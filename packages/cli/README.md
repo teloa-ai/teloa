@@ -17,7 +17,7 @@ teloa up
 
 默认打开本机 Web 界面，首次进入后在设置中配置模型。在浏览器未自动打开时运行 `teloa open`。默认安装目录为 `~/.teloa`，Web 端口为 3100；新安装可通过 `teloa up --home <目录> --port <端口> --workspace <工作目录>` 指定。
 
-已有 PostgreSQL 可通过 `--database-config <文件>` 提供包含 `connectionString` 的 JSON 文件，权限应为 `0600`。不要把连接凭据放入命令行、仓库或共享日志。
+使用自行准备的 PostgreSQL 时，仅接受 `localhost` 或 `127.0.0.1` 上名为 `teloa` 的独立数据库；首次安装必须为空库，不接管已有业务库或其他安装。通过 `--database-config <文件>` 提供包含 `connectionString` 的 JSON 文件，权限应为 `0600`。不要把连接凭据放入命令行、仓库或共享日志。
 
 ## 常用命令
 
@@ -47,6 +47,8 @@ This package includes the Free application and its installation and maintenance 
 Use Node.js **22.19+ (22.x) or 24.x**, npm **11.12.1+ (11.x)**, and a running local Docker engine for the dedicated PostgreSQL database. Run the installation commands above, then configure your model in the Web interface. The default home is `~/.teloa` and the default Web port is 3100. A new installation accepts `--home`, `--port` and `--workspace`; `--no-open` suppresses the browser launch.
 
 Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
+
+To use your own PostgreSQL, supply a protected JSON file containing `connectionString` through `--database-config`. Only a dedicated database named `teloa` on `localhost` or `127.0.0.1` is accepted. It must be empty for a new installation; existing business databases or databases owned by another installation are rejected. Keep this file at mode `0600` and keep credentials out of command lines, repositories and shared logs.
 
 ## License and support
 
