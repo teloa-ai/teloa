@@ -63,9 +63,44 @@ SOC is the first end-to-end business scenario. Customer delivery, content operat
 
 ## Quick start
 
-Bring your own model service and API key. Model usage is billed by your provider; the Free software license does not include inference credits. The npm installer has not been published, so start from source using either route below.
+Bring your own model service and API key. Model usage is billed by your provider; the Free software license does not include inference credits. **0.2.0-alpha.7** is available through [npm](https://www.npmjs.com/package/@teloa/cli) and [Docker Hub](https://hub.docker.com/r/teloa/teloa). Choose native npm installation for local programs, or Docker Hub for container deployment. Source builds remain available below.
 
-### Docker Compose
+### Native npm installation
+
+Use **Node.js 24.x** or **22.x from 22.19 onward**, **npm 11.x from 11.12.1 onward**, and a running local Docker engine for the dedicated PostgreSQL database. Install the exact version into a new command directory; no global installation or source build is required.
+
+```sh
+mkdir teloa-command
+cd teloa-command
+npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7
+./node_modules/.bin/teloa up
+./node_modules/.bin/teloa doctor
+./node_modules/.bin/teloa status
+```
+
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart), and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup) before updating an existing installation.
+
+### Docker Hub with Compose
+
+Install Docker with Compose and start the engine. The published image and the configuration below have been verified on **Linux ARM64**; **amd64 has not been verified**. Teloa, DSH and PostgreSQL run in containers, so host Node.js and pnpm are not required.
+
+Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.0-alpha.7` for both initialization and the application, with persistent data volumes and a generated database password.
+
+```sh
+mkdir teloa-free
+cd teloa-free
+curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
+docker compose pull
+docker compose up -d --no-build
+docker compose ps
+docker compose logs --tail=50 app
+```
+
+Wait for `db` and `app` to be healthy. Successful exit of the one-time `init` service is expected. Open the complete authentication link from the app log, using the configured local port (3100 by default). If the port is occupied, set `TELOA_PORT=3101` in this directory's `.env` before startup. Keep authentication links private. See [installation and lifecycle instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup).
+
+Container tools run inside the container; mounting a folder does not give control of your host applications.
+
+### Docker Compose from source
 
 Install Docker with Compose and start the engine. This route runs Teloa and PostgreSQL in containers; host Node.js and pnpm are not required.
 

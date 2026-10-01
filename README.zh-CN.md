@@ -63,9 +63,44 @@ SOC 是首个完整业务流程场景。客户交付、内容运营、电商零�
 
 ## 快速开始
 
-需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；Free 软件许可不包含推理额度。npm 安装器尚未发布，当前按以下源码方式启动。
+需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；Free 软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。
 
-### Docker Compose
+### npm 原生安装
+
+需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**npm 11.12.1 及以上的 11.x**，以及运行中的本机 Docker 引擎，用于独立 PostgreSQL 数据库。将精确版本安装到新建命令目录，无需全局安装或编译源码。
+
+```sh
+mkdir teloa-command
+cd teloa-command
+npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7
+./node_modules/.bin/teloa up
+./node_modules/.bin/teloa doctor
+./node_modules/.bin/teloa status
+```
+
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，已有安装更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
+
+### Docker Hub + Compose
+
+先安装带 Compose 的 Docker，并启动 Docker 引擎。正式镜像及以下配置已验 **Linux ARM64**；**amd64 尚未验证**。Teloa、DSH 与 PostgreSQL 均在容器内运行，本机不需要安装 Node.js 或 pnpm。
+
+将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.0-alpha.7`，沿用持久数据卷与自动生成的数据库口令。
+
+```sh
+mkdir teloa-free
+cd teloa-free
+curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
+docker compose pull
+docker compose up -d --no-build
+docker compose ps
+docker compose logs --tail=50 app
+```
+
+等待 `db` 与 `app` 显示健康；一次性 `init` 服务成功退出属于正常行为。使用应用日志中的完整认证链接进入，采用所配置的本机端口（默认 3100）。端口被占用时，先在该目录 `.env` 中填写 `TELOA_PORT=3101`。不要公开认证链接。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
+
+容器中的工具执行容器内的程序，挂载文件夹不会获得本机应用的操作权限。
+
+### Docker Compose 源码构建
 
 先安装带 Compose 的 Docker，并启动 Docker 引擎。此方式将 Teloa 与 PostgreSQL 一起运行在容器中，本机不需要安装 Node.js 或 pnpm。
 
