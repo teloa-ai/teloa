@@ -27,9 +27,9 @@ const taskIdentity=(request:ConversationWorkRequest,target:WorkRequestTarget)=>w
 const executionSession=(requestId:string,roleId:string)=>'task-run-'+workRequestChildId(requestId,'run',roleId)
 const terminal=(run:TaskRun)=>['ended','withdrawn','configuration_failed'].includes(run.state)
 const projection=(task:WorkTask)=>({id:task.id,title:task.title,scope:task.scope,version:task.version,state:task.state,assigneeRoleId:task.assigneeRoleId})
-const previousRoleChangeMessage='原接手员工的状态、版本或业务授权已变化，请先核对原交办。'
+const previousRoleChangeMessages=new Set(['原接手同事的状态、版本或业务授权已变化，请先核对原交办。','原接手员工的状态、版本或业务授权已变化，请先核对原交办。'])
 const roleChangeFailure={code:'teloa/version-conflict',message:'原接手员工已暂停、版本或业务授权已变化；本次执行未启动，请由本人核对原交办并重新安排。'} as const
-const isRoleChangeFailure=(failure:ConversationWorkRequest['failures'][string]|undefined)=>failure?.code===roleChangeFailure.code&&(failure.message===roleChangeFailure.message||failure.message===previousRoleChangeMessage)
+const isRoleChangeFailure=(failure:ConversationWorkRequest['failures'][string]|undefined)=>failure?.code===roleChangeFailure.code&&(failure.message===roleChangeFailure.message||previousRoleChangeMessages.has(failure.message))
 function publicFailure(error:unknown){return error instanceof WorkError?{code:error.code,message:error.message.slice(0,1000)}:{code:'teloa/host-unavailable',message:'交办暂时无法完成，请先核对原请求再重试。'}}
 
 /** 只编排既有任务服务；本模块不拥有另一套运行状态或执行授权。 */

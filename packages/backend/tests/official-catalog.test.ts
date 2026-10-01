@@ -252,10 +252,10 @@ function buildKindsSnapshot():OfficialCatalogSnapshot{
  return {indexSha256:sha256(json),index:next,files:{...base.files,'teloa.role.test-role/1.0.0/role.json':Buffer.from(roleBytes).toString('base64')}}
 }
 
-test('list：counts 在过滤前算全量五类，kind=role / model 可筛，query 命中 roleId / modelId；model 无 artifact',async()=>{
+test('list：counts 在过滤前算全量六类，kind=role / model 可筛，query 命中 roleId / modelId；model 无 artifact',async()=>{
  const service=new OfficialCatalogService(stub().store,buildKindsSnapshot())
  const all=await service.list(human())
- assert.deepEqual(all.counts,{solution:1,role:1,skill:0,connector:0,model:1})
+ assert.deepEqual(all.counts,{solution:1,dashboard:0,role:1,skill:0,connector:0,model:1})
  assert.deepEqual(all.skipped,{unknownKind:0,newerApp:0})
  const roles=await service.list(human(),{kind:'role'})
  assert.deepEqual(roles.items.map(item=>item.entry.id),['teloa.role.test-role']);assert.deepEqual(roles.counts,all.counts)

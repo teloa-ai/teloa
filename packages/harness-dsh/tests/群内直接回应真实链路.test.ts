@@ -234,7 +234,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  // 探针就成了一个永远数到 0 的摆设（内置那个 buffer 导出器也因此收不到任何一行 warn）。
  ctx.logger.exporter({levels:{default:2},export:message=>{if(message.type==='warn')warnings.push(message.args.map(arg=>String(arg)).join(' '))}})
  const routingFailures=()=>warnings.filter(line=>line.includes('Teloa 群内路由未完成')).length
- const postRefusals=()=>warnings.filter(line=>line.includes('Teloa 同事群内回传未写入'))
+ const postRefusals=()=>warnings.filter(line=>line.includes('Teloa 员工群内回传未写入'))
  // 探针本身的自检在 M4 那一条：它要求这里真的收到两行 `群内回传未写入`。
  // 那一条绿，`routingFailures()` 的两处零断言才不是空转。
 
@@ -892,7 +892,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   assert.deepEqual(noPostReplyRows,[],'canPost 为假的岗位一条群消息都不许落库')
   assert.deepEqual(revokedReplyRows,[],'运行在途被撤授权之后，这一轮的回帖也发不出去')
   // 两次都必须走「授权判据挡住」那一支（`task-run-group-publisher.ts:35-38`）而不是静悄悄没跑：
-  // 那一支会留一行 `Teloa 同事群内回传未写入：<码>`，码只允许是授权/版本那三个之一。
+  // 那一支会留一行 `Teloa 员工群内回传未写入：<码>`，码只允许是授权/版本那三个之一。
   assert.deepEqual([noPostReconciled.state,revokedReconciled.state],['ended','ended'],'两次 reconcile 都必须真的收口，发布器才一定被调到')
   for(const [label,refusals] of [['没有发言权的那位',noPostRefusals],['运行在途被撤授权的那位',revokedRefusals]] as const){
    assert.ok(refusals.length>=1,`${label}的回帖该留至少一行「群内回传未写入」，实得 ${JSON.stringify(refusals)}`)

@@ -8,8 +8,6 @@ import {access,mkdtemp,readFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createServer} from 'node:http'
-// @ts-ignore - metrics-worker has no TypeScript declarations; cross-validated at runtime
-import {parseEvent} from '../../../metrics-worker/src/protocol.mjs'
 import {createResourceInstallReporter} from '../src/usage-stats.ts'
 import {createSolutionRoleResolver,resourceInstallOf,withResourceInstallReport,withSolutionRoleReport} from '../src/market-install-report.ts'
 
@@ -46,7 +44,7 @@ test('未开启与排除环境：零请求，不建安装标识',async t=>{
  await assert.rejects(access(join(dir,'usage-stats','installation-id.json')))
 })
 
-test('开启后发送通过 Worker 协议校验的 resource-install；同一原始日同条目只发一次；换条目或换原始日再发',async t=>{
+test('开启后发送符合公开客户端协议的 resource-install；同一原始日同条目只发一次；换条目或换原始日再发',async t=>{
  const dir=await tmp(t);received.length=0;status=200
  const report=createResourceInstallReporter(dir,()=>ON)
  report(soc());report(soc())
@@ -55,8 +53,10 @@ test('开启后发送通过 Worker 协议校验的 resource-install；同一原�
  const event=received[0]!
  assert.deepEqual(Object.keys(event).sort(),['appVersion','day','edition','entryId','entryVersion','event','installationId','kind','schemaVersion'])
  assert.equal(event.event,'resource-install');assert.equal(event.entryId,'teloa.soc');assert.equal(event.day,dayOf(0))
- const parsed=parseEvent(event,Date.now()) as Record<string,unknown>
- assert.ok(!('error' in parsed),JSON.stringify(parsed))
+ assert.equal(event.schemaVersion,1);assert.equal(event.edition,'free')
+ assert.match(String(event.installationId),/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+ assert.match(String(event.appVersion),/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+ assert.equal(event.kind,'solution');assert.equal(event.entryVersion,'1.0.0')
  report({id:'anthropic.internal-comms',version:'1.0.0',kind:'skill',day:dayOf(0)})
  report({...soc(),day:dayOf(1)})
  await settle()

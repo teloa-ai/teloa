@@ -35,6 +35,7 @@ const expectedTables=[
  "teloa_business_configuration_versions",
  "teloa_business_conversation_bindings",
  "teloa_business_dashboard_migrations",
+ "teloa_business_dashboard_preparations",
  "teloa_business_dashboard_refreshes",
  "teloa_business_definition_drafts",
  "teloa_business_local_definition_heads",

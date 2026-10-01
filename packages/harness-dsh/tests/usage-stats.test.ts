@@ -9,8 +9,6 @@ import {mkdtemp, rm, readFile, writeFile, mkdir} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http'
-// @ts-ignore - metrics-worker has no TypeScript declarations; cross-validated at runtime
-import {parseEvent} from '../../../metrics-worker/src/protocol.mjs'
 
 import {
   readOrCreateInstallId,
@@ -407,9 +405,9 @@ test('signalActivity: 4xx response is terminal - no retry', async () => {
 })
 
 // ---------------------------------------------------------------------------
-// Protocol fields cross-validate with metrics-worker parseEvent
+// 只核对公开出站事件白名单；运营服务端协议测试不属于 Free 源码。
 // ---------------------------------------------------------------------------
-test('protocol: events pass parseEvent validation', async () => {
+test('protocol: events contain only the public client fields', async () => {
   resetStub()
   const dir = await makeTmp()
   try {
@@ -420,11 +418,18 @@ test('protocol: events pass parseEvent validation', async () => {
 
     assert.ok(stubReceived.length > 0, 'at least one event must have been sent')
     for (const event of stubReceived) {
-      const result = parseEvent(event, Date.now())
-      assert.ok(
-        !('error' in result),
-        `parseEvent must accept event: ${JSON.stringify(event)}, got: ${JSON.stringify(result)}`,
-      )
+      const fields = event as Record<string, unknown>
+      assert.ok(fields.event === 'installation' || fields.event === 'active-day')
+      const keys = ['schemaVersion', 'installationId', 'event', 'appVersion', 'edition', ...(fields.event === 'active-day' ? ['day'] : [])]
+      assert.deepEqual(Object.keys(fields).sort(), keys.sort(), 'outbound events must not include private content or unknown fields')
+      assert.equal(fields.schemaVersion, 1)
+      assert.equal(fields.edition, 'free')
+      assert.match(String(fields.installationId), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+      assert.match(String(fields.appVersion), /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+      if (fields.event === 'active-day') {
+        assert.match(String(fields.day), /^\d{4}-\d{2}-\d{2}$/)
+        assert.equal(new Date(String(fields.day) + 'T00:00:00Z').toISOString().slice(0, 10), fields.day)
+      }
     }
   } finally {
     await rm(dir, {recursive: true, force: true})

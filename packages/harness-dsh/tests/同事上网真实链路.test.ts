@@ -339,8 +339,8 @@ test('第 8 步：未勾上网的在岗同事被逐字拒，且一行记录都�
  unauthorizedRun=await startRun(await prepareRun(other,'未授权同事的同一目标'))
  assert.ok(!unauthorizedRun.allowedTools.includes('web_fetch'))
  const before=await allWebRows(),bodies=fetchBodies+searchBodies
- denied(await runTool(unauthorizedRun.sessionId,'web_fetch',{url:publicUrl}),'当前任务未授权使用此工具，请核对同事执行范围。')
- denied(await runTool(unauthorizedRun.sessionId,'web_search',{queries:['同一目标']}),'当前任务未授权使用此工具，请核对同事执行范围。')
+ denied(await runTool(unauthorizedRun.sessionId,'web_fetch',{url:publicUrl}),'当前任务未授权使用此工具，请核对员工执行范围。')
+ denied(await runTool(unauthorizedRun.sessionId,'web_search',{queries:['同一目标']}),'当前任务未授权使用此工具，请核对员工执行范围。')
  assert.equal(fetchBodies+searchBodies,bodies,'被拒的调用不得进入工具体')
  assert.deepEqual((await allWebRows()).length,before.length,'未授权的外发不许落账')
  // 运行本身不崩：同一会话仍是 running，回包里也没有 webAccess。
@@ -362,7 +362,7 @@ test('第 8 步（续）：技能代发实际装配（规格 2026-09-27 §5，�
  await lifecycle(await reload(paused.id),'resume')
  // 调用时授权挂在 pre-execute 链最前、读的是任务守卫同一份运行策略：未授予时回它自己的理由（而不是任务守卫的通用理由）。
  const bodies=fetchBodies+searchBodies
- denied(await runTool(unauthorizedRun.sessionId,'teloa_skill_http',{skill:'x-search',method:'GET',url:'https://api.x.ai/v1/models'}),'本同事未获授权使用技能接口代发')
+ denied(await runTool(unauthorizedRun.sessionId,'teloa_skill_http',{skill:'x-search',method:'GET',url:'https://api.x.ai/v1/models'}),'本员工未获授权使用技能接口代发')
  assert.equal(fetchBodies+searchBodies,bodies)
 })
 
@@ -444,8 +444,8 @@ test('第 12 步：绑定业务对象来源的会话仍 fail-closed，逐字不�
  const created=await call('business-tasks/create',{requestId:randomUUID(),reference:{scope:item.scope,type:item.type,id:item.id,version:item.version,snapshotHash:item.snapshotHash},goal:'核对异常外联',assignee:{roleId:analyst.id,expectedVersion:analyst.version}}) as {task:{id:string;version:number}}
  const run=await startRun(await call('task-runs/prepare',{requestId:randomUUID(),taskId:created.task.id,expectedTaskVersion:created.task.version}) as Run)
  const before=await allWebRows(),bodies=fetchBodies+searchBodies
- denied(await runTool(run.sessionId,'web_fetch',{url:fixtureOrigin+'/inject'}),'本会话关联了外部业务来源，联网工具未在同事执行范围内授权。')
- denied(await runTool(run.sessionId,'web_search',{queries:['chain-01']}),'本会话关联了外部业务来源，联网工具未在同事执行范围内授权。')
+ denied(await runTool(run.sessionId,'web_fetch',{url:fixtureOrigin+'/inject'}),'本会话关联了外部业务来源，联网工具未在员工执行范围内授权。')
+ denied(await runTool(run.sessionId,'web_search',{queries:['chain-01']}),'本会话关联了外部业务来源，联网工具未在员工执行范围内授权。')
  assert.equal(fetchBodies+searchBodies,bodies)
  assert.deepEqual((await allWebRows()).length,before.length)
 })

@@ -115,7 +115,7 @@ test('search 无任一条件拒绝且不调目录；带 query/kind 对七个市�
  assert.equal(lists.length,7)
  for(const [,payload] of lists){
   const row=payload as Record<string,unknown>
-  assert.ok(Object.keys(row).every(key=>['cursor','limit','query','kind','tests/fixtures/public-market','sort'].includes(key)))
+  assert.ok(Object.keys(row).every(key=>['cursor','limit','query','kind','marketplace','sort'].includes(key)))
   assert.equal(row.kind,'skill');assert.equal(row.query,'pdf');assert.equal(row.sort,'installs')
  }
  assert.deepEqual(new Set(lists.map(([,payload])=>(payload as {marketplace?:string}).marketplace)),new Set([undefined,'claude-code','codex','dsh','openclaw','clawhub','hermes']))

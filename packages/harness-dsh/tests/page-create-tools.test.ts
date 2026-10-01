@@ -56,7 +56,7 @@ test('真实工具注册恰好目录和草案；目录是只读且不提供 appl
 test('模型可见的岗位草案示例通过正式写入契约，无需猜字段或读取源码',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose())
  const description=e.ctx.tools.schemas(e.agent).find(item=>item.name==='teloa_create_draft')!.description
- const example=/最小同事示例：\n([^\n]+)\n/.exec(description??'')
+ const example=/最小员工示例：\n([^\n]+)\n/.exec(description??'')
  assert.ok(example,'工具必须提供完整可用的岗位定义示例')
  const parsed=JSON.parse(example[1]!)
  assert.deepEqual(roleWriteDefinition(parsed),parsed)

@@ -161,14 +161,16 @@ test('start事务前岗位变化的竞争被再次核对；仅确定岗位变化
  }
 })
 test('旧岗位变更失败记录随已准备的Run恢复为可回流状态',async()=>{
- const f=fixture()
- await f.dispatch.dispatch({...request,roleId,expectedRoleVersion:1},new AbortController().signal)
- f.setRun({...f.run!,state:'prepared'})
- f.stored.failures[roleId]={code:'teloa/version-conflict',message:'原接手同事的状态、版本或业务授权已变化，请先核对原交办。'}
- const status=await f.dispatch.status('origin',requestId)
- assert.equal(status.members[0]?.status,'failed')
- assert.match(status.members[0]?.reason??'',/本人核对/)
- await f.dispatch.deliver();assert.ok(f.calls.includes('notified'))
+ for(const message of ['原接手同事的状态、版本或业务授权已变化，请先核对原交办。','原接手员工的状态、版本或业务授权已变化，请先核对原交办。']){
+  const f=fixture()
+  await f.dispatch.dispatch({...request,roleId,expectedRoleVersion:1},new AbortController().signal)
+  f.setRun({...f.run!,state:'prepared'})
+  f.stored.failures[roleId]={code:'teloa/version-conflict',message}
+  const status=await f.dispatch.status('origin',requestId)
+  assert.equal(status.members[0]?.status,'failed',message)
+  assert.match(status.members[0]?.reason??'',/本人核对/)
+  await f.dispatch.deliver();assert.ok(f.calls.includes('notified'),message)
+ }
 })
 test('prepare后启动响应未知仍保持等待，不提前回流失败',async()=>{
  const f=fixture(),originalRun=f.ports.run
