@@ -17,7 +17,8 @@ test('日期时间固定按传入 locale 与时区格式化', () => {
   assert.equal(formatDateTime('zh-Hant', input, options), '2026年9月13日 中午12:34')
   assert.equal(formatDateTime('en', input, options), 'Sep 13, 2026, 12:34 PM')
   assert.equal(formatDateTime('ja', input, options), '2026/09/13 12:34')
-  assert.equal(formatDateTime('ko', input, options), '2026. 9. 13. PM 12:34')
+  // ICU 版本可能使用韩文或拉丁下午标记；日期、时区与时间仍须一致。
+  assert.match(formatDateTime('ko', input, options), /^2026\. 9\. 13\. (?:오후|PM) 12:34$/)
   assert.equal(formatDateTime('vi', input, options), '12:34 13 thg 9, 2026')
   assert.equal(formatDateTime('es', input, options), '13 sept 2026, 12:34')
   assert.equal(formatDateTime('fr', input, options), '13 sept. 2026, 12:34')

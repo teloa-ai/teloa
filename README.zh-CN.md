@@ -6,7 +6,7 @@
 
 [官网](https://www.teloa.ai/) · [使用文档](https://docs.teloa.ai/) · [资源市场](https://market.teloa.ai/) · [问题反馈](https://github.com/teloa-ai/teloa/issues)
 
-Teloa Free 是可以自行部署的 AI 团队工作台。你可以为 AI 员工定义职责，提供资料和技能，连接工作所需的工具，再交办任务、跟进进度，并把成果关联到原来的任务和业务记录。
+Teloa 是用于构建、协作和运行 AI 团队的 **AI-Native Team Studio**。**Teloa Free** 是面向个人、自行部署的版本。你可以为 AI 员工定义职责，提供资料和技能，连接工作所需的工具，再交办任务、跟进进度，并把成果关联到原来的任务和业务记录。
 
 你决定工作目标、访问范围和审批规则，员工在这些边界内执行，你负责关键决策和成果验收。Teloa 使用 **DeepSeek Harness（DSH）**作为智能体运行引擎。
 
