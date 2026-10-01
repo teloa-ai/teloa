@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url'
 import {Context} from '@deepseek-ai/cordis'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {LlmRuntime,ToolCallId,createUserMessage} from '@deepseek-ai/dsh-llm'
+import {HarnessError,LlmRuntime,ToolCallId,createUserMessage} from '@deepseek-ai/dsh-llm'
 import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry,type AgentHandle} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
@@ -139,9 +139,11 @@ async function boot(){
 
 /**
  * 模型可见的上网两名由上游 `@deepseek-ai/dsh-tool-web` 注册；该包不是本包的依赖，
- * 因此这里按同名同参注册两条同形工具，工具体走真实网络（`web_fetch`）。
+ * 因此这里按同名同参注册两条同形工具。HTTP 夹具走真实网络；三条私网地址由模拟 provider 确定拒绝，
+ * 不向实际私网发请求。错误沿 rc.1 WebError 的 HarnessError/code 契约返回，不代表实测了官方 provider。
  * 被测对象是 Teloa 侧那条闸与派发前记录，不是 provider 自身。
  */
+const providerBlockedTargets=['http://127.0.0.1:3080/','http://169.254.169.254/latest/meta-data/','http://10.0.0.1/']
 let fetchBodies=0,searchBodies=0
 function registerWebTools(){
  ctx.tools.register(defineTool({
@@ -150,6 +152,7 @@ function registerWebTools(){
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args:Record<string,unknown>)=>{
    fetchBodies++
+   if(providerBlockedTargets.includes(String(args.url)))throw new HarnessError('模拟 provider 拒绝访问非公网地址。','WEB_BLOCKED_URL')
    const response=await fetch(String(args.url),{signal:AbortSignal.timeout(5000)})
    return (await response.text()).slice(0,200)
   },
@@ -163,7 +166,7 @@ function registerWebTools(){
 }
 
 let callSeq=0
-type ToolResult={isError:boolean}
+type ToolResult={isError:boolean;content:unknown[];error?:{info?:{code?:string}}}
 const runTool=async(sessionId:string,name:string,args:Record<string,unknown>):Promise<ToolResult>=>{
  const handle=agents.get(sessionId)
  assert.ok(handle,'工具调用需要真实 Agent 会话')
@@ -366,14 +369,16 @@ test('第 8 步（续）：技能代发实际装配（规格 2026-09-27 §5，�
  assert.equal(fetchBodies+searchBodies,bodies)
 })
 
-test('第 9 步：私网三 URL 在 Teloa 层放行、由 provider 拒，三次都留下记录行',{timeout:180000},async()=>{
- const targets=['http://127.0.0.1:3080/','http://169.254.169.254/latest/meta-data/','http://10.0.0.1/']
- const before=(await webRows(authorizedRun.id)).length
+test('第 9 步：私网三 URL 在 Teloa 层放行、由模拟 provider 拒，三次都留下记录行',{timeout:180000},async()=>{
+ const targets=providerBlockedTargets
+ const before=(await webRows(authorizedRun.id)).length,bodies=fetchBodies
  for(const url of targets){
   const result=await runTool(authorizedRun.sessionId,'web_fetch',{url})
   assert.equal(result.isError,true,`${url} 应由 provider 拒`)
-  assert.ok(!JSON.stringify(result).includes('WEB_'),'上游错误码不得透传进工具正文')
+  assert.equal(result.error?.info?.code,'WEB_BLOCKED_URL','模拟 provider 的结构化拒绝码必须保留')
+  assert.ok(!JSON.stringify(result.content).includes('WEB_'),'上游错误码不得透传进工具正文')
  }
+ assert.equal(fetchBodies-bodies,targets.length,'三个 URL 均须实际派发至模拟 provider')
  const rows=await webRows(authorizedRun.id)
  assert.deepEqual(rows.slice(before).map(row=>[row.kind,row.value]),targets.map(url=>['fetch',url]),'三次都过了 Teloa 层的判据，记录必须先于派发写入')
 })
