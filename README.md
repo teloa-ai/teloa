@@ -1,62 +1,169 @@
-# Teloa Free
+# Teloa · AI-Native Team Studio
 
-[English](#english)
+**An AI team of your own. For everyone.**
 
-Teloa Free 是个人本地部署的 AI 团队工作台。可以创建 AI 员工、交办任务、查看进度和成果，并通过连接器、技能与业务看板组织工作。执行引擎使用 DeepSeek Harness（DSH）。
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-本仓库提供 Free 版本源码。当前快照版本见 `packages/cli/package.json`；此源码快照尚未发布到 npm。
+[Website](https://www.teloa.ai/en/) · [Documentation](https://docs.teloa.ai/en/) · [Resource market](https://market.teloa.ai/en/) · [Issues](https://github.com/teloa-ai/teloa/issues)
 
-## 从源码运行
+Teloa Free is a self-hosted workspace for building and running an AI team. Give each AI employee a role, relevant knowledge, skills and tools. Assign work, follow its progress, and keep the results connected to the task and business records they came from.
 
-需要 Node.js 22.19+ 或 24+、pnpm 11.7.0，以及用于本地 PostgreSQL 的 Docker。依赖版本由锁文件固定。
+You define the goals, access and approval rules. Employees work within those boundaries, while you handle decisions and review deliverables. Teloa uses **DeepSeek Harness (DSH)** as its agent runtime.
+
+**Free edition:** one human user, multiple AI employees, running on your computer through a Web interface. This repository provides the Free source code under [Apache-2.0](LICENSE). The current source version is **0.2.0-alpha.7**.
+
+## What you can do
+
+| Capability | How it helps |
+| --- | --- |
+| **Conversations** | Work with text, files and images, use `@` references and `/` commands, and continue in the same context. |
+| **AI employees and groups** | Define lasting roles with their own knowledge, skills and access. Bring employees together in a group for discussion and collaboration. |
+| **Tasks and projects** | Assign a concrete goal, see the responsible employee and execution progress, and organize related work and deliverables around a project. |
+| **Businesses and dashboards** | Describe records, fields and views in natural language. Review and save the configuration, manage records, and build dashboards over the business data. |
+| **Knowledge and skills** | Provide reference material and reusable working methods. Choose what each employee may use. |
+| **Connectors and the market** | Connect supported external tools through MCP. Add employees, skills, connectors, task templates and business dashboards individually or as part of a solution. |
+| **Automation** | Schedule repeat work and follow its runs. Enable plans explicitly and keep the runtime online. |
+| **Model configuration** | Configure model services supported by the runtime with your own credentials. Employee model settings and permissions remain separate. |
+
+![Teloa AI employee directory in English](https://docs.teloa.ai/assets/screenshots/en/team.ace3d08ce890.png)
+
+*Product interface with example employees and work. A fresh installation does not require this demo data.*
+
+## How the pieces work together
+
+A **business** organizes records, people and resources. An **AI employee** owns a role; a **skill** supplies a method; **knowledge** provides evidence; a **connector** gives access to a system. A **task** tracks an assignment, a **deliverable** preserves its output, and a **dashboard** summarizes the business records.
+
+```mermaid
+flowchart LR
+    goal["Goal and business records"] --> task["Task"]
+    task --> employee["AI employee"]
+    knowledge["Knowledge and skills"] --> employee
+    connector["Authorized tools and connectors"] --> employee
+    employee --> result["Progress and deliverables"]
+    result --> review["Your review"]
+    review --> records["Linked business records"]
+    records --> dashboard["Business dashboard"]
+```
+
+For example, in **security operations (SOC)**:
+
+1. Describe an alert-tracking business and review its record fields and pages.
+2. Add local records, import a supported table, or configure an authorized data connection.
+3. Give an analyst employee relevant procedures, evidence and tools, then assign an alert investigation.
+4. Follow the task, inspect the evidence and review the deliverable linked to that alert.
+5. Use a dashboard to summarize alert status, severity and trends.
+
+Adding a solution does not automatically connect accounts, authorize employees or start scheduled work. Those choices stay with you.
+
+![SOC business dashboard in English](https://docs.teloa.ai/assets/screenshots/en/business-dashboard.46902db1d51d.png)
+
+*Dashboard using synthetic alert records; this is not live security monitoring.*
+
+SOC is the first end-to-end business scenario. Customer delivery, content operations, retail, software development, education, store services and other security workflows are **future scenario examples**, rather than completed integrations. See [industry examples](https://docs.teloa.ai/en/tutorials/industry-examples) and the [SOC walkthrough](https://docs.teloa.ai/en/tutorials/soc-triage).
+
+## Quick start
+
+Bring your own model service and API key. Model usage is billed by your provider; the Free software license does not include inference credits. The npm installer has not been published, so start from source using either route below.
+
+### Docker Compose
+
+Install Docker with Compose and start the engine. This route runs Teloa and PostgreSQL in containers; host Node.js and pnpm are not required.
 
 ```sh
+git clone https://github.com/teloa-ai/teloa.git
+cd teloa
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=50 app
+```
+
+Wait for `db` and `app` to be healthy. `init` exits after initialization; that is expected. Open the **complete authentication link** printed in the app log. The default address uses `127.0.0.1:3100`. If that port is occupied, put `TELOA_PORT=3101` in a local `.env` before starting and use that port in the authentication link.
+
+Database credentials are generated during initialization. Data persists in named volumes. To pause and resume:
+
+```sh
+docker compose stop
+docker compose start
+```
+
+Container tools run inside the container. Mounting a folder does not give access to applications installed on your host. Use native execution when your work needs local programs.
+
+### Native source installation
+
+Use **Node.js 24.x** or **22.x from 22.19 onward**, **pnpm 11.7.0**, and a running local Docker engine for PostgreSQL. Teloa and DSH run on your computer, while the database runs in Docker.
+
+```sh
+git clone https://github.com/teloa-ai/teloa.git
+cd teloa
 pnpm install --frozen-lockfile
 pnpm build
 pnpm check:dsh
 pnpm setup:database
-pnpm setup:workspace
 pnpm setup:dsh
 pnpm dev:dsh
 ```
 
-启动后按终端提示打开地址，在设置中配置模型。运行数据保存在 `.runtime/`，请勿提交数据库、凭据或会话数据。
+Open the complete authentication URL printed at startup. On macOS or Linux, use `TELOA_DSH_PORT=3101 pnpm dev:dsh` to choose another Web port. Source-installation state stays under `.runtime/`; the default working directory is `.runtime/teloa/workspace`.
 
-## 测试与构建
+See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [local development guide](https://docs.teloa.ai/en/develop/local-development) for deployment and troubleshooting. Back up your data before upgrades.
+
+## Your first task
+
+1. Open **Settings → Models**, configure a supported provider, and verify a simple conversation. Model credentials belong in Settings.
+2. Create an **AI employee**. Define its responsibility, select reference material, and set its tool and approval boundaries.
+3. Open its conversation and make a specific request, such as: “Summarize these files, cite the sources, and list what is still uncertain.”
+4. For work that needs tracking, create or approve a task. Follow actual progress, handle requests in **Needs your attention**, and review the deliverable.
+5. Organize related work in a business or project, then add a dashboard or schedule as needed.
+
+Guides: [first task](https://docs.teloa.ai/en/start/first-task) · [employees](https://docs.teloa.ai/en/guides/colleagues) · [groups](https://docs.teloa.ai/en/guides/groups) · [businesses and dashboards](https://docs.teloa.ai/en/guides/business) · [market](https://docs.teloa.ai/en/guides/market).
+
+## Architecture and development
+
+| Product layer | Responsibility |
+| --- | --- |
+| **AI Team** | Employees, collaboration, businesses, projects, tasks and automation. |
+| **Agent Studio** | Each employee's responsibilities, knowledge, skills, tools and permissions. |
+| **Agent Harness** | Models, execution environments, tools, sandboxing, approvals and runtime events. DSH supplies the current runtime. |
+
+Business services, runtime adaptation and the UI are organized separately:
+
+| Directory | Purpose |
+| --- | --- |
+| `packages/contract` | Shared types and protocols. |
+| `packages/backend` | PostgreSQL-backed business services. |
+| `packages/harness-dsh` | DSH integration, task execution and authorization checks. |
+| `packages/client/`, `packages/bundle` | Web workspace, shared UI and runtime composition. |
+| `packages/cli`, `packages/native-*` | Installation lifecycle and native tool integrations. |
+| `packages/mcp-reference`, `packages/im-gateway`, `packages/local-embedding` | Reference access, messaging integration and local retrieval. |
+| `config/`, `scripts/` | Pinned dependency baseline, preparation and startup. |
+| `tests/`, `examples/industry/` | Regression tests and synthetic business-format examples. |
+
+Before submitting a change:
 
 ```sh
-pnpm typecheck
+pnpm build
+pnpm check:client
+pnpm check:dsh
+NODE_OPTIONS=--max-old-space-size=4096 pnpm typecheck
+pnpm test:repo
 pnpm test:contract
 pnpm test:bindings
-pnpm test:repo
 ```
 
-宿主与后端测试需要 Docker 和隔离数据库。
-## 源码目录
+Run relevant backend or runtime tests for behavior changes. These may require Docker and isolated databases. Keep runtime data and credentials out of commits. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution process and DCO requirements.
 
-| 目录 | 内容 |
-| --- | --- |
-| `packages/` | Free 客户端、后端、CLI、DSH 适配及随附扩展 |
-| `config/` | 固定依赖基线 |
-| `scripts/` | 启动、构建与资源校验工具 |
-| `examples/industry/` | 使用合成数据的业务格式示例 |
-| `tests/` | 构建与运行回归测试 |
-| `third-party-licenses/` | 第三方许可证与来源说明 |
+## Data, permissions and current scope
 
-用户资料、模型授权和外部动作分别受权限控制。请阅读 [安全说明](SECURITY.md)。浏览器停止及远程执行仍受上游能力限制；停止会话不能保证所有外部请求立即中断。
+Application data is stored on the machine running Teloa. Remote models and authorized external tools receive the task context they need. Self-hosting does not make every model call offline. See [SECURITY.md](SECURITY.md) for the permission model and known limitations.
 
-[产品文档](https://docs.teloa.ai/) · [官网](https://www.teloa.ai/) · [资源市场](https://market.teloa.ai/)
+The current edition is a personal Web Alpha. Hosted multi-user services, Pro desktop/mobile clients and enterprise deployment features are outside this Free repository. External integrations require compatible services and credentials. Stopping a conversation does not guarantee immediate cancellation of every external request.
 
-采用 [Apache-2.0](LICENSE) 许可，第三方组件各自保留原许可；见 [NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [商标说明](TRADEMARK.md)。贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+## Community and license
 
-## English
+- Bugs and proposals: [GitHub Issues](https://github.com/teloa-ai/teloa/issues).
+- Contributions: [guide](CONTRIBUTING.md) and [DCO](DCO.md).
+- Product support: [support@teloa.ai](mailto:support@teloa.ai).
+- Business inquiries: [hi@teloa.ai](mailto:hi@teloa.ai).
+- Serious security issues: [security@teloa.ai](mailto:security@teloa.ai), following [SECURITY.md](SECURITY.md). General reports can use Issues; keep sensitive details private.
 
-Teloa Free is a locally deployed AI team workspace for individuals. Create AI employees, assign work, follow task progress and results, and organize work with skills, connectors and business dashboards. The execution engine is DeepSeek Harness (DSH).
-
-This repository contains the Free source code. See `packages/cli/package.json` for the snapshot version. This source snapshot has not been published to npm.
-
-For source installation, use the commands above with Node.js 22.19+ or 24+, pnpm 11.7.0 and Docker for PostgreSQL. Open the URL printed at startup and configure a model in Settings. Runtime data stays under `.runtime/`; never commit credentials, databases or conversations.
-
-Build and test commands are listed above. Backend and host tests need Docker and isolated databases.
-
-See [documentation](https://docs.teloa.ai/en/), [security policy](SECURITY.md), [license](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md) and [contribution guide](CONTRIBUTING.md). Browser cancellation and remote execution remain subject to upstream limitations; stopping a conversation does not guarantee immediate cancellation of every external request.
+Teloa Free is licensed under **[Apache-2.0](LICENSE)**. Third-party components retain their own licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name and branding are covered by the [trademark policy](TRADEMARK.md).
