@@ -1,0 +1,81 @@
+{
+  "format": "teloa.derivative-review/v1",
+  "entryId": "anthropic.modernize-extract-rules",
+  "version": "1.0.0",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa",
+  "changeChecks": [
+    {
+      "changeId": "MER-M01",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "按锁定提交取回原版 plugins/code-modernization/commands/modernize-extract-rules.md（git blob 4381c11a…，9419 字节，sha256 dfd10caa…）全文核对，Method B、规则卡格式与 Finish 由 SKILL.md 承接（逐处见其余各条）。资源文件不含该路径，2026-09-28 校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MER-M02",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "全文核对原版 workflows/extract-rules.js（blob 98fcd909…，48621 字节，sha256 408951e4…）的提示、schema 与控制流：依赖 Workflow 运行时的 agent()、parallel()、budget、agentType「code-modernization:business-rules-extractor / legacy-analyst」与 resumeFromRunId；原命令 L102 写明没有 Workflow 工具时用 Method B。资源文件不含该脚本，校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MER-M03",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "核对原版 scripts/make_shards.py（blob 175d6980…，sha256 1462f990…）文档串与参数：只为 Method A 生成 analysis/<system>/extract-rules.modules.json；不随附，校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MER-M04",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "核对原版 scripts/render_rules.py（blob fa609332…，sha256 795dbe4e…）文档串：读取 Workflow 结果 rules_result.json 生成 BUSINESS_RULES.md 与 DATA_OBJECTS.md，仅 Method A 使用；不随附，校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MER-M05",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "核对原版 scripts/build_report.py（blob b690eb3f…，sha256 769bbacc…）文档串与全部联网/进程调用（只有 urllib.parse.quote，无网络与子进程）：从 analysis/ 生成单个 REPORT.html，原命令标为可选；不随附，校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MER-M06",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 --pr 通过 skill.frontmatter-keys、skill.name-mismatch 与 derivative.change-notice。参考执行（reviews/derivatives/anthropic.modernize-extract-rules/tests/reference-run/）按用户给出的路径 billing/ 与系统名 billing 运行，引用路径相对代码目录，报告写在 analysis/billing/。"
+    },
+    {
+      "changeId": "MER-M07",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行：作者按定稿 SKILL.md 逐步执行，先统计 6 个文件 107 行，低于规模门槛，未询问直接开始；三个视角依次完成，全部 5 个源文件完整读过。本机 qwen3:14b 按改写前一版正文（尚无 MER-M12 两条规则）实跑 2 次：第 1 次只凭 grep 结果写规则、把注释里的「逾期 90 天加收 5%」当成 P0 规则并在回复中复述了示例凭据；第 2 次完整读了全部 5 个文件、8 条规则的引用与参考结果一致、注释规则与指令样文本均被标出且未照做、没有复述凭据，但把 8 条全部评为 P0。两次都只在回复里给出规则卡而没有写文件。结论：流程本身可行，小型本地模型不能可靠执行，条目兼容条件据此写明需要能力较强的模型并人工核对。"
+    },
+    {
+      "changeId": "MER-M08",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行按粒度要求得到 8 条规则（107 行、约每 13 行一条，因示例代码几乎全是业务逻辑），其中 P0 2 条，不超过四分之一；每条对应一个业务决策，没有按分支拆分。"
+    },
+    {
+      "changeId": "MER-M09",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行的核验结果：8 条规则引用全部落在所引文件的行范围内（reviews/derivatives/anthropic.modernize-extract-rules/tests/reference-run/check-citations.output.txt 逐条打印所引行）；把每张规则卡的 Given/When/Then 示例写成断言对示例代码实跑，14/14 通过（rule-examples.output.txt），其中一条确认注释里的「逾期 90 天加收 5%」在代码中不存在，该候选被判为 refuted 并剔除；report.py:2-3 的指令样文本被标出且未照做；BUSINESS_RULES.md 中没有凭据原值。"
+    },
+    {
+      "changeId": "MER-M10",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行输出的 BUSINESS_RULES.md 以汇总表开头、规则标题为「### RULE-NNN: <name>」、末尾依次是「需专家确认」、被剔除候选与指令样文本、未覆盖部分（reviews/derivatives/anthropic.modernize-extract-rules/tests/reference-run/BUSINESS_RULES.md）；DATA_OBJECTS.md 同时写出。没有引用已移除的命令或脚本。"
+    },
+    {
+      "changeId": "MER-M11",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过（角色说明前 4 KiB 内含 MODIFICATIONS.md）；角色说明里规则卡格式的出处指向本技能 SKILL.md，grep「/code-modernization:」为 0。"
+    },
+    {
+      "changeId": "MER-M12",
+      "method": "review",
+      "result": "pass",
+      "evidence": "两条规则来自本机实跑观察（见 MER-M07 所述第 1 次实跑：只凭 grep 写规则、在回复中复述凭据）。参考执行按这两条执行：全部 5 个源文件完整读过后才写规则，BUSINESS_RULES.md 与回复中没有凭据原值（check-citations.py 断言通过）。加入这两条后未再用本机模型重跑。"
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "sales-business-development",
+  "title": "销售与商务",
+  "version": "1.0.0",
+  "domain": "general",
+  "scope": "sales",
+  "description": "面向客户研究简报、方案书草案、会后跟进与报价核对的行业方案。岗位只基于你提供的客户材料、产品事实与价格表形成可追溯草案；对客户发送、报价、承诺与合同条款均由本人确认，岗位不代替人定价或承诺。",
+  "resources": [
+    {
+      "id": "bd-collaborator",
+      "kind": "role",
+      "title": "商务协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/bd-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "商务协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "商务协作员",
+            "en": "Business development collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "sales-methods",
+      "kind": "knowledge",
+      "title": "商务协作方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/sales-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "商务协作方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "商务协作方法与来源索引",
+            "en": "Sales collaboration methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "customer-research",
+      "kind": "skill",
+      "title": "客户研究简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/customer-research/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "客户研究简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "客户研究简报",
+            "en": "Customer research brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "proposal-draft",
+      "kind": "skill",
+      "title": "方案书草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/proposal-draft/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "方案书草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "方案书草案",
+            "en": "Proposal draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "sales-meeting-minutes",
+      "kind": "skill",
+      "title": "客户会议纪要与跟进事项",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/sales-meeting-minutes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "客户会议纪要与跟进事项",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "客户会议纪要与跟进事项",
+            "en": "Customer meeting minutes and follow-ups"
+          }
+        }
+      }
+    },
+    {
+      "id": "quote-verification",
+      "kind": "skill",
+      "title": "报价核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/quote-verification/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "报价核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "报价核对",
+            "en": "Quote verification"
+          }
+        }
+      }
+    },
+    {
+      "id": "customer-research-task",
+      "kind": "work-template",
+      "title": "客户研究简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/customer-research-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "客户研究简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "客户研究简报",
+            "en": "Customer research brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "proposal-draft-task",
+      "kind": "work-template",
+      "title": "方案书草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/proposal-draft-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "方案书草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "方案书草案",
+            "en": "Proposal draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "meeting-followup-task",
+      "kind": "work-template",
+      "title": "会后跟进与报价核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/meeting-followup-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "会后跟进与报价核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "会后跟进与报价核对",
+            "en": "Meeting follow-up and quote verification"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "bd-collaborator",
+      "to": "sales-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "bd-collaborator",
+      "to": "customer-research"
+    },
+    {
+      "kind": "role-skill",
+      "from": "bd-collaborator",
+      "to": "proposal-draft"
+    },
+    {
+      "kind": "role-skill",
+      "from": "bd-collaborator",
+      "to": "sales-meeting-minutes"
+    },
+    {
+      "kind": "role-skill",
+      "from": "bd-collaborator",
+      "to": "quote-verification"
+    },
+    {
+      "kind": "role-work",
+      "from": "bd-collaborator",
+      "to": "customer-research-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "bd-collaborator",
+      "to": "proposal-draft-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "bd-collaborator",
+      "to": "meeting-followup-task"
+    }
+  ],
+  "entrypoints": [
+    "customer-research-task",
+    "proposal-draft-task",
+    "meeting-followup-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "销售与商务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "销售与商务",
+        "en": "Sales and business development"
+      }
+    },
+    "description": {
+      "original": "面向客户研究简报、方案书草案、会后跟进与报价核对的行业方案。岗位只基于你提供的客户材料、产品事实与价格表形成可追溯草案；对客户发送、报价、承诺与合同条款均由本人确认，岗位不代替人定价或承诺。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向客户研究简报、方案书草案、会后跟进与报价核对的行业方案。岗位只基于你提供的客户材料、产品事实与价格表形成可追溯草案；对客户发送、报价、承诺与合同条款均由本人确认，岗位不代替人定价或承诺。",
+        "en": "A solution for customer research briefs, proposal drafts, meeting follow-ups and quote verification. The role works only from the customer materials, product facts and price lists you provide and produces traceable drafts; sending to customers, quoting, commitments and contract terms are all confirmed by you. The role never sets prices or makes promises on your behalf."
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.wscats.interview-simulator",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "automation"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "interview-simulator",
+    "title": {
+      "zh-CN": "面试模拟器",
+      "en": "Interview Simulator"
+    },
+    "summary": {
+      "zh-CN": "模拟技术和行为面试，根据职位和经验级别量身定制。用于面试准备和求职技能提升。",
+      "en": "Simulates mock interviews for any role and experience level with tailored technical, behavioral, and case questions plus detailed feedback and scoring."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "wscats",
+    "slug": "interview-simulator",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "72e09233472ad57742fa727268252d25c00a63c24476663376fe019496f5b06f",
+        "size": 5155
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "02f3f0a81577dc8ec91c0d1218ca7bf482ffbe42970305ab742d595415e667ef",
+        "size": 10570
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "647024b1cac636d530d548228a7f9c243d818f9a5d70e13bfb8f4b0152c573bb",
+        "size": 2110
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 22204,
+    "installsLabel": "2.2 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

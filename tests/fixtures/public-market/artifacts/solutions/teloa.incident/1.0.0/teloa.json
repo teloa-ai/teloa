@@ -1,0 +1,317 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "incident-response",
+  "title": "研发事件响应",
+  "version": "1.0.0",
+  "domain": "software",
+  "scope": "incident",
+  "description": "面向线上服务事件的分级初判、缓解变更说明、事件时间线、无责复盘与值班交接的行业方案。岗位只依据已提供的告警、日志、变更记录与值班消息形成可追溯的草案；回滚、重启与配置变更由授权人员执行，状态页与客户通告由负责人决定，复盘原因只归到系统与流程。",
+  "resources": [
+    {
+      "id": "incident-duty-collaborator",
+      "kind": "role",
+      "title": "事件值班协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/incident-duty-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "事件值班协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件值班协作员",
+            "en": "Incident duty collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-methods",
+      "kind": "knowledge",
+      "title": "研发事件响应方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/incident-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "研发事件响应方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "研发事件响应方法与来源索引",
+            "en": "Engineering incident response methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-triage",
+      "kind": "skill",
+      "title": "事件分级与初判",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/incident-triage/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "事件分级与初判",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件分级与初判",
+            "en": "Incident triage and severity assessment"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-change-notes",
+      "kind": "skill",
+      "title": "缓解变更与回滚说明",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/incident-change-notes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "缓解变更与回滚说明",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "缓解变更与回滚说明",
+            "en": "Mitigation change and rollback notes"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-timeline",
+      "kind": "skill",
+      "title": "事件时间线",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/incident-timeline/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "事件时间线",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件时间线",
+            "en": "Incident timeline"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-postmortem",
+      "kind": "skill",
+      "title": "无责复盘报告",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/incident-postmortem/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "无责复盘报告",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "无责复盘报告",
+            "en": "Blameless postmortem report"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-handover",
+      "kind": "skill",
+      "title": "值班交接记录",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/incident-handover/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "值班交接记录",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "值班交接记录",
+            "en": "On-call handover record"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-triage-task",
+      "kind": "work-template",
+      "title": "事件分级与初判",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/incident-triage-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "事件分级与初判",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件分级与初判",
+            "en": "Incident triage and severity assessment"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-postmortem-task",
+      "kind": "work-template",
+      "title": "事件时间线与无责复盘报告",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/incident-postmortem-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "事件时间线与无责复盘报告",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件时间线与无责复盘报告",
+            "en": "Incident timeline and blameless postmortem"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-handover-task",
+      "kind": "work-template",
+      "title": "值班交接记录",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/incident-handover-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "值班交接记录",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "值班交接记录",
+            "en": "On-call handover record"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-daily-handover",
+      "kind": "plan",
+      "title": "每日值班交接计划",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "plans/incident-daily-handover.json"
+      },
+      "localized": {
+        "title": {
+          "original": "每日值班交接计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "每日值班交接计划",
+            "en": "Daily on-call handover plan"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "incident-duty-collaborator",
+      "to": "incident-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "incident-duty-collaborator",
+      "to": "incident-triage"
+    },
+    {
+      "kind": "role-skill",
+      "from": "incident-duty-collaborator",
+      "to": "incident-change-notes"
+    },
+    {
+      "kind": "role-skill",
+      "from": "incident-duty-collaborator",
+      "to": "incident-timeline"
+    },
+    {
+      "kind": "role-skill",
+      "from": "incident-duty-collaborator",
+      "to": "incident-postmortem"
+    },
+    {
+      "kind": "role-skill",
+      "from": "incident-duty-collaborator",
+      "to": "incident-handover"
+    },
+    {
+      "kind": "role-work",
+      "from": "incident-duty-collaborator",
+      "to": "incident-triage-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "incident-duty-collaborator",
+      "to": "incident-postmortem-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "incident-duty-collaborator",
+      "to": "incident-handover-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "incident-duty-collaborator",
+      "to": "incident-daily-handover"
+    }
+  ],
+  "entrypoints": [
+    "incident-triage-task",
+    "incident-postmortem-task",
+    "incident-handover-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "研发事件响应",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "研发事件响应",
+        "en": "Engineering incident response"
+      }
+    },
+    "description": {
+      "original": "面向线上服务事件的分级初判、缓解变更说明、事件时间线、无责复盘与值班交接的行业方案。岗位只依据已提供的告警、日志、变更记录与值班消息形成可追溯的草案；回滚、重启与配置变更由授权人员执行，状态页与客户通告由负责人决定，复盘原因只归到系统与流程。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向线上服务事件的分级初判、缓解变更说明、事件时间线、无责复盘与值班交接的行业方案。岗位只依据已提供的告警、日志、变更记录与值班消息形成可追溯的草案；回滚、重启与配置变更由授权人员执行，状态页与客户通告由负责人决定，复盘原因只归到系统与流程。",
+        "en": "A solution for production incident triage, mitigation change notes, incident timelines, blameless postmortems and on-call handovers. The role produces traceable drafts only from the alerts, logs, change records and on-call messages you provide; rollbacks, restarts and configuration changes are executed by authorized staff, status pages and customer notices are decided by the owner, and postmortem causes are attributed to systems and process only."
+      }
+    }
+  }
+}

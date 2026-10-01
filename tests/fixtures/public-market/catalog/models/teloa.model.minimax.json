@@ -1,0 +1,115 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.minimax",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "minimax",
+    "title": {
+      "zh-CN": "MiniMax",
+      "en": "MiniMax"
+    },
+    "summary": {
+      "zh-CN": "MiniMax 开放平台国内站，国内直连，长上下文，适合 Agent 与工具调用。",
+      "en": "MiniMax platform (China site): reachable directly in China, long context, suited to agents and tool calling."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": false,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 1000000,
+    "license": {
+      "spdx": "custom",
+      "name": "MiniMax 开放平台用户协议",
+      "url": "https://platform.minimaxi.com/protocol/user-agreement",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "custom",
+        "api": "openai-completions",
+        "baseURL": "https://api.minimax.cn/v1"
+      },
+      "models": [
+        {
+          "id": "MiniMax-M3",
+          "name": "MiniMax-M3",
+          "contextWindow": 1000000,
+          "maxTokens": null,
+          "input": [
+            "text"
+          ]
+        },
+        {
+          "id": "MiniMax-M2.7",
+          "name": "MiniMax-M2.7",
+          "contextWindow": 204800,
+          "maxTokens": null,
+          "input": [
+            "text"
+          ]
+        }
+      ],
+      "priceBand": "low",
+      "credentialLabel": {
+        "zh-CN": "MiniMax API 密钥",
+        "en": "MiniMax API key"
+      },
+      "signupUrl": "https://platform.minimax.cn"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://platform.minimaxi.com/protocol/user-agreement"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

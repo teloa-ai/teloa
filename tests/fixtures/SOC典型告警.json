@@ -1,0 +1,63 @@
+{
+  "schema": "teloa.data-source-page/v1",
+  "sourceId": "security-alert-http",
+  "scope": "SOC",
+  "capturedAt": "2026-09-14T03:05:00.000Z",
+  "items": [
+    {
+      "scope": "SOC",
+      "type": "alert",
+      "id": "edr-powershell-c2-001",
+      "version": 1,
+      "title": "生产终端 PowerShell 下载执行并连接恶意域名",
+      "source": "EDR",
+      "observedAt": "2026-09-14T03:00:00.000Z",
+      "receivedAt": "2026-09-14T03:00:08.000Z",
+      "quality": "complete",
+      "summary": "prod-03 上的 powershell.exe 使用编码命令下载载荷，随后连接已知恶意域名。",
+      "fields": [
+        { "label": "资产", "value": "prod-03" },
+        { "label": "账号", "value": "svc-deploy" },
+        { "label": "进程", "value": "powershell.exe -enc SQBFAFgA..." },
+        { "label": "目的域名", "value": "update-check.example.invalid" },
+        { "label": "MITRE ATT&CK", "value": "T1059.001, T1105" }
+      ]
+    },
+    {
+      "scope": "SOC",
+      "type": "alert",
+      "id": "waf-rce-exploit-001",
+      "version": 1,
+      "title": "互联网应用疑似远程代码执行利用",
+      "source": "WAF",
+      "observedAt": "2026-09-14T03:01:00.000Z",
+      "receivedAt": "2026-09-14T03:01:03.000Z",
+      "quality": "complete",
+      "summary": "外部地址向订单接口发送命令注入载荷，应用随后出现异常子进程。",
+      "fields": [
+        { "label": "资产", "value": "web-prod-01" },
+        { "label": "源地址", "value": "198.51.100.23" },
+        { "label": "请求路径", "value": "/api/orders/export" },
+        { "label": "处置建议", "value": "核对应用日志、进程树与变更窗口" }
+      ]
+    },
+    {
+      "scope": "SOC",
+      "type": "alert",
+      "id": "iam-impossible-travel-001",
+      "version": 1,
+      "title": "管理员账号不可能旅行并伴随 MFA 疲劳",
+      "source": "IAM",
+      "observedAt": "2026-09-14T03:02:00.000Z",
+      "receivedAt": "2026-09-14T03:02:04.000Z",
+      "quality": "missing",
+      "summary": "同一管理员账号在短时间内从相距过远的地点登录，并连续触发多次 MFA 推送。",
+      "fields": [
+        { "label": "账号", "value": "admin.ops" },
+        { "label": "首个位置", "value": "Shanghai" },
+        { "label": "第二位置", "value": "Frankfurt" },
+        { "label": "缺失证据", "value": "终端合规状态与用户确认" }
+      ]
+    }
+  ]
+}

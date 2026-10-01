@@ -1,0 +1,7 @@
+.filters{margin:14px 0 8px}
+.filters>summary{display:flex;align-items:center;gap:7px;width:fit-content;min-height:36px;cursor:pointer;color:var(--teloa-muted);font-size:var(--teloa-font-caption);list-style:none}
+.filters>summary::-webkit-details-marker{display:none}
+.filters>summary:focus-visible{outline:2px solid var(--teloa-accent);outline-offset:3px;border-radius:4px}
+.filterSummary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.filterSummary>span{min-width:0;flex:1}
+@media(max-width:740px){.filters>summary{min-height:44px}}

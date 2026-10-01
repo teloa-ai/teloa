@@ -1,0 +1,84 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "appsec-sla-trend",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "SLA 到期趋势",
+  "kind": "trend",
+  "chart": "line",
+  "objectType": "vulnerability",
+  "dimension": {
+    "field": "due-at",
+    "bucket": "day",
+    "limit": 30
+  },
+  "measures": [
+    {
+      "id": "all",
+      "label": "全部",
+      "aggregation": "count",
+      "localized": {
+        "label": {
+          "original": "全部",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "全部",
+            "en": "All"
+          }
+        }
+      }
+    },
+    {
+      "id": "critical",
+      "label": "严重与高",
+      "aggregation": "count",
+      "where": {
+        "field": "risk-level",
+        "op": "in",
+        "values": [
+          "严重",
+          "高"
+        ]
+      },
+      "localized": {
+        "label": {
+          "original": "严重与高",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "严重与高",
+            "en": "Critical and high"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [
+    {
+      "field": "fix-state",
+      "op": "in",
+      "values": [
+        "未修复",
+        "修复中"
+      ]
+    }
+  ],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "window": {
+    "field": "due-at",
+    "relative": "next-30d"
+  },
+  "limit": 30,
+  "localized": {
+    "title": {
+      "original": "SLA 到期趋势",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "SLA 到期趋势",
+        "en": "SLA due-date trend"
+      }
+    }
+  }
+}

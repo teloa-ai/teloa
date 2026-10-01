@@ -1,0 +1,226 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "hermes.simplify-code",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.1.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "software/engineering"
+    ]
+  },
+  "skill": {
+    "name": "simplify-code",
+    "title": {
+      "zh-CN": "代码变更清理",
+      "en": "Code change cleanup"
+    },
+    "summary": {
+      "zh-CN": "从复用、质量、效率与设计层次检查近期代码变更，合并建议并验证修改。二次开发自 Hermes Agent 官方技能：效率发现须写出修复前后每次调用的工作量，建议附行为等价说明，各角度可以返回「无实质发现」，并补充了输出预算提示。",
+      "en": "Review recent code changes for reuse, quality, efficiency and abstraction; combine findings and verify fixes. Derived from the Hermes Agent skill: efficiency findings must state the work per call before and after the fix, suggested fixes carry a behavior-equivalence check, any angle may report \"no material findings\", and an output-budget note is added."
+    }
+  },
+  "upstream": {
+    "ecosystem": "hermes",
+    "author": "Hermes Agent",
+    "repository": {
+      "host": "github.com",
+      "owner": "NousResearch",
+      "repo": "hermes-agent"
+    },
+    "commit": "a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8",
+    "path": "skills/software-development/simplify-code",
+    "license": "MIT",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "gitBlob": "0dcfae3084b22544c3d250f5265c5964325543eb",
+        "size": 14696,
+        "sha256": "9ee977c3362a1c07f2e327198e066ddb3c0ed67709706fc410165ee820b2ca01"
+      },
+      {
+        "path": "LICENSE",
+        "gitBlob": "75410e73319c72cd3e991a501c5455eb78f38375",
+        "size": 1070,
+        "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+        "repositoryPath": "LICENSE"
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "用于审查明确给出的近期代码变更（diff 或文件范围），需要 Git 与 bash/read/edit 工具；Hermes 委派不可用时按顺序回退为单次内联审查。",
+        "en": "Use on an explicitly provided recent change (diff or file scope). Needs Git and the bash/read/edit tools; without Hermes delegation it falls back to a single inline pass."
+      },
+      {
+        "zh-CN": "调用方必须允许任何角度返回 `no material findings`，不得要求每个角度都有发现。",
+        "en": "Callers must allow any angle to return `no material findings` and must not require a finding for every angle."
+      },
+      {
+        "zh-CN": "效率结论需要人工核对：qwen3:8b 实测约 1/5 的采样会把维护收益误写成运行时收益；qwen3:4b 与 8b 均已测，更大的模型未测。",
+        "en": "Check efficiency conclusions by hand: in testing, qwen3:8b described a maintenance benefit as a runtime gain in about one in five samples. qwen3:4b and 8b were tested; larger models were not."
+      },
+      {
+        "zh-CN": "会先思考的模型请把输出上限设为至少 8k token，截断的回答不能作为审查结果。不会自动安装依赖、提交或推送。",
+        "en": "For models that think before answering, set the output limit to at least 8k tokens; a truncated answer is not a review. It does not install dependencies, commit or push on its own."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "bash",
+      "read",
+      "edit"
+    ],
+    "network": false,
+    "runtimes": [
+      "git"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  },
+  "derivation": {
+    "unchangedFiles": [
+      "LICENSE"
+    ],
+    "changes": [
+      {
+        "id": "HSC-M08",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "below the title",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from NousResearch/hermes-agent@a7c080ca…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from NousResearch/hermes-agent@a7c080ca…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "MIT 不强制修改声明，但 Teloa 要求二次开发的文件写明修改；用可见正文而不是 HTML 注释，避免隐藏注释被安全扫描当作可疑内容。",
+          "en": "MIT does not require a change notice, but Teloa requires derived files to state their changes; visible text is used instead of an HTML comment, which security scans would flag as hidden content."
+        }
+      },
+      {
+        "id": "HSC-M09",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "frontmatter",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "frontmatter 只保留 `name` 与 `description`，删除 `version`（此前曾由 `1.1.0` 改为 `1.1.0-teloa.1`，以免被当成原版 1.1.0；现以本条目版本为准）、`author`、`license`、`platforms` 与 `metadata.hermes`（tags、related_skills）；正文未改。",
+          "en": "The frontmatter keeps only `name` and `description`; `version` (earlier changed from `1.1.0` to `1.1.0-teloa.1` so it would not pass for the original 1.1.0; the entry version now applies), `author`, `license`, `platforms` and `metadata.hermes` (tags, related_skills) are removed. The body is unchanged."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场保存的技能 frontmatter 只允许 `name` 与 `description` 两个单行键；作者与许可信息由本条目的原版来源、根目录 LICENSE 与 MODIFICATIONS.md 保留。",
+          "en": "Skills stored in the Teloa marketplace may only have the single-line `name` and `description` keys in their frontmatter; authorship and license information stay in this entry's original source, the root LICENSE and MODIFICATIONS.md."
+        }
+      },
+      {
+        "id": "HSC-M02",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "§Phase 2, finding format (L110)",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "发现格式新增一项「behavior check (why the fix keeps outputs, iteration order, side effects and error behavior identical)」；CAREFUL/RISKY 级修复缺少这一项时记为 `confidence: low`。",
+          "en": "The finding format adds a \"behavior check (why the fix keeps outputs, iteration order, side effects and error behavior identical)\"; CAREFUL/RISKY fixes without it are marked `confidence: low`."
+        },
+        "reason": {
+          "zh-CN": "原版只在 Phase 3 应用修改后靠跑测试兜底，只报告不修改时没有任何等价性论证要求。",
+          "en": "The original relies on running tests after applying fixes in Phase 3; in report-only runs nothing required an equivalence argument."
+        }
+      },
+      {
+        "id": "HSC-M03",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "§Phase 2, after the finding format (after L113)",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "紧挨发现格式加两条对每个发现都适用的规则：效率发现必须写出修复前后每次调用的工作量，相同即不是效率发现；任何角度都可以返回 `no material findings`，空结果有效，编造的结果无效。",
+          "en": "Adds two rules right next to the finding format that apply to every finding: an efficiency finding must state the work per call before and after the fix, and if they are equal it is not an efficiency finding; any angle may return `no material findings`, an empty result is valid and a made-up one is not."
+        },
+        "reason": {
+          "zh-CN": "这两条规则原本不存在；放在输出格式旁边，写每条发现时都能看到。",
+          "en": "These rules did not exist; next to the output format they are in view while each finding is written."
+        }
+      },
+      {
+        "id": "HSC-M04",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "§Phase 2, end of \"Tell each reviewer to\" list (after L121-122)",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "新增：某个角度可以没有实质发现，报 `no material findings`，不得换个标签重述其他角度的发现或编造收益来填空；重复代码付出的是维护成本而不是 CPU，除非同一输入在同一执行路径上确实被处理多次；拿不到能证明重复工作的调用点时，efficiency 默认写 `no material findings (call sites not provided)`。",
+          "en": "Adds: an angle may have no material findings and reports `no material findings`, without relabelling another angle's findings or inventing gains to fill the slot; duplicated code costs maintenance, not CPU, unless the same input is really processed several times on the same execution path; without call sites that prove repeated work, efficiency defaults to `no material findings (call sites not provided)`."
+        },
+        "reason": {
+          "zh-CN": "原版没有空结果的出口，调用方又常要求四个角度都给出结果，两者叠加会形成填空压力；这里给出一个现成的合法答案。",
+          "en": "The original had no way to return an empty result, and callers often require a result for all four angles, which together create pressure to fill the slot; this gives a ready, valid answer."
+        }
+      },
+      {
+        "id": "HSC-M05",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "§Phase 2, \"No delegation available?\" (L91-97)",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "新增自检轮：顺序回退完成四个角度后，只对 efficiency 发现再核一遍——修复前后每次调用的工作量是否真的不同、哪一行能证明；不成立的删除。",
+          "en": "Adds a self-check pass: after the sequential fallback covers all four angles, re-check only the efficiency findings (does the work per call really differ, and which line proves it) and drop those that do not hold."
+        },
+        "reason": {
+          "zh-CN": "没有委派时由同一个模型依次完成四个角度，需要单独复核最容易出错的效率结论。",
+          "en": "Without delegation one model covers all four angles in turn, so the error-prone efficiency conclusions get a separate check."
+        }
+      },
+      {
+        "id": "HSC-M06",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "§Pitfalls (after L245)",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "新增「Reasoning budget」：会先思考再回答的模型做四角度内联审查可能需要 8k 以上输出 token；被截断的回答不是审查结果，应加大输出上限或缩小 diff 重跑，不得依据部分结果行动。",
+          "en": "Adds \"Reasoning budget\": models that think before answering may need more than 8k output tokens for an inline four-angle review; a truncated answer is not a review, so raise the output limit or narrow the diff and rerun, and never act on a partial result."
+        },
+        "reason": {
+          "zh-CN": "测试中 4096 token 的输出上限曾让模型在思考阶段耗尽额度、没有给出回答。",
+          "en": "In testing, a 4096-token output limit let the model exhaust the budget while thinking and produce no answer."
+        }
+      },
+      {
+        "id": "HSC-M01",
+        "type": "improved",
+        "path": "SKILL.md",
+        "section": "§Phase 2, Reviewer 3 (Efficiency), last sentence (L166-167)",
+        "upstream": "NousResearch/hermes-agent@a7c080ca66d32b1ec2cb71e15896c5b0dc2470e8:skills/software-development/simplify-code/SKILL.md",
+        "summary": {
+          "zh-CN": "把「For each, give the concrete fix and why it's faster or safer.」改为：给出具体修复和可度量的依据——引用在一次请求或运行中真正执行了重复工作的调用点（file:line），写出修复前后每次调用的工作量（例：before: one DNS lookup per outgoing message; after: one per batch）；前后相同就不是效率发现，应删除或交给 Quality 角度；在分别被调用的函数之间共享代码本身不减少运行时工作量（例：两个 CLI 子命令共用一个参数解析器，仍各解析一次），只有同一执行路径上的重复工作才算；对 silent failures 与 TOCTOU，要说明当前被掩盖的错误或竞态是什么、什么会把它暴露出来，作为「safer」的依据。",
+          "en": "Changes \"For each, give the concrete fix and why it's faster or safer.\" to: give the concrete fix and a measurable basis, citing the call sites (file:line) that actually repeat work within one request or run and stating the work per call before and after the fix (for example: before, one DNS lookup per outgoing message; after, one per batch); if before and after are the same it is not an efficiency finding and is dropped or handed to the Quality angle; sharing code between separately called functions does not by itself reduce runtime work (two CLI subcommands sharing an argument parser still parse once each), only repeated work on the same execution path counts; for silent failures and TOCTOU, say which error or race is currently hidden and what would expose it, as the basis for \"safer\"."
+        },
+        "reason": {
+          "zh-CN": "原版要求每条效率发现都解释「为什么更快」，输入里没有效率问题时会诱导模型编造收益。改后要求给出可核对的依据，并保留「or safer」的安全性论证。对比测试没有测出两个版本在编造率上的差异，本条依据的是表述的正确性。",
+          "en": "The original asks every efficiency finding to explain why it is faster, which invites made-up gains when the input has no efficiency problem. The new wording asks for a checkable basis and keeps the \"or safer\" argument. Comparative testing found no detectable difference between the two versions in made-up findings; this change rests on the correctness of the instruction."
+        }
+      }
+    ]
+  }
+}

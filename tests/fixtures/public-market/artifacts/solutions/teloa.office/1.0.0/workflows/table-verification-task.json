@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "table-verification-task",
+  "title": "表格核对与差异清单",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "对已提供的表格进行合计核验、单位核验与跨表口径核验，输出差异清单与口径问题清单。",
+  "requirements": [
+    "待核对的表格文件（已上传）",
+    "核对范围说明（核对哪些列/指标/问题）"
+  ],
+  "output": "差异清单：合计差异表、单位冲突表、口径问题表、缺失值记录，附核对结论",
+  "skills": [
+    {
+      "id": "table-verification",
+      "title": "表格核对（对照、差异、口径问题清单）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "表格核对与差异清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "表格核对与差异清单",
+        "en": "Table verification and discrepancy list"
+      }
+    },
+    "description": {
+      "original": "对已提供的表格进行合计核验、单位核验与跨表口径核验，输出差异清单与口径问题清单。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的表格进行合计核验、单位核验与跨表口径核验，输出差异清单与口径问题清单。",
+        "en": "Verify provided tables for totals, units, and cross-table definition consistency; output a discrepancy list and definition issue list."
+      }
+    },
+    "requirements": [
+      {
+        "original": "待核对的表格文件（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待核对的表格文件（已上传）",
+          "en": "Table file to verify (already uploaded)"
+        }
+      },
+      {
+        "original": "核对范围说明（核对哪些列/指标/问题）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "核对范围说明（核对哪些列/指标/问题）",
+          "en": "Verification scope (which columns, metrics, or issues to check)"
+        }
+      }
+    ],
+    "output": {
+      "original": "差异清单：合计差异表、单位冲突表、口径问题表、缺失值记录，附核对结论",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "差异清单：合计差异表、单位冲突表、口径问题表、缺失值记录，附核对结论",
+        "en": "Discrepancy list: totals differences, unit conflicts, definition issues, missing values, with overall verification conclusion"
+      }
+    }
+  }
+}

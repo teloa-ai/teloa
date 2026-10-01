@@ -1,0 +1,2 @@
+import type {IndustryLoadRecord} from './industry-load-api.js'
+export function mergeSavedIndustryLoad(current:IndustryLoadRecord[],incoming:IndustryLoadRecord):IndustryLoadRecord[]{const previous=current.filter(load=>load.id!==incoming.id),sameSpace=[...current.filter(load=>load.space.id===incoming.space.id),incoming],newest=sameSpace.reduce((best,load)=>load.space.version>best.space.version?load:best).space;return [...previous,incoming].map(load=>load.space.id===newest.id?{...load,space:{...newest}}:load)}

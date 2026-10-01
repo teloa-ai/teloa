@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "rough-cut-plan-task",
+  "title": "粗剪方案与剪辑单",
+  "version": "1.0.0",
+  "domain": "video",
+  "description": "基于素材盘点与剪辑需求，起草叙事结构概要和 EDL 风格剪辑单（序号、素材、入点、出点、时长、画面说明、声音说明、字幕、转场、备注）。交付物为计划文档，不等于已完成渲染。",
+  "requirements": [
+    "素材盘点表（素材盘点任务输出）",
+    "剪辑需求（时长目标、叙事结构、目标平台/规格）",
+    "带时间码文字稿（可选，转写整理输出）"
+  ],
+  "output": "叙事结构概要 + EDL 风格剪辑单（Markdown 表格），含待确认项汇总",
+  "skills": [
+    {
+      "id": "rough-cut-plan",
+      "title": "粗剪方案与剪辑单",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "粗剪方案与剪辑单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "粗剪方案与剪辑单",
+        "en": "Rough cut plan and edit decision list task"
+      }
+    },
+    "description": {
+      "original": "基于素材盘点与剪辑需求，起草叙事结构概要和 EDL 风格剪辑单（序号、素材、入点、出点、时长、画面说明、声音说明、字幕、转场、备注）。交付物为计划文档，不等于已完成渲染。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于素材盘点与剪辑需求，起草叙事结构概要和 EDL 风格剪辑单（序号、素材、入点、出点、时长、画面说明、声音说明、字幕、转场、备注）。交付物为计划文档，不等于已完成渲染。",
+        "en": "Draft a narrative structure outline and EDL-style edit decision list (index, footage, in-point, out-point, duration, picture note, sound note, subtitle, transition, remarks) from footage inventory and editing requirements. The deliverable is a planning document — it is not a rendered video."
+      }
+    },
+    "requirements": [
+      {
+        "original": "素材盘点表（素材盘点任务输出）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "素材盘点表（素材盘点任务输出）",
+          "en": "Footage inventory table (output from the footage inventory task)"
+        }
+      },
+      {
+        "original": "剪辑需求（时长目标、叙事结构、目标平台/规格）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "剪辑需求（时长目标、叙事结构、目标平台/规格）",
+          "en": "Editing requirements (target duration, narrative structure, target platform/spec)"
+        }
+      },
+      {
+        "original": "带时间码文字稿（可选，转写整理输出）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "带时间码文字稿（可选，转写整理输出）",
+          "en": "Timecoded transcript (optional, from transcription task output)"
+        }
+      }
+    ],
+    "output": {
+      "original": "叙事结构概要 + EDL 风格剪辑单（Markdown 表格），含待确认项汇总",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "叙事结构概要 + EDL 风格剪辑单（Markdown 表格），含待确认项汇总",
+        "en": "Narrative structure outline + EDL-style edit decision list (Markdown table) with a summary of items pending confirmation"
+      }
+    }
+  }
+}

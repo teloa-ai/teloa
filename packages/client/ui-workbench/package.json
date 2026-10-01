@@ -1,0 +1,72 @@
+{
+  "name": "@teloa/client-ui-workbench",
+  "version": "0.2.0-alpha.7",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    }
+  },
+  "engines": {
+    "dsh": "0.1.7-rc.1"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-client-ui-settings-general": "0.1.7-rc.1",
+    "@teloa/client-ui-kit": "workspace:*",
+    "@teloa/contract": "workspace:*",
+    "@zip.js/zip.js": "2.14.0",
+    "clsx": "2.1.1",
+    "lucide-react": "1.41.0",
+    "vega": "6.4.0",
+    "vega-interpreter": "2.3.2",
+    "vega-lite": "6.4.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-api-remotes": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-workspace-controller": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-brand": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-store": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-dockkit": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-input-trigger": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-theme": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-tool": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-session": "0.1.7-rc.1"
+  }
+}

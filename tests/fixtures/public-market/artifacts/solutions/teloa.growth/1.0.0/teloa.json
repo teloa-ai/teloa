@@ -1,0 +1,292 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "product-growth",
+  "title": "产品运营与增长分析",
+  "version": "1.0.0",
+  "domain": "software",
+  "scope": "growth",
+  "description": "面向指标口径核对、实验结论整理、用户反馈归类与增长周报的行业方案。岗位只依据已提供的指标词典、数据导出、实验记录与反馈材料形成可复算、可追溯的草案；不自行判定哪种口径正确，不决定实验全量或回滚，不回复用户，对外发送与写入分析平台均需本人授权。",
+  "resources": [
+    {
+      "id": "product-ops-analyst",
+      "kind": "role",
+      "title": "产品运营分析员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/product-ops-analyst.json"
+      },
+      "localized": {
+        "title": {
+          "original": "产品运营分析员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "产品运营分析员",
+            "en": "Product ops analyst"
+          }
+        }
+      }
+    },
+    {
+      "id": "growth-methods",
+      "kind": "knowledge",
+      "title": "增长分析方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/growth-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "增长分析方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "增长分析方法与来源索引",
+            "en": "Growth analysis methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "growth-metric-definition-check",
+      "kind": "skill",
+      "title": "指标口径核对（定义、复算、跨源差异）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/growth-metric-definition-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "指标口径核对（定义、复算、跨源差异）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "指标口径核对（定义、复算、跨源差异）",
+            "en": "Metric definition check (definitions, recomputation, cross-source variance)"
+          }
+        }
+      }
+    },
+    {
+      "id": "growth-experiment-readout",
+      "kind": "skill",
+      "title": "实验结论整理（主指标、护栏、决策规则对照）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/growth-experiment-readout/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "实验结论整理（主指标、护栏、决策规则对照）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "实验结论整理（主指标、护栏、决策规则对照）",
+            "en": "Experiment readout (primary metric, guardrails, decision rule check)"
+          }
+        }
+      }
+    },
+    {
+      "id": "growth-feedback-cluster",
+      "kind": "skill",
+      "title": "用户反馈归类（主题、频次、原文摘录）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/growth-feedback-cluster/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "用户反馈归类（主题、频次、原文摘录）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "用户反馈归类（主题、频次、原文摘录）",
+            "en": "User feedback clustering (themes, counts, verbatim excerpts)"
+          }
+        }
+      }
+    },
+    {
+      "id": "growth-weekly-report",
+      "kind": "skill",
+      "title": "增长周报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/growth-weekly-report/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "增长周报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "增长周报",
+            "en": "Growth weekly report"
+          }
+        }
+      }
+    },
+    {
+      "id": "metric-definition-check-task",
+      "kind": "work-template",
+      "title": "指标口径核对与复算",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/metric-definition-check-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "指标口径核对与复算",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "指标口径核对与复算",
+            "en": "Metric definition check and recomputation"
+          }
+        }
+      }
+    },
+    {
+      "id": "experiment-readout-task",
+      "kind": "work-template",
+      "title": "整理实验结论",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/experiment-readout-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "整理实验结论",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "整理实验结论",
+            "en": "Prepare experiment readout"
+          }
+        }
+      }
+    },
+    {
+      "id": "feedback-cluster-task",
+      "kind": "work-template",
+      "title": "用户反馈归类与主题统计",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/feedback-cluster-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "用户反馈归类与主题统计",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "用户反馈归类与主题统计",
+            "en": "Cluster user feedback and count themes"
+          }
+        }
+      }
+    },
+    {
+      "id": "growth-weekly-report-task",
+      "kind": "work-template",
+      "title": "生成增长周报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/growth-weekly-report-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "生成增长周报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "生成增长周报",
+            "en": "Generate growth weekly report"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "product-ops-analyst",
+      "to": "growth-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "product-ops-analyst",
+      "to": "growth-metric-definition-check"
+    },
+    {
+      "kind": "role-skill",
+      "from": "product-ops-analyst",
+      "to": "growth-experiment-readout"
+    },
+    {
+      "kind": "role-skill",
+      "from": "product-ops-analyst",
+      "to": "growth-feedback-cluster"
+    },
+    {
+      "kind": "role-skill",
+      "from": "product-ops-analyst",
+      "to": "growth-weekly-report"
+    },
+    {
+      "kind": "role-work",
+      "from": "product-ops-analyst",
+      "to": "metric-definition-check-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "product-ops-analyst",
+      "to": "experiment-readout-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "product-ops-analyst",
+      "to": "feedback-cluster-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "product-ops-analyst",
+      "to": "growth-weekly-report-task"
+    }
+  ],
+  "entrypoints": [
+    "metric-definition-check-task",
+    "experiment-readout-task",
+    "feedback-cluster-task",
+    "growth-weekly-report-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "产品运营与增长分析",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "产品运营与增长分析",
+        "en": "Product ops & growth"
+      }
+    },
+    "description": {
+      "original": "面向指标口径核对、实验结论整理、用户反馈归类与增长周报的行业方案。岗位只依据已提供的指标词典、数据导出、实验记录与反馈材料形成可复算、可追溯的草案；不自行判定哪种口径正确，不决定实验全量或回滚，不回复用户，对外发送与写入分析平台均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向指标口径核对、实验结论整理、用户反馈归类与增长周报的行业方案。岗位只依据已提供的指标词典、数据导出、实验记录与反馈材料形成可复算、可追溯的草案；不自行判定哪种口径正确，不决定实验全量或回滚，不回复用户，对外发送与写入分析平台均需本人授权。",
+        "en": "A solution for metric definition checks, experiment readouts, user feedback clustering, and growth weekly reports. The role produces recomputable, traceable drafts only from the metric dictionaries, data exports, experiment records, and feedback you provide; it never rules on which definition is correct, never decides to ship or roll back an experiment, never replies to users, and sending externally or writing to analytics platforms requires your authorization."
+      }
+    }
+  }
+}

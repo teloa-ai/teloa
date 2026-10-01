@@ -1,0 +1,145 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.local.gemma3",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "gemma3-local",
+    "title": {
+      "zh-CN": "Gemma 3（本机）",
+      "en": "Gemma 3 (local)"
+    },
+    "summary": {
+      "zh-CN": "Google Gemma 3 开源多模态模型，经 Ollama 在本机运行；4B / 12B 两档，支持图片输入，128K 上下文。",
+      "en": "Google's open-weight multimodal Gemma 3 running locally via Ollama; 4B / 12B sizes with image input and 128K context."
+    },
+    "form": "local-general",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": false,
+      "vision": true,
+      "reasoning": false,
+      "structured": false
+    },
+    "contextWindow": 131072,
+    "license": {
+      "spdx": "custom",
+      "name": "Gemma Terms of Use",
+      "url": "https://ai.google.dev/gemma/terms",
+      "tier": "restricted",
+      "restrictions": [
+        {
+          "zh-CN": "Gemma 使用条款与禁止使用政策适用；再分发须附带条款。",
+          "en": "The Gemma Terms of Use and Prohibited Use Policy apply; redistribution must include the terms."
+        }
+      ]
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+      {
+        "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+        "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+      }
+    ],
+    "cloud": null,
+    "local": {
+      "runtime": "ollama"
+    },
+    "variants": [
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 3338801804,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "gemma3:4b",
+            "digest": "sha256:a2af6cc3eb7fa8be8504abaf9b04e88f17a119ec3f04a3addf55f92841195f5a"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 8,
+          "recommendedRamGb": 16,
+          "vramGb": null
+        },
+        "models": {
+          "id": "gemma3:4b",
+          "contextWindow": 131072,
+          "maxTokens": 8192,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      },
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 8149190253,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "gemma3:12b",
+            "digest": "sha256:f4031aab637d1ffa37b42570452ae0e4fad0314754d17ded67322e4b95836f8a"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 16,
+          "recommendedRamGb": 32,
+          "vramGb": null
+        },
+        "models": {
+          "id": "gemma3:12b",
+          "contextWindow": 131072,
+          "maxTokens": 8192,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://ai.google.dev/gemma/terms"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+        "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "ollama"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

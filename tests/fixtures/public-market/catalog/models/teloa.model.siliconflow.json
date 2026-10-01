@@ -1,0 +1,110 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.siliconflow",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "siliconflow",
+    "title": {
+      "zh-CN": "硅基流动（聚合）",
+      "en": "SiliconFlow (aggregator)"
+    },
+    "summary": {
+      "zh-CN": "国内模型聚合平台，一个密钥调用多家开源与商用模型，国内直连。",
+      "en": "Model aggregator in China: one key for many open and commercial models, reachable directly in China."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": false,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": null,
+    "license": {
+      "spdx": "custom",
+      "name": "硅基流动用户协议",
+      "url": "https://docs.siliconflow.cn/cn/legals/terms-of-service",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      },
+      {
+        "zh-CN": "聚合服务：各模型另受其许可约束，能力与价格以所选模型为准。",
+        "en": "Aggregator: each model keeps its own license; capabilities and prices follow the chosen model."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "custom",
+        "api": "openai-completions",
+        "baseURL": "https://api.siliconflow.cn/v1"
+      },
+      "models": [
+        {
+          "id": "Pro/deepseek-ai/DeepSeek-R1",
+          "name": "DeepSeek-R1 (Pro)",
+          "contextWindow": null,
+          "maxTokens": null,
+          "input": [
+            "text"
+          ]
+        }
+      ],
+      "priceBand": null,
+      "credentialLabel": {
+        "zh-CN": "硅基流动 API 密钥",
+        "en": "SiliconFlow API key"
+      },
+      "signupUrl": "https://cloud.siliconflow.cn"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://docs.siliconflow.cn/cn/legals/terms-of-service"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

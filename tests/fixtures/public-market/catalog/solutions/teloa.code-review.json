@@ -1,0 +1,112 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.code-review",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "software/engineering"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "code-review",
+    "title": {
+      "zh-CN": "研发协作与代码评审",
+      "en": "Code review & release"
+    },
+    "summary": {
+      "zh-CN": "上传 PR 差异、提交记录与 Issue 即可开始：带行号的 PR 评审意见（区分阻断与建议）、发布说明草案、Issue 分诊与追问，附安全修复验证与安全设计评审；不替你评论、合并、推送、发版或关闭 Issue。",
+      "en": "Start from uploaded PR diffs, commit logs and issues: line-referenced PR review comments separating blocking from suggestions, release note drafts, issue triage with follow-up questions, plus security fix verification and security design review; it never comments, merges, pushes, releases or closes issues for you."
+    },
+    "scope": "code-review",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "按正确性、测试、安全、可维护性逐处评审 PR 差异，每条意见带文件行号并区分阻断、建议与提问",
+          "en": "Review PR diffs for correctness, tests, security and maintainability, with file and line on every comment, separated into blocking, suggestion and question"
+        },
+        {
+          "zh-CN": "给出建议批准、建议请求变更或需人工复核三种结论之一，不代替批准",
+          "en": "Give one of three conclusions — suggest approve, suggest request changes, or needs manual review — without approving for you"
+        },
+        {
+          "zh-CN": "从已合并 PR 或提交记录整理发布说明，不兼容变更附升级步骤，每条附来源编号",
+          "en": "Draft release notes from merged PRs or commits, with upgrade steps for breaking changes and a source reference on every line"
+        },
+        {
+          "zh-CN": "对 Issue 判定类型、优先级建议、缺失信息与疑似重复，并起草追问",
+          "en": "Triage issues by type, suggested priority, missing information and suspected duplicates, and draft follow-up questions"
+        },
+        {
+          "zh-CN": "在对话中使用（无任务模板）：核对安全修复是否闭环，并按 OWASP ASVS 5.0.0 章节评审设计文档",
+          "en": "Use in conversation (no task template): verify that security fixes close the original finding, and review design documents against OWASP ASVS 5.0.0 chapters"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "PR 差异与描述、版本区间内的已合并 PR 或提交记录、Issue 文本",
+          "en": "PR diffs and descriptions, merged PRs or commits for the release range, and issue text"
+        },
+        {
+          "zh-CN": "可选：团队评审规范、优先级定义、迁移文档、组件关注人对照表",
+          "en": "Optional: team review guidelines, priority definitions, migration docs and a component owner table"
+        },
+        {
+          "zh-CN": "可选：GitHub、Linear、Greptile 连接器（海外服务，均需密钥）与 Context7、DeepWiki 文档检索（海外服务，无需密钥），用于读取 PR、Issue 与库文档",
+          "en": "Optional: GitHub, Linear and Greptile connectors (overseas services, credentials required) and Context7 and DeepWiki documentation lookup (overseas services, no credentials) to read PRs, issues and library docs"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件，不运行差异中的代码、测试或脚本",
+          "en": "Reads only the files you provide for the task and never runs code, tests or scripts from the diff"
+        },
+        {
+          "zh-CN": "需你确认后由你操作：在 PR 或 Issue 上发表评论、批准或请求变更、合并、推送、打标签发版、关闭 Issue 或改标签指派",
+          "en": "Only with your confirmation and done by you: commenting on PRs or issues, approving or requesting changes, merging, pushing, tagging releases, closing issues or changing labels and assignees"
+        },
+        {
+          "zh-CN": "把代码片段上传到外部服务（含代码搜索与文档检索）之前需你确认",
+          "en": "Uploading code snippets to external services, including code search and documentation lookup, needs your confirmation"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-26 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：从市场添加、加载到业务、代码评审协作员上岗后，三个任务模板（PR 评审、发布说明、Issue 分诊）按合成样例产出结构与期望一致，每条意见指向文件行号或编号；未在 PR 或 Issue 上发表、未批准合并、未改标签。PR 评审可能比样例更严（如把鉴权缺失列为阻断），结论仍需负责人确认。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-26: added from the market, loaded into a business, code review collaborator on duty; all three templates (PR review, release notes, issue triage) matched the expected structure, each comment traced to a file line or number; nothing was posted, approved, merged or relabelled. PR reviews can be stricter than the sample, so the owner confirms the verdict."
+      },
+      {
+        "zh-CN": "代码托管、工单与文档检索连接为可选项，本版不内置。",
+        "en": "Code hosting, issue tracker and documentation lookup connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

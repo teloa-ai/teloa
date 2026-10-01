@@ -1,0 +1,94 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-deepwiki",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs",
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "deepwiki",
+    "title": {
+      "zh-CN": "DeepWiki（官方远程）",
+      "en": "DeepWiki (Official Remote)"
+    },
+    "summary": {
+      "zh-CN": "Cognition AI 官方托管的 DeepWiki MCP 服务，可对任意公开 GitHub 仓库提问、读取自动生成的 Wiki 目录与内容。无需账户，无需 API 密钥。",
+      "en": "Cognition AI's official hosted DeepWiki MCP service. Ask questions about any public GitHub repository and read auto-generated wiki structure and content. No account or API key required."
+    },
+    "auth": {
+      "kind": "none"
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.deepwiki.com/mcp"
+    },
+    "tools": [
+      {
+        "name": "ask_wiki_question",
+        "description": {
+          "zh-CN": "对指定公开 GitHub 仓库提问",
+          "en": "Ask a question about a public GitHub repository"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "read_wiki_contents",
+        "description": {
+          "zh-CN": "读取 DeepWiki 自动生成的 Wiki 页面内容（Markdown）",
+          "en": "Read auto-generated DeepWiki wiki page content (Markdown)"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "read_wiki_structure",
+        "description": {
+          "zh-CN": "读取 Wiki 目录结构",
+          "en": "Read the wiki directory structure"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://cognition.com/blog/deepwiki-mcp-server"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-DeepWiki-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "仅支持公开 GitHub 仓库；私有仓库需 Devin 账户",
+        "en": "Public GitHub repositories only; private repositories require a Devin account"
+      },
+      {
+        "zh-CN": "中国大陆访问 mcp.deepwiki.com 可用性未验证",
+        "en": "Availability of mcp.deepwiki.com from mainland China is unverified"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

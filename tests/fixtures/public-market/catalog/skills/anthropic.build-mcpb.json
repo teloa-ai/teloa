@@ -1,0 +1,101 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "anthropic.build-mcpb",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "build-mcpb",
+    "title": {
+      "zh-CN": "MCPB 本地服务器打包",
+      "en": "MCPB bundle builder"
+    },
+    "summary": {
+      "zh-CN": "指导把需要在本机运行的 MCP 服务器连同运行时打包成单个 .mcpb 文件：编写 manifest.json 清单、Node 或 Python 构建流程、本地安全清单，以及校验、打包与签名命令。",
+      "en": "Guides packaging a local MCP server together with its runtime into a single .mcpb file: writing the manifest.json file, Node or Python build pipelines, a local security checklist, and validate, pack and sign commands."
+    }
+  },
+  "upstream": {
+    "kind": "github",
+    "repository": {
+      "host": "github.com",
+      "owner": "anthropics",
+      "repo": "claude-plugins-official"
+    },
+    "commit": "fa59bc9037741ecfa131aa27938272605710d7b2",
+    "path": "plugins/mcp-server-dev/skills/build-mcpb",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "gitBlob": "772097ddbbd78e8faaad2ff57dc7faa64c7a5ea3",
+        "sha256": "6bb90afd0415754e13f353ee5982d13857c14826edbcbdf5f1481fa5563cd56b",
+        "size": 7867
+      },
+      {
+        "path": "references/local-security.md",
+        "gitBlob": "6fd756f7a78fa9b09317fe57f67abbd1a3a99295",
+        "sha256": "7813aae1084e050537241956ba835adceb710804871894b53a9adcdeb3736241",
+        "size": 5384
+      },
+      {
+        "path": "references/manifest-schema.md",
+        "gitBlob": "0a42b84bfb874f765b03252c31a7e611f60cc887",
+        "sha256": "6a97f9481107ebdbe8a75f06a5e126ba28021e1e8652677109e53d63a5793c72",
+        "size": 5359
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "claude-code",
+    "installs": null,
+    "installsLabel": "未记录 / Not recorded",
+    "countedAt": "2026-09-27"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "Teloa 本身不安装 .mcpb 文件；npx @anthropic-ai/mcpb 等命令由用户在自己的终端执行，打包结果面向支持 MCPB 的客户端应用",
+        "en": "Teloa itself does not install .mcpb files; commands such as npx @anthropic-ai/mcpb run in the user's own terminal, and the bundle targets client apps that support MCPB"
+      },
+      {
+        "zh-CN": "正文提到的 build-mcp-server、build-mcp-app 技能不随本资源提供；构建远端 MCP 服务器可参考 MCP 服务器构建指南（anthropic.mcp-builder）",
+        "en": "The build-mcp-server and build-mcp-app skills mentioned in the text are not included; for remote MCP servers see the MCP server builder (anthropic.mcp-builder)"
+      },
+      {
+        "zh-CN": "许可为原始仓库根目录的 LICENSE（Apache-2.0），不在技能目录内",
+        "en": "The license is the LICENSE (Apache-2.0) at the root of the original repository, outside the skill directory"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "node",
+      "npx"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-27",
+    "reviewer": "Teloa"
+  }
+}

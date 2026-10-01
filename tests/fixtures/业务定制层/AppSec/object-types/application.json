@@ -1,0 +1,168 @@
+{
+  "format": "teloa.business-object-type/v1",
+  "id": "application",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "应用",
+  "unit": "个",
+  "lead": "漏洞要挂到具体应用和仓库上，才找得到负责团队。",
+  "sourceId": "appsec-finding-http",
+  "fields": [
+    {
+      "name": "environment",
+      "label": "环境",
+      "type": "enum",
+      "required": true,
+      "from": "环境",
+      "values": [
+        "生产",
+        "预发",
+        "测试"
+      ],
+      "localized": {
+        "label": {
+          "original": "环境",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "环境",
+            "en": "Environment"
+          }
+        },
+        "values": [
+          {
+            "original": "生产",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "生产",
+              "en": "Production"
+            }
+          },
+          {
+            "original": "预发",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "预发",
+              "en": "Staging"
+            }
+          },
+          {
+            "original": "测试",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "测试",
+              "en": "Test"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tier",
+      "label": "重要级别",
+      "type": "enum",
+      "required": true,
+      "from": "重要级别",
+      "values": [
+        "核心",
+        "重要",
+        "一般"
+      ],
+      "localized": {
+        "label": {
+          "original": "重要级别",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "重要级别",
+            "en": "Criticality"
+          }
+        },
+        "values": [
+          {
+            "original": "核心",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "核心",
+              "en": "Core"
+            }
+          },
+          {
+            "original": "重要",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "重要",
+              "en": "Important"
+            }
+          },
+          {
+            "original": "一般",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "一般",
+              "en": "Standard"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "owner-team",
+      "label": "负责团队",
+      "type": "text",
+      "required": false,
+      "from": "负责团队",
+      "localized": {
+        "label": {
+          "original": "负责团队",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "负责团队",
+            "en": "Owner team"
+          }
+        }
+      }
+    },
+    {
+      "name": "repository",
+      "label": "仓库",
+      "type": "text",
+      "required": false,
+      "from": "仓库",
+      "localized": {
+        "label": {
+          "original": "仓库",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "仓库",
+            "en": "Repository"
+          }
+        }
+      }
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "应用",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "应用",
+        "en": "Applications"
+      }
+    },
+    "unit": {
+      "original": "个",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "个",
+        "en": "apps"
+      }
+    },
+    "lead": {
+      "original": "漏洞要挂到具体应用和仓库上，才找得到负责团队。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "漏洞要挂到具体应用和仓库上，才找得到负责团队。",
+        "en": "Vulnerabilities are linked to applications and repositories so the responsible team can be identified."
+      }
+    }
+  }
+}

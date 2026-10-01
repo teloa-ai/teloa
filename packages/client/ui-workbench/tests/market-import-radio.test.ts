@@ -1,0 +1,33 @@
+import {test,before,after} from 'node:test'
+import assert from 'node:assert/strict'
+import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {fileURLToPath} from 'node:url'
+import {join} from 'node:path'
+import {build} from 'vite'
+// @ts-expect-error 既有独立无界面浏览器夹具。
+import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
+const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url))
+let browser:any,script:string,styles:string,temp:string
+const entry=`
+import React from 'react';import {createRoot} from 'react-dom/client';import {MarketImportForm} from '${client}MarketForms.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';
+for(const [key,value] of Object.entries(prototypeThemes.light))document.body.style.setProperty(key,value);
+const locale=document.documentElement.lang,snapshot={locale,dshLocale:locale==='en'?'en':'zh-CN',revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
+const fixture=window.radioFixture={calls:[],closed:0,saved:0},api={pending:()=>undefined,recoveryMessage:()=>undefined,resolve:input=>{fixture.calls.push(input);return new Promise((resolve,reject)=>{fixture.reject=()=>reject(Error('fixture unavailable'))})}};
+createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><MarketImportForm githubSourceApi={api} contentApi={{importGithubSkill:async()=>{fixture.saved++}}} items={[]} mode="github" close={()=>fixture.closed++} save={()=>fixture.saved++} saveMany={()=>fixture.saved++}/></I18nProvider>);
+`
+before(async()=>{temp=await mkdtemp(join(root,'.runtime-market-radio-'));await writeFile(join(temp,'fixture.tsx'),entry);const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'MarketRadioFixture',formats:['iife']}}});const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);script=bundle.output.find(item=>item.type==='chunk')!.code;styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n');browser=await loadPlaywright().chromium.launch(launchOptions())})
+after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,force:true})})
+async function mount(t:any,locale='zh-CN',width=390){const page=await browser.newPage({viewport:{width,height:1100}}),errors:string[]=[];page.setDefaultTimeout(6000);page.on('pageerror',(error:Error)=>errors.push(error.message));t.after(async()=>{await page.close();assert.deepEqual(errors,[])});await page.route('**/*',(route:{abort:()=>Promise<void>})=>route.abort());await page.setContent('<!doctype html><html lang="'+locale+'"><body></body><div id="root"></div></html>');await page.addStyleTag({content:'*{box-sizing:border-box}body{margin:0;font-family:system-ui}'+styles});await page.addScriptTag({content:script});await page.getByRole('dialog').waitFor();return page}
+for(const locale of ['zh-CN','en'])for(const width of [390,1280])test(locale+'/'+width+' import radios keep compact aligned labels and native keyboard interaction',async t=>{
+ const page=await mount(t,locale,width),group=page.getByRole('group',{name:locale==='en'?'Import as':'导入为',exact:true})
+ const facts=await group.evaluate((node:HTMLElement)=>({border:getComputedStyle(node).borderTopWidth,labels:[...node.querySelectorAll('label')].map(label=>{const input=label.querySelector('input')!,range=document.createRange(),text=label.querySelector('span')??[...label.childNodes].find(n=>n.nodeType===Node.TEXT_NODE&&n.textContent?.trim())!;range.selectNodeContents(text);const a=input.getBoundingClientRect(),b=range.getBoundingClientRect(),c=label.getBoundingClientRect();return {width:a.width,height:a.height,rowHeight:c.height,radioY:a.y+a.height/2,textY:b.y+b.height/2,textX:b.x,radioRight:a.right,direction:getComputedStyle(label).flexDirection,padding:getComputedStyle(input).padding}})}))
+ assert.equal(facts.border,'0px');assert.equal(facts.labels.length,2);for(const row of facts.labels){assert.equal(row.direction,'row');assert.ok(row.width<=18&&row.height<=18);assert.ok(row.rowHeight<=46);assert.ok(Math.abs(row.radioY-row.textY)<2);assert.ok(row.textX>row.radioRight);assert.equal(row.padding,'0px')}
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+ const labels=group.locator('label'),box=await labels.nth(1).boundingBox();assert.ok(box);await labels.nth(1).click({position:{x:box.width-8,y:box.height/2}});assert.equal(await group.getByRole('radio').nth(1).isChecked(),true)
+ const first=group.getByRole('radio').first(),second=group.getByRole('radio').nth(1);await first.focus();await page.keyboard.press('ArrowRight');assert.equal(await second.isChecked(),true);await page.keyboard.press('Tab');assert.equal(await page.locator(':focus').getAttribute('placeholder'),'skills/.curated/pdf');await page.keyboard.press('Shift+Tab');await page.keyboard.press('ArrowLeft');assert.equal(await first.isChecked(),true)
+ assert.deepEqual(await page.evaluate(()=>(window as any).radioFixture.calls),[])
+})
+test('busy GitHub request keeps both radio choices disabled and recovers without changing import semantics',async t=>{
+ const page=await mount(t),group=page.getByRole('group',{name:'导入为',exact:true});await page.getByPlaceholder('https://github.com/owner/repo').fill('https://github.com/teloa-ai/examples');await page.locator('form button[type=submit]').click();await page.waitForFunction(()=>(window as any).radioFixture.calls.length===1)
+ assert.equal(await group.getByRole('radio').first().isDisabled(),true);assert.equal(await group.getByRole('radio').nth(1).isDisabled(),true);await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>(window as any).radioFixture.closed),0);assert.deepEqual(await page.evaluate(()=>(window as any).radioFixture.calls),[{owner:'teloa-ai',repo:'examples',ref:'main'}]);await page.evaluate(()=>(window as any).radioFixture.reject());await page.getByRole('alert').waitFor();assert.equal(await group.getByRole('radio').first().isDisabled(),false);assert.equal(await group.getByRole('radio').first().isChecked(),true);assert.equal(await page.evaluate(()=>(window as any).radioFixture.saved),0)
+})

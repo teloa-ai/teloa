@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "product-copy-task",
+  "title": "起草商品文案",
+  "version": "1.0.0",
+  "domain": "ecommerce",
+  "description": "依据商品事实表为指定渠道（详情页首屏、详情页正文、主图文案、短视频口播、直播口播提纲）起草商品文案草案，每条参数指向事实表条目，缺失事实留占位符，不含绝对化用语与无依据的效果、比较、荣誉表述。发布或替换任何渠道内容需负责人确认。",
+  "requirements": [
+    "商品事实表（已上传，最好带条目编号）",
+    "目标渠道列表（详情页首屏 / 详情页正文 / 主图文案 / 短视频口播 / 直播口播提纲）",
+    "品牌语气手册、人群与场景说明、检测报告或资质依据、活动信息（可选）"
+  ],
+  "output": "商品文案草案：首部列出使用的事实条目；每个渠道一个区块，参数后附事实编号；未核实占位符表；已删改的表述表；待确认动作",
+  "skills": [
+    {
+      "id": "ecommerce-product-copy",
+      "title": "商品文案起草（详情页、主图、短视频口播）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "起草商品文案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "起草商品文案",
+        "en": "Draft product copy"
+      }
+    },
+    "description": {
+      "original": "依据商品事实表为指定渠道（详情页首屏、详情页正文、主图文案、短视频口播、直播口播提纲）起草商品文案草案，每条参数指向事实表条目，缺失事实留占位符，不含绝对化用语与无依据的效果、比较、荣誉表述。发布或替换任何渠道内容需负责人确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "依据商品事实表为指定渠道（详情页首屏、详情页正文、主图文案、短视频口播、直播口播提纲）起草商品文案草案，每条参数指向事实表条目，缺失事实留占位符，不含绝对化用语与无依据的效果、比较、荣誉表述。发布或替换任何渠道内容需负责人确认。",
+        "en": "Draft product copy for the chosen channels (detail page hero, detail page body, main image lines, short video script, live stream outline) from the product fact sheet; every parameter points to a fact entry, missing facts stay as placeholders, and no superlatives or unsupported effect, comparison or award claims are used. Publishing or replacing any channel content requires the owner's confirmation."
+      }
+    },
+    "requirements": [
+      {
+        "original": "商品事实表（已上传，最好带条目编号）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "商品事实表（已上传，最好带条目编号）",
+          "en": "Product fact sheet (already uploaded, ideally with entry IDs)"
+        }
+      },
+      {
+        "original": "目标渠道列表（详情页首屏 / 详情页正文 / 主图文案 / 短视频口播 / 直播口播提纲）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标渠道列表（详情页首屏 / 详情页正文 / 主图文案 / 短视频口播 / 直播口播提纲）",
+          "en": "Target channels (detail page hero / detail page body / main image lines / short video script / live stream outline)"
+        }
+      },
+      {
+        "original": "品牌语气手册、人群与场景说明、检测报告或资质依据、活动信息（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "品牌语气手册、人群与场景说明、检测报告或资质依据、活动信息（可选）",
+          "en": "Brand voice guide, audience and scenario notes, test reports or certificates, campaign details (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "商品文案草案：首部列出使用的事实条目；每个渠道一个区块，参数后附事实编号；未核实占位符表；已删改的表述表；待确认动作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "商品文案草案：首部列出使用的事实条目；每个渠道一个区块，参数后附事实编号；未核实占位符表；已删改的表述表；待确认动作",
+        "en": "Product copy draft: fact entries used listed up front; one block per channel with fact IDs after each parameter; unverified placeholder table; removed or rewritten claims table; actions awaiting confirmation"
+      }
+    }
+  }
+}

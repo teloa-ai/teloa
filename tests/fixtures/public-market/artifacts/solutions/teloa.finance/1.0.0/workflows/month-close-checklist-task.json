@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "month-close-checklist-task",
+  "title": "月结清单与缺口核对",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "依据组织月结检查表或通用清单，逐项核对月结事项的完成状态与依据，做科目余额表借贷平衡与明细合计的算术勾稽，输出月结清单与缺口清单；只标状态与缺口，不做计提、调账或会计处理建议。",
+  "requirements": [
+    "月结期间与月结材料（科目余额表、对账结果、计提折旧表、税金计算表等，已上传）",
+    "组织月结检查表、上月月结清单（可选）"
+  ],
+  "output": "月结清单：事项状态表（已完成 / 未完成 / 无法确认，附依据位置）、算术勾稽结果、缺口清单、上月遗留、清单外事项、汇总；不含计提与调账建议",
+  "skills": [
+    {
+      "id": "month-close-checklist",
+      "title": "月结清单与缺口核对",
+      "version": "1.0.0"
+    },
+    {
+      "id": "finance-table-verification",
+      "title": "表格核对（对照、差异、口径问题清单）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "月结清单与缺口核对",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "月结清单与缺口核对",
+        "en": "Month-end close checklist task"
+      }
+    },
+    "description": {
+      "original": "依据组织月结检查表或通用清单，逐项核对月结事项的完成状态与依据，做科目余额表借贷平衡与明细合计的算术勾稽，输出月结清单与缺口清单；只标状态与缺口，不做计提、调账或会计处理建议。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "依据组织月结检查表或通用清单，逐项核对月结事项的完成状态与依据，做科目余额表借贷平衡与明细合计的算术勾稽，输出月结清单与缺口清单；只标状态与缺口，不做计提、调账或会计处理建议。",
+        "en": "Check each month-end close item against your checklist or a generic list for completion status and evidence, run arithmetic checks on trial balance debits and credits and detail totals, and output a close checklist with gaps; status and gaps only, with no accrual, adjustment or accounting treatment suggestions."
+      }
+    },
+    "requirements": [
+      {
+        "original": "月结期间与月结材料（科目余额表、对账结果、计提折旧表、税金计算表等，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "月结期间与月结材料（科目余额表、对账结果、计提折旧表、税金计算表等，已上传）",
+          "en": "Close period and close materials (trial balance, reconciliation results, accrual and depreciation schedules, tax calculations, etc., already uploaded)"
+        }
+      },
+      {
+        "original": "组织月结检查表、上月月结清单（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "组织月结检查表、上月月结清单（可选）",
+          "en": "Your organization's close checklist and last month's close list (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "月结清单：事项状态表（已完成 / 未完成 / 无法确认，附依据位置）、算术勾稽结果、缺口清单、上月遗留、清单外事项、汇总；不含计提与调账建议",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "月结清单：事项状态表（已完成 / 未完成 / 无法确认，附依据位置）、算术勾稽结果、缺口清单、上月遗留、清单外事项、汇总；不含计提与调账建议",
+        "en": "Close checklist: item status table (done / not done / cannot confirm, with evidence locations), arithmetic check results, gap list, carry-overs from last month, items outside the list, summary; no accrual or adjustment suggestions"
+      }
+    }
+  }
+}

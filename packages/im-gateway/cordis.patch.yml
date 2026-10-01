@@ -1,0 +1,5 @@
+# IM 通道：随 Teloa 发行的官方扩展，默认不进组合。
+# 本人在市场「扩展」启用后才加入 dsh.profile.bundles，由宿主在点击时即时加载（前后复验安全钉），不需要重启；teloaWork 由 @teloa/harness-dsh 提供（inject 等待就绪）。
+- insert:
+    - id: teloa-im-gateway
+      name: '@teloa/im-gateway'

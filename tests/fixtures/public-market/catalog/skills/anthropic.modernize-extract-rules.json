@@ -1,0 +1,310 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "anthropic.modernize-extract-rules",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "software/engineering"
+    ]
+  },
+  "skill": {
+    "name": "modernize-extract-rules",
+    "title": {
+      "zh-CN": "业务规则提取",
+      "en": "Business rule extraction"
+    },
+    "summary": {
+      "zh-CN": "从遗留代码提取业务规则（计算、校验、资格、状态流转、政策），写成带 file:line 出处的 Given/When/Then 规则卡，另出数据对象清单与待专家确认的问题；只出现在注释里的「规则」剔除，凭据掩码。二次开发自 Anthropic 官方 Claude Code 插件 code-modernization：去掉依赖 Workflow 与脚本的分片流程，把规则粒度、引用核验、P0 复核与同义合并写进正文，范围大时先报规模再征得同意。",
+      "en": "Extracts business rules from legacy code into Given/When/Then rule cards with file:line sources, plus a data-object catalog and questions for domain experts; comment-only \"rules\" are dropped and credentials masked. Derived from Anthropic's Claude Code plugin code-modernization: the Workflow-and-script sharding is removed, and its granularity, citation checks, P0 double check and duplicate merging are written into the skill; large scopes are sized first."
+    }
+  },
+  "upstream": {
+    "ecosystem": "anthropic",
+    "author": "Anthropic",
+    "repository": {
+      "host": "github.com",
+      "owner": "anthropics",
+      "repo": "claude-plugins-official"
+    },
+    "commit": "fa59bc9037741ecfa131aa27938272605710d7b2",
+    "path": "plugins/code-modernization",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE",
+        "gitBlob": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+        "size": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "path": "commands/modernize-extract-rules.md",
+        "gitBlob": "4381c11ab6c4b86cf2dcd877177eb695c397bd07",
+        "size": 9419,
+        "sha256": "dfd10caadf2eeb70d2e5a15db657fe2505445aa91e6d8f54dc81b1c5bdeb3c09"
+      },
+      {
+        "path": "agents/business-rules-extractor.md",
+        "gitBlob": "0f3e1017893408ded687472c00a4922d5d277144",
+        "size": 3781,
+        "sha256": "77edbaced0c0c66a836c5313d1709ad993424fdc98f2c005be836607a07ff32f"
+      },
+      {
+        "path": "workflows/extract-rules.js",
+        "gitBlob": "98fcd909b87a2e073c34ec3a7b715548c5abb38d",
+        "size": 48621,
+        "sha256": "408951e41ff645c5ee272d089455f37d15b52cb8f6d94bb370e86d7ad5cf6ca2"
+      },
+      {
+        "path": "scripts/make_shards.py",
+        "gitBlob": "175d69809a024606c1488268b688480e9e1f0eb4",
+        "size": 12468,
+        "sha256": "1462f990eab2e3f27f3ad7eb153392a8fa0669ec3a3fab74d28c6c4c3a842f2b"
+      },
+      {
+        "path": "scripts/render_rules.py",
+        "gitBlob": "fa6093321f23e265d74cf75f88ed3d501f6c608e",
+        "size": 10121,
+        "sha256": "795dbe4e0ee891e5036c0253c963cd226fc61df9655373defd3dbd2aaf34d4c2"
+      },
+      {
+        "path": "scripts/build_report.py",
+        "gitBlob": "b690eb3fd381dd24b6edac5b041ddaf9d79eba02",
+        "size": 45739,
+        "sha256": "769bbaccf3fc324bcc83c7d355de151978dba1dd59955eebead033e7726a8fd6"
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要 read、glob、grep 工具与写入 analysis/ 报告的权限（写入经宿主确认）；bash 只做只读统计（find、wc、grep），不构建、不运行被分析的代码。",
+        "en": "Needs the read, glob and grep tools and permission to write reports under analysis/ (writes go through the host's confirmation); bash is used only for read-only counting (find, wc, grep), never to build or run the analyzed code."
+      },
+      {
+        "zh-CN": "范围大（约 30 个源文件或 1 万行以上）时先报文件数与行数，由你选择全量、只做一部分或取消；全量时按模块逐段完成后合并。",
+        "en": "For large scopes (roughly more than 30 source files or 10,000 lines) it first reports the file and line counts and lets you choose all, a slice or cancel; a full run goes module by module and merges afterwards."
+      },
+      {
+        "zh-CN": "规则卡是给领域专家核对的草稿：置信度不是 High 的规则与存疑的 P0 规则都列在「需专家确认」一节，确认前不要当作验收标准。",
+        "en": "Rule cards are drafts for domain experts: rules below High confidence and doubtful P0 rules are listed under \"Rules requiring SME confirmation\" and should not be used as acceptance criteria before they are confirmed."
+      },
+      {
+        "zh-CN": "需要能力较强的模型：在小型示例系统上按正文执行的参考结果引用全部正确；本机 qwen3:14b 实跑 2 次不可靠（一次只凭搜索结果写规则并复述了凭据，一次把所有规则都评为 P0），两次都没有写出报告文件。请人工核对规则卡。未在 Teloa 宿主中端到端验证。",
+        "en": "Needs a capable model: a reference run of the skill on a small sample system produced correct citations throughout, while two runs with a local qwen3:14b were unreliable (one wrote rules from search results and repeated the credential, one rated every rule P0), and neither wrote the report files. Check rule cards by hand. Not validated end to end in a Teloa host."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "read",
+      "glob",
+      "grep",
+      "bash",
+      "write"
+    ],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  },
+  "derivation": {
+    "unchangedFiles": [
+      "LICENSE"
+    ],
+    "changes": [
+      {
+        "id": "MER-M01",
+        "type": "removed",
+        "path": "commands/modernize-extract-rules.md",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-extract-rules.md",
+        "summary": {
+          "zh-CN": "原版 Claude Code 斜杠命令文件不随附；其正文改写为资源根目录的 SKILL.md（逐处改动见本清单其余各条）。",
+          "en": "The original Claude Code slash-command file is not shipped; its text is rewritten as SKILL.md at the resource root (each change is listed in the other entries)."
+        },
+        "reason": {
+          "zh-CN": "Teloa 按技能加载 SKILL.md，不支持 Claude Code 的命令文件格式（`argument-hint`、`arguments`、`$system`/`$module_pattern`）。",
+          "en": "Teloa loads skills from SKILL.md and does not support the Claude Code command format (`argument-hint`, `arguments`, `$system`/`$module_pattern`)."
+        }
+      },
+      {
+        "id": "MER-M02",
+        "type": "removed",
+        "path": "workflows/extract-rules.js",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/workflows/extract-rules.js",
+        "summary": {
+          "zh-CN": "不随附 Method A 的 Workflow 脚本；SKILL.md 删除 Method A 全节（分片、预估、批次、恢复运行、渲染），其中可在单次会话里执行的做法见 MER-M07、MER-M08、MER-M09。",
+          "en": "The Method A Workflow script is not shipped; SKILL.md drops the whole Method A section (shards, estimates, batches, resuming, rendering); the practices that work in a single session are covered by MER-M07, MER-M08 and MER-M09."
+        },
+        "reason": {
+          "zh-CN": "该脚本依赖 Claude Code Workflow 工具的运行时接口（agent()、parallel()、插件注册的 agentType、resumeFromRunId、journal.jsonl）；Teloa 市场不接受可执行脚本，Teloa 的编排工具接口也不同。原版在没有 Workflow 工具时本就使用 Method B。",
+          "en": "The script depends on the Claude Code Workflow tool runtime (agent(), parallel(), plugin-registered agentType, resumeFromRunId, journal.jsonl); the Teloa marketplace does not accept executable scripts and Teloa's orchestration tools have a different interface. The original already uses Method B when the Workflow tool is missing."
+        }
+      },
+      {
+        "id": "MER-M03",
+        "type": "removed",
+        "path": "scripts/make_shards.py",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/scripts/make_shards.py",
+        "summary": {
+          "zh-CN": "不随附生成分片清单的 Python 脚本（仅 Method A 使用）。",
+          "en": "The Python script that builds the shard list (used only by Method A) is not shipped."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场不接受可执行脚本；分片只服务于已移除的 Workflow 流程。",
+          "en": "The Teloa marketplace does not accept executable scripts; the shards only serve the removed Workflow flow."
+        }
+      },
+      {
+        "id": "MER-M04",
+        "type": "removed",
+        "path": "scripts/render_rules.py",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/scripts/render_rules.py",
+        "summary": {
+          "zh-CN": "不随附把 Workflow 结果渲染成 BUSINESS_RULES.md 的 Python 脚本（仅 Method A 使用）；规则卡由会话按 SKILL.md 的格式直接写出。",
+          "en": "The Python script that renders the Workflow result into BUSINESS_RULES.md (used only by Method A) is not shipped; the session writes rule cards directly in the format given in SKILL.md."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场不接受可执行脚本；原版 Method B 本就由会话直接写文件。",
+          "en": "The Teloa marketplace does not accept executable scripts; the original Method B already writes the files directly."
+        }
+      },
+      {
+        "id": "MER-M05",
+        "type": "removed",
+        "path": "scripts/build_report.py",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/scripts/build_report.py",
+        "summary": {
+          "zh-CN": "不随附生成 REPORT.html 的 Python 脚本；「Finish」一节不再调用它。",
+          "en": "The Python script that builds REPORT.html is not shipped; the Finish section no longer calls it."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场不接受可执行脚本；原版也把它标为可选。",
+          "en": "The Teloa marketplace does not accept executable scripts; the original already treats it as optional."
+        }
+      },
+      {
+        "id": "MER-M06",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "frontmatter (L1-5); below the title; code location (L7-13)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-extract-rules.md",
+        "summary": {
+          "zh-CN": "frontmatter 改为只有 `name` 与单行 `description`；标题下加修改声明（Apache-2.0 第 4(b) 条，指向 MODIFICATIONS.md）；`$system`、`$module_pattern` 与 `legacy/$system` 约定改为用户给出代码路径、系统短名和可选的模块或文件范围，路径不存在就停止，引用路径相对代码目录，报告写在工作区的 `analysis/<system>/`；删除「用 `/code-modernization:modernize … --source` 建立链接」的指引。",
+          "en": "The frontmatter keeps only `name` and a single-line `description`; a change notice is added below the title (Apache-2.0 section 4(b), pointing to MODIFICATIONS.md); `$system`, `$module_pattern` and the `legacy/$system` convention become a code path, short system name and optional module or file pattern given by the user; stop if the path does not exist; citations are relative to the code folder; reports go to `analysis/<system>/` in the workspace. The pointer to `/code-modernization:modernize … --source` is removed."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场的技能 frontmatter 只允许单行 name 与 description；Teloa 技能没有参数替换，`legacy/` 链接由原插件另一个未收录的命令建立。",
+          "en": "Skills in the Teloa marketplace may only have single-line name and description frontmatter keys; Teloa skills have no argument substitution, and the `legacy/` link is created by another command of the original plugin that is not included."
+        }
+      },
+      {
+        "id": "MER-M07",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Size the job first (new); Working rules (new); Method B (L104-107)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-extract-rules.md",
+        "summary": {
+          "zh-CN": "Method B 的「three business-rules-extractor subagents in parallel」改为按随附的 `agents/business-rules-extractor.md` 做三个视角：宿主允许一次性委派（如 subagent_task）时交给只读子任务，否则自己依次完成；取自 Method A 第 1、2 步的做法改写为「先估规模」：统计范围内的文件数与行数，范围大（约 30 个源文件或 1 万行以上）时先报数并让用户选全量、只做一部分或取消，全量时按模块逐段完成后按来源文件与规则名去重合并；非模块源（SQL、公共引用、配置表）只在被引用时读取。新增只读规则：不构建、不运行、不修改被分析的代码，只写两份报告且经宿主确认。",
+          "en": "Method B's \"three business-rules-extractor subagents in parallel\" becomes three lenses that follow the shipped `agents/business-rules-extractor.md`: delegated to read-only subtasks when the host allows one-off delegation (such as subagent_task), otherwise run in turn. Method A steps 1-2 become \"Size the job first\": count the files and lines in scope; for large scopes (roughly more than 30 source files or 10,000 lines) report the counts and let the user choose all, a slice or cancel; a full run goes module by module and merges, de-duplicating by source file and rule name; non-module source (SQL, shared includes, config tables) is read only when referenced. Adds read-only rules: never build, run or modify the analyzed code; write only the two reports, through the host's confirmation."
+        },
+        "reason": {
+          "zh-CN": "Teloa 没有 Claude Code 的 Task 工具与插件注册的命名子代理；AI 同事能否委派取决于岗位是否授予一次性委派工具（subagent_task），所以按「可委派就委派、否则自己依次完成」写，并去掉模型档位，按宿主已配置的模型运行。原版的规模预估与「超过 12 个分片先询问」只写在 Method A 里，退回路径没有任何规模控制，大系统会一次读完全部代码。",
+          "en": "Teloa has no Claude Code Task tool and no plugin-registered named subagents; whether an AI colleague can delegate depends on whether its role was granted the one-off delegation tool (subagent_task), so the text says to delegate when possible and otherwise work in turn, and drops model tiers in favour of the host's configured model. The original's estimate and \"ask before launching more than 12 shards\" exist only in Method A; the fallback had no size control and would read an entire large system in one go."
+        }
+      },
+      {
+        "id": "MER-M10",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Write (L119-144); Finish (L146-151)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-extract-rules.md",
+        "summary": {
+          "zh-CN": "规则卡格式保留；「later commands find rules by that pattern」「The brief's behavior contract」改为不依赖其他命令的说法；BUSINESS_RULES.md 末尾在「需专家确认」一节后列出被标记的指令样文本（只写 file:line）与未覆盖的部分（原版由 render_rules.py 输出）；「Finish」删除 build_report.py、Method A 专属统计与「下一步 /code-modernization:modernize-review、modernize-brief」，改为提示待专家回答的 P0 规则数量。",
+          "en": "The rule-card format is kept; \"later commands find rules by that pattern\" and \"The brief's behavior contract\" are reworded without depending on other commands; BUSINESS_RULES.md ends, after the SME section, with the flagged instruction-shaped text (file:line only) and the parts not covered (which render_rules.py produced in the original); Finish drops build_report.py, Method A-only counts and \"next /code-modernization:modernize-review, modernize-brief\", and points out how many P0 rules await an expert's answer."
+        },
+        "reason": {
+          "zh-CN": "这些命令与脚本不在本资源里，在 Teloa 中无法调用。",
+          "en": "Those commands and scripts are not part of this resource and cannot be called in Teloa."
+        }
+      },
+      {
+        "id": "MER-M11",
+        "type": "adapted",
+        "path": "agents/business-rules-extractor.md",
+        "section": "frontmatter (L1-5); L54-55",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/agents/business-rules-extractor.md",
+        "summary": {
+          "zh-CN": "把 Claude Code 子代理定义改成随技能附带的角色说明：frontmatter（name、description、tools）改为标题、修改声明、一行「Role」（原 description）与一行「Tools」（read、glob、grep，bash 只做只读检查，不安装工具或依赖）；规则卡格式的出处由「`/code-modernization:modernize-extract-rules` 命令」改为 `modernize-extract-rules` 技能的 SKILL.md。",
+          "en": "Turns the Claude Code subagent definition into a role file shipped with the skill: the frontmatter (name, description, tools) becomes a title, the change notice, a \"Role\" line (the original description) and a \"Tools\" line (read, glob, grep; bash for read-only inspection only; no installing tools or dependencies); the rule-card format reference changes from the \"`/code-modernization:modernize-extract-rules` command\" to the SKILL.md of the `modernize-extract-rules` skill."
+        },
+        "reason": {
+          "zh-CN": "Teloa 不认 Claude Code 的子代理 frontmatter；原命令文件不随附。",
+          "en": "Teloa does not read Claude Code subagent frontmatter; the original command file is not shipped."
+        }
+      },
+      {
+        "id": "MER-M08",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "Extract, \"How fine to cut rules\" (new)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/workflows/extract-rules.js",
+        "summary": {
+          "zh-CN": "新增规则粒度要求（取自原版 Workflow 脚本给提取者的 GRANULARITY 提示）：一条规则对应一个业务决策或计算，不按分支、字段或行拆；同一决策的情形合并进边界情况；跳过参数解析、显示格式化等管道代码；大致每 40-80 行实际逻辑一条；P0 只给少数一旦出错就违背系统目的的规则，超过四分之一时重新评级。",
+          "en": "Adds granularity guidance (from the GRANULARITY prompt the original Workflow script gives its extractors): one rule per business decision or calculation, not per branch, field or line; cases of one decision go under edge cases; skip plumbing such as argument parsing and display formatting; roughly one rule per 40-80 lines of real logic; P0 only for the few rules that would defeat the system's purpose if wrong, re-rating when more than one in four are P0."
+        },
+        "reason": {
+          "zh-CN": "原版 Method B 没有粒度说明；脚本注释写明缺少这项约束时，小程序也会被拆出数百条「规则」、提取不收敛。",
+          "en": "The original Method B has no granularity guidance; the script's comments note that without it a small program yields hundreds of \"rules\" and extraction never converges."
+        }
+      },
+      {
+        "id": "MER-M09",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "Verify before you write (L116-118)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/workflows/extract-rules.js",
+        "summary": {
+          "zh-CN": "把 Method B 的「写之前核对引用」扩充为原版 Workflow 的核验做法：每条候选规则给出 confirmed / wrong citation / refuted 结论，只存在于注释、字符串或文档里的规则判为 refuted，剔除数量附 2-3 个例子；每条 P0 规则再从合规与忠实两个角度各复核一次，存疑时降为 P1 或把置信度降为 Medium 并附专家问题，无法复核的 P0 保留并请专家确认；描述同一行为的规则合并时保留较高优先级、较低置信度及全部疑似缺陷与专家问题，只因主题相同或数值、条件、副作用不同的不合并。",
+          "en": "Expands Method B's \"verify before you write\" with the original Workflow's checks: each candidate gets a confirmed / wrong citation / refuted verdict, with rules found only in comments, strings or docs refuted and the number dropped reported with 2-3 examples; each P0 rule is checked twice more, for compliance and fidelity, dropping to P1 or to Medium confidence with an SME question when in doubt, and a P0 that could not be checked stays P0 and goes to an SME; rules describing the same behavior are merged keeping the higher priority, the lower confidence and every suspected defect and SME question, while rules that only share a topic or differ in a number, condition or side effect stay separate."
+        },
+        "reason": {
+          "zh-CN": "原版在 Workflow 里用裁判代理、P0 双评审与合并代理保证质量，退回路径只有一句「读每条引用确认」，同一套质量保证在 Teloa 里只能写进正文由会话执行。",
+          "en": "The original ensures quality in the Workflow with referee agents, a two-judge P0 panel and a consolidation agent, while its fallback has only \"read each cited line and confirm\"; in Teloa the same checks have to be written into the skill for the session to carry out."
+        }
+      },
+      {
+        "id": "MER-M12",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "Working rules (new)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-extract-rules.md",
+        "summary": {
+          "zh-CN": "新增两条规则：提取前完整阅读范围内的每个源文件，搜索结果只用来定位要读的地方，不能对应到已读代码行的规则不进目录；任何地方（规则卡、数据对象、回复、报告）都不写凭据原值，只写 file:line 与至多 2-4 字符预览。",
+          "en": "Adds two rules: read every source file in scope in full before extracting from it (a search hit only points to a place to read, and a rule that cannot be tied to lines that were read does not go into the catalog); and never write a credential value anywhere (rule cards, data objects, replies, reports), only file:line with at most a 2-4 character preview."
+        },
+        "reason": {
+          "zh-CN": "原版 Method B 把阅读交给提取子代理，没有写明必须通读；凭据掩码只写在规则卡的 Parameters 一栏与子代理说明里。本机小模型实跑时只凭 grep 结果写规则、写出代码里不存在的规则，并在回复里复述了示例凭据。",
+          "en": "The original Method B leaves reading to the extractor subagents without saying the files must be read in full, and credential masking appears only in the Parameters field and the subagent file. In local-model runs a small model wrote rules from grep output alone, described rules the code does not contain and repeated the sample credential in its reply."
+        }
+      }
+    ]
+  }
+}

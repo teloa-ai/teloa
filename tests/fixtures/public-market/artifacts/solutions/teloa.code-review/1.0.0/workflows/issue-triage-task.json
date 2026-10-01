@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "issue-triage-task",
+  "title": "Issue 分诊与追问草案",
+  "version": "1.0.0",
+  "domain": "code-review",
+  "description": "对新建或积压的 Issue 逐条判定类型、信息完整度、疑似重复与优先级建议，输出分诊表与面向提问者的追问草案。不改标签、不指派、不关闭、不在 Issue 上发表评论。",
+  "requirements": [
+    "待分诊的 Issue 文本：标题、正文、现有标签与评论（已上传）",
+    "团队的 Issue 模板、标签体系与优先级定义（可选）",
+    "近期已关闭或进行中的 Issue 列表、组件负责人对照表（可选）"
+  ],
+  "output": "Issue 分诊草案：首部注明分诊范围、来源与优先级定义；分诊表（类型、优先级建议、依据、缺失信息、疑似重复、建议关注人）、追问草案、需负责人决策事项、分诊摘要；在 Issue 上操作前需负责人确认",
+  "skills": [
+    {
+      "id": "code-review-issue-triage",
+      "title": "Issue 分诊",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "Issue 分诊与追问草案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "Issue 分诊与追问草案",
+        "en": "Issue triage and follow-up questions"
+      }
+    },
+    "description": {
+      "original": "对新建或积压的 Issue 逐条判定类型、信息完整度、疑似重复与优先级建议，输出分诊表与面向提问者的追问草案。不改标签、不指派、不关闭、不在 Issue 上发表评论。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对新建或积压的 Issue 逐条判定类型、信息完整度、疑似重复与优先级建议，输出分诊表与面向提问者的追问草案。不改标签、不指派、不关闭、不在 Issue 上发表评论。",
+        "en": "Classify each new or backlogged issue by type, information completeness, likely duplicates and suggested priority, and output a triage table plus draft follow-up questions for the reporter. Does not change labels, assign, close or comment on issues."
+      }
+    },
+    "requirements": [
+      {
+        "original": "待分诊的 Issue 文本：标题、正文、现有标签与评论（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待分诊的 Issue 文本：标题、正文、现有标签与评论（已上传）",
+          "en": "Issue text to triage: title, body, existing labels and comments (already uploaded)"
+        }
+      },
+      {
+        "original": "团队的 Issue 模板、标签体系与优先级定义（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "团队的 Issue 模板、标签体系与优先级定义（可选）",
+          "en": "Team issue template, label scheme and priority definitions (optional)"
+        }
+      },
+      {
+        "original": "近期已关闭或进行中的 Issue 列表、组件负责人对照表（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "近期已关闭或进行中的 Issue 列表、组件负责人对照表（可选）",
+          "en": "Recently closed or open issue list, component owner mapping (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "Issue 分诊草案：首部注明分诊范围、来源与优先级定义；分诊表（类型、优先级建议、依据、缺失信息、疑似重复、建议关注人）、追问草案、需负责人决策事项、分诊摘要；在 Issue 上操作前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "Issue 分诊草案：首部注明分诊范围、来源与优先级定义；分诊表（类型、优先级建议、依据、缺失信息、疑似重复、建议关注人）、追问草案、需负责人决策事项、分诊摘要；在 Issue 上操作前需负责人确认",
+        "en": "Issue triage draft: header with scope, sources and priority definitions; triage table (type, suggested priority, rationale, missing information, likely duplicates, suggested watcher), follow-up question drafts, decisions needed, triage summary; requires the owner's confirmation before acting on issues"
+      }
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.iswalle.getnote",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "2.1.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "getnote",
+    "title": {
+      "zh-CN": "得到大脑笔记",
+      "en": "得到大脑（原 Get 笔记）"
+    },
+    "summary": {
+      "zh-CN": "通过官方 CLI 连接得到大脑知识库，保存、查询、搜索和管理笔记与链接。用于个人知识管理和学习记录。",
+      "en": "通过官方 getnote CLI 连接得到大脑，完成浏览器授权、连接诊断、CLI 升级，以及保存、查询、搜索和管理真实笔记。用户要保存链接/图片、上传文件到知识库、查询文件限制、读取标记/发芽报告/时间线、整理知识库/文件夹、订阅博主、管理标签，或明确要求登录、诊断或升级时使用；不会自行安装或更新 Skill。"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "iswalle",
+    "slug": "getnote",
+    "version": "2.1.0",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "5ae702df6fa38fa61ef3b86d6276d38d8aae05797b003dc419d1c831251dec8d",
+        "size": 8848
+      },
+      {
+        "path": "references/auth.md",
+        "sha256": "1841f2ffcc3784730eb2470dfc3c3e3ba359612e520ae9eb37238a4dd637309c",
+        "size": 4894
+      },
+      {
+        "path": "references/kb.md",
+        "sha256": "46b15cfd4b6e60066e1990ca7c607ab95af044248f3a55ad0858c71dcb7057fb",
+        "size": 10686
+      },
+      {
+        "path": "references/note.md",
+        "sha256": "9d10cefd31e70f6449e8577877a092526d4c6deb1aaebde4f80f53233db2eba2",
+        "size": 8197
+      },
+      {
+        "path": "references/search.md",
+        "sha256": "707690db243745dd9eec3458332bd9fdc9994725092dfd4d734ac531f18ef538",
+        "size": 3934
+      },
+      {
+        "path": "references/tag.md",
+        "sha256": "619ee0cd5f39684224b69579aac6d4e62106e877a81c0e923cca8f3e2594b014",
+        "size": 2844
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "b61d8cb82fb1fe903f4eafb9a83c31dba6b115a2d99c56691c5d3ebdc2cabaea",
+        "size": 2723
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 30614,
+    "installsLabel": "3.1 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "笔记内容会同步到你自己的「得到大脑」账户；授权在浏览器完成，技能不接触凭据。",
+        "en": "Notes sync to your own Get Brain account; sign-in happens in the browser and the skill never handles credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "node"
+    ],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

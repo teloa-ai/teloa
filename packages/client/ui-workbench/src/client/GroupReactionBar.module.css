@@ -1,0 +1,15 @@
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-text);padding:1px 8px;font-size:var(--teloa-font-caption);line-height:20px}
+.chip[aria-pressed=true]{border-color:var(--teloa-accent);background:var(--teloa-accent-bg);color:var(--teloa-accent)}
+.chip:disabled{opacity:.6;cursor:default}
+.addAnchor{position:relative;display:inline-flex}
+.add{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--teloa-muted);padding:3px;border-radius:6px;opacity:.55;transition:opacity .15s}
+.add:hover{background:var(--teloa-hover);color:var(--teloa-accent)}
+.add:hover,.add:focus-visible{opacity:1}
+.addAnchor:focus-within .add{opacity:1}
+:global([data-teloa-message="true"]):hover .add,:global([data-teloa-message="true"]):focus-within .add{opacity:1}
+.emojiOptions{position:absolute;bottom:calc(100% + 5px);left:0;z-index:9;display:grid;grid-template-columns:repeat(6,1fr);gap:2px;margin:0;padding:4px;list-style:none;width:186px;box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+.emojiOptions li{display:grid;place-items:center;width:27px;height:27px;border-radius:7px;font-size:var(--teloa-font-reading);cursor:pointer}
+.emojiOptions li[aria-selected=true]{background:var(--teloa-hover)}
+.hint{margin:4px 0 0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.hint[role=alert]{color:var(--teloa-accent)}

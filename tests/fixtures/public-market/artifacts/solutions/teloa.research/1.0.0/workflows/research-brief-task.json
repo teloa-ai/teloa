@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "research-brief-task",
+  "title": "研究简报",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "基于已提供或授权检索的资料回答一个研究问题，输出可追溯研究简报：每条事实标来源与检索日期，事实、推断与待核实项分开陈述。",
+  "requirements": [
+    "研究资料（文档、网页快照或授权检索范围，已上传或说明）",
+    "研究问题（一句话）与读者"
+  ],
+  "output": "可追溯研究简报：来源清单与信息截止日期、关键事实（含来源与检索日期）、推断（含依据）、分歧与待核实事项、下一步核验建议",
+  "skills": [
+    {
+      "id": "research-brief",
+      "title": "资料研究与可追溯简报",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "研究简报",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "研究简报",
+        "en": "Research brief"
+      }
+    },
+    "description": {
+      "original": "基于已提供或授权检索的资料回答一个研究问题，输出可追溯研究简报：每条事实标来源与检索日期，事实、推断与待核实项分开陈述。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于已提供或授权检索的资料回答一个研究问题，输出可追溯研究简报：每条事实标来源与检索日期，事实、推断与待核实项分开陈述。",
+        "en": "Answer one research question from provided or authorized materials and produce a traceable brief: every fact carries its source and retrieval date, with facts, inferences and items to verify kept apart."
+      }
+    },
+    "requirements": [
+      {
+        "original": "研究资料（文档、网页快照或授权检索范围，已上传或说明）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "研究资料（文档、网页快照或授权检索范围，已上传或说明）",
+          "en": "Research materials (documents, web snapshots or an authorized search scope, uploaded or described)"
+        }
+      },
+      {
+        "original": "研究问题（一句话）与读者",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "研究问题（一句话）与读者",
+          "en": "The research question (one sentence) and its audience"
+        }
+      }
+    ],
+    "output": {
+      "original": "可追溯研究简报：来源清单与信息截止日期、关键事实（含来源与检索日期）、推断（含依据）、分歧与待核实事项、下一步核验建议",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "可追溯研究简报：来源清单与信息截止日期、关键事实（含来源与检索日期）、推断（含依据）、分歧与待核实事项、下一步核验建议",
+        "en": "Traceable research brief: source list and information cut-off date, key facts (with sources and retrieval dates), inferences (with rationale), disagreements and items to verify, next verification steps"
+      }
+    }
+  }
+}

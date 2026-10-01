@@ -1,0 +1,43 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "appsec-application-list",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "应用清单",
+  "kind": "list",
+  "chart": "table",
+  "objectType": "application",
+  "measures": [
+    {
+      "id": "records",
+      "label": "记录",
+      "aggregation": "count",
+      "localized": {
+        "label": {
+          "original": "记录",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "记录",
+            "en": "Records"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "limit": 100,
+  "localized": {
+    "title": {
+      "original": "应用清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "应用清单",
+        "en": "Application list"
+      }
+    }
+  }
+}

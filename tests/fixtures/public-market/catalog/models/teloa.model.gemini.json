@@ -1,0 +1,110 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.gemini",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "gemini",
+    "title": {
+      "zh-CN": "Gemini（Google）",
+      "en": "Gemini (Google)"
+    },
+    "summary": {
+      "zh-CN": "Google Gemini API；国内需海外网络。",
+      "en": "Google Gemini API; needs an overseas network from China."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": true
+    },
+    "contextWindow": null,
+    "license": {
+      "spdx": "custom",
+      "name": "Gemini API Additional Terms of Service",
+      "url": "https://ai.google.dev/gemini-api/terms",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "proxy-required",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      },
+      {
+        "zh-CN": "按条款须年满 18 岁；免费档提交的内容可能被用于改进 Google 产品并经人工审阅。",
+        "en": "Per the terms you must be 18 or older; content sent on the free tier may be used to improve Google products, including human review."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "google"
+      },
+      "models": [
+        {
+          "id": "gemini-3.8-flash",
+          "name": "Gemini 3.8 Flash",
+          "contextWindow": null,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "low",
+      "credentialLabel": {
+        "zh-CN": "Google AI API 密钥",
+        "en": "Google AI API key"
+      },
+      "signupUrl": "https://aistudio.google.com"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://ai.google.dev/gemini-api/terms"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

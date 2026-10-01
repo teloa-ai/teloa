@@ -1,0 +1,370 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "appsec-review",
+  "title": "应用安全",
+  "version": "1.0.1",
+  "domain": "cyber-security",
+  "scope": "AppSec",
+  "description": "面向应用安全团队的代码审计、安全设计评审、威胁建模、扫描结果复核与 Web 渗透测试协作方案。岗位以可追溯的分析与草案为主；主动测试、仓库推送、工单对外发送均须独立授权与确认。",
+  "localized": {
+    "title": {
+      "original": "应用安全",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "应用安全",
+        "en": "Application security"
+      }
+    },
+    "description": {
+      "original": "面向应用安全团队的代码审计、安全设计评审、威胁建模、扫描结果复核与 Web 渗透测试协作方案。岗位以可追溯的分析与草案为主；主动测试、仓库推送、工单对外发送均须独立授权与确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向应用安全团队的代码审计、安全设计评审、威胁建模、扫描结果复核与 Web 渗透测试协作方案。岗位以可追溯的分析与草案为主；主动测试、仓库推送、工单对外发送均须独立授权与确认。",
+        "en": "A solution for application security teams covering code audit, security design review, threat modeling, scan triage, and web penetration testing collaboration. The analyst prepares traceable findings and drafts; active testing, repository writes, and external ticket submission require separate authorization."
+      }
+    }
+  },
+  "resources": [
+    {
+      "id": "appsec-auditor",
+      "kind": "role",
+      "title": "应用安全审计员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/appsec-auditor.json"
+      },
+      "localized": {
+        "title": {
+          "original": "应用安全审计员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "应用安全审计员",
+            "en": "Application security auditor"
+          }
+        }
+      }
+    },
+    {
+      "id": "appsec-methods",
+      "kind": "knowledge",
+      "title": "应用安全方法与来源",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/appsec-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "应用安全方法与来源",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "应用安全方法与来源",
+            "en": "Application security methods and references"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-audit",
+      "kind": "skill",
+      "title": "代码审计",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/code-audit/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "代码审计",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "代码审计",
+            "en": "Code audit"
+          }
+        }
+      }
+    },
+    {
+      "id": "security-design-review",
+      "kind": "skill",
+      "title": "安全设计评审",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/security-design-review/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "安全设计评审",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全设计评审",
+            "en": "Security design review"
+          }
+        }
+      }
+    },
+    {
+      "id": "threat-modeling",
+      "kind": "skill",
+      "title": "威胁建模",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/threat-modeling/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "威胁建模",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "威胁建模",
+            "en": "Threat modeling"
+          }
+        }
+      }
+    },
+    {
+      "id": "scan-triage",
+      "kind": "skill",
+      "title": "扫描结果复核",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/scan-triage/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "扫描结果复核",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "扫描结果复核",
+            "en": "Scan result triage"
+          }
+        }
+      }
+    },
+    {
+      "id": "fix-verification",
+      "kind": "skill",
+      "title": "修复验证",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/fix-verification/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "修复验证",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "修复验证",
+            "en": "Fix verification"
+          }
+        }
+      }
+    },
+    {
+      "id": "web-pentest-collab",
+      "kind": "skill",
+      "title": "Web 渗透测试协作",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/web-pentest-collab/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "Web 渗透测试协作",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "Web 渗透测试协作",
+            "en": "Web penetration test collaboration"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-audit-task",
+      "kind": "work-template",
+      "title": "代码审计任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/code-audit-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "代码审计任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "代码审计任务",
+            "en": "Code audit task"
+          }
+        }
+      }
+    },
+    {
+      "id": "security-design-review-task",
+      "kind": "work-template",
+      "title": "安全设计评审任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/security-design-review-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "安全设计评审任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全设计评审任务",
+            "en": "Security design review task"
+          }
+        }
+      }
+    },
+    {
+      "id": "threat-modeling-task",
+      "kind": "work-template",
+      "title": "威胁建模任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/threat-modeling-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "威胁建模任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "威胁建模任务",
+            "en": "Threat modeling task"
+          }
+        }
+      }
+    },
+    {
+      "id": "scan-triage-task",
+      "kind": "work-template",
+      "title": "扫描结果复核任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/scan-triage-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "扫描结果复核任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "扫描结果复核任务",
+            "en": "Scan triage task"
+          }
+        }
+      }
+    },
+    {
+      "id": "web-pentest-collab-task",
+      "kind": "work-template",
+      "title": "Web 渗透测试协作任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/web-pentest-collab-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "Web 渗透测试协作任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "Web 渗透测试协作任务",
+            "en": "Web penetration test collaboration task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "appsec-auditor",
+      "to": "appsec-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "appsec-auditor",
+      "to": "code-audit"
+    },
+    {
+      "kind": "role-skill",
+      "from": "appsec-auditor",
+      "to": "security-design-review"
+    },
+    {
+      "kind": "role-skill",
+      "from": "appsec-auditor",
+      "to": "threat-modeling"
+    },
+    {
+      "kind": "role-skill",
+      "from": "appsec-auditor",
+      "to": "scan-triage"
+    },
+    {
+      "kind": "role-skill",
+      "from": "appsec-auditor",
+      "to": "fix-verification"
+    },
+    {
+      "kind": "role-skill",
+      "from": "appsec-auditor",
+      "to": "web-pentest-collab"
+    },
+    {
+      "kind": "role-work",
+      "from": "appsec-auditor",
+      "to": "code-audit-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "appsec-auditor",
+      "to": "security-design-review-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "appsec-auditor",
+      "to": "threat-modeling-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "appsec-auditor",
+      "to": "scan-triage-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "appsec-auditor",
+      "to": "web-pentest-collab-task"
+    }
+  ],
+  "entrypoints": [
+    "code-audit",
+    "threat-modeling",
+    "code-audit-task",
+    "threat-modeling-task"
+  ]
+}

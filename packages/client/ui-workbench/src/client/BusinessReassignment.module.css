@@ -1,0 +1,14 @@
+.card{min-width:0;max-width:100%;box-sizing:border-box;padding:20px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body,1.5);overflow-wrap:anywhere}
+.card h2{margin:0;font-size:var(--teloa-font-section)}
+.hint{margin:8px 0;color:var(--teloa-muted)}
+.status{margin:16px 0;font-weight:600}
+.notice{padding:12px;border:1px solid var(--teloa-border);border-radius:8px;margin:12px 0}
+.form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.form label{display:flex;min-width:0;flex-direction:column;gap:8px}
+.form select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:40px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;padding:8px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.card button{min-height:40px;max-width:100%;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;padding:8px 12px;cursor:pointer;overflow-wrap:anywhere}
+.card button.primary{background:var(--teloa-accent);color:var(--teloa-on-accent);border-color:var(--teloa-accent)}
+.card button:disabled,.form select:disabled{opacity:.55;cursor:default}
+.card button:focus-visible,.form select:focus-visible{outline:2px solid var(--teloa-accent);outline-offset:2px}
+@media(max-width:740px){.card{padding:16px}.form{grid-template-columns:minmax(0,1fr)}.card button,.form select{min-height:44px}}

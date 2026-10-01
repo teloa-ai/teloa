@@ -1,0 +1,101 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.shaw555.ocr-local",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "ocr-local",
+    "title": {
+      "zh-CN": "OCR 本地识别",
+      "en": "OCR - Local (No API Key)"
+    },
+    "summary": {
+      "zh-CN": "使用 Tesseract.js 进行本地 OCR 文字识别，支持中文、无需 API 密钥。用于图像文字提取。",
+      "en": "Extract text from images using Tesseract.js OCR (100% local, no API key required). Supports Chinese (simplified/traditional) and English."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "shaw555",
+    "slug": "ocr-local",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "PUBLISH.md",
+        "sha256": "12e030f1bce5faa976515d2bc1290491467483067889786e9988bd0bb5fa27e2",
+        "size": 2005
+      },
+      {
+        "path": "README.md",
+        "sha256": "b531e58940493aae58fe33943d8ef55edf496239c90a205c2d2d08fcea7e452e",
+        "size": 1877
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "7851270a251ca1aea722d7af6e9ba8a48193a51107d7f7da327534cb2b45d3c7",
+        "size": 1472
+      },
+      {
+        "path": "package.json",
+        "sha256": "91b5fa7cf38590dcf914808551ad70ba458e3b28f5db5f9571e38fcb1b255095",
+        "size": 615
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "d9b9d0cf7a7a7fb032051d56994816f8123eff5e6c82fa6fbc25daae6566377f",
+        "size": 1990
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 19840,
+    "installsLabel": "2 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "scripts",
+      "count": 1
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 1 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 1 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "bash",
+      "node"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

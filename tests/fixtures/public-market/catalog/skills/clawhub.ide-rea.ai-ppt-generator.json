@@ -1,0 +1,91 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ide-rea.ai-ppt-generator",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.1.5",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "ai-ppt-generator",
+    "title": {
+      "zh-CN": "百度文库 AI PPT",
+      "en": "Baidu Wenku AIPPT"
+    },
+    "summary": {
+      "zh-CN": "使用百度文库 AI 生成 PPT 演示文稿，智能选择模板并根据内容自动排版。用于快速演示文稿创建。",
+      "en": "Generate PPT with Baidu Wenku AI. Smart template selection based on content."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ide-rea",
+    "slug": "ai-ppt-generator",
+    "version": "1.1.5",
+    "files": [
+      {
+        "path": "_meta.json",
+        "sha256": "b0d4b72504836745508fe4fdd476c38a4b59ef230c39df4a2bfdb7aed1e35e1a",
+        "size": 135
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "4e8a2cf7f73248d5a7053f24d300a91e37495e96ea1a3bcec362492e812b2920",
+        "size": 3311
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "18bc2787b5a590ab02fb6ee22dc4b0b0b5df7d5a979dd1339079b6ba232a8ee0",
+        "size": 2019
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 33002,
+    "installsLabel": "3.3 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "scripts",
+      "count": 3
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 3 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 3 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "bash",
+      "python"
+    ],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

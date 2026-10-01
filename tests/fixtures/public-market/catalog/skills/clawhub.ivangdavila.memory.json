@@ -1,0 +1,153 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.memory",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.7",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "memory",
+    "title": {
+      "zh-CN": "持久化记忆",
+      "en": "Memory"
+    },
+    "summary": {
+      "zh-CN": "记忆和组织重要事实信息，存储在本地 markdown 文件中。用于长期知识管理和记忆保持。",
+      "en": "Remembers, recalls, and organizes durable facts in a categorized markdown store at ~/Clawic/data/memory/, parallel to built-in agent memory. Use when the user says remember this, save this, note that for later, or don't forget; when they ask what did I tell you about X, when did we decide Y, or who"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "memory",
+    "version": "1.0.7",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "0ab3e7090538728ff6331612d97655f5cab7ade6059804afe06a7c75640119b2",
+        "size": 20829
+      },
+      {
+        "path": "_meta.json",
+        "sha256": "5967a163ff4f3ca7d3bff98562a33a91f6cca8ec1256e61d5293800a3ff2780a",
+        "size": 610
+      },
+      {
+        "path": "capture.md",
+        "sha256": "67b18d54b73dccee45a6c229e5eb72940a7d39d6d1d6383cc84e39e472b5ccf7",
+        "size": 6003
+      },
+      {
+        "path": "commands.md",
+        "sha256": "c22ecfe0222e4834a08a765f7cb76636eb2cf45026fc04f509e567d845263348",
+        "size": 4308
+      },
+      {
+        "path": "conflicts.md",
+        "sha256": "047d73c6e1d521b37eac853a0a599e37966f703fe335180e001d5aa341638f7e",
+        "size": 5144
+      },
+      {
+        "path": "entities.md",
+        "sha256": "1bef6788b5f7c1e1d0d43669938dd6cdc20dbf1eeccdd1d0a3feba103e79f628",
+        "size": 5296
+      },
+      {
+        "path": "layouts.md",
+        "sha256": "bbbbf8b824c7f651b6044a8f166be3a38d4a548bdb098bbb45569eb226167d65",
+        "size": 6348
+      },
+      {
+        "path": "maintenance.md",
+        "sha256": "43f3f21b142cb6eaaa85638a7eb4f131fc72f105822e90f6a83c48ee4e247528",
+        "size": 5106
+      },
+      {
+        "path": "memory-template.md",
+        "sha256": "1dfb98382959d7c52cd58b218fd0169999cef5e025e321c8e0d30578a7af4be7",
+        "size": 8282
+      },
+      {
+        "path": "migration.md",
+        "sha256": "a7547c9e3735fc82802b91b666b38e6b52a345351d9a4425230658b1095e1443",
+        "size": 5465
+      },
+      {
+        "path": "privacy.md",
+        "sha256": "424bb472278c09725b339a25b95a3a333b753ae7797a70fe348c58e63d2569e5",
+        "size": 4747
+      },
+      {
+        "path": "recall.md",
+        "sha256": "2a4aa317a52ef89260a7ca8a7cd885991b31de43049deb1232b3aa9901b08d85",
+        "size": 5467
+      },
+      {
+        "path": "scaling.md",
+        "sha256": "90c1dddbaa20e9528b37699fd5471da4e9c4a75db5087901ab850ebf6190f752",
+        "size": 5227
+      },
+      {
+        "path": "sessions.md",
+        "sha256": "ebb5c8859098709118215ae0a7a6e9ae0853990f0c194a9d4b0f6c92f04cd671",
+        "size": 4827
+      },
+      {
+        "path": "setup.md",
+        "sha256": "7465c31d8a8023bf105631bd928217d539a0d64560af8b57d670edfb8fe3a09b",
+        "size": 4462
+      },
+      {
+        "path": "sync.md",
+        "sha256": "94d63e2906f43fd6223bdcdb4a5641667764c44b2f0a63b1cda84d3be07ecc9c",
+        "size": 5054
+      },
+      {
+        "path": "troubleshooting.md",
+        "sha256": "6d60a7428ba9b676ef89bfc7277f75c9c30806b6ad8f54238c33de7025eae911",
+        "size": 6344
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "87dc106a01e2529c9ffae1ffec022a18927b5ced345331479236d5e4841a73cd",
+        "size": 2288
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 19319,
+    "installsLabel": "1.9 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

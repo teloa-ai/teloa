@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "footage-inventory-task",
+  "title": "素材盘点",
+  "version": "1.0.0",
+  "domain": "video",
+  "description": "对已提供的视频素材清单逐项登记，输出带技术规格和内容描述的结构化索引表。不删除或移动任何原始文件。",
+  "requirements": [
+    "素材文件清单（文件名列表或目录结构）",
+    "媒体信息输出（mediainfo/ffprobe，可选，用于填写技术规格）",
+    "场记单或拍摄记录（可选）"
+  ],
+  "output": "素材盘点表（序号、文件名、格式/编解码器、时长、分辨率、帧率、录制时间、内容描述、备注），含摘要行",
+  "skills": [
+    {
+      "id": "footage-inventory",
+      "title": "素材盘点",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "素材盘点",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "素材盘点",
+        "en": "Footage inventory task"
+      }
+    },
+    "description": {
+      "original": "对已提供的视频素材清单逐项登记，输出带技术规格和内容描述的结构化索引表。不删除或移动任何原始文件。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的视频素材清单逐项登记，输出带技术规格和内容描述的结构化索引表。不删除或移动任何原始文件。",
+        "en": "Register each item from the provided footage list and output a structured index table with technical specs and content descriptions. No files are moved or deleted."
+      }
+    },
+    "requirements": [
+      {
+        "original": "素材文件清单（文件名列表或目录结构）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "素材文件清单（文件名列表或目录结构）",
+          "en": "Footage file list (filename list or directory structure)"
+        }
+      },
+      {
+        "original": "媒体信息输出（mediainfo/ffprobe，可选，用于填写技术规格）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "媒体信息输出（mediainfo/ffprobe，可选，用于填写技术规格）",
+          "en": "Media info output (mediainfo/ffprobe, optional, for filling technical specs)"
+        }
+      },
+      {
+        "original": "场记单或拍摄记录（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "场记单或拍摄记录（可选）",
+          "en": "Shot list or shooting log (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "素材盘点表（序号、文件名、格式/编解码器、时长、分辨率、帧率、录制时间、内容描述、备注），含摘要行",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "素材盘点表（序号、文件名、格式/编解码器、时长、分辨率、帧率、录制时间、内容描述、备注），含摘要行",
+        "en": "Footage inventory table (index, filename, format/codec, duration, resolution, frame rate, recording time, content description, notes) with a summary row"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@teloa/bundle",
+  "version": "0.2.0-alpha.7",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "dsh": "0.1.7-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml",
+        "./agent-presets/standard.patch.yml",
+        "./agent-presets/ptc.patch.yml",
+        "./agent-presets/cordis.patch.yml",
+        "./agent-presets/teloa-standard/agent.cordis.yml"
+      ]
+    }
+  },
+  "dependencies": {
+    "@teloa/client-ui-workbench": "workspace:*",
+    "@teloa/harness-dsh": "workspace:*",
+    "@teloa/mcp-reference": "workspace:*",
+    "@deepseek-ai/dsh-mcp-client": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.1.7-rc.1"
+  }
+}

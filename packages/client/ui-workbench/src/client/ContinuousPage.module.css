@@ -1,0 +1,35 @@
+.caption{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);color:var(--teloa-muted);margin:20px 4px 8px}
+.notice{padding:14px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-sidebar)}
+.list{display:flex;flex-direction:column;gap:8px}.list>button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:12px;min-width:0;overflow-wrap:anywhere}.list small{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6}.list strong{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
+.fields{display:flex;gap:12px;flex-wrap:wrap}.fields>label{flex:1;min-width:100px}
+.directoryError{margin:12px 26px 0}.directoryError>button{flex:none;white-space:nowrap;margin-left:auto}
+.sandboxMode{background:var(--teloa-background)}
+.sandboxBanner{border-color:var(--teloa-warn);background:var(--teloa-warn-bg)}.sandboxBanner>strong{color:var(--teloa-warn)}
+.workPage{overflow:auto}
+.workPage>header{box-sizing:border-box;width:100%;max-width:1120px;margin:0 auto;padding-left:42px;padding-right:42px;flex-shrink:0}
+.workPage>header{padding-top:38px;padding-bottom:24px;border:0;align-items:flex-start}.workPage>header h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-heading)}.workPage>header p{line-height:1.8}
+.workLayout{flex:1 0 420px}
+.overview .workLayout{display:block;flex:1 0 auto;box-sizing:border-box;width:100%;max-width:1120px;margin:0 auto;padding:0 42px 38px}
+.overview [data-teloa-pane="directory"]{padding:0;border:0;background:transparent}.overview [data-teloa-pane="detail"]{display:none}
+.overview [data-teloa-pane="directory"]>div{overflow:visible;flex:initial}
+.detailPage{overflow:hidden}
+.detailPage>header,.detailPage [data-teloa-pane="directory"]{display:none}
+.detailPage .workLayout{display:flex;flex:1;min-height:0}
+.detailPage [data-teloa-pane="detail"]{box-sizing:border-box;flex:1;width:100%;max-width:1120px;margin:0 auto;padding:38px 42px;min-height:0}
+.detailPage [data-teloa-pane="detail"]>button:first-child{border:0;background:transparent;padding-left:0;color:var(--teloa-muted)}
+.detailPage [data-teloa-pane="detail"]>h2{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-heading);margin-top:24px}
+@media(max-width:1380px){.workPage>header{padding-left:30px;padding-right:30px}.overview .workLayout{padding:0 30px 30px}.detailPage [data-teloa-pane="detail"]{padding:30px}}
+@media(max-width:760px){.workPage>header{padding-top:26px;flex-wrap:wrap;gap:8px;padding-left:21px;padding-right:21px}.workPage>header h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.overview .workLayout{padding:0 21px 26px}.detailPage [data-teloa-pane="detail"]{padding:26px 21px}.detailPage [data-teloa-pane="detail"]>h2{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}}
+@media(max-width:1100px){.directoryError{margin-left:18px;margin-right:18px}}
+@media(max-width:760px){.planPreview,.directoryError{flex-wrap:wrap;align-items:center}.planPreview>span{flex:1 1 220px;min-width:0}.planPreview>button,.directoryError>button{flex:none;white-space:nowrap;margin-left:auto}.directoryError{margin:10px 14px 0}}
+
+.planGoal{color:var(--teloa-muted)}
+.planBody{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
+@media(max-width:1000px){.planBody{grid-template-columns:1fr}}
+
+/* 列表筛选只在有内容或已有条件时显示，与列表共用一行。 */
+.directoryFilters{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.directoryFilters>label{flex:1 1 240px;min-width:180px}
+.directoryFilters>select{flex:0 1 180px;min-width:120px}
+.directoryFilters>button.resetFilters{flex:none;border:0;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
+@media(max-width:600px){.directoryFilters>label{flex-basis:100%;min-width:0}.directoryFilters>select{flex:1 1 120px}.directoryFilters>button.resetFilters{margin-left:auto}}

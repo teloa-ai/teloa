@@ -1,0 +1,49 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-pending-board",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "待处理告警",
+  "kind": "board-card",
+  "chart": "number",
+  "objectType": "alert-ticket",
+  "measures": [
+    {
+      "id": "pending",
+      "label": "条",
+      "aggregation": "count",
+      "localized": {
+        "label": {
+          "original": "条",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "条",
+            "en": "Alerts"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [
+    {
+      "field": "verdict",
+      "op": "in",
+      "values": [
+        "还没有人看",
+        "正在核对",
+        "等你确认"
+      ]
+    }
+  ],
+  "limit": 1,
+  "localized": {
+    "title": {
+      "original": "待处理告警",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "待处理告警",
+        "en": "Pending alerts"
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+.picker{width:100%;box-sizing:border-box;border-top:1px solid var(--teloa-border);padding:14px 21px;color:var(--teloa-text)}
+.embedded{border-top:0;padding:12px 0 0}
+.heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.heading strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.heading p,.notice,.muted,.resource small,.selected small{margin:3px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.notice{margin:10px 0 0}
+.refresh,.resource button,.selected button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:32px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.refresh{width:32px;padding:0;flex-shrink:0}
+.resource button,.selected button{padding:5px 9px}
+.refresh:disabled,.resource button:disabled{opacity:.5;cursor:default}
+.refresh:focus-visible,.resource button:focus-visible,.selected button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.error{margin:10px 0 0;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:8px;font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.selected,.directory{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;list-style:none;padding:0}
+.selected{margin:12px 0}
+.directory{margin-top:10px;max-height:226px;overflow:auto;overscroll-behavior:contain;padding-right:3px}
+.selected li,.resource{display:flex;align-items:center;gap:10px;min-width:0;min-height:52px;padding:8px 10px;border:1px solid var(--teloa-border);border-radius:9px;background:var(--teloa-background)}
+.selected li{background:var(--teloa-subtle)}
+.resourceIcon{display:grid!important;place-items:center;flex:0 0 28px!important;width:28px;height:28px;border-radius:7px;background:var(--teloa-subtle);color:var(--teloa-muted)}
+.selected .resourceIcon{background:var(--teloa-surface);color:var(--teloa-text)}
+.resourceCopy{min-width:0;display:flex;flex:1;flex-direction:column;gap:2px}
+.selected strong,.resource strong{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selected em{font-style:normal;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.45}
+.invalid{opacity:.7}
+.muted{margin:12px 0}
+.filterRow{display:flex;align-items:center;gap:8px;margin-top:10px}
+.embedded .filterRow{margin-top:12px}
+.filter{display:flex;align-items:center;gap:7px;min-height:32px;flex:1;min-width:0;padding:0 9px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-background)}
+.filter input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
+.filter:focus-within{border-color:var(--teloa-accent)}
+.resource small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.45}
+.resource button,.selected button{flex-shrink:0;white-space:nowrap}
+.srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:740px){.picker{width:100%;box-sizing:border-box;padding:14px 18px}.embedded{padding:12px 0 0}.refresh,.resource button,.selected button{min-height:38px}.selected,.directory{grid-template-columns:1fr}.resource,.selected li{align-items:center}.resource button,.selected button{flex-shrink:0}}
+
+.compact{padding:0 4px 4px}.compact .selected,.compact .directory{grid-template-columns:minmax(0,1fr);gap:2px}.compact .directory{max-height:240px;padding:0}.compact .selected li,.compact .resource{padding:8px 4px;border:0;border-radius:6px;background:transparent;gap:8px}.compact .resource:hover{background:var(--teloa-hover)}.compact .selected{padding-bottom:6px;border-bottom:1px solid var(--teloa-border)}.compact .resourceIcon{background:transparent}.compact .resource strong,.compact .selected strong{font-size:var(--teloa-font-control)}.compact .resource button,.compact .selected button{border:0;background:transparent;min-width:30px}.compact .filterRow{margin-top:8px}

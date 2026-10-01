@@ -1,0 +1,88 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.market-research",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "market-research",
+    "title": {
+      "zh-CN": "市场研究",
+      "en": "Market Research"
+    },
+    "summary": {
+      "zh-CN": "进行市场研究，包括市场规模评估、竞争对手分析和定价研究。用于商业决策和市场验证。",
+      "en": "Research markets with sizing, segmentation, competitor mapping, pricing checks, and demand validation that turn fuzzy ideas into decision-ready evidence. Use..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "market-research",
+    "version": "1.0.1",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "9cb0edb3c0d18495b419533eca19323b5fdda58cd409442e1bc89a505a77a95b",
+        "size": 7368
+      },
+      {
+        "path": "competitor-analysis.md",
+        "sha256": "995fc92cb50f685e3369ef1e3e235ec7c0425f0d6ab6500b41c54e8bca62a686",
+        "size": 3087
+      },
+      {
+        "path": "evidence-grading.md",
+        "sha256": "6ff41dd0e76cb58359d4c84c84be09e75875318ac6e59dc508c0a38af58d98e7",
+        "size": 1322
+      },
+      {
+        "path": "validation.md",
+        "sha256": "dcbaa98fba9b8834a4aa09fc9116471fd9c121198b3e190d5c56eb8b6de03bcd",
+        "size": 3634
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "361269076ddd737d6c40d87a08def4ee8643315308d1dd341389e50c423cacfc",
+        "size": 2369
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 26737,
+    "installsLabel": "2.7 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

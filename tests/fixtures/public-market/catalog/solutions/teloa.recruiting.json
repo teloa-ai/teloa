@@ -1,0 +1,112 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.recruiting",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "business-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "hr-recruiting",
+    "title": {
+      "zh-CN": "HR 招聘",
+      "en": "HR recruiting"
+    },
+    "summary": {
+      "zh-CN": "上传岗位需求与简历即可开始：JD 草案、简历初筛对照清单、面试纲要与面试记录汇总；只出草案与对照，不做录用或淘汰决定，不用受保护特征筛人。",
+      "en": "Start from job requirements and resumes: JD drafts, resume screening checklists, interview guides and note summaries; drafts and comparisons only, never hire or reject decisions, never screening on protected characteristics."
+    },
+    "scope": "recruiting",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "把用人部门需求拆成职责、必备与加分条件，每条附来源，缺口标待确认",
+          "en": "Split hiring requirements into responsibilities, must-haves and nice-to-haves, each sourced, with gaps flagged"
+        },
+        {
+          "zh-CN": "逐份简历对照 JD 条目，只记满足、未满足、未提及、疑似满足并附出处，不打分不排名",
+          "en": "Compare each resume against JD items, recording only met, not met, not mentioned or possibly met with citations; no scores or ranking"
+        },
+        {
+          "zh-CN": "设计面试纲要与评分表，每题对应一条能力要求，评分锚点是可观察行为，自动排除禁问事项",
+          "en": "Design interview guides and scorecards where every question maps to a competency, anchors are observable behaviors and prohibited questions are excluded"
+        },
+        {
+          "zh-CN": "从面试转写提取事实、面试官原话评价与待办，多位面试官评价并列不合并",
+          "en": "Extract facts, verbatim interviewer comments and action items from transcripts, keeping multiple interviewers' comments side by side"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "岗位需求说明或旧版 JD、简历、面试转写或面试官笔记",
+          "en": "Job requirement notes or a previous JD, resumes, interview transcripts or interviewer notes"
+        },
+        {
+          "zh-CN": "岗位名称、面试轮次与目标，以及经验折算等补充口径",
+          "en": "Job title, interview round and goals, plus supplementary rules such as how internships count"
+        },
+        {
+          "zh-CN": "进入下一轮、录用与薪酬决定由你与用人部门作出",
+          "en": "Advancing, hiring and compensation decisions stay with you and the hiring team"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件，不检索候选人的社交账号或外部资料",
+          "en": "Reads only the files you provide; never searches candidates' social accounts or external sources"
+        },
+        {
+          "zh-CN": "需你确认才会做：向候选人或第三方发送材料、写入招聘系统或人才库、创建面试日程、起草录用通知或拒信",
+          "en": "Only with your confirmation: sending material to candidates or third parties, writing to recruiting systems or talent pools, creating interview schedules, drafting offer or rejection letters"
+        },
+        {
+          "zh-CN": "候选人个人信息最小化：不摘录身份证号、联系方式、照片等与筛选无关的字段",
+          "en": "Candidate data is kept to the minimum: ID numbers, contact details, photos and other non-essential fields are not extracted"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：JD 起草、简历初筛对照、面试纲要与记录三个模板按合成样例产出结构与期望一致，年龄、婚育等受保护特征被剔除并在合规提示中说明，只出对照清单与草案、不给录用或淘汰结论。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-25: JD draft, resume screening checklist and interview guide with notes matched the expected structure on synthetic samples; protected attributes such as age and marital status were excluded and flagged; only checklists and drafts, no hire or reject conclusions."
+      },
+      {
+        "zh-CN": "飞书、钉钉等日历与消息连接为可选项，本版不内置。",
+        "en": "Lark, DingTalk and other calendar or messaging connections are optional and not bundled in this version."
+      },
+      {
+        "zh-CN": "招聘协作员只出草案与对照清单；录用、淘汰、薪酬决定由你作出，筛选不使用受保护特征。",
+        "en": "The role produces drafts and checklists only; hire, reject and compensation decisions are yours, and screening never uses protected characteristics."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

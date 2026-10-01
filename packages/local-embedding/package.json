@@ -1,0 +1,32 @@
+{
+  "name": "@teloa/local-embedding",
+  "version": "0.2.0-alpha.7",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "engines": {
+    "dsh": "0.1.7-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-subprocess": "0.1.7-rc.1",
+    "@huggingface/tokenizers": "0.2.0",
+    "@teloa/contract": "workspace:*",
+    "@teloa/harness-dsh": "workspace:*"
+  }
+}

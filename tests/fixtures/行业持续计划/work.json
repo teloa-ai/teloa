@@ -1,0 +1,13 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "review",
+  "title": "告警日常核对",
+  "version": "1.0.0",
+  "domain": "security",
+  "description": "核对告警来源与证据",
+  "requirements": [
+    "本次获准告警数据"
+  ],
+  "output": "调查报告",
+  "skills": []
+}

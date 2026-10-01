@@ -1,0 +1,130 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-amap",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "amap",
+    "title": {
+      "zh-CN": "高德地图（官方 MCP）",
+      "en": "Amap Maps (Official MCP)"
+    },
+    "summary": {
+      "zh-CN": "高德地图官方 MCP 服务，提供地理编码、逆地理编码、路径规划、POI 搜索与天气查询能力。需要高德 API Key。",
+      "en": "Amap's official MCP service providing geocoding, reverse geocoding, route planning, POI search, and weather queries. Requires Amap API Key."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "env",
+          "envVarName": "AMAP_MAPS_API_KEY",
+          "label": {
+            "zh-CN": "高德地图 API Key（从高德开放平台获取）",
+            "en": "Amap API Key (get from Amap Open Platform)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "stdio",
+      "package": "@amap/amap-maps-mcp-server",
+      "version": "0.0.8",
+      "integrity": "sha512-Kg5rYr0azYdN09NP63jUYssKG4Vx8qM92bVIQa8agajjmaasI7J01UK/jGg8Ptima4A8I5RY7ch0m6BaVte5PQ==",
+      "bin": "build/index.js",
+      "args": []
+    },
+    "tools": [
+      {
+        "name": "maps_geo",
+        "description": {
+          "zh-CN": "地址转地理坐标",
+          "en": "Convert address to geographic coordinates"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "maps_regeocode",
+        "description": {
+          "zh-CN": "地理坐标转地址",
+          "en": "Convert geographic coordinates to address"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "maps_direction_walking",
+        "description": {
+          "zh-CN": "步行路径规划",
+          "en": "Walking route planning"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "maps_direction_driving",
+        "description": {
+          "zh-CN": "驾车路径规划",
+          "en": "Driving route planning"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "maps_text_search",
+        "description": {
+          "zh-CN": "关键词 POI 搜索",
+          "en": "Keyword POI search"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "maps_weather",
+        "description": {
+          "zh-CN": "天气查询",
+          "en": "Weather query"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://lbs.amap.com/api/mcp-server/gettingstarted"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "ISC",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要高德开放平台 API Key",
+        "en": "Requires Amap Open Platform API Key"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "Node.js 18+"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,302 @@
+{
+  "format": "teloa.upstream-review/v1",
+  "reviewedAt": "2026-09-25",
+  "reviewer": "Teloa 内容安全审查（逐文件）",
+  "entries": {
+    "clawhub.cellcog.image-generation-cellcog": {"verdict": "approve", "conditions": []},
+    "clawhub.guohongbin-git.skill-finder-cn": {"verdict": "approve", "conditions": []},
+    "clawhub.ide-rea.ai-ppt-generator": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.data-analysis": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.excel-xlsx": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.git": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.image": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.market-research": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.memory": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.powerpoint-pptx": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.proactivity": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.screenshot": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.seo": {"verdict": "approve", "conditions": []},
+    "clawhub.ivangdavila.word-docx": {"verdict": "approve", "conditions": []},
+    "clawhub.kennyzir.capability-evolver-pro": {"verdict": "approve", "conditions": []},
+    "clawhub.lidayan.tushare-data": {"verdict": "approve", "conditions": []},
+    "clawhub.othmanadi.planning-with-files": {"verdict": "approve", "conditions": []},
+    "clawhub.paulshe.china-stock-analysis": {"verdict": "approve", "conditions": []},
+    "clawhub.shaw555.ocr-local": {"verdict": "approve", "conditions": []},
+    "clawhub.wscats.eno": {"verdict": "approve", "conditions": []},
+    "clawhub.wscats.interview-simulator": {"verdict": "approve", "conditions": []},
+    "clawhub.wscats.resume-assistant": {"verdict": "approve", "conditions": []},
+    "clawhub.wscats.smart-weekly-report": {"verdict": "approve", "conditions": []},
+    "clawhub.wscats.t-trading": {"verdict": "approve", "conditions": []},
+    "clawhub.yueyanc.self-improving-proactive-agent": {"verdict": "approve", "conditions": []},
+    "clawhub.iswalle.getnote": {
+      "verdict": "approve",
+      "conditions": [
+        {
+          "zh-CN": "笔记内容会同步到你自己的「得到大脑」账户；授权在浏览器完成，技能不接触凭据。",
+          "en": "Notes sync to your own Get Brain account; sign-in happens in the browser and the skill never handles credentials."
+        }
+      ]
+    },
+    "clawhub.cellcog.cellcog": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需自备 CellCog API 密钥，文件会上传到 cellcog.ai 处理。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Requires your own CellCog API key; files are uploaded to cellcog.ai for processing. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.financial-ai-analyst.mx-finance-search": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需自备东方财富 API 密钥，数据请求经东方财富服务器处理。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Requires your own East Money API key; data requests are processed through East Money's servers. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.financial-ai-analyst.mx-macro-data": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需自备东方财富 API 密钥，数据请求经东方财富服务器处理。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Requires your own East Money API key; data requests are processed through East Money's servers. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.jaaneek.x-search": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需自备 xAI API 密钥，搜索请求经 xAI 服务器处理。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Requires your own xAI API key; search requests are processed through xAI's servers. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.api-gateway": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.calendly-api": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.clickup-api": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.fathom-api": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.gmail": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.google-drive": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.google-meet": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.google-play": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.google-sheets": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.google-slides": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.google-workspace-admin": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.klaviyo": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.mailchimp": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.microsoft-excel": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.monday": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.outlook-api": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.pipedrive-api": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.salesforce-api": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.typeform": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.whatsapp-business": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.woocommerce": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.xero": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.youtube-api-skill": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.zoho-crm": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    },
+    "clawhub.byungkyu.zoho-mail": {
+      "verdict": "blocked",
+      "conditions": [
+        {
+          "zh-CN": "需通过第三方 Maton 网关授权，账号令牌由 Maton 托管、请求经其服务器中转。建议改用厂商官方连接器。Teloa 暂不支持为技能安全注入密钥，暂不可添加。",
+          "en": "Authorization goes through the third-party Maton gateway — account tokens are held by Maton and requests are routed through its servers. Consider using the vendor's official connector instead. Teloa cannot yet inject secrets into skills safely, so this skill can't be added yet."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-consensus": {
+      "evidence": "2026-09-27 无凭据 initialize 回 401（WWW-Authenticate 带 scope=\"search\"）；受保护资源元数据 resource=https://mcp.consensus.app（站点根，不含 /mcp）、授权服务器 https://consensus.app、scopes_supported [search, profile]；授权服务器元数据含 registration_endpoint（DCR）、code_challenge_methods_supported [S256]、token_endpoint_auth_methods_supported 含 none、scopes_supported [search]。工具取自官方文档「Search Tool」节（需授权，未能 tools/list 实录）：单工具 search，只读。免费层额度页对非浏览器请求返回人机挑战，未读取，条件文案按主控裁定不写数字",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.consensus.app/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "search"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "search": "read"
+      }
+    }
+  }
+}

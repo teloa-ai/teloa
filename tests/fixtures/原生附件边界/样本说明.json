@@ -1,0 +1,57 @@
+[
+  {
+    "name": "动画验收.gif",
+    "size": [
+      128,
+      96
+    ],
+    "format": "GIF",
+    "frames": 2,
+    "bytes": 457,
+    "sha256": "d3356d59e7118133420d6134f730f3003028c85bf8f6a2c85f96a36dc59ecdfb"
+  },
+  {
+    "name": "格式验收.jpg",
+    "size": [
+      128,
+      96
+    ],
+    "format": "JPEG",
+    "frames": 1,
+    "bytes": 821,
+    "sha256": "599ca540b7b93f4d726b30690f393f3fcac4d107305f8f6128eff00197a4cd64"
+  },
+  {
+    "name": "超出边长.png",
+    "size": [
+      8193,
+      1
+    ],
+    "format": "PNG",
+    "frames": 1,
+    "bytes": 104,
+    "sha256": "f4d622289b3a227cb2158c7469abbbafa68a90adf1fc3a7a2fc859dd95588f56"
+  },
+  {
+    "name": "格式验收.webp",
+    "size": [
+      128,
+      96
+    ],
+    "format": "WEBP",
+    "frames": 1,
+    "bytes": 104,
+    "sha256": "0d31ee7c5d42753c031da2541bc94e740398ddf15618c6d67fe6d85581344851"
+  },
+  {
+    "name": "超出像素.png",
+    "size": [
+      8192,
+      8192
+    ],
+    "format": "PNG",
+    "frames": 1,
+    "bytes": 195487,
+    "sha256": "28ece05e8c1d6a5ff12841119593e74ab521a765bc95b8703b46e7fbd00b8151"
+  }
+]

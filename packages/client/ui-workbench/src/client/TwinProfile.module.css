@@ -1,0 +1,39 @@
+/* 分身个人主页（TwinProfile.tsx）照原型 原型.jsx:459-462 与 原型.module.css 的
+   .conversationHeader / .tabs / .message / .memoryCard / .callout 改写，只用既有 --teloa-* 令牌，不新增颜色。
+   圆角一律走 --teloa-design-r1/r2（prototype-theme.ts 生成，theme-presenter 运行时挂到 body），与原型 --maxent-preview-r* 对应。
+   页签下划线与分隔线都用中性 --teloa-border/--teloa-text，不用强调色画任何竖条或色线。
+   页签按钮要盖掉 TaskPage.module.css 的 `.page button` / `.alignedPage button`（0,1,1 比单类名高），
+   跨 CSS Module 又拿不到 TeamPage.module.css 的 `.teamPage` 前缀，所以冲突属性用 !important（与 StaffRoster.module.css 同一套做法）。 */
+.twin{display:flex;flex-direction:column;min-width:0}
+.head{border-bottom:1px solid var(--teloa-border)}
+.identity{display:flex;align-items:center;gap:12px;min-width:0}
+.identityText{min-width:0}
+.identityText h1{margin:0 0 3px;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:normal;overflow-wrap:anywhere}
+.twin .identityText>p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7;overflow-wrap:anywhere}
+.stage{display:inline-flex;align-items:center;margin-left:12px;padding:3px 7px;border-radius:var(--teloa-design-r1);background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);vertical-align:middle}
+.tabs{display:flex;gap:19px;margin:14px 0 -1px;overflow-x:auto}
+.tabs button{min-height:0!important;padding:10px 0!important;border:0!important;border-bottom:2px solid transparent!important;border-radius:0!important;background:transparent!important;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);white-space:nowrap;cursor:pointer}
+.tabs button:hover{background:transparent!important;color:var(--teloa-text)}
+.tabs button[aria-selected=true]{border-bottom-color:var(--teloa-text)!important;color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.panel{padding-top:22px;min-width:0}
+.panel[hidden]{display:none}
+.twin .panel h2{margin:0 0 6px;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.message{display:flex;align-items:flex-start;gap:12px;margin:0}
+.messageAvatar{flex:none}
+.messageBody{flex:1;min-width:0}
+.messageBody>header{display:flex;align-items:center;gap:8px;min-height:27px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.messageBody>header strong{color:var(--teloa-text);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.twin .messageBody>p{margin:7px 0 12px;font-size:var(--teloa-font-body);line-height:1.9}
+.draftCard{margin:5px 0 0;padding:19px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface)}
+.draftBadge{display:inline-flex;align-items:center;padding:3px 7px;border-radius:var(--teloa-design-r1);background:var(--teloa-warn-bg);color:var(--teloa-warn);font-size:var(--teloa-font-caption)}
+.twin .draftCard h3{margin:12px 0 7px;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.twin .draftCard>p{margin:0;font-size:var(--teloa-font-control);line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.draftEditor{margin-top:12px}
+.draftEditor>summary{color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer;list-style-position:inside}
+.draftEditor[open]>summary{color:var(--teloa-text)}
+.twin .note{margin:14px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+.chatToggle{margin-top:12px}
+.chatPanel{margin-top:12px;min-width:0}
+.twin .callout{display:flex;align-items:flex-start;gap:10px;margin:18px 0 0;padding:14px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.8}
+.callout>svg{flex:0 0 18px;margin-top:3px;color:var(--teloa-muted)}
+@media(max-width:760px){.tabs{gap:14px}.tabs button{min-height:44px!important}.identityText h1{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.draftCard{padding:15px}}

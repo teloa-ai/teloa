@@ -1,0 +1,9 @@
+.conversation{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:var(--teloa-background)}
+.body{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
+.home{height:100%;overflow:auto;background:var(--teloa-background)}
+.homeConversation{height:410px;min-height:350px;max-width:980px;margin:0 auto;display:flex;flex-direction:column}
+.notice{max-width:880px;padding:16px;margin:0 auto;font-size:var(--teloa-font-control);color:var(--teloa-muted)}
+.notice button{font:inherit;cursor:pointer;margin-left:8px}
+@media(max-width:740px){.homeConversation{height:410px}}
+
+.homeConversation[hidden],.body[hidden]{display:none}

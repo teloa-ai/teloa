@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "delivery-checklist-task",
+  "title": "多规格交付检查",
+  "version": "1.0.0",
+  "domain": "video",
+  "description": "根据交付规格生成多规格成片检查清单。无媒体执行环境时，清单作为交付文档；实际播放核对须有渲染输出后由负责人完成。",
+  "requirements": [
+    "交付规格（规格名称、分辨率/比例、帧率、编解码器、响度目标、文件格式）",
+    "成片文件清单（规格名与文件名映射，可选）",
+    "渲染输出 mediainfo/ffprobe 信息（可选）"
+  ],
+  "output": "每规格一张检查表（Markdown 格式），含检查项、预期值与待填实测结果列；汇总说明",
+  "skills": [
+    {
+      "id": "delivery-checklist",
+      "title": "多规格交付与成片检查清单",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "多规格交付检查",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "多规格交付检查",
+        "en": "Multi-format delivery check task"
+      }
+    },
+    "description": {
+      "original": "根据交付规格生成多规格成片检查清单。无媒体执行环境时，清单作为交付文档；实际播放核对须有渲染输出后由负责人完成。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "根据交付规格生成多规格成片检查清单。无媒体执行环境时，清单作为交付文档；实际播放核对须有渲染输出后由负责人完成。",
+        "en": "Generate a multi-format final cut checklist from delivery specifications. Without a media execution environment, the checklist serves as the deliverable; actual playback verification must be completed by the owner after rendering."
+      }
+    },
+    "requirements": [
+      {
+        "original": "交付规格（规格名称、分辨率/比例、帧率、编解码器、响度目标、文件格式）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "交付规格（规格名称、分辨率/比例、帧率、编解码器、响度目标、文件格式）",
+          "en": "Delivery spec (spec name, resolution/aspect ratio, frame rate, codec, loudness target, file format)"
+        }
+      },
+      {
+        "original": "成片文件清单（规格名与文件名映射，可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "成片文件清单（规格名与文件名映射，可选）",
+          "en": "Final cut file list (spec-name to filename mapping, optional)"
+        }
+      },
+      {
+        "original": "渲染输出 mediainfo/ffprobe 信息（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "渲染输出 mediainfo/ffprobe 信息（可选）",
+          "en": "Rendered output mediainfo/ffprobe data (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "每规格一张检查表（Markdown 格式），含检查项、预期值与待填实测结果列；汇总说明",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "每规格一张检查表（Markdown 格式），含检查项、预期值与待填实测结果列；汇总说明",
+        "en": "One checklist per spec (Markdown format) with check items, expected values, and blank measured-result column; plus a summary note"
+      }
+    }
+  }
+}

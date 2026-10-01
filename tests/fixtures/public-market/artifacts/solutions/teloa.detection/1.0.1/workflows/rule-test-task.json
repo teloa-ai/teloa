@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "rule-test-task",
+  "title": "规则测试与调优任务",
+  "version": "1.0.0",
+  "domain": "detection",
+  "description": "基于正负样本表对规则草案进行手动评估，记录命中结果与调优过程，并生成变更与回滚说明。样本由用户提供，本任务不在生产 SIEM 中执行查询。",
+  "requirements": [
+    "规则草案（Sigma 源规则或目标平台查询草案）",
+    "正样本（至少 1 条）与负样本（至少 1 条）"
+  ],
+  "output": "样本回放报告（命中率、调优记录）与变更说明（版本、影响范围、回滚步骤）",
+  "skills": [
+    {
+      "id": "sample-replay-tuning",
+      "title": "样本回放与误报调优",
+      "version": "1.0.0"
+    },
+    {
+      "id": "change-rollback-notes",
+      "title": "变更与回滚说明",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "规则测试与调优任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "规则测试与调优任务",
+        "en": "Rule testing and tuning task"
+      }
+    },
+    "description": {
+      "original": "基于正负样本表对规则草案进行手动评估，记录命中结果与调优过程，并生成变更与回滚说明。样本由用户提供，本任务不在生产 SIEM 中执行查询。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于正负样本表对规则草案进行手动评估，记录命中结果与调优过程，并生成变更与回滚说明。样本由用户提供，本任务不在生产 SIEM 中执行查询。",
+        "en": "Manually evaluate rule drafts against a positive/negative sample table, record hit results and tuning decisions, and produce change and rollback notes. Samples are provided by the user; this task does not execute queries in a production SIEM."
+      }
+    },
+    "requirements": [
+      {
+        "original": "规则草案（Sigma 源规则或目标平台查询草案）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "规则草案（Sigma 源规则或目标平台查询草案）",
+          "en": "Rule draft (Sigma source rule or target platform query draft)"
+        }
+      },
+      {
+        "original": "正样本（至少 1 条）与负样本（至少 1 条）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "正样本（至少 1 条）与负样本（至少 1 条）",
+          "en": "At least one positive sample and one negative sample"
+        }
+      }
+    ],
+    "output": {
+      "original": "样本回放报告（命中率、调优记录）与变更说明（版本、影响范围、回滚步骤）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "样本回放报告（命中率、调优记录）与变更说明（版本、影响范围、回滚步骤）",
+        "en": "Sample replay report (hit rates, tuning log) and change notes (version, impact scope, rollback steps)"
+      }
+    }
+  }
+}

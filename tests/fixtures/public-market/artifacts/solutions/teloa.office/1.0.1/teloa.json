@@ -1,0 +1,318 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "office-collaboration",
+  "title": "通用办公协作",
+  "version": "1.0.1",
+  "domain": "general",
+  "scope": "office",
+  "description": "面向日常办公文档整理、会议纪要提取、周报与决策简报起草、表格核查的行业方案。岗位负责形成可追溯的草案，发送、发布与对外提交均需本人授权。",
+  "resources": [
+    {
+      "id": "office-collaborator",
+      "kind": "role",
+      "title": "办公协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/office-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "办公协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "办公协作员",
+            "en": "Office collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "office-methods",
+      "kind": "knowledge",
+      "title": "办公协作方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/office-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "办公协作方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "办公协作方法与来源索引",
+            "en": "Office collaboration methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "document-research",
+      "kind": "skill",
+      "title": "资料研究与可追溯简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/document-research/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "资料研究与可追溯简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "资料研究与可追溯简报",
+            "en": "Document research and traceable brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "meeting-minutes",
+      "kind": "skill",
+      "title": "会议纪要与待办提取",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/meeting-minutes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "会议纪要与待办提取",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "会议纪要与待办提取",
+            "en": "Meeting minutes and action item extraction"
+          }
+        }
+      }
+    },
+    {
+      "id": "weekly-report",
+      "kind": "skill",
+      "title": "周报与决策简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/weekly-report/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "周报与决策简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "周报与决策简报",
+            "en": "Weekly report and decision brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "table-verification",
+      "kind": "skill",
+      "title": "表格核对（对照、差异、口径问题清单）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/table-verification/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "表格核对（对照、差异、口径问题清单）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "表格核对（对照、差异、口径问题清单）",
+            "en": "Table verification (comparison, discrepancies, definition issues)"
+          }
+        }
+      }
+    },
+    {
+      "id": "document-research-task",
+      "kind": "work-template",
+      "title": "资料研究与简报任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/document-research-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "资料研究与简报任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "资料研究与简报任务",
+            "en": "Document research and brief task"
+          }
+        }
+      }
+    },
+    {
+      "id": "meeting-minutes-task",
+      "kind": "work-template",
+      "title": "整理会议纪要与待办",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/meeting-minutes-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "整理会议纪要与待办",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "整理会议纪要与待办",
+            "en": "Meeting minutes and action item task"
+          }
+        }
+      }
+    },
+    {
+      "id": "weekly-report-task",
+      "kind": "work-template",
+      "title": "生成周报或决策简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/weekly-report-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "生成周报或决策简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "生成周报或决策简报",
+            "en": "Generate weekly report or decision brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "table-verification-task",
+      "kind": "work-template",
+      "title": "表格核对与差异清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/table-verification-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "表格核对与差异清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "表格核对与差异清单",
+            "en": "Table verification and discrepancy list"
+          }
+        }
+      }
+    },
+    {
+      "id": "office-weekly-review",
+      "kind": "plan",
+      "title": "每周办公整理计划",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "plans/office-weekly-review.json"
+      },
+      "localized": {
+        "title": {
+          "original": "每周办公整理计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "每周办公整理计划",
+            "en": "Weekly office review plan"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "office-collaborator",
+      "to": "office-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "office-collaborator",
+      "to": "document-research"
+    },
+    {
+      "kind": "role-skill",
+      "from": "office-collaborator",
+      "to": "meeting-minutes"
+    },
+    {
+      "kind": "role-skill",
+      "from": "office-collaborator",
+      "to": "weekly-report"
+    },
+    {
+      "kind": "role-skill",
+      "from": "office-collaborator",
+      "to": "table-verification"
+    },
+    {
+      "kind": "role-work",
+      "from": "office-collaborator",
+      "to": "document-research-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "office-collaborator",
+      "to": "meeting-minutes-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "office-collaborator",
+      "to": "weekly-report-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "office-collaborator",
+      "to": "table-verification-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "office-collaborator",
+      "to": "office-weekly-review"
+    }
+  ],
+  "entrypoints": [
+    "meeting-minutes-task",
+    "table-verification-task",
+    "document-research-task",
+    "weekly-report-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "通用办公协作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "通用办公协作",
+        "en": "Office collaboration"
+      }
+    },
+    "description": {
+      "original": "面向日常办公文档整理、会议纪要提取、周报与决策简报起草、表格核查的行业方案。岗位负责形成可追溯的草案，发送、发布与对外提交均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向日常办公文档整理、会议纪要提取、周报与决策简报起草、表格核查的行业方案。岗位负责形成可追溯的草案，发送、发布与对外提交均需本人授权。",
+        "en": "A solution for daily office document organization, meeting minutes extraction, weekly report drafting, and table verification. The role produces traceable drafts; sending, publishing, and external submission all require your authorization."
+      }
+    }
+  }
+}

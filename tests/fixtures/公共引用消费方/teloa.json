@@ -1,0 +1,24 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "reference-consumer",
+  "title": "公共知识复用验收",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "复用固定知识内容",
+  "resources": [
+    {
+      "id": "shared-guide",
+      "kind": "knowledge",
+      "title": "引用研究手册",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "public",
+        "id": "research-methods",
+        "version": "1.0.0"
+      }
+    }
+  ],
+  "relations": [],
+  "entrypoints": []
+}

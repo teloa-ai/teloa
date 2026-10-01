@@ -1,0 +1,7 @@
+.label{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:var(--teloa-font-caption);font-style:normal;font-weight:var(--teloa-weight-regular);line-height:20px;color:var(--teloa-muted)}
+.label>svg{flex:none;color:var(--status-ink,var(--teloa-muted))}
+.label>span{overflow-wrap:anywhere}
+.label[data-tone=good]{--status-ink:var(--teloa-good)}
+.label[data-tone=info]{--status-ink:var(--teloa-info)}
+.label[data-tone=warn]{--status-ink:var(--teloa-warn)}
+.label[data-mark=enabled]>svg{width:8px;height:8px;margin:0 2px;fill:currentColor}

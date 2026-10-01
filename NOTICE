@@ -1,0 +1,34 @@
+Teloa
+Copyright 2026 Teloa contributors
+
+This product is licensed under the Apache License, Version 2.0 (see
+the LICENSE file in this repository for the full license text).
+
+This distribution includes third-party software, each of which
+remains under its own copyright and license terms. THIRD_PARTY_NOTICES.md
+at the root of this repository records the current frozen workspace
+dependency inventory, reported license identifiers, and known gaps in
+standalone license-file placement. The npm installer's npm-shrinkwrap.json
+records its exact dependency graph, including platform-specific optional
+packages that may differ from the workspace install.
+The separate third-party-licenses/ directory preserves fixed-source license
+and notice files for ten current darwin-arm64 production packages without a
+top-level license file, with source revisions and SHA-256 hashes. Its README
+states the scope and remaining limits of those materials.
+
+In particular, this product is built to run on top of DeepSeek
+Harness (DSH), distributed as the `@deepseek-ai/*` npm packages:
+
+    Copyright (c) 2026 DeepSeek
+    https://github.com/deepseek-ai/deepseek-harness
+    Installed package manifests report MIT, BSD-3-Clause and MPL-2.0
+    identifiers, depending on the package and platform.
+
+See THIRD_PARTY_NOTICES.md for the installed workspace DSH package list,
+the reported identifiers and license-file placement notes. Exact terms
+come from each package's own license files where present.
+
+"Teloa" and the Teloa logo are trademarks of the Teloa contributors.
+See TRADEMARK.md for the trademark and branding policy; the
+trademark grant is separate from, and not conveyed by, the Apache
+License, Version 2.0 grant above (per Section 6 of that license).

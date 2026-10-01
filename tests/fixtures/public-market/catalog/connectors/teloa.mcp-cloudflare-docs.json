@@ -1,0 +1,86 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-cloudflare-docs",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs",
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "cloudflare_docs",
+    "title": {
+      "zh-CN": "Cloudflare 开发者文档（官方远程）",
+      "en": "Cloudflare Developer Docs (Official Remote)"
+    },
+    "summary": {
+      "zh-CN": "Cloudflare 官方托管的文档服务，可检索 Workers、Pages、R2、D1、KV、Durable Objects 等产品的开发者文档，并读取从 Pages 迁移到 Workers 的官方指南。无需账户，无需 API 密钥，数据经 docs.mcp.cloudflare.com 传输。",
+      "en": "Cloudflare's official hosted documentation service: search developer docs for Workers, Pages, R2, D1, KV, Durable Objects and more, and read the official guide for migrating from Pages to Workers. No account or API key required. Data passes through docs.mcp.cloudflare.com."
+    },
+    "auth": {
+      "kind": "none"
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://docs.mcp.cloudflare.com/mcp"
+    },
+    "tools": [
+      {
+        "name": "search_cloudflare_documentation",
+        "description": {
+          "zh-CN": "检索 Cloudflare 开发者文档",
+          "en": "Search Cloudflare developer documentation"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "migrate_pages_to_workers_guide",
+        "description": {
+          "zh-CN": "读取从 Pages 迁移到 Workers 的官方指南",
+          "en": "Read the official guide for migrating from Pages to Workers"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Cloudflare-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "数据经由 docs.mcp.cloudflare.com 传输；中国大陆访问的可用性未验证",
+        "en": "Data passes through docs.mcp.cloudflare.com; availability from mainland China is unverified"
+      },
+      {
+        "zh-CN": "需要读写账户资源时改用 Cloudflare API 连接器（teloa.mcp-cloudflare，OAuth 授权）",
+        "en": "To read or change account resources, use the Cloudflare API connector (teloa.mcp-cloudflare, OAuth)"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-27",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "format": "teloa.derivative-review/v1",
+  "entryId": "anthropic.modernize-assess",
+  "version": "1.0.0",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa",
+  "changeChecks": [
+    {
+      "changeId": "MAS-M01",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "按锁定提交取回原版 plugins/code-modernization/commands/modernize-assess.md（git blob c787f3b3…，8886 字节，sha256 4274f473…）全文核对，组合模式与单系统七步由 SKILL.md 承接（逐处见其余各条）。资源文件不含该路径，2026-09-28 校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MAS-M02",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "全文核对原版 workflows/portfolio-assess.js（blob 029748b3…，6516 字节，sha256 a4426322…）：依赖 Workflow 运行时的 pipeline()、agent() 与 agentType「code-modernization:legacy-analyst」，脚本自身不访问文件系统；原命令 L37-38 写明没有 Workflow 工具时由会话逐个统计。资源文件不含该脚本，校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MAS-M03",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "核对原版 scripts/build_report.py（blob b690eb3f…，sha256 769bbacc…）文档串与全部联网/进程调用（只有 urllib.parse.quote，无网络与子进程）：从 analysis/ 生成 REPORT.html，原命令 L155-156 标为可选。资源文件不含该脚本，校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "MAS-M04",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 --pr 通过 skill.frontmatter-keys 与 skill.name-mismatch（name 为 modernize-assess）；argument-hint、arguments 不在 SKILL.md 中。"
+    },
+    {
+      "changeId": "MAS-M05",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过：SKILL.md 前 4 KiB 内含修改声明与 MODIFICATIONS.md。"
+    },
+    {
+      "changeId": "MAS-M06",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行（reviews/derivatives/anthropic.modernize-assess/tests/reference-run/，作者按定稿 SKILL.md 逐步执行）：按用户给出的路径 billing/ 与系统名 billing 运行，报告写在工作区 analysis/billing/（ASSESSMENT.md、ARCHITECTURE.mmd），没有用到 legacy/ 链接或其他插件命令。"
+    },
+    {
+      "changeId": "MAS-M07",
+      "method": "test",
+      "result": "pass",
+      "evidence": "组合模式参考执行（reviews/derivatives/anthropic.modernize-assess/tests/reference-run/portfolio/）：两个子目录 billing、orders 都是普通名称；两套系统用同一方法统计（find + wc -l，同一组决策关键字求和并找出最复杂文件，measure.output.txt），规模指数都按 2.94 × KSLOC^1.10 计算（0.24 与 0.04），portfolio.html 列名为「Complexity index」，没有工期或成本。"
+    },
+    {
+      "changeId": "MAS-M08",
+      "method": "review",
+      "result": "pass",
+      "evidence": "核对新增要求（无脚本、无外部资源、取自代码的值转义）与原版 build_report.py 的做法（转义、CSP、不读符号链接）一致。参考执行生成的 portfolio.html 不含 script、src、href（grep 为 0），单元格值经 HTML 转义。该要求约束的是模型手写的 HTML，参考执行由作者完成，所以只记为审阅。"
+    },
+    {
+      "changeId": "MAS-M09",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行（reviews/derivatives/anthropic.modernize-assess/tests/reference-run/，作者按定稿 SKILL.md 逐步执行）：未提供委派工具，按 agents/legacy-analyst.md 与 agents/security-auditor.md 依次完成结构图、技术债与安全三个专项后再综合；只读分析，只写 analysis/ 下的报告；scc 与 cloc 未安装，按回退方法统计并在报告里写明，没有安装任何工具；没有运行 npm audit 或 pip-audit（示例没有依赖清单）。"
+    },
+    {
+      "changeId": "MAS-M10",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行（reviews/derivatives/anthropic.modernize-assess/tests/reference-run/，作者按定稿 SKILL.md 逐步执行）：ASSESSMENT.md 的推荐模式写为 Refactor 并说明对应的工作类型（原地重构，必要时原地升级），没有引用未收录的 uplift、transform、map 等命令或 build_report.py；结束时报告了产物位置、3 条安全发现与 1 个凭据、所用统计工具。"
+    },
+    {
+      "changeId": "MAS-M11",
+      "method": "test",
+      "result": "pass",
+      "evidence": "参考执行（reviews/derivatives/anthropic.modernize-assess/tests/reference-run/，作者按定稿 SKILL.md 逐步执行）：在 Git 仓库里写入 analysis/.gitignore 后 `git check-ignore -q analysis/billing/SECRETS.local.md` 返回 0，写出只含掩码（post****）的 SECRETS.local.md，git status 不列出它；无 Git 的副本里同一检查返回 128，按正文不写该文件、清单只在回复中给出（nogit-check.output.txt）。analysis/ 下所有文件都不含示例凭据原值（grep 为 0）。"
+    },
+    {
+      "changeId": "MAS-M12",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过；与原版逐行比对，frontmatter 之后的正文完全相同。"
+    },
+    {
+      "changeId": "MAS-M13",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过；与原版逐行比对，正文只有依赖审计两处措辞不同（L29-30、L40）。参考执行的示例没有依赖清单，没有运行在线审计。"
+    }
+  ]
+}

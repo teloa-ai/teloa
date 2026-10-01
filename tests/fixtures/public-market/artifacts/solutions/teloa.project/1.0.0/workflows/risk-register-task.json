@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "risk-register-task",
+  "title": "更新项目风险台账",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "从会议纪要、状态报告或成员提交的风险材料中提取新风险，与既有台账去重合并，逐条评分并给出应对建议，输出完整台账草案、本次变更清单与摘要。风险接受、关闭与等级下调只在负责人确认后标注。",
+  "requirements": [
+    "新风险材料：会议纪要、状态报告或风险说明（已上传）",
+    "现有风险台账（更新场景，已上传；新建可不提供）",
+    "项目的风险容忍说明或评分规则（可选）"
+  ],
+  "output": "风险台账草案：完整台账表（含描述、触发条件、影响对象、评分、应对、状态、来源）、本次变更清单（新增/更新/建议关闭）、风险摘要；首行标注草案与确认要求",
+  "skills": [
+    {
+      "id": "project-risk-register",
+      "title": "项目风险台账",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "更新项目风险台账",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "更新项目风险台账",
+        "en": "Update project risk register"
+      }
+    },
+    "description": {
+      "original": "从会议纪要、状态报告或成员提交的风险材料中提取新风险，与既有台账去重合并，逐条评分并给出应对建议，输出完整台账草案、本次变更清单与摘要。风险接受、关闭与等级下调只在负责人确认后标注。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从会议纪要、状态报告或成员提交的风险材料中提取新风险，与既有台账去重合并，逐条评分并给出应对建议，输出完整台账草案、本次变更清单与摘要。风险接受、关闭与等级下调只在负责人确认后标注。",
+        "en": "Extract new risks from meeting minutes, status reports, or submitted risk notes, merge them with the existing register, score each item and suggest responses, and output the full register draft, a change list, and a summary. Acceptance, closure, and downgrades are marked only after the owner confirms."
+      }
+    },
+    "requirements": [
+      {
+        "original": "新风险材料：会议纪要、状态报告或风险说明（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "新风险材料：会议纪要、状态报告或风险说明（已上传）",
+          "en": "New risk materials: meeting minutes, status reports, or risk notes (already uploaded)"
+        }
+      },
+      {
+        "original": "现有风险台账（更新场景，已上传；新建可不提供）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "现有风险台账（更新场景，已上传；新建可不提供）",
+          "en": "Existing risk register (for updates, already uploaded; not needed when creating a new one)"
+        }
+      },
+      {
+        "original": "项目的风险容忍说明或评分规则（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "项目的风险容忍说明或评分规则（可选）",
+          "en": "Project risk tolerance statement or scoring rules (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "风险台账草案：完整台账表（含描述、触发条件、影响对象、评分、应对、状态、来源）、本次变更清单（新增/更新/建议关闭）、风险摘要；首行标注草案与确认要求",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "风险台账草案：完整台账表（含描述、触发条件、影响对象、评分、应对、状态、来源）、本次变更清单（新增/更新/建议关闭）、风险摘要；首行标注草案与确认要求",
+        "en": "Risk register draft: full table (description, trigger, affected items, scores, response, status, source), change list (added / updated / proposed closure), and summary; first line marks it as a draft pending confirmation"
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "sales-verification-task",
+  "title": "核对销量与销售额",
+  "version": "1.0.0",
+  "domain": "ecommerce",
+  "description": "对平台后台导出、运营日报与退款记录等多份销量表格逐项核对，输出各表口径、合计差异、单位冲突、跨表口径问题与缺失值清单，每个差额附算式可复算。不判定哪份表格正确，不修改原始数据。",
+  "requirements": [
+    "平台后台订单或销量导出（已上传）",
+    "运营日报、退款记录或活动数据表（已上传）",
+    "核对范围说明；口径说明与容忍值（可选）"
+  ],
+  "output": "销量核对清单：各表口径表；合计差异、单位冲突、口径问题、缺失值四张清单（每个差额附算式）；无法核对的事项；核对结论；待确认动作",
+  "skills": [
+    {
+      "id": "ecommerce-sales-verification",
+      "title": "销量与销售额核对",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "核对销量与销售额",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "核对销量与销售额",
+        "en": "Verify sales volume and revenue"
+      }
+    },
+    "description": {
+      "original": "对平台后台导出、运营日报与退款记录等多份销量表格逐项核对，输出各表口径、合计差异、单位冲突、跨表口径问题与缺失值清单，每个差额附算式可复算。不判定哪份表格正确，不修改原始数据。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对平台后台导出、运营日报与退款记录等多份销量表格逐项核对，输出各表口径、合计差异、单位冲突、跨表口径问题与缺失值清单，每个差额附算式可复算。不判定哪份表格正确，不修改原始数据。",
+        "en": "Check platform back-office exports, operations daily reports and refund records against each other, and output each table's definitions plus lists of total discrepancies, unit conflicts, cross-table definition issues and missing values, with a formula for every difference. Does not rule which table is right and does not modify source data."
+      }
+    },
+    "requirements": [
+      {
+        "original": "平台后台订单或销量导出（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "平台后台订单或销量导出（已上传）",
+          "en": "Platform back-office order or sales export (already uploaded)"
+        }
+      },
+      {
+        "original": "运营日报、退款记录或活动数据表（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "运营日报、退款记录或活动数据表（已上传）",
+          "en": "Operations daily report, refund records or campaign data table (already uploaded)"
+        }
+      },
+      {
+        "original": "核对范围说明；口径说明与容忍值（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "核对范围说明；口径说明与容忍值（可选）",
+          "en": "Scope of the check; metric definitions and tolerance (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "销量核对清单：各表口径表；合计差异、单位冲突、口径问题、缺失值四张清单（每个差额附算式）；无法核对的事项；核对结论；待确认动作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "销量核对清单：各表口径表；合计差异、单位冲突、口径问题、缺失值四张清单（每个差额附算式）；无法核对的事项；核对结论；待确认动作",
+        "en": "Sales verification list: per-table definitions; four lists for total discrepancies, unit conflicts, definition issues and missing values (formula for every difference); items that could not be checked; conclusion; actions awaiting confirmation"
+      }
+    }
+  }
+}

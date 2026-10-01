@@ -1,0 +1,203 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.seo",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.6",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "seo",
+    "title": {
+      "zh-CN": "SEO 优化工具",
+      "en": "SEO (Site Audit + Content Writer + Competitor Analysis)"
+    },
+    "summary": {
+      "zh-CN": "网站 SEO 审计、关键词研究和竞争对手分析。用于搜索引擎优化和内容改进。",
+      "en": "Improves Google rankings with search engine optimization (SEO): audits, keyword research, content optimization, technical fixes, schema, and links. Not for paid search ads (PPC/SEM) or app store optimization. Use when organic traffic or rankings drop, pages are not indexed or get deindexed, crawl er"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "seo",
+    "version": "1.0.6",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "16dd9273646bcbd97e3eb054256f2385ce88127451230513470890525c62f8ad",
+        "size": 18158
+      },
+      {
+        "path": "_meta.json",
+        "sha256": "45b9be1e3a40d25b744991a2271486d9f2c6a10eac4a91bb7fcde8ba2b28115b",
+        "size": 656
+      },
+      {
+        "path": "ai-search.md",
+        "sha256": "afa042ae4f45b9acaf9389a90e305e20bb288cbc4ecc3f23c0ce86ac98cf6253",
+        "size": 6580
+      },
+      {
+        "path": "architecture.md",
+        "sha256": "dbb4d72dd01264e0506ebb7a61eb761d0b471f41f5b3174066f69734a820dfb8",
+        "size": 6581
+      },
+      {
+        "path": "audits.md",
+        "sha256": "4d70a90b9873ec61ce2d9b5d276c8477b3cc5808cc8481ca09b9da1c7e8d34ec",
+        "size": 5550
+      },
+      {
+        "path": "cms-platforms.md",
+        "sha256": "545e0fe78ebbecd33e9c027c71ae19e8e3aa81e14869b1e842ad597ba44b2f54",
+        "size": 5767
+      },
+      {
+        "path": "commercial-pages.md",
+        "sha256": "4531f04f13e5e82a9f09e8521639cf142affdaca779f26844bacd6d4951ea2cb",
+        "size": 5815
+      },
+      {
+        "path": "content.md",
+        "sha256": "b238970108fcd6a16dde448b49e9a92f1fbb801813b704d609a7c93ec5274005",
+        "size": 8749
+      },
+      {
+        "path": "ecommerce.md",
+        "sha256": "902b6ec67d9ea275326fdba58eb57a7f54b96d2989a30ce45b80c57fabd4c625",
+        "size": 6217
+      },
+      {
+        "path": "international.md",
+        "sha256": "7ad4d34e8293fc439228ecdc58c2da33e0e83be7a31d195d9e6af5fd9a4b1c2d",
+        "size": 6142
+      },
+      {
+        "path": "javascript.md",
+        "sha256": "f5a5a125cd87b985cb26017e3ec9870b7a19094535e4d976815b566f727dbf89",
+        "size": 5873
+      },
+      {
+        "path": "keywords.md",
+        "sha256": "e6269263f91c3c117f965e90beaf573cae5c7a260414eddeb7544f80fea5ed0b",
+        "size": 7800
+      },
+      {
+        "path": "links.md",
+        "sha256": "ed2948d6ff3b5af6f452ff903dd3f8b8fd9c0afe396499997891a7faebf61bdb",
+        "size": 7513
+      },
+      {
+        "path": "local.md",
+        "sha256": "99b8663ced3917d6b923523cebd0411ceee9a3e1fc3d6b4a7e2164defc1cedf8",
+        "size": 8044
+      },
+      {
+        "path": "memory-template.md",
+        "sha256": "f61698a8baa3cf30e5967070fdcb832b489d36a5188abb9dd2ed20776a1834d1",
+        "size": 3223
+      },
+      {
+        "path": "migrations.md",
+        "sha256": "e3c238ec7486e069fef226e0b8df62e3f275dcaa49af9828cc650fcd2274b5ef",
+        "size": 6382
+      },
+      {
+        "path": "news-discover.md",
+        "sha256": "f9bd77faab42ef6c16764b4b080eaa2c7bb364949779c03ca558d91f5347f53e",
+        "size": 5980
+      },
+      {
+        "path": "on-page.md",
+        "sha256": "bd49b8f83dc8c0870b6a2e99eb27f03c32aa967a5df13ac3445f99a68ede3c6f",
+        "size": 5986
+      },
+      {
+        "path": "other-engines.md",
+        "sha256": "84d10eb24f48ad007b019347f481c90ffc22ed05435625341388ff761b3c6500",
+        "size": 3843
+      },
+      {
+        "path": "performance.md",
+        "sha256": "598c53466587ecfae22654d02211a4cd0bd7684f9f14eaea4f6c85f5ea48d1d1",
+        "size": 5677
+      },
+      {
+        "path": "programmatic.md",
+        "sha256": "a6da7b886202284715fb46121f151b7d84c4c1b316db09dfd7ef133192daef81",
+        "size": 5414
+      },
+      {
+        "path": "recovery.md",
+        "sha256": "7e1240d9a1f5020ea5bbd51f5dbc39a80f1975c16935136e17cdb7ac69a87009",
+        "size": 7151
+      },
+      {
+        "path": "schema.md",
+        "sha256": "1b4ec3e7a0e160cfbeabd1eedf2027835834cebc0913de959364614ee0adb69a",
+        "size": 6999
+      },
+      {
+        "path": "search-console.md",
+        "sha256": "b5145b9cf45c8542b06159f29906d7b7275f1b626b16e3206ed7c4358e0eb1de",
+        "size": 6965
+      },
+      {
+        "path": "serp-features.md",
+        "sha256": "c9a348f225c66e00eab67133758b2ad7acbd69ebc0900be87a83a1ebdb583bd9",
+        "size": 7154
+      },
+      {
+        "path": "setup.md",
+        "sha256": "1cabb8370a7ddba165e9e72a75767169ae51cf47f6db958fcc29c6f72cf02807",
+        "size": 2651
+      },
+      {
+        "path": "technical.md",
+        "sha256": "cd34f1e3bcb92ee4bf410ea1bc0d6ed0009dcdcb0e82e574ecbdae5dbaeb2367",
+        "size": 8909
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "cd9793ad7e58eab0c2e41de1a928be03224744dcbdf6debcb889eb171d697968",
+        "size": 2306
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 18395,
+    "installsLabel": "1.8 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

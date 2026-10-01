@@ -1,0 +1,321 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "grc-compliance",
+  "title": "GRC 合规",
+  "version": "1.0.0",
+  "domain": "compliance",
+  "scope": "grc",
+  "description": "面向 GRC 团队的控制映射、证据索引、差距分析与整改计划、风险台账、安全问卷代拟和例外到期复核方案。岗位以可追溯的草案和整理为主；代签、对外提交、接受风险等结论性操作须负责人审批确认。",
+  "localized": {
+    "title": {
+      "original": "GRC 合规",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "GRC 合规",
+        "en": "GRC compliance"
+      }
+    },
+    "description": {
+      "original": "面向 GRC 团队的控制映射、证据索引、差距分析与整改计划、风险台账、安全问卷代拟和例外到期复核方案。岗位以可追溯的草案和整理为主；代签、对外提交、接受风险等结论性操作须负责人审批确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向 GRC 团队的控制映射、证据索引、差距分析与整改计划、风险台账、安全问卷代拟和例外到期复核方案。岗位以可追溯的草案和整理为主；代签、对外提交、接受风险等结论性操作须负责人审批确认。",
+        "en": "A solution for GRC teams covering control mapping, evidence indexing, gap analysis and remediation planning, risk register, security questionnaire drafting, and exception expiry review. The analyst prepares traceable drafts; signing, external submission, and risk acceptance require authorized approval."
+      }
+    }
+  },
+  "resources": [
+    {
+      "id": "grc-collaborator",
+      "kind": "role",
+      "title": "GRC 协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/grc-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "GRC 协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "GRC 协作员",
+            "en": "GRC collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "grc-methods",
+      "kind": "knowledge",
+      "title": "GRC 方法与来源",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/grc-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "GRC 方法与来源",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "GRC 方法与来源",
+            "en": "GRC methods and references"
+          }
+        }
+      }
+    },
+    {
+      "id": "control-mapping",
+      "kind": "skill",
+      "title": "控制映射",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/control-mapping/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "控制映射",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "控制映射",
+            "en": "Control mapping"
+          }
+        }
+      }
+    },
+    {
+      "id": "evidence-index",
+      "kind": "skill",
+      "title": "证据索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/evidence-index/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "证据索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "证据索引",
+            "en": "Evidence index"
+          }
+        }
+      }
+    },
+    {
+      "id": "gap-analysis",
+      "kind": "skill",
+      "title": "差距分析与整改计划",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/gap-analysis/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "差距分析与整改计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "差距分析与整改计划",
+            "en": "Gap analysis and remediation plan"
+          }
+        }
+      }
+    },
+    {
+      "id": "risk-register",
+      "kind": "skill",
+      "title": "风险台账",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/risk-register/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "风险台账",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "风险台账",
+            "en": "Risk register"
+          }
+        }
+      }
+    },
+    {
+      "id": "questionnaire-draft",
+      "kind": "skill",
+      "title": "安全问卷代拟",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/questionnaire-draft/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "安全问卷代拟",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全问卷代拟",
+            "en": "Security questionnaire drafting"
+          }
+        }
+      }
+    },
+    {
+      "id": "exception-review",
+      "kind": "skill",
+      "title": "例外到期复核",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/exception-review/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "例外到期复核",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "例外到期复核",
+            "en": "Exception expiry review"
+          }
+        }
+      }
+    },
+    {
+      "id": "control-mapping-task",
+      "kind": "work-template",
+      "title": "控制映射任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/control-mapping-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "控制映射任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "控制映射任务",
+            "en": "Control mapping task"
+          }
+        }
+      }
+    },
+    {
+      "id": "gap-analysis-task",
+      "kind": "work-template",
+      "title": "差距分析任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/gap-analysis-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "差距分析任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "差距分析任务",
+            "en": "Gap analysis task"
+          }
+        }
+      }
+    },
+    {
+      "id": "risk-register-task",
+      "kind": "work-template",
+      "title": "风险台账任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/risk-register-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "风险台账任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "风险台账任务",
+            "en": "Risk register task"
+          }
+        }
+      }
+    },
+    {
+      "id": "questionnaire-draft-task",
+      "kind": "work-template",
+      "title": "安全问卷代拟任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/questionnaire-draft-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "安全问卷代拟任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全问卷代拟任务",
+            "en": "Security questionnaire drafting task"
+          }
+        }
+      }
+    },
+    {
+      "id": "exception-review-task",
+      "kind": "work-template",
+      "title": "例外到期复核任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/exception-review-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "例外到期复核任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "例外到期复核任务",
+            "en": "Exception expiry review task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    { "kind": "role-knowledge", "from": "grc-collaborator", "to": "grc-methods" },
+    { "kind": "role-skill", "from": "grc-collaborator", "to": "control-mapping" },
+    { "kind": "role-skill", "from": "grc-collaborator", "to": "evidence-index" },
+    { "kind": "role-skill", "from": "grc-collaborator", "to": "gap-analysis" },
+    { "kind": "role-skill", "from": "grc-collaborator", "to": "risk-register" },
+    { "kind": "role-skill", "from": "grc-collaborator", "to": "questionnaire-draft" },
+    { "kind": "role-skill", "from": "grc-collaborator", "to": "exception-review" },
+    { "kind": "role-work", "from": "grc-collaborator", "to": "control-mapping-task" },
+    { "kind": "role-work", "from": "grc-collaborator", "to": "gap-analysis-task" },
+    { "kind": "role-work", "from": "grc-collaborator", "to": "risk-register-task" },
+    { "kind": "role-work", "from": "grc-collaborator", "to": "questionnaire-draft-task" },
+    { "kind": "role-work", "from": "grc-collaborator", "to": "exception-review-task" }
+  ],
+  "entrypoints": [
+    "control-mapping",
+    "control-mapping-task",
+    "questionnaire-draft-task"
+  ]
+}

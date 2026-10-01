@@ -1,0 +1,12 @@
+# 官方服务持有会话、浏览器与 MCP 生命周期；Teloa 只声明可选组合。
+- insert:
+    - id: teloa-browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+      disabled: true
+    - id: teloa-browser-playwright
+      name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+      # 即使安装器选择了本 bundle，也不自动初始化浏览器或赋予岗位权限。
+      disabled: true
+      config:
+        mode: launch
+        headless: true

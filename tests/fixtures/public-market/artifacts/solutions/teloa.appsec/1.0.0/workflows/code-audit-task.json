@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "code-audit-task",
+  "title": "代码审计任务",
+  "version": "1.0.0",
+  "domain": "AppSec",
+  "description": "对已提供的代码快照执行安全审计，识别漏洞发现并输出带文件行号和证据路径的发现报告。",
+  "requirements": [
+    "代码快照（固定版本或提交哈希）及语言/框架说明",
+    "审计范围（目录、模块或变更范围）",
+    "威胁边界说明（哪些输入来自不可信方）"
+  ],
+  "output": "代码审计报告：审计摘要、分漏洞类别的发现清单（含文件行号、可达性、利用条件、影响、CWE、修复建议、验证方法、置信度）、未覆盖范围说明",
+  "skills": [
+    {
+      "id": "code-audit",
+      "title": "代码审计",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "代码审计任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "代码审计任务",
+        "en": "Code audit task"
+      }
+    },
+    "description": {
+      "original": "对已提供的代码快照执行安全审计，识别漏洞发现并输出带文件行号和证据路径的发现报告。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的代码快照执行安全审计，识别漏洞发现并输出带文件行号和证据路径的发现报告。",
+        "en": "Perform a security audit on a provided code snapshot, identify vulnerability findings, and produce a report with file line numbers and evidence paths."
+      }
+    },
+    "requirements": [
+      {
+        "original": "代码快照（固定版本或提交哈希）及语言/框架说明",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "代码快照（固定版本或提交哈希）及语言/框架说明",
+          "en": "Code snapshot (fixed version or commit hash) with language/framework description"
+        }
+      },
+      {
+        "original": "审计范围（目录、模块或变更范围）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "审计范围（目录、模块或变更范围）",
+          "en": "Audit scope (directories, modules or change set)"
+        }
+      },
+      {
+        "original": "威胁边界说明（哪些输入来自不可信方）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "威胁边界说明（哪些输入来自不可信方）",
+          "en": "Threat boundary description (which inputs are from untrusted parties)"
+        }
+      }
+    ],
+    "output": {
+      "original": "代码审计报告：审计摘要、分漏洞类别的发现清单（含文件行号、可达性、利用条件、影响、CWE、修复建议、验证方法、置信度）、未覆盖范围说明",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "代码审计报告：审计摘要、分漏洞类别的发现清单（含文件行号、可达性、利用条件、影响、CWE、修复建议、验证方法、置信度）、未覆盖范围说明",
+        "en": "Code audit report: summary, per-category findings (with file line numbers, reachability, exploit conditions, impact, CWE, remediation advice, verification method, confidence), uncovered scope"
+      }
+    }
+  }
+}

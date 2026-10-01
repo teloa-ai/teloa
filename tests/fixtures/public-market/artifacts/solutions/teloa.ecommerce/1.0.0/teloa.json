@@ -1,0 +1,318 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "ecommerce-operations",
+  "title": "电商运营",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "scope": "ecommerce",
+  "description": "面向电商店铺日常运营的行业方案：商品文案起草、活动日历编排、销量数据核对与买家评价分析。岗位只依据已提供的商品事实、平台通知、后台导出与评价材料形成可追溯的草案与清单；改价、上下架、报名活动、发布商品或文案、回复买家均需本人授权；从不向买家承诺退款或赔付。",
+  "resources": [
+    {
+      "id": "ecommerce-ops-collaborator",
+      "kind": "role",
+      "title": "电商运营协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/ecommerce-ops-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "电商运营协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "电商运营协作员",
+            "en": "E-commerce ops collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "ecommerce-methods",
+      "kind": "knowledge",
+      "title": "电商运营方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/ecommerce-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "电商运营方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "电商运营方法与来源索引",
+            "en": "E-commerce operations methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "ecommerce-product-copy",
+      "kind": "skill",
+      "title": "商品文案起草（详情页、主图、短视频口播）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/ecommerce-product-copy/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "商品文案起草（详情页、主图、短视频口播）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "商品文案起草（详情页、主图、短视频口播）",
+            "en": "Product copy drafting (detail page, main image, short video script)"
+          }
+        }
+      }
+    },
+    {
+      "id": "ecommerce-fact-check",
+      "kind": "skill",
+      "title": "商品文案事实与用语核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/ecommerce-fact-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "商品文案事实与用语核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "商品文案事实与用语核对",
+            "en": "Product copy fact and wording check"
+          }
+        }
+      }
+    },
+    {
+      "id": "ecommerce-sales-verification",
+      "kind": "skill",
+      "title": "销量与销售额核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/ecommerce-sales-verification/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "销量与销售额核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "销量与销售额核对",
+            "en": "Sales volume and revenue verification"
+          }
+        }
+      }
+    },
+    {
+      "id": "ecommerce-campaign-calendar",
+      "kind": "skill",
+      "title": "活动日历编排",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/ecommerce-campaign-calendar/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "活动日历编排",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "活动日历编排",
+            "en": "Campaign calendar planning"
+          }
+        }
+      }
+    },
+    {
+      "id": "ecommerce-review-analysis",
+      "kind": "skill",
+      "title": "买家评价分析",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/ecommerce-review-analysis/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "买家评价分析",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "买家评价分析",
+            "en": "Buyer review analysis"
+          }
+        }
+      }
+    },
+    {
+      "id": "product-copy-task",
+      "kind": "work-template",
+      "title": "起草商品文案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/product-copy-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "起草商品文案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "起草商品文案",
+            "en": "Draft product copy"
+          }
+        }
+      }
+    },
+    {
+      "id": "campaign-calendar-task",
+      "kind": "work-template",
+      "title": "编排活动日历",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/campaign-calendar-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "编排活动日历",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "编排活动日历",
+            "en": "Build campaign calendar"
+          }
+        }
+      }
+    },
+    {
+      "id": "sales-verification-task",
+      "kind": "work-template",
+      "title": "核对销量与销售额",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/sales-verification-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "核对销量与销售额",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "核对销量与销售额",
+            "en": "Verify sales volume and revenue"
+          }
+        }
+      }
+    },
+    {
+      "id": "review-analysis-task",
+      "kind": "work-template",
+      "title": "分析买家评价",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/review-analysis-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "分析买家评价",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "分析买家评价",
+            "en": "Analyze buyer reviews"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "ecommerce-ops-collaborator",
+      "to": "ecommerce-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "ecommerce-ops-collaborator",
+      "to": "ecommerce-product-copy"
+    },
+    {
+      "kind": "role-skill",
+      "from": "ecommerce-ops-collaborator",
+      "to": "ecommerce-fact-check"
+    },
+    {
+      "kind": "role-skill",
+      "from": "ecommerce-ops-collaborator",
+      "to": "ecommerce-sales-verification"
+    },
+    {
+      "kind": "role-skill",
+      "from": "ecommerce-ops-collaborator",
+      "to": "ecommerce-campaign-calendar"
+    },
+    {
+      "kind": "role-skill",
+      "from": "ecommerce-ops-collaborator",
+      "to": "ecommerce-review-analysis"
+    },
+    {
+      "kind": "role-work",
+      "from": "ecommerce-ops-collaborator",
+      "to": "product-copy-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "ecommerce-ops-collaborator",
+      "to": "campaign-calendar-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "ecommerce-ops-collaborator",
+      "to": "sales-verification-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "ecommerce-ops-collaborator",
+      "to": "review-analysis-task"
+    }
+  ],
+  "entrypoints": [
+    "product-copy-task",
+    "campaign-calendar-task",
+    "sales-verification-task",
+    "review-analysis-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "电商运营",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "电商运营",
+        "en": "E-commerce operations"
+      }
+    },
+    "description": {
+      "original": "面向电商店铺日常运营的行业方案：商品文案起草、活动日历编排、销量数据核对与买家评价分析。岗位只依据已提供的商品事实、平台通知、后台导出与评价材料形成可追溯的草案与清单；改价、上下架、报名活动、发布商品或文案、回复买家均需本人授权；从不向买家承诺退款或赔付。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向电商店铺日常运营的行业方案：商品文案起草、活动日历编排、销量数据核对与买家评价分析。岗位只依据已提供的商品事实、平台通知、后台导出与评价材料形成可追溯的草案与清单；改价、上下架、报名活动、发布商品或文案、回复买家均需本人授权；从不向买家承诺退款或赔付。",
+        "en": "A solution for day-to-day online store operations: product copy drafting, campaign calendar planning, sales data verification, and buyer review analysis. The role produces traceable drafts and checklists only from the product facts, platform notices, back-office exports and review materials you provide; changing prices, listing or delisting, enrolling in campaigns, publishing products or copy, and replying to buyers all require your authorization; it never promises buyers refunds or compensation."
+      }
+    }
+  }
+}

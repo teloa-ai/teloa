@@ -1,0 +1,112 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-yuque",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "yuque",
+    "title": {
+      "zh-CN": "语雀（知识库）",
+      "en": "Yuque (Knowledge Base)"
+    },
+    "summary": {
+      "zh-CN": "语雀官方 MCP，通过个人访问令牌读取和搜索团队知识库文档。需要在语雀账户设置 > 开发者配置中生成个人访问令牌。数据经由 yuque.com 传输。",
+      "en": "Yuque official MCP for reading and searching team knowledge base documents via personal access token. Generate a token in Yuque account settings > Developer settings. Data passes through yuque.com."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "env",
+          "envVarName": "YUQUE_PERSONAL_TOKEN",
+          "label": {
+            "zh-CN": "语雀个人访问令牌（账户设置 > 开发者配置中生成）",
+            "en": "Yuque personal access token (generate in account settings > Developer)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "stdio",
+      "package": "yuque-mcp",
+      "version": "1.0.0",
+      "integrity": "sha512-zfa66is9NAkoLjPeKAgBGdAK7IGrrXFkOScX5Wbugx5EMBSTLV1o9YwXYgqNzZiGh6a6wa65zdRc9enO4crq7g==",
+      "bin": "dist/cli.js",
+      "args": []
+    },
+    "tools": [
+      {
+        "name": "yuque_search",
+        "description": {
+          "zh-CN": "搜索语雀文档",
+          "en": "Search Yuque documents"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "yuque_list_books",
+        "description": {
+          "zh-CN": "列出知识库",
+          "en": "List knowledge bases (books)"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "yuque_list_docs",
+        "description": {
+          "zh-CN": "列出知识库中的文档",
+          "en": "List documents in a knowledge base"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "yuque_get_doc",
+        "description": {
+          "zh-CN": "获取文档内容",
+          "en": "Get document content"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://github.com/yuque/yuque-mcp-server"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "数据经由 yuque.com 平台传输",
+        "en": "Data passes through yuque.com"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

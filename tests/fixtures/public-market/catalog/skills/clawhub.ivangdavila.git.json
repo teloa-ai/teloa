@@ -1,0 +1,178 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.git",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.12",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "git",
+    "title": {
+      "zh-CN": "Git 版本控制",
+      "en": "Git"
+    },
+    "summary": {
+      "zh-CN": "管理 Git 仓库的提交、分支、合并和变基操作，解决冲突和恢复历史。用于代码版本管理和团队协作。",
+      "en": "Commits, branches, merges, and rebases Git repositories, resolves conflicts, and recovers lost history. Use when the work touches a repo, commit, branch, merge, rebase, stash, tag, or submodule; when Git refuses a command — index.lock exists, push rejected as non-fast-forward, detached HEAD, dubious"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "git",
+    "version": "1.0.12",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "8e83d3beaf251a167f7cfecff0efb4c7bb3cedec993aa81875bdb5e512406256",
+        "size": 18149
+      },
+      {
+        "path": "_meta.json",
+        "sha256": "630867c1c7e801c82e6781b9a24d918644f8b77fd9f469fae9b2b8ae1831ede4",
+        "size": 755
+      },
+      {
+        "path": "branching.md",
+        "sha256": "2d809b9aa68837c9ebfd82c9396ae00bde7d36076fe9132072425f306ddfddf0",
+        "size": 5916
+      },
+      {
+        "path": "collaboration.md",
+        "sha256": "e8615b554358ce81dc562298a5e4007d25719a85384fbf85dd28a8207ef056e3",
+        "size": 4668
+      },
+      {
+        "path": "commands.md",
+        "sha256": "5806fd5f4d33b518b121dbb1da27800611a72f7d2ffa2d6e5635b5ad5710e42a",
+        "size": 4400
+      },
+      {
+        "path": "commits.md",
+        "sha256": "adb74f80aa1a77a4619a86530de5eb3b4fe66f256612e31067758b051130f60f",
+        "size": 5801
+      },
+      {
+        "path": "config.md",
+        "sha256": "a4596a41b1b08742ec6e295b48c282bd183a3b16872e42ea6f4ee4c6b77e41b9",
+        "size": 6732
+      },
+      {
+        "path": "conflicts.md",
+        "sha256": "858fdfccecea67f93b096ea1106a086173d173edd77f6305bb9ee50cfe9af6fc",
+        "size": 5353
+      },
+      {
+        "path": "errors.md",
+        "sha256": "a0c7af3e9d11669304d3f9f6ac2592e8af5961b70edbea03f4c60f21a2cb9439",
+        "size": 6564
+      },
+      {
+        "path": "forensics.md",
+        "sha256": "e78db2b8057399a0c389da698657d6f7e0d4fb930bbf39220acb5cdae0b514c5",
+        "size": 5061
+      },
+      {
+        "path": "history.md",
+        "sha256": "a6f59cd11e040b72aa816fc62cb57fdf4b5282fb52c87dca43f56e5e80c418e6",
+        "size": 6073
+      },
+      {
+        "path": "hooks.md",
+        "sha256": "8e9923bc424e7513f841ee87b01142ec9df5753db19596d1f1b29be659e230d2",
+        "size": 5618
+      },
+      {
+        "path": "large-repos.md",
+        "sha256": "ebb2afe73bcad8a244df6254fb7dae9e2feac2f6a8be0927d40efa9deb1b0274",
+        "size": 5991
+      },
+      {
+        "path": "memory-template.md",
+        "sha256": "0407b4308ebe115f6fba7f32cc10724b2050bc7701bd43b726a79781e8594971",
+        "size": 1263
+      },
+      {
+        "path": "recovery.md",
+        "sha256": "dc176b035a00a591118bf016a563bce594c80cb8502176d66769f91f3b0ff173",
+        "size": 6376
+      },
+      {
+        "path": "releases.md",
+        "sha256": "2fd2f7ab51faa04a3ef8edaa656ea3e87ca461e431d6e9484a260738a8041825",
+        "size": 5313
+      },
+      {
+        "path": "remotes.md",
+        "sha256": "ff69422a748208995742f90b8fdbde25fac44f25026ca3809e04b289ff02991f",
+        "size": 5729
+      },
+      {
+        "path": "scripting.md",
+        "sha256": "e687c2f5be8f8384b86fc452db80c8b4d0fea0d30b67e9704eaccb3c7a697b0b",
+        "size": 6308
+      },
+      {
+        "path": "secrets.md",
+        "sha256": "0aaf9c34fa4294c34bdfb482ecc44e9f17246c7da5cce0496dae71f99d3c6572",
+        "size": 4880
+      },
+      {
+        "path": "setup.md",
+        "sha256": "013513773b1dd445f77570d09109e3700add40586adab5ea4b878c255d39c4d0",
+        "size": 2621
+      },
+      {
+        "path": "submodules.md",
+        "sha256": "62874f3beafdfe4975820068e02d3ff7fb99aaa7488c8515976f74544adf9ca3",
+        "size": 5876
+      },
+      {
+        "path": "worktrees.md",
+        "sha256": "87ec5ff7b7de54a683af3477a8ff61705eea1908de82dcd9a98d58d8827516c0",
+        "size": 4755
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "577c204d54a044efb4241970e369f6b2fd408749495a732977ce37f37367cc9d",
+        "size": 2141
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 18354,
+    "installsLabel": "1.8 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

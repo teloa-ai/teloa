@@ -1,0 +1,141 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-dingtalk",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "dingtalk",
+    "title": {
+      "zh-CN": "钉钉（企业通讯与协作）",
+      "en": "DingTalk (Enterprise Communication)"
+    },
+    "summary": {
+      "zh-CN": "钉钉官方 MCP，通过应用 Client ID/Secret 访问钉钉通讯录、机器人群消息与 DING 消息（默认启用的三个模块）。需在钉钉开放平台创建企业内部应用并授权对应权限。数据经由 dingtalk.com 传输。",
+      "en": "DingTalk official MCP for contacts, robot group messages and DING messages (the three modules enabled by default) via App Client ID/Secret. Create an enterprise internal app on DingTalk Open Platform and grant the required scopes. Data passes through dingtalk.com."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "env",
+          "envVarName": "DINGTALK_Client_ID",
+          "label": {
+            "zh-CN": "钉钉应用 Client ID（开放平台 > 应用详情 > AppKey）",
+            "en": "DingTalk App Client ID (Open Platform > App Details > AppKey)"
+          },
+          "required": true
+        },
+        {
+          "target": "env",
+          "envVarName": "DINGTALK_Client_Secret",
+          "label": {
+            "zh-CN": "钉钉应用 Client Secret（开放平台 > 应用详情 > AppSecret）",
+            "en": "DingTalk App Client Secret (Open Platform > App Details > AppSecret)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "stdio",
+      "package": "dingtalk-mcp",
+      "version": "1.1.21",
+      "integrity": "sha512-TLBqO4xxC0A4IfoV40+iP3/Jg1BSxvrrCg41JyERiUC2+pXLO1oVf2nXbOAZFv8eeZbTvIJecCKXaASbKPRYZw==",
+      "bin": "dist/cli.js",
+      "args": []
+    },
+    "tools": [
+      {
+        "name": "searchUser",
+        "description": {
+          "zh-CN": "按关键词搜索成员",
+          "en": "Search users by keyword"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "getUserDetailByUserId",
+        "description": {
+          "zh-CN": "查询成员详情",
+          "en": "Get user details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "getDepartmentUsersByDepId",
+        "description": {
+          "zh-CN": "列出部门成员",
+          "en": "List users in a department"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "sendMessageToGroupByRobot",
+        "description": {
+          "zh-CN": "通过机器人向群发送消息",
+          "en": "Send a message to a group via robot"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "batchSendMessageToUsersByRobot",
+        "description": {
+          "zh-CN": "通过机器人向成员批量发送单聊消息",
+          "en": "Send one-on-one messages to users via robot"
+        },
+        "readOnly": false
+      }
+    ],
+    "upstreamUrl": "https://open.dingtalk.com/document/ai-dev/dingtalk-server-api-mcp-overview"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要在钉钉开放平台创建企业内部应用并为对应功能模块完成授权配置",
+        "en": "Requires creating an enterprise internal app on DingTalk Open Platform and configuring the required scopes"
+      },
+      {
+        "zh-CN": "数据经由 dingtalk.com 平台传输",
+        "en": "Data passes through dingtalk.com"
+      },
+      {
+        "zh-CN": "本版只启用钉钉 MCP 默认模块（通讯录、机器人消息、DING 消息）；日程、待办、部门管理等模块未开放",
+        "en": "Only the DingTalk MCP default modules (contacts, robot messages, DING messages) are enabled in this version; calendar, todo, department management and other modules are not available"
+      },
+      {
+        "zh-CN": "钉钉 MCP 只能按模块启用（默认三模块共 13 个工具，含撤回消息、自定义机器人发消息等目录未列的工具）；Teloa 只注册目录列出的工具，其余不可见、不可调用",
+        "en": "DingTalk MCP can only be enabled per module (the three default modules expose 13 tools, including unlisted ones such as message recall and custom-robot messages); Teloa registers only the tools listed in the catalog, the rest are neither visible nor callable"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

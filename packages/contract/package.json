@@ -1,0 +1,1 @@
+{"name":"@teloa/contract","version":"0.2.0-alpha.7","private":true,"type":"module","exports":"./src/index.ts","scripts":{"build":"tsc -b"}}

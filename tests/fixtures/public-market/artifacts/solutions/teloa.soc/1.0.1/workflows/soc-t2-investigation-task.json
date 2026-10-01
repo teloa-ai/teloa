@@ -1,0 +1,79 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "soc-t2-investigation-task",
+  "title": "T2 事件调查任务",
+  "version": "1.0.0",
+  "domain": "SOC",
+  "description": "基于 T1 研判卡或客户事件线索，执行结构化事件调查，产出证据时间线、假设验证、影响评估与处置建议草案。",
+  "requirements": [
+    "T1 研判卡或客户事件描述（包含事件范围与已知证据）",
+    "已授权的日志/数据源范围说明"
+  ],
+  "output": "事件调查报告草案（时间线、假设、影响范围、处置建议——标注需人工审批）",
+  "skills": [
+    {
+      "id": "entity-context-enrichment",
+      "title": "实体关联与上下文补全",
+      "version": "1.0.0"
+    },
+    {
+      "id": "evidence-timeline",
+      "title": "证据时间线",
+      "version": "1.0.0"
+    },
+    {
+      "id": "investigation-hypothesis",
+      "title": "调查假设与验证计划",
+      "version": "1.0.0"
+    },
+    {
+      "id": "incident-report",
+      "title": "事件调查报告",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "T2 事件调查任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "T2 事件调查任务",
+        "en": "T2 incident investigation task"
+      }
+    },
+    "description": {
+      "original": "基于 T1 研判卡或客户事件线索，执行结构化事件调查，产出证据时间线、假设验证、影响评估与处置建议草案。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于 T1 研判卡或客户事件线索，执行结构化事件调查，产出证据时间线、假设验证、影响评估与处置建议草案。",
+        "en": "Conduct a structured incident investigation based on a T1 triage card or customer-provided incident scope. Produces a timeline, hypothesis validation, impact assessment, and response recommendation draft."
+      }
+    },
+    "requirements": [
+      {
+        "original": "T1 研判卡或客户事件描述（包含事件范围与已知证据）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "T1 研判卡或客户事件描述（包含事件范围与已知证据）",
+          "en": "T1 triage card or customer incident description (including scope and known evidence)"
+        }
+      },
+      {
+        "original": "已授权的日志/数据源范围说明",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已授权的日志/数据源范围说明",
+          "en": "Description of authorized log / data source scope"
+        }
+      }
+    ],
+    "output": {
+      "original": "事件调查报告草案（时间线、假设、影响范围、处置建议——标注需人工审批）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "事件调查报告草案（时间线、假设、影响范围、处置建议——标注需人工审批）",
+        "en": "Incident investigation report draft (timeline, hypotheses, impact scope, response recommendations marked as requiring human approval)"
+      }
+    }
+  }
+}

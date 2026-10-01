@@ -1,0 +1,4 @@
+import type {ResourceDirectory,WorkResource} from '@teloa/contract'
+type PublicDirectory={directory:()=>Promise<ResourceDirectory>}
+type IndustryDirectory={list:()=>Promise<readonly {resource:WorkResource|null}[]>}
+export async function createRoleResourceDirectory(publicApi:PublicDirectory,industryApi:IndustryDirectory){const [directory,instances]=await Promise.all([publicApi.directory(),industryApi.list()]),resources=[...directory.resources];for(const {resource} of instances){if(!resource)continue;const index=resources.findIndex(row=>row.id===resource.id);if(index<0)resources.push(resource);else if(resource.version>resources[index]!.version)resources[index]=resource;else if(resource.version===resources[index]!.version&&JSON.stringify(resource)!==JSON.stringify(resources[index]))throw Error('员工资料目录中的同版本内容不一致。')}return {...directory,resources}}

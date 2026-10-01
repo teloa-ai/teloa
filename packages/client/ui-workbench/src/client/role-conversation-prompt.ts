@@ -1,0 +1,1 @@
+export {roleConversationBoundary,roleConversationPrompt,roleConversationPromptMaxChars,type RoleConversationPromptRole} from '@teloa/contract'

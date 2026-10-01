@@ -1,0 +1,44 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "appsec-fix-ticket-list",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "修复工单清单",
+  "kind": "list",
+  "chart": "table",
+  "objectType": "fix-ticket",
+  "measures": [
+    {
+      "id": "promised",
+      "label": "承诺完成",
+      "aggregation": "max",
+      "field": "promised-at",
+      "localized": {
+        "label": {
+          "original": "承诺完成",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "承诺完成",
+            "en": "Promised completion"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "limit": 100,
+  "localized": {
+    "title": {
+      "original": "修复工单清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "修复工单清单",
+        "en": "Remediation ticket list"
+      }
+    }
+  }
+}

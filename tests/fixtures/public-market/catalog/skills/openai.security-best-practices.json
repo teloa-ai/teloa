@@ -1,0 +1,937 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "openai.security-best-practices",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "security"
+    ],
+    "industries": [
+      "software/engineering"
+    ]
+  },
+  "skill": {
+    "name": "security-best-practices",
+    "title": {
+      "zh-CN": "语言与框架安全实践审查",
+      "en": "Language and framework security review"
+    },
+    "summary": {
+      "zh-CN": "针对 Python、JavaScript/TypeScript 与 Go，结合语言和框架参考核查代码安全实践，整理有文件位置依据的发现与修复建议。二次开发自 OpenAI Codex 官方技能，修正了开放重定向校验、SRI、CSP、CSRF 口径、覆盖指令的提示注入入口、react2shell 与 CVE-2026-23864 版本事实等内容，重定向校验代码已用三种语言的测试向量实跑验证。",
+      "en": "Reviews security practices in Python, JavaScript/TypeScript and Go using language and framework references, with file-based findings and remediation guidance. Derived from the OpenAI Codex curated skill with documented changes (open-redirect validation tested with vectors in three languages, SRI, CSP, CSRF scope, override handling, react2shell and CVE-2026-23864 version facts, and others)."
+    }
+  },
+  "upstream": {
+    "ecosystem": "openai",
+    "author": "OpenAI",
+    "repository": {
+      "host": "github.com",
+      "owner": "openai",
+      "repo": "skills"
+    },
+    "commit": "49f948faa9258a0c61caceaf225e179651397431",
+    "path": "skills/.curated/security-best-practices",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "gitBlob": "13e25df86ce06eb6488e6a6bc5c5847f5dedc352",
+        "size": 10776,
+        "sha256": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9"
+      },
+      {
+        "path": "SKILL.md",
+        "gitBlob": "45ccbd8d671c4c4cc3e7e0645a16a3f80ec50de7",
+        "size": 8612,
+        "sha256": "7b3dae1ffc5434d890f3c65c8f552af52d0307fab3b35dec13013c9ca3844c4f"
+      },
+      {
+        "path": "agents/openai.yaml",
+        "gitBlob": "1721736a914e6ce41da2e0e005f6a8e782f2e642",
+        "size": 237,
+        "sha256": "6e9c6f2edce448eb2b589f81ad6e3f722665021785513bcbfd0bf7b86b529171"
+      },
+      {
+        "path": "references/golang-general-backend-security.md",
+        "gitBlob": "85e9c6a1669e0d04af56c9a0bce113dd35e0248d",
+        "size": 38659,
+        "sha256": "a73c47c34497b120672d48411fe51dc90d426a571801a0b3f649e2ce4ec658b4"
+      },
+      {
+        "path": "references/javascript-express-web-server-security.md",
+        "gitBlob": "98d79067ffb784ce426394193e744ddc7f3c93be",
+        "size": 49357,
+        "sha256": "427835cbb5be7ba96172ea6ca9af80ddd4419c833e9ebf870996740c80d8406c"
+      },
+      {
+        "path": "references/javascript-general-web-frontend-security.md",
+        "gitBlob": "d8b696f363ea54661791c048ba19a57933d20825",
+        "size": 38638,
+        "sha256": "3a7bc7b3f6e7ff043db9dbaa8933894d7a19d987d0607e4ddae5d70184a63d63"
+      },
+      {
+        "path": "references/javascript-jquery-web-frontend-security.md",
+        "gitBlob": "3fd00db430ed55fafe50112b8d8b751fe82deec1",
+        "size": 33581,
+        "sha256": "bcbad2fa6c2a02709e47e889e70102c76886bf36bc798624d27db570eccf40da"
+      },
+      {
+        "path": "references/javascript-typescript-nextjs-web-server-security.md",
+        "gitBlob": "44cc8213b11feda2eac8283dfd6a11fe93a68965",
+        "size": 43423,
+        "sha256": "71c773f7a97ce60c853adfa100b3d88b3b7bc4c6b8acaef1432ffabd923ee182"
+      },
+      {
+        "path": "references/javascript-typescript-react-web-frontend-security.md",
+        "gitBlob": "33fb693282a40754a081a499cda3d471aa23da28",
+        "size": 41686,
+        "sha256": "d3030c0f24bddb56b9bbb91bbec1ee49eb7778bce4d3e0297b2641b2fc6b0d9c"
+      },
+      {
+        "path": "references/javascript-typescript-vue-web-frontend-security.md",
+        "gitBlob": "be326548bf953b6d1918727d228449ab4cb5110d",
+        "size": 31445,
+        "sha256": "77c6a747f9f17e3df03aad0fcb20d99ac7898001b81aef8b80908e45ac14a688"
+      },
+      {
+        "path": "references/python-django-web-server-security.md",
+        "gitBlob": "0b9a89a73e0ff3a88ccb7837b56ad1a5f15259e0",
+        "size": 38661,
+        "sha256": "4fb69b5d45f10e588d1a8c35cdc5f59e18910f6b46a93e2d342d90f286f8dfd2"
+      },
+      {
+        "path": "references/python-fastapi-web-server-security.md",
+        "gitBlob": "d394a55bb86b3b2e5c2b73e65cb115a2a0ce1c05",
+        "size": 44926,
+        "sha256": "7383c7f4fc271190b05e562ada7e825982a2c76b6c79a9f95a1da7687b65a616"
+      },
+      {
+        "path": "references/python-flask-web-server-security.md",
+        "gitBlob": "adbc599aad8688a3446f5b595a1f4f0c1eac942f",
+        "size": 31748,
+        "sha256": "9606d69190c04c167fdeac57e61297547a57b0542fd89dede36f355970446929"
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE.txt"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "仅用于明确请求的 Python、JavaScript/TypeScript、Go 安全编码与审查；需提供授权的代码范围和目标框架版本。",
+        "en": "Use for explicitly requested Python, JavaScript/TypeScript or Go security guidance and review; provide authorized code scope and target framework versions."
+      },
+      {
+        "zh-CN": "静态审查使用原生文件读取与搜索；保存报告需要写入权限。无必装的第三方技能、MCP 或专用凭据。",
+        "en": "Static review uses native file reading and search; saving a report needs write access. No additional skill, MCP service or dedicated credential is required."
+      },
+      {
+        "zh-CN": "联网查文档、npm audit、govulncheck、项目测试和修复都是条件路径：修复需要编辑，运行测试或扫描需要 Shell，运行前核对授权、工具与网络。npm audit 会向 registry 发送依赖树，不应上传源码或密钥。",
+        "en": "Documentation lookup, npm audit, govulncheck, project tests and fixes are conditional paths: fixes need editing and running tests or scans needs a shell. Check authorization, tools and network first. npm audit sends the dependency tree to its registry; do not upload source code or secrets."
+      },
+      {
+        "zh-CN": "所附参考资料的内容截至 2026 年 1 月，并经 Teloa 二次开发修正；版本号与 CVE 需对照当前官方公告复核；静态发现不是安全认证。未完成真实模型任务验证。",
+        "en": "The included references reflect January 2026 and were corrected by Teloa; verify version and CVE statements against current official advisories. Static findings are not a security certification. A real-model task has not been validated."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "read",
+      "glob",
+      "grep",
+      "write",
+      "edit",
+      "bash"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  },
+  "derivation": {
+    "unchangedFiles": [
+      "LICENSE.txt"
+    ],
+    "changes": [
+      {
+        "id": "CSB-M01",
+        "type": "security",
+        "path": "references/javascript-typescript-react-web-frontend-security.md",
+        "section": "§REACT-REDIRECT-001 Fix (L676-683); Notes (after L683)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-react-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "删除原版用正则 `/^\\/[^\\s]*$/` 判定站内跳转的写法，改为三步校验的 `safeReturnTo()` 与 `sameOriginPath()`：① 原始串须以 `/` 开头且第二个字符不是 `/` 或 `\\`，不含控制字符、反斜杠、`%2e`/`%2f`/`%5c`/`%25` 编码与 `.`/`..` 段；② 用 `new URL(value, origin)` 解析后比较 origin，只接受 http(s)；③ 复验规范化后的路径不以 `//`、`/\\` 开头，返回绝对地址。写明不得把已校验的 URL 重新序列化为相对串（点段归一化后路径可能以 `//` 开头）。Notes 末尾补一行：Express 参考的 EXPRESS-REDIRECT-001 对服务端陈述同一规则。",
+          "en": "Removes the original regex check `/^\\/[^\\s]*$/` for same-site redirects and replaces it with a three-step `safeReturnTo()` plus `sameOriginPath()`: (1) the raw string must start with `/`, its second character must not be `/` or `\\`, and it must contain no control characters, backslashes, `%2e`/`%2f`/`%5c`/`%25` encodings or `.`/`..` segments; (2) parse with `new URL(value, origin)`, compare origins and accept only http(s); (3) re-check that the normalised path does not start with `//` or `/\\`, then return the absolute URL. It states that a validated URL must not be re-serialised to a relative string (after dot-segment normalisation the path can start with `//`). A line in Notes points to EXPRESS-REDIRECT-001, which states the same rule for servers."
+        },
+        "reason": {
+          "zh-CN": "原版正则会放过 `//evil.example/path` 与 `/\\evil.example`，属于开放重定向。只检查开头的修法又会被点段形式（如 `/.//evil.example`、`/%2e//evil.example`）绕过：校验后重新序列化为相对串会得到 `//evil.example`。现行写法已用 55 个恶意向量与 10 个合法路径在 Node、Python、Go 三种语言中实跑，全部符合预期；原版正则会放过其中 34 个恶意向量。",
+          "en": "The original regex accepts `//evil.example/path` and `/\\evil.example`, an open redirect. A prefix-only fix is still bypassed by dot segments such as `/.//evil.example` and `/%2e//evil.example`: re-serialising the validated URL as a relative string yields `//evil.example`. The current code was run against 55 hostile vectors and 10 legitimate paths in Node, Python and Go with the expected result for every case; the original regex lets 34 of the hostile vectors through."
+        }
+      },
+      {
+        "id": "CSB-M02",
+        "type": "security",
+        "path": "references/javascript-typescript-react-web-frontend-security.md",
+        "section": "§REACT-URL-001 Fix (L312)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-react-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "把「只允许以 `/` 开头的相对路径」补充为「以 `/` 开头但不以 `//`、`/\\` 开头，解析后比较 origin 并复验规范化路径」，并指向 REACT-REDIRECT-001。",
+          "en": "Extends \"allow only relative paths starting with `/`\" to \"starting with `/` but not `//` or `/\\`, compare origins after parsing and re-check the normalised path\", pointing to REACT-REDIRECT-001."
+        },
+        "reason": {
+          "zh-CN": "与 REACT-REDIRECT-001 同一类开放重定向问题：只检查 `/` 开头会放过协议相对地址。",
+          "en": "Same open-redirect class as REACT-REDIRECT-001: checking only for a leading `/` lets protocol-relative addresses through."
+        }
+      },
+      {
+        "id": "CSB-M03",
+        "type": "security",
+        "path": "references/javascript-typescript-nextjs-web-server-security.md",
+        "section": "§NEXT-REDIRECT-001 Fix (L764-765)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-nextjs-web-server-security.md",
+        "summary": {
+          "zh-CN": "删除「拒绝协议相对 `//evil.com` 或绝对 URL」的简单口径，改为与 REACT-REDIRECT-001 相同的三步校验，给出带类型的 `safeReturnTo(value: unknown, origin: string, fallback = \"/\"): string` 与 `NextResponse.redirect(new URL(target, origin))` 示例；指出 `Location: /\\evil.example` 会被浏览器当作 `//evil.example`；生产环境应传入配置的规范 origin（`process.env.APP_ORIGIN ?? request.nextUrl.origin`），否则绝对地址与 Location 头会随请求的 Host / X-Forwarded-Host 变化。点段措辞改为「原样发出时仍在本源，重新序列化为相对串后才会变成站外的协议相对地址」。",
+          "en": "Replaces the simple \"reject protocol-relative `//evil.com` or absolute URLs\" rule with the same three-step check as REACT-REDIRECT-001, with a typed `safeReturnTo(value: unknown, origin: string, fallback = \"/\"): string` and a `NextResponse.redirect(new URL(target, origin))` example; notes that browsers treat `Location: /\\evil.example` as `//evil.example`; production code should pass the configured canonical origin (`process.env.APP_ORIGIN ?? request.nextUrl.origin`), otherwise the absolute URL and Location header follow the request Host / X-Forwarded-Host. The dot-segment wording now says such values stay on the origin when sent as-is and only become off-site protocol-relative addresses after re-serialisation to a relative string."
+        },
+        "reason": {
+          "zh-CN": "原版没有覆盖 `/\\` 与点段形式。示例函数与测试所用函数逐字一致，55 个恶意向量全部回退到默认地址；不带类型的写法在 TypeScript strict（noImplicitAny）下无法编译；返回绝对地址后 Location 依赖请求 Host，因此需要规范 origin；原措辞把点段说成直接离开本源，并不准确。",
+          "en": "The original did not cover `/\\` or dot segments. The example function is identical to the tested one and all 55 hostile vectors fall back to the default; an untyped version does not compile under TypeScript strict (noImplicitAny); returning an absolute URL makes Location depend on the request Host, hence the canonical origin; the earlier wording claimed dot segments leave the origin directly, which is inaccurate."
+        }
+      },
+      {
+        "id": "CSB-M04",
+        "type": "security",
+        "path": "references/javascript-typescript-vue-web-frontend-security.md",
+        "section": "§VUE-ROUTER-002 Fix (L454-455)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-vue-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "删除「以 `/` 开头且拒绝 `//host`」的简单口径，改为引用 REACT-REDIRECT-001 的三步校验：`window.location.href = safeReturnTo(route.query.next)`、`router.push(sameOriginPath(route.query.next))`，并禁止 `router.push(route.query.next as string)`。并分开说明：`/\\evil.example` 会被浏览器当作 `//evil.example`，无需重新序列化即离开本源；点段形式在重新序列化为相对串后才离开本源。",
+          "en": "Replaces \"starts with `/` and reject `//host`\" with the three-step check from REACT-REDIRECT-001: `window.location.href = safeReturnTo(route.query.next)` and `router.push(sameOriginPath(route.query.next))`, and forbids `router.push(route.query.next as string)`. It also separates the cases: browsers treat `/\\evil.example` as `//evil.example`, so it leaves the origin without any re-serialisation, while dot-segment forms leave it only after re-serialisation to a relative string."
+        },
+        "reason": {
+          "zh-CN": "同类写法漏掉 `/\\` 与点段形式；改为与 React 共用同一个经过测试的函数。",
+          "en": "The same pattern misses `/\\` and dot segments; it now shares the tested function with React."
+        }
+      },
+      {
+        "id": "CSB-M05",
+        "type": "security",
+        "path": "references/golang-general-backend-security.md",
+        "section": "§GO-REDIRECT-001 Fix (L630-632)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "给出 `safeReturnTo(raw, fallback)`：原始串策略同 REACT-REDIRECT-001；`url.Parse` 后要求没有 Scheme、Opaque、Host、User；`path.Clean` 后复验不以 `//` 开头，并从解析部件重建 Location。跨源需求用精确的 `(scheme, host)` 允许表，禁止用 `HasPrefix`/`Contains` 比较主机。`path.Clean` 前加注释：它会去掉结尾斜杠，依赖结尾斜杠的路由须在校验后补回。点段措辞改为「原样发出时仍在本源，重新序列化为相对串后才会变成站外的协议相对地址」。",
+          "en": "Adds `safeReturnTo(raw, fallback)`: the raw-string policy of REACT-REDIRECT-001; after `url.Parse`, require no Scheme, Opaque, Host or User; re-check after `path.Clean` that the path does not start with `//`, and rebuild Location from the parsed parts. Cross-origin needs use an exact `(scheme, host)` allowlist; comparing hosts with `HasPrefix`/`Contains` is forbidden. A comment before `path.Clean` notes that it drops a trailing slash, which routes that depend on it must restore after validation. The dot-segment wording now says such values stay on the origin when sent as-is and only become off-site protocol-relative addresses after re-serialisation to a relative string."
+        },
+        "reason": {
+          "zh-CN": "原版只写「只允许相对路径」，没有给出判定方法。Go 实现用 65 个向量实跑无失败；`path.Clean(\"/a/b/\")` 返回 `\"/a/b\"` 已实测，所以要提示结尾斜杠。",
+          "en": "The original only says \"allow only relative paths\" without a way to decide. The Go implementation passes all 65 vectors; `path.Clean(\"/a/b/\")` returning `\"/a/b\"` was confirmed, hence the trailing-slash note."
+        }
+      },
+      {
+        "id": "CSB-M06",
+        "type": "security",
+        "path": "references/python-flask-web-server-security.md",
+        "section": "§FLASK-REDIRECT-001 Fix (L566-567)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-flask-web-server-security.md",
+        "summary": {
+          "zh-CN": "给出只用标准库的 `safe_return_to(value, request_origin)`：先按原始串策略判断，再经 `urlsplit`/`urljoin` 后比较 scheme 与 netloc，然后复验路径不以 `//` 开头，最后返回绝对 URL；注明 Django 的 `url_has_allowed_host_and_scheme` 是同一思路的参考实现。代码块补齐 `import re` 与 `from urllib.parse import urlsplit, urljoin`，`re.split` 改用关键字参数 `maxsplit=1`。用法写明生产环境应传入配置的规范 origin（`current_app.config.get(\"APP_ORIGIN\") or request.host_url.rstrip(\"/\")`）。点段措辞改为「原样发出时仍在本源，重新序列化为相对串后才会变成站外的协议相对地址」。",
+          "en": "Adds a standard-library `safe_return_to(value, request_origin)`: raw-string policy, then `urlsplit`/`urljoin` and compare scheme and netloc, re-check that the path does not start with `//`, and return the absolute URL; Django's `url_has_allowed_host_and_scheme` is named as a reference implementation of the same idea. The code block now imports `re` and `urlsplit, urljoin`, and `re.split` uses the keyword `maxsplit=1`. The usage passes the configured canonical origin in production (`current_app.config.get(\"APP_ORIGIN\") or request.host_url.rstrip(\"/\")`). The dot-segment wording now says such values stay on the origin when sent as-is and only become off-site protocol-relative addresses after re-serialisation to a relative string."
+        },
+        "reason": {
+          "zh-CN": "原版只有笼统口径，没有可用的判定方法。Python 实现用 65 个向量实跑无失败；Python 3.13 起按位置传 maxsplit 会触发 DeprecationWarning，改后在把告警视为错误的模式下运行无告警。",
+          "en": "The original gives only a general rule with no usable check. The Python implementation passes all 65 vectors; from Python 3.13 a positional maxsplit raises a DeprecationWarning, and the fixed code runs cleanly with warnings treated as errors."
+        }
+      },
+      {
+        "id": "CSB-M07",
+        "type": "security",
+        "path": "references/python-fastapi-web-server-security.md",
+        "section": "§FASTAPI-REDIRECT-001 Fix (L850)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-fastapi-web-server-security.md",
+        "summary": {
+          "zh-CN": "给出与 FLASK-REDIRECT-001 逐字相同的 `safe_return_to()`，用法为 `RedirectResponse(safe_return_to(request.query_params.get(\"next\"), settings.APP_ORIGIN or str(request.base_url).rstrip(\"/\")))`；同样补齐导入、改用 `maxsplit=1`，并写明生产环境应传入配置的规范 origin。点段措辞改为「原样发出时仍在本源，重新序列化为相对串后才会变成站外的协议相对地址」。",
+          "en": "Adds the same `safe_return_to()` as FLASK-REDIRECT-001, used as `RedirectResponse(safe_return_to(request.query_params.get(\"next\"), settings.APP_ORIGIN or str(request.base_url).rstrip(\"/\")))`; the imports and `maxsplit=1` fix are included, and production code passes the configured canonical origin. The dot-segment wording now says such values stay on the origin when sent as-is and only become off-site protocol-relative addresses after re-serialisation to a relative string."
+        },
+        "reason": {
+          "zh-CN": "与 FLASK-REDIRECT-001 相同：原版缺少判定方法；65 个向量实跑无失败，改后的写法在把告警视为错误时没有 DeprecationWarning。",
+          "en": "Same as FLASK-REDIRECT-001: the original lacks a way to decide; all 65 vectors pass and the fixed code raises no DeprecationWarning with warnings treated as errors."
+        }
+      },
+      {
+        "id": "CSB-M08",
+        "type": "security",
+        "path": "references/javascript-jquery-web-frontend-security.md",
+        "section": "§JQ-SUPPLY-002 Note (L215)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-jquery-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "删除「拿不到 SRI 哈希就跳过；用错导致无法加载时去掉 integrity」。改为：integrity 不匹配说明字节与哈希不符——先确认锁定的版本与文件，从官方下载页取哈希或自行计算并带算法前缀（如 `integrity=\"sha384-…\"`，可用 `openssl dgst -sha384 -binary … | openssl base64 -A` 计算），保留 `crossorigin=\"anonymous\"`；没有可信哈希就改用 npm 打包或自托管；哈希正确仍失败时先排除 CORS（缺 `crossorigin` 或 CDN 未返回 ACAO，控制台会报与 CORS 相关的错误），确认是 integrity 错误后保持失败，并按供应链事件上报。",
+          "en": "Removes \"skip SRI if you cannot get the hash; remove integrity if it breaks loading\". An integrity mismatch now means the bytes do not match the hash: confirm the locked version and file, take the hash from the official download page or compute it with the algorithm prefix (for example `integrity=\"sha384-…\"` via `openssl dgst -sha384 -binary … | openssl base64 -A`), and keep `crossorigin=\"anonymous\"`; without a trusted hash, bundle through npm or self-host; if a correct hash still fails, rule out CORS first (missing `crossorigin` or no ACAO from the CDN shows a CORS-related error in the console), and once it is an integrity error, keep failing and report it as a supply-chain incident."
+        },
+        "reason": {
+          "zh-CN": "原建议会让字节完整性校验失效，且与同一节前文要求使用 SRI 的写法（L198、L202）矛盾。",
+          "en": "The original advice disables byte-integrity checking and contradicts the same section's earlier SRI requirement (L198, L202)."
+        }
+      },
+      {
+        "id": "CSB-M09",
+        "type": "security",
+        "path": "references/javascript-jquery-web-frontend-security.md",
+        "section": "§3.3 CSP + Trusted Types (L137)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-jquery-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "把「只需设置 script-src，其余 CSP 指令为方便开发可整体省略」改为：script-src 优先，首选 nonce/hash 加 `'strict-dynamic'`（主机允许表可经 JSONP 或开放重定向绕过）；不得整体省略其余指令，`object-src 'none'` 与 `base-uri` 用于封堵 script-src 绕过，`frame-ancestors` 是点击劫持防护（只在响应头中生效）；其余指令按应用实际加载、嵌入与提交的目标定制，先用 report-only 迭代。并补充：用 `<meta>` 交付时 frame-ancestors、report-uri、sandbox 会被忽略，report-only 只能通过响应头使用。",
+          "en": "Replaces \"only script-src is needed; the other CSP directives can be omitted for convenience\" with: prioritise script-src, preferably nonces or hashes with `'strict-dynamic'` (host allowlists can be bypassed through JSONP or open redirects); do not drop the other directives wholesale: `object-src 'none'` and `base-uri` close script-src bypasses, and `frame-ancestors` is the clickjacking control (effective only as a response header); tailor the rest to what the app actually loads, embeds and submits to, iterating with report-only. It also notes that frame-ancestors, report-uri and sandbox are ignored when the policy is delivered in `<meta>`, and report-only works only as a response header."
+        },
+        "reason": {
+          "zh-CN": "原文把安全建议写成「可省略其余指令」，与同一文件对 frame-ancestors 和点击劫持的要求冲突；缺少 object-src、base-uri 的 CSP 可以被绕过。",
+          "en": "The original advice says the other directives may be omitted, which contradicts the same file's frame-ancestors and clickjacking requirements; a CSP without object-src and base-uri can be bypassed."
+        }
+      },
+      {
+        "id": "CSB-M10",
+        "type": "security",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "§EXPRESS-HEADERS-001 NOTE (L199)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「只需设置 script-src，其余 CSP 指令为方便开发可整体省略」改为：script-src 优先，首选 nonce/hash 加 `'strict-dynamic'`（主机允许表可经 JSONP 或开放重定向绕过）；不得整体省略其余指令，`object-src 'none'` 与 `base-uri` 用于封堵 script-src 绕过，`frame-ancestors` 是点击劫持防护（只在响应头中生效）；其余指令按应用实际加载、嵌入与提交的目标定制，先用 report-only 迭代。",
+          "en": "Replaces \"only script-src is needed; the other CSP directives can be omitted for convenience\" with: prioritise script-src, preferably nonces or hashes with `'strict-dynamic'` (host allowlists can be bypassed through JSONP or open redirects); do not drop the other directives wholesale: `object-src 'none'` and `base-uri` close script-src bypasses, and `frame-ancestors` is the clickjacking control (effective only as a response header); tailor the rest to what the app actually loads, embeds and submits to, iterating with report-only."
+        },
+        "reason": {
+          "zh-CN": "原文把安全建议写成「可省略其余指令」，与同一文件对 frame-ancestors 和点击劫持的要求冲突；缺少 object-src、base-uri 的 CSP 可以被绕过。",
+          "en": "The original advice says the other directives may be omitted, which contradicts the same file's frame-ancestors and clickjacking requirements; a CSP without object-src and base-uri can be bypassed."
+        }
+      },
+      {
+        "id": "CSB-M11",
+        "type": "security",
+        "path": "references/javascript-general-web-frontend-security.md",
+        "section": "§JS-CSP-001 NOTE (L371); §JS-CSP-002 NOTE (L407)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-general-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "把「只需设置 script-src，其余 CSP 指令为方便开发可整体省略」改为：script-src 优先，首选 nonce/hash 加 `'strict-dynamic'`（主机允许表可经 JSONP 或开放重定向绕过）；不得整体省略其余指令，`object-src 'none'` 与 `base-uri` 用于封堵 script-src 绕过，`frame-ancestors` 是点击劫持防护（只在响应头中生效）；其余指令按应用实际加载、嵌入与提交的目标定制，先用 report-only 迭代。",
+          "en": "Replaces \"only script-src is needed; the other CSP directives can be omitted for convenience\" with: prioritise script-src, preferably nonces or hashes with `'strict-dynamic'` (host allowlists can be bypassed through JSONP or open redirects); do not drop the other directives wholesale: `object-src 'none'` and `base-uri` close script-src bypasses, and `frame-ancestors` is the clickjacking control (effective only as a response header); tailor the rest to what the app actually loads, embeds and submits to, iterating with report-only."
+        },
+        "reason": {
+          "zh-CN": "原文把安全建议写成「可省略其余指令」，与同一文件对 frame-ancestors 和点击劫持的要求冲突；缺少 object-src、base-uri 的 CSP 可以被绕过。",
+          "en": "The original advice says the other directives may be omitted, which contradicts the same file's frame-ancestors and clickjacking requirements; a CSP without object-src and base-uri can be bypassed."
+        }
+      },
+      {
+        "id": "CSB-M12",
+        "type": "security",
+        "path": "references/golang-general-backend-security.md",
+        "section": "§GO-HTTP-004 (L313)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "把「只需设置 script-src，其余 CSP 指令为方便开发可整体省略」改为：script-src 优先，首选 nonce/hash 加 `'strict-dynamic'`（主机允许表可经 JSONP 或开放重定向绕过）；不得整体省略其余指令，`object-src 'none'` 与 `base-uri` 用于封堵 script-src 绕过，`frame-ancestors` 是点击劫持防护（只在响应头中生效）；其余指令按应用实际加载、嵌入与提交的目标定制，先用 report-only 迭代。",
+          "en": "Replaces \"only script-src is needed; the other CSP directives can be omitted for convenience\" with: prioritise script-src, preferably nonces or hashes with `'strict-dynamic'` (host allowlists can be bypassed through JSONP or open redirects); do not drop the other directives wholesale: `object-src 'none'` and `base-uri` close script-src bypasses, and `frame-ancestors` is the clickjacking control (effective only as a response header); tailor the rest to what the app actually loads, embeds and submits to, iterating with report-only."
+        },
+        "reason": {
+          "zh-CN": "原文把安全建议写成「可省略其余指令」，与同一文件对 frame-ancestors 和点击劫持的要求冲突；缺少 object-src、base-uri 的 CSP 可以被绕过。",
+          "en": "The original advice says the other directives may be omitted, which contradicts the same file's frame-ancestors and clickjacking requirements; a CSP without object-src and base-uri can be bypassed."
+        }
+      },
+      {
+        "id": "CSB-M13",
+        "type": "security",
+        "path": "references/javascript-typescript-nextjs-web-server-security.md",
+        "section": "§NEXT-CSP-001 NOTE (L496)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-nextjs-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「只需设置 script-src，其余 CSP 指令为方便开发可整体省略」改为：script-src 优先，首选 nonce/hash 加 `'strict-dynamic'`（主机允许表可经 JSONP 或开放重定向绕过）；不得整体省略其余指令，`object-src 'none'` 与 `base-uri` 用于封堵 script-src 绕过，`frame-ancestors` 是点击劫持防护（只在响应头中生效）；其余指令按应用实际加载、嵌入与提交的目标定制，先用 report-only 迭代。",
+          "en": "Replaces \"only script-src is needed; the other CSP directives can be omitted for convenience\" with: prioritise script-src, preferably nonces or hashes with `'strict-dynamic'` (host allowlists can be bypassed through JSONP or open redirects); do not drop the other directives wholesale: `object-src 'none'` and `base-uri` close script-src bypasses, and `frame-ancestors` is the clickjacking control (effective only as a response header); tailor the rest to what the app actually loads, embeds and submits to, iterating with report-only."
+        },
+        "reason": {
+          "zh-CN": "原文把安全建议写成「可省略其余指令」，与同一文件对 frame-ancestors 和点击劫持的要求冲突；缺少 object-src、base-uri 的 CSP 可以被绕过。",
+          "en": "The original advice says the other directives may be omitted, which contradicts the same file's frame-ancestors and clickjacking requirements; a CSP without object-src and base-uri can be bypassed."
+        }
+      },
+      {
+        "id": "CSB-M14",
+        "type": "security",
+        "path": "references/python-django-web-server-security.md",
+        "section": "§DJANGO-CSP-001 NOTE (L646)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-django-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「只需设置 script-src，其余 CSP 指令为方便开发可整体省略」改为：script-src 优先，首选 nonce/hash 加 `'strict-dynamic'`（主机允许表可经 JSONP 或开放重定向绕过）；不得整体省略其余指令，`object-src 'none'` 与 `base-uri` 用于封堵 script-src 绕过，`frame-ancestors` 是点击劫持防护（只在响应头中生效）；其余指令按应用实际加载、嵌入与提交的目标定制，先用 report-only 迭代。",
+          "en": "Replaces \"only script-src is needed; the other CSP directives can be omitted for convenience\" with: prioritise script-src, preferably nonces or hashes with `'strict-dynamic'` (host allowlists can be bypassed through JSONP or open redirects); do not drop the other directives wholesale: `object-src 'none'` and `base-uri` close script-src bypasses, and `frame-ancestors` is the clickjacking control (effective only as a response header); tailor the rest to what the app actually loads, embeds and submits to, iterating with report-only."
+        },
+        "reason": {
+          "zh-CN": "原文把安全建议写成「可省略其余指令」，与同一文件对 frame-ancestors 和点击劫持的要求冲突；缺少 object-src、base-uri 的 CSP 可以被绕过。",
+          "en": "The original advice says the other directives may be omitted, which contradicts the same file's frame-ancestors and clickjacking requirements; a CSP without object-src and base-uri can be bypassed."
+        }
+      },
+      {
+        "id": "CSB-M15",
+        "type": "security",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "§EXPRESS-DEPS-001 NOTE (L919)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "删除「忽略开发工具和打包器的 npm audit 结果」。改为按可达性分级：请求路径上的依赖优先处理，但不得整体忽略 devDependencies——构建与 CI 工具能接触源码、凭据和发布令牌，开发依赖只要被安装（开发机、未加 `--omit=dev` 的 CI），其安装脚本就会执行；确认不可达且没有安装脚本后才可降级。",
+          "en": "Removes \"ignore npm audit results for dev tools and bundlers\". Findings are now ranked by reachability: dependencies on the request path come first, but devDependencies must not be ignored wholesale, because build and CI tools can reach source code, credentials and publishing tokens, and any installed dev dependency (developer machines, CI without `--omit=dev`) runs its install scripts; downgrade only after confirming it is unreachable and has no install scripts."
+        },
+        "reason": {
+          "zh-CN": "与 React 参考 REACT-SUPPLY-001 把构建工具与安装脚本攻击纳入范围的要求冲突；整体排除开发依赖会漏掉构建与 CI 的供应链风险。",
+          "en": "It conflicts with REACT-SUPPLY-001 in the React reference, which covers build tools and install-script attacks; excluding dev dependencies wholesale misses build and CI supply-chain risk."
+        }
+      },
+      {
+        "id": "CSB-M16",
+        "type": "security",
+        "path": "references/javascript-typescript-react-web-frontend-security.md",
+        "section": "§REACT-CSRF-001 NOTE (L552)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-react-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M17",
+        "type": "security",
+        "path": "references/javascript-jquery-web-frontend-security.md",
+        "section": "§JQ-AJAX-002 NOTE (L418)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-jquery-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M18",
+        "type": "security",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "§EXPRESS-CSRF-001 IMPORTANT NOTE (L368, L379); Required #1 (L372)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。Required 首条的「that rely on cookies for authentication」同步改为「rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)」。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session. The first Required item, \"that rely on cookies for authentication\", now reads \"rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)\"."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M19",
+        "type": "security",
+        "path": "references/golang-general-backend-security.md",
+        "section": "§GO-HTTP-006 IMPORTANT NOTE (L365); Required #1 (L368); \"If tokens are impractical\" (L372)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。Required 首条的「that rely on cookies for authentication」同步改为「rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)」，与上方说明一致。「If tokens are impractical」一条中的自定义请求头要求补上前提「(combined with strict CORS and `SameSite` cookies)」，与 Express 参考一致。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session. The first Required item, \"that rely on cookies for authentication\", now reads \"rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)\" to match the note above. The custom-header requirement under \"If tokens are impractical\" adds the precondition \"(combined with strict CORS and `SameSite` cookies)\", as in the Express reference."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M20",
+        "type": "security",
+        "path": "references/javascript-typescript-nextjs-web-server-security.md",
+        "section": "§NEXT-CSRF-001 IMPORTANT NOTE (L340)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-nextjs-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M21",
+        "type": "security",
+        "path": "references/javascript-typescript-vue-web-frontend-security.md",
+        "section": "§VUE-CSRF-001 NOTE (L494)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-vue-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M22",
+        "type": "security",
+        "path": "references/python-flask-web-server-security.md",
+        "section": "§FLASK-CSRF-001 IMPORTANT NOTE (L240); Required #1 (L243); \"If tokens are impractical\" (L247); Fix, last item (L260)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-flask-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。Required 首条的「that rely on cookies for authentication」同步改为「rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)」。「If tokens are impractical」一条中的自定义请求头要求补上前提「(combined with strict CORS and `SameSite` cookies)」，与 Express 参考一致。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session. The first Required item, \"that rely on cookies for authentication\", now reads \"rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)\". The custom-header requirement under \"If tokens are impractical\" adds the precondition \"(combined with strict CORS and `SameSite` cookies)\", as in the Express reference."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule."
+        }
+      },
+      {
+        "id": "CSB-M23",
+        "type": "security",
+        "path": "references/python-fastapi-web-server-security.md",
+        "section": "§FASTAPI-CSRF-001 Note (L391); Required #1 (L395); Required, last item (L398)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-fastapi-web-server-security.md",
+        "summary": {
+          "zh-CN": "把「不用 cookie 认证就没有 CSRF 风险」的绝对表述改为：浏览器会自动附带的凭据（会话 cookie、HTTP Basic/Digest、TLS 客户端证书）都会引发 CSRF；只有当所有受保护端点只接受脚本显式设置的 `Authorization: Bearer`、不接受任何自动附带的凭据时，经典的浏览器 CSRF 才不适用，并要求确认这些端点没有同时接受 cookie 会话。同时把 L398 残留的「If cookies are not used for auth … CSRF is usually not applicable」改为指向上文的自动附带凭据规则。Required 首条的「that rely on cookies for authentication」同步改为「rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)」。",
+          "en": "Replaces the absolute claim \"no cookie authentication means no CSRF risk\" with: any credential the browser attaches automatically (session cookies, HTTP Basic/Digest, TLS client certificates) enables CSRF; classic browser CSRF does not apply only when every protected endpoint accepts nothing but an `Authorization: Bearer` header set explicitly by script and no ambient credential, and the reviewer must confirm those endpoints do not also accept a cookie session. The leftover L398 sentence \"If cookies are not used for auth … CSRF is usually not applicable\" now points to the ambient-credential rule above. The first Required item, \"that rely on cookies for authentication\", now reads \"rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)\"."
+        },
+        "reason": {
+          "zh-CN": "原口径会让审查者对使用 HTTP Basic/Digest、客户端证书以及混用 cookie 的端点跳过 CSRF 检查，得出不安全的结论；各参考文件在这一点上统一为完整口径。L398 的残留句与新口径矛盾。",
+          "en": "The original wording leads reviewers to skip CSRF checks for endpoints using HTTP Basic/Digest, client certificates or a mix with cookies, and so to reach unsafe conclusions; all references now state the complete rule. The leftover L398 sentence contradicted the new rule."
+        }
+      },
+      {
+        "id": "CSB-M24",
+        "type": "security",
+        "path": "references/javascript-typescript-nextjs-web-server-security.md",
+        "section": "§NEXT-SUPPLY-001 IMPORTANT (L198-205); §6 Sources (L1126)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-nextjs-web-server-security.md",
+        "summary": {
+          "zh-CN": "重写 react2shell 段：编号改为 CVE-2025-55182（React）/ GHSA-9qr9-h5gf-34mp（Next.js），注明 CVE-2025-66478 已被 NVD 以重复为由拒绝；写明受影响范围（15.x、16.x、14.3.0-canary.77 及以上，且使用 App Router）与不受影响范围（13.x、14.x 稳定版、Pages Router、Edge）；说明 15.0.5/15.1.9/15.2.6/15.3.6/15.4.8/15.5.7/16.0.7 只是这次远程代码执行漏洞的修复线，不是安全基线。后续两批分列：① 2025-12-11（CVE-2025-55184/55183/67779）修复线 15.0.7/15.1.11/15.2.8/15.3.8/15.4.10/15.5.9/16.0.10，14.x 为 14.2.35，且 14.2.35 只对应这一批；② CVE-2026-23864（GHSA-h25m-26qc-wcjf）影响 `next >= 13.0.0, < 15.0.8`，使用 App Router 的 13.x/14.x 应用（含 14.2.35）同样受影响且没有线内修复，须升级到 15.0.8 及以上；15.x/16.x 修复线为 15.0.8/15.1.12/15.2.9/15.3.9/15.4.11/15.5.10/16.0.11/16.1.5。报告前核对入口改为 https://nextjs.org/blog/tag/security；§6 的 CVE-2026-23864 链接改为 GHSA-h25m-26qc-wcjf（React 侧 GHSA-83fc-fqcc-2hmg），并新增 NVD CVE-2025-55182 来源。核对日期句改为：以上三批于 2026-09-28 核对，此后另有更新的公告，本列表不是安全基线，以官方公告为准。",
+          "en": "Rewrites the react2shell section: CVE-2025-55182 (React) / GHSA-9qr9-h5gf-34mp (Next.js); NVD rejected CVE-2025-66478 as a duplicate. Affected: 15.x, 16.x, 14.3.0-canary.77+ with the App Router; unaffected: 13.x, 14.x stable, Pages Router, Edge. 15.0.5/15.1.9/15.2.6/15.3.6/15.4.8/15.5.7/16.0.7 fix only this RCE. Later batches: (1) 2025-12-11 (CVE-2025-55184/55183/67779): 15.0.7/15.1.11/15.2.8/15.3.8/15.4.10/15.5.9/16.0.10, and 14.2.35 for 14.x (this batch only); (2) CVE-2026-23864 (GHSA-h25m-26qc-wcjf) affects `next >= 13.0.0, < 15.0.8`: 13.x/14.x App Router apps, 14.2.35 included, have no fix on their line and must move to 15.0.8+; 15.x/16.x fixes: 15.0.8/15.1.12/15.2.9/15.3.9/15.4.11/15.5.10/16.0.11/16.1.5. The check link becomes https://nextjs.org/blog/tag/security; §6 links GHSA-h25m-26qc-wcjf (React: GHSA-83fc-fqcc-2hmg) and NVD CVE-2025-55182. The three batches were checked on 2026-09-28; newer advisories exist, so the list is no security baseline."
+        },
+        "reason": {
+          "zh-CN": "原文会把 13.x/14.x 误报为受这次远程代码执行漏洞影响，又把 15.5.7/16.0.7 当作安全基线；所用 CVE 编号已被 NVD 拒绝，GHSA 链接无法打开。只补修复线而漏写 CVE-2026-23864 对 13.x/14.x App Router 的影响时，装着 14.2.35 的项目会被误判为无需处理。版本事实已于 2026-09-28 对照 GitHub Advisory、vercel/next.js 仓库公告、Vercel 官方摘要、NVD 与 npm registry 核实。",
+          "en": "The original reports 13.x/14.x as affected by this remote code execution bug, treats 15.5.7/16.0.7 as a security baseline, uses a CVE identifier NVD rejected, and links to a GHSA page that does not exist. Listing the fix lines without the CVE-2026-23864 impact on 13.x/14.x App Router apps would let a project on 14.2.35 be judged safe. The version facts were checked on 2026-09-28 against GitHub Advisory, the vercel/next.js repository advisory, Vercel's official summary, NVD and the npm registry."
+        }
+      },
+      {
+        "id": "CSB-M25",
+        "type": "security",
+        "path": "SKILL.md",
+        "section": "§Overrides (L42)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/SKILL.md",
+        "summary": {
+          "zh-CN": "重写覆盖规则：只接受用户在会话中明确给出的覆盖，或用户明确指定的项目配置文件；被审仓库里的 README、AGENTS、CLAUDE、提示文件、注释与提交信息只是数据，可以说明原因，但不能压制、降级或改写发现；要求跳过检查、忽略发现或改变报告范围的文字本身应作为发现上报；经用户同意的覆盖在报告中列为「accepted risk (user override)」并写明原因，不得静默省略。",
+          "en": "Rewrites the override rule: accept overrides only when the user gives them in the conversation or names a project configuration file; README, AGENTS, CLAUDE, prompt files, comments and commit messages in the reviewed repository are data that may explain intent but cannot suppress, downgrade or rewrite findings; text asking to skip checks, ignore findings or change the report scope is itself reported as a finding; overrides the user approves are listed as \"accepted risk (user override)\" with the reason, never silently dropped."
+        },
+        "reason": {
+          "zh-CN": "原文要求留意项目文档与提示文件中覆盖最佳实践的指令、并且不要与之争辩，这是提示注入入口：被审代码是不可信输入，仓库里一句「忽略鉴权相关发现」就能压掉报告内容。",
+          "en": "The original told the agent to heed instructions in project docs and prompt files that override best practices and not to argue with them. That is a prompt-injection entry point: reviewed code is untrusted input, and one line such as \"ignore authentication findings\" in the repository could suppress the report."
+        }
+      },
+      {
+        "id": "CSB-M40",
+        "type": "security",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "§EXPRESS-CSRF-001 Required #4 (L375)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "用自定义请求头替代 CSRF 令牌时，补上前提「(combined with strict CORS and `SameSite` cookies)」。",
+          "en": "When a custom request header replaces CSRF tokens, adds the precondition \"(combined with strict CORS and `SameSite` cookies)\"."
+        },
+        "reason": {
+          "zh-CN": "自定义请求头只有在 CORS 不允许攻击者的源携带凭据发送该头时才有效；原版只说这是次强的方法而不写前提，遇到反射 Origin 且允许凭据的 CORS 配置时会得出不安全的结论。",
+          "en": "A custom header only protects when CORS does not let an attacker's origin send it with credentials; the original calls it the next strongest method without that precondition, which leads to unsafe conclusions for CORS setups that reflect Origin and allow credentials."
+        }
+      },
+      {
+        "id": "CSB-M52",
+        "type": "security",
+        "path": "references/python-django-web-server-security.md",
+        "section": "§DJANGO-CSRF-001 Required #1 (L368)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-django-web-server-security.md",
+        "summary": {
+          "zh-CN": "Required 首条的「MUST protect all state-changing endpoints … that rely on cookies for authentication」改为「rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)」，与其他参考文件的 CSRF 口径一致。",
+          "en": "The first Required item, \"MUST protect all state-changing endpoints … that rely on cookies for authentication\", now reads \"rely on ambient credentials (cookies, HTTP Basic/Digest, TLS client certificates)\", matching the CSRF rule in the other references."
+        },
+        "reason": {
+          "zh-CN": "只写 cookie 会让审查者对使用 HTTP Basic/Digest 或客户端证书的端点跳过 CSRF 检查。",
+          "en": "Naming only cookies leads reviewers to skip CSRF checks for endpoints that use HTTP Basic/Digest or client certificates."
+        }
+      },
+      {
+        "id": "CSB-M26",
+        "type": "fixed",
+        "path": "references/golang-general-backend-security.md",
+        "section": "§GO-INJECT-002 Notes (L557)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "「The Go os/exec package intentionally does invoke a shell」改为「does not invoke a shell: arguments are passed to the program verbatim」。",
+          "en": "\"The Go os/exec package intentionally does invoke a shell\" becomes \"does not invoke a shell: arguments are passed to the program verbatim\"."
+        },
+        "reason": {
+          "zh-CN": "事实错误：os/exec 不经过 shell，原句也与本规则及文末来源注记（L811）矛盾。",
+          "en": "Factual error: os/exec does not use a shell, and the sentence contradicts this rule and the source note at L811."
+        }
+      },
+      {
+        "id": "CSB-M27",
+        "type": "fixed",
+        "path": "references/golang-general-backend-security.md",
+        "section": "§GO-HTTP-006 \"If tokens are impractical\" (L372)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "Django/Flask 的配置名 `SESSION_COOKIE_SAMESITE=lax` 改为 Go 写法 `http.Cookie{SameSite: http.SameSiteLaxMode}`。",
+          "en": "The Django/Flask setting `SESSION_COOKIE_SAMESITE=lax` becomes the Go form `http.Cookie{SameSite: http.SameSiteLaxMode}`."
+        },
+        "reason": {
+          "zh-CN": "从其他框架复制来的配置名，Go 里没有这个设置。",
+          "en": "A setting name copied from another framework; Go has no such setting."
+        }
+      },
+      {
+        "id": "CSB-M28",
+        "type": "fixed",
+        "path": "references/javascript-general-web-frontend-security.md",
+        "section": "§FS-DOMC-001 Fix (L624)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-general-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "失效的交叉引用 `FEJS-URL-001` 改为 `JS-URL-001`。",
+          "en": "The broken cross-reference `FEJS-URL-001` becomes `JS-URL-001`."
+        },
+        "reason": {
+          "zh-CN": "文中没有 FEJS-URL-001 这条规则。",
+          "en": "The file has no rule FEJS-URL-001."
+        }
+      },
+      {
+        "id": "CSB-M29",
+        "type": "fixed",
+        "path": "SKILL.md",
+        "section": "§General Security Advice / A note on TLS (L86)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/SKILL.md",
+        "summary": {
+          "zh-CN": "删除「避免推荐 HSTS」。改为：默认不把缺少 HSTS 报为发现；只有确认站点只走 TLS 且用户要求时才建议，先用较短的 max-age，暂不加 includeSubDomains 与 preload，并指向 Django 参考中的渐进做法。",
+          "en": "Removes \"avoid recommending HSTS\". Missing HSTS is not reported by default; recommend it only when the site is confirmed TLS-only and the user asks, starting with a short max-age and without includeSubDomains or preload, pointing to the gradual approach in the Django reference."
+        },
+        "reason": {
+          "zh-CN": "原文与 Django 参考（L115、L257、L273）建议启用 HSTS 的写法冲突。",
+          "en": "The original conflicts with the Django reference (L115, L257, L273), which recommends enabling HSTS."
+        }
+      },
+      {
+        "id": "CSB-M30",
+        "type": "fixed",
+        "path": "references/python-flask-web-server-security.md",
+        "section": "§FLASK-SSTI-001 Required (L303); Insecure patterns (L311)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-flask-web-server-security.md",
+        "summary": {
+          "zh-CN": "原句「MUST NOT use use `.format()` on user controlled strings」改为：格式串本身受用户控制属于格式串注入；并且无论格式串归谁控制，只要格式化或拼接的结果作为模板源传给 `render_template_string`/`Environment.from_string`，就是 SSTI（Critical），例如 `render_template_string(f\"Hello {request.args['name']}\")`；只有结果作为普通字符串输出时，才属于按输出上下文转义的较低风险问题。Insecure patterns 补上 `render_template_string(\"Hello %s\" % name)` 与 f-string 拼接两种写法。并补一句：用户控制的格式串即使结果只作为字符串输出，仍属格式串注入。",
+          "en": "The sentence \"MUST NOT use use `.format()` on user controlled strings\" is rewritten: a user-controlled format string is format-string injection, and whoever controls the format string, passing the formatted or concatenated result as a template source to `render_template_string`/`Environment.from_string` is SSTI (Critical), for example `render_template_string(f\"Hello {request.args['name']}\")`; only when the result is output as a plain string is it a lower-risk output-encoding issue. Insecure patterns add `render_template_string(\"Hello %s\" % name)` and f-string concatenation. It adds that a user-controlled format string is still format-string injection even when the result is only emitted as a string."
+        },
+        "reason": {
+          "zh-CN": "原句有重复词，且没有说清风险在哪里；Flask 最常见的 SSTI 写法（开发者写的格式串拼进用户值，再作为模板源）容易被当作较低风险，从而降级一条 Critical 规则。",
+          "en": "The original sentence repeats a word and does not say where the risk lies; the most common Flask SSTI pattern (a developer-written format string with a user value, then used as a template source) could be treated as low risk, downgrading a Critical rule."
+        }
+      },
+      {
+        "id": "CSB-M41",
+        "type": "removed",
+        "path": "agents/openai.yaml",
+        "section": "whole file",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/agents/openai.yaml",
+        "summary": {
+          "zh-CN": "不再随附 `agents/openai.yaml`（Codex 客户端的界面展示信息：display_name、short_description、default_prompt）。",
+          "en": "`agents/openai.yaml` (Codex client display information: display_name, short_description, default_prompt) is no longer included."
+        },
+        "reason": {
+          "zh-CN": "该文件只被 Codex 客户端读取，Teloa 不使用；标题与简介由市场目录条目提供。",
+          "en": "Only the Codex client reads this file and Teloa does not use it; the title and summary come from the catalog entry."
+        }
+      },
+      {
+        "id": "CSB-M31",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "§A note on TLS (L86)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/SKILL.md",
+        "summary": {
+          "zh-CN": "去掉「not generally recommended for the scope of projects being reviewed by codex」中专指 Codex 的措辞。",
+          "en": "Removes the Codex-specific wording \"not generally recommended for the scope of projects being reviewed by codex\"."
+        },
+        "reason": {
+          "zh-CN": "让说明对 Teloa 等其他客户端应用保持中性；HSTS 建议本身的更正见 CSB-M29。",
+          "en": "Keeps the text neutral for other client apps such as Teloa; the HSTS correction itself is CSB-M29."
+        }
+      },
+      {
+        "id": "CSB-M32",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/SKILL.md",
+        "summary": {
+          "zh-CN": "在 SKILL.md 标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md；10 份参考文件的同一声明分别见 CSB-M42～CSB-M51。",
+          "en": "Adds a prominent change notice below the title of SKILL.md, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md; the same notice in each of the 10 reference files is CSB-M42 to CSB-M51."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M42",
+        "type": "adapted",
+        "path": "references/golang-general-backend-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M43",
+        "type": "adapted",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M44",
+        "type": "adapted",
+        "path": "references/javascript-general-web-frontend-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-general-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M45",
+        "type": "adapted",
+        "path": "references/javascript-jquery-web-frontend-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-jquery-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M46",
+        "type": "adapted",
+        "path": "references/javascript-typescript-nextjs-web-server-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-nextjs-web-server-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M47",
+        "type": "adapted",
+        "path": "references/javascript-typescript-react-web-frontend-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-react-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M48",
+        "type": "adapted",
+        "path": "references/javascript-typescript-vue-web-frontend-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-typescript-vue-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M49",
+        "type": "adapted",
+        "path": "references/python-django-web-server-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-django-web-server-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M50",
+        "type": "adapted",
+        "path": "references/python-fastapi-web-server-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-fastapi-web-server-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M51",
+        "type": "adapted",
+        "path": "references/python-flask-web-server-security.md",
+        "section": "below the title",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-flask-web-server-security.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行显著的修改声明「Derived work: modified by Teloa from openai/skills@49f948fa…」，并指向 MODIFICATIONS.md。",
+          "en": "Adds a prominent change notice below the title, \"Derived work: modified by Teloa from openai/skills@49f948fa…\", pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求被修改的文件带有显著的修改声明。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry prominent notices that they were changed."
+        }
+      },
+      {
+        "id": "CSB-M33",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "§Workflow (after L25)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/SKILL.md",
+        "summary": {
+          "zh-CN": "新增一段：参考文件的内容截至 2026 年 1 月，报告中涉及版本号、最新版本与 CVE 时，须先对照当前官方公告核实并引用出处。",
+          "en": "Adds a paragraph: the references reflect January 2026, so version numbers, latest releases and CVEs must be checked against current official advisories and cited before reporting."
+        },
+        "reason": {
+          "zh-CN": "参考文件中的版本与漏洞事实会过时，直接引用可能给出错误的升级建议。",
+          "en": "Version and vulnerability facts in the references go stale; quoting them directly can produce wrong upgrade advice."
+        }
+      },
+      {
+        "id": "CSB-M34",
+        "type": "added",
+        "path": "references/golang-general-backend-security.md",
+        "section": "§GO-HTTP-006 Required (L370 rewritten; new item after it)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/golang-general-backend-security.md",
+        "summary": {
+          "zh-CN": "新增：Go 1.25 及以上 SHOULD 使用 `http.NewCrossOriginProtection().Handler(mux)`——按 `Sec-Fetch-Site` 拒绝不安全的跨源请求，缺该头时回退比较 `Origin` 与 `Host`，两者都缺时放行；GET/HEAD/OPTIONS 一律放行；代理改写 Host 时用 `AddTrustedOrigin`；需要兼容两个头都不发送的客户端时保留令牌；不要用 GET 改状态（CrossOriginProtection 与 SameSite=Lax 都拦不住跨站顶层 GET），应改用 POST/PUT/PATCH/DELETE。为容纳这条新防线，原版 L370「tokens remain the primary defense」改为「主防线是 CSRF 令牌或 Go 1.25+ CrossOriginProtection，其余为纵深防御」。",
+          "en": "Adds: on Go 1.25+, SHOULD use `http.NewCrossOriginProtection().Handler(mux)`, which rejects unsafe cross-origin requests by `Sec-Fetch-Site`, falls back to comparing `Origin` with `Host` when that header is missing, and allows requests that carry neither; GET/HEAD/OPTIONS always pass; use `AddTrustedOrigin` when a proxy rewrites Host; keep tokens for clients that send neither header; never change state with GET (neither CrossOriginProtection nor SameSite=Lax stops cross-site top-level GET), use POST/PUT/PATCH/DELETE. To make room for this defence, the original L370 \"tokens remain the primary defense\" now says the primary defence is CSRF tokens or Go 1.25+ CrossOriginProtection, with the rest as defence in depth."
+        },
+        "reason": {
+          "zh-CN": "这份参考以 Go 1.25.x 为目标，却没有提到标准库自带的 CSRF 防护；行为描述已与 pkg.go.dev 文档逐项核对。L370 的改写是为容纳新增防线，不是纠正原版错误，所以随本条归为新增。",
+          "en": "The reference targets Go 1.25.x but did not mention the standard library's built-in CSRF protection; the behaviour described was checked item by item against pkg.go.dev. Rewriting L370 only makes room for the new defence and does not correct an error, so it belongs to this addition."
+        }
+      },
+      {
+        "id": "CSB-M35",
+        "type": "added",
+        "path": "references/python-flask-web-server-security.md",
+        "section": "§FLASK-SUPPLY-001 Audit focus (L626)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/python-flask-web-server-security.md",
+        "summary": {
+          "zh-CN": "新增一句：Werkzeug `safe_join` 的设备名处理有多次后续修复（CVE-2025-66221 在 3.1.4 修复、CVE-2026-21860 在 3.1.5 修复、CVE-2026-27199 在 3.1.6 修复），以当前 Werkzeug 公告为准。",
+          "en": "Adds a sentence: Werkzeug `safe_join` device-name handling had several follow-up fixes (CVE-2025-66221 fixed in 3.1.4, CVE-2026-21860 fixed in 3.1.5, CVE-2026-27199 fixed in 3.1.6); check the current Werkzeug advisories."
+        },
+        "reason": {
+          "zh-CN": "原版文件的抓取日（2026-01-26）之前 CVE-2026-21860 已经发布，但文中没有列出。",
+          "en": "CVE-2026-21860 was published before the original file's retrieval date (2026-01-26) but was not listed."
+        }
+      },
+      {
+        "id": "CSB-M37",
+        "type": "improved",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "§EXPRESS-CSRF-001 Required #4 (L375)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "修正语病「MUST use at a minimum require」，「CRSF」改为「CSRF」，「second strongest」改为「next strongest」，并补上「on state-changing requests」。",
+          "en": "Fixes the garbled \"MUST use at a minimum require\", \"CRSF\" to \"CSRF\", \"second strongest\" to \"next strongest\", and adds \"on state-changing requests\"."
+        },
+        "reason": {
+          "zh-CN": "拼写、语法与表述清晰度；同一行新增的安全前提单列为 CSB-M40。",
+          "en": "Spelling, grammar and clarity; the security precondition added on the same line is listed separately as CSB-M40."
+        }
+      },
+      {
+        "id": "CSB-M38",
+        "type": "improved",
+        "path": "references/javascript-express-web-server-security.md",
+        "section": "§EXPRESS-STATIC-001 Severity (L644); §EXPRESS-DEPS-001 (L921)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-express-web-server-security.md",
+        "summary": {
+          "zh-CN": "拼写：「tot eh」改为「on the」，「concent」改为「consent」。",
+          "en": "Spelling: \"tot eh\" becomes \"on the\" and \"concent\" becomes \"consent\"."
+        },
+        "reason": {
+          "zh-CN": "拼写错误。",
+          "en": "Typos."
+        }
+      },
+      {
+        "id": "CSB-M39",
+        "type": "improved",
+        "path": "references/javascript-jquery-web-frontend-security.md",
+        "section": "§JQ-SUPPLY-001 NOTE (L159)",
+        "upstream": "openai/skills@49f948faa9258a0c61caceaf225e179651397431:skills/.curated/security-best-practices/references/javascript-jquery-web-frontend-security.md",
+        "summary": {
+          "zh-CN": "拼写：「concent」改为「consent」。",
+          "en": "Spelling: \"concent\" becomes \"consent\"."
+        },
+        "reason": {
+          "zh-CN": "拼写错误。",
+          "en": "Typo."
+        }
+      }
+    ]
+  }
+}

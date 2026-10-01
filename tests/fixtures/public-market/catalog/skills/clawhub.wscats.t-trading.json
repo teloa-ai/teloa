@@ -1,0 +1,83 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.wscats.t-trading",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "automation"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "t-trading",
+    "title": {
+      "zh-CN": "T 短线交易",
+      "en": "T Trading"
+    },
+    "summary": {
+      "zh-CN": "基于技术指标提供 A 股和加密货币短线交易分析和建议。用于短线交易策略制定。",
+      "en": "基于维加斯通道EMA多层通道与斐波那契回撤，提供A股和加密货币短线交易的多维度结构化技术分析和明确操作建议。"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "wscats",
+    "slug": "t-trading",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "18af137652e3eacd1ebcf8a01902b82b320e348a9702f374b2456f266b14e92b",
+        "size": 7851
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "27eb59814e8c806954933cf6a2a156ecabd761a860e148536f2b21725da32d63",
+        "size": 6016
+      },
+      {
+        "path": "vegas-tunnel-resonance-skill.md",
+        "sha256": "ed8502a93a629df6f7342d99c3c9ae05e68987d76d5a5229ee88789e29ddffcf",
+        "size": 20580
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "0ecc277830411c1fbbeafa97803072cd8165676144ca30b1975efcca0a4e3a96",
+        "size": 2755
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 21653,
+    "installsLabel": "2.2 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "format": "teloa.business-object-type/v1",
+  "id": "asset",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "资产",
+  "unit": "台",
+  "lead": "从资产台账同步，告警要落到具体机器上才查得下去。",
+  "sourceId": "security-alert-http",
+  "fields": [
+    {
+      "name": "environment",
+      "label": "环境",
+      "type": "enum",
+      "required": true,
+      "from": "环境",
+      "values": [
+        "生产",
+        "测试"
+      ],
+      "localized": {
+        "label": {
+          "original": "环境",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "环境",
+            "en": "Environment"
+          }
+        },
+        "values": [
+          {
+            "original": "生产",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "生产",
+              "en": "Production"
+            }
+          },
+          {
+            "original": "测试",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "测试",
+              "en": "Test"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "owner-name",
+      "label": "负责人",
+      "type": "text",
+      "required": false,
+      "from": "负责人",
+      "localized": {
+        "label": {
+          "original": "负责人",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "负责人",
+            "en": "Owner"
+          }
+        }
+      }
+    },
+    {
+      "name": "grade",
+      "label": "资产等级",
+      "type": "enum",
+      "required": false,
+      "from": "资产等级",
+      "values": [
+        "重要",
+        "一般"
+      ],
+      "localized": {
+        "label": {
+          "original": "资产等级",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "资产等级",
+            "en": "Asset tier"
+          }
+        },
+        "values": [
+          {
+            "original": "重要",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "重要",
+              "en": "Important"
+            }
+          },
+          {
+            "original": "一般",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "一般",
+              "en": "Standard"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "registered-at",
+      "label": "接入时间",
+      "type": "datetime",
+      "required": false,
+      "from": "接入时间",
+      "localized": {
+        "label": {
+          "original": "接入时间",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "接入时间",
+            "en": "Onboarded at"
+          }
+        }
+      }
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "资产",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "资产",
+        "en": "Assets"
+      }
+    },
+    "unit": {
+      "original": "台",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "台",
+        "en": "assets"
+      }
+    },
+    "lead": {
+      "original": "从资产台账同步，告警要落到具体机器上才查得下去。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从资产台账同步，告警要落到具体机器上才查得下去。",
+        "en": "Assets are synchronized from the asset inventory so every alert can be traced to a specific endpoint."
+      }
+    }
+  }
+}

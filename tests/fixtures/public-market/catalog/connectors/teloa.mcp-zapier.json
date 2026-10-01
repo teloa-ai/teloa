@@ -1,0 +1,107 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-zapier",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "automation"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "zapier",
+    "title": {
+      "zh-CN": "Zapier MCP（9000+ 应用自动化）",
+      "en": "Zapier MCP (9000+ App Automations)"
+    },
+    "summary": {
+      "zh-CN": "Zapier 官方远程 MCP，通过专属连接令牌访问 9000+ 应用的自动化动作。需在 Zapier 账户中开启 MCP 并生成连接令牌，令牌包含在专属服务器 URL 中。",
+      "en": "Zapier official remote MCP connecting 9000+ app automations via a dedicated connection token embedded in your personal server URL. Enable MCP in your Zapier account and copy the connection token."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "url-path",
+          "label": {
+            "zh-CN": "Zapier MCP 连接令牌（在 Zapier 账户 > AI Actions > MCP 设置中生成，格式为字母数字串）",
+            "en": "Zapier MCP connection token (generate in Zapier account > AI Actions > MCP settings; alphanumeric string)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http-template",
+      "urlTemplate": "https://mcp.zapier.com/api/mcp/s/{secret}/mcp"
+    },
+    "tools": [
+      {
+        "name": "inspect_zapier_actions",
+        "description": {
+          "zh-CN": "查看服务器上已启用的 Zapier 动作",
+          "en": "Inspect Zapier actions enabled on the server"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "execute_zapier_read_action",
+        "description": {
+          "zh-CN": "执行读取类 Zapier 动作（搜索、查询）",
+          "en": "Run a read Zapier action (search, lookup)"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "execute_zapier_write_action",
+        "description": {
+          "zh-CN": "执行写入类 Zapier 动作（发送、创建、更新）",
+          "en": "Run a write Zapier action (send, create, update)"
+        },
+        "readOnly": false
+      }
+    ],
+    "upstreamUrl": "https://zapier.com/mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Zapier-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "连接令牌包含在专属服务器 URL 中，Teloa 仅存储令牌本身，不记录或返回完整 URL",
+        "en": "Connection token is embedded in a personal server URL; Teloa stores only the token itself and never logs or returns the full URL"
+      },
+      {
+        "zh-CN": "数据会经由 zapier.com 平台中转；中国企业数据经境外平台路由涉及数据出境合规，需要负责人自行评估",
+        "en": "Data passes through zapier.com; Chinese enterprise data routed via overseas platform involves data export compliance — responsible party must self-evaluate"
+      },
+      {
+        "zh-CN": "工具按 Zapier 新建服务器默认的 agentic 模式核对；改用经典或托管模式时工具清单不同，需另行评估",
+        "en": "Tools were checked against the agentic mode that new Zapier servers default to; classic or managed modes expose different tools and need a separate review"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

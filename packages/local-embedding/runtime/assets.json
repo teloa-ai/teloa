@@ -1,0 +1,125 @@
+{
+ "format": "teloa.local-embedding.assets/v1",
+ "model": {
+  "name": "Qwen3-Embedding-0.6B",
+  "upstream": {
+   "repo": "Qwen/Qwen3-Embedding-0.6B",
+   "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+   "license": "Apache-2.0"
+  },
+  "onnx": {
+   "repo": "onnx-community/Qwen3-Embedding-0.6B-ONNX",
+   "revision": "c25a394dd583836952667c12f008335071b3f43d",
+   "producer": "onnxruntime-genai",
+   "provenance": "onnx-community 社区转换，非原厂工件；Teloa 未修改。int8 变体未通过 Task 0 等价性门槛，未收录，见 PROVENANCE.md。"
+  }
+ },
+ "allowedHosts": [
+  "huggingface.co"
+ ],
+ "redirectHosts": [
+  "huggingface.co",
+  "*.huggingface.co",
+  "*.hf.co"
+ ],
+ "mirrors": [
+  {
+   "id": "hf-mirror",
+   "hostMap": {
+    "huggingface.co": "hf-mirror.com"
+   },
+   "redirectHosts": [
+    "huggingface.co",
+    "*.huggingface.co",
+    "*.hf.co",
+    "*.hf-mirror.com"
+   ]
+  }
+ ],
+ "defaultVariant": "fp32",
+ "variants": [
+  "fp32"
+ ],
+ "sessionOptions": {},
+ "files": [
+  {
+   "path": "onnx/model.onnx",
+   "variant": "fp32",
+   "url": "https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/c25a394dd583836952667c12f008335071b3f43d/onnx/model.onnx",
+   "bytes": 307161415,
+   "sha256": "bf27b2f3f9ef9c32ca337d75b361fa99439deaeaefe82e4701b2dbd8439197cc"
+  },
+  {
+   "path": "onnx/model.onnx_data",
+   "variant": "fp32",
+   "url": "https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/c25a394dd583836952667c12f008335071b3f43d/onnx/model.onnx_data",
+   "bytes": 2093436928,
+   "sha256": "f0a61604465929a27e68aa6217c8c89ec6186572f0209fdb7711adda48a9b9a9"
+  },
+  {
+   "path": "tokenizer.json",
+   "variant": "shared",
+   "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/resolve/97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3/tokenizer.json",
+   "bytes": 11423705,
+   "sha256": "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a"
+  },
+  {
+   "path": "tokenizer_config.json",
+   "variant": "shared",
+   "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/resolve/97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3/tokenizer_config.json",
+   "bytes": 9706,
+   "sha256": "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0"
+  }
+ ],
+ "profile": {
+  "dimensions": 1024,
+  "pooling": "last-token",
+  "normalize": "l2",
+  "maxTokens": 512,
+  "queryInstruction": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
+  "documentPrefix": "",
+  "padTokenId": 151643,
+  "appendedTokenId": 151643,
+  "paddingSide": "right",
+  "inputs": [
+   "input_ids",
+   "attention_mask",
+   "position_ids",
+   "past_key_values.{0..27}.{key,value}"
+  ],
+  "output": "last_hidden_state",
+  "emptyKvShape": [
+   0,
+   8,
+   0,
+   128
+  ],
+  "kvLayers": 28
+ },
+ "evaluationOnly": {
+  "note": "仅在 TELOA_LOCAL_EMBEDDING_ACCEPTANCE=1 的验收脚本里按 TELOA_LOCAL_EMBEDDING_VARIANT 读取（int8 另供验收宿主并测）；均不在 files/variants 中，不作发行件。int8 未通过 Task 0 等价性门槛（平均 0.958 / 最差 0.932）；q4、bnb4 为 B11 补测件。摘要见 PROVENANCE.md §2.1。",
+  "files": [
+   {
+    "path": "onnx/model_int8.onnx",
+    "variant": "int8",
+    "url": "https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/c25a394dd583836952667c12f008335071b3f43d/onnx/model_int8.onnx",
+    "bytes": 613527539,
+    "sha256": "6d0ea863f78b4a84afa3c7fcba1ec341572b5e28121aef77b7092b1dfdf679c7"
+   },
+   {
+    "path": "onnx/model_q4.onnx",
+    "variant": "q4",
+    "url": "https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/c25a394dd583836952667c12f008335071b3f43d/onnx/model_q4.onnx",
+    "bytes": 914121462,
+    "sha256": "8be554b37368134c3f38613c6f6ad0b7bb5f3a6465ab87574dbc0dcf24daa428"
+   },
+   {
+    "path": "onnx/model_bnb4.onnx",
+    "variant": "bnb4",
+    "url": "https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/c25a394dd583836952667c12f008335071b3f43d/onnx/model_bnb4.onnx",
+    "bytes": 886593402,
+    "sha256": "043b1fad2d02dc5c59de13deb8b059aab093b1e3f85d5554edb73dc2e0abacd1"
+   }
+  ]
+ }
+}

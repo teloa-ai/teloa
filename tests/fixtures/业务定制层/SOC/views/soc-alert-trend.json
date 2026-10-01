@@ -1,0 +1,103 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-alert-trend",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "告警趋势",
+  "kind": "trend",
+  "chart": "line",
+  "objectType": "alert-ticket",
+  "dimension": {
+    "field": "first-seen-at",
+    "bucket": "day",
+    "limit": 30
+  },
+  "measures": [
+    {
+      "id": "high",
+      "label": "高",
+      "aggregation": "count",
+      "where": {
+        "field": "severity",
+        "op": "eq",
+        "values": [
+          "高"
+        ]
+      },
+      "localized": {
+        "label": {
+          "original": "高",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "高",
+            "en": "High"
+          }
+        }
+      }
+    },
+    {
+      "id": "med",
+      "label": "中",
+      "aggregation": "count",
+      "where": {
+        "field": "severity",
+        "op": "eq",
+        "values": [
+          "中"
+        ]
+      },
+      "localized": {
+        "label": {
+          "original": "中",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "中",
+            "en": "Medium"
+          }
+        }
+      }
+    },
+    {
+      "id": "low",
+      "label": "低",
+      "aggregation": "count",
+      "where": {
+        "field": "severity",
+        "op": "eq",
+        "values": [
+          "低"
+        ]
+      },
+      "localized": {
+        "label": {
+          "original": "低",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "低",
+            "en": "Low"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "window": {
+    "field": "first-seen-at",
+    "relative": "last-30d"
+  },
+  "limit": 30,
+  "localized": {
+    "title": {
+      "original": "告警趋势",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "告警趋势",
+        "en": "Alert trend"
+      }
+    }
+  }
+}

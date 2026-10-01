@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "sigma-rule-task",
+  "title": "Sigma 规则开发任务",
+  "version": "1.0.0",
+  "domain": "detection",
+  "description": "基于检测需求文档编写 Sigma 源规则，生成目标平台转换草案（SPL/KQL/EQL）与字段映射表。所有转换草案标注未在目标引擎验证。",
+  "requirements": [
+    "检测需求文档（或威胁假设 + ATT&CK 技术 + 关键字段摘要）",
+    "目标平台列表（如 Splunk、Microsoft Sentinel、Elastic）"
+  ],
+  "output": "Sigma 源规则（含所有必需字段）、各目标平台转换草案、字段映射表",
+  "skills": [
+    {
+      "id": "sigma-rule-authoring",
+      "title": "Sigma 规则编写",
+      "version": "1.0.0"
+    },
+    {
+      "id": "platform-translation",
+      "title": "目标平台转换草案",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "Sigma 规则开发任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "Sigma 规则开发任务",
+        "en": "Sigma rule development task"
+      }
+    },
+    "description": {
+      "original": "基于检测需求文档编写 Sigma 源规则，生成目标平台转换草案（SPL/KQL/EQL）与字段映射表。所有转换草案标注未在目标引擎验证。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于检测需求文档编写 Sigma 源规则，生成目标平台转换草案（SPL/KQL/EQL）与字段映射表。所有转换草案标注未在目标引擎验证。",
+        "en": "Author a Sigma source rule from detection requirements and produce platform translation drafts (SPL/KQL/EQL) with field mapping tables. All translation drafts are marked as not validated in the target engine."
+      }
+    },
+    "requirements": [
+      {
+        "original": "检测需求文档（或威胁假设 + ATT&CK 技术 + 关键字段摘要）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "检测需求文档（或威胁假设 + ATT&CK 技术 + 关键字段摘要）",
+          "en": "Detection requirements document (or threat hypothesis + ATT&CK technique + key field summary)"
+        }
+      },
+      {
+        "original": "目标平台列表（如 Splunk、Microsoft Sentinel、Elastic）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标平台列表（如 Splunk、Microsoft Sentinel、Elastic）",
+          "en": "Target platform list (e.g. Splunk, Microsoft Sentinel, Elastic)"
+        }
+      }
+    ],
+    "output": {
+      "original": "Sigma 源规则（含所有必需字段）、各目标平台转换草案、字段映射表",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "Sigma 源规则（含所有必需字段）、各目标平台转换草案、字段映射表",
+        "en": "Sigma source rule (all required fields), target platform translation drafts, field mapping table"
+      }
+    }
+  }
+}

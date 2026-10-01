@@ -1,0 +1,73 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.screenshot",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "screenshot",
+    "title": {
+      "zh-CN": "截图工具",
+      "en": "Screenshot"
+    },
+    "summary": {
+      "zh-CN": "捕获、检查和对比屏幕、窗口和网页截图。用于可视化验证和问题诊断。",
+      "en": "Capture, inspect, and compare screenshots of screens, windows, regions, web pages, simulators, and CI runs with the right tool, wait strategy, viewport, and..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "screenshot",
+    "version": "1.0.1",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "e47b2807c5ff734b50ec4627a0d19377eec34083e63cc3f33786bebd0802c492",
+        "size": 7578
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "2498584c773d3510fa097ef7a1f0edeeccfdaa9983825308f2a850666e3449ac",
+        "size": 2010
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 17837,
+    "installsLabel": "1.8 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

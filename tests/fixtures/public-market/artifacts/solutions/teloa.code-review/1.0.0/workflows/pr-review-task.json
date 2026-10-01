@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "pr-review-task",
+  "title": "PR 评审意见草案",
+  "version": "1.0.0",
+  "domain": "code-review",
+  "description": "对已提供的 Pull Request 差异按正确性、测试、安全、可维护性四个维度逐处核对，输出带文件行号的评审意见草案，区分阻断项、建议项与提问，并给出建议批准、建议请求变更或需人工复核的结论。不在 PR 上发表评论、不批准、不合并。",
+  "requirements": [
+    "PR 差异（unified diff、补丁或逐文件变更，已上传）",
+    "PR 标题与描述（目的、范围、测试方式）",
+    "评审规范、相关 Issue、CI 结果或被改动文件的完整版本（可选）"
+  ],
+  "output": "PR 评审意见草案：首部注明基准与目标提交、评审范围与来源；改动地图、描述与差异不一致、阻断项、建议项、提问、测试覆盖、结论；发表到 PR 前需负责人确认",
+  "skills": [
+    {
+      "id": "code-review-pr",
+      "title": "PR 评审清单",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "PR 评审意见草案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "PR 评审意见草案",
+        "en": "Draft PR review comments"
+      }
+    },
+    "description": {
+      "original": "对已提供的 Pull Request 差异按正确性、测试、安全、可维护性四个维度逐处核对，输出带文件行号的评审意见草案，区分阻断项、建议项与提问，并给出建议批准、建议请求变更或需人工复核的结论。不在 PR 上发表评论、不批准、不合并。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的 Pull Request 差异按正确性、测试、安全、可维护性四个维度逐处核对，输出带文件行号的评审意见草案，区分阻断项、建议项与提问，并给出建议批准、建议请求变更或需人工复核的结论。不在 PR 上发表评论、不批准、不合并。",
+        "en": "Check the provided pull request diff line by line across correctness, tests, security and maintainability; output review comments with file and line references, separated into blocking items, suggestions and questions, with a verdict of approve, request changes or needs manual review. Does not comment on the PR, approve or merge."
+      }
+    },
+    "requirements": [
+      {
+        "original": "PR 差异（unified diff、补丁或逐文件变更，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "PR 差异（unified diff、补丁或逐文件变更，已上传）",
+          "en": "PR diff (unified diff, patch or per-file changes, already uploaded)"
+        }
+      },
+      {
+        "original": "PR 标题与描述（目的、范围、测试方式）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "PR 标题与描述（目的、范围、测试方式）",
+          "en": "PR title and description (purpose, scope, how it was tested)"
+        }
+      },
+      {
+        "original": "评审规范、相关 Issue、CI 结果或被改动文件的完整版本（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "评审规范、相关 Issue、CI 结果或被改动文件的完整版本（可选）",
+          "en": "Review guidelines, related issues, CI results or full versions of the changed files (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "PR 评审意见草案：首部注明基准与目标提交、评审范围与来源；改动地图、描述与差异不一致、阻断项、建议项、提问、测试覆盖、结论；发表到 PR 前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "PR 评审意见草案：首部注明基准与目标提交、评审范围与来源；改动地图、描述与差异不一致、阻断项、建议项、提问、测试覆盖、结论；发表到 PR 前需负责人确认",
+        "en": "PR review draft: header with base and head commits, review scope and sources; change map, description-versus-diff mismatches, blocking items, suggestions, questions, test coverage, verdict; requires the owner's confirmation before posting to the PR"
+      }
+    }
+  }
+}

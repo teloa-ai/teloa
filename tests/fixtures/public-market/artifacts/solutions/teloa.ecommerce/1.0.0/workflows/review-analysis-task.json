@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "review-analysis-task",
+  "title": "分析买家评价",
+  "version": "1.0.0",
+  "domain": "ecommerce",
+  "description": "对已导出的买家评价按主题归类并统计条数与占比（可由总数复算），摘录脱敏原句并附评价编号，单列安全类表述，输出评价分析报告与需负责人决定是否跟进的问题清单。不回复买家、不删改评价、不承诺赔付。",
+  "requirements": [
+    "评价导出：评价编号或行号、星级、文本、日期、SKU（已上传）",
+    "客服会话或售后工单记录、商品事实表、上期分析报告（可选）",
+    "负责人额外关注的主题（可选）"
+  ],
+  "output": "评价分析报告：星级分布；需负责人立即处理（安全类）表；主题统计（多选，附占比算式与代表原句）；待判读表；问题清单；正面亮点；分析摘要",
+  "skills": [
+    {
+      "id": "ecommerce-review-analysis",
+      "title": "买家评价分析",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "分析买家评价",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "分析买家评价",
+        "en": "Analyze buyer reviews"
+      }
+    },
+    "description": {
+      "original": "对已导出的买家评价按主题归类并统计条数与占比（可由总数复算），摘录脱敏原句并附评价编号，单列安全类表述，输出评价分析报告与需负责人决定是否跟进的问题清单。不回复买家、不删改评价、不承诺赔付。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已导出的买家评价按主题归类并统计条数与占比（可由总数复算），摘录脱敏原句并附评价编号，单列安全类表述，输出评价分析报告与需负责人决定是否跟进的问题清单。不回复买家、不删改评价、不承诺赔付。",
+        "en": "Classify exported buyer reviews by theme, count them with shares that can be recomputed from the total, quote anonymized original lines with review IDs, isolate safety-related remarks, and output a review analysis report plus a list of issues for the owner to decide on. Never replies to buyers, edits reviews or promises compensation."
+      }
+    },
+    "requirements": [
+      {
+        "original": "评价导出：评价编号或行号、星级、文本、日期、SKU（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "评价导出：评价编号或行号、星级、文本、日期、SKU（已上传）",
+          "en": "Review export: review ID or row number, star rating, text, date, SKU (already uploaded)"
+        }
+      },
+      {
+        "original": "客服会话或售后工单记录、商品事实表、上期分析报告（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "客服会话或售后工单记录、商品事实表、上期分析报告（可选）",
+          "en": "Customer service or after-sales records, product fact sheet, previous analysis report (optional)"
+        }
+      },
+      {
+        "original": "负责人额外关注的主题（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "负责人额外关注的主题（可选）",
+          "en": "Additional themes the owner wants tracked (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "评价分析报告：星级分布；需负责人立即处理（安全类）表；主题统计（多选，附占比算式与代表原句）；待判读表；问题清单；正面亮点；分析摘要",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "评价分析报告：星级分布；需负责人立即处理（安全类）表；主题统计（多选，附占比算式与代表原句）；待判读表；问题清单；正面亮点；分析摘要",
+        "en": "Review analysis report: star distribution; safety-related items for immediate attention; theme statistics (multi-label, with share formulas and representative quotes); items pending interpretation; issue list; positive highlights; summary"
+      }
+    }
+  }
+}

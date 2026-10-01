@@ -1,0 +1,4 @@
+.notice{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-warn-bg);color:var(--teloa-text);font-size:13px;line-height:1.6}
+.notice p{flex:1 1 240px;min-width:0;margin:0;overflow-wrap:anywhere}
+.notice button{flex:none;border:1px solid var(--teloa-border);border-radius:6px;padding:5px 9px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;cursor:pointer}
+.notice button:disabled{opacity:.55;cursor:wait}.notice button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}

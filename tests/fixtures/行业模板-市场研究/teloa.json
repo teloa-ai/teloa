@@ -1,0 +1,51 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "market-research",
+  "title": "市场研究",
+  "version": "1.0.0",
+  "domain": "research",
+  "description": "个人版单空间验收用的最小行业模板：domain 不是内置业务范围，加载后应在范围标签目录里新增一个标签。",
+  "resources": [
+    {
+      "id": "research-playbook",
+      "kind": "knowledge",
+      "title": "市场研究手册",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/市场研究手册.md"
+      },
+      "localized": {
+        "title": {
+          "original": "市场研究手册",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "市场研究手册",
+            "en": "Market research playbook"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [],
+  "entrypoints": [],
+  "localized": {
+    "title": {
+      "original": "市场研究",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "市场研究",
+        "en": "Market research"
+      }
+    },
+    "description": {
+      "original": "个人版单空间验收用的最小行业模板：domain 不是内置业务范围，加载后应在范围标签目录里新增一个标签。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "个人版单空间验收用的最小行业模板：domain 不是内置业务范围，加载后应在范围标签目录里新增一个标签。",
+        "en": "A minimal industry template for the personal single-workspace acceptance: its domain is not a built-in business scope, so loading it must register a new scope label."
+      }
+    }
+  }
+}

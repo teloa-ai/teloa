@@ -1,0 +1,180 @@
+# 替换布局；原生侧栏、会话、工具详情、模型与引用插件全部保留。
+# 分身/同事会话复用原生选模，只隔离其附带的全局默认写入。
+- insert:
+    - id: teloa-session-model-scope
+      name: '@teloa/harness-dsh/session-model-scope'
+- id: ui-layout
+  disabled: true
+# Teloa 直接承接原生设置入口，避免工作台再次挂载整套会话侧栏。
+- id: ui-sidebar
+  disabled: true
+# Teloa 负责通用设置 slot；官方整组会重复声明子 slot，开发者工具通过公开配置服务接入。
+- id: ui-settings-general
+  disabled: true
+# Teloa 统一诊断页标题；组件清单仍由官方 inventory 注册，避免重复声明其父 slot。
+- id: ui-settings-plugins
+  disabled: true
+# 复用官方管理器，只为 Teloa 必需组件和既有市场待启用记录补产品级保护。
+- id: plugin-manager
+  disabled: true
+- insert:
+    - id: teloa-plugin-manager
+      name: '@teloa/harness-dsh/plugin-manager'
+# 凭据改由 Teloa 加密提供方承载（规格 2026-09-26-凭据存储加固 §3）；官方明文提供方整行停用。
+- id: credentials
+  disabled: true
+# 个人会话提交前密钥闸：官方附件准入由 Teloa 子类承接（规格 §6）。
+- id: attachment-local
+  disabled: true
+- insert:
+    - id: teloa-credentials
+      name: '@teloa/harness-dsh/credentials'
+      # 只取启动时继承的进程环境：DSH 会把工作区 .env 合入 process.env，档位不能由工作区决定。
+      config:
+        store: !!js "ctx.get('launchEnvironment')?.getFrom('TELOA_CREDENTIALS_STORE', ['process'])?.value || 'auto'"
+    - id: teloa-attachment-guard
+      name: '@teloa/harness-dsh/attachment-guard'
+# 上游 HMR 会先卸载 root 再挂载，现有 RootOutlet 在该间隙报错白屏。
+# 独立开发宿主采用构建后重启，待上游支持根布局原子替换再恢复 HMR。
+- id: client-hmr
+  disabled: true
+# rc1 宿主 HMR 会直接监听 profile 清单与补丁，已不读取旧 patchReload 字段。
+# 关闭实际服务，配置与插件变更走官方“需要重启”，每次启动重新复验安全钉。
+- id: hmr
+  disabled: true
+# 通道注册由 Connection provider 自己挂载到 HTTP 服务；保留原 webRuntime
+# 配置依赖并补齐 webServer，调用方插件才能安全注册自有 RPC 通道。
+- id: connection
+  inject:
+    - webRuntime
+    - webServer
+# 会话遥测默认以 FEEDBACK_ONLY 挂载：用户点一次反馈，就把该会话的完整规范前缀
+# （消息正文、工具参数与结果、system prompt、工具 schema、会话 cwd）交给 OTel 管道上传到外部端点。
+# Teloa 处理的是安全告警正文、主机标识与隔离动作参数，必须留在本机，因此钉死 DISABLED：
+# 该模式不构造协调器、provider、处理器与 exporter，任何遥测记录都不会离开本进程。
+# 保留本行而不是整行关闭，是为了让原生反馈界面继续本地可用，并让会话的 sharing 披露如实报出 disabled。
+# 这里写字面量而不是 !!js 表达式：不留任何环境变量入口把它改回上传模式。
+- id: session-telemetry-otel
+  config:
+    mode: DISABLED
+# 原生会话日志扩展会把工具事件 meta 附带到模型请求，绕过工具正文的脱敏。
+# 复用官方 enabled 开关关闭这条附加上传通道；本地会话持久化与日志下载不受影响。
+- id: session-log-deepseek
+  config:
+    enabled: false
+# 沙箱默认模式钉死 workspace-write：写范围由 workspaceRoot 兜底，而宿主的 cwd 就是专用工作区。
+# 上游默认把这一行交给 DSH_PERMISSION_MODE，环境里放一个放行全盘的模式就能让数字员工与原生终端
+# 写到工作区之外。这里写字面量而不是 !!js 表达式：不留环境变量入口（与遥测那行同一推理）。
+# 补丁按整个 config 替换而不是逐键合并，因此 workspaceRoot 必须原样写回：
+# 保持上游的 process.cwd()，由启动器保证宿主的 cwd 就是专用工作区。
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js process.cwd()
+# 审批征询的部署默认值同样钉为字面量：上游把它写成
+# `(process.env.DSH_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'`，
+# 于是 shell 里一个变量就能把整台宿主切成 never（每次征询直接判 rejected、不提示任何人）。
+# 提示出不出现不能由环境静默决定，与沙箱模式同一推理。
+# ask 就是该表达式在钉死的 workspace-write 下的取值，部署行为逐字不变；
+# 这里钉的只是**部署默认值**，会话级 `approval/policy` 覆盖（用户的 /permission 界面）照旧可用。
+# approval 的 Config 只有 policy 一个键，整块替换不会丢其它配置。
+- id: approval
+  config:
+    policy: ask
+# 复用原生全文索引，首次搜索才打开；派生索引留在 Teloa 独立运行目录。
+- id: session-query-sqlite
+  config:
+    openAt: first-search
+    path: !!js "process.env.DSH_HOME + '/session-search.sqlite'"
+# 部署默认工具呈现保持 native；本人显式选择 PTC 时由官方预设覆盖。
+# 代码执行的逐次确认与岗位工具授权由执行闸判定，预设本身不是权限沙箱。
+- id: tools
+  config:
+    mode: native
+# ptc-runtime 必须保持启用：Agent 预设把 workflowEngine 绑在
+# `@deepseek-ai/dsh-workflow-ptc` 上，而该行 inject 的正是本行提供的 ptcRuntime。
+# 关掉它会让预设挂载失败，任何 sessions.create（含 task-run-dsh.ts 的执行准备）随之失败。
+# ptcRuntime 是引擎侧服务，本身没有工具入口；PTC 预设及 workflow 共用官方实现。
+- id: ptc-runtime
+  disabled: false
+# 官方 Web 把编排工具放在预设作用域，宿主同名行保持关闭，避免重复注册。
+- id: tool-workflow
+  disabled: true
+- id: tool-ralph
+  disabled: true
+# 官方注册器保留本人选择；部署默认面向通用业务，四种官方预设均可选。
+# 生成覆盖只接入 standard 受管派发及三种模式的本地压缩预算，其余官方正文保持原样。
+- id: agent-preset-registry
+  config:
+    default: teloa-standard
+- id: preset-standard
+  disabled: false
+- id: preset-ptc
+  disabled: false
+- id: preset-minimal
+  disabled: false
+- id: preset-cordis
+  disabled: false
+# 会话级预设裁掉 danger-full-access：该预设等于 sandbox: danger-full-access
+# + approval: never，一次 /permission 切换就让沙箱写范围越出工作区、每次征询直接
+# 判过不提示。部署默认值已在上面钉死 workspace-write/ask，这里补上会话侧的入口。
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+# 上网的 provider 选择与边界值钉成字面量。
+# `web-fetch-http` 原本**没有 config**，取的全是上游默认；而补丁按整块替换，第三方 bundle
+# 在 `dsh.profile.bundles` 尾部追加一行就能把 maxRedirects 提到 50、maxResponseBytes 提到 5GB。
+# `deniedPatchRowIds` 只挡市场安装这条路，挡不住本人手工追加的包，
+# 装配期复验（composition-safety 的第 9 枚钉 `web`）才是兜底。
+# 换掉 fetchProvider 等于换掉上游那整套 SSRF 保护（私网/链路本地/云元数据地址、非 http(s)、
+# 跨源重定向与重定向后复判都在 provider 里），所以 provider 选择与边界值一起钉。
+- id: web
+  config:
+    searchProvider: deepseek-official
+    fetchProvider: http
+# 检索端点与凭据引用一并钉死：上游逐字写着 `config.baseURL ?? $DEEPSEEK_SEARCH_BASE_URL ?? 默认`，
+# 而该行今天只写了 apiKeyEnv，于是环境里放一个变量就能把检索词连同 DEEPSEEK_API_KEY
+# 改投到别的 Anthropic 兼容端点。`SECURITY.md` 逐字向本人承诺了这个端点，不能由环境静默改写。
+- id: web-search-deepseek
+  config:
+    baseURL: https://api.deepseek.com/anthropic/v1
+    apiKeyEnv: DEEPSEEK_API_KEY
+# maxRedirects 从上游默认 5 收到 3：同源跳转三跳足够覆盖 http→https、尾斜杠归一、语言/地区跳转，
+# 再多只是给跳转链留面积。
+# userAgent 逐字写上游默认值（不伪装成浏览器），并一并钉住：它是每次外发对目标站点的自我披露，
+# `SECURITY.md` 已逐字向本人承诺目标站点看到的是 `deepseek-harness/…`。补丁按整块替换，
+# 不写这一行就等于把这句承诺交回给后加载的第三方补丁去改。
+- id: web-fetch-http
+  config:
+    maxResponseBytes: 5000000
+    maxBodyChars: 100000
+    timeoutMs: 30000
+    maxRedirects: 3
+    userAgent: deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)
+- insert:
+    - id: teloa-ui-workbench
+      name: '@teloa/client-ui-workbench'
+    - id: teloa-harness-dsh
+      name: '@teloa/harness-dsh'
+    # 宿主的 cwd 是工作区而不是仓库根，参考 MCP 的入口只能按启动器给出的仓库根解析。
+    # 仓库根只认启动快照的 process 层：DSH 会把工作区 .env（模型可写）合入 process.env，借它就能让宿主在沙箱外起任意脚本。
+    # 没有快照（测试、非产品组合）时按上游约定读 process.env。
+    # maxInstructionBytes 收窄到 2048：MCP server 的 `instructions` 会逐字进入系统提示，
+    # 上游默认 32768 等于给任何 MCP server 一条 32KB 的提示注入面。Teloa 目前只挂自己这一台
+    # server，注入面为 0，这条上限是行业模板日后真挂第三方 MCP 时的默认基线。
+    - id: teloa-reference-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: teloa_reference
+        transport: stdio
+        command: !!js process.execPath
+        args: !!js "[(ctx.get('launchEnvironment') ? ctx.get('launchEnvironment').getFrom('TELOA_PROJECT_ROOT', ['process'])?.value : process.env.TELOA_PROJECT_ROOT) + '/packages/mcp-reference/src/main.ts']"
+        cwd: !!js "ctx.get('launchEnvironment') ? ctx.get('launchEnvironment').getFrom('TELOA_PROJECT_ROOT', ['process'])?.value : process.env.TELOA_PROJECT_ROOT"
+        failOnStartupError: true
+        maxInstructionBytes: 2048

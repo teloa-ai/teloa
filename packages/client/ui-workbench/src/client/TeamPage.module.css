@@ -1,0 +1,162 @@
+.facts{display:grid;grid-template-columns:80px minmax(0,1fr);gap:15px 20px;font-size:var(--teloa-font-control);line-height:1.8}.facts dt{color:var(--teloa-muted)}.facts dd{margin:0;white-space:pre-wrap}
+.notice{background:var(--teloa-sidebar);border:1px solid var(--teloa-border);border-radius:10px;padding:18px;margin:15px 0;font-size:var(--teloa-font-control);line-height:1.8}.notice h3{margin:0}.notice ul{padding-left:18px}
+.workList{display:flex;flex-direction:column;gap:9px}.workList button{justify-content:flex-start!important;align-items:flex-start!important;flex-direction:column;text-align:left;line-height:1.7;padding:13px!important}.workList small{color:var(--teloa-muted)}
+.memory{border:1px solid var(--teloa-border);border-radius:10px;padding:18px;margin:14px 0;background:var(--teloa-sidebar)}.memory header{display:flex;justify-content:space-between;gap:10px;align-items:baseline}.memory header span{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.memory small{line-height:1.8;overflow-wrap:anywhere}
+.scopes{border:1px solid var(--teloa-border);border-radius:8px;display:flex;flex-wrap:wrap;gap:12px;padding:13px}.scopes label{display:flex!important;flex-direction:row!important;align-items:center!important;gap:6px!important}.scopes input{accent-color:var(--teloa-focus)}
+@media(max-width:760px){.facts{grid-template-columns:62px minmax(0,1fr);gap:12px}.memory header{flex-wrap:wrap}}
+
+/* 对齐原型岗位目录、身份标题和配置页签，生命周期与草稿节点保留。 */
+.teamPage aside>label{margin:0 14px 10px;flex:initial}.teamPage aside>select{margin:12px 16px;width:calc(100% - 32px)}
+.avatar{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;border-radius:10px;background:var(--teloa-info-bg);color:var(--teloa-info);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}.avatar>svg{position:absolute;right:-3px;bottom:-3px;background:var(--teloa-background);border-radius:3px;padding:1px;box-sizing:content-box}.human{border-radius:50%;background:var(--teloa-hover);color:var(--teloa-text)}
+.mailRow{display:flex;align-items:center;gap:9px}.mailRow>span:last-child{min-width:0;flex:1}
+.teamPage .facts{grid-template-columns:85px minmax(0,1fr);gap:11px;font-size:var(--teloa-font-caption);margin:22px 0;line-height:1.65}
+.teamPage .notice{background:var(--teloa-subtle);border-radius:8px;padding:14px;margin:18px 0;font-size:var(--teloa-font-caption);line-height:1.8}.teamPage .notice h3{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.teamPage .notice p{font-size:var(--teloa-font-caption);margin:5px 0 0;line-height:1.8}
+.sectionPath{margin:4px 0 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
+.teamPage .memory{border-radius:9px;padding:19px;margin:17px 0;background:var(--teloa-surface)}.teamPage .memory header strong{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}.teamPage .memory p{font-size:var(--teloa-font-control);line-height:1.85}.teamPage .memory small{display:block;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.memoryPath{display:flex;flex-wrap:wrap;gap:6px 12px;margin:12px 0;padding:9px 10px;border-radius:7px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.65}.memoryPath span{color:var(--teloa-muted)}.memoryPath span:first-child{width:100%;color:var(--teloa-text)}.memoryPath small{width:100%}
+.teamPage .workList{gap:0}.teamPage .workList button{padding:16px!important;border-radius:9px;margin:6px 0}.teamPage .workList strong{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}.teamPage .workList small{font-size:var(--teloa-font-caption)}
+@media(max-width:760px){.teamPage .facts{grid-template-columns:70px minmax(0,1fr)}}
+
+.teamPage.embeddedTeam .homepage{grid-template-columns:minmax(0,1fr)}
+
+/* 个人主页 A2：左身份栏固定，右侧时间线；六档头像配色见 StaffAvatar.module.css。 */
+.homepage{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(0,1.6fr);gap:24px;margin:14px 0;align-items:start}
+.identityRail{position:sticky;top:0;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:18px;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
+.identityRail h2{margin:8px 0 0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-heading)}
+.identityRail>p{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.7}
+.identityStatusRow{display:flex;align-items:center;gap:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.identityStatusDot{width:7px;height:7px;border-radius:50%;background:var(--teloa-muted);flex-shrink:0}
+.identityStatusRow[data-identity-status=active] .identityStatusDot{background:var(--teloa-good)}
+.identityStatusRow[data-identity-status=busy] .identityStatusDot{background:var(--teloa-accent)}
+.identityStatusRow[data-identity-status=paused] .identityStatusDot{background:var(--teloa-warn)}
+.identityToday{box-sizing:border-box;width:100%;margin-top:2px;padding:11px 13px;border-radius:8px;background:var(--teloa-subtle)}
+.identityToday small{display:block;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.identityToday strong{display:block;margin-top:3px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);line-height:1.6}
+.identityOwner{display:flex;align-items:center;gap:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.identityActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;width:100%}
+.teamPage .identityPrimary{border-color:var(--teloa-text);background:var(--teloa-text);color:var(--teloa-background)}
+.teamPage .identityPrimary:hover{opacity:.88}
+.identityEditLink{margin-top:2px;padding:0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);text-decoration:underline;cursor:pointer}
+.identityEditLink:hover{color:var(--teloa-text)}
+.chatPanel{width:100%;margin-top:8px}
+.homepageHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.homepageHead h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.timeline{list-style:none;margin:0;padding:0 0 0 16px;border-left:1px solid var(--teloa-border)}
+.timeline>li{position:relative;padding-bottom:6px}
+.timelineDot{position:absolute;left:-21px;top:16px;width:8px;height:8px;border-radius:50%;background:var(--teloa-border)}
+.timeline button{display:flex;flex-direction:column;gap:5px;width:100%;padding:12px 14px;margin-bottom:8px;text-align:left;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:8px;font:inherit}
+.timeline button:hover{border-color:var(--teloa-muted)}
+.timeline strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.timeline small{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.75}
+.timelineHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.timelineHead time{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.timelineBadge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:var(--teloa-font-caption);background:var(--teloa-subtle);color:var(--teloa-muted)}
+.timelineBadge[data-tone=warn]{background:var(--teloa-warn-bg);color:var(--teloa-warn)}
+.timelineBadge[data-tone=good]{background:var(--teloa-good-bg);color:var(--teloa-good)}
+
+/* 「编辑」里的五组人话分组 + 次级「它的变更记录」：默认全折叠的 <details>，不用左侧强调竖条，只叠加既有 --teloa-* 令牌。 */
+.sectionList{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.section{border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
+.section>summary{padding:14px 16px;color:var(--teloa-muted);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);cursor:pointer;list-style-position:inside}
+.section>summary small{display:block;margin-top:2px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular)}
+.section[open]>summary{color:var(--teloa-text);border-bottom:1px solid var(--teloa-border)}
+.sectionBody{padding:4px 16px 16px}
+.sectionBody>h3{margin:10px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.sectionBody>h3:first-child{margin-top:4px}
+.sectionNote{margin-top:14px;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption)}
+.sectionNote summary{cursor:pointer;color:var(--teloa-muted)}
+
+.formBody{border:0;padding:0;margin:0;min-width:0;display:contents}
+
+.roleSteps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin:12px 0 10px}
+.roleStepsFour{grid-template-columns:repeat(4,minmax(0,1fr))}.roleSteps button{display:flex;align-items:flex-start;gap:8px;min-width:0;padding:9px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-muted);text-align:left;font:inherit;cursor:pointer}.roleSteps button[aria-current=step]{border-color:var(--teloa-focus);background:var(--teloa-hover);color:var(--teloa-text)}.roleSteps button>span:first-child{display:inline-flex;flex:0 0 21px;align-items:center;justify-content:center;width:21px;height:21px;border:1px solid var(--teloa-border);border-radius:50%;font-size:var(--teloa-font-caption)}.roleSteps button>span:last-child{display:flex;min-width:0;flex-direction:column;gap:2px}.roleSteps strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption)}.roleSteps small{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:var(--teloa-font-caption);line-height:1.35}.stepNote{margin:8px 0 12px!important;padding:9px 11px;border-radius:7px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption)!important;line-height:1.6}.stepHint{margin:8px 0 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}.stepPanel{min-height:290px}.stepPanel>label{margin:12px 0}.inlineNotice{margin:12px 0;padding:10px 12px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}.responsibilityEditor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.responsibilityEditor label{margin:0}.responsibilityEditor textarea{min-height:54px}.responsibilityEditor small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.responsibilities{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.responsibilities>div{padding:10px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle)}.responsibilities dt{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}.responsibilities dd{margin:5px 0 0;font-size:var(--teloa-font-caption);line-height:1.65}.responsibilities ul{margin:0;padding-left:16px}.runtimeHeader{margin:12px 0}.runtimeHeader h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.runtimeHeader p{margin:4px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}.runtimeSummary{display:grid;gap:4px;margin:12px 0;padding:11px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.6}.runtimeSummary strong{font-size:var(--teloa-font-caption)}.runtimeSummary span,.runtimeSummary small{color:var(--teloa-muted)}.capabilityChoice{margin:11px 0;padding:12px;border:1px solid var(--teloa-border);border-radius:8px}.capabilityChoice>div:first-child h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.capabilityChoice>div:first-child p{margin:4px 0 10px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.reviewPanel{min-height:290px;padding:14px;border:1px solid var(--teloa-border);border-radius:9px}.reviewPanel>header{display:flex;align-items:center;gap:10px}.reviewPanel>header h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.reviewPanel>header p{margin:3px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.reviewPanel dl{display:grid;grid-template-columns:72px minmax(0,1fr);gap:9px 14px;margin:18px 0;font-size:var(--teloa-font-caption);line-height:1.55}.reviewPanel dt{color:var(--teloa-muted)}.reviewPanel dd{margin:0;white-space:pre-wrap}.nextActions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:11px;border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption)}.nextActions strong{width:100%;font-size:var(--teloa-font-caption)}.nextActions span{padding:4px 7px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface)}.stepFooter{align-items:center!important;justify-content:space-between!important;margin-top:14px!important}.stepFooter>span{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.stepFooter button{display:inline-flex!important;align-items:center;gap:4px}
+@media(max-width:700px){.roleSteps{grid-template-columns:1fr}.roleSteps small{display:none}.responsibilityEditor,.responsibilities{grid-template-columns:1fr}.stepPanel,.reviewPanel{min-height:0}}
+
+/* 入职三问（招一位新同事）：选形象 / 选岗位 / 定边界 / 工牌预览。只在新建时启用，编辑仍是五步（照原型 数字员工形象.module.css 改用 --teloa-* 令牌）。 */
+.lookRow{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.lookOption{padding:5px;background:transparent;border:2px solid transparent;border-radius:12px;line-height:0;cursor:pointer}
+.lookOption:hover{border-color:var(--teloa-border)}
+.lookPicked{border-color:var(--teloa-focus)}
+.jobRow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}
+.jobCard{position:relative;display:flex;flex-direction:column;gap:6px;padding:14px 13px;text-align:left;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:9px;color:inherit;font:inherit;cursor:pointer}
+.jobCard strong{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.jobCard span{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6;min-height:2.6em}
+.jobCard small{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.jobPicked{border-color:var(--teloa-focus);background:var(--teloa-hover)}
+.jobCheck{position:absolute;top:9px;right:9px;display:grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--teloa-focus);color:var(--teloa-on-accent)}
+.chipRow{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:var(--teloa-subtle);border:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);color:var(--teloa-muted);white-space:nowrap}
+.chipToggle{cursor:pointer}
+.chipOn{background:var(--teloa-accent-bg);border-color:var(--teloa-accent);color:var(--teloa-accent)}
+.limitList{list-style:none;margin:10px 0;padding:0;border:1px solid var(--teloa-border);border-radius:9px;background:var(--teloa-surface);overflow:hidden}
+.limitList>li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;font-size:var(--teloa-font-caption)}
+.limitList>li+li{border-top:1px solid var(--teloa-border)}
+.segment{display:inline-flex;gap:2px;padding:2px;border-radius:7px;background:var(--teloa-subtle);border:1px solid var(--teloa-border);flex:none}
+.segment button{min-height:26px;padding:3px 9px;border:0;border-radius:5px;background:transparent;font-size:var(--teloa-font-caption);color:var(--teloa-muted);cursor:pointer}
+.segmentOn{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.previewWrap{display:grid;grid-template-columns:minmax(160px,190px) minmax(0,1fr);gap:18px;align-items:start;margin:10px 0}
+.badgeCard{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;padding:26px 14px 14px;text-align:center;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:12px}
+.badgeHole{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:36px;height:5px;border-radius:999px;background:var(--teloa-hover)}
+.badgeName{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);letter-spacing:-.2px;margin-top:2px}
+.badgeJob{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6}
+.badgeFoot{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;margin-top:3px;padding-top:10px;border-top:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.previewFacts{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;margin:0;font-size:var(--teloa-font-caption);line-height:1.65}
+.previewFacts dt{color:var(--teloa-muted)}
+.previewFacts dd{margin:0}
+@media(max-width:700px){.jobRow,.previewWrap{grid-template-columns:1fr}.limitList>li{flex-wrap:wrap}.segment{width:100%}.segment button{flex:1}}
+/* 单栏断点必须写在上面的 .homepage 基线规则之后：同等特指度下后写的胜出，写在前面这条规则会被基线覆盖掉。 */
+@media(max-width:900px){.homepage{grid-template-columns:minmax(0,1fr)}.identityRail{position:static}}
+
+/* ── 第二期 A2-1 全宽通讯录与整页个人主页（原型 原型.jsx:528-541 的 .widePage） ──────────────
+   非嵌入态不再走 TaskPage.module.css 的两栏 .layout：未选中是一页全宽名单，选中是一页个人主页。
+   TaskPage.module.css 是任务页共用的，语义不能动，所以这两套容器全部落在本文件里；
+   但它已有的规则可以「读」——eyebrow 直接用 `.alignedPage .eyebrow`，h1 字号也交给 `.alignedPage .pageHeader h1` 的同一套数值。
+   与 `.page button` / `.alignedPage button` 冲突的属性在本文件靠 `.teamPage` 前缀提特指度即可；
+   StaffRoster.module.css 跨模块拿不到这个前缀，那边只能用 !important。
+   圆角走 --teloa-design-r1/r2（prototype-theme.ts 生成，theme-presenter 运行时挂到 body），与原型 --maxent-preview-r* 对应。 */
+.rosterPage{display:flex;flex:1;min-height:0;overflow:auto}
+.rosterPane{box-sizing:border-box;display:flex;flex-direction:column;gap:14px;width:100%;max-width:1120px;margin:0 auto;padding:38px 42px}
+.rosterPane:focus{outline:none}
+.rosterHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;min-width:0}
+.rosterHeadMain{min-width:0}
+.rosterTitleRow{display:flex;align-items:center;gap:8px;min-width:0}
+/* 字号/字重/字距沿用 .alignedPage .pageHeader h1（TaskPage.module.css:73），这里只覆盖 margin 与折行。 */
+.rosterTitleRow h1{margin:7px 0 0;font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:normal;overflow-wrap:anywhere}
+.rosterSummary{margin:10px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.8;overflow-wrap:anywhere}
+.rosterBar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0}
+.rosterSearch{display:flex;align-items:center;gap:8px;flex:1;min-width:190px;box-sizing:border-box;min-height:36px;padding:0 12px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);color:var(--teloa-muted)}
+.rosterSearch>svg{flex:none}
+.teamPage .rosterSearch input{flex:1;min-width:0;padding:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control)}
+.teamPage .rosterSearchClear{display:grid;place-items:center;flex:none;width:20px;height:20px;min-height:20px;padding:0;border:0;border-radius:50%;background:var(--teloa-hover);color:var(--teloa-muted)}
+.teamPage .rosterSearchClear:hover{color:var(--teloa-text)}
+.rosterSearch:focus-within{outline:2px solid var(--teloa-focus);outline-offset:-1px}
+.statusPills{display:inline-flex;flex:none;gap:2px;padding:2px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-subtle)}
+.teamPage .statusPills button{min-height:30px;padding:4px 12px;border:0;border-radius:5px;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
+.teamPage .statusPills button[aria-pressed='true']{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.rosterHire{flex:none}
+/* 选中态：整页只剩个人主页，详情自己居中（沿用 .alignedPage .detail 的 justify-self，所以容器必须是 grid）。 */
+.detailPage{position:relative;display:grid;grid-template-columns:minmax(0,1fr);flex:1;min-width:0;min-height:0}
+@media(max-width:760px){
+  .rosterPane{gap:12px;padding:20px 16px}
+  .rosterHead{flex-wrap:wrap}
+  .rosterTitleRow h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+  .rosterSearch{flex-basis:100%;min-height:44px}
+  .teamPage .rosterSearchClear{width:44px;height:44px;min-height:44px;margin-right:-12px;background:transparent}
+  .statusPills{flex:1}
+  .teamPage .statusPills button{flex:1;min-height:44px;padding:7px 8px}
+  .rosterHire{min-height:44px}
+  .tabs{gap:14px}
+  .tabs button{min-height:44px!important}
+}
+/* 「它记得的事 / 工作日志」页签：与 TwinProfile.module.css 的 .tabs 同一形态与令牌，不新增颜色。 */
+.tabs{display:flex;gap:19px;margin:14px 0 -1px;overflow-x:auto}
+.tabs button{min-height:0!important;padding:10px 0!important;border:0!important;border-bottom:2px solid transparent!important;border-radius:0!important;background:transparent!important;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);white-space:nowrap;cursor:pointer}
+.tabs button:hover{background:transparent!important;color:var(--teloa-text)}
+.tabs button[aria-selected=true]{border-bottom-color:var(--teloa-text)!important;color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+
+/* 岗位选择使用紧凑说明，勾选标记不继承说明文字的最小高度。 */
+.jobCard.jobCard{align-items:flex-start;padding:14px 13px;justify-content:flex-start}.jobCard strong{padding-right:20px;font-size:var(--teloa-font-control)}.jobCard>.jobCheck{min-height:0;color:var(--teloa-on-accent);width:16px;height:16px;line-height:1}.jobCard.jobPicked{border-color:var(--teloa-focus);background:var(--teloa-hover)}
+
+.roleStepsFour.roleStepsFour{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.roleStepsFour.roleStepsFour button{flex-direction:column;align-items:center;justify-content:flex-start;gap:5px;padding:7px 4px;border-color:transparent;text-align:center}.roleStepsFour.roleStepsFour button[aria-current=step]{border-color:var(--teloa-border)}.roleStepsFour.roleStepsFour strong{white-space:normal;overflow:visible;line-height:1.4}.roleStepsFour small{display:none}
+
+.hireDialog.hireDialog{width:min(640px,calc(100vw - 32px))}

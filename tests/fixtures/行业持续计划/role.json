@@ -1,0 +1,8 @@
+{
+  "format": "teloa.role/v1",
+  "name": "日常核对岗",
+  "kind": "employee",
+  "duty": "核对告警证据",
+  "dataScope": "获准告警",
+  "executionScope": "只读与代拟"
+}

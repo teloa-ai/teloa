@@ -1,0 +1,126 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.claude",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "claude",
+    "title": {
+      "zh-CN": "Claude（Anthropic）",
+      "en": "Claude (Anthropic)"
+    },
+    "summary": {
+      "zh-CN": "Anthropic 官方 API（Claude 系列）；国内需海外网络。",
+      "en": "Anthropic official API (Claude models); needs an overseas network from China."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": true
+    },
+    "contextWindow": 1000000,
+    "license": {
+      "spdx": "custom",
+      "name": "Anthropic Commercial Terms of Service",
+      "url": "https://www.anthropic.com/legal/commercial-terms",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "proxy-required",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "anthropic"
+      },
+      "models": [
+        {
+          "id": "claude-opus-5-5",
+          "name": "Claude Opus 5.5",
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "claude-sonnet-5",
+          "name": "Claude Sonnet 5",
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "name": "Claude Haiku 4.5",
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "high",
+      "credentialLabel": {
+        "zh-CN": "Anthropic API 密钥",
+        "en": "Anthropic API key"
+      },
+      "signupUrl": "https://platform.claude.com"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://www.anthropic.com/legal/commercial-terms"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

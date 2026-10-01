@@ -1,0 +1,120 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.qwen",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "qwen",
+    "title": {
+      "zh-CN": "通义千问（百炼）",
+      "en": "Qwen (Model Studio)"
+    },
+    "summary": {
+      "zh-CN": "阿里云百炼的通义千问系列，国内直连；本预设使用百炼 Token Plan 服务地址。",
+      "en": "Alibaba Cloud Model Studio Qwen models, reachable directly in China; this preset uses the Model Studio Token Plan service address."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 1000000,
+    "license": {
+      "spdx": "custom",
+      "name": "阿里云百炼服务协议",
+      "url": "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      },
+      {
+        "zh-CN": "此预设需要百炼 Token Plan 专属密钥（sk-sp- 开头），与按量付费密钥不能混用；按量付费请在 设置 · 模型 添加 OpenAI 兼容服务，地址含你自己的业务空间 ID，见百炼文档。",
+        "en": "This preset needs a Model Studio Token Plan key (starts with sk-sp-), which cannot be mixed with pay-as-you-go keys; for pay-as-you-go, add an OpenAI-compatible service under Settings · Models using the address with your own workspace id, as described in the Model Studio docs."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "qwen-token-plan-cn"
+      },
+      "models": [
+        {
+          "id": "qwen3.8-max",
+          "name": "Qwen3.8 Max",
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "qwen3.7-plus",
+          "name": "Qwen3.7 Plus",
+          "contextWindow": 1000000,
+          "maxTokens": 65536,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "mid",
+      "credentialLabel": {
+        "zh-CN": "百炼 Token Plan API 密钥",
+        "en": "Model Studio Token Plan API key"
+      },
+      "signupUrl": "https://bailian.console.aliyun.com"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

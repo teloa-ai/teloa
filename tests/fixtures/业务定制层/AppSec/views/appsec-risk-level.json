@@ -1,0 +1,57 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "appsec-risk-level",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "风险等级分布",
+  "kind": "distribution",
+  "chart": "bar",
+  "objectType": "vulnerability",
+  "dimension": {
+    "field": "risk-level",
+    "limit": 4
+  },
+  "measures": [
+    {
+      "id": "open",
+      "label": "个数",
+      "aggregation": "count",
+      "localized": {
+        "label": {
+          "original": "个数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "个数",
+            "en": "Findings"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [
+    {
+      "field": "fix-state",
+      "op": "in",
+      "values": [
+        "未修复",
+        "修复中"
+      ]
+    }
+  ],
+  "sort": {
+    "by": "measure",
+    "measureId": "open",
+    "direction": "desc"
+  },
+  "limit": 4,
+  "localized": {
+    "title": {
+      "original": "风险等级分布",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "风险等级分布",
+        "en": "Risk level distribution"
+      }
+    }
+  }
+}

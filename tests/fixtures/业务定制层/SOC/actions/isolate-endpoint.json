@@ -1,0 +1,38 @@
+{
+  "format": "teloa.business-action/v1",
+  "id": "isolate-endpoint",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "隔离这台主机",
+  "objectType": "alert-ticket",
+  "target": {
+    "kind": "execution-tool",
+    "localId": "soc-endpoint-isolation",
+    "tool": "security.endpoint.isolate",
+    "workTemplate": "endpoint-isolation-record",
+    "targetFrom": {
+      "from": "field",
+      "field": "host"
+    }
+  },
+  "inputs": [
+    {
+      "from": "object",
+      "part": "summary"
+    },
+    {
+      "from": "literal",
+      "value": "按告警工单发起，影响范围以资产台账为准。"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "隔离这台主机",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "隔离这台主机",
+        "en": "Isolate this endpoint"
+      }
+    }
+  }
+}

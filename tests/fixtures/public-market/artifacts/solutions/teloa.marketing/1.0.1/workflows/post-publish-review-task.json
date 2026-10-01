@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "post-publish-review-task",
+  "title": "发布复盘任务",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "description": "基于已提供的发布记录与指标数据，输出复盘报告框架、数据对比与下一步建议。无数据时只输出框架，不填虚构数字。",
+  "requirements": [
+    "发布内容摘要（渠道、时间、主题，来自发布记录）",
+    "发布目标或 KPI（负责人事先设定）"
+  ],
+  "output": "发布复盘报告：数据指标摘要（含来源）、归因分析（标注为假设）、下一步调整建议；无数据时输出框架与数据槽",
+  "skills": [
+    {
+      "id": "post-publish-review",
+      "title": "发布复盘",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "发布复盘任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "发布复盘任务",
+        "en": "Post-publish review task"
+      }
+    },
+    "description": {
+      "original": "基于已提供的发布记录与指标数据，输出复盘报告框架、数据对比与下一步建议。无数据时只输出框架，不填虚构数字。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于已提供的发布记录与指标数据，输出复盘报告框架、数据对比与下一步建议。无数据时只输出框架，不填虚构数字。",
+        "en": "Based on publish records and metrics provided, output a review report with data summary, attribution hypotheses, and next-step suggestions. Without data, output the framework only — no fabricated figures."
+      }
+    },
+    "requirements": [
+      {
+        "original": "发布内容摘要（渠道、时间、主题，来自发布记录）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "发布内容摘要（渠道、时间、主题，来自发布记录）",
+          "en": "Publish summary (channel, time, topic, from publish record)"
+        }
+      },
+      {
+        "original": "发布目标或 KPI（负责人事先设定）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "发布目标或 KPI（负责人事先设定）",
+          "en": "Publish goal or KPI (set by you in advance)"
+        }
+      }
+    ],
+    "output": {
+      "original": "发布复盘报告：数据指标摘要（含来源）、归因分析（标注为假设）、下一步调整建议；无数据时输出框架与数据槽",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "发布复盘报告：数据指标摘要（含来源）、归因分析（标注为假设）、下一步调整建议；无数据时输出框架与数据槽",
+        "en": "Post-publish review: metrics summary (with source), attribution hypotheses (labeled as such), next-step suggestions; if no data available, framework with empty data slots"
+      }
+    }
+  }
+}

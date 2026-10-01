@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "proposal-draft-task",
+  "title": "方案书草案",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "基于客户需求说明与产品事实库起草方案书：需求理解、方案概述、能力对应表、实施框架、案例与待确认事项。产品能力只取事实库；价格、折扣、交期、服务水平与条款全部留空由你填写。",
+  "requirements": [
+    "客户需求说明（需求文档、招标文件或纪要中的需求部分，已上传）与产品事实库（产品说明、参数表、已授权案例，已上传）",
+    "方案书用途（初步交流 / 正式投标 / 续约）；可选附方案书模板与客户研究简报"
+  ],
+  "output": "方案书草案：需求理解表、方案概述、能力对应与说明（有对应 / 部分对应 / 待确认能否满足）、实施与交付安排框架（时间占位）、案例（含授权范围）、商务条款占位、待确认事项",
+  "skills": [
+    {
+      "id": "proposal-draft",
+      "title": "方案书草案",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "方案书草案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "方案书草案",
+        "en": "Proposal draft"
+      }
+    },
+    "description": {
+      "original": "基于客户需求说明与产品事实库起草方案书：需求理解、方案概述、能力对应表、实施框架、案例与待确认事项。产品能力只取事实库；价格、折扣、交期、服务水平与条款全部留空由你填写。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于客户需求说明与产品事实库起草方案书：需求理解、方案概述、能力对应表、实施框架、案例与待确认事项。产品能力只取事实库；价格、折扣、交期、服务水平与条款全部留空由你填写。",
+        "en": "Draft a proposal from the customer's requirements and the product fact base: requirement understanding, overview, capability mapping, delivery framework, cases and items to confirm. Capabilities come only from the fact base; price, discount, timeline, service levels and terms are left blank for you to fill."
+      }
+    },
+    "requirements": [
+      {
+        "original": "客户需求说明（需求文档、招标文件或纪要中的需求部分，已上传）与产品事实库（产品说明、参数表、已授权案例，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "客户需求说明（需求文档、招标文件或纪要中的需求部分，已上传）与产品事实库（产品说明、参数表、已授权案例，已上传）",
+          "en": "Customer requirements (requirement document, tender file or the requirements section of minutes, uploaded) and the product fact base (product description, spec sheet, authorized cases, uploaded)"
+        }
+      },
+      {
+        "original": "方案书用途（初步交流 / 正式投标 / 续约）；可选附方案书模板与客户研究简报",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "方案书用途（初步交流 / 正式投标 / 续约）；可选附方案书模板与客户研究简报",
+          "en": "Proposal purpose (initial discussion / formal bid / renewal); optionally a proposal template and the customer research brief"
+        }
+      }
+    ],
+    "output": {
+      "original": "方案书草案：需求理解表、方案概述、能力对应与说明（有对应 / 部分对应 / 待确认能否满足）、实施与交付安排框架（时间占位）、案例（含授权范围）、商务条款占位、待确认事项",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "方案书草案：需求理解表、方案概述、能力对应与说明（有对应 / 部分对应 / 待确认能否满足）、实施与交付安排框架（时间占位）、案例（含授权范围）、商务条款占位、待确认事项",
+        "en": "Proposal draft: requirement understanding table, overview, capability mapping (matched / partly matched / to be confirmed), delivery framework (time placeholders), cases (with authorization scope), commercial terms placeholders, items to confirm"
+      }
+    }
+  }
+}

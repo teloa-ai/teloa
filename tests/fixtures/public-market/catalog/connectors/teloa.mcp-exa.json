@@ -1,0 +1,99 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-exa",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "cloud-ops",
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "exa",
+    "title": {
+      "zh-CN": "Exa 网络搜索",
+      "en": "Exa Web Search"
+    },
+    "summary": {
+      "zh-CN": "Exa AI 官方 MCP 服务，提供语义网络搜索与网页抓取能力（包默认只启用这两个工具）。需要 EXA_API_KEY。",
+      "en": "Exa AI official MCP service providing semantic web search and web page fetching (the package enables only these two tools by default). Requires EXA_API_KEY."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "env",
+          "envVarName": "EXA_API_KEY",
+          "label": {
+            "zh-CN": "Exa API Key（从 exa.ai 控制台获取）",
+            "en": "Exa API Key (get from exa.ai console)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "stdio",
+      "package": "exa-mcp-server",
+      "version": "3.4.1",
+      "integrity": "sha512-X6g4J9LXLJZ0uK52G8KE/KCaxpaD+wkEHzjkoDTYkC+afxfm5xqWgih3i0hgTfyufl6PggkLeR0L6rDAxW6ETg==",
+      "bin": "dist/stdio.cjs",
+      "args": []
+    },
+    "tools": [
+      {
+        "name": "web_search_exa",
+        "description": {
+          "zh-CN": "使用 Exa 进行语义网络搜索",
+          "en": "Perform semantic web search using Exa"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "web_fetch_exa",
+        "description": {
+          "zh-CN": "抓取并提取指定 URL 的网页内容",
+          "en": "Crawl and extract content from a specified URL"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://github.com/exa-labs/exa-mcp-server"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要 Exa API Key",
+        "en": "Requires Exa API Key"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "Node.js 20+"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

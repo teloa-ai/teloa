@@ -1,0 +1,96 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.video",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "media/video"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "video-editing",
+    "title": {
+      "zh-CN": "视频剪辑",
+      "en": "Video editing"
+    },
+    "summary": {
+      "zh-CN": "素材盘点、带时间码转写、粗剪方案与剪辑单、字幕校对、交付检查清单；没有媒体处理环境时交付的是方案与字幕文件，不是成片。",
+      "en": "Footage inventory, timecoded transcripts, rough-cut plans and edit lists, subtitle proofreading and delivery checklists; without a media environment the output is plans and subtitle files, not rendered video."
+    },
+    "scope": "video",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "登记素材清单与技术规格，未知项标「待确认」",
+          "en": "Index footage and specs, marking unknowns for confirmation"
+        },
+        {
+          "zh-CN": "整理带时间码的文字稿，标注品牌词与低置信段",
+          "en": "Clean timecoded transcripts and flag brand terms and low-confidence parts"
+        },
+        {
+          "zh-CN": "起草粗剪结构与剪辑单（入点、出点、画面、声音、字幕、转场）",
+          "en": "Draft rough-cut structure and edit lists with in/out points, picture, sound, captions and transitions"
+        },
+        {
+          "zh-CN": "校对 SRT/VTT 字幕并按规格生成交付检查表",
+          "en": "Proofread SRT/VTT subtitles and build delivery checklists per spec"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "素材清单或媒体信息、转写文本、字幕文件",
+          "en": "Footage lists or media info, transcripts and subtitle files"
+        },
+        {
+          "zh-CN": "品牌词表与交付规格",
+          "en": "Brand term list and delivery specs"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "不删除、不移动、不覆盖任何原始素材",
+          "en": "Never deletes, moves or overwrites original footage"
+        },
+        {
+          "zh-CN": "需你确认才会做：渲染导出、上传或发布视频",
+          "en": "Only with your confirmation: rendering, uploading or publishing video"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "不含视频渲染；需要成片时另配媒体处理环境。",
+        "en": "No rendering included; add a media processing environment when you need final video."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

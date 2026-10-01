@@ -1,0 +1,436 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "soc-operations",
+  "title": "安全运营（SOC T1/T2/T3）",
+  "version": "1.0.2",
+  "domain": "cyber-security",
+  "scope": "SOC",
+  "description": "面向 SOC 团队的告警研判与事件调查方案。T1 岗位完成告警分诊与真/误/待定判定；T2 岗位完成多数据源事件调查与报告；威胁狩猎计划作为 T2 岗位的任务模板交付，需要客户自有遥测支持。生产处置（封禁、隔离、工单关闭）一律为确认点，不作为自主动作。",
+  "resources": [
+    {
+      "id": "soc-t1-analyst",
+      "kind": "role",
+      "title": "T1 告警研判员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/soc-t1-analyst.json"
+      },
+      "localized": {
+        "title": {
+          "original": "T1 告警研判员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "T1 告警研判员",
+            "en": "T1 alert triage analyst"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-t2-investigator",
+      "kind": "role",
+      "title": "T2 事件调查员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/soc-t2-investigator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "T2 事件调查员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "T2 事件调查员",
+            "en": "T2 incident investigator"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-methods",
+      "kind": "knowledge",
+      "title": "SOC 方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/soc-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "SOC 方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "SOC 方法与来源索引",
+            "en": "SOC methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-triage",
+      "kind": "skill",
+      "title": "告警分诊",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/alert-triage/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "告警分诊",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警分诊",
+            "en": "Alert triage"
+          }
+        }
+      }
+    },
+    {
+      "id": "entity-context-enrichment",
+      "kind": "skill",
+      "title": "实体关联与上下文补全",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/entity-context-enrichment/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "实体关联与上下文补全",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "实体关联与上下文补全",
+            "en": "Entity correlation and context enrichment"
+          }
+        }
+      }
+    },
+    {
+      "id": "evidence-timeline",
+      "kind": "skill",
+      "title": "证据时间线",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/evidence-timeline/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "证据时间线",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "证据时间线",
+            "en": "Evidence timeline"
+          }
+        }
+      }
+    },
+    {
+      "id": "investigation-hypothesis",
+      "kind": "skill",
+      "title": "调查假设与验证计划",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/investigation-hypothesis/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "调查假设与验证计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "调查假设与验证计划",
+            "en": "Investigation hypothesis and verification plan"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-report",
+      "kind": "skill",
+      "title": "事件调查报告",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/incident-report/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "事件调查报告",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件调查报告",
+            "en": "Incident investigation report"
+          }
+        }
+      }
+    },
+    {
+      "id": "threat-hunt-plan",
+      "kind": "skill",
+      "title": "假设驱动狩猎计划",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/threat-hunt-plan/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "假设驱动狩猎计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "假设驱动狩猎计划",
+            "en": "Hypothesis-driven threat hunt plan"
+          }
+        }
+      }
+    },
+    {
+      "id": "shift-handover",
+      "kind": "skill",
+      "title": "交班记录",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/shift-handover/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "交班记录",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "交班记录",
+            "en": "Shift handover record"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-t1-triage-task",
+      "kind": "work-template",
+      "title": "T1 告警分诊任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/soc-t1-triage-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "T1 告警分诊任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "T1 告警分诊任务",
+            "en": "T1 alert triage task"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-t2-investigation-task",
+      "kind": "work-template",
+      "title": "T2 事件调查任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/soc-t2-investigation-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "T2 事件调查任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "T2 事件调查任务",
+            "en": "T2 incident investigation task"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-t3-hunt-plan",
+      "kind": "work-template",
+      "title": "T3 狩猎计划与查询草案",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "workflows/soc-t3-hunt-plan.json"
+      },
+      "localized": {
+        "title": {
+          "original": "T3 狩猎计划与查询草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "T3 狩猎计划与查询草案",
+            "en": "T3 threat hunt plan and query drafts (requires customer telemetry)"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-shift-handover",
+      "kind": "work-template",
+      "title": "交班记录任务",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "workflows/soc-shift-handover.json"
+      },
+      "localized": {
+        "title": {
+          "original": "交班记录任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "交班记录任务",
+            "en": "Shift handover task"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-daily-triage",
+      "kind": "plan",
+      "title": "每日告警分诊计划",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "plans/soc-daily-triage.json"
+      },
+      "localized": {
+        "title": {
+          "original": "每日告警分诊计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "每日告警分诊计划",
+            "en": "Daily alert triage plan"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "soc-t1-analyst",
+      "to": "soc-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t1-analyst",
+      "to": "alert-triage"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t1-analyst",
+      "to": "entity-context-enrichment"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t1-analyst",
+      "to": "shift-handover"
+    },
+    {
+      "kind": "role-work",
+      "from": "soc-t1-analyst",
+      "to": "soc-t1-triage-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "soc-t1-analyst",
+      "to": "soc-shift-handover"
+    },
+    {
+      "kind": "role-work",
+      "from": "soc-t1-analyst",
+      "to": "soc-daily-triage"
+    },
+    {
+      "kind": "role-knowledge",
+      "from": "soc-t2-investigator",
+      "to": "soc-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t2-investigator",
+      "to": "entity-context-enrichment"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t2-investigator",
+      "to": "evidence-timeline"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t2-investigator",
+      "to": "investigation-hypothesis"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t2-investigator",
+      "to": "incident-report"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t2-investigator",
+      "to": "threat-hunt-plan"
+    },
+    {
+      "kind": "role-skill",
+      "from": "soc-t2-investigator",
+      "to": "shift-handover"
+    },
+    {
+      "kind": "role-work",
+      "from": "soc-t2-investigator",
+      "to": "soc-t2-investigation-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "soc-t2-investigator",
+      "to": "soc-t3-hunt-plan"
+    },
+    {
+      "kind": "role-work",
+      "from": "soc-t2-investigator",
+      "to": "soc-shift-handover"
+    }
+  ],
+  "entrypoints": [
+    "soc-t1-triage-task",
+    "soc-t2-investigation-task",
+    "alert-triage"
+  ],
+  "localized": {
+    "title": {
+      "original": "安全运营（SOC T1/T2/T3）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "安全运营（SOC T1/T2/T3）",
+        "en": "Security operations (SOC T1/T2/T3)"
+      }
+    },
+    "description": {
+      "original": "面向 SOC 团队的告警研判与事件调查方案。T1 岗位完成告警分诊与真/误/待定判定；T2 岗位完成多数据源事件调查与报告；威胁狩猎计划作为 T2 岗位的任务模板交付，需要客户自有遥测支持。生产处置（封禁、隔离、工单关闭）一律为确认点，不作为自主动作。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向 SOC 团队的告警研判与事件调查方案。T1 岗位完成告警分诊与真/误/待定判定；T2 岗位完成多数据源事件调查与报告；威胁狩猎计划作为 T2 岗位的任务模板交付，需要客户自有遥测支持。生产处置（封禁、隔离、工单关闭）一律为确认点，不作为自主动作。",
+        "en": "Alert triage and incident investigation for SOC teams. T1 handles alert triage and true/false/pending classification; T2 handles multi-source incident investigation and reporting. Threat hunt plans are delivered as T2 work templates and require customer telemetry. Production response actions (blocking, isolation, ticket closure) are all confirmation points, not autonomous actions."
+      }
+    }
+  }
+}

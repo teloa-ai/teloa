@@ -1,0 +1,105 @@
+{
+  "format": "teloa.derivative-review/v1",
+  "entryId": "anthropic.review-pr",
+  "version": "1.0.0",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa",
+  "changeChecks": [
+    {
+      "changeId": "RPR-M01",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "按锁定提交取回原版 plugins/pr-review-toolkit/commands/review-pr.md（git blob 021234cf…，4997 字节，sha256 5e70c172…）全文核对，正文由 SKILL.md 承接（逐处见其余各条）。资源文件不含该路径，2026-09-28 校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "RPR-M02",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "全文核对原版 agents/code-simplifier.md（blob 89a01c0b…，sha256 976ddb22…）：L88「You operate autonomously and proactively, refining code immediately after it's written or modified without requiring explicit requests」，L49-56 把 ES modules、function 关键字、React Props 等写成项目标准；插件 README 注明这些代理维护在「claude-cli-internal」。市场目录已有 hermes.simplify-code（simplify-code）覆盖改代码的精简。资源文件不含该文件，SKILL.md 维度表已无 simplify（grep 为 0），校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "RPR-M03",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 --pr 通过 skill.frontmatter-keys 与 skill.name-mismatch（name 为 review-pr）；原版 allowed-tools、argument-hint 不在 SKILL.md 中。"
+    },
+    {
+      "changeId": "RPR-M04",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过：SKILL.md 前 4 KiB 内含修改声明与 MODIFICATIONS.md。"
+    },
+    {
+      "changeId": "RPR-M05",
+      "method": "test",
+      "result": "pass",
+      "evidence": "本机 qwen3:14b 按 SKILL.md 在示例仓库实跑 2 次（未提供委派工具）：两次都先读取 agents/ 下 5 份角色说明，再按顺序完成各专项并输出 Critical/Important/Suggestions 汇总；没有尝试调用不存在的 Task 工具。两次都多读了一个不存在的角色文件（agents/summary*.md，工具返回错误后继续），已写入 tests/README.md。记录见 reviews/derivatives/anthropic.review-pr/tests/review-pr-replies.md。"
+    },
+    {
+      "changeId": "RPR-M06",
+      "method": "test",
+      "result": "pass",
+      "evidence": "同上 2 次实跑，场景不拦截任何命令、只记录：两次都没有写文件、暂存、提交或调用 gh，执行的 bash 只有 git status / git diff / git ls-files，结束后工作区与开始时相同（tests/review-pr-runs.jsonl 的 mutating 与 writes 为空，git status 未变）。示例仓库没有远程 PR，gh 分支未实跑。"
+    },
+    {
+      "changeId": "RPR-M07",
+      "method": "reproduction",
+      "result": "pass",
+      "evidence": "复现（reviews/derivatives/anthropic.review-pr/tests/git-scope-orders.txt）：示例仓库有一个已暂存文件（含 except Exception: return None）、一个未暂存测试改动、一个新文件 orders/coupon.py；原版 `git diff --name-only` 只列出 tests/test_service.py，`git diff HEAD --name-only` 与 `git status --porcelain=v1 -uall` 列出全部 3 个。2 次实跑都读取了已暂存的 orders/service.py 与新文件 orders/coupon.py，并对两者给出发现（第 2 次报告了被吞掉的异常，两次都报告了 Coupon 的 0-100 约束未校验）。"
+    },
+    {
+      "changeId": "RPR-M08",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2 次实跑的汇总都按对照表分成 Critical/Important/Suggestions 三级并标出来源专项（reviews/derivatives/anthropic.review-pr/tests/review-pr-replies.md）。模型把静默失败、类型约束分别放在 Critical 或 Important，分级与对照表基本一致；本条是为汇总提供统一口径，不宣称提高审查质量。"
+    },
+    {
+      "changeId": "RPR-M09",
+      "method": "review",
+      "result": "pass",
+      "evidence": "逐条核对两条规则的措辞与同一上游仓库 code-modernization 插件 agents/*.md 的「Untrusted content discipline」「Secret handling」一致。示例仓库不含指令样文本与凭据，这两条在实跑中未被触发，只做了审阅。"
+    },
+    {
+      "changeId": "RPR-M10",
+      "method": "reproduction",
+      "result": "pass",
+      "evidence": "同 RPR-M07 的复现：原版 code-reviewer 默认范围 `git diff` 只含 tests/test_service.py（reviews/derivatives/anthropic.review-pr/tests/git-scope-orders.txt 中 `git diff | grep ^+++`），漏掉已暂存的 orders/service.py 与新文件；新写法的 `git diff HEAD` 加 `git status -uall` 覆盖三者。"
+    },
+    {
+      "changeId": "RPR-M11",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2 次实跑中 code-reviewer 专项只读（无写入、无改变工作区的命令），引用的是示例仓库的 AGENTS.md 规则（第 2 次据此报告被吞掉的异常），没有要求 CLAUDE.md。"
+    },
+    {
+      "changeId": "RPR-M12",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2 次实跑中 comment-analyzer 专项只读：第 1 次指出 apply_coupon 注释写「dollars」而函数返回分；第 2 次指出 Coupon 文档声称 percent 在 0-100 之间却不校验（同一次里注释与单位不符由 code-reviewer 报告，且建议改代码而非改注释，方向不对，已如实记在 tests/README.md）。"
+    },
+    {
+      "changeId": "RPR-M13",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2 次实跑中 pr-test-analyzer 专项只读，两次都给出缺失的测试（load_order 异常、apply_coupon 边界或 order_total 非法输入）。"
+    },
+    {
+      "changeId": "RPR-M14",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2 次实跑中 type-design-analyzer 专项只读，两次都指出 Coupon 文档写明 percent 在 0-100 之间但构造时不校验。"
+    },
+    {
+      "changeId": "RPR-M15",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "对照原版 agents/silent-failure-hunter.md（sha256 fa9b0dae…）L39、L41、L94、L123-129：把 logForDebugging、logError（Sentry）、logEvent（Statsig）与 constants/errorIds.ts 写成「This project has…」；插件 README 写明代理维护在「Project agents: .claude/agents/ in claude-cli-internal」，说明这是特定代码库的约定。示例仓库没有 errorIds.ts、Sentry 或这些函数（grep 为 0）。改后 2 次实跑都没有要求这些文件或函数，第 2 次按仓库自己的 AGENTS.md（log.exception 并重新抛出）报告了被吞掉的异常。"
+    },
+    {
+      "changeId": "RPR-M16",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过（角色说明前 4 KiB 内含 MODIFICATIONS.md）；2 次实跑中该专项只读。"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "interview-guide-task",
+  "title": "面试纲要与面试记录汇总",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "面试前依据 JD 与轮次目标设计面试纲要与评分表；面试后从转写或面试官笔记中提取面试记录，区分候选人事实、面试官评价与待办，多位面试官评价并列不合并。",
+  "requirements": [
+    "岗位 JD 与本轮面试目标（面试前）",
+    "面试录音转写或面试官笔记（面试后，可选）"
+  ],
+  "output": "面试纲要（能力矩阵、问题与追问、评分表、禁问事项）；如提供转写则另出面试记录（事实、评价原文、待办、待确认项）；不含录用结论",
+  "skills": [
+    {
+      "id": "interview-guide",
+      "title": "面试纲要与评分表设计",
+      "version": "1.0.0"
+    },
+    {
+      "id": "interview-notes",
+      "title": "面试记录与待办提取",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "面试纲要与面试记录汇总",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面试纲要与面试记录汇总",
+        "en": "Interview guide and notes summary task"
+      }
+    },
+    "description": {
+      "original": "面试前依据 JD 与轮次目标设计面试纲要与评分表；面试后从转写或面试官笔记中提取面试记录，区分候选人事实、面试官评价与待办，多位面试官评价并列不合并。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面试前依据 JD 与轮次目标设计面试纲要与评分表；面试后从转写或面试官笔记中提取面试记录，区分候选人事实、面试官评价与待办，多位面试官评价并列不合并。",
+        "en": "Before the interview, design a guide and scorecard from the JD and round goals; afterwards, extract notes from the transcript or interviewer notes, separating candidate facts, interviewer comments and action items, with multiple interviewers' comments kept side by side and never merged."
+      }
+    },
+    "requirements": [
+      {
+        "original": "岗位 JD 与本轮面试目标（面试前）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "岗位 JD 与本轮面试目标（面试前）",
+          "en": "Job JD and this round's goals (before the interview)"
+        }
+      },
+      {
+        "original": "面试录音转写或面试官笔记（面试后，可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "面试录音转写或面试官笔记（面试后，可选）",
+          "en": "Interview transcript or interviewer notes (after the interview, optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "面试纲要（能力矩阵、问题与追问、评分表、禁问事项）；如提供转写则另出面试记录（事实、评价原文、待办、待确认项）；不含录用结论",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面试纲要（能力矩阵、问题与追问、评分表、禁问事项）；如提供转写则另出面试记录（事实、评价原文、待办、待确认项）；不含录用结论",
+        "en": "Interview guide (competency matrix, questions and follow-ups, scorecard, prohibited questions); if a transcript is provided, an interview record (facts, verbatim comments, action items, open points); no hiring conclusion"
+      }
+    }
+  }
+}

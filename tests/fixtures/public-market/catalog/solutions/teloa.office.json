@@ -1,0 +1,100 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.office",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "office-collaboration",
+    "title": {
+      "zh-CN": "通用办公",
+      "en": "General office"
+    },
+    "summary": {
+      "zh-CN": "上传文件即可开始：资料研究简报、会议纪要与待办、周报与决策简报、表格核对，结论都指向原文出处。",
+      "en": "Start from uploaded files: research briefs, meeting minutes and action items, weekly and decision briefs, and table checks, with every conclusion pointing to its source."
+    },
+    "scope": "office",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "多份资料提炼成可追溯简报，区分事实、推断与待核实项",
+          "en": "Turn documents into traceable briefs that separate facts, inferences and open questions"
+        },
+        {
+          "zh-CN": "从会议文字稿提取决议与待办，负责人和期限只取原文",
+          "en": "Extract decisions and action items from transcripts; owners and dates only from the text"
+        },
+        {
+          "zh-CN": "整理周报、向上汇报与决策简报，数字附来源",
+          "en": "Write weekly reports and decision briefs with sourced numbers"
+        },
+        {
+          "zh-CN": "核对表格合计、单位与口径，列出全部差异",
+          "en": "Check totals, units and definitions in tables and list every difference"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "会议文字稿、表格、工作记录等文件",
+          "en": "Transcripts, spreadsheets, work notes and other files"
+        },
+        {
+          "zh-CN": "研究问题、核对范围或简报读者",
+          "en": "The research question, check scope or brief audience"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件",
+          "en": "Reads only the files you provide for the task"
+        },
+        {
+          "zh-CN": "需你确认才会做：发送邮件、创建日程、改动共享权限",
+          "en": "Only with your confirmation: sending email, creating calendar events or changing sharing"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型验证：从市场添加、加载到业务、办公协作员上岗后，按会议纪要模板交付结构化纪要与待办。",
+        "en": "Verified with a real model on 2026-09-25: added from the market, loaded into a business, and the office collaborator delivered structured minutes and action items from the meeting-minutes template."
+      },
+      {
+        "zh-CN": "云盘、邮件与日历连接为可选项，本版不内置。",
+        "en": "Cloud drive, mail and calendar connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

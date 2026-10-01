@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "risk-register-task",
+  "title": "风险台账任务",
+  "version": "1.0.0",
+  "domain": "grc",
+  "description": "建立新风险台账条目或更新已有台账，对每条风险进行登记、固有与残余风险评分（5×5 矩阵）和处理建议，输出风险台账更新草案，供负责人审阅后决策。风险接受须由授权人正式批准。",
+  "requirements": [
+    "风险来源材料（差距分析报告、安全事件记录、漏洞扫描报告或业务变更说明）",
+    "现有风险台账（如有，用于更新场景）",
+    "资产清单或系统描述（用于评估影响）"
+  ],
+  "output": "风险台账更新草案：新增或变更的风险条目（含风险 ID、描述、资产、固有与残余评分、现有控制、处理方式建议、建议负责人占位）和风险摘要（高/中/低分布）",
+  "skills": [
+    {
+      "id": "risk-register",
+      "title": "风险台账",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "风险台账任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "风险台账任务",
+        "en": "Risk register task"
+      }
+    },
+    "description": {
+      "original": "建立新风险台账条目或更新已有台账，对每条风险进行登记、固有与残余风险评分（5×5 矩阵）和处理建议，输出风险台账更新草案，供负责人审阅后决策。风险接受须由授权人正式批准。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "建立新风险台账条目或更新已有台账，对每条风险进行登记、固有与残余风险评分（5×5 矩阵）和处理建议，输出风险台账更新草案，供负责人审阅后决策。风险接受须由授权人正式批准。",
+        "en": "Create new risk register entries or update an existing register, scoring inherent and residual risk using a 5x5 matrix and suggesting treatment options. Output a draft risk register update for owner review; formal risk acceptance requires authorized sign-off."
+      }
+    },
+    "requirements": [
+      {
+        "original": "风险来源材料（差距分析报告、安全事件记录、漏洞扫描报告或业务变更说明）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "风险来源材料（差距分析报告、安全事件记录、漏洞扫描报告或业务变更说明）",
+          "en": "Risk source material (gap analysis report, security incident record, vulnerability scan report, or business change description)"
+        }
+      },
+      {
+        "original": "现有风险台账（如有，用于更新场景）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "现有风险台账（如有，用于更新场景）",
+          "en": "Existing risk register (optional, required for update scenarios)"
+        }
+      },
+      {
+        "original": "资产清单或系统描述（用于评估影响）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "资产清单或系统描述（用于评估影响）",
+          "en": "Asset inventory or system description (for impact assessment)"
+        }
+      }
+    ],
+    "output": {
+      "original": "风险台账更新草案：新增或变更的风险条目（含风险 ID、描述、资产、固有与残余评分、现有控制、处理方式建议、建议负责人占位）和风险摘要（高/中/低分布）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "风险台账更新草案：新增或变更的风险条目（含风险 ID、描述、资产、固有与残余评分、现有控制、处理方式建议、建议负责人占位）和风险摘要（高/中/低分布）",
+        "en": "Draft risk register update: new or changed risk entries (with risk ID, description, asset, inherent and residual scores, existing controls, treatment suggestion, suggested owner placeholder) and risk summary (high/medium/low distribution)"
+      }
+    }
+  }
+}

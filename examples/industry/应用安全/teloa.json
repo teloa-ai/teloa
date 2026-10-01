@@ -1,0 +1,264 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "application-security",
+  "title": "应用安全",
+  "version": "1.0.0",
+  "domain": "security",
+  "scope": "AppSec",
+  "description": "统一管理应用、漏洞和修复工单，提供风险分布、SLA 趋势与修复任务入口。这一包只带业务台账声明，同事、技能与资料按需另行添加。",
+  "resources": [
+    {
+      "id": "finding-data",
+      "kind": "data-source",
+      "title": "代码安全发现来源",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "data/findings.json"
+      },
+      "localized": {
+        "title": {
+          "original": "代码安全发现来源",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "代码安全发现来源",
+            "en": "Code security finding source"
+          }
+        }
+      }
+    },
+    {
+      "id": "application",
+      "kind": "object-type",
+      "title": "应用",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "object-types/application.json"
+      },
+      "localized": {
+        "title": {
+          "original": "应用",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "应用",
+            "en": "Application"
+          }
+        }
+      }
+    },
+    {
+      "id": "vulnerability",
+      "kind": "object-type",
+      "title": "漏洞",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "object-types/vulnerability.json"
+      },
+      "localized": {
+        "title": {
+          "original": "漏洞",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "漏洞",
+            "en": "Vulnerability"
+          }
+        }
+      }
+    },
+    {
+      "id": "fix-ticket",
+      "kind": "object-type",
+      "title": "修复工单",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "object-types/fix-ticket.json"
+      },
+      "localized": {
+        "title": {
+          "original": "修复工单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "修复工单",
+            "en": "Remediation ticket"
+          }
+        }
+      }
+    },
+    {
+      "id": "appsec-risk-level",
+      "kind": "business-view",
+      "title": "风险等级分布",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/appsec-risk-level.json"
+      },
+      "localized": {
+        "title": {
+          "original": "风险等级分布",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "风险等级分布",
+            "en": "Risk level distribution"
+          }
+        }
+      }
+    },
+    {
+      "id": "appsec-sla-trend",
+      "kind": "business-view",
+      "title": "SLA 到期趋势",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/appsec-sla-trend.json"
+      },
+      "localized": {
+        "title": {
+          "original": "SLA 到期趋势",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "SLA 到期趋势",
+            "en": "SLA due-date trend"
+          }
+        }
+      }
+    },
+    {
+      "id": "appsec-application-list",
+      "kind": "business-view",
+      "title": "应用清单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/appsec-application-list.json"
+      },
+      "localized": {
+        "title": {
+          "original": "应用清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "应用清单",
+            "en": "Application list"
+          }
+        }
+      }
+    },
+    {
+      "id": "appsec-vulnerability-list",
+      "kind": "business-view",
+      "title": "漏洞清单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/appsec-vulnerability-list.json"
+      },
+      "localized": {
+        "title": {
+          "original": "漏洞清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "漏洞清单",
+            "en": "Vulnerability list"
+          }
+        }
+      }
+    },
+    {
+      "id": "appsec-fix-ticket-list",
+      "kind": "business-view",
+      "title": "修复工单清单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/appsec-fix-ticket-list.json"
+      },
+      "localized": {
+        "title": {
+          "original": "修复工单清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "修复工单清单",
+            "en": "Remediation ticket list"
+          }
+        }
+      }
+    },
+    {
+      "id": "open-fix-ticket",
+      "kind": "business-action",
+      "title": "开一张修复工单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "actions/open-fix-ticket.json"
+      },
+      "localized": {
+        "title": {
+          "original": "开一张修复工单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "开一张修复工单",
+            "en": "Create a remediation ticket"
+          }
+        }
+      }
+    },
+    {
+      "id": "vulnerability-fix",
+      "kind": "work-template",
+      "title": "漏洞修复",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/vulnerability-fix.json"
+      },
+      "localized": {
+        "title": {
+          "original": "漏洞修复",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "漏洞修复",
+            "en": "Vulnerability remediation"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [],
+  "entrypoints": [
+    "vulnerability-fix"
+  ],
+  "localized": {
+    "title": {
+      "original": "应用安全",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "应用安全",
+        "en": "Application security"
+      }
+    },
+    "description": {
+      "original": "统一管理应用、漏洞和修复工单，提供风险分布、SLA 趋势与修复任务入口。这一包只带业务台账声明，同事、技能与资料按需另行添加。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "统一管理应用、漏洞和修复工单，提供风险分布、SLA 趋势与修复任务入口。这一包只带业务台账声明，同事、技能与资料按需另行添加。",
+        "en": "Manage applications, vulnerabilities, and remediation tickets in one place, with risk distribution, SLA trends, and remediation task entry points. This package carries only the business ledger declarations; colleagues, skills, and reference material are added separately as needed."
+      }
+    }
+  }
+}

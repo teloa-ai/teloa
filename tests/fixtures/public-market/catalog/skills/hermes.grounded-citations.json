@@ -1,0 +1,100 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "hermes.grounded-citations",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "grounded-citations",
+    "title": {
+      "zh-CN": "有据引用",
+      "en": "Grounded citations"
+    },
+    "summary": {
+      "zh-CN": "把答案与文档中的每一项声明固定到可核验的来源，附行内编号引用与 Sources 列表；编号与 URL 全部来自检索，不凭记忆生成。",
+      "en": "Grounds every claim in answers and documents to verifiable sources with inline numbered citations and a Sources list; numbers and URLs come from retrieval, never from memory."
+    }
+  },
+  "upstream": {
+    "ecosystem": "hermes",
+    "author": "Hermes Agent + Teknium",
+    "repository": {
+      "host": "github.com",
+      "owner": "NousResearch",
+      "repo": "hermes-agent"
+    },
+    "commit": "130b8f2c5dbca93a81aa396dd2ba44420d78f6f0",
+    "path": "skills/research/grounded-citations",
+    "license": "MIT",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "gitBlob": "97c4bce66391e88129287aa0a8f7ed75236ff513",
+        "size": 12652
+      },
+      {
+        "path": "references/citation-formats.md",
+        "gitBlob": "cf7d3f7f5b07f98e56f0b66192b61fba1bc6d7b9",
+        "size": 2418
+      },
+      {
+        "path": "references/grounding-rationale.md",
+        "gitBlob": "7c25d6b29a4a2ebbe468db4cbc927cb204e1e930",
+        "size": 3127
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "frontmatter 只保留 name 与 description，去掉 version、author、license、platforms 及 metadata.hermes 等 Hermes 专属字段。",
+      "en": "Frontmatter keeps only name and description; Hermes-specific fields version, author, license, platforms, and metadata.hermes removed."
+    },
+    {
+      "zh-CN": "scripts/sources.py 与 scripts/_hermes_home.py 不随资源文件收录（构建拒绝脚本文件）；原流程中由脚本维护的 URL 到编号的账本改为由模型在上下文中用编号列表自行维护，Quick Reference 与 Procedure 各节已据此重写。",
+      "en": "scripts/sources.py and scripts/_hermes_home.py are not included (build rejects script files); the URL-to-number ledger previously managed by the script is now maintained by the model in-context as a numbered list; Quick Reference and Procedure sections rewritten accordingly."
+    },
+    {
+      "zh-CN": "移除 HERMES_HOME 路径引用、hermes skills install 安装指令及对 hermes rss-feeds/reddit-reading 等技能的 install 指引；改为「如有可用工具则使用」表述。",
+      "en": "Removed HERMES_HOME path references, hermes skills install directives, and install links for related skills; replaced with 'use if available' phrasing."
+    },
+    {
+      "zh-CN": "仓库根 LICENSE（MIT，Nous Research 版权声明）随资源文件收录，路径为 LICENSE。",
+      "en": "The repository root LICENSE (MIT, Nous Research copyright notice) is included with the resource files at path LICENSE."
+    }
+  ],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "纯文本方法；检索工具（web_search、web_extract 等）须已在会话中授权方可运行检索步骤，但技能文本本身不需要额外工具即可加载。",
+        "en": "Text-only method; retrieval tools (web_search, web_extract, etc.) must be authorized in the conversation to perform retrieval steps, but the skill text itself loads without extra tools."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

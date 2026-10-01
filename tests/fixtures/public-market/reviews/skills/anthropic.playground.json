@@ -1,0 +1,71 @@
+{
+  "format": "teloa.upstream-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa",
+  "entries": {
+    "anthropic.playground": {
+      "verdict": "approve",
+      "conditions": [
+        {
+          "zh-CN": "正文第 4 步的 open 命令仅适用于 macOS；在 Teloa 中请按输出的文件路径预览",
+          "en": "The open command in step 4 only works on macOS; in Teloa, preview the file at the path reported"
+        },
+        {
+          "zh-CN": "正文说把生成的提示词复制回 Claude；在 Teloa 中复制回当前对话即可",
+          "en": "The skill says to copy the generated prompt back into Claude; in Teloa, paste it back into the current conversation"
+        },
+        {
+          "zh-CN": "文档批注与代码差异评审模板未要求转义嵌入内容；处理第三方文档或 diff 时，请让助手把内容以 JSON 嵌入并用 textContent 渲染",
+          "en": "The document-critique and diff-review templates do not require escaping embedded content; for third-party documents or diffs, ask the assistant to embed the content as JSON and render it with textContent"
+        },
+        {
+          "zh-CN": "许可为上游仓库根目录的 LICENSE（Apache-2.0），不在技能目录内",
+          "en": "The license is the LICENSE (Apache-2.0) at the upstream repository root, outside the skill directory"
+        }
+      ],
+      "evidence": {
+        "source": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/playground/skills/playground",
+        "files": [
+          {
+            "path": "SKILL.md",
+            "gitBlob": "e8b2da023f4bfb25907fb7a48e8234bbd0e1cb7d",
+            "size": 3824
+          },
+          {
+            "path": "templates/code-map.md",
+            "gitBlob": "152d9a43ecdec670cbc159115eaf099e4c2f1997",
+            "size": 6196
+          },
+          {
+            "path": "templates/concept-map.md",
+            "gitBlob": "83ef2307ae3b032fe520822cd2450d72e70aa15a",
+            "size": 3644
+          },
+          {
+            "path": "templates/data-explorer.md",
+            "gitBlob": "dde65467789c0416115f47834056820a5782c821",
+            "size": 2817
+          },
+          {
+            "path": "templates/design-playground.md",
+            "gitBlob": "1d2fefce1650251ed6bc5c8bf71cc6fd5ce1ebb7",
+            "size": 2719
+          },
+          {
+            "path": "templates/diff-review.md",
+            "gitBlob": "db18b2f2f5b3ea0d1666533fb6a1452ff2c9522d",
+            "size": 5733
+          },
+          {
+            "path": "templates/document-critique.md",
+            "gitBlob": "d99d77da69bfb6058964d48929508e33a6e64aaf",
+            "size": 5154
+          }
+        ],
+        "license": "仓库根 LICENSE 与插件级 plugins/playground/LICENSE 为同一 blob d645695673349e3947e8e5ae42332d0ac3164cd7（Apache-2.0，11358 字节）；技能目录内无许可文件。现行契约 upstream.files 只能列技能目录内相对路径（无 repositoryPath），故 license.files 为空，由条件文案说明许可位置",
+        "review": "全文审查：无阻断项；SKILL.md 第 4 步 open 命令仅 macOS；templates/document-critique.md:163 与 diff-review.md 嵌入内容无转义要求、data-explorer.md:43 innerHTML 示范写法，按主控裁定不二次开发，以条件文案提示；按上游原样收录，未改字节",
+        "installs": "按规格 §12.1-6 填 null"
+      }
+    }
+  }
+}

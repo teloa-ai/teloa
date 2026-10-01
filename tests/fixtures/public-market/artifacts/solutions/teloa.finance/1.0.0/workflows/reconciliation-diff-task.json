@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "reconciliation-diff-task",
+  "title": "对账差异清单",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "将银行流水与账面明细逐条匹配，输出分为已匹配、金额差异、日期差异、单边未达、疑似重复五类的差异清单，附来源行号、精确差额与合计勾稽；只列差异，不调账、不付款、不解释原因。",
+  "requirements": [
+    "银行流水或支付平台账单导出，以及账面明细导出（已上传）",
+    "对账期间；日期与金额容忍规则、上期未达清单（可选）"
+  ],
+  "output": "对账差异清单：匹配汇总、金额差异、日期差异、单边未达（分两边）、疑似重复、待人工确认的候选匹配、已匹配明细附录、合计勾稽；不含差异原因判断与调账建议",
+  "skills": [
+    {
+      "id": "reconciliation-diff",
+      "title": "对账差异清单",
+      "version": "1.0.0"
+    },
+    {
+      "id": "finance-table-verification",
+      "title": "表格核对（对照、差异、口径问题清单）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "对账差异清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对账差异清单",
+        "en": "Reconciliation discrepancy list task"
+      }
+    },
+    "description": {
+      "original": "将银行流水与账面明细逐条匹配，输出分为已匹配、金额差异、日期差异、单边未达、疑似重复五类的差异清单，附来源行号、精确差额与合计勾稽；只列差异，不调账、不付款、不解释原因。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将银行流水与账面明细逐条匹配，输出分为已匹配、金额差异、日期差异、单边未达、疑似重复五类的差异清单，附来源行号、精确差额与合计勾稽；只列差异，不调账、不付款、不解释原因。",
+        "en": "Match bank statement lines against ledger entries and output a discrepancy list in five classes (matched, amount difference, date difference, one-sided items, suspected duplicates) with source row numbers, exact differences and a totals check; differences only, with no ledger changes, payments or explanations."
+      }
+    },
+    "requirements": [
+      {
+        "original": "银行流水或支付平台账单导出，以及账面明细导出（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "银行流水或支付平台账单导出，以及账面明细导出（已上传）",
+          "en": "Bank statement or payment platform export, plus the ledger detail export (already uploaded)"
+        }
+      },
+      {
+        "original": "对账期间；日期与金额容忍规则、上期未达清单（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "对账期间；日期与金额容忍规则、上期未达清单（可选）",
+          "en": "Reconciliation period; date and amount tolerance rules and last period's outstanding items (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "对账差异清单：匹配汇总、金额差异、日期差异、单边未达（分两边）、疑似重复、待人工确认的候选匹配、已匹配明细附录、合计勾稽；不含差异原因判断与调账建议",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对账差异清单：匹配汇总、金额差异、日期差异、单边未达（分两边）、疑似重复、待人工确认的候选匹配、已匹配明细附录、合计勾稽；不含差异原因判断与调账建议",
+        "en": "Discrepancy list: match summary, amount differences, date differences, one-sided items (per side), suspected duplicates, candidate matches for manual confirmation, matched-items appendix and totals check; no cause judgments or adjustment suggestions"
+      }
+    }
+  }
+}

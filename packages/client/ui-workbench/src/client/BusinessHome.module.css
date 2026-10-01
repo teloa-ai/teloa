@@ -1,0 +1,55 @@
+/* 业务台账首页（原型 B3 `业务页方案.module.css`）。只用既有 --teloa-* 令牌，不新增颜色。
+   圆角走 --teloa-design-r3/--teloa-design-round（prototype-theme.ts 生成，theme-presenter 运行时挂到 body），
+   与原型 --maxent-preview-r3/round 一一对应。 */
+.page{overflow:auto;scrollbar-gutter:stable;overflow-wrap:anywhere}
+.container{box-sizing:border-box;width:100%;max-width:1220px;margin:0 auto;padding:34px 42px 24px;min-width:0}
+.pageHeader{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
+.pageHeader>div:first-child{min-width:0}
+.pageHeader h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-heading);margin:0}
+.subtitle{margin:9px 0 0;font-size:var(--teloa-font-control);line-height:1.8;color:var(--teloa-muted)}
+/* 展开时用 flex-basis:100% 把自己挤到 pageHeader 的下一行，随文档流把下面的卡片往下推，不盖住任何内容（390 与 1440 都成立）。 */
+.createControl{flex:none}.createControl>summary{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 12px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-control);cursor:pointer;list-style:none}.createControl>summary::-webkit-details-marker{display:none}.createControl>summary:hover{background:var(--teloa-hover)}.createOpen{flex:1 1 100%}.create{box-sizing:border-box;width:100%;margin-top:12px;padding:18px 20px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3);background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+
+.cardList{display:flex;flex-direction:column;gap:14px;margin-top:6px}
+.empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:34px 24px;border:1px dashed var(--teloa-border);border-radius:var(--teloa-design-r3);background:var(--teloa-surface)}
+.empty h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.empty p{margin:0;font-size:var(--teloa-font-control);line-height:1.8;color:var(--teloa-muted)}
+.spaceCard{display:flex;flex-direction:column;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3);background:var(--teloa-surface);overflow:hidden}
+.spaceCard:hover{border-color:var(--teloa-muted)}
+.page .spaceOpen{display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;box-sizing:border-box;padding:20px 24px;text-align:left;background:transparent;border:0;border-radius:0}
+.page .spaceOpen:hover{background:var(--teloa-hover)}
+.spaceName{display:flex;align-items:center;gap:8px;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-medium);letter-spacing:-.4px;line-height:1.5}
+.spaceName>svg{color:var(--teloa-muted);flex:none}
+.spaceSituation{font-size:var(--teloa-font-control);color:var(--teloa-muted);line-height:1.7}
+.spaceWork{font-size:var(--teloa-font-control);line-height:1.7;font-weight:var(--teloa-weight-medium)}
+.spaceLine{font-size:var(--teloa-font-body);line-height:1.8}
+/* 七行摘要：处境句那一块下面一行名词计数，每段是可点的文字按钮，分隔符不可点。 */
+.spaceComposition{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:0 24px 18px}
+.page .compositionPart{padding:0 2px;min-height:26px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-accent);font-size:var(--teloa-font-control);line-height:1.7;white-space:nowrap}
+.page .compositionPart:hover{background:transparent;text-decoration:underline}
+.compositionGap{color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.7;white-space:pre}
+.spaceFoot{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:14px 24px;border-top:1px solid var(--teloa-border);background:var(--teloa-subtle)}
+.grow{flex:1}
+.page .staffLink{padding:0;min-height:28px;border:0;background:transparent;font-size:var(--teloa-font-caption);color:var(--teloa-accent);white-space:nowrap}
+.page .staffLink:hover{background:transparent;text-decoration:underline}
+.page .spaceFoot>button:not(.staffLink){font-size:var(--teloa-font-caption)}
+.needPill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--teloa-design-round);background:var(--teloa-warn-bg);color:var(--teloa-warn);font-size:var(--teloa-font-caption);white-space:nowrap}
+.staffRow{display:inline-flex;align-items:center}
+.staffAvatar{display:inline-flex;border:2px solid var(--teloa-surface);border-radius:26%;line-height:0}
+.staffAvatar+.staffAvatar{margin-left:-8px}
+.staffMore{margin-left:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);font-variant-numeric:tabular-nums}
+.noStaff{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+
+@media(max-width:740px){
+ .container{padding:24px 20px 19px}
+ .pageHeader{flex-wrap:wrap}
+ .pageHeader h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+ .page .spaceOpen{padding:18px}
+ .spaceName{font-size:var(--teloa-font-section)}
+ .spaceFoot{padding:13px 18px}
+ .spaceComposition{padding:0 18px 16px}
+ .page .compositionPart{min-height:44px}
+ .page .staffLink{min-height:44px}
+}
+
+.entryActions{display:flex;flex-wrap:wrap;gap:8px}.entryActions>button:first-child{background:var(--teloa-accent);color:var(--teloa-on-accent,#fff);border-color:var(--teloa-accent)}

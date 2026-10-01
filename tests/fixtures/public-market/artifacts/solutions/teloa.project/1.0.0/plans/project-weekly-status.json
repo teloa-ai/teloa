@@ -1,0 +1,14 @@
+{
+  "format": "teloa.plan/v1",
+  "version": "1.0.0",
+  "title": "每周项目状态计划",
+  "workTemplate": "status-report-task",
+  "dataScope": "当周已上传或明确提供的任务记录、看板导出、里程碑表与风险台账；项目管理工具与即时通讯连接为可选项，需在部署时另行配置。",
+  "trigger": {
+    "kind": "schedule",
+    "cadence": "weekly",
+    "weekday": 5,
+    "time": "15:00",
+    "timezone": "Asia/Shanghai"
+  }
+}

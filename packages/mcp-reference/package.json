@@ -1,0 +1,19 @@
+{
+  "name": "@teloa/mcp-reference",
+  "version": "0.2.0-alpha.7",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts",
+    "./catalog": "./src/catalog.ts",
+    "./local": "./src/local.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.5.4"
+  }
+}

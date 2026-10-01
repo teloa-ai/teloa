@@ -1,0 +1,44 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-incident-list",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "事件工单清单",
+  "kind": "list",
+  "chart": "table",
+  "objectType": "incident-ticket",
+  "measures": [
+    {
+      "id": "objects",
+      "label": "用到的对象数",
+      "aggregation": "max",
+      "field": "object-count",
+      "localized": {
+        "label": {
+          "original": "用到的对象数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "用到的对象数",
+            "en": "Related objects"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "limit": 100,
+  "localized": {
+    "title": {
+      "original": "事件工单清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "事件工单清单",
+        "en": "Incident ticket list"
+      }
+    }
+  }
+}

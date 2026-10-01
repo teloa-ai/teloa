@@ -1,0 +1,26 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-composio": {
+      "evidence": "2026-09-26：旧端点 mcp.composio.dev/mcp 回 HTML 页；官方现为 https://connect.composio.dev/mcp（401 质询）；Composio Connect 文档列 7 个元工具，其中 COMPOSIO_SEARCH_TOOLS、COMPOSIO_GET_TOOL_SCHEMAS、COMPOSIO_MULTI_EXECUTE_TOOL。2026-09-28 复核：受保护资源元数据 resource=https://connect.composio.dev/mcp、authorization_servers [https://connect.composio.dev]，未声明 scopes_supported；授权服务器元数据 issuer https://connect.composio.dev，registration_endpoint 与 token_endpoint 在 login.composio.dev，token_endpoint_auth_methods_supported [none]，code_challenge_methods_supported [S256]，scopes_supported 为 openid/profile/email/offline_access（配方不指定 scope，按服务端默认）。2026-09-27 主控自测：DCR 201，授权端点 302 到 connect.composio.dev/login，无 error。同一套宿主 OAuth 代码 2026-09-28 在 Cloudflare 连接器上用真实账户走通全链路。按用户裁定（无 Composio 账号，不实测第三方真实账户）改为 supported，条件写明登录后环节未实测",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://connect.composio.dev/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": []
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "COMPOSIO_SEARCH_TOOLS": "read",
+        "COMPOSIO_GET_TOOL_SCHEMAS": "read",
+        "COMPOSIO_MULTI_EXECUTE_TOOL": "write"
+      }
+    }
+  }
+}

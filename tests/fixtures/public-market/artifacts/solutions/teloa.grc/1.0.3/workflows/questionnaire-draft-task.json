@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "questionnaire-draft-task",
+  "title": "安全问卷代拟任务",
+  "version": "1.0.0",
+  "domain": "grc",
+  "description": "对已收到的安全问卷或供应商尽调问卷逐题起草回答草案，标注每道题的置信度（高/中/低/需确认）和具体需人工确认项，供负责人审阅确认后再正式提交。草案不得直接提交给问卷发送方。",
+  "requirements": [
+    "问卷文件（含全部题目）",
+    "已有策略文件或控制清单（用于支撑回答，已提供的版本）",
+    "组织背景信息（规模、行业、适用框架或认证状态）"
+  ],
+  "output": "问卷回答草案：逐题建议回答（含支撑证据引用、置信度标注）、需确认项汇总清单，以及置信度分布统计",
+  "skills": [
+    {
+      "id": "questionnaire-draft",
+      "title": "安全问卷代拟",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "安全问卷代拟任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "安全问卷代拟任务",
+        "en": "Security questionnaire drafting task"
+      }
+    },
+    "description": {
+      "original": "对已收到的安全问卷或供应商尽调问卷逐题起草回答草案，标注每道题的置信度（高/中/低/需确认）和具体需人工确认项，供负责人审阅确认后再正式提交。草案不得直接提交给问卷发送方。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已收到的安全问卷或供应商尽调问卷逐题起草回答草案，标注每道题的置信度（高/中/低/需确认）和具体需人工确认项，供负责人审阅确认后再正式提交。草案不得直接提交给问卷发送方。",
+        "en": "Draft answer-by-answer responses to received security or vendor due-diligence questionnaires, annotating each item with confidence level (high/medium/low/needs confirmation) and specific human review items. The draft must not be submitted directly to the questionnaire sender."
+      }
+    },
+    "requirements": [
+      {
+        "original": "问卷文件（含全部题目）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "问卷文件（含全部题目）",
+          "en": "Questionnaire file (containing all questions)"
+        }
+      },
+      {
+        "original": "已有策略文件或控制清单（用于支撑回答，已提供的版本）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已有策略文件或控制清单（用于支撑回答，已提供的版本）",
+          "en": "Existing policy documents or control inventory (provided version, used to support answers)"
+        }
+      },
+      {
+        "original": "组织背景信息（规模、行业、适用框架或认证状态）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "组织背景信息（规模、行业、适用框架或认证状态）",
+          "en": "Organizational context (size, industry, applicable frameworks or certification status)"
+        }
+      }
+    ],
+    "output": {
+      "original": "问卷回答草案：逐题建议回答（含支撑证据引用、置信度标注）、需确认项汇总清单，以及置信度分布统计",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "问卷回答草案：逐题建议回答（含支撑证据引用、置信度标注）、需确认项汇总清单，以及置信度分布统计",
+        "en": "Draft questionnaire answers: per-question suggested responses (with evidence reference and confidence annotation), consolidated needs-confirmation list, and confidence distribution statistics"
+      }
+    }
+  }
+}

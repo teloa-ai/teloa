@@ -1,0 +1,163 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.local.qwen3",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "qwen3-local",
+    "title": {
+      "zh-CN": "Qwen3（本机）",
+      "en": "Qwen3 (local)"
+    },
+    "summary": {
+      "zh-CN": "通义千问 Qwen3 开源模型，经 Ollama 在本机运行；4B / 8B / 14B 三档，支持工具调用与思考模式。",
+      "en": "Open-weight Qwen3 running locally via Ollama; 4B / 8B / 14B sizes with tool calling and thinking mode."
+    },
+    "form": "local-general",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": false,
+      "reasoning": true,
+      "structured": true
+    },
+    "contextWindow": 40960,
+    "license": {
+      "spdx": "Apache-2.0",
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+      {
+        "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+        "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+      }
+    ],
+    "cloud": null,
+    "local": {
+      "runtime": "ollama"
+    },
+    "variants": [
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 2497293931,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "qwen3:4b",
+            "digest": "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 8,
+          "recommendedRamGb": 16,
+          "vramGb": null
+        },
+        "models": {
+          "id": "qwen3:4b",
+          "contextWindow": 40960,
+          "maxTokens": 8192,
+          "input": [
+            "text"
+          ]
+        }
+      },
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 5225388164,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "qwen3:8b",
+            "digest": "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 16,
+          "recommendedRamGb": 16,
+          "vramGb": null
+        },
+        "models": {
+          "id": "qwen3:8b",
+          "contextWindow": 40960,
+          "maxTokens": 8192,
+          "input": [
+            "text"
+          ]
+        }
+      },
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 9276198565,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "qwen3:14b",
+            "digest": "sha256:bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 16,
+          "recommendedRamGb": 32,
+          "vramGb": null
+        },
+        "models": {
+          "id": "qwen3:14b",
+          "contextWindow": 40960,
+          "maxTokens": 8192,
+          "input": [
+            "text"
+          ]
+        }
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [],
+    "url": "https://www.apache.org/licenses/LICENSE-2.0"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+        "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "ollama"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

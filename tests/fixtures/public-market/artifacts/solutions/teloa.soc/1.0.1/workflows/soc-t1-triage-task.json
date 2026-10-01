@@ -1,0 +1,87 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "soc-t1-triage-task",
+  "title": "T1 告警分诊任务",
+  "version": "1.0.0",
+  "domain": "SOC",
+  "description": "对已提供的安全告警执行 T1 分诊，给出真/误/待定判定、严重度、置信度、证据表与升级建议。",
+  "requirements": [
+    "告警原文或可核对的原始记录引用（包含告警 ID、时间戳、规则名）",
+    "告警涉及的主机名或 IP",
+    "告警涉及的账号（若有）",
+    "检测规则来源"
+  ],
+  "output": "研判卡（分类、严重度、置信度、支持/反对证据表、缺口、升级建议）",
+  "skills": [
+    {
+      "id": "alert-triage",
+      "title": "告警分诊",
+      "version": "1.0.0"
+    },
+    {
+      "id": "entity-context-enrichment",
+      "title": "实体关联与上下文补全",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "T1 告警分诊任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "T1 告警分诊任务",
+        "en": "T1 alert triage task"
+      }
+    },
+    "description": {
+      "original": "对已提供的安全告警执行 T1 分诊，给出真/误/待定判定、严重度、置信度、证据表与升级建议。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的安全告警执行 T1 分诊，给出真/误/待定判定、严重度、置信度、证据表与升级建议。",
+        "en": "Perform T1 triage on a provided alert: classify as true/false/inconclusive, assess severity and confidence, produce an evidence table and escalation recommendation."
+      }
+    },
+    "requirements": [
+      {
+        "original": "告警原文或可核对的原始记录引用（包含告警 ID、时间戳、规则名）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "告警原文或可核对的原始记录引用（包含告警 ID、时间戳、规则名）",
+          "en": "Raw alert or verifiable log reference (alert ID, timestamp, rule name)"
+        }
+      },
+      {
+        "original": "告警涉及的主机名或 IP",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "告警涉及的主机名或 IP",
+          "en": "Host name or IP involved in the alert"
+        }
+      },
+      {
+        "original": "告警涉及的账号（若有）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "告警涉及的账号（若有）",
+          "en": "Account involved in the alert (if any)"
+        }
+      },
+      {
+        "original": "检测规则来源",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "检测规则来源",
+          "en": "Detection rule source"
+        }
+      }
+    ],
+    "output": {
+      "original": "研判卡（分类、严重度、置信度、支持/反对证据表、缺口、升级建议）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "研判卡（分类、严重度、置信度、支持/反对证据表、缺口、升级建议）",
+        "en": "Triage card (classification, severity, confidence, supporting/refuting evidence table, gaps, escalation recommendation)"
+      }
+    }
+  }
+}

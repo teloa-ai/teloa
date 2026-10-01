@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "source-compare-task",
+  "title": "多源对比",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "就同一问题把两个以上来源按统一维度逐项对比，输出对比表、分歧清单与缺失项，每格标来源与检索日期，不替你裁定哪个来源正确。",
+  "requirements": [
+    "两个以上来源（文件、网页快照或授权检索到的公开内容，已上传或说明）",
+    "对比问题（一句话）与对比维度（可选，未给时用默认维度）"
+  ],
+  "output": "多源对比：来源清单（含发布方、版本/日期、检索日期）、统一维度对比表、分歧清单（含可能原因与核验动作）、一致项摘要、缺失项、结论边界",
+  "skills": [
+    {
+      "id": "source-compare",
+      "title": "多源对比与分歧清单",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "多源对比",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "多源对比",
+        "en": "Multi-source comparison"
+      }
+    },
+    "description": {
+      "original": "就同一问题把两个以上来源按统一维度逐项对比，输出对比表、分歧清单与缺失项，每格标来源与检索日期，不替你裁定哪个来源正确。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "就同一问题把两个以上来源按统一维度逐项对比，输出对比表、分歧清单与缺失项，每格标来源与检索日期，不替你裁定哪个来源正确。",
+        "en": "Compare two or more sources on the same question along fixed dimensions; output a comparison table, a disagreement list and missing items, each cell sourced and dated, without deciding for you which source is right."
+      }
+    },
+    "requirements": [
+      {
+        "original": "两个以上来源（文件、网页快照或授权检索到的公开内容，已上传或说明）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "两个以上来源（文件、网页快照或授权检索到的公开内容，已上传或说明）",
+          "en": "Two or more sources (files, web snapshots or authorized public search results, uploaded or described)"
+        }
+      },
+      {
+        "original": "对比问题（一句话）与对比维度（可选，未给时用默认维度）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "对比问题（一句话）与对比维度（可选，未给时用默认维度）",
+          "en": "The comparison question (one sentence) and dimensions (optional; defaults are used when omitted)"
+        }
+      }
+    ],
+    "output": {
+      "original": "多源对比：来源清单（含发布方、版本/日期、检索日期）、统一维度对比表、分歧清单（含可能原因与核验动作）、一致项摘要、缺失项、结论边界",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "多源对比：来源清单（含发布方、版本/日期、检索日期）、统一维度对比表、分歧清单（含可能原因与核验动作）、一致项摘要、缺失项、结论边界",
+        "en": "Multi-source comparison: source list (publisher, version/date, retrieval date), fixed-dimension comparison table, disagreement list (possible causes and verification actions), agreed items, missing items, and the limits of the conclusion"
+      }
+    }
+  }
+}

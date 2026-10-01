@@ -1,0 +1,17 @@
+import {useEffect,useState} from 'react'
+import {NativeArtifactPicker,ArtifactMessages} from './NativeArtifactPicker.js'
+import {ArtifactFiles} from './ArtifactFiles.js'
+import {copyArtifactMessages,artifactMessageKey,type ArtifactMessage,type NativeArtifactApi} from './artifact-native.js'
+import {copyArtifactFiles,type ArtifactFile,type ArtifactFileApi,type ArtifactFileForm} from './artifact-files.js'
+import css from './TaskPage.module.css'
+import {useI18n} from './i18n/provider.js'
+import {localizeWorkError} from './i18n/errors.js'
+export type TaskArtifactPort={list:(id:string)=>Promise<{id:string;title:string}[]>;open:(sessionId:string)=>Promise<void>}
+export function TaskArtifactPicker({filesOnly=false,taskId,port,native,filesApi,messages,files,setMessages,setFiles,enabled}:{filesOnly?:boolean;taskId:string;port:TaskArtifactPort;native:NativeArtifactApi;filesApi:ArtifactFileApi;messages:ArtifactMessage[];files:ArtifactFile[];setMessages:(rows:ArtifactMessage[])=>void;setFiles:(rows:ArtifactFile[])=>void;enabled:boolean}){
+ const {locale,t}=useI18n()
+ const [rows,setRows]=useState<{id:string;title:string}[]>([]),[chosen,setChosen]=useState(''),[session,setSession]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[form,setForm]=useState<ArtifactFileForm>({query:'',candidate:null})
+ const load=async()=>{setBusy(true);setError('');try{setRows(await port.list(taskId));setSession('')}catch(cause){setError(localizeWorkError(locale,cause))}finally{setBusy(false)}}
+ useEffect(()=>{void load()},[taskId])
+ const safely=(run:()=>void)=>{try{run();setError('')}catch(cause){setError(localizeWorkError(locale,cause))}}
+ return <section className={css.block} aria-label={t('artifact.task.aria')}><h4>{t('artifact.task.title')}</h4>{error&&<p role="alert">{error}</p>}<label>{t('artifact.task.source')}<select value={chosen} disabled={busy||!enabled} onChange={e=>{setChosen(e.target.value);setSession('');setForm({query:'',candidate:null})}}><option value="">{t('artifact.task.choose')}</option>{rows.map(row=><option key={row.id} value={row.id}>{row.title} · {row.id.slice(0,8)}</option>)}</select></label><div className={css.buttons}><button type="button" disabled={busy||!enabled||!rows.some(r=>r.id===chosen)} onClick={async()=>{setBusy(true);setError('');try{await port.open(chosen);setSession(chosen)}catch(cause){setError(localizeWorkError(locale,cause))}finally{setBusy(false)}}}>{t('artifact.task.read')}</button><button type="button" disabled={busy} onClick={()=>void load()}>{t('artifact.task.refresh')}</button></div>{session&&<>{!filesOnly&&<NativeArtifactPicker sessionId={session} api={native} selected={messages} select={message=>safely(()=>setMessages(copyArtifactMessages([...messages,message],{kind:'task',id:taskId})))}/>}<ArtifactFiles sessionId={session} api={filesApi} files={files.filter(f=>f.sessionId===session)} enabled={enabled&&!busy} form={form} changeForm={setForm} changeFiles={selected=>safely(()=>setFiles(copyArtifactFiles([...files.filter(f=>f.sessionId!==session),...selected],{kind:'task',id:taskId})))}/></>}{!filesOnly&&<ArtifactMessages messages={messages} api={native} enabled={false} remove={message=>setMessages(messages.filter(m=>artifactMessageKey(m)!==artifactMessageKey(message)))}/ >}{!session&&files.length>0&&<ArtifactFiles sessionId="" api={filesApi} files={files} enabled={false} form={{query:'',candidate:null}} changeForm={()=>{}}/>}<p className={css.muted}>{t('artifact.task.boundary')}</p></section>
+}

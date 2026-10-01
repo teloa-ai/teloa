@@ -1,0 +1,12 @@
+# 主仓 Issue 入口：普通问题仍可开空白 Issue（本仓目前只有安全提示一张表单）；安全问题优先走私密渠道。
+blank_issues_enabled: true
+contact_links:
+  - name: Private security report · 私密安全报告
+    url: mailto:security@teloa.ai
+    about: Remote code execution, credential leaks or privacy exposure — email first, no GitHub account needed. · 远程执行代码、凭据泄露或隐私暴露请先发邮件，无需 GitHub 账号。
+  - name: GitHub private vulnerability report · GitHub 私密漏洞报告
+    url: https://github.com/teloa-ai/teloa/security/advisories/new
+    about: Structured private advisory (requires the repository to enable private reporting). · 结构化私密公告（需仓库启用私密漏洞报告）。
+  - name: Security policy · 安全政策
+    url: https://github.com/teloa-ai/teloa/blob/main/SECURITY.md
+    about: Report template, severity scale and disclosure policy. · 报告模板、严重度与披露政策。

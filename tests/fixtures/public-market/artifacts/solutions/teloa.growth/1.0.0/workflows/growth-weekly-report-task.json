@@ -1,0 +1,82 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "growth-weekly-report-task",
+  "title": "生成增长周报",
+  "version": "1.0.0",
+  "domain": "growth",
+  "description": "将本周指标导出、上周周报、口径核对结论、实验结论、反馈归类与运营动作记录整理为增长周报草案：核心指标表（本周、上周、变化、口径来源）、实验进展、反馈要点、本周动作与结果、下周计划与需决策事项。变化只在口径一致时计算，原因只取材料原文。",
+  "requirements": [
+    "本周指标导出或原始计数表（已上传）",
+    "上周周报或上周指标值（已上传）",
+    "读者类型（团队周报 / 管理层简报）",
+    "指标口径核对结论、实验结论整理、反馈归类结果、运营动作记录（可选）"
+  ],
+  "output": "增长周报草案：首部注明周期、对比周期、信息截止、来源与未核实假设；核心指标表（变化附算式）；实验进展；用户反馈要点；本周动作与结果；下周计划；需决策事项；发送前需负责人确认",
+  "skills": [
+    {
+      "id": "growth-weekly-report",
+      "title": "增长周报",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "生成增长周报",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "生成增长周报",
+        "en": "Generate growth weekly report"
+      }
+    },
+    "description": {
+      "original": "将本周指标导出、上周周报、口径核对结论、实验结论、反馈归类与运营动作记录整理为增长周报草案：核心指标表（本周、上周、变化、口径来源）、实验进展、反馈要点、本周动作与结果、下周计划与需决策事项。变化只在口径一致时计算，原因只取材料原文。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将本周指标导出、上周周报、口径核对结论、实验结论、反馈归类与运营动作记录整理为增长周报草案：核心指标表（本周、上周、变化、口径来源）、实验进展、反馈要点、本周动作与结果、下周计划与需决策事项。变化只在口径一致时计算，原因只取材料原文。",
+        "en": "Organize this week's metric export, last week's report, metric check results, experiment readouts, feedback clusters, and ops action logs into a growth weekly report draft: core metric table (this week, last week, change, definition source), experiment progress, feedback highlights, this week's actions and results, next-week plan, and decisions needed. Changes are computed only when definitions match; reasons come only from the materials."
+      }
+    },
+    "requirements": [
+      {
+        "original": "本周指标导出或原始计数表（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本周指标导出或原始计数表（已上传）",
+          "en": "This week's metric export or raw count table (already uploaded)"
+        }
+      },
+      {
+        "original": "上周周报或上周指标值（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "上周周报或上周指标值（已上传）",
+          "en": "Last week's report or metric values (already uploaded)"
+        }
+      },
+      {
+        "original": "读者类型（团队周报 / 管理层简报）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "读者类型（团队周报 / 管理层简报）",
+          "en": "Audience type (team weekly / management brief)"
+        }
+      },
+      {
+        "original": "指标口径核对结论、实验结论整理、反馈归类结果、运营动作记录（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "指标口径核对结论、实验结论整理、反馈归类结果、运营动作记录（可选）",
+          "en": "Metric check results, experiment readouts, feedback clustering results, ops action log (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "增长周报草案：首部注明周期、对比周期、信息截止、来源与未核实假设；核心指标表（变化附算式）；实验进展；用户反馈要点；本周动作与结果；下周计划；需决策事项；发送前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "增长周报草案：首部注明周期、对比周期、信息截止、来源与未核实假设；核心指标表（变化附算式）；实验进展；用户反馈要点；本周动作与结果；下周计划；需决策事项；发送前需负责人确认",
+        "en": "Growth weekly report draft: header with period, comparison period, information cutoff, sources, and unverified assumptions; core metric table with change arithmetic; experiment progress; feedback highlights; this week's actions and results; next-week plan; decisions needed; requires the owner's confirmation before sending"
+      }
+    }
+  }
+}

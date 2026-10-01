@@ -1,0 +1,134 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.financial-ai-analyst.mx-macro-data",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.12",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "mx-macro-data",
+    "title": {
+      "zh-CN": "全球宏观数据助手",
+      "en": "Global Macro Database Assistant"
+    },
+    "summary": {
+      "zh-CN": "基于东方财富数据库的宏观经济数据查询，涵盖 GDP、物价、金融、贸易等数据。用于宏观经济研究和市场分析。需自备东方财富 API 密钥。",
+      "en": "基于东方财富数据库，支持自然语言查询全球宏观经济数据，涵盖国民经济核算、价格指数、货币金融、财政收支、对外贸易、就业民生、产业运行等多个领域，适配各类宏观经济研究、市场分析、政策解读等多元专业场景需求。返回结果包含数据说明及 csv 文件。Natural language query for macroecono..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "financial-ai-analyst",
+    "slug": "mx-macro-data",
+    "version": "1.0.12",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "2a86e1520737b927ba488f81ace80420f894abc7ebf64df46a563dc5f4843497",
+        "size": 13171
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "306c6d33331bcc35b0d8e22d2c60d57a9df6d403defcd57ac0230f3db7c865b2",
+        "size": 2639
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 16956,
+    "installsLabel": "1.7 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "scripts",
+      "count": 1
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 1 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 1 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要自备东方财富妙想 API Key（在 ai.eastmoney.com/mxClaw 注册获取），数据请求经东方财富服务器处理。使用前请阅读东方财富《妙想用户服务协议》。",
+        "en": "Requires your own East Money Miaoxiang API key (register at ai.eastmoney.com/mxClaw); data requests are processed on East Money's servers. Read East Money's Miaoxiang user service agreement before use."
+      },
+      {
+        "zh-CN": "由 Teloa 代为发送请求：密钥由 Teloa 保管，只发往 https://ai-saas.eastmoney.com/proxy/b/mcp/tool/searchMacroData；该地址只接受 POST，因此每次查询都会先请你确认。东方财富两个妙想技能共用同一个 API Key，填一次即可。",
+        "en": "Teloa sends the requests for this skill: it keeps the key and sends it only to https://ai-saas.eastmoney.com/proxy/b/mcp/tool/searchMacroData. That address accepts only POST, so every query asks for your confirmation first. Both East Money Miaoxiang skills share one API key, so you enter it once."
+      },
+      {
+        "zh-CN": "正文里的 python3 scripts/get_data.py 在 Teloa 中不适用（脚本不随技能安装），改按调用指引直接请求；请求格式取自锁定版本 1.0.12 的 scripts/get_data.py。",
+        "en": "The python3 scripts/get_data.py steps in the skill text do not apply in Teloa (scripts are not installed with the skill); the call guide sends the request directly, in the format taken from scripts/get_data.py of the pinned version 1.0.12."
+      },
+      {
+        "zh-CN": "单次返回内容超过 256 KiB 会被截断，非文字内容只给出省略提示。",
+        "en": "Responses over 256 KiB are truncated, and non-text content is replaced by a short notice."
+      },
+      {
+        "zh-CN": "未经 Teloa 真实账户实测：请求地址与鉴权方式按服务商官方文档和锁定版本的技能正文核对。使用中遇到问题，请在资源详情页点「问题反馈」。",
+        "en": "Not tested with a real account by Teloa: request addresses and authentication were checked against the provider's official documentation and the pinned skill text. If something does not work, use Report a problem on the resource page."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "teloa_skill_http"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "secrets": [
+    {
+      "envVarName": "EM_API_KEY",
+      "label": {
+        "zh-CN": "东方财富妙想 API Key（在 ai.eastmoney.com/mxClaw 获取）",
+        "en": "East Money Miaoxiang API key (from ai.eastmoney.com/mxClaw)"
+      },
+      "required": true,
+      "target": "header",
+      "name": "em_api_key",
+      "endpoints": [
+        {
+          "origin": "https://ai-saas.eastmoney.com",
+          "pathPrefixes": [
+            "/proxy/b/mcp/tool/searchMacroData"
+          ]
+        }
+      ],
+      "methods": [
+        "POST"
+      ]
+    }
+  ],
+  "secretGroup": "eastmoney-mx",
+  "httpGuide": {
+    "zh-CN": "正文里的 python3 scripts/get_data.py 命令，在 Teloa 里改用 teloa_skill_http 调用（格式取自锁定版本 1.0.12 的 scripts/get_data.py）：\nmethod POST，url https://ai-saas.eastmoney.com/proxy/b/mcp/tool/searchMacroData，headers 写 Content-Type: application/json。\nbody：{\"query\":\"<自然语言问题>\",\"toolContext\":{\"callId\":\"call_<8 位随机十六进制>\",\"userInfo\":{\"userId\":\"user_<8 位随机十六进制>\"}}}\n返回 JSON 的 data.dataTables 按指标给出表格（entityName、title、table、nameMap）；直接在回复里整理成表格并注明数据来源与单位，不需要写 CSV 文件。",
+    "en": "Where the skill text runs python3 scripts/get_data.py, call teloa_skill_http instead (format taken from scripts/get_data.py of the pinned version 1.0.12):\nmethod POST, url https://ai-saas.eastmoney.com/proxy/b/mcp/tool/searchMacroData, headers Content-Type: application/json.\nbody: {\"query\":\"<natural-language question>\",\"toolContext\":{\"callId\":\"call_<8 random hex digits>\",\"userInfo\":{\"userId\":\"user_<8 random hex digits>\"}}}\ndata.dataTables in the JSON response holds one table per indicator (entityName, title, table, nameMap); present them as tables in the reply with source and units, without writing CSV files."
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

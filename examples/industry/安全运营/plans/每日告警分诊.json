@@ -1,0 +1,14 @@
+{
+  "format": "teloa.plan/v1",
+  "version": "1.0.0",
+  "title": "每日告警分诊",
+  "workTemplate": "alert-triage-review",
+  "dataScope": "安全运营范围内已获准读取的告警工单、事件工单与资产台账；外部告警源待实际连接配置。",
+  "trigger": {
+    "kind": "schedule",
+    "cadence": "daily",
+    "weekday": 1,
+    "time": "08:30",
+    "timezone": "Asia/Singapore"
+  }
+}

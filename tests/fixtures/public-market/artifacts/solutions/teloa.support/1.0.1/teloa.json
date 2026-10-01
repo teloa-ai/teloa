@@ -1,0 +1,265 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "customer-support",
+  "title": "客户支持协作",
+  "version": "1.0.1",
+  "domain": "general",
+  "scope": "support",
+  "description": "面向工单分诊、回复草案、FAQ 沉淀与升级摘要的行业方案。岗位只依据已提供的工单、产品事实库与支持政策形成草案；对客户发送、写入工单系统、承诺退款或赔偿、处理个人信息均需本人授权。",
+  "resources": [
+    {
+      "id": "support-knowledge-collaborator",
+      "kind": "role",
+      "title": "客服知识协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/support-knowledge-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "客服知识协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "客服知识协作员",
+            "en": "Support knowledge collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "support-methods",
+      "kind": "knowledge",
+      "title": "客户支持方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/support-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "客户支持方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "客户支持方法与来源索引",
+            "en": "Customer support methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "ticket-triage",
+      "kind": "skill",
+      "title": "工单分诊（分类、优先级、升级判定）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/ticket-triage/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "工单分诊（分类、优先级、升级判定）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "工单分诊（分类、优先级、升级判定）",
+            "en": "Ticket triage (category, priority, escalation)"
+          }
+        }
+      }
+    },
+    {
+      "id": "reply-draft",
+      "kind": "skill",
+      "title": "客户回复草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/reply-draft/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "客户回复草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "客户回复草案",
+            "en": "Customer reply draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "faq-distill",
+      "kind": "skill",
+      "title": "FAQ 沉淀（从工单到知识条目）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/faq-distill/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "FAQ 沉淀（从工单到知识条目）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "FAQ 沉淀（从工单到知识条目）",
+            "en": "FAQ distillation (from tickets to knowledge entries)"
+          }
+        }
+      }
+    },
+    {
+      "id": "reply-fact-check",
+      "kind": "skill",
+      "title": "回复事实与措辞核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/reply-fact-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "回复事实与措辞核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "回复事实与措辞核对",
+            "en": "Reply fact and wording check"
+          }
+        }
+      }
+    },
+    {
+      "id": "ticket-triage-task",
+      "kind": "work-template",
+      "title": "工单分诊与回复草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/ticket-triage-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "工单分诊与回复草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "工单分诊与回复草案",
+            "en": "Ticket triage and reply draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "faq-distill-task",
+      "kind": "work-template",
+      "title": "FAQ 沉淀",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/faq-distill-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "FAQ 沉淀",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "FAQ 沉淀",
+            "en": "FAQ distillation"
+          }
+        }
+      }
+    },
+    {
+      "id": "escalation-summary-task",
+      "kind": "work-template",
+      "title": "升级摘要",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/escalation-summary-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "升级摘要",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "升级摘要",
+            "en": "Escalation summary"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "support-knowledge-collaborator",
+      "to": "support-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "support-knowledge-collaborator",
+      "to": "ticket-triage"
+    },
+    {
+      "kind": "role-skill",
+      "from": "support-knowledge-collaborator",
+      "to": "reply-draft"
+    },
+    {
+      "kind": "role-skill",
+      "from": "support-knowledge-collaborator",
+      "to": "faq-distill"
+    },
+    {
+      "kind": "role-skill",
+      "from": "support-knowledge-collaborator",
+      "to": "reply-fact-check"
+    },
+    {
+      "kind": "role-work",
+      "from": "support-knowledge-collaborator",
+      "to": "ticket-triage-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "support-knowledge-collaborator",
+      "to": "faq-distill-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "support-knowledge-collaborator",
+      "to": "escalation-summary-task"
+    }
+  ],
+  "entrypoints": [
+    "ticket-triage-task",
+    "faq-distill-task",
+    "escalation-summary-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "客户支持协作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "客户支持协作",
+        "en": "Customer support"
+      }
+    },
+    "description": {
+      "original": "面向工单分诊、回复草案、FAQ 沉淀与升级摘要的行业方案。岗位只依据已提供的工单、产品事实库与支持政策形成草案；对客户发送、写入工单系统、承诺退款或赔偿、处理个人信息均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向工单分诊、回复草案、FAQ 沉淀与升级摘要的行业方案。岗位只依据已提供的工单、产品事实库与支持政策形成草案；对客户发送、写入工单系统、承诺退款或赔偿、处理个人信息均需本人授权。",
+        "en": "A solution for ticket triage, reply drafts, FAQ distillation, and escalation summaries. The role produces drafts only from the tickets, product facts, and support policies you provide; sending to customers, writing to the ticket system, promising refunds or compensation, and handling personal data all require your authorization."
+      }
+    }
+  }
+}

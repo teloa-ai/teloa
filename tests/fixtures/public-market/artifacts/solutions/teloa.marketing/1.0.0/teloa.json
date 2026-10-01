@@ -1,0 +1,343 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "content-marketing",
+  "title": "新媒体内容运营",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "scope": "marketing",
+  "description": "面向品牌内容生产与复盘的行业方案：从选题研究到多渠道改写、品牌事实核对、发布包整理与复盘。岗位负责起草内容与核查材料，账号发布、投放与互动一律需本人授权。",
+  "resources": [
+    {
+      "id": "content-marketer",
+      "kind": "role",
+      "title": "内容运营员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/content-marketer.json"
+      },
+      "localized": {
+        "title": {
+          "original": "内容运营员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "内容运营员",
+            "en": "Content marketer"
+          }
+        }
+      }
+    },
+    {
+      "id": "marketing-methods",
+      "kind": "knowledge",
+      "title": "内容运营方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/marketing-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "内容运营方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "内容运营方法与来源索引",
+            "en": "Content marketing methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "topic-research",
+      "kind": "skill",
+      "title": "选题研究",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/topic-research/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "选题研究",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "选题研究",
+            "en": "Topic research"
+          }
+        }
+      }
+    },
+    {
+      "id": "multi-channel-adaptation",
+      "kind": "skill",
+      "title": "多渠道改写与适配",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/multi-channel-adaptation/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "多渠道改写与适配",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "多渠道改写与适配",
+            "en": "Multi-channel content adaptation"
+          }
+        }
+      }
+    },
+    {
+      "id": "brand-fact-check",
+      "kind": "skill",
+      "title": "品牌事实核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/brand-fact-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "品牌事实核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "品牌事实核对",
+            "en": "Brand fact check"
+          }
+        }
+      }
+    },
+    {
+      "id": "publish-pack",
+      "kind": "skill",
+      "title": "发布包整理",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/publish-pack/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "发布包整理",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "发布包整理",
+            "en": "Publish pack preparation"
+          }
+        }
+      }
+    },
+    {
+      "id": "post-publish-review",
+      "kind": "skill",
+      "title": "发布复盘",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/post-publish-review/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "发布复盘",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "发布复盘",
+            "en": "Post-publish review"
+          }
+        }
+      }
+    },
+    {
+      "id": "topic-research-task",
+      "kind": "work-template",
+      "title": "选题研究任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/topic-research-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "选题研究任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "选题研究任务",
+            "en": "Topic research task"
+          }
+        }
+      }
+    },
+    {
+      "id": "multi-channel-task",
+      "kind": "work-template",
+      "title": "多渠道内容改写任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/multi-channel-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "多渠道内容改写任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "多渠道内容改写任务",
+            "en": "Multi-channel content adaptation task"
+          }
+        }
+      }
+    },
+    {
+      "id": "brand-fact-check-task",
+      "kind": "work-template",
+      "title": "品牌事实核对任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/brand-fact-check-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "品牌事实核对任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "品牌事实核对任务",
+            "en": "Brand fact check task"
+          }
+        }
+      }
+    },
+    {
+      "id": "publish-pack-task",
+      "kind": "work-template",
+      "title": "发布包整理任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/publish-pack-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "发布包整理任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "发布包整理任务",
+            "en": "Publish pack task"
+          }
+        }
+      }
+    },
+    {
+      "id": "post-publish-review-task",
+      "kind": "work-template",
+      "title": "发布复盘任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/post-publish-review-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "发布复盘任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "发布复盘任务",
+            "en": "Post-publish review task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "content-marketer",
+      "to": "marketing-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "content-marketer",
+      "to": "topic-research"
+    },
+    {
+      "kind": "role-skill",
+      "from": "content-marketer",
+      "to": "multi-channel-adaptation"
+    },
+    {
+      "kind": "role-skill",
+      "from": "content-marketer",
+      "to": "brand-fact-check"
+    },
+    {
+      "kind": "role-skill",
+      "from": "content-marketer",
+      "to": "publish-pack"
+    },
+    {
+      "kind": "role-skill",
+      "from": "content-marketer",
+      "to": "post-publish-review"
+    },
+    {
+      "kind": "role-work",
+      "from": "content-marketer",
+      "to": "topic-research-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "content-marketer",
+      "to": "multi-channel-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "content-marketer",
+      "to": "brand-fact-check-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "content-marketer",
+      "to": "publish-pack-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "content-marketer",
+      "to": "post-publish-review-task"
+    }
+  ],
+  "entrypoints": [
+    "topic-research-task",
+    "multi-channel-task",
+    "brand-fact-check-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "新媒体内容运营",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "新媒体内容运营",
+        "en": "Content marketing"
+      }
+    },
+    "description": {
+      "original": "面向品牌内容生产与复盘的行业方案：从选题研究到多渠道改写、品牌事实核对、发布包整理与复盘。岗位负责起草内容与核查材料，账号发布、投放与互动一律需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向品牌内容生产与复盘的行业方案：从选题研究到多渠道改写、品牌事实核对、发布包整理与复盘。岗位负责起草内容与核查材料，账号发布、投放与互动一律需本人授权。",
+        "en": "A solution for brand content production and review: from topic research to multi-channel adaptation, brand fact checking, publish pack preparation, and post-publish review. The role drafts content and verifies materials; publishing, ads, and interactions all require your authorization."
+      }
+    }
+  }
+}

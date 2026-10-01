@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "expense-policy-check-task",
+  "title": "报销单合规核对",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "将一批报销单逐单逐条对照报销制度，输出「报销单 × 制度条款」核对矩阵与不符合明细，标注疑似重复或拆分与票据金额不一致；只记符合、不符合、材料未提及，不作通过或驳回结论，不判断发票真伪与税务处理。",
+  "requirements": [
+    "报销制度文件（含费用标准、审批层级、票据要求、时限，已上传）",
+    "待核对的报销单及附件或发票影像（已上传）；职级对照表（可选）"
+  ],
+  "output": "报销核对清单：核对条款表、逐单核对矩阵、不符合明细（含差额与计算过程）、材料未提及明细、跨单据提示、无法核对的条款、需负责人另行验证事项、汇总；不含审批结论",
+  "skills": [
+    {
+      "id": "expense-policy-check",
+      "title": "报销单合规核对",
+      "version": "1.0.0"
+    },
+    {
+      "id": "finance-evidence-index",
+      "title": "单据与证据索引",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "报销单合规核对",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "报销单合规核对",
+        "en": "Expense claim policy check task"
+      }
+    },
+    "description": {
+      "original": "将一批报销单逐单逐条对照报销制度，输出「报销单 × 制度条款」核对矩阵与不符合明细，标注疑似重复或拆分与票据金额不一致；只记符合、不符合、材料未提及，不作通过或驳回结论，不判断发票真伪与税务处理。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将一批报销单逐单逐条对照报销制度，输出「报销单 × 制度条款」核对矩阵与不符合明细，标注疑似重复或拆分与票据金额不一致；只记符合、不符合、材料未提及，不作通过或驳回结论，不判断发票真伪与税务处理。",
+        "en": "Check each expense claim against every policy clause and output a claim-by-clause matrix with non-compliance details, flagging suspected duplicates or splits and receipt amount mismatches; only compliant, non-compliant or not-mentioned states are recorded, with no approve or reject conclusion and no judgment on invoice authenticity or tax treatment."
+      }
+    },
+    "requirements": [
+      {
+        "original": "报销制度文件（含费用标准、审批层级、票据要求、时限，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "报销制度文件（含费用标准、审批层级、票据要求、时限，已上传）",
+          "en": "Expense policy document with limits, approval levels, receipt requirements and deadlines (already uploaded)"
+        }
+      },
+      {
+        "original": "待核对的报销单及附件或发票影像（已上传）；职级对照表（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待核对的报销单及附件或发票影像（已上传）；职级对照表（可选）",
+          "en": "Expense claims with attachments or invoice images (already uploaded); grade mapping table (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "报销核对清单：核对条款表、逐单核对矩阵、不符合明细（含差额与计算过程）、材料未提及明细、跨单据提示、无法核对的条款、需负责人另行验证事项、汇总；不含审批结论",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "报销核对清单：核对条款表、逐单核对矩阵、不符合明细（含差额与计算过程）、材料未提及明细、跨单据提示、无法核对的条款、需负责人另行验证事项、汇总；不含审批结论",
+        "en": "Expense check list: clause table, claim-by-clause matrix, non-compliance details (with differences and calculations), not-mentioned details, cross-claim flags, clauses that cannot be checked, items for you to verify separately, summary; no approval conclusion"
+      }
+    }
+  }
+}

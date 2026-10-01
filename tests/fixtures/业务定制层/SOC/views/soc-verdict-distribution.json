@@ -1,0 +1,48 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-verdict-distribution",
+  "version": "2.0.1",
+  "domain": "SOC",
+  "title": "当前判定分布",
+  "kind": "distribution",
+  "chart": "bar",
+  "objectType": "alert-ticket",
+  "dimension": {
+    "field": "verdict",
+    "limit": 10
+  },
+  "measures": [
+    {
+      "id": "count",
+      "label": "告警数",
+      "aggregation": "count",
+      "localized": {
+        "label": {
+          "original": "告警数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警数",
+            "en": "Alerts"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "measure",
+    "measureId": "count",
+    "direction": "desc"
+  },
+  "limit": 10,
+  "localized": {
+    "title": {
+      "original": "当前判定分布",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "当前判定分布",
+        "en": "Triage status distribution"
+      }
+    }
+  }
+}

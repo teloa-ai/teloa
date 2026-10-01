@@ -1,0 +1,6 @@
+{
+  "format": "teloa.data-source/v1",
+  "sourceId": "appsec-finding-http",
+  "scopes": ["AppSec"],
+  "sourceNoun": "代码仓库"
+}

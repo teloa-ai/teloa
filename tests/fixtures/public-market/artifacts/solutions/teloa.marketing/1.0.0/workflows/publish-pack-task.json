@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "publish-pack-task",
+  "title": "发布包整理任务",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "description": "将已完成的各渠道稿件整理为发布包，包含渠道说明、稿件正文、素材清单与发布检查单。输出为草案，实际发布须负责人操作。",
+  "requirements": [
+    "已完成的各渠道稿件（已上传）",
+    "目标账号说明（渠道名称和账号名称）"
+  ],
+  "output": "发布包草案：各渠道稿件正文、素材清单（含授权状态）、发布检查单，发布时间建议",
+  "skills": [
+    {
+      "id": "publish-pack",
+      "title": "发布包整理",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "发布包整理任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "发布包整理任务",
+        "en": "Publish pack task"
+      }
+    },
+    "description": {
+      "original": "将已完成的各渠道稿件整理为发布包，包含渠道说明、稿件正文、素材清单与发布检查单。输出为草案，实际发布须负责人操作。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将已完成的各渠道稿件整理为发布包，包含渠道说明、稿件正文、素材清单与发布检查单。输出为草案，实际发布须负责人操作。",
+        "en": "Compile finished channel drafts into a publish pack with channel notes, copy, asset list, and a pre-publish checklist. Output is a draft; actual publishing requires your action."
+      }
+    },
+    "requirements": [
+      {
+        "original": "已完成的各渠道稿件（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已完成的各渠道稿件（已上传）",
+          "en": "Finished channel drafts (already uploaded)"
+        }
+      },
+      {
+        "original": "目标账号说明（渠道名称和账号名称）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标账号说明（渠道名称和账号名称）",
+          "en": "Target account details (channel name and account name)"
+        }
+      }
+    ],
+    "output": {
+      "original": "发布包草案：各渠道稿件正文、素材清单（含授权状态）、发布检查单，发布时间建议",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "发布包草案：各渠道稿件正文、素材清单（含授权状态）、发布检查单，发布时间建议",
+        "en": "Draft publish pack: copy per channel, asset list (with rights status), pre-publish checklist, timing recommendation"
+      }
+    }
+  }
+}

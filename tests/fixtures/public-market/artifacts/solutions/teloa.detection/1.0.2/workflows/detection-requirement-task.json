@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "detection-requirement-task",
+  "title": "检测需求分析任务",
+  "version": "1.0.0",
+  "domain": "detection",
+  "description": "将威胁描述或 ATT&CK 技术转化为结构化检测需求文档，明确数据源、字段、误报来源与验收判据。",
+  "requirements": [
+    "威胁描述或 MITRE ATT&CK 技术编号",
+    "客户日志类型说明（可选，有则提供字段字典）"
+  ],
+  "output": "检测需求文档（威胁假设、Data Component、字段清单、误报分析、验收判据）",
+  "skills": [
+    {
+      "id": "detection-requirements",
+      "title": "检测需求梳理",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "检测需求分析任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "检测需求分析任务",
+        "en": "Detection requirement analysis task"
+      }
+    },
+    "description": {
+      "original": "将威胁描述或 ATT&CK 技术转化为结构化检测需求文档，明确数据源、字段、误报来源与验收判据。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将威胁描述或 ATT&CK 技术转化为结构化检测需求文档，明确数据源、字段、误报来源与验收判据。",
+        "en": "Convert a threat description or ATT&CK technique into a structured detection requirements document covering data sources, fields, false positive sources, and acceptance criteria."
+      }
+    },
+    "requirements": [
+      {
+        "original": "威胁描述或 MITRE ATT&CK 技术编号",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "威胁描述或 MITRE ATT&CK 技术编号",
+          "en": "Threat description or MITRE ATT&CK technique ID"
+        }
+      },
+      {
+        "original": "客户日志类型说明（可选，有则提供字段字典）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "客户日志类型说明（可选，有则提供字段字典）",
+          "en": "Customer log type description (optional; provide field dictionary if available)"
+        }
+      }
+    ],
+    "output": {
+      "original": "检测需求文档（威胁假设、Data Component、字段清单、误报分析、验收判据）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "检测需求文档（威胁假设、Data Component、字段清单、误报分析、验收判据）",
+        "en": "Detection requirements document (threat hypothesis, Data Components, field list, false positive analysis, acceptance criteria)"
+      }
+    }
+  }
+}

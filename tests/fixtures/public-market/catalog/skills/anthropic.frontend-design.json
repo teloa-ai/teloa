@@ -1,0 +1,95 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "anthropic.frontend-design",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "content-design",
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "frontend-design",
+    "title": {
+      "zh-CN": "前端视觉设计",
+      "en": "Frontend design"
+    },
+    "summary": {
+      "zh-CN": "为新建或改版的界面确定有辨识度的视觉方向：先定配色、字体与线框方案并自审，对照常见的模板化默认风格，守住响应式、键盘焦点可见、减少动效等质量底线，并给出界面文案规范。",
+      "en": "Sets a distinctive visual direction for new or reworked UI: settle palette, type and wireframe choices first and self-review them, check against common templated defaults, keep quality floors such as responsiveness, visible keyboard focus and reduced motion, and follow UI copy guidelines."
+    }
+  },
+  "upstream": {
+    "kind": "github",
+    "repository": {
+      "host": "github.com",
+      "owner": "anthropics",
+      "repo": "skills"
+    },
+    "commit": "33375500bcea98d610eb30ce10ac4e59b89c390d",
+    "path": "skills/frontend-design",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "gitBlob": "f433b1a53f5b830a205fd2df78e2b34974656c7b",
+        "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+        "size": 10174
+      },
+      {
+        "path": "SKILL.md",
+        "gitBlob": "a5333457c414d20d625f307df945842c0952ecc3",
+        "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3",
+        "size": 9390
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "claude-code",
+    "installs": null,
+    "installsLabel": "未记录 / Not recorded",
+    "countedAt": "2026-09-27"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE.txt"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "正文要求先与客户确认设计方向；在无人值守的 AI 同事任务中无法询问时，写明所作假设后继续",
+        "en": "The skill asks you to confirm the design direction with the client first; in unattended AI teammate tasks where you cannot ask, state your assumptions and continue"
+      },
+      {
+        "zh-CN": "正文鼓励使用非默认字体：优先使用系统字体栈或自托管字体，引用外部字体须经用户同意",
+        "en": "The skill encourages non-default fonts: prefer system font stacks or self-hosted fonts, and load external fonts only with the user's consent"
+      },
+      {
+        "zh-CN": "正文以 Claude 界面主色 #D97757 作为避免默认配色的校准示例，在 Teloa 中同样适用，无需调整",
+        "en": "The skill uses Claude's interface accent #D97757 as a calibration example of a default palette to avoid; it applies equally in Teloa and needs no change"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-27",
+    "reviewer": "Teloa"
+  }
+}

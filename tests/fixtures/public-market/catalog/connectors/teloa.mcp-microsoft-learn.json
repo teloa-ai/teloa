@@ -1,0 +1,98 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-microsoft-learn",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs",
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "microsoft_learn",
+    "title": {
+      "zh-CN": "Microsoft Learn 文档（官方远程）",
+      "en": "Microsoft Learn Docs (Official Remote)"
+    },
+    "summary": {
+      "zh-CN": "Microsoft 官方托管的 Learn 文档服务，可检索 Microsoft、Azure、.NET、Microsoft 365 等官方文档与代码示例，并把指定文档页读取为 Markdown。无需账户，无需 API 密钥，数据经 learn.microsoft.com 传输。",
+      "en": "Microsoft's official hosted Learn documentation service: search official Microsoft, Azure, .NET and Microsoft 365 docs and code samples, and fetch a documentation page as Markdown. No account or API key required. Data passes through learn.microsoft.com."
+    },
+    "auth": {
+      "kind": "none"
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://learn.microsoft.com/api/mcp"
+    },
+    "tools": [
+      {
+        "name": "microsoft_docs_search",
+        "description": {
+          "zh-CN": "检索 Microsoft 官方文档",
+          "en": "Search official Microsoft documentation"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "microsoft_code_sample_search",
+        "description": {
+          "zh-CN": "检索官方代码示例（可按编程语言筛选）",
+          "en": "Search official code samples (optional language filter)"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "microsoft_docs_fetch",
+        "description": {
+          "zh-CN": "读取指定的 Microsoft Learn 文档页并转为 Markdown",
+          "en": "Fetch a Microsoft Learn page as Markdown"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://learn.microsoft.com/en-us/training/support/mcp-developer-reference"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Microsoft-Learn-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "数据经由 learn.microsoft.com 传输；官方为公共免费服务并设有限流（未公布具体数值），请勿批量调用",
+        "en": "Data passes through learn.microsoft.com; the service is public and free with undisclosed rate limits, so do not call it in bulk"
+      },
+      {
+        "zh-CN": "官方说明工具清单可能随时调整；Teloa 只启用这里列出的三个工具",
+        "en": "Microsoft states that the tool list may change; Teloa only enables the three tools listed here"
+      },
+      {
+        "zh-CN": "中国大陆访问 learn.microsoft.com 的可用性未验证",
+        "en": "Availability of learn.microsoft.com from mainland China is unverified"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-27",
+    "reviewer": "Teloa"
+  }
+}

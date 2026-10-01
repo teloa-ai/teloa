@@ -1,0 +1,112 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.finance",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "business-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "finance-reconciliation",
+    "title": {
+      "zh-CN": "财务对账",
+      "en": "Finance reconciliation"
+    },
+    "summary": {
+      "zh-CN": "上传流水、账面与报销单即可开始：对账差异清单、报销合规核对、月结清单与单据索引，每条差异附行号与精确差额；只出清单与核对意见，不付款、不改账、不做税务结论。",
+      "en": "Start from bank statements, ledgers and expense claims: reconciliation discrepancy lists, expense policy checks, month-end close checklists and voucher indexes, every difference with row numbers and exact amounts; lists and review notes only, never payments, ledger changes or tax conclusions."
+    },
+    "scope": "finance",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "银行流水与账面逐条匹配，差异分已匹配、金额差异、日期差异、单边未达、疑似重复五类并做合计勾稽",
+          "en": "Match bank lines to ledger entries, classify differences as matched, amount, date, one-sided or suspected duplicate, and check totals"
+        },
+        {
+          "zh-CN": "报销单逐条对照制度条款，只记符合、不符合、材料未提及，标注疑似重复与拆分",
+          "en": "Check expense claims clause by clause, recording only compliant, non-compliant or not mentioned, and flag suspected duplicates and splits"
+        },
+        {
+          "zh-CN": "月结事项标已完成、未完成、无法确认并附依据，做科目余额表与子表的算术勾稽",
+          "en": "Mark close items done, not done or cannot confirm with evidence, and run arithmetic checks on the trial balance and schedules"
+        },
+        {
+          "zh-CN": "核对表格合计、币种、借贷方向与含税口径；把单据关联到账目条目并统计覆盖率",
+          "en": "Verify table totals, currencies, debit/credit direction and tax definitions; link vouchers to ledger entries with coverage statistics"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "银行流水或支付平台账单、账面明细、报销单与发票影像、报销制度、科目余额表与月结子表",
+          "en": "Bank statements or payment platform exports, ledger details, expense claims with invoice images, the expense policy, trial balance and close schedules"
+        },
+        {
+          "zh-CN": "对账期间、容忍规则、正负号与借贷方向约定、适用制度版本",
+          "en": "Reconciliation period, tolerance rules, sign and debit/credit conventions, applicable policy version"
+        },
+        {
+          "zh-CN": "付款、调账、审批与税务处理由你在财务系统内完成或交专业人士判断",
+          "en": "Payments, adjustments, approvals and tax treatment are done by you in the finance system or judged by a professional"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件，不接入银行账户或财务系统",
+          "en": "Reads only the files you provide; no bank account or finance system access"
+        },
+        {
+          "zh-CN": "需你确认才会做：对外发送清单、写入财务系统或共享账套、正式通过或驳回报销、起草付款或调账建议",
+          "en": "Only with your confirmation: sending lists externally, writing to finance systems or shared ledgers, formally approving or rejecting claims, drafting payment or adjustment suggestions"
+        },
+        {
+          "zh-CN": "产出中不保留银行卡完整卡号、身份证号等敏感字段",
+          "en": "Full bank card numbers, ID numbers and other sensitive fields are not kept in the output"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：对账差异清单、报销合规核对、月结清单三个模板按合成样例产出结构与期望一致，勾稽差额（200.00 / 1,000.00）与报销不符合项（6 条）与期望完全相同；对账差异清单两轮中有一轮把一笔单边未达归错侧并如实报「勾稽不平」后停止，分类结果仍需本人逐条复核。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-25: reconciliation differences, expense policy check and month-end checklist matched the expected structure on synthetic samples; tie-out differences (200.00 / 1,000.00) and the six expense findings matched exactly. In one of two reconciliation runs a one-sided item landed on the wrong side and the run reported an unbalanced tie-out and stopped; classifications need line-by-line review by the owner."
+      },
+      {
+        "zh-CN": "Stripe、飞书、钉钉等连接为可选项，本版不内置。",
+        "en": "Stripe, Lark, DingTalk and other connections are optional and not bundled in this version."
+      },
+      {
+        "zh-CN": "对账协作员只出差异清单与核对意见；付款、调账、审批与税务结论由你作出。",
+        "en": "The role produces discrepancy lists and review notes only; payments, adjustments, approvals and tax conclusions are yours."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

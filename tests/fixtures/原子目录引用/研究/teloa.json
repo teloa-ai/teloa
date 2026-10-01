@@ -1,0 +1,26 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "catalog-consumer-research",
+  "title": "研究目录引用",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "通过明确选择复用独立导入的研究 Skill。",
+  "resources": [
+    {
+      "id": "brief",
+      "kind": "skill",
+      "title": "研究简报引用",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "public",
+        "id": "research-brief",
+        "version": "1.0.0"
+      }
+    }
+  ],
+  "relations": [],
+  "entrypoints": [
+    "brief"
+  ]
+}

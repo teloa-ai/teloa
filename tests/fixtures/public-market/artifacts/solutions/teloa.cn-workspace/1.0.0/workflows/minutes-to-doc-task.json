@@ -1,0 +1,78 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "minutes-to-doc-task",
+  "title": "整理会议纪要并核对写入文档",
+  "version": "1.0.0",
+  "domain": "workspace",
+  "description": "从会议转写或记录中提取已决事项、行动事项、缺席确认与讨论摘要，再对照目标团队文档的现有内容，列出写入位置、逐段变更、冲突与不应写入的内容，给出可粘贴的正文草案。负责人与截止日期只取原文；不写入、不覆盖任何文档。",
+  "requirements": [
+    "会议转写或会议记录（已上传）",
+    "目标文档现有内容（已上传导出；已连接飞书或语雀只读工具时可写文档标题）",
+    "写入位置与方式、文档编写约定、读者范围（可选）"
+  ],
+  "output": "会议纪要与写入前核对单草案：纪要（已决事项、行动事项、缺席确认、讨论摘要、待确认项）；核对单（目标位置与写入方式、变更清单、与现有内容的冲突、不应写入、需确认）；建议写入正文；写入前需负责人确认",
+  "skills": [
+    {
+      "id": "workspace-meeting-minutes",
+      "title": "会议纪要与待办提取",
+      "version": "1.0.0"
+    },
+    {
+      "id": "doc-sync-check",
+      "title": "写入文档前核对",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "整理会议纪要并核对写入文档",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "整理会议纪要并核对写入文档",
+        "en": "Prepare meeting minutes and check before writing to a doc"
+      }
+    },
+    "description": {
+      "original": "从会议转写或记录中提取已决事项、行动事项、缺席确认与讨论摘要，再对照目标团队文档的现有内容，列出写入位置、逐段变更、冲突与不应写入的内容，给出可粘贴的正文草案。负责人与截止日期只取原文；不写入、不覆盖任何文档。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从会议转写或记录中提取已决事项、行动事项、缺席确认与讨论摘要，再对照目标团队文档的现有内容，列出写入位置、逐段变更、冲突与不应写入的内容，给出可粘贴的正文草案。负责人与截止日期只取原文；不写入、不覆盖任何文档。",
+        "en": "Extract decisions, action items, absentee confirmations and discussion summary from a meeting transcript, then compare against the target team document's current content to list the write location, per-section changes, conflicts and content that should not be written, with a paste-ready draft. Owners and due dates come only from the transcript; no document is written or overwritten."
+      }
+    },
+    "requirements": [
+      {
+        "original": "会议转写或会议记录（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "会议转写或会议记录（已上传）",
+          "en": "Meeting transcript or notes (uploaded)"
+        }
+      },
+      {
+        "original": "目标文档现有内容（已上传导出；已连接飞书或语雀只读工具时可写文档标题）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标文档现有内容（已上传导出；已连接飞书或语雀只读工具时可写文档标题）",
+          "en": "Current content of the target document (uploaded export; if read-only Feishu or Yuque tools are connected, you may give the document title)"
+        }
+      },
+      {
+        "original": "写入位置与方式、文档编写约定、读者范围（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "写入位置与方式、文档编写约定、读者范围（可选）",
+          "en": "Write location and method, document conventions, audience (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "会议纪要与写入前核对单草案：纪要（已决事项、行动事项、缺席确认、讨论摘要、待确认项）；核对单（目标位置与写入方式、变更清单、与现有内容的冲突、不应写入、需确认）；建议写入正文；写入前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "会议纪要与写入前核对单草案：纪要（已决事项、行动事项、缺席确认、讨论摘要、待确认项）；核对单（目标位置与写入方式、变更清单、与现有内容的冲突、不应写入、需确认）；建议写入正文；写入前需负责人确认",
+        "en": "Draft meeting minutes with a pre-write checklist: minutes (decisions, action items, absentee confirmations, discussion summary, open items); checklist (location and method, change list, conflicts with existing content, not to be written, items to confirm); suggested body text; the owner confirms before writing"
+      }
+    }
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "openai.security-threat-model",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "security"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "security-threat-model",
+    "title": {
+      "zh-CN": "代码仓威胁建模",
+      "en": "Repository threat modeling"
+    },
+    "summary": {
+      "zh-CN": "基于代码仓证据梳理信任边界、资产、攻击路径与缓解措施，输出简明的威胁模型。",
+      "en": "Maps trust boundaries, assets, abuse paths and mitigations from repository evidence and writes a concise threat model."
+    }
+  },
+  "upstream": {
+    "ecosystem": "openai",
+    "author": "OpenAI",
+    "repository": {
+      "host": "github.com",
+      "owner": "openai",
+      "repo": "skills"
+    },
+    "commit": "49f948faa9258a0c61caceaf225e179651397431",
+    "path": "skills/.curated/security-threat-model",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "gitBlob": "13e25df86ce06eb6488e6a6bc5c5847f5dedc352",
+        "size": 10776
+      },
+      {
+        "path": "SKILL.md",
+        "gitBlob": "abd3c1c95d49c4e0e0664f198f4bf168c6291aec",
+        "size": 5561
+      },
+      {
+        "path": "references/prompt-template.md",
+        "gitBlob": "b6affb0d2f873ffe398f7a8df00095dc0ff01f59",
+        "size": 12642
+      },
+      {
+        "path": "references/security-controls-and-assets.md",
+        "gitBlob": "63d1455aeacfc97eaca4e371040dbadfbd791635",
+        "size": 1680
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "未收录 agents/openai.yaml。",
+      "en": "agents/openai.yaml is not included."
+    },
+    {
+      "zh-CN": "结果文件只在有已授权写文件工具时写入，否则在回复中给出；只分析会话内可读的代码。",
+      "en": "Writes the result file only when an authorized file-writing tool exists, otherwise returns it in the reply; analyzes only code readable in the conversation."
+    }
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE.txt"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要能读取被分析的代码；未授权读取代码时只能基于用户提供的材料。",
+        "en": "Needs read access to the code under analysis; without it, works only from materials the user provides."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

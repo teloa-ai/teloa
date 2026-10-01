@@ -1,0 +1,94 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-consensus",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "data-research",
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "consensus",
+    "title": {
+      "zh-CN": "Consensus 学术检索（OAuth）",
+      "en": "Consensus Academic Search (OAuth)"
+    },
+    "summary": {
+      "zh-CN": "Consensus 官方托管的学术检索服务，可按问题检索同行评审论文，支持年份、研究类型、期刊、样本量、引用数、开放获取等筛选，返回带链接与摘要的排序结果。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，免费 Consensus 账户即可使用。",
+      "en": "Consensus's official hosted academic search service: search peer-reviewed papers by question with filters for year, study type, journal, sample size, citations, open access and more, returning ranked results with links and abstracts. Authorized by Teloa via OAuth (dynamic client registration + PKCE); a free Consensus account is enough."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "search"
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.consensus.app/mcp"
+    },
+    "tools": [
+      {
+        "name": "search",
+        "description": {
+          "zh-CN": "检索同行评审论文（可按年份、研究类型、期刊、样本量、引用数等筛选）",
+          "en": "Search peer-reviewed papers (filters for year, study type, journal, sample size, citations and more)"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://docs.consensus.app/consensus-mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Consensus-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中用 Consensus 账户完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser with a Consensus account from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "授权服务器公开的配置信息实测支持动态客户端注册（token_endpoint_auth_method none）与 PKCE S256，只申请 search 权限；本机回环回调与 resource 参数（服务端声明为站点根地址）尚未实测",
+        "en": "The authorization server's published configuration confirms dynamic client registration (token_endpoint_auth_method none) and PKCE S256, and only the search scope is requested; the loopback callback and the resource parameter (the server declares the site root) have not been tested yet"
+      },
+      {
+        "zh-CN": "免费账户有调用额度，详见官方；DOI、全文摘录与第二页起的翻页需付费计划",
+        "en": "Free accounts have a call allowance; see Consensus's official documentation. DOIs, full-text excerpts and pages after the first need a paid plan"
+      },
+      {
+        "zh-CN": "官方文档说明 OAuth 令牌可能数小时后过期，届时需重新授权；结果文本含服务端给出的引用格式要求",
+        "en": "Consensus's docs note the OAuth token may expire after a few hours, requiring re-authorization; result text includes citation instructions supplied by the server"
+      },
+      {
+        "zh-CN": "按 Consensus 条款仅供个人研究使用，不得用于批量抓取或建立数据库；中国大陆访问的可用性未验证",
+        "en": "Consensus's terms allow personal research use only, not bulk retrieval or database building; availability from mainland China is unverified"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-27",
+    "reviewer": "Teloa"
+  }
+}

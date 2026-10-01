@@ -1,0 +1,24 @@
+{
+ "format":"teloa.business-package/v2","id":"soc-ledger","title":"安全运营业务台账","version":"1.1.1","domain":"SOC","scope":"SOC",
+ "description":"统一管理告警工单、事件工单与资产，提供风险分布、待处理队列、趋势和受控动作。",
+ "localized":{"title":{"original":"安全运营业务台账","defaultLocale":"en","locales":{"zh-CN":"安全运营业务台账","en":"Security operations business ledger"}},"description":{"original":"统一管理告警工单、事件工单与资产，提供风险分布、待处理队列、趋势和受控动作。","defaultLocale":"en","locales":{"zh-CN":"统一管理告警工单、事件工单与资产，提供风险分布、待处理队列、趋势和受控动作。","en":"Manage alert tickets, incident tickets, and assets in one place, with risk distribution, pending queues, trends, and controlled actions."}}},
+ "resources":[
+  {"id":"soc-alert-source","kind":"data-source","title":"告警数据源","localized":{"title":{"original":"告警数据源","defaultLocale":"en","locales":{"zh-CN":"告警数据源","en":"Alert data source"}}},"version":"1.0.0","required":true,"source":{"kind":"local","path":"connections/data-source.json"}},
+  {"id":"soc-endpoint-isolation","kind":"execution-tool","title":"终端隔离执行工具","localized":{"title":{"original":"终端隔离执行工具","defaultLocale":"en","locales":{"zh-CN":"终端隔离执行工具","en":"Endpoint isolation tool"}}},"version":"1.0.0","required":true,"source":{"kind":"local","path":"connections/execution-tool.json"}},
+  {"id":"alert-triage-review","kind":"work-template","title":"告警核对","localized":{"title":{"original":"告警核对","defaultLocale":"en","locales":{"zh-CN":"告警核对","en":"Alert review"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"workflows/alert-triage-review.json"}},
+  {"id":"endpoint-isolation-record","kind":"work-template","title":"终端隔离记录","localized":{"title":{"original":"终端隔离记录","defaultLocale":"en","locales":{"zh-CN":"终端隔离记录","en":"Endpoint isolation record"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"workflows/endpoint-isolation-record.json"}},
+  {"id":"alert-ticket","kind":"object-type","title":"告警工单","localized":{"title":{"original":"告警工单","defaultLocale":"en","locales":{"zh-CN":"告警工单","en":"Alert ticket"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"object-types/alert-ticket.json"}},
+  {"id":"incident-ticket","kind":"object-type","title":"事件工单","localized":{"title":{"original":"事件工单","defaultLocale":"en","locales":{"zh-CN":"事件工单","en":"Incident ticket"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"object-types/incident-ticket.json"}},
+  {"id":"asset","kind":"object-type","title":"资产","localized":{"title":{"original":"资产","defaultLocale":"en","locales":{"zh-CN":"资产","en":"Asset"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"object-types/asset.json"}},
+  {"id":"soc-risk-distribution","kind":"business-view","title":"风险分布","localized":{"title":{"original":"风险分布","defaultLocale":"en","locales":{"zh-CN":"风险分布","en":"Risk distribution"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/soc-risk-distribution.json"}},
+  {"id":"soc-pending-board","kind":"business-view","title":"待处理告警","localized":{"title":{"original":"待处理告警","defaultLocale":"en","locales":{"zh-CN":"待处理告警","en":"Pending alerts"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/soc-pending-board.json"}},
+  {"id":"soc-alert-trend","kind":"business-view","title":"告警趋势","localized":{"title":{"original":"告警趋势","defaultLocale":"en","locales":{"zh-CN":"告警趋势","en":"Alert trend"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/soc-alert-trend.json"}},
+  {"id":"soc-alert-list","kind":"business-view","title":"告警清单","localized":{"title":{"original":"告警清单","defaultLocale":"en","locales":{"zh-CN":"告警清单","en":"Alert list"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/soc-alert-list.json"}},
+  {"id":"soc-incident-list","kind":"business-view","title":"事件工单清单","localized":{"title":{"original":"事件工单清单","defaultLocale":"en","locales":{"zh-CN":"事件工单清单","en":"Incident ticket list"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/soc-incident-list.json"}},
+  {"id":"soc-asset-list","kind":"business-view","title":"资产清单","localized":{"title":{"original":"资产清单","defaultLocale":"en","locales":{"zh-CN":"资产清单","en":"Asset list"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/soc-asset-list.json"}},
+  {"id":"assign-alert-review","kind":"business-action","title":"交给同事核对","localized":{"title":{"original":"交给同事核对","defaultLocale":"en","locales":{"zh-CN":"交给同事核对","en":"Assign for peer review"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"actions/assign-alert-review.json"}},
+  {"id":"isolate-endpoint","kind":"business-action","title":"隔离这台主机","localized":{"title":{"original":"隔离这台主机","defaultLocale":"en","locales":{"zh-CN":"隔离这台主机","en":"Isolate this endpoint"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"actions/isolate-endpoint.json"}}
+ ],
+ "relations":[],
+ "entrypoints":["alert-triage-review"]
+}

@@ -1,0 +1,67 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "alert-triage-review",
+  "title": "告警核对",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "description": "核对一条告警涉及的主机与已知情况，给出继续处理还是可以关闭的结论。",
+  "requirements": [
+    "涉及主机",
+    "告警标题",
+    "已知情况"
+  ],
+  "output": "核对结论：继续处理或可以关闭，附判断依据。",
+  "skills": [],
+  "localized": {
+    "title": {
+      "original": "告警核对",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "告警核对",
+        "en": "Alert review"
+      }
+    },
+    "description": {
+      "original": "核对一条告警涉及的主机与已知情况，给出继续处理还是可以关闭的结论。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "核对一条告警涉及的主机与已知情况，给出继续处理还是可以关闭的结论。",
+        "en": "Review the host and known context for an alert, then decide whether to continue investigation or close it."
+      }
+    },
+    "requirements": [
+      {
+        "original": "涉及主机",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "涉及主机",
+          "en": "Affected host"
+        }
+      },
+      {
+        "original": "告警标题",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "告警标题",
+          "en": "Alert title"
+        }
+      },
+      {
+        "original": "已知情况",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已知情况",
+          "en": "Known context"
+        }
+      }
+    ],
+    "output": {
+      "original": "核对结论：继续处理或可以关闭，附判断依据。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "核对结论：继续处理或可以关闭，附判断依据。",
+        "en": "Review decision: continue investigation or close, with supporting rationale."
+      }
+    }
+  }
+}

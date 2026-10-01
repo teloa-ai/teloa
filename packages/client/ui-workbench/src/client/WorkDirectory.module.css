@@ -1,0 +1,52 @@
+/* 参照原型的 directoryHeader、directoryRow、mailRow 与 directoryFoot。 */
+.directory{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;color:var(--teloa-muted);background:var(--teloa-background);font-size:var(--teloa-font-caption)}
+.directory>header{display:flex;align-items:center;gap:8px;padding:23px 18px 14px}
+.directory>header>div{flex:1;min-width:0}.directory h2{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label);color:var(--teloa-text);margin:0 0 4px}.directory>header span{display:block;font-size:var(--teloa-font-caption)}
+.directory button{font:inherit;background:transparent;color:inherit;border:0;cursor:pointer}.directory button:disabled{opacity:.5;cursor:default}.directory button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.directory .iconButton,.directory .closeDirectory{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 30px;padding:0;border-radius:6px}.directory .closeDirectory{display:none}.iconButton:hover,.closeDirectory:hover{background:var(--teloa-hover)}
+.directory>p{margin:8px 16px;overflow-wrap:anywhere;line-height:1.8}
+.search{display:flex;align-items:center;gap:7px;border:1px solid var(--teloa-border);border-radius:7px;padding:7px 9px;margin:0 14px 10px}.search svg{flex-shrink:0}.search input{min-width:0;width:100%;border:0;background:transparent;color:var(--teloa-text);font:inherit;outline:0}.search button{display:grid;place-items:center;padding:0}.search:focus-within{outline:1px solid var(--teloa-accent)}
+.organization{display:grid;grid-template-columns:minmax(0,1fr) 88px;gap:8px;margin:2px 16px 12px}.organization label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:var(--teloa-font-caption)}.organization select{width:100%;min-width:0;box-sizing:border-box;font:inherit;font-size:var(--teloa-font-caption);color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:9px 10px}.organization select:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}.path{overflow-wrap:anywhere;margin:0 16px 10px;font-size:var(--teloa-font-caption)}
+.filters{display:flex;gap:16px;padding:0 16px;border-bottom:1px solid var(--teloa-border);flex-shrink:0}.filters button{padding:10px 0;border-bottom:2px solid transparent;white-space:nowrap;font-size:var(--teloa-font-caption)}.filters button[aria-pressed=true]{border-bottom-color:var(--teloa-text);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.rows{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto;padding:8px}
+.row{display:flex;align-items:center;gap:2px;border:1px solid transparent;border-radius:8px;margin:2px 0;flex-shrink:0;position:relative}.directory .row{padding:8px 7px!important}.row:hover{background:var(--teloa-subtle)}.row[data-active]{background:var(--teloa-surface);border-color:var(--teloa-border);box-shadow:0 2px 6px var(--teloa-border)}
+.rows .open{display:block;text-align:left;flex:1;min-width:0;padding:0;border-radius:8px;overflow-wrap:anywhere;color:var(--teloa-text)}
+.mailRow{display:flex;align-items:center;gap:8px;min-width:0;width:100%}.mailBody{min-width:0;flex:1}.mailBody strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}.rowTop{display:flex;align-items:center;justify-content:space-between;gap:7px;min-width:0;margin-bottom:1px}.rowTop strong{flex:1}.rowTop time{flex:none;white-space:nowrap;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.avatar{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border-radius:8px;background:var(--teloa-info-bg);color:var(--teloa-info);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}.avatar>svg{position:absolute;right:-3px;bottom:-3px;background:var(--teloa-background);border-radius:3px;padding:1px;box-sizing:content-box}
+.rows small{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.5;margin:2px 0}.rows .more{flex:none;display:grid;place-items:center;width:26px;height:30px;padding:0;margin-right:2px;border-radius:6px;opacity:0}.row:hover .more,.row:focus-within .more{opacity:1}.more:hover{background:var(--teloa-hover)}
+.archived{padding:12px 10px;overflow-wrap:anywhere;max-width:100%;box-sizing:border-box}.archived>span{font-size:var(--teloa-font-control);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.orderButtons{display:flex;flex-direction:column;flex:none}.orderButtons button{display:grid;place-items:center;width:26px;min-height:30px;border-radius:5px}.orderButtons button:hover{background:var(--teloa-hover)}
+.directoryFoot{border-top:1px solid var(--teloa-border);padding:12px 15px;font-size:var(--teloa-font-caption);flex-shrink:0}
+@media(max-width:740px){.directory .closeDirectory{display:inline-flex}.directory .iconButton,.directory .closeDirectory{width:44px;height:44px;flex-basis:44px}.rows .more,.orderButtons button{width:44px;min-height:44px}}
+
+
+@media(hover:none){.rows .more{opacity:1}}
+
+/* 单聊与群按活动时间进入同一列表；执行位置与手动排序仍只管理原生会话。 */
+.directoryScroll{flex:1;min-height:0;overflow:auto}
+.directoryScroll>p{margin:8px 16px;overflow-wrap:anywhere;line-height:1.8}
+.directoryScroll>.rows{overflow:visible;flex:none}
+.groupAvatar{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:8px;background:var(--teloa-subtle);color:var(--teloa-muted)}
+
+/* 对齐原型目录：标题只保留新建入口，搜索与筛选同行。 */
+.directory>.compactHeader{align-items:flex-start;padding:22px 16px 14px}
+.compactHeader>div:first-child{min-width:0;flex:1}
+.compactHeader>div>span{line-height:1.65}
+.createMenu{position:relative;flex:none;margin-top:3px}
+.createMenu>summary{display:grid;place-items:center;width:32px;height:32px;list-style:none;border-radius:7px;cursor:pointer;color:var(--teloa-muted)}
+.createMenu>summary::-webkit-details-marker{display:none}
+.createMenu>summary:hover{background:var(--teloa-hover)}
+.createMenu>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.createMenu>div{position:absolute;right:0;top:calc(100% + 6px);z-index:13;width:200px;max-width:calc(100vw - 40px);padding:6px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+.createMenu>div>button{display:block;width:100%;text-align:left;padding:10px;border-radius:5px}
+.createMenu>div>button:hover{background:var(--teloa-hover)}
+.searchRow{display:flex;align-items:center;gap:8px;margin:0 14px 10px;flex:none;min-width:0}
+.searchRow>.search{width:auto;flex:1;min-width:0;margin:0}
+.filterScope{padding-top:12px;margin:10px 0;border-top:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);color:var(--teloa-muted)}
+.panelActions{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--teloa-border);padding-top:8px;margin-top:12px}
+.panelActions>button{display:flex;align-items:center;gap:8px;min-height:34px;padding:7px;text-align:left;border-radius:5px}
+.panelActions>button:hover{background:var(--teloa-hover)}
+.directory>.activeFilters{display:flex;gap:6px;flex-wrap:wrap;margin:0 16px 8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+@media(max-width:760px){.createMenu>summary{width:44px;height:44px}.createMenu>div>button,.panelActions>button{min-height:44px}.directory>.compactHeader{padding-top:16px}}
+
+.rows .more[aria-expanded=true]{opacity:1;background:var(--teloa-hover)}

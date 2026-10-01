@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "gap-analysis-task",
+  "title": "差距分析任务",
+  "version": "1.0.0",
+  "domain": "grc",
+  "description": "基于已完成的控制映射结果，输出差距分析报告草案和优先级排序的整改计划，按残余风险高低排序，每条差距附具体整改措施建议，供 GRC 负责人审阅确认责任人和完成日期。",
+  "requirements": [
+    "已完成的控制映射表（含状态和证据引用）",
+    "业务背景说明（用于评估差距的业务影响）",
+    "资产重要性信息（如有，用于优化风险评分）"
+  ],
+  "output": "差距分析报告草案：差距明细表（含差距 ID、控制编号、差距类型、风险评分、风险级别）和整改计划表（含整改措施、建议负责人占位、预计完成日期占位、验收标准）",
+  "skills": [
+    {
+      "id": "gap-analysis",
+      "title": "差距分析与整改计划",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "差距分析任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "差距分析任务",
+        "en": "Gap analysis task"
+      }
+    },
+    "description": {
+      "original": "基于已完成的控制映射结果，输出差距分析报告草案和优先级排序的整改计划，按残余风险高低排序，每条差距附具体整改措施建议，供 GRC 负责人审阅确认责任人和完成日期。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于已完成的控制映射结果，输出差距分析报告草案和优先级排序的整改计划，按残余风险高低排序，每条差距附具体整改措施建议，供 GRC 负责人审阅确认责任人和完成日期。",
+        "en": "Based on a completed control mapping, produce a draft gap analysis report and priority-ordered remediation plan sorted by residual risk, with specific remediation suggestions per gap, for GRC lead review to assign owners and due dates."
+      }
+    },
+    "requirements": [
+      {
+        "original": "已完成的控制映射表（含状态和证据引用）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已完成的控制映射表（含状态和证据引用）",
+          "en": "Completed control mapping table (with status and evidence references)"
+        }
+      },
+      {
+        "original": "业务背景说明（用于评估差距的业务影响）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "业务背景说明（用于评估差距的业务影响）",
+          "en": "Business context description (for assessing business impact of each gap)"
+        }
+      },
+      {
+        "original": "资产重要性信息（如有，用于优化风险评分）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "资产重要性信息（如有，用于优化风险评分）",
+          "en": "Asset criticality information (optional, used to refine risk scoring)"
+        }
+      }
+    ],
+    "output": {
+      "original": "差距分析报告草案：差距明细表（含差距 ID、控制编号、差距类型、风险评分、风险级别）和整改计划表（含整改措施、建议负责人占位、预计完成日期占位、验收标准）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "差距分析报告草案：差距明细表（含差距 ID、控制编号、差距类型、风险评分、风险级别）和整改计划表（含整改措施、建议负责人占位、预计完成日期占位、验收标准）",
+        "en": "Draft gap analysis report: gap detail table (with gap ID, control number, gap type, risk score, risk level) and remediation plan table (with remediation actions, suggested owner placeholder, target date placeholder, and acceptance criteria)"
+      }
+    }
+  }
+}

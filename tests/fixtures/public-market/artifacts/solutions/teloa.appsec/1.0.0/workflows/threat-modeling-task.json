@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "threat-modeling-task",
+  "title": "威胁建模任务",
+  "version": "1.0.0",
+  "domain": "AppSec",
+  "description": "对已提供的系统描述建立数据流图和信任边界，按 STRIDE 识别威胁，输出威胁台账、缓解措施和残余风险说明。",
+  "requirements": [
+    "系统功能描述（至少说明系统做什么、处理哪些数据、有哪些用户类型）",
+    "主要数据流描述（数据来源、经过哪些组件、存储位置、去向）"
+  ],
+  "output": "威胁模型报告：系统概述与数据流图、资产与主体清单、STRIDE 威胁台账（含可能性/影响/缓解/残余风险/验证用例）、假设清单",
+  "skills": [
+    {
+      "id": "threat-modeling",
+      "title": "威胁建模",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "威胁建模任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "威胁建模任务",
+        "en": "Threat modeling task"
+      }
+    },
+    "description": {
+      "original": "对已提供的系统描述建立数据流图和信任边界，按 STRIDE 识别威胁，输出威胁台账、缓解措施和残余风险说明。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的系统描述建立数据流图和信任边界，按 STRIDE 识别威胁，输出威胁台账、缓解措施和残余风险说明。",
+        "en": "Build a data flow diagram and trust boundaries from a provided system description, identify STRIDE threats, and produce a threat register with mitigations and residual risk."
+      }
+    },
+    "requirements": [
+      {
+        "original": "系统功能描述（至少说明系统做什么、处理哪些数据、有哪些用户类型）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "系统功能描述（至少说明系统做什么、处理哪些数据、有哪些用户类型）",
+          "en": "System description (at minimum: what it does, what data it handles, what user types exist)"
+        }
+      },
+      {
+        "original": "主要数据流描述（数据来源、经过哪些组件、存储位置、去向）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "主要数据流描述（数据来源、经过哪些组件、存储位置、去向）",
+          "en": "Main data flow description (data sources, components traversed, storage locations, destinations)"
+        }
+      }
+    ],
+    "output": {
+      "original": "威胁模型报告：系统概述与数据流图、资产与主体清单、STRIDE 威胁台账（含可能性/影响/缓解/残余风险/验证用例）、假设清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "威胁模型报告：系统概述与数据流图、资产与主体清单、STRIDE 威胁台账（含可能性/影响/缓解/残余风险/验证用例）、假设清单",
+        "en": "Threat model report: system overview and DFD, asset and actor inventory, STRIDE threat register (with likelihood/impact/mitigation/residual risk/verification cases), assumptions list"
+      }
+    }
+  }
+}

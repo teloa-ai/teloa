@@ -1,0 +1,207 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-supabase-remote",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools",
+      "cloud-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "supabase_remote",
+    "title": {
+      "zh-CN": "Supabase 远程（OAuth）",
+      "en": "Supabase Remote (OAuth)"
+    },
+    "summary": {
+      "zh-CN": "Supabase 官方托管远程 MCP 服务，默认以只读模式（read_only=true）连接：可查看项目与数据表、以只读数据库用户执行查询、查看日志与安全建议、查看边缘函数。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，令牌自动刷新，不需要填写访问令牌。",
+      "en": "Supabase's official hosted remote MCP service, connected in read-only mode (read_only=true) by default: browse projects and tables, run queries as a read-only database user, read logs and advisors, and view Edge Functions. Authorized by Teloa via OAuth (dynamic client registration + PKCE) with automatic token refresh; no access token needs to be entered."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "organizations:read",
+        "projects:read",
+        "database:read",
+        "analytics:read",
+        "edge_functions:read",
+        "environment:read"
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.supabase.com/mcp?read_only=true"
+    },
+    "tools": [
+      {
+        "name": "list_organizations",
+        "description": {
+          "zh-CN": "列出组织",
+          "en": "List organizations"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_projects",
+        "description": {
+          "zh-CN": "列出项目",
+          "en": "List projects"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_project",
+        "description": {
+          "zh-CN": "获取项目详情",
+          "en": "Get project details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_project_url",
+        "description": {
+          "zh-CN": "获取项目 API 地址",
+          "en": "Get project API URL"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_tables",
+        "description": {
+          "zh-CN": "列出数据表",
+          "en": "List tables"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_extensions",
+        "description": {
+          "zh-CN": "列出数据库扩展",
+          "en": "List database extensions"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_migrations",
+        "description": {
+          "zh-CN": "列出迁移",
+          "en": "List migrations"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "execute_sql",
+        "description": {
+          "zh-CN": "执行 SQL",
+          "en": "Execute SQL"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "get_logs",
+        "description": {
+          "zh-CN": "查询日志",
+          "en": "Get logs"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_advisors",
+        "description": {
+          "zh-CN": "获取安全与性能建议",
+          "en": "Get security and performance advisors"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "generate_typescript_types",
+        "description": {
+          "zh-CN": "生成 TypeScript 类型",
+          "en": "Generate TypeScript types"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_edge_functions",
+        "description": {
+          "zh-CN": "列出边缘函数",
+          "en": "List Edge Functions"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_edge_function",
+        "description": {
+          "zh-CN": "获取边缘函数",
+          "en": "Get an Edge Function"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_branches",
+        "description": {
+          "zh-CN": "列出开发分支",
+          "en": "List development branches"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "search_docs",
+        "description": {
+          "zh-CN": "搜索 Supabase 文档",
+          "en": "Search Supabase docs"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://supabase.com/docs/guides/getting-started/mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Supabase-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "官方文档确认托管服务默认使用动态客户端注册；本机回环回调（127.0.0.1）尚未实测",
+        "en": "Official docs confirm the hosted server uses dynamic client registration by default; the loopback callback (127.0.0.1) has not been tested yet"
+      },
+      {
+        "zh-CN": "授权只申请服务端公开的资源配置里列出的只读 scope（组织、项目、数据库、分析、边缘函数、环境）；服务端是否按 scope 收窄令牌尚未实测，未收窄时令牌仍具全部权限。连接设置另带 read_only=true（官方参数：以只读 Postgres 用户执行查询，写工具不注册）",
+        "en": "Authorization requests only the read scopes listed in the server's published resource configuration (organizations, projects, database, analytics, edge functions, environment); whether the server narrows the token by scope is untested, and without narrowing the token still carries full permissions. The connection settings also set read_only=true (official parameter: queries run as a read-only Postgres user and write tools are not registered)"
+      },
+      {
+        "zh-CN": "建议只连接非生产项目；只读模式下迁移、部署函数等写工具不可用，存储功能组不在默认启用范围",
+        "en": "Prefer non-production projects; write tools such as migrations and function deploys are unavailable in read-only mode, and the storage feature group is not enabled by default"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

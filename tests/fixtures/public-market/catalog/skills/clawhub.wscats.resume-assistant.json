@@ -1,0 +1,168 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.wscats.resume-assistant",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.6",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "resume-assistant",
+    "title": {
+      "zh-CN": "简历助手",
+      "en": "Resume Assistant"
+    },
+    "summary": {
+      "zh-CN": "协助求职者打磨、定制和评分简历。用于简历优化和求职准备。",
+      "en": "Assist job seekers by polishing, customizing, scoring, and exporting resumes with detailed checklist reviews and multi-format support."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "wscats",
+    "slug": "resume-assistant",
+    "version": "1.0.6",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "2a7d4a44855014301619d992ac84f4f1637bb7959130e68c598fd54f805ba4c3",
+        "size": 10640
+      },
+      {
+        "path": "README_ZH.md",
+        "sha256": "8eddc50fccf430b016c8bed8dec686a6f951b34f3fe831603beb05e126dcf242",
+        "size": 10688
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "224bae2d8dfd1c11c0d28cba8337bc7754a19278b1c9c4119fdded501b1559e5",
+        "size": 18826
+      },
+      {
+        "path": "SKILL_ZH.md",
+        "sha256": "c9befe88ba51e0a46f97ddf8c5913b37821e362d4f9bf02ae91e9b68f30d9e7a",
+        "size": 22825
+      },
+      {
+        "path": "examples/sample-resume-en.md",
+        "sha256": "eca2b913a2060778695cf6ff98d9290039279ed66c360661852bf4af4d62ef36",
+        "size": 2525
+      },
+      {
+        "path": "examples/sample-resume-weak.md",
+        "sha256": "169e05ee728f28ba2aca16882e21093aecf0bed1cf5ed29c2ddee60425e6e0f1",
+        "size": 781
+      },
+      {
+        "path": "examples/sample-resume-zh.md",
+        "sha256": "a485009f0ee071461e741a3039bfe5c6c0b1ece9f8a83356e0b36a72a8f7ad55",
+        "size": 2290
+      },
+      {
+        "path": "examples/usage.md",
+        "sha256": "76b48aaabb1bb5ef16a3b6e2ca5ce8e10406076405c7aea1ef0effe358a184a1",
+        "size": 7748
+      },
+      {
+        "path": "prompts/customize.md",
+        "sha256": "2aa3d51c5685c3d12284a471d4b0a0947d2dd3156997e969f0923adc95332876",
+        "size": 3557
+      },
+      {
+        "path": "prompts/export.md",
+        "sha256": "1744286c7c7a15d6d5994051fb282e03e14469dc89d82bdbc394d6d318e5d50e",
+        "size": 4124
+      },
+      {
+        "path": "prompts/polish.md",
+        "sha256": "0ec34ba4f6b7fa6f327e54eaff1456185563a7667850ea632d8c0f31171534fb",
+        "size": 5259
+      },
+      {
+        "path": "prompts/score.md",
+        "sha256": "17a6bfedf28a07da324fcd2b8789e064f98d23eefcc34d059f821d120c935f38",
+        "size": 5605
+      },
+      {
+        "path": "prompts/system.md",
+        "sha256": "a3abebb727769c52b9710627fcd738ce5b44321e41caa3a341df43514358a658",
+        "size": 5192
+      },
+      {
+        "path": "skill.json",
+        "sha256": "5064b315222c2b070ff04af233413787f5ed93dfe05116a469675e301ea04c91",
+        "size": 5659
+      },
+      {
+        "path": "skill.yaml",
+        "sha256": "1c50241f7e89f949fce91774d56d6d0cb9d0ee3eb4046e199779f6469446feed",
+        "size": 5862
+      },
+      {
+        "path": "templates/academic.md",
+        "sha256": "e2cccf18ee9ba0160c9eb57a837ed8c4d30a989854d9d27a1f3e6477aa849f44",
+        "size": 1491
+      },
+      {
+        "path": "templates/export/resume.html",
+        "sha256": "7b4835eb57b4a30cbe66b1f9180d2e54f88315916430ffcabe707be7435d015c",
+        "size": 5886
+      },
+      {
+        "path": "templates/minimal.md",
+        "sha256": "1ca9877b55ba7d8302e4b3997c58d3789ca93dbea120e6b353322caf04d37649",
+        "size": 625
+      },
+      {
+        "path": "templates/modern.md",
+        "sha256": "3ec6b35519ab859e1480859a3d3349119c0168a52de529a8ebd32f5698245265",
+        "size": 1131
+      },
+      {
+        "path": "templates/professional.md",
+        "sha256": "0ddee20da4ac4932efa15186006b4f222e9d7e29a3cd4e3230d7000e2d535919",
+        "size": 850
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "29f1f03f41aef32244b73f92ad16f35d09ac811ff0e05c49df6a73934e06cb4a",
+        "size": 2468
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 21519,
+    "installsLabel": "2.2 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

@@ -1,0 +1,9 @@
+# 官方 provider 管理平台原生驱动；不在 Teloa 另建电脑操作服务。
+- insert:
+    - id: teloa-computer-use
+      name: '@deepseek-ai/dsh-computer-use'
+      disabled: true
+    - id: teloa-computer-cua
+      name: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
+      # 启用必须是用户的独立操作，安装不请求桌面权限或初始化原生 SDK。
+      disabled: true

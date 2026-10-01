@@ -1,0 +1,111 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-linear",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "linear",
+    "title": {
+      "zh-CN": "Linear（官方远程 MCP）",
+      "en": "Linear (Official Remote MCP)"
+    },
+    "summary": {
+      "zh-CN": "Linear 官方远程 MCP 服务，提供 Issue 列表与查询、查看、创建或更新（save_issue）与项目列表能力。需要 Linear API Key（Bearer Token）。",
+      "en": "Linear official remote MCP service: list and filter issues, view issues, create or update them (save_issue), and list projects. Requires a Linear API key (Bearer token)."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "bearer",
+          "label": {
+            "zh-CN": "Linear API Key（从 Linear 设置 > API 获取）",
+            "en": "Linear API Key (get from Linear Settings > API)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "tools": [
+      {
+        "name": "list_issues",
+        "description": {
+          "zh-CN": "列出并筛选 Linear Issue",
+          "en": "List and filter Linear issues"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_issue",
+        "description": {
+          "zh-CN": "获取指定 Issue 详情",
+          "en": "Get issue details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "save_issue",
+        "description": {
+          "zh-CN": "创建或更新 Issue",
+          "en": "Create or update an issue"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "list_projects",
+        "description": {
+          "zh-CN": "列出项目",
+          "en": "List projects"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://linear.app/settings/api"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Linear-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要 Linear API Key",
+        "en": "Requires a Linear API key"
+      },
+      {
+        "zh-CN": "官方未公布工具清单；工具名按 2026 年公开使用记录核对（创建与更新已合并为 save_issue），待真实账户实测",
+        "en": "Linear publishes no tool list; names were checked against public 2026 usage (create and update merged into save_issue) and await a real-account test"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

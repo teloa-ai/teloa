@@ -1,0 +1,265 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "hr-recruiting",
+  "title": "HR 招聘协作",
+  "version": "1.0.0",
+  "domain": "general",
+  "scope": "recruiting",
+  "description": "面向岗位说明书（JD）起草、简历初筛清单、面试纲要与面试记录汇总的行业方案。岗位只产出草案与对照清单，不做录用或淘汰决定；筛选只看与岗位相关的能力，不使用年龄、性别、婚育、民族、籍贯等受保护特征；候选人个人信息按最小化处理。对外发送与写入招聘系统均需本人授权。",
+  "resources": [
+    {
+      "id": "recruiting-collaborator",
+      "kind": "role",
+      "title": "招聘协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/recruiting-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "招聘协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "招聘协作员",
+            "en": "Recruiting collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "recruiting-methods",
+      "kind": "knowledge",
+      "title": "招聘协作方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/recruiting-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "招聘协作方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "招聘协作方法与来源索引",
+            "en": "Recruiting methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "jd-draft",
+      "kind": "skill",
+      "title": "岗位说明书（JD）起草",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/jd-draft/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "岗位说明书（JD）起草",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "岗位说明书（JD）起草",
+            "en": "Job description drafting"
+          }
+        }
+      }
+    },
+    {
+      "id": "resume-screen-checklist",
+      "kind": "skill",
+      "title": "简历初筛对照清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/resume-screen-checklist/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "简历初筛对照清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "简历初筛对照清单",
+            "en": "Resume screening checklist"
+          }
+        }
+      }
+    },
+    {
+      "id": "interview-guide",
+      "kind": "skill",
+      "title": "面试纲要与评分表设计",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/interview-guide/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "面试纲要与评分表设计",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "面试纲要与评分表设计",
+            "en": "Interview guide and scorecard design"
+          }
+        }
+      }
+    },
+    {
+      "id": "interview-notes",
+      "kind": "skill",
+      "title": "面试记录与待办提取",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/interview-notes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "面试记录与待办提取",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "面试记录与待办提取",
+            "en": "Interview notes and action item extraction"
+          }
+        }
+      }
+    },
+    {
+      "id": "jd-draft-task",
+      "kind": "work-template",
+      "title": "起草岗位说明书（JD）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/jd-draft-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "起草岗位说明书（JD）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "起草岗位说明书（JD）",
+            "en": "Draft a job description"
+          }
+        }
+      }
+    },
+    {
+      "id": "resume-screen-task",
+      "kind": "work-template",
+      "title": "简历初筛与对照清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/resume-screen-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "简历初筛与对照清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "简历初筛与对照清单",
+            "en": "Resume screening and checklist task"
+          }
+        }
+      }
+    },
+    {
+      "id": "interview-guide-task",
+      "kind": "work-template",
+      "title": "面试纲要与面试记录汇总",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/interview-guide-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "面试纲要与面试记录汇总",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "面试纲要与面试记录汇总",
+            "en": "Interview guide and notes summary task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "recruiting-collaborator",
+      "to": "recruiting-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "recruiting-collaborator",
+      "to": "jd-draft"
+    },
+    {
+      "kind": "role-skill",
+      "from": "recruiting-collaborator",
+      "to": "resume-screen-checklist"
+    },
+    {
+      "kind": "role-skill",
+      "from": "recruiting-collaborator",
+      "to": "interview-guide"
+    },
+    {
+      "kind": "role-skill",
+      "from": "recruiting-collaborator",
+      "to": "interview-notes"
+    },
+    {
+      "kind": "role-work",
+      "from": "recruiting-collaborator",
+      "to": "jd-draft-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "recruiting-collaborator",
+      "to": "resume-screen-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "recruiting-collaborator",
+      "to": "interview-guide-task"
+    }
+  ],
+  "entrypoints": [
+    "jd-draft-task",
+    "resume-screen-task",
+    "interview-guide-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "HR 招聘协作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "HR 招聘协作",
+        "en": "HR recruiting"
+      }
+    },
+    "description": {
+      "original": "面向岗位说明书（JD）起草、简历初筛清单、面试纲要与面试记录汇总的行业方案。岗位只产出草案与对照清单，不做录用或淘汰决定；筛选只看与岗位相关的能力，不使用年龄、性别、婚育、民族、籍贯等受保护特征；候选人个人信息按最小化处理。对外发送与写入招聘系统均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向岗位说明书（JD）起草、简历初筛清单、面试纲要与面试记录汇总的行业方案。岗位只产出草案与对照清单，不做录用或淘汰决定；筛选只看与岗位相关的能力，不使用年龄、性别、婚育、民族、籍贯等受保护特征；候选人个人信息按最小化处理。对外发送与写入招聘系统均需本人授权。",
+        "en": "A solution for drafting job descriptions, building resume screening checklists, and preparing interview guides and note summaries. The role produces drafts and comparison checklists only and never makes hire or reject decisions; screening looks only at job-relevant abilities and never uses protected characteristics such as age, gender, marital or parental status, ethnicity or place of origin; candidate personal data is kept to the minimum. Sending externally and writing to recruiting systems require your authorization."
+      }
+    }
+  }
+}

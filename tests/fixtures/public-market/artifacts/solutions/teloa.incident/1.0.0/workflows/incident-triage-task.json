@@ -1,0 +1,78 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "incident-triage-task",
+  "title": "事件分级与初判",
+  "version": "1.0.0",
+  "domain": "incident",
+  "description": "对已提供的告警、日志、用户反馈与值班群消息做初判：判定是否构成事件、建议 P1–P4 等级与置信度、列出支持与反对证据、疑似关联变更与证据缺口，并给出需负责人确认后执行的下一步建议；负责人要求时，为建议的回滚或缓解变更起草变更说明与回滚步骤草案。不执行任何变更，不对外发布。",
+  "requirements": [
+    "事件线索：监控告警、错误日志摘录、用户反馈或值班群消息中至少一项（已上传）",
+    "涉及的服务、环境与区域",
+    "组织的事件分级规则、近期部署与配置变更记录（可选；无分级规则时用默认表并注明）"
+  ],
+  "output": "研判卡草案：分级规则来源、事件基本信息、判定、建议等级与依据、疑似关联变更、支持与反对证据、证据缺口、需负责人确认后执行的下一步、对外沟通由负责人决定；负责人要求时附缓解变更说明与回滚步骤草案（含待填写字段）",
+  "skills": [
+    {
+      "id": "incident-triage",
+      "title": "事件分级与初判",
+      "version": "1.0.0"
+    },
+    {
+      "id": "incident-change-notes",
+      "title": "缓解变更与回滚说明",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "事件分级与初判",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "事件分级与初判",
+        "en": "Incident triage and severity assessment"
+      }
+    },
+    "description": {
+      "original": "对已提供的告警、日志、用户反馈与值班群消息做初判：判定是否构成事件、建议 P1–P4 等级与置信度、列出支持与反对证据、疑似关联变更与证据缺口，并给出需负责人确认后执行的下一步建议；负责人要求时，为建议的回滚或缓解变更起草变更说明与回滚步骤草案。不执行任何变更，不对外发布。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的告警、日志、用户反馈与值班群消息做初判：判定是否构成事件、建议 P1–P4 等级与置信度、列出支持与反对证据、疑似关联变更与证据缺口，并给出需负责人确认后执行的下一步建议；负责人要求时，为建议的回滚或缓解变更起草变更说明与回滚步骤草案。不执行任何变更，不对外发布。",
+        "en": "Assess provided alerts, logs, user reports and on-call chat: decide whether this is an incident, suggest a P1–P4 level with confidence, list supporting and opposing evidence, suspected related changes and evidence gaps, and propose next steps that the owner must confirm before execution; on request, draft change and rollback notes for the suggested mitigation. Executes no changes and publishes nothing externally."
+      }
+    },
+    "requirements": [
+      {
+        "original": "事件线索：监控告警、错误日志摘录、用户反馈或值班群消息中至少一项（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "事件线索：监控告警、错误日志摘录、用户反馈或值班群消息中至少一项（已上传）",
+          "en": "Incident signals: at least one of monitoring alerts, error log excerpts, user reports or on-call chat messages (already uploaded)"
+        }
+      },
+      {
+        "original": "涉及的服务、环境与区域",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "涉及的服务、环境与区域",
+          "en": "Affected service, environment and region"
+        }
+      },
+      {
+        "original": "组织的事件分级规则、近期部署与配置变更记录（可选；无分级规则时用默认表并注明）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "组织的事件分级规则、近期部署与配置变更记录（可选；无分级规则时用默认表并注明）",
+          "en": "Your severity policy and recent deployment or configuration change records (optional; the default table is used and noted when no policy is provided)"
+        }
+      }
+    ],
+    "output": {
+      "original": "研判卡草案：分级规则来源、事件基本信息、判定、建议等级与依据、疑似关联变更、支持与反对证据、证据缺口、需负责人确认后执行的下一步、对外沟通由负责人决定；负责人要求时附缓解变更说明与回滚步骤草案（含待填写字段）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "研判卡草案：分级规则来源、事件基本信息、判定、建议等级与依据、疑似关联变更、支持与反对证据、证据缺口、需负责人确认后执行的下一步、对外沟通由负责人决定；负责人要求时附缓解变更说明与回滚步骤草案（含待填写字段）",
+        "en": "Triage card draft: policy source, incident facts, verdict, suggested level with rationale, suspected related changes, supporting and opposing evidence, evidence gaps, next steps pending the owner's confirmation, external communication left to the owner; on request, a mitigation change and rollback notes draft with fields to be filled at execution"
+      }
+    }
+  }
+}

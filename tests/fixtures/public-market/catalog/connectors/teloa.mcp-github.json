@@ -1,0 +1,124 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-github",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools",
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "github",
+    "title": {
+      "zh-CN": "GitHub（官方远程 MCP）",
+      "en": "GitHub (Official Remote MCP)"
+    },
+    "summary": {
+      "zh-CN": "GitHub Copilot 官方远程 MCP 服务，提供仓库搜索、文件读取、Issue 管理、PR 创建与代码推送能力。需要 GitHub Personal Access Token。",
+      "en": "GitHub Copilot's official remote MCP service providing repository search, file reading, issue management, PR creation, and code push. Requires GitHub Personal Access Token."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "bearer",
+          "label": {
+            "zh-CN": "GitHub Personal Access Token（需 repo 权限）",
+            "en": "GitHub Personal Access Token (repo scope required)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
+    "tools": [
+      {
+        "name": "search_repositories",
+        "description": {
+          "zh-CN": "搜索 GitHub 仓库",
+          "en": "Search GitHub repositories"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_file_contents",
+        "description": {
+          "zh-CN": "读取仓库文件内容",
+          "en": "Read repository file contents"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_issues",
+        "description": {
+          "zh-CN": "列出 Issue",
+          "en": "List issues"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "issue_write",
+        "description": {
+          "zh-CN": "创建或更新 Issue",
+          "en": "Create or update an issue"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "create_pull_request",
+        "description": {
+          "zh-CN": "创建 Pull Request",
+          "en": "Create a pull request"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "push_files",
+        "description": {
+          "zh-CN": "推送文件到仓库",
+          "en": "Push files to a repository"
+        },
+        "readOnly": false
+      }
+    ],
+    "upstreamUrl": "https://github.com/github/github-mcp-server"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-GitHub-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要 GitHub Personal Access Token（repo 权限）",
+        "en": "Requires GitHub Personal Access Token (repo scope)"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

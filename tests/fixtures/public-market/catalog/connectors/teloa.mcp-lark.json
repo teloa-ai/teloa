@@ -1,0 +1,155 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-lark",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "lark",
+    "title": {
+      "zh-CN": "飞书/Lark（官方 MCP）",
+      "en": "Feishu/Lark (Official MCP)"
+    },
+    "summary": {
+      "zh-CN": "飞书/Lark 官方 MCP 服务，以 -t 白名单只启用下列消息与云文档工具（包默认预设中的多维表格、建群等其余工具不启用）。需要飞书应用凭据（App ID + App Secret），以环境变量 APP_ID / APP_SECRET 注入。工具名为下划线写法（如 im_v1_message_list）。注意：依赖 keytar 原生模块，--ignore-scripts 安装可能影响凭据存储功能，Teloa 通过环境变量直接注入凭据，不使用 keytar。",
+      "en": "Official Feishu/Lark MCP service; the -t allowlist enables only the messaging and cloud-doc tools listed below (the rest of the default preset, e.g. Bitable and chat creation, stays off). Requires Lark app credentials (App ID + App Secret), injected as the APP_ID / APP_SECRET environment variables. Tool names use snake case (e.g. im_v1_message_list). Teloa injects credentials via env vars, bypassing the keytar native module."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "env",
+          "envVarName": "APP_ID",
+          "label": {
+            "zh-CN": "飞书 App ID（从开放平台获取）",
+            "en": "Lark App ID (from Lark Open Platform)"
+          },
+          "required": true
+        },
+        {
+          "target": "env",
+          "envVarName": "APP_SECRET",
+          "label": {
+            "zh-CN": "飞书 App Secret（从开放平台获取）",
+            "en": "Lark App Secret (from Lark Open Platform)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "stdio",
+      "package": "@larksuiteoapi/lark-mcp",
+      "version": "0.5.1",
+      "integrity": "sha512-KgSzQIvVFUTHKjmTvAg3sSeyIZJ35CXMZQ3HygwT8/tQzDkuM4RsUSoVK4TVJKVsKCHP3QBOV9sAyBmMCBNc9g==",
+      "bin": "dist/cli.js",
+      "args": [
+        "mcp",
+        "-t",
+        "im.v1.chat.list,im.v1.message.list,im.v1.message.create,docx.v1.document.rawContent,docx.builtin.search,docx.builtin.import"
+      ]
+    },
+    "tools": [
+      {
+        "name": "im_v1_chat_list",
+        "description": {
+          "zh-CN": "列出机器人所在的群",
+          "en": "List chats the bot is in"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "im_v1_message_list",
+        "description": {
+          "zh-CN": "列出会话消息",
+          "en": "List messages in a chat"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "im_v1_message_create",
+        "description": {
+          "zh-CN": "发送消息",
+          "en": "Send a message"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "docx_v1_document_rawContent",
+        "description": {
+          "zh-CN": "获取云文档纯文本内容",
+          "en": "Get the plain-text content of a document"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "docx_builtin_search",
+        "description": {
+          "zh-CN": "搜索云文档",
+          "en": "Search cloud documents"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "docx_builtin_import",
+        "description": {
+          "zh-CN": "导入 Markdown 新建云文档",
+          "en": "Create a cloud document by importing Markdown"
+        },
+        "readOnly": false
+      }
+    ],
+    "upstreamUrl": "https://github.com/larksuite/lark-openapi-mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要飞书 App ID 和 App Secret",
+        "en": "Requires Lark App ID and App Secret"
+      },
+      {
+        "zh-CN": "keytar 原生模块在 --ignore-scripts 下 keychain 路径不可用，Teloa 通过环境变量传入凭据，绕过 keytar",
+        "en": "keytar native module keychain path unavailable under --ignore-scripts; Teloa passes credentials via env vars, bypassing keytar"
+      },
+      {
+        "zh-CN": "需要 Node.js 20+",
+        "en": "Requires Node.js 20+"
+      },
+      {
+        "zh-CN": "连接设置以 -t 只启用目录列出的工具；Teloa 另外只注册目录列出的工具",
+        "en": "The connection settings enable only the listed tools via -t; Teloa additionally registers only the tools listed in the catalog"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "Node.js 20+"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

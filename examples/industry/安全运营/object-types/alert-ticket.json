@@ -1,0 +1,242 @@
+{
+  "format": "teloa.business-object-type/v1",
+  "id": "alert-ticket",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "告警工单",
+  "unit": "条",
+  "lead": "来自告警平台和终端记录，进来之后先归并再判断。",
+  "sourceId": "security-alert-http",
+  "fields": [
+    {
+      "name": "severity",
+      "label": "严重度",
+      "type": "enum",
+      "required": true,
+      "from": "严重度",
+      "values": [
+        "高",
+        "中",
+        "低"
+      ],
+      "localized": {
+        "label": {
+          "original": "严重度",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "严重度",
+            "en": "Severity"
+          }
+        },
+        "values": [
+          {
+            "original": "高",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "高",
+              "en": "High"
+            }
+          },
+          {
+            "original": "中",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "中",
+              "en": "Medium"
+            }
+          },
+          {
+            "original": "低",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "低",
+              "en": "Low"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "host",
+      "label": "主机",
+      "type": "text",
+      "required": true,
+      "from": "主机",
+      "localized": {
+        "label": {
+          "original": "主机",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "主机",
+            "en": "Host"
+          }
+        }
+      }
+    },
+    {
+      "name": "verdict",
+      "label": "当前判定",
+      "type": "enum",
+      "required": true,
+      "from": "当前判定",
+      "values": [
+        "还没有人看",
+        "正在核对",
+        "等你确认",
+        "已确认维护"
+      ],
+      "localized": {
+        "label": {
+          "original": "当前判定",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "当前判定",
+            "en": "Triage status"
+          }
+        },
+        "values": [
+          {
+            "original": "还没有人看",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "还没有人看",
+              "en": "Unreviewed"
+            }
+          },
+          {
+            "original": "正在核对",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "正在核对",
+              "en": "Under review"
+            }
+          },
+          {
+            "original": "等你确认",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "等你确认",
+              "en": "Needs your decision"
+            }
+          },
+          {
+            "original": "已确认维护",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "已确认维护",
+              "en": "Confirmed maintenance"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "first-seen-at",
+      "label": "首次出现",
+      "type": "datetime",
+      "required": true,
+      "from": "首次出现",
+      "localized": {
+        "label": {
+          "original": "首次出现",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "首次出现",
+            "en": "First seen"
+          }
+        }
+      }
+    },
+    {
+      "name": "last-changed-at",
+      "label": "最近变化",
+      "type": "datetime",
+      "required": true,
+      "from": "最近变化",
+      "localized": {
+        "label": {
+          "original": "最近变化",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "最近变化",
+            "en": "Last updated"
+          }
+        }
+      }
+    },
+    {
+      "name": "account-count",
+      "label": "涉及账号数",
+      "type": "number",
+      "required": false,
+      "from": "涉及账号数",
+      "localized": {
+        "label": {
+          "original": "涉及账号数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "涉及账号数",
+            "en": "Affected accounts"
+          }
+        }
+      }
+    },
+    {
+      "name": "incident",
+      "label": "关联调查",
+      "type": "reference",
+      "required": false,
+      "from": "关联调查",
+      "referenceType": "incident-ticket",
+      "localized": {
+        "label": {
+          "original": "关联调查",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "关联调查",
+            "en": "Linked investigation"
+          }
+        }
+      }
+    }
+  ],
+  "progress": {
+    "stageField": "verdict",
+    "unfinished": [
+      "还没有人看",
+      "正在核对",
+      "等你确认"
+    ],
+    "waitingForYou": [
+      "等你确认"
+    ],
+    "changedAtField": "last-changed-at"
+  },
+  "defaultAction": "assign-alert-review",
+  "localized": {
+    "title": {
+      "original": "告警工单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "告警工单",
+        "en": "Alert tickets"
+      }
+    },
+    "unit": {
+      "original": "条",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "条",
+        "en": "alerts"
+      }
+    },
+    "lead": {
+      "original": "来自告警平台和终端记录，进来之后先归并再判断。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "来自告警平台和终端记录，进来之后先归并再判断。",
+        "en": "Alerts from security monitoring and endpoint records are correlated before analysts make a decision."
+      }
+    }
+  }
+}

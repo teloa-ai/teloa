@@ -1,0 +1,115 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "anthropic.mcp-builder",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "mcp-builder",
+    "title": {
+      "zh-CN": "MCP 服务器构建指南",
+      "en": "MCP server builder"
+    },
+    "summary": {
+      "zh-CN": "指导如何用 Python（FastMCP）或 Node/TypeScript（MCP SDK）构建高质量 MCP 服务器，覆盖工具设计、错误处理、评测与最佳实践；附完整参考文档。",
+      "en": "Guides building high-quality MCP servers in Python (FastMCP) or Node/TypeScript (MCP SDK), covering tool design, error handling, evaluation, and best practices; full reference docs included."
+    }
+  },
+  "upstream": {
+    "ecosystem": "anthropic",
+    "author": "Anthropic",
+    "repository": {
+      "host": "github.com",
+      "owner": "anthropics",
+      "repo": "skills"
+    },
+    "commit": "33375500bcea98d610eb30ce10ac4e59b89c390d",
+    "path": "skills/mcp-builder",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "gitBlob": "4f881c52d1f72f4cfb720e339e2d35c3058d01a9",
+        "size": 11345
+      },
+      {
+        "path": "SKILL.md",
+        "gitBlob": "8a1a77a47d141967b246adb4da4f91037578ff7d",
+        "size": 9092
+      },
+      {
+        "path": "reference/evaluation.md",
+        "gitBlob": "87e9bb78840fac113d93b4a27ab5b229a18cf226",
+        "size": 21663
+      },
+      {
+        "path": "reference/mcp_best_practices.md",
+        "gitBlob": "b9d343cc3ae89b1fc139dae96bdb2b7e29ba3648",
+        "size": 7330
+      },
+      {
+        "path": "reference/node_mcp_server.md",
+        "gitBlob": "f6e5df982adc0848bf261c47ab8d65a1e0469391",
+        "size": 28550
+      },
+      {
+        "path": "reference/python_mcp_server.md",
+        "gitBlob": "cf7ec996d2e6e3655bc75ff6902738d03a37334e",
+        "size": 25099
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "frontmatter 只保留 name 与 description，去掉 license 字段。",
+      "en": "Frontmatter keeps only name and description; the license field removed."
+    },
+    {
+      "zh-CN": "scripts/ 目录（connections.py、evaluation.py、example_evaluation.xml、requirements.txt）不随资源文件收录（构建拒绝脚本文件）；SKILL.md 开头加注说明评测脚本未包含，评测参考文档 reference/evaluation.md 随附（改动见最后一条）。",
+      "en": "The scripts/ directory (connections.py, evaluation.py, example_evaluation.xml, requirements.txt) is not included (build rejects script files); a note is added to SKILL.md stating scripts are excluded; the evaluation reference doc reference/evaluation.md is included (see the last change)."
+    },
+    {
+      "zh-CN": "reference/ 下 mcp_best_practices.md、node_mcp_server.md、python_mcp_server.md 三个参考文档原样收录，无修改。",
+      "en": "reference/mcp_best_practices.md, node_mcp_server.md and python_mcp_server.md are included unchanged."
+    },
+    {
+      "zh-CN": "SKILL.md 两个章节标题与十处链接文字前的表情符号去掉，开头的说明同步更新；reference/evaluation.md 开头加修改说明，输出格式里标记答对、答错的两个符号改为文字 correct/incorrect。只改符号，不改内容。",
+      "en": "Emoji before two headings and ten link labels in SKILL.md are removed and the note at the top is updated; reference/evaluation.md gets a change notice at the top, and the two symbols marking right and wrong answers in the output format are written as correct/incorrect. Only symbols change, not content."
+    }
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE.txt"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "纯参考指南，不需要额外工具；实际构建 MCP 服务器需要 Python 或 Node.js 运行时，但这是用户的开发环境要求，不是技能加载要求。",
+        "en": "Pure reference guide; no extra tools required to load. Building an actual MCP server requires Python or Node.js in the user's own development environment."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  }
+}

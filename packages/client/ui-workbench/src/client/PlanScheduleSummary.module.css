@@ -1,0 +1,6 @@
+.facts{display:flex;flex-direction:column;gap:8px}
+.item{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-sidebar);overflow-wrap:anywhere}
+.item small{font-size:var(--teloa-font-caption);line-height:1.6;color:var(--teloa-muted)}
+.item button{margin-top:4px}
+.error{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.error button{flex:none;white-space:nowrap;margin-left:auto}

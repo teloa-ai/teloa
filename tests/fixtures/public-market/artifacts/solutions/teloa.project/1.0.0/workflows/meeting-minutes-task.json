@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "meeting-minutes-task",
+  "title": "整理项目会议纪要与待办",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "从项目会议的转写或文字记录中提取已决事项、计划变更、行动事项、上次待办闭环、缺席确认事项与未成决议的风险，负责人与截止日期只取原文，计划变更单独标出等负责人确认。",
+  "requirements": [
+    "会议转写文本或会议记录（已上传）",
+    "会议名称、日期、参会人列表（可从转写推断，需确认）",
+    "会议议程、上次待办清单、当前里程碑表或风险台账（可选）"
+  ],
+  "output": "项目会议纪要草案：首部为会议基本信息；已决事项、计划变更（需负责人确认后生效）、行动事项、上次待办闭环、缺席确认事项、风险与问题、讨论摘要、待确认项；发送前需负责人确认",
+  "skills": [
+    {
+      "id": "project-meeting-minutes",
+      "title": "项目会议纪要与待办提取",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "整理项目会议纪要与待办",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "整理项目会议纪要与待办",
+        "en": "Prepare project meeting minutes and action items"
+      }
+    },
+    "description": {
+      "original": "从项目会议的转写或文字记录中提取已决事项、计划变更、行动事项、上次待办闭环、缺席确认事项与未成决议的风险，负责人与截止日期只取原文，计划变更单独标出等负责人确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从项目会议的转写或文字记录中提取已决事项、计划变更、行动事项、上次待办闭环、缺席确认事项与未成决议的风险，负责人与截止日期只取原文，计划变更单独标出等负责人确认。",
+        "en": "Extract decisions, plan changes, action items, follow-through on last meeting's items, absent-party confirmations, and undecided risks from a project meeting transcript or notes; owners and due dates come only from the text, and plan changes are listed separately pending the owner's confirmation."
+      }
+    },
+    "requirements": [
+      {
+        "original": "会议转写文本或会议记录（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "会议转写文本或会议记录（已上传）",
+          "en": "Meeting transcript or meeting notes (already uploaded)"
+        }
+      },
+      {
+        "original": "会议名称、日期、参会人列表（可从转写推断，需确认）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "会议名称、日期、参会人列表（可从转写推断，需确认）",
+          "en": "Meeting name, date, and attendee list (may be inferred from the transcript, to be confirmed)"
+        }
+      },
+      {
+        "original": "会议议程、上次待办清单、当前里程碑表或风险台账（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "会议议程、上次待办清单、当前里程碑表或风险台账（可选）",
+          "en": "Agenda, last meeting's action list, current milestone table or risk register (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "项目会议纪要草案：首部为会议基本信息；已决事项、计划变更（需负责人确认后生效）、行动事项、上次待办闭环、缺席确认事项、风险与问题、讨论摘要、待确认项；发送前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "项目会议纪要草案：首部为会议基本信息；已决事项、计划变更（需负责人确认后生效）、行动事项、上次待办闭环、缺席确认事项、风险与问题、讨论摘要、待确认项；发送前需负责人确认",
+        "en": "Project meeting minutes draft: header with meeting details; decisions, plan changes (effective only after the owner confirms), action items, follow-through on last meeting's items, absent-party confirmations, risks and issues, discussion summary, open items; requires the owner's confirmation before sending"
+      }
+    }
+  }
+}

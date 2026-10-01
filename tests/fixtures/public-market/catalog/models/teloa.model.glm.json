@@ -1,0 +1,110 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.glm",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "glm",
+    "title": {
+      "zh-CN": "智谱 GLM",
+      "en": "Zhipu GLM"
+    },
+    "summary": {
+      "zh-CN": "智谱 BigModel 开放平台的 GLM 系列，国内直连，按量付费通用服务地址。",
+      "en": "Zhipu BigModel GLM models, reachable directly in China, via the general pay-as-you-go service address."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": false,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": null,
+    "license": {
+      "spdx": "custom",
+      "name": "智谱开放平台用户协议",
+      "url": "https://docs.bigmodel.cn/cn/terms/user-agreement",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      },
+      {
+        "zh-CN": "这是按量付费通用服务地址；GLM Coding Plan 用户须改用 /api/coding/paas/v4，两者密钥与地址不能混用。",
+        "en": "This is the general pay-as-you-go service address; GLM Coding Plan subscribers must use /api/coding/paas/v4 instead, and keys and addresses cannot be mixed."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "custom",
+        "api": "openai-completions",
+        "baseURL": "https://open.bigmodel.cn/api/paas/v4"
+      },
+      "models": [
+        {
+          "id": "glm-5.3",
+          "name": "GLM-5.3",
+          "contextWindow": null,
+          "maxTokens": null,
+          "input": [
+            "text"
+          ]
+        }
+      ],
+      "priceBand": "mid",
+      "credentialLabel": {
+        "zh-CN": "智谱 API 密钥",
+        "en": "Zhipu API key"
+      },
+      "signupUrl": "https://open.bigmodel.cn"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://docs.bigmodel.cn/cn/terms/user-agreement"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

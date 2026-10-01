@@ -1,0 +1,71 @@
+/* 已加入的方案详情：模板名做页面主标题，状态与版本退为次要信息；按钮分主/次/文字/危险四层，分类用分段控件。
+   选择器都挂在 .page 下提高一级特异性，压过 MarketPage.module.css 里 .savedDirectory :where(button) 的通用边框样式。 */
+.page{display:grid;gap:18px}
+.page.emptyState{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 18px;padding:16px 18px}
+.page .emptyDescription{flex:1 1 240px;min-width:0;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
+.page.emptyState button{flex:none}
+.page .scopeGroup{margin-top:0}
+.page .scopeGroup+.scopeGroup{margin-top:28px}
+.page .scopeTitle{margin:0 0 14px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-heading);letter-spacing:.02em;color:var(--teloa-muted)}
+.page .load{display:grid;gap:16px;margin-top:0;padding-top:0;border-top:0}
+.page .load+.load{margin-top:12px;padding-top:24px;border-top:1px solid var(--teloa-border)}
+
+.hero{display:grid;gap:6px;min-width:0}
+.state{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.stateOn{display:inline-flex;align-items:center;gap:6px;padding:2px 9px 2px 8px;border-radius:999px;background:var(--teloa-good-bg);color:var(--teloa-good);font-weight:var(--teloa-weight-medium)}
+.stateOn::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.scope{color:var(--teloa-muted)}
+.title{margin:2px 0 0;font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:normal;overflow-wrap:anywhere}
+.page h3.title{font-size:var(--teloa-font-detail)}
+.meta{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}
+.lede{margin:4px 0 0;max-width:62ch;color:var(--teloa-muted);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body)}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+
+/* 按钮层级 */
+.page :where(button){display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:5px 12px;border-radius:8px;font:inherit;font-size:var(--teloa-font-control);line-height:1.4}
+.page .primaryButton{border:1px solid var(--teloa-accent);background:var(--teloa-accent);color:var(--teloa-on-accent)}
+.page .primaryButton:hover:not(:disabled){background:var(--teloa-accent);filter:brightness(.94)}
+.page .secondaryButton{border:1px solid var(--teloa-border);background:var(--teloa-surface);color:var(--teloa-text)}
+.page .secondaryButton:hover:not(:disabled){background:var(--teloa-hover)}
+.page .textButton{min-height:32px;padding:5px 2px;border:0;background:transparent;color:var(--teloa-accent)}
+.page .textButton:hover:not(:disabled){background:transparent;text-decoration:underline;text-underline-offset:3px}
+.page .dangerButton{border:1px solid color-mix(in srgb,var(--teloa-danger,var(--teloa-warn)) 45%,var(--teloa-border));background:transparent;color:var(--teloa-danger,var(--teloa-warn))}
+.page .dangerButton:hover:not(:disabled){background:var(--teloa-warn-bg)}
+.page .dangerSolid{border:1px solid var(--teloa-danger,var(--teloa-warn));background:var(--teloa-danger,var(--teloa-warn));color:var(--teloa-surface)}
+.page .dangerSolid:hover:not(:disabled){background:var(--teloa-danger,var(--teloa-warn));filter:brightness(.94)}
+.page .actions .dangerButton{margin-left:auto}
+
+.confirm{display:grid;gap:8px;margin-top:8px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--teloa-warn) 35%,var(--teloa-border));border-radius:10px;background:var(--teloa-warn-bg);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}
+.confirm p{margin:0}
+.confirm ul{margin:0;padding-left:18px}
+.confirm .actions{margin-top:0}
+
+.diagnostics{margin-top:2px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.diagnostics summary{width:max-content;cursor:pointer;padding:2px 0}
+.diagnostics dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;margin:8px 0 0}
+.diagnostics dt{margin:0;color:var(--teloa-muted)}
+.diagnostics dd{margin:0;overflow-wrap:anywhere;color:var(--teloa-text)}
+.diagnostics code{font-family:var(--teloa-design-mono,ui-monospace,monospace);font-size:var(--teloa-font-caption)}
+
+/* 右侧详情里的技术详情：默认收起，小字灰色 */
+.techDetails{margin-top:14px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.techDetails summary{width:max-content;cursor:pointer}
+.techDetails ul{margin:6px 0 0;padding-left:16px;overflow-wrap:anywhere;line-height:1.7}
+
+/* 分类：分段控件，没有内容的分组不出现 */
+.page .segmented{display:flex;flex-wrap:wrap;gap:2px;width:max-content;max-width:100%;padding:3px;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-subtle)}
+.page .segmented button{min-height:30px;padding:4px 12px;border:0;border-radius:7px;background:transparent;color:var(--teloa-muted);white-space:nowrap}
+.page .segmented button:hover:not([aria-pressed=true]){background:var(--teloa-hover);color:var(--teloa-text)}
+.page .segmented button[aria-pressed=true]{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium);box-shadow:0 1px 2px color-mix(in srgb,var(--teloa-text) 12%,transparent)}
+.page .segmented span{margin-left:2px;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;color:var(--teloa-muted)}
+
+.page :where(button):focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.page :where(button):disabled{opacity:.55;cursor:not-allowed}
+
+@media(max-width:740px){
+ .title{font-size:var(--teloa-font-detail)}
+ .page .actions .dangerButton{margin-left:0}
+ .page :where(button),.page .segmented button{min-height:44px}
+ .page .segmented{width:100%}
+ .page .segmented button{flex:1 1 auto}
+}

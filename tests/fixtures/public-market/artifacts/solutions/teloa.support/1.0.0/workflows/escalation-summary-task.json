@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "escalation-summary-task",
+  "title": "升级摘要",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "为需要升级到二线、产品团队或负责人决定的工单整理升级摘要：问题一句话、发生条件、客户影响范围、已尝试步骤与结果、需要对方决定的事项、时限与相关条目。退款、赔偿、安全事件与法律风险类工单只做摘要，不给结论、不起草对外回复。",
+  "requirements": [
+    "需升级的工单或对话记录（已上传）",
+    "支持政策（升级规则与 SLA）、产品事实库或已知问题清单（可选）",
+    "升级对象（二线 / 产品团队 / 负责人）与期望时限（可选）"
+  ],
+  "output": "升级摘要：每条工单或共性问题簇一份，含问题、发生条件、影响范围、已尝试步骤、需对方决定的事项（问句）、时限、相关条目；个人信息已遮蔽，只保留工单编号",
+  "skills": [
+    {
+      "id": "ticket-triage",
+      "title": "工单分诊（分类、优先级、升级判定）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "升级摘要",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "升级摘要",
+        "en": "Escalation summary"
+      }
+    },
+    "description": {
+      "original": "为需要升级到二线、产品团队或负责人决定的工单整理升级摘要：问题一句话、发生条件、客户影响范围、已尝试步骤与结果、需要对方决定的事项、时限与相关条目。退款、赔偿、安全事件与法律风险类工单只做摘要，不给结论、不起草对外回复。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "为需要升级到二线、产品团队或负责人决定的工单整理升级摘要：问题一句话、发生条件、客户影响范围、已尝试步骤与结果、需要对方决定的事项、时限与相关条目。退款、赔偿、安全事件与法律风险类工单只做摘要，不给结论、不起草对外回复。",
+        "en": "Prepare escalation summaries for tickets that need second-line support, the product team, or an owner's decision: one-line problem, conditions, customer impact, steps tried and results, decisions needed, deadline, and related entries. Refund, compensation, security, and legal-risk tickets get a summary only, with no conclusion and no outbound draft."
+      }
+    },
+    "requirements": [
+      {
+        "original": "需升级的工单或对话记录（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "需升级的工单或对话记录（已上传）",
+          "en": "Tickets or conversation records to escalate (already uploaded)"
+        }
+      },
+      {
+        "original": "支持政策（升级规则与 SLA）、产品事实库或已知问题清单（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "支持政策（升级规则与 SLA）、产品事实库或已知问题清单（可选）",
+          "en": "Support policy (escalation rules and SLA), product fact base or known-issue list (optional)"
+        }
+      },
+      {
+        "original": "升级对象（二线 / 产品团队 / 负责人）与期望时限（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "升级对象（二线 / 产品团队 / 负责人）与期望时限（可选）",
+          "en": "Escalation target (second line / product team / owner) and expected deadline (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "升级摘要：每条工单或共性问题簇一份，含问题、发生条件、影响范围、已尝试步骤、需对方决定的事项（问句）、时限、相关条目；个人信息已遮蔽，只保留工单编号",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "升级摘要：每条工单或共性问题簇一份，含问题、发生条件、影响范围、已尝试步骤、需对方决定的事项（问句）、时限、相关条目；个人信息已遮蔽，只保留工单编号",
+        "en": "Escalation summary: one per ticket or common-issue cluster, with problem, conditions, impact, steps tried, decisions needed (as questions), deadline, related entries; personal data masked, ticket IDs only"
+      }
+    }
+  }
+}

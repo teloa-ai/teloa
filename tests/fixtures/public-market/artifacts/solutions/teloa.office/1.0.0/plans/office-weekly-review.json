@@ -1,0 +1,14 @@
+{
+  "format": "teloa.plan/v1",
+  "version": "1.0.0",
+  "title": "每周办公整理计划",
+  "workTemplate": "weekly-report-task",
+  "dataScope": "当周已上传或明确提供的工作记录与项目材料；外部云盘与邮件数据待实际连接配置。",
+  "trigger": {
+    "kind": "schedule",
+    "cadence": "weekly",
+    "weekday": 5,
+    "time": "16:00",
+    "timezone": "Asia/Shanghai"
+  }
+}

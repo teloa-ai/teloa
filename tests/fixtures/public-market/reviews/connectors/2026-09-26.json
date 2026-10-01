@@ -1,0 +1,625 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-26",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-amap": {
+      "evidence": "npm pack @amap/amap-maps-mcp-server@0.0.8（--ignore-scripts），读 build/index.js：MAPS_TOOLS 共 12 个，全部为查询；只读 AMAP_MAPS_API_KEY；无命令行参数与工具白名单；无 instructions",
+      "recipe": {
+        "transport": "stdio",
+        "package": "@amap/amap-maps-mcp-server",
+        "version": "0.0.8",
+        "integrity": "sha512-Kg5rYr0azYdN09NP63jUYssKG4Vx8qM92bVIQa8agajjmaasI7J01UK/jGg8Ptima4A8I5RY7ch0m6BaVte5PQ==",
+        "bin": "build/index.js",
+        "args": []
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "env:AMAP_MAPS_API_KEY"
+        ]
+      },
+      "toolFilter": "none",
+      "upstreamTools": {
+        "maps_regeocode": "read",
+        "maps_geo": "read",
+        "maps_ip_location": "read",
+        "maps_weather": "read",
+        "maps_bicycling": "read",
+        "maps_direction_walking": "read",
+        "maps_direction_driving": "read",
+        "maps_direction_transit_integrated": "read",
+        "maps_distance": "read",
+        "maps_text_search": "read",
+        "maps_around_search": "read",
+        "maps_search_detail": "read"
+      }
+    },
+    "teloa.mcp-atlassian": {
+      "evidence": "官方 README（atlassian/atlassian-mcp-server）：/v1/mcp 仍受支持并暴露 v2 工具；服务账号 API Key 用 Authorization: Bearer，个人 API Token 须 Basic（宿主不支持）；工具名取自官方仓库 skills/ 对 v2 工具的引用；未鉴权 initialize 回 401 OAuth 质询",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.atlassian.com/v1/mcp"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "bearer"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "getJiraIssue": "read",
+        "searchJiraIssuesUsingJql": "read",
+        "createJiraIssue": "write",
+        "listJiraProjects": "read",
+        "lookupJiraAccountId": "read",
+        "listJiraIssueComments": "read",
+        "searchConfluence": "read",
+        "getConfluenceContent": "read",
+        "getConfluenceSpace": "read",
+        "listConfluenceSpaces": "read",
+        "createConfluenceContent": "write",
+        "updateConfluenceContent": "write"
+      }
+    },
+    "teloa.mcp-context7": {
+      "evidence": "无凭据 initialize + tools/list（Context7 4.1.1）：2 个工具，readOnlyHint 均 true；instructions 636 字节",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.context7.com/mcp"
+      },
+      "auth": {
+        "kind": "none",
+        "slots": []
+      },
+      "toolFilter": "none",
+      "instructionsBytes": 636,
+      "upstreamTools": {
+        "resolve-library-id": "read",
+        "query-docs": "read"
+      }
+    },
+    "teloa.mcp-deepwiki": {
+      "evidence": "无凭据 initialize + tools/list（DeepWiki 2.14.3）：3 个工具；instructions 3129 字节",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.deepwiki.com/mcp"
+      },
+      "auth": {
+        "kind": "none",
+        "slots": []
+      },
+      "toolFilter": "none",
+      "instructionsBytes": 3129,
+      "upstreamTools": {
+        "ask_wiki_question": "read",
+        "read_wiki_contents": "read",
+        "read_wiki_structure": "read"
+      }
+    },
+    "teloa.mcp-dingtalk": {
+      "evidence": "npm pack dingtalk-mcp@1.1.21，读 dist/DingTalkMCPServer.js 与 *_mcp_server.yaml：未设 ACTIVE_PROFILES 时只加载 default_active 的通讯录、DING、机器人消息三个模块共 13 个工具；读 DINGTALK_Client_ID / DINGTALK_Client_Secret；只有模块级开关、无工具白名单，也不能以配方传常量环境变量",
+      "recipe": {
+        "transport": "stdio",
+        "package": "dingtalk-mcp",
+        "version": "1.1.21",
+        "integrity": "sha512-TLBqO4xxC0A4IfoV40+iP3/Jg1BSxvrrCg41JyERiUC2+pXLO1oVf2nXbOAZFv8eeZbTvIJecCKXaASbKPRYZw==",
+        "bin": "dist/cli.js",
+        "args": []
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "env:DINGTALK_Client_ID",
+          "env:DINGTALK_Client_Secret"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "currentDateTime": "read",
+        "searchUser": "read",
+        "getUserDetailByUserId": "read",
+        "getUserIdByMobile": "read",
+        "getUserIdByUnionId": "read",
+        "getDepartmentUsersByDepId": "read",
+        "sendDINGMessageByRobot": "write",
+        "recallDINGMessage": "write",
+        "sendMessageToGroupByRobot": "write",
+        "recallGroupMessageByRobot": "write",
+        "batchSendMessageToUsersByRobot": "write",
+        "batchRecallToUsersMessageByRobot": "write",
+        "sendMessageToGroupByCustomRobot": "write"
+      }
+    },
+    "teloa.mcp-exa": {
+      "evidence": "npm pack exa-mcp-server@3.4.1，读 dist/stdio.cjs：TOOL_REGISTRY 默认只启用 web_search_exa、web_fetch_exa（readOnlyHint true）；agent_run 默认关闭，只能经 ENABLED_TOOLS 环境变量打开；engines node>=20；无 instructions",
+      "recipe": {
+        "transport": "stdio",
+        "package": "exa-mcp-server",
+        "version": "3.4.1",
+        "integrity": "sha512-X6g4J9LXLJZ0uK52G8KE/KCaxpaD+wkEHzjkoDTYkC+afxfm5xqWgih3i0hgTfyufl6PggkLeR0L6rDAxW6ETg==",
+        "bin": "dist/stdio.cjs",
+        "args": []
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "env:EXA_API_KEY"
+        ]
+      },
+      "toolFilter": "upstream-default",
+      "upstreamTools": {
+        "web_search_exa": "read",
+        "web_fetch_exa": "read"
+      }
+    },
+    "teloa.mcp-figma": {
+      "evidence": "受保护资源元数据 https://mcp.figma.com/.well-known/oauth-protected-resource：scopes_supported [\"mcp:connect\"]；仍只允许 Figma MCP Catalog 所列客户端",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.figma.com/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "mcp:connect"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {}
+    },
+    "teloa.mcp-github": {
+      "evidence": "github/github-mcp-server v1.12.2 README 与 docs/remote-server.md：默认工具集 context/repos/issues/pull_requests/users；create_issue 已并入 issue_write；远程支持 X-MCP-Tools 请求头白名单，但目录配方不能带固定请求头，由宿主只注册声明工具；默认工具集 instructions 约 1.9KB",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://api.githubcopilot.com/mcp/"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "bearer"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "search_repositories": "read",
+        "get_file_contents": "read",
+        "list_issues": "read",
+        "issue_read": "read",
+        "issue_write": "write",
+        "create_pull_request": "write",
+        "push_files": "write",
+        "get_me": "read"
+      }
+    },
+    "teloa.mcp-gitlab": {
+      "evidence": "GitLab 文档 mcp_server_tools 列 56 个工具，目录声明的 20 个都在；受保护资源元数据 scopes_supported [\"mcp\"]",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://gitlab.com/api/v4/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "mcp"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "list_projects": "read",
+        "get_project": "read",
+        "search": "read",
+        "get_repository_file": "read",
+        "list_repository_tree": "read",
+        "list_branches": "read",
+        "list_commits": "read",
+        "get_commit": "read",
+        "list_merge_requests": "read",
+        "get_merge_request": "read",
+        "get_merge_request_diffs": "read",
+        "save_merge_request": "write",
+        "list_work_items": "read",
+        "get_work_item": "read",
+        "save_work_item": "write",
+        "save_note": "write",
+        "list_pipelines": "read",
+        "get_pipeline": "read",
+        "get_job": "read",
+        "get_user": "read"
+      }
+    },
+    "teloa.mcp-greptile": {
+      "evidence": "旧地址 /v2/mcp 回 404；官方地址 https://api.greptile.com/mcp，无凭据 initialize + tools/list 列 21 个工具（注解），instructions 2794 字节；官方设置文档（docs/mcp-v2/setup）只写 OAuth，受保护资源元数据 scopes_supported [read, write]，授权服务器 auth.greptile.com 有 DCR（/oauth2/register）与 PKCE S256；目录声明的 5 个工具均为 readOnlyHint true，按 read scope 申请",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://api.greptile.com/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "read"
+        ]
+      },
+      "toolFilter": "host-only",
+      "instructionsBytes": 2794,
+      "upstreamTools": {
+        "get_me": "read",
+        "list_repositories": "read",
+        "list_custom_context": "read",
+        "get_custom_context": "read",
+        "search_custom_context": "read",
+        "list_merge_requests": "read",
+        "list_pull_requests": "read",
+        "get_merge_request": "read",
+        "list_merge_request_comments": "read",
+        "list_code_reviews": "read",
+        "get_code_review": "read",
+        "trigger_code_review": "write",
+        "search_greptile_comments": "read",
+        "create_custom_context": "write",
+        "list_knowledge_bases": "read",
+        "list_knowledge_base_documents": "read",
+        "get_knowledge_base_document": "read",
+        "search_knowledge_base": "read",
+        "list_analytics_filter_options": "read",
+        "get_analytics_overview": "read",
+        "list_analytics_findings": "read"
+      }
+    },
+    "teloa.mcp-lark": {
+      "evidence": "npm pack @larksuiteoapi/lark-mcp@0.5.1：-t 按包内点号名过滤，注册名按 snake 规则把点号换下划线；配方启用 6 个（第三批已实测 tools/list）",
+      "recipe": {
+        "transport": "stdio",
+        "package": "@larksuiteoapi/lark-mcp",
+        "version": "0.5.1",
+        "integrity": "sha512-KgSzQIvVFUTHKjmTvAg3sSeyIZJ35CXMZQ3HygwT8/tQzDkuM4RsUSoVK4TVJKVsKCHP3QBOV9sAyBmMCBNc9g==",
+        "bin": "dist/cli.js",
+        "args": [
+          "mcp",
+          "-t",
+          "im.v1.chat.list,im.v1.message.list,im.v1.message.create,docx.v1.document.rawContent,docx.builtin.search,docx.builtin.import"
+        ]
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "env:APP_ID",
+          "env:APP_SECRET"
+        ]
+      },
+      "toolFilter": "upstream-allowlist",
+      "upstreamTools": {
+        "im_v1_chat_list": "read",
+        "im_v1_message_list": "read",
+        "im_v1_message_create": "write",
+        "docx_v1_document_rawContent": "read",
+        "docx_builtin_search": "read",
+        "docx_builtin_import": "write"
+      }
+    },
+    "teloa.mcp-linear": {
+      "evidence": "Linear 文档：https://mcp.linear.app/mcp 接受 Authorization: Bearer <API key 或 OAuth token>；官方未公布工具清单，2026 年公开配置与问题单显示创建/更新合并为 save_*（save_issue 等），list_issues、get_issue、list_projects 沿用；search_issues 不存在",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.linear.app/mcp"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "bearer"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "list_issues": "read",
+        "get_issue": "read",
+        "save_issue": "write",
+        "list_projects": "read",
+        "save_comment": "write"
+      }
+    },
+    "teloa.mcp-notion": {
+      "evidence": "npm pack @notionhq/notion-mcp-server@2.5.2，读 bin/cli.mjs 与 scripts/notion-openapi.json：工具名为 API-<operationId>，GET 标 readOnlyHint、其余标 destructiveHint（按 HTTP 方法，搜索与查询虽为 POST 实为只读）；读 NOTION_TOKEN；无工具白名单",
+      "recipe": {
+        "transport": "stdio",
+        "package": "@notionhq/notion-mcp-server",
+        "version": "2.5.2",
+        "integrity": "sha512-5nPSwHMnugSGAhSJS5vVIlMao+iTJO9HoWGpCnT8lJNrPy3rZMqs1V/CPiN4MuxF+5EBgRE/f/Tirl6Wfi75Mg==",
+        "bin": "bin/cli.mjs",
+        "args": []
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "env:NOTION_TOKEN"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "API-get-user": "read",
+        "API-get-users": "read",
+        "API-get-self": "read",
+        "API-post-search": "read",
+        "API-get-block-children": "read",
+        "API-patch-block-children": "write",
+        "API-retrieve-a-block": "read",
+        "API-update-a-block": "write",
+        "API-delete-a-block": "write",
+        "API-retrieve-a-page": "read",
+        "API-patch-page": "write",
+        "API-post-page": "write",
+        "API-retrieve-a-page-property": "read",
+        "API-retrieve-a-comment": "read",
+        "API-create-a-comment": "write",
+        "API-query-data-source": "read",
+        "API-retrieve-a-data-source": "read",
+        "API-update-a-data-source": "write",
+        "API-create-a-data-source": "write",
+        "API-list-data-source-templates": "read",
+        "API-retrieve-a-database": "read",
+        "API-move-page": "write",
+        "API-retrieve-page-markdown": "read",
+        "API-update-page-markdown": "write"
+      }
+    },
+    "teloa.mcp-pagerduty": {
+      "evidence": "PagerDuty 支持文档：托管服务器 API Key 须用 Authorization: Token token=…（宿主只发 Bearer），Bearer 只收 OAuth 令牌（含 Scoped OAuth 应用 client-credentials 令牌）；不支持 DCR；托管服务器不支持工具过滤；工具为 browse_* / manage_* 两类",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.pagerduty.com/mcp"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "bearer"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "browse_incidents": "read",
+        "manage_incidents": "write",
+        "browse_services": "read",
+        "manage_services": "write",
+        "browse_schedules": "read",
+        "manage_schedules": "write",
+        "browse_teams": "read",
+        "browse_escalation_policies": "read",
+        "browse_users": "read",
+        "browse_change_events": "read",
+        "browse_activity": "read"
+      }
+    },
+    "teloa.mcp-playwright": {
+      "evidence": "npm pack @playwright/mcp@0.0.82 与 playwright-core@1.64.0-alpha-1789764292000，读 lib/coreBundle.js filteredTools：默认启用 capability 以 core 开头且非 skillOnly 的 25 个工具；--caps 只能追加能力，无工具白名单；--help 离线可跑",
+      "recipe": {
+        "transport": "stdio",
+        "package": "@playwright/mcp",
+        "version": "0.0.82",
+        "integrity": "sha512-OCqftfb8H4dnqm/njbTBRk3seUvUPttOlJUxCtEzXGETYOlRH5Qt3bbXIjmZIuWAxD9RF+yg1ASrPeXvm0y5cA==",
+        "bin": "cli.js",
+        "args": []
+      },
+      "auth": {
+        "kind": "none",
+        "slots": []
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "browser_snapshot": "read",
+        "browser_take_screenshot": "read",
+        "browser_find": "read",
+        "browser_console_messages": "read",
+        "browser_network_requests": "read",
+        "browser_network_request": "read",
+        "browser_navigate": "write",
+        "browser_navigate_back": "write",
+        "browser_click": "write",
+        "browser_type": "write",
+        "browser_press_key": "write",
+        "browser_hover": "write",
+        "browser_drag": "write",
+        "browser_select_option": "write",
+        "browser_fill_form": "write",
+        "browser_file_upload": "write",
+        "browser_drop": "write",
+        "browser_handle_dialog": "write",
+        "browser_close": "write",
+        "browser_resize": "write",
+        "browser_emulate_media": "write",
+        "browser_evaluate": "write",
+        "browser_run_code_unsafe": "write",
+        "browser_tabs": "write",
+        "browser_wait_for": "read"
+      }
+    },
+    "teloa.mcp-posthog": {
+      "evidence": "PostHog 文档 FAQ：Personal API Key（MCP Server 预设）以 Bearer 传；?readonly=true 只留读工具，?tools= 按工具白名单；PostHog/posthog services/mcp 源码：未列入 tools 模式的客户端（含 dsh-mcp-client）走单一 exec 工具（instructions 限 2048 字符），tools 模式 instructions 多节远超 4KB；exec 上游 readOnlyHint:false，本记录记为 read 的前提是配方 URL 强制 readonly=true（离线用例单独钉住）",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.posthog.com/mcp?readonly=true&tools=insight-query,projects-get,read-data-schema"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "bearer"
+        ]
+      },
+      "toolFilter": "upstream-allowlist",
+      "upstreamTools": {
+        "exec": "read"
+      }
+    },
+    "teloa.mcp-sentry": {
+      "evidence": "getsentry/sentry-mcp 0.42.0：Bearer 只收 MCP OAuth 令牌，用户 Auth Token 须 Sentry-Bearer（宿主不支持）；mcp.sentry.dev 支持 DCR 与 PKCE S256；tools/list 直接暴露的顶层工具见 tools/surfaces.ts；无 instructions",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.sentry.dev/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": []
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "find_organizations": "read",
+        "find_projects": "read",
+        "update_issue": "write",
+        "search_events": "read",
+        "analyze_issue_with_seer": "write",
+        "search_issues": "read",
+        "get_sentry_resource": "read",
+        "search_sentry_tools": "read",
+        "execute_sentry_tool": "write"
+      }
+    },
+    "teloa.mcp-slack": {
+      "evidence": "Slack 文档：不支持 DCR；受保护资源元数据 scopes_supported 含配方的 4 个读 scope；官方未列工具标识，配方不声明工具",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.slack.com/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "search:read.public",
+          "channels:history",
+          "channels:read",
+          "users:read"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {}
+    },
+    "teloa.mcp-stripe": {
+      "evidence": "Stripe 文档 docs.stripe.com/mcp：工具为 stripe_api_search / stripe_api_details / stripe_api_read / stripe_api_write 等；API Key 以 Bearer 传，2026-10-31 起只收带 Agent 标记的密钥",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.stripe.com"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "bearer"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "stripe_api_search": "read",
+        "stripe_api_details": "read",
+        "stripe_api_read": "read",
+        "stripe_api_write": "write",
+        "get_stripe_account_info": "read",
+        "stripe_analytics": "read",
+        "search_stripe_documentation": "read"
+      }
+    },
+    "teloa.mcp-supabase-remote": {
+      "evidence": "supabase-community/supabase-mcp mcp-server-supabase-v0.13.0 源码：默认功能组不含 storage；read_only 时写工具隐藏；受保护资源元数据（?read_only=true）scopes_supported 列 8 个 :read scope；instructions 约 1.1KB",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.supabase.com/mcp?read_only=true"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "organizations:read",
+          "projects:read",
+          "database:read",
+          "analytics:read",
+          "edge_functions:read",
+          "environment:read"
+        ]
+      },
+      "toolFilter": "upstream-readonly",
+      "upstreamTools": {
+        "list_organizations": "read",
+        "get_organization": "read",
+        "list_projects": "read",
+        "get_project": "read",
+        "get_cost": "read",
+        "list_tables": "read",
+        "list_extensions": "read",
+        "list_migrations": "read",
+        "execute_sql": "write",
+        "get_logs": "read",
+        "get_advisors": "read",
+        "get_project_url": "read",
+        "get_publishable_keys": "read",
+        "generate_typescript_types": "read",
+        "search_docs": "read",
+        "list_edge_functions": "read",
+        "get_edge_function": "read",
+        "list_branches": "read"
+      }
+    },
+    "teloa.mcp-yuque": {
+      "evidence": "npm pack yuque-mcp@1.0.0，读 dist/cli.js 与 dist/tools/*.js：读 YUQUE_PERSONAL_TOKEN；19 个 yuque_* 工具；无工具白名单",
+      "recipe": {
+        "transport": "stdio",
+        "package": "yuque-mcp",
+        "version": "1.0.0",
+        "integrity": "sha512-zfa66is9NAkoLjPeKAgBGdAK7IGrrXFkOScX5Wbugx5EMBSTLV1o9YwXYgqNzZiGh6a6wa65zdRc9enO4crq7g==",
+        "bin": "dist/cli.js",
+        "args": []
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "env:YUQUE_PERSONAL_TOKEN"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "yuque_search": "read",
+        "yuque_get_user": "read",
+        "yuque_list_books": "read",
+        "yuque_get_book": "read",
+        "yuque_list_docs": "read",
+        "yuque_get_doc": "read",
+        "yuque_get_toc": "read",
+        "yuque_list_notes": "read",
+        "yuque_get_note": "read",
+        "yuque_get_resource": "read",
+        "yuque_create_book": "write",
+        "yuque_update_book": "write",
+        "yuque_create_doc": "write",
+        "yuque_update_doc": "write",
+        "yuque_create_note": "write",
+        "yuque_update_note": "write",
+        "yuque_create_resource": "write",
+        "yuque_update_resource": "write",
+        "yuque_update_toc": "write"
+      }
+    },
+    "teloa.mcp-zapier": {
+      "evidence": "Zapier 文档 how-tools-work：新建服务器默认 agentic 模式，暴露 16 个固定元工具；读动作走 execute_zapier_read_action、写动作走 execute_zapier_write_action；连接令牌在专属服务器 URL 路径中",
+      "recipe": {
+        "transport": "streamable-http-template",
+        "urlTemplate": "https://mcp.zapier.com/api/mcp/s/{secret}/mcp"
+      },
+      "auth": {
+        "kind": "secret",
+        "slots": [
+          "url-path"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "inspect_zapier_actions": "read",
+        "discover_zapier_actions": "read",
+        "enable_zapier_action": "write",
+        "execute_zapier_read_action": "read",
+        "execute_zapier_write_action": "write",
+        "list_zapier_connections": "read"
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-alert-list",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "告警清单",
+  "kind": "list",
+  "chart": "table",
+  "objectType": "alert-ticket",
+  "measures": [
+    {
+      "id": "accounts",
+      "label": "涉及账号数",
+      "aggregation": "max",
+      "field": "account-count",
+      "localized": {
+        "label": {
+          "original": "涉及账号数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "涉及账号数",
+            "en": "Affected accounts"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "limit": 100,
+  "localized": {
+    "title": {
+      "original": "告警清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "告警清单",
+        "en": "Alert list"
+      }
+    }
+  }
+}

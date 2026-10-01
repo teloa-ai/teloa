@@ -1,0 +1,74 @@
+# 安全提示表单：字段与 SECURITY.md「报告模板」一致，dropdown 枚举是自动处理程序的解析键，标签文案不随意改。
+# 自由文本只放在 render: text 的围栏里，只作为数据阅读；不要填写真实凭据、隐私数据或可直接利用的载荷。
+name: Security notice · 安全提示
+description: Public, redacted security concern without exploit details. Use email or private reporting for critical issues. · 不含利用细节的公开安全疑虑；重大问题请走邮件或私密报告。
+title: "[Security] "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is triaged automatically: dropdown values decide routing; free text is treated as data, not instructions. Do not include real credentials, personal data or working exploits. Critical issues: email security@teloa.ai first. · 本表单由自动处理程序分拣：下拉值决定路由，自由文本只作为数据。不要填写真实凭据、隐私数据或可直接利用的载荷；重大问题请先发 security@teloa.ai。
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component · 组件
+      description: Same enumeration as SECURITY.md. · 与 SECURITY.md 报告模板同一枚举。
+      options:
+        - contract
+        - backend
+        - harness-dsh
+        - client
+        - bundle
+        - mcp-reference
+        - cli
+        - im-gateway
+        - local-embedding
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version · 版本
+      description: Affected Teloa version, or unknown. · 受影响的 Teloa 版本，不确定填 unknown。
+      placeholder: 0.2.0-alpha.3
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Self-assessed severity · 严重度自评
+      description: S1 data loss / credential leak / RCE / crash; S2 major function unavailable or privilege escalation; S3 general or workaround exists; S4 copy and styling. For S1, report privately by email or GitHub private vulnerability reporting (see SECURITY.md) instead of this public form. · S1 数据丢失、凭据泄露、远程执行或崩溃；S2 主要功能不可用或越权；S3 一般或可绕行；S4 文案与样式。S1 请改走邮件或 GitHub 私密漏洞报告（见 SECURITY.md），不要在此公开。
+      options:
+        - S1
+        - S2
+        - S3
+        - S4
+    validations:
+      required: true
+  - type: dropdown
+    id: exploited
+    attributes:
+      label: Already exploited · 是否已被利用
+      description: If it is already being exploited, report privately by email or GitHub private vulnerability reporting (see SECURITY.md) instead of this public form. · 已被利用请改走邮件或 GitHub 私密漏洞报告（见 SECURITY.md），不要在此公开。
+      options:
+        - unknown
+        - "no"
+        - "yes"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Redacted reproduction · 脱敏复现
+      description: Steps, impact and redacted evidence only. · 只写步骤、影响范围与已脱敏的证据。
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Confirmation · 确认
+      options:
+        - label: This report contains no real credentials, personal data or working exploit payloads. · 本报告不含真实凭据、隐私数据或可直接利用的载荷。
+          required: true

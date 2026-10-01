@@ -1,0 +1,10 @@
+{
+  "format": "teloa.mcp-connection/v1",
+  "serverName": "yuque",
+  "tools": [
+    "yuque_search",
+    "yuque_list_books",
+    "yuque_list_docs",
+    "yuque_get_doc"
+  ]
+}

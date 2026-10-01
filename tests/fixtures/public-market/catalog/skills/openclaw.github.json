@@ -1,0 +1,95 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "openclaw.github",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "github",
+    "title": {
+      "zh-CN": "GitHub CLI 工作流",
+      "en": "GitHub CLI workflow"
+    },
+    "summary": {
+      "zh-CN": "用 gh CLI 管理 Issues、PR、CI 检查、代码审查、发布与 API 查询；需要用户已安装并登录 gh，写操作须逐项经本人确认。",
+      "en": "Manage issues, PRs, CI runs, code reviews, releases, and API queries with the gh CLI; requires the user to have gh installed and authenticated; every write operation needs the owner's explicit approval."
+    }
+  },
+  "upstream": {
+    "ecosystem": "openclaw",
+    "author": "OpenClaw",
+    "repository": {
+      "host": "github.com",
+      "owner": "openclaw",
+      "repo": "openclaw"
+    },
+    "commit": "0eecafafa554db9a3647d8dc01a568c01e81707b",
+    "path": "skills/github",
+    "license": "MIT",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "gitBlob": "b078e93446f07dc459f7e5f23a72e939acc3f224",
+        "size": 3649
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "frontmatter 只保留 name 与 description，去掉 metadata.openclaw（含 emoji、requires.bins 与 install brew 指令）等 OpenClaw 专属字段。",
+      "en": "Frontmatter keeps only name and description; OpenClaw-specific metadata.openclaw (including emoji, requires.bins, and install brew directive) removed."
+    },
+    {
+      "zh-CN": "移除正文中 OpenClaw 会话 footer 模板（\"View the OpenClaw team session\" 段落），该部分依赖 OpenClaw Runtime 注入的 sessionUrl，在 Teloa 中不适用。",
+      "en": "Removed the OpenClaw session footer template from the body (the 'View the OpenClaw team session' paragraph); it depends on OpenClaw Runtime's sessionUrl injection, which is not applicable in Teloa."
+    },
+    {
+      "zh-CN": "仓库根 LICENSE（MIT）与 THIRD_PARTY_NOTICES.md 随资源文件收录。",
+      "en": "The repository root LICENSE (MIT) and THIRD_PARTY_NOTICES.md are included with the resource files."
+    }
+  ],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要用户自行安装 gh CLI 并完成 gh auth login；Teloa 不负责安装 gh 或代为登录。",
+        "en": "Requires the user to install gh CLI and run gh auth login; Teloa does not install gh or log in on the user's behalf."
+      },
+      {
+        "zh-CN": "任何写操作（创建 Issue/PR、推送代码、合并、评论等）必须经仓库所有人逐项明确确认后方可执行。",
+        "en": "Any write operation (creating issues/PRs, pushing code, merging, commenting, etc.) must be explicitly approved by the repository owner before execution."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "gh"
+    ],
+    "network": false,
+    "runtimes": [
+      "gh"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

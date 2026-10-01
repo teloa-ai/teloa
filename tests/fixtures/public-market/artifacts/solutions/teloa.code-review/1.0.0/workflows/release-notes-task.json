@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "release-notes-task",
+  "title": "整理发布说明草案",
+  "version": "1.0.0",
+  "domain": "code-review",
+  "description": "从两个版本之间的提交记录、已合并 PR 列表或变更日志整理发布说明草案，按不兼容变更、安全、新增、变更、修复、弃用、移除归类，每条附来源编号，不写入说明的条目单列供核对。不打标签、不发版。",
+  "requirements": [
+    "版本区间（上一版本与本次版本标识，或提交范围）",
+    "该区间的提交记录、已合并 PR 列表或变更日志片段（已上传）",
+    "发布说明模板或历史发布说明、关联 Issue、读者类型、迁移文档（可选）"
+  ],
+  "output": "发布说明草案：首部注明版本区间、来源与读者；不兼容变更（附升级步骤）、安全、新增、变更、修复、弃用、移除、已知问题；待确认分类表、不写入说明的条目表、需负责人决策事项；发布前需负责人确认",
+  "skills": [
+    {
+      "id": "release-notes-draft",
+      "title": "发布说明草案",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "整理发布说明草案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "整理发布说明草案",
+        "en": "Draft release notes"
+      }
+    },
+    "description": {
+      "original": "从两个版本之间的提交记录、已合并 PR 列表或变更日志整理发布说明草案，按不兼容变更、安全、新增、变更、修复、弃用、移除归类，每条附来源编号，不写入说明的条目单列供核对。不打标签、不发版。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从两个版本之间的提交记录、已合并 PR 列表或变更日志整理发布说明草案，按不兼容变更、安全、新增、变更、修复、弃用、移除归类，每条附来源编号，不写入说明的条目单列供核对。不打标签、不发版。",
+        "en": "Turn the commits, merged PR list or changelog between two versions into a release notes draft grouped into breaking changes, security, added, changed, fixed, deprecated and removed, each with its source reference; excluded items are listed separately for checking. Does not tag or publish a release."
+      }
+    },
+    "requirements": [
+      {
+        "original": "版本区间（上一版本与本次版本标识，或提交范围）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "版本区间（上一版本与本次版本标识，或提交范围）",
+          "en": "Version range (previous and current version identifiers, or a commit range)"
+        }
+      },
+      {
+        "original": "该区间的提交记录、已合并 PR 列表或变更日志片段（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "该区间的提交记录、已合并 PR 列表或变更日志片段（已上传）",
+          "en": "Commit log, merged PR list or changelog excerpt for that range (already uploaded)"
+        }
+      },
+      {
+        "original": "发布说明模板或历史发布说明、关联 Issue、读者类型、迁移文档（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "发布说明模板或历史发布说明、关联 Issue、读者类型、迁移文档（可选）",
+          "en": "Release notes template or past notes, related issues, audience type, migration docs (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "发布说明草案：首部注明版本区间、来源与读者；不兼容变更（附升级步骤）、安全、新增、变更、修复、弃用、移除、已知问题；待确认分类表、不写入说明的条目表、需负责人决策事项；发布前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "发布说明草案：首部注明版本区间、来源与读者；不兼容变更（附升级步骤）、安全、新增、变更、修复、弃用、移除、已知问题；待确认分类表、不写入说明的条目表、需负责人决策事项；发布前需负责人确认",
+        "en": "Release notes draft: header with version range, sources and audience; breaking changes (with upgrade steps), security, added, changed, fixed, deprecated, removed, known issues; unclassified items, excluded items, decisions needed; requires the owner's confirmation before publishing"
+      }
+    }
+  }
+}

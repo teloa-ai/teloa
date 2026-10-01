@@ -1,0 +1,164 @@
+{
+  "format": "teloa.business-object-type/v1",
+  "id": "incident-ticket",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "事件工单",
+  "unit": "件",
+  "lead": "告警里说不清的，立成一件调查，交给同事查到有结论为止。",
+  "sourceId": "security-alert-http",
+  "fields": [
+    {
+      "name": "state",
+      "label": "当前状态",
+      "type": "enum",
+      "required": true,
+      "from": "当前状态",
+      "values": [
+        "进来的事",
+        "正在处理",
+        "需要你",
+        "已完成"
+      ],
+      "localized": {
+        "label": {
+          "original": "当前状态",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "当前状态",
+            "en": "Status"
+          }
+        },
+        "values": [
+          {
+            "original": "进来的事",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "进来的事",
+              "en": "New"
+            }
+          },
+          {
+            "original": "正在处理",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "正在处理",
+              "en": "In progress"
+            }
+          },
+          {
+            "original": "需要你",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "需要你",
+              "en": "Needs you"
+            }
+          },
+          {
+            "original": "已完成",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "已完成",
+              "en": "Completed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "owner",
+      "label": "负责同事",
+      "type": "text",
+      "required": true,
+      "from": "负责同事",
+      "localized": {
+        "label": {
+          "original": "负责同事",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "负责同事",
+            "en": "Assignee"
+          }
+        }
+      }
+    },
+    {
+      "name": "opened-at",
+      "label": "立案时间",
+      "type": "datetime",
+      "required": true,
+      "from": "立案时间",
+      "localized": {
+        "label": {
+          "original": "立案时间",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "立案时间",
+            "en": "Opened at"
+          }
+        }
+      }
+    },
+    {
+      "name": "object-count",
+      "label": "用到的对象数",
+      "type": "number",
+      "required": false,
+      "from": "用到的对象数",
+      "localized": {
+        "label": {
+          "original": "用到的对象数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "用到的对象数",
+            "en": "Related objects"
+          }
+        }
+      }
+    },
+    {
+      "name": "asset",
+      "label": "涉及资产",
+      "type": "reference",
+      "required": false,
+      "from": "涉及资产",
+      "referenceType": "asset",
+      "localized": {
+        "label": {
+          "original": "涉及资产",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "涉及资产",
+            "en": "Affected asset"
+          }
+        }
+      }
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "事件工单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "事件工单",
+        "en": "Incident tickets"
+      }
+    },
+    "unit": {
+      "original": "件",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "件",
+        "en": "cases"
+      }
+    },
+    "lead": {
+      "original": "告警里说不清的，立成一件调查，交给同事查到有结论为止。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "告警里说不清的，立成一件调查，交给同事查到有结论为止。",
+        "en": "Alerts that need deeper investigation become incident tickets and stay assigned until a conclusion is reached."
+      }
+    }
+  }
+}

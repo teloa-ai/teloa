@@ -1,0 +1,20 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "research-review",
+  "title": "资料研究与核对",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "整理提供的资料，逐项核对来源、日期与结论；标明证据不足和仍需确认的事项。",
+  "requirements": [
+    "资料位置或原文",
+    "本次核对范围"
+  ],
+  "output": "带来源的研究简报与待确认事项清单",
+  "skills": [
+    {
+      "id": "research-brief",
+      "title": "研究简报",
+      "version": "1.0.0"
+    }
+  ]
+}

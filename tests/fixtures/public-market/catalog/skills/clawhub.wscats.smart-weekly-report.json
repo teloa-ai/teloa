@@ -1,0 +1,83 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.wscats.smart-weekly-report",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.1.3",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "smart-weekly-report",
+    "title": {
+      "zh-CN": "周报生成器",
+      "en": "Report Generator"
+    },
+    "summary": {
+      "zh-CN": "根据职业角色和工作内容自动生成结构化周报，包含问题分析和计划。用于工作总结和汇报。",
+      "en": "根据您的职业角色和本周工作内容，自动提炼关键信息，生成结构化、专业且具有洞察力的周报，包括问题分析与下周计划。"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "wscats",
+    "slug": "smart-weekly-report",
+    "version": "1.1.3",
+    "files": [
+      {
+        "path": "CHANGELOG.md",
+        "sha256": "9d31427f317d11ef8932053318423394f89a7836e3e4d7723bce05db813e8556",
+        "size": 546
+      },
+      {
+        "path": "README.md",
+        "sha256": "5f0365325ee90e99b8742d5d126a6ca33f55aa60325658a1006504a15fbb0732",
+        "size": 7353
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "7e89b894e7f8eb031f1d49ede043dfc1d457c03ccea5aeee8352b6a482f2e90a",
+        "size": 12672
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "e23d8d1a0dec40b5e5e08a7e33bb9de289dbc7915b39c5cca173d88a2363f412",
+        "size": 1836
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 22829,
+    "installsLabel": "2.3 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

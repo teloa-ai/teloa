@@ -1,0 +1,9 @@
+.importAs{display:grid;gap:8px;min-width:0;margin:0;padding:0;border:0}
+.importAs legend{margin:0 0 8px;padding:0;color:var(--teloa-text);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
+.importAs label.choice{display:flex;flex-direction:row;align-items:center;gap:10px;box-sizing:border-box;width:100%;min-width:0;min-height:40px;padding:9px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);cursor:pointer;line-height:1.5}
+.importAs .choice>input[type=radio]{appearance:auto;flex:0 0 16px;width:16px;height:16px;margin:0;padding:0;border:0;border-radius:50%;accent-color:var(--teloa-focus)}
+.choice>span{min-width:0;overflow-wrap:anywhere}
+.importAs .selected{border-color:var(--teloa-focus);background:var(--teloa-subtle)}
+.importAs:not(:disabled) .choice:hover{background:var(--teloa-hover)}
+.choice:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.importAs:disabled .choice{opacity:.55;cursor:not-allowed}

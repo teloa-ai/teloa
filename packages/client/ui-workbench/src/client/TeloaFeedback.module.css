@@ -1,0 +1,20 @@
+.dialog{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--teloa-border);border-radius:14px;padding:24px;background:var(--teloa-surface);color:var(--teloa-text);font:var(--teloa-font-body)/1.65 var(--teloa-design-font)}
+.dialog::backdrop{background:var(--teloa-backdrop)}
+.dialog form{display:flex;flex-direction:column;gap:10px}
+.dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.dialog h2{font-size:var(--teloa-font-dialog);line-height:1.4;margin:0}
+.dialog label{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.dialog textarea,.dialog input,.dialog select{box-sizing:border-box;width:100%;min-width:0;border:1px solid var(--teloa-border);border-radius:8px;padding:9px 11px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit}
+.dialog textarea{min-height:132px;max-height:260px;resize:vertical}
+.dialog button{min-height:36px;border:1px solid var(--teloa-border);border-radius:8px;padding:7px 13px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;cursor:pointer}
+.dialog .close{display:grid;place-items:center;min-height:32px;border:0;padding:6px;flex:none}
+.dialog button:disabled{opacity:.55;cursor:default}
+.dialog .primary{background:var(--teloa-accent);border-color:var(--teloa-accent);color:var(--teloa-on-accent,#fff)}
+.dialog button:focus-visible,.dialog input:focus-visible,.dialog textarea:focus-visible,.dialog select:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:10px}
+.description,.receipt p{font-size:var(--teloa-font-caption);color:var(--teloa-muted);margin:0;overflow-wrap:anywhere}
+.receipt{display:flex;flex-direction:column;gap:14px}
+.error{margin:0;color:var(--teloa-warn);font-size:var(--teloa-font-caption)}
+.failure a{display:inline-block;margin-top:6px;color:var(--teloa-text);font-size:var(--teloa-font-caption);text-underline-offset:3px}
+@media(max-width:480px){.dialog{padding:18px}.dialog button{min-height:40px}}
+.resource{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-text);background:var(--teloa-hover);border-radius:8px;padding:6px 10px;overflow-wrap:anywhere}

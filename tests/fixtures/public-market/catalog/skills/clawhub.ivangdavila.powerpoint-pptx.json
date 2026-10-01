@@ -1,0 +1,73 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.powerpoint-pptx",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "powerpoint-pptx",
+    "title": {
+      "zh-CN": "PowerPoint 演示",
+      "en": "Powerpoint / PPTX"
+    },
+    "summary": {
+      "zh-CN": "创建、检查和编辑 PowerPoint 演示文稿，支持布局、过渡和主题。用于演示文稿制作和编辑。",
+      "en": "Create, inspect, and edit Microsoft PowerPoint presentations and PPTX decks with reliable layouts, templates, placeholders, notes, charts, and visual QA. Use..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "powerpoint-pptx",
+    "version": "1.0.1",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "d286c8cd144b9957d9d27046e75797d9dfd577e5c1d01ffda6373573d5a5a956",
+        "size": 7058
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "9a3779b2704efb2999f7464707dcc33b7d6d747b555d1f5285c49c0a12119bbd",
+        "size": 2058
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 56045,
+    "installsLabel": "5.6 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

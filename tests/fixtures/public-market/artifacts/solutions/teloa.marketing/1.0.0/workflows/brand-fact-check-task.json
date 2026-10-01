@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "brand-fact-check-task",
+  "title": "品牌事实核对任务",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "description": "逐条核查稿件中的产品数据、禁用表述与素材权利，输出已核实/待确认/存疑三类清单。",
+  "requirements": [
+    "待核查稿件（已上传）",
+    "产品事实库（官方产品参数，客户提供，已上传）"
+  ],
+  "output": "品牌事实核查清单：产品事实核查表、禁用表述扫描结果、素材权利核查，附核查摘要",
+  "skills": [
+    {
+      "id": "brand-fact-check",
+      "title": "品牌事实核对",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "品牌事实核对任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "品牌事实核对任务",
+        "en": "Brand fact check task"
+      }
+    },
+    "description": {
+      "original": "逐条核查稿件中的产品数据、禁用表述与素材权利，输出已核实/待确认/存疑三类清单。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "逐条核查稿件中的产品数据、禁用表述与素材权利，输出已核实/待确认/存疑三类清单。",
+        "en": "Check each product claim, prohibited phrasing, and asset right in the draft; output a three-category list: verified, to confirm, and flagged."
+      }
+    },
+    "requirements": [
+      {
+        "original": "待核查稿件（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待核查稿件（已上传）",
+          "en": "Draft to check (already uploaded)"
+        }
+      },
+      {
+        "original": "产品事实库（官方产品参数，客户提供，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "产品事实库（官方产品参数，客户提供，已上传）",
+          "en": "Product fact database (official product specs, provided by you, already uploaded)"
+        }
+      }
+    ],
+    "output": {
+      "original": "品牌事实核查清单：产品事实核查表、禁用表述扫描结果、素材权利核查，附核查摘要",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "品牌事实核查清单：产品事实核查表、禁用表述扫描结果、素材权利核查，附核查摘要",
+        "en": "Brand fact check list: product fact table, prohibited phrasing scan, asset rights check, with summary"
+      }
+    }
+  }
+}

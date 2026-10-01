@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "metric-definition-check-task",
+  "title": "指标口径核对与复算",
+  "version": "1.0.0",
+  "domain": "growth",
+  "description": "依据指标词典对仪表盘导出、周报或第二来源中的产品指标逐项核对口径并用原始计数复算，输出复算差异（报告值 − 复算值）、跨来源口径冲突、单位与时间窗口问题、缺失口径与无法核对事项的清单。不判定哪种口径正确。",
+  "requirements": [
+    "指标词典或口径说明（已上传）",
+    "待核对的指标数值来源：仪表盘导出、周报或看板截图（已上传）",
+    "原始计数表、第二个数值来源、上期核对结论（可选）"
+  ],
+  "output": "指标口径核对清单：首部注明周期、词典版本、来源与精度；指标口径表；复算差异清单（含算式）；口径冲突清单；单位与时间窗口问题；缺失口径；无法核对事项；核对结论三档与需负责人确认事项",
+  "skills": [
+    {
+      "id": "growth-metric-definition-check",
+      "title": "指标口径核对（定义、复算、跨源差异）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "指标口径核对与复算",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "指标口径核对与复算",
+        "en": "Metric definition check and recomputation"
+      }
+    },
+    "description": {
+      "original": "依据指标词典对仪表盘导出、周报或第二来源中的产品指标逐项核对口径并用原始计数复算，输出复算差异（报告值 − 复算值）、跨来源口径冲突、单位与时间窗口问题、缺失口径与无法核对事项的清单。不判定哪种口径正确。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "依据指标词典对仪表盘导出、周报或第二来源中的产品指标逐项核对口径并用原始计数复算，输出复算差异（报告值 − 复算值）、跨来源口径冲突、单位与时间窗口问题、缺失口径与无法核对事项的清单。不判定哪种口径正确。",
+        "en": "Check each product metric in dashboard exports, weekly reports, or a second source against the metric dictionary and recompute from raw counts; output recomputation variances (reported minus recomputed), cross-source definition conflicts, unit and time-window issues, missing definitions, and items that cannot be checked. Does not rule on which definition is correct."
+      }
+    },
+    "requirements": [
+      {
+        "original": "指标词典或口径说明（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "指标词典或口径说明（已上传）",
+          "en": "Metric dictionary or definition notes (already uploaded)"
+        }
+      },
+      {
+        "original": "待核对的指标数值来源：仪表盘导出、周报或看板截图（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待核对的指标数值来源：仪表盘导出、周报或看板截图（已上传）",
+          "en": "Metric values to check: dashboard export, weekly report, or board screenshot (already uploaded)"
+        }
+      },
+      {
+        "original": "原始计数表、第二个数值来源、上期核对结论（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "原始计数表、第二个数值来源、上期核对结论（可选）",
+          "en": "Raw count table, a second value source, previous check results (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "指标口径核对清单：首部注明周期、词典版本、来源与精度；指标口径表；复算差异清单（含算式）；口径冲突清单；单位与时间窗口问题；缺失口径；无法核对事项；核对结论三档与需负责人确认事项",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "指标口径核对清单：首部注明周期、词典版本、来源与精度；指标口径表；复算差异清单（含算式）；口径冲突清单；单位与时间窗口问题；缺失口径；无法核对事项；核对结论三档与需负责人确认事项",
+        "en": "Metric definition check list: header with period, dictionary version, sources, and precision; definition table; recomputation variance list with formulas; definition conflict list; unit and time-window issues; missing definitions; items that cannot be checked; three-level conclusion and items needing the owner's confirmation"
+      }
+    }
+  }
+}

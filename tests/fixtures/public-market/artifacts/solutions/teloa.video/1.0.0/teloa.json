@@ -1,0 +1,317 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "video-editing",
+  "title": "视频剪辑协作",
+  "version": "1.0.0",
+  "domain": "media",
+  "scope": "video",
+  "description": "面向视频剪辑流程的行业方案：素材盘点、带时间码转写整理、粗剪方案与剪辑单（EDL 风格）、字幕校对与多规格交付检查清单。无媒体执行环境时，交付物为计划文档与剪辑单，而非渲染成片。",
+  "resources": [
+    {
+      "id": "video-editor",
+      "kind": "role",
+      "title": "视频剪辑协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/video-editor.json"
+      },
+      "localized": {
+        "title": {
+          "original": "视频剪辑协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "视频剪辑协作员",
+            "en": "Video editing collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "video-methods",
+      "kind": "knowledge",
+      "title": "视频剪辑方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/video-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "视频剪辑方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "视频剪辑方法与来源索引",
+            "en": "Video editing methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "footage-inventory",
+      "kind": "skill",
+      "title": "素材盘点",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/footage-inventory/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "素材盘点",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "素材盘点",
+            "en": "Footage inventory"
+          }
+        }
+      }
+    },
+    {
+      "id": "transcription-with-timecode",
+      "kind": "skill",
+      "title": "带时间码转写整理",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/transcription-with-timecode/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "带时间码转写整理",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "带时间码转写整理",
+            "en": "Timecoded transcription organization"
+          }
+        }
+      }
+    },
+    {
+      "id": "rough-cut-plan",
+      "kind": "skill",
+      "title": "粗剪方案与剪辑单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/rough-cut-plan/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "粗剪方案与剪辑单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "粗剪方案与剪辑单",
+            "en": "Rough cut plan and edit decision list"
+          }
+        }
+      }
+    },
+    {
+      "id": "subtitle-proofreading",
+      "kind": "skill",
+      "title": "字幕校对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/subtitle-proofreading/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "字幕校对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "字幕校对",
+            "en": "Subtitle proofreading (timecodes, line breaks, typos, brand terms)"
+          }
+        }
+      }
+    },
+    {
+      "id": "delivery-checklist",
+      "kind": "skill",
+      "title": "多规格交付与成片检查清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/delivery-checklist/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "多规格交付与成片检查清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "多规格交付与成片检查清单",
+            "en": "Multi-format delivery and final cut checklist"
+          }
+        }
+      }
+    },
+    {
+      "id": "footage-inventory-task",
+      "kind": "work-template",
+      "title": "素材盘点任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/footage-inventory-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "素材盘点任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "素材盘点任务",
+            "en": "Footage inventory task"
+          }
+        }
+      }
+    },
+    {
+      "id": "rough-cut-plan-task",
+      "kind": "work-template",
+      "title": "粗剪方案与剪辑单任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/rough-cut-plan-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "粗剪方案与剪辑单任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "粗剪方案与剪辑单任务",
+            "en": "Rough cut plan and EDL task"
+          }
+        }
+      }
+    },
+    {
+      "id": "subtitle-proofreading-task",
+      "kind": "work-template",
+      "title": "字幕校对任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/subtitle-proofreading-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "字幕校对任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "字幕校对任务",
+            "en": "Subtitle proofreading task"
+          }
+        }
+      }
+    },
+    {
+      "id": "delivery-checklist-task",
+      "kind": "work-template",
+      "title": "多规格交付检查任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/delivery-checklist-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "多规格交付检查任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "多规格交付检查任务",
+            "en": "Multi-format delivery check task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "video-editor",
+      "to": "video-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "video-editor",
+      "to": "footage-inventory"
+    },
+    {
+      "kind": "role-skill",
+      "from": "video-editor",
+      "to": "transcription-with-timecode"
+    },
+    {
+      "kind": "role-skill",
+      "from": "video-editor",
+      "to": "rough-cut-plan"
+    },
+    {
+      "kind": "role-skill",
+      "from": "video-editor",
+      "to": "subtitle-proofreading"
+    },
+    {
+      "kind": "role-skill",
+      "from": "video-editor",
+      "to": "delivery-checklist"
+    },
+    {
+      "kind": "role-work",
+      "from": "video-editor",
+      "to": "footage-inventory-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "video-editor",
+      "to": "rough-cut-plan-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "video-editor",
+      "to": "subtitle-proofreading-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "video-editor",
+      "to": "delivery-checklist-task"
+    }
+  ],
+  "entrypoints": [
+    "rough-cut-plan-task",
+    "subtitle-proofreading-task",
+    "footage-inventory-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "视频剪辑协作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "视频剪辑协作",
+        "en": "Video editing collaboration"
+      }
+    },
+    "description": {
+      "original": "面向视频剪辑流程的行业方案：素材盘点、带时间码转写整理、粗剪方案与剪辑单（EDL 风格）、字幕校对与多规格交付检查清单。无媒体执行环境时，交付物为计划文档与剪辑单，而非渲染成片。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向视频剪辑流程的行业方案：素材盘点、带时间码转写整理、粗剪方案与剪辑单（EDL 风格）、字幕校对与多规格交付检查清单。无媒体执行环境时，交付物为计划文档与剪辑单，而非渲染成片。",
+        "en": "A solution for video editing workflows: footage inventory, timecoded transcription, rough cut plan and EDL, subtitle proofreading, and multi-format delivery checklist. Without a media execution environment, the deliverable is the plan and EDL, not a rendered video."
+      }
+    }
+  }
+}

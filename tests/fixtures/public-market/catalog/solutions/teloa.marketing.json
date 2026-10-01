@@ -1,0 +1,96 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.marketing",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "marketing/new-media"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "content-marketing",
+    "title": {
+      "zh-CN": "新媒体营销",
+      "en": "Content marketing"
+    },
+    "summary": {
+      "zh-CN": "从选题到发布包：选题研究、多渠道改写、品牌事实核对、发布包整理与复盘，产出都是待你审阅的草案。",
+      "en": "From topics to publish packs: topic research, multi-channel adaptation, brand fact checks, publish packs and reviews, all as drafts for your review."
+    },
+    "scope": "marketing",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "基于品牌材料输出选题方向与受众画像草案",
+          "en": "Draft topic directions and audience profiles from your brand materials"
+        },
+        {
+          "zh-CN": "改写为公众号、小红书、微博、抖音脚本、LinkedIn、X 等版本",
+          "en": "Adapt copy for WeChat, Xiaohongshu, Weibo, Douyin scripts, LinkedIn and X"
+        },
+        {
+          "zh-CN": "逐条核对产品数据、禁用表述与素材权利",
+          "en": "Check product claims, banned phrases and asset rights line by line"
+        },
+        {
+          "zh-CN": "整理发布包；按你提供的数据写复盘，不编数字",
+          "en": "Assemble publish packs; review results from data you provide, never invented numbers"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "品牌手册、产品事实库、禁用表述与素材权利清单",
+          "en": "Brand guide, product facts, banned phrases and asset rights list"
+        },
+        {
+          "zh-CN": "目标渠道、账号与发布目标",
+          "en": "Target channels, accounts and goals"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你提供的材料，不登录任何平台账号",
+          "en": "Reads only your materials and never signs in to platform accounts"
+        },
+        {
+          "zh-CN": "需你确认才会做：发布内容、投放广告、以账号身份互动",
+          "en": "Only with your confirmation: publishing, buying ads or interacting as your account"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "平台格式约束为常见做法，发布前以平台现行规则为准。",
+        "en": "Channel formats follow common practice; check current platform rules before publishing."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict'
+import {test,before,after} from 'node:test'
+import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
+import {fileURLToPath} from 'node:url'
+import {join} from 'node:path'
+import {build} from 'vite'
+// @ts-expect-error 既有测试浏览器夹具为无声明的 MJS 模块。
+import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
+
+// 实际组件与 CSS，API 为隔离夹具；禁止联网和有界面浏览器，不声称真实宿主验收。
+const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url))
+const {chromium}=loadPlaywright()
+let browser:any,script:string,styles:string,temp:string
+const entry=`
+import React from 'react';import {createRoot} from 'react-dom/client';
+import {readBusinessConfigurationPageProjectionVersioned} from '@teloa/contract';
+import {BusinessConfigurationPage} from '${client}BusinessConfigurationPage.tsx';
+import {BusinessRecordFlow} from '${client}business-record-flow.ts';
+import {createBusinessRecordApi} from '${client}business-record-api.ts';
+import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+const locale=document.documentElement.lang,en=locale==='en',snapshot={locale,dshLocale:en?'en':'zh',revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
+const stamp='2026-09-30T00:00:00.000Z',hash='a'.repeat(64),raw='11111111-1111-4111-8111-111111111111';
+const make=(id,title,type='customer')=>({scope:'sales',type,id,version:1,snapshotHash:hash,title,summary:'',source:'本地记录',observedAt:stamp,receivedAt:stamp,quality:'complete',fields:[]});
+let customer=make(raw,en?'Customer Alpha':'客户甲'),second=make('customer-two',en?'Customer Beta':'客户乙'),rows=[{...make('order-one',en?'Order One':'订单一','order'),fields:[{label:'客户关联',value:raw}]}],stored=null,receipts=new Map(),sequence=0;
+const state=window.relationsFixture={calls:[],go:[],mode:'preview',readMode:'ok',writeMode:'ok',pageMode:'ok',slow:false,pending:[]};
+let objectType={format:'teloa.business-object-type/v1',id:'order',version:'1.0.0',domain:'sales',title:en?'Order':'订单',unit:en?'records':'条',lead:en?'Order follow-up':'跟进订单',sourceId:'records',fields:[{name:'customer',label:en?'Customer':'客户',from:'客户关联',type:'reference',required:true,referenceType:'customer'}]};
+const definition={id:'orders',title:en?'Orders':'订单记录',kind:'records',objectType:'order',fields:['customer'],allowCreate:true,allowEdit:true,allowArchive:true};
+const api=createBusinessRecordApi(async(endpoint,input)=>{
+ state.calls.push([endpoint,input]);
+ if(endpoint.endsWith('/list')){if(input.type==='order')return {schema:'teloa.business-data-page/v1',sourceId:'records',capturedAt:stamp,items:rows};if(state.slow)return await new Promise(resolve=>state.pending.push(()=>resolve({schema:'teloa.business-data-page/v1',sourceId:'records',capturedAt:stamp,items:[make('stale','STALE TITLE')]})));if(input.cursor&&state.pageMode==='failed')throw Error('offline');return {schema:'teloa.business-data-page/v1',sourceId:'records',capturedAt:stamp,items:input.cursor?[second]:[customer],...(input.cursor?state.pageMode==='repeat'?{nextCursor:'page-two'}:{}:{nextCursor:'page-two'})}}
+ if(endpoint.endsWith('/get')){if(input.type==='order')return rows.find(row=>row.id===input.id);if(state.slow)return await new Promise(resolve=>state.pending.push(()=>resolve(make(input.id,'STALE TITLE',input.type))));if(state.readMode==='forbidden')throw Object.assign(Error('secret raw '+raw),{code:'teloa/forbidden'});if(state.readMode==='failed')throw Error('secret raw '+raw);if(state.readMode==='missing')throw Object.assign(Error('secret raw '+raw),{code:'teloa/not-found'});if(state.readMode==='wrong')return {...customer,scope:'SOC'};if(state.readMode==='malformed')return {...customer,title:''};return {...(input.id===second.id?second:customer),...(state.readMode==='archived'?{deletedAt:stamp}:{})}}
+ if(endpoint.endsWith('/receipt'))return receipts.get(input.requestId)??null;
+ if(endpoint.endsWith('/create')||endpoint.endsWith('/edit')){if(state.writeMode==='reject')throw Object.assign(Error('forbidden'),{code:'teloa/forbidden'});if(state.writeMode==='before')throw Error('offline');const result={...make(input.id??'order-two',input.title,'order'),summary:input.summary,version:input.expectedVersion?input.expectedVersion+1:1,fields:input.fields.map(f=>({label:'客户关联',value:f.value}))};receipts.set(input.requestId,result);rows=[result];if(state.writeMode==='lost')throw Error('lost');return result}
+ throw Error('unexpected endpoint');
+});
+const journal=()=>({read:()=>stored,write:raw=>{stored=raw},clear:()=>{stored=null}});let flow=new BusinessRecordFlow(api,()=> '22222222-2222-4222-8222-'+String(++sequence).padStart(12,'0'),journal);
+const trap=new Proxy(flow,{get(){state.calls.push(['preview-access']);throw Error('preview access')}}),app=createRoot(document.getElementById('root'));
+state.render=(mode='saved')=>{state.mode=mode;const projection=readBusinessConfigurationPageProjectionVersioned({mode,scope:'sales',configurationHash:hash,page:{kind:'records',definition,objectType,emptyState:'no-records'},...(mode==='preview'?{draftId:raw,revision:1}:{configurationVersion:1})});app.render(<I18nProvider runtime={runtime}><BusinessConfigurationPage projection={projection} recordFlow={mode==='preview'?trap:flow} capabilities={{create:true,edit:true,archive:true}} colorScheme="light" go={target=>state.go.push(target)}/></I18nProvider>)};
+state.title=title=>{customer={...customer,title};state.render()};state.restore=()=>{flow=new BusinessRecordFlow(api,()=> '33333333-3333-4333-8333-333333333333',journal);state.render()};state.switchType=type=>{objectType={...objectType,fields:objectType.fields.map(field=>({...field,referenceType:type}))};state.render()};state.flush=()=>{state.slow=false;state.pending.splice(0).forEach(resolve=>resolve())};state.form=()=>flow.forTarget('sales','order').getSnapshot();state.raw=raw;state.render('preview');
+`
+before(async()=>{
+ await mkdir(join(client,'../../.runtime'),{recursive:true});temp=await mkdtemp(join(client,'../../.runtime/relation-record-ui-'));await writeFile(join(temp,'fixture.tsx'),entry)
+ const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'RelationFixture',formats:['iife']}}})
+ const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
+ script=bundle.output.find(item=>item.type==='chunk')!.code;styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
+ browser=await chromium.launch(launchOptions())
+})
+
+after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,force:true})})
+for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'+width+' 单选关联使用授权标题、分页、稳定ID和冻结草稿',async t=>{
+ const page=await browser.newPage({viewport:{width,height:1000}});page.setDefaultTimeout(5000);const errors:string[]=[],requests:string[]=[]
+ page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()});t.after(async()=>{await page.close();assert.deepEqual(errors,[]);assert.deepEqual(requests,[])})
+ await page.setContent('<!doctype html><html lang="'+locale+'"><body><div id="root"></div></body></html>');await page.addStyleTag({content:':root{--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-weight-heading:600;--teloa-weight-medium:500;--teloa-leading-heading:1.4;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#9e4226;--teloa-on-accent:#fff}body{font-family:system-ui;margin:16px}'+styles});await page.addScriptTag({content:script});await page.getByRole('heading',{level:2}).waitFor();assert.deepEqual(await page.evaluate(()=>(window as any).relationsFixture.calls),[])
+ await page.evaluate(()=>(window as any).relationsFixture.render());const en=locale==='en',alpha=en?'Customer Alpha':'客户甲',beta=en?'Customer Beta':'客户乙',customer=en?'Customer':'客户',order=en?'Order One':'订单一'
+ await page.getByText(alpha,{exact:true}).waitFor();assert.equal((await page.locator('body').innerText()).includes('11111111-1111-4111-8111-111111111111'),false);assert.equal(await page.locator('button button').count(),0)
+ await page.getByRole('button',{name:new RegExp(order)}).click();await page.getByRole('button',{name:alpha,exact:true}).click();await page.waitForFunction(()=>(window as any).relationsFixture.go.length===1);const go=await page.evaluate(()=>(window as any).relationsFixture.go);assert.equal(go[0].recordReference.id,'11111111-1111-4111-8111-111111111111');assert.equal(go[0].recordReference.type,'customer');assert.equal(go[0].recordReference.snapshotHash,'a'.repeat(64));assert.equal(go[0].recordReference.version,1)
+ await page.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).click();const select=page.getByRole('combobox',{name:customer,exact:true});await select.waitFor();await page.getByRole('button',{name:en?'Load more':'加载更多',exact:true}).click();await select.selectOption({label:beta});await page.waitForFunction(()=>(window as any).relationsFixture.form().form.values.customer==='customer-two');
+ await page.evaluate(()=>(window as any).relationsFixture.writeMode='reject');await page.getByRole('button',{name:en?'Save record':'保存记录',exact:true}).click();await page.getByText(en?'Saving failed. Your content is preserved. Check it and retry.':'保存未完成，内容已保留。请检查后重试。',{exact:true}).waitFor();assert.equal(await select.inputValue(),'customer-two')
+ await page.evaluate(()=>(window as any).relationsFixture.writeMode='before');await page.getByRole('button',{name:en?'Save record':'保存记录',exact:true}).click();await page.getByRole('button',{name:en?'Check save result':'核对保存结果',exact:true}).waitFor();assert.equal(await select.isDisabled(),true);await page.evaluate(()=>(window as any).relationsFixture.restore());await page.getByRole('button',{name:en?'Check save result':'核对保存结果',exact:true}).waitFor();assert.equal(await select.inputValue(),'customer-two');assert.equal(await select.isDisabled(),true)
+ await mkdir(join(root,'.runtime/record-relations-ui'),{recursive:true});await page.screenshot({path:join(root,'.runtime/record-relations-ui',locale+'-'+width+'-frozen.png'),fullPage:true})
+ await page.getByRole('button',{name:en?'Check save result':'核对保存结果',exact:true}).click();await page.evaluate(()=>(window as any).relationsFixture.writeMode='ok');await page.getByRole('button',{name:en?'Retry original operation':'重试原操作',exact:true}).click();await page.waitForFunction(()=>(window as any).relationsFixture.form().phase==='saved');const writes=await page.evaluate(()=>(window as any).relationsFixture.calls.filter((row:any)=>row[0]==='business-records/edit'));assert.deepEqual(writes[1][1],writes[2][1]);assert.equal(writes[2][1].fields[0].value,'customer-two');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+ await mkdir(join(root,'.runtime/record-relations-ui'),{recursive:true});await page.screenshot({path:join(root,'.runtime/record-relations-ui',locale+'-'+width+'.png'),fullPage:true})
+})
+
+test('读取错误和归档隐藏原ID；标题刷新、分页失败和慢回包不污染新目标或清空原稿',async t=>{
+ const page=await browser.newPage({viewport:{width:390,height:1000}});page.setDefaultTimeout(5000);const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort());t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
+ await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.evaluate(()=>(window as any).relationsFixture.render());await page.getByText('客户甲',{exact:true}).waitFor();await page.getByRole('button',{name:/订单一/}).click();
+ await page.evaluate(()=>(window as any).relationsFixture.title('客户新名称'));await page.getByRole('button',{name:'刷新记录',exact:true}).click();await page.getByText('客户新名称',{exact:true}).first().waitFor();
+ for(const [mode,message] of [['archived','关联记录已归档'],['forbidden','无权查看关联记录'],['missing','关联记录不可用'],['wrong','关联记录不可用'],['malformed','关联记录不可用'],['failed','关联记录读取失败']]){
+  await page.evaluate((mode:string)=>(window as any).relationsFixture.readMode=mode,mode);await page.getByRole('button',{name:'刷新记录',exact:true}).click();await page.getByText(message,{exact:true}).first().waitFor();assert.equal(await page.locator('button button').count(),0);const text=await page.locator('body').innerText();assert.equal(text.includes('11111111-1111-4111-8111-111111111111'),false);assert.equal(await page.getByRole('button',{name:'客户新名称',exact:true}).count(),0)
+ }
+ await page.evaluate(()=>(window as any).relationsFixture.readMode='ok');await page.getByRole('button',{name:'编辑记录',exact:true}).click();const select=page.getByRole('combobox',{name:'客户',exact:true});await select.waitFor();await page.evaluate(()=>(window as any).relationsFixture.pageMode='failed');await page.getByRole('button',{name:'加载更多',exact:true}).click();await page.getByRole('alert').getByText('关联记录读取失败',{exact:true}).waitFor();assert.equal(await select.inputValue(),'11111111-1111-4111-8111-111111111111');await page.evaluate(()=>(window as any).relationsFixture.pageMode='ok');await page.getByRole('button',{name:'加载更多',exact:true}).click();await page.evaluate(()=>(window as any).relationsFixture.slow=true);await select.selectOption({label:'客户乙'});await page.waitForFunction(()=>Array.from(document.querySelectorAll('button')).some(button=>button.textContent==='保存记录'&&button.disabled));assert.equal(await page.getByRole('button',{name:'保存记录',exact:true}).isDisabled(),true)
+ await page.evaluate(()=>{(window as any).relationsFixture.slow=false;(window as any).relationsFixture.switchType('project')});await page.getByText('业务字段已改变，请关闭旧表单后重新打开。原内容仍保留在这里。',{exact:true}).waitFor();await page.evaluate(()=>(window as any).relationsFixture.flush());assert.equal(await page.evaluate(()=>(window as any).relationsFixture.form().form.values.customer),'11111111-1111-4111-8111-111111111111');await page.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'编辑记录',exact:true}).click();await page.waitForFunction(()=>(window as any).relationsFixture.calls.some((row:readonly [string,unknown])=>row[0]==='business-records/list'&&typeof row[1]==='object'&&row[1]!==null&&'type'in row[1]&&row[1].type==='project'));assert.equal((await page.locator('body').innerText()).includes('STALE TITLE'),false)
+})

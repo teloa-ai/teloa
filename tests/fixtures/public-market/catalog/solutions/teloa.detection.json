@@ -1,0 +1,96 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.detection",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "security"
+    ],
+    "industries": [
+      "cyber-security/detection"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "detection-engineering",
+    "title": {
+      "zh-CN": "检测工程",
+      "en": "Detection engineering"
+    },
+    "summary": {
+      "zh-CN": "从检测需求到 Sigma 源规则，再到 Splunk SPL、Sentinel KQL、Elastic EQL 草案、字段映射、样本回放与变更回滚说明；目标引擎验证前一律标注未验证。",
+      "en": "From detection requirements to Sigma rules, Splunk SPL, Sentinel KQL and Elastic EQL drafts, field mappings, sample replay and change/rollback notes; everything is marked unverified until tested on the target engine."
+    },
+    "scope": "detection",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "按威胁与 ATT&CK 编号梳理检测需求与验收判据",
+          "en": "Define detection requirements and acceptance criteria from threats and ATT&CK IDs"
+        },
+        {
+          "zh-CN": "编写符合规范的 Sigma 规则",
+          "en": "Write specification-compliant Sigma rules"
+        },
+        {
+          "zh-CN": "生成 SPL/KQL/EQL 与 Suricata、YARA 草案及字段映射",
+          "en": "Draft SPL/KQL/EQL plus Suricata and YARA rules with field mappings"
+        },
+        {
+          "zh-CN": "用正负样本回放调优并写变更与回滚说明",
+          "en": "Tune with positive and negative samples and write change and rollback notes"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "目标平台版本与日志字段字典",
+          "en": "Target platform versions and log field dictionary"
+        },
+        {
+          "zh-CN": "脱敏正负样本与验收阈值",
+          "en": "Sanitised positive/negative samples and acceptance thresholds"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取字段字典与规则库",
+          "en": "Read-only access to field dictionaries and rule repositories"
+        },
+        {
+          "zh-CN": "需你确认才会做：在生产 SIEM 加载或启用规则、开启阻断",
+          "en": "Only with your confirmation: loading or enabling rules in production SIEM or turning on blocking"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "转换结果需在你的目标引擎中验证，推荐用 pySigma 官方后端。",
+        "en": "Conversions must be verified on your target engine; pySigma official backends are recommended."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

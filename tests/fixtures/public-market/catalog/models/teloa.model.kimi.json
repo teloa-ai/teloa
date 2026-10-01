@@ -1,0 +1,116 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.kimi",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "kimi",
+    "title": {
+      "zh-CN": "Kimi（Moonshot）",
+      "en": "Kimi (Moonshot)"
+    },
+    "summary": {
+      "zh-CN": "月之暗面 Kimi 开放平台，国内直连，长上下文，适合长文档与编程。",
+      "en": "Moonshot Kimi platform: reachable directly in China, long context, good for long documents and coding."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 1048576,
+    "license": {
+      "spdx": "custom",
+      "name": "Kimi 开放平台服务协议",
+      "url": "https://platform.kimi.com/docs/agreement/modeluse",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "moonshotai-cn"
+      },
+      "models": [
+        {
+          "id": "kimi-k3",
+          "name": "Kimi K3",
+          "contextWindow": 1048576,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "kimi-k2.6",
+          "name": "Kimi K2.6",
+          "contextWindow": 262144,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "mid",
+      "credentialLabel": {
+        "zh-CN": "Moonshot API 密钥",
+        "en": "Moonshot API key"
+      },
+      "signupUrl": "https://platform.kimi.com"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://platform.kimi.com/docs/agreement/modeluse"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

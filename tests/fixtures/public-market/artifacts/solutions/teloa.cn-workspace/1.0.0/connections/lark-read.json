@@ -1,0 +1,10 @@
+{
+  "format": "teloa.mcp-connection/v1",
+  "serverName": "lark",
+  "tools": [
+    "im_v1_chat_list",
+    "im_v1_message_list",
+    "docx_v1_document_rawContent",
+    "docx_builtin_search"
+  ]
+}

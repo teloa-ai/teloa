@@ -1,0 +1,81 @@
+{
+  "format": "teloa.derivative-review/v1",
+  "entryId": "anthropic.feature-dev",
+  "version": "1.0.0",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa",
+  "changeChecks": [
+    {
+      "changeId": "FDV-M01",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "按锁定提交取回原版 plugins/feature-dev/commands/feature-dev.md（git blob 8bdeda34…，5097 字节，sha256 652e5d62…）全文核对，七个阶段由 SKILL.md 承接（逐处见其余各条）。资源文件不含该路径，2026-09-28 校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "FDV-M02",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 --pr 通过 skill.frontmatter-keys 与 skill.name-mismatch（name 为 feature-dev）；argument-hint 不在 SKILL.md 中。"
+    },
+    {
+      "changeId": "FDV-M03",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过：SKILL.md 前 4 KiB 内含修改声明与 MODIFICATIONS.md。"
+    },
+    {
+      "changeId": "FDV-M04",
+      "method": "review",
+      "result": "pass",
+      "evidence": "逐处核对 L14、L16、L24 的替换：$ARGUMENTS 改为调用时的请求，TodoWrite 改为 todo_write 或回复内清单。实跑场景未提供 todo_write，模型没有尝试调用不存在的 TodoWrite。"
+    },
+    {
+      "changeId": "FDV-M05",
+      "method": "test",
+      "result": "pass",
+      "evidence": "本机 qwen3:14b 定稿实跑（reviews/derivatives/anthropic.feature-dev/tests/local-model-runs.jsonl）：未提供委派工具时，无人值守 3 次中 1 次读取了 agents/ 下三份角色说明并按顺序完成探索（该次反复重读文件直到 40 步上限），没有任何一次尝试调用不存在的 Task 工具或指定模型档位。"
+    },
+    {
+      "changeId": "FDV-M06",
+      "method": "review",
+      "result": "pass",
+      "evidence": "逐处核对写入边界、无人值守规则、第一阶段第 0 步与第五阶段批准条件与 Teloa「写操作须本人确认、AI 同事不能自行安装或提交」一致。本机 qwen3:14b 定稿实跑（reviews/derivatives/anthropic.feature-dev/tests/local-model-runs.jsonl）：无人值守 3 次中 2 次没有写文件、1 次写了 orders/export.py；有人值守 1 次在批准轮之前就写了文件。说明正文不能单独约束小模型，条目兼容条件据此写明需要能力较强的模型、写入须由宿主逐次确认。早期两版正文的无人值守实跑都写了文件，改写后有改善但未根治。"
+    },
+    {
+      "changeId": "FDV-M07",
+      "method": "reproduction",
+      "result": "pass",
+      "evidence": "复现（reviews/derivatives/anthropic.feature-dev/tests/git-scope.txt）：临时仓库里一处未暂存、一处已暂存、一个新文件，`git diff --name-only` 只列 tracked.py，`git diff HEAD --name-only` 列出已暂存与未暂存的 2 个，`git status --porcelain=v1 -uall` 另列出新文件 newfile.py；新写法覆盖全部 3 个文件。"
+    },
+    {
+      "changeId": "FDV-M08",
+      "method": "reproduction",
+      "result": "pass",
+      "evidence": "同 FDV-M07 的复现：原版 code-reviewer 默认的 `git diff` 只含 tracked.py（reviews/derivatives/anthropic.feature-dev/tests/git-scope.txt 中 `git diff | grep ^+++`），漏掉已暂存的 staged.py 与新文件 newfile.py；改后的默认范围覆盖三者。"
+    },
+    {
+      "changeId": "FDV-M09",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过（角色说明前 4 KiB 内含 MODIFICATIONS.md）；与原版逐行比对，正文只有范围一句（FDV-M08）与规范文件三处措辞不同。"
+    },
+    {
+      "changeId": "FDV-M10",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过；与原版逐行比对，frontmatter 之后的正文完全相同。"
+    },
+    {
+      "changeId": "FDV-M11",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过；与原版逐行比对，正文只有 L14 规范文件一处措辞不同。"
+    },
+    {
+      "changeId": "FDV-M12",
+      "method": "review",
+      "result": "pass",
+      "evidence": "核对该规则措辞与同一上游仓库 code-modernization 插件 agents/*.md 的「Untrusted content discipline」一致。示例仓库不含指令样文本，本条在实跑中未被触发，只做了审阅。"
+    }
+  ]
+}

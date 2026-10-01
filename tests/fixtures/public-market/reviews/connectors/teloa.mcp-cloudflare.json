@@ -1,0 +1,26 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-cloudflare": {
+      "evidence": "2026-09-27 无凭据 initialize 回 401 OAuth 质询；受保护资源元数据 resource=https://mcp.cloudflare.com/mcp、授权服务器 https://mcp.cloudflare.com；授权服务器元数据含 registration_endpoint（DCR）、code_challenge_methods_supported [S256]、token_endpoint_auth_methods_supported 含 none，未声明 scopes_supported（权限在授权页勾选）。工具取自 cloudflare/mcp README 与 src/tools/*.ts（需授权，未能 tools/list 实录）：docs、search、execute；上游注解三者 readOnlyHint 均为 false，execute 另标 destructiveHint:true。按主控裁定以语义标注：docs 只检索文档、search 只查询 OpenAPI 规范且不访问账户，记为 read；execute 可改删账户资源，记为 write，走逐次确认。instructions 字节数待授权后实测",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.cloudflare.com/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": []
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "docs": "read",
+        "search": "read",
+        "execute": "write"
+      }
+    }
+  }
+}

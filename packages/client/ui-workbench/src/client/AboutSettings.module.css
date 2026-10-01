@@ -1,0 +1,53 @@
+.about{padding:24px;max-width:960px;box-sizing:border-box;color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:1.7;overflow-wrap:anywhere}.brandHeader{display:flex;align-items:center;gap:24px;flex-wrap:wrap}.identity{display:flex;flex-direction:column;gap:8px}.brandRow{display:flex;align-items:center;gap:18px;max-width:100%;flex-wrap:wrap}.about header p{color:var(--teloa-muted);margin:0}.release{display:flex;flex-direction:column;justify-content:center;gap:3px;padding-left:24px;border-left:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:20px;min-height:44px;align-self:stretch}.about>section{border-top:1px solid var(--teloa-border);margin-top:24px;padding-top:18px}.about h2{font-size:var(--teloa-font-section);margin:0;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.about a{color:var(--teloa-text);text-underline-offset:3px}.about a:focus-visible,.about button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}.about p{color:var(--teloa-muted)}.brandName{display:flex;align-items:center;gap:10px}.brandName strong{font-size:19px;font-weight:var(--teloa-weight-medium);white-space:nowrap}
+.qrDialog button{font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:7px 11px;min-height:36px;cursor:pointer}.qrDialog button:hover{background:var(--teloa-hover)}
+.plansSection>p{margin:0 0 12px}.plansHeader{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:14px}.plansHeader h2{margin:0}.plansSection{container-type:inline-size}.plansGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px}.planCard{display:flex;flex-direction:column;box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:12px;padding:13px 13px;background:var(--teloa-surface)}.planCardCurrent{border-width:2px;border-color:var(--teloa-accent);padding:12px 12px}.planBadge{font-size:var(--teloa-font-caption);line-height:1.4;font-weight:var(--teloa-weight-medium);letter-spacing:.04em;color:var(--teloa-muted)}.planName{margin-top:4px;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-medium);line-height:1.3;color:var(--teloa-text)}.planCard p{margin:0}.planTagline{margin-top:3px;font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-text)}.planCard ul{display:flex;flex-direction:column;gap:4px;list-style:none;margin:10px 0 0;padding:0}.planCard li{display:flex;align-items:flex-start;gap:6px;font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-muted)}.planCard li svg{flex:none;margin-top:2px;color:var(--teloa-accent)}
+.foundationSection>h2{grid-column:1/-1;margin:0}
+.dialogBackdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:var(--teloa-backdrop)}.qrDialog{box-sizing:border-box;width:min(360px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--teloa-border);border-radius:14px;padding:22px;background:var(--teloa-surface);color:var(--teloa-text);box-shadow:var(--teloa-shadow)}.qrDialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.qrDialog header p{margin:5px 0 0;font-size:var(--teloa-font-caption)}.qrDialog header button{display:grid;place-items:center;border:0;padding:6px;min-height:32px;flex:none}.qrCode{display:flex;flex-direction:column;align-items:center;margin:22px 0 0}.qrImage{display:block;width:196px;height:196px;max-width:100%;overflow:hidden;border:1px solid var(--teloa-border);border-radius:9px}.qrCode figcaption{margin-top:9px;text-align:center;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+@media(max-width:700px){}
+@media(max-width:600px){.about{padding:16px}.brandRow{gap:12px}.brandName strong{font-size:18px}.release{padding-left:14px;min-height:40px}.connectionActions button{min-height:40px}.qrDialog{padding:18px}}
+
+.planCard ul{margin-bottom:10px}
+
+
+
+.headerTagline{display:flex;align-items:center;margin:0;padding-left:24px;border-left:1px solid var(--teloa-border);min-height:44px;align-self:stretch;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:20px}
+@media(max-width:740px){.headerTagline{padding-left:14px;min-height:40px}}
+
+
+
+
+
+
+
+
+
+
+.foundationLine{margin:0;padding-top:12px;border-top:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}
+.plansNote{margin:0;font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}.plansMore a{color:var(--teloa-accent);text-decoration:none}.plansMore a:hover{text-decoration:underline}
+
+
+.connectionSummary{display:flex;flex-direction:column;gap:16px}
+.contactLabel{font-size:var(--teloa-font-caption);letter-spacing:.04em;color:var(--teloa-muted)}
+.contactRow{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:-8px}
+.contactIdentity{display:flex;flex-direction:column;gap:8px;min-width:0}
+.contactEmails{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.contactCard{display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
+.contactCardTitle{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
+.contactCardTitle svg{flex:none;margin-top:2px;color:var(--teloa-muted)}
+.contactCardActions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;margin-top:auto;min-height:36px}
+.contactCardActions a{display:inline-flex;align-items:center;min-height:36px;font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-muted);text-decoration:none}
+.contactCardActions a:hover{color:var(--teloa-text);text-decoration:underline;text-underline-offset:3px}
+.contactNames{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;font-size:var(--teloa-font-reading);color:var(--teloa-text)}.contactNames strong{font-weight:var(--teloa-weight-medium);white-space:nowrap}.contactNames i{font-style:normal;color:var(--teloa-muted)}
+.contactLinks,.connectionActions{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0}
+.contactLinks a,.connectionActions button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 8px;box-sizing:border-box;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);line-height:1.5;text-decoration:none;cursor:pointer}
+.contactLinks a:hover,.connectionActions button:hover{color:var(--teloa-text);background:var(--teloa-hover)}
+.contactLinks svg,.connectionActions svg{flex:none}
+@media(max-width:600px){.contactLinks a,.connectionActions button{min-height:40px}.contactCard{padding:14px}}
+
+@container (min-width:880px){.plansGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@container (max-width:420px){.plansGrid{grid-template-columns:1fr}}
+
+
+.qrDialog h2{font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+
+.feedbackButton{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;min-height:36px;padding:7px 11px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}.feedbackButton:hover{background:var(--teloa-hover)}.feedbackButton svg{flex:none}@media(max-width:600px){.feedbackButton{min-height:40px}}

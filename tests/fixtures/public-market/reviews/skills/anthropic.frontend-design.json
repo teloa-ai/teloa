@@ -1,0 +1,43 @@
+{
+  "format": "teloa.upstream-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa",
+  "entries": {
+    "anthropic.frontend-design": {
+      "verdict": "approve",
+      "conditions": [
+        {
+          "zh-CN": "正文要求先与客户确认设计方向；在无人值守的 AI 同事任务中无法询问时，写明所作假设后继续",
+          "en": "The skill asks you to confirm the design direction with the client first; in unattended AI teammate tasks where you cannot ask, state your assumptions and continue"
+        },
+        {
+          "zh-CN": "正文鼓励使用非默认字体：优先使用系统字体栈或自托管字体，引用外部字体须经用户同意",
+          "en": "The skill encourages non-default fonts: prefer system font stacks or self-hosted fonts, and load external fonts only with the user's consent"
+        },
+        {
+          "zh-CN": "正文以 Claude 界面主色 #D97757 作为避免默认配色的校准示例，在 Teloa 中同样适用，无需调整",
+          "en": "The skill uses Claude's interface accent #D97757 as a calibration example of a default palette to avoid; it applies equally in Teloa and needs no change"
+        }
+      ],
+      "evidence": {
+        "source": "anthropics/skills@33375500bcea98d610eb30ce10ac4e59b89c390d:skills/frontend-design",
+        "files": [
+          {
+            "path": "LICENSE.txt",
+            "gitBlob": "f433b1a53f5b830a205fd2df78e2b34974656c7b",
+            "size": 10174
+          },
+          {
+            "path": "SKILL.md",
+            "gitBlob": "a5333457c414d20d625f307df945842c0952ecc3",
+            "size": 9390
+          }
+        ],
+        "license": "技能目录内 LICENSE.txt，Apache-2.0 正文 1–9 条，无附录、无版权行；上游无 NOTICE",
+        "dedupe": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/frontend-design/skills/frontend-design 与本来源字节完全相同（目录树 d79e2a5bb4df4a386c2adcdd9ab8709bba28c3f6，SKILL.md、LICENSE.txt blob 一致，2026-09-27 以 GitHub API 与固定提交原文逐字节核对）；按主控裁定只收 anthropics/skills 一条，另一来源无目录条目，不写 alternatives",
+        "review": "全文审查：纯文本，无工具名、脚本、外链或隐藏指令；frontmatter 另含 license 键，DSH 解析忽略；按上游原样收录，未改字节",
+        "installs": "claude.com/plugins/frontend-design 公开页显示插件级安装量，是否写入 origin.installs 待主控裁定；按规格 §12.1-6 暂填 null"
+      }
+    }
+  }
+}

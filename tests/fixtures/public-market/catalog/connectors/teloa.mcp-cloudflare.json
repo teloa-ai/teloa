@@ -1,0 +1,112 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-cloudflare",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "cloud-ops",
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "cloudflare_api",
+    "title": {
+      "zh-CN": "Cloudflare API（OAuth）",
+      "en": "Cloudflare API (OAuth)"
+    },
+    "summary": {
+      "zh-CN": "Cloudflare 官方托管的 API 服务，用三个工具覆盖 Cloudflare API：检索开发者文档、查询 API 规范、执行 API 调用（可读写 Workers、DNS、KV、R2、D1、防火墙等账户资源）。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，授权时由本人在 Cloudflare 页面勾选权限。",
+      "en": "Cloudflare's official hosted API service, covering the Cloudflare API with three tools: search developer docs, query the API spec, and execute API calls (read and write Workers, DNS, KV, R2, D1, firewall and other account resources). Authorized by Teloa via OAuth (dynamic client registration + PKCE); the owner picks permissions on Cloudflare's consent page."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": []
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.cloudflare.com/mcp"
+    },
+    "tools": [
+      {
+        "name": "docs",
+        "description": {
+          "zh-CN": "检索 Cloudflare 开发者文档",
+          "en": "Search Cloudflare developer documentation"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "search",
+        "description": {
+          "zh-CN": "在服务端沙箱中用 JavaScript 查询 Cloudflare API 规范，查找所需接口；不访问账户",
+          "en": "Run JavaScript in a server-side sandbox to query the Cloudflare API spec for the operations it needs; never touches the account"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "execute",
+        "description": {
+          "zh-CN": "在服务端沙箱中用 JavaScript 调用 Cloudflare API，可读取、创建、修改或删除账户资源",
+          "en": "Run JavaScript in a server-side sandbox that calls the Cloudflare API; can read, create, update or delete account resources"
+        },
+        "readOnly": false
+      }
+    ],
+    "upstreamUrl": "https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Cloudflare-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "授权服务器公开的配置信息实测支持动态客户端注册（token_endpoint_auth_method none）与 PKCE S256；本机回环回调（127.0.0.1）尚未实测",
+        "en": "The authorization server's published configuration confirms dynamic client registration (token_endpoint_auth_method none) and PKCE S256; the loopback callback (127.0.0.1) has not been tested yet"
+      },
+      {
+        "zh-CN": "服务端不提供 scope 列表，权限在 Cloudflare 授权页勾选：授权时只勾选需要的权限，优先使用非生产账户",
+        "en": "The server publishes no scope list; permissions are chosen on Cloudflare's consent page. Grant only the permissions you need and prefer a non-production account"
+      },
+      {
+        "zh-CN": "execute 可创建、修改或删除账户资源，Teloa 对它的每次调用逐次确认；docs 与 search 只查文档和 API 规范，不访问账户",
+        "en": "execute can create, modify or delete account resources, and Teloa asks for confirmation on every call; docs and search only query documentation and the API spec and never touch the account"
+      },
+      {
+        "zh-CN": "工具结果默认截断至约 6000 token；执行的 API 调用按本人 Cloudflare 计划计费；按 Cloudflare 条款不得用于批量抓取或自动化压测",
+        "en": "Tool results are truncated to about 6,000 tokens by default; API calls are billed under the owner's Cloudflare plan; Cloudflare's terms forbid bulk data mining or automated load"
+      },
+      {
+        "zh-CN": "只需查文档时可改用 Cloudflare 开发者文档连接器（teloa.mcp-cloudflare-docs），无需授权",
+        "en": "For documentation only, use the Cloudflare Developer Docs connector (teloa.mcp-cloudflare-docs), which needs no authorization"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-27",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "experiment-readout-task",
+  "title": "整理实验结论",
+  "version": "1.0.0",
+  "domain": "growth",
+  "description": "将实验计划与结果导出整理为实验结论：抄录预设假设、主指标、护栏与决策规则，核对执行期、样本量与分流比例，逐组复算主指标与护栏并对照决策规则逐条判定，输出「符合 / 不符合 / 无法判定预设放量条件」的结论与需负责人决策事项。不自行计算显著性，不决定全量或回滚。",
+  "requirements": [
+    "实验计划或假设文档：变体、分流、主指标、护栏、周期、样本量、决策规则（已上传）",
+    "结果导出：每组用户数、事件数或指标值（已上传）",
+    "分析平台给出的显著性结果、分段数据、实验期间发布记录（可选）"
+  ],
+  "output": "实验结论整理：首部注明计划与实际周期、来源；实验设计摘要；执行核对表；主指标结果表（含绝对差、相对差、转录的显著性）；护栏指标表（含越线算式）；决策规则对照表与三选一结论；非预设观察；需负责人决策事项",
+  "skills": [
+    {
+      "id": "growth-experiment-readout",
+      "title": "实验结论整理（主指标、护栏、决策规则对照）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "整理实验结论",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "整理实验结论",
+        "en": "Prepare experiment readout"
+      }
+    },
+    "description": {
+      "original": "将实验计划与结果导出整理为实验结论：抄录预设假设、主指标、护栏与决策规则，核对执行期、样本量与分流比例，逐组复算主指标与护栏并对照决策规则逐条判定，输出「符合 / 不符合 / 无法判定预设放量条件」的结论与需负责人决策事项。不自行计算显著性，不决定全量或回滚。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将实验计划与结果导出整理为实验结论：抄录预设假设、主指标、护栏与决策规则，核对执行期、样本量与分流比例，逐组复算主指标与护栏并对照决策规则逐条判定，输出「符合 / 不符合 / 无法判定预设放量条件」的结论与需负责人决策事项。不自行计算显著性，不决定全量或回滚。",
+        "en": "Turn an experiment plan and results export into a readout: transcribe the pre-registered hypothesis, primary metric, guardrails, and decision rule; check duration, sample size, and split ratio; recompute the primary metric and guardrails per group and judge each decision condition; conclude with 'meets / does not meet / cannot judge the pre-set ship criteria' plus items needing the owner's decision. Does not compute significance or decide to ship or roll back."
+      }
+    },
+    "requirements": [
+      {
+        "original": "实验计划或假设文档：变体、分流、主指标、护栏、周期、样本量、决策规则（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "实验计划或假设文档：变体、分流、主指标、护栏、周期、样本量、决策规则（已上传）",
+          "en": "Experiment plan or hypothesis doc: variants, split, primary metric, guardrails, duration, sample size, decision rule (already uploaded)"
+        }
+      },
+      {
+        "original": "结果导出：每组用户数、事件数或指标值（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "结果导出：每组用户数、事件数或指标值（已上传）",
+          "en": "Results export: users, events, or metric values per group (already uploaded)"
+        }
+      },
+      {
+        "original": "分析平台给出的显著性结果、分段数据、实验期间发布记录（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "分析平台给出的显著性结果、分段数据、实验期间发布记录（可选）",
+          "en": "Significance results from the analytics platform, segment data, release records during the experiment (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "实验结论整理：首部注明计划与实际周期、来源；实验设计摘要；执行核对表；主指标结果表（含绝对差、相对差、转录的显著性）；护栏指标表（含越线算式）；决策规则对照表与三选一结论；非预设观察；需负责人决策事项",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "实验结论整理：首部注明计划与实际周期、来源；实验设计摘要；执行核对表；主指标结果表（含绝对差、相对差、转录的显著性）；护栏指标表（含越线算式）；决策规则对照表与三选一结论；非预设观察；需负责人决策事项",
+        "en": "Experiment readout: header with planned and actual period and sources; design summary; execution check table; primary metric table with absolute and relative difference and transcribed significance; guardrail table with threshold arithmetic; decision rule table with a three-way conclusion; non-pre-registered observations; items needing the owner's decision"
+      }
+    }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-stripe",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "business-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "stripe",
+    "title": {
+      "zh-CN": "Stripe（支付）",
+      "en": "Stripe (Payments)"
+    },
+    "summary": {
+      "zh-CN": "Stripe 官方远程 MCP，通过 Agent API Key 检索 Stripe API 方法、以只读方式读取客户、支付、订阅等数据，并可调用写入类 API。建议 Agent Key 只授予所需权限。数据经由 stripe.com 传输。",
+      "en": "Stripe official remote MCP: with an agent API key, look up Stripe API methods, read customers, payments, subscriptions and more, and call write APIs. Grant the agent key only the permissions it needs. Data transits stripe.com."
+    },
+    "auth": {
+      "kind": "secret",
+      "vars": [
+        {
+          "target": "bearer",
+          "label": {
+            "zh-CN": "Stripe Agent API Key（带 Agent 标记，建议只授予读取权限）",
+            "en": "Stripe agent API key (with the Agent badge; read-only permissions recommended)"
+          },
+          "required": true
+        }
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.stripe.com"
+    },
+    "tools": [
+      {
+        "name": "stripe_api_search",
+        "description": {
+          "zh-CN": "按关键词查找 Stripe API 方法",
+          "en": "Find Stripe API methods by keyword"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "stripe_api_details",
+        "description": {
+          "zh-CN": "查看 API 方法的参数说明",
+          "en": "Get parameter details for an API method"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "stripe_api_read",
+        "description": {
+          "zh-CN": "以 GET 方法读取 Stripe 数据",
+          "en": "Read Stripe data with GET methods"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "stripe_api_write",
+        "description": {
+          "zh-CN": "以 POST/PATCH/PUT/DELETE 方法写入 Stripe 数据",
+          "en": "Write Stripe data with POST/PATCH/PUT/DELETE methods"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "get_stripe_account_info",
+        "description": {
+          "zh-CN": "获取账户信息",
+          "en": "Get account information"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://docs.stripe.com/building-with-llms/mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Stripe-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-10-31 起 Stripe MCP 不再接受完整密钥与不带 Agent 标记的受限密钥，须使用 Agent API Key",
+        "en": "From 2026-10-31 Stripe MCP no longer accepts full secret keys or restricted keys without the Agent badge; use an agent API key"
+      },
+      {
+        "zh-CN": "数据经由 stripe.com 平台传输",
+        "en": "Data transits the stripe.com platform"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

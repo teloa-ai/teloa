@@ -1,0 +1,36 @@
+{
+  "format": "teloa.business-action/v1",
+  "id": "open-fix-ticket",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "开一张修复工单",
+  "objectType": "vulnerability",
+  "target": {
+    "kind": "work-template",
+    "localId": "vulnerability-fix"
+  },
+  "inputs": [
+    {
+      "from": "object",
+      "part": "title"
+    },
+    {
+      "from": "field",
+      "field": "application"
+    },
+    {
+      "from": "object",
+      "part": "summary"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "开一张修复工单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "开一张修复工单",
+        "en": "Create a remediation ticket"
+      }
+    }
+  }
+}

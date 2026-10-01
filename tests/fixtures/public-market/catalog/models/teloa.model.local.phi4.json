@@ -1,0 +1,113 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.local.phi4",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "phi4-local",
+    "title": {
+      "zh-CN": "Phi-4（本机）",
+      "en": "Phi-4 (local)"
+    },
+    "summary": {
+      "zh-CN": "Microsoft Phi-4 14B 小模型，经 Ollama 在本机运行；数学与推理见长，16K 上下文。",
+      "en": "Microsoft Phi-4 14B running locally via Ollama; strong at math and reasoning, 16K context."
+    },
+    "form": "local-general",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": false,
+      "vision": false,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 16384,
+    "license": {
+      "spdx": "MIT",
+      "name": "MIT License",
+      "url": "https://opensource.org/license/mit",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+      {
+        "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+        "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+      }
+    ],
+    "cloud": null,
+    "local": {
+      "runtime": "ollama"
+    },
+    "variants": [
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 9053116391,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "phi4:14b",
+            "digest": "sha256:ac896e5b8b34a1f4efa7b14d7520725140d5512484457fab45d2a4ea14c69dba"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 16,
+          "recommendedRamGb": 32,
+          "vramGb": null
+        },
+        "models": {
+          "id": "phi4:14b",
+          "contextWindow": 16384,
+          "maxTokens": 8192,
+          "input": [
+            "text"
+          ]
+        }
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [],
+    "url": "https://opensource.org/license/mit"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+        "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "ollama"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

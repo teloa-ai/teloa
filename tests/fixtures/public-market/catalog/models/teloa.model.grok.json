@@ -1,0 +1,116 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.grok",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "grok",
+    "title": {
+      "zh-CN": "Grok（xAI）",
+      "en": "Grok (xAI)"
+    },
+    "summary": {
+      "zh-CN": "xAI 官方 API（Grok 系列）；国内需海外网络。",
+      "en": "xAI official API (Grok models); needs an overseas network from China."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 500000,
+    "license": {
+      "spdx": "custom",
+      "name": "xAI Enterprise Terms of Service",
+      "url": "https://x.ai/legal/terms-of-service-enterprise",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "proxy-required",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "xai"
+      },
+      "models": [
+        {
+          "id": "grok-4.7",
+          "name": "Grok 4.7",
+          "contextWindow": 500000,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "grok-4.3",
+          "name": "Grok 4.3",
+          "contextWindow": 1000000,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "mid",
+      "credentialLabel": {
+        "zh-CN": "xAI API 密钥",
+        "en": "xAI API key"
+      },
+      "signupUrl": "https://console.x.ai"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://x.ai/legal/terms-of-service-enterprise"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

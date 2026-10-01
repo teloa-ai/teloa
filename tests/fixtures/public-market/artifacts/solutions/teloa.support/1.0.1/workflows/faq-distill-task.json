@@ -1,0 +1,78 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "faq-distill-task",
+  "title": "FAQ 沉淀",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "从一段时间的已解决工单中聚类重复问题，核对到事实库与政策后起草 FAQ 条目，去除全部客户个人信息，并与既有 FAQ 比对给出合并、冲突与过期建议。条目发布前需负责人确认。",
+  "requirements": [
+    "已解决工单集合（含问题、回复或解决记录、时间，已上传）",
+    "产品事实库或支持政策（已上传）",
+    "既有 FAQ 或知识库导出、条目格式模板、产品发布记录（可选）"
+  ],
+  "output": "FAQ 草案：新建条目（问题、适用范围、简答、步骤、变体、来源、核对日期）、建议合并到既有条目、冲突待确认、疑似过期、单次问题备查、摘要；个人信息已去除",
+  "skills": [
+    {
+      "id": "faq-distill",
+      "title": "FAQ 沉淀（从工单到知识条目）",
+      "version": "1.0.0"
+    },
+    {
+      "id": "reply-fact-check",
+      "title": "回复事实与措辞核对",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "FAQ 沉淀",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "FAQ 沉淀",
+        "en": "FAQ distillation"
+      }
+    },
+    "description": {
+      "original": "从一段时间的已解决工单中聚类重复问题，核对到事实库与政策后起草 FAQ 条目，去除全部客户个人信息，并与既有 FAQ 比对给出合并、冲突与过期建议。条目发布前需负责人确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从一段时间的已解决工单中聚类重复问题，核对到事实库与政策后起草 FAQ 条目，去除全部客户个人信息，并与既有 FAQ 比对给出合并、冲突与过期建议。条目发布前需负责人确认。",
+        "en": "Cluster recurring questions from a period of resolved tickets, draft FAQ entries after checking them against the fact base and policies, strip all customer personal data, and compare with the existing FAQ to suggest merges, flag conflicts and outdated entries. Entries need the owner's confirmation before publishing."
+      }
+    },
+    "requirements": [
+      {
+        "original": "已解决工单集合（含问题、回复或解决记录、时间，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已解决工单集合（含问题、回复或解决记录、时间，已上传）",
+          "en": "Set of resolved tickets (with question, reply or resolution record, and time; already uploaded)"
+        }
+      },
+      {
+        "original": "产品事实库或支持政策（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "产品事实库或支持政策（已上传）",
+          "en": "Product fact base or support policy (already uploaded)"
+        }
+      },
+      {
+        "original": "既有 FAQ 或知识库导出、条目格式模板、产品发布记录（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "既有 FAQ 或知识库导出、条目格式模板、产品发布记录（可选）",
+          "en": "Existing FAQ or knowledge base export, entry template, product release notes (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "FAQ 草案：新建条目（问题、适用范围、简答、步骤、变体、来源、核对日期）、建议合并到既有条目、冲突待确认、疑似过期、单次问题备查、摘要；个人信息已去除",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "FAQ 草案：新建条目（问题、适用范围、简答、步骤、变体、来源、核对日期）、建议合并到既有条目、冲突待确认、疑似过期、单次问题备查、摘要；个人信息已去除",
+        "en": "FAQ draft: new entries (question, scope, short answer, steps, variants, sources, check date), suggested merges into existing entries, conflicts to confirm, likely outdated entries, one-off questions for reference, summary; personal data removed"
+      }
+    }
+  }
+}

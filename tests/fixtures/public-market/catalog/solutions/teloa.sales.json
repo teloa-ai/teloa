@@ -1,0 +1,104 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.sales",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "business-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "sales-business-development",
+    "title": {
+      "zh-CN": "销售与商务",
+      "en": "Sales and business development"
+    },
+    "summary": {
+      "zh-CN": "上传客户材料即可开始：客户研究简报、方案书草案、客户会议纪要与跟进、报价核对；产品能力只取事实库，价格与承诺留给你填，对客户发送需你确认。",
+      "en": "Start from uploaded customer materials: research briefs, proposal drafts, meeting minutes with follow-ups, and quote checks. Capabilities come only from your fact base, prices and commitments are left for you, and anything sent to customers needs your confirmation."
+    },
+    "scope": "sales",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "从客户公开资料整理拜访前简报，事实标来源与检索日期，推断写明依据，列出待确认问题",
+          "en": "Build a pre-meeting brief from public customer materials; facts carry source and retrieval date, inferences state their basis, open questions are listed"
+        },
+        {
+          "zh-CN": "按需求逐条对应产品事实库起草方案书，标出有对应、部分对应与待确认项；价格与条款留空",
+          "en": "Draft a proposal mapping each requirement to the product fact base as matched, partly matched or to be confirmed; price and terms left blank"
+        },
+        {
+          "zh-CN": "从客户会议转写提取需求、异议、我方承诺与跟进事项，客户口头表述不写成已确认",
+          "en": "Extract needs, objections, our commitments and follow-ups from customer meeting transcripts; verbal remarks are never written as confirmed"
+        },
+        {
+          "zh-CN": "逐行核对报价单与价格表，列出单价、折扣、合计与税的差异，不给建议价",
+          "en": "Check the quote against the price list line by line, listing unit price, discount, total and tax differences without suggesting prices"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "客户公开资料、需求说明或招标文件；客户会议转写",
+          "en": "Public customer materials, requirement notes or tender files; customer meeting transcripts"
+        },
+        {
+          "zh-CN": "产品事实库、已授权引用的案例、价格表（含版本）与折扣规则",
+          "en": "Product fact base, authorized cases, price list (with version) and discount rules"
+        },
+        {
+          "zh-CN": "如需检索客户公开信息或发到内部群，另行添加并授权 exa、飞书或钉钉连接器（均为可选）",
+          "en": "To search public customer information or post to internal groups, add and authorize the exa, Lark or DingTalk connector separately (all optional)"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件；不检索联系人个人社交账号，不读取未提供的邮箱、聊天记录或 CRM 数据",
+          "en": "Reads only the files you provide; never searches contacts' personal social accounts or reads mailboxes, chats or CRM data you have not provided"
+        },
+        {
+          "zh-CN": "需你确认才会做：向客户发送任何材料、写入 CRM、写入价格或承诺、引用联系人个人信息、改动合同条款",
+          "en": "Only with your confirmation: sending anything to customers, writing to a CRM, placing prices or commitments, quoting contact details, touching contract terms"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：客户研究简报、方案书草案、会后跟进与报价核对三个模板按合成样例产出结构与期望一致，报价核对的单价差异与合计差额与期望完全相同，价格、折扣、交期一律留待本人填写，未对外发送。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-25: customer research brief, proposal draft and meeting follow-up with quote verification matched the expected structure on synthetic samples; the quote check reproduced the expected unit-price and total discrepancies exactly; prices, discounts and delivery dates left for the owner, nothing sent."
+      },
+      {
+        "zh-CN": "商务协作员不定价、不承诺、不改条款；检索、消息与 CRM 连接为可选项，本版不内置。",
+        "en": "The role sets no prices, makes no commitments and touches no contract terms; search, messaging and CRM connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

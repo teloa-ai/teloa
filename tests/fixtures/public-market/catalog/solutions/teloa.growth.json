@@ -1,0 +1,109 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.growth",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "data-research",
+      "business-ops"
+    ],
+    "industries": [
+      "software/product"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "product-growth",
+    "title": {
+      "zh-CN": "产品运营与增长分析",
+      "en": "Product ops & growth"
+    },
+    "summary": {
+      "zh-CN": "上传指标词典、仪表盘导出、实验记录与用户反馈即可开始：指标口径核对与复算、实验结论对照决策规则、反馈主题归类统计、增长周报，每个数字可复算、每条结论指向来源；不改埋点与线上配置，不决定实验全量或回滚，不对外发布实验结论。",
+      "en": "Start from uploaded metric dictionaries, dashboard exports, experiment records and user feedback: metric definition checks with recomputation, experiment readouts against decision rules, feedback theme clustering and growth weekly reports, with every figure recomputable and every conclusion sourced; it never changes tracking or live configuration, decides to ship or roll back experiments, or publishes experiment conclusions externally."
+    },
+    "scope": "growth",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "按指标词典用原始计数复算仪表盘数字，带符号写出差异与算式，并列跨来源口径冲突",
+          "en": "Recompute dashboard figures from raw counts per the metric dictionary, with signed differences and formulas, and list cross-source definition conflicts side by side"
+        },
+        {
+          "zh-CN": "复算实验各组主指标与护栏，逐条对照预设决策规则，结论只写符合、不符合或无法判定",
+          "en": "Recompute primary and guardrail metrics per experiment group and check each pre-set decision rule; the verdict is only meets, does not meet or cannot determine"
+        },
+        {
+          "zh-CN": "反馈去重后逐条标注并归并主题，条数与占比可复算，安全与越权反馈单列转交",
+          "en": "De-duplicate and tag feedback, group it into themes with recomputable counts and shares, and list security and access issues separately for hand-off"
+        },
+        {
+          "zh-CN": "生成增长周报：核心指标环比（计数写百分比、比率写百分点）、实验进展、反馈要点与需决策事项",
+          "en": "Produce growth weekly reports: week-over-week core metrics (counts as percentages, rates as percentage points), experiment progress, feedback highlights and open decisions"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "指标词典、仪表盘导出或原始计数表、实验计划与结果导出、用户反馈导出、运营动作记录",
+          "en": "Metric dictionary, dashboard exports or raw count tables, experiment plans and result exports, user feedback exports, operations logs"
+        },
+        {
+          "zh-CN": "统计周期与时区、报告精度、周报读者、实验的预设决策规则",
+          "en": "Reporting period and time zone, reporting precision, report audience, and pre-registered experiment decision rules"
+        },
+        {
+          "zh-CN": "可选：PostHog、Exa 连接器（海外服务，均需密钥），用于读取指标与实验结果、检索公开资料",
+          "en": "Optional: PostHog and Exa connectors (overseas services, credentials required) to read metrics and experiment results and search public material"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件",
+          "en": "Reads only the files you provide for the task"
+        },
+        {
+          "zh-CN": "不改埋点、指标定义、仪表盘或线上配置，不执行实验全量、扩量或回滚，不回复用户",
+          "en": "Never changes tracking, metric definitions, dashboards or live configuration, never ships, ramps up or rolls back experiments, and never replies to users"
+        },
+        {
+          "zh-CN": "需你确认才会做：发送报告或结论、对外发布实验结论、把数据上传到外部平台",
+          "en": "Only with your confirmation: sending reports or conclusions, publishing experiment conclusions externally, uploading data to external platforms"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-26 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：从市场添加、加载到业务、产品运营分析员上岗后，四个任务模板（指标口径核对、实验结论整理、用户反馈归类、增长周报）各跑两轮，产出结构与期望一致、数字可复算并指向来源；反馈归类先写逐条标注表再推出统计，两轮条数与编号均与标注表对账一致；口径裁定、实验放量与回滚只列待确认，不回复用户。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-26: all four templates (metric check, experiment readout, feedback clustering, weekly report) ran twice and matched the expected structure with recomputable, sourced numbers; feedback clustering derives counts from a per-item tagging table, and both runs reconciled with it; definition rulings and rollouts were left as open items."
+      },
+      {
+        "zh-CN": "产品分析与搜索连接为可选项，本版不内置。",
+        "en": "Product analytics and search connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

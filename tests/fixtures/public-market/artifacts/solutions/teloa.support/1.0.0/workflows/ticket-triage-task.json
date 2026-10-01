@@ -1,0 +1,83 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "ticket-triage-task",
+  "title": "工单分诊与回复草案",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "对已提供的工单或对话记录分类、定优先级并判定处理路径；对路径为一线回复的工单依据事实库与政策起草回复草案并核对事实与措辞；需升级的只出摘要，不起草对外回复。所有草案待负责人确认后发送。",
+  "requirements": [
+    "工单或对话记录（单条或批量，已上传）",
+    "产品事实库或支持政策（至少一项，已上传）",
+    "分类与优先级规则、既有 FAQ、禁用表述清单、回复渠道与语言（可选）"
+  ],
+  "output": "分诊表（分类、优先级、依据、处理路径）+ 一线回复工单的回复草案（含依据表、待确认项、自检）+ 需升级工单的升级摘要；首部注明规则与资料版本，个人信息已遮蔽",
+  "skills": [
+    {
+      "id": "ticket-triage",
+      "title": "工单分诊（分类、优先级、升级判定）",
+      "version": "1.0.0"
+    },
+    {
+      "id": "reply-draft",
+      "title": "客户回复草案",
+      "version": "1.0.0"
+    },
+    {
+      "id": "reply-fact-check",
+      "title": "回复事实与措辞核对",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "工单分诊与回复草案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "工单分诊与回复草案",
+        "en": "Ticket triage and reply draft"
+      }
+    },
+    "description": {
+      "original": "对已提供的工单或对话记录分类、定优先级并判定处理路径；对路径为一线回复的工单依据事实库与政策起草回复草案并核对事实与措辞；需升级的只出摘要，不起草对外回复。所有草案待负责人确认后发送。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的工单或对话记录分类、定优先级并判定处理路径；对路径为一线回复的工单依据事实库与政策起草回复草案并核对事实与措辞；需升级的只出摘要，不起草对外回复。所有草案待负责人确认后发送。",
+        "en": "Categorize provided tickets or conversations, set priority, and decide the handling path; for tickets routed to first-line reply, draft a response from the fact base and policies and check facts and wording; tickets needing escalation get a summary only, with no outbound draft. All drafts wait for the owner's confirmation before sending."
+      }
+    },
+    "requirements": [
+      {
+        "original": "工单或对话记录（单条或批量，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "工单或对话记录（单条或批量，已上传）",
+          "en": "Tickets or conversation records (single or batch, already uploaded)"
+        }
+      },
+      {
+        "original": "产品事实库或支持政策（至少一项，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "产品事实库或支持政策（至少一项，已上传）",
+          "en": "Product fact base or support policy (at least one, already uploaded)"
+        }
+      },
+      {
+        "original": "分类与优先级规则、既有 FAQ、禁用表述清单、回复渠道与语言（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "分类与优先级规则、既有 FAQ、禁用表述清单、回复渠道与语言（可选）",
+          "en": "Category and priority rules, existing FAQ, forbidden wording list, reply channel and language (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "分诊表（分类、优先级、依据、处理路径）+ 一线回复工单的回复草案（含依据表、待确认项、自检）+ 需升级工单的升级摘要；首部注明规则与资料版本，个人信息已遮蔽",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "分诊表（分类、优先级、依据、处理路径）+ 一线回复工单的回复草案（含依据表、待确认项、自检）+ 需升级工单的升级摘要；首部注明规则与资料版本，个人信息已遮蔽",
+        "en": "Triage table (category, priority, rationale, handling path) + reply drafts for first-line tickets (with evidence table, open items, self-check) + escalation summaries for tickets needing escalation; header notes the rules and reference versions, personal data masked"
+      }
+    }
+  }
+}

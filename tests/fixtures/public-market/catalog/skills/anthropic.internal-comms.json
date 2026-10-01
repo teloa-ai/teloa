@@ -1,0 +1,107 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "anthropic.internal-comms",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "internal-comms",
+    "title": {
+      "zh-CN": "内部沟通稿",
+      "en": "Internal communications"
+    },
+    "summary": {
+      "zh-CN": "按公司常用格式起草周报、3P 进展、简讯、FAQ 与事故通报，只起草不发送。",
+      "en": "Drafts status reports, 3P updates, newsletters, FAQs and incident reports in your company formats. Drafts only, never sends."
+    }
+  },
+  "upstream": {
+    "ecosystem": "anthropic",
+    "author": "Anthropic",
+    "repository": {
+      "host": "github.com",
+      "owner": "anthropics",
+      "repo": "skills"
+    },
+    "commit": "33375500bcea98d610eb30ce10ac4e59b89c390d",
+    "path": "skills/internal-comms",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "gitBlob": "4f881c52d1f72f4cfb720e339e2d35c3058d01a9",
+        "size": 11345
+      },
+      {
+        "path": "SKILL.md",
+        "gitBlob": "56ea935b74f371bfeb4c7d3c19d5139df866e73b",
+        "size": 1511
+      },
+      {
+        "path": "examples/3p-updates.md",
+        "gitBlob": "5329bfbf3b47035946a3995dd63025799b582f8c",
+        "size": 3274
+      },
+      {
+        "path": "examples/company-newsletter.md",
+        "gitBlob": "4997a072b62ed7f65a9fd113903db3d9eba34b98",
+        "size": 3295
+      },
+      {
+        "path": "examples/faq-answers.md",
+        "gitBlob": "395262a860636434593cd3c3da258000231ea4f6",
+        "size": 2366
+      },
+      {
+        "path": "examples/general-comms.md",
+        "gitBlob": "0ea977018ca8167d39bfc9adb253f80336819578",
+        "size": 602
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "frontmatter 只保留 name 与 description，说明改为不点名具体模型的表述。",
+      "en": "Frontmatter keeps only name and description; the description no longer names a specific model."
+    },
+    {
+      "zh-CN": "新增「只起草、不发送」说明；examples 原样收录。",
+      "en": "Added a drafts-only note; examples are included unchanged."
+    }
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE.txt"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "纯文本方法，不需要额外工具。",
+        "en": "Text-only method; no extra tools required."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

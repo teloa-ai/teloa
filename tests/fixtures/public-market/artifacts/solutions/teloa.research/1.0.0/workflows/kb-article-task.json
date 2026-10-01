@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "kb-article-task",
+  "title": "知识库条目",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "把已确认的研究结论、流程或常见问题整理为知识库条目草案，含适用范围、来源清单、最近核对日期与维护人占位；涉及的术语按术语表统一。只出草案，写入知识库需你确认。",
+  "requirements": [
+    "条目素材（已确认的简报、流程说明、对话记录或文档，已上传）",
+    "条目主题与读者（一句话）；如有，附知识库模板、已有同主题条目或术语表"
+  ],
+  "output": "知识库条目草案：标题、别名、适用范围、正文（事实附来源编号）、待确认、相关条目、来源清单（含检索日期）、维护信息；有已有条目时附差异表；术语统一说明",
+  "skills": [
+    {
+      "id": "kb-article",
+      "title": "知识库条目撰写",
+      "version": "1.0.0"
+    },
+    {
+      "id": "glossary",
+      "title": "术语表整理",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "知识库条目",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "知识库条目",
+        "en": "Knowledge base article"
+      }
+    },
+    "description": {
+      "original": "把已确认的研究结论、流程或常见问题整理为知识库条目草案，含适用范围、来源清单、最近核对日期与维护人占位；涉及的术语按术语表统一。只出草案，写入知识库需你确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "把已确认的研究结论、流程或常见问题整理为知识库条目草案，含适用范围、来源清单、最近核对日期与维护人占位；涉及的术语按术语表统一。只出草案，写入知识库需你确认。",
+        "en": "Turn confirmed findings, procedures or FAQs into a knowledge base article draft with scope, source list, last-checked date and a maintainer placeholder; terms follow the glossary. Draft only; writing to the knowledge base requires your confirmation."
+      }
+    },
+    "requirements": [
+      {
+        "original": "条目素材（已确认的简报、流程说明、对话记录或文档，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "条目素材（已确认的简报、流程说明、对话记录或文档，已上传）",
+          "en": "Article material (confirmed briefs, procedure notes, conversation records or documents, uploaded)"
+        }
+      },
+      {
+        "original": "条目主题与读者（一句话）；如有，附知识库模板、已有同主题条目或术语表",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "条目主题与读者（一句话）；如有，附知识库模板、已有同主题条目或术语表",
+          "en": "Article topic and audience (one sentence); optionally the knowledge base template, an existing article on the topic or a glossary"
+        }
+      }
+    ],
+    "output": {
+      "original": "知识库条目草案：标题、别名、适用范围、正文（事实附来源编号）、待确认、相关条目、来源清单（含检索日期）、维护信息；有已有条目时附差异表；术语统一说明",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "知识库条目草案：标题、别名、适用范围、正文（事实附来源编号）、待确认、相关条目、来源清单（含检索日期）、维护信息；有已有条目时附差异表；术语统一说明",
+        "en": "Knowledge base article draft: title, aliases, scope, body (facts with source numbers), items to confirm, related articles, source list (with retrieval dates), maintenance info; a diff table when an existing article exists; note on unified terms"
+      }
+    }
+  }
+}

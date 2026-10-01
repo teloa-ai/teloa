@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "weekly-report-task",
+  "title": "生成周报",
+  "version": "1.0.0",
+  "domain": "workspace",
+  "description": "把本周的工作记录、群消息日报、会议纪要与文档材料整理为周报或决策简报草案：完成事项、进行中、阻碍与风险、下周计划、需确认或决策的事项，数字与状态附来源；跨来源状态不一致时按冲突列出。不代为提交汇报应用、不发群。",
+  "requirements": [
+    "本周工作记录、群消息日报或项目材料（已上传）",
+    "周报类型与读者（周报 / 向上汇报 / 决策简报，可选）"
+  ],
+  "output": "周报或决策简报草案：首部为报告期间、来源清单与未核实假设；按类型输出对应结构，所有数字与状态附来源；提交或发送前需负责人确认",
+  "skills": [
+    {
+      "id": "workspace-weekly-report",
+      "title": "周报与决策简报",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "生成周报",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "生成周报",
+        "en": "Generate weekly report"
+      }
+    },
+    "description": {
+      "original": "把本周的工作记录、群消息日报、会议纪要与文档材料整理为周报或决策简报草案：完成事项、进行中、阻碍与风险、下周计划、需确认或决策的事项，数字与状态附来源；跨来源状态不一致时按冲突列出。不代为提交汇报应用、不发群。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "把本周的工作记录、群消息日报、会议纪要与文档材料整理为周报或决策简报草案：完成事项、进行中、阻碍与风险、下周计划、需确认或决策的事项，数字与状态附来源；跨来源状态不一致时按冲突列出。不代为提交汇报应用、不发群。",
+        "en": "Turn this week's work records, group digests, meeting minutes and documents into a draft weekly report or decision brief: completed, in progress, blockers and risks, next week's plan and items needing confirmation or decision, with sources for figures and statuses; inconsistent statuses across sources are listed as conflicts. Nothing is submitted to reporting apps or posted to groups."
+      }
+    },
+    "requirements": [
+      {
+        "original": "本周工作记录、群消息日报或项目材料（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本周工作记录、群消息日报或项目材料（已上传）",
+          "en": "This week's work records, group digests or project materials (uploaded)"
+        }
+      },
+      {
+        "original": "周报类型与读者（周报 / 向上汇报 / 决策简报，可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "周报类型与读者（周报 / 向上汇报 / 决策简报，可选）",
+          "en": "Report type and audience (weekly report / management summary / decision brief, optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "周报或决策简报草案：首部为报告期间、来源清单与未核实假设；按类型输出对应结构，所有数字与状态附来源；提交或发送前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "周报或决策简报草案：首部为报告期间、来源清单与未核实假设；按类型输出对应结构，所有数字与状态附来源；提交或发送前需负责人确认",
+        "en": "Draft weekly report or decision brief: header with period, sources and unverified assumptions; structured by type with every figure and status sourced; the owner confirms before submitting or sending"
+      }
+    }
+  }
+}

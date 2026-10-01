@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "noEmit": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "packages/**/*.ts",
+    "packages/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/lib/**",
+    "**/tsdown.config.ts",
+    "packages/client/tsdown.preset.ts"
+  ]
+}

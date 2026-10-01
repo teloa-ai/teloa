@@ -1,0 +1,62 @@
+name: teloa
+services:
+  init:
+    image: teloa-local:alpha
+    build: .
+    command: ["node", "scripts/启动容器.mjs", "init"]
+    restart: "no"
+    volumes:
+      - database-secret:/data/secrets
+      - credentials-secret:/data/credentials-secret
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  db:
+    image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teloa
+      POSTGRES_USER: teloa
+      POSTGRES_PASSWORD_FILE: /run/teloa-secrets/postgres-password
+    group_add: ["1000"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - database-secret:/run/teloa-secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teloa -d teloa"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  app:
+    image: teloa-local:alpha
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TELOA_PORT:-3100}:8080"
+    volumes:
+      - app-data:/data
+      - database-secret:/run/teloa-secrets:ro
+      # 凭据主密钥卷只挂给 app（只读），db 不挂；与 DSH_HOME 所在的 app-data 分卷存放。
+      - credentials-secret:/run/teloa-credentials:ro
+    environment:
+      TELOA_CREDENTIALS_KEY_FILE: /run/teloa-credentials/key
+    depends_on:
+      db:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok||r.status===401?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+volumes:
+  postgres-data:
+  app-data:
+  database-secret:
+  credentials-secret:

@@ -1,0 +1,65 @@
+import {useEffect,useState} from 'react'
+import {ArrowLeft,FolderKanban,Plus,RefreshCw,CalendarDays} from 'lucide-react'
+import {projectLinkKinds,type ProjectDefinition,type ProjectDetail,type ProjectItem,type ProjectReferenceItem,type WorkProject} from '@teloa/contract'
+import type {BusinessScopeLabel} from './business-directory.js'
+import {useBusinessScopes} from './business-scope-context.js'
+import type {ProjectApi} from './project-api.js'
+import {ProjectForm,ProjectArchiveDialog} from './ProjectForm.js'
+import {ProjectRelations} from './ProjectRelations.js'
+import {ProjectReferences} from './ProjectReferences.js'
+import {filterProjects,projectFields,projectProgress,removeProjectLink,removeProjectReference,referenceScopeName,projectStateKeys,projectKindKeys,projectItemStateKeys} from './project-presentation.js'
+import {useI18n} from './i18n/provider.js'
+import {localizeWorkError} from './i18n/errors.js'
+import css from './ProjectWorkspace.module.css'
+
+type Props={api:ProjectApi;scope:string;selectedId?:string;typeName:string;scopeLabels?:readonly BusinessScopeLabel[];select:(id:string,scope?:string)=>void;back:()=>void;openItem:(item:ProjectItem|ProjectReferenceItem)=>void|Promise<void>}
+export function ProjectWorkspace({api,scope,selectedId,typeName,scopeLabels=[],select,back,openItem}:Props){
+ const {t,locale}=useI18n(),collaborationScopes=useBusinessScopes(),scopeName=(value:string)=>referenceScopeName({scope:value},scopeLabels,item=>collaborationScopes[item]||item),[rows,setRows]=useState<WorkProject[]>([]),[detail,setDetail]=useState<ProjectDetail>(),[loadedKey,setLoadedKey]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,refresh]=useState(0)
+ const [query,setQuery]=useState(''),[archived,setArchived]=useState(false),[busy,setBusy]=useState(false),[discarded,setDiscarded]=useState(false)
+ const [form,setForm]=useState<{fields:ProjectDefinition;project?:WorkProject}|null>(null),[relations,setRelations]=useState<WorkProject|null>(null),[references,setReferences]=useState<WorkProject|null>(null),[archive,setArchive]=useState<WorkProject|null>(null)
+ const key=scope+':'+(selectedId??''),current=loadedKey===key?detail:undefined
+ useEffect(()=>{
+  let active=true;setLoading(true);setError('')
+  const load=async()=>{if(selectedId){const value=await api.get(selectedId);if(value.project.scope!==scope)throw Error('项目不属于当前业务。');if(active){setDetail(value);setRows([])}}else{const value=await api.list(scope);if(active){setRows(value);setDetail(undefined)}}}
+  void load().then(()=>{if(active){setLoadedKey(key);setLoading(false)}},e=>{if(active){setError(localizeWorkError(locale,e));setLoading(false)}})
+  return()=>{active=false}
+ },[api,scope,selectedId,revision,locale,key])
+ useEffect(()=>{if(form||relations||references||archive||busy)return;const update=()=>{if(document.visibilityState==='visible')refresh(n=>n+1)};window.addEventListener('focus',update);const timer=setInterval(update,30000);return()=>{window.removeEventListener('focus',update);clearInterval(timer)}},[form,relations,references,archive,busy])
+ const save=async(project:WorkProject,fields:ProjectDefinition)=>{await api.edit(project.id,project.version,fields);refresh(n=>n+1)}
+ const action=async(run:()=>Promise<unknown>)=>{if(busy)return;setBusy(true);setError('');try{await run()}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}
+ const pending=api.pendingFields(),shown=filterProjects(rows,query,archived)
+ return <section className={css.workspace} aria-label={t('project.workspace.aria')}>
+  {error&&<div className={css.error} role="alert">{error}<button type="button" disabled={busy} onClick={()=>refresh(n=>n+1)}>{t('project.refresh')}</button></div>}
+  {selectedId&&!current&&!loading&&<button type="button" onClick={back}>{t('project.back',{type:typeName})}</button>}
+  {loading&&!current?<p role="status">{t('project.loading')}</p>:error&&loadedKey!==key?null:selectedId?current&&<ProjectDetailView detail={current} busy={busy||loading} back={back} refresh={()=>refresh(n=>n+1)} edit={()=>setForm({fields:projectFields(current.project),project:current.project})} add={()=>setRelations(current.project)} addReference={()=>setReferences(current.project)} changeState={state=>{if(state==='archived')setArchive(current.project);else void action(()=>save(current.project,projectFields(current.project,{state})))}} remove={item=>{void action(()=>save(current.project,removeProjectLink(current.project,item)))}} removeReference={ref=>{void action(()=>save(current.project,removeProjectReference(current.project,ref)))}} open={item=>{void action(async()=>{await openItem(item)})}} scopeName={scopeName}/>:
+   <div className={css.directory}>
+    <header><div><h2>{typeName}</h2><p>{t('project.directoryHint')}</p></div><button className={css.primary} type="button" disabled={busy||!!pending||!!api.recoveryError()} onClick={()=>setForm({fields:{scope,title:'',goal:'',dueDate:null,state:'planning',links:[],references:[]}})}><Plus size={16}/>{t('project.create')}</button></header>
+    {(pending||api.recoveryError())&&<div className={css.notice}><p>{t('project.pending')}</p><p>{t('recovery.nextStep')}</p>{pending&&<button type="button" disabled={busy} onClick={()=>void action(async()=>{const row=await api.recover();select(row.id,row.scope)})}>{t('project.recover')}</button>}<button type="button" disabled={busy} onClick={()=>{api.discard();setDiscarded(true);refresh(n=>n+1)}}>{t('recovery.discard')}</button></div>}
+    {discarded&&<p role="status">{t('recovery.discarded')}</p>}
+    <div className={css.toolbar}><input aria-label={t('project.search')} placeholder={t('project.search')} value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label={t('project.filter')} value={archived?'archived':'current'} onChange={e=>setArchived(e.target.value==='archived')}><option value="current">{t('project.current')}</option><option value="archived">{t('project.state.archived')}</option></select><button type="button" onClick={()=>refresh(n=>n+1)} aria-label={t('project.refresh')}><RefreshCw size={16}/></button></div>
+    {!shown.length?<div className={css.directoryEmpty}><FolderKanban size={27}/><h3>{t(query||archived?'project.noMatch':'project.empty.title')}</h3><p>{t('project.directoryHint')}</p></div>:<div className={css.projectList}>{shown.map(project=><button type="button" className={css.projectCard} key={project.id} onClick={()=>select(project.id)}><span className={css.cardTitle}><FolderKanban size={19}/><strong>{project.title}</strong><small>{t(projectStateKeys[project.state])}</small></span><span className={css.cardGoal}>{project.goal}</span>{project.dueDate&&<span className={css.due}><CalendarDays size={13}/>{project.dueDate}</span>}</button>)}</div>}
+   </div>}
+  {form&&<ProjectForm initial={form.fields} editing={!!form.project} openTasks={current?projectProgress(current.summary).total-current.summary.completedTasks:0} close={()=>setForm(null)} save={async fields=>{if(form.project)await save(form.project,fields);else{const created=await api.create(fields);select(created.id,created.scope)}setForm(null)}}/>}
+  {relations&&<ProjectRelations project={relations} api={api} close={()=>setRelations(null)} save={async links=>{await save(relations,projectFields(relations,{links:[...relations.links,...links]}));setRelations(null)}}/>}
+  {references&&<ProjectReferences project={references} api={api} scopeLabels={scopeLabels} scopeName={scopeName} close={()=>setReferences(null)} save={async added=>{await save(references,projectFields(references,{references:[...references.references,...added]}));setReferences(null)}}/>}
+  {archive&&<ProjectArchiveDialog close={()=>setArchive(null)} save={async()=>{await save(archive,projectFields(archive,{state:'archived'}));setArchive(null)}}/>}
+ </section>
+}
+
+type DetailProps={detail:ProjectDetail;busy:boolean;back:()=>void;refresh:()=>void;edit:()=>void;add:()=>void;addReference:()=>void;changeState:(state:ProjectDefinition['state'])=>void;remove:(item:ProjectItem)=>void;removeReference:(ref:ProjectReferenceItem)=>void;open:(item:ProjectItem|ProjectReferenceItem)=>void;scopeName:(scope:string)=>string}
+export function ProjectDetailView({detail,busy,back,refresh,edit,add,addReference,changeState,remove,removeReference,open,scopeName}:DetailProps){
+ const {t}=useI18n(),{project,items,summary,references}=detail,progress=projectProgress(summary),archived=project.state==='archived',attention=items.filter(item=>item.attention!==null)
+ const row=(item:ProjectItem)=><li key={item.kind+item.id}><div>{item.available?<button type="button" className={css.itemOpen} data-project-item={item.id} disabled={busy} onClick={()=>open(item)}>{item.title}</button>:<span>{t('project.item.unavailable')}</span>}<small>{item.state?t(projectItemStateKeys[item.state as keyof typeof projectItemStateKeys]):t('project.unavailableHint')}{item.origin!=='direct'&&<> · {t(item.origin==='automation'?'project.fromAutomation':'project.fromTask')}</>}{item.kind==='artifact'&&item.version!==null&&<> · v{item.version}</>}</small></div>{!archived&&item.origin==='direct'&&<button type="button" data-project-remove={item.id} className={css.remove} disabled={busy} aria-label={t('project.removeNamed',{name:item.title??t('project.item.unavailable')})} onClick={()=>remove(item)}>{t('project.remove')}</button>}</li>
+ return <article className={css.detail}>
+  <div className={css.detailToolbar}><button type="button" className={css.back} onClick={back}><ArrowLeft size={15}/>{t('project.directory')}</button><button type="button" onClick={refresh} disabled={busy}><RefreshCw size={15}/>{t('project.refresh')}</button></div>
+  <header className={css.detailHeader}><div><span className={css.status}>{t(projectStateKeys[project.state])}</span><h2>{project.title}</h2><p>{project.goal}</p>{project.dueDate&&<span className={css.due}><CalendarDays size={14}/>{t('project.dueDate')}: {project.dueDate}</span>}</div><div className={css.actions}>{archived?<button type="button" disabled={busy} onClick={()=>changeState('running')}>{t('project.restore')}</button>:<><button type="button" data-project-edit disabled={busy} onClick={edit}>{t('project.edit')}</button><button type="button" disabled={busy} onClick={()=>changeState('archived')}>{t('project.archive')}</button><button type="button" className={css.primary} disabled={busy} onClick={add}><Plus size={15}/>{t('project.add')}</button></>}</div></header>
+  <dl className={css.metrics}><div><dt>{t('project.progress')}</dt><dd>{progress.percent===null?'—':progress.percent+'%'}<small>{t('project.progressCount',{done:progress.completed,total:progress.total})}</small></dd>{progress.total>0&&<progress max={progress.total} value={progress.completed} aria-label={t('project.progress')}/>}</div><div><dt>{t('task.table.attention')}</dt><dd>{summary.attentionTasks}</dd></div><div><dt>{t('project.artifacts')}</dt><dd>{items.filter(item=>item.kind==='artifact'&&item.available).length}</dd></div></dl>
+  {attention.length>0&&<section className={css.attention}><h3>{t('task.table.attention')}</h3><ul>{attention.map(row)}</ul></section>}
+  <div className={css.relationGrid}>{projectLinkKinds.map(kind=><section key={kind} className={css.relationSection} aria-label={t(projectKindKeys[kind])}><header><h3>{t(projectKindKeys[kind])}</h3><span>{items.filter(item=>item.kind===kind).length}</span></header>{items.some(item=>item.kind===kind)?<ul>{items.filter(item=>item.kind===kind).map(row)}</ul>:<p className={css.muted}>{t('project.noneLinked')}</p>}</section>)}
+   <section className={css.relationSection+' '+css.references} aria-label={t('project.references')} data-project-references="">
+    <header><h3>{t('project.references')}</h3><span>{references.length}</span>{!archived&&<button type="button" data-project-reference-add="" disabled={busy} onClick={addReference}><Plus size={15}/>{t('project.reference.add')}</button>}</header>
+    <p className={css.muted}>{t('project.reference.hint')}</p>
+    {references.length?<ul>{references.map(ref=><li key={ref.scope+ref.kind+ref.id}><div>{ref.available?<button type="button" className={css.itemOpen} data-project-reference={ref.id} disabled={busy} onClick={()=>open(ref)}>{ref.title}</button>:<span>{t('project.item.unavailable')}</span>}<small><span className={css.referenceBadge}>{scopeName(ref.scope)}</span> · {t(projectKindKeys[ref.kind])} · <span className={css.referenceBadge}>{t('project.reference.readonly')}</span>{ref.available?ref.state&&<> · {t(projectItemStateKeys[ref.state as keyof typeof projectItemStateKeys])}</>:<> · {t('project.reference.unavailableHint')}</>}</small></div>{!archived&&<button type="button" data-project-reference-remove={ref.id} className={css.remove} disabled={busy} aria-label={t('project.removeNamed',{name:ref.title??t('project.item.unavailable')})} onClick={()=>removeReference(ref)}>{t('project.reference.remove')}</button>}</li>)}</ul>:<p className={css.muted}>{t('project.reference.empty')}</p>}
+   </section></div>
+ </article>
+}

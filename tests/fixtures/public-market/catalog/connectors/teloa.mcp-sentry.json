@@ -1,0 +1,115 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-sentry",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "cloud-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "sentry",
+    "title": {
+      "zh-CN": "Sentry（错误监控）",
+      "en": "Sentry (Error Monitoring)"
+    },
+    "summary": {
+      "zh-CN": "Sentry 官方远程 MCP，查询组织与项目、搜索 Issue 与事件、按链接或 ID 读取 Issue 详情。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，令牌自动刷新。数据经由 sentry.io 传输。",
+      "en": "Sentry official remote MCP: find organizations and projects, search issues and events, and read issue details by URL or ID. Authorized by Teloa via OAuth (dynamic client registration + PKCE) with automatic token refresh. Data transits sentry.io."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": []
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "tools": [
+      {
+        "name": "find_organizations",
+        "description": {
+          "zh-CN": "列出可访问的组织",
+          "en": "List accessible organizations"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "find_projects",
+        "description": {
+          "zh-CN": "列出可访问的项目",
+          "en": "List accessible projects"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "search_issues",
+        "description": {
+          "zh-CN": "按自然语言搜索 Issue",
+          "en": "Search issues in natural language"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "search_events",
+        "description": {
+          "zh-CN": "按自然语言搜索事件",
+          "en": "Search events in natural language"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_sentry_resource",
+        "description": {
+          "zh-CN": "按链接或 ID 读取 Issue、事件等详情",
+          "en": "Read an issue, event or other resource by URL or ID"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://docs.sentry.io/product/sentry-basics/integrations/mcp/"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Sentry-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "远程服务的 Bearer 只收 MCP OAuth 令牌，Sentry 用户 Auth Token 须用 Sentry-Bearer 头（Teloa 不支持），故改为 OAuth；服务端支持动态客户端注册与 PKCE S256，本机回环回调（127.0.0.1）尚未实测",
+        "en": "The remote server accepts only MCP OAuth tokens as Bearer; Sentry user auth tokens need a Sentry-Bearer header (unsupported in Teloa), so this connector uses OAuth; the server supports dynamic client registration and PKCE S256, and the loopback callback (127.0.0.1) has not been tested yet"
+      },
+      {
+        "zh-CN": "数据经由 sentry.io 平台传输",
+        "en": "Data transits the sentry.io platform"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

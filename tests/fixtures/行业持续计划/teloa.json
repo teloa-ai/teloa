@@ -1,0 +1,42 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "plan-demo",
+  "title": "行业计划验收",
+  "version": "1.0.0",
+  "domain": "security",
+  "description": "验证行业计划范围",
+  "resources": [
+    {
+      "id": "role",
+      "kind": "role",
+      "title": "日常核对岗",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "role.json"
+      }
+    },
+    {
+      "id": "work",
+      "kind": "work-template",
+      "title": "告警日常核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "work.json"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-work",
+      "from": "role",
+      "to": "work"
+    }
+  ],
+  "entrypoints": [
+    "work"
+  ]
+}

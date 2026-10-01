@@ -1,0 +1,113 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.support",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "business-ops",
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "customer-support",
+    "title": {
+      "zh-CN": "客户支持",
+      "en": "Customer support"
+    },
+    "summary": {
+      "zh-CN": "上传工单、产品事实库与支持政策即可开始：工单分诊、回复草案、FAQ 沉淀、升级摘要，每条事实指向来源，退款与赔偿决定始终由你做出。",
+      "en": "Start from uploaded tickets, product facts and support policies: ticket triage, reply drafts, FAQ distillation and escalation summaries, with every fact pointing to its source and refund or compensation decisions always left to you."
+    },
+    "scope": "support",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "按类型与优先级分诊工单，写出判定依据，判定自助、一线回复或升级",
+          "en": "Triage tickets by category and priority with stated rationale, routing to self-service, first-line reply or escalation"
+        },
+        {
+          "zh-CN": "为一线可答的工单起草回复，每条事实指向事实库或政策条目，不做退款赔偿承诺",
+          "en": "Draft replies for first-line tickets with every fact pointing to a fact-base or policy entry, and no refund or compensation promises"
+        },
+        {
+          "zh-CN": "从已解决工单沉淀 FAQ 条目，去除客户个人信息，标出与既有 FAQ 的重复与过期",
+          "en": "Distill FAQ entries from resolved tickets, strip customer personal data, and flag duplicates and outdated entries in the existing FAQ"
+        },
+        {
+          "zh-CN": "为需升级的工单整理摘要：问题、发生条件、影响、已尝试步骤、需对方决定的事项与时限",
+          "en": "Prepare escalation summaries: problem, conditions, impact, steps tried, decisions needed and deadline"
+        },
+        {
+          "zh-CN": "发送或发布前核对事实、承诺性措辞、禁用表述与个人信息",
+          "en": "Check facts, promissory wording, forbidden phrases and personal data before sending or publishing"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "工单或对话记录、产品事实库、支持政策（升级规则与 SLA）、既有 FAQ",
+          "en": "Tickets or conversation records, product fact base, support policies (escalation rules and SLA), existing FAQ"
+        },
+        {
+          "zh-CN": "组织自己的分类与优先级规则、回复渠道与语言、禁用表述清单（没有则用方案默认并注明）",
+          "en": "Your own category and priority rules, reply channel and language, forbidden wording list (defaults are used and noted otherwise)"
+        },
+        {
+          "zh-CN": "可选：飞书、钉钉、语雀、Notion 或 Zapier 连接器，用于读取消息与在你确认后发送或写入",
+          "en": "Optional: Feishu, DingTalk, Yuque, Notion or Zapier connectors to read messages and send or write after your confirmation"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件",
+          "en": "Reads only the files you provide for the task"
+        },
+        {
+          "zh-CN": "需你确认才会做：向客户发送回复、改动工单系统、发布 FAQ、引用客户个人信息",
+          "en": "Only with your confirmation: sending replies to customers, changing the ticket system, publishing FAQ entries, quoting customer personal data"
+        },
+        {
+          "zh-CN": "不代你做退款、赔偿、补偿或例外处理的决定与承诺",
+          "en": "Never decides or promises refunds, compensation or exceptions on your behalf"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：工单分诊、FAQ 沉淀、升级摘要三个模板按合成样例产出结构与期望一致，回复草案逐条引用事实库条目并做措辞核对，升级类工单不起草对外回复、个人信息只保留工单编号。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-25: ticket triage, FAQ distillation and escalation summary matched the expected structure on synthetic samples; reply drafts cite fact-base entries with wording checks, escalated tickets get no outbound draft, personal data reduced to ticket ids."
+      },
+      {
+        "zh-CN": "工单系统、即时通讯与知识库连接为可选项，本版不内置。",
+        "en": "Ticket system, messaging and knowledge base connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

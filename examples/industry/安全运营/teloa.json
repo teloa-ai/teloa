@@ -1,0 +1,479 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "security-operations",
+  "title": "安全运营",
+  "version": "1.0.2",
+  "domain": "security",
+  "scope": "SOC",
+  "description": "面向安全告警研判、证据整理与处置建议的行业模板。岗位以可回溯的分析和代拟为主，生产处置与外发动作必须经过授权边界。",
+  "resources": [
+    {
+      "id": "security-analyst",
+      "kind": "role",
+      "title": "安全运营分析员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/安全运营分析员.json"
+      },
+      "localized": {
+        "title": {
+          "original": "安全运营分析员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全运营分析员",
+            "en": "Security operations analyst"
+          }
+        }
+      }
+    },
+    {
+      "id": "security-triage",
+      "kind": "knowledge",
+      "title": "安全告警研判手册",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/安全告警研判手册.md"
+      },
+      "localized": {
+        "title": {
+          "original": "安全告警研判手册",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全告警研判手册",
+            "en": "Security alert triage handbook"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-triage",
+      "kind": "skill",
+      "title": "告警研判记录",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/告警研判记录/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "告警研判记录",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警研判记录",
+            "en": "Alert triage report"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-data",
+      "kind": "data-source",
+      "title": "告警数据来源",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "data/alerts.json"
+      },
+      "localized": {
+        "title": {
+          "original": "告警数据来源",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警数据来源",
+            "en": "Alert data source"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-mcp",
+      "kind": "mcp",
+      "title": "告警参考连接",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "connections/alerts.json"
+      },
+      "localized": {
+        "title": {
+          "original": "告警参考连接",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警参考连接",
+            "en": "Alert reference connection"
+          }
+        }
+      }
+    },
+    {
+      "id": "isolate-tool",
+      "kind": "execution-tool",
+      "title": "终端隔离执行工具",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "tools/isolate.json"
+      },
+      "localized": {
+        "title": {
+          "original": "终端隔离执行工具",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "终端隔离执行工具",
+            "en": "Endpoint isolation execution tool"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-ticket",
+      "kind": "object-type",
+      "title": "告警工单",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "object-types/alert-ticket.json"
+      },
+      "localized": {
+        "title": {
+          "original": "告警工单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警工单",
+            "en": "Alert ticket"
+          }
+        }
+      }
+    },
+    {
+      "id": "incident-ticket",
+      "kind": "object-type",
+      "title": "事件工单",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "object-types/incident-ticket.json"
+      },
+      "localized": {
+        "title": {
+          "original": "事件工单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件工单",
+            "en": "Incident ticket"
+          }
+        }
+      }
+    },
+    {
+      "id": "asset",
+      "kind": "object-type",
+      "title": "资产",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "object-types/asset.json"
+      },
+      "localized": {
+        "title": {
+          "original": "资产",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "资产",
+            "en": "Asset"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-risk-distribution",
+      "kind": "business-view",
+      "title": "风险分布",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/soc-risk-distribution.json"
+      },
+      "localized": {
+        "title": {
+          "original": "风险分布",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "风险分布",
+            "en": "Risk distribution"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-pending-board",
+      "kind": "business-view",
+      "title": "待处理告警",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/soc-pending-board.json"
+      },
+      "localized": {
+        "title": {
+          "original": "待处理告警",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "待处理告警",
+            "en": "Pending alerts"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-alert-trend",
+      "kind": "business-view",
+      "title": "告警趋势",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/soc-alert-trend.json"
+      },
+      "localized": {
+        "title": {
+          "original": "告警趋势",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警趋势",
+            "en": "Alert trend"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-alert-list",
+      "kind": "business-view",
+      "title": "告警清单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/soc-alert-list.json"
+      },
+      "localized": {
+        "title": {
+          "original": "告警清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警清单",
+            "en": "Alert list"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-incident-list",
+      "kind": "business-view",
+      "title": "事件工单清单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/soc-incident-list.json"
+      },
+      "localized": {
+        "title": {
+          "original": "事件工单清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "事件工单清单",
+            "en": "Incident ticket list"
+          }
+        }
+      }
+    },
+    {
+      "id": "soc-asset-list",
+      "kind": "business-view",
+      "title": "资产清单",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "views/soc-asset-list.json"
+      },
+      "localized": {
+        "title": {
+          "original": "资产清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "资产清单",
+            "en": "Asset list"
+          }
+        }
+      }
+    },
+    {
+      "id": "assign-alert-review",
+      "kind": "business-action",
+      "title": "交给同事核对",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "actions/assign-alert-review.json"
+      },
+      "localized": {
+        "title": {
+          "original": "交给同事核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "交给同事核对",
+            "en": "Assign for peer review"
+          }
+        }
+      }
+    },
+    {
+      "id": "isolate-endpoint",
+      "kind": "business-action",
+      "title": "隔离这台主机",
+      "version": "1.0.1",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "actions/isolate-endpoint.json"
+      },
+      "localized": {
+        "title": {
+          "original": "隔离这台主机",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "隔离这台主机",
+            "en": "Isolate this endpoint"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-triage-review",
+      "kind": "work-template",
+      "title": "告警核对",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/alert-triage-review.json"
+      },
+      "localized": {
+        "title": {
+          "original": "告警核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "告警核对",
+            "en": "Alert review"
+          }
+        }
+      }
+    },
+    {
+      "id": "endpoint-isolation-record",
+      "kind": "work-template",
+      "title": "终端隔离记录",
+      "version": "1.0.1",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/endpoint-isolation-record.json"
+      },
+      "localized": {
+        "title": {
+          "original": "终端隔离记录",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "终端隔离记录",
+            "en": "Endpoint isolation record"
+          }
+        }
+      }
+    },
+    {
+      "id": "daily-alert-triage",
+      "kind": "plan",
+      "title": "每日告警分诊",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "plans/每日告警分诊.json"
+      },
+      "localized": {
+        "title": {
+          "original": "每日告警分诊",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "每日告警分诊",
+            "en": "Daily alert triage"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "security-analyst",
+      "to": "security-triage"
+    },
+    {
+      "kind": "role-skill",
+      "from": "security-analyst",
+      "to": "alert-triage"
+    },
+    {
+      "kind": "role-connection",
+      "from": "security-analyst",
+      "to": "alert-data"
+    },
+    {
+      "kind": "role-connection",
+      "from": "security-analyst",
+      "to": "alert-mcp"
+    },
+    {
+      "kind": "role-connection",
+      "from": "security-analyst",
+      "to": "isolate-tool"
+    }
+  ],
+  "entrypoints": [
+    "alert-triage"
+  ],
+  "localized": {
+    "title": {
+      "original": "安全运营",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "安全运营",
+        "en": "Security operations"
+      }
+    },
+    "description": {
+      "original": "面向安全告警研判、证据整理与处置建议的行业模板。岗位以可回溯的分析和代拟为主，生产处置与外发动作必须经过授权边界。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向安全告警研判、证据整理与处置建议的行业模板。岗位以可回溯的分析和代拟为主，生产处置与外发动作必须经过授权边界。",
+        "en": "A template for alert triage, evidence gathering, and response recommendations. The analyst prepares traceable findings and drafts; production response and external actions require authorization."
+      }
+    }
+  }
+}

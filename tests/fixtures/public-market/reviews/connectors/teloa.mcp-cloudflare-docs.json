@@ -1,0 +1,24 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-cloudflare-docs": {
+      "evidence": "2026-09-27 无凭据 initialize + tools/list（serverInfo docs-ai-search 0.4.13，协议 2025-06-18）：2 个工具，注解均 readOnlyHint:true；initialize 无 instructions 字段；四个 well-known 路径均 404（无鉴权）",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://docs.mcp.cloudflare.com/mcp"
+      },
+      "auth": {
+        "kind": "none",
+        "slots": []
+      },
+      "toolFilter": "none",
+      "upstreamTools": {
+        "search_cloudflare_documentation": "read",
+        "migrate_pages_to_workers_guide": "read"
+      }
+    }
+  }
+}

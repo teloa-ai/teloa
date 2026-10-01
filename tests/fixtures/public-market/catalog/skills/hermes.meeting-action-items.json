@@ -1,0 +1,86 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "hermes.meeting-action-items",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "meeting-action-items",
+    "title": {
+      "zh-CN": "会议行动项",
+      "en": "Meeting action items"
+    },
+    "summary": {
+      "zh-CN": "把会议纪要或转写整理成有出处的决定、负责人与待办草案，对外写入须逐条确认。",
+      "en": "Turns meeting notes or transcripts into cited decisions, owners and proposed tasks; every external write needs your confirmation."
+    }
+  },
+  "upstream": {
+    "ecosystem": "hermes",
+    "author": "Ben Barclay (Hermes Agent)",
+    "repository": {
+      "host": "github.com",
+      "owner": "NousResearch",
+      "repo": "hermes-agent"
+    },
+    "commit": "130b8f2c5dbca93a81aa396dd2ba44420d78f6f0",
+    "path": "skills/productivity/meeting-action-items",
+    "license": "MIT",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "gitBlob": "56962c6c57f093f737c488bd0ada9f1a509831ed",
+        "size": 3808
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "frontmatter 只保留 name 与 description，去掉 Hermes 专属字段。",
+      "en": "Frontmatter keeps only name and description; Hermes-specific fields removed."
+    },
+    {
+      "zh-CN": "read_file、teams-meeting-pipeline 与专用工单连接器改为「用户提供的资料」「本会话已授权的工具」；对外写入逐条经本人确认。",
+      "en": "read_file, teams-meeting-pipeline and dedicated tracker connectors were replaced with user-provided materials and tools already authorized in the conversation; each external write needs confirmation."
+    },
+    {
+      "zh-CN": "仓库根 LICENSE（MIT，Nous Research 版权声明）随资源文件收录。",
+      "en": "The repository root LICENSE (MIT, Nous Research copyright notice) is included with the resource files."
+    }
+  ],
+  "license": {
+    "spdx": "MIT",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "写入任务或外部工单需要对应工具已授权。",
+        "en": "Writing tasks or external tickets needs the corresponding tools to be authorized."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

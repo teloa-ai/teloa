@@ -1,0 +1,5 @@
+{
+  "format": "teloa.mcp-connection/v1",
+  "serverName": "teloa_reference",
+  "tools": ["read_reference"]
+}

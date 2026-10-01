@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "multi-channel-task",
+  "title": "多渠道内容改写任务",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "description": "将原始稿件改写为公众号、小红书、微博、抖音脚本、LinkedIn、X 等渠道版本，格式符合各渠道约束（行业常见做法，发布前以平台现行规则为准）。",
+  "requirements": [
+    "原始稿件或核心内容（已上传）",
+    "目标渠道列表（从：公众号、小红书、微博、抖音脚本、LinkedIn、X 中选择）"
+  ],
+  "output": "各渠道独立稿件（含标题、正文、标签建议、素材说明），每个渠道一个区块，附格式约束来源说明",
+  "skills": [
+    {
+      "id": "multi-channel-adaptation",
+      "title": "多渠道改写与适配",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "多渠道内容改写任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "多渠道内容改写任务",
+        "en": "Multi-channel content adaptation task"
+      }
+    },
+    "description": {
+      "original": "将原始稿件改写为公众号、小红书、微博、抖音脚本、LinkedIn、X 等渠道版本，格式符合各渠道约束（行业常见做法，发布前以平台现行规则为准）。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将原始稿件改写为公众号、小红书、微博、抖音脚本、LinkedIn、X 等渠道版本，格式符合各渠道约束（行业常见做法，发布前以平台现行规则为准）。",
+        "en": "Adapt source content for WeChat, Xiaohongshu, Weibo, Douyin scripts, LinkedIn, and X, following channel format conventions (common industry practice; verify against current platform rules before publishing)."
+      }
+    },
+    "requirements": [
+      {
+        "original": "原始稿件或核心内容（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "原始稿件或核心内容（已上传）",
+          "en": "Source content or key messages (already uploaded)"
+        }
+      },
+      {
+        "original": "目标渠道列表（从：公众号、小红书、微博、抖音脚本、LinkedIn、X 中选择）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标渠道列表（从：公众号、小红书、微博、抖音脚本、LinkedIn、X 中选择）",
+          "en": "Target channel list (choose from: WeChat, Xiaohongshu, Weibo, Douyin script, LinkedIn, X)"
+        }
+      }
+    ],
+    "output": {
+      "original": "各渠道独立稿件（含标题、正文、标签建议、素材说明），每个渠道一个区块，附格式约束来源说明",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "各渠道独立稿件（含标题、正文、标签建议、素材说明），每个渠道一个区块，附格式约束来源说明",
+        "en": "Independent draft per channel (title, body, tag suggestions, asset notes), one section per channel, with format convention source note"
+      }
+    }
+  }
+}

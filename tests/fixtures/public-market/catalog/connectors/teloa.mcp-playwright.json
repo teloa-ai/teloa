@@ -1,0 +1,124 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-playwright",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "automation",
+      "cloud-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "playwright",
+    "title": {
+      "zh-CN": "Playwright 浏览器自动化",
+      "en": "Playwright Browser Automation"
+    },
+    "summary": {
+      "zh-CN": "Microsoft 官方 Playwright MCP 服务，提供浏览器截图、DOM 快照、表单操作等工具。注意：playwright 子依赖的 postinstall 会下载浏览器二进制，--ignore-scripts 会阻断此步骤，需要在受管安装后额外执行浏览器安装命令。中国大陆 Playwright CDN 访问受限。",
+      "en": "Microsoft's official Playwright MCP service providing browser screenshots, DOM snapshots, form operations, and more. Note: playwright's postinstall downloads browser binaries; --ignore-scripts blocks this step, requiring a separate browser install step after managed installation. Playwright CDN may be restricted from mainland China."
+    },
+    "auth": {
+      "kind": "none"
+    },
+    "recipe": {
+      "transport": "stdio",
+      "package": "@playwright/mcp",
+      "version": "0.0.82",
+      "integrity": "sha512-OCqftfb8H4dnqm/njbTBRk3seUvUPttOlJUxCtEzXGETYOlRH5Qt3bbXIjmZIuWAxD9RF+yg1ASrPeXvm0y5cA==",
+      "bin": "cli.js",
+      "args": []
+    },
+    "tools": [
+      {
+        "name": "browser_snapshot",
+        "description": {
+          "zh-CN": "获取当前页面无障碍树快照",
+          "en": "Get accessibility tree snapshot of the current page"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "browser_take_screenshot",
+        "description": {
+          "zh-CN": "对当前页面截图",
+          "en": "Take a screenshot of the current page"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "browser_navigate",
+        "description": {
+          "zh-CN": "导航到 URL",
+          "en": "Navigate to a URL"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "browser_click",
+        "description": {
+          "zh-CN": "点击页面元素",
+          "en": "Click a page element"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "browser_type",
+        "description": {
+          "zh-CN": "在元素中输入文字",
+          "en": "Type text into an element"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "browser_find",
+        "description": {
+          "zh-CN": "在页面查找元素",
+          "en": "Find elements on the page"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://github.com/microsoft/playwright-mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "playwright 子依赖 postinstall 下载浏览器二进制被 --ignore-scripts 阻断，需受管安装后额外步骤",
+        "en": "playwright sub-dependency postinstall for browser binaries is blocked by --ignore-scripts; requires an extra step after managed install"
+      },
+      {
+        "zh-CN": "中国大陆 Playwright CDN 访问受限，需使用镜像或离线安装",
+        "en": "Playwright CDN may be restricted from mainland China; mirror or offline install required"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "Node.js 18+"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

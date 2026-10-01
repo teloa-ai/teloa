@@ -1,0 +1,105 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.project",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "office-docs",
+      "business-ops"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "project-management",
+    "title": {
+      "zh-CN": "项目管理",
+      "en": "Project management"
+    },
+    "summary": {
+      "zh-CN": "上传计划、看板导出与会议记录即可开始：周状态报告、项目会议纪要、风险台账更新、里程碑偏差核对，每个日期和状态都指向来源，不替你改计划或承诺日期。",
+      "en": "Start from uploaded plans, board exports and meeting notes: weekly status reports, project meeting minutes, risk register updates and milestone variance checks, with every date and status pointing to its source and no plan changes or date commitments made for you."
+    },
+    "scope": "project",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "把任务记录与状态材料整理成周状态报告，整体状态三档并写出依据",
+          "en": "Turn task records and status notes into a weekly status report with a three-level overall status and stated rationale"
+        },
+        {
+          "zh-CN": "从项目会议转写提取决议、计划变更与待办，负责人和日期只取原文",
+          "en": "Extract decisions, plan changes and action items from project meeting transcripts; owners and dates only from the text"
+        },
+        {
+          "zh-CN": "登记与更新风险台账，逐条评分并列出本次变更，接受与关闭等你确认",
+          "en": "Add and update risk register entries with scores and a change list; acceptance and closure wait for your confirmation"
+        },
+        {
+          "zh-CN": "计划与实际逐条对照里程碑，算出偏差天数并追溯依赖影响",
+          "en": "Compare milestones plan versus actual, compute variance in days and trace dependency impact"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "项目计划或里程碑表、任务清单或看板导出、会议转写、风险台账",
+          "en": "Project plan or milestone table, task list or board export, meeting transcripts, risk register"
+        },
+        {
+          "zh-CN": "报告类型与读者、容忍范围、已对外承诺的日期",
+          "en": "Report type and audience, tolerance range, and dates already committed externally"
+        },
+        {
+          "zh-CN": "可选：Linear、Atlassian、飞书或钉钉连接器，用于读取事项与在你确认后发送",
+          "en": "Optional: Linear, Atlassian, Feishu or DingTalk connectors to read issues and send after your confirmation"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件",
+          "en": "Reads only the files you provide for the task"
+        },
+        {
+          "zh-CN": "需你确认才会做：发送报告或纪要、写入项目管理工具、变更计划基线、对外承诺日期、标记风险为已接受或已关闭",
+          "en": "Only with your confirmation: sending reports or minutes, writing to project tools, changing the plan baseline, committing dates externally, marking risks accepted or closed"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：从市场添加、加载到业务、项目协调员上岗后，四个任务模板（周状态报告、会议纪要、风险台账、里程碑核对）按合成样例产出结构与期望一致，每条状态、日期指向来源文件，计划变更与对外承诺只列待确认、未代为决定。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-25: added from the market, loaded into a business, project coordinator on duty; all four templates (status report, meeting minutes, risk register, milestone check) matched the expected structure on synthetic samples, every status and date traced to its source; plan changes and external commitments were left as open items."
+      },
+      {
+        "zh-CN": "项目管理工具与即时通讯连接为可选项，本版不内置。",
+        "en": "Project tool and messaging connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

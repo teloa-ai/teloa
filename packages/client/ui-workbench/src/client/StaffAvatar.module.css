@@ -1,0 +1,21 @@
+/* 身份色是内容色，不是界面状态色：六档 `.tone0`–`.tone5` 的 --staff-bg/--staff-ink/--staff-glyph
+   逐字移植自原型 `UI design`，不再映射
+   --teloa-accent/info/warn/good/subtle/hover——撞状态令牌会把一位同事读成「警告」（终审 T4）。
+   六档都是深底 + 近白字 + 半透明白图形，浅深色主题通用（原型同一套值，仓库也没有 [data-theme] 级深色选择器，
+   头像自带底色，主题切换不影响它的对比度）。
+   市场方案卡插画（`SolutionCards.tsx` / `MarketPage.tsx` 产品页 hero）直接复用本文件 `.tone0-5`：类名 `.tone0`–`.tone5` 与三个变量名是对外契约，改名要一起改。 */
+.avatarWrap{display:inline-flex;flex:none}
+.avatarSvg{display:block;width:100%;height:100%;border-radius:26%}
+.sizesm{width:24px;height:24px}
+.sizemd{width:40px;height:40px}
+.sizelg{width:60px;height:60px}
+.sizexl{width:88px;height:88px}
+.avBg{fill:var(--staff-bg)}
+.avGlyph{fill:var(--staff-glyph)}
+.avText{fill:var(--staff-ink);font-size:23px;font-weight:560;letter-spacing:-.5px}
+.tone0{--staff-bg:#3f6f5b;--staff-ink:#f4f9f5;--staff-glyph:#ffffff26}
+.tone1{--staff-bg:#4a6b96;--staff-ink:#f3f7fc;--staff-glyph:#ffffff26}
+.tone2{--staff-bg:#9a5b3a;--staff-ink:#fdf5f0;--staff-glyph:#ffffff26}
+.tone3{--staff-bg:#65558c;--staff-ink:#f7f4fc;--staff-glyph:#ffffff26}
+.tone4{--staff-bg:#8a6a2f;--staff-ink:#fbf7ee;--staff-glyph:#ffffff26}
+.tone5{--staff-bg:#3d6a70;--staff-ink:#f1f8f9;--staff-glyph:#ffffff26}

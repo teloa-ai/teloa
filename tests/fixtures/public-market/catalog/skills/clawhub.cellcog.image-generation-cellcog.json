@@ -1,0 +1,75 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.cellcog.image-generation-cellcog",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.17",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "image-generation-cellcog",
+    "title": {
+      "zh-CN": "图像生成（CellCog）",
+      "en": "Image Generation"
+    },
+    "summary": {
+      "zh-CN": "由 CellCog 驱动的 AI 图像生成和编辑功能，支持文生图、图生图、一致性人物生成和图像编辑。用于创意视觉内容生成。",
+      "en": "AI image generation and photo editing powered by CellCog. Text-to-image, image-to-image, consistent characters, product photography, reference-based generation, style transfer, sets of images, social media visuals, brand assets, stickers, comics, GIFs. Professional image creation with multiple AI mo"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "cellcog",
+    "slug": "image-generation-cellcog",
+    "version": "1.0.17",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "e42fa5f48f235289d45e91775d4b6582b1f3c1d8676aae6ff7695c480c9d755e",
+        "size": 8117
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "80f2fda68a2deefaabdc94588977bb0921c2da574e34e2c11d68ea77db5486cb",
+        "size": 1995
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 16207,
+    "installsLabel": "1.6 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "python"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

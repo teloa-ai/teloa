@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "milestone-check-task",
+  "title": "里程碑核对与偏差清单",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "将项目计划中的里程碑与实际进度材料逐条对照，输出偏差清单（计划日期、实际或预计日期、偏差天数、判定、依据、原因）、依赖影响分析与需负责人决策的事项。不重排计划、不提出新日期。",
+  "requirements": [
+    "项目计划或里程碑表（已上传）",
+    "实际进度材料：任务清单、看板导出、状态报告或验收记录（已上传）",
+    "容忍范围、依赖关系、对外承诺日期清单（可选）"
+  ],
+  "output": "里程碑偏差清单：每个里程碑一行，含计划、实际/预计、偏差天数、判定与来源；依赖影响表；匹配待确认表；需负责人决策事项；核对摘要",
+  "skills": [
+    {
+      "id": "milestone-check",
+      "title": "里程碑核对（计划、实际、偏差、依赖）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "里程碑核对与偏差清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "里程碑核对与偏差清单",
+        "en": "Milestone check and variance list"
+      }
+    },
+    "description": {
+      "original": "将项目计划中的里程碑与实际进度材料逐条对照，输出偏差清单（计划日期、实际或预计日期、偏差天数、判定、依据、原因）、依赖影响分析与需负责人决策的事项。不重排计划、不提出新日期。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将项目计划中的里程碑与实际进度材料逐条对照，输出偏差清单（计划日期、实际或预计日期、偏差天数、判定、依据、原因）、依赖影响分析与需负责人决策的事项。不重排计划、不提出新日期。",
+        "en": "Compare each milestone in the project plan against actual progress materials and output a variance list (planned date, actual or forecast date, variance in days, verdict, evidence, reason), dependency impact analysis, and items needing the owner's decision. Does not reschedule or propose new dates."
+      }
+    },
+    "requirements": [
+      {
+        "original": "项目计划或里程碑表（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "项目计划或里程碑表（已上传）",
+          "en": "Project plan or milestone table (already uploaded)"
+        }
+      },
+      {
+        "original": "实际进度材料：任务清单、看板导出、状态报告或验收记录（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "实际进度材料：任务清单、看板导出、状态报告或验收记录（已上传）",
+          "en": "Actual progress materials: task list, board export, status report, or acceptance records (already uploaded)"
+        }
+      },
+      {
+        "original": "容忍范围、依赖关系、对外承诺日期清单（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "容忍范围、依赖关系、对外承诺日期清单（可选）",
+          "en": "Tolerance range, dependencies, list of externally committed dates (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "里程碑偏差清单：每个里程碑一行，含计划、实际/预计、偏差天数、判定与来源；依赖影响表；匹配待确认表；需负责人决策事项；核对摘要",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "里程碑偏差清单：每个里程碑一行，含计划、实际/预计、偏差天数、判定与来源；依赖影响表；匹配待确认表；需负责人决策事项；核对摘要",
+        "en": "Milestone variance list: one row per milestone with planned, actual/forecast, variance in days, verdict, and source; dependency impact table; unconfirmed matches; items needing the owner's decision; check summary"
+      }
+    }
+  }
+}

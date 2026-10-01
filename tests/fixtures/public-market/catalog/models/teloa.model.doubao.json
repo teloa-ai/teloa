@@ -1,0 +1,111 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.doubao",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "doubao",
+    "title": {
+      "zh-CN": "豆包（火山方舟）",
+      "en": "Doubao (Volcengine Ark)"
+    },
+    "summary": {
+      "zh-CN": "火山引擎方舟平台的豆包系列，国内直连，OpenAI 兼容接口。",
+      "en": "Doubao models on Volcengine Ark, reachable directly in China through an OpenAI-compatible API."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": null,
+    "license": {
+      "spdx": "custom",
+      "name": "豆包大模型服务协议",
+      "url": "https://www.volcengine.com/docs/82379/1142195",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      },
+      {
+        "zh-CN": "模型版本更新较快，以方舟控制台模型广场的 Model ID 为准。",
+        "en": "Model versions change often; use the Model ID shown in the Ark console model square."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "custom",
+        "api": "openai-completions",
+        "baseURL": "https://ark.cn-beijing.volces.com/api/v3"
+      },
+      "models": [
+        {
+          "id": "doubao-seed-2-1-pro-260628",
+          "name": "Doubao Seed 2.1 Pro",
+          "contextWindow": null,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "low",
+      "credentialLabel": {
+        "zh-CN": "火山方舟 API 密钥",
+        "en": "Volcengine Ark API key"
+      },
+      "signupUrl": "https://console.volcengine.com/ark"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://www.volcengine.com/docs/82379/1142195"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

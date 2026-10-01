@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "campaign-calendar-task",
+  "title": "编排活动日历",
+  "version": "1.0.0",
+  "domain": "ecommerce",
+  "description": "将平台活动通知、店铺自有计划与库存备货材料中的节点按日期排入活动日历，按材料给出的准备时长倒推准备起点，列出截止、库存、资源、价格与时间重叠冲突。报名、改价、上下架等平台动作只列为待确认，不代为执行。",
+  "requirements": [
+    "平台活动通知：报名截止、预热、正式开始与结束等日期（已上传）",
+    "店铺自有计划：新品上市、直播、内容发布等（已上传或书面说明）",
+    "活动 SKU 库存与到货日期、准备工作与时长、负责人分工、成本或最低售价（可选）"
+  ],
+  "output": "活动日历：按日期升序的节点与准备工作表（含算式与来源）；冲突清单；准备时长待确认表；待确认动作表（含建议最晚执行日）；日历摘要",
+  "skills": [
+    {
+      "id": "ecommerce-campaign-calendar",
+      "title": "活动日历编排",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "编排活动日历",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "编排活动日历",
+        "en": "Build campaign calendar"
+      }
+    },
+    "description": {
+      "original": "将平台活动通知、店铺自有计划与库存备货材料中的节点按日期排入活动日历，按材料给出的准备时长倒推准备起点，列出截止、库存、资源、价格与时间重叠冲突。报名、改价、上下架等平台动作只列为待确认，不代为执行。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将平台活动通知、店铺自有计划与库存备货材料中的节点按日期排入活动日历，按材料给出的准备时长倒推准备起点，列出截止、库存、资源、价格与时间重叠冲突。报名、改价、上下架等平台动作只列为待确认，不代为执行。",
+        "en": "Place the dates from platform campaign notices, the store's own plans and stock materials into a campaign calendar, back-calculate preparation start dates from the lead times given in the materials, and list deadline, stock, resource, price and overlap conflicts. Enrolling, repricing, listing and delisting are listed as actions awaiting confirmation and never performed."
+      }
+    },
+    "requirements": [
+      {
+        "original": "平台活动通知：报名截止、预热、正式开始与结束等日期（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "平台活动通知：报名截止、预热、正式开始与结束等日期（已上传）",
+          "en": "Platform campaign notices: enrollment deadline, warm-up, start and end dates (already uploaded)"
+        }
+      },
+      {
+        "original": "店铺自有计划：新品上市、直播、内容发布等（已上传或书面说明）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "店铺自有计划：新品上市、直播、内容发布等（已上传或书面说明）",
+          "en": "Store's own plans: product launches, live streams, content releases (uploaded or stated in writing)"
+        }
+      },
+      {
+        "original": "活动 SKU 库存与到货日期、准备工作与时长、负责人分工、成本或最低售价（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "活动 SKU 库存与到货日期、准备工作与时长、负责人分工、成本或最低售价（可选）",
+          "en": "Campaign SKU stock and arrival dates, preparation tasks and lead times, owner assignments, cost or floor price (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "活动日历：按日期升序的节点与准备工作表（含算式与来源）；冲突清单；准备时长待确认表；待确认动作表（含建议最晚执行日）；日历摘要",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "活动日历：按日期升序的节点与准备工作表（含算式与来源）；冲突清单；准备时长待确认表；待确认动作表（含建议最晚执行日）；日历摘要",
+        "en": "Campaign calendar: date-ordered table of nodes and preparation tasks with formulas and sources; conflict list; lead times awaiting confirmation; actions awaiting confirmation with suggested latest execution dates; calendar summary"
+      }
+    }
+  }
+}

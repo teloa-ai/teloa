@@ -1,0 +1,113 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.ecommerce",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "business-ops",
+      "content-design"
+    ],
+    "industries": [
+      "marketing/e-commerce"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "ecommerce-operations",
+    "title": {
+      "zh-CN": "电商运营",
+      "en": "E-commerce operations"
+    },
+    "summary": {
+      "zh-CN": "上传商品事实表、平台活动通知、后台导出与评价即可开始：商品文案起草与核对、活动日历、销量核对、评价分析，每条参数、日期与数字指向来源，绝对化用语须有依据；不改价、不上下架、不报名活动或发布商品，不回复买家、不承诺赔付。",
+      "en": "Start from uploaded product fact sheets, platform campaign notices, back-office exports and reviews: product copy drafting and checks, campaign calendars, sales verification and review analysis, with every parameter, date and figure sourced and absolute claims only with evidence; it never changes prices, lists or delists products, enrolls in campaigns or publishes products, replies to buyers or promises compensation."
+    },
+    "scope": "ecommerce",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "按商品事实表起草详情页、主图、短视频与直播口播文案，参数附事实编号，无依据的绝对化、功效与比较表述不写",
+          "en": "Draft detail page, main image, short video and livestream copy from the product fact sheet, with fact IDs on parameters and no unsupported absolute, efficacy or comparison claims"
+        },
+        {
+          "zh-CN": "核对文案中的参数、效果、荣誉与诱导性用语及素材授权，分已核实、待确认、存疑三类",
+          "en": "Check parameters, efficacy, award and urgency wording and asset licensing in copy, sorted into verified, to confirm and questionable"
+        },
+        {
+          "zh-CN": "编排活动日历：倒推准备起点并写算式，列出截止、库存、资源与价格冲突",
+          "en": "Build campaign calendars with back-calculated preparation dates and formulas, listing deadline, stock, resource and price conflicts"
+        },
+        {
+          "zh-CN": "对照平台导出、日报与退款记录核对销量和销售额，差额可复算，口径不一致时并列结果",
+          "en": "Verify sales volume and revenue across platform exports, daily reports and refund records, with recomputable differences and side-by-side results when definitions differ"
+        },
+        {
+          "zh-CN": "分析买家评价：星级分布、主题统计、脱敏摘录与问题清单，安全类表述单列",
+          "en": "Analyze buyer reviews: star distribution, theme counts, anonymized quotes and an issue list, with safety-related remarks listed separately"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "商品事实表与检测或资质依据、平台活动通知、店铺计划与库存、平台销量导出、运营日报、退款记录、评价导出",
+          "en": "Product fact sheet with test or qualification evidence, platform campaign notices, store plans and stock, platform sales exports, daily reports, refund records, review exports"
+        },
+        {
+          "zh-CN": "目标渠道与人群、书面确认的活动价与赠品、核对范围与容忍值",
+          "en": "Target channels and audience, campaign prices and gifts confirmed in writing, verification scope and tolerance"
+        },
+        {
+          "zh-CN": "可选：Exa 连接器（海外服务，需密钥）用于检索公开资料；Playwright 连接器（海外开源，无需密钥，需本机浏览器）用于查看公开网页",
+          "en": "Optional: Exa connector (overseas service, credentials required) to search public material; Playwright connector (overseas open source, no credentials, needs a local browser) to view public pages"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件",
+          "en": "Reads only the files you provide for the task"
+        },
+        {
+          "zh-CN": "不改价、不改库存或优惠，不上下架，不报名活动，不发布商品、文案或素材",
+          "en": "Never changes prices, stock or discounts, lists or delists products, enrolls in campaigns, or publishes products, copy or assets"
+        },
+        {
+          "zh-CN": "不回复买家、不承诺退款或赔付、不删改评价；需你确认才会做：把文案、清单或数据发给外部合作方或上传到外部平台",
+          "en": "Never replies to buyers, promises refunds or compensation, or alters reviews; only with your confirmation: sending copy, checklists or data to outside parties or uploading them to external platforms"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-26 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：从市场添加、加载到业务、电商运营协作员上岗后，四个任务模板（商品文案、活动日历、销量核对、评价分析）按合成样例产出结构与期望一致，无依据表述已删除，冲突与差额均附算式；未报名、未改价、未回复买家。文案两轮都出现「单手就能开」这类事实表外的使用描述，发布前需逐句核对事实编号。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-26: added from the market, loaded into a business, e-commerce collaborator on duty; all four templates (product copy, campaign calendar, sales verification, review analysis) matched the expected structure, unsupported claims removed and conflicts shown with arithmetic; nothing registered, repriced or replied to. Copy added phrases not in the fact sheet in both runs; check each line before publishing."
+      },
+      {
+        "zh-CN": "搜索与浏览器连接为可选项，本版不内置。",
+        "en": "Search and browser connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

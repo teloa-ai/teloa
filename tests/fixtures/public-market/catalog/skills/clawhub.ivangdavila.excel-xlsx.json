@@ -1,0 +1,75 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.excel-xlsx",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "excel-xlsx",
+    "title": {
+      "zh-CN": "Excel 电子表格",
+      "en": "Excel / XLSX"
+    },
+    "summary": {
+      "zh-CN": "创建、检查和编辑 Excel 工作簿，支持公式、日期和类型转换。用于电子表格处理和数据管理。",
+      "en": "Create, inspect, and edit Microsoft Excel workbooks and XLSX files with reliable formulas, dates, types, formatting, recalculation, and template preservation..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "excel-xlsx",
+    "version": "1.0.2",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "52421d9fba8fdb64124416c450849434f3639e7b95249ce10fecd209aa90f038",
+        "size": 6960
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "1ca3fbe81c9663f3b852a7a011e5e884d3f4f9b4ba198792cb4fe2a368eb1118",
+        "size": 1870
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 81215,
+    "installsLabel": "8.1 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "python"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

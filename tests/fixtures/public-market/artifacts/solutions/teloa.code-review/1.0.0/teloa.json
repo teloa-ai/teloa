@@ -1,0 +1,291 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "code-review",
+  "title": "研发协作与代码评审",
+  "version": "1.0.0",
+  "domain": "software",
+  "scope": "code-review",
+  "description": "面向 PR 评审、发布说明与 Issue 分诊的研发协作方案，附安全修复验证与安全设计评审。岗位只依据已提供的差异、提交记录、Issue 与设计文档形成带行号、可追溯的评审意见与草案；在 PR 或 Issue 上发表评论、批准、合并、推送、发版、关闭 Issue 均需本人确认后自行操作。",
+  "resources": [
+    {
+      "id": "code-review-collaborator",
+      "kind": "role",
+      "title": "代码评审协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/code-review-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "代码评审协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "代码评审协作员",
+            "en": "Code review collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-review-methods",
+      "kind": "knowledge",
+      "title": "代码评审方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/code-review-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "代码评审方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "代码评审方法与来源索引",
+            "en": "Code review methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-review-pr",
+      "kind": "skill",
+      "title": "PR 评审清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/code-review-pr/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "PR 评审清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "PR 评审清单",
+            "en": "PR review checklist"
+          }
+        }
+      }
+    },
+    {
+      "id": "release-notes-draft",
+      "kind": "skill",
+      "title": "发布说明草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/release-notes-draft/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "发布说明草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "发布说明草案",
+            "en": "Release notes draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-review-issue-triage",
+      "kind": "skill",
+      "title": "Issue 分诊",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/code-review-issue-triage/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "Issue 分诊",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "Issue 分诊",
+            "en": "Issue triage"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-review-fix-verification",
+      "kind": "skill",
+      "title": "安全修复验证",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/code-review-fix-verification/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "安全修复验证",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全修复验证",
+            "en": "Security fix verification"
+          }
+        }
+      }
+    },
+    {
+      "id": "code-review-security-design",
+      "kind": "skill",
+      "title": "安全设计评审（ASVS）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/code-review-security-design/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "安全设计评审（ASVS）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "安全设计评审（ASVS）",
+            "en": "Security design review (ASVS)"
+          }
+        }
+      }
+    },
+    {
+      "id": "pr-review-task",
+      "kind": "work-template",
+      "title": "PR 评审意见草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/pr-review-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "PR 评审意见草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "PR 评审意见草案",
+            "en": "Draft PR review comments"
+          }
+        }
+      }
+    },
+    {
+      "id": "release-notes-task",
+      "kind": "work-template",
+      "title": "整理发布说明草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/release-notes-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "整理发布说明草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "整理发布说明草案",
+            "en": "Draft release notes"
+          }
+        }
+      }
+    },
+    {
+      "id": "issue-triage-task",
+      "kind": "work-template",
+      "title": "Issue 分诊与追问草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/issue-triage-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "Issue 分诊与追问草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "Issue 分诊与追问草案",
+            "en": "Issue triage and follow-up questions"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "code-review-collaborator",
+      "to": "code-review-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "code-review-collaborator",
+      "to": "code-review-pr"
+    },
+    {
+      "kind": "role-skill",
+      "from": "code-review-collaborator",
+      "to": "release-notes-draft"
+    },
+    {
+      "kind": "role-skill",
+      "from": "code-review-collaborator",
+      "to": "code-review-issue-triage"
+    },
+    {
+      "kind": "role-skill",
+      "from": "code-review-collaborator",
+      "to": "code-review-fix-verification"
+    },
+    {
+      "kind": "role-skill",
+      "from": "code-review-collaborator",
+      "to": "code-review-security-design"
+    },
+    {
+      "kind": "role-work",
+      "from": "code-review-collaborator",
+      "to": "pr-review-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "code-review-collaborator",
+      "to": "release-notes-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "code-review-collaborator",
+      "to": "issue-triage-task"
+    }
+  ],
+  "entrypoints": [
+    "pr-review-task",
+    "release-notes-task",
+    "issue-triage-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "研发协作与代码评审",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "研发协作与代码评审",
+        "en": "Code review & release"
+      }
+    },
+    "description": {
+      "original": "面向 PR 评审、发布说明与 Issue 分诊的研发协作方案，附安全修复验证与安全设计评审。岗位只依据已提供的差异、提交记录、Issue 与设计文档形成带行号、可追溯的评审意见与草案；在 PR 或 Issue 上发表评论、批准、合并、推送、发版、关闭 Issue 均需本人确认后自行操作。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向 PR 评审、发布说明与 Issue 分诊的研发协作方案，附安全修复验证与安全设计评审。岗位只依据已提供的差异、提交记录、Issue 与设计文档形成带行号、可追溯的评审意见与草案；在 PR 或 Issue 上发表评论、批准、合并、推送、发版、关闭 Issue 均需本人确认后自行操作。",
+        "en": "An engineering collaboration solution for PR review, release notes and issue triage, with security fix verification and security design review. The role produces line-referenced, traceable review comments and drafts only from the diffs, commit logs, issues and design documents you provide; commenting on PRs or issues, approving, merging, pushing, publishing releases or closing issues all wait for your confirmation and are done by you."
+      }
+    }
+  }
+}

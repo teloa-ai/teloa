@@ -1,0 +1,26 @@
+/* 类型化金额读数保留文本精度；图形与其可访问对照表共同显示。 */
+.body{display:flex;flex-direction:column;gap:10px;min-width:0}
+.metric{display:flex;flex-direction:column;gap:6px;min-width:0}
+.metric strong{font-size:var(--teloa-font-metric,28px);font-weight:var(--teloa-weight-regular,400);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.metric span{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.tableWrap{min-width:0;max-width:100%;overflow-x:auto;border:1px solid var(--teloa-border);border-radius:8px}
+.table{width:100%;border-collapse:collapse;text-align:left;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}
+.table caption{text-align:left;padding:8px;background:var(--teloa-subtle);font-weight:var(--teloa-weight-medium)}
+.table th,.table td{padding:8px;vertical-align:top;border-bottom:1px solid var(--teloa-border);overflow-wrap:anywhere;min-width:90px}
+.table th{font-weight:var(--teloa-weight-medium);color:var(--teloa-muted)}
+.table tr:last-child td,.table tr:last-child th{border-bottom:0}
+.plot{min-width:0}
+.plot h4{margin:0 0 5px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
+.bars,.lines{display:block;width:100%;height:100px;overflow:visible}
+.bars rect,.lines circle{fill:var(--teloa-accent)}
+.bars line{stroke:var(--teloa-border);stroke-width:.2}
+.lines polyline{stroke:var(--teloa-accent);stroke-width:.6}
+.pie{display:block;width:110px;height:110px;margin:8px auto;transform:rotate(-90deg)}
+.pie circle[data-series='0']{stroke:var(--teloa-accent)}
+.pie circle[data-series='1']{stroke:var(--teloa-good,#648768)}
+.pie circle[data-series='2']{stroke:var(--teloa-warn,#bd9449)}
+.pie circle[data-series='3']{stroke:var(--teloa-muted)}
+.swatch{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:var(--teloa-accent)}
+.swatch[data-series='1']{background:var(--teloa-good,#648768)}
+.swatch[data-series='2']{background:var(--teloa-warn,#bd9449)}
+.swatch[data-series='3']{background:var(--teloa-muted)}

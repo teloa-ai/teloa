@@ -1,0 +1,42 @@
+{
+  "name": "teloa",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "test:repo": "node --test \"tests/DSH可选依赖基线.test.js\" \"tests/DSH可选插件准备.test.js\" \"tests/DSH右栏类型依赖.test.js\" \"tests/DSH版本声明.test.js\" \"tests/DSH组合安全钉.test.js\" \"tests/DSH预设准备验证.test.js\" \"tests/Dockerfile复制源.test.js\" \"tests/acceptance-process.test.js\" \"tests/container-config.test.js\" \"tests/container-proxy.test.js\" \"tests/database-setup.test.js\" \"tests/dsh-security-baseline.test.js\" \"tests/plain-language-copy.test.js\" \"tests/repository-test-entrypoints.test.js\" \"tests/宿主就绪自检.test.js\" \"tests/本地嵌入权重不入库.test.js\" \"tests/正式数据准备边界.test.js\" \"tests/行业资源类型一致性.test.js\"",
+    "check:dsh": "node scripts/核对DSH依赖.mjs",
+    "check:client": "node scripts/检查客户端构建.mjs",
+    "setup:dsh": "node scripts/准备DSH插件.mjs",
+    "test:work": "pnpm --filter @teloa/backend test",
+    "test:bindings": "node --test packages/client/ui-workbench/tests/*.test.ts",
+    "test:contract": "node --test packages/contract/tests/*.test.ts",
+    "dev:dsh": "pnpm build && node scripts/启动DSH.mjs",
+    "dev:dsh:acceptance": "pnpm build && node scripts/启动浏览器验收.mjs",
+    "build": "pnpm -r build",
+    "pretypecheck": "pnpm -r build",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "test:references": "pnpm --filter @teloa/mcp-reference test",
+    "test:native": "pnpm --filter @teloa/harness-dsh test",
+    "test:extensions": "pnpm --filter @teloa/im-gateway --filter @teloa/local-embedding test",
+    "setup:database": "node scripts/准备资料数据库.mjs",
+    "setup:workspace": "node scripts/准备本机工作目录.mjs"
+  },
+  "devDependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "1.41.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "vite": "5.4.21",
+    "typescript": "5.9.3",
+    "tsdown": "0.22.2",
+    "lightningcss": "1.32.0",
+    "@types/react": "18.3.1",
+    "@types/react-dom": "18.3.1",
+    "@types/node": "24.0.0",
+    "@deepseek-ai/dsh": "0.1.7-rc.1"
+  }
+}

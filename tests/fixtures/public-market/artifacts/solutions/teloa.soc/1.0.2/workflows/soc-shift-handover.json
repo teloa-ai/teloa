@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "soc-shift-handover",
+  "title": "交班记录任务",
+  "version": "1.0.0",
+  "domain": "SOC",
+  "description": "生成本班交班记录，覆盖活跃事件状态、关键动作、关注点与挂起的待审批动作，确保接班无缝衔接。",
+  "requirements": [
+    "本班处理的告警/事件 ID 列表及当前状态",
+    "本班执行的关键动作描述"
+  ],
+  "output": "交班记录（活跃事件清单、关键动作、关注点、工具状态、挂起的待审批动作）",
+  "skills": [
+    {
+      "id": "shift-handover",
+      "title": "交班记录",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "交班记录任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "交班记录任务",
+        "en": "Shift handover task"
+      }
+    },
+    "description": {
+      "original": "生成本班交班记录，覆盖活跃事件状态、关键动作、关注点与挂起的待审批动作，确保接班无缝衔接。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "生成本班交班记录，覆盖活跃事件状态、关键动作、关注点与挂起的待审批动作，确保接班无缝衔接。",
+        "en": "Produce a shift handover record covering active incident status, key actions, watch points, tool status, and pending approval items."
+      }
+    },
+    "requirements": [
+      {
+        "original": "本班处理的告警/事件 ID 列表及当前状态",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本班处理的告警/事件 ID 列表及当前状态",
+          "en": "List of alert/incident IDs handled this shift and their current status"
+        }
+      },
+      {
+        "original": "本班执行的关键动作描述",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本班执行的关键动作描述",
+          "en": "Description of key actions taken this shift"
+        }
+      }
+    ],
+    "output": {
+      "original": "交班记录（活跃事件清单、关键动作、关注点、工具状态、挂起的待审批动作）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "交班记录（活跃事件清单、关键动作、关注点、工具状态、挂起的待审批动作）",
+        "en": "Shift handover record (active incident list, key actions, watch points, tool status, pending approval items)"
+      }
+    }
+  }
+}

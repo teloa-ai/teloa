@@ -1,0 +1,321 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "anthropic.modernize-assess",
+  "kind": "skill",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "software/engineering"
+    ]
+  },
+  "skill": {
+    "name": "modernize-assess",
+    "title": {
+      "zh-CN": "遗留系统评估",
+      "en": "Legacy system assessment"
+    },
+    "summary": {
+      "zh-CN": "改造前评估遗留代码：规模与复杂度、技术栈、业务域结构图、前十项技术债、带 CWE 的安全发现（凭据掩码）、文档缺口与推荐改造模式；也可给多套系统排名。规模指数只用于排序，不是工期或成本。二次开发自 Anthropic 官方 Claude Code 插件 code-modernization：去掉 Workflow 与报告脚本，统一度量方法写进正文，取消写出凭据原值的选项，只读分析代码。",
+      "en": "Assesses legacy code before modernization: size and complexity, technology, domain map, top technical debt, CWE-tagged security findings with masked credentials, documentation gaps and a recommended pattern; can rank several systems. Size indices rank systems, never a cost or timeline. Derived from Anthropic's Claude Code plugin code-modernization without its Workflow and report scripts or raw-secret option; code is analyzed read-only."
+    }
+  },
+  "upstream": {
+    "ecosystem": "anthropic",
+    "author": "Anthropic",
+    "repository": {
+      "host": "github.com",
+      "owner": "anthropics",
+      "repo": "claude-plugins-official"
+    },
+    "commit": "fa59bc9037741ecfa131aa27938272605710d7b2",
+    "path": "plugins/code-modernization",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE",
+        "gitBlob": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+        "size": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "path": "commands/modernize-assess.md",
+        "gitBlob": "c787f3b35d1eb620512b713f5647f2b989086a8f",
+        "size": 8886,
+        "sha256": "4274f473d1584747d544017fec5009d3ae98848794cf042d7c9697a37c8bdd3f"
+      },
+      {
+        "path": "agents/legacy-analyst.md",
+        "gitBlob": "ad9ed51f89931208bad6e2cc61dbff8326479e58",
+        "size": 3707,
+        "sha256": "b31ec09dfeb1ba12514979d982d26eff6adcd86e86ea3605eee33efc749acc4a"
+      },
+      {
+        "path": "agents/security-auditor.md",
+        "gitBlob": "428bd9bcd0ce5a723c46e90f062c70b5193d4104",
+        "size": 4916,
+        "sha256": "0910739fa2df087ff5566ea1f34271f5fdd7569c16621ca14e01c1cca2c379d6"
+      },
+      {
+        "path": "workflows/portfolio-assess.js",
+        "gitBlob": "029748b33decd78617d044d2dfa5b2badde15815",
+        "size": 6516,
+        "sha256": "a44263224ca1097fd4950b015ccacf645a041d4ab5cea1e7348db248e7cca646"
+      },
+      {
+        "path": "scripts/build_report.py",
+        "gitBlob": "b690eb3fd381dd24b6edac5b041ddaf9d79eba02",
+        "size": 45739,
+        "sha256": "769bbaccf3fc324bcc83c7d355de151978dba1dd59955eebead033e7726a8fd6"
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要 read、glob、grep 工具与写入 analysis/ 报告的权限（写入经宿主确认）；bash 只做只读统计（scc、cloc、find、wc、grep），不构建、不运行被分析的代码。",
+        "en": "Needs the read, glob and grep tools and permission to write reports under analysis/ (writes go through the host's confirmation); bash is used only for read-only counting (scc, cloc, find, wc, grep), never to build or run the analyzed code."
+      },
+      {
+        "zh-CN": "scc、cloc 可选，没装时退回 find + wc 并在报告里写明；不会自行安装工具。npm audit、pip-audit 会把依赖清单发到公共服务，只在你同意后运行。",
+        "en": "scc and cloc are optional; without them it falls back to find + wc and says so; it never installs tools. npm audit and pip-audit send the dependency list to a public service and run only with your agreement."
+      },
+      {
+        "zh-CN": "凭据只记 file:line 与至多 2-4 字符掩码，从不写出原值；只有在 Git 仓库里且 analysis/.gitignore 已生效时才写 SECRETS.local.md，否则凭据清单只在对话里给出。",
+        "en": "Credentials are recorded only as file:line with at most a 2-4 character mask, never the value; SECRETS.local.md is written only in a Git repository where analysis/.gitignore takes effect, otherwise the inventory stays in the conversation."
+      },
+      {
+        "zh-CN": "已在小型示例遗留系统上按正文做参考执行（单系统与组合模式），本机 qwen3:14b 实跑因测试脚手架超时未完成、没有有效结果；同一插件的规则提取技能在该模型上不可靠，建议使用能力较强的模型。未在 Teloa 宿主中端到端验证；大型系统耗时与模型用量都高，结论需人工核对。",
+        "en": "A reference run of the skill was done on a small sample legacy system (single-system and portfolio modes); local qwen3:14b runs did not complete (test harness timeouts) and gave no usable result. The sibling rule-extraction skill was unreliable on that model, so use a capable model. Not validated end to end in a Teloa host; large systems take long and use many model calls; check the conclusions by hand."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "read",
+      "glob",
+      "grep",
+      "bash",
+      "write"
+    ],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  },
+  "derivation": {
+    "unchangedFiles": [
+      "LICENSE"
+    ],
+    "changes": [
+      {
+        "id": "MAS-M01",
+        "type": "removed",
+        "path": "commands/modernize-assess.md",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "原版 Claude Code 斜杠命令文件不随附；其正文改写为资源根目录的 SKILL.md（逐处改动见本清单其余各条）。",
+          "en": "The original Claude Code slash-command file is not shipped; its text is rewritten as SKILL.md at the resource root (each change is listed in the other entries)."
+        },
+        "reason": {
+          "zh-CN": "Teloa 按技能加载 SKILL.md，不支持 Claude Code 的命令文件格式（`argument-hint`、`arguments`、`$ARGUMENTS`/`$system`）。",
+          "en": "Teloa loads skills from SKILL.md and does not support the Claude Code command format (`argument-hint`, `arguments`, `$ARGUMENTS`/`$system`)."
+        }
+      },
+      {
+        "id": "MAS-M02",
+        "type": "removed",
+        "path": "workflows/portfolio-assess.js",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/workflows/portfolio-assess.js",
+        "summary": {
+          "zh-CN": "不随附组合评估的 Workflow 脚本；其度量方法写进 SKILL.md 的组合模式（见 MAS-M07）。",
+          "en": "The portfolio Workflow script is not shipped; its measuring method is written into SKILL.md's portfolio mode (see MAS-M07)."
+        },
+        "reason": {
+          "zh-CN": "该脚本依赖 Claude Code Workflow 工具的运行时接口（agent()、pipeline()、插件注册的 agentType、resumeFromRunId）；Teloa 市场不接受可执行脚本，Teloa 的编排工具接口也不同。原版在没有 Workflow 工具时本就退回由会话逐个统计。",
+          "en": "The script depends on the Claude Code Workflow tool runtime (agent(), pipeline(), plugin-registered agentType, resumeFromRunId); the Teloa marketplace does not accept executable scripts and Teloa's orchestration tools have a different interface. The original already falls back to per-system measuring in the session when the Workflow tool is missing."
+        }
+      },
+      {
+        "id": "MAS-M03",
+        "type": "removed",
+        "path": "scripts/build_report.py",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/scripts/build_report.py",
+        "summary": {
+          "zh-CN": "不随附生成 REPORT.html 的 Python 脚本；SKILL.md 第 7 步不再调用它（见 MAS-M10）。",
+          "en": "The Python script that builds REPORT.html is not shipped; SKILL.md step 7 no longer calls it (see MAS-M10)."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场不接受可执行脚本；原版也把它标为可选（失败或没有 python3 时说明一句继续）。",
+          "en": "The Teloa marketplace does not accept executable scripts; the original already treats it as optional (if it fails or python3 is missing, say so and carry on)."
+        }
+      },
+      {
+        "id": "MAS-M04",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "frontmatter (L1-5)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "frontmatter 改为只有 `name: modernize-assess` 与单行 `description`；删除 `argument-hint` 与 `arguments`。",
+          "en": "The frontmatter keeps only `name: modernize-assess` and a single-line `description`; `argument-hint` and `arguments` are removed."
+        },
+        "reason": {
+          "zh-CN": "Teloa 市场的技能 frontmatter 只允许单行 name 与 description。",
+          "en": "Skills in the Teloa marketplace may only have single-line name and description frontmatter keys."
+        }
+      },
+      {
+        "id": "MAS-M05",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "below the title",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "在标题下方加一行可见的修改声明「Derived work: modified by Teloa from anthropics/claude-plugins-official@fa59bc90…」，写明原版文件路径与许可，并指向 MODIFICATIONS.md。",
+          "en": "Adds a visible change notice below the title, \"Derived work: modified by Teloa from anthropics/claude-plugins-official@fa59bc90…\", naming the original file and license and pointing to MODIFICATIONS.md."
+        },
+        "reason": {
+          "zh-CN": "Apache-2.0 第 4(b) 条要求改过的文件带显著的修改声明；用可见正文而不是 HTML 注释，避免隐藏注释被安全扫描当作可疑内容。",
+          "en": "Apache-2.0 section 4(b) requires modified files to carry a prominent change notice; visible text is used instead of an HTML comment, which security scans would flag as hidden content."
+        }
+      },
+      {
+        "id": "MAS-M06",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Mode and code location (L7-12); Steps 1-3 and 6 (`legacy/$system`)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "`$ARGUMENTS`、`--portfolio`、`$system` 与 `legacy/$system` 约定改为：用户给出代码路径与系统短名，路径不存在就停止，符号链接先说明指向；报告写在工作区的 `analysis/<system>/`；删除「用 `/code-modernization:modernize … --source` 建立 legacy 链接」的指引。",
+          "en": "`$ARGUMENTS`, `--portfolio`, `$system` and the `legacy/$system` convention become: the user gives the code path and a short system name; stop if the path does not exist; say where a symbolic link points; reports go to `analysis/<system>/` in the workspace. The pointer to `/code-modernization:modernize … --source` for creating the legacy link is removed."
+        },
+        "reason": {
+          "zh-CN": "Teloa 技能没有参数替换；`legacy/` 链接由原插件另一个未收录的命令建立。",
+          "en": "Teloa skills have no argument substitution; the `legacy/` link is created by another command of the original plugin that is not included."
+        }
+      },
+      {
+        "id": "MAS-M07",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Portfolio mode",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/workflows/portfolio-assess.js",
+        "summary": {
+          "zh-CN": "组合模式按原版「没有 Workflow 工具时由会话逐个统计」执行，并写入原工作流的度量规则：先列子目录并告知数量，只接受普通子目录名，系统多时先确认；复杂度对每套系统用同一方法（scc 的 Complexity 列求和，没有 scc 时按同一组决策关键字计数，不混用按函数统计的数字）；每套系统 1-3 条风险说明；规模指数一律用 `2.94 × KSLOC^1.10` 计算；无法统计的系统标「not measured」并写原因。",
+          "en": "Portfolio mode follows the original's \"without the Workflow tool, gather the same row per system yourself\" path and takes over the workflow's measuring rules: list the subdirectories and give the count, accept only plain subdirectory names, ask first when there are many; measure complexity the same way for every system (sum of scc's Complexity column, or the same decision keywords without scc, never mixing in per-function figures); 1-3 risk notes per system; the index always computed as `2.94 × KSLOC^1.10`; systems that could not be measured are marked \"not measured\" with the reason."
+        },
+        "reason": {
+          "zh-CN": "原版把统一口径写在 Workflow 脚本的提示里，退回路径只有一句「自己收集同样的一行」；不写明口径，各系统数字不可比。",
+          "en": "The original keeps the uniform rules inside the Workflow script's prompt, and its fallback only says \"gather the same row per system yourself\"; without the rules the numbers are not comparable across systems."
+        }
+      },
+      {
+        "id": "MAS-M09",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Working rules (new); Step 3 (L83-100); Step 4 (L104)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "「three subagents, in parallel」与「Run every subagent in the foreground」改为按随附的 `agents/legacy-analyst.md`、`agents/security-auditor.md` 做三个专项：宿主允许一次性委派（如 subagent_task）时交给只读子任务，否则自己依次完成，全部完成后再综合；新增只读规则（不构建、不运行、不修改被分析的代码，只写 analysis/ 下的报告且经宿主确认）、不自行安装 scc/cloc 等工具、npm audit/pip-audit 须经用户同意；第 4 步「APM MCP server」改为用户已设置好的监控连接器。",
+          "en": "\"three subagents, in parallel\" and \"Run every subagent in the foreground\" become three specialist passes that follow the shipped `agents/legacy-analyst.md` and `agents/security-auditor.md`: delegated to read-only subtasks when the host allows one-off delegation (such as subagent_task), otherwise run in turn, synthesizing after all of them; adds read-only rules (never build, run or modify the analyzed code; only write reports under analysis/, through the host's confirmation), no self-installing scc/cloc or other tools, and npm audit/pip-audit only with the user's agreement; step 4's \"APM MCP server\" becomes a monitoring connector the user has already set up."
+        },
+        "reason": {
+          "zh-CN": "Teloa 没有 Claude Code 的 Task 工具与插件注册的命名子代理；AI 同事能否委派取决于岗位是否授予一次性委派工具（subagent_task），所以按「可委派就委派、否则自己依次完成」写，并去掉模型档位，按宿主已配置的模型运行。npm audit 与 pip-audit 会把依赖清单发往公共服务，Teloa 的外发须经用户同意。",
+          "en": "Teloa has no Claude Code Task tool and no plugin-registered named subagents; whether an AI colleague can delegate depends on whether its role was granted the one-off delegation tool (subagent_task), so the text says to delegate when possible and otherwise work in turn, and drops model tiers in favour of the host's configured model. npm audit and pip-audit send the dependency list to public services, and outbound traffic in Teloa needs the user's agreement."
+        }
+      },
+      {
+        "id": "MAS-M10",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Step 6 recommended pattern (L140-148); Step 7 (L153-158)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "推荐模式不再指向本技能未收录的 `uplift`、`transform`、`reimagine`、`map`、`harden`、`preflight` 命令，改为说明对应的工作类型（原地升级、渐进改写、重新架构），Replace 一项指向 `modernize-extract-rules` 技能；第 7 步删除 build_report.py 与「下一步 /code-modernization:modernize-map」，改为报告产物位置、安全发现与凭据数量、所用统计工具和未能确定的内容。",
+          "en": "The recommended pattern no longer routes to the `uplift`, `transform`, `reimagine`, `map`, `harden` and `preflight` commands, which are not included; it names the kind of work instead (in-place uplift, incremental transformation, re-architecture), and Replace points to the `modernize-extract-rules` skill. Step 7 drops build_report.py and \"next step /code-modernization:modernize-map\", and reports the output files, the number of security findings and credentials, the measuring tool used and what could not be determined."
+        },
+        "reason": {
+          "zh-CN": "这些命令与脚本不在本资源里，在 Teloa 中无法调用。",
+          "en": "Those commands and scripts are not part of this resource and cannot be called in Teloa."
+        }
+      },
+      {
+        "id": "MAS-M11",
+        "type": "adapted",
+        "path": "SKILL.md",
+        "section": "Step 6, secrets (L117-131); argument-hint (L3)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "删除 `--show-secrets`（在 SECRETS.local.md 里加一列凭据原值）与没有 Git 时写到 `~/.modernize/$system/` 的做法：本技能从不写出凭据原值；只有在 Git 仓库里、`git check-ignore` 确认 analysis/.gitignore 生效时才写只含掩码的 SECRETS.local.md，否则把掩码清单只在对话里交给用户并说明原因；去掉仅供原插件其他命令使用的 `*.local.patch` 忽略项。",
+          "en": "Removes `--show-secrets` (a raw-value column in SECRETS.local.md) and writing to `~/.modernize/$system/` without Git: this skill never writes a raw credential value; it writes a masked-only SECRETS.local.md only in a Git repository where `git check-ignore` confirms analysis/.gitignore takes effect, and otherwise gives the masked inventory to the user in the conversation with the reason; the `*.local.patch` ignore entry, used only by other commands of the original plugin, is dropped."
+        },
+        "reason": {
+          "zh-CN": "Teloa 的规则是凭据不进对话与由 AI 生成的文件，需要原值的人可以按 file:line 打开源文件；`~/.modernize` 在工作区之外，AI 同事不应写到那里。",
+          "en": "Teloa keeps credential values out of conversations and AI-written files, and anyone who needs a value can open the source at file:line; `~/.modernize` is outside the workspace, where an AI colleague should not write."
+        }
+      },
+      {
+        "id": "MAS-M12",
+        "type": "adapted",
+        "path": "agents/legacy-analyst.md",
+        "section": "frontmatter (L1-5)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/agents/legacy-analyst.md",
+        "summary": {
+          "zh-CN": "把 Claude Code 子代理定义改成随技能附带的角色说明：frontmatter（name、description、tools）改为标题、修改声明、一行「Role」（原 description）与一行「Tools」（read、glob、grep，bash 只做只读检查，不安装工具或依赖）；正文未改。",
+          "en": "Turns the Claude Code subagent definition into a role file shipped with the skill: the frontmatter (name, description, tools) becomes a title, the change notice, a \"Role\" line (the original description) and a \"Tools\" line (read, glob, grep; bash for read-only inspection only; no installing tools or dependencies); the body is unchanged."
+        },
+        "reason": {
+          "zh-CN": "Teloa 不认 Claude Code 的子代理 frontmatter；技能正文让主会话在可委派时把角色说明交给一次性子任务，否则自己按角色说明完成。",
+          "en": "Teloa does not read Claude Code subagent frontmatter; the skill hands the role file to a one-off delegated subtask when possible, otherwise the main session follows it."
+        }
+      },
+      {
+        "id": "MAS-M13",
+        "type": "adapted",
+        "path": "agents/security-auditor.md",
+        "section": "frontmatter (L1-5); L29-30, L40",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/agents/security-auditor.md",
+        "summary": {
+          "zh-CN": "frontmatter 同 MAS-M12 改为标题、修改声明、Role 与 Tools 行；「run `npm audit` / `pip-audit`」改为先读清单与锁文件，只在用户同意后运行（它们会把依赖清单发往公共服务），未做在线审计要说明；SAST 一句同步。",
+          "en": "The frontmatter becomes a title, the change notice and Role and Tools lines as in MAS-M12; \"run `npm audit` / `pip-audit`\" becomes: read manifests and lock files first, run them only with the user's agreement (they send the dependency list to public services), and say when no online audit was run; the SAST sentence follows."
+        },
+        "reason": {
+          "zh-CN": "Teloa 不认子代理 frontmatter；这两个工具会联网外发依赖清单，Teloa 的外发须经用户同意。",
+          "en": "Teloa does not read subagent frontmatter; both tools send the dependency list over the network, and outbound traffic in Teloa needs the user's agreement."
+        }
+      },
+      {
+        "id": "MAS-M08",
+        "type": "added",
+        "path": "SKILL.md",
+        "section": "Portfolio mode, portfolio.html (L50-55)",
+        "upstream": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/code-modernization/commands/modernize-assess.md",
+        "summary": {
+          "zh-CN": "portfolio.html 新增要求：不含脚本、不引用外部资源，所有取自被分析代码的值都要转义。",
+          "en": "portfolio.html must contain no scripts and no external resources, and every value taken from the analyzed code is escaped."
+        },
+        "reason": {
+          "zh-CN": "系统名、最复杂文件路径等来自不可信的代码树，直接写进 HTML 会带入标签或脚本；原版在 build_report.py 里做了转义与 CSP，由模型手写的 portfolio.html 没有这项要求。",
+          "en": "System names and file paths come from an untrusted code tree and, written straight into HTML, can carry tags or scripts; the original escapes and applies a CSP in build_report.py, but the model-written portfolio.html had no such requirement."
+        }
+      }
+    ]
+  }
+}

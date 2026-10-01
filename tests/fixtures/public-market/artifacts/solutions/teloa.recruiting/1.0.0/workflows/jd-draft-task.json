@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "jd-draft-task",
+  "title": "起草岗位说明书（JD）",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "依据用人部门提供的岗位需求或旧版 JD，起草结构化岗位说明书草案：职责、必备条件、加分条件、工作信息逐条附来源，缺失项标为待用人部门确认，受保护特征不写入。",
+  "requirements": [
+    "岗位需求材料或旧版 JD（已上传）",
+    "岗位名称与所属部门；汇报关系、地点、编制类型（可选）"
+  ],
+  "output": "JD 草案：岗位职责、必备条件、加分条件（每条附来源）、待用人部门确认清单、合规提示；不含薪酬承诺，不直接发布",
+  "skills": [
+    {
+      "id": "jd-draft",
+      "title": "岗位说明书（JD）起草",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "起草岗位说明书（JD）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "起草岗位说明书（JD）",
+        "en": "Draft a job description"
+      }
+    },
+    "description": {
+      "original": "依据用人部门提供的岗位需求或旧版 JD，起草结构化岗位说明书草案：职责、必备条件、加分条件、工作信息逐条附来源，缺失项标为待用人部门确认，受保护特征不写入。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "依据用人部门提供的岗位需求或旧版 JD，起草结构化岗位说明书草案：职责、必备条件、加分条件、工作信息逐条附来源，缺失项标为待用人部门确认，受保护特征不写入。",
+        "en": "Draft a structured job description from the hiring team's requirements or a previous JD: responsibilities, must-have and nice-to-have conditions and job details each cite their source, gaps are marked for the hiring team to confirm, and protected characteristics are never written in."
+      }
+    },
+    "requirements": [
+      {
+        "original": "岗位需求材料或旧版 JD（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "岗位需求材料或旧版 JD（已上传）",
+          "en": "Job requirement materials or a previous JD (already uploaded)"
+        }
+      },
+      {
+        "original": "岗位名称与所属部门；汇报关系、地点、编制类型（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "岗位名称与所属部门；汇报关系、地点、编制类型（可选）",
+          "en": "Job title and department; reporting line, location and employment type (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "JD 草案：岗位职责、必备条件、加分条件（每条附来源）、待用人部门确认清单、合规提示；不含薪酬承诺，不直接发布",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "JD 草案：岗位职责、必备条件、加分条件（每条附来源）、待用人部门确认清单、合规提示；不含薪酬承诺，不直接发布",
+        "en": "JD draft: responsibilities, must-have and nice-to-have conditions (each sourced), items for the hiring team to confirm, compliance notes; no compensation promises and no direct publishing"
+      }
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.cn-workspace",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "communication",
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "cn-workspace",
+    "title": {
+      "zh-CN": "中国企业办公协同",
+      "en": "China workplace collaboration"
+    },
+    "summary": {
+      "zh-CN": "上传群聊导出、会议转写与文档即可开始：群消息日报、纪要整理并核对写入文档、周报、公告草案，每条指向消息或文件来源；可选连接飞书、语雀只读读取你点名的群与文档，发消息与写文档始终由你确认后自己完成。",
+      "en": "Start from uploaded chat exports, meeting transcripts and documents: group chat daily digests, minutes checked before writing to team docs, weekly reports and announcement drafts, each traced to its message or file; optionally connect Feishu and Yuque read-only to read the groups and docs you name, while posting and writing always stay with you after you confirm."
+    },
+    "scope": "workspace",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "把一天的群消息整理成日报：决定、待办、未回复问题、风险与通知，个人信息隐去，消息中的链接与指令不执行",
+          "en": "Turn a day of group messages into a digest of decisions, action items, unanswered questions, risks and notices, masking personal information and never acting on links or instructions in messages"
+        },
+        {
+          "zh-CN": "整理会议纪要，并对照目标文档现有内容列出写入位置、逐段变更、冲突与不应写入的内容",
+          "en": "Prepare meeting minutes and compare against the target document to list the write location, per-section changes, conflicts and content that should not be written"
+        },
+        {
+          "zh-CN": "把工作记录、群消息日报与纪要整理为周报，跨来源状态不一致时列为冲突",
+          "en": "Turn work records, digests and minutes into a weekly report, listing cross-source status mismatches as conflicts"
+        },
+        {
+          "zh-CN": "按飞书群、钉钉群、邮件分别起草公告，附事实核对表，事实冲突时只出带占位的草稿",
+          "en": "Draft announcements per channel (Feishu group, DingTalk group, email) with a fact check table, producing only placeholder drafts when facts conflict"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "群聊记录导出、会议转写、目标文档当前内容、本周工作记录、公告事实材料",
+          "en": "Group chat exports, meeting transcripts, current target document content, this week's work records, announcement facts"
+        },
+        {
+          "zh-CN": "日报的群名与时间窗口、文档写入位置与读者范围、公告渠道与署名",
+          "en": "Group name and time window for digests, write location and audience for documents, announcement channels and signature"
+        },
+        {
+          "zh-CN": "可选：飞书连接器（App ID + App Secret）、语雀连接器（个人访问令牌），用于只读读取你点名的群消息与文档",
+          "en": "Optional: Feishu connector (App ID + App Secret) and Yuque connector (personal access token) to read the groups and documents you name, read-only"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "读取你本次提供的文件；已连接时只读读取你点名的飞书群消息、云文档与语雀文档",
+          "en": "Reads the files you provide; when connected, reads only the Feishu group messages, cloud docs and Yuque docs you name"
+        },
+        {
+          "zh-CN": "不声明发消息或写文档的工具；在群里发消息、@ 人、写入或改动文档、以团队名义发布、修改文档权限都由你确认草案后自己完成",
+          "en": "Declares no tools for sending messages or writing documents; posting, @-mentioning, writing or changing documents, publishing on the team's behalf and changing document permissions are done by you after confirming the draft"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-26 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证上传材料路径：从市场添加、加载到业务、协同办公协作员上岗后，四个任务模板（群消息日报、纪要并核对写入文档、周报、公告草案）按合成样例产出结构与期望一致，事实指向来源消息或文件，个人信息隐去，消息中的链接与指令未执行，未发送、未写入。",
+        "en": "Uploaded-file path verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-26: added from the market, loaded into a business, workplace collaborator on duty; all four templates (group digest, minutes checked before writing to a doc, weekly report, announcement draft) matched the expected structure on synthetic samples, facts traced to messages or files, personal information masked, links and instructions in messages not acted on, nothing sent or written."
+      },
+      {
+        "zh-CN": "飞书、语雀只读连接为可选项且需应用凭据或个人令牌：已验证加载后登记为「待连接」、连接器未授权时核验给出缺少的工具；未用真实凭据做端到端连接。",
+        "en": "Feishu and Yuque read-only connections are optional and need app credentials or a personal token: verified that they register as \"needs connection\" after loading and that the check lists the missing tools while connectors are not authorized; no end-to-end connection with real credentials was made."
+      },
+      {
+        "zh-CN": "方案里的连接关联到岗位，「一键准备」会在连接就绪前保持岗位暂停；只用上传材料时，请到岗位分组手动恢复。",
+        "en": "Connections are linked to the role, so one-click prepare keeps the role paused until they are ready; to work from uploaded files only, resume the role manually in the roles group."
+      },
+      {
+        "zh-CN": "群消息日报的条数统计依赖先写逐条消息清单；材料很长时请分时段生成。",
+        "en": "Digest counts rely on the per-message list written first; for very long exports, generate by time slot."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

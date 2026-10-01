@@ -1,0 +1,8 @@
+.backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;box-sizing:border-box;background:var(--teloa-backdrop)}
+.dialog{box-sizing:border-box;width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--teloa-border);border-radius:14px;padding:28px;background:var(--teloa-surface);color:var(--teloa-text);box-shadow:var(--teloa-shadow)}
+.dialog h2{margin:0;font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);outline:none}
+.copy{margin-top:20px;color:var(--teloa-muted);font-size:var(--teloa-font-body);line-height:1.8;overflow-wrap:anywhere}.copy p{margin:0}.copy p+p{margin-top:12px}
+.actions{display:flex;justify-content:flex-end;margin-top:24px}
+.actions button{min-width:120px;min-height:36px;padding:7px 11px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-accent);color:var(--teloa-on-accent);font:inherit;cursor:pointer}
+.actions button:hover{border-color:var(--teloa-accent)}.actions button:focus-visible,.dialog h2:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:600px){.dialog{padding:22px}.actions button{width:100%;min-height:44px}}

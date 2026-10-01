@@ -1,0 +1,23 @@
+{
+  "schema": "teloa.ui-freeze-baseline/v1",
+  "source": "2026-09-19 UI 定型及 2026-09-20 业务结构定稿；正式测试的固定设计约定，私有原型同步另由 test:prototype 核对。",
+  "brand": {"viewBox": "0.5 -4.32 567.33 108.79", "width": 567.33, "height": 108.79},
+  "staffAvatarTones": [
+    "--staff-bg:#3f6f5b;--staff-ink:#f4f9f5;--staff-glyph:#ffffff26",
+    "--staff-bg:#4a6b96;--staff-ink:#f3f7fc;--staff-glyph:#ffffff26",
+    "--staff-bg:#9a5b3a;--staff-ink:#fdf5f0;--staff-glyph:#ffffff26",
+    "--staff-bg:#65558c;--staff-ink:#f7f4fc;--staff-glyph:#ffffff26",
+    "--staff-bg:#8a6a2f;--staff-ink:#fbf7ee;--staff-glyph:#ffffff26",
+    "--staff-bg:#3d6a70;--staff-ink:#f1f8f9;--staff-glyph:#ffffff26"
+  ],
+  "teamSearch": "搜名字、岗位，或它擅长的事",
+  "compositionRows": [
+    {"id": "staff", "label": "AI 员工"},
+    {"id": "skill", "label": "技能"},
+    {"id": "knowledge", "label": "依据资料"},
+    {"id": "source", "label": "接入源"},
+    {"id": "board", "label": "业务看板"},
+    {"id": "method", "label": "任务模板"},
+    {"id": "extension", "label": "扩展"}
+  ]
+}

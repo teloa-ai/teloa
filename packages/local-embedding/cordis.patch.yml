@@ -1,0 +1,5 @@
+# 本地中文检索：随 Teloa 发行的官方扩展，默认不进组合。
+# 本人在市场「扩展」启用后才加入 dsh.profile.bundles，由宿主在点击时即时加载（前后复验安全钉），不需要重启；启用只检查运行时与模型缓存，不下载、不安装。
+- insert:
+    - id: teloa-local-embedding
+      name: '@teloa/local-embedding'

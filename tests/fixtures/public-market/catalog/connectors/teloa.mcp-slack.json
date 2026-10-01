@@ -1,0 +1,85 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-slack",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "slack",
+    "title": {
+      "zh-CN": "Slack（OAuth，需自建 Slack 应用）",
+      "en": "Slack (OAuth, Bring Your Own Slack App)"
+    },
+    "summary": {
+      "zh-CN": "Slack 官方远程 MCP 服务，可搜索消息与频道、读取频道与用户信息（本连接只申请读取权限，不能发送消息）。Slack 不支持动态客户端注册，需先自建 Slack 内部应用并开启 PKCE，在连接设置中填写其 client_id（形如 1234567890.1234567890），再由 Teloa 以 OAuth（PKCE，无客户端密钥）授权。",
+      "en": "Slack's official remote MCP service for searching messages and channels and reading channel and user info (this connector requests read-only scopes and cannot send messages). Slack does not support dynamic client registration: create your own internal Slack app with PKCE enabled, enter its client_id (like 1234567890.1234567890) in the connection settings, then Teloa authorizes via OAuth (PKCE, no client secret)."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "search:read.public",
+        "channels:history",
+        "channels:read",
+        "users:read"
+      ],
+      "requiresUserClientId": true,
+      "clientIdPattern": "^\\d+\\.\\d+$"
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.slack.com/mcp"
+    },
+    "tools": [],
+    "upstreamUrl": "https://docs.slack.dev/ai/slack-mcp-server/"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Slack-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "Slack 不支持动态客户端注册，且只允许内部应用或已上架应用使用 MCP：需自建内部应用、开启 PKCE、把 Teloa 的回调地址加入 Redirect URLs、添加上述用户 scope，并在连接设置填写 client_id",
+        "en": "Slack does not support dynamic client registration and only internal or directory-published apps may use MCP: create an internal app, enable PKCE, add Teloa's callback URL to Redirect URLs, add the user scopes above, and enter its client_id in the connection settings"
+      },
+      {
+        "zh-CN": "开启 PKCE 后该应用成为公共客户端（不可撤销），刷新令牌 30 天过期",
+        "en": "Enabling PKCE makes the app a public client (irreversible) and refresh tokens expire after 30 days"
+      },
+      {
+        "zh-CN": "只申请读取所需的最小用户 scope（search:read.public、channels:history、channels:read、users:read），不含 chat:write 等写权限；工具清单待实测：官方文档未列出工具标识，实测后按实际工具补充并复核 scope。官方 PKCE 示例用 localhost，127.0.0.1 回调是否按桌面回调处理尚未实测",
+        "en": "Requests only the minimal read user scopes (search:read.public, channels:history, channels:read, users:read) and no write scopes such as chat:write; the tool list is pending testing: official docs do not list tool identifiers, so tools will be added and scopes rechecked after testing. Slack's PKCE example uses localhost and whether a 127.0.0.1 callback is treated as a desktop redirect has not been tested"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

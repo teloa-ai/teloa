@@ -1,0 +1,99 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.sensevoice",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "sensevoice-local",
+    "title": {
+      "zh-CN": "SenseVoice 本地语音",
+      "en": "SenseVoice local speech"
+    },
+    "summary": {
+      "zh-CN": "在运行 Teloa 的电脑上将语音转成输入框文字；支持中文、粤语、英语、日语和韩语。",
+      "en": "Turn speech into composer text on the computer running Teloa. Supports Mandarin, Cantonese, English, Japanese and Korean."
+    },
+    "form": "local-specialist",
+    "usage": [
+      "speech-to-text"
+    ],
+    "capabilities": {
+      "tools": false,
+      "vision": false,
+      "reasoning": false,
+      "structured": false
+    },
+    "contextWindow": null,
+    "license": {
+      "spdx": "LicenseRef-FunASR",
+      "name": "FunASR Model Open Source License Agreement",
+      "url": "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE",
+      "tier": "restricted",
+      "restrictions": [
+        {
+          "zh-CN": "模型权重遵循 FunASR 模型许可；源码 MIT 许可不替代权重许可，使用和再分发须保留所要求的声明。",
+          "en": "Weights follow the FunASR model license. The source-code MIT license does not replace the weight license; retain the required notices when using or redistributing the model."
+        }
+      ]
+    },
+    "cnReachable": "mirror",
+    "support": "experimental",
+    "notes": [
+      {
+        "zh-CN": "由 DSH 原生语音扩展准备和管理；使用 SenseVoiceSmall ONNX 与 Silero VAD。",
+        "en": "Prepared and managed by the native DSH speech extension using SenseVoiceSmall ONNX and Silero VAD."
+      },
+      {
+        "zh-CN": "默认 INT8 主权重约 239 MB，另有词表和 VAD；文件体积不代表运行内存。具体版本、摘要和下载进度由原生准备器核对。",
+        "en": "The default INT8 main weight is about 239 MB, plus tokens and VAD. File size is not runtime memory; the native preparer verifies versions, hashes and download progress."
+      },
+      {
+        "zh-CN": "安装位置是运行 Teloa 的电脑，不是打开网页的设备。首次准备需要下载；就绪后本地识别。停用扩展保留缓存。",
+        "en": "Installation is on the computer that runs Teloa, not the device viewing this page. Initial preparation requires a download; recognition then runs locally. Disabling the extension retains cached files."
+      }
+    ],
+    "native": {
+      "kind": "dsh-speech",
+      "providerId": "sensevoice-local"
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [],
+    "url": "https://opensource.org/license/mit"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "先启用原生「语音输入」扩展并重启 Teloa，再确认准备。原生支持目标含 macOS arm64/x64、Linux glibc arm64/x64、Windows x64；实际就绪状态以 Teloa 的检查为准。",
+        "en": "Enable the native Voice Input extension, restart Teloa, then confirm preparation. Native targets include macOS arm64/x64, Linux glibc arm64/x64 and Windows x64; actual readiness is determined by Teloa's check."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "DSH speech-to-text-sensevoice"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-microsoft-learn": {
+      "evidence": "2026-09-27 无凭据 initialize + tools/list（Microsoft Learn MCP Server 1.0.0，协议 2025-06-18）：3 个工具，注解均 readOnlyHint:true、destructiveHint:false；instructions 1545 字节；官方 MCP FAQ 明确允许用于自建或为他人构建的代理",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://learn.microsoft.com/api/mcp"
+      },
+      "auth": {
+        "kind": "none",
+        "slots": []
+      },
+      "toolFilter": "none",
+      "instructionsBytes": 1545,
+      "upstreamTools": {
+        "microsoft_docs_search": "read",
+        "microsoft_code_sample_search": "read",
+        "microsoft_docs_fetch": "read"
+      }
+    }
+  }
+}

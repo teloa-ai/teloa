@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "soc-t3-hunt-plan",
+  "title": "T3 狩猎计划与查询草案",
+  "version": "1.0.0",
+  "domain": "SOC",
+  "description": "为特定 ATT&CK 技术或业务风险制定假设驱动的威胁狩猎计划，输出数据可见性矩阵与查询逻辑草案。本任务只产出计划与草案，不执行查询；执行前需确认客户遥测覆盖与查询授权。",
+  "requirements": [
+    "业务优先资产或威胁关注点描述",
+    "客户遥测概况（日志类型与保留期）",
+    "目标 ATT&CK 技术编号（若已知）"
+  ],
+  "output": "狩猎计划（假设、数据可见性矩阵、查询草案、成功/失败判据）——标注为草案，执行前需在目标环境验证",
+  "skills": [
+    {
+      "id": "threat-hunt-plan",
+      "title": "假设驱动狩猎计划",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "T3 狩猎计划与查询草案（需客户遥测）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "T3 狩猎计划与查询草案（需客户遥测）",
+        "en": "T3 threat hunt plan and query drafts (requires customer telemetry)"
+      }
+    },
+    "description": {
+      "original": "为特定 ATT&CK 技术或业务风险制定假设驱动的威胁狩猎计划，输出数据可见性矩阵与查询逻辑草案。本任务只产出计划与草案，不执行查询；执行前需确认客户遥测覆盖与查询授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "为特定 ATT&CK 技术或业务风险制定假设驱动的威胁狩猎计划，输出数据可见性矩阵与查询逻辑草案。本任务只产出计划与草案，不执行查询；执行前需确认客户遥测覆盖与查询授权。",
+        "en": "Produce a hypothesis-driven threat hunt plan for a specific ATT&CK technique or business risk. Outputs a data visibility matrix and query logic drafts. This task produces plans and drafts only — query execution requires confirmed telemetry coverage and authorization."
+      }
+    },
+    "requirements": [
+      {
+        "original": "业务优先资产或威胁关注点描述",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "业务优先资产或威胁关注点描述",
+          "en": "Priority business assets or threat focus description"
+        }
+      },
+      {
+        "original": "客户遥测概况（日志类型与保留期）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "客户遥测概况（日志类型与保留期）",
+          "en": "Customer telemetry overview (log types and retention periods)"
+        }
+      },
+      {
+        "original": "目标 ATT&CK 技术编号（若已知）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标 ATT&CK 技术编号（若已知）",
+          "en": "Target ATT&CK technique ID (if known)"
+        }
+      }
+    ],
+    "output": {
+      "original": "狩猎计划（假设、数据可见性矩阵、查询草案、成功/失败判据）——标注为草案，执行前需在目标环境验证",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "狩猎计划（假设、数据可见性矩阵、查询草案、成功/失败判据）——标注为草案，执行前需在目标环境验证",
+        "en": "Hunt plan (hypotheses, data visibility matrix, query drafts, success/failure criteria) — marked as drafts requiring validation in the target environment before execution"
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "document-research-task",
+  "title": "资料研究与简报任务",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "整理已提供的资料，按来源可追溯原则输出研究简报，区分事实、推断与待确认事项。",
+  "requirements": [
+    "待研究资料（文档或文件，已上传）",
+    "研究问题或目标（一句话描述）"
+  ],
+  "output": "可追溯研究简报：关键事实（含来源位置）、推断（含依据）、分歧与待确认事项清单",
+  "skills": [
+    {
+      "id": "document-research",
+      "title": "资料研究与可追溯简报",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "资料研究与简报任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "资料研究与简报任务",
+        "en": "Document research and brief task"
+      }
+    },
+    "description": {
+      "original": "整理已提供的资料，按来源可追溯原则输出研究简报，区分事实、推断与待确认事项。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "整理已提供的资料，按来源可追溯原则输出研究简报，区分事实、推断与待确认事项。",
+        "en": "Organize provided materials and produce a traceable research brief, distinguishing facts, inferences, and items to verify."
+      }
+    },
+    "requirements": [
+      {
+        "original": "待研究资料（文档或文件，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待研究资料（文档或文件，已上传）",
+          "en": "Source materials (documents or files, already uploaded)"
+        }
+      },
+      {
+        "original": "研究问题或目标（一句话描述）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "研究问题或目标（一句话描述）",
+          "en": "Research question or objective (one sentence)"
+        }
+      }
+    ],
+    "output": {
+      "original": "可追溯研究简报：关键事实（含来源位置）、推断（含依据）、分歧与待确认事项清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "可追溯研究简报：关键事实（含来源位置）、推断（含依据）、分歧与待确认事项清单",
+        "en": "Traceable research brief: key facts (with source locations), inferences (with rationale), and list of discrepancies and items to verify"
+      }
+    }
+  }
+}

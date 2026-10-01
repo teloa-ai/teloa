@@ -1,0 +1,132 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.jaaneek.x-search",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "x-search",
+    "title": {
+      "zh-CN": "X（Twitter）搜索",
+      "en": "X Search"
+    },
+    "summary": {
+      "zh-CN": "使用 xAI API 搜索 X（Twitter）上的帖子。用于社交媒体监控和内容发现。",
+      "en": "Search X (Twitter) posts using the xAI API. Use when the user wants to find tweets, search X/Twitter, look up what people are saying on X, or find social med..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "jaaneek",
+    "slug": "x-search",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "71d70639d3b5610459c524c95d7cbaad7ff631e75cb3d2a60d2f40f08129a3dc",
+        "size": 1931
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "f041957f968c2276636c559adb0c4b900f05048c8aa27a62fbe012694d072b93",
+        "size": 2082
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 16321,
+    "installsLabel": "1.6 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "scripts",
+      "count": 2
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 2 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 2 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要自备 xAI API Key（在 console.x.ai 获取）。搜索由 xAI 的 Grok 模型在 xAI 服务器上完成，按你的 xAI 账户计费。",
+        "en": "Requires your own xAI API key (from console.x.ai). Searches run on xAI's servers through its Grok model and are billed to your xAI account."
+      },
+      {
+        "zh-CN": "由 Teloa 代为发送请求：密钥由 Teloa 保管，只发往 https://api.x.ai/v1/responses；该地址只接受 POST，因此每次搜索都会先请你确认。",
+        "en": "Teloa sends the requests for this skill: it keeps the key and sends it only to https://api.x.ai/v1/responses. That address accepts only POST, so every search asks for your confirmation first."
+      },
+      {
+        "zh-CN": "正文里的 python3 scripts/search.py 在 Teloa 中不适用（脚本不随技能安装），改按调用指引直接请求；请求格式取自锁定版本 1.0.0 的 scripts/search.py。",
+        "en": "The python3 scripts/search.py steps in the skill text do not apply in Teloa (scripts are not installed with the skill); the call guide sends the request directly, in the format taken from scripts/search.py of the pinned version 1.0.0."
+      },
+      {
+        "zh-CN": "单次返回内容超过 256 KiB 会被截断，非文字内容只给出省略提示。",
+        "en": "Responses over 256 KiB are truncated, and non-text content is replaced by a short notice."
+      },
+      {
+        "zh-CN": "未经 Teloa 真实账户实测：请求地址与鉴权方式按服务商官方文档和锁定版本的技能正文核对。使用中遇到问题，请在资源详情页点「问题反馈」。",
+        "en": "Not tested with a real account by Teloa: request addresses and authentication were checked against the provider's official documentation and the pinned skill text. If something does not work, use Report a problem on the resource page."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "teloa_skill_http"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "secrets": [
+    {
+      "envVarName": "XAI_API_KEY",
+      "label": {
+        "zh-CN": "xAI API Key（在 console.x.ai 获取）",
+        "en": "xAI API key (from console.x.ai)"
+      },
+      "required": true,
+      "target": "bearer",
+      "endpoints": [
+        {
+          "origin": "https://api.x.ai",
+          "pathPrefixes": [
+            "/v1/responses"
+          ]
+        }
+      ],
+      "methods": [
+        "POST"
+      ]
+    }
+  ],
+  "httpGuide": {
+    "zh-CN": "正文里的 python3 scripts/search.py 命令，在 Teloa 里改用 teloa_skill_http 调用（格式取自锁定版本 1.0.0 的 scripts/search.py）：\nmethod POST，url https://api.x.ai/v1/responses，headers 写 Content-Type: application/json。\nbody：{\"model\":\"grok-4.20-reasoning\",\"input\":[{\"role\":\"user\",\"content\":\"<搜索问题>\"}],\"tools\":[{\"type\":\"x_search\"}]}\nx_search 工具对象可加：allowed_x_handles 或 excluded_x_handles（账号列表，各最多 10 个，二者不能同时用）、from_date 与 to_date（YYYY-MM-DD）、enable_image_understanding、enable_video_understanding（true）。\n返回 JSON 的 output 里有模型整理的文字与引用链接；回复时列出帖子内容、作者和原帖链接。",
+    "en": "Where the skill text runs python3 scripts/search.py, call teloa_skill_http instead (format taken from scripts/search.py of the pinned version 1.0.0):\nmethod POST, url https://api.x.ai/v1/responses, headers Content-Type: application/json.\nbody: {\"model\":\"grok-4.20-reasoning\",\"input\":[{\"role\":\"user\",\"content\":\"<search question>\"}],\"tools\":[{\"type\":\"x_search\"}]}\nThe x_search tool object may add allowed_x_handles or excluded_x_handles (lists of up to 10 handles, not both), from_date and to_date (YYYY-MM-DD), enable_image_understanding and enable_video_understanding (true).\nThe output array of the JSON response holds the summarized text and citation links; present the post content, authors and links to the original posts."
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

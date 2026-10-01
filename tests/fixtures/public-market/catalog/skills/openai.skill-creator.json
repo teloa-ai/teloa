@@ -1,0 +1,98 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "openai.skill-creator",
+  "kind": "skill",
+  "delivery": "builtin",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "teloa-skill-creator",
+    "title": {
+      "zh-CN": "技能创建器",
+      "en": "Skill creator"
+    },
+    "summary": {
+      "zh-CN": "新建或修改技能时自动使用，按固定流程查重、编写并保存成待确认草案。",
+      "en": "Used automatically when creating or revising a skill: checks for duplicates, writes the skill and saves it as a draft for confirmation."
+    }
+  },
+  "upstream": {
+    "ecosystem": "openai",
+    "author": "OpenAI",
+    "repository": {
+      "host": "github.com",
+      "owner": "openai",
+      "repo": "skills"
+    },
+    "commit": "49f948faa9258a0c61caceaf225e179651397431",
+    "path": "skills/.system/skill-creator",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "gitBlob": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+        "size": 11358
+      },
+      {
+        "path": "SKILL.md",
+        "gitBlob": "72bc0b97e7a6476254a9d5c424c9971748402ec3",
+        "size": 18664
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "zh-CN": "技能名改为 teloa-skill-creator，说明改为 Teloa 场景。",
+      "en": "Renamed to teloa-skill-creator and rewrote the description for Teloa."
+    },
+    {
+      "zh-CN": "删除 agents/openai.yaml 相关段落；未收录 agents/openai.yaml、references/openai_yaml.md 与 scripts/ 下三个 Python 脚本。",
+      "en": "Removed the agents/openai.yaml guidance; agents/openai.yaml, references/openai_yaml.md and the three Python scripts under scripts/ are not included."
+    },
+    {
+      "zh-CN": "用「Teloa 创建流程」替换原初始化与校验步骤：先查重，再保存成待确认草案。",
+      "en": "Replaced the original initialize and validate steps with the Teloa creation flow: check for duplicates, then save a draft for confirmation."
+    },
+    {
+      "zh-CN": "正文中的 Codex 改为中性的 the agent。",
+      "en": "Replaced mentions of Codex with a neutral \"the agent\"."
+    }
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE.txt"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "只在本人普通会话中提供，同事执行任务时不可见。",
+        "en": "Available only in your own ordinary conversations; not visible to colleagues running tasks."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "teloa_create_directory",
+      "teloa_create_draft"
+    ],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

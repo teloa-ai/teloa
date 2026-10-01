@@ -1,0 +1,134 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "persistent-research",
+  "title": "持久加载验收",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "面向组织日常研究、资料整理与决策简报的轻量行业模板。岗位负责形成可追溯的研究草案，结论与外部行动仍需本人核验和授权。",
+  "resources": [
+    {
+      "id": "research-analyst",
+      "kind": "role",
+      "title": "研究分析员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/研究分析员.json"
+      }
+    },
+    {
+      "id": "research-methods",
+      "kind": "knowledge",
+      "title": "通用研究方法",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/通用研究方法.md"
+      }
+    },
+    {
+      "id": "research-brief",
+      "kind": "skill",
+      "title": "研究简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/研究简报/SKILL.md"
+      }
+    },
+    {
+      "id": "research-review",
+      "kind": "work-template",
+      "title": "资料研究与核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/资料研究.json"
+      }
+    },
+    {
+      "id": "daily-review",
+      "kind": "plan",
+      "title": "每日研究资料核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "plans/每日资料核对.json"
+      }
+    },
+    {
+      "id": "mcp",
+      "kind": "mcp",
+      "title": "待配置 MCP",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "connections/mcp.json"
+      }
+    },
+    {
+      "id": "plugin",
+      "kind": "plugin",
+      "title": "待配置插件",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "connections/plugin.json"
+      }
+    },
+    {
+      "id": "data-source",
+      "kind": "data-source",
+      "title": "待配置数据源",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "connections/data-source.json"
+      }
+    },
+    {
+      "id": "execution-tool",
+      "kind": "execution-tool",
+      "title": "待配置执行工具",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "connections/execution-tool.json"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-skill",
+      "from": "research-analyst",
+      "to": "research-brief"
+    },
+    {
+      "kind": "role-work",
+      "from": "research-analyst",
+      "to": "research-review"
+    },
+    {
+      "kind": "role-work",
+      "from": "research-analyst",
+      "to": "daily-review"
+    },
+    {
+      "kind": "role-connection",
+      "from": "research-analyst",
+      "to": "mcp"
+    }
+  ],
+  "entrypoints": [
+    "research-review"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "format": "teloa.business-package/v1",
+  "id": "review-kit",
+  "title": "本地上传资源包验收",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "核对本地 JSON 内容读取与依赖预览。",
+  "requirements": ["获准的公开资料"],
+  "output": "带来源的审阅稿",
+  "components": [
+    { "kind": "skill", "path": "skills/brief/SKILL.md", "required": true },
+    { "kind": "mcp", "path": "mcp.json", "required": false }
+  ]
+}

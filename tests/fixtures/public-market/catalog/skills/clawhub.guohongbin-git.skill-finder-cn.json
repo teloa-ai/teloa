@@ -1,0 +1,95 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.guohongbin-git.skill-finder-cn",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "automation"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "skill-finder-cn",
+    "title": {
+      "zh-CN": "技能查找器",
+      "en": "Skill Finder Cn"
+    },
+    "summary": {
+      "zh-CN": "帮助发现和安装 ClawHub 技能库中的各类技能。用于快速搜索和安装所需功能扩展。",
+      "en": "Skill 查找器 | Skill Finder. 帮助发现和安装 ClawHub Skills | Discover and install ClawHub Skills. 回答'有什么技能可以X'、'找一个技能' | Answers 'what skill can X', 'find a skill'. 触发..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "guohongbin-git",
+    "slug": "skill-finder-cn",
+    "version": "1.0.1",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "762005fbdc05a618726f663d4f0c70d7cbdd13c09339bd32475dc0debc9d0a46",
+        "size": 2684
+      },
+      {
+        "path": "_meta.json",
+        "sha256": "462530538a9b5f3979809f68d15e4550a34f61271b627fc1729d301e3f547085",
+        "size": 134
+      },
+      {
+        "path": "package.json",
+        "sha256": "9245c1c9472bc37d6ad55ac2f50c4c636320c9f3afc23bb95bec65a31b9f46da",
+        "size": 108
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "f95cb75163fbd9e27a5bb6c833fe78c9c3681029749bad27938d5b66f15fac70",
+        "size": 2053
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 39942,
+    "installsLabel": "4 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "scripts",
+      "count": 1
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 1 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 1 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "bash"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

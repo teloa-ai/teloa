@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "status-report-task",
+  "title": "生成项目周状态报告",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "将已提供的任务记录、看板导出与项目状态材料整理为周状态报告草案，包含整体状态判定、本周完成、进行中、里程碑状态、阻碍与风险、下周计划与需决策事项，所有数字与日期附来源。",
+  "requirements": [
+    "本周任务记录、看板导出或项目状态材料（已上传）",
+    "报告类型（团队周报 / 干系人汇报 / 管理层简报）",
+    "项目计划或里程碑表、风险台账、上周报告（可选）"
+  ],
+  "output": "项目周状态报告草案：首部注明期间、信息截止、来源与整体状态判定依据；按报告类型输出对应结构；发送前需负责人确认",
+  "skills": [
+    {
+      "id": "project-weekly-report",
+      "title": "项目周状态报告",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "生成项目周状态报告",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "生成项目周状态报告",
+        "en": "Generate weekly project status report"
+      }
+    },
+    "description": {
+      "original": "将已提供的任务记录、看板导出与项目状态材料整理为周状态报告草案，包含整体状态判定、本周完成、进行中、里程碑状态、阻碍与风险、下周计划与需决策事项，所有数字与日期附来源。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将已提供的任务记录、看板导出与项目状态材料整理为周状态报告草案，包含整体状态判定、本周完成、进行中、里程碑状态、阻碍与风险、下周计划与需决策事项，所有数字与日期附来源。",
+        "en": "Organize provided task records, board exports, and project status materials into a weekly status report draft: overall status with rationale, completed items, in-progress items, milestone status, blockers and risks, next-week plan, and decisions needed, with every figure and date sourced."
+      }
+    },
+    "requirements": [
+      {
+        "original": "本周任务记录、看板导出或项目状态材料（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本周任务记录、看板导出或项目状态材料（已上传）",
+          "en": "This week's task records, board export, or project status materials (already uploaded)"
+        }
+      },
+      {
+        "original": "报告类型（团队周报 / 干系人汇报 / 管理层简报）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "报告类型（团队周报 / 干系人汇报 / 管理层简报）",
+          "en": "Report type (team weekly / stakeholder update / management brief)"
+        }
+      },
+      {
+        "original": "项目计划或里程碑表、风险台账、上周报告（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "项目计划或里程碑表、风险台账、上周报告（可选）",
+          "en": "Project plan or milestone table, risk register, last week's report (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "项目周状态报告草案：首部注明期间、信息截止、来源与整体状态判定依据；按报告类型输出对应结构；发送前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "项目周状态报告草案：首部注明期间、信息截止、来源与整体状态判定依据；按报告类型输出对应结构；发送前需负责人确认",
+        "en": "Weekly project status report draft: header with period, information cutoff, sources, and overall status rationale; structured by report type; requires the owner's confirmation before sending"
+      }
+    }
+  }
+}

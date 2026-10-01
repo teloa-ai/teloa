@@ -1,0 +1,10 @@
+/* 原生右栏里的 Teloa 页签：外层版式、页签条、分栏、浮动全由 DSH 负责，
+   这里只管二级视图的切换条与正文容器。 */
+.tab{display:flex;flex-direction:column;gap:12px;min-height:0;height:100%;overflow:auto;padding:12px;background:var(--teloa-background);color:var(--teloa-text)}
+.views{display:flex;gap:6px;flex:none}
+.views>button{border:1px solid var(--teloa-border);border-radius:999px;padding:4px 12px;font-size:var(--teloa-font-caption);background:var(--teloa-surface);color:var(--teloa-muted);cursor:pointer}
+.views>button:hover{background:var(--teloa-hover)}
+.views>button[aria-current='page']{border-color:var(--teloa-accent);background:var(--teloa-accent-bg);color:var(--teloa-accent)}
+.views>button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.body{display:flex;flex-direction:column;min-height:0;flex:1}
+.missing{margin:0;font-size:var(--teloa-font-control);color:var(--teloa-muted)}

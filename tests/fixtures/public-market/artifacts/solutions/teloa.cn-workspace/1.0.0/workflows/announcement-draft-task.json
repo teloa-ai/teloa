@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "announcement-draft-task",
+  "title": "起草公告与通知",
+  "version": "1.0.0",
+  "domain": "workspace",
+  "description": "依据已提供的事实材料，为飞书群、钉钉群、邮件等渠道分别起草公告或通知，附事实核对表与发送前清单；事实冲突或缺失时只出带占位的草稿，不写材料之外的承诺。不发送、不 @ 任何人。",
+  "requirements": [
+    "公告事实材料（已上传：通知事项、时间地点、适用范围、联系人、政策或决定依据）",
+    "发布渠道与读者（如飞书全员群 + 邮件，可选）"
+  ],
+  "output": "公告草案：事实核对表（采用值、来源、状态）、冲突与缺失、分渠道草案、发送前需确认清单；发送前需负责人确认",
+  "skills": [
+    {
+      "id": "announcement-draft",
+      "title": "公告与通知草案",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "起草公告与通知",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "起草公告与通知",
+        "en": "Draft announcement or notice"
+      }
+    },
+    "description": {
+      "original": "依据已提供的事实材料，为飞书群、钉钉群、邮件等渠道分别起草公告或通知，附事实核对表与发送前清单；事实冲突或缺失时只出带占位的草稿，不写材料之外的承诺。不发送、不 @ 任何人。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "依据已提供的事实材料，为飞书群、钉钉群、邮件等渠道分别起草公告或通知，附事实核对表与发送前清单；事实冲突或缺失时只出带占位的草稿，不写材料之外的承诺。不发送、不 @ 任何人。",
+        "en": "Draft an announcement or notice for each channel (Feishu group, DingTalk group, email and so on) from the facts provided, with a fact check table and pre-send checklist; when facts conflict or are missing only a placeholder draft is produced, and no commitments beyond the materials are made. Nothing is sent and no one is @-mentioned."
+      }
+    },
+    "requirements": [
+      {
+        "original": "公告事实材料（已上传：通知事项、时间地点、适用范围、联系人、政策或决定依据）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "公告事实材料（已上传：通知事项、时间地点、适用范围、联系人、政策或决定依据）",
+          "en": "Announcement facts (uploaded: what, when and where, who is affected, contact, policy or decision basis)"
+        }
+      },
+      {
+        "original": "发布渠道与读者（如飞书全员群 + 邮件，可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "发布渠道与读者（如飞书全员群 + 邮件，可选）",
+          "en": "Channels and audience (for example Feishu all-hands group + email, optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "公告草案：事实核对表（采用值、来源、状态）、冲突与缺失、分渠道草案、发送前需确认清单；发送前需负责人确认",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "公告草案：事实核对表（采用值、来源、状态）、冲突与缺失、分渠道草案、发送前需确认清单；发送前需负责人确认",
+        "en": "Draft announcement: fact check table (value, source, status), conflicts and gaps, per-channel drafts, pre-send checklist; the owner confirms before sending"
+      }
+    }
+  }
+}

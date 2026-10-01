@@ -1,0 +1,114 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.deepseek",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "deepseek",
+    "title": {
+      "zh-CN": "DeepSeek",
+      "en": "DeepSeek"
+    },
+    "summary": {
+      "zh-CN": "深度求索官方 API，国内直连，价格低，适合日常对话与长文档处理。",
+      "en": "DeepSeek official API: reachable directly in China, low price, good for everyday chat and long documents."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": false,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 1000000,
+    "license": {
+      "spdx": "custom",
+      "name": "DeepSeek 开放平台服务协议",
+      "url": "https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "deepseek"
+      },
+      "models": [
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "contextWindow": 1000000,
+          "maxTokens": 384000,
+          "input": [
+            "text"
+          ]
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "contextWindow": 1000000,
+          "maxTokens": 384000,
+          "input": [
+            "text"
+          ]
+        }
+      ],
+      "priceBand": "low",
+      "credentialLabel": {
+        "zh-CN": "DeepSeek API 密钥",
+        "en": "DeepSeek API key"
+      },
+      "signupUrl": "https://platform.deepseek.com"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

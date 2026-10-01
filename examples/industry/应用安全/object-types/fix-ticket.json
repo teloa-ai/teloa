@@ -1,0 +1,147 @@
+{
+  "format": "teloa.business-object-type/v1",
+  "id": "fix-ticket",
+  "version": "1.0.1",
+  "domain": "AppSec",
+  "title": "修复工单",
+  "unit": "份",
+  "lead": "一个漏洞一张单，承诺时间和验收结果都留在单上。",
+  "sourceId": "appsec-finding-http",
+  "fields": [
+    {
+      "name": "state",
+      "label": "当前状态",
+      "type": "enum",
+      "required": true,
+      "from": "当前状态",
+      "values": [
+        "待受理",
+        "修复中",
+        "待验收",
+        "已完成"
+      ],
+      "localized": {
+        "label": {
+          "original": "当前状态",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "当前状态",
+            "en": "Status"
+          }
+        },
+        "values": [
+          {
+            "original": "待受理",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "待受理",
+              "en": "Pending intake"
+            }
+          },
+          {
+            "original": "修复中",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "修复中",
+              "en": "In remediation"
+            }
+          },
+          {
+            "original": "待验收",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "待验收",
+              "en": "Awaiting validation"
+            }
+          },
+          {
+            "original": "已完成",
+            "defaultLocale": "en",
+            "locales": {
+              "zh-CN": "已完成",
+              "en": "Completed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "vulnerability",
+      "label": "关联漏洞",
+      "type": "reference",
+      "required": true,
+      "from": "关联漏洞",
+      "referenceType": "vulnerability",
+      "localized": {
+        "label": {
+          "original": "关联漏洞",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "关联漏洞",
+            "en": "Vulnerability"
+          }
+        }
+      }
+    },
+    {
+      "name": "assignee",
+      "label": "负责同事",
+      "type": "text",
+      "required": false,
+      "from": "负责同事",
+      "localized": {
+        "label": {
+          "original": "负责同事",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "负责同事",
+            "en": "Assignee"
+          }
+        }
+      }
+    },
+    {
+      "name": "promised-at",
+      "label": "承诺完成",
+      "type": "datetime",
+      "required": true,
+      "from": "承诺完成",
+      "localized": {
+        "label": {
+          "original": "承诺完成",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "承诺完成",
+            "en": "Promised completion"
+          }
+        }
+      }
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "修复工单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "修复工单",
+        "en": "Remediation tickets"
+      }
+    },
+    "unit": {
+      "original": "份",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "份",
+        "en": "tickets"
+      }
+    },
+    "lead": {
+      "original": "一个漏洞一张单，承诺时间和验收结果都留在单上。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "一个漏洞一张单，承诺时间和验收结果都留在单上。",
+        "en": "Each vulnerability has a remediation ticket that records the commitment and validation result."
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@teloa/cli",
+  "version": "0.2.0-alpha.7",
+  "private": true,
+  "type": "module",
+  "exports": {"./runtime":"./src/runtime-status.ts","./webserver":"./src/runtime-webserver.ts","./gateway":"./src/runtime-gateway.ts"},
+  "scripts": {"build": "tsc -b", "test": "node --test tests/*.test.ts"},
+  "engines": {"node": "^22.19.0 || ^24.0.0", "npm": "^11.12.1"}
+}

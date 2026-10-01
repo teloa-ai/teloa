@@ -1,0 +1,57 @@
+{
+  "format": "teloa.derivative-review/v1",
+  "entryId": "anthropic.commit",
+  "version": "1.0.0",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa",
+  "changeChecks": [
+    {
+      "changeId": "CMT-M01",
+      "method": "source-check",
+      "result": "pass",
+      "evidence": "按锁定提交取回原版 plugins/commit-commands/commands/commit.md（git blob 31ef0790…，624 字节，sha256 d1acbc2b…，与 GitHub 树一致）全文核对：只有 allowed-tools frontmatter、四行 !`…` 上下文与三句任务说明；其正文已由 SKILL.md 承接（逐处见 CMT-M02～M08）。资源文件里不含该路径，2026-09-28 校验器 derivative.removed-unlisted 通过。"
+    },
+    {
+      "changeId": "CMT-M02",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 --pr 通过：skill.frontmatter-keys（只有 name、description）与 skill.name-mismatch（name 为 commit，与条目 skill.name 一致）两条规则。原版 allowed-tools 行已不在 SKILL.md 中（grep 为 0）。"
+    },
+    {
+      "changeId": "CMT-M03",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 derivative.change-notice 通过：SKILL.md 前 4 KiB 内含修改声明与 MODIFICATIONS.md。"
+    },
+    {
+      "changeId": "CMT-M04",
+      "method": "test",
+      "result": "pass",
+      "evidence": "本机 qwen3:14b（thinking 开、temperature 0.2）按 SKILL.md 在示例仓库实跑 8 次（有人值守 3、无人值守 5），8/8 都先自己运行只读的 git status --porcelain=v1 -uall 与 git log，没有依赖加载时展开。示例仓库里 git status 默认输出把新文件折叠为 `tests/`，-uall 列出 `tests/test_pricing.py`（见 reviews/derivatives/anthropic.commit/tests/commit-v2-runs.jsonl 与 scenario 构造脚本）。"
+    },
+    {
+      "changeId": "CMT-M05",
+      "method": "test",
+      "result": "pass",
+      "evidence": "本机 qwen3:14b 实跑：有人值守 3 次均先展示分支、文件清单、凭据检查与提交命令，git add/commit 全部发生在用户确认之后（确认前改变仓库的命令 0 条）；无人值守 5 次均未提交、HEAD 未变、未改任何文件。改写过程如实记录：首版边界在无人值守 3 次中有 1 次仍改了 .gitignore 并提交，据此把「无人值守从不提交、无人回答不算确认、不改 .gitignore」写成独立一条，定稿后的 8 次即上述结果。原始记录见 reviews/derivatives/anthropic.commit/tests/。"
+    },
+    {
+      "changeId": "CMT-M06",
+      "method": "reproduction",
+      "result": "pass",
+      "evidence": "复现（tests/commit-secret-stage.txt）：示例仓库无 .gitignore，原版 allowed-tools 放行范围内的 `git add .` 把含 AWS 官方示例密钥的 .env 纳入暂存区；按本条的文件名规则 .env 被标出，拟提交文件的凭据样式扫描为 0。定稿 SKILL.md 实跑 8 次（qwen3:14b）：.env 从未被暂存或提交（8/8），从未使用 git add -A/./-a，回复里没有复述密钥（0/8）；首版曾在 6 次中 2 次复述完整密钥，据此加入「任何地方都不复述凭据值、凭据文件按文件名标出不必打开」。原版命令同模型 5 次：4 次没有产生工具调用，1 次只提交 app/pricing.py，未复现 .env 被提交，本条不以模型行为作为依据。"
+    },
+    {
+      "changeId": "CMT-M07",
+      "method": "review",
+      "result": "pass",
+      "evidence": "逐条核对 SKILL.md Step 1 与 Step 5 与原版、README 排错一节的对应关系。实跑观察（qwen3:14b，定稿 8 次）：有人值守 3 次都把新测试文件与修改一起提交、notes-scratch.txt 标为未纳入并说明理由，提交后都运行 git status 与 git log 报告结果；示例仓库没有提交钩子，钩子失败分支未被实跑，只做了审阅。"
+    },
+    {
+      "changeId": "CMT-M08",
+      "method": "test",
+      "result": "pass",
+      "evidence": "定稿有人值守 3 次（qwen3:14b）的提交标题都沿用仓库最近提交的 `feat(pricing): …` 风格，且没有加签名或工具署名行。原版命令唯一产生提交的一次也用了同一前缀，所以本条不宣称效果提升，依据是把原版只作为上下文给出的最近提交变成明确要求。"
+    }
+  ]
+}

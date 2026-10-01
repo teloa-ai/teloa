@@ -1,0 +1,317 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "detection-engineering",
+  "title": "检测工程",
+  "version": "1.0.1",
+  "domain": "cyber-security",
+  "scope": "detection",
+  "description": "面向检测工程师的威胁检测开发方案。覆盖从检测需求梳理到 Sigma 规则编写、目标平台转换草案（Splunk SPL、Microsoft Sentinel KQL、Elastic EQL/ES|QL）、设备原生规则草案、样本回放调优，以及变更与回滚说明的完整链路。目标平台转换草案明确标注「未在目标引擎验证」，需客户在目标环境完成验收。",
+  "resources": [
+    {
+      "id": "detection-engineer",
+      "kind": "role",
+      "title": "检测工程师",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/detection-engineer.json"
+      },
+      "localized": {
+        "title": {
+          "original": "检测工程师",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "检测工程师",
+            "en": "Detection engineer"
+          }
+        }
+      }
+    },
+    {
+      "id": "detection-methods",
+      "kind": "knowledge",
+      "title": "检测工程方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/detection-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "检测工程方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "检测工程方法与来源索引",
+            "en": "Detection engineering methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "detection-requirements",
+      "kind": "skill",
+      "title": "检测需求梳理",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/detection-requirements/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "检测需求梳理",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "检测需求梳理",
+            "en": "Detection requirements analysis"
+          }
+        }
+      }
+    },
+    {
+      "id": "sigma-rule-authoring",
+      "kind": "skill",
+      "title": "Sigma 规则编写",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/sigma-rule-authoring/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "Sigma 规则编写",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "Sigma 规则编写",
+            "en": "Sigma rule authoring"
+          }
+        }
+      }
+    },
+    {
+      "id": "platform-translation",
+      "kind": "skill",
+      "title": "目标平台转换草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/platform-translation/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "目标平台转换草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "目标平台转换草案",
+            "en": "Target platform translation draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "native-rule-drafting",
+      "kind": "skill",
+      "title": "设备原生规则草案",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "skills/native-rule-drafting/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "设备原生规则草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "设备原生规则草案",
+            "en": "Native device rule draft"
+          }
+        }
+      }
+    },
+    {
+      "id": "sample-replay-tuning",
+      "kind": "skill",
+      "title": "样本回放与误报调优",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/sample-replay-tuning/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "样本回放与误报调优",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "样本回放与误报调优",
+            "en": "Sample replay and false positive tuning"
+          }
+        }
+      }
+    },
+    {
+      "id": "change-rollback-notes",
+      "kind": "skill",
+      "title": "变更与回滚说明",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/change-rollback-notes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "变更与回滚说明",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "变更与回滚说明",
+            "en": "Change and rollback notes"
+          }
+        }
+      }
+    },
+    {
+      "id": "detection-requirement-task",
+      "kind": "work-template",
+      "title": "检测需求分析任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/detection-requirement-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "检测需求分析任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "检测需求分析任务",
+            "en": "Detection requirement analysis task"
+          }
+        }
+      }
+    },
+    {
+      "id": "sigma-rule-task",
+      "kind": "work-template",
+      "title": "Sigma 规则开发任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/sigma-rule-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "Sigma 规则开发任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "Sigma 规则开发任务",
+            "en": "Sigma rule development task"
+          }
+        }
+      }
+    },
+    {
+      "id": "rule-test-task",
+      "kind": "work-template",
+      "title": "规则测试与调优任务",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/rule-test-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "规则测试与调优任务",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "规则测试与调优任务",
+            "en": "Rule testing and tuning task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "detection-engineer",
+      "to": "detection-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "detection-engineer",
+      "to": "detection-requirements"
+    },
+    {
+      "kind": "role-skill",
+      "from": "detection-engineer",
+      "to": "sigma-rule-authoring"
+    },
+    {
+      "kind": "role-skill",
+      "from": "detection-engineer",
+      "to": "platform-translation"
+    },
+    {
+      "kind": "role-skill",
+      "from": "detection-engineer",
+      "to": "native-rule-drafting"
+    },
+    {
+      "kind": "role-skill",
+      "from": "detection-engineer",
+      "to": "sample-replay-tuning"
+    },
+    {
+      "kind": "role-skill",
+      "from": "detection-engineer",
+      "to": "change-rollback-notes"
+    },
+    {
+      "kind": "role-work",
+      "from": "detection-engineer",
+      "to": "detection-requirement-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "detection-engineer",
+      "to": "sigma-rule-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "detection-engineer",
+      "to": "rule-test-task"
+    }
+  ],
+  "entrypoints": [
+    "detection-requirement-task",
+    "sigma-rule-task",
+    "detection-requirements"
+  ],
+  "localized": {
+    "title": {
+      "original": "检测工程",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "检测工程",
+        "en": "Detection engineering"
+      }
+    },
+    "description": {
+      "original": "面向检测工程师的威胁检测开发方案。覆盖从检测需求梳理到 Sigma 规则编写、目标平台转换草案（Splunk SPL、Microsoft Sentinel KQL、Elastic EQL/ES|QL）、设备原生规则草案、样本回放调优，以及变更与回滚说明的完整链路。目标平台转换草案明确标注「未在目标引擎验证」，需客户在目标环境完成验收。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向检测工程师的威胁检测开发方案。覆盖从检测需求梳理到 Sigma 规则编写、目标平台转换草案（Splunk SPL、Microsoft Sentinel KQL、Elastic EQL/ES|QL）、设备原生规则草案、样本回放调优，以及变更与回滚说明的完整链路。目标平台转换草案明确标注「未在目标引擎验证」，需客户在目标环境完成验收。",
+        "en": "Detection development for detection engineers. Covers the full pipeline from requirements analysis to Sigma rule authoring, target platform translation drafts (Splunk SPL, Microsoft Sentinel KQL, Elastic EQL/ES|QL), native device rule drafts, sample replay and false-positive tuning, and change/rollback notes. Platform translation drafts are explicitly marked 'not validated in target engine' and must be accepted by the customer in their environment."
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "endpoint-isolation-record",
+  "title": "终端隔离记录",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "description": "记录一次终端隔离动作的理由与影响范围，供事后复核。",
+  "requirements": [
+    "隔离理由",
+    "影响范围说明"
+  ],
+  "output": "隔离记录：理由、影响范围与执行时间。",
+  "skills": [],
+  "localized": {
+    "title": {
+      "original": "终端隔离记录",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "终端隔离记录",
+        "en": "Endpoint isolation record"
+      }
+    },
+    "description": {
+      "original": "记录一次终端隔离动作的理由与影响范围，供事后复核。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "记录一次终端隔离动作的理由与影响范围，供事后复核。",
+        "en": "Record the reason and impact scope of an endpoint isolation action for later review."
+      }
+    },
+    "requirements": [
+      {
+        "original": "隔离理由",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "隔离理由",
+          "en": "Isolation reason"
+        }
+      },
+      {
+        "original": "影响范围说明",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "影响范围说明",
+          "en": "Impact scope"
+        }
+      }
+    ],
+    "output": {
+      "original": "隔离记录：理由、影响范围与执行时间。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "隔离记录：理由、影响范围与执行时间。",
+        "en": "Isolation record: reason, impact scope, and execution time."
+      }
+    }
+  }
+}

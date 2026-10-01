@@ -1,0 +1,5 @@
+/* 567.33/108.79 是字标宽高比，与 src/brand/logotype.ts 的 LOGOTYPE_ASPECT 同步；CSS 不能 import 常量。 */
+/* --brand-height 按新字标外框换算（旧 26px / 窄屏 24px），帽高在屏幕上保持不变。 */
+.mark{--brand-height:19px;display:block;width:calc(var(--brand-height)*567.33/108.79);height:var(--brand-height)}
+.mark img{width:100%;height:100%;object-fit:contain}
+@media(max-width:740px){.mark{--brand-height:18px}}

@@ -1,0 +1,5 @@
+{
+  "format": "teloa.execution-tool/v1",
+  "adapterId": "security-action-http",
+  "tools": ["security.endpoint.isolate"]
+}

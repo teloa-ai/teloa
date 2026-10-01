@@ -1,0 +1,64 @@
+/* 市场统一列表：两排筛选（行业 / 功能）与条目卡；官方目录、本机条目、本机资源共用。 */
+/* 两排筛选（行业 / 功能）+ 排序：左列行标签，右列按钮；标签列宽由最长标签决定（subgrid），换行时按钮对齐在按钮列里 */
+.filterBar{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;align-items:start}
+.filterRow{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:start}
+.filterLabel{font-size:var(--teloa-font-caption);line-height:30px;color:var(--teloa-muted);white-space:nowrap}
+.filterRowSub .filterLabel{padding-left:10px;border-left:2px solid var(--teloa-border)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.filterBar .chips button{display:inline-flex;align-items:center;gap:6px;min-height:30px;min-width:0;padding:3px 12px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);line-height:1.4;white-space:nowrap;cursor:pointer}
+.filterBar .chips button:hover:not(:disabled){background:var(--teloa-hover)}
+.filterBar .chips button[aria-pressed=true]{border-color:var(--teloa-text);background:var(--teloa-text);color:var(--teloa-surface)}
+.filterBar .chips button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.chips button span{font-variant-numeric:tabular-nums;color:var(--teloa-muted)}
+.chips button[aria-pressed=true] span{color:inherit;opacity:.72}
+.moreFilters{grid-column:2;min-width:0}
+.moreFilters>summary{cursor:pointer;width:max-content;font-size:var(--teloa-font-caption);color:var(--teloa-muted);padding:4px 0}
+.moreFilters>summary:hover{color:var(--teloa-text)}
+.moreFilters>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.moreFilters[open]>.chips{margin-top:6px}
+/* 条目列表：单列条目卡，与原型 ItemCard 同一套尺寸；本机与官方条目同一份样式 */
+.rows{list-style:none;margin:0;padding:0;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);overflow:hidden}
+.row+.row{border-top:1px solid var(--teloa-border)}
+.rows .rowButton{display:flex;align-items:center;gap:14px;width:100%;min-width:0;min-height:0;padding:14px 18px;border:0;border-radius:0;background:transparent;color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer}
+.rows .rowButton:hover{background:var(--teloa-hover)}
+.rows .rowButton:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-2px}
+.rowButton>svg:last-child,.gridCard>svg:last-child{flex:none;color:var(--teloa-muted)}
+.rowMain{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.rowTop{display:flex;align-items:center;gap:9px;min-width:0}
+.rowTitle{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);color:var(--teloa-text);overflow-wrap:anywhere}
+.rowSummary{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.rowFacts{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6;overflow-wrap:anywhere}
+.rowAfter{margin:-6px 18px 12px 72px}
+.rowAfter>*{padding-top:0;border-top:0}
+/* 方案：双列方案卡，与原型 BundleCard 同一套尺寸 */
+.grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grid>li{display:flex;min-width:0}
+.grid .gridCard{display:flex;align-items:center;gap:16px;width:100%;min-width:0;min-height:0;padding:20px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3);background:var(--teloa-surface);color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer}
+.grid .gridCard:hover{border-color:var(--teloa-accent)}
+.grid .gridCard:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.gridCard>svg:last-child{align-self:flex-end}
+.gridTitle{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-medium);min-width:0;overflow-wrap:anywhere}
+.gridPitch{font-size:var(--teloa-font-control);line-height:1.75;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+/* 行内小标签（内置示例 / 本机）与白话计数行 */
+.tag{flex:none;display:inline-flex;align-items:center;padding:0 7px;border:1px solid var(--teloa-border);border-radius:999px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);line-height:1.6;color:var(--teloa-muted);white-space:nowrap}
+.resultLine{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.empty{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:0;padding:18px;border:1px dashed var(--teloa-border);border-radius:var(--teloa-design-r2);font-size:var(--teloa-font-caption);color:var(--teloa-muted);text-align:center}
+.empty button{font:inherit;font-size:var(--teloa-font-caption);min-height:30px;padding:3px 12px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-text);cursor:pointer}
+.empty button:hover{background:var(--teloa-hover)}
+.empty button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.rowButton[aria-current=page],.gridCard[aria-current=page]{background:var(--teloa-hover)}
+.moreFilters select{font:inherit;font-size:var(--teloa-font-caption);min-height:30px;padding:3px 8px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text)}
+.moreFields{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px}
+.moreFields label{display:flex;align-items:center;gap:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}}
+@media(max-width:740px){
+ .filterBar{grid-template-columns:minmax(0,1fr);gap:6px}
+ .filterRow{grid-template-columns:minmax(0,1fr);gap:4px}
+ .filterLabel{line-height:1.6}
+ .moreFilters{grid-column:1}
+ .filterBar .chips button,.moreFilters select{min-height:44px}
+ .rows .rowButton{padding:12px 14px;gap:12px}
+ .rowAfter{margin:-4px 14px 10px 66px}
+ .grid .gridCard{align-items:flex-start;padding:16px}
+ .gridCard>svg:last-child{display:none}
+}

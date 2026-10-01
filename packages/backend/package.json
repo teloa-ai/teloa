@@ -1,0 +1,22 @@
+{
+  "name": "@teloa/backend",
+  "version": "0.2.0-alpha.7",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@teloa/contract": "workspace:*",
+    "@teloa/mcp-reference": "workspace:*",
+    "libpg-query": "18.1.5",
+    "pg": "8.23.0",
+    "pgsql-deparser": "18.3.8"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "10.28.0",
+    "@types/pg": "8.23.1"
+  }
+}

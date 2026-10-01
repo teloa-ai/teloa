@@ -1,0 +1,83 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.wscats.eno",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "eno",
+    "title": {
+      "zh-CN": "Eno 技能库",
+      "en": "Eno Skills"
+    },
+    "summary": {
+      "zh-CN": "前端项目分析工具，用于评估架构和技术栈。用于代码审查和技术评估。",
+      "en": "This skill should be used when the user needs to analyze frontend project architecture evaluate tech stack choices review component design patterns assess bu..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "wscats",
+    "slug": "eno",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "14fd419166805b91e748bc46d457e6e615eb7db587969e6b1f50305b97c59451",
+        "size": 12176
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "fd05d2a1f14c61f35490cda0052ac4935bcd163a84215bd99a2be16a244061b9",
+        "size": 11801
+      },
+      {
+        "path": "frontend-arch-skill.md",
+        "sha256": "d2bd12612e2a2484fe172b8c5ff7f12b624f27e5611b9ecb409a6e8f5401b964",
+        "size": 17006
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "e13f47df4aa475c5410ca44c3d6ba083003d473cdf7abbdd4325a4fdbe607e4b",
+        "size": 2569
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 20385,
+    "installsLabel": "2 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

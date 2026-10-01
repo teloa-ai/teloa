@@ -1,0 +1,34 @@
+/* 层序与 DSH 右栏对齐：列内覆盖 20/24/25 < DSH fullscreen 40 < Teloa 浮层 45 < DSH 浮动面板 60 < 导航浮层 65/70/71 < 跳过链接 100。
+   把手 11 只需压过 DSH 面板的 z-index:10——面板是轨道内的 position:absolute，会盖掉把手伸进轨道的那 4px——仍在 fullscreen 40 之下。
+   .newWorkMenu 由 48 调到 65 不改变观感：它是 .navigation 的后代，≤1080px 时 .navigation 自带 z-index 形成层叠上下文，菜单只在抽屉内部排序；
+   更宽的视口下 .navigation 不形成层叠上下文，但菜单与 .overlay 的先后没变（原先 48>30，现在 65>45）。 */
+/* DSH 的浮动面板 portal 到 document.body，脱离挂着 .tokens 的 .frame；颜色语义再挂一份到文档根，
+   浮出去的 Teloa 页签才不会丢 --teloa-* 取值。只投影颜色，不投影 z-index：层序只在 Teloa 自己的结构里有意义。
+   两个选择器都要：ThemePresenter 把 --teloa-design-* 写在 body 的行内样式上，:root 上取不到它们，
+   真正生效的是 body 这一份；:root 那份只是为不经 body 的极端情况留个同名兜底。
+   .tokens 原有声明一字不动保留，它的特异性更高，.frame 内行为不变。 */
+:global(:root),:global(body){--teloa-background:var(--teloa-design-bg);--teloa-surface:var(--teloa-design-surface);--teloa-sidebar:var(--teloa-design-sidebar);--teloa-subtle:var(--teloa-design-subtle);--teloa-border:var(--teloa-design-border);--teloa-text:var(--teloa-design-text);--teloa-muted:var(--teloa-design-muted);--teloa-hover:var(--teloa-design-hover);--teloa-focus:var(--teloa-design-accent);--teloa-accent:var(--teloa-design-accent);--teloa-accent-bg:var(--teloa-design-accent-bg);--teloa-on-accent:var(--teloa-design-on-accent);--teloa-backdrop:var(--teloa-design-overlay);--teloa-info:var(--teloa-design-info);--teloa-info-bg:var(--teloa-design-info-bg);--teloa-warn:var(--teloa-design-warn);--teloa-warn-bg:var(--teloa-design-warn-bg);--teloa-good:var(--teloa-design-good);--teloa-good-bg:var(--teloa-design-good-bg);--teloa-shadow:var(--teloa-design-shadow)}
+.tokens{--teloa-background:var(--teloa-design-bg);--teloa-surface:var(--teloa-design-surface);--teloa-sidebar:var(--teloa-design-sidebar);--teloa-subtle:var(--teloa-design-subtle);--teloa-border:var(--teloa-design-border);--teloa-text:var(--teloa-design-text);--teloa-muted:var(--teloa-design-muted);--teloa-hover:var(--teloa-design-hover);--teloa-focus:var(--teloa-design-accent);--teloa-accent:var(--teloa-design-accent);--teloa-accent-bg:var(--teloa-design-accent-bg);--teloa-on-accent:var(--teloa-design-on-accent);--teloa-backdrop:var(--teloa-design-overlay);--teloa-info:var(--teloa-design-info);--teloa-info-bg:var(--teloa-design-info-bg);--teloa-warn:var(--teloa-design-warn);--teloa-warn-bg:var(--teloa-design-warn-bg);--teloa-good:var(--teloa-design-good);--teloa-good-bg:var(--teloa-design-good-bg);--teloa-shadow:var(--teloa-design-shadow);--teloa-z-rightbar-handle:11;--teloa-z-column-overlay:20;--teloa-z-menu:24;--teloa-z-column-overlay-narrow:25;--teloa-z-shell-overlay:45;--teloa-z-nav-menu:65;--teloa-z-nav-mask:70;--teloa-z-navigation:71;--teloa-z-skip:100;font-family:var(--teloa-design-font);font-size:var(--teloa-design-text-base);line-height:var(--teloa-design-lh)}
+
+/* 产品字体规范：按用途取值；portal 浮层同样继承。会话正文仍尊重用户字号设置。 */
+:global(:root),:global(body),.tokens{
+ --teloa-font-caption:var(--teloa-design-text-xs,12px);
+ --teloa-font-control:var(--teloa-design-text-sm,13px);
+ --teloa-font-body:var(--teloa-design-text-base,14px);
+ --teloa-font-list:var(--teloa-font-body);
+ --teloa-font-reading:var(--teloa-design-text-body,15px);
+ --teloa-font-section:16px;
+ --teloa-font-dialog:18px;
+ --teloa-font-detail:20px;
+ --teloa-font-page:var(--teloa-design-text-xl,24px);
+ --teloa-font-hero:28px;
+ --teloa-font-metric:28px;
+ --teloa-font-touch-input:16px;
+ --teloa-weight-regular:400;
+ --teloa-weight-medium:500;
+ --teloa-weight-heading:600;
+ --teloa-leading-heading:1.4;
+ --teloa-leading-label:1.5;
+ --teloa-leading-body:1.6;
+ --teloa-leading-reading:1.75;
+}

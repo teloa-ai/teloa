@@ -1,0 +1,265 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "knowledge-research",
+  "title": "知识库与研究",
+  "version": "1.0.0",
+  "domain": "general",
+  "scope": "research",
+  "description": "面向多源资料研究、来源对比、知识库条目与术语表沉淀的行业方案。岗位只基于你提供或授权的资料形成可追溯草案：每条结论标来源与检索日期，区分事实与推断；写入知识库、对外发送与发布均需本人授权。",
+  "resources": [
+    {
+      "id": "research-collaborator",
+      "kind": "role",
+      "title": "研究协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/research-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "研究协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "研究协作员",
+            "en": "Research collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "research-methods",
+      "kind": "knowledge",
+      "title": "研究方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/research-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "研究方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "研究方法与来源索引",
+            "en": "Research methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "research-brief",
+      "kind": "skill",
+      "title": "资料研究与可追溯简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/research-brief/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "资料研究与可追溯简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "资料研究与可追溯简报",
+            "en": "Document research and traceable brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "source-compare",
+      "kind": "skill",
+      "title": "多源对比与分歧清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/source-compare/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "多源对比与分歧清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "多源对比与分歧清单",
+            "en": "Multi-source comparison and disagreement list"
+          }
+        }
+      }
+    },
+    {
+      "id": "kb-article",
+      "kind": "skill",
+      "title": "知识库条目撰写",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/kb-article/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "知识库条目撰写",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "知识库条目撰写",
+            "en": "Knowledge base article writing"
+          }
+        }
+      }
+    },
+    {
+      "id": "glossary",
+      "kind": "skill",
+      "title": "术语表整理",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/glossary/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "术语表整理",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "术语表整理",
+            "en": "Glossary compilation"
+          }
+        }
+      }
+    },
+    {
+      "id": "research-brief-task",
+      "kind": "work-template",
+      "title": "研究简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/research-brief-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "研究简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "研究简报",
+            "en": "Research brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "source-compare-task",
+      "kind": "work-template",
+      "title": "多源对比",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/source-compare-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "多源对比",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "多源对比",
+            "en": "Multi-source comparison"
+          }
+        }
+      }
+    },
+    {
+      "id": "kb-article-task",
+      "kind": "work-template",
+      "title": "知识库条目",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/kb-article-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "知识库条目",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "知识库条目",
+            "en": "Knowledge base article"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "research-collaborator",
+      "to": "research-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "research-collaborator",
+      "to": "research-brief"
+    },
+    {
+      "kind": "role-skill",
+      "from": "research-collaborator",
+      "to": "source-compare"
+    },
+    {
+      "kind": "role-skill",
+      "from": "research-collaborator",
+      "to": "kb-article"
+    },
+    {
+      "kind": "role-skill",
+      "from": "research-collaborator",
+      "to": "glossary"
+    },
+    {
+      "kind": "role-work",
+      "from": "research-collaborator",
+      "to": "research-brief-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "research-collaborator",
+      "to": "source-compare-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "research-collaborator",
+      "to": "kb-article-task"
+    }
+  ],
+  "entrypoints": [
+    "research-brief-task",
+    "source-compare-task",
+    "kb-article-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "知识库与研究",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "知识库与研究",
+        "en": "Knowledge and research"
+      }
+    },
+    "description": {
+      "original": "面向多源资料研究、来源对比、知识库条目与术语表沉淀的行业方案。岗位只基于你提供或授权的资料形成可追溯草案：每条结论标来源与检索日期，区分事实与推断；写入知识库、对外发送与发布均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向多源资料研究、来源对比、知识库条目与术语表沉淀的行业方案。岗位只基于你提供或授权的资料形成可追溯草案：每条结论标来源与检索日期，区分事实与推断；写入知识库、对外发送与发布均需本人授权。",
+        "en": "A solution for multi-source research, source comparison, knowledge base articles and glossary building. The role works only from materials you provide or authorize and produces traceable drafts: every conclusion carries its source and retrieval date, and facts are separated from inferences. Writing to a knowledge base, sending externally and publishing all require your authorization."
+      }
+    }
+  }
+}

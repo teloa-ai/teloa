@@ -1,0 +1,5 @@
+{
+  "format": "teloa.data-source/v1",
+  "sourceId": "security-alert-http",
+  "scopes": ["SOC"]
+}

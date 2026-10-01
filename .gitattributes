@@ -1,0 +1,2 @@
+# 生成的检索夹具：不在审查 diff 中展开，标为生成文件
+tests/fixtures/local-retrieval/*.json -diff linguist-generated

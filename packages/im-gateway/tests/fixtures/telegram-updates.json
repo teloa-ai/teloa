@@ -1,0 +1,10 @@
+{
+ "getMe":{"id":900001,"is_bot":true,"first_name":"Teloa","username":"teloa_test_bot"},
+ "private":{"update_id":1001,"message":{"message_id":11,"date":1790000000,"chat":{"id":424242,"type":"private","first_name":"Ada"},"from":{"id":424242,"is_bot":false,"first_name":"Ada","last_name":"Lovelace","username":"ada"},"text":"你好"}},
+ "topic":{"update_id":1002,"message":{"message_id":12,"message_thread_id":77,"is_topic_message":true,"date":1790000001,"chat":{"id":-1001234567890,"type":"supergroup","title":"团队"},"from":{"id":424242,"is_bot":false,"first_name":"Ada"},"text":"话题里的消息"}},
+ "supergroupReply":{"update_id":1007,"message":{"message_id":15,"message_thread_id":12,"date":1790000006,"chat":{"id":-1001234567890,"type":"supergroup","title":"团队"},"from":{"id":424242,"is_bot":false,"first_name":"Ada"},"reply_to_message":{"message_id":12},"text":"非话题超群里的普通回复"}},
+ "mentions":{"update_id":1003,"message":{"message_id":13,"date":1790000002,"chat":{"id":-4001,"type":"group","title":"小组"},"from":{"id":424242,"is_bot":false,"first_name":"Ada"},"text":"@Teloa_Test_Bot 请看 Bob 和 @someone","entities":[{"type":"mention","offset":0,"length":15},{"type":"text_mention","offset":19,"length":3,"user":{"id":515151,"is_bot":false,"first_name":"Bob"}},{"type":"mention","offset":25,"length":8}]}},
+ "callback":{"update_id":1004,"callback_query":{"id":"4382bfdwdsb323b2d9","from":{"id":424242,"is_bot":false,"first_name":"Ada"},"chat_instance":"-8123","data":"a:1a2b3c4d","message":{"message_id":21,"date":1790000003,"chat":{"id":424242,"type":"private","first_name":"Ada"},"text":"审批"}}},
+ "badCallback":{"update_id":1005,"callback_query":{"id":"cq-bad-1","from":{"id":424242,"is_bot":false,"first_name":"Ada"},"chat_instance":"-8123","data":"x:<script>","message":{"message_id":22,"date":1790000004,"chat":{"id":424242,"type":"private","first_name":"Ada"},"text":"审批"}}},
+ "channelPost":{"update_id":1006,"message":{"message_id":14,"date":1790000005,"chat":{"id":-1009,"type":"channel","title":"频道"},"from":{"id":424242,"is_bot":false,"first_name":"Ada"},"text":"频道消息"}}
+}

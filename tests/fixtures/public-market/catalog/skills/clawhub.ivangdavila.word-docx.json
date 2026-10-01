@@ -1,0 +1,75 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.word-docx",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "word-docx",
+    "title": {
+      "zh-CN": "Word 文档",
+      "en": "Word / DOCX"
+    },
+    "summary": {
+      "zh-CN": "创建、检查和编辑 Word 文档，支持样式、编号和格式。用于文档编写和排版。",
+      "en": "Create, inspect, and edit Microsoft Word documents and DOCX files with reliable styles, numbering, tracked changes, tables, sections, and compatibility check..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "word-docx",
+    "version": "1.0.2",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "c766da489810acf03290283780ba9d3be798678d689255ace34477caeb6d7541",
+        "size": 7887
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "ee543d852ff1ee291171a5c768b546451e93558e990dc0ae9e9ac1189da54364",
+        "size": 2484
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 93236,
+    "installsLabel": "9.3 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "node"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

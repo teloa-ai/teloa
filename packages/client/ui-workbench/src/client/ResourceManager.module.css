@@ -1,0 +1,93 @@
+.page{display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:hidden;color:var(--teloa-text);background:var(--teloa-background)}
+.page[hidden]{display:none}
+.workspace{position:relative;display:grid;grid-template-columns:272px minmax(0,1fr);flex:1;min-height:0}
+.taxonomy{display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;border-right:1px solid var(--teloa-border);background:var(--teloa-surface)}
+.detail{min-width:0;min-height:0;overflow:auto;padding:28px 32px 48px;background:var(--teloa-background)}
+.treeHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 14px 10px}
+.treeHeader h2{margin:0;font-size:var(--teloa-font-section);line-height:var(--teloa-leading-label);font-weight:var(--teloa-weight-heading)}
+.treeHeader>div{display:flex;align-items:center;gap:2px}
+.treeHeader>div>button{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--teloa-muted);cursor:pointer}
+.treeHeader>div>button:hover:not(:disabled){background:var(--teloa-subtle);color:var(--teloa-text)}
+.treeHeader>div>button:disabled{opacity:.45;cursor:default}
+.wikiTree{display:grid;align-content:start;gap:2px;min-height:0;overflow:auto;padding:0 8px 12px;overscroll-behavior:contain}
+.treeBranch{min-width:0}
+.treeBranch>summary{display:grid;grid-template-columns:14px 15px minmax(0,1fr) auto;align-items:center;gap:6px;min-height:34px;padding:3px 7px;border-radius:7px;color:var(--teloa-text);cursor:pointer;list-style:none}
+.treeBranch>summary::-webkit-details-marker{display:none}
+.treeBranch>summary:hover{background:var(--teloa-subtle)}
+.treeBranch>summary[aria-current=page]{background:var(--teloa-subtle);color:var(--teloa-accent)}
+.treeBranch>summary>svg:first-child{color:var(--teloa-muted);transition:transform .15s ease}
+.treeBranch:not([open])>summary>svg:first-child{transform:rotate(-90deg)}
+.treeBranch>summary>svg:nth-child(2){color:var(--teloa-muted)}
+.treeBranch>summary strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-heading)}
+.treeBranch>summary small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.treeGroup{display:grid;margin-left:14px;padding-left:7px;border-left:1px solid var(--teloa-border)}
+.treeDocument{display:grid;grid-template-columns:14px minmax(0,1fr);align-items:center;gap:7px;width:100%;min-height:34px;padding:4px 7px;border:0;border-radius:7px;background:transparent;color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer}
+.treeDocument:hover,.treeDocument[aria-current=page]{background:var(--teloa-subtle)}
+.treeDocument[aria-current=page]{color:var(--teloa-accent)}
+.treeDocument:disabled{cursor:default;opacity:.7}
+.treeDocument>svg{color:var(--teloa-muted)}
+.treeDocument>span{display:flex;align-items:center;justify-content:space-between;gap:7px;min-width:0}
+.treeDocument strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.treeDocument small{flex:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.treeEmpty{margin:6px 4px;padding:12px;border-radius:8px;background:var(--teloa-subtle)}
+.treeEmpty p{margin:0 0 7px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.treeEmpty button{padding:0;border:0;background:transparent;color:var(--teloa-accent);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.folderForm{display:grid;gap:7px;margin:0 12px 10px;padding:10px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-background)}
+.folderForm>span{overflow:hidden;color:var(--teloa-muted);font-size:var(--teloa-font-caption);text-overflow:ellipsis;white-space:nowrap}
+.folderForm input,.governance input,.governance select{box-sizing:border-box;width:100%;min-width:0;height:32px;padding:5px 8px;border:1px solid var(--teloa-border);border-radius:6px;background:var(--teloa-background);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
+.folderForm>div,.governance form>div{display:flex;justify-content:flex-end;gap:6px}
+.folderForm button,.governance button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;padding:5px 8px;border:1px solid var(--teloa-border);border-radius:6px;background:var(--teloa-background);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.folderForm button:disabled,.governance button:disabled{cursor:default;opacity:.5}
+.unclassifiedNotice{flex:none;margin:0 12px 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}
+.editor{max-width:760px;margin:0 auto}
+.editor h2,.emptyDetail h2{margin:0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+.editor fieldset{min-width:0;margin:0;padding:0;border:0}
+.editor label{display:flex;flex-direction:column;gap:7px;margin:16px 0;font-size:var(--teloa-font-control)}
+.editor input,.editor select{box-sizing:border-box;width:100%;min-height:38px;padding:7px 10px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-background);color:var(--teloa-text);font:inherit}
+.moreFacts{margin-top:20px;border-top:1px solid var(--teloa-border)}
+.moreFacts>summary{padding:12px 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer}
+.breadcrumbs{display:flex;align-items:center;gap:6px;min-height:28px;margin:0 auto 14px;max-width:920px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.breadcrumbs span{display:flex;align-items:center;gap:6px;min-width:0}
+.breadcrumbs i{font-style:normal}
+.breadcrumbs button{overflow:hidden;max-width:180px;padding:2px;border:0;background:transparent;color:inherit;font:inherit;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.breadcrumbs button[aria-current=page]{color:var(--teloa-text);font-weight:var(--teloa-weight-heading)}
+.folderDetail{display:grid;place-items:center;align-content:center;min-height:52vh;text-align:center}
+.folderDetail h2{margin:8px 0 0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+.folderDetail p{margin:6px 0 14px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.governance{position:relative;z-index:4}
+.governanceMenu{position:relative}
+.governanceMenu>summary{display:grid;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--teloa-muted);cursor:pointer;list-style:none}
+.governanceMenu>summary::-webkit-details-marker{display:none}
+.governanceMenu>summary:hover{background:var(--teloa-subtle);color:var(--teloa-text)}
+.governanceMenu>div{position:absolute;right:0;display:grid;width:154px;padding:5px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+.governanceMenu>div button{justify-content:flex-start;border:0;background:transparent}
+.governance form{position:absolute;top:35px;right:0;display:grid;gap:10px;width:250px;padding:12px;border:1px solid var(--teloa-border);border-radius:9px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+.governance form label{display:grid;gap:6px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.governanceFacts{display:grid;margin:0;border-top:1px solid var(--teloa-border);font-size:var(--teloa-font-caption)}
+.governanceFacts>div{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px solid var(--teloa-border)}
+.governanceFacts dt{color:var(--teloa-muted)}
+.governanceFacts dd{min-width:0;margin:0;overflow-wrap:anywhere}
+.emptyDetail{display:grid;place-content:center;min-height:55vh;text-align:center}
+.emptyDetail p,.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
+.version{overflow-wrap:anywhere;color:var(--teloa-muted);font-family:monospace;font-size:var(--teloa-font-caption)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.button,.primaryButton{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 10px;border-radius:7px;font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.button{border:1px solid var(--teloa-border);background:var(--teloa-background);color:var(--teloa-text)}
+.primaryButton{border:1px solid var(--teloa-text);background:var(--teloa-text);color:var(--teloa-background)}
+.button:disabled,.primaryButton:disabled{opacity:.5;cursor:default}
+.message{position:absolute;z-index:5;top:12px;left:50%;max-width:min(620px,70vw);transform:translateX(-50%);margin:0;padding:9px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow);font-size:var(--teloa-font-caption)}
+.mobileBack{display:none}
+.toolCard{padding:14px;border:1px solid var(--teloa-border);border-radius:9px;color:var(--teloa-text);font-size:var(--teloa-font-control)}
+.toolCard pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.toolCard .button{margin-right:8px}
+.button:focus-visible,.primaryButton:focus-visible,.treeHeader button:focus-visible,.treeBranch>summary:focus-visible,.treeDocument:focus-visible,.treeEmpty button:focus-visible,.editor input:focus-visible,.editor select:focus-visible,.moreFacts>summary:focus-visible,.mobileBack:focus-visible,.folderForm input:focus-visible,.folderForm button:focus-visible,.breadcrumbs button:focus-visible,.governance summary:focus-visible,.governance input:focus-visible,.governance select:focus-visible,.governance button:focus-visible{outline:2px solid var(--teloa-text);outline-offset:2px}
+@media(max-width:900px){.workspace{grid-template-columns:240px minmax(0,1fr)}.detail{padding:24px 22px 40px}}
+@media(max-width:720px){.workspace{grid-template-columns:1fr}.taxonomy{border-right:0}.detail{padding:18px}.mobileBack{display:inline-flex;min-height:44px;margin-bottom:12px;padding:0;border:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}.page[data-mobile-detail=open] .taxonomy{display:none}.page[data-mobile-detail=directory] .detail{display:none}.governance form{max-width:calc(100vw - 36px)}.button,.primaryButton,.treeDocument,.treeBranch>summary,.moreFacts>summary,.breadcrumbs button,.folderForm button,.governance button{min-height:44px}.treeHeader>div>button{min-height:44px;min-width:44px;width:44px;height:44px}.governanceMenu>summary{min-height:44px;min-width:44px;width:44px;height:44px}.folderForm input,.governance input,.governance select{height:44px;font-size:var(--teloa-font-touch-input)}}
+@media(max-width:720px){.page button{min-height:44px;min-width:44px}}
+
+.treeSearch{display:flex;flex:none;align-items:center;gap:7px;margin:0 12px 10px;padding:0 9px;min-height:36px;border:1px solid var(--teloa-border);border-radius:7px;color:var(--teloa-muted);background:var(--teloa-background)}
+.treeSearch:focus-within{outline:2px solid var(--teloa-accent);outline-offset:2px}
+.treeSearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
+@media(max-width:760px){.treeSearch{min-height:44px}.treeSearch input{font-size:var(--teloa-font-touch-input)}}
+
+.retrieval{flex:none;max-height:45%;overflow:auto;padding:0 12px;}

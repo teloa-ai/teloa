@@ -1,0 +1,84 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.cellcog.cellcog",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "2.0.21",
+  "taxonomy": {
+    "functions": [
+      "content-design"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "cellcog",
+    "title": {
+      "zh-CN": "CellCog AI 代理",
+      "en": "cellcog"
+    },
+    "summary": {
+      "zh-CN": "多功能 AI 代理，支持研究、图像生成、视频、音频、音乐、播客、虚拟形象、声音克隆等多种内容创建能力。用于媒体内容生成和智能分析。",
+      "en": "Any-to-any AI sub-agent — research, images, video, audio, music, podcasts, avatars, voice cloning, documents, spreadsheets, dashboards, 3D models, diagrams, and code in one request. Agent-to-agent protocol with multi-step iteration for high accuracy. #1 on DeepResearch Bench (Apr 2026) — deep reason"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "cellcog",
+    "slug": "cellcog",
+    "version": "2.0.21",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "37440c17bb82c8c9f8a075183311cf37ad4ac4cc367f94ec6eaf0dfe7348ed8c",
+        "size": 18222
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "e2ec6b27b1e370162b024359efd5ae66eea3920d55f495d5355f026ec9a8657c",
+        "size": 2439
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 18261,
+    "installsLabel": "1.8 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "unsupported",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "不可添加：这个技能只能通过 CellCog 官方 Python SDK（pip 包 cellcog）调用，正文没有给出可直接请求的 HTTP 接口，文件也要经 SDK 上传；Teloa 的技能不能安装或运行 Python 包和脚本。",
+        "en": "Cannot be added: this skill works only through CellCog's official Python SDK (the cellcog pip package); the skill text documents no HTTP interface that can be called directly, and files are uploaded through the SDK. Teloa skills cannot install or run Python packages or scripts."
+      },
+      {
+        "zh-CN": "需要 CellCog API Key，文件会上传到 cellcog.ai 处理。",
+        "en": "Requires a CellCog API key; files are uploaded to cellcog.ai for processing."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "python"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "format": "teloa.plan/v1",
+  "version": "1.0.0",
+  "title": "每日研究资料核对",
+  "workTemplate": "research-review",
+  "dataScope": "当天明确提供并获准读取的研究资料；外部来源待实际连接配置。",
+  "trigger": {
+    "kind": "schedule",
+    "cadence": "daily",
+    "weekday": 1,
+    "time": "09:00",
+    "timezone": "Asia/Singapore"
+  }
+}

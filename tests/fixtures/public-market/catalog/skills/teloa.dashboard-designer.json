@@ -1,0 +1,68 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.dashboard-designer",
+  "kind": "skill",
+  "delivery": "builtin",
+  "version": "1.1.0",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "teloa-dashboard-designer",
+    "title": {
+      "zh-CN": "看板设计",
+      "en": "Dashboard designer"
+    },
+    "summary": {
+      "zh-CN": "把业务数据做成看板时自动使用：读字段、试跑只读 SQL，生成组件与看板草案，由你在业务页预览确认。",
+      "en": "Used automatically when turning business data into a dashboard: reads fields, trial-runs read-only SQL and drafts widgets and a dashboard for you to preview and confirm on the Business page."
+    }
+  },
+  "upstream": null,
+  "modifications": [
+    {
+      "zh-CN": "Teloa 自编内置技能，没有原始来源（upstream 为 null），随 Teloa 安装包提供，不进在线索引。",
+      "en": "Built-in skill authored by Teloa with no original source (upstream is null); it comes with Teloa and is not in the online index."
+    }
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "只在本人普通会话中提供，同事执行任务时不可见。",
+        "en": "Available only in your own ordinary conversations; not visible to colleagues running tasks."
+      },
+      {
+        "zh-CN": "草案须由本人在「业务 > 看板 > 待确认」预览并确认后才生效。",
+        "en": "Drafts take effect only after you preview and confirm them under Business > Dashboards > Pending."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "teloa_business_definitions_directory",
+      "teloa_business_sql_trial",
+      "teloa_business_definitions_draft"
+    ],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  }
+}

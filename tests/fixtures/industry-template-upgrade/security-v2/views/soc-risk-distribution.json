@@ -1,0 +1,56 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-risk-distribution",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "风险分布",
+  "kind": "distribution",
+  "chart": "bar",
+  "objectType": "alert-ticket",
+  "dimension": {
+    "field": "severity",
+    "limit": 3
+  },
+  "measures": [
+    {
+      "id": "total",
+      "label": "条数",
+      "aggregation": "count",
+      "localized": {
+        "label": {
+          "original": "条数",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "条数",
+            "en": "Alerts"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [
+    {
+      "field": "verdict",
+      "op": "ne",
+      "values": [
+        "已确认维护"
+      ]
+    }
+  ],
+  "sort": {
+    "by": "measure",
+    "measureId": "total",
+    "direction": "desc"
+  },
+  "limit": 3,
+  "localized": {
+    "title": {
+      "original": "风险分布",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "风险分布",
+        "en": "Risk distribution"
+      }
+    }
+  }
+}

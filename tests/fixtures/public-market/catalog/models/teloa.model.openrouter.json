@@ -1,0 +1,110 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.openrouter",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "openrouter",
+    "title": {
+      "zh-CN": "OpenRouter（聚合）",
+      "en": "OpenRouter (aggregator)"
+    },
+    "summary": {
+      "zh-CN": "一个密钥接入数百个模型的聚合服务，价格与许可随所选模型；国内需海外网络。",
+      "en": "One key for hundreds of models; price and terms follow the model you pick. Needs an overseas network from China."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": true
+    },
+    "contextWindow": null,
+    "license": {
+      "spdx": "custom",
+      "name": "OpenRouter Terms of Service",
+      "url": "https://openrouter.ai/terms",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "proxy-required",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      },
+      {
+        "zh-CN": "聚合服务：各模型另受其提供方条款约束，能力与价格以所选模型为准。",
+        "en": "Aggregator: each model is also bound by its provider terms; capabilities and prices follow the chosen model."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "openrouter"
+      },
+      "models": [
+        {
+          "id": "openrouter/auto",
+          "name": "OpenRouter Auto",
+          "contextWindow": null,
+          "maxTokens": null,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": null,
+      "credentialLabel": {
+        "zh-CN": "OpenRouter API 密钥",
+        "en": "OpenRouter API key"
+      },
+      "signupUrl": "https://openrouter.ai"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://openrouter.ai/terms"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

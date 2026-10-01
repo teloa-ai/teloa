@@ -1,0 +1,15 @@
+node_modules/
+packages/**/lib/
+dist/
+*.tsbuildinfo
+.runtime/
+.env
+.env.*
+*.log
+.DS_Store
+*.onnx
+*.onnx_data
+*.safetensors
+*.partial
+**/.cache/
+**/venv/

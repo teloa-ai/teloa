@@ -1,0 +1,12 @@
+.panel{min-width:0;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-caption);margin:6px 0}
+.panel summary{padding:10px 12px;cursor:pointer}
+.panel summary:focus-visible,.button:focus-visible{outline:2px solid var(--teloa-text);outline-offset:2px}
+.body{padding:0 12px 12px;max-height:320px;overflow:auto}
+.body p{margin:8px 0;overflow-wrap:anywhere}
+.failure{border-top:1px solid var(--teloa-border);padding-top:12px;margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.failure strong{overflow-wrap:anywhere}
+.message pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:160px;overflow:auto;padding:8px;border:1px solid var(--teloa-border);border-radius:6px}
+.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.button{border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;padding:6px 9px;cursor:pointer}
+.button:disabled{opacity:.55;cursor:not-allowed}

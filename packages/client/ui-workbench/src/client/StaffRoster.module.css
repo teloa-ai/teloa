@@ -1,0 +1,52 @@
+/* 只用既有 --teloa-* 令牌，不新增颜色；选中态不用左侧强调竖条。 */
+/* 第二期 A2-1：全宽通讯录（原型 数字员工形象.module.css 的 .rosterStack/.group/.personList/.personRow）。
+   圆角走 --teloa-design-r1/r2/r3（prototype-theme.ts 生成，theme-presenter 运行时挂到 body），与原型 --maxent-preview-r* 一一对应。
+   成员行与分区头要盖掉 TaskPage.module.css 的 `.page button` / `.alignedPage button`（0,1,1 比单类名高），
+   而跨 CSS Module 又拿不到 TeamPage.module.css 的 `.teamPage` 前缀来提特指度，所以冲突属性只能用 !important
+   （与 DirectoryPane.module.css 同一套做法）；TeamPage.module.css 那边有 `.teamPage` 可用，不需要 !important。 */
+/* 目录总数 chip（规格 §4.2）：现在挂在工具行右端，count 与 countNote 上下两行。 */
+.rosterCount{display:flex;flex-direction:column;gap:2px;flex:0 1 auto;min-width:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.rosterCount small{line-height:1.5;overflow-wrap:anywhere}
+.rosterStack{display:flex;flex-direction:column;gap:14px;min-width:0}
+.group{display:flex;flex-direction:column;gap:8px;min-width:0}
+.groupHead{display:flex!important;flex-wrap:wrap;align-items:center;gap:10px!important;width:100%;box-sizing:border-box;margin:0;padding:8px 2px!important;border:0!important;border-radius:0!important;background:transparent!important;color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer}
+.groupHead:hover{background:var(--teloa-hover)!important}
+.groupHead[aria-disabled='true']{cursor:default}
+.groupHead:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-2px}
+.chevron{flex:none;color:var(--teloa-muted);transition:transform .15s ease}
+.chevronOpen{transform:rotate(90deg)}
+.groupName{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px;min-width:0;overflow-wrap:anywhere}
+.groupTitle{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);line-height:1.5}
+.groupKind{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.groupCounts{margin-left:auto;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
+/* 成员容器：白底描边，行与行之间一条细线，与原型 .personList 一致。 */
+.personList{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface)}
+.personList>*+*{border-top:1px solid var(--teloa-border)}
+.personRow{display:flex!important;align-items:center;gap:14px!important;width:100%;box-sizing:border-box;margin:0;padding:14px 18px!important;border:0!important;border-radius:0!important;background:transparent!important;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;cursor:pointer}
+.personRow:hover{background:var(--teloa-subtle)!important}
+.personRow:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-2px}
+.personMain{display:flex;flex-direction:column;gap:2px;min-width:130px;max-width:100%;overflow-wrap:anywhere}
+.personMain strong{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
+.personMain small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.55}
+.personNow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.personChevron{flex:none;color:var(--teloa-muted)}
+.status{display:flex;align-items:center;gap:5px;flex:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
+.statusDot{width:6px;height:6px;border-radius:50%;background:var(--teloa-muted);flex-shrink:0}
+.status[data-roster-status=active] .statusDot{background:var(--teloa-good)}
+.status[data-roster-status=busy] .statusDot{background:var(--teloa-accent)}
+.status[data-roster-status=paused] .statusDot{background:var(--teloa-warn)}
+.hireCard{display:flex!important;align-items:center;justify-content:flex-start;gap:14px!important;width:100%;box-sizing:border-box;margin:0;padding:16px 18px!important;border:1px dashed var(--teloa-border)!important;border-radius:var(--teloa-design-r3)!important;background:transparent!important;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
+.hireCard:hover{border-color:var(--teloa-accent)!important;color:var(--teloa-text)}
+.hireCard:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.hireIcon{display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:50%;background:var(--teloa-subtle)}
+.hireText{display:flex;flex-direction:column;gap:3px;min-width:0;text-align:left;overflow-wrap:anywhere}
+.hireText strong{color:var(--teloa-text);font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);line-height:1.5}
+.hireText small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+/* ≤760px：分区头三个数换行到第二行，成员行的「正在做」独占一行，chevron 收起来不占宽度。 */
+@media(max-width:760px){
+  .groupCounts{margin-left:0;flex-basis:100%;white-space:normal}
+  .rosterCount{flex-basis:100%}
+  .personRow{flex-wrap:wrap;gap:10px!important;padding:13px 14px!important}
+  .personNow{flex-basis:100%;overflow:visible;white-space:normal;overflow-wrap:anywhere}
+  .personChevron{display:none}
+}

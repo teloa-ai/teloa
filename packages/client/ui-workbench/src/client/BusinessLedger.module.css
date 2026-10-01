@@ -1,0 +1,117 @@
+/* 对象台账：块是主视觉单位，选中态靠底色与字重，不用左侧强调竖条。 */
+.surface{margin-top:20px;min-width:0}
+.note{margin:0 0 16px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.85}
+.coverage{margin:0 0 10px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.8}
+.blocks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.block{display:flex;flex-direction:column;min-width:0;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);overflow:hidden}
+.blockOpen{display:flex;flex:1;flex-direction:column;gap:7px;width:100%;min-height:0;padding:20px 21px 16px;border:0;background:transparent;text-align:left}
+.blockOpen:hover{background:var(--teloa-subtle)}
+.blockTitle{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.blockTitle strong{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-medium);line-height:1.6}
+.blockTitle svg{flex:none;color:var(--teloa-muted)}
+.lead{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.8}
+.count{font-size:var(--teloa-font-metric);font-weight:var(--teloa-weight-regular);letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.3}
+.count i{margin-left:6px;font-size:var(--teloa-font-caption);font-style:normal;color:var(--teloa-muted);letter-spacing:0}
+.blockSummary{min-height:3.4em;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.75}
+.blockSummary small{display:block;margin-top:3px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.block>footer{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:auto;padding:13px 21px;border-top:1px solid var(--teloa-border);background:var(--teloa-subtle)}
+.block>footer button{min-height:0;padding:0;border:0;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.block>footer button:last-child{margin-left:auto}
+.block>footer button:hover{color:var(--teloa-text);text-decoration:underline}
+.block>footer .defaultAction{max-width:100%;overflow:hidden;color:var(--teloa-text);font-weight:var(--teloa-weight-medium);font-size:var(--teloa-font-caption);line-height:1.6;text-overflow:ellipsis;white-space:nowrap}
+.view{margin-bottom:15px}
+.view:last-child{margin-bottom:0}
+.analysisViews{margin-top:16px;border-top:1px solid var(--teloa-border)}
+.analysisViews>summary{min-height:44px;padding:14px 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);cursor:pointer}
+.analysisViews>summary:hover{color:var(--teloa-text)}
+.analysisViews>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.analysisViews>div{padding-top:2px}
+
+.boardCard{display:flex;flex-direction:column;gap:4px;padding:15px 0;border-top:1px solid var(--teloa-border)}
+.boardCard strong{font-size:var(--teloa-font-metric);font-weight:var(--teloa-weight-regular);letter-spacing:-.8px;font-variant-numeric:tabular-nums}
+.boardCard span{font-size:var(--teloa-font-caption);line-height:1.7}
+.boardCard small{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+
+.chart{padding-top:14px;border-top:1px solid var(--teloa-border)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 10px;padding:0;list-style:none;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.legend li{display:flex;align-items:center;gap:5px}
+.swatch{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teloa-accent)}
+.swatch[data-series='1']{opacity:.72}
+.swatch[data-series='2']{opacity:.48}
+.swatch[data-series='3']{opacity:.3}
+.bars,.lines{display:block;width:100%;overflow:visible}
+.bars rect{fill:var(--teloa-accent)}
+.bars rect[data-series='1']{opacity:.72}
+.bars rect[data-series='2']{opacity:.48}
+.bars rect[data-series='3']{opacity:.3}
+.lines{height:78px}
+/* 圆头描边：孤立点画成首尾坐标相同的零长度线段，方头描边（默认）什么都不画，圆头才会显形为一个点（复审 N-4）。 */
+.lines polyline{stroke:var(--teloa-accent);stroke-width:1;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.lines polyline[data-series='1']{opacity:.72}
+.lines polyline[data-series='2']{opacity:.48}
+.lines polyline[data-series='3']{opacity:.3}
+/* 饼：圆环切片按 dasharray 走，半径 15.9155 让周长恰好是 100，一段长度就是它的百分比。 */
+.pie{display:block;width:104px;height:104px;margin:2px auto 6px}
+.pie circle{stroke:var(--teloa-accent)}
+.pie circle[data-series='1']{opacity:.72}
+.pie circle[data-series='2']{opacity:.48}
+.pie circle[data-series='3']{opacity:.3}
+.chartRows{display:flex;flex-direction:column;gap:7px;margin:12px 0 0;font-size:var(--teloa-font-caption)}
+.chartRow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0}
+.chartRow dt{color:var(--teloa-muted);min-width:0;overflow-wrap:anywhere}
+.chartRow dd{display:flex;gap:11px;margin:0;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.action{display:flex;flex-direction:column;gap:5px;padding:12px 13px;border:1px solid var(--teloa-border);border-radius:9px;background:var(--teloa-subtle)}
+.action strong{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.action p{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.8}
+.action small{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.8}
+
+.directoryHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+.directoryHeader h2{margin:5px 0 0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-label)}
+.sourceNotice{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:9px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+.sourceNotice button{flex:none;min-height:32px;padding:5px 10px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-caption)}
+.filters{display:flex;gap:14px;align-items:center;margin:0 0 12px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.filters label{display:flex;align-items:center;gap:8px}
+.stageFilters{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.stageFilters button{min-height:32px;padding:6px 11px;border:1px solid var(--teloa-border);border-radius:16px;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.stageFilters button[aria-pressed='true']{background:var(--teloa-subtle);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.stageFilters button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.listView{min-width:0}
+.tableWrap{overflow:auto;border:1px solid var(--teloa-border);border-radius:10px}
+.table{border-collapse:collapse;width:100%;text-align:left;font-size:var(--teloa-font-caption)}
+.table th{background:var(--teloa-subtle);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);color:var(--teloa-muted);padding:12px 16px;white-space:nowrap}
+.table th:first-child{width:42%}
+.table td{padding:16px;border-top:1px solid var(--teloa-border);vertical-align:top}
+.table td:nth-child(3),.table td:nth-child(4){white-space:nowrap}
+.table td small{display:block;margin-top:5px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.table tr:hover td{background:var(--teloa-subtle)}
+.table button{border:0;background:transparent;text-align:left;padding:0;min-height:0;line-height:1.6;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.table button:hover{color:var(--teloa-accent);text-decoration:underline}
+.table button[aria-pressed='true']{color:var(--teloa-accent)}
+
+.sheet{margin-top:14px;padding:17px;border:1px solid var(--teloa-border);border-radius:9px;background:var(--teloa-subtle)}
+.sheet>header span{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.sheet>header h3{margin:3px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.sheet>p{margin:14px 0}
+.sheet dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:9px 15px;margin:0;font-size:var(--teloa-font-caption);line-height:1.7}
+.sheet dt{color:var(--teloa-muted)}
+.sheet dd{margin:0;overflow-wrap:anywhere}
+.fact{display:contents}
+.sheet details{margin:14px 0 0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.sheet code{display:block;margin-top:8px;overflow-wrap:anywhere;color:var(--teloa-muted)}
+
+@media(max-width:1100px){.blocks{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:740px){
+ .blocks{grid-template-columns:1fr}
+ .block{padding:0}
+ .blockOpen{padding:17px}
+ .blockSummary{min-height:0}
+ .block>footer{padding:13px 17px}
+ .directoryHeader{flex-wrap:wrap}
+ .sourceNotice{align-items:flex-start;flex-direction:column}
+ .sourceNotice button{min-height:44px}
+ .stageFilters button{min-height:44px}
+ .table th{font-size:var(--teloa-font-caption);padding:11px}
+ .table td{padding:14px 11px;font-size:var(--teloa-font-caption)}
+ .sheet dl{grid-template-columns:84px minmax(0,1fr)}
+}

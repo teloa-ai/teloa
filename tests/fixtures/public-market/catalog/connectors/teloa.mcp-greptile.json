@@ -1,0 +1,117 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-greptile",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "greptile",
+    "title": {
+      "zh-CN": "Greptile（代码库语义搜索）",
+      "en": "Greptile (Codebase Semantic Search)"
+    },
+    "summary": {
+      "zh-CN": "Greptile 官方远程 MCP，查看已索引的仓库、合并请求与 Greptile 代码评审意见（只读）。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，只申请 read scope，令牌自动刷新。需在 Greptile 平台接入目标仓库。数据经由 greptile.com 传输。",
+      "en": "Greptile official remote MCP: browse indexed repositories, pull/merge requests and Greptile code-review comments (read-only). Authorized by Teloa via OAuth (dynamic client registration + PKCE) requesting only the read scope, with automatic token refresh. Target repositories must be connected in Greptile. Data transits greptile.com."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "read"
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://api.greptile.com/mcp"
+    },
+    "tools": [
+      {
+        "name": "list_repositories",
+        "description": {
+          "zh-CN": "列出 Greptile 已接入的仓库",
+          "en": "List repositories connected to Greptile"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_pull_requests",
+        "description": {
+          "zh-CN": "列出 Pull Request",
+          "en": "List pull requests"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_merge_request",
+        "description": {
+          "zh-CN": "获取 PR / MR 详情与评审记录",
+          "en": "Get a PR/MR with review records"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_merge_request_comments",
+        "description": {
+          "zh-CN": "列出 PR / MR 评审意见",
+          "en": "List PR/MR review comments"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "search_greptile_comments",
+        "description": {
+          "zh-CN": "搜索 Greptile 评审意见",
+          "en": "Search Greptile review comments"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://docs.greptile.com/integrations/mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Greptile-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "官方设置文档只列 OAuth；授权服务器 auth.greptile.com 支持动态客户端注册与 PKCE S256，本机回环回调（127.0.0.1）尚未实测。只申请 read scope，目录只列出只读工具",
+        "en": "Greptile setup docs list OAuth only; the authorization server auth.greptile.com supports dynamic client registration and PKCE S256, and the loopback callback (127.0.0.1) has not been tested yet. Only the read scope is requested and only read-only tools are listed"
+      },
+      {
+        "zh-CN": "数据经由 greptile.com 平台传输",
+        "en": "Data transits the greptile.com platform"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

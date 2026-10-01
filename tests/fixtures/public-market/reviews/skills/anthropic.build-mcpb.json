@@ -1,0 +1,47 @@
+{
+  "format": "teloa.upstream-review/v1",
+  "reviewedAt": "2026-09-27",
+  "reviewer": "Teloa",
+  "entries": {
+    "anthropic.build-mcpb": {
+      "verdict": "approve",
+      "conditions": [
+        {
+          "zh-CN": "Teloa 本身不安装 .mcpb 文件；npx @anthropic-ai/mcpb 等命令由用户在自己的终端执行，产物面向支持 MCPB 的宿主",
+          "en": "Teloa itself does not install .mcpb files; commands such as npx @anthropic-ai/mcpb run in the user's own terminal, and the bundle targets hosts that support MCPB"
+        },
+        {
+          "zh-CN": "正文提到的 build-mcp-server、build-mcp-app 技能不随本资源提供；构建远端 MCP 服务器可参考 MCP 服务器构建指南（anthropic.mcp-builder）",
+          "en": "The build-mcp-server and build-mcp-app skills mentioned in the text are not included; for remote MCP servers see the MCP server builder (anthropic.mcp-builder)"
+        },
+        {
+          "zh-CN": "许可为上游仓库根目录的 LICENSE（Apache-2.0），不在技能目录内",
+          "en": "The license is the LICENSE (Apache-2.0) at the upstream repository root, outside the skill directory"
+        }
+      ],
+      "evidence": {
+        "source": "anthropics/claude-plugins-official@fa59bc9037741ecfa131aa27938272605710d7b2:plugins/mcp-server-dev/skills/build-mcpb",
+        "files": [
+          {
+            "path": "SKILL.md",
+            "gitBlob": "772097ddbbd78e8faaad2ff57dc7faa64c7a5ea3",
+            "size": 7867
+          },
+          {
+            "path": "references/local-security.md",
+            "gitBlob": "6fd756f7a78fa9b09317fe57f67abbd1a3a99295",
+            "size": 5384
+          },
+          {
+            "path": "references/manifest-schema.md",
+            "gitBlob": "0a42b84bfb874f765b03252c31a7e611f60cc887",
+            "size": 5359
+          }
+        ],
+        "license": "仓库根 LICENSE 与插件级 plugins/mcp-server-dev/LICENSE 为同一 blob d645695673349e3947e8e5ae42332d0ac3164cd7（Apache-2.0，11358 字节）；技能目录内无许可文件。现行契约 upstream.files 只能列技能目录内相对路径（无 repositoryPath），故 license.files 为空，由条件文案说明许可位置",
+        "review": "全文审查：面向开发者的 MCPB 打包指南，不依赖宿主专属工具；references/local-security.md:149 的破坏性 shell 片段位于对抗输入测试样例中，无害；frontmatter 另含 version 键，DSH 解析忽略；按上游原样收录，未改字节",
+        "installs": "按规格 §12.1-6 填 null"
+      }
+    }
+  }
+}

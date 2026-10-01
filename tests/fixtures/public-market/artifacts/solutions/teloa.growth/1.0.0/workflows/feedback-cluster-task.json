@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "feedback-cluster-task",
+  "title": "用户反馈归类与主题统计",
+  "version": "1.0.0",
+  "domain": "growth",
+  "description": "先为每条原始反馈写一行标注（模块、类型、情绪、严重程度、主题、是否重复及指向），再只由标注表推出去重数、有效条数与主题条数占比，统计与标注表逐项可对账；每个主题附反馈 ID 与脱敏原文摘录，安全、数据泄露与法律类内容单列需立即转交。不给优先级、不起草回复。",
+  "requirements": [
+    "反馈导出：每条含 ID、日期、渠道、原文（已上传）",
+    "产品模块清单、既有主题表、用户分层字段（可选）"
+  ],
+  "output": "反馈归类结果：首部注明时间范围与渠道；逐条标注表（每条原始反馈一行，含重复指向）；由标注表推出的原始、去重、无效与有效条数算式和主题统计表（条数、占比、反馈 ID）及对账行；需立即转交表；主题摘录（脱敏）；需负责人确认事项",
+  "skills": [
+    {
+      "id": "growth-feedback-cluster",
+      "title": "用户反馈归类（主题、频次、原文摘录）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "用户反馈归类与主题统计",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "用户反馈归类与主题统计",
+        "en": "Cluster user feedback and count themes"
+      }
+    },
+    "description": {
+      "original": "先为每条原始反馈写一行标注（模块、类型、情绪、严重程度、主题、是否重复及指向），再只由标注表推出去重数、有效条数与主题条数占比，统计与标注表逐项可对账；每个主题附反馈 ID 与脱敏原文摘录，安全、数据泄露与法律类内容单列需立即转交。不给优先级、不起草回复。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "先为每条原始反馈写一行标注（模块、类型、情绪、严重程度、主题、是否重复及指向），再只由标注表推出去重数、有效条数与主题条数占比，统计与标注表逐项可对账；每个主题附反馈 ID 与脱敏原文摘录，安全、数据泄露与法律类内容单列需立即转交。不给优先级、不起草回复。",
+        "en": "First write one tagging row per raw feedback item (module, type, sentiment, severity, theme, and whether it duplicates another item), then derive duplicate, valid, and per-theme counts and shares only from that table so every figure reconciles with it; attach feedback IDs and redacted verbatim excerpts per theme, and list security, data exposure, and legal items separately for immediate hand-off. No prioritization and no reply drafting."
+      }
+    },
+    "requirements": [
+      {
+        "original": "反馈导出：每条含 ID、日期、渠道、原文（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "反馈导出：每条含 ID、日期、渠道、原文（已上传）",
+          "en": "Feedback export with ID, date, channel, and verbatim text per item (already uploaded)"
+        }
+      },
+      {
+        "original": "产品模块清单、既有主题表、用户分层字段（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "产品模块清单、既有主题表、用户分层字段（可选）",
+          "en": "Product module list, existing theme table, user segment fields (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "反馈归类结果：首部注明时间范围与渠道；逐条标注表（每条原始反馈一行，含重复指向）；由标注表推出的原始、去重、无效与有效条数算式和主题统计表（条数、占比、反馈 ID）及对账行；需立即转交表；主题摘录（脱敏）；需负责人确认事项",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "反馈归类结果：首部注明时间范围与渠道；逐条标注表（每条原始反馈一行，含重复指向）；由标注表推出的原始、去重、无效与有效条数算式和主题统计表（条数、占比、反馈 ID）及对账行；需立即转交表；主题摘录（脱敏）；需负责人确认事项",
+        "en": "Feedback clustering result: header with time range and channels; per-item tagging table (one row per raw item, with duplicate pointers); raw, duplicate, invalid, and valid count arithmetic and theme table (counts, shares, feedback IDs) derived from that table, with a reconciliation line; immediate hand-off table; redacted theme excerpts; items needing the owner's confirmation"
+      }
+    }
+  }
+}

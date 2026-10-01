@@ -1,0 +1,10 @@
+import type {SecurityAction,SecurityApproval,SecurityActionExecution,SecurityActionPanel} from '@teloa/contract'
+export const taskId='11111111-1111-8111-8111-111111111111',actionId='22222222-2222-4222-8222-222222222222',approvalId='33333333-3333-4333-8333-333333333333',operationId='44444444-4444-4444-8444-444444444444',requestId='55555555-5555-4555-8555-555555555555',owner='local:teloa-owner'
+export const frozen={taskDefinitionDigest:'sha256:'+'a'.repeat(64),sourceSnapshotDigest:'b'.repeat(64),objectSnapshotHash:'c'.repeat(64),playbookVersion:'isolate/v1',paramFingerprint:'sha256:'+'d'.repeat(64),targetFingerprint:'sha256:'+'e'.repeat(64)}
+export const action:SecurityAction={id:actionId,taskId,ownerId:owner,proposerId:owner,version:3,state:'approved',title:'隔离',goal:'控制影响',tool:'security.endpoint.isolate',riskTier:'high',reversible:'reversible',playbookVersion:frozen.playbookVersion,targetSet:['endpoint-1'],params:{reason:'调查隔离'},supersedesActionId:null,frozen,createdAt:'2026-09-14T00:00:00.000Z',updatedAt:'2026-09-14T00:00:00.000Z'}
+export const approval:SecurityApproval={id:approvalId,ownerId:owner,approverId:owner,actionId,actionVersion:2,decision:'approved',reason:'已核实',impactConfirmed:true,frozen,createdAt:action.createdAt}
+export const execution:SecurityActionExecution={operationId,ownerId:owner,actionId,approvalId,approvalVersion:2,state:'effect_unknown',revision:1,frozen,dispatch:{operationId,actionId,tool:action.tool,playbookVersion:action.playbookVersion,targets:action.targetSet,params:action.params},acceptanceReceipt:null,effectReceipt:null,createdAt:action.createdAt,updatedAt:action.updatedAt}
+export const panel:SecurityActionPanel={taskId,actions:[action],approvals:[approval],executions:[],proposal:{tools:[{tool:action.tool,allowedTargets:['endpoint-1']}]}}
+export const command={requestId,actionId,expectedActionVersion:3}
+
+export const source={taskId,ownerId:owner,sourceId:'security-alert-http',reference:{scope:'SOC',type:'alert',id:'alert-1',version:1,snapshotHash:frozen.objectSnapshotHash}}

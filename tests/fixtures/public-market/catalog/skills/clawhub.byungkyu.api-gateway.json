@@ -1,0 +1,1300 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.byungkyu.api-gateway",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.2.23",
+  "taxonomy": {
+    "functions": [
+      "office-docs"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "api-gateway",
+    "title": {
+      "zh-CN": "API 网关（Maton）",
+      "en": "API Gateway"
+    },
+    "summary": {
+      "zh-CN": "通过 Maton 网关调用已连接的第三方应用 API，网关自动注入凭据。用于读取邮箱、查询 CRM、创建工单、更新表格等操作。需通过 Maton 网关授权，数据经其服务器中转。",
+      "en": "Call third-party APIs through the Maton gateway, which injects the credential for an app the user has already connected. Use this skill when the user names a connected app and a concrete action in it - read a mailbox, query a CRM, file an issue, update a spreadsheet, etc."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "byungkyu",
+    "slug": "api-gateway",
+    "version": "1.2.23",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "0db6ad6fe8d0e377663fb25676595881ee703bc5434c6704a946cc7f07d129c0",
+        "size": 57727
+      },
+      {
+        "path": "references/zoho-projects/README.md",
+        "sha256": "78e6cd4d9dcad47c0d6465e15176aeaf5959717a38b263ed2d2e72f502fa5a73",
+        "size": 13303
+      },
+      {
+        "path": "references/outlook/README.md",
+        "sha256": "6d351f0f737818046a82fc8e05a9b94bdd8936739d048dccf3083205ecb5824f",
+        "size": 10487
+      },
+      {
+        "path": "references/youtube-analytics/README.md",
+        "sha256": "558d79802105c1d09b3e196ddd8ab5d68c2a1717d199003ad7ef42051afbd8d7",
+        "size": 8366
+      },
+      {
+        "path": "references/fastmail/README.md",
+        "sha256": "b4dea302cfd65553924ed4ec8fc9a9d77f1945443e1903fa88079d40d2717bbc",
+        "size": 34864
+      },
+      {
+        "path": "references/buffer/README.md",
+        "sha256": "dee652d81906a27252e490cb6bff8b41d58f2688189e1ce1e9e0bf1f7c91f6ec",
+        "size": 14195
+      },
+      {
+        "path": "references/notion-mcp/README.md",
+        "sha256": "9d0531a04118154d01fe1961f2d0b1d42d1363928fa83d6d0e9bec049da16bd4",
+        "size": 15241
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-search.json",
+        "sha256": "475c7c1ecbed921b8d7b66f798e00a90bf849a2effd43f26aa7f06ee6b58b699",
+        "size": 4883
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-fetch.json",
+        "sha256": "63f571a0e1b591a222b5f2cd4bc7333fb295e5ea4d74f2a189d54b0fc4b6cb4c",
+        "size": 2137
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-create-database.json",
+        "sha256": "953ad2cd0e6237c039e524e466fd8b13396455ce4146bfac4b437ac08e24069c",
+        "size": 4710
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-get-comments.json",
+        "sha256": "d25bc3ec722b2a04c7c5f4ca5c76697b8e4fbc511540d194b19d38455aa03c47",
+        "size": 1607
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-update-page.json",
+        "sha256": "a80e8aebc4b21ebd20bfe53e55f555fe51b7cfff08eabee5c737a5a652c374d2",
+        "size": 9556
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-get-teams.json",
+        "sha256": "81ffe78a86e5daa09292e28d7a3d4f00c9da1e48bff2885c5bd14b106cad2e5b",
+        "size": 863
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-move-pages.json",
+        "sha256": "f64fc15e98b5e6357ebabac0aa0598500a3285ffb290dd42e2d0cebea312e24c",
+        "size": 3415
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-get-users.json",
+        "sha256": "58b9108d8b93f9be806c5208cd54f357ed949922bd74a7cf173eabe63b4de71e",
+        "size": 2357
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-duplicate-page.json",
+        "sha256": "c4b093ab2de048217b27dbb01b98847f7bb9b5562360ad37d6ef5391ed0f4e2b",
+        "size": 927
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-create-comment.json",
+        "sha256": "87dc06351d6d3d958743b2dfb8bb6901a01ffccb25942dc2baecea249cbe76a7",
+        "size": 18069
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-create-pages.json",
+        "sha256": "2cbe4dc25c3968e3406fdf86eb51b29866df0df00b5fc46c4722ec7e5184ca89",
+        "size": 10837
+      },
+      {
+        "path": "references/notion-mcp/schemas/notion-update-data-source.json",
+        "sha256": "2e78677d55242fcd5ae2bf8bf7bd6f2b481e9971e45ef9565c0860c487aa03ea",
+        "size": 6507
+      },
+      {
+        "path": "references/stripe/triggers.md",
+        "sha256": "b29b637756108edfdaf3ce6d26f40411da6d548db577f381e1640164c09b7e2f",
+        "size": 25161
+      },
+      {
+        "path": "references/stripe/README.md",
+        "sha256": "de76f74edc607dd6c7d894a091c1146933eaa89392b329d8b2c0c6438baca6f5",
+        "size": 23851
+      },
+      {
+        "path": "references/twilio/README.md",
+        "sha256": "412eb5e7681cf5227a501e9ce0ea4f7e93008ae9ef2f680e17c5be8f4a5ae8e2",
+        "size": 15745
+      },
+      {
+        "path": "references/linkedin/README.md",
+        "sha256": "ff6674c493bb70a987be8dad6e8b6057d44efbf901f11ee14a6a8b52daccdd34",
+        "size": 23628
+      },
+      {
+        "path": "references/google-contacts/README.md",
+        "sha256": "b05b9fc6c8f917dba14af1948a732a01ed52a62cc03ca07ea74a44998f86c2aa",
+        "size": 8264
+      },
+      {
+        "path": "references/resend/README.md",
+        "sha256": "604c5119a1467f0d9d38c14e4149d3546143344c6a7629c0e511796a8bb67547",
+        "size": 17381
+      },
+      {
+        "path": "references/snapchat/README.md",
+        "sha256": "959add70cf0cd33f96d3a5a9042ac738939f5853d4372c9bb00c00d9f19965a1",
+        "size": 14824
+      },
+      {
+        "path": "references/apify/README.md",
+        "sha256": "e88939e5a92dca680dd59a38fa31386ea92163bcd0e1767f6f8e45264e9acac0",
+        "size": 14596
+      },
+      {
+        "path": "references/google-search-console/README.md",
+        "sha256": "ee8a89bfcec51e0544779b05ad81c0f9b118b44b450186dc0fd9f6f7ee2d6e27",
+        "size": 6300
+      },
+      {
+        "path": "references/zoom-admin/README.md",
+        "sha256": "5def5f309e8994b6fc85a7419328f9aa7d484e63bbd623f563a2ebea2a4cf9b6",
+        "size": 14841
+      },
+      {
+        "path": "references/coda/README.md",
+        "sha256": "09d15fd918f1d97de5dfb08c98fa1423cf9bfb6ced9d57ea4839b5cbf352dc81",
+        "size": 10652
+      },
+      {
+        "path": "references/one-note/README.md",
+        "sha256": "3ceb56bf72fecdbc63c2f5e859841c668aa065b13b385756c35033b6d7f70783",
+        "size": 11359
+      },
+      {
+        "path": "references/asana/README.md",
+        "sha256": "105d6926e7e9e218a584fed36d62695722098ea66a6e0645320e30f6a766613a",
+        "size": 12586
+      },
+      {
+        "path": "references/highlevel-pit/README.md",
+        "sha256": "23acceee5a212c86419d5d299488e840e99b221dbca167a41d49f884f96f5db9",
+        "size": 26391
+      },
+      {
+        "path": "references/brevo/README.md",
+        "sha256": "f1ee701e0a427036852727d0791404815652cedb3d221829b800fd3e7d468b4d",
+        "size": 17996
+      },
+      {
+        "path": "references/microsoft-excel/README.md",
+        "sha256": "a64f865df088965ee320c43da056b5006225b3303f6745d018fba4c56d7eb5ac",
+        "size": 8059
+      },
+      {
+        "path": "references/front/README.md",
+        "sha256": "a213d95144e5a2255394afc36b863ebc26b211e81c5cd9389f1a96c0d5c1285c",
+        "size": 10587
+      },
+      {
+        "path": "references/vercel-ai-gateway/README.md",
+        "sha256": "27b16523ba08a8ad6eb760ffdb4ba31c499f23dd9602ec297554747136f1584d",
+        "size": 34268
+      },
+      {
+        "path": "references/sentry/README.md",
+        "sha256": "aa802cff26659a12f4d9e09db83042207d9ba49ed175f0bd61bf8608599251c8",
+        "size": 9667
+      },
+      {
+        "path": "references/companycam/README.md",
+        "sha256": "2efd58e65590e855cb507a3c1186059d31d093eb3a8db8bb578ec3a58642dd9f",
+        "size": 14113
+      },
+      {
+        "path": "references/google-analytics-data/README.md",
+        "sha256": "2b4f7ebb09b229e6d21ddc93f5579e4e42ad7abe1a8a61b90a244e418ce69c5b",
+        "size": 5812
+      },
+      {
+        "path": "references/calendly/triggers.md",
+        "sha256": "ab37ed1f7c577baca0d14ef0196770cf1559bf8a47ca6e44e396d409ccfa3020",
+        "size": 9789
+      },
+      {
+        "path": "references/calendly/README.md",
+        "sha256": "4c5a1e566b97ed3ec87047f5cd1fd871e894e094b0ea82ce838bee9bd28c6e57",
+        "size": 16527
+      },
+      {
+        "path": "references/beehiiv/README.md",
+        "sha256": "9ab7d570152144807d76184ba3953b6c03ce32179784402a7695c5b7c4106343",
+        "size": 12545
+      },
+      {
+        "path": "references/tavily/README.md",
+        "sha256": "ac887fb47193e47c8bb841f98f4ee89d3cd6bdf4d31050b93868e766b4a71527",
+        "size": 11330
+      },
+      {
+        "path": "references/constant-contact/README.md",
+        "sha256": "2338ff5a93390c6298b13156e90d26dcba32a9984e024c5514b55bc7f12cc3be",
+        "size": 27006
+      },
+      {
+        "path": "references/clockify/README.md",
+        "sha256": "5bc3de13e3be40c9265b2ccb1f6e54a0feeff6153377fce67f1419a027639b25",
+        "size": 12176
+      },
+      {
+        "path": "references/google-bigquery/README.md",
+        "sha256": "33f7b14523da856a48942c54faacead3677276f789a432ac1be238f34ab6888e",
+        "size": 13289
+      },
+      {
+        "path": "references/trello/README.md",
+        "sha256": "3ef11e93e1168787322ac050e65c9e445da2ff09b3b53b72ad841f9c6c8d558b",
+        "size": 14027
+      },
+      {
+        "path": "references/clio/README.md",
+        "sha256": "a9b62f5823f7dbffd0bbb514a482182d64d5457b509cdd6f7e4def11fccf34fc",
+        "size": 11053
+      },
+      {
+        "path": "references/google-slides/README.md",
+        "sha256": "341373314fc69e7bd598288f0db4de0402c1b590c6dbc1339284e05b0cb32e77",
+        "size": 8117
+      },
+      {
+        "path": "references/twenty/README.md",
+        "sha256": "5a7417f998d58396bf5eb104acf11de037660fee9b3c9eb9bcbcf83e1b7cb37f",
+        "size": 8832
+      },
+      {
+        "path": "references/posthog/README.md",
+        "sha256": "851a25728eeb6370e5b1e321c16acf92b33d1d66d76cb74253adfe316d298800",
+        "size": 13118
+      },
+      {
+        "path": "references/slack/triggers.md",
+        "sha256": "059d59aa30cdeb6bc6b05a194f3b5aad9a288f6f8844a60197356b75991801a2",
+        "size": 5692
+      },
+      {
+        "path": "references/slack/README.md",
+        "sha256": "a16894143dab7c279f053601f6424065974b429222d5abd90e5ccb66e6041ffe",
+        "size": 18476
+      },
+      {
+        "path": "references/mailgun/README.md",
+        "sha256": "deb68fcb32168a0ed79ccdf8af424346f9a0950b1faa193e87b3101356128e14",
+        "size": 17539
+      },
+      {
+        "path": "references/salesforce/README.md",
+        "sha256": "eebbaf092d1b01ce80c7a467463eea5a8dccd9376050390f715631d44ea8ae71",
+        "size": 14759
+      },
+      {
+        "path": "references/google-play/README.md",
+        "sha256": "cc7b2d64cef54c3756f5e07d67b1e5cee6847b57ca768d3099cb833b0ffcc1e8",
+        "size": 8522
+      },
+      {
+        "path": "references/zoho-recruit/README.md",
+        "sha256": "6b651092d8a0ea89b5c73abf1ccd24d247b90f6a3947ac473b2dc289faf0d56c",
+        "size": 14698
+      },
+      {
+        "path": "references/zoho-people/README.md",
+        "sha256": "ac369b57c76115553cebb8f466507067d070cf56e4f1308b2cc681f9385aeda3",
+        "size": 10143
+      },
+      {
+        "path": "references/dropbox/README.md",
+        "sha256": "769464e3a351dc1691876a0c3bc708c791b8dc30c6c581f42244e7229c6749e1",
+        "size": 17869
+      },
+      {
+        "path": "references/wati/README.md",
+        "sha256": "b1ffda8e9598c2064ab3b0a4892ab209cddb4bef7e1b7094e57caa47c187e3fc",
+        "size": 14023
+      },
+      {
+        "path": "references/zoom/README.md",
+        "sha256": "50be3654d34441044e72a8cc246f717a8f4307f606eac519230dea28d0971010",
+        "size": 11065
+      },
+      {
+        "path": "references/ticktick/README.md",
+        "sha256": "26dfe71373c43fadcaba0a5760fc78fbb4fdf86d0166e9e201645cbdd3e2b76f",
+        "size": 6293
+      },
+      {
+        "path": "references/sharepoint/README.md",
+        "sha256": "845ae0eeceae79f56cb7ef8fc59ca6faadc7e16c95ab2952686ab970d4e38184",
+        "size": 15825
+      },
+      {
+        "path": "references/confluence/README.md",
+        "sha256": "826452bceca6bcdcfbb6d637afdb4e247b7d661a81baebc0d0895ae597d624b3",
+        "size": 18882
+      },
+      {
+        "path": "references/fathom/README.md",
+        "sha256": "7f72f052b0e9c6bd24bafdfca00659208473fe111531638e219133d62404d2c6",
+        "size": 10166
+      },
+      {
+        "path": "references/telegram/README.md",
+        "sha256": "79633eaaeeee85871841e03822b16bf3f80decc5f94eff47aef51234d42ee841",
+        "size": 13434
+      },
+      {
+        "path": "references/zoho-mail/README.md",
+        "sha256": "a9e505781c6e0b1de858b15e9d2dd6d016fc979d4d3a3f9437622c19e3ef7360",
+        "size": 16052
+      },
+      {
+        "path": "references/manus/README.md",
+        "sha256": "67422ba97af6d85640f1ae028aa439c33bf62ebdc88f121bf578efb7e01b73d3",
+        "size": 8246
+      },
+      {
+        "path": "references/lemlist/README.md",
+        "sha256": "91bd417090d92d31ba628f54d7fca6951ea0755713adbdc01bbe6b92d7bb8ad7",
+        "size": 6533
+      },
+      {
+        "path": "references/make/README.md",
+        "sha256": "aa96dce878563f4fdc673eaa4734e68ebb86c60b9187879b62583045612de338",
+        "size": 15612
+      },
+      {
+        "path": "references/google-drive/README.md",
+        "sha256": "c65ce52bd550fec026090b52c64401ce643d439c718f8d15f1ad9ccce6a2cc1f",
+        "size": 10851
+      },
+      {
+        "path": "references/instantly/README.md",
+        "sha256": "189fbf41437309657c404216570f4f089c7577eda2baa670ae8be53af557b311",
+        "size": 13078
+      },
+      {
+        "path": "references/jotform/README.md",
+        "sha256": "92d35dd5f41beebf64fa0bdc251b02730221d63d02dbd2f63659243c1b87240e",
+        "size": 7160
+      },
+      {
+        "path": "references/google-sheets/README.md",
+        "sha256": "f94e58b93e5105418c1e0c8dc31055cdd644439ab7b13b01c5c3155258367cc3",
+        "size": 9112
+      },
+      {
+        "path": "references/apollo/README.md",
+        "sha256": "919b7363d0f10e2d9645de486a02e593f3107e0c7926a032844bf34a82c46286",
+        "size": 7091
+      },
+      {
+        "path": "references/dropbox-business/README.md",
+        "sha256": "d210cfc2322f9b5d529e18eb4fb3ef5dc4354a7a87f217688e231e030fe6fa59",
+        "size": 24745
+      },
+      {
+        "path": "references/eventbrite/README.md",
+        "sha256": "c5629e788bc632cd9b8af1683313060035cc57fd16e9c24c4b669221f11afecd",
+        "size": 10378
+      },
+      {
+        "path": "references/basecamp/README.md",
+        "sha256": "23ecad7edd7ca8edb744afa695596f87662d814cedf16bb9270ade8e8f5d955d",
+        "size": 14834
+      },
+      {
+        "path": "references/zoho-bookings/README.md",
+        "sha256": "db5650120ed9fb8dae3255919d1d975a861f61bfc0bd3ec961c5f9c438caca4d",
+        "size": 11270
+      },
+      {
+        "path": "references/figma/README.md",
+        "sha256": "4b47b6f819f1aae7a1c18881c283e0b778ab445733a1dc135adbee8d19bc73a6",
+        "size": 18237
+      },
+      {
+        "path": "references/github/triggers.md",
+        "sha256": "12f715e1afe93128b40dce70fae93ee6fa15f127e8b47526b8f22cbda1cf6996",
+        "size": 60652
+      },
+      {
+        "path": "references/github/README.md",
+        "sha256": "ec0c15ced89b08ed9aa9521a6cc48faf893120118feee70cc71b28e90006ad8e",
+        "size": 19891
+      },
+      {
+        "path": "references/jira/README.md",
+        "sha256": "f05477a03c12f19fe9238856fdd3812d3a1d455b3e20f264b5fa0ddd9849e1e2",
+        "size": 9721
+      },
+      {
+        "path": "references/sunsama-mcp/README.md",
+        "sha256": "a662eef5acbc86657eda41c2d12598bbb8a7a89d92810982fbb97fe6260f5aac",
+        "size": 11255
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/move_calendar_event.json",
+        "sha256": "0eec682e5f45a85c68e77a138b3c1b4209f60b4c9985937b3ad5ce4e19f5f084",
+        "size": 2070
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/timebox_a_task_to_calendar.json",
+        "sha256": "cce9e74bec9232ac98f8d5a3299e6b0c14cc8e0ce08c584d7ac939324a3448ef",
+        "size": 1528
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/edit_subtask_title.json",
+        "sha256": "0ec19a4e4d767f38e84bbfb249f58bd0a2d1f3f38aafe6925b2f93cad32156bb",
+        "size": 1718
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/append_task_notes.json",
+        "sha256": "d65b0cbcd08d486a9803dbb66f000a8853a8fb868d37a1951b1a6650b7143e84",
+        "size": 1352
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/edit_task_title.json",
+        "sha256": "c3fe350049c6e28901ed801d6aa65993831f627e3508ebe73cbeb6161c13c41d",
+        "size": 375
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/accept_meeting_invite.json",
+        "sha256": "1e46edf862606d80aca1cdb9094e0fb4635ba693dc4195b938634b5ffd199e76",
+        "size": 827
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/create_follow_up_task_from_email.json",
+        "sha256": "d16479b20192fb5b5e4be00d96aa2d6cf2d303223a517c3c9882884cdf160544",
+        "size": 1914
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/toggle_auto_import_events.json",
+        "sha256": "81c34a366783f235e02590a36b8e919de1961e1c9f4dc2f6b28d0836f543e80c",
+        "size": 906
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/delete_email_thread.json",
+        "sha256": "57d5b64de11e68c4eea06805601a7654ee4c0a1090d7651b2e4c93c14ff875bf",
+        "size": 825
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/delete_calendar_event.json",
+        "sha256": "3472d46d000a911292d657be5c064ea29ad54cc8ed54ce341b08fb9d3140c90a",
+        "size": 1595
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/reorder_tasks.json",
+        "sha256": "68385784165063504b6db62c0c0dd93a9236aa9f3eda810591aa3c3c2fc8ebf3",
+        "size": 484
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/update_calendar_preferences.json",
+        "sha256": "92921dbee333c21e52d276de62fa9c67a41272bf94bc82110cfd94d258e2cc4a",
+        "size": 1070
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/mark_subtask_as_incomplete.json",
+        "sha256": "1af5b1406ec362333307adfe962aaa0ec799b8a07239e9486909623186e5b474",
+        "size": 411
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/delete_task.json",
+        "sha256": "b864a2b7193ef0d480571c2183b70a8485e51a79427e46d5424f7061342b8558",
+        "size": 915
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/delete_all_incomplete_recurring_task_instances.json",
+        "sha256": "b713c29ffee8d3ed770222178a4436f13cc1a5fe9a4e766b05349d9c74eb9128",
+        "size": 1276
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/unarchive_task.json",
+        "sha256": "6395669a9617d9fdc17db2aa765fe44de253ba638488991f4f38162bb0579b5e",
+        "size": 453
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/decline_meeting_invite.json",
+        "sha256": "a9a82c421867a28e421d61df8ee5448e35e1b36ccd831ae8ac0bb3fa0ae3a55b",
+        "size": 695
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/import_task_from_calendar_event.json",
+        "sha256": "0bbd97e7aff8c5e3e51de792664633ee5ba9781748e9f311be56fceb00437a4d",
+        "size": 944
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/create_channel.json",
+        "sha256": "f420c87121073e823bbf390067bee1f9c0166d19234c1845e783f3e7c1cd918e",
+        "size": 1360
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/start_task_timer.json",
+        "sha256": "87dd6869fd43051b9abeed132a6caa37982359ca43e6e668f8ce95841c93aac5",
+        "size": 482
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/search_tasks.json",
+        "sha256": "1d51b4ba6bd46888b695746761675a1138d4a8519634dbf360d2e400516fb6ca",
+        "size": 478
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/edit_task_time_estimate.json",
+        "sha256": "0739cb42f0ca362387e86aabaa45492dcc6985d41f4f11fcb24653d6b4a158fc",
+        "size": 418
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/create_calendar_event.json",
+        "sha256": "9a9c46639bdd627e38211f33a6632b1540678ed912e9567f4448c27e801bf01c",
+        "size": 1604
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/set_calendar_event_allow_task_projections.json",
+        "sha256": "c519a4bd98ab36aee4ad238bffd3f2ae9c0a49bed401d8ecaedcd377cddeec09",
+        "size": 941
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/move_task_from_backlog.json",
+        "sha256": "f23342a9c620eea6633c4f183e10226eda95c3b859a0f94b44447cdcc6b95eeb",
+        "size": 432
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/restore_task.json",
+        "sha256": "c0585bd60426cd84b5802e96a0e7496534cf624b80168b161e89a0524a000bd0",
+        "size": 668
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/get_backlog_tasks.json",
+        "sha256": "ed29eb9799d473d5b3b0d6c813af1faa57a743ca4cadf0f6fb59b2354391f273",
+        "size": 171
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/create_task.json",
+        "sha256": "1d99ff7139ec2d44a5acf8048831ae6736abc638b3c09e5edab7e3e22cfb7fc4",
+        "size": 580
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/mark_task_as_incomplete.json",
+        "sha256": "eb0210a84ca686591367dfb967cbd977b6ccb27302ce97a3cfe78ec51e725630",
+        "size": 458
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/mark_subtask_as_completed.json",
+        "sha256": "32343fafdefc1e6959cdc425a9e336984a5705f9aa8e15e3fec65f7a405a4b95",
+        "size": 815
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/update_all_incomplete_recurring_task_instances.json",
+        "sha256": "fddd5ea2b9260760c96a0456bb94845f1505417bbc91fc428762bae631bd4728",
+        "size": 1905
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/mark_task_as_completed.json",
+        "sha256": "0e0a796493e19d08c1a4e8f1c40b59a934458eb5603d056892cad76b2f87b109",
+        "size": 441
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/get_archived_tasks.json",
+        "sha256": "91090b79d048d0582b66e3adec29b2af59d7b656d4ab739e4779aa75bb991e0b",
+        "size": 162
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/stop_task_timer.json",
+        "sha256": "00e53f62329874c7849d0fdfead70f041882efc95aba184b61c4442a281f909b",
+        "size": 274
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/edit_task_recurrence_rule.json",
+        "sha256": "c4114bdf3fd41557ad86b96c22a54b72e6b3c5e8db1f7f21cf63648ec663111b",
+        "size": 448
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/move_task_to_day.json",
+        "sha256": "fbe514ed263d346f46a36ee6193545fb25322e5cc4846c71d5589f15c16a939a",
+        "size": 428
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/reposition_task_in_backlog.json",
+        "sha256": "f26a68c2bbdb894102b94250efa8a7c144918d07f2d95722c1efcbc34fbef008",
+        "size": 622
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/log_user_feedback.json",
+        "sha256": "f737ad9ac91aecddbdea89188438e78c805637d74a54bc3ef9aa1a3a800a8ddd",
+        "size": 865
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/add_subtasks_to_task.json",
+        "sha256": "504af113fe5ba60f602f48452c6e521fbdf8221eefa01280f703360f0c136339",
+        "size": 1048
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/create_braindump_task.json",
+        "sha256": "812cc1d03893f837899ef4914d0f1b8bd9c0968cecd91d785a122b4250056d11",
+        "size": 1083
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/set_shutdown_time.json",
+        "sha256": "070085d612a910c86d7ee0d88cf05e24c99271b9bf1a7c7d88137a6f64f6b493",
+        "size": 508
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/create_weekly_objective.json",
+        "sha256": "5c9acb5f67a4d031dc7871355192106993a9e0f4c2b1e93a53c8d0ad7d6ceda1",
+        "size": 833
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/mark_email_thread_as_read.json",
+        "sha256": "c56081372fd4c4ae91ab9cf225dcad5cdbd2a122479283fa54e34b62aa96b869",
+        "size": 869
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/get_task_time_estimate.json",
+        "sha256": "570f7b00227bc61cb23aa32c2fde10656448914dea5d9b68cc7c9f629bed0e15",
+        "size": 309
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/align_task_with_objective.json",
+        "sha256": "5720aa60cfba36c7df4d250b0d5dfe826bba3ac2458356ec1e3903f339070209",
+        "size": 414
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/change_backlog_folder.json",
+        "sha256": "6daffdd34a25803d59ced9b3de08eaf951731c6c9fa73ac22b7dea61450af0e4",
+        "size": 1008
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/add_task_to_channel.json",
+        "sha256": "1c21dd0cb6a006c812993f495cd5f2367052a37a70ce477cef962b6ff99a26f0",
+        "size": 1775
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/update_import_event_filters.json",
+        "sha256": "84a18ece2a9b25b1ca357e322afadfcb1a42be801604b2e064b7f3786257ebaa",
+        "size": 387
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/list_email_threads.json",
+        "sha256": "97ad1cdad1af7ac18ad053e4db0580b2f789fd1fb6d7461929322829dc803cd3",
+        "size": 310
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/schedule_next_call.json",
+        "sha256": "f8ff5ea5118327e4284f998b3dbf56782df063deaac9e6f7519dae10cde76b7a",
+        "size": 1853
+      },
+      {
+        "path": "references/sunsama-mcp/schemas/move_task_to_backlog.json",
+        "sha256": "9175b2b6773e05b4c9054afe4f5647f1b606b7eeadb363697da8c5aff230a28d",
+        "size": 288
+      },
+      {
+        "path": "references/zoho-bigin/README.md",
+        "sha256": "7d0a126a7fb945d65b2129a5863783caf875ee91d2300b87ca532ac574bc64d1",
+        "size": 9924
+      },
+      {
+        "path": "references/firebase/README.md",
+        "sha256": "d8808d84e1e7109a6cb67f6f111fcea7419471308011a34e7191f82bd1f47849",
+        "size": 13432
+      },
+      {
+        "path": "references/google-classroom/README.md",
+        "sha256": "bf84a8f5014585f490dc4184619ffe70611cdc8c1c073b8f2fbd73875f54852d",
+        "size": 15640
+      },
+      {
+        "path": "references/quo/README.md",
+        "sha256": "b316503d868ad2600f6ca839a892f8a8d3b6321b472c159ab8e95aceabb11601",
+        "size": 11306
+      },
+      {
+        "path": "references/todoist/README.md",
+        "sha256": "d654153d01dbddb6021e07801de22e3769e3a4e42a26ae3ab6792b025e664be4",
+        "size": 11161
+      },
+      {
+        "path": "references/tally/README.md",
+        "sha256": "f5411f46ed23d20c93baf66d301079e2d17bf20184816d94c357e3ff198dc2c1",
+        "size": 12971
+      },
+      {
+        "path": "references/linkedin-community-management/README.md",
+        "sha256": "2203a20d12ab96e6fdc7734dcd53d7f3cc7082a39c5f772604928152dfc292a2",
+        "size": 19647
+      },
+      {
+        "path": "references/airtable/README.md",
+        "sha256": "1068751896e4b643b11b3d57e0352890fddc9a4c8bf1c51116d9fc89df3d8aef",
+        "size": 5772
+      },
+      {
+        "path": "references/zoho-calendar/README.md",
+        "sha256": "61a084f49e3b072eb56bdf5ba5532037a594d69a7ac6a4220b26a07a3856a17f",
+        "size": 10007
+      },
+      {
+        "path": "references/netlify/README.md",
+        "sha256": "f084f4a13ae58c0e575ab62865a37c3c0d64cdb3a400b0510942b3f7af2987ad",
+        "size": 15707
+      },
+      {
+        "path": "references/fireflies/README.md",
+        "sha256": "db2f9da6a375c590af4ac4645a9baa13a8f9c55fcf453540eb4a7b53d8eeee9a",
+        "size": 7500
+      },
+      {
+        "path": "references/hubspot/triggers.md",
+        "sha256": "982f472f32966b5b0d9b929b19c973e8d3097c317e1d32ff307acafb7f9cd4b5",
+        "size": 7807
+      },
+      {
+        "path": "references/hubspot/README.md",
+        "sha256": "1f3d03d39b7f6dae73c36ffb56dc432cf9133c8046f262747fa3e27260627274",
+        "size": 20721
+      },
+      {
+        "path": "references/google-calendar/README.md",
+        "sha256": "15badb5ad139f52e0450cf6f0f46c94d237a186c02a4a78c4cd45a25b8cce5a8",
+        "size": 6889
+      },
+      {
+        "path": "references/zoho-crm/README.md",
+        "sha256": "5c70c240dee83315e200db736a2dc655c54a772bc3ba9eb1ef60b5b36142417f",
+        "size": 18498
+      },
+      {
+        "path": "references/jobber/README.md",
+        "sha256": "920fef4998adcb41b926c924e66b7b59c103c251f8b38f1735e5a9eabb48c27c",
+        "size": 8704
+      },
+      {
+        "path": "references/supabase/README.md",
+        "sha256": "e8aa6b3d4219d83afab6fb29dc0a5120555546c2d73343299254c6ff7edeb967",
+        "size": 10728
+      },
+      {
+        "path": "references/time/triggers.md",
+        "sha256": "7ed286a1297e2a0c4444d8eb3f9dd299f07bb1d6563f1d07bb17f365197b40ab",
+        "size": 642
+      },
+      {
+        "path": "references/elevenlabs/README.md",
+        "sha256": "38229e3b0ac19a949e4b76a3924a242e7c8d2ab31306aef315c6475f019f4853",
+        "size": 14897
+      },
+      {
+        "path": "references/notion/triggers.md",
+        "sha256": "c2f2f499bc699ec02162808d565bac441d874ae9d7c29d9e1e5a8b8f1f3f669a",
+        "size": 5350
+      },
+      {
+        "path": "references/notion/README.md",
+        "sha256": "9941c5ac77c49fc2e7855e500752ce0b2ba2f39c48f7dc191805c1f03010581a",
+        "size": 12073
+      },
+      {
+        "path": "references/keap/README.md",
+        "sha256": "8950946c7cdddc7899ebac41fcd6bb9e935dad3c4ed4a03c1966aa780f5acd48",
+        "size": 13981
+      },
+      {
+        "path": "references/google-business-profile/README.md",
+        "sha256": "c839ef4f5f6c53e0fd484bf3bc858d2b053c16e738c5844b83755d3f72ee7e9e",
+        "size": 20235
+      },
+      {
+        "path": "references/youtube/README.md",
+        "sha256": "2e16b5e438542a90b673d86242679cf7a704a7c2d71164c818c358166e248a94",
+        "size": 12974
+      },
+      {
+        "path": "references/gumroad/README.md",
+        "sha256": "ccf89fe6d418766295af5f7e9499931d5301aebe3389a4247bd63036206734a7",
+        "size": 13978
+      },
+      {
+        "path": "references/motion/README.md",
+        "sha256": "9d0005e9a42029ad59627355af48b0596f0f524f71e04d2151a7d54d77b6a72b",
+        "size": 9956
+      },
+      {
+        "path": "references/podio/README.md",
+        "sha256": "ac119a3712b741b5297a67db29b0158c833500d4ac2d703e328e4c67467cfa2d",
+        "size": 11990
+      },
+      {
+        "path": "references/one-drive/README.md",
+        "sha256": "fef5c5d32b3eaa69acc0c6fd824dc29e274129ab426bdb512a5735d3c3f20631",
+        "size": 16955
+      },
+      {
+        "path": "references/toggl-track/README.md",
+        "sha256": "cdef5475f326f08bf271dd7b84e01d605716b64081cc7c569e1e4b52e8b625c5",
+        "size": 10321
+      },
+      {
+        "path": "references/mailchimp/README.md",
+        "sha256": "923c716f63f4e9345971c02f6b1cd9bf9996d469d771cb6e04f81d57be07d0ab",
+        "size": 19222
+      },
+      {
+        "path": "references/grafana/README.md",
+        "sha256": "43271e2267f8e7a541c26061c83af84cc5b886ea5dea7d911bd909eedf77f96b",
+        "size": 11178
+      },
+      {
+        "path": "references/quickbooks/README.md",
+        "sha256": "7cef12023ae8ee6d691378b51d3ade2e0d984800c2933064d0187ba63ed6eae7",
+        "size": 13455
+      },
+      {
+        "path": "references/clickup/README.md",
+        "sha256": "af3f5fa16d905b30448237d1447249ac43b0af8dd747be654543517d98b301ad",
+        "size": 15339
+      },
+      {
+        "path": "references/pdf-co/README.md",
+        "sha256": "fbae40b8eb131931643a16d0ba977f9cc9a67fadc4c79272e647313e3763ab58",
+        "size": 10101
+      },
+      {
+        "path": "references/typeform/README.md",
+        "sha256": "710062868e9ee90365f3befa632f87f64e9c5a15d79cdf4a1a1140b12bad2a3a",
+        "size": 6888
+      },
+      {
+        "path": "references/google-workspace-admin/README.md",
+        "sha256": "be8296f5f4d62eb667fa0ea6502dff8e56d2e002ee4f13aae16c9d0ac222eb4c",
+        "size": 11810
+      },
+      {
+        "path": "references/kit/README.md",
+        "sha256": "ddb05b1e5b8a6a58e06b55869cb2eb3ed5558cc91376085d337e16dfa185f2f7",
+        "size": 10677
+      },
+      {
+        "path": "references/active-campaign/README.md",
+        "sha256": "726527ad67384d7ff81a49e8c6c0d41f3038579cf7b58ff753f6cb70cd6374d0",
+        "size": 12941
+      },
+      {
+        "path": "references/google-tasks/README.md",
+        "sha256": "df8eefad308b56afa3e79ce61032a3aa8bfad7154306699f267d1af25e2d1ef5",
+        "size": 11082
+      },
+      {
+        "path": "references/reducto/README.md",
+        "sha256": "3b961b241ab268ba8e1539f88405f2c29d44e9b41cd2cb44e052c98a62ae7a80",
+        "size": 10233
+      },
+      {
+        "path": "references/systeme/README.md",
+        "sha256": "6e8ed20f3c3dbec45e20481d0deeef10de7a5b08c956df4806f2b32022822014",
+        "size": 9027
+      },
+      {
+        "path": "references/google-merchant/README.md",
+        "sha256": "c77684225cc0fde3c63787ce1b44b9f0ec9321a4dc79bc311deb024ba4b7ec4f",
+        "size": 19835
+      },
+      {
+        "path": "references/vimeo/README.md",
+        "sha256": "f1a6469cf04a1037817d9885b1d196dae34ea458c7f584127e72b53a8a73b9e8",
+        "size": 10640
+      },
+      {
+        "path": "references/acuity-scheduling/README.md",
+        "sha256": "0f30e3b90aec34308f52959dac3bc1cc7e615f8a821462072ebce32edf68d150",
+        "size": 11506
+      },
+      {
+        "path": "references/exa/README.md",
+        "sha256": "bebca90c1ae4a26a9f3d87a008d286dd8c3ca0e5351b470998d57501adadbab3",
+        "size": 14429
+      },
+      {
+        "path": "references/callrail/README.md",
+        "sha256": "59001bc4162cdb3f639a71c018c9606e8043629a221e56596e1e7ceba6b72344",
+        "size": 11062
+      },
+      {
+        "path": "references/cognito-forms/README.md",
+        "sha256": "1e42e1c0d974a60d908c31f8f96a3c0913d56ba6f36901f4b210af1799b26a5a",
+        "size": 5430
+      },
+      {
+        "path": "references/linear/triggers.md",
+        "sha256": "d3a4446d0d79b6a8b5ba7f54c25fa3e31dae85021210f5905da3c5e29b612db1",
+        "size": 6780
+      },
+      {
+        "path": "references/linear/README.md",
+        "sha256": "dd740e320b3d7b1413085c6fcaba72bed54223f7be9ee93b49fe8437999d8b19",
+        "size": 8031
+      },
+      {
+        "path": "references/google-forms/README.md",
+        "sha256": "c8b10682b2f2afc24c739f80c31343151fe2f538c2a5dddd105469d9a121c47d",
+        "size": 5312
+      },
+      {
+        "path": "references/pipedrive/README.md",
+        "sha256": "aae35644ada701c3ff708f736d1cf52fc7c695460b530ea31dce0a6356f4ba69",
+        "size": 9132
+      },
+      {
+        "path": "references/microsoft-to-do/README.md",
+        "sha256": "99069659e3c5b93435baca80cf1078657a71e37813f80f3def60ccdf92732532",
+        "size": 9373
+      },
+      {
+        "path": "references/wrike/README.md",
+        "sha256": "964c269c93b6494a88ce264119c0c2d8a9037d0adb0f1ecaa3ab43a704db02f2",
+        "size": 28124
+      },
+      {
+        "path": "references/klaviyo/README.md",
+        "sha256": "46c4f83976f910658214e0ec1ad77659692b09e6063c044733cd4d355558dca4",
+        "size": 39259
+      },
+      {
+        "path": "references/memelord/README.md",
+        "sha256": "b6595ebe5bbfeab59d1d35c68278ac3ee0b28c4b8068a36bf66d3b5d2e92161e",
+        "size": 10199
+      },
+      {
+        "path": "references/xero/README.md",
+        "sha256": "98375a719fec9ed2c8a0b6fe148a71ae865fdd7e7da706cbd48d1172f0c00515",
+        "size": 7172
+      },
+      {
+        "path": "references/google-ads/README.md",
+        "sha256": "6bec0cad695808ee1e573d0a9201ae6c3c1789693ab7ec195f76bbd006cde359",
+        "size": 7391
+      },
+      {
+        "path": "references/firecrawl/README.md",
+        "sha256": "ae68afe1b2430fa9af9af742bebf0fdc68cf01734de6524e5c612119aa28f3e2",
+        "size": 18977
+      },
+      {
+        "path": "references/getresponse/README.md",
+        "sha256": "0ba314ad1cda2c0722539e245e239c9e515eb2f97444665452d5d4d61d4df503",
+        "size": 15165
+      },
+      {
+        "path": "references/sendgrid/README.md",
+        "sha256": "03e37f8caeca2caf6b98bacca1428a005e3b9af89d985347dc20462c6ffba900",
+        "size": 17382
+      },
+      {
+        "path": "references/facebook-page/README.md",
+        "sha256": "185f27620433df1e7111229479edd353dcf52bc223e87903a5aefd3cb174f32d",
+        "size": 18837
+      },
+      {
+        "path": "references/unbounce/README.md",
+        "sha256": "3d331b57060c49af4e943ce280771477c2a7dc8ecad3338bfdd4fce6ddcf74b6",
+        "size": 11127
+      },
+      {
+        "path": "references/whatsapp-business/README.md",
+        "sha256": "c6d30cb5a9d1a74f0ed82efc854f0577a459b5248a15e5a8780034bdb63432c9",
+        "size": 12391
+      },
+      {
+        "path": "references/wordpress/README.md",
+        "sha256": "e0893fbd6ba5d77578a7703d4cfdceb520aeec98ef241f8939ade6bbe5c11e90",
+        "size": 11309
+      },
+      {
+        "path": "references/squarespace/README.md",
+        "sha256": "e87c16c56ce08a972b7c44de665eeb3e98946ad854bb5835336cc9da99d8b05c",
+        "size": 19184
+      },
+      {
+        "path": "references/zoho-inventory/README.md",
+        "sha256": "6e064066a3d69302f8adecd2a5e378cdd131480f360d2868e3abdc7c390a2903",
+        "size": 22948
+      },
+      {
+        "path": "references/mailerlite/README.md",
+        "sha256": "1588fa9699be061ab93a5f62310afed942f5ff766f65303171f61f0d1662c1bb",
+        "size": 15625
+      },
+      {
+        "path": "references/kibana/README.md",
+        "sha256": "4ac1e8aec0827aea7378e9ea71dfa5d1f77ddece299814c42824815bbddfb585",
+        "size": 10823
+      },
+      {
+        "path": "references/manychat/README.md",
+        "sha256": "52a57ed7eec052f8061a8572d49dc0361bdaa55eaae749c7700aef250a119740",
+        "size": 12157
+      },
+      {
+        "path": "references/google-apps-script/README.md",
+        "sha256": "86e64a62dbc39fae986b01ff4f1bc7c21c172cb5936cd424d618a6f6bef9e4b9",
+        "size": 14311
+      },
+      {
+        "path": "references/google-tag-manager/README.md",
+        "sha256": "effa59c4e081da44bb2b6c2c5a7efdf9762b5c7c3180cf6bc8de03436250412f",
+        "size": 17890
+      },
+      {
+        "path": "references/granola-mcp/README.md",
+        "sha256": "c4498937c3ba6c28c4fead56a6e5f022ee15a2e9b912d0796ac2611d66345760",
+        "size": 7325
+      },
+      {
+        "path": "references/granola-mcp/schemas/get_meeting_transcript.json",
+        "sha256": "2f61585f558351cb313b3026fbd45ad82f6f5b90c6d464c2dc63ffda3e547847",
+        "size": 1062
+      },
+      {
+        "path": "references/granola-mcp/schemas/get_meetings.json",
+        "sha256": "a70b5e8d148e13298426541085f6341b6a1677ecad5b1076827bb0da6f4661a4",
+        "size": 1605
+      },
+      {
+        "path": "references/granola-mcp/schemas/list_meetings.json",
+        "sha256": "0725d6e2cab47bf2e63bbea9c2db8bff413af3c478440d6a6318a0fbe716ef61",
+        "size": 1585
+      },
+      {
+        "path": "references/granola-mcp/schemas/query_granola_meetings.json",
+        "sha256": "a63c83a2c223a6c86e8cd1e3405957057989808378e56e88a494324ddea5e4f0",
+        "size": 2128
+      },
+      {
+        "path": "references/kaggle/README.md",
+        "sha256": "da8e10718aa44a8c3cb31dc352fafa70abccd4da43ad59f9537af06a8039ca81",
+        "size": 7444
+      },
+      {
+        "path": "references/clickfunnels/README.md",
+        "sha256": "35af184f6271fbbc311ad5d48e595afc7162d7f77eaad0a645b9901d90fc8e66",
+        "size": 17124
+      },
+      {
+        "path": "references/vercel/README.md",
+        "sha256": "e6f03f939a5c1417d826efa9b74582342e45b9962aba86739c112a7914a1408e",
+        "size": 9143
+      },
+      {
+        "path": "references/google-meet/README.md",
+        "sha256": "ef3d618c72a2e89841e7c7960db37e7e1a839af0330c88fb22c3ae502d3663dd",
+        "size": 5796
+      },
+      {
+        "path": "references/zoho-books/README.md",
+        "sha256": "6d798c4c714c3eed8a1f5c8a3ca8856de2e27e58e28f53025b2fb9a91a77d6d4",
+        "size": 11161
+      },
+      {
+        "path": "references/box/README.md",
+        "sha256": "0498a61c25875f0936be9ff6281a08a831b2272647736346aa524b1e8b2710d5",
+        "size": 22484
+      },
+      {
+        "path": "references/clicksend/README.md",
+        "sha256": "29781fd4025f6ea172e48b83ecccc61291329c1914decbba05e8371bb8ec34ac",
+        "size": 13640
+      },
+      {
+        "path": "references/google-mail/triggers.md",
+        "sha256": "b2323e488e7fc8e49362121a80492fd8c6ef6da4b58b6403cbb96cf9fd574e78",
+        "size": 2159
+      },
+      {
+        "path": "references/google-mail/README.md",
+        "sha256": "78c0b0989a415b697664de86e98cb0031791c01d2a610b5b94ed26c476a9ee1f",
+        "size": 7992
+      },
+      {
+        "path": "references/woocommerce/README.md",
+        "sha256": "2967c960fe12bfcfa4eb16b7b7bc0416b72f5ca1860523a482d65645e72c2072",
+        "size": 36445
+      },
+      {
+        "path": "references/youtube-reporting/README.md",
+        "sha256": "eb0d7d52175d0cfc3525650a1b79fbeff393fd8031b4f5c58bc15587b1b51269",
+        "size": 8539
+      },
+      {
+        "path": "references/fal-ai/README.md",
+        "sha256": "e98b1999ebbc549e8a4729e1a543c3018b67e4f1dd49b2853c7a51f8bd1e440e",
+        "size": 8075
+      },
+      {
+        "path": "references/google-analytics-admin/README.md",
+        "sha256": "7d586ef267fce0e7903c4074fca46ab105c03bd2ced9e1e0aaf7216895a69aff",
+        "size": 9669
+      },
+      {
+        "path": "references/monday/README.md",
+        "sha256": "32b6c0477d6523d47de61233d51a95341d995cad7a668ab17190a42c98ae15fc",
+        "size": 8444
+      },
+      {
+        "path": "references/baserow/README.md",
+        "sha256": "da8f5a2f6b4b36889196d936f9e94218e0082ae78d2a0c3f783b55bf81e8c0d2",
+        "size": 16717
+      },
+      {
+        "path": "references/signnow/README.md",
+        "sha256": "8ca42cd19eb80da685449de22dcff151abef86ef1a9e8dd09d96aabe46177f15",
+        "size": 9938
+      },
+      {
+        "path": "references/google-docs/README.md",
+        "sha256": "f819241d343767a30285b5526e54ccca251420a5ffa3f583b5feaa3d9a9bd497",
+        "size": 4337
+      },
+      {
+        "path": "references/chargebee/README.md",
+        "sha256": "39db729497db3f3c981257764151356157e8e63b55bc03c35167c9e1ca428a25",
+        "size": 7272
+      },
+      {
+        "path": "references/brave-search/README.md",
+        "sha256": "692cb7fedc7b02aafc3a75b63c407c20b88faba4df7bb123e5967cecdcae0b31",
+        "size": 13833
+      },
+      {
+        "path": "references/microsoft-teams/README.md",
+        "sha256": "b9389e9186c2bf94c3ca5883b0cc05a083848e072a3b8eae8290bd7f55b45eaa",
+        "size": 18818
+      },
+      {
+        "path": "references/squareup/README.md",
+        "sha256": "74b3cf984b89d947c30b600d9e36b4e5ecbf98535739c0f189b8b4841702894a",
+        "size": 20936
+      },
+      {
+        "path": "references/attio/README.md",
+        "sha256": "bff8655a2e7ec5692e86d6fd5d0633b3db41e517bb7004de5db1918ff7ef340a",
+        "size": 12684
+      },
+      {
+        "path": "references/cal-com/README.md",
+        "sha256": "7067963512d951fdd772f6f9b1276d1089f373363cc3736d86830309af38dfd4",
+        "size": 15178
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "fe580cc20defcb1220f06c811392977998b3b5b556a8c924aab56808909d089c",
+        "size": 2027
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 86992,
+    "installsLabel": "8.7 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.7",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要 Maton API Key（在 maton.ai 的 Settings 页获取），并先由本人在 maton.ai 网页连接要调用的各个应用。账号令牌由 Maton 保管，每次请求都经 Maton 服务器转发。",
+        "en": "Requires a Maton API key (from Settings on maton.ai), and you must first connect each app you want to use on the maton.ai website. Maton holds the account tokens and relays every request through its servers."
+      },
+      {
+        "zh-CN": "由 Teloa 代为发送请求：密钥由 Teloa 保管，只发往 https://api.maton.ai（路径由你连接的应用决定）；新增、修改、删除类请求每次先请你确认。所有 Maton 技能共用同一个 Maton API Key，填一次即可。",
+        "en": "Teloa sends the requests for this skill: it keeps the key and sends it only to https://api.maton.ai (the path depends on the app you connect); every request that creates, changes or deletes data asks for your confirmation first. All Maton skills share one Maton API key, so you enter it once."
+      },
+      {
+        "zh-CN": "正文里安装 maton 命令行工具或 maton-ai Python 包的步骤在 Teloa 中不适用；托管函数（*.maton.app）、触发器和连接管理等依赖命令行工具的功能不可用。同一应用连了多个账号时，可在请求里加 Maton-Connection 指定使用哪一个。",
+        "en": "Steps that install the maton command-line tool or the maton-ai Python package do not apply in Teloa; hosted functions (*.maton.app), triggers, connection management and other features that need the command-line tool are unavailable. If you connected several accounts of the same app, add Maton-Connection to a request to choose one."
+      },
+      {
+        "zh-CN": "单次返回内容超过 256 KiB 会被截断，非文字内容只给出省略提示。",
+        "en": "Responses over 256 KiB are truncated, and non-text content is replaced by a short notice."
+      },
+      {
+        "zh-CN": "未经 Teloa 真实账户实测：请求地址与鉴权方式按服务商官方文档和锁定版本的技能正文核对。使用中遇到问题，请在资源详情页点「问题反馈」。",
+        "en": "Not tested with a real account by Teloa: request addresses and authentication were checked against the provider's official documentation and the pinned skill text. If something does not work, use Report a problem on the resource page."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [
+      "teloa_skill_http"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "secrets": [
+    {
+      "envVarName": "MATON_API_KEY",
+      "label": {
+        "zh-CN": "Maton API Key（在 maton.ai 的 Settings 页获取）",
+        "en": "Maton API key (from Settings on maton.ai)"
+      },
+      "required": true,
+      "target": "bearer",
+      "endpoints": [
+        {
+          "origin": "https://api.maton.ai",
+          "pathPrefixes": [
+            "/"
+          ]
+        }
+      ],
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ],
+      "allowHeaders": [
+        "Maton-Connection"
+      ]
+    }
+  ],
+  "secretGroup": "maton",
+  "httpGuide": {
+    "zh-CN": "正文里的 maton api '<路径>' 命令，在 Teloa 里改用 teloa_skill_http 直接调用：url 写 https://api.maton.ai 加同一路径。\n例如 maton api '/google-mail/gmail/v1/users/me/messages' 对应 GET https://api.maton.ai/google-mail/gmail/v1/users/me/messages。\n查询参数要做 URL 编码；写入请求用 POST、PUT、PATCH 或 DELETE，JSON 正文放在 body，headers 写 Content-Type: application/json。\n同一应用连了多个账号时，在 headers 里加一行 Maton-Connection: <连接 ID>。\n不要安装或运行 maton 命令行工具与 maton-ai Python 包，也不要调用 *.maton.app 托管函数；应用连接由本人在 maton.ai 网页创建。",
+    "en": "Where the skill text runs maton api '<path>', call teloa_skill_http instead with the url https://api.maton.ai followed by the same path.\nFor example, maton api '/google-mail/gmail/v1/users/me/messages' becomes GET https://api.maton.ai/google-mail/gmail/v1/users/me/messages.\nURL-encode query values; for writes use POST, PUT, PATCH or DELETE with the JSON body in body and the header Content-Type: application/json.\nIf the same app has several connected accounts, add the header line Maton-Connection: <connection id>.\nDo not install or run the maton command-line tool or the maton-ai Python package, and do not call *.maton.app hosted functions; the owner creates app connections on the maton.ai website."
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

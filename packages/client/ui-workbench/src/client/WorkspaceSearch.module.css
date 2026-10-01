@@ -1,0 +1,19 @@
+.dialog{width:min(570px,calc(100vw - 28px))}
+.search{display:flex;align-items:center;gap:10px;min-height:46px;border:1px solid var(--teloa-border);border-radius:8px;padding:0 13px;color:var(--teloa-muted)}
+.dialog .search input{flex:1;min-width:0;border:0;background:transparent;color:var(--teloa-text);font:inherit;outline:none;padding:0;box-shadow:none}
+.search:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.dialog .close{flex:none;min-width:40px;min-height:40px;padding:0;border:0;border-radius:50%;background:transparent}
+.body{display:flex;flex-direction:column;gap:12px}
+.note{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.7;margin:0}
+.results{max-height:52vh;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:9px}
+.dialog .results button{flex:none;display:flex;align-items:center;gap:12px;width:100%;min-height:0;padding:13px 15px;text-align:left;border:1px solid var(--teloa-border);border-radius:8px;background:transparent;color:var(--teloa-text);cursor:pointer}
+.results button:hover{background:var(--teloa-subtle)}
+.results button>div{flex:1;min-width:0}
+.results button svg{flex:none;color:var(--teloa-muted)}
+.results strong{display:block;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
+.results span{display:block;font-size:var(--teloa-font-caption);color:var(--teloa-muted);margin-top:5px;overflow-wrap:anywhere}
+.empty{margin:18px 0;text-align:center;color:var(--teloa-muted)}
+.empty h3{color:var(--teloa-text);font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);margin:0 0 6px;line-height:var(--teloa-leading-label)}
+.empty p{font-size:var(--teloa-font-caption);line-height:1.7;margin:0}
+@media(max-width:740px){.dialog{width:calc(100vw - 24px)}.search input{font-size:var(--teloa-font-touch-input)}.results{max-height:48vh}.results button{min-height:44px}}
+.dialog .search input:focus,.dialog .search input:focus-visible{outline:none;box-shadow:none;border:0}

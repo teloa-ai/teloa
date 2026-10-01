@@ -1,0 +1,318 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "project-management",
+  "title": "项目管理协作",
+  "version": "1.0.0",
+  "domain": "general",
+  "scope": "project",
+  "description": "面向项目周状态报告、项目会议纪要、风险台账维护与里程碑核对的行业方案。岗位只依据已提供的项目材料形成可追溯的草案；对外发送、写入项目管理系统、调整计划或承诺日期均需本人授权。",
+  "resources": [
+    {
+      "id": "project-coordinator",
+      "kind": "role",
+      "title": "项目协调员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/project-coordinator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "项目协调员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "项目协调员",
+            "en": "Project coordinator"
+          }
+        }
+      }
+    },
+    {
+      "id": "project-methods",
+      "kind": "knowledge",
+      "title": "项目管理方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/project-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "项目管理方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "项目管理方法与来源索引",
+            "en": "Project management methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "project-weekly-report",
+      "kind": "skill",
+      "title": "项目周状态报告",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/project-weekly-report/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "项目周状态报告",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "项目周状态报告",
+            "en": "Weekly project status report"
+          }
+        }
+      }
+    },
+    {
+      "id": "project-meeting-minutes",
+      "kind": "skill",
+      "title": "项目会议纪要与待办提取",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/project-meeting-minutes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "项目会议纪要与待办提取",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "项目会议纪要与待办提取",
+            "en": "Project meeting minutes and action item extraction"
+          }
+        }
+      }
+    },
+    {
+      "id": "project-risk-register",
+      "kind": "skill",
+      "title": "项目风险台账",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/project-risk-register/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "项目风险台账",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "项目风险台账",
+            "en": "Project risk register"
+          }
+        }
+      }
+    },
+    {
+      "id": "milestone-check",
+      "kind": "skill",
+      "title": "里程碑核对（计划、实际、偏差、依赖）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/milestone-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "里程碑核对（计划、实际、偏差、依赖）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "里程碑核对（计划、实际、偏差、依赖）",
+            "en": "Milestone check (plan, actual, variance, dependencies)"
+          }
+        }
+      }
+    },
+    {
+      "id": "status-report-task",
+      "kind": "work-template",
+      "title": "生成项目周状态报告",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/status-report-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "生成项目周状态报告",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "生成项目周状态报告",
+            "en": "Generate weekly project status report"
+          }
+        }
+      }
+    },
+    {
+      "id": "meeting-minutes-task",
+      "kind": "work-template",
+      "title": "整理项目会议纪要与待办",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/meeting-minutes-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "整理项目会议纪要与待办",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "整理项目会议纪要与待办",
+            "en": "Prepare project meeting minutes and action items"
+          }
+        }
+      }
+    },
+    {
+      "id": "risk-register-task",
+      "kind": "work-template",
+      "title": "更新项目风险台账",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/risk-register-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "更新项目风险台账",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "更新项目风险台账",
+            "en": "Update project risk register"
+          }
+        }
+      }
+    },
+    {
+      "id": "milestone-check-task",
+      "kind": "work-template",
+      "title": "里程碑核对与偏差清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/milestone-check-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "里程碑核对与偏差清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "里程碑核对与偏差清单",
+            "en": "Milestone check and variance list"
+          }
+        }
+      }
+    },
+    {
+      "id": "project-weekly-status",
+      "kind": "plan",
+      "title": "每周项目状态计划",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "plans/project-weekly-status.json"
+      },
+      "localized": {
+        "title": {
+          "original": "每周项目状态计划",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "每周项目状态计划",
+            "en": "Weekly project status plan"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "project-coordinator",
+      "to": "project-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "project-coordinator",
+      "to": "project-weekly-report"
+    },
+    {
+      "kind": "role-skill",
+      "from": "project-coordinator",
+      "to": "project-meeting-minutes"
+    },
+    {
+      "kind": "role-skill",
+      "from": "project-coordinator",
+      "to": "project-risk-register"
+    },
+    {
+      "kind": "role-skill",
+      "from": "project-coordinator",
+      "to": "milestone-check"
+    },
+    {
+      "kind": "role-work",
+      "from": "project-coordinator",
+      "to": "status-report-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "project-coordinator",
+      "to": "meeting-minutes-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "project-coordinator",
+      "to": "risk-register-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "project-coordinator",
+      "to": "milestone-check-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "project-coordinator",
+      "to": "project-weekly-status"
+    }
+  ],
+  "entrypoints": [
+    "status-report-task",
+    "meeting-minutes-task",
+    "milestone-check-task",
+    "risk-register-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "项目管理协作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "项目管理协作",
+        "en": "Project management"
+      }
+    },
+    "description": {
+      "original": "面向项目周状态报告、项目会议纪要、风险台账维护与里程碑核对的行业方案。岗位只依据已提供的项目材料形成可追溯的草案；对外发送、写入项目管理系统、调整计划或承诺日期均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向项目周状态报告、项目会议纪要、风险台账维护与里程碑核对的行业方案。岗位只依据已提供的项目材料形成可追溯的草案；对外发送、写入项目管理系统、调整计划或承诺日期均需本人授权。",
+        "en": "A solution for weekly project status reports, project meeting minutes, risk register upkeep, and milestone checks. The role produces traceable drafts only from the project materials you provide; sending externally, writing to project tools, changing plans, or committing to dates all require your authorization."
+      }
+    }
+  }
+}

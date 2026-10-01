@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "control-mapping-task",
+  "title": "控制映射任务",
+  "version": "1.0.0",
+  "domain": "grc",
+  "description": "将已提供的安全控制证据与指定合规框架（ISO 27001:2022、NIST CSF 2.0、SOC 2 TSC、等保 2.0 等）进行逐条对照，输出控制映射表草案和差距统计，供 GRC 负责人审阅。",
+  "requirements": [
+    "目标框架版本（如 ISO 27001:2022、NIST CSF 2.0、SOC 2 TSC 2017）",
+    "已有策略文件或控制清单（已提供的版本）",
+    "业务范围说明（哪些系统或业务在范围内）"
+  ],
+  "output": "控制映射表草案：每条控制编号的满足状态（已满足/部分满足/未满足/不适用）、证据引用或缺口说明，以及覆盖率统计摘要",
+  "skills": [
+    {
+      "id": "control-mapping",
+      "title": "控制映射",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "控制映射任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "控制映射任务",
+        "en": "Control mapping task"
+      }
+    },
+    "description": {
+      "original": "将已提供的安全控制证据与指定合规框架（ISO 27001:2022、NIST CSF 2.0、SOC 2 TSC、等保 2.0 等）进行逐条对照，输出控制映射表草案和差距统计，供 GRC 负责人审阅。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将已提供的安全控制证据与指定合规框架（ISO 27001:2022、NIST CSF 2.0、SOC 2 TSC、等保 2.0 等）进行逐条对照，输出控制映射表草案和差距统计，供 GRC 负责人审阅。",
+        "en": "Map provided security control evidence against a specified compliance framework (ISO 27001:2022, NIST CSF 2.0, SOC 2 TSC, GB/T 22239-2019, etc.) line by line, and produce a draft control mapping table with gap statistics for GRC lead review."
+      }
+    },
+    "requirements": [
+      {
+        "original": "目标框架版本（如 ISO 27001:2022、NIST CSF 2.0、SOC 2 TSC 2017）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标框架版本（如 ISO 27001:2022、NIST CSF 2.0、SOC 2 TSC 2017）",
+          "en": "Target framework version (e.g. ISO 27001:2022, NIST CSF 2.0, SOC 2 TSC 2017)"
+        }
+      },
+      {
+        "original": "已有策略文件或控制清单（已提供的版本）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "已有策略文件或控制清单（已提供的版本）",
+          "en": "Existing policy documents or control inventory (provided version)"
+        }
+      },
+      {
+        "original": "业务范围说明（哪些系统或业务在范围内）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "业务范围说明（哪些系统或业务在范围内）",
+          "en": "Business scope description (which systems or services are in scope)"
+        }
+      }
+    ],
+    "output": {
+      "original": "控制映射表草案：每条控制编号的满足状态（已满足/部分满足/未满足/不适用）、证据引用或缺口说明，以及覆盖率统计摘要",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "控制映射表草案：每条控制编号的满足状态（已满足/部分满足/未满足/不适用）、证据引用或缺口说明，以及覆盖率统计摘要",
+        "en": "Draft control mapping table: per-control fulfillment status (satisfied/partial/not satisfied/N/A), evidence reference or gap notes, and coverage statistics summary"
+      }
+    }
+  }
+}

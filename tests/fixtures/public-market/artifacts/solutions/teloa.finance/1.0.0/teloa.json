@@ -1,0 +1,291 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "finance-reconciliation",
+  "title": "财务对账协作",
+  "version": "1.0.0",
+  "domain": "general",
+  "scope": "finance",
+  "description": "面向银行与账面对账差异清单、报销单合规核对、月结清单与单据索引的行业方案。岗位只出差异清单与核对意见，不付款、不改账、不做税务结论；写入财务系统、对外发送与任何资金动作均需本人授权。",
+  "resources": [
+    {
+      "id": "reconciliation-collaborator",
+      "kind": "role",
+      "title": "对账协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/reconciliation-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "对账协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "对账协作员",
+            "en": "Reconciliation collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "finance-methods",
+      "kind": "knowledge",
+      "title": "财务对账方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/finance-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "财务对账方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "财务对账方法与来源索引",
+            "en": "Finance reconciliation methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "reconciliation-diff",
+      "kind": "skill",
+      "title": "对账差异清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/reconciliation-diff/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "对账差异清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "对账差异清单",
+            "en": "Reconciliation discrepancy list"
+          }
+        }
+      }
+    },
+    {
+      "id": "expense-policy-check",
+      "kind": "skill",
+      "title": "报销单合规核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/expense-policy-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "报销单合规核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "报销单合规核对",
+            "en": "Expense claim policy check"
+          }
+        }
+      }
+    },
+    {
+      "id": "month-close-checklist",
+      "kind": "skill",
+      "title": "月结清单与缺口核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/month-close-checklist/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "月结清单与缺口核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "月结清单与缺口核对",
+            "en": "Month-end close checklist and gap check"
+          }
+        }
+      }
+    },
+    {
+      "id": "finance-table-verification",
+      "kind": "skill",
+      "title": "表格核对（对照、差异、口径问题清单）",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/finance-table-verification/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "表格核对（对照、差异、口径问题清单）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "表格核对（对照、差异、口径问题清单）",
+            "en": "Table verification (comparison, discrepancies, definition issues)"
+          }
+        }
+      }
+    },
+    {
+      "id": "finance-evidence-index",
+      "kind": "skill",
+      "title": "单据与证据索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/finance-evidence-index/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "单据与证据索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "单据与证据索引",
+            "en": "Voucher and evidence index"
+          }
+        }
+      }
+    },
+    {
+      "id": "reconciliation-diff-task",
+      "kind": "work-template",
+      "title": "对账差异清单",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/reconciliation-diff-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "对账差异清单",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "对账差异清单",
+            "en": "Reconciliation discrepancy list task"
+          }
+        }
+      }
+    },
+    {
+      "id": "expense-policy-check-task",
+      "kind": "work-template",
+      "title": "报销单合规核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/expense-policy-check-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "报销单合规核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "报销单合规核对",
+            "en": "Expense claim policy check task"
+          }
+        }
+      }
+    },
+    {
+      "id": "month-close-checklist-task",
+      "kind": "work-template",
+      "title": "月结清单与缺口核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/month-close-checklist-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "月结清单与缺口核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "月结清单与缺口核对",
+            "en": "Month-end close checklist task"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "reconciliation-collaborator",
+      "to": "finance-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "reconciliation-collaborator",
+      "to": "reconciliation-diff"
+    },
+    {
+      "kind": "role-skill",
+      "from": "reconciliation-collaborator",
+      "to": "expense-policy-check"
+    },
+    {
+      "kind": "role-skill",
+      "from": "reconciliation-collaborator",
+      "to": "month-close-checklist"
+    },
+    {
+      "kind": "role-skill",
+      "from": "reconciliation-collaborator",
+      "to": "finance-table-verification"
+    },
+    {
+      "kind": "role-skill",
+      "from": "reconciliation-collaborator",
+      "to": "finance-evidence-index"
+    },
+    {
+      "kind": "role-work",
+      "from": "reconciliation-collaborator",
+      "to": "reconciliation-diff-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "reconciliation-collaborator",
+      "to": "expense-policy-check-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "reconciliation-collaborator",
+      "to": "month-close-checklist-task"
+    }
+  ],
+  "entrypoints": [
+    "reconciliation-diff-task",
+    "expense-policy-check-task",
+    "month-close-checklist-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "财务对账协作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "财务对账协作",
+        "en": "Finance reconciliation"
+      }
+    },
+    "description": {
+      "original": "面向银行与账面对账差异清单、报销单合规核对、月结清单与单据索引的行业方案。岗位只出差异清单与核对意见，不付款、不改账、不做税务结论；写入财务系统、对外发送与任何资金动作均需本人授权。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向银行与账面对账差异清单、报销单合规核对、月结清单与单据索引的行业方案。岗位只出差异清单与核对意见，不付款、不改账、不做税务结论；写入财务系统、对外发送与任何资金动作均需本人授权。",
+        "en": "A solution for bank-to-ledger reconciliation discrepancy lists, expense claim policy checks, month-end close checklists and voucher indexes. The role produces discrepancy lists and review notes only; it never makes payments, changes ledger entries or draws tax conclusions. Writing to finance systems, sending externally and any movement of funds require your authorization."
+      }
+    }
+  }
+}

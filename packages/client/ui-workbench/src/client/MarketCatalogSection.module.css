@@ -1,0 +1,57 @@
+.section{display:grid;gap:14px;margin:0;min-width:0}
+.header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.header h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);color:var(--teloa-text)}
+.header span{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.card{border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface);padding:14px 16px;display:grid;gap:8px}
+.top{display:flex;align-items:flex-start;gap:8px 12px;flex-wrap:wrap}
+/* 标题占左侧，徽标成组靠右，不再被 space-between 拉散 */
+.name{margin:0 auto 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
+.summary{margin:0;font-size:var(--teloa-font-body);color:var(--teloa-text);line-height:var(--teloa-leading-label)}
+.meta{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.stars{display:inline-flex;gap:1px;vertical-align:-1px;color:var(--teloa-accent)}
+.badge{display:inline-flex;align-items:center;border:1px solid var(--teloa-border);border-radius:999px;padding:1px 8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);white-space:nowrap}
+.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.actions button{font:inherit;font-size:var(--teloa-font-control);border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);padding:4px 12px;cursor:pointer}
+.actions button:hover:not(:disabled){background:var(--teloa-hover)}
+.actions button:focus-visible,.details summary:focus-visible,.details a:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.actions button:disabled{cursor:default;color:var(--teloa-muted)}
+/* 主按钮：实心强调色（添加 / 连接 / 去配置），其余为描边次按钮；不再用强调色描边，免得像危险操作 */
+.actions .primary{border-color:var(--teloa-accent);background:var(--teloa-accent);color:var(--teloa-on-accent);font-weight:var(--teloa-weight-medium)}
+.actions .primary:hover:not(:disabled){background:var(--teloa-accent);opacity:.9}
+.actions .primary:disabled{color:var(--teloa-on-accent);opacity:.6}
+.details{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.details summary{cursor:pointer;color:var(--teloa-text)}
+.details ul{margin:6px 0;padding-left:18px}
+.details p{margin:6px 0}
+.details a{color:var(--teloa-accent)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--teloa-font-caption);color:var(--teloa-muted);word-break:break-all}
+.error{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-text);background:var(--teloa-warn-bg);border-radius:8px;padding:6px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.error button{font:inherit;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);padding:2px 10px;cursor:pointer}
+.status{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+/* 详情：返回链接 + 一张完整卡片（添加、来源与许可、评价、问题反馈都在这里） */
+.section .backLink{display:inline-flex;align-items:center;gap:6px;justify-self:start;min-height:32px;padding:0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.section .backLink:hover{color:var(--teloa-text)}
+.section .backLink:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.detailView{max-width:760px}
+.detailView .card{padding:20px 22px;gap:10px}
+.detailView .name{font-size:var(--teloa-font-section)}
+/* 评价正文按纯文本显示：保留换行、长串强制折行 */
+.reviewBody{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--teloa-text)}
+.details .distribution{list-style:none;margin:6px 0;padding:0;display:grid;grid-template-columns:max-content minmax(80px,1fr) max-content;align-items:center;gap:2px 8px;max-width:320px}
+.distribution li{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center}
+.distribution li>span:last-child{text-align:end;font-variant-numeric:tabular-nums}
+.distributionBar{display:block;height:6px;border-radius:3px;background:var(--teloa-subtle);overflow:hidden}
+.distributionBar i{display:block;height:100%;border-radius:3px;background:var(--teloa-accent)}
+.confirm{margin:6px 0;padding:8px 10px;border:1px solid var(--teloa-accent);border-radius:8px;color:var(--teloa-text)}
+.reviewForm{display:grid;gap:6px;margin-top:6px}
+.reviewForm label{display:grid;gap:4px;color:var(--teloa-muted)}
+.reviewForm select,.reviewForm textarea{font:inherit;font-size:var(--teloa-font-control);color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:8px;padding:4px 8px;box-sizing:border-box}
+.reviewForm select{justify-self:start}
+.reviewForm textarea{width:100%;max-width:560px;resize:vertical}
+.reviewForm select:focus-visible,.reviewForm textarea:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+
+.alternatives{border-top:1px solid var(--teloa-border);padding-top:8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.alternatives button{font:inherit;color:var(--teloa-accent);background:none;border:0;padding:4px 0;cursor:pointer;text-align:start;overflow-wrap:anywhere;max-width:100%}
+.alternatives button:hover{text-decoration:underline}
+.alternatives button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}

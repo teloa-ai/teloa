@@ -1,0 +1,139 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.othmanadi.planning-with-files",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "3.20.7",
+  "taxonomy": {
+    "functions": [
+      "automation"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "planning-with-files",
+    "title": {
+      "zh-CN": "文件式任务规划",
+      "en": "Planning with files"
+    },
+    "summary": {
+      "zh-CN": "基于文件的持久化规划工具，维护任务计划、调查结果和进度追踪。用于复杂多步骤工作管理。",
+      "en": "Persistent file-based planning for multi-step AI-agent work. Keeps task_plan.md, findings.md, and progress.md on disk; lifecycle hooks inject selected project planning context. Automatic recovery reads project planning files only. Explicit session-catchup.py --metadata reads same-project local agent"
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "othmanadi",
+    "slug": "planning-with-files",
+    "version": "3.20.7",
+    "files": [
+      {
+        "path": "examples.md",
+        "sha256": "930b18a2360cfce582080dc89cf13de81e25ad5fd623264a5b75f4fc98d899ac",
+        "size": 4720
+      },
+      {
+        "path": "reference.md",
+        "sha256": "cf1c0639ce33373d812449bbc7897a5bbf671099d5d6896f6adbaca0ef068f97",
+        "size": 8673
+      },
+      {
+        "path": "SKILL.md",
+        "sha256": "5c2a37ad3a4d6a51d0453267a2c18b7b8eb78d4430fec733e93cbac00ec0e8da",
+        "size": 38654
+      },
+      {
+        "path": "templates/analytics_findings.md",
+        "sha256": "cd46495d0a7d59f150f1ecc7f9528bb1b0856bec73a2d04e06f48cdb6798ec0f",
+        "size": 1803
+      },
+      {
+        "path": "templates/analytics_task_plan.md",
+        "sha256": "23bd59a0dae765eb1058ea0287447f2c9da7558d6ec79a6d167341e6e13f13f8",
+        "size": 2668
+      },
+      {
+        "path": "templates/findings.md",
+        "sha256": "bb9237ccbf08148d7f7f23ad58fbc9bd7c879c6d0cbca1d533b5b5f21c26c529",
+        "size": 1161
+      },
+      {
+        "path": "templates/loop.md",
+        "sha256": "26b3f2bd8094c6e2e2e6c47a6548a1f6506eaa02f857870922d855659bc8c31c",
+        "size": 2180
+      },
+      {
+        "path": "templates/progress.md",
+        "sha256": "28fc357000ed2b18910c4e436f0f2e02f4abf0acd29cce370a2670640974f31c",
+        "size": 1547
+      },
+      {
+        "path": "templates/task_plan.md",
+        "sha256": "3c4b61444270f689c3dab81b7113467fb87e9705175aea9c3a3b970bd4e777a3",
+        "size": 2257
+      },
+      {
+        "path": "templates/task_plan_autonomous.md",
+        "sha256": "5a93e639a15a3d0e4f89d915199cf09cdd211441547eba86bed34164edc25891",
+        "size": 3268
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "6878886ba57dc45fafa74829a8234cfa68b2b11d7957bebb507c43a86494a0a9",
+        "size": 2522
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 43869,
+    "installsLabel": "4.4 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "hooks",
+      "count": 1
+    },
+    {
+      "kind": "scripts",
+      "count": 14
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 1 openclaw hook file(s)",
+      "en": "Strip before porting: strip 1 openclaw hook file(s)"
+    },
+    {
+      "zh-CN": "移植时需处理：strip 14 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 14 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "bash",
+      "python"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

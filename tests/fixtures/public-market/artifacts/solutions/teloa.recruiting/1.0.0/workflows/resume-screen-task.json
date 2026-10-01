@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "resume-screen-task",
+  "title": "简历初筛与对照清单",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "将一批简历逐份对照目标岗位 JD 的条件，输出「JD 条目 × 候选人」对照矩阵与逐份出处明细；只记录满足、未满足、未提及、疑似满足四种状态，不打分、不排名、不给录用建议。",
+  "requirements": [
+    "目标岗位 JD 或筛选条件列表（已上传或在会话中给出）",
+    "待筛选的简历文件（已上传）"
+  ],
+  "output": "初筛对照清单：对照条目表、对照矩阵、逐份出处明细、材料待确认、无法对照的条件、合规提示、个人信息提示；不含评分与录用建议",
+  "skills": [
+    {
+      "id": "resume-screen-checklist",
+      "title": "简历初筛对照清单",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "简历初筛与对照清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "简历初筛与对照清单",
+        "en": "Resume screening and checklist task"
+      }
+    },
+    "description": {
+      "original": "将一批简历逐份对照目标岗位 JD 的条件，输出「JD 条目 × 候选人」对照矩阵与逐份出处明细；只记录满足、未满足、未提及、疑似满足四种状态，不打分、不排名、不给录用建议。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "将一批简历逐份对照目标岗位 JD 的条件，输出「JD 条目 × 候选人」对照矩阵与逐份出处明细；只记录满足、未满足、未提及、疑似满足四种状态，不打分、不排名、不给录用建议。",
+        "en": "Compare each resume against the JD conditions and output a JD-item-by-candidate matrix with per-resume source details; only four states are recorded (met, not met, not mentioned, possibly met) with no scoring, ranking or hiring recommendation."
+      }
+    },
+    "requirements": [
+      {
+        "original": "目标岗位 JD 或筛选条件列表（已上传或在会话中给出）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "目标岗位 JD 或筛选条件列表（已上传或在会话中给出）",
+          "en": "Target JD or list of screening conditions (uploaded or given in the conversation)"
+        }
+      },
+      {
+        "original": "待筛选的简历文件（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "待筛选的简历文件（已上传）",
+          "en": "Resume files to screen (already uploaded)"
+        }
+      }
+    ],
+    "output": {
+      "original": "初筛对照清单：对照条目表、对照矩阵、逐份出处明细、材料待确认、无法对照的条件、合规提示、个人信息提示；不含评分与录用建议",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "初筛对照清单：对照条目表、对照矩阵、逐份出处明细、材料待确认、无法对照的条件、合规提示、个人信息提示；不含评分与录用建议",
+        "en": "Screening checklist: condition table, comparison matrix, per-resume source details, items needing confirmation, conditions that cannot be compared, compliance notes and personal-data notes; no scores or hiring recommendations"
+      }
+    }
+  }
+}

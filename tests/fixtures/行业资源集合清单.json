@@ -1,0 +1,90 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "security-review",
+  "title": "安全运营资源集合验收",
+  "version": "1.0.0",
+  "domain": "security",
+  "description": "调查与协作行业环境",
+  "resources": [
+    {
+      "id": "investigator",
+      "kind": "role",
+      "title": "调查岗",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/investigator.json"
+      }
+    },
+    {
+      "id": "handbook",
+      "kind": "knowledge",
+      "title": "调查手册",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/handbook.md"
+      }
+    },
+    {
+      "id": "investigate",
+      "kind": "skill",
+      "title": "告警调查",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/investigate/SKILL.md"
+      }
+    },
+    {
+      "id": "alerts",
+      "kind": "mcp",
+      "title": "告警连接",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "connections/alerts.json"
+      }
+    },
+    {
+      "id": "triage",
+      "kind": "work-template",
+      "title": "告警核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "tasks/triage.json"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "investigator",
+      "to": "handbook"
+    },
+    {
+      "kind": "role-skill",
+      "from": "investigator",
+      "to": "investigate"
+    },
+    {
+      "kind": "role-connection",
+      "from": "investigator",
+      "to": "alerts"
+    },
+    {
+      "kind": "role-work",
+      "from": "investigator",
+      "to": "triage"
+    }
+  ],
+  "entrypoints": [
+    "triage"
+  ]
+}

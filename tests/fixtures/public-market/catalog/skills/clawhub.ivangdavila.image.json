@@ -1,0 +1,113 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.image",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.4",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "image",
+    "title": {
+      "zh-CN": "图像处理",
+      "en": "Image"
+    },
+    "summary": {
+      "zh-CN": "创建、检查和优化图像文件，支持格式转换和图像处理。用于视觉资产管理和图像编辑。",
+      "en": "Create, inspect, process, and optimize image files and visual assets with reliable format choice, resizing, compression, color-profile, metadata, and platfor..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "image",
+    "version": "1.0.4",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "b51263826ed06badee2998bb237b51b4bfe05572e337fcdb749c6b753ca1758f",
+        "size": 13968
+      },
+      {
+        "path": "accessibility.md",
+        "sha256": "9207daaf45ff17b3e5d79046dbaa227838cfe4637e62b76bcbbb94b8be81dc34",
+        "size": 2651
+      },
+      {
+        "path": "branding.md",
+        "sha256": "b00ac1616b847d606c67a0f7ef585cdaae932e12279013ed869d2384814f5763",
+        "size": 2954
+      },
+      {
+        "path": "commands.md",
+        "sha256": "7fccf6f13bfd60d2ff8f49b918fcc39425e4ca6d8e88b9452709eed4c7f93314",
+        "size": 3591
+      },
+      {
+        "path": "ecommerce.md",
+        "sha256": "d5daf902e2fc03905529840e957edb7332ef5521b112af6d7c6803ab851cd134",
+        "size": 2834
+      },
+      {
+        "path": "photography.md",
+        "sha256": "419bbf2ec3ef38e89cd26bc0fd70094425d77ef52c7e945085307cbb9a6bee5d",
+        "size": 2653
+      },
+      {
+        "path": "screenshots.md",
+        "sha256": "794f3c03d444365425d5784c5ce2a7d15e331d14e6f00574c2a2eb8b8be9fe1a",
+        "size": 2805
+      },
+      {
+        "path": "social.md",
+        "sha256": "68612b55aa18d14b07aad5e37477e353686929eb26c81a9821114608963c5683",
+        "size": 2521
+      },
+      {
+        "path": "web.md",
+        "sha256": "b2d366affae1789ace5eba72d5a83a69b281b67ca3c9ac634902ca3963f74c69",
+        "size": 3841
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "09348baad0b20b9291c33285fa941d441f07ee408d478e5341e125163799ffdc",
+        "size": 2055
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 22854,
+    "installsLabel": "2.3 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

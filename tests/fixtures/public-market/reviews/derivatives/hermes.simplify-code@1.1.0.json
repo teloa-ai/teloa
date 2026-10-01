@@ -1,0 +1,57 @@
+{
+  "format": "teloa.derivative-review/v1",
+  "entryId": "hermes.simplify-code",
+  "version": "1.1.0",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa",
+  "changeChecks": [
+    {
+      "changeId": "HSC-M08",
+      "method": "review",
+      "result": "pass",
+      "evidence": "SKILL.md 标题下的修改声明含 MODIFICATIONS.md，2026-09-28 市场校验器 derivative.change-notice 通过；按主控 2026-09-28 裁定归 adapted。"
+    },
+    {
+      "changeId": "HSC-M09",
+      "method": "test",
+      "result": "pass",
+      "evidence": "2026-09-28 市场校验器 skill.frontmatter-keys 规则通过（frontmatter 只有 name、description，name 与 skill.name 一致）；与修剪前的 SKILL.md（sha256 cb340074…）逐行比对，除删去的 frontmatter 行外正文完全相同。原 HSC-M07 修改的 version 字段随本条删除，不再单列。"
+    },
+    {
+      "changeId": "HSC-M02",
+      "method": "review",
+      "result": "pass",
+      "evidence": "独立复判（reviews/derivatives/hermes.simplify-code/review-2.md §2）核对：字段齐全、分类符合定稿；盲评阳性样本两版均 20/20、0 截断，新增约束没有压制真实发现（仅说明未退化，不作为效果证据）。首轮复审（reviews/derivatives/hermes.simplify-code/review-1.md）指出的行号错误已更正（原版 L110）。"
+    },
+    {
+      "changeId": "HSC-M03",
+      "method": "review",
+      "result": "pass",
+      "evidence": "独立复判（reviews/derivatives/hermes.simplify-code/review-2.md §2）核对：字段齐全、分类符合定稿；盲评阳性样本两版均 20/20、0 截断，新增约束没有压制真实发现（仅说明未退化，不作为效果证据）。复判 H2 指出的行号已更正为原版 L113 之后。"
+    },
+    {
+      "changeId": "HSC-M04",
+      "method": "review",
+      "result": "pass",
+      "evidence": "独立复判（reviews/derivatives/hermes.simplify-code/review-2.md §2）核对：字段齐全、分类符合定稿；盲评阳性样本两版均 20/20、0 截断，新增约束没有压制真实发现（仅说明未退化，不作为效果证据）。本条对应首轮复审（reviews/derivatives/hermes.simplify-code/review-1.md）提示层建议中的「默认空结果」。"
+    },
+    {
+      "changeId": "HSC-M05",
+      "method": "review",
+      "result": "pass",
+      "evidence": "独立复判（reviews/derivatives/hermes.simplify-code/review-2.md §2）核对：字段齐全、分类符合定稿；盲评阳性样本两版均 20/20、0 截断，新增约束没有压制真实发现（仅说明未退化，不作为效果证据）。本条对应首轮复审（reviews/derivatives/hermes.simplify-code/review-1.md）提示层建议中的「efficiency 自检轮」。"
+    },
+    {
+      "changeId": "HSC-M06",
+      "method": "review",
+      "result": "pass",
+      "evidence": "独立复判（reviews/derivatives/hermes.simplify-code/review-2.md §2）核对：字段齐全、分类符合定稿；盲评阳性样本两版均 20/20、0 截断，新增约束没有压制真实发现（仅说明未退化，不作为效果证据）。依据：首轮测试在 4096 上限下出现思考耗尽、没有输出（reviews/derivatives/hermes.simplify-code/review-1.md），复测在 8192 上限下 120 次采样截断 0 次（reviews/derivatives/hermes.simplify-code/review-2.md §1）。复判 H2 指出的行号已更正为原版 L245 之后。"
+    },
+    {
+      "changeId": "HSC-M01",
+      "method": "reproduction",
+      "result": "pass",
+      "evidence": "盲评复测（reviews/derivatives/hermes.simplify-code/review-2.md §1）：qwen3:4b 与 qwen3:8b × 原版/二次开发版 × 3 组未见输入 × 10 次采样，共 120 次，8k 输出上限、0 截断；阴性编造 4b 两版均 0/20，8b 原版 5/20、二次开发版 4/20（Fisher 双侧 p=1.0），阳性两版均 10/10。结论：版本差异不可检出，本条不宣称降低编造，依据是表述改进（去掉诱导编造的要求、恢复 \"or safer\" 出口），故归 improved。独立复判（reviews/derivatives/hermes.simplify-code/review-2.md §2）解盲前独立判读，与实现者判读零不一致，并确认 SKILL.md 中已无测试答案泄漏。判读者与实现者同为一人、一条样本在解盲后改判，均已如实记录。"
+    }
+  ]
+}

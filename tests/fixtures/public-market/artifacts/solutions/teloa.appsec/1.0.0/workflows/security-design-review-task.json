@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "security-design-review-task",
+  "title": "安全设计评审任务",
+  "version": "1.0.0",
+  "domain": "AppSec",
+  "description": "对架构文档或 API 契约按 ASVS 5.0.0 章节编号执行安全评审，输出带证据引用的评审备忘录。",
+  "requirements": [
+    "PRD、架构图或系统设计文档（注明版本或日期）",
+    "数据分类说明（哪些数据属于敏感/个人/机密）",
+    "用户/服务身份与权限矩阵（初稿即可）"
+  ],
+  "output": "安全评审备忘录：适用 ASVS 5.0.0 章节清单、逐条评审结论（已满足/有条件满足/证据不足/需整改）、差距与责任人/期限建议、未决事项",
+  "skills": [
+    {
+      "id": "security-design-review",
+      "title": "安全设计评审",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "安全设计评审任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "安全设计评审任务",
+        "en": "Security design review task"
+      }
+    },
+    "description": {
+      "original": "对架构文档或 API 契约按 ASVS 5.0.0 章节编号执行安全评审，输出带证据引用的评审备忘录。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对架构文档或 API 契约按 ASVS 5.0.0 章节编号执行安全评审，输出带证据引用的评审备忘录。",
+        "en": "Perform a security review of architecture documents or API contracts against ASVS 5.0.0 section numbers, producing a review memo with evidence citations."
+      }
+    },
+    "requirements": [
+      {
+        "original": "PRD、架构图或系统设计文档（注明版本或日期）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "PRD、架构图或系统设计文档（注明版本或日期）",
+          "en": "PRD, architecture diagram, or system design document (with version or date)"
+        }
+      },
+      {
+        "original": "数据分类说明（哪些数据属于敏感/个人/机密）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "数据分类说明（哪些数据属于敏感/个人/机密）",
+          "en": "Data classification description (which data is sensitive/personal/confidential)"
+        }
+      },
+      {
+        "original": "用户/服务身份与权限矩阵（初稿即可）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "用户/服务身份与权限矩阵（初稿即可）",
+          "en": "User/service identity and permission matrix (draft acceptable)"
+        }
+      }
+    ],
+    "output": {
+      "original": "安全评审备忘录：适用 ASVS 5.0.0 章节清单、逐条评审结论（已满足/有条件满足/证据不足/需整改）、差距与责任人/期限建议、未决事项",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "安全评审备忘录：适用 ASVS 5.0.0 章节清单、逐条评审结论（已满足/有条件满足/证据不足/需整改）、差距与责任人/期限建议、未决事项",
+        "en": "Security review memo: applicable ASVS 5.0.0 sections, per-item verdicts (met/conditionally met/insufficient evidence/needs remediation), gaps with suggested owners and timelines, open questions"
+      }
+    }
+  }
+}

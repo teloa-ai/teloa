@@ -1,0 +1,126 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.openai",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "openai",
+    "title": {
+      "zh-CN": "OpenAI",
+      "en": "OpenAI"
+    },
+    "summary": {
+      "zh-CN": "OpenAI 官方 API（GPT 系列）；国内需海外网络。",
+      "en": "OpenAI official API (GPT models); needs an overseas network from China."
+    },
+    "form": "cloud",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": true,
+      "vision": true,
+      "reasoning": true,
+      "structured": true
+    },
+    "contextWindow": 1050000,
+    "license": {
+      "spdx": "custom",
+      "name": "OpenAI Services Agreement",
+      "url": "https://openai.com/policies/services-agreement/",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "proxy-required",
+    "support": "supported",
+    "notes": [
+      {
+        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+        "en": "Service address and model ids verified against official docs on 2026-09-26."
+      }
+    ],
+    "cloud": {
+      "provider": {
+        "kind": "pi-ai",
+        "id": "openai"
+      },
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "gpt-6-sol",
+          "name": "GPT-6 Sol",
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "gpt-6-luna",
+          "name": "GPT-6 Luna",
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "input": [
+            "text",
+            "image"
+          ]
+        }
+      ],
+      "priceBand": "high",
+      "credentialLabel": {
+        "zh-CN": "OpenAI API 密钥",
+        "en": "OpenAI API key"
+      },
+      "signupUrl": "https://platform.openai.com"
+    },
+    "local": null,
+    "variants": null
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://openai.com/policies/services-agreement/"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+        "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

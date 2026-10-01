@@ -1,0 +1,20 @@
+{
+ "format":"teloa.business-package/v2","id":"appsec-ledger","title":"应用安全台账","version":"1.1.1","domain":"AppSec","scope":"AppSec",
+ "description":"统一管理应用、漏洞和修复工单，提供风险分布、SLA 趋势与修复任务入口。",
+ "localized":{"title":{"original":"应用安全台账","defaultLocale":"en","locales":{"zh-CN":"应用安全台账","en":"Application security ledger"}},"description":{"original":"统一管理应用、漏洞和修复工单，提供风险分布、SLA 趋势与修复任务入口。","defaultLocale":"en","locales":{"zh-CN":"统一管理应用、漏洞和修复工单，提供风险分布、SLA 趋势与修复任务入口。","en":"Manage applications, vulnerabilities, and remediation tickets in one place, with risk distribution, SLA trends, and remediation task entry points."}}},
+ "resources":[
+  {"id":"appsec-finding-source","kind":"data-source","title":"应用安全数据源","localized":{"title":{"original":"应用安全数据源","defaultLocale":"en","locales":{"zh-CN":"应用安全数据源","en":"Application security data source"}}},"version":"1.0.0","required":true,"source":{"kind":"local","path":"connections/data-source.json"}},
+  {"id":"vulnerability-fix","kind":"work-template","title":"漏洞修复","localized":{"title":{"original":"漏洞修复","defaultLocale":"en","locales":{"zh-CN":"漏洞修复","en":"Vulnerability remediation"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"workflows/vulnerability-fix.json"}},
+  {"id":"application","kind":"object-type","title":"应用","localized":{"title":{"original":"应用","defaultLocale":"en","locales":{"zh-CN":"应用","en":"Application"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"object-types/application.json"}},
+  {"id":"vulnerability","kind":"object-type","title":"漏洞","localized":{"title":{"original":"漏洞","defaultLocale":"en","locales":{"zh-CN":"漏洞","en":"Vulnerability"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"object-types/vulnerability.json"}},
+  {"id":"fix-ticket","kind":"object-type","title":"修复工单","localized":{"title":{"original":"修复工单","defaultLocale":"en","locales":{"zh-CN":"修复工单","en":"Remediation ticket"}}},"version":"1.0.1","required":true,"source":{"kind":"local","path":"object-types/fix-ticket.json"}},
+  {"id":"appsec-risk-level","kind":"business-view","title":"风险等级分布","localized":{"title":{"original":"风险等级分布","defaultLocale":"en","locales":{"zh-CN":"风险等级分布","en":"Risk level distribution"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/appsec-risk-level.json"}},
+  {"id":"appsec-sla-trend","kind":"business-view","title":"SLA 到期趋势","localized":{"title":{"original":"SLA 到期趋势","defaultLocale":"en","locales":{"zh-CN":"SLA 到期趋势","en":"SLA due-date trend"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/appsec-sla-trend.json"}},
+  {"id":"appsec-application-list","kind":"business-view","title":"应用清单","localized":{"title":{"original":"应用清单","defaultLocale":"en","locales":{"zh-CN":"应用清单","en":"Application list"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/appsec-application-list.json"}},
+  {"id":"appsec-vulnerability-list","kind":"business-view","title":"漏洞清单","localized":{"title":{"original":"漏洞清单","defaultLocale":"en","locales":{"zh-CN":"漏洞清单","en":"Vulnerability list"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/appsec-vulnerability-list.json"}},
+  {"id":"appsec-fix-ticket-list","kind":"business-view","title":"修复工单清单","localized":{"title":{"original":"修复工单清单","defaultLocale":"en","locales":{"zh-CN":"修复工单清单","en":"Remediation ticket list"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"views/appsec-fix-ticket-list.json"}},
+  {"id":"open-fix-ticket","kind":"business-action","title":"开一张修复工单","localized":{"title":{"original":"开一张修复工单","defaultLocale":"en","locales":{"zh-CN":"开一张修复工单","en":"Create a remediation ticket"}}},"version":"1.0.1","required":false,"source":{"kind":"local","path":"actions/open-fix-ticket.json"}}
+ ],
+ "relations":[],
+ "entrypoints":["vulnerability-fix"]
+}

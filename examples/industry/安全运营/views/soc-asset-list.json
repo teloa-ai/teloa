@@ -1,0 +1,44 @@
+{
+  "format": "teloa.business-view/v1",
+  "id": "soc-asset-list",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "资产清单",
+  "kind": "list",
+  "chart": "table",
+  "objectType": "asset",
+  "measures": [
+    {
+      "id": "registered",
+      "label": "接入时间",
+      "aggregation": "max",
+      "field": "registered-at",
+      "localized": {
+        "label": {
+          "original": "接入时间",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "接入时间",
+            "en": "Onboarded at"
+          }
+        }
+      }
+    }
+  ],
+  "filters": [],
+  "sort": {
+    "by": "dimension",
+    "direction": "asc"
+  },
+  "limit": 100,
+  "localized": {
+    "title": {
+      "original": "资产清单",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "资产清单",
+        "en": "Asset list"
+      }
+    }
+  }
+}

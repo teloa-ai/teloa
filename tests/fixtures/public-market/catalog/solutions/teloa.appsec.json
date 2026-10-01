@@ -1,0 +1,100 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.appsec",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "security"
+    ],
+    "industries": [
+      "cyber-security/appsec"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "appsec-review",
+    "title": {
+      "zh-CN": "应用安全",
+      "en": "Application security"
+    },
+    "summary": {
+      "zh-CN": "代码审计、安全设计评审（ASVS）、STRIDE 威胁建模、扫描结果复核、修复验证与 Web 测试计划；不执行主动测试。",
+      "en": "Code audit, ASVS design review, STRIDE threat modeling, scan triage, fix verification and web test planning; no active testing is performed."
+    },
+    "scope": "AppSec",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "审计某一版本的代码，给出文件行号、调用链证据、CWE 与修复建议",
+          "en": "Audit a given version of the code with file and line, call-chain evidence, CWE and fixes"
+        },
+        {
+          "zh-CN": "按 ASVS 章节评审设计，按 STRIDE 建立威胁模型",
+          "en": "Review designs against ASVS chapters and build STRIDE threat models"
+        },
+        {
+          "zh-CN": "复核 SAST/SCA/DAST 结果、去重定级并验证修复",
+          "en": "Triage SAST/SCA/DAST results, dedupe, prioritise and verify fixes"
+        },
+        {
+          "zh-CN": "按 WSTG 编写 Web 测试计划与发现记录",
+          "en": "Write WSTG-based web test plans and findings records"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "锁定版本的代码、架构文档或扫描报告",
+          "en": "Code at a locked version, architecture documents or scan reports"
+        },
+        {
+          "zh-CN": "Web 测试需书面授权范围与停止联系人",
+          "en": "Web testing needs written scope and a stop contact"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你上传的代码、文档与报告",
+          "en": "Reads only the code, documents and reports you upload"
+        },
+        {
+          "zh-CN": "需你确认才会做：推送代码、提交外部工单、执行任何主动测试",
+          "en": "Only with your confirmation: pushing code, filing external tickets or running any active test"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型验证代码审计：对合成样例给出带行号、CWE、置信度与修复验证方法的发现。",
+        "en": "Code audit verified with a real model on 2026-09-25: findings on a synthetic sample include line numbers, CWE, confidence and fix verification."
+      },
+      {
+        "zh-CN": "只做静态分析与计划；主动测试需另行授权的隔离环境。",
+        "en": "Static analysis and planning only; active testing needs a separately authorised isolated environment."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

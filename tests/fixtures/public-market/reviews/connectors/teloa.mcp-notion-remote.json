@@ -1,0 +1,37 @@
+{
+  "format": "teloa.connector-recipe-review/v1",
+  "reviewedAt": "2026-09-28",
+  "reviewer": "Teloa 连接器配方核对（npm pack 解包读源码 / 官方文档与公开元数据）",
+  "note": "每条记录该连接器按目录配方启动时上游实际注册的工具（名 → read/write）、凭据槽与启动参数。离线用例逐条比对目录条目；上游升级或改配方时须先重新核对再改本文件。",
+  "entries": {
+    "teloa.mcp-notion-remote": {
+      "evidence": "2026-09-26：Notion 文档 mcp-supported-tools 列 37 个工具，目录声明的 12 个均在且读写一致。2026-09-28 复核：受保护资源元数据 resource=https://mcp.notion.com/mcp、authorization_servers [https://mcp.notion.com]、scopes_supported [default]；授权服务器元数据 issuer 与之一致，registration_endpoint https://mcp.notion.com/register，token_endpoint_auth_methods_supported 含 none，code_challenge_methods_supported 含 S256。2026-09-27 主控自测：DCR 201，授权端点（resource=https://mcp.notion.com/mcp，PKCE S256）302 到 api.notion.com/v1/oauth/authorize，无 error。同一套宿主 OAuth 代码 2026-09-28 在 Cloudflare 连接器上用真实账户走通 DCR、授权、回调、令牌交换、initialize、tools/list、tools/call。按用户裁定（无 Notion 账号，不实测第三方真实账户）改为 supported，条件写明登录后环节未实测；instructions 字节数待真实授权后实测",
+      "recipe": {
+        "transport": "streamable-http",
+        "url": "https://mcp.notion.com/mcp"
+      },
+      "auth": {
+        "kind": "oauth",
+        "supported": true,
+        "scopes": [
+          "default"
+        ]
+      },
+      "toolFilter": "host-only",
+      "upstreamTools": {
+        "notion-search": "read",
+        "notion-fetch": "read",
+        "notion-query-data-sources": "read",
+        "notion-get-comments": "read",
+        "notion-get-teams": "read",
+        "notion-get-users": "read",
+        "notion-create-pages": "write",
+        "notion-update-page": "write",
+        "notion-move-pages": "write",
+        "notion-duplicate-page": "write",
+        "notion-create-database": "write",
+        "notion-create-comment": "write"
+      }
+    }
+  }
+}

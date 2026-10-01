@@ -1,0 +1,14 @@
+{
+  "format": "teloa.plan/v1",
+  "version": "1.0.0",
+  "title": "每日值班交接计划",
+  "workTemplate": "incident-handover-task",
+  "dataScope": "当班已上传或明确提供的事件与告警记录、关键动作记录、下一班次计划变更；错误追踪、告警平台与代码托管连接为可选项，需在部署时另行配置。",
+  "trigger": {
+    "kind": "schedule",
+    "cadence": "daily",
+    "weekday": 1,
+    "time": "17:30",
+    "timezone": "Asia/Shanghai"
+  }
+}

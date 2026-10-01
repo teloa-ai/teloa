@@ -1,0 +1,90 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.lidayan.tushare-data",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.1.19",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "tushare-data",
+    "title": {
+      "zh-CN": "Tushare 股票数据",
+      "en": "tushare"
+    },
+    "summary": {
+      "zh-CN": "自然语言查询 Tushare 股票数据，支持行情查询、财报分析和板块分析。用于股票研究和投资分析。需自备 Tushare API 密钥。",
+      "en": "面向中文自然语言的 Tushare 数据研究技能。用于把“看看这只股票最近怎么样”“帮我查财报趋势”“最近哪个板块最强”“北向资金在买什么”“给我导出一份行情数据”这类请求，转成可执行的数据获取、清洗、对比、筛选、导出与简要分析流程。适用于 A 股、指数、ETF/基金、财务、估值、资金流、公告新闻、板块概念与宏观..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "lidayan",
+    "slug": "tushare-data",
+    "version": "1.1.19",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "6f9ac8a66c89d96bc2bd2baaad4600c2e7942a662f0665a6b81631bdc65a4aed",
+        "size": 17758
+      },
+      {
+        "path": "references/数据接口.md",
+        "sha256": "0df85aa1265a59b963fca6660eb3f58bec232aa2347c9c44d763d0d55a1b9cb2",
+        "size": 94114
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "75344b2573cebe7ca3ffe9a5c675903aab86660d0ac32a784fa02dc3c7e6eaa8",
+        "size": 2570
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 17497,
+    "installsLabel": "1.7 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [
+    {
+      "kind": "scripts",
+      "count": 2
+    }
+  ],
+  "modifications": [
+    {
+      "zh-CN": "移植时需处理：strip 2 script file(s) (method remains text-portable)",
+      "en": "Strip before porting: strip 2 script file(s) (method remains text-portable)"
+    }
+  ],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "python"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

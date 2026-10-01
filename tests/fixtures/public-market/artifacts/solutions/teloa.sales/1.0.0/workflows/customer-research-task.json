@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "customer-research-task",
+  "title": "客户研究简报",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "基于客户公开资料与已授权材料形成拜访前研究简报：客户背景事实、已表达的需求、推断的关注点、我方切入点与待确认问题，每条标来源与检索日期。不检索个人社交账号，不出现价格与承诺。",
+  "requirements": [
+    "客户材料（官网快照、公开资料、招标文件或客户发来的需求说明，已上传）",
+    "研究目的（一句话：为哪次拜访或机会做准备）；可选附产品事实库与历史接触记录"
+  ],
+  "output": "客户研究简报草案：来源清单与信息截止日期、客户背景事实（含来源与检索日期）、客户已表达的需求、推断的关注点（含依据）、我方切入点（对应产品事实库）、拜访待确认问题、信息冲突",
+  "skills": [
+    {
+      "id": "customer-research",
+      "title": "客户研究简报",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "客户研究简报",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "客户研究简报",
+        "en": "Customer research brief"
+      }
+    },
+    "description": {
+      "original": "基于客户公开资料与已授权材料形成拜访前研究简报：客户背景事实、已表达的需求、推断的关注点、我方切入点与待确认问题，每条标来源与检索日期。不检索个人社交账号，不出现价格与承诺。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于客户公开资料与已授权材料形成拜访前研究简报：客户背景事实、已表达的需求、推断的关注点、我方切入点与待确认问题，每条标来源与检索日期。不检索个人社交账号，不出现价格与承诺。",
+        "en": "Build a pre-meeting brief from public and authorized customer materials: background facts, stated needs, inferred concerns, our entry points and questions to confirm, each with source and retrieval date. No personal social accounts are searched; no prices or commitments appear."
+      }
+    },
+    "requirements": [
+      {
+        "original": "客户材料（官网快照、公开资料、招标文件或客户发来的需求说明，已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "客户材料（官网快照、公开资料、招标文件或客户发来的需求说明，已上传）",
+          "en": "Customer materials (website snapshots, public documents, tender files or a requirements note from the customer, uploaded)"
+        }
+      },
+      {
+        "original": "研究目的（一句话：为哪次拜访或机会做准备）；可选附产品事实库与历史接触记录",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "研究目的（一句话：为哪次拜访或机会做准备）；可选附产品事实库与历史接触记录",
+          "en": "Research purpose (one sentence: which meeting or opportunity this prepares for); optionally the product fact base and past contact records"
+        }
+      }
+    ],
+    "output": {
+      "original": "客户研究简报草案：来源清单与信息截止日期、客户背景事实（含来源与检索日期）、客户已表达的需求、推断的关注点（含依据）、我方切入点（对应产品事实库）、拜访待确认问题、信息冲突",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "客户研究简报草案：来源清单与信息截止日期、客户背景事实（含来源与检索日期）、客户已表达的需求、推断的关注点（含依据）、我方切入点（对应产品事实库）、拜访待确认问题、信息冲突",
+        "en": "Customer research brief draft: source list and cut-off date, background facts (with source and retrieval date), stated needs, inferred concerns (with rationale), our entry points (mapped to the product fact base), questions to confirm at the meeting, information conflicts"
+      }
+    }
+  }
+}

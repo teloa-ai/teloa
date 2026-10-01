@@ -1,0 +1,104 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.research",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "knowledge-research",
+    "title": {
+      "zh-CN": "知识库与研究",
+      "en": "Knowledge and research"
+    },
+    "summary": {
+      "zh-CN": "上传资料即可开始：研究简报、多源对比、知识库条目与术语表，每条结论标来源与检索日期，事实与推断分开；写入知识库需你确认。",
+      "en": "Start from uploaded materials: research briefs, multi-source comparison, knowledge base articles and glossaries. Every conclusion carries its source and retrieval date, facts stay apart from inferences, and writing to a knowledge base needs your confirmation."
+    },
+    "scope": "research",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "从多份资料提炼可追溯研究简报，事实、推断与待核实项分开，每条标来源与检索日期",
+          "en": "Turn multiple materials into a traceable brief; facts, inferences and open items are separated, each with source and retrieval date"
+        },
+        {
+          "zh-CN": "把两个以上来源按统一维度逐格对比，列出一致、分歧与缺失项，不替你裁定谁对",
+          "en": "Compare two or more sources cell by cell along fixed dimensions, listing agreed, disputed and missing items without deciding which is right"
+        },
+        {
+          "zh-CN": "把已确认结论整理为知识库条目草案，含适用范围、来源清单与最近核对日期；与旧条目冲突时并列差异",
+          "en": "Draft knowledge base articles from confirmed findings with scope, source list and last-checked date; conflicts with existing articles shown side by side"
+        },
+        {
+          "zh-CN": "从文档与对话记录提取术语表，定义附来源，别名合并，冲突定义并列",
+          "en": "Extract a glossary from documents and conversations; definitions sourced, aliases merged, conflicting definitions listed side by side"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "文档、报告、网页快照或对话记录等资料",
+          "en": "Documents, reports, web snapshots or conversation records"
+        },
+        {
+          "zh-CN": "研究问题与读者；可选对比维度、来源优先级、知识库模板或已有条目",
+          "en": "The research question and audience; optionally comparison dimensions, source priority, knowledge base template or existing articles"
+        },
+        {
+          "zh-CN": "如需检索公开网页或写入知识库，另行添加并授权 context7、deepwiki、exa、notion 或语雀连接器（均为可选）",
+          "en": "To search public pages or write to a knowledge base, add and authorize the context7, deepwiki, exa, notion or yuque connector separately (all optional)"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件；授权检索时只查与问题直接相关的公开内容并记录检索日期",
+          "en": "Reads only the files you provide; with search authorized, looks up only public content related to the question and records the retrieval date"
+        },
+        {
+          "zh-CN": "需你确认才会做：写入知识库或外部系统、发送或分享草案、引用个人信息或未公开信息、把某来源当作权威",
+          "en": "Only with your confirmation: writing to a knowledge base or external system, sending or sharing drafts, quoting personal or unpublished information, treating one source as authoritative"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：研究简报、多源对比、知识库条目三个模板按合成样例产出结构与期望一致，关键事实逐条标注来源与位置，分歧并列不裁定，未写入知识库或外部系统。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-25: research brief, source comparison and knowledge-base article matched the expected structure on synthetic samples; facts carry source and location, disagreements are listed without adjudication, nothing written to any knowledge base or external system."
+      },
+      {
+        "zh-CN": "检索连接器与知识库写入连接为可选项，本版不内置。",
+        "en": "Search connectors and knowledge base write connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

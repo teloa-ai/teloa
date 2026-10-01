@@ -1,0 +1,74 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-figma",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "content-design",
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "figma",
+    "title": {
+      "zh-CN": "Figma 远程（OAuth，需厂商白名单）",
+      "en": "Figma Remote (OAuth, Vendor Allowlist Required)"
+    },
+    "summary": {
+      "zh-CN": "Figma 官方远程 MCP 服务，使用 OAuth 授权，但只允许 Figma MCP Catalog 所列的客户端连接。Teloa 尚未进入该名单，获批前暂不可添加。",
+      "en": "Figma's official remote MCP service uses OAuth but only allows clients listed in the Figma MCP Catalog. Teloa is not on the list yet, so this connector cannot be added until approval."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "mcp:connect"
+      ],
+      "requiresAllowlist": true
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.figma.com/mcp"
+    },
+    "tools": [],
+    "upstreamUrl": "https://developers.figma.com/docs/figma-mcp-server/"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Figma-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "客户端白名单：Figma 只允许 Figma MCP Catalog 所列客户端连接，Teloa 尚未获批（可通过官方等候名单申请），获批前 Teloa 拒绝添加",
+        "en": "Client allowlist: Figma only allows clients listed in the Figma MCP Catalog; Teloa is not approved yet (apply through the official waitlist), and Teloa refuses to add this connector until then"
+      },
+      {
+        "zh-CN": "服务端公开的资源配置列出的 OAuth scope 为 mcp:connect",
+        "en": "The server's published resource configuration lists mcp:connect as the OAuth scope"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

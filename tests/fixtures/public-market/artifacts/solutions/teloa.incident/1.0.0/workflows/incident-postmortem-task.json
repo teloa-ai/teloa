@@ -1,0 +1,78 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "incident-postmortem-task",
+  "title": "事件时间线与无责复盘报告",
+  "version": "1.0.0",
+  "domain": "incident",
+  "description": "把告警导出、部署与配置记录、日志摘录、值班群消息整理为五阶段事件时间线（UTC 双列、来源与可信度、关键用时），再据此起草无责复盘报告：影响、原因三层分析、做得好的地方、运气因素、改进行动建议与未完成事项。原因只归到系统与流程，行动项为建议，发送前需负责人确认。",
+  "requirements": [
+    "事件处理记录：告警导出、部署与配置变更记录、日志摘录、值班群或事件频道消息中至少两类（已上传）",
+    "事件 ID 与负责人提供的影响说明（受影响用户或请求数、数据完整性）",
+    "复盘会记录、成员书面说明、组织复盘模板（可选）"
+  ],
+  "output": "事件时间线（五阶段、UTC 与原时区、来源与可信度、四个关键用时、缺口）与无责复盘报告草案（摘要、影响、节点与用时、经过、触发条件/直接原因/促成因素、做得好、运气因素、改进行动建议、未完成事项、无责声明）；首部标注草案与来源",
+  "skills": [
+    {
+      "id": "incident-timeline",
+      "title": "事件时间线",
+      "version": "1.0.0"
+    },
+    {
+      "id": "incident-postmortem",
+      "title": "无责复盘报告",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "事件时间线与无责复盘报告",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "事件时间线与无责复盘报告",
+        "en": "Incident timeline and blameless postmortem"
+      }
+    },
+    "description": {
+      "original": "把告警导出、部署与配置记录、日志摘录、值班群消息整理为五阶段事件时间线（UTC 双列、来源与可信度、关键用时），再据此起草无责复盘报告：影响、原因三层分析、做得好的地方、运气因素、改进行动建议与未完成事项。原因只归到系统与流程，行动项为建议，发送前需负责人确认。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "把告警导出、部署与配置记录、日志摘录、值班群消息整理为五阶段事件时间线（UTC 双列、来源与可信度、关键用时），再据此起草无责复盘报告：影响、原因三层分析、做得好的地方、运气因素、改进行动建议与未完成事项。原因只归到系统与流程，行动项为建议，发送前需负责人确认。",
+        "en": "Turn alert exports, deployment and configuration records, log excerpts and on-call chat into a five-phase incident timeline (UTC with original zone, sources and confidence, key durations), then draft a blameless postmortem: impact, three-layer cause analysis, what went well, luck factors, improvement suggestions and open items. Causes are attributed to systems and process only, action items are suggestions, and the owner confirms before anything is sent."
+      }
+    },
+    "requirements": [
+      {
+        "original": "事件处理记录：告警导出、部署与配置变更记录、日志摘录、值班群或事件频道消息中至少两类（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "事件处理记录：告警导出、部署与配置变更记录、日志摘录、值班群或事件频道消息中至少两类（已上传）",
+          "en": "Incident records: at least two of alert exports, deployment and configuration change records, log excerpts, on-call or incident channel messages (already uploaded)"
+        }
+      },
+      {
+        "original": "事件 ID 与负责人提供的影响说明（受影响用户或请求数、数据完整性）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "事件 ID 与负责人提供的影响说明（受影响用户或请求数、数据完整性）",
+          "en": "Incident ID and the owner's impact statement (affected users or requests, data integrity)"
+        }
+      },
+      {
+        "original": "复盘会记录、成员书面说明、组织复盘模板（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "复盘会记录、成员书面说明、组织复盘模板（可选）",
+          "en": "Postmortem meeting notes, written statements from team members, your postmortem template (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "事件时间线（五阶段、UTC 与原时区、来源与可信度、四个关键用时、缺口）与无责复盘报告草案（摘要、影响、节点与用时、经过、触发条件/直接原因/促成因素、做得好、运气因素、改进行动建议、未完成事项、无责声明）；首部标注草案与来源",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "事件时间线（五阶段、UTC 与原时区、来源与可信度、四个关键用时、缺口）与无责复盘报告草案（摘要、影响、节点与用时、经过、触发条件/直接原因/促成因素、做得好、运气因素、改进行动建议、未完成事项、无责声明）；首部标注草案与来源",
+        "en": "Incident timeline (five phases, UTC and original zone, sources and confidence, four key durations, gaps) and a blameless postmortem draft (summary, impact, milestones and durations, narrative, trigger / direct cause / contributing factors, what went well, luck factors, improvement suggestions, open items, blameless statement); header marks draft status and sources"
+      }
+    }
+  }
+}

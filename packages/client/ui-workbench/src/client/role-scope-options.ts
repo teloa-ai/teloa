@@ -1,0 +1,1 @@
+export function roleScopeOptions(labels:Readonly<Record<string,string>>,selected:readonly string[]){const rows=Object.entries(labels);for(const scope of selected)if(!rows.some(([id])=>id===scope))rows.push([scope,scope]);return rows}

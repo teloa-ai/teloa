@@ -1,0 +1,5 @@
+.help{border-top:1px solid var(--teloa-border);padding-top:12px;color:var(--teloa-muted)}
+.help a{display:inline-flex;align-items:center;gap:8px;min-height:44px;max-width:100%;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label);text-decoration:none;overflow-wrap:anywhere}
+.help a svg{flex:none}
+.help a:hover{color:var(--teloa-text);text-decoration:underline;text-underline-offset:3px}
+.help a:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px;border-radius:4px}

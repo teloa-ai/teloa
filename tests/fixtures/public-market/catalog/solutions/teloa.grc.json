@@ -1,0 +1,96 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.grc",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.3",
+  "taxonomy": {
+    "functions": [
+      "security"
+    ],
+    "industries": [
+      "cyber-security/grc"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "grc-compliance",
+    "title": {
+      "zh-CN": "治理、风险与合规（GRC）",
+      "en": "Governance, risk and compliance (GRC)"
+    },
+    "summary": {
+      "zh-CN": "控制映射（ISO 27001、NIST CSF 2.0、SOC 2、等保 2.0）、证据索引、差距与整改计划、风险台账、安全问卷代拟与例外到期复核；只起草，不代签。",
+      "en": "Control mapping (ISO 27001, NIST CSF 2.0, SOC 2, MLPS 2.0), evidence indexes, gaps and remediation plans, risk registers, questionnaire drafts and exception reviews; drafts only, never signed on your behalf."
+    },
+    "scope": "grc",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "把制度与证据逐条对照到你选定的控制框架",
+          "en": "Map policies and evidence to the control framework you choose"
+        },
+        {
+          "zh-CN": "建立证据索引，输出差距与整改计划",
+          "en": "Build evidence indexes and gap remediation plans"
+        },
+        {
+          "zh-CN": "登记风险台账并评估固有与残余风险",
+          "en": "Maintain risk registers with inherent and residual scores"
+        },
+        {
+          "zh-CN": "逐题代拟安全问卷，标注需确认项",
+          "en": "Draft questionnaire answers and flag items needing confirmation"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "适用框架与版本、制度文件和证据清单",
+          "en": "Applicable frameworks and versions, policies and evidence lists"
+        },
+        {
+          "zh-CN": "问卷原文与组织背景",
+          "en": "Questionnaire files and organisation background"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你上传的制度、证据与问卷",
+          "en": "Reads only the policies, evidence and questionnaires you upload"
+        },
+        {
+          "zh-CN": "需你确认才会做：对外提交证据、签署问卷、接受风险或批准例外",
+          "en": "Only with your confirmation: submitting evidence, signing questionnaires, accepting risk or approving exceptions"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "标准条款只引用编号与自编摘要；适用标准由你确定。",
+        "en": "Standards are cited by number with our own summaries; you decide which standards apply."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "exception-review-task",
+  "title": "例外到期复核任务",
+  "version": "1.0.0",
+  "domain": "grc",
+  "description": "对即将到期或已到期的安全例外申请进行复核，评估原批准理由的有效性、补偿控制状态和当前风险水平，输出复核报告草案（含延续/关闭/升级建议）。例外延续须由授权人正式批准，本任务仅产出草案和建议。",
+  "requirements": [
+    "原例外申请记录（含批准日期、批准人、原始理由、到期日期）",
+    "当前控制实施状态说明（整改进展或补偿控制当前状态）",
+    "相关风险台账条目（如有）"
+  ],
+  "output": "例外复核报告草案：原例外背景还原、当前状态多维评估、延续/关闭/升级建议及理由，以及延续场景下的建议条件（期限、里程碑要求、授权层级建议）",
+  "skills": [
+    {
+      "id": "exception-review",
+      "title": "例外到期复核",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "例外到期复核任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "例外到期复核任务",
+        "en": "Exception expiry review task"
+      }
+    },
+    "description": {
+      "original": "对即将到期或已到期的安全例外申请进行复核，评估原批准理由的有效性、补偿控制状态和当前风险水平，输出复核报告草案（含延续/关闭/升级建议）。例外延续须由授权人正式批准，本任务仅产出草案和建议。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对即将到期或已到期的安全例外申请进行复核，评估原批准理由的有效性、补偿控制状态和当前风险水平，输出复核报告草案（含延续/关闭/升级建议）。例外延续须由授权人正式批准，本任务仅产出草案和建议。",
+        "en": "Review expiring or expired security exceptions by assessing the continued validity of original approval rationale, compensating control status, and current risk level. Produce a draft review report with extend/close/escalate recommendation. Exception renewals require authorized sign-off; this task produces only drafts and recommendations."
+      }
+    },
+    "requirements": [
+      {
+        "original": "原例外申请记录（含批准日期、批准人、原始理由、到期日期）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "原例外申请记录（含批准日期、批准人、原始理由、到期日期）",
+          "en": "Original exception request record (with approval date, approver, original rationale, and expiry date)"
+        }
+      },
+      {
+        "original": "当前控制实施状态说明（整改进展或补偿控制当前状态）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "当前控制实施状态说明（整改进展或补偿控制当前状态）",
+          "en": "Current control implementation status (remediation progress or compensating control current state)"
+        }
+      },
+      {
+        "original": "相关风险台账条目（如有）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "相关风险台账条目（如有）",
+          "en": "Related risk register entries (if available)"
+        }
+      }
+    ],
+    "output": {
+      "original": "例外复核报告草案：原例外背景还原、当前状态多维评估、延续/关闭/升级建议及理由，以及延续场景下的建议条件（期限、里程碑要求、授权层级建议）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "例外复核报告草案：原例外背景还原、当前状态多维评估、延续/关闭/升级建议及理由，以及延续场景下的建议条件（期限、里程碑要求、授权层级建议）",
+        "en": "Draft exception review report: original exception background restoration, multi-dimensional current state assessment, extend/close/escalate recommendation with rationale, and (for extend scenarios) suggested conditions including duration, milestone requirements, and recommended authorization level"
+      }
+    }
+  }
+}

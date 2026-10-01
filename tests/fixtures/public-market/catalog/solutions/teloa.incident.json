@@ -1,0 +1,116 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.incident",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "cloud-ops"
+    ],
+    "industries": [
+      "software/engineering"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "incident-response",
+    "title": {
+      "zh-CN": "研发事件响应",
+      "en": "Engineering incident response"
+    },
+    "summary": {
+      "zh-CN": "上传告警、日志、变更记录与值班消息即可开始：事件分级初判、回滚说明草案、时间线与无责复盘、值班交接，每个时间和结论都指向来源；不替你回滚或重启，不发布公告，不对个人归责。",
+      "en": "Start from uploaded alerts, logs, change records and on-call messages: incident triage, rollback note drafts, timelines with blameless postmortems and on-call handovers, with every time and conclusion pointing to its source; it never rolls back or restarts for you, publishes announcements, or blames individuals."
+    },
+    "scope": "incident",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "从告警、日志与用户反馈初判是否构成事件，按分级规则给出建议等级、证据与缺口",
+          "en": "Triage alerts, logs and user reports into an incident verdict with a suggested level, evidence and gaps under your severity policy"
+        },
+        {
+          "zh-CN": "列出异常前 24 小时内的疑似关联变更并算出时间差，只标疑似不下因果结论",
+          "en": "List suspected related changes from the 24 hours before the anomaly with time offsets, without causal claims"
+        },
+        {
+          "zh-CN": "为建议的回滚或配置变更起草说明：版本、影响、风险、描述性执行与验证步骤、待填写字段",
+          "en": "Draft notes for a proposed rollback or config change: versions, impact, risks, descriptive execution and verification steps, fields to fill in"
+        },
+        {
+          "zh-CN": "整理五阶段事件时间线并计算检测、响应、缓解与总持续用时",
+          "en": "Build a five-phase incident timeline and compute detection, response, mitigation and total durations"
+        },
+        {
+          "zh-CN": "起草无责复盘：三层原因、做得好的地方、运气因素、与促成因素对应的改进建议",
+          "en": "Draft a blameless postmortem: three-layer causes, what went well, luck factors, and improvements mapped to contributing factors"
+        },
+        {
+          "zh-CN": "生成值班交接：活跃事件、临时缓解到期项、下一班发布窗口与挂起的待确认动作",
+          "en": "Produce on-call handovers: active incidents, expiring temporary mitigations, next-shift release windows and pending confirmations"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "告警导出、日志摘录、部署与配置变更记录、值班群或事件频道消息、用户反馈",
+          "en": "Alert exports, log excerpts, deployment and config change records, on-call or incident channel messages, user reports"
+        },
+        {
+          "zh-CN": "组织的事件分级规则、时区、负责人提供的影响说明",
+          "en": "Your severity policy, time zone, and impact notes from the incident owner"
+        },
+        {
+          "zh-CN": "可选：Sentry、PagerDuty、GitHub 连接器（海外服务，均需密钥），用于读取错误事件、值班表与部署记录",
+          "en": "Optional: Sentry, PagerDuty and GitHub connectors (overseas services, credentials required) to read error events, on-call schedules and deployment records"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读取你本次提供的文件",
+          "en": "Reads only the files you provide for the task"
+        },
+        {
+          "zh-CN": "不执行回滚、重启、扩容、开关或配置变更，只出说明草案，由授权人员确认后执行",
+          "en": "Never executes rollbacks, restarts, scaling, flag or config changes; it drafts notes for authorized staff to carry out after confirmation"
+        },
+        {
+          "zh-CN": "需你确认才会做：发送复盘或交接记录、在事件或工单系统中操作；状态页、事故公告与客户沟通由你决定并执行",
+          "en": "Only with your confirmation: sending postmortems or handovers, acting in incident or ticket systems; status pages, announcements and customer contact stay with you"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "verified",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-26 已用真实模型（DeepSeek deepseek-flash，隔离的测试环境）验证：从市场添加、加载到业务、事件值班协作员上岗后，三个任务模板（分级初判含回滚说明草案、时间线与无责复盘、值班交接）按合成样例产出结构与期望一致，时间差与各段用时可复算并指向来源；回滚、对外公告与等级裁定只列待确认，个人归责表述未写入原因分析。",
+        "en": "Verified with a real model (DeepSeek deepseek-flash, isolated test environment) on 2026-09-26: added from the market, loaded into a business, incident duty collaborator on duty; all three templates (triage with rollback note, timeline and blameless postmortem, on-call handover) matched the expected structure, with recomputable, sourced times; rollbacks, announcements and the final level were left as open items and blame stayed out of the cause analysis."
+      },
+      {
+        "zh-CN": "错误追踪、告警平台与代码托管连接为可选项，本版不内置。",
+        "en": "Error tracking, alerting and code hosting connections are optional and not bundled in this version."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "subtitle-proofreading-task",
+  "title": "字幕校对",
+  "version": "1.0.0",
+  "domain": "video",
+  "description": "对已提供的 SRT 或 VTT 字幕文件进行时间轴、断句、错别字与品牌词校对，输出问题清单和修订后字幕草案。",
+  "requirements": [
+    "字幕文件（SRT 或 VTT 格式，直接粘贴或上传）",
+    "品牌词表（可选）",
+    "校对目标说明（可选，如语言规范、是否含法律免责条款）"
+  ],
+  "output": "问题清单（按类型分组）+ 修订后字幕草案（完整 SRT/VTT 文本）",
+  "skills": [
+    {
+      "id": "subtitle-proofreading",
+      "title": "字幕校对（时间轴、断句、错别字、品牌词）",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "字幕校对",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "字幕校对",
+        "en": "Subtitle proofreading task"
+      }
+    },
+    "description": {
+      "original": "对已提供的 SRT 或 VTT 字幕文件进行时间轴、断句、错别字与品牌词校对，输出问题清单和修订后字幕草案。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对已提供的 SRT 或 VTT 字幕文件进行时间轴、断句、错别字与品牌词校对，输出问题清单和修订后字幕草案。",
+        "en": "Proofread a provided SRT or VTT subtitle file for timecode overlaps, line-break errors, typos, and brand term accuracy. Output an issue list and a revised subtitle draft."
+      }
+    },
+    "requirements": [
+      {
+        "original": "字幕文件（SRT 或 VTT 格式，直接粘贴或上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "字幕文件（SRT 或 VTT 格式，直接粘贴或上传）",
+          "en": "Subtitle file (SRT or VTT format, paste or upload)"
+        }
+      },
+      {
+        "original": "品牌词表（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "品牌词表（可选）",
+          "en": "Brand term glossary (optional)"
+        }
+      },
+      {
+        "original": "校对目标说明（可选，如语言规范、是否含法律免责条款）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "校对目标说明（可选，如语言规范、是否含法律免责条款）",
+          "en": "Proofreading target note (optional, e.g. language standard, whether legal disclaimers apply)"
+        }
+      }
+    ],
+    "output": {
+      "original": "问题清单（按类型分组）+ 修订后字幕草案（完整 SRT/VTT 文本）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "问题清单（按类型分组）+ 修订后字幕草案（完整 SRT/VTT 文本）",
+        "en": "Issue list (grouped by type) + revised subtitle draft (full SRT/VTT text)"
+      }
+    }
+  }
+}

@@ -1,0 +1,267 @@
+{
+  "schema": "teloa.third-party-license-evidence/v1",
+  "platform": "darwin-arm64",
+  "packages": [
+    {
+      "name": "@img/sharp-libvips-darwin-arm64",
+      "version": "1.3.3",
+      "declaredLicense": "LGPL-3.0-or-later",
+      "status": "upstream-later-version-note",
+      "evidence": [
+        "sharp-libvips-1.3.3-versions.json",
+        "sharp-libvips-1.3.3-build-LICENSE.txt",
+        "sharp-libvips-1.3.3-THIRD-PARTY-NOTICES.md",
+        "libvips-v8.18.6-LICENSE.txt",
+        "LGPL-3.0.txt",
+        "GPL-3.0.txt"
+      ]
+    },
+    {
+      "name": "@koromix/koffi-darwin-arm64",
+      "version": "3.2.1",
+      "declaredLicense": "MIT",
+      "status": "fixed-source",
+      "evidence": [
+        "koffi-3.2.1-LICENSE.txt"
+      ]
+    },
+    {
+      "name": "@napi-rs/keyring-darwin-arm64",
+      "version": "2.1.0",
+      "declaredLicense": "MIT",
+      "status": "fixed-source",
+      "evidence": [
+        "keyring-2.1.0-LICENSE.txt"
+      ]
+    },
+    {
+      "name": "@trycua/cua-driver",
+      "version": "0.28.0",
+      "declaredLicense": "MIT",
+      "status": "fixed-source",
+      "evidence": [
+        "cua-driver-0.28.0-LICENSE.md"
+      ]
+    },
+    {
+      "name": "@trycua/cua-driver-darwin-arm64",
+      "version": "0.28.0",
+      "declaredLicense": "MIT AND MPL-2.0",
+      "status": "package-and-embedded-runtime",
+      "evidence": [
+        "cua-driver-0.28.0-LICENSE.md",
+        "cua-driver-0.28.0-node-runtime-NOTICE.md",
+        "uniffi-bindgen-0.31.0-3-LICENSE.txt",
+        "MPL-2.0.txt"
+      ]
+    },
+    {
+      "name": "@ubjs/core",
+      "version": "0.31.0-3",
+      "declaredLicense": "MPL-2.0",
+      "status": "fixed-source",
+      "evidence": [
+        "uniffi-bindgen-0.31.0-3-LICENSE.txt",
+        "MPL-2.0.txt"
+      ]
+    },
+    {
+      "name": "@ubjs/node",
+      "version": "0.31.0-3",
+      "declaredLicense": "MPL-2.0",
+      "status": "fixed-source",
+      "evidence": [
+        "uniffi-bindgen-0.31.0-3-LICENSE.txt",
+        "MPL-2.0.txt"
+      ]
+    },
+    {
+      "name": "@ubjs/node-darwin-arm64",
+      "version": "0.31.0-3",
+      "declaredLicense": "MPL-2.0",
+      "status": "fixed-source",
+      "evidence": [
+        "uniffi-bindgen-0.31.0-3-LICENSE.txt",
+        "MPL-2.0.txt"
+      ]
+    },
+    {
+      "name": "pg-types",
+      "version": "2.2.0",
+      "declaredLicense": "MIT",
+      "status": "fixed-readme-license",
+      "evidence": [
+        "pg-types-2.2.0-README.md"
+      ]
+    },
+    {
+      "name": "pgpass",
+      "version": "1.0.5",
+      "declaredLicense": "MIT",
+      "status": "fixed-readme-license",
+      "evidence": [
+        "pgpass-1.0.5-README.md"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "file": "koffi-3.2.1-LICENSE.txt",
+      "sourceKind": "git",
+      "sourceUrl": "https://codeberg.org/Koromix/rygel/raw/commit/f3ce6b84d2a63da2f609f9c272adf5d1e5018419/src/koffi/LICENSE.txt",
+      "revision": "f3ce6b84d2a63da2f609f9c272adf5d1e5018419",
+      "role": "package-license",
+      "sha256": "22bcbbbacd739b026a8dc484f62a31484ce4c4e31f3408b60b29b4e41d62b290"
+    },
+    {
+      "file": "keyring-2.1.0-LICENSE.txt",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/Brooooooklyn/keyring-node/1635ed458e8349ba28233728a8238ad99a5b2817/LICENSE",
+      "revision": "1635ed458e8349ba28233728a8238ad99a5b2817",
+      "role": "package-license",
+      "sha256": "02965ed67e29f871a53f7a7afa593a0ddc8020f86ccce0faaf1aa59215b5269e"
+    },
+    {
+      "file": "cua-driver-0.28.0-LICENSE.md",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/trycua/cua/1b50c02e2d34734f64d2d22f54eb76cc97b4a663/LICENSE.md",
+      "revision": "1b50c02e2d34734f64d2d22f54eb76cc97b4a663",
+      "role": "package-source-license",
+      "sha256": "c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9"
+    },
+    {
+      "file": "cua-driver-0.28.0-node-runtime-NOTICE.md",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/trycua/cua/1b50c02e2d34734f64d2d22f54eb76cc97b4a663/libs/cua-driver/scripts/node-runtime-NOTICE.md",
+      "revision": "1b50c02e2d34734f64d2d22f54eb76cc97b4a663",
+      "role": "embedded-runtime-notice",
+      "sha256": "66a466cc022b4bf4a41f678e4d31d9b82098cc55cc364d6e9295366dfd02cef2"
+    },
+    {
+      "file": "uniffi-bindgen-0.31.0-3-LICENSE.txt",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/jhugman/uniffi-bindgen-react-native/dcb5c4ab2350d57f6d26f5fa81a99c77ed86d449/LICENSE",
+      "revision": "dcb5c4ab2350d57f6d26f5fa81a99c77ed86d449",
+      "role": "source-license-header",
+      "sha256": "d1cc4c0ada218e8a336dc8c3d8bb7d5b1c8dedfa31f5b25c9ea1759d21b8b62d"
+    },
+    {
+      "file": "pg-types-2.2.0-README.md",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/brianc/node-pg-types/d9d9dfb87eb50914043cbc178c301b7dd3b0c50d/README.md",
+      "revision": "d9d9dfb87eb50914043cbc178c301b7dd3b0c50d",
+      "role": "readme-license-section",
+      "sha256": "ecda9bca71d3f0cee4e600d1dd2bef336213f39ef2e8fca6a1a1c1c8723f643a"
+    },
+    {
+      "file": "pgpass-1.0.5-README.md",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/hoegaarden/pgpass/4230ed5e417ba6044ea7eb80b7c33db9ec301398/README.md",
+      "revision": "4230ed5e417ba6044ea7eb80b7c33db9ec301398",
+      "role": "readme-license-section",
+      "sha256": "62549909404b5a0dcb2b4b74c9a930baf8095dbcfa1543c4ffc79378acd22b57"
+    },
+    {
+      "file": "sharp-libvips-1.3.3-build-LICENSE.txt",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/LICENSE",
+      "revision": "6e5971d333377743163edc3ad9e5d0b897abcbc9",
+      "role": "build-repository-license",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "file": "libvips-v8.18.6-LICENSE.txt",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/libvips/libvips/426af3f44246fce9cfa8dd51a353aa4dfd48c553/LICENSE",
+      "revision": "426af3f44246fce9cfa8dd51a353aa4dfd48c553",
+      "role": "embedded-libvips-source-license",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    {
+      "file": "MPL-2.0.txt",
+      "sourceKind": "canonical",
+      "sourceUrl": "https://www.mozilla.org/media/MPL/2.0/index.txt",
+      "revision": "MPL-2.0",
+      "role": "license-text",
+      "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+    },
+    {
+      "file": "LGPL-3.0.txt",
+      "sourceKind": "canonical",
+      "sourceUrl": "https://www.gnu.org/licenses/lgpl-3.0.txt",
+      "revision": "LGPL-3.0",
+      "role": "declared-license-reference",
+      "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+    },
+    {
+      "file": "GPL-3.0.txt",
+      "sourceKind": "canonical",
+      "sourceUrl": "https://www.gnu.org/licenses/gpl-3.0.txt",
+      "revision": "GPL-3.0",
+      "role": "companion-license-reference",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "file": "sharp-libvips-1.3.3-versions.json",
+      "sourceKind": "npm",
+      "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.3.tgz",
+      "revision": "sha512-suTBPTDGrI9WodccaDdwZItTSaBYASlBk1NSfElSHrUfzu3szG6lvIF58+WiFvnfzuK8ZBFS5zE00PxqxnRiPg==",
+      "role": "binary-versions",
+      "sha256": "adddf5e76ac1cc03b503a17c488b8591dd9eb5ec3faf689a3852d02d1b5fbb10"
+    },
+    {
+      "file": "sharp-libvips-1.3.3-THIRD-PARTY-NOTICES.md",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/THIRD-PARTY-NOTICES.md",
+      "revision": "6e5971d333377743163edc3ad9e5d0b897abcbc9",
+      "role": "binary-third-party-notices",
+      "sha256": "25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49"
+    },
+    {
+      "file": "sharp-libvips-1.3.4-THIRD-PARTY-NOTICES.md",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/lovell/sharp-libvips/ebb95f8add54eee8bed840e3fb587e4cbec857d7/THIRD-PARTY-NOTICES.md",
+      "revision": "ebb95f8add54eee8bed840e3fb587e4cbec857d7",
+      "role": "binary-third-party-notices",
+      "sha256": "6f0d5086e3bcbee12bcdacf5878b31d1104002aeecaeb241d3fff466108082fe"
+    },
+    {
+      "file": "sharp-libvips-1.3.4-versions.json",
+      "sourceKind": "npm",
+      "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.4.tgz",
+      "revision": "sha512-5R89nBYiRdUlSWJxPhO+GVtaXzXSxKnRu/xqMn3KTA3L9EB9Oy/P+Nn2f2vlhPuUdy/Zusb2DarbyTpGCfEDuw==",
+      "role": "binary-versions",
+      "sha256": "e2611d5d854815a8b33c8a3d2ec649511a9596ccf16844e8eae7cf81e79881c4"
+    },
+    {
+      "file": "libvips-v8.18.7-LICENSE.txt",
+      "sourceKind": "git",
+      "sourceUrl": "https://raw.githubusercontent.com/libvips/libvips/24ad4d042940e6bf99a68871ba886ca8847c9c82/LICENSE",
+      "revision": "24ad4d042940e6bf99a68871ba886ca8847c9c82",
+      "role": "embedded-libvips-source-license",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    {
+      "file": "MPL-1.1.txt",
+      "sourceKind": "canonical",
+      "sourceUrl": "https://www.mozilla.org/media/MPL/1.1/index.txt",
+      "revision": "MPL-1.1",
+      "role": "license-text",
+      "sha256": "f849fc26a7a99981611a3a370e83078deb617d12a45776d6c4cada4d338be469"
+    }
+  ],
+  "releaseCandidate": {
+    "name": "@img/sharp-libvips-darwin-arm64",
+    "version": "1.3.4",
+    "declaredLicense": "LGPL-3.0-or-later",
+    "npmIntegrity": "sha512-5R89nBYiRdUlSWJxPhO+GVtaXzXSxKnRu/xqMn3KTA3L9EB9Oy/P+Nn2f2vlhPuUdy/Zusb2DarbyTpGCfEDuw==",
+    "evidence": [
+      "sharp-libvips-1.3.4-versions.json",
+      "sharp-libvips-1.3.4-THIRD-PARTY-NOTICES.md",
+      "libvips-v8.18.7-LICENSE.txt",
+      "LGPL-3.0.txt",
+      "GPL-3.0.txt",
+      "MPL-1.1.txt"
+    ]
+  }
+}

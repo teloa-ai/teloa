@@ -1,0 +1,69 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "meeting-followup-task",
+  "title": "会后跟进与报价核对",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "从客户会议转写中提取纪要与跟进事项（客户需求、异议、我方承诺、跟进清单），并逐行核对会上讨论的报价单与价格表，列出差异与需你裁定的折扣项。客户口头表述不写成已确认，不给定价建议。",
+  "requirements": [
+    "客户会议转写或记录（已上传）；双方参会人与职务（可选）",
+    "如需核对报价：报价单与价格表（含版本或生效日期，已上传）；可选附折扣规则与需求清单"
+  ],
+  "output": "会后跟进草案：客户会议纪要（客户需求 / 异议 / 我方承诺含承诺人 / 跟进事项含负责人与日期占位 / 待确认项）+ 报价核对清单（价格差异、折扣需裁定项、合计与税差异、缺失与覆盖、核对结论）",
+  "skills": [
+    {
+      "id": "sales-meeting-minutes",
+      "title": "客户会议纪要与跟进事项",
+      "version": "1.0.0"
+    },
+    {
+      "id": "quote-verification",
+      "title": "报价核对",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "会后跟进与报价核对",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "会后跟进与报价核对",
+        "en": "Meeting follow-up and quote verification"
+      }
+    },
+    "description": {
+      "original": "从客户会议转写中提取纪要与跟进事项（客户需求、异议、我方承诺、跟进清单），并逐行核对会上讨论的报价单与价格表，列出差异与需你裁定的折扣项。客户口头表述不写成已确认，不给定价建议。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "从客户会议转写中提取纪要与跟进事项（客户需求、异议、我方承诺、跟进清单），并逐行核对会上讨论的报价单与价格表，列出差异与需你裁定的折扣项。客户口头表述不写成已确认，不给定价建议。",
+        "en": "Extract minutes and follow-ups from a customer meeting transcript (needs, objections, our commitments, follow-up list) and check the discussed quote line by line against the price list, listing differences and discount items for you to decide. Verbal customer remarks are never written as confirmed; no pricing advice is given."
+      }
+    },
+    "requirements": [
+      {
+        "original": "客户会议转写或记录（已上传）；双方参会人与职务（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "客户会议转写或记录（已上传）；双方参会人与职务（可选）",
+          "en": "Customer meeting transcript or record (uploaded); attendees and titles on both sides (optional)"
+        }
+      },
+      {
+        "original": "如需核对报价：报价单与价格表（含版本或生效日期，已上传）；可选附折扣规则与需求清单",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "如需核对报价：报价单与价格表（含版本或生效日期，已上传）；可选附折扣规则与需求清单",
+          "en": "For quote checking: the quote and the price list (with version or effective date, uploaded); optionally discount rules and the requirements list"
+        }
+      }
+    ],
+    "output": {
+      "original": "会后跟进草案：客户会议纪要（客户需求 / 异议 / 我方承诺含承诺人 / 跟进事项含负责人与日期占位 / 待确认项）+ 报价核对清单（价格差异、折扣需裁定项、合计与税差异、缺失与覆盖、核对结论）",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "会后跟进草案：客户会议纪要（客户需求 / 异议 / 我方承诺含承诺人 / 跟进事项含负责人与日期占位 / 待确认项）+ 报价核对清单（价格差异、折扣需裁定项、合计与税差异、缺失与覆盖、核对结论）",
+        "en": "Follow-up draft: customer meeting minutes (needs / objections / our commitments with the person committing / follow-ups with owner and date placeholders / items to confirm) plus a quote verification list (price differences, discounts needing decision, total and tax differences, missing and coverage items, conclusion)"
+      }
+    }
+  }
+}

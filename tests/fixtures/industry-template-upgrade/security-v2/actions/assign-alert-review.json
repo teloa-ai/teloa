@@ -1,0 +1,36 @@
+{
+  "format": "teloa.business-action/v1",
+  "id": "assign-alert-review",
+  "version": "1.0.1",
+  "domain": "SOC",
+  "title": "交给同事核对",
+  "objectType": "alert-ticket",
+  "target": {
+    "kind": "work-template",
+    "localId": "alert-triage-review"
+  },
+  "inputs": [
+    {
+      "from": "field",
+      "field": "host"
+    },
+    {
+      "from": "object",
+      "part": "title"
+    },
+    {
+      "from": "object",
+      "part": "summary"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "交给同事核对",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "交给同事核对",
+        "en": "Assign for peer review"
+      }
+    }
+  }
+}

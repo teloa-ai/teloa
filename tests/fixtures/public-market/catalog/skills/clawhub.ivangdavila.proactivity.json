@@ -1,0 +1,118 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.proactivity",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "proactivity",
+    "title": {
+      "zh-CN": "主动代理",
+      "en": "Proactivity (Proactive Agent)"
+    },
+    "summary": {
+      "zh-CN": "主动式 AI 代理，预测用户需求、持续推进工作并通过学习改进。用于自动化工作流和智能协助。",
+      "en": "Anticipates needs, keeps work moving, and improves through use so the agent gets more proactive over time."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "proactivity",
+    "version": "1.0.1",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "2ebb2ca0988db7250904f68fd3ef34388a6ca9ff4b5358975e2edde7b5a30e27",
+        "size": 6239
+      },
+      {
+        "path": "boundaries.md",
+        "sha256": "b46480181f597f9ad00f21846e71056c9c4c6e11210047f9a2ecad53d15997c0",
+        "size": 1252
+      },
+      {
+        "path": "execution.md",
+        "sha256": "67984a39fa3fea991555b0e60b6b6680b8fd9b4c1e3b48f5d716805b1917729f",
+        "size": 2235
+      },
+      {
+        "path": "heartbeat-rules.md",
+        "sha256": "ed9a0ef558086fa21b441f916c47d639ba136fce3ccafaea00ba27e3140f99e3",
+        "size": 989
+      },
+      {
+        "path": "memory-template.md",
+        "sha256": "6a1e1eb4a15d7cad322900246bec55e7b087051a9db63de177d6f2d2fcfda0ef",
+        "size": 1972
+      },
+      {
+        "path": "migration.md",
+        "sha256": "f4b750456e66b169a61c261ce14d006cb7cecd795f11871bd59e34aac6168838",
+        "size": 1153
+      },
+      {
+        "path": "recovery.md",
+        "sha256": "876c61a40744b3edb34acb485d70d8b6e352d48048f8e872ae13beca99718400",
+        "size": 744
+      },
+      {
+        "path": "setup.md",
+        "sha256": "6ddf5236923fa5505a359ef9b04b51c7e184e8f2e9a1fcff70efc8a684df682d",
+        "size": 5826
+      },
+      {
+        "path": "signals.md",
+        "sha256": "fc70d2430c9138daacf913f116af1f2fc4b064519df701dc97c5f4dac6d9e4e1",
+        "size": 1637
+      },
+      {
+        "path": "state.md",
+        "sha256": "685c33dbb42ad6ebe987ac0cac222909d0441099b2d0bb0c5d8f3fba263861f3",
+        "size": 930
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "877660e6b07ae4b4b3fc8f8842d8c59744fa155f8e72393096d7511e86c8ff8e",
+        "size": 2457
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 28594,
+    "installsLabel": "2.9 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

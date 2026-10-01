@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "scan-triage-task",
+  "title": "扫描结果复核任务",
+  "version": "1.0.0",
+  "domain": "AppSec",
+  "description": "对 SAST/SCA/DAST 扫描工具输出进行去重、误报判定和优先级分类，输出经人工复核的发现清单。",
+  "requirements": [
+    "扫描工具输出（SARIF、CSV、JSON 或文本格式，注明工具名称与版本）",
+    "扫描目标说明（代码仓库、应用 URL 或包清单）"
+  ],
+  "output": "扫描复核报告：扫描摘要、去重后发现清单（含置信度、误报判定理由、P0-P3 优先级建议、建议处理方式）、未覆盖范围",
+  "skills": [
+    {
+      "id": "scan-triage",
+      "title": "扫描结果复核",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "扫描结果复核任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "扫描结果复核任务",
+        "en": "Scan result triage task"
+      }
+    },
+    "description": {
+      "original": "对 SAST/SCA/DAST 扫描工具输出进行去重、误报判定和优先级分类，输出经人工复核的发现清单。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "对 SAST/SCA/DAST 扫描工具输出进行去重、误报判定和优先级分类，输出经人工复核的发现清单。",
+        "en": "Deduplicate, false-positive-triage, and prioritize SAST/SCA/DAST scan tool output, producing a human-reviewed finding list."
+      }
+    },
+    "requirements": [
+      {
+        "original": "扫描工具输出（SARIF、CSV、JSON 或文本格式，注明工具名称与版本）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "扫描工具输出（SARIF、CSV、JSON 或文本格式，注明工具名称与版本）",
+          "en": "Scan tool output (SARIF, CSV, JSON, or text format, with tool name and version)"
+        }
+      },
+      {
+        "original": "扫描目标说明（代码仓库、应用 URL 或包清单）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "扫描目标说明（代码仓库、应用 URL 或包清单）",
+          "en": "Scan target description (code repository, application URL, or package manifest)"
+        }
+      }
+    ],
+    "output": {
+      "original": "扫描复核报告：扫描摘要、去重后发现清单（含置信度、误报判定理由、P0-P3 优先级建议、建议处理方式）、未覆盖范围",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "扫描复核报告：扫描摘要、去重后发现清单（含置信度、误报判定理由、P0-P3 优先级建议、建议处理方式）、未覆盖范围",
+        "en": "Scan triage report: summary, deduplicated finding list (with confidence, false-positive rationale, P0-P3 priority recommendation, disposition), uncovered scope"
+      }
+    }
+  }
+}

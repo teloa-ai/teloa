@@ -1,0 +1,73 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "incident-handover-task",
+  "title": "值班交接记录",
+  "version": "1.0.0",
+  "domain": "incident",
+  "description": "生成本班值班交接记录：活跃事件与接班后最重要的下一步、本班关键动作、关注点与临时缓解到期项、下一班次计划变更与发布窗口、工具与连接状态、等待负责人确认的挂起动作。不在交接中执行任何处置，不写凭据。",
+  "requirements": [
+    "本班处理的事件与告警 ID 列表及当前状态（已上传或本次提供）",
+    "本班执行的关键动作记录（研判、建议、升级、被确认执行的变更）",
+    "下一班次内的计划变更或发布窗口、工具异常记录、接班者标识（可选）"
+  ],
+  "output": "值班交接记录：班次时间（UTC 与原时区）、活跃事件状态表、本班关键动作、关注点与临时缓解到期项、下一班次计划变更与发布窗口、工具与连接状态、挂起的待确认动作",
+  "skills": [
+    {
+      "id": "incident-handover",
+      "title": "值班交接记录",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "值班交接记录",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "值班交接记录",
+        "en": "On-call handover record"
+      }
+    },
+    "description": {
+      "original": "生成本班值班交接记录：活跃事件与接班后最重要的下一步、本班关键动作、关注点与临时缓解到期项、下一班次计划变更与发布窗口、工具与连接状态、等待负责人确认的挂起动作。不在交接中执行任何处置，不写凭据。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "生成本班值班交接记录：活跃事件与接班后最重要的下一步、本班关键动作、关注点与临时缓解到期项、下一班次计划变更与发布窗口、工具与连接状态、等待负责人确认的挂起动作。不在交接中执行任何处置，不写凭据。",
+        "en": "Produce the on-call handover record for this shift: active incidents with the single most important next step, key actions taken, watch points and expiring temporary mitigations, planned changes and release windows in the next shift, tool and connection status, and pending actions awaiting the owner's confirmation. Executes nothing during handover and records no credentials."
+      }
+    },
+    "requirements": [
+      {
+        "original": "本班处理的事件与告警 ID 列表及当前状态（已上传或本次提供）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本班处理的事件与告警 ID 列表及当前状态（已上传或本次提供）",
+          "en": "Incident and alert IDs handled this shift with their current status (uploaded or provided for this task)"
+        }
+      },
+      {
+        "original": "本班执行的关键动作记录（研判、建议、升级、被确认执行的变更）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "本班执行的关键动作记录（研判、建议、升级、被确认执行的变更）",
+          "en": "Key actions taken this shift (assessments, suggestions, escalations, changes confirmed and executed by others)"
+        }
+      },
+      {
+        "original": "下一班次内的计划变更或发布窗口、工具异常记录、接班者标识（可选）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "下一班次内的计划变更或发布窗口、工具异常记录、接班者标识（可选）",
+          "en": "Planned changes or release windows in the next shift, tool anomalies, and the incoming on-call identifier (optional)"
+        }
+      }
+    ],
+    "output": {
+      "original": "值班交接记录：班次时间（UTC 与原时区）、活跃事件状态表、本班关键动作、关注点与临时缓解到期项、下一班次计划变更与发布窗口、工具与连接状态、挂起的待确认动作",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "值班交接记录：班次时间（UTC 与原时区）、活跃事件状态表、本班关键动作、关注点与临时缓解到期项、下一班次计划变更与发布窗口、工具与连接状态、挂起的待确认动作",
+        "en": "Handover record: shift window (UTC and original zone), active incident table, key actions, watch points and expiring temporary mitigations, next-shift planned changes and release windows, tool and connection status, pending actions awaiting confirmation"
+      }
+    }
+  }
+}

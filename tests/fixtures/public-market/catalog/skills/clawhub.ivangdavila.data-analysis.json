@@ -1,0 +1,100 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.ivangdavila.data-analysis",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "data-research"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "data-analysis",
+    "title": {
+      "zh-CN": "数据分析",
+      "en": "Data Analysis"
+    },
+    "summary": {
+      "zh-CN": "数据分析和可视化工具，支持数据库查询、报表生成和表格自动化。用于数据分析和商业智能。",
+      "en": "Data analysis and visualization. Query databases, generate reports, automate spreadsheets, and turn raw data into clear, actionable insights. Use when (1) yo..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "ivangdavila",
+    "slug": "data-analysis",
+    "version": "1.0.2",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "3f1e1a7093c7391eb8f364bdafc8e6357842455b03933b5ba5af76feb32637e7",
+        "size": 7910
+      },
+      {
+        "path": "chart-selection.md",
+        "sha256": "01d040c85f79df832d8d9956e0decab76cbf6ee57cf7c584e35ab9c0c1410a47",
+        "size": 1756
+      },
+      {
+        "path": "decision-briefs.md",
+        "sha256": "e9a4a5ae1fbe0950f2669d03b9b3ba8b7e85fbbaf42465f48f2ae192fa3d170b",
+        "size": 1144
+      },
+      {
+        "path": "metric-contracts.md",
+        "sha256": "074be3abdc96242096fe516f633315138a07ff216c44e649c59cd8a597a223d6",
+        "size": 1580
+      },
+      {
+        "path": "pitfalls.md",
+        "sha256": "88eb29fc1e307bbb984c47a2bb28fbbd045bde7e296aa0f51fa244995566b14e",
+        "size": 3961
+      },
+      {
+        "path": "techniques.md",
+        "sha256": "e073dd1b2af9bed0a11cdf7bd231184ff3d76d9acd61f32e56dc8413118fda78",
+        "size": 4994
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "a832d903bc77ac18b6c59ac306c11bd4dc40c45df2d528d5fc006679606df62f",
+        "size": 2491
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 42303,
+    "installsLabel": "4.2 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [
+      "python"
+    ],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

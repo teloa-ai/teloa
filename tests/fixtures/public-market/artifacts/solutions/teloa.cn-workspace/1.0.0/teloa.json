@@ -1,0 +1,370 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "cn-workspace",
+  "title": "中国企业办公协同",
+  "version": "1.0.0",
+  "domain": "general",
+  "scope": "workspace",
+  "description": "面向中国企业日常协同的行业方案：群消息日报、会议纪要整理并核对写入团队文档、周报与公告草案。可选连接飞书、语雀只读工具读取点名的群与文档；岗位只出草案与核对单，在群里发消息、写入或改动文档、以团队名义发布均需本人授权并由本人完成。",
+  "resources": [
+    {
+      "id": "workplace-collaborator",
+      "kind": "role",
+      "title": "协同办公协作员",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/workplace-collaborator.json"
+      },
+      "localized": {
+        "title": {
+          "original": "协同办公协作员",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "协同办公协作员",
+            "en": "Workplace collaborator"
+          }
+        }
+      }
+    },
+    {
+      "id": "workspace-methods",
+      "kind": "knowledge",
+      "title": "协同办公方法与来源索引",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/workspace-methods.md"
+      },
+      "localized": {
+        "title": {
+          "original": "协同办公方法与来源索引",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "协同办公方法与来源索引",
+            "en": "Workplace collaboration methods and source index"
+          }
+        }
+      }
+    },
+    {
+      "id": "im-digest",
+      "kind": "skill",
+      "title": "群消息日报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/im-digest/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "群消息日报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "群消息日报",
+            "en": "Group chat daily digest"
+          }
+        }
+      }
+    },
+    {
+      "id": "workspace-meeting-minutes",
+      "kind": "skill",
+      "title": "会议纪要与待办提取",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/workspace-meeting-minutes/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "会议纪要与待办提取",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "会议纪要与待办提取",
+            "en": "Meeting minutes and action item extraction"
+          }
+        }
+      }
+    },
+    {
+      "id": "doc-sync-check",
+      "kind": "skill",
+      "title": "写入文档前核对",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/doc-sync-check/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "写入文档前核对",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "写入文档前核对",
+            "en": "Pre-write document check"
+          }
+        }
+      }
+    },
+    {
+      "id": "workspace-weekly-report",
+      "kind": "skill",
+      "title": "周报与决策简报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/workspace-weekly-report/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "周报与决策简报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "周报与决策简报",
+            "en": "Weekly report and decision brief"
+          }
+        }
+      }
+    },
+    {
+      "id": "announcement-draft",
+      "kind": "skill",
+      "title": "公告与通知草案",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "skills/announcement-draft/SKILL.md"
+      },
+      "localized": {
+        "title": {
+          "original": "公告与通知草案",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "公告与通知草案",
+            "en": "Announcement and notice drafts"
+          }
+        }
+      }
+    },
+    {
+      "id": "lark-read",
+      "kind": "mcp",
+      "title": "飞书只读连接（群消息与云文档）",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "connections/lark-read.json"
+      },
+      "localized": {
+        "title": {
+          "original": "飞书只读连接（群消息与云文档）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "飞书只读连接（群消息与云文档）",
+            "en": "Feishu read-only connection (group messages and docs)"
+          }
+        }
+      }
+    },
+    {
+      "id": "yuque-read",
+      "kind": "mcp",
+      "title": "语雀只读连接（知识库文档）",
+      "version": "1.0.0",
+      "required": false,
+      "source": {
+        "kind": "local",
+        "path": "connections/yuque-read.json"
+      },
+      "localized": {
+        "title": {
+          "original": "语雀只读连接（知识库文档）",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "语雀只读连接（知识库文档）",
+            "en": "Yuque read-only connection (knowledge base docs)"
+          }
+        }
+      }
+    },
+    {
+      "id": "im-digest-task",
+      "kind": "work-template",
+      "title": "群消息日报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/im-digest-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "群消息日报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "群消息日报",
+            "en": "Group chat daily digest"
+          }
+        }
+      }
+    },
+    {
+      "id": "minutes-to-doc-task",
+      "kind": "work-template",
+      "title": "整理会议纪要并核对写入文档",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/minutes-to-doc-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "整理会议纪要并核对写入文档",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "整理会议纪要并核对写入文档",
+            "en": "Prepare meeting minutes and check before writing to a doc"
+          }
+        }
+      }
+    },
+    {
+      "id": "weekly-report-task",
+      "kind": "work-template",
+      "title": "生成周报",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/weekly-report-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "生成周报",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "生成周报",
+            "en": "Generate weekly report"
+          }
+        }
+      }
+    },
+    {
+      "id": "announcement-draft-task",
+      "kind": "work-template",
+      "title": "起草公告与通知",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "workflows/announcement-draft-task.json"
+      },
+      "localized": {
+        "title": {
+          "original": "起草公告与通知",
+          "defaultLocale": "en",
+          "locales": {
+            "zh-CN": "起草公告与通知",
+            "en": "Draft announcement or notice"
+          }
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "kind": "role-knowledge",
+      "from": "workplace-collaborator",
+      "to": "workspace-methods"
+    },
+    {
+      "kind": "role-skill",
+      "from": "workplace-collaborator",
+      "to": "im-digest"
+    },
+    {
+      "kind": "role-skill",
+      "from": "workplace-collaborator",
+      "to": "workspace-meeting-minutes"
+    },
+    {
+      "kind": "role-skill",
+      "from": "workplace-collaborator",
+      "to": "doc-sync-check"
+    },
+    {
+      "kind": "role-skill",
+      "from": "workplace-collaborator",
+      "to": "workspace-weekly-report"
+    },
+    {
+      "kind": "role-skill",
+      "from": "workplace-collaborator",
+      "to": "announcement-draft"
+    },
+    {
+      "kind": "role-connection",
+      "from": "workplace-collaborator",
+      "to": "lark-read"
+    },
+    {
+      "kind": "role-connection",
+      "from": "workplace-collaborator",
+      "to": "yuque-read"
+    },
+    {
+      "kind": "role-work",
+      "from": "workplace-collaborator",
+      "to": "im-digest-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "workplace-collaborator",
+      "to": "minutes-to-doc-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "workplace-collaborator",
+      "to": "weekly-report-task"
+    },
+    {
+      "kind": "role-work",
+      "from": "workplace-collaborator",
+      "to": "announcement-draft-task"
+    }
+  ],
+  "entrypoints": [
+    "im-digest-task",
+    "minutes-to-doc-task",
+    "weekly-report-task",
+    "announcement-draft-task"
+  ],
+  "localized": {
+    "title": {
+      "original": "中国企业办公协同",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "中国企业办公协同",
+        "en": "China workplace collaboration"
+      }
+    },
+    "description": {
+      "original": "面向中国企业日常协同的行业方案：群消息日报、会议纪要整理并核对写入团队文档、周报与公告草案。可选连接飞书、语雀只读工具读取点名的群与文档；岗位只出草案与核对单，在群里发消息、写入或改动文档、以团队名义发布均需本人授权并由本人完成。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "面向中国企业日常协同的行业方案：群消息日报、会议纪要整理并核对写入团队文档、周报与公告草案。可选连接飞书、语雀只读工具读取点名的群与文档；岗位只出草案与核对单，在群里发消息、写入或改动文档、以团队名义发布均需本人授权并由本人完成。",
+        "en": "A solution for everyday collaboration in Chinese workplaces: group chat daily digests, meeting minutes checked before writing to team documents, weekly reports and announcement drafts. Optional read-only Feishu and Yuque connections read the groups and documents you name; the role only produces drafts and checklists, and posting to groups, writing or changing documents, or publishing on the team's behalf all require your authorization and are done by you."
+      }
+    }
+  }
+}

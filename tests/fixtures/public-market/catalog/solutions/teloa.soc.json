@@ -1,0 +1,104 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.soc",
+  "kind": "solution",
+  "delivery": "install",
+  "version": "1.0.2",
+  "taxonomy": {
+    "functions": [
+      "security"
+    ],
+    "industries": [
+      "cyber-security/soc"
+    ]
+  },
+  "upstream": null,
+  "solution": {
+    "packageId": "soc-operations",
+    "title": {
+      "zh-CN": "安全运营（SOC T1/T2/T3）",
+      "en": "Security operations (SOC T1/T2/T3)"
+    },
+    "summary": {
+      "zh-CN": "T1 告警研判员与 T2 事件调查员：告警分诊、实体上下文、证据时间线、调查报告、狩猎计划草案与交班记录；所有处置只作建议。",
+      "en": "A T1 triage analyst and a T2 investigator: alert triage, entity context, evidence timelines, investigation reports, hunting plan drafts and shift handovers; every response action is a recommendation."
+    },
+    "scope": "SOC",
+    "capabilities": {
+      "now": [
+        {
+          "zh-CN": "对提供的告警给出真/误/待定判定、严重度、置信度与证据表",
+          "en": "Classify provided alerts as true, false or undetermined with severity, confidence and evidence"
+        },
+        {
+          "zh-CN": "建立证据时间线并完成事件调查报告草案",
+          "en": "Build evidence timelines and draft investigation reports"
+        },
+        {
+          "zh-CN": "按 ATT&CK 编写假设驱动的狩猎计划与查询草案",
+          "en": "Write ATT&CK-based hypothesis hunting plans and query drafts"
+        },
+        {
+          "zh-CN": "生成交班记录",
+          "en": "Produce shift handover notes"
+        }
+      ],
+      "needs": [
+        {
+          "zh-CN": "告警原文或导出；持续研判需接入你的 SIEM/EDR",
+          "en": "Alert text or exports; ongoing triage needs your SIEM/EDR connected"
+        },
+        {
+          "zh-CN": "资产台账、目录信息与响应授权边界",
+          "en": "Asset inventory, directory data and response authority boundaries"
+        },
+        {
+          "zh-CN": "狩猎需说明遥测覆盖与字段",
+          "en": "Hunting needs your telemetry coverage and fields"
+        }
+      ],
+      "permissions": [
+        {
+          "zh-CN": "只读查询告警、日志、目录与资产",
+          "en": "Read-only access to alerts, logs, directory and assets"
+        },
+        {
+          "zh-CN": "需你确认才会做：关闭或抑制告警、封禁账号、隔离主机、修改规则",
+          "en": "Only with your confirmation: closing or suppressing alerts, disabling accounts, isolating hosts or changing rules"
+        }
+      ]
+    }
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "Apache-2.0",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "2026-09-25 已用真实模型验证上传告警的 T1 分诊：给出判定、严重度、置信度、证据缺口与升级建议。",
+        "en": "T1 triage of uploaded alerts verified with a real model on 2026-09-25: classification, severity, confidence, evidence gaps and escalation."
+      },
+      {
+        "zh-CN": "实时研判与调查需要你自己的 SIEM/EDR 只读连接，本方案不含任何厂商凭据。",
+        "en": "Live triage and investigation need your own read-only SIEM/EDR connection; no vendor credentials are included."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa"
+  }
+}

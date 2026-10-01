@@ -1,0 +1,64 @@
+{
+  "format": "teloa.work-template/v1",
+  "id": "topic-research-task",
+  "title": "选题研究任务",
+  "version": "1.0.0",
+  "domain": "marketing",
+  "description": "基于已提供的品牌材料输出选题方向清单与受众画像草案，每个选题方向标注品牌关联性与依据来源。",
+  "requirements": [
+    "品牌定位说明或品牌手册（已上传）",
+    "内容方向需求（负责人描述）"
+  ],
+  "output": "选题方向清单（含受众相关性、品牌关联性、建议渠道、依据来源）与受众画像草案",
+  "skills": [
+    {
+      "id": "topic-research",
+      "title": "选题研究",
+      "version": "1.0.0"
+    }
+  ],
+  "localized": {
+    "title": {
+      "original": "选题研究任务",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "选题研究任务",
+        "en": "Topic research task"
+      }
+    },
+    "description": {
+      "original": "基于已提供的品牌材料输出选题方向清单与受众画像草案，每个选题方向标注品牌关联性与依据来源。",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "基于已提供的品牌材料输出选题方向清单与受众画像草案，每个选题方向标注品牌关联性与依据来源。",
+        "en": "Based on provided brand materials, output a topic direction list and audience persona draft, with brand relevance and source for each topic."
+      }
+    },
+    "requirements": [
+      {
+        "original": "品牌定位说明或品牌手册（已上传）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "品牌定位说明或品牌手册（已上传）",
+          "en": "Brand positioning statement or brand handbook (already uploaded)"
+        }
+      },
+      {
+        "original": "内容方向需求（负责人描述）",
+        "defaultLocale": "en",
+        "locales": {
+          "zh-CN": "内容方向需求（负责人描述）",
+          "en": "Content direction requirements (your description)"
+        }
+      }
+    ],
+    "output": {
+      "original": "选题方向清单（含受众相关性、品牌关联性、建议渠道、依据来源）与受众画像草案",
+      "defaultLocale": "en",
+      "locales": {
+        "zh-CN": "选题方向清单（含受众相关性、品牌关联性、建议渠道、依据来源）与受众画像草案",
+        "en": "Topic direction list (with audience relevance, brand relevance, suggested channels, and source) and audience persona draft"
+      }
+    }
+  }
+}

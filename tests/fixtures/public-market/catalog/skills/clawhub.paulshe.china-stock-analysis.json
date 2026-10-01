@@ -1,0 +1,78 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "clawhub.paulshe.china-stock-analysis",
+  "kind": "skill",
+  "delivery": "upstream",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "automation"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "skill": {
+    "name": "china-stock-analysis",
+    "title": {
+      "zh-CN": "中国股票分析",
+      "en": "China Stock Analysis"
+    },
+    "summary": {
+      "zh-CN": "分析中国 A 股和港股价格走势，提供投资建议。用于股票研究和投资决策。",
+      "en": "Analyze Chinese stock prices (A-shares, HK stocks) and provide investment recommendations. Use when the user asks about stock analysis for Chinese companies,..."
+    }
+  },
+  "upstream": {
+    "kind": "clawhub",
+    "owner": "paulshe",
+    "slug": "china-stock-analysis",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "274b88c93b57f711d17e0123007d5aac7a8c00caf11e71ef350f99b350c882a1",
+        "size": 2107
+      },
+      {
+        "path": "references/china-stocks.md",
+        "sha256": "07d8845ce8e0896685386a1d05bd7c155de7100357bda21ddf4988afa6ffb18f",
+        "size": 2618
+      },
+      {
+        "path": "skill-card.md",
+        "sha256": "a00772b45ce8a0dfb8b9f7d12290bb79211e2ffd8b0422729bf8ee9a3b72c966",
+        "size": 1828
+      }
+    ]
+  },
+  "origin": {
+    "marketplace": "clawhub",
+    "installs": 29332,
+    "installsLabel": "2.9 万",
+    "countedAt": "2026-09-25"
+  },
+  "alternatives": [],
+  "unsupportedComponents": [],
+  "modifications": [],
+  "license": {
+    "spdx": "MIT-0",
+    "files": []
+  },
+  "compatibility": {
+    "status": "content-only",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": []
+  },
+  "requires": {
+    "tools": [],
+    "network": false,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-25",
+    "reviewer": "Teloa 内容安全审查（逐文件）"
+  }
+}

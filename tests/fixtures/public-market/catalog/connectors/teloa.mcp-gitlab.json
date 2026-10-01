@@ -1,0 +1,237 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-gitlab",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.0",
+  "taxonomy": {
+    "functions": [
+      "dev-tools"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "gitlab",
+    "title": {
+      "zh-CN": "GitLab（OAuth，Beta）",
+      "en": "GitLab (OAuth, Beta)"
+    },
+    "summary": {
+      "zh-CN": "GitLab 官方 MCP 服务（GitLab.com），可查看项目、代码、提交、合并请求、流水线与工作项，并可创建或更新工作项、合并请求与评论。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，令牌自动刷新。",
+      "en": "GitLab's official MCP server (GitLab.com) for browsing projects, code, commits, merge requests, pipelines and work items, and for creating or updating work items, merge requests and notes. Authorized by Teloa via OAuth (dynamic client registration + PKCE) with automatic token refresh."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "mcp"
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://gitlab.com/api/v4/mcp"
+    },
+    "tools": [
+      {
+        "name": "list_projects",
+        "description": {
+          "zh-CN": "列出项目",
+          "en": "List projects"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_project",
+        "description": {
+          "zh-CN": "获取项目详情",
+          "en": "Get project details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "search",
+        "description": {
+          "zh-CN": "在 GitLab 中搜索",
+          "en": "Search GitLab"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_repository_file",
+        "description": {
+          "zh-CN": "读取仓库文件",
+          "en": "Read a repository file"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_repository_tree",
+        "description": {
+          "zh-CN": "列出仓库目录",
+          "en": "List repository tree"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_branches",
+        "description": {
+          "zh-CN": "列出分支",
+          "en": "List branches"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_commits",
+        "description": {
+          "zh-CN": "列出提交",
+          "en": "List commits"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_commit",
+        "description": {
+          "zh-CN": "获取提交详情",
+          "en": "Get commit details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "list_merge_requests",
+        "description": {
+          "zh-CN": "列出合并请求",
+          "en": "List merge requests"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_merge_request",
+        "description": {
+          "zh-CN": "获取合并请求详情",
+          "en": "Get merge request details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_merge_request_diffs",
+        "description": {
+          "zh-CN": "获取合并请求差异",
+          "en": "Get merge request diffs"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "save_merge_request",
+        "description": {
+          "zh-CN": "创建或更新合并请求",
+          "en": "Create or update a merge request"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "list_work_items",
+        "description": {
+          "zh-CN": "列出工作项",
+          "en": "List work items"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_work_item",
+        "description": {
+          "zh-CN": "获取工作项详情",
+          "en": "Get work item details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "save_work_item",
+        "description": {
+          "zh-CN": "创建或更新工作项",
+          "en": "Create or update a work item"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "save_note",
+        "description": {
+          "zh-CN": "添加评论",
+          "en": "Add a note"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "list_pipelines",
+        "description": {
+          "zh-CN": "列出流水线",
+          "en": "List pipelines"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_pipeline",
+        "description": {
+          "zh-CN": "获取流水线详情",
+          "en": "Get pipeline details"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_job",
+        "description": {
+          "zh-CN": "获取作业详情与日志",
+          "en": "Get job details and log"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "get_user",
+        "description": {
+          "zh-CN": "获取用户信息",
+          "en": "Get user information"
+        },
+        "readOnly": true
+      }
+    ],
+    "upstreamUrl": "https://docs.gitlab.com/user/model_context_protocol/mcp_server/"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-GitLab-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "官方状态为 Beta；GitLab.com 需在顶级群组设置中允许访问 MCP 服务器",
+        "en": "Officially in Beta; on GitLab.com, MCP server access must be allowed in the top-level group settings"
+      },
+      {
+        "zh-CN": "官方文档确认支持动态客户端注册与 mcp scope；本机回环回调（127.0.0.1）尚未实测",
+        "en": "Official docs confirm dynamic client registration and the mcp scope; the loopback callback (127.0.0.1) has not been tested yet"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

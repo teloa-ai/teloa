@@ -1,0 +1,190 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.mcp-notion-remote",
+  "kind": "connector",
+  "delivery": "managed",
+  "version": "1.0.1",
+  "taxonomy": {
+    "functions": [
+      "office-docs",
+      "communication"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "upstream": null,
+  "connector": {
+    "serverName": "notion_remote",
+    "title": {
+      "zh-CN": "Notion 远程（OAuth）",
+      "en": "Notion Remote (OAuth)"
+    },
+    "summary": {
+      "zh-CN": "Notion 官方推荐的远程 MCP 服务，可搜索与读取页面和数据库、创建与更新页面、查询数据源、读写评论。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，令牌自动刷新。只想用 Notion 集成令牌时，请改用本地版资源（teloa.mcp-notion）。",
+      "en": "Notion's officially recommended remote MCP service for searching and reading pages and databases, creating and updating pages, querying data sources, and reading or writing comments. Authorized by Teloa via OAuth (dynamic client registration + PKCE) with automatic token refresh. To use a Notion integration token instead, use the local version (teloa.mcp-notion)."
+    },
+    "auth": {
+      "kind": "oauth",
+      "supported": true,
+      "scopes": [
+        "default"
+      ]
+    },
+    "recipe": {
+      "transport": "streamable-http",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "tools": [
+      {
+        "name": "notion-search",
+        "description": {
+          "zh-CN": "搜索工作区",
+          "en": "Search the workspace"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "notion-fetch",
+        "description": {
+          "zh-CN": "读取页面、数据库或数据源",
+          "en": "Fetch a page, database or data source"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "notion-query-data-sources",
+        "description": {
+          "zh-CN": "查询数据源",
+          "en": "Query data sources"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "notion-get-comments",
+        "description": {
+          "zh-CN": "读取评论",
+          "en": "Get comments"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "notion-get-teams",
+        "description": {
+          "zh-CN": "列出团队空间",
+          "en": "List teamspaces"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "notion-get-users",
+        "description": {
+          "zh-CN": "列出成员",
+          "en": "List members"
+        },
+        "readOnly": true
+      },
+      {
+        "name": "notion-create-pages",
+        "description": {
+          "zh-CN": "创建页面",
+          "en": "Create pages"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "notion-update-page",
+        "description": {
+          "zh-CN": "更新页面",
+          "en": "Update a page"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "notion-move-pages",
+        "description": {
+          "zh-CN": "移动页面",
+          "en": "Move pages"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "notion-duplicate-page",
+        "description": {
+          "zh-CN": "复制页面",
+          "en": "Duplicate a page"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "notion-create-database",
+        "description": {
+          "zh-CN": "创建数据库",
+          "en": "Create a database"
+        },
+        "readOnly": false
+      },
+      {
+        "name": "notion-create-comment",
+        "description": {
+          "zh-CN": "添加评论",
+          "en": "Add a comment"
+        },
+        "readOnly": false
+      }
+    ],
+    "upstreamUrl": "https://developers.notion.com/docs/mcp"
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "LicenseRef-Notion-Terms",
+    "files": [
+      "LICENSE"
+    ]
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需在 市场 > 连接 页由本人在浏览器中用 Notion 账户完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+        "en": "The owner must complete OAuth authorization with a Notion account in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+      },
+      {
+        "zh-CN": "授权服务器公开的配置信息支持动态客户端注册（token_endpoint_auth_method none）与 PKCE S256，只申请 default scope；2026-09-27 实测客户端注册成功、授权页正常跳转到 Notion 登录页。",
+        "en": "The authorization server's published configuration supports dynamic client registration (token_endpoint_auth_method none) and PKCE S256, and only the default scope is requested; on 2026-09-27 client registration succeeded and the authorization page redirected to the Notion sign-in page."
+      },
+      {
+        "zh-CN": "同一套 OAuth 流程已在 Cloudflare 连接器上用真实账户走通（注册、授权、令牌交换、工具调用）。",
+        "en": "The same OAuth flow has been run end to end with a real account on the Cloudflare connector (registration, consent, token exchange, tool calls)."
+      },
+      {
+        "zh-CN": "登录 Notion 之后的令牌交换与工具调用未经 Teloa 真实账户实测，使用中遇到问题请在资源详情页点「问题反馈」。",
+        "en": "Token exchange and tool calls after signing in to Notion have not been tested with a real account by Teloa; if something does not work, use Report a problem on the resource page."
+      },
+      {
+        "zh-CN": "企业版工作区管理员可限制可连接的 MCP 客户端，新客户端可能被拦截",
+        "en": "Enterprise workspace admins can restrict which MCP clients may connect, so a new client may be blocked"
+      },
+      {
+        "zh-CN": "刷新令牌最长 180 天或连续 30 天未刷新即失效，届时需重新授权",
+        "en": "Refresh tokens expire after at most 180 days or 30 days without a refresh; re-authorization is then required"
+      },
+      {
+        "zh-CN": "替代方案：本地版资源 teloa.mcp-notion（使用 Notion 集成令牌）",
+        "en": "Alternative: the local version teloa.mcp-notion (uses a Notion integration token)"
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "format": "teloa.market-catalog-entry/v1",
+  "id": "teloa.model.local.deepseek-r1",
+  "kind": "model",
+  "delivery": "reference",
+  "version": "1.0.0",
+  "upstream": null,
+  "taxonomy": {
+    "functions": [
+      "other"
+    ],
+    "industries": [
+      "general"
+    ]
+  },
+  "model": {
+    "modelId": "deepseek-r1-local",
+    "title": {
+      "zh-CN": "DeepSeek-R1（本机）",
+      "en": "DeepSeek-R1 (local)"
+    },
+    "summary": {
+      "zh-CN": "DeepSeek-R1 推理模型的 Qwen2.5 蒸馏版，经 Ollama 在本机运行；7B / 14B 两档，长思维链推理。",
+      "en": "Qwen2.5-distilled DeepSeek-R1 reasoning models running locally via Ollama; 7B / 14B sizes with long chain-of-thought."
+    },
+    "form": "local-general",
+    "usage": [
+      "chat"
+    ],
+    "capabilities": {
+      "tools": false,
+      "vision": false,
+      "reasoning": true,
+      "structured": false
+    },
+    "contextWindow": 131072,
+    "license": {
+      "spdx": "MIT",
+      "name": "MIT License",
+      "url": "https://opensource.org/license/mit",
+      "tier": "commercial",
+      "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+      {
+        "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+        "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+      },
+      {
+        "zh-CN": "权重按 MIT 发布；7B / 14B 的基座为 Qwen2.5（Apache-2.0），基座许可同样适用。",
+        "en": "Weights are released under MIT; the 7B / 14B bases are Qwen2.5 (Apache-2.0) and that base license also applies."
+      }
+    ],
+    "cloud": null,
+    "local": {
+      "runtime": "ollama"
+    },
+    "variants": [
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 4683075440,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "deepseek-r1:7b",
+            "digest": "sha256:755ced02ce7befdb13b7ca74e1e4d08cddba4986afdb63a480f2c93d3140383f"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 8,
+          "recommendedRamGb": 16,
+          "vramGb": null
+        },
+        "models": {
+          "id": "deepseek-r1:7b",
+          "contextWindow": 131072,
+          "maxTokens": 8192,
+          "input": [
+            "text"
+          ]
+        }
+      },
+      {
+        "quant": "Q4_K_M",
+        "format": "gguf",
+        "sizeBytes": 8988112209,
+        "sources": [
+          {
+            "kind": "ollama",
+            "name": "deepseek-r1:14b",
+            "digest": "sha256:c333b7232bdb521236694ffbb5f5a6b11cc45d98e9142c73123b670fca400b09"
+          }
+        ],
+        "hardware": {
+          "minRamGb": 16,
+          "recommendedRamGb": 32,
+          "vramGb": null
+        },
+        "models": {
+          "id": "deepseek-r1:14b",
+          "contextWindow": 131072,
+          "maxTokens": 8192,
+          "input": [
+            "text"
+          ]
+        }
+      }
+    ]
+  },
+  "modifications": [],
+  "license": {
+    "spdx": "MIT",
+    "files": [],
+    "url": "https://opensource.org/license/mit"
+  },
+  "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+      {
+        "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+        "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+      }
+    ]
+  },
+  "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+      "ollama"
+    ]
+  },
+  "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "format": "teloa.business-package/v2",
+  "id": "directory-demo",
+  "title": "行业目录读取验收",
+  "version": "1.0.0",
+  "domain": "general",
+  "description": "读取知识与核对缺失依赖",
+  "resources": [
+    {
+      "id": "guide",
+      "kind": "knowledge",
+      "title": "资料核对手册",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "knowledge/guide.md"
+      }
+    },
+    {
+      "id": "missing",
+      "kind": "role",
+      "title": "待补岗位",
+      "version": "1.0.0",
+      "required": true,
+      "source": {
+        "kind": "local",
+        "path": "roles/missing.json"
+      }
+    }
+  ],
+  "relations": [],
+  "entrypoints": []
+}
