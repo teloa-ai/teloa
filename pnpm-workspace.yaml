@@ -311,9 +311,9 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-workflow-ptc@0.2.0-rc.2"
   - "@deepseek-ai/dsh-workspace@0.2.0-rc.2"
   - "@deepseek-ai/dsh-workspace-changes@0.2.0-rc.2"
-  - "@deepseek-ai/libreoffice-kit@0.1.0"
-  - "@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.0"
-  - "@deepseek-ai/libreoffice-kit-wasm@0.1.0"
+  - "@deepseek-ai/libreoffice-kit@0.1.1"
+  - "@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.1"
+  - "@deepseek-ai/libreoffice-kit-wasm@0.1.1"
   - "@deepseek-ai/node-addon-system@0.1.2"
   - "@deepseek-ai/node-addon-system-darwin-arm64@0.1.2"
   - "@deepseek-ai/node-addon-system-darwin-x64@0.1.2"
@@ -615,9 +615,9 @@ overrides:
   "@deepseek-ai/dsh-workflow-ptc": 0.2.0-rc.2
   "@deepseek-ai/dsh-workspace": 0.2.0-rc.2
   "@deepseek-ai/dsh-workspace-changes": 0.2.0-rc.2
-  "@deepseek-ai/libreoffice-kit": 0.1.0
-  "@deepseek-ai/libreoffice-kit-darwin-arm64": 0.1.0
-  "@deepseek-ai/libreoffice-kit-wasm": 0.1.0
+  "@deepseek-ai/libreoffice-kit": 0.1.1
+  "@deepseek-ai/libreoffice-kit-darwin-arm64": 0.1.1
+  "@deepseek-ai/libreoffice-kit-wasm": 0.1.1
   "@deepseek-ai/node-addon-system": 0.1.2
   "@deepseek-ai/node-addon-system-darwin-arm64": 0.1.2
   "@deepseek-ai/node-addon-system-darwin-x64": 0.1.2

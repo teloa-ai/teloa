@@ -70,7 +70,7 @@ pnpm licenses list --json          # full graph, used only for the DSH section b
   | `@ubjs/core@0.31.0-3` | MPL-2.0 |
   | `@ubjs/node@0.31.0-3` | MPL-2.0 |
   | `@ubjs/node-darwin-arm64@0.31.0-3` | MPL-2.0 |
-  | `@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.0` | MPL-2.0 |
+  | `@deepseek-ai/libreoffice-kit-darwin-arm64@0.1.1` | MPL-2.0 |
 
   A bounded scan inside these installed package directories found nested
   `LICENSE`, `NOTICE` and third-party-license files under
@@ -806,8 +806,8 @@ present, remains the source for its exact text.
 
 | Package | Version(s) |
 |---|---|
-| `@deepseek-ai/libreoffice-kit` | 0.1.0 |
-| `@deepseek-ai/libreoffice-kit-darwin-arm64` | 0.1.0 |
+| `@deepseek-ai/libreoffice-kit` | 0.1.1 |
+| `@deepseek-ai/libreoffice-kit-darwin-arm64` | 0.1.1 |
 
 ### BSD-3-Clause (2 packages)
 
