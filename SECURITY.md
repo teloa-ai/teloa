@@ -50,10 +50,11 @@
 
   **已知边界（如实披露）**：以上钉住的只是部署默认值。若本人在 DSH 原生的 `/permission` 界面把某个会话手动切到 `danger-full-access`（即 `sandbox: danger-full-access` + `approval: never`），该会话的沙箱写范围会变成全盘（含 `.runtime/teloa/postgres.env`、`.runtime/dsh/.credentials.enc`、凭据元数据与仓库源码），且每次审批征询都直接判过、不再提示任何人。这是上游 DSH 的会话级能力，不是 Teloa 部署钉能拦截的范围；凭据守卫仍做已知形态检查，但不能充当操作系统隔离，用户须知晓这一操作的后果。
 - **专用工作区**：会话默认工作区是 `.runtime/teloa/workspace`（`0o700`），不是仓库根——它同时是沙箱的兜底写范围与原生终端的初始目录，落在仓库根时一次已认证会话即可改写 `packages/`、`config/`、`.runtime/` 与 `.git`。工作区设置仍可登记任意目录（收敛的是默认工作区，不是可达集合），但等于仓库根或其祖先的工作区在 `conversations/create` 被拒绝，启动器也拒绝以它起服务。
-- **遥测**：已在组合配置 `packages/bundle/cordis.patch.yml` 中钉为 `mode: DISABLED`，字面量、无环境变量入口，由根测试与 `scripts/准备DSH插件.mjs` 的 `verifyConfig` 双重钉住；该模式不构造协调器、provider、处理器与 exporter，任何遥测记录都不会离开本进程。保留该行而不是整行关闭，是为让原生反馈界面继续本地可用，并让会话的 sharing 披露如实报出 `disabled`。
+- **会话遥测**：组合配置将官方会话遥测钉为 `mode: DISABLED`，不构造会话记录上传管道；原生反馈界面仍可本地使用，会话 sharing 披露为 `disabled`。
+- **产品遥测**：复用 DSH 0.2 的产品事件采集与 OTel 批量发送，经过 Teloa 字段过滤后发送至 `https://metrics.teloa.ai/v1/product-events`。仅保留固定事件名、时间、枚举、布尔、受限耗时及匿名安装标识、随机事件标识和操作系统类型；不发送 DeepSeek 账号或设备身份、会话或消息标识、模型名称、用户输入、路径、错误原文和会话正文。遵循既有安装统计规则：正式入口默认参与，源码、CI 与隔离验收排除；无应用内关闭开关。服务端对安装与事件标识做独立事件 HMAC，仅保存去重键与聚合维度，不保存原始标识。
 - **`@teloa/` 保留作用域与随附来源核对**：`@teloa/` 作用域只属于随 Teloa 发行的官方包（契约 `isReservedOfficialPackage`，不区分大小写）。市场 npm 预览与安装回 `teloa/forbidden`，原生扩展管理在选择前拒收并完整回滚，对随附扩展 `@teloa/im-gateway` 只读。随附官方扩展与应用本身同属一个信任域，靠「编译期常量 + 程序目录来源核对」识别：条目只来自契约常量 `bundledExtensions`，不从在线目录或 npm 读取；启用前与每次启动都核对 profile 依赖是 `link:`，且 realpath 等于 `<programRoot>/packages/<包>`，`node_modules` 链接也须指向同一目录（缺失、悬空或指向别处的链接在 profile 锁内原子改回，实体目录拒绝启动）。来源不符时拒绝启用或拒绝启动（`packages/harness-dsh/src/bundled-extensions-profile.ts`、`scripts/启动DSH.mjs`、`scripts/runtime/profile.mjs`）。随附扩展不另做签名；签名只用于从在线目录下载的内容。IM 通道未进组合时，`attachExtension` 一律拒绝挂接，防止第三方插件抢先占用 `im/*` 端点。
 - **凭据与运行时数据不入库**：数据库连接口令、DSH profile、会话日志、验收留痕等一律保存在 `.runtime/`（及升级备份目录），已列入 `.gitignore`，不进入版本库；测试 fixture 中不写真实凭据。
-- **不附带上传原始会话事件**：DSH `0.1.7-rc.1` 的 `session-log-deepseek` 默认会在模型请求中添加 `dsh_session_log`，其中工具事件的 `meta` 可能包含正文脱敏前的文件行。Teloa 用官方 `enabled: false` 配置关闭此附加通道，并在启动时核对缺行、重复、别名重挂和重新开启。正常对话仍按选定模型发送必要上下文；本地会话持久化和日志下载保留。这项修复不意味着所有入口或编码形态都能自动脱敏。
+- **不附带上传原始会话事件**：DSH `0.2.0-rc.2` 的 `session-log-deepseek` 使用动态 `enabled` 开关。Teloa 整行停用这个请求附加插件，并在启动时核对缺行、重复、别名重挂和重新开启，避免设置再次启用上传。正常对话仍按选定模型发送必要上下文；本地会话持久化和日志下载保留。这项修复不意味着所有入口或编码形态都能自动脱敏。
 
 ## 凭据存储与恢复
 

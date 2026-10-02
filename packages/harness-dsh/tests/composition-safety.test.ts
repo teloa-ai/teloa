@@ -59,6 +59,7 @@ test('rc1 官方组合的宿主 HMR 行被显式禁用且受原生插件管理�
 const safe={
  telemetryMode:'DISABLED',
  sessionLogUploadDisabled:true,
+ productAnalyticsPinned:true,
  sandboxMode:'workspace-write',
  sandboxWorkspaceRoot:{__jsExpr:'process.cwd()'},
  sandboxBackendMounted:true,
@@ -97,6 +98,26 @@ const safe={
 }
 /** 装配期复验要用的 profile 事实；没有待启用插件时三项都取空。 */
 const facts={bundles:[] as string[],pendingPackages:[] as string[]}
+
+test('产品遥测仅通过 Teloa 提供方：换端点、换名、停用或以别名重复挂载均拒绝',()=>{
+ const baseline=readCompositionRows({loader:compositionEntries()})!
+ const telemetry=baseline.find(row=>row.id==='teloa-product-telemetry')!
+ const analytics=baseline.find(row=>row.id==='product-analytics')!
+ const check=(rows:typeof baseline)=>compositionViolations(compositionSnapshot(rows,{bundles:[],packages:[]}))
+ assert.deepEqual(check(baseline),[])
+ for(const target of [telemetry,analytics]){
+  const variants=[
+   baseline.filter(row=>row!==target),
+   baseline.map(row=>row===target?{...row,disabled:true}:row),
+   baseline.map(row=>row===target?{...row,config:{endpoint:'https://collector.example.test'}}:row),
+   baseline.map(row=>row===target?{...row,name:'@vendor/analytics'}:row),
+   [...baseline,target],
+   [...baseline,{...target,id:'alias-analytics',disabled:false}],
+  ]
+  for(const rows of variants)assert.deepEqual(check(rows),['telemetry'])
+ }
+ assert.deepEqual(check(baseline.map(row=>row.id==='desktop-product-telemetry'?{...row,disabled:false}:row)),['telemetry'])
+})
 
 test('原生插件声明按实际生效子插件复验，补丁改正文不能借磁盘原文蒙混过关',async()=>{
  const parsed=parseYaml(await readFile(join(bundledAgentPresetsRoot,'teloa-standard/agent.cordis.yml'),'utf8'),{customTags:[{tag:'tag:yaml.org,2002:js',resolve:(source:string)=>({__jsExpr:source})}]})
@@ -379,25 +400,27 @@ test('凭据与提交前闸两枚钉：官方行复挂、Teloa 行缺失都判�
 test('会话日志附带上传必须关闭：缺行、重新开启、表达式、重复或别名挂载都拒绝',()=>{
  const entries=[...compositionEntries().entries()]
  const rows=entries.map(entry=>({id:entry.options.id,disabled:entry.disabled,config:entry.options.config,name:entry.options.name}))
- const row={id:'session-log-deepseek',disabled:false,name:'@deepseek-ai/dsh-session-log-deepseek',config:{enabled:false}}
+ const row={id:'session-log-deepseek',disabled:true,name:'@deepseek-ai/dsh-session-log-deepseek',config:{enabled:false}}
  const rest=rows.filter(item=>item.id!==row.id)
  const check=(list:typeof rows)=>compositionViolations(compositionSnapshot(list,{bundles:[],packages:[]}))
  assert.deepEqual(check([...rest,row]),[])
- for(const bad of [rest,[...rest,{...row,config:{enabled:true}}],[...rest,{...row,config:{}}],[...rest,{...row,config:{enabled:{__jsExpr:'false'}}}],[...rest,row,row],[...rest,row,{...row,id:'alias-log',config:{enabled:true}}],[...rest,{...row,name:'@other/log'}]]){
+ for(const bad of [rest,[...rest,{...row,disabled:false}],[...rest,row,row],[...rest,row,{...row,id:'alias-log',disabled:false}],[...rest,{...row,name:'@other/log'}]]){
   assert.ok(check(bad).includes('telemetry'))
  }
  assert.equal(protectedNativePlugin({patchId:row.id,moduleName:row.name}),true)
 })
 
-test('rc.1 官方日志插件：enabled=false 不注册模型请求附加字段',async()=>{
+test('DSH 0.2 官方日志插件动态开关：注册不等于上传，prepare 每次读取 enabled',async()=>{
  const require=createRequire(import.meta.url),dshRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
  const bootRequire=createRequire(dshRequire.resolve('@deepseek-ai/dsh-app-boot'))
  const baseRequire=createRequire(bootRequire.resolve('@deepseek-ai/dsh-base/package.json'))
  const plugin=await import(pathToFileURL(baseRequire.resolve('@deepseek-ai/dsh-session-log-deepseek')).href)
- const registered:string[]=[]
- const ctx={deepseekLlmApiExtensions:{register:(name:string)=>registered.push(name)}}
- plugin.apply(ctx,{enabled:false})
- assert.deepEqual(registered,[])
- plugin.apply(ctx,{enabled:true})
- assert.deepEqual(registered,['dsh_session_log'],'正对照证明测到官方真实注册口')
+ let enabled=false,reads=0,prepare:(request:unknown)=>unknown=()=>{throw Error('未注册')}
+ const ctx={deepseekLlmApiExtensions:{register:(name:string,extension:{prepare:typeof prepare})=>{assert.equal(name,'dsh_session_log');prepare=extension.prepare}},sessions:{get:()=>{reads++;return undefined}}}
+ plugin.apply(ctx,{enabled:{get:()=>enabled},maxBytes:1024})
+ assert.equal(prepare({sessionId:'synthetic-log-check'}),undefined)
+ assert.equal(reads,0,'关闭时不读取会话日志')
+ enabled=true
+ assert.equal(prepare({sessionId:'synthetic-log-check'}),undefined)
+ assert.equal(reads,1,'正对照证明开关在每次请求时求值')
 })

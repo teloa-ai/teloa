@@ -32,6 +32,19 @@ test('只认岗位明确配置的远程备用：首选本地、全局默认为�
  assert.deepEqual(await resolveTaskModelPolicy(host(),undefined,signal),{primary:remote})
  assert.deepEqual(await resolveTaskModelPolicy(host(local),{fallbackModel:remote},signal),{primary:local,fallback:remote})
 })
+
+test('DSH 0.2 拆分的 API key 与账号路由可显式选作远程备用，配置环回地址时仍拒绝',async()=>{
+ for(const [provider,settingsNs] of [['deepseek-official','llm-deepseek-api-key'],['deepseek-account','llm-deepseek-account']]){
+  const model={provider:provider!,model:'deepseek-flash'}
+  const ctx=host(local)
+  ctx.llm.listConfigurableProviders=()=>[{provider:provider!,displayName:'DeepSeek',settingsNs:settingsNs!,settingsPath:[]}]
+  const settings=Reflect.get(ctx,'settings') as {describe:()=>unknown[]}
+  settings.describe=()=>[{ns:settingsNs,value:{}}]
+  assert.deepEqual(await resolveTaskModelPolicy(ctx,{model:local,fallbackModel:model},signal),{primary:local,fallback:model})
+  settings.describe=()=>[{ns:settingsNs,value:{baseURL:'http://127.0.0.1:9'}}]
+  await assert.rejects(resolveTaskModelPolicy(ctx,{model:local,fallbackModel:model},signal),{stage:'model-resolve'})
+ }
+})
 test('备用配置不可用显式失败；不暴露底层原文，也不偷偷换成另一个远程',async()=>{
  await assert.rejects(resolveTaskModelPolicy(host(),{model:remote,fallbackModel:local},signal),{stage:'model-resolve'})
  const ctx=host();ctx.llm.resolveCallConfig=async()=>{throw Error('private credential value')}

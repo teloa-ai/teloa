@@ -4,7 +4,7 @@ import {createRequire} from 'node:module'
 import {RuntimeAdmission} from '../../harness-dsh/src/runtime-admission.ts'
 import {guardedWebServer,guardedGateway,loadHost} from '../src/runtime-admission.ts'
 test('从官方包依赖范围加载网关，拒绝未验证的载体版本',async()=>{
- assert.equal(typeof await loadHost('@deepseek-ai/dsh-api-gateway','0.1.7-rc.1'),'function')
+ assert.equal(typeof await loadHost('@deepseek-ai/dsh-api-gateway','0.2.0-rc.2'),'function')
  await assert.rejects(loadHost('@deepseek-ai/dsh-api-gateway','unverified'),/版本尚未验证/)
 })
 test('HTTP 关闸返回 503，管理通道保留认证处理，解闸后业务可用',async()=>{

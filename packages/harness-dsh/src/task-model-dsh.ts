@@ -24,8 +24,9 @@ export function remoteModelAddress(value:unknown):boolean{
 }
 export function isDshRemoteModel(ctx:Context,model:ModelReference):boolean{
  const directory=ctx.llm.listConfigurableProviders().find(row=>row.provider===model.provider)
- // 未提供可读配置地址的适配器不猜；当前接入范围为官方 pi-ai 与官方 DeepSeek（DSH 0.1.7-rc.1 `llm-deepseek`）。
- if(!directory||directory.settingsNs!=='llm-pi-ai'&&directory.settingsNs!=='llm-deepseek')return false
+ // DSH 0.2 拆分 API key 与账号路由；官方组合仍将 API key 行命名为 llm-deepseek。
+ const deepseekNamespaces=['llm-deepseek','llm-deepseek-api-key','llm-deepseek-account']
+ if(!directory||directory.settingsNs!=='llm-pi-ai'&&!deepseekNamespaces.includes(directory.settingsNs))return false
  const settings=Reflect.get(ctx,'settings') as Pick<SettingsPort,'describe'>|undefined
  const descriptor=settings?.describe().find(row=>row.ns===directory.settingsNs)
  let profile:unknown=descriptor?.value
@@ -34,7 +35,7 @@ export function isDshRemoteModel(ctx:Context,model:ModelReference):boolean{
   if(profile.baseURL!==undefined)return remoteModelAddress(profile.baseURL)
  }
  // 官方 DeepSeek（provider `deepseek-official`）未配置 baseURL 时使用适配器固定的官方公网端点。
- if(directory.settingsNs==='llm-deepseek')return true
+ if(deepseekNamespaces.includes(directory.settingsNs))return true
  // 官方目录内建路由使用适配器维护的云端地址；自定义路由必须提供可核对的地址。
  return directory.declared===false&&model.provider!=='ollama'
 }

@@ -9,7 +9,7 @@ const officialRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.js
 const {parse,stringify}=require('yaml')
 const officialRoot=dirname(officialRequire.resolve('@deepseek-ai/dsh-web-app/package.json'))
 const manifest=JSON.parse(await readFile(join(officialRoot,'package.json'),'utf8'))
-if(manifest.version!=='0.1.7-rc.1')throw Error('请先复核新的官方预设版本，再更新适配与安全摘要。')
+if(manifest.version!=='0.2.0-rc.2')throw Error('请先复核新的官方预设版本，再更新适配与安全摘要。')
 const customTags=[{tag:'tag:yaml.org,2002:js',identify:value=>typeof value?.__jsExpr==='string',resolve:value=>({__jsExpr:value}),stringify:item=>JSON.stringify(item.value.__jsExpr)}]
 for(const id of ['standard','ptc','cordis']){
  const source=parse(await readFile(join(officialRoot,'presets',id+'.patch.yml'),'utf8'),{customTags})
@@ -24,7 +24,7 @@ for(const id of ['standard','ptc','cordis']){
  }
  if(compactions.length!==1||compactions[0].name!=='@deepseek-ai/dsh-compaction-basic')throw Error('官方 '+id+' 压缩配置已变化。')
  compactions[0].name='@teloa/harness-dsh/local-compaction'
- const content='# 自动生成自 DSH 0.1.7-rc.1；请运行 node scripts/生成官方预设适配.mjs，勿手改。\n'
+ const content='# 自动生成自 DSH 0.2.0-rc.2；请运行 node scripts/生成官方预设适配.mjs，勿手改。\n'
   +stringify([{id:declaration.id,config:declaration.config}],{customTags,lineWidth:0})
  const target=new URL('../packages/bundle/agent-presets/'+id+'.patch.yml',import.meta.url)
  if(process.argv.includes('--check')){

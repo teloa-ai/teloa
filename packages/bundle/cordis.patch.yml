@@ -57,9 +57,36 @@
 - id: session-telemetry-otel
   config:
     mode: DISABLED
+# 复用官方产品采集和 OTel，转交 Teloa 统计服务；不依赖 DeepSeek 的统计端点或账号身份。
+# 开发与验收排除由 Teloa 提供方按只读启动快照执行。
+- id: desktop-product-telemetry
+  disabled: true
+  config: {}
+- insert:
+    - id: teloa-product-telemetry
+      name: '@teloa/harness-dsh/product-telemetry'
+      config:
+        endpoint: https://metrics.teloa.ai/v1/product-events
+        channel: teloa_product_analytics
+        serviceName: teloa-free
+        serviceVersion: 0.2.0-alpha.7
+        compression: none
+        maxExportBatchSize: 32
+        maxQueueSize: 256
+        scheduledDelayMillis: 30000
+        timeoutMillis: 3000
+        exportTimeoutMillis: 4000
+        shutdownTimeoutMillis: 2000
+- id: product-analytics
+  disabled: false
+  config:
+    enabled: true
+    appVersion: 0.2.0-alpha.7
 # 原生会话日志扩展会把工具事件 meta 附带到模型请求，绕过工具正文的脱敏。
-# 复用官方 enabled 开关关闭这条附加上传通道；本地会话持久化与日志下载不受影响。
+# DSH 0.2 的 enabled 已可动态改写，整行停用才能保证设置不能重新打开上传。
+# 本地会话持久化与日志下载由独立插件提供。
 - id: session-log-deepseek
+  disabled: true
   config:
     enabled: false
 # 沙箱默认模式钉死 workspace-write：写范围由 workspaceRoot 兜底，而宿主的 cwd 就是专用工作区。

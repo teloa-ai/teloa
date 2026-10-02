@@ -586,9 +586,10 @@ export function apply(ctx: Context): void {
     const instance=handle.create()
     const disposeNavigationPersistence=attachWorkbenchNavigationPersistence(instance,sessionStorage)
     const store={...handle,create:()=>instance}
-    const layout=createWorkbenchLayout(instance.actions,id=>ctx.slots.entries('main').some(entry=>entry.options.key===id),settingsNavigation)
+    const panelInfo={getSnapshot:()=>instance.getSnapshot().panelInfo,subscribe:(listener:()=>void)=>instance.subscribe(listener)}
+    const layout=createWorkbenchLayout(instance.actions,id=>ctx.slots.entries('main').some(entry=>entry.options.key===id),settingsNavigation,panelInfo)
     const retainMainPanels=()=>instance.actions.retainMainPanels(ctx.slots.entries('main').flatMap(entry=>entry.options.key===undefined?[]:[entry.options.key]))
-    const disposePanelInfo=ctx.slots.provideRoot({hooks:{panelInfo:{getSnapshot:()=>instance.getSnapshot().panelInfo,subscribe:listener=>instance.subscribe(listener)}}})
+    const disposePanelInfo=ctx.slots.provideRoot({hooks:{panelInfo:layout.panelInfo}})
     const disposeService=ctx.reflect.provide('layout',layout)
     const runtime=requireI18n()
     const LocalizedWorkbenchFrame=(props:ComponentProps<typeof WorkbenchFrame>)=>createElement(I18nProvider,{runtime},createElement(WorkbenchFrame,props))

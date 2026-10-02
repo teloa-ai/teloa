@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "dsh": "0.1.7-rc.1"
+    "dsh": "0.2.0-rc.2"
   },
   "dsh": {
     "bundle": {
@@ -21,7 +21,7 @@
     "@teloa/client-ui-workbench": "workspace:*",
     "@teloa/harness-dsh": "workspace:*",
     "@teloa/mcp-reference": "workspace:*",
-    "@deepseek-ai/dsh-mcp-client": "0.1.7-rc.1",
-    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.1.7-rc.1"
+    "@deepseek-ai/dsh-mcp-client": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.0-rc.2"
   }
 }

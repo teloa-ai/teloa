@@ -21,6 +21,9 @@ const {default:TypertRegistry}=await import(gatewayRequire.resolve('@deepseek-ai
 const {default:TypertGateway}=await import(officialRequire.resolve('@deepseek-ai/dsh-api-gateway'))
 
 class Adapter extends LlmAdapter{
+ override async listModels(provider:string){
+  return ['original','small','specialist','large','slow','after-failure','local-only','native-again','text-only'].map(id=>({provider,id,name:id,inputModalities:['text'] as const}))
+ }
  beforeResolve:(model:string)=>Promise<void>=async()=>{}
  requests:GenerateOptions[]=[]
  override async resolveModel(provider:string,model:string){

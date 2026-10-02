@@ -71,7 +71,10 @@ test('嵌套子树里的行也按本地 id 读出，前缀不进定位键',async
 test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
  const ctx=await tree([
   {id:'session-telemetry-otel',name:'cordis:pin',config:{mode:'DISABLED'}},
-  {id:'session-log-deepseek',name:'cordis:pin',config:{enabled:false}},
+  {id:'session-log-deepseek',name:'cordis:pin',disabled:true,config:{enabled:false}},
+  {id:'desktop-product-telemetry',name:'cordis:pin',disabled:true},
+  {id:'teloa-product-telemetry',name:'cordis:pin',config:{endpoint:'https://metrics.teloa.ai/v1/product-events',channel:'teloa_product_analytics',serviceName:'teloa-free'}},
+  {id:'product-analytics',name:'cordis:pin',config:{enabled:true}},
   {id:'sandbox-policy',name:'cordis:pin',config:{mode:'workspace-write',workspaceRoot:{__jsExpr:'process.cwd()'}}},
   {id:'sandbox',name:'cordis:pin'},
   {id:'approval',name:'cordis:pin',config:{policy:'ask'}},
@@ -99,6 +102,9 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
  const names:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
  for(const id of ['standard','ptc','minimal','cordis'])names['preset-'+id]='@deepseek-ai/dsh-agent-preset'
  names['session-log-deepseek']='@deepseek-ai/dsh-session-log-deepseek'
+ names['desktop-product-telemetry']='@deepseek-ai/dsh-host-product-telemetry-otel'
+ names['teloa-product-telemetry']='@teloa/harness-dsh/product-telemetry'
+ names['product-analytics']='@deepseek-ai/dsh-client-product-analytics'
  const snapshot=compositionSnapshot(rows.map(row=>({...row,name:names[row.id]??row.name})),{bundles:[],packages:[]})
  assert.deepEqual(compositionViolations(snapshot),[])
 })

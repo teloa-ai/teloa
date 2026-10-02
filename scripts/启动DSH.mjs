@@ -11,7 +11,7 @@ import { imCredentialFields } from '../packages/contract/src/im-channels.ts'
 // 与安装适配器、装配期复验共用同一份事实来源；这个模块不依赖契约链，启动路径上足够轻。
 import { pendingBundleConflicts, pendingBundleRefusal, readJsonFile, suppressPendingBundles, withProfileLock, writeProfileManifest } from '../packages/harness-dsh/src/pending-plugins.ts'
 import { bundledSourceConflicts, bundledSourceRefusal, bundledSourcesToRegister, migrateBundledExtensions, officialBundledSpecs } from '../packages/harness-dsh/src/bundled-extensions-profile.ts'
-import { bundledModuleConflicts, repairBundledModuleLinks, withOptionalNativeDependencies } from './runtime/profile.mjs'
+import { bundledModuleConflicts, repairBundledModuleLinks, withOptionalNativeDependencies, optionalNativeBundleSpecs, managedAutoReviewModuleSpec } from './runtime/profile.mjs'
 
 const formalPort = 3100
 const formalDshHome = resolve(projectRoot,'.runtime/dsh')
@@ -125,7 +125,9 @@ async function ensureProfile(command,checking) {
     try{
       await withProfileLock(profileDir,async()=>{
         const missing=await bundledSourcesToRegister(profileDir,projectRoot)
-        if(Object.keys(missing).length)await writeProfileManifest(profileDir,withOptionalNativeDependencies(await readJsonFile(profileManifestPath),missing))
+        const manifest=await readJsonFile(profileManifestPath)
+        const next=withOptionalNativeDependencies(manifest,{...optionalNativeBundleSpecs(projectRoot),...missing})
+        if(JSON.stringify(next)!==JSON.stringify(manifest))await writeProfileManifest(profileDir,next)
       })
     }catch(error){console.warn('[teloa] 官方扩展补登记未完成，本次按现状启动：'+(error instanceof Error?error.message:String(error)))}
   }
@@ -137,7 +139,7 @@ async function ensureProfile(command,checking) {
   // 纵深防御：上游先按安装锚点解析组合包，锚点解析失败时会退回 profile 的 node_modules。
   // 随附包链接缺失、悬空或被换到别处时，与 npm 路径同一原子改链函数在锁内改回本程序目录，再按同一判据核对。
   const bundledSpecs=officialBundledSpecs(projectRoot)
-  await withProfileLock(profileDir,()=>repairBundledModuleLinks(profileDir,bundledSpecs))
+  await withProfileLock(profileDir,async()=>repairBundledModuleLinks(profileDir,{...bundledSpecs,...managedAutoReviewModuleSpec(await readJsonFile(profileManifestPath),optionalNativeBundleSpecs(projectRoot))}))
   if((await bundledModuleConflicts(profileDir,bundledSpecs)).length)throw Error(bundledSourceRefusal)
 }
 // 就绪自检的进程级回归需要一个可控的假宿主；只接受本仓库 tests 目录下的 .mjs，

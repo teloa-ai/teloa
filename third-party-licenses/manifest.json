@@ -18,11 +18,11 @@
     },
     {
       "name": "@koromix/koffi-darwin-arm64",
-      "version": "3.2.1",
+      "version": "3.1.1",
       "declaredLicense": "MIT",
       "status": "fixed-source",
       "evidence": [
-        "koffi-3.2.1-LICENSE.txt"
+        "koffi-3.1.1-LICENSE.txt"
       ]
     },
     {
@@ -248,6 +248,14 @@
       "revision": "MPL-1.1",
       "role": "license-text",
       "sha256": "f849fc26a7a99981611a3a370e83078deb617d12a45776d6c4cada4d338be469"
+    },
+    {
+      "file": "koffi-3.1.1-LICENSE.txt",
+      "sourceKind": "npm",
+      "sourceUrl": "https://registry.npmjs.org/koffi/-/koffi-3.1.1.tgz",
+      "revision": "sha512-mRX6AMeeKCxSOeOopqAcLAl5jcNvge7NAG8l7rF/8gGJATI0tdHFYjteIdE0mGOtWdsrJOij+PjnP8Q9c1gwgA==",
+      "role": "package-license",
+      "sha256": "22bcbbbacd739b026a8dc484f62a31484ce4c4e31f3408b60b29b4e41d62b290"
     }
   ],
   "releaseCandidate": {

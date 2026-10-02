@@ -27,6 +27,6 @@ test('电脑组合不修改沙箱、审批或现有岗位授权入口',()=>{
 test('电脑组合声明固定官方服务及原生 provider，由上游持有驱动依赖',()=>{
   const {manifest}=bundle(directory)
   assert.equal(manifest.name,'@teloa/native-computer')
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-computer-use'],'0.1.7-rc.1')
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'],'0.1.7-rc.1')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-computer-use'],'0.2.0-rc.2')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'],'0.2.0-rc.2')
 })

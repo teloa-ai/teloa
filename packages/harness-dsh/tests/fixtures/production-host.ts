@@ -33,6 +33,9 @@ export function compositionEntries(override:Record<string,unknown>={}){
   const rows:Record<string,unknown>={
     'session-telemetry-otel':{mode:'DISABLED'},
     'session-log-deepseek':{enabled:false},
+    'desktop-product-telemetry':{},
+    'teloa-product-telemetry':{endpoint:'https://metrics.teloa.ai/v1/product-events',channel:'teloa_product_analytics',serviceName:'teloa-free'},
+    'product-analytics':{enabled:true},
     // 组合树里 workspaceRoot 是 !!js 表达式节点，不是字符串。
     'sandbox-policy':{mode:'workspace-write',workspaceRoot:{__jsExpr:'process.cwd()'}},
     sandbox:{},
@@ -60,11 +63,14 @@ export function compositionEntries(override:Record<string,unknown>={}){
     'teloa-attachment-guard':{},
     ...override,
   }
-  const disabledRows=new Set(['tool-workflow','tool-ralph','hmr','credentials','attachment-local'])
+  const disabledRows=new Set(['tool-workflow','tool-ralph','hmr','credentials','attachment-local','session-log-deepseek','desktop-product-telemetry'])
   // 上网三行还要钉住"这一行挂的是哪个包"：只按 id 定位挡不住同 id 换实现。
   const rowNames:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
   for(const id of Object.keys(officialPresets))rowNames[id]='@deepseek-ai/dsh-agent-preset'
   rowNames['session-log-deepseek']='@deepseek-ai/dsh-session-log-deepseek'
+  rowNames['desktop-product-telemetry']='@deepseek-ai/dsh-host-product-telemetry-otel'
+  rowNames['teloa-product-telemetry']='@teloa/harness-dsh/product-telemetry'
+  rowNames['product-analytics']='@deepseek-ai/dsh-client-product-analytics'
   // `entry.id` 带所属子树前缀（真实宿主里是根 Include 的条目 id），定位键只能取 `options.id`。
   return {entries:function*(){
     for(const [id,config] of Object.entries(rows))yield {id:'profile-include:'+id,disabled:disabledRows.has(id),options:{id,config,...(rowNames[id]===undefined?{}:{name:rowNames[id]})}}

@@ -17,11 +17,11 @@ test('local-embedding 自带组合补丁：只插入 teloa-local-embedding 一�
  assert.equal((JSON.parse(await read('packages/bundle/package.json')) as {dependencies:Record<string,string>}).dependencies['@teloa/local-embedding'],undefined)
 })
 
-test('依赖：第三方只有 @huggingface/tokenizers@0.2.0；DSH 公开包钉 0.1.7-rc.1；不依赖 onnxruntime-node（按需受管安装）',async()=>{
+test('依赖：第三方只有 @huggingface/tokenizers@0.2.0；DSH 公开包钉 0.2.0-rc.2；不依赖 onnxruntime-node（按需受管安装）',async()=>{
  const manifest=JSON.parse(await read('package.json',pkgRoot)) as Record<string,Record<string,string>|undefined>
  const deps=manifest.dependencies!
  assert.deepEqual(Object.keys(deps).filter(name=>!name.startsWith('@deepseek-ai/')&&!name.startsWith('@teloa/')),['@huggingface/tokenizers'])
  assert.equal(deps['@huggingface/tokenizers'],'0.2.0')
- for(const [name,version] of Object.entries(deps))if(name.startsWith('@deepseek-ai/'))assert.equal(version,name==='@deepseek-ai/cordis'?'4.0.4':'0.1.7-rc.1',name)
+ for(const [name,version] of Object.entries(deps))if(name.startsWith('@deepseek-ai/'))assert.equal(version,name==='@deepseek-ai/cordis'?'4.0.4':'0.2.0-rc.2',name)
  for(const field of ['dependencies','devDependencies','optionalDependencies','peerDependencies'])assert.equal(manifest[field]?.['onnxruntime-node'],undefined,field)
 })

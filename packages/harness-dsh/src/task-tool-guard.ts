@@ -168,7 +168,9 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    checkedOrchestration.set(exec,{definition,rootId:policySessionId,policy})
    const decision=await next()
    const approval=ctx.get('approval')
-   if((decision.kind==='allow'||decision.kind==='ask')&&approval&&(approval.overrideOf(exec.agent.session)??approval.config.policy??'ask')==='never')return {kind:'deny',reason:'当前权限模式不会请求人工确认；请切换到允许人工确认的权限模式后再执行脚本或迭代任务。'}
+   const permissions=ctx.get('permissionPresets')
+   // DSH 0.2 Auto 使用 ask + 模型审查，不能把 ask 当作必然由本人批准。
+   if((decision.kind==='allow'||decision.kind==='ask')&&(permissions?.current(exec.agent.session)==='auto'||approval&&(approval.overrideOf(exec.agent.session)??approval.config.policy??'ask')==='never'))return {kind:'deny',reason:'当前权限模式不会请求人工确认；请切换到允许人工确认的权限模式后再执行脚本或迭代任务。'}
    return decision.kind==='allow'?{kind:'ask',reason:'请确认本次脚本或迭代执行；员工授权不会代替逐次确认。'}:decision
   }
   if(policy!==null&&isNativeToolName(exec.name)){

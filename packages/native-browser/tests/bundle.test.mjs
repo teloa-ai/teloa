@@ -29,6 +29,6 @@ test('浏览器启用不授予 Full access、不改变现有审批与工具呈�
 test('浏览器组合拥有固定官方运行依赖，不能被误当作已安装裸 provider',()=>{
   const {manifest}=bundle(directory)
   assert.equal(manifest.name,'@teloa/native-browser')
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-browser-use'],'0.1.7-rc.1')
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'],'0.1.7-rc.1')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-browser-use'],'0.2.0-rc.2')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'],'0.2.0-rc.2')
 })

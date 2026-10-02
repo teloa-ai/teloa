@@ -55,3 +55,14 @@ test('官方 Team bundle 紧邻 Teloa 之前，保留其他 bundle 顺序且重�
  assert.deepEqual(runtime.withTeloaRequiredBundles(next),next)
  assert.deepEqual(runtime.withTeloaRequiredBundles(['base']),['base','@deepseek-ai/dsh-experimental-agent-team-profile','@teloa/bundle'])
 })
+test('随附 Auto Review 跟进 DSH 升级，手动来源保留；仅当前登记可修复链接',()=>{
+ const name='@deepseek-ai/dsh-experimental-auto-review'
+ const previous='link:/old-program/node_modules/.pnpm/@deepseek-ai+dsh-experimental-auto-review@0.1.7-rc.1/node_modules/'+name
+ const current='link:/new-program/node_modules/.pnpm/@deepseek-ai+dsh-experimental-auto-review@0.2.0-rc.2/node_modules/'+name
+ const specs={[name]:current},manifest={dependencies:{[name]:previous}}
+ const next=runtime.withOptionalNativeDependencies(manifest,specs)
+ assert.equal(next.dependencies[name],current)
+ assert.deepEqual(runtime.managedAutoReviewModuleSpec(next,specs),specs)
+ assert.deepEqual(runtime.managedAutoReviewModuleSpec(manifest,specs),{})
+ for(const custom of ['file:/custom/review','0.1.7-rc.1','link:/custom/review'])assert.equal(runtime.withOptionalNativeDependencies({dependencies:{[name]:custom}},specs).dependencies[name],custom)
+})

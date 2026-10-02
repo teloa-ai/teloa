@@ -9,7 +9,7 @@
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
   "engines": {
-    "dsh": "0.1.7-rc.1"
+    "dsh": "0.2.0-rc.2"
   },
   "dsh": {
     "bundle": {
@@ -22,9 +22,9 @@
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.1",
-    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.1",
-    "@deepseek-ai/dsh-subprocess": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-atomic-write": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2",
     "@huggingface/tokenizers": "0.2.0",
     "@teloa/contract": "workspace:*",
     "@teloa/harness-dsh": "workspace:*"

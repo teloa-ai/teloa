@@ -23,6 +23,8 @@ export type CompositionRow={id:string;disabled:boolean;config:unknown;name?:unkn
 export type CompositionSnapshot={
  telemetryMode?:unknown
  sessionLogUploadDisabled?:boolean
+ /** 产品事件使用 Teloa 过滤提供方和统计端点，官方采集保留且未重复挂载。 */
+ productAnalyticsPinned?:boolean
  sandboxMode?:unknown
  sandboxWorkspaceRoot?:unknown
  /** 执行后端 `@deepseek-ai/dsh-sandbox-local` 行是否在组合树里且未被关闭。 */
@@ -172,7 +174,7 @@ function presetsSafe(value:unknown):boolean{
 /** 纯函数：键值快照 → 违规钉子列表。钉子测试与装配期复验共用这一份判据。 */
 export function compositionViolations(snapshot:CompositionSnapshot):CompositionPin[]{
  const violations:CompositionPin[]=[]
- if(snapshot.telemetryMode!=='DISABLED'||snapshot.sessionLogUploadDisabled!==true)violations.push('telemetry')
+ if(snapshot.telemetryMode!=='DISABLED'||snapshot.sessionLogUploadDisabled!==true||snapshot.productAnalyticsPinned!==true)violations.push('telemetry')
  if(snapshot.sandboxMode!=='workspace-write'||!workspaceRootPinned(snapshot.sandboxWorkspaceRoot)||snapshot.sandboxBackendMounted!==true)violations.push('sandbox')
  if(snapshot.approvalPolicy!=='ask')violations.push('approval')
  if(snapshot.toolsMode!=='native'||snapshot.toolWorkflowDisabled!==true||snapshot.toolRalphDisabled!==true||snapshot.presetToolPresentationMode!=='native'||snapshot.presetToolWorkflowDisabled!==false||snapshot.presetToolRalphDisabled!==false||snapshot.presetBodyDigestMatches!==true)violations.push('tools')
@@ -317,10 +319,20 @@ export function compositionSnapshot(rows:readonly CompositionRow[],pending?:{bun
  /** 缺行同样判违规：取不到这一行就无从证明那个工具入口没被挂上去。 */
  const rowDisabled=(id:string):boolean=>{const row=rowOf(id);return row!==undefined&&row.disabled===true}
  const sessionLog=rowOf('session-log-deepseek'),sessionLogModule='@deepseek-ai/dsh-session-log-deepseek'
- const logDisabled=(row:CompositionRow)=>row.disabled||(record(row.config)&&row.config.enabled===false)
+ // enabled 在 DSH 0.2 是 Volatile，磁盘 false 不能证明运行时关闭；必须整行停用。
+ const logDisabled=(row:CompositionRow)=>row.disabled===true
  return {
   telemetryMode:configOf('session-telemetry-otel')?.mode,
   sessionLogUploadDisabled:sessionLog!==undefined&&sessionLog.name===sessionLogModule&&logDisabled(sessionLog)&&rows.filter(row=>row.name===sessionLogModule).every(logDisabled),
+  productAnalyticsPinned:rowOf('desktop-product-telemetry')?.name==='@deepseek-ai/dsh-host-product-telemetry-otel'
+   &&rowDisabled('desktop-product-telemetry')
+   &&rowOf('teloa-product-telemetry')?.name==='@teloa/harness-dsh/product-telemetry'
+   &&configOf('teloa-product-telemetry')?.endpoint==='https://metrics.teloa.ai/v1/product-events'
+   &&configOf('teloa-product-telemetry')?.channel==='teloa_product_analytics'
+   &&['teloa-free','teloa-pro'].includes(String(configOf('teloa-product-telemetry')?.serviceName))
+   &&rowOf('product-analytics')?.name==='@deepseek-ai/dsh-client-product-analytics'
+   &&configOf('product-analytics')?.enabled===true
+   &&rows.filter(row=>!row.disabled&&['@teloa/harness-dsh/product-telemetry','@deepseek-ai/dsh-host-product-telemetry-otel','@deepseek-ai/dsh-client-product-analytics'].includes(String(row.name))).length===2,
   sandboxMode:sandbox?.mode,
   sandboxWorkspaceRoot:sandbox?.workspaceRoot,
   // 执行后端缺席时上游的 bash 执行器因 inject 悬挂而不装载，但显式钉住这一行更省心。

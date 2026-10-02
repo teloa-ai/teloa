@@ -74,6 +74,7 @@ test('判据函数本身仍会对每一条被改回上游取值的钉子报警',
   assert.deepEqual(compositionViolations(safe), [])
   assert.deepEqual(compositionViolations({ ...safe, telemetryMode: 'FEEDBACK_ONLY' }), ['telemetry'])
   assert.deepEqual(compositionViolations({ ...safe, sessionLogUploadDisabled: false }), ['telemetry'])
+  assert.deepEqual(compositionViolations({ ...safe, productAnalyticsPinned: false }), ['telemetry'])
   assert.deepEqual(compositionViolations({ ...safe, sandboxMode: 'danger-full-access' }), ['sandbox'])
   assert.deepEqual(compositionViolations({ ...safe, approvalPolicy: 'never' }), ['approval'])
   assert.deepEqual(compositionViolations({ ...safe, toolsMode: 'ptc' }), ['tools'])
@@ -158,7 +159,7 @@ test('组合树里没有任何把这些钉子交回环境变量的入口', () =>
 test('补丁以字面量钉住这些取值', async () => {
   const patch = await readFile(new URL('../packages/bundle/cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /- id: session-telemetry-otel\n\s+config:\n\s+mode: DISABLED\n/, '补丁必须以字面量钉住 DISABLED')
-  assert.match(patch, /- id: session-log-deepseek\n\s+config:\n\s+enabled: false\n/, '会话日志附带上传必须以字面量关闭')
+  assert.match(patch, /- id: session-log-deepseek\n\s+disabled: true\n\s+config:\n\s+enabled: false\n/, '动态日志开关不能重新启用已停用的上传插件')
   assert.match(patch, /- id: sandbox-policy\n(?:\s*#.*\n)*\s+config:\n\s+mode: workspace-write\n\s+workspaceRoot: !!js process\.cwd\(\)\n/, '补丁必须钉住 workspace-write 与 process.cwd() 兜底根')
   assert.match(patch, /- id: tools\n\s+config:\n\s+mode: native\n/, '补丁必须以字面量钉住 native')
   assert.match(patch, /- id: tool-workflow\n\s+disabled: true\n/, '补丁必须以字面量关闭 workflow 工具入口')

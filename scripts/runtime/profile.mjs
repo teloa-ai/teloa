@@ -34,7 +34,16 @@ export function optionalNativeBundleSpecs(programRoot){
  *  `@teloa/` 随附包例外：官方值覆盖旧值——npm 每版本换程序目录（home/releases/<version>），旧 link 会让来源核对失败、宿主起不来。 */
 export function withOptionalNativeDependencies(manifest,specs){
  const official=Object.fromEntries(Object.entries(specs).filter(([name])=>name.startsWith('@teloa/')))
+ const review='@deepseek-ai/dsh-experimental-auto-review',previous=manifest.dependencies?.[review]
+ // 仅跟随 Teloa 随附的 pnpm 源链接；本人选定的 registry/file/其他 link 版本保持原样。
+ if(typeof previous==='string'&&previous.startsWith('link:')&&previous.includes('/node_modules/.pnpm/@deepseek-ai+dsh-experimental-auto-review@')&&previous.endsWith('/node_modules/'+review)&&specs[review])official[review]=specs[review]
  return {...manifest,dependencies:{...specs,...manifest.dependencies,...official}}
+}
+
+/** 只修复已明确登记为当前随附源的 Auto Review 链接，不接管本人选择的来源。 */
+export function managedAutoReviewModuleSpec(manifest,specs){
+ const name='@deepseek-ai/dsh-experimental-auto-review'
+ return specs[name]&&manifest.dependencies?.[name]===specs[name]?{[name]:specs[name]}:{}
 }
 
 /** realpath；路径不存在（含悬空链接）时为 undefined。 */
@@ -102,9 +111,10 @@ export async function prepareRuntimeProfile(layout){
  const bundledSpecs=bundled.officialBundledSpecs(layout.programRoot)
  await pending.withProfileLock(profileDir,async()=>{
   const manifest=await pending.readJsonFile(join(profileDir,'package.json'))
-  const next=withOptionalNativeDependencies(manifest,optionalNativeBundleSpecs(layout.programRoot))
+  const optional=optionalNativeBundleSpecs(layout.programRoot)
+  const next=withOptionalNativeDependencies(manifest,optional)
   if(JSON.stringify(next)!==JSON.stringify(manifest))await pending.writeProfileManifest(profileDir,next)
-  await repairBundledModuleLinks(profileDir,bundledSpecs)
+  await repairBundledModuleLinks(profileDir,{...bundledSpecs,...managedAutoReviewModuleSpec(next,optional)})
  })
  await pending.rewriteProfileBundles(profileDir,withTeloaRequiredBundles)
  await pending.suppressPendingBundles(profileDir)

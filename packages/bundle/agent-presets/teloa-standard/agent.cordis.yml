@@ -1,4 +1,4 @@
-# DSH 0.1.7-rc.1 官方预设声明：由 bundle.patch 按顺序加载，无目录扫描或自建注册器。
+# DSH 0.2.0-rc.2 官方预设声明：由 bundle.patch 按顺序加载，无目录扫描或自建注册器。
 # 面向通用业务协作，官方注册器负责作用域和生命周期，执行闸负责业务授权。
 # 声明可被后续补丁覆盖，因此 composition-safety 校验实际 config.plugins 的完整摘要。
 - insert:

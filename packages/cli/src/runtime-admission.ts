@@ -18,7 +18,7 @@ export function guardedWebServer(Base:any,gate:any){return class extends Base {
  }})}
 }}
 export function guardedGateway(Base:any,gate:any){
- // DSH 0.1.7-rc.1 的 WebSocket mux 绕过公开 stream()/wireStream.open，且没有入站拦截扩展。
+ // 已核对 DSH 0.2.0-rc.2：WebSocket mux 仍直调 openWireStream，没有入站拦截扩展。
  // 仅在固定版本的载体入口加停止闸门，解析、认证、取消与流协议仍由官方实现；升级须实装复验。
  if(typeof Base.prototype.openWireStream!=='function')throw Error('DSH 流入口不兼容，无法装配停止保护。')
  return class extends Base {

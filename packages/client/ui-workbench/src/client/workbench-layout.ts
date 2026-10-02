@@ -3,9 +3,10 @@ import type {WorkbenchActions} from './store.js'
 import type {SettingsNavigation} from './settings-navigation.js'
 
 type WorkbenchLayout=ILayout&{dispose():void}
-export function createWorkbenchLayout(actions:WorkbenchActions,hasMainPanel:(id:MainPanelId)=>boolean,settings:SettingsNavigation):WorkbenchLayout{
+export function createWorkbenchLayout(actions:WorkbenchActions,hasMainPanel:(id:MainPanelId)=>boolean,settings:SettingsNavigation,panelInfo:ILayout['panelInfo']):WorkbenchLayout{
   let navigation=new AbortController()
   return {
+    panelInfo,
     selectPanel(panelId){
       // 模型设置是 DSH 的 settings.section（id models），不是主面板：市场模型条目「去配置」经设置目录打开。
       if(panelId==='models'){

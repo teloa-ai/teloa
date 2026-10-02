@@ -15,7 +15,7 @@ const {createWorkbenchStore}=await import('../src/client/store.ts')
 
 test('原生插件入口打开设置内的连接与运行环境，保留返回位置',()=>{
   const store=createWorkbenchStore().create(),settings=createSettingsNavigation()
-  const layout=createWorkbenchLayout(store.actions,id=>id==='plugins',settings)
+  const layout=createWorkbenchLayout(store.actions,id=>id==='plugins',settings,{getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:listener=>store.subscribe(listener)})
   store.actions.openCapabilityCatalog()
   settings.select('teloa-about')
   const pending=layout.beginNavigation()
@@ -34,7 +34,7 @@ test('原生插件入口打开设置内的连接与运行环境，保留返回�
 
 test('市场模型条目「去配置」：models 不是主面板，改为打开设置并选中模型设置页',()=>{
   const store=createWorkbenchStore().create(),settings=createSettingsNavigation()
-  const layout=createWorkbenchLayout(store.actions,id=>id==='plugins',settings)
+  const layout=createWorkbenchLayout(store.actions,id=>id==='plugins',settings,{getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:listener=>store.subscribe(listener)})
   store.actions.openCapabilityCatalog()
   settings.select('teloa-about')
   const pending=layout.beginNavigation()
@@ -48,7 +48,11 @@ test('市场模型条目「去配置」：models 不是主面板，改为打开�
 
 test('其他原生面板和会话导航保持原行为，未知面板不改变当前页面',()=>{
   const store=createWorkbenchStore().create(),settings=createSettingsNavigation()
-  const layout=createWorkbenchLayout(store.actions,id=>id==='workspace-settings',settings)
+  const panelInfo={getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:(listener:()=>void)=>store.subscribe(listener)}
+  const layout=createWorkbenchLayout(store.actions,id=>id==='workspace-settings',settings,panelInfo)
+  assert.equal(layout.panelInfo,panelInfo,'原生服务与根 hook 必须共享同一个选中态来源')
+  const selections:(MainPanelId|null)[]=[]
+  const off=layout.panelInfo.subscribe(()=>selections.push(layout.panelInfo.getSnapshot().activePanelId))
   layout.selectPanel('workspace-settings' as MainPanelId)
   assert.equal(store.getSnapshot().panelInfo.activePanelId,'workspace-settings')
   assert.throws(()=>layout.selectPanel('missing' as MainPanelId),/not registered/)
@@ -56,6 +60,8 @@ test('其他原生面板和会话导航保持原行为，未知面板不改变�
   layout.selectPanel(null)
   assert.equal(store.getSnapshot().view,'messages')
   assert.equal(store.getSnapshot().panelInfo.activePanelId,null)
+  assert.deepEqual(selections,['workspace-settings',null])
+  off()
   layout.dispose()
 })
 

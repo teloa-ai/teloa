@@ -13,7 +13,7 @@ darwin-arm64 lock entry differs from the frozen pnpm install.
 | Installed package | Recorded material |
 | --- | --- |
 | `@img/sharp-libvips-darwin-arm64@1.3.3` | `sharp-libvips-1.3.3-versions.json`, `sharp-libvips-1.3.3-THIRD-PARTY-NOTICES.md`, `sharp-libvips-1.3.3-build-LICENSE.txt`, `libvips-v8.18.6-LICENSE.txt`, `LGPL-3.0.txt`, `GPL-3.0.txt` |
-| `@koromix/koffi-darwin-arm64@3.2.1` | `koffi-3.2.1-LICENSE.txt` |
+| `@koromix/koffi-darwin-arm64@3.1.1` | `koffi-3.1.1-LICENSE.txt` |
 | `@napi-rs/keyring-darwin-arm64@2.1.0` | `keyring-2.1.0-LICENSE.txt` |
 | `@trycua/cua-driver@0.28.0` | `cua-driver-0.28.0-LICENSE.md` |
 | `@trycua/cua-driver-darwin-arm64@0.28.0` | `cua-driver-0.28.0-LICENSE.md`, `cua-driver-0.28.0-node-runtime-NOTICE.md`, `uniffi-bindgen-0.31.0-3-LICENSE.txt`, `MPL-2.0.txt` |
@@ -23,8 +23,9 @@ darwin-arm64 lock entry differs from the frozen pnpm install.
 | `pg-types@2.2.0` | `pg-types-2.2.0-README.md` (the MIT text is in its license section) |
 | `pgpass@1.0.5` | `pgpass-1.0.5-README.md` (the MIT text is in its license section) |
 
-The Koffi and keyring source license files match the corresponding installed
-parent packages byte for byte. The pg-types and pgpass fixed-tag READMEs match
+The Koffi 3.1.1 license comes from the pinned installed parent package; its
+registry tarball integrity is recorded in the manifest. The keyring source
+license file matches its installed parent package byte for byte. The pg-types and pgpass fixed-tag READMEs match
 their installed READMEs byte for byte. The Cua `node-runtime-NOTICE.md` matches
 the installed binary package byte for byte. It describes the embedded N-API
 runtime derived from `uniffi-bindgen-react-native` 0.31.0-3 under MPL-2.0;

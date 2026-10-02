@@ -1,4 +1,4 @@
-# 自动生成自 DSH 0.1.7-rc.1；请运行 node scripts/生成官方预设适配.mjs，勿手改。
+# 自动生成自 DSH 0.2.0-rc.2；请运行 node scripts/生成官方预设适配.mjs，勿手改。
 - id: preset-standard
   config:
     id: standard
