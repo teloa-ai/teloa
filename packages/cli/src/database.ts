@@ -95,8 +95,10 @@ export async function prepareDatabase(state:InstallState,options:{initialize?:bo
   await client.query("select pg_advisory_lock(hashtext('teloa-install-owner'))")
   const marker=await client.query("select to_regclass('public.teloa_installation') as marker")
   if(marker.rows[0].marker){
-   const rows=await client.query('select id from public.teloa_installation')
+   const rows=await client.query('select id,data_version from public.teloa_installation')
    if(rows.rows.length!==1||rows.rows[0].id!==state.id)throw Error('数据库已归属另一安装，拒绝接管。')
+   // 当前发行只支持已验收的数据版本 1；不能先初始化或改表，再发现旧程序不兼容。
+   if(rows.rows[0].data_version!==1)throw Error('数据库数据版本尚不支持，拒绝初始化或接管；请使用匹配版本恢复。')
   }else{
    const tables=await client.query("select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not in ('pg_catalog','information_schema') and n.nspname not like 'pg_toast%' and c.relkind in ('r','p','v','m','S') limit 1")
    if(tables.rows.length)throw Error('已有数据库不是空库，拒绝接管。请使用新的本机 teloa 专库。')
@@ -108,7 +110,7 @@ export async function prepareDatabase(state:InstallState,options:{initialize?:bo
    await initializeTeloaDatabase(pool)
   }
  }catch(error){
-  if(error instanceof Error&&/^(数据库已归属|已有数据库不是空库|本机数据库未就绪)/.test(error.message))throw error
+  if(error instanceof Error&&/^(数据库已归属|数据库数据版本|已有数据库不是空库|本机数据库未就绪)/.test(error.message))throw error
   throw Error('数据库初始化失败；已保留本安装数据，可修复连接后重试。')
  }finally{if(client){await client.query("select pg_advisory_unlock(hashtext('teloa-install-owner'))").catch(()=>{});client.release()}await pool.end()}
  return {configPath:databaseConfig(state)}
