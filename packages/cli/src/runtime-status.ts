@@ -1,6 +1,10 @@
-type ActivityHost={agents:{list:()=>Array<{status:string;whenIdle:()=>Promise<void>}>};jobs:{list:()=>Array<{status:string}>};sessions:{list:()=>Array<{id:string}>};terminalController:{list:(id:string)=>Array<{state:string}>}}
+type ActivityHost={agents:{list:()=>Array<{id:string;status:string;whenIdle:()=>Promise<void>}>};jobs:{list:(caller?:string)=>Array<{id:string;status:string}>};sessions:{list:()=>Array<{id:string}>};terminalController:{list:(id:string)=>Array<{state:string}>}}
 export async function readRuntimeActivity(host:ActivityHost){
- const agents=host.agents.list(),jobs=host.jobs.list(),terminals=host.sessions.list().flatMap(session=>host.terminalController.list(session.id))
+ const agents=host.agents.list(),sessions=host.sessions.list()
+ // 官方 Job.list() 无 caller 时只返回无归属作业；维护检查须读取每个会话并去重。
+ const callers=new Set([...sessions,...agents].map(row=>row.id))
+ const jobs=[...new Map([host.jobs.list(),...[...callers].map(id=>host.jobs.list(id))].flat().map(row=>[row.id,row])).values()]
+ const terminals=sessions.flatMap(session=>host.terminalController.list(session.id))
  if(agents.some(row=>!['idle','running','disposed'].includes(row.status))||jobs.some(row=>!['running','stopping','completed','killed','failed'].includes(row.status))||terminals.some(row=>!['running','exited','failed'].includes(row.state)))throw Error('无法确认完整运行状态。')
  const busy=await Promise.all(agents.map(async agent=>{
   if(agent.status==='running')return true
