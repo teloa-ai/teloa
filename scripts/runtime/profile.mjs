@@ -35,8 +35,11 @@ export function optionalNativeBundleSpecs(programRoot){
 export function withOptionalNativeDependencies(manifest,specs){
  const official=Object.fromEntries(Object.entries(specs).filter(([name])=>name.startsWith('@teloa/')))
  const review='@deepseek-ai/dsh-experimental-auto-review',previous=manifest.dependencies?.[review]
- // 仅跟随 Teloa 随附的 pnpm 源链接；本人选定的 registry/file/其他 link 版本保持原样。
- if(typeof previous==='string'&&previous.startsWith('link:')&&previous.includes('/node_modules/.pnpm/@deepseek-ai+dsh-experimental-auto-review@')&&previous.endsWith('/node_modules/'+review)&&specs[review])official[review]=specs[review]
+ // 仅跟随随附的 pnpm 或发行 .teloa-store 源链接；本人选定的 registry/file/其他 link 保持原样。
+ const bundledReview=typeof previous==='string'&&previous.startsWith('link:')&&(
+  previous.includes('/node_modules/.pnpm/@deepseek-ai+dsh-experimental-auto-review@')&&previous.endsWith('/node_modules/'+review)||
+  /\/node_modules\/\.teloa-store\/[a-f0-9]{24}\/node_modules\/@deepseek-ai\/dsh-experimental-auto-review$/.test(previous))
+ if(bundledReview&&specs[review])official[review]=specs[review]
  return {...manifest,dependencies:{...specs,...manifest.dependencies,...official}}
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtemp,readFile,writeFile} from 'node:fs/promises'
+import {mkdtemp,mkdir,readFile,realpath,rm,symlink,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import * as setup from '../scripts/准备DSH插件.mjs'
@@ -65,4 +65,42 @@ test('随附 Auto Review 跟进 DSH 升级，手动来源保留；仅当前登�
  assert.deepEqual(runtime.managedAutoReviewModuleSpec(next,specs),specs)
  assert.deepEqual(runtime.managedAutoReviewModuleSpec(manifest,specs),{})
  for(const custom of ['file:/custom/review','0.1.7-rc.1','link:/custom/review'])assert.equal(runtime.withOptionalNativeDependencies({dependencies:{[name]:custom}},specs).dependencies[name],custom)
+})
+
+test('发行 Auto Review 链接随应用目录更新，独立安装的 store 摘要变化也可修复',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-review-release-'))
+ t.after(()=>rm(root,{recursive:true,force:true}))
+ const name='@deepseek-ai/dsh-experimental-auto-review'
+ const source=join(root,'原应用 With Spaces/Teloa.app/node_modules/.teloa-store','a'.repeat(24),'node_modules',name)
+ const target=join(root,'新应用 With Spaces/Teloa.app/node_modules/.teloa-store','b'.repeat(24),'node_modules',name)
+ const profile=join(root,'profile'),link=join(profile,'node_modules',name)
+ for(const path of [source,target,join(profile,'node_modules/@deepseek-ai')])await mkdir(path,{recursive:true})
+ await symlink(source,link)
+ const before={dependencies:{[name]:'link:'+source,other:'1.0.0'},dsh:{profile:{bundles:['base']}},custom:{keep:true}}
+ const specs={[name]:'link:'+target},after=runtime.withOptionalNativeDependencies(before,specs)
+ assert.equal(after.dependencies[name],specs[name])
+ assert.deepEqual(after.dsh,before.dsh)
+ assert.deepEqual(after.custom,before.custom)
+ assert.equal(after.dependencies.other,'1.0.0')
+ assert.equal(before.dependencies[name],'link:'+source)
+ await runtime.repairBundledModuleLinks(profile,runtime.managedAutoReviewModuleSpec(after,specs))
+ assert.equal(await realpath(link),await realpath(target))
+ assert.deepEqual(await runtime.bundledModuleConflicts(profile,specs),[])
+ await runtime.repairBundledModuleLinks(profile,runtime.managedAutoReviewModuleSpec(after,specs))
+ assert.equal(await realpath(link),await realpath(target))
+})
+
+test('发行 Auto Review 仅识别完整随附布局，未知或本人来源不改写',()=>{
+ const name='@deepseek-ai/dsh-experimental-auto-review'
+ const specs={[name]:'link:/current/node_modules/.teloa-store/'+ 'a'.repeat(24)+'/node_modules/'+name}
+ const custom=['file:/custom/review','0.2.0-rc.2','link:/custom/review',
+  'link:/old/node_modules/.teloa-store/'+ 'a'.repeat(23)+'/node_modules/'+name,
+  'link:/old/node_modules/.teloa-store/'+ 'A'.repeat(24)+'/node_modules/'+name,
+  'link:/old/node_modules/.teloa-store/'+ 'a'.repeat(24)+'/node_modules/@vendor/review',
+  'link:/old/node_modules/.teloa-store/'+ 'a'.repeat(24)+'/node_modules/'+name+'/other']
+ for(const spec of custom){
+  const before={dependencies:{[name]:spec}},after=runtime.withOptionalNativeDependencies(before,specs)
+  assert.equal(after.dependencies[name],spec)
+  assert.deepEqual(runtime.managedAutoReviewModuleSpec(after,specs),{})
+ }
 })
