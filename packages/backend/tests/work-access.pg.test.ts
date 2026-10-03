@@ -29,6 +29,7 @@ const states=new Map<string,State>()
 function state(owner:string){let value=states.get(owner);if(!value){value={allowed:true,epoch:1,now:100,expires:200,requests:[]};states.set(owner,value)}return value}
 before(async()=>{
  workAccess.requirePolicy();workAccess.installPolicy(async request=>{
+  if(request.kind==='native-input')throw Error('此业务事务夹具不接收原生输入。')
   const current=state(request.ownerId),epoch=current.epoch
   current.requests.push(request)
   await Promise.resolve()

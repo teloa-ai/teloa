@@ -1,0 +1,167 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1500,6 +1500,7 @@
+ 	transact;
+ 	commit;
+ 	retention;
++	options;
+ 	timer;
+ 	running;
+ 	stopping = false;
+@@ -1510,12 +1511,13 @@
+ 	* @param transact - Serialize delivery against management writes.
+ 	* @param commit - Persist task status, target, receipt, and history together after durable inbox delivery.
+ 	*/
+-	constructor(ctx, tasks, transact, commit, retention) {
++	constructor(ctx, tasks, transact, commit, retention, options = {}) {
+ 		this.ctx = ctx;
+ 		this.tasks = tasks;
+ 		this.transact = transact;
+ 		this.commit = commit;
+ 		this.retention = retention;
++		this.options = options;
+ 	}
+ 	/**
+ 	* Recompute the nearest obligation after startup or a durable change.
+@@ -1593,7 +1595,46 @@
+ 					}],
+ 					source: { kind: "schedule" }
+ 				});
+-				resolved.agent.followup(message);
++				const admission = this.options.admitDelivery;
++				if (admission === undefined) {
++					if (this.options.requireDeliveryAdmission) throw new Error("Schedule delivery admission is required");
++					resolved.agent.followup(message);
++				} else {
++					const snapshots = admitted.map(member => ({ record: structuredClone(member.record), sessionId: member.sessionId }));
++					const deliveryOccurrences = Object.freeze(admitted.map(member => Object.freeze({
++						scheduleId: member.record.id,
++						occurrenceAt: occurrences.find(entry => entry.task === member)?.occurrence.occurrenceAt ?? member.record.scheduledAt
++					})));
++					const freezeMessage = value => {
++						if (value && typeof value === "object") { for (const child of Object.values(value)) freezeMessage(child); Object.freeze(value); }
++					};
++					freezeMessage(message);
++					const request = Object.freeze({ agent: resolved.agent, message, occurrences: deliveryOccurrences });
++					let active = true, called = false, accepted = false;
++					const dispatch = () => {
++						if (!active || called) throw new Error("Schedule delivery scope is closed");
++						called = true;
++						const dispatchNow = Date.now();
++						if (this.stopping || dispatchNow < now || this.ctx.agents.get(resolved.agent.id) !== resolved.agent || this.ctx.sessions.get(resolved.agent.id) !== resolved.agent.session) throw new Error("Schedule delivery changed during admission");
++						const currentTasks = this.tasks();
++						for (const snapshot of snapshots) {
++							const current = currentTasks.find(member => member.record.id === snapshot.record.id);
++							if (!current || current.status !== "active" || current.sessionId !== snapshot.sessionId || !isDeepStrictEqual(current.record, snapshot.record) || Date.parse(current.record.scheduledAt) > dispatchNow) throw new Error("Schedule delivery changed during admission");
++							if (isRecurringScheduleRecord(current.record)) {
++								const before = occurrences.find(entry => entry.task.record.id === current.record.id).occurrence;
++								if (!isDeepStrictEqual(resolveRecurringOccurrence(current.record, dispatchNow), before)) throw new Error("Schedule occurrence changed during admission");
++							}
++						}
++						resolved.agent.followup(message);
++						accepted = true;
++					};
++					try { await admission(request, dispatch); }
++					catch (error) {
++						if (!accepted) throw error;
++						this.ctx.logger.warn(`schedule: admission failed after accepted delivery: ${String(error)}`);
++					} finally { active = false; }
++					if (!accepted) throw new Error("Schedule delivery admission did not dispatch");
++				}
+ 				if (!await this.ctx.sessions.flush(resolved.agent.session)) throw new Error("Session persistence did not acknowledge the reminder");
+ 				const deliveredAt = new Date(Date.now()).toISOString();
+ 				if (!isRecurringScheduleRecord(task.record)) {
+@@ -2458,6 +2499,20 @@
+ }
+ //#endregion
+ //#region lib/types/index.js
++/** Fixed local provider and monotonic requirement; scoped Service receivers share this closure. */
++function createScheduleDeliveryAdmission() {
++	let required = false, admission;
++	return Object.freeze({
++		get admitDelivery() { return admission; },
++		get requireDeliveryAdmission() { return required; },
++		require() { required = true; },
++		install(candidate) {
++			if (typeof candidate !== "function" || admission !== undefined && admission !== candidate) throw new Error("Schedule delivery admission is already installed or invalid");
++			admission = candidate;
++		}
++	});
++}
++
+ /** Host-wide durable reminders and shared human/model management. */
+ var __runInitializers = function(thisArg, initializers, value) {
+ 	var useValue = arguments.length > 2;
+@@ -2605,13 +2660,17 @@
+ 		initialized;
+ 		chain = Promise.resolve();
+ 		runtime;
++		deliveryOptions = createScheduleDeliveryAdmission();
+ 		stopping = false;
+ 		/**
+ 		* @param ctx - Host services owning storage, dispatch, and Session restoration.
+ 		* @param config - Validated retention configuration for delivery history.
+ 		*/
+-		constructor(ctx, config) {
++		constructor(ctx, config, options = {}) {
+ 			super(ctx, "schedule");
++			Object.defineProperty(this, "deliveryOptions", { value: this.deliveryOptions, writable: false, configurable: false });
++			if (options.requireDeliveryAdmission) this.requireDeliveryAdmission();
++			if (options.admitDelivery !== undefined) this.installDeliveryAdmission(options.admitDelivery);
+ 			this.retention = {
+ 				days: config.deliveryHistoryDays ?? DEFAULT_DELIVERY_HISTORY_DAYS,
+ 				records: config.deliveryHistoryRecords ?? DEFAULT_DELIVERY_HISTORY_RECORDS
+@@ -2646,7 +2705,7 @@
+ 				this.runtime = new ScheduleRuntime(ctx, () => [...tasks.entries()].map(([, task]) => task), (work) => this.serialize(work), async (task) => {
+ 					await tasks.put(task.record.id, task);
+ 					this.emitChanged();
+-				}, this.retention);
++				}, this.retention, this.deliveryOptions);
+ 				this.runtime.requestDrive();
+ 				return cleanup;
+ 			});
+@@ -2701,6 +2760,12 @@
+ 			}, "schedule.archiveAdmission()");
+ 			for (const agent of ctx.agents.roots()) attach(agent);
+ 		}
++		/** Single trusted provider, installed before startup scans when passed to the constructor. */
++		installDeliveryAdmission(admission) {
++			this.deliveryOptions.install(admission);
++		}
++		/** Monotonic requirement; missing admission never falls back to unmanaged delivery. */
++		requireDeliveryAdmission() { this.deliveryOptions.require(); }
+ 		async [Service.init]() {
+ 			await this.initialized;
+ 		}
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -1,3 +1,18 @@
++import type { Agent } from '@deepseek-ai/dsh-agent';
++import type { UserMessage } from '@deepseek-ai/dsh-llm';
++import type { ScheduleId } from './types.ts';
++/** Exact local delivery candidate; never deserialize an Agent or message proof from IPC. */
++export interface ScheduleDeliveryRequest {
++    readonly agent: Agent;
++    readonly message: UserMessage;
++    readonly occurrences: readonly Readonly<{ scheduleId: ScheduleId; occurrenceAt: string }>[];
++}
++/** Await authorization, then synchronously call dispatch once inside the current native-input proof. Do not re-enter Schedule management's FIFO. */
++export type ScheduleDeliveryAdmission = (request: Readonly<ScheduleDeliveryRequest>, dispatch: () => void) => Promise<void>;
++export interface ScheduleRuntimeOptions {
++    readonly admitDelivery?: ScheduleDeliveryAdmission;
++    readonly requireDeliveryAdmission?: boolean;
++}
+ import z from '@deepseek-ai/schemastery';
+ import { Context, Service } from '@deepseek-ai/cordis';
+ import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+@@ -50,7 +65,9 @@
+      * @param ctx - Host services owning storage, dispatch, and Session restoration.
+      * @param config - Validated retention configuration for delivery history.
+      */
+-    constructor(ctx: Context, config: Config);
++    constructor(ctx: Context, config: Config, options?: ScheduleRuntimeOptions);
++    installDeliveryAdmission(admission: ScheduleDeliveryAdmission): void;
++    requireDeliveryAdmission(): void;
+     [Service.init](): Promise<void>;
+     /**
+      * Create a reminder bound to the caller-selected Session without activating it.

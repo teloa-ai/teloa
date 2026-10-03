@@ -5,6 +5,7 @@ export type WorkAccessRequest=
  |{kind:'task-run-start';ownerId:string;runId:string;taskId:string;sessionId:string;nativeRequestId:string}
  |{kind:'conversation-work-reserve';ownerId:string;requestId:string;sessionId:string}
  |{kind:'plan-occurrence';ownerId:string;planId:string;occurrenceId:string;source:'manual'|'schedule'}
+ |{kind:'native-input';sessionId:string;messageId:string;nativeRequestId:string|null;payloadSha256:string;producer:'prompt'|'queue'|'subagent'|'schedule'|'task-run';contextSha256:string}
 export type WorkAccessLease={assertCurrent:()=>void}
 export type WorkAccessPolicy=(request:Readonly<WorkAccessRequest>)=>Promise<WorkAccessLease>
 const denied=()=>new WorkError('teloa/forbidden','当前暂不能开始新工作，请核对运行许可后重试。')

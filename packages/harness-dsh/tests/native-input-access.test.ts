@@ -39,7 +39,7 @@ test('真实 Inbox.mutate 无 proof 时追加前否决，许可只包围原对�
  assert.equal(agent.session.snapshotEvents().length,before);assert.equal(agent.inbox.nextTurn.length,0);assert.equal(inserted,0);assert.equal(events,0)
  const identity=nativeInputIdentity(input,'request')
  assert.equal(await guard.withLease(agent.session,identity,allow(),()=>{agent.inbox.append('next-turn',input);return 'accepted'}),'accepted')
- assert.equal(ctx.agents.get(agent.id),agent);assert.equal(ctx.sessions.get(agent.id),agent.session)
+ assert.equal(ctx.agents.get(agent.id),agent);assert.equal((Reflect.get(ctx,'sessions') as unknown as SessionStore).get(agent.id),agent.session)
  assert.equal(agent.inbox.nextTurn[0]?.id,input.id);assert.notEqual(agent.inbox.nextTurn[0],input)
  assert.ok(Object.isFrozen(agent.inbox.nextTurn[0]));assert.equal(inserted,1);assert.equal(events,1)
 })
@@ -205,7 +205,7 @@ test('已受理 seed 恢复不重验许可，关闭之后新输入仍拒绝',asy
  let assertions=0
  await guard.withLease(agent.session,nativeInputIdentity(input),{assertCurrent:()=>{assertions++}},()=>agent.inbox.append('next-turn',input))
  const before=assertions,seed=agent.session.snapshotEvents();guard.close()
- const replay=ctx.sessions.create(SessionId('history-copy'),{seed})
+ const replay=(Reflect.get(ctx,'sessions') as unknown as SessionStore).create(SessionId('history-copy'),{seed})
  assert.equal(assertions,before)
  assert.equal(replay.snapshotEvents().filter(event=>event.type==='agent/inbox/spliced').length,1)
  assert.throws(()=>replay.append('agent/inbox/spliced',{target:'next-turn',start:1,removedCount:0,inserted:[message('new')]}),forbidden)
