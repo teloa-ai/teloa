@@ -2,6 +2,11 @@ import {Service,type Context} from '@deepseek-ai/cordis'
 import {WorkError} from '@teloa/contract'
 import {createNativeWorkInput} from './native-work-input.ts'
 import {createNativeProducerAdmissions} from './native-producer-admission.ts'
+import {workAccess} from '@teloa/backend'
+import type {NativeInputCheckpoint} from './native-input-checkpoint.ts'
+
+export type {NativeInputCheckpoint,NativeInputCheckpointInput} from './native-input-checkpoint.ts'
+export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoint}>
 
 declare module '@deepseek-ai/cordis'{
  interface Context{readonly teloaNativeInput:TeloaNativeInput}
@@ -45,9 +50,9 @@ export class TeloaNativeInput extends Service{
  static inject=['sessions','agents','llm','tools']
  declare readonly input:ReturnType<typeof createNativeWorkInput>
  declare readonly admissions:ReturnType<typeof createNativeProducerAdmissions>
- constructor(ctx:Context){
+ constructor(ctx:Context,config:NativeInputProviderConfig={}){
   // 必须先验证最终补口，不能先发布一个缺少守卫的准入 Service。
-  const input=createNativeWorkInput(ctx),admissions=createNativeProducerAdmissions(input)
+  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint),admissions=createNativeProducerAdmissions(input)
   super(ctx,'teloaNativeInput')
   Object.defineProperties(this,{
    input:{value:input,enumerable:true,writable:false,configurable:false},

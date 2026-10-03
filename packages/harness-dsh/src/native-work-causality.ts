@@ -8,6 +8,7 @@ import type {WorkAccessLease} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
+import type {NativeInputCheckpoint,NativeInputCheckpointInput} from './native-input-checkpoint.ts'
 
 type Step={number:number;signal:AbortSignal}
 type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<NativeInputAcceptance>;step:Step|undefined}
@@ -52,7 +53,7 @@ function install(receiver:object,requireName:string,installName:string,policy:un
  * 权限证明只来自最终受理回执和官方私有执行点；公共事件与归因标记不授予执行许可。
  * 官方 Loop/Tools 仍负责运行、调度、持久化、结果与取消；这里仅核对实际对象与许可。
  */
-export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation){
+export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint){
  if(installed.has(ctx))throw denied()
  const pending=new WeakMap<UserMessage,PendingInput>(),turns=new Map<Agent,Turn>()
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
@@ -181,6 +182,25 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  const loopInjection=ctx.inject(['agentLoop','sessionProjections'],child=>{
   try{
    const loop=Reflect.get(child,'agentLoop') as object,loopIdentity=Reflect.get(loop,'runtime') as unknown
+   if(checkpoint)install(loop,'requireInputCheckpoint','installInputCheckpoint',async(request:Omit<NativeInputCheckpointInput,'assertCurrent'>)=>{
+    const turn=turns.get(request.agent),inputs=request.messages.map(message=>pending.get(message))
+    const assertCurrent=()=>{
+     try{
+      if(!turn||turns.get(request.agent)!==turn||turn.number!==request.turn||turn.signal!==request.signal||inputs.length===0)throw denied()
+      target(turn);request.signal.throwIfAborted()
+      for(let index=0;index<inputs.length;index++){
+       const input=inputs[index],message=request.messages[index]
+       if(!input||!message||pending.get(message)!==input||input.receipt.session!==turn.session||canonical(request.snapshot.events[input.receipt.event.seq])!==canonical(input.receipt.event))throw denied()
+       assertNativeInputAcceptanceCurrent(input.receipt);fixedRoots(input.roots)
+      }
+      target(turn);request.signal.throwIfAborted()
+     }catch{cancel(request.agent);throw denied()}
+    }
+    assertCurrent()
+    await checkpoint(Object.freeze({...request,assertCurrent}))
+    assertCurrent()
+    return Object.freeze({assertCurrent})
+   })
    install(loop,'requireRestoreAdmission','installRestoreAdmission',(request:RestoreRequest)=>{
     // 未发布的载体通过官方投影读取 Inbox；不生成无关客户端视图或新的受理证明。
     const cold=Session.create(SessionId(request.sessionId),request.events,request.header,SessionLogOffset(request.inheritedEventCount))

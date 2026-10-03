@@ -14,6 +14,8 @@ import {WorkError} from '@teloa/contract'
 import {createNativeWorkInput} from '../../src/native-work-input.ts'
 import {patchedSessionPackage,type FinalSessionStore} from './native-final-session.ts'
 import {patchedNativePackage} from './native-patched-package.ts'
+import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import type {NativeInputCheckpoint} from '../../src/native-input-checkpoint.ts'
 
 const denied=()=>new WorkError('teloa/forbidden','热运行工作因果已失效。')
 export type StreamAdmissionRuntime=LlmRuntime&{
@@ -104,8 +106,9 @@ export class HotAdapter extends LlmAdapter{
 }
 
 /** 独立双断言只模拟业务许可；受理因果必须来自真实最终 Session 受理回执。 */
-export async function nativeHotCausalityFixture(t:TestContext){
+export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoint?:NativeInputCheckpoint;persistenceRoot?:string}={}){
  const f=await nativeHotKernel(t),{ctx}=f
+ if(options.persistenceRoot)await ctx.plugin(Persistence,{root:options.persistenceRoot,compression:'none'})
  const observed=new Map<Session,SessionEvent[]>()
  ctx.on('session/event',(session,event)=>{const rows=observed.get(session)??[];rows.push(event);observed.set(session,rows)},{global:true})
  const rights={valid:true,revoked:false,generation:0}
@@ -120,7 +123,7 @@ export async function nativeHotCausalityFixture(t:TestContext){
    assertContinuationCurrent(){counters.continuationAssertions++;if(rights.revoked||generation!==rights.generation)throw denied()},
   })
  })
- const work=createNativeWorkInput(ctx,access);t.after(()=>work.close())
+ const work=createNativeWorkInput(ctx,access,options.checkpoint);t.after(()=>work.close())
  const adapter=new HotAdapter();ctx.llm.registerAdapter(['hot-test'],adapter)
  const toolExecutions:ToolRunContext[]=[]
  let toolAction:(exec:ToolRunContext)=>Promise<void>=async()=>{}

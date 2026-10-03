@@ -1,12 +1,76 @@
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -11,6 +11,86 @@
+@@ -1,5 +1,6 @@
+ import { Service } from "@deepseek-ai/cordis";
+ import { randomUUID } from "node:crypto";
++import { isDeepStrictEqual } from "node:util";
+ import z from "@deepseek-ai/schemastery";
+ import { z as z$1 } from "zod";
+ import { brandString } from "@deepseek-ai/dsh-brand";
+@@ -11,6 +12,143 @@
  import { createScope } from "@deepseek-ai/dsh-scope";
  import { joinContextSections, renderContextSections, renderPrompt } from "@deepseek-ai/dsh-system-prompt";
  import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER } from "@deepseek-ai/dsh-tools";
 +// Deployment-owned callbacks are module-private; public events and service properties cannot invoke them.
 +const loopWorkAdmissions = new WeakMap();
 +const agentWorkAdmissions = new WeakMap();
++const loopInputCheckpoints = new WeakMap();
++const agentInputCheckpoints = new WeakMap();
++function inputCheckpointFailure() { return new Error("Agent loop input checkpoint is unavailable or invalid"); }
++function checkpointAgentInput(agent, input) {
++ const checkpoint = agentInputCheckpoints.get(agent);
++ if (checkpoint === void 0) throw inputCheckpointFailure();
++ return checkpoint(input);
++}
++function prepareInputCheckpoint(holder, agent, handle, ownerSignal, input) {
++ const state = loopInputCheckpoints.get(holder);
++ if (state === void 0) throw inputCheckpointFailure();
++ const policy = state.policy;
++ if (policy === void 0) {
++  if (state.required) throw inputCheckpointFailure();
++  return;
++ }
++ const { signal, target } = input, session = agent.session, phase = agent.phase;
++ const nextStep = Object.freeze([...agent.inbox.nextStep]);
++ const nextTurn = Object.freeze(target === "next-turn" ? agent.inbox.nextTurn.slice(0, 1) : []);
++ const messages = Object.freeze([...nextStep, ...nextTurn]);
++ const header = handle?.header, cut = handle?.inheritedEventCount;
++ const assertCurrent = () => {
++  signal.throwIfAborted(); ownerSignal.throwIfAborted();
++  assertAgentRestoreCurrent(agent);
++  if (state.policy !== policy || agent.session !== session || agent.phase !== phase || phase.kind !== "running" || phase.abort.signal !== signal || holder.ctx.agents.get(agent.id) !== agent || holder.ctx.sessions.get(agent.id) !== session) throw inputCheckpointFailure();
++ };
++ assertCurrent();
++ // Empty steps continue from the already admitted turn without another IO wait.
++ if (messages.length === 0) return;
++ if (handle?.access !== "write" || handle.id !== agent.id || typeof handle.flush !== "function" || typeof handle.read !== "function" || header.id !== agent.id || cut !== session.inheritedEventCount) throw inputCheckpointFailure();
++ const flush = handle.flush, read = handle.read, events = deepFreeze(session.snapshotEvents());
++ const owned = () => {
++  assertCurrent();
++  if (handle.access !== "write" || handle.id !== agent.id || handle.header !== header || handle.inheritedEventCount !== cut || handle.flush !== flush || handle.read !== read || !isDeepStrictEqual(session.snapshotEvents().slice(0, events.length), events)) throw inputCheckpointFailure();
++ };
++ return (async () => {
++  owned();
++  // The official store drains live routing first; handle.flush alone does not.
++  await agent.ctx.sessions.flush(session); owned();
++  await Reflect.apply(flush, handle, [{ signal }]); owned();
++  const persisted = await Reflect.apply(read, handle, [0, events.length, { signal }]); owned();
++  if (!isDeepStrictEqual(persisted.events, events)) throw inputCheckpointFailure();
++  const snapshot = deepFreeze({ header: structuredClone(header), events: structuredClone(persisted.events), inheritedEventCount: cut });
++  const request = Object.freeze({ ...input, agent, messages, snapshot });
++  const lease = await raceAbortCall(() => Reflect.apply(policy, void 0, [request]), signal, agent.id); owned();
++  const assertion = lease && Object.isFrozen(lease) && Object.getOwnPropertyDescriptor(lease, "assertCurrent")?.value;
++  if (typeof assertion !== "function") throw inputCheckpointFailure();
++  const assertLease = () => {
++   owned();
++   const returned = Reflect.apply(assertion, lease, []);
++   if (returned !== void 0) { Promise.resolve(returned).catch(() => {}); throw inputCheckpointFailure(); }
++   owned();
++  };
++  assertLease();
++  return Object.freeze({ nextStep, nextTurn, assertCurrent: assertLease });
++ })();
++}
 +// Restore is a cold checkpoint, not durable authorization for persisted work.
 +const loopRestoreAdmissions = new WeakMap();
 +const agentRestoreAdmissions = new WeakMap();
@@ -87,7 +151,25 @@
  //#region lib/types/inbox.js
  /**
  * Driver-owned durable agent inbox projection and command facade.
-@@ -569,7 +649,7 @@
+@@ -100,9 +238,14 @@
+ 	* @param turn - turn that will own the claimed batch.
+ 	* @returns next-step input followed by the queued turn, when requested.
+ 	*/
+-	claim(target, turn) {
+-		const claimed = this.mutate("next-step", 0, this.nextStep.length, [], false);
+-		if (target === "next-turn") claimed.push(...this.mutate("next-turn", 0, 1, [], false));
++	claim(target, turn, checkpoint) {
++		if (checkpoint !== void 0) {
++			checkpoint.assertCurrent();
++			const step = this.nextStep, queued = this.nextTurn;
++			if (!checkpoint.nextStep.every((message, index) => step[index] === message) || !checkpoint.nextTurn.every((message, index) => queued[index] === message)) throw inputCheckpointFailure();
++		}
++		const claimed = this.mutate("next-step", 0, checkpoint?.nextStep.length ?? this.nextStep.length, [], false);
++		if (target === "next-turn") claimed.push(...this.mutate("next-turn", 0, checkpoint?.nextTurn.length ?? 1, [], false));
+ 		for (const message of claimed) this.dispatch.emit("agent/inbox/claimed", {
+ 			message,
+ 			turn
+@@ -569,7 +712,7 @@
  			const call = group[committed];
  			const result = slot.needsPost ? await ctx.tools[TOOL_RUNTIME_SCHEDULER].finalize(slot.exec, slot.result) : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result);
  			appendToolResult(session, turn, step, call.block, result, callSeqs[committed]);
@@ -96,7 +178,7 @@
  			concluded ||= result.concludesTurn === true;
  			committed++;
  		}
-@@ -579,6 +659,7 @@
+@@ -579,6 +722,7 @@
  		const call = group[index];
  		callSeqs[index] = appendToolCall(session, turn, step, call.block);
  		started++;
@@ -104,18 +186,19 @@
  		const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare(call.exec);
  		throwSchedulerFailure();
  		switch (prepared.kind) {
-@@ -768,7 +849,9 @@
+@@ -768,7 +912,10 @@
  	systemPrompt;
  	/** Identities fully frozen by this loop; weak references do not retain replaced history. */
  	frozenMessages = /* @__PURE__ */ new WeakSet();
 -	constructor(loopCtx, id, options, session) {
-+	constructor(loopCtx, id, options, session, workAdmission, restoreAdmission) {
++	constructor(loopCtx, id, options, session, workAdmission, restoreAdmission, inputCheckpoint) {
++		agentInputCheckpoints.set(this, inputCheckpoint);
 +		agentWorkAdmissions.set(this, workAdmission);
 +		if (restoreAdmission !== void 0) agentRestoreAdmissions.set(this, { assertCurrent: restoreAdmission, wakeRequested: false });
  		this.loopCtx = loopCtx;
  		this.id = id;
  		this.options = options;
-@@ -832,13 +915,26 @@
+@@ -832,13 +979,26 @@
  		this.activityDone = done.promise;
  		return (async () => {
  			try {
@@ -144,7 +227,7 @@
  				done.resolve();
  			}
  		})();
-@@ -852,6 +948,11 @@
+@@ -852,6 +1012,11 @@
  	*   the inbox insertion so a reentrant cancel cannot reclassify it.
  	*/
  	wakeDriver(wakeAfterAbort = false) {
@@ -156,15 +239,20 @@
  		if (this.phase.kind !== "idle") {
  			if (abortedCancelCause(this.phase.abort.signal)?.kind !== "disposed" && (this.phase.kind === "maintenance" || wakeAfterAbort)) this.phase.wakeRequested = true;
  			return;
-@@ -904,6 +1005,7 @@
+@@ -903,7 +1068,11 @@
+ 		/* v8 ignore next -- private callers establish the running phase before proposing a step */
  		if (this.phase.kind !== "running") throw new Error(`agent "${this.id}": pre-step outside running phase`);
  		const signal = this.phase.abort.signal;
- 		const claimed = this.inbox.claim(target, position.turn);
+-		const claimed = this.inbox.claim(target, position.turn);
++		const preparedCheckpoint = checkpointAgentInput(this, { ...position, signal, target });
++		const checkpoint = preparedCheckpoint === void 0 ? void 0 : await preparedCheckpoint;
++		signal.throwIfAborted();
++		const claimed = this.inbox.claim(target, position.turn, checkpoint);
 +		for (const message of claimed) admitAgentWork(this, { kind: "claim", ...position, signal, target, message });
  		const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal));
  		signal.throwIfAborted();
  		const sections = renderContextSections(assembly);
-@@ -939,8 +1041,9 @@
+@@ -939,8 +1108,9 @@
  		const { signal } = phase.abort;
  		signal.throwIfAborted();
  		const turn = phase.turn + 1;
@@ -175,7 +263,7 @@
  		} catch (error) {
  			this.throwError(error);
  		}
-@@ -948,6 +1051,7 @@
+@@ -948,6 +1118,7 @@
  		let turnEnds = null;
  		let target = "next-turn";
  		try {
@@ -183,7 +271,7 @@
  			while (true) {
  				signal.throwIfAborted();
  				const step = phase.step + 1;
-@@ -965,7 +1069,7 @@
+@@ -965,7 +1136,7 @@
  					return false;
  				}
  				signal.throwIfAborted();
@@ -192,7 +280,7 @@
  					turn,
  					step
  				});
-@@ -975,6 +1079,7 @@
+@@ -975,6 +1146,7 @@
  					if (session === this.session) toolRecovery.observe(event);
  				});
  				try {
@@ -200,7 +288,7 @@
  					const stepEnd = await this.step(decision);
  					if (turnEnds === null || turnEnds.kind !== "max-tokens") turnEnds = stepEnd;
  				} catch (error) {
-@@ -989,10 +1094,11 @@
+@@ -989,10 +1161,11 @@
  					throw error;
  				} finally {
  					stopRecovery();
@@ -213,7 +301,7 @@
  				}
  				signal.throwIfAborted();
  				if (turnEnds && this.inbox.nextStep.length === 0) {
-@@ -1024,10 +1130,11 @@
+@@ -1024,10 +1197,11 @@
  			this.throwError(error);
  		} finally {
  			try {
@@ -226,7 +314,7 @@
  			} catch (error) {
  				this.throwError(error);
  			}
-@@ -1069,6 +1176,7 @@
+@@ -1069,6 +1243,7 @@
  			});
  			let started = false;
  			try {
@@ -234,7 +322,7 @@
  				const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request);
  				signal.throwIfAborted();
  				live.start();
-@@ -1531,6 +1639,7 @@
+@@ -1531,6 +1706,7 @@
  	];
  	/** Runtime schema for declarative agents. */
  	static Config = z.object({
@@ -242,7 +330,7 @@
  		maxParallelToolCalls: z.number().step(1).min(1).default(10).volatile(),
  		agents: z.array(z.object({
  			id: z.string().required(),
-@@ -1551,6 +1660,7 @@
+@@ -1551,6 +1727,7 @@
  	constructor(ctx, config) {
  		super(ctx, "agentLoop");
  		this.config = {
@@ -250,27 +338,41 @@
  			agents: applyLauncherIdentities(config.agents, ctx.get(CONFIGURED_AGENT_IDENTITIES_KEY)),
  			maxParallelToolCalls: config.maxParallelToolCalls
  		};
-@@ -1558,7 +1668,9 @@
+@@ -1558,7 +1735,10 @@
  		ctx.sessionProjections.register(turnBoundaryProjectionDefinition);
  		ctx.sessionProjections.register(inboxProjectionDefinition);
  		this.ownership = new FactoryOwnership(ctx.fiber);
 -		this.runtime = { ctx };
 +		Object.defineProperty(this, "runtime", { value: Object.freeze({ ctx }), writable: false, configurable: false });
 +		loopWorkAdmissions.set(this.runtime, { required: false, policy: void 0 });
++		loopInputCheckpoints.set(this.runtime, { required: false, policy: void 0 });
 +		loopRestoreAdmissions.set(this.runtime, { required: this.config.requireRestoreAdmission, policy: void 0 });
  		ctx.effect(() => () => this.ownership.dispose(), "agentLoop.transactions()");
  		ctx.effect(() => ctx.agents.setFactory(this), "agentLoop.setFactory()");
  		ctx.systemPrompt.variable("provider", (context) => context.agent?.options.provider);
-@@ -1594,6 +1706,30 @@
+@@ -1593,7 +1773,43 @@
+ 				}).dispose;
  			}, `agentLoop.resume(${id})`);
  		}
- 	}
++	}
++	/** Require a durable checkpoint before a driver removes accepted input. */
++	requireInputCheckpoint() {
++		const state = loopInputCheckpoints.get(this.runtime);
++		if (state === void 0) throw inputCheckpointFailure();
++		state.required = true;
++	}
++	/** One deployment policy; receives a flushed snapshot, never the owned handle. */
++	installInputCheckpoint(policy) {
++		const state = loopInputCheckpoints.get(this.runtime);
++		if (state === void 0 || state.policy !== void 0 || typeof policy !== "function") throw inputCheckpointFailure();
++		state.policy = policy;
++	}
 +	/** Monotonic same-process opt-in; no dispatcher is exposed. */
 +	requireWorkAdmission() {
 +		const state = loopWorkAdmissions.get(this.runtime);
 +		if (state === void 0) throw workAdmissionFailure();
 +		state.required = true;
-+	}
+ 	}
 +	/** Install exactly one deployment-owned synchronous policy. */
 +	installWorkAdmission(policy) {
 +		const state = loopWorkAdmissions.get(this.runtime);
@@ -292,7 +394,7 @@
  	/** Report a contained declarative-start failure to identity-bound consumers. */
  	reportConfiguredStartupFailure(configId, action, sessionId, error) {
  		if (!this.ownership.isActive()) return;
-@@ -1652,13 +1788,15 @@
+@@ -1652,13 +1868,15 @@
  	* BEFORE publication, so a mid-setup unload rolls everything back; `signal`
  	* fuses caller cancellation with lifecycle teardown for setup awaits.
  	*/
@@ -310,7 +412,7 @@
  		const abort = new AbortController();
  		const onCallerAbort = () => {
  			abort.abort(callerSignal?.reason instanceof Error ? callerSignal.reason : new Error(`agent "${id}" creation aborted`, { cause: callerSignal?.reason }));
-@@ -1685,7 +1823,11 @@
+@@ -1685,7 +1903,11 @@
  				if (machine === void 0) await machineReady.promise;
  				/* v8 ignore next -- setup failure untracks this disposer before resolving without a machine. */
  				if (machine !== void 0) {
@@ -323,16 +425,16 @@
  					await machine.whenIdle();
  					await machine.scope.dispose();
  				}
-@@ -1711,7 +1853,7 @@
+@@ -1711,7 +1933,7 @@
  		let unfollowOwner;
  		try {
  			unfollowOwner = ownerCtx.effect(function* () {
 -				machine = new ReactLoopAgent(loopCtx, id, options, session);
-+				machine = new ReactLoopAgent(loopCtx, id, options, session, (input, publish) => invokeLoopWorkAdmission(workRuntime, input, publish), restoreAdmission);
++				machine = new ReactLoopAgent(loopCtx, id, options, session, (input, publish) => invokeLoopWorkAdmission(workRuntime, input, publish), restoreAdmission, input => prepareInputCheckpoint(workRuntime, machine, handle, abort.signal, input));
  				machineReady.resolve();
  				yield machine.scope.rawDispose;
  				yield () => {
-@@ -1729,6 +1871,7 @@
+@@ -1729,6 +1951,7 @@
  		}
  		/* v8 ignore stop */
  		const assertLive = () => {
@@ -340,7 +442,7 @@
  			if (!abort.signal.aborted) return;
  			/* v8 ignore next -- unreachable String() arm, see above */
  			throw abort.signal.reason instanceof Error ? abort.signal.reason : new Error(String(abort.signal.reason));
-@@ -1749,7 +1892,9 @@
+@@ -1749,7 +1972,9 @@
  						detachAgent = loopCtx.agents.enter(agent, parentAgent);
  						agent.ctx.sessions.announce(session);
  						assertLive();
@@ -351,7 +453,7 @@
  						assertLive();
  						return {
  							agent,
-@@ -1836,10 +1981,14 @@
+@@ -1836,10 +2061,14 @@
  	* @param stored - the session's owned handle and stored cursor, if any.
  	* @param session - the unpublished session whose suffix is stored.
  	*/
@@ -368,7 +470,7 @@
  		stored.storedCount += suffix.length;
  	}
  	/**
-@@ -1870,7 +2019,7 @@
+@@ -1870,7 +2099,7 @@
  		return published;
  	}
  	/** Prepare one Agent around an acquired Session, run setup, and publish it. */
@@ -377,7 +479,7 @@
  		const env_2 = {
  			stack: [],
  			error: void 0,
-@@ -1880,15 +2029,22 @@
+@@ -1880,15 +2109,22 @@
  			const session = __addDisposableResource(env_2, preparation, false).session;
  			let prepared;
  			try {
@@ -404,7 +506,7 @@
  			});
  		} catch (e_2) {
  			env_2.error = e_2;
-@@ -1899,14 +2055,18 @@
+@@ -1899,14 +2135,18 @@
  	}
  	async initializeAgent(prepared, initialize) {
  		try {
@@ -425,7 +527,7 @@
  		} catch (error) {
  			await prepared.dispose().catch(() => {});
  			throw error;
-@@ -1928,8 +2088,9 @@
+@@ -1928,8 +2168,9 @@
  		const id = options.resumeSessionId;
  		const published = (async () => {
  			const ownerAbort = new AbortController();
@@ -436,7 +538,7 @@
  			}, `agentLoop.resume-load(${id})`);
  			const fused = AbortSignal.any([
  				...options.signal === void 0 ? [] : [options.signal],
-@@ -1937,40 +2098,76 @@
+@@ -1937,40 +2178,76 @@
  				this.ownership.signal
  			]);
  			let handle;
@@ -465,6 +567,7 @@
 -					};
 -					await this.appendUnstoredSuffix(stored, preparation.session);
 -				} finally {
+-					await unfollowOwner();
 +    const restoreState = loopRestoreAdmissions.get(this.runtime);
 +    const guarded = restoreState.required || restoreState.policy !== void 0;
 +    let assertLease, admittedCandidate;
@@ -501,7 +604,10 @@
 +				if (closers.length > 0) {
 +					if (restoreWrite === void 0) await handle.append(closers);
 +					else await appendRestoreEvents(handle, closers, restoreWrite);
-+				}
+ 				}
+-				ownerCtx.fiber.assertActive();
+-				if (!this.ownership.isActive()) throw new Error("agent loop is not active");
+-				const owned = stored;
 +				assertCurrent();
 +				preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(id, {
 +					seed: [...persisted, ...closers],
@@ -512,7 +618,8 @@
 +				const stored = { handle, storedCount: persisted.length + closers.length };
 +				await this.appendUnstoredSuffix(stored, preparation.session, restoreWrite);
 +				assertCurrent();
-+				handle = void 0;
+ 				handle = void 0;
+-				return await this.setupAndPublish(ownerCtx, id, preparation, options.agentOptions ?? {}, options.setup, options.signal, "resume", owned, options.parentAgent);
 +				restored = await this.setupAndPublish(ownerCtx, id, preparation, options.agentOptions ?? {}, options.setup, options.signal, "resume", stored, options.parentAgent, assertCurrent, restoreWrite);
 +				assertCurrent();
 +				followingOwner = false;
@@ -525,21 +632,14 @@
 +			} catch (error) {
 +				await restored?.dispose().catch(() => {});
 +				throw error;
-+			} finally {
-+				preparation?.[Symbol.dispose]();
+ 			} finally {
+ 				preparation?.[Symbol.dispose]();
+-				await handle?.close().catch(() => {});
 +				if (handle !== void 0) await handle.close().catch(() => {});
 +				if (followingOwner) {
 +					followingOwner = false;
- 					await unfollowOwner();
- 				}
--				ownerCtx.fiber.assertActive();
--				if (!this.ownership.isActive()) throw new Error("agent loop is not active");
--				const owned = stored;
--				handle = void 0;
--				return await this.setupAndPublish(ownerCtx, id, preparation, options.agentOptions ?? {}, options.setup, options.signal, "resume", owned, options.parentAgent);
--			} finally {
--				preparation?.[Symbol.dispose]();
--				await handle?.close().catch(() => {});
++					await unfollowOwner();
++				}
  			}
  		})();
  		this.ownership.trackWrapper(published);
@@ -572,7 +672,7 @@
      /**
       * Maximum parallel-safe calls in flight per agent step. `1` is serial;
       * omission defaults to {@link DEFAULT_MAX_PARALLEL_TOOL_CALLS}.
-@@ -95,12 +101,30 @@
+@@ -95,12 +101,43 @@
          resumeSessionId?: SessionId;
      })[];
  }
@@ -582,6 +682,19 @@
 +export type AgentLoopRestoreAdmissionLease = SessionOpenAdmissionLease;
 +/** A cold checkpoint only; durable authorization/signature verification belongs to the provider. */
 +export type AgentLoopRestoreAdmission = SessionOpenAdmission;
++/** Exact driver batch and immutable prefix read from the owned writer after official flush. */
++export type AgentLoopInputCheckpointInput = Readonly<{
++    agent: Agent;
++    turn: number;
++    step: number;
++    target: InboxTarget;
++    signal: AbortSignal;
++    messages: readonly UserMessage[];
++    snapshot: Readonly<Omit<SessionOpenAdmissionInput, 'sessionId' | 'signal'>>;
++}>;
++/** Frozen own synchronous assertion, rechecked immediately before Inbox claim. */
++export type AgentLoopInputCheckpointLease = Readonly<{assertCurrent(): undefined}>;
++export type AgentLoopInputCheckpoint = (input: AgentLoopInputCheckpointInput) => AgentLoopInputCheckpointLease | PromiseLike<AgentLoopInputCheckpointLease>;
 +/** Exact driver-owned phase descriptors; public events are only observations. */
 +export type AgentLoopWorkAdmissionInput = Readonly<{ agent: Agent; turn: number; signal: AbortSignal }> & (
 +    | Readonly<{ kind: 'turn-start' | 'turn-end'; event: Readonly<SessionEvent> }>
@@ -603,10 +716,14 @@
          maxParallelToolCalls?: number;
      }, Config>;
      /** Validated configuration owned by the agent-loop service. */
-@@ -109,6 +133,14 @@
+@@ -109,6 +146,18 @@
      /** Plain holder prevents Cordis from re-tracing the factory's dependency context through a caller shadow. */
      private readonly runtime;
      constructor(ctx: Context, config: Config);
++    /** Monotonic opt-in; deny claim when the provider or owned persistence is absent. */
++    requireInputCheckpoint(): void;
++    /** Install one async policy over the exact flushed prefix; not a Remote API. */
++    installInputCheckpoint(policy: AgentLoopInputCheckpoint): void;
 +    /** Monotonic same-process opt-in; missing provider denies new driver work. */
 +    requireWorkAdmission(): void;
 +    /** Install one immutable synchronous driver policy. Not a Remote API. */
@@ -618,3 +735,10 @@
      /** Report a contained declarative-start failure to identity-bound consumers. */
      private reportConfiguredStartupFailure;
      /** Restore a materialized exact config identity on remount, or create it on first use. */
+@@ -176,4 +225,4 @@
+     private resumeWith;
+ }
+ export default AgentLoop;
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=index.d.ts.map

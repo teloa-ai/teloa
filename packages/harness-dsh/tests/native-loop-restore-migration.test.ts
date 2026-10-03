@@ -339,7 +339,7 @@ test('公开JS/types契约：ES2022深只读候选、异步策略、同步lease�
  await writeFile(path, `
 import {SessionPersistence, SessionAdmissionUnsupportedError, type SessionOpenAdmission, type SessionOpenAdmissionInput, type SessionOpenAdmissionLease} from ${JSON.stringify(join(seamRoot, 'lib/types/index.js'))}
 import Jsonl from ${JSON.stringify(join(backendRoot, 'lib/types/index.js'))}
-import type {AgentLoopRestoreAdmission} from ${JSON.stringify(join(loopRoot, 'lib/types/index.js'))}
+import type {AgentLoopRestoreAdmission, AgentLoopInputCheckpoint, AgentLoopInputCheckpointInput, AgentLoopInputCheckpointLease} from ${JSON.stringify(join(loopRoot, 'lib/types/index.js'))}
 declare const restorePolicy: AgentLoopRestoreAdmission
 const compatiblePolicy: SessionOpenAdmission = restorePolicy
 declare const input: SessionOpenAdmissionInput
@@ -360,6 +360,20 @@ const invalid: SessionOpenAdmissionLease = {async assertCurrent() {}}
 storage.openWithAdmission(input.sessionId, policy, {signal: input.signal})
 jsonl.openWithAdmission(input.sessionId, policy)
 const error: Error = new SessionAdmissionUnsupportedError()
+declare const checkpointInput: AgentLoopInputCheckpointInput
+const checkpointLease: AgentLoopInputCheckpointLease = Object.freeze({assertCurrent() {return undefined}})
+const checkpointPolicy: AgentLoopInputCheckpoint = async candidate => {
+ // @ts-expect-error flushed header internals must remain readonly
+ candidate.snapshot.header.createdAt = 0
+ // @ts-expect-error persisted event internals must remain readonly
+ candidate.snapshot.events[0].time = 0
+ // @ts-expect-error the driver batch must remain readonly
+ candidate.messages.push({})
+ return checkpointLease
+}
+// @ts-expect-error async assertion cannot authorize a synchronous Inbox claim
+const invalidCheckpoint: AgentLoopInputCheckpointLease = {async assertCurrent() {}}
+checkpointPolicy(checkpointInput)
 `)
  const program = ts.createProgram([path], {noEmit: true, strict: true, skipLibCheck: true, target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler,

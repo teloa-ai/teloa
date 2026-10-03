@@ -7,6 +7,7 @@ import {WorkError} from '@teloa/contract'
 import {createNativeInputGuard,nativeInputIdentity} from './native-input-access.ts'
 import {createNativeWorkCausality} from './native-work-causality.ts'
 import {isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
+import type {NativeInputCheckpoint} from './native-input-checkpoint.ts'
 
 export type NativeInputProducer=Extract<WorkAccessRequest,{kind:'native-input'}>['producer']
 // identity 由拥有实际发布点的 producer 构造。它只绑定上下文，不凭此标记授予许可。
@@ -16,7 +17,8 @@ const producers=new Set<NativeInputProducer>(['prompt','queue','subagent','sched
 const denied=()=>new WorkError('teloa/forbidden','当前暂不能提交新输入，请核对运行许可后重试。')
 
 /** 首次输入用新工作许可；真实受理后的热轮次使用固定续作许可。seed 与冷恢复独立核对。 */
-export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess){
+export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,checkpoint?:NativeInputCheckpoint){
+ if(checkpoint!==undefined&&typeof checkpoint!=='function')throw denied()
  const guard=createNativeInputGuard(ctx,{final:true,onAccepted:receipt=>causality.accept(receipt)})
  const prepare=(agent:Agent,message:UserMessage,submit:()=>void,signal?:AbortSignal)=>{
   let snapshot:UserMessage
@@ -45,7 +47,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess){
    if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
   })
  }
- const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit))
+ const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit),checkpoint)
  const withNewInput=async(agent:Agent,message:UserMessage,context:NativeInputContext,submit:()=>void,signal?:AbortSignal):Promise<void>=>{
   if(isNativeResourceCleanupScope())throw denied()
   let producer:NativeInputProducer,contextIdentity:string

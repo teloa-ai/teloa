@@ -7,15 +7,15 @@
     {
       "path": "lib/index.js",
       "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
-      "afterSha256": "b20d8115ed98ca0a52c276cd5374e14a6a7c6831a2af924e6c41c31799706078"
+      "afterSha256": "63a7fa298a400cede51908ea25d9d226354b9102905d93897145e3493b3be985"
     },
     {
       "path": "lib/types/index.d.ts",
       "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
-      "afterSha256": "a3a08631d0fd058b096dcece02f0818b4c0457efea7cf0b673118842e4891e53"
+      "afterSha256": "c696d9872b24a419b3ed476f5fc00a20f2b087fbccaf54fdcf82f4b7a5a719aa"
     }
   ],
-  "patchSha256": "f048356a7ea4d9e9f26427b45e712e618e78dc5dc64ca448b761541b7acd273f",
+  "patchSha256": "c1adb1897f873c9de509d64df746b9fde4806466b7a12c5126774a8629007024",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
@@ -26,7 +26,12 @@
     "Config.requireRestoreAdmission",
     "AgentLoopRestoreAdmissionInput",
     "AgentLoopRestoreAdmissionLease",
-    "AgentLoopRestoreAdmission"
+    "AgentLoopRestoreAdmission",
+    "AgentLoop.requireInputCheckpoint",
+    "AgentLoop.installInputCheckpoint",
+    "AgentLoopInputCheckpointInput",
+    "AgentLoopInputCheckpointLease",
+    "AgentLoopInputCheckpoint"
   ],
   "scope": {
     "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
@@ -39,10 +44,12 @@
       "ToolRuntime final body admission is separate; this only attests exact Loop-planned input before scheduler.prepare",
       "A context policy that throws/returns Promise after sync publication cannot roll back that accepted write",
       "Public events remain observation-only and cannot call private policy; this is not protection against arbitrary mutation of SDK private internals",
-      "Rejection before migration admission leaves every historical log byte unchanged; revocation after an authorized migration or append cannot roll back committed generations, closers or later setup/publication writes, but prevents restored work from reaching the model."
+      "Rejection before migration admission leaves every historical log byte unchanged; revocation after an authorized migration or append cannot roll back committed generations, closers or later setup/publication writes, but prevents restored work from reaching the model.",
+      "Input checkpoint attests the persisted pre-claim prefix only. Provider must durably commit its acceptance ledger and govern cold recovery; in-flight tool side effects and reentrant failure after a committed partial Inbox splice need separate reconciliation."
     ],
     "restore": "SessionPersistence.openWithAdmission read-only preparation under retained writer/OS ownership before migration; exact frozen validated header/events, inherited count and official fused signal; abortable async policy returning a frozen synchronous assertCurrent lease; checked before first closer write, construction, setup/commit/publication awaits and final pending wake",
     "restoreCleanup": "Private pending-restore state preserves the durable Inbox on failed or cancelled admission-enabled restoration, including owner/factory disposal; successful activation removes that state, so subsequent user disposal and unguarded Free cleanup retain original cancellation semantics.",
-    "restoreWrites": "Admission-enabled restore passes the official fused signal to closer and both seed/setup suffix appends and races their waits. Cancellation abandons adapter continuations; the owning lifecycle still awaits the original handle.close(), including any in-flight backend mutation chain. Committed writes are not rolled back; unguarded Free and fresh/fork appends retain their original waits."
+    "restoreWrites": "Admission-enabled restore passes the official fused signal to closer and both seed/setup suffix appends and races their waits. Cancellation abandons adapter continuations; the owning lifecycle still awaits the original handle.close(), including any in-flight backend mutation chain. Committed writes are not rolled back; unguarded Free and fresh/fork appends retain their original waits.",
+    "inputCheckpoint": "Before Inbox removal: official SessionStore live drain, owned writer flush/read and exact frozen prefix; async once-installed private policy plus frozen synchronous lease; waiting appends remain queued outside the selected batch; cancellation/rejection does not claim pending input. No handle or replay dispatcher is exposed."
   }
 }
