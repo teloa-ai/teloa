@@ -34,3 +34,17 @@ export type NativeProgressCheckpointInput=Readonly<{
  assertCurrent:()=>void
 }>
 export type NativeProgressCheckpoint=(input:NativeProgressCheckpointInput)=>Promise<void>
+
+/** 官方冷读后、任何恢复写入前的完整候选；只有部署拥有者可以核验持久许可。 */
+export type NativeInputRestoreInput=Readonly<{
+ sessionId:string
+ snapshot:NativeCheckpointSnapshot
+ messages:readonly UserMessage[]
+ signal:AbortSignal
+}>
+export type NativeInputRestoreLease=Readonly<{
+ roots:readonly NativeInputRoot[]
+ /** 仅允许已核验根继续执行；不能据此接纳新输入。 */
+ assertCurrent:()=>undefined
+}>
+export type NativeInputRestore=(input:NativeInputRestoreInput)=>NativeInputRestoreLease|PromiseLike<NativeInputRestoreLease>

@@ -3,16 +3,17 @@ import {WorkError} from '@teloa/contract'
 import {createNativeWorkInput} from './native-work-input.ts'
 import {createNativeProducerAdmissions} from './native-producer-admission.ts'
 import {workAccess} from '@teloa/backend'
-import type {NativeInputCheckpoint,NativeProgressCheckpoint} from './native-input-checkpoint.ts'
+import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore} from './native-input-checkpoint.ts'
 
-export type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput} from './native-input-checkpoint.ts'
-export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint}>
+export type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore,NativeInputRestoreInput,NativeInputRestoreLease} from './native-input-checkpoint.ts'
+export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;restore?:NativeInputRestore}>
+/** 固定宿主在装配前核验真实冷恢复契约，旧核心不能静默忽略恢复配置。 */
+export const nativeInputRestoreVersion=1
 
 declare module '@deepseek-ai/cordis'{
  interface Context{readonly teloaNativeInput:TeloaNativeInput}
 }
 
-const forbidden=()=>new WorkError('teloa/forbidden','已有待处理输入尚无受理证明，暂不能启动智能体。')
 const unavailable=()=>new WorkError('teloa/unavailable','原生输入准入服务尚未就绪。')
 type Method=(...args:unknown[])=>unknown
 
@@ -40,8 +41,8 @@ export function requireNativeInputProvider(ctx:Context):TeloaNativeInput{
 
 /**
  * 一个物理宿主共享一个最终 Session guard 与一组固定发布策略。
- * 使用官方 Service/inject 装配；只接已有 Agent 的新输入，不授予 seed/fork/cold 续作许可。
- * 冷恢复在官方读日志后、首个修复写入前拒绝待处理 Inbox；未安装恢复门时不发布执行能力。
+ * 使用官方 Service/inject 装配；冷续作须由部署恢复策略核验精确历史和全部待办根。
+ * 未配置恢复策略时，在官方读日志后、首个修复写入前拒绝待处理 Inbox。
  * 初次 Agent 发布仍拒绝没有受理因果证明的 pending seed/fork；seed 可能已落存。
  * Store 的 required 策略单向固定；卸载服务后维持关闭，重新运行须重建物理宿主。
  */
@@ -52,17 +53,12 @@ export class TeloaNativeInput extends Service{
  declare readonly admissions:ReturnType<typeof createNativeProducerAdmissions>
  constructor(ctx:Context,config:NativeInputProviderConfig={}){
   // 必须先验证最终补口，不能先发布一个缺少守卫的准入 Service。
-  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint,config.progress),admissions=createNativeProducerAdmissions(input)
+  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint,config.progress,config.restore),admissions=createNativeProducerAdmissions(input)
   super(ctx,'teloaNativeInput')
   Object.defineProperties(this,{
    input:{value:input,enumerable:true,writable:false,configurable:false},
    admissions:{value:admissions,enumerable:true,writable:false,configurable:false},
   })
-  ctx.on('agent/created',async({agent,signal})=>{
-   signal?.throwIfAborted()
-   if(agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw forbidden()
-   signal?.throwIfAborted()
-  },{global:true,prepend:true})
   ctx.effect(()=>()=>input.close())
  }
 }

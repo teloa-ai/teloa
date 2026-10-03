@@ -7,7 +7,7 @@
  import z from "@deepseek-ai/schemastery";
  import { z as z$1 } from "zod";
  import { brandString } from "@deepseek-ai/dsh-brand";
-@@ -11,6 +12,148 @@
+@@ -11,6 +12,154 @@
  import { createScope } from "@deepseek-ai/dsh-scope";
  import { joinContextSections, renderContextSections, renderPrompt } from "@deepseek-ai/dsh-system-prompt";
  import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER } from "@deepseek-ai/dsh-tools";
@@ -79,13 +79,14 @@
 +// Restore is a cold checkpoint, not durable authorization for persisted work.
 +const loopRestoreAdmissions = new WeakMap();
 +const agentRestoreAdmissions = new WeakMap();
++const restorePendingWakes = new WeakMap();
 +function restoreAdmissionFailure() { return new Error("Agent loop restore admission is unavailable or invalid"); }
 +async function acquireRestoreAdmission(holder, candidate) {
 + const { sessionId, signal } = candidate;
 + const state = loopRestoreAdmissions.get(holder);
 + if (state === void 0) throw restoreAdmissionFailure();
 + const policy = state.policy;
-+ let lease, assertion;
++ let lease, assertion, wakePending = false;
 + if (policy === void 0) {
 +  if (state.required) throw restoreAdmissionFailure();
 + } else {
@@ -95,8 +96,11 @@
 +  // Capture a data method: getters and Promise/thenable assertions are not leases.
 +  assertion = Object.getOwnPropertyDescriptor(lease, "assertCurrent")?.value;
 +  if (typeof assertion !== "function") throw restoreAdmissionFailure();
++  const wake = Object.getOwnPropertyDescriptor(lease, "wakePending");
++  if (wake !== void 0 && (!Object.hasOwn(wake, "value") || wake.value !== true)) throw restoreAdmissionFailure();
++  wakePending = wake?.value === true;
 + }
-+ return () => {
++ const assertCurrent = () => {
 +  signal.throwIfAborted();
 +  if (state.policy !== policy || (policy === void 0 && state.required)) throw restoreAdmissionFailure();
 +  if (assertion !== void 0) {
@@ -108,6 +112,8 @@
 +  }
 +  signal.throwIfAborted();
 + };
++ restorePendingWakes.set(assertCurrent, wakePending);
++ return assertCurrent;
 +}
 +// Race only the restore wait. The owner still awaits close(), which joins the
 +// backend mutation chain; an adapter's late result cannot publish or advance a cursor.
@@ -156,7 +162,7 @@
  //#region lib/types/inbox.js
  /**
  * Driver-owned durable agent inbox projection and command facade.
-@@ -100,9 +243,14 @@
+@@ -100,9 +249,14 @@
  	* @param turn - turn that will own the claimed batch.
  	* @returns next-step input followed by the queued turn, when requested.
  	*/
@@ -174,7 +180,7 @@
  		for (const message of claimed) this.dispatch.emit("agent/inbox/claimed", {
  			message,
  			turn
-@@ -569,7 +717,7 @@
+@@ -569,7 +723,7 @@
  			const call = group[committed];
  			const result = slot.needsPost ? await ctx.tools[TOOL_RUNTIME_SCHEDULER].finalize(slot.exec, slot.result) : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result);
  			appendToolResult(session, turn, step, call.block, result, callSeqs[committed]);
@@ -183,7 +189,7 @@
  			concluded ||= result.concludesTurn === true;
  			committed++;
  		}
-@@ -579,6 +727,7 @@
+@@ -579,6 +733,7 @@
  		const call = group[index];
  		callSeqs[index] = appendToolCall(session, turn, step, call.block);
  		started++;
@@ -191,7 +197,7 @@
  		const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare(call.exec);
  		throwSchedulerFailure();
  		switch (prepared.kind) {
-@@ -768,7 +917,11 @@
+@@ -768,7 +923,11 @@
  	systemPrompt;
  	/** Identities fully frozen by this loop; weak references do not retain replaced history. */
  	frozenMessages = /* @__PURE__ */ new WeakSet();
@@ -204,7 +210,7 @@
  		this.loopCtx = loopCtx;
  		this.id = id;
  		this.options = options;
-@@ -832,13 +985,26 @@
+@@ -832,13 +991,26 @@
  		this.activityDone = done.promise;
  		return (async () => {
  			try {
@@ -233,7 +239,7 @@
  				done.resolve();
  			}
  		})();
-@@ -852,6 +1018,11 @@
+@@ -852,6 +1024,11 @@
  	*   the inbox insertion so a reentrant cancel cannot reclassify it.
  	*/
  	wakeDriver(wakeAfterAbort = false) {
@@ -245,7 +251,7 @@
  		if (this.phase.kind !== "idle") {
  			if (abortedCancelCause(this.phase.abort.signal)?.kind !== "disposed" && (this.phase.kind === "maintenance" || wakeAfterAbort)) this.phase.wakeRequested = true;
  			return;
-@@ -903,7 +1074,13 @@
+@@ -903,7 +1080,13 @@
  		/* v8 ignore next -- private callers establish the running phase before proposing a step */
  		if (this.phase.kind !== "running") throw new Error(`agent "${this.id}": pre-step outside running phase`);
  		const signal = this.phase.abort.signal;
@@ -260,7 +266,7 @@
  		const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal));
  		signal.throwIfAborted();
  		const sections = renderContextSections(assembly);
-@@ -939,8 +1116,9 @@
+@@ -939,8 +1122,9 @@
  		const { signal } = phase.abort;
  		signal.throwIfAborted();
  		const turn = phase.turn + 1;
@@ -271,7 +277,7 @@
  		} catch (error) {
  			this.throwError(error);
  		}
-@@ -948,6 +1126,7 @@
+@@ -948,6 +1132,7 @@
  		let turnEnds = null;
  		let target = "next-turn";
  		try {
@@ -279,7 +285,7 @@
  			while (true) {
  				signal.throwIfAborted();
  				const step = phase.step + 1;
-@@ -965,7 +1144,7 @@
+@@ -965,7 +1150,7 @@
  					return false;
  				}
  				signal.throwIfAborted();
@@ -288,7 +294,7 @@
  					turn,
  					step
  				});
-@@ -975,6 +1154,7 @@
+@@ -975,6 +1160,7 @@
  					if (session === this.session) toolRecovery.observe(event);
  				});
  				try {
@@ -296,7 +302,7 @@
  					const stepEnd = await this.step(decision);
  					if (turnEnds === null || turnEnds.kind !== "max-tokens") turnEnds = stepEnd;
  				} catch (error) {
-@@ -989,10 +1169,13 @@
+@@ -989,10 +1175,13 @@
  					throw error;
  				} finally {
  					stopRecovery();
@@ -311,7 +317,7 @@
  				}
  				signal.throwIfAborted();
  				if (turnEnds && this.inbox.nextStep.length === 0) {
-@@ -1024,10 +1207,13 @@
+@@ -1024,10 +1213,13 @@
  			this.throwError(error);
  		} finally {
  			try {
@@ -326,7 +332,7 @@
  			} catch (error) {
  				this.throwError(error);
  			}
-@@ -1069,6 +1255,9 @@
+@@ -1069,6 +1261,9 @@
  			});
  			let started = false;
  			try {
@@ -336,7 +342,7 @@
  				const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request);
  				signal.throwIfAborted();
  				live.start();
-@@ -1151,7 +1340,9 @@
+@@ -1151,7 +1346,9 @@
  				if (finish.kind === "max-tokens") return { kind: "max-tokens" };
  				const toolCalls = message.content.filter((block) => block.type === "tool-call");
  				if (toolCalls.length === 0) return { kind: "completed" };
@@ -347,7 +353,7 @@
  				return concluded ? { kind: "completed" } : null;
  			} catch (error) {
  				if (!live.ended) live.abandon();
-@@ -1531,6 +1722,7 @@
+@@ -1531,6 +1728,7 @@
  	];
  	/** Runtime schema for declarative agents. */
  	static Config = z.object({
@@ -355,7 +361,7 @@
  		maxParallelToolCalls: z.number().step(1).min(1).default(10).volatile(),
  		agents: z.array(z.object({
  			id: z.string().required(),
-@@ -1551,6 +1743,7 @@
+@@ -1551,6 +1749,7 @@
  	constructor(ctx, config) {
  		super(ctx, "agentLoop");
  		this.config = {
@@ -363,7 +369,7 @@
  			agents: applyLauncherIdentities(config.agents, ctx.get(CONFIGURED_AGENT_IDENTITIES_KEY)),
  			maxParallelToolCalls: config.maxParallelToolCalls
  		};
-@@ -1558,7 +1751,11 @@
+@@ -1558,7 +1757,11 @@
  		ctx.sessionProjections.register(turnBoundaryProjectionDefinition);
  		ctx.sessionProjections.register(inboxProjectionDefinition);
  		this.ownership = new FactoryOwnership(ctx.fiber);
@@ -376,7 +382,7 @@
  		ctx.effect(() => () => this.ownership.dispose(), "agentLoop.transactions()");
  		ctx.effect(() => ctx.agents.setFactory(this), "agentLoop.setFactory()");
  		ctx.systemPrompt.variable("provider", (context) => context.agent?.options.provider);
-@@ -1593,6 +1790,54 @@
+@@ -1593,6 +1796,54 @@
  				}).dispose;
  			}, `agentLoop.resume(${id})`);
  		}
@@ -431,7 +437,7 @@
  	}
  	/** Report a contained declarative-start failure to identity-bound consumers. */
  	reportConfiguredStartupFailure(configId, action, sessionId, error) {
-@@ -1652,13 +1897,15 @@
+@@ -1652,13 +1903,15 @@
  	* BEFORE publication, so a mid-setup unload rolls everything back; `signal`
  	* fuses caller cancellation with lifecycle teardown for setup awaits.
  	*/
@@ -449,7 +455,7 @@
  		const abort = new AbortController();
  		const onCallerAbort = () => {
  			abort.abort(callerSignal?.reason instanceof Error ? callerSignal.reason : new Error(`agent "${id}" creation aborted`, { cause: callerSignal?.reason }));
-@@ -1685,7 +1932,12 @@
+@@ -1685,7 +1938,12 @@
  				if (machine === void 0) await machineReady.promise;
  				/* v8 ignore next -- setup failure untracks this disposer before resolving without a machine. */
  				if (machine !== void 0) {
@@ -463,7 +469,7 @@
  					await machine.whenIdle();
  					await machine.scope.dispose();
  				}
-@@ -1711,7 +1963,7 @@
+@@ -1711,7 +1969,7 @@
  		let unfollowOwner;
  		try {
  			unfollowOwner = ownerCtx.effect(function* () {
@@ -472,7 +478,7 @@
  				machineReady.resolve();
  				yield machine.scope.rawDispose;
  				yield () => {
-@@ -1729,6 +1981,7 @@
+@@ -1729,6 +1987,7 @@
  		}
  		/* v8 ignore stop */
  		const assertLive = () => {
@@ -480,8 +486,9 @@
  			if (!abort.signal.aborted) return;
  			/* v8 ignore next -- unreachable String() arm, see above */
  			throw abort.signal.reason instanceof Error ? abort.signal.reason : new Error(String(abort.signal.reason));
-@@ -1749,7 +2002,9 @@
+@@ -1749,7 +2008,10 @@
  						detachAgent = loopCtx.agents.enter(agent, parentAgent);
++						if (restoreAdmission !== void 0) invokeLoopWorkAdmission(workRuntime, Object.freeze({ kind: "restore-publish", agent, signal: abort.signal }));
  						agent.ctx.sessions.announce(session);
  						assertLive();
 -						await loopCtx.agents.announce(agent, source, abort.signal);
@@ -491,7 +498,7 @@
  						assertLive();
  						return {
  							agent,
-@@ -1836,10 +2091,14 @@
+@@ -1836,10 +2098,14 @@
  	* @param stored - the session's owned handle and stored cursor, if any.
  	* @param session - the unpublished session whose suffix is stored.
  	*/
@@ -508,7 +515,7 @@
  		stored.storedCount += suffix.length;
  	}
  	/**
-@@ -1870,7 +2129,7 @@
+@@ -1870,7 +2136,7 @@
  		return published;
  	}
  	/** Prepare one Agent around an acquired Session, run setup, and publish it. */
@@ -517,7 +524,7 @@
  		const env_2 = {
  			stack: [],
  			error: void 0,
-@@ -1880,15 +2139,22 @@
+@@ -1880,15 +2146,22 @@
  			const session = __addDisposableResource(env_2, preparation, false).session;
  			let prepared;
  			try {
@@ -544,7 +551,7 @@
  			});
  		} catch (e_2) {
  			env_2.error = e_2;
-@@ -1899,14 +2165,18 @@
+@@ -1899,14 +2172,18 @@
  	}
  	async initializeAgent(prepared, initialize) {
  		try {
@@ -565,7 +572,7 @@
  		} catch (error) {
  			await prepared.dispose().catch(() => {});
  			throw error;
-@@ -1928,8 +2198,9 @@
+@@ -1928,8 +2205,9 @@
  		const id = options.resumeSessionId;
  		const published = (async () => {
  			const ownerAbort = new AbortController();
@@ -576,7 +583,7 @@
  			}, `agentLoop.resume-load(${id})`);
  			const fused = AbortSignal.any([
  				...options.signal === void 0 ? [] : [options.signal],
-@@ -1937,40 +2208,76 @@
+@@ -1937,40 +2215,76 @@
  				this.ownership.signal
  			]);
  			let handle;
@@ -665,7 +672,7 @@
 +				assertCurrent();
 +				const restore = agentRestoreAdmissions.get(restored.agent);
 +				agentRestoreAdmissions.delete(restored.agent);
-+				if (restore?.wakeRequested && restored.agent.inbox.hasPending) restored.agent.wakeDriver();
++				if ((restore?.wakeRequested || restorePendingWakes.get(assertLease) === true) && restored.agent.inbox.hasPending) restored.agent.wakeDriver();
 +				return restored;
 +			} catch (error) {
 +				await restored?.dispose().catch(() => {});
@@ -710,14 +717,15 @@
      /**
       * Maximum parallel-safe calls in flight per agent step. `1` is serial;
       * omission defaults to {@link DEFAULT_MAX_PARALLEL_TOOL_CALLS}.
-@@ -95,12 +101,52 @@
+@@ -95,12 +101,55 @@
          resumeSessionId?: SessionId;
      })[];
  }
 +/** Exact frozen persistence candidate; signal is the official caller/owner/factory fusion. */
 +export type AgentLoopRestoreAdmissionInput = SessionOpenAdmissionInput;
 +/** Frozen lease with an own synchronous assertion returning undefined. */
-+export type AgentLoopRestoreAdmissionLease = SessionOpenAdmissionLease;
++/** Deployment-owned request to wake the existing verified Inbox after successful final activation. */
++export type AgentLoopRestoreAdmissionLease = SessionOpenAdmissionLease & Readonly<{wakePending?: true}>;
 +/** A cold checkpoint only; durable authorization/signature verification belongs to the provider. */
 +export type AgentLoopRestoreAdmission = SessionOpenAdmission;
 +/** Exact driver batch and immutable prefix read from the owned writer after official flush. */
@@ -743,7 +751,9 @@
 +export type AgentLoopInputCheckpointLease = Readonly<{assertCurrent(): undefined}>;
 +export type AgentLoopInputCheckpoint = (input: AgentLoopInputCheckpointInput) => AgentLoopInputCheckpointLease | PromiseLike<AgentLoopInputCheckpointLease>;
 +/** Exact driver-owned phase descriptors; public events are only observations. */
-+export type AgentLoopWorkAdmissionInput = Readonly<{ agent: Agent; turn: number; signal: AbortSignal }> & (
++export type AgentLoopWorkAdmissionInput =
++    | Readonly<{ kind: 'restore-publish'; agent: Agent; signal: AbortSignal }>
++    | Readonly<{ agent: Agent; turn: number; signal: AbortSignal }> & (
 +    | Readonly<{ kind: 'turn-start' | 'turn-end'; event: Readonly<SessionEvent> }>
 +    | Readonly<{ kind: 'step-start' | 'step-end'; step: number; event: Readonly<SessionEvent> }>
 +    | Readonly<{ kind: 'claim'; step: number; target: InboxTarget; message: UserMessage }>
@@ -763,7 +773,7 @@
          maxParallelToolCalls?: number;
      }, Config>;
      /** Validated configuration owned by the agent-loop service. */
-@@ -109,6 +155,20 @@
+@@ -109,6 +158,20 @@
      /** Plain holder prevents Cordis from re-tracing the factory's dependency context through a caller shadow. */
      private readonly runtime;
      constructor(ctx: Context, config: Config);
@@ -784,7 +794,7 @@
      /** Report a contained declarative-start failure to identity-bound consumers. */
      private reportConfiguredStartupFailure;
      /** Restore a materialized exact config identity on remount, or create it on first use. */
-@@ -176,4 +236,4 @@
+@@ -176,4 +239,4 @@
      private resumeWith;
  }
  export default AgentLoop;

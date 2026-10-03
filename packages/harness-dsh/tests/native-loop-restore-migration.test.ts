@@ -24,10 +24,10 @@ import {deferred} from './fixtures/native-subagent-admission.ts'
 
 type ReadonlyJson<T> = T extends string | number | boolean | null | undefined ? T : {readonly [K in keyof T]: ReadonlyJson<T[K]>}
 type Candidate = Readonly<{sessionId: SessionId; header: ReadonlyJson<SessionHeader>; events: readonly ReadonlyJson<SessionEvent>[]; inheritedEventCount: SessionLogOffset; signal: AbortSignal}>
-type Lease = Readonly<{assertCurrent(): undefined}>
+type Lease = Readonly<{assertCurrent(): undefined;wakePending?:true}>
 type Policy = (input: Candidate) => Lease | PromiseLike<Lease>
 type AdmissionPersistence = SessionPersistence & {openWithAdmission(id: SessionId, admission: Policy, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>}
-type RestoreLoop = AgentLoop & {requireRestoreAdmission(): void; installRestoreAdmission(policy: Policy): void}
+type RestoreLoop = AgentLoop & {requireRestoreAdmission(): void; installRestoreAdmission(policy: Policy): void; installWorkAdmission(policy:(input:Readonly<{kind:string;agent:Agent;signal:AbortSignal}>)=>void):void}
 type PersistenceModule = typeof import('@deepseek-ai/dsh-session-persistence') & {SessionAdmissionUnsupportedError: new () => Error}
 const options = {timeout: 15000}, route = {provider: 'migration-deterministic', model: 'fixed-output'}
 const immediate = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -322,15 +322,57 @@ for (const window of ['stage-open', 'committed-link'] as const) for (const cause
  })
 }
 
-test('迁移后的agent publish微任务撤销仍阻止模型，精确重建两个原Inbox', options, async t => {
+test('迁移后的agent publish微任务撤销仍阻止请求wake的模型，精确重建两个原Inbox', options, async t => {
  const f = await fixture(t), cold = await f.seed(3, true, true), {loop} = await f.mount()
  let current = true
- loop.installRestoreAdmission(() => Object.freeze({assertCurrent() {if (!current) throw Error('checkpoint revoked'); return undefined}}))
+ loop.installRestoreAdmission(() => Object.freeze({wakePending:true,assertCurrent() {if (!current) throw Error('checkpoint revoked'); return undefined}}))
  f.ctx.on('agent/created', () => {queueMicrotask(() => {current = false}); return undefined})
  await assert.rejects(f.ctx.agents.resume({resumeSessionId: cold.id, agentOptions: route}), denied)
  assert.deepEqual(await f.inbox(cold), cold.inbox); assert.equal(f.adapter.requests.length, 0)
  assert.equal(f.ctx.agents.get(cold.id), undefined); assert.equal(f.store.get(cold.id), undefined)
  for (const [name, bytes] of cold.before) assert.deepEqual(await readFile(join(cold.dir, name)), bytes)
+})
+
+for(const wake of [false,true])test(`公开恢复lease wakePending=${wake}：原Inbox按显式开关启动且不插入新消息`,options,async t=>{
+ const f=await fixture(t),cold=await f.seed(4,false,false),{loop}=await f.mount()
+ loop.installRestoreAdmission(()=>Object.freeze({...wake?{wakePending:true as const}:{},assertCurrent(){return undefined}}))
+ const handle=await f.ctx.agents.resume({resumeSessionId:cold.id,agentOptions:route});await handle.agent.whenIdle()
+ assert.equal(f.adapter.requests.length,wake?1:0)
+ const events=handle.agent.session.snapshotEvents()
+ assert.deepEqual(events.slice(0,cold.events.length),cold.events)
+ assert.equal(events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.length>0).length,2,'只消费已有两条Inbox，不新增steer')
+ if(wake){assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/pending next-turn/);assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/pending next-step/)}
+ await handle.dispose()
+})
+
+for(const invalid of ['getter',false,1,'true'] as const)test(`公开恢复wakePending拒绝${String(invalid)}，首写前零模型`,options,async t=>{
+ const f=await fixture(t),cold=await f.seed(3,true,true),{loop}=await f.mount()
+ loop.installRestoreAdmission((()=>invalid==='getter'?Object.freeze({get wakePending(){return true},assertCurrent(){return undefined}}):Object.freeze({wakePending:invalid,assertCurrent(){return undefined}})) as Policy)
+ await assert.rejects(f.ctx.agents.resume({resumeSessionId:cold.id,agentOptions:route}),/restore admission/);await f.rejected(cold)
+})
+
+test('请求wake的异步恢复策略被取消后，晚到准入不启动实际driver',options,async t=>{
+ const f=await fixture(t),cold=await f.seed(4,false,false),{loop}=await f.mount(),entered=deferred<Candidate>(),late=deferred<Lease>(),controller=new AbortController()
+ loop.installRestoreAdmission(candidate=>{entered.resolve(candidate);return late.promise})
+ const restoring=f.ctx.agents.resume({resumeSessionId:cold.id,agentOptions:route,signal:controller.signal}),rejected=assert.rejects(restoring)
+ await entered.promise;controller.abort(Error('cancel explicit wake'));await rejected;await f.rejected(cold)
+ late.resolve(Object.freeze({wakePending:true,assertCurrent(){return undefined}}));await immediate();assert.equal(f.adapter.requests.length,0);await cold.unchanged()
+})
+
+test('恢复绑定描述符仅在实际双 registry enter 后、公开通知前由私有factory调用一次',options,async t=>{
+ const f=await fixture(t),cold=await f.seed(4,false,false),{loop}=await f.mount(),order:string[]=[]
+ loop.installRestoreAdmission(()=>Object.freeze({wakePending:true,assertCurrent(){return undefined}}))
+ loop.installWorkAdmission(input=>{
+  if(input.kind!=='restore-publish')return
+  assert.ok(Object.isFrozen(input));assert.equal(input.agent.session,f.store.get(cold.id));assert.equal(input.agent,f.ctx.agents.get(cold.id));input.signal.throwIfAborted();order.push('private binding')
+ })
+ f.ctx.on('session/created',()=>{order.push('public session')})
+ f.ctx.on('agent/created',()=>{order.push('public agent');return undefined})
+ const handle=await f.ctx.agents.resume({resumeSessionId:cold.id,agentOptions:route});await handle.agent.whenIdle()
+ assert.deepEqual(order,['private binding','public session','public agent'])
+ await f.ctx.serial('agent/created',{agent:handle.agent,source:'resume'})
+ assert.equal(order.filter(item=>item==='private binding').length,1);assert.equal(f.adapter.requests.length,1)
+ await handle.dispose()
 })
 
 test('公开JS/types契约：ES2022深只读候选、异步策略、同步lease与unsupported基类', options, async t => {
@@ -339,13 +381,23 @@ test('公开JS/types契约：ES2022深只读候选、异步策略、同步lease�
  await writeFile(path, `
 import {SessionPersistence, SessionAdmissionUnsupportedError, type SessionOpenAdmission, type SessionOpenAdmissionInput, type SessionOpenAdmissionLease} from ${JSON.stringify(join(seamRoot, 'lib/types/index.js'))}
 import Jsonl from ${JSON.stringify(join(backendRoot, 'lib/types/index.js'))}
-import type {AgentLoopRestoreAdmission, AgentLoopInputCheckpoint, AgentLoopInputCheckpointInput, AgentLoopInputCheckpointLease} from ${JSON.stringify(join(loopRoot, 'lib/types/index.js'))}
+import type {AgentLoopRestoreAdmission, AgentLoopRestoreAdmissionLease, AgentLoopWorkAdmissionInput, AgentLoopInputCheckpoint, AgentLoopInputCheckpointInput, AgentLoopInputCheckpointLease} from ${JSON.stringify(join(loopRoot, 'lib/types/index.js'))}
 declare const restorePolicy: AgentLoopRestoreAdmission
 const compatiblePolicy: SessionOpenAdmission = restorePolicy
 declare const input: SessionOpenAdmissionInput
 declare const storage: SessionPersistence
 declare const jsonl: Jsonl
 const lease: SessionOpenAdmissionLease = Object.freeze({assertCurrent() {return undefined}})
+const wakingLease: AgentLoopRestoreAdmissionLease = Object.freeze({wakePending: true, assertCurrent() {return undefined}})
+// @ts-expect-error only explicit true is a restore wake request
+const invalidWake: AgentLoopRestoreAdmissionLease = {wakePending: false, assertCurrent() {return undefined}}
+declare const workInput: AgentLoopWorkAdmissionInput
+if(workInput.kind==='restore-publish'){
+ const session: string=workInput.agent.session.id
+ workInput.signal.throwIfAborted()
+ // @ts-expect-error cold binding has no active turn
+ const turn: number=workInput.turn
+}
 const policy: SessionOpenAdmission = async candidate => {
  // @ts-expect-error candidate header must be deeply readonly
  candidate.header.createdAt = 0

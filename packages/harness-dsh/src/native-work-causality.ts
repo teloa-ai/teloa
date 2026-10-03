@@ -2,22 +2,24 @@ import {AsyncLocalStorage} from 'node:async_hooks'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {GenerateOptions,StreamChunk} from '@deepseek-ai/dsh-llm'
-import {Session,SessionId,SessionLogOffset,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
+import {Session,SessionId,SessionLogOffset,interruptedTurnClosers,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
 import type {ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
 import type {WorkAccessLease} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
-import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput} from './native-input-checkpoint.ts'
+import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
 
 type Step={number:number;signal:AbortSignal}
-type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<NativeInputAcceptance>;step:Step|undefined}
+type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
+type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<InputCause>;step:Step|undefined}
 type Model={turn:Turn;step:Step;options:GenerateOptions;entered:boolean;active:boolean}
 type ToolCause={turn:Turn;step:Step;exec:ToolRunContext;signal:AbortSignal;parent:ToolRunContext['parent'];token:ToolRunContext['token'];agent:Agent;callId:string;rootCallId:string;name:string;arguments:unknown;active:boolean}
-type PendingInput={receipt:NativeInputAcceptance;roots:readonly NativeInputAcceptance[]}
-type ContextPublication={session:Session;identity:NativeInputIdentity;roots:readonly NativeInputAcceptance[];accepted:boolean}
+type PendingInput={receipt:InputCause;roots:readonly InputCause[]}
+type ContextPublication={session:Session;identity:NativeInputIdentity;roots:readonly InputCause[];accepted:boolean}
 type Position=Readonly<{agent:Agent;turn:number;signal:AbortSignal}>
 type LoopRequest=
+ |Readonly<{kind:'restore-publish';agent:Agent;signal:AbortSignal}>
  |Position&Readonly<{kind:'turn-start'}>
  |Position&Readonly<{kind:'turn-end'}>
  |Position&Readonly<{kind:'claim';message:UserMessage}>
@@ -53,26 +55,47 @@ function install(receiver:object,requireName:string,installName:string,policy:un
  * 权限证明只来自最终受理回执和官方私有执行点；公共事件与归因标记不授予执行许可。
  * 官方 Loop/Tools 仍负责运行、调度、持久化、结果与取消；这里仅核对实际对象与许可。
  */
-export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint,progress?:NativeProgressCheckpoint){
+export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint,progress?:NativeProgressCheckpoint,restore?:NativeInputRestore){
  if(installed.has(ctx))throw denied()
  const pending=new WeakMap<UserMessage,PendingInput>(),turns=new Map<Agent,Turn>()
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
  const models=new WeakMap<GenerateOptions,Model>(),planned=new WeakMap<ToolExecutionInput,{turn:Turn;step:Step}>()
  const executions=new WeakMap<ToolRunContext,ToolCause>(),activeTool=new AsyncLocalStorage<ToolCause>()
+ const recovering=new Map<string,{publish:(agent:Agent,signal?:AbortSignal)=>void}>(),recoveryAbort=new AbortController()
  let closed=false,loopReady=false
  // 仅覆盖下面的同步最终发布；不向公共事件、工具或调用者暴露继承证明。
  let contextPublication:ContextPublication|undefined
  const sessions=()=>Reflect.get(ctx,'sessions') as unknown as SessionStore
  const cancel=(agent:Agent)=>{try{agent.cancel({kind:'hook',reason},{keepInbox:true})}catch{}}
  const target=(turn:Turn)=>{if(closed||ctx.agents.get(turn.agent.id)!==turn.agent||turn.agent.session!==turn.session||sessions().get(turn.agent.id)!==turn.session)throw denied()}
- const fixedRoots=(roots:readonly NativeInputAcceptance[])=>{if(closed||roots.length===0)throw denied();for(const receipt of roots)assertNativeInputAcceptanceCurrent(receipt)}
- const rootIdentities=(roots:readonly NativeInputAcceptance[]):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
-  assertNativeInputAcceptanceCurrent(receipt)
+ const messageRoot=(sessionId:string,message:UserMessage):NativeInputRoot=>{
+  const rpcId=Reflect.get(message.source,'rpcId'),identity=nativeInputIdentity(message,typeof rpcId==='string'?rpcId:undefined)
+  if(rpcId!==undefined&&(typeof rpcId!=='string'||!rpcId))throw denied()
+  return Object.freeze({sessionId,messageId:identity.messageId,nativeRequestId:identity.nativeRequestId??null,payloadSha256:identity.payloadSha256})
+ }
+ const fixedRoots=(roots:readonly InputCause[])=>{if(closed||roots.length===0)throw denied();for(const receipt of roots)receipt.assertCurrent()}
+ const rootIdentities=(roots:readonly InputCause[]):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
+  receipt.assertCurrent()
   const event=receipt.event
   if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)throw denied()
-  const message=event.data.inserted[0]!,rpcId=Reflect.get(message.source,'rpcId'),identity=nativeInputIdentity(message,typeof rpcId==='string'?rpcId:undefined)
-  return Object.freeze({sessionId:receipt.session.id,messageId:identity.messageId,nativeRequestId:identity.nativeRequestId??null,payloadSha256:identity.payloadSha256})
+  return messageRoot(receipt.session.id,event.data.inserted[0]!)
  }))
+ // 公开创建通知只核验已经由官方私有恢复发布点绑定的因果，不消费恢复证明。
+ ctx.on('agent/created',({agent,signal})=>{
+  signal?.throwIfAborted()
+  const messages=[...agent.inbox.nextTurn,...agent.inbox.nextStep]
+  if(messages.length){
+   if(ctx.agents.get(agent.id)!==agent||sessions().get(agent.id)!==agent.session)throw denied()
+   for(const message of messages){
+    const input=pending.get(message)
+    if(!input||input.receipt.session!==agent.session)throw denied()
+    input.receipt.assertCurrent();fixedRoots(input.roots)
+   }
+   if(canonical([...agent.inbox.nextTurn,...agent.inbox.nextStep])!==canonical(messages)||ctx.agents.get(agent.id)!==agent||sessions().get(agent.id)!==agent.session)throw denied()
+  }
+  signal?.throwIfAborted()
+  return undefined
+ },{global:true,prepend:true})
  const current=(turn:Turn,step?:Step)=>{
   try{target(turn);fixedRoots([...turn.roots]);target(turn);if(turns.get(turn.agent)!==turn||step!==undefined&&turn.step!==step)throw denied();turn.signal.throwIfAborted();step?.signal.throwIfAborted()}
   catch{cancel(turn.agent);throw denied()}
@@ -103,6 +126,16 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  }
  const loopPolicy=(request:LoopRequest):void=>{
   const {agent}=request
+  if(request.kind==='restore-publish'){
+   try{
+    if(closed||!loopReady||ctx.agents.get(agent.id)!==agent||sessions().get(agent.id)!==agent.session)throw denied()
+    request.signal.throwIfAborted()
+    const proof=recovering.get(agent.id)
+    if(proof){proof.publish(agent,request.signal);recovering.delete(agent.id)}
+    else if(agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw denied()
+    request.signal.throwIfAborted();return
+   }catch{cancel(agent);throw denied()}
+  }
   if(request.kind==='turn-end'){turns.delete(agent);return}
   if(request.kind==='step-end'){
    const turn=turns.get(agent);if(turn?.number===request.turn&&turn.step?.number===request.step)turn.step=undefined
@@ -119,7 +152,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     const turn=turns.get(agent),input=pending.get(request.message)
     if(!turn||turn.number!==request.turn||turn.signal!==request.signal||!input||input.receipt.session!==turn.session)throw denied()
     // claim 仍须核对精确最终回执；同 Session 派生输入只合并其原始授权根。
-    assertNativeInputAcceptanceCurrent(input.receipt);target(turn);pending.delete(request.message)
+    input.receipt.assertCurrent();target(turn);pending.delete(request.message)
     for(const root of input.roots)turn.roots.add(root)
     return
    }
@@ -198,7 +231,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
       for(let index=0;index<inputs.length;index++){
        const input=inputs[index],message=request.messages[index]
        if(!input||!message||pending.get(message)!==input||input.receipt.session!==turn.session||canonical(request.snapshot.events[input.receipt.event.seq])!==canonical(input.receipt.event))throw denied()
-       assertNativeInputAcceptanceCurrent(input.receipt);fixedRoots(input.roots)
+       input.receipt.assertCurrent();fixedRoots(input.roots)
       }
       target(turn);request.signal.throwIfAborted()
      }catch{cancel(request.agent);throw denied()}
@@ -222,18 +255,80 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     await progress(Object.freeze({...request,roots,assertCurrent}))
     assertCurrent();return Object.freeze({assertCurrent})
    })
-   install(loop,'requireRestoreAdmission','installRestoreAdmission',(request:RestoreRequest)=>{
+   install(loop,'requireRestoreAdmission','installRestoreAdmission',async(request:RestoreRequest)=>{
     // 未发布的载体通过官方投影读取 Inbox；不生成无关客户端视图或新的受理证明。
     const cold=Session.create(SessionId(request.sessionId),request.events,request.header,SessionLogOffset(request.inheritedEventCount))
     const inbox=child.sessionProjections.stateOf(cold,'inbox')
-    if(!inbox||inbox['next-turn'].length||inbox['next-step'].length)throw denied()
-    // 无待办历史只允许创建空闲载体；不据此为任何后续输入生成受理证明。
-    return Object.freeze({assertCurrent(){
+    if(!inbox)throw denied()
+    const assertOwner=()=>{
      const currentLoop=ctx.get('agentLoop') as object|undefined
      const currentIdentity=currentLoop===undefined?undefined:Reflect.get(currentLoop,'runtime') as unknown
      request.signal.throwIfAborted()
      if(closed||!loopReady||currentIdentity!==loopIdentity)throw denied()
-    }})
+    }
+    assertOwner()
+    // 空闲日志可读，但本证明不能授权任何新输入。派生 next-step 必须另有持久因果协议。
+    if(!inbox['next-turn'].length&&!inbox['next-step'].length)return Object.freeze({assertCurrent:assertOwner})
+    if(!restore||inbox['next-step'].length||recovering.has(request.sessionId))throw denied()
+    const messages=Object.freeze([...inbox['next-turn']]),events:SessionEvent[]=[],roots:NativeInputRoot[]=[]
+    // 已领取的未结束轮次可能有未知外部成果，不因仍有其他排队消息而重放。
+    let activeTurn=false,claimed=false
+    for(const event of request.events){
+     if(event.type==='turn/start'){activeTurn=true;claimed=false}
+     else if(event.type==='turn/end'){activeTurn=false;claimed=false}
+     else if(activeTurn&&event.type==='agent/inbox/spliced'&&(event.data.removedCount??0)>0)claimed=true
+    }
+    if(activeTurn&&claimed)throw denied()
+    for(const message of messages){
+     const matches=request.events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.some(inserted=>inserted.id===message.id))
+     const event=matches[0]
+     if(matches.length!==1||!event||event.type!=='agent/inbox/spliced'||event.seq<request.inheritedEventCount||event.data.target!=='next-turn'||event.data.inserted.length!==1||message.source.kind==='tool'||canonical(event.data.inserted[0])!==canonical(message))throw denied()
+     events.push(event);roots.push(messageRoot(request.sessionId,message))
+    }
+    const signal=AbortSignal.any([request.signal,recoveryAbort.signal]),snapshot=Object.freeze({header:request.header,events:request.events,inheritedEventCount:request.inheritedEventCount})
+    const candidate=Object.freeze({sessionId:request.sessionId,snapshot,messages,signal})
+    let onAbort:()=>void=()=>{}
+    const aborted=new Promise<never>((_resolve,reject)=>{onAbort=()=>reject(denied());signal.addEventListener('abort',onAbort,{once:true})})
+    let lease:Awaited<ReturnType<NativeInputRestore>>
+    try{signal.throwIfAborted();lease=await Promise.race([Promise.resolve().then(()=>restore(candidate)),aborted])}
+    finally{signal.removeEventListener('abort',onAbort)}
+    assertOwner();signal.throwIfAborted()
+    if(!lease||!Object.isFrozen(lease))throw denied()
+    const assertion:unknown=Object.getOwnPropertyDescriptor(lease,'assertCurrent')?.value,granted:unknown=Object.getOwnPropertyDescriptor(lease,'roots')?.value
+    if(typeof assertion!=='function'||!Array.isArray(granted)||!Object.isFrozen(granted)||granted.some(root=>!root||!Object.isFrozen(root))||granted.length!==roots.length||new Set(granted.map(canonical)).size!==roots.length||canonical(granted.map(canonical).sort())!==canonical(roots.map(canonical).sort()))throw denied()
+    let bound:Agent|undefined,published=false
+    const assertCurrent=()=>{
+     assertOwner();signal.throwIfAborted()
+     const returned:unknown=Reflect.apply(assertion,lease,[])
+     if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
+     assertOwner();signal.throwIfAborted()
+     if(bound&&(ctx.agents.get(bound.id)!==bound||sessions().get(bound.id)!==bound.session))throw denied()
+    }
+    assertCurrent()
+    const proof={publish(agent:Agent,publishSignal?:AbortSignal){
+     assertCurrent();publishSignal?.throwIfAborted()
+     if(published||ctx.agents.get(agent.id)!==agent||sessions().get(agent.id)!==agent.session||agent.id!==request.sessionId||canonical(agent.session.header)!==canonical(request.header)||agent.session.inheritedEventCount!==request.inheritedEventCount)throw denied()
+     const actual=agent.session.snapshotEvents(),suffix=actual.slice(request.events.length),closers=interruptedTurnClosers(request.events)
+     if(canonical(actual.slice(0,request.events.length))!==canonical(request.events)||suffix.length<closers.length||suffix.length>closers.length+1)throw denied()
+     if(canonical(suffix.slice(0,closers.length))!==canonical(closers))throw denied()
+     if(suffix.length>closers.length&&(suffix.at(-1)?.type!=='session/end-seed'||canonical(suffix.at(-1)?.data)!=='{}'))throw denied()
+     const actualMessages=agent.inbox.nextTurn
+     if(agent.inbox.nextStep.length||canonical(actualMessages)!==canonical(messages))throw denied()
+     assertCurrent();publishSignal?.throwIfAborted()
+     bound=agent;published=true
+     const ids=new Set<string>()
+     for(let index=0;index<actualMessages.length;index++){
+      const message=actualMessages[index]!,event=agent.session.eventAt(events[index]!.seq)
+      if(!event||canonical(event)!==canonical(events[index]))throw denied()
+      const receipt:InputCause=Object.freeze({session:agent.session,event,assertCurrent})
+      pending.set(message,{receipt,roots:[receipt]});ids.add(message.id)
+     }
+     acceptedIds.set(agent.session,ids);assertCurrent()
+    }}
+    recovering.set(request.sessionId,proof)
+    request.signal.addEventListener('abort',()=>{if(recovering.get(request.sessionId)===proof)recovering.delete(request.sessionId)},{once:true})
+    // 官方 Loop 在真实恢复完成并释放临时 owner 后唤醒原 Inbox；不新增 steer 输入。
+    return Object.freeze({assertCurrent,wakePending:true})
    })
    install(loop,'requireWorkAdmission','installWorkAdmission',loopPolicy);loopReady=true
   }
@@ -277,7 +372,8 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    received.add(receipt)
    const ids=acceptedIds.get(session)??new Set<string>();ids.add(message.id);acceptedIds.set(session,ids)
    // child 首次输入跨 Session，保留它自己的不可伪造回执；不按 source/lineage 授权。
-   pending.set(message,{receipt,roots:publication?.roots??[receipt]})
+   const cause:InputCause=Object.freeze({session,event,assertCurrent:()=>assertNativeInputAcceptanceCurrent(receipt)})
+   pending.set(message,{receipt:cause,roots:publication?.roots??[cause]})
   },
   currentToolLease(sender:Agent):WorkAccessLease|undefined{
    if(isNativeResourceCleanupScope())throw denied()
@@ -289,6 +385,6 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     assertContinuationCurrent(){fixedRoots(captured)},
    })
   },
-  close():void{closed=true;for(const agent of turns.keys())cancel(agent);turns.clear()},
+  close():void{closed=true;recoveryAbort.abort(denied());recovering.clear();for(const agent of turns.keys())cancel(agent);turns.clear()},
  })
 }
