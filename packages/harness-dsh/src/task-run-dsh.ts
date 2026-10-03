@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util'
 import {readRunKnowledge,readRunSkills,TaskRunPresetError} from '@teloa/backend'
 import {resolveDshRoleSkills} from './role-skills-dsh.ts'
 import type {Context} from '@deepseek-ai/cordis'
@@ -20,11 +21,14 @@ import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
 import {skillSecretHint} from './skill-secret-hint.ts'
 import type {ResolvedSkillSecrets} from './skill-secrets.ts'
 import type {Agent} from '@deepseek-ai/dsh-agent'
+import type {createNativeWorkInput} from './native-work-input.ts'
 import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
 import {createTaskModelRouting,resolveTaskModelPolicy} from './task-model-dsh.ts'
 import type {ModelReference} from '@teloa/contract'
 import {readNativeReassignmentInspection,withNativeResourceInspection,type NativeAbortInspection,type NativeResourceFacts} from './business-reassignment-native.ts'
+
+export type DshTaskNativeInput=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>
 
 export type ExactManagedSkillLoader=(sessionId:string,installationIds:readonly string[],signal:AbortSignal,database?:TaskRunSkillDatabase)=>Promise<TaskRun['skills']>
 
@@ -163,7 +167,7 @@ export async function prepareDshTaskSession(ctx:Context,sessionId:string,agentPr
 }
 
 /** 公开 SessionController 解析身份；有固定模型时经附件准入 + Agent 队列发送，SessionStore 落盘。 */
-export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string}>,loadKnowledge?:TaskRunPorts['loadKnowledge'],resolveManaged?:ManagedRunSkillResolver,readManagedAvailability?:ReadManagedSkillAvailability,ensureRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>,loadExactManaged?:ExactManagedSkillLoader,readRoleScopes?:ReadRoleScopes,runtimeLinks?:TaskRunRuntimeLinks,prepareModel?:Parameters<typeof createTaskModelRouting>[1],declaredSkillSecrets?:(skill:string)=>Promise<ResolvedSkillSecrets|undefined>):DshTaskRunPorts{
+export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string}>,loadKnowledge?:TaskRunPorts['loadKnowledge'],resolveManaged?:ManagedRunSkillResolver,readManagedAvailability?:ReadManagedSkillAvailability,ensureRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>,loadExactManaged?:ExactManagedSkillLoader,readRoleScopes?:ReadRoleScopes,runtimeLinks?:TaskRunRuntimeLinks,prepareModel?:Parameters<typeof createTaskModelRouting>[1],declaredSkillSecrets?:(skill:string)=>Promise<ResolvedSkillSecrets|undefined>,nativeInput?:DshTaskNativeInput):DshTaskRunPorts{
  const store=Reflect.get(ctx,'sessions') as unknown as SessionStore
  const ensureModels=createTaskModelRouting(ctx,prepareModel)
  if(Reflect.get(ctx,'jobs')&&!runtimeLinks)throw new WorkError('teloa/dependency-unavailable','后台工作关联存储未配置。')
@@ -171,6 +175,24 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
  if(background)ctx.effect(()=>background.dispose)
  // 停止后日志 seq 的冻结计时。只为「已请求停止」的记录建条目，收口或恢复运行即清除。
  const stopFreeze=new Map<string,StopFreeze>()
+ // 只串行同一固定请求的本地模型代发；结束即释放，不保存另一份受理状态。
+ const sending=new Map<string,Promise<void>>()
+ const serialize=async(key:string,operation:()=>Promise<void>)=>{
+  const previous=sending.get(key)
+  let release!:()=>void
+  const pending=new Promise<void>(done=>{release=done})
+  sending.set(key,pending)
+  try{await previous;await operation()}finally{release();if(sending.get(key)===pending)sending.delete(key)}
+ }
+ // 与 rc.2 Controller.prompt 的三处可信回执判定一致；插件来源不能冒充用户请求。
+ const accepted=(agent:Agent,requestId:string)=>{
+  const matches=(message:{source:{kind:string}})=>message.source.kind==='user'&&'rpcId' in message.source&&Reflect.get(message.source,'rpcId')===requestId
+  return agent.inbox.nextTurn.some(matches)||agent.inbox.nextStep.some(matches)||readSessionEvents(agent.session).some(event=>event.type==='user/message'&&(!nativeInput||agent.session.isOwnSeq(event.seq))&&matches(event.data))
+ }
+ const validateTarget=(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'taskId'|'taskVersion'|'linkVersion'>>,target:TaskExecutionScope)=>{
+  if(run.taskId!==target.taskId||run.sessionId!==target.sessionId)throw new WorkError('teloa/forbidden','执行任务或会话关联身份不匹配。')
+  if(run.taskVersion!==target.taskVersion||run.linkVersion!==target.linkVersion)throw new WorkError('teloa/version-conflict','执行任务或会话关联版本已变化。')
+ }
  const validateBinding=async(run:Pick<TaskRun,'sessionId'>)=>{
   const binding=await inspect(run.sessionId)
   if(binding.ownerId!==owner||binding.sessionId!==run.sessionId||binding.status!=='ready')throw new WorkError('teloa/forbidden','执行会话身份未就绪。')
@@ -208,12 +230,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   return resolveDshTaskPreset(ctx,'teloa-standard',signal)
  }
  const prepareSession=async(sessionId:string,agentPresetId:string|undefined,signal:AbortSignal)=>prepareDshTaskSession(ctx,sessionId,await resolvePreset(agentPresetId,signal),signal)
- const checkAgent=async(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope)=>{
-  if(target){
-   if(run.taskId!==target.taskId||run.sessionId!==target.sessionId)throw new WorkError('teloa/forbidden','执行任务或会话关联身份不匹配。')
-   if(run.taskVersion!==target.taskVersion||run.linkVersion!==target.linkVersion)throw new WorkError('teloa/version-conflict','执行任务或会话关联版本已变化。')
-  }
-  signal.throwIfAborted();const agent=await resolve(run);signal.throwIfAborted()
+ const checkAgent=async(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent)=>{
+  if(target)validateTarget(run,target)
+  signal.throwIfAborted();const agent=resolved??await resolve(run);signal.throwIfAborted()
   if(run.agentPresetId==='cordis'||agent.session.header?.agentPreset==='cordis')throw new WorkError('teloa/forbidden','创造模式仅供本人会话使用，不能用于员工运行。')
   if(run.agentPresetId!==undefined&&agent.session.header.agentPreset!==run.agentPresetId)throw new WorkError('teloa/version-conflict','原生会话运行配置与本次执行快照不一致。')
   if(run.knowledge?.length){
@@ -248,75 +267,106 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   },
   ...(loadKnowledge?{loadKnowledge}:{}),
   loadSkills,
-  send:async(run,signal,target)=>{
-   if(!target)throw new WorkError('teloa/conflict','执行发送缺少可信任务关联。')
-   // 收窄与发送都用核对过的那一个 agent，不再另解析一次。
-   const agent=await checkAgent(run,signal,target)
-   await ensureRunSkills?.(run,signal)
-   signal.throwIfAborted()
-   await background?.start(run)
-   // 测试替身的 agent 可能没有 ctx；真实 Agent 一定有。收窄失败原样上抛，不让「看起来能跑」掩盖装配问题。
-   const lift=agent.ctx?restrictRunTools(agent,run.allowedTools):undefined
-   const modelState=ensureModels(agent,run),routing=modelState?.routing
-   // 请求确定没交给原生就失败（取消、读图失败等）时撤掉收窄，会话不带着这次运行的限制留下；
-   // 一旦调到 prompt，原生可能已接下这一轮（上层按「需核对、不重发」处理），收窄必须保留。
-   let handedOff=false
-   const request={sessionId:brandString<SessionId>(run.sessionId),requestId:brandString<SessionRequestId>(run.nativeRequestId),mode:'queue' as const}
-   const prompt=async(content:(PromptTextPart|PromptImagePart)[])=>{
-    if(!routing){handedOff=true;return ctx.sessionController.prompt({...request,content},signal)}
-    // rc.1 Controller.prompt 按全局默认的会话缓存做模型/图片准入，且没有局部选模参数。
-    // Run 独占空会话且载荷只有可信文字/已授权图片；复用官方附件准入与 Agent 队列，不复制 loop。
-    // 纯文本也必须经过同一准入：凭据防泄漏闸挂在此公开接口上。
-    const admitted=await ctx.attachments.admitPromptContent(content)
+  send:async(input,signal,inputTarget)=>{
+   if(!inputTarget)throw new WorkError('teloa/conflict','执行发送缺少可信任务关联。')
+   // 服务端 Run 快照在第一次 await 前复制，等待许可不能移植请求或任务关联身份。
+   const run=Object.freeze(structuredClone(input)),target=Object.freeze(structuredClone(inputTarget))
+   if(typeof run.nativeRequestId!=='string'||!run.nativeRequestId)throw new WorkError('teloa/forbidden','执行请求身份未就绪。')
+   const context=Object.freeze({producer:'task-run' as const,identity:JSON.stringify([owner,run.id,run.taskId,run.taskVersion,run.linkVersion,run.sessionId,run.nativeRequestId])})
+   const operation=async()=>{
+    validateTarget(run,target)
     signal.throwIfAborted()
-    if(ctx.agents.get(agent.id)!==agent||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw new WorkError('teloa/conflict','执行会话在发送前已变化，请核对原运行。')
-    const message=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:admitted})
-    handedOff=true
-    agent.followup(message)
-    return {accepted:true as const}
-   }
-   try{
+    // 排队或历史中同 rpcId 已受理时只回原回执，不读新附件或重新申请工作许可。
+    const agent=await resolve(run)
     signal.throwIfAborted()
-    // 日期单独一个 text 部件：固定输入是后端冻结的 JSON 快照，往正文里追加会让它不再可整段解析。
-    const dateLine:PromptTextPart={type:'text',text:runDateLine()}
-    // 代发提示读取失败只降级为不带提示（与技能加载提示同一口径），不阻断本次发送；警告只记错误类别。
-    const hint=declaredSkillSecrets?await skillHttpRunHint(run,declaredSkillSecrets).catch((error:unknown)=>{ctx.logger.warn(JSON.stringify({event:'skill-secret.hint-skipped',runId:run.id,error:error instanceof Error?error.name:'Error'}));return undefined}):undefined
+    const session=agent.session
+    if(nativeInput&&(agent.id!==run.sessionId||session.id!==run.sessionId||ctx.agents.get(agent.id)!==agent||store.get(agent.id)!==session))throw new WorkError('teloa/forbidden','执行会话与固定请求身份不一致。')
+    if(accepted(agent,run.nativeRequestId))return
+    // 收窄与发送都用核对过的那一个 agent，不再另解析一次。
+    await checkAgent(run,signal,target,agent)
+    await ensureRunSkills?.(run,signal)
     signal.throwIfAborted()
-    const hintParts:PromptTextPart[]=hint?[{type:'text',text:hint}]:[]
-    const textOnly:PromptTextPart[]=[{type:'text',text:run.inputText},...hintParts,dateLine]
-    await routing?.resolve(signal)
-    const group=ports.groupPrompt
-    const {picked,skipped}=group?pickPromptImages(run.groupContext?.files??[]):{picked:[],skipped:0}
-    // 没有可进模型的图片就走从前那条路：普通运行不因本期改动多一次能力查询。
-    if(!group||!picked.length){await prompt(textOnly);return}
-    const vision=await readRunModelVision(ctx,run.sessionId,signal,routing?.current())
-    signal.throwIfAborted()
-    // 明确声明没有视觉能力时一张都不发；无视觉那句由宿主在回帖时前置，不让模型自己交代。
-    if(!visionAllowsImages(vision)&&vision!=='unknown'){
-     group.markNoVision(run.sessionId,run.nativeRequestId)
-     await prompt(textOnly);return
-    }
-    const images:PromptImagePart[]=[]
-    for(const file of picked){
-     const bytes=file.kind==='attachment'
-      ?await group.readAttachmentImageBytes({attachmentId:file.id,mediaType:file.mime,bytes:file.bytes,width:file.width??0,height:file.height??0})
-      :await group.readArtifactImageBytes({artifactId:file.id,version:file.version,sha256:file.sha256,mediaType:file.mime,bytes:file.bytes,name:file.name})
+    await background?.start(run)
+    // 测试替身的 agent 可能没有 ctx；真实 Agent 一定有。收窄失败原样上抛，不让「看起来能跑」掩盖装配问题。
+    const lift=agent.ctx?restrictRunTools(agent,run.allowedTools):undefined
+    const modelState=ensureModels(agent,run),routing=modelState?.routing
+    // 请求确定没交给原生就失败（取消、读图失败等）时撤掉收窄，会话不带着这次运行的限制留下；
+    // 一旦调到 prompt，原生可能已接下这一轮（上层按「需核对、不重发」处理），收窄必须保留。
+    let handedOff=false
+    const request={sessionId:brandString<SessionId>(run.sessionId),requestId:brandString<SessionRequestId>(run.nativeRequestId),mode:'queue' as const}
+    const prompt=async(content:(PromptTextPart|PromptImagePart)[])=>{
+     if(!routing){handedOff=true;return ctx.sessionController.prompt({...request,content},signal)}
+     // rc.2 Controller.prompt 按全局默认的会话缓存做模型/图片准入，且没有局部选模参数。
+     // Run 独占空会话且载荷只有可信文字/已授权图片；复用官方附件准入与 Agent 队列，不复制 loop。
+     // 纯文本也必须经过同一准入：凭据防泄漏闸挂在此公开接口上。
+     const admitted=await ctx.attachments.admitPromptContent(content)
      signal.throwIfAborted()
-     // mime 已被 pickPromptImages 按白名单收窄；这里只是把它落回字面量联合，不做任何放宽。
-     images.push({type:'image',mediaType:file.mime as PromptImageMediaType,data:Buffer.from(bytes).toString('base64'),name:file.name})
+     const ready=()=>{
+      signal.throwIfAborted()
+      if(ctx.agents.get(agent.id)!==agent||agent.session!==session||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length||readSessionEvents(session).some(event=>event.type==='turn/start'||event.type==='user/message'))throw new WorkError('teloa/conflict','执行会话在发送前已变化，请核对原运行。')
+     }
+     ready()
+     const message=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:admitted})
+     const submit=()=>{
+      ready()
+      const startSeq=session.seq
+      let committed=false
+      try{agent.followup(message)}catch(error){
+       // 官方 append 后的通知派发仍可抛错；只认本次目标的 own 新事件及完整候选。
+       try{committed=readSessionEvents(session).some(event=>event.seq>=startSeq&&session.isOwnSeq(event.seq)&&event.type==='agent/inbox/spliced'&&event.data.target==='next-turn'&&event.data.inserted.some(input=>isDeepStrictEqual(input,message)))}catch{}
+       if(!committed)throw error
+       // 此回执只确认已受理；官方 append 与 wakeDriver 非原子，不补唤醒或再次投递。
+      }finally{handedOff=committed||accepted(agent,run.nativeRequestId)}
+     }
+     if(nativeInput)await nativeInput.withNewInput(agent,message,context,submit,signal)
+     else submit()
+     return {accepted:true as const}
     }
-    const text=skipped?`${run.inputText}\n\n本轮还有 ${skipped} 张已授权图片未进模型。`:run.inputText
-    if(modelState)modelState.imagesAdmitted=true
-    try{await prompt([{type:'text',text},...hintParts,dateLine,...images])}
-    catch(error){
-     // 能力查不到时可用性优先：先发图，被原生以 session/attachment-invalid 拒了再去图重发。
-     // 声明支持却被拒是另一回事，原样上抛，不掩盖不一致。
-     if(vision!=='unknown'||!rejectedImages(error))throw error
-     group.markNoVision(run.sessionId,run.nativeRequestId)
-     if(modelState)modelState.imagesAdmitted=false
-     await prompt(textOnly)
-    }
-   }catch(error){if(!handedOff){lift?.();modelState?.dispose()}throw error}
+    try{
+     signal.throwIfAborted()
+     // 日期单独一个 text 部件：固定输入是后端冻结的 JSON 快照，往正文里追加会让它不再可整段解析。
+     const dateLine:PromptTextPart={type:'text',text:runDateLine()}
+     // 代发提示读取失败只降级为不带提示（与技能加载提示同一口径），不阻断本次发送；警告只记错误类别。
+     const hint=declaredSkillSecrets?await skillHttpRunHint(run,declaredSkillSecrets).catch((error:unknown)=>{ctx.logger.warn(JSON.stringify({event:'skill-secret.hint-skipped',runId:run.id,error:error instanceof Error?error.name:'Error'}));return undefined}):undefined
+     signal.throwIfAborted()
+     const hintParts:PromptTextPart[]=hint?[{type:'text',text:hint}]:[]
+     const textOnly:PromptTextPart[]=[{type:'text',text:run.inputText},...hintParts,dateLine]
+     await routing?.resolve(signal)
+     const group=ports.groupPrompt
+     const {picked,skipped}=group?pickPromptImages(run.groupContext?.files??[]):{picked:[],skipped:0}
+     // 没有可进模型的图片就走从前那条路：普通运行不因本期改动多一次能力查询。
+     if(!group||!picked.length){await prompt(textOnly);return}
+     const vision=await readRunModelVision(ctx,run.sessionId,signal,routing?.current())
+     signal.throwIfAborted()
+     // 明确声明没有视觉能力时一张都不发；无视觉那句由宿主在回帖时前置，不让模型自己交代。
+     if(!visionAllowsImages(vision)&&vision!=='unknown'){
+      group.markNoVision(run.sessionId,run.nativeRequestId)
+      await prompt(textOnly);return
+     }
+     const images:PromptImagePart[]=[]
+     for(const file of picked){
+      const bytes=file.kind==='attachment'
+       ?await group.readAttachmentImageBytes({attachmentId:file.id,mediaType:file.mime,bytes:file.bytes,width:file.width??0,height:file.height??0})
+       :await group.readArtifactImageBytes({artifactId:file.id,version:file.version,sha256:file.sha256,mediaType:file.mime,bytes:file.bytes,name:file.name})
+      signal.throwIfAborted()
+      // mime 已被 pickPromptImages 按白名单收窄；这里只是把它落回字面量联合，不做任何放宽。
+      images.push({type:'image',mediaType:file.mime as PromptImageMediaType,data:Buffer.from(bytes).toString('base64'),name:file.name})
+     }
+     const text=skipped?`${run.inputText}\n\n本轮还有 ${skipped} 张已授权图片未进模型。`:run.inputText
+     if(modelState)modelState.imagesAdmitted=true
+     try{await prompt([{type:'text',text},...hintParts,dateLine,...images])}
+     catch(error){
+      // 能力查不到时可用性优先：先发图，被原生以 session/attachment-invalid 拒了再去图重发。
+      // 声明支持却被拒是另一回事，原样上抛，不掩盖不一致。
+      if(vision!=='unknown'||!rejectedImages(error))throw error
+      group.markNoVision(run.sessionId,run.nativeRequestId)
+      if(modelState)modelState.imagesAdmitted=false
+      await prompt(textOnly)
+     }
+    }catch(error){if(!handedOff){lift?.();modelState?.dispose()}throw error}
+   }
+   if(run.modelPolicy)await serialize(JSON.stringify([run.sessionId,run.nativeRequestId]),operation)
+   else await operation()
   },
   stop:async(run,signal)=>{
    signal.throwIfAborted()

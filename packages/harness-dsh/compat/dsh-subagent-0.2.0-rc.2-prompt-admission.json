@@ -1,0 +1,38 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-subagent",
+  "version": "0.2.0-rc.2",
+  "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "patchSha256": "6fc9c4c05e36cd1430a23c94a9cc40f48a30e1952c640f7923431b6c6b44f4d9",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "75b50b1c9452a6aeb10d1c859e3f45b05e062ea1fad6ed3bcd9577f2bc912541",
+      "afterSha256": "84d078dbdb70377125c65473770c4dde737630be665a6741b88e8e71c8514f9a"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "674879b514f8af54213ecc4985cf7a8e8b00c8a00086261fcccce1b0d6325ee4",
+      "afterSha256": "4073f1ce1978b34b2fd386973e4fc688e6e827f65f796e19e4ecb4411da6043e"
+    }
+  ],
+  "api": [
+    "SubagentPromptAdmissionRequest",
+    "SubagentPromptAdmission",
+    "SubagentPromptAdmissionOptions",
+    "SubagentRuntime.requirePromptAdmission",
+    "SubagentRuntime.installPromptAdmission"
+  ],
+  "scope": {
+    "admission": "admitPrompt({agent,message,sender,delivery},dispatch):Promise<void>",
+    "default": "No provider and not required preserves Free publication; required is monotonic with a unique immutable holder",
+    "boundary": "Resident live direct parent→child prompt/sendMessage and child→live direct parent sendMessage; exact residency/adjacency/cancellation recheck at synchronous once publication",
+    "limitations": [
+      "Unpublished seed/fork/provider initial and cold-resume materialization are not covered",
+      "No same-rpcId/request deduplication or durable admission receipt is introduced",
+      "Already inserted input cannot be rolled back if a later callback rejects; this attempt retains its actual Inbox acceptance receipt",
+      "Admission provider must not await reentrant same-child continuation operations",
+      "Source, adjacency, and lineage are routing facts, not accepted-work authorization"
+    ]
+  }
+}

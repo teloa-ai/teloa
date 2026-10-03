@@ -300,7 +300,7 @@ test('提交原生prompt之前必须完成运行Skill作用域，失败或取消
  const run={id:'run',taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标'} as TaskRun
  const calls:string[]=[],agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]}},ctx={sessionController:{resolveAgent:async()=>({agent}),prompt:async()=>{calls.push('prompt')}}} as unknown as Context
  let fail=true
- const controller=new AbortController(),ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}),undefined,undefined,undefined,async(value,signal)=>{assert.equal(value,run);assert.equal(signal,controller.signal);calls.push('scope');if(fail)throw Error('scope unavailable')})
+ const controller=new AbortController(),ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}),undefined,undefined,undefined,async(value,signal)=>{assert.deepEqual(value,run);assert.equal(signal,controller.signal);calls.push('scope');if(fail)throw Error('scope unavailable')})
  await assert.rejects(ports.send(run,controller.signal,target),/scope unavailable/);assert.deepEqual(calls,['scope'])
  fail=false;await ports.send(run,controller.signal,target);assert.deepEqual(calls,['scope','scope','prompt'])
  const cancelled=new AbortController(),cancelPorts=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}),undefined,undefined,undefined,async()=>{cancelled.abort()})

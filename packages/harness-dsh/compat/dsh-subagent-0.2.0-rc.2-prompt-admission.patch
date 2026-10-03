@@ -1,0 +1,185 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1573,6 +1573,54 @@
+ */
+ const deliverSubagentPrompt = Symbol.for("dsh.subagent.deliverPrompt");
+ //#endregion
++// Teloa compatibility micro-extension: live independent input only.
++function createPromptAdmission(options) {
++	let required = options.requirePromptAdmission === true;
++	let provider;
++	const install = (candidate) => {
++		if (typeof candidate !== "function" || provider !== void 0 && provider !== candidate) throw new SubagentError("subagent prompt admission provider is unavailable", "CONTINUATION_UNAVAILABLE");
++		provider = candidate;
++	};
++	if (options.admitPrompt !== void 0) install(options.admitPrompt);
++	return Object.freeze({
++		require() { required = true; },
++		install,
++		async run(request, publish, logger) {
++			const candidate = provider;
++			if (candidate === void 0) {
++				if (required) throw new SubagentError("subagent prompt admission provider is unavailable", "CONTINUATION_UNAVAILABLE");
++				publish();
++				return;
++			}
++			const session = request.agent.session;
++			const startSeq = session.seq;
++			let active = true;
++			let consumed = false;
++			let accepted = false;
++			const dispatch = () => {
++				if (!active || consumed) throw new SubagentError("subagent prompt admission scope is closed", "CONTINUATION_UNAVAILABLE");
++				consumed = true;
++				try {
++					publish();
++					accepted = true;
++				} catch (error) {
++					// Only an actual new Inbox insertion proves this attempt was accepted.
++					accepted = session.snapshotEvents().some((event) => event.seq >= startSeq && event.type === "agent/inbox/spliced" && event.data.inserted.some((message) => message.id === request.message.id));
++					throw error;
++				}
++			};
++			try {
++				await candidate(Object.freeze(request), dispatch);
++				if (!accepted) throw new SubagentError("subagent prompt was not admitted", "CONTINUATION_UNAVAILABLE");
++			} catch (error) {
++				if (!accepted) throw error;
++				logger.warn("subagent prompt: admission callback failed after Inbox acceptance");
++			} finally {
++				active = false;
++			}
++		}
++	});
++}
+ //#region lib/types/continuation.js
+ /**
+ * Continuable-subagent orchestration behind `ctx.subagents`: stable child ids,
+@@ -1765,7 +1813,7 @@
+ 		const senderActivation = this.activations.get(sender.id);
+ 		if (senderActivation !== void 0 && senderActivation.handle.agent === sender && senderActivation.parentSession === targetId) {
+ 			options.signal.throwIfAborted();
+-			return this.sendToParent(senderActivation, sender, content);
++			return this.sendToParent(senderActivation, sender, content, options.signal);
+ 		}
+ 		if (sender.session.header.parentSession === targetId) throw new SubagentError(`agent "${sender.id}" is not a resident continuable child and cannot send to parent "${targetId}"`, "UNAUTHORIZED");
+ 		return this.deliverToChild(sender, targetId, content, {
+@@ -1833,7 +1881,16 @@
+ 						return;
+ 					}
+ 				}
+-				const messageId = this.submitAdmitted(activation, content, options, parent);
++				const agent = activation.handle.agent;
++				const session = agent.session;
++				const parentSession = parent.session;
++				const message = options.source === void 0 ? createAgentMessage(parent, content) : createUserMessage({ content, source: options.source });
++				await this.host.admitPrompt({ agent, message, sender: parent, delivery: options.delivery }, () => {
++					options.signal.throwIfAborted();
++					if (this.activations.get(childId) !== activation || activation.childId !== childId || activation.handle.agent !== agent || agent.session !== session || parent.session !== parentSession || this.ctx.get("sessions")?.get(parent.id) !== parentSession || this.ctx.agents.get(childId) !== agent || this.ctx.get("sessions")?.get(childId) !== session) throw new SubagentError("subagent residency changed before prompt admission", "CONTINUATION_UNAVAILABLE");
++					this.activations.submitAdmitted(activation, message, options.delivery, parent, options.signal);
++				});
++				const messageId = message.id;
+ 				activation.announced = true;
+ 				return messageId;
+ 			});
+@@ -1854,14 +1911,22 @@
+ 		this.activations.interrupt(targetSessionId, authority);
+ 	}
+ 	/** Deliver one resident continuable child's message to its live direct parent. */
+-	sendToParent(activation, sender, content) {
++	async sendToParent(activation, sender, content, signal) {
+ 		/* v8 ignore next 6 -- only synchronous re-entrant teardown can open this
+ 		* transaction between exact-agent authorization and this no-await span. */
+ 		if (activation.inbox.closing !== void 0) throw new SubagentError(`subagent "${sender.id}" activation is being disposed; the message was not delivered`, "ACTIVATION_CLOSING");
+ 		const parent = this.ctx.agents.get(activation.parentSession);
+ 		if (parent === void 0) throw new SubagentError("direct parent is not live; the message was not delivered", "PARENT_UNAVAILABLE");
+ 		const message = createAgentMessage(sender, content);
+-		this.sendAgentMessage(parent, message);
++		const parentSession = parent.session;
++		const senderSession = sender.session;
++		await this.host.admitPrompt({ agent: parent, message, sender, delivery: "steer" }, () => {
++			signal.throwIfAborted();
++			this.activations.assertAdmitting(sender);
++			this.activations.assertAdmitting(parent);
++			if (this.activations.get(sender.id) !== activation || activation.inbox.closing !== void 0 || this.ctx.agents.get(sender.id) !== sender || activation.handle.agent !== sender || sender.session !== senderSession || parent.session !== parentSession || activation.parentSession !== parent.id || senderSession.header.parentSession !== parent.id || this.ctx.get("sessions")?.get(sender.id) !== senderSession || this.ctx.agents.get(parent.id) !== parent || this.ctx.get("sessions")?.get(parent.id) !== parentSession) throw new SubagentError("subagent adjacency changed before prompt admission", "UNAUTHORIZED");
++			this.sendAgentMessage(parent, message);
++		});
+ 		return message.id;
+ 	}
+ 	/** Send one Agent message while translating only the target's own rejection. */
+@@ -2830,14 +2895,16 @@
+ 		* composes into the carrier.
+ 		*/
+ 		emitLifecycle;
+-		constructor(ctx, config) {
++		constructor(ctx, config, options = {}) {
+ 			super(ctx, "subagents");
+ 			this.config = config;
++			Object.defineProperty(this, "promptAdmission", { value: createPromptAdmission(options), writable: false, configurable: false });
+ 			this.emitLifecycle = createLifecycleEmitter(this.ctx, (parent) => scopeTarget(this, parent));
+ 			ctx.inject(["agents"], (childCtx) => {
+ 				const manager = new SubagentContinuationManager(childCtx, {
+ 					prepareContinuable: (name, request) => this.prepareContinuable(name, request),
+-					observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent)
++					observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
++					admitPrompt: (request, dispatch) => this.promptAdmission.run(request, dispatch, this.ctx.logger)
+ 				}, () => this.config.maxActiveSubagents.get());
+ 				this.continuations = manager;
+ 				childCtx.effect(() => () => {
+@@ -2860,6 +2927,12 @@
+ 		* @param configured - Explicit tool limit, or provider-managed for external delegation.
+ 		* @returns The numeric limit, or undefined when the provider owns depth enforcement.
+ 		*/
++		requirePromptAdmission() {
++			this.promptAdmission.require();
++		}
++		installPromptAdmission(provider) {
++			this.promptAdmission.install(provider);
++		}
+ 		resolveMaxDepth(configured) {
+ 			if (configured === "provider-managed") return void 0;
+ 			if (configured !== void 0) return configured;
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -32,7 +32,7 @@
+ import { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+ import type { Scoped } from '@deepseek-ai/dsh-scope';
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm';
++import type { ContentBlock, MessageId, UserMessage } from '@deepseek-ai/dsh-llm';
+ import type { Agent } from '@deepseek-ai/dsh-agent';
+ import type { SessionId } from '@deepseek-ai/dsh-session';
+ import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+@@ -105,6 +105,19 @@
+     /** Default delegation depth for tools without an explicit limit; defaults to 1. */
+     maxDepth: Volatile<number>;
+ }
++/** Exact live independent input; Agent references are borrowed, other fields are frozen. */
++export interface SubagentPromptAdmissionRequest {
++    readonly agent: Agent;
++    readonly message: UserMessage;
++    readonly sender: Agent;
++    readonly delivery: 'queue' | 'steer';
++}
++/** Dispatch is synchronous, once, and usable only until this admission settles. */
++export type SubagentPromptAdmission = (request: Readonly<SubagentPromptAdmissionRequest>, dispatch: () => void) => Promise<void>;
++export interface SubagentPromptAdmissionOptions {
++    readonly requirePromptAdmission?: boolean;
++    readonly admitPrompt?: SubagentPromptAdmission;
++}
+ /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
+ export declare class SubagentRuntime extends TypertRemoteService {
+     private config;
+@@ -123,7 +136,11 @@
+      * composes into the carrier.
+      */
+     private readonly emitLifecycle;
+-    constructor(ctx: Context, config: Config);
++    constructor(ctx: Context, config: Config, options?: SubagentPromptAdmissionOptions);
++    /** Monotonic requirement for live independent prompt/sendMessage admission. */
++    requirePromptAdmission(): void;
++    /** Install exactly one provider; repeating the same function is allowed. */
++    installPromptAdmission(provider: SubagentPromptAdmission): void;
+     /**
+      * Resolve a delegation tool's depth policy against the current user setting.
+      * @param configured - Explicit tool limit, or provider-managed for external delegation.

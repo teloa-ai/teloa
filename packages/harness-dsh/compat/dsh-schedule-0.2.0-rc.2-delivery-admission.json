@@ -3,12 +3,12 @@
   "package": "@deepseek-ai/dsh-schedule",
   "version": "0.2.0-rc.2",
   "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "patchSha256": "7a1606ea17a060544ad27331174154c0bf2527ed16c550384c0e401297d85ba9",
+  "patchSha256": "50650eefac4f42f5bf43d72ae0ecdd6936b868e87b08415eedff16abe804e234",
   "files": [
     {
       "path": "lib/index.js",
       "beforeSha256": "9d728e13edb7e7f954d493ece3aaf4c90c3bcb6f888b41efb3ae21b09384ae38",
-      "afterSha256": "8a96cedc32dbdb63ce2d8f362ef441c664f61c30d64ef6afc2d5d27cef803114"
+      "afterSha256": "ebea96b17c52dc9901f77c8129878eab246d80f31bcc192650ef24dee3d5808d"
     },
     {
       "path": "lib/types/index.d.ts",
@@ -30,7 +30,7 @@
       "installDeliveryAdmission(fn):void"
     ],
     "default": "Free preserves official behavior without admission; required is monotonic",
-    "scope": "synchronous once dispatch; time/task/agent recheck; accepted delivery flush and receipt continue",
+    "scope": "synchronous once dispatch; time/task/exact agent and captured Session recheck; new own exact Inbox splice confirms committed delivery after notification failure; accepted captured Session flush and receipt continue",
     "limitations": [
       "Schedule inbox and task receipt are not atomic; crash may duplicate delivery",
       "No automatic retry after refused admission",

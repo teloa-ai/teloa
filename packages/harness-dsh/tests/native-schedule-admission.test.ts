@@ -1,5 +1,6 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
+import type {SessionStore} from '@deepseek-ai/dsh-session'
 import {setImmediate as immediate} from 'node:timers/promises'
 import {scheduleFixture,deferred,until,type Delivery,type Admission} from './fixtures/native-schedule-admission.ts'
 
@@ -101,4 +102,78 @@ test('同id的另一真实Context Agent不能借该计划投递，exact对象核
  const f=await scheduleFixture(t,{admitDelivery:async(request,dispatch)=>{entered.resolve(request);await hold.promise;dispatch()}},[one()],true,other.agent)
  const request=await entered.promise;assert.equal(request.agent,other.agent);assert.equal(request.agent.id,f.agent.id);assert.notEqual(request.agent,f.agent)
  hold.resolve();await f.drain();zero(f);zero(other);assert.equal((await f.catalog())[0].lastDelivery,undefined)
+})
+
+
+test('真实普通 observer 异常原版与差分均由官方隔离，receipt后扫描不重复',async t=>{
+ clock(t)
+ for(const patched of [false,true]){
+  let sessionNotifications=0,inboxNotifications=0
+  const f=await scheduleFixture(t,patched?{admitDelivery:async(_,dispatch)=>dispatch()}:{},[one()],patched,undefined,{beforeService:({ctx,agent})=>{
+   ctx.on('session/event',()=>{sessionNotifications++;throw Error('test contained schedule session observer')},{global:true})
+   agent.ctx.on('agent/inbox/inserted',()=>{inboxNotifications++;throw Error('test contained schedule inbox observer')})
+  }})
+  await f.drain();const [row]=await f.catalog()
+  assert.equal(row.status,'inactive');assert.equal(f.inbox().length,1);assert.equal(row.lastDelivery.messageId,f.inbox()[0]!.id)
+  assert.ok(sessionNotifications>=1);assert.equal(inboxNotifications,1);assert.equal(f.state.flushes,1)
+  f.service.runtime.requestDrive();await f.drain()
+  assert.equal(f.events().filter(event=>event.type==='agent/inbox/spliced').length,1);assert.equal(inboxNotifications,1);assert.equal(f.state.flushes,1)
+ }
+})
+
+test('真实Inbox通知dispatch验证在append后抛错，精确新提交继续receipt且扫描不重复',async t=>{
+ clock(t);let faults=0
+ const f=await scheduleFixture(t,{admitDelivery:async(_,dispatch)=>dispatch()},[one()],true,undefined,{beforeService:({ctx})=>{
+  ctx.on('internal/dispatch',(_mode,name)=>{if(name==='agent/inbox/inserted'){faults++;throw Error('test schedule dispatch after committed splice')}})
+ }})
+ await f.drain();const [row]=await f.catalog()
+ assert.equal(f.inbox().length,1);assert.equal(f.events().filter(event=>event.type==='agent/inbox/spliced').length,1);assert.equal(faults,1)
+ assert.equal(row.status,'inactive');assert.equal(row.lastDelivery.messageId,f.inbox()[0]!.id);assert.equal(f.state.flushes,1)
+ f.service.runtime.requestDrive();await f.drain()
+ assert.equal(f.inbox().length,1);assert.equal(f.events().filter(event=>event.type==='agent/inbox/spliced').length,1);assert.equal(faults,1);assert.equal(f.state.flushes,1)
+})
+
+test('await前exact Session不能随Agent公开字段与Store解析一起替换后借旧grant',async t=>{
+ clock(t);const other=await scheduleFixture(t),entered=deferred(),hold=deferred()
+ const f=await scheduleFixture(t,{admitDelivery:async(_,dispatch)=>{entered.resolve();await hold.promise;dispatch()}},[one()])
+ await entered.promise
+ const session=f.agent.session,store=Reflect.get(f.ctx,'sessions') as unknown as SessionStore,get=store.get.bind(store),originalGet=store.get
+ // 故障注入两个公开身份读取边界；Agent、Session、Inbox与提交路径仍为官方真实对象。
+ Reflect.set(f.agent,'session',other.agent.session)
+ store.get=(id)=>id===f.agent.id?other.agent.session:get(id)
+ try{
+  hold.resolve();await f.drain()
+  assert.equal(session.snapshotEvents().filter(event=>event.type==='agent/inbox/spliced').length,0)
+  zero(f);zero(other);assert.equal((await f.catalog())[0].lastDelivery,undefined)
+ }finally{Reflect.set(f.agent,'session',session);store.get=originalGet}
+})
+
+
+test('提交前真实dispatch veto零写，旧的完整候选splice不能充当本次受理',async t=>{
+ clock(t)
+ const veto=await scheduleFixture(t,{admitDelivery:async(_,dispatch)=>dispatch()},[one()],true,undefined,{beforeService:({ctx})=>{
+  ctx.on('internal/dispatch',(_mode,name,args)=>{if(name==='session/event'&&args[1]?.type==='agent/inbox/spliced')throw Error('test schedule pre-append veto')})
+ }})
+ await veto.drain();zero(veto);assert.equal((await veto.catalog())[0].lastDelivery,undefined)
+ const old=await scheduleFixture(t,{admitDelivery:async(request,dispatch)=>{
+  // 在本次同步提交窗口开始前写入完全相同的真实候选；下一次投递因官方重复ID校验被拒。
+  request.agent.followup(request.message);dispatch()
+ }},[one()])
+ await old.drain();assert.equal(old.inbox().length,1);assert.equal(old.events().filter(event=>event.type==='agent/inbox/spliced').length,1)
+ assert.equal(old.state.flushes,0);const [row]=await old.catalog();assert.equal(row.status,'active');assert.equal(row.lastDelivery,undefined)
+})
+
+test('真实新splice的相同message id与source不能代替完整候选payload',async t=>{
+ clock(t);let faults=0,candidate:Delivery['message']|undefined
+ const f=await scheduleFixture(t,{admitDelivery:async(request,dispatch)=>{
+  candidate=request.message;const followup=request.agent.followup
+  // 仅故障注入公开投递边界：仍由官方followup提交真实Session/Inbox，但消息正文被替换。
+  request.agent.followup=(message)=>followup.call(request.agent,{...message,content:[{type:'text',text:'相同id与source的其他正文'}]})
+  try{dispatch()}finally{request.agent.followup=followup}
+ }},[one()],true,undefined,{beforeService:({ctx})=>{
+  ctx.on('internal/dispatch',(_mode,name)=>{if(name==='agent/inbox/inserted'){faults++;throw Error('test changed candidate after committed splice')}})
+ }})
+ await f.drain();assert.equal(faults,1);assert.equal(f.inbox().length,1);assert.equal(f.events().filter(event=>event.type==='agent/inbox/spliced').length,1)
+ assert.equal(f.inbox()[0]!.id,candidate!.id);assert.deepEqual(f.inbox()[0]!.source,candidate!.source);assert.notDeepEqual(f.inbox()[0],candidate)
+ assert.equal(f.state.flushes,0);const [row]=await f.catalog();assert.equal(row.status,'active');assert.equal(row.lastDelivery,undefined)
 })
