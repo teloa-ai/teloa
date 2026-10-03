@@ -687,10 +687,13 @@
 +				}
  			}
  		})();
- 		this.ownership.trackWrapper(published);
+		this.ownership.trackWrapper(published);
+@@ -1981 +2295 @@
+-export { AgentLoop, AgentLoop as default, CONFIGURED_AGENT_IDENTITIES_KEY, DEFAULT_MAX_PARALLEL_TOOL_CALLS, turnBoundaryProjectionDefinition };
++export { AgentLoop, AgentLoop as default, CONFIGURED_AGENT_IDENTITIES_KEY, DEFAULT_MAX_PARALLEL_TOOL_CALLS, inboxProjectionDefinition, turnBoundaryProjectionDefinition };
 --- a/lib/types/index.d.ts
 +++ b/lib/types/index.d.ts
-@@ -4,12 +4,16 @@
+@@ -4,12 +4,18 @@
   *
   * @module @deepseek-ai/dsh-agent-loop
   */
@@ -706,9 +709,11 @@
 +import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
 +import type { ToolExecutionInput, ToolRunContext, ToolExecutionResult } from '@deepseek-ai/dsh-tools';
  import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts';
++/** Standard durable Inbox fold; registration does not construct an Agent or authorize work. */
++export { inboxProjectionDefinition } from './inbox.ts';
  /** Host projection of agent turn and step boundaries. */
  export declare const turnBoundaryProjectionDefinition: {
-@@ -78,6 +82,8 @@
+@@ -78,6 +84,8 @@
  export declare const CONFIGURED_AGENT_IDENTITIES_KEY = "configuredAgentIdentities";
  /** Agent-loop plugin configuration. */
  export interface Config {
@@ -717,7 +722,7 @@
      /**
       * Maximum parallel-safe calls in flight per agent step. `1` is serial;
       * omission defaults to {@link DEFAULT_MAX_PARALLEL_TOOL_CALLS}.
-@@ -95,12 +101,55 @@
+@@ -95,12 +103,55 @@
          resumeSessionId?: SessionId;
      })[];
  }
@@ -773,7 +778,7 @@
          maxParallelToolCalls?: number;
      }, Config>;
      /** Validated configuration owned by the agent-loop service. */
-@@ -109,6 +158,20 @@
+@@ -109,6 +160,20 @@
      /** Plain holder prevents Cordis from re-tracing the factory's dependency context through a caller shadow. */
      private readonly runtime;
      constructor(ctx: Context, config: Config);
@@ -794,7 +799,7 @@
      /** Report a contained declarative-start failure to identity-bound consumers. */
      private reportConfiguredStartupFailure;
      /** Restore a materialized exact config identity on remount, or create it on first use. */
-@@ -176,4 +239,4 @@
+@@ -176,4 +241,4 @@
      private resumeWith;
  }
  export default AgentLoop;

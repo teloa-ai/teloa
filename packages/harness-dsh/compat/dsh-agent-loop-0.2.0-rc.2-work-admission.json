@@ -7,15 +7,15 @@
     {
       "path": "lib/index.js",
       "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
-      "afterSha256": "d2fb3f0a34724c2836b25f754cb1489d445f6bdaf803293625054e9a39a2227e"
+      "afterSha256": "cb4a24c6bcfe4824cb290fe2be1e539c0bce2b2c55a9806f1485420fb5d81299"
     },
     {
       "path": "lib/types/index.d.ts",
       "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
-      "afterSha256": "216e610a6b126c5d8a4f0dc76c82afe7d1a1fe025a5c8a8e59ae214c7493267f"
+      "afterSha256": "e9e7564fffc1980a772039a3dc01457f045b7657cdf3bab15d8308efb13f96a1"
     }
   ],
-  "patchSha256": "4f0e3a8d30c6019ccc59610cf350fe355615ed2611251e8cb186c694271b4283",
+  "patchSha256": "10dde224776e5981573bf50de19d075f7beb250029a0c3431231c4de6561abd2",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
@@ -37,7 +37,8 @@
     "AgentLoopProgressCheckpointInput",
     "AgentLoopProgressCheckpoint",
     "AgentLoopRestoreAdmissionLease.wakePending",
-    "AgentLoopWorkAdmissionInput.restore-publish"
+    "AgentLoopWorkAdmissionInput.restore-publish",
+    "inboxProjectionDefinition"
   ],
   "scope": {
     "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
@@ -60,6 +61,7 @@
     "progressCheckpoint": "Factory-owned flush/read snapshots after claim, before model and tool dispatch, and before step/turn cleanup; private once-installed async policy with exact synchronous lease. No-policy Free has no added IO or await.",
     "inputShutdown": "An enabled durable input checkpoint retains unclaimed Inbox during owner/factory disposal. Explicit user cancellation and unguarded Free retain their original semantics.",
     "restoreWake": "Optional frozen lease own data wakePending:true requests the existing driver only after final restore admission, publication and temporary owner release; absent preserves idle and original latched-wake semantics. Invalid getter or values fail before restore writes.",
-    "restoreBinding": "Module-private restore-publish descriptor after actual Session/Agent enter and before either public creation notification; deployment binds verified cold roots once here. Public events cannot invoke this descriptor or consume the proof."
+    "restoreBinding": "Module-private restore-publish descriptor after actual Session/Agent enter and before either public creation notification; deployment binds verified cold roots once here. Public events cannot invoke this descriptor or consume the proof.",
+    "inboxProjection": "The root package exports the original standard Inbox projection object already registered by AgentLoop; maintenance can register and cold-fold it without Agent, Loop, model, tool or work-admission construction. No duplicate fold, mutation command or execution authority is introduced."
   }
 }
