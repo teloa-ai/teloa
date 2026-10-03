@@ -38,6 +38,7 @@ import {inspectNativeSkillDirectory,registerManagedSkills} from './managed-skill
 import {createSkillInstallationsHandler,skillInstallationEndpoints} from './skill-installations.ts'
 import {createPlanRuntime} from './plan-runtime.ts'
 import {runtimeAdmission} from './runtime-admission.ts'
+import type {} from './native-input-provider.ts'
 import {startPlanScheduler} from './plan-scheduler.ts'
 import {createAutoDreamHabitTick} from './auto-dream-habit-tick.ts'
 import {createPlanScheduleHandler,planScheduleEndpoints} from './plan-schedule.ts'
@@ -786,7 +787,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if('error' in resolved)throw new WorkError('teloa/session-unavailable','运行技能作用域的会话不可用。')
     if(resolved.agent.session.id!==run.sessionId)throw new WorkError('teloa/forbidden','运行技能作用域与固定会话不一致。')
     await runSkillScopes.ensure(resolved.agent,{id:run.id,sessionId:run.sessionId,skills:run.skills},signal)
-  },(sessionId,installationIds,signal,database)=>resolveDshManagedRoleSkills(ctx,owner,sessionId,installationIds,id=>service.bySession(owner,id),signal,managedRunSkillPorts,database),readRoleScopes,runtimeLinks,(config,signal)=>localModelsHandler.prepareRequest(config,signal),name=>declaredSkillSecrets(name))
+  },(sessionId,installationIds,signal,database)=>resolveDshManagedRoleSkills(ctx,owner,sessionId,installationIds,id=>service.bySession(owner,id),signal,managedRunSkillPorts,database),readRoleScopes,runtimeLinks,(config,signal)=>localModelsHandler.prepareRequest(config,signal),name=>declaredSkillSecrets(name),ctx.get('teloaNativeInput')?.input)
   // 手动执行与自动化都经执行驱动启动：被原生宿主接受即记一次当日活动
   runPorts.onAccepted=()=>signalActivity()
   runPorts.stableStart=availabilitySync.stable

@@ -12,7 +12,10 @@
     "./session-model-scope": "./src/native-session-model.ts",
     "./launch-env": "./src/launch-env.ts",
     "./managed-package-install": "./src/managed-package-install.ts",
-    "./product-telemetry": "./src/product-telemetry.ts"
+    "./product-telemetry": "./src/product-telemetry.ts",
+    "./native-input-provider": "./src/native-input-provider.ts",
+    "./managed-session-controller": "./src/managed-session-controller.ts",
+    "./managed-subagent": "./src/managed-subagent.ts"
   },
   "engines": {
     "dsh": "0.2.0-rc.2"
