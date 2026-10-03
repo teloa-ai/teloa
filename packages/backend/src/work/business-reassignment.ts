@@ -8,6 +8,7 @@ import {readStoredRole} from './roles.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {readBusinessConfigurationManagement} from './business-configuration-store.ts'
 import {BusinessResponsibilityService} from './business-responsibility.ts'
+import type {WorkAccessLease} from './work-access.ts'
 import {BusinessTaskService} from './business-tasks.ts'
 import {TaskService} from './tasks.ts'
 import {initializeTaskRunAbortProofs} from './task-run-abort-proof.ts'
@@ -79,7 +80,7 @@ export class BusinessReassignmentService{
   if(managed)await new BusinessResponsibilityService(this.pool).readInTransaction(db,{ownerId:owner,scopeIds:[old.scope]},{scope:old.scope})
   await db.query('select id from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id for share',[owner,byteSorted([old.targets[0]!.roleId,input.instruction.selection.newRoleId])])
  }
- private async transaction<T>(owner:string,prepared:Preparation,operation:(db:PoolClient,old:ConversationWorkRequest)=>Promise<T>):Promise<T>{
+ private async transaction<T>(owner:string,prepared:Preparation,operation:(db:PoolClient,old:ConversationWorkRequest)=>Promise<T>,beforeCommit?:()=>void):Promise<T>{
   const db=await this.pool.connect()
   try{
    await db.query('begin');await this.locks(db,owner,prepared)
@@ -88,7 +89,7 @@ export class BusinessReassignmentService{
    if(!row)throw forbidden()
    const old=readStoredConversationWorkRequest(row)
    if(old.sessionId!==prepared.old.sessionId||old.scope!==prepared.old.scope||old.kind!=='task'||old.targets.length!==1||JSON.stringify(old.targets)!==JSON.stringify(prepared.old.targets)||row.task_child_request_id!==workRequestChildId(old.requestId,'task',old.targets[0]!.roleId))throw corrupt()
-   const result=await operation(db,old);await db.query('commit');return result
+   const result=await operation(db,old);beforeCommit?.();await db.query('commit');return result
   }catch(error){await db.query('rollback').catch(()=>{});if(error&&typeof error==='object'&&'code' in error&&error.code==='23505')throw conflict();throw error}finally{db.release()}
  }
  private async saved(db:PoolClient,owner:string,input:Input):Promise<{snapshot:BusinessReassignmentSnapshot;receipt:BusinessReassignmentReceipt}|null>{
@@ -153,6 +154,7 @@ export class BusinessReassignmentService{
  async commit(owner:string,value:Input,approvedValue:BusinessReassignmentSnapshot,revalidateInstruction:()=>Promise<void>):Promise<BusinessReassignmentReceipt>{
   const prepared=await this.preflight(owner,value,revalidateInstruction),approved=readBusinessReassignmentSnapshot(approvedValue),{snapshotHash,...fixed}=approved
   if(fixedSnapshot(fixed).snapshotHash!==snapshotHash||approved.instruction.selection.oldRequestId!==prepared.input.oldRequestId||JSON.stringify(approved.instruction)!==JSON.stringify(prepared.input.instruction))throw conflict()
+  let admission:WorkAccessLease|undefined
   return this.transaction(owner,prepared,async(db,old)=>{
    const saved=await this.saved(db,owner,prepared.input)
    if(saved){if(saved.snapshot.snapshotHash!==snapshotHash)throw conflict();return saved.receipt}
@@ -160,10 +162,11 @@ export class BusinessReassignmentService{
    if(current.snapshotHash!==snapshotHash)throw changed()
    if(old.stoppedAt===null)throw conflict()
    await assertReassignmentRunsSettled(db,owner,old)
-   await reserveConversationWorkInTransaction(db,owner,reserveInputFromReassignment(current),{guard:async connection=>{await prepared.guard(connection);if(!this.work.scopes||!(await this.work.scopes(connection,owner)).includes(old.scope))throw forbidden()},now:this.now,...(this.work.scopes?{scopes:this.work.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
+   await reserveConversationWorkInTransaction(db,owner,reserveInputFromReassignment(current),{onAdmission:lease=>{admission=lease},guard:async connection=>{await prepared.guard(connection);if(!this.work.scopes||!(await this.work.scopes(connection,owner)).includes(old.scope))throw forbidden()},now:this.now,...(this.work.scopes?{scopes:this.work.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
+   admission?.assertCurrent()
    const createdAt=this.now()
    await db.query('insert into teloa_conversation_work_successors(owner_id,old_request_id,new_request_id,snapshot,snapshot_hash,created_at) values($1,$2,$3,$4,$5,$6)',[owner,old.requestId,current.instruction.requestId,JSON.stringify(current),current.snapshotHash,createdAt])
    return readBusinessReassignmentReceipt({oldRequestId:old.requestId,newRequestId:current.instruction.requestId,oldSessionId:old.sessionId,newSessionId:current.instruction.sessionId,scope:old.scope,snapshotHash:current.snapshotHash,createdAt})
-  })
+  },()=>admission?.assertCurrent())
  }
 }

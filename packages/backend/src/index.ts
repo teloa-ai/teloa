@@ -47,6 +47,7 @@ export {taskArtifactSource,taskArtifactSessions} from './work/artifact-task-sour
 
 export {TaskTransitions,initializeTaskTransitions,initializeTaskCompletions} from './work/task-transitions.ts'
 export {ObjectConversationService,initializeObjectConversations} from './work/object-conversations.ts'
+export {WorkAccess,workAccess,type WorkAccessRequest,type WorkAccessLease,type WorkAccessPolicy} from './work/work-access.ts'
 export {TaskRunService,TaskRunPresetError,initializeTaskRuns,type TaskRun,type TaskExecutionScope,type TaskRunConfigurationFailure,type TaskRunPreparationTarget} from './work/task-runs.ts'
 export {initializeTaskRunAbortProofs,readNativeRunSettlement,recordNativeRunResourceSettlement,recordNativeRunAbortProof,assertNativeRunAbortProof,hashNativeRunSettlement,type NativeRunAbortProof,type NativeRunResourceSettlement,type NativeJobOwnerSettlement} from './work/task-run-abort-proof.ts'
 export {readRunGroupArtifactImageBytes,readRunGroupContext,readStoredRunGroupContext,runGroupContextHash,groupContextNotice,groupReferenceNotice,groupModelNoVisionNotice,groupPartialAttachFailedNotice,groupFileHandleLine,type RunGroupContext,type RunGroupMaterial,type RunGroupFile,type RunGroupFilePorts} from './work/task-run-group-context.ts'

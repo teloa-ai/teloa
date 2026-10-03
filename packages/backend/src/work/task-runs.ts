@@ -18,6 +18,7 @@ import {runEvidence,mergeRunEvidence,type TaskRunEvidence} from './task-run-evid
 import {assertRunSkillsEnabled} from '../market/skill-availability.ts'
 import type {IndustryRunSkillBindings} from './industry-skill-bindings.ts'
 import {initializeTaskRunFlows} from './task-run-flows.ts'
+import {workAccess} from './work-access.ts'
 import {readRunRoleMemories,type RunRoleMemory} from './role-memory.ts'
 import {businessContextNotice,readRunBusinessContext,runBusinessContextHash,type RunBusinessContext} from './task-run-business-context.ts'
 import {initializeTaskRunSubagents,type TaskRunSubagent} from './task-run-subagents.ts'
@@ -423,9 +424,12 @@ export class TaskRunService{
     if(guarded.parent.stopped)throw new WorkError('teloa/conflict','原交办已停止，不能领取执行发送权；请核对原请求。')
     if((await db.query('select request_id from teloa_tasks where owner_id=$1 and id=$2',[owner,task.id])).rows[0]?.request_id!==guarded.childRequestId)throw new WorkError('teloa/storage-corrupt','交办的任务归属索引损坏，请先核对原请求。')
    }
+   const admission=await workAccess.authorize({kind:'task-run-start',ownerId:owner,runId:run.id,taskId:task.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId})
+   admission.assertCurrent()
    await db.query("update teloa_tasks set state='running',version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,task.id,this.identity.now()])
+   admission.assertCurrent()
    const updated=await db.query("update teloa_task_runs set state='submitting',task_state_version=$3 where owner_id=$1 and id=$2 returning *",[owner,run.id,task.version+1])
-   const saved=await this.readVerified(db,owner,updated.rows[0]);await db.query('commit');return {run:saved,dispatch:true,target:executionTarget(task,saved.sessionId,saved.linkVersion,saved.taskVersion)}
+   const saved=await this.readVerified(db,owner,updated.rows[0]);admission.assertCurrent();await db.query('commit');return {run:saved,dispatch:true,target:executionTarget(task,saved.sessionId,saved.linkVersion,saved.taskVersion)}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  private async current(db:PoolClient,owner:string,row:Record<string,unknown>,stateVersion?:number,knownConversation?:Awaited<ReturnType<Inspect>>){

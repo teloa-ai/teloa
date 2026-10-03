@@ -7,6 +7,7 @@ import {readStoredRole} from './roles.ts'
 import {BusinessResponsibilityService} from './business-responsibility.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {readBusinessConfigurationManagement} from './business-configuration-store.ts'
+import {workAccess,type WorkAccessLease} from './work-access.ts'
 
 export type ConversationWorkContext={sessionId:string;scopeId:string;roleId:string|null;version:number;locked:boolean}
 export type WorkRequestTarget={roleId:string;roleVersion:number;name:string;scope:string;unavailable:null|'paused'|'retired'}
@@ -89,6 +90,7 @@ export function readStoredConversationWorkRequest(row:Record<string,unknown>):Co
  }catch{throw corrupt()}
 }
 export type ConversationWorkReservationPrepared={
+ onAdmission:(lease:WorkAccessLease)=>void
  guard?:ConversationWorkPreparedGuard
  now:()=>string
  scopes?: (db:PoolClient,owner:string)=>Promise<readonly string[]>
@@ -128,8 +130,11 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
    if(eligible.length>1000)throw new WorkError('teloa/invalid-input','本次员工范围过大，请缩小业务范围。')
    const targets:WorkRequestTarget[]=eligible.map(role=>({roleId:role.id,roleVersion:role.version,name:role.name,scope:input.allBusinesses===true?role.scopes.find(scope=>allowed!.includes(scope))!:input.scope,unavailable:role.state==='active'?null:role.state}))
    if(input.expectedReportTargets&&JSON.stringify(targets)!==JSON.stringify(input.expectedReportTargets))throw new WorkError('teloa/version-conflict','汇报员工名单、版本、状态或授权范围已变化，请重新确认。')
+   const admission=await workAccess.authorize({kind:'conversation-work-reserve',ownerId:owner,requestId:input.requestId,sessionId:input.sessionId})
+   preparedGuard.onAdmission(admission);admission.assertCurrent()
    const saved=(await db.query('insert into teloa_conversation_work_requests(owner_id,request_id,session_id,request_spec,targets,created_at,task_child_request_id) values($1,$2,$3,$4,$5,$6,$7) returning *',[owner,input.requestId,input.sessionId,spec,JSON.stringify(targets),preparedGuard.now(),taskChild])).rows[0]
-   await db.query('update teloa_conversation_work_contexts set locked=true where owner_id=$1 and session_id=$2',[owner,input.sessionId]);return readStoredConversationWorkRequest(saved)
+   admission.assertCurrent()
+   await db.query('update teloa_conversation_work_contexts set locked=true where owner_id=$1 and session_id=$2',[owner,input.sessionId]);admission.assertCurrent();return readStoredConversationWorkRequest(saved)
 }
 export type ConversationWorkLockConnections={connect:()=>Promise<PoolClient>}
 export class ConversationWorkService{
@@ -199,10 +204,11 @@ export class ConversationWorkService{
  async reserve(owner:string,value:unknown):Promise<ConversationWorkRequest>{
   actor(owner);const input=reserveInput(value),taskChild=input.kind==='task'?workRequestChildId(input.requestId,'task',input.roleId!):null
   await this.inspectSession(owner,input.sessionId);const guard=await this.guard?.(owner,input.sessionId),db=await this.pool.connect()
+  let admission:WorkAccessLease|undefined
   try{
    await db.query('begin');if(taskChild)await lockConversationTaskChild(db,owner,taskChild);await this.lock(db,owner,'request:'+input.requestId);await this.lock(db,owner,'context:'+input.sessionId)
-   const result=await reserveConversationWorkInTransaction(db,owner,input,{...(guard?{guard}:{}),now:this.now,...(this.scopes?{scopes:this.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
-   await db.query('commit');return result
+   const result=await reserveConversationWorkInTransaction(db,owner,input,{onAdmission:lease=>{admission=lease},...(guard?{guard}:{}),now:this.now,...(this.scopes?{scopes:this.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
+   admission?.assertCurrent();await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async get(owner:string,input:unknown):Promise<ConversationWorkRequest|null>{

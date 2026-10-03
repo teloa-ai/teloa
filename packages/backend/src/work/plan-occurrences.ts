@@ -1,5 +1,6 @@
 import {lockConversationTaskParent,assertConversationTaskOpen} from './conversation-work-task-protection.ts'
 import {initializePlanSchedulerStatus} from './plan-scheduler-status.ts'
+import {workAccess} from './work-access.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
@@ -219,15 +220,25 @@ export class PlanOccurrenceService{
     await this.saveState(db,plan,value.now)
     await db.query('commit');return {occurrence:null,dispatch:false,skip}
    }
+   // 精确旧领取沿用原回执和游标推进；不为既有事实重新申请新工作准入。
+   const previous=(await db.query('select * from teloa_plan_occurrences where plan_id=$1 and owner_id=$2 and config_version=$3 and occurrence_id=$4 for share',[plan.id,owner,plan.configVersion,state.occurrenceId])).rows[0]
+   if(previous){
+    const occurrence=readOccurrence(previous),next=nextScheduleOccurrence(plan.fields.trigger,value.now)
+    await db.query('update teloa_plan_schedule_state set plan_version=$2,config_version=$3,next_at=$4,occurrence_id=$5,updated_at=$6 where plan_id=$1',[plan.id,plan.version,plan.configVersion,next.at,next.occurrenceId,value.now])
+    await db.query('commit');return {occurrence,dispatch:false}
+   }
+   const admission=await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId:state.occurrenceId,source:'schedule'})
    const occurrenceId=this.identity.id(),taskRequestId=this.identity.id()
    if(!uuid(occurrenceId)||!uuid(taskRequestId))throw new WorkError('teloa/storage-unavailable','无法生成稳定的日程领取身份。')
    const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion}
+   admission.assertCurrent()
    const inserted=(await db.query(`insert into teloa_plan_occurrences(id,owner_id,plan_id,plan_version,config_version,occurrence_id,scheduled_at,claimed_at,task_request_id,snapshot,snapshot_hash)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict(plan_id,config_version,occurrence_id) do nothing returning *`,[occurrenceId,owner,plan.id,plan.version,plan.configVersion,state.occurrenceId,state.nextAt,value.now,taskRequestId,JSON.stringify(snapshot),snapshotHash(snapshot)])).rows[0] as Record<string,unknown>|undefined
    const saved=inserted??(await db.query('select * from teloa_plan_occurrences where plan_id=$1 and config_version=$2 and occurrence_id=$3 for share',[plan.id,plan.configVersion,state.occurrenceId])).rows[0]
    const occurrence=readOccurrence(saved),next=nextScheduleOccurrence(plan.fields.trigger,value.now)
+   admission.assertCurrent()
    await db.query('update teloa_plan_schedule_state set plan_version=$2,config_version=$3,next_at=$4,occurrence_id=$5,updated_at=$6 where plan_id=$1',[plan.id,plan.version,plan.configVersion,next.at,next.occurrenceId,value.now])
-   await db.query('commit');return {occurrence,dispatch:!!inserted}
+   admission.assertCurrent();await db.query('commit');return {occurrence,dispatch:!!inserted}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  /** 本人明确点“立即运行”时创建一次独立领取；不前移或改写下一次日程游标。 */
@@ -260,13 +271,15 @@ export class PlanOccurrenceService{
     (t.id is null and p.state='active' and o.plan_version=p.version and o.config_version=p.config_version)
    ) order by o.claimed_at,o.id limit 1`,[owner,plan.id])).rows.map(observedOccurrence)
    if(history.find(({occurrence,task})=>task?!['completed','cancelled'].includes(task.state):!occurrence.invalidated))throw new WorkError('teloa/conflict','当前计划已有未结束执行，不能再次立即运行。')
+   const admission=await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId,source:'manual'})
    const id=this.identity.id()
    if(!uuid(id))throw new WorkError('teloa/storage-unavailable','无法生成稳定的立即运行身份。')
    const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion}
+   admission.assertCurrent()
    const saved=(await db.query(`insert into teloa_plan_occurrences(id,owner_id,plan_id,plan_version,config_version,occurrence_id,scheduled_at,claimed_at,task_request_id,snapshot,snapshot_hash)
     values($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10) returning *`,[id,owner,plan.id,plan.version,plan.configVersion,occurrenceId,now,row.requestId,JSON.stringify(snapshot),snapshotHash(snapshot)])).rows[0]
    const occurrence=readOccurrence(saved)
-   await db.query('commit');return {occurrence,dispatch:true}
+   admission.assertCurrent();await db.query('commit');return {occurrence,dispatch:true}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  private claimIdentity(input:unknown,withTask=false):{claimId:string;taskRequestId:string;taskId?:string}{
