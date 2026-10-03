@@ -583,7 +583,7 @@
  			}, `agentLoop.resume-load(${id})`);
  			const fused = AbortSignal.any([
  				...options.signal === void 0 ? [] : [options.signal],
-@@ -1937,40 +2215,76 @@
+@@ -1937,39 +2215,75 @@
  				this.ownership.signal
  			]);
  			let handle;
@@ -687,7 +687,6 @@
 +				}
  			}
  		})();
-		this.ownership.trackWrapper(published);
 @@ -1981 +2295 @@
 -export { AgentLoop, AgentLoop as default, CONFIGURED_AGENT_IDENTITIES_KEY, DEFAULT_MAX_PARALLEL_TOOL_CALLS, turnBoundaryProjectionDefinition };
 +export { AgentLoop, AgentLoop as default, CONFIGURED_AGENT_IDENTITIES_KEY, DEFAULT_MAX_PARALLEL_TOOL_CALLS, inboxProjectionDefinition, turnBoundaryProjectionDefinition };

@@ -15,7 +15,7 @@
       "afterSha256": "e9e7564fffc1980a772039a3dc01457f045b7657cdf3bab15d8308efb13f96a1"
     }
   ],
-  "patchSha256": "10dde224776e5981573bf50de19d075f7beb250029a0c3431231c4de6561abd2",
+  "patchSha256": "e406c30d84708d74abc015319db97e0f5107810959523f2381fcff707fd17838",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
