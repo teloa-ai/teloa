@@ -1,11 +1,9 @@
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
-import {LlmRuntime} from '@deepseek-ai/dsh-llm'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {ToolRuntime} from '@deepseek-ai/dsh-tools'
 import type {Agent} from '@deepseek-ai/dsh-agent'
-import {patchedSessionFixture,patchedSessionPackage,type FinalSessionStore} from './native-final-session.ts'
+import {patchedSessionFixture,patchedCorePackages,type FinalSessionStore} from './native-final-session.ts'
 
 type Cleanup={after:(action:()=>unknown)=>void}
 
@@ -34,8 +32,8 @@ export async function nativeProviderFixture(t:Cleanup){
 
 /** 尚未启动AgentLoop的真核心图，用于验证profile注入先后顺序。 */
 export async function nativeProviderKernel(t:Cleanup){
- const sessionPackage=await patchedSessionPackage(t),ctx=new Context()
+ const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),ctx=new Context()
  t.after(()=>ctx.fiber.dispose())
- for(const plugin of [LlmRuntime,sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
- return {ctx,sessionPackage,sessions:Reflect.get(ctx,'sessions') as unknown as FinalSessionStore}
+ for(const plugin of [llmPackage.LlmRuntime,sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
+ return {ctx,sessionPackage,loopPackage,sessions:Reflect.get(ctx,'sessions') as unknown as FinalSessionStore}
 }

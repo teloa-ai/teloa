@@ -5,6 +5,7 @@ import type {SessionController} from '@deepseek-ai/dsh-api-session-controller'
 import {createUserMessage,ToolCallId,type ContextFormed} from '@deepseek-ai/dsh-llm'
 import {SessionId,type SessionStore} from '@deepseek-ai/dsh-session'
 import type {ToolExecution,ToolExecutionResult} from '@deepseek-ai/dsh-tools'
+import {createNativeResourceCleanupOwner} from './native-resource-cleanup.ts'
 
 const closeTool='mcp__playwright-mcp__browser_close'
 export const browserStopSource='plugin:teloa.browser-stop' as const
@@ -18,6 +19,10 @@ const unknownMessage='浏览器关闭结果未确认，本会话的浏览器操�
 /** rc.1 普通取消只中止工具等待。复用官方维护阶段与关闭工具，既不释放 Agent，也不清空排队消息。 */
 export function createSessionBrowserStop(ctx:Context){
  const states=new WeakMap<Agent,State>(),pending=new Set<Promise<void>>()
+ const cleanupOwner=createNativeResourceCleanupOwner(ctx,agent=>{
+  const state=states.get(agent)
+  return !!state&&state.closing&&state.closed<state.dispatched&&!closeUnknown.has(agent)
+ })
  let disposed=false
  const current=(agent:Agent)=>ctx.agents.get(agent.session.id)===agent
  const record=async(agent:Agent,state:BrowserStopState)=>{
@@ -45,7 +50,7 @@ export function createSessionBrowserStop(ctx:Context){
      let unsuccessful=false
      try{
       const signal=AbortSignal.timeout(10000)
-      const result=await ctx.tools.execute({agent,name:closeTool,arguments:{},callId:ToolCallId('teloa-session-close-'+randomUUID()),signal})
+      const result=await cleanupOwner.execute(agent,ToolCallId('teloa-session-close-'+randomUUID()),signal)
       unsuccessful=result.isError||signal.aborted||state.closed!==state.dispatched
      }catch{unsuccessful=true}
      if(unsuccessful)await failed(agent)
@@ -111,6 +116,7 @@ export function createSessionBrowserStop(ctx:Context){
    disposed=true;offEvent();offStatus()
    if(controller?.cancel===wrapped)controller.cancel=cancel!
    await Promise.allSettled([...pending])
+   cleanupOwner.close()
   },
  }
 }

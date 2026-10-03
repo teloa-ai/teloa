@@ -1,14 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import type {Agent} from '@deepseek-ai/dsh-agent'
 import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import {WorkAccess,type WorkAccessRequest} from '../../backend/src/work/work-access.ts'
 import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {patchedSessionFixture} from './fixtures/native-final-session.ts'
+import {nativeProviderKernel} from './fixtures/native-input-provider.ts'
 const message=(id='request')=>({...createUserMessage({source:{kind:'user',rpcId:id},content:[{type:'text',text:'固定原生输入'}]})})
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done});return {promise,resolve}}
 const forbidden={code:'teloa/forbidden'}
 
-test('首次原生输入等待实际策略后，exact消息与上下文只发送摘要，最终真实入Inbox',async t=>{
+test('创建后立即提交等待真实 Loop 注入及策略，exact消息与上下文只发送摘要，最终真实入Inbox',{timeout:10000},async t=>{
  const {ctx,agent}=await patchedSessionFixture(t),access=new WorkAccess(),entered=deferred(),release=deferred(),seen:WorkAccessRequest[]=[],before=agent.session.snapshotEvents().length
  access.requirePolicy();access.installPolicy(async request=>{seen.push(request);entered.resolve();await release.promise;return {assertCurrent:()=>{}}})
  const work=createNativeWorkInput(ctx,access),input=message(),context={producer:'prompt' as const,identity:'private-context'},pending=work.withNewInput(agent,input,context,()=>{agent.inbox.append('next-turn',input)})
@@ -34,6 +36,42 @@ test('缺策略与关闸不执行submit',async t=>{
  access.installPolicy(async()=>({assertCurrent:()=>{}}));work.close()
  await assert.rejects(work.withNewInput(agent,input,{producer:'prompt',identity:'request'},()=>{calls++;agent.inbox.append('next-turn',input)}),forbidden)
  assert.equal(calls,0);assert.equal(agent.inbox.nextTurn.length,0)
+})
+test('等待真实 Loop 注入时关闸或取消，不请求许可且不写入',{timeout:10000},async t=>{
+ for(const reason of ['closed','aborted']){
+  const {ctx,agent}=await patchedSessionFixture(t),access=new WorkAccess(),abort=new AbortController(),input=message(),before=agent.session.snapshotEvents().length
+  let calls=0,submits=0
+  access.installPolicy(async()=>{calls++;return {assertCurrent(){}}})
+  const work=createNativeWorkInput(ctx,access)
+  const pending=work.withNewInput(agent,input,{producer:'prompt',identity:'startup'},()=>{submits++;agent.inbox.append('next-turn',input)},abort.signal)
+  const rejected=assert.rejects(pending)
+  if(reason==='closed')work.close();else abort.abort()
+  await rejected
+  assert.equal(calls,0);assert.equal(submits,0);assert.equal(agent.session.snapshotEvents().length,before);assert.equal(agent.inbox.nextTurn.length,0)
+ }
+})
+test('缺 Loop 的真实注入及时拒绝，不请求许可、不提交且 Session 零写',{timeout:10000},async t=>{
+ const {ctx,sessions,sessionPackage}=await nativeProviderKernel(t),access=new WorkAccess(),input=message('missing-loop')
+ const session=sessions.create(sessionPackage.SessionId('missing-loop'))
+ // 无 Loop 时没有 Agent factory；只登记最小目标以通过 exact-target 前置检查。
+ // Session、Registry、Cordis 注入和最终守卫均使用真实实现。
+ const agent={id:session.id,session,ctx} as Agent
+ t.after(ctx.agents.enter(agent,undefined))
+ assert.equal(ctx.agents.get(agent.id),agent);assert.equal(sessions.get(agent.id),session)
+ assert.equal(ctx.get('agentLoop'),undefined)
+ let authorizations=0,submits=0
+ access.requirePolicy();access.installPolicy(async()=>{authorizations++;return {assertCurrent(){}}})
+ const work=createNativeWorkInput(ctx,access),before=session.snapshotEvents(),seq=session.seq
+ t.after(()=>work.close())
+ let timer:ReturnType<typeof setTimeout>|undefined
+ const deadline=new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>reject(Error('缺 Loop 的 whenReady 未在 1 秒内结算')),1000)})
+ try{
+  await assert.rejects(Promise.race([work.withNewInput(agent,input,{producer:'prompt',identity:'missing-loop'},()=>{
+   submits++;session.append('agent/inbox/spliced',{target:'next-turn',start:0,removedCount:0,inserted:[input]})
+  }),deadline]),{code:'teloa/forbidden',message:'工作许可或实际受理因果已失效。'})
+ }finally{clearTimeout(timer)}
+ assert.equal(ctx.get('agentLoop'),undefined);assert.equal(authorizations,0);assert.equal(submits,0)
+ assert.equal(session.seq,seq);assert.deepEqual(session.snapshotEvents(),before)
 })
 test('producer上下文或异步submit无效时不向许可策略请求',async t=>{
  const {ctx,agent}=await patchedSessionFixture(t),access=new WorkAccess();let calls=0

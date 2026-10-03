@@ -8,12 +8,11 @@ import {spawnSync} from 'node:child_process'
 import {setTimeout as delay} from 'node:timers/promises'
 import {Context,Service} from '@deepseek-ai/cordis'
 import {AgentRegistry,type Agent} from '@deepseek-ai/dsh-agent'
-import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {LlmRuntime,type UserMessage} from '@deepseek-ai/dsh-llm'
-import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
+import type {UserMessage} from '@deepseek-ai/dsh-llm'
+import {SessionId,type SessionStore} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {ToolRuntime} from '@deepseek-ai/dsh-tools'
+import {patchedCorePackages} from './native-final-session.ts'
 
 export type Delivery={agent:Agent;message:UserMessage;occurrences:readonly {scheduleId:string;occurrenceAt:string}[]}
 export type Admission=(request:Readonly<Delivery>,dispatch:()=>void)=>Promise<void>
@@ -60,9 +59,9 @@ export type ScheduleFixtureComposition={
 }
 
 export async function scheduleFixture(t:{after:(action:()=>unknown)=>void},options:ScheduleOptions={},records:unknown[]=[],patched=true,resolvedAgent?:Agent,composition:ScheduleFixtureComposition={}){
- const schedule=await patchedSchedule(t,patched),ctx=new Context(),publication=deferred(),published=deferred<Agent>()
- for(const plugin of [LlmRuntime,composition.sessionPackage?.SessionStore??SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
- await ctx.plugin(AgentLoop,{agents:[]})
+ const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),schedule=await patchedSchedule(t,patched),ctx=new Context(),publication=deferred(),published=deferred<Agent>()
+ for(const plugin of [llmPackage.LlmRuntime,composition.sessionPackage?.SessionStore??sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
+ await ctx.plugin(loopPackage.AgentLoop,{agents:[]})
  // 官方创建发布屏障防止 turn 启动；无需 LLM/模型请求，仍保留真实 Agent.followup/Inbox。
  ctx.on('agent/created',async({agent})=>{published.resolve(agent);await publication.promise})
  const creating=ctx.agents.create({sessionId:SessionId('schedule-real-agent'),agentOptions:{provider:'test',model:'test'}})

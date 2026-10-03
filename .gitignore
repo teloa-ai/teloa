@@ -3,6 +3,7 @@ packages/**/lib/
 dist/
 *.tsbuildinfo
 .runtime/
+.spec-workflow/
 .env
 .env.*
 *.log

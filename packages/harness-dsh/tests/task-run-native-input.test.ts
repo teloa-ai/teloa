@@ -2,19 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry,type Agent} from '@deepseek-ai/dsh-agent'
-import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
-import {LlmAdapter,LlmRuntime,createUserMessage,type UserMessage} from '@deepseek-ai/dsh-llm'
+import {LlmAdapter,createUserMessage,type UserMessage} from '@deepseek-ai/dsh-llm'
 import {SessionId,SessionSeq,SessionLogOffset,type SessionStore} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {ToolRuntime} from '@deepseek-ai/dsh-tools'
 import type {TaskExecutionScope,TaskRun} from '@teloa/backend'
 import {WorkAccess,type WorkAccessRequest} from '../../backend/src/work/work-access.ts'
 import {dshTaskRunPorts} from '../src/task-run-dsh.ts'
 import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {nativeInputIdentity} from '../src/native-input-access.ts'
-import {patchedSessionPackage} from './fixtures/native-final-session.ts'
+import {patchedCorePackages} from './fixtures/native-final-session.ts'
 
 const deferred=<T=void>()=>{let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done});return {promise,resolve}}
 const forbidden={code:'teloa/forbidden'}
@@ -25,9 +23,9 @@ class NoModel extends LlmAdapter{
 }
 
 async function fixture(t:{after:(action:()=>unknown)=>void},managed=true,inherited=false){
- const sessionPackage=await patchedSessionPackage(t),ctx=new Context(),publication=deferred(),published=deferred<Agent>()
- for(const plugin of [LlmRuntime,sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
- await ctx.plugin(AgentLoop,{agents:[]})
+ const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),ctx=new Context(),publication=deferred(),published=deferred<Agent>()
+ for(const plugin of [llmPackage.LlmRuntime,sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
+ await ctx.plugin(loopPackage.AgentLoop,{agents:[]})
  const model=new NoModel();ctx.llm.registerAdapter(['controlled'],model)
  // 使用官方发布屏障持有驱动，保留真实 followup/Inbox，禁止任何模型或轮次启动。
  ctx.on('agent/created',async({agent})=>{published.resolve(agent);await publication.promise})

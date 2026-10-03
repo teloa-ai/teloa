@@ -6,10 +6,10 @@ import type {createNativeWorkInput,NativeInputContext} from './native-work-input
 export type ControllerInputCandidate=
  |Readonly<{kind:'prompt';agent:Agent;message:UserMessage;requestId:string;mode:'queue'|'steer'}>
  |Readonly<{kind:'queue-edit';agent:Agent;message:UserMessage;itemId:string;target:'next-turn'|'next-step';previousMessage:UserMessage}>
-export type SubagentInputCandidate=Readonly<{agent:Agent;message:UserMessage;sender:Agent;delivery:'queue'|'steer'}>
+export type SubagentInputCandidate=Readonly<{agent:Agent;message:UserMessage;sender:Agent;delivery:'queue'|'steer';signal?:AbortSignal;kind?:'initial'|'live'|'resume'}>
 export type ScheduleInputCandidate=Readonly<{agent:Agent;message:UserMessage;occurrences:readonly Readonly<{scheduleId:string;occurrenceAt:string}>[]}>
 type Publisher=()=>void
-type Input=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>
+type Input=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'withSubagentInput'>>
 
 function context(producer:NativeInputContext['producer'],identity:readonly unknown[]):NativeInputContext{
  // 仅绑定官方发布者已解析的上下文；实际许可仍由 WorkAccess 与最终 Session 验证。
@@ -30,7 +30,8 @@ export function createNativeProducerAdmissions(input:Input){
    return input.withNewInput(candidate.agent,candidate.message,binding,dispatch)
   },
   subagent(candidate:SubagentInputCandidate,dispatch:Publisher):Promise<void>{
-   const binding=context('subagent',['subagent/live-input',candidate.sender.id,candidate.agent.id,candidate.delivery])
+   const binding=context('subagent',['subagent/input',candidate.kind??'live',candidate.sender.id,candidate.agent.id,candidate.delivery])
+   if(candidate.kind&&input.withSubagentInput)return input.withSubagentInput({...candidate,kind:candidate.kind},binding,dispatch)
    return input.withNewInput(candidate.agent,candidate.message,binding,dispatch)
   },
   schedule(candidate:ScheduleInputCandidate,dispatch:Publisher):Promise<void>{

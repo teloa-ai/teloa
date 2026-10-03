@@ -2,8 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {setImmediate as immediate} from 'node:timers/promises'
 import {mkdtemp,rm} from 'node:fs/promises'
-import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {Context} from '@deepseek-ai/cordis'
+import {AgentRegistry} from '@deepseek-ai/dsh-agent'
+import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {SessionStore,SessionId,SessionSeq,SessionLogOffset,type SessionEvent} from '@deepseek-ai/dsh-session'
 import {SessionController} from '@deepseek-ai/dsh-api-session-controller'
 import {SubagentRuntime} from '@deepseek-ai/dsh-subagent'
@@ -15,6 +17,7 @@ import {TeloaNativeInput} from '../src/native-input-provider.ts'
 import {createManagedSessionController,ManagedSessionController} from '../src/managed-session-controller.ts'
 import {createManagedSubagentRuntime,ManagedSubagentRuntime} from '../src/managed-subagent.ts'
 import {nativeProviderFixture,nativeProviderKernel} from './fixtures/native-input-provider.ts'
+import {patchedCorePackages} from './fixtures/native-final-session.ts'
 import {patchedControllerPackage,promptRequest,queueRequest,type AdmittingSessionController} from './fixtures/native-controller-admission.ts'
 import {patchedSubagent,deferred,until} from './fixtures/native-subagent-admission.ts'
 
@@ -41,6 +44,30 @@ const managedController=async(f:Awaited<ReturnType<typeof nativeProviderFixture>
  const fiber=f.ctx.plugin(Managed,{nativeOpen:false});await fiber
  return {fiber,controller:Reflect.get(f.ctx,'sessionController') as AdmittingSessionController,Managed,sdk}
 }
+
+for(const delayed of ['llm','tools'] as const)test(`真实 Cordis 延迟 ${delayed} 时 provider 等待，补齐后允许依赖 provider 的 Loop 启动`,{timeout:10000},async t=>{
+ reset()
+ const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),ctx=new Context()
+ t.after(()=>ctx.fiber.dispose())
+ const delayedPlugin=delayed==='llm'?llmPackage.LlmRuntime:toolsPackage.ToolRuntime
+ for(const plugin of [sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,AgentRegistry,llmPackage.LlmRuntime,toolsPackage.ToolRuntime]){
+  if(plugin!==delayedPlugin)await ctx.plugin(plugin)
+ }
+ const provider=ctx.plugin(TeloaNativeInput);await provider
+ assert.equal(ctx.get(delayed),undefined);assert.equal(ctx.get('teloaNativeInput'),undefined)
+ await ctx.plugin(delayedPlugin);await provider
+ assert.ok(ctx.get('teloaNativeInput'));assert.equal(ctx.get('agentLoop'),undefined)
+ // Loop 依赖已发布的 provider；provider 不能反向静态依赖 Loop 而形成启动环。
+ const configured={inject:[...loopPackage.AgentLoop.inject,'teloaNativeInput'],Config:loopPackage.AgentLoop.Config,
+  apply(child:Context,config:ConstructorParameters<typeof loopPackage.AgentLoop>[1]){new loopPackage.AgentLoop(child,config)}}
+ await ctx.plugin(configured,{agents:[]})
+ const model=new NoModel();ctx.llm.registerAdapter(['test'],model)
+ const {agent}=await ctx.agents.create({sessionId:SessionId('delayed-'+delayed),agentOptions:{provider:'test',model:'fixed'}})
+ void agent.runMaintenance(abort=>new Promise<void>(done=>abort.addEventListener('abort',()=>done(),{once:true})))
+ const input=message('ready-'+delayed)
+ await ctx.teloaNativeInput.input.withNewInput(agent,input,{producer:'task-run',identity:'first-ready'},()=>{agent.inbox.append('next-turn',input)})
+ assert.equal(agent.inbox.nextTurn[0]?.id,input.id);assert.equal(seen.length,1);assert.equal(model.calls,0)
+})
 
 test('真实 plugin graph 在 provider 发布前等待；首次 Controller service 通知就使用固定策略',async t=>{
  reset()
@@ -118,7 +145,10 @@ test('provider 官方dispose关闭共享guard；cached input与controller均不�
 
 test('缺最终Session补口不发布provider；缺官方Controller/Subagent补口在super之前拒绝',async t=>{
  reset()
- const bare=new Context();t.after(()=>bare.fiber.dispose());await bare.plugin(SessionStore)
+ const {llmPackage,toolsPackage}=await patchedCorePackages(t)
+ const bare=new Context();t.after(()=>bare.fiber.dispose())
+ for(const plugin of [llmPackage.LlmRuntime,SystemPrompt,toolsPackage.ToolRuntime,SessionStore])await bare.plugin(plugin)
+ assert.ok(bare.get('llm'));assert.ok(bare.get('tools'))
  bare.provide('agents',{} as never)
  await assert.rejects(bare.plugin(TeloaNativeInput).await(),forbidden)
  assert.equal(bare.get('teloaNativeInput'),undefined)
@@ -150,20 +180,37 @@ test('真实 managed Subagent plugin 在provider之前等待，首次通知已�
  assert.equal(seen.length,0)
 })
 
-test('明确初始composition缺口：managed Subagent首次start未走live许可，最终guard拒绝初始Inbox',async t=>{
+test('managed Subagent首次start核对独立初始许可，拒绝零写、恢复后唯一受理',async t=>{
  reset()
  const f=await nativeProviderFixture(t),sdk=await patchedSubagent(t),Managed=createManagedSubagentRuntime(sdk.SubagentRuntime as typeof SubagentRuntime)
  const root=await mkdtemp('/private/tmp/teloa-provider-persistence-')
  t.after(()=>rm(root,{recursive:true,force:true}))
  await f.ctx.plugin(Persistence,{root});await f.ctx.plugin(TeloaNativeInput);await f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8})
  await f.ctx.plugin(SpawnProvider,{providerName:'spawn'})
- const id=SessionId('initial-not-covered')
- await assert.rejects(f.ctx.subagents.startContinuable({provider:'spawn',childId:id,label:'unsupported initial',request:{parent:f.agent,prompt:[{type:'text',text:'不能凭seed放行'}]},signal}))
- assert.equal(seen.length,0)
+ valid=false
+ const id=SessionId('initial-admission-denied')
+ await assert.rejects(f.ctx.subagents.startContinuable({provider:'spawn',childId:id,label:'initial admission denied',request:{parent:f.agent,prompt:[{type:'text',text:'不能凭seed放行'}]},signal}),forbidden)
+ assert.equal(seen.length,1)
+ assert.equal(seen[0]?.kind,'native-input')
+ if(seen[0]?.kind==='native-input')assert.equal(seen[0].producer,'subagent')
  const child=f.ctx.agents.get(id)
  if(child)assert.equal(child.inbox.nextTurn.length,0)
- // Session setup本身不在本底座范围；只证明没有将初始prompt误算为已授权live输入。
+ // Session setup 本身不授予许可；首次 prompt 必须通过独立许可，失败时没有 Inbox 写入。
  assert.equal(f.agent.inbox.nextTurn.length,0)
+ const acceptedId=SessionId('initial-admission-accepted')
+ const model=new NoModel();f.ctx.llm.registerAdapter(['test'],model)
+ waiting={entered:deferred(),release:deferred()};t.after(()=>waiting?.release.resolve(undefined))
+ valid=true
+ const starting=f.ctx.subagents.startContinuable({provider:'spawn',childId:acceptedId,label:'initial admission accepted',request:{parent:f.agent,prompt:[{type:'text',text:'真实首次许可通过'}]},signal})
+ await waiting.entered.promise
+ // 官方 initializeAgent 的 maintenance 已退出，首次准入尚未放行，此时才持有测试屏障。
+ const admitted=f.ctx.agents.get(acceptedId)!
+ void admitted.runMaintenance(abort=>new Promise<void>(done=>abort.addEventListener('abort',()=>done(),{once:true})))
+ waiting.release.resolve(undefined);const accepted=await starting;waiting=undefined
+ assert.equal(accepted.childId,admitted.id);assert.equal(model.calls,0)
+ assert.equal(seen.length,2);assert.equal(admitted.inbox.nextTurn.length,1)
+ assert.deepEqual(admitted.inbox.nextTurn[0]?.content,[{type:'text',text:'真实首次许可通过'}])
+ assert.equal(admitted.session.snapshotEvents().filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.length).length,1)
 })
 
 test('Free原官方Controller缺provider仍可发送；managed类不替换官方原型/静态Config',async t=>{
@@ -247,8 +294,8 @@ test('profile等价真实依赖图：agent-loop配置冷pending必须等待provi
  const failed=deferred<unknown>()
  f.ctx.on('agent-loop/config-start-failed',({sessionId,error})=>{assert.equal(sessionId,id);failed.resolve(error)})
  // 和官方loader profile行相同：保留原class和Config，只追加明确的服务依赖。
- const configured={name:'managed-configured-loop',inject:[...AgentLoop.inject,'teloaNativeInput'],Config:AgentLoop.Config,
-  apply(ctx:Context,config:ConstructorParameters<typeof AgentLoop>[1]){new AgentLoop(ctx,config)}}
+ const configured={name:'managed-configured-loop',inject:[...f.loopPackage.AgentLoop.inject,'teloaNativeInput'],Config:f.loopPackage.AgentLoop.Config,
+  apply(ctx:Context,config:ConstructorParameters<typeof f.loopPackage.AgentLoop>[1]){new f.loopPackage.AgentLoop(ctx,config)}}
  const loop=f.ctx.plugin(configured,{agents:[{id:'configured-label',resumeSessionId:id,provider:'controlled',model:'fixed'}]})
  await loop;assert.equal(f.ctx.get('agentLoop'),undefined);assert.equal(model.calls,0)
  await f.ctx.plugin(TeloaNativeInput);await loop

@@ -40,7 +40,8 @@ export function requireNativeInputProvider(ctx:Context):TeloaNativeInput{
  * Store 的 required 策略单向固定；卸载服务后维持关闭，重新运行须重建物理宿主。
  */
 export class TeloaNativeInput extends Service{
- static inject=['sessions','agents']
+ // Loop 由准入服务发布后再启动；这里只等待构造守卫直接使用的核心服务。
+ static inject=['sessions','agents','llm','tools']
  declare readonly input:ReturnType<typeof createNativeWorkInput>
  declare readonly admissions:ReturnType<typeof createNativeProducerAdmissions>
  constructor(ctx:Context){

@@ -1,0 +1,146 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -2660,6 +2660,46 @@
+ * Tool registry and execution pipeline. Scoped registrations shadow globals;
+ * one visibility resolver feeds presentation, lookup, and dispatch.
+ */
++/** One-way work policy shared by every scoped proxy of this runtime. */
++const toolWorkAdmissionKeySymbol = Symbol("tool-work-admission-key");
++const toolWorkAdmissionHolders = new WeakMap();
++const toolWorkAdmissionInvokers = new WeakMap();
++function toolWorkAdmissionKey(runtime) {
++	return runtime[toolWorkAdmissionKeySymbol];
++}
++function initializeToolWorkAdmission(runtime) {
++	Object.defineProperty(runtime, toolWorkAdmissionKeySymbol, { value: runtime });
++	let required = false;
++	let provider;
++	toolWorkAdmissionHolders.set(runtime, Object.freeze({
++		require() { required = true; },
++		install(policy) {
++			if (typeof policy !== "function") throw new TypeError("tool work admission policy must be a function");
++			if (provider !== void 0) throw new Error("tool work admission policy is already installed");
++			provider = policy;
++		}
++	}));
++	toolWorkAdmissionInvokers.set(runtime, (candidate) => {
++		if (provider === void 0) {
++			if (required && candidate.kind !== "body-end") throw new Error("tool work admission policy is required");
++			return;
++		}
++		const returned = provider(Object.freeze(candidate));
++		if (returned !== void 0) {
++			Promise.resolve(returned).catch(() => {});
++			throw new TypeError("tool work admission policy must synchronously return undefined");
++		}
++	});
++}
++function assertToolWorkAdmission(runtime, candidate) {
++	const invoke = toolWorkAdmissionInvokers.get(toolWorkAdmissionKey(runtime));
++	if (invoke === void 0) throw new Error("tool work admission runtime is unavailable");
++	invoke(candidate);
++}
++function finishToolWorkAdmission(runtime, exec) {
++	// Cleanup cannot change the body result, cancellation, or official finalization.
++	try { assertToolWorkAdmission(runtime, { kind: "body-end", exec }); } catch {}
++}
+ var ToolRuntime = class extends Service {
+ 	static inject = ["systemPrompt"];
+ 	static Config = z.object({
+@@ -2702,6 +2742,7 @@
+ 	ptcTransport;
+ 	constructor(ctx, config = {}) {
+ 		super(ctx, "tools");
++		initializeToolWorkAdmission(this);
+ 		this.defaultMode = config.mode ?? "native";
+ 		this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls);
+ 		ctx.systemPrompt.tools((context) => this.wireSchemas(context.scope));
+@@ -2709,6 +2750,14 @@
+ 			ctx.systemPrompt.section(this.collapseSection());
+ 			ctx.systemPrompt.section(this.sdkSection());
+ 		}
++	}
++	/** Require synchronous work admission permanently for this runtime. */
++	requireWorkAdmission() {
++		toolWorkAdmissionHolders.get(toolWorkAdmissionKey(this)).require();
++	}
++	/** Install the sole work admission policy; replacement is forbidden. */
++	installWorkAdmission(policy) {
++		toolWorkAdmissionHolders.get(toolWorkAdmissionKey(this)).install(policy);
+ 	}
+ 	/**
+ 	* The prompt statement of the `ptc` executor collapse, registered wherever
+@@ -3159,10 +3208,11 @@
+ 		const capturedFinalizer = visible?.finalizeContent?.bind(visible);
+ 		const capturedProjector = visible?.projectContent?.bind(visible);
+ 		const finalizerFor = () => collapsed && !signal.aborted ? void 0 : capturedFinalizer;
++		let execution;
+ 		try {
+ 			const detached = snapshotJsonValue(exec.arguments);
+ 			if (detached === void 0) throw new TypeError("tool execution arguments must be losslessly JSON-serializable");
+-			const execution = {
++			execution = {
+ 				...base,
+ 				arguments: deepFreeze(detached)
+ 			};
+@@ -3173,6 +3223,7 @@
+ 				callerSignal: signal,
+ 				bodyInvoked: false
+ 			});
++			assertToolWorkAdmission(this, { kind: "create", input: exec, exec: execution });
+ 			if (collapsed) {
+ 				if (signal.aborted) return {
+ 					kind: "final-result",
+@@ -3190,7 +3241,7 @@
+ 				exec: execution
+ 			};
+ 		} catch (error) {
+-			const execution = {
++			execution ??= {
+ 				...base,
+ 				arguments: void 0
+ 			};
+@@ -3306,8 +3357,16 @@
+ 		try {
+ 			const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== void 0);
+ 			if (!tool) throw new ToolNotFoundError(exec.name);
++			const execute = tool.execute;
++			const args = exec.arguments;
++			assertToolWorkAdmission(this, { kind: "body", exec });
+ 			state.bodyInvoked = true;
+-			const returned = await tool.execute(exec.arguments, exec);
++			let returned;
++			try {
++				returned = await Reflect.apply(execute, tool, [args, exec]);
++			} finally {
++				finishToolWorkAdmission(this, exec);
++			}
+ 			const result = this.createSuccessResult(exec, tool, returned);
+ 			return isAborted(signal) ? toolAbortedResult(result) : result;
+ 		} catch (error) {
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -524,6 +524,12 @@
+  * Tool registry and execution pipeline. Scoped registrations shadow globals;
+  * one visibility resolver feeds presentation, lookup, and dispatch.
+  */
++/** Exact SDK-owned boundary; labels and input fields do not confer work rights. */
++export type ToolWorkAdmissionRequest =
++    | Readonly<{ kind: 'create'; input: ToolExecutionInput; exec: ToolRunContext }>
++    | Readonly<{ kind: 'body' | 'body-end'; exec: ToolRunContext }>;
++/** Synchronous undefined only; body-end is a contained cleanup notification. */
++export type ToolWorkAdmission = (request: ToolWorkAdmissionRequest) => undefined;
+ export declare class ToolRuntime extends Service {
+     static inject: string[];
+     static Config: z<Config>;
+@@ -551,6 +557,10 @@
+      */
+     private ptcTransport;
+     constructor(ctx: Context, config?: Config);
++    /** Require synchronous work admission permanently for this runtime. */
++    requireWorkAdmission(): void;
++    /** Install the sole work admission policy; replacement is forbidden. */
++    installWorkAdmission(policy: ToolWorkAdmission): void;
+     /**
+      * The prompt statement of the `ptc` executor collapse, registered wherever
+      * {@link sdkSection} is and rendering empty outside an effective `ptc`.

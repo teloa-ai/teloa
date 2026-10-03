@@ -1,28 +1,23 @@
 {
   "schema": "teloa.dsh-compat-patch/v1",
-  "package": "@deepseek-ai/dsh-subagent",
+  "package": "@deepseek-ai/dsh-subagent-in-process-driver",
   "version": "0.2.0-rc.2",
   "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "patchSha256": "e3f5c20498d3b94041d82640e31b08aea585e1b42fb90c960f9856657c9057e4",
+  "patchSha256": "d7a59141921fff0fdf1109c9beeba2bd8bda65c5f2ff33877695d1fa892f87e7",
   "files": [
     {
       "path": "lib/index.js",
-      "beforeSha256": "75b50b1c9452a6aeb10d1c859e3f45b05e062ea1fad6ed3bcd9577f2bc912541",
-      "afterSha256": "06565838a28bb7f21a0aa0cc843ae5007db656cd8bd130788350f21bd27d442b"
+      "beforeSha256": "a169b6dac8f9fd0ef6e8db4ec0d2c009580c5c10b6d561e6d214cbe9b89521d1",
+      "afterSha256": "c5dc55f40c1c3adf5a2b8c0c99dd4f1890a469e990aa121684953a342cf451bf"
     },
     {
       "path": "lib/types/index.d.ts",
-      "beforeSha256": "674879b514f8af54213ecc4985cf7a8e8b00c8a00086261fcccce1b0d6325ee4",
-      "afterSha256": "35d09a8e331b6ed623c4e96c97b0ea18171758312fa6023ee67f1ea8801878ba"
+      "beforeSha256": "68b45850465e7c70ac5935c3e6d441863310470f0224388b91270fedcf8c49f8",
+      "afterSha256": "4d22ea4c59c2903bd6660d44621fe62c694d0f719d53873cc6feab0e0f382f6b"
     }
   ],
   "api": [
-    "SubagentPromptAdmissionRequest",
-    "SubagentPromptAdmission",
-    "SubagentPromptAdmissionOptions",
-    "SubagentRuntime.requirePromptAdmission",
-    "SubagentRuntime.installPromptAdmission",
-    "SubagentRuntime.admitPrompt"
+    "startInProcessRun (unchanged signature)"
   ],
   "scope": {
     "admission": "admitPrompt({kind,mode?,agent,message,sender,delivery,signal},dispatch):Promise<void>",

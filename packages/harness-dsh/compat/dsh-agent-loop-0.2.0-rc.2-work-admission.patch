@@ -1,0 +1,239 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -11,6 +11,40 @@
+ import { createScope } from "@deepseek-ai/dsh-scope";
+ import { joinContextSections, renderContextSections, renderPrompt } from "@deepseek-ai/dsh-system-prompt";
+ import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER } from "@deepseek-ai/dsh-tools";
++// Deployment-owned callbacks are module-private; public events and service properties cannot invoke them.
++const loopWorkAdmissions = new WeakMap();
++const agentWorkAdmissions = new WeakMap();
++function workAdmissionFailure() { return new Error("Agent loop work admission is unavailable or invalid"); }
++function invokeLoopWorkAdmission(holder, input, publish) {
++ const state = loopWorkAdmissions.get(holder);
++ if (state === void 0) throw workAdmissionFailure();
++ const cleanup = input.kind === "step-end" || input.kind === "turn-end";
++ if (state.policy === void 0) {
++  if (state.required && !cleanup) throw workAdmissionFailure();
++  if (publish !== void 0) publish();
++  return;
++ }
++ let active = true, dispatched = false;
++ const dispatch = () => {
++  if (!active || dispatched || publish === void 0) throw workAdmissionFailure();
++  dispatched = true;
++  publish();
++ };
++ const request = Object.freeze({ ...input, ...(publish === void 0 ? {} : { publish: dispatch }) });
++ try {
++  const returned = Reflect.apply(state.policy, void 0, [request]);
++  if (returned !== void 0) {
++   Promise.resolve(returned).catch(() => {});
++   throw workAdmissionFailure();
++  }
++  if (publish !== void 0 && !dispatched) throw workAdmissionFailure();
++ } finally { active = false; }
++}
++function admitAgentWork(agent, input, publish) {
++ const admission = agentWorkAdmissions.get(agent);
++ if (admission === void 0) throw workAdmissionFailure();
++ admission({ ...input, agent }, publish);
++}
+ //#region lib/types/inbox.js
+ /**
+ * Driver-owned durable agent inbox projection and command facade.
+@@ -569,7 +603,7 @@
+ 			const call = group[committed];
+ 			const result = slot.needsPost ? await ctx.tools[TOOL_RUNTIME_SCHEDULER].finalize(slot.exec, slot.result) : ctx.tools[TOOL_RUNTIME_SCHEDULER].finish(slot.exec, slot.result);
+ 			appendToolResult(session, turn, step, call.block, result, callSeqs[committed]);
+-			for (const context of result.additionalContexts ?? []) acceptContext(context);
++			for (const context of result.additionalContexts ?? []) admitAgentWork(ctx.agents.requireInitiator(), { kind: "context", turn, step, signal, exec: slot.exec, result, context }, () => { acceptContext(context); });
+ 			concluded ||= result.concludesTurn === true;
+ 			committed++;
+ 		}
+@@ -579,6 +613,7 @@
+ 		const call = group[index];
+ 		callSeqs[index] = appendToolCall(session, turn, step, call.block);
+ 		started++;
++		admitAgentWork(ctx.agents.requireInitiator(), { kind: "tool-prepare", turn, step, signal, input: call.exec });
+ 		const prepared = await ctx.tools[TOOL_RUNTIME_SCHEDULER].prepare(call.exec);
+ 		throwSchedulerFailure();
+ 		switch (prepared.kind) {
+@@ -768,7 +803,8 @@
+ 	systemPrompt;
+ 	/** Identities fully frozen by this loop; weak references do not retain replaced history. */
+ 	frozenMessages = /* @__PURE__ */ new WeakSet();
+-	constructor(loopCtx, id, options, session) {
++	constructor(loopCtx, id, options, session, workAdmission) {
++		agentWorkAdmissions.set(this, workAdmission);
+ 		this.loopCtx = loopCtx;
+ 		this.id = id;
+ 		this.options = options;
+@@ -904,6 +940,7 @@
+ 		if (this.phase.kind !== "running") throw new Error(`agent "${this.id}": pre-step outside running phase`);
+ 		const signal = this.phase.abort.signal;
+ 		const claimed = this.inbox.claim(target, position.turn);
++		for (const message of claimed) admitAgentWork(this, { kind: "claim", ...position, signal, target, message });
+ 		const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal));
+ 		signal.throwIfAborted();
+ 		const sections = renderContextSections(assembly);
+@@ -939,8 +976,9 @@
+ 		const { signal } = phase.abort;
+ 		signal.throwIfAborted();
+ 		const turn = phase.turn + 1;
++		let workTurnEvent;
+ 		try {
+-			this.session.append("turn/start", { turn });
++			workTurnEvent = this.session.append("turn/start", { turn });
+ 		} catch (error) {
+ 			this.throwError(error);
+ 		}
+@@ -948,6 +986,7 @@
+ 		let turnEnds = null;
+ 		let target = "next-turn";
+ 		try {
++			admitAgentWork(this, { kind: "turn-start", turn, signal, event: workTurnEvent });
+ 			while (true) {
+ 				signal.throwIfAborted();
+ 				const step = phase.step + 1;
+@@ -965,7 +1004,7 @@
+ 					return false;
+ 				}
+ 				signal.throwIfAborted();
+-				this.session.append("step/start", {
++				const workStepEvent = this.session.append("step/start", {
+ 					turn,
+ 					step
+ 				});
+@@ -975,6 +1014,7 @@
+ 					if (session === this.session) toolRecovery.observe(event);
+ 				});
+ 				try {
++					admitAgentWork(this, { kind: "step-start", turn, step, signal, event: workStepEvent });
+ 					const stepEnd = await this.step(decision);
+ 					if (turnEnds === null || turnEnds.kind !== "max-tokens") turnEnds = stepEnd;
+ 				} catch (error) {
+@@ -989,10 +1029,11 @@
+ 					throw error;
+ 				} finally {
+ 					stopRecovery();
+-					this.session.append("step/end", {
++					const workStepEnd = this.session.append("step/end", {
+ 						turn,
+ 						step
+ 					});
++					admitAgentWork(this, { kind: "step-end", turn, step, signal, event: workStepEnd });
+ 				}
+ 				signal.throwIfAborted();
+ 				if (turnEnds && this.inbox.nextStep.length === 0) {
+@@ -1024,10 +1065,11 @@
+ 			this.throwError(error);
+ 		} finally {
+ 			try {
+-				this.session.append("turn/end", {
++				const workTurnEnd = this.session.append("turn/end", {
+ 					turn,
+ 					reason: turnEnds
+ 				});
++				admitAgentWork(this, { kind: "turn-end", turn, signal, event: workTurnEnd });
+ 			} catch (error) {
+ 				this.throwError(error);
+ 			}
+@@ -1069,6 +1111,7 @@
+ 			});
+ 			let started = false;
+ 			try {
++				admitAgentWork(this, { kind: "request", turn, step, signal, options: request });
+ 				const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request);
+ 				signal.throwIfAborted();
+ 				live.start();
+@@ -1558,7 +1601,8 @@
+ 		ctx.sessionProjections.register(turnBoundaryProjectionDefinition);
+ 		ctx.sessionProjections.register(inboxProjectionDefinition);
+ 		this.ownership = new FactoryOwnership(ctx.fiber);
+-		this.runtime = { ctx };
++		Object.defineProperty(this, "runtime", { value: Object.freeze({ ctx }), writable: false, configurable: false });
++		loopWorkAdmissions.set(this.runtime, { required: false, policy: void 0 });
+ 		ctx.effect(() => () => this.ownership.dispose(), "agentLoop.transactions()");
+ 		ctx.effect(() => ctx.agents.setFactory(this), "agentLoop.setFactory()");
+ 		ctx.systemPrompt.variable("provider", (context) => context.agent?.options.provider);
+@@ -1594,6 +1638,18 @@
+ 			}, `agentLoop.resume(${id})`);
+ 		}
+ 	}
++	/** Monotonic same-process opt-in; no dispatcher is exposed. */
++	requireWorkAdmission() {
++		const state = loopWorkAdmissions.get(this.runtime);
++		if (state === void 0) throw workAdmissionFailure();
++		state.required = true;
++	}
++	/** Install exactly one deployment-owned synchronous policy. */
++	installWorkAdmission(policy) {
++		const state = loopWorkAdmissions.get(this.runtime);
++		if (state === void 0 || state.policy !== void 0 || typeof policy !== "function") throw workAdmissionFailure();
++		state.policy = policy;
++	}
+ 	/** Report a contained declarative-start failure to identity-bound consumers. */
+ 	reportConfiguredStartupFailure(configId, action, sessionId, error) {
+ 		if (!this.ownership.isActive()) return;
+@@ -1658,7 +1714,8 @@
+ 		/* v8 ignore next -- unreachable backstop, see above */
+ 		if (!this.ownership.isActive()) throw new Error("agent loop is not active");
+ 		if (callerSignal?.aborted) throw callerSignal.reason instanceof Error ? callerSignal.reason : new Error(`agent "${id}" creation aborted`, { cause: callerSignal.reason });
+-		const loopCtx = this.runtime.ctx;
++		const workRuntime = this.runtime;
++		const loopCtx = workRuntime.ctx;
+ 		const abort = new AbortController();
+ 		const onCallerAbort = () => {
+ 			abort.abort(callerSignal?.reason instanceof Error ? callerSignal.reason : new Error(`agent "${id}" creation aborted`, { cause: callerSignal?.reason }));
+@@ -1711,7 +1768,7 @@
+ 		let unfollowOwner;
+ 		try {
+ 			unfollowOwner = ownerCtx.effect(function* () {
+-				machine = new ReactLoopAgent(loopCtx, id, options, session);
++				machine = new ReactLoopAgent(loopCtx, id, options, session, (input, publish) => invokeLoopWorkAdmission(workRuntime, input, publish));
+ 				machineReady.resolve();
+ 				yield machine.scope.rawDispose;
+ 				yield () => {
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -9,7 +9,10 @@
+ import z from '@deepseek-ai/schemastery';
+ import { z as zod } from 'zod';
+ import type { Agent, AgentFactory, AgentHandle, AgentOptions, CreateAgentOptions, ResumeAgentOptions, TurnBoundaryProjection } from '@deepseek-ai/dsh-agent';
+-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session';
++import type { SessionHeader, SessionId, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session';
++import type { InboxTarget } from '@deepseek-ai/dsh-agent';
++import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
++import type { ToolExecutionInput, ToolRunContext, ToolExecutionResult } from '@deepseek-ai/dsh-tools';
+ import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts';
+ /** Host projection of agent turn and step boundaries. */
+ export declare const turnBoundaryProjectionDefinition: {
+@@ -95,6 +98,17 @@
+         resumeSessionId?: SessionId;
+     })[];
+ }
++/** Exact driver-owned phase descriptors; public events are only observations. */
++export type AgentLoopWorkAdmissionInput = Readonly<{ agent: Agent; turn: number; signal: AbortSignal }> & (
++    | Readonly<{ kind: 'turn-start' | 'turn-end'; event: Readonly<SessionEvent> }>
++    | Readonly<{ kind: 'step-start' | 'step-end'; step: number; event: Readonly<SessionEvent> }>
++    | Readonly<{ kind: 'claim'; step: number; target: InboxTarget; message: UserMessage }>
++    | Readonly<{ kind: 'request'; step: number; options: Readonly<GenerateOptions> }>
++    | Readonly<{ kind: 'tool-prepare'; step: number; input: ToolExecutionInput }>
++    | Readonly<{ kind: 'context'; step: number; exec: ToolRunContext; result: ToolExecutionResult; context: UserMessage; publish: () => void }>
++);
++/** Context policies must call their active once-only publish synchronously; all returns must be undefined. */
++export type AgentLoopWorkAdmission = (input: AgentLoopWorkAdmissionInput) => void;
+ /** Concrete agent factory and driver service. */
+ export declare class AgentLoop extends Service implements AgentFactory {
+     static inject: string[];
+@@ -109,6 +123,10 @@
+     /** Plain holder prevents Cordis from re-tracing the factory's dependency context through a caller shadow. */
+     private readonly runtime;
+     constructor(ctx: Context, config: Config);
++    /** Monotonic same-process opt-in; missing provider denies new driver work. */
++    requireWorkAdmission(): void;
++    /** Install one immutable synchronous driver policy. Not a Remote API. */
++    installWorkAdmission(policy: AgentLoopWorkAdmission): void;
+     /** Report a contained declarative-start failure to identity-bound consumers. */
+     private reportConfiguredStartupFailure;
+     /** Restore a materialized exact config identity on remount, or create it on first use. */

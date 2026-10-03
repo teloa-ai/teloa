@@ -1,0 +1,38 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-agent-loop",
+  "version": "0.2.0-rc.2",
+  "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
+      "afterSha256": "e07ebf96be179b48cb0a54b57c016a8f7895de1587a2b25ddc13b2794a7c85ca"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
+      "afterSha256": "283651ac1f7308e109f639863da8055056ce85c6342876d0f60ae0cdb1d75cd7"
+    }
+  ],
+  "patchSha256": "a776614b36e6a710a83ad9b7f5214dac0146d66cc47f82a04e764e675587b5a1",
+  "api": [
+    "AgentLoop.requireWorkAdmission",
+    "AgentLoop.installWorkAdmission",
+    "AgentLoopWorkAdmissionInput",
+    "AgentLoopWorkAdmission"
+  ],
+  "scope": {
+    "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
+    "context": "After actual tool/result commit; exact slot execution/result/context, synchronous active once-only original inbox.splice publisher",
+    "private": "Module WeakMap keyed by immutable runtime holder; per-Agent callbacks module-private; no exposed invoke/dispatch capability or new public event",
+    "free": "No require/provider retains original driver execution and context publication",
+    "cleanup": "step-end/turn-end continue when required provider missing; original committed receipt is not undone by post-commit policy failure",
+    "limitations": [
+      "Does not prove constructor seed/fork/cold resume input was authorized",
+      "ToolRuntime final body admission is separate; this only attests exact Loop-planned input before scheduler.prepare",
+      "A context policy that throws/returns Promise after sync publication cannot roll back that accepted write",
+      "Public events remain observation-only and cannot call private policy; this is not protection against arbitrary mutation of SDK private internals"
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-llm",
+  "version": "0.2.0-rc.2",
+  "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "patchSha256": "c963d1ada863247023c7c8cc9f8dab19ef32e6def9226eab1503932e5d50aef3",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "9132c8a8053ee82b9fb1ded4f98c85cf557f288a15a85c552c6b1fb319ead120",
+      "afterSha256": "1c12b6c63081db8dfa7191c9901bcefc1c181d9886ef06aa414cb7af7dbf3b25"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "c5e3c6d92c7c2cf1529ff34eeaf0af92ccee56f2e5ae0f06c36f8548736f9c55",
+      "afterSha256": "0c413f89b2701e014ddcd0cfd1083976f813766ba87bd78c98507284bb03ddb9"
+    }
+  ],
+  "api": [
+    "LlmStreamAdmission",
+    "LlmRuntime.requireStreamAdmission",
+    "LlmRuntime.installStreamAdmission"
+  ],
+  "scope": {
+    "admission": "Synchronous original GenerateOptions check after exact-model resolution and projection, immediately before adapter stream dispatch and each iterator.next",
+    "default": "No provider and not required preserves official Free behavior; required is monotonic and installed policy is unique and immutable",
+    "boundary": "Both regular and prepared calls; final dispatch after arbitrary llm/stream middleware awaits does not depend on listener order",
+    "limitations": [
+      "No input or accepted-task proof is synthesized; consumer must bind an actual trusted root and current step",
+      "Provider resolution may complete before this dispatch gate; failed admission starts no adapter stream",
+      "Already started effects are not rolled back; cancellation and stream cleanup retain official behavior"
+    ]
+  }
+}

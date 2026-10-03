@@ -14,6 +14,7 @@ import type {TaskToolPolicy,TaskToolPolicyReader} from './task-tool-guard.ts'
 import {taskRunRuntimeId} from './task-run-background.ts'
 import type {TaskRunPorts} from './task-run-driver.ts'
 import {createSessionBrowserStop} from './session-browser-stop.ts'
+import {createNativeResourceCleanupOwner} from './native-resource-cleanup.ts'
 
 type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
 type BrowserLink=Extract<TaskRunRuntimeLink,{kind:'browser'}>
@@ -51,6 +52,10 @@ export function createTaskRunBrowser(ctx:Context,links:TaskRunRuntimeLinks,readP
   const receipt=receipts.get(row.nativeId),binding=bindings.get(row.sessionId)
   return row.payload.runtimeId===runtimeId&&receipt?.link.runId===row.runId&&receipt.link.payload.requestId===row.payload.requestId&&binding?.id===row.runId&&binding.nativeRequestId===row.payload.requestId&&ctx.agents.get(SessionId(row.sessionId))===receipt.agent?receipt:undefined
  }
+ const cleanupOwner=createNativeResourceCleanupOwner(ctx,agent=>{
+  const token=authorization.getStore()
+  return !!token&&!token.blocked&&token.agent===agent&&[...receipts.values()].some(receipt=>receipt.link.payload.status==='dirty'&&sameRun(token.run,{id:receipt.link.runId,nativeRequestId:receipt.link.payload.requestId,sessionId:receipt.link.sessionId})&&owned(receipt.link)?.agent===agent)
+ })
  const policyFor=(agent:Agent,signal:AbortSignal)=>readPolicy(resolveSessionLineage(ctx,agent.session).root.id,signal)
  const permitted=(policy:TaskToolPolicy|null,run:Binding,mode:CleanupMode)=>policy?.nativeRequestId===run.nativeRequestId&&(policy.stopRequested===true||mode==='child-release'&&policy.allowedTools.includes(closeTool))&&taskToolArgumentsAllowed(policy.argumentRules,closeTool,{})
  const matches=(token:CleanupToken,exec:ToolExecution)=>token.agent===exec.agent&&token.callId===exec.callId&&exec.name===closeTool&&empty(exec.arguments)&&exec.parent===undefined
@@ -108,7 +113,7 @@ export function createTaskRunBrowser(ctx:Context,links:TaskRunRuntimeLinks,readP
    if(!binding||!sameRun(binding,run)||!permitted(await policyFor(agent,signal),binding,mode))throw denied()
    if(!await hasOwnedDirty(binding,agent))return
    const token:CleanupToken={mode,run:binding,agent,callId:ToolCallId('teloa-browser-close-'+randomUUID()),consumed:false,blocked:false}
-   const result=await authorization.run(token,()=>ctx.tools.execute({agent,name:closeTool,arguments:{},callId:token.callId,signal}))
+   const result=await authorization.run(token,()=>cleanupOwner.execute(agent,token.callId,signal))
    if(result.isError)throw denied()
   })()
   closing.set(agent,operation)
@@ -145,7 +150,7 @@ export function createTaskRunBrowser(ctx:Context,links:TaskRunRuntimeLinks,readP
   cancelling.set(run.id,pending)
   try{return await pending}finally{if(cancelling.get(run.id)===pending)cancelling.delete(run.id)}
  }
- return {bind,state,cancel,cleanup,sessionState:sessionStop.state,dispose:async()=>{await sessionStop.dispose();disposeTools();disposeStatus()}}
+ return {bind,state,cancel,cleanup,sessionState:sessionStop.state,dispose:async()=>{await sessionStop.dispose();disposeStatus();await Promise.allSettled([...closing.values()]);cleanupOwner.close();disposeTools()}}
 }
 
 /** 将资源回收纳入已有 Run 收口；不以取消回执替代官方浏览器的关闭结果。 */
