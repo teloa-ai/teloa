@@ -7,15 +7,15 @@
     {
       "path": "lib/index.js",
       "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
-      "afterSha256": "63a7fa298a400cede51908ea25d9d226354b9102905d93897145e3493b3be985"
+      "afterSha256": "6cf4eaf7564e01beba53adce7732ce32f757e03c8bf0d6b25f53a76c938f49e6"
     },
     {
       "path": "lib/types/index.d.ts",
       "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
-      "afterSha256": "c696d9872b24a419b3ed476f5fc00a20f2b087fbccaf54fdcf82f4b7a5a719aa"
+      "afterSha256": "9700b720620c72443574a9065454cdf6a9651c751a4488bc723b0d882c611f15"
     }
   ],
-  "patchSha256": "c1adb1897f873c9de509d64df746b9fde4806466b7a12c5126774a8629007024",
+  "patchSha256": "9925b71f70ab908fc80c027e8ad7981914282b1671059f05761ff29cd90c7b94",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
@@ -31,7 +31,11 @@
     "AgentLoop.installInputCheckpoint",
     "AgentLoopInputCheckpointInput",
     "AgentLoopInputCheckpointLease",
-    "AgentLoopInputCheckpoint"
+    "AgentLoopInputCheckpoint",
+    "AgentLoop.requireProgressCheckpoint",
+    "AgentLoop.installProgressCheckpoint",
+    "AgentLoopProgressCheckpointInput",
+    "AgentLoopProgressCheckpoint"
   ],
   "scope": {
     "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
@@ -50,6 +54,8 @@
     "restore": "SessionPersistence.openWithAdmission read-only preparation under retained writer/OS ownership before migration; exact frozen validated header/events, inherited count and official fused signal; abortable async policy returning a frozen synchronous assertCurrent lease; checked before first closer write, construction, setup/commit/publication awaits and final pending wake",
     "restoreCleanup": "Private pending-restore state preserves the durable Inbox on failed or cancelled admission-enabled restoration, including owner/factory disposal; successful activation removes that state, so subsequent user disposal and unguarded Free cleanup retain original cancellation semantics.",
     "restoreWrites": "Admission-enabled restore passes the official fused signal to closer and both seed/setup suffix appends and races their waits. Cancellation abandons adapter continuations; the owning lifecycle still awaits the original handle.close(), including any in-flight backend mutation chain. Committed writes are not rolled back; unguarded Free and fresh/fork appends retain their original waits.",
-    "inputCheckpoint": "Before Inbox removal: official SessionStore live drain, owned writer flush/read and exact frozen prefix; async once-installed private policy plus frozen synchronous lease; waiting appends remain queued outside the selected batch; cancellation/rejection does not claim pending input. No handle or replay dispatcher is exposed."
+    "inputCheckpoint": "Before Inbox removal: official SessionStore live drain, owned writer flush/read and exact frozen prefix; async once-installed private policy plus frozen synchronous lease; waiting appends remain queued outside the selected batch; cancellation/rejection does not claim pending input. No handle or replay dispatcher is exposed.",
+    "progressCheckpoint": "Factory-owned flush/read snapshots after claim, before model and tool dispatch, and before step/turn cleanup; private once-installed async policy with exact synchronous lease. No-policy Free has no added IO or await.",
+    "inputShutdown": "An enabled durable input checkpoint retains unclaimed Inbox during owner/factory disposal. Explicit user cancellation and unguarded Free retain their original semantics."
   }
 }

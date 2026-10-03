@@ -561,7 +561,7 @@ test('补丁声明可编译：deep readonly候选、可async策略、同步asser
  assert.equal(ConfigSchema({agents: [], requireRestoreAdmission: true}).requireRestoreAdmission, true)
  assert.throws(() => ConfigSchema({agents: [], requireRestoreAdmission: 'true'}))
  const path = join(pkg.root, 'restore-type-contract.ts')
- await writeFile(path, `import {AgentLoop, type Config, type AgentLoopRestoreAdmission} from './lib/types/index.js'
+ await writeFile(path, `import {AgentLoop, type Config, type AgentLoopRestoreAdmission, type AgentLoopProgressCheckpoint} from './lib/types/index.js'
 declare const loop: AgentLoop
 const config: Partial<Config> = {requireRestoreAdmission: true}
 // @ts-expect-error Config only accepts boolean
@@ -585,6 +585,19 @@ loop.installRestoreAdmission(policy)
 loop.installRestoreAdmission(() => Object.freeze({async assertCurrent() {}}))
 // @ts-expect-error no public dispatch capability
 loop.dispatchRestoreAdmission({})
+const progress: AgentLoopProgressCheckpoint = async input => {
+ // @ts-expect-error readonly phase
+ input.phase = 'model'
+ // @ts-expect-error deep readonly snapshot
+ input.snapshot.header.id = input.agent.id
+ return Object.freeze({assertCurrent() {return undefined}})
+}
+loop.requireProgressCheckpoint()
+loop.installProgressCheckpoint(progress)
+// @ts-expect-error async progress assertions are not leases
+loop.installProgressCheckpoint(() => Object.freeze({async assertCurrent() {}}))
+// @ts-expect-error progress dispatcher is private
+loop.dispatchProgressCheckpoint({})
 `)
  const program = ts.createProgram([path], {noEmit: true, strict: true, skipLibCheck: true,
   module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, target: ts.ScriptTarget.ES2022,

@@ -8,7 +8,7 @@ import type {WorkAccessLease} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
-import type {NativeInputCheckpoint,NativeInputCheckpointInput} from './native-input-checkpoint.ts'
+import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput} from './native-input-checkpoint.ts'
 
 type Step={number:number;signal:AbortSignal}
 type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<NativeInputAcceptance>;step:Step|undefined}
@@ -53,7 +53,7 @@ function install(receiver:object,requireName:string,installName:string,policy:un
  * 权限证明只来自最终受理回执和官方私有执行点；公共事件与归因标记不授予执行许可。
  * 官方 Loop/Tools 仍负责运行、调度、持久化、结果与取消；这里仅核对实际对象与许可。
  */
-export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint){
+export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint,progress?:NativeProgressCheckpoint){
  if(installed.has(ctx))throw denied()
  const pending=new WeakMap<UserMessage,PendingInput>(),turns=new Map<Agent,Turn>()
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
@@ -66,6 +66,13 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  const cancel=(agent:Agent)=>{try{agent.cancel({kind:'hook',reason},{keepInbox:true})}catch{}}
  const target=(turn:Turn)=>{if(closed||ctx.agents.get(turn.agent.id)!==turn.agent||turn.agent.session!==turn.session||sessions().get(turn.agent.id)!==turn.session)throw denied()}
  const fixedRoots=(roots:readonly NativeInputAcceptance[])=>{if(closed||roots.length===0)throw denied();for(const receipt of roots)assertNativeInputAcceptanceCurrent(receipt)}
+ const rootIdentities=(roots:readonly NativeInputAcceptance[]):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
+  assertNativeInputAcceptanceCurrent(receipt)
+  const event=receipt.event
+  if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)throw denied()
+  const message=event.data.inserted[0]!,rpcId=Reflect.get(message.source,'rpcId'),identity=nativeInputIdentity(message,typeof rpcId==='string'?rpcId:undefined)
+  return Object.freeze({sessionId:receipt.session.id,messageId:identity.messageId,nativeRequestId:identity.nativeRequestId??null,payloadSha256:identity.payloadSha256})
+ }))
  const current=(turn:Turn,step?:Step)=>{
   try{target(turn);fixedRoots([...turn.roots]);target(turn);if(turns.get(turn.agent)!==turn||step!==undefined&&turn.step!==step)throw denied();turn.signal.throwIfAborted();step?.signal.throwIfAborted()}
   catch{cancel(turn.agent);throw denied()}
@@ -182,7 +189,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  const loopInjection=ctx.inject(['agentLoop','sessionProjections'],child=>{
   try{
    const loop=Reflect.get(child,'agentLoop') as object,loopIdentity=Reflect.get(loop,'runtime') as unknown
-   if(checkpoint)install(loop,'requireInputCheckpoint','installInputCheckpoint',async(request:Omit<NativeInputCheckpointInput,'assertCurrent'>)=>{
+   if(checkpoint)install(loop,'requireInputCheckpoint','installInputCheckpoint',async(request:Omit<NativeInputCheckpointInput,'assertCurrent'|'roots'>)=>{
     const turn=turns.get(request.agent),inputs=request.messages.map(message=>pending.get(message))
     const assertCurrent=()=>{
      try{
@@ -197,9 +204,23 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
      }catch{cancel(request.agent);throw denied()}
     }
     assertCurrent()
-    await checkpoint(Object.freeze({...request,assertCurrent}))
+    const roots=rootIdentities(inputs.flatMap(input=>input?.roots??[]))
+    await checkpoint(Object.freeze({...request,roots,assertCurrent}))
     assertCurrent()
     return Object.freeze({assertCurrent})
+   })
+   if(progress)install(loop,'requireProgressCheckpoint','installProgressCheckpoint',async(request:Omit<NativeProgressCheckpointInput,'assertCurrent'|'roots'>)=>{
+    const turn=turns.get(request.agent),step=turn?.step
+    const assertCurrent=()=>{
+     try{
+      if(!turn||turn.number!==request.turn||turn.signal!==request.signal||turns.get(request.agent)!==turn||turn.step!==step)throw denied()
+      current(turn,step);request.signal.throwIfAborted()
+     }catch{cancel(request.agent);throw denied()}
+    }
+    assertCurrent()
+    const roots=rootIdentities([...turn!.roots])
+    await progress(Object.freeze({...request,roots,assertCurrent}))
+    assertCurrent();return Object.freeze({assertCurrent})
    })
    install(loop,'requireRestoreAdmission','installRestoreAdmission',(request:RestoreRequest)=>{
     // 未发布的载体通过官方投影读取 Inbox；不生成无关客户端视图或新的受理证明。

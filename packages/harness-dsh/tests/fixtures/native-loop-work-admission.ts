@@ -25,6 +25,8 @@ export type LoopWorkRuntime=AgentLoop&{
  installWorkAdmission:(policy:LoopWorkPolicy)=>void
  requireInputCheckpoint:()=>void
  installInputCheckpoint:(policy:(input:unknown)=>unknown)=>void
+ requireProgressCheckpoint:()=>void
+ installProgressCheckpoint:(policy:(input:unknown)=>unknown)=>void
 }
 export type LoopWorkPackage=typeof import('@deepseek-ai/dsh-agent-loop')&{AgentLoop:new(ctx:Context,config:import('@deepseek-ai/dsh-agent-loop').Config)=>LoopWorkRuntime}
 export const loopWorkCompat='dsh-agent-loop-0.2.0-rc.2-work-admission'
