@@ -6,7 +6,8 @@ export type WorkAccessRequest=
  |{kind:'conversation-work-reserve';ownerId:string;requestId:string;sessionId:string}
  |{kind:'plan-occurrence';ownerId:string;planId:string;occurrenceId:string;source:'manual'|'schedule'}
  |{kind:'native-input';sessionId:string;messageId:string;nativeRequestId:string|null;payloadSha256:string;producer:'prompt'|'queue'|'subagent'|'schedule'|'task-run';contextSha256:string}
-export type WorkAccessLease={assertCurrent:()=>void}
+/** 续作复核由策略区分；未提供时保持新工作复核语义。 */
+export type WorkAccessLease={assertCurrent:()=>void;assertContinuationCurrent?:()=>void}
 export type WorkAccessPolicy=(request:Readonly<WorkAccessRequest>)=>Promise<WorkAccessLease>
 const denied=()=>new WorkError('teloa/forbidden','当前暂不能开始新工作，请核对运行许可后重试。')
 const unavailable=()=>new WorkError('teloa/unavailable','新工作准入策略尚未就绪，请稍后重试。')
@@ -29,20 +30,22 @@ export class WorkAccess{
   let raw:WorkAccessLease
   try{raw=policy?await policy(fixed):{assertCurrent:()=>{}}}catch{throw denied()}
   if(!raw||typeof raw!=='object')throw denied()
-  let assertion:WorkAccessLease['assertCurrent']
-  try{assertion=raw.assertCurrent}catch{throw denied()}
-  if(typeof assertion!=='function')throw denied()
-  const lease=Object.freeze({assertCurrent:()=>{
+  let assertion:WorkAccessLease['assertCurrent'],continuation:WorkAccessLease['assertContinuationCurrent']
+  try{assertion=raw.assertCurrent;continuation=raw.assertContinuationCurrent}catch{throw denied()}
+  if(typeof assertion!=='function'||(continuation!==undefined&&typeof continuation!=='function'))throw denied()
+  const wrap=(check:()=>void)=>()=>{
    if(this.epoch!==epoch)throw denied()
    try{
-    const returned:unknown=assertion.call(raw)
+    const returned:unknown=Reflect.apply(check,raw,[])
     if(returned!==undefined){
      // JS 策略也不能把最终同步闸变成未等待的 Promise；接住拒绝再关闭准入。
      void Promise.resolve(returned).catch(()=>{})
      throw denied()
     }
+    if(this.epoch!==epoch)throw denied()
    }catch{throw denied()}
-  }})
+  }
+  const lease=Object.freeze({assertCurrent:wrap(assertion),assertContinuationCurrent:wrap(continuation??assertion)})
   lease.assertCurrent()
   return lease
  }
