@@ -6,9 +6,13 @@ import {workAccess} from '@teloa/backend'
 import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore} from './native-input-checkpoint.ts'
 
 export type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore,NativeInputRestoreInput,NativeInputRestoreLease} from './native-input-checkpoint.ts'
+export {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
+export type {NativeInputRecoveryCandidate,NativeInputRecoveryCandidateInput} from './native-input-recovery-candidate.ts'
 export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;restore?:NativeInputRestore}>
 /** 固定宿主在装配前核验真实冷恢复契约，旧核心不能静默忽略恢复配置。 */
 export const nativeInputRestoreVersion=1
+/** 固定宿主在发现待办前核验共享只读筛选契约；候选数据不是恢复授权。 */
+export const nativeInputRecoveryCandidateVersion=1
 
 declare module '@deepseek-ai/cordis'{
  interface Context{readonly teloaNativeInput:TeloaNativeInput}

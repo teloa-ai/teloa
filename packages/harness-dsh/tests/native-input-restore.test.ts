@@ -5,7 +5,7 @@ import {join} from 'node:path'
 import {tmpdir} from 'node:os'
 import {SessionId,SessionSeq,type SessionEvent} from '@deepseek-ai/dsh-session'
 import {createUserMessage} from '@deepseek-ai/dsh-llm'
-import {TeloaNativeInput,type NativeInputRestore,type NativeInputRestoreInput,type NativeInputRestoreLease} from '../src/native-input-provider.ts'
+import {TeloaNativeInput,nativeInputRecoveryCandidate,type NativeInputRestore,type NativeInputRestoreInput,type NativeInputRestoreLease} from '../src/native-input-provider.ts'
 import {nativeInputIdentity} from '../src/native-input-access.ts'
 import {nativeProviderKernel} from './fixtures/native-input-provider.ts'
 import {HotAdapter,textAnswer,hotGate} from './fixtures/native-hot-causality.ts'
@@ -60,6 +60,21 @@ for(const count of [1,2])for(const interrupted of [false,true])test(`真实 JSON
 test('无恢复策略：公开 roots JSON 和创建通知不授予 pending 许可，首写前保持原日志',options,async t=>{
  const f=await fixture(t);await f.seed();const before=await f.bytes()
  await assert.rejects(f.resume(),denied);assert.deepEqual(await f.bytes(),before);assert.equal(f.adapter.requests.length,0);await f.reopened()
+})
+
+test('共享候选数据不能充当部署恢复租约；真实 JSONL 首写前拒绝且零模型',options,async t=>{
+ let calls=0
+ const f=await fixture(t,(input=>{
+  calls++
+  const candidate=nativeInputRecoveryCandidate({snapshot:input.snapshot,inbox:{'next-turn':input.messages,'next-step':[]}})
+  assert.ok(candidate)
+  assert.deepEqual(candidate.roots,roots(input))
+  return candidate
+ }) as unknown as NativeInputRestore)
+ await f.seed({count:2});const before=await f.bytes()
+ await assert.rejects(f.resume(),denied);assert.equal(calls,1)
+ assert.deepEqual(await f.bytes(),before);assert.equal(f.adapter.requests.length,0);assert.equal(f.ctx.agents.get(f.id),undefined)
+ await f.reopened()
 })
 
 for(const kind of ['next-step','inherited','claimed'] as const)test(`${kind} 派生或未知成果不因有根策略而重放`,options,async t=>{

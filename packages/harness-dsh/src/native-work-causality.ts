@@ -9,6 +9,7 @@ import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
 import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
+import {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
 
 type Step={number:number;signal:AbortSignal}
 type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
@@ -269,23 +270,11 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     assertOwner()
     // 空闲日志可读，但本证明不能授权任何新输入。派生 next-step 必须另有持久因果协议。
     if(!inbox['next-turn'].length&&!inbox['next-step'].length)return Object.freeze({assertCurrent:assertOwner})
-    if(!restore||inbox['next-step'].length||recovering.has(request.sessionId))throw denied()
-    const messages=Object.freeze([...inbox['next-turn']]),events:SessionEvent[]=[],roots:NativeInputRoot[]=[]
-    // 已领取的未结束轮次可能有未知外部成果，不因仍有其他排队消息而重放。
-    let activeTurn=false,claimed=false
-    for(const event of request.events){
-     if(event.type==='turn/start'){activeTurn=true;claimed=false}
-     else if(event.type==='turn/end'){activeTurn=false;claimed=false}
-     else if(activeTurn&&event.type==='agent/inbox/spliced'&&(event.data.removedCount??0)>0)claimed=true
-    }
-    if(activeTurn&&claimed)throw denied()
-    for(const message of messages){
-     const matches=request.events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.some(inserted=>inserted.id===message.id))
-     const event=matches[0]
-     if(matches.length!==1||!event||event.type!=='agent/inbox/spliced'||event.seq<request.inheritedEventCount||event.data.target!=='next-turn'||event.data.inserted.length!==1||message.source.kind==='tool'||canonical(event.data.inserted[0])!==canonical(message))throw denied()
-     events.push(event);roots.push(messageRoot(request.sessionId,message))
-    }
-    const signal=AbortSignal.any([request.signal,recoveryAbort.signal]),snapshot=Object.freeze({header:request.header,events:request.events,inheritedEventCount:request.inheritedEventCount})
+    if(!restore||recovering.has(request.sessionId))throw denied()
+    const snapshot=Object.freeze({header:request.header,events:request.events,inheritedEventCount:request.inheritedEventCount})
+    const dataCandidate=nativeInputRecoveryCandidate({snapshot,inbox})
+    if(!dataCandidate||dataCandidate.sessionId!==request.sessionId)throw denied()
+    const {messages,roots,acceptedEvents:events}=dataCandidate,signal=AbortSignal.any([request.signal,recoveryAbort.signal])
     const candidate=Object.freeze({sessionId:request.sessionId,snapshot,messages,signal})
     let onAbort:()=>void=()=>{}
     const aborted=new Promise<never>((_resolve,reject)=>{onAbort=()=>reject(denied());signal.addEventListener('abort',onAbort,{once:true})})
