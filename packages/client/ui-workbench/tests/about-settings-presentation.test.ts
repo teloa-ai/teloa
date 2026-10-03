@@ -60,16 +60,17 @@ test('关于页列出 Max Luo、Morgan Chen、Caleb Pan，联系方式只保留�
   assert.equal((view.match(/className=\{css\.contactLinks\}/g)||[]).length,1)
 })
 
-test('版本卡片区分当前开源版与规划中的专业客户端、托管和企业私有化部署',async()=>{
+test('版本卡片保持三个版本，当前身份由宿主提供；Cloud 明确归于 Pro',async()=>{
  const [view,styles,rows]=await Promise.all([
   readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8'),
   readFile(new URL('../src/client/AboutSettings.module.css',import.meta.url),'utf8'),
   readFile(new URL('../src/client/i18n/locales/about-plans.ts',import.meta.url),'utf8'),
  ])
  const names=[...view.matchAll(/name:'(Free|Pro|Cloud|Enterprise)'/g)].map(match=>match[1])
- assert.deepEqual(names,['Free','Pro','Cloud','Enterprise'])
- assert.equal((view.match(/current:true/g)||[]).length,1)
- assert.equal((view.match(/badge:'about.plans.planned'/g)||[]).length,3)
+ assert.deepEqual(names,['Free','Pro','Enterprise'])
+ assert.match(view,/card\.name===application\.product/)
+ assert.match(rows,/Cloud 是 Pro 的云端执行能力，不是独立版本/)
+ assert.match(rows,/Pro 的云端、手机和 Web 能力仍在开发/)
  assert.doesNotMatch(view,/LIMIT_ROWS|planLimits|name:'Team'/)
  assert.match(rows,/企业私有化部署/)
  for(const feature of ["多种智能体引擎","分布式部署","安全合规","操作审计","安全网关"])assert.ok(rows.includes(feature),feature)

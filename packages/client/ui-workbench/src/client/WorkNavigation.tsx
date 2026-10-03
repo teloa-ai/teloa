@@ -9,6 +9,7 @@ import { presentConversations } from './work-presentation.js'
 import lightLogo from '../brand/teloa-light.svg'
 import darkLogo from '../brand/teloa-dark.svg'
 import {personalProfile} from './personal-profile.js'
+import {applicationPresentation} from './application-presentation.js'
 import {businessShortcutKey,type BusinessShortcut} from './personal-business-shortcuts.js'
 import type {BusinessTarget} from './business-preview.js'
 import {useI18n} from './i18n/provider.js'
@@ -33,6 +34,7 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
   const managed=useSyncExternalStore(management.subscribe,management.getSnapshot)
   const native=useSessions(value=>value.byId)
   const profile=useSyncExternalStore(personalProfile.subscribe,personalProfile.getSnapshot,personalProfile.getSnapshot)
+  const application=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getSnapshot,applicationPresentation.getSnapshot)
   const [error,setError]=useState<string>(),[opening,setOpening]=useState(false)
   const recentWorkHidden=browserRecentWorkHiddenStore()
   const [hiddenRecentIds,setHiddenRecentIds]=useState<readonly string[]>(()=>recentWorkHidden.read())
@@ -54,7 +56,7 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
   const activeShortcutKey=view==='spaces'&&businessTarget?businessShortcutKey({scope:businessTarget.scope,section:businessTarget.section,...(businessTarget.section==='dashboards'&&businessTarget.dashboardId?{dashboardId:businessTarget.dashboardId}:{})}):undefined
   return <>
   <aside className={css.navigation} aria-label={t('navigation.main')}>
-    <div className={css.brand}><div className={css.brandIdentity}><div className={css.brandHeading}><img src={colorScheme==='dark'?darkLogo:lightLogo} alt="Teloa"/><span className={css.brandTier}>{t('edition.tier.free')}</span></div><span className={css.brandStudio}>AI-Native Team Studio</span></div><button type="button" className={css.mobileClose} aria-label={t('shell.navigation.close')} onClick={actions.closeNavigation}><X size={17}/></button></div>
+    <div className={css.brand}><div className={css.brandIdentity}><div className={css.brandHeading}><img src={colorScheme==='dark'?darkLogo:lightLogo} alt="Teloa"/><span className={css.brandTier}>{application.product}</span></div><span className={css.brandStudio}>AI-Native Team Studio</span></div><button type="button" className={css.mobileClose} aria-label={t('shell.navigation.close')} onClick={actions.closeNavigation}><X size={17}/></button></div>
     <div ref={newWorkGroup} className={css.newWorkGroup}>
       <button ref={newWorkTrigger} type="button" className={css.newWork} aria-label={t('navigation.new')} aria-haspopup="menu" aria-expanded={newWorkMenuOpen} aria-controls="teloa-new-work-menu" disabled={creating} onClick={()=>setNewWorkMenuOpen(value=>!value)}><Plus size={16} aria-hidden/><span>{t(creating?'navigation.creating':'navigation.new')}</span></button>
       {newWorkMenuOpen&&<div ref={newWorkMenu} id="teloa-new-work-menu" className={css.newWorkMenu} role="menu" aria-label={t('navigation.moreCreate')} onKeyDown={event=>{

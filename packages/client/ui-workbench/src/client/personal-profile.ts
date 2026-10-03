@@ -1,4 +1,5 @@
-export type PersonalProfile={displayName:string}
+import {applicationPresentation} from './application-presentation.ts'
+export type PersonalProfile={displayName:string;email?:string;managed?:true}
 
 const key='teloa.personal-profile/v1'
 export const defaultPersonalDisplayName='Max'
@@ -11,6 +12,8 @@ export function normalizePersonalDisplayName(value:string):string{
 }
 
 function read():PersonalProfile{
+  const account=applicationPresentation.getSnapshot().account
+  if(account)return {...account,managed:true}
   if(typeof window==='undefined')return {displayName:defaultPersonalDisplayName}
   try{
     const value=JSON.parse(window.localStorage.getItem(key)??'null') as unknown
@@ -22,6 +25,7 @@ function read():PersonalProfile{
 let snapshot=read()
 const listeners=new Set<()=>void>()
 const refresh=()=>{const next=read();if(next.displayName===snapshot.displayName)return;snapshot=next;for(const listener of listeners)listener()}
+applicationPresentation.subscribe(()=>{snapshot=read();for(const listener of listeners)listener()})
 
 export const personalProfile={
   subscribe(listener:()=>void){
@@ -31,6 +35,7 @@ export const personalProfile={
   },
   getSnapshot:()=>snapshot,
   setDisplayName(value:string){
+    if(applicationPresentation.getSnapshot().account)throw Error('账号姓名由账号服务管理。')
     const displayName=normalizePersonalDisplayName(value)
     if(typeof window!=='undefined')window.localStorage.setItem(key,JSON.stringify({displayName}))
     if(displayName===snapshot.displayName)return

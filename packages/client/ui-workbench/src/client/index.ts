@@ -124,6 +124,7 @@ import { createConnectorProbeApi } from './connector-probe-api.js'
 import { createBusinessSpaceApi } from './business-space-api.js'
 import { createBusinessScopeApi } from './business-scope-api.js'
 import { configureEdition, createEditionApi } from './edition.js'
+import {applicationPresentation} from './application-presentation.js'
 import {createBusinessTaskApi} from './business-task-api.js'
 import {createPageCreateApi} from './page-create-api.js'
 import {readPageCreateAtomicSkillBody} from './page-create-skill-content.js'
@@ -160,7 +161,9 @@ const RAIL_TAB_TITLE_KEYS:Readonly<Record<TeloaRailKind,'sidebarRight.tab.task'|
 export const name = 'teloa-ui-workbench'
 export const inject = ['slots','theme','connection','locale','remote','remote.pluginManager','remote.agentPresets','uiSession']
 
-export function apply(ctx: Context): void {
+export async function apply(ctx: Context): Promise<void> {
+  const releasePresentation=await applicationPresentation.configure(window.teloaApplication)
+  ctx.effect(()=>releasePresentation)
   ctx.effect(()=>{
     const original=Array.from(document.head.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]'))
     const snapshots=original.map(link=>({link,href:link.getAttribute('href'),type:link.getAttribute('type'),sizes:link.getAttribute('sizes')}))

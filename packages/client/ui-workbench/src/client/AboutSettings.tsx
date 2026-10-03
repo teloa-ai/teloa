@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,type KeyboardEvent as ReactKeyboardEvent,type MouseEvent as ReactMouseEvent} from 'react'
+import {useEffect,useRef,useState,useSyncExternalStore,type KeyboardEvent as ReactKeyboardEvent,type MouseEvent as ReactMouseEvent} from 'react'
 import {Check,Code2,Globe,Heart,Mail,MessageCircle,MessageSquare,ScanLine,X} from 'lucide-react'
 import { BrandLogo,type BrandTheme } from './BrandLogo.js'
 import wechatQrCode from '../assets/about/wechat-official-account.jpg'
@@ -10,18 +10,19 @@ import {useI18n} from './i18n/provider.js'
 import {supportQrKind} from './support-qr.js'
 import {TeloaFeedbackForm} from './TeloaFeedback.js'
 import {TeloaFeedbackModel} from './TeloaFeedbackClient.js'
+import {applicationPresentation} from './application-presentation.js'
 
 type QrKind='author'|'community'|'support'
 
 // 版本说明与当前能力分开标记；尚未发布的方案不提供购买入口。
 const PLAN_CARDS=[
-  {id:'free',name:'Free',current:true,badge:'about.plans.card.free.badge',tagline:'about.plans.card.free.tagline',items:['about.plans.card.free.item1','about.plans.card.free.item2','about.plans.card.free.item3','about.plans.card.free.item4']},
-  {id:'pro',name:'Pro',current:false,badge:'about.plans.planned',tagline:'about.plans.card.pro.tagline',items:['about.plans.card.pro.item1','about.plans.card.pro.item2','about.plans.card.pro.item3','about.plans.card.pro.item4','about.plans.card.pro.item5','about.plans.card.pro.item6']},
-  {id:'cloud',name:'Cloud',current:false,badge:'about.plans.planned',tagline:'about.plans.card.cloud.tagline',items:['about.plans.card.cloud.item1','about.plans.card.cloud.item2','about.plans.card.cloud.item3','about.plans.card.cloud.item4']},
-  {id:'enterprise',name:'Enterprise',current:false,badge:'about.plans.planned',tagline:'about.plans.card.enterprise.tagline',items:['about.plans.card.enterprise.item1','about.plans.card.enterprise.item2','about.plans.card.enterprise.item3','about.plans.card.enterprise.item4','about.plans.card.enterprise.item5','about.plans.card.enterprise.item6']},
+  {id:'free',name:'Free',tagline:'about.plans.card.free.tagline',items:['about.plans.card.free.item1','about.plans.card.free.item2','about.plans.card.free.item3','about.plans.card.free.item4']},
+  {id:'pro',name:'Pro',tagline:'about.plans.card.pro.tagline',items:['about.plans.card.pro.item1','about.plans.card.pro.item2','about.plans.card.pro.item3','about.plans.card.pro.item4','about.plans.card.pro.item5','about.plans.card.pro.item6']},
+  {id:'enterprise',name:'Enterprise',tagline:'about.plans.card.enterprise.tagline',items:['about.plans.card.enterprise.item1','about.plans.card.enterprise.item2','about.plans.card.enterprise.item3','about.plans.card.enterprise.item4','about.plans.card.enterprise.item5','about.plans.card.enterprise.item6']},
 ] as const
 
 export function AboutSettings({theme}:{theme:BrandTheme}){
+  const application=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getSnapshot,applicationPresentation.getSnapshot)
   const {locale,t}=useI18n()
   const showWechat=supportQrKind(locale)==='wechat'
   const [activeQr,setActiveQr]=useState<QrKind>()
@@ -37,8 +38,8 @@ export function AboutSettings({theme}:{theme:BrandTheme}){
         <h2>{t('about.plans.title')}</h2>
       </div>
       <div className={css.plansGrid}>
-        {PLAN_CARDS.map(card=><article key={card.id} className={card.current?`${css.planCard} ${css.planCardCurrent}`:css.planCard}>
-          <span className={css.planBadge}>{t(card.badge)}</span>
+        {PLAN_CARDS.map(card=><article key={card.id} className={card.name===application.product?`${css.planCard} ${css.planCardCurrent}`:css.planCard}>
+          <span className={css.planBadge}>{t(card.name===application.product?(card.name==='Free'?'about.plans.card.free.badge':'about.plans.current'):card.name==='Free'?'about.plans.available':'about.plans.planned')}</span>
           <strong className={css.planName}>{card.name}</strong>
           {'tagline' in card&&<p className={css.planTagline}>{t(card.tagline)}</p>}
           <ul>{card.items.map(item=><li key={item}><Check size={14} aria-hidden/>{t(item)}</li>)}</ul>

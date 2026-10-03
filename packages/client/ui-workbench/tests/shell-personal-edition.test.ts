@@ -42,6 +42,7 @@ function mount(file:string,initialProps:Record<string,unknown>){
   if(id==='react')return React
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id.endsWith('personal-profile.js'))return {personalProfile:{subscribe:()=>()=>{},getSnapshot:()=>({displayName:'Max'})}}
+  if(id.endsWith('application-presentation.js'))return {applicationPresentation:{subscribe:()=>()=>{},getSnapshot:()=>({product:'Free',account:null})}}
   if(id.endsWith('provider.js'))return {useI18n:()=>({locale:'zh-CN',t:(key:string,params?:Record<string,unknown>)=>params?key+':'+JSON.stringify(params):key})}
   if(id.endsWith('errors.js'))return {localizeWorkError:(_:string,value:unknown)=>String(value)}
   if(id.endsWith('work-presentation.js'))return {presentConversations:()=>[]}

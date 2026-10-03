@@ -1,4 +1,5 @@
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import {applicationPresentation} from './application-presentation.ts'
 export type BrandLocale={bind:(namespace:string)=>Translate;getSnapshot:()=>{active:string}}
 const taskTeamCopy:Record<string,readonly [string,string]>={
   trigger:['执行小组','Task team'],
@@ -29,9 +30,9 @@ export function installConversationBrand(locale:BrandLocale):()=>void {
         if(key==='failure')return (zh?'执行小组记录暂不可用：':'Task team record is unavailable: ')+String(params?.message??'')
         return native(key,params)
       }
-      // 接管工作室品牌与欢迎区档位徽标（用户 2026-09-20 裁定：宿主自带的「预览版」改为 Free，与左栏档位胶囊一致；档位名四语通用不翻译）。
+      // 接管工作室品牌与欢迎区档位徽标，名称来自同一宿主展示身份。
       if(enabled&&key==='hero.headline')return 'AI-Native Team Studio'
-      if(enabled&&key==='hero.preview')return 'Free'
+      if(enabled&&key==='hero.preview')return applicationPresentation.getSnapshot().product
       // 原生持久引用可能已缩放或转为静态帧，不能把它标成未经处理的原图。
       if(enabled&&key==='image.preview')return zh?'图片预览':'Image preview'
       if(enabled&&key==='image.closePreview')return zh?'关闭图片预览':'Close image preview'
