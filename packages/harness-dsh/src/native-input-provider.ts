@@ -36,7 +36,8 @@ export function requireNativeInputProvider(ctx:Context):TeloaNativeInput{
 /**
  * 一个物理宿主共享一个最终 Session guard 与一组固定发布策略。
  * 使用官方 Service/inject 装配；只接已有 Agent 的新输入，不授予 seed/fork/cold 续作许可。
- * 初次 Agent 发布时拒绝没有受理因果证明的待处理 Inbox；seed 可能已落存，不声称撤销持久化。
+ * 冷恢复在官方读日志后、首个修复写入前拒绝待处理 Inbox；未安装恢复门时不发布执行能力。
+ * 初次 Agent 发布仍拒绝没有受理因果证明的 pending seed/fork；seed 可能已落存。
  * Store 的 required 策略单向固定；卸载服务后维持关闭，重新运行须重建物理宿主。
  */
 export class TeloaNativeInput extends Service{

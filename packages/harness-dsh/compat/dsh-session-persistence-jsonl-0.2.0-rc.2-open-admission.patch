@@ -1,0 +1,208 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1944,13 +1944,14 @@
+ 	if (bytes > 0) await write(pending.length === 1 ? pending[0] : Buffer.concat(pending, bytes));
+ }
+ /** Encode directly into one synced stage without a whole-artifact row or byte buffer. */
+-async function writeSyncedTemp(currentPath, suffix, compression, artifact, format, signal, internals) {
++async function writeSyncedTemp(currentPath, suffix, compression, artifact, format, signal, internals, assertCurrent) {
+ 	signal?.throwIfAborted();
+ 	let path;
+ 	let handle;
+ 	for (;;) {
+ 		path = join(dirname(currentPath), `session.migration.${internals.randomToken()}${suffix}.tmp`);
+ 		try {
++			assertCurrent?.();
+ 			handle = await internals.fs.open(path, "wx", 384);
+ 			break;
+ 		} catch (error) {
+@@ -1961,6 +1962,7 @@
+ 	const hash = createHash("sha256");
+ 	let bytes = 0;
+ 	const write = async (chunk) => {
++		assertCurrent?.();
+ 		await handle.writeFile(chunk);
+ 		hash.update(chunk);
+ 		bytes += chunk.length;
+@@ -2070,17 +2072,22 @@
+ 		}
+ 	};
+ }
+-async function publishPreparedMigration(options, suffix, artifact, sourceIdentity, internals) {
++async function publishPreparedMigration(options, suffix, artifact, sourceIdentity, internals, admission) {
+ 	await scheduler.yield();
++	admission?.assertCurrent();
+ 	const { sourcePath, currentPath, compression, verifyCurrentFile } = options;
+ 	const eventCount = artifact.events.length;
+-	let staged = await writeSyncedTemp(currentPath, suffix, compression, artifact, options.format, void 0, internals);
++	let staged = await writeSyncedTemp(currentPath, suffix, compression, artifact, options.format, admission?.signal, internals, admission?.assertCurrent);
+ 	try {
+ 		const verifiedStage = await verifyCurrentFile(staged.path, compression, artifact.header.id, eventCount);
+ 		if (verifiedStage.bytes !== staged.bytes || verifiedStage.digest !== staged.digest) throw new Error("staged session generation changed during verification");
++		admission?.assertCurrent();
+ 		await internals.barrier("before-source-check", 1);
++		admission?.assertCurrent();
+ 		await options.validateRelatedSources?.();
++		admission?.assertCurrent();
+ 		if (identity(await internals.fs.stat(sourcePath)) !== identity(sourceIdentity)) throw new JsonlGenerationSourceChangedError(sourcePath);
++		admission?.assertCurrent();
+ 		const published = await publishCurrentExclusive(staged.path, currentPath, internals);
+ 		if (published && internals.platform === "win32") staged = {
+ 			...staged,
+@@ -2134,8 +2141,8 @@
+ 	return {
+ 		sourceIdentity,
+ 		artifact,
+-		publish() {
+-			if (publication === void 0) publication = publishPreparedMigration(options, suffix, artifact, sourceIdentity, internals);
++		publish(admission) {
++			if (publication === void 0) publication = publishPreparedMigration(options, suffix, artifact, sourceIdentity, internals, admission);
+ 			return publication;
+ 		}
+ 	};
+@@ -2363,6 +2370,31 @@
+ 		});
+ 	});
+ }
++/** Validate only the storage lease protocol; application policy remains caller-owned. */
++async function acquireOpenAdmission(candidate, admission, signal) {
++	signal.throwIfAborted();
++	const pending = Promise.resolve().then(() => {
++		signal.throwIfAborted();
++		return Reflect.apply(admission, void 0, [candidate]);
++	});
++	// An already-aborted waiter must still consume a late policy rejection.
++	pending.catch(() => {});
++	const lease = await waitWithAbort(pending, signal);
++	if (lease === null || typeof lease !== "object" || !Object.isFrozen(lease)) throw new Error("invalid session open admission lease");
++	const assertion = Object.getOwnPropertyDescriptor(lease, "assertCurrent")?.value;
++	if (typeof assertion !== "function") throw new Error("invalid session open admission assertion");
++	const assertCurrent = () => {
++		signal.throwIfAborted();
++		const returned = Reflect.apply(assertion, lease, []);
++		if (returned !== void 0) {
++			Promise.resolve(returned).catch(() => {});
++			throw new Error("session open admission assertion must be synchronous and return undefined");
++		}
++		signal.throwIfAborted();
++	};
++	assertCurrent();
++	return Object.freeze({ signal, assertCurrent });
++}
+ /**
+ * The JSONL persistence backend. Load as a plugin; it registers as
+ * `ctx.sessionPersistence`. Sessions materialize lazily: a created session is
+@@ -2381,6 +2413,8 @@
+ 	compression;
+ 	rootEncodingCheck;
+ 	tracker = new JsonlBackendTracker(this.name);
++	/** Pending admitted opens have no handle yet; teardown must own them too. */
++	admissionLifetime = { controller: new AbortController(), pending: new Set() };
+ 	generationFormat;
+ 	/**
+ 	* Bounded LRU of parsed, validated stored logs keyed by session id and
+@@ -2407,6 +2441,11 @@
+ 		};
+ 		this.assertUsableRoot();
+ 		this.tracker.install(ctx);
++		const lifetime = this.admissionLifetime;
++		ctx.effect(() => async () => {
++			lifetime.controller.abort(new Error("session persistence admission owner disposed"));
++			await Promise.allSettled([...lifetime.pending]);
++		}, `${this.name} admitted opens`);
+ 	}
+ 	/**
+ 	* Refusal-diagnostics hook: the absolute target path, without touching the filesystem.
+@@ -2451,7 +2490,24 @@
+ 	* @param options - optional cancellation.
+ 	* @returns the open handle.
+ 	*/
+-	async open(id, access, options) {
++	open(id, access, options) {
++		return this.openStored(id, access, options);
++	}
++	/** Admit the exact logical candidate under continuous writer and OS ownership. */
++	openWithAdmission(id, admission, options) {
++		if (typeof admission !== "function") return Promise.reject(new TypeError("session open admission must be a function"));
++		const lifetime = this.admissionLifetime;
++		const ownedSignal = AbortSignal.any([
++			...options?.signal === void 0 ? [] : [options.signal],
++			lifetime.controller.signal
++		]);
++		const operation = this.openStored(id, "write", { signal: ownedSignal }, admission, options?.signal ?? ownedSignal).finally(() => {
++			lifetime.pending.delete(operation);
++		});
++		lifetime.pending.add(operation);
++		return operation;
++	}
++	async openStored(id, access, options, admission, admissionSignal) {
+ 		options?.signal?.throwIfAborted();
+ 		await this.ensureRootEncoding();
+ 		options?.signal?.throwIfAborted();
+@@ -2491,10 +2547,19 @@
+ 			lease = await this.acquireLease(id, void 0, dirname(resolved.currentPath));
+ 			const prepared = await this.requireStoredLog(id, options?.signal);
+ 			options?.signal?.throwIfAborted();
++			let admitted;
++			if (admission !== void 0) {
++				freezeStoredEvent(prepared.meta);
++				const candidate = Object.freeze({ sessionId: id, header: prepared.meta, events: prepared.events,
++					inheritedEventCount: prepared.inheritedEventCount, signal: admissionSignal });
++				admitted = await acquireOpenAdmission(candidate, admission, options.signal);
++			}
++			admitted?.assertCurrent();
+ 			let stored;
+-			if (prepared.status === "prepared") stored = await this.publishStoredMigration(id, prepared);
++			if (prepared.status === "prepared") stored = await this.publishStoredMigration(id, prepared, admitted);
+ 			else stored = prepared;
+ 			options?.signal?.throwIfAborted();
++			admitted?.assertCurrent();
+ 			return this.tracker.adopt(new JsonlSessionHandle(this, id, stored.meta, "write", {
+ 				cursor: stored.events.length,
+ 				materialized: true,
+@@ -2739,11 +2804,12 @@
+ 		return stored;
+ 	}
+ 	/** Publish a prepared historical log before granting write access. */
+-	async publishStoredMigration(id, stored) {
++	async publishStoredMigration(id, stored, admission) {
+ 		const migration = stored.publication;
+ 		let identity;
+ 		try {
+-			identity = await migration.value.publish();
++			admission?.assertCurrent();
++			identity = await migration.value.publish(admission);
+ 		} catch (error) {
+ 			/* v8 ignore else -- a newer preparation may have replaced this stale cache entry. */
+ 			if (this.coldLogMemo.get(id) === stored) this.coldLogMemo.delete(id);
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -7,7 +7,7 @@
+  */
+ import { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+-import { SessionPersistence, type SessionAccess, type SessionHandle, type SessionHandleReadResult, type SessionPersistenceCreateOptions, type SessionPersistenceListOptions, type SessionPersistenceOpenOptions, type SessionPersistenceSnapshot, type SessionPersistenceStatOptions, type SessionPersistenceRevision as PersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
++import { SessionPersistence, type SessionAccess, type SessionHandle, type SessionHandleReadResult, type SessionPersistenceCreateOptions, type SessionPersistenceListOptions, type SessionPersistenceOpenOptions, type SessionOpenAdmission, type SessionPersistenceSnapshot, type SessionPersistenceStatOptions, type SessionPersistenceRevision as PersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
+ import { JsonlSessionHandle } from './storage.ts';
+ import { SessionWriteLease } from './lease.ts';
+ import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session';
+@@ -61,6 +61,8 @@
+     private compression;
+     private rootEncodingCheck;
+     private readonly tracker;
++    /** Pending admitted opens are cancelled and joined on backend teardown. */
++    private readonly admissionLifetime;
+     private readonly generationFormat;
+     /**
+      * Bounded LRU of parsed, validated stored logs keyed by session id and
+@@ -97,6 +99,10 @@
+      * @returns the open handle.
+      */
+     open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>;
++    /** Same writer and OS lease throughout preparation, admission, migration and handle transfer. */
++    openWithAdmission(id: SessionId, admission: SessionOpenAdmission, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>;
++    /** Shared storage path; ordinary open retains its original migration behavior. */
++    private openStored;
+     /**
+      * Flush every active write handle in one durability barrier; see the seam
+      * contract.

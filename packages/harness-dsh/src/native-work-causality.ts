@@ -2,7 +2,7 @@ import {AsyncLocalStorage} from 'node:async_hooks'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {GenerateOptions,StreamChunk} from '@deepseek-ai/dsh-llm'
-import type {Session,SessionStore,UserMessage} from '@deepseek-ai/dsh-session'
+import {Session,SessionId,SessionLogOffset,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
 import type {ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
 import type {WorkAccessLease} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
@@ -28,6 +28,7 @@ type LoopRequest=
 type ToolRequest=
  |Readonly<{kind:'create';input:ToolExecutionInput;exec:ToolRunContext}>
  |Readonly<{kind:'body'|'body-end';exec:ToolRunContext}>
+type RestoreRequest=Readonly<{sessionId:string;header:Readonly<SessionHeader>;events:readonly SessionEvent[];inheritedEventCount:number;signal:AbortSignal}>
 type PublishContinuation=(agent:Agent,message:UserMessage,lease:WorkAccessLease,publish:()=>void)=>void
 const installed=new WeakSet<Context>()
 const denied=()=>new WorkError('teloa/forbidden','工作许可或实际受理因果已失效。')
@@ -177,8 +178,24 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  })
  install(ctx.tools,'requireWorkAdmission','installWorkAdmission',toolPolicy)
  // 在官方 Service 就绪后安装唯一私有 Loop 回调；输入在此之前维持关闭。
- const loopInjection=ctx.inject(['agentLoop'],child=>{
-  try{install(Reflect.get(child,'agentLoop') as object,'requireWorkAdmission','installWorkAdmission',loopPolicy);loopReady=true}
+ const loopInjection=ctx.inject(['agentLoop','sessionProjections'],child=>{
+  try{
+   const loop=Reflect.get(child,'agentLoop') as object,loopIdentity=Reflect.get(loop,'runtime') as unknown
+   install(loop,'requireRestoreAdmission','installRestoreAdmission',(request:RestoreRequest)=>{
+    // 未发布的载体通过官方投影读取 Inbox；不生成无关客户端视图或新的受理证明。
+    const cold=Session.create(SessionId(request.sessionId),request.events,request.header,SessionLogOffset(request.inheritedEventCount))
+    const inbox=child.sessionProjections.stateOf(cold,'inbox')
+    if(!inbox||inbox['next-turn'].length||inbox['next-step'].length)throw denied()
+    // 无待办历史只允许创建空闲载体；不据此为任何后续输入生成受理证明。
+    return Object.freeze({assertCurrent(){
+     const currentLoop=ctx.get('agentLoop') as object|undefined
+     const currentIdentity=currentLoop===undefined?undefined:Reflect.get(currentLoop,'runtime') as unknown
+     request.signal.throwIfAborted()
+     if(closed||!loopReady||currentIdentity!==loopIdentity)throw denied()
+    }})
+   })
+   install(loop,'requireWorkAdmission','installWorkAdmission',loopPolicy);loopReady=true
+  }
   catch{closed=true;for(const agent of turns.keys())cancel(agent);throw denied()}
   return ()=>{loopReady=false}
  })

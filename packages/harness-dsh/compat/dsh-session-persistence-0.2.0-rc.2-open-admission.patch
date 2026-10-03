@@ -1,0 +1,76 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -258,12 +258,24 @@
+ * Freshness: once an `append` or `flush` resolves, reads started afterwards
+ * on this backend instance observe at least that prefix.
+ */
++/** Backends must opt in to admission before any write-side repair or migration. */
++var SessionAdmissionUnsupportedError = class extends Error {
++	constructor() {
++		super("session persistence openWithAdmission is unsupported by this backend");
++		this.name = "SessionAdmissionUnsupportedError";
++	}
++};
+ var SessionPersistence = class extends Service {
+ 	/** Process-local instance identity, stable through Context proxies and distinct after service replacement. */
+ 	identity = Symbol("sessionPersistence");
+ 	constructor(ctx) {
+ 		super(ctx, "sessionPersistence");
+ 	}
+-};
+-//#endregion
+-export { SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionFormatUnsupportedError, SessionHandleClosedError, SessionOwnershipLostError, SessionPersistence, SessionPersistence as default, SessionPersistenceCorruptionError, SessionPersistenceNotFoundError, SessionPersistenceRevision, SessionReadOnlyError, assertContiguous, assertStoredId, assertVersion, materializeAppendBatch, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents };
++	/** Never emulate admission by releasing a read handle and reopening for write. */
++	async openWithAdmission(id, admission, options) {
++		options?.signal?.throwIfAborted();
++		throw new SessionAdmissionUnsupportedError();
++	}
++};
++//#endregion
++export { SessionAdmissionUnsupportedError, SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionFormatUnsupportedError, SessionHandleClosedError, SessionOwnershipLostError, SessionPersistence, SessionPersistence as default, SessionPersistenceCorruptionError, SessionPersistenceNotFoundError, SessionPersistenceRevision, SessionReadOnlyError, assertContiguous, assertStoredId, assertVersion, materializeAppendBatch, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents };
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -61,6 +61,25 @@
+     /** Optional cancellation observed before backend work starts. */
+     readonly signal?: AbortSignal;
+ }
++/** Deeply immutable JSON values prepared under the same writer ownership as the returned handle. */
++type AdmissionReadonly<T> = T extends string | number | boolean | null | undefined ? T : { readonly [K in keyof T]: AdmissionReadonly<T[K]> };
++/** Exact validated logical history, before any migration publication or tail repair. */
++export type SessionOpenAdmissionInput = Readonly<{
++    sessionId: SessionId;
++    header: AdmissionReadonly<SessionHeader>;
++    events: readonly AdmissionReadonly<SessionEvent>[];
++    inheritedEventCount: SessionLogOffset;
++    /** The supplied cancellation signal, or an operation-local signal when omitted. */
++    signal: AbortSignal;
++}>;
++/** Must be frozen with an own data method. Promise/thenable assertions are invalid. */
++export type SessionOpenAdmissionLease = Readonly<{ assertCurrent(): undefined }>;
++/** Storage transports evidence; the caller owns every application authorization decision. */
++export type SessionOpenAdmission = (input: SessionOpenAdmissionInput) => SessionOpenAdmissionLease | PromiseLike<SessionOpenAdmissionLease>;
++/** A backend without atomic admission support fails closed without calling open(). */
++export declare class SessionAdmissionUnsupportedError extends Error {
++    constructor();
++}
+ /** Options for {@link SessionPersistence.stat}. */
+ export interface SessionPersistenceStatOptions {
+     /** Optional cancellation for backend metadata reads. */
+@@ -123,6 +142,17 @@
+      */
+     abstract open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>;
+     /**
++     * Acquire one writer (including its cross-process lease), prepare a frozen
++     * validated candidate without changing log bytes, and await admission while
++     * retaining ownership. Check its synchronous lease before migration/repair
++     * and before returning the same owned write handle. No read/reopen fallback.
++     * Cancellation abandons a pending policy, releases ownership, and consumes
++     * late results. Actual in-flight persistence and lock cleanup must finish
++     * before rejection; a committed generation is never rolled back.
++     * Default implementation throws SessionAdmissionUnsupportedError.
++     */
++    openWithAdmission(id: SessionId, admission: SessionOpenAdmission, options?: SessionPersistenceOpenOptions): Promise<SessionHandle>;
++    /**
+      * Flush every active write handle owned by this service instance in one
+      * durability barrier: each handle's routed live events drain durably and
+      * its session materializes, exactly as that handle's own

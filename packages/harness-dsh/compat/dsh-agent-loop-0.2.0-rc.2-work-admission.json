@@ -7,32 +7,42 @@
     {
       "path": "lib/index.js",
       "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
-      "afterSha256": "e07ebf96be179b48cb0a54b57c016a8f7895de1587a2b25ddc13b2794a7c85ca"
+      "afterSha256": "b20d8115ed98ca0a52c276cd5374e14a6a7c6831a2af924e6c41c31799706078"
     },
     {
       "path": "lib/types/index.d.ts",
       "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
-      "afterSha256": "283651ac1f7308e109f639863da8055056ce85c6342876d0f60ae0cdb1d75cd7"
+      "afterSha256": "a3a08631d0fd058b096dcece02f0818b4c0457efea7cf0b673118842e4891e53"
     }
   ],
-  "patchSha256": "a776614b36e6a710a83ad9b7f5214dac0146d66cc47f82a04e764e675587b5a1",
+  "patchSha256": "f048356a7ea4d9e9f26427b45e712e618e78dc5dc64ca448b761541b7acd273f",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
     "AgentLoopWorkAdmissionInput",
-    "AgentLoopWorkAdmission"
+    "AgentLoopWorkAdmission",
+    "AgentLoop.requireRestoreAdmission",
+    "AgentLoop.installRestoreAdmission",
+    "Config.requireRestoreAdmission",
+    "AgentLoopRestoreAdmissionInput",
+    "AgentLoopRestoreAdmissionLease",
+    "AgentLoopRestoreAdmission"
   ],
   "scope": {
     "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
     "context": "After actual tool/result commit; exact slot execution/result/context, synchronous active once-only original inbox.splice publisher",
     "private": "Module WeakMap keyed by immutable runtime holder; per-Agent callbacks module-private; no exposed invoke/dispatch capability or new public event",
-    "free": "No require/provider retains original driver execution and context publication",
+    "free": "No require/provider retains original Free driver execution, cold restoration and context publication",
     "cleanup": "step-end/turn-end continue when required provider missing; original committed receipt is not undone by post-commit policy failure",
     "limitations": [
-      "Does not prove constructor seed/fork/cold resume input was authorized",
+      "Fresh constructor/fork seeds are not covered; cold restore is a checkpoint only, not durable authorization. The deployment provider must verify its signed checkpoint and persisted work.",
       "ToolRuntime final body admission is separate; this only attests exact Loop-planned input before scheduler.prepare",
       "A context policy that throws/returns Promise after sync publication cannot roll back that accepted write",
-      "Public events remain observation-only and cannot call private policy; this is not protection against arbitrary mutation of SDK private internals"
-    ]
+      "Public events remain observation-only and cannot call private policy; this is not protection against arbitrary mutation of SDK private internals",
+      "Rejection before migration admission leaves every historical log byte unchanged; revocation after an authorized migration or append cannot roll back committed generations, closers or later setup/publication writes, but prevents restored work from reaching the model."
+    ],
+    "restore": "SessionPersistence.openWithAdmission read-only preparation under retained writer/OS ownership before migration; exact frozen validated header/events, inherited count and official fused signal; abortable async policy returning a frozen synchronous assertCurrent lease; checked before first closer write, construction, setup/commit/publication awaits and final pending wake",
+    "restoreCleanup": "Private pending-restore state preserves the durable Inbox on failed or cancelled admission-enabled restoration, including owner/factory disposal; successful activation removes that state, so subsequent user disposal and unguarded Free cleanup retain original cancellation semantics.",
+    "restoreWrites": "Admission-enabled restore passes the official fused signal to closer and both seed/setup suffix appends and races their waits. Cancellation abandons adapter continuations; the owning lifecycle still awaits the original handle.close(), including any in-flight backend mutation chain. Committed writes are not rolled back; unguarded Free and fresh/fork appends retain their original waits."
   }
 }

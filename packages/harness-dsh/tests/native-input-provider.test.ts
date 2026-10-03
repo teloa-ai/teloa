@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {setImmediate as immediate} from 'node:timers/promises'
-import {mkdtemp,rm} from 'node:fs/promises'
+import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises'
+import {join} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
@@ -10,7 +11,6 @@ import {SessionStore,SessionId,SessionSeq,SessionLogOffset,type SessionEvent} fr
 import {SessionController} from '@deepseek-ai/dsh-api-session-controller'
 import {SubagentRuntime} from '@deepseek-ai/dsh-subagent'
 import {createUserMessage,LlmAdapter} from '@deepseek-ai/dsh-llm'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as SpawnProvider from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import {workAccess,type WorkAccessRequest} from '@teloa/backend'
 import {TeloaNativeInput} from '../src/native-input-provider.ts'
@@ -39,6 +39,11 @@ workAccess.installPolicy(async request=>{
 })
 const reset=()=>{valid=true;epoch++;waiting=undefined;seen.length=0}
 const message=(rpcId:string)=>createUserMessage({source:{kind:'user',rpcId},content:[{type:'text',text:'私有输入'}]})
+const historyBytes=async(root:string,id:string)=>{
+ const names=(await readdir(root,{recursive:true})).filter(name=>name.split('/').includes(id)&&/session\.v\d+\.jsonl(?:\.zstd)?$/.test(name)).sort()
+ assert.equal(names.length,1)
+ return await readFile(join(root,names[0]!))
+}
 const managedController=async(f:Awaited<ReturnType<typeof nativeProviderFixture>>,t:Parameters<typeof nativeProviderFixture>[0])=>{
  const sdk=await patchedControllerPackage(t),Managed=createManagedSessionController(sdk.SessionController)
  const fiber=f.ctx.plugin(Managed,{nativeOpen:false});await fiber
@@ -185,7 +190,7 @@ test('managed Subagent首次start核对独立初始许可，拒绝零写、恢�
  const f=await nativeProviderFixture(t),sdk=await patchedSubagent(t),Managed=createManagedSubagentRuntime(sdk.SubagentRuntime as typeof SubagentRuntime)
  const root=await mkdtemp('/private/tmp/teloa-provider-persistence-')
  t.after(()=>rm(root,{recursive:true,force:true}))
- await f.ctx.plugin(Persistence,{root});await f.ctx.plugin(TeloaNativeInput);await f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8})
+ await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput);await f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8})
  await f.ctx.plugin(SpawnProvider,{providerName:'spawn'})
  valid=false
  const id=SessionId('initial-admission-denied')
@@ -224,12 +229,12 @@ test('Free原官方Controller缺provider仍可发送；managed类不替换官方
  assert.equal(ManagedSubagentRuntime.Config,SubagentRuntime.Config)
 })
 
-test('过渡创建屏障：fresh/fork seed任意pending与真实持久冷resume都拒绝，保留已落seed且零模型',async t=>{
+test('过渡创建屏障保留已落seed；冷pending在中断修复前拒绝，完整持久字节保持且零模型',async t=>{
  reset()
  const f=await nativeProviderFixture(t),model=new NoModel(),root=await mkdtemp('/private/tmp/teloa-provider-seed-')
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model)
- await f.ctx.plugin(Persistence,{root});await f.ctx.plugin(TeloaNativeInput)
+ await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput)
  for(const target of ['next-turn','next-step'] as const)for(const inherited of [false,true]){
   const id=SessionId('pending-'+target+'-'+inherited),input=message('seed-not-a-permit')
   const seed:SessionEvent[]=[{type:'agent/inbox/spliced',seq:SessionSeq(0),time:1,data:{target,start:0,removedCount:0,inserted:[input]}}]
@@ -243,17 +248,27 @@ test('过渡创建屏障：fresh/fork seed任意pending与真实持久冷resume�
   assert.equal(stored.events[0]?.type,'agent/inbox/spliced')
   if(stored.events[0]?.type==='agent/inbox/spliced')assert.equal(stored.events[0].data.inserted[0]?.id,input.id)
   // 创建拒绝后的官方 dispose 会取消 pending，并追加移除日志；不能把此残留冒充 cold pending。
-  const coldId=SessionId('cold-'+target+'-'+inherited)
-  const header={...f.sessionPackage.Session.create(coldId).header,...inherited?{isSeeded:true,parentSession:f.agent.id}:{}}
-  const cold=f.sessionPackage.Session.create(coldId,seed,header,SessionLogOffset(inherited?seed.length:0))
-  const writer=await f.ctx.sessionPersistence.create(cold.header,{inheritedEventCount:cold.inheritedEventCount})
-  await writer.append(cold.snapshotEvents());await writer.flush();await writer.close()
-  await assert.rejects(f.ctx.agents.resume({resumeSessionId:coldId,agentOptions:{provider:'controlled',model:'fixed'}}),forbidden)
-  assert.equal(f.ctx.agents.get(coldId),undefined);assert.equal(f.sessions.get(coldId),undefined)
-  const after=await f.ctx.sessionPersistence.open(coldId,'read'),rejected=(await after.read()).events
-  await after.close()
-  assert.deepEqual(rejected.slice(0,seed.length),seed)
-  assert.equal(rejected.filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.length>0).length,1)
+  for(const interrupted of [false,true]){
+   const coldId=SessionId('cold-'+target+'-'+inherited+'-'+interrupted)
+   const events:SessionEvent[]=interrupted?[
+    {type:'turn/start',seq:SessionSeq(0),time:1,data:{turn:1}},
+    {type:'step/start',seq:SessionSeq(1),time:1,data:{turn:1,step:1}},
+    {...seed[0]!,seq:SessionSeq(2)},
+   ]:seed
+   const header={...f.sessionPackage.Session.create(coldId).header,...inherited?{isSeeded:true,parentSession:f.agent.id}:{}}
+   const cold=f.sessionPackage.Session.create(coldId,events,header,SessionLogOffset(inherited?events.length:0))
+   const storedEvents=cold.snapshotEvents()
+   const writer=await f.ctx.sessionPersistence.create(cold.header,{inheritedEventCount:cold.inheritedEventCount})
+   await writer.append(storedEvents);await writer.flush();await writer.close()
+   const before=await historyBytes(root,coldId)
+   await assert.rejects(f.ctx.agents.resume({resumeSessionId:coldId,agentOptions:{provider:'controlled',model:'fixed'}}),forbidden)
+   assert.equal(f.ctx.agents.get(coldId),undefined);assert.equal(f.sessions.get(coldId),undefined)
+   assert.deepEqual(await historyBytes(root,coldId),before)
+   // 拒绝后真实 writer 能重新取得所有权，历史既没有修复，也没有 canceled 移除。
+   const after=await f.ctx.sessionPersistence.open(coldId,'write'),rejected=(await after.read()).events
+   await after.close()
+   assert.deepEqual(rejected,storedEvents)
+  }
  }
  assert.equal(model.calls,0);assert.equal(seen.length,0)
 })
@@ -282,25 +297,61 @@ test('空seed及已完成history正常创建但不获得新工作许可，空Age
  assert.equal(blank.agent.inbox.nextTurn.length,1);assert.equal(model.calls,0)
 })
 
-test('profile等价真实依赖图：agent-loop配置冷pending必须等待provider，created屏障拒绝自动wake', {timeout:10000},async t=>{
+test('空闲持久history正常冷恢复；历史不生成工作证明，后续新输入重新核验许可',async t=>{
+ reset()
+ const f=await nativeProviderFixture(t),model=new NoModel(),root=await mkdtemp('/private/tmp/teloa-provider-idle-cold-')
+ t.after(()=>rm(root,{recursive:true,force:true}))
+ f.ctx.llm.registerAdapter(['controlled'],model)
+ await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput)
+ const {controller}=await managedController(f,t)
+ for(const completed of [false,true]){
+  const id=SessionId('idle-cold-'+completed),historical=message('past-'+completed)
+  const events:SessionEvent[]=completed?[
+   {type:'turn/start',seq:SessionSeq(0),time:1,data:{turn:1}},
+   {type:'user/message',seq:SessionSeq(1),time:1,data:historical,surfaceOp:'append'},
+   {type:'turn/end',seq:SessionSeq(2),time:1,data:{turn:1,reason:{kind:'completed'}}},
+  ]:[]
+  const cold=f.sessionPackage.Session.create(id,events),writer=await f.ctx.sessionPersistence.create(cold.header)
+  await writer.append(cold.snapshotEvents());await writer.flush();await writer.close()
+  valid=false
+  const handle=await f.ctx.agents.resume({resumeSessionId:id,agentOptions:{provider:'controlled',model:'fixed'}})
+  t.after(()=>handle.dispose())
+  void handle.agent.runMaintenance(abort=>new Promise<void>(done=>abort.addEventListener('abort',()=>done(),{once:true})))
+  assert.equal(handle.agent.inbox.nextTurn.length,0);assert.equal(handle.agent.inbox.nextStep.length,0)
+  const resumedEvents=handle.agent.session.snapshotEvents()
+  assert.deepEqual(resumedEvents.slice(0,events.length),events)
+  assert.ok(resumedEvents.slice(events.length).every(event=>event.type==='session/end-seed'))
+  await assert.rejects(controller.prompt(promptRequest(handle.agent,'denied-cold-'+completed),signal),forbidden)
+  assert.deepEqual(handle.agent.session.snapshotEvents(),resumedEvents)
+  valid=true
+  await controller.prompt(promptRequest(handle.agent,'new-cold-'+completed),signal)
+  assert.equal(handle.agent.inbox.nextTurn.length,1)
+ }
+ assert.equal(model.calls,0);assert.equal(seen.length,4)
+})
+
+test('profile等价真实依赖图：agent-loop配置冷pending必须等待provider，恢复门拒绝自动wake', {timeout:10000},async t=>{
  reset()
  const f=await nativeProviderKernel(t),model=new NoModel(),root=await mkdtemp('/private/tmp/teloa-provider-configured-')
  t.after(()=>rm(root,{recursive:true,force:true}))
- f.ctx.llm.registerAdapter(['controlled'],model);await f.ctx.plugin(Persistence,{root})
+ f.ctx.llm.registerAdapter(['controlled'],model);await f.ctx.plugin(f.persistencePackage.default,{root})
  const id=SessionId('configured-pending'),input=message('configuration-not-a-permit')
  const seeded=f.sessionPackage.Session.create(id,[{type:'agent/inbox/spliced',seq:SessionSeq(0),time:1,data:{target:'next-turn',start:0,removedCount:0,inserted:[input]}}])
  const writer=await f.ctx.sessionPersistence.create(seeded.header)
  await writer.append(seeded.snapshotEvents());await writer.flush();await writer.close()
+ const before=await historyBytes(root,id)
  const failed=deferred<unknown>()
  f.ctx.on('agent-loop/config-start-failed',({sessionId,error})=>{assert.equal(sessionId,id);failed.resolve(error)})
  // 和官方loader profile行相同：保留原class和Config，只追加明确的服务依赖。
  const configured={name:'managed-configured-loop',inject:[...f.loopPackage.AgentLoop.inject,'teloaNativeInput'],Config:f.loopPackage.AgentLoop.Config,
-  apply(ctx:Context,config:ConstructorParameters<typeof f.loopPackage.AgentLoop>[1]){new f.loopPackage.AgentLoop(ctx,config)}}
- const loop=f.ctx.plugin(configured,{agents:[{id:'configured-label',resumeSessionId:id,provider:'controlled',model:'fixed'}]})
+  apply(ctx:Context,config:ConstructorParameters<typeof f.loopPackage.AgentLoop>[1]&{requireRestoreAdmission?:boolean}){new f.loopPackage.AgentLoop(ctx,config)}}
+ const launchConfig={requireRestoreAdmission:true,agents:[{id:'configured-label',resumeSessionId:id,provider:'controlled',model:'fixed'}]}
+ const loop=f.ctx.plugin(configured,launchConfig)
  await loop;assert.equal(f.ctx.get('agentLoop'),undefined);assert.equal(model.calls,0)
  await f.ctx.plugin(TeloaNativeInput);await loop
  const failure=await failed.promise
  assert.equal((failure as {code?:string}).code,'teloa/forbidden')
  assert.equal(f.ctx.agents.get(id),undefined);assert.equal(f.sessions.get(id),undefined)
+ assert.deepEqual(await historyBytes(root,id),before)
  assert.equal(model.calls,0);assert.equal(seen.length,0)
 })

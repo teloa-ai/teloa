@@ -1,0 +1,33 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-agent",
+  "version": "0.2.0-rc.2",
+  "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "7b9aa39474de83115cf890dd7f8904cf0d59df0811cb335ab85565a04f1aac93",
+      "afterSha256": "b43f9aee521144ce02e7b286de8fb566c024bac669267b04b1c57da59953d597"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "3531899158347ff10627228732c67462c78ea0352e31a7eabc19631f90b08bc1",
+      "afterSha256": "04e204e5c5052527f174b01d83651eb125d1deff2c1070b53c0ba65267f3a834"
+    }
+  ],
+  "patchSha256": "510521f2e5c50a5dee288201d0ab1e027d62cba955520329c390ecc371838383",
+  "api": [
+    "AgentRegistry.announce"
+  ],
+  "scope": {
+    "announcement": "announce(agent, source, signal?):Promise<void>; an explicit signal cancels waiting and subsequent serial listeners, detaches the exact entry on abort or listener failure, and contains late listener settlement",
+    "dispatch": "Uses public Cordis events.dispatch(serial) and isBailed with the original scope carrier, callback receiver, listener snapshot and ordering",
+    "default": "Without a signal, the original ctx.serial and deferred-detach behavior remain unchanged",
+    "identity": "Entry validation precedes cancellation; exact-entry detach is idempotent and cannot delete a replacement with the same id. Successful completion removes its abort listener",
+    "lifecycle": "Registry owns only announcement and exact-entry removal; AgentLoop retains Session, Inbox, writer, scope and driver teardown ownership",
+    "limitations": [
+      "Cancellation cannot preempt arbitrary code already executing in a listener; the listener receives the signal and must cooperate for its own side effects",
+      "No durable work authorization, public dispatcher, new Remote API or change to default Free announcement behavior"
+    ]
+  }
+}

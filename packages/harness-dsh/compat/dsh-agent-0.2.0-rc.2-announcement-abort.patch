@@ -1,0 +1,104 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1,4 +1,4 @@
+-import { Service, getTraceable, symbols } from "@deepseek-ai/cordis";
++import { Service, getTraceable, isBailed, symbols } from "@deepseek-ai/cordis";
+ import { AsyncLocalStorage } from "node:async_hooks";
+ import { isPromise } from "node:util/types";
+ import { scopeTarget } from "@deepseek-ai/dsh-scope";
+@@ -505,7 +505,7 @@
+ 	* @returns an idempotent closure that removes this exact entry and emits
+ 	*   `agent/disposed` with listener failures contained. When called from a
+ 	*   `agent/created` listener, removal and disposal wait until the serial
+-	*   creation dispatch settles.
++	*   creation dispatch settles, or its explicit announcement signal aborts.
+ 	*/
+ 	enter(agent, owner) {
+ 		const id = agent.id;
+@@ -563,7 +563,11 @@
+ 	* Announce an agent previously inserted with {@link enter}.
+ 	* @param agent - the live inserted agent to announce.
+ 	* @param source - fresh creation, resume, clear, or compaction source.
+-	* @param signal - optional factory initialization cancellation signal passed to listeners.
++	* @param signal - optional initialization cancellation signal passed to listeners. With a signal,
++	* abort or listener failure releases this exact entry; abort stops waiting and skips
++	* subsequent listeners. A pre-aborted signal removes the unannounced entry without
++	* a disposal event. Already-running listeners must cooperate with cancellation;
++	* their late settlement cannot continue dispatch or detach a replacement entry.
+ 	* @returns completion of the serial creation listeners; a listener failure rejects.
+ 	* @throws if `agent` is not the exact live registry entry for its id, or its
+ 	*   creation announcement already began (including a reentrant call from a
+@@ -573,15 +577,44 @@
+ 		const entry = this.store.get(agent.id);
+ 		if (entry === void 0 || entry.agent !== agent) throw new Error(`agent "${agent.id}" is not live in this registry`);
+ 		if (entry.announced || entry.announcing) throw new Error(`agent "${entry.id}" was already announced`);
++		if (signal?.aborted) {
++			// No creation was announced, so this exact entry has no disposal edge.
++			this.detachEntered(entry);
++			signal.throwIfAborted();
++		}
+ 		entry.announcing = true;
+ 		entry.announced = true;
++		let onAbort;
+ 		try {
+-			await this.ctx.serial(entry.carrier, "agent/created", {
+-				agent: entry.agent,
+-				source,
+-				...signal === void 0 ? {} : { signal }
+-			});
++			if (signal === void 0) {
++				// Preserve the original Free dispatch and deferred-detach semantics.
++				await this.ctx.serial(entry.carrier, "agent/created", { agent: entry.agent, source });
++			} else {
++				const aborted = new Promise((_, reject) => {
++					onAbort = () => {
++						// Release before the suspended listener settles; detachEntered checks exact identity.
++						this.detachEntered(entry);
++						reject(signal.reason);
++					};
++				});
++				// Dispatch hooks or a synchronous listener can abort and throw before the first race.
++				aborted.catch(() => {});
++				signal.addEventListener("abort", onAbort, { once: true });
++				const args = [entry.carrier, "agent/created", { agent: entry.agent, source, signal }];
++				// Use Cordis' public filtering, receiver binding, snapshot and bail rules.
++				for (const callback of this.ctx.events.dispatch("serial", args)) {
++					signal.throwIfAborted();
++					const result = await Promise.race([callback(...args), aborted]);
++					signal.throwIfAborted();
++					if (isBailed(result)) break;
++				}
++				signal.throwIfAborted();
++			}
++		} catch (error) {
++			if (signal !== void 0) this.detachEntered(entry);
++			throw error;
+ 		} finally {
++			if (onAbort !== void 0) signal.removeEventListener("abort", onAbort);
+ 			entry.announcing = false;
+ 			if (entry.detachRequested) this.detachEntered(entry);
+ 		}
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -317,7 +317,7 @@
+      * @returns an idempotent closure that removes this exact entry and emits
+      *   `agent/disposed` with listener failures contained. When called from a
+      *   `agent/created` listener, removal and disposal wait until the serial
+-     *   creation dispatch settles.
++     *   creation dispatch settles, or its explicit announcement signal aborts.
+      */
+     enter(agent: Agent, owner: Agent | undefined): () => void;
+     /** Remove one exact entered agent and emit its paired disposal when announced. */
+@@ -328,7 +328,11 @@
+      * Announce an agent previously inserted with {@link enter}.
+      * @param agent - the live inserted agent to announce.
+      * @param source - fresh creation, resume, clear, or compaction source.
+-     * @param signal - optional factory initialization cancellation signal passed to listeners.
++     * @param signal - optional initialization cancellation signal passed to listeners. With a signal,
++     * abort or listener failure releases this exact entry; abort stops waiting and skips
++     * subsequent listeners. A pre-aborted signal removes the unannounced entry without
++     * a disposal event. Already-running listeners must cooperate with cancellation;
++     * their late settlement cannot continue dispatch or detach a replacement entry.
+      * @returns completion of the serial creation listeners; a listener failure rejects.
+      * @throws if `agent` is not the exact live registry entry for its id, or its
+      *   creation announcement already began (including a reentrant call from a
