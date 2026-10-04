@@ -9,6 +9,8 @@ import type {BusinessSqlExecution} from '../src/work/business-sql-executor.ts'
 import {BusinessLedgerService} from '../src/work/business-view-compute.ts'
 import {BusinessWidgetService,initializeBusinessWidgets} from '../src/work/business-widgets.ts'
 import {BusinessDashboardService,initializeBusinessDashboards} from '../src/work/business-dashboards.ts'
+import {BusinessSpaceService} from '../src/work/business-spaces.ts'
+import {BusinessRuntimeService} from '../src/work/business-runtime.ts'
 import {dashboardOf,definitionsOf,riskView,startDatabase,widget} from './business-widget-fixture.ts'
 
 /** 看板服务真库验收（计划 功能验证 第 5–7、10 条）：只读快照、刷新互斥与幂等、到期判定、权限。 */
@@ -141,6 +143,77 @@ test('due：看板周期 300s 按最新结果判到期；组件覆盖 60s 只该
  assert.deepEqual(await mixed.service.due(mixed.owner,at),[{scope:'SOC',dashboardId:'soc-overview',widgetIds:['alert-fast']}])
  const never=harness([count])
  assert.deepEqual(await never.service.due(never.owner,at),[],'没有本地看板指针也没有结果的本人不枚举')
+})
+
+test('恢复暂停共享运行门控：due 与迟到定时请求不计算，旧成果可读、本人可手动刷新与重新启用',async()=>{
+ const f=harness([count]),identity={id:randomUUID,now:()=>new Date().toISOString()}
+ await new BusinessSpaceService(pool,identity).ensurePersonal(f.owner)
+ const runtime=new BusinessRuntimeService(pool,identity)
+ const first=await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
+ const at='2026-10-04T12:00:00.000Z'
+ const queued=await f.service.due(f.owner,at)
+ assert.deepEqual(queued,[{scope:'SOC',dashboardId:'soc-overview'}])
+ const definitionsBefore=JSON.stringify(f.state)
+ const resultsBefore=(await pool.query('select * from teloa_business_widget_results where owner_id=$1 order by computed_at',[f.owner])).rows
+ const paused=await runtime.pauseScheduledWork(f.actor,{scope:'SOC',requestId:randomUUID()})
+ assert.deepEqual(await f.service.due(f.owner,at),[])
+ const calls=f.executor.calls
+ await rejectsWith(f.service.refresh(f.actor,{requestId:randomUUID(),...queued[0]!},undefined,{trigger:'schedule'}),'teloa/conflict',/已暂停/)
+ assert.equal(f.executor.calls,calls,'已排队的定时刷新也必须重新核对门控')
+ assert.deepEqual((await pool.query('select * from teloa_business_widget_results where owner_id=$1 order by computed_at',[f.owner])).rows,resultsBefore,'暂停与拒绝迟到任务不改成果历史')
+ assert.equal(JSON.stringify(f.state),definitionsBefore,'原刷新周期与声明不变')
+ assert.deepEqual((await f.service.read(f.actor,{scope:'SOC',dashboardId:'soc-overview'})).results,first.results)
+ const manual=await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
+ assert.equal(manual.results[0]!.status,'ok')
+ assert.equal(f.executor.calls,calls+1,'本人按需刷新保留')
+ await runtime.setSync(f.actor,{scope:'SOC',enabled:true,expectedRevision:paused.revision,requestId:randomUUID()})
+ assert.deepEqual(await f.service.due(f.owner,at),queued)
+ await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'},undefined,{trigger:'schedule'})
+ assert.equal(f.executor.calls,calls+2,'本人明确开启后恢复周期执行')
+ await pool.query('delete from teloa_business_runtime where owner_id=$1 and scope_id=$2',[f.owner,'SOC'])
+ assert.deepEqual(await f.service.due(f.owner,at),[],'受管状态损坏时不能按旧范围兼容语义继续调度')
+ await rejectsWith(f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'},undefined,{trigger:'schedule'}),'teloa/storage-corrupt')
+ assert.equal(f.executor.calls,calls+2)
+})
+
+test('定时刷新持运行锁至提交：暂停完成后不会再开始新计算，旧刷新回执仍可只读重放',async()=>{
+ const f=harness([count]),identity={id:randomUUID,now:()=>new Date().toISOString()}
+ await new BusinessSpaceService(pool,identity).ensurePersonal(f.owner)
+ const runtime=new BusinessRuntimeService(pool,identity)
+ const requestId=randomUUID(),pauseRequestId=randomUUID()
+ let release!:()=>void,started!:()=>void
+ const blocked=new Promise<void>(resolve=>{release=resolve})
+ const entered=new Promise<void>(resolve=>{started=resolve})
+ const execute=f.executor.execute.bind(f.executor)
+ f.executor.execute=async()=>{started();await blocked;return execute()}
+ const refresh=f.service.refresh(f.actor,{requestId,scope:'SOC',dashboardId:'soc-overview'},undefined,{trigger:'schedule'})
+ await entered
+ let paused=false
+ const pause=runtime.pauseScheduledWork(f.actor,{scope:'SOC',requestId:pauseRequestId}).then(state=>{paused=true;return state})
+ const finished=Promise.allSettled([refresh,pause])
+ // 查询真实咨询锁等待，不用时间猜测暂停已经与在途刷新相遇。
+ const deadline=Date.now()+3000
+ let waiting=false
+ try{
+  while(!waiting&&Date.now()<deadline){
+   waiting=(await pool.query("select exists(select 1 from pg_locks where locktype='advisory' and not granted and classid=((hashtextextended($1,0)>>32)&4294967295)::oid and objid=(hashtextextended($1,0)&4294967295)::oid and objsubid=1) as waiting",[JSON.stringify(['teloa.business-runtime',f.owner,'SOC'])])).rows[0].waiting===true
+   if(!waiting)await delay(5)
+  }
+  assert.equal(waiting,true,'暂停应等待真实运行锁')
+  assert.equal(paused,false)
+ }finally{release();await finished}
+ const [refreshed,pauseResult]=await finished
+ assert.equal(refreshed!.status,'fulfilled')
+ assert.equal(pauseResult!.status,'fulfilled')
+ if(refreshed!.status!=='fulfilled')throw refreshed!.reason
+ const page=refreshed!.value
+ assert.equal(paused,true)
+ const calls=f.executor.calls
+ const replay=await f.service.refresh(f.actor,{requestId,scope:'SOC',dashboardId:'soc-overview'},undefined,{trigger:'schedule'})
+ assert.deepEqual(replay.results,page.results,'暂停后重放已完成回执不重新计算')
+ assert.equal(f.executor.calls,calls)
+ await rejectsWith(f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'},undefined,{trigger:'schedule'}),'teloa/conflict',/已暂停/)
+ assert.equal(f.executor.calls,calls)
 })
 
 test('权限与不存在：非本人范围 forbidden，看板不存在 not-found',async()=>{

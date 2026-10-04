@@ -73,6 +73,51 @@ test('并发同请求只有一个修订，跨范围复用 requestId 拒绝',asyn
  await assert.rejects(h.service.setSync(h.actor,{...request,scope:'AppSec'}),{code:'teloa/conflict'})
 })
 
+test('维护暂停旧范围与已开启范围：合法登记、启停回执及后续本人重启均保留',async()=>{
+ const h=await setup()
+ const scopeBefore=(await pool.query('select scope,title,kind,space_id,created_at from teloa_business_scopes where owner_id=$1 order by scope',[h.ownerId])).rows
+ const legacyRequest={scope:'AppSec',requestId:randomUUID()}
+ const legacy=await h.service.pauseScheduledWork(h.actor,legacyRequest)
+ assert.deepEqual(legacy,{scope:'AppSec',managed:true,syncEnabled:false,revision:2})
+ const enabled=await h.service.setSync(h.actor,{scope:'SOC',enabled:true,expectedRevision:1,requestId:randomUUID()})
+ const request={scope:'SOC',requestId:randomUUID()}
+ const paused=await h.service.pauseScheduledWork(h.actor,request)
+ assert.deepEqual(paused,{...enabled,syncEnabled:false,revision:3})
+ const receiptsBefore=(await pool.query('select request_id,request_spec,result,created_at from teloa_business_runtime_requests where owner_id=$1 order by request_id',[h.ownerId])).rows
+ const restarted=await h.service.setSync(h.actor,{scope:'SOC',enabled:true,expectedRevision:paused.revision,requestId:randomUUID()})
+ const reopened=new backend.BusinessRuntimeService(pool,identity)
+ assert.deepEqual(await reopened.pauseScheduledWork(h.actor,request),paused,'同暂停请求只回放原回执，不覆盖本人后来的开启')
+ assert.deepEqual(await reopened.get(h.actor,'SOC'),restarted)
+ assert.deepEqual(await reopened.pauseScheduledWork(h.actor,legacyRequest),legacy)
+ assert.deepEqual((await pool.query('select scope,title,kind,space_id,created_at from teloa_business_scopes where owner_id=$1 order by scope',[h.ownerId])).rows,scopeBefore,'范围身份与展示声明不改')
+ assert.deepEqual((await pool.query('select request_id,request_spec,result,created_at from teloa_business_runtime_requests where owner_id=$1 and request_id=any($2::uuid[]) order by request_id',[h.ownerId,receiptsBefore.map(row=>row.request_id)])).rows,receiptsBefore,'既有启停历史未被替换')
+})
+
+test('维护暂停并发幂等、授权拒绝与事务中途失败不会留下半登记',async()=>{
+ const h=await setup(),request={scope:'AppSec',requestId:randomUUID()}
+ const results=await Promise.all([h.service.pauseScheduledWork(h.actor,request),h.service.pauseScheduledWork(h.actor,request)])
+ assert.deepEqual(results[0],results[1])
+ assert.equal(results[0]!.revision,2)
+ assert.equal((await pool.query('select count(*)::int as n from teloa_business_runtime_requests where owner_id=$1 and request_id=$2',[h.ownerId,request.requestId])).rows[0].n,1)
+ await assert.rejects(h.service.pauseScheduledWork(h.actor,{...request,scope:'SOC'}),{code:'teloa/conflict'})
+ await assert.rejects(h.service.pauseScheduledWork({...h.actor,scopeIds:['SOC']},{scope:'AppSec',requestId:randomUUID()}),{code:'teloa/forbidden'})
+ await assert.rejects(h.service.pauseScheduledWork(h.actor,{scope:'AppSec',requestId:randomUUID(),enabled:true} as never),{code:'teloa/invalid-input'})
+ await assert.rejects(h.service.pauseScheduledWork({...h.actor,scopeIds:['missing']},{scope:'missing',requestId:randomUUID()}),{code:'teloa/invalid-input'})
+ const other=await setup()
+ let writes=0
+ const fails=new backend.BusinessRuntimeService(pool,{now:()=>{if(++writes===2)throw Error('暂停回执故障点');return identity.now()}})
+ await assert.rejects(fails.pauseScheduledWork(other.actor,{scope:'AppSec',requestId:randomUUID()}),/暂停回执故障点/)
+ assert.deepEqual(await other.service.get(other.actor,'AppSec'),{scope:'AppSec',managed:false,syncEnabled:true,revision:0})
+ assert.equal((await pool.query('select count(*)::int as n from teloa_business_runtime where owner_id=$1 and scope_id=$2',[other.ownerId,'AppSec'])).rows[0].n,0)
+})
+
+test('维护暂停不把损坏的受管状态静默重置为新范围',async()=>{
+ const h=await setup()
+ await pool.query('delete from teloa_business_runtime where owner_id=$1 and scope_id=$2',[h.ownerId,'SOC'])
+ await assert.rejects(h.service.pauseScheduledWork(h.actor,{scope:'SOC',requestId:randomUUID()}),{code:'teloa/storage-corrupt'})
+ assert.equal((await pool.query('select count(*)::int as n from teloa_business_runtime_requests where owner_id=$1',[h.ownerId])).rows[0].n,0)
+})
+
 test('受管缺行或标记反转 fail closed，登记不能修复损坏为默认值',async()=>{
  const h=await setup()
  await pool.query("delete from teloa_business_runtime where owner_id=$1",[h.ownerId])

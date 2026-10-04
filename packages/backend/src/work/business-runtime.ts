@@ -1,5 +1,5 @@
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isBusinessScopeKey,readBusinessRuntimeState,readBusinessRuntimeSetSyncInput,type BusinessRuntimeState,type BusinessRuntimeSetSyncInput} from '@teloa/contract'
+import {WorkError,isBusinessScopeKey,taskInput,readBusinessRuntimeState,readBusinessRuntimeSetSyncInput,type BusinessRuntimeState,type BusinessRuntimeSetSyncInput} from '@teloa/contract'
 
 export type BusinessRuntimeActor={ownerId:string;scopeIds:string[]}
 /** 门控失败不代表来源失败：同步器据此退出，不增加来源退避。 */
@@ -98,23 +98,60 @@ export class BusinessRuntimeService{
   try{
    await db.query('begin')
    // 请求锁先于范围锁，同本人跨范围复用请求也只生成一份回执。
-   await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['teloa.business-runtime-request',actor.ownerId,checked.requestId])])
-   const previous=(await db.query('select request_spec,result from teloa_business_runtime_requests where owner_id=$1 and request_id=$2',[actor.ownerId,checked.requestId])).rows[0]
+   await this.lockRequest(db,actor.ownerId,checked.requestId)
+   const previous=await this.request(db,actor.ownerId,checked.requestId)
    if(previous){
-    let spec:BusinessRuntimeSetSyncInput,result:BusinessRuntimeState
-    try{spec=readBusinessRuntimeSetSyncInput(previous.request_spec);result=readBusinessRuntimeState(previous.result)}catch{throw corrupt()}
-    if(!result.managed||result.scope!==spec.scope||result.syncEnabled!==spec.enabled||result.revision!==spec.expectedRevision+1)throw corrupt()
+    const {spec,result}=previous
     if(JSON.stringify(spec)!==JSON.stringify(checked))throw new WorkError('teloa/conflict','同一启停请求不能改变内容。')
     await db.query('commit');return result
    }
    await lockBusinessRuntime(db,actor.ownerId,checked.scope,'exclusive')
    const state=await readState(db,actor.ownerId,checked.scope)
    if(!state.managed)throw invalid()
-   if(state.revision!==checked.expectedRevision||state.revision>=Number.MAX_SAFE_INTEGER)throw new WorkError('teloa/conflict','业务运行修订已变化，请重新读取。')
-   const now=this.identity.now(),result={...state,syncEnabled:checked.enabled,revision:state.revision+1}
-   await db.query('update teloa_business_runtime set sync_enabled=$3,revision=$4,updated_at=$5 where owner_id=$1 and scope_id=$2',[actor.ownerId,checked.scope,result.syncEnabled,result.revision,now])
-   await db.query('insert into teloa_business_runtime_requests(owner_id,request_id,request_spec,result,created_at) values($1,$2,$3,$4,$5)',[actor.ownerId,checked.requestId,JSON.stringify(checked),JSON.stringify(result),now])
+   const result=await this.writeSync(db,actor.ownerId,checked,state)
    await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ /**
+  * 导入等维护入口在启动调度前调用：同一事务登记旧范围并暂停自动同步与看板刷新，声明与成果不动。
+  * 使用既有启停回执；同请求重放不再次暂停本人后来明确开启的工作。
+  */
+ async pauseScheduledWork(actor:BusinessRuntimeActor,input:{scope:string;requestId:string}):Promise<BusinessRuntimeState>{
+  const row=taskInput(input,['scope','requestId'])
+  // 复用启停输入的身份校验；期望修订由持锁后的真实状态取得，不信任调用方。
+  const validated=readBusinessRuntimeSetSyncInput({...row,enabled:false,expectedRevision:1})
+  authorize(actor,validated.scope)
+  const db=await this.pool.connect()
+  try{
+   await db.query('begin')
+   await this.lockRequest(db,actor.ownerId,validated.requestId)
+   const previous=await this.request(db,actor.ownerId,validated.requestId)
+   if(previous){
+    if(previous.spec.scope!==validated.scope||previous.spec.enabled)throw new WorkError('teloa/conflict','同一启停请求不能改变内容。')
+    await db.query('commit');return previous.result
+   }
+   const state=await this.registerInTransaction(db,actor.ownerId,validated.scope)
+   const checked={...validated,expectedRevision:state.revision}
+   const result=await this.writeSync(db,actor.ownerId,checked,state)
+   await db.query('commit');return result
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ private async lockRequest(db:PoolClient,ownerId:string,requestId:string):Promise<void>{
+  await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['teloa.business-runtime-request',ownerId,requestId])])
+ }
+ private async request(db:PoolClient,ownerId:string,requestId:string):Promise<{spec:BusinessRuntimeSetSyncInput;result:BusinessRuntimeState}|undefined>{
+  const previous=(await db.query('select request_spec,result from teloa_business_runtime_requests where owner_id=$1 and request_id=$2',[ownerId,requestId])).rows[0]
+  if(!previous)return undefined
+  let spec:BusinessRuntimeSetSyncInput,result:BusinessRuntimeState
+  try{spec=readBusinessRuntimeSetSyncInput(previous.request_spec);result=readBusinessRuntimeState(previous.result)}catch{throw corrupt()}
+  if(spec.requestId!==requestId||!result.managed||result.scope!==spec.scope||result.syncEnabled!==spec.enabled||result.revision!==spec.expectedRevision+1)throw corrupt()
+  return {spec,result}
+ }
+ private async writeSync(db:PoolClient,ownerId:string,checked:BusinessRuntimeSetSyncInput,state:BusinessRuntimeState):Promise<BusinessRuntimeState>{
+  if(state.revision!==checked.expectedRevision||state.revision>=Number.MAX_SAFE_INTEGER)throw new WorkError('teloa/conflict','业务运行修订已变化，请重新读取。')
+  const now=this.identity.now(),result={...state,syncEnabled:checked.enabled,revision:state.revision+1}
+  await db.query('update teloa_business_runtime set sync_enabled=$3,revision=$4,updated_at=$5 where owner_id=$1 and scope_id=$2',[ownerId,checked.scope,result.syncEnabled,result.revision,now])
+  await db.query('insert into teloa_business_runtime_requests(owner_id,request_id,request_spec,result,created_at) values($1,$2,$3,$4,$5)',[ownerId,checked.requestId,JSON.stringify(checked),JSON.stringify(result),now])
+  return result
  }
 }

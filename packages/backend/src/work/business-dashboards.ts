@@ -6,6 +6,7 @@ import {
 import type {BusinessDefinitionBundle,BusinessDefinitionSourceReader} from './business-definition-source.ts'
 import type {BusinessSyncTrigger} from './business-sync.ts'
 import {businessDashboardMigrationLock,businessWidgetDefinitionHash,businessWidgetResultOf,type BusinessWidgetComputeContext,type BusinessWidgetService} from './business-widgets.ts'
+import {assertScheduledSync,lockBusinessRuntime,scheduledSyncAllowed} from './business-runtime.ts'
 
 export type BusinessDashboardActor={ownerId:string;scopeIds:string[]}
 
@@ -170,6 +171,11 @@ export class BusinessDashboardService{
     if(recorded.time_range!==selected&&!(requested===undefined&&legacyBatch(recorded.results)))throw new WorkError('teloa/conflict','同一刷新请求标识已用于另一个时间范围。')
     page=await this.page(db,owner,scope,located,await this.resultsAt(db,owner,scope,located,selected,recorded.results),selected)
    }else{
+    // 到期枚举不授予执行：暂停与实际定时刷新共享运行锁，暂停返回后旧任务不能再开始计算。
+    if(options.trigger==='schedule'){
+     await lockBusinessRuntime(db,owner,scope,'shared')
+     await assertScheduledSync(db,owner,scope)
+    }
     let targets=options.widgetIds===undefined?located.widgets:located.widgets.filter(widget=>options.widgetIds!.includes(widget.id))
     // 非默认范围的按需刷新：未接入组件的结果不随范围变，已有 all 结果即直接复用、不重算；还没有才补算一次。
     if(located.dashboard.filters&&selected!==defaultRange(located.dashboard)){
@@ -212,6 +218,7 @@ export class BusinessDashboardService{
   for(const scope of scopes){
    try{
     await this.readOnly(async db=>{
+     if(!await scheduledSyncAllowed(db,ownerId,scope))return
      const bundles=await this.definitions.forScope(db,ownerId,scope)
      const latest=await this.latestStamps(db,ownerId,scope)
      for(const record of bundles.flatMap(bundle=>bundle.dashboards)){
