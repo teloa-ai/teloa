@@ -11,6 +11,8 @@ type Cleanup={after:(action:()=>unknown)=>void}
 export type NativePackagePatch=Readonly<{
  packageName:string
  compatBasename:string
+ /** 可选组合的解析入口；仍对实际官方包逐文件核对来源。 */
+ packageAnchor?:string
  /** 只将已复制的官方 peer 包接到同一私有 graph；不会写原 node_modules。 */
  overrides?:Readonly<Record<string,string>>
 }>
@@ -21,7 +23,7 @@ const packageNamePattern=/^@deepseek-ai\/dsh-[a-z0-9-]+$/
 /** 完整官方 npm 副本，精确 hash 与无 fuzz 差分；返回可供同图复用的 package root。 */
 export async function patchedNativePackage<T>(t:Cleanup,spec:NativePackagePatch):Promise<{root:string;namespace:T}>{
  assert.match(spec.packageName,packageNamePattern);assert.match(spec.compatBasename,/^[a-z0-9.-]+$/)
- const source=dirname(await realpath(createRequire(import.meta.url).resolve(spec.packageName+'/package.json')))
+ const source=dirname(await realpath(createRequire(spec.packageAnchor??import.meta.url).resolve(spec.packageName+'/package.json')))
  const receipt=JSON.parse(await readFile(join(compat,spec.compatBasename+'.json'),'utf8')) as {
   schema:string;package:string;version:string;upstreamCommit:string;patchSha256:string;files:Array<{path:string;beforeSha256:string;afterSha256:string}>
  }

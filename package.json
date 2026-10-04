@@ -9,6 +9,7 @@
   "scripts": {
     "test:repo": "node --test \"tests/DSH可选依赖基线.test.js\" \"tests/DSH可选插件准备.test.js\" \"tests/DSH右栏类型依赖.test.js\" \"tests/DSH版本声明.test.js\" \"tests/DSH组合安全钉.test.js\" \"tests/DSH预设准备验证.test.js\" \"tests/Dockerfile复制源.test.js\" \"tests/acceptance-process.test.js\" \"tests/container-config.test.js\" \"tests/container-proxy.test.js\" \"tests/database-setup.test.js\" \"tests/dsh-security-baseline.test.js\" \"tests/plain-language-copy.test.js\" \"tests/repository-test-entrypoints.test.js\" \"tests/宿主就绪自检.test.js\" \"tests/本地嵌入权重不入库.test.js\" \"tests/正式数据准备边界.test.js\" \"tests/行业资源类型一致性.test.js\"",
     "check:dsh": "node scripts/核对DSH依赖.mjs",
+    "check:browser-compat": "node --test packages/harness-dsh/tests/native-browser-sandbox.test.ts",
     "check:client": "node scripts/检查客户端构建.mjs",
     "setup:dsh": "node scripts/准备DSH插件.mjs",
     "test:work": "pnpm --filter @teloa/backend test",
