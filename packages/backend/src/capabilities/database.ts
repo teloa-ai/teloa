@@ -13,6 +13,7 @@ import {MarkdownKnowledgeCatalog} from './markdown-knowledge-catalog.ts'
 import {KnowledgeResourceService} from './knowledge-resources.ts'
 import {KnowledgeTreeService} from './knowledge-tree.ts'
 import {RetrievalIndexService} from './retrieval-index.ts'
+import {resourceDatabaseEndpointPolicy} from './database-endpoint.ts'
 
 export function databaseConnectionAllowed(connectionString:string,deployment?:string):boolean{
   let url:URL
@@ -34,7 +35,12 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
     throw new WorkError('teloa/storage-unavailable','工作资料数据库尚未配置或配置不可读，请运行本项目的 setup:database。')
   }
   if(!isRecord(config)||typeof config.connectionString!=='string')throw new WorkError('teloa/storage-unavailable','工作资料数据库配置格式不正确。')
-  if(!databaseConnectionAllowed(config.connectionString,options.deployment))throw new WorkError('teloa/storage-unavailable','只接受本机数据库或 Compose 内网 db 服务的独立 teloa 数据库。')
+  let connection
+  try{connection=resourceDatabaseEndpointPolicy.connectionOptions(config.connectionString)}catch{throw new WorkError('teloa/storage-unavailable','资料数据库配置与宿主固定目标不一致。')}
+  if(!connection){
+    if(!databaseConnectionAllowed(config.connectionString,options.deployment))throw new WorkError('teloa/storage-unavailable','只接受本机数据库或 Compose 内网 db 服务的独立 teloa 数据库。')
+    connection={connectionString:config.connectionString}
+  }
   const knowledgeRoot=resolve(dirname(path),'data')
   try{
     await mkdir(knowledgeRoot,{recursive:true,mode:0o700})
@@ -45,10 +51,10 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
     if(error instanceof WorkError)throw error
     throw new WorkError('teloa/storage-unavailable','知识内容仓目录无法准备。')
   }
-  const pool=new Pool({connectionString:config.connectionString,max:6,connectionTimeoutMillis:5000,statement_timeout:15000})
+  const pool=new Pool({...connection,max:6,connectionTimeoutMillis:5000,statement_timeout:15000})
   pool.on('error',()=>{/* 下次业务请求通过显式失败报告，不暴露连接凭据。 */})
   // 锁等待不能占用业务事务的连接额度；Pool在首次借用之前不会建立连接。
-  const dispatchLocks=new Pool({connectionString:config.connectionString,max:2,connectionTimeoutMillis:5000,statement_timeout:15000})
+  const dispatchLocks=new Pool({...connection,max:2,connectionTimeoutMillis:5000,statement_timeout:15000})
   dispatchLocks.on('error',()=>{/* 已借出的锁连接由服务中止lockSignal；空闲连接由pg回收。 */})
   let closing:Promise<void>|undefined
   const close=()=>closing??=(async()=>{try{await dispatchLocks.end()}finally{await pool.end()}})()

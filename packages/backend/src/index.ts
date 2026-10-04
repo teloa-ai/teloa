@@ -5,6 +5,7 @@ export type { CopyHost, CopyRecord, CopyRepository, CopyState } from './work/cop
 export { ResourceService,authorizeResourceActor,type ResourceActor,type ResourceSourceContext,type ResourceSourceCatalog,type RetrievalExcerptHit } from './capabilities/resources.ts'
 export { initializeResources } from './capabilities/schema.ts'
 export { openResourceDatabase } from './capabilities/database.ts'
+export {ResourceDatabaseEndpointPolicy,resourceDatabaseEndpointPolicy,type ResourceDatabaseEndpoint} from './capabilities/database-endpoint.ts'
 export {MarkdownKnowledgeService,initializeMarkdownKnowledge,normalizePasteMarkdown} from './capabilities/markdown-knowledge.ts'
 export {KnowledgeTreeService,initializeKnowledgeTree} from './capabilities/knowledge-tree.ts'
 export {MarkdownKnowledgeCatalog,markdownKnowledgeReferenceId} from './capabilities/markdown-knowledge-catalog.ts'
