@@ -66,3 +66,21 @@ test('路由用户名保留长度边界且拒绝多段、空后缀和额外配�
  assert.throws(()=>new ResourceDatabaseEndpointPolicy().install({...endpoint,username:'tenant_a.route',database:'tenant_a.route'}))
  assert.throws(()=>new ResourceDatabaseEndpointPolicy().install({...endpoint,username:'tenant_a.route',tls:false}))
 })
+test('可信端点可指定direct协商，pg选项保留严格TLS且不向TLS透传协商字段',()=>{
+ const connectionString='postgresql://tenant_a:password@tenant-db.example/tenant_a'
+ for(const tls of [{negotiation:'direct' as const},{ca:'trusted-ca',negotiation:'direct' as const}]){
+  const policy=new ResourceDatabaseEndpointPolicy();policy.install({...endpoint,tls})
+  assert.deepEqual(policy.connectionOptions(connectionString),{connectionString,sslnegotiation:'direct',ssl:{rejectUnauthorized:true,...('ca' in tls?{ca:'trusted-ca'}:{})}})
+  assert.throws(()=>policy.connectionOptions(connectionString+'?sslmode=require'))
+ }
+ const mutable={...endpoint,tls:{ca:'trusted-ca',negotiation:'direct' as const}},policy=new ResourceDatabaseEndpointPolicy();policy.install(mutable)
+ mutable.tls.ca='changed-ca';(mutable.tls as {negotiation:string}).negotiation='invalid'
+ assert.deepEqual(policy.connectionOptions(connectionString),{connectionString,sslnegotiation:'direct',ssl:{rejectUnauthorized:true,ca:'trusted-ca'}})
+})
+test('direct协商拒绝非法取值、未知TLS字段和顶层扩展，仍要求有效TLS',()=>{
+ for(const tls of [undefined,null,{negotiation:'prefer'},{negotiation:'DIRECT'},{negotiation:''},{negotiation:false},{negotiation:1},{negotiation:null},{negotiation:'direct',rejectUnauthorized:false},{negotiation:'direct',unknown:true},{negotiation:'direct',ca:''}]){
+  assert.throws(()=>new ResourceDatabaseEndpointPolicy().install({...endpoint,tls} as typeof endpoint))
+ }
+ assert.throws(()=>new ResourceDatabaseEndpointPolicy().install({...endpoint,tls:{negotiation:'direct'},sslnegotiation:'direct'} as typeof endpoint))
+ assert.throws(()=>new ResourceDatabaseEndpointPolicy().install({...endpoint,tls:false}))
+})
