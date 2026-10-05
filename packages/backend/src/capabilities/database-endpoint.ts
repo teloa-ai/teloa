@@ -14,7 +14,7 @@ export class ResourceDatabaseEndpointPolicy{
   if(typeof endpoint.hostname!=='string'||!endpoint.hostname||/[\s\/@?#%\\\0]/.test(endpoint.hostname)||
    !Number.isSafeInteger(endpoint.port)||endpoint.port<1||endpoint.port>65535||
    typeof endpoint.database!=='string'||!/^[a-z][a-z0-9_]{0,62}$/.test(endpoint.database)||
-   typeof endpoint.username!=='string'||!/^[a-z][a-z0-9_]{0,62}$/.test(endpoint.username))throw invalid()
+   typeof endpoint.username!=='string'||!/^[a-z][a-z0-9_]{0,62}(?:\.[a-z0-9]{1,63})?$/.test(endpoint.username))throw invalid()
   if(endpoint.tls===false){
    // 明文仅用于回环或既有 Compose 内网；外置服务必须校验证书。
    if(!['127.0.0.1','localhost','db'].includes(endpoint.hostname))throw invalid()
