@@ -1,0 +1,33 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-compaction-basic",
+  "version": "0.2.0-rc.2",
+  "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "patchSha256": "99e682ed3a9b8cfbab458c88bfe272e31e83651cf56b41147b10b4b9b16a1939",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "b7ac52f20a36430cf01a66b3a36f23a48ffdb22708d714dbe1fff541b5df4ec5",
+      "afterSha256": "4c10e83a26b3c88a9a2d89bfeec6b24e157803638da0a8d7844026eb06cedb3e"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "8f3a2e81523980868b5b40e74fc6495238771177446f0757dad6b53e7dcb5adc",
+      "afterSha256": "4bd841574ccefad58b8eb3bcd4d740f412c3951b08c73df83712fb08aaf14c5f"
+    }
+  ],
+  "api": [
+    "BasicSummaryRequest",
+    "BasicCompactionEngine.summaryRequestOwner"
+  ],
+  "scope": {
+    "admission": "Read-only provenance for the exact options created by the default official summarizer, bound to its actual agent and session",
+    "default": "No authorization is granted; ordinary Free summarization and all native summary selection, persistence and retry behavior are retained",
+    "boundary": "Publish immediately before the concrete stream; delete in finally. Immutable static lookup reads only this fixed official module, including isolated engines; custom engine lookups cannot synthesize provenance",
+    "limitations": [
+      "Consumers must still bind current accepted input roots, turn, owner and revocation generation",
+      "purpose and sessionId strings alone never publish provenance",
+      "Custom summarizer overrides do not publish default-summary provenance"
+    ]
+  }
+}

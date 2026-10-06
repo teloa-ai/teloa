@@ -1,6 +1,7 @@
 import {AsyncLocalStorage} from 'node:async_hooks'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
+import {BasicCompactionEngine} from '@deepseek-ai/dsh-compaction-basic'
 import type {GenerateOptions,StreamChunk} from '@deepseek-ai/dsh-llm'
 import {Session,SessionId,SessionLogOffset,interruptedTurnClosers,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
 import type {ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
@@ -14,7 +15,7 @@ import {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts
 type Step={number:number;signal:AbortSignal}
 type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
 type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<InputCause>;step:Step|undefined}
-type Model={turn:Turn;step:Step;options:GenerateOptions;entered:boolean;active:boolean}
+type Model={turn:Turn;step:Step|undefined;options:GenerateOptions;assertCurrent:()=>void;entered:boolean;active:boolean}
 type ToolCause={turn:Turn;step:Step;exec:ToolRunContext;signal:AbortSignal;parent:ToolRunContext['parent'];token:ToolRunContext['token'];agent:Agent;callId:string;rootCallId:string;name:string;arguments:unknown;active:boolean}
 type PendingInput={receipt:InputCause;roots:readonly InputCause[]}
 type ContextPublication={session:Session;identity:NativeInputIdentity;roots:readonly InputCause[];accepted:boolean}
@@ -107,8 +108,44 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   current(turn,stepNumber===undefined?undefined:step);return {turn,step}
  }
  const assertModel=(model:Model)=>{
-  try{if(!model.active||model.options.signal!==model.step.signal)throw denied();current(model.turn,model.step)}
+  try{
+   if(!model.active||model.options.signal!==model.turn.signal||model.turn.step!==model.step)throw denied()
+   model.assertCurrent()
+  }
   catch{cancel(model.turn.agent);throw denied()}
+ }
+ /** 只读官方摘要内部的活跃请求表；purpose、归因事件与调用者复制的 options 不产生证明。 */
+ const summaryModel=(options:GenerateOptions):Model|undefined=>{
+  const agent=options.sessionId?ctx.agents.get(options.sessionId):undefined,turn=agent?turns.get(agent):undefined
+  if(!agent||!turn||!Object.isFrozen(options)||options.signal!==turn.signal)return undefined
+  const descriptor=Object.getOwnPropertyDescriptor(BasicCompactionEngine,'summaryRequestOwner')
+  if(!descriptor||descriptor.writable!==false||descriptor.configurable!==false||typeof descriptor.value!=='function')return undefined
+  const lookup=()=>Reflect.apply(descriptor.value,BasicCompactionEngine,[options]) as unknown
+  const proof=lookup()
+  if(!proof||typeof proof!=='object'||!Object.isFrozen(proof)||Reflect.get(proof,'options')!==options||Reflect.get(proof,'agent')!==agent||Reflect.get(proof,'session')!==turn.session||Reflect.get(proof,'signal')!==turn.signal)return undefined
+  const step=turn.step,roots=[...turn.roots]
+  // 官方 pre-step 可能早于 claim；仅接受已取得最终回执、仍在本人原 Inbox 的输入。
+  const queued=roots.length?[]:[...agent.inbox.nextTurn,...agent.inbox.nextStep].map(message=>({message,input:pending.get(message)}))
+  for(const {input} of queued){
+   if(!input||input.receipt.session!==turn.session)throw denied()
+   roots.push(...input.roots)
+  }
+  const assertCurrent=()=>{
+   target(turn)
+   if(!loopReady||turns.get(agent)!==turn||turn.step!==step||lookup()!==proof)throw denied()
+   turn.signal.throwIfAborted()
+   for(const {message,input} of queued){
+    if(pending.get(message)!==input||![...agent.inbox.nextTurn,...agent.inbox.nextStep].includes(message))throw denied()
+   }
+   fixedRoots(roots)
+   target(turn)
+   if(turns.get(agent)!==turn||turn.step!==step||lookup()!==proof)throw denied()
+   turn.signal.throwIfAborted()
+  }
+  assertCurrent()
+  const model:Model={turn,step,options,assertCurrent,entered:false,active:false}
+  models.set(options,model)
+  return model
  }
  const assertTool=(cause:ToolCause)=>{
   try{
@@ -165,7 +202,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    if(request.kind==='request'){
     const options=request.options
     if(models.has(options)||options.sessionId!==agent.id||options.signal!==step.signal||!Object.isFrozen(options))throw denied()
-    models.set(options,{turn,step,options,entered:false,active:false});return
+    models.set(options,{turn,step,options,assertCurrent:()=>current(turn,step),entered:false,active:false});return
    }
    if(request.kind==='tool-prepare'){
     if(planned.has(request.input)||request.input.agent!==agent||request.input.parent!==undefined||request.input.signal!==step.signal)throw denied()
@@ -325,7 +362,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   return ()=>{loopReady=false}
  })
  ctx.on('llm/stream',async function*(options,next):AsyncIterable<StreamChunk>{
-  const model=models.get(options)
+  const model=models.get(options)??summaryModel(options)
   if(!model||model.entered)throw denied()
   model.entered=true;model.active=true
   try{assertModel(model);for await(const chunk of next()){assertModel(model);yield chunk}}
