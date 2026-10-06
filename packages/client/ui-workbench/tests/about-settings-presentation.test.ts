@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {supportQrKind} from '../src/client/support-qr.ts'
+import {ABOUT_PLAN_MESSAGE_ROWS} from '../src/client/i18n/locales/about-plans.ts'
 
 test('关于页默认只显示紧凑联系入口，二维码按需在单一弹窗中呈现',async()=>{
   const [view,styles]=await Promise.all([
@@ -60,7 +61,7 @@ test('关于页列出 Max Luo、Morgan Chen、Caleb Pan，联系方式只保留�
   assert.equal((view.match(/className=\{css\.contactLinks\}/g)||[]).length,1)
 })
 
-test('版本卡片保持三个版本，当前身份由宿主提供；Cloud 明确归于 Pro',async()=>{
+test('版本卡片保持三个版本，Pro 为 Mac 本机工作，手机及 Enterprise 明确尚未开放',async()=>{
  const [view,styles,rows]=await Promise.all([
   readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8'),
   readFile(new URL('../src/client/AboutSettings.module.css',import.meta.url),'utf8'),
@@ -69,14 +70,23 @@ test('版本卡片保持三个版本，当前身份由宿主提供；Cloud 明�
  const names=[...view.matchAll(/name:'(Free|Pro|Cloud|Enterprise)'/g)].map(match=>match[1])
  assert.deepEqual(names,['Free','Pro','Enterprise'])
  assert.match(view,/card\.name===application\.product/)
- assert.match(rows,/Cloud 是 Pro 的云端执行能力，不是独立版本/)
- assert.match(rows,/Pro 的云端、手机和 Web 能力仍在开发/)
+ assert.match(rows,/Mac 本机工作/)
+ assert.match(rows,/手机远程（尚未开放）/)
+ assert.match(rows,/公开 Web 仅用于注册、登录、账号恢复与返回客户端/)
+ assert.match(rows,/Enterprise 规划独立部署与企业治理/)
+ assert.match(rows,/企业独立部署与治理（尚未开放）/)
+ assert.doesNotMatch(rows,/Harness|技术候选|开发.{0,2}暂停/)
+ assert.doesNotMatch(rows,/Cloud 是 Pro|Cloud execution belongs to Pro|备份恢复与更新维护|Local and cloud execution/)
  assert.doesNotMatch(view,/LIMIT_ROWS|planLimits|name:'Team'/)
- assert.match(rows,/企业私有化部署/)
- for(const feature of ["多种智能体引擎","分布式部署","安全合规","操作审计","安全网关"])assert.ok(rows.includes(feature),feature)
+ assert.match(rows,/客户控制部署/)
+ for(const feature of ["安全合规","操作审计","安全网关"])assert.ok(rows.includes(feature),feature)
  assert.doesNotMatch(rows,/企业私有化 Web|放开上限|Team 全部|托管模型额度/)
  assert.match(rows,/自备模型 API 密钥/)
+ assert.match(rows,/模型费用另计/)
  assert.match(rows,/Free 与 Pro 共享个人核心功能/)
+ assert.ok(ABOUT_PLAN_MESSAGE_ROWS.every(row=>row.length===11&&row.slice(1).every(value=>value.trim())), '全部词条应完整覆盖十语言')
+ assert.match(view,/card\.id==='enterprise'\|\|card\.id==='pro'&&item==='about\.plans\.card\.pro\.item5'/)
+ assert.match(view,/<Clock3 size=\{14\} aria-hidden/)
  assert.match(styles,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
  const section=view.slice(view.indexOf('className={css.plansSection}'),view.indexOf('</section>',view.indexOf('className={css.plansSection}')))
  assert.doesNotMatch(section,/<button/)

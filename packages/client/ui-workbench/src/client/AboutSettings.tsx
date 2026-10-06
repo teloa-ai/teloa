@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,useSyncExternalStore,type KeyboardEvent as ReactKeyboardEvent,type MouseEvent as ReactMouseEvent} from 'react'
-import {Check,Code2,Globe,Heart,Mail,MessageCircle,MessageSquare,ScanLine,X} from 'lucide-react'
+import {Check,Clock3,Code2,Globe,Heart,Mail,MessageCircle,MessageSquare,ScanLine,X} from 'lucide-react'
 import { BrandLogo,type BrandTheme } from './BrandLogo.js'
 import wechatQrCode from '../assets/about/wechat-official-account.jpg'
 import personalQrCode from '../assets/about/wechat-contact.jpg'
@@ -42,7 +42,7 @@ export function AboutSettings({theme}:{theme:BrandTheme}){
           <span className={css.planBadge}>{t(card.name===application.product?(card.name==='Free'?'about.plans.card.free.badge':'about.plans.current'):card.name==='Free'?'about.plans.available':'about.plans.planned')}</span>
           <strong className={css.planName}>{card.name}</strong>
           {'tagline' in card&&<p className={css.planTagline}>{t(card.tagline)}</p>}
-          <ul>{card.items.map(item=><li key={item}><Check size={14} aria-hidden/>{t(item)}</li>)}</ul>
+          <ul>{card.items.map(item=><li key={item}>{card.id==='enterprise'||card.id==='pro'&&item==='about.plans.card.pro.item5'?<Clock3 size={14} aria-hidden/>:<Check size={14} aria-hidden/>}{t(item)}</li>)}</ul>
         </article>)}
       </div>
       <p className={css.plansNote}>{t('about.plans.relation')} <span className={css.plansMore}>{t('about.plans.more')}<a href="https://teloa.ai" target="_blank" rel="noreferrer">teloa.ai</a></span></p>
