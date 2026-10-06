@@ -7,6 +7,16 @@ import {nativeHotSubagentFixture,type ChildMode} from './fixtures/native-hot-sub
 const options={timeout:15000}
 const modes:readonly ChildMode[]=['one-shot','continuable']
 
+for(const mode of modes)test('受管 '+mode+' 初始child必须独立核对parallel能力，不能借父续作租约绕过到期',options,async t=>{
+ const f=await nativeHotSubagentFixture(t,mode)
+ f.access.installSessionCapabilities(async(_id,producer)=>({ownerId:'verified-owner',capabilities:producer==='subagent'?['parallel-agents']:['general-agent']}))
+ f.setToolAction(async(_exec,start)=>{f.rights.valid=false;return start()})
+ await f.send()
+ assert.equal(f.childRequests().length,0)
+ if(f.candidates.length)assert.equal(f.inserted(f.candidates[0]!.agent).length,0)
+ assert.ok(f.authorizations.some(request=>request.kind==='capability'&&request.capability==='parallel-agents'))
+})
+
 for(const mode of modes)test('真实 '+mode+' 子任务沿已受理根自然到期仍完成首次模型和父下一step',options,async t=>{
  const f=await nativeHotSubagentFixture(t,mode)
  f.setToolAction(async(_exec,start)=>{f.rights.valid=false;return start()})

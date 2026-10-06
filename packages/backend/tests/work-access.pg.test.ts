@@ -94,12 +94,12 @@ async function planFixture(){
 }
 async function planRows(owner:string){return (await pool.query('select (select jsonb_agg(to_jsonb(o) order by id) from teloa_plan_occurrences o where owner_id=$1) occurrences,(select jsonb_agg(to_jsonb(s) order by plan_id) from teloa_plan_schedule_state s where owner_id=$1) state',[owner])).rows[0]}
 
-test('TaskRun 首次prepared拒绝零持久变更，可信request固定native identity',async()=>{
- const f=await runFixture(),before=await runState(f.task.id,f.run.id),current=state(f.owner)
+test('TaskRun 首次prepared拒绝零持久变更，可信能力request固定真实员工与会话',async()=>{
+ const f=await runFixture(),before=await runState(f.task.id,f.run.id),current=state(f.owner),calls=current.requests.length
  current.allowed=false
  await assert.rejects(f.service.claim(f.owner,{runId:f.run.id}),{code:'teloa/forbidden'})
  assert.deepEqual(await runState(f.task.id,f.run.id),before)
- assert.deepEqual(current.requests,[{kind:'task-run-start',ownerId:f.owner,runId:f.run.id,taskId:f.task.id,sessionId:f.run.sessionId,nativeRequestId:f.run.nativeRequestId}])
+ assert.deepEqual(current.requests.slice(calls),[{kind:'capability',capability:'people',ownerId:f.owner,sessionId:f.run.sessionId,objectId:f.run.roleId,operation:'run'}])
 })
 test('TaskRun许可到期仍可返回旧accepted回执、读取、停止意图和对账',async()=>{
  const f=await runFixture(),claimed=await f.service.claim(f.owner,{runId:f.run.id})
@@ -176,9 +176,11 @@ test('Plan schedule真实游标写回包延迟跨到期，occurrence/游标回�
 test('并发schedule只有真实新领取申请一次准入；旧游标查询不重新准入',async()=>{
  const f=await planFixture(),current=state(f.owner),input={planId:f.plan.id,now:'2026-09-11T01:00:00.000Z'}
  await f.service.recover(f.owner,{planId:f.plan.id,now:'2026-09-11T00:30:00.000Z'})
+ const calls=current.requests.length
  const results=await Promise.all(Array.from({length:6},()=>f.service.claim(f.owner,input)))
- assert.equal(results.filter(row=>row.dispatch).length,1);assert.equal(current.requests.length,1)
- current.allowed=false;assert.equal((await f.service.claim(f.owner,input)).dispatch,false);assert.equal(current.requests.length,1)
+ assert.equal(results.filter(row=>row.dispatch).length,1);assert.equal(current.requests.length,calls+2)
+ assert.deepEqual(current.requests.slice(calls).map(row=>row.kind),['capability','plan-occurrence'])
+ current.allowed=false;assert.equal((await f.service.claim(f.owner,input)).dispatch,false);assert.equal(current.requests.length,calls+2)
 })
 
 async function reassignmentFixture(){

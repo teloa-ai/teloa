@@ -1,6 +1,6 @@
 import {lockConversationTaskParent,assertConversationTaskOpen} from './conversation-work-task-protection.ts'
 import {initializePlanSchedulerStatus} from './plan-scheduler-status.ts'
-import {workAccess} from './work-access.ts'
+import {workAccess,combineWorkAccessLeases} from './work-access.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
@@ -227,7 +227,10 @@ export class PlanOccurrenceService{
     await db.query('update teloa_plan_schedule_state set plan_version=$2,config_version=$3,next_at=$4,occurrence_id=$5,updated_at=$6 where plan_id=$1',[plan.id,plan.version,plan.configVersion,next.at,next.occurrenceId,value.now])
     await db.query('commit');return {occurrence,dispatch:false}
    }
-   const admission=await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId:state.occurrenceId,source:'schedule'})
+   const admission=combineWorkAccessLeases([
+    await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:plan.id,operation:'run'}),
+    await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId:state.occurrenceId,source:'schedule'}),
+   ])
    const occurrenceId=this.identity.id(),taskRequestId=this.identity.id()
    if(!uuid(occurrenceId)||!uuid(taskRequestId))throw new WorkError('teloa/storage-unavailable','无法生成稳定的日程领取身份。')
    const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion}
@@ -271,7 +274,10 @@ export class PlanOccurrenceService{
     (t.id is null and p.state='active' and o.plan_version=p.version and o.config_version=p.config_version)
    ) order by o.claimed_at,o.id limit 1`,[owner,plan.id])).rows.map(observedOccurrence)
    if(history.find(({occurrence,task})=>task?!['completed','cancelled'].includes(task.state):!occurrence.invalidated))throw new WorkError('teloa/conflict','当前计划已有未结束执行，不能再次立即运行。')
-   const admission=await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId,source:'manual'})
+   const admission=combineWorkAccessLeases([
+    await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:plan.id,operation:'run'}),
+    await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId,source:'manual'}),
+   ])
    const id=this.identity.id()
    if(!uuid(id))throw new WorkError('teloa/storage-unavailable','无法生成稳定的立即运行身份。')
    const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion}

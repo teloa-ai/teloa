@@ -7,6 +7,21 @@ import {nativeProviderKernel} from './fixtures/native-input-provider.ts'
 import {loopWorkFixture} from './fixtures/native-loop-work-admission.ts'
 
 const options={timeout:10000}
+
+test('本人取消后的真实turn-end仍用所属writer持久收尾，不能漏掉终态释放证据',options,async t=>{
+ const seen:NativeProgressCheckpointInput[]=[],gate=hotGate();t.after(gate.release)
+ const f=await fixture(t,async input=>{input.assertCurrent();seen.push(input)})
+ f.adapter.prepareGate=gate;f.adapter.scripts.push(textAnswer)
+ const message=await f.send('progress-cancel-terminal');await gate.entered
+ f.agent.cancel({kind:'user'},{keepInbox:true});gate.release();await f.agent.whenIdle()
+ const terminal=seen.find(input=>input.phase==='turn-end')
+ assert.ok(terminal,'取消必须送达持久终态，而非只留下活跃预约')
+ const last=terminal.snapshot.events.at(-1)
+ assert.equal(last?.type,'turn/end');assert.equal(last?.type==='turn/end'&&last.data.turn,terminal.turn)
+ assert.equal(last?.type==='turn/end'&&last.data.reason.kind,'aborted')
+ assert.deepEqual(terminal.roots.map(root=>root.messageId),[message.id])
+ assert.ok((await f.cold()).events.some(event=>event.type==='turn/end'&&event.seq===last!.seq))
+})
 async function fixture(t:TestContext,progress?:NativeProgressCheckpoint,checkpoint:()=>Promise<void>=async()=>{},durable=true){
  const root=await mkdtemp('/private/tmp/teloa-progress-checkpoint-');t.after(()=>rm(root,{recursive:true,force:true}))
  const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,progress,checkpoint:durable?checkpoint:undefined})

@@ -8,6 +8,17 @@ import {drain,hotGate,nativeHotCausalityFixture,nativeHotLlmFixture,reconstructe
 const forbidden={code:'teloa/forbidden'}
 const options={timeout:10000}
 
+test('高级能力租约随受理根进入真实热步骤，到期阻止下一次模型派发',options,async t=>{
+ let advanced=true
+ const f=await nativeHotCausalityFixture(t,{capabilityPolicy:async()=>({assertCurrent(){if(!advanced)throw Error('expired capability')}})})
+ f.access.installSessionCapabilities(async()=>({ownerId:'verified-owner',capabilities:['people']}))
+ f.adapter.scripts.push(toolAnswer,textAnswer)
+ f.setToolAction(async()=>{advanced=false})
+ await f.send('advanced-before-expiry');await f.agent.whenIdle()
+ assert.equal(f.counters.tools,1);assert.equal(f.adapter.requests.length,1)
+ assert.notEqual(f.events().filter(event=>event.type==='turn/end').at(-1)?.data.reason.kind,'completed')
+})
+
 test('真实首次受理后自然到期，prepare 后首步及工具后下一模型 step 都继续，新 prompt 拒绝',options,async t=>{
  const f=await nativeHotCausalityFixture(t),gate=hotGate();t.after(gate.release)
  f.adapter.prepareGate=gate;f.adapter.scripts.push(toolAnswer,textAnswer)

@@ -2,6 +2,7 @@ import type { Pool,PoolClient } from 'pg'
 import { WorkError,roleInput,roleDefinition,roleWriteDefinition,type DigitalRole } from '@teloa/contract'
 import { ensureAutoDreamPlan,type AutoDreamPorts } from './auto-dream-plans.ts'
 import { renewRoleGrants } from './collaboration.ts'
+import {workAccess} from './work-access.ts'
 
 export async function initializeRoles(pool:Pool):Promise<void>{
  await pool.query(`create table if not exists teloa_roles (
@@ -80,7 +81,7 @@ export class RoleService{
   ownerId(owner)
   const existing=await this.pool.query("select * from teloa_roles where owner_id=$1 and definition->>'kind'='twin' order by created_at,id limit 1",[owner])
   if(existing.rows[0])return readStoredRole(existing.rows[0])
-  return this.create(owner,{requestId:personalTwinRequestId,fields:personalTwinFields})
+  return (await this.createOrExistingWithAdmission(owner,{requestId:personalTwinRequestId,fields:personalTwinFields},undefined,true)).role
  }
  /**
   * 用户亲手招聘的岗位创建后直接 `active`：新员工直接在岗，不再要求先恢复一次。
@@ -89,7 +90,8 @@ export class RoleService{
   */
  async create(owner:string,input:unknown,options?:{state?:'active'|'paused'}):Promise<DigitalRole>{return (await this.createOrExisting(owner,input,options)).role}
  /** 同 `create`，另带出本次是否命中同一请求已建的岗位：判定在创建锁内完成，并发同请求恰有一个拿到 `existing:false`。 */
- async createOrExisting(owner:string,input:unknown,options?:{state?:'active'|'paused'}):Promise<{role:DigitalRole;existing:boolean}>{
+ async createOrExisting(owner:string,input:unknown,options?:{state?:'active'|'paused'}):Promise<{role:DigitalRole;existing:boolean}>{return this.createOrExistingWithAdmission(owner,input,options)}
+ private async createOrExistingWithAdmission(owner:string,input:unknown,options?:{state?:'active'|'paused'},systemTwin=false):Promise<{role:DigitalRole;existing:boolean}>{
   ownerId(owner);const row=roleInput(input,['requestId','fields'])
   if(!uuid(row.requestId))throw new WorkError('teloa/invalid-input','需要有效的创建请求 ID。')
   const client=await this.pool.connect()
@@ -105,11 +107,14 @@ export class RoleService{
     const role=readStoredRole(existing);await client.query('commit');return {role,existing:true}
    }
    const definition=roleWriteDefinition(row.fields),now=this.identity.now()
+   // 唯一默认分身初始化不授予使用权；人类招聘、模板建岗均按 people 核对。
+   const admission=systemTwin?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:row.requestId as string,operation:'create'})
+   admission?.assertCurrent()
    const result=await client.query('insert into teloa_roles(id,owner_id,request_id,request_spec,definition,version,state,created_at,updated_at) values($1,$2,$3,$4,$4,1,$6,$5,$5) returning *',[this.identity.id(),owner,row.requestId,JSON.stringify(definition),now,options?.state??'active'])
    const role=readStoredRole(result.rows[0])
    // 接线失败一律回滚整笔岗位创建：不能留下一位没有每日小结的在岗员工。
    if(this.autoDream)await ensureAutoDreamPlan(client,this.autoDream,owner,role)
-   await client.query('commit');return {role,existing:false}
+   admission?.assertCurrent();await client.query('commit');return {role,existing:false}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
  async edit(owner:string,input:unknown):Promise<DigitalRole>{
@@ -145,12 +150,15 @@ export class RoleService{
   if(role.state==='retired'||role.kind!==definition.kind)throw new WorkError('teloa/conflict','已退役员工不能修改，员工身份类型不能变更。')
   // 现阶段只开放暂停岗位编辑；运行岗位的范围缩减必须与任务、计划一起校验。
   if(role.state!=='paused')throw new WorkError('teloa/conflict','请先暂停员工并核对关联工作。')
+  const admission=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:role.id,operation:'edit'})
+  admission.assertCurrent()
   const now=this.identity.now()
   const updated=await client.query('update teloa_roles set definition=$3,version=version+1,updated_at=$4 where id=$1 and owner_id=$2 returning *',[role.id,owner,JSON.stringify(definition),now])
   const value=readStoredRole(updated.rows[0]);await client.query('insert into teloa_role_edits(role_id,base_version,request_spec,result) values($1,$2,$3,$4)',[role.id,row.expectedVersion,JSON.stringify(definition),JSON.stringify(value)])
   // 岗位版本 +1 会让这位员工在各群的授权整体判 `invalidated`：同一笔事务里按新版本续签，
   // 否则改一次使命就让他在所有群里的「直接回应」静默停摆。
   await renewRoleGrants(client,owner,value,now)
+  admission.assertCurrent()
   return value
  }
 }

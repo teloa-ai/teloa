@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {SessionSeq,snapshotSessionEvent,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
-import {workAccess,type WorkAccess,type WorkAccessLease,type WorkAccessRequest} from '@teloa/backend'
+import {workAccess,combineWorkAccessLeases,type WorkAccess,type WorkAccessLease,type WorkAccessRequest} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {createNativeInputGuard,nativeInputIdentity} from './native-input-access.ts'
 import {createNativeWorkCausality} from './native-work-causality.ts'
@@ -40,14 +40,14 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
    prepared.assertTarget();const returned:unknown=Reflect.apply(assertion,lease,[]);prepared.assertTarget()
    if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
   }
-  const fixed=Object.freeze({assertCurrent:()=>invoke(assertLease),assertContinuationCurrent:()=>invoke(assertContinuation)})
+  const fixed=Object.freeze({assertCurrent:()=>invoke(assertLease),assertContinuationCurrent:()=>invoke(assertContinuation),...(lease.releaseUnaccepted?{releaseUnaccepted:()=>lease.releaseUnaccepted!()}: {})})
   guard.withSyncLease(prepared.session,prepared.identity,fixed,()=>{
    prepared.assertTarget()
    const returned:unknown=submit()
    if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
   })
  }
- const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit),checkpoint,progress,restore)
+ const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit),checkpoint,progress,restore,sessionId=>access.authorizeSessionCapabilities(sessionId,'restore'))
  const withNewInput=async(agent:Agent,message:UserMessage,context:NativeInputContext,submit:()=>void,signal?:AbortSignal):Promise<void>=>{
   if(isNativeResourceCleanupScope())throw denied()
   let producer:NativeInputProducer,contextIdentity:string
@@ -58,8 +58,10 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const prepared=prepare(agent,message,submit,signal),contextSha256=createHash('sha256').update(JSON.stringify([producer,contextIdentity])).digest('hex')
   const request:WorkAccessRequest={kind:'native-input',sessionId:agent.id,messageId:prepared.identity.messageId,nativeRequestId:prepared.rpcId??null,payloadSha256:prepared.identity.payloadSha256,producer,contextSha256}
   await causality.whenReady();prepared.assertTarget()
+  const capabilities=await access.authorizeSessionCapabilities(agent.id,producer)
+  prepared.assertTarget();capabilities.assertCurrent()
   const lease=await access.authorize(request)
-  publish(prepared,lease,submit)
+  publish(prepared,combineWorkAccessLeases([capabilities,lease]),submit)
  }
  return Object.freeze({
   withNewInput,
@@ -68,7 +70,11 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
    if(candidate.kind==='initial'){
     // 只有当前实际工具体内的派生输入可继承父任务；错 scope/撤销不能降级成新工作。
     const lease=causality.currentToolLease(candidate.sender)
-    if(lease){publish(prepare(candidate.agent,candidate.message,submit,candidate.signal),lease,submit);return}
+    if(lease){
+     const prepared=prepare(candidate.agent,candidate.message,submit,candidate.signal)
+     const capabilities=await access.authorizeSessionCapabilities(candidate.agent.id,'subagent')
+     publish(prepared,combineWorkAccessLeases([capabilities,lease]),submit);return
+    }
    }
    await withNewInput(candidate.agent,candidate.message,context,submit,candidate.signal)
   },

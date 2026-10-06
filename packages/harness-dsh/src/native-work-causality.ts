@@ -57,7 +57,7 @@ function install(receiver:object,requireName:string,installName:string,policy:un
  * 权限证明只来自最终受理回执和官方私有执行点；公共事件与归因标记不授予执行许可。
  * 官方 Loop/Tools 仍负责运行、调度、持久化、结果与取消；这里仅核对实际对象与许可。
  */
-export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint,progress?:NativeProgressCheckpoint,restore?:NativeInputRestore){
+export function createNativeWorkCausality(ctx:Context,publishContinuation:PublishContinuation,checkpoint?:NativeInputCheckpoint,progress?:NativeProgressCheckpoint,restore?:NativeInputRestore,restoreCapabilities?:(sessionId:string)=>Promise<WorkAccessLease>){
  if(installed.has(ctx))throw denied()
  const pending=new WeakMap<UserMessage,PendingInput>(),turns=new Map<Agent,Turn>()
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
@@ -76,8 +76,9 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   return Object.freeze({sessionId,messageId:identity.messageId,nativeRequestId:identity.nativeRequestId??null,payloadSha256:identity.payloadSha256})
  }
  const fixedRoots=(roots:readonly InputCause[])=>{if(closed||roots.length===0)throw denied();for(const receipt of roots)receipt.assertCurrent()}
- const rootIdentities=(roots:readonly InputCause[]):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
-  receipt.assertCurrent()
+ const rootIdentities=(roots:readonly InputCause[],terminal=false):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
+  if(terminal){if(sessions().get(receipt.session.id)!==receipt.session||canonical(receipt.session.eventAt(receipt.event.seq))!==canonical(receipt.event))throw denied()}
+  else receipt.assertCurrent()
   const event=receipt.event
   if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)throw denied()
   return messageRoot(receipt.session.id,event.data.inserted[0]!)
@@ -282,14 +283,19 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    })
    if(progress)install(loop,'requireProgressCheckpoint','installProgressCheckpoint',async(request:Omit<NativeProgressCheckpointInput,'assertCurrent'|'roots'>)=>{
     const turn=turns.get(request.agent),step=turn?.step
+    const terminal=request.phase==='turn-end',end=request.snapshot.events.at(-1)
     const assertCurrent=()=>{
      try{
       if(!turn||turn.number!==request.turn||turn.signal!==request.signal||turns.get(request.agent)!==turn||turn.step!==step)throw denied()
-      current(turn,step);request.signal.throwIfAborted()
+      if(terminal){
+       // 终态只持久化已发生的收尾；不重新授予领取、模型、工具或上下文发布许可。
+       target(turn)
+       if(end?.type!=='turn/end'||end.data.turn!==request.turn||canonical(turn.session.eventAt(end.seq))!==canonical(end))throw denied()
+      }else{current(turn,step);request.signal.throwIfAborted()}
      }catch{cancel(request.agent);throw denied()}
     }
     assertCurrent()
-    const roots=rootIdentities([...turn!.roots])
+    const roots=rootIdentities([...turn!.roots],terminal)
     await progress(Object.freeze({...request,roots,assertCurrent}))
     assertCurrent();return Object.freeze({assertCurrent})
    })
@@ -313,6 +319,9 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     if(!dataCandidate||dataCandidate.sessionId!==request.sessionId)throw denied()
     const {messages,roots,acceptedEvents:events}=dataCandidate,signal=AbortSignal.any([request.signal,recoveryAbort.signal])
     const candidate=Object.freeze({sessionId:request.sessionId,snapshot,messages,signal})
+    // 能力拒绝只影响这一会话，先于商业历史票据核验；不能把高级到期误判为历史损坏。
+    const capabilities=await restoreCapabilities?.(request.sessionId)
+    assertOwner();capabilities?.assertCurrent()
     let onAbort:()=>void=()=>{}
     const aborted=new Promise<never>((_resolve,reject)=>{onAbort=()=>reject(denied());signal.addEventListener('abort',onAbort,{once:true})})
     let lease:Awaited<ReturnType<NativeInputRestore>>
@@ -325,6 +334,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     let bound:Agent|undefined,published=false
     const assertCurrent=()=>{
      assertOwner();signal.throwIfAborted()
+     if(capabilities)(published?(capabilities.assertContinuationCurrent??capabilities.assertCurrent):capabilities.assertCurrent)()
      const returned:unknown=Reflect.apply(assertion,lease,[])
      if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
      assertOwner();signal.throwIfAborted()

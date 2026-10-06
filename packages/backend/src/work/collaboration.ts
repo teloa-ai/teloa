@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
+import {workAccess} from './work-access.ts'
 import {assertBusinessScopeRegistered} from './business-scopes.ts'
 import {WorkError,roleSupportsScope,groupChangeInput,groupCreateInput,groupDefinition,groupListInput,groupMessageListInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupSendInput,isGroup,isGroupMember,isGroupMessage,isGroupResource,isGroupResourceVersion,roleDefinition,type Group,type GroupChangeInput,type GroupDefinition,type GroupMember,type GroupMention,type GroupMessage,type GroupResource,type GroupResourceSaveInput,type GroupResourceVersion,type GroupResourceWithdrawInput,type DigitalRole,normalizeReferences,type GroupSendInput,type MessageReference} from '@teloa/contract'
 import {readActiveAttachment} from './group-attachments.ts'
@@ -236,9 +237,12 @@ export class CollaborationService{
       await assertBusinessScopeRegistered(client,owner,request.fields.scope)
       await this.validateMembers(client,owner,request.fields.memberRoleIds)
       const id=this.identity.id(),now=this.identity.now()
+      const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:id,operation:'create'})
+      admission.assertCurrent()
       const saved=await client.query("insert into teloa_groups(id,owner_id,request_id,request_spec,definition,version,pinned,archived,created_at,updated_at) values($1,$2,$3,$4,$4,1,false,false,$5,$5) returning *",[id,owner,request.requestId,spec,now])
       const group=readGroup(saved.rows[0])
       await this.replaceMembers(client,owner,group,request.fields.memberRoleIds,now)
+      admission.assertCurrent()
       await client.query('commit')
       return group
     }catch(error){await client.query('rollback');throw error}finally{client.release()}
@@ -265,6 +269,8 @@ export class CollaborationService{
       await this.validateMembers(client,owner,request.fields.memberRoleIds)
       const definition:GroupDefinition={name:request.fields.name,scope:current.scope,announcement:request.fields.announcement,rules:{...request.fields.rules},memberRoleIds:[...request.fields.memberRoleIds]}
       const now=this.identity.now()
+      const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:current.id,operation:'edit'})
+      admission.assertCurrent()
       const saved=await client.query('update teloa_groups set definition=$3,version=version+1,pinned=$4,archived=$5,updated_at=$6 where id=$1 and owner_id=$2 returning *',[current.id,owner,JSON.stringify(definition),request.fields.pinned,request.fields.archived,now])
       const group=readGroup(saved.rows[0])
       await this.replaceMembers(client,owner,group,request.fields.memberRoleIds,now)
@@ -273,6 +279,7 @@ export class CollaborationService{
       // 群版本 +1 会让既有授权行整体判 `invalidated`（`group-agent-grants.ts:113`）：不续签的话，一次改群名就让「直接回应」全体停摆。
       await this.renewMemberGrants(client,owner,group,request.fields.memberRoleIds,now)
       await client.query('insert into teloa_group_change_requests(owner_id,request_id,group_id,request_spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[owner,request.requestId,group.id,spec,JSON.stringify(group),now])
+      admission.assertCurrent()
       await client.query('commit')
       return group
     }catch(error){await client.query('rollback');throw error}finally{client.release()}
@@ -299,8 +306,11 @@ export class CollaborationService{
       if(request.rootId!==undefined)await this.assertRoot(client,owner,group.id,request.rootId)
       await this.assertReferences(client,owner,group.id,request.references??[])
       await this.assertMentions(client,owner,group.id,request.mentions??[])
+      const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:group.id,operation:'run'})
+      admission.assertCurrent()
       const now=this.identity.now(),saved=await client.query("insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,text,reference_snapshot,mention_snapshot,created_at) values($1,$2,$3,$4,$5,$6,'self',$7,$8,$9,$10) returning *",[this.identity.id(),owner,group.id,request.requestId,spec,request.rootId??null,request.text,JSON.stringify(request.references??[]),JSON.stringify(request.mentions??[]),now])
       const message=readMessage(saved.rows[0])
+      admission.assertCurrent()
       await client.query('commit')
       return message
     }catch(error){await client.query('rollback');throw error}finally{client.release()}

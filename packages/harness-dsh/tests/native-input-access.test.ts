@@ -212,6 +212,12 @@ test('已受理 seed 恢复不重验许可，关闭之后新输入仍拒绝',asy
  replay.append('agent/inbox/spliced',{target:'next-turn',start:0,removedCount:1,inserted:[]})
 })
 
+test('未启用最终validator时不能猜测未受理并释放真实已写入的执行',async t=>{
+ const {ctx,agent}=await fixture(t),guard=createNativeInputGuard(ctx),input=message()
+ let releases=0
+ await guard.withLease(agent.session,nativeInputIdentity(input),{assertCurrent(){},releaseUnaccepted(){releases++}},()=>agent.inbox.append('next-turn',input))
+ assert.equal(agent.inbox.nextTurn[0]?.id,input.id);assert.equal(releases,0)
+})
 test('官方 JSON 与 surface 校验先于准入钩子，非法候选不进入 dispatch',async t=>{
  const {ctx,agent}=await fixture(t),guard=createNativeInputGuard(ctx),input=message(),before=agent.session.snapshotEvents().length
  let assertions=0,dispatches=0

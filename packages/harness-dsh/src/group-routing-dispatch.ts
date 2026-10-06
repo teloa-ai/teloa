@@ -1,6 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {WorkError,groupDefinition,roleSupportsScope,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingCandidatesMax,groupRoutingHopLimit,groupRoutingRespondMax,roleDefinition,type GroupReactionEmoji,type GroupRoutingDecision,type GroupTaskCreateInput} from '@teloa/contract'
-import {groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,readRunGroupTopic,type GroupRoutingDecisionService,type RunGroupContext,type RunGroupTopicMessage} from '@teloa/backend'
+import {workAccess,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,readRunGroupTopic,type GroupRoutingDecisionService,type RunGroupContext,type RunGroupTopicMessage} from '@teloa/backend'
 import {askGroupRouting,type GroupRoutingAsk,type GroupRoutingCandidate} from './group-routing.ts'
 
 /** 最小可查询接口：只要有 `query(text,values)` 就够，不为此专门依赖 `pg`（先例 `business-definitions.ts:60`）。 */
@@ -124,10 +124,13 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
   return {version:group.version,name:group.name,hops,candidates,truncatedCandidates,topic:await ports.topic(owner,groupId,rootId,db)}
  })
  if(!carried)return
+ const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:groupId,operation:'run'})
+ admission.assertCurrent();signal.throwIfAborted()
  const candidateIds=carried.candidates.map(candidate=>candidate.roleId)
  // 段 B：锁已释放。三态直接映成 decision.kind，不在这里重新判别通道故障与解析失败。
  const ask:GroupRoutingAsk={groupId,groupName:carried.name,messageId,rootId,trigger:{...trigger,mentions:[...trigger.mentions]},topic:carried.topic,candidates:carried.candidates,hops:carried.hops}
  const answered=await askGroupRouting(ctx,owner,ask,signal)
+ admission.assertCurrent();signal.throwIfAborted()
  const shared={candidateIds,truncatedCandidates:carried.truncatedCandidates}
  const decision=answered.kind==='ok'
   ?decisionOf(now,'routed',carried.hops,{...shared,respond:answered.output.respond.filter(roleId=>candidateIds.includes(roleId)).slice(0,groupRoutingRespondMax),reactions:answered.output.reactions.filter(reaction=>candidateIds.includes(reaction.roleId)).map(reaction=>({...reaction}))})
@@ -140,6 +143,7 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
   :[]
  // 段 C：并发的两条触发都会跑完段 B，但只有一条能 insert 成功，另一条整条退出、不建任务。
  const written=await ports.decisions.withTopicLock(owner,groupId,rootId,async db=>{
+  admission.assertCurrent()
   if(await ports.decisions.claimed(db,owner,messageId))return undefined
   const recorded=await ports.decisions.record(db,owner,{groupId,messageId,decision})
   if(!recorded)return undefined
@@ -147,6 +151,7 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
   // 「没有决策却有路由表情」的孤儿行。代价是一次 insert 加至多 30 条 upsert 都压在这把锁里——
   // 都是毫秒级的本地写，换来的是两张表恒一致。
   for(const reaction of [...decision.reactions,...acknowledged])await ports.applyReaction(db,owner,{groupId,messageId,roleId:reaction.roleId,emoji:reaction.emoji,requestId:groupRoutedReactionRequestId(owner,messageId,reaction.roleId,reaction.emoji)})
+  admission.assertCurrent()
   return recorded
  })
  if(!written)return

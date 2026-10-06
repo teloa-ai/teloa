@@ -2,6 +2,7 @@ import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { WorkError, type Conversation, type DigitalRole } from '@teloa/contract'
+import {workAccess} from './work-access.ts'
 /** 存储层内部字段，与 `requestedWorkspaceId`/`requestedSessionId` 同族：只用于同请求 ID 是否换了岗位的判据，不属对外契约，读回给调用方前一律经 `toPublic` 剥掉。 */
 export type StoredConversation = Conversation & {requestedRoleId?:string}
 export interface ConversationRepository { read():Promise<StoredConversation[]>; write(rows:StoredConversation[]):Promise<void> }
@@ -102,23 +103,34 @@ export class ConversationService {
       if(row?.status==='ready'){
         if(run===undefined)await this.host.inspect(row.sessionId)
         else{
+          const admission=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId,objectId:run.roleId,operation:'create'})
+          admission.assertCurrent()
           const sessionId=await this.host.create(row.requestedSessionId,row.requestedWorkspaceId,run.agentPresetId,run.signal)
+          admission.assertCurrent()
           if(sessionId!==row.sessionId)throw new WorkError('teloa/invalid-host-response','运行会话重放返回了不同身份。')
         }
         return this.toPublic(row)
       }
+      // 先核对真实岗位及能力，再落预约与调用宿主；旧 ready 回执只读不重新授予执行。
+      const roleAgentPresetId=run===undefined&&requestedRoleId!==undefined?await this.resolveRoleAgentPresetId(owner,requestedRoleId):undefined
+      const roleId=run?.roleId??requestedRoleId,requestedSessionId=row?.requestedSessionId??run?.sessionId??this.identity.id()
+      const admission=roleId===undefined?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:requestedSessionId,objectId:roleId,operation:'create'})
       if(!row) {
-        const sessionId=run?.sessionId??this.identity.id()
+        const sessionId=requestedSessionId
         row={id:this.identity.id(),ownerId:owner,title:data.title.trim(),scopeIds:['general'],version:1,status:'pending',requestedSessionId:sessionId,sessionId,createdAt:this.identity.now(),requestId:data.requestId,...(data.workspaceId===undefined?{}:{requestedWorkspaceId:data.workspaceId}),...(requestedRoleId===undefined?{}:{requestedRoleId}),...(runSnapshot===undefined?{}:{purpose:'task-run' as const,run:runSnapshot})}
+        admission?.assertCurrent()
         rows.push(row);await this.repository.write(rows)
       }
-      const roleAgentPresetId=run===undefined&&requestedRoleId!==undefined?await this.resolveRoleAgentPresetId(owner,requestedRoleId):undefined
+      admission?.assertCurrent()
       const sessionId=await this.host.create(row.requestedSessionId,row.requestedWorkspaceId,run?.agentPresetId??roleAgentPresetId,run?.signal)
+      admission?.assertCurrent()
       if(!validId(sessionId))throw new WorkError('teloa/invalid-host-response','宿主未返回合法会话身份。')
       if(run!==undefined&&sessionId!==row.requestedSessionId)throw new WorkError('teloa/invalid-host-response','运行专用会话身份与固定预约不一致。')
       if(rows.some(other=>other.id!==row.id&&other.sessionId===sessionId))throw new WorkError('teloa/conflict','宿主返回的会话已经绑定另一项工作。')
       const ready:StoredConversation={...row,sessionId,status:'ready'}
+      admission?.assertCurrent()
       await this.repository.write(rows.map(item=>item.id===ready.id?ready:item))
+      admission?.assertCurrent()
       return this.toPublic(ready)
     })()
   }

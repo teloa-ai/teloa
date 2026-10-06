@@ -2,6 +2,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,isRecord,readScheduleTrigger,roleDefinition,roleSupportsScope,taskDefinition,type ScheduleTrigger} from '@teloa/contract'
 import type {MarketContent} from '../market/content-store.ts'
 import {assertBusinessScopeRegistered} from './business-scopes.ts'
+import {workAccess} from './work-access.ts'
 
 export const planNotificationPolicies=['always','attention','failure','silent'] as const
 export type PlanNotificationPolicy=typeof planNotificationPolicies[number]
@@ -204,9 +205,11 @@ export class PlanService{
    const role=(await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[value.fields.roleId,ownerId])).rows[0] as Record<string,unknown>|undefined
    if(!role)throw new WorkError('teloa/forbidden','负责员工不存在或不属于当前本人。')
    validateRole(role,value.fields,value.expectedRoleVersion)
+   const admission=await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:value.requestId,operation:'create'})
+   admission.assertCurrent()
    const now=this.identity.now(),inserted=(await client.query(`insert into teloa_plans(id,owner_id,request_id,request_spec,definition,source,notification_policy,role_id,role_version,scope,version,config_version,state,archived_reason,archived_at,created_at,updated_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,1,'paused',null,null,$11,$11) returning *`,[this.identity.id(),ownerId,value.requestId,JSON.stringify(value.spec),JSON.stringify(value.fields),JSON.stringify(value.source),value.fields.notificationPolicy,value.fields.roleId,value.expectedRoleVersion,value.fields.scope,now])).rows[0]
-   return readStoredPlan(inserted)
+   admission.assertCurrent();return readStoredPlan(inserted)
  }
  async change(ownerId:string,input:unknown):Promise<PersistentPlan>{
   owner(ownerId);const client=await this.pool.connect()
@@ -262,9 +265,11 @@ export class PlanService{
    * `validateRole` 的其余三条（在岗、AI 员工、范围仍覆盖计划所属业务）一字不变。
    */
   if(action==='enable'){await this.verifyIndustryLoad(client,ownerId,locked.id);validateRole(role,locked,locked.source.kind==='system-digest'?Number(role.version):locked.roleVersion);await this.verifySource(ownerId,locked.source,client)}
+  const admission=action==='enable'||action==='update'?await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:locked.id,operation:action==='enable'?'resume':'edit'}):undefined
+  admission?.assertCurrent()
   const state=action==='enable'?'active':action==='pause'?'paused':action==='archive'?'archived':locked.state,now=this.identity.now(),definition=action==='update'?{...locked,...fields}:locked
   const saved=readStoredPlan((await client.query(`update teloa_plans set definition=$3,notification_policy=$4,state=$5,version=version+1,config_version=config_version+$6,archived_reason=$7,archived_at=$8,updated_at=$9 where id=$1 and owner_id=$2 returning *`,[locked.id,ownerId,JSON.stringify({title:definition.title,goal:definition.goal,scope:locked.scope,dataScope:definition.dataScope,delivery:definition.delivery,roleId:locked.roleId,trigger:definition.trigger,notificationPolicy:definition.notificationPolicy}),definition.notificationPolicy,state,action==='update'?1:0,action==='archive'?note!:null,action==='archive'?now:null,now])).rows[0])
   await client.query('insert into teloa_plan_changes(owner_id,request_id,plan_id,request_spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[ownerId,row.requestId,locked.id,JSON.stringify(spec),JSON.stringify(saved),now])
-  return saved
+  admission?.assertCurrent();return saved
  }
 }

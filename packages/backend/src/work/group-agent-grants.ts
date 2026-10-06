@@ -2,6 +2,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,roleSupportsScope,groupAgentGrantChangeInput,groupAgentGrantGetInput,groupDefinition,isGroupAgentGrant,isGroupAgentGrantRead,normalizeReferences,type GroupAgentGrant,type GroupAgentGrantRead,type GroupAgentResourceGrant} from '@teloa/contract'
 import {readActiveAttachment} from './group-attachments.ts'
 import {readStoredRole} from './roles.ts'
+import {workAccess} from './work-access.ts'
 
 /** 只保证这个值能进 uuid 列，不限版本位与变体位（与 `group-run-messages.ts:9` 同口径）。 */
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)
@@ -90,9 +91,12 @@ export class GroupAgentGrantService{
    }
    const previous=(await client.query('select grant_version from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for update',[request.groupId,request.roleId])).rows[0]
    const grantVersion=previous?(previous.grant_version as number)+1:1
+   const admission=request.action==='save'?await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:request.groupId,operation:'edit'}):undefined
+   admission?.assertCurrent()
    const saved=await client.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,[request.groupId,owner,request.roleId,grantVersion,context.groupVersion,context.roleVersion,request.action==='save'?'active':'revoked',JSON.stringify(request.resources),request.canPost,request.canAutoRun,request.requestId,spec,this.now()])
    const result=readGroupAgentGrant(saved.rows[0])
+   admission?.assertCurrent()
    await client.query('commit')
    return result
   }catch(error){await client.query('rollback');throw error}finally{client.release()}

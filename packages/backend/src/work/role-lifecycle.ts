@@ -3,6 +3,7 @@ import {WorkError,roleInput,type DigitalRole} from '@teloa/contract'
 import {readStoredRole} from './roles.ts'
 import {ensureAutoDreamPlan,pauseAutoDreamPlan,type AutoDreamPorts} from './auto-dream-plans.ts'
 import {renewRoleGrants} from './collaboration.ts'
+import {workAccess} from './work-access.ts'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 export type RoleLifecycleResult={role:DigitalRole;appliedVersion:number;handoffTaskIds:string[]}
 export async function initializeRoleLifecycle(pool:Pool):Promise<void>{
@@ -57,6 +58,8 @@ export class RoleLifecycleService{
      handoffTaskIds.push(task.id)
     }
    }
+   const admission=row.action==='resume'?await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:role.id,operation:'resume'}):undefined
+   admission?.assertCurrent()
    const state=row.action==='pause'?'paused':row.action==='resume'?'active':'retired'
    const updated=await client.query('update teloa_roles set state=$3,version=version+1,updated_at=$4 where id=$1 and owner_id=$2 returning *',[role.id,owner,state,now])
    const current=readStoredRole(updated.rows[0])
@@ -69,7 +72,7 @@ export class RoleLifecycleService{
     else await pauseAutoDreamPlan(client,this.autoDream,owner,current.id)
    }
    await client.query('insert into teloa_role_transitions(role_id,base_version,request_spec,handoff_task_ids,created_at) values($1,$2,$3,$4,$5)',[role.id,role.version,spec,JSON.stringify(handoffTaskIds),now])
-   await client.query('commit');return {role:current,appliedVersion:current.version,handoffTaskIds}
+   admission?.assertCurrent();await client.query('commit');return {role:current,appliedVersion:current.version,handoffTaskIds}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
 }

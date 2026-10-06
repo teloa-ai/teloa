@@ -18,7 +18,7 @@ import {runEvidence,mergeRunEvidence,type TaskRunEvidence} from './task-run-evid
 import {assertRunSkillsEnabled} from '../market/skill-availability.ts'
 import type {IndustryRunSkillBindings} from './industry-skill-bindings.ts'
 import {initializeTaskRunFlows} from './task-run-flows.ts'
-import {workAccess} from './work-access.ts'
+import {workAccess,combineWorkAccessLeases} from './work-access.ts'
 import {readRunRoleMemories,type RunRoleMemory} from './role-memory.ts'
 import {businessContextNotice,readRunBusinessContext,runBusinessContextHash,type RunBusinessContext} from './task-run-business-context.ts'
 import {initializeTaskRunSubagents,type TaskRunSubagent} from './task-run-subagents.ts'
@@ -424,7 +424,10 @@ export class TaskRunService{
     if(guarded.parent.stopped)throw new WorkError('teloa/conflict','原交办已停止，不能领取执行发送权；请核对原请求。')
     if((await db.query('select request_id from teloa_tasks where owner_id=$1 and id=$2',[owner,task.id])).rows[0]?.request_id!==guarded.childRequestId)throw new WorkError('teloa/storage-corrupt','交办的任务归属索引损坏，请先核对原请求。')
    }
-   const admission=await workAccess.authorize({kind:'task-run-start',ownerId:owner,runId:run.id,taskId:task.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId})
+   const capabilityLeases=[await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:run.sessionId,objectId:role.id,operation:'run'})]
+   if(groupContext)capabilityLeases.push(await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:run.sessionId,objectId:groupContext.groupId,operation:'run'}))
+   if(planContext)capabilityLeases.push(await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:run.sessionId,objectId:planContext.occurrenceId,operation:'run'}))
+   const admission=combineWorkAccessLeases([...capabilityLeases,await workAccess.authorize({kind:'task-run-start',ownerId:owner,runId:run.id,taskId:task.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId})])
    admission.assertCurrent()
    await db.query("update teloa_tasks set state='running',version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,task.id,this.identity.now()])
    admission.assertCurrent()
@@ -458,6 +461,8 @@ export class TaskRunService{
    const previous=await db.query('select *,request_spec=$3::jsonb as same from teloa_task_runs where owner_id=$1 and request_id=$2',[owner,row.requestId,spec])
    if(previous.rows[0]){if(!previous.rows[0].same)throw new WorkError('teloa/conflict','执行请求已记录其他安排。');const result=await this.readVerified(db,owner,previous.rows[0]);await db.query('commit');return result}
    const {task,role,link}=await this.current(db,owner,row),target=executionTarget(task,row.sessionId,link.version)
+   const preparation=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId as string,objectId:role.id,operation:'create'})
+   preparation.assertCurrent()
    const memory=readRunRoleMemories(await this.roleMemory?.(db,owner,target,role)??[])
    const roleKnowledge=readRunKnowledge(await loadKnowledge?.(target,role,db)??[])
    if(JSON.stringify(roleKnowledge.map(item=>item.id))!==JSON.stringify(role.knowledge))throw new WorkError('teloa/conflict','员工知识声明需绑定可用资料ID，不能忽略声明执行。')
@@ -504,7 +509,7 @@ export class TaskRunService{
      const inputText=executionInput(task,role,[],knowledge,argumentRules,planContext,industryContext,agentPresetId,memory,businessContext,groupContext)
      await finalizeParent()
      const saved=await db.query("insert into teloa_task_runs(id,owner_id,request_id,request_spec,task_id,role_id,task_version,role_version,link_version,session_id,native_request_id,state,input_text,created_at,allowed_tools,role_skills,role_knowledge,role_memory,tool_argument_rules,plan_context_hash,industry_context_hash,business_context_hash,group_context_hash,agent_preset_id,configuration_error) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'configuration_failed',$12,$13,$14,'[]'::jsonb,$15,$16,$17,$18,$19,$20,$21,$22,$23) returning *",[this.identity.id(),owner,row.requestId,spec,task.id,role.id,task.version,role.version,link.version,row.sessionId,this.identity.id(),inputText,this.identity.now(),JSON.stringify(allowedTools),JSON.stringify(knowledge),JSON.stringify(memory),argumentRules===undefined?null:JSON.stringify(argumentRules),planContext?runPlanContextHash(planContext):null,industryContext?runIndustryContextHash(industryContext):null,businessContext?runBusinessContextHash(businessContext):null,groupContext?runGroupContextHash(groupContext):null,agentPresetId??null,JSON.stringify(failure)])
-     const result=read(saved.rows[0]);await db.query('commit');return result
+     const result=read(saved.rows[0]);preparation.assertCurrent();await db.query('commit');return result
     }
    }
    const skills=readRunSkills(await checkSession?.(row.sessionId,role,db,industrySkills?installationIds:undefined)??[]),industrySet=new Set(installationIds),industryResolved=skills.filter(skill=>skill.managed&&industrySet.has(skill.managed.installationId)),regularResolved=skills.filter(skill=>!skill.managed||!industrySet.has(skill.managed.installationId))
@@ -512,8 +517,9 @@ export class TaskRunService{
    await assertRunSkillsEnabled(db,owner,skills)
    const inputText=executionInput(task,role,skills,knowledge,argumentRules,planContext,industryContext,agentPresetId,memory,businessContext,groupContext,true,groupTopic,roleMemoryNotice,modelPolicy)
    await finalizeParent()
+   preparation.assertCurrent()
    const saved=await db.query("insert into teloa_task_runs(id,owner_id,request_id,request_spec,task_id,role_id,task_version,role_version,link_version,session_id,native_request_id,state,input_text,created_at,allowed_tools,role_skills,role_knowledge,role_memory,tool_argument_rules,plan_context_hash,industry_context_hash,business_context_hash,group_context_hash,agent_preset_id,configuration_error) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'prepared',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,null) returning *",[this.identity.id(),owner,row.requestId,spec,task.id,role.id,task.version,role.version,link.version,row.sessionId,this.identity.id(),inputText,this.identity.now(),JSON.stringify(allowedTools),JSON.stringify(skills),JSON.stringify(knowledge),JSON.stringify(memory),argumentRules===undefined?null:JSON.stringify(argumentRules),planContext?runPlanContextHash(planContext):null,industryContext?runIndustryContextHash(industryContext):null,businessContext?runBusinessContextHash(businessContext):null,groupContext?runGroupContextHash(groupContext):null,agentPresetId??null])
-   const result=read(saved.rows[0]);await writeTaskRunSkillRefs(db,owner,result.id,skills);await verifyTaskRunSkillRefs(db,owner,result.id,skills);await db.query('commit');return result
+   const result=read(saved.rows[0]);await writeTaskRunSkillRefs(db,owner,result.id,skills);await verifyTaskRunSkillRefs(db,owner,result.id,skills);preparation.assertCurrent();await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
 }

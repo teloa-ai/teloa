@@ -14,6 +14,9 @@ import {createTaskRunModelReader} from './task-run-model-status.ts'
 import {officialCatalogModelEntry,type TaskRunSkillDatabase} from '@teloa/backend'
 import {createHostIndustryModelProbe} from './industry-model-readiness.ts'
 import {withPresetReadScope} from './preset-read-scope.ts'
+import {workAccess} from '@teloa/backend'
+import {createNativeSessionCapabilities} from './native-session-capabilities.ts'
+import {registerNativeCapabilityTools} from './native-capability-tools.ts'
 export {SecurityActionHttpAdapter,type SecurityActionHttpOptions} from './security-action-http-adapter.ts'
 import {SecurityActionHttpAdapter} from './security-action-http-adapter.ts'
 import {SecurityActionExecutionDriver} from './security-action-execution.ts'
@@ -1214,6 +1217,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    if(!(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='task'))return false
    return !(await database.pool.query('select 1 from teloa_conversation_work_requests where owner_id=$1 and session_id=$2 limit 1',[owner,sessionId])).rowCount
   }
+  workAccess.installSessionCapabilities(createNativeSessionCapabilities(ctx,{owner,conversations:service,links:workLinks,pool:database.pool,isRoutingSession}))
+  resources.beforeDatabaseClose(registerNativeCapabilityTools(ctx,owner))
   const conversationWorkEligibility=async(sessionId:string)=>{
    const binding=await service.bySession(owner,sessionId),resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
    if('error' in resolved)throw new WorkError('teloa/session-unavailable','当前会话尚不可读取。')

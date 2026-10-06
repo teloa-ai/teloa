@@ -9,6 +9,32 @@ import {nativeProviderKernel} from './fixtures/native-input-provider.ts'
 const message=(id='request')=>({...createUserMessage({source:{kind:'user',rpcId:id},content:[{type:'text',text:'固定原生输入'}]})})
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done});return {promise,resolve}}
 const forbidden={code:'teloa/forbidden'}
+test('实际append前取消释放未受理lease，最终真实受理后失败不释放执行预约',async t=>{
+ for(const accepted of [false,true]){
+  const {ctx,agent}=await patchedSessionFixture(t),access=new WorkAccess(),controller=new AbortController(),input=message(),before=agent.session.snapshotEvents().length
+  let releases=0
+  access.installPolicy(async()=>({assertCurrent(){},releaseUnaccepted(){releases++}}))
+  const work=createNativeWorkInput(ctx,access)
+  if(!accepted)ctx.on('internal/dispatch',(_mode,name,args)=>{if(name==='session/event'&&args[1]?.type==='agent/inbox/spliced')controller.abort()})
+  await assert.rejects(work.withNewInput(agent,input,{producer:'prompt',identity:'reservation'},()=>{agent.inbox.append('next-turn',input);if(accepted)throw Error('after actual append')},controller.signal))
+  assert.equal(releases,accepted?0:1)
+  assert.equal(agent.session.snapshotEvents().length>before,accepted)
+  assert.equal(agent.inbox.nextTurn.length,accepted?1:0)
+ }
+})
+
+test('真实prompt按可信员工能力拒绝，基础会话受理；禁止renderer以prompt绕过分类',async t=>{
+ const {ctx,agent,other}=await patchedSessionFixture(t),access=new WorkAccess(),seen:WorkAccessRequest[]=[]
+ access.installSessionCapabilities(async id=>({ownerId:'actual-owner',capabilities:id===agent.id?['people']:['general-agent']}))
+ access.installPolicy(async request=>{seen.push(request);if(request.kind==='capability'&&request.capability==='people')throw Error('locked');return {assertCurrent(){}}})
+ const work=createNativeWorkInput(ctx,access),input=message('locked-employee'),before=agent.session.snapshotEvents().length
+ await assert.rejects(work.withNewInput(agent,input,{producer:'prompt',identity:'general-claimed'},()=>agent.inbox.append('next-turn',input)),forbidden)
+ assert.equal(agent.inbox.nextTurn.length,0);assert.equal(agent.session.snapshotEvents().length,before)
+ const basic=message('basic-work')
+ await work.withNewInput(other,basic,{producer:'prompt',identity:'ordinary'},()=>other.inbox.append('next-turn',basic))
+ assert.equal(other.inbox.nextTurn[0]?.id,basic.id)
+ assert.ok(seen.some(request=>request.kind==='capability'&&request.capability==='people'&&request.ownerId==='actual-owner'))
+})
 
 test('创建后立即提交等待真实 Loop 注入及策略，exact消息与上下文只发送摘要，最终真实入Inbox',{timeout:10000},async t=>{
  const {ctx,agent}=await patchedSessionFixture(t),access=new WorkAccess(),entered=deferred(),release=deferred(),seen:WorkAccessRequest[]=[],before=agent.session.snapshotEvents().length

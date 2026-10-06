@@ -2,6 +2,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
 import {readStoredRole} from './roles.ts'
+import {workAccess} from './work-access.ts'
 type Kind='task'|'role'
 export type ObjectConversation={kind:Kind;objectId:string;objectVersion:number;conversationId:string;sessionId:string;version:number;active:boolean;updatedAt:string;scopeId:string|null}
 type Inspect=(owner:string,sessionId:string)=>Promise<{id:string;sessionId:string;ownerId:string;status:string}>
@@ -92,9 +93,11 @@ export class ObjectConversationService{
    if(conversation.ownerId!==owner||conversation.sessionId!==row.sessionId||conversation.status!=='ready'||!session(conversation.id))throw new WorkError('teloa/forbidden','只能关联本人已就绪的工作会话。')
    if(current&&current.conversationId!==conversation.id)throw new WorkError('teloa/storage-corrupt','会话身份与原关联不一致。')
    const scopeId=row.action==='link'?(requestedScope??(currentObject.scopes.length===1?currentObject.scopes[0]!:null)):(current?.scopeId??null)
+   const admission=row.action==='link'?await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId as string,objectId:row.objectId as string,operation:'edit'}):undefined
+   admission?.assertCurrent()
    const saved=await db.query(`insert into teloa_object_conversations(owner_id,kind,object_id,object_version,conversation_id,session_id,version,active,updated_at,scope_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict(owner_id,kind,object_id,session_id) do update set object_version=excluded.object_version,version=excluded.version,active=excluded.active,updated_at=excluded.updated_at,scope_id=excluded.scope_id returning *`,[owner,row.kind,row.objectId,currentObject.version,conversation.id,row.sessionId,(current?.version??0)+1,row.action==='link',this.now(),scopeId])
    await db.query('insert into teloa_object_conversation_requests values($1,$2,$3)',[owner,row.requestId,spec])
-   const result=read(saved.rows[0]);await db.query('commit');return result
+   const result=read(saved.rows[0]);admission?.assertCurrent();await db.query('commit');return result
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
 }

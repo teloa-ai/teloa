@@ -9,7 +9,7 @@ import type {Session,SessionEvent} from '@deepseek-ai/dsh-session'
 import {LlmRuntime,LlmAdapter,ToolCallId,createUserMessage,markAgentLoopRequest,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {defineTool} from '@deepseek-ai/dsh-tools'
-import {WorkAccess,type WorkAccessRequest} from '@teloa/backend'
+import {WorkAccess,type WorkAccessRequest,type WorkAccessPolicy} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {createNativeWorkInput} from '../../src/native-work-input.ts'
 import {patchedSessionPackage,type FinalSessionStore} from './native-final-session.ts'
@@ -106,7 +106,7 @@ export class HotAdapter extends LlmAdapter{
 }
 
 /** 独立双断言只模拟业务许可；受理因果必须来自真实最终 Session 受理回执。 */
-export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;persistenceRoot?:string}={}){
+export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;persistenceRoot?:string;capabilityPolicy?:WorkAccessPolicy}={}){
  const f=await nativeHotKernel(t),{ctx}=f
  if(options.persistenceRoot)await ctx.plugin(Persistence,{root:options.persistenceRoot,compression:'none'})
  const observed=new Map<Session,SessionEvent[]>()
@@ -116,6 +116,7 @@ export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoin
  const authorizations:Readonly<WorkAccessRequest>[]=[]
  const access=new WorkAccess();access.requirePolicy()
  access.installPolicy(async request=>{
+  if(request.kind==='capability'&&options.capabilityPolicy)return options.capabilityPolicy(request)
   authorizations.push(request)
   const generation=rights.generation
   return Object.freeze({
@@ -142,7 +143,7 @@ export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoin
  const {agent:other}=await ctx.agents.create({sessionId:f.sessionPackage.SessionId('hot-b'),agentOptions:{provider:'hot-test',model:'hot-model'}})
  assert.equal(f.sessions.get(agent.id),agent.session);assert.equal(ctx.agents.get(agent.id),agent)
  return {
-  ...f,agent,other,rights,counters,authorizations,adapter,work,toolExecutions,
+  ...f,agent,other,rights,counters,authorizations,adapter,work,access,toolExecutions,
   events(target:Agent=agent):readonly SessionEvent[]{return observed.get(target.session)??[]},
   setToolAction(action:(exec:ToolRunContext)=>Promise<void>){toolAction=action},
   async send(rpcId:string,target:Agent=agent,wakeup=true){

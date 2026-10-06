@@ -7,7 +7,7 @@ import {readStoredRole} from './roles.ts'
 import {BusinessResponsibilityService} from './business-responsibility.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {readBusinessConfigurationManagement} from './business-configuration-store.ts'
-import {workAccess,type WorkAccessLease} from './work-access.ts'
+import {workAccess,combineWorkAccessLeases,type WorkAccessLease} from './work-access.ts'
 
 export type ConversationWorkContext={sessionId:string;scopeId:string;roleId:string|null;version:number;locked:boolean}
 export type WorkRequestTarget={roleId:string;roleVersion:number;name:string;scope:string;unavailable:null|'paused'|'retired'}
@@ -130,7 +130,10 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
    if(eligible.length>1000)throw new WorkError('teloa/invalid-input','本次员工范围过大，请缩小业务范围。')
    const targets:WorkRequestTarget[]=eligible.map(role=>({roleId:role.id,roleVersion:role.version,name:role.name,scope:input.allBusinesses===true?role.scopes.find(scope=>allowed!.includes(scope))!:input.scope,unavailable:role.state==='active'?null:role.state}))
    if(input.expectedReportTargets&&JSON.stringify(targets)!==JSON.stringify(input.expectedReportTargets))throw new WorkError('teloa/version-conflict','汇报员工名单、版本、状态或授权范围已变化，请重新确认。')
-   const admission=await workAccess.authorize({kind:'conversation-work-reserve',ownerId:owner,requestId:input.requestId,sessionId:input.sessionId})
+   const admission=combineWorkAccessLeases([
+    await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:input.sessionId,objectId:input.roleId??input.requestId,operation:'run'}),
+    await workAccess.authorize({kind:'conversation-work-reserve',ownerId:owner,requestId:input.requestId,sessionId:input.sessionId}),
+   ])
    preparedGuard.onAdmission(admission);admission.assertCurrent()
    const saved=(await db.query('insert into teloa_conversation_work_requests(owner_id,request_id,session_id,request_spec,targets,created_at,task_child_request_id) values($1,$2,$3,$4,$5,$6,$7) returning *',[owner,input.requestId,input.sessionId,spec,JSON.stringify(targets),preparedGuard.now(),taskChild])).rows[0]
    admission.assertCurrent()
@@ -197,8 +200,11 @@ export class ConversationWorkService{
    if((current?.version??0)!==row.expectedVersion)throw new WorkError('teloa/version-conflict','会话业务设置已变化，请先核对。')
    await assertBusinessScopeRegistered(db,owner,row.scopeId)
    if(row.roleId!==null){const raw=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,row.roleId])).rows[0];if(!raw)throw new WorkError('teloa/forbidden','指定员工不存在或不属于本人。');const role=readStoredRole(raw);if(role.kind!=='employee'||role.state!=='active')throw new WorkError('teloa/conflict','指定员工当前不能接手。');if(!roleSupportsScope(role.scopes,row.scopeId))throw new WorkError('teloa/forbidden','指定员工不支持此业务。')}
+   const admission=row.roleId===null?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId as string,objectId:row.roleId as string,operation:'edit'})
+   admission?.assertCurrent()
    const saved=(await db.query('insert into teloa_conversation_work_contexts(owner_id,session_id,scope_id,role_id,version,locked) values($1,$2,$3,$4,$5,false) on conflict(owner_id,session_id) do update set scope_id=excluded.scope_id,role_id=excluded.role_id,version=excluded.version returning *',[owner,row.sessionId,row.scopeId,row.roleId,Number(row.expectedVersion)+1])).rows[0]
-   await db.query('insert into teloa_conversation_work_context_requests values($1,$2,$3)',[owner,row.requestId,spec]);await db.query('commit');return readContext(saved)
+   admission?.assertCurrent()
+   await db.query('insert into teloa_conversation_work_context_requests values($1,$2,$3)',[owner,row.requestId,spec]);admission?.assertCurrent();await db.query('commit');return readContext(saved)
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async reserve(owner:string,value:unknown):Promise<ConversationWorkRequest>{

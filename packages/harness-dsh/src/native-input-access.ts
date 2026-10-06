@@ -18,7 +18,7 @@ type AppendAdmissionStore={
  requireAppendAdmission:()=>void
  installAppendAdmission:(policy:(session:Session,event:Readonly<SessionEvent>)=>void)=>void
 }
-type Ticket={session:Session;identity:NativeInputIdentity;assertCurrent:()=>void;assertContinuationCurrent:()=>void;active:boolean;consumed:boolean;published:boolean;pendingEvent?:Readonly<SessionEvent>}
+type Ticket={session:Session;identity:NativeInputIdentity;assertCurrent:()=>void;assertContinuationCurrent:()=>void;releaseUnaccepted?:()=>void;active:boolean;consumed:boolean;published:boolean;pendingEvent?:Readonly<SessionEvent>}
 const installed=new WeakSet<Context>(),acceptances=new WeakMap<NativeInputAcceptance,()=>void>()
 const denied=()=>new WorkError('teloa/forbidden','当前暂不能提交新输入，请核对运行许可后重试。')
 
@@ -121,12 +121,16 @@ export function createNativeInputGuard(ctx:Context,options:NativeInputGuardOptio
   }catch{throw denied()}
  }
  const finish=(ticket:Ticket):void=>{
+  const unused=final&&ticket.active&&!ticket.consumed
   ticket.active=false
   if(ticket.pendingEvent)pending.delete(ticket.pendingEvent)
   delete ticket.pendingEvent
+  if(unused)ticket.releaseUnaccepted?.()
  }
  const begin=(session:Session,identity:NativeInputIdentity,lease:WorkAccessLease,action:unknown):Ticket=>{
-  const ticket:Ticket={session,identity:fixedIdentity(identity),...fixedAssertions(lease,onAccepted!==undefined),active:true,consumed:false,published:false}
+  const release=lease.releaseUnaccepted
+  if(release!==undefined&&typeof release!=='function')throw denied()
+  const ticket:Ticket={session,identity:fixedIdentity(identity),...fixedAssertions(lease,onAccepted!==undefined),...(release?{releaseUnaccepted(){const value:unknown=Reflect.apply(release,lease,[]);if(value!==undefined){void Promise.resolve(value).catch(()=>{});throw denied()}}}:{}),active:true,consumed:false,published:false}
   try{
    current(ticket)
    if(typeof action!=='function')throw denied()

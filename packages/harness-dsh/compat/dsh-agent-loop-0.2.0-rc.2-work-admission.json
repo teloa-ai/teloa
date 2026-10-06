@@ -7,7 +7,7 @@
     {
       "path": "lib/index.js",
       "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
-      "afterSha256": "cb4a24c6bcfe4824cb290fe2be1e539c0bce2b2c55a9806f1485420fb5d81299"
+      "afterSha256": "64a574b824e59257865ca9f51363445c943d9fef43ab247f71a7e2bd9996d80c"
     },
     {
       "path": "lib/types/index.d.ts",
@@ -15,7 +15,7 @@
       "afterSha256": "e9e7564fffc1980a772039a3dc01457f045b7657cdf3bab15d8308efb13f96a1"
     }
   ],
-  "patchSha256": "e406c30d84708d74abc015319db97e0f5107810959523f2381fcff707fd17838",
+  "patchSha256": "342fd0c6364f893b880d17058245298080310353cd6173a65adbfbd3f7428327",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
@@ -45,7 +45,7 @@
     "context": "After actual tool/result commit; exact slot execution/result/context, synchronous active once-only original inbox.splice publisher",
     "private": "Module WeakMap keyed by immutable runtime holder; per-Agent callbacks module-private; no exposed invoke/dispatch capability or new public event",
     "free": "No require/provider retains original Free driver execution, cold restoration and context publication",
-    "cleanup": "step-end/turn-end continue when required provider missing; original committed receipt is not undone by post-commit policy failure",
+    "cleanup": "step-end/turn-end remain cleanup. Terminal progress attests the exact committed turn/end through the registered writer using its physical owner signal, even when the turn is cancelled or capability expires; it grants no claim/model/tool/publication rights.",
     "limitations": [
       "Fresh constructor/fork seeds are not covered; cold restore is a checkpoint only, not durable authorization. The deployment provider must verify its signed checkpoint and persisted work.",
       "ToolRuntime final body admission is separate; this only attests exact Loop-planned input before scheduler.prepare",

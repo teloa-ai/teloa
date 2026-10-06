@@ -13,6 +13,8 @@ export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoin
 export const nativeInputRestoreVersion=1
 /** 固定宿主在发现待办前核验共享只读筛选契约；候选数据不是恢复授权。 */
 export const nativeInputRecoveryCandidateVersion=1
+/** 真实业务分类、输入组合租约与初始派生准入均由当前核心装配。 */
+export const nativeInputCapabilityVersion=1
 
 declare module '@deepseek-ai/cordis'{
  interface Context{readonly teloaNativeInput:TeloaNativeInput}
