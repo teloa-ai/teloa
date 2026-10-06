@@ -1,3 +1,4 @@
+import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -45,6 +46,7 @@ function mount(initial:Props){
  }
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string):unknown=>{
+  const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id.endsWith('.module.css'))return {default:cssProxy}

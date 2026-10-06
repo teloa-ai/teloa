@@ -1,3 +1,4 @@
+import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync,existsSync} from 'node:fs'
@@ -53,6 +54,7 @@ function resolveSibling(fromAbsPath:string,specifier:string):string{
 
 /** 'react'/'clsx'/'lucide-react'/'*.module.css'/i18n 的 provider 与 errors/'@teloa/contract' 六类特判，两层加载器共用。 */
 function specialCase(id:string,reactBinding:unknown):unknown{
+ const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
  if(id==='react')return reactBinding
  if(id==='clsx')return clsxModule
  if(id==='lucide-react')return iconsProxy

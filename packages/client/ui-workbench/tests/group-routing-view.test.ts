@@ -1,3 +1,4 @@
+import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
 import {staffAvatarComponent} from './staff-avatar-component.ts'
 import test from 'node:test'
@@ -88,9 +89,9 @@ test('表情条接线：表情条挂在 SavedMessage 的 reactions prop 上（�
  const savedMessage=page.split('function SavedMessage(')[1]!.split('\nfunction ')[0]!
  assert.ok(savedMessage.indexOf('className={css.reactions}')<savedMessage.indexOf('<GroupReplyPreview'))
  assert.ok(savedMessage.indexOf('<GroupReplyPreview')<savedMessage.indexOf('className={css.messageActions}'))
- // 归档群只读：表情条的 archived 直接来自群本身。
+ // 归档及高级权益只读都禁止新增回应；消息与原回应仍可读取。
  const bar=page.split('<GroupReactionBar')[1]!.split('/>')[0]!
- assert.ok(bar.includes('archived={group.archived}'),bar)
+ assert.ok(bar.includes('archived={group.archived||!allowed}'),bar)
  assert.ok(bar.includes('roleNames={roleNames}'),bar)
 })
 
@@ -268,6 +269,7 @@ function mountPage(props:Record<string,unknown>){
   return exported
  }
  const require=(id:string):unknown=>{
+  const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
   if(id==='./StaffAvatar.js')return staffAvatarComponent
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})

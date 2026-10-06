@@ -83,3 +83,73 @@ test('迟到旧导航 scope 与旧卸载不能覆盖新账号范围',async()=>{
  close();assert.equal(store.getNavigationStorageScope(),'c'.repeat(64))
  closeNew();assert.equal(store.getNavigationStorageScope(),undefined)
 })
+
+const rights=(allowed:boolean,reason:unknown=allowed?null:'subscription-expired')=>({schema:'teloa.application-capabilities/v1',capabilities:{'general-agent':true,'parallel-agents':allowed,groups:allowed,people:allowed,automation:allowed},reason})
+
+test('社区能力默认全开；商业缺失或非法权益保守只读，不能由身份名称授予高级能力',async()=>{
+ const store=createApplicationPresentationStore()
+ assert.equal(store.getCapabilitySnapshot().capabilities.groups,true)
+ await store.configure(bridge())
+ assert.equal(store.getCapabilitySnapshot().capabilities['general-agent'],true)
+ assert.equal(store.getCapabilitySnapshot().capabilities.groups,false)
+ assert.equal(store.getCapabilitySnapshot().reason,'unavailable')
+ for(const value of [{...rights(true),token:'private'},rights(true,'unknown'),{...rights(true),capabilities:{...rights(true).capabilities,groups:'yes'}},null]){
+  await store.configure({...bridge(),capabilities:async()=>value})
+  assert.equal(store.getCapabilitySnapshot().capabilities.people,false)
+  assert.equal(store.getCapabilitySnapshot().reason,'unavailable')
+ }
+ await store.configure()
+ assert.equal(store.getCapabilitySnapshot().capabilities.automation,true)
+})
+
+test('权益实时到期降为只读，迟到读取及旧账号推送不能重新授予高级能力',async()=>{
+ const store=createApplicationPresentationStore();let push!:(value:unknown)=>void,resolve!:(value:unknown)=>void,unsubscribed=0
+ const configured=store.configure({...bridge(),capabilities:()=>new Promise(done=>{resolve=done}),subscribeCapabilities:listener=>{push=listener;return()=>{unsubscribed++}}})
+ await Promise.resolve();await Promise.resolve()
+ assert.equal(store.getCapabilitySnapshot().reason,'checking')
+ push(rights(false));resolve(rights(true));const close=await configured
+ assert.equal(store.getCapabilitySnapshot().reason,'subscription-expired')
+ push(rights(true));assert.equal(store.getCapabilitySnapshot().capabilities.groups,true)
+ push(rights(false));assert.equal(store.getCapabilitySnapshot().capabilities.groups,false)
+ await store.configure({...bridge('Bob'),capabilities:async()=>rights(true)})
+ push(rights(false));close()
+ assert.equal(store.getSnapshot().account?.displayName,'Bob')
+ assert.equal(store.getCapabilitySnapshot().capabilities.groups,true)
+ assert.equal(unsubscribed,1)
+})
+
+test('订阅入口只在本人主动调用时打开；可选新桥优先且旧宿主回退账号入口',async()=>{
+ const store=createApplicationPresentationStore();let account=0,subscription=0
+ const owner={...bridge(),openAccount:async()=>{account++},openSubscription:async()=>{subscription++},capabilities:async()=>rights(false)}
+ await store.configure(owner);assert.equal(subscription,0);assert.equal(account,0)
+ await store.openSubscription();assert.equal(subscription,1);assert.equal(account,0)
+ await store.configure({...bridge(),openAccount:async()=>{account++}})
+ await store.openSubscription();assert.equal(account,1)
+ await store.configure();await assert.rejects(store.openSubscription())
+})
+
+test('宿主就绪后重新核实名字；暂不可用到有效权益及连接恢复都更新本人昵称',async()=>{
+ const store=createApplicationPresentationStore();let name='',push!:(value:unknown)=>void,ready=false
+ const current=()=>({...identity(),account:{displayName:name,email:'alice@example.test'}})
+ await store.configure({presentation:async()=>current(),openAccount:async()=>{},capabilities:async()=>rights(false,ready?'subscription-required':'unavailable'),subscribeCapabilities:listener=>{push=listener;return()=>{}}})
+ assert.equal(store.getSnapshot().account?.displayName,'')
+ name='ML';ready=true;push(rights(false,'subscription-required'));await Promise.resolve();await Promise.resolve()
+ assert.equal(store.getSnapshot().account?.displayName,'ML')
+ name='Max Luo';await store.refresh()
+ assert.equal(store.getSnapshot().account?.displayName,'Max Luo')
+ assert.equal(store.getSnapshot().account?.email,'alice@example.test')
+})
+
+test('昵称回执与本人归属隔离；迟到旧刷新不能覆盖新账号或沿旧导航范围换号',async()=>{
+ const store=createApplicationPresentationStore();let resolve!:(value:unknown)=>void,delayed=false
+ await store.configure({presentation:()=>delayed?new Promise(done=>{resolve=done}):Promise.resolve(identity()),openAccount:async()=>{}})
+ delayed=true;const old=store.refresh()
+ await Promise.resolve()
+ await store.configure(bridge('Bob'));resolve(identity('Wrong owner'));await old
+ assert.equal(store.getSnapshot().account?.displayName,'Bob')
+ let current=identity('Bob')
+ await store.configure({presentation:async()=>current,openAccount:async()=>{},capabilities:async()=>rights(true)})
+ current=identity('Carol');await store.refresh()
+ assert.equal(store.getSnapshot().account?.displayName,'Bob')
+ assert.equal(store.getCapabilitySnapshot().reason,'unavailable')
+})

@@ -1,3 +1,4 @@
+import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
 import {staffAvatarComponent} from './staff-avatar-component.ts'
 import test from 'node:test'
@@ -176,6 +177,7 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
  }
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string):unknown=>{
+  const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
   if(id==='./StaffAvatar.js')return staffAvatarComponent
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})

@@ -1,3 +1,4 @@
+import {useApplicationCapability} from './CapabilityNotice.js'
 import {StatusLabel} from './StatusLabel.js'
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
@@ -46,6 +47,7 @@ export const dutyLead = (duty: string) => duty.split(/[。.!?！？\n]/)[0]?.tri
  * 三个数只吃调用方传入的 `tasks`（要求是 `directoryState.tasks`），不新增端点、不在这里重新过滤示例数据。
  */
 export function StaffRoster({ roles, labels, tasks, focusScope, fold, onFoldChange, searching, onSelect, onHire, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: StaffRosterProps) {
+ const allowed=useApplicationCapability('people')
     const { t, number } = useI18n();
     profileName = personalDisplayName(profileName, t('profile.account'));
     const focusRef = useRef<HTMLElement>(null);
@@ -104,7 +106,7 @@ export function StaffRoster({ roles, labels, tasks, focusScope, fold, onFoldChan
             </section>;
         })}
         {/* 招聘卡照原型 数字员工形象.jsx:79：圆形加号 + 标题 + 一句「三步就能上班」的小字。 */}
-        <button type="button" className={rosterCss.hireCard} onClick={onHire}>
+        <button type="button" className={rosterCss.hireCard} disabled={!allowed} onClick={onHire}>
             <span className={rosterCss.hireIcon} aria-hidden="true"><Plus size={20} /></span>
             <span className={rosterCss.hireText}><strong>{t('team.action.new')}</strong><small>{t('team.page.hireHint')}</small></span>
         </button>

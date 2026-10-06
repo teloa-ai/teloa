@@ -1,3 +1,4 @@
+import {useApplicationCapability} from './CapabilityNotice.js'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import { Settings2, MessageSquare, Users, Plus, Search, X, Moon, Sun, ListTodo, CalendarClock, FolderOpen, Pin, PinOff, UserRound } from 'lucide-react'
@@ -22,6 +23,7 @@ const shortcutSectionKey={overview:'business.home.title',projects:'business.sect
 /** 固定的看板在左栏显示「范围 · 看板标题」：标题表以 `businessDashboardTitleKey` 为键，没读到标题时显示看板标识。 */
 export const businessDashboardTitleKey=(scope:string,dashboardId:string)=>JSON.stringify([scope,dashboardId])
 export function WorkNavigation({onSearch,view,colorScheme,actions,work,management,useSessions,create,creating,needCount,attentionKnown=true,createTask,createGroup,openTwin,setTheme,businessShortcuts=[],businessScopeNames={},businessTarget,openBusinessShortcut=()=>{},unpinBusinessShortcut=()=>{},businessDashboardTitles={}}:Props){
+ const groupsAllowed=useApplicationCapability('groups')
   const {locale,t}=useI18n()
   const directory=useSyncExternalStore(work.subscribe,work.getDirectorySnapshot)
   const managed=useSyncExternalStore(management.subscribe,management.getSnapshot)
@@ -62,7 +64,7 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>create())}><MessageSquare size={15}/><span>{t('navigation.newConversation')}</span></button>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(createTask)}><ListTodo size={15}/><span>{t('navigation.newTask')}</span></button>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>actions.openPlans())}><CalendarClock size={15}/><span>{t('navigation.newContinuous')}</span></button>
-        <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(createGroup)}><Users size={15}/><span>{t('home.action.newGroup')}</span></button>
+        <button type="button" role="menuitem" disabled={!groupsAllowed} onClick={()=>{if(applicationPresentation.can('groups'))fromNewWorkMenu(createGroup)}}><Users size={15}/><span>{t('home.action.newGroup')}</span></button>
         <div className={css.newWorkMenuDivider}/>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>create({chooseWorkspace:true}))}><FolderOpen size={15}/><span>{t('conversationDialog.otherLocation')}</span></button>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>actions.openDirectory())}><Settings2 size={15}/><span>{t('conversationDialog.manage')}</span></button>

@@ -1,3 +1,5 @@
+import {CapabilityFields,useApplicationCapability} from './CapabilityNotice.js'
+import {applicationPresentation} from './application-presentation.js'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {Play,ShieldCheck,MessageSquare,FileText,MoreHorizontal,TriangleAlert} from 'lucide-react'
@@ -29,6 +31,7 @@ const evidenceKindKey = (kind: RoleDailyLogEvidence['kind']) =>
 
 export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigger, now }: RoleDailyLogPanelProps) {
   const { t, locale, dateTime } = useI18n()
+  const allowed=useApplicationCapability('people')
   const [logs, setLogs] = useState<RoleDailyLogSummary[]>()
   const [logsError, setLogsError] = useState<string>()
   const [selected, setSelected] = useState<string>()
@@ -126,21 +129,21 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
         {paragraphs.length?paragraphs.map((paragraph,index)=><p key={index}>{paragraph}</p>):<p>{detail.markdown}</p>}
         <section aria-label={t('dailyLog.evidence')}><h4 className={css.sectionTitle}>{t('dailyLog.evidenceCount',{count:detail.evidence.length})}</h4><ul>{detail.evidence.map(item=>{const Icon=item.kind==='run'?Play:item.kind==='approval'?ShieldCheck:item.kind==='group-message'?MessageSquare:FileText;return <li className={css.evidence} key={item.kind+item.id}><Icon size={14} aria-hidden="true"/><span>{item.title}</span><small className={css.evidenceKind}>{t(evidenceKindKey(item.kind))} · v{item.version}</small></li>})}</ul></section>
         <section aria-label={t('dailyLog.candidates')}><h4 className={css.sectionTitle}>{t('dailyLog.candidateCount',{count:candidates.length})}</h4><p>{t('dailyLog.candidateHint')}</p><ul>{candidates.map(memory=><li className={css.candidate} key={memory.id}><span>{memory.title}</span><span>{t(!memory.sourceAvailable?'roleMemory.sourceGone':memory.state==='confirmed'?'team.presentation.memory.confirmed.label':'team.presentation.memory.candidate.label')}</span><span className={css.candidateActions}>
-          {memoryApi&&memory.state==='candidate'&&<button type="button" disabled={busy||!memory.sourceAvailable} onClick={()=>runMemoryAction(memoryApi.confirm(memory.id,memory.stateVersion))}>{t('team.memory.confirm')}</button>}
+          {memoryApi&&memory.state==='candidate'&&<button type="button" disabled={!allowed||busy||!memory.sourceAvailable} onClick={()=>{if(applicationPresentation.can('people'))runMemoryAction(memoryApi.confirm(memory.id,memory.stateVersion))}}>{t('team.memory.confirm')}</button>}
           {memoryApi&&<button type="button" disabled={busy} onClick={()=>runMemoryAction(memoryApi.withdraw(memory.id,memory.stateVersion))}>{t('team.memory.withdraw')}</button>}
         </span></li>)}</ul></section>
-        {kind==='habit-digest'&&promote&&<details className={css.fold}><summary aria-disabled={promoteLimitReached||undefined}>{promoteLimitReached?t('habitLog.promoteLimit'):t('habitLog.promoteFold',{count:remaining})}</summary><div className={css.foldForm}>
+        {kind==='habit-digest'&&promote&&<details className={css.fold}><summary aria-disabled={promoteLimitReached||undefined}>{promoteLimitReached?t('habitLog.promoteLimit'):t('habitLog.promoteFold',{count:remaining})}</summary><CapabilityFields capability="people"><div className={css.foldForm}>
           {!promoteLimitReached&&<p>{t('habitLog.promoteLimit')}</p>}
         <label>{t('team.memory.record')}<input value={promoteTitle} maxLength={120} onChange={event => setPromoteTitle(event.target.value)} /></label>
         <label>{t('team.form.memory.candidateBody')}<textarea value={promoteMarkdown} onChange={event => setPromoteMarkdown(event.target.value)} /></label>
         {promoteError && <p role="alert">{promoteError}</p>}
-        <button type="button" disabled={promoteBusy || promoteLimitReached || !promoteTitle.trim() || !promoteMarkdown.trim()} onClick={async () => {
+        <button type="button" disabled={!allowed||promoteBusy || promoteLimitReached || !promoteTitle.trim() || !promoteMarkdown.trim()} onClick={async () => {if(!applicationPresentation.can('people'))return;
           setPromoteBusy(true); setPromoteError(undefined)
           try { await promote(detail, { title: promoteTitle.trim(), markdown: promoteMarkdown.trim() }); setPromoteCount(count => count + 1) }
           catch (error) { setPromoteError(localizeWorkError(locale, error)) }
           finally { setPromoteBusy(false) }
         }}>{t('habitLog.promote')}</button>
-        </div></details>}
+        </div></CapabilityFields></details>}
         {detail.pruneHints.length>0&&<section className={css.warn} aria-label={t('dailyLog.pruneHints')}><h4 className={css.sectionTitle}><TriangleAlert size={14}/>{t('dailyLog.pruneHintsCount',{count:detail.pruneHints.length})}</h4><p>{t('dailyLog.pruneHintHint')}</p><ul>{detail.pruneHints.map(hint=>{
           const memory=memories?.find(row=>row.id===hint.memoryId)
           const stale=!memory||memory.state==='withdrawn'||memory.stateVersion!==hint.memoryStateVersion

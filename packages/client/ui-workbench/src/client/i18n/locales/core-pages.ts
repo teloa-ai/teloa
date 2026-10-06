@@ -70,6 +70,7 @@ import {MARKET_TAXONOMY_MESSAGE_ROWS} from './market-taxonomy.js'
 import {IM_CHANNELS_MESSAGE_ROWS} from './im-channels.js'
 import {CREDENTIAL_STORE_MESSAGE_ROWS} from './credential-store.js'
 import {BUNDLED_EXTENSIONS_MESSAGE_ROWS} from './bundled-extensions.js'
+import {APPLICATION_CAPABILITY_MESSAGE_ROWS} from './application-capabilities.js'
 
 /**
  * 聚合词表只需保证每行完整覆盖十种产品语言。显式行类型避免持续追加词表时让声明产物展开成
@@ -78,6 +79,7 @@ import {BUNDLED_EXTENSIONS_MESSAGE_ROWS} from './bundled-extensions.js'
 type CorePageMessageRow=readonly [string,string,string,string,string,string,string,string,string,string,string]
 
 export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
+  ...APPLICATION_CAPABILITY_MESSAGE_ROWS,
   ...BUSINESS_CONFIGURATION_MESSAGE_ROWS,
   ...BUSINESS_DAILY_MESSAGE_ROWS,
   ...BUSINESS_RECORD_MESSAGE_ROWS,

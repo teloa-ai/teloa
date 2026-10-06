@@ -126,6 +126,8 @@ import { createBusinessSpaceApi } from './business-space-api.js'
 import { createBusinessScopeApi } from './business-scope-api.js'
 import { configureEdition, createEditionApi } from './edition.js'
 import {applicationPresentation} from './application-presentation.js'
+import {createSessionCapabilityPresentation} from './session-capability-presentation.js'
+import {SessionCapabilityNotice} from './SessionCapabilityNotice.js'
 import {createBusinessTaskApi} from './business-task-api.js'
 import {createPageCreateApi} from './page-create-api.js'
 import {readPageCreateAtomicSkillBody} from './page-create-skill-content.js'
@@ -323,9 +325,11 @@ export async function apply(ctx: Context): Promise<void> {
     return result.value
   },()=>call('model-options/list',{}))
   const preparation=new PromptPreparation()
-  const bindingBlocks=new Map<string,string>(),contextBlocks=new Map<string,string>(),submissionBlocks=new Map<string,string>(),businessBlocks=new Map<string,string>()
+  const bindingBlocks=new Map<string,string>(),contextBlocks=new Map<string,string>(),submissionBlocks=new Map<string,string>(),businessBlocks=new Map<string,string>(),capabilityBlocks=new Map<string,string>()
+  const sessionCapabilities=createSessionCapabilityPresentation((sessionId,signal)=>call('session-capabilities/read',{sessionId},signal))
+  ctx.effect(()=>()=>sessionCapabilities.dispose(),'teloa: 会话能力投影释放')
   const syncComposerBlock=(sessionId:string)=>{
-    const reason=businessBlocks.get(sessionId)??bindingBlocks.get(sessionId)??contextBlocks.get(sessionId)??submissionBlocks.get(sessionId)
+    const reason=businessBlocks.get(sessionId)??bindingBlocks.get(sessionId)??contextBlocks.get(sessionId)??submissionBlocks.get(sessionId)??capabilityBlocks.get(sessionId)
     const blocks=requireWorkContext().conversation.blocks,id=brandString<SessionId>(sessionId)
     if(blocks.storeFor(id).getSnapshot()?.reason!==reason)blocks.set(id,reason?{reason}:undefined)
   }
@@ -339,11 +343,13 @@ export async function apply(ctx: Context): Promise<void> {
     read:async(sessionId)=>{
       const value=await call('conversations/read',{sessionId})
       if(!isConversation(value)||value.sessionId!==sessionId)throw Error('工作服务返回的会话格式不正确。')
+      if(sessionCapabilities.getSnapshot().sessionId===sessionId)void sessionCapabilities.refresh()
       return value
     },
     ensure:async(sessionId)=>{
       const value=await call('conversations/ensure',{sessionId})
       if(!isConversation(value))throw Error('工作服务返回的绑定格式不正确。')
+      if(sessionCapabilities.getSnapshot().sessionId===sessionId)void sessionCapabilities.refresh()
       return value
     },
     isNativeChild:sessionId=>isNativeChildSession(requireWorkContext().sessions,brandString<SessionId>(sessionId)),
@@ -680,6 +686,22 @@ export async function apply(ctx: Context): Promise<void> {
     child.slots.inject('conversation.hero.brand.mark',()=>child.slots.register({name:'conversation.hero.brand.mark',inject:()=>({theme:brandTheme})},ConversationBrand))
     // 服务必须从声明了依赖的子上下文捕获；外层布局上下文无权读取它们。
     workContext=child
+    child.effect(()=>{
+      let previous:string|undefined
+      const syncCapabilityBlock=()=>{
+        const state=sessionCapabilities.getSnapshot(),current=mainSession.getSnapshot()
+        if(previous&&previous!==state.sessionId){capabilityBlocks.delete(previous);syncComposerBlock(previous)}
+        previous=state.sessionId
+        if(!current||state.sessionId!==current)return
+        const copy=state.status==='checking'?'application.capability.checking':state.status==='unavailable'?'application.capability.unavailable':state.deniedCapability?'application.capability.'+(applicationPresentation.getCapabilitySnapshot().reason??'unavailable'):undefined
+        if(copy)capabilityBlocks.set(current,requireI18n().t(copy));else capabilityBlocks.delete(current)
+        syncComposerBlock(current)
+      }
+      const selected=()=>sessionCapabilities.select(mainSession.getSnapshot())
+      const off=[sessionCapabilities.subscribe(syncCapabilityBlock),mainSession.subscribe(selected),connection.state.subscribe(()=>{void applicationPresentation.refresh();void sessionCapabilities.refresh()}),requireI18n().subscribe(syncCapabilityBlock)]
+      selected()
+      return()=>{for(const dispose of off)dispose();sessionCapabilities.select(undefined);capabilityBlocks.clear();if(previous&&workContext)syncComposerBlock(previous)}
+    },'teloa: 同源会话能力与输入只读投影')
     child.effect(()=>retainNativeInputs({
       sessions:child.sessions,current:mainSession,
       owner:{getSnapshot:()=>businessBuilder.getSnapshot().namespace,subscribe:businessBuilder.subscribe},
@@ -733,6 +755,7 @@ export async function apply(ctx: Context): Promise<void> {
     child.effect(()=>{const off=observeMainSessionBinding(mainSession,child.sessions,work);return ()=>{off();workContext=undefined}},'teloa: 原生会话绑定同步')
     child.slots.inject('conversation.input.left',()=>child.slots.register({name:'conversation.input.left',id:'teloa-capabilities',order:90,inject:()=>({work,i18n:requireI18n(),openResources:()=>requireActions().openResources(),openTeamCapabilities:()=>requireActions().navigate('capabilities')})},Capabilities))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-binding',order:-100,inject:()=>({work,i18n:requireI18n()})},BindingStatus))
+    child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-session-capability',order:-98,inject:()=>({reader:sessionCapabilities,i18n:requireI18n()})},SessionCapabilityNotice))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({
       name:'conversation.input.dock',id:'teloa-browser-stop',order:-95,
       inject:sessionId=>({i18n:requireI18n(),reader:createSessionBrowserStopReader(
