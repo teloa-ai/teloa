@@ -1,10 +1,16 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {SessionId} from '@deepseek-ai/dsh-session'
 import type {ConversationService,ObjectConversationService,PlanService,SessionCapabilityReader,WorkCapability} from '@teloa/backend'
-import {WorkError} from '@teloa/contract'
+import {workAccess,sessionInput,type WorkAccess} from '@teloa/backend'
+import {WorkError,type SessionCapabilitySnapshot} from '@teloa/contract'
 import {resolveSessionLineage} from './subagent-lineage.ts'
 
 type Ports={owner:string;conversations:Pick<ConversationService,'repository'>;links:Pick<ObjectConversationService,'bySession'>;pool:Pick<PlanService['pool'],'query'>;isRoutingSession:(sessionId:string)=>boolean}
+
+/** owner 由原宿主固定，客户端只提交 sessionId；读取历史不申请执行许可。 */
+export async function readNativeSessionCapabilities(owner:string,input:unknown,access:Pick<WorkAccess,'readSessionCapabilities'>=workAccess):Promise<SessionCapabilitySnapshot>{
+ return access.readSessionCapabilities(owner,sessionInput(input))
+}
 
 /** 只读取本人已落盘关联及实际 Agent 谱系；冷恢复不 resolve/activate 会话。 */
 export function createNativeSessionCapabilities(ctx:Pick<Context,'agents'>,ports:Ports):SessionCapabilityReader{

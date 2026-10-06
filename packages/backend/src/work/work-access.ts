@@ -1,6 +1,6 @@
-import {WorkError} from '@teloa/contract'
+import {WorkError,type WorkCapability,type SessionCapabilitySnapshot} from '@teloa/contract'
 
-export type WorkCapability='general-agent'|'parallel-agents'|'groups'|'people'|'automation'
+export type {WorkCapability} from '@teloa/contract'
 export type SessionCapabilityProducer='prompt'|'queue'|'subagent'|'schedule'|'task-run'|'restore'
 export type SessionCapabilityReader=(sessionId:string,producer:SessionCapabilityProducer)=>Promise<Readonly<{ownerId:string;capabilities:readonly WorkCapability[]}>>
 /** 由服务端已核验的持久身份构造；不接收客户端许可、版本或商业主体。 */
@@ -39,13 +39,28 @@ export class WorkAccess{
   if(this.sessionCapabilities===reader)return
   this.sessionCapabilities=reader;this.epoch++
  }
+ /** 同一真实分类供执行与纯读复用；读侧不调用许可策略，也不返回主体或私有对象。 */
+ private async classifySessionCapabilities(sessionId:string,producer:SessionCapabilityProducer):Promise<Awaited<ReturnType<SessionCapabilityReader>>>{
+  const reader=this.sessionCapabilities,epoch=this.epoch
+  if(!reader)throw unavailable()
+  let current:Awaited<ReturnType<SessionCapabilityReader>>
+  try{current=await reader(sessionId,producer)}catch{throw denied()}
+  if(this.epoch!==epoch||!current||typeof current.ownerId!=='string'||!current.ownerId.trim()||!Array.isArray(current.capabilities)||current.capabilities.length===0||current.capabilities.some(capability=>!capabilities.has(capability)))throw denied()
+  return Object.freeze({ownerId:current.ownerId,capabilities:Object.freeze([...new Set(current.capabilities)])})
+ }
+ async readSessionCapabilities(ownerId:string,sessionId:string):Promise<SessionCapabilitySnapshot>{
+  try{
+   // prompt 只表示中性直接输入；员工、群、计划及子会话仍由真实关联和谱系决定。
+   const current=await this.classifySessionCapabilities(sessionId,'prompt')
+   if(!ownerId||current.ownerId!==ownerId)throw denied()
+   return Object.freeze({schema:'teloa.session-capabilities/v1',sessionId,status:'ready',requiredCapabilities:current.capabilities})
+  }catch{return Object.freeze({schema:'teloa.session-capabilities/v1',sessionId,status:'unavailable',requiredCapabilities:null})}
+ }
  async authorizeSessionCapabilities(sessionId:string,producer:SessionCapabilityProducer):Promise<WorkAccessLease>{
   if(!this.policy&&!this.required)return combineWorkAccessLeases([])
   const reader=this.sessionCapabilities,epoch=this.epoch
   if(!reader){if(this.sessionCapabilitiesRequired)throw unavailable();return combineWorkAccessLeases([])}
-  let current:Awaited<ReturnType<SessionCapabilityReader>>
-  try{current=await reader(sessionId,producer)}catch{throw denied()}
-  if(this.epoch!==epoch||!current||typeof current.ownerId!=='string'||!current.ownerId.trim()||!Array.isArray(current.capabilities)||current.capabilities.length===0||current.capabilities.some(capability=>!capabilities.has(capability)))throw denied()
+  const current=await this.classifySessionCapabilities(sessionId,producer)
   const leases:WorkAccessLease[]=[]
   for(const capability of new Set(current.capabilities))leases.push(await this.authorize({kind:'capability',capability,ownerId:current.ownerId,sessionId,objectId:sessionId,operation:producer==='restore'?'resume':'run'}))
   if(this.epoch!==epoch)throw denied()

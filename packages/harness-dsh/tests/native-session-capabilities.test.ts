@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {WorkAccess} from '../../backend/src/work/work-access.ts'
 
 test('真实关联的任务、员工、群和计划不会被prompt降级为基础，cold读取不激活Agent',async()=>{
  const capabilities=await import('../src/native-session-capabilities.ts').catch(()=>({} as typeof import('../src/native-session-capabilities.ts')))
@@ -24,4 +25,19 @@ test('仅有真实非空会话负责人也按people分类；清空负责人后�
  assert.deepEqual(await reader('context-only','restore'),{ownerId:'owner',capabilities:['people']})
  selected=false
  assert.deepEqual(await reader('context-only','prompt'),{ownerId:'owner',capabilities:['general-agent']})
+})
+
+test('真实纯读handler覆盖cold已ensure会话与未绑定原生历史，不触发授权或Agent激活',async()=>{
+ const module=await import('../src/native-session-capabilities.ts'),read=Reflect.get(module,'readNativeSessionCapabilities') as typeof module.readNativeSessionCapabilities
+ assert.equal(typeof read,'function')
+ const rows:Array<{sessionId:string;ownerId:string;status:string;requestedRoleId?:string}>=[{sessionId:'cold-employee',ownerId:'owner',status:'ready',requestedRoleId:'real-employee'}]
+ const ports={owner:'owner',conversations:{repository:{read:async()=>rows}},links:{bySession:async()=>[]},pool:{query:async()=>({rows:[]})},isRoutingSession:(id:string)=>id==='actual-group'}
+ const access=new WorkAccess();access.requireSessionCapabilities();access.installPolicy(async()=>{assert.fail('读取历史不得调用执行准入')})
+ access.installSessionCapabilities(module.createNativeSessionCapabilities({agents:{get:()=>undefined}} as never,ports as never))
+ assert.deepEqual(await read('owner',{sessionId:'cold-employee'},access),{schema:'teloa.session-capabilities/v1',sessionId:'cold-employee',status:'ready',requiredCapabilities:['people']})
+ assert.deepEqual(await read('owner',{sessionId:'actual-group'},access),{schema:'teloa.session-capabilities/v1',sessionId:'actual-group',status:'ready',requiredCapabilities:['groups']})
+ assert.deepEqual(await read('owner',{sessionId:'unbound'},access),{schema:'teloa.session-capabilities/v1',sessionId:'unbound',status:'unavailable',requiredCapabilities:null})
+ rows.push({sessionId:'unbound',ownerId:'owner',status:'ready'})
+ assert.deepEqual(await read('owner',{sessionId:'unbound'},access),{schema:'teloa.session-capabilities/v1',sessionId:'unbound',status:'ready',requiredCapabilities:['general-agent']})
+ for(const payload of [{sessionId:'cold-employee',requiredCapabilities:['general-agent']},{sessionId:'cold-employee',producer:'prompt'},{sessionId:'cold-employee',ownerId:'other'}])await assert.rejects(read('owner',payload,access),{code:'teloa/invalid-input'})
 })
