@@ -13,8 +13,11 @@ export async function loadHost(name:string,expectedVersion?:string){
 export function guardedWebServer(Base:any,gate:any){return class extends Base {
  get teloaAdmissionGuard(){return gate}
  register(route:any){return super.register({...route,handler:(req:any,res:any)=>{
-  if(/^\/teloa-local-runtime\/(?:activity|readiness|quiesce|resume|sealed)$/.test((req.url??'').split('?')[0]))return route.handler(req,res)
-  return gate.run(()=>route.handler(req,res)).catch((error:Error)=>{if(!res.headersSent){res.writeHead(503,{'content-type':'text/plain; charset=utf-8','retry-after':'1'});res.end(error.message)}else res.destroy(error)})
+  const path=(req.url??'').split('?')[0]
+  if(/^\/teloa-local-runtime\/(?:activity|readiness|quiesce|resume|sealed)$/.test(path))return route.handler(req,res)
+  // 固定只读目录订阅保留官方路由的认证、信封校验和取消；仅等待寿命不计工作。
+  const observe=route.path==='/teloa'&&req.method==='POST'&&path==='/teloa/conversations/watch'
+  return (observe?gate.observe(()=>route.handler(req,res)):gate.run(()=>route.handler(req,res))).catch((error:Error)=>{if(!res.headersSent){res.writeHead(503,{'content-type':'text/plain; charset=utf-8','retry-after':'1'});res.end(error.message)}else res.destroy(error)})
  }})}
 }}
 export function guardedGateway(Base:any,gate:any){

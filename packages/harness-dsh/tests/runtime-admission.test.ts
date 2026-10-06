@@ -24,3 +24,11 @@ test('关闸后的群接力保留并迫使停止失败，解闸后继续执行',
  assert.equal(gate.deferred,1);assert.equal(routed,false)
  gate.resume();await pending;assert.equal(routed,true)
 })
+test('只读观察不授予派发票据；关闸后原观察的新增工作同样拒绝',async()=>{
+ const gate=new api.RuntimeAdmission();let continueRead:()=>void=()=>{},started=false
+ const observation=gate.observe(async()=>{await new Promise<void>(done=>{continueRead=done});return gate.run(()=>{started=true})})
+ await gate.quiesce(0);gate.assertQuiescent()
+ await assert.rejects(gate.observe(()=>{started=true}),/停止/)
+ continueRead();await assert.rejects(observation,/停止/);assert.equal(started,false)
+ gate.resume()
+})

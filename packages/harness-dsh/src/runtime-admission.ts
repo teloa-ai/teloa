@@ -14,6 +14,11 @@ export class RuntimeAdmission {
   const ticket={active:true}
   try{return await this.scope.run(ticket,work)}finally{ticket.active=false;this.active--}
  }
+ /** 只读观察仍须入站准入；等待通知不计作工作，也不授予嵌套派发票据。 */
+ async observe<T>(read:()=>Promise<T>|T):Promise<T>{
+  if(this.closed)throw Error('服务正在停止，请稍后重试。')
+  return this.scope.run({active:false},read)
+ }
  /** 群消息已落库后的异步接力不可丢失；关闸时保留，停止检查发现它后解闸。 */
  defer<T>(work:()=>Promise<T>):Promise<T>{
   if(!this.closed||this.scope.getStore()?.active)return this.run(work)
