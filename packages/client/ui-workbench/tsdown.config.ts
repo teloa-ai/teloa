@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { clientBundle, clientChunk } from '../tsdown.preset.ts'
+import { clientBundle, clientChunk, standaloneClientBundle } from '../tsdown.preset.ts'
 
 const manifest=JSON.parse(readFileSync(new URL('./package.json',import.meta.url),'utf8'))
 const baseline=JSON.parse(readFileSync(new URL('../../../config/dsh-baseline.json',import.meta.url),'utf8'))
@@ -17,4 +17,4 @@ const browserBuild=(name:string)=>vegaRequire.resolve(name).replace(/\.node\.js$
 const chart=clientChunk('@teloa/client-ui-workbench','chart','src/client/business-chart-vega.ts')
 chart.alias={'vega-canvas':browserBuild('vega-canvas'),'vega-loader':browserBuild('vega-loader')}
 // 构建工具的默认出口不属于 Cordis 插件运行时。
-export default [...configs,chart]
+export default [...configs,chart,standaloneClientBundle('@teloa/client-ui-workbench','src/client/guest.tsx','src/client/guest-styles.ts')]

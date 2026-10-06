@@ -19,14 +19,16 @@ const read = (name: string) => readFile(new URL(name, clientRoot), 'utf8')
 
 test('导航按日常工作、团队与业务、资源排序，设置固定底部', async () => {
   const source = await read('WorkNavigation.tsx')
-  const navMatch = source.match(/const primaryNavigation=\[([\s\S]*?)\]\s*as const/)
+  const chrome = await read('WorkbenchNavigationChrome.tsx')
+  const navMatch = chrome.match(/const primaryNavigation=\[([\s\S]*?)\]\s*as const/)
   assert.ok(navMatch)
   const ids = [...(navMatch?.[1] ?? '').matchAll(/\['([a-z]+)'/g)].map(row => row[1])
   assert.deepEqual(ids, ['home','attention','messages','tasks','projects','plans','team','spaces','resources','capabilities','market'])
   const footer=source.slice(source.indexOf('<div className={css.navFooter}>'))
   assert.match(footer,/navigation.v2.settings/)
   assert.doesNotMatch(footer,/navigation.tasks|navigation.capabilities|navigation.v2.library|navigation.v2.market|navigation.v2.other/)
-  assert.ok(source.indexOf('<div className={css.navScroll}>')<source.indexOf('<nav '),'所有导航内容能在短窗口中滚动')
+  assert.ok(source.indexOf('<div className={css.navScroll}>')<source.indexOf('<WorkbenchNavigationItems '),'共享主导航能在原工作台短窗口中滚动')
+  assert.match(chrome,/<nav aria-label=\{t\('navigation\.main'\)\}>/)
 })
 
 test('zh-CN 的 navigation.capabilities 恒为「能力」', () => {

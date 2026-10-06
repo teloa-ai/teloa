@@ -1,40 +1,23 @@
 import {applicationPresentation} from './application-presentation.ts'
+import {usablePersonalName} from './personal-identity.ts'
+export {personalDisplayName,personalAvatarInitials} from './personal-identity.ts'
 export type PersonalProfile={displayName:string;email?:string;managed?:true}
 
 const key='teloa.personal-profile/v1'
 export const defaultPersonalDisplayName=''
 
-function usableName(value:string):string{
-  const name=value.normalize('NFC').trim().replace(/\s+/gu,' ')
-  return /[@＠\p{Cc}]/u.test(name)||!/\p{L}/u.test(name)?'':name
-}
-
-/** 姓名用于展示；邮箱只在账号设置中核对，不从邮箱推导本人姓名。 */
-export function personalDisplayName(value:string,fallback:string):string{
-  return usableName(value)||fallback
-}
-
-const graphemes=new Intl.Segmenter('und',{granularity:'grapheme'})
-/** 取姓名首尾词的首个完整字素，单名只取一个；跳过装饰符号及标点。 */
-export function personalAvatarInitials(value:string):string{
-  const words=usableName(value).split(' ').filter(word=>/\p{L}/u.test(word))
-  const initial=(word:string)=>[...graphemes.segment(word)].find(part=>/\p{L}/u.test(part.segment))?.segment.toUpperCase()??''
-  if(!words.length)return ''
-  return initial(words[0]!)+(words.length>1?initial(words.at(-1)!):'')
-}
-
 export function normalizePersonalDisplayName(value:string):string{
   const name=value.trim().replace(/\s+/g,' ')
   if(!name)throw Error('用户名不能为空。')
   if(/[@＠]/u.test(name))throw Error('显示名称不能使用邮箱。')
-  if(!usableName(name))throw Error('用户名不能为空。')
+  if(!usablePersonalName(name))throw Error('用户名不能为空。')
   if([...name].length>40)throw Error('用户名不能超过 40 个字符。')
   return name.normalize('NFC')
 }
 
 function read():PersonalProfile{
   const account=applicationPresentation.getSnapshot().account
-  if(account)return {...account,displayName:usableName(account.displayName),managed:true}
+  if(account)return {...account,displayName:usablePersonalName(account.displayName),managed:true}
   if(typeof window==='undefined')return {displayName:defaultPersonalDisplayName}
   try{
     const value=JSON.parse(window.localStorage.getItem(key)??'null') as unknown

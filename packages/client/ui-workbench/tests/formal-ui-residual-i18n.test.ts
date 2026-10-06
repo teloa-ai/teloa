@@ -124,10 +124,12 @@ test('AI-Native Team Studio 是唯一的工作室品牌名称',async()=>{
     assert.doesNotMatch(source,/>AI Studio<|return 'AI Studio'/,file)
   }
   const navigation=await readFile(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8')
+  const chrome=await readFile(new URL('../src/client/WorkbenchNavigationChrome.tsx',import.meta.url),'utf8')
   const home=await readFile(new URL('../src/client/WorkHome.tsx',import.meta.url),'utf8')
   const navigationStyles=await readFile(new URL('../src/client/WorkbenchFrame.module.css',import.meta.url),'utf8')
   assert.doesNotMatch(home,/className=\{css\.brand\}|darkLogo|lightLogo/)
-  assert.match(navigation,/<div className=\{css\.brandHeading\}><img[^>]+alt="Teloa"\/><span className=\{css\.brandTier\}>\{application\.product\}<\/span><\/div><span className=\{css\.brandStudio\}>AI-Native Team Studio<\/span>/)
+  assert.match(navigation,/<WorkbenchNavigationBrand product=\{application\.product\}/)
+  assert.match(chrome,/<div className=\{css\.brandHeading\}><img[^>]+alt="Teloa"\/><span className=\{css\.brandTier\}>\{product\}<\/span><\/div><span className=\{css\.brandStudio\}>AI-Native Team Studio<\/span>/)
   assert.match(navigationStyles,/\.brandIdentity\{[^}]*flex-direction:column[^}]*align-items:flex-start/)
   assert.match(navigationStyles,/\.brandStudio\{[^}]*width:auto[^}]*text-align:left/)
 })

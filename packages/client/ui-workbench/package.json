@@ -11,6 +11,10 @@
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
+    },
+    "./guest": {
+      "types": "./lib/types/client/guest.d.ts",
+      "default": "./lib/guest.js"
     }
   },
   "engines": {

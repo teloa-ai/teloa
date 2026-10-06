@@ -68,7 +68,9 @@ test('左栏顶部不再有空间入口与切换箭头；账号块提供「我�
  // 窄屏下「我的分身」这行字要有 44px 命中区。
  assert.match(styles,/@media\(max-width:740px\)\{[^@]*\.navigation \.twinLink\{display:flex;align-items:center;min-height:44px\}/)
  // 顶栏面包屑与左栏账号块同源：都读 personalProfile 的 displayName，不再提「我的工作空间」。
- assert.match(frame,/const profile=useSyncExternalStore\(personalProfile\.subscribe,personalProfile\.getSnapshot,personalProfile\.getSnapshot\)/)
+ assert.match(frame,/const profile=usePersonalProfile\(\)/)
+ const profileHook=await read('use-personal-profile.ts')
+ assert.match(profileHook,/const profile=useSyncExternalStore\(personalProfile\.subscribe,personalProfile\.getSnapshot,personalProfile\.getSnapshot\)/)
  // 分身只负责本人代拟与判断建议，不进入数字员工的岗位资料/任务拆分授权面。
  assert.match(frame,/role\?\.kind==='employee'&&<RoleToolGrants/)
  // 2026-09-20 用户裁定面包屑可点：显示名成为回工作台的按钮，页名成为回列表根的按钮。

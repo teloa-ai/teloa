@@ -34,7 +34,14 @@ function styleInjectionModule(
   fileId: string,
   css: string,
   classMap: Readonly<Record<string, string>>,
+  registrationModule?: string,
 ): string {
+  // 独立工作台在 mount 时由宿主传入 CSP nonce；模块求值只登记样式，不写文档。
+  if (registrationModule) return [
+    `import {registerGuestStyle} from ${JSON.stringify(registrationModule)};`,
+    `registerGuestStyle(${JSON.stringify(`${id}/${basename(fileId)}`)}, ${JSON.stringify(css)});`,
+    `export default ${JSON.stringify(classMap)};`,
+  ].join('\n')
   const source = [
     `const css = ${JSON.stringify(css)};`,
     `const tagId = ${JSON.stringify(`${id}/${basename(fileId)}`)};`,
@@ -50,7 +57,7 @@ function styleInjectionModule(
   return source.join('\n')
 }
 
-function cssModulesInlinePlugin(id: string): TsdownPlugin {
+function cssModulesInlinePlugin(id: string, registrationModule?: string): TsdownPlugin {
   return {
     name: 'teloa-css-modules-inline',
     // 只解析 emitted 路径，不像 vendor 版 sourceAssetPath() 那样在缺失时反查
@@ -82,8 +89,21 @@ function cssModulesInlinePlugin(id: string): TsdownPlugin {
       })
       const classMap: Record<string, string> = {}
       for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
-      return styleInjectionModule(id, fileId, code.toString(), classMap)
+      return styleInjectionModule(id, fileId, code.toString(), classMap, registrationModule)
     },
+  }
+}
+
+/** 无 DSH 宿主的公共呈现入口：React、CSS 和品牌图全部放进单个浏览器 ESM。 */
+export function standaloneClientBundle(packageId: string, entry: string, styleRuntime: string): UserConfig {
+  return {
+    entry: {guest: entry}, outDir: 'lib', format: 'esm', platform: 'browser', target: 'es2024',
+    dts: false, clean: false, minify: true,
+    define: {'process.env.NODE_ENV': JSON.stringify('production')},
+    deps: {neverBundle: () => false, alwaysBundle: () => true},
+    plugins: [cssModulesInlinePlugin(`${packageId}/guest`, resolvePath(styleRuntime))],
+    inputOptions: {resolve: {mainFields: ['module', 'browser', 'main']}},
+    outputOptions: {entryFileNames: 'guest.js', codeSplitting: false},
   }
 }
 

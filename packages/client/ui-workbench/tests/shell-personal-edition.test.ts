@@ -23,8 +23,9 @@ function mount(file:string,initialProps:Record<string,unknown>){
  const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
  const states:unknown[]=[];let cursor=0
  const effects:{deps?:unknown[]|undefined}[]=[];let effectCursor=0
+ const sharedComponents=new Set<unknown>()
  const React={
-  createElement:(type:unknown,props:Record<string,unknown>|null,...children:unknown[])=>({type,props:props??{},children:children.flat(Infinity)}),
+  createElement:(type:unknown,props:Record<string,unknown>|null,...children:unknown[]):any=>sharedComponents.has(type)?(type as (props:unknown)=>unknown)({...props,children}):({type,props:props??{},children:children.flat(Infinity)}),
   useState:(initial:unknown)=>{const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?(initial as ()=>unknown)():initial;return [states[index],(value:unknown)=>{states[index]=typeof value==='function'?(value as (previous:unknown)=>unknown)(states[index]):value}]},
   useRef:(value:unknown)=>{const index=cursor++;return states[index]??(states[index]={current:value})},
   useMemo:(factory:()=>unknown)=>factory(),
@@ -41,6 +42,14 @@ function mount(file:string,initialProps:Record<string,unknown>){
  const require=(id:string)=>{
   if(id==='react')return React
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
+  if(id.endsWith('WorkbenchNavigationChrome.js')){
+   const sharedSource=readFileSync(new URL('WorkbenchNavigationChrome.tsx',root),'utf8')
+   const sharedJs=ts.transpileModule(sharedSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
+   const shared:Record<string,any>={}
+   new Function('require','exports','React',sharedJs)(require,shared,React)
+   sharedComponents.add(shared.WorkbenchNavigationBrand);sharedComponents.add(shared.WorkbenchNavigationItems)
+   return shared
+  }
   if(id.endsWith('use-personal-profile.js'))return {usePersonalProfile:()=>({displayName:'Max',initials:'M'})}
   if(id.endsWith('application-presentation.js'))return {applicationPresentation:{subscribe:()=>()=>{},getSnapshot:()=>({product:'Free',account:null})}}
   if(id.endsWith('provider.js'))return {useI18n:()=>({locale:'zh-CN',t:(key:string,params?:Record<string,unknown>)=>params?key+':'+JSON.stringify(params):key})}
