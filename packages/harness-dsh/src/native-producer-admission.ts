@@ -1,7 +1,16 @@
 import {createHash} from 'node:crypto'
+import {RemoteError} from '@deepseek-ai/dsh-typert-protocol'
+import {WorkError} from '@teloa/contract'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {UserMessage} from '@deepseek-ai/dsh-session'
 import type {createNativeWorkInput,NativeInputContext} from './native-work-input.ts'
+
+declare module '@deepseek-ai/dsh-typert-protocol'{
+ interface RemoteErrorDetailsMap{
+  'teloa/forbidden':Record<string,never>
+  'teloa/unavailable':Record<string,never>
+ }
+}
 
 export type ControllerInputCandidate=
  |Readonly<{kind:'prompt';agent:Agent;message:UserMessage;requestId:string;mode:'queue'|'steer'}>
@@ -23,11 +32,16 @@ function context(producer:NativeInputContext['producer'],identity:readonly unkno
  */
 export function createNativeProducerAdmissions(input:Input){
  return Object.freeze({
-  controller(candidate:ControllerInputCandidate,dispatch:Publisher):Promise<void>{
+  async controller(candidate:ControllerInputCandidate,dispatch:Publisher):Promise<void>{
    const binding=candidate.kind==='prompt'
     ?context('prompt',['controller/prompt',candidate.agent.id,candidate.requestId,candidate.mode])
     :context('queue',['controller/queue-edit',candidate.agent.id,candidate.itemId,candidate.target,candidate.previousMessage.id])
-   return input.withNewInput(candidate.agent,candidate.message,binding,dispatch)
+   try{await input.withNewInput(candidate.agent,candidate.message,binding,dispatch)}
+   catch(error){
+    // 内部准入仍抛业务错误；只有官方 Controller 的传输边界显式转换已知拒绝。
+    if(error instanceof WorkError&&(error.code==='teloa/forbidden'||error.code==='teloa/unavailable'))throw new RemoteError(error.code,error.message,{}, {cause:error})
+    throw error
+   }
   },
   subagent(candidate:SubagentInputCandidate,dispatch:Publisher):Promise<void>{
    const binding=context('subagent',['subagent/input',candidate.kind??'live',candidate.sender.id,candidate.agent.id,candidate.delivery])
