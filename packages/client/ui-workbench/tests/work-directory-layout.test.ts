@@ -2,9 +2,70 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {mount,nodes} from './market-component-harness.ts'
+import {BindingClient,type WorkPort} from '../src/client/binding-client.ts'
+import type {Conversation} from '@teloa/contract'
+import * as presentation from '../src/client/work-presentation.ts'
 
 const root=new URL('../src/client/',import.meta.url)
 const read=(name:string)=>readFile(new URL(name,root),'utf8')
+
+function conversation(sessionId:string):Conversation{return {id:'work-'+sessionId,ownerId:'owner',title:sessionId,scopeIds:['general'],version:1,status:'ready',sessionId,requestedSessionId:sessionId,createdAt:'2026-10-07T00:00:00Z'}}
+function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(yes=>{resolve=yes});return {promise,resolve}}
+async function openedDirectory(){
+  let current='B',mode:'directory'|'native'='directory'
+  const opened:string[]=[],noop=()=>()=>{}
+  const port:WorkPort={isNativeChild:()=>false,list:async()=>[conversation('A')],read:async id=>conversation(id),ensure:async id=>conversation(id),catalog:async id=>({schema:'teloa.capabilities/v1',conversation:conversation(id),observedAt:'2026-10-07T00:00:00Z',skills:[],knowledge:{status:'not-connected'},connections:{status:'not-connected'},writes:{status:'not-implemented'}}),block:()=>{},create:async()=>conversation('new'),adopt:async id=>id,open:id=>{current=id;opened.push(id)},current:()=>current}
+  const work=new BindingClient(port)
+  await work.select('B');await work.refreshDirectory()
+  function ConversationActions(){}
+  function ConversationActionMenu(){}
+  const page=mount('WorkDirectory.tsx',{'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':presentation,'./conversation-search.js':{searchPhase:()=> 'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en',dateTime:()=> '10/07'})},'./i18n/errors.js':{localizeWorkError:(_locale:string,error:unknown)=>error instanceof Error?error.message:String(error)},'./ConversationActions.js':{ConversationActions,ConversationActionMenu}})
+  const props={work,management:{subscribe:noop,getSnapshot:()=>({ready:true,baseline:true,workspaces:[],archived:[],pending:{}})},search:{subscribe:noop,getSnapshot:()=>({items:[]})},current:'B',useSessions:(select:any)=>select({byId:{A:{id:'A',title:'A',running:false,blank:false,updatedAt:Date.parse('2026-10-07T00:00:00Z')}},ids:['A']}),onOpened:()=>{mode='native'},focusRequest:0,onClose:()=>{},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]})},selectedGroup:undefined,openGroup:()=>{},createGroup:()=>{}}
+  const render=()=>page.render('WorkDirectory',props)
+  const click=()=>{const row=nodes(render()).find(node=>node.props['data-session-id']==='A')!;const button=nodes(row).find(node=>node.type==='button'&&node.props.className==='open')!;assert.equal(button.props.disabled,false);button.props.onClick()}
+  const copyOpen=()=>{nodes(render()).find(node=>node.type===ConversationActionMenu)!.props.choose('copy');return nodes(render()).find(node=>node.type===ConversationActions)!.props.open as (row:Conversation,signal:AbortSignal)=>Promise<void>}
+  return {work,port,opened,render,click,copyOpen,mode:()=>mode}
+}
+
+test('目录点击实际已打开而选中投影仍非目标时，恢复原生单聊',async()=>{
+  const f=await openedDirectory(),snapshot=f.work.getSnapshot()
+  f.click();await new Promise(resolve=>setImmediate(resolve))
+  assert.deepEqual(f.opened,['A'])
+  assert.deepEqual(f.work.getSnapshot(),snapshot)
+  assert.equal(f.work.getSnapshot().sessionId,'B')
+  assert.equal(f.mode(),'native')
+})
+
+test('目录打开被较新选择或打开取消、或领养身份不符时，不恢复原生单聊',async()=>{
+  for(const change of ['selection','opening','identity'] as const){
+    const f=await openedDirectory(),adoption=deferred<string>(),entered=deferred<void>()
+    f.port.adopt=id=>{if(id==='A'){entered.resolve();return adoption.promise}return Promise.resolve(id)}
+    f.click();await entered.promise
+    if(change==='selection')await f.work.select('C')
+    if(change==='opening')await f.work.openSession('C')
+    adoption.resolve(change==='identity'?'wrong':'A')
+    await new Promise(resolve=>setImmediate(resolve))
+    assert.deepEqual(f.opened,change==='opening'?['C']:[],change)
+    assert.equal(f.mode(),'directory',change)
+    const alerts=nodes(f.render()).filter(node=>node.props.role==='alert')
+    assert.deepEqual(alerts.flatMap(node=>node.children),change==='identity'?['原生会话领养身份不一致。']:[],change)
+  }
+})
+
+test('目录副本打开以真实回执恢复，abort 或较新选择不能确认打开',async()=>{
+  for(const outcome of ['opened','abort','selection'] as const){
+    const f=await openedDirectory(),adoption=deferred<string>(),entered=deferred<void>(),controller=new AbortController()
+    f.port.adopt=()=>{entered.resolve();return adoption.promise}
+    const opening=f.copyOpen()(conversation('A'),controller.signal)
+    await entered.promise
+    if(outcome==='abort')controller.abort()
+    if(outcome==='selection')await f.work.select('C')
+    adoption.resolve('A')
+    if(outcome==='selection')await assert.rejects(opening,/workDirectory.copy.switched/);else await opening
+    assert.deepEqual(f.opened,outcome==='opened'?['A']:[],outcome)
+    assert.equal(f.mode(),outcome==='opened'?'native':'directory',outcome)
+  }
+})
 
 test('目录头精简为新建，单聊与群共用一条列表，搜索与管理动作保持统一',()=>{
   const calls:string[]=[],noop=()=>()=>{},snapshot={status:'ready',rows:[]},managed={ready:true,baseline:true,workspaces:[{workspaceId:'ws',title:'Docs',path:'/docs',sessionIds:[]}],archived:[],pending:{}}

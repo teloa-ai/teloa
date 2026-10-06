@@ -10,6 +10,45 @@ function fixture() {
   const port:WorkPort={isNativeChild:()=>false,list:async()=>[],read:async id=>row(id),ensure:async id=>{const d=deferred<Conversation>();calls.set(id,d);return d.promise},catalog:async id=>({schema:'teloa.capabilities/v1',conversation:row(id),observedAt:'2026-09-10T00:00:00Z',skills:[],knowledge:{status:'not-connected'},connections:{status:'not-connected'},writes:{status:'not-implemented'}}),block:(id,reason)=>{blocks.set(id,reason)},create:async input=>({...row('new'),requestId:input.requestId,...(input.workspaceId===undefined?{}:{requestedWorkspaceId:input.workspaceId})}),adopt:async id=>id,open:()=>{},current:()=>undefined}
   return {calls,blocks,port,client:new BindingClient(port)}
 }
+test('打开回执来自真实原生打开，选中投影迟到仍返回 opened',async()=>{
+  const f=fixture(),opened:string[]=[]
+  f.port.ensure=async id=>row(id);f.port.current=()=> 'B';f.port.open=id=>opened.push(id)
+  await f.client.select('B')
+  const snapshot=f.client.getSnapshot()
+  const result=await f.client.openConversation(row('A'))
+  assert.deepEqual(opened,['A'])
+  assert.deepEqual(f.client.getSnapshot(),snapshot,'打开回执不伪造迟到的选中投影')
+  assert.equal(result,'opened')
+})
+test('打开回执区分 abort、较新选择和较新打开，取消不派发原生打开',async()=>{
+  for(const change of ['already-aborted','abort','selection','opening'] as const){
+    const f=fixture(),adoption=deferred<string>(),entered=deferred<void>(),opened:string[]=[],controller=new AbortController()
+    f.port.ensure=async id=>row(id);f.port.current=()=> 'A';f.port.open=id=>opened.push(id)
+    await f.client.select('A')
+    f.port.adopt=id=>{if(id==='old'){entered.resolve();return adoption.promise}return Promise.resolve(id)}
+    if(change==='already-aborted')controller.abort()
+    const pending=f.client.openConversation(row('old'),controller.signal)
+    if(change!=='already-aborted'){
+      await entered.promise
+      if(change==='abort')controller.abort()
+      if(change==='selection')await f.client.select('B')
+      if(change==='opening')assert.equal(await f.client.openConversation(row('new')),'opened')
+      adoption.resolve('old')
+    }
+    assert.equal(await pending,'cancelled',change)
+    assert.deepEqual(opened,change==='opening'?['new']:[],change)
+  }
+})
+test('打开回执不把读取、领养身份或原生打开异常当成成功或取消',async()=>{
+  for(const stage of ['ensure','adopt','identity','open'] as const){
+    const f=fixture(),opened:string[]=[]
+    f.port.ensure=async id=>{if(stage==='ensure')throw Error('读取失败');return row(id)}
+    f.port.adopt=async id=>{if(stage==='adopt')throw Error('领养失败');return stage==='identity'?'wrong':id}
+    f.port.open=id=>{if(stage==='open')throw Error('打开失败');opened.push(id)}
+    await assert.rejects(f.client.openConversation(row('A')),stage==='identity'?/领养身份不一致/:/失败/)
+    assert.deepEqual(opened,[],stage)
+  }
+})
 test('openSession在read/adopt前固定导航代次；迟到不得publish/block或抢开',async()=>{
  for(const stage of ['read','adopt']){
   const f=fixture(),gate=deferred<void>(),opened:string[]=[]

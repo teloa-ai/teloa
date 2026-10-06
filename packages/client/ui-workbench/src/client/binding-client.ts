@@ -4,6 +4,8 @@ export type BindingState={sessionId:string|undefined;status:'idle'|'loading'|'re
 // 回包 Conversation 零新键，客户端读不回它，因此恢复路径重建请求时无从补上（见 T14 报告疑虑）。
 export type ConversationCreation=Readonly<{requestId:string;title?:string;workspaceId?:string;roleId?:string}>
 export type CreateConversationOptions=Readonly<{requestId?:string;title?:string;workspaceId?:string;roleId?:string;beforeOpen?:(conversation:Conversation)=>Promise<void>;mayOpen?:()=>boolean}>
+/** opened 表示守卫通过并已派发原生打开，不依赖随后到达的选中投影。 */
+export type ConversationOpenResult='opened'|'cancelled'
 const taskRunInputBlock='工作会话正在由任务执行编排，请从原任务恢复。'
 export interface WorkPort {
   list(signal?:AbortSignal):Promise<Conversation[]>
@@ -90,13 +92,13 @@ export class BindingClient {
       throw error
     }
   }
-  async openConversation(conversation:Conversation,signal?:AbortSignal):Promise<void> {
-    await this.openResolvedConversation(conversation,signal,false)
+  async openConversation(conversation:Conversation,signal?:AbortSignal):Promise<ConversationOpenResult> {
+    return this.openResolvedConversation(conversation,signal,false)
   }
-  private async openResolvedConversation(conversation:Conversation,signal:AbortSignal|undefined,resolved:boolean,navigation?:{opening:number;generation:number;previous:string|undefined;mayOpen:(()=>boolean)|undefined;commit:()=>void}):Promise<void> {
-    if(signal?.aborted)return
+  private async openResolvedConversation(conversation:Conversation,signal:AbortSignal|undefined,resolved:boolean,navigation?:{opening:number;generation:number;previous:string|undefined;mayOpen:(()=>boolean)|undefined;commit:()=>void}):Promise<ConversationOpenResult> {
+    if(signal?.aborted)return 'cancelled'
     const opening=navigation?.opening??++this.opening,previous=navigation?navigation.previous:this.port.current(),generation=navigation?.generation??this.generation
-    if(navigation&&(opening!==this.opening||generation!==this.generation||this.port.current()!==previous||navigation.mayOpen?.()===false))return
+    if(navigation&&(opening!==this.opening||generation!==this.generation||this.port.current()!==previous||navigation.mayOpen?.()===false))return 'cancelled'
     if(previous)this.port.block(previous,'正在打开目标工作会话…')
     const restore=()=>{
       if(this.releaseOpeningBlock!==restore)return
@@ -120,10 +122,11 @@ export class BindingClient {
       const sessionId=await this.port.adopt(target.sessionId,target.requestedWorkspaceId)
       if(sessionId!==target.sessionId)throw Error('原生会话领养身份不一致。')
       if(recovery&&this.creation?.requestId===recovery.requestId)this.creation=undefined
-      if(signal?.aborted||opening!==this.opening||generation!==this.generation||navigation&&(this.port.current()!==previous||navigation.mayOpen?.()===false))return
+      if(signal?.aborted||opening!==this.opening||generation!==this.generation||navigation&&(this.port.current()!==previous||navigation.mayOpen?.()===false))return 'cancelled'
       navigation?.commit()
       this.port.open(sessionId)
       void this.refreshDirectory()
+      return 'opened'
     }finally{
       signal?.removeEventListener('abort',cancel)
       restore()
