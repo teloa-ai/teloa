@@ -12,7 +12,7 @@ import { RoleLifecycle, RoleLifecycleRecovery, type RoleLifecyclePort } from './
 import { roleLifecyclePath, roleMemoryPath, roleSkillNotice, roleStatusLabel, roleWorkPath, twinDisplayName } from './team-presentation.js';
 import type { TwinDraftInput } from './TwinDraftEditor.js';
 import { TwinProfile } from './TwinProfile.js';
-import { defaultPersonalDisplayName } from './personal-profile.js';
+import { defaultPersonalDisplayName, personalAvatarInitials, personalDisplayName } from './personal-profile.js';
 import { useDirectoryFocus } from './directory-focus.js';
 import { openDialog } from './dialog-focus.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -99,6 +99,7 @@ type Props = {
     focusScope?: string | null;
     /** 本人用户名（personalProfile.displayName）：分身在名单与个人主页上按「{用户名} 的分身」显示。 */
     profileName?: string;
+    profileInitials?: string;
     pageCreate?: {api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string})=>void;openMarket:()=>void};
 };
 type RoleInput = {
@@ -114,8 +115,9 @@ const firstSentence = (text: string) => text.split(/[。.!?！？\n]/)[0]?.trim(
 /** 全宽名单工具行上的三个状态胶囊（原型 数字员工形象.jsx:107 的 statusFilters）。恢复旧筛选记忆时也拿它当白名单。 */
 const STATUS_PILL_IDS = ['all', 'busy', 'paused'] as const;
 type PendingRoleDraft={initial:RoleFields;resolve:(id:string)=>void;reject:(reason:unknown)=>void}
-export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, pageCreate }: Props) {
+export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
     const { locale, t, list, number } = useI18n();
+    profileName = personalDisplayName(profileName, t('profile.account'));
     const collaborationScopes = useBusinessScopes();
     // 「正在忙」是派生态（不是 role.state），四档筛选与成员行状态点共用同一份人话词条（team.roster.status.*，见 roleStatusLabel）。
     const rosterStatusLabel = (value: 'busy' | PreviewRole['state']) => roleStatusLabel(value, t);
@@ -170,7 +172,7 @@ export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, 
     const resetDirectory=()=>{setQuery('');setStatus('all');select(null)};
     const showRoster = !embedded && !role;
     const detailPane = role
-      ? <RoleDetail savedGroups={savedGroups} profileName={profileName} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
+      ? <RoleDetail savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
       : <div className={css.empty}><Bot size={38}/><h2>{t('team.landingTitle')}</h2><p>{t('team.landingDescription')}</p></div>;
     return <section data-team-directory-mode={directoryMode} className={clsx(css.page, css.alignedPage,isSandbox&&css.sandboxMode, teamCss.teamPage, embedded && css.embeddedPage, embedded && teamCss.embeddedTeam)} aria-label={t('navigation.team')}>
 
@@ -212,7 +214,7 @@ export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, 
             </div>
             {pageCreate&&persistence&&!isSandbox&&createEntryOpen&&<div id="team-create-entry" className={teamCss.createEntry}><CreateEntry entity="role" api={pageCreate.api} openForm={()=>{setCreateEntryOpen(false);setCreating(true)}} openMarket={()=>{setCreateEntryOpen(false);pageCreate.openMarket()}} prepare={pageCreate.prepare} onConfirm={confirmRoleDraft}/></div>}
             {rows.length > 0
-              ? <StaffRoster profileName={profileName} roles={rows} labels={scopeLabels} tasks={directoryState.tasks} {...(focusScope ? { focusScope } : {})} fold={fold} onFoldChange={setFold} searching={!!query.trim()} onSelect={id => select(id)} onHire={() => setCreating(true)}/>
+              ? <StaffRoster profileName={profileName} profileInitials={profileInitials} roles={rows} labels={scopeLabels} tasks={directoryState.tasks} {...(focusScope ? { focusScope } : {})} fold={fold} onFoldChange={setFold} searching={!!query.trim()} onSelect={id => select(id)} onHire={() => setCreating(true)}/>
               : <div className={css.empty}><Bot size={30}/><h2>{t(directoryRoles.length ? 'team.empty.noMatch' : 'team.empty.unconfigured')}</h2><p>{t(directoryRoles.length ? 'team.empty.noMatchDescription' : 'team.empty.unconfiguredDescription')}</p>{directoryRoles.length > 0 && <button type="button" onClick={() => { setQuery(''); setStatus('all'); }}>{t('team.empty.reset')}</button>}</div>}
           </section>
         : detailPane}
@@ -221,9 +223,10 @@ export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, 
   </section>;
 }
 // 导出给 team-profile-sections.test.ts 用 renderToStaticMarkup 直接核对「编辑」态的五组呈现，不必经过 TeamPage 的内部选中态。
-export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, state, collaboration, change, back, openTask, openGroup, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName }: {
+export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, state, collaboration, change, back, openTask, openGroup, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
     work: BindingClient;
     profileName?: string;
+    profileInitials?: string;
     resourceApi: ResourceApi;
     savedGroups?:GroupApi | undefined;
     memoryApi: Props['memoryApi'];
@@ -249,6 +252,7 @@ export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogA
     plans: Props['plans'];
 }) {
     const { locale, t, dateTime, list } = useI18n();
+    profileName = personalDisplayName(profileName, t('profile.account'));
     const collaborationScopes = useBusinessScopes();
     const stamp = (value: string) => dateTime(value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     const [form, setForm] = useState<'edit' | 'retire' | 'assign' | 'memory'>(), [error, setError] = useState<string>(), [chatNotice, setChatNotice] = useState<string>(), [editingRole, setEditingRole] = useState<PreviewRole>();
@@ -361,7 +365,7 @@ export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogA
     {/* 分身整页照原型 原型.jsx:459-462 重做（非嵌入与嵌入态都走这支），其余同事仍是身份栏 + 时间线的两栏个人主页；
         「全部同事」返回、错误条与各个对话框都留在外面，两支共用。 */}
     {twin
-      ? <TwinProfile profileName={profileName} role={role} draft={input.draft} update={draft => update({ draft })} save={act} {...(talk?{talk:async()=>{await talk(role.id)}}:talkDisabledReason?{talkDisabledReason}:{})} conversations={role.storage==='persistent'?conversations(role.id):null} samples={memorySection} habits={role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} roleId={role.id} kind="habit-digest" api={dailyLogApi} memoryApi={memoryApi} {...(promoteHabit?{promote:promoteHabit}:{})}/>:undefined}/>
+      ? <TwinProfile profileName={profileName} profileInitials={profileInitials} role={role} draft={input.draft} update={draft => update({ draft })} save={act} {...(talk?{talk:async()=>{await talk(role.id)}}:talkDisabledReason?{talkDisabledReason}:{})} conversations={role.storage==='persistent'?conversations(role.id):null} samples={memorySection} habits={role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} roleId={role.id} kind="habit-digest" api={dailyLogApi} memoryApi={memoryApi} {...(promoteHabit?{promote:promoteHabit}:{})}/>:undefined}/>
       : <div className={teamCss.homepage}>
       <aside className={teamCss.identityRail} aria-label={t('team.profile.title')}>
         <StaffAvatar initial={role.name.slice(0, 1)} seed={role.id} size="xl"/>

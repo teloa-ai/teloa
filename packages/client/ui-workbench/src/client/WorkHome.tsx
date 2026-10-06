@@ -15,7 +15,7 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {homeRecentContext,homeTaskContext} from './home-recent-context.js'
 import {homeColleagueWork} from './home-colleague-work.js'
-import {personalProfile} from './personal-profile.js'
+import {usePersonalProfile} from './use-personal-profile.js'
 import type {ObjectConversationLink} from './object-conversations.js'
 
 const workStatusKeys:Record<PresentedConversation['status'],'workDirectory.status.pending'|'workDirectory.status.running'|'workDirectory.status.blank'|'workDirectory.status.idle'|'workDirectory.status.unknown'>={
@@ -31,7 +31,7 @@ export function WorkHome({current,visible,work,management,useSessions,workTasks,
   const native=useSessions(value=>value.byId)
   const managed=useSyncExternalStore(management.subscribe,management.getSnapshot)
   const scopeNames=useBusinessScopes()
-  const profile=useSyncExternalStore(personalProfile.subscribe,personalProfile.getSnapshot,personalProfile.getSnapshot)
+  const profile=usePersonalProfile()
   const colleagueWork=homeColleagueWork(workTasks)
   const [conversationError,setConversationError]=useState<string>(),[opening,setOpening]=useState<string>()
   const attentionHeading=attentionStatusText(attentionStatus,t)

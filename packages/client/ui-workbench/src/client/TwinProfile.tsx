@@ -1,9 +1,10 @@
-import {Fingerprint, LockKeyhole} from 'lucide-react'
+import {Fingerprint, LockKeyhole, UserRound} from 'lucide-react'
 import {Fragment, useId, useRef, useState, type KeyboardEvent, type ReactNode} from 'react'
 import clsx from 'clsx'
 import {TwinDraftEditor, type TwinDraftInput} from './TwinDraftEditor.js'
 import type {PreviewRole, TeamChange} from './role-preview.js'
 import {twinDisplayName} from './team-presentation.js'
+import {personalAvatarInitials,personalDisplayName} from './personal-profile.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import teamCss from './TeamPage.module.css'
@@ -26,8 +27,9 @@ const TAB_TITLES={draft:'team.twin.tab.draft',samples:'team.detail.tab.judgment'
  * 记忆列表、习惯观察日志与关联会话都不在这里重写一遍。`habits` 不传时该页签按钮 `disabled`，
  * `TWIN_TABS` 仍固定四项——不按是否传入做条件分支，避免键盘环绕的下标错位。
  */
-export function TwinProfile({profileName,role,draft,update,save,talk,talkDisabledReason,conversations,samples,habits}:{
+export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,talkDisabledReason,conversations,samples,habits}:{
   profileName:string
+  profileInitials?:string
   role:PreviewRole
   draft:TwinDraftInput|undefined
   update:(draft:TwinDraftInput|undefined)=>void
@@ -40,6 +42,7 @@ export function TwinProfile({profileName,role,draft,update,save,talk,talkDisable
   habits?:ReactNode
 }){
   const {locale,t}=useI18n()
+  profileName=personalDisplayName(profileName,t('profile.account'))
   const [tab,setTab]=useState<TwinTab>('draft')
   const [chatError,setChatError]=useState('')
   const tabId=useId()
@@ -72,7 +75,7 @@ export function TwinProfile({profileName,role,draft,update,save,talk,talkDisable
   return <div className={css.twin}>
     <header className={css.head}>
       <div className={css.identity}>
-        <span className={clsx(teamCss.avatar,teamCss.human,css.avatar)}>{profileName.slice(0,1)}<Fingerprint size={12}/></span>
+        <span className={clsx(teamCss.avatar,teamCss.human,css.avatar)}>{profileInitials||<UserRound size={14}/>}<Fingerprint size={12}/></span>
         <div className={css.identityText}>
           <h1>{twinName}<span className={css.stage}>{t('team.twin.stage')}</span></h1>
           <p>{t('team.twin.subtitle',{name:profileName})}</p>
@@ -85,7 +88,7 @@ export function TwinProfile({profileName,role,draft,update,save,talk,talkDisable
 
     <section id={`${tabId}-panel-draft`} className={css.panel} role="tabpanel" aria-labelledby={`${tabId}-tab-draft`} tabIndex={0} hidden={tab!=='draft'}>
       <article className={css.message}>
-        <span className={clsx(teamCss.avatar,teamCss.human,css.messageAvatar)} aria-hidden="true">{profileName.slice(0,1)}<Fingerprint size={10}/></span>
+        <span className={clsx(teamCss.avatar,teamCss.human,css.messageAvatar)} aria-hidden="true">{profileInitials||<UserRound size={14}/>}<Fingerprint size={10}/></span>
         <div className={css.messageBody}>
         <header>
           <strong>{twinName}</strong>

@@ -11,8 +11,8 @@ const text=(value:unknown,max:number):value is string=>typeof value==='string'&&
 export function readApplicationPresentation(value:unknown):ApplicationPresentation{
  if(!exact(value,['schema','product','account'])||value.schema!==free.schema||typeof value.product!=='string'||!['Free','Pro','Enterprise'].includes(value.product))throw invalid()
  if(value.product==='Free'){if(value.account!==null)throw invalid();return free}
- if(!exact(value.account,['displayName','email'])||!text(value.account.displayName,320)||!text(value.account.email,320))throw invalid()
- return Object.freeze({schema:free.schema,product:value.product as ApplicationPresentation['product'],account:Object.freeze({displayName:value.account.displayName,email:value.account.email})})
+ if(!exact(value.account,['displayName','email'])||typeof value.account.displayName!=='string'||value.account.displayName.length>320||/[\u0000-\u001f\u007f]/.test(value.account.displayName)||!text(value.account.email,320))throw invalid()
+ return Object.freeze({schema:free.schema,product:value.product as ApplicationPresentation['product'],account:Object.freeze({displayName:value.account.displayName.trim(),email:value.account.email})})
 }
 
 export function createApplicationPresentationStore(){

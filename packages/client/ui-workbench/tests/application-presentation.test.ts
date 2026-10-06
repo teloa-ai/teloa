@@ -11,7 +11,8 @@ test('默认 Free 无账号；宿主展示严格裁剪，混合身份或额外�
  const free={schema:'teloa.application-presentation/v1',product:'Free',account:null}
  assert.deepEqual(readApplicationPresentation(free),free)
  assert.deepEqual(readApplicationPresentation(identity()),identity())
- for(const invalid of [{...identity(),token:'private'}, {...identity(),product:'Cloud'}, {...identity(),product:{toString:()=> 'Pro'}},{...free,account:identity().account},{...identity(),account:null},{...identity(),account:{...identity().account,displayName:' '}}])assert.throws(()=>readApplicationPresentation(invalid))
+ for(const invalid of [{...identity(),token:'private'}, {...identity(),product:'Cloud'}, {...identity(),product:{toString:()=> 'Pro'}},{...free,account:identity().account},{...identity(),account:null},{...identity(),account:{...identity().account,displayName:null}},{...identity(),account:{...identity().account,email:''}}])assert.throws(()=>readApplicationPresentation(invalid))
+ for(const displayName of ['', ' '])assert.equal(readApplicationPresentation({...identity(),account:{displayName,email:'alice@example.test'}}).account?.displayName,'')
 })
 
 test('后发身份优先；迟到旧读取与旧卸载不能覆盖新账号，关闭后不再打开账号页',async()=>{
@@ -43,4 +44,14 @@ test('账号姓名覆盖全部本人资料与欢迎徽标，禁止本机改名�
  await applicationPresentation.openAccount();assert.equal(opened,1)
  close();close=undefined;assert.equal(personalProfile.getSnapshot().displayName,'Local name')
  assert.equal(locale.bind('conversation')('hero.preview'),'Free');dispose()
+})
+
+test('无有效账号姓名时个人资料保留空姓名，邮箱只保留在独立账号字段',async t=>{
+ let close:(()=>void)|undefined
+ t.after(()=>close?.())
+ for(const displayName of ['', '  ', 'max@example.test', 'Max <max@example.test>', '  Max   Luo  ']){
+  close=await applicationPresentation.configure({presentation:async()=>({...identity(),account:{displayName,email:'max@example.test'}}),openAccount:async()=>{}})
+  assert.deepEqual(personalProfile.getSnapshot(),{displayName:displayName.includes('Luo')?'Max Luo':'',email:'max@example.test',managed:true})
+  close();close=undefined
+ }
 })

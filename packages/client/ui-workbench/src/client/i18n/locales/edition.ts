@@ -3,6 +3,7 @@ type Row<K extends string=string>=readonly [K,...Values]
 const r=<K extends string>(key:K,...values:Values):Row<K>=>[key,...values]
 
 export const EDITION_MESSAGE_ROWS=[
+ r('profile.account','账号','帳號','Account','アカウント','계정','Tài khoản','Cuenta','Compte','Konto','Conta'),
  r('profile.accountDescription','资料来自你当前登录的 Teloa 账号。','資料來自你目前登入的 Teloa 帳號。','Profile information comes from your signed-in Teloa account.','現在ログインしている Teloa アカウントのプロフィールです。','현재 로그인한 Teloa 계정의 프로필입니다.','Thông tin hồ sơ từ tài khoản Teloa đang đăng nhập.','Los datos provienen de tu cuenta de Teloa.','Ces informations proviennent de votre compte Teloa connecté.','Die Angaben stammen aus Ihrem angemeldeten Teloa-Konto.','Os dados vêm da sua conta Teloa autenticada.'),
  r('profile.manageAccount','管理账号','管理帳號','Manage account','アカウントを管理','계정 관리','Quản lý tài khoản','Gestionar cuenta','Gérer le compte','Konto verwalten','Gerir conta'),
  r('profile.manageFailed','账号页面暂时打不开，请稍后重试。','帳號頁面暫時無法開啟，請稍後重試。','The account page is unavailable. Please try again.','アカウント画面を開けません。後でもう一度お試しください。','계정 페이지를 열 수 없습니다. 잠시 후 다시 시도하세요.','Không mở được trang tài khoản. Vui lòng thử lại.','No se puede abrir la cuenta. Inténtalo de nuevo.','La page du compte est indisponible. Réessayez.','Die Kontoseite ist nicht verfügbar. Bitte versuchen Sie es erneut.','A página da conta está indisponível. Tente novamente.'),

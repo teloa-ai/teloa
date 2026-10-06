@@ -26,7 +26,7 @@ import {attentionPersistenceKey,attentionReasonText,attentionSourceKey,type Atte
 import {resolveHomeWorkAssignee,type HomeWorkAssigneeOption} from './home-work-assignee.js'
 import { roleName, type PreviewRole } from './role-preview.js'
 import type { BusinessTarget } from './business-preview.js'
-import {personalProfile} from './personal-profile.js'
+import {usePersonalProfile} from './use-personal-profile.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import css from './TaskPage.module.css'
@@ -174,7 +174,7 @@ export function TaskPage({groups,openGroup,navigation,securityActions,decisionAc
 
 export function TaskForm({task,initial,persistent=false,review=false,assignees,initialAssigneeId='self',groups,close,save}:{task?:PreviewTask;initial?:TaskDefinition|undefined;persistent?:boolean;review?:boolean;assignees?:HomeWorkAssigneeOption[];initialAssigneeId?:string;groups?:readonly TaskGroupOption[]|undefined;close:()=>void;save:(value:{title:string;goal:string;scope:CollaborationScope;groupId:string|null;skills:string[]},assignee?:TaskAssignee)=>void|Promise<void>}){
   const {locale,t}=useI18n()
-  const profile=useSyncExternalStore(personalProfile.subscribe,personalProfile.getSnapshot,personalProfile.getSnapshot)
+  const profile=usePersonalProfile()
   const collaborationScopes=useBusinessScopes()
   const dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null)
   const initialScope=(task?.scope||initial?.scope||'general') as CollaborationScope

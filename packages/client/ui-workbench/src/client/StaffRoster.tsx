@@ -1,7 +1,7 @@
 import {StatusLabel} from './StatusLabel.js'
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { ChevronRight, Fingerprint, Plus } from 'lucide-react';
+import { ChevronRight, Fingerprint, Plus, UserRound } from 'lucide-react';
 import type { BusinessScopeLabel } from './business-directory.js';
 import type { PreviewRole } from './role-preview.js';
 import type { PreviewTask } from './task-preview.js';
@@ -10,7 +10,7 @@ import { ROSTER_FOLD_LIMIT, rosterFoldToggle, rosterSectionOpen, type RosterFold
 import { rosterCounts, roleNowDoing } from './team-roster-counts.ts';
 import { useI18n } from './i18n/provider.js';
 import { twinDisplayName } from './team-presentation.js';
-import { defaultPersonalDisplayName } from './personal-profile.js';
+import { defaultPersonalDisplayName, personalAvatarInitials, personalDisplayName } from './personal-profile.js';
 import { StaffAvatar } from './StaffAvatar.js';
 import teamCss from './TeamPage.module.css';
 import rosterCss from './StaffRoster.module.css';
@@ -27,6 +27,7 @@ export type StaffRosterProps = {
     onHire: () => void;
     /** 本人用户名：分身在名单里按「{用户名} 的分身」显示，不用存储里第一人称的 role.name。 */
     profileName?: string;
+    profileInitials?: string;
 };
 
 /** 分身是默认代拟身份，不进入数字员工的在岗状态机；数字员工才显示四档运行状态。 */
@@ -44,8 +45,9 @@ export const dutyLead = (duty: string) => duty.split(/[。.!?！？\n]/)[0]?.tri
  * 分区头三个数与成员行的「今天在做」/状态点全部来自 `team-roster-counts.ts` 的纯函数——
  * 三个数只吃调用方传入的 `tasks`（要求是 `directoryState.tasks`），不新增端点、不在这里重新过滤示例数据。
  */
-export function StaffRoster({ roles, labels, tasks, focusScope, fold, onFoldChange, searching, onSelect, onHire, profileName = defaultPersonalDisplayName }: StaffRosterProps) {
+export function StaffRoster({ roles, labels, tasks, focusScope, fold, onFoldChange, searching, onSelect, onHire, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: StaffRosterProps) {
     const { t, number } = useI18n();
+    profileName = personalDisplayName(profileName, t('profile.account'));
     const focusRef = useRef<HTMLElement>(null);
     const [appliedFocus, setAppliedFocus] = useState<string>();
     const sections = rosterSections(roles, labels, t('team.roster.other'));
@@ -86,10 +88,10 @@ export function StaffRoster({ roles, labels, tasks, focusScope, fold, onFoldChan
                     <span className={rosterCss.groupCounts}>{counts}</span>
                 </button>
                 {open && <div id={panelId} className={rosterCss.personList}>{section.members.map(item => {
-                    // 分身这一行显示「{用户名} 的分身」；头像首字母跟着同一个名字取，与个人主页页头一致。
+                    // 分身头像使用本人姓名缩写；无姓名时与个人主页同用通用用户图标。
                     const status = rosterMemberStatus(item), lead = dutyLead(item.duty), name = item.kind === 'twin' ? twinDisplayName(profileName, t) : item.name;
                     return <button type="button" key={item.id} data-teloa-entry={item.id} className={rosterCss.personRow} onClick={() => onSelect(item.id)}>
-                        {item.kind === 'twin' ? <span className={clsx(teamCss.avatar, teamCss.human)}>{name.slice(0, 1)}<Fingerprint size={10} /></span> : <StaffAvatar initial={name.slice(0, 1)} seed={item.id} size="md" />}
+                        {item.kind === 'twin' ? <span className={clsx(teamCss.avatar, teamCss.human)} aria-hidden="true">{profileInitials || <UserRound size={14}/>}<Fingerprint size={10} /></span> : <StaffAvatar initial={name.slice(0, 1)} seed={item.id} size="md" />}
                         <span className={rosterCss.personMain}>
                             <strong>{name}</strong>
                             {lead && <small>{lead}</small>}

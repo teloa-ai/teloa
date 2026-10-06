@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { LayoutGrid, CheckCheck, CheckSquare, Globe2, Settings2, MessageSquare, Users, Bot, Blocks, Plus, Search, X, Library, Moon, Sun, ListTodo, CalendarClock, FolderKanban, FolderOpen, Pin, PinOff, Sparkles } from 'lucide-react'
+import { LayoutGrid, CheckCheck, CheckSquare, Globe2, Settings2, MessageSquare, Users, Bot, Blocks, Plus, Search, X, Library, Moon, Sun, ListTodo, CalendarClock, FolderKanban, FolderOpen, Pin, PinOff, Sparkles, UserRound } from 'lucide-react'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { WorkbenchActions, WorkbenchView } from './store.js'
 import type { BindingClient } from './binding-client.js'
@@ -8,7 +8,7 @@ import type { ConversationManagement } from './conversation-management.js'
 import { presentConversations } from './work-presentation.js'
 import lightLogo from '../brand/teloa-light.svg'
 import darkLogo from '../brand/teloa-dark.svg'
-import {personalProfile} from './personal-profile.js'
+import {usePersonalProfile} from './use-personal-profile.js'
 import {applicationPresentation} from './application-presentation.js'
 import {businessShortcutKey,type BusinessShortcut} from './personal-business-shortcuts.js'
 import type {BusinessTarget} from './business-preview.js'
@@ -33,7 +33,7 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
   const directory=useSyncExternalStore(work.subscribe,work.getDirectorySnapshot)
   const managed=useSyncExternalStore(management.subscribe,management.getSnapshot)
   const native=useSessions(value=>value.byId)
-  const profile=useSyncExternalStore(personalProfile.subscribe,personalProfile.getSnapshot,personalProfile.getSnapshot)
+  const profile=usePersonalProfile()
   const application=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getSnapshot,applicationPresentation.getSnapshot)
   const [error,setError]=useState<string>(),[opening,setOpening]=useState(false)
   const recentWorkHidden=browserRecentWorkHiddenStore()
@@ -83,7 +83,7 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
     </div>
     <div className={css.navFooter}>
       <button type="button" className={clsx(css.navItem,view==='settings'&&css.active)} onClick={actions.openDirectory}><Settings2 size={16}/>{t('navigation.v2.settings')}</button>
-      <div className={css.account}><span className={css.avatar}>{[...profile.displayName][0]?.toLocaleUpperCase()??'?'}</span><span className={css.accountText}><button type="button" className={css.profileButton} aria-label={t('navigation.profileAria',{name:profile.displayName})} onClick={actions.openDirectory}><strong>{profile.displayName}</strong></button><button type="button" className={css.twinLink} disabled={opening||creating} onClick={startTwin}><small>{t('navigation.twin')}</small></button></span><button type="button" className={css.iconButton} aria-label={t(colorScheme==='light'?'navigation.themeDark':'navigation.themeLight')} onClick={()=>setTheme(colorScheme==='light'?'dark':'light')}>{colorScheme==='light'?<Moon size={16}/>:<Sun size={16}/>}</button></div>
+      <div className={css.account}><span className={css.avatar} aria-hidden="true">{profile.initials||<UserRound size={14}/>}</span><span className={css.accountText}><button type="button" className={css.profileButton} aria-label={t('navigation.profileAria',{name:profile.displayName})} onClick={actions.openDirectory}><strong>{profile.displayName}</strong></button><button type="button" className={css.twinLink} disabled={opening||creating} onClick={startTwin}><small>{t('navigation.twin')}</small></button></span><button type="button" className={css.iconButton} aria-label={t(colorScheme==='light'?'navigation.themeDark':'navigation.themeLight')} onClick={()=>setTheme(colorScheme==='light'?'dark':'light')}>{colorScheme==='light'?<Moon size={16}/>:<Sun size={16}/>}</button></div>
     </div>
   </aside>
   </>
