@@ -114,6 +114,8 @@ import { Bot, ChevronRight, Fingerprint, MessageSquare, MoreHorizontal, PanelLef
 import { StaffAvatar } from './StaffAvatar.js'
 import { WorkNavigation,businessDashboardTitleKey } from './WorkNavigation.js'
 import {usePersonalProfile} from './use-personal-profile.js'
+import {CapabilityNotice,useApplicationCapability} from './CapabilityNotice.js'
+import {applicationPresentation} from './application-presentation.js'
 import {businessShortcutKey,personalBusinessShortcuts} from './personal-business-shortcuts.js'
 import {aggregateAttentionItems,formalAttentionCount,openAttentionItem,type AttentionItem} from './attention-item.js'
 import {localRecoveryItems} from './attention-local-recovery.js'
@@ -307,6 +309,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
   const conversationTitle=useSessions(value=>current?value.byId[current]?.title:undefined)
   const binding=useSyncExternalStore(work.subscribe,work.getSnapshot)
   const profile=usePersonalProfile()
+  const peopleAllowed=useApplicationCapability('people')
   const [workspaceSearchOpen,setWorkspaceSearchOpen]=useState(false)
   const [workspaceSearchKnowledge,setWorkspaceSearchKnowledge]=useState<WorkspaceKnowledgeSearchEntry[]>([]),[workspaceSearchKnowledgeStatus,setWorkspaceSearchKnowledgeStatus]=useState<'idle'|'loading'|'ready'|'failed'>('idle'),workspaceSearchKnowledgeGeneration=useRef(0)
   const [workspaceSearchCapabilities,setWorkspaceSearchCapabilities]=useState<WorkspaceCapabilitySearchRow[]>([]),[workspaceSearchCapabilityStatus,setWorkspaceSearchCapabilityStatus]=useState<'idle'|'loading'|'ready'|'failed'>('idle'),workspaceSearchCapabilityGeneration=useRef(0)
@@ -1228,6 +1231,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
   }
   async function createWork(workspaceId?:string,intent:CreationIntent|null=creationIntent,automatic=false){
     if(!intent)return
+    if(intent.object?.kind==='role'&&!applicationPresentation.can('people'))return
     setCreating(true)
     const creationLocation=homeCreationLocation(latestState.current)
     try {
@@ -1294,6 +1298,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
     return createWork(decision.workspaceId,intent,true).catch(()=>{})
   }
   const requestRoleCreation=(object:ConversationObject,scopes:readonly CollaborationScope[])=>{
+    if(!applicationPresentation.can('people'))return
     const available=[...new Set(scopes.filter(Boolean))]
     if(available.length>1){setRoleScopeIntent({object,scopes:available});return}
     return requestCreation({object,...(available[0]?{scope:available[0]}:{})})
@@ -1434,6 +1439,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
   const contextScope=conversationObject?.scopeId??contextTask?.scope??(contextRole?.scopes.length===1?contextRole.scopes[0]:undefined)
   const createContextConversation=()=>{
     if(!conversationObject||!contextLinked)return requestCreation({})
+    if(conversationObject.object.kind==='role'&&!applicationPresentation.can('people'))return
     const object=resolveConversationObject(conversationObject.object.kind,conversationObject.object.id)
     const roleScopes=object.kind==='role'?contextRole?.scopes:undefined
     if(roleScopes){if(contextScope&&roleScopes.includes(contextScope as CollaborationScope))return requestCreation({object,scope:contextScope as CollaborationScope});return requestRoleCreation(object,roleScopes)}
@@ -1593,6 +1599,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
           {nativePanelError&&<p role="alert">{nativePanelError}</p>}
           {builderError&&!businessLedgerHome&&<p role="alert">{builderError}</p>}
           {!!builderState.error&&!businessLedgerHome&&(state.view==='messages'||state.view==='home')&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}
+          {!builderVisible&&conversationVisible&&contextRole&&<CapabilityNotice capability="people"/>}
           {!builderVisible&&conversationVisible&&conversationObject&&contextLinked&&(conversationObject.object.kind==='role'&&contextRole
             ? <section className={css.objectContext} aria-label={t('frame.context.sourceAria')}>
                 <button type="button" className={css.contextAvatarButton} title={t('frame.context.viewProfile')} aria-label={`${t('frame.context.viewProfile')} · ${contextRole.kind==='twin'?twinDisplayName(profile.displayName,t):contextRole.name}`} aria-expanded={contextDetailShown&&!businessDetailOpen} onClick={toggleContextObject}>{contextRole.kind==='twin'
@@ -1607,7 +1614,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
                   </div>
                   <p className={css.contextLead}>{dutyLead(contextRole.duty)}</p>
                 </div>
-                <div className={css.objectActions}><button type="button" className={css.contextPrimary} disabled={creating||contextRole.state==='retired'} onClick={createContextConversation}>{t('navigation.newConversation')}</button>{contextScope&&<button type="button" onClick={()=>openContextBusiness({scope:contextScope,section:'overview'})}>{localizedScopeNames[contextScope]??contextScope}</button>}<button type="button" ref={objectPanelTrigger} aria-expanded={contextDetailShown&&!businessDetailOpen} onClick={toggleContextObject}>{t('frame.context.viewProfile')}</button></div>
+                <div className={css.objectActions}><button type="button" className={css.contextPrimary} disabled={!peopleAllowed||creating||contextRole.state==='retired'} onClick={createContextConversation}>{t('navigation.newConversation')}</button>{contextScope&&<button type="button" onClick={()=>openContextBusiness({scope:contextScope,section:'overview'})}>{localizedScopeNames[contextScope]??contextScope}</button>}<button type="button" ref={objectPanelTrigger} aria-expanded={contextDetailShown&&!businessDetailOpen} onClick={toggleContextObject}>{t('frame.context.viewProfile')}</button></div>
               </section>
             : <section className={css.objectContext} aria-label={t('frame.context.sourceAria')}>
                 <div className={css.contextIdentity}><div className={css.contextTitle}><strong>{t('frame.context.kindTask')} · {contextTask?.title||conversationObject.object.title}</strong></div></div>
