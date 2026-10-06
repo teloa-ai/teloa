@@ -100,6 +100,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isConversation, isCapabilitySnapshot, isSkillCatalog } from '@teloa/contract'
 import { BindingClient } from './binding-client.js'
 import { ConversationManagement, ForkRejectedError, managementAvailability } from './conversation-management.js'
+import {followConversationDirectory} from './conversation-directory-follow.js'
 import { ConversationSearch } from './conversation-search.js'
 import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { BindingStatus, Capabilities, CapabilitiesToolCard } from './Capabilities.js'
@@ -326,8 +327,8 @@ export async function apply(ctx: Context): Promise<void> {
   }
   const homeContextBlock=(sessionId:string,reason:string|undefined)=>{if(reason)contextBlocks.set(sessionId,reason);else contextBlocks.delete(sessionId);syncComposerBlock(sessionId)}
   const work=new BindingClient({
-    list:async()=>{
-      const value=await call('conversations/list',{})
+    list:async signal=>{
+      const value=await call('conversations/list',{},signal)
       if(!Array.isArray(value)||!value.every(isConversation))throw Error('工作服务返回的目录格式不正确。')
       return value
     },
@@ -358,6 +359,11 @@ export async function apply(ctx: Context): Promise<void> {
     open:sessionId=>requireWorkContext().uiWorkspace.openSession(brandString<SessionId>(sessionId)),
     current:mainSession.getSnapshot,
   })
+  ctx.effect(()=>followConversationDirectory({
+    state:connection.state,generation:connection.generation,
+    watch:(revision,signal)=>call('conversations/watch',revision===undefined?{}:{revision},signal),
+    refresh:async signal=>{await work.refreshDirectory(signal);return work.getDirectorySnapshot().status==='ready'},
+  }),'teloa: 会话目录失效订阅')
   // 输入恢复 dock 和业务切换共用同一 monitor；只核对原生回执，不重发正文。
   const homeSubmissionMonitors=new Map<string,{monitor:HomeSubmissionMonitor;update:()=>void}>()
   const homeSubmissionMonitor=(sessionId:SessionId):HomeSubmissionMonitor=>{

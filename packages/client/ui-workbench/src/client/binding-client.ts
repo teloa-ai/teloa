@@ -6,7 +6,7 @@ export type ConversationCreation=Readonly<{requestId:string;title?:string;worksp
 export type CreateConversationOptions=Readonly<{requestId?:string;title?:string;workspaceId?:string;roleId?:string;beforeOpen?:(conversation:Conversation)=>Promise<void>;mayOpen?:()=>boolean}>
 const taskRunInputBlock='工作会话正在由任务执行编排，请从原任务恢复。'
 export interface WorkPort {
-  list():Promise<Conversation[]>
+  list(signal?:AbortSignal):Promise<Conversation[]>
   read(sessionId:string):Promise<Conversation>
   ensure(sessionId:string):Promise<Conversation>
   isNativeChild(sessionId:string):boolean
@@ -63,11 +63,12 @@ export class BindingClient {
     }
   }
   retry=()=>this.select(this.state.sessionId)
-  async refreshDirectory():Promise<void> {
+  async refreshDirectory(signal?:AbortSignal):Promise<void> {
+    if(signal?.aborted)return
     const listing=++this.listing
     this.directory={...this.directory,status:'loading',error:undefined};this.publish({})
-    try {const rows=await this.port.list();if(listing===this.listing){this.directory={status:'ready',rows,error:undefined};this.publish({})}}
-    catch(error){if(listing===this.listing){this.directory={...this.directory,status:'failed',error};this.publish({})}}
+    try {const rows=await this.port.list(signal);if(listing===this.listing&&!signal?.aborted){this.directory={status:'ready',rows,error:undefined};this.publish({})}}
+    catch(error){if(listing===this.listing&&!signal?.aborted){this.directory={...this.directory,status:'failed',error};this.publish({})}}
   }
   async openSession(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<void> {
     // 新入口使旧导航失效时，先撤下旧导航自己的临时阻断；read 未完成也不能遗留它。

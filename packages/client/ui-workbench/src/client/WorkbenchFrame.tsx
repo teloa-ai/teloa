@@ -1336,7 +1336,6 @@ export function WorkbenchFrame({openLocalModels,runtimeSettings,runtimeExtension
     return openRoleConversation(twin.id)
   }
   useEffect(()=>{const product=t('app.name');document.title=title?title+' · '+product:product},[title,t])
-  useEffect(()=>{void work.refreshDirectory()},[work])
   // 会话「知识与能力」选择器在原生输入插槽里，拿不到外壳注入；这里登记带入通道，所选技能与资料走既有 preparation.prepare。
   const capabilitySkillSelections=useRef<Record<string,HomeSkillSelection[]>>({})
   useEffect(()=>registerCapabilitySelection(selection=>{capabilitySkillSelections.current[selection.sessionId]=selection.skills;insertConversationCapabilities(selection)}),[insertConversationCapabilities])
