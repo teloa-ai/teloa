@@ -40,7 +40,7 @@ function mount(props:Record<string,unknown>){
   './home-recent-context.js':homeRecentContext,
   './work-presentation.js':workPresentation,
   './home-colleague-work.js':homeColleagueWork,
-  './personal-profile.js':{personalProfile:{subscribe:()=>()=>{},getSnapshot:()=>({displayName:'Max'})}},
+  './use-personal-profile.js':{usePersonalProfile:()=>({displayName:'Max',initials:'M'})},
   './business-scope-context.js':{useBusinessScopes:()=>({general:'通用工作'})},
   './i18n/provider.js':{useI18n:()=>({locale:'zh-CN',t:(key:string,params?:Record<string,unknown>)=>params?key+':'+JSON.stringify(params):key,dateTime:(value:number)=>String(value),number:(value:number)=>String(value)})},
   './i18n/errors.js':{localizeWorkError:(_:string,value:unknown)=>String(value)},
