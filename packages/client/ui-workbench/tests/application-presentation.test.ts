@@ -55,3 +55,31 @@ test('无有效账号姓名时个人资料保留空姓名，邮箱只保留在�
   close();close=undefined
  }
 })
+
+test('原生导航 scope 仅接收宿主 SHA-256，失败或卸载清空范围，普通 Free 不持久恢复',async()=>{
+ const store=createApplicationPresentationStore(),scope='a'.repeat(64)
+ const close=await store.configure({...bridge(),navigationStorageScope:async()=>scope})
+ assert.equal(store.getNavigationStorageScope(),scope)
+ close();assert.equal(store.getNavigationStorageScope(),undefined)
+ for(const invalid of ['', 'alice@example.test', 'a'.repeat(63), 'g'.repeat(64), scope+' ', null]){
+  await assert.rejects(store.configure({...bridge(),navigationStorageScope:async()=>invalid as string}))
+  assert.equal(store.getNavigationStorageScope(),undefined)
+ }
+ await store.configure(bridge());assert.equal(store.getNavigationStorageScope(),undefined)
+ await store.configure({presentation:async()=>({schema:'teloa.application-presentation/v1',product:'Free',account:null}),openAccount:async()=>{},navigationStorageScope:async()=>scope})
+ assert.equal(store.getNavigationStorageScope(),undefined)
+})
+
+test('迟到旧导航 scope 与旧卸载不能覆盖新账号范围',async()=>{
+ const store=createApplicationPresentationStore();let resolve!:(value:string)=>void
+ const delayed=store.configure({...bridge(),navigationStorageScope:()=>new Promise(done=>{resolve=done})})
+ const denied=assert.rejects(delayed)
+ await Promise.resolve()
+ const close=await store.configure({...bridge('Bob'),navigationStorageScope:async()=> 'b'.repeat(64)})
+ resolve('a'.repeat(64));await denied
+ assert.equal(store.getSnapshot().account?.displayName,'Bob')
+ assert.equal(store.getNavigationStorageScope(),'b'.repeat(64))
+ const closeNew=await store.configure({...bridge('Carol'),navigationStorageScope:async()=> 'c'.repeat(64)})
+ close();assert.equal(store.getNavigationStorageScope(),'c'.repeat(64))
+ closeNew();assert.equal(store.getNavigationStorageScope(),undefined)
+})

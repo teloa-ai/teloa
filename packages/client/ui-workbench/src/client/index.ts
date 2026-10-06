@@ -154,6 +154,7 @@ import {createElement, type ComponentProps} from 'react'
 import {installTeloaI18n, type TeloaI18n} from './i18n/index.js'
 import {I18nProvider} from './i18n/provider.js'
 import {attachWorkbenchNavigationPersistence,loadWorkbenchNavigationState,writeDirectoryFilterCategory} from './workbench-navigation-state.js'
+import {createWorkbenchNavigationStorage} from './workbench-navigation-storage.js'
 
 /** 已迁入原生右栏的页类型各自的页签标题词条。 */
 const RAIL_TAB_TITLE_KEYS:Readonly<Record<TeloaRailKind,'sidebarRight.tab.task'|'sidebarRight.tab.role'|'sidebarRight.tab.business'>>=
@@ -167,6 +168,7 @@ export const inject = ['slots','theme','connection','locale','remote','remote.pl
 export async function apply(ctx: Context): Promise<void> {
   const releasePresentation=await applicationPresentation.configure(window.teloaApplication)
   ctx.effect(()=>releasePresentation)
+  const navigationStorage=createWorkbenchNavigationStorage(applicationPresentation.getNavigationStorageScope(),window)
   ctx.effect(()=>{
     const original=Array.from(document.head.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]'))
     const snapshots=original.map(link=>({link,href:link.getAttribute('href'),type:link.getAttribute('type'),sizes:link.getAttribute('sizes')}))
@@ -229,8 +231,8 @@ export async function apply(ctx: Context): Promise<void> {
   const sidebarRightFace=()=>requireSidebarRight(workContext)
   const mainSession=mainSessionSource(ctx.uiSession)
   // 未决请求日志统一走同源共享存储：关掉标签页不再丢记录，多个标签页读到同一个 requestId
-  // （规格 §八 G4，键名逐字沿用不新开）。导航状态仍留在 sessionStorage——那是"这一个标签页
-  // 现在看着哪一页"，本来就不该跨标签页共享。
+  // （规格 §八 G4，键名逐字沿用不新开）。普通 Web 导航仍属于当前标签页；
+  // 原生宿主提供本人/安装范围后，导航及首页待用身份可跨窗口恢复。
   const journal=(key:string)=>createJournalStorage(key,localStorage)
   // 根类型检查同时看到 host/client 同名服务；浏览器运行域只取其公开 RPC 调用面。
   const connection=Reflect.get(ctx,'connection') as unknown as ConnectionHandle
@@ -519,7 +521,7 @@ export async function apply(ctx: Context): Promise<void> {
   }
   const management=new ConversationManagement(()=>work.getDirectorySnapshot().rows)
   const homeSession=new HomeNativeController({
-    storage:sessionStorage,identity:()=>crypto.randomUUID(),
+    storage:navigationStorage,identity:()=>crypto.randomUUID(),
     refresh:()=>requireWorkContext().sessions.refresh(),
     isBlank:id=>{const child=requireWorkContext();return readHomeNativeBlank(child.sessions,brandString<SessionId>(id),binding=>child.conversation.input.for(binding.ctx).state.getSnapshot().queue.some(item=>item.source.kind==='user'&&'rpcId'in item.source))},
     create:async id=>{
@@ -529,10 +531,10 @@ export async function apply(ctx: Context): Promise<void> {
         const selected=mainSession.getSnapshot()
         const previous=available.find(row=>selected&&row.sessionIds.includes(selected))
         const key='teloa.home-native-workspace/'+id
-        const remembered=sessionStorage.getItem(key)
+        const remembered=navigationStorage.getItem(key)
         const workspaceId=remembered??previous?.workspaceId??(available.length===1?available[0]!.workspaceId:undefined)
         if(!workspaceId)throw Error('请先在新建会话中选择执行位置。')
-        sessionStorage.setItem(key,workspaceId)
+        navigationStorage.setItem(key,workspaceId)
         const created=await child.sessions.create({sessionId,workspaceId:brandString<WorkspaceId>(workspaceId)})
         if(created!==sessionId)throw Error('待用会话身份不一致。')
       }
@@ -593,9 +595,9 @@ export async function apply(ctx: Context): Promise<void> {
     if(snapshot.status!=='ready'||snapshot.sessionId!==sessionId||snapshot.conversation?.sessionId!==sessionId||mainSession.getSnapshot()!==sessionId)throw Error('会话已切换或绑定不可用，请回到来源会话后读取文件。')
   })
   ctx.effect(()=>{
-    const handle=createWorkbenchStore(ctx.theme.getTheme().active.colorScheme,loadWorkbenchNavigationState(sessionStorage))
+    const handle=createWorkbenchStore(ctx.theme.getTheme().active.colorScheme,loadWorkbenchNavigationState(navigationStorage))
     const instance=handle.create()
-    const disposeNavigationPersistence=attachWorkbenchNavigationPersistence(instance,sessionStorage)
+    const disposeNavigationPersistence=attachWorkbenchNavigationPersistence(instance,navigationStorage)
     const store={...handle,create:()=>instance}
     const panelInfo={getSnapshot:()=>instance.getSnapshot().panelInfo,subscribe:(listener:()=>void)=>instance.subscribe(listener)}
     const layout=createWorkbenchLayout(instance.actions,id=>ctx.slots.entries('main').some(entry=>entry.options.key===id),settingsNavigation,panelInfo)
@@ -615,7 +617,7 @@ export async function apply(ctx: Context): Promise<void> {
         'teloa.conversation':{kind:'single',scope:'session-maybe'},
       },
       store,
-      inject:(bound: WorkbenchActions)=>{actions=bound;return {openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText:ctx.locale.resolveText.bind(ctx.locale),setTheme:(value:'light'|'dark')=>ctx.theme.setTheme(value),sidebarRightFace,mainSession,openNativePanel:(id:string)=>layout.selectPanel(brandString<MainPanelId>(id)),work,management,conversationSearch,planApi,marketContentApi,marketCatalogApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,roleApi,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,projectApi,taskRunApi,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,insertBusinessRecord,pageCreateApi,preparation,sendConversationMessage,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}},
+      inject:(bound: WorkbenchActions)=>{actions=bound;return {navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText:ctx.locale.resolveText.bind(ctx.locale),setTheme:(value:'light'|'dark')=>ctx.theme.setTheme(value),sidebarRightFace,mainSession,openNativePanel:(id:string)=>layout.selectPanel(brandString<MainPanelId>(id)),work,management,conversationSearch,planApi,marketContentApi,marketCatalogApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,roleApi,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,projectApi,taskRunApi,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,insertBusinessRecord,pageCreateApi,preparation,sendConversationMessage,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}},
     },LocalizedWorkbenchFrame)
     const disposePanels=ctx.slots.subscribe('main',retainMainPanels)
     retainMainPanels()

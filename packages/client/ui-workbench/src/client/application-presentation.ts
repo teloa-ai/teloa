@@ -1,5 +1,7 @@
 export type ApplicationPresentation=Readonly<{schema:'teloa.application-presentation/v1';product:'Free'|'Pro'|'Enterprise';account:Readonly<{displayName:string;email:string}>|null}>
-export type ApplicationBridge={presentation:()=>Promise<unknown>;openAccount:()=>Promise<unknown>}
+import {readWorkbenchNavigationStorageScope} from './workbench-navigation-storage.ts'
+
+export type ApplicationBridge={presentation:()=>Promise<unknown>;openAccount:()=>Promise<unknown>;navigationStorageScope?:()=>Promise<string>}
 declare global{interface Window{teloaApplication?:ApplicationBridge}}
 
 const free:ApplicationPresentation=Object.freeze({schema:'teloa.application-presentation/v1',product:'Free',account:null})
@@ -16,19 +18,21 @@ export function readApplicationPresentation(value:unknown):ApplicationPresentati
 }
 
 export function createApplicationPresentationStore(){
- let snapshot=free,bridge:ApplicationBridge|undefined,generation=0
+ let snapshot=free,bridge:ApplicationBridge|undefined,navigationStorageScope:string|undefined,generation=0
  const listeners=new Set<()=>void>(),publish=()=>{for(const listener of listeners)listener()}
  return {
   getSnapshot:()=>snapshot,
+  getNavigationStorageScope:()=>navigationStorageScope,
   subscribe(listener:()=>void){listeners.add(listener);return ()=>{listeners.delete(listener)}},
   async configure(candidate?:ApplicationBridge){
    const owner=++generation
-   bridge=undefined;snapshot=free;publish()
-   if(candidate!==undefined&&(!candidate||typeof candidate.presentation!=='function'||typeof candidate.openAccount!=='function'))throw invalid()
+   bridge=undefined;navigationStorageScope=undefined;snapshot=free;publish()
+   if(candidate!==undefined&&(!candidate||typeof candidate.presentation!=='function'||typeof candidate.openAccount!=='function'||candidate.navigationStorageScope!==undefined&&typeof candidate.navigationStorageScope!=='function'))throw invalid()
    const next=candidate?readApplicationPresentation(await candidate.presentation()):free
+   const scope=next.product!=='Free'&&candidate?.navigationStorageScope?readWorkbenchNavigationStorageScope(await candidate.navigationStorageScope()):undefined
    if(generation!==owner)throw invalid()
-   bridge=candidate;snapshot=next;publish()
-   return ()=>{if(generation!==owner)return;generation++;bridge=undefined;snapshot=free;publish()}
+   bridge=candidate;navigationStorageScope=scope;snapshot=next;publish()
+   return ()=>{if(generation!==owner)return;generation++;bridge=undefined;navigationStorageScope=undefined;snapshot=free;publish()}
   },
   async openAccount(){if(!bridge||!snapshot.account)throw invalid();await bridge.openAccount()},
  }
