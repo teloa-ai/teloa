@@ -159,6 +159,8 @@ import {attachWorkbenchNavigationPersistence,loadWorkbenchNavigationState,writeD
 const RAIL_TAB_TITLE_KEYS:Readonly<Record<TeloaRailKind,'sidebarRight.tab.task'|'sidebarRight.tab.role'|'sidebarRight.tab.business'>>=
   {'teloa.task':'sidebarRight.tab.task','teloa.role':'sidebarRight.tab.role','teloa.business':'sidebarRight.tab.business'}
 
+declare module '@deepseek-ai/dsh-client-ui-slots'{interface SlotMap{'teloa.workbench.toolbar':{kind:'list';scope:'root'}}}
+
 export const name = 'teloa-ui-workbench'
 export const inject = ['slots','theme','connection','locale','remote','remote.pluginManager','remote.agentPresets','uiSession']
 
@@ -609,6 +611,7 @@ export async function apply(ctx: Context): Promise<void> {
         main:{kind:'keyed',scope:'root'},
         rightbar:{kind:'single',scope:'root'},
         'shell.overlay':{kind:'list',scope:'root'},
+        'teloa.workbench.toolbar':{kind:'list',scope:'root'},
         'teloa.conversation':{kind:'single',scope:'session-maybe'},
       },
       store,
