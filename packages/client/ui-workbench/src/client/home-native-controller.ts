@@ -11,6 +11,19 @@ export class HomeNativeController{
  owns(sessionId:string){return this.ready===sessionId&&this.port.storage.getItem(draftKey)===sessionId}
  /** 只退役已经有真实用户回执的待用身份；迟到回执不能清掉新草稿。 */
  accept(sessionId:string){if(this.port.storage.getItem(draftKey)!==sessionId)return;this.port.storage.removeItem(draftKey);if(this.ready===sessionId)this.ready=undefined}
+ /** 只认领真实核空且仍是当前作用域的初始会话，不创建、复制或改写原生输入。 */
+ async claimPrepared(sessionId:string,assertCurrent:()=>void,explicit=false):Promise<boolean>{
+  if(this.pending)return false
+  const previous=this.port.storage.getItem(draftKey)
+  assertCurrent()
+  if(previous&&previous!==sessionId&&!explicit)return false
+  const blank=await this.port.isBlank(sessionId)
+  assertCurrent()
+  if(this.pending||this.port.storage.getItem(draftKey)!==previous)throw Error('待用会话身份已变化，请重试。')
+  if(blank!==true)return false
+  this.port.storage.setItem(draftKey,sessionId);this.ready=sessionId
+  return true
+ }
  prepare():Promise<string>{
   if(this.pending)return this.pending
   const operation=(async()=>{

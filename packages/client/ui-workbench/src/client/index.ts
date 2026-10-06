@@ -25,6 +25,7 @@ import {HomeNativeConversation} from './HomeNativeConversation.js'
 import {HomeComposerContext} from './HomeComposerContext.js'
 import {HomeNativeController,createHomeContextApi} from './home-native-controller.js'
 import {readHomeNativeBlank} from './home-native-readiness.js'
+import {createInitialNativeSessionCoordinator} from './initial-native-session.js'
 import {SessionBrowserStopNotice} from './SessionBrowserStopNotice.js'
 import {createSessionBrowserStopReader,sessionBrowserStopBindingReady} from './session-browser-stop.js'
 import {createRuntimeSettingsSurface} from './runtime-settings-surface.js'
@@ -229,6 +230,11 @@ export async function apply(ctx: Context): Promise<void> {
   },WorkbenchSidebar))
   let workContext:Context|undefined
   const requireWorkContext=()=>{if(!workContext)throw Error('原生会话服务正在连接，请稍后重试。');return workContext}
+  const initialSessionLifetime=new AbortController()
+  let resolveInitialContext!:()=>void,rejectInitialContext!:(error:unknown)=>void
+  const initialContext=new Promise<void>((resolve,reject)=>{resolveInitialContext=resolve;rejectInitialContext=reject})
+  void initialContext.catch(()=>{})
+  ctx.effect(()=>()=>{initialSessionLifetime.abort();rejectInitialContext(initialSessionLifetime.signal.reason)},'teloa: 初始原生会话归属')
   // 每次用都重新取右栏控制面，并接受它会抛：右栏插件可能未装、未就绪，或在开页时拒绝。
   const sidebarRightFace=()=>requireSidebarRight(workContext)
   const mainSession=mainSessionSource(ctx.uiSession)
@@ -550,12 +556,26 @@ export async function apply(ctx: Context): Promise<void> {
       return id
     },
   })
-  const prepareHomeSession=(signal:AbortSignal)=>homeSession.prepare().then(id=>{
+  let initialSessionPrepared=false
+  const initialSession=createInitialNativeSessionCoordinator(async()=>{
+    await initialContext
+    return {current:mainSession,sessions:()=>requireWorkContext().sessions,isBlank:async(id:SessionId)=>{const child=requireWorkContext();return readHomeNativeBlank(child.sessions,id,binding=>child.conversation.input.for(binding.ctx).state.getSnapshot().queue.some(item=>item.source.kind==='user'&&'rpcId'in item.source))}}
+  },initialSessionLifetime.signal)
+  ctx.on('teloa/initial-native-session/register',initialSession.register)
+  const prepareHomeSession=async(signal:AbortSignal)=>{
+    const lifetime=AbortSignal.any([signal,initialSessionLifetime.signal])
+    if(!initialSessionPrepared){
+      const proof=await initialSession.prepare(lifetime)
+      lifetime.throwIfAborted()
+      if(proof&&await homeSession.claimPrepared(proof.sessionId,proof.assertCurrent,proof.explicit)){initialSessionPrepared=true;return proof.sessionId}
+      initialSessionPrepared=true
+    }
+    const id=await homeSession.prepare()
     if(signal.aborted)return
     requireWorkContext().uiWorkspace.openSession(brandString<SessionId>(id))
     requireActions().navigate('home')
     return id
-  })
+  }
 
   const conversationSearch=new ConversationSearch(async(query,signal)=>{
     const result=await requireWorkContext().sessions.search(query,signal)
@@ -686,6 +706,7 @@ export async function apply(ctx: Context): Promise<void> {
     child.slots.inject('conversation.hero.brand.mark',()=>child.slots.register({name:'conversation.hero.brand.mark',inject:()=>({theme:brandTheme})},ConversationBrand))
     // 服务必须从声明了依赖的子上下文捕获；外层布局上下文无权读取它们。
     workContext=child
+    resolveInitialContext()
     child.effect(()=>{
       let previous:string|undefined
       const syncCapabilityBlock=()=>{
