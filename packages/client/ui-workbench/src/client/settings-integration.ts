@@ -17,8 +17,8 @@ import type { WebAccessApi } from './web-access-api.js'
 import {ImChannelsSettingsPage,type ImChannelsSettingsProps} from './ImChannelsSettingsPage.js'
 import type {TeloaTranslate} from './i18n/index.js'
 
-/** 隐藏旧 DSH 内测声明；模型配置等其余原生引导步骤照常保留。 */
-const REPLACED_ONBOARDING_STEPS=new Set(['welcome-notice'])
+/** 不以声明或单一厂商弹窗阻挡设置；模型配置统一进入原生模型页。主动补录密钥仍归原插件。 */
+const REPLACED_ONBOARDING_STEPS=new Set(['welcome-notice','deepseek-official'])
 
 /** 日常偏好 → 运行配置 → 状态与版本；新插件的设置保留在组件状态之前。 */
 const SETTINGS_SECTION_ORDER:Readonly<Record<string,number>>={general:0,'teloa-auto-dream':10,models:20,'teloa-local-models':25,'teloa-workspaces':30,'teloa-native-panels':40,'agent-presets':50,'teloa-im-channels':65,plugins:70,'teloa-about':80}
