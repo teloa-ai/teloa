@@ -1,5 +1,7 @@
-// 市场「扩展」· 官方扩展区与 设置 › IM 通道 引导卡
+// 市场「扩展」与设置中的内置 IM 状态。新增文案只译三类语言，其余语言回退英文。
+const builtinUnavailableEnglish='Messaging is not ready yet. Please retry.'
 export const BUNDLED_EXTENSIONS_MESSAGE_ROWS = [
+  ['bundledExtensions.im.builtinUnavailable','消息通道暂未就绪，请重试。','訊息通道暫未就緒，請重試。',builtinUnavailableEnglish,builtinUnavailableEnglish,builtinUnavailableEnglish,builtinUnavailableEnglish,builtinUnavailableEnglish,builtinUnavailableEnglish,builtinUnavailableEnglish,builtinUnavailableEnglish],
   ['bundledExtensions.title','官方扩展','官方擴充','Official extensions','公式拡張機能','공식 확장','Tiện ích mở rộng chính thức','Extensiones oficiales','Extensions officielles','Offizielle Erweiterungen','Extensões oficiais'],
   ['bundledExtensions.description','随应用提供、由 Teloa 官方维护；启用或停用即时生效。','隨應用程式提供、由 Teloa 官方維護；啟用或停用立即生效。','Shipped with the app and maintained by Teloa. Enabling or disabling takes effect right away.','アプリに同梱され Teloa が公式に保守します。有効化・無効化はすぐに反映されます。','앱과 함께 제공되며 Teloa가 공식 관리합니다. 켜거나 끄면 바로 적용됩니다.','Đi kèm ứng dụng và do Teloa duy trì. Bật hoặc tắt có hiệu lực ngay.','Incluidas con la aplicación y mantenidas por Teloa. Activarlas o desactivarlas se aplica al momento.','Fournies avec l’application et maintenues par Teloa. L’activation ou la désactivation s’applique immédiatement.','Mit der App ausgeliefert und von Teloa gepflegt. Aktivieren oder Deaktivieren wirkt sofort.','Incluídas na aplicação e mantidas pela Teloa. Ativar ou desativar aplica-se de imediato.'],
   ['bundledExtensions.im.name','IM 通道','IM 通道','IM channels','IM チャネル','IM 채널','Kênh IM','Canales de mensajería','Canaux de messagerie','IM-Kanäle','Canais de mensagens'],

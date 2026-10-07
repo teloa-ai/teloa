@@ -1,14 +1,11 @@
 # @teloa/im-gateway
 
-Teloa IM 通道插件（飞书 / Lark（飞书国际版）/ Telegram / Slack）。随 Teloa 发行的**可选官方扩展**：本包自带 `cordis.patch.yml`（`- insert:` 行 `teloa-im-gateway`），默认不进 `dsh.profile.bundles`；`teloaWork` 由 `@teloa/harness-dsh` 提供。
+Teloa 内置消息通道（飞书 / Lark / Telegram / Slack），随平台默认加载，无需从市场安装或启用插件。用户在 设置 · IM 通道 添加并启用具体渠道后才建立连接；未配置时不连接外部消息服务。
 
-## 启用与停用
-
-- **只能从市场启停**：市场「扩展」的「官方扩展」区，或会话内 `teloa_market_add`（候选 `{kind:'bundled-extension',extensionId:'im-gateway'}`，一律出确认卡，只能启用）。两者都经宿主端点 `bundled-extensions/set`（`packages/harness-dsh/src/bundled-extensions.ts`），只改 profile 的 `dsh.profile.bundles`，**不热加载**，重启 Teloa 后生效。原生扩展管理对本包只读，`@teloa/` 规格一律拒收。
-- **状态**：`available`（未启用）→ `enable-pending`（已写入组合，待重启）→ `active`（本进程已加载并挂接）；`failed` 为本进程启动时已在组合里却没挂接成功；`disable-pending` 为已移出组合、待重启卸下。未 `active` 时设置 › IM 通道显示引导卡；本进程没挂接时（`available`、`enable-pending`、`failed`）`im/*` 回 `teloa/dependency-unavailable`，`disable-pending` 期间本进程仍挂接着，`im/*` 照常服务、渠道照常收发，直到重启卸下。宿主刚起时 IM 要等 `teloaWork` 注入，设置页读到 `failed` 会先隔几秒重读再显示。
-- **来源核对**：启用前与每次启动都核对 profile 依赖 `@teloa/im-gateway` 是 `link:` 且 realpath 等于 `<programRoot>/packages/im-gateway`，`node_modules` 链接也须指向同一目录；不符则拒绝启用或拒绝启动。启动时缺登记或旧版本目录的登记先以官方值补登记（`packages/harness-dsh/src/bundled-extensions-profile.ts`）。
-- **停用保留数据**：停用只把本包移出 bundles，下文「本机存储」里的全部文件与 DSH 凭据原样保留，重新启用即恢复；要清除请先在 设置 · IM 通道 移除渠道。
-- **升级迁移**：本包曾是 `@teloa/bundle` 的默认行。启动时若 `channels.json` 至少有 1 个渠道且未迁移过，自动启用一次，并在 `<profileDir>/teloa-官方扩展.json`（0600，键 `im-gateway-optional-v1`）记下，之后不再改回本人的停用选择。
+- **内置加载**：源码准备、CLI、桌面和容器启动都加载固定随附来源；插件管理不能停用或移除 IM，本地中文检索仍为可选扩展。
+- **渠道管理**：在设置中配置凭据、配对用户、绑定员工或工作群，暂停或移除具体渠道。插件默认加载不自动启用渠道，不改变旧渠道、绑定或凭据。
+- **来源核对**：profile 依赖及 node_modules 只能指向本程序的随附目录；未知或替换来源拒绝准入。
+- **旧安装**：启动补齐默认组合，旧 `im-gateway-optional-v1` 标记不再决定是否加载；原配置、审计及旧标记文件保留。
 
 ## 职责边界
 

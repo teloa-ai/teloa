@@ -3,7 +3,6 @@ import clsx from 'clsx'
 import type {BundledExtensionState,BundledExtensionView} from '@teloa/contract'
 import {imChannelKinds,imCredentialFields,type ImBindingSummary,type ImChannelErrorCode,type ImChannelKind,type ImChannelSummary,type ImDefaultTarget,type ImGroupBindingSummary} from '@teloa/contract'
 import type {ImChannelsApi} from './im-channels-api.js'
-import {bundledSetErrorKey} from './BundledExtensionsSection.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import tokens from './theme-tokens.module.css'
@@ -11,9 +10,7 @@ import css from './ImChannelsSettingsPage.module.css'
 
 type Option={id:string;name:string}
 type Pairing={channelId:string;code:string;expiresAt:string}
-export type ImChannelsSettingsProps={api:ImChannelsApi;roles:()=>Promise<Option[]>;groups:()=>Promise<Option[]>;extension?:{read:()=>Promise<BundledExtensionView|undefined>;openMarket:()=>void
- /** 在设置页直接启用（宿主即时加载）；回 active 即直接进入渠道配置。 */
- enable?:()=>Promise<BundledExtensionView>}}
+export type ImChannelsSettingsProps={api:ImChannelsApi;roles:()=>Promise<Option[]>;groups:()=>Promise<Option[]>;extension?:{read:()=>Promise<BundledExtensionView|undefined>}}
 
 const kindLabel={feishu:'imChannels.kind.feishu',lark:'imChannels.kind.lark',telegram:'imChannels.kind.telegram',slack:'imChannels.kind.slack',stub:'imChannels.kind.stub'} as const
 const fieldLabel={
@@ -320,24 +317,13 @@ function ImChannelsActive({api,roles,groups}:ImChannelsSettingsProps){
  />
 }
 type NoticeState=Exclude<BundledExtensionState,'active'>|'unreadable'
-const noticeKey:Record<NoticeState,string>={'available':'bundledExtensions.im.notice.available','enable-pending':'bundledExtensions.im.notice.enablePending','failed':'bundledExtensions.im.notice.failed','disable-pending':'bundledExtensions.im.notice.disablePending','unreadable':'bundledExtensions.readFailed'}
-export type ImChannelsEnableControl={confirming:boolean;busy:boolean;error:string|undefined;onAsk:()=>void;onConfirm:()=>void;onCancel:()=>void}
-/** IM 通道扩展没在本进程运行、或状态读不到时的引导卡：不调用 im/*。给了 enable 时可在此直接启用（先确认），启用即时生效。 */
-export function ImChannelsExtensionNotice({state,openMarket,onRetry,enable}:{state:NoticeState;openMarket:()=>void;onRetry?:()=>void;enable?:ImChannelsEnableControl}){
+// IM 随平台加载；未就绪只重试，不再引导安装或启停插件。
+export function ImChannelsExtensionNotice({onRetry}:{state:NoticeState;onRetry?:()=>void}){
  const {t}=useI18n()
- const canEnable=state==='available'||state==='disable-pending'
  return <section className={css.section} aria-label={t('imChannels.title')}>
   <h2 className={css.title}>{t('imChannels.title')}</h2>
-  <p className={css.notice} role="status">{t(noticeKey[state] as never)}</p>
-  {enable?.error&&<p className={css.alert} role="alert">{enable.error}</p>}
-  {canEnable&&enable&&(enable.confirming?<span className={css.actions}>
-    <span className={css.notice} role="status">{t('bundledExtensions.confirm.enable')}</span>
-    <button type="button" className={clsx(css.button,css.primary)} disabled={enable.busy} onClick={enable.onConfirm}>{t('bundledExtensions.confirm.ok')}</button>
-    <button type="button" className={css.button} disabled={enable.busy} onClick={enable.onCancel}>{t('bundledExtensions.confirm.cancel')}</button>
-   </span>
-   :<button type="button" className={clsx(css.button,css.primary)} disabled={enable.busy} onClick={enable.onAsk}>{t('bundledExtensions.im.enable')}</button>)}
-  {canEnable&&<button type="button" className={clsx(css.button,!enable&&css.primary)} onClick={openMarket}>{t('bundledExtensions.im.openMarket')}</button>}
-  {(state==='unreadable'||state==='failed')&&onRetry&&<button type="button" className={css.button} onClick={onRetry}>{t('bundledExtensions.retry')}</button>}
+  <p className={css.notice} role="status">{t('bundledExtensions.im.builtinUnavailable')}</p>
+  {onRetry&&<button type="button" className={css.button} onClick={onRetry}>{t('bundledExtensions.retry')}</button>}
  </section>
 }
 /**
@@ -363,14 +349,11 @@ export async function readExtensionStateSettled(read:()=>Promise<BundledExtensio
   await wait()
  }
 }
-/** 规格 3.4：先读扩展状态，不是 active 就显示引导卡；读不到显示引导卡与重试，不进入完整页。引导卡里启用成功（宿主即时加载）即直接进入完整页。 */
+/** 核对内置 IM 就绪状态；就绪即进入渠道配置，失败保留重试。 */
 export function ImChannelsSettingsPage(props:ImChannelsSettingsProps){
  const {t}=useI18n()
  const [state,setState]=useState<BundledExtensionState|'loading'|'unreadable'>(props.extension?'loading':'active')
  const [attempt,setAttempt]=useState(0)
- const [confirming,setConfirming]=useState(false)
- const [busy,setBusy]=useState(false)
- const [enableError,setEnableError]=useState<string>()
  const reread=useCallback(()=>{setState('loading');setAttempt(value=>value+1)},[])
  useEffect(()=>{
   if(!props.extension)return
@@ -380,9 +363,6 @@ export function ImChannelsSettingsPage(props:ImChannelsSettingsProps){
  },[props.extension,attempt])
  const api=useMemo(()=>props.extension?guardImUnavailable(props.api,reread):props.api,[props.api,props.extension,reread])
  if(state==='loading')return <p className={css.muted} role="status">{t('bundledExtensions.im.loading')}</p>
- const enable=props.extension?.enable
- const enableControl:ImChannelsEnableControl|undefined=enable&&{confirming,busy,error:enableError,onAsk:()=>{setEnableError(undefined);setConfirming(true)},onCancel:()=>setConfirming(false),
-  onConfirm:()=>{setBusy(true);setEnableError(undefined);enable().then(next=>setState(next.state)).catch(cause=>setEnableError(t(bundledSetErrorKey(cause) as never))).finally(()=>{setBusy(false);setConfirming(false)})}}
- if(state!=='active')return <ImChannelsExtensionNotice state={state} openMarket={props.extension!.openMarket} onRetry={reread} {...(enableControl?{enable:enableControl}:{})}/>
+ if(state!=='active')return <ImChannelsExtensionNotice state={state} onRetry={reread}/>
  return <ImChannelsActive {...props} api={api}/>
 }

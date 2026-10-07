@@ -9,7 +9,7 @@ test('原生插件管理保护宿主必需行与预设，仍可启停可选能�
  assert.equal(protectedNativePlugin({moduleName:'@teloa/harness-dsh',entryId:'include:other-name'}),true)
  assert.equal(protectedNativePlugin({moduleName:'@teloa/im-gateway'}),true)
  assert.equal(protectedNativePlugin({moduleName:'any',entryId:'x:teloa-im-gateway'}),true)
- // 本地中文检索与 IM 通道同为随附扩展：只经市场「扩展」启停，原生页不能单独关掉它的行
+ // 本地中文检索继续作为可选官方扩展，原生页不能单独关掉其必需行
  assert.equal(protectedNativePlugin({moduleName:'@teloa/local-embedding'}),true)
  assert.equal(protectedNativePlugin({moduleName:'any',entryId:'x:teloa-local-embedding'}),true)
  assert.equal(marketManagedBundle('@teloa/local-embedding'),true)
@@ -23,13 +23,13 @@ test('原生启用不得绕过既有市场包的精确待启用记录',()=>{
  assert.equal(pendingNativeBundle({},'@vendor/example'),false)
 })
 
-test('IM 通道 bundle 只能从市场启停；行与模块仍受保护',()=>{
- assert.equal(marketManagedBundle('@teloa/im-gateway'),true)
- assert.equal(marketManagedBundle('@Teloa/im-gateway'),true)
- assert.equal(marketManagedBundle('@TELOA/IM-GATEWAY'),true)
+test('IM 通道内置且不归市场启停；行与模块仍受保护',()=>{
+ assert.equal(marketManagedBundle('@teloa/im-gateway'),false)
+ assert.equal(marketManagedBundle('@Teloa/im-gateway'),false)
+ assert.equal(marketManagedBundle('@TELOA/IM-GATEWAY'),false)
  assert.equal(marketManagedBundle('@teloa/native-browser'),false)
  assert.equal(protectedNativePlugin({moduleName:'any',entryId:'x:teloa-im-gateway'}),true)
- // 本地中文检索与 IM 通道同为随附扩展：只经市场「扩展」启停，原生页不能单独关掉它的行
+ // 本地中文检索继续作为可选官方扩展，原生页不能单独关掉其必需行
  assert.equal(protectedNativePlugin({moduleName:'@teloa/local-embedding'}),true)
  assert.equal(protectedNativePlugin({moduleName:'any',entryId:'x:teloa-local-embedding'}),true)
  assert.equal(marketManagedBundle('@teloa/local-embedding'),true)

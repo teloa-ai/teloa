@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,mkdir,readFile,stat,symlink,writeFile} from 'node:fs/promises'
-import {createRequire,syncBuiltinESMExports} from 'node:module'
 import {tmpdir} from 'node:os'
 import {join,relative,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -42,13 +41,13 @@ test('启用插在 @teloa/bundle 之后、第三方 bundle 之前：第三方不
  assert.equal(await migrateBundledExtensions(migrated.profileDir,migrated.runtimeRoot,projectRoot),'enabled')
  assert.deepEqual(await bundles(migrated.profileDir),expected)
 })
-test('启用幂等；停用只摘除该包',async()=>{
+test('内置 IM 加载幂等；停用插件被拒绝，具体渠道由设置管理',async()=>{
  const {profileDir}=await fixture(official)
  await setBundledExtension(profileDir,projectRoot,IM_GATEWAY_PACKAGE,true)
  await setBundledExtension(profileDir,projectRoot,IM_GATEWAY_PACKAGE,true)
  assert.deepEqual(await bundles(profileDir),['@deepseek-ai/dsh-base','@teloa/bundle',IM_GATEWAY_PACKAGE])
- await setBundledExtension(profileDir,projectRoot,IM_GATEWAY_PACKAGE,false)
- assert.deepEqual(await bundles(profileDir),['@deepseek-ai/dsh-base','@teloa/bundle'])
+ await assert.rejects(setBundledExtension(profileDir,projectRoot,IM_GATEWAY_PACKAGE,false),/内置能力/)
+ assert.deepEqual(await bundles(profileDir),['@deepseek-ai/dsh-base','@teloa/bundle',IM_GATEWAY_PACKAGE])
 })
 test('来源为相对 link 且指向随附目录时也放行；组合里没有 @teloa/bundle 时追加到末尾',async()=>{
  const {profileDir}=await fixture(undefined)
@@ -65,38 +64,34 @@ test('来源被替换时拒绝启用，bundles 不变；启动核对报出冲突
  await writeFile(join(profileDir,'package.json'),JSON.stringify(manifest))
  assert.deepEqual(await bundledSourceConflicts(profileDir,projectRoot),[IM_GATEWAY_PACKAGE])
 })
-test('迁移：有渠道的老用户自动启用，只迁一次，之后尊重停用',async()=>{
+test('迁移：默认加载 IM，保留已有渠道配置且重跑幂等',async()=>{
  const {profileDir,runtimeRoot}=await fixture(official,1)
+ const path=join(runtimeRoot,'im-gateway','channels.json'),before=await readFile(path)
  assert.equal(await migrateBundledExtensions(profileDir,runtimeRoot,projectRoot),'enabled')
  assert.ok((await bundles(profileDir)).includes(IM_GATEWAY_PACKAGE))
- assert.equal((await stat(join(profileDir,BUNDLED_EXTENSIONS_FILE))).mode&0o777,0o600)
- assert.deepEqual(await marker(profileDir),{'im-gateway-optional-v1':'enabled'})
- await setBundledExtension(profileDir,projectRoot,IM_GATEWAY_PACKAGE,false)
  assert.equal(await migrateBundledExtensions(profileDir,runtimeRoot,projectRoot),'skipped')
- assert.ok(!(await bundles(profileDir)).includes(IM_GATEWAY_PACKAGE))
+ assert.deepEqual(await readFile(path),before)
+ await assert.rejects(stat(join(profileDir,BUNDLED_EXTENSIONS_FILE)),{code:'ENOENT'})
 })
-test('迁移：没有渠道不启用但写标记；来源未登记则推迟且不写标记',async()=>{
+
+test('迁移：未配置渠道也默认加载；未登记的来源不准入',async()=>{
  const empty=await fixture(official,0)
- assert.equal(await migrateBundledExtensions(empty.profileDir,empty.runtimeRoot,projectRoot),'skipped')
- assert.ok(!(await bundles(empty.profileDir)).includes(IM_GATEWAY_PACKAGE))
- assert.equal((await stat(join(empty.profileDir,BUNDLED_EXTENSIONS_FILE))).mode&0o777,0o600)
- assert.deepEqual(await marker(empty.profileDir),{'im-gateway-optional-v1':'skipped'})
+ assert.equal(await migrateBundledExtensions(empty.profileDir,empty.runtimeRoot,projectRoot),'enabled')
+ assert.ok((await bundles(empty.profileDir)).includes(IM_GATEWAY_PACKAGE))
  const missing=await fixture(undefined,3)
  assert.equal(await migrateBundledExtensions(missing.profileDir,missing.runtimeRoot,projectRoot),'deferred')
- await assert.rejects(stat(join(missing.profileDir,BUNDLED_EXTENSIONS_FILE)),{code:'ENOENT'})
+ assert.ok(!(await bundles(missing.profileDir)).includes(IM_GATEWAY_PACKAGE))
 })
-test('迁移：渠道文件除不存在外读不了（JSON 损坏、是目录）一律推迟，不写标记、不启用',async()=>{
- // EISDIR 与 EACCES 走同一分支；chmod 000 在 root 下不生效，这里用目录代替。
- for(const broken of ['{','dir']){
-  const {profileDir,runtimeRoot}=await fixture(official)
-  await mkdir(join(runtimeRoot,'im-gateway'),{recursive:true})
-  if(broken==='dir')await mkdir(join(runtimeRoot,'im-gateway','channels.json'))
-  else await writeFile(join(runtimeRoot,'im-gateway','channels.json'),broken)
-  assert.equal(await migrateBundledExtensions(profileDir,runtimeRoot,projectRoot),'deferred',broken)
-  await assert.rejects(stat(join(profileDir,BUNDLED_EXTENSIONS_FILE)),{code:'ENOENT'})
-  assert.ok(!(await bundles(profileDir)).includes(IM_GATEWAY_PACKAGE))
- }
+
+test('迁移：插件加载不修复或覆盖损坏的渠道配置',async()=>{
+ const {profileDir,runtimeRoot}=await fixture(official)
+ await mkdir(join(runtimeRoot,'im-gateway'),{recursive:true})
+ const path=join(runtimeRoot,'im-gateway','channels.json')
+ await writeFile(path,'{')
+ assert.equal(await migrateBundledExtensions(profileDir,runtimeRoot,projectRoot),'enabled')
+ assert.equal(await readFile(path,'utf8'),'{')
 })
+
 test('补登记：缺失或指向其它目录时给出官方值，已是官方来源时为空',async()=>{
  assert.deepEqual(await bundledSourcesToRegister((await fixture(undefined)).profileDir,projectRoot),{[IM_GATEWAY_PACKAGE]:official,...embedding})
  assert.deepEqual(await bundledSourcesToRegister((await fixture('link:'+tmpdir())).profileDir,projectRoot),{[IM_GATEWAY_PACKAGE]:official,...embedding})
@@ -130,28 +125,21 @@ test('原型链上的名字不算官方扩展：不报冲突、不能越过未�
   await assert.rejects(setBundledExtension(profileDir,projectRoot,name,false),{message:bundledSourceMismatch},name)
  assert.deepEqual(await bundles(profileDir),['@deepseek-ai/dsh-base','@teloa/bundle','toString','constructor'])
 })
-test('迁移记录：不可读时抛出且不启用；写回时保留其它键',async()=>{
- const broken=await fixture(official,1)
- await mkdir(join(broken.profileDir,BUNDLED_EXTENSIONS_FILE))
- await assert.rejects(migrateBundledExtensions(broken.profileDir,broken.runtimeRoot,projectRoot),/迁移记录不可读/)
- assert.ok(!(await bundles(broken.profileDir)).includes(IM_GATEWAY_PACKAGE))
- const kept=await fixture(official,1)
- await writeFile(join(kept.profileDir,BUNDLED_EXTENSIONS_FILE),JSON.stringify({other:'x'}))
+test('旧可选标记不再阻止内置 IM，也不被改写',async()=>{
+ const kept=await fixture(official)
+ const legacy={'im-gateway-optional-v1':'skipped',other:'x'}
+ await writeFile(join(kept.profileDir,BUNDLED_EXTENSIONS_FILE),JSON.stringify(legacy))
  assert.equal(await migrateBundledExtensions(kept.profileDir,kept.runtimeRoot,projectRoot),'enabled')
- assert.deepEqual(await marker(kept.profileDir),{other:'x','im-gateway-optional-v1':'enabled'})
+ assert.deepEqual(await marker(kept.profileDir),legacy)
 })
-test('迁移：标记写失败就不启用——宁漏自动启用，也不留「已启用却没标记」（否则下次启动会改回本人的停用）',async t=>{
- const {profileDir,runtimeRoot}=await fixture(official,1)
- // 内置模块的具名导出随 CJS 对象同步：只让写迁移记录那一次 rename 失败，profile 清单照常可写。
- const fs=createRequire(import.meta.url)('node:fs/promises') as {rename:(from:string,to:string)=>Promise<void>}
- const rename=fs.rename
- t.after(()=>{fs.rename=rename;syncBuiltinESMExports()})
- fs.rename=async(from,to)=>{if(String(to).endsWith(BUNDLED_EXTENSIONS_FILE))throw Object.assign(Error('denied'),{code:'EACCES'});return rename(from,to)}
- syncBuiltinESMExports()
- await assert.rejects(migrateBundledExtensions(profileDir,runtimeRoot,projectRoot),{code:'EACCES'})
- assert.ok(!(await bundles(profileDir)).includes(IM_GATEWAY_PACKAGE))
- await assert.rejects(stat(join(profileDir,BUNDLED_EXTENSIONS_FILE)),{code:'ENOENT'})
+
+test('旧迁移文件不可读不影响内置能力就绪，也不删除旧文件',async()=>{
+ const {profileDir,runtimeRoot}=await fixture(official)
+ await mkdir(join(profileDir,BUNDLED_EXTENSIONS_FILE))
+ assert.equal(await migrateBundledExtensions(profileDir,runtimeRoot,projectRoot),'enabled')
+ assert.equal((await stat(join(profileDir,BUNDLED_EXTENSIONS_FILE))).isDirectory(),true)
 })
+
 test('包名表与契约的随附扩展常量一致',()=>{
  assert.deepEqual(Object.keys(officialBundledSpecs(projectRoot)),bundledExtensions.map(row=>row.packageName))
  assert.ok(bundledExtensions.some(row=>row.packageName===IM_GATEWAY_PACKAGE))

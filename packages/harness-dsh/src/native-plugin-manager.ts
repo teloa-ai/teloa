@@ -7,7 +7,7 @@ import {deniedPatchRowIds} from './dsh-plugin-install-adapter.ts'
 import {pendingPackageNames,readJsonFile,readPendingPlugins,withProfileLock,writeAtomic} from './pending-plugins.ts'
 
 const requiredModules=new Set(['@teloa/harness-dsh','@teloa/client-ui-workbench','@teloa/harness-dsh/plugin-manager','@teloa/im-gateway','@teloa/local-embedding','@teloa/harness-dsh/credentials','@teloa/harness-dsh/attachment-guard','@teloa/harness-dsh/session-model-scope','@teloa/harness-dsh/tool-resource-provenance'])
-const requiredBundles=new Set(['@teloa/bundle','@deepseek-ai/dsh-experimental-agent-team-profile'])
+const requiredBundles=new Set(['@teloa/bundle','@teloa/im-gateway','@deepseek-ai/dsh-experimental-agent-team-profile'])
 const requiredRows=new Set(['teloa-harness-dsh','teloa-ui-workbench','teloa-reference-mcp','teloa-agent-preset','teloa-native-webserver','teloa-native-gateway','teloa-install-runtime','teloa-plugin-manager','teloa-im-gateway','teloa-local-embedding','teloa-credentials','teloa-attachment-guard','teloa-session-model-scope','teloa-tool-resource-provenance','agent-team','tool-agent-team','ui-agent-team'])
 
 /** 原生管理器没有产品级必需行策略；只补这一层，安装、锁、回滚和配置仍由官方实现。 */
@@ -16,8 +16,8 @@ export function protectedNativePlugin(row:{patchId?:string;entryId?:string;modul
  return requiredModules.has(row.moduleName)||(id!==undefined&&(requiredRows.has(id)||deniedPatchRowIds.has(id)))
 }
 export const pendingNativeBundle=(pending:Readonly<Record<string,string>>,name:string):boolean=>pendingPackageNames(pending).includes(name)
-/** 随附官方扩展只经市场「扩展」启停（bundled-extensions/set 核对来源、改 bundles，并在前后复验安全钉的前提下即时套用）；原生页不开热切换，本宿主也不开 hmr。 */
-const marketManagedBundles=new Set(bundledExtensions.map(row=>row.packageName.toLowerCase()))
+/** 可选官方扩展只经市场「扩展」启停（bundled-extensions/set 核对来源、改 bundles，并在前后复验安全钉的前提下即时套用）；原生页不开热切换，本宿主也不开 hmr。 */
+const marketManagedBundles=new Set(bundledExtensions.filter(row=>row.id!=='im-gateway').map(row=>row.packageName.toLowerCase()))
 /** 不区分大小写：`@Teloa/im-gateway` 在 macOS/Windows 默认文件系统下解析到同一官方目录。 */
 export const marketManagedBundle=(name:string):boolean=>marketManagedBundles.has(name.toLowerCase())
 /** `@teloa/` 作用域只随 Teloa 发行；任何从原生扩展管理安装同作用域包的规格都拒收（不区分大小写：macOS 文件系统下 `@Teloa/x` 与官方包落同一目录）。只看规格文本，是第一道闸；别名、tarball 等绕过由安装后核对兜底，真正防线是启动前来源核对。 */
@@ -75,13 +75,14 @@ export default class TeloaPluginManager extends PluginManager{
  }
  override async listBundles():Promise<BundleInfo[]>{
   const pending=await readPendingPlugins(this.profileDir)
-  return (await super.listBundles()).map(bundle=>requiredBundles.has(bundle.name)||marketManagedBundle(bundle.name)||pendingNativeBundle(pending,bundle.name)?{...bundle,removable:false,readOnlyReason:'management-required'}:bundle)
+  return (await super.listBundles()).map(bundle=>requiredBundles.has(bundle.name.toLowerCase())||marketManagedBundle(bundle.name)||pendingNativeBundle(pending,bundle.name)?{...bundle,removable:false,readOnlyReason:'management-required'}:bundle)
  }
  override async setBundleEnabled(name:string,enabled:boolean):Promise<ChangeResult>{
   return withProfileLock(this.profileDir,async()=>{
-   if(marketManagedBundle(name))return this.refused(name,'enable','IM 通道是随应用发行的官方扩展，请到市场「扩展」里启用或停用。')
+   if(name.toLowerCase()==='@teloa/im-gateway')return this.refused(name,'enable','IM 通道是内置能力；请在设置中管理具体渠道。')
+   if(marketManagedBundle(name))return this.refused(name,'enable','该可选官方扩展请到市场「扩展」里启用或停用。')
    if(await this.unregisteredReserved(name))return this.refused(name,'enable','@teloa/ 作用域只接受 profile 里已登记的官方包名。')
-   if(requiredBundles.has(name)&&!enabled)return this.refused(name,'enable','Teloa 必需组件不能在扩展管理中停用。')
+   if(requiredBundles.has(name.toLowerCase())&&!enabled)return this.refused(name,'enable','Teloa 必需组件不能在扩展管理中停用。')
    if(enabled&&pendingNativeBundle(await readPendingPlugins(this.profileDir),name))return this.refused(name,'enable','此扩展有待核对的市场安装记录，请从市场的已添加列表完成启用。')
    return super.setBundleEnabled(name,enabled)
   })
@@ -101,9 +102,9 @@ export default class TeloaPluginManager extends PluginManager{
  }
  override async removeBundle(name:string):Promise<ChangeResult>{
   return withProfileLock(this.profileDir,async()=>{
-   if(marketManagedBundle(name))return this.refused(name,'remove','IM 通道是随应用发行的官方扩展，只能停用，请到市场「扩展」操作。')
+   if(marketManagedBundle(name))return this.refused(name,'remove','该可选官方扩展请到市场「扩展」里停用。')
    if(await this.unregisteredReserved(name))return this.refused(name,'remove','@teloa/ 作用域只接受 profile 里已登记的官方包名。')
-   if(requiredBundles.has(name))return this.refused(name,'remove','Teloa 必需组件不能在扩展管理中移除。')
+   if(requiredBundles.has(name.toLowerCase()))return this.refused(name,'remove','Teloa 必需组件不能在扩展管理中移除。')
    if(pendingNativeBundle(await readPendingPlugins(this.profileDir),name))return this.refused(name,'remove','此扩展有待核对的市场安装记录，请先在市场处理该记录。')
    return super.removeBundle(name)
   })

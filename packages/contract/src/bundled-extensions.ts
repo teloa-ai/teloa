@@ -1,7 +1,7 @@
 import {WorkError} from './work-error.ts'
 
 /**
- * 随 Teloa 发行、默认不进组合的官方扩展。条目只来自这份编译期常量：
+ * 随 Teloa 发行的官方能力：IM 内置默认加载，本地检索仍可选。条目只来自编译期常量：
  * 不从在线目录或 npm 读取，第三方无法以同名条目出现。
  */
 export const bundledExtensions=[{id:'im-gateway',packageName:'@teloa/im-gateway'},{id:'local-embedding',packageName:'@teloa/local-embedding'}] as const

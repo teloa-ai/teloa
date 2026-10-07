@@ -6,12 +6,13 @@ import {randomUUID} from 'node:crypto'
 import {spawn} from 'node:child_process'
 
 export const nativeTeamBundle='@deepseek-ai/dsh-experimental-agent-team-profile'
-/** 直接使用官方完整 Team 组合；Teloa 末层保留岗位预设和业务授权。 */
+/** 官方完整 Team 与内置 IM 默认加载；Teloa 保留岗位预设和渠道授权。 */
 export function withTeloaRequiredBundles(bundles){
- const result=[...new Set(bundles)].filter(name=>name!==nativeTeamBundle)
+ const result=[...new Set(bundles)].filter(name=>name!==nativeTeamBundle&&name!=='@teloa/im-gateway')
  const index=result.indexOf('@teloa/bundle')
- if(index<0)return [...result,nativeTeamBundle,'@teloa/bundle']
+ if(index<0)return [...result,nativeTeamBundle,'@teloa/bundle','@teloa/im-gateway']
  result.splice(index,0,nativeTeamBundle)
+ result.splice(index+2,0,'@teloa/im-gateway')
  return result
 }
 
@@ -23,7 +24,7 @@ export function optionalNativeBundleSpecs(programRoot){
   '@teloa/native-browser':'link:'+join(programRoot,'packages/native-browser'),
   '@teloa/native-computer':'link:'+join(programRoot,'packages/native-computer'),
   '@deepseek-ai/dsh-experimental-auto-review':'link:'+autoReview,
-  // IM 通道：随附官方扩展，登记可发现但不进组合；启停只经市场「扩展」（bundled-extensions/set）。
+  // IM 是内置默认能力；先登记固定来源，再由 withTeloaRequiredBundles 装配。
   '@teloa/im-gateway':'link:'+join(programRoot,'packages/im-gateway'),
   // 本地中文检索：同为随附官方扩展，登记可发现但不进组合；推理运行时与模型只在本人确认准备后下载。
   '@teloa/local-embedding':'link:'+join(programRoot,'packages/local-embedding'),

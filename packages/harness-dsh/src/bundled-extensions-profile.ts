@@ -4,13 +4,12 @@
  */
 import {readFile,realpath} from 'node:fs/promises'
 import {isAbsolute,join,resolve} from 'node:path'
-import {profileBundles,readJsonFile,rewriteProfileBundlesLocked,withProfileLock,writeAtomic} from './pending-plugins.ts'
+import {profileBundles,readJsonFile,rewriteProfileBundlesLocked,withProfileLock} from './pending-plugins.ts'
 
 export const IM_GATEWAY_PACKAGE='@teloa/im-gateway'
 export const LOCAL_EMBEDDING_PACKAGE='@teloa/local-embedding'
 const TELOA_BUNDLE='@teloa/bundle'
 export const BUNDLED_EXTENSIONS_FILE='teloa-官方扩展.json'
-const MIGRATION_KEY='im-gateway-optional-v1'
 /** 无原型对象：`toString`、`constructor` 这类名字不会从原型链上查到。 */
 const directories:Readonly<Record<string,string>>=Object.assign(Object.create(null) as Record<string,string>,{[IM_GATEWAY_PACKAGE]:'packages/im-gateway',[LOCAL_EMBEDDING_PACKAGE]:'packages/local-embedding'})
 /** 各随附包 bundle 补丁插入的那一行 id（与 packages/<包>/cordis.patch.yml 一致）；即时启停只接受恰好这一行 `{id,name}` 的变化。 */
@@ -19,7 +18,6 @@ const record=(value:unknown):value is Record<string,unknown>=>typeof value==='ob
 
 export const bundledSourceMismatch='官方扩展来源与本程序随附的目录不一致，已拒绝启用。'
 export const bundledSourceRefusal='DSH profile 里的官方扩展来源不是本程序随附的目录，宿主拒绝启动；请重新运行安装准备后再启动。'
-const markerUnreadable='DSH profile 的官方扩展迁移记录不可读，已停止；请核对该文件后重试。'
 
 async function officialSource(profileDir:string,manifest:Record<string,unknown>,packageName:string,programRoot:string):Promise<boolean>{
  const directory=directories[packageName]
@@ -34,6 +32,7 @@ async function officialSource(profileDir:string,manifest:Record<string,unknown>,
 /** 调用方必须已经持有 `withProfileLock`。启用前核对来源；停用不核对（只朝更安全的方向改）。 */
 export async function setBundledExtensionLocked(profileDir:string,programRoot:string,packageName:string,enabled:boolean):Promise<void>{
  if(directories[packageName]===undefined)throw Error(bundledSourceMismatch)
+ if(packageName===IM_GATEWAY_PACKAGE&&!enabled)throw Error('IM 通道是内置能力；请在设置中停用具体渠道。')
  if(enabled&&!await officialSource(profileDir,await readJsonFile(join(profileDir,'package.json')),packageName,programRoot))throw Error(bundledSourceMismatch)
  await rewriteProfileBundlesLocked(profileDir,bundles=>enabled?withBundledExtension(bundles,packageName):bundles.filter(name=>name!==packageName))
 }
@@ -106,25 +105,15 @@ export async function configuredImChannels(runtimeRoot:string):Promise<number>{
 }
 
 /**
- * 升级迁移：IM 通道曾是 `@teloa/bundle` 的默认行。配置过渠道的本人升级后视为已启用；
- * 只迁一次（标记在 profile 目录，0600），此后本人的停用选择不再被改回。
- * 随附来源尚未登记进 profile、或渠道文件读不了时推迟，不写标记；调用方捕获异常只告警，不阻断启动。
- * 先写标记再启用：标记写失败就不启用（宁可漏掉自动启用，本人可在市场手动启用），
- * 也不能留下「已启用却没标记」的状态，否则下次启动会把本人的停用改回来。
+ * 内置 IM 每次启动均核对固定来源并确保加载；旧可选标记不再影响默认能力。
+ * 不读取或改变渠道文件，因此不会自动启用、删除或重配任何渠道。
  */
-export function migrateBundledExtensions(profileDir:string,runtimeRoot:string,programRoot:string):Promise<'enabled'|'skipped'|'deferred'>{
+export function migrateBundledExtensions(profileDir:string,_runtimeRoot:string,programRoot:string):Promise<'enabled'|'skipped'|'deferred'>{
  return withProfileLock(profileDir,async()=>{
-  const markerPath=join(profileDir,BUNDLED_EXTENSIONS_FILE)
-  let marker:Record<string,unknown>={}
-  try{marker=await readJsonFile(markerPath)}
-  catch(error){if(!(record(error)&&error.code==='ENOENT'))throw Error(markerUnreadable)}
-  if(marker[MIGRATION_KEY]!==undefined)return 'skipped'
-  if(!await officialSource(profileDir,await readJsonFile(join(profileDir,'package.json')),IM_GATEWAY_PACKAGE,programRoot))return 'deferred'
-  let count:number
-  try{count=await configuredImChannels(runtimeRoot)}catch{return 'deferred'}
-  const enable=count>0
-  await writeAtomic(markerPath,JSON.stringify({...marker,[MIGRATION_KEY]:enable?'enabled':'skipped'},null,2)+'\n',0o600)
-  if(enable)await setBundledExtensionLocked(profileDir,programRoot,IM_GATEWAY_PACKAGE,true)
-  return enable?'enabled':'skipped'
+  const manifest=await readJsonFile(join(profileDir,'package.json'))
+  if(!await officialSource(profileDir,manifest,IM_GATEWAY_PACKAGE,programRoot))return 'deferred'
+  const present=profileBundles(manifest).includes(IM_GATEWAY_PACKAGE)
+  await setBundledExtensionLocked(profileDir,programRoot,IM_GATEWAY_PACKAGE,true)
+  return present?'skipped':'enabled'
  })
 }

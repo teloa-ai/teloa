@@ -48,12 +48,12 @@ for(const result of ['success','throw','exit'])test(`可选安装 ${result} 均�
  assert.deepEqual(JSON.parse(await readFile(join(profileDir,'teloa-待启用插件.json'),'utf8')),{'@vendor/pending@1.0.0':'a'.repeat(64)})
 })
 
-test('官方 Team bundle 紧邻 Teloa 之前，保留其他 bundle 顺序且重跑不重复',()=>{
+test('官方 Team 和内置 IM 紧邻 Teloa，保留其他 bundle 顺序且重跑不重复',()=>{
  const before=['@deepseek-ai/dsh-base','@teloa/bundle','@vendor/optional']
  const next=runtime.withTeloaRequiredBundles(before)
- assert.deepEqual(next,['@deepseek-ai/dsh-base','@deepseek-ai/dsh-experimental-agent-team-profile','@teloa/bundle','@vendor/optional'])
+ assert.deepEqual(next,['@deepseek-ai/dsh-base','@deepseek-ai/dsh-experimental-agent-team-profile','@teloa/bundle','@teloa/im-gateway','@vendor/optional'])
  assert.deepEqual(runtime.withTeloaRequiredBundles(next),next)
- assert.deepEqual(runtime.withTeloaRequiredBundles(['base']),['base','@deepseek-ai/dsh-experimental-agent-team-profile','@teloa/bundle'])
+ assert.deepEqual(runtime.withTeloaRequiredBundles(['base']),['base','@deepseek-ai/dsh-experimental-agent-team-profile','@teloa/bundle','@teloa/im-gateway'])
 })
 test('随附 Auto Review 跟进 DSH 升级，手动来源保留；仅当前登记可修复链接',()=>{
  const name='@deepseek-ai/dsh-experimental-auto-review'

@@ -32,7 +32,7 @@ export function BundledExtensionsView(props:BundledExtensionsViewProps){
   <h2 className={css.title}>{t('bundledExtensions.title')}</h2>
   <p className={css.muted}>{t('bundledExtensions.description')}</p>
   {props.error&&<p className={css.alert} role="alert">{props.error} <button type="button" className={css.button} onClick={props.onRetry}>{t('bundledExtensions.retry')}</button></p>}
-  <ul className={css.list}>{props.rows.map(row=>{
+  <ul className={css.list}>{props.rows.filter(row=>row.id!=='im-gateway').map(row=>{
    const on=enabledNow(row.state),asking=props.confirming?.id===row.id,text=extensionText[row.id]
    return <li key={row.id} className={css.row}>
     <span className={css.rowText}><strong>{t(text.name as never)}</strong><span className={css.muted}>{t(text.summary as never)}</span>{row.memoryRisk&&<span className={css.notice} role="note">{t('bundledExtensions.localEmbedding.memoryRisk')}</span>}<span className={css.status}>{t(stateKey[row.state] as never)}</span></span>

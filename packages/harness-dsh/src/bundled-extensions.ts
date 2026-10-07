@@ -39,6 +39,7 @@ export function createBundledExtensionHandler(deps:BundledExtensionDeps){
   if(endpoint==='bundled-extensions/list'){taskInput(payload,[]);return Promise.all(bundledExtensions.map(row=>view(row.id)))}
   if(endpoint==='bundled-extensions/set'){
    const input=readBundledExtensionSetInput(payload)
+   if(input.extensionId==='im-gateway'&&!input.enabled)throw new WorkError('teloa/forbidden','IM 通道是内置能力；请在设置中停用具体渠道。')
    const entry=bundledExtensions.find(row=>row.id===input.extensionId)!
    // 同一把 profile 锁串行：并发点击、原生扩展管理与市场安装逐个进行，写盘与热套用之间不会插进别的改动。
    await withProfileLock(deps.profileDir,async()=>{
