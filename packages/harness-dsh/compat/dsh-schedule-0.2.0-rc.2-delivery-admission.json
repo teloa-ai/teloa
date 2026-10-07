@@ -3,7 +3,7 @@
   "package": "@deepseek-ai/dsh-schedule",
   "version": "0.2.0-rc.2",
   "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "patchSha256": "50650eefac4f42f5bf43d72ae0ecdd6936b868e87b08415eedff16abe804e234",
+  "patchSha256": "380a37a38062d1b86622d1ea4e3caf05f0fa83b9127c8ff88bb0bfe6d62deeba",
   "files": [
     {
       "path": "lib/index.js",

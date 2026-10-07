@@ -23,7 +23,7 @@
  	}
  	/**
  	* Recompute the nearest obligation after startup or a durable change.
-@@ -1593,7 +1595,56 @@
+@@ -1593,8 +1595,57 @@
  					}],
  					source: { kind: "schedule" }
  				});
@@ -82,6 +82,7 @@
 +				if (!await this.ctx.sessions.flush(deliverySession ?? resolved.agent.session)) throw new Error("Session persistence did not acknowledge the reminder");
  				const deliveredAt = new Date(Date.now()).toISOString();
  				if (!isRecurringScheduleRecord(task.record)) {
+ 					await this.commit({
 @@ -2458,6 +2509,20 @@
  }
  //#endregion
