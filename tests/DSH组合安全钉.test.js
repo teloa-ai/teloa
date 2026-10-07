@@ -166,7 +166,7 @@ test('补丁以字面量钉住这些取值', async () => {
   assert.match(patch, /- id: tool-ralph\n\s+disabled: true\n/, '补丁必须以字面量关闭 ralph 工具入口')
   // 引擎行反过来必须留着：Agent 预设把 workflowEngine 绑在 workflow-ptc 上，关掉它任何会话都建不起来。
   assert.match(patch, /- id: ptc-runtime\n\s+disabled: false\n/, '补丁必须保持 ptc-runtime 启用')
-  assert.match(patch, /- id: agent-preset-registry\n\s+config:\n\s+default: teloa-standard\n/, '补丁必须使用官方注册器并保持运行身份')
+  assert.match(patch, /- id: agent-preset-registry\n(?:\s*#.*\n)*\s+inject:\n\s+- loader\n\s+- sessionProjections\n\s+- teloaToolResourceProvenance\n\s+config:\n\s+default: teloa-standard\n/, '补丁必须保持官方注册器、明确来源依赖与运行身份')
   for (const id of ['preset-standard', 'preset-ptc', 'preset-minimal', 'preset-cordis'])
     assert.match(patch, new RegExp('- id: ' + id + '\\n\\s+disabled: false\\n'), '官方原生预设必须启用')
   // 第三方 MCP instructions 进系统提示的上限基线。

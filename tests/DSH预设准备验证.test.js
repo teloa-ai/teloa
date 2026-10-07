@@ -16,12 +16,13 @@ function configRows() {
     'tool-ralph': '@deepseek-ai/dsh-tool-ralph',
   }
   return [
-    ...[...compositionEntries().entries()].map(entry => ({ ...entry.options, disabled: entry.disabled, name: entry.options.name ?? names[entry.options.id] })),
+    ...[...compositionEntries().entries()].map(entry => ({ ...entry.options, disabled: entry.disabled, name: entry.options.name ?? names[entry.options.id], ...(entry.options.id === 'agent-preset-registry' ? { inject: ['loader', 'sessionProjections', 'teloaToolResourceProvenance'] } : {}) })),
     ...['ui-layout', 'ui-sidebar', 'ui-settings-general', 'ui-settings-plugins', 'client-hmr'].map(id => ({ id, name: '@deepseek-ai/dsh-' + (id.startsWith('client-') ? id : 'client-' + id), disabled: true })),
     { id: 'connection', name: '@deepseek-ai/dsh-client-connection', inject: ['webRuntime', 'webServer'] },
     { id: 'session-query-sqlite', name: '@deepseek-ai/dsh-session-query-sqlite', config: { openAt: 'first-search', path: 'session-search.sqlite' } },
     { id: 'teloa-ui-workbench', name: '@teloa/client-ui-workbench' },
     { id: 'teloa-harness-dsh', name: '@teloa/harness-dsh' },
+    { id: 'teloa-tool-resource-provenance', name: '@teloa/harness-dsh/tool-resource-provenance' },
     { id: 'teloa-reference-mcp', name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'teloa_reference', cwd: { __jsExpr: 'process.env.TELOA_PROJECT_ROOT' }, failOnStartupError: true, maxInstructionBytes: 2048 } },
   ]
 }
@@ -38,6 +39,9 @@ test('插件准备拒绝正文追加执行器、声明冒名和关闭官方预�
     rows => { rows.find(row => row.id === 'teloa-agent-preset').name = '@vendor/preset' },
     rows => { rows.find(row => row.id === 'preset-ptc').disabled = true },
     rows => rows.push({ id: 'new-preset', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'unsafe', plugins: [] } }),
+    rows => rows.find(row => row.id === 'agent-preset-registry').inject.push('unknownDependency'),
+    rows => rows.find(row => row.id === 'agent-preset-registry').inject.pop(),
+    rows => { rows.find(row => row.id === 'teloa-tool-resource-provenance').name = '@vendor/provenance' },
   ]) {
     const rows = structuredClone(configRows())
     mutate(rows)
