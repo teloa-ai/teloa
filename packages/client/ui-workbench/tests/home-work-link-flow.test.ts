@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFileSync} from 'node:fs'
+import {homeNativeAdoptionRequestId} from '../src/client/home-native-controller.ts'
 
 const frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
 const conversations=readFileSync(new URL('../src/client/ObjectConversations.tsx',import.meta.url),'utf8')
@@ -33,6 +34,11 @@ test('新建角色与任务的迟到后续只使用已有会话，任务读取�
 
 test('首页原生空会话用固定身份显式加入工作目录，目录仅隐藏仍空白的行',()=>{
  const index=readFileSync(new URL('../src/client/index.ts',import.meta.url),'utf8'),directory=readFileSync(new URL('../src/client/WorkDirectory.tsx',import.meta.url),'utf8')
- assert.match(index,/call\('conversations\/adopt',\{sessionId:id,requestId:id,title:/)
+ assert.match(index,/call\('conversations\/adopt',\{sessionId:id,requestId:homeNativeAdoptionRequestId\(navigationStorage,id\),title:/)
+ const entries=new Map<string,string>(),storage={getItem:(key:string)=>entries.get(key)??null,setItem:(key:string,value:string)=>{entries.set(key,value)},removeItem:(key:string)=>{entries.delete(key)}}
+ const requestId='11111111-1111-4111-8111-111111111111',sessionId='dsh-native-session'
+ assert.equal(homeNativeAdoptionRequestId(storage,requestId,()=>{throw Error('已有业务身份不应重建')}),requestId)
+ assert.equal(homeNativeAdoptionRequestId(storage,sessionId,()=>requestId),requestId)
+ assert.equal(homeNativeAdoptionRequestId(storage,sessionId,()=>{throw Error('重试不应重建请求身份')}),requestId)
  assert.match(directory,/filter\(item=>item\.status!=='blank'&&managed\.archived/)
 })

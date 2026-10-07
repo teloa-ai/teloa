@@ -61,7 +61,7 @@ test('关于页列出 Max Luo、Morgan Chen、Caleb Pan，联系方式只保留�
   assert.equal((view.match(/className=\{css\.contactLinks\}/g)||[]).length,1)
 })
 
-test('版本卡片保持三个版本，Pro 为 Mac 本机工作，手机及 Enterprise 明确尚未开放',async()=>{
+test('版本卡片描述三个产品定位与使用场景，不混入开发进度、认证技术或购买动作',async()=>{
  const [view,styles,rows]=await Promise.all([
   readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8'),
   readFile(new URL('../src/client/AboutSettings.module.css',import.meta.url),'utf8'),
@@ -70,30 +70,36 @@ test('版本卡片保持三个版本，Pro 为 Mac 本机工作，手机及 Ente
  const products=[...view.matchAll(/product:'(Free|Pro|Cloud|Enterprise)'/g)].map(match=>match[1])
  assert.deepEqual(products,['Free','Pro','Enterprise'])
  assert.match(view,/card\.product===application\.product/)
- assert.match(rows,/Mac 本机工作/)
- assert.match(rows,/手机远程（尚未开放）/)
- assert.match(rows,/公开 Web 仅用于注册、登录、账号恢复与返回客户端/)
- assert.match(rows,/Enterprise 规划独立部署与企业治理/)
- assert.match(rows,/企业独立部署与治理（尚未开放）/)
+ assert.match(rows,/版本定位/)
+ assert.match(rows,/开箱即用的 Mac 原生应用/)
+ assert.match(rows,/手机随时新建、跟进与接续工作/)
+ assert.match(rows,/AI 团队协作与自动化/)
+ assert.match(rows,/企业云或内网部署/)
+ assert.match(rows,/组织成员与共享 AI 员工/)
+ assert.match(rows,/权限隔离与操作审计/)
+ assert.match(rows,/SSO 与组织身份管理/)
+ assert.match(rows,/企业数据与业务系统集成/)
+ assert.doesNotMatch(rows,/尚未开放|尚未開放|规划中|規劃中|开发中|Alpha|not yet available|planned|Public Web|公开 Web|公開 Web/i)
  assert.doesNotMatch(rows,/Harness|技术候选|开发.{0,2}暂停/)
  assert.doesNotMatch(rows,/Cloud 是 Pro|Cloud execution belongs to Pro|备份恢复与更新维护|Local and cloud execution/)
  assert.doesNotMatch(view,/LIMIT_ROWS|planLimits|name:'Team'/)
- assert.match(rows,/客户控制部署/)
- for(const feature of ["安全合规","操作审计","安全网关"])assert.ok(rows.includes(feature),feature)
+ assert.match(rows,/客户掌控执行与数据/)
  assert.doesNotMatch(rows,/企业私有化 Web|放开上限|Team 全部|托管模型额度/)
  assert.match(rows,/自备模型 API 密钥/)
  assert.match(rows,/模型费用另计/)
- assert.match(rows,/社区版提供所有版本共用的公开核心，支持自行部署/)
+ assert.match(rows,/三个版本共用 Teloa 核心/)
+ for(const position of ['开源','个人 / 专业','企业团队'])assert.ok(rows.includes(position),position)
  assert.doesNotMatch(rows,/\bFree\b/)
  assert.ok(ABOUT_PLAN_MESSAGE_ROWS.every(row=>row.length===11&&row.slice(1).every(value=>value.trim())), '全部词条应完整覆盖十语言')
- assert.match(view,/card\.id==='enterprise'\|\|card\.id==='pro'&&item==='about\.plans\.card\.pro\.item5'/)
- assert.match(view,/<Clock3 size=\{14\} aria-hidden/)
+ assert.match(view,/t\(card\.product===application\.product\?'about\.plans\.current':card\.position\)/)
+ assert.match(view,/<Check size=\{14\} aria-hidden/)
+ assert.doesNotMatch(view,/Clock3|about\.plans\.planned|about\.plans\.available|about\.plans\.card\.community\.badge/)
  assert.match(styles,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
  const section=view.slice(view.indexOf('className={css.plansSection}'),view.indexOf('</section>',view.indexOf('className={css.plansSection}')))
  assert.doesNotMatch(section,/<button/)
 })
 
-test('版本与方案区不再有配额措辞小字（用户 2026-09-21 裁定：小字不加）',async()=>{
+test('版本定位区不再有配额措辞小字（用户 2026-09-21 裁定：小字不加）',async()=>{
   const [view,rows]=await Promise.all([
     readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8'),
     readFile(new URL('../src/client/i18n/locales/about-plans.ts',import.meta.url),'utf8'),

@@ -41,7 +41,8 @@ test('十语言真实关于页、侧栏与版本标签统一显示社区版；�
   assert.equal(await page.locator('#edition').textContent(),label,locale)
   assert.deepEqual(await page.locator('#about article > strong').allTextContents(),[label,'Pro','Enterprise'],locale)
   assert.equal(await page.locator('#about article[class*="planCardCurrent"] > strong').textContent(),label,locale)
-  assert.doesNotMatch(await page.locator('#about').innerText(),/\bFree\b|Personal edition/,locale)
+  if(locale==='zh-CN')assert.deepEqual(await page.locator('#about article [class*="planBadge"]').allTextContents(),['当前版本','个人 / 专业','企业团队'])
+  assert.doesNotMatch(await page.locator('#about section[class*="plansSection"]').innerText(),/\bFree\b|Personal edition|Alpha|not yet available|planned|Public Web/i,locale)
   assert.equal(await page.locator('img[alt="Teloa"]').count(),2,'产品始终是 Teloa')
  }
  for(const product of ['Pro','Enterprise']){
@@ -50,12 +51,18 @@ test('十语言真实关于页、侧栏与版本标签统一显示社区版；�
   assert.deepEqual(await page.locator('#about article > strong').allTextContents(),['社区版','Pro','Enterprise'])
   assert.equal(await page.locator('#about article[class*="planCardCurrent"] > strong').textContent(),product)
   const cards=page.locator('#about article')
-  assert.match(await cards.nth(0).innerText(),/公开核心 · 自行部署/)
-  assert.match(await cards.nth(1).innerText(),/Mac 本机工作[\s\S]*手机远程（尚未开放）/)
-  assert.match(await cards.nth(2).innerText(),/企业独立部署与治理（尚未开放）/)
-  const text=await page.locator('#about').innerText()
-  assert.match(text,/公开 Web 仅用于注册、登录、账号恢复与返回客户端/)
-  assert.match(text,/所有版本均需自备模型 API 密钥，模型费用另计/)
+  assert.match(await cards.nth(0).innerText(),/开源核心 · 自行部署/)
+  assert.match(await cards.nth(1).innerText(),/开箱即用的 Mac 原生应用[\s\S]*AI 团队协作与自动化[\s\S]*手机随时新建、跟进与接续工作/)
+  assert.match(await cards.nth(2).innerText(),/企业云或内网部署[\s\S]*组织成员与共享 AI 员工[\s\S]*SSO 与组织身份管理[\s\S]*企业数据与业务系统集成/)
+  const text=await page.locator('#about section[class*="plansSection"]').innerText()
+  assert.match(text,/版本定位/)
+  assert.match(text,/三个版本共用 Teloa 核心/)
+  assert.match(text,/自备模型 API 密钥，模型费用另计/)
+  assert.doesNotMatch(text,/规划中|尚未开放|公开 Web|Alpha/)
+  for(const [index,position] of ['开源','个人 / 专业','企业团队'].entries()){
+   const expected=['Free','Pro','Enterprise'][index]===product?'当前版本':position
+   assert.equal(await cards.nth(index).locator('[class*="planBadge"]').textContent(),expected)
+  }
   assert.equal(await page.locator('#about article button').count(),0,'版本说明不虚构购买入口')
  }
  checksPassed=true

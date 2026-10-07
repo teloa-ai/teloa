@@ -8,10 +8,14 @@ test('业务空间提供项目子页；左栏平台级「项目」入口按 2026
  assert.match(pageSource,/section\('projects'/)
  assert.match(pageSource,/<ProjectWorkspace/)
  // 项目仍是业务摘要条的直接入口；左栏「项目」总览只是跨业务视角，不改归属。
- const beforeMore=pageSource.split('<details ref={scopeMoreRef}')[0]??''
+ const beforeMore=pageSource.split('<BusinessMoreMenu')[0]??''
  assert.match(beforeMore,/aria-pressed=\{target\.section==='projects'\}/)
- const workNavigation=await readFile(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8')
- assert.match(workNavigation,/\['projects','navigation\.projects',FolderKanban\]/)
+ assert.match(beforeMore,/onClick=\{\(\)=>section\('projects'\)\}/)
+ const [navigationChrome,workNavigation]=await Promise.all([readFile(new URL('../src/client/WorkbenchNavigationChrome.tsx',import.meta.url),'utf8'),readFile(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8')])
+ assert.match(navigationChrome,/\['projects','navigation\.projects',FolderKanban\]/)
+ assert.match(navigationChrome,/primaryNavigation\.map\(/);assert.match(navigationChrome,/onClick=\{\(\)=>onSelect\(id\)\}/)
+ assert.match(workNavigation,/import \{WorkbenchNavigationBrand,WorkbenchNavigationItems\} from '\.\/WorkbenchNavigationChrome\.js'/)
+ assert.match(workNavigation,/<WorkbenchNavigationItems view=\{view\}/);assert.match(workNavigation,/:actions\.navigate\(id\)\}/)
 })
 
 test('项目页读取真实详情和六类关系，不伪造项目主会话',async()=>{

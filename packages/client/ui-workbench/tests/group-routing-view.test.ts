@@ -1,4 +1,4 @@
-import {applicationCapabilityModule} from './application-capability-fixture.ts'
+import {applicationCapabilityModule,applicationCapabilityModules} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
 import {staffAvatarComponent} from './staff-avatar-component.ts'
 import test from 'node:test'
@@ -443,6 +443,7 @@ test('新建岗位会话不自动发消息，照常清理创建意图并跳转�
   const calls:unknown[]=[],conversation={id:'conversation',sessionId:'created'},object={kind:'role',id:roleA,version:1,canStart:true}
   let current='previous'
   const create=implementation<(workspace:string,intent:unknown)=>Promise<void>>(node,{
+   ...applicationCapabilityModules['./application-presentation.js'],
    setCreating:(value:boolean)=>calls.push(['creating',value]),homeCreationLocation:()=> 'origin',latestState:{current:{}},
    resolveConversationObject:()=>object,homeContextApi:{pending:()=>undefined},persistentObject:()=>true,
    work:{create:async(options:{roleId?:string;beforeOpen:(row:unknown)=>Promise<void>;mayOpen:()=>boolean})=>{assert.equal(options.roleId,roleA);assert.equal(options.mayOpen(),true);await options.beforeOpen(conversation);current=conversation.sessionId;return conversation},getSnapshot:()=>({sessionId:current})},

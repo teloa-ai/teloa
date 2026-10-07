@@ -189,17 +189,17 @@ pnpm test:bindings
 
 Run relevant backend or runtime tests for behavior changes. These may require Docker and isolated databases. Keep runtime data and credentials out of commits. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution process and DCO requirements.
 
-## Data, permissions and current scope
+## Data, permissions and product editions
 
 Application data is stored on the machine running Teloa. Remote models and authorized external tools receive the task context they need. Self-hosting does not make every model call offline. See [SECURITY.md](SECURITY.md) for the permission model and known limitations.
 
-The Community edition is a self-hosted Web Alpha for one human user. Pro and Enterprise share the common core and are developed separately; their private source is outside this repository.
+Teloa's three editions share the same product core and serve different working needs. This repository maintains the open-source Community edition.
 
-| Edition | Use and availability |
+| Edition | Who it is for and how it is used |
 | --- | --- |
-| Community | Open-source, self-hosted Web application: AI employees, collaboration, tasks, automation, skills and business records. |
-| Pro | Mac desktop edition in development. Work executes locally on the Mac; phone remote access is not yet available. Public Web handles sign-in, registration, account recovery and return to the client. |
-| Enterprise | Independent enterprise deployment and governance in development: customer-controlled execution, access isolation, audit and enterprise integrations. Not yet available. |
+| Community | An open-source edition for individuals and developers. Deploy and configure your own workspace with AI employees, collaboration, tasks, automation and skills. |
+| Pro | A native Mac application for personal and professional work. Get started with local task execution and access to your files and apps, then create, follow and continue work from your phone. |
+| Enterprise | For businesses and organizations, deployed in the company cloud or internal network. Manage members, shared AI employees, permissions and audit, and connect internal data, systems and business workflows. |
 
 All editions use your own model service and API keys; model usage is billed separately. External integrations require compatible services and credentials. Stopping a conversation does not guarantee immediate cancellation of every external request.
 

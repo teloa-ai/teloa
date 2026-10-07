@@ -58,12 +58,19 @@ test('主导航用单个紧凑新建按钮展开会话、工作与执行位置�
 })
 
 test('对话、任务与自动化并列，自动化直接进入计划目录',async()=>{
-  const source=await read('WorkNavigation.tsx')
-  assert.match(source,/className=\{clsx\(css\.navItem,active&&css\.active\)\}/)
-  assert.match(source,/id==='attention'&&needCount>0/)
-  assert.match(source,/\['tasks','navigation\.tasks',CheckSquare\]/)
-  assert.match(source,/const active=view===id;/)
-  assert.doesNotMatch(source,/\(view==='tasks'\|\|view==='plans'\)&&id==='home'/)
+  const [source,chrome]=await Promise.all([read('WorkNavigation.tsx'),read('WorkbenchNavigationChrome.tsx')])
+  assert.match(source,/<WorkbenchNavigationItems view=\{view\} needCount=\{needCount\} attentionKnown=\{attentionKnown\}/)
+  assert.match(source,/id==='plans'\?actions\.openPlans\(\{kind:'plans'\}\)/)
+  assert.match(source,/id==='messages'\?actions\.openConversationDirectory\(\)/)
+  assert.match(source,/actions\.navigate\(id\)/)
+  assert.match(chrome,/className=\{clsx\(css\.navItem,active&&css\.active\)\}/)
+  assert.match(chrome,/aria-current=\{active\?'page':undefined\} onClick=\{\(\)=>onSelect\(id\)\}/)
+  assert.match(chrome,/id==='attention'&&needCount>0/)
+  assert.match(chrome,/\['messages','navigation\.v2\.conversations',MessageSquare\]/)
+  assert.match(chrome,/\['tasks','navigation\.tasks',CheckSquare\]/)
+  assert.match(chrome,/\['plans','navigation\.plans',CalendarClock\]/)
+  assert.match(chrome,/const active=view===id;/)
+  assert.doesNotMatch(chrome,/\(view==='tasks'\|\|view==='plans'\)&&id==='home'/)
 })
 
 test('需要你里的决策原地展开，打开任务动作再进入真实任务页',async()=>{
