@@ -1,6 +1,18 @@
 type Storage={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}
 type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;create:(id:string)=>Promise<string>;refresh?:()=>Promise<void>}
 const draftKey='teloa.home-native-session/v1'
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
+
+/** 原生会话身份不等于业务请求 UUID；冷恢复和未知回包重试必须复用同一领养请求。 */
+export function homeNativeAdoptionRequestId(storage:Storage,sessionId:string,identity:()=>string=()=>crypto.randomUUID()):string{
+ if(uuid.test(sessionId))return sessionId
+ const key='teloa.home-native-adoption/'+sessionId,saved=storage.getItem(key)
+ if(saved!==null){if(!uuid.test(saved))throw Error('待用会话接入记录无法核对。');return saved}
+ const requestId=identity()
+ if(!uuid.test(requestId))throw Error('待用会话接入身份不正确。')
+ storage.setItem(key,requestId)
+ return requestId
+}
 
 /** 这里只持久保存待用会话身份；正文、引用和附件始终归官方输入所有。 */
 export class HomeNativeController{

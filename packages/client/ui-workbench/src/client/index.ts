@@ -23,7 +23,7 @@ import {insertHomeCapabilities} from './home-native-capabilities.js'
 import type {CapabilitySelection} from './Capabilities.js'
 import {HomeNativeConversation} from './HomeNativeConversation.js'
 import {HomeComposerContext} from './HomeComposerContext.js'
-import {HomeNativeController,createHomeContextApi} from './home-native-controller.js'
+import {HomeNativeController,createHomeContextApi,homeNativeAdoptionRequestId} from './home-native-controller.js'
 import {readHomeNativeBlank} from './home-native-readiness.js'
 import {createInitialNativeSessionCoordinator} from './initial-native-session.js'
 import {SessionBrowserStopNotice} from './SessionBrowserStopNotice.js'
@@ -545,12 +545,12 @@ export async function apply(ctx: Context): Promise<void> {
         const key='teloa.home-native-workspace/'+id
         const remembered=navigationStorage.getItem(key)
         const workspaceId=remembered??previous?.workspaceId??(available.length===1?available[0]!.workspaceId:undefined)
-        if(!workspaceId)throw Error('请先在新建会话中选择执行位置。')
+        if(!workspaceId)throw Object.assign(Error('请先在新建会话中选择执行位置。'),{code:'teloa/home-location-required'})
         navigationStorage.setItem(key,workspaceId)
         const created=await child.sessions.create({sessionId,workspaceId:brandString<WorkspaceId>(workspaceId)})
         if(created!==sessionId)throw Error('待用会话身份不一致。')
       }
-      const binding=await call('conversations/adopt',{sessionId:id,requestId:id,title:child.sessions.list.getSnapshot().byId[sessionId]?.title||'通用工作会话'})
+      const binding=await call('conversations/adopt',{sessionId:id,requestId:homeNativeAdoptionRequestId(navigationStorage,id),title:child.sessions.list.getSnapshot().byId[sessionId]?.title||'通用工作会话'})
       if(!isConversation(binding)||binding.sessionId!==id)throw Error('待用会话绑定未确认。')
       await work.refreshDirectory()
       return id

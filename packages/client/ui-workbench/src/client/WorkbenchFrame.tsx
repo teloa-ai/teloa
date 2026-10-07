@@ -22,7 +22,7 @@ import {homeCreationLocation,mayContinueHomeCreation} from './home-creation-navi
 import {ensureHomeObjectContext} from './home-object-context.js'
 import type {HomeContextApi} from './home-native-controller.js'
 import {homeNativeCopy} from './home-native-copy.js'
-import homeNativeCss from './HomeNativeConversation.module.css'
+import {HomeNativePreparationNotice} from './HomeNativePreparationNotice.js'
 import {taskArtifactPort} from './task-artifact-port.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import {StatusLabel} from './StatusLabel.js'
@@ -293,7 +293,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
   useEffect(()=>{setBuilderTab('conversation')},[current])
 
   const homeManagement=useSyncExternalStore(management.subscribe,management.getSnapshot)
-  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<string>(),[homeRetry,setHomeRetry]=useState(0)
+  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'>(),[homeRetry,setHomeRetry]=useState(0)
   useEffect(()=>{
     if(state.view!=='home'||!homeManagement.ready)return
     if(businessBuilder&&current&&builderState.checkedSessionId!==current)return
@@ -301,7 +301,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
     if((builderState.sessionKind!==null||builderVisible)&&current){setHomeSessionId(current);setHomeInputError(undefined);return}
     const controller=new AbortController()
     setHomeSessionId(undefined);setHomeInputError(undefined)
-    void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(localizeWorkError(locale,cause))})
+    void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')})
     return()=>controller.abort()
   },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
 
@@ -1631,7 +1631,7 @@ export function WorkbenchFrame({navigationStorage,openLocalModels,runtimeSetting
             content:renderSlot('main',{}, {entryKey:'conversation'}),
             home:state.view==='home',ready:state.view!=='home'||homeSessionId!==undefined&&homeSessionId===current,
             engaged:sessionId=>{if(latestState.current.view==='home'&&mainSession.getSnapshot()===sessionId)actions.openMessages('native')},
-            notice:state.view==='home'&&(homeSessionId===undefined||homeSessionId!==current)?<p className={homeNativeCss.notice} role={homeInputError?'alert':'status'}>{homeInputError??homeNativeCopy(locale,'preparing')}{homeInputError&&<button type="button" onClick={()=>setHomeRetry(value=>value+1)}>{t('common.retry')}</button>}{homeInputError&&<button type="button" onClick={()=>requestCreation({},true)}>{t('conversationDialog.otherLocation')}</button>}</p>:undefined,
+            notice:state.view==='home'&&(homeSessionId===undefined||homeSessionId!==current)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} chooseLocation={()=>requestCreation({},true)}/>:undefined,
             overview:<WorkHome current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
           })}</div>
           {builderState.sessionKind==='daily'&&(state.view==='home'||conversationVisible)&&dailyStatus}
