@@ -19,6 +19,18 @@ import {knowledgeSearchToolName} from '../src/local-retrieval.ts'
 import {readFileSync} from 'node:fs'
 import {parse} from 'yaml'
 
+test('文件工具只能接收真实候选的工作目录范围，不能伪造任意参数或路径授权',()=>{
+ const candidates=['read','write','edit'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace' as const}))
+ validateReferenceToolRules(candidates,candidates)
+ for(const name of ['read','write','edit']){
+  assert.throws(()=>validateReferenceToolRules([{name,allowed:[],anyArguments:true}],candidates),{code:'teloa/forbidden'})
+  assert.throws(()=>validateReferenceToolRules([{name,allowed:[{file_path:'/outside'}]}],candidates),{code:'teloa/forbidden'})
+  assert.throws(()=>validateReferenceToolRules(candidates.filter(rule=>rule.name===name),[]),{code:'teloa/forbidden'})
+ }
+ assert.equal(unconstrainedGrantToolNames.includes('read'),false)
+ assert.equal(roleGrantToolNames.includes('bash'),false)
+})
+
 test('原生编排支持本人会话与岗位显式授权，不能从声明自动获得执行权限',async()=>{
  const {orchestrationTools,orchestrationToolAllowed}=await import('../src/role-tool-grants.ts')
  for(const name of orchestrationTools){

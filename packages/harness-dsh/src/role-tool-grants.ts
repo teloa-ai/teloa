@@ -1,4 +1,4 @@
-import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,type TaskToolArgumentRule,type ResourceContext} from '@teloa/contract'
+import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,isWorkspaceFileRule,workspaceFileToolNames,type TaskToolArgumentRule,type ResourceContext} from '@teloa/contract'
 import type {RoleToolGrantService} from '@teloa/backend'
 import {isNativeToolName,nativeGrantToolNames} from './native-tool-access.ts'
 import {businessResultToolNames} from './business-result-tools.ts'
@@ -44,7 +44,7 @@ export function taskRunToolRules(available:readonly TaskToolArgumentRule[]):Task
  */
 export const externalEgressTools=['web_fetch','web_search'] as const
 /** 岗位授权规则的静态基线；行业 MCP 另由服务端的逐角色活动连接候选补充。 */
-export const roleGrantToolNames=[referenceReadTool,...mcpResourceTools,subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...businessResultToolNames,knowledgeSearchToolName,skillHttpToolName] as readonly string[]
+export const roleGrantToolNames=[referenceReadTool,...mcpResourceTools,subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...workspaceFileToolNames,...businessResultToolNames,knowledgeSearchToolName,skillHttpToolName] as readonly string[]
 // 技能代发只能按岗位授予（规格 2026-09-27 §5.1）：不进外发类工具（那会被上网闸按 web_fetch 口径改判），自授权集由任务守卫装配期拒绝。
 if((externalEgressTools as readonly string[]).includes(skillHttpToolName))throw Error('技能代发工具不能列入外发类工具。')
 /** 授权页上技能代发候选的展示信息：技能名、来源（岗位本身技能 / 行业职责技能）、目录声明的目标 origin、是否已保存密钥（读不出来时省略）。 */
@@ -119,6 +119,10 @@ export function validateReferenceToolRules(rules:TaskToolArgumentRule[],availabl
  const candidates=new Map(available.map(rule=>[rule.name,rule]))
  for(const rule of readTaskToolArgumentRules(rules)){
   const candidate=candidates.get(rule.name)
+  if((workspaceFileToolNames as readonly string[]).includes(rule.name)){
+   if(!isWorkspaceFileRule(rule)||!candidate||!isWorkspaceFileRule(candidate))throw new WorkError('teloa/forbidden','文件工具只能授权当前工作目录，且必须有真实受限文件工具候选。')
+   continue
+  }
   const dynamicMcp=!isNativeToolName(rule.name)&&!!candidate?.anyArguments&&/^mcp__[A-Za-z0-9_-]{1,32}__[A-Za-z0-9_-]{1,128}$/.test(rule.name)
   const unconstrained=unconstrainedGrantToolNames.includes(rule.name)||dynamicMcp
   if(!roleGrantToolNames.includes(rule.name)&&!dynamicMcp)throw new WorkError('teloa/forbidden','只能授权员工已选资料、已连接行业工具或已登记的技能接口代发。')

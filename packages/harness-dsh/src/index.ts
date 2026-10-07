@@ -86,6 +86,7 @@ import {readRunGroupArtifactImageBytes,TaskRunService,TaskRunSubagentService,Tas
 import {isTextOnlyTaskRun} from './task-run-background.ts'
 import {WebAccessPolicyService,TaskRunWebAccessService} from '@teloa/backend'
 import {registerTaskToolGuard,type TaskToolPolicyReader} from './task-tool-guard.ts'
+import {createTaskRunWorkspaceFileAccess,workspaceFileToolRules} from './workspace-file-access.ts'
 import {registerNativeAutoReviewGuard} from './native-auto-review-guard.ts'
 import {guardDecision,protectedRootsFor,redactRunMessage,registerCredentialGuards} from './credential-guards.ts'
 import {knownSecretValues} from './credentials/known-values.ts'
@@ -609,11 +610,11 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     // 闸 ① 执行（逐字理由「设置中已关闭网页搜索与读取。」），不能让这里的候选缺失把同一运行的其余工具
     // 一并连坐拒绝（见 D-1）；关掉总开关后带上网授权的员工必须照样准备得起运行，只是跑不出外发。
     // 授权页候选与保存校验仍跟着总开关走，那一支在下面的 `grantRules` 里，与这里两条互不相干。
-    validate:async(rules,knowledge,context)=>validateReferenceToolRules(rules,taskRunToolRules([...referenceToolRules(knowledge),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...nativeToolRules(ctx)])),
+    validate:async(rules,knowledge,context)=>validateReferenceToolRules(rules,taskRunToolRules([...referenceToolRules(knowledge),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...nativeToolRules(ctx),...await workspaceFileToolRules(ctx)])),
     recheck:async(run,target,context)=>{
       const current=readRunKnowledge(await readExecutionKnowledge(target,run.knowledge.map(item=>item.id),undefined,context.role.scopes,context.db))
       if(JSON.stringify(current)!==JSON.stringify(run.knowledge))throw new WorkError('teloa/version-conflict','执行资料已变化，请重新准备。')
-      validateReferenceToolRules(run.argumentRules??[],taskRunToolRules([...referenceToolRules(current),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...nativeToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId)))]))
+      validateReferenceToolRules(run.argumentRules??[],taskRunToolRules([...referenceToolRules(current),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...nativeToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId))),...await workspaceFileToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId)))]))
     },
   }})
   const subagentDelegation={
@@ -666,6 +667,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const safeKnown=():readonly string[]=>{try{return knownSecretValues(ctx.credentials)}catch{if(!knownUnavailable){knownUnavailable=true;ctx.logger.warn('凭据提供方不可用，脱敏只按前缀形态')}return []}}
   const credentialRoots=()=>protectedRootsFor({providerPaths:(ctx.credentials as unknown as {protectedPaths?:()=>string[]}|undefined)?.protectedPaths?.()??[],runtimeRoot,projectRoot,env:process.env})
   registerCredentialGuards(ctx,{roots:credentialRoots,known:safeKnown})
+  const taskWorkspaceFiles=createTaskRunWorkspaceFileAccess(ctx,workspaceRoot,readTaskToolPolicy,path=>guardDecision({file_path:path},{toolName:'read',cwd:workspaceRoot,roots:credentialRoots(),known:[],env:process.env,home:homedir()})!==undefined)
   registerTaskToolGuard(ctx,readTaskToolPolicy,
   // teloa_group_attach 同进自授权集：它只登记意图，既不是 MCP 资源工具、编排类、委派工具，也不是外发通道，
   // 因此过得了上面那三条装配期断言。真正的许可核对在服务端 post（canPost ＋ 本次运行的成果），
@@ -690,7 +692,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       await new TaskRunWebAccessService((await resources.database()).pool,{now:()=>new Date().toISOString()}).append(owner,run.id,entry)
       return 'written'
     },
-  },taskTeam,taskBrowser.cleanup,taskOrchestration)
+  },taskTeam,taskBrowser.cleanup,taskOrchestration,taskWorkspaceFiles)
   assertRoutingGuardRegisteredFirst(ctx)
   resources.beforeDatabaseClose(registerTaskSubagentTool(ctx,subagentDelegation))
   registerRoleMemoryTools(ctx,{
@@ -1047,7 +1049,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       ...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),
       // 工具授权只能在暂停的AI 员工上编辑；候选沿用同一前置条件，避免界面给出必然被服务端拒绝的选项。
       // 技能代发换成逐技能枚举（roleGrantPageRules）：没有可代发技能即无此候选，保存同源拒绝。
-      ...(role.state==='paused'&&role.kind==='employee'?roleGrantPageRules(taskRunToolRules(nativeToolRules(ctx)),skillHttp??await skillHttpGrants(role,db)):[]),
+      ...(role.state==='paused'&&role.kind==='employee'?roleGrantPageRules(taskRunToolRules([...nativeToolRules(ctx),...await workspaceFileToolRules(ctx)]),skillHttp??await skillHttpGrants(role,db)):[]),
       // 上网的两条候选同此前置条件，并跟着总开关走：关掉时授权页没有可勾项，保存校验也一并拒。
       ...(role.state==='paused'&&role.kind==='employee'?webToolRules((await webAccessPolicy(db)).enabled):[]),
     ]

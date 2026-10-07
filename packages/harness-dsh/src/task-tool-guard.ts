@@ -12,6 +12,8 @@ import type {TaskRunOrchestrationAccess} from './task-run-orchestration.ts'
 import {delegationToolAllowed,delegationTools,teamDelegationTools,externalEgressToolAllowed,externalEgressTools,mcpResourceToolAllowed,mcpResourceTools,orchestrationToolAllowed,orchestrationTools,subagentTaskToolName,type WebGatePolicy} from './role-tool-grants.ts'
 import {webAccessHost,webHostBlocked,type WebAccessKind} from '@teloa/contract'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
+import {workspaceFileToolNames,isWorkspaceFileRule} from '@teloa/contract'
+import type {TaskRunWorkspaceFileAccess} from './workspace-file-access.ts'
 
 export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];stopRequested?:boolean}
 /** null 仅表示该会话不受任务执行管理；岗位暂停应返回空清单，不能降级为 null。 */
@@ -30,7 +32,7 @@ export type WebAccessGatePorts={
 }
 
 /** 复用 DSH 公开前置守卫，保留框架既有审批链；不凭工具名称前缀授予权限。 */
-export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReader,selfAuthorizedTools:readonly string[]=[],readBusinessBinding?:TaskSessionBusinessBindingReader,delegation?:SubagentDelegationPorts,webAccess?:WebAccessGatePorts,team?:TaskRunTeamAccess,browserCleanup?:TaskBrowserCleanupAccess,orchestration?:TaskRunOrchestrationAccess){
+export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReader,selfAuthorizedTools:readonly string[]=[],readBusinessBinding?:TaskSessionBusinessBindingReader,delegation?:SubagentDelegationPorts,webAccess?:WebAccessGatePorts,team?:TaskRunTeamAccess,browserCleanup?:TaskBrowserCleanupAccess,orchestration?:TaskRunOrchestrationAccess,workspaceFiles?:TaskRunWorkspaceFileAccess){
  const selfAuthorized=new Set(selfAuthorizedTools)
  // 自授权分支在资源工具闸之前返回，装配期就堵死这条绕过路径，避免日后扩充自授权集时静默放开。
  if(mcpResourceTools.some(name=>selfAuthorized.has(name)))throw Error('自授权工具不能包含 MCP 资源工具。')
@@ -43,6 +45,8 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
  if(selfAuthorizedTools.some(isNativeToolName))throw Error('自授权工具不能包含原生浏览器、电脑或后台工具。')
  // 技能代发只能由本人按岗位授予（规格 2026-09-27 §5.1）；AI 员工不能自授。
  if(selfAuthorized.has(skillHttpToolName))throw Error('自授权工具不能包含技能代发工具。')
+ if(workspaceFileToolNames.some(name=>selfAuthorized.has(name)))throw Error('自授权工具不能包含工作目录文件工具。')
+ const removeFileGuard=ctx.on('tools/execute',async(exec,next)=>{await workspaceFiles?.recheck(exec);return next()})
  // 官方 monotonic guard 在审批结束后执行：确认期间卸载、换 provider 或替换工具不能执行旧定义。
  const checkedNative=new WeakMap<ToolExecution,ToolDefinition>()
  const checkedCleanup=new WeakSet<ToolExecution>()
@@ -162,6 +166,11 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   if(policy!==null&&!cleanup&&!policy.allowedTools.includes(exec.name))return {kind:'deny',reason:'当前任务未授权使用此工具，请核对员工执行范围。'}
   // 技能代发按「岗位 × 技能」授权（审查修复 R1 M-1）：参数里只有 skill 对应授权记录，地址与请求体由工具自身按声明核对。
   if(policy?.argumentRules!==undefined&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.argumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments)))return {kind:'deny',reason:'工具参数超出本次任务授权的数据范围或版本。'}
+  if(policy!==null&&(workspaceFileToolNames as readonly string[]).includes(exec.name)){
+   if(!workspaceFiles||!policy.argumentRules?.some(rule=>rule.name===exec.name&&isWorkspaceFileRule(rule)))return {kind:'deny',reason:'当前任务未装配受限工作目录文件授权。'}
+   const issue=await workspaceFiles.check(exec,lineage.root,policy)
+   if(issue!==undefined)return {kind:'deny',reason:issue}
+  }
   if((orchestrationTools as readonly string[]).includes(exec.name)){
    const definition=ctx.tools.get(exec.name,exec.agent)
    if(!definition)return {kind:'deny',reason:'当前运行模式未提供此编排工具。'}
@@ -186,5 +195,5 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   }
   return next()
  })
- return ()=>{removePreExecute();removeNativeGuard();removeOrchestrationGuard()}
+ return ()=>{removePreExecute();removeNativeGuard();removeOrchestrationGuard();removeFileGuard()}
 }

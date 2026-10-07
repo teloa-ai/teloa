@@ -603,6 +603,9 @@ importers:
       '@deepseek-ai/dsh-token-meter':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(42d33da5a9a545c3948e11174b60d523)
+      '@deepseek-ai/dsh-tool-fs':
+        specifier: 0.2.0-rc.2
+        version: 0.2.0-rc.2(bf0da04cc963a4827c7c5eca38b096b0)
       '@deepseek-ai/dsh-tool-jobs':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(f3945ee8fcbc3a4f4103e8ae4bee1d5e)

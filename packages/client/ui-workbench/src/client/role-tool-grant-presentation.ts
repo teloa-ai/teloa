@@ -1,4 +1,4 @@
-import type {TaskToolArgumentRule} from '@teloa/contract'
+import {isWorkspaceFileRule,type TaskToolArgumentRule} from '@teloa/contract'
 
 export const subagentTaskToolName='subagent_task'
 export type SubagentDelegationLimits={maxDepth:number;maxPerRun:number}
@@ -34,6 +34,7 @@ export function isWebToolRule(rule:TaskToolArgumentRule):boolean{
  */
 export function selectedRoleToolGrantRules(rules:readonly TaskToolArgumentRule[],selected:ReadonlySet<string>):TaskToolArgumentRule[]{
  return rules.flatMap(rule=>{
+  if(isWorkspaceFileRule(rule))return selected.has(roleToolGrantSelectionKey(rule))?[{name:rule.name,allowed:[],workspaceFiles:'default-workspace' as const}]:[]
   if(rule.anyArguments===true)return selected.has(roleToolGrantSelectionKey(rule))?[{name:rule.name,allowed:[],anyArguments:true}]:[]
   const allowed=rule.allowed.filter(args=>selected.has(roleToolGrantSelectionKey(rule,args)))
   return allowed.length?[{name:rule.name,allowed}]:[]

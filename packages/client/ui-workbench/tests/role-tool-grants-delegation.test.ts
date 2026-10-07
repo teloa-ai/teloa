@@ -8,6 +8,14 @@ const delegation={maxDepth:2,maxPerRun:8}
 const rule={name:'subagent_task',allowed:[],anyArguments:true as const}
 const journal={read:()=>null,write:(_value:string)=>{},clear:()=>{}}
 
+test('工作目录文件勾选逐字保存服务端作用域，不改成任意参数或添加 Bash',async()=>{
+ const files=['read','write','edit'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace' as const}))
+ const api=createRoleToolGrantApi(async()=>({roleVersion:3,rules:files}),journal)
+ assert.deepEqual((await api.candidates(roleId)).rules,files)
+ assert.deepEqual(selectedRoleToolGrantRules(files,new Set(files.map(rule=>roleToolGrantSelectionKey(rule)))),files)
+ assert.deepEqual(selectedRoleToolGrantRules(files,new Set()),[])
+})
+
 test('岗位工具候选仅在服务端同时给出整工具授权与限额时才接受任务拆分选项',async()=>{
  const api=createRoleToolGrantApi(async()=>({roleVersion:3,rules:[rule],delegation}),journal)
  const result=await api.candidates(roleId)

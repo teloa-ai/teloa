@@ -88,7 +88,7 @@ export function isSkillCatalog(value:unknown):value is CapabilitySnapshot['skill
 
 export * from './artifact-messages.ts'
 
-export {readTaskToolArgumentRules,taskToolArgumentsAllowed,type TaskToolArgumentRule} from './task-tool-arguments.ts'
+export {readTaskToolArgumentRules,taskToolArgumentsAllowed,isWorkspaceFileRule,workspaceFileToolNames,type TaskToolArgumentRule} from './task-tool-arguments.ts'
 
 export {readScheduleTrigger,nextScheduleOccurrence,scheduleTimezones,type ScheduleTrigger} from './plan-schedule.ts'
 export * from './work-flows.ts'

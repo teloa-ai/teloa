@@ -32,3 +32,19 @@ test('带 anyArguments 的规则经规范化后串比稳定，既有调用方无
  assert.equal(JSON.stringify(readTaskToolArgumentRules(once)),JSON.stringify(once))
  assert.equal(JSON.stringify(once),'[{"name":"subagent_task","allowed":[],"anyArguments":true},{"name":"read_reference","allowed":[{"id":"one","version":"v1"}]}]')
 })
+
+test('工作目录文件授权独立于任意参数授权，限定官方文件工具及参数',()=>{
+ for(const name of ['read','write','edit']){
+  const rule={name,allowed:[],workspaceFiles:'default-workspace' as const}
+  assert.deepEqual(readTaskToolArgumentRules([rule]),[rule])
+  const args=name==='read'?{file_path:'outputs/result.txt',offset:1,limit:20}:name==='write'?{file_path:'outputs/result.txt',content:'真实成果'}:{file_path:'outputs/result.txt',old_string:'真实',new_string:'更新',replace_all:false}
+  assert.equal(taskToolArgumentsAllowed([rule],name,args),true)
+  assert.equal(taskToolArgumentsAllowed([rule],name,{...args,sandbox_permissions:'danger-full-access',justification:'扩大范围'}),false)
+  assert.equal(taskToolArgumentsAllowed([rule],name,{...args,file_path:'../outside.txt'}),false)
+  assert.equal(taskToolArgumentsAllowed([rule],name,{...args,file_path:'.runtime/secret'}),false)
+  assert.throws(()=>readTaskToolArgumentRules([{...rule,anyArguments:true}]))
+  assert.throws(()=>readTaskToolArgumentRules([{...rule,allowed:[{file_path:'a'}]}]))
+ }
+ assert.throws(()=>readTaskToolArgumentRules([{name:'bash',allowed:[],workspaceFiles:'default-workspace'}]))
+ assert.throws(()=>readTaskToolArgumentRules([{name:'read',allowed:[],workspaceFiles:'/forged'}]))
+})
