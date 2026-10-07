@@ -55,6 +55,64 @@ test('官方 Team 和内置 IM 紧邻 Teloa，保留其他 bundle 顺序且重�
  assert.deepEqual(runtime.withTeloaRequiredBundles(next),next)
  assert.deepEqual(runtime.withTeloaRequiredBundles(['base']),['base','@deepseek-ai/dsh-experimental-agent-team-profile','@teloa/bundle','@teloa/im-gateway'])
 })
+
+test('新建和升级 profile 首次默认启用原生语音，保留 provider 配置与其他 metadata',()=>{
+ const voice='@deepseek-ai/dsh-experimental-voice-input-bundle'
+ for(const before of [
+  {dsh:{profile:{bundles:['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}},
+  {dependencies:{'@vendor/stt':'file:/custom/stt'},dsh:{profile:{bundles:['@deepseek-ai/dsh-base','@teloa/bundle','@vendor/stt'],selection:{providerId:'custom',language:'yue'}}},teloa:{other:'keep'},custom:{keep:true}},
+ ]){
+  const snapshot=structuredClone(before),after=runtime.withTeloaProfileDefaults(before)
+  assert.equal(after.dsh.profile.bundles.filter(name=>name===voice).length,1)
+  assert.equal(after.teloa.voiceInputDefaultV1,true)
+  assert.equal(after.teloa.other,before.teloa?.other)
+  assert.deepEqual(after.dependencies,before.dependencies)
+  assert.deepEqual(after.dsh.profile.selection,before.dsh.profile.selection)
+  assert.deepEqual(after.custom,before.custom)
+  assert.deepEqual(before,snapshot)
+ }
+})
+
+test('已启用语音的旧 profile 不重复，迁移后本人停用在重启和准备时保持',()=>{
+ const voice='@deepseek-ai/dsh-experimental-voice-input-bundle'
+ const before={dsh:{profile:{bundles:['@deepseek-ai/dsh-base','@teloa/bundle',voice,'@vendor/other']}}}
+ const first=runtime.withTeloaProfileDefaults(before)
+ assert.equal(first.dsh.profile.bundles.filter(name=>name===voice).length,1)
+ const disabled={...first,dsh:{...first.dsh,profile:{...first.dsh.profile,bundles:first.dsh.profile.bundles.filter(name=>name!==voice)}}}
+ assert.deepEqual(runtime.withTeloaProfileDefaults(disabled),disabled)
+ assert.equal(runtime.withTeloaProfileDefaults(first).dsh.profile.bundles.filter(name=>name===voice).length,1)
+})
+
+test('npm profile 真实初始化和关闭后重启保留语音选择、原生配置及缓存',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-voice-default-'))
+ t.after(()=>rm(root,{recursive:true,force:true}))
+ const {createRequire}=await import('node:module'),{fileURLToPath,pathToFileURL}=await import('node:url'),{dirname}=await import('node:path')
+ const projectRoot=fileURLToPath(new URL('../',import.meta.url)),programRoot=join(root,'program')
+ await mkdir(join(programRoot,'node_modules/@deepseek-ai'),{recursive:true})
+ await writeFile(join(programRoot,'package.json'),'{}')
+ await symlink(join(projectRoot,'packages'),join(programRoot,'packages'))
+ const sdkRoot=dirname(createRequire(join(projectRoot,'packages/harness-dsh/package.json')).resolve('@deepseek-ai/dsh-app-boot/package.json'))
+ await symlink(sdkRoot,join(programRoot,'node_modules/@deepseek-ai/dsh-app-boot'))
+ const layout={programRoot,dshHome:join(root,'dsh'),runtimeRoot:join(root,'data'),workspaceRoot:join(root,'work'),profileName:'teloa'}
+ const profileDir=await runtime.prepareRuntimeProfile(layout)
+ const path=join(profileDir,'package.json'),voice='@deepseek-ai/dsh-experimental-voice-input-bundle'
+ const first=JSON.parse(await readFile(path,'utf8'))
+ assert.equal(first.teloa.voiceInputDefaultV1,true)
+ assert.equal(first.dsh.profile.bundles.filter(name=>name===voice).length,1)
+ const patch=join(profileDir,'cordis.patch.yml'),configuration='- id: speech-to-text\n  config:\n    defaultProvider: custom-stt\n    language: yue\n'
+ await writeFile(patch,configuration)
+ const cache=join(layout.dshHome,'speech-to-text/sensevoice')
+ await mkdir(cache,{recursive:true});await writeFile(join(cache,'cached-model'),'existing cache')
+ // 与官方插件管理器一样只改 bundles，保留顶层迁移标记。
+ const sdk=await import(pathToFileURL(createRequire(join(layout.programRoot,'package.json')).resolve('@deepseek-ai/dsh-app-boot')).href)
+ const disabled=sdk.readProfileManifest('dsh',profileDir)
+ disabled.dsh.profile.bundles=disabled.dsh.profile.bundles.filter(name=>name!==voice)
+ sdk.writeProfileManifest(profileDir,disabled)
+ await runtime.prepareRuntimeProfile(layout)
+ assert.deepEqual(JSON.parse(await readFile(path,'utf8')),disabled)
+ assert.equal(await readFile(patch,'utf8'),configuration)
+ assert.equal(await readFile(join(cache,'cached-model'),'utf8'),'existing cache')
+})
 test('随附 Auto Review 跟进 DSH 升级，手动来源保留；仅当前登记可修复链接',()=>{
  const name='@deepseek-ai/dsh-experimental-auto-review'
  const previous='link:/old-program/node_modules/.pnpm/@deepseek-ai+dsh-experimental-auto-review@0.1.7-rc.1/node_modules/'+name

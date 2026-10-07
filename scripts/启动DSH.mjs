@@ -11,7 +11,7 @@ import { imCredentialFields } from '../packages/contract/src/im-channels.ts'
 // 与安装适配器、装配期复验共用同一份事实来源；这个模块不依赖契约链，启动路径上足够轻。
 import { pendingBundleConflicts, pendingBundleRefusal, readJsonFile, suppressPendingBundles, withProfileLock, writeProfileManifest } from '../packages/harness-dsh/src/pending-plugins.ts'
 import { bundledSourceConflicts, bundledSourceRefusal, bundledSourcesToRegister, migrateBundledExtensions, officialBundledSpecs } from '../packages/harness-dsh/src/bundled-extensions-profile.ts'
-import { bundledModuleConflicts, repairBundledModuleLinks, withOptionalNativeDependencies, optionalNativeBundleSpecs, managedAutoReviewModuleSpec } from './runtime/profile.mjs'
+import { bundledModuleConflicts, repairBundledModuleLinks, withOptionalNativeDependencies, optionalNativeBundleSpecs, managedAutoReviewModuleSpec, withTeloaProfileDefaults } from './runtime/profile.mjs'
 
 const formalPort = 3100
 const formalDshHome = resolve(projectRoot,'.runtime/dsh')
@@ -116,7 +116,7 @@ async function ensureProfile(command,checking) {
   const pendingInBundles=await pendingBundleConflicts(profileDir)
   if(pendingInBundles.length)throw Error(pendingBundleRefusal)
   // 容器（构建期才跑 setup:dsh，profile 在 app-data 卷）与源码升级不会重新登记随附扩展：缺登记或来源不是本程序目录就以官方值补登记，
-  // 不进 bundles。与 npm 路径同一做法：锁内直接改写 profile 依赖，随后由下方原子改链补齐 node_modules 链接，不经包管理器——
+  // 与 npm 路径共用首次语音默认选择；后续停用保留。锁内直接改写清单，随后由下方原子改链补齐 node_modules 链接，不经包管理器——
   // 容器里 profile 是构建期以 root 装的，node 用户运行 pnpm 会撞上 root 的 store，离线时也装不了。
   // 只对已跑过 setup 的 profile 做——首次 --dump-config 生成模板时由 setup:dsh 统一登记。
   // --dump-config 等检查分支不补登记、不迁移：它们的 stderr 被安装准备逐字核对，构建期镜像里也不能留下迁移记录。
@@ -126,7 +126,7 @@ async function ensureProfile(command,checking) {
       await withProfileLock(profileDir,async()=>{
         const missing=await bundledSourcesToRegister(profileDir,projectRoot)
         const manifest=await readJsonFile(profileManifestPath)
-        const next=withOptionalNativeDependencies(manifest,{...optionalNativeBundleSpecs(projectRoot),...missing})
+        const next=withTeloaProfileDefaults(withOptionalNativeDependencies(manifest,{...optionalNativeBundleSpecs(projectRoot),...missing}))
         if(JSON.stringify(next)!==JSON.stringify(manifest))await writeProfileManifest(profileDir,next)
       })
     }catch(error){console.warn('[teloa] 官方扩展补登记未完成，本次按现状启动：'+(error instanceof Error?error.message:String(error)))}

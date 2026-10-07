@@ -6,6 +6,7 @@ import {randomUUID} from 'node:crypto'
 import {spawn} from 'node:child_process'
 
 export const nativeTeamBundle='@deepseek-ai/dsh-experimental-agent-team-profile'
+export const nativeVoiceBundle='@deepseek-ai/dsh-experimental-voice-input-bundle'
 /** 官方完整 Team 与内置 IM 默认加载；Teloa 保留岗位预设和渠道授权。 */
 export function withTeloaRequiredBundles(bundles){
  const result=[...new Set(bundles)].filter(name=>name!==nativeTeamBundle&&name!=='@teloa/im-gateway')
@@ -14,6 +15,16 @@ export function withTeloaRequiredBundles(bundles){
  result.splice(index,0,nativeTeamBundle)
  result.splice(index+2,0,'@teloa/im-gateway')
  return result
+}
+
+/** 原生语音首次装配与旧 profile 升级默认启用；同份清单记录完成，之后保留本人停用选择。 */
+export function withTeloaProfileDefaults(manifest){
+ const metadata=manifest.teloa??{}
+ if(typeof metadata!=='object'||Array.isArray(metadata))throw Error('DSH profile 的 Teloa 默认能力标记格式不正确。')
+ const dsh=manifest.dsh??{},profile=dsh.profile??{}
+ const bundles=withTeloaRequiredBundles(profile.bundles??[])
+ if(metadata.voiceInputDefaultV1!==true&&!bundles.includes(nativeVoiceBundle))bundles.splice(bundles.indexOf('@teloa/im-gateway')+1,0,nativeVoiceBundle)
+ return {...manifest,teloa:{...metadata,voiceInputDefaultV1:true},dsh:{...dsh,profile:{...profile,bundles}}}
 }
 
 /** 只登记官方插件页可发现的 Web 可选组合；SSH 生成器永不进入此目录。 */
@@ -116,11 +127,10 @@ export async function prepareRuntimeProfile(layout){
  await pending.withProfileLock(profileDir,async()=>{
   const manifest=await pending.readJsonFile(join(profileDir,'package.json'))
   const optional=optionalNativeBundleSpecs(layout.programRoot)
-  const next=withOptionalNativeDependencies(manifest,optional)
+  const next=withTeloaProfileDefaults(withOptionalNativeDependencies(manifest,optional))
   if(JSON.stringify(next)!==JSON.stringify(manifest))await pending.writeProfileManifest(profileDir,next)
   await repairBundledModuleLinks(profileDir,{...bundledSpecs,...managedAutoReviewModuleSpec(next,optional)})
  })
- await pending.rewriteProfileBundles(profileDir,withTeloaRequiredBundles)
  await pending.suppressPendingBundles(profileDir)
  if((await pending.pendingBundleConflicts(profileDir)).length)throw Error(pending.pendingBundleRefusal)
  // 依赖已在上面的锁内被 withOptionalNativeDependencies 改写为当前程序目录；迁移失败只告警。

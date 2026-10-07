@@ -5,9 +5,9 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath,pathToFileURL } from 'node:url'
 import { compositionSnapshot, compositionViolations, scheduleCompositionFacts } from '../packages/harness-dsh/src/composition-safety.ts'
 import { projectRoot, verifyDshPackages } from './核对DSH依赖.mjs'
-import {optionalNativeBundleSpecs,withTeloaRequiredBundles} from './runtime/profile.mjs'
+import {optionalNativeBundleSpecs,withTeloaProfileDefaults} from './runtime/profile.mjs'
 // rc.1 保留已有禁用选择；仍兼容市场历史 pending 记录，使用与安装适配器相同的压制函数。
-import { rewriteProfileBundles, suppressPendingBundles } from '../packages/harness-dsh/src/pending-plugins.ts'
+import { readJsonFile, suppressPendingBundles, withProfileLock, writeProfileManifest } from '../packages/harness-dsh/src/pending-plugins.ts'
 
 const dshHome=resolve(process.env.TELOA_DSH_HOME||resolve(projectRoot,'.runtime/dsh'))
 const profileName=process.env.TELOA_DSH_PROFILE||'teloa'
@@ -123,7 +123,10 @@ try {
   const bundles=profile.dsh?.profile?.bundles
   if(!Array.isArray(bundles))throw Error('独立 profile 缺少已知的 bundles 列表。')
   // 与适配器同一把 profile 级互斥与同一套原子写：清单不会被截断成半份。
-  await rewriteProfileBundles(profileDir,withTeloaRequiredBundles)
+  await withProfileLock(profileDir,async()=>{
+    const manifest=await readJsonFile(path),next=withTeloaProfileDefaults(manifest)
+    if(JSON.stringify(next)!==JSON.stringify(manifest))await writeProfileManifest(profileDir,next)
+  })
   const dump=await run([resolve(projectRoot,'scripts/启动DSH.mjs'),'--dump-config'],{capture:true})
   if(dump.stderr.trim())throw Error('DSH 组合配置存在未命中的补丁或诊断：'+dump.stderr.trim())
   verifyConfig(dump.stdout)
