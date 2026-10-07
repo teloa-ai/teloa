@@ -320,6 +320,7 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/node-addon-system-linux-arm64@0.1.2"
   - "@deepseek-ai/node-addon-system-linux-x64@0.1.2"
   - "@deepseek-ai/schemastery@3.18.4"
+  - dsh-context@0.65.0
 overrides:
   "@deepseek-ai/cordis": 4.0.4
   "@deepseek-ai/cordis-plugin-group": 1.0.4

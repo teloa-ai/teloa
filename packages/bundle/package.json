@@ -18,10 +18,11 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-mcp-client": "0.2.0-rc.2",
     "@teloa/client-ui-workbench": "workspace:*",
     "@teloa/harness-dsh": "workspace:*",
     "@teloa/mcp-reference": "workspace:*",
-    "@deepseek-ai/dsh-mcp-client": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.0-rc.2"
+    "dsh-context": "0.65.0"
   }
 }

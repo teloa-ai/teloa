@@ -108,6 +108,14 @@ pnpm licenses list --json          # full graph, used only for the DSH section b
   by that lockfile. `protobufjs` declares a `postinstall` script; it is skipped
   because the install always runs with `--ignore-scripts`.
 
+## Bundled context inspection plugin
+
+Teloa includes `dsh-context@0.65.0` by bowenliang123 under Apache-2.0.
+Source: https://github.com/bowenliang123/dsh-context. The installed package
+retains its `LICENSE`; Teloa uses the plugin's native conversation tab,
+right sidebar and `/context` command. It is a community plugin, separate
+from the official DeepSeek Harness packages listed below.
+
 ## Production dependencies (non-DSH)
 
 204 packages in the installed darwin-arm64 `pnpm licenses list --json --prod`

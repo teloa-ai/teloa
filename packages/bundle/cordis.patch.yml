@@ -1,6 +1,9 @@
 # 替换布局；原生侧栏、会话、工具详情、模型与引用插件全部保留。
 # 分身/同事会话复用原生选模，只隔离其附带的全局默认写入。
 - insert:
+    # 固定随附的上下文观察插件，复用原生会话页签、右栏和 /context 入口。
+    - id: dsh-context
+      name: dsh-context
     - id: teloa-session-model-scope
       name: '@teloa/harness-dsh/session-model-scope'
     - id: teloa-tool-resource-provenance
