@@ -1,5 +1,5 @@
 import {createHash,randomUUID} from 'node:crypto'
-import {access,copyFile,lstat,readFile,readdir,realpath,mkdir,rename,chmod,open,mkdtemp,rm,writeFile} from 'node:fs/promises'
+import {access,copyFile,lstat,readFile,readlink,readdir,realpath,mkdir,rename,chmod,open,mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {constants} from 'node:fs'
 import {join,dirname,relative,isAbsolute,resolve,sep} from 'node:path'
 import {tmpdir} from 'node:os'
@@ -74,7 +74,11 @@ async function assertNoRuns(state:InstallState):Promise<void>{
 /** `$DSH_HOME/.env` 可能含明文密钥，与凭据一样不随备份；备份与恢复输出提示本人自行保存。 */
 export const dshEnvBackupNotice='DSH 目录下的 .env 可能含明文密钥，未包含在备份中；如需保留请自行另存到受保护的位置。'
 export const dshEnvRestoreNotice=(dshHome:string)=>'DSH 目录下的 .env 不随备份恢复；如原安装有需要的设置，请自行放回 '+join(dshHome,'.env')+'（仅本人可读，0600）。'
-export async function copyBackupData(source:string,target:string,releaseRoot:string,skipGenerated=false):Promise<void>{
+/** 调用方须核验旧安装归属及生成来源；默认仍拒绝所有缺失链接。 */
+export interface BackupCopyOptions{
+ allowMissingGeneratedLink?:(input:Readonly<{source:string,path:string,target:string}>)=>boolean|Promise<boolean>
+}
+export async function copyBackupData(source:string,target:string,releaseRoot:string,skipGenerated=false,options:BackupCopyOptions={}):Promise<void>{
  await mkdir(target,{recursive:true,mode:0o700})
  async function visit(from:string,to:string,generated:boolean){
   for(const entry of await readdir(from,{withFileTypes:true})){
@@ -87,7 +91,20 @@ export async function copyBackupData(source:string,target:string,releaseRoot:str
    if(/^\.credentials\./.test(rel)||/^mcp\/credentials(?:\/|$)/.test(rel)||rel==='.env')continue
    if(entry.isSymbolicLink()){
     // DSH 根据当前发行重建这一目录；只允许省略指向当前版本的生成链接。
-    if(skip&&within(await realpath(releaseRoot),await realpath(src)))continue
+    if(skip){
+     let resolved:string|undefined
+     try{resolved=await realpath(src)}catch(error){
+      if((error as NodeJS.ErrnoException).code!=='ENOENT'||!options.allowMissingGeneratedLink)throw error
+      const before=await lstat(src),linkTarget=await readlink(src)
+      if(await options.allowMissingGeneratedLink(Object.freeze({source,path:src,target:linkTarget}))===true){
+       const after=await lstat(src)
+       if(!after.isSymbolicLink()||before.dev!==after.dev||before.ino!==after.ino||before.mtimeMs!==after.mtimeMs||before.ctimeMs!==after.ctimeMs||linkTarget!==await readlink(src))throw Error('生成链接在备份核验期间发生变化，备份已停止。')
+       // 缺失目标若在核验期间重新出现，继续按原发行范围核验。
+       try{resolved=await realpath(src)}catch(next){if((next as NodeJS.ErrnoException).code==='ENOENT')continue;throw next}
+      }
+     }
+     if(resolved&&within(await realpath(releaseRoot),resolved))continue
+    }
     throw Error('数据含不能安全备份的外链；请移除外部链接或另行保存扩展后重试。')
    }
    if(entry.isDirectory()){

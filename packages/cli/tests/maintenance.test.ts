@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtemp,mkdir,writeFile,symlink,readFile} from 'node:fs/promises'
+import {mkdtemp,mkdir,writeFile,symlink,readFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
@@ -52,6 +52,39 @@ test('只省略 DSH 三处生成依赖链接，外部链接仍拒绝',async()=>{
  await api.copyBackupData(source,join(root,'backup'),release,true)
  await symlink('/tmp',join(source,'external'))
  await assert.rejects(api.copyBackupData(source,join(root,'bad'),release,true),/外链/)
+})
+test('缺失的生成依赖仅在调用方明确批准后省略，其他数据保留',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const source=join(root,'dsh'),release=join(root,'removed-release'),path=join(source,'profiles','teloa','node_modules','generated'),target=join(release,'package')
+ await mkdir(join(source,'profiles','teloa','node_modules'),{recursive:true})
+ await symlink(target,path);await writeFile(join(source,'session.jsonl'),'original history')
+ await assert.rejects(api.copyBackupData(source,join(root,'default'),release,true))
+ await assert.rejects(api.copyBackupData(source,join(root,'denied'),release,true,{allowMissingGeneratedLink:()=>false}))
+ const calls:any[]=[]
+ await api.copyBackupData(source,join(root,'approved'),release,true,{allowMissingGeneratedLink:async(input:any)=>{calls.push(input);return true}})
+ assert.deepEqual(calls,[{source,path,target}])
+ assert.equal(await readFile(join(root,'approved','session.jsonl'),'utf8'),'original history')
+})
+test('缺失链接批准不能绕过现存外链、本地扩展或普通数据链接',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-boundary-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ for(const variant of ['live-external','ordinary-link','local-file']){
+  const source=join(root,variant),release=join(root,'absent-release'),generated=join(source,'profiles','teloa','node_modules')
+  await mkdir(generated,{recursive:true})
+  if(variant==='live-external')await symlink(root,join(generated,'custom'))
+  else if(variant==='ordinary-link')await symlink(join(root,'missing'),join(source,'custom'))
+  else await writeFile(join(generated,'custom'),'user data')
+  let calls=0
+  await assert.rejects(api.copyBackupData(source,source+'-out',release,true,{allowMissingGeneratedLink:()=>{calls++;return true}}))
+  assert.equal(calls,0,variant)
+ }
+})
+test('缺失链接批准后被替换时停止备份',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-race-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const source=join(root,'dsh'),path=join(source,'profiles','node_modules','generated')
+ await mkdir(join(source,'profiles','node_modules'),{recursive:true});await symlink(join(root,'missing-a'),path)
+ await assert.rejects(api.copyBackupData(source,join(root,'out'),join(root,'removed-release'),true,{allowMissingGeneratedLink:async()=>{
+  await rm(path);await symlink(join(root,'missing-b'),path);return true
+ }}),/变化/)
 })
 test('恢复之前验证原工作目录，不能用缺失路径或普通文件冒充',async()=>{
  assert.equal(typeof api.assertRestoreWorkspace,'function')
