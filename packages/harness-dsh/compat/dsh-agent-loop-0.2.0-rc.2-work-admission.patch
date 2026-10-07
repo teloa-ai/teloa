@@ -586,7 +586,7 @@
  			}, `agentLoop.resume-load(${id})`);
  			const fused = AbortSignal.any([
  				...options.signal === void 0 ? [] : [options.signal],
-@@ -1937,39 +2218,75 @@
+@@ -1937,40 +2218,76 @@
  				this.ownership.signal
  			]);
  			let handle;
@@ -690,12 +690,13 @@
 +				}
  			}
  		})();
+ 		this.ownership.trackWrapper(published);
 @@ -1981 +2298 @@
 -export { AgentLoop, AgentLoop as default, CONFIGURED_AGENT_IDENTITIES_KEY, DEFAULT_MAX_PARALLEL_TOOL_CALLS, turnBoundaryProjectionDefinition };
 +export { AgentLoop, AgentLoop as default, CONFIGURED_AGENT_IDENTITIES_KEY, DEFAULT_MAX_PARALLEL_TOOL_CALLS, inboxProjectionDefinition, turnBoundaryProjectionDefinition };
 --- a/lib/types/index.d.ts
 +++ b/lib/types/index.d.ts
-@@ -4,12 +4,18 @@
+@@ -4,13 +4,19 @@
   *
   * @module @deepseek-ai/dsh-agent-loop
   */
@@ -715,6 +716,7 @@
 +export { inboxProjectionDefinition } from './inbox.ts';
  /** Host projection of agent turn and step boundaries. */
  export declare const turnBoundaryProjectionDefinition: {
+     key: "turnBoundary";
 @@ -78,6 +84,8 @@
  export declare const CONFIGURED_AGENT_IDENTITIES_KEY = "configuredAgentIdentities";
  /** Agent-loop plugin configuration. */
