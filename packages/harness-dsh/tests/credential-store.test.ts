@@ -155,7 +155,7 @@ test('AI 与会话工具不能调用凭据存储端点：只经本人浏览器�
  // 处理器只在 /teloa 连接处理函数里调用一次，且不进入 endpointSet（dispatchTeloaEndpoint 与 teloaWork.invoke 都以它为前置门槛）
  assert.equal(source.split('credentialStoreHandler(').length-1,1)
  const rpc=source.indexOf("connection.rpc.handle('/teloa'"),call=source.indexOf('credentialStoreHandler('),dispatch=source.indexOf('const dispatchTeloaEndpoint=')
- assert.ok(rpc>0&&call>rpc&&call<source.indexOf('ctx.tools.register',rpc))
+ assert.ok(rpc>0&&call>rpc&&call<source.indexOf('toolRegistrationContext.tools.register',rpc))
  assert.ok(!source.slice(dispatch,rpc).includes('credentialStore'))
  assert.ok(!/const endpointSet=new Set\([^\n]*credentialStore/.test(source))
  // 任何注册模型工具的源文件都不引用凭据存储端点

@@ -159,7 +159,7 @@ test('装配：自授权集在贴回工具之后追加本工具，工具名只�
  assert.equal(selfAuthorizedSource.includes('groupAttachToolName,groupReactToolName]'),true)
  assert.equal(wiring.includes('[...selfAuthorizedToolNames],async(sessionId,signal)=>{'),true)
  assert.equal(wiring.includes(`'${groupReactToolName}'`),false);assert.equal(selfAuthorizedSource.includes(`'${groupReactToolName}'`),false)
- assert.equal(wiring.includes('registerGroupReactTool(ctx,{'),true)
+ assert.equal(wiring.includes('registerGroupReactTool(toolRegistrationContext,{'),true)
 })
 
 test('装配：三个端口各自接线，requestId 由确定性派生算出而不是随机取',()=>{

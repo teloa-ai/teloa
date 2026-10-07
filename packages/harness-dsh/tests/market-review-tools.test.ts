@@ -240,10 +240,10 @@ test('确认卡显示将公开的全文（不截断）并注明总字数、控�
 
 test('index.ts 注册评价工具、接到评价端点并共用主干贴密钥闸的已存值来源',async()=>{
  const source=await readFile(new URL('../src/index.ts',import.meta.url),'utf8')
- assert.match(source,/registerMarketReviewTools\(ctx,\{[\s\S]*?reviews:\(endpoint,payload\)=>marketReviewsHandler\(endpoint,payload\)/)
- assert.match(source,/registerMarketReviewTools\(ctx,\{[\s\S]*?checkSecrets:texts=>checkPromptSecrets\(texts,storedSecrets\)/)
+ assert.match(source,/registerMarketReviewTools\(toolRegistrationContext,\{[\s\S]*?reviews:\(endpoint,payload\)=>marketReviewsHandler\(endpoint,payload\)/)
+ assert.match(source,/registerMarketReviewTools\(toolRegistrationContext,\{[\s\S]*?checkSecrets:texts=>checkPromptSecrets\(texts,storedSecrets\)/)
  // IM 会话登记来自 teloaWork.imSessions（与 teloa_model_prepare 同源）
- assert.match(source,/registerMarketReviewTools\(ctx,\{[\s\S]*?isImSession:sessionId=>\(ctx\.get\('teloaWork'\) as TeloaWorkService\|undefined\)\?\.imSessions\.has\(sessionId\)\?\?false/)
+ assert.match(source,/registerMarketReviewTools\(toolRegistrationContext,\{[\s\S]*?isImSession:sessionId=>\(ctx\.get\('teloaWork'\) as TeloaWorkService\|undefined\)\?\.imSessions\.has\(sessionId\)\?\?false/)
  assert.match(source,/const storedSecrets=storedSecretSource\(\(\)=>ctx\.credentials,/)
  assert.match(source,/groupMessageSecretGate\(storedSecrets\)/)
 })

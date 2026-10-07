@@ -173,7 +173,7 @@ test('装配：自授权集在既有两族之后追加本工具，顺序与既�
  assert.equal(wiring.includes('[...selfAuthorizedToolNames],async(sessionId,signal)=>{'),true)
  // 工具名只以常量进入装配，不写字面量：另起一份清单绕过登记闸会红。
  assert.equal(wiring.includes(`'${groupAttachToolName}'`),false);assert.equal(selfAuthorizedSource.includes(`'${groupAttachToolName}'`),false)
- assert.equal(wiring.includes('registerGroupAttachTool(ctx,{context:'),true)
+ assert.equal(wiring.includes('registerGroupAttachTool(toolRegistrationContext,{context:'),true)
 })
 
 test('装配：运行上下文的 groupContext 端口绑上附件字节端口（T7 评审 HIGH）',()=>{

@@ -184,7 +184,7 @@ test('正式宿主把每日日志服务、两个工具与 Auto Dream 端口都�
  // 两个小结工具与岗位记忆候选必须在自授权集（已抽成常量模块）的最前两位；后面可以追加别的自授权工具（群附件一期加了 teloa_group_attach）。
  assert.match(selfAuthorized,/\[roleMemoryProposalToolName,\.\.\.roleDailyDigestToolNames[,\]]/)
  assert.match(source,/registerTaskToolGuard\(ctx,readTaskToolPolicy,[\s\S]*?\[\.\.\.selfAuthorizedToolNames\],async/)
- assert.match(source,/registerRoleDailyDigestTools\(ctx,\{/)
+ assert.match(source,/registerRoleDailyDigestTools\(toolRegistrationContext,\{/)
  // 同事在岗自动带一条 Auto Dream 系统计划：两个岗位生命周期入口都必须带上计划端口。
  assert.match(source,/new RoleLifecycleService\(pool,identity,\{plans\}\)/)
  assert.match(source,/new RoleService\(pool,identity,\{plans\}\)/)

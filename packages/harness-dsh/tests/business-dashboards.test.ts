@@ -123,6 +123,7 @@ test('宿主接线：端点进 RPC 分发；执行器专用池以只读角色口
  assert.match(source,/ctx\.effect\(\(\)=>\(\)=>\{void businessSqlPool\.end\(\)/)
  assert.match(source,/new BusinessSqlExecutor\(businessSqlPool,/)
  assert.match(source,/new BusinessDefinitionPreviewService\(pool,identity,local,definitions,ledger,\{widgets,resolveSource:businessSyncSources\}\)/)
- assert.match(source,/registerBusinessResultTools\(ctx,/)
+ assert.match(source,/const toolRegistrationContext=toolResourceProvenance\.wrapContext\(ctx,\{kind:'plugin',providerId:'@teloa\/harness-dsh',name:'Teloa'\}\)/)
+ assert.match(source,/registerBusinessResultTools\(toolRegistrationContext,/)
  assert.doesNotMatch(source,/business-sql-reader\.json'[^\n]*logger/)
 })

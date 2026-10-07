@@ -293,7 +293,7 @@ test('index.ts 接线：市场评价端点只在本人浏览器 /teloa 连接上
  const line='if((marketReviewEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await marketReviewsHandler(endpoint,payload)}'
  assert.equal(source.split(line).length-1,1)
  const rpc=source.indexOf("connection.rpc.handle('/teloa'"),call=source.indexOf(line),dispatch=source.indexOf('const dispatchTeloaEndpoint=')
- assert.ok(rpc>0&&call>rpc&&call<source.indexOf('ctx.tools.register',rpc))
+ assert.ok(rpc>0&&call>rpc&&call<source.indexOf('toolRegistrationContext.tools.register',rpc))
  // 在 endpointSet 判定之前分发，与凭据存储端点同一位置
  assert.ok(call<source.indexOf('if(!endpointSet.has(endpoint))',rpc))
  assert.ok(!source.slice(dispatch,rpc).includes('marketReview'))
