@@ -5,7 +5,7 @@ import {registerHooks} from 'node:module'
 import ts from 'typescript'
 import {createElement,Fragment} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
-import {applicationPresentation} from '../src/client/application-presentation.ts'
+import {applicationPresentation,type WorkCapability} from '../src/client/application-presentation.ts'
 
 // 本批不构建固定核心：直接在内存转译实际 UI 源码，不读取旧的 ui-workbench/lib。
 const sourceRoot=new URL('../src/',import.meta.url).href
@@ -67,7 +67,7 @@ test('高级表单原生 disabled 边界保留原内容，取消在边界外可�
   assert.match(html,/value="已有工作组"/);assert.match(html,/disabled=""/)
   assert.match(button(html,zh('collaboration.form.saveSettings')),/disabled/)
   assert.doesNotMatch(button(html,zh('collaboration.form.cancel')),/disabled/)
-  const fields=render(Fragment,{children:[createElement(CapabilityFields,{capability:'groups'},createElement('input',{value:'保留草稿',readOnly:true})),createElement('button',{type:'button'},'取消')]})
+  const fields=render(Fragment,{children:[createElement(CapabilityFields,{capability:'groups',children:createElement('input',{value:'保留草稿',readOnly:true})}),createElement('button',{type:'button'},'取消')]})
   assert.match(fields,/<fieldset[^>]*disabled/);assert.match(fields,/保留草稿/);assert.match(fields,/<\/fieldset><button type="button">取消/)
  }finally{close()}
  const html=render(SavedGroupForm,groupProps);assert.doesNotMatch(button(html,zh('collaboration.form.saveSettings')),/disabled/)
@@ -95,7 +95,7 @@ test('群编辑中实时到期保留未保存输入，旧提交回调不会再�
  let push!:(value:unknown)=>void,saved=0,cancelled=0
  const close=await applicationPresentation.configure({presentation:async()=>identity,openAccount:async()=>{},capabilities:async()=>rights(true),subscribeCapabilities:listener=>{push=listener;return noop}})
  try{
-  const mounted=mount('SavedCollaborationPage.tsx',{'./CapabilityNotice.js':{useApplicationCapability:capability=>applicationPresentation.can(capability),CapabilityNotice,CapabilityFields},'./application-presentation.js':{applicationPresentation},'./business-scope-context.js':{useBusinessScopes:()=>({general:'通用'})}})
+  const mounted=mount('SavedCollaborationPage.tsx',{'./CapabilityNotice.js':{useApplicationCapability:(capability:WorkCapability)=>applicationPresentation.can(capability),CapabilityNotice,CapabilityFields},'./application-presentation.js':{applicationPresentation},'./business-scope-context.js':{useBusinessScopes:()=>({general:'通用'})}})
   const props={...groupProps,save:()=>{saved++},close:()=>{cancelled++}}
   let tree=mounted.render('SavedGroupForm',props)
   const name=nodes(tree).find(node=>node.type==='input'&&node.props.maxLength===80)!

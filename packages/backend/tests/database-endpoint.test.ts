@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {ResourceDatabaseEndpointPolicy} from '../src/capabilities/database-endpoint.ts'
+import {ResourceDatabaseEndpointPolicy,type ResourceDatabaseEndpoint} from '../src/capabilities/database-endpoint.ts'
 
-const endpoint={hostname:'tenant-db.example',port:5432,database:'tenant_a',username:'tenant_a',tls:{ca:'trusted-ca'}} as const
+const endpoint:ResourceDatabaseEndpoint={hostname:'tenant-db.example',port:5432,database:'tenant_a',username:'tenant_a',tls:{ca:'trusted-ca'}}
 test('未绑定宿主保留原连接策略；固定目标强制完整 TLS 且不能换绑',()=>{
  const policy=new ResourceDatabaseEndpointPolicy()
  assert.equal(policy.connectionOptions('postgresql://a:b@localhost/teloa'),undefined)

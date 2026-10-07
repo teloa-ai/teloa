@@ -25,8 +25,9 @@ after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,for
 
 test('十语言真实关于页、侧栏与版本标签统一显示社区版；三种宿主各自只高亮当前版本',async t=>{
  const page=await browser.newPage(),errors:string[]=[],requests:string[]=[]
+ let checksPassed=false
  page.setDefaultTimeout(6000);page.on('pageerror',(error:Error)=>errors.push(error.message));page.on('console',(message:any)=>{if(message.type()==='error')errors.push(message.text().slice(0,1000))})
- t.after(async()=>{if(t.passed===false)t.diagnostic(await page.locator('body').innerText());await page.close();assert.deepEqual(errors,[]);assert.deepEqual(requests,[])})
+ t.after(async()=>{if(!checksPassed)t.diagnostic(await page.locator('body').innerText());await page.close();assert.deepEqual(errors,[]);assert.deepEqual(requests,[])})
  await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
  // 使用可信本机来源，保留反馈表单依赖的真实 crypto.randomUUID；页面仅由夹具响应，无网络请求。
  const fixtureURL='http://127.0.0.1/teloa-community-version-fixture'
@@ -34,7 +35,7 @@ test('十语言真实关于页、侧栏与版本标签统一显示社区版；�
  await page.goto(fixtureURL);await page.addScriptTag({content:script})
  for(const locale of ['zh-CN','zh-Hant','en','ja','ko','vi','es','fr','de','pt']){
   const label=locale==='zh-CN'?'社区版':locale==='zh-Hant'?'社區版':'Community'
-  const snapshot=await page.evaluate(locale=>(window as any).versionFixture.mount(locale,'Free'),locale)
+  const snapshot=await page.evaluate((locale:string)=>(window as any).versionFixture.mount(locale,'Free'),locale)
   assert.equal(snapshot.product,'Free','展示改名保留兼容协议值');assert.equal(snapshot.account,null)
   await page.locator('#brand [class*="brandTier"]').filter({hasText:label}).waitFor()
   assert.equal(await page.locator('#edition').textContent(),label,locale)
@@ -44,7 +45,7 @@ test('十语言真实关于页、侧栏与版本标签统一显示社区版；�
   assert.equal(await page.locator('img[alt="Teloa"]').count(),2,'产品始终是 Teloa')
  }
  for(const product of ['Pro','Enterprise']){
-  await page.evaluate(product=>(window as any).versionFixture.mount('zh-CN',product),product)
+  await page.evaluate((product:string)=>(window as any).versionFixture.mount('zh-CN',product),product)
   await page.locator('#brand [class*="brandTier"]').filter({hasText:product}).waitFor()
   assert.deepEqual(await page.locator('#about article > strong').allTextContents(),['社区版','Pro','Enterprise'])
   assert.equal(await page.locator('#about article[class*="planCardCurrent"] > strong').textContent(),product)
@@ -57,4 +58,5 @@ test('十语言真实关于页、侧栏与版本标签统一显示社区版；�
   assert.match(text,/所有版本均需自备模型 API 密钥，模型费用另计/)
   assert.equal(await page.locator('#about article button').count(),0,'版本说明不虚构购买入口')
  }
+ checksPassed=true
 })

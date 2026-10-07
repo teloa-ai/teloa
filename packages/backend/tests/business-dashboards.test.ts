@@ -203,9 +203,9 @@ test('定时刷新持运行锁至提交：暂停完成后不会再开始新计�
   assert.equal(paused,false)
  }finally{release();await finished}
  const [refreshed,pauseResult]=await finished
+ if(refreshed!.status!=='fulfilled')throw refreshed!.reason
  assert.equal(refreshed!.status,'fulfilled')
  assert.equal(pauseResult!.status,'fulfilled')
- if(refreshed!.status!=='fulfilled')throw refreshed!.reason
  const page=refreshed!.value
  assert.equal(paused,true)
  const calls=f.executor.calls

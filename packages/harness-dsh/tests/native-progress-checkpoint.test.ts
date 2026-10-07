@@ -24,7 +24,7 @@ test('本人取消后的真实turn-end仍用所属writer持久收尾，不能漏
 })
 async function fixture(t:TestContext,progress?:NativeProgressCheckpoint,checkpoint:()=>Promise<void>=async()=>{},durable=true){
  const root=await mkdtemp('/private/tmp/teloa-progress-checkpoint-');t.after(()=>rm(root,{recursive:true,force:true}))
- const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,progress,checkpoint:durable?checkpoint:undefined})
+ const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,...progress===undefined?{}:{progress},...durable?{checkpoint}:{}})
  return {...f,root,async cold(){
   const cold=await nativeProviderKernel(t)
   await cold.ctx.plugin(cold.persistencePackage.default,{root,compression:'none'})
@@ -42,7 +42,7 @@ test('实际writer完整推进领取、模型、步骤与轮次快照，最后�
  const f=await fixture(t,async input=>{input.assertCurrent();seen.push(input)})
  f.adapter.scripts.push(textAnswer);const message=await f.send('progress-completed');await f.agent.whenIdle()
  assert.deepEqual(seen.map(input=>input.phase),['claimed','model','step-end','turn-end'])
- assert.equal(seen[0]!.snapshot.events.some(event=>event.type==='agent/inbox/spliced'&&event.data.removedCount>0),true)
+ assert.equal(seen[0]!.snapshot.events.some(event=>event.type==='agent/inbox/spliced'&&(event.data.removedCount??0)>0),true)
  assert.equal(seen[1]!.snapshot.events.some(event=>event.type==='user/message'&&event.data.id===message.id),true)
  assert.deepEqual(seen.at(-1)!.snapshot.events,f.agent.session.snapshotEvents())
  for(const input of seen){
@@ -64,9 +64,10 @@ test('模型前真实持久确认等待维持零模型，到期后原工作继�
 test('领取后持久确认拒绝即停止模型，已提交的Inbox领取不伪装回滚',options,async t=>{
  const f=await fixture(t,async()=>{throw Error('持久推进不可用')})
  f.adapter.scripts.push(textAnswer);await f.send('progress-claimed-failure');await f.agent.whenIdle()
- assert.equal(f.adapter.requests.length,0);assert.equal(f.counters.tools,0);assert.equal(f.agent.inbox.hasPending,false)
+ assert.equal(f.adapter.requests.length,0);assert.equal(f.counters.tools,0)
+ assert.deepEqual(f.agent.inbox.nextTurn,[]);assert.deepEqual(f.agent.inbox.nextStep,[])
  const stored=await f.cold()
- assert.equal(stored.events.some(event=>event.type==='agent/inbox/spliced'&&event.data.removedCount>0),true)
+ assert.equal(stored.events.some(event=>event.type==='agent/inbox/spliced'&&(event.data.removedCount??0)>0),true)
  assert.equal(stored.events.some(event=>event.type==='assistant/message'),false)
 })
 
@@ -95,7 +96,7 @@ test('确认拒绝后的真实宿主卸载保留磁盘待办，独立新图可�
  await f.ctx.fiber.dispose()
  const cold=await f.cold()
  assert.deepEqual(cold.inbox['next-turn'].map(row=>row.id),[message.id])
- assert.equal(cold.events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.removedCount>0).length,0)
+ assert.equal(cold.events.filter(event=>event.type==='agent/inbox/spliced'&&(event.data.removedCount??0)>0).length,0)
  assert.equal(f.adapter.requests.length,0)
 })
 

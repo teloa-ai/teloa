@@ -95,7 +95,7 @@ test('等待时追加的新next-step输入保留到下一轮独立持久确认�
  gate.release();await f.agent.whenIdle()
  assert.equal(seen.length,2);assert.deepEqual(seen[1]!.messages,[later])
  assert.equal(seen[1]!.snapshot.events.some(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.some(message=>message.id===later.id)),true)
- assert.equal(f.adapter.requests.length,2);assert.equal(f.agent.inbox.hasPending,false)
+ assert.equal(f.adapter.requests.length,2);assert.equal(f.agent.inbox.nextTurn.length,0);assert.equal(f.agent.inbox.nextStep.length,0)
 })
 
 test('没有实际持久writer时拒绝领取，不调用持久确认或模型',options,async t=>{
@@ -157,7 +157,7 @@ test('公开claimed/pre-step事件不能执行私有持久确认策略',options,
  const message=createUserMessage({source:{kind:'user'},content:[]})
  f.ctx.emit('agent/inbox/claimed',{agent:f.agent,message,turn:42})
  await f.ctx.waterfall('agent/pre-step',{agent:f.agent,messages:[message],turn:42,step:1,signal},()=>Promise.resolve({kind:'enter' as const,messages:[message]}))
- assert.equal(attempts,0);assert.equal(f.adapter.requests.length,0);assert.equal(f.agent.inbox.hasPending,false)
+ assert.equal(attempts,0);assert.equal(f.adapter.requests.length,0);assert.equal(f.agent.inbox.nextTurn.length,0);assert.equal(f.agent.inbox.nextStep.length,0)
 })
 
 test('SDK 最后同步lease断言重入改变Inbox后，仍核对实际批次并拒绝领取',options,async t=>{

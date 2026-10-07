@@ -4,9 +4,10 @@ import {HomeNativeController,createHomeContextApi} from '../src/client/home-nati
 import {prepareInitialNativeSession,createInitialNativeSessionCoordinator} from '../src/client/initial-native-session.ts'
 
 const memory=()=>{const rows=new Map<string,string>();return {getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value)},removeItem:(key:string)=>{rows.delete(key)}}}
+const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(finish=>{resolve=finish});return {promise,resolve}}
 
 test('显式初始 provider 在非首页也启动，首页等待同一真实请求且取消不能认领',async()=>{
- const ready=Promise.withResolvers<void>(),opened=Promise.withResolvers<void>(),lifetime=new AbortController(),calls:string[]=[],binding={sessionId:'official'},storage=memory()
+ const ready=deferred(),opened=deferred(),lifetime=new AbortController(),calls:string[]=[],binding={sessionId:'official'},storage=memory()
  const sessions={binding:()=>binding,using:async(_id:string,_options:unknown,operation:any)=>operation({ready:ready.promise,binding})}
  const ports={current:{getSnapshot:()=> 'official' as any,subscribe:()=>()=>{}},sessions:()=>sessions as any,isBlank:async()=>true}
  const initial=createInitialNativeSessionCoordinator(async()=>ports,lifetime.signal)
@@ -54,7 +55,7 @@ test('初始等待取消或核空期间选择/绑定变化不能认领与改写�
 })
 
 test('官方引用 ready 返回前的较新选择不能被初始原稿接续认领',async()=>{
- const ready=Promise.withResolvers<void>(),entered=Promise.withResolvers<void>(),storage=memory(),calls:string[]=[],binding={sessionId:'A'}
+ const ready=deferred(),entered=deferred(),storage=memory(),calls:string[]=[],binding={sessionId:'A'}
  let current:any='A'
  const sessions={binding:()=>binding,using:async(id:string,_options:unknown,operation:any)=>{calls.push(id);entered.resolve();return operation({ready:ready.promise,binding})}}
  const preparing=prepareInitialNativeSession({current:{getSnapshot:()=>current,subscribe:()=>()=>{}},sessions:()=>sessions as any,isBlank:async()=>true},new AbortController().signal,async()=>undefined)

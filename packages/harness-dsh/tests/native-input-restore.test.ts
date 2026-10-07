@@ -24,7 +24,7 @@ async function fixture(t:TestContext,restore?:NativeInputRestore){
  const f=await nativeProviderKernel(t),root=await mkdtemp(join(tmpdir(),'teloa-input-restore-'))
  t.after(()=>rm(root,{recursive:true,force:true}))
  await f.ctx.plugin(f.persistencePackage.default,{root,compression:'none'})
- const provider=f.ctx.plugin(TeloaNativeInput,{restore});await provider
+ const provider=f.ctx.plugin(TeloaNativeInput,restore===undefined?{}:{restore});await provider
  const adapter=new HotAdapter();f.ctx.llm.registerAdapter([route.provider],adapter)
  await f.ctx.plugin(f.loopPackage.AgentLoop,{agents:[]})
  const id=SessionId('cold-input'),messages=[1,2].map(index=>createUserMessage({source:{kind:'user',rpcId:'cold-'+index},content:[{type:'text',text:'pending root '+index}]}))
@@ -39,7 +39,7 @@ async function fixture(t:TestContext,restore?:NativeInputRestore){
   return cold
  }
  const bytes=async()=>{const files=(await readdir(root,{recursive:true})).filter(file=>file.endsWith('.jsonl')).sort();return Promise.all(files.map(async file=>[file,await readFile(join(root,file))]))}
- const resume=(signal?:AbortSignal)=>f.ctx.agents.resume({resumeSessionId:id,agentOptions:route,signal})
+ const resume=(signal?:AbortSignal)=>f.ctx.agents.resume({resumeSessionId:id,agentOptions:route,...signal===undefined?{}:{signal}})
  const reopened=async()=>{const writer=await f.ctx.sessionPersistence.open(id,'write');await writer.close()}
  return {...f,root,provider,adapter,id,messages,seed,bytes,resume,reopened}
 }
@@ -64,7 +64,7 @@ test('无恢复策略：公开 roots JSON 和创建通知不授予 pending 许�
 
 test('共享候选数据不能充当部署恢复租约；真实 JSONL 首写前拒绝且零模型',options,async t=>{
  let calls=0
- const f=await fixture(t,(input=>{
+ const f=await fixture(t,((input:NativeInputRestoreInput)=>{
   calls++
   const candidate=nativeInputRecoveryCandidate({snapshot:input.snapshot,inbox:{'next-turn':input.messages,'next-step':[]}})
   assert.ok(candidate)

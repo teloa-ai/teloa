@@ -347,7 +347,8 @@ for(const wake of [false,true])test(`公开恢复lease wakePending=${wake}：原
 
 for(const invalid of ['getter',false,1,'true'] as const)test(`公开恢复wakePending拒绝${String(invalid)}，首写前零模型`,options,async t=>{
  const f=await fixture(t),cold=await f.seed(3,true,true),{loop}=await f.mount()
- loop.installRestoreAdmission((()=>invalid==='getter'?Object.freeze({get wakePending(){return true},assertCurrent(){return undefined}}):Object.freeze({wakePending:invalid,assertCurrent(){return undefined}})) as Policy)
+ const invalidPolicy=()=>invalid==='getter'?Object.freeze({get wakePending(){return true},assertCurrent(){return undefined}}):Object.freeze({wakePending:invalid,assertCurrent(){return undefined}})
+ Reflect.apply(loop.installRestoreAdmission,loop,[invalidPolicy])
  await assert.rejects(f.ctx.agents.resume({resumeSessionId:cold.id,agentOptions:route}),/restore admission/);await f.rejected(cold)
 })
 

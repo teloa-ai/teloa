@@ -9,7 +9,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url'
 import {createServer} from 'node:http'
 import {tmpdir} from 'node:os'
 import ts from 'typescript'
-import {Context} from '@deepseek-ai/cordis'
+import {Context, type Plugin} from '@deepseek-ai/cordis'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionStore, SessionId} from '@deepseek-ai/dsh-session'
@@ -21,7 +21,7 @@ import {patchedNativePackage} from './fixtures/native-patched-package.ts'
 
 type Launch = {mode:'launch';headless:boolean;executablePath?:string;chromiumSandbox?:boolean;toolCallTimeoutMs?:number}
 type Attach = {mode:'attach';endpoint:string;toolCallTimeoutMs?:number}
-type Provider = {Config:(value:unknown)=>Launch|Attach;apply:(ctx:Context,config:Launch|Attach)=>void;inject:string[];name:string;chromiumSandboxVersion:1}
+type Provider = {Config:((value:unknown)=>Launch|Attach)&NonNullable<Plugin.Object<Launch|Attach>['Config']>;apply:(ctx:Context,config:Launch|Attach)=>void;inject:string[];name:string;chromiumSandboxVersion:1}
 const anchor=fileURLToPath(new URL('../../native-browser/package.json',import.meta.url))
 const originalProvider=createRequire(anchor).resolve('@deepseek-ai/dsh-experimental-browser-use-playwright-mcp/package.json')
 const basename=(kind:string)=>'dsh-experimental-browser-use-'+kind+'-0.2.0-rc.2-chromium-sandbox'

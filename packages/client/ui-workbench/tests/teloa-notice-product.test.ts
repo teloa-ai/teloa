@@ -34,7 +34,7 @@ async function mount(t:any){
 test('Pro 与 Enterprise 跳过社区版预览声明并完成引导，不读取或写入社区版确认',async t=>{
  const page=await mount(t)
  for(const product of ['Pro','Enterprise']){
-  await page.evaluate(product=>(window as any).noticeFixture.mount(product),product)
+  await page.evaluate((product:string)=>(window as any).noticeFixture.mount(product),product)
   await page.waitForFunction(()=>(window as any).noticeFixture.completed===1)
   assert.equal(await page.getByRole('dialog').count(),0)
   assert.deepEqual(await page.evaluate(()=>({reads:(window as any).noticeFixture.reads,writes:(window as any).noticeFixture.writes})),{reads:[],writes:[]})

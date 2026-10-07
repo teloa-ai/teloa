@@ -27,10 +27,12 @@ async function fixture(t: TestContext, compression: 'none' | 'zstd' = 'none') {
  await ctx.plugin(SessionProjectionRegistry)
  await ctx.plugin(JsonlSessionPersistence, {root, compression})
  const dispose = ctx.sessionProjections.register(pkg.namespace.inboxProjectionDefinition)
+ const sessions = ctx.get('sessions')
+ assert.ok(sessions instanceof SessionStore)
  // 维护上下文只有官方存储和投影；不构造 Loop/Agent，也没有模型或工具服务。
  for (const key of ['agentLoop', 'agents', 'llm', 'tools', 'sessionController']) assert.equal(ctx.get(key), undefined)
- assert.equal(ctx.sessions.list().length, 0)
- return {ctx, root, pkg, dispose}
+ assert.equal(sessions.list().length, 0)
+ return {ctx, root, pkg, dispose, sessions}
 }
 
 for (const compression of ['none', 'zstd'] as const) {
@@ -76,7 +78,7 @@ for (const compression of ['none', 'zstd'] as const) {
    assert.deepEqual(final.snapshot.values.inbox, {'next-turn': [], 'next-step': []})
    assert.equal(final.snapshot.asOfSeq, prefix.length + suffix.length - 1)
    assert.deepEqual(foldConsumedWork(stored.events), {droppedUnrun: true})
-   assert.equal(f.ctx.sessions.list().length, 0)
+   assert.equal(f.sessions.list().length, 0)
    for (const key of ['agentLoop', 'agents', 'llm', 'tools', 'sessionController']) assert.equal(f.ctx.get(key), undefined)
   } finally {await writer.close()}
   // 编码由官方 JSONL 后端处理；当前格式追加不改原始文件前缀，包括 zstd 帧。
