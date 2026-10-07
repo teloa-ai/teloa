@@ -1,4 +1,4 @@
-name: Free source CI
+name: Community source CI
 on:
   push:
     branches: [main]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: free-${{ github.ref }}
+  group: community-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   check:
