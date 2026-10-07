@@ -34,6 +34,10 @@ export type CompositionSnapshot={
  /** 宿主平面的两个工具入口也必须关闭。 */
  toolWorkflowDisabled?:boolean
  toolRalphDisabled?:boolean
+ /** 原生提醒只保留唯一官方服务；客户端入口和写工具在整棵生效树中关闭。 */
+ scheduleServicePinned?:boolean
+ scheduleUiDisabled?:boolean
+ scheduleToolsDisabled?:boolean
  /** 官方注册器和五份核对过的声明均来自生效组合，无目录扫描或 roots 配置。 */
  agentPresetDefault?:unknown
  agentPresetRegistryPinned?:boolean
@@ -98,7 +102,7 @@ const pinLabels:Record<CompositionPin,string>={
  telemetry:'会话遥测与日志上传',
  sandbox:'沙箱默认模式',
  approval:'审批征询默认值',
- tools:'工具呈现模式与 workflow / ralph 工具入口',
+ tools:'工具呈现模式与 workflow / ralph / 原生提醒入口',
  agentPresets:'Agent 预设声明与默认运行配置',
  permission:'会话权限预设表',
  patchReload:'补丁热加载禁用',
@@ -114,10 +118,10 @@ export const teloaAgentPresetRowId='teloa-agent-preset'
 const presetPluginName='@deepseek-ai/dsh-agent-preset'
 const presetRegistryName='@deepseek-ai/dsh-agent-preset-registry'
 export const shippedPresetBodyDigests={
- standard:'95f1a355c6fe6cb689c53382b3198713bbc10e109defcd6e998cf504e4b0c9ae',
- ptc:'f5701cd2cbd4740fe1c2995414d6ec1ec8b8eab77f265180230583027d431915',
+ standard:'29951c164fc127b410a25eb5d078f72fae6e4540ca16fba052cf6786e725feb1',
+ ptc:'eb74637994a1df84ca326d0d89ff8de38028a2c118c1e8365253082fa6f2b773',
  minimal:'46f29c9251390c8c34315e49259ea27eb1b973e039dba69f9627447a41fbf4cb',
- cordis:'f143d3b4be7e60de59d9b24cf8685be7628bf000e002c7faac2115b0ab293879',
+ cordis:'47f346944a0d617360e87a615717a98d5177c58c87ccf3dbff20fb40c4ed5270',
 } as const
 const shippedPresetRowIds=Object.keys(shippedPresetBodyDigests).map(id=>'preset-'+id)
 const allowedPresetIds=[teloaAgentPresetId,...Object.keys(shippedPresetBodyDigests)]
@@ -177,7 +181,7 @@ export function compositionViolations(snapshot:CompositionSnapshot):CompositionP
  if(snapshot.telemetryMode!=='DISABLED'||snapshot.sessionLogUploadDisabled!==true||snapshot.productAnalyticsPinned!==true)violations.push('telemetry')
  if(snapshot.sandboxMode!=='workspace-write'||!workspaceRootPinned(snapshot.sandboxWorkspaceRoot)||snapshot.sandboxBackendMounted!==true)violations.push('sandbox')
  if(snapshot.approvalPolicy!=='ask')violations.push('approval')
- if(snapshot.toolsMode!=='native'||snapshot.toolWorkflowDisabled!==true||snapshot.toolRalphDisabled!==true||snapshot.presetToolPresentationMode!=='native'||snapshot.presetToolWorkflowDisabled!==false||snapshot.presetToolRalphDisabled!==false||snapshot.presetBodyDigestMatches!==true)violations.push('tools')
+ if(snapshot.toolsMode!=='native'||snapshot.toolWorkflowDisabled!==true||snapshot.toolRalphDisabled!==true||snapshot.scheduleServicePinned!==true||snapshot.scheduleUiDisabled!==true||snapshot.scheduleToolsDisabled!==true||snapshot.presetToolPresentationMode!=='native'||snapshot.presetToolWorkflowDisabled!==false||snapshot.presetToolRalphDisabled!==false||snapshot.presetBodyDigestMatches!==true)violations.push('tools')
  if(snapshot.agentPresetDefault!==teloaAgentPresetId||snapshot.agentPresetRegistryPinned!==true||snapshot.agentPresetDeclarationPinned!==true)violations.push('agentPresets')
  if(!presetsSafe(snapshot.permissionPresets))violations.push('permission')
  if(snapshot.hmrDisabled!==true)violations.push('patchReload')
@@ -202,6 +206,35 @@ export function pendingPluginsExcluded(rows:readonly CompositionRow[],bundles:re
  const names=new Set(pending)
  if(bundles.some(name=>names.has(name)))return false
  return !rows.some(row=>typeof row.name==='string'&&names.has(row.name))
+}
+
+export type ScheduleCompositionFacts={scheduleServicePinned:boolean;scheduleUiDisabled:boolean;scheduleToolsDisabled:boolean}
+
+/** 准备阶段与装配阶段共用：别名、预设正文和 group 子树不能重新挂载原生自动化入口。 */
+export function scheduleCompositionFacts(rows:readonly unknown[]):ScheduleCompositionFacts{
+ const services=rows.filter(row=>record(row)&&row.id==='schedule'),uis=rows.filter(row=>record(row)&&row.id==='ui-schedule')
+ const service=services.length===1&&record(services[0])?services[0]:undefined
+ const ui=uis.length===1&&record(uis[0])?uis[0]:undefined
+ const facts={
+  scheduleServicePinned:service!==undefined&&service.name==='@deepseek-ai/dsh-schedule'&&!service.group&&(service.disabled===undefined||service.disabled===false),
+  scheduleUiDisabled:ui!==undefined&&ui.name==='@deepseek-ai/dsh-client-ui-schedule'&&!ui.group&&ui.disabled===true,
+  scheduleToolsDisabled:true,
+ }
+ const visit=(nodes:readonly unknown[],depth:number):void=>{
+  if(depth>16){facts.scheduleServicePinned=false;facts.scheduleUiDisabled=false;facts.scheduleToolsDisabled=false;return}
+  for(const node of nodes){
+   if(!record(node))continue
+   // Loader 对 group 的 disabled 恒不生效，不能用该字段证明入口已关闭。
+   const disabled=node.disabled===true&&!node.group
+   if((node.id==='schedule'||node.name==='@deepseek-ai/dsh-schedule')&&(node!==service||depth!==0)&&!disabled)facts.scheduleServicePinned=false
+   if((node.id==='ui-schedule'||node.name==='@deepseek-ai/dsh-client-ui-schedule')&&!disabled)facts.scheduleUiDisabled=false
+   if((node.id==='tool-schedule'||node.name==='@deepseek-ai/dsh-tool-schedule')&&!disabled)facts.scheduleToolsDisabled=false
+   if(node.group&&Array.isArray(node.config))visit(node.config,depth+1)
+   if(record(node.config)&&Array.isArray(node.config.plugins))visit(node.config.plugins,depth+1)
+  }
+ }
+ visit(rows,0)
+ return facts
 }
 
 /** 原生声明子插件的可读信号及完整结构摘要。 */
@@ -344,6 +377,7 @@ export function compositionSnapshot(rows:readonly CompositionRow[],pending?:{bun
   toolsMode:configOf('tools')?.mode,
   toolWorkflowDisabled:rowDisabled('tool-workflow'),
   toolRalphDisabled:rowDisabled('tool-ralph'),
+  ...scheduleCompositionFacts(rows),
   agentPresetDefault:agentPresets?.default,
   agentPresetRegistryPinned:registryPinned(rowOf('agent-preset-registry')),
   agentPresetDeclarationPinned:declarationPinned(rows,declaration),

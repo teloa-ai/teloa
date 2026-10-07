@@ -24,7 +24,7 @@ type Attach = {mode:'attach';endpoint:string;toolCallTimeoutMs?:number}
 type Provider = {Config:((value:unknown)=>Launch|Attach)&NonNullable<Plugin.Object<Launch|Attach>['Config']>;apply:(ctx:Context,config:Launch|Attach)=>void;inject:string[];name:string;chromiumSandboxVersion:1}
 const anchor=fileURLToPath(new URL('../../native-browser/package.json',import.meta.url))
 const originalProvider=createRequire(anchor).resolve('@deepseek-ai/dsh-experimental-browser-use-playwright-mcp/package.json')
-const basename=(kind:string)=>'dsh-experimental-browser-use-'+kind+'-0.2.0-rc.2-chromium-sandbox'
+const basename=(kind:string)=>'dsh-experimental-browser-use-'+kind+'-0.2.1-alpha.1-chromium-sandbox'
 
 async function packages(t:Parameters<typeof patchedNativePackage>[0]){
  const runtime=await patchedNativePackage(t,{packageName:'@deepseek-ai/dsh-experimental-browser-use-runtime',compatBasename:basename('runtime'),packageAnchor:originalProvider})

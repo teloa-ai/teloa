@@ -1,0 +1,67 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-agent-loop",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2",
+      "afterSha256": "64a574b824e59257865ca9f51363445c943d9fef43ab247f71a7e2bd9996d80c"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
+      "afterSha256": "e9e7564fffc1980a772039a3dc01457f045b7657cdf3bab15d8308efb13f96a1"
+    }
+  ],
+  "patchSha256": "1d84e8536cc5e2502db381569cbb5895e8ddcc8e7edd8c25bca88591fb2ad74a",
+  "api": [
+    "AgentLoop.requireWorkAdmission",
+    "AgentLoop.installWorkAdmission",
+    "AgentLoopWorkAdmissionInput",
+    "AgentLoopWorkAdmission",
+    "AgentLoop.requireRestoreAdmission",
+    "AgentLoop.installRestoreAdmission",
+    "Config.requireRestoreAdmission",
+    "AgentLoopRestoreAdmissionInput",
+    "AgentLoopRestoreAdmissionLease",
+    "AgentLoopRestoreAdmission",
+    "AgentLoop.requireInputCheckpoint",
+    "AgentLoop.installInputCheckpoint",
+    "AgentLoopInputCheckpointInput",
+    "AgentLoopInputCheckpointLease",
+    "AgentLoopInputCheckpoint",
+    "AgentLoop.requireProgressCheckpoint",
+    "AgentLoop.installProgressCheckpoint",
+    "AgentLoopProgressCheckpointInput",
+    "AgentLoopProgressCheckpoint",
+    "AgentLoopRestoreAdmissionLease.wakePending",
+    "AgentLoopWorkAdmissionInput.restore-publish",
+    "inboxProjectionDefinition"
+  ],
+  "scope": {
+    "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
+    "context": "After actual tool/result commit; exact slot execution/result/context, synchronous active once-only original inbox.splice publisher",
+    "private": "Module WeakMap keyed by immutable runtime holder; per-Agent callbacks module-private; no exposed invoke/dispatch capability or new public event",
+    "free": "No require/provider retains original Free driver execution, cold restoration and context publication",
+    "cleanup": "step-end/turn-end remain cleanup. Terminal progress attests the exact committed turn/end through the registered writer using its physical owner signal, even when the turn is cancelled or capability expires; it grants no claim/model/tool/publication rights.",
+    "limitations": [
+      "Fresh constructor/fork seeds are not covered; cold restore is a checkpoint only, not durable authorization. The deployment provider must verify its signed checkpoint and persisted work.",
+      "ToolRuntime final body admission is separate; this only attests exact Loop-planned input before scheduler.prepare",
+      "A context policy that throws/returns Promise after sync publication cannot roll back that accepted write",
+      "Public events remain observation-only and cannot call private policy; this is not protection against arbitrary mutation of SDK private internals",
+      "Rejection before migration admission leaves every historical log byte unchanged; revocation after an authorized migration or append cannot roll back committed generations, closers or later setup/publication writes, but prevents restored work from reaching the model.",
+      "Input checkpoint attests the persisted pre-claim prefix only. Provider must durably commit its acceptance ledger and govern cold recovery; in-flight tool side effects and reentrant failure after a committed partial Inbox splice need separate reconciliation."
+    ],
+    "restore": "SessionPersistence.openWithAdmission read-only preparation under retained writer/OS ownership before migration; exact frozen validated header/events, inherited count and official fused signal; abortable async policy returning a frozen synchronous assertCurrent lease; checked before first closer write, construction, setup/commit/publication awaits and final pending wake",
+    "restoreCleanup": "Private pending-restore state preserves the durable Inbox on failed or cancelled admission-enabled restoration, including owner/factory disposal; successful activation removes that state, so subsequent user disposal and unguarded Free cleanup retain original cancellation semantics.",
+    "restoreWrites": "Admission-enabled restore passes the official fused signal to closer and both seed/setup suffix appends and races their waits. Cancellation abandons adapter continuations; the owning lifecycle still awaits the original handle.close(), including any in-flight backend mutation chain. Committed writes are not rolled back; unguarded Free and fresh/fork appends retain their original waits.",
+    "inputCheckpoint": "Before Inbox removal: official SessionStore live drain, owned writer flush/read and exact frozen prefix; async once-installed private policy plus frozen synchronous lease; waiting appends remain queued outside the selected batch; cancellation/rejection does not claim pending input. No handle or replay dispatcher is exposed.",
+    "progressCheckpoint": "Factory-owned flush/read snapshots after claim, before model and tool dispatch, and before step/turn cleanup; private once-installed async policy with exact synchronous lease. No-policy Free has no added IO or await.",
+    "inputShutdown": "An enabled durable input checkpoint retains unclaimed Inbox during owner/factory disposal. Explicit user cancellation and unguarded Free retain their original semantics.",
+    "restoreWake": "Optional frozen lease own data wakePending:true requests the existing driver only after final restore admission, publication and temporary owner release; absent preserves idle and original latched-wake semantics. Invalid getter or values fail before restore writes.",
+    "restoreBinding": "Module-private restore-publish descriptor after actual Session/Agent enter and before either public creation notification; deployment binds verified cold roots once here. Public events cannot invoke this descriptor or consume the proof.",
+    "inboxProjection": "The root package exports the original standard Inbox projection object already registered by AgentLoop; maintenance can register and cold-fold it without Agent, Loop, model, tool or work-admission construction. No duplicate fold, mutation command or execution authority is introduced."
+  }
+}

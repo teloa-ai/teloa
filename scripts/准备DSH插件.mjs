@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath,pathToFileURL } from 'node:url'
-import { compositionSnapshot, compositionViolations } from '../packages/harness-dsh/src/composition-safety.ts'
+import { compositionSnapshot, compositionViolations, scheduleCompositionFacts } from '../packages/harness-dsh/src/composition-safety.ts'
 import { projectRoot, verifyDshPackages } from './核对DSH依赖.mjs'
 import {optionalNativeBundleSpecs,withTeloaRequiredBundles} from './runtime/profile.mjs'
 // rc.1 保留已有禁用选择；仍兼容市场历史 pending 记录，使用与安装适配器相同的压制函数。
@@ -90,6 +90,10 @@ export function verifyConfig(source) {
   const { parse }=createRequire(resolve(projectRoot,'packages/harness-dsh/package.json'))('yaml')
   const document=parse(source,{customTags:[{tag:'tag:yaml.org,2002:js',resolve:expression=>({__jsExpr:expression})}]})
   if(!Array.isArray(document))throw Error('DSH 组合配置不是插件行列表。')
+  const reminder=scheduleCompositionFacts(document)
+  if(!reminder.scheduleServicePinned)throw Error('DSH 原生提醒服务应唯一保留。')
+  if(!reminder.scheduleUiDisabled)throw Error('DSH 原生自动化入口应保持关闭。')
+  if(!reminder.scheduleToolsDisabled)throw Error('DSH 原生提醒工具应保持关闭。')
   const effectiveRows=document.map(row=>({...row,disabled:row.disabled===true}))
   const violations=compositionViolations(compositionSnapshot(effectiveRows)).filter(pin=>pin==='agentPresets'||pin==='tools')
   if(violations.length)throw Error('DSH 原生预设声明或工具配置未通过装配安全复验。')

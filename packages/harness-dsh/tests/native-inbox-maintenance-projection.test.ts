@@ -19,7 +19,7 @@ type LoopPackage = typeof import('@deepseek-ai/dsh-agent-loop') & {
 
 async function fixture(t: TestContext, compression: 'none' | 'zstd' = 'none') {
  const pkg = await patchedNativePackage<LoopPackage>(t, {
-  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.0-rc.2-work-admission',
+  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-alpha.1-work-admission',
  })
  const root = await mkdtemp(join(tmpdir(), 'teloa-inbox-maintenance-')), ctx = new Context()
  t.after(async () => {await ctx.fiber.dispose(); await rm(root, {recursive: true, force: true})})

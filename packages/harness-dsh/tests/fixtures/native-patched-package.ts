@@ -29,9 +29,9 @@ export async function patchedNativePackage<T>(t:Cleanup,spec:NativePackagePatch)
  }
  const metadata=JSON.parse(await readFile(join(source,'package.json'),'utf8')) as {name:string;version:string}
  assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1')
- assert.equal(receipt.upstreamCommit,'639ed015397290b3745d163aafe02ffee4aa3f84')
+ assert.equal(receipt.upstreamCommit,'5badb15009ae1756c3afe0ae0cef1faafc290ccc')
  assert.equal(receipt.package,spec.packageName);assert.equal(metadata.name,spec.packageName)
- assert.equal(metadata.version,'0.2.0-rc.2');assert.equal(receipt.version,metadata.version)
+ assert.equal(metadata.version,'0.2.1-alpha.1');assert.equal(receipt.version,metadata.version)
  const patch=await readFile(join(compat,spec.compatBasename+'.patch'))
  assert.equal(hash(patch),receipt.patchSha256)
  for(const file of receipt.files){
@@ -50,7 +50,7 @@ export async function patchedNativePackage<T>(t:Cleanup,spec:NativePackagePatch)
  for(const [name,value] of Object.entries(spec.overrides??{})){
   assert.match(name,packageNamePattern);assert.ok(isAbsolute(value))
   const actual=await realpath(value),overrideMetadata=JSON.parse(await readFile(join(actual,'package.json'),'utf8')) as {name:string;version:string}
-  assert.equal(overrideMetadata.name,name);assert.equal(overrideMetadata.version,'0.2.0-rc.2')
+  assert.equal(overrideMetadata.name,name);assert.equal(overrideMetadata.version,'0.2.1-alpha.1')
   assert.ok(name!==spec.packageName,'本包只能引用本轮已验证副本')
   overrides.set(name,actual)
  }

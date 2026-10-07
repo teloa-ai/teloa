@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "description": "生成独立的官方 SSH Headless profile；不是 Web 插件。",
-  "engines": {"dsh": "0.2.0-rc.2"},
+  "engines": {"dsh": "0.2.1-alpha.1"},
   "files": ["profile.mjs", "bin.mjs", "README.md"],
   "exports": {".": "./profile.mjs", "./package.json": "./package.json"},
   "bin": {"teloa-remote-profile": "./bin.mjs"},
   "scripts": {"test": "node --test tests/*.test.mjs"},
   "dependencies": {
-    "@deepseek-ai/dsh-ssh": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-fs-ssh": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-subprocess-ssh": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox-ssh": "0.2.0-rc.2"
+    "@deepseek-ai/dsh-ssh": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-fs-ssh": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess-ssh": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-sandbox-ssh": "0.2.1-alpha.1"
   }
 }

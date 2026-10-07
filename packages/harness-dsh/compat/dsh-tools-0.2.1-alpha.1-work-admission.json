@@ -1,0 +1,36 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-tools",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "patchSha256": "62c1bcc434785c5c204f6697b9f570aee9a58c4c6ee4ec85b187fcebb07b3173",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "2e9b6a72ba6b917197965c08eb894d4e8d01dc6f81e0e1c9870a5ae8514687a7",
+      "afterSha256": "bc4451ea87dd3f39a055a462f1943d441af3694cad514522efd76baef79aa530"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "3536b173ec22361dcda85c05281921fc850db49984813b138d05395c4fe4510f",
+      "afterSha256": "801dc94e88175cee3ce55ac85f8520c0b66d960a68795b3cddf946825accbc19"
+    }
+  ],
+  "api": [
+    "ToolWorkAdmissionRequest",
+    "ToolWorkAdmission",
+    "ToolRuntime.requireWorkAdmission",
+    "ToolRuntime.installWorkAdmission"
+  ],
+  "scope": {
+    "admission": "Synchronous undefined-only create/input + actual ToolRunContext, body + actual fused-signal context, contained body-end cleanup",
+    "default": "No provider and not required preserves Free execution",
+    "boundary": "Exact SDK-minted execution after all private map writes and before pre middleware; captured execute/arguments followed by synchronous final body policy; cleanup only after actual invocation enters",
+    "limitations": [
+      "No source/lineage or callId grants work authorization",
+      "The policy supplies exact root and revocation validation; this SDK seam mints no proofs",
+      "Tool body admission failures remain official tool error results; cleanup failures do not replace them",
+      "No change to AgentLoop, scheduler, tool result schema, model calls, or persistent receipts"
+    ]
+  }
+}

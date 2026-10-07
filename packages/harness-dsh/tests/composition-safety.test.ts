@@ -67,6 +67,9 @@ const safe={
  toolsMode:'native',
  toolWorkflowDisabled:true,
  toolRalphDisabled:true,
+ scheduleServicePinned:true,
+ scheduleUiDisabled:true,
+ scheduleToolsDisabled:true,
  agentPresetDefault:'teloa-standard',
  agentPresetRegistryPinned:true,
  agentPresetDeclarationPinned:true,
@@ -98,6 +101,66 @@ const safe={
 }
 /** 装配期复验要用的 profile 事实；没有待启用插件时三项都取空。 */
 const facts={bundles:[] as string[],pendingPackages:[] as string[]}
+
+test('原生提醒的装配安全事实必须明确，缺失或失守都归入工具安全钉',()=>{
+ const baseline=readCompositionRows({loader:compositionEntries()})!
+ const snapshot=compositionSnapshot(baseline,{bundles:[],packages:[]})
+ for(const key of ['scheduleServicePinned','scheduleUiDisabled','scheduleToolsDisabled'] as const){
+  assert.equal(snapshot[key],true)
+  assert.deepEqual(compositionViolations({...safe,[key]:false}),['tools'])
+  assert.deepEqual(compositionViolations({...safe,[key]:undefined}),['tools'])
+ }
+})
+
+test('原生提醒服务必须唯一来自官方，关闭、替换及宿主和嵌套别名均拒绝装配',()=>{
+ const baseline=readCompositionRows({loader:compositionEntries()})!
+ const service=baseline.find(row=>row.id==='schedule')!
+ const variants=[
+  baseline.filter(row=>row!==service),
+  baseline.map(row=>row===service?{...row,disabled:true}:row),
+  baseline.map(row=>row===service?{...row,name:'@vendor/schedule'}:row),
+  baseline.map(row=>row===service?{...row,group:true}:row),
+  [...baseline,service],
+  [...baseline,{...service,id:'alias-schedule'}],
+  [...baseline,{id:'extra-group',group:true,disabled:true,config:[{...service,id:'alias-schedule'}]}],
+  [...baseline,{id:'extra-preset',disabled:false,config:{plugins:[{...service,id:'alias-schedule'}]}}],
+  [...baseline,{id:'extra-group',group:true,disabled:false,config:[service]}],
+ ]
+ for(const rows of variants){
+  assert.equal(compositionSnapshot(rows).scheduleServicePinned,false)
+  const entries=rows.map(row=>({disabled:row.disabled,options:row}))
+  assert.throws(()=>assertCompositionSafety({loader:{entries:()=>entries}},facts),/工具/)
+ }
+})
+
+test('原生自动化 UI 和提醒工具禁止在宿主、group 或预设中重新挂载',()=>{
+ const baseline=readCompositionRows({loader:compositionEntries()})!
+ const ui=baseline.find(row=>row.id==='ui-schedule')!
+ const uiVariants=[
+  baseline.filter(row=>row!==ui),
+  baseline.map(row=>row===ui?{...row,disabled:false}:row),
+  baseline.map(row=>row===ui?{...row,name:'@vendor/ui'}:row),
+  baseline.map(row=>row===ui?{...row,group:true}:row),
+  [...baseline,ui],
+ ]
+ for(const rows of uiVariants)assert.equal(compositionSnapshot(rows).scheduleUiDisabled,false)
+ for(const [id,name,key] of [
+  ['ui-schedule','@deepseek-ai/dsh-client-ui-schedule','scheduleUiDisabled'],
+  ['tool-schedule','@deepseek-ai/dsh-tool-schedule','scheduleToolsDisabled'],
+ ] as const){
+  for(const entry of [{id,name,disabled:false,config:{}},{id:'alias-reminder',name,disabled:false,config:{}},{id,name:'@vendor/reminder',disabled:false,config:{}},{id:'alias-reminder',name,disabled:true,group:true,config:[]}]){
+   const variants=[
+    [...baseline,entry],
+    [...baseline,{id:'extra-group',group:true,disabled:true,config:[entry]}],
+    baseline.map(row=>row.id==='preset-standard'?{...row,config:{...(row.config as object),plugins:[entry]}}:row),
+   ]
+   for(const rows of variants){
+    assert.equal(compositionSnapshot(rows)[key],false)
+    assert.ok(compositionViolations(compositionSnapshot(rows,{bundles:[],packages:[]})).includes('tools'))
+   }
+  }
+ }
+})
 
 test('产品遥测仅通过 Teloa 提供方：换端点、换名、停用或以别名重复挂载均拒绝',()=>{
  const baseline=readCompositionRows({loader:compositionEntries()})!

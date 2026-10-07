@@ -1,0 +1,34 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-subagent-in-process-driver",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "patchSha256": "d7a59141921fff0fdf1109c9beeba2bd8bda65c5f2ff33877695d1fa892f87e7",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "a169b6dac8f9fd0ef6e8db4ec0d2c009580c5c10b6d561e6d214cbe9b89521d1",
+      "afterSha256": "c5dc55f40c1c3adf5a2b8c0c99dd4f1890a469e990aa121684953a342cf451bf"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "68b45850465e7c70ac5935c3e6d441863310470f0224388b91270fedcf8c49f8",
+      "afterSha256": "4d22ea4c59c2903bd6660d44621fe62c694d0f719d53873cc6feab0e0f382f6b"
+    }
+  ],
+  "api": [
+    "startInProcessRun (unchanged signature)"
+  ],
+  "scope": {
+    "admission": "admitPrompt({kind,mode?,agent,message,sender,delivery,signal},dispatch):Promise<void>",
+    "default": "No provider and not required preserves Free publication; direct driver without Subagent service preserves original publication",
+    "boundary": "One frozen exact initial/live/resumed message; synchronous once publication with final exact Agent/Session/runtime ownership and cancellation checks; one-shot failure remains on published run.result",
+    "limitations": [
+      "Seed/history is not licensed by this publisher seam",
+      "Source, kind, mode, adjacency, and lineage do not grant accepted-work authorization",
+      "No new request deduplication or durable admission receipt",
+      "Creation/setup may precede initial prompt admission; continuation failures retain original rollback and one-shot caller retains the published handle",
+      "Admission provider must not await reentrant same-child continuation operations"
+    ]
+  }
+}

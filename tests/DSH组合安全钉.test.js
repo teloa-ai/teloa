@@ -81,6 +81,11 @@ test('判据函数本身仍会对每一条被改回上游取值的钉子报警',
   // 宿主入口关闭，由预设作用域提供工具；引擎行 ptc-runtime 必须启用。
   assert.deepEqual(compositionViolations({ ...safe, toolWorkflowDisabled: false }), ['tools'])
   assert.deepEqual(compositionViolations({ ...safe, toolRalphDisabled: false }), ['tools'])
+  for (const key of ['scheduleServicePinned', 'scheduleUiDisabled', 'scheduleToolsDisabled']) {
+    assert.equal(safe[key], true)
+    assert.deepEqual(compositionViolations({ ...safe, [key]: false }), ['tools'])
+    assert.deepEqual(compositionViolations({ ...safe, [key]: undefined }), ['tools'])
+  }
   assert.deepEqual(compositionViolations({ ...safe, agentPresetDefault: 'standard' }), ['agentPresets'])
   assert.deepEqual(compositionViolations({ ...safe, agentPresetRegistryPinned: false }), ['agentPresets'])
   assert.deepEqual(compositionViolations({ ...safe, agentPresetDeclarationPinned: false }), ['agentPresets'])
@@ -130,6 +135,26 @@ test('预设正文规范化摘要与钉住的字面量一致——改文件必�
   const facts = await readPresetBodyFacts()
   assert.ok(facts, '装配期必须能真实读到 Teloa 自带预设正文')
   assert.equal(facts.digestMatches, true, 'teloa-standard/agent.cordis.yml 已改动但 composition-safety.ts 的 presetBodyDigest 常量未同步更新')
+})
+
+test('正式组合的原生提醒安全钉拒绝顶层别名和嵌套预设、group 的执行入口', async () => {
+  const baseline = dumpRows()
+  const pending = (await profileFacts()).pending
+  assert.deepEqual(compositionViolations(compositionSnapshot(baseline, pending)), [])
+  for (const name of ['@deepseek-ai/dsh-schedule', '@deepseek-ai/dsh-client-ui-schedule', '@deepseek-ai/dsh-tool-schedule']) {
+    const alias = { id: 'alias-reminder', name, disabled: false }
+    const variants = [
+      [...baseline, alias],
+      [...baseline, { id: 'extra-group', group: true, disabled: true, config: [alias] }],
+      baseline.map(row => row.id === 'preset-standard' ? { ...row, config: { ...row.config, plugins: [...row.config.plugins, alias] } } : row),
+    ]
+    for (const rows of variants) {
+      const snapshot = compositionSnapshot(rows, pending)
+      const key = name === '@deepseek-ai/dsh-schedule' ? 'scheduleServicePinned' : name === '@deepseek-ai/dsh-client-ui-schedule' ? 'scheduleUiDisabled' : 'scheduleToolsDisabled'
+      assert.equal(snapshot[key], false)
+      assert.ok(compositionViolations(snapshot).includes('tools'))
+    }
+  }
 })
 
 test('Teloa 自己在 cordis.patch.yml 打了补丁的每个 id 都必须在拒绝清单里', async () => {

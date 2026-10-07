@@ -1,0 +1,39 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-subagent",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "patchSha256": "20aa422e7b6592979302e92dbec2e462b0f51842fad394c3139da31fb51b6057",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "75b50b1c9452a6aeb10d1c859e3f45b05e062ea1fad6ed3bcd9577f2bc912541",
+      "afterSha256": "06565838a28bb7f21a0aa0cc843ae5007db656cd8bd130788350f21bd27d442b"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "66770cf4c38caa2868dec3b5283bce7370ca38e4ed5088c9c3cdaf38bfb57f57",
+      "afterSha256": "53937a2c92fa96c6e1d33ce205501b1a2a3232fc7b2a2c2053fb8c0f235c51e7"
+    }
+  ],
+  "api": [
+    "SubagentPromptAdmissionRequest",
+    "SubagentPromptAdmission",
+    "SubagentPromptAdmissionOptions",
+    "SubagentRuntime.requirePromptAdmission",
+    "SubagentRuntime.installPromptAdmission",
+    "SubagentRuntime.admitPrompt"
+  ],
+  "scope": {
+    "admission": "admitPrompt({kind,mode?,agent,message,sender,delivery,signal},dispatch):Promise<void>",
+    "default": "No provider and not required preserves Free publication; direct driver without Subagent service preserves original publication",
+    "boundary": "One frozen exact initial/live/resumed message; synchronous once publication with final exact Agent/Session/runtime ownership and cancellation checks; one-shot failure remains on published run.result",
+    "limitations": [
+      "Seed/history is not licensed by this publisher seam",
+      "Source, kind, mode, adjacency, and lineage do not grant accepted-work authorization",
+      "No new request deduplication or durable admission receipt",
+      "Creation/setup may precede initial prompt admission; continuation failures retain original rollback and one-shot caller retains the published handle",
+      "Admission provider must not await reentrant same-child continuation operations"
+    ]
+  }
+}

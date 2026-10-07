@@ -45,6 +45,8 @@ export function compositionEntries(override:Record<string,unknown>={}){
     'ptc-runtime':{},
     'tool-workflow':{},
     'tool-ralph':{},
+    schedule:{},
+    'ui-schedule':{},
     hmr:{root:[]},
     // 使用真实官方声明结构，安全钉核对 Loader 内实际的子插件正文。
     'agent-preset-registry':{default:'teloa-standard'},
@@ -63,7 +65,7 @@ export function compositionEntries(override:Record<string,unknown>={}){
     'teloa-attachment-guard':{},
     ...override,
   }
-  const disabledRows=new Set(['tool-workflow','tool-ralph','hmr','credentials','attachment-local','session-log-deepseek','desktop-product-telemetry'])
+  const disabledRows=new Set(['tool-workflow','tool-ralph','ui-schedule','hmr','credentials','attachment-local','session-log-deepseek','desktop-product-telemetry'])
   // 上网三行还要钉住"这一行挂的是哪个包"：只按 id 定位挡不住同 id 换实现。
   const rowNames:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
   for(const id of Object.keys(officialPresets))rowNames[id]='@deepseek-ai/dsh-agent-preset'
@@ -71,6 +73,8 @@ export function compositionEntries(override:Record<string,unknown>={}){
   rowNames['desktop-product-telemetry']='@deepseek-ai/dsh-host-product-telemetry-otel'
   rowNames['teloa-product-telemetry']='@teloa/harness-dsh/product-telemetry'
   rowNames['product-analytics']='@deepseek-ai/dsh-client-product-analytics'
+  rowNames.schedule='@deepseek-ai/dsh-schedule'
+  rowNames['ui-schedule']='@deepseek-ai/dsh-client-ui-schedule'
   // `entry.id` 带所属子树前缀（真实宿主里是根 Include 的条目 id），定位键只能取 `options.id`。
   return {entries:function*(){
     for(const [id,config] of Object.entries(rows))yield {id:'profile-include:'+id,disabled:disabledRows.has(id),options:{id,config,...(rowNames[id]===undefined?{}:{name:rowNames[id]})}}

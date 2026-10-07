@@ -30,24 +30,24 @@ class NoModel extends LlmAdapter {
 /** 完整官方 Registry/Loop 副本；peer override 只连接 helper 已验证的私有副本。 */
 async function fixture(t: TestContext, {original = false, persistence = false} = {}) {
  const registry = original ? undefined : await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent')>(t, {
-  packageName: '@deepseek-ai/dsh-agent', compatBasename: 'dsh-agent-0.2.0-rc.2-announcement-abort',
+  packageName: '@deepseek-ai/dsh-agent', compatBasename: 'dsh-agent-0.2.1-alpha.1-announcement-abort',
  })
  // 独立fixture可用于Loop第三版，也可接入root随后集成的持久层准入补口。
  // 有清单就完整验证并使用真实补口；不为缺失能力模拟openWithAdmission。
- const storageManifest = new URL('../compat/dsh-session-persistence-0.2.0-rc.2-open-admission.json', import.meta.url)
+ const storageManifest = new URL('../compat/dsh-session-persistence-0.2.1-alpha.1-open-admission.json', import.meta.url)
  const storageAvailable = persistence && await readFile(storageManifest).then(() => true, (error: NodeJS.ErrnoException) => {
   if (error.code === 'ENOENT') return false
   throw error
  })
  const storage = storageAvailable ? await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence')>(t, {
-  packageName: '@deepseek-ai/dsh-session-persistence', compatBasename: 'dsh-session-persistence-0.2.0-rc.2-open-admission',
+  packageName: '@deepseek-ai/dsh-session-persistence', compatBasename: 'dsh-session-persistence-0.2.1-alpha.1-open-admission',
  }) : undefined
  const jsonl = storage ? await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence-jsonl')>(t, {
-  packageName: '@deepseek-ai/dsh-session-persistence-jsonl', compatBasename: 'dsh-session-persistence-jsonl-0.2.0-rc.2-open-admission',
+  packageName: '@deepseek-ai/dsh-session-persistence-jsonl', compatBasename: 'dsh-session-persistence-jsonl-0.2.1-alpha.1-open-admission',
   overrides: {'@deepseek-ai/dsh-session-persistence': storage.root},
  }) : undefined
  const loopPackage = await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t, {
-  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.0-rc.2-work-admission',
+  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-alpha.1-work-admission',
   overrides: {...registry ? {'@deepseek-ai/dsh-agent': registry.root} : {}, ...storage ? {'@deepseek-ai/dsh-session-persistence': storage.root} : {}},
  })
  const ctx = new Context(), root = await mkdtemp(join(tmpdir(), 'teloa-agent-announcement-')), model = new NoModel()
@@ -285,6 +285,6 @@ for (const failure of ['throw', 'reject'] as const) test(`真实JSONL公告${fai
 
 test('补口清单只声明Registry已有announce，不增加新dispatcher或Remote API', async () => {
  const compat = new URL('../compat/', import.meta.url)
- const registry = JSON.parse(await readFile(new URL('dsh-agent-0.2.0-rc.2-announcement-abort.json', compat), 'utf8')) as {api: string[]; package: string}
+ const registry = JSON.parse(await readFile(new URL('dsh-agent-0.2.1-alpha.1-announcement-abort.json', compat), 'utf8')) as {api: string[]; package: string}
  assert.equal(registry.package, '@deepseek-ai/dsh-agent'); assert.deepEqual(registry.api, ['AgentRegistry.announce'])
 })

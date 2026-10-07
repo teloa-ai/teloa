@@ -19,7 +19,7 @@ export type Delivery={agent:Agent;message:UserMessage;occurrences:readonly {sche
 export type Admission=(request:Readonly<Delivery>,dispatch:()=>void)=>Promise<void>
 export type ScheduleOptions={admitDelivery?:Admission;requireDeliveryAdmission?:boolean}
 const require=createRequire(import.meta.url),dshRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
-const compat=fileURLToPath(new URL('../../compat/',import.meta.url)),name='dsh-schedule-0.2.0-rc.2-delivery-admission'
+const compat=fileURLToPath(new URL('../../compat/',import.meta.url)),name='dsh-schedule-0.2.1-alpha.1-delivery-admission'
 const sha=(data:Uint8Array)=>createHash('sha256').update(data).digest('hex')
 const installed=(name:string)=>dshRequire.resolve(name)
 export function deferred<T=void>(){let resolve!:(value:T)=>void;let reject!:(error:unknown)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail});return {promise,resolve,reject}}
@@ -28,7 +28,7 @@ export async function until(check:()=>boolean|Promise<boolean>){for(let i=0;i<50
 /** 仅复制已核对 npm 包到自有 tmp；原始依赖不写入，不复制引擎实现到仓库。 */
 export async function patchedSchedule(t:{after:(action:()=>unknown)=>void},patched=true){
  const source=dirname(dirname(installed('@deepseek-ai/dsh-schedule'))),metadata=JSON.parse(await readFile(join(source,'package.json'),'utf8'))
- assert.equal(metadata.version,'0.2.0-rc.2')
+ assert.equal(metadata.version,'0.2.1-alpha.1')
  const receipt=JSON.parse(await readFile(join(compat,name+'.json'),'utf8'))
  const patch=join(compat,name+'.patch');assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(metadata.name,receipt.package);assert.equal(metadata.version,receipt.version);assert.equal(sha(await readFile(patch)),receipt.patchSha256)
  for(const row of receipt.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)

@@ -1,4 +1,4 @@
-# 自动生成自 DSH 0.2.0-rc.2；请运行 node scripts/生成官方预设适配.mjs，勿手改。
+# 自动生成自 DSH 0.2.1-alpha.1；请运行 node scripts/生成官方预设适配.mjs，勿手改。
 - id: preset-cordis
   config:
     id: cordis
@@ -13,6 +13,8 @@
         name: "@deepseek-ai/dsh-agent-instructions"
         config:
           maxBytes: 65536
+      - id: time-context
+        name: "@deepseek-ai/dsh-time-context"
       - id: tool-bash
         name: "@deepseek-ai/dsh-tool-bash"
         disabled: !!js "process.platform === 'win32'"
@@ -86,12 +88,24 @@
               toolName: subagent
               modelSelectionSettings: true
               backgroundMode: continuable
+              toolFilter:
+                deny:
+                  - schedule_create
+                  - schedule_delete
+                  - schedule_list
+                  - schedule_update
           - id: tool-subagent-fork
             name: "@deepseek-ai/dsh-tool-subagent"
             config:
               provider: fork
               toolName: subagent_fork
               backgroundMode: continuable
+              toolFilter:
+                deny:
+                  - schedule_create
+                  - schedule_delete
+                  - schedule_list
+                  - schedule_update
           - id: tool-subagent-codex
             name: "@deepseek-ai/dsh-tool-subagent"
             disabled: true

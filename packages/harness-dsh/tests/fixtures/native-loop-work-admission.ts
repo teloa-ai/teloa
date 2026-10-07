@@ -29,7 +29,7 @@ export type LoopWorkRuntime=AgentLoop&{
  installProgressCheckpoint:(policy:(input:unknown)=>unknown)=>void
 }
 export type LoopWorkPackage=typeof import('@deepseek-ai/dsh-agent-loop')&{AgentLoop:new(ctx:Context,config:import('@deepseek-ai/dsh-agent-loop').Config)=>LoopWorkRuntime}
-export const loopWorkCompat='dsh-agent-loop-0.2.0-rc.2-work-admission'
+export const loopWorkCompat='dsh-agent-loop-0.2.1-alpha.1-work-admission'
 export async function patchedLoopWorkPackage(t:TestContext,overrides?:Readonly<Record<string,string>>){
  return patchedNativePackage<LoopWorkPackage>(t,{packageName:'@deepseek-ai/dsh-agent-loop',compatBasename:loopWorkCompat,...overrides===undefined?{}:{overrides}})
 }

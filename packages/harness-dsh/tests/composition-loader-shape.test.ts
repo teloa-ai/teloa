@@ -81,6 +81,8 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
   {id:'tools',name:'cordis:pin',config:{mode:'native'}},
   {id:'tool-workflow',name:'cordis:pin',disabled:true},
   {id:'tool-ralph',name:'cordis:pin',disabled:true},
+  {id:'schedule',name:'cordis:pin'},
+  {id:'ui-schedule',name:'cordis:pin',disabled:true},
   {id:'hmr',name:'cordis:pin',disabled:true},
   // 原生预设声明把动态子插件作为数据留给注册器，不在宿主行求值。
   {id:'agent-preset-registry',name:'cordis:pin',config:{default:'teloa-standard'}},
@@ -105,6 +107,8 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
  names['desktop-product-telemetry']='@deepseek-ai/dsh-host-product-telemetry-otel'
  names['teloa-product-telemetry']='@teloa/harness-dsh/product-telemetry'
  names['product-analytics']='@deepseek-ai/dsh-client-product-analytics'
+ names.schedule='@deepseek-ai/dsh-schedule'
+ names['ui-schedule']='@deepseek-ai/dsh-client-ui-schedule'
  const snapshot=compositionSnapshot(rows.map(row=>({...row,name:names[row.id]??row.name})),{bundles:[],packages:[]})
  assert.deepEqual(compositionViolations(snapshot),[])
 })
@@ -125,4 +129,23 @@ test('上游对 group 行的 disabled 恒不生效：逐行压制挡不住声明
  assert.equal(rows.find(row=>row.id==='vendor-extras')?.disabled,false,'group 行的 disabled 在上游恒为 false')
  assert.equal(rows.find(row=>row.id==='plain-row')?.disabled,true)
  assert.equal(applied.length,1,'group 行仍被执行，plain 行没有——这就是轮 2 逐行压制被打穿的原因')
+})
+
+test('真实 Loader 中嵌套 group 的原生提醒工具即使声明 disabled 也不能通过安全钉',async()=>{
+ const ctx=await tree([
+  {id:'schedule',name:'cordis:pin'},
+  {id:'ui-schedule',name:'cordis:pin',disabled:true},
+  {id:'reminder-scope',name:'cordis:group',group:true,disabled:true,config:[
+   {id:'tool-schedule',name:'cordis:recorder',group:true,disabled:true,config:[]},
+  ]},
+ ])
+ const rows=readCompositionRows(ctx)
+ assert.ok(rows)
+ assert.equal(rows.find(row=>row.id==='tool-schedule')?.disabled,false)
+ const names:Record<string,string>={schedule:'@deepseek-ai/dsh-schedule','ui-schedule':'@deepseek-ai/dsh-client-ui-schedule'}
+ const snapshot=compositionSnapshot(rows.map(row=>({...row,name:names[row.id]??row.name})))
+ assert.equal(snapshot.scheduleServicePinned,true)
+ assert.equal(snapshot.scheduleUiDisabled,true)
+ assert.equal(snapshot.scheduleToolsDisabled,false)
+ assert.ok(compositionViolations(snapshot).includes('tools'))
 })

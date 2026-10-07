@@ -15,14 +15,14 @@ export type WorkAdmissionRequest=Readonly<{kind:'create';input:ToolExecutionInpu
 export type WorkAdmission=(candidate:WorkAdmissionRequest)=>undefined
 type Cleanup={after:(action:()=>unknown)=>void}
 const require=createRequire(import.meta.url),source=dirname(dirname(require.resolve('@deepseek-ai/dsh-tools')))
-const compat=fileURLToPath(new URL('../../compat/',import.meta.url)),basename='dsh-tools-0.2.0-rc.2-work-admission'
+const compat=fileURLToPath(new URL('../../compat/',import.meta.url)),basename='dsh-tools-0.2.1-alpha.1-work-admission'
 const sha=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
 export function deferred<T=void>(){let resolve!:(value:T)=>void;let reject!:(error:unknown)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail});return {promise,resolve,reject}}
 
 /** 真完整npm Tools副本、fuzz0及逐文件before/after，不写受管包。 */
 export async function patchedTools(t:Cleanup,patched=true){
  const manifest=JSON.parse(await readFile(join(compat,basename+'.json'),'utf8')),metadata=JSON.parse(await readFile(join(source,'package.json'),'utf8')),patch=join(compat,basename+'.patch')
- assert.equal(manifest.schema,'teloa.dsh-compat-patch/v1');assert.equal(manifest.package,metadata.name);assert.equal(metadata.version,'0.2.0-rc.2');assert.equal(manifest.version,metadata.version);assert.equal(manifest.upstreamCommit,'639ed015397290b3745d163aafe02ffee4aa3f84');assert.equal(sha(await readFile(patch)),manifest.patchSha256)
+ assert.equal(manifest.schema,'teloa.dsh-compat-patch/v1');assert.equal(manifest.package,metadata.name);assert.equal(metadata.version,'0.2.1-alpha.1');assert.equal(manifest.version,metadata.version);assert.equal(manifest.upstreamCommit,'5badb15009ae1756c3afe0ae0cef1faafc290ccc');assert.equal(sha(await readFile(patch)),manifest.patchSha256)
  assert.deepEqual(manifest.files.map((row:{path:string})=>row.path),['lib/index.js','lib/types/index.d.ts'])
  for(const row of manifest.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)
  if(!patched)return {root:source,namespace:await import(pathToFileURL(join(source,'lib/index.js')).href)}

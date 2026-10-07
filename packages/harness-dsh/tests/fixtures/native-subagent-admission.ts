@@ -21,7 +21,7 @@ export type AdmissionRequest=Readonly<{agent:Agent;message:UserMessage;sender:Ag
 export type Admission=(request:Readonly<AdmissionRequest>,dispatch:()=>void)=>Promise<void>
 export type AdmissionOptions={requirePromptAdmission?:boolean;admitPrompt?:Admission}
 const require=createRequire(import.meta.url),installed=require.resolve('@deepseek-ai/dsh-subagent')
-const compat=fileURLToPath(new URL('../../compat/',import.meta.url)),name='dsh-subagent-0.2.0-rc.2-prompt-admission'
+const compat=fileURLToPath(new URL('../../compat/',import.meta.url)),name='dsh-subagent-0.2.1-alpha.1-prompt-admission'
 const sha=(data:Uint8Array)=>createHash('sha256').update(data).digest('hex')
 type Cleanup={after:(action:()=>unknown)=>void}
 export function deferred<T=void>(){let resolve!:(value:T)=>void;let reject!:(error:unknown)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail});return {promise,resolve,reject}}
@@ -31,7 +31,7 @@ export async function until(check:()=>boolean|Promise<boolean>){for(let i=0;i<50
 export async function patchedSubagent(t:Cleanup,patched=true){
  const source=dirname(dirname(installed)),metadata=JSON.parse(await readFile(join(source,'package.json'),'utf8'))
  const receipt=JSON.parse(await readFile(join(compat,name+'.json'),'utf8')),patch=join(compat,name+'.patch')
- assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(metadata.name,receipt.package);assert.equal(metadata.version,'0.2.0-rc.2');assert.equal(metadata.version,receipt.version);assert.equal(sha(await readFile(patch)),receipt.patchSha256)
+ assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(metadata.name,receipt.package);assert.equal(metadata.version,'0.2.1-alpha.1');assert.equal(metadata.version,receipt.version);assert.equal(sha(await readFile(patch)),receipt.patchSha256)
  for(const row of receipt.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)
  if(!patched)return import(pathToFileURL(join(source,'lib/index.js')).href)
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-native-subagent-'))),copy=join(root,'package')
@@ -86,12 +86,12 @@ export async function initialSubagentPackages(t:Cleanup,patched=true){
  const aliases=new Map<string,string>()
  for(let i=0;i<sources.length;i++){
   const source=sources[i]!,copy=copies[i]!,metadata=JSON.parse(await readFile(join(source,'package.json'),'utf8'))
-  assert.equal(metadata.version,'0.2.0-rc.2');aliases.set(metadata.name,copy)
+  assert.equal(metadata.version,'0.2.1-alpha.1');aliases.set(metadata.name,copy)
   await cp(source,copy,{recursive:true,filter:path=>path!==join(source,'node_modules')})
   for(const path of ['lib/index.js','lib/types/index.d.ts','package.json'])records.push({source,path,sha256:sha(await readFile(join(source,path)))})
   if(i===2)continue
-  const patchName=i===0?name:'dsh-subagent-in-process-driver-0.2.0-rc.2-input-admission',manifest=JSON.parse(await readFile(join(compat,patchName+'.json'),'utf8')),bytes=await readFile(join(compat,patchName+'.patch'))
-  assert.equal(manifest.schema,'teloa.dsh-compat-patch/v1');assert.equal(manifest.package,metadata.name);assert.equal(manifest.version,metadata.version);assert.equal(manifest.upstreamCommit,'639ed015397290b3745d163aafe02ffee4aa3f84');assert.equal(manifest.patchSha256,sha(bytes))
+  const patchName=i===0?name:'dsh-subagent-in-process-driver-0.2.1-alpha.1-input-admission',manifest=JSON.parse(await readFile(join(compat,patchName+'.json'),'utf8')),bytes=await readFile(join(compat,patchName+'.patch'))
+  assert.equal(manifest.schema,'teloa.dsh-compat-patch/v1');assert.equal(manifest.package,metadata.name);assert.equal(manifest.version,metadata.version);assert.equal(manifest.upstreamCommit,'5badb15009ae1756c3afe0ae0cef1faafc290ccc');assert.equal(manifest.patchSha256,sha(bytes))
   for(const row of manifest.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)
   if(patched){const result=spawnSync('/usr/bin/patch',['--batch','--fuzz=0','--forward','-p1'],{cwd:copy,input:bytes,encoding:'utf8'});assert.equal(result.status,0,result.stdout+result.stderr);for(const row of manifest.files)assert.equal(sha(await readFile(join(copy,row.path))),row.afterSha256)}
  }

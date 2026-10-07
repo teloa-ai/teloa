@@ -1,0 +1,35 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-api-session-controller",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "api": [
+    "requireInputAdmission()",
+    "installInputAdmission(policy)"
+  ],
+  "apiVersion": "teloa.session-controller-input-admission/v1",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "d8219295e47819c1f0b5285b0a76ab5ff6a4ae7f1cf0b5eb8ee0753e763626e2",
+      "afterSha256": "b6e036f8ed6fb0b289ee01cf2a2ad868db8ea48e5c9eb5ca2702d1a3c8b0e02a"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "638196ed9c3cee1f3bc9ece0cdf8376fd56ff23530f451eb53a2efa420f58fb4",
+      "afterSha256": "68d316f3c58b3cb663e7eb821f77086c416f3adb1674ee282539083643e819dc"
+    }
+  ],
+  "patchSha256": "993e13b04400ad8b90ee958c8b22744f75404b328ed7ca8ef4a74bc6b88d7e1d",
+  "scope": [
+    "Free without a policy or requirement preserves the original prompt and queue paths.",
+    "Managed prompt serializes only the same exact Agent and rpcId, checking original accepted receipt after waiting and before publication.",
+    "Immutable exact prompt candidates are built after attachments await; managed queue-edit rechecks the exact previous item and target before replacement.",
+    "The publisher callback dispatch is synchronous and single-use during the awaited policy; NativeWorkInput supplies the final exact-payload admission.",
+    "Managed queue-steer is deliberately unavailable until a separate trusted accepted-input continuation is implemented; the old item is retained.",
+    "Seed/fork/replay and subagent initial composition are outside this patch.",
+    "The admission holder is immutable at runtime and shared by scoped service receivers.",
+    "Managed old-receipt lookup verifies the owned exact Agent/Session and excludes inherited user history; Free keeps the original upstream receipt semantics."
+  ]
+}

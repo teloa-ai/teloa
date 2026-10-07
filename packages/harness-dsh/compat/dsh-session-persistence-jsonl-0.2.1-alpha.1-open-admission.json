@@ -1,0 +1,32 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-session-persistence-jsonl",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "0845707017acc2b4a8a75eab2244fa3fd88587b8094ab32014321dce7ca1e31b",
+      "afterSha256": "6b9864fa0663a176450f55c6080c512ef6c42b2df17526503f34bdadc21c5de9"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "806dfa610c3ed3ce80ffac89900993288d7013d4278ab21e2b55b193c542f79a",
+      "afterSha256": "35dcdc8b3524cca20cd32e94aa5629aa898d00c1a88d7c30172a30bcc205ace8"
+    }
+  ],
+  "patchSha256": "3650b3894dbcdd9b7e69fb7ad32c3b2d125f7bd0856447df5fda4465c434c0df",
+  "api": [
+    "JsonlSessionPersistence.openWithAdmission"
+  ],
+  "scope": {
+    "admission": "Public openWithAdmission(id, admission, options?) returns the same owned write SessionHandle. Exact deeply frozen validated sessionId/header/events/inheritedEventCount and caller-supplied signal; async policy returns a frozen own synchronous assertCurrent data method returning undefined.",
+    "ownership": "Single writer and OS lease are retained through preparation, async admission, migration publication and handle transfer. No read/reopen fallback; cancellation consumes late policy results and releases ownership before rejection. JSONL backend teardown also cancels and joins admitted opens that do not yet have handles, even when the caller omitted a signal.",
+    "migration": "JSONL prepares historical formats read-only, then checks current lease before migration staging, writes and final publication. Original historical bytes are retained. Actual persistence/cleanup is joined; already committed generations are not rolled back.",
+    "free": "Ordinary open/create behavior is unchanged. Base openWithAdmission explicitly throws SessionAdmissionUnsupportedError; no implicit fallback.",
+    "limitations": [
+      "Storage carries evidence and synchronous freshness only, not business authorization or a durable acceptance certificate.",
+      "Revocation after a committed write cannot undo it. Consumers must retain the lease check through their own setup/publication and before model dispatch."
+    ]
+  }
+}

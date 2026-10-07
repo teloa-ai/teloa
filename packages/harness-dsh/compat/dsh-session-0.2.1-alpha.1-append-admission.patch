@@ -1,0 +1,87 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1468,6 +1468,7 @@
+ 				"session/event",
+ 				...callbackArgs
+ 			]);
++			if (entry !== void 0) entry.assertAppend(this, event);
+ 			this.log.push(event);
+ 			this.eventsSnapshot = void 0;
+ 			if (callbacks !== void 0 && entry !== void 0) invokeContainedSessionObservers(entry.emitCtx, "session/event", entry.id, callbackArgs, callbacks);
+@@ -1593,7 +1594,43 @@
+ * attaches a session-log writer to each published session's write handle;
+ * a session published outside that lifecycle persists nothing.
+ */
++/** One store-owned admission closure, shared by scoped Service receivers. */
++function createSessionAppendAdmission() {
++	let required = false;
++	let policy;
++	return Object.freeze({
++		require() {
++			required = true;
++		},
++		install(candidate) {
++			if (typeof candidate !== "function") throw new TypeError("session append admission must be a function");
++			if (policy !== void 0 && policy !== candidate) throw new Error("session append admission is already installed");
++			policy = candidate;
++		},
++		assert(session, event) {
++			if (policy === void 0) {
++				if (required) throw new Error("session append admission is unavailable");
++				return;
++			}
++			const result = policy(session, event);
++			if (result !== void 0) {
++				// Append is synchronous: deny every return value and contain rejection.
++				void Promise.resolve(result).catch(() => {});
++				throw new Error("session append admission must return undefined");
++			}
++		}
++	});
++}
+ var SessionStore = class extends Service {
++	appendAdmission = createSessionAppendAdmission();
++	/** Require a fixed admission policy for future attached appends; cannot be undone. */
++	requireAppendAdmission() {
++		this.appendAdmission.require();
++	}
++	/** Install the one synchronous validator; the same function is idempotent. */
++	installAppendAdmission(policy) {
++		this.appendAdmission.install(policy);
++	}
+ 	store = /* @__PURE__ */ new Map();
+ 	counter = 0;
+ 	projections = [];
+@@ -1619,6 +1656,7 @@
+ 	}
+ 	constructor(ctx) {
+ 		super(ctx, "sessions");
++		Object.defineProperty(this, "appendAdmission", { value: this.appendAdmission, writable: false, configurable: false });
+ 		ctx.inject(["typert"], (typeCtx) => {
+ 			typeCtx.typert.lookups.register("session", {
+ 				parameter: "session",
+@@ -1741,6 +1779,7 @@
+ 			session,
+ 			carrier,
+ 			emitCtx: this.ctx,
++			assertAppend: this.appendAdmission.assert,
+ 			announced: false,
+ 			announcing: false,
+ 			appending: false,
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -327,7 +327,14 @@
+  * attaches a session-log writer to each published session's write handle;
+  * a session published outside that lifecycle persists nothing.
+  */
++/** Final synchronous validation of an attached, immutable candidate, after dispatch collection. */
++export type SessionAppendAdmission = (session: Session, event: Readonly<SessionEvent>) => void;
+ export declare class SessionStore extends Service {
++    private readonly appendAdmission;
++    /** Require an admission policy for future attached appends; this cannot be undone. */
++    requireAppendAdmission(): void;
++    /** Install one fixed synchronous policy. Reinstalling the same function is idempotent. */
++    installAppendAdmission(policy: SessionAppendAdmission): void;
+     private store;
+     private counter;
+     private readonly projections;

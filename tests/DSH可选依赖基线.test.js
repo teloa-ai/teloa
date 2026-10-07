@@ -4,9 +4,11 @@ import {createRequire} from 'node:module'
 import {readFileSync} from 'node:fs'
 import {verifyDshPackages} from '../scripts/核对DSH依赖.mjs'
 
+const baseline=JSON.parse(readFileSync(new URL('../config/dsh-package-versions.json',import.meta.url),'utf8')).versions
+
 test('固定基线包含独立安装的 Browser、Computer、SSH、Auto review 官方提供方',()=>{
  const packages=new Map(verifyDshPackages().map(row=>[row.name,row.version]))
- for(const name of ['dsh-browser-use','dsh-experimental-browser-use-playwright-mcp','dsh-computer-use','dsh-experimental-computer-use-cua-driver-native','dsh-ssh','dsh-fs-ssh','dsh-subprocess-ssh','dsh-sandbox-ssh','dsh-experimental-auto-review'])assert.equal(packages.get('@deepseek-ai/'+name),'0.2.0-rc.2',name)
+ for(const name of ['dsh-browser-use','dsh-experimental-browser-use-playwright-mcp','dsh-computer-use','dsh-experimental-computer-use-cua-driver-native','dsh-ssh','dsh-fs-ssh','dsh-subprocess-ssh','dsh-sandbox-ssh','dsh-experimental-auto-review'])assert.equal(packages.get('@deepseek-ai/'+name),baseline['@deepseek-ai/dsh'],name)
 })
 
 test('本地中文检索扩展：DSH 依赖在固定基线内；onnxruntime-node 只经受管安装，不进任何 workspace 清单与锁文件',async()=>{
@@ -16,7 +18,7 @@ test('本地中文检索扩展：DSH 依赖在固定基线内；onnxruntime-node
  const packages=new Map(verifyDshPackages().map(row=>[row.name,row.version]))
  const manifest=JSON.parse(await readFile(new URL('packages/local-embedding/package.json',root),'utf8'))
  for(const [name,version] of Object.entries(manifest.dependencies)){
-  if(name==='@deepseek-ai/cordis')assert.equal(version,'4.0.4')
+  if(name==='@deepseek-ai/cordis')assert.equal(version,baseline[name])
   else if(name.startsWith('@deepseek-ai/'))assert.equal(packages.get(name),version,name)
  }
  assert.equal(manifest.dependencies['@huggingface/tokenizers'],'0.2.0')

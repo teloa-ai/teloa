@@ -25,7 +25,7 @@ const compat=fileURLToPath(new URL('../../compat/',import.meta.url))
 
 export async function patchedControllerPackage(t:Cleanup){
  const source=dirname(await realpath(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-api-session-controller/package.json')))
- const filename='dsh-session-controller-0.2.0-rc.2-input-admission'
+ const filename='dsh-session-controller-0.2.1-alpha.1-input-admission'
  const receipt=JSON.parse(await readFile(join(compat,filename+'.json'),'utf8')) as {
   schema:string;package:string;version:string;patchSha256:string;files:Array<{path:string;beforeSha256:string;afterSha256:string}>
  }

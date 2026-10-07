@@ -16,7 +16,7 @@ const overflow:readonly StreamChunk[]=[{type:'finish',reason:{kind:'error',failu
 
 /** 实际产品源码临时副本只重接 import；准入与摘要子类复用同一精确官方补丁模块。 */
 async function fixture(t:TestContext,local=false){
- const pkg=await patchedNativePackage<typeof import('@deepseek-ai/dsh-compaction-basic')>(t,{packageName:'@deepseek-ai/dsh-compaction-basic',compatBasename:'dsh-compaction-basic-0.2.0-rc.2-summary-request'})
+ const pkg=await patchedNativePackage<typeof import('@deepseek-ai/dsh-compaction-basic')>(t,{packageName:'@deepseek-ai/dsh-compaction-basic',compatBasename:'dsh-compaction-basic-0.2.1-alpha.1-summary-request'})
  const basic=pathToFileURL(join(pkg.root,'lib/index.js')).href
  const copy=async(relative:string,name:string,replacements:Record<string,string>={})=>{
   const origin=new URL(relative,import.meta.url),require=createRequire(origin)

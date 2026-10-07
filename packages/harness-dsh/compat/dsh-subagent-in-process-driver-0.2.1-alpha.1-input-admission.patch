@@ -1,0 +1,56 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -186,13 +186,13 @@
+ 		agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
+ 		signal: request.signal,
+ 		setup
+-	}), request.signal, request.prompt, childId, activationBoundary, structured);
++	}), request.signal, request.prompt, childId, activationBoundary, structured, parent);
+ }
+ /**
+ * Wrap a published child in the single run lifecycle that owns signal handoff,
+ * one turn, result settlement, and quiescent disposal.
+ */
+-function drivePublishedRun(handle, signal, prompt, childId, boundary, structured) {
++function drivePublishedRun(handle, signal, prompt, childId, boundary, structured, parent) {
+ 	const child = handle.agent;
+ 	const flags = { cancelled: false };
+ 	const onAbort = () => {
+@@ -204,10 +204,20 @@
+ 	const result = (async () => {
+ 		try {
+ 			if (!flags.cancelled) {
+-				child.followup(createUserMessage({
+-					content: prompt,
+-					source: { kind: "user" }
+-				}));
++				const session = child.session;
++				const parentSession = parent.session;
++				const message = createUserMessage({ content: prompt, source: { kind: "user" } });
++				const service = child.ctx.get("subagents");
++				if (service === void 0) child.followup(message);
++				else {
++					const admission = service.admitPrompt;
++					if (typeof admission !== "function") throw new Error("subagent initial prompt admission is unavailable");
++					await admission.call(service, { kind: "initial", mode: "one-shot", agent: child, message, sender: parent, delivery: "queue", signal }, () => {
++						signal.throwIfAborted();
++						if (flags.cancelled || handle.agent !== child || child.session !== session || parent.session !== parentSession || child.ctx.agents.get(childId) !== child || child.ctx.get("sessions")?.get(childId) !== session || child.ctx.agents.get(parent.id) !== parent || child.ctx.get("sessions")?.get(parent.id) !== parentSession || !child.ctx.agents.isOwnedBy(childId, parent)) throw new Error("subagent residency changed before initial prompt admission");
++						child.followup(message);
++					});
++				}
+ 				await child.whenIdle();
+ 			}
+ 			return readResult(child, boundary, flags.cancelled, structured ? { captured: structured.captured() } : void 0);
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -24,7 +24,9 @@
+  * and disposal work through the returned run. Rejection means the agent
+  * factory's unpublished creation transaction reached quiescence without
+  * publishing a child. Every start appends its resolved descriptor inside the
+- * child's initial turn.
++ * child's initial turn. Initial prompt admission may await the owning Subagent
++ * service; rejection after child publication belongs to run.result. A driver
++ * without that service preserves the original direct Free publication.
+  * @param request - the trusted typed start request, including its required signal.
+  * @param options - the optional fork seed.
+  * @returns a published holder-owned run.

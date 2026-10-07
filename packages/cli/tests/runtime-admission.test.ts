@@ -47,7 +47,7 @@ test('目录观察仍执行原认证处理并保留取消；其他方法和相�
  }
 })
 test('从官方包依赖范围加载网关，拒绝未验证的载体版本',async()=>{
- assert.equal(typeof await loadHost('@deepseek-ai/dsh-api-gateway','0.2.0-rc.2'),'function')
+ assert.equal(typeof await loadHost('@deepseek-ai/dsh-api-gateway','0.2.1-alpha.1'),'function')
  await assert.rejects(loadHost('@deepseek-ai/dsh-api-gateway','unverified'),/版本尚未验证/)
 })
 test('HTTP 关闸返回 503，管理通道保留认证处理，解闸后业务可用',async()=>{

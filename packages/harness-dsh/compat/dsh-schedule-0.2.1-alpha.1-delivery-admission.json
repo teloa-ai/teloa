@@ -1,0 +1,40 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-schedule",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "patchSha256": "5ae313c1722c63b0badde81c12a6f972de26d933d9e94f5f23c759459e4f7193",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "022b9f191b6ca0f4b0f26625afc49f375933068a42712c0a75e94e439d7e6d0e",
+      "afterSha256": "f4b223bf744bfc1fe098c1bd5349cc5bee5c8ba2bfb6fc08fe9270eb188df531"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "1f683f0c7a80ae940ab535e212cb81582676568d159dc9b39ff2ccb60dfbe480",
+      "afterSha256": "f672763dcfa4d30cb2ab972b4397d545303d827829a3d5eab136d6ad3764324c"
+    }
+  ],
+  "api": [
+    "ScheduleRuntimeOptions",
+    "ScheduleDeliveryAdmission",
+    "ScheduleService.requireDeliveryAdmission",
+    "ScheduleService.installDeliveryAdmission"
+  ],
+  "scope": {
+    "options": "ScheduleRuntimeOptions",
+    "admission": "admitDelivery({agent,message,occurrences:[{scheduleId,occurrenceAt}]},dispatch):Promise<void>",
+    "service": [
+      "requireDeliveryAdmission():void",
+      "installDeliveryAdmission(fn):void"
+    ],
+    "default": "Free preserves official behavior without admission; required is monotonic",
+    "scope": "synchronous once dispatch; time/task/exact agent and captured Session recheck; new own exact Inbox splice confirms committed delivery after notification failure; accepted captured Session flush and receipt continue",
+    "limitations": [
+      "Schedule inbox and task receipt are not atomic; crash may duplicate delivery",
+      "No automatic retry after refused admission",
+      "Provider must not await reentrant Schedule management"
+    ]
+  }
+}

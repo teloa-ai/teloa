@@ -1,0 +1,83 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1742,6 +1742,28 @@
+ * The abstract `llm` service: an adapter registry plus a streaming model-call
+ * API, interceptable via the `llm/stream` waterfall.
+ */
++// Deployment-owned synchronous gate at the final adapter boundary. Free has no gate by default.
++function createStreamAdmission() {
++ let required = false, policy;
++ return Object.freeze({
++  require() { required = true; },
++  install(candidate) {
++   if (policy !== void 0 || typeof candidate !== "function") throw new Error("LLM stream admission is already installed or invalid");
++   policy = candidate;
++  },
++  assert(options) {
++   if (policy === void 0) {
++    if (required) throw new LlmError("LLM stream admission provider is unavailable", "STREAM_ADMISSION_UNAVAILABLE");
++    return;
++   }
++   const returned = Reflect.apply(policy, void 0, [options]);
++   if (returned !== void 0) {
++    Promise.resolve(returned).catch(() => {});
++    throw new LlmError("LLM stream admission must be synchronous", "STREAM_ADMISSION_UNAVAILABLE");
++   }
++  }
++ });
++}
+ let LlmRuntime = (() => {
+ 	let _classSuper = TypertRemoteService;
+ 	let _instanceExtraInitializers = [];
+@@ -1799,7 +1821,10 @@
+ 		discoveries = /* @__PURE__ */ new Map();
+ 		constructor(ctx) {
+ 			super(ctx, "llm");
++			Object.defineProperty(this, "streamAdmission", { value: createStreamAdmission(), writable: false, configurable: false });
+ 		}
++		requireStreamAdmission() { this.streamAdmission.require(); }
++		installStreamAdmission(policy) { this.streamAdmission.install(policy); }
+ 		/** Notify topology observers without letting one broken listener veto the commit. */
+ 		emitAdaptersUpdated() {
+ 			for (const listener of this.ctx.events.dispatch("emit", ["llm/adapters-updated"])) try {
+@@ -2314,7 +2339,9 @@
+ 					};
+ 					if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions);
+ 				}
+-				iterator = dispatch(this.forAdapter(projectedOptions, adapter))[Symbol.asyncIterator]();
++				const dispatchOptions = this.forAdapter(projectedOptions, adapter);
++				this.streamAdmission.assert(options);
++				iterator = dispatch(dispatchOptions)[Symbol.asyncIterator]();
+ 			} catch (error) {
+ 				yield adapterFailureChunk(error, options.signal);
+ 				return;
+@@ -2324,7 +2351,8 @@
+ 				while (true) {
+ 					let item;
+ 					try {
+-						const next = await iterator.next();
++						this.streamAdmission.assert(options);
++					const next = await iterator.next();
+ 						item = next.done ? { done: true } : {
+ 							done: false,
+ 							value: next.value
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -233,11 +233,17 @@
+  * The abstract `llm` service: an adapter registry plus a streaming model-call
+  * API, interceptable via the `llm/stream` waterfall.
+  */
++/** Synchronous deployment gate; errors prevent final adapter dispatch or further iteration. */
++export type LlmStreamAdmission = (options: Readonly<GenerateOptions>) => void;
+ export declare class LlmRuntime extends TypertRemoteService {
+     private adapters;
+     private directory;
+     private discoveries;
+     constructor(ctx: Context);
++    /** Monotonic opt-in. Not a Remote API. */
++    requireStreamAdmission(): void;
++    /** Install exactly one immutable same-process gate. Not a Remote API. */
++    installStreamAdmission(policy: LlmStreamAdmission): void;
+     /** Notify topology observers without letting one broken listener veto the commit. */
+     private emitAdaptersUpdated;
+     /** Contained-listener diagnostic shared by the sync and async failure paths. */

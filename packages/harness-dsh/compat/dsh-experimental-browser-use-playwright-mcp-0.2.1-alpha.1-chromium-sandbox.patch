@@ -1,0 +1,36 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -14,6 +14,8 @@
+ ];
+ /** Validate the launch or attachment configuration before activation. */
+ const Config = BrowserMcpConfig;
++/** Controlled Chromium sandbox launch configuration capability. */
++const chromiumSandboxVersion = 1;
+ /**
+ * Expose Playwright's upstream tools in each live Session's scope.
+ * The pinned npm server runs under the current Node executable; browser state is not persisted by DSH.
+@@ -33,6 +35,7 @@
+ 	else {
+ 		args.push("--isolated");
+ 		if (config.headless) args.push("--headless");
++		if (config.chromiumSandbox === true) args.push("--sandbox");
+ 		if (config.executablePath !== void 0) args.push("--executable-path", config.executablePath);
+ 	}
+ 	mountSessionMcp(ctx, {
+@@ -45,4 +48,4 @@
+ 	});
+ }
+ //#endregion
+-export { Config, apply, inject, name };
++export { Config, apply, chromiumSandboxVersion, inject, name };
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -9,6 +9,8 @@
+ export type Config = BrowserMcpConfig;
+ /** Validate the launch or attachment configuration before activation. */
+ export declare const Config: typeof BrowserMcpConfig;
++/** Controlled Chromium sandbox launch configuration capability. */
++export declare const chromiumSandboxVersion = 1;
+ /**
+  * Expose Playwright's upstream tools in each live Session's scope.
+  * The pinned npm server runs under the current Node executable; browser state is not persisted by DSH.

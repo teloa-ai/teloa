@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "description": "可选的官方 Playwright Browser Use 组合；安装后仍须显式启用提供方。",
-  "engines": {"dsh": "0.2.0-rc.2"},
+  "engines": {"dsh": "0.2.1-alpha.1"},
   "files": ["cordis.patch.yml", "README.md"],
   "exports": {"./package.json": "./package.json", "./cordis.patch.yml": "./cordis.patch.yml"},
   "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
   "scripts": {"test": "node --test tests/*.test.mjs"},
   "dependencies": {
-    "@deepseek-ai/dsh-browser-use": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": "0.2.0-rc.2"
+    "@deepseek-ai/dsh-browser-use": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": "0.2.1-alpha.1"
   }
 }

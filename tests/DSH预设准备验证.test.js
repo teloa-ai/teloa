@@ -48,3 +48,44 @@ test('插件准备拒绝正文追加执行器、声明冒名和关闭官方预�
     assert.throws(() => verifyConfig(dump(rows)), /原生预设|未保留/)
   }
 })
+
+test('插件准备保留原生提醒服务，拒绝关闭、替换、删除及重复挂载', () => {
+  for (const mutate of [
+    rows => { rows.find(row => row.id === 'schedule').disabled = true },
+    rows => { rows.find(row => row.id === 'schedule').name = '@vendor/schedule' },
+    rows => rows.splice(rows.findIndex(row => row.id === 'schedule'), 1),
+    rows => rows.push({ id: 'schedule', name: '@deepseek-ai/dsh-schedule' }),
+    rows => rows.push({ id: 'another-service', name: '@deepseek-ai/dsh-schedule' }),
+  ]) {
+    const rows = configRows()
+    mutate(rows)
+    assert.throws(() => verifyConfig(dump(rows)), /提醒服务/)
+  }
+})
+
+test('插件准备拒绝重新启用原生自动化页及通过别名挂载相同入口', () => {
+  for (const mutate of [
+    rows => { rows.find(row => row.id === 'ui-schedule').disabled = false },
+    rows => { delete rows.find(row => row.id === 'ui-schedule').disabled },
+    rows => rows.splice(rows.findIndex(row => row.id === 'ui-schedule'), 1),
+    rows => rows.push({ id: 'another-ui', name: '@deepseek-ai/dsh-client-ui-schedule' }),
+  ]) {
+    const rows = configRows()
+    mutate(rows)
+    assert.throws(() => verifyConfig(dump(rows)), /自动化入口/)
+  }
+})
+
+test('插件准备拒绝宿主及嵌套组合重新挂载原生提醒写工具', () => {
+  for (const tool of [
+    { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
+    { id: 'another-tool', name: '@deepseek-ai/dsh-tool-schedule' },
+  ]) {
+    for (const target of ['host', 'group', 'preset']) {
+      const rows = configRows()
+      if (target === 'preset') rows.find(row => row.id === 'preset-standard').config.plugins.push(tool)
+      else rows.push(target === 'group' ? { id: 'additional-group', name: 'cordis:group', group: true, config: [tool] } : tool)
+      assert.throws(() => verifyConfig(dump(rows)), /提醒工具/)
+    }
+  }
+})

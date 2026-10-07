@@ -171,7 +171,7 @@ export const deniedPatchRowIds=new Set([
  // DSH 0.2 新增产品遥测与账号模型路由，沿用既有外发与模型接线保护。
  'session-telemetry-otel','desktop-product-telemetry','product-analytics','otel','llm-deepseek-account','sandbox-policy','sandbox','approval','permission','tools','ptc-runtime','connection',
  'agent-presets','agent-preset-registry','preset-standard','preset-ptc','preset-minimal','preset-cordis','subagent','subagent-spawn-in-process','subagent-fork-in-process','agent-default-model','llm-deepseek',
- 'tool-workflow','tool-ralph','workflow-ptc','tool-subagent','tool-subagent-fork','tool-subagent-control',
+ 'tool-workflow','tool-ralph','tool-schedule','schedule','ui-schedule','workflow-ptc','tool-subagent','tool-subagent-fork','tool-subagent-control',
  'tool-bash','tool-pwsh','tool-fs','tool-web',
  'bash-sandbox','pwsh-sandbox','subprocess','fs-sandbox','fs-observation-policy',
  'web','web-search-deepseek','web-fetch-http',

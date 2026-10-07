@@ -1,0 +1,266 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1,4 +1,5 @@
+ import { hostname } from "node:os";
++import { isDeepStrictEqual } from "node:util";
+ import { isAbsolute, resolve } from "node:path";
+ import z from "@deepseek-ai/schemastery";
+ import { AssistantStreamAccumulator, ReasoningEffortId, assistantStreamChunks, createUserMessage, errorChain, freezeMessage } from "@deepseek-ai/dsh-llm";
+@@ -12,10 +13,10 @@
+ import { brandString } from "@deepseek-ai/dsh-brand";
+ import { AttachmentError } from "@deepseek-ai/dsh-attachment";
+ import { buildForkSeed } from "@deepseek-ai/dsh-session/fork";
+-import { SessionLogOffset, SessionSeq, isAppendSurfaceEvent } from "@deepseek-ai/dsh-session";
++import { SessionLogOffset, SessionSeq, isAppendSurfaceEvent, snapshotSessionEvent } from "@deepseek-ai/dsh-session";
+ import { SessionTitleInvalidError } from "@deepseek-ai/dsh-session-title";
+ import { canonicalClientTimeZone } from "@deepseek-ai/dsh-util-time";
+-import { assertNever } from "@deepseek-ai/dsh-util-values";
++import { assertNever, deepFreeze, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
+ import { Deque } from "@deepseek-ai/dsh-deque";
+ import { performance } from "node:perf_hooks";
+ import { scheduler } from "node:timers/promises";
+@@ -664,6 +665,49 @@
+ 		boundary = next.seq;
+ 	}
+ 	return boundary;
++}
++/** One immutable host-local holder; it grants no permission from message source tags. */
++function createSessionInputAdmission() {
++	let required = false, policy;
++	const prompts = new WeakMap();
++	return Object.freeze({
++		get managed() { return required || policy !== void 0; },
++		require() { required = true; },
++		install(candidate) {
++			if (typeof candidate !== "function" || policy !== void 0 && policy !== candidate) throw new Error("Session input admission is already installed or invalid");
++			policy = candidate;
++		},
++		serializePrompt(agent, requestId, operation) {
++			if (!required && policy === void 0) return operation();
++			let pending = prompts.get(agent);
++			if (pending === void 0) { pending = new Map(); prompts.set(agent, pending); }
++			const previous = pending.get(requestId) ?? Promise.resolve();
++			const current = previous.catch(() => {}).then(operation);
++			pending.set(requestId, current);
++			return current.finally(() => { if (pending.get(requestId) === current) pending.delete(requestId); });
++		},
++		async publish(candidate, operation, acceptedReceipt) {
++			if (policy === void 0) {
++				if (required) throw new RemoteError("session/input-admission-unavailable", "Session input admission is required", {});
++				operation(); return;
++			}
++			let active = true, called = false, accepted = false;
++			const dispatch = () => {
++				if (!active || called) throw new Error("Session input admission scope is closed");
++				called = true;
++				try { operation(); accepted = true; }
++				catch (error) {
++					// Observer/binding failure after real append cannot erase its acceptance.
++					try { accepted = acceptedReceipt(); } catch {}
++					throw error;
++				}
++			};
++			try { await policy(candidate, dispatch); }
++			catch (error) { if (!accepted) throw error; }
++			finally { active = false; }
++			if (!accepted) throw new RemoteError("session/input-admission-unavailable", "Session input admission did not dispatch", {});
++		}
++	});
+ }
+ /** Implements Session business commands delegated by the Session Controller Remote service. */
+ var SessionCommandController = class {
+@@ -675,7 +719,8 @@
+ 	* @param agents - sole owner of create, resume, and Session-local model selection.
+ 	* @param defaultCwd - project directory used when create names neither a Workspace nor a cwd.
+ 	*/
+-	constructor(ctx, agents, defaultCwd) {
++	constructor(ctx, agents, defaultCwd, inputAdmission) {
++		Object.defineProperty(this, "inputAdmission", { value: inputAdmission, writable: false, configurable: false });
+ 		this.ctx = ctx;
+ 		this.agents = agents;
+ 		this.defaultCwd = defaultCwd;
+@@ -850,11 +895,21 @@
+ 	* @returns acknowledgement that the Agent accepted the prompt.
+ 	*/
+ 	async prompt(request) {
++		if (this.inputAdmission.managed) {
++			const { sessionId, requestId, mode, content, clientTimeZone } = request;
++			const copied = snapshotJsonValue(content);
++			if (copied === void 0 || typeof requestId !== "string" || requestId.length === 0 || !["queue", "steer"].includes(mode)) throw new RemoteError("gateway/bad-request", "invalid prompt request", {});
++			request = Object.freeze({ sessionId, requestId, mode, content: deepFreeze(copied), ...clientTimeZone === void 0 ? {} : { clientTimeZone } });
++		}
+ 		if (!hasPromptContent(request.content)) throw new RemoteError("gateway/bad-request", "prompt content must include non-whitespace text or an attachment", {});
+ 		const clientTimeZone = request.clientTimeZone === void 0 ? void 0 : canonicalClientTimeZone(request.clientTimeZone);
+ 		if (request.clientTimeZone !== void 0 && clientTimeZone === void 0) throw new RemoteError("session/invalid-time-zone", "clientTimeZone must be UTC or a valid IANA Area/Location name", { value: request.clientTimeZone });
+ 		const agent = await this.resolveAgent(request.sessionId);
+-		if (hasPromptRequest(agent, request.requestId)) return { accepted: true };
++		const session = agent.session;
++		const managed = this.inputAdmission.managed;
++		const assertTarget = () => { if (managed && (agent.id !== request.sessionId || session.id !== request.sessionId || agent.session !== session || this.ctx.agents.get(agent.id) !== agent || this.ctx.sessions.get(agent.id) !== session)) throw new RemoteError("session/not-found", "prompt target identity changed before receipt lookup", { sessionId: request.sessionId }); };
++		assertTarget();
++		if (hasPromptRequest(agent, request.requestId, managed)) return { accepted: true };
+ 		const source = {
+ 			kind: "user",
+ 			rpcId: request.requestId,
+@@ -862,6 +917,7 @@
+ 		};
+ 		const hasImage = request.content.some((part) => part.type === "image");
+ 		const admit = async () => {
++			if (this.inputAdmission.managed) { assertTarget(); if (hasPromptRequest(agent, request.requestId, true)) return { accepted: true }; }
+ 			try {
+ 				const env_2 = {
+ 					stack: [],
+@@ -875,15 +931,22 @@
+ 						if (model.inputModalities !== void 0 && !model.inputModalities.includes("image")) throw new RemoteError("session/attachment-invalid", `Model "${current.model}" does not support image input.`, { reason: "MODEL_DOES_NOT_SUPPORT_IMAGES" });
+ 					}
+ 					const admission = resolvePromptFileReceipts(request.content, (receiptId) => this.ctx.fileUploads.resolve(agent, receiptId));
+-					const message = createUserMessage({
++					const prepared = createUserMessage({
+ 						content: await this.ctx.attachments.admitPromptContent(admission.content),
+ 						source
+ 					});
+-					if (this.ctx.agents.get(agent.id) !== agent) throw new RemoteError("session/not-found", `session "${agent.id}" was disposed during prompt admission`, { sessionId: agent.id });
+-					const binding = __addDisposableResource$3(env_2, this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId), false);
+-					if (request.mode === "steer") agent.steer(message);
+-					else agent.followup(message);
+-					binding.commit();
++					const managed = this.inputAdmission.managed;
++					const message = managed ? snapshotSessionEvent({ type: "user/message", seq: SessionSeq(0), time: 0, data: prepared, surfaceOp: "append" }).data : prepared;
++					const publish = () => {
++						if (this.ctx.agents.get(agent.id) !== agent || managed && (agent.session !== session || this.ctx.sessions.get(agent.id) !== session)) throw new RemoteError("session/not-found", `session "${agent.id}" was disposed during prompt admission`, { sessionId: agent.id });
++						if (managed && hasPromptRequest(agent, request.requestId, true)) return;
++						const binding = __addDisposableResource$3(env_2, this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId), false);
++						if (request.mode === "steer") agent.steer(message);
++						else agent.followup(message);
++						binding.commit();
++					};
++					if (managed) await this.inputAdmission.publish(Object.freeze({ kind: "prompt", agent, message, requestId: request.requestId, mode: request.mode }), publish, () => this.ctx.agents.get(agent.id) === agent && agent.session === session && this.ctx.sessions.get(agent.id) === session && hasPromptRequest(agent, request.requestId, true));
++					else publish();
+ 				} catch (e_2) {
+ 					env_2.error = e_2;
+ 					env_2.hasError = true;
+@@ -891,13 +954,13 @@
+ 					__disposeResources$3(env_2);
+ 				}
+ 			} catch (error) {
+-				if (remoteErrorOf(error) !== void 0) throw error;
++				if (remoteErrorOf(error) !== void 0 || error?.code === "teloa/forbidden" || error?.code === "teloa/unavailable") throw error;
+ 				if (error instanceof AttachmentError) throw new RemoteError("session/attachment-invalid", error.message, { reason: error.code });
+ 				throw new RemoteError("session/agent-busy", "prompt rejected", { reason: String(error) });
+ 			}
+ 			return { accepted: true };
+ 		};
+-		return hasImage ? this.agents.serializeImageAdmission(agent, admit) : admit();
++		return this.inputAdmission.serializePrompt(agent, request.requestId, () => hasImage ? this.agents.serializeImageAdmission(agent, admit) : admit());
+ 	}
+ 	async requireModel(selection) {
+ 		if (!await modelAvailable(this.ctx, selection)) throw new RemoteError("session/model-unavailable", "Select an available model before sending a message.", {
+@@ -937,6 +1000,12 @@
+ 	* @returns acknowledgement that the queue mutation was applied.
+ 	*/
+ 	async updateQueue(request) {
++		if (this.inputAdmission.managed) {
++			const { sessionId, itemId, action } = request;
++			const copied = snapshotJsonValue(action);
++			if (copied === void 0) throw new RemoteError("gateway/bad-request", "invalid queue action", {});
++			request = Object.freeze({ sessionId, itemId, action: deepFreeze(copied) });
++		}
+ 		if (request.action.kind === "edit") {
+ 			if (request.action.content.some((block) => block.type !== "text")) throw new RemoteError("session/attachment-invalid", "queue edits accept text content only", { reason: "QUEUE_EDIT_NON_TEXT" });
+ 			if (!hasPromptContent(request.action.content)) throw new RemoteError("gateway/bad-request", "queue edit content must include non-whitespace text", {});
+@@ -965,14 +1034,25 @@
+ 		};
+ 		if (located === void 0) throw new RemoteError("session/queue-item-not-found", "queued item is no longer pending", { itemId: request.itemId });
+ 		const { target, message } = located;
++		if (request.action.kind === "steer" && this.inputAdmission.managed) throw new RemoteError("session/steer-unavailable", "managed queue steering requires trusted accepted-input continuation", { itemId: request.itemId, reason: "TRUSTED_CONTINUATION_NOT_IMPLEMENTED" });
+ 		if (request.action.kind === "steer" && (target !== "next-turn" || agent.status !== "running")) throw new RemoteError("session/steer-unavailable", "current turn no longer accepts steering", { itemId: request.itemId });
+ 		switch (request.action.kind) {
+-			case "edit":
+-				agent.inbox.replace(request.itemId, freezeMessage({
+-					...message,
+-					content: [...request.action.content]
+-				}));
++			case "edit": {
++				const edited = freezeMessage({ ...message, content: [...request.action.content] });
++				if (!this.inputAdmission.managed) agent.inbox.replace(request.itemId, edited);
++				else {
++					const session = agent.session;
++					const startSeq = session.seq;
++					const candidate = snapshotSessionEvent({ type: "user/message", seq: SessionSeq(0), time: 0, data: edited, surfaceOp: "append" }).data;
++					await this.inputAdmission.publish(Object.freeze({ kind: "queue-edit", agent, message: candidate, itemId: request.itemId, target, previousMessage: message }), () => {
++						if (this.ctx.agents.get(agent.id) !== agent || agent.session !== session || this.ctx.sessions.get(agent.id) !== session) throw new RemoteError("session/not-found", "queue target changed during admission", { sessionId: agent.id });
++						const pending = target === "next-turn" ? agent.inbox.nextTurn : agent.inbox.nextStep;
++						if (pending.find(item => item.id === request.itemId) !== message) throw new RemoteError("session/queue-item-not-found", "queued item changed during admission", { itemId: request.itemId });
++						agent.inbox.replace(request.itemId, candidate);
++					}, () => this.ctx.agents.get(agent.id) === agent && agent.session === session && this.ctx.sessions.get(agent.id) === session && session.snapshotEvents().some(event => event.seq >= startSeq && session.isOwnSeq(event.seq) && event.type === "agent/inbox/spliced" && event.data.target === target && event.data.inserted.some(item => isDeepStrictEqual(item, candidate))));
++				}
+ 				break;
++			}
+ 			case "remove": {
+ 				agent.inbox.remove(request.itemId);
+ 				const source = message.source;
+@@ -1062,14 +1142,14 @@
+ 		receiptIds: [...receiptIds]
+ 	};
+ }
+-function hasPromptRequest(agent, requestId) {
++function hasPromptRequest(agent, requestId, ownHistory = false) {
+ 	const matches = (message) => {
+ 		const source = message.source;
+ 		return source.kind === "user" && "rpcId" in source && source.rpcId === requestId;
+ 	};
+ 	if (agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)) return true;
+ 	return agent.session.snapshotEvents().some((event) => {
+-		if (event.type !== "user/message") return false;
++		if (event.type !== "user/message" || ownHistory && !agent.session.isOwnSeq(event.seq)) return false;
+ 		const source = event.data.source;
+ 		return source.kind === "user" && "rpcId" in source && source.rpcId === requestId;
+ 	});
+@@ -2868,9 +2948,10 @@
+ 		constructor(ctx, config, internals = {}) {
+ 			super(ctx, "sessionController", { namespace: "session" });
+ 			const resolved = SessionController.Config(config);
++			Object.defineProperty(this, "inputAdmission", { value: createSessionInputAdmission(), writable: false, configurable: false });
+ 			installModelSelectionProjection(ctx);
+ 			this.agents = new ApiSessionAgentController(ctx);
+-			this.commands = new SessionCommandController(ctx, this.agents, process.cwd());
++			this.commands = new SessionCommandController(ctx, this.agents, process.cwd(), this.inputAdmission);
+ 			ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
+ 				const result = await this.agents.resolveAgent(sessionId);
+ 				if ("error" in result) throw result.error;
+@@ -2919,6 +3000,10 @@
+ 				ctx.emit("api-session/activity", session.id, event.time);
+ 			});
+ 		}
++		/** Require input admission before publishing new prompts or edits; this cannot be undone. */
++		requireInputAdmission() { this.inputAdmission.require(); }
++		/** One fixed local publisher policy. Managed queue-steer still requires future trusted continuation. */
++		installInputAdmission(policy) { this.inputAdmission.install(policy); }
+ 		promote(observation) {
+ 			const sessionId = observation.header.id;
+ 			const task = (async () => {
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -1,3 +1,11 @@
++import type { Agent } from '@deepseek-ai/dsh-agent';
++import type { UserMessage } from '@deepseek-ai/dsh-session';
++/** Exact host-local, immutable candidate after attachment preparation. No source tag grants execution. */
++export type SessionInputAdmissionRequest =
++    | Readonly<{ kind: 'prompt'; agent: Agent; message: UserMessage; requestId: string; mode: 'queue' | 'steer' }>
++    | Readonly<{ kind: 'queue-edit'; agent: Agent; message: UserMessage; itemId: string; target: 'next-turn' | 'next-step'; previousMessage: UserMessage }>;
++/** Await authorization, then synchronously dispatch once. Required managed queue-steer is not yet covered: trusted accepted-input continuation must be implemented separately. */
++export type SessionInputAdmission = (candidate: SessionInputAdmissionRequest, dispatch: () => void) => Promise<void>;
+ /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
+ import { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+@@ -63,6 +71,10 @@
+      * @param internals - host integrations replaceable by direct unit tests.
+      */
+     constructor(ctx: Context, config: Config, internals?: SessionControllerInternals);
++    /** Monotonic requirement for future new input; remove/read/cancel remain available. */
++    requireInputAdmission(): void;
++    /** Install one fixed host-local policy; identical reinstall is idempotent. */
++    installInputAdmission(policy: SessionInputAdmission): void;
+     private promote;
+     /**
+      * Resolve or resume one ordinary Session for another Host API domain.

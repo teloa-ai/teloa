@@ -16,19 +16,19 @@ type Cleanup={after:(action:()=>unknown)=>void}
 export async function patchedSessionPackage(t:Cleanup){
  const result=await patchedNativePackage<typeof import('@deepseek-ai/dsh-session')&{
   SessionStore:new(ctx:Context)=>FinalSessionStore
- }>(t,{packageName:'@deepseek-ai/dsh-session',compatBasename:'dsh-session-0.2.0-rc.2-append-admission'})
+ }>(t,{packageName:'@deepseek-ai/dsh-session',compatBasename:'dsh-session-0.2.1-alpha.1-append-admission'})
  return result.namespace
 }
 
 /** 同一私有完整官方图；Loop 与 Tools 共用 scheduler Symbol，LLM marker/Adapter 保持原模块。 */
 export async function patchedCorePackages(t:Cleanup){
  const sessionPackage=await patchedSessionPackage(t)
- const agentPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent')>(t,{packageName:'@deepseek-ai/dsh-agent',compatBasename:'dsh-agent-0.2.0-rc.2-announcement-abort'})
- const persistenceSeam=await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence')>(t,{packageName:'@deepseek-ai/dsh-session-persistence',compatBasename:'dsh-session-persistence-0.2.0-rc.2-open-admission'})
- const persistencePackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence-jsonl')>(t,{packageName:'@deepseek-ai/dsh-session-persistence-jsonl',compatBasename:'dsh-session-persistence-jsonl-0.2.0-rc.2-open-admission',overrides:{'@deepseek-ai/dsh-session-persistence':persistenceSeam.root}})
- const llmPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-llm')>(t,{packageName:'@deepseek-ai/dsh-llm',compatBasename:'dsh-llm-0.2.0-rc.2-stream-admission'})
- const toolsPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-tools')>(t,{packageName:'@deepseek-ai/dsh-tools',compatBasename:'dsh-tools-0.2.0-rc.2-work-admission'})
- const loopPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t,{packageName:'@deepseek-ai/dsh-agent-loop',compatBasename:'dsh-agent-loop-0.2.0-rc.2-work-admission',overrides:{'@deepseek-ai/dsh-tools':toolsPackage.root,'@deepseek-ai/dsh-agent':agentPackage.root,'@deepseek-ai/dsh-session-persistence':persistenceSeam.root}})
+ const agentPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent')>(t,{packageName:'@deepseek-ai/dsh-agent',compatBasename:'dsh-agent-0.2.1-alpha.1-announcement-abort'})
+ const persistenceSeam=await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence')>(t,{packageName:'@deepseek-ai/dsh-session-persistence',compatBasename:'dsh-session-persistence-0.2.1-alpha.1-open-admission'})
+ const persistencePackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence-jsonl')>(t,{packageName:'@deepseek-ai/dsh-session-persistence-jsonl',compatBasename:'dsh-session-persistence-jsonl-0.2.1-alpha.1-open-admission',overrides:{'@deepseek-ai/dsh-session-persistence':persistenceSeam.root}})
+ const llmPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-llm')>(t,{packageName:'@deepseek-ai/dsh-llm',compatBasename:'dsh-llm-0.2.1-alpha.1-stream-admission'})
+ const toolsPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-tools')>(t,{packageName:'@deepseek-ai/dsh-tools',compatBasename:'dsh-tools-0.2.1-alpha.1-work-admission'})
+ const loopPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t,{packageName:'@deepseek-ai/dsh-agent-loop',compatBasename:'dsh-agent-loop-0.2.1-alpha.1-work-admission',overrides:{'@deepseek-ai/dsh-tools':toolsPackage.root,'@deepseek-ai/dsh-agent':agentPackage.root,'@deepseek-ai/dsh-session-persistence':persistenceSeam.root}})
  return {sessionPackage,agentPackage:agentPackage.namespace,persistencePackage:persistencePackage.namespace,llmPackage:llmPackage.namespace,toolsPackage:toolsPackage.namespace,loopPackage:loopPackage.namespace}
 }
 

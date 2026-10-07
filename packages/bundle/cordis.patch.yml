@@ -13,6 +13,11 @@
 # Teloa 直接承接原生设置入口，避免工作台再次挂载整套会话侧栏。
 - id: ui-sidebar
   disabled: true
+# 原生提醒记录和投递仍由 Schedule 承载；业务自动化沿用 Teloa 计划，不挂第二个任务页。
+- id: schedule
+  disabled: false
+- id: ui-schedule
+  disabled: true
 # Teloa 负责通用设置 slot；官方整组会重复声明子 slot，开发者工具通过公开配置服务接入。
 - id: ui-settings-general
   disabled: true
