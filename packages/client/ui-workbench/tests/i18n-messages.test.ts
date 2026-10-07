@@ -18,6 +18,14 @@ import {correctionMistranslation, lockSense, plainLanguageExemptions, plainLangu
 
 const expectedKeys = [...MESSAGE_KEYS].sort()
 
+test('工作概览先维护简繁英，保留港台差异，其余语言新词条回退英文',()=>{
+ assert.equal(translateMessage('zh-CN','overview.title'),'工作概览')
+ assert.equal(translateMessage('zh-TW','overview.resourceRecords',{count:2}),'2 筆記錄')
+ assert.equal(translateMessage('zh-HK','overview.resourceRecords',{count:2}),'2 條記錄')
+ assert.equal(translateMessage('en','overview.title'),'Work overview')
+ for(const locale of MAIN_LOCALES)if(!['zh-CN','zh-Hant','en'].includes(locale))assert.equal(translateMessage(locale,'overview.title'),'Work overview')
+})
+
 const localizedMarketTemplateKeys = [
   'market.template.useEyebrow',
   'market.template.backToContent',

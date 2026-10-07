@@ -178,6 +178,8 @@ import { registerResources,resourceEndpoints } from './resources.ts'
 import { createCredentialStoreHandler,credentialStoreEndpoints } from './credential-store.ts'
 import {createSkillSecretStore,declaredSkillSecretsResolver,isManagedSkillWinner,skillSecretEndpoints} from './skill-secrets.ts'
 import { registerSkillContextDedup } from './skill-context.ts'
+import {getToolResourceProvenance} from './tool-resource-provenance.ts'
+import {createToolResourceUseSnapshots,resourceUseSnapshotSessionScope} from './tool-resource-use-snapshots.ts'
 import {registerRoleConversationContext} from './role-conversation-context.ts'
 import { createArtifactFileReader,artifactFileEndpoints } from './artifact-files.ts'
 import {createArtifactHandler,artifactEndpoints} from './artifacts.ts'
@@ -231,7 +233,7 @@ const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
 const conversationWorkContextEndpoints=['work-context/read','work-context/set','work-context/eligibility','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
 export const handoffEndpoints=['handoffs/list','handoffs/resolve','handoffs/change'] as const
-const endpointSet=new Set([...conversationWorkContextEndpoints,...projectEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','roles/lifecycle',...handoffEndpoints,...resourceEndpoints,...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints,...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
+const endpointSet=new Set([...conversationWorkContextEndpoints,...projectEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints,...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints,...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
 
 type HandoffPort=Pick<HandoffService,'list'|'resolve'|'change'>
 export function createHandoffHandler(ownerId:string,get:()=>Promise<HandoffPort>):(endpoint:string,payload:unknown)=>Promise<unknown>{
@@ -290,6 +292,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 不用磁盘原文代替实际生效的工具面。
   assertCompositionSafety(ctx,await readProfileFacts(resolveTeloaDshHome(projectRoot),resolveTeloaDshProfile(trusted)))
   registerSkillContextDedup(ctx)
+  const toolResourceProvenance=getToolResourceProvenance(ctx)
+  const toolRegistrationContext=toolResourceProvenance.wrapContext(ctx,{kind:'plugin',providerId:'@teloa/harness-dsh',name:'Teloa'})
   const runtimeRoot=resolveTeloaRuntime(projectRoot,trusted)
   // 设置 → 凭据存储（规格 §0-1、§0-3）：档位与锁定状态、历史明文副本清单。处理器只挂在 /teloa 连接上（见下），模型工具与进程内调用口够不到。
   const credentialProvider=ctx.credentials as unknown as {status?:()=>{tier:'keyring'|'file'|'plaintext'|null;fault:string|null};livePlaintextPath?:()=>string|undefined;quarantinedPlaintextPaths?:()=>string[];paths?:{dshHome:string}}
@@ -363,6 +367,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
   },{now:()=>new Date().toISOString()},async source=>{await service.bySession(owner,source);await inspectOrdinarySession(id=>ctx.sessionController.inspect(id),brandString<SessionId>(source))})
   await copies.list(owner,{})
+  const resourceUseSnapshots=createToolResourceUseSnapshots({root:resolve(runtimeRoot,'resource-use'),authorize:async sessionId=>{
+    await service.bySession(owner,sessionId)
+    const inspection=await ctx.sessionController.inspect(brandString<SessionId>(sessionId))
+    return resourceUseSnapshotSessionScope(sessionId,inspection.events)
+  }})
+  ctx.effect(()=>toolResourceProvenance.onNestedUse(resourceUseSnapshots.record),'Teloa 已成功嵌套调用来源快照')
   const resources=registerResources(ctx,projectRoot,owner,service,async sessionId=>{
     const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
     if('error' in resolved)throw new WorkError('teloa/session-unavailable','原生会话历史暂不可用。')
@@ -694,15 +704,15 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
   },taskTeam,taskBrowser.cleanup,taskOrchestration,taskWorkspaceFiles)
   assertRoutingGuardRegisteredFirst(ctx)
-  resources.beforeDatabaseClose(registerTaskSubagentTool(ctx,subagentDelegation))
-  registerRoleMemoryTools(ctx,{
+  resources.beforeDatabaseClose(registerTaskSubagentTool(toolRegistrationContext,subagentDelegation))
+  registerRoleMemoryTools(toolRegistrationContext,{
     owner,
     run:sessionId=>(runService()).then(service=>service.skillScope(owner,{sessionId})),
     scope:runId=>(runService()).then(service=>service.executionScope(owner,{runId})),
     create:(actor,input)=>(roleMemoryService()).then(service=>service.create(actor,input)),
   })
   // 两个每日小结工具与岗位记忆候选同属自授权集：每次运行都可见，能不能用由它们自己的闸判定。
-  registerRoleDailyDigestTools(ctx,{
+  registerRoleDailyDigestTools(toolRegistrationContext,{
     owner,
     run:sessionId=>(runService()).then(service=>service.skillScope(owner,{sessionId})),
     digestRun:runId=>(roleDailyLogService()).then(service=>service.digestRun(owner,{runId})),
@@ -714,7 +724,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    * 有群执行上下文且本岗位 canPost 为真才放行，其余一律拒。登记表只记意图，
    * 字节读取、核对与定版都在运行结束后的 `post` 事务里。
    */
-  const groupAttachClaims=registerGroupAttachTool(ctx,{context:async(sessionId,signal)=>{
+  const groupAttachClaims=registerGroupAttachTool(toolRegistrationContext,{context:async(sessionId,signal)=>{
     signal.throwIfAborted()
     const run=await(await runService()).skillScope(owner,{sessionId})
     if(!run?.groupContext||run.sessionId!==sessionId||!['accepted','active'].includes(run.state))return undefined
@@ -729,7 +739,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    * 再一道是本话题：目标消息必须落在本次运行来源消息所在的那个话题里，跨话题一律拒。
    * 四道闸（群运行、canPost、入参、本话题）都在工具自己的 authorize() 里判完，`react` 端口只负责写。
    */
-  registerGroupReactTool(ctx,{
+  registerGroupReactTool(toolRegistrationContext,{
     context:async(sessionId,signal)=>{
       signal.throwIfAborted()
       const run=await(await runService()).skillScope(owner,{sessionId})
@@ -753,7 +763,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
   })
   const conversationKnowledge=new ConversationKnowledgeService(database.pool,database.knowledge,database.service,()=>new Date().toISOString())
-  registerKnowledgeTools(ctx,{
+  registerKnowledgeTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     knowledge:conversationKnowledge,
@@ -1222,7 +1232,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const sessionCapabilitiesReader=createNativeSessionCapabilities(ctx,{owner,conversations:service,links:workLinks,pool:database.pool,isRoutingSession})
   workAccess.installSessionCapabilities(sessionCapabilitiesReader)
   ctx.effect(()=>()=>workAccess.releaseSessionCapabilities(sessionCapabilitiesReader),'Teloa 宿主会话能力读取器')
-  resources.beforeDatabaseClose(registerNativeCapabilityTools(ctx,owner))
+  resources.beforeDatabaseClose(registerNativeCapabilityTools(toolRegistrationContext,owner))
   const conversationWorkEligibility=async(sessionId:string)=>{
    const binding=await service.bySession(owner,sessionId),resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
    if('error' in resolved)throw new WorkError('teloa/session-unavailable','当前会话尚不可读取。')
@@ -1249,7 +1259,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   const businessResponsibilityHandler=createBusinessResponsibilityHandler(owner,businessScopeIds,businessDefinitionServices)
   const businessBuilderActor=async()=>({ownerId:owner,scopeIds:await businessScopeIds()})
-  resources.beforeDatabaseClose(registerBusinessBuilderTools(ctx,{
+  resources.beforeDatabaseClose(registerBusinessBuilderTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
    isRoleConversation:async sessionId=>(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='role'),isTaskConversation,
    binding:async sessionId=>(await businessBuilderServices()).bindings.bySession(await businessBuilderActor(),{sessionId}),
@@ -1265,13 +1275,13 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    context:sessionId=>conversationWork.context(owner,{sessionId}),
    scopes:async()=>(await new BusinessScopeService((await resources.database()).pool).list(owner)).filter(item=>item.scope!=='general').map(({scope,title})=>({scope,title})),
   }
-  const stopBusinessResponsibilityTools=registerBusinessResponsibilityTools(ctx,{
+  const stopBusinessResponsibilityTools=registerBusinessResponsibilityTools(toolRegistrationContext,{
    ...businessConversationAuthorization,
    roles:async actor=>{if(actor!==owner)throw new WorkError('teloa/forbidden','员工目录不属于当前本人。');const {pool,identity,plans}=await autoDreamPlans();return new RoleService(pool,identity,{plans}).list(owner,{})},
    responsibility:{read:async(actor,input)=>(await businessDefinitionServices()).responsibility.read(actor,input),set:async(actor,input)=>(await businessDefinitionServices()).responsibility.set(actor,input),receipt:async(actor,input)=>(await businessDefinitionServices()).responsibility.receipt(actor,input)},
   })
   resources.beforeDatabaseClose(()=>{stopBusinessResponsibilityTools()})
-  resources.beforeDatabaseClose(registerBusinessRecordTools(ctx,{
+  resources.beforeDatabaseClose(registerBusinessRecordTools(toolRegistrationContext,{
    ...businessConversationAuthorization,
    definitions:async(actor,scope)=>{
     // 即时授权在checkout前完成；审批不持连接，定义只从已采用来源读取。
@@ -1288,7 +1298,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     recentBatches:async(actor,input)=>(await businessDefinitionServices()).records.recentBatches(actor,input),
    },
   }))
-  resources.beforeDatabaseClose(registerBusinessImportTools(ctx,{
+  resources.beforeDatabaseClose(registerBusinessImportTools(toolRegistrationContext,{
    ...businessConversationAuthorization,
    imports:{
     get:async(actor,input)=>(await businessDefinitionServices()).imports.get(actor,input),
@@ -1351,7 +1361,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    now:()=>new Date().toISOString(),
   })
   deliverConversationWork=()=>runtimeAdmission.run(()=>workDispatch.deliver())
-  resources.beforeDatabaseClose(registerConversationWorkTools(ctx,{
+  resources.beforeDatabaseClose(registerConversationWorkTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
    isRoleConversation:async sessionId=>(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='role'),
    isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:sessionId=>businessBindings.isPendingDaily(owner,sessionId),
@@ -1362,7 +1372,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    facts:async input=>new WorkFactsService(database.pool,()=>new Date().toISOString()).read({ownerId:owner,scopeIds:['general',...await businessScopeIds()]},input),
    data:(input,signal)=>businessDataHandler('business-data/query',input,signal),now:()=>new Date().toISOString(),
   }))
-  registerPlanTools(ctx,{
+  registerPlanTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     planHandler,scheduleHandler:planScheduleHandler,
@@ -1372,7 +1382,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
 
 
-  registerIndustryPlanTools(ctx,{
+  registerIndustryPlanTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     handler:industryPlansHandler,
@@ -1382,7 +1392,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
   })
 
-  registerSkillInstallTools(ctx,{
+  registerSkillInstallTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     handler:skillInstallationsHandler,
@@ -1405,7 +1415,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     lifecycle:payload=>changeRoleLifecycle(payload),
     audit:entry=>ctx.logger.info('Teloa 方案一键准备：%o',entry),
   }))
-  registerMarketSessionTools(ctx,{
+  registerMarketSessionTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     // teloaWork 在 applyHost 末尾 provide；按次读取，IM 通道未装载时没有 IM 会话。
@@ -1425,7 +1435,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const skillHttpAuthPorts={owner,conversation:(id:string)=>service.bySession(owner,id),readTaskPolicy:async(id:string,signal:AbortSignal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})}}
   // 技能密钥审计一行一条 JSON；工具本体与调用时授权（deny caller）共用这一个出口。
   const skillHttpAudit=(event:SkillHttpAuditEvent)=>ctx.logger.info(JSON.stringify(event))
-  registerSkillHttpTool(ctx,{
+  registerSkillHttpTool(toolRegistrationContext,{
     skillVisible:(exec,name,signal)=>availabilitySync.stable(async()=>{
       if(!exec.agent)return false
       const selected=await selectedManagedSkill(name)
@@ -1462,7 +1472,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     warn:(skill,error)=>ctx.logger.warn(JSON.stringify({event:'skill-secret.hint-skipped',skill,error:error instanceof Error?error.name:'Error'})),
   })
   // 会话内浏览/搜索评价与发表评价（规格 §13）：发表一律原生确认卡，正文过主干贴密钥闸；账号授权仍只在市场页
-  registerMarketReviewTools(ctx,{
+  registerMarketReviewTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     reviews:(endpoint,payload)=>marketReviewsHandler(endpoint,payload),
@@ -1471,7 +1481,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     isImSession:sessionId=>(ctx.get('teloaWork') as TeloaWorkService|undefined)?.imSessions.has(sessionId)??false,
   })
 
-  registerBusinessDefinitionTools(ctx,{
+  registerBusinessDefinitionTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     // 这个私有写口不在 endpointSet 中；浏览器 RPC 无法将它当作任意模型管理端点使用。
@@ -1493,7 +1503,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
   })
   // AI 员工成果与看板读取工具：任务会话只读看板、试算 SQL、按 role-result 映射记录成果；没有刷新、同步与声明写口。
-  registerBusinessResultTools(ctx,{
+  registerBusinessResultTools(toolRegistrationContext,{
     owner,conversation:id=>service.bySession(owner,id),
     readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
     readBusinessScope:async(id,signal)=>{signal.throwIfAborted();const pool=(await resources.database()).pool,identity={id:randomUUID,now:()=>new Date().toISOString()};return new BusinessTaskService(pool,identity,new TaskService(pool,identity)).businessSourceScope(owner,id)},
@@ -1505,7 +1515,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 模型服务只经公开 ctx.reflect 发现（与上面 bundledExtensionLoaded 同一读口）：扩展停用时工具报 dependency-unavailable 并给启用引导，不引入扩展源码。
   // 本人普通会话在模型就绪后默认可用；受管任务按岗位整工具授权（task-tool-guard 清单闸），主体与目标范围沿 readExecutionKnowledge 同一条 taskKnowledgeAuthorization。
   const retrievalPausePath=resolve(runtimeRoot,'retrieval-auto-paused.json')
-  const localRetrieval=registerLocalRetrieval(ctx,{
+  const localRetrieval=registerLocalRetrieval(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
    taskAuthorization:async(sessionId,signal)=>{
     signal.throwIfAborted()
@@ -1536,14 +1546,14 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   try{
    const builtin=officialCatalogBuiltin(builtinSkillCreatorName)
    skillCreator=await prepareBuiltinSkillCreator(ctx,{runtimeRoot,treeHash:builtin.treeHash,files:builtin.files})
-   registerBuiltinSkillCreator(ctx,skillCreator,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy})
+   registerBuiltinSkillCreator(toolRegistrationContext,skillCreator,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy})
   }catch(error){ctx.logger.error('Teloa 内置技能创建器不可用，技能草案将被拒绝：%o',error)}
   // 内置「看板设计」技能：同一套物化与登记，只到本人普通会话；准备失败只记日志，业务声明草案工具照常可用。
   try{
    const builtin=officialCatalogBuiltin(builtinDashboardDesignerName)
-   registerBuiltinSkill(ctx,await prepareBuiltinSkill(ctx,{name:builtinDashboardDesignerName,runtimeRoot,treeHash:builtin.treeHash,files:builtin.files}),{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy})
+   registerBuiltinSkill(toolRegistrationContext,await prepareBuiltinSkill(ctx,{name:builtinDashboardDesignerName,runtimeRoot,treeHash:builtin.treeHash,files:builtin.files}),{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy})
   }catch(error){ctx.logger.error('Teloa 内置看板设计技能不可用：%o',error)}
-  registerPageCreateTools(ctx,{
+  registerPageCreateTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),skillCreator,
    readTaskPolicy:ordinaryTaskPolicy,
    directory:async input=>{
@@ -1596,6 +1606,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const connection=Reflect.get(ctx,'connection') as HostConnectionHandle
   const dispatchTeloaEndpoint=async(endpoint:string,payload:unknown,signal:AbortSignal)=>{
     if(!endpointSet.has(endpoint)||endpoint==='requests/pending/list'||endpoint==='requests/pending/recover'||endpoint==='requests/pending/ack')throw new WorkError('teloa/not-found','未提供此工作接口。')
+    if(endpoint==='resource-use/list')return resourceUseSnapshots.list(payload)
     // 扩展端点（im/*）由 IM 通道插件经 teloaWork.attachExtension 挂接；端点名来自契约，宿主装配期即知。
     // 浏览器经 /teloa 调 im/* 写端点仍走 invokeTeloaEndpoint（reserve pending → dispatch → markResponseReady；im/channels/save 携带凭据原值，不在待恢复白名单，直接派发），
     // 只有 teloaWork.invoke 绕过 pending 登记（评审 H3）。
@@ -1709,7 +1720,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       return {ok:false,error:{code:error instanceof WorkError?error.code:'teloa/host-unavailable',message:error instanceof WorkError?error.message:'工作服务暂不可用，请重试；详细原因已记录在宿主日志。',details:error instanceof WorkError&&error.details?error.details:{}}}
     }
   })
-  ctx.tools.register(defineTool({
+  toolRegistrationContext.tools.register(defineTool({
     name:'teloa_capabilities',
     description:'查询当前 Teloa 工作会话的已绑定范围、DSH 实际技能与 MCP 工具目录。只读，注册不等于连接健康或本轮已使用，不提供安装、授权或写操作。',
     parameters:{},

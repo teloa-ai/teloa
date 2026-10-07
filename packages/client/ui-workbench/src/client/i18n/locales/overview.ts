@@ -1,0 +1,47 @@
+/** 先定稿中英文；其它既有语言只回退，不在开发中反复补译。 */
+const rows = [
+ ['title','工作概览','工作概覽','Work overview'],
+ ['progress','进展','進展','Progress'],
+ ['running','运行中','執行中','Running'],
+ ['artifacts','成果','成果','Results'],
+ ['usage','本次使用','本次使用','Used this round'],
+ ['empty','这段会话还没有工作记录。','此對話還沒有工作記錄。','No work recorded in this conversation yet.'],
+ ['earlierSteps','较早步骤 · {count}','較早步驟 · {count}','Earlier steps · {count}'],
+ ['endedWork','已结束 · {count}','已結束 · {count}','Ended · {count}'],
+ ['noRunning','没有正在运行的后台工作','沒有正在執行的背景工作','No background work is running'],
+ ['noUsage','本轮尚无可确认的资源使用记录','此輪尚無可確認的資源使用記錄','No verified resource use this round'],
+ ['record','查看记录','查看記錄','View record'],
+ ['stopAria','停止{name}','停止{name}','Stop {name}'],
+ ['reconcile','核对状态','核對狀態','Check status'],
+ ['back','返回工作概览','返回工作概覽','Back to work overview'],
+ ['status.idle','未开始','未開始','Not started'],
+ ['status.pending','待执行','待執行','Pending'],
+ ['status.waiting','等待处理','等待處理','Waiting'],
+ ['status.stopping','正在停止','正在停止','Stopping'],
+ ['status.stopped','已停止','已停止','Stopped'],
+ ['status.unknown','状态未知','狀態不明','Status unknown'],
+ ['stopRequesting','正在发送停止请求…','正在傳送停止請求…','Sending stop request…'],
+ ['stopAwaiting','停止请求已发送，等待状态确认','停止請求已傳送，等待狀態確認','Stop requested; awaiting status confirmation'],
+ ['unknownHint','当前状态尚未确认，核对后再继续操作','目前狀態尚未確認，核對後再繼續操作','Check the current status before continuing'],
+ ['previewAria','预览{name}','預覽{name}','Preview {name}'],
+ ['downloadAria','下载{name}','下載{name}','Download {name}'],
+ ['artifact.draft','草稿','草稿','Draft'],
+ ['artifact.final','最终版','最終版','Final'],
+ ['artifact.sourceText','源文本','原始文字','Source text'],
+ ['artifact.downloadOnly','此格式可下载此版文件查看。','此格式可下載此版檔案檢視。','Download this version to view this format.'],
+ ['usageScope','当前工作轮次','目前工作回合','Current work round'],
+ ['resourceRecords','{count} 条记录','{count} 筆記錄','{count} records'],
+ ['executorUnknown','本次执行','本次執行','This run'],
+ ['resource.read','已读取','已讀取','Read'],
+ ['resource.search','网页搜索','網頁搜尋','Web search'],
+ ['resource.injected','已注入','已注入','Injected'],
+ ['resource.sources','参考来源','參考來源','Sources'],
+ ['resource.truncated','记录仅包含部分来源','記錄只包含部分來源','Only some sources are included'],
+ ['outputGap','较早的输出已不在当前记录中。','較早的輸出已不在目前記錄中。','Earlier output is no longer in this record.'],
+ ['outputEmpty','暂时没有输出','暫時沒有輸出','No output yet'],
+] as const
+export type OverviewMessageKey=`overview.${typeof rows[number][0]}`
+export const OVERVIEW_MESSAGE_KEYS=rows.map(row=>`overview.${row[0]}` as OverviewMessageKey)
+const column=(index:1|2|3)=>Object.fromEntries(rows.map(row=>[`overview.${row[0]}`,row[index]])) as Readonly<Record<OverviewMessageKey,string>>
+export const overviewMessages={'zh-CN':column(1),'zh-Hant':column(2),en:column(3)}
+export const overviewHongKongMessages={'overview.resourceRecords':'{count} 條記錄'} as const

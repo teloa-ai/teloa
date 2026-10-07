@@ -12,8 +12,9 @@ import {ptMessages} from './locales/pt.js'
 import {zhTWMessages} from './regions/zh-TW.js'
 import {zhHKMessages} from './regions/zh-HK.js'
 import {CORE_PAGE_MESSAGE_ROWS} from './locales/core-pages.js'
+import {OVERVIEW_MESSAGE_KEYS,overviewMessages,overviewHongKongMessages,type OverviewMessageKey} from './locales/overview.js'
 
-export const MESSAGE_KEYS = [
+const BASE_MESSAGE_KEYS = [
   'app.name',
   'app.edition.personal',
   'navigation.home',
@@ -144,27 +145,28 @@ export const MESSAGE_KEYS = [
   'error.unknown',
 ] as const
 
+export const MESSAGE_KEYS=[...BASE_MESSAGE_KEYS,...OVERVIEW_MESSAGE_KEYS] as const
 export type MessageKey = typeof MESSAGE_KEYS[number]
-export type MessageCatalog = Readonly<Record<MessageKey, string>>
+export type MessageCatalog = Readonly<Record<typeof BASE_MESSAGE_KEYS[number], string>&Partial<Record<OverviewMessageKey,string>>>
 export type RegionCatalog = Readonly<Partial<Record<MessageKey, string>>>
 export type MessageParams = Readonly<Record<string, string | number>>
 
-export const catalogs: Readonly<Record<MainLocale, MessageCatalog>> = {
-  'zh-CN': zhCNMessages,
-  'zh-Hant': zhHantMessages,
-  en: enMessages,
-  ja: jaMessages,
-  ko: koMessages,
-  vi: viMessages,
-  es: esMessages,
-  fr: frMessages,
-  de: deMessages,
-  pt: ptMessages,
+export const catalogs: Readonly<Record<MainLocale, Readonly<Record<MessageKey,string>>>> = {
+  'zh-CN': {...zhCNMessages,...overviewMessages['zh-CN']},
+  'zh-Hant': {...zhHantMessages,...overviewMessages['zh-Hant']},
+  en: {...enMessages,...overviewMessages.en},
+  ja: {...jaMessages,...overviewMessages.en},
+  ko: {...koMessages,...overviewMessages.en},
+  vi: {...viMessages,...overviewMessages.en},
+  es: {...esMessages,...overviewMessages.en},
+  fr: {...frMessages,...overviewMessages.en},
+  de: {...deMessages,...overviewMessages.en},
+  pt: {...ptMessages,...overviewMessages.en},
 }
 
 export const regionCatalogs: Readonly<Record<RegionLocale, RegionCatalog>> = {
   'zh-TW': zhTWMessages,
-  'zh-HK': zhHKMessages,
+  'zh-HK': {...zhHKMessages,...overviewHongKongMessages},
 }
 
 type LooseMainCatalogs = Readonly<Record<string, Readonly<Record<string, string>>>>

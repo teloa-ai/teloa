@@ -142,6 +142,9 @@ import { PromptPreparation } from './prompt-preparation.js'
 import { PreparedPromptCard } from './PreparedPromptCard.js'
 import { createNativeArtifactApi } from './native-artifact-api.js'
 import {createArtifactApi} from './artifact-api.js'
+import {createSnapshotStore} from '@deepseek-ai/dsh-client-store'
+import {ConversationOverviewTab,ConversationOverviewTitle,ConversationOverviewEntry,CONVERSATION_OVERVIEW_KIND,CONVERSATION_OVERVIEW_TAB_ID} from './ConversationOverviewTab.js'
+import {isToolResourceUseSnapshot} from '@teloa/contract'
 import { createArtifactFileApi } from './artifact-files.js'
 import { unwrapWorkRpcResult } from './work-rpc-result.js'
 import {ProducedFileCards} from './ProducedFileCards.js'
@@ -277,7 +280,12 @@ export async function apply(ctx: Context): Promise<void> {
   const isHomeAssistantContext=async(id:string,signal?:AbortSignal)=>{const value=await call('work-context/eligibility',{sessionId:id},signal);if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==id||!('eligible'in value)||typeof value.eligible!=='boolean')throw Error('会话身份核对失败。');return value.eligible}
   const localRetrievalApi=createLocalRetrievalApi(call)
   const resourceApi=createResourceApi(call)
-  const artifactApi=createArtifactApi(call,journal('teloa.artifact-save/v1'))
+  const artifactChanges=createSnapshotStore(0)
+  const artifactApi=createArtifactApi(async(method,payload)=>{
+    const value=await call(method,payload)
+    if(['artifacts/create','artifacts/revise'].includes(method))artifactChanges.set(artifactChanges.getSnapshot()+1)
+    return value
+  },journal('teloa.artifact-save/v1'))
   const taskTransitions=createTaskTransitionApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-transition/v1'))
   const pendingRequestApi=createPendingRequestApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value})
   receiptChanged=pendingRequestApi.notify
@@ -702,6 +710,32 @@ export async function apply(ctx: Context): Promise<void> {
         // 不比对身份就会把刚写好的详情抹掉；钩子按 kind 全局注册，会话得靠 DSH 传进来的这一个参数分辨。
         rail.effect(()=>rail.sidebarRight.registerCloseHandler(kind,(sessionId,tab)=>{if(tab.kind===kind)teloaTabHost()?.releaseTab(sessionId,kind)}),'teloa: 右栏对象关闭钩子')
       }
+      rail.inject(['jobs'],overview=>{
+        const runtime=requireI18n()
+        const Body=(props:ComponentProps<typeof ConversationOverviewTab>)=>createElement(I18nProvider,{runtime},createElement(ConversationOverviewTab,props))
+        const Title=()=>createElement(I18nProvider,{runtime},createElement(ConversationOverviewTitle))
+        const Entry=(props:ComponentProps<typeof ConversationOverviewEntry>)=>createElement(I18nProvider,{runtime},createElement(ConversationOverviewEntry,props))
+        overview.effect(()=>overview.sidebarRightTabs.register({id:CONVERSATION_OVERVIEW_TAB_ID,kind:CONVERSATION_OVERVIEW_KIND,keepMounted:true,title:()=>runtime.t('overview.title')}),'teloa: 会话工作概览页类型')
+        overview.effect(()=>overview.slots.inject('sidebar.right.pane.tab',()=>overview.slots.register({
+          name:'sidebar.right.pane.tab',key:CONVERSATION_OVERVIEW_TAB_ID,
+          inject:sessionId=>{
+            const binding=child.sessions.binding(sessionId)
+            const status=ctx.uiSession.sessionStatus
+            return {sessions:child.sessions,jobs:overview.jobs,connection:{getSnapshot:()=>connection.state.getSnapshot()??'disconnected',subscribe:connection.state.subscribe},artifacts:artifactApi,artifactChanges,
+              readResourceUses:async(id:string,signal:AbortSignal)=>{
+                if(id!==sessionId||binding===undefined||child.sessions.binding(sessionId)!==binding)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+                const rows=await call('resource-use/list',{sessionId:id},signal)
+                if(!Array.isArray(rows)||rows.length>2048||!rows.every(isToolResourceUseSnapshot))throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+                return rows
+              },
+              pendingInteraction:{getSnapshot:()=>status.getSnapshot().get(sessionId)?.pendingInteraction!==undefined,subscribe:status.subscribe},
+              files:createArtifactFileApi(call,id=>{if(id!==sessionId||binding===undefined||child.sessions.binding(sessionId)!==binding)throw Object.assign(Error(),{code:'teloa/source-unavailable'})}),
+            }
+          },
+        },Body)),'teloa: 原生会话工作概览正文')
+        overview.effect(()=>overview.slots.inject('sidebar.right.pane.tab.title',()=>overview.slots.register({name:'sidebar.right.pane.tab.title',key:CONVERSATION_OVERVIEW_TAB_ID},Title)),'teloa: 工作概览活标题')
+        overview.effect(()=>overview.slots.inject('conversation.session.header.utilities',()=>overview.slots.register({name:'conversation.session.header.utilities',id:'teloa-work-overview',order:90,inject:()=>({open:(id:string)=>overview.sidebarRight.openTabIn(brandString<SessionId>(id),CONVERSATION_OVERVIEW_KIND)})},Entry)),'teloa: 手动打开工作概览')
+      })
     })
     child.slots.inject('conversation.hero.brand.mark',()=>child.slots.register({name:'conversation.hero.brand.mark',inject:()=>({theme:brandTheme})},ConversationBrand))
     // 服务必须从声明了依赖的子上下文捕获；外层布局上下文无权读取它们。

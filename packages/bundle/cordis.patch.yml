@@ -3,6 +3,8 @@
 - insert:
     - id: teloa-session-model-scope
       name: '@teloa/harness-dsh/session-model-scope'
+    - id: teloa-tool-resource-provenance
+      name: '@teloa/harness-dsh/tool-resource-provenance'
 - id: ui-layout
   disabled: true
 # Teloa 直接承接原生设置入口，避免工作台再次挂载整套会话侧栏。
@@ -132,6 +134,11 @@
 # 官方注册器保留本人选择；部署默认面向通用业务，四种官方预设均可选。
 # 生成覆盖只接入 standard 受管派发及三种模式的本地压缩预算，其余官方正文保持原样。
 - id: agent-preset-registry
+  # 预设会立即加载工具；明确依赖来源服务，避免并行 import 时漏掉首轮注册。
+  inject:
+    - loader
+    - sessionProjections
+    - teloaToolResourceProvenance
   config:
     default: teloa-standard
 - id: preset-standard

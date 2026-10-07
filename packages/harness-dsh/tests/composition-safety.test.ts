@@ -261,6 +261,15 @@ test('原生注册器或声明被替换、缺失、重复、动态启停时均�
  assert.deepEqual(violations([...baseline,{id:'preset-standard',name:'@vendor/replacement',disabled:false,config:{}}]),['tools','agentPresets'])
 })
 
+test('注册器仅允许固定来源监听依赖，遗漏、重复或其他服务仍拒绝',()=>{
+ const rows=readCompositionRows({loader:compositionEntries()})!
+ const changed=(inject:unknown)=>rows.map(row=>row.id==='agent-preset-registry'?{...row,inject}:row)
+ const violations=(entries:typeof rows)=>compositionViolations(compositionSnapshot(entries,{bundles:[],packages:[]}))
+ assert.deepEqual(violations(rows),[])
+ assert.deepEqual(violations(changed(['teloaToolResourceProvenance','sessionProjections','loader'])),[])
+ for(const inject of [[],['tools'],['loader','sessionProjections'],['loader','loader','teloaToolResourceProvenance'],['loader','sessionProjections','other']])assert.deepEqual(violations(changed(inject)),['agentPresets'])
+})
+
 test('预设声明外层被改注入或隔离域时同样拒绝，不能让原生声明接到另一份注册器',()=>{
  for(const id of ['agent-preset-registry','teloa-agent-preset','preset-standard','preset-ptc','preset-minimal','preset-cordis']){
   for(const extra of [{isolate:{agentPresets:true}},{inject:[]},{intercept:{agentPresets:{}}},{group:true}]){

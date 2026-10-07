@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.typecheck.json",
+  "include": [
+    "packages/client/**/*.ts",
+    "packages/client/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/lib/**",
+    "**/tsdown.config.ts",
+    "packages/client/tsdown.preset.ts"
+  ]
+}

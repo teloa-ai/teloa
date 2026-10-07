@@ -13,6 +13,7 @@ import {OAuthFlowManager,clearTokens,oauthExpiredMessage,pendingFlowTtlMs,readTo
 import {securityEnv} from './launch-env.ts'
 import {credentialSlotStore,migrateLegacyMcpCredentials,type McpCredentialPort,type McpSlotStore} from './managed-mcp-credentials.ts'
 import {isCredentialStoreLocked} from './credentials/store-state.ts'
+import {getToolResourceProvenance,type ToolResourceProvenance,type ToolResourceSource} from './tool-resource-provenance.ts'
 
 export const managedMcpConnectionEndpoints=['mcp-connections/add','mcp-connections/connect','mcp-connections/disconnect','mcp-connections/delete','mcp-connections/list','mcp-connections/get','mcp-connections/oauth-start','mcp-connections/oauth-status'] as const
 
@@ -376,14 +377,17 @@ function configuredPublicCallbackUrl(ctx:Context,runtimeRoot:string):string|unde
  * （个人会话与能力页都能看到）。这里用 Cordis 的 `ctx.extend` 给客户端一个只放行声明公开名的 `tools`，
  * 初次同步与之后的重同步都走同一个 `register`；未声明的工具不进注册表，也就无从调用。
  */
-function declaredToolsOnly(declared:ReadonlySet<string>){
+function declaredToolsOnly(declared:ReadonlyMap<string,string>,source:ToolResourceSource,provenance:()=>ToolResourceProvenance){
  return {
   name:McpClient.name,
   inject:McpClient.inject,
   Config:McpClient.Config,
   apply:(ctx:Context,config:McpClient.Config)=>{
    const tools=ctx.tools
-   const register:typeof tools.register=definition=>declared.has(definition.name)?tools.register(definition):()=>{}
+   const register:typeof tools.register=definition=>{
+    const rawToolName=declared.get(definition.name)
+    return rawToolName===undefined?()=>{}:tools.register(provenance().wrapDefinition(definition,{...source,rawToolName}))
+   }
    return McpClient.apply(ctx.extend({tools:new Proxy(tools,{get:(target,prop)=>prop==='register'?register:Reflect.get(target,prop)})}),config)
   },
  }
@@ -490,7 +494,7 @@ export function createManagedMcpConnectionHandler(
   const declared=entry.connector.tools.map(t=>({name:t.name,fullName:mcpToolFullName(conn.serverName,t.name),readOnly:t.readOnly}))
   // 先登记再建连：首次同步到写入快照之间、以及之后重同步新增的已声明写工具，都已在审批闸的名单里
   declaredToolsMap.set(conn.serverName,declared)
-  const fiber=ctx.plugin(declaredToolsOnly(new Set(declared.map(t=>t.fullName))),config)
+  const fiber=ctx.plugin(declaredToolsOnly(new Map(declared.map(t=>[t.fullName,t.name])),{kind:'mcp',providerId:conn.serverName,name:entry.connector.title['zh-CN']},()=>getToolResourceProvenance(ctx)),config)
   let timer:ReturnType<typeof setTimeout>|undefined
   try{
    await Promise.race([fiber,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('MCP connect timed out')),connectTimeoutMs)})])

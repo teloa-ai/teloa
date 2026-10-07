@@ -1,0 +1,14 @@
+.entry{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);cursor:pointer}
+.entry:hover{background:var(--teloa-hover);color:var(--teloa-text)}
+.entry:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.root,.content{display:flex;flex-direction:column;flex:1;height:100%;min-height:0;min-width:0;color:var(--teloa-text);background:var(--teloa-background)}
+.root [hidden]{display:none}
+.notice,.error{margin:0;padding:12px 18px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.error{color:var(--teloa-warn)}
+.error p{margin:0 0 6px}
+.error button{padding:4px 8px;border:1px solid var(--teloa-border);border-radius:5px;background:var(--teloa-surface);color:var(--teloa-text);cursor:pointer;font:inherit}
+.record{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
+.record header{padding:12px 18px;border-bottom:1px solid var(--teloa-border)}
+.record header button{display:flex;gap:5px;align-items:center;border:0;background:transparent;color:var(--teloa-muted);cursor:pointer;font:inherit;font-size:var(--teloa-font-caption)}
+.record h2{margin:12px 0 0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading)}
+.record pre{flex:1;min-height:0;overflow:auto;margin:0;padding:18px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--teloa-font-caption)}

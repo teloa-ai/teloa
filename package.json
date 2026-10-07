@@ -19,7 +19,7 @@
     "dev:dsh:acceptance": "pnpm build && node scripts/启动浏览器验收.mjs",
     "build": "pnpm -r build",
     "pretypecheck": "pnpm -r build",
-    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit && tsc -p tsconfig.typecheck.client.json --noEmit",
     "test:references": "pnpm --filter @teloa/mcp-reference test",
     "test:native": "pnpm --filter @teloa/harness-dsh test",
     "test:extensions": "pnpm --filter @teloa/im-gateway --filter @teloa/local-embedding test",

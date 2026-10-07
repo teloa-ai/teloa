@@ -261,13 +261,16 @@ export async function readPresetBodyFacts():Promise<PresetBodyFacts|undefined>{
 
 /** 注册器仅接受官方配置；被替换、重复或含旧扫描字段均不能放行。 */
 function registryPinned(row:CompositionRow|undefined):boolean{
- if(!row||row.disabled||row.name!==presetRegistryName||!record(row.config)||!presetWiringPinned(row))return false
+ if(!row||row.disabled||row.name!==presetRegistryName||!record(row.config))return false
+ const {inject,...wiring}=row
+ const dependencies=['loader','sessionProjections','teloaToolResourceProvenance']
+ if(!presetWiringPinned(wiring)||(inject!==undefined&&(!Array.isArray(inject)||inject.length!==dependencies.length||new Set(inject).size!==dependencies.length||!inject.every(name=>dependencies.includes(name)))))return false
  return Object.keys(row.config).every(key=>['default','selectedDefault','modeSelectionEnabled'].includes(key))
   &&(row.config.selectedDefault===undefined||typeof row.config.selectedDefault==='string'&&allowedPresetIds.includes(row.config.selectedDefault))
   &&(row.config.modeSelectionEnabled===undefined||typeof row.config.modeSelectionEnabled==='boolean')
 }
 
-/** 注册器与预设声明使用官方默认作用域与注入，不能被补丁接到别的服务。 */
+/** 预设声明保持官方默认作用域；注册器另只接受上方已核对的来源监听依赖。 */
 function presetWiringPinned(row:CompositionRow):boolean{
  return row.isolate===undefined&&row.inject===undefined&&row.intercept===undefined&&row.group===undefined
 }

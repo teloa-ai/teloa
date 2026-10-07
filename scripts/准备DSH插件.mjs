@@ -67,7 +67,7 @@ export function verifyConfig(source) {
     'tool-workflow': ["name: '@deepseek-ai/dsh-tool-workflow'",'disabled: true'],
     'tool-ralph': ["name: '@deepseek-ai/dsh-tool-ralph'",'disabled: true'],
     // 部署默认保持 Teloa，官方四种预设开放；plugins 正文由下方摘要复验。
-    'agent-preset-registry': ["name: '@deepseek-ai/dsh-agent-preset-registry'",'default: teloa-standard'],
+    'agent-preset-registry': ["name: '@deepseek-ai/dsh-agent-preset-registry'",'default: teloa-standard','- teloaToolResourceProvenance'],
     'teloa-agent-preset': ["name: '@deepseek-ai/dsh-agent-preset'",'id: teloa-standard'],
     'preset-standard': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
     'preset-ptc': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
@@ -76,6 +76,7 @@ export function verifyConfig(source) {
     'session-query-sqlite': ["name: '@deepseek-ai/dsh-session-query-sqlite'",'openAt: first-search','session-search.sqlite'],
     'teloa-ui-workbench': ["name: '@teloa/client-ui-workbench'"],
     'teloa-harness-dsh': ["name: '@teloa/harness-dsh'"],
+    'teloa-tool-resource-provenance': ["name: '@teloa/harness-dsh/tool-resource-provenance'"],
     // maxInstructionBytes 是 MCP instructions 进系统提示的上限，上游默认 32768，这里收窄为基线 2048。
     'teloa-reference-mcp': ["name: '@deepseek-ai/dsh-mcp-client'",'serverName: teloa_reference','process.env.TELOA_PROJECT_ROOT','failOnStartupError: true','maxInstructionBytes: 2048'],
   }
