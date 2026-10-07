@@ -1,11 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {applicationPresentation,createApplicationPresentationStore,readApplicationPresentation} from '../src/client/application-presentation.ts'
+import {applicationPresentation,applicationProductName,createApplicationPresentationStore,readApplicationPresentation} from '../src/client/application-presentation.ts'
 import {personalProfile} from '../src/client/personal-profile.ts'
 import {installConversationBrand} from '../src/client/conversation-brand.ts'
 
 const identity=(name='Alice')=>({schema:'teloa.application-presentation/v1',product:'Pro',account:{displayName:name,email:name.toLowerCase()+'@example.test'}})
 const bridge=(name='Alice')=>({presentation:async()=>identity(name),openAccount:async()=>{}})
+
+test('社区版名称适配 DSH 与地区语言，商业名称不因翻译改变',()=>{
+ for(const locale of ['zh','zh-CN','zh-Hans'])assert.equal(applicationProductName('Free',locale),'社区版')
+ for(const locale of ['zh-Hant','zh-TW','zh-HK','zh-MO'])assert.equal(applicationProductName('Free',locale),'社區版')
+ for(const locale of ['en','en-US','ja','ko','vi','es','fr','de','pt','unsupported'])assert.equal(applicationProductName('Free',locale),'Community')
+ for(const product of ['Pro','Enterprise'] as const)for(const locale of ['zh','en'])assert.equal(applicationProductName(product,locale),product)
+})
 
 test('默认 Free 无账号；宿主展示严格裁剪，混合身份或额外许可字段不能进入工作台',()=>{
  const free={schema:'teloa.application-presentation/v1',product:'Free',account:null}
@@ -43,7 +50,7 @@ test('账号姓名覆盖全部本人资料与欢迎徽标，禁止本机改名�
  assert.equal(locale.bind('conversation')('hero.preview'),'Pro')
  await applicationPresentation.openAccount();assert.equal(opened,1)
  close();close=undefined;assert.equal(personalProfile.getSnapshot().displayName,'Local name')
- assert.equal(locale.bind('conversation')('hero.preview'),'Free');dispose()
+ assert.equal(locale.bind('conversation')('hero.preview'),'Community');dispose()
 })
 
 test('无有效账号姓名时个人资料保留空姓名，邮箱只保留在独立账号字段',async t=>{

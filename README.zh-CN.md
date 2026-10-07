@@ -10,9 +10,9 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 **AI 员工是长期工作角色。** 它有职责与授权，保留有来源的岗位经验；一次任务结束后，身份与配置仍可用于后续工作。你可以像与同事合作一样讨论方案、跟进进展和提出修改。
 
-**你提出目标，AI 团队交付成果。** 你负责方向、职责分配、访问范围、审批规则和成果验收；员工在这些边界内执行并交接工作。你仍可以直接提出任务，无需先配齐整支团队。**Teloa Free** 是面向个人、自行部署的版本，使用 **DeepSeek Harness（DSH）**作为智能体运行引擎。
+**你提出目标，AI 团队交付成果。** 你负责方向、职责分配、访问范围、审批规则和成果验收；员工在这些边界内执行并交接工作。你仍可以直接提出任务，无需先配齐整支团队。**Teloa 社区版** 是面向个人、自行部署的版本，使用 **DeepSeek Harness（DSH）**作为智能体运行引擎。
 
-**Free 版本面向个人使用：** 一个用户在自己的电脑上，通过 Web 界面管理多位 AI 员工。本仓库提供 [Apache-2.0](LICENSE) 许可的 Free 源码，当前源码版本为 **0.2.0-alpha.7**。
+**社区版面向个人使用：** 一个用户在自己的电脑上，通过 Web 界面管理多位 AI 员工。本仓库提供 [Apache-2.0](LICENSE) 许可的社区版源码，当前源码版本为 **0.2.0-alpha.7**。
 
 ## 可以做什么
 
@@ -65,7 +65,7 @@ SOC 是首个完整业务流程场景。客户交付、内容运营、电商零�
 
 ## 快速开始
 
-需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；Free 软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。
+需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。
 
 ### npm 原生安装
 
@@ -89,8 +89,8 @@ Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置�
 将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.0-alpha.7`，沿用持久数据卷与自动生成的数据库口令。
 
 ```sh
-mkdir teloa-free
-cd teloa-free
+mkdir teloa-community
+cd teloa-community
 curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
@@ -193,7 +193,15 @@ pnpm test:bindings
 
 应用数据保存在运行 Teloa 的设备上。使用远程模型或授权外部工具时，工作所需的上下文会发送给对应服务。自行部署不代表所有推理都在本地完成。权限模型与已知限制见[安全政策](SECURITY.md)。
 
-当前是个人 Web Alpha。多人托管服务、Pro 桌面与手机端、企业部署功能不属于这个 Free 仓库。外部集成需要兼容服务及相应凭据。停止会话不能保证所有外部请求立即中断。
+社区版是面向单个用户、自行部署的 Web Alpha。Pro 与 Enterprise 复用共同核心，分别开发；它们的私有源码不在本仓库。
+
+| 版本 | 定位与开放状态 |
+| --- | --- |
+| 社区版 | 开源、自行部署的 Web 应用，提供 AI 员工、协作、任务、自动化、技能与业务记录。 |
+| Pro | 开发中的 Mac 桌面版，任务在 Mac 本机执行；手机远程尚未开放。公开 Web 用于注册、登录、账号恢复与返回客户端。 |
+| Enterprise | 开发中的企业独立部署与治理，面向客户控制的执行环境、权限隔离、审计与企业集成，尚未开放。 |
+
+各版本均使用自备的模型服务与 API 密钥，模型费用另计。外部集成需要兼容服务及相应凭据。停止会话不能保证所有外部请求立即中断。
 
 ## 社区与许可
 
@@ -203,4 +211,4 @@ pnpm test:bindings
 - 商务与合作：[hi@teloa.ai](mailto:hi@teloa.ai)。
 - 重大安全问题：按 [SECURITY.md](SECURITY.md) 联系 [security@teloa.ai](mailto:security@teloa.ai)。一般问题可以公开提交 Issue，敏感细节请私下补充。
 
-Teloa Free 使用 **[Apache-2.0](LICENSE)** 许可。第三方组件保留各自许可，见 [NOTICE](NOTICE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。Teloa 名称与品牌的使用见[商标政策](TRADEMARK.md)。
+Teloa 社区版使用 **[Apache-2.0](LICENSE)** 许可。第三方组件保留各自许可，见 [NOTICE](NOTICE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。Teloa 名称与品牌的使用见[商标政策](TRADEMARK.md)。

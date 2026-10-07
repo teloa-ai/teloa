@@ -4,7 +4,7 @@ import {corePageMessages} from './core-pages.js'
 export const enMessages = {
   ...corePageMessages['en'],
   'app.name': 'Teloa AI-Native Team Studio',
-  'app.edition.personal': 'Personal',
+  'app.edition.personal': 'Community',
   'navigation.home': 'Workspace',
   'navigation.attention': 'Needs your attention',
   'navigation.team': 'Employees',

@@ -4,7 +4,7 @@ import {corePageMessages} from './core-pages.js'
 export const jaMessages = {
   ...corePageMessages['ja'],
   'app.name': 'Teloa AI-Native Team Studio',
-  'app.edition.personal': 'パーソナル',
+  'app.edition.personal': 'Community',
   'navigation.home': 'ワークスペース',
   'navigation.attention': '確認が必要',
   'navigation.team': '従業員',

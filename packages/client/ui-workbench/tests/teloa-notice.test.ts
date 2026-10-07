@@ -98,9 +98,9 @@ test('声明词条十语言齐全，简中与英文使用确认文案', () => {
     assert.match(body, /Teloa AI-Native Team Studio/, locale)
     assert.match(body, /DeepSeek Harness/, locale)
   }
-  assert.equal(catalogs['zh-CN']['notice.title'], '个人版预览声明')
+  assert.equal(catalogs['zh-CN']['notice.title'], '社区版预览声明')
   assert.equal(catalogs['zh-CN']['notice.continue'], '我知道了')
-  assert.equal(catalogs.en['notice.title'], 'Personal Edition Preview Notice')
+  assert.equal(catalogs.en['notice.title'], 'Community Preview Notice')
   assert.equal(catalogs.en['notice.continue'], 'Got it')
   assert.equal(
     catalogs['zh-CN']['notice.body'],

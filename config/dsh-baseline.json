@@ -1,5 +1,5 @@
 {
-  "purpose": "Teloa Free 固定 DSH 依赖基线",
+  "purpose": "Teloa 社区版固定 DSH 依赖基线",
   "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
   "tag": "dsh-v0.2.0-rc.2",
   "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",

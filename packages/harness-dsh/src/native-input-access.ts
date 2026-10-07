@@ -84,7 +84,7 @@ function fixedAssertions(lease:WorkAccessLease,withContinuation:boolean):Pick<Ti
 }
 
 /**
- * 受管宿主显式安装的逐输入底座；Free 不安装时沿用官方行为。
+ * 受管宿主显式安装的逐输入底座；社区版不安装时沿用官方行为。
  * rc.2 Session 在 log.push 前解析 session/event 监听器，公开 internal/dispatch
  * 的同步抛错会否决候选；普通 session/event 是提交后通知，不能用来否决。
  * 缺省只保证本监听器执行时的 proof；后续 dispatch 监听器仍可使 lease 失效。

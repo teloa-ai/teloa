@@ -24,7 +24,7 @@ export function combineWorkAccessLeases(leases:readonly WorkAccessLease[]):WorkA
  return Object.freeze({assertCurrent:check(false),assertContinuationCurrent:check(true),releaseUnaccepted(){for(const item of captured){if(!item.release)continue;const value:unknown=Reflect.apply(item.release,item.lease,[]);if(value!==undefined){void Promise.resolve(value).catch(()=>{});throw denied()}}}})
 }
 
-/** 只负责进程内准入；Free 默认允许，受管宿主必须在启动前要求并安装唯一策略。 */
+/** 只负责进程内准入；社区版默认允许，受管宿主必须在启动前要求并安装唯一策略。 */
 export class WorkAccess{
  private required=false
  private policy:WorkAccessPolicy|undefined

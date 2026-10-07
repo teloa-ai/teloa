@@ -4,7 +4,7 @@ import {corePageMessages} from './core-pages.js'
 export const zhCNMessages = {
   ...corePageMessages['zh-CN'],
   'app.name': 'Teloa AI-Native Team Studio',
-  'app.edition.personal': '个人版',
+  'app.edition.personal': '社区版',
   'navigation.home': '工作台',
   'navigation.attention': '需要你',
   'navigation.team': '员工',

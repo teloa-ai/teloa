@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
+import {applicationProductName} from '../src/client/application-presentation.ts'
 
 const root=new URL('../src/client/',import.meta.url)
 
@@ -51,7 +52,7 @@ function mount(file:string,initialProps:Record<string,unknown>){
    return shared
   }
   if(id.endsWith('use-personal-profile.js'))return {usePersonalProfile:()=>({displayName:'Max',initials:'M'})}
-  if(id.endsWith('application-presentation.js'))return {applicationPresentation:{subscribe:()=>()=>{},getSnapshot:()=>({product:'Free',account:null})}}
+  if(id.endsWith('application-presentation.js'))return {applicationProductName,applicationPresentation:{subscribe:()=>()=>{},getSnapshot:()=>({product:'Free',account:null})}}
   if(id.endsWith('provider.js'))return {useI18n:()=>({locale:'zh-CN',t:(key:string,params?:Record<string,unknown>)=>params?key+':'+JSON.stringify(params):key})}
   if(id.endsWith('errors.js'))return {localizeWorkError:(_:string,value:unknown)=>String(value)}
   if(id.endsWith('work-presentation.js'))return {presentConversations:()=>[]}

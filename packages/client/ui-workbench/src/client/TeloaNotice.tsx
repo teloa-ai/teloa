@@ -8,7 +8,7 @@ import {TELOA_NOTICE_VERSION,noticeStorage,readNoticeAcknowledged,writeNoticeAck
 
 const titleId='teloa-notice-title'
 
-/** Teloa 个人版预览声明；取代 DSH 内测声明，排在 DSH 的 API Key 引导之前。 */
+/** Teloa 社区版预览声明；取代 DSH 内测声明，排在 DSH 的 API Key 引导之前。 */
 export function TeloaNotice({complete}:{complete:()=>void}){
   const {t}=useI18n()
   const application=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getSnapshot,applicationPresentation.getSnapshot)
@@ -20,7 +20,7 @@ export function TeloaNotice({complete}:{complete:()=>void}){
   const finish=useCallback(()=>{if(finished.current)return;finished.current=true;complete()},[complete])
   // 只在首次呈现时聚焦标题；complete 的身份每次重渲染都会变，不能把聚焦挂在它上面。
   useEffect(()=>{if(applicable&&!acknowledged)title.current?.focus({preventScroll:true})},[applicable,acknowledged])
-  // 其他产品继续后续原生引导，不把跳过写成 Free 声明已确认。
+  // 其他产品继续后续原生引导，不把跳过写成社区版声明已确认。
   useEffect(()=>{if(!applicable||acknowledged)finish()},[applicable,acknowledged,finish])
   if(!applicable||acknowledged)return null
   return <div className={clsx(tokens.tokens,css.backdrop)}>

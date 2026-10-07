@@ -31,7 +31,7 @@ async function mount(t:any){
  await page.route('**/*',(route:{abort:()=>Promise<void>})=>route.abort());await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>');await page.addScriptTag({content:script});return page
 }
 
-test('Pro 与 Enterprise 跳过 Free 预览声明并完成引导，不读取或写入 Free 确认',async t=>{
+test('Pro 与 Enterprise 跳过社区版预览声明并完成引导，不读取或写入社区版确认',async t=>{
  const page=await mount(t)
  for(const product of ['Pro','Enterprise']){
   await page.evaluate(product=>(window as any).noticeFixture.mount(product),product)
@@ -41,12 +41,12 @@ test('Pro 与 Enterprise 跳过 Free 预览声明并完成引导，不读取或�
  }
 })
 
-test('默认 Free 保留预览内容、首次显式确认和同版本记忆；Pro 跳过不替它确认',async t=>{
+test('默认社区版保留预览内容、首次显式确认和同版本记忆；Pro 跳过不替它确认',async t=>{
  const page=await mount(t)
  await page.evaluate(()=>(window as any).noticeFixture.mount('Pro'))
  await page.waitForFunction(()=>(window as any).noticeFixture.completed===1)
  await page.evaluate(()=>(window as any).noticeFixture.mount('Free'))
- const dialog=page.getByRole('dialog',{name:'个人版预览声明'});await dialog.waitFor()
+ const dialog=page.getByRole('dialog',{name:'社区版预览声明'});await dialog.waitFor()
  assert.match(await dialog.textContent(),/当前为个人单机版预览/)
  assert.equal(await page.evaluate(()=>(window as any).noticeFixture.completed),0)
  assert.equal(await page.locator(':focus').getAttribute('id'),'teloa-notice-title')

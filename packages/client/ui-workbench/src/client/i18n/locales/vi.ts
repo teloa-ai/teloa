@@ -4,7 +4,7 @@ import {corePageMessages} from './core-pages.js'
 export const viMessages = {
   ...corePageMessages['vi'],
   'app.name': 'Teloa AI-Native Team Studio',
-  'app.edition.personal': 'Cá nhân',
+  'app.edition.personal': 'Community',
   'navigation.home': 'Không gian làm việc',
   'navigation.attention': 'Cần bạn xử lý',
   'navigation.team': 'Nhân viên',

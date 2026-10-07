@@ -1,4 +1,4 @@
-# Contributing to Teloa Free
+# Contributing to Teloa Community
 
 欢迎通过 Issue 提交问题或功能建议，通过 Pull Request 提交改动。请描述问题、改动后的行为和验证方式，保持改动范围明确。
 

@@ -67,9 +67,9 @@ test('版本卡片保持三个版本，Pro 为 Mac 本机工作，手机及 Ente
   readFile(new URL('../src/client/AboutSettings.module.css',import.meta.url),'utf8'),
   readFile(new URL('../src/client/i18n/locales/about-plans.ts',import.meta.url),'utf8'),
  ])
- const names=[...view.matchAll(/name:'(Free|Pro|Cloud|Enterprise)'/g)].map(match=>match[1])
- assert.deepEqual(names,['Free','Pro','Enterprise'])
- assert.match(view,/card\.name===application\.product/)
+ const products=[...view.matchAll(/product:'(Free|Pro|Cloud|Enterprise)'/g)].map(match=>match[1])
+ assert.deepEqual(products,['Free','Pro','Enterprise'])
+ assert.match(view,/card\.product===application\.product/)
  assert.match(rows,/Mac 本机工作/)
  assert.match(rows,/手机远程（尚未开放）/)
  assert.match(rows,/公开 Web 仅用于注册、登录、账号恢复与返回客户端/)
@@ -83,7 +83,8 @@ test('版本卡片保持三个版本，Pro 为 Mac 本机工作，手机及 Ente
  assert.doesNotMatch(rows,/企业私有化 Web|放开上限|Team 全部|托管模型额度/)
  assert.match(rows,/自备模型 API 密钥/)
  assert.match(rows,/模型费用另计/)
- assert.match(rows,/Free 与 Pro 共享个人核心功能/)
+ assert.match(rows,/社区版提供所有版本共用的公开核心，支持自行部署/)
+ assert.doesNotMatch(rows,/\bFree\b/)
  assert.ok(ABOUT_PLAN_MESSAGE_ROWS.every(row=>row.length===11&&row.slice(1).every(value=>value.trim())), '全部词条应完整覆盖十语言')
  assert.match(view,/card\.id==='enterprise'\|\|card\.id==='pro'&&item==='about\.plans\.card\.pro\.item5'/)
  assert.match(view,/<Clock3 size=\{14\} aria-hidden/)

@@ -4,7 +4,7 @@ import {corePageMessages} from './core-pages.js'
 export const koMessages = {
   ...corePageMessages['ko'],
   'app.name': 'Teloa AI-Native Team Studio',
-  'app.edition.personal': '개인용',
+  'app.edition.personal': 'Community',
   'navigation.home': '작업 공간',
   'navigation.attention': '확인 필요',
   'navigation.team': '직원',

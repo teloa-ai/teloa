@@ -10,9 +10,9 @@ Teloa is an **AI-Native Team Studio** for building, managing, and running teams 
 
 **An AI employee is a lasting work role.** It keeps responsibilities, access boundaries, and role experience with sources. Its identity and configuration remain after a task ends. Discuss plans, follow progress, and request revisions as you would with colleagues.
 
-**You set the goal. Your AI team delivers.** You guide the work, assign responsibilities, define access and approval rules, and review deliverables. Employees carry out work and hand over results within those boundaries. You can also make a direct request without setting up a full team first. **Teloa Free** is the self-hosted personal edition, using **DeepSeek Harness (DSH)** as its agent runtime.
+**You set the goal. Your AI team delivers.** You guide the work, assign responsibilities, define access and approval rules, and review deliverables. Employees carry out work and hand over results within those boundaries. You can also make a direct request without setting up a full team first. **Teloa Community** is the self-hosted personal edition, using **DeepSeek Harness (DSH)** as its agent runtime.
 
-**Free edition:** one human user, multiple AI employees, running on your computer through a Web interface. This repository provides the Free source code under [Apache-2.0](LICENSE). The current source version is **0.2.0-alpha.7**.
+**Community edition:** one human user, multiple AI employees, running on your computer through a Web interface. This repository provides the Community source code under [Apache-2.0](LICENSE). The current source version is **0.2.0-alpha.7**.
 
 ## What you can do
 
@@ -65,7 +65,7 @@ SOC is the first end-to-end business scenario. Customer delivery, content operat
 
 ## Quick start
 
-Bring your own model service and API key. Model usage is billed by your provider; the Free software license does not include inference credits. **0.2.0-alpha.7** is available through [npm](https://www.npmjs.com/package/@teloa/cli) and [Docker Hub](https://hub.docker.com/r/teloa/teloa). Choose native npm installation for local programs, or Docker Hub for container deployment. Source builds remain available below.
+Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits. **0.2.0-alpha.7** is available through [npm](https://www.npmjs.com/package/@teloa/cli) and [Docker Hub](https://hub.docker.com/r/teloa/teloa). Choose native npm installation for local programs, or Docker Hub for container deployment. Source builds remain available below.
 
 ### Native npm installation
 
@@ -89,8 +89,8 @@ Install Docker with Compose and start the engine. The published image and the co
 Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.0-alpha.7` for both initialization and the application, with persistent data volumes and a generated database password.
 
 ```sh
-mkdir teloa-free
-cd teloa-free
+mkdir teloa-community
+cd teloa-community
 curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
@@ -193,7 +193,15 @@ Run relevant backend or runtime tests for behavior changes. These may require Do
 
 Application data is stored on the machine running Teloa. Remote models and authorized external tools receive the task context they need. Self-hosting does not make every model call offline. See [SECURITY.md](SECURITY.md) for the permission model and known limitations.
 
-The current edition is a personal Web Alpha. Hosted multi-user services, Pro desktop/mobile clients and enterprise deployment features are outside this Free repository. External integrations require compatible services and credentials. Stopping a conversation does not guarantee immediate cancellation of every external request.
+The Community edition is a self-hosted Web Alpha for one human user. Pro and Enterprise share the common core and are developed separately; their private source is outside this repository.
+
+| Edition | Use and availability |
+| --- | --- |
+| Community | Open-source, self-hosted Web application: AI employees, collaboration, tasks, automation, skills and business records. |
+| Pro | Mac desktop edition in development. Work executes locally on the Mac; phone remote access is not yet available. Public Web handles sign-in, registration, account recovery and return to the client. |
+| Enterprise | Independent enterprise deployment and governance in development: customer-controlled execution, access isolation, audit and enterprise integrations. Not yet available. |
+
+All editions use your own model service and API keys; model usage is billed separately. External integrations require compatible services and credentials. Stopping a conversation does not guarantee immediate cancellation of every external request.
 
 ## Community and license
 
@@ -203,4 +211,4 @@ The current edition is a personal Web Alpha. Hosted multi-user services, Pro des
 - Business inquiries: [hi@teloa.ai](mailto:hi@teloa.ai).
 - Serious security issues: [security@teloa.ai](mailto:security@teloa.ai), following [SECURITY.md](SECURITY.md). General reports can use Issues; keep sensitive details private.
 
-Teloa Free is licensed under **[Apache-2.0](LICENSE)**. Third-party components retain their own licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name and branding are covered by the [trademark policy](TRADEMARK.md).
+Teloa Community is licensed under **[Apache-2.0](LICENSE)**. Third-party components retain their own licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The name and branding are covered by the [trademark policy](TRADEMARK.md).

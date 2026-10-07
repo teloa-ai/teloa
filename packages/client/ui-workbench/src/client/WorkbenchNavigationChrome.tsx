@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import {LayoutGrid,CheckCheck,CheckSquare,Globe2,MessageSquare,Bot,Blocks,Library,CalendarClock,FolderKanban,Sparkles,X} from 'lucide-react'
 import type {WorkbenchView} from './store.js'
 import {useI18n} from './i18n/provider.js'
+import {applicationProductName,type ApplicationPresentation} from './application-presentation.js'
 import lightLogo from '../brand/teloa-light.svg'
 import darkLogo from '../brand/teloa-dark.svg'
 import css from './WorkbenchFrame.module.css'
@@ -13,9 +14,9 @@ export const primaryNavigation=[
  ['resources','navigation.v2.library',Library],['capabilities','navigation.capabilities',Sparkles],['market','navigation.v2.market',Blocks],
 ] as const
 
-export function WorkbenchNavigationBrand({product,colorScheme,onClose}:{product:'Free'|'Pro'|'Enterprise';colorScheme:'light'|'dark';onClose:()=>void}){
- const {t}=useI18n()
- return <div className={css.brand}><div className={css.brandIdentity}><div className={css.brandHeading}><img src={colorScheme==='dark'?darkLogo:lightLogo} alt="Teloa"/><span className={css.brandTier}>{product}</span></div><span className={css.brandStudio}>AI-Native Team Studio</span></div><button type="button" className={css.mobileClose} aria-label={t('shell.navigation.close')} onClick={onClose}><X size={17}/></button></div>
+export function WorkbenchNavigationBrand({product,colorScheme,onClose}:{product:ApplicationPresentation['product'];colorScheme:'light'|'dark';onClose:()=>void}){
+ const {locale,t}=useI18n()
+ return <div className={css.brand}><div className={css.brandIdentity}><div className={css.brandHeading}><img src={colorScheme==='dark'?darkLogo:lightLogo} alt="Teloa"/><span className={css.brandTier}>{applicationProductName(product,locale)}</span></div><span className={css.brandStudio}>AI-Native Team Studio</span></div><button type="button" className={css.mobileClose} aria-label={t('shell.navigation.close')} onClick={onClose}><X size={17}/></button></div>
 }
 
 export function WorkbenchNavigationItems({view,onSelect,needCount=0,attentionKnown=true}:{view:WorkbenchView;onSelect:(view:WorkbenchView)=>void;needCount?:number;attentionKnown?:boolean}){

@@ -1,5 +1,5 @@
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import {applicationPresentation} from './application-presentation.ts'
+import {applicationPresentation,applicationProductName} from './application-presentation.ts'
 export type BrandLocale={bind:(namespace:string)=>Translate;getSnapshot:()=>{active:string}}
 const taskTeamCopy:Record<string,readonly [string,string]>={
   trigger:['执行小组','Task team'],
@@ -32,7 +32,7 @@ export function installConversationBrand(locale:BrandLocale):()=>void {
       }
       // 接管工作室品牌与欢迎区档位徽标，名称来自同一宿主展示身份。
       if(enabled&&key==='hero.headline')return 'AI-Native Team Studio'
-      if(enabled&&key==='hero.preview')return applicationPresentation.getSnapshot().product
+      if(enabled&&key==='hero.preview')return applicationProductName(applicationPresentation.getSnapshot().product,locale.getSnapshot().active)
       // 原生持久引用可能已缩放或转为静态帧，不能把它标成未经处理的原图。
       if(enabled&&key==='image.preview')return zh?'图片预览':'Image preview'
       if(enabled&&key==='image.closePreview')return zh?'关闭图片预览':'Close image preview'

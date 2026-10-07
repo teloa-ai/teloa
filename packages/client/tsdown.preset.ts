@@ -1,4 +1,4 @@
-// Teloa Free 客户端构建预设；输出遵循 DSH 模块加载协议。
+// Teloa 社区版客户端构建预设；输出遵循 DSH 模块加载协议。
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, resolve as resolvePath } from 'node:path'
 import { transform } from 'lightningcss'

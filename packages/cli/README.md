@@ -1,8 +1,8 @@
 # Teloa · AI-Native Team Studio
 
-Teloa 用于构建、协作和运行 AI 团队。**Teloa Free** 是面向个人、自行部署的版本：为 AI 员工配置职责、资料、技能和连接器，交办任务，跟进进度，并把成果关联到业务记录和看板。
+Teloa 用于构建、协作和运行 AI 团队。**Teloa 社区版** 是面向个人、自行部署的版本：为 AI 员工配置职责、资料、技能和连接器，交办任务，跟进进度，并把成果关联到业务记录和看板。
 
-本包提供 Free 版本的安装和维护命令，以及运行所需的应用。使用自己的模型服务和凭据。
+本包提供社区版的安装和维护命令，以及运行所需的应用。使用自己的模型服务和凭据。
 
 [产品介绍](https://www.teloa.ai/) · [使用文档](https://docs.teloa.ai/) · [资源市场](https://market.teloa.ai/) · [源码](https://github.com/teloa-ai/teloa)
 
@@ -38,9 +38,9 @@ teloa up
 
 ## English
 
-Teloa is an **AI-Native Team Studio** for building, collaborating with, and running an AI team. **Teloa Free** is its self-hosted personal edition. Give AI employees roles, knowledge, skills and connectors; assign tasks, follow progress, and keep results connected to business records and dashboards.
+Teloa is an **AI-Native Team Studio** for building, collaborating with, and running an AI team. **Teloa Community** is its self-hosted personal edition. Give AI employees roles, knowledge, skills and connectors; assign tasks, follow progress, and keep results connected to business records and dashboards.
 
-This package includes the Free application and its installation and maintenance CLI. Bring your own model service and credentials.
+This package includes the Community application and its installation and maintenance CLI. Bring your own model service and credentials.
 
 [Website](https://www.teloa.ai/en/) · [Documentation](https://docs.teloa.ai/en/) · [Resource market](https://market.teloa.ai/en/) · [Source](https://github.com/teloa-ai/teloa)
 
@@ -52,6 +52,6 @@ To use your own PostgreSQL, supply a protected JSON file containing `connectionS
 
 ## License and support
 
-Free source code is licensed under [Apache-2.0](https://github.com/teloa-ai/teloa/blob/main/LICENSE). See [third-party notices](https://github.com/teloa-ai/teloa/blob/main/THIRD_PARTY_NOTICES.md) for bundled dependencies and [trademark guidance](https://github.com/teloa-ai/teloa/blob/main/TRADEMARK.md) for the Teloa name.
+Community source code is licensed under [Apache-2.0](https://github.com/teloa-ai/teloa/blob/main/LICENSE). See [third-party notices](https://github.com/teloa-ai/teloa/blob/main/THIRD_PARTY_NOTICES.md) for bundled dependencies and [trademark guidance](https://github.com/teloa-ai/teloa/blob/main/TRADEMARK.md) for the Teloa name.
 
 Report ordinary problems through [GitHub Issues](https://github.com/teloa-ai/teloa/issues). For vulnerabilities with significant impact, contact **security@teloa.ai** privately; see the [security policy](https://github.com/teloa-ai/teloa/blob/main/SECURITY.md). Product support: **support@teloa.ai**.

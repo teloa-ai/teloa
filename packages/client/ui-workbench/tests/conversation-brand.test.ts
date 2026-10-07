@@ -10,11 +10,11 @@ test('会话文案保持翻译身份、语言切换与其他 namespace',()=>{
   const original=locale.bind,dispose=installConversationBrand(locale)
   const t=locale.bind('conversation')
   assert.equal(t('hero.headline'),'AI-Native Team Studio')
-  assert.equal(t('hero.preview'),'Free')
+  assert.equal(t('hero.preview'),'社区版')
   assert.equal(locale.bind('conversation'),t)
   active='en'
   assert.equal(t('hero.headline'),'AI-Native Team Studio')
-  assert.equal(t('hero.preview'),'Free')
+  assert.equal(t('hero.preview'),'Community')
   assert.equal(t('placeholder.hero',{name:'Ada'}),'en:placeholder.hero')
   assert.deepEqual(calls.at(-1),['placeholder.hero',{name:'Ada'}])
   assert.equal(locale.bind('settings'),native)
