@@ -46,7 +46,6 @@ import {FORMAL_UI_P6_MESSAGE_ROWS} from './formal-ui-p6.js'
 import {PRESENTATION_HELPER_MESSAGE_ROWS} from './presentation-helpers.js'
 import {PRESENTATION_SECONDARY_MESSAGE_ROWS} from './presentation-secondary.js'
 import {INDUSTRY_UPDATE_PREVIEW_MESSAGE_ROWS} from './industry-update-preview.js'
-import {TELOA_NOTICE_MESSAGE_ROWS} from './teloa-notice.js'
 import {EDITION_MESSAGE_ROWS} from './edition.js'
 import {ATTENTION_DECISION_MESSAGE_ROWS} from './attention-decision.js'
 import {SECURITY_RECOVERY_MESSAGE_ROWS} from './security-recovery.js'
@@ -217,7 +216,6 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...PRESENTATION_HELPER_MESSAGE_ROWS,
   ...PRESENTATION_SECONDARY_MESSAGE_ROWS,
   ...INDUSTRY_UPDATE_PREVIEW_MESSAGE_ROWS,
-  ...TELOA_NOTICE_MESSAGE_ROWS,
   ...EDITION_MESSAGE_ROWS,
   ...ATTENTION_DECISION_MESSAGE_ROWS,
   ...SECURITY_RECOVERY_MESSAGE_ROWS,

@@ -4,6 +4,7 @@ import type {ConversationOverviewArtifact,ConversationOverviewSnapshot,Conversat
 import type {ConversationOverviewResourceGroup} from './conversation-overview-resources.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
+import type {OverviewMessageKey} from './i18n/locales/overview.js'
 import css from './ConversationWorkOverview.module.css'
 
 export type ConversationWorkOverviewProps=Readonly<{
@@ -15,6 +16,17 @@ export type ConversationWorkOverviewProps=Readonly<{
  onDownloadArtifact?:(artifact:ConversationOverviewArtifact)=>void|Promise<void>
 }>
 type StopRequest=Readonly<{status:'requesting'|'sent'|'unknown';sourceStatus:ConversationOverviewStatus}>
+/** 只本地化宿主已记录的官方来源，不按工具名或插件显示名猜身份。 */
+const resourceLabelKey=(resource:ConversationOverviewResourceGroup):OverviewMessageKey|undefined=>{
+ if(resource.kind==='search')return 'overview.resource.search'
+ if(resource.kind!=='plugin')return undefined
+ switch(resource.provider){
+  case '@deepseek-ai/dsh-tool-bash':return 'overview.resource.commands'
+  case '@deepseek-ai/dsh-tool-fs':return 'overview.resource.files'
+  case '@deepseek-ai/dsh-tool-present':return 'overview.resource.deliveries'
+  default:return undefined
+ }
+}
 
 /** 只投影 Harness 的会话事实；分栏、浮动、扩大与窄窗行为由原生右栏承载。 */
 export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
@@ -24,6 +36,7 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
  const trigger=useRef<HTMLButtonElement>(),back=useRef<HTMLButtonElement>(null),generation=useRef(0)
  const resource=snapshot.usageGroups.find(group=>group.id===resourceId)
  const currentArtifacts=snapshot.artifacts.filter(artifact=>!artifact.isHistorical),historicalArtifacts=snapshot.artifacts.filter(artifact=>artifact.isHistorical)
+ const resourceLabel=(resource:ConversationOverviewResourceGroup)=>{const key=resourceLabelKey(resource);return key?t(key):resource.name}
  useEffect(()=>{
   generation.current++;setResourceId(undefined);setError('');setRequests(new Map());setEarlierOpen(false);setEndedOpen(false);setVersionsOpen(false)
  },[snapshot.sessionId])
@@ -118,13 +131,13 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
     <section className={css.section} aria-label={t('overview.usage')}>
      <SectionHeading label={t('overview.usage')}/><p className={css.scope}>{t('overview.usageScope')}</p>
      {snapshot.usageGroups.length?<div className={css.resourceList}>{snapshot.usageGroups.map(group=><button key={group.id} type="button" className={css.resourceRow} onClick={event=>{trigger.current=event.currentTarget;setResourceId(group.id)}}>
-      <ResourceIcon kind={group.kind}/><span>{group.kind==='search'?t('overview.resource.search'):group.name}</span><span className={css.resourceValue}>{t('overview.resourceRecords',{count:group.evidence.length})}</span><ChevronRight size={14}/>
+      <ResourceIcon kind={group.kind}/><span>{resourceLabel(group)}</span><span className={css.resourceValue}>{t('overview.resourceRecords',{count:group.evidence.length})}</span><ChevronRight size={14}/>
      </button>)}</div>:<p className={css.note}>{t('overview.noUsage')}</p>}
     </section>
    </>}
   </div>
   {resource&&<div className={css.resourceDetail} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeResource()}}}>
-   <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={15}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resource.kind==='search'?t('overview.resource.search'):resource.name}</h2><p className={css.scope}>{t('overview.usageScope')}</p></header>
+   <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={15}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resourceLabel(resource)}</h2><p className={css.scope}>{t('overview.usageScope')}</p></header>
    <ResourceDetails resource={resource}/>
   </div>}
  </section>

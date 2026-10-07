@@ -1,6 +1,6 @@
 import type {RecoveryJournal} from './recovery-error.ts'
 
-/** 只用到读写删三个方法，便于单测与受限浏览器环境替换（与 teloa-notice.ts 同形）。 */
+/** 只用到读写删三个方法，便于单测与受限浏览器环境替换。 */
 type WebStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>
 
 // 既有键名形状：`teloa.<业务>/v<n>`，安全动作那八条多一段命令名。本模块只是把它们从

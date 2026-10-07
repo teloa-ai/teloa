@@ -13,12 +13,11 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SettingsShell,GeneralSettings,DeveloperToolsSettings,NativePanelsSettings,NativePluginDetailMarker,ComponentStatusSettings,SettingsDocumentAction,type SettingsEntry } from './SettingsShell.js'
 import { WorkspaceManagement } from './workspace-management.js'
 import { WorkspaceSettings } from './WorkspaceSettings.js'
-import { TeloaNotice } from './TeloaNotice.js'
 import type { WebAccessApi } from './web-access-api.js'
 import {ImChannelsSettingsPage,type ImChannelsSettingsProps} from './ImChannelsSettingsPage.js'
 import type {TeloaTranslate} from './i18n/index.js'
 
-/** DSH 的内测声明步骤；Teloa 以自己的个人版预览声明替代，其余原生引导步骤照常保留。 */
+/** 隐藏旧 DSH 内测声明；模型配置等其余原生引导步骤照常保留。 */
 const REPLACED_ONBOARDING_STEPS=new Set(['welcome-notice'])
 
 /** 日常偏好 → 运行配置 → 状态与版本；新插件的设置保留在组件状态之前。 */
@@ -71,8 +70,6 @@ export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close
     if(localModels)child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'teloa-local-models',order:25,label:()=>t('localModels.title'),inject:()=>localModels},LocalModelsSettings))
     child.slots.inject('plugins.detail.actions',()=>child.slots.register({name:'plugins.detail.actions',id:'teloa-settings-detail-scope'},NativePluginDetailMarker))
     child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'plugins',order:15,label:()=>t('settings.systemComponents'),children:{'settings.plugins.tab':{kind:'list',scope:'root'}}},ComponentStatusSettings))
-    // order 必须早于 DSH 的 API Key 引导（deepseek-official，order 0），让声明先于配置出现。
-    child.slots.inject('settings.onboarding',()=>child.slots.register({name:'settings.onboarding',id:'teloa-notice',order:-200},TeloaNotice))
     child.slots.inject('settings.action',()=>child.slots.register({name:'settings.action',id:'open-document',order:0,inject:()=>({describe,loopback:remote.$host.isLoopback,openDocument:async()=>{const result=await remote.settings.openSettingsDocument();if(!result.ok)throw Error(result.error.message)}})},SettingsDocumentAction))
   })
 }

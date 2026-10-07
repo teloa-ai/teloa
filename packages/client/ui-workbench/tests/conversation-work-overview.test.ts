@@ -97,6 +97,18 @@ test('后台停止仅传递明确对象，请求期间保留运行事实且禁�
 
 test('资源详情使用当前轮次真实执行者、查询与来源，拒绝主动链接并在返回后恢复触发处焦点及输入',async t=>{
  const value={...empty(),artifacts:Array.from({length:12},(_,index)=>({id:'file:'+index,sessionId:'parent',path:'output/'+index+'.md',label:'记录'+index+'.md',kind:'markdown',status:'draft'})),usageGroups:[{id:'search',kind:'search',name:'网页搜索',evidence:[{id:'search:1',sessionId:'researcher',executorId:'researcher',executorName:'资料研究员',seq:3,callId:'call-1',timestamp:1791360000000,status:'completed',queries:['产品交付清单规范'],sources:[{url:'https://example.test/guide',title:'交付清单规范'},{url:'javascript:alert(1)',title:'不可信主动地址'}]}]}]},page=await pageFor(t,value)
+ const builtin=[['bash','命令执行'],['fs','文件操作'],['present','成果交付']] as const
+ const groups=builtin.map(([module])=>({id:module,kind:'plugin',provider:'@deepseek-ai/dsh-tool-'+module,name:'tool-'+module,evidence:[{id:module+':1',sessionId:'parent',executorId:'parent',seq:30,timestamp:1791360000000,status:'completed',toolName:module}]}))
+ const custom={...groups[0],id:'custom',provider:'@vendor/custom',name:'tool-bash'}
+ const mcp={...groups[1],id:'mcp',kind:'mcp',name:'本人文件连接'}
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),{...value,usageGroups:[...value.usageGroups,...groups,custom,mcp]})
+ for(const [,label] of builtin)assert.equal(await page.getByRole('button',{name:new RegExp('^'+label+' ')}).count(),1)
+ assert.equal(await page.getByRole('button',{name:/^tool-bash /}).count(),1,'同名第三方插件保留其真实名称，不冒充内置来源')
+ assert.equal(await page.getByRole('button',{name:/^本人文件连接 /}).count(),1,'MCP 不按相似 provider 字符串被改成文件操作')
+ await page.getByRole('button',{name:/^文件操作 /}).click()
+ assert.equal(await page.getByRole('heading',{name:'文件操作',exact:true}).count(),1)
+ await page.getByRole('button',{name:'返回工作概览',exact:true}).click()
+ assert.deepEqual(await page.evaluate(()=>(window as any).overviewFixture.snapshot.usageGroups),[...value.usageGroups,...groups,custom,mcp],'显示名称不改原始来源、分组或执行证据')
  const resource=page.getByRole('button',{name:/网页搜索/})
  await resource.scrollIntoViewIfNeeded()
  const scroll=await page.locator('aside > section > div').first().evaluate((node:any)=>node.scrollTop)
