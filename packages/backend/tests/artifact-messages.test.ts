@@ -7,8 +7,10 @@ import {Pool} from 'pg'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {ArtifactMessageStore,initializeArtifactMessages} from '../src/work/artifact-messages.ts'
 let container:StartedPostgreSqlContainer,pool:Pool
-before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeArtifactMessages(pool)})
-after(async()=>{await pool?.end();await container?.stop()})
+const closedClients:Promise<void>[]=[]
+// pg-pool 先移出连接再结算 end；停止 PG 前等连接的公开 end 事件，避免收尾错误落到已结束测试。
+after(async()=>{await pool?.end();await Promise.all(closedClients);await container?.stop()},{timeout:30_000})
+before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});pool.on('connect',client=>closedClients.push(new Promise<void>(resolve=>client.once('end',resolve))));await initializeArtifactMessages(pool)})
 const input={sessionId:'s1',messageId:'m1',seq:2,role:'assistant',at:'2026-09-11T00:00:00Z',text:'固定原正文',interrupted:false,omittedBlocks:1,images:[]}
 test('原消息快照并发去重，重建读取与跨本人隔离',async()=>{
  const owner=randomUUID(),store=new ArtifactMessageStore(pool),[a,b]=await Promise.all([store.save(owner,input),store.save(owner,input)])

@@ -1,0 +1,25 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-client-ui-conversation",
+  "version": "0.2.0-rc.2",
+  "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "patchSha256": "13c066219a27503b067ee28c306bcc3fde744a8d6aca67dff821ca2a1ca4e698",
+  "files": [
+    {
+      "path": "lib/client.js",
+      "beforeSha256": "8d5c8223197d52d69eb0587f88a8a051fc172985553915f1de361544653a68b0",
+      "afterSha256": "a7ff2b1983dafb535a7971357dd271b88020b1cf6170c8842bd00894a6ca0409"
+    }
+  ],
+  "api": [
+    "conversation.session.header.utilities"
+  ],
+  "scope": {
+    "default": "Keep the native session utilities outlet available before the first turn; title, actions, tabs and single corner semantics are unchanged",
+    "boundary": "Only the official client renderer is patched. Registered utilities retain their own session, content and authorization conditions; blank rows right-align utilities next to the preserved native corner",
+    "limitations": [
+      "All existing session utilities may render for a blank session; no provider or authorization is synthesized",
+      "A sessionless header remains governed by the official ConversationHeader owner boundary"
+    ]
+  }
+}
