@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react'
 import {ArrowLeft,Bot,CheckCircle2,ChevronRight,Circle,Download,ExternalLink,FileText,Globe,Plug,Puzzle,Search,Square,Terminal,WandSparkles} from 'lucide-react'
-import type {ConversationOverviewArtifact,ConversationOverviewSnapshot,ConversationOverviewStatus,ConversationOverviewStep,ConversationOverviewWork} from './conversation-overview-model.js'
+import type {ConversationOverviewArtifact,ConversationOverviewRound,ConversationOverviewSnapshot,ConversationOverviewStatus,ConversationOverviewStep,ConversationOverviewWork} from './conversation-overview-model.js'
 import type {ConversationOverviewResourceGroup} from './conversation-overview-resources.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
@@ -16,6 +16,8 @@ export type ConversationWorkOverviewProps=Readonly<{
  onDownloadArtifact?:(artifact:ConversationOverviewArtifact)=>void|Promise<void>
 }>
 type StopRequest=Readonly<{status:'requesting'|'sent'|'unknown';sourceStatus:ConversationOverviewStatus}>
+type ResourceSelection=Readonly<{id:string;sessionId:string;roundId?:string}>
+const roundIdentity=(round:ConversationOverviewRound)=>JSON.stringify([round.sessionId,round.userMessageId,round.startSeq])
 /** 只本地化宿主已记录的官方来源，不按工具名或插件显示名猜身份。 */
 const resourceLabelKey=(resource:ConversationOverviewResourceGroup):OverviewMessageKey|undefined=>{
  if(resource.kind==='search')return 'overview.resource.search'
@@ -30,15 +32,19 @@ const resourceLabelKey=(resource:ConversationOverviewResourceGroup):OverviewMess
 
 /** 只投影 Harness 的会话事实；分栏、浮动、扩大与窄窗行为由原生右栏承载。 */
 export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
- const {snapshot}=props,{locale,t}=useI18n()
- const [resourceId,setResourceId]=useState<string>(),[error,setError]=useState(''),[requests,setRequests]=useState<ReadonlyMap<string,StopRequest>>(new Map())
+ const {snapshot}=props,{locale,t,time}=useI18n()
+ const [resourceSelection,setResourceSelection]=useState<ResourceSelection>(),[error,setError]=useState(''),[requests,setRequests]=useState<ReadonlyMap<string,StopRequest>>(new Map())
  const [earlierOpen,setEarlierOpen]=useState(false),[endedOpen,setEndedOpen]=useState(false),[versionsOpen,setVersionsOpen]=useState(false)
+ const [usageHistoryState,setUsageHistoryState]=useState({sessionId:snapshot.sessionId,open:false})
  const trigger=useRef<HTMLButtonElement>(),back=useRef<HTMLButtonElement>(null),generation=useRef(0)
- const resource=snapshot.usageGroups.find(group=>group.id===resourceId)
+ const usageHistory=snapshot.usageHistory??[],currentRoundId=snapshot.currentRound?roundIdentity(snapshot.currentRound):undefined
+ const resourceHistory=usageHistory.find(entry=>roundIdentity(entry.round)===resourceSelection?.roundId)
+ const selectedGroups=resourceSelection?.roundId===currentRoundId?snapshot.usageGroups:resourceHistory?.usageGroups??[]
+ const resource=resourceSelection?.sessionId===snapshot.sessionId?selectedGroups.find(group=>group.id===resourceSelection.id):undefined
  const currentArtifacts=snapshot.artifacts.filter(artifact=>!artifact.isHistorical),historicalArtifacts=snapshot.artifacts.filter(artifact=>artifact.isHistorical)
  const resourceLabel=(resource:ConversationOverviewResourceGroup)=>{const key=resourceLabelKey(resource);return key?t(key):resource.name}
  useEffect(()=>{
-  generation.current++;setResourceId(undefined);setError('');setRequests(new Map());setEarlierOpen(false);setEndedOpen(false);setVersionsOpen(false)
+  generation.current++;trigger.current=undefined;setResourceSelection(undefined);setError('');setRequests(new Map());setEarlierOpen(false);setEndedOpen(false);setVersionsOpen(false);setUsageHistoryState({sessionId:snapshot.sessionId,open:false})
  },[snapshot.sessionId])
  useEffect(()=>{
   setRequests(previous=>{
@@ -47,9 +53,9 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
    return next.size===previous.size?previous:next
   })
  },[snapshot])
- useEffect(()=>{if(resource)back.current?.focus()},[resourceId])
- const closeResource=()=>{setResourceId(undefined);queueMicrotask(()=>trigger.current?.isConnected&&trigger.current.focus())}
- useEffect(()=>{if(resourceId&&!resource)closeResource()},[resourceId,resource])
+ useEffect(()=>{if(resource)back.current?.focus()},[resourceSelection])
+ const closeResource=()=>{const target=trigger.current,epoch=generation.current;setResourceSelection(undefined);queueMicrotask(()=>{if(epoch===generation.current&&target?.isConnected)target.focus()})}
+ useEffect(()=>{if(resourceSelection&&!resource){if(resourceSelection.sessionId===snapshot.sessionId)closeResource();else{trigger.current=undefined;setResourceSelection(undefined)}}},[resourceSelection,resource,snapshot.sessionId])
  const invoke=(action:()=>void|Promise<void>)=>{
   const current=generation.current
   void Promise.resolve().then(action).then(()=>{if(current===generation.current)setError('')},cause=>{if(current===generation.current)setError(localizeWorkError(locale,cause))})
@@ -68,7 +74,7 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
   await props.onReconcileWork?.(work)
   setRequests(previous=>{const next=new Map(previous);next.delete(work.id);return next})
  })
- const hasWork=Boolean(snapshot.progress.current.length||snapshot.progress.earlier.length||snapshot.progress.goal||snapshot.running.length||snapshot.ended.length||snapshot.artifacts.length||snapshot.usageGroups.length)
+ const hasWork=Boolean(snapshot.progress.current.length||snapshot.progress.earlier.length||snapshot.progress.goal||snapshot.running.length||snapshot.ended.length||snapshot.artifacts.length||snapshot.usageGroups.length||usageHistory.length)
  const statusLabel=(status:ConversationOverviewStatus|'pending')=>{
   switch(status){
    case 'running':return t('status.running')
@@ -108,6 +114,9 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
   </button>
   {props.onDownloadArtifact&&<button type="button" className={css.iconButton} aria-label={t('overview.downloadAria',{name:artifact.label})} onClick={()=>invoke(()=>props.onDownloadArtifact!(artifact))}><Download size={16}/></button>}
  </article>
+ const resourceRows=(groups:readonly ConversationOverviewResourceGroup[],round?:ConversationOverviewRound)=>groups.length?<div className={css.resourceList}>{groups.map(group=><button key={group.id} type="button" className={css.resourceRow} onClick={event=>{trigger.current=event.currentTarget;setResourceSelection({id:group.id,sessionId:snapshot.sessionId,...(round?{roundId:roundIdentity(round)}:{})})}}>
+  <ResourceIcon kind={group.kind}/><span>{resourceLabel(group)}</span><span className={css.resourceValue}>{t('overview.resourceRecords',{count:group.evidence.length})}</span><ChevronRight size={14}/>
+ </button>)}</div>:<p className={css.note}>{t('overview.noUsage')}</p>
  return <section className={css.root} aria-label={t('overview.title')}>
   {error&&<p role="alert" className={css.error}>{error}</p>}
   <div className={css.overview} hidden={Boolean(resource)}>
@@ -130,15 +139,19 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
     </section>}
     <section className={css.section} aria-label={t('overview.usage')}>
      <SectionHeading label={t('overview.usage')}/><p className={css.scope}>{t('overview.usageScope')}</p>
-     {snapshot.usageGroups.length?<div className={css.resourceList}>{snapshot.usageGroups.map(group=><button key={group.id} type="button" className={css.resourceRow} onClick={event=>{trigger.current=event.currentTarget;setResourceId(group.id)}}>
-      <ResourceIcon kind={group.kind}/><span>{resourceLabel(group)}</span><span className={css.resourceValue}>{t('overview.resourceRecords',{count:group.evidence.length})}</span><ChevronRight size={14}/>
-     </button>)}</div>:<p className={css.note}>{t('overview.noUsage')}</p>}
+     {resourceRows(snapshot.usageGroups,snapshot.currentRound)}
+     {usageHistory.length>0&&<details className={css.history} open={usageHistoryState.sessionId===snapshot.sessionId&&usageHistoryState.open} onToggle={event=>setUsageHistoryState({sessionId:snapshot.sessionId,open:event.currentTarget.open})}><summary><ChevronRight size={13}/>{t('overview.usageHistory',{count:usageHistory.length})}</summary>
+      {usageHistory.map(entry=><section key={roundIdentity(entry.round)} className={css.usageRound} aria-label={t('overview.usageRound',{turn:entry.round.turn})}>
+       <header><h3>{t('overview.usageRound',{turn:entry.round.turn})}</h3>{Number.isFinite(entry.round.startedAt)&&<time dateTime={new Date(entry.round.startedAt).toISOString()}>{time(entry.round.startedAt)}</time>}</header>
+       {resourceRows(entry.usageGroups,entry.round)}
+      </section>)}
+     </details>}
     </section>
    </>}
   </div>
   {resource&&<div className={css.resourceDetail} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeResource()}}}>
-   <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={15}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resourceLabel(resource)}</h2><p className={css.scope}>{t('overview.usageScope')}</p></header>
-   <ResourceDetails resource={resource}/>
+   <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={15}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resourceLabel(resource)}</h2><p className={css.scope}>{resourceHistory?t('overview.usageRound',{turn:resourceHistory.round.turn}):t('overview.usageScope')}{resourceHistory&&Number.isFinite(resourceHistory.round.startedAt)&&<> · <time dateTime={new Date(resourceHistory.round.startedAt).toISOString()}>{time(resourceHistory.round.startedAt)}</time></>}</p></header>
+   <ResourceDetails resource={resource} sessionId={snapshot.sessionId}/>
   </div>}
  </section>
 }
@@ -149,12 +162,13 @@ function SectionHeading({label,count,children}:{label:string;count?:number;child
 function ResourceIcon({kind}:{kind:ConversationOverviewResourceGroup['kind']}){
  return kind==='search'?<Globe size={16}/>:kind==='skill'?<WandSparkles size={16}/>:kind==='mcp'?<Plug size={16}/>:<Puzzle size={16}/>
 }
-function ResourceDetails({resource}:{resource:ConversationOverviewResourceGroup}){
+function ResourceDetails({resource,sessionId}:{resource:ConversationOverviewResourceGroup;sessionId:string}){
  const {t,time}=useI18n()
  const safeLink=(value:string)=>{try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)?url.href:undefined}catch{return undefined}}
  return <div className={css.detailContent}>{resource.evidence.map(event=><article key={event.id} className={css.event}>
   <div className={css.eventHeading}><strong>{event.executorName||t('overview.executorUnknown')}</strong><span className={css.status} data-status={event.status}>{event.status==='completed'?t('status.completed'):event.status==='failed'?t('status.failed'):event.status==='read'?t('overview.resource.read'):event.status==='injected'?t('overview.resource.injected'):t('overview.status.pending')}</span></div>
   <div className={css.eventMeta}>{Number.isFinite(event.timestamp)&&<time dateTime={new Date(event.timestamp).toISOString()}>{time(event.timestamp)}</time>}{event.toolName&&<code>{event.toolName}</code>}</div>
+  {event.sessionId!==sessionId&&<p className={css.note}>{t('overview.childResourceScope')}</p>}
   {event.queries?.map((query,index)=><p key={index} className={css.query}><Search size={14}/><span>{query}</span></p>)}
   {event.sources&&event.sources.length>0&&<div className={css.sources}><h3>{t('overview.resource.sources')}</h3>{event.sources.map((source,index)=>{const href=safeLink(source.url);return <div key={index} className={css.source}>{href?<a href={href} target="_blank" rel="noopener noreferrer"><span>{source.title||source.url}</span><ExternalLink size={12}/></a>:<strong>{source.title||source.url}</strong>}<small>{source.url}</small>{source.snippet&&<p>{source.snippet}</p>}</div>})}</div>}
   {event.truncated&&<p className={css.note}>{t('overview.resource.truncated')}</p>}

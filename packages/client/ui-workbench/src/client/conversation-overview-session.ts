@@ -3,7 +3,7 @@ import type {IJobs} from '@deepseek-ai/dsh-api-job-controller/client'
 import type {ObservableSnapshot} from '@deepseek-ai/dsh-client-store'
 import type {SubagentAddress,SubagentCatalogEntry} from '@deepseek-ai/dsh-subagent/client'
 import type {ToolResourceUseSnapshot} from '@teloa/contract'
-import {conversationOverviewRound,conversationOverviewRoundEntries,createConversationOverviewModel,type ConversationOverviewArtifact,type ConversationOverviewChild,type ConversationOverviewSnapshot,type ConversationOverviewWork} from './conversation-overview-model.ts'
+import {conversationOverviewRoundScopes,createConversationOverviewModel,type ConversationOverviewArtifact,type ConversationOverviewChild,type ConversationOverviewRoundScope,type ConversationOverviewSnapshot,type ConversationOverviewWork} from './conversation-overview-model.ts'
 import {collectConversationOverviewResources,type ConversationOverviewRelatedResourceSession} from './conversation-overview-resources.ts'
 
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
@@ -54,14 +54,11 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
   const state=child.binding.session.getSnapshot(),timing=child.binding.session.projections.faceOf('subagentTiming').getSnapshot()
   return {...row,mode:state.subagent!.address.mode,parentAvailable:state.subagent?.parentAvailable!==false&&state.openState==='open',...(state.openState==='open'?{running:state.running,entries:child.binding.eventSource.getSnapshot().entries}:{}),...(record(timing)&&typeof timing.lastTurnCompleted==='boolean'?{lastTurnCompleted:timing.lastTurnCompleted}:{})}
  })
- const relatedResources=():ConversationOverviewRelatedResourceSession[]=>{
-  const entries=binding.eventSource.getSnapshot().entries,round=conversationOverviewRound(binding.sessionId,entries)
-  if(!round)return []
-  const owned=conversationOverviewRoundEntries(entries,round),related:ConversationOverviewRelatedResourceSession[]=[]
-  let parentTurn:number|undefined
-  // 同turn追加人类输入切界时，turn/start可能在范围之前；只从已加载真实事件找所属turn。
-  for(const entry of entries){if(entry.type==='event'&&entry.event.seq<=round.startSeq&&entry.event.type==='turn/start')parentTurn=entry.event.data.turn}
-  for(const entry of owned){
+ const relatedResources=({round,entries}:ConversationOverviewRoundScope):ConversationOverviewRelatedResourceSession[]=>{
+  const related:ConversationOverviewRelatedResourceSession[]=[]
+  // 同turn追加人类输入切界时，turn/start可能在范围之前；round.turn已由真实事件确定。
+  let parentTurn:number|undefined=round.turn
+  for(const entry of entries){
    const event=entry.event
    if(event.type==='turn/start')parentTurn=event.data.turn
    if(event.type==='turn/end')parentTurn=undefined
@@ -81,7 +78,11 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
  }
  const model=createConversationOverviewModel(binding,{jobs:jobs.state,activity,children:readChildren,context:()=>{
   const entries=binding.eventSource.getSnapshot().entries,executorName=options.executorName?.()
-  return {connected:connected(),pendingInteraction:options.pendingInteraction?.getSnapshot()??false,artifacts:options.artifacts?.getSnapshot()??[],usageGroups:collectConversationOverviewResources({round:conversationOverviewRound(binding.sessionId,entries),entries,executorId:binding.sessionId,...(executorName===undefined?{}:{executorName}),relatedSessions:relatedResources(),resourceUseSnapshots:options.resourceUseSnapshots?.getSnapshot().filter(row=>row.sessionId===binding.sessionId)??[]})}
+  const scopes=conversationOverviewRoundScopes(binding.sessionId,entries),resourceUseSnapshots=options.resourceUseSnapshots?.getSnapshot().filter(row=>row.sessionId===binding.sessionId)??[]
+  const resources=(scope:ConversationOverviewRoundScope|undefined)=>scope?collectConversationOverviewResources({round:scope.round,entries:scope.entries,executorId:binding.sessionId,...(executorName===undefined?{}:{executorName}),relatedSessions:relatedResources(scope),resourceUseSnapshots}):[]
+  // 最后人类工作的待进入Goal/宿主turn仍属于当前工作，不提前搬成已结束历史。
+  const usageHistory=scopes.rounds.slice(0,-1).map(scope=>({round:scope.round,usageGroups:resources(scope)}))
+  return {connected:connected(),pendingInteraction:options.pendingInteraction?.getSnapshot()??false,artifacts:options.artifacts?.getSnapshot()??[],usageGroups:resources(scopes.currentRound),usageHistory}
  }})
  const applyWork=(work:ConversationOverviewWork):ConversationOverviewWork=>{
   const stop=stops.get(work.id)

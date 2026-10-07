@@ -48,7 +48,10 @@ test('空会话没有虚构步骤、后台工作或成果，真实较早记录�
  await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),value)
  const history=page.locator('details').filter({has:page.getByText('已核对资料',{exact:true})})
  assert.equal(await history.getAttribute('open'),null)
- await history.locator('summary').click();assert.notEqual(await history.getAttribute('open'),null)
+ await history.evaluate((node:any)=>{(window as any).historyToggle=new Promise<void>(resolve=>node.addEventListener('toggle',()=>resolve(),{once:true}))})
+ await history.locator('summary').click();await page.evaluate(()=>(window as any).historyToggle)
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount({...value,status:'completed'}),value)
+ assert.notEqual(await history.getAttribute('open'),null,'展开状态已进入组件，正常同会话刷新仍保持选择')
  await page.evaluate((value:any)=>(window as any).overviewFixture.mount({...value,status:'running'}),value)
  assert.notEqual(await history.getAttribute('open'),null)
  const current={id:'report:v2',sessionId:'parent',path:'output/report.md',label:'报告.md',kind:'Markdown',status:'final',version:'v2',seq:20}
@@ -124,4 +127,100 @@ test('资源详情使用当前轮次真实执行者、查询与来源，拒绝�
  assert.equal(await page.getByLabel('原任务输入').inputValue(),'保留的任务草稿')
  await resource.click();await page.getByRole('button',{name:'返回工作概览',exact:true}).click()
  assert.equal(await resource.evaluate((node:any)=>node===document.activeElement),true)
+})
+
+test('较早真实轮次默认折叠，分别回看实际资源并保留来源、草稿与返回焦点',async t=>{
+ const first={sessionId:'parent',turn:1,turns:[1],startSeq:1,startedAt:1791360000000,userMessageId:'first',userMessageSeq:2,endSeq:10,endedAt:1791360030000,status:'completed'}
+ const second={sessionId:'parent',turn:1,turns:[1],startSeq:11,startedAt:1791360060000,userMessageId:'second',userMessageSeq:12,status:'unknown'}
+ const current={sessionId:'parent',turn:2,turns:[2],startSeq:21,startedAt:1791360120000,userMessageId:'current',userMessageSeq:22,status:'running'}
+ const usageHistory=[
+  {round:first,usageGroups:[
+   {id:'shared',kind:'mcp',name:'资料连接',provider:'test-mcp',evidence:[{id:'first:1',sessionId:'researcher',executorId:'researcher',executorName:'资料研究员',seq:3,resultSeq:4,callId:'first-call',timestamp:1791360010000,status:'completed',toolName:'mcp_search_documents'}]},
+   {id:'skill',kind:'skill',name:'项目复盘',evidence:[{id:'first:skill',sessionId:'parent',executorId:'parent',executorName:'本机助理',seq:5,timestamp:1791360020000,status:'read',toolName:'read'}]},
+  ]},
+  {round:second,usageGroups:[
+   {id:'shared',kind:'search',name:'网页搜索',provider:'test-web',evidence:[{id:'second:1',sessionId:'parent',executorId:'parent',executorName:'本机助理',seq:13,resultSeq:14,callId:'second-call',timestamp:1791360070000,status:'completed',toolName:'web_search',queries:['第二次工作的公开来源'],sources:[{url:'https://example.test/second',title:'第二次工作参考'}]}]},
+   {id:'plugin',kind:'plugin',name:'表格校验',provider:'test-plugin',evidence:[{id:'second:plugin',sessionId:'parent',executorId:'parent',executorName:'本机助理',seq:15,resultSeq:16,callId:'plugin-call',timestamp:1791360080000,status:'completed',toolName:'validate_csv'}]},
+  ]},
+ ]
+ const value={...empty(),status:'running',currentRound:current,artifacts:Array.from({length:12},(_,index)=>({id:'file:'+index,sessionId:'parent',path:'output/'+index+'.md',label:'记录'+index+'.md',kind:'markdown',status:'draft'})),usageGroups:[{id:'shared',kind:'plugin',name:'当前连接',provider:'current-plugin',evidence:[{id:'current:1',sessionId:'parent',executorId:'parent',executorName:'当前执行者',seq:23,timestamp:1791360130000,status:'completed',toolName:'current_tool'}]}],usageHistory}
+ const page=await pageFor(t,value),history=page.locator('details').filter({has:page.getByText('资料连接',{exact:true})})
+ assert.equal(await history.count(),1,'较早真实工作轮次必须有独立可展开入口')
+ assert.equal(await history.getAttribute('open'),null)
+ assert.equal(await page.getByRole('button',{name:/^资料连接 /}).isVisible(),false)
+ assert.equal(await page.getByRole('button',{name:/^当前连接 /}).isVisible(),true)
+ await history.locator('summary').click()
+ assert.equal(await history.getByRole('heading',{name:'工作轮次 1',exact:true}).count(),2,'同一个真实宿主 turn 可有两个不同 human 工作范围')
+ assert.deepEqual(await history.locator('time').evaluateAll((nodes:any[])=>nodes.map(node=>node.getAttribute('datetime'))),['2026-10-07T08:00:00.000Z','2026-10-07T08:01:00.000Z'])
+ for(const name of ['项目复盘','表格校验'])assert.equal(await history.getByRole('button',{name:new RegExp('^'+name+' ')}).isVisible(),true)
+ const resource=history.getByRole('button',{name:/^资料连接 /})
+ await resource.scrollIntoViewIfNeeded()
+ const scroll=await page.locator('aside > section > div').first().evaluate((node:any)=>node.scrollTop)
+ await resource.click()
+ assert.equal(await page.getByText('资料研究员',{exact:true}).isVisible(),true)
+ assert.equal(await page.getByText('mcp_search_documents',{exact:true}).isVisible(),true)
+ assert.equal(await page.getByText('子助手记录按启动轮次归档',{exact:true}).isVisible(),true)
+ assert.equal(await page.getByText('当前执行者',{exact:true}).isVisible(),false,'相同分组身份不能取成当前轮的证据')
+ assert.equal(await page.getByText(/^工作轮次 1 ·/).isVisible(),true)
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount({...value,status:'completed'}),value)
+ assert.equal(await page.getByText('资料研究员',{exact:true}).isVisible(),true,'事实刷新不退出正在查看的历史详情')
+ await page.getByRole('button',{name:'返回工作概览',exact:true}).press('Escape')
+ assert.equal(await resource.evaluate((node:any)=>node===document.activeElement),true)
+ assert.equal(await page.locator('aside > section > div').first().evaluate((node:any)=>node.scrollTop),scroll)
+ assert.notEqual(await history.getAttribute('open'),null)
+ await history.getByRole('button',{name:/^网页搜索 /}).click()
+ assert.equal(await page.getByText('第二次工作的公开来源',{exact:true}).isVisible(),true)
+ assert.equal(await page.getByText('子助手记录按启动轮次归档',{exact:true}).isVisible(),false,'父会话资源不重复展示子助手归档说明')
+ assert.equal(await page.getByRole('link',{name:'第二次工作参考',exact:true}).getAttribute('href'),'https://example.test/second')
+ assert.equal(await page.getByText('mcp_search_documents',{exact:true}).isVisible(),false)
+ await page.getByRole('button',{name:'返回工作概览',exact:true}).click()
+ assert.equal(await history.getByRole('button',{name:/^网页搜索 /}).evaluate((node:any)=>node===document.activeElement),true)
+ assert.equal(await page.getByLabel('原任务输入').inputValue(),'保留的任务草稿')
+})
+
+test('新增历史不抢开或夺取输入焦点，切换会话关闭旧详情并重新折叠历史',async t=>{
+ const value=empty(),page=await pageFor(t,value),input=page.getByLabel('原任务输入')
+ await input.fill('继续准备，尚未发送');await input.focus()
+ const round={sessionId:'parent',turn:1,turns:[1],startSeq:1,startedAt:1791360000000,userMessageId:'first',userMessageSeq:2,endSeq:5,endedAt:1791360030000,status:'completed'}
+ const group={id:'shared',kind:'plugin',name:'历史工具',provider:'past-plugin',evidence:[{id:'first:1',sessionId:'parent',executorId:'parent',executorName:'旧执行者',seq:3,resultSeq:4,callId:'first-call',timestamp:1791360010000,status:'completed',toolName:'old_tool'}]}
+ const withHistory={...value,usageHistory:[{round,usageGroups:[group]}]}
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),withHistory)
+ const history=page.locator('details').filter({has:page.getByText('历史工具',{exact:true})})
+ assert.equal(await history.count(),1,'只有历史资源时仍能访问其真实工作记录')
+ assert.equal(await history.getAttribute('open'),null)
+ assert.equal(await input.evaluate((node:any)=>node===document.activeElement),true)
+ await history.locator('summary').click();await history.getByRole('button',{name:/^历史工具 /}).click()
+ assert.equal(await page.getByText('旧执行者',{exact:true}).isVisible(),true)
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),{...empty(),sessionId:'other',usageHistory:[{round:{...round,sessionId:'other',userMessageId:'other-first'},usageGroups:[{...group,evidence:[{...group.evidence[0],sessionId:'other',executorId:'other',executorName:'另一会话执行者',toolName:'other_tool'}]}]}]})
+ assert.equal(await page.getByRole('button',{name:'返回工作概览',exact:true}).isVisible(),false)
+ assert.equal(await page.getByText('旧执行者',{exact:true}).count(),0)
+ assert.equal(await history.getAttribute('open'),null,'切会话不继承历史展开状态')
+ await history.locator('summary').click();await history.getByRole('button',{name:/^历史工具 /}).click()
+ assert.equal(await page.getByText('另一会话执行者',{exact:true}).isVisible(),true)
+ assert.equal(await page.getByText('other_tool',{exact:true}).isVisible(),true)
+ assert.equal(await input.inputValue(),'继续准备，尚未发送')
+})
+
+test('切换会话时复用资源行不能把焦点从输入移到另一会话',async t=>{
+ const round={sessionId:'parent',turn:1,turns:[1],startSeq:1,startedAt:1791360000000,userMessageId:'first',userMessageSeq:2,status:'running'}
+ const group={id:'shared',kind:'plugin',name:'文件连接',provider:'file-plugin',evidence:[{id:'first:1',sessionId:'parent',executorId:'parent',executorName:'旧执行者',seq:3,resultSeq:4,callId:'first-call',timestamp:1791360010000,status:'completed',toolName:'read'}]}
+ const page=await pageFor(t,{...empty(),currentRound:round,usageGroups:[group]}),resource=page.getByRole('button',{name:/^文件连接 /}),trigger=await resource.elementHandle()
+ await resource.click()
+ const input=page.getByLabel('原任务输入');await input.fill('新会话准备中的输入');await input.focus()
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),{...empty(),sessionId:'other',currentRound:{...round,sessionId:'other',userMessageId:'other-first'},usageGroups:[{...group,evidence:[{...group.evidence[0],id:'other:1',sessionId:'other',executorId:'other',executorName:'新执行者'}]}]})
+ assert.equal(await trigger!.evaluate((node:any)=>node.isConnected),true,'同group.id的当前资源行确实复用了真实DOM')
+ assert.equal(await page.getByRole('button',{name:'返回工作概览',exact:true}).isVisible(),false)
+ assert.equal(await input.evaluate((node:any)=>node===document.activeElement),true,'切会话只清旧详情，不能把焦点恢复到已复用的新会话资源按钮')
+ assert.equal(await input.inputValue(),'新会话准备中的输入')
+})
+
+test('展开历史后经过空历史会话，返回原会话仍默认折叠',async t=>{
+ const round={sessionId:'parent',turn:1,turns:[1],startSeq:1,startedAt:1791360000000,userMessageId:'first',userMessageSeq:2,endSeq:5,endedAt:1791360030000,status:'completed'}
+ const group={id:'shared',kind:'plugin',name:'历史工具',provider:'past-plugin',evidence:[{id:'first:1',sessionId:'parent',executorId:'parent',executorName:'旧执行者',seq:3,resultSeq:4,callId:'first-call',timestamp:1791360010000,status:'completed',toolName:'old_tool'}]}
+ const value={...empty(),usageHistory:[{round,usageGroups:[group]}]},page=await pageFor(t,value),history=page.locator('details').filter({has:page.getByText('历史工具',{exact:true})})
+ await history.locator('summary').click();assert.notEqual(await history.getAttribute('open'),null)
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),{...empty(),sessionId:'other'})
+ assert.equal(await page.locator('details').count(),0,'另一会话没有历史节点，不依赖其toggle事件清除旧选择')
+ await page.evaluate((value:any)=>(window as any).overviewFixture.mount(value),value)
+ assert.equal(await history.getAttribute('open'),null,'返回原会话不能恢复之前会话切换前的展开状态')
 })

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {SessionBinding,SessionEventLikeEntry} from '@deepseek-ai/dsh-api-session-controller/client'
-import {conversationOverviewRound,conversationOverviewRoundEntries,projectConversationOverviewSnapshot,createConversationOverviewModel,type ConversationOverviewInput,type ConversationOverviewJob} from '../src/client/conversation-overview-model.ts'
+import {conversationOverviewRound,conversationOverviewRounds,conversationOverviewRoundScopes,conversationOverviewRoundEntries,projectConversationOverviewSnapshot,createConversationOverviewModel,type ConversationOverviewInput,type ConversationOverviewJob} from '../src/client/conversation-overview-model.ts'
 
 const event=(seq:number,type:string,data:unknown,time=seq*100)=>({type:'event',event:{seq,type,data,time,...(type==='user/message'?{surfaceOp:'append'}:{})}}) as SessionEventLikeEntry
 const human=(seq:number,id:string)=>event(seq,'user/message',{id,role:'user',source:{kind:'user'},content:[{type:'text',text:id}]})
@@ -31,6 +31,39 @@ test('同一宿主turn的第二条人类输入独立切界，压缩副本和fork
  const round=conversationOverviewRound('main',entries)!
  assert.equal(round.startSeq,5);assert.equal(round.userMessageId,'second');assert.deepEqual(conversationOverviewRoundEntries(entries,round).map(entry=>entry.event.seq),[5,6])
  assert.equal(conversationOverviewRound('child',[...entries,event(7,'session/end-seed',{inherited:true}),event(8,'turn/start',{turn:2})]),undefined)
+})
+
+test('历史只保留自身已进入的人类工作，Goal续轮归并且同turn切界不虚构旧终态',()=>{
+ const entries=[event(1,'turn/start',{turn:1}),human(2,'inherited'),event(3,'turn/end',{turn:1,reason:{kind:'completed'}}),event(4,'session/end-seed',{inherited:true}),event(5,'turn/start',{turn:2}),human(6,'first'),event(7,'turn/end',{turn:2,reason:{kind:'completed'}}),event(8,'turn/start',{turn:3}),event(9,'user/message',{source:{kind:'goal'}}),event(10,'turn/end',{turn:3,reason:{kind:'completed'}}),human(11,'queued-echo'),event(12,'turn/start',{turn:4}),human(13,'second'),event(14,'tool/call',{}),human(15,'third'),event(16,'turn/end',{turn:4,reason:{kind:'aborted'}})]
+ const rounds=conversationOverviewRounds('main',entries)
+ assert.deepEqual(rounds.map(round=>round.userMessageId),['first','second','third'])
+ assert.deepEqual(rounds[0]?.turns,[2,3]);assert.equal(rounds[0]?.endSeq,10)
+ assert.equal(rounds[1]?.status,'unknown');assert.equal(rounds[1]?.endSeq,undefined);assert.equal(rounds[1]?.endedAt,undefined);assert.equal(rounds[1]?.reason,undefined)
+ assert.deepEqual(conversationOverviewRoundEntries(entries,rounds[1]).map(entry=>entry.event.seq),[12,13,14])
+ assert.equal(rounds[2]?.startSeq,15);assert.equal(rounds[2]?.status,'stopped')
+ assert.deepEqual(conversationOverviewRound('main',entries),rounds[2])
+ const scoped=conversationOverviewRoundScopes('main',[...entries].reverse())
+ assert.deepEqual(scoped.rounds.map(scope=>scope.entries.map(entry=>entry.event.seq)),rounds.map(round=>conversationOverviewRoundEntries(entries,round).map(entry=>entry.event.seq)))
+ assert.deepEqual(scoped.currentRound?.round,rounds[2])
+})
+
+test('资源历史可缺省，显式历史快照沿同一模型context传递',()=>{
+ const round=conversationOverviewRound('main',[event(1,'turn/start',{turn:1}),human(2,'first'),event(3,'turn/end',{turn:1,reason:{kind:'completed'}})])!
+ const usageHistory=[{round,usageGroups:[]}]
+ assert.equal(projectConversationOverviewSnapshot(input()).usageHistory,undefined)
+ assert.equal(projectConversationOverviewSnapshot(input([],{usageHistory})).usageHistory,usageHistory)
+ const state=source(session),events=source({entries:[] as readonly SessionEventLikeEntry[]})
+ const binding={sessionId:'main',session:{...state,projections:{faceOf:()=>source(undefined)}},eventSource:events} as unknown as SessionBinding
+ assert.equal(createConversationOverviewModel(binding,{context:()=>({usageHistory})}).getSnapshot().usageHistory,usageHistory)
+})
+
+test('Goal已进入续轮后首human steer以消息seq切界，不回退宿主turn/start',()=>{
+ const entries=[event(1,'turn/start',{turn:1}),human(2,'first'),event(3,'turn/end',{turn:1,reason:{kind:'completed'}}),event(4,'turn/start',{turn:2}),event(5,'user/message',{source:{kind:'goal'}}),event(6,'tool/call',{}),human(7,'steer'),event(8,'tool/call',{}),event(9,'turn/end',{turn:2,reason:{kind:'completed'}})]
+ const rounds=conversationOverviewRounds('main',entries)
+ assert.equal(rounds[1]?.startSeq,7);assert.deepEqual(rounds[0]?.turns,[1,2])
+ assert.equal(rounds[0]?.status,'unknown');assert.equal(rounds[0]?.endSeq,undefined)
+ assert.deepEqual(conversationOverviewRoundEntries(entries,rounds[0]).map(entry=>entry.event.seq),[1,2,3,4,5,6])
+ assert.deepEqual(conversationOverviewRoundEntries(entries,rounds[1]).map(entry=>entry.event.seq),[7,8,9])
 })
 
 test('宿主失败、取消、阻塞和未知终态分别投影，停止响应不是成功',()=>{

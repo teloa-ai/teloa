@@ -23,6 +23,12 @@ test('工作概览先维护简繁英，保留港台差异，其余语言新词�
  assert.equal(translateMessage('zh-TW','overview.resourceRecords',{count:2}),'2 筆記錄')
  assert.equal(translateMessage('zh-HK','overview.resourceRecords',{count:2}),'2 條記錄')
  assert.equal(translateMessage('en','overview.title'),'Work overview')
+ assert.equal(translateMessage('zh-CN','overview.usageHistory',{count:2}),'较早轮次 · 2')
+ assert.equal(translateMessage('zh-TW','overview.usageHistory',{count:2}),'較早回合 · 2')
+ assert.equal(translateMessage('zh-HK','overview.usageHistory',{count:2}),'較早回合 · 2')
+ assert.equal(translateMessage('en','overview.usageRound',{turn:4}),'Work round 4')
+ assert.equal(translateMessage('zh-CN','overview.childResourceScope'),'子助手记录按启动轮次归档')
+ for(const locale of MAIN_LOCALES)if(!['zh-CN','zh-Hant','en'].includes(locale))assert.equal(translateMessage(locale,'overview.usageHistory',{count:2}),'Earlier rounds · 2')
  for(const locale of MAIN_LOCALES)if(!['zh-CN','zh-Hant','en'].includes(locale))assert.equal(translateMessage(locale,'overview.title'),'Work overview')
 })
 

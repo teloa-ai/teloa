@@ -126,3 +126,45 @@ test('独立来源snapshot按父子session分配，outer失败后仍保留成功
  assert.deepEqual(f.service.getSnapshot().usageGroups.map(group=>group.evidence[0]?.executorId),['main','child'])
  f.service.dispose();assert.equal(f.resourceUseSnapshots.size(),0)
 })
+
+test('完整会话资源按人类工作留历史，Goal续轮归并且迟到child不串到本轮',async()=>{
+ const f=fixture();f.service.attach();f.catalog();await tick()
+ const tool=(seq:number,name:string,turn:number)=>[event(seq,'tool/call',{turn,step:1,callId:`call${seq}`,name,arguments:'{}'}),event(seq+1,'tool/result',{turn,step:1,message:{role:'tool',toolCallId:`call${seq}`,content:[],isError:false},meta:{teloaResourceUse:{schema:'teloa.resource-use/v1',kind:'mcp',providerId:'server',name,toolName:name,state:'used'}}})]
+ const request=(seq:number,id:string)=>event(seq,'user/message',{id,source:{kind:'user'},content:[]})
+ const first=[event(1,'turn/start',{turn:1}),request(2,'first'),...tool(3,'First',1),event(5,'subagent/catalog',{version:0,childId:'child',childCreatedAt:200,mode:'one-shot'}),event(6,'turn/end',{turn:1,reason:{kind:'completed'}}),event(7,'turn/start',{turn:2}),event(8,'user/message',{source:{kind:'goal'}}),...tool(9,'Goal continuation',2),event(11,'turn/end',{turn:2,reason:{kind:'completed'}})]
+ f.child.events.set({entries:[event(5,'session/end-seed',{inherited:true}),event(6,'turn/start',{turn:1})]})
+ f.parent.events.set({entries:[...first,request(12,'queued-echo'),event(13,'turn/start',{turn:3}),request(14,'second'),...tool(15,'Second',3)]})
+ const history=f.service.getSnapshot().usageHistory!
+ assert.equal(history.length,1);assert.equal(history[0]?.round.userMessageId,'first');assert.deepEqual(history[0]?.round.turns,[1,2])
+ assert.deepEqual(history[0]?.usageGroups.map(group=>group.name),['First','Goal continuation'])
+ assert.deepEqual(f.service.getSnapshot().usageGroups.map(group=>group.name),['Second'])
+ f.child.events.set({entries:[event(5,'session/end-seed',{inherited:true}),event(6,'turn/start',{turn:1}),...tool(7,'Late child',1)]})
+ assert.deepEqual(f.service.getSnapshot().usageHistory?.[0]?.usageGroups.map(group=>group.name),['First','Goal continuation','Late child'])
+ assert.equal(f.service.getSnapshot().usageHistory?.[0]?.usageGroups.at(-1)?.evidence[0]?.executorId,'child')
+ assert.deepEqual(f.service.getSnapshot().usageGroups.map(group=>group.name),['Second'])
+ // 新宿主turn尚未接收人类/Goal输入，不把最后一轮移入历史或冒充新一轮。
+ f.parent.events.set({entries:[...first,event(13,'turn/start',{turn:3}),request(14,'second'),...tool(15,'Second',3),event(17,'turn/end',{turn:3,reason:{kind:'completed'}}),event(18,'turn/start',{turn:4})]})
+ assert.equal(f.service.getSnapshot().currentRound,undefined);assert.equal(f.service.getSnapshot().usageHistory?.length,1);assert.deepEqual(f.service.getSnapshot().usageGroups,[])
+ f.service.dispose();assert.equal(f.child.events.size(),0)
+})
+
+test('同turn多个human按真实seq各自聚合，不借共用turn把child重复归入下一轮',async()=>{
+ const f=fixture();f.service.attach();f.catalog();await tick()
+ const skill=(seq:number,name:string)=>[event(seq,'user/message',{source:{kind:'skill-invocation',name,form:'instructions'},content:[{type:'text',text:'实际技能正文'}]})]
+ f.child.events.set({entries:[event(5,'session/end-seed',{inherited:true}),...skill(6,'Child skill')]})
+ f.parent.events.set({entries:[event(1,'turn/start',{turn:1}),human(2),...skill(3,'First skill'),event(4,'subagent/catalog',{version:0,childId:'child',childCreatedAt:200,mode:'one-shot'}),human(7),...skill(8,'Second skill'),event(9,'turn/end',{turn:1,reason:{kind:'completed'}})]})
+ const snapshot=f.service.getSnapshot()
+ assert.equal(snapshot.usageHistory?.[0]?.round.status,'unknown');assert.equal(snapshot.usageHistory?.[0]?.round.endSeq,undefined)
+ assert.deepEqual(snapshot.usageHistory?.[0]?.usageGroups.map(group=>group.name),['First skill','Child skill'])
+ assert.deepEqual(snapshot.usageGroups.map(group=>group.name),['Second skill'])
+ f.service.dispose()
+})
+
+test('Goal续轮资源在首human steer后留在原工作历史，后续资源才属于当前轮',()=>{
+ const f=fixture();f.service.attach()
+ const skill=(seq:number,name:string)=>event(seq,'user/message',{source:{kind:'skill-invocation',name,form:'instructions'},content:[{type:'text',text:'实际技能正文'}]})
+ f.parent.events.set({entries:[event(1,'turn/start',{turn:1}),human(2),event(3,'turn/end',{turn:1,reason:{kind:'completed'}}),event(4,'turn/start',{turn:2}),event(5,'user/message',{source:{kind:'goal'}}),skill(6,'Goal skill'),human(7),skill(8,'Steer skill'),event(9,'turn/end',{turn:2,reason:{kind:'completed'}})]})
+ assert.deepEqual(f.service.getSnapshot().usageHistory?.[0]?.usageGroups.map(group=>group.name),['Goal skill'])
+ assert.deepEqual(f.service.getSnapshot().usageGroups.map(group=>group.name),['Steer skill'])
+ f.service.dispose()
+})

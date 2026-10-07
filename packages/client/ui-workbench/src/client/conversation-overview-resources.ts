@@ -85,7 +85,7 @@ function ptcFact(value:unknown,type:'tool/ptc-dispatch-start'|'tool/ptc-dispatch
  return {seq:value.seq,time:value.time,rootCallId:data.rootCallId,parentCallId:data.parentCallId,callId:data.subCallId,toolName:data.name,isError:data.isError===true}
 }
 
-/** 当前用户轮次的一份事实投影；不把请求、安装目录或模型正文当作实际使用证明。 */
+/** 一份真实用户轮次的事实投影；当前与历史复用序号边界，不把请求或模型正文当作使用证明。 */
 export function collectConversationOverviewResources(input:ConversationOverviewResourcesInput):readonly ConversationOverviewResourceGroup[]{
  const round=input.round
  if(!round)return []
@@ -163,7 +163,7 @@ export function collectConversationOverviewResources(input:ConversationOverviewR
  for(const child of input.relatedSessions??[]){
   if(child.sessionId===round.sessionId||child.parentSessionId!==round.sessionId||!round.turns.includes(child.parentTurn)||child.parentStartSeq!==round.startSeq||!Number.isSafeInteger(child.inheritedEventCount)||child.inheritedEventCount<0)continue
   // 父轮次关系来自宿主；子会话只取自己的日志，排除 fork 继承前缀。
-  const entries=child.entries.filter((entry):entry is ConversationOverviewEventEntry=>entry.type==='event'&&entry.event.seq>=child.inheritedEventCount)
+  const entries=child.entries.filter((entry):entry is ConversationOverviewEventEntry=>entry.type==='event'&&entry.event.seq>=child.inheritedEventCount).sort((left,right)=>left.event.seq-right.event.seq)
   project(entries,{sessionId:child.sessionId,executorId:child.executorId,...(child.executorName!==undefined?{executorName:child.executorName}:{})},child.resourceUseSnapshots)
  }
  return [...groups.values()]

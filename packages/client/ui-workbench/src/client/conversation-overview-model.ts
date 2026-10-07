@@ -36,6 +36,7 @@ export type ConversationOverviewWork={
 }
 export type ConversationOverviewArtifact={readonly id:string;readonly sessionId:string;readonly path:string;readonly label:string;readonly kind:string;readonly status:'draft'|'final'|'unknown';readonly version?:string;readonly seq?:number;readonly isHistorical?:boolean}
 export type ConversationOverviewGoal={readonly id:string;readonly objective:string;readonly phase:'active'|'paused'|'blocked'|'complete';readonly blockedReason?:string}
+export type ConversationOverviewUsageHistoryEntry={readonly round:ConversationOverviewRound;readonly usageGroups:readonly ConversationOverviewResourceGroup[]}
 export type ConversationOverviewSnapshot={
  readonly sessionId:string
  readonly status:ConversationOverviewStatus
@@ -45,6 +46,7 @@ export type ConversationOverviewSnapshot={
  readonly ended:readonly ConversationOverviewWork[]
  readonly artifacts:readonly ConversationOverviewArtifact[]
  readonly usageGroups:readonly ConversationOverviewResourceGroup[]
+ readonly usageHistory?:readonly ConversationOverviewUsageHistoryEntry[]
 }
 export type ConversationOverviewSource<T>={getSnapshot:()=>T;subscribe:(listener:()=>void)=>()=>void}
 /** JobView 的公开只读字段；不会把浏览器模型耦合到宿主 JobRegistry。 */
@@ -66,6 +68,7 @@ export type ConversationOverviewInput={
  readonly connected?:boolean
  readonly artifacts?:readonly ConversationOverviewArtifact[]
  readonly usageGroups?:readonly ConversationOverviewResourceGroup[]
+ readonly usageHistory?:readonly ConversationOverviewUsageHistoryEntry[]
 }
 
 function durableEntries(entries:readonly SessionEventLikeEntry[]):ConversationOverviewEventEntry[]{
@@ -93,38 +96,62 @@ function terminalStatus(kind:unknown):ConversationOverviewStatus{
  }
 }
 
-/** 当前范围由最后一条真正进入宿主的人类消息确定；排队回声和压缩副本不授予执行范围。 */
-export function conversationOverviewRound(sessionId:string,entries:readonly SessionEventLikeEntry[]):ConversationOverviewRound|undefined{
+function scanConversationOverviewRounds(sessionId:string,entries:readonly SessionEventLikeEntry[]):{rounds:readonly ConversationOverviewRound[];currentRound:ConversationOverviewRound|undefined;entries:readonly ConversationOverviewEventEntry[]}{
  const durable=ownEntries(entries)
+ const rounds:ConversationOverviewRound[]=[]
  let activeStart:ConversationOverviewEventEntry|undefined
  let current:ConversationOverviewRound|undefined
- let humansInTurn=0
  let entered=false
+ const replaceCurrent=(round:ConversationOverviewRound)=>{current=round;rounds[rounds.length-1]=round}
  for(const entry of durable){
   const event=entry.event
   if(event.type==='turn/start'){
-   activeStart=entry;humansInTurn=0;entered=false
+   activeStart=entry;entered=false
   }else if(event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'){
    if(!activeStart||activeStart.event.type!=='turn/start')continue
-   humansInTurn++
+   const start=entered?event:activeStart.event
    entered=true
-   const start=humansInTurn>1?event:activeStart.event
+   // 宿主turn已接收人类或Goal后，追加人类输入只有序号切界，没有上一条工作独立结束的事实。
+   if(current?.status==='running')replaceCurrent({...current,status:'unknown'})
    current={sessionId,turn:activeStart.event.data.turn,turns:[activeStart.event.data.turn],startSeq:start.seq,startedAt:start.time,userMessageId:event.data.id,userMessageSeq:event.seq,status:'running'}
+   rounds.push(current)
   }else if(event.type==='user/message'&&event.surfaceOp==='append'&&String(event.data.source.kind)==='goal'&&current&&activeStart?.event.type==='turn/start'){
    entered=true
-   if(!current.turns.includes(activeStart.event.data.turn))current={...current,turns:[...current.turns,activeStart.event.data.turn],status:'running'}
+   const {endSeq:_endSeq,endedAt:_endedAt,reason:_reason,...open}=current
+   replaceCurrent({...open,turns:current.turns.includes(activeStart.event.data.turn)?current.turns:[...current.turns,activeStart.event.data.turn],status:'running'})
   }else if(event.type==='turn/end'&&current&&current.turns.at(-1)===event.data.turn){
-   current={...current,endSeq:event.seq,endedAt:event.time,status:terminalStatus(event.data.reason.kind),reason:event.data.reason.kind}
+   replaceCurrent({...current,endSeq:event.seq,endedAt:event.time,status:terminalStatus(event.data.reason.kind),reason:event.data.reason.kind})
    activeStart=undefined
   }
  }
  // 后续续轮已开始时，旧终态只是前一个宿主 turn 的事实，不是整次用户工作的终态。
- if(activeStart&&!entered)return undefined
- if(current&&activeStart){const {endSeq:_endSeq,endedAt:_endedAt,reason:_reason,...open}=current;current=open}
- return current
+ return {rounds,currentRound:activeStart&&!entered?undefined:current,entries:durable}
+}
+export type ConversationOverviewRoundScope={readonly round:ConversationOverviewRound;readonly entries:readonly ConversationOverviewEventEntry[]}
+/** 单次快照共享排序和轮次扫描，再按真实边界分配日志，避免每个历史轮次重复解析整段会话。 */
+export function conversationOverviewRoundScopes(sessionId:string,entries:readonly SessionEventLikeEntry[]):{rounds:readonly ConversationOverviewRoundScope[];currentRound:ConversationOverviewRoundScope|undefined}{
+ const scanned=scanConversationOverviewRounds(sessionId,entries)
+ const rounds=scanned.rounds.map(round=>({round,entries:[] as ConversationOverviewEventEntry[]}))
+ let index=0
+ for(const entry of scanned.entries){
+  while(rounds[index+1]&&entry.event.seq>=rounds[index+1]!.round.startSeq)index++
+  const scope=rounds[index]
+  if(scope&&entry.event.seq>=scope.round.startSeq&&(scope.round.endSeq===undefined||entry.event.seq<=scope.round.endSeq))scope.entries.push(entry)
+ }
+ return {rounds,currentRound:scanned.currentRound?rounds.at(-1):undefined}
+}
+/** 只收录真正进入宿主的本会话人类工作；Goal续轮不另建历史，继承与排队回声不计入。 */
+export function conversationOverviewRounds(sessionId:string,entries:readonly SessionEventLikeEntry[]):readonly ConversationOverviewRound[]{
+ return scanConversationOverviewRounds(sessionId,entries).rounds
+}
+/** 当前范围由最后一条真正进入宿主的人类消息确定；排队回声和压缩副本不授予执行范围。 */
+export function conversationOverviewRound(sessionId:string,entries:readonly SessionEventLikeEntry[]):ConversationOverviewRound|undefined{
+ return scanConversationOverviewRounds(sessionId,entries).currentRound
 }
 export function conversationOverviewRoundEntries(entries:readonly SessionEventLikeEntry[],round:ConversationOverviewRound|undefined):readonly ConversationOverviewEventEntry[]{
- return round?durableEntries(entries).filter(entry=>entry.event.seq>=round.startSeq&&(round.endSeq===undefined||entry.event.seq<=round.endSeq)):[]
+ if(!round)return []
+ const next=conversationOverviewRounds(round.sessionId,entries).find(candidate=>candidate.startSeq>round.startSeq)
+ return ownEntries(entries).filter(entry=>entry.event.seq>=round.startSeq&&(round.endSeq===undefined||entry.event.seq<=round.endSeq)&&(!next||entry.event.seq<next.startSeq))
 }
 function goalValue(value:unknown):ConversationOverviewGoal|undefined{
  const goal=record(record(value)?.goal)
@@ -179,14 +206,14 @@ export function projectConversationOverviewSnapshot(input:ConversationOverviewIn
  else if(currentRound)status=currentRound.status==='running'?'unknown':currentRound.status
  else status='idle'
  const ended=(item:ConversationOverviewWork)=>['stopped','failed','completed'].includes(item.status)
- return {sessionId:input.sessionId,status,...(currentRound?{currentRound}:{}),progress:{current:steps.filter(step=>step.status!=='completed'),earlier:steps.filter(step=>step.status==='completed'),...(goal?{goal}:{})},running:work.filter(item=>!ended(item)),ended:work.filter(ended),artifacts:input.artifacts??[],usageGroups:input.usageGroups??[]}
+ return {sessionId:input.sessionId,status,...(currentRound?{currentRound}:{}),progress:{current:steps.filter(step=>step.status!=='completed'),earlier:steps.filter(step=>step.status==='completed'),...(goal?{goal}:{})},running:work.filter(item=>!ended(item)),ended:work.filter(ended),artifacts:input.artifacts??[],usageGroups:input.usageGroups??[],...(input.usageHistory===undefined?{}:{usageHistory:input.usageHistory})}
 }
 
 export type ConversationOverviewModelPorts={
  readonly jobs?:ConversationOverviewSource<{readonly rows:Readonly<Record<string,readonly ConversationOverviewJob[]>>}>
  readonly activity?:ConversationOverviewSource<unknown>
  readonly children?:(catalog:unknown)=>readonly ConversationOverviewChild[]
- readonly context?:()=>Pick<ConversationOverviewInput,'pendingInteraction'|'stopping'|'connected'|'workLinks'|'artifacts'|'usageGroups'>
+ readonly context?:()=>Pick<ConversationOverviewInput,'pendingInteraction'|'stopping'|'connected'|'workLinks'|'artifacts'|'usageGroups'|'usageHistory'>
 }
 /** 所有状态来源由现有绑定持有；此模型只缓存投影和订阅，不启动、停止或重放执行。 */
 export function createConversationOverviewModel(binding:SessionBinding,ports:ConversationOverviewModelPorts={}){

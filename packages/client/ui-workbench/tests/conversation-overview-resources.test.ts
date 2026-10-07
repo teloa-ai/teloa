@@ -125,3 +125,14 @@ test('PTC独立来源snapshot须匹配本次真实成功结算，outer失败/取
  const success=[entries[0]!,entries[1]!,entries[2]!,result(15,'outer',false,{teloaResourceUses:[row]})]
  assert.equal(collectConversationOverviewResources({round,entries:success,resourceUseSnapshots:[snapshot]}).at(0)?.evidence.length,1)
 })
+
+test('较早同turn资源按下一人类输入切界，迟到子资源按原关系归属且按真实seq读取',()=>{
+ const human=(seq:number,id:string)=>({type:'event',event:{seq,type:'user/message',time:1000+seq,surfaceOp:'append',data:{id,source:{kind:'user'},content:[]}}}) as unknown as SessionEventLikeEntry
+ const earlier={sessionId:'parent',turn:2,turns:[2],startSeq:10,startedAt:1010,userMessageId:'first',userMessageSeq:11,status:'unknown' as const}
+ const entries=[event(10,'turn/start',{turn:2}),human(11,'first'),call(12,'first','skill',{}),result(13,'first',false,skillMeta('第一轮')),human(14,'second'),call(15,'second','skill',{}),result(16,'second',false,skillMeta('当前轮')),event(17,'turn/end',{turn:2,reason:{kind:'completed'}})]
+ const child={sessionId:'child',executorId:'child-worker',executorName:'原校对助手',parentSessionId:'parent',parentTurn:2,parentStartSeq:10,inheritedEventCount:2,entries:[result(4,'child',false,skillMeta('迟到子资源')),call(3,'child','skill',{}),call(0,'ancestor','skill',{}),result(1,'ancestor',false,skillMeta('继承资源'))]}
+ const groups=collectConversationOverviewResources({round:earlier,entries,relatedSessions:[child,{...child,sessionId:'foreign',parentSessionId:'other-session'}]})
+ assert.deepEqual(groups.map(group=>group.name),['第一轮','迟到子资源'])
+ assert.equal(groups[1]?.evidence[0]?.executorId,'child-worker');assert.equal(groups[1]?.evidence[0]?.executorName,'原校对助手')
+ assert.equal(collectConversationOverviewResources({round:{...earlier,startSeq:14,userMessageSeq:14,userMessageId:'second'},entries,relatedSessions:[child]}).some(group=>group.name==='迟到子资源'),false)
+})
