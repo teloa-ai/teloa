@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
-import {cp,mkdtemp,readFile,rm,symlink} from 'node:fs/promises'
+import {cp,mkdtemp,readFile,realpath,rm,symlink} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
 import {createRequire} from 'node:module'
@@ -25,7 +26,7 @@ export async function patchedTools(t:Cleanup,patched=true){
  assert.deepEqual(manifest.files.map((row:{path:string})=>row.path),['lib/index.js','lib/types/index.d.ts'])
  for(const row of manifest.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)
  if(!patched)return {root:source,namespace:await import(pathToFileURL(join(source,'lib/index.js')).href)}
- const root=await mkdtemp('/private/tmp/teloa-native-tools-work-'),copy=join(root,'package')
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-native-tools-work-'))),copy=join(root,'package')
  t.after(async()=>{for(const row of manifest.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256);await rm(root,{recursive:true,force:true})})
  await cp(source,copy,{recursive:true,filter:path=>path!==join(source,'node_modules')});await symlink(dirname(dirname(source)),join(copy,'node_modules'),'dir')
  const applied=spawnSync('/usr/bin/patch',['--batch','--fuzz=0','--forward','-p1','-i',patch],{cwd:copy,encoding:'utf8'})

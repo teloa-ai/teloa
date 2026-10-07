@@ -1219,7 +1219,9 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    if(!(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='task'))return false
    return !(await database.pool.query('select 1 from teloa_conversation_work_requests where owner_id=$1 and session_id=$2 limit 1',[owner,sessionId])).rowCount
   }
-  workAccess.installSessionCapabilities(createNativeSessionCapabilities(ctx,{owner,conversations:service,links:workLinks,pool:database.pool,isRoutingSession}))
+  const sessionCapabilitiesReader=createNativeSessionCapabilities(ctx,{owner,conversations:service,links:workLinks,pool:database.pool,isRoutingSession})
+  workAccess.installSessionCapabilities(sessionCapabilitiesReader)
+  ctx.effect(()=>()=>workAccess.releaseSessionCapabilities(sessionCapabilitiesReader),'Teloa 宿主会话能力读取器')
   resources.beforeDatabaseClose(registerNativeCapabilityTools(ctx,owner))
   const conversationWorkEligibility=async(sessionId:string)=>{
    const binding=await service.bySession(owner,sessionId),resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))

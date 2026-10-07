@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {setImmediate as immediate} from 'node:timers/promises'
-import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises'
+import {mkdtemp,readFile,readdir,realpath,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
@@ -188,7 +189,7 @@ test('真实 managed Subagent plugin 在provider之前等待，首次通知已�
 test('managed Subagent首次start核对独立初始许可，拒绝零写、恢复后唯一受理',async t=>{
  reset()
  const f=await nativeProviderFixture(t),sdk=await patchedSubagent(t),Managed=createManagedSubagentRuntime(sdk.SubagentRuntime as typeof SubagentRuntime)
- const root=await mkdtemp('/private/tmp/teloa-provider-persistence-')
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-persistence-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
  await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput);await f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8})
  await f.ctx.plugin(SpawnProvider,{providerName:'spawn'})
@@ -231,7 +232,7 @@ test('Free原官方Controller缺provider仍可发送；managed类不替换官方
 
 test('过渡创建屏障保留已落seed；冷pending在中断修复前拒绝，完整持久字节保持且零模型',async t=>{
  reset()
- const f=await nativeProviderFixture(t),model=new NoModel(),root=await mkdtemp('/private/tmp/teloa-provider-seed-')
+ const f=await nativeProviderFixture(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-seed-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model)
  await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput)
@@ -299,7 +300,7 @@ test('空seed及已完成history正常创建但不获得新工作许可，空Age
 
 test('空闲持久history正常冷恢复；历史不生成工作证明，后续新输入重新核验许可',async t=>{
  reset()
- const f=await nativeProviderFixture(t),model=new NoModel(),root=await mkdtemp('/private/tmp/teloa-provider-idle-cold-')
+ const f=await nativeProviderFixture(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-idle-cold-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model)
  await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput)
@@ -332,7 +333,7 @@ test('空闲持久history正常冷恢复；历史不生成工作证明，后续�
 
 test('profile等价真实依赖图：agent-loop配置冷pending必须等待provider，恢复门拒绝自动wake', {timeout:10000},async t=>{
  reset()
- const f=await nativeProviderKernel(t),model=new NoModel(),root=await mkdtemp('/private/tmp/teloa-provider-configured-')
+ const f=await nativeProviderKernel(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-configured-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model);await f.ctx.plugin(f.persistencePackage.default,{root})
  const id=SessionId('configured-pending'),input=message('configuration-not-a-permit')

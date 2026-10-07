@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
-import {cp,mkdir,mkdtemp,readFile,readdir,rm,symlink} from 'node:fs/promises'
+import {cp,mkdir,mkdtemp,readFile,readdir,realpath,rm,symlink} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
 import {createRequire} from 'node:module'
@@ -33,7 +34,7 @@ export async function patchedSubagent(t:Cleanup,patched=true){
  assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(metadata.name,receipt.package);assert.equal(metadata.version,'0.2.0-rc.2');assert.equal(metadata.version,receipt.version);assert.equal(sha(await readFile(patch)),receipt.patchSha256)
  for(const row of receipt.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)
  if(!patched)return import(pathToFileURL(join(source,'lib/index.js')).href)
- const root=await mkdtemp('/private/tmp/teloa-native-subagent-'),copy=join(root,'package')
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-native-subagent-'))),copy=join(root,'package')
  t.after(async()=>{for(const row of receipt.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256);await rm(root,{recursive:true,force:true})})
  await cp(source,copy,{recursive:true,filter:path=>path!==join(source,'node_modules')});await symlink(dirname(dirname(source)),join(copy,'node_modules'),'dir')
  const applied=spawnSync('/usr/bin/patch',['--batch','--fuzz=0','--forward','-p1','-i',patch],{cwd:copy,encoding:'utf8'})
@@ -46,7 +47,7 @@ export type SubagentComposition={sessionPackage?:{SessionStore:typeof SessionSto
 
 /** 真官方 continuable materialization、Slot、AgentLoop/Session/Inbox，初始任务在 pre-step 停住。 */
 export async function subagentFixture(t:Cleanup,options:AdmissionOptions={},patched=true,composition:SubagentComposition={}){
- const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),subagent=await patchedSubagent(t,patched),ctx=new Context(),stepGate=deferred(),root=await mkdtemp('/private/tmp/teloa-subagent-persistence-')
+ const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),subagent=await patchedSubagent(t,patched),ctx=new Context(),stepGate=deferred(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-subagent-persistence-')))
  let modelCalls=0
  t.after(async()=>{const disposing=ctx.fiber.dispose();stepGate.resolve();await disposing;assert.equal(modelCalls,0);await rm(root,{recursive:true,force:true})})
  for(const plugin of [llmPackage.LlmRuntime,composition.sessionPackage?.SessionStore??sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
@@ -79,7 +80,7 @@ export async function subagentFixture(t:Cleanup,options:AdmissionOptions={},patc
 export async function initialSubagentPackages(t:Cleanup,patched=true){
  const subagentSource=dirname(dirname(installed)),spawnSource=dirname(dirname(require.resolve('@deepseek-ai/dsh-subagent-spawn-in-process')))
  const driverSource=dirname(dirname(createRequire(join(spawnSource,'lib/index.js')).resolve('@deepseek-ai/dsh-subagent-in-process-driver')))
- const root=await mkdtemp('/private/tmp/teloa-subagent-initial-packages-')
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-subagent-initial-packages-')))
  const sources=[subagentSource,driverSource,spawnSource],copies=sources.map((_,i)=>join(root,'package-'+i)),records:Array<{source:string;path:string;sha256:string}>=[]
  t.after(async()=>{for(const row of records)assert.equal(sha(await readFile(join(row.source,row.path))),row.sha256);await rm(root,{recursive:true,force:true})})
  const aliases=new Map<string,string>()
@@ -111,7 +112,7 @@ export type InitialSubagentComposition={sessionPackage?:{SessionStore:typeof Ses
 
 /** 策略在首次子Agent创建前固定；真官方Session/Inbox/JSONL/Query，禁止任何模型调用。 */
 export async function initialSubagentFixture(t:Cleanup,options:AdmissionOptions={},composition:InitialSubagentComposition={}){
- const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),packages=await initialSubagentPackages(t,composition.patched!==false),ctx=new Context(),stepGate=deferred(),root=await mkdtemp('/private/tmp/teloa-subagent-initial-persistence-')
+ const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),packages=await initialSubagentPackages(t,composition.patched!==false),ctx=new Context(),stepGate=deferred(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-subagent-initial-persistence-')))
  let modelCalls=0,holdSteps=true
  t.after(async()=>{holdSteps=false;stepGate.resolve();await ctx.fiber.dispose();assert.equal(modelCalls,0);await rm(root,{recursive:true,force:true})})
  for(const plugin of [llmPackage.LlmRuntime,composition.sessionPackage?.SessionStore??sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.ToolRuntime,AgentRegistry])await ctx.plugin(plugin)

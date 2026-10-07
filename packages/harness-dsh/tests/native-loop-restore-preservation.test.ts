@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,rm} from 'node:fs/promises'
+import {mkdtemp,realpath,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {SessionId,SessionSeq} from '@deepseek-ai/dsh-session'
 import {createUserMessage,LlmAdapter} from '@deepseek-ai/dsh-llm'
@@ -14,7 +16,7 @@ class NoModel extends LlmAdapter{
 
 for(const window of ['session-publish','agent-publish','publish-microtask'] as const){
  test(`恢复在${window}撤销时保留原pending，不能写成用户取消`,{timeout:10000},async t=>{
-  const f=await nativeProviderKernel(t),root=await mkdtemp('/private/tmp/teloa-restore-preservation-'),model=new NoModel()
+  const f=await nativeProviderKernel(t),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-restore-preservation-'))),model=new NoModel()
   t.after(()=>rm(root,{recursive:true,force:true}))
   f.ctx.llm.registerAdapter(['controlled'],model)
   await f.ctx.plugin(f.persistencePackage.default,{root,compression:'none'})

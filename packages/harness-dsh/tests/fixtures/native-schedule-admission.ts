@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
-import {cp,mkdtemp,readFile,rm,symlink} from 'node:fs/promises'
+import {cp,mkdtemp,readFile,realpath,rm,symlink} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
 import {createRequire} from 'node:module'
@@ -32,7 +33,7 @@ export async function patchedSchedule(t:{after:(action:()=>unknown)=>void},patch
  const patch=join(compat,name+'.patch');assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(metadata.name,receipt.package);assert.equal(metadata.version,receipt.version);assert.equal(sha(await readFile(patch)),receipt.patchSha256)
  for(const row of receipt.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256)
  if(!patched)return import(pathToFileURL(join(source,'lib/index.js')).href)
- const root=await mkdtemp('/private/tmp/teloa-native-schedule-'),copy=join(root,'package')
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-native-schedule-'))),copy=join(root,'package')
  t.after(async()=>{for(const row of receipt.files)assert.equal(sha(await readFile(join(source,row.path))),row.beforeSha256);await rm(root,{recursive:true,force:true})})
  await cp(source,copy,{recursive:true,filter:path=>path!==join(source,'node_modules')});await symlink(dirname(dirname(source)),join(copy,'node_modules'),'dir')
  const applied=spawnSync('/usr/bin/patch',['--batch','--fuzz=0','--forward','-p1','-i',patch],{cwd:copy,encoding:'utf8'})

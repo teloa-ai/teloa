@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {WorkAccess,type WorkAccessRequest} from '../src/work/work-access.ts'
+import {WorkAccess,type WorkAccessRequest,type SessionCapabilityReader} from '../src/work/work-access.ts'
 
 test('可信会话能力分别申请，组合租约使高级续作到期失效而基础仍可用',async()=>{
  const access=new WorkAccess(),seen:Readonly<WorkAccessRequest>[]=[],rights={advanced:true}
@@ -47,4 +47,27 @@ test('纯读缺分类、不可信枚举、读取失败或世代变化均明确un
   })
   assert.deepEqual(await access.readSessionCapabilities('owner','history'),{schema:'teloa.session-capabilities/v1',sessionId:'history',status:'unavailable',requiredCapabilities:null})
  }
+})
+
+test('宿主能力读取器释放撤销旧租约，迟到旧清理不撤销后继宿主',async()=>{
+ const access=new WorkAccess(),first:SessionCapabilityReader=async()=>({ownerId:'owner',capabilities:['general-agent']}),next:SessionCapabilityReader=async()=>({ownerId:'owner',capabilities:['people']})
+ access.requireSessionCapabilities();access.installPolicy(async()=>({assertCurrent(){}}));access.installSessionCapabilities(first)
+ const previous=await access.authorizeSessionCapabilities('session','prompt')
+ access.releaseSessionCapabilities(first)
+ assert.throws(()=>previous.assertCurrent(),{code:'teloa/forbidden'})
+ await assert.rejects(access.authorizeSessionCapabilities('session','prompt'),{code:'teloa/unavailable'})
+ access.installSessionCapabilities(next);const current=await access.authorizeSessionCapabilities('session','prompt')
+ access.releaseSessionCapabilities(first);current.assertCurrent()
+ assert.deepEqual((await access.readSessionCapabilities('owner','session')).requiredCapabilities,['people'])
+ assert.throws(()=>access.installSessionCapabilities(first),{code:'teloa/forbidden'})
+})
+
+test('释放期间迟到的能力分类不能给新宿主授予旧许可',async()=>{
+ const access=new WorkAccess();let settle!:()=>void
+ const waiting=new Promise<void>(resolve=>{settle=resolve}),first:SessionCapabilityReader=async()=>{await waiting;return {ownerId:'owner',capabilities:['general-agent']}}
+ access.requireSessionCapabilities();access.installSessionCapabilities(first)
+ const reading=access.readSessionCapabilities('owner','session')
+ access.releaseSessionCapabilities(first);access.installSessionCapabilities(async()=>({ownerId:'owner',capabilities:['people']}));settle()
+ assert.equal((await reading).status,'unavailable')
+ assert.deepEqual((await access.readSessionCapabilities('owner','session')).requiredCapabilities,['people'])
 })

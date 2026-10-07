@@ -1,6 +1,8 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,rm} from 'node:fs/promises'
+import {mkdtemp,realpath,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import type {NativeProgressCheckpoint,NativeProgressCheckpointInput} from '../src/native-input-checkpoint.ts'
 import {nativeHotCausalityFixture,hotGate,textAnswer,toolAnswer} from './fixtures/native-hot-causality.ts'
 import {nativeProviderKernel} from './fixtures/native-input-provider.ts'
@@ -23,7 +25,7 @@ test('本人取消后的真实turn-end仍用所属writer持久收尾，不能漏
  assert.ok((await f.cold()).events.some(event=>event.type==='turn/end'&&event.seq===last!.seq))
 })
 async function fixture(t:TestContext,progress?:NativeProgressCheckpoint,checkpoint:()=>Promise<void>=async()=>{},durable=true){
- const root=await mkdtemp('/private/tmp/teloa-progress-checkpoint-');t.after(()=>rm(root,{recursive:true,force:true}))
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-progress-checkpoint-')));t.after(()=>rm(root,{recursive:true,force:true}))
  const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,...progress===undefined?{}:{progress},...durable?{checkpoint}:{}})
  return {...f,root,async cold(){
   const cold=await nativeProviderKernel(t)
@@ -113,7 +115,7 @@ test('未开启持久策略时保留原宿主卸载取消待办语义',options,a
  assert.deepEqual((await f.cold()).inbox['next-turn'],[])
 })
 test('SDK required缺progress提供方在实际claim后保持零模型，scoped策略只能装一次',options,async t=>{
- const root=await mkdtemp('/private/tmp/teloa-progress-required-');t.after(()=>rm(root,{recursive:true,force:true}))
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-progress-required-')));t.after(()=>rm(root,{recursive:true,force:true}))
  const f=await loopWorkFixture(t,false,root),scoped=f.ctx.extend().agentLoop as typeof f.loop
  scoped.requireProgressCheckpoint()
  await f.send('progress-provider-missing')
@@ -122,14 +124,14 @@ test('SDK required缺progress提供方在实际claim后保持零模型，scoped�
  assert.throws(()=>f.loop.installProgressCheckpoint(()=>{}))
 })
 for(const invalid of ['getter','promise'] as const)test(`SDK progress ${invalid}租约不可放行模型`,options,async t=>{
- const root=await mkdtemp('/private/tmp/teloa-progress-lease-');t.after(()=>rm(root,{recursive:true,force:true}))
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-progress-lease-')));t.after(()=>rm(root,{recursive:true,force:true}))
  const f=await loopWorkFixture(t,false,root);let getters=0
  f.loop.requireProgressCheckpoint();f.loop.installProgressCheckpoint(()=>invalid==='getter'?Object.freeze({get assertCurrent(){getters++;return ()=>{}}}):Object.freeze({assertCurrent(){return Promise.reject(Error('不是同步租约'))}}))
  await f.send('progress-lease-'+invalid)
  assert.equal(f.adapter.requests.length,0);assert.equal(getters,0)
 })
 test('SDK progress await后的最后同步租约复核失效仍保持零模型',options,async t=>{
- const root=await mkdtemp('/private/tmp/teloa-progress-final-');t.after(()=>rm(root,{recursive:true,force:true}))
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-progress-final-')));t.after(()=>rm(root,{recursive:true,force:true}))
  const f=await loopWorkFixture(t,false,root);let assertions=0,finalDenied=false
  f.loop.requireProgressCheckpoint();f.loop.installProgressCheckpoint(input=>{
   const phase=(input as {phase:string}).phase

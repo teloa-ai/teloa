@@ -11,6 +11,7 @@ import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputA
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
 import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
 import {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
+import {readSessionEvents} from './session-events.ts'
 
 type Step={number:number;signal:AbortSignal}
 type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
@@ -77,7 +78,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  }
  const fixedRoots=(roots:readonly InputCause[])=>{if(closed||roots.length===0)throw denied();for(const receipt of roots)receipt.assertCurrent()}
  const rootIdentities=(roots:readonly InputCause[],terminal=false):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
-  if(terminal){if(sessions().get(receipt.session.id)!==receipt.session||canonical(receipt.session.eventAt(receipt.event.seq))!==canonical(receipt.event))throw denied()}
+  if(terminal){if(sessions().get(receipt.session.id)!==receipt.session||canonical(readSessionEvents(receipt.session).find(event=>event.seq===receipt.event.seq))!==canonical(receipt.event))throw denied()}
   else receipt.assertCurrent()
   const event=receipt.event
   if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)throw denied()
@@ -290,7 +291,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
       if(terminal){
        // 终态只持久化已发生的收尾；不重新授予领取、模型、工具或上下文发布许可。
        target(turn)
-       if(end?.type!=='turn/end'||end.data.turn!==request.turn||canonical(turn.session.eventAt(end.seq))!==canonical(end))throw denied()
+       if(end?.type!=='turn/end'||end.data.turn!==request.turn||canonical(readSessionEvents(turn.session).find(event=>event.seq===end.seq))!==canonical(end))throw denied()
       }else{current(turn,step);request.signal.throwIfAborted()}
      }catch{cancel(request.agent);throw denied()}
     }
@@ -344,7 +345,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     const proof={publish(agent:Agent,publishSignal?:AbortSignal){
      assertCurrent();publishSignal?.throwIfAborted()
      if(published||ctx.agents.get(agent.id)!==agent||sessions().get(agent.id)!==agent.session||agent.id!==request.sessionId||canonical(agent.session.header)!==canonical(request.header)||agent.session.inheritedEventCount!==request.inheritedEventCount)throw denied()
-     const actual=agent.session.snapshotEvents(),suffix=actual.slice(request.events.length),closers=interruptedTurnClosers(request.events)
+     const actual=readSessionEvents(agent.session),suffix=actual.slice(request.events.length),closers=interruptedTurnClosers(request.events)
      if(canonical(actual.slice(0,request.events.length))!==canonical(request.events)||suffix.length<closers.length||suffix.length>closers.length+1)throw denied()
      if(canonical(suffix.slice(0,closers.length))!==canonical(closers))throw denied()
      if(suffix.length>closers.length&&(suffix.at(-1)?.type!=='session/end-seed'||canonical(suffix.at(-1)?.data)!=='{}'))throw denied()
@@ -354,7 +355,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
      bound=agent;published=true
      const ids=new Set<string>()
      for(let index=0;index<actualMessages.length;index++){
-      const message=actualMessages[index]!,event=agent.session.eventAt(events[index]!.seq)
+      const message=actualMessages[index]!,event=readSessionEvents(agent.session).find(event=>event.seq===events[index]!.seq)
       if(!event||canonical(event)!==canonical(events[index]))throw denied()
       const receipt:InputCause=Object.freeze({session:agent.session,event,assertCurrent})
       pending.set(message,{receipt,roots:[receipt]});ids.add(message.id)

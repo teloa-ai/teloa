@@ -39,6 +39,11 @@ export class WorkAccess{
   if(this.sessionCapabilities===reader)return
   this.sessionCapabilities=reader;this.epoch++
  }
+ /** 仅释放所属宿主的读取器；旧宿主迟到清理不能撤销后继宿主的分类。 */
+ releaseSessionCapabilities(reader:SessionCapabilityReader):void{
+  if(this.sessionCapabilities!==reader)return
+  this.sessionCapabilities=undefined;this.epoch++
+ }
  /** 同一真实分类供执行与纯读复用；读侧不调用许可策略，也不返回主体或私有对象。 */
  private async classifySessionCapabilities(sessionId:string,producer:SessionCapabilityProducer):Promise<Awaited<ReturnType<SessionCapabilityReader>>>{
   const reader=this.sessionCapabilities,epoch=this.epoch
