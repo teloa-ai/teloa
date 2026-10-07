@@ -6,9 +6,11 @@
 
 [Website](https://www.teloa.ai/en/) · [Documentation](https://docs.teloa.ai/en/) · [Resource market](https://market.teloa.ai/en/) · [Issues](https://github.com/teloa-ai/teloa/issues)
 
-Teloa is an **AI-Native Team Studio** for building, collaborating with, and running an AI team. **Teloa Free** is its self-hosted personal edition. Give each AI employee a role, relevant knowledge, skills and tools. Assign work, follow its progress, and keep the results connected to the task and business records they came from.
+Teloa is an **AI-Native Team Studio** for building, managing, and running teams of AI employees. Start with a researcher, content strategist, or developer: define its responsibilities, knowledge, skills, tools, memory, and permissions, then bring roles together to deliver results. These jobs are examples you can configure yourself.
 
-You define the goals, access and approval rules. Employees work within those boundaries, while you handle decisions and review deliverables. Teloa uses **DeepSeek Harness (DSH)** as its agent runtime.
+**An AI employee is a lasting work role.** It keeps responsibilities, access boundaries, and role experience with sources. Its identity and configuration remain after a task ends. Discuss plans, follow progress, and request revisions as you would with colleagues.
+
+**You set the goal. Your AI team delivers.** You guide the work, assign responsibilities, define access and approval rules, and review deliverables. Employees carry out work and hand over results within those boundaries. You can also make a direct request without setting up a full team first. **Teloa Free** is the self-hosted personal edition, using **DeepSeek Harness (DSH)** as its agent runtime.
 
 **Free edition:** one human user, multiple AI employees, running on your computer through a Web interface. This repository provides the Free source code under [Apache-2.0](LICENSE). The current source version is **0.2.0-alpha.7**.
 
