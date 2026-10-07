@@ -16,18 +16,18 @@ test('设置页标题不重复应用品牌与部署说明',async()=>{
 })
 
 test('设置目录和内容建立明确的可访问关联',async()=>{
-  const shell=await readFile(new URL('SettingsShell.tsx',client),'utf8')
+  const [shell,layout]=await Promise.all([readFile(new URL('SettingsShell.tsx',client),'utf8'),readFile(new URL('SettingsLayout.tsx',client),'utf8')])
   assert.match(shell,/const selectedRow=rows\.find\(row=>row\.id===active\)\?\?rows\[0\]/)
-  assert.match(shell,/id=\{`settings-entry-\$\{row\.id\}`\}/)
-  assert.match(shell,/aria-controls="settings-content"/)
-  assert.match(shell,/title=\{entryLabel\(row\)\}/)
-  assert.match(shell,/id="settings-content"/)
-  assert.match(shell,/aria-labelledby=\{selectedRow\?`settings-entry-\$\{selectedRow\.id\}`:undefined\}/)
+  assert.match(layout,/id=\{`settings-entry-\$\{row\.id\}`\}/)
+  assert.match(layout,/aria-controls="settings-content"/)
+  assert.match(layout,/title=\{row\.label\}/)
+  assert.match(layout,/id="settings-content"/)
+  assert.match(layout,/aria-labelledby=\{selected\?`settings-entry-\$\{selected\.id\}`:undefined\}/)
 })
 
 test('设置页在窄栏中约束标题、操作和菜单宽度',async()=>{
   const [shell,css]=await Promise.all([
-    readFile(new URL('SettingsShell.tsx',client),'utf8'),
+    readFile(new URL('SettingsLayout.tsx',client),'utf8'),
     readFile(new URL('SettingsShell.module.css',client),'utf8'),
   ])
   assert.match(css,/\.shell\{[^}]*overflow:hidden/)

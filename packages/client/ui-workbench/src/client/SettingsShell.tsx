@@ -1,17 +1,14 @@
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import type {SettingsNavigation} from './settings-navigation.js'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import clsx from 'clsx'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {MainSessionSource} from './main-session.js'
 import type { ConfigForms,SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ChevronRight } from 'lucide-react'
 import css from './SettingsShell.module.css'
-import tokens from './theme-tokens.module.css'
-import { mountSettingsSubdialogFocus } from './settings-subdialog-focus.js'
+import {SettingsLayout} from './SettingsLayout.js'
 import { SettingsConfigurationGuide } from './SettingsConfigurationGuide.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
@@ -35,31 +32,15 @@ export function SettingsShell({selection,mainSession,open,close,renderSlot,useSe
   const eligible=useSessions(state=>state.phase==='ready'&&(current===undefined||state.byId[current]?.blank===true))
   const active=useSyncExternalStore(selection.subscribe,selection.getSnapshot)
   const [completed,setCompleted]=useState<ReadonlySet<string>>(()=>new Set())
-  const shell=useRef<HTMLElement>(null)
-  const content=useRef<HTMLDivElement>(null)
   useEffect(()=>{if(!eligible)setCompleted(new Set())},[eligible])
-  useEffect(()=>{if(shell.current)return mountSettingsSubdialogFocus(shell.current)},[])
   const step=eligible?steps.find(row=>!completed.has(row.id)):undefined
   const selectedRow=rows.find(row=>row.id===active)??rows[0]
   const selected=selectedRow?.id
-  useEffect(()=>{if(content.current)content.current.scrollTop=0},[selected])
   const entryLabel=(row:SettingsEntry)=>row.id==='general'?t('settings.general'):row.id==='teloa-workspaces'?t('settings.workspace'):row.id==='teloa-about'?t('settings.about'):row.id==='plugins'?t('settings.systemComponents'):row.label
-  const entryButton=(row:SettingsEntry)=><button type="button" key={row.id} id={`settings-entry-${row.id}`} aria-current={row.id===selected?'page':undefined} aria-controls="settings-content" title={entryLabel(row)} onClick={()=>selection.select(row.id)}>{entryLabel(row)}</button>
   return <>
-    <section ref={shell} className={clsx(tokens.tokens,css.shell)} aria-label={t('shell.settings')}>
-      <header className={css.header}>
-        <div className={css.heading}>{renderSlot('settings.header',{})}</div>
-        <div className={css.actions}>{renderSlot('settings.action',{})}</div>
-      </header>
-      {connectionState!=='connected'&&<p className={css.connection} role="status">{t(connectionState==='connecting'?'settings.connecting':'settings.disconnected')} <button type="button" onClick={()=>connection.reconnect()}>{t('settings.reconnect')}</button></p>}
-      <div className={css.layout}>
-        <div className={css.navigationViewport}>
-          <nav className={css.navigation} aria-label={t('shell.settings')}>{rows.map(entryButton)}</nav>
-          <span className={css.navigationScrollHint} aria-hidden="true"><ChevronRight size={16}/></span>
-        </div>
-        <div ref={content} id="settings-content" aria-labelledby={selectedRow?`settings-entry-${selectedRow.id}`:undefined} className={clsx(css.content,selected!=='general'&&selected!=='teloa-about'&&css.page)}>{selected?renderSlot('settings.section',{close}, {only:selected}):<p role="status">{t('settings.loading')}</p>}</div>
-      </div>
-    </section>
+    <SettingsLayout label={t('shell.settings')} heading={renderSlot('settings.header',{})} actions={renderSlot('settings.action',{})} entries={rows.map(row=>({...row,label:entryLabel(row)}))} selectedId={selected} onSelect={selection.select} plainContent={selected==='general'||selected==='teloa-about'} notice={connectionState!=='connected'?<p className={css.connection} role="status">{t(connectionState==='connecting'?'settings.connecting':'settings.disconnected')} <button type="button" onClick={()=>connection.reconnect()}>{t('settings.reconnect')}</button></p>:null}>
+     {selected?renderSlot('settings.section',{close}, {only:selected}):<p role="status">{t('settings.loading')}</p>}
+    </SettingsLayout>
     {step&&renderSlot('settings.onboarding',{stepId:step.id,complete:()=>setCompleted(previous=>new Set([...previous,step.id])),openSection:id=>{selection.select(id);open()}},{only:step.id})}
   </>
 }

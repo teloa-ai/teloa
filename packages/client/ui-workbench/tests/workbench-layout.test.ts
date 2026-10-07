@@ -66,14 +66,15 @@ test('其他原生面板和会话导航保持原行为，未知面板不改变�
 })
 
 test('设置外部入口、目录按钮和引导步骤共享同一个选中态',()=>{
-  const page=mount('SettingsShell.tsx'),selection=createSettingsNavigation()
+  const page=mount('SettingsShell.tsx'),layout=mount('SettingsLayout.tsx'),selection=createSettingsNavigation()
   const rows=[{id:'general',label:'通用设置',order:0},{id:'teloa-native-panels',label:'连接与运行环境',order:1}]
   const props={selection,mainSession:{getSnapshot:()=>undefined,subscribe:()=>()=>{}},connection:{state:{getSnapshot:()=>'connected',subscribe:()=>()=>{}}},useSessions:(select:any)=>select({phase:'ready',byId:{}}),sections:{getSnapshot:()=>rows,subscribe:()=>()=>{}},onboarding:{getSnapshot:()=>[{id:'setup'}],subscribe:()=>()=>{}},open:()=>{},close:()=>{},renderSlot:(name:string,slotProps:any,options:any)=>({type:'slot',props:{name,...slotProps,...options},children:[]})}
   const render=()=>nodes(page.render('SettingsShell',props))
   assert.equal(render().find(node=>node.props.name==='settings.section')?.props.only,'general')
   selection.select('teloa-native-panels')
   assert.equal(render().find(node=>node.props.name==='settings.section')?.props.only,'teloa-native-panels')
-  render().find(node=>node.props.id==='settings-entry-general')!.props.onClick()
+  const presentation=render().find(node=>node.props.entries!==undefined)!
+  nodes(layout.render('SettingsLayout',presentation.props)).find(node=>node.props.id==='settings-entry-general')!.props.onClick()
   assert.equal(selection.getSnapshot(),'general')
   render().find(node=>node.props.name==='settings.onboarding')!.props.openSection('teloa-native-panels')
   assert.equal(selection.getSnapshot(),'teloa-native-panels')
