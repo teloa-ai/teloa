@@ -19,6 +19,7 @@ Teloa is an **AI-Native Team Studio** for building, managing, and running teams 
 | Capability | How it helps |
 | --- | --- |
 | **Conversations** | Work with text, files and images, use `@` references and `/` commands, and continue in the same context. |
+| **Voice input** | The conversation composer includes voice input by default. Prepare the local recognition model on first use, review the transcript in your draft, and send it when ready. You can disable voice input in Settings. |
 | **Context inspection** | Bundled dsh-context shows context composition, tokens, estimated cost and compaction records through conversation tabs, the right sidebar or `/context`. Provider billing remains authoritative. |
 | **Messaging channels** | Built-in IM Gateway connects Feishu, Lark, Telegram and Slack after you configure and enable each channel in Settings. No separate plugin installation is required. |
 | **AI employees and groups** | Define lasting roles with their own knowledge, skills and access. Bring employees together in a group for discussion and collaboration. |
@@ -131,6 +132,8 @@ Container tools run inside the container. Mounting a folder does not give access
 
 Use **Node.js 24.x** or **22.x from 22.19 onward**, **pnpm 11.7.0**, and a running local Docker engine for PostgreSQL. Teloa and DSH run on your computer, while the database runs in Docker.
 
+The current main branch pins DSH **0.2.1-alpha.1** and includes voice input by default. Published npm and Docker releases are updated separately; source features are not necessarily available in an older release.
+
 ```sh
 git clone https://github.com/teloa-ai/teloa.git
 cd teloa
@@ -143,6 +146,8 @@ pnpm dev:dsh
 ```
 
 Open the complete authentication URL printed at startup. On macOS or Linux, use `TELOA_DSH_PORT=3101 pnpm dev:dsh` to choose another Web port. Source-installation state stays under `.runtime/`; the default working directory is `.runtime/teloa/workspace`.
+
+On first use, follow the voice prompt to prepare the local SenseVoice model and allow microphone access. Showing the button does not download models or start recording; cancelling setup preserves your draft. Transcription runs locally, and text you send is handled by your selected model service. If you disable voice input, later starts preserve that choice.
 
 See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [local development guide](https://docs.teloa.ai/en/develop/local-development) for deployment and troubleshooting. Back up your data before upgrades.
 
