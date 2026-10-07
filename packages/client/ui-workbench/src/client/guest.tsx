@@ -11,7 +11,7 @@ import {resolveProductLocale} from './i18n/locale.js'
 import {translateMessage} from './i18n/messages.js'
 import {prototypeThemes} from '../brand/prototype-theme.js'
 import {guestCopy} from './guest-copy.js'
-import {personalAvatarInitials,personalDisplayName} from './personal-identity.js'
+import {personalAvatarInitials} from './personal-identity.js'
 import {installGuestStyles} from './guest-styles.js'
 import {SettingsLayout} from './SettingsLayout.js'
 import css from './WorkbenchFrame.module.css'
@@ -83,7 +83,6 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
  currentView.current=view
  controller.setPrompt=setPrompt
  controller.setAccount=setAccount
- const accountName=account?personalDisplayName(account.displayName??'',copy.account):copy.guest
  const initials=account?personalAvatarInitials(account.displayName??''):''
  const accountLabel=account?copy.account:copy.login
  const openSettings=(id?:string)=>{
@@ -139,7 +138,7 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
    <div className={css.navScroll}><WorkbenchNavigationItems view={view} onSelect={select}/></div>
    <div className={css.navFooter}>
     <button type="button" className={css.navItem} aria-current={view==='settings'?'page':undefined} onClick={()=>select('settings')}><Settings2 size={16}/><span>{t('navigation.v2.settings')}</span></button>
-    <div className={css.account}><span className={css.avatar} aria-hidden="true">{initials||<UserRound size={15}/>}</span><span className={css.accountText}><strong>{accountName}</strong></span><button type="button" className={css.iconButton} onClick={()=>setColorScheme(value=>value==='dark'?'light':'dark')} aria-label={t(colorScheme==='dark'?'navigation.themeLight':'navigation.themeDark')} title={t(colorScheme==='dark'?'navigation.themeLight':'navigation.themeDark')}>{colorScheme==='dark'?<Sun size={16}/>:<Moon size={16}/>}</button><button type="button" className={css.button} disabled={pending} onClick={()=>request('account')}>{accountLabel}</button></div>
+    <div className={css.account}><button type="button" className={clsx(css.profileButton,css.avatar)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{initials||<UserRound size={15} aria-hidden/>}</button><button type="button" className={css.iconButton} onClick={()=>setColorScheme(value=>value==='dark'?'light':'dark')} aria-label={t(colorScheme==='dark'?'navigation.themeLight':'navigation.themeDark')} title={t(colorScheme==='dark'?'navigation.themeLight':'navigation.themeDark')}>{colorScheme==='dark'?<Sun size={16}/>:<Moon size={16}/>}</button></div>
    </div>
   </aside>
   {navOpen&&<button type="button" className={css.navMask} aria-label={t('shell.navigation.close')} onClick={()=>setNavOpen(false)}/>}

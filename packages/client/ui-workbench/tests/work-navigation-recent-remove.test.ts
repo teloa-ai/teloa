@@ -105,6 +105,17 @@ test('最近工作每一行带一个移出按钮，点击只隐藏这一行，�
  assert.deepEqual(opened,[],'点移出不应触发打开这条会话')
 })
 
+test('侧栏账号只显示用户名缩写头像，点击仍进入原设置',()=>{
+ let opened=0
+ const render=mount('WorkNavigation.tsx',{...props([],async()=>{}),actions:{openDirectory:()=>{opened++}}})
+ const view=render(),account=nodes(view).find(node=>node.props.className==='account')
+ assert.ok(account)
+ const avatar=nodes(account).find(node=>node.type==='button'&&node.props.className==='profileButton avatar')
+ assert.ok(avatar);assert.equal(textOf(avatar),'M');assert.equal(textOf(account).includes('Max'),false)
+ avatar.props.onClick();assert.equal(opened,1)
+ assert.ok(nodes(account).some(node=>node.type==='button'&&node.props['aria-label']==='navigation.themeDark'))
+})
+
 test('移出最近的隐藏名单本地持久化：重新挂载（模拟刷新）后仍隐藏，其它行不受影响',()=>{
  const rows=[
   {id:'conv-1',sessionId:'sess-1',title:'会话一',status:'ready' as const,createdAt:'2026-09-20T01:00:00.000Z'} as Conversation,
