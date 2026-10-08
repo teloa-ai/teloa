@@ -24,6 +24,20 @@ const capture=process.env.TELOA_WEB_SHELL_CAPTURE
 // 截图留给人工核对：等加载条走到中段再拍。
 const shot=async(page:any,name:string)=>{if(capture){await mkdir(capture,{recursive:true});await page.waitForTimeout(700);await page.screenshot({path:join(capture,name+'.png')})}}
 
+/** 失败卡上字样节点（换成 Teloa 字标）与失败标题的颜色，以及卡片底色。 */
+const failureCard=(page:any)=>page.evaluate(()=>{
+ const card=document.querySelector('#root > [data-dsh-boot]')!,wordmark=card.firstElementChild!.firstElementChild as HTMLElement
+ const title=[...card.querySelectorAll('div')].find(element=>element.textContent==='Failed to load plugins')!
+ const style=getComputedStyle(wordmark)
+ return {text:wordmark.textContent,fontSize:style.fontSize,width:style.width,fill:style.backgroundColor,mask:(style.maskImage||style.webkitMaskImage).includes('data:image/svg+xml'),title:getComputedStyle(title).color,card:getComputedStyle(card).backgroundColor}
+})
+async function fail(page:any,runEntry:()=>void){
+ runEntry()
+ await page.locator('#root > [data-dsh-boot] [data-dsh-boot-spinner]').waitFor({state:'attached'})
+ await page.evaluate(()=>(globalThis as any).releaseBoot())
+ await page.getByText('Failed to load plugins').waitFor()
+}
+
 async function open(browser:any,origin:string,{colorScheme='light',reducedMotion='no-preference',script='hold'}:{colorScheme?:'light'|'dark';reducedMotion?:'reduce'|'no-preference';script?:'hold'|'block'}={}){
  const page=await browser.newPage({viewport:{width:1000,height:700},colorScheme,reducedMotion})
  // 启动就绪由测试放行：先停在 DSH 加载中的真实启动卡片，再决定挂载或失败。
@@ -59,10 +73,8 @@ test('刷新时先显示 Teloa 字标与加载指示，加载中盖住 DSH 启�
  const failed=await shell(page)
  assert.deepEqual([failed.overlay.content,failed.logotype.content],['none','none'],'加载失败不能被过渡画面挡住')
  assert.ok(await page.getByText(/__ModuleLoader__/).isVisible(),'失败原因原样保留')
- const wordmark=await page.locator('#root > [data-dsh-boot] > * > :first-child').evaluate((element:HTMLElement)=>{
-  const style=getComputedStyle(element);return {text:element.textContent,fontSize:style.fontSize,width:style.width,fill:style.backgroundColor,mask:(style.maskImage||style.webkitMaskImage).includes('data:image/svg+xml')}
- })
- assert.deepEqual(wordmark,{text:'HARNESS',fontSize:'0px',width:'96px',fill:rgb(light['--teloa-design-text']!),mask:true},'失败卡上的 DSH 字样换成 Teloa 字标')
+ const {title,card,...wordmark}=await failureCard(page)
+ assert.deepEqual(wordmark,{text:'HARNESS',fontSize:'0px',width:'96px',fill:title,mask:true},'失败卡上的 DSH 字样换成 Teloa 字标，颜色与卡片文字一致')
  await shot(page,'failure')
 })
 
@@ -72,11 +84,19 @@ test('减少动效时加载指示改为缓慢呼吸',async t=>{
  const {page}=await open(browser,origin,{reducedMotion:'reduce',script:'block'})
  const state=await shell(page)
  assert.deepEqual([state.logotype.content,state.logotype.mask,state.logotype.animation],['""',true,'teloa-boot-breathe'])
- // 加载条不移动，只有颜色在边框色与次要文字色之间缓慢变化。
- const sample=()=>page.evaluate(()=>{const style=getComputedStyle(document.getElementById('root')!,'::after');return {color:style.getPropertyValue('--teloa-boot-pulse'),position:style.backgroundPosition}})
- const first=await sample();await page.waitForTimeout(800);const later=await sample()
- assert.equal(later.position,first.position)
- assert.notEqual(later.color,first.color)
+ // 加载条不移动，只有颜色在边框色与次要文字色之间缓慢往返：固定动画时间点取样，结果与运行快慢无关。
+ const breathing=await page.evaluate(()=>{
+  const style=getComputedStyle(document.getElementById('root')!,'::after')
+  const animation=document.getAnimations().find(item=>(item as CSSAnimation).animationName==='teloa-boot-breathe')!
+  animation.pause()
+  const at=(time:number)=>{animation.currentTime=time;const current=getComputedStyle(document.getElementById('root')!,'::after');return {color:current.getPropertyValue('--teloa-boot-pulse'),position:current.backgroundPosition}}
+  return {duration:style.animationDuration,count:style.animationIterationCount,direction:style.animationDirection,start:at(0),middle:at(1200),end:at(2399.9)}
+ })
+ assert.deepEqual([breathing.duration,breathing.count,breathing.direction],['2.4s','infinite','alternate'])
+ assert.equal(breathing.start.color,rgb(light['--teloa-design-border']!),'起点是边框色')
+ assert.notEqual(breathing.middle.color,breathing.start.color)
+ assert.notEqual(breathing.end.color,breathing.middle.color)
+ assert.equal(new Set([breathing.start.position,breathing.middle.position,breathing.end.position]).size,1,'加载条位置不变')
  await shot(page,'reduced-motion')
 })
 
@@ -136,4 +156,41 @@ test('精简字形与原字标在工作台用到的尺寸上视觉一致',async 
   assert.ok(mean<0.1,width+'px 平均差 '+mean)
   assert.ok(max<=128,width+'px 最大差 '+max+'（只允许边缘抗锯齿的个别采样差）')
  }
+})
+
+test('失败卡上的字标颜色与卡片文字一致，各主题状态下都看得清',async t=>{
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ const check=async(origin:string,colorScheme:'light'|'dark',label:string)=>{
+  const {page,runEntry}=await open(browser,origin,{colorScheme})
+  await fail(page,runEntry)
+  const state=await failureCard(page)
+  assert.equal(state.fill,state.title,label+'：字标与失败标题同色')
+  assert.notEqual(state.fill,state.card,label+'：字标与卡片底色不同')
+ }
+ const system=(await serveIndex(t)).origin
+ await check(system,'light','系统浅色')
+ await check(system,'dark','系统深色、没有主题插件')
+ let preference:'light'|'dark'='dark'
+ const chosen=(await serveIndex(t,{themePreference:()=>preference})).origin
+ await check(chosen,'light','本人选深色')
+ preference='light'
+ await check(chosen,'dark','本人选浅色')
+})
+
+test('不支持遮罩的浏览器只显示底色与加载条，失败卡保留原字样',async t=>{
+ const {origin}=await serveIndex(t)
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ const {page,runEntry}=await open(browser,origin)
+ // 把 @supports 条件换成恒假，模拟不支持遮罩的浏览器。
+ await page.evaluate(()=>{
+  const own=[...document.querySelectorAll('style')].find(style=>style.textContent!.includes('--teloa-boot'))!
+  own.textContent=own.textContent!.replace('@supports (mask-image:url("")) or (-webkit-mask-image:url(""))','@supports not (display:block)')
+ })
+ const state=await shell(page)
+ assert.equal(state.overlay.background,rgb(light['--teloa-design-bg']!))
+ assert.deepEqual({content:state.logotype.content,width:state.logotype.width,height:state.logotype.height,fill:state.logotype.fill,mask:state.logotype.mask,animation:state.logotype.animation},
+  {content:'""',width:'96px',height:'2px',fill:'rgba(0, 0, 0, 0)',mask:false,animation:'teloa-boot-sweep'},'只剩加载条，不出现实色块')
+ await fail(page,runEntry)
+ const {title,card,...wordmark}=await failureCard(page)
+ assert.deepEqual({text:wordmark.text,fontSize:wordmark.fontSize,mask:wordmark.mask,fill:wordmark.fill},{text:'HARNESS',fontSize:'16px',mask:false,fill:'rgba(0, 0, 0, 0)'},'失败卡保留原字样')
 })

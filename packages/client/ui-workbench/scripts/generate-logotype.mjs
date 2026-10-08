@@ -1,7 +1,7 @@
 // 从 src/brand/teloa-light.svg 生成刷新首页内嵌用的精简字形 src/brand/logotype-svg.ts。
 // 字标原文件坐标带十几位小数（约 39KB），刷新首页不缓存，不能逐字内嵌：这里把坐标取到 2 位小数（字标 96px 宽时误差不到 0.001px），
 // 去掉取整后重合的点，改用相对坐标并合并成一条路径，只保留 viewBox 与尺寸，填充用 currentColor，由使用方按主题着色。
-// 只支持原文件用到的绝对 M/L/H/V/Z；换成带曲线的字标时这里会报错，需要先扩展再重新生成。
+// 只支持原文件用到的 svg/g/path 与绝对 M/L/H/V/Z；遇到曲线、其他元素、变换或填充规则等会报错，需要先扩展再重新生成。
 // 用法：node packages/client/ui-workbench/scripts/generate-logotype.mjs（换字标后运行，测试会核对生成结果与提交文件一致）
 import {readFileSync,writeFileSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
@@ -52,12 +52,38 @@ function serialize(tokens){
   return out
 }
 
+// 只认这些元素与属性；其余结构（其他图形元素、变换、填充或裁剪规则、样式、不填充等）会改变形状，一律报错而不是忽略。
+const ALLOWED={svg:new Set(['xmlns','viewBox','width','height','role','aria-label']),g:new Set(['fill']),path:new Set(['d','fill'])}
+const FILL=/^(?:#[0-9a-fA-F]{3,8}|currentColor)$/
+
+/** 逐个读出标签；标签之间只能是空白。 */
+function elements(source){
+  const result=[]
+  let at=0
+  for(const match of source.matchAll(/<(\/?)([A-Za-z][\w:-]*)((?:\s+[\w:-]+="[^"]*")*)\s*\/?>/g)){
+    const between=source.slice(at,match.index).trim()
+    if(between)throw Error(`字标含暂不支持的内容「${between.slice(0,40)}」，请先扩展生成脚本。`)
+    at=match.index+match[0].length
+    const [,closing,name,attributeText]=match
+    if(!Object.hasOwn(ALLOWED,name))throw Error(`字标含暂不支持的元素 <${name}>，请先扩展生成脚本。`)
+    if(closing)continue
+    const attributes=Object.fromEntries([...attributeText.matchAll(/([\w:-]+)="([^"]*)"/g)].map(([,key,value])=>[key,value]))
+    for(const key of Object.keys(attributes))if(!ALLOWED[name].has(key))throw Error(`字标的 <${name}> 含暂不支持的属性 ${key}，请先扩展生成脚本。`)
+    if(attributes.fill!==undefined&&!FILL.test(attributes.fill))throw Error(`字标含暂不支持的填充 ${attributes.fill}，请先扩展生成脚本。`)
+    result.push({name,attributes})
+  }
+  const rest=source.slice(at).trim()
+  if(rest)throw Error(`字标含暂不支持的内容「${rest.slice(0,40)}」，请先扩展生成脚本。`)
+  return result
+}
+
 /** 生成精简字形：单条路径、相对坐标、currentColor 填充。 */
 export function minifyLogotype(source){
-  const svg=source.match(/^<svg\b[^>]*>/)?.[0]
-  const viewBox=svg?.match(/\bviewBox="([^"]+)"/)?.[1],width=svg?.match(/\bwidth="([^"]+)"/)?.[1],height=svg?.match(/\bheight="([^"]+)"/)?.[1]
-  const paths=[...source.matchAll(/<path\b[^>]*\bd="([^"]+)"/g)].map(match=>match[1])
-  if(!viewBox||!width||!height||!paths.length)throw Error('字标文件缺少 viewBox、尺寸或路径。')
+  const tags=elements(source),svg=tags[0]
+  if(svg?.name!=='svg'||tags.slice(1).some(tag=>tag.name==='svg'))throw Error('字标文件须只有一个 <svg> 根元素。')
+  const {viewBox,width,height}=svg.attributes
+  const paths=tags.filter(tag=>tag.name==='path').map(tag=>tag.attributes.d)
+  if(!viewBox||!width||!height||!paths.length||paths.some(d=>!d))throw Error('字标文件缺少 viewBox、尺寸或路径。')
   const tokens=[]
   for(const points of paths.flatMap(subpaths)){
     let [x,y]=points[0]

@@ -5,11 +5,11 @@ import {Context} from '@deepseek-ai/cordis'
 import {prototypeThemes} from '../src/brand/prototype-theme.ts'
 import {TELOA_LOGOTYPE_SVG} from '../src/brand/logotype-svg.ts'
 // @ts-expect-error 生成脚本是无类型声明的纯 Node 模块。
-import {logotypeModule} from '../scripts/generate-logotype.mjs'
+import {logotypeModule,minifyLogotype} from '../scripts/generate-logotype.mjs'
 import {serveIndex,upstreamFile} from './fixtures/dsh-web-shell.ts'
 
 const brandFile=(name:string)=>readFile(new URL('../src/brand/'+name,import.meta.url),'utf8')
-const markSource=await brandFile('teloa-mark.svg')
+const markSource=await brandFile('teloa-mark.svg'),TELOA_LIGHT=await brandFile('teloa-light.svg')
 const markPath=markSource.match(/ d="([^"]+)"/)![1]!,markViewBox=markSource.match(/viewBox="([^"]+)"/)![1]!
 const light=prototypeThemes.light,dark=prototypeThemes.dark
 // 宿主或网关会在 __DSH_BOOT__ 前后插入脚本；品牌改动不能挪动它们。
@@ -32,6 +32,10 @@ test('刷新首页标题为 Teloa，#root 保持为空，其余结构与注入�
  assert.equal(own.length,1,'只加一段过渡样式')
  assert.doesNotMatch(own[0]!,/<script/i)
  assert.equal(branded.replace(own[0]!,'').replace('<title>Teloa</title>','<title>DeepSeek Harness</title>'),upstream)
+ const charset=branded.indexOf('<meta charset')
+ assert.ok(charset>=0&&charset<1024,'字符集声明在前 1024 字节内')
+ assert.equal(charset,upstream.indexOf('<meta charset'),'过渡样式不把字符集声明往后推')
+ assert.ok(branded.indexOf(own[0]!)>charset,'过渡样式排在字符集声明之后')
 })
 
 test('浅色与深色网站图标是 Teloa 标识，沿用上游地址',async t=>{
@@ -67,6 +71,26 @@ test('精简字形由生成脚本从现有字标生成，提交的文件与重�
  assert.match(TELOA_LOGOTYPE_SVG,/^<svg [^>]*viewBox='0\.5 -4\.32 567\.33 108\.79'[^>]*><path fill='currentColor' d='[^']+'\/><\/svg>$/)
 })
 
+test('生成脚本遇到不支持的 SVG 结构一律报错，不静默忽略',async()=>{
+ assert.doesNotThrow(()=>minifyLogotype(TELOA_LIGHT))
+ const svg=(body:string,attributes='')=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10"${attributes}>${body}</svg>`
+ const path='<path d="M0 0H10V10Z"/>'
+ for(const [name,source] of [
+  ['其他图形元素',svg(path+'<rect width="5" height="5"/>')],
+  ['多边形',svg('<polygon points="0,0 5,5 0,5"/>')],
+  ['文字',svg(path+'<text>T</text>')],
+  ['引用',svg(path+'<use href="#a"/>')],
+  ['路径变换',svg('<path transform="scale(2)" d="M0 0H10V10Z"/>')],
+  ['分组变换',svg(`<g transform="translate(1 1)">${path}</g>`)],
+  ['根元素变换',svg(path,' transform="scale(2)"')],
+  ['填充规则',svg('<path fill-rule="evenodd" d="M0 0H10V10Z"/>')],
+  ['裁剪规则',svg('<g clip-rule="evenodd">'+path+'</g>')],
+  ['不填充',svg('<path fill="none" d="M0 0H10V10Z"/>')],
+  ['内联样式',svg('<path style="opacity:.5" d="M0 0H10V10Z"/>')],
+  ['游离文字',svg(path+'T')],
+ ] as const)assert.throws(()=>minifyLogotype(source),/字标/,name)
+})
+
 test('过渡画面只是 #root 的样式：只内嵌一份不超过 12KB 的字形，按主题令牌着色，带加载指示，不写任何文字',async t=>{
  const {origin}=await serveIndex(t)
  const css=(await (await fetch(origin+'/')).text()).match(ownStyle)![0]!
@@ -77,7 +101,12 @@ test('过渡画面只是 #root 的样式：只内嵌一份不超过 12KB 的字�
  assert.equal(decodeURIComponent(images[0]!.slice('data:image/svg+xml,'.length)),TELOA_LOGOTYPE_SVG)
  assert.ok(Buffer.byteLength(images[0]!)<=12*1024,'内嵌字形 '+Buffer.byteLength(images[0]!)+' 字节')
  for(const theme of [light,dark])for(const token of ['--teloa-design-bg','--teloa-design-text'])assert.ok(css.includes(theme[token]!),token)
- assert.match(css,/background:[^;}]*currentColor/,'字形用 currentColor 着色')
+ // 遮罩与 currentColor 底色、失败卡字样都只在支持遮罩时生效；不支持时只剩底色与加载条，失败卡保留原字样。
+ const supports='@supports (mask-image:url("")) or (-webkit-mask-image:url("")){',at=css.indexOf(supports)
+ assert.ok(at>0,'遮罩声明包在 @supports 里')
+ const outside=css.slice(0,at),inside=css.slice(at)
+ for(const pattern of [/[;{]-?(?:webkit-)?mask(?:-image)?:/,/background(?:-color)?:currentColor/,/font-size:0/])assert.doesNotMatch(outside,pattern)
+ for(const pattern of [/[;{]mask:/,/[;{]-webkit-mask:/,/background-color:currentColor/,/font-size:0/])assert.match(inside,pattern)
  assert.match(css,/prefers-color-scheme:dark/)
  assert.match(css,/body\[data-ds-dark-theme\]/,'本人选的深色主题优先')
  assert.match(css,/@keyframes teloa-boot-sweep/)
