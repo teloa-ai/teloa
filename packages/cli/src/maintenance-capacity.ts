@@ -16,7 +16,7 @@ export function planMaintenanceCapacity({volumes,demands,reserveBytes=256n*1024n
  for(const row of volumes){
   const id=identifier(row?.id)
   if(known.has(id))throw Error('维护容量卷标识重复。')
-  known.set(id,{id,available:bytes(row.availableBytes),space:row.sharedSpaceId===undefined?undefined:identifier(row.sharedSpaceId)})
+  known.set(id,{id,available:bytes(row.availableBytes),...(row.sharedSpaceId===undefined?{}:{space:identifier(row.sharedSpaceId)})})
  }
  const uncertain=[...known.values()].some(row=>row.space===undefined),groups=new Map<string,{ids:string[];available:bigint;demand:bigint}>(),volumeGroups=new Map<string,string>()
  for(const row of known.values()){
