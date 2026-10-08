@@ -33,6 +33,8 @@ export async function fetchRelease(state:InstallState,version:string):Promise<st
 /** 由调用方持安装锁。下载失败保留旧安装；切换后的失败只保留恢复点，不假装回滚数据库。 */
 export async function upgradeInstall(state:InstallState,version:string,download=fetchRelease):Promise<InstallState>{
  if(!exactVersion(version))throw Error('升级必须指定确切版本。')
+ // 已切换的版本号不能证明升级完成；维护现场必须先核对原恢复点，不能重复迁移。
+ if(state.phase==='maintenance')throw Error('上次升级尚未完成；安装保持维护状态。请先核对 '+join(state.layout.instanceRoot,'upgrade.json')+' 中记录的备份，并使用来源版本 CLI 恢复到新目录；原数据与失败现场保留。')
  if(version===state.version)return state
  assertMaintenanceStopped(await serviceStatus(state),state.phase)
  const current=await verifyRelease(state.layout.releaseRoot)
