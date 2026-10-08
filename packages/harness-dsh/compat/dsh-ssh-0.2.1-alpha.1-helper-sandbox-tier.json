@@ -1,0 +1,29 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-ssh",
+  "version": "0.2.1-alpha.1",
+  "upstreamCommit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "api": [
+    "resolveHelperSandboxTier",
+    "ContainerTierSandboxProvider"
+  ],
+  "files": [
+    {
+      "path": "lib/helper.js",
+      "beforeSha256": "30872f85b42dad6e97a7fec9e68f72305cae51c72f28ade1930c5cd9079dc0ce",
+      "afterSha256": "db80f74f81a663581040f9f2ce12e892db840731020e75551ec8b24b7a96820a"
+    },
+    {
+      "path": "lib/types/helper-entry.d.ts",
+      "beforeSha256": "8596defb0ebb24dda2cc2c6fe322fab84a35810f61e9d80b2ab57363d6740e3b",
+      "afterSha256": "572932aa9499383f1b5ce68b4fe68db49b403b5f3833c281a87b2cc427d10607"
+    }
+  ],
+  "patchSha256": "fd09a919c4a4623c4f06769664756a59dfc82d3a2e5d389189a4cd85fe6e89c9",
+  "scope": {
+    "tier": "The helper's services() assembles ContainerTierSandboxProvider only when DSH_SSH_SANDBOX is exactly 'container'. The provider extends the upstream LocalSandboxProvider, so it keeps the same service name (ctx.sandbox), Config and confine(argv, policy, signal) signature.",
+    "default": "Unset or any other value assembles the upstream LocalSandboxProvider unchanged; every sandbox reply is byte-for-byte identical to the upstream helper.",
+    "boundary": "Under the container tier, workspace-write returns the caller's argv unchanged with enforcement 'partial', which here means the container owns the file boundary; denialSignatures and runnerFailureRules are empty. read-only and every other mode defer to the upstream LocalSandboxProvider, which still refuses with SANDBOX_UNAVAILABLE when no runner is usable; danger-full-access is still refused by the helper before confine.",
+    "authority": "No work, tool, network or deployment authorization is introduced. The deployment that sets DSH_SSH_SANDBOX=container must itself provide the container boundary; the helper does not verify it."
+  }
+}

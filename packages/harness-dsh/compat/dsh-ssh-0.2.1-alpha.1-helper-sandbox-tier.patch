@@ -1,0 +1,73 @@
+--- a/lib/helper.js
++++ b/lib/helper.js
+@@ -527,6 +527,33 @@
+ const object = z.object({}).strict();
+ const processIdRequest = z.object({ id: processIdSchema }).strict();
+ const textStreamIdRequest = z.object({ id: textStreamIdSchema }).strict();
++/**
++* Select the helper's sandbox tier from its environment. Only the exact value
++* `container` selects the container tier; omission or any other value keeps the
++* upstream local provider unchanged.
++*/
++function resolveHelperSandboxTier(env) {
++	return env.DSH_SSH_SANDBOX === "container" ? "container" : "local";
++}
++/**
++* Container-tier provider for a helper that already runs inside a container
++* whose file boundary is enforced from outside. `workspace-write` returns the
++* caller's argv unchanged and reports `partial` enforcement (the container
++* owns the boundary); `read-only` and every other mode defer to the upstream
++* local provider, which still fails closed when no runner is usable.
++*/
++var ContainerTierSandboxProvider = class extends LocalSandboxProvider {
++	async confine(argv, policy, signal) {
++		signal?.throwIfAborted();
++		if (policy.mode === "workspace-write") return {
++			argv: [...argv],
++			enforcement: "partial",
++			denialSignatures: [],
++			runnerFailureRules: []
++		};
++		return super.confine(argv, policy, signal);
++	}
++};
+ async function services() {
+ 	const ctx = new Context();
+ 	const fibers = [await ctx.plugin(SessionProjectionRegistry)];
+@@ -536,7 +563,7 @@
+ 	}));
+ 	fibers.push(await ctx.plugin(SandboxedFileSystem, { cwd: process.cwd() }));
+ 	fibers.push(await ctx.plugin(LocalSubprocessRuntime));
+-	fibers.push(await ctx.plugin(LocalSandboxProvider));
++	fibers.push(await ctx.plugin(resolveHelperSandboxTier(process.env) === "container" ? ContainerTierSandboxProvider : LocalSandboxProvider));
+ 	return {
+ 		ctx,
+ 		close: async () => {
+@@ -838,4 +865,4 @@
+ 	]) process.off(signal, stop);
+ }
+ //#endregion
+-export {};
++export { ContainerTierSandboxProvider, resolveHelperSandboxTier };
+--- a/lib/types/helper-entry.d.ts
++++ b/lib/types/helper-entry.d.ts
+@@ -1,2 +1,17 @@
+-export {};
++import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local';
++import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox';
++/**
++ * Select the helper's sandbox tier from its environment. Only the exact value
++ * `container` selects the container tier; omission or any other value keeps the
++ * upstream local provider unchanged.
++ */
++export declare function resolveHelperSandboxTier(env: Record<string, string | undefined>): 'local' | 'container';
++/**
++ * Container-tier provider: `workspace-write` returns the caller's argv unchanged
++ * with `partial` enforcement because the container owns the file boundary;
++ * `read-only` and every other mode defer to the upstream local provider.
++ */
++export declare class ContainerTierSandboxProvider extends LocalSandboxProvider {
++    confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv>;
++}
+ //# sourceMappingURL=helper-entry.d.ts.map
+\ No newline at end of file
