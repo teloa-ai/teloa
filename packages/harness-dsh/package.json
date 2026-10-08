@@ -14,6 +14,7 @@
     "./managed-package-install": "./src/managed-package-install.ts",
     "./product-telemetry": "./src/product-telemetry.ts",
     "./native-input-provider": "./src/native-input-provider.ts",
+    "./native-input-composition": "./src/native-input-composition.ts",
     "./tool-resource-provenance": "./src/tool-resource-provenance.ts",
     "./managed-session-controller": "./src/managed-session-controller.ts",
     "./managed-subagent": "./src/managed-subagent.ts"
