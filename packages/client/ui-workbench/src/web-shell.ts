@@ -5,6 +5,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { prototypeThemes } from './brand/prototype-theme.ts'
+import { teloaLogotypeSvg } from './brand/logotype-svg.ts'
 import { teloaMarkSvg } from './brand/teloa-mark.ts'
 
 declare module '@deepseek-ai/cordis'{interface Events{'webserver/index-inject'(table:unknown[]):void}}
@@ -33,18 +34,30 @@ const assets:Record<string,Handler>={
   })),
 }
 
-const palette=(theme:Record<string,string>)=>
-  `--teloa-boot-bg:${theme['--teloa-design-bg']};--teloa-boot-mark:url("data:image/svg+xml,${encodeURIComponent(teloaMarkSvg(theme['--teloa-design-text']!))}")`
+const image=(svg:string)=>`url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+const scheme=(theme:Record<string,string>,logotype:'light'|'dark')=>
+  `--teloa-boot-bg:${theme['--teloa-design-bg']};--teloa-boot-track:${theme['--teloa-design-border']};--teloa-boot-ink:${theme['--teloa-design-muted']};--teloa-boot-logotype:var(--teloa-boot-logotype-${logotype})`
+// 变量只在 #root 为空或只有官方启动卡片时定义，工作台挂载后不再继承到应用里；不支持 :has() 的浏览器只认空 #root。
+const BOOTING='#root:is(:empty,:not(:has(>:not([data-dsh-boot]))))'
+const SHOWN='#root:is(:empty,:has(>[data-dsh-boot]:only-child [data-dsh-boot-spinner]))'
+// 启动卡片转为失败说明后，卡片里第一个纯文字节点是官方字样，紧跟着带子节点的失败说明；说明文字不动。
+const FAILED_WORDMARK='#root>[data-dsh-boot]:only-child:not(:has([data-dsh-boot-spinner]))>*>:first-child:not(:has(*)):has(+*>*)'
 /**
- * 过渡画面画在 #root 的伪元素上：#root 为空（入口脚本尚未执行）或只有仍在转圈的官方启动卡片时盖满视口；
- * 工作台挂载后 #root 换成应用节点即不再匹配；启动卡片转为失败说明（转圈消失）时让出，不挡住失败原因。
- * 深浅色先随系统；本人在设置里选过主题时，以官方主题启动行写下的标记为准，与工作台挂载后一致。
+ * 过渡画面画在 #root 的两个伪元素上：::before 盖满视口并居中字标，::after 是字标下方的细加载条。
+ * #root 为空（入口脚本尚未执行）或只有仍在转圈的官方启动卡片时显示；工作台挂载后 #root 换成应用节点即不再匹配；
+ * 启动卡片转为失败说明（转圈消失）时让出，只把卡片上的官方字样换成 Teloa 字标。
+ * 深浅色先随系统；本人在设置里选过主题时，以官方主题启动行写下的标记为准，与工作台挂载后一致。减少动效时加载条只缓慢呼吸。
  */
 const BOOT_STYLE=[
-  `#root::before{${palette(light)}}`,
-  `@media(prefers-color-scheme:dark){html:not([data-ds-theme-source]) #root::before{${palette(dark)}}}`,
-  `body[data-ds-dark-theme] #root::before{${palette(dark)}}`,
-  '#root:is(:empty,:has(>[data-dsh-boot]:only-child [data-dsh-boot-spinner]))::before{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;background:var(--teloa-boot-mark) center/56px 56px no-repeat var(--teloa-boot-bg)}',
+  `${BOOTING}{--teloa-boot-logotype-light:${image(teloaLogotypeSvg.light)};--teloa-boot-logotype-dark:${image(teloaLogotypeSvg.dark)};${scheme(light,'light')}}`,
+  `@media(prefers-color-scheme:dark){html:not([data-ds-theme-source]) ${BOOTING}{${scheme(dark,'dark')}}}`,
+  `body[data-ds-dark-theme] ${BOOTING}{${scheme(dark,'dark')}}`,
+  `${SHOWN}::before{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;background:var(--teloa-boot-logotype) 50% calc(50% - 12px)/96px auto no-repeat var(--teloa-boot-bg)}`,
+  `${SHOWN}::after{content:"";position:fixed;z-index:1;pointer-events:none;left:calc(50% - 48px);top:calc(50% + 14px);width:96px;height:2px;border-radius:1px;background:linear-gradient(90deg,transparent,var(--teloa-boot-ink),transparent) -40px 0/40px 100% no-repeat var(--teloa-boot-track);animation:teloa-boot-sweep 1.4s ease-in-out infinite}`,
+  '@keyframes teloa-boot-sweep{to{background-position:96px 0}}',
+  `@media(prefers-reduced-motion:reduce){${SHOWN}::after{background:var(--teloa-boot-ink);animation:teloa-boot-breathe 2.4s ease-in-out infinite alternate}}`,
+  '@keyframes teloa-boot-breathe{from{opacity:.2}to{opacity:.7}}',
+  `${FAILED_WORDMARK}{width:96px;height:19px;font-size:0;color:transparent;background:var(--teloa-boot-logotype) center/contain no-repeat}`,
 ].join('')
 
 /** 浏览器首页的 Teloa 品牌；没有 webServer 的组合（桌面壳）只登记过渡样式行。 */

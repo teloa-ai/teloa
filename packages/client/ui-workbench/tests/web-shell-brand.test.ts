@@ -5,7 +5,8 @@ import {Context} from '@deepseek-ai/cordis'
 import {prototypeThemes} from '../src/brand/prototype-theme.ts'
 import {serveIndex,upstreamFile} from './fixtures/dsh-web-shell.ts'
 
-const markSource=await readFile(new URL('../src/brand/teloa-mark.svg',import.meta.url),'utf8')
+const brandFile=(name:string)=>readFile(new URL('../src/brand/'+name,import.meta.url),'utf8')
+const markSource=await brandFile('teloa-mark.svg')
 const markPath=markSource.match(/ d="([^"]+)"/)![1]!,markViewBox=markSource.match(/viewBox="([^"]+)"/)![1]!
 const light=prototypeThemes.light,dark=prototypeThemes.dark
 // 宿主或网关会在 __DSH_BOOT__ 前后插入脚本；品牌改动不能挪动它们。
@@ -57,19 +58,18 @@ test('应用清单 name 与 short_name 为 Teloa，主题色与背景色取 Telo
  assert.deepEqual(manifest,{...upstream,name:'Teloa',short_name:'Teloa',theme_color:light['--teloa-design-bg'],background_color:light['--teloa-design-bg']})
 })
 
-test('过渡画面只是 #root 的样式：标识居中、随深浅色切换，不写任何文字',async t=>{
+test('过渡画面只是 #root 的样式：字标逐字取自现有文件，带加载指示，不写任何文字',async t=>{
  const {origin}=await serveIndex(t)
  const css=(await (await fetch(origin+'/')).text()).match(ownStyle)![0]!
  assert.doesNotMatch(css,/DeepSeek|Harness/i)
- assert.deepEqual(css.match(/content:[^;}]*/g),['content:""'],'伪元素不带文字')
- const marks=[...new Set([...css.matchAll(/url\("data:image\/svg\+xml,([^"]+)"\)/g)].map(match=>decodeURIComponent(match[1]!)))]
- assert.equal(marks.length,2,'浅色与深色各一种标识')
- for(const [mark,ink] of marks.map((mark,index)=>[mark,[light,dark][index]!['--teloa-design-text']] as const)){
-  assert.ok(mark.includes(`d="${markPath}"`));assert.ok(mark.includes(`fill="${ink}"`));assert.doesNotMatch(mark,/<text/)
- }
+ assert.deepEqual(css.match(/content:[^;}]*/g),['content:""','content:""'],'两个伪元素都不带文字')
+ const images=[...css.matchAll(/url\("data:image\/svg\+xml,([^"]+)"\)/g)].map(match=>decodeURIComponent(match[1]!))
+ assert.deepEqual(images,[await brandFile('teloa-light.svg'),await brandFile('teloa-dark.svg')],'浅色与深色字标各一份，逐字取自现有文件')
  assert.ok(css.includes(light['--teloa-design-bg']!)&&css.includes(dark['--teloa-design-bg']!))
  assert.match(css,/prefers-color-scheme:dark/)
  assert.match(css,/body\[data-ds-dark-theme\]/,'本人选的深色主题优先')
+ assert.match(css,/@keyframes teloa-boot-sweep/)
+ assert.match(css,/@media\(prefers-reduced-motion:reduce\)\{[^@]*animation:teloa-boot-breathe/)
 })
 
 test('没有 webServer 的组合（桌面壳）照常加载，只登记过渡样式行',async t=>{
