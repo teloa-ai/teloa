@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {Context} from '@deepseek-ai/cordis'
 import {prototypeThemes} from '../src/brand/prototype-theme.ts'
+import {TELOA_LOGOTYPE_SVG} from '../src/brand/logotype-svg.ts'
+// @ts-expect-error 生成脚本是无类型声明的纯 Node 模块。
+import {logotypeModule} from '../scripts/generate-logotype.mjs'
 import {serveIndex,upstreamFile} from './fixtures/dsh-web-shell.ts'
 
 const brandFile=(name:string)=>readFile(new URL('../src/brand/'+name,import.meta.url),'utf8')
@@ -15,7 +18,7 @@ const hostRows=[
  {kind:'global',name:'__DSH_BOOT__',value:{entries:[{id:'plugin',url:'plugins/x/client.js'}]}},
  {kind:'script',placement:'body',text:'globalThis.hostBody=1'},
 ]
-const ownStyle=/<style>[^<]*--teloa-boot[^<]*<\/style>/g
+const ownStyle=/<style>(?:(?!<\/style>)[^])*--teloa-boot(?:(?!<\/style>)[^])*<\/style>/g
 
 test('刷新首页标题为 Teloa，#root 保持为空，其余结构与注入顺序和上游逐字节一致',async t=>{
  const upstream=await (await fetch((await serveIndex(t,{brand:false,hostRows})).origin+'/')).text()
@@ -58,14 +61,23 @@ test('应用清单 name 与 short_name 为 Teloa，主题色与背景色取 Telo
  assert.deepEqual(manifest,{...upstream,name:'Teloa',short_name:'Teloa',theme_color:light['--teloa-design-bg'],background_color:light['--teloa-design-bg']})
 })
 
-test('过渡画面只是 #root 的样式：字标逐字取自现有文件，带加载指示，不写任何文字',async t=>{
+test('精简字形由生成脚本从现有字标生成，提交的文件与重新生成的结果逐字一致',async()=>{
+ const module=await readFile(new URL('../src/brand/logotype-svg.ts',import.meta.url),'utf8')
+ assert.equal(logotypeModule(await brandFile('teloa-light.svg')),module,'换字标后需运行 scripts/generate-logotype.mjs 重新生成')
+ assert.match(TELOA_LOGOTYPE_SVG,/^<svg [^>]*viewBox='0\.5 -4\.32 567\.33 108\.79'[^>]*><path fill='currentColor' d='[^']+'\/><\/svg>$/)
+})
+
+test('过渡画面只是 #root 的样式：只内嵌一份不超过 12KB 的字形，按主题令牌着色，带加载指示，不写任何文字',async t=>{
  const {origin}=await serveIndex(t)
  const css=(await (await fetch(origin+'/')).text()).match(ownStyle)![0]!
  assert.doesNotMatch(css,/DeepSeek|Harness/i)
  assert.deepEqual(css.match(/content:[^;}]*/g),['content:""','content:""'],'两个伪元素都不带文字')
- const images=[...css.matchAll(/url\("data:image\/svg\+xml,([^"]+)"\)/g)].map(match=>decodeURIComponent(match[1]!))
- assert.deepEqual(images,[await brandFile('teloa-light.svg'),await brandFile('teloa-dark.svg')],'浅色与深色字标各一份，逐字取自现有文件')
- assert.ok(css.includes(light['--teloa-design-bg']!)&&css.includes(dark['--teloa-design-bg']!))
+ const images=[...css.matchAll(/url\("(data:image\/svg\+xml,[^"]+)"\)/g)].map(match=>match[1]!)
+ assert.equal(images.length,1,'只内嵌一份字形')
+ assert.equal(decodeURIComponent(images[0]!.slice('data:image/svg+xml,'.length)),TELOA_LOGOTYPE_SVG)
+ assert.ok(Buffer.byteLength(images[0]!)<=12*1024,'内嵌字形 '+Buffer.byteLength(images[0]!)+' 字节')
+ for(const theme of [light,dark])for(const token of ['--teloa-design-bg','--teloa-design-text'])assert.ok(css.includes(theme[token]!),token)
+ assert.match(css,/background:[^;}]*currentColor/,'字形用 currentColor 着色')
  assert.match(css,/prefers-color-scheme:dark/)
  assert.match(css,/body\[data-ds-dark-theme\]/,'本人选的深色主题优先')
  assert.match(css,/@keyframes teloa-boot-sweep/)

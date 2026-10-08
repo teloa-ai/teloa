@@ -5,7 +5,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { prototypeThemes } from './brand/prototype-theme.ts'
-import { teloaLogotypeSvg } from './brand/logotype-svg.ts'
+import { TELOA_LOGOTYPE_SVG } from './brand/logotype-svg.ts'
 import { teloaMarkSvg } from './brand/teloa-mark.ts'
 
 declare module '@deepseek-ai/cordis'{interface Events{'webserver/index-inject'(table:unknown[]):void}}
@@ -34,30 +34,34 @@ const assets:Record<string,Handler>={
   })),
 }
 
-const image=(svg:string)=>`url("data:image/svg+xml,${encodeURIComponent(svg)}")`
-const scheme=(theme:Record<string,string>,logotype:'light'|'dark')=>
-  `--teloa-boot-bg:${theme['--teloa-design-bg']};--teloa-boot-track:${theme['--teloa-design-border']};--teloa-boot-ink:${theme['--teloa-design-muted']};--teloa-boot-logotype:var(--teloa-boot-logotype-${logotype})`
+const scheme=(theme:Record<string,string>)=>
+  `--teloa-boot-bg:${theme['--teloa-design-bg']};--teloa-boot-text:${theme['--teloa-design-text']};--teloa-boot-track:${theme['--teloa-design-border']};--teloa-boot-ink:${theme['--teloa-design-muted']}`
 // 变量只在 #root 为空或只有官方启动卡片时定义，工作台挂载后不再继承到应用里；不支持 :has() 的浏览器只认空 #root。
 const BOOTING='#root:is(:empty,:not(:has(>:not([data-dsh-boot]))))'
 const SHOWN='#root:is(:empty,:has(>[data-dsh-boot]:only-child [data-dsh-boot-spinner]))'
 // 启动卡片转为失败说明后，卡片里第一个纯文字节点是官方字样，紧跟着带子节点的失败说明；说明文字不动。
 const FAILED_WORDMARK='#root>[data-dsh-boot]:only-child:not(:has([data-dsh-boot-spinner]))>*>:first-child:not(:has(*)):has(+*>*)'
+// 字形是遮罩，颜色取 currentColor：上方 96px 宽的字标，下方隔 16px 一条 2px 加载条。
+const LOGOTYPE_MASK='var(--teloa-boot-logotype) 0 0/100% auto no-repeat,linear-gradient(#000 0 0) 0 100%/100% 2px no-repeat'
 /**
- * 过渡画面画在 #root 的两个伪元素上：::before 盖满视口并居中字标，::after 是字标下方的细加载条。
+ * 过渡画面画在 #root 的两个伪元素上：::before 盖满视口，::after 居中显示字标与其下方的细加载条。
  * #root 为空（入口脚本尚未执行）或只有仍在转圈的官方启动卡片时显示；工作台挂载后 #root 换成应用节点即不再匹配；
  * 启动卡片转为失败说明（转圈消失）时让出，只把卡片上的官方字样换成 Teloa 字标。
- * 深浅色先随系统；本人在设置里选过主题时，以官方主题启动行写下的标记为准，与工作台挂载后一致。减少动效时加载条只缓慢呼吸。
+ * 字形只内嵌一份（刷新首页不缓存），按主题令牌着色。深浅色先随系统；本人在设置里选过主题时，以官方主题启动行写下的标记为准，
+ * 与工作台挂载后一致。减少动效时加载条只缓慢呼吸。
  */
 const BOOT_STYLE=[
-  `${BOOTING}{--teloa-boot-logotype-light:${image(teloaLogotypeSvg.light)};--teloa-boot-logotype-dark:${image(teloaLogotypeSvg.dark)};${scheme(light,'light')}}`,
-  `@media(prefers-color-scheme:dark){html:not([data-ds-theme-source]) ${BOOTING}{${scheme(dark,'dark')}}}`,
-  `body[data-ds-dark-theme] ${BOOTING}{${scheme(dark,'dark')}}`,
-  `${SHOWN}::before{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;background:var(--teloa-boot-logotype) 50% calc(50% - 12px)/96px auto no-repeat var(--teloa-boot-bg)}`,
-  `${SHOWN}::after{content:"";position:fixed;z-index:1;pointer-events:none;left:calc(50% - 48px);top:calc(50% + 14px);width:96px;height:2px;border-radius:1px;background:linear-gradient(90deg,transparent,var(--teloa-boot-ink),transparent) -40px 0/40px 100% no-repeat var(--teloa-boot-track);animation:teloa-boot-sweep 1.4s ease-in-out infinite}`,
-  '@keyframes teloa-boot-sweep{to{background-position:96px 0}}',
-  `@media(prefers-reduced-motion:reduce){${SHOWN}::after{background:var(--teloa-boot-ink);animation:teloa-boot-breathe 2.4s ease-in-out infinite alternate}}`,
-  '@keyframes teloa-boot-breathe{from{opacity:.2}to{opacity:.7}}',
-  `${FAILED_WORDMARK}{width:96px;height:19px;font-size:0;color:transparent;background:var(--teloa-boot-logotype) center/contain no-repeat}`,
+  `${BOOTING}{--teloa-boot-logotype:url("data:image/svg+xml,${encodeURIComponent(TELOA_LOGOTYPE_SVG)}");${scheme(light)}}`,
+  `@media(prefers-color-scheme:dark){html:not([data-ds-theme-source]) ${BOOTING}{${scheme(dark)}}}`,
+  `body[data-ds-dark-theme] ${BOOTING}{${scheme(dark)}}`,
+  `${SHOWN}::before{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;background:var(--teloa-boot-bg)}`,
+  `${SHOWN}::after{content:"";position:fixed;z-index:1;pointer-events:none;left:calc(50% - 48px);top:calc(50% - 21px);width:96px;height:37px;color:var(--teloa-boot-text);background:linear-gradient(90deg,transparent,var(--teloa-boot-ink),transparent) -40px 100%/40px 2px no-repeat,linear-gradient(var(--teloa-boot-track) 0 0) 0 100%/100% 2px no-repeat currentColor;-webkit-mask:${LOGOTYPE_MASK};mask:${LOGOTYPE_MASK};animation:teloa-boot-sweep 1.4s ease-in-out infinite}`,
+  '@keyframes teloa-boot-sweep{to{background-position:96px 100%,0 100%}}',
+  // 减少动效时不扫动：加载条颜色在边框色与次要文字色之间缓慢往返（需要注册的颜色变量才能平滑过渡）。
+  "@property --teloa-boot-pulse{syntax:'<color>';inherits:false;initial-value:transparent}",
+  `@media(prefers-reduced-motion:reduce){${SHOWN}::after{background:linear-gradient(var(--teloa-boot-pulse) 0 0) 0 100%/100% 2px no-repeat currentColor;animation:teloa-boot-breathe 2.4s ease-in-out infinite alternate}}`,
+  '@keyframes teloa-boot-breathe{from{--teloa-boot-pulse:var(--teloa-boot-track)}to{--teloa-boot-pulse:var(--teloa-boot-ink)}}',
+  `${FAILED_WORDMARK}{width:96px;height:19px;font-size:0;color:var(--teloa-boot-text);background:currentColor;-webkit-mask:var(--teloa-boot-logotype) center/contain no-repeat;mask:var(--teloa-boot-logotype) center/contain no-repeat}`,
 ].join('')
 
 /** 浏览器首页的 Teloa 品牌；没有 webServer 的组合（桌面壳）只登记过渡样式行。 */
