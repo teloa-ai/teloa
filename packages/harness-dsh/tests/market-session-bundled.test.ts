@@ -11,9 +11,9 @@ test('只认 bundled-extension 候选；其它候选返回 undefined 交给原�
  assert.throws(()=>bundledAddInput({candidate:{kind:'bundled-extension',extensionId:'local-embedding'}}),{code:'teloa/invalid-input'})
  assert.throws(()=>bundledAddInput({candidate:{kind:'bundled-extension',extensionId:'im-gateway',packageName:'@x/y'}}),{code:'teloa/invalid-input'})
 })
-test('确认卡写明随附、不下载、即时生效不需重启、凭据不经聊天',()=>{
+test('确认卡写明内置默认加载、随附不下载、旧安装缺失恢复与凭据不经聊天',()=>{
  const reason=bundledAddReason(view('available') as never,'')
- for(const text of ['IM 通道','@teloa/im-gateway 0.2.0-alpha.6','不从网络下载','立即启用并加载，不需要重启','不经聊天'])assert.ok(reason.includes(text),text)
+ for(const text of ['IM 通道','@teloa/im-gateway 0.2.0-alpha.6','不从网络下载','默认随平台加载','旧安装缺失时恢复加载','已就绪则不做改动','设置 · IM 通道','密钥只在设置页填写','不经聊天'])assert.ok(reason.includes(text),text)
 })
 test('预检一律出确认卡，不论当前状态（消除检查—执行时间窗）',()=>{
  for(const state of ['available','enable-pending','active','failed','disable-pending'])
@@ -43,10 +43,10 @@ test('宿主回包形状不对归为 invalid-host-response（list 与 set 都是
  const badSet={bundledExtensions:async(endpoint:string)=>endpoint==='bundled-extensions/list'?[view('available')]:{state:'enable-pending'}}
  await assert.rejects(executeBundledAdd(badSet as never,'im-gateway'),{code:'teloa/invalid-host-response'})
 })
-test('确认卡不随预检状态变：写明未启用才写入、已启用不做改动（执行时状态可能已变）',()=>{
+test('确认卡不随预检状态变：写明旧安装缺失恢复、已就绪不做改动（执行时状态可能已变）',()=>{
  for(const state of ['available','active','enable-pending','failed','disable-pending']){
   const reason=bundledAddReason(view(state) as never,'')
   assert.equal(reason,bundledAddReason(view('available') as never,''),state)
-  assert.match(reason,/未启用时立即启用并加载，不需要重启 Teloa；已启用则不做改动/)
+  assert.match(reason,/默认随平台加载；旧安装缺失时恢复加载，已就绪则不做改动/)
  }
 })

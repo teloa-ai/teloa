@@ -21,17 +21,17 @@ test('@teloa/bundle 不再默认加载 IM 通道',async()=>{
  assert.equal(manifest.dependencies['@teloa/im-gateway'],undefined)
 })
 
-test('im-gateway package.json：@deepseek-ai/* 钉 0.2.0-rc.2（cordis 4.0.4）；四处依赖字段与根 lock 均不含 larksuiteoapi（M7）',async()=>{
+test('im-gateway package.json：@deepseek-ai/* 钉 0.2.1-alpha.1（cordis 4.0.5-alpha.1）；四处依赖字段与根 lock 均不含 larksuiteoapi（M7）',async()=>{
  const manifest=JSON.parse(await read('package.json',pkgRoot)) as Record<string,Record<string,string>|string>
  assert.equal(manifest.name,'@teloa/im-gateway')
- assert.equal((manifest.engines as Record<string,string>).dsh,'0.2.0-rc.2')
+ assert.equal((manifest.engines as Record<string,string>).dsh,'0.2.1-alpha.1')
  const fields=['dependencies','devDependencies','optionalDependencies','peerDependencies']
  for(const field of fields){
   const deps=(manifest[field] as Record<string,string>|undefined)??{}
   assert.ok(!('@larksuiteoapi/node-sdk' in deps),field+' 不得含 @larksuiteoapi/node-sdk')
   for(const [name,version] of Object.entries(deps)){
-   if(name==='@deepseek-ai/cordis')assert.equal(version,'4.0.4',name)
-   else if(name.startsWith('@deepseek-ai/'))assert.equal(version,'0.2.0-rc.2',name)
+   if(name==='@deepseek-ai/cordis')assert.equal(version,'4.0.5-alpha.1',name)
+   else if(name.startsWith('@deepseek-ai/'))assert.equal(version,'0.2.1-alpha.1',name)
   }
  }
  const deps=manifest.dependencies as Record<string,string>

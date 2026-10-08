@@ -19,6 +19,14 @@ const officialRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.js
 const presetRoot=join(dirname(officialRequire.resolve('@deepseek-ai/dsh-web-app/package.json')),'presets')
 const overlayUrl=new URL('../../bundle/agent-presets/standard.patch.yml',import.meta.url)
 
+// 仅认可锁定官方声明中的这一行；其它字段、重复行或插件变化仍由整份预设比较拒绝。
+function removeApprovedScheduleTool(plugins:Record<string,unknown>[]){
+ const index=plugins.findIndex(row=>row.id==='tool-schedule')
+ assert.notEqual(index,-1,'锁定官方预设缺少预期的模型定时工具')
+ assert.deepEqual(plugins[index],{id:'tool-schedule',name:'@deepseek-ai/dsh-tool-schedule'})
+ plugins.splice(index,1)
+}
+
 test('官方真实补丁与 Teloa bundle 按发行顺序组合后五份预设通过安全复验',async()=>{
  const boot=await import(pathToFileURL(officialRequire.resolve('@deepseek-ai/dsh-app-boot')).href)
  const patches:unknown[]=[]
@@ -35,12 +43,13 @@ test('官方真实补丁与 Teloa bundle 按发行顺序组合后五份预设通
  assert.deepEqual(rows.filter((row:Record<string,unknown>)=>row.name==='@deepseek-ai/dsh-agent-preset'&&!row.disabled).map((row:{config:{id:string}})=>row.config.id).sort(),['cordis','minimal','ptc','standard','teloa-standard'])
 })
 
-test('官方覆盖由锁定声明生成，仅替换受管派发与本地压缩预算适配',async()=>{
+test('官方覆盖由锁定声明生成，仅含受管派发、本地压缩预算适配和模型定时入口移除',async()=>{
  assert.equal(existsSync(overlayUrl),true,'缺少受管 standard 覆盖')
  const official=parseDocument(await readFile(join(presetRoot,'standard.patch.yml'),'utf8'))[0].insert[0]
  const overlay=parseDocument(await readFile(overlayUrl,'utf8'))[0]
  assert.equal(overlay.id,'preset-standard')
  const expected=structuredClone(official.config)
+ removeApprovedScheduleTool(expected.plugins)
  const delegation=expected.plugins.find((row:{id:string})=>row.id==='delegation')
  delegation.config.find((row:{id:string})=>row.id==='workflow-ptc').config.provider='teloa-workflow-spawn'
  expected.plugins.find((row:{id:string})=>row.id==='compaction').config.find((row:{id:string})=>row.id==='compaction-basic').name='@teloa/harness-dsh/local-compaction'
@@ -55,6 +64,7 @@ test('官方覆盖由锁定声明生成，仅替换受管派发与本地压缩�
   if(id==='minimal')assert.equal(presetBodyNormalizedDigest(native.config.plugins),shippedPresetBodyDigests[id],id)
   else{
    const adapted=parseDocument(await readFile(new URL('../../bundle/agent-presets/'+id+'.patch.yml',import.meta.url),'utf8'))[0]
+   removeApprovedScheduleTool(native.config.plugins)
    native.config.plugins.find((row:{id:string})=>row.id==='compaction').config.find((row:{id:string})=>row.id==='compaction-basic').name='@teloa/harness-dsh/local-compaction'
    assert.deepEqual(adapted.config,native.config,id+' 未增加无关改动')
    assert.equal(presetBodyNormalizedDigest(adapted.config.plugins),shippedPresetBodyDigests[id],id)
