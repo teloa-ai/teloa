@@ -307,18 +307,16 @@ async function prepareClientFace(provider:Provider,resolve:Resolve,runtimeRoot:s
 }
 
 /**
- * `exports["./client"]` 取浏览器面入口：字符串形态直接取；条件对象按 browser、import、default 取第一个。
- * 官方发现只读字符串或 default，几个条件同时存在却指向不同文件时无法确定官方实际读取的内容，拒绝。
+ * `exports["./client"]` 取浏览器面入口，判定与官方发现 `clientExportOf`（dsh-client-modules）逐条一致：
+ * exports 不是对象或没有 `./client` 时视为没有导出；字符串直接取；对象只取字符串 `default`
+ * （`types`、`browser`、`import` 等其他条件官方不读）；其余形态官方报错，这里同样拒绝。
  */
 function clientExport(manifest:Row,packageRoot:string,subject:string):string{
- const entry=record(manifest.exports)?manifest.exports['./client']:undefined
+ const exports=manifest.exports,entry=typeof exports==='object'&&exports!==null?Reflect.get(exports,'./client'):undefined
  if(entry===undefined)throw refuse(subject+'没有导出浏览器面（exports["./client"]）。')
- if(typeof entry==='string')return resolvePath(packageRoot,entry)
- const conditions=record(entry)?['browser','import','default'].filter(key=>entry[key]!==undefined).map(key=>entry[key]):[]
- if(!conditions.length||conditions.some(value=>typeof value!=='string'))throw refuse(subject+'的浏览器面导出形态无法识别。')
- const paths=new Set(conditions.map(value=>resolvePath(packageRoot,value as string)))
- if(paths.size>1)throw refuse(subject+'的浏览器面导出在 browser、import、default 之间指向不同文件，无法确定官方发现读取的内容。')
- return [...paths][0] as string
+ const chosen:unknown=typeof entry==='string'?entry:typeof entry==='object'&&entry!==null?Reflect.get(entry,'default'):undefined
+ if(typeof chosen!=='string')throw refuse(subject+'的浏览器面导出形态无法识别：须为字符串，或带字符串 default 的对象（与官方发现规则一致）。')
+ return resolvePath(packageRoot,chosen)
 }
 
 /** 删除超过保留时长的临时目录；只处理本目录下的实际目录，不跟随链接。清理失败不影响本次组合，下次启动再试。 */

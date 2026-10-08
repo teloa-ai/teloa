@@ -318,26 +318,47 @@ test('组合成功后清理过期的临时目录，不动当前载体、其他�
  assert.ok((await stat(outside)).isDirectory())
 })
 
-test('浏览器面导出按 browser、import、default 取值，无法识别或互相矛盾时给出专门原因',async t=>{
+test('浏览器面导出取值与官方 clientExportOf 逐条一致',async t=>{
+ // 对照真值取自官方：同一份安装副本挂成文件入口行，交给官方 ClientModuleRegistry 发现。
  const compat=await providers(),rows=communityRows()
- const clientExport=(client:unknown)=>(root:string)=>editManifest(root,manifest=>{
-  const next={...manifest.exports as Record<string,unknown>}
-  if(client===undefined)delete next['./client'];else next['./client']=client
-  manifest.exports=next
- })
- const run=async(client:unknown)=>compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve:await installedPackage(t,clientExport(client))})
- for(const client of ['./lib/client.js',{browser:'./lib/client.js'},{types:'./lib/types/client/index.d.ts',import:'./lib/client.js'},{browser:'./lib/client.js',default:'lib/client.js'}]){
-  assert.deepEqual(await readFile(join(faceDirectory(applyPatches(rows,await run(client))),'client.js')),officialClient,JSON.stringify(client))
- }
- const cases:Array<[unknown,RegExp]>=[
-  [undefined,/没有导出浏览器面/],
-  [{node:'./lib/client.js'},/浏览器面导出形态无法识别/],
-  [{browser:{default:'./lib/client.js'}},/浏览器面导出形态无法识别/],
-  [42,/浏览器面导出形态无法识别/],
-  [{browser:'./lib/index.js',default:'./lib/client.js'},/指向不同文件/],
-  [{browser:'../outside.js'},/不在包内/],
+ const forms:Array<[string,(exports:Record<string,unknown>)=>unknown]>=[
+  ['字符串',exports=>({...exports,'./client':'./lib/client.js'})],
+  ['{default}',exports=>({...exports,'./client':{default:'./lib/client.js'}})],
+  ['{types, default}',exports=>({...exports,'./client':{types:'./lib/types/client/index.d.ts',default:'./lib/client.js'}})],
+  ['只有 browser',exports=>({...exports,'./client':{browser:'./lib/client.js'}})],
+  ['只有 import',exports=>({...exports,'./client':{import:'./lib/client.js'}})],
+  ['browser 与 default 指向不同文件',exports=>({...exports,'./client':{browser:'./lib/index.js',default:'./lib/client.js'}})],
+  ['import 与 default 指向不同文件',exports=>({...exports,'./client':{import:'./lib/index.js',default:'./lib/client.js'}})],
+  ['default 为嵌套条件',exports=>({...exports,'./client':{default:{import:'./lib/client.js'}}})],
+  ['数字',exports=>({...exports,'./client':42})],
+  ['null',exports=>({...exports,'./client':null})],
+  ['数组',exports=>({...exports,'./client':['./lib/client.js']})],
+  ['缺少 ./client',exports=>{const next={...exports};delete next['./client'];return next}],
+  ['exports 整体为字符串',()=>'./lib/index.js'],
  ]
- for(const [client,message] of cases)await assert.rejects(run(client),{name:'NativeInputCompositionError',message},JSON.stringify(client))
+ for(const [label,edit] of forms){
+  const resolve=await installedPackage(t,root=>editManifest(root,manifest=>{manifest.exports=edit(manifest.exports as Record<string,unknown>)}))
+  const root=dirname(resolve(sessionControllerPackage+'/package.json'))
+  const official=await clientModuleRegistry([{id:'official',name:pathToFileURL(join(root,'lib/index.js')).href}]).then(
+   registry=>({accepted:true as const,path:registry.clientPath(sessionControllerPackage)}),
+   (error:unknown)=>({accepted:false as const,reason:error instanceof Error?error.message:String(error)}))
+  const ours=await compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve}).then(
+   patches=>({accepted:true as const,directory:faceDirectory(applyPatches(rows,patches))}),
+   (error:unknown)=>({accepted:false as const,error}))
+  assert.equal(ours.accepted,official.accepted,label)
+  if(official.accepted&&ours.accepted){
+   assert.ok(official.path,label)
+   assert.deepEqual(await readFile(join(ours.directory,'client.js')),await readFile(official.path),label)
+  }else if(!official.accepted&&!ours.accepted){
+   assert.ok(ours.error instanceof NativeInputCompositionError,label)
+   // 拒绝原因与官方同类：官方“没有导出”对应“没有导出浏览器面”，官方“形态不合要求”对应“导出形态无法识别”
+   const missing=official.reason.includes('exports no "./client" bundle')
+   assert.ok(missing||official.reason.includes('must be a string or an object with a string default'),official.reason)
+   assert.match(ours.error.message,missing?/没有导出浏览器面/:/浏览器面导出形态无法识别/,label)
+  }
+ }
+ // 官方不检查导出是否落在包内；这是本接口另加的安全核对，形态合法时仍按位置拒绝。
+ await assert.rejects(compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve:await installedPackage(t,root=>editManifest(root,manifest=>{manifest.exports={...manifest.exports as object,'./client':{default:'../outside.js'}}}))}),{name:'NativeInputCompositionError',message:/不在包内/})
 })
 
 test('社区版默认组合不调用该接口；同一提交内加载并调用接口不改变社区默认组合',async t=>{
