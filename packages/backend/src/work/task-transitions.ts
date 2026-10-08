@@ -1,6 +1,6 @@
 import {runEvidence} from './task-run-evidence.ts'
 import {ArtifactService} from './artifacts.ts'
-import type {Pool} from 'pg'
+import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,type WorkTask} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
@@ -18,14 +18,19 @@ export class TaskTransitions{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string}
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string}){this.pool=pool;this.identity=identity}
  async change(owner:string,input:unknown):Promise<WorkTask>{
+  const db=await this.pool.connect()
+  try{await db.query('begin');const result=await this.changeInTransaction(db,owner,input);await db.query('commit');return result}
+  catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ /** 可信结项复用本人结项的锁、固定成果及唯一回执；调用方负责事务。proof不接受客户端输入。 */
+ async changeInTransaction(client:PoolClient,owner:string,input:unknown,proof?:{candidate:unknown;policy:unknown;receiptIds:string[]}):Promise<WorkTask>{
   if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要本人身份。')
   const row=taskInput(input,['taskId','requestId','expectedVersion','action','artifact','note'])
   if(!uuid(row.taskId)||!uuid(row.requestId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1||typeof row.action!=='string'||!Object.hasOwn(targets,row.action))throw new WorkError('teloa/invalid-input','任务状态请求格式不正确。')
   if(row.action!=='complete'&&(row.artifact!==undefined||row.note!==undefined))throw new WorkError('teloa/invalid-input','只有结项请求可以包含成果与说明。')
   const artifact=row.action==='complete'?taskInput(row.artifact,['id','version']):undefined
   if(artifact&&(!uuid(artifact.id)||!Number.isSafeInteger(artifact.version)||(artifact.version as number)<1||typeof row.note!=='string'||!row.note.trim()||row.note.length>4000))throw new WorkError('teloa/invalid-input','请选择固定成果版本并填写结项说明。')
-  const action=row.action as keyof typeof targets,spec=JSON.stringify(row),client=await this.pool.connect()
-  try{await client.query('begin')
+  const action=row.action as keyof typeof targets,spec=JSON.stringify({...row,...(proof?{verifiedCompletion:proof}:{})})
    await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['task-transition',owner,row.requestId])])
    const rows=await client.query('select * from teloa_tasks where owner_id=$1 and id=$2 for update',[owner,row.taskId])
    if(!rows.rows[0])throw new WorkError('teloa/forbidden','任务不存在或不属于本人。')
@@ -35,7 +40,7 @@ export class TaskTransitions{
     let saved:WorkTask
     try{const raw=receipt.result;saved=readStoredTask({...raw,created_at:new Date(raw.created_at),updated_at:new Date(raw.updated_at)});if(receipt.task_id!==task.id||saved.id!==task.id||saved.ownerId!==owner||saved.version!==(row.expectedVersion as number)+1||saved.state!==targets[action])throw Error()}catch{throw new WorkError('teloa/storage-corrupt','任务状态回执损坏，请核对记录。')}
     if(action==='complete'){const completion=await this.readCompletion(client,owner,task.id);if(!completion||completion.taskVersion!==saved.version||completion.artifactId!==artifact!.id||completion.artifactVersion!==artifact!.version||completion.note!==(row.note as string).trim())throw new WorkError('teloa/storage-corrupt','结项记录与状态回执不一致。')}
-    await client.query('commit');return saved
+    return saved
    }
    if(task.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','任务版本已变化，请刷新后核对。')
    if(task.assigneeRoleId){
@@ -59,8 +64,7 @@ export class TaskTransitions{
    }
    const updated=await client.query('update teloa_tasks set state=$3,version=version+1,updated_at=$4 where owner_id=$1 and id=$2 returning *',[owner,task.id,targets[action],this.identity.now()]),saved=readStoredTask(updated.rows[0])
    await client.query('insert into teloa_task_transitions values($1,$2,$3,$4,$5,$6)',[owner,row.requestId,task.id,spec,JSON.stringify(updated.rows[0]),this.identity.now()])
-   await client.query('commit');return saved
-  }catch(error){await client.query('rollback');throw error}finally{client.release()}
+   return saved
  }
  private async readCompletion(db:Pick<Pool,'query'>,owner:string,id:string){
   const rows=await db.query('select * from teloa_task_completions where owner_id=$1 and task_id=$2',[owner,id]);if(!rows.rows[0])return null

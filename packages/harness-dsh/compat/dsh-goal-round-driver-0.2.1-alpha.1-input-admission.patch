@@ -1,0 +1,102 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -52,7 +52,22 @@
+ 	return value instanceof Error ? value.message : String(value);
+ }
+ /** Install automatic same-session continuation and its race fences. */
+-function apply(ctx) {
++const inputAdmissions = new WeakMap();
++function admissionState(ctx) {
++ let state = inputAdmissions.get(ctx);
++ if (!state) { state = { required: false, provider: void 0 }; inputAdmissions.set(ctx, state); }
++ return state;
++}
++function requireGoalInputAdmission(ctx) { admissionState(ctx).required = true; }
++function installGoalInputAdmission(ctx, provider) {
++ const state = admissionState(ctx);
++ if (typeof provider !== "function" || state.provider && state.provider !== provider) throw new Error("Goal input admission is unavailable.");
++ state.provider = provider;
++}
++function apply(ctx, options = {}) {
++ if (options.requireInputAdmission === true) requireGoalInputAdmission(ctx);
++ if (options.admitInput !== void 0) installGoalInputAdmission(ctx, options.admitInput);
++ const admission = admissionState(ctx);
+ 	const states = /* @__PURE__ */ new Map();
+ 	/** Create state for an exact currently live agent. */
+ 	function stateFor(agent) {
+@@ -150,9 +165,27 @@
+ 			cancelled: false,
+ 			stale: false
+ 		};
++		const session = agent.session;
++		const attempt = state.attempt;
++		let settleAdmission;
++		attempt.admission = new Promise(resolve => { settleAdmission = resolve; });
++		attempt.admissionAccepted = false;
++		let open = true, dispatched = false, committed = false;
++		const removeCommitObserver = ctx.on("session/event", (actual, event) => { if (actual === session && event.type === "agent/inbox/spliced" && session.isOwnSeq(event.seq) && event.data.inserted.length === 1 && isDeepStrictEqual(event.data.inserted[0], message)) committed = true; }, { global: true, prepend: true });
++		const dispatch = () => {
++			const latest = currentGoal(state);
++			if (!open || dispatched || !readyToDrive(state) || agent.session !== session || ctx.sessions.get(session.id) !== session || state.attempt !== attempt || attempt.stale || latest === void 0 || latest.id !== goal.id || latest.revision !== goal.revision || latest.phase !== "active" || latest.activation !== "armed" || latest.roundsStarted + 1 !== round) throw new Error("Goal input admission is stale.");
++			dispatched = true;
++			agent.followup(message);
++		};
+ 		try {
+-			agent.followup(message);
++			if (admission.provider) await admission.provider({ agent, message, goal: goalRef(goal), round }, dispatch);
++			else if (admission.required) throw new Error("Goal input admission is required.");
++			else dispatch();
++			if (!dispatched || !committed) throw new Error("Goal input admission did not commit its exact input.");
++			attempt.admissionAccepted = true;
+ 		} catch (error) {
++			if (committed) { ctx.logger.warn(`goal-round-driver: accepted round ${round} notification failed: ${renderThrown(error)}`); return; }
+ 			state.attempt = void 0;
+ 			ctx.logger.warn(`goal-round-driver: could not queue round ${round} for agent "${agent.id}": ${renderThrown(error)}`);
+ 			const latest = currentGoal(state);
+@@ -160,7 +193,7 @@
+ 				code: "queue-failed",
+ 				message: `Could not queue goal round ${round}: ${renderThrown(error)}`
+ 			});
+-		}
++		} finally { open = false; removeCommitObserver(); settleAdmission(); }
+ 	}
+ 	/** Coalesce triggers onto one agent-local serialized driver. */
+ 	function requestDrive(state) {
+@@ -276,13 +309,16 @@
+ 		function validReservation(state, content, source) {
+ 			const attempt = state.attempt;
+ 			const goal = currentGoal(state);
+-			return ctx.fiber.state === 2 && !state.stopping && attempt !== void 0 && attempt.phase === "claimed" && !attempt.stale && sameQueued(content, source, attempt) && goal !== void 0 && goal.id === source.goalId && goal.revision === source.revision && goal.phase === "active" && goal.activation === "armed" && source.round === goal.roundsStarted + 1;
++			return ctx.fiber.state === 2 && !state.stopping && attempt !== void 0 && attempt.admissionAccepted === true && attempt.phase === "claimed" && !attempt.stale && sameQueued(content, source, attempt) && goal !== void 0 && goal.id === source.goalId && goal.revision === source.revision && goal.phase === "active" && goal.activation === "armed" && source.round === goal.roundsStarted + 1;
+ 		}
+ 		ctx.on("agent/pre-step", async ({ agent, messages, signal }, next) => {
+ 			const submitted = messages.find((message) => isGoalRoundSource(message.source));
+ 			if (submitted === void 0) return next();
+ 			const { content, source } = submitted;
+ 			const state = stateFor(agent);
++			const queuedAttempt = state.attempt;
++			if (queuedAttempt?.admission) await queuedAttempt.admission;
++			if (signal.aborted) return { kind: "reject" };
+ 			let valid = false;
+ 			try {
+ 				valid = validReservation(state, content, source);
+@@ -363,4 +399,4 @@
+ 	}, "goal-round-driver lifecycle");
+ }
+ //#endregion
+-export { apply, inject, name, renderGoalRoundPrompt };
++export { apply, inject, name, renderGoalRoundPrompt, requireGoalInputAdmission, installGoalInputAdmission };
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -7,5 +7,9 @@
+ export declare const name = "goal-round-driver";
+ export declare const inject: string[];
+ /** Install automatic same-session continuation and its race fences. */
+-export declare function apply(ctx: Context): void;
++export type GoalInputAdmission = (candidate: Readonly<{agent: import("@deepseek-ai/dsh-agent").Agent;message: import("@deepseek-ai/dsh-session").UserMessage;goal: Readonly<{id: import("@deepseek-ai/dsh-goal").GoalId;revision:number}>;round:number}>,dispatch:()=>void)=>Promise<void>;
++export type GoalRoundDriverOptions = {admitInput?:GoalInputAdmission;requireInputAdmission?:boolean};
++export declare function requireGoalInputAdmission(ctx: Context): void;
++export declare function installGoalInputAdmission(ctx: Context, provider: GoalInputAdmission): void;
++export declare function apply(ctx: Context, options?: GoalRoundDriverOptions): void;
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file

@@ -1,9 +1,10 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,artifactContent,isRoleDailyLog,isRoleDailyLogSummary,readScheduleTrigger,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput,roleDefinition,savedArtifactSource,type RoleDailyLog,type RoleDailyLogEvidence,type RoleDailyLogPruneHint,type RoleDailyLogSummary,type RoleMemory,type ScheduleTrigger} from '@teloa/contract'
+import {WorkError,artifactContent,isRoleDailyLog,isRoleDailyLogSummary,isRoleMemory,readScheduleTrigger,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput,roleDefinition,savedArtifactSource,type RoleDailyLog,type RoleDailyLogEvidence,type RoleDailyLogPruneHint,type RoleDailyLogSummary,type RoleMemory,type ScheduleTrigger} from '@teloa/contract'
 import {planSource} from './plans.ts'
 import type {PlanSource} from './plans.ts'
 import type {RoleMemoryService} from './role-memory.ts'
+import {PlanOccurrenceService,readStoredPlanOccurrence} from './plan-occurrences.ts'
 
 export type RoleDailyLogActor={ownerId:string;kind:'human'}|{ownerId:string;kind:'agent';roleId:string}
 export type RoleDayEvidence={
@@ -16,6 +17,7 @@ export type RoleDailyDigestSubmission={
  pruneHints:Array<{memoryId:string;reason:string}>
 }
 export type RoleDigestRunIdentity={runId:string;taskId:string;planId:string;roleId:string;roleVersion:number;day:string}
+export type RoleDailyLogCompletionEvidence={identity:RoleDigestRunIdentity;log:RoleDailyLog;receiptIds:string[];contentHash:string}
 
 /** 日志正文可引用的证据上限，与契约 `isRoleDailyLog` 的 60 条一致。 */
 export const roleDailyLogEvidenceLimit=60
@@ -148,9 +150,9 @@ export class RoleDailyLogService{
   * 闸的唯一真源：run → task → plan_task_links → plan_occurrences → plans.source。
   * 任一跳断链、来源不是本岗位的 `system-digest`、或领取身份读不出日期，一律返回 null（拒），不放行。
   */
- async digestRun(ownerId:string,input:{runId:string}):Promise<RoleDigestRunIdentity|null>{
+ async digestRun(ownerId:string,input:{runId:string},db:Pick<Pool,'query'>=this.pool):Promise<RoleDigestRunIdentity|null>{
   if(typeof ownerId!=='string'||!ownerId.trim()||!input||!uuid(input.runId))return null
-  const row=(await this.pool.query(`select r.id as run_id,r.task_id,r.role_id,r.role_version,o.occurrence_id,o.scheduled_at,p.id as plan_id,p.source,p.definition
+  const row=(await db.query(`select r.id as run_id,r.task_id,r.role_id,r.role_version,o.occurrence_id,o.scheduled_at,p.id as plan_id,p.source,p.definition
    from teloa_task_runs r
    join teloa_plan_task_links l on l.task_id=r.task_id and l.owner_id=r.owner_id
    join teloa_plan_occurrences o on o.id=l.claim_id and o.owner_id=r.owner_id
@@ -168,10 +170,38 @@ export class RoleDailyLogService{
    // 时区白名单的唯一真源是契约 `readScheduleTrigger`，本文件不另抄一份。
    let timezone:ScheduleTrigger['timezone']
    try{timezone=readScheduleTrigger((row.definition as Record<string,unknown>).trigger).timezone}catch{return null}
-   day=String((await this.pool.query("select to_char(($1::timestamptz at time zone $2)::date,'YYYY-MM-DD') as day",[row.scheduled_at,timezone])).rows[0]?.day)
+   day=String((await db.query("select to_char(($1::timestamptz at time zone $2)::date,'YYYY-MM-DD') as day",[row.scheduled_at,timezone])).rows[0]?.day)
   }
   if(!isDay(day))return null
   return {runId:row.run_id,taskId:row.task_id,planId:row.plan_id,roleId:row.role_id,roleVersion:Number(row.role_version),day}
+ }
+
+ /** 已提交的真实日志及候选保存回执才是系统小结交付，habit观察绝不进入此路径。 */
+ async completeEvidenceInTransaction(db:PoolClient,ownerId:string,runId:string):Promise<RoleDailyLogCompletionEvidence|null>{
+  const who=await this.digestRun(ownerId,{runId},db)
+  if(!who)return null
+  const context=await new PlanOccurrenceService(this.pool,this.identity).executionContext(db,ownerId,who.taskId)
+  if(!context)return null
+  const stored=(await db.query('select * from teloa_plan_occurrences where owner_id=$1 and id=$2',[ownerId,context.occurrenceId])).rows[0]
+  if(!stored)return null
+  const occurrence=readStoredPlanOccurrence(stored)
+  if(occurrence.planId!==who.planId||occurrence.source.kind!=='system-digest'||occurrence.source.roleId!==who.roleId||occurrence.fields.roleId!==who.roleId||occurrence.roleVersion!==who.roleVersion)return null
+  const role=(await db.query('select definition from teloa_roles where owner_id=$1 and id=$2 for share',[ownerId,who.roleId])).rows[0]
+  if(!role||roleDefinition(role.definition).kind!=='employee')return null
+  const rows=(await db.query(selectLog(['request_id','request_spec'])+" where owner_id=$1 and run_id=$2 and kind='daily-digest' for share",[ownerId,runId])).rows
+  if(rows.length!==1)return null
+  const saved=rows[0],log=readLog(saved),spec=submission(saved.request_spec)
+  if(log.state!=='kept'||log.roleId!==who.roleId||log.roleVersion!==who.roleVersion||log.day!==who.day||log.runId!==runId||log.title!==spec.title||log.markdown!==spec.markdown||!uuid(saved.request_id))return null
+  const receiptIds=[saved.request_id]
+  for(const [index,candidate] of spec.candidates.entries()){
+   const row=(await db.query(`select c.memory_id,c.result,m.state,m.confirmed_at,m.source_snapshot,v.markdown,v.content_hash from teloa_role_memory_creations c
+    join teloa_role_memories m on m.owner_id=c.owner_id and m.id=c.memory_id
+    join teloa_role_memory_versions v on v.owner_id=m.owner_id and v.memory_id=m.id and v.number=1
+    where c.owner_id=$1 and c.request_id=$2 for share of c,m,v`,[ownerId,derivedRequestId(ownerId,who,index)])).rows[0]
+   if(!row||!uuid(row.memory_id)||!isRoleMemory(row.result)||row.result.id!==row.memory_id||row.result.ownerId!==ownerId||row.result.roleId!==who.roleId||row.result.roleVersion!==who.roleVersion||row.result.title!==candidate.title||row.result.content.version!==1||row.result.content.markdown!==candidate.markdown||row.markdown!==candidate.markdown||row.content_hash!==createHash('sha256').update(candidate.markdown).digest('hex')||row.result.visibility.kind!=='role'||JSON.stringify([...row.result.visibility.scopeIds].sort())!==JSON.stringify([...candidate.scopeIds].sort())||row.result.source.kind!=='daily-digest'||row.result.source.id!==log.id||row.result.source.version!==1||row.source_snapshot?.source?.kind!=='daily-digest'||row.source_snapshot.source.id!==log.id||row.confirmed_at===null||!['confirmed','withdrawn'].includes(row.state))return null
+   receiptIds.push(row.memory_id)
+  }
+  return {identity:who,log,receiptIds,contentHash:createHash('sha256').update(log.markdown).digest('hex')}
  }
 
  /** 任一类读不出即抛 `teloa/storage-corrupt`，不以空数组糊弄；五类全空抛 `teloa/source-unavailable`。 */

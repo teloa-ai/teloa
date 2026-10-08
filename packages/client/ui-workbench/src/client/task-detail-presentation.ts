@@ -1,3 +1,4 @@
+import type {TaskCompletionPolicy} from '@teloa/contract'
 import type {AttentionKind} from './task-preview.js'
 import type {TeloaTranslate} from './i18n/index.js'
 
@@ -37,8 +38,9 @@ const stateCopy={
 
 const key=(value:string)=>value as Parameters<TeloaTranslate>[0]
 
-export function describeTaskProgress(state:keyof typeof stateCopy,needs:readonly AttentionKind[],t?:TeloaTranslate):{title:string;description:string}{
+export function describeTaskProgress(state:keyof typeof stateCopy,needs:readonly AttentionKind[],t?:TeloaTranslate,completionPolicy?:TaskCompletionPolicy):{title:string;description:string}{
   const unique=[...new Set(needs)]
+  if(state==='waiting'&&completionPolicy?.kind==='verified'&&unique.every(need=>need==='review'))return t?{title:t('taskCompletion.verificationWaiting.title'),description:t('taskCompletion.verificationWaiting.description')}:{title:'本轮交付仍待核验',description:'自动结项条件尚未全部满足。核对运行、来源和正式成果；未收尾或结果未知的工作不会自动通过。'}
   if(unique.length===1){
     const need=unique[0]!
     if(need==='execution')return t?{title:t('plan.run.prepared'),description:t('security.attention.execution-required')}:singleNeed.execution

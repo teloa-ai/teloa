@@ -237,6 +237,21 @@ test('启动后核对实际装配的是受管提供方实例',async()=>{
  assert.throws(()=>composition.assertNativeInputProviders({get:name=>services[name]},{...compat}),NativeInputCompositionError)
 })
 
+test('常驻宿主的 Goal 驱动必须经固定兼容组合并实际绑定同一准入服务',async t=>{
+ const complete=compatibilityAPIs(),missing=structuredClone(complete)
+ delete missing['@deepseek-ai/dsh-goal-round-driver']
+ await assert.rejects(load({compatibilityAPIs:missing,requireGoal:true}),NativeInputCompositionError)
+ const compat=await load({compatibilityAPIs:complete,requireGoal:true}),rows=communityRows(),runtimeRoot=await temporary(t)
+ const composed=applyPatches(rows,await compose(rows,{providers:compat,runtimeRoot}))
+ const original=findRow(rows,'goal-round-driver'),managed=findRow(composed,'teloa-managed-goal-round-driver')
+ assert.equal(findRow(composed,'goal-round-driver')?.disabled,true)
+ assert.equal(managed?.name,'@teloa/harness-dsh/managed-goal-round-driver')
+ assert.deepEqual(managed?.config,original?.config)
+ const goal={admit:()=>{}},services={...managedServices(compat),teloaTaskRunGoal:goal,teloaManagedGoalRoundDriver:{version:1,goal}}
+ assert.doesNotThrow(()=>composition.assertNativeInputProviders({get:name=>Reflect.get(services,name)},compat))
+ assert.throws(()=>composition.assertNativeInputProviders({get:name=>name==='teloaManagedGoalRoundDriver'?{version:1,goal:{admit:()=>{}}}:Reflect.get(services,name)},compat),NativeInputCompositionError)
+})
+
 test('载体被改动或权限无效时，拒绝消息给出载体目录与恢复办法，删除后重新生成',async t=>{
  const compat=await providers(),rows=communityRows(),runtimeRoot=await temporary(t)
  const first=await compose(rows,{providers:compat,runtimeRoot}),directory=faceDirectory(applyPatches(rows,first)),base=dirname(directory)
@@ -361,8 +376,8 @@ test('浏览器面导出取值与官方 clientExportOf 逐条一致',async t=>{
  await assert.rejects(compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve:await installedPackage(t,root=>editManifest(root,manifest=>{manifest.exports={...manifest.exports as object,'./client':{default:'../outside.js'}}}))}),{name:'NativeInputCompositionError',message:/不在包内/})
 })
 
-test('社区版默认组合不调用该接口；同一提交内加载并调用接口不改变社区默认组合',async t=>{
- // 社区版自身的源码、组合补丁、启动脚本与容器配置都不引用该接口（各包测试目录与本接口的导出声明除外）。
+test('公共启动入口统一受管组合；调用接口不改写官方 profile 基础树',async t=>{
+ // 统一启动入口是唯一装配点，其他产品模块不复制插件行替换。
  // 跳过隐藏目录：其中只有其他测试并发创建、随即删除的临时目录与运行目录，不是源码。
  const files:string[]=[]
  const walk=async(directory:string)=>{
@@ -374,7 +389,9 @@ test('社区版默认组合不调用该接口；同一提交内加载并调用�
  }
  for(const directory of ['packages','scripts'])await walk(join(projectRoot,directory))
  files.push(join(projectRoot,'Dockerfile'),join(projectRoot,'compose.yaml'))
- const own=new Set([fileURLToPath(new URL('../src/native-input-composition.ts',import.meta.url)),fileURLToPath(new URL('../package.json',import.meta.url))])
+ const entry=join(projectRoot,'scripts/runtime/native-runtime-entry.mjs')
+ const own=new Set([fileURLToPath(new URL('../src/native-input-composition.ts',import.meta.url)),fileURLToPath(new URL('../package.json',import.meta.url)),entry])
+ assert.match(await readFile(entry,'utf8'),/composeNativeInput/)
  assert.ok(files.some(path=>path.includes('/packages/backend/'))&&files.some(path=>path.includes('/packages/client/')))
  for(const path of files.filter(path=>!own.has(path)))assert.doesNotMatch(await readFile(path,'utf8'),/native-input-composition|nativeInputCompos|composeNativeInput/,path)
  // 本进程加载接口并完成多次组合后，重算的社区默认组合与加载前的基线逐字节一致。

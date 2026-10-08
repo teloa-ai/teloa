@@ -46,6 +46,13 @@ test('任务进展固定文案随当前语言变化，待办类型保留语义',
   })
 })
 
+test('明确自动结项仍在等待时显示证据未齐，审批优先且不假报完成',()=>{
+ const policy={kind:'verified' as const,verifier:'system-digest' as const,verifierVersion:1,authorizationVersion:1}
+ assert.deepEqual(describeTaskProgress('waiting',['review'],undefined,policy),{title:'本轮交付仍待核验',description:'自动结项条件尚未全部满足。核对运行、来源和正式成果；未收尾或结果未知的工作不会自动通过。'})
+ assert.equal(describeTaskProgress('waiting',['approval'],undefined,policy).title,'等待你的审批决定')
+ assert.equal(describeTaskProgress('waiting',['review'],undefined,{kind:'manual'}).title,'等待你核对本轮结果')
+})
+
 test('接任表单只在真实待交接且用户主动展开后出现',()=>{
   assert.equal(shouldShowHandoffForm(false,false),false)
   assert.equal(shouldShowHandoffForm(false,true),false)

@@ -7,6 +7,7 @@ import {WorkError} from '@teloa/contract'
 import {readSessionEvents} from './session-events.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 import type {TaskRunRuntimeLinks,TaskRunRuntimeLink} from '@teloa/backend'
+import type {GoalObservationContext} from '@teloa/contract'
 type TaskRunJobLink=Extract<TaskRunRuntimeLink,{kind:'job'}>
 
 type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
@@ -25,7 +26,7 @@ export function isOwnerOnlyTextRun(run:TextBinding,rows:readonly TaskRunRuntimeL
  return row.kind==='job'&&row.payload.record==='owner'&&row.runId===run.id&&row.sessionId===run.sessionId&&row.payload.requestId===run.nativeRequestId&&row.payload.runtimeId!==runtimeId&&row.nativeId==='owner:'+row.payload.runtimeId+':'+run.sessionId
 }
 /** RC 的 Session.append 无法持久化外部 ignorable 事件，业务关联因此经窄端口落库。 */
-export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,admit?:(run:Binding)=>boolean,runtimeId:string=taskRunRuntimeId){
+export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,admit?:(run:Binding)=>boolean,runtimeId:string=taskRunRuntimeId,goalObservation?:(run:Binding,events:readonly import('@deepseek-ai/dsh-session').SessionEvent[])=>Promise<GoalObservationContext|undefined>){
  const bindings=new Map<string,Binding>(),pending=new Map<string,Promise<void>>()
  const recorded=new Map<string,JobStatus>(),failed=new Set<string>()
  const agentFor=(sessionId:string)=>{
@@ -50,10 +51,13 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
   if(!run)return
   const key=run.sessionId+':'+job.id,previous=recorded.get(key)
   if(previous===job.status)return
-  if(previous===undefined&&!(admit?.(run)??observeTaskRunTimeline(readSessionEvents(agentFor(run.sessionId).session),run.nativeRequestId).authorized))return
+  const events=previous===undefined?readSessionEvents(agentFor(run.sessionId).session):undefined
   recorded.set(key,job.status)
   const prior=pending.get(run.sessionId)??Promise.resolve()
-  const next=prior.then(()=>links.put({runId:run.id,kind:'job',nativeId:runtimeId+':'+job.id,sessionId:run.sessionId,payload:{record:'job',runtimeId,requestId:run.nativeRequestId,jobId:job.id,status:job.status}}))
+  const next=prior.then(async()=>{
+   if(events&&!(admit?.(run)??observeTaskRunTimeline(events,run.nativeRequestId,undefined,undefined,await goalObservation?.(run,events)).authorized)){recorded.delete(key);return}
+   await links.put({runId:run.id,kind:'job',nativeId:runtimeId+':'+job.id,sessionId:run.sessionId,payload:{record:'job',runtimeId,requestId:run.nativeRequestId,jobId:job.id,status:job.status}})
+  })
   pending.set(run.sessionId,next)
   next.catch(()=>failed.add(run.sessionId))
  }

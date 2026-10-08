@@ -1,12 +1,19 @@
 import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,isRoleMemory,roleMemorySource,taskInput} from '@teloa/contract'
+import {WorkError,isRoleMemory,roleMemorySource,taskInput,type DigitalRole} from '@teloa/contract'
 import {resolveSessionLineage,type LineageSession} from './subagent-lineage.ts'
 import type {RoleMemoryActor,TaskExecutionScope} from '@teloa/backend'
 
 export const roleMemoryEndpoints=['role-memory/list','role-memory/create','role-memory/confirm','role-memory/withdraw'] as const
+export const roleMemoryViewEndpoints=['role-memory-views/create','role-memory-views/read'] as const
 export const roleMemoryProposalToolName='teloa_role_memory_propose'
+/** 岗位记忆读口只接受已授权的范围选择，不把任务及原生会话载体作为读取权限。 */
+export function roleMemoryRunTarget(target:TaskExecutionScope,role:Pick<DigitalRole,'kind'>){
+ if(role.kind==='employee')return target.scope
+ if(target.groupId===undefined||target.memoryViewId===undefined)throw new WorkError('teloa/forbidden','分身记忆读取需要明确的群与视图选择。')
+ return {scope:target.scope,groupId:target.groupId,memoryViewId:target.memoryViewId}
+}
 type RoleMemoryOperations={
  list:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
  create:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
@@ -27,7 +34,18 @@ export function createRoleMemoryHandler(ownerId:string,get:()=>Promise<RoleMemor
  }
 }
 
-type RoleMemoryRunIdentity={id:string;roleId:string;roleVersion:number;sessionId:string;state:string}
+type RoleMemoryViewOperations={create:(ownerId:string,input:unknown)=>Promise<unknown>;read:(ownerId:string,input:unknown)=>Promise<unknown>}
+/** 只装配到已有本人认证 RPC，不注册为模型工具，也不接受调用方提供 owner。 */
+export function createRoleMemoryViewHandler(ownerId:string,get:()=>Promise<RoleMemoryViewOperations>){
+ return async(endpoint:string,payload:unknown)=>{
+  if(!(roleMemoryViewEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此共享记忆视图接口。')
+  taskInput(payload,endpoint==='role-memory-views/create'?['requestId','roleId','expectedRoleVersion','groupId','entries']:['viewId'])
+  const service=await get()
+  return endpoint==='role-memory-views/create'?service.create(ownerId,payload):service.read(ownerId,payload)
+ }
+}
+
+export type RoleMemoryRunIdentity={id:string;roleId:string;roleVersion:number;sessionId:string;state:string;roleSnapshot?:{kind:'employee'|'twin'}|null}
 export type RoleMemoryToolPorts={
  owner:string
  run:(sessionId:string)=>Promise<RoleMemoryRunIdentity|null>
@@ -53,6 +71,7 @@ async function authorize(ctx:Context,ports:RoleMemoryToolPorts,exec:{agent?:{ses
  try{root=resolveSessionLineage(ctx,exec.agent.session).root}catch{throw new WorkError('teloa/forbidden','无法核对当前会话的子 Agent 谱系。')}
  const run=await ports.run(root.id)
  if(!run||!uuid(run.id)||!uuid(run.roleId)||!positive(run.roleVersion)||run.sessionId!==root.id||!['accepted','active'].includes(run.state))throw new WorkError('teloa/forbidden','当前会话没有可核验的在运行员工。')
+ if(run.roleSnapshot&& !['employee','twin'].includes(run.roleSnapshot.kind))throw new WorkError('teloa/forbidden','当前运行岗位快照不完整。')
  const scope=await ports.scope(run.id)
  if(scope.sessionId!==run.sessionId||typeof scope.scope!=='string'||!scope.scope.trim())throw new WorkError('teloa/forbidden','当前运行员工与业务范围不一致。')
  return {run,scope}
@@ -68,9 +87,11 @@ export function registerRoleMemoryTools(ctx:Context,ports:RoleMemoryToolPorts){
   execute:async(args,exec)=>{
    const row=exact(args,['title','markdown','source']),source=roleMemorySource(row.source)
    if(source.kind==='self-feedback')throw new WorkError('teloa/forbidden','员工候选必须引用可核验来源。')
-   const {run,scope}=await authorize(ctx,ports,exec),requestId=requestIdentity(ports.owner,run.sessionId,String(exec.callId))
-   const memory=await ports.create({ownerId:ports.owner,kind:'agent',roleId:run.roleId},{requestId,roleId:run.roleId,expectedRoleVersion:run.roleVersion,title:row.title,markdown:row.markdown,source,visibility:{kind:'role',scopeIds:[scope.scope]}})
-   if(!isRoleMemory(memory)||memory.ownerId!==ports.owner||memory.roleId!==run.roleId||memory.roleVersion!==run.roleVersion||memory.state!=='candidate'||memory.proposedBy.kind!=='role'||memory.proposedBy.roleId!==run.roleId||memory.proposedBy.roleVersion!==run.roleVersion||memory.visibility.kind!=='role'||memory.visibility.scopeIds.length!==1||memory.visibility.scopeIds[0]!==scope.scope||JSON.stringify(memory.source)!==JSON.stringify(source))throw new WorkError('teloa/invalid-host-response','员工记忆服务返回了与当前运行身份不一致的候选。')
+   const {run,scope}=await authorize(ctx,ports,exec),requestId=requestIdentity(ports.owner,run.sessionId,String(exec.callId)),twin=run.roleSnapshot?.kind==='twin'
+   if(twin&&(source.kind!=='run'||source.id!==run.id||source.version!==1))throw new WorkError('teloa/forbidden','分身经验只能引用本次真实运行。')
+   const visibility=twin?{kind:'private' as const,scopeIds:[] as []}:{kind:'role' as const,scopeIds:[scope.scope]}
+   const memory=await ports.create({ownerId:ports.owner,kind:'agent',roleId:run.roleId},{requestId,roleId:run.roleId,expectedRoleVersion:run.roleVersion,title:row.title,markdown:row.markdown,source,visibility})
+   if(!isRoleMemory(memory)||memory.ownerId!==ports.owner||memory.roleId!==run.roleId||memory.roleVersion!==run.roleVersion||memory.state!=='candidate'||memory.proposedBy.kind!=='role'||memory.proposedBy.roleId!==run.roleId||memory.proposedBy.roleVersion!==run.roleVersion||memory.visibility.kind!==visibility.kind||JSON.stringify(memory.visibility.scopeIds)!==JSON.stringify(visibility.scopeIds)||JSON.stringify(memory.source)!==JSON.stringify(source))throw new WorkError('teloa/invalid-host-response','员工记忆服务返回了与当前运行身份不一致的候选。')
    return JSON.stringify({requestId,memory})
   },
  }))

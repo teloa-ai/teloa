@@ -1,8 +1,12 @@
 import {lockConversationTaskParent,assertConversationTaskOpen} from './conversation-work-task-protection.ts'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,groupDefinition,groupTaskCreateInput,isGroupMessage,isGroupTaskSource,normalizeReferences,type GroupMessage,type GroupTaskCreateInput,type GroupTaskSource,type WorkTask} from '@teloa/contract'
+import {WorkError,groupDefinition,groupTaskCreateInput,isGroupMessage,isGroupTaskSource,normalizeReferences,roleSupportsScope,type GroupMessage,type GroupTaskCreateInput,type GroupTaskSource,type WorkTask} from '@teloa/contract'
 import {groupTaskSourceDigest} from './group-task-source-digest.ts'
 import {readStoredTask,type TaskService} from './tasks.ts'
+import {lockRoleWorkRole,assertRoleWorkRole} from './twin-execution-consents.ts'
+import {readRoleWorkGroupGrant} from './role-delegations.ts'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
+import {readTrustedGroupMessageWorkSource} from './group-routing-outbox.ts'
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const ownerId=(value:string):void=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
@@ -77,6 +81,8 @@ export class GroupTaskService{
    }
    if((await client.query('select 1 from teloa_tasks where owner_id=$1 and request_id=$2',[owner,request.requestId])).rows[0])throw new WorkError('teloa/conflict','该请求已被其他任务使用。')
    assertConversationTaskOpen(parent)
+   // Task 创建会写负责人；在读取群前先锁角色，保持 role→group→Task 顺序。
+   const role=request.assignee?await lockRoleWorkRole(client,owner,request.assignee.roleId):null
    const groupRow=(await client.query('select * from teloa_groups where id=$1 and owner_id=$2 for share',[request.groupId,owner])).rows[0]
    if(!groupRow)throw new WorkError('teloa/forbidden','群不存在或不属于当前本人。')
    let scope:string
@@ -91,15 +97,21 @@ export class GroupTaskService{
     const root=(await client.query('select id,root_id from teloa_group_messages where id=$1 and group_id=$2 and owner_id=$3 for share',[rootId,request.groupId,owner])).rows[0]
     if(!root||root.root_id!==null)throw new WorkError('teloa/storage-corrupt','群话题根记录损坏，不能创建任务。')
    }
-   if(request.assignee){
-    const member=(await client.query('select 1 from teloa_group_members where group_id=$1 and owner_id=$2 and role_id=$3 for share',[request.groupId,owner,request.assignee.roleId])).rows[0]
-    if(!member)throw new WorkError('teloa/forbidden','负责人不是当前群的员工成员。')
+   let assignment:Awaited<ReturnType<typeof authorizeRoleTaskAssignment>>|undefined
+   if(role&&request.assignee){
+    assertRoleWorkRole(role,request.assignee.expectedVersion)
+    if(!roleSupportsScope(role.scopes,scope))throw new WorkError('teloa/forbidden','负责人不支持当前群业务范围。')
+    const grant=await readRoleWorkGroupGrant(client,owner,role,request.groupId,scope,role.kind==='twin'||(request.trigger??'manual')!=='manual')
+    if(message.references.some(reference=>!grant.resources.some(allowed=>allowed.kind===reference.kind&&allowed.id===reference.id&&allowed.version===reference.version)))throw new WorkError('teloa/forbidden','群消息包含未授予当前负责人的原件或版本。')
+    assignment=await authorizeRoleTaskAssignment(client,this.pool,owner,role,scope,request.groupId)
    }
-   const task=await this.tasks.createInTransaction(client,owner,{requestId:request.requestId,fields:{title:title(message.text),goal:request.goal,scope},...(request.assignee?{assignee:request.assignee}:{})})
+   // 只从本条持久 v2 Run 回复派生执行父关系；本人消息及旧消息沿独立根路径，不借话题 root 猜谱系。
+   const workSource=await readTrustedGroupMessageWorkSource(client,owner,{groupId:request.groupId,messageId:request.messageId},this.pool)
+   const task=await this.tasks.createInTransaction(client,owner,{requestId:request.requestId,fields:{title:title(message.text),goal:request.goal,scope,groupId:request.groupId},...(request.assignee?{assignee:request.assignee}:{})},workSource??undefined)
    const createdAt=this.identity.now(),source:GroupTaskSource={schema:'teloa.group-task-source/v1',taskId:task.id,ownerId:owner,groupId:request.groupId,groupVersion:groupRow.version as number,messageId:message.id,rootId,messageCreatedAt:message.createdAt,messageText:message.text,references:message.references.map(reference=>({...reference})),createdAssignee:request.assignee?{roleId:request.assignee.roleId,roleVersion:request.assignee.expectedVersion}:null,trigger:request.trigger??'manual',createdAt}
    await client.query(`insert into teloa_group_task_sources(task_id,owner_id,request_id,request_spec,group_id,group_version,message_id,root_id,source_snapshot,snapshot_digest,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[task.id,owner,request.requestId,spec,request.groupId,source.groupVersion,message.id,rootId,JSON.stringify(source),groupTaskSourceDigest(source),createdAt])
-   await client.query('commit');return {task,source}
+   assignment?.assertCurrent();await client.query('commit');return {task,source}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
 

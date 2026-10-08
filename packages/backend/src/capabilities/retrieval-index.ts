@@ -105,6 +105,14 @@ function sourceIds(input:unknown):string[]{
 }
 function profile(embedder:Embedder):string{if(!isRecord(embedder)||!hex64(embedder.profileHash)||typeof embedder.embed!=='function')throw bad('本地检索模型配置摘要不正确。');return embedder.profileHash}
 const within=(scopes:string[],allowed:readonly string[])=>scopes.every(scope=>allowed.includes(scope))
+/** 仅接受执行服务固定的资料许可；null沿原范围，空数组没有资料候选。 */
+function permittedKnowledgeIds(input:readonly string[]|null):string[]|null{
+ if(input===null)return null
+ if(!Array.isArray(input)||!input.every(id=>typeof id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)))throw bad('本次检索资料许可不正确。')
+ const ids=input.map(id=>id.toLowerCase())
+ if(new Set(ids).size!==ids.length)throw bad('本次检索资料许可不能重复。')
+ return ids
+}
 
 function encode(vector:Float32Array):Buffer{
  const buffer=Buffer.alloc(retrievalLimits.vectorBytes),view=new DataView(buffer.buffer,buffer.byteOffset,buffer.byteLength)
@@ -127,7 +135,7 @@ const candidateSql=(lock:boolean)=>`
  left join teloa_retrieval_indexes i on i.owner_id=r.owner_id and i.resource_id=r.id and i.resource_version=r.revision
   and i.source_id=e.source_id and i.source_version=r.spec->>'sourceVersion' and i.scope_ids=r.spec->'scopeIds'
   and i.profile_hash=$2 and i.chunker=$3
- where e.owner_id=$1 order by r.id${lock?' for share of r':''}`
+ where e.owner_id=$1 and ($4::uuid[] is null or r.id=any($4::uuid[])) order by r.id${lock?' for share of r':''}`
 
 export class RetrievalIndexService{
  private readonly pool:Pool
@@ -142,8 +150,8 @@ export class RetrievalIndexService{
   finally{client.release()}
  }
  private lockOwner(client:PoolClient,ownerId:string){return client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['retrieval-index',ownerId])])}
- private async candidates(client:PoolClient,ownerId:string,profileHash:string|null,lock=false):Promise<Candidate[]>{
-  return (await client.query(candidateSql(lock),[ownerId,profileHash,retrievalChunker])).rows.map(candidate)
+ private async candidates(client:PoolClient,ownerId:string,profileHash:string|null,lock=false,knowledgeIds:readonly string[]|null=null):Promise<Candidate[]>{
+  return (await client.query(candidateSql(lock),[ownerId,profileHash,retrievalChunker,knowledgeIds])).rows.map(candidate)
  }
  private async embed(embedder:Embedder,kind:'query'|'passage',texts:string[],signal:AbortSignal):Promise<Float32Array[]>{
   let vectors:unknown
@@ -182,13 +190,14 @@ export class RetrievalIndexService{
  }
 
  /** `profileHash` 为 null（模型配置未知）时没有可用索引，已加入的启用资料一律为 stale。 */
- async status(actor:ResourceActor,profileHash:string|null):Promise<RetrievalStatus>{
+ async status(actor:ResourceActor,profileHash:string|null,knowledgeIds:readonly string[]|null=null):Promise<RetrievalStatus>{
   authorizeResourceActor(actor)
   if(profileHash!==null&&!hex64(profileHash))throw bad('本地检索模型配置摘要不正确。')
+  const permitted=permittedKnowledgeIds(knowledgeIds)
   return this.tx(async client=>{
-   const rows=(await this.candidates(client,actor.ownerId,profileHash)).filter(row=>within(row.spec.scopeIds,actor.scopeIds))
+   const rows=(await this.candidates(client,actor.ownerId,profileHash,false,permitted)).filter(row=>within(row.spec.scopeIds,actor.scopeIds))
    const items:RetrievalStatusItem[]=rows.map(row=>({sourceId:row.spec.sourceId,resourceId:row.resourceId,title:row.spec.title,version:row.version,state:row.state??'stale',chunkCount:row.chunkCount}))
-   if(actor.kind!=='human')return {items}
+   if(actor.kind!=='human'||permitted!==null)return {items}
    const enrolled=(await client.query('select source_id from teloa_retrieval_enrollments where owner_id=$1 order by source_id',[actor.ownerId])).rows.map(row=>row.source_id as string)
    const active=new Set((await client.query(`select distinct spec->>'sourceId' as source_id from teloa_resources where owner_id=$1 and status='active'`,[actor.ownerId])).rows.map(row=>row.source_id as string))
    for(const sourceId of enrolled)if(!active.has(sourceId))items.push({sourceId,resourceId:null,title:null,version:null,state:'unavailable',chunkCount:null})
@@ -351,13 +360,14 @@ export class RetrievalIndexService{
   * 当前绑定下索引就绪的资料。暴力余弦取 top-K，再在同一事务内经 ResourceService 回读有界摘录。
   * 范围外资料既不进入 searched 也不进入 pending。
   */
- async search(actor:ResourceActor,targetScopes:string[],input:unknown,embedder:Embedder,signal:AbortSignal):Promise<RetrievalSearchResult>{
+ async search(actor:ResourceActor,targetScopes:string[],input:unknown,embedder:Embedder,signal:AbortSignal,knowledgeIds:readonly string[]|null=null):Promise<RetrievalSearchResult>{
   authorizeResourceActor(actor)
   // limit 只认缺省（undefined）：null 不是缺省，按格式错误拒绝（审查 LOW-3）。
   const row=exact(input,['query','limit']),query=row.query,limit=row.limit===undefined?defaultLimit:row.limit
   if(!resourceScopes(targetScopes)||typeof query!=='string'||!query.trim()||[...query].length>retrievalLimits.maxQueryChars||typeof limit!=='number'||!Number.isSafeInteger(limit)||limit<1||limit>retrievalLimits.maxResults)throw bad()
   profile(embedder)
   checkAbort(signal)
+  const permitted=permittedKnowledgeIds(knowledgeIds)
   const visible=(rows:Candidate[])=>rows.filter(row=>within(row.spec.scopeIds,actor.scopeIds)&&within(row.spec.scopeIds,targetScopes))
   const split=(rows:Candidate[])=>{
    const coverage:RetrievalCoverage={searched:[],pending:[],note:retrievalCoverageNote},ready:Candidate[]=[]
@@ -368,13 +378,13 @@ export class RetrievalIndexService{
    return {coverage,ready}
   }
   // 主体与范围核验之后、推理之前先看候选：范围内没有就绪索引就不推理（审查 LOW-3），覆盖说明照常给出。
-  const preview=split(visible(await this.tx(client=>this.candidates(client,actor.ownerId,embedder.profileHash))))
+  const preview=split(visible(await this.tx(client=>this.candidates(client,actor.ownerId,embedder.profileHash,false,permitted))))
   if(!preview.ready.length)return readRetrievalSearchResult({coverage:preview.coverage,results:[]})
   const [queryVector]=await this.embed(embedder,'query',[query],signal)
   checkAbort(signal)
   return this.tx(async client=>{
    // 推理期间不持有事务；进事务后按锁定行重读候选，撤回或改版以这次读到的为准。
-   const {coverage,ready}=split(visible(await this.candidates(client,actor.ownerId,embedder.profileHash,true)))
+   const {coverage,ready}=split(visible(await this.candidates(client,actor.ownerId,embedder.profileHash,true,permitted)))
    const loaded=await this.vectors(client,ready.map(row=>({id:row.indexId!,chunkCount:row.chunkCount!})))
    const top=rankRetrievalVectors(queryVector!,ready.map(row=>({row,index:loaded.get(row.indexId!)!})),limit)
    const excerpts=await this.resources.readExcerptsInTransaction(client,actor,targetScopes,top.map(hit=>({resourceId:hit.row.resourceId,resourceVersion:hit.row.version,sourceVersion:hit.row.spec.sourceVersion,chars:[hit.chunk.start,hit.chunk.end]})))

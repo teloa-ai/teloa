@@ -1,15 +1,15 @@
 import {WorkError,type WorkCapability,type SessionCapabilitySnapshot} from '@teloa/contract'
 
 export type {WorkCapability} from '@teloa/contract'
-export type SessionCapabilityProducer='prompt'|'queue'|'subagent'|'schedule'|'task-run'|'restore'
+export type SessionCapabilityProducer='prompt'|'queue'|'subagent'|'schedule'|'goal'|'task-run'|'restore'
 export type SessionCapabilityReader=(sessionId:string,producer:SessionCapabilityProducer)=>Promise<Readonly<{ownerId:string;capabilities:readonly WorkCapability[]}>>
 /** 由服务端已核验的持久身份构造；不接收客户端许可、版本或商业主体。 */
 export type WorkAccessRequest=
  |{kind:'capability';capability:WorkCapability;ownerId:string;sessionId:string|null;objectId:string|null;operation:'create'|'edit'|'run'|'resume'}
  |{kind:'task-run-start';ownerId:string;runId:string;taskId:string;sessionId:string;nativeRequestId:string}
  |{kind:'conversation-work-reserve';ownerId:string;requestId:string;sessionId:string}
- |{kind:'plan-occurrence';ownerId:string;planId:string;occurrenceId:string;source:'manual'|'schedule'}
- |{kind:'native-input';sessionId:string;messageId:string;nativeRequestId:string|null;payloadSha256:string;producer:'prompt'|'queue'|'subagent'|'schedule'|'task-run';contextSha256:string}
+ |{kind:'plan-occurrence';ownerId:string;planId:string;occurrenceId:string;source:'manual'|'schedule'|'local-event'}
+ |{kind:'native-input';sessionId:string;messageId:string;nativeRequestId:string|null;payloadSha256:string;producer:'prompt'|'queue'|'subagent'|'schedule'|'goal'|'task-run';contextSha256:string}
 /** 续作复核由策略区分；未提供时保持新工作复核语义。 */
 export type WorkAccessLease={assertCurrent:()=>void;assertContinuationCurrent?:()=>void;releaseUnaccepted?:()=>void}
 export type WorkAccessPolicy=(request:Readonly<WorkAccessRequest>)=>Promise<WorkAccessLease>

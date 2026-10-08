@@ -8,6 +8,8 @@ export type ResourceSourceContext={actor:ResourceActor;client?:PoolClient;scopeI
 export interface ResourceSourceCatalog {
   list(context?:ResourceSourceContext):Promise<{schema:'teloa.reference-list/v1';references:SourceReference[]}>
   read(id:string,version:string,context?:ResourceSourceContext):ReturnType<ReferenceCatalog['read']>
+  /** 原件监听仅核对指定来源，不能用全目录读取代替单资料授权。 */
+  current?(id:string,context:ResourceSourceContext):Promise<SourceReference>
   /** 可选：不读正文，按来源登记给出字节数，键为 `id@version`；主体无权或版本不符的不给。 */
   sizes?(refs:readonly {id:string;version:string}[],context:ResourceSourceContext):Promise<Map<string,number>>
 }
@@ -81,6 +83,22 @@ export class ResourceService {
     catch(error){if(error instanceof WorkError)throw error;if(error instanceof ReferenceError&&error.code==='reference/version-conflict')throw new WorkError('teloa/version-conflict','来源内容已变化，请核对新版本后重新提交资料。');throw new WorkError('teloa/source-unavailable','资料来源当前不可读取。')}
   }
   async sourceDirectory(actor:ResourceActor){authorizeResourceActor(actor);try{return (await this.sources.list({actor})).references}catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/source-unavailable','受控资料来源当前不可读取。')}}
+  /** 宿主已确认的长期资料监听专用；不接受浏览器给出的版本或正文，不扩大原授权范围。 */
+  async refreshAuthorizedLocalVersionInTransaction(client:PoolClient,actor:ResourceActor,id:string):Promise<WorkResource>{
+    authorizeResourceActor(actor)
+    if(!resourceId(id))throw badInput()
+    const current=await this.resource(client,actor,id,'update')
+    if(current.status!=='active')throw new WorkError('teloa/forbidden','资料已撤回，不能继续监听。')
+    const context={actor,client,scopeIds:current.scopeIds}
+    if(current.sourceId.startsWith('local_material_')&&!this.sources.current)throw new WorkError('teloa/unavailable','本机原件的指定来源读取尚未就绪。')
+    const source=this.sources.current?await this.sources.current(current.sourceId,context):(await this.sources.list(context)).references.find(row=>row.id===current.sourceId)
+    // 知识投影沿原知识编辑事务改版；本机监听不能代替该保存/审批入口。
+    if(!source||source.knowledge)throw new WorkError('teloa/forbidden','仅已授权本机原件可自动登记版本事件。')
+    if(source.version===current.sourceVersion)return current
+    const next=spec({title:current.title,sourceId:current.sourceId,sourceVersion:source.version,scopeIds:current.scopeIds})
+    await this.source(next,actor,client)
+    return resourceRow((await client.query('update teloa_resources set spec=$3,revision=revision+1,updated_at=$4 where owner_id=$1 and id=$2 returning *',[actor.ownerId,id,JSON.stringify(next),this.identity.now()])).rows[0])
+  }
   async create(actor:ResourceActor,input:unknown):Promise<ResourceDraft>{
     const data=object(input,['requestId',...specKeys]),value=spec(data)
     if(!resourceId(data.requestId))throw badInput()
@@ -177,6 +195,19 @@ export class ResourceService {
   async getResource(actor:ResourceActor,input:unknown):Promise<WorkResource>{
     authorizeResourceActor(actor);const data=object(input,['resourceId']);if(!resourceId(data.resourceId))throw badInput()
     return this.tx(client=>this.resource(client,actor,data.resourceId as string))
+  }
+  /** 本人预览已确认加入的本机原件；固定版本读取，不更新正文或扩大资料范围。 */
+  async readContent(actor:ResourceActor,input:unknown):Promise<{resource:WorkResource;text:string}>{
+    authorizeResourceActor(actor,actor.ownerId,[],true)
+    const data=object(input,['resourceId','expectedVersion','sourceVersion']),{id,version}=expected(data,'resourceId')
+    if(typeof data.sourceVersion!=='string'||!/^[a-f0-9]{64}$/.test(data.sourceVersion))throw badInput()
+    return this.tx(async client=>{
+      const resource=await this.resource(client,actor,id)
+      if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','资料已撤回，请先核对资料状态。')
+      if(resource.version!==version||resource.sourceVersion!==data.sourceVersion)throw new WorkError('teloa/version-conflict','资料已更新，请刷新后查看当前内容。')
+      if(!resource.sourceId.startsWith('local_material_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件。')
+      return {resource,text:await this.source(resource,actor,client)}
+    })
   }
   /** 按来源登记的字节数给出资料体积（资源 ID → 字节），不读正文；来源不登记字节数的资料不在结果里。 */
   async fullTextBytes(actor:ResourceActor,resources:readonly WorkResource[]):Promise<Map<string,number>>{

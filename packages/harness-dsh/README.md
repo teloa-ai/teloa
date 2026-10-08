@@ -10,7 +10,9 @@ Teloa 社区版的 DSH 适配包：任务执行、授权检查以及宿主装配
 
 本接口把三件事放在一处：兼容能力核对、行替换补丁、浏览器面载体。替换声明了浏览器面的官方行时一定同时插入载体行，组合完成后再按同一发现规则核对，缺失就拒绝启动。
 
-**社区版自身不调用本接口。** 社区版保留官方会话控制器行，不启用原生输入准入，组合结果不变。
+社区版的源码、npm 与容器启动入口统一在官方 profile 基础树上调用本接口，启用受管会话控制器、子工作与 Goal 续轮；消费核心的宿主复用相同接口。组合在私有运行副本中应用，不修改官方安装包或基础 profile。
+
+本版 Goal 自动续轮绑定同事或分身的 TaskRun，并核对岗位授权、当前执行轮和持久受理票据。普通本人会话保留目标只读查询；`create_goal`、`update_goal` 在工具体之前拒绝，需从任务入口开始持续工作。本版不另建普通会话 Goal 的执行、预算或恢复体系。
 
 ### 调用顺序
 
@@ -26,7 +28,7 @@ import {
 if (nativeInputCompositionVersion !== 1) throw new Error('核心的原生输入组合接口版本不符。')
 
 // 1. 启动早期：核对兼容能力，再导入受管提供方
-const providers = await loadNativeInputProviders({compatibilityAPIs})
+const providers = await loadNativeInputProviders({compatibilityAPIs, requireGoal: true})
 
 // 2. 按官方补丁算法得到完整生效树，生成组合补丁并追加到宿主覆盖补丁末尾
 const rows = applyEntryPatches([], readProfilePatches('dsh', {...profileContext, overlays}), fail)
@@ -45,10 +47,10 @@ assertNativeInputProviders(ctx, providers)
 
 | 接口 | 说明 |
 | --- | --- |
-| `loadNativeInputProviders({compatibilityAPIs, requireCheckpoint?})` | `compatibilityAPIs` 是宿主已核对并应用的官方兼容补丁清单，形如 `{[包名]: 清单 api}`。缺少 `nativeInputRequiredAPIs` 中任一能力时拒绝（`requireCheckpoint: true` 时还要求 `nativeInputCheckpointAPIs`），消息列出包名与缺少的能力名，此时不导入任何执行模块。返回冻结的 `{input, controller, subagent, recoveryCandidate?}`，只有这个返回值能用于后续两步。 |
+| `loadNativeInputProviders({compatibilityAPIs, requireCheckpoint?, requireGoal?})` | `compatibilityAPIs` 是宿主已核对并应用的官方兼容补丁清单，形如 `{[包名]: 清单 api}`。缺少 `nativeInputRequiredAPIs` 中任一能力时拒绝；`requireCheckpoint: true` 还要求 `nativeInputCheckpointAPIs`，`requireGoal: true` 还要求 `nativeInputGoalAPIs`。消息列出包名与缺少的能力名，此时不导入任何执行模块。返回冻结的 `{input, controller, subagent, recoveryCandidate?, goal?}`，只有这个返回值能用于后续两步。 |
 | `composeNativeInput(rows, {providers, runtimeRoot, inputProvider?, resolve?})` | `rows` 是官方 `applyEntryPatches` 得到的完整生效树（含父组），不会被修改。返回补丁列表，下表列出它生成的行。`runtimeRoot` 是宿主私有运行目录，必须已存在且为规范绝对路径。`inputProvider` 可换成宿主自己的原生输入提供方模块（例如配置了持久确认的包装）。`resolve` 用于解析实际安装的官方包，默认按本包依赖解析，与受管类继承的官方类同源。 |
 | `assertNativeInputClientFaces(finalRows, {resolve?})` | 只读核对。被替换的官方包若声明了浏览器面，启用行中必须恰好有一个按官方发现规则提供它的来源。相对路径入口依赖所属子树的解析基址，不计入。 |
-| `assertNativeInputProviders(ctx, providers, {resolve?})` | 实际装配的 `teloaNativeInput`、`sessionController`、`subagents` 必须是受管提供方或其子类。组合里有浏览器端（存在官方 `clientModules` 服务）时，还核对它的模块表含被替换官方包的浏览器面：宿主漏做组合后核对时，这里是第二道失败关闭。没有浏览器组合时不做这一项。 |
+| `assertNativeInputProviders(ctx, providers, {resolve?})` | 实际装配的 `teloaNativeInput`、`sessionController`、`subagents` 必须是受管提供方或其子类。启用 `requireGoal` 时，还核对实际 `teloaManagedGoalRoundDriver` 与当前 `teloaTaskRunGoal` 是同一提供方。组合里有浏览器端（存在官方 `clientModules` 服务）时，还核对它的模块表含被替换官方包的浏览器面：宿主漏做组合后核对时，这里是第二道失败关闭。没有浏览器组合时不做这一项。 |
 
 ### 生成的行
 
@@ -58,6 +60,7 @@ assertNativeInputProviders(ctx, providers)
 | `agent-loop` | 依赖追加 `teloaNativeInput`（数组、对象、缺省三种形态都支持）；保留原配置并设 `requireRestoreAdmission: true`。 |
 | `typert-loader` | `packages` 追加两个官方包名：官方加载器不从子路径入口发现远程调用描述，这里沿用原包的描述。 |
 | `session-controller`、`subagent` | 官方行停用；在原父组插入 `teloa-managed-session-controller`、`teloa-managed-subagent`，保留原配置与依赖。 |
+| `goal-round-driver` | 启用 `requireGoal` 时，官方行停用；在原父组插入 `teloa-managed-goal-round-driver`，保留原配置与依赖。使用核心持久 Goal 准入，不复制官方目标领域与模型循环。 |
 | `teloa-client-face-session-controller` | 浏览器面载体，与受管行在同一组，但独立成行。官方包没有声明浏览器面时不生成，目前子代理就是这种情况。 |
 
 组合树里已有上述保留行编号，或官方行缺失、重复、被停用、带启用条件、已被替换时，一律拒绝。同一棵树不能组合两次。
@@ -93,4 +96,4 @@ assertNativeInputProviders(ctx, providers)
 
 ## English
 
-`@teloa/harness-dsh/native-input-composition` is a host-side composition API for hosts that enable native input admission by replacing the official session controller and subagent host rows with the managed providers from this package. DSH client-module discovery reads `dsh.client` only from the package root of each enabled row, so a bare row replacement drops the official browser face (the workbench `sessions` service). The API centralizes the compatibility check (`loadNativeInputProviders`), the row replacement patches including the `typert-loader` package list (`composeNativeInput`), and a carrier package for the browser face, generated from the actually installed, patched official package (its `exports["./client"]` entry is read exactly as the official discovery reads it: a string, or an object's string `default`) and always inserted as its own row whenever a row that declares a browser face is replaced. After all overlays, `assertNativeInputClientFaces` verifies that exactly one enabled source provides each replaced browser face; `assertNativeInputProviders` verifies the booted services and, when the composition has a browser side, checks the official `clientModules` graph as a second fail-closed guard. Every failure throws `NativeInputCompositionError` with a stated reason so the host can refuse to start; carrier failures name the directory, which can be deleted (once no evidence needs to be kept) to regenerate it on the next start. Stale `.staging-*` directories older than one hour are removed after a successful composition; carrier directories for older digests are left to the host's retention policy. The community edition itself does not call this API, and its composition is unchanged. See the migration steps above for hosts that maintain their own copies.
+`@teloa/harness-dsh/native-input-composition` is a host-side composition API for hosts that enable native input admission by replacing the official session controller and subagent host rows with the managed providers from this package. DSH client-module discovery reads `dsh.client` only from the package root of each enabled row, so a bare row replacement drops the official browser face (the workbench `sessions` service). The API centralizes the compatibility check (`loadNativeInputProviders`), the row replacement patches including the `typert-loader` package list (`composeNativeInput`), and a carrier package for the browser face, generated from the actually installed, patched official package (its `exports["./client"]` entry is read exactly as the official discovery reads it: a string, or an object's string `default`) and always inserted as its own row whenever a row that declares a browser face is replaced. After all overlays, `assertNativeInputClientFaces` verifies that exactly one enabled source provides each replaced browser face; `assertNativeInputProviders` verifies the booted services and, when the composition has a browser side, checks the official `clientModules` graph as a second fail-closed guard. Every failure throws `NativeInputCompositionError` with a stated reason so the host can refuse to start; carrier failures name the directory, which can be deleted (once no evidence needs to be kept) to regenerate it on the next start. Stale `.staging-*` directories older than one hour are removed after a successful composition; carrier directories for older digests are left to the host's retention policy. Community source, npm, and container entry points also use this API on the official profile tree. Hosts enabling goal continuation pass `requireGoal: true`, declare `nativeInputGoalAPIs` in the applied compatibility list, and provide the current `teloaTaskRunGoal` before the managed round driver starts; startup verifies their shared identity. Official package copies and client-face carriers remain in the private runtime directory. See the migration steps above for hosts that maintain their own copies.

@@ -33,6 +33,16 @@ test('发送接收与日志恢复分离，取消信号不领取发送权',async(
  assert.equal(f.sends(),1)
 })
 
+test('实际 Flow 等待保持业务 Run 活跃，停止收尾不将等待当作原生活动',async()=>{
+ const f=fixture();await f.driver.start('owner',{runId:'run'},new AbortController().signal)
+ f.events([{seq:0,time:0,type:'turn/start',data:{turn:0}},{seq:1,time:1,type:'user/message',surfaceOp:'append',data:{source:{kind:'user',rpcId:'native'},content:[],id:'fixed',role:'user'}},{seq:2,time:2,type:'turn/end',data:{turn:0,reason:{kind:'completed'}}}] as SessionEvent[])
+ f.driver.ports.flowState=async()=> 'outstanding'
+ assert.equal((await f.driver.reconcile('owner',{runId:'run'})).state,'active')
+ f.driver.ports.controlState=async()=> 'stopping'
+ assert.equal((await f.driver.stop('owner',{runId:'run'},new AbortController().signal)).state,'ended')
+ assert.equal(f.stops(),1)
+})
+
 test('旧世代只有 owner 关联的纯文本 Run 从固定原生完成轮恢复，带工具能力仍视为中断',async()=>{
  const answer=createAssistantMessage({source:{provider:'test',model:'test'},content:[{type:'text',text:'固定结论'}]})
  const events=[
@@ -324,6 +334,14 @@ test('提交未知核验中有未完后台工作，原生completed只能记activ
  await assert.rejects(f.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/execution-pending'})
  assert.deepEqual(f.run().evidence,{state:'active',turn:0,messageSeq:1})
  assert.equal(f.sends(),1)
+})
+
+test('本轮已暂停时原生 aborted 或宿主旧世代不终结业务 Run，恢复不重放原请求',async()=>{
+ const f=fixture();await f.driver.start('owner',{runId:'run'},new AbortController().signal)
+ f.events([{seq:0,time:0,type:'turn/start',data:{turn:0}},{seq:1,time:1,type:'user/message',surfaceOp:'append',data:{source:{kind:'user',rpcId:'native'},content:[],id:'fixed',role:'user'}},{seq:2,time:2,type:'turn/end',data:{turn:0,reason:{kind:'aborted',reason:{kind:'user'}}}}] as SessionEvent[])
+ f.driver.ports.controlState=async()=> 'paused';f.driver.ports.backgroundState=async()=>({outstanding:false,interrupted:true})
+ assert.equal((await f.driver.reconcile('owner',{runId:'run'})).state,'accepted');assert.equal(f.run().stopRequestedAt,null)
+ await f.driver.start('owner',{runId:'run'},new AbortController().signal);assert.equal(f.sends(),1)
 })
 
 test('提交未知的核验读取或持久化失败不伪造收口，不掩盖原需核对状态',async()=>{

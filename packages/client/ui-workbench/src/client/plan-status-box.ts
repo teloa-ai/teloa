@@ -8,7 +8,7 @@ export type PlanStatusAction={kind:'trigger'}|{kind:'pause'}|{kind:'resume'}|{ki
 export type PlanStatusButton={label:string;action:PlanStatusAction}
 export type PlanStatusBoxModel={tone:'info'|'warn'|'good'|'muted';sentence:string;detail?:string;hint?:string;primary?:PlanStatusButton;secondary?:PlanStatusButton}
 export type PlanStatusInput={
- plan:{state:SavedPlan['state'];trigger:PlanTrigger}
+ plan:{state:SavedPlan['state'];trigger:PlanTrigger;workDefinition?:SavedPlan['workDefinition']}
  schedule:PlanScheduleSummary|undefined
  skips:readonly PlanScheduleSkip[]
  latestExecution:PlanExecutionHistoryItem|null
@@ -51,6 +51,11 @@ export function planStatusBox(input:PlanStatusInput):PlanStatusBoxModel{
   }
  }
  if(latestExecution?.run?.state==='configuration_failed'&&latestExecution.task)return {tone:'warn',sentence:t('plan.status.configFailed'),detail:t('plan.run.configurationFailed'),primary:{label:t('plan.status.action.rePrepare'),action:{kind:'open-task',taskId:latestExecution.task.id}}}
+ if(plan.workDefinition&&!plan.workDefinition.triggers.some(trigger=>trigger.kind==='schedule')){
+  const task=overview?.latest?.task
+  if(task&&task.state!=='completed'&&task.state!=='cancelled')return {tone:'info',sentence:t('planWork.waitingCurrent'),primary:{label:t('plan.status.action.openTask'),action:{kind:'open-task',taskId:task.id}},secondary:pause}
+  return {tone:'info',sentence:t('planWork.waitingEvent'),secondary:pause}
+ }
  if(overview?.nextAt)return {tone:'good',sentence:t('plan.status.active',{time:stamp(overview.nextAt),timezone}),primary:trigger,secondary:pause}
  return {tone:'info',sentence:t('plan.status.activeNoNext'),...(schedule?.available?{detail:t('continuous.detail.status.noSummary')}:{}),primary:trigger,secondary:pause}
 }

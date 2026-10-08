@@ -3,6 +3,8 @@ import {WorkError,roleSupportsScope,groupAgentGrantChangeInput,groupAgentGrantGe
 import {readActiveAttachment} from './group-attachments.ts'
 import {readStoredRole} from './roles.ts'
 import {workAccess} from './work-access.ts'
+import {authorizeTwinGroupActivation,readCurrentTwinDelegationAuthorization} from './role-task-authorization.ts'
+import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 
 /** 只保证这个值能进 uuid 列，不限版本位与变体位（与 `group-run-messages.ts:9` 同口径）。 */
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)
@@ -57,7 +59,9 @@ export class GroupAgentGrantService{
    // `not-granted` 必须配 `grant:null`，`contract/src/collaboration.ts:295`），没有行才是 `not-granted`；本人因此看得到、也撤得掉历史遗留行。
    const row=(await client.query('select * from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for share',[request.groupId,request.roleId])).rows[0]
    const grant=row?readGroupAgentGrant(row):null
-   const status=context.scopeSupported?this.status(context,grant,grant?await this.resourcesAvailable(client,owner,request.groupId,grant.resources):true):grant?'invalidated':'not-granted'
+   let executionReady=true
+   if(context.role.kind==='twin'&&grant?.canAutoRun){try{await readCurrentTwinDelegationAuthorization(client,owner,context.role,context.scope,request.groupId)}catch(error){if(!(error instanceof WorkError)||!['teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/invalid-input'].includes(error.code))throw error;executionReady=false}}
+   const status=context.scopeSupported?this.status(context,grant,grant?await this.resourcesAvailable(client,owner,request.groupId,grant.resources):true,executionReady):grant?'invalidated':'not-granted'
    const result={groupVersion:context.groupVersion,roleVersion:context.roleVersion,grant,status}
    if(!isGroupAgentGrantRead(result))throw new WorkError('teloa/storage-corrupt','群员工授权状态损坏。')
    await client.query('commit')
@@ -80,10 +84,12 @@ export class GroupAgentGrantService{
    }
    const context=await this.context(client,owner,request.groupId,request.roleId,'update')
    if(context.groupVersion!==request.expectedGroupVersion||context.roleVersion!==request.expectedRoleVersion)throw new WorkError('teloa/version-conflict','群或员工已变化，请重新核对授权。')
+   let execution:{assertCurrent:()=>void}|undefined
    if(request.action==='save'){
     if(!context.scopeSupported)throw new WorkError('teloa/forbidden','员工不在本群业务范围内，不能授权。')
     if(context.archived)throw new WorkError('teloa/conflict','已归档群不能新增员工授权。')
-    if(context.roleState!=='active'||context.roleKind!=='employee')throw new WorkError('teloa/conflict','只有当前在岗的员工可以获得群授权。')
+    if(context.roleState!=='active')throw new WorkError('teloa/conflict','只有当前在岗的同事可以获得群授权。')
+    if(context.roleKind==='twin'&&request.canAutoRun)execution=await authorizeTwinGroupActivation(client,this.pool,owner,context.role,context.scope,request.groupId)
     await this.assertResources(client,owner,request.groupId,request.resources)
    }else if(!context.scopeSupported&&!(await client.query('select 1 from teloa_group_agent_grants where group_id=$1 and role_id=$2 limit 1 for update',[request.groupId,request.roleId])).rows[0]){
     // 本群授权不了的岗位本来就没有落点：不给它凭空落一行 `revoked`。已有行（历史遗留）照常可撤。
@@ -92,36 +98,38 @@ export class GroupAgentGrantService{
    const previous=(await client.query('select grant_version from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for update',[request.groupId,request.roleId])).rows[0]
    const grantVersion=previous?(previous.grant_version as number)+1:1
    const admission=request.action==='save'?await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:request.groupId,operation:'edit'}):undefined
-   admission?.assertCurrent()
+   admission?.assertCurrent();execution?.assertCurrent()
    const saved=await client.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,[request.groupId,owner,request.roleId,grantVersion,context.groupVersion,context.roleVersion,request.action==='save'?'active':'revoked',JSON.stringify(request.resources),request.canPost,request.canAutoRun,request.requestId,spec,this.now()])
    const result=readGroupAgentGrant(saved.rows[0])
-   admission?.assertCurrent()
+   admission?.assertCurrent();execution?.assertCurrent()
    await client.query('commit')
+   invalidateRoleWorkEligibility(owner,context.role.id)
    return result
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
 
  private async context(client:PoolClient,owner:string,groupId:string,roleId:string,lock:'share'|'update'){
+  // 与 TaskRun 的 role→task→group 及群编辑保持同一顺序。
+  const roleRow=(await client.query(`select * from teloa_roles where id=$1 and owner_id=$2 for ${lock}`,[roleId,owner])).rows[0]
+  if(!roleRow)throw new WorkError('teloa/forbidden','同事不存在或不属于当前本人。')
+  const role=readStoredRole(roleRow)
   const groupRow=(await client.query(`select * from teloa_groups where id=$1 and owner_id=$2 for ${lock}`,[groupId,owner])).rows[0]
   if(!groupRow)throw new WorkError('teloa/forbidden','群不存在或不属于当前本人。')
   let scope:string
   try{scope=groupDefinition(groupRow.definition).scope}catch{throw new WorkError('teloa/storage-corrupt','群定义记录损坏，不能读取授权。')}
   if(!Number.isSafeInteger(groupRow.version)||(groupRow.version as number)<1||typeof groupRow.archived!=='boolean')throw new WorkError('teloa/storage-corrupt','群版本或归档状态损坏。')
-  const roleRow=(await client.query(`select * from teloa_roles where id=$1 and owner_id=$2 for ${lock}`,[roleId,owner])).rows[0]
-  if(!roleRow)throw new WorkError('teloa/forbidden','员工不存在或不属于当前本人。')
-  const role=readStoredRole(roleRow)
   const member=(await client.query('select 1 from teloa_group_members where group_id=$1 and owner_id=$2 and role_id=$3 for share',[groupId,owner,roleId])).rows[0]
   if(!member)throw new WorkError('teloa/forbidden','员工不是当前群成员。')
   // 范围不支持不是数据损坏：群成员可以来自任何业务范围（`collaboration.ts` 的 `validateMembers`，用户裁定 B），
   // 只是这位员工在本群拿不到授权。读口据此呈现「未授权」，写口据此拒绝保存，都不再把合法数据当损坏。
-  return {groupVersion:groupRow.version as number,roleVersion:role.version,archived:groupRow.archived as boolean,roleState:role.state,roleKind:role.kind,scopeSupported:roleSupportsScope(role.scopes,scope)}
+  return {role,scope,groupVersion:groupRow.version as number,roleVersion:role.version,archived:groupRow.archived as boolean,roleState:role.state,roleKind:role.kind,scopeSupported:roleSupportsScope(role.scopes,scope)}
  }
 
- private status(context:{groupVersion:number;roleVersion:number;archived:boolean;roleState:string;roleKind:string},grant:GroupAgentGrant|null,resourcesAvailable:boolean):GroupAgentGrantRead['status']{
+ private status(context:{groupVersion:number;roleVersion:number;archived:boolean;roleState:string;roleKind:string},grant:GroupAgentGrant|null,resourcesAvailable:boolean,executionReady:boolean):GroupAgentGrantRead['status']{
   if(!grant)return 'not-granted'
   if(grant.state==='revoked')return 'revoked'
-  if(grant.groupVersion!==context.groupVersion||grant.roleVersion!==context.roleVersion||context.archived||context.roleState!=='active'||context.roleKind!=='employee'||!resourcesAvailable)return 'invalidated'
+  if(grant.groupVersion!==context.groupVersion||grant.roleVersion!==context.roleVersion||context.archived||context.roleState!=='active'||!resourcesAvailable||!executionReady)return 'invalidated'
   return 'active'
  }
 

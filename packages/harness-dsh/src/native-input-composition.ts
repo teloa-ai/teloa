@@ -1,5 +1,5 @@
 /**
- * 原生输入组合：供启用原生输入准入的宿主在启动前调用，社区版自身组合不调用。
+ * 原生输入组合：社区版与消费核心的宿主在启动前统一调用。
  *
  * 宿主要把官方会话控制器与子代理的宿主行换成本包的受管提供方。官方客户端发现
  * （dsh-client-modules）只读启用行入口所在包根的 `dsh.client`；受管行的入口是本包子路径，
@@ -17,6 +17,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url'
 import type {SessionController} from '@deepseek-ai/dsh-api-session-controller'
 import type {SubagentRuntime} from '@deepseek-ai/dsh-subagent'
 import type {TeloaNativeInput,nativeInputRecoveryCandidate} from './native-input-provider.ts'
+import type {createTaskRunGoal} from './task-run-goal.ts'
 
 /** 宿主据此确认所加载的核心提供本接口及以下语义。 */
 export const nativeInputCompositionVersion=1
@@ -49,6 +50,7 @@ export const nativeInputRequiredAPIs=table({
 export const nativeInputCheckpointAPIs=table({
  '@deepseek-ai/dsh-agent-loop':['AgentLoop.requireInputCheckpoint','AgentLoop.installInputCheckpoint','AgentLoop.requireProgressCheckpoint','AgentLoop.installProgressCheckpoint'],
 })
+export const nativeInputGoalAPIs=table({'@deepseek-ai/dsh-goal-round-driver':['GoalInputAdmission','GoalRoundDriverOptions','requireGoalInputAdmission','installGoalInputAdmission']})
 
 export type NativeInputProviders=Readonly<{
  input:typeof TeloaNativeInput
@@ -56,11 +58,13 @@ export type NativeInputProviders=Readonly<{
  subagent:typeof SubagentRuntime
  /** 仅在 requireCheckpoint 时提供：只读的冷恢复候选筛选。 */
  recoveryCandidate?:typeof nativeInputRecoveryCandidate
+ goal?:typeof createTaskRunGoal
 }>
 export type NativeInputLoadOptions=Readonly<{
  /** 宿主已核对并应用的官方兼容补丁清单：包名 → 清单 `api`。 */
  compatibilityAPIs:unknown
  requireCheckpoint?:boolean
+ requireGoal?:boolean
 }>
 /** 只有经本模块兼容核对后导入的提供方才能用于组合与启动核对。 */
 const loaded=new WeakSet<object>()
@@ -72,9 +76,11 @@ const loaded=new WeakSet<object>()
 export async function loadNativeInputProviders(options:NativeInputLoadOptions):Promise<NativeInputProviders>{
  const requireCheckpoint:unknown=options?.requireCheckpoint===undefined?false:options.requireCheckpoint
  if(typeof requireCheckpoint!=='boolean')throw refuse('持久确认选项无效。')
+ const requireGoal=options?.requireGoal??false
+ if(typeof requireGoal!=='boolean')throw refuse('Goal 准入选项无效。')
  const apis=options?.compatibilityAPIs
  if(!record(apis))throw refuse('宿主没有提供已应用的官方兼容能力清单。')
- for(const required of requireCheckpoint?[nativeInputRequiredAPIs,nativeInputCheckpointAPIs]:[nativeInputRequiredAPIs]){
+ for(const required of [nativeInputRequiredAPIs,...requireCheckpoint?[nativeInputCheckpointAPIs]:[],...requireGoal?[nativeInputGoalAPIs]:[]]){
   for(const [name,names] of Object.entries(required)){
    const declared=Object.hasOwn(apis,name)?apis[name]:undefined
    const missing=Array.isArray(declared)?names.filter(api=>!declared.includes(api)):names
@@ -83,7 +89,8 @@ export async function loadNativeInputProviders(options:NativeInputLoadOptions):P
  }
  const [input,controller,subagent]=await Promise.all([import('./native-input-provider.ts'),import('./managed-session-controller.ts'),import('./managed-subagent.ts')])
  const base={input:input.TeloaNativeInput,controller:controller.ManagedSessionController,subagent:subagent.ManagedSubagentRuntime}
- const providers:NativeInputProviders=Object.freeze(requireCheckpoint?{...base,recoveryCandidate:input.nativeInputRecoveryCandidate}:base)
+ const goal=requireGoal?(await import('./task-run-goal.ts')).createTaskRunGoal:undefined
+ const providers:NativeInputProviders=Object.freeze({...base,...requireCheckpoint?{recoveryCandidate:input.nativeInputRecoveryCandidate}:{},...goal?{goal}:{}})
  loaded.add(providers)
  return providers
 }
@@ -96,8 +103,9 @@ const providerRows:readonly Provider[]=[
  {id:'session-controller',source:'@deepseek-ai/dsh-api-session-controller',target:'teloa-managed-session-controller',name:'@teloa/harness-dsh/managed-session-controller',face:'teloa-client-face-session-controller',label:'会话控制器'},
  {id:'subagent',source:'@deepseek-ai/dsh-subagent',target:'teloa-managed-subagent',name:'@teloa/harness-dsh/managed-subagent',face:'teloa-client-face-subagent',label:'子代理'},
 ]
+const goalProvider:Provider={id:'goal-round-driver',source:'@deepseek-ai/dsh-goal-round-driver',target:'teloa-managed-goal-round-driver',name:'@teloa/harness-dsh/managed-goal-round-driver',face:'teloa-client-face-goal-round-driver',label:'目标续轮'}
 const inputRowId='teloa-native-input'
-const reserved=new Set([inputRowId,...providerRows.flatMap(row=>[row.target,row.face])])
+const reserved=new Set([inputRowId,...[...providerRows,goalProvider].flatMap(row=>[row.target,row.face])])
 const moduleRequire=createRequire(import.meta.url)
 const defaultResolve:Resolve=specifier=>moduleRequire.resolve(specifier)
 
@@ -124,6 +132,7 @@ export async function composeNativeInput(rows:readonly unknown[],options:NativeI
  const inputProvider=options.inputProvider??'@teloa/harness-dsh/native-input-provider'
  if(typeof inputProvider!=='string'||!inputProvider)throw refuse('原生输入准入服务的模块名无效。')
  const runtimeRoot=await canonicalRoot(options.runtimeRoot),resolve=options.resolve??defaultResolve
+ const rowsToReplace=options.providers.goal?[...providerRows,goalProvider]:providerRows
  const tree=indexRows(rows)
  const loop=only(tree,'agent-loop','@deepseek-ai/dsh-agent-loop','代理循环').row
  const loopConfig=loop.config??{}
@@ -138,7 +147,7 @@ export async function composeNativeInput(rows:readonly unknown[],options:NativeI
   // 官方加载器不从子路径入口发现远程调用描述，显式沿用原包生成的描述。
   {id:'typert-loader',name:'@deepseek-ai/dsh-typert-loader',config:{...structuredClone(loaderConfig),packages:[...new Set([...listed as string[],...providerRows.map(row=>row.source)])]}},
  ]
- const placements=providerRows.map(provider=>{
+ const placements=rowsToReplace.map(provider=>{
   const found=only(tree,provider.id,provider.source,provider.label)
   if(found.parent!==undefined&&tree.get(found.parent)?.length!==1)throw refuse('官方'+provider.label+'行所在的组不唯一（'+provider.id+'）。')
   const placement=found.parent===undefined?{}:{id:found.parent}
@@ -180,6 +189,7 @@ export function assertNativeInputProviders(ctx:Readonly<{get:(name:string)=>unkn
  if(!loaded.has(providers))throw refuse('提供方未经兼容核对。')
  const expected=[['teloaNativeInput',providers.input,'原生输入准入服务'],['sessionController',providers.controller,'会话控制器'],['subagents',providers.subagent,'子代理']] as const
  for(const [service,type,label] of expected)if(!(ctx.get(service) instanceof type))throw refuse('启动后的'+label+'不是受管提供方。')
+ if(providers.goal){const goal=ctx.get('teloaTaskRunGoal'),driver=ctx.get('teloaManagedGoalRoundDriver');if(!record(goal)||typeof goal.admit!=='function'||!record(driver)||driver.goal!==goal||driver.version!==1)throw refuse('启动后的目标续轮不是受管提供方。')}
  const modules=ctx.get('clientModules')
  if(modules===undefined)return
  const ids=clientModuleIds(modules),resolve=options?.resolve??defaultResolve

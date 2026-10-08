@@ -116,7 +116,7 @@ export async function prepareRuntimeProfile(layout){
  for(const directory of [layout.dshHome,layout.runtimeRoot,layout.workspaceRoot]){
   await mkdir(directory,{recursive:true,mode:0o700})
  }
- const require=createRequire(join(layout.programRoot,'package.json'))
+ const program=createRequire(join(layout.programRoot,'package.json')),require=createRequire(program.resolve('@deepseek-ai/dsh/package.json'))
  const sdk=await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-app-boot')).href)
  const profileDir=join(layout.dshHome,'profiles',layout.profileName)
  sdk.initProfile(profileDir,sdk.PROFILE_TEMPLATES.web.bundles)
@@ -141,7 +141,6 @@ export async function prepareRuntimeProfile(layout){
 }
 
 export function launchRuntime(layout,{port}){
- const require=createRequire(join(layout.programRoot,'package.json'))
- const executable=join(require.resolve('@deepseek-ai/dsh/package.json'),'../lib/bin.js')
+ const executable=join(layout.programRoot,'scripts/runtime/native-runtime-entry.mjs')
  return spawn(process.execPath,[executable,'--profile',layout.profileName,'--no-open','--host','127.0.0.1','--port',String(port)],{cwd:layout.workspaceRoot,env:runtimeEnvironment(layout),stdio:['ignore','pipe','pipe']})
 }

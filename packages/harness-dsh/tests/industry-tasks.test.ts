@@ -25,6 +25,18 @@ const snapshot={loadId,itemInstanceId,itemLocalId:'research',contentId:requestId
 const fixed={...snapshot,taskId:requestId,ownerId:'owner',inputs:['资料'],createdAssignee:null,createdAt:stamp}
 const task={id:requestId,ownerId:'owner',title:'本人修改的标题',goal:'本人修改的目标',scope:snapshot.scope,groupId:null,skills:[],version:3,state:'cancelled',assigneeRoleId:null,assigneeRoleVersion:null,createdAt:stamp,updatedAt:stamp}
 const input={requestId,loadId,itemInstanceId,goal:'核对',inputs:[' 资料 ']}
+test('行业任务内容版本与完成策略兼容旧回包并严格读取新增字段',async()=>{
+ const read=(value:unknown)=>createIndustryTasksHandler('owner',async()=>({preview:async()=>snapshot,create:async()=>({task:value,source:fixed}),source:async()=>fixed}))('industry-tasks/create',input)
+ assert.deepEqual(await read(task),{task,source:fixed})
+ for(const completionPolicy of [{kind:'manual'},{kind:'verified',verifier:'system-digest',verifierVersion:1,authorizationVersion:2}]){
+  const current={...task,contentVersion:2,completionPolicy};assert.deepEqual(await read(current),{task:current,source:fixed})
+ }
+ for(const fields of [
+  ...[null,0,-1,1.5,'2',Number.MAX_SAFE_INTEGER+1].map(contentVersion=>({contentVersion})),
+  ...[null,{kind:'manual',extra:true},{kind:'verified',verifier:'unknown',verifierVersion:1,authorizationVersion:1},{kind:'verified',verifier:'system-digest',verifierVersion:0,authorizationVersion:1},{kind:'verified',verifier:'system-digest',verifierVersion:1}].map(completionPolicy=>({completionPolicy})),
+  {unexpected:true},
+ ])await assert.rejects(read({...task,...fields}),{code:'teloa/invalid-host-response'})
+})
 test('固定来源与当前合法编辑任务分别读取，拒绝错误身份、声明授权及坏快照',async()=>{
  const calls:unknown[][]=[]
  const handler=createIndustryTasksHandler('owner',async()=>({preview:async()=>snapshot,create:async(...args)=>{calls.push(args);return {task,source:fixed}},source:async()=>fixed}))

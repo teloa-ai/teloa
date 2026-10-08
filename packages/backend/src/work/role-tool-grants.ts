@@ -3,6 +3,8 @@ import {WorkError,taskInput,readTaskToolArgumentRules,type TaskToolArgumentRule,
 import {readStoredRole} from './roles.ts'
 import {renewRoleGrants} from './collaboration.ts'
 import {workAccess} from './work-access.ts'
+import {assertRoleDelegationsInactive} from './role-delegations.ts'
+import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 export type RoleToolGrant={roleId:string;roleVersion:number;state:'active'|'revoked';rules:TaskToolArgumentRule[];createdAt:string}
 export async function initializeRoleToolGrants(pool:Pool){await pool.query(`create table if not exists teloa_role_tool_grants(
  role_id uuid not null references teloa_roles(id),base_version integer not null check(base_version>0),
@@ -56,7 +58,10 @@ export class RoleToolGrantService{
     await db.query('commit');return receipt
    }
    if(role.version!==row.expectedRoleVersion)throw new WorkError('teloa/version-conflict','员工已变化，请重新读取。')
-   if(row.action==='save'&&(role.state!=='paused'||role.kind!=='employee'))throw new WorkError('teloa/conflict','请暂停员工后配置工具授权。')
+   if(role.kind==='twin'){
+    if(role.state!=='active')throw new WorkError('teloa/conflict','分身身份需保持在岗，请停用执行委托后配置工具。')
+    await assertRoleDelegationsInactive(db,owner,role)
+   }else if(row.action==='save'&&role.state!=='paused')throw new WorkError('teloa/conflict','请暂停员工后配置工具授权。')
    if(row.action==='save')await this.validate(db,owner,role,rules)
    const admission=row.action==='save'?await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:role.id,operation:'edit'}):undefined
    admission?.assertCurrent()
@@ -66,7 +71,7 @@ export class RoleToolGrantService{
    // 保存与撤销都把岗位版本 +1，群授权因此整体判 `invalidated`（与改岗位定义、恢复在岗同一根因）。
    // 撤销这一支在岗时也能调：不续签的话，本人在岗位详情里撤一次工具授权，就停掉了他在所有群的直接回应。
    await renewRoleGrants(db,owner,readStoredRole(bumped.rows[0]),now)
-   const result=readRoleToolGrant(saved.rows[0]);admission?.assertCurrent();await db.query('commit');return result
+   const result=readRoleToolGrant(saved.rows[0]);invalidateRoleWorkEligibility(owner,role.id);admission?.assertCurrent();await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
 }

@@ -9,11 +9,11 @@ const exact=(value:unknown,keys:readonly string[],optional:readonly string[]=[])
 const invalid=()=>new WorkError('teloa/invalid-host-response','群消息任务回包与原请求不一致。')
 
 function task(value:unknown,owner:string):WorkTask{
- const row=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills'])
+ const row=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills','contentVersion','completionPolicy'])
  let definition:ReturnType<typeof taskDefinition>
- try{definition=taskDefinition({title:row.title,goal:row.goal,scope:row.scope,groupId:row.groupId,skills:row.skills})}catch{throw invalid()}
- if(!uuid(row.id)||row.ownerId!==owner||!positive(row.version)||!workTaskStates.includes(row.state as never)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||(row.assigneeRoleId===null?row.assigneeRoleVersion!==null:!uuid(row.assigneeRoleId)||!positive(row.assigneeRoleVersion)))throw invalid()
- return {...definition,id:row.id,ownerId:owner,version:row.version as number,state:row.state as WorkTask['state'],assigneeRoleId:row.assigneeRoleId as string|null,assigneeRoleVersion:row.assigneeRoleVersion as number|null,createdAt:row.createdAt as string,updatedAt:row.updatedAt as string}
+ try{definition=taskDefinition({title:row.title,goal:row.goal,scope:row.scope,groupId:row.groupId,skills:row.skills,completionPolicy:row.completionPolicy})}catch{throw invalid()}
+ if(!uuid(row.id)||row.ownerId!==owner||!positive(row.version)||(row.contentVersion!==undefined&&!positive(row.contentVersion))||!workTaskStates.includes(row.state as never)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||(row.assigneeRoleId===null?row.assigneeRoleVersion!==null:!uuid(row.assigneeRoleId)||!positive(row.assigneeRoleVersion)))throw invalid()
+ return {...definition,id:row.id,ownerId:owner,version:row.version as number,...(row.contentVersion!==undefined?{contentVersion:row.contentVersion as number}:{}),state:row.state as WorkTask['state'],assigneeRoleId:row.assigneeRoleId as string|null,assigneeRoleVersion:row.assigneeRoleVersion as number|null,createdAt:row.createdAt as string,updatedAt:row.updatedAt as string}
 }
 
 function source(value:unknown,owner:string):GroupTaskSource{

@@ -1,9 +1,8 @@
-import type {PreviewRole} from './role-preview.js'
+import {canReceiveTask,type PreviewRole} from './role-preview.ts'
 import type {PreviewTask} from './task-preview.js'
 import type {BusinessTaskSource} from './business-task-api.ts'
 import {objectRefTarget,type ObjectRef} from './business-preview.ts'
 import {Fragment,createElement,type ReactNode} from 'react'
-import {roleSupportsScope} from '@teloa/contract'
 
 export type BusinessTaskMode='real'|'sandbox'
 
@@ -41,7 +40,7 @@ export function withBusinessTaskSource(task:PreviewTask,source:BusinessTaskSourc
 /**
  * 可接任务的候选人只按当前对象所属业务范围筛选；动作可用性已经在业务台账层决定。
  */
-export const persistentBusinessTaskAssignees=(roles:readonly PreviewRole[],scope:string)=>roles.filter(role=>role.storage==='persistent'&&role.kind==='employee'&&role.state==='active'&&roleSupportsScope(role.scopes,scope))
+export const persistentBusinessTaskAssignees=(roles:readonly PreviewRole[],scope:string)=>roles.filter(role=>role.storage==='persistent'&&canReceiveTask(role,scope))
 
 
 export const businessTasksForMode=(tasks:readonly PreviewTask[],scope:string,mode:BusinessTaskMode)=>tasks.filter(task=>task.scope===scope&&(mode==='real'?task.storage==='persistent':task.storage!=='persistent'))

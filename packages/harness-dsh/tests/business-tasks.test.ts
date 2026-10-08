@@ -11,6 +11,19 @@ const createInput={requestId,reference,goal:'调查'}
 const item=(task:unknown,source:unknown)=>({task,source,progress:null,completion:null})
 const withFacts=(response:any)=>({...response,...(response.items?{items:response.items.map((row:any)=>({...row,progress:null,completion:null}))}:{})})
 
+test('业务任务内容版本与完成策略兼容旧回包并严格读取新增字段',async()=>{
+ const read=(value:unknown)=>createBusinessTaskHandler('local:owner',async()=>['SOC'],async()=>({create:async()=>({task:value,source})}) as never)('business-tasks/create',createInput)
+ assert.deepEqual(await read(task),{task,source})
+ for(const completionPolicy of [{kind:'manual'},{kind:'verified',verifier:'system-digest',verifierVersion:1,authorizationVersion:2}]){
+  const current={...task,contentVersion:2,completionPolicy};assert.deepEqual(await read(current),{task:current,source})
+ }
+ for(const fields of [
+  ...[null,0,-1,1.5,'2',Number.MAX_SAFE_INTEGER+1].map(contentVersion=>({contentVersion})),
+  ...[null,{kind:'manual',extra:true},{kind:'verified',verifier:'unknown',verifierVersion:1,authorizationVersion:1},{kind:'verified',verifier:'system-digest',verifierVersion:0,authorizationVersion:1},{kind:'verified',verifier:'system-digest',verifierVersion:1}].map(completionPolicy=>({completionPolicy})),
+  {unexpected:true},
+ ])await assert.rejects(read({...task,...fields}),{code:'teloa/invalid-host-response'})
+})
+
 test('宿主装配复用台账的已登记业务范围读取器',()=>{
  const source=readFileSync(new URL('../src/index.ts',import.meta.url),'utf8')
  assert.match(source,/createBusinessTaskHandler\(owner,businessScopeIds,async\(\)=>/)

@@ -9,6 +9,7 @@ import {readStoredRole} from './roles.ts'
 import {readStoredTask} from './tasks.ts'
 import {runEvidence} from './task-run-evidence.ts'
 import {groupContextNotice,groupPartialAttachFailedNotice,readRunGroupContext,readStoredRunGroupContext,runGroupContextHash,type RunGroupFilePorts} from './task-run-group-context.ts'
+export type GroupRunMessageRoutingPorts={recordRunMessage:(db:PoolClient,owner:string,input:{messageId:string;runId:string})=>Promise<void>;recordWake:(db:PoolClient,owner:string,input:{messageId:string;groupId:string})=>Promise<void>}
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const ownerId=(value:string):void=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
@@ -81,7 +82,8 @@ export class GroupRunMessageService{
  readonly identity:{id:()=>string;now:()=>string}
  readonly artifacts:GroupRunArtifactPorts|undefined
  readonly files:RunGroupFilePorts|undefined
- constructor(pool:Pool,identity:{id:()=>string;now:()=>string},artifacts?:GroupRunArtifactPorts,files?:RunGroupFilePorts){this.pool=pool;this.identity=identity;this.artifacts=artifacts;this.files=files}
+ readonly routing:GroupRunMessageRoutingPorts|undefined
+ constructor(pool:Pool,identity:{id:()=>string;now:()=>string},artifacts?:GroupRunArtifactPorts,files?:RunGroupFilePorts,routing?:GroupRunMessageRoutingPorts){this.pool=pool;this.identity=identity;this.artifacts=artifacts;this.files=files;this.routing=routing}
 
  /**
   * 声明的文件逐条现读、核对后落快照；核对不过的只剔除该条并记一次宿主日志，绝不因此丢掉已确认的正文。
@@ -156,13 +158,15 @@ export class GroupRunMessageService{
     if(!prior.same_request)throw new WorkError('teloa/conflict','同一员工回传请求不能更换内容。')
     const message=readMessage(prior)
     if(!('runId' in message)||message.runId!==request.runId)throw new WorkError('teloa/storage-corrupt','员工回传幂等记录与运行不一致。')
+    // 历史消息重放只补持久唤醒；不凭新代码替旧消息补造原本没有的作者/谱系快照。
+    await this.routing?.recordWake(client,owner,{messageId:message.id,groupId:message.groupId})
     await client.query('commit');return message
    }
    const taskRow=(await client.query('select * from teloa_tasks where id=$1 and owner_id=$2 for share',[context.taskId,owner])).rows[0]
    const roleRow=(await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[context.roleId,owner])).rows[0]
    if(!taskRow||!roleRow)throw new WorkError('teloa/forbidden','任务或员工已不存在，不能回传群消息。')
    const task=readStoredTask(taskRow),role=readStoredRole(roleRow)
-   const current=await readRunGroupContext(client,owner,task,role,this.files)
+   const current=await readRunGroupContext(client,owner,task,role,this.files,this.pool)
    if(!current||JSON.stringify(current)!==JSON.stringify(context))throw new WorkError('teloa/version-conflict','群任务授权或资料已变化，不能回传群消息。')
    const grantRow=(await client.query('select * from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for share',[context.groupId,context.roleId])).rows[0]
    if(!grantRow)throw new WorkError('teloa/forbidden','员工没有当前群内发言授权。')
@@ -186,6 +190,7 @@ export class GroupRunMessageService{
    const saved=await client.query(`insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,task_id,run_id,text,reference_snapshot,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,[this.identity.id(),owner,context.groupId,request.requestId,spec,context.source.rootId,context.roleId,context.taskId,request.runId,text,JSON.stringify(references),now])
    const message=readMessage(saved.rows[0])
+   await this.routing?.recordRunMessage(client,owner,{messageId:message.id,runId:request.runId})
    await client.query('commit');return message
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }

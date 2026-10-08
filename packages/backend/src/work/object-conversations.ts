@@ -3,6 +3,9 @@ import {WorkError,taskInput} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
 import {readStoredRole} from './roles.ts'
 import {workAccess} from './work-access.ts'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
+import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
+import {readRoleWorkAuthorization} from './run-role-snapshot.ts'
 type Kind='task'|'role'
 export type ObjectConversation={kind:Kind;objectId:string;objectVersion:number;conversationId:string;sessionId:string;version:number;active:boolean;updatedAt:string;scopeId:string|null}
 type Inspect=(owner:string,sessionId:string)=>Promise<{id:string;sessionId:string;ownerId:string;status:string}>
@@ -46,16 +49,26 @@ export class ObjectConversationService{
   if(!session(row.sessionId)||!positive(row.expectedTaskVersion))throw new WorkError('teloa/invalid-input','任务会话或版本不合法。')
   const db=await this.pool.connect()
   try{
-   await db.query('begin isolation level repeatable read read only')
+   // 执行资格复用当前角色/授权行锁；只读上下文不新增或续签本人许可。
+   await db.query('begin isolation level repeatable read')
    const tasks=await db.query('select * from teloa_tasks where owner_id=$1 and id=$2',[owner,row.taskId]);if(!tasks.rows[0])throw new WorkError('teloa/forbidden','任务不存在或不属于本人。')
    const task=readStoredTask(tasks.rows[0]);if(task.version!==row.expectedTaskVersion)throw new WorkError('teloa/version-conflict','任务目标或负责人已变化，请刷新任务。')
    if(['completed','cancelled'].includes(task.state))throw new WorkError('teloa/conflict','已结束任务不能准备新的执行上下文。')
    const links=await db.query("select * from teloa_object_conversations where owner_id=$1 and kind='task' and object_id=$2 and session_id=$3",[owner,task.id,row.sessionId]);if(!links.rows[0])throw new WorkError('teloa/forbidden','会话未关联此任务。')
    const link=read(links.rows[0]);if(!link.active)throw new WorkError('teloa/forbidden','任务会话关联已解除。')
    const conversation=await this.inspect(owner,row.sessionId);if(conversation.ownerId!==owner||conversation.status!=='ready'||conversation.id!==link.conversationId||conversation.sessionId!==link.sessionId)throw new WorkError('teloa/forbidden','会话身份或状态不匹配。')
-   let role=null
-   if(task.assigneeRoleId){const roles=await db.query('select * from teloa_roles where owner_id=$1 and id=$2',[owner,task.assigneeRoleId]);if(!roles.rows[0])throw new WorkError('teloa/storage-corrupt','负责员工缺失。');role=readStoredRole(roles.rows[0]);if(role.state!=='active'||role.kind!=='employee'||!role.scopes.includes(task.scope))throw new WorkError('teloa/conflict','负责员工当前不能接续此任务，请处理员工状态或交接。')}
-   await db.query('commit');return {task,role,link}
+   let role=null,admission:{assertCurrent:()=>void}|undefined
+   if(task.assigneeRoleId){
+    const roles=await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,task.assigneeRoleId]);if(!roles.rows[0])throw new WorkError('teloa/storage-corrupt','负责同事缺失。')
+    role=readStoredRole(roles.rows[0])
+    if(role.kind==='twin'){
+     // 消费任务首次创建固定的授权；单任务本人确认不能被替换成新的长期委托。
+     const authorization=tasks.rows[0].execution_authorization==null?{kind:'task' as const,taskId:task.id,taskContentVersion:task.contentVersion??1}:readRoleWorkAuthorization(tasks.rows[0].execution_authorization)
+     if(authorization.kind==='task'&&authorization.taskId!==task.id)throw new WorkError('teloa/storage-corrupt','任务执行授权与原任务身份不一致。')
+     admission=await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:role.id,expectedRoleVersion:task.assigneeRoleVersion!,scope:task.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:task.groupId},db)
+    }else admission=await authorizeRoleTaskAssignment(db,this.pool,owner,role,task.scope)
+   }
+   admission?.assertCurrent();await db.query('commit');admission?.assertCurrent();return {task,role,link}
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
  async list(owner:string,input:unknown):Promise<ObjectConversation[]>{

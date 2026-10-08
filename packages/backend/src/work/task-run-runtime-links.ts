@@ -89,10 +89,13 @@ export class TaskRunRuntimeLinkService{
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async list(owner:string,input:unknown):Promise<TaskRunRuntimeLink[]>{
+  return this.listInTransaction(this.pool,owner,input)
+ }
+ async listInTransaction(db:Pick<Pool,'query'>,owner:string,input:unknown):Promise<TaskRunRuntimeLink[]>{
   actor(owner);const row=taskInput(input,['runId','kind'])
   if(!uuid(row.runId)||(row.kind!==undefined&&row.kind!=='job'&&row.kind!=='team'&&row.kind!=='browser'))throw invalid()
-  const run=await this.pool.query('select 1 from teloa_task_runs where owner_id=$1 and id=$2',[owner,row.runId])
+  const run=await db.query('select 1 from teloa_task_runs where owner_id=$1 and id=$2',[owner,row.runId])
   if(!run.rowCount)throw new WorkError('teloa/forbidden','执行不属于本人。')
-  return (await this.pool.query('select * from teloa_task_run_runtime_links where owner_id=$1 and run_id=$2 and ($3::text is null or kind=$3) order by kind,native_id',[owner,row.runId,row.kind??null])).rows.map(stored)
+  return (await db.query('select * from teloa_task_run_runtime_links where owner_id=$1 and run_id=$2 and ($3::text is null or kind=$3) order by kind,native_id',[owner,row.runId,row.kind??null])).rows.map(stored)
  }
 }

@@ -6,6 +6,7 @@ import {WorkError,roleSupportsScope,groupChangeInput,groupCreateInput,groupDefin
 import {readActiveAttachment} from './group-attachments.ts'
 import {readGroupAgentGrant} from './group-agent-grants.ts'
 import {readStoredRole} from './roles.ts'
+import {authorizeRoleTaskAssignment,readCurrentTwinDelegationAuthorization} from './role-task-authorization.ts'
 
 /** 只保证这个值能进 uuid 列，不限版本位与变体位（与 `group-run-messages.ts:9` 同口径）。 */
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)
@@ -195,9 +196,10 @@ export async function initializeCollaboration(pool:Pool):Promise<void>{
 
 export class CollaborationService{
   readonly pool:Pool
+  readonly routing:{recordWake:(db:PoolClient,owner:string,input:{groupId:string;messageId:string})=>Promise<void>}|undefined
   readonly identity:{id:()=>string;now:()=>string}
 
-  constructor(pool:Pool,identity:{id:()=>string;now:()=>string}){this.pool=pool;this.identity=identity}
+  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},routing?:CollaborationService['routing']){this.pool=pool;this.identity=identity;this.routing=routing}
 
   async list(owner:string,input:unknown):Promise<Group[]>{
     ownerId(owner)
@@ -262,10 +264,12 @@ export class CollaborationService{
         await client.query('commit')
         return result
       }
+      const lockedRoles=await this.lockMemberRoles(client,owner,request.groupId,request.fields.memberRoleIds)
       const found=await client.query('select * from teloa_groups where id=$1 and owner_id=$2 for update',[request.groupId,owner])
       if(!found.rows[0])throw new WorkError('teloa/forbidden','群不存在或不属于当前本人。')
       const current=readGroup(found.rows[0])
       if(current.version!==request.expectedVersion)throw new WorkError('teloa/version-conflict','群设置已变化，请刷新后核对。')
+      if(groupDefinition(found.rows[0].definition).memberRoleIds.some(id=>!lockedRoles.includes(id)))throw new WorkError('teloa/version-conflict','群成员已变化，请重新核对。')
       await this.validateMembers(client,owner,request.fields.memberRoleIds)
       const definition:GroupDefinition={name:request.fields.name,scope:current.scope,announcement:request.fields.announcement,rules:{...request.fields.rules},memberRoleIds:[...request.fields.memberRoleIds]}
       const now=this.identity.now()
@@ -295,9 +299,11 @@ export class CollaborationService{
       if(prior.rows[0]){
         if(!prior.rows[0].same_request)throw new WorkError('teloa/conflict','同一消息请求不能更换内容。')
         const message=readMessage(prior.rows[0])
+        await this.routing?.recordWake(client,owner,{groupId:message.groupId,messageId:message.id})
         await client.query('commit')
         return message
       }
+      if(request.mentions?.length)await client.query('select id from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id for update',[owner,[...new Set(request.mentions.map(mention=>mention.roleId))].sort()])
       const found=await client.query('select * from teloa_groups where id=$1 and owner_id=$2 for share',[request.groupId,owner])
       if(!found.rows[0])throw new WorkError('teloa/forbidden','不能向非本人群发送消息。')
       const group=readGroup(found.rows[0])
@@ -305,11 +311,12 @@ export class CollaborationService{
       if(group.archived)throw new WorkError('teloa/conflict','已归档群不能发送新消息。')
       if(request.rootId!==undefined)await this.assertRoot(client,owner,group.id,request.rootId)
       await this.assertReferences(client,owner,group.id,request.references??[])
-      await this.assertMentions(client,owner,group.id,request.mentions??[])
+      await this.assertMentions(client,owner,group.id,group.scope,request.mentions??[])
       const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:group.id,operation:'run'})
       admission.assertCurrent()
       const now=this.identity.now(),saved=await client.query("insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,text,reference_snapshot,mention_snapshot,created_at) values($1,$2,$3,$4,$5,$6,'self',$7,$8,$9,$10) returning *",[this.identity.id(),owner,group.id,request.requestId,spec,request.rootId??null,request.text,JSON.stringify(request.references??[]),JSON.stringify(request.mentions??[]),now])
       const message=readMessage(saved.rows[0])
+      await this.routing?.recordWake(client,owner,{groupId:message.groupId,messageId:message.id})
       admission.assertCurrent()
       await client.query('commit')
       return message
@@ -433,9 +440,9 @@ export class CollaborationService{
   /**
    * 给 `groupGrantBackfillCutoff` 之前建的群补签默认授权（2026-09-21 用户裁定）：默认签发只在建群与改成员那一笔跑，
    * 更早建的群一行授权都没有，群里发消息因此恒判 `no-candidate`。每群的员工成员走既有 `grantMembers`——
-   * 它对「已有任何一版授权行」「分身 / 非在岗 / 范围不支持」一律跳过，所以重复调用不会签出第二行、也不复活已撤销的那一版。
+   * 它对「已有任何一版授权行」「非在岗 / 范围不支持」一律跳过；Twin 只补 canAutoRun=false，不授予执行许可。
    * **一群一个事务**：一个群补不上不该把其余群一起回滚，失败只经 `report` 记一行告警（只给群身份与错误码，不给群内正文）。
-   * 外层列表不加锁，锁在每群的事务里按 groups→members/roles→grants 取，与群编辑同序。返回本次实际签出的行数。
+   * 外层列表不加锁，锁在每群事务里按 roles→group→grants 取，与群编辑及执行准备同序。
    */
   async backfillDefaultGrants(owner:string,report?:(groupId:string,code:string)=>void):Promise<number>{
     ownerId(owner)
@@ -445,11 +452,13 @@ export class CollaborationService{
       const client=await this.pool.connect()
       try{
         await client.query('begin')
+        const lockedRoles=await this.lockMemberRoles(client,owner,groupId)
         // 外层读过之后被删掉或归档的群在这里自然落空：不存在与已归档都跳过，不当作失败。
         const row=(await client.query('select * from teloa_groups where id=$1 and owner_id=$2 for update',[groupId,owner])).rows[0]
         let count=0
         if(row&&row.archived===false){
           const group=readGroup(row)
+          if(groupDefinition(row.definition).memberRoleIds.some(id=>!lockedRoles.includes(id)))throw new WorkError('teloa/version-conflict','群成员已变化，请重新核对。')
           // 成员表里有一行 member_key='self' 且 role_id 为 null；按群成员取员工的查询一律带 role_id is not null。
           const members=await client.query('select role_id from teloa_group_members where group_id=$1 and owner_id=$2 and role_id is not null for update',[groupId,owner])
           count=await this.grantMembers(client,owner,group,members.rows.map(member=>String(member.role_id)),this.identity.now())
@@ -464,9 +473,17 @@ export class CollaborationService{
     return signed
   }
 
+  /** 先锁旧成员与新成员的角色，再锁群；群版本及成员复核拒绝无锁的新成员。 */
+  private async lockMemberRoles(client:PoolClient,owner:string,groupId:string,roleIds:readonly string[]=[]):Promise<string[]>{
+    const previous=(await client.query('select role_id from teloa_group_members where group_id=$1 and owner_id=$2 and role_id is not null',[groupId,owner])).rows.map(row=>String(row.role_id))
+    const ids=[...new Set([...previous,...roleIds])].sort()
+    if(ids.length)await client.query('select id from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id for update',[owner,ids])
+    return ids
+  }
+
   private async validateMembers(client:PoolClient,owner:string,roleIds:readonly string[]):Promise<void>{
-    for(const roleId of roleIds){
-      const found=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[roleId,owner])
+    for(const roleId of [...new Set(roleIds)].sort()){
+      const found=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for update',[roleId,owner])
       if(!found.rows[0])throw new WorkError('teloa/forbidden','群成员员工不存在或不属于当前本人。')
       // 群成员可来自任何业务范围（2026-09-21 用户裁定 B）：只保留岗位归属、定义完整性与在岗判据，范围只在建任务时校验。
       try{roleDefinition(found.rows[0].definition)}catch{throw new WorkError('teloa/storage-corrupt','群成员员工定义损坏，不能加入协作群。')}
@@ -476,7 +493,7 @@ export class CollaborationService{
 
   /**
    * 拉员工进群默认允许直接回应（规格 §2.5 的 C1）：成员写口是全量替换，所以「本次新增」必须在 `replaceMembers` 删成员之前算。
-   * 只给本次新增里此前从未有过授权行的 roleId 签一版 `{resources:[],canPost:true,canAutoRun:true}`；
+   * 只给此前从未有授权行的新成员保存空资源与 canPost=true；员工默认 canAutoRun=true，Twin 默认 false。
    * 有行一律跳过——既不覆盖本人自己调过的授权，也不复活已撤销的那一版。移出成员不动它的授权行。
    */
   private async grantNewMembers(client:PoolClient,owner:string,group:Group,roleIds:readonly string[],now:string):Promise<void>{
@@ -491,8 +508,7 @@ export class CollaborationService{
 
   /**
    * 逐个签发默认授权：已有任何一版授权行（含 `revoked`）一律跳过。
-   * 跳过判据与 `task-run-group-context.ts:115` 同四项（岗位类型、在岗、业务范围、群本身可用）——
-   * 签不出能跑的运行的行不如不签。范围一项走契约判据 `roleSupportsScope`：通用工作群对任何范围的员工都开放（2026-09-21 用户裁定）。
+   * 在岗、业务范围、群可用性仍走原判据；Twin 的空资源默认授权只允许保存群范围，不能用于自动运行。
    * 返回本次实际签出的行数，只给 `backfillDefaultGrants` 报数用。
    */
   private async grantMembers(client:PoolClient,owner:string,group:Group,roleIds:readonly string[],now:string):Promise<number>{
@@ -500,14 +516,13 @@ export class CollaborationService{
     for(const roleId of roleIds){
       const found=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[roleId,owner])
       const role=readStoredRole(found.rows[0])
-      // 分身永远不能执行群任务（`task-run-group-context.ts:115`），默认授权对它没有落点；
-      // `state` 这一条是冗余防御，`validateMembers` 已经先拒过非在岗岗位。
-      if(role.kind!=='employee'||role.state!=='active'||!roleSupportsScope(role.scopes,group.scope))continue
+      if(role.state!=='active'||!roleSupportsScope(role.scopes,group.scope))continue
       const previous=await client.query('select grant_version from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for update',[group.id,roleId])
       if(previous.rows[0])continue
-      const spec=JSON.stringify({groupId:group.id,roleId,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:[],canPost:true,canAutoRun:true})
+      const canAutoRun=role.kind==='employee'
+      const spec=JSON.stringify({groupId:group.id,roleId,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:[],canPost:true,canAutoRun})
       const inserted=await client.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
-        values($1,$2,$3,1,$4,$5,'active','[]'::jsonb,true,true,$6,$7,$8) on conflict(group_id,role_id,grant_version) do nothing`,[group.id,owner,roleId,group.version,role.version,defaultGrantRequestId(owner,group.id,roleId),spec,now])
+        values($1,$2,$3,1,$4,$5,'active','[]'::jsonb,true,$9,$6,$7,$8) on conflict(group_id,role_id,grant_version) do nothing`,[group.id,owner,roleId,group.version,role.version,defaultGrantRequestId(owner,group.id,roleId),spec,now,canAutoRun])
       signed+=inserted.rowCount??0
     }
     return signed
@@ -531,12 +546,13 @@ export class CollaborationService{
       if(grant.state!=='active'||grant.groupVersion===group.version)continue
       const found=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[roleId,owner])
       const role=readStoredRole(found.rows[0])
-      // 与 `grantMembers` 同四项判据：签不出能跑的运行的行不如不签。
-      if(role.kind!=='employee'||role.state!=='active'||!roleSupportsScope(role.scopes,group.scope))continue
+      if(role.state!=='active'||!roleSupportsScope(role.scopes,group.scope))continue
+      let canAutoRun=grant.canAutoRun
+      if(role.kind==='twin'&&canAutoRun){try{await readCurrentTwinDelegationAuthorization(client,owner,role,group.scope,group.id)}catch(error){if(!(error instanceof WorkError)||!['teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/invalid-input'].includes(error.code))throw error;canAutoRun=false}}
       const resources=JSON.stringify(grant.resources)
-      const spec=JSON.stringify({groupId:group.id,roleId,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:grant.resources,canPost:grant.canPost,canAutoRun:grant.canAutoRun})
+      const spec=JSON.stringify({groupId:group.id,roleId,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:grant.resources,canPost:grant.canPost,canAutoRun})
       await client.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
-        values($1,$2,$3,$4,$5,$6,'active',$7::jsonb,$8,$9,$10,$11,$12) on conflict(group_id,role_id,grant_version) do nothing`,[group.id,owner,roleId,grant.grantVersion+1,group.version,role.version,resources,grant.canPost,grant.canAutoRun,renewedGrantRequestId(owner,group.id,roleId,group.version),spec,now])
+        values($1,$2,$3,$4,$5,$6,'active',$7::jsonb,$8,$9,$10,$11,$12) on conflict(group_id,role_id,grant_version) do nothing`,[group.id,owner,roleId,grant.grantVersion+1,group.version,role.version,resources,grant.canPost,canAutoRun,renewedGrantRequestId(owner,group.id,roleId,group.version),spec,now])
     }
   }
 
@@ -590,47 +606,31 @@ export class CollaborationService{
     }
   }
 
-  /** 每个提及都必须是本群的在岗AI 员工成员且岗位版本匹配；成员关系、在岗状态或岗位类型不符都判 teloa/forbidden，版本不符 teloa/version-conflict。 */
-  private async assertMentions(client:PoolClient,owner:string,groupId:string,mentions:readonly GroupMention[]):Promise<void>{
+  /** 在岗成员版本必须匹配；Twin 还须获本人当前群范围执行委托，提及本身从不授予许可。 */
+  private async assertMentions(client:PoolClient,owner:string,groupId:string,scope:string,mentions:readonly GroupMention[]):Promise<void>{
     for(const mention of mentions){
       const found=await client.query('select roles.* from teloa_group_members members join teloa_roles roles on roles.id=members.role_id and roles.owner_id=members.owner_id where members.group_id=$1 and members.owner_id=$2 and members.role_id=$3 for share of members,roles',[groupId,owner,mention.roleId])
       const roleRow=found.rows[0]
       if(!roleRow)throw new WorkError('teloa/forbidden','该员工不在本群，无法提及。')
       const role=readStoredRole(roleRow)
-      if(role.kind!=='employee'||role.state!=='active')throw new WorkError('teloa/forbidden','该员工不在本群，无法提及。')
+      if(role.state!=='active')throw new WorkError('teloa/forbidden','该同事不在本群，无法提及。')
       if(role.version!==mention.expectedVersion)throw new WorkError('teloa/version-conflict','被提及的员工已变化，请刷新后重发。')
+      if(role.kind==='twin')(await authorizeRoleTaskAssignment(client,this.pool,owner,role,scope,groupId)).assertCurrent()
     }
   }
 }
 
 /**
- * 岗位版本 +1 之后，按新岗位版本续签这位员工在各群的授权。**与 `renewMemberGrants` 互为另一半**：
- * 那条管群版本变化，这条管岗位版本变化。`group-agent-grants.ts` 的 `status()` 拿
- * `grant.roleVersion!==context.roleVersion` 判 `invalidated`，候选 SQL 的 `grants.role_version=roles.version`
- * （`group-routing-dispatch.ts`）据此把他从**每一个群**的候选集里删掉——不续签的话，改一次使命、
- * 或只是暂停再恢复，就让这位员工在所有群里的「直接回应」静默停摆。
- *
- * 判据与 `renewMemberGrants` 同：只对最新一版是 `active` 的续一行，`resources`/`canPost`/`canAutoRun`
- * 逐字沿用；`revoked` 不复活；已归档群不签；范围不支持不签；分身不签。**只有岗位状态这一项不同**：
- * 改岗位定义必须先暂停（`roles.ts` 的 `if(role.state!=='paused')throw`），把 `state==='active'`
- * 逐字照抄过来就永远续不出任何一行。这里取「未退役」，放宽不会让暂停的员工被选中——
- * `status()` 另有 `roleState!=='active'`、候选 SQL 另有 `roles.state='active'`，两道都还在。
- *
- * 事务由调用方提供：岗位那一笔与续签同生共死。**群行只读、不加锁**：群编辑的锁序是群 → 岗位，
- * 这里是岗位（调用方已 `for update`）→ 群，两边相反，加锁就会在「同时改同一位员工的岗位与他所在的群」
- * 时互等成 40P01（那个错误码不在仓内错误码联合里，冒出去只会变成一句看不懂的失败）。
- * 代价是群版本/归档状态可能在读到插入之间被改掉：那种情形下群编辑自己的 `renewMemberGrants`
- * 会先把 `grant_version+1` 那一行落下，我们这一笔撞唯一键、按「已被并发续签」跳过该群——
- * 宁可靠唯一键兜底，也不引入死锁。`on conflict do nothing` **不带冲突目标**：
- * 主键 `(group_id,role_id,grant_version)` 与 `unique(owner_id,request_id)` 两条都当作「已经有人续过了」，
- * 一条也不抛（在事务里 catch 23505 救不回来——语句一失败整笔事务就已经 aborted）。
+ * 调用方已锁角色，按角色→群续签已有群范围；撤销行不复活。
+ * 员工保留原群设置。Twin 角色版本变化只续可读群范围，canAutoRun=false，
+ * 本人须为新版本重新保存委托、确认执行并主动开启群自动运行。
  */
 export async function renewRoleGrants(client:PoolClient,owner:string,role:DigitalRole,now:string):Promise<void>{
-  if(role.kind!=='employee'||role.state==='retired')return
+  if(role.state==='retired')return
   // 成员表里有一行 member_key='self' 且 role_id 为 null；按 role_id 取的查询天然排除它。
   const memberships=(await client.query('select group_id from teloa_group_members where owner_id=$1 and role_id=$2 order by group_id',[owner,role.id])).rows
   for(const membership of memberships){
-    const row=(await client.query('select * from teloa_groups where id=$1 and owner_id=$2',[membership.group_id,owner])).rows[0]
+    const row=(await client.query('select * from teloa_groups where id=$1 and owner_id=$2 for share',[membership.group_id,owner])).rows[0]
     if(!row||row.archived!==false)continue
     const group=readGroup(row)
     if(!roleSupportsScope(role.scopes,group.scope))continue
@@ -638,11 +638,12 @@ export async function renewRoleGrants(client:PoolClient,owner:string,role:Digita
     if(!previous)continue
     const grant=readGroupAgentGrant(previous)
     if(grant.state!=='active'||grant.roleVersion===role.version)continue
+    const canAutoRun=role.kind==='employee'&&grant.canAutoRun
     const resources=JSON.stringify(grant.resources)
-    const spec=JSON.stringify({groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:grant.resources,canPost:grant.canPost,canAutoRun:grant.canAutoRun})
+    const spec=JSON.stringify({groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:grant.resources,canPost:grant.canPost,canAutoRun})
     // 不带目标的 on conflict 能「吞掉即安全」靠一条不变量：本表每个写入点都先取 teloa_roles 行锁（本函数的调用方持排他锁），
     // 主键冲突因此只可能来自已完成的同一续签；新增写入点或第三条 unique 时必须复核这句。
     await client.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
-      values($1,$2,$3,$4,$5,$6,'active',$7::jsonb,$8,$9,$10,$11,$12) on conflict do nothing`,[group.id,owner,role.id,grant.grantVersion+1,group.version,role.version,resources,grant.canPost,grant.canAutoRun,roleRenewedGrantRequestId(owner,group.id,role.id,role.version),spec,now])
+      values($1,$2,$3,$4,$5,$6,'active',$7::jsonb,$8,$9,$10,$11,$12) on conflict do nothing`,[group.id,owner,role.id,grant.grantVersion+1,group.version,role.version,resources,grant.canPost,canAutoRun,roleRenewedGrantRequestId(owner,group.id,role.id,role.version),spec,now])
   }
 }

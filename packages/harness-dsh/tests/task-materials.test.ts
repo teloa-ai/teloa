@@ -5,6 +5,23 @@ import type {TaskMaterialService} from '@teloa/backend'
 import type {TaskExecutionScope,TaskRunSkillDatabase} from '@teloa/backend'
 import {createTaskMaterialHandler,createTaskMaterialKnowledgeLoader} from '../src/task-materials.ts'
 
+test('分身只读取已选任务资料，空范围不调用正文读取',async()=>{
+ const target:TaskExecutionScope={taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'general',knowledgeIds:[]}
+ const database={} as TaskRunSkillDatabase,privateId='d87222d1-d5a2-4d4b-8860-9b1bfd331ddb',selectedId='a87222d1-d5a2-4d4b-8860-9b1bfd331ddb'
+ const calls:unknown[]=[]
+ const load=createTaskMaterialKnowledgeLoader('owner',async()=>({executionRefsInTransaction:async()=>[{id:privateId,version:1},{id:selectedId,version:2}]}),async(_target,refs)=>{
+  calls.push(refs)
+  assert.deepEqual(refs,[{id:selectedId,version:2}])
+  const text='已授权资料'
+  return [{id:selectedId,version:2,title:'资料',scopeIds:['general'],sourceId:'markdown-knowledge',sourceVersion:createHash('sha256').update(text).digest('hex'),text}]
+ })
+ const signal=new AbortController().signal
+ assert.deepEqual(await load(target,{} as never,database,signal),[])
+ assert.equal(calls.length,0)
+ await load({...target,knowledgeIds:[selectedId]},{} as never,database,signal)
+ assert.equal(calls.length,1)
+})
+
 test('任务知识 RPC 固定宿主本人并拒绝未知字段',async()=>{
  const calls:unknown[]=[]
  const service={

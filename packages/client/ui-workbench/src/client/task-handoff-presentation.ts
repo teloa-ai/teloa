@@ -1,6 +1,5 @@
-import type {PreviewRole} from './role-preview.js'
+import {canReceiveTask,type PreviewRole} from './role-preview.ts'
 import type {PreviewTask} from './task-preview.js'
-import {roleSupportsScope} from '@teloa/contract'
 
 export type ActiveHandoffCandidate=
  | {kind:'self';id:'self';version:null}
@@ -8,7 +7,7 @@ export type ActiveHandoffCandidate=
 
 export function activeHandoffCandidates(task:PreviewTask,roles:readonly PreviewRole[]):ActiveHandoffCandidate[]{
  const self:ActiveHandoffCandidate[]=task.assigneeId==='self'?[]:[{kind:'self',id:'self',version:null}]
- return [...self,...roles.filter(role=>role.storage==='persistent'&&role.id!==task.assigneeId&&role.kind==='employee'&&role.state==='active'&&roleSupportsScope(role.scopes,task.scope)).map(role=>({kind:'role' as const,id:role.id,name:role.name,version:role.version}))]
+ return [...self,...roles.filter(role=>role.storage==='persistent'&&role.id!==task.assigneeId&&canReceiveTask(role,task.scope,task.groupId??undefined)).map(role=>({kind:'role' as const,id:role.id,name:role.name,version:role.version}))]
 }
 
 /**

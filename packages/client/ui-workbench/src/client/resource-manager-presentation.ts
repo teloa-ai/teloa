@@ -1,4 +1,11 @@
 import type {KnowledgeCategory,KnowledgeNode,KnowledgeTree,ResourceDirectory,ResourceDraft,SourceReference,WorkResource} from '@teloa/contract'
+import {isLocalMaterialSourceId} from './local-material-registration.ts'
+
+/** 本机原件使用真实资源段；不冒充知识页或生成假的 knowledgeId。 */
+export function libraryResourceDirectory(directory:ResourceDirectory,sources:SourceReference[]):ResourceDirectory{
+ const include=(row:ResourceDraft|WorkResource)=>isLocalMaterialSourceId(row.sourceId)||sources.some(source=>source.id===row.sourceId&&source.knowledge)
+ return {drafts:directory.drafts.filter(include),resources:directory.resources.filter(include)}
+}
 
 export const workResourceCategories=[
   {id:'business-context',title:'业务说明',description:'说明业务如何运作、职责与术语。'},

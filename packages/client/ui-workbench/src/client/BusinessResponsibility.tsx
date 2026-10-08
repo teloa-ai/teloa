@@ -1,12 +1,13 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
-import {roleSupportsScope,type BusinessResponsibility as Responsibility,type DigitalRole} from '@teloa/contract'
+import type {BusinessResponsibility as Responsibility,DigitalRole} from '@teloa/contract'
 import type {BusinessResponsibilityApi} from './business-responsibility-api.js'
-import type {RoleApi} from './role-api.js'
+import type {RoleWorkDirectory,WorkAccessRole} from './role-work-directory.js'
+import {canReceiveTask} from './role-preview.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessResponsibility.module.css'
 
-export type BusinessResponsibilityProps={scope:string;api:BusinessResponsibilityApi;roles:Pick<RoleApi,'list'>;onChanged?:()=>void}
-type State={identity:object;current:Responsibility|null;roles:DigitalRole[];selection:string;pending:boolean;busy:boolean;error:boolean}
+export type BusinessResponsibilityProps={scope:string;api:BusinessResponsibilityApi;roles:Pick<RoleWorkDirectory,'list'>;onChanged?:()=>void}
+type State={identity:object;current:Responsibility|null;roles:WorkAccessRole[];selection:string;pending:boolean;busy:boolean;error:boolean}
 /** 可选业务负责人；设置只保存归属，不创建任务或启动工作。 */
 export function BusinessResponsibility({scope,api,roles,onChanged}:BusinessResponsibilityProps){
  const {t}=useI18n(),identity=useMemo(()=>({}),[scope,api,roles]),active=useRef<object|null>(identity),running=useRef<object|null>(null)
@@ -33,7 +34,7 @@ export function BusinessResponsibility({scope,api,roles,onChanged}:BusinessRespo
    else{
     if(!visible.current)throw Error('Responsibility is not loaded')
     const selected=visible.selection?visible.roles.find(role=>role.id===visible.selection):undefined
-    if(visible.selection&&(!selected||selected.state!=='active'||selected.kind!=='employee'||!roleSupportsScope(selected.scopes,scope)))throw Error('Role is unavailable')
+    if(visible.selection&&!canReceiveTask(selected,scope))throw Error('Role is unavailable')
     await api.set({scope,requestId:crypto.randomUUID(),expectedVersion:visible.current.version,role:selected?{id:selected.id,expectedVersion:selected.version}:null})
     if(!live())return
     current=await api.read({scope})
@@ -43,7 +44,7 @@ export function BusinessResponsibility({scope,api,roles,onChanged}:BusinessRespo
   finally{if(running.current===identity)running.current=null}
  }
  const current=visible?.current,selected=current?.roleId?visible?.roles.find(role=>role.id===current.roleId):undefined
- const eligible=visible?.roles.filter(role=>role.kind==='employee'&&role.state==='active'&&roleSupportsScope(role.scopes,scope)&&!(role.id===current?.roleId&&current.availability!=='ready'))??[]
+ const eligible=visible?.roles.filter(role=>canReceiveTask(role,scope)&&!(role.id===current?.roleId&&current.availability!=='ready'))??[]
  const unavailable=current?.roleId&&!eligible.some(role=>role.id===current.roleId)
  const disabled=!visible||visible.busy||visible.pending
  let canReselect=false

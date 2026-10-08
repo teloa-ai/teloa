@@ -22,6 +22,7 @@ function configRows() {
     { id: 'session-query-sqlite', name: '@deepseek-ai/dsh-session-query-sqlite', config: { openAt: 'first-search', path: 'session-search.sqlite' } },
     { id: 'teloa-ui-workbench', name: '@teloa/client-ui-workbench' },
     { id: 'teloa-harness-dsh', name: '@teloa/harness-dsh' },
+    ...['native-input-provider','managed-session-controller','managed-subagent','managed-goal-round-driver'].map(name=>({id:'teloa-'+(name==='native-input-provider'?'native-input':name),name:'@teloa/harness-dsh/'+name})),
     { id: 'teloa-tool-resource-provenance', name: '@teloa/harness-dsh/tool-resource-provenance' },
     { id: 'teloa-reference-mcp', name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'teloa_reference', cwd: { __jsExpr: 'process.env.TELOA_PROJECT_ROOT' }, failOnStartupError: true, maxInstructionBytes: 2048 } },
   ]

@@ -46,7 +46,7 @@ async function setup(t:TestContext,options:{timeoutMs?:number}={}){
  const rows=new Map<string,TaskRunRuntimeLink>(),calls:Array<{kind:string;input:unknown}>=[]
  const links:TaskRunRuntimeLinks={list:async input=>[...rows.values()].filter(row=>row.runId===input.runId&&(!input.kind||row.kind===input.kind)),put:async row=>{rows.set(row.kind+':'+row.nativeId,structuredClone(row))}}
  let beforeBind=async()=>{},beforeReserve=async()=>{}
- const delegation:SubagentDelegationPorts={limits:{maxDepth:1,maxPerRun:6},runId:async()=> 'run',reserve:async input=>{await beforeReserve();calls.push({kind:'reserve',input})},release:async input=>{calls.push({kind:'release',input})},bind:async input=>{calls.push({kind:'bind',input});await beforeBind()},settle:async input=>{calls.push({kind:'settle',input})},abandon:async input=>{calls.push({kind:'abandon',input})}}
+ const delegation:SubagentDelegationPorts={limits:{maxDepth:1,maxPerRun:6},list:async()=>[],runId:async()=> 'run',reserve:async input=>{await beforeReserve();calls.push({kind:'reserve',input})},release:async input=>{calls.push({kind:'release',input})},bind:async input=>{calls.push({kind:'bind',input});await beforeBind()},settle:async input=>{calls.push({kind:'settle',input})},abandon:async input=>{calls.push({kind:'abandon',input})}}
  let policy:TaskToolPolicy|null={allowedTools:['workflow','ralph'],nativeRequestId:'native'}
  const orchestration=createTaskRunOrchestration(ctx,delegation,async()=>policy,links,options);t.after(async()=>{await orchestration.dispose()})
  const start=(schema=false,parent=root)=>ctx.subagents.start('teloa-workflow-spawn',{parent,signal:AbortSignal.timeout(5000),prompt:[{type:'text',text:'整理'}],...(schema?{outputSchema:{type:'object' as const,properties:{done:{type:'boolean' as const}},required:['done'],additionalProperties:false}}:{})})
@@ -67,6 +67,33 @@ test('官方 fresh provider 保持一套生命周期并将子运行绑定到共�
  env.finish();assert.equal((await child.result).stopReason,'completed');await child.dispose()
  assert.equal(env.calls.filter(call=>call.kind==='settle').length,1)
  assert.deepEqual(await env.orchestration.state(env.run),{outstanding:false,interrupted:false})
+})
+
+test('服务器 Flow 薄口沿官方 fresh 生命周期固定预留；原回执未知不重派',async t=>{
+ const env=await setup(t),flowId='bce776aa-0e03-4d36-8c50-3aa1341dc182',reservationId='flow:'+flowId+':read:1'
+ env.ctx.tools.register(defineTool({name:'workflow',description:'测试既有工具过滤',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=> '未调用'}))
+ const run={...env.run,agentPresetId:'teloa',allowedTools:['workflow'],knowledge:[],skills:[]} as TaskRun
+ const step={id:'read',title:'读取材料',kind:'work' as const,dependsOn:[],inputSummary:'只读核对既有材料',state:'running' as const,attempts:1,outputSummary:null,waitReason:null,startedAt:'2026-10-09T00:00:00.000Z',updatedAt:'2026-10-09T00:00:00.000Z',completedAt:null,execution:{kind:'subagent' as const,parentSessionId:env.root.id,agentPresetId:'teloa',allowedTools:['workflow'],knowledgeIds:[],skillNames:[]}}
+ const events:string[]=[];env.ctx.on('subagent/start',info=>{events.push(info.provider)},{global:true})
+ const input={run,flowId,step,reservationId},receipt=await env.orchestration.startFlow(input,AbortSignal.timeout(5000))
+ assert.equal(receipt.reservationId,reservationId);assert.equal(typeof receipt.childSessionId,'string')
+ assert.deepEqual(env.calls.find(c=>c.kind==='reserve')?.input,{runId:'run',reservationId,limit:6})
+ assert.equal((env.calls.find(c=>c.kind==='bind')!.input as {childSessionId:string}).childSessionId,receipt.childSessionId)
+ assert.deepEqual(events,['teloa-workflow-spawn'])
+ assert.deepEqual(await env.orchestration.startFlow(input,AbortSignal.timeout(5000)),receipt)
+ assert.equal(env.calls.filter(c=>c.kind==='reserve').length,1)
+ env.finish();await new Promise(resolve=>setTimeout(resolve,20))
+ assert.equal(env.calls.filter(c=>c.kind==='settle').length,1)
+})
+
+test('Flow 薄口拒绝父身份/当前工具不符，在真实预留前关闭',async t=>{
+ const env=await setup(t),flowId='bce776aa-0e03-4d36-8c50-3aa1341dc182'
+ const run={...env.run,agentPresetId:'teloa',allowedTools:['workflow'],knowledge:[],skills:[]} as TaskRun
+ const step={id:'read',title:'读取材料',kind:'work' as const,dependsOn:[],inputSummary:'只读材料',state:'running' as const,attempts:1,outputSummary:null,waitReason:null,startedAt:'2026-10-09T00:00:00.000Z',updatedAt:'2026-10-09T00:00:00.000Z',completedAt:null,execution:{kind:'subagent' as const,parentSessionId:'another-parent',agentPresetId:'teloa',allowedTools:['workflow'],knowledgeIds:[],skillNames:[]}}
+ await assert.rejects(env.orchestration.startFlow({run,flowId,step,reservationId:'flow:'+flowId+':read:1'},AbortSignal.timeout(5000)),/配置|身份/)
+ env.setPolicy({allowedTools:[],nativeRequestId:'native'})
+ await assert.rejects(env.orchestration.startFlow({run,flowId,step:{...step,execution:{...step.execution,parentSessionId:env.root.id}},reservationId:'flow:'+flowId+':read:1'},AbortSignal.timeout(5000)),/授权/)
+ assert.equal(env.calls.length,0)
 })
 
 test('绑定尚未写入时 child 授权等待；绑定完成后才放行精确子级',async t=>{

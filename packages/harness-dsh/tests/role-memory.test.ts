@@ -10,7 +10,7 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {createRoleMemoryHandler,registerRoleMemoryTools,roleMemoryProposalToolName,type RoleMemoryToolPorts} from '../src/role-memory.ts'
+import {roleMemoryRunTarget,createRoleMemoryHandler,createRoleMemoryViewHandler,registerRoleMemoryTools,roleMemoryProposalToolName,type RoleMemoryToolPorts} from '../src/role-memory.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
 
 test('岗位记忆 RPC 固定为本人，并独立分派目录、候选、确认与撤回',async()=>{
@@ -39,6 +39,18 @@ test('未知接口、未知字段和伪造主体在读取服务前拒绝',async(
  assert.equal(reads,0)
  await assert.rejects(handle('role-memory/list',{roleId:'a'}),/数据库不可用/)
  assert.equal(reads,1)
+})
+
+test('共享记忆视图 RPC 固定本人映射，伪造主体与额外字段在服务前拒绝',async()=>{
+ const calls:unknown[]=[],backend={create:async(owner:string,input:unknown)=>{calls.push(['create',owner,input]);return {id:'fixed-view'}},read:async(owner:string,input:unknown)=>{calls.push(['read',owner,input]);return {id:'fixed-view'}}}
+ let reads=0
+ const handle=createRoleMemoryViewHandler('local:owner',async()=>{reads++;return backend}),input={requestId:'r',roleId:'twin',expectedRoleVersion:2,groupId:'g',entries:[]}
+ await handle('role-memory-views/create',input);await handle('role-memory-views/read',{viewId:'fixed-view'})
+ assert.deepEqual(calls,[['create','local:owner',input],['read','local:owner',{viewId:'fixed-view'}]])
+ await assert.rejects(handle('role-memory-views/create',{...input,ownerId:'other'}),{code:'teloa/invalid-input'})
+ await assert.rejects(handle('role-memory-views/read',{viewId:'fixed-view',kind:'agent'}),{code:'teloa/invalid-input'})
+ await assert.rejects(handle('role-memory-views/delete',{}),{code:'teloa/not-found'})
+ assert.equal(reads,2)
 })
 
 const owner='local:teloa-owner',roleId='22222222-2222-4222-8222-222222222222',runId='33333333-3333-4333-8333-333333333333',sourceId='44444444-4444-4444-8444-444444444444'
@@ -103,4 +115,30 @@ test('岗位记忆工具拒绝普通或结束 Run、范围身份不一致与 sel
  ]
  for(const overrides of cases){const env=await setupTool(overrides);t.after(()=>env.ctx.fiber.dispose());assert.equal((await env.call({title:'复核证据',markdown:'正文',source:{kind:'task',id:sourceId,version:1}})).isError,true);assert.equal(env.calls.length,0)}
  const source=await setupTool();t.after(()=>source.ctx.fiber.dispose());assert.equal((await source.call({title:'自述',markdown:'正文',source:{kind:'self-feedback',id:sourceId,version:1}})).isError,true);assert.equal(source.calls.length,0)
+})
+
+test('分身运行经验工具固定为私有且只接受自身 Run 来源',async t=>{
+ const env=await setupTool({run:async sessionId=>({id:runId,roleId,roleVersion:2,sessionId,state:'active',roleSnapshot:{kind:'twin'}})});t.after(()=>env.ctx.fiber.dispose())
+ env.candidate.visibility={kind:'private',scopeIds:[]} as typeof env.candidate.visibility
+ env.candidate.source={kind:'run',id:runId,version:1}
+ const result=await env.call({title:'本轮经验',markdown:'本轮实际核验后的经验。',source:{kind:'run',id:runId,version:1}})
+ assert.equal(result.isError,false)
+ assert.deepEqual((env.calls[0]![1] as {visibility:unknown}).visibility,{kind:'private',scopeIds:[]})
+ for(const source of [{kind:'run',id:sourceId,version:1},{kind:'run',id:runId,version:2},{kind:'task',id:sourceId,version:1}])assert.equal((await env.call({title:'越界',markdown:'正文',source})).isError,true)
+ assert.equal(env.calls.length,1)
+})
+
+
+test('真实分身记忆读口：任务载体投影到明确的群和视图，群内未共享不读取私有数据',async()=>{
+ const {RoleMemoryService}=await import('@teloa/backend')
+ const role={id:roleId,ownerId:owner,kind:'twin',version:2,scopes:['SOC']} as import('@teloa/contract').DigitalRole
+ let reads=0
+ const db={query:async()=>{reads++;return {rows:[]}}},service=new RoleMemoryService({} as never,{id:()=>sourceId,now:()=>new Date().toISOString()})
+ const target={taskId:sourceId,taskVersion:1,sessionId:'native-session',linkVersion:1,scope:'SOC',groupId:runId,memoryViewId:null,knowledgeIds:[]} as import('@teloa/backend').TaskExecutionScope
+ await assert.rejects(service.confirmedForRun(db as never,owner,target,role),{code:'teloa/forbidden'})
+ assert.deepEqual(await service.confirmedForRun(db as never,owner,roleMemoryRunTarget(target,role),role),[])
+ assert.equal(reads,0)
+ const {groupId,...withoutGroup}=target
+ assert.throws(()=>roleMemoryRunTarget(withoutGroup,role),{code:'teloa/forbidden'})
+ assert.equal(roleMemoryRunTarget(target,{kind:'employee'}),'SOC')
 })

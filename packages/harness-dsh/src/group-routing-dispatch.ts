@@ -1,7 +1,9 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {WorkError,groupDefinition,roleSupportsScope,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingCandidatesMax,groupRoutingHopLimit,groupRoutingRespondMax,roleDefinition,type GroupReactionEmoji,type GroupRoutingDecision,type GroupTaskCreateInput} from '@teloa/contract'
-import {workAccess,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,readRunGroupTopic,type GroupRoutingDecisionService,type RunGroupContext,type RunGroupTopicMessage} from '@teloa/backend'
+import {workAccess,authorizeRoleTaskAssignment,readStoredRole,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,readRunGroupTopic,type GroupRoutingDecisionService,type RunGroupContext,type RunGroupTopicMessage} from '@teloa/backend'
 import {askGroupRouting,type GroupRoutingAsk,type GroupRoutingCandidate} from './group-routing.ts'
+import {drainGroupRoutingOutbox,type GroupRoutingOutboxPorts} from './group-routing-outbox-driver.ts'
+import {readTrustedGroupMessageRunSource,type GroupRoutingOutboxService} from '@teloa/backend'
 
 /** 最小可查询接口：只要有 `query(text,values)` 就够，不为此专门依赖 `pg`（先例 `business-definitions.ts:60`）。 */
 type Queryable={query(text:string,values:readonly unknown[]):Promise<{rows:Record<string,unknown>[]}>}
@@ -12,6 +14,8 @@ type PoolClient=Parameters<Parameters<GroupRoutingDecisionService['withTopicLock
 export type GroupRoutingMessage={groupId:string;rootId:string;authorKind:'self'|'role';authorId:string;authorName:string;text:string;createdAt:string;mentions:string[]}
 
 export type GroupRoutingDispatchPorts={
+ /** 新宿主必须装配。历史调用可保留旧投递方式，已有决策不会凭当前岗位版本补造待办。 */
+ delivery?:GroupRoutingOutboxPorts&{outbox:GroupRoutingOutboxPorts['outbox']&Pick<GroupRoutingOutboxService,'recordRecipients'>}
  /**
   * 话题锁与决策表的唯一真源。段 A 与段 C 各用 `withTopicLock` 包一次；
   * 模型调用（段 B）与建任务（段 D）都在锁外（H7/H8）。
@@ -123,7 +127,7 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
   }
   return {version:group.version,name:group.name,hops,candidates,truncatedCandidates,topic:await ports.topic(owner,groupId,rootId,db)}
  })
- if(!carried)return
+ if(!carried){if(ports.delivery)await drainGroupRoutingOutbox(owner,ports.delivery,signal,{messageId});return}
  const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:groupId,operation:'run'})
  admission.assertCurrent();signal.throwIfAborted()
  const candidateIds=carried.candidates.map(candidate=>candidate.roleId)
@@ -135,25 +139,30 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
  const decision=answered.kind==='ok'
   ?decisionOf(now,'routed',carried.hops,{...shared,respond:answered.output.respond.filter(roleId=>candidateIds.includes(roleId)).slice(0,groupRoutingRespondMax),reactions:answered.output.reactions.filter(reaction=>candidateIds.includes(reaction.roleId)).map(reaction=>({...reaction}))})
   :decisionOf(now,answered.kind==='degraded'?'degraded':'parse-failed',carried.hops,{...shared,respond:degradedRespond(trigger.mentions,candidateIds)})
- // 被选中的每一位先按一枚「收到」。模型已经为同一位选了表情时不再补：那一枚本身就是这一位的回执，
- // 再加一枚 👀 只是噪音。**不写进决策行**：决策行是模型那一次输出的逐字留痕（恰 8 键、reactions 与
- // respond 各自最多 30 条），把回执塞进去既改了它的语义，也会在 respond 满 30 位时把 reactions 顶出上限。
- const acknowledged:{roleId:string;emoji:GroupReactionEmoji}[]=decision.kind==='routed'
-  ?decision.respond.filter(roleId=>!decision.reactions.some(reaction=>reaction.roleId===roleId)).map(roleId=>({roleId,emoji:routedAckEmoji}))
-  :[]
  // 段 C：并发的两条触发都会跑完段 B，但只有一条能 insert 成功，另一条整条退出、不建任务。
  const written=await ports.decisions.withTopicLock(owner,groupId,rootId,async db=>{
   admission.assertCurrent()
   if(await ports.decisions.claimed(db,owner,messageId))return undefined
-  const recorded=await ports.decisions.record(db,owner,{groupId,messageId,decision})
+  // 模型等待期间可能撤销本人同意、群授权或改变岗位。先重核当前资格，不能让旧候选接单或加表情。
+  const current=await ports.candidates(owner,groupId,db),group=await ports.group(owner,groupId,db)
+  const eligible=new Set(group&&!group.archived&&group.version===carried.version
+   ?current.filter(item=>carried.candidates.some(prior=>prior.roleId===item.roleId&&prior.roleVersion===item.roleVersion)).map(item=>item.roleId):[])
+  const fixed={...decision,respond:decision.respond.filter(roleId=>eligible.has(roleId)),reactions:decision.reactions.filter(reaction=>eligible.has(reaction.roleId))}
+  // 「收到」只给仍可接单的岗位；它与决策同事务落库，独立于模型的表情输出。
+  const acknowledged:{roleId:string;emoji:GroupReactionEmoji}[]=fixed.kind==='routed'
+   ?fixed.respond.filter(roleId=>!fixed.reactions.some(reaction=>reaction.roleId===roleId)).map(roleId=>({roleId,emoji:routedAckEmoji})):[]
+  const recorded=await ports.decisions.record(db,owner,{groupId,messageId,decision:fixed})
   if(!recorded)return undefined
+  // 每位接收者的稳定请求与终态决策同事务：提交前失败没有孤儿，提交后退出可由恢复worker补派。
+  if(ports.delivery)await ports.delivery.outbox.recordRecipients(db,owner,{groupId,messageId,decision:recorded,decisionVersion:1})
   // 表情与决策同一个事务：决策行写不进去（并发撞主键）时一个表情都不该落表，否则库里会留下
   // 「没有决策却有路由表情」的孤儿行。代价是一次 insert 加至多 30 条 upsert 都压在这把锁里——
   // 都是毫秒级的本地写，换来的是两张表恒一致。
-  for(const reaction of [...decision.reactions,...acknowledged])await ports.applyReaction(db,owner,{groupId,messageId,roleId:reaction.roleId,emoji:reaction.emoji,requestId:groupRoutedReactionRequestId(owner,messageId,reaction.roleId,reaction.emoji)})
+  for(const reaction of [...fixed.reactions,...acknowledged])await ports.applyReaction(db,owner,{groupId,messageId,roleId:reaction.roleId,emoji:reaction.emoji,requestId:groupRoutedReactionRequestId(owner,messageId,reaction.roleId,reaction.emoji)})
   admission.assertCurrent()
   return recorded
  })
+ if(ports.delivery){await drainGroupRoutingOutbox(owner,ports.delivery,signal,{messageId});return}
  if(!written)return
  // 段 D：锁外。一位没建成不影响别的几位；两码吞掉不重试，其余只记一行。
  // 日志带上消息与岗位：一条群消息可能同时派给多位，只记错误码的话分不清是哪一位没建起来。
@@ -192,7 +201,8 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
 
 /** 群的版本、归档位与群名（模型输入只用得到群名）。 */
 export async function readRoutingGroup(owner:string,groupId:string,db:Queryable):Promise<{version:number;archived:boolean;name:string}|undefined>{
- const row=(await db.query('select definition,version,archived from teloa_groups where id=$1 and owner_id=$2 for share',[groupId,owner])).rows[0]
+ // 投影不先持群锁；候选读口按 role→group 固定行，避免和本人编辑群、岗位的锁序相反。
+ const row=(await db.query('select definition,version,archived from teloa_groups where id=$1 and owner_id=$2',[groupId,owner])).rows[0]
  if(!row)return undefined
  if(!Number.isSafeInteger(row.version)||typeof row.archived!=='boolean')throw new WorkError('teloa/storage-corrupt','群版本或归档状态损坏。')
  return {version:row.version as number,archived:row.archived as boolean,name:groupDefinition(row.definition).name}
@@ -212,14 +222,15 @@ export async function readRoutingMessage(owner:string,messageId:string,db:Querya
  // 先判类型再取值：`String(undefined)` 会造出 'undefined' 这种能进候选比对的假 roleId。
  const mentioned=snapshot.filter((mention):mention is {roleId:string}=>!!mention&&typeof mention==='object'&&typeof (mention as {roleId?:unknown}).roleId==='string')
  const mentions=self?[...new Set(mentioned.map(mention=>mention.roleId))]:[]
- const named=self?undefined:(await db.query("select definition->>'name' as name from teloa_roles where owner_id=$1 and id=$2",[owner,author])).rows[0]
+ const fixed=self?null:await readTrustedGroupMessageRunSource(db as Parameters<typeof readTrustedGroupMessageRunSource>[0],owner,{groupId:String(row.group_id),messageId})
+ const named=self||fixed?undefined:(await db.query("select definition->>'name' as name from teloa_roles where owner_id=$1 and id=$2",[owner,author])).rows[0]
  return {
   groupId:String(row.group_id),
   // 根消息自己就是话题根：`root_id` 为空时用它自己的 id。
   rootId:row.root_id===null?messageId:String(row.root_id),
   authorKind:self?'self':'role',
   authorId:self?'self':author,
-  authorName:self?'本人':(named?.name as string|undefined)??author,
+  authorName:self?'本人':fixed?.roleName??(named?.name as string|undefined)??author,
   text:String(row.text),
   createdAt:createdAt.toISOString(),
   mentions,
@@ -227,15 +238,19 @@ export async function readRoutingMessage(owner:string,messageId:string,db:Querya
 }
 
 /**
- * 候选（规格 §2.4）：本群成员（**`role_id is not null`**，M15）∩ 在岗 employee ∩ 群授权 `active`
+ * 候选：本群成员（**`role_id is not null`**，M15）∩ 在岗角色 ∩ 群授权 `active`
  * ∩ `canAutoRun` ∩ `canPost` ∩ 岗位支持本群范围（契约判据 `roleSupportsScope`：通用工作群对任何范围的员工都开放）。
  * 授权取该 `(group,role)` 的**最新一版**再判 `active`——已撤销的不会被更早的 active 行复活。
+ * Twin 还须本人当前委托和执行回执通过共享准入服务；未装配 pool 的历史读口不放行 Twin。
  */
-export async function readRoutingCandidates(owner:string,groupId:string,db:Queryable):Promise<GroupRoutingCandidate[]>{
- const groupRow=(await db.query('select definition,version from teloa_groups where id=$1 and owner_id=$2 for share',[groupId,owner])).rows[0]
- if(!groupRow)return []
+export async function readRoutingCandidates(owner:string,groupId:string,db:PoolClient,pool?:GroupRoutingDecisionService['pool']):Promise<GroupRoutingCandidate[]>{
+ // 与群、岗位编辑共用 role→group 锁序；按 id 取全体成员锁，结果仍保留原成员显示顺序。
+ await db.query(`select roles.id from teloa_group_members members join teloa_roles roles on roles.id=members.role_id and roles.owner_id=members.owner_id
+  where members.group_id=$1 and members.owner_id=$2 and members.role_id is not null order by roles.id for share of roles`,[groupId,owner])
+ const groupRow=(await db.query('select definition,version,archived from teloa_groups where id=$1 and owner_id=$2 for share',[groupId,owner])).rows[0]
+ if(!groupRow||groupRow.archived)return []
  const scope=groupDefinition(groupRow.definition).scope
- const rows=(await db.query(`select roles.id,roles.version,roles.definition,roles.state from teloa_group_members members
+ const rows=(await db.query(`select roles.* from teloa_group_members members
   join teloa_roles roles on roles.id=members.role_id and roles.owner_id=members.owner_id
   join lateral (select * from teloa_group_agent_grants candidate where candidate.group_id=members.group_id and candidate.owner_id=members.owner_id and candidate.role_id=members.role_id order by candidate.grant_version desc limit 1) grants on true
   where members.group_id=$1 and members.owner_id=$2 and members.role_id is not null
@@ -245,7 +260,15 @@ export async function readRoutingCandidates(owner:string,groupId:string,db:Query
  const candidates:GroupRoutingCandidate[]=[]
  for(const row of rows){
   const definition=roleDefinition(row.definition)
-  if(definition.kind!=='employee'||!roleSupportsScope(definition.scopes,scope))continue
+  if(!roleSupportsScope(definition.scopes,scope))continue
+  if(definition.kind==='twin'){
+   if(!pool)continue
+   try{(await authorizeRoleTaskAssignment(db,pool,owner,readStoredRole(row),scope,groupId)).assertCurrent()}
+   catch(error){
+    if(error instanceof WorkError&&['teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/invalid-input'].includes(error.code))continue
+    throw error
+   }
+  }
   const responsibility=definition.responsibility??{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}
   candidates.push({roleId:String(row.id),roleVersion:row.version as number,name:definition.name,duty:definition.duty,...responsibility})
  }

@@ -76,6 +76,10 @@ export function verifyConfig(source) {
     'session-query-sqlite': ["name: '@deepseek-ai/dsh-session-query-sqlite'",'openAt: first-search','session-search.sqlite'],
     'teloa-ui-workbench': ["name: '@teloa/client-ui-workbench'"],
     'teloa-harness-dsh': ["name: '@teloa/harness-dsh'"],
+    'teloa-native-input': ["name: '@teloa/harness-dsh/native-input-provider'"],
+    'teloa-managed-session-controller': ["name: '@teloa/harness-dsh/managed-session-controller'"],
+    'teloa-managed-subagent': ["name: '@teloa/harness-dsh/managed-subagent'"],
+    'teloa-managed-goal-round-driver': ["name: '@teloa/harness-dsh/managed-goal-round-driver'"],
     'teloa-tool-resource-provenance': ["name: '@teloa/harness-dsh/tool-resource-provenance'"],
     // maxInstructionBytes 是 MCP instructions 进系统提示的上限，上游默认 32768，这里收窄为基线 2048。
     'teloa-reference-mcp': ["name: '@deepseek-ai/dsh-mcp-client'",'serverName: teloa_reference','process.env.TELOA_PROJECT_ROOT','failOnStartupError: true','maxInstructionBytes: 2048'],

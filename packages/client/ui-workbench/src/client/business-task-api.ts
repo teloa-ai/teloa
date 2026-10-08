@@ -1,4 +1,5 @@
-import {businessMcpSourceIdMaxLength,businessObjectReference,taskDefinition,taskInput,type BusinessLedgerBlock,type BusinessObjectReference,type WorkTask} from '@teloa/contract'
+import {businessMcpSourceIdMaxLength,businessObjectReference,type BusinessLedgerBlock,type BusinessObjectReference,type WorkTask} from '@teloa/contract'
+import {readSavedTask} from './task-api.ts'
 import {recoveryStorageError} from './recovery-error.ts'
 
 type Call=(endpoint:string,payload:unknown)=>Promise<unknown>
@@ -44,13 +45,10 @@ function request(value:unknown):BusinessTaskRequest{
 
 function task(value:unknown,expectedOwner:string):WorkTask{
  try{
-  const row=taskInput(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'].concat(['groupId','skills']))
-  const {id,ownerId,version,state,assigneeRoleId,assigneeRoleVersion,createdAt,updatedAt,...definition}=row
-  if(!uuid(id)||!text(ownerId,128)||!positive(version)||!['ready','running','paused','waiting','blocked','completed','cancelled'].includes(String(state))||!stamp(createdAt)||!stamp(updatedAt)||updatedAt<createdAt)throw Error()
-  if(assigneeRoleId===null?assigneeRoleVersion!==null:!uuid(assigneeRoleId)||!positive(assigneeRoleVersion))throw Error()
-  const parsed=taskDefinition(definition)
-  if(parsed.title!==definition.title||parsed.goal!==definition.goal||parsed.scope!==definition.scope||ownerId!==expectedOwner)throw Error()
-  return {...parsed,id,ownerId,version:version as number,state:state as WorkTask['state'],assigneeRoleId:assigneeRoleId===null?null:assigneeRoleId as string,assigneeRoleVersion:assigneeRoleVersion as number|null,createdAt,updatedAt}
+  const row=readSavedTask(value),original=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt','groupId','skills','contentVersion','completionPolicy'])
+  if(!text(row.ownerId,128)||!positive(row.version)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||row.assigneeRoleVersion!==null&&!positive(row.assigneeRoleVersion))throw Error()
+  if(row.title!==original.title||row.goal!==original.goal||row.scope!==original.scope||row.ownerId!==expectedOwner)throw Error()
+  return row
  }catch{throw Error('调查任务格式不正确。')}
 }
 

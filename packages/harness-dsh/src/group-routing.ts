@@ -4,7 +4,7 @@ import type {SessionId} from '@deepseek-ai/dsh-session'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import type {RunGroupTopic} from '@teloa/backend'
-import {groupReactionEmojis,groupRoutingHopLimit,groupRoutingInputSchema,groupRoutingOutput,groupRoutingOutputSchema,groupRoutingRequestId,groupRoutingSessionId,groupRoutingTopicMax,type GroupRoutingOutput} from '@teloa/contract'
+import {WorkError,groupReactionEmojis,groupRoutingHopLimit,groupRoutingInputSchema,groupRoutingOutput,groupRoutingOutputSchema,groupRoutingRequestId,groupRoutingSessionId,groupRoutingTopicMax,type GroupRoutingOutput} from '@teloa/contract'
 import {teloaAgentPresetId} from './composition-safety.ts'
 import {prepareDshTaskSession,resolveDshTaskPreset} from './task-run-dsh.ts'
 import {readGroupRoutingResult,readRoutingEvents,routingTurnMixed} from './group-routing-result.ts'
@@ -224,26 +224,34 @@ function serializeBySession<T>(sessionId:string,work:(waitedMs:number)=>Promise<
  * 会话按 (owner, groupId, day) 派生，换日即换一条会话，日界跟着 UTC 走，不跟本人时区走。
  */
 export async function askGroupRouting(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:AbortSignal,day?:string):Promise<{kind:'ok';output:GroupRoutingOutput}|{kind:'degraded'}|{kind:'parse-failed'}>{
- const sessionId=groupRoutingSessionId(owner,ask.groupId,day??new Date().toISOString().slice(0,10))
+ const fixedDay=day??new Date().toISOString().slice(0,10),sessionId=groupRoutingSessionId(owner,ask.groupId,fixedDay)
  if(routingDisabled.has(ctx))return degraded(ctx,'preset',sessionId)
  // 排到自己时先看还值不值得问：调用方已经不等了，或者光排队就排过了等待上限，直接退化，不白问一句。
  const queued=serializeBySession(sessionId,waitedMs=>
   signal.aborted?Promise.resolve(degraded(ctx,'aborted',sessionId))
   :waitedMs>=routingTurnWaitMs?Promise.resolve(degraded(ctx,'timeout',sessionId))
-  :askOnce(ctx,owner,ask,signal,sessionId))
+  :askOnce(ctx,owner,ask,signal,sessionId,fixedDay))
  return queued.kind==='overflow'?degraded(ctx,'timeout',sessionId):queued.value
 }
 
-async function askOnce(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:AbortSignal,sessionId:string):Promise<{kind:'ok';output:GroupRoutingOutput}|{kind:'degraded'}|{kind:'parse-failed'}>{
+async function askOnce(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:AbortSignal,sessionId:string,day:string):Promise<{kind:'ok';output:GroupRoutingOutput}|{kind:'degraded'}|{kind:'parse-failed'}>{
  const requestId=groupRoutingRequestId(owner,ask.groupId,ask.messageId)
  let settled:RoutingTurn
  try{await ensureRoutingSession(ctx,sessionId,signal)}
  catch{return degraded(ctx,signal.aborted?'aborted':'session',sessionId)}
+ let release:(()=>void)|undefined
+ try{
  try{
   // 重试幂等：这条 requestId 在会话里已经问过了就不再问第二遍——同一条 rpcId 出现两次会让
   // `observeTaskRun` 直接判日志损坏，那才是真正读不回结论的那一步。
   const asked=observeTaskRun(await readRoutingEvents(ctx,sessionId),requestId)
-  if(asked.state==='unobserved')await ctx.sessionController.prompt({sessionId:brandString<SessionId>(sessionId),requestId:brandString<SessionRequestId>(requestId),mode:'queue' as const,content:[{type:'text',text:JSON.stringify(groupRoutingInput(ask))}]},signal)
+  if(asked.state==='unobserved'){
+   const resident=ctx.get('teloaResidentInputAdmission' as never) as {bindRouting?:(input:{sessionId:string;day:string;groupId:string;messageId:string;nativeRequestId:string})=>Promise<()=>void>}|undefined
+   if(typeof resident?.bindRouting!=='function')throw new WorkError('teloa/unavailable','群路由的可信来源与累计额度服务尚未就绪。')
+   release=await resident.bindRouting({sessionId,day,groupId:ask.groupId,messageId:ask.messageId,nativeRequestId:requestId})
+   if(typeof release!=='function')throw new WorkError('teloa/unavailable','群路由来源租约未就绪。')
+   await ctx.sessionController.prompt({sessionId:brandString<SessionId>(sessionId),requestId:brandString<SessionRequestId>(requestId),mode:'queue' as const,content:[{type:'text',text:JSON.stringify(groupRoutingInput(ask))}]},signal)
+  }
  }catch(error){return degraded(ctx,signal.aborted?'aborted':corrupted(error)?'corrupt':'prompt',sessionId)}
  try{settled=await awaitRoutingTurn(ctx,sessionId,requestId,signal)}
  catch(error){return degraded(ctx,signal.aborted?'aborted':corrupted(error)?'corrupt':'timeout',sessionId)}
@@ -254,4 +262,5 @@ async function askOnce(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:Abort
  if(text===undefined)return degraded(ctx,'silent',sessionId)
  try{return {kind:'ok',output:groupRoutingOutput(text,ask.candidates.map(candidate=>candidate.roleId))}}
  catch{return {kind:'parse-failed'}}
+ }finally{release?.()}
 }

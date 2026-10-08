@@ -14,6 +14,15 @@ test('读取可用调度的真实下次时间、最近领取、任务和健康�
  assert.deepEqual(readPlanScheduleSummary(value,planId),value)
 })
 
+test('可信长期事件摘要保留完成策略与冻结定义，旧日程不新增字段',()=>{
+ const completionPolicy={kind:'verified' as const,verifier:'material-version-summary' as const,verifierVersion:1,authorizationVersion:1},workDefinition={schema:'teloa.plan-work/v2',definitionVersion:2,definitionControlId:planId,budgetAccountId:taskId,authorization:{kind:'delegation',delegationId:occurrenceId,delegationVersion:1},completion:completionPolicy,triggers:[{kind:'local-event',eventKind:'material-version',sourceId:taskRequestId,coalesce:'latest'}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}
+ const event={...occurrence,configVersion:2,occurrenceId:'event:'+occurrenceId,workDefinition,fields:{...occurrence.fields,completionPolicy},taskRequest:{...occurrence.taskRequest,fields:{...occurrence.taskRequest.fields,completionPolicy}}}
+ const value={available:true,overview:{planId,planVersion:3,state:'active',nextAt:null,latest:{occurrence:event,task:{id:taskId,state:'waiting'}},latestSkip:null},health:null}
+ assert.deepEqual(readPlanScheduleSummary(value,planId),value)
+ assert.throws(()=>readPlanScheduleSummary({...value,overview:{...value.overview,latest:{occurrence:{...event,workDefinition:{...workDefinition,definitionVersion:1}},task:null}}},planId),/调度摘要/)
+ assert.throws(()=>readPlanScheduleSummary({...value,overview:{...value.overview,latest:{occurrence:{...event,taskRequest:occurrence.taskRequest},task:null}}},planId),/调度摘要/)
+})
+
 test('未装配宿主不携带伪造摘要或日期，已装配但未记录可显式为空',()=>{
  assert.deepEqual(readPlanScheduleSummary({available:false,overview:null,health:null},planId),{available:false,overview:null,health:null})
  assert.deepEqual(readPlanScheduleSummary({available:true,overview:null,health:null},planId),{available:true,overview:null,health:null})

@@ -10,8 +10,15 @@ import type {MessageReference} from '@teloa/contract'
 import {CollaborationService,initializeCollaboration} from '../src/work/collaboration.ts'
 import {GroupTaskService,initializeGroupTasks} from '../src/work/group-tasks.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
-import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
+import {GroupAgentGrantService,initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
+import {RoleToolGrantService,initializeRoleToolGrants} from '../src/work/role-tool-grants.ts'
+import {RoleDelegationService} from '../src/work/role-delegations.ts'
+import {TwinExecutionConsentService} from '../src/work/twin-execution-consents.ts'
+import {initializeTaskRuns} from '../src/work/task-runs.ts'
+import {initializeTaskRunSubagents} from '../src/work/task-run-subagents.ts'
+import {initializeTaskRunRuntimeLinks} from '../src/work/task-run-runtime-links.ts'
+import {initializeTaskRunFlows} from '../src/work/task-run-flows.ts'
 import {GroupAttachmentService,initializeGroupAttachments,type GroupAttachmentBytePorts} from '../src/work/group-attachments.ts'
 import {ArtifactSnapshotStore,initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
 import {initializeArtifacts} from '../src/work/artifacts.ts'
@@ -55,6 +62,7 @@ before(async()=>{
  await initializeGroupAttachments(pool)
  await initializeArtifactSnapshots(pool)
  await initializeArtifacts(pool)
+ await initializeRoleToolGrants(pool);await initializeTaskRuns(pool);await initializeTaskRunSubagents(pool);await initializeTaskRunRuntimeLinks(pool);await initializeTaskRunFlows(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 
@@ -62,14 +70,25 @@ const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,
 const groupFields=(memberRoleIds:string[])=>({name:'SOC 调查协作',scope:'SOC',announcement:'围绕固定证据协作。',rules:openGroupRules,memberRoleIds})
 const roleFields={name:'调查岗',kind:'employee' as const,scopes:['SOC'],duty:'调查',dataScope:'固定证据',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}
 
-async function fixture(){
+async function fixture(kind:'employee'|'twin'='employee'){
  const owner=randomUUID(),tasks=new TaskService(pool,identity)
  const roles=new RoleService(pool,identity),groups=new CollaborationService(pool,identity),groupTasks=new GroupTaskService(pool,identity,tasks)
- const role=await roles.create(owner,{requestId:randomUUID(),fields:roleFields})
+ let role=await roles.create(owner,{requestId:randomUUID(),fields:{...roleFields,kind}})
+ if(kind==='twin'){
+  await new RoleToolGrantService(pool,identity.now,async()=>{}).change(owner,{roleId:role.id,expectedRoleVersion:role.version,action:'save',rules:[{name:'read_reference',allowed:[{id:'one',version:'v1'}]}]})
+  role=(await roles.get(owner,role.id))!
+ }
  const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:groupFields([role.id])})
  const message=await groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'请核验这些原件。'})
+ const authority={authorize:async()=>({assertCurrent(){}})},consents=new TwinExecutionConsentService(pool,identity,authority)
+ let consent:Awaited<ReturnType<TwinExecutionConsentService['confirm']>>|undefined
+ if(kind==='twin'){
+  const delegation=await new RoleDelegationService(pool,identity,authority).change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:role.version,expectedVersion:null,action:'save',fields:{scope:'SOC',allowedTools:['read_reference'],knowledgeIds:[],memoryViewId:null,groupIds:[group.id],safeRecovery:false}})
+  consent=await consents.confirm(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:role.version,authorization:{kind:'delegation',delegationId:delegation.id,delegationVersion:delegation.version}})
+  await new GroupAgentGrantService(pool,identity.now).change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:[],canPost:true,canAutoRun:true})
+ }
  const created=await groupTasks.create(owner,{requestId:randomUUID(),groupId:group.id,messageId:message.id,expectedGroupVersion:group.version,goal:'形成结论。',assignee:{roleId:role.id,expectedVersion:role.version}})
- return {owner,role,group,task:created.task,source:created.source,attachments:new GroupAttachmentService(pool,identity,bytePorts)}
+ return {owner,role,group,task:created.task,source:created.source,consent,consents,attachments:new GroupAttachmentService(pool,identity,bytePorts)}
 }
 
 type Fixture=Awaited<ReturnType<typeof fixture>>
@@ -85,9 +104,9 @@ async function wire(f:Fixture,references:MessageReference[],granted=references){
  await pool.query("insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at) values($1,$2,$3,1,$4,$5,'active',$6,false,false,$7,'{}'::jsonb,$8)",[f.group.id,f.owner,f.role.id,f.group.version,f.role.version,JSON.stringify(granted),randomUUID(),identity.now()])
 }
 
-async function context(f:Fixture,ports:RunGroupFilePorts|null=runPorts):Promise<RunGroupContext|undefined>{
+async function context(f:Fixture,ports:RunGroupFilePorts|null=runPorts,withPool=true):Promise<RunGroupContext|undefined>{
  const db=await pool.connect()
- try{await db.query('begin');const value=await readRunGroupContext(db,f.owner,f.task,f.role,ports??undefined);await db.query('commit');return value}
+ try{await db.query('begin');const value=await readRunGroupContext(db,f.owner,f.task,f.role,ports??undefined,withPool?pool:undefined);await db.query('commit');return value}
  catch(error){await db.query('rollback');throw error}
  finally{db.release()}
 }
@@ -121,6 +140,26 @@ test('缺 files 键的旧快照按空数组回落，不判 storage-corrupt',()=>
  assert.deepEqual(readStoredRunGroupContext(legacy)?.files,[])
  assert.equal(readStoredRunGroupContext(undefined),undefined)
  assert.throws(()=>readStoredRunGroupContext({...legacy,extra:1}),{code:'teloa/storage-corrupt'})
+})
+
+test('Twin群运行上下文复用当前本人完整执行许可，无pool或撤回同意不能读取新上下文',async()=>{
+ const f=await fixture('twin'),value=await context(f)
+ assert.equal(value?.roleId,f.role.id);assert.equal(value?.roleVersion,f.role.version)
+ assert.deepEqual(value?.materials,[]);assert.deepEqual(value?.files,[])
+ assert.equal('memory' in value!,false)
+ await assert.rejects(context(f,runPorts,false),{code:'teloa/forbidden'})
+ assert.ok(f.consent)
+ await f.consents.revoke(f.owner,{requestId:randomUUID(),consentId:f.consent.id,expectedVersion:f.consent.version})
+ await assert.rejects(context(f),{code:'teloa/forbidden'})
+ assert.deepEqual(readStoredRunGroupContext(value),value)
+})
+
+test('Twin群运行上下文拒绝关闭发言或自动Run的当前grant，不借用旧授权',async()=>{
+ const f=await fixture('twin'),grants=new GroupAgentGrantService(pool,identity.now)
+ const change=async(canPost:boolean,canAutoRun:boolean)=>grants.change(f.owner,{requestId:randomUUID(),groupId:f.group.id,roleId:f.role.id,expectedGroupVersion:f.group.version,expectedRoleVersion:f.role.version,action:'save',resources:[],canPost,canAutoRun})
+ await change(false,true);await assert.rejects(context(f),{code:'teloa/forbidden'})
+ await change(true,false);await assert.rejects(context(f),{code:'teloa/forbidden'})
+ await change(true,true);assert.equal((await context(f))?.roleId,f.role.id)
 })
 
 test('非空 files 的哈希对同一输入稳定，改一位 sha256 即变',()=>{

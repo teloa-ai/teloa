@@ -422,6 +422,12 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     assertContinuationCurrent(){fixedRoots(captured)},
    })
   },
+  /** 只返回当前真实 request 对象的执行位置；归因字符串或复制 options 不能产生证明。 */
+  modelPosition(options:GenerateOptions):Readonly<{sessionId:string;turn:number;step:number}>|null{
+   const model=models.get(options);if(!model)return null
+   if(!model.active)throw denied();assertModel(model)
+   return Object.freeze({sessionId:model.turn.agent.id,turn:model.turn.number,step:model.step?.number??0})
+  },
   close():void{closed=true;recoveryAbort.abort(denied());recovering.clear();for(const agent of turns.keys())cancel(agent);turns.clear()},
  })
 }

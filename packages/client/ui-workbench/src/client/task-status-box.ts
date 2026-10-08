@@ -1,3 +1,4 @@
+import type {TaskCompletionPolicy} from '@teloa/contract'
 import type {AttentionKind,PreviewTask} from './task-preview.js'
 import type {TaskAttention} from './task-api.js'
 import type {TaskAttentionReasonKey} from './task-attention-presentation.js'
@@ -16,7 +17,7 @@ export type TaskStatusAction=
 export type TaskStatusButton={label:string;action:TaskStatusAction}
 export type TaskStatusBoxModel={tone:'info'|'warn'|'good'|'muted';sentence:string;hint:string;reasonKey?:TaskAttentionReasonKey;primary?:TaskStatusButton;secondary?:TaskStatusButton}
 export type TaskStatusInput={
- state:PreviewTask['state'];needs:readonly AttentionKind[]
+ completionPolicy?:TaskCompletionPolicy;state:PreviewTask['state'];needs:readonly AttentionKind[]
  attention:TaskAttention|null|undefined        // 持久任务的服务端关注；沙盒任务传 undefined
  assigned:boolean                               // task.assigneeId!=='self'
  ownerName:string;runCount:number
@@ -31,7 +32,7 @@ const anchor=(label:string,target:TaskStatusAnchor,focus?:'prepare'):TaskStatusB
 /** 任务状态框映射：自上而下第一条命中即返回，关注原因优先于状态。 */
 export function taskStatusBox(input:TaskStatusInput):TaskStatusBoxModel{
  const {state,needs,attention,t}=input
- const progress=describeTaskProgress(input.state,input.needs,input.t)
+ const progress=describeTaskProgress(input.state,input.needs,input.t,input.completionPolicy)
  const base={sentence:progress.title,hint:progress.description}
  const reason=attention?.reason
  if(needs.includes('approval')||needs.includes('execution'))return {...base,tone:'warn',primary:anchor(t('task.status.action.approve'),'approval')}

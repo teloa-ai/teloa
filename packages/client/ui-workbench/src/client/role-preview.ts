@@ -1,12 +1,13 @@
 import type { CollaborationScope } from './collaboration-preview.js'
 import type {TeloaTranslate} from './i18n/index.js'
 import {roleSupportsScope,type RoleRuntimeConfig} from '@teloa/contract'
+import type {RoleDelegationRead} from './role-delegation-api.js'
 export type {RoleRuntimeConfig} from '@teloa/contract'
 
 export const roleStates={active:'role.state.active',paused:'role.state.paused',retired:'role.state.retired'} as const
 export type RoleMemory={id:string;title:string;text:string;source:string;scope:'role'|'private';status:'candidate'|'confirmed'|'withdrawn';version:number;createdAt:string;updatedAt:string}
 export type RoleResponsibility={triggers:string[];autonomousActions:string[];confirmationPoints:string[];escalationRules:string[];deliveryChecks:string[]}
-export type PreviewRole={storage?:'persistent';id:string;name:string;kind:'employee'|'twin';scopes:CollaborationScope[];state:keyof typeof roleStates;version:number;duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig;memories:RoleMemory[];history:{text:string;actorId:string;at:string}[];draft?:{body:string;version:number;editorId:string;updatedAt:string};retirementReason?:string}
+export type PreviewRole={storage?:'persistent';workAccess?:RoleDelegationRead|undefined;id:string;name:string;kind:'employee'|'twin';scopes:CollaborationScope[];state:keyof typeof roleStates;version:number;duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig;memories:RoleMemory[];history:{text:string;actorId:string;at:string}[];draft?:{body:string;version:number;editorId:string;updatedAt:string};retirementReason?:string}
 export type RoleFields=Pick<PreviewRole,'name'|'kind'|'scopes'|'duty'|'dataScope'|'executionScope'|'skills'|'knowledge'|'responsibility'|'runtimeConfig'>
 export type TeamChange=(
   |{type:'create';id:string;fields:RoleFields}
@@ -18,7 +19,15 @@ export type TeamChange=(
   |{type:'draft';roleId:string;expectedVersion:number;body:string}
 )&{now:string}
 
-export const canReceiveTask=(role:PreviewRole|undefined,scope:CollaborationScope)=>!!role&&role.kind==='employee'&&role.state==='active'&&roleSupportsScope(role.scopes,scope)
+type WorkRole=Pick<PreviewRole,'id'|'kind'|'state'|'version'|'scopes'|'workAccess'>
+/** 仅展示服务端核实的当前委托；一次性本人确认走独立创建入口，不把选择操作当成授权。 */
+export const canReceiveTask=(role:WorkRole|undefined,scope:string,groupId?:string)=>{
+ if(!role||role.state!=='active'||!roleSupportsScope(role.scopes,scope))return false
+ if(role.kind==='employee')return true
+ const access=role.workAccess
+ return !!access&&access.roleId===role.id&&access.roleVersion===role.version&&access.delegations.some(delegation=>delegation.roleId===role.id&&delegation.roleVersion===role.version&&delegation.state==='active'&&delegation.scope===scope&&(!groupId||delegation.groupIds.includes(groupId))&&access.consents.some(consent=>consent.roleId===role.id&&consent.roleVersion===role.version&&consent.ownerId===delegation.ownerId&&consent.state==='active'&&consent.authorization.kind==='delegation'&&consent.authorization.delegationId===delegation.id&&consent.authorization.delegationVersion===delegation.version))
+}
+export const canConfigureRoleExecution=(role:WorkRole,access:RoleDelegationRead|undefined)=>role.state!=='retired'&&!!access&&access.roleId===role.id&&access.roleVersion===role.version&&access.canEditExecution===true
 export const roleName=(roles:readonly Pick<PreviewRole,'id'|'name'>[],id:string,t?:TeloaTranslate)=>id==='self'?(t?t('role.preview.self'):'我'):roles.find(role=>role.id===id)?.name||(t?t('role.preview.formerMember'):'历史成员')
 export const rolePeople=(roles:readonly PreviewRole[],t?:TeloaTranslate)=>[{id:'self',name:t?t('role.preview.self'):'我',kind:'human' as const,state:'active' as const},...roles.map(role=>({id:role.id,name:role.name,kind:role.kind==='twin'?'draft' as const:'digital' as const,state:role.state}))]
 

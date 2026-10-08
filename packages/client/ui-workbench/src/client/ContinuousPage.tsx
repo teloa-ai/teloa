@@ -1,3 +1,7 @@
+import {PlanWorkSettings} from './PlanWorkSettings.js'
+import type {ResourceApi} from './resource-api.js'
+import type {WorkControlApi} from './work-control-api.js'
+import type {WorkControl} from '@teloa/contract'
 import {CapabilityFields,CapabilityNotice,useApplicationCapability} from './CapabilityNotice.js'
 import {applicationPresentation} from './application-presentation.js'
 import {planLifecycle} from './status-presentation.js'
@@ -31,7 +35,7 @@ import type { PlanTemplate, TemplatePlanSeed } from './plan-template.js'
 import type { PlanScheduleSummary } from './plan-schedule-summary.js'
 import type { TaskPreview } from './task-preview.js'
 import type { BusinessTarget } from './business-preview.js'
-import { persistentPlanCreation, persistentPlanUpdate } from './continuous-persistence.js'
+import { persistentPlanAction, persistentPlanCreation, persistentPlanUpdate } from './continuous-persistence.js'
 import type { PlanAction, PlanApi, PlanSource, SavedPlan } from './plan-api.js'
 import { describeSavedPlanSource } from './plan-source-presentation.js'
 import { continuousDirectoryMode, visiblePreviewPlans, type ContinuousDirectoryMode } from './continuous-directory-presentation.js'
@@ -42,7 +46,7 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {readDirectoryFilterCategory,writeDirectoryFilterCategory,type WorkbenchDirectoryNavigation,type WorkbenchDirectoryPatch} from './workbench-navigation-state.js'
 
-type PlanPersistence={api:PlanApi;plans:SavedPlan[];merge:(rows:SavedPlan[])=>void;refreshRoles:()=>void;industrySource:(plan:SavedPlan)=>ReactNode}
+type PlanPersistence={api:PlanApi;controls?:WorkControlApi;resources?:ResourceApi;plans:SavedPlan[];merge:(rows:SavedPlan[])=>void;refreshRoles:()=>void;industrySource:(plan:SavedPlan)=>ReactNode}
 type Props={navigation?:{state:WorkbenchDirectoryNavigation;change:(patch:WorkbenchDirectoryPatch)=>void};persistence?:PlanPersistence;openArtifacts:OpenArtifacts;seed:TemplatePlanSeed|null;clearSeed:()=>void;openMarket:(id:string)=>void;visible:boolean;state:TaskPreview;target:ContinuousTarget;go:(target:ContinuousTarget)=>void;change:(change:ContinuousChange)=>TaskPreview;openTask:(id:string)=>void;openRole:(id:string)=>void;openBusiness:(target:BusinessTarget)=>void;team:()=>void;attention:()=>void}
 type Draft={input:string;occurrenceId:string;result:string;output:string;note:string;roleId:string}
 type PlanDraft={id:string;revision?:number;fields:PlanFields;template?:PlanTemplate;source?:PlanSource}
@@ -126,7 +130,7 @@ export function ContinuousPage({navigation,persistence,openArtifacts,seed,clearS
       </aside>
       <article data-teloa-pane="detail" tabIndex={-1} ref={detailScroll} onScroll={event=>{positions.current[routeKey]=event.currentTarget.scrollTop}} className={css.detail} aria-label={t(run?'continuous.detail.runTitle':plan?'continuous.detail.planTitle':'continuous.detail.infoTitle')} onKeyDown={event=>closeDirectoryDetailOnEscape(event,()=>navigate({kind:isRuns?'runs':'plans'}))}>
         <button type="button" onClick={()=>navigate({kind:isRuns?'runs':'plans'})}><ArrowLeft size={16}/>{t('continuous.detail.back')}</button>
-        {plan?<PlanDetail key={plan.id} industrySource={savedPlan&&persistence?.industrySource(savedPlan)} openMarket={openMarket} plan={plan} saved={savedPlan} scheduleApi={savedPlan?persistence?.api:undefined} persist={savedPlan&&persistence?async(action,note)=>{try{setError('');persistence.merge([await persistence.api.change(savedPlan.id,savedPlan.version,action,note)]);return true}catch(cause){setError(localizeWorkError(locale,cause));return false}}:undefined} state={state} draft={draft} patch={patch} act={act} edit={()=>edit(plan)} go={navigate} openTask={openTask} openRole={openRole} team={team}/>:run?<RunDetail openArtifacts={openArtifacts} openMarket={openMarket} run={run} state={state} draft={draft} patch={patch} act={act} go={navigate} openTask={openTask} openRole={openRole}/>:<div className={css.empty}><CalendarClock size={34}/><h2>{t(target.id?'error.notFound':'continuous.directory')}</h2><p>{t(target.id?'error.notFound':'continuous.saved.description')}</p><div className={css.buttons}><button type="button" disabled={!allowed} onClick={()=>edit()}>{t(isSandbox?'continuous.action.createSandbox':'continuous.action.create')}</button>{target.scope&&<button type="button" onClick={()=>openBusiness({scope:target.scope!,section:'analysis'})}>{t('navigation.spaces')}</button>}</div></div>}
+        {plan?<PlanDetail key={plan.id} industrySource={savedPlan&&persistence?.industrySource(savedPlan)} openMarket={openMarket} plan={plan} saved={savedPlan} workChanged={row=>persistence?.merge([row])} resources={persistence?.resources} controls={persistence?.controls} scheduleApi={savedPlan?persistence?.api:undefined} persist={savedPlan&&persistence?async(action,note)=>{try{setError('');persistence.merge([await persistentPlanAction(persistence.api,persistence.controls,savedPlan,action,note)]);return true}catch(cause){setError(localizeWorkError(locale,cause));return false}}:undefined} state={state} draft={draft} patch={patch} act={act} edit={()=>edit(plan)} go={navigate} openTask={openTask} openRole={openRole} team={team}/>:run?<RunDetail openArtifacts={openArtifacts} openMarket={openMarket} run={run} state={state} draft={draft} patch={patch} act={act} go={navigate} openTask={openTask} openRole={openRole}/>:<div className={css.empty}><CalendarClock size={34}/><h2>{t(target.id?'error.notFound':'continuous.directory')}</h2><p>{t(target.id?'error.notFound':'continuous.saved.description')}</p><div className={css.buttons}><button type="button" disabled={!allowed} onClick={()=>edit()}>{t(isSandbox?'continuous.action.createSandbox':'continuous.action.create')}</button>{target.scope&&<button type="button" onClick={()=>openBusiness({scope:target.scope!,section:'analysis'})}>{t('navigation.spaces')}</button>}</div></div>}
       </article>
     </div>}
     {editing&&forms[editing]&&(()=>{const form=forms[editing]!,saved=persistence?.plans.find(plan=>plan.id===form.id),persistent=!!persistence&&!isSandbox;return <PlanForm persistent={persistent} fallbackFocus={()=>createButton.current?.focus()} openMarket={id=>{setEditing(null);openMarket(id)}} draft={form} roles={state.roles} close={()=>setEditing(null)} patch={fields=>setForms(current=>({...current,[editing]:{...current[editing]!,fields}}))} reload={form.revision!==undefined?()=>{const plan=value.plans.find(item=>item.id===form.id);if(plan)setForms(current=>({...current,[editing]:{id:plan.id,revision:plan.revision,fields:structuredClone(plan.fields),...(plan.template?{template:structuredClone(plan.template)}:{})}}))}:undefined} save={async()=>{if(!applicationPresentation.can('automation'))return;let id=form.id;if(persistent&&saved){const updated=await persistence.api.update(saved,persistentPlanUpdate(form.fields,saved));persistence.merge([updated])}else if(persistent){const creation=persistentPlanCreation(form.fields,form.template,state.roles,form.source),created=await persistence.api.create(creation.fields,creation.source);persistence.merge([created]);id=created.id}else{change({type:'save',id:form.id,...(form.revision===undefined?{}:{expectedRevision:form.revision}),fields:form.fields,...(form.template?{template:form.template}:{}),now:new Date().toISOString()})}setForms(current=>{const next={...current};delete next[editing];return next});setEditing(null);navigate({kind:'plan',id})}}/>})()}
@@ -139,18 +143,19 @@ const notificationPolicyKeys={always:'continuous.form.notification.always',atten
 const runStateKeys={prepared:'plan.run.prepared',submitting:'plan.run.submitting',accepted:'plan.run.accepted',active:'plan.run.active',ended:'plan.run.ended',withdrawn:'plan.run.withdrawn',configuration_failed:'plan.run.configurationFailed'} as const
 function localizedTrigger(t:ReturnType<typeof useI18n>['t'],trigger:PlanFields['trigger']){return triggerLabel(trigger,t)}
 
-function PlanDetail({industrySource,openMarket,plan,saved,scheduleApi,persist,state,draft,patch,act,go,edit,openTask,openRole,team}:DetailProps&{industrySource:ReactNode;plan:ContinuousPlan;saved:SavedPlan|undefined;scheduleApi:PlanApi|undefined;persist:((action:PlanAction,note?:string)=>Promise<boolean>)|undefined;edit:()=>void;openTask:Props['openTask'];team:()=>void}){
+function PlanDetail({workChanged,resources,controls,industrySource,openMarket,plan,saved,scheduleApi,persist,state,draft,patch,act,go,edit,openTask,openRole,team}:DetailProps&{workChanged:(plan:SavedPlan)=>void;resources:ResourceApi|undefined;controls:WorkControlApi|undefined;industrySource:ReactNode;plan:ContinuousPlan;saved:SavedPlan|undefined;scheduleApi:PlanApi|undefined;persist:((action:PlanAction,note?:string)=>Promise<boolean>)|undefined;edit:()=>void;openTask:Props['openTask'];team:()=>void}){
   const {locale,t,dateTime}=useI18n()
   const allowed=useApplicationCapability('automation')
   const stamp=(value:string)=>dateTime(value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
   const states={running:t('status.running'),completed:t('status.completed'),failed:t('status.failed'),stale:t('status.stale')} as const
   const collaborationScopes=useBusinessScopes()
-  const [busy,setBusy]=useState(false)
+  const [busy,setBusy]=useState(false),[control,setControl]=useState<WorkControl>()
   const [triggerError,setTriggerError]=useState('')
   const [scheduleReload,setScheduleReload]=useState(0)
   const [scheduleState,setScheduleState]=useState<{key:string;value?:PlanScheduleSummary;error:string;loading:boolean}>({key:'',error:'',loading:false})
   const root=useRef<HTMLDivElement>(null)
   const persisted=!!saved
+  useEffect(()=>{let live=true;setControl(undefined);if(saved?.workDefinition&&controls)void controls.get(saved.workDefinition.definitionControlId).then(value=>{if(value.ownerId!==saved.ownerId||value.scope!=='definition')throw Error('控制范围不匹配。');if(live)setControl(value)}).catch(cause=>{if(live)setTriggerError(localizeWorkError(locale,cause))});return()=>{live=false}},[controls,saved?.id,saved?.version,scheduleReload])
   const block=planBlock(plan,state.roles,t),runs=visiblePlanRuns(state.continuous.runs,plan.id,persisted)
   const candidates=state.roles.filter(role=>canReceiveTask(role,plan.fields.scope)&&role.id!==plan.fields.roleId)
   const revision={planId:plan.id,expectedRevision:plan.revision}
@@ -198,7 +203,7 @@ function PlanDetail({industrySource,openMarket,plan,saved,scheduleApi,persist,st
   ]
   const events=saved&&faces?planTimelineEvents({plan:saved,executions:executionPage?.items??[],skips:skipPage?.items??[],sourceLabel:describeSavedPlanSource(saved.source,t).label,faces,stamp,t,taskStateLabel:state=>t(taskStates[state]),runStateLabel:state=>t(runStateKeys[state])}):sandboxEvents
   const rows:PropertyRow[]=[
-    {id:'trigger',label:t('continuous.detail.trigger'),value:localizedTrigger(t,plan.fields.trigger)},
+    {id:'trigger',label:t('continuous.detail.trigger'),value:saved?.workDefinition&&!saved.workDefinition.triggers.some(v=>v.kind==='schedule')?t('planWork.material'):localizedTrigger(t,plan.fields.trigger)},
     {id:'notification',label:t('continuous.form.notificationPolicy'),value:plan.fields.notificationPolicy?t(notificationPolicyKeys[plan.fields.notificationPolicy]):t('continuous.detail.notification.review')},
     {id:'dataScope',label:t('continuous.detail.dataScope'),value:plan.fields.dataScope},
     {id:'delivery',label:t('continuous.detail.delivery'),value:plan.fields.delivery},
@@ -208,13 +213,16 @@ function PlanDetail({industrySource,openMarket,plan,saved,scheduleApi,persist,st
     {id:'health',label:t('plan.rail.health'),value:health===null?t('plan.schedule.healthUnknown'):health.health==='healthy'?t('plan.schedule.healthy',{time:stamp(health.lastSuccessAt??health.lastAttemptAt)}):t('plan.schedule.failed',{code:health.failureCode??'—',time:stamp(health.lastAttemptAt)}),...(health?{detail:<p className={css.muted}>{t('plan.rail.healthAt',{time:stamp(health.lastAttemptAt)})}</p>}:{})},
   ]
   return <div ref={root}>
-    <ObjectPageHeader backHidden title={plan.fields.title} {...(plan.archived||!allowed?{}:{onEditTitle:edit,editTitleLabel:t('continuous.detail.edit')})} status={{mark:lifecycle==='active'?'enabled':lifecycle==='paused'?'paused':'retired',label:t(lifecycle==='archived'?'status.archived':lifecycle==='active'?'status.enabled':'status.paused'),tone:lifecycle==='active'?'good':'muted'}} badges={[{id:'scope',label:collaborationScopes[plan.fields.scope]??plan.fields.scope}]} owner={{label:roleLabel,name:roleName(state.roles,plan.fields.roleId,t),onOpen:()=>openRole(plan.fields.roleId)}} menuLabel={t('plan.menu.more')} menu={[
-      {id:'edit',label:t('continuous.detail.edit'),onSelect:edit,disabled:!allowed||plan.archived||!persisted&&!!plan.handoff},
+    <ObjectPageHeader backHidden title={plan.fields.title} {...(plan.archived||!allowed?{}:{onEditTitle:saved?.workDefinition?()=>openAnchor('plan-work'):edit,editTitleLabel:t('continuous.detail.edit')})} status={{mark:lifecycle==='active'?'enabled':lifecycle==='paused'?'paused':'retired',label:t(lifecycle==='archived'?'status.archived':lifecycle==='active'?'status.enabled':'status.paused'),tone:lifecycle==='active'?'good':'muted'}} badges={[{id:'scope',label:collaborationScopes[plan.fields.scope]??plan.fields.scope}]} owner={{label:roleLabel,name:roleName(state.roles,plan.fields.roleId,t),onOpen:()=>openRole(plan.fields.roleId)}} menuLabel={t('plan.menu.more')} menu={[
+      {id:'edit',label:t('continuous.detail.edit'),onSelect:saved?.workDefinition?()=>openAnchor('plan-work'):edit,disabled:!allowed||plan.archived||!persisted&&!!plan.handoff},
       {id:'toggle',label:(plan.enabled?t('continuous.detail.pause'):t('continuous.detail.resume'))+(persisted?'':t('continuous.common.demoSuffix')),onSelect:()=>runPlanAction({kind:plan.enabled?'pause':'resume'}),disabled:busy||plan.archived||resumeBlocked||!plan.enabled&&!allowed},
       {id:'archive',label:t('continuous.detail.archive'),onSelect:()=>openAnchor('archive'),disabled:plan.archived||saved?.source.kind==='system-digest'},
     ]}/>
     <p className={own.planGoal}>{plan.fields.goal}</p>
+    {saved?.workDefinition&&<p role="status">{control?t(`planWork.state.${control.state}`):t('roleDelegation.loading')}{saved.state==='active'&&control?.state==='active'&&!saved.workDefinition.triggers.some(v=>v.kind==='schedule')?' · '+t('planWork.waitingEvent'):''}</p>}
+    {controls?.pending()&&<p role="alert">{t('planWork.unknown')} <button type="button" onClick={()=>{void controls.recover().then(()=>setScheduleReload(v=>v+1),cause=>setTriggerError(localizeWorkError(locale,cause)))}}>{t('planWork.recover')}</button></p>}
     <div className={own.planBody}><div>
+      {saved&&scheduleApi&&saved.source.kind!=='system-digest'&&<PlanWorkSettings key={saved.id+':'+saved.version} plan={saved} api={scheduleApi} role={state.roles.find(role=>role.id===saved.roleId)} resources={resources} changed={workChanged} openRole={openRole}/>}
       <StatusBox ariaLabel={t('plan.status.aria')} tone={model.tone} sentence={model.sentence} {...(model.hint?{hint:model.hint,hintLabel:t('task.status.hint')}:{})} {...(model.primary?{primary:statusAction(model.primary)}:{})} {...(model.secondary?{secondary:statusAction(model.secondary)}:{})}>
         {detail&&<p className={css.muted}>{detail}</p>}
         {triggerError&&<p className={css.error} role="alert">{triggerError}<button type="button" onClick={()=>setTriggerError('')}>{t('common.closeError')}</button></p>}

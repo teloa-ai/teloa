@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {TaskRunFlowService} from '@teloa/backend'
-import {createTaskRunFlowHandler,taskRunFlowEndpoints} from '../src/task-run-flows.ts'
+import {createTaskRunFlowHandler,taskRunFlowEndpoints,confirmedTaskRunFlowEndpoints,createConfirmedTaskRunFlowHandler} from '../src/task-run-flows.ts'
 
 test('内部 Flow RPC 固定宿主身份，只公开读回与固定步骤事件',async()=>{
  const calls:Array<[string,string,unknown]>=[],service={
@@ -23,4 +23,9 @@ test('内部 Flow RPC 固定宿主身份，只公开读回与固定步骤事件'
  await assert.rejects(handler('task-run-flows/get',{runId:'run'},controller.signal),error=>error instanceof Error&&error.name==='AbortError')
  assert.deepEqual(taskRunFlowEndpoints,['task-run-flows/get','task-run-flows/transition'])
  assert.equal(calls.length,2)
+})
+test('本人 Flow 确认入口独立于 generic set，宿主绑定身份且取消后不进入服务',async()=>{
+ const calls:string[]=[],service={createConfirmed:async(owner:string)=>{calls.push(owner);return null},waitSources:async(owner:string)=>{calls.push(owner);return {}},rebindWaitConfirmed:async(owner:string)=>{calls.push(owner);return null}} as unknown as TaskRunFlowService,handler=createConfirmedTaskRunFlowHandler('real-self',async()=>service),signal=new AbortController().signal
+ for(const endpoint of confirmedTaskRunFlowEndpoints){assert.equal((taskRunFlowEndpoints as readonly string[]).includes(endpoint),false);await handler(endpoint,{},signal)}assert.deepEqual(calls,['real-self','real-self','real-self'])
+ const controller=new AbortController();controller.abort();await assert.rejects(handler(confirmedTaskRunFlowEndpoints[0],{},controller.signal),{name:'AbortError'});assert.equal(calls.length,3)
 })

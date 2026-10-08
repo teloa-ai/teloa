@@ -1,4 +1,4 @@
-import {readScheduleTrigger} from '@teloa/contract'
+import {readScheduleTrigger,type TaskCompletionPolicy} from '@teloa/contract'
 import type { ArtifactRef } from './artifact-preview.ts'
 import type { PlanTemplate } from './plan-template.ts'
 import { collaborationScopes, type CollaborationScope } from './collaboration-preview.ts'
@@ -11,7 +11,7 @@ export type PlanNotificationPolicy=typeof planNotificationPolicies[number]
 export const planNotificationPolicyKeys:Record<PlanNotificationPolicy,string>={always:'continuous.form.notification.always',attention:'continuous.form.notification.attention',failure:'continuous.form.notification.failure',silent:'continuous.form.notification.silent'}
 export const planNotificationPolicyLabels:Record<PlanNotificationPolicy,string>={always:'每次都提醒',attention:'需要本人处理时提醒',failure:'仅失败时提醒',silent:'不主动提醒'}
 export const isPlanNotificationPolicy=(value:unknown):value is PlanNotificationPolicy=>planNotificationPolicies.some(policy=>policy===value)
-export type PlanFields={title:string;scope:CollaborationScope;goal:string;dataScope:string;delivery:string;roleId:string;trigger:PlanTrigger;notificationPolicy?:PlanNotificationPolicy}
+export type PlanFields={title:string;scope:CollaborationScope;goal:string;dataScope:string;delivery:string;roleId:string;trigger:PlanTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
 type PlanHistory={text:string;at:string}
 export type ContinuousPlan={id:string;version:number;revision:number;fields:PlanFields;template?:PlanTemplate;enabled:boolean;archived:boolean;handoff?:{fromId:string;reason:string};history:PlanHistory[]}
 export type PlanRun={id:string;planId:string;occurrenceId:string;revision:number;snapshot:{version:number;fields:PlanFields;template?:PlanTemplate};actor:{id:string;name:string};input:string;state:'running'|'completed'|'failed';result:string;output:string;createdAt:string;finishedAt?:string;retryOf?:string;resolution?:{note:string;at:string};taskId?:string;artifact?:ArtifactRef}
@@ -34,7 +34,7 @@ export const continuousText=(value:string,label:string,max=8000)=>{const result=
 export function validatePlanFields(fields:PlanFields,roles:PreviewRole[],scopes:Readonly<Record<string,string>>=collaborationScopes,allowPausedRole=false):PlanFields{
   if(!Object.hasOwn(scopes,fields.scope))throw Error('业务范围无效。')
   const role=roles.find(role=>role.id===fields.roleId)
-  if(!canReceiveTask(role,fields.scope)&&!(allowPausedRole&&role?.state==='paused'&&role.kind==='employee'&&role.scopes.includes(fields.scope)))throw Error('请选择同业务在岗的员工；分身先代拟。')
+  if(!canReceiveTask(role,fields.scope)&&!(allowPausedRole&&role?.state==='paused'&&role.kind==='employee'&&role.scopes.includes(fields.scope)))throw Error('请选择同业务在岗且已获本人执行授权的同事或分身。')
   const trigger=validatePlanTrigger(fields.trigger)
   if(!isPlanNotificationPolicy(fields.notificationPolicy))throw Error('请本人核对并选择通知策略。')
   return {title:continuousText(fields.title,'计划名称',120),scope:fields.scope,goal:continuousText(fields.goal,'工作目标'),dataScope:continuousText(fields.dataScope,'数据范围'),delivery:continuousText(fields.delivery,'交付要求'),roleId:fields.roleId,trigger,notificationPolicy:fields.notificationPolicy}

@@ -1,0 +1,26 @@
+import {readTaskRunFlow,readTaskRunFlowDefinition,taskInput,workUuid,type TaskRunFlowDefinition} from '@teloa/contract'
+import {recoveryStorageError} from './recovery-error.ts'
+type Journal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
+type Binding={stepId:string;sourceKind:'approval-result'|'material-version'|'group-message'|'child-completed';sourceId:string}
+type Create={kind:'create';requestId:string;runId:string;definitionVersion:number;steps:TaskRunFlowDefinition['steps'];waitBindings:Binding[]}
+type Rebind=Binding&{kind:'rebind';requestId:string;runId:string;flowId:string;expectedAttempts:number;expectedBindingVersion:number}
+type Command=Create|Rebind
+function binding(value:unknown):Binding{const r=taskInput(value,['stepId','sourceKind','sourceId']);if(typeof r.stepId!=='string'||!/^[a-zA-Z0-9][-_a-zA-Z0-9]{0,119}$/.test(r.stepId)||!['approval-result','material-version','group-message','child-completed'].includes(String(r.sourceKind))||!workUuid(r.sourceId))throw Error('等待来源不正确。');return r as Binding}
+function read(value:unknown):Command{
+ const r=taskInput(value,['kind','requestId','runId','definitionVersion','steps','waitBindings','flowId','stepId','expectedAttempts','expectedBindingVersion','sourceKind','sourceId']);if(!workUuid(r.requestId)||!workUuid(r.runId))throw Error('工作流程恢复身份不正确。')
+ if(r.kind==='create'){taskInput(value,['kind','requestId','runId','definitionVersion','steps','waitBindings']);const d=readTaskRunFlowDefinition({definitionVersion:r.definitionVersion,steps:r.steps});if(d.steps.some(s=>s.execution)||!Array.isArray(r.waitBindings))throw Error('执行配置必须由宿主固定。');return {kind:'create',requestId:r.requestId,runId:r.runId,...d,waitBindings:r.waitBindings.map(binding)}}
+ taskInput(value,['kind','requestId','runId','flowId','stepId','expectedAttempts','expectedBindingVersion','sourceKind','sourceId']);if(r.kind!=='rebind'||!workUuid(r.flowId)||!Number.isSafeInteger(r.expectedAttempts)||Number(r.expectedAttempts)<1||!Number.isSafeInteger(r.expectedBindingVersion)||Number(r.expectedBindingVersion)<1)throw Error('等待来源恢复版本不正确。');return {...r,...binding({stepId:r.stepId,sourceKind:r.sourceKind,sourceId:r.sourceId})} as Rebind
+}
+export function createConfirmedFlowApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:Journal,id=()=>crypto.randomUUID()){
+ let pending:Command|undefined,error:Error|undefined,busy=false
+ try{const raw=journal?.read();if(raw){if(raw.length>150000)throw Error();const r=taskInput(JSON.parse(raw),['schema','request']);if(r.schema!=='teloa.flow-command/v1')throw Error();pending=read(r.request)}}catch{error=recoveryStorageError()}
+ const clear=()=>{journal?.clear();pending=undefined}
+ const send=async()=>{if(error)throw error;if(!pending||busy)throw Error('请先核对原工作流程请求。');busy=true;const command=pending;try{journal?.write(JSON.stringify({schema:'teloa.flow-command/v1',request:command}));const {kind,...payload}=command,result=readTaskRunFlow(await call(kind==='create'?'task-run-flows/create-confirmed':'task-run-flows/rebind-wait-confirmed',payload));if(result.runId!==command.runId)throw Error('工作流程回执不属于当前执行。');if(kind==='create'){const definition=readTaskRunFlowDefinition({definitionVersion:result.definitionVersion,steps:result.steps.map(({state:_s,attempts:_a,outputSummary:_o,waitReason:_w,startedAt:_start,updatedAt:_u,completedAt:_c,execution:_e,...s})=>s)});if(JSON.stringify(definition)!==JSON.stringify({definitionVersion:command.definitionVersion,steps:command.steps}))throw Error('工作流程回执与原定义不一致。')}else if(result.flowId!==command.flowId||!result.steps.some(s=>s.id===command.stepId&&s.attempts===command.expectedAttempts&&s.state==='waiting'))throw Error('等待来源回执与原步骤不一致。');clear();return result}catch(cause){if(cause&&typeof cause==='object'&&'rejected'in cause&&cause.rejected===true)clear();throw cause}finally{busy=false}}
+ const prepare=(command:Command)=>{if(error)throw error;if(pending)throw Error('请先核对原工作流程请求。');pending=read(command);return send()}
+ return {pending:()=>pending?structuredClone(pending):undefined,recoveryMessage:()=>error,recover:send,discard(){clear();error=undefined},
+  create:(runId:string,definition:TaskRunFlowDefinition,waitBindings:Binding[])=>prepare({kind:'create',requestId:id(),runId,...definition,waitBindings}),
+  rebind:(request:Omit<Rebind,'kind'|'requestId'>)=>prepare({kind:'rebind',requestId:id(),...request}),
+  async sources(runId:string){const r=taskInput(await call('task-run-flows/wait-sources',{runId}),['materials','approvals','bindings']);const items=(v:unknown)=>{if(!Array.isArray(v))throw Error('等待来源目录格式不正确。');return v.map(i=>{const x=taskInput(i,['id','title']);if(!workUuid(x.id)||typeof x.title!=='string'||!x.title.trim())throw Error('等待来源身份不正确。');return x as {id:string;title:string}})};if(!Array.isArray(r.bindings))throw Error('等待来源绑定格式不正确。');return {materials:items(r.materials),approvals:items(r.approvals),bindings:r.bindings.map(v=>{const b=taskInput(v,['stepId','version','sourceKind','sourceId']);if(!Number.isSafeInteger(b.version)||Number(b.version)<1)throw Error('等待来源版本不正确。');return {...binding({stepId:b.stepId,sourceKind:b.sourceKind,sourceId:b.sourceId}),version:Number(b.version)}})}},
+ }
+}
+export type ConfirmedFlowApi=ReturnType<typeof createConfirmedFlowApi>

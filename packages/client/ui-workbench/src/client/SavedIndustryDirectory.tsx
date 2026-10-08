@@ -17,6 +17,7 @@ import type {IndustryTaskApi} from './industry-task-api.js'
 import {SavedIndustryTaskForm} from './SavedIndustryTaskForm.js'
 import type {IndustryPlanApi,IndustryPlanRequest} from './industry-plan-api.js'
 import {SavedIndustryPlanForm} from './SavedIndustryPlanForm.js'
+import type {RoleDelegationRead} from './role-delegation-api.js'
 import type {SkillInstallApi} from './skill-install-api.js'
 import {SkillInstallControl} from './SkillInstallControl.js'
 import {IndustryReadinessPanel,type ReadinessPort} from './IndustryReadinessPanel.js'
@@ -50,7 +51,7 @@ export function missingRoleKnowledge(load:IndustryLoadRecord,roleItemId:string,k
   .map(link=>load.items.find(row=>row.instanceId===link.to))
   .filter((row):row is IndustryLoadRecord['items'][number]=>!!row&&row.required&&heldInstance(knowledgeRows,load,row)?.state!=='active')
 }
-export function SavedIndustryDirectory({loads,loadId,scope,roleId,templateId,target,error,refresh,openMarket,nativeSettings,knowledge,dataSources,executionTools,mcpConnections,plugins,roles,tasks,plans,unload,skillInstallApi,connectors,readiness}:{loads:readonly IndustryLoadRecord[];loadId?:string;scope?:string;roleId?:string;templateId?:string;target?:{loadId:string;itemInstanceId:string};error:string|undefined;refresh:()=>Promise<void>;openMarket:(id?:string)=>void;nativeSettings:()=>void;knowledge:KnowledgeProps;dataSources:DataSourceProps;executionTools:ExecutionToolProps;mcpConnections:McpConnectionProps;plugins:PluginProps;roles:RoleProps;tasks:TaskProps;plans:PlanProps;unload:UnloadProps;skillInstallApi:SkillInstallApi;connectors?:ConnectorsProps;readiness?:ReadinessPort}){
+export function SavedIndustryDirectory({loads,loadId,scope,roleId,templateId,target,error,refresh,openMarket,nativeSettings,knowledge,dataSources,executionTools,mcpConnections,plugins,roles,tasks,plans,unload,skillInstallApi,connectors,readiness,executionAccess}:{loads:readonly IndustryLoadRecord[];loadId?:string;scope?:string;roleId?:string;templateId?:string;target?:{loadId:string;itemInstanceId:string};error:string|undefined;refresh:()=>Promise<void>;openMarket:(id?:string)=>void;nativeSettings:()=>void;knowledge:KnowledgeProps;dataSources:DataSourceProps;executionTools:ExecutionToolProps;mcpConnections:McpConnectionProps;plugins:PluginProps;roles:RoleProps;tasks:TaskProps;plans:PlanProps;unload:UnloadProps;skillInstallApi:SkillInstallApi;connectors?:ConnectorsProps;readiness?:ReadinessPort;executionAccess?:Readonly<Record<string,RoleDelegationRead>>}){
  const {locale,t}=useI18n()
  const scopeNames=useBusinessScopes()
  type ItemStatus=IndustryLoadRecord['items'][number]['status']
@@ -226,7 +227,7 @@ export function SavedIndustryDirectory({loads,loadId,scope,roleId,templateId,tar
    </>}}/>
   </section>})}
  </section>)}
-  {planForm&&<SavedIndustryPlanForm load={planForm.load} itemInstanceId={planForm.itemInstanceId} roles={roles.items} api={plans.api} close={()=>setPlanForm(undefined)} create={plans.create} openRole={plans.openRole}/>}
-  {taskForm&&<SavedIndustryTaskForm load={taskForm.load} itemInstanceId={taskForm.itemInstanceId} roles={roles.items} api={tasks.api} close={()=>setTaskForm(undefined)} create={tasks.create}/>} 
+  {planForm&&<SavedIndustryPlanForm load={planForm.load} itemInstanceId={planForm.itemInstanceId} roles={roles.items} {...(executionAccess?{executionAccess}:{})} api={plans.api} close={()=>setPlanForm(undefined)} create={plans.create} openRole={plans.openRole}/>}
+  {taskForm&&<SavedIndustryTaskForm load={taskForm.load} itemInstanceId={taskForm.itemInstanceId} roles={roles.items} {...(executionAccess?{executionAccess}:{})} api={tasks.api} close={()=>setTaskForm(undefined)} create={tasks.create}/>}
  </section>
 }

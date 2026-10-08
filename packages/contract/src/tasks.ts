@@ -1,7 +1,8 @@
+import {readTaskCompletionPolicy,type TaskCompletionPolicy} from './task-completion.ts'
 import {WorkError,isRecord} from './index.ts'
 export const workTaskStates=['ready','running','paused','waiting','blocked','completed','cancelled'] as const
-export type TaskDefinition={title:string;goal:string;scope:string;groupId:string|null;skills:string[]}
-export type WorkTask=TaskDefinition&{id:string;ownerId:string;version:number;state:typeof workTaskStates[number];assigneeRoleId:string|null;assigneeRoleVersion:number|null;createdAt:string;updatedAt:string}
+export type TaskDefinition={title:string;goal:string;scope:string;groupId:string|null;skills:string[];completionPolicy?:TaskCompletionPolicy}
+export type WorkTask=TaskDefinition&{contentVersion?:number;id:string;ownerId:string;version:number;state:typeof workTaskStates[number];assigneeRoleId:string|null;assigneeRoleVersion:number|null;createdAt:string;updatedAt:string}
 export function taskInput(input:unknown,keys:readonly string[]):Record<string,unknown>{
  if(!isRecord(input)||Object.keys(input).some(key=>!keys.includes(key)))throw new WorkError('teloa/invalid-input','任务请求包含未知字段或格式不正确。');return input
 }
@@ -23,8 +24,8 @@ function taskSkills(value:unknown):string[]{
  return list
 }
 export function taskDefinition(input:unknown):TaskDefinition{
- const row=taskInput(input,['title','goal','scope','groupId','skills'])
+ const row=taskInput(input,['title','goal','scope','groupId','skills','completionPolicy'])
  const text=(value:unknown,max:number)=>{if(typeof value!=='string'||!value.trim()||value.length>max)throw new WorkError('teloa/invalid-input','任务名称、目标或业务身份不合法。');return value.trim()}
  const scope=text(row.scope,128);if(!/^[-a-zA-Z0-9_]+$/.test(scope))throw new WorkError('teloa/invalid-input','业务身份格式不正确。')
- return {title:text(row.title,120),goal:text(row.goal,8000),scope,groupId:taskGroupId(row.groupId),skills:taskSkills(row.skills)}
+ return {title:text(row.title,120),goal:text(row.goal,8000),scope,groupId:taskGroupId(row.groupId),skills:taskSkills(row.skills),...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
 }

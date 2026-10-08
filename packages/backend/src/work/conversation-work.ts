@@ -8,6 +8,8 @@ import {BusinessResponsibilityService} from './business-responsibility.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {readBusinessConfigurationManagement} from './business-configuration-store.ts'
 import {workAccess,combineWorkAccessLeases,type WorkAccessLease} from './work-access.ts'
+import {assertRoleWorkRole} from './twin-execution-consents.ts'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
 
 export type ConversationWorkContext={sessionId:string;scopeId:string;roleId:string|null;version:number;locked:boolean}
 export type WorkRequestTarget={roleId:string;roleVersion:number;name:string;scope:string;unavailable:null|'paused'|'retired'}
@@ -91,6 +93,7 @@ export function readStoredConversationWorkRequest(row:Record<string,unknown>):Co
 }
 export type ConversationWorkReservationPrepared={
  onAdmission:(lease:WorkAccessLease)=>void
+ pool?:Pool
  guard?:ConversationWorkPreparedGuard
  now:()=>string
  scopes?: (db:PoolClient,owner:string)=>Promise<readonly string[]>
@@ -121,16 +124,22 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
    await guard?.(db,{kind:'reserve'})
    const allowed=input.kind==='report'?(preparedGuard.scopes?await preparedGuard.scopes(db,owner):input.allBusinesses?null:[input.scope]):null
    if(input.kind==='report'&&(!allowed||!Array.isArray(allowed)||allowed.some(scope=>!session(scope))||!allowed.includes(input.scope)))throw new WorkError('teloa/forbidden','无法核对汇报当前业务授权范围。')
-   const eligible=roles.filter(role=>role.kind==='employee'&&(input.kind==='report'?input.allBusinesses===true?role.scopes.some(scope=>allowed!.includes(scope)):role.scopes.includes(input.scope):roleSupportsScope(role.scopes,input.scope)))
+   // 汇报固定本人确认的员工名单；明确交办可选择已由本人委托执行的分身。
+   const eligible=roles.filter(role=>input.kind==='report'?role.kind==='employee'&&(input.allBusinesses===true?role.scopes.some(scope=>allowed!.includes(scope)):role.scopes.includes(input.scope)):roleSupportsScope(role.scopes,input.scope))
+   let assignment:WorkAccessLease|undefined
    if(input.kind==='task'){
-    const role=eligible[0];if(!role)throw new WorkError('teloa/forbidden','指定员工不存在或不支持责任业务。')
-    if(role.version!==input.expectedRoleVersion)throw new WorkError('teloa/version-conflict','指定员工版本已变化，请核对。')
-    if(role.state!=='active')throw new WorkError('teloa/conflict','指定员工已暂停或退役，不能接手新工作。')
+    const role=eligible[0];if(!role)throw new WorkError('teloa/forbidden','指定角色不存在或不支持责任业务。')
+    assertRoleWorkRole(role,input.expectedRoleVersion!)
+    if(role.kind==='twin'){
+     if(!preparedGuard.pool)throw new WorkError('teloa/unavailable','当前会话未接入执行委托核验，不能交办给分身。')
+     assignment=await authorizeRoleTaskAssignment(db,preparedGuard.pool,owner,role,input.scope)
+    }
    }
    if(eligible.length>1000)throw new WorkError('teloa/invalid-input','本次员工范围过大，请缩小业务范围。')
    const targets:WorkRequestTarget[]=eligible.map(role=>({roleId:role.id,roleVersion:role.version,name:role.name,scope:input.allBusinesses===true?role.scopes.find(scope=>allowed!.includes(scope))!:input.scope,unavailable:role.state==='active'?null:role.state}))
    if(input.expectedReportTargets&&JSON.stringify(targets)!==JSON.stringify(input.expectedReportTargets))throw new WorkError('teloa/version-conflict','汇报员工名单、版本、状态或授权范围已变化，请重新确认。')
    const admission=combineWorkAccessLeases([
+    ...(assignment?[assignment]:[]),
     await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:input.sessionId,objectId:input.roleId??input.requestId,operation:'run'}),
     await workAccess.authorize({kind:'conversation-work-reserve',ownerId:owner,requestId:input.requestId,sessionId:input.sessionId}),
    ])
@@ -199,8 +208,15 @@ export class ConversationWorkService{
    if(observed.submitted||current?.locked||frozen)throw new WorkError('teloa/conflict','已发送的工作不能改变业务或指定负责人，请开始新工作。')
    if((current?.version??0)!==row.expectedVersion)throw new WorkError('teloa/version-conflict','会话业务设置已变化，请先核对。')
    await assertBusinessScopeRegistered(db,owner,row.scopeId)
-   if(row.roleId!==null){const raw=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,row.roleId])).rows[0];if(!raw)throw new WorkError('teloa/forbidden','指定员工不存在或不属于本人。');const role=readStoredRole(raw);if(role.kind!=='employee'||role.state!=='active')throw new WorkError('teloa/conflict','指定员工当前不能接手。');if(!roleSupportsScope(role.scopes,row.scopeId))throw new WorkError('teloa/forbidden','指定员工不支持此业务。')}
-   const admission=row.roleId===null?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId as string,objectId:row.roleId as string,operation:'edit'})
+   let assignment:WorkAccessLease|undefined
+   if(row.roleId!==null){
+    const raw=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,row.roleId])).rows[0]
+    if(!raw)throw new WorkError('teloa/forbidden','指定角色不存在或不属于本人。')
+    const role=readStoredRole(raw);assertRoleWorkRole(role,role.version)
+    if(!roleSupportsScope(role.scopes,row.scopeId))throw new WorkError('teloa/forbidden','指定角色不支持此业务。')
+    assignment=await authorizeRoleTaskAssignment(db,this.pool,owner,role,row.scopeId)
+   }
+   const admission=row.roleId===null?undefined:combineWorkAccessLeases([assignment!,await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId as string,objectId:row.roleId as string,operation:'edit'})])
    admission?.assertCurrent()
    const saved=(await db.query('insert into teloa_conversation_work_contexts(owner_id,session_id,scope_id,role_id,version,locked) values($1,$2,$3,$4,$5,false) on conflict(owner_id,session_id) do update set scope_id=excluded.scope_id,role_id=excluded.role_id,version=excluded.version returning *',[owner,row.sessionId,row.scopeId,row.roleId,Number(row.expectedVersion)+1])).rows[0]
    admission?.assertCurrent()
@@ -213,7 +229,7 @@ export class ConversationWorkService{
   let admission:WorkAccessLease|undefined
   try{
    await db.query('begin');if(taskChild)await lockConversationTaskChild(db,owner,taskChild);await this.lock(db,owner,'request:'+input.requestId);await this.lock(db,owner,'context:'+input.sessionId)
-   const result=await reserveConversationWorkInTransaction(db,owner,input,{onAdmission:lease=>{admission=lease},...(guard?{guard}:{}),now:this.now,...(this.scopes?{scopes:this.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
+   const result=await reserveConversationWorkInTransaction(db,owner,input,{pool:this.pool,onAdmission:lease=>{admission=lease},...(guard?{guard}:{}),now:this.now,...(this.scopes?{scopes:this.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
    admission?.assertCurrent();await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }

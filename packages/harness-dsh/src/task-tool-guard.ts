@@ -2,7 +2,7 @@ import {taskToolArgumentsAllowed,type TaskToolArgumentRule} from './task-tool-ar
 import type {Context} from '@deepseek-ai/cordis'
 import type {PreToolDecision,ToolDefinition,ToolExecution} from '@deepseek-ai/dsh-tools'
 import {isNativeToolName,nativeToolCallIssue,nativeToolNeedsApproval} from './native-tool-access.ts'
-import {observeTaskRun} from './task-run-observation.ts'
+import {observeTaskRunTimeline} from './task-run-observation.ts'
 import {readSessionEvents} from './session-events.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
 import type {SubagentDelegationPorts} from './subagent-delegation.ts'
@@ -10,10 +10,13 @@ import type {TaskRunTeamAccess} from './task-run-team.ts'
 import type {TaskBrowserCleanupAccess} from './task-run-browser.ts'
 import type {TaskRunOrchestrationAccess} from './task-run-orchestration.ts'
 import {delegationToolAllowed,delegationTools,teamDelegationTools,externalEgressToolAllowed,externalEgressTools,mcpResourceToolAllowed,mcpResourceTools,orchestrationToolAllowed,orchestrationTools,subagentTaskToolName,type WebGatePolicy} from './role-tool-grants.ts'
-import {webAccessHost,webHostBlocked,type WebAccessKind} from '@teloa/contract'
+import {WorkError,webAccessHost,webHostBlocked,type WebAccessKind} from '@teloa/contract'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
 import {workspaceFileToolNames,isWorkspaceFileRule} from '@teloa/contract'
 import type {TaskRunWorkspaceFileAccess} from './workspace-file-access.ts'
+import type {GoalObservationContext} from '@teloa/contract'
+import type {SessionEvent} from '@deepseek-ai/dsh-session'
+export type TaskRunGoalObservationReader=(sessionId:string,events:readonly SessionEvent[])=>Promise<GoalObservationContext|undefined>
 
 export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];stopRequested?:boolean}
 /** null 仅表示该会话不受任务执行管理；岗位暂停应返回空清单，不能降级为 null。 */
@@ -32,7 +35,7 @@ export type WebAccessGatePorts={
 }
 
 /** 复用 DSH 公开前置守卫，保留框架既有审批链；不凭工具名称前缀授予权限。 */
-export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReader,selfAuthorizedTools:readonly string[]=[],readBusinessBinding?:TaskSessionBusinessBindingReader,delegation?:SubagentDelegationPorts,webAccess?:WebAccessGatePorts,team?:TaskRunTeamAccess,browserCleanup?:TaskBrowserCleanupAccess,orchestration?:TaskRunOrchestrationAccess,workspaceFiles?:TaskRunWorkspaceFileAccess){
+export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReader,selfAuthorizedTools:readonly string[]=[],readBusinessBinding?:TaskSessionBusinessBindingReader,delegation?:SubagentDelegationPorts,webAccess?:WebAccessGatePorts,team?:TaskRunTeamAccess,browserCleanup?:TaskBrowserCleanupAccess,orchestration?:TaskRunOrchestrationAccess,workspaceFiles?:TaskRunWorkspaceFileAccess,goalObservation?:TaskRunGoalObservationReader){
  const selfAuthorized=new Set(selfAuthorizedTools)
  // 自授权分支在资源工具闸之前返回，装配期就堵死这条绕过路径，避免日后扩充自授权集时静默放开。
  if(mcpResourceTools.some(name=>selfAuthorized.has(name)))throw Error('自授权工具不能包含 MCP 资源工具。')
@@ -72,34 +75,49 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   if(!exec.agent)return next()
   if(exec.signal.aborted)return {kind:'deny',reason:'本次工具调用已取消。'}
   let policy:TaskToolPolicy|null,policySessionId:string,lineage:{root:typeof exec.agent.session;depth:number},teamMember=false,orchestrationChild=false,cleanup=false
+  let authorizationStage='lineage'
   try{
    // 谱系上溯与岗位记忆、Run Skill 作用域共用一份实现；抛错落到下面既有的 catch，仍回同一句固定理由。
    lineage=resolveSessionLineage(ctx,exec.agent.session)
    policySessionId=lineage.root.id
+   authorizationStage='read-policy'
    policy=await readPolicy(policySessionId,exec.signal)
+   authorizationStage='cleanup'
    cleanup=await browserCleanup?.consume(exec,policy)??false
    if(cleanup)checkedCleanup.add(exec)
    if(policy?.stopRequested===true&&!cleanup)return {kind:'deny',reason:'本次执行已请求停止，不能继续调用工具。'}
    if(policy!==null&&(!Array.isArray(policy.allowedTools)||policy.allowedTools.some(name=>typeof name!=='string'||!name.trim())))throw Error('invalid policy')
+   authorizationStage='team-membership'
    if(policy!==null&&Reflect.get(ctx,'agentTeams')?.tryMembership(exec.agent)?.role==='teammate'){
     // 收尾不是继续派发 Team：私有 receipt 和持久化关联已核对已登记 child，不能要求停止后仍有 spawn 授权。
     if(!cleanup&&(!team||!await team.authorizeMember(exec.agent,policy,exec.signal)))throw Error('unregistered teammate')
     teamMember=true
    }
+   authorizationStage='orchestration'
    if(policy!==null&&!teamMember&&!cleanup&&orchestration)orchestrationChild=await orchestration.authorizeChild(exec.agent,policy,exec.signal)
    if(policy?.nativeRequestId!==undefined&&!cleanup){
     // 请求身份属于策略根会话；子级首条消息由驱动写入且没有 rpcId，拿它核对必然全拒。
     // 混入请求也只看同一份根会话事件，子级消息不参与；根调用方仍核对自己的会话。
+    authorizationStage='session-events'
     const requestId=policy.nativeRequestId,events=readSessionEvents(lineage.root)
     const root=ctx.agents.get(lineage.root.id)
-    const observed=observeTaskRun(events,requestId,root?await team?.continuations(root,requestId,events):undefined)
-    if(!teamMember&&!orchestrationChild&&observed.state!=='active')return {kind:'deny',reason:'当前工具调用不属于获准执行的原生轮次。'}
+    authorizationStage='team-continuations'
+    const continuations=root?await team?.continuations(root,requestId,events):undefined
+    authorizationStage='goal-observation'
+    const goal=await goalObservation?.(lineage.root.id,events)
+    authorizationStage='turn-observation'
+    const observed=observeTaskRunTimeline(events,requestId,continuations,undefined,goal)
+    if(!teamMember&&!orchestrationChild&&observed.observation.state!=='active')return {kind:'deny',reason:'当前工具调用不属于获准执行的原生轮次。'}
     let start=events.length-1
     while(start>=0&&events[start]!.type!=='turn/start')start--
     const mixed=events.slice(start+1).some(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'&&(!('rpcId' in event.data.source)||event.data.source.rpcId!==requestId))
     if(mixed)return {kind:'deny',reason:'本轮混入其他请求，请在独立执行会话中重试。'}
+    if(!teamMember&&!orchestrationChild&&!observed.authorized)return {kind:'deny',reason:'当前工具调用不属于获准执行的原生轮次。'}
    }
-  }catch{
+  }catch(error){
+   // 仅记录固定阶段和错误分类；原异常正文、工具参数及会话内容不进入日志。
+   const code=error instanceof WorkError?error.code:error instanceof TypeError?'type-error':error instanceof SyntaxError?'syntax-error':'teloa/unavailable'
+   ctx.logger.warn('Teloa 任务工具授权待核对：%s/%s',authorizationStage,code)
    return {kind:'deny',reason:'无法核对任务执行权限，请先恢复授权服务。'}
   }
   if(exec.signal.aborted)return {kind:'deny',reason:'本次工具调用已取消。'}

@@ -15,3 +15,12 @@ test('读取失败仍释放预设租约，并保留失败原因',async()=>{
  await assert.rejects(withPresetReadScope(registry,async()=>{throw failure}),error=>error===failure)
  assert.equal(released,1)
 })
+
+test('岗位目录持有本人选择预设的真实作用域，默认读取与失败释放保持',async()=>{
+ const selected='role-preset',key={},ids:Array<string|undefined>=[];let released=0
+ const registry={acquireScope:async(id?:string)=>{ids.push(id);return {key,async [Symbol.asyncDispose](){released++}}}}
+ assert.equal(await withPresetReadScope(registry,async scope=>{assert.equal(scope,key);assert.equal(released,0);return 'actual-selected-layer'},selected),'actual-selected-layer')
+ assert.deepEqual(ids,[selected]);assert.equal(released,1)
+ await assert.rejects(withPresetReadScope(registry,async()=>{throw Error('layer unavailable')},selected),/layer unavailable/)
+ assert.equal(released,2)
+})

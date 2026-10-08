@@ -50,14 +50,38 @@
 .rowText { min-width: 0; color: var(--teloa-muted); font-size: var(--teloa-font-control); overflow-wrap: anywhere; }
 .row .button { min-height: 30px; padding: 4px 12px; flex: none; }
 .together { display: block; margin-top: 2px; font-size: var(--teloa-font-caption); color: var(--teloa-muted); font-weight: var(--teloa-weight-regular); }
-.setup { margin: 8px 0; }
-.setup h2 { margin-top: 0; }
-.setup .confirm { margin-top: 8px; }
+.setup { margin: 8px 0; padding: 12px 16px; border-radius: var(--teloa-design-r2,10px); }
+.modelHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.setup .modelHeader h2 { margin: 0; font-size: var(--teloa-font-control); font-weight: var(--teloa-weight-medium); color: var(--teloa-muted); }
+.panel .close { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--teloa-muted); }
+.panel .close:hover:not(:disabled) { background: var(--teloa-hover); color: var(--teloa-text); }
+.modelRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 6px 0 0; min-height: 36px; }
+.modelIdentity { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.modelIdentity > svg { flex: none; color: var(--teloa-muted); }
+.modelIdentity strong { font-size: var(--teloa-font-body); font-weight: var(--teloa-weight-medium); }
+.modelPicker { position: relative; display: inline-flex; min-width: 0; }
+.modelPicker select { appearance: none; max-width: 100%; min-height: 36px; padding: 6px 30px 6px 10px; font: inherit; font-size: var(--teloa-font-body); font-weight: var(--teloa-weight-medium); color: var(--teloa-text); background: var(--teloa-subtle); border: 1px solid var(--teloa-border); border-radius: 8px; cursor: pointer; }
+.modelPicker select:hover:not(:disabled) { background: var(--teloa-hover); }
+.modelPicker select:focus-visible { outline: 2px solid var(--teloa-accent); outline-offset: 3px; }
+.modelPicker select:disabled { opacity: .5; cursor: default; }
+.modelPicker > svg { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--teloa-muted); }
+.modelState, .selected { display: inline-flex; align-items: center; gap: 4px; font-size: var(--teloa-font-caption); color: var(--teloa-muted); }
+.selected { color: var(--teloa-good); }
+.modelActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.modelActions:empty { display: none; }
+.setup .button, .setup .primary { font-size: var(--teloa-font-control); }
+.setup .progress { margin: 10px 0 0; gap: 4px; font-size: var(--teloa-font-caption); color: var(--teloa-muted); }
+.setup .progress progress { height: 5px; }
+.setup .warning { margin: 8px 0 0; font-size: var(--teloa-font-caption); }
+.setup .confirm { margin-top: 12px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--teloa-border); border-radius: 0; }
+.setup .confirm h3 { margin: 0 0 8px; font-size: var(--teloa-font-body); font-weight: var(--teloa-weight-medium); }
+.setup .confirm p { margin: 6px 0; font-size: var(--teloa-font-control); }
+.setup .confirm > details summary { padding: 6px 0; cursor: pointer; width: max-content; }
+.setup .confirm a { color: var(--teloa-accent); }
 .setup .confirm > details { margin-bottom: 12px; color: var(--teloa-muted); font-size: var(--teloa-font-caption); }
-.settingsHeader { margin: 12px 0 4px; font-size: var(--teloa-font-control); }
-.settingsHeader select { font: inherit; padding: 6px 10px; color: var(--teloa-text); background: var(--teloa-surface); border: 1px solid var(--teloa-border); border-radius: 8px; }
 .info { color: var(--teloa-muted); font-size: var(--teloa-font-caption); }
 .info summary { cursor: pointer; width: max-content; }
 .info ul { margin: 6px 0; padding-left: 18px; }
 .info p { margin: 0; }
 @media (max-width: 740px) { .searchHeader { flex-direction: column; gap: 8px; } .searchTools { width: 100%; justify-content: space-between; } .moreMenu { right: 0; } .more > summary, .row .button, .panel .menuItem { min-height: 44px; } }
+@media (max-width: 600px) { .modelIdentity { max-width: 100%; } .modelPicker { max-width: calc(100vw - 100px); } .modelPicker select, .panel .close { min-height: 44px; } .panel .close { width: 44px; } }

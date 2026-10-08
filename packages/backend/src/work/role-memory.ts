@@ -1,10 +1,12 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,artifactContent,isRoleMemory,roleMemorySource,roleMemoryVisibility,roleSupportsScope,savedArtifactSource,taskDefinition,type DigitalRole,type RoleMemory,type RoleMemoryProposer,type RoleMemorySource,type RoleMemoryVisibility} from '@teloa/contract'
+import {WorkError,artifactContent,isRoleMemory,roleMemorySource,roleMemoryVisibility,roleSupportsScope,savedArtifactSource,taskDefinition,type DigitalRole,type RoleMemory,type RoleMemoryProposer,type RoleMemorySource,type RoleMemoryVisibility,type RoleMemoryView} from '@teloa/contract'
 import {readStoredRole} from './roles.ts'
+import {readStoredRoleMemoryView,roleMemoryViewEntries} from './role-memory-views.ts'
 
 export type RoleMemoryActor={ownerId:string;kind:'human'}|{ownerId:string;kind:'agent';roleId:string}
 export type RunRoleMemory={id:string;version:number;title:string;contentHash:string;markdown:string;source:RoleMemorySource;visibility:RoleMemoryVisibility}
+export type RoleMemoryRunTarget={scope:string;memoryViewId?:string|null;groupId?:string|null}
 /** 每次运行读取的上下文窗口上限；Auto Dream 保存的历史条数不受此值限制。 */
 export const roleMemoryRunLimit=30
 
@@ -49,7 +51,7 @@ export function readRunRoleMemories(value:unknown):RunRoleMemory[]{
   if(!Array.isArray(value)||value.length>30)throw Error()
   const rows=value.map(item=>{
    const row=exact(item,['id','version','title','contentHash','markdown','source','visibility']),source=roleMemorySource(row.source),visibility=roleMemoryVisibility(row.visibility)
-   if(!uuid(row.id)||!positive(row.version)||typeof row.title!=='string'||!row.title.trim()||row.title.length>120||typeof row.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.contentHash)||typeof row.markdown!=='string'||hash(row.markdown)!==row.contentHash||visibility.kind!=='role')throw Error()
+   if(!uuid(row.id)||!positive(row.version)||typeof row.title!=='string'||!row.title.trim()||row.title.length>120||typeof row.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.contentHash)||typeof row.markdown!=='string'||hash(row.markdown)!==row.contentHash)throw Error()
    return {id:row.id,version:row.version,title:row.title,contentHash:row.contentHash,markdown:row.markdown,source,visibility}
   })
   if(new Set(rows.map(row=>row.id)).size!==rows.length)return (()=>{throw Error()})()
@@ -191,7 +193,12 @@ export class RoleMemoryService{
    if(role.version!==row.expectedRoleVersion)throw new WorkError('teloa/version-conflict','员工版本已变化，请刷新后记录候选。')
    if(role.state==='retired')throw new WorkError('teloa/conflict','已退役员工不能新增记忆候选。')
    if(role.kind==='employee'&&visibility.kind!=='role'||role.kind==='twin'&&visibility.kind!=='private')throw bad()
-   if(who.kind==='agent'&&(who.roleId!==role.id||role.kind!=='employee'))throw new WorkError('teloa/forbidden','只有当前员工能为自身提出候选；分身样本由本人记录。')
+   if(who.kind==='agent'&&who.roleId!==role.id)throw new WorkError('teloa/forbidden','只能为当前运行岗位提出候选。')
+   if(who.kind==='agent'&&role.kind==='twin'){
+    if(source.kind!=='run')throw new WorkError('teloa/forbidden','分身候选必须引用自身的真实运行。')
+    const run=(await db.query('select role_id,role_version,state from teloa_task_runs where owner_id=$1 and id=$2 for share',[who.ownerId,source.id])).rows[0]
+    if(!run||run.role_id!==role.id||run.role_version!==role.version||!['accepted','active'].includes(run.state)||source.version!==1)throw new WorkError('teloa/forbidden','分身经验来源与当前运行岗位不一致。')
+   }
    if(who.kind==='agent'&&source.kind==='self-feedback')throw new WorkError('teloa/forbidden','员工候选必须引用可核验的任务、运行、成果或知识来源。')
    let resolved=await this.resolveSource(db,who.ownerId,source,role.id)
    if(source.kind==='self-feedback')resolved={...resolved,scopeIds:visibility.scopeIds}
@@ -275,10 +282,42 @@ export class RoleMemoryService{
  confirm(principal:RoleMemoryActor,input:unknown){return this.change(principal,input,'confirm')}
  withdraw(principal:RoleMemoryActor,input:unknown){return this.change(principal,input,'withdraw')}
  // 项目引用不改变此处范围判定；见 2026-09-25 计划 Task 3。
- async confirmedForRun(db:Pick<Pool,'query'>,ownerId:string,target:{scope:string},role:DigitalRole):Promise<RunRoleMemory[]>{
-  actor({ownerId,kind:'human'});if(role.ownerId!==ownerId||role.kind!=='employee'||!roleSupportsScope(role.scopes,target.scope))throw new WorkError('teloa/forbidden','运行员工与记忆读取范围不一致。')
-  const rows=(await db.query("select * from teloa_role_memories where owner_id=$1 and role_id=$2 and state='confirmed' order by confirmed_at desc,candidate_at desc,id",[ownerId,role.id])).rows,result:RunRoleMemory[]=[]
-  for(const stored of rows){const memory=await this.read(db,ownerId,stored);if(!memory.sourceAvailable||memory.visibility.kind!=='role'||!memory.visibility.scopeIds.includes(target.scope))continue;result.push({id:memory.id,version:memory.content.version,title:memory.title,contentHash:memory.content.contentHash,markdown:memory.content.markdown,source:memory.source,visibility:memory.visibility});if(result.length===roleMemoryRunLimit)break}
+ async confirmedForRun(db:Pick<Pool,'query'>,ownerId:string,target:string|RoleMemoryRunTarget,role:DigitalRole):Promise<RunRoleMemory[]>{
+  actor({ownerId,kind:'human'})
+  const selection=typeof target==='string'?{scope:target}:target,scope=selection?.scope
+  if(role.ownerId!==ownerId||typeof scope!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(scope)||!roleSupportsScope(role.scopes,scope))throw new WorkError('teloa/forbidden','运行岗位与记忆读取范围不一致。')
+  if(role.kind==='twin'){
+   // 历史调用没有群与共享视图选择，不能据此授予读取私有记忆的许可。
+   if(typeof target==='string'||Object.keys(selection).some(key=>!['scope','groupId','memoryViewId'].includes(key))||!Object.hasOwn(selection,'groupId')||!Object.hasOwn(selection,'memoryViewId')||selection.groupId!==null&&!uuid(selection.groupId)||selection.memoryViewId!==null&&!uuid(selection.memoryViewId))throw new WorkError('teloa/forbidden','分身记忆读取需要明确的群与视图选择。')
+   if(selection.groupId!==null){
+    if(selection.memoryViewId===null)return []
+    const view=await readStoredRoleMemoryView(db,ownerId,selection.memoryViewId!)
+    if(view.roleId!==role.id||view.roleVersion!==role.version||view.groupId!==selection.groupId)throw new WorkError('teloa/forbidden','共享记忆视图与当前运行岗位或群不一致。')
+    const group=(await db.query("select definition->>'scope' as scope from teloa_groups where owner_id=$1 and id=$2",[ownerId,selection.groupId])).rows[0]
+    if(group?.scope!==scope)throw new WorkError('teloa/forbidden','共享记忆视图与当前运行范围不一致。')
+    return this.confirmedViewEntries(db,ownerId,role,view.entries)
+   }
+   if(selection.memoryViewId!==null)throw new WorkError('teloa/forbidden','共享记忆视图只用于指定群。')
+  }
+  const rows=(await db.query(`select * from teloa_role_memories where owner_id=$1 and role_id=$2 and state='confirmed' and visibility->>'kind'=$3 ${role.kind==='employee'?"and visibility->'scopeIds' ? $4":''} order by confirmed_at desc,candidate_at desc,id`,role.kind==='employee'?[ownerId,role.id,'role',scope]:[ownerId,role.id,'private'])).rows,result:RunRoleMemory[]=[]
+  for(const stored of rows){const memory=await this.read(db,ownerId,stored);if(!memory.sourceAvailable)continue;result.push(this.runMemory(memory));if(result.length===roleMemoryRunLimit)break}
+  return readRunRoleMemories(result)
+ }
+ private runMemory(memory:RoleMemory):RunRoleMemory{return {id:memory.id,version:memory.content.version,title:memory.title,contentHash:memory.content.contentHash,markdown:memory.content.markdown,source:memory.source,visibility:memory.visibility}}
+ /** 只读取本人指定的固定项，任何撤回、改版或来源变化都会使整个视图失效。 */
+ async confirmedViewEntries(db:Pick<Pool,'query'>,ownerId:string,role:DigitalRole,entries:RoleMemoryView['entries']):Promise<RunRoleMemory[]>{
+  entries=roleMemoryViewEntries(entries)
+  if(role.ownerId!==ownerId||role.kind!=='twin'||!Array.isArray(entries)||entries.length===0||entries.length>roleMemoryRunLimit)throw new WorkError('teloa/forbidden','共享记忆视图需要本人分身的明确固定项。')
+  const rows=(await db.query("select * from teloa_role_memories where owner_id=$1 and role_id=$2 and state='confirmed' and visibility->>'kind'='private' and id=any($3::uuid[]) for share",[ownerId,role.id,entries.map(entry=>entry.memoryId)])).rows
+  if(rows.length!==entries.length)throw new WorkError('teloa/version-conflict','共享记忆已撤回或不属于当前分身。')
+  const result:RunRoleMemory[]=[]
+  for(const entry of entries){
+   const row=rows.find(row=>row.id===entry.memoryId)
+   if(!row||row.current_version!==entry.memoryVersion)throw new WorkError('teloa/version-conflict','共享记忆固定版本已变化。')
+   const memory=await this.read(db,ownerId,row)
+   if(memory.content.contentHash!==entry.contentSha256||!memory.sourceAvailable||memory.visibility.kind!=='private')throw new WorkError('teloa/version-conflict','共享记忆摘要或来源已变化。')
+   result.push(this.runMemory(memory))
+  }
   return readRunRoleMemories(result)
  }
 }

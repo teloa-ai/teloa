@@ -13,6 +13,13 @@ import {scheduleFixture,until} from './fixtures/native-schedule-admission.ts'
 
 const forbidden={code:'teloa/forbidden'},signal=new AbortController().signal
 
+test('Goal 通用 producer 缺持久业务准入时拒绝，不能凭 producer 标签绕票据',()=>{
+ let calls=0
+ const admission=createNativeProducerAdmissions({async withNewInput(){calls++}})
+ assert.throws(()=>admission.goal({agent:{} as never,message:{} as never,goal:{id:'goal',revision:1},round:1},()=>{calls++}),{code:'teloa/unavailable'})
+ assert.equal(calls,0)
+})
+
 test('真实 Controller 的 prompt 与 queue-edit 将明确准入拒绝交给官方 Remote 错误识别',async t=>{
  for(const code of ['teloa/forbidden','teloa/unavailable'] as const){
   const f=await controllerAdmissionFixture(t),access=new WorkAccess(),work=createNativeWorkInput(f.ctx,access)

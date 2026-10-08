@@ -16,6 +16,7 @@ import {TaskService,initializeTasks} from '../src/work/tasks.ts'
 import {GroupAgentGrantService,initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import {initializeRoleDelegations} from '../src/work/role-delegations.ts'
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 
 let container:StartedPostgreSqlContainer,pool:Pool
@@ -27,6 +28,7 @@ before(async()=>{
   container=await new PostgreSqlContainer('postgres:17-alpine').start()
   pool=new Pool({connectionString:container.getConnectionUri()})
   await initializeRoles(pool)
+  await initializeRoleDelegations(pool)
   await initializeTasks(pool)
   await initializeCollaboration(pool)
   await initializeGroupTasks(pool)

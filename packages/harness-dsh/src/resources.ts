@@ -2,7 +2,7 @@ import { createHash,randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { BusinessScopeService,openResourceDatabase,type ConversationService,type ResourceActor } from '@teloa/backend'
+import { BusinessScopeService,openResourceDatabase,AuthorizedLocalMaterialCatalog,initializeAuthorizedLocalMaterials,type AuthorizedLocalMaterialPorts,type ConversationService,type ResourceActor } from '@teloa/backend'
 import { isRecord,promptFullTextMaxBytes,WorkError } from '@teloa/contract'
 import { sessionInput } from '@teloa/backend'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -16,19 +16,19 @@ import {resolveTeloaRuntime} from './runtime-paths.ts'
 import {securityEnv} from './launch-env.ts'
 import {readSessionEvents} from './session-events.ts'
 
-export const resourceEndpoints=['resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/apply','resources/withdraw','resources/recovery','resources/history','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource']
+export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/apply','resources/withdraw','resources/recovery','resources/history','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource']
 const empty=(value:unknown)=>{if(!isRecord(value)||Object.keys(value).length)throw new WorkError('teloa/invalid-input','此查询不接受其他参数。')}
 function requestIdentity(sessionId:string,callId:string):string {
   const hash=createHash('sha256').update(sessionId+'\0'+callId).digest('hex')
   return hash.slice(0,8)+'-'+hash.slice(8,12)+'-5'+hash.slice(13,16)+'-a'+hash.slice(17,20)+'-'+hash.slice(20,32)
 }
-export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>){
+export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>,localMaterialPorts?:AuthorizedLocalMaterialPorts){
   // 运行目录与部署形态只认启动时继承的进程环境（launch-env.ts）：决定数据库口令文件位置与数据库主机白名单。
   const trusted=securityEnv(ctx),runtimeRoot=resolveTeloaRuntime(projectRoot,trusted)
-  let loading:ReturnType<typeof openResourceDatabase>|undefined,disposed=false
+  let loading:ReturnType<typeof openResourceDatabase>|undefined,disposed=false,localMaterials:AuthorizedLocalMaterialCatalog|undefined
   const get=()=>{
     if(disposed)throw new WorkError('teloa/host-unavailable','资料服务正在关闭。')
-    if(!loading){loading=openResourceDatabase(resolve(runtimeRoot,'database.json'),{id:randomUUID,now:()=>new Date().toISOString()},{deployment:trusted.TELOA_DEPLOYMENT});void loading.catch(()=>{loading=undefined})}
+    if(!loading){const identity={id:randomUUID,now:()=>new Date().toISOString()};loading=openResourceDatabase(resolve(runtimeRoot,'database.json'),identity,{deployment:trusted.TELOA_DEPLOYMENT,...(localMaterialPorts?{localMaterialCatalog:async pool=>{await initializeAuthorizedLocalMaterials(pool);localMaterials=new AuthorizedLocalMaterialCatalog(pool,identity,localMaterialPorts);return localMaterials}}:{})});void loading.catch(()=>{loading=undefined;localMaterials=undefined})}
     return loading
   }
   const shutdown=createHostShutdown(async()=>{disposed=true;const connection=await loading?.catch(()=>undefined);await connection?.close()})
@@ -58,6 +58,8 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
     }
     const {service,knowledge,knowledgeTree,knowledgeResources}=await get(),humanActor=await human()
     switch(endpoint){
+      case 'resources/register-local-material':if(!localMaterials)throw new WorkError('teloa/unavailable','当前宿主尚不支持跟踪本机原件。');return localMaterials.register(humanActor,payload)
+      case 'resources/read-content':return service.readContent(humanActor,payload)
       case 'resources/sources':empty(payload);return service.sourceDirectory(humanActor)
       case 'resources/list':empty(payload);return service.list(humanActor)
       case 'resources/candidates':return candidates(sessionInput(payload))

@@ -2,7 +2,7 @@ import {useEffect,useRef,useState,useSyncExternalStore} from 'react'
 import type {PropsRuntime} from '@deepseek-ai/dsh-client-ui-slots'
 import type {BindingClient} from './binding-client.js'
 import type {HomeContextApi,HomeWorkContext} from './home-native-controller.js'
-import type {HomeWorkAssigneeOption} from './home-work-assignee.js'
+import {canReceiveHomeWorkAssignee,type HomeWorkAssigneeOption} from './home-work-assignee.js'
 import {useBusinessScopes} from './business-scope-context.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
@@ -46,7 +46,7 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
  if(excluded||objectIdentity)return lostAttachments?<div className={css.context}><p className={css.notice} role="status">{copy('attachments')}</p></div>:null
  const readonly=locked||status!=='ready'||!!pending
  return <div className={css.context} aria-busy={status==='loading'||status==='saving'}>
-  {locked?<span className={css.fixed} aria-label={copy('scope')} title={copy('scope')}>{scopes[scopeId]??scopeId}</span>:<label><span className={css.visuallyHidden}>{copy('scope')}</span><select aria-label={copy('scope')} value={scopeId} disabled={readonly} onChange={event=>void change(event.target.value,roleId)}>{Object.entries(scopes).filter(([id])=>!roleId||id==='general'||options.some(role=>role.id===roleId&&role.scopes.includes(id))).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>}
+  {locked?<span className={css.fixed} aria-label={copy('scope')} title={copy('scope')}>{scopes[scopeId]??scopeId}</span>:<label><span className={css.visuallyHidden}>{copy('scope')}</span><select aria-label={copy('scope')} value={scopeId} disabled={readonly} onChange={event=>void change(event.target.value,roleId)}>{Object.entries(scopes).filter(([id])=>!roleId||options.some(role=>role.id===roleId&&canReceiveHomeWorkAssignee(role,id))).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>}
   {roleId&&<span className={css.fixed}>{copy('owner')} · {options.find(role=>role.id===roleId)?.name??copy('missing')}{!locked&&<button type="button" disabled={readonly} aria-label={locale.startsWith('zh')?'移除指定员工':'Remove assigned employee'} onClick={()=>void change(scopeId,null)}>×</button>}</span>}
   {status==='loading'||status==='saving'?<span className={css.visuallyHidden} role="status">{copy(status==='saving'?'saving':'reading')}</span>:null}
   {(error||lostAttachments)&&<div className={css.notice}>{error&&<p role="alert">{error} <button type="button" onClick={()=>void (pending?.sessionId===sessionId?change(scopeId,roleId,true):refresh())}>{copy('retry')}</button></p>}{lostAttachments&&<p role="status">{copy('attachments')}</p>}</div>}

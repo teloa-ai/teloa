@@ -6,6 +6,7 @@ import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontaine
 import * as api from '../src/index.ts'
 import {BusinessDefinitionSourceReader} from '../src/work/business-definition-source.ts'
 import {lockBusinessConfiguration} from '../src/work/business-configuration-lock.ts'
+import {initializeRoleDelegations} from '../src/work/role-delegations.ts'
 let pool:Pool,container:StartedPostgreSqlContainer
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 const unavailable=async():Promise<never>=>{throw Error('不得访问远端')}
@@ -13,6 +14,7 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start()
  pool=new Pool({connectionString:container.getConnectionUri(),statement_timeout:5000,connectionTimeoutMillis:2000})
  await api.initializeRoles(pool);await api.initializeBusinessSpaces(pool);await api.initializeBusinessDefinitions(pool);await api.initializeBusinessConfigurations(pool);await api.initializeBusinessRuntime(pool);await api.initializeBusinessData(pool)
+ await initializeRoleDelegations(pool)
 },{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
 async function fixture(){

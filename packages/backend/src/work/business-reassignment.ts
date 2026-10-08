@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,taskInput,roleSupportsScope,readBusinessReassignmentInstruction,readBusinessReassignmentSnapshot,readBusinessReassignmentReceipt,canonicalBusinessReassignmentSnapshot,type BusinessReassignmentInstruction,type BusinessReassignmentSnapshot,type BusinessReassignmentReceipt} from '@teloa/contract'
+import {WorkError,taskInput,roleDefinition,roleSupportsScope,readBusinessReassignmentInstruction,readBusinessReassignmentSnapshot,readBusinessReassignmentReceipt,canonicalBusinessReassignmentSnapshot,type BusinessReassignmentInstruction,type BusinessReassignmentSnapshot,type BusinessReassignmentReceipt} from '@teloa/contract'
 import {ConversationWorkService,initializeConversationWork,readStoredConversationWorkRequest,readStoredConversationWorkContext,reserveConversationWorkInTransaction,type ConversationWorkRequest,type ConversationWorkReserveInput} from './conversation-work.ts'
 import {workRequestChildId,lockConversationTaskChild} from './conversation-work-task-protection.ts'
 import type {BusinessConversationBindingService} from './business-conversation-bindings.ts'
@@ -13,6 +13,7 @@ import {BusinessTaskService} from './business-tasks.ts'
 import {TaskService} from './tasks.ts'
 import {initializeTaskRunAbortProofs} from './task-run-abort-proof.ts'
 import {assertReassignmentRunsSettled,readReassignmentRunTargets,type ReassignmentRunTargets} from './business-reassignment-store.ts'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
 export type {ReassignmentRunIdentity,ReassignmentRunTargets} from './business-reassignment-store.ts'
 
 type Input={oldRequestId:string;instruction:BusinessReassignmentInstruction}
@@ -78,7 +79,11 @@ export class BusinessReassignmentService{
   if(!this.work.scopes||!(await this.work.scopes(db,owner)).includes(old.scope))throw forbidden()
   const {managed}=await readBusinessConfigurationManagement(db,owner,old.scope)
   if(managed)await new BusinessResponsibilityService(this.pool).readInTransaction(db,{ownerId:owner,scopeIds:[old.scope]},{scope:old.scope})
-  await db.query('select id from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id for share',[owner,byteSorted([old.targets[0]!.roleId,input.instruction.selection.newRoleId])])
+  const roleIds=byteSorted([old.targets[0]!.roleId,input.instruction.selection.newRoleId])
+  const hints=(await db.query('select id,definition from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id',[owner,roleIds])).rows
+  // 员工沿既有共享锁；Twin新目标提前持排他锁，随后统一资格闸不在共享锁上升级。
+  // kind在创建后不可变，最终版本与完整定义仍由snapshot从锁内记录重新核对。
+  for(const id of roleIds){const hint=hints.find(row=>row.id===id),lock=id===input.instruction.selection.newRoleId&&hint&&roleDefinition(hint.definition).kind==='twin'?'update':'share';await db.query('select id from teloa_roles where owner_id=$1 and id=$2 for '+lock,[owner,id])}
  }
  private async transaction<T>(owner:string,prepared:Preparation,operation:(db:PoolClient,old:ConversationWorkRequest)=>Promise<T>,beforeCommit?:()=>void):Promise<T>{
   const db=await this.pool.connect()
@@ -136,12 +141,13 @@ export class BusinessReassignmentService{
   const responsibility=selected?{version:selected.version,roleId:selected.roleId}:null
   const roles=(await db.query('select * from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id for share',[owner,byteSorted([old.targets[0]!.roleId,input.instruction.selection.newRoleId])])).rows.map(readStoredRole)
   const oldRole=roles.find(role=>role.id===old.targets[0]!.roleId),newRole=roles.find(role=>role.id===input.instruction.selection.newRoleId)
-  if(!newRole||newRole.kind!=='employee'||!roleSupportsScope(newRole.scopes,old.scope))throw forbidden()
+  if(!newRole||!roleSupportsScope(newRole.scopes,old.scope))throw forbidden()
   if(newRole.version!==input.instruction.selection.expectedNewRoleVersion)throw changed()
   if(newRole.state!=='active')throw conflict()
+  const execution=await authorizeRoleTaskAssignment(db,this.pool,owner,newRole,old.scope)
   if(old.reference)await new BusinessTaskService(this.pool,{now:this.now},new TaskService(this.pool,{id:randomUUID,now:this.now})).referenceInTransaction(db,{ownerId:owner,scopeIds:[old.scope]},old.reference)
   const target=old.targets[0]!
-  return fixedSnapshot({instruction:input.instruction,oldSessionId:old.sessionId,scope:old.scope,oldContext:{version:oldContext.version,roleId:oldContext.roleId},newContext:{version:newContext.version,roleId:newContext.roleId},oldTarget:{roleId:target.roleId,roleVersion:target.roleVersion,name:target.name},oldRoleCurrent:oldRole?{version:oldRole.version,state:oldRole.state}:null,newTarget:{roleId:newRole.id,roleVersion:newRole.version,name:newRole.name},responsibility,title:old.title,goal:old.goal,...(old.sourceText===undefined?{}:{sourceText:old.sourceText}),...(old.reference===undefined?{}:{reference:old.reference})})
+  execution.assertCurrent();return fixedSnapshot({instruction:input.instruction,oldSessionId:old.sessionId,scope:old.scope,oldContext:{version:oldContext.version,roleId:oldContext.roleId},newContext:{version:newContext.version,roleId:newContext.roleId},oldTarget:{roleId:target.roleId,roleVersion:target.roleVersion,name:target.name},oldRoleCurrent:oldRole?{version:oldRole.version,state:oldRole.state}:null,newTarget:{roleId:newRole.id,roleVersion:newRole.version,name:newRole.name},responsibility,title:old.title,goal:old.goal,...(old.sourceText===undefined?{}:{sourceText:old.sourceText}),...(old.reference===undefined?{}:{reference:old.reference})})
  }
  async prepare(owner:string,value:Input,revalidateInstruction:()=>Promise<void>):Promise<BusinessReassignmentSnapshot>{
   const prepared=await this.preflight(owner,value,revalidateInstruction)
@@ -162,7 +168,7 @@ export class BusinessReassignmentService{
    if(current.snapshotHash!==snapshotHash)throw changed()
    if(old.stoppedAt===null)throw conflict()
    await assertReassignmentRunsSettled(db,owner,old)
-   await reserveConversationWorkInTransaction(db,owner,reserveInputFromReassignment(current),{onAdmission:lease=>{admission=lease},guard:async connection=>{await prepared.guard(connection);if(!this.work.scopes||!(await this.work.scopes(connection,owner)).includes(old.scope))throw forbidden()},now:this.now,...(this.work.scopes?{scopes:this.work.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
+   await reserveConversationWorkInTransaction(db,owner,reserveInputFromReassignment(current),{pool:this.pool,onAdmission:lease=>{admission=lease},guard:async connection=>{await prepared.guard(connection);if(!this.work.scopes||!(await this.work.scopes(connection,owner)).includes(old.scope))throw forbidden()},now:this.now,...(this.work.scopes?{scopes:this.work.scopes}:{}),responsibility:new BusinessResponsibilityService(this.pool)})
    admission?.assertCurrent()
    const createdAt=this.now()
    await db.query('insert into teloa_conversation_work_successors(owner_id,old_request_id,new_request_id,snapshot,snapshot_hash,created_at) values($1,$2,$3,$4,$5,$6)',[owner,old.requestId,current.instruction.requestId,JSON.stringify(current),current.snapshotHash,createdAt])

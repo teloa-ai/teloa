@@ -18,6 +18,7 @@ import {businessObjectSnapshotHash} from '../src/work/business-data.ts'
 import {WorkError} from '@teloa/contract'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
+import {RoleDelegationService} from '../src/work/role-delegations.ts'
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool)})
@@ -32,6 +33,133 @@ async function fixture(scope='general',agentPresetId='security-analyst'){
 }
 const stable=(value:unknown):string=>JSON.stringify(value,(_,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a<b?-1:a>b?1:0)):item)
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex')
+
+test('常驻职责：新 Run 固定身份、范围和完整职责，领取不丢失',async()=>{
+ const f=await fixture(),service=new TaskRunService(pool,identity,f.inspect)
+ const run=await service.prepare(f.owner,f.command),input=JSON.parse(run.inputText)
+ assert.equal(input.schema,'teloa.task-run-input/v2')
+ assert.equal(input.role.kind,'employee')
+ assert.deepEqual(input.role.scopes,['general'])
+ assert.deepEqual(input.role.responsibility,{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]})
+ assert.deepEqual(run.roleSnapshot,input.role)
+ assert.deepEqual(run.lineage,input.lineage)
+ assert.deepEqual((await service.claim(f.owner,{runId:run.id})).run.inputText,run.inputText)
+})
+test('常驻职责：历史缺完整职责角色可读但不能准备新 Run',async()=>{
+ const f=await fixture()
+ await pool.query("update teloa_roles set definition=definition-'responsibility' where id=$1",[f.role.id])
+ await assert.rejects(()=>new TaskRunService(pool,identity,f.inspect).prepare(f.owner,f.command),{code:'teloa/conflict'})
+})
+
+test('常驻验收范围：已完成本轮只供同事务结项读取，不能再次执行或越过当前授权',async()=>{
+ const f=await fixture(),service=new TaskRunService(pool,identity,f.inspect)
+ const run=await service.prepare(f.owner,f.command)
+ await service.claim(f.owner,{runId:run.id})
+ await service.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ assert.equal((await pool.query('select state from teloa_tasks where id=$1',[f.task.id])).rows[0].state,'waiting')
+ await assert.rejects(()=>service.executionScope(f.owner,{runId:run.id}),{code:'teloa/conflict'})
+ const readCompletion=async()=>{const db=await pool.connect();try{await db.query('begin');const scope=await service.executionScopeInTransaction(db,f.owner,{runId:run.id,mode:'completion'});await db.query('commit');return scope}catch(error){await db.query('rollback');throw error}finally{db.release()}}
+ assert.equal((await readCompletion()).taskId,f.task.id)
+ await pool.query("update teloa_roles set state='paused' where id=$1",[f.role.id])
+ await assert.rejects(readCompletion,{code:'teloa/conflict'})
+ await pool.query("update teloa_roles set state='active' where id=$1",[f.role.id])
+ await pool.query("update teloa_tasks set definition=jsonb_set(definition,'{goal}',to_jsonb($2::text)),content_version=content_version+1,version=version+1 where id=$1",[f.task.id,'新的目标'])
+ await assert.rejects(readCompletion,{code:'teloa/version-conflict'})
+})
+
+test('员工真实委托的空资料范围贯穿准备领取运行与结项，旧员工任务保持原边界',async()=>{
+ const f=await fixture(),authority={authorize:async()=>({assertCurrent(){}})},delegations=new RoleDelegationService(pool,identity,authority)
+ const delegated=await delegations.change(f.owner,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,expectedVersion:null,action:'save',fields:{scope:'general',allowedTools:[],knowledgeIds:[],memoryViewId:null,groupIds:[],safeRecovery:false}})
+ const authorization={kind:'delegation',delegationId:delegated.id,delegationVersion:delegated.version}
+ await pool.query('update teloa_tasks set execution_authorization=$3 where owner_id=$1 and id=$2',[f.owner,f.task.id,JSON.stringify(authorization)])
+ const service=new TaskRunService(pool,identity,f.inspect)
+ let preparedScope:Parameters<NonNullable<Parameters<TaskRunService['prepare']>[4]>>[0]|undefined
+ const run=await service.prepare(f.owner,f.command,undefined,async target=>{preparedScope=target;return []})
+ assert.deepEqual(run.roleSnapshot?.authorization,authorization)
+ assert.deepEqual(preparedScope?.knowledgeIds,[],'准备回调不能把真实委托的空范围回落成旧员工范围')
+ const claimed=await service.claim(f.owner,{runId:run.id})
+ assert.equal(claimed.dispatch,true);assert.deepEqual(claimed.target?.knowledgeIds,[]);assert.equal(claimed.target?.groupId,null)
+ await service.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'accepted'}})
+ assert.deepEqual((await service.executionScope(f.owner,{runId:run.id})).knowledgeIds,[])
+ await service.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ const db=await pool.connect()
+ try{await db.query('begin');assert.deepEqual((await service.executionScopeInTransaction(db,f.owner,{runId:run.id,mode:'completion'})).knowledgeIds,[]);await db.query('commit')}finally{await db.query('rollback');db.release()}
+ const old=await fixture(),legacyService=new TaskRunService(pool,identity,old.inspect)
+ const oldPreparedScope:{target?:typeof preparedScope}={}
+ const legacy=await legacyService.prepare(old.owner,old.command,undefined,async target=>{oldPreparedScope.target=target;return []})
+ assert.ok(oldPreparedScope.target);assert.equal(oldPreparedScope.target.knowledgeIds,undefined)
+ const oldClaim=await legacyService.claim(old.owner,{runId:legacy.id});assert.equal(oldClaim.target?.knowledgeIds,undefined)
+ assert.equal((await legacyService.executionScope(old.owner,{runId:legacy.id})).knowledgeIds,undefined)
+})
+
+test('常驻职责：分身单次确认与Task、回执、谱系原子落盘，状态推进不撤销本轮',async()=>{
+ const owner=randomUUID(),role=await new RoleService(pool,identity).ensurePersonalTwin(owner)
+ let mayConfirm=true
+ const authority={authorize:async()=>{if(!mayConfirm)throw new WorkError('teloa/forbidden','当前不能授予执行。');return {assertCurrent(){}}}},tasks=new TaskService(pool,identity,authority)
+ const command={requestId:randomUUID(),fields:{title:'整理资料',goal:'给出小结',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}
+ await assert.rejects(()=>new TaskService(pool,identity).create(owner,command),{code:'teloa/forbidden'})
+ const task=await tasks.createConfirmed(owner,command)
+ mayConfirm=false
+ const replay=await tasks.createConfirmed(owner,command)
+ assert.equal(task.id,replay.id)
+ assert.equal((await pool.query('select count(*)::int as count from teloa_twin_execution_consents where owner_id=$1',[owner])).rows[0].count,1)
+ assert.equal((await pool.query('select count(*)::int as count from teloa_task_work_lineage where owner_id=$1',[owner])).rows[0].count,1)
+ const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,sessionId,ownerId:owner,status:'ready'})
+ await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:1,sessionId,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(pool,identity,inspect),runRequestId=randomUUID(),run=await runs.prepare(owner,{requestId:runRequestId,taskId:task.id,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1},async()=>role.skills.map(name=>({name,provider:'test-contract',source:'fixture',description:name,content:name,sha256:hash(name)})),undefined,undefined,async()=> 'default-agent')
+ assert.equal(run.roleSnapshot?.kind,'twin')
+ assert.deepEqual(run.roleSnapshot?.authorization,{kind:'task',taskId:task.id,taskContentVersion:1})
+ const claimed=await runs.claim(owner,{runId:run.id})
+ assert.equal(claimed.dispatch,true)
+ assert.deepEqual((await tasks.list(owner,{}))[0]?.contentVersion,1)
+ const fixed=JSON.parse(run.inputText);fixed.lineage.rootTaskId=randomUUID()
+ await pool.query('update teloa_task_runs set input_text=$2 where id=$1',[run.id,JSON.stringify(fixed)])
+ await assert.rejects(()=>runs.request(owner,{requestId:runRequestId,taskId:task.id,expectedTaskVersion:1}),{code:'teloa/storage-corrupt'})
+})
+
+test('常驻职责：本人准入在事务末失效，单次确认不留下半个任务',async()=>{
+ const owner=randomUUID(),role=await new RoleService(pool,identity).ensurePersonalTwin(owner)
+ let calls=0
+ const authority={authorize:async()=>{const version=++calls;return {assertCurrent(){if(calls!==version)throw new WorkError('teloa/forbidden','本次确认已取消。')}}}}
+ const tasks=new TaskService(pool,identity,authority)
+ await assert.rejects(()=>tasks.createConfirmed(owner,{requestId:randomUUID(),fields:{title:'资料小结',goal:'整理',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}),{code:'teloa/forbidden'})
+ for(const table of ['teloa_tasks','teloa_twin_execution_consents','teloa_task_work_lineage'])assert.equal((await pool.query('select count(*)::int as count from '+table+' where owner_id=$1',[owner])).rows[0].count,0)
+})
+
+test('常驻职责：真实运行终态回执释放连接后收口暂停委托',async()=>{
+ const f=await fixture(),authority={authorize:async()=>({assertCurrent(){}})}
+ const limited=new Pool({connectionString:container.getConnectionUri(),max:1})
+ try{
+  const delegations=new RoleDelegationService(limited,identity,authority)
+  const saved=await delegations.change(f.owner,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,expectedVersion:null,action:'save',fields:{scope:'general',allowedTools:[],knowledgeIds:[],memoryViewId:null,groupIds:[],safeRecovery:false}})
+  let callbacks=0
+  const service=new TaskRunService(limited,identity,f.inspect,{allowedTools:[],onSettled:async(owner,run)=>{
+   callbacks++
+   assert.equal((await limited.query('select state from teloa_task_runs where id=$1',[run.id])).rows[0].state,'ended')
+   const current=(await delegations.get(owner,{roleId:run.roleId})).delegations.find(item=>item.roleVersion===run.roleVersion)!
+   await delegations.reconcile(owner,{roleId:run.roleId,expectedVersion:current.version})
+  }})
+  const run=await service.prepare(f.owner,f.command)
+  await service.claim(f.owner,{runId:run.id})
+  const paused=await delegations.change(f.owner,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,expectedVersion:saved.version,action:'pause'})
+  assert.equal(paused.state,'pausing')
+  await service.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+  assert.equal(callbacks,1)
+  assert.equal((await delegations.get(f.owner,{roleId:f.role.id})).delegations[0]?.state,'paused')
+  const next=await delegations.change(f.owner,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,expectedVersion:paused.version+1,action:'resume'})
+  const second=await fixture(),secondService=new TaskRunService(limited,identity,second.inspect,{allowedTools:[],onSettled:async(owner,run)=>{
+   const current=(await delegations.get(owner,{roleId:run.roleId})).delegations[0]!
+   await delegations.reconcile(owner,{roleId:run.roleId,expectedVersion:current.version})
+  }})
+  const ending=await delegations.change(second.owner,{requestId:randomUUID(),roleId:second.role.id,expectedRoleVersion:2,expectedVersion:null,action:'save',fields:{scope:'general',allowedTools:[],knowledgeIds:[],memoryViewId:null,groupIds:[],safeRecovery:false}})
+  const pending=await secondService.prepare(second.owner,second.command)
+  assert.equal((await delegations.change(second.owner,{requestId:randomUUID(),roleId:second.role.id,expectedRoleVersion:2,expectedVersion:ending.version,action:'end'})).state,'ending')
+  await secondService.withdraw(second.owner,{runId:pending.id})
+  await secondService.withdraw(second.owner,{runId:pending.id})
+  assert.equal((await delegations.get(second.owner,{roleId:second.role.id})).delegations[0]?.state,'ended')
+  assert.equal(next.state,'active')
+ }finally{await limited.end()}
+})
 
 test('旧 Run 表真实升级会补齐 preset、配置失败字段、可选 Flow 引用与关联表',async()=>{
  const schema='upgrade_'+randomUUID().replaceAll('-',''),upgrade=new Pool({connectionString:container.getConnectionUri(),options:`-c search_path=${schema}`})

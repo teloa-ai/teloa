@@ -13,9 +13,9 @@ function read(value:unknown,owner:string):TaskAttentionPage{
   const page=exact(value,['items']);if(!Array.isArray(page.items))throw invalid()
   const ids=new Set<string>()
   for(const value of page.items){
-   const row=exact(value,['task','attention']),task=exact(row.task,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills']))
-   if(!uuid(task.id)||ids.has(task.id.toLowerCase())||task.ownerId!==owner||!positive(task.version)||!workTaskStates.some(state=>state===task.state)||!timestamp(task.createdAt)||!timestamp(task.updatedAt)||task.updatedAt<task.createdAt)throw invalid()
-   ids.add(task.id.toLowerCase());taskDefinition({title:task.title,goal:task.goal,scope:task.scope,groupId:task.groupId,skills:task.skills})
+   const row=exact(value,['task','attention']),task=exact(row.task,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy']))
+   if(!uuid(task.id)||ids.has(task.id.toLowerCase())||task.ownerId!==owner||!positive(task.version)||(task.contentVersion!==undefined&&!positive(task.contentVersion))||!workTaskStates.some(state=>state===task.state)||!timestamp(task.createdAt)||!timestamp(task.updatedAt)||task.updatedAt<task.createdAt)throw invalid()
+   ids.add(task.id.toLowerCase());taskDefinition({title:task.title,goal:task.goal,scope:task.scope,groupId:task.groupId,skills:task.skills,completionPolicy:task.completionPolicy})
    if(task.assigneeRoleId===null?task.assigneeRoleVersion!==null:!uuid(task.assigneeRoleId)||!positive(task.assigneeRoleVersion))throw invalid()
    if(task.state==='blocked'||task.state==='waiting'||row.attention!==null){
     const attention=exact(row.attention,['kind','reason'])

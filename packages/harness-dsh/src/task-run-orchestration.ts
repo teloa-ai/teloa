@@ -7,7 +7,7 @@ import type {SubagentProvider,SubagentRun} from '@deepseek-ai/dsh-subagent'
 import {foldSubagentDescriptor} from '@deepseek-ai/dsh-subagent'
 import type {ToolDefinition,ToolExecution} from '@deepseek-ai/dsh-tools'
 import type {TaskRun,TaskRunRuntimeLinks} from '@teloa/backend'
-import {WorkError} from '@teloa/contract'
+import {WorkError,type TaskRunFlowStep} from '@teloa/contract'
 import type {SubagentDelegationPorts} from './subagent-delegation.ts'
 import type {TaskToolPolicy,TaskToolPolicyReader} from './task-tool-guard.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
@@ -31,6 +31,9 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
  const children=new Map<string,Child>(),pending=new Map<string,Set<Promise<void>>>(),stopped=new Set<string>()
  const starting=new Map<string,Set<AbortController>>()
  const deadlines=new Set<{cancel:()=>void;clear:()=>void}>()
+ // 票据仅由宿主薄口持有，模型传入 provider 参数不能取得固定 Flow 预留身份。
+ const flowTickets=new WeakMap<AbortSignal,{runId:string;reservationId:string;nativeRequestId:string}>()
+ const flowStarts=new Map<string,Promise<{reservationId:string;childSessionId:string}>>()
  const jobDeadlines=new Map<string,{clear:()=>void}>()
  let disposed=false
  const background=createTaskRunBackground(ctx,links,binding=>children.get(binding.sessionId)?.ready===true)
@@ -60,16 +63,18 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
    const lineage=resolveSessionLineage(ctx,request.parent.session),rootId=lineage.root.id,policy=await readPolicy(rootId,request.signal)
    request.signal.throwIfAborted()
    // 本人会话不伪造业务 Run，完整保留官方默认权限与生命周期。
-   if(policy===null)return native.start(request)
+   const flowTicket=flowTickets.get(request.signal)
+   if(policy===null){if(flowTicket)throw failure('Flow 缺少受管执行授权。');return native.start(request)}
    assertPolicy(policy)
    if(stopped.has(rootId))throw failure('本次执行已停止。')
    const depth=lineage.depth+1
    if(depth>delegation.limits.maxDepth)throw failure('已达到本次任务允许的拆分层数上限。')
    const runId=await delegation.runId(rootId,request.signal)
    if(!runId)throw failure('原生编排缺少受管执行身份。')
+   if(flowTicket&&(flowTicket.runId!==runId||flowTicket.nativeRequestId!==policy.nativeRequestId))throw failure('Flow 当前执行身份已变化。')
    if(!await generation(runId))throw failure('此执行所属宿主已重启，不能重新派发。')
    let releaseGate!:()=>void
-   const reservationId='workflow:'+randomUUID(),gate=new Promise<void>(resolve=>{releaseGate=resolve}),starts=pending.get(rootId)??new Set<Promise<void>>()
+   const reservationId=flowTicket?.reservationId??'workflow:'+randomUUID(),gate=new Promise<void>(resolve=>{releaseGate=resolve}),starts=pending.get(rootId)??new Set<Promise<void>>()
    starts.add(gate);pending.set(rootId,starts)
    const controller=new AbortController()
    const controllers=starting.get(rootId)??new Set<AbortController>();controllers.add(controller);starting.set(rootId,controllers)
@@ -179,6 +184,32 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
  }
  return {
   ...access,
+  /** 只由真实 Flow 驱动调用；复用官方 runtime 的单份 descriptor、生命周期及配额结算。 */
+  async startFlow(input:{run:TaskRun;flowId:string;step:TaskRunFlowStep;reservationId:string},signal:AbortSignal):Promise<{reservationId:string;childSessionId:string}>{
+   signal.throwIfAborted();const {run,flowId,step,reservationId}=input,execution=step.execution
+   const parent=ctx.agents.get(SessionId(run.sessionId))
+   if(!parent||!execution||!run.nativeRequestId||!['accepted','active'].includes(run.state)||step.state!=='running'||step.attempts<1||reservationId!=='flow:'+flowId+':'+step.id+':'+step.attempts||execution.parentSessionId!==run.sessionId||execution.agentPresetId!==run.agentPresetId||execution.allowedTools.some(name=>!run.allowedTools.includes(name)))throw failure('Flow 子工作配置与真实父执行身份不一致。')
+   // fresh provider 当前继承父资源上下文；不能声称收窄了它实际上仍能读取的资料或技能。
+   const equal=(a:readonly string[],b:readonly string[])=>a.length===b.length&&a.every(name=>b.includes(name))
+   if(!equal(execution.knowledgeIds,run.knowledge.map(item=>item.id))||!equal(execution.skillNames,run.skills.map(item=>item.name)))throw failure('当前 Flow provider 尚不能隔离更窄的资料或技能配置。')
+   const policy=await readPolicy(run.sessionId,signal);if(!policy||policy.nativeRequestId!==run.nativeRequestId)throw failure('Flow 当前执行授权已变化。');assertPolicy(policy)
+   if(execution.allowedTools.some(name=>!policy.allowedTools.includes(name)))throw failure('Flow 工具授权已变化。')
+   const prior=flowStarts.get(reservationId);if(prior)return prior
+   const start=async()=>{
+    // 有持久预留而本世代没有明确启动回包时只核原件，禁止再次派发。
+    if(!delegation.list)throw failure('Flow 缺少真实子执行预留读口。')
+    if((await delegation.list(run.id)).some(row=>row.reservationId===reservationId))throw failure('Flow 原子执行回执待核对，不能重新派发。')
+    const controller=new AbortController(),currentSignal=AbortSignal.any([signal,controller.signal])
+    flowTickets.set(currentSignal,{runId:run.id,reservationId,nativeRequestId:run.nativeRequestId!})
+    try{
+     const child=await ctx.subagents.start('teloa-workflow-spawn',{parent,signal:currentSignal,label:step.title,prompt:[{type:'text',text:step.inputSummary}],toolFilter:{allow:execution.allowedTools},maxDepth:delegation.limits.maxDepth})
+     child.result.catch(()=>{})
+     return {reservationId,childSessionId:child.id}
+    }finally{flowTickets.delete(currentSignal)}
+   }
+   const pendingStart=start();flowStarts.set(reservationId,pendingStart);pendingStart.catch(()=>{})
+   return pendingStart
+  },
   async state(run:TaskRun):Promise<{outstanding:boolean;interrupted:boolean}>{
    const rows=await links.list({runId:run.id})
    // 旧世代仍禁止派发；结果核对不能仅凭旧 root owner 推翻完整纯文本原生结尾。

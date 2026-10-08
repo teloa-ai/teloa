@@ -36,7 +36,7 @@ const person=(id:string,roles:readonly PreviewRole[]=[],t?:Parameters<typeof rol
 const foldKeys={run:'task.timeline.fold.run',change:'task.timeline.fold.change',artifact:'task.timeline.fold.artifact',knowledge:'task.timeline.fold.knowledge',approval:'task.timeline.fold.approval'} as const
 const foldKey=(kind:TimelineEventKind)=>kind in foldKeys?foldKeys[kind as keyof typeof foldKeys]:'task.timeline.fold.change'
 
-export type TaskDetailProps={
+export type TaskDetailProps={workProgress?:((runs:RunView[])=>ReactNode)|undefined;
  presentation?:{full:boolean;toggle:()=>void}|undefined
  groups?:readonly TaskGroupOption[]|undefined;openGroup?:((id:string)=>void)|undefined
  attentionNeeds:AttentionKind[];attention:TaskAttention|null|undefined;attentionReason:string|undefined
@@ -113,7 +113,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const knownArtifact=artifactRef?taskArtifacts.find(artifact=>artifact.id===artifactRef.id&&artifact.versions.some(version=>version.number===artifactRef.version)):undefined
   const modeId=responsible?.runtimeConfig?.agentPresetId
 
-  const model=taskStatusBox({state:task.state,needs,attention,assigned:task.assigneeId!=='self',ownerName:person(task.assigneeId,roles,t),runCount:runs.length,completion:record?{artifactVersion:record.artifactVersion}:null,t})
+  const model=taskStatusBox({state:task.state,...(task.completionPolicy?{completionPolicy:task.completionPolicy}:{}),needs,attention,assigned:task.assigneeId!=='self',ownerName:person(task.assigneeId,roles,t),runCount:runs.length,completion:record?{artifactVersion:record.artifactVersion}:null,t})
   // 沙盒没有运行记录面，不能提供指向不存在区域的操作。
   const primary=model.primary?.action.kind==='anchor'&&model.primary.action.anchor==='run'&&task.storage!=='persistent'?undefined:model.primary
   const executionsNode=executions(acceptRuns)
@@ -160,6 +160,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
         {task.state==='running'&&task.storage!=='persistent'&&!needs.length&&!task.approvalRequired&&<form className={css.form} onSubmit={event=>{event.preventDefault();act({type:'progress',taskId:task.id,action:'complete',result,now:new Date().toISOString()})}}><label>{t('task.detail.result')}<textarea required rows={3} maxLength={4000} value={result} onChange={event=>patch({result:event.target.value})}/></label><button type="submit" disabled={inputBlocked||!result.trim()}>{t('task.detail.completeResult')}</button></form>}
       </StatusBox>
     </div>
+    {runsLoaded&&props.workProgress?.(runs)}
     <section className={detailCss.resultBlock} aria-label={t('task.detail.artifact')} data-teloa-anchor="artifact">
       <header><h3>{t('task.detail.artifact')}</h3>{(taskArtifacts.length>0||!artifactRef)&&<button type="button" className={detailCss.link} onClick={()=>openTaskArtifact(artifactRef)}>{t(artifactRef||taskArtifacts.length?'task.detail.viewArtifacts':'task.detail.organizeArtifacts')}<ChevronRight size={14} aria-hidden="true"/></button>}</header>
       {task.result&&<p>{task.result}</p>}

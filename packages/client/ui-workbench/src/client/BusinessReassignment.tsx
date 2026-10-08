@@ -1,8 +1,10 @@
 import {useEffect,useId,useMemo,useRef,useState} from 'react'
-import {isBusinessScopeKey,readBusinessReassignmentSelection,roleSupportsScope,type DigitalRole} from '@teloa/contract'
+import {isBusinessScopeKey,readBusinessReassignmentSelection} from '@teloa/contract'
 import {verifyBusinessReassignmentReceipt,type BusinessReassignmentOriginal,type BusinessReassignmentReceiptIdentity} from './business-reassignment-api.ts'
 import type {BusinessReassignmentInputSelection} from './business-reassignment-input.ts'
 import {BUSINESS_REASSIGNMENT_MESSAGES} from './i18n/locales/business-reassignment.ts'
+import {canReceiveTask} from './role-preview.js'
+import type {WorkAccessRole} from './role-work-directory.js'
 import css from './BusinessReassignment.module.css'
 
 export type BusinessReassignmentDailyIntent={scope:string;newConversation:true;oldRequestId:string}
@@ -17,7 +19,7 @@ export type BusinessReassignmentProps={
  originals:readonly BusinessReassignmentOriginal[]
  /** 跨 daily 只携带本人此前明确选定的旧请求 ID。 */
  carriedOldRequestId?:string
- roles:readonly DigitalRole[];outcome?:BusinessReassignmentOutcome
+ roles:readonly WorkAccessRole[];outcome?:BusinessReassignmentOutcome
  onPrepare:(selection:BusinessReassignmentInputSelection)=>Promise<void>
  onNewDaily:(intent:BusinessReassignmentDailyIntent)=>Promise<void>
 }
@@ -39,7 +41,7 @@ export function BusinessReassignment({locale,scope,sessionId,context,originals,c
  for(const row of originals){if(row.scope!==scope||row.oldSessionId!==sessionId||!uuid(row.oldRequestId)||!uuid(row.oldRoleId)||seen.has(row.oldRequestId))invalid=true;seen.add(row.oldRequestId)}
  if(carriedOldRequestId!==undefined&&!uuid(carriedOldRequestId))invalid=true
  const validOriginal=!!visible.oldRequestId&&(!!original||visible.oldRequestId===carriedOldRequestId)
- const eligible=roles.filter(role=>uuid(role.id)&&Number.isSafeInteger(role.version)&&role.version>=1&&role.name===role.name.trim()&&!!role.name&&role.name.length<=120&&!/[\x00-\x1f\x7f]/.test(role.name)&&role.kind==='employee'&&role.state==='active'&&roleSupportsScope(role.scopes,scope)&&role.id!==original?.oldRoleId)
+ const eligible=roles.filter(role=>uuid(role.id)&&Number.isSafeInteger(role.version)&&role.version>=1&&role.name===role.name.trim()&&!!role.name&&role.name.length<=120&&!/[\x00-\x1f\x7f]/.test(role.name)&&canReceiveTask(role,scope)&&role.id!==original?.oldRoleId)
  const selected=visible.role&&eligible.find(role=>role.id===visible.role!.id&&role.version===visible.role!.version&&role.name===visible.role!.name)
  const conflict=!!selected&&context.roleId!==null&&context.roleId!==selected.id
  let established=false

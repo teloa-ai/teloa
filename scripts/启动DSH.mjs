@@ -186,7 +186,8 @@ try {
     if(await exists(runtimeRoot))await chmod(runtimeRoot,0o700)
     await mkdir(workspaceRoot,{recursive:true,mode:0o700})
   }
-  const hostCommand=resolveHostCommand(command)
+  const managedCommand=resolve(projectRoot,'scripts/runtime/native-runtime-entry.mjs')
+  const hostCommand=resolveHostCommand(managedCommand)
   const child=spawn(process.execPath,[hostCommand,...commandArgs],{cwd:serving?workspaceRoot:projectRoot,env:childEnv,stdio:serving?['inherit','pipe','inherit']:'inherit'})
   let readinessFailed=false,cancelling=false
   for (const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>{cancelling=true;child.kill(signal)})
@@ -218,7 +219,7 @@ try {
     // 用户在地址出现前按下 Ctrl-C 属于取消，不是自检失败：不打诊断消息，退出码交回信号语义。
     // 桩宿主的挂载状态在进程起来那一刻就定了，没有装配空窗；真跑用例不必等满真实宿主的挂载窗口。
     // 判据取"实际是否换成了桩"，不再直接读环境变量：变量被拒绝时仍然会走真实宿主的完整窗口。
-    const stubbed=hostCommand!==command
+    const stubbed=hostCommand!==managedCommand
     const failed=await guardTeloaReadiness({child,startupUrl,...(stubbed?{mountTimeout:1000}:{}),report:message=>{if(!cancelling)console.error(message)}})
     // 子进程若抢在自检结论之前就以 0 退出，exit 回调已经写过退出码，这里必须再压一次。
     if(failed&&!cancelling){readinessFailed=true;process.exitCode=1}

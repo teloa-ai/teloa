@@ -45,11 +45,11 @@ function readSource(value:unknown,owner:string,scopeIds:readonly string[]):Busin
 }
 
 function readTask(value:unknown,owner:string):WorkTask{
- const row=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills'])
+ const row=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills','contentVersion','completionPolicy'])
  let definition:ReturnType<typeof taskDefinition>
- try{definition=taskDefinition({title:row.title,goal:row.goal,scope:row.scope,groupId:row.groupId,skills:row.skills})}catch{throw invalid()}
- if(!uuid(row.id)||row.ownerId!==owner||definition.title!==row.title||definition.goal!==row.goal||definition.scope!==row.scope||!positive(row.version)||!workTaskStates.some(state=>state===row.state)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||(row.assigneeRoleId===null?row.assigneeRoleVersion!==null:!uuid(row.assigneeRoleId)||!positive(row.assigneeRoleVersion)))throw invalid()
- return {...definition,id:row.id,ownerId:owner,version:row.version,state:row.state as WorkTask['state'],assigneeRoleId:row.assigneeRoleId as string|null,assigneeRoleVersion:row.assigneeRoleVersion as number|null,createdAt:row.createdAt,updatedAt:row.updatedAt}
+ try{definition=taskDefinition({title:row.title,goal:row.goal,scope:row.scope,groupId:row.groupId,skills:row.skills,completionPolicy:row.completionPolicy})}catch{throw invalid()}
+ if(!uuid(row.id)||row.ownerId!==owner||definition.title!==row.title||definition.goal!==row.goal||definition.scope!==row.scope||!positive(row.version)||(row.contentVersion!==undefined&&(!Number.isSafeInteger(row.contentVersion)||Number(row.contentVersion)<=0))||!workTaskStates.some(state=>state===row.state)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||(row.assigneeRoleId===null?row.assigneeRoleVersion!==null:!uuid(row.assigneeRoleId)||!positive(row.assigneeRoleVersion)))throw invalid()
+ return {...definition,id:row.id,ownerId:owner,version:row.version,...(row.contentVersion!==undefined?{contentVersion:row.contentVersion as number}:{}),state:row.state as WorkTask['state'],assigneeRoleId:row.assigneeRoleId as string|null,assigneeRoleVersion:row.assigneeRoleVersion as number|null,createdAt:row.createdAt,updatedAt:row.updatedAt}
 }
 
 function readSummary(value:unknown,owner:string,scope:string):BusinessTaskListItem['task']{

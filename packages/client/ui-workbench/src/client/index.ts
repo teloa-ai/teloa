@@ -1,3 +1,4 @@
+import {createWorkControlApi} from './work-control-api.js'
 import {createDashboardMarketJournal} from './business-dashboard-market-journal.js'
 import {createBusinessDashboardResourceApi} from './business-dashboard-resource-api.js'
 import {insertBusinessRecordInput} from './business-record-input.js'
@@ -55,6 +56,9 @@ import {createSkillInstallApi} from './skill-install-api.js'
 import {createMarketPluginInstallApi} from './market-plugin-install-api.js'
 import {readSavedPlan} from './plan-api.js'
 import {createRoleToolGrantApi} from './role-tool-grant-api.js'
+import {createRoleDelegationApi} from './role-delegation-api.js'
+import {createRoleWorkDirectory} from './role-work-directory.js'
+import {homeWorkAssigneeOptions} from './home-work-assignee.js'
 import {createWebAccessApi} from './web-access-api.js'
 import {createTaskRunApi} from './task-run-api.js'
 import {createTaskMaterialApi} from './task-material-api.js'
@@ -254,7 +258,7 @@ export async function apply(ctx: Context): Promise<void> {
     return unwrapWorkRpcResult(await callWithReceipt(endpoint,payload,signal))
   }
   const securityActionApi=createSecurityActionApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},Object.fromEntries(securityActionCommands.map(command=>{const key='teloa.security-action.'+command+'/v1';return [command,journal(key)]})),'local:teloa-owner')
-  const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-run-prepare/v1'))
+  const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-run-prepare/v1'),journal('teloa.flow-command/v1'))
   const taskMaterialApi=createTaskMaterialApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-material-add/v1'))
   // 群命令的结果不明时必须保留原 requestId；服务端未显式声明无副作用，客户端不擅自释放恢复记录。
   const groupApi=createGroupApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.group-command/v1'),undefined,'local:teloa-owner')
@@ -280,7 +284,7 @@ export async function apply(ctx: Context): Promise<void> {
   const homeContextApi=createHomeContextApi(call,localStorage)
   const isHomeAssistantContext=async(id:string,signal?:AbortSignal)=>{const value=await call('work-context/eligibility',{sessionId:id},signal);if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==id||!('eligible'in value)||typeof value.eligible!=='boolean')throw Error('会话身份核对失败。');return value.eligible}
   const localRetrievalApi=createLocalRetrievalApi(call)
-  const resourceApi=createResourceApi(call)
+  const resourceApi=createResourceApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.local-material-command/v1'))
   const artifactChanges=createSnapshotStore(0)
   const artifactApi=createArtifactApi(async(method,payload)=>{
     const value=await call(method,payload)
@@ -292,6 +296,7 @@ export async function apply(ctx: Context): Promise<void> {
   receiptChanged=pendingRequestApi.notify
   const roleLifecycle=createRoleLifecycleApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-lifecycle/v1'))
   const memoryApi=createRoleMemoryApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-memory-command/v1'))
+  const workControlApi=createWorkControlApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.work-control-command/v1'),undefined,journal('teloa.work-budget-command/v1'))
   const planApi=createPlanApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.plan-command/v1'))
   const dailyLogApi=createRoleDailyLogApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-daily-log-command/v1'))
   // Auto Dream 的开关与时间以全部 system-digest 计划为载体，复用既有 planApi（plan-api.ts 已在 a035c00 认得
@@ -319,6 +324,7 @@ export async function apply(ctx: Context): Promise<void> {
   const skillUpgradeApi=createSkillUpgradeApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.skill-upgrade/v1'))
   const skillAvailabilityApi=createSkillAvailabilityApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.skill-availability/v1'))
   const roleToolGrantApi=createRoleToolGrantApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-tools/v1'))
+  const roleDelegationApi=createRoleDelegationApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-delegation/v1'))
   const webAccessApi=createWebAccessApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.web-access/v1'))
   // 凭据保存（im/channels/save）不进恢复记录；其余写命令按 requestId 登记待核对，恢复记录只含标识字段。
   const imChannelsApi=createImChannelsApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.im-channels/v1'))
@@ -333,6 +339,7 @@ export async function apply(ctx: Context): Promise<void> {
   const taskApi=createTaskApi(call,journal('teloa.task-create/v1'))
   const projectApi=createProjectApi(call,journal('teloa.project-create/v1'))
   const roleApi=createRoleApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-create/v1'))
+  const roleWorkDirectory=createRoleWorkDirectory(roleApi,roleDelegationApi)
   const autoDreamRecentApi=createAutoDreamRecentApi({roles:()=>roleApi.list(),dailyLogs:id=>dailyLogApi.list(id)})
   const runtimeConfigApi=createRoleRuntimeConfigApi(async()=>{
     const result=await ctx.remote.agentPresets.list()
@@ -653,7 +660,7 @@ export async function apply(ctx: Context): Promise<void> {
         'teloa.conversation':{kind:'single',scope:'session-maybe'},
       },
       store,
-      inject:(bound: WorkbenchActions)=>{actions=bound;return {navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText:ctx.locale.resolveText.bind(ctx.locale),setTheme:(value:'light'|'dark')=>ctx.theme.setTheme(value),sidebarRightFace,mainSession,openNativePanel:(id:string)=>layout.selectPanel(brandString<MainPanelId>(id)),work,management,conversationSearch,planApi,marketContentApi,marketCatalogApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,roleApi,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,projectApi,taskRunApi,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,insertBusinessRecord,pageCreateApi,preparation,sendConversationMessage,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}},
+      inject:(bound: WorkbenchActions)=>{actions=bound;return {navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText:ctx.locale.resolveText.bind(ctx.locale),setTheme:(value:'light'|'dark')=>ctx.theme.setTheme(value),sidebarRightFace,mainSession,openNativePanel:(id:string)=>layout.selectPanel(brandString<MainPanelId>(id)),work,management,conversationSearch,planApi,workControlApi,marketContentApi,marketCatalogApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,roleApi,roleWorkDirectory,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,projectApi,taskRunApi,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,roleDelegationApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,insertBusinessRecord,pageCreateApi,preparation,sendConversationMessage,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}},
     },LocalizedWorkbenchFrame)
     const disposePanels=ctx.slots.subscribe('main',retainMainPanels)
     retainMainPanels()
@@ -802,7 +809,7 @@ export async function apply(ctx: Context): Promise<void> {
     },HomeNativeConversation))
     child.slots.inject('conversation.input.left',()=>child.slots.register({
       name:'conversation.input.left',id:'teloa-work-context',order:80,
-      inject:()=>({api:homeContextApi,work,isNativeChild:(id:string)=>isNativeChildSession(child.sessions,brandString<SessionId>(id)),isAssistantContext:isHomeAssistantContext,block:homeContextBlock,roles:async()=> (await roleApi.list()).filter(role=>role.state==='active'&&role.kind==='employee').map(role=>({id:role.id,name:role.name,version:role.version,scopes:role.scopes}))}),
+      inject:()=>({api:homeContextApi,work,isNativeChild:(id:string)=>isNativeChildSession(child.sessions,brandString<SessionId>(id)),isAssistantContext:isHomeAssistantContext,block:homeContextBlock,roles:async()=>homeWorkAssigneeOptions((await roleWorkDirectory.list()).map(role=>({...role,storage:'persistent' as const})))}),
     },HomeComposerContext))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({
       name:'conversation.input.dock',id:'teloa-work-requests',order:-105,

@@ -18,7 +18,7 @@ export function createNativeSessionCapabilities(ctx:Pick<Context,'agents'>,ports
   const actual=ctx.agents.get(SessionId(sessionId)),root=actual?resolveSessionLineage(ctx,actual.session).root.id:sessionId
   const capabilities=new Set<WorkCapability>()
   if(producer==='subagent'||actual?.session.header.origin==='subagent')capabilities.add('parallel-agents')
-  if(producer==='schedule')capabilities.add('automation')
+  if(producer==='schedule'||producer==='goal')capabilities.add('automation')
   if(ports.isRoutingSession(root))capabilities.add('groups')
   else{
    // 直接读快照，避免等待正在创建该会话的队列或反向激活冷日志。

@@ -17,6 +17,7 @@ export type ControllerInputCandidate=
  |Readonly<{kind:'queue-edit';agent:Agent;message:UserMessage;itemId:string;target:'next-turn'|'next-step';previousMessage:UserMessage}>
 export type SubagentInputCandidate=Readonly<{agent:Agent;message:UserMessage;sender:Agent;delivery:'queue'|'steer';signal?:AbortSignal;kind?:'initial'|'live'|'resume'}>
 export type ScheduleInputCandidate=Readonly<{agent:Agent;message:UserMessage;occurrences:readonly Readonly<{scheduleId:string;occurrenceAt:string}>[]}>
+export type GoalInputCandidate=Readonly<{agent:Agent;message:UserMessage;goal:Readonly<{id:string;revision:number}>;round:number}>
 type Publisher=()=>void
 type Input=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'withSubagentInput'>>
 
@@ -30,7 +31,7 @@ function context(producer:NativeInputContext['producer'],identity:readonly unkno
  * 仅首次新输入；旧回执由 Controller 核对，seed/fork 与受理任务续作另行接入。
  * 返回固定函数供各服务在启动前安装，不自行创建第二个 guard 或决定业务身份。
  */
-export function createNativeProducerAdmissions(input:Input){
+export function createNativeProducerAdmissions(input:Input,goalAdmission?:(candidate:GoalInputCandidate,dispatch:Publisher)=>Promise<void>){
  return Object.freeze({
   async controller(candidate:ControllerInputCandidate,dispatch:Publisher):Promise<void>{
    const binding=candidate.kind==='prompt'
@@ -51,6 +52,11 @@ export function createNativeProducerAdmissions(input:Input){
   schedule(candidate:ScheduleInputCandidate,dispatch:Publisher):Promise<void>{
    const binding=context('schedule',['schedule/delivery',candidate.agent.id,candidate.occurrences.map(item=>[item.scheduleId,item.occurrenceAt])])
    return input.withNewInput(candidate.agent,candidate.message,binding,dispatch)
+  },
+  goal(candidate:GoalInputCandidate,dispatch:Publisher):Promise<void>{
+   // Goal 必须先有持久业务票据；通用 producer 标记不能变成免票据的另一条发布入口。
+   if(!goalAdmission)throw new WorkError('teloa/unavailable','Goal 持久续轮准入尚未装配。')
+   return goalAdmission(candidate,dispatch)
   },
  })
 }

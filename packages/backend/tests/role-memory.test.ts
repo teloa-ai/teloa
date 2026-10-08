@@ -14,6 +14,8 @@ import {TaskAttentionService} from '../src/work/task-attention.ts'
 import {initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
 import {initializeArtifacts} from '../src/work/artifacts.ts'
 import {initializeRoleMemory,RoleMemoryService} from '../src/work/role-memory.ts'
+import {initializeRoleMemoryViews,RoleMemoryViewService} from '../src/work/role-memory-views.ts'
+import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeMarkdownKnowledge} from '../src/capabilities/markdown-knowledge.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
@@ -23,7 +25,7 @@ before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
- await initializeResources(pool);await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeMarkdownKnowledge(pool);await initializeRoleMemory(pool)
+ await initializeResources(pool);await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeMarkdownKnowledge(pool);await initializeRoleMemory(pool);await initializeCollaboration(pool);await initializeRoleMemoryViews(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop()})
 
@@ -35,6 +37,86 @@ async function fixture(kind:'employee'|'twin'='employee',scope='SOC'){
  const task=kind==='employee'?await new TaskService(pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'季度复盘',goal:'核对处置记录',scope},assignee:{roleId:role.id,expectedVersion:2}}):undefined
  return {owner,role,task,service:new RoleMemoryService(pool,identity),human:{ownerId:owner,kind:'human' as const}}
 }
+
+async function memoryViewFixture(){
+ const f=await fixture('twin','general'),groupId=randomUUID(),views=new RoleMemoryViewService(pool,identity,f.service)
+ await pool.query("insert into teloa_groups(id,owner_id,request_id,request_spec,definition,version,pinned,archived,created_at,updated_at) values($1,$2,$3,'{}',$4,1,false,false,now(),now())",[groupId,f.owner,randomUUID(),JSON.stringify({name:'协作群',scope:'general',announcement:'',memberRoleIds:[f.role.id]})])
+ await pool.query('insert into teloa_group_members(group_id,owner_id,member_key,role_id,created_at) values($1,$2,$3::text,$3::uuid,now())',[groupId,f.owner,f.role.id])
+ const candidate=await f.service.create(f.human,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'可分享经验',markdown:'仅分享这一条固定经验。',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}})
+ const memory=await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1}),entries=[{memoryId:memory.id,memoryVersion:memory.content.version,contentSha256:memory.content.contentHash}]
+ return {...f,groupId,views,memory,input:{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,groupId,entries}}
+}
+
+test('共享视图真实持久化且幂等，只读取固定项并保持原记忆私有',async()=>{
+ const f=await memoryViewFixture(),view=await f.views.create(f.owner,f.input)
+ assert.deepEqual(await new RoleMemoryViewService(pool,identity,new RoleMemoryService(pool,identity)).read(f.owner,{viewId:view.id}),view)
+ assert.deepEqual(await f.views.create(f.owner,f.input),view)
+ await assert.rejects(f.views.create(f.owner,{...f.input,entries:[{...f.input.entries[0],contentSha256:'0'.repeat(64)}]}),{code:'teloa/conflict'})
+ const privateQueries:string[]=[],db={query:(async(text:string,values:unknown[])=>{if(text.includes('teloa_role_memor'))privateQueries.push(text);return pool.query(text,values)}) as Pool['query']}
+ assert.deepEqual(await f.service.confirmedForRun(db,f.owner,{scope:'general',groupId:f.groupId,memoryViewId:null},f.role),[])
+ assert.equal(privateQueries.length,0)
+ const selected=await f.service.confirmedForRun(db,f.owner,{scope:'general',groupId:f.groupId,memoryViewId:view.id},f.role)
+ assert.deepEqual(selected.map(memory=>[memory.id,memory.visibility.kind]),[[f.memory.id,'private']])
+ assert.ok(privateQueries.find(text=>text.includes('from teloa_role_memories'))?.includes('id=any($3::uuid[])'))
+ assert.equal((await f.service.list(f.human,{roleId:f.role.id}))[0]!.visibility.kind,'private')
+ await assert.rejects(f.service.confirmedForRun(pool,f.owner,{scope:'general',groupId:randomUUID(),memoryViewId:view.id},f.role),{code:'teloa/forbidden'})
+ await assert.rejects(f.views.read(randomUUID(),{viewId:view.id}),{code:'teloa/forbidden'})
+ await assert.rejects(pool.query('update teloa_role_memory_views set version=1 where owner_id=$1 and id=$2',[f.owner,view.id]),/immutable/)
+})
+
+test('共享视图拒绝候选、跨本人、未知项以及不匹配的版本或摘要',async()=>{
+ const f=await memoryViewFixture(),fresh=(entries:unknown)=>f.views.create(f.owner,{...f.input,requestId:randomUUID(),entries})
+ const candidate=await f.service.create(f.human,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'未确认偏好',markdown:'本人尚未决定。',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}})
+ for(const entry of [{memoryId:candidate.id,memoryVersion:1,contentSha256:candidate.content.contentHash},{...f.input.entries[0],memoryId:randomUUID()},{...f.input.entries[0],memoryVersion:2},{...f.input.entries[0],contentSha256:'0'.repeat(64)}])await assert.rejects(fresh([entry]),{code:'teloa/version-conflict'})
+ const other=await memoryViewFixture()
+ await assert.rejects(fresh(other.input.entries),{code:'teloa/version-conflict'})
+ await assert.rejects(fresh([f.input.entries[0],f.input.entries[0]]),{code:'teloa/invalid-input'})
+ await assert.rejects(f.views.create(f.owner,{...f.input,ownerId:other.owner}),{code:'teloa/invalid-input'})
+ await assert.rejects(f.views.create(f.owner,{...f.input,expectedRoleVersion:3}),{code:'teloa/version-conflict'})
+ await assert.rejects(f.views.create(f.owner,{...f.input,groupId:other.groupId}),{code:'teloa/forbidden'})
+})
+
+test('视图读取消费拒绝岗位改版、移出群、归档和固定记忆撤回',async()=>{
+ const f=await memoryViewFixture(),view=await f.views.create(f.owner,f.input),read=()=>f.views.read(f.owner,{viewId:view.id})
+ await pool.query('update teloa_roles set version=3 where id=$1',[f.role.id]);await assert.rejects(read(),{code:'teloa/version-conflict'})
+ await pool.query('update teloa_roles set version=2 where id=$1',[f.role.id])
+ await pool.query('delete from teloa_group_members where owner_id=$1 and group_id=$2 and role_id=$3',[f.owner,f.groupId,f.role.id]);await assert.rejects(read(),{code:'teloa/forbidden'})
+ await pool.query('insert into teloa_group_members(group_id,owner_id,member_key,role_id,created_at) values($1,$2,$3::text,$3::uuid,now())',[f.groupId,f.owner,f.role.id])
+ await pool.query('update teloa_groups set archived=true where id=$1',[f.groupId]);await assert.rejects(read(),{code:'teloa/forbidden'})
+ await pool.query('update teloa_groups set archived=false where id=$1',[f.groupId])
+ await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:f.memory.id,expectedStateVersion:2})
+ await assert.rejects(read(),{code:'teloa/version-conflict'})
+ await assert.rejects(f.service.confirmedForRun(pool,f.owner,{scope:'general',groupId:f.groupId,memoryViewId:view.id},f.role),{code:'teloa/version-conflict'})
+ assert.deepEqual(await f.views.create(f.owner,f.input),view)
+})
+
+test('分身新运行只读本人已确认私有记忆，旧缺选择调用不能取得私有正文',async()=>{
+ const f=await fixture('twin','general'),candidate=await f.service.create(f.human,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'本人偏好',markdown:'先列证据再写结论。',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}})
+ await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1})
+ const selected=await f.service.confirmedForRun(pool,f.owner,{scope:'general',memoryViewId:null,groupId:null},f.role)
+ assert.deepEqual(selected.map(item=>[item.id,item.visibility.kind]),[[candidate.id,'private']])
+ await assert.rejects(f.service.confirmedForRun(pool,f.owner,{scope:'general'},f.role),{code:'teloa/forbidden'})
+ await assert.rejects(f.service.confirmedForRun(pool,f.owner,{scope:'',memoryViewId:null,groupId:null},f.role),{code:'teloa/forbidden'})
+ assert.deepEqual(await f.service.confirmedForRun(pool,f.owner,{scope:'general',memoryViewId:null,groupId:randomUUID()},f.role),[])
+})
+
+test('员工历史字符串范围仍按岗位记忆读取',async()=>{
+ const f=await fixture(),memory=await f.service.create(f.human,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'经验',markdown:'核对证据。',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'role',scopeIds:['SOC']}})
+ await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:memory.id,expectedStateVersion:1})
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(item=>item.id),[memory.id])
+})
+
+test('分身可为自己的真实运行提出私有经验候选，仍不能确认或引用另一岗位运行',async()=>{
+ const f=await fixture('twin','general'),runId=randomUUID(),taskId=randomUUID()
+ await pool.query("insert into teloa_tasks(id,owner_id,request_id,request_spec,definition,version,state,assignee_role_id,assignee_role_version,created_at,updated_at) values($1,$2,$3,'{}',$4,1,'ready',$5,2,now(),now())",[taskId,f.owner,randomUUID(),JSON.stringify({title:'分身任务',goal:'核对资料',scope:'general',priority:'normal',dueAt:null,projectId:null,groupId:null,participants:[]}),f.role.id])
+ await pool.query("insert into teloa_task_runs(id,owner_id,request_id,request_spec,task_id,role_id,task_version,role_version,link_version,session_id,native_request_id,state,input_text,created_at) values($1,$2,$3,'{}',$4,$5,1,2,1,$6,$7,'active',$8,now())",[runId,f.owner,randomUUID(),taskId,f.role.id,'twin-memory-'+runId,randomUUID(),JSON.stringify({task:{id:taskId,version:1,title:'分身任务',goal:'核对资料',scope:'general'}})])
+ const input={requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'运行经验',markdown:'本轮实际核对后形成的经验。',source:{kind:'run',id:runId,version:1},visibility:{kind:'private',scopeIds:[]}},agent={ownerId:f.owner,kind:'agent' as const,roleId:f.role.id}
+ const memory=await f.service.create(agent,input)
+ assert.equal(memory.state,'candidate');assert.equal(memory.visibility.kind,'private')
+ await assert.rejects(f.service.confirm(agent,{requestId:randomUUID(),memoryId:memory.id,expectedStateVersion:1}),{code:'teloa/forbidden'})
+ await pool.query('update teloa_task_runs set role_id=$2 where id=$1',[runId,(await fixture()).role.id])
+ await assert.rejects(f.service.create(agent,{...input,requestId:randomUUID()}),{code:'teloa/forbidden'})
+})
 
 test('候选正文与任务来源固定，重复请求幂等且跨本人不可读',async()=>{
  const f=await fixture(),requestId=randomUUID(),input={requestId,roleId:f.role.id,expectedRoleVersion:2,title:'交付前核对来源',markdown:'交付前必须核对来源版本。',source:{kind:'task' as const,id:f.task!.id,version:1},visibility:{kind:'role' as const,scopeIds:['SOC']}}

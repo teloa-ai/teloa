@@ -1,17 +1,22 @@
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isRecord,readScheduleTrigger,roleDefinition,roleSupportsScope,taskDefinition,type ScheduleTrigger} from '@teloa/contract'
+import {WorkError,isRecord,readScheduleTrigger,roleSupportsScope,taskDefinition,readTaskCompletionPolicy,type TaskCompletionPolicy,type ScheduleTrigger} from '@teloa/contract'
 import type {MarketContent} from '../market/content-store.ts'
 import {assertBusinessScopeRegistered} from './business-scopes.ts'
-import {workAccess} from './work-access.ts'
+import {workAccess,combineWorkAccessLeases,type WorkAccessLease} from './work-access.ts'
+import {readStoredRole} from './roles.ts'
+import {assertRoleWorkRole,authorizeOwnerWork,type OwnerWorkAuthority} from './twin-execution-consents.ts'
+import {configurePlanWork} from './plan-work-configuration.ts'
+import {readPlanWorkDefinition,type PlanWorkDefinition} from '@teloa/contract'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
 
 export const planNotificationPolicies=['always','attention','failure','silent'] as const
 export type PlanNotificationPolicy=typeof planNotificationPolicies[number]
-type PlanFieldValues={title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger}
+type PlanFieldValues={title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;completionPolicy?:TaskCompletionPolicy}
 export type PlanFields=PlanFieldValues&{notificationPolicy:PlanNotificationPolicy}
-export type PlanUpdateFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'trigger'|'notificationPolicy'>
+export type PlanUpdateFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'trigger'|'notificationPolicy'|'completionPolicy'>
 type StoredPlanFields=PlanFieldValues&{notificationPolicy?:PlanNotificationPolicy}
 export type PlanSource={kind:'manual'}|{kind:'market-content';contentId:string;contentHash:string;resourceId:string;resourceVersion:string}|{kind:'system-digest';roleId:string}
-export type PersistentPlan=StoredPlanFields&{id:string;ownerId:string;roleVersion:number;source:PlanSource;version:number;configVersion:number;state:'paused'|'active'|'archived';archivedReason:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
+export type PersistentPlan=StoredPlanFields&{workDefinition?:PlanWorkDefinition;id:string;ownerId:string;roleVersion:number;source:PlanSource;version:number;configVersion:number;state:'paused'|'active'|'archived';archivedReason:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
 export type PlanMarketSources={get:(actor:{ownerId:string;kind:'human'},input:{contentId:string})=>Promise<MarketContent>;getInTransaction?:(client:PoolClient,actor:{ownerId:string;kind:'human'},input:{contentId:string})=>Promise<MarketContent>}
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
@@ -38,27 +43,28 @@ function source(value:unknown):PlanSource{
 export {source as planSource}
 function trigger(value:unknown):ScheduleTrigger{try{return readScheduleTrigger(value)}catch{throw invalid()}}
 function policy(value:unknown):PlanNotificationPolicy{if(!planNotificationPolicies.includes(value as PlanNotificationPolicy))throw invalid();return value as PlanNotificationPolicy}
+const completionFields=(row:Record<string,unknown>)=>row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)}
 function definition(value:unknown,requirePolicy:true):PlanFields
 function definition(value:unknown,requirePolicy?:false):StoredPlanFields
 function definition(value:unknown,requirePolicy=false):StoredPlanFields{
- const row=object(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy']),task=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
+ const row=object(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy']),task=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
  if(!uuid(row.roleId))throw invalid()
  const notificationPolicy=row.notificationPolicy===undefined?undefined:policy(row.notificationPolicy)
  if(requirePolicy&&notificationPolicy===undefined)throw invalid()
- return {title:task.title,goal:task.goal,scope:task.scope,dataScope:text(row.dataScope,8000),delivery:text(row.delivery,8000),roleId:row.roleId,trigger:trigger(row.trigger),...(notificationPolicy?{notificationPolicy}:{})}
+ return {title:task.title,goal:task.goal,scope:task.scope,dataScope:text(row.dataScope,8000),delivery:text(row.delivery,8000),roleId:row.roleId,trigger:trigger(row.trigger),...(notificationPolicy?{notificationPolicy}:{}),...completionFields(row)}
 }
 function creationSpec(value:unknown):{fields:PlanFields;expectedRoleVersion:number;source:PlanSource;normalized:Record<string,unknown>}{
- const row=object(value,['fields','source']),raw=object(row.fields,['title','goal','scope','dataScope','delivery','roleId','expectedRoleVersion','trigger','notificationPolicy'])
+ const row=object(value,['fields','source']),raw=object(row.fields,['title','goal','scope','dataScope','delivery','roleId','expectedRoleVersion','trigger','notificationPolicy','completionPolicy'])
  if(!Number.isSafeInteger(raw.expectedRoleVersion)||Number(raw.expectedRoleVersion)<1)throw invalid()
  const {expectedRoleVersion:rawExpectedRoleVersion,...rawFields}=raw
  const fields=definition(rawFields,true),expectedRoleVersion=Number(rawExpectedRoleVersion),fixedSource=source(row.source)
  return {fields,expectedRoleVersion,source:fixedSource,normalized:{fields:{...fields,expectedRoleVersion},source:fixedSource}}
 }
 function updateFields(value:unknown):PlanUpdateFields{
- const row=object(value,['title','goal','dataScope','delivery','trigger','notificationPolicy'])
+ const row=object(value,['title','goal','dataScope','delivery','trigger','notificationPolicy','completionPolicy'])
  const base=taskDefinition({title:row.title,goal:row.goal,scope:'general'})
  if(!text(row.dataScope,8000)||!text(row.delivery,8000)||!planNotificationPolicies.includes(row.notificationPolicy as PlanNotificationPolicy))throw invalid()
- return {title:base.title,goal:base.goal,dataScope:text(row.dataScope,8000),delivery:text(row.delivery,8000),trigger:trigger(row.trigger),notificationPolicy:row.notificationPolicy as PlanNotificationPolicy}
+ return {title:base.title,goal:base.goal,dataScope:text(row.dataScope,8000),delivery:text(row.delivery,8000),trigger:trigger(row.trigger),notificationPolicy:row.notificationPolicy as PlanNotificationPolicy,...completionFields(row)}
 }
 function createInput(input:unknown):{requestId:string;fields:PlanFields;expectedRoleVersion:number;source:PlanSource;spec:Record<string,unknown>}{
  const row=object(input,['requestId','fields','source']);if(!uuid(row.requestId))throw invalid()
@@ -74,28 +80,31 @@ export function readStoredPlan(row:Record<string,unknown>):PersistentPlan{
   if(hasRequestId!==hasRequestSpec)throw Error()
   if(hasRequestId){
    if(!uuid(row.request_id))throw Error()
-   const requestFields=object((object(row.request_spec,['fields','source'])).fields,['title','goal','scope','dataScope','delivery','roleId','expectedRoleVersion','trigger','notificationPolicy'])
+   const requestFields=object((object(row.request_spec,['fields','source'])).fields,['title','goal','scope','dataScope','delivery','roleId','expectedRoleVersion','trigger','notificationPolicy','completionPolicy'])
    const expectedRoleVersion=requestFields.expectedRoleVersion,{expectedRoleVersion:_expected,...rawFields}=requestFields,request={fields:definition(rawFields),expectedRoleVersion,source:source((row.request_spec as Record<string,unknown>).source)}
-   if(!Number.isSafeInteger(request.expectedRoleVersion)||Number(request.expectedRoleVersion)<1||request.expectedRoleVersion!==row.role_version||request.fields.roleId!==fields.roleId||request.fields.scope!==fields.scope||JSON.stringify(request.source)!==JSON.stringify(fixedSource)||(Number(row.config_version)===1&&JSON.stringify(request.fields)!==JSON.stringify(fields)))throw Error()
+   if(!Number.isSafeInteger(request.expectedRoleVersion)||Number(request.expectedRoleVersion)<1||Number(row.config_version)===1&&request.expectedRoleVersion!==row.role_version||request.fields.roleId!==fields.roleId||request.fields.scope!==fields.scope||JSON.stringify(request.source)!==JSON.stringify(fixedSource)||(Number(row.config_version)===1&&JSON.stringify(request.fields)!==JSON.stringify(fields)))throw Error()
   }
   const archived=row.state==='archived'
   if(archived?(typeof row.archived_reason!=='string'||!row.archived_reason.trim()||row.archived_reason.length>4000||row.archived_at===null):(row.archived_reason!==null||row.archived_at!==null))throw Error()
-  return {...fields,id:row.id,ownerId:row.owner_id,roleVersion:Number(row.role_version),source:fixedSource,version:Number(row.version),configVersion:Number(row.config_version),state:row.state as PersistentPlan['state'],archivedReason:archived?row.archived_reason as string:null,archivedAt:archived?stamp(row.archived_at):null,createdAt:stamp(row.created_at),updatedAt:stamp(row.updated_at)}
+  const workDefinition=row.work_definition==null?undefined:readPlanWorkDefinition(row.work_definition)
+  if(workDefinition&&(workDefinition.definitionVersion!==row.config_version||JSON.stringify(workDefinition.completion)!==JSON.stringify(fields.completionPolicy)))throw Error()
+  return {...fields,...(workDefinition?{workDefinition}:{}),id:row.id,ownerId:row.owner_id,roleVersion:Number(row.role_version),source:fixedSource,version:Number(row.version),configVersion:Number(row.config_version),state:row.state as PersistentPlan['state'],archivedReason:archived?row.archived_reason as string:null,archivedAt:archived?stamp(row.archived_at):null,createdAt:stamp(row.created_at),updatedAt:stamp(row.updated_at)}
  }catch(error){if(error instanceof WorkError&&error.code==='teloa/storage-corrupt')throw error;throw corrupt()}
 }
-function receiptPlan(value:unknown):PersistentPlan{
+export function receiptPlan(value:unknown):PersistentPlan{
  try{
-  const row=object(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt'])
+  const row=object(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','completionPolicy','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt','workDefinition'])
   const date=(stampValue:unknown):Date=>{if(typeof stampValue!=='string')throw Error();const parsed=new Date(stampValue);if(!Number.isFinite(parsed.getTime())||parsed.toISOString()!==stampValue)throw Error();return parsed}
-  return readStoredPlan({id:row.id,owner_id:row.ownerId,definition:{title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{})},notification_policy:row.notificationPolicy??null,source:row.source,role_id:row.roleId,role_version:row.roleVersion,scope:row.scope,version:row.version,config_version:row.configVersion,state:row.state,archived_reason:row.archivedReason,archived_at:row.archivedAt===null?null:date(row.archivedAt),created_at:date(row.createdAt),updated_at:date(row.updatedAt)})
+  return readStoredPlan({work_definition:row.workDefinition??null,id:row.id,owner_id:row.ownerId,definition:{title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{}),...completionFields(row)},notification_policy:row.notificationPolicy??null,source:row.source,role_id:row.roleId,role_version:row.roleVersion,scope:row.scope,version:row.version,config_version:row.configVersion,state:row.state,archived_reason:row.archivedReason,archived_at:row.archivedAt===null?null:date(row.archivedAt),created_at:date(row.createdAt),updated_at:date(row.updatedAt)})
  }catch{throw corrupt()}
 }
-function immutablePlan(plan:PersistentPlan):string{return JSON.stringify({title:plan.title,goal:plan.goal,scope:plan.scope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,roleVersion:plan.roleVersion,trigger:plan.trigger,...(plan.notificationPolicy?{notificationPolicy:plan.notificationPolicy}:{}),source:plan.source,configVersion:plan.configVersion,createdAt:plan.createdAt})}
-function validateRole(row:Record<string,unknown>,fields:PlanFieldValues,expectedVersion:number):void{
- let value:ReturnType<typeof roleDefinition>;try{value=roleDefinition(row.definition)}catch{throw new WorkError('teloa/storage-corrupt','负责员工定义损坏，已停止持续计划操作。')}
- if(row.version!==expectedVersion)throw new WorkError('teloa/version-conflict','负责员工版本已变化，请重新核对计划。')
- if(row.state!=='active'||value.kind!=='employee')throw new WorkError('teloa/conflict','只有在岗员工可以负责持续计划。')
- if(!roleSupportsScope(value.scopes,fields.scope))throw new WorkError('teloa/forbidden','负责员工不支持计划所属业务。')
+function immutablePlan(plan:PersistentPlan):string{return JSON.stringify({title:plan.title,goal:plan.goal,scope:plan.scope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,roleVersion:plan.roleVersion,trigger:plan.trigger,...(plan.notificationPolicy?{notificationPolicy:plan.notificationPolicy}:{}),...(plan.completionPolicy?{completionPolicy:plan.completionPolicy}:{}),source:plan.source,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{}),configVersion:plan.configVersion,createdAt:plan.createdAt})}
+async function validateRole(db:PoolClient,pool:Pool,ownerId:string,row:Record<string,unknown>,fields:PlanFieldValues,expectedVersion:number,source:PlanSource):Promise<WorkAccessLease>{
+ const role=readStoredRole(row)
+ assertRoleWorkRole(role,expectedVersion)
+ if(source.kind==='system-digest'&&role.kind!=='employee')throw new WorkError('teloa/conflict','Auto Dream 系统小结由在岗员工负责。')
+ if(!roleSupportsScope(role.scopes,fields.scope))throw new WorkError('teloa/forbidden','负责角色不支持计划所属业务。')
+ return authorizeRoleTaskAssignment(db,pool,ownerId,role,fields.scope)
 }
 
 export async function initializePlans(pool:Pool):Promise<void>{
@@ -116,6 +125,7 @@ export async function initializePlans(pool:Pool):Promise<void>{
   foreign key(plan_id,owner_id) references teloa_plans(id,owner_id)
  );
  alter table teloa_plans add column if not exists notification_policy text;
+ alter table teloa_plans add column if not exists work_definition jsonb;
  do $$ begin if not exists(select 1 from pg_constraint where conrelid='teloa_plans'::regclass and conname='teloa_plans_notification_policy_check') then alter table teloa_plans add constraint teloa_plans_notification_policy_check check(notification_policy in ('always','attention','failure','silent')); end if; end $$;
  create index if not exists teloa_plans_scheduler_order on teloa_plans(owner_id,id)`)
 }
@@ -134,7 +144,9 @@ export class PlanService{
  readonly pool:Pool
  readonly identity:{id:()=>string;now:()=>string}
  readonly marketSources:PlanMarketSources|undefined
- constructor(pool:Pool,identity:{id:()=>string;now:()=>string},marketSources?:PlanMarketSources){this.pool=pool;this.identity=identity;this.marketSources=marketSources}
+ readonly ownerAuthority:OwnerWorkAuthority|undefined
+ constructor(pool:Pool,identity:{id:()=>string;now:()=>string},marketSources?:PlanMarketSources,ownerAuthority?:OwnerWorkAuthority){this.pool=pool;this.identity=identity;this.marketSources=marketSources;this.ownerAuthority=ownerAuthority}
+ async configureWorkConfirmed(ownerId:string,input:unknown):Promise<PersistentPlan>{return configurePlanWork(this.pool,this.identity,this.ownerAuthority,ownerId,input)}
  private verifySource(ownerId:string,value:PlanSource,client?:PoolClient):Promise<void>{return verifyPlanSource(ownerId,value,this.marketSources,client)}
  /**
   * 行业模板创建的计划只能在仍在生效的加载上重新启用：加载已卸载或已被升级替代时，卸载与升级都把它暂停过，
@@ -181,18 +193,34 @@ export class PlanService{
  async create(ownerId:string,input:unknown):Promise<PersistentPlan>{
   owner(ownerId)
   if(isRecord(input)&&isRecord(input.source)&&input.source.kind==='system-digest')throw new WorkError('teloa/forbidden','Auto Dream 的系统计划随员工在岗自动建立，不能手工新建。')
+  if(isRecord(input)&&isRecord(input.fields)&&readTaskCompletionPolicy(input.fields.completionPolicy).kind==='verified')throw new WorkError('teloa/forbidden','自动结项策略须由本人明确确认。')
   const client=await this.pool.connect()
   try{await client.query('begin')
    const plan=await this.createInTransaction(client,ownerId,input);await client.query('commit');return plan
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
- async createInTransaction(client:PoolClient,ownerId:string,input:unknown):Promise<PersistentPlan>{
+ /** 仅本人专用RPC装配持有authority；未知回包先读原创建回执。 */
+ async createConfirmed(ownerId:string,input:unknown):Promise<PersistentPlan>{
+  owner(ownerId);const value=createInput(input)
+  if(value.source.kind==='system-digest'||!this.ownerAuthority)throw new WorkError('teloa/forbidden','需要本人确认自动结项范围。')
+  const db=await this.pool.connect()
+  try{await db.query('begin')
+   await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['plan-create',ownerId,value.requestId])])
+   const prior=(await db.query('select *,request_spec=$3::jsonb same_request from teloa_plans where owner_id=$1 and request_id=$2',[ownerId,value.requestId,JSON.stringify(value.spec)])).rows[0]
+   if(prior){if(!prior.same_request)throw new WorkError('teloa/conflict','原请求已创建不同计划。');const plan=readStoredPlan(prior);await db.query('commit');return plan}
+   const lease=await authorizeOwnerWork(this.ownerAuthority,ownerId,{requestId:value.requestId,roleId:value.fields.roleId,operation:'confirm'})
+   const result=await this.createInTransaction(db,ownerId,input,lease);lease.assertCurrent();await db.query('commit');return result
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ async createInTransaction(client:PoolClient,ownerId:string,input:unknown,confirmed?:WorkAccessLease):Promise<PersistentPlan>{
    owner(ownerId);const value=createInput(input)
    // 系统计划的来源身份必须就是它负责的那位员工：不一致会让每日小结的运行判据与闸永远判不出来。
    if(value.source.kind==='system-digest'&&value.source.roleId!==value.fields.roleId)throw invalid()
    await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['plan-create',ownerId,value.requestId])])
    const prior=await client.query('select *,request_spec=$3::jsonb same_request from teloa_plans where owner_id=$1 and request_id=$2',[ownerId,value.requestId,JSON.stringify(value.spec)])
    if(prior.rows[0]){if(!prior.rows[0].same_request)throw new WorkError('teloa/conflict','同一请求不能创建不同的持续计划。');return readStoredPlan(prior.rows[0])}
+   if(value.fields.completionPolicy?.kind==='verified'&&value.source.kind!=='system-digest'&&!confirmed)throw new WorkError('teloa/forbidden','自动结项策略须由本人明确确认。')
+   confirmed?.assertCurrent()
    // 一位员工至多一条系统计划：多出来的第二条会让同一天被领取两次。原请求重放已在上一行返回，不受这条影响。
    // 「查不到就建」这一段必须按员工串起来，否则两次并发招聘/复岗各自查空、各插一条。
    if(value.source.kind==='system-digest'){
@@ -204,12 +232,12 @@ export class PlanService{
    await this.verifySource(ownerId,value.source,client)
    const role=(await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[value.fields.roleId,ownerId])).rows[0] as Record<string,unknown>|undefined
    if(!role)throw new WorkError('teloa/forbidden','负责员工不存在或不属于当前本人。')
-   validateRole(role,value.fields,value.expectedRoleVersion)
-   const admission=await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:value.requestId,operation:'create'})
+   const assignment=await validateRole(client,this.pool,ownerId,role,value.fields,value.expectedRoleVersion,value.source)
+   const admission=combineWorkAccessLeases([assignment,await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:value.requestId,operation:'create'})])
    admission.assertCurrent()
    const now=this.identity.now(),inserted=(await client.query(`insert into teloa_plans(id,owner_id,request_id,request_spec,definition,source,notification_policy,role_id,role_version,scope,version,config_version,state,archived_reason,archived_at,created_at,updated_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,1,'paused',null,null,$11,$11) returning *`,[this.identity.id(),ownerId,value.requestId,JSON.stringify(value.spec),JSON.stringify(value.fields),JSON.stringify(value.source),value.fields.notificationPolicy,value.fields.roleId,value.expectedRoleVersion,value.fields.scope,now])).rows[0]
-   admission.assertCurrent();return readStoredPlan(inserted)
+   confirmed?.assertCurrent();admission.assertCurrent();return readStoredPlan(inserted)
  }
  async change(ownerId:string,input:unknown):Promise<PersistentPlan>{
   owner(ownerId);const client=await this.pool.connect()
@@ -223,7 +251,20 @@ export class PlanService{
   * `pause` 的 `note` 只记在变更台账 `teloa_plan_changes.request_spec` 里，
   * `archived_reason` 仍由数据库约束限定为归档专用，计划本身的对外形状不变。
   */
- async changeInTransaction(client:PoolClient,ownerId:string,input:unknown):Promise<PersistentPlan>{
+ async changeConfirmed(ownerId:string,input:unknown):Promise<PersistentPlan>{
+  owner(ownerId);const row=object(input,['planId','requestId','expectedVersion','expectedConfigVersion','action','note','fields'])
+  if(!uuid(row.planId)||!uuid(row.requestId)||!this.ownerAuthority)throw new WorkError('teloa/forbidden','需要本人确认自动结项范围。')
+  const db=await this.pool.connect()
+  try{await db.query('begin')
+   const existing=(await db.query('select * from teloa_plan_changes where owner_id=$1 and request_id=$2',[ownerId,row.requestId])).rows[0]
+   if(existing){const result=await this.changeInTransaction(db,ownerId,input);await db.query('commit');return result}
+   const stored=(await db.query('select * from teloa_plans where owner_id=$1 and id=$2',[ownerId,row.planId])).rows[0]
+   if(!stored)throw new WorkError('teloa/forbidden','计划不属于本人。')
+   const lease=await authorizeOwnerWork(this.ownerAuthority,ownerId,{requestId:row.requestId,roleId:readStoredPlan(stored).roleId,operation:'confirm'})
+   const result=await this.changeInTransaction(db,ownerId,input,lease);lease.assertCurrent();await db.query('commit');return result
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ async changeInTransaction(client:PoolClient,ownerId:string,input:unknown,confirmed?:WorkAccessLease):Promise<PersistentPlan>{
   owner(ownerId);const row=object(input,['planId','requestId','expectedVersion','expectedConfigVersion','action','note','fields'])
   if(!uuid(row.planId)||!uuid(row.requestId)||!Number.isSafeInteger(row.expectedVersion)||Number(row.expectedVersion)<1||!['enable','pause','archive','update'].includes(String(row.action)))throw invalid()
   const action=row.action as 'enable'|'pause'|'archive'|'update';let note:string|undefined,fields:PlanUpdateFields|undefined
@@ -240,7 +281,7 @@ export class PlanService{
   if(prior){
    if(!prior.same_request||prior.plan_id!==current.id)throw new WorkError('teloa/conflict','原请求已记录其他计划操作。')
    const saved=receiptPlan(prior.result),target=action==='enable'?'active':action==='pause'?'paused':action==='archive'?'archived':current.state,receiptAt=stamp(prior.created_at)
-   const sameUpdate=action!=='update'||(saved.title===fields!.title&&saved.goal===fields!.goal&&saved.dataScope===fields!.dataScope&&saved.delivery===fields!.delivery&&JSON.stringify(saved.trigger)===JSON.stringify(fields!.trigger)&&saved.notificationPolicy===fields!.notificationPolicy&&saved.roleId===current.roleId&&saved.scope===current.scope)
+   const sameUpdate=action!=='update'||(saved.title===fields!.title&&saved.goal===fields!.goal&&saved.dataScope===fields!.dataScope&&saved.delivery===fields!.delivery&&JSON.stringify(saved.trigger)===JSON.stringify(fields!.trigger)&&saved.notificationPolicy===fields!.notificationPolicy&&JSON.stringify(saved.completionPolicy)===JSON.stringify(fields!.completionPolicy??current.completionPolicy)&&saved.roleId===current.roleId&&saved.scope===current.scope)
    if(saved.id!==current.id||saved.ownerId!==ownerId||saved.version!==Number(row.expectedVersion)+1||saved.state!==target||!sameUpdate||saved.configVersion!==(action==='update'?Number(row.expectedConfigVersion)+1:current.configVersion)||action!=='update'&&immutablePlan(saved)!==immutablePlan(current)||saved.updatedAt!==receiptAt||saved.archivedReason!==(action==='archive'?note!:null)||action==='archive'&&saved.archivedAt!==receiptAt)throw corrupt()
    return saved
   }
@@ -248,28 +289,35 @@ export class PlanService{
   if(!role)throw corrupt()
   const locked=readStoredPlan((await client.query('select * from teloa_plans where id=$1 and owner_id=$2 for update',[current.id,ownerId])).rows[0])
   if(locked.roleId!==current.roleId||locked.scope!==current.scope)throw corrupt()
+  if(action==='enable'&&locked.workDefinition&&!confirmed)throw new WorkError('teloa/forbidden','长期工作须由本人明确启动。')
+  if(action==='update'&&locked.workDefinition)throw new WorkError('teloa/conflict','长期定义请先暂停并通过本人确认的配置入口修改。')
   if(locked.version!==row.expectedVersion||action==='update'&&locked.configVersion!==row.expectedConfigVersion)throw new WorkError('teloa/version-conflict','持续计划版本已变化，请重新核对。')
   if(locked.state==='archived'||action==='enable'&&locked.state!=='paused'||action==='pause'&&locked.state!=='active')throw new WorkError('teloa/conflict','当前持续计划状态不能执行此操作。')
+  if(['enable','update'].includes(action)&&(fields?.completionPolicy??locked.completionPolicy)?.kind==='verified'&&locked.source.kind!=='system-digest'&&!confirmed)throw new WorkError('teloa/forbidden','自动结项策略须由本人明确确认。')
+  confirmed?.assertCurrent()
   if(locked.source.kind==='system-digest'){
    if(action==='archive')throw new WorkError('teloa/forbidden','Auto Dream 的系统计划不能归档；请暂停它，或暂停这位员工。')
    if(action==='update'){
     const next=fields!
     // 只放行时刻与时区；其余字段任何差异一律 teloa/forbidden，不静默忽略。
-    if(next.title!==locked.title||next.goal!==locked.goal||next.dataScope!==locked.dataScope||next.delivery!==locked.delivery||next.notificationPolicy!==locked.notificationPolicy||next.trigger.kind!==locked.trigger.kind||next.trigger.cadence!==locked.trigger.cadence||next.trigger.weekday!==locked.trigger.weekday)throw new WorkError('teloa/forbidden','Auto Dream 的系统计划只能改时刻与时区。')
+    if(next.title!==locked.title||next.goal!==locked.goal||next.dataScope!==locked.dataScope||next.delivery!==locked.delivery||next.notificationPolicy!==locked.notificationPolicy||JSON.stringify(next.completionPolicy??locked.completionPolicy)!==JSON.stringify(locked.completionPolicy)||next.trigger.kind!==locked.trigger.kind||next.trigger.cadence!==locked.trigger.cadence||next.trigger.weekday!==locked.trigger.weekday)throw new WorkError('teloa/forbidden','Auto Dream 的系统计划只能改时刻与时区。')
    }
   }
   /**
    * 用户建的计划按创建时固定的岗位版本核对：岗位改过就该由本人重新核对再启用。
    * Auto Dream 的系统计划相反——它是随岗位生命周期走的附属物，而暂停与复岗本身各把岗位版本加一，
    * 按固定版本核对会让「复岗」这条路径永远启用不回来。改按岗位当前版本核对，
-   * `validateRole` 的其余三条（在岗、AI 员工、范围仍覆盖计划所属业务）一字不变。
+   * 系统小结仍限定员工；普通计划按当前完整职责及已有本人委托核对。
    */
-  if(action==='enable'){await this.verifyIndustryLoad(client,ownerId,locked.id);validateRole(role,locked,locked.source.kind==='system-digest'?Number(role.version):locked.roleVersion);await this.verifySource(ownerId,locked.source,client)}
-  const admission=action==='enable'||action==='update'?await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:locked.id,operation:action==='enable'?'resume':'edit'}):undefined
+  let assignment:WorkAccessLease|undefined
+  if(action==='enable'){await this.verifyIndustryLoad(client,ownerId,locked.id);assignment=await validateRole(client,this.pool,ownerId,role,locked,locked.source.kind==='system-digest'?Number(role.version):locked.roleVersion,locked.source);await this.verifySource(ownerId,locked.source,client)}
+  // 修改分身计划不能扩大或恢复旧委托；暂停、归档及旧回执读取不依赖新授权。
+  if(action==='update'&&readStoredRole(role).kind==='twin')assignment=await validateRole(client,this.pool,ownerId,role,locked,locked.roleVersion,locked.source)
+  const admission=action==='enable'||action==='update'?combineWorkAccessLeases([...(assignment?[assignment]:[]),await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:locked.id,operation:action==='enable'?'resume':'edit'})]):undefined
   admission?.assertCurrent()
   const state=action==='enable'?'active':action==='pause'?'paused':action==='archive'?'archived':locked.state,now=this.identity.now(),definition=action==='update'?{...locked,...fields}:locked
-  const saved=readStoredPlan((await client.query(`update teloa_plans set definition=$3,notification_policy=$4,state=$5,version=version+1,config_version=config_version+$6,archived_reason=$7,archived_at=$8,updated_at=$9 where id=$1 and owner_id=$2 returning *`,[locked.id,ownerId,JSON.stringify({title:definition.title,goal:definition.goal,scope:locked.scope,dataScope:definition.dataScope,delivery:definition.delivery,roleId:locked.roleId,trigger:definition.trigger,notificationPolicy:definition.notificationPolicy}),definition.notificationPolicy,state,action==='update'?1:0,action==='archive'?note!:null,action==='archive'?now:null,now])).rows[0])
+  const saved=readStoredPlan((await client.query(`update teloa_plans set definition=$3,notification_policy=$4,state=$5,version=version+1,config_version=config_version+$6,archived_reason=$7,archived_at=$8,updated_at=$9 where id=$1 and owner_id=$2 returning *`,[locked.id,ownerId,JSON.stringify({title:definition.title,goal:definition.goal,scope:locked.scope,dataScope:definition.dataScope,delivery:definition.delivery,roleId:locked.roleId,trigger:definition.trigger,notificationPolicy:definition.notificationPolicy,...(definition.completionPolicy?{completionPolicy:definition.completionPolicy}:{})}),definition.notificationPolicy,state,action==='update'?1:0,action==='archive'?note!:null,action==='archive'?now:null,now])).rows[0])
   await client.query('insert into teloa_plan_changes(owner_id,request_id,plan_id,request_spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[ownerId,row.requestId,locked.id,JSON.stringify(spec),JSON.stringify(saved),now])
-  admission?.assertCurrent();return saved
+  confirmed?.assertCurrent();admission?.assertCurrent();return saved
  }
 }

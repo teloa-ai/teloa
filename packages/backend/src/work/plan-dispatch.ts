@@ -15,7 +15,7 @@ function fixedSnapshot(row:PlanOccurrence){
 }
 function checkRequest(row:PlanOccurrence){
  if(!uuid(row.id)||!uuid(row.taskRequestId)||row.taskRequest?.requestId!==row.taskRequestId)throw corrupt()
- if(!isDeepStrictEqual(row.taskRequest.fields,{title:row.fields.title,goal:row.fields.goal,scope:row.fields.scope})||!isDeepStrictEqual(row.taskRequest.assignee,{roleId:row.fields.roleId,expectedVersion:row.roleVersion}))throw corrupt()
+ if(!isDeepStrictEqual(row.taskRequest.fields,{title:row.fields.title,goal:row.fields.goal,scope:row.fields.scope,...(row.fields.completionPolicy?{completionPolicy:row.fields.completionPolicy}:{})})||!isDeepStrictEqual(row.taskRequest.assignee,{roleId:row.fields.roleId,expectedVersion:row.roleVersion}))throw corrupt()
 }
 
 /**

@@ -232,8 +232,10 @@ test('EmbeddingGemma 2可按受审provider准备并显式选用，默认读取�
  await api.cancelPreparation(undefined,'embeddinggemma-2')
  assert.deepEqual(calls.map(c=>c.payload),[{providerId:'embeddinggemma-2'},{providerId:'embeddinggemma-2'},{expected:captureRetrievalPreparation(gemma as never)},{providerId:'embeddinggemma-2',profileHash:gemma.profileHash},{providerId:'embeddinggemma-2'}])
  const ready={...status,provider:{...gemma,preparation:{phase:'ready'}}}
- assert.match(renderModel({status:ready,catalogId:gemma.catalogId,onSelect:()=>{}}),/>用于知识库检索</)
- assert.match(renderModel({status:{...ready,selectedProviderId:gemma.id},catalogId:gemma.catalogId,onSelect:()=>{}}),/disabled=""[^>]*>正在用于知识库检索/)
+ assert.match(renderModel({status:ready,catalogId:gemma.catalogId,onSelect:()=>{}}),/>使用此模型</)
+ const selected=renderModel({status:{...ready,selectedProviderId:gemma.id},catalogId:gemma.catalogId,onSelect:()=>{}})
+ assert.match(selected,/data-retrieval-selected="true"[^>]*>[\s\S]*当前使用/)
+ assert.doesNotMatch(selected,/>使用此模型<|正在用于知识库检索/)
 })
 test('就地首次开启只突出一次下载与自动整理，细节收起；准备中没有绕过收尾的第二个取消',()=>{
  const first=renderModel({compact:true,joining:true,confirming:true})
@@ -241,7 +243,7 @@ test('就地首次开启只突出一次下载与自动整理，细节收起；�
  assert.match(first,/<details><summary>下载详情<\/summary>/)
  assert.match(first,/>下载并开启</)
  const progress=renderModel({compact:true,status:{...model,provider:{...provider,preparation:{phase:'downloading',stage:'assets',resource:'model.onnx',completedBytes:20,totalBytes:100}}}})
- assert.equal((progress.match(/<button/g)??[]).length,1)
+ assert.match(progress,/<button[^>]*disabled=""[^>]*aria-label="关闭模型设置"|<button[^>]*aria-label="关闭模型设置"[^>]*disabled=""/)
  assert.match(progress,/取消准备/);assert.doesNotMatch(progress,/model.onnx|第 2 步/)
  assert.match(renderModel({compact:true,error:'未能加入，请重试',status:{...model,provider:{...provider,preparation:{phase:'ready'}}},onRetry:()=>{}}),/>重试加入</)
 })

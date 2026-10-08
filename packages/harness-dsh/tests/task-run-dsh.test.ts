@@ -19,6 +19,14 @@ test('冷读执行证据经官方 inspect，不能为了核对结果激活或重
 
 const target:TaskExecutionScope={taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'SOC'}
 
+test('v2 常驻角色执行缺少最终原生准入时拒绝，不能退回旧发送路径',async()=>{
+ let requests=0
+ const ctx={sessionController:{resolveAgent:async()=>{requests++;throw Error('不得解析并发送')}}} as unknown as Context
+ const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}))
+ await assert.rejects(ports.send({roleSnapshot:{kind:'employee'}} as TaskRun,new AbortController().signal,target),{code:'teloa/unavailable'})
+ assert.equal(requests,0)
+})
+
 test('任务知识授权只使用服务端任务范围，不继承普通会话 general 范围',()=>{
  assert.deepEqual(taskKnowledgeAuthorization('owner',target),{
   actor:{ownerId:'owner',kind:'agent',scopeIds:['SOC']},

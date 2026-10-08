@@ -3,6 +3,8 @@ import { WorkError,roleInput,roleDefinition,roleWriteDefinition,type DigitalRole
 import { ensureAutoDreamPlan,type AutoDreamPorts } from './auto-dream-plans.ts'
 import { renewRoleGrants } from './collaboration.ts'
 import {workAccess} from './work-access.ts'
+import {assertRoleDelegationsInactive} from './role-delegations.ts'
+import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 
 export async function initializeRoles(pool:Pool):Promise<void>{
  await pool.query(`create table if not exists teloa_roles (
@@ -32,7 +34,8 @@ const personalTwinFields={
  executionScope:'仅代拟；不能代批、冒充本人或直接外发。',
  // `knowledge` 保存的是资料中心资源 ID，不能用一句说明文字冒充资料引用。
  // 分身的本人偏好由判断力样本承载；未显式保存为资料时保持为空。
- skills:['交班代拟','判断建议'],knowledge:[],
+ // 代拟与判断属于职责，不伪装成尚未安装的原生 Skill；本人可另行选择真实技能。
+ skills:[],knowledge:[],
  responsibility:{
   triggers:['本人需要整理资料、代拟回复或判断建议'],
   autonomousActions:['整理已明确提供的资料并形成候选稿'],
@@ -148,8 +151,11 @@ export class RoleService{
   }
   if(role.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','员工已被修改，请读取新版本后复核。')
   if(role.state==='retired'||role.kind!==definition.kind)throw new WorkError('teloa/conflict','已退役员工不能修改，员工身份类型不能变更。')
-  // 现阶段只开放暂停岗位编辑；运行岗位的范围缩减必须与任务、计划一起校验。
-  if(role.state!=='paused')throw new WorkError('teloa/conflict','请先暂停员工并核对关联工作。')
+  // 默认个人身份保持 active；停用执行委托与运行收口后才可改分身定义。
+  if(role.kind==='twin'){
+   if(role.state!=='active')throw new WorkError('teloa/conflict','个人分身身份当前不可配置。')
+   await assertRoleDelegationsInactive(client,owner,role)
+  }else if(role.state!=='paused')throw new WorkError('teloa/conflict','请先暂停员工并核对关联工作。')
   const admission=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:role.id,operation:'edit'})
   admission.assertCurrent()
   const now=this.identity.now()
@@ -158,6 +164,7 @@ export class RoleService{
   // 岗位版本 +1 会让这位员工在各群的授权整体判 `invalidated`：同一笔事务里按新版本续签，
   // 否则改一次使命就让他在所有群里的「直接回应」静默停摆。
   await renewRoleGrants(client,owner,value,now)
+  invalidateRoleWorkEligibility(owner,role.id)
   admission.assertCurrent()
   return value
  }

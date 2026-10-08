@@ -9,6 +9,11 @@ type Call=(method:string,payload:unknown)=>Promise<unknown>
 type Journal={read():string|null;write(value:string):void;clear():void}
 function api(call:Call,journal?:Journal){return createBusinessTaskApi(call,journal,task.ownerId)}
 const available={defaultAction:{available:true}} as never
+test('业务真实任务复用完整 reader 接受内容版本和完成策略且保留本人及原始字段核验',async()=>{
+ const current={...task,contentVersion:1,completionPolicy:{kind:'manual' as const}}
+ assert.deepEqual(await api(async()=>({task:current,source})).create(request),{task:current,source})
+ for(const invalid of [{...current,contentVersion:0},{...current,completionPolicy:{kind:'verified',verifier:'model-quality',verifierVersion:1,authorizationVersion:1}},{...current,ownerId:'other'},{...current,title:' '+task.title},{...current,updatedAt:'2026-01-01T00:00:00.000Z'},{...current,extra:true}])await assert.rejects(api(async()=>({task:invalid,source})).create(request),/格式|不一致/)
+})
 
  test('客户端按台账动作能力展示入口，不维护 SOC 或来源标识白名单',()=>{
   assert.equal(businessTaskSupports('SOC',available),true)

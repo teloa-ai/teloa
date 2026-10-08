@@ -23,12 +23,49 @@ test('目录与详情严格校验身份、本人间接范围、重复项和固�
  assert.deepEqual(await createPlanApi(async()=>legacy).get(planId),legacy)
 })
 
+test('完成策略来自真实计划回包，旧值缺省不新增字段，未知验证器拒绝',async()=>{
+ const completionPolicy={kind:'verified' as const,verifier:'system-digest' as const,verifierVersion:1,authorizationVersion:1}
+ const saved=await createPlanApi(async()=>({...row,completionPolicy})).get(planId)
+ assert.deepEqual(saved.completionPolicy,completionPolicy)
+ assert.deepEqual(await createPlanApi(async()=>row).get(planId),row)
+ assert.equal(Object.hasOwn(await createPlanApi(async()=>row).get(planId),'completionPolicy'),false)
+ await assert.rejects(createPlanApi(async()=>({...row,completionPolicy:{...completionPolicy,verifier:'model-says-done'}})).get(planId),/格式/)
+ await assert.rejects(createPlanApi(async()=>({...row,completionPolicy:{...completionPolicy,authorizationVersion:0}})).get(planId),/格式/)
+})
+
+test('本人确认自动结项创建的未知请求恢复固定确认端点，不降级普通调用',async()=>{
+ const completionPolicy={kind:'verified' as const,verifier:'material-version-summary' as const,verifierVersion:1,authorizationVersion:1},manual={kind:'manual' as const}
+ let raw:string|null=null,lost=true;const calls:unknown[][]=[],journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
+ const call=async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);if(lost){lost=false;throw Error('确认回包未知')}return {...row,source:manual,completionPolicy}}
+ await assert.rejects(createPlanApi(call,journal,()=>requestId).createConfirmed({...fields,completionPolicy},manual),/未知/)
+ assert.ok(raw);assert.equal(JSON.parse(raw!).schema,'teloa.plan-command/v2')
+ assert.deepEqual((await createPlanApi(call,journal).recover()).completionPolicy,completionPolicy)
+ assert.equal(raw,null);assert.deepEqual(calls[0],calls[1]);assert.equal(calls[0]?.[0],'plans/create-confirmed')
+ const forged=JSON.stringify({schema:'teloa.plan-command/v1',request:{kind:'create',requestId,fields:{...fields,completionPolicy},source:manual,confirmed:true}})
+ const api=createPlanApi(call,{read:()=>forged,write(){},clear(){}});assert.ok(api.recoveryMessage());await assert.rejects(api.recover(),/Recovery journal/)
+})
+
+test('长期定义本人确认的未知回包恢复原请求，并刷新当前持久状态',async()=>{
+ const configuration={completion:{kind:'manual' as const},triggers:[{kind:'local-event' as const,eventKind:'material-version' as const,sourceId:roleId,coalesce:'latest' as const}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid' as const,missed:'coalesce' as const,safeRecovery:false}
+ const workDefinition={schema:'teloa.plan-work/v2' as const,definitionVersion:2,definitionControlId:planId,budgetAccountId:roleId,authorization:{kind:'delegation' as const,delegationId:requestId,delegationVersion:1},...configuration},receipt={...row,version:2,configVersion:2,completionPolicy:configuration.completion,workDefinition},current={...receipt,state:'active' as const,version:3}
+ let raw:string|null=null,lost=true;const calls:unknown[][]=[],journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}},call=async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);if(lost){lost=false;throw Error('定义回包未知')}return endpoint==='plans/get'?current:receipt}
+ await assert.rejects(createPlanApi(call,journal,()=>requestId).configureWorkConfirmed(row,configuration),/未知/)
+ assert.equal(JSON.parse(raw!).schema,'teloa.plan-command/v2')
+ assert.deepEqual(await createPlanApi(call,journal).recover(),current);assert.equal(raw,null)
+ assert.deepEqual(calls[0],calls[1]);assert.equal(calls[0]?.[0],'plans/configure-work-confirmed');assert.deepEqual(calls[2],['plans/get',{planId}])
+})
+
 test('调度摘要只读取指定计划的服务端事实且严格校验回包',async()=>{
  const calls:unknown[][]=[],api=createPlanApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return {available:false,overview:null,health:null}})
  assert.deepEqual(await api.schedule(planId),{available:false,overview:null,health:null})
  assert.deepEqual(calls,[['plans/schedule',{planId}]])
  await assert.rejects(api.schedule('bad-id'),/身份/)
  await assert.rejects(createPlanApi(async()=>({available:true,overview:{planId:'55555555-5555-4555-8555-555555555555',planVersion:1,state:'active',nextAt:null,latest:null,latestSkip:null},health:null})).schedule(planId),/调度摘要/)
+})
+test('长期计划目标编辑未知恢复保留原四字段及本人配置端点',async()=>{
+ const configuration={completion:{kind:'manual' as const},triggers:[{kind:'schedule' as const,schedule:trigger}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid' as const,missed:'coalesce' as const,safeRecovery:false},fields={title:'新目标',goal:'核对新来源',dataScope:'当前委托原件',delivery:'本轮交付'},workDefinition={schema:'teloa.plan-work/v2' as const,definitionVersion:2,definitionControlId:planId,budgetAccountId:roleId,authorization:{kind:'delegation' as const,delegationId:requestId,delegationVersion:1},...configuration},result={...row,...fields,version:2,configVersion:2,completionPolicy:configuration.completion,workDefinition}
+ let raw:string|null=null,lost=true;const calls:unknown[][]=[],journal={read:()=>raw,write:(v:string)=>{raw=v},clear:()=>{raw=null}},call=async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);if(lost){lost=false;throw Error('未知')}return result}
+ await assert.rejects(createPlanApi(call,journal,()=>requestId).configureWorkConfirmed(row,configuration,fields),/未知/);assert.deepEqual(await createPlanApi(call,journal).recover(),result);assert.deepEqual(calls[0],calls[1]);assert.deepEqual((calls[0]![1] as {fields:unknown}).fields,fields);assert.equal(raw,null)
 })
 
 test('执行历史使用默认和显式分页参数并严格解析回包',async()=>{

@@ -10,7 +10,8 @@ type GroupRunPublisherPorts={
  clear?:(sessionId:string,nativeRequestId:string)=>void
  /**
   * 回帖**落库成功之后**的后置编排：这条新消息同样要过一次「谁该回」路由（接力就是这么来的）。
-  * fire-and-forget，实现方自己吞掉一切失败——路由失败不能让运行观察循环把已确认的回帖重试一遍。
+  * 服务端 post 已把路由 wake 与消息同事务保存；这里仅作即时唤醒提示。
+  * 路由失败由持久 wake 恢复，不能让运行观察循环把已确认的回帖重试一遍。
   */
  route?:(messageId:string)=>void
  report:(code:string)=>void

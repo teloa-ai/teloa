@@ -3,6 +3,7 @@ import {Fragment, useId, useRef, useState, type KeyboardEvent, type ReactNode} f
 import clsx from 'clsx'
 import {TwinDraftEditor, type TwinDraftInput} from './TwinDraftEditor.js'
 import type {PreviewRole, TeamChange} from './role-preview.js'
+import type {RoleDelegationMessageKey} from './i18n/locales/role-delegation.js'
 import {twinDisplayName} from './team-presentation.js'
 import {personalAvatarInitials,personalDisplayName} from './personal-profile.js'
 import {useI18n} from './i18n/provider.js'
@@ -27,7 +28,7 @@ const TAB_TITLES={draft:'team.twin.tab.draft',samples:'team.detail.tab.judgment'
  * 记忆列表、习惯观察日志与关联会话都不在这里重写一遍。`habits` 不传时该页签按钮 `disabled`，
  * `TWIN_TABS` 仍固定四项——不按是否传入做条件分支，避免键盘环绕的下标错位。
  */
-export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,talkDisabledReason,conversations,samples,habits}:{
+export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,talkDisabledReason,conversations,samples,habits,delegation,executionStatus,assign}:{
   profileName:string
   profileInitials?:string
   role:PreviewRole
@@ -40,6 +41,10 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
   samples:ReactNode
   /** 由 RoleDetail 传入的 <RoleDailyLogPanel kind='habit-digest' …/>；不传时该页签不渲染内容且按钮 disabled。 */
   habits?:ReactNode
+  /** 可信委托服务的现有授权管理节点；不改变代拟、样本与习惯观察路径。 */
+  delegation?:ReactNode
+  executionStatus?:RoleDelegationMessageKey
+  assign?:()=>void
 }){
   const {locale,t}=useI18n()
   profileName=personalDisplayName(profileName,t('profile.account'))
@@ -77,7 +82,7 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
       <div className={css.identity}>
         <span className={clsx(teamCss.avatar,teamCss.human,css.avatar)}>{profileInitials||<UserRound size={14}/>}<Fingerprint size={12}/></span>
         <div className={css.identityText}>
-          <h1>{twinName}<span className={css.stage}>{t('team.twin.stage')}</span></h1>
+          <h1>{twinName}<span className={css.stage}>{t(executionStatus??'team.twin.stage')}</span></h1>
           <p>{t('team.twin.subtitle',{name:profileName})}</p>
         </div>
       </div>
@@ -122,9 +127,11 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
     </section>
 
     <section id={`${tabId}-panel-boundary`} className={css.panel} role="tabpanel" aria-labelledby={`${tabId}-tab-boundary`} tabIndex={0} hidden={tab!=='boundary'}>
-      <h2>{t('team.twin.boundary.title')}</h2>
-      <dl className={teamCss.facts}>{boundary.map(([term,description,params])=><Fragment key={term}><dt>{t(term)}</dt><dd>{params?t(description,params):t(description)}</dd></Fragment>)}</dl>
-      <p className={css.note}>{t('roleGrant.web.twinNote')}</p>
+      <h2>{t(delegation?'roleDelegation.title':'team.twin.boundary.title')}</h2>
+      {delegation}
+      {assign&&<button type="button" onClick={assign}>{t('roleDelegation.taskCreate')}</button>}
+      <dl className={teamCss.facts}>{boundary.map(([term,description,params])=><Fragment key={term}><dt>{t(term)}</dt><dd>{delegation&&(term==='team.twin.boundary.canTerm'||term==='team.twin.boundary.delegationTerm')?t('roleDelegation.description'):params?t(description,params):t(description)}</dd></Fragment>)}</dl>
+      <p className={css.note}>{t(delegation?'roleDelegation.configureHint':'roleGrant.web.twinNote')}</p>
       <p className={css.callout}><LockKeyhole size={18}/>{t('team.twin.boundary.callout')}</p>
     </section>
   </div>

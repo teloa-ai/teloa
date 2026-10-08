@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createRuntime,defineTool,ToolCallId} from '../../../tests/native-auto-review-fixture.mjs'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
-import {nativeBrowserToolNames,nativeComputerToolNames,nativeJobToolNames,nativeToolRules} from '../src/native-tool-access.ts'
+import {nativeBrowserToolNames,nativeComputerToolNames,nativeJobToolNames,nativeToolRules,isNativeToolName} from '../src/native-tool-access.ts'
 import {validateReferenceToolRules} from '../src/role-tool-grants.ts'
 import {LocalJobRegistry} from '@deepseek-ai/dsh-jobs-local'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
@@ -12,6 +12,21 @@ import type {Context} from '@deepseek-ai/cordis'
 function tool(ctx:Context,name:string,body:()=>void=()=>{}){
  return ctx.tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{body();return 'executed'}}))
 }
+
+test('Goal 岗位候选仅认真实已注册工具和目标服务，调用仍需当前岗位授权',async t=>{
+ const {ctx,create}=await createRuntime(t),agent=await create('native-goal-grant')
+ const names=['get_goal','create_goal','update_goal'];let allowed=false,bodies=0
+ const remove=names.map(name=>tool(ctx,name,()=>{bodies++}));tool(ctx,'replace_goal_unsafe')
+ assert.deepEqual(nativeToolRules(ctx).filter(row=>names.includes(row.name)),[])
+ ctx.provide('goals',{get(){return undefined}})
+ assert.deepEqual(nativeToolRules(ctx).filter(row=>names.includes(row.name)).map(row=>row.name),names)
+ for(const name of names)assert.ok(isNativeToolName(name));assert.equal(isNativeToolName('replace_goal_unsafe'),false)
+ registerTaskToolGuard(ctx,async()=>({allowedTools:allowed?names:[],argumentRules:names.map(name=>({name,anyArguments:true,allowed:[]}))}))
+ const call=(name:string)=>ctx.tools.execute({agent,name,arguments:{},callId:ToolCallId('goal-'+name+'-'+allowed),signal:AbortSignal.timeout(5000)})
+ assert.equal((await call('create_goal')).isError,true);assert.equal(bodies,0)
+ allowed=true;assert.equal((await call('create_goal')).isError,false);assert.equal(bodies,1)
+ for(const dispose of remove)dispose();assert.deepEqual(nativeToolRules(ctx).filter(row=>names.includes(row.name)),[])
+})
 
 test('受管电脑工具先过岗位规则再进入官方确认，拒绝与取消均不执行动作',async t=>{
  const {ctx,create}=await createRuntime(t),agent=await create('native-action')

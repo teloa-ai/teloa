@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {createPlanHandler} from '../src/plans.ts'
+import {createPlanHandler,createConfirmedPlanHandler,planEndpoints} from '../src/plans.ts'
 
 const owner='local:owner'
 const planId='11111111-1111-4111-8111-111111111111',roleId='22222222-2222-4222-8222-222222222222',requestId='33333333-3333-4333-8333-333333333333'
@@ -8,6 +8,19 @@ const trigger={kind:'schedule' as const,cadence:'weekly' as const,weekday:2,time
 const fields={title:'每周资料核对',goal:'核对本周资料并形成结论。',scope:'general',dataScope:'本人已授权资料。',delivery:'变化与待核对项。',roleId,expectedRoleVersion:3,trigger,notificationPolicy:'attention' as const}
 const stored={id:planId,ownerId:owner,title:fields.title,goal:fields.goal,scope:fields.scope,dataScope:fields.dataScope,delivery:fields.delivery,roleId,roleVersion:3,trigger,notificationPolicy:fields.notificationPolicy,source:{kind:'manual' as const},version:1,configVersion:1,state:'paused' as const,archivedReason:null,archivedAt:null,createdAt:'2026-09-11T00:00:00.000Z',updatedAt:'2026-09-11T00:00:00.000Z'}
 const operations={list:async()=>[stored],get:async()=>stored,create:async()=>stored,change:async()=>stored}
+
+test('自动结项策略回包可读取，本人确认操作与普通计划工具隔离',async()=>{
+ const completionPolicy={kind:'verified' as const,verifier:'material-version-summary' as const,verifierVersion:1,authorizationVersion:1},record={...stored,completionPolicy}
+ let created=0,confirmed=0
+ const get=async()=>({...operations,get:async()=>record,create:async()=>{created++;return record},createConfirmed:async()=>{confirmed++;return record}})
+ assert.deepEqual(await createPlanHandler(owner,get)('plans/get',{planId}),record)
+ await assert.rejects(createPlanHandler(owner,get)('plans/create-confirmed',{requestId,fields:{...fields,completionPolicy},source:{kind:'manual'}}),{code:'teloa/not-found'})
+ await assert.rejects(createPlanHandler(owner,get)('plans/create',{requestId,fields:{...fields,completionPolicy},source:{kind:'manual'}}),{code:'teloa/forbidden'})
+ assert.equal((planEndpoints as readonly string[]).includes('plans/create-confirmed'),false)
+ assert.deepEqual(await createConfirmedPlanHandler(owner,get)('plans/create-confirmed',{requestId,fields:{...fields,completionPolicy},source:{kind:'manual'}}),record)
+ assert.equal(created,0);assert.equal(confirmed,1)
+ await assert.rejects(createConfirmedPlanHandler(owner,async()=>operations)('plans/create-confirmed',{requestId,fields:{...fields,completionPolicy},source:{kind:'manual'}}),{code:'teloa/dependency-unavailable'})
+})
 
 test('未知端点和非法输入在打开计划服务前拒绝',async()=>{
  let opened=0

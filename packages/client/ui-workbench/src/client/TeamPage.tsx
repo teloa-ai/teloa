@@ -4,6 +4,9 @@ import {RoleModelFields} from './RoleModelFields.js'
 import {patchRoleModel,roleModelLabel,roleModelsCanSave,type RoleModelLoadState} from './role-models.js'
 import type {GroupApi} from './group-api.js';
 import {RoleGroupMembership} from './RoleGroupMembership.js';
+import {RoleDelegation,roleDelegationStatus} from './RoleDelegation.js'
+import type {RoleDelegationApi,RoleDelegationRead} from './role-delegation-api.js'
+import type {RoleToolGrantApi} from './role-tool-grant-api.js'
 import {StatusLabel} from './StatusLabel.js'
 import type {ScheduleTrigger} from '@teloa/contract';
 import { HomeSkillPicker } from './HomeSkillPicker.js';
@@ -55,6 +58,9 @@ import { ROLE_PROFILE_SECTIONS, roleProfileSectionKeys, type RoleProfileSection 
 import { STAFF_AVATAR_SHAPES, STAFF_AVATAR_TONES } from './staff-avatar-seed.ts';
 import { HIRE_ACTIONS, HIRE_DEFAULT_LIMITS, HIRE_LEVELS, HIRE_PRESETS, hireActionLabel, hireDrifted, hireLevelLabel, hireMergeLimit, hireMergePreset, hirePresetFields, hirePresetLabel, hirePresetRecommendedSkills, type HireAction, type HireAppliedFields, type HireLevel, type HirePreset } from './role-hire-presets.ts';
 type Props = {
+    delegations?:RoleDelegationApi|undefined;
+    roleTools?:RoleToolGrantApi|undefined;
+    delegationChanged?:(read:RoleDelegationRead)=>void;
     savedGroups?:GroupApi;
     navigation?: {state:WorkbenchDirectoryNavigation;change:(patch:WorkbenchDirectoryPatch)=>void};
     work: BindingClient;
@@ -72,6 +78,7 @@ type Props = {
             goal: string;
             scope: CollaborationScope;
         }) => Promise<string>;
+        assignConfirmed?: (role:PreviewRole,fields:{title:string;goal:string;scope:CollaborationScope})=>Promise<string>;
         lifecycle: RoleLifecyclePort;
         pendingFields: () => RoleFields | undefined;
         create: (fields: RoleFields) => Promise<string>;
@@ -117,7 +124,7 @@ const firstSentence = (text: string) => text.split(/[。.!?！？\n]/)[0]?.trim(
 /** 全宽名单工具行上的三个状态胶囊（原型 数字员工形象.jsx:107 的 statusFilters）。恢复旧筛选记忆时也拿它当白名单。 */
 const STATUS_PILL_IDS = ['all', 'busy', 'paused'] as const;
 type PendingRoleDraft={initial:RoleFields;resolve:(id:string)=>void;reject:(reason:unknown)=>void}
-export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
+export function TeamPage({ delegations,roleTools,delegationChanged,savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
     const { locale, t, list, number } = useI18n();
     const allowed=useApplicationCapability('people');
     profileName = personalDisplayName(profileName, t('profile.account'));
@@ -176,7 +183,7 @@ export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, 
     const resetDirectory=()=>{setQuery('');setStatus('all');select(null)};
     const showRoster = !embedded && !role;
     const detailPane = role
-      ? <RoleDetail savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
+      ? <RoleDetail delegations={isSandbox?undefined:delegations} roleTools={roleTools} delegationChanged={delegationChanged} savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
       : <div className={css.empty}><Bot size={38}/><h2>{t('team.landingTitle')}</h2><p>{t('team.landingDescription')}</p></div>;
     return <section data-team-directory-mode={directoryMode} className={clsx(css.page, css.alignedPage,isSandbox&&css.sandboxMode, teamCss.teamPage, embedded && css.embeddedPage, embedded && teamCss.embeddedTeam)} aria-label={t('navigation.team')}>{!selected&&<CapabilityNotice capability="people"/>}
 
@@ -227,8 +234,11 @@ export function TeamPage({ savedGroups,navigation,work, resourceApi, memoryApi, 
   </section>;
 }
 // 导出给 team-profile-sections.test.ts 用 renderToStaticMarkup 直接核对「编辑」态的五组呈现，不必经过 TeamPage 的内部选中态。
-export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, state, collaboration, change, back, openTask, openGroup, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
+export function RoleDetail({ delegations,roleTools,delegationChanged,savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, state, collaboration, change, back, openTask, openGroup, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
     work: BindingClient;
+    delegations?:RoleDelegationApi|undefined;
+    roleTools?:RoleToolGrantApi|undefined;
+    delegationChanged?:((read:RoleDelegationRead)=>void)|undefined;
     profileName?: string;
     profileInitials?: string;
     resourceApi: ResourceApi;
@@ -299,6 +309,8 @@ export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogA
         setMemoryError(localizeWorkError(locale, error)); }).finally(() => { if (active)
         setMemoryLoading(false); }); return () => { active = false; }; }, [editing, role.id, role.storage, memoryApi, locale]);
     const retired = role.state === 'retired', twin = role.kind === 'twin';
+    const [delegationRead,setDelegationRead]=useState<RoleDelegationRead>();
+    const delegationNode=role.storage==='persistent'&&delegations?<RoleDelegation role={role} api={delegations} toolGrants={roleTools} resources={resourceApi} groups={savedGroups} changed={value=>{setDelegationRead(value);delegationChanged?.(value)}} configuration={()=> <section className={css.block}><h3>{t('roleDelegation.configure')}</h3><button type="button" disabled={!allowed||!persistence} onClick={()=>{setEditingRole(role);setForm('edit')}}>{t('team.action.edit')}</button>{capabilities(role.id)}{savedGroups&&<RoleGroupMembership api={savedGroups} roleId={role.id} open={openGroup}/>}</section>}/>:undefined;
     const unfinished = state.tasks.filter(task => task.assigneeId === role.id && !closed(task.state));
     const lifecycle = roleLifecyclePath(role.state,t);
     const lifecyclePending = persistence?.lifecycle.pending?.roleId === role.id;
@@ -370,7 +382,7 @@ export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogA
     {/* 分身整页照原型 原型.jsx:459-462 重做（非嵌入与嵌入态都走这支），其余同事仍是身份栏 + 时间线的两栏个人主页；
         「全部同事」返回、错误条与各个对话框都留在外面，两支共用。 */}
     {twin
-      ? <TwinProfile profileName={profileName} profileInitials={profileInitials} role={role} draft={input.draft} update={draft => update({ draft })} save={act} {...(talk?{talk:async()=>{await talk(role.id)}}:talkDisabledReason?{talkDisabledReason}:{})} conversations={role.storage==='persistent'?conversations(role.id):null} samples={memorySection} habits={role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} roleId={role.id} kind="habit-digest" api={dailyLogApi} memoryApi={memoryApi} {...(promoteHabit?{promote:promoteHabit}:{})}/>:undefined}/>
+      ? <TwinProfile profileName={profileName} profileInitials={profileInitials} role={role} draft={input.draft} update={draft => update({ draft })} save={act} {...(talk?{talk:async()=>{await talk(role.id)}}:talkDisabledReason?{talkDisabledReason}:{})} conversations={role.storage==='persistent'?conversations(role.id):null} samples={memorySection} delegation={delegationNode} {...(delegationNode?{executionStatus:roleDelegationStatus(role,delegationRead)}:{})} {...(!retired&&role.state==='active'&&allowed&&persistence?.assignConfirmed?{assign:()=>setForm('assign')}:{})} habits={role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} roleId={role.id} kind="habit-digest" api={dailyLogApi} memoryApi={memoryApi} {...(promoteHabit?{promote:promoteHabit}:{})}/>:undefined}/>
       : <div className={teamCss.homepage}>
       <aside className={teamCss.identityRail} aria-label={t('team.profile.title')}>
         <StaffAvatar initial={role.name.slice(0, 1)} seed={role.id} size="xl"/>
@@ -426,12 +438,12 @@ export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogA
                 <section className={teamCss.notice}><h3>{t('team.detail.employeeAuthorizationTitle')}</h3><p>{t('team.detail.employeeAuthorizationDesc')}</p></section>
               </>}
               {/* 第六组：身份栏原先常驻的生命周期与状态三问搬到这里（终审 T2），一条不删，只是默认折叠。 */}
-              {section === 'runtime' && <dl className={teamCss.facts} aria-label={t('team.detail.identity.status')}>
+              {section === 'runtime' && <>{delegationNode}<dl className={teamCss.facts} aria-label={t('team.detail.identity.status')}>
                 <dt>{t('team.detail.lifecycle')}</dt><dd>{lifecycle.summary}</dd>
                 <dt>{t('team.detail.actualState')}</dt><dd>{statusLabel(role.state)} · {lifecycle.label}</dd>
                 <dt>{t('team.detail.blocker')}</dt><dd>{blocker}</dd>
                 <dt>{t('team.detail.next')}</dt><dd>{lifecyclePending ? t('team.detail.pendingStateReview') : lifecycle.next}</dd>
-              </dl>}
+              </dl></>}
             </div>
           </details> })}
           {savedGroups?<RoleGroupMembership api={savedGroups} roleId={role.id} open={openGroup}/>:<><section className={css.block}><header><h3>{t('team.work.groups', { count: groups.length })}</h3><p className={teamCss.sectionPath}>{t('team.work.groupsDesc')}</p></header>{groups.map(group => <button type="button" key={group.id} onClick={() => openGroup(group.id)}>{group.name}{retired ? t('team.work.retainedIdentity') : ''}</button>)}{!groups.length && <p className={css.muted}>{t('team.work.noGroups')}</p>}</section></>}
@@ -451,7 +463,7 @@ export function RoleDetail({ savedGroups,work, resourceApi, memoryApi, dailyLogA
     {form === 'assign' && <AssignmentForm role={role} close={() => setForm(undefined)} save={async (value) => { let id: string; if (role.storage === 'persistent') {
         if (!persistence)
             throw Error(t('team.assignment.unavailable'));
-        id = await persistence.assign(role, value);
+        if(role.kind==='twin'){if(!persistence.assignConfirmed)throw Error(t('roleDelegation.unavailable'));id=await persistence.assignConfirmed(role,value)}else id = await persistence.assign(role, value);
     }
     else {
         id = crypto.randomUUID();
@@ -668,8 +680,8 @@ function RetirementForm({role,unfinished,plans,close,save}:{plans:{id:string;tit
 
 function AssignmentForm({role,close,save}:{role:PreviewRole;close:()=>void;save:(value:{title:string;goal:string;scope:CollaborationScope})=>void|Promise<void>}){
   const allowed=useApplicationCapability('people')
-  const {t}=useI18n();const collaborationScopes=useBusinessScopes();const [title,setTitle]=useState(''),[goal,setGoal]=useState(''),[scope,setScope]=useState(role.scopes[0]!)
-  return <Dialog capability="people" title={t('team.assignment.title',{name:role.name})} close={close} submit={()=>{if(applicationPresentation.can('people'))return save({title,goal,scope})}}><p>{t('team.assignment.path')}</p><p>{roleWorkPath(role.storage==='persistent',t)}</p><label>{t('team.assignment.name')}<input required maxLength={120} value={title} onChange={event=>setTitle(event.target.value)}/></label><label>{t('team.assignment.goal')}<textarea required rows={4} maxLength={8000} value={goal} onChange={event=>setGoal(event.target.value)}/></label><label>{t('team.assignment.scope')}<select value={scope} onChange={event=>setScope(event.target.value as CollaborationScope)}>{role.scopes.map(id=><option key={id} value={id}>{collaborationScopes[id]??id}</option>)}</select></label><footer className={css.buttons}><button type="button" onClick={close}>{t('team.form.cancel')}</button><button type="submit" disabled={!allowed||!title.trim()||!goal.trim()}>{t(role.storage==='persistent'?'team.assignment.save':'team.assignment.demo')}</button></footer></Dialog>
+  const {t}=useI18n();const collaborationScopes=useBusinessScopes();const [title,setTitle]=useState(''),[goal,setGoal]=useState(''),[scope,setScope]=useState(role.scopes[0]!),[twinConfirmed,setTwinConfirmed]=useState(false)
+  return <Dialog capability="people" title={t('team.assignment.title',{name:role.name})} close={close} submit={()=>{if(applicationPresentation.can('people')&&(role.kind!=='twin'||twinConfirmed))return save({title,goal,scope})}}><p>{t('team.assignment.path')}</p><p>{roleWorkPath(role.storage==='persistent',t)}</p><label>{t('team.assignment.name')}<input required maxLength={120} value={title} onChange={event=>{setTwinConfirmed(false);setTitle(event.target.value)}}/></label><label>{t('team.assignment.goal')}<textarea required rows={4} maxLength={8000} value={goal} onChange={event=>{setTwinConfirmed(false);setGoal(event.target.value)}}/></label><label>{t('team.assignment.scope')}<select value={scope} onChange={event=>{setTwinConfirmed(false);setScope(event.target.value as CollaborationScope)}}>{role.scopes.map(id=><option key={id} value={id}>{collaborationScopes[id]??id}</option>)}</select></label>{role.kind==='twin'&&<label><input type="checkbox" checked={twinConfirmed} onChange={event=>setTwinConfirmed(event.target.checked)}/>{t('roleDelegation.taskConfirm')}</label>}<footer className={css.buttons}><button type="button" onClick={close}>{t('team.form.cancel')}</button><button type="submit" disabled={!allowed||!title.trim()||!goal.trim()||role.kind==='twin'&&!twinConfirmed}>{t(role.kind==='twin'?'roleDelegation.taskCreate':role.storage==='persistent'?'team.assignment.save':'team.assignment.demo')}</button></footer></Dialog>
 }
 
 function MemoryForm({persistent,twin,scopes,close,save}:{persistent:boolean;twin:boolean;scopes:CollaborationScope[];close:()=>void;save:(value:{title:string;text:string;scope:CollaborationScope})=>void|Promise<void>}){

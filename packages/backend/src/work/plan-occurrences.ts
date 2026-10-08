@@ -4,13 +4,19 @@ import {workAccess,combineWorkAccessLeases} from './work-access.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isRecord,nextScheduleOccurrence,readScheduleTrigger,roleDefinition,roleSupportsScope,taskDefinition,workTaskStates,type ScheduleTrigger,type WorkTask} from '@teloa/contract'
+import {WorkError,isRecord,nextScheduleOccurrence,readScheduleTrigger,roleSupportsScope,taskDefinition,workTaskStates,readTaskCompletionPolicy,type TaskCompletionPolicy,type ScheduleTrigger,type WorkTask} from '@teloa/contract'
 import {initializeTasks,TaskService,readStoredTask} from './tasks.ts'
 import {readStoredTaskRun} from './task-runs.ts'
 import {initializePlans,planNotificationPolicies,verifyPlanSource,type PlanNotificationPolicy,type PlanSource,type PlanMarketSources} from './plans.ts'
+import {readStoredRole} from './roles.ts'
+import {assertRoleWorkRole} from './twin-execution-consents.ts'
+import {readPlanWorkDefinition,type PlanWorkDefinition} from '@teloa/contract'
+import type {WorkEvent} from '@teloa/contract'
+import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
 
-export type PlanOccurrenceFields={title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy}
-export type PlanOccurrence={id:string;ownerId:string;planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;claimedAt:string;taskRequestId:string;fields:PlanOccurrenceFields;source:PlanSource;roleVersion:number;invalidated?:{reason:'plan-paused'|'plan-archived'|'plan-version-changed';observedPlanUpdatedAt:string};taskRequest:{requestId:string;fields:{title:string;goal:string;scope:string};assignee:{roleId:string;expectedVersion:number}}}
+export type PlanOccurrenceFields={title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
+export type PlanOccurrence={workDefinition?:PlanWorkDefinition;id:string;ownerId:string;planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;claimedAt:string;taskRequestId:string;fields:PlanOccurrenceFields;source:PlanSource;roleVersion:number;invalidated?:{reason:'plan-paused'|'plan-archived'|'plan-version-changed';observedPlanUpdatedAt:string};taskRequest:{requestId:string;fields:{title:string;goal:string;scope:string;completionPolicy?:TaskCompletionPolicy};assignee:{roleId:string;expectedVersion:number}}}
 export type PlanScheduleSkip={planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;skippedAt:string;reason:'previous-pending'|'previous-task-unfinished';blockingClaimId:string;taskId:string|null}
 export type PlanSkipHistoryCursor={skippedAt:string;configVersion:number;occurrenceId:string}
 export type PlanSkipHistoryPage={items:PlanScheduleSkip[];errors?:Array<PlanSkipHistoryCursor&{code:'teloa/storage-corrupt'}>;cursor?:PlanSkipHistoryCursor}
@@ -28,7 +34,7 @@ export type PendingPlanExecution={
  planId:string
  job:{claimId:string;taskId:string;taskCreatedVersion:1;taskTitle:string;roleId:string;roleVersion:number}
 }&({action:'prepare';run:null}|{action:'skip';reason:'task-ended';run:null}|{action:'start'|'reconcile';run:{id:string;state:'prepared'|'submitting'|'accepted'|'active';sessionId:string;nativeRequestId:string}})
-type CurrentPlan={id:string;ownerId:string;version:number;configVersion:number;state:'paused'|'active'|'archived';updatedAt:string;fields:PlanOccurrenceFields;source:PlanSource;roleVersion:number}
+type CurrentPlan={workDefinition?:PlanWorkDefinition;id:string;ownerId:string;version:number;configVersion:number;state:'paused'|'active'|'archived';updatedAt:string;fields:PlanOccurrenceFields;source:PlanSource;roleVersion:number}
 type ScheduleState={planId:string;ownerId:string;planVersion:number;configVersion:number;nextAt:string;occurrenceId:string}
 
 const invalid=()=>new WorkError('teloa/invalid-input','持续计划日程领取请求格式不正确。')
@@ -44,7 +50,8 @@ const stamp=(value:unknown):string=>{if(!(value instanceof Date)||!Number.isFini
 const moment=(value:unknown):string=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value))throw invalid();const parsed=new Date(value),canonical=value.includes('.')?value:value.replace('Z','.000Z');if(!Number.isFinite(parsed.getTime())||parsed.toISOString()!==canonical)throw invalid();return canonical}
 const scheduledOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[(?:Asia\/Singapore|Asia\/Shanghai|UTC)\]$/.test(value)
 const manualOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^manual:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-const occurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&value.length<=100&&(scheduledOccurrenceIdentity(value)||manualOccurrenceIdentity(value))
+const eventOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^event:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+const occurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&value.length<=100&&(scheduledOccurrenceIdentity(value)||manualOccurrenceIdentity(value)||eventOccurrenceIdentity(value))
 const notificationPolicy=(value:unknown):value is PlanNotificationPolicy=>planNotificationPolicies.some(policy=>policy===value)
 
 function readSource(value:unknown):PlanSource{
@@ -55,15 +62,15 @@ function readSource(value:unknown):PlanSource{
  return {kind:'market-content',contentId:row.contentId,contentHash:row.contentHash,resourceId:row.resourceId,resourceVersion:row.resourceVersion}
 }
 function readFields(value:unknown):PlanOccurrenceFields{
- const row=exact(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy']),base=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
+ const row=exact(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy']),base=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
  if(!text(row.dataScope,8000)||!text(row.delivery,8000)||!uuid(row.roleId))throw invalid()
  if(row.notificationPolicy!==undefined&&!notificationPolicy(row.notificationPolicy))throw invalid()
  let trigger:ScheduleTrigger;try{trigger=readScheduleTrigger(row.trigger)}catch{throw invalid()}
- return {title:base.title,goal:base.goal,scope:base.scope,dataScope:row.dataScope.trim(),delivery:row.delivery.trim(),roleId:row.roleId,trigger,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy})}
+ return {title:base.title,goal:base.goal,scope:base.scope,dataScope:row.dataScope.trim(),delivery:row.delivery.trim(),roleId:row.roleId,trigger,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy}),...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
 }
-function readSnapshot(value:unknown):{fields:PlanOccurrenceFields;source:PlanSource;roleVersion:number}{
- const row=exact(value,['fields','source','roleVersion']);if(!positive(row.roleVersion))throw invalid()
- return {fields:readFields(row.fields),source:readSource(row.source),roleVersion:row.roleVersion}
+function readSnapshot(value:unknown):{fields:PlanOccurrenceFields;source:PlanSource;roleVersion:number;workDefinition?:PlanWorkDefinition}{
+ const row=exact(value,['fields','source','roleVersion','workDefinition']);if(!positive(row.roleVersion))throw invalid()
+ return {fields:readFields(row.fields),source:readSource(row.source),roleVersion:row.roleVersion,...(row.workDefinition===undefined?{}:{workDefinition:readPlanWorkDefinition(row.workDefinition)})}
 }
 function snapshotHash(value:ReturnType<typeof readSnapshot>):string{return createHash('sha256').update(JSON.stringify(value)).digest('hex')}
 function same(a:unknown,b:unknown):boolean{return JSON.stringify(a)===JSON.stringify(b)}
@@ -71,9 +78,9 @@ function readPlan(row:Record<string,unknown>):CurrentPlan{
  try{
   const fields=readFields(row.definition),source=readSource(row.source)
   if(!uuid(row.id)||!text(row.owner_id,128)||row.role_id!==fields.roleId||row.scope!==fields.scope||row.notification_policy!==(fields.notificationPolicy??null)||!positive(row.role_version)||!positive(row.version)||!positive(row.config_version)||!['paused','active','archived'].includes(String(row.state)))throw Error()
-  const request=exact(row.request_spec,['fields','source']),requestFields=exact(request.fields,['title','goal','scope','dataScope','delivery','roleId','expectedRoleVersion','trigger','notificationPolicy']),{expectedRoleVersion,...definition}=requestFields
-  if(!positive(expectedRoleVersion)||expectedRoleVersion!==row.role_version||definition.roleId!==fields.roleId||definition.scope!==fields.scope||!same(readSource(request.source),source)||(Number(row.config_version)===1&&!same(readFields(definition),fields)))throw Error()
-  return {id:row.id,ownerId:row.owner_id,version:row.version,configVersion:row.config_version,state:row.state as CurrentPlan['state'],updatedAt:stamp(row.updated_at),fields,source,roleVersion:row.role_version}
+  const request=exact(row.request_spec,['fields','source']),requestFields=exact(request.fields,['title','goal','scope','dataScope','delivery','roleId','expectedRoleVersion','trigger','notificationPolicy','completionPolicy']),{expectedRoleVersion,...definition}=requestFields
+  if(!positive(expectedRoleVersion)||Number(row.config_version)===1&&expectedRoleVersion!==row.role_version||definition.roleId!==fields.roleId||definition.scope!==fields.scope||!same(readSource(request.source),source)||(Number(row.config_version)===1&&!same(readFields(definition),fields)))throw Error()
+  return {...(row.work_definition==null?{}:{workDefinition:readPlanWorkDefinition(row.work_definition)}),id:row.id,ownerId:row.owner_id,version:row.version,configVersion:row.config_version,state:row.state as CurrentPlan['state'],updatedAt:stamp(row.updated_at),fields,source,roleVersion:row.role_version}
  }catch(error){if(error instanceof WorkError&&error.code==='teloa/storage-corrupt')throw error;throw corrupt()}
 }
 function expectedOccurrence(trigger:ScheduleTrigger,scheduledAt:string){return nextScheduleOccurrence(trigger,new Date(Date.parse(scheduledAt)-1).toISOString())}
@@ -91,7 +98,8 @@ function readOccurrence(row:Record<string,unknown>):PlanOccurrence{
   const scheduled=scheduledOccurrenceIdentity(row.occurrence_id),manual=manualOccurrenceIdentity(row.occurrence_id)
   const expected=scheduled?expectedOccurrence(snapshot.fields.trigger,scheduledAt):undefined
   if(!hash(row.snapshot_hash)||row.snapshot_hash!==snapshotHash(snapshot)||!uuid(row.id)||!uuid(row.plan_id)||!text(row.owner_id,128)||!positive(row.plan_version)||!positive(row.config_version)||!uuid(row.task_request_id)||!occurrenceIdentity(row.occurrence_id)||scheduled&&(!expected||expected.at!==scheduledAt||expected.occurrenceId!==row.occurrence_id||claimedAt<scheduledAt)||manual&&(row.occurrence_id!=='manual:'+row.task_request_id||claimedAt!==scheduledAt))throw Error()
-  return {id:row.id,ownerId:row.owner_id,planId:row.plan_id,planVersion:row.plan_version,configVersion:row.config_version,occurrenceId:row.occurrence_id,scheduledAt,claimedAt,taskRequestId:row.task_request_id,fields:snapshot.fields,source:snapshot.source,roleVersion:snapshot.roleVersion,taskRequest:{requestId:row.task_request_id,fields:{title:snapshot.fields.title,goal:snapshot.fields.goal,scope:snapshot.fields.scope},assignee:{roleId:snapshot.fields.roleId,expectedVersion:snapshot.roleVersion}}}
+  if(eventOccurrenceIdentity(row.occurrence_id)&&(!snapshot.workDefinition||snapshot.workDefinition.definitionVersion!==row.config_version))throw Error()
+  return {...(snapshot.workDefinition?{workDefinition:snapshot.workDefinition}:{}),id:row.id,ownerId:row.owner_id,planId:row.plan_id,planVersion:row.plan_version,configVersion:row.config_version,occurrenceId:row.occurrence_id,scheduledAt,claimedAt,taskRequestId:row.task_request_id,fields:snapshot.fields,source:snapshot.source,roleVersion:snapshot.roleVersion,taskRequest:{requestId:row.task_request_id,fields:{title:snapshot.fields.title,goal:snapshot.fields.goal,scope:snapshot.fields.scope,...(snapshot.fields.completionPolicy?{completionPolicy:snapshot.fields.completionPolicy}:{})},assignee:{roleId:snapshot.fields.roleId,expectedVersion:snapshot.roleVersion}}}
  }catch{throw corrupt()}
 }
 
@@ -144,6 +152,7 @@ export async function initializePlanOccurrences(pool:Pool):Promise<void>{
   claim_id uuid primary key references teloa_plan_occurrences(id),owner_id text not null,
   task_request_id uuid not null unique,task_id uuid not null unique references teloa_tasks(id)
  );
+ create table if not exists teloa_plan_schedule_coalesces(owner_id text not null,claim_id uuid not null,first_due_at timestamptz not null,last_due_at timestamptz not null,omitted_count integer not null check(omitted_count>0),primary key(owner_id,claim_id));
  create index if not exists teloa_plan_occurrences_recovery_order on teloa_plan_occurrences(owner_id,claimed_at,id);
  create table if not exists teloa_plan_schedule_skips(
   plan_id uuid not null,owner_id text not null,plan_version integer not null check(plan_version>0),config_version integer not null check(config_version>0),
@@ -164,7 +173,7 @@ export class PlanOccurrenceService{
   if(!text(owner,128))throw new WorkError('teloa/forbidden','需要有效的本人身份。')
   const row=exact(value,['planId','now']);if(!uuid(row.planId))throw invalid();return {planId:row.planId,now:moment(row.now)}
  }
- private async current(db:PoolClient,owner:string,planId:string,exclusiveRole=false):Promise<CurrentPlan>{
+ private async current(db:PoolClient,owner:string,planId:string,exclusiveRole=false):Promise<CurrentPlan&{assertCurrent:()=>void}>{
   const preview=(await db.query('select * from teloa_plans where id=$1 and owner_id=$2',[planId,owner])).rows[0] as Record<string,unknown>|undefined
   if(!preview)throw new WorkError('teloa/forbidden','持续计划不存在或不属于当前本人。')
   const observed=readPlan(preview),role=(await db.query(exclusiveRole?'select * from teloa_roles where id=$1 and owner_id=$2 for update':'select * from teloa_roles where id=$1 and owner_id=$2 for share',[observed.fields.roleId,owner])).rows[0] as Record<string,unknown>|undefined
@@ -172,20 +181,22 @@ export class PlanOccurrenceService{
   const locked=readPlan((await db.query('select * from teloa_plans where id=$1 and owner_id=$2 for update',[planId,owner])).rows[0])
   if(locked.fields.roleId!==observed.fields.roleId)throw corrupt()
   if(locked.state!=='active')throw new WorkError('teloa/conflict','只有已启用的持续计划可以领取日程。')
-  let definition:ReturnType<typeof roleDefinition>;try{definition=roleDefinition(role.definition)}catch{throw corrupt()}
+  const currentRole=readStoredRole(role)
   /**
    * 用户建的计划按创建时固定的岗位版本领取：岗位改过就该由本人重新核对。
    * Auto Dream 的系统计划相反——它随岗位生命周期走，而暂停与复岗本身各把岗位版本加一，
    * 按固定版本核对会让复岗后的小结永远领不到日程（计划回到 active 却次次 version-conflict）。
-   * 与 `plans.ts` 的 `enable` 判据同一口径：只放宽版本这一条，紧随其后的在岗、AI 员工、
-   * 范围仍覆盖计划所属业务三条一字不变。
+   * 与 `plans.ts` 的 `enable` 同一口径：系统小结仍限定员工，普通计划核本人当前委托。
    */
   if(locked.source.kind!=='system-digest'&&role.version!==locked.roleVersion)throw new WorkError('teloa/version-conflict','负责员工版本已变化，停止领取计划日程。')
-  if(role.state!=='active'||definition.kind!=='employee')throw new WorkError('teloa/conflict','负责员工当前不能领取计划日程。')
-  if(!roleSupportsScope(definition.scopes,locked.fields.scope))throw new WorkError('teloa/forbidden','负责员工不再支持计划所属业务。')
-  await verifyPlanSource(owner,locked.source,this.marketSources)
+  assertRoleWorkRole(currentRole,locked.source.kind==='system-digest'?currentRole.version:locked.roleVersion)
+  if(locked.source.kind==='system-digest'&&currentRole.kind!=='employee')throw new WorkError('teloa/conflict','Auto Dream 系统小结由在岗员工负责。')
+  if(!roleSupportsScope(currentRole.scopes,locked.fields.scope))throw new WorkError('teloa/forbidden','负责角色不再支持计划所属业务。')
+  const admission=locked.workDefinition?await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:currentRole.id,expectedRoleVersion:locked.roleVersion,scope:locked.fields.scope,inputSchema:'teloa.task-run-input/v2',authorization:locked.workDefinition.authorization,groupId:null},db):await authorizeRoleTaskAssignment(db,this.pool,owner,currentRole,locked.fields.scope)
+  if(locked.workDefinition){const c=(await db.query('select * from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,locked.workDefinition.definitionControlId])).rows[0];if(!c||c.state!=='active'||c.kind!=='definition'||c.budget_account_id!==locked.workDefinition.budgetAccountId||locked.workDefinition.definitionVersion!==locked.configVersion)throw new WorkError('teloa/conflict','长期工作定义已暂停或发生变化。')}
+  await verifyPlanSource(owner,locked.source,this.marketSources,db)
   // 系统计划跟随岗位，但本次领取必须固定当前岗位版本；后续建任务及重放都使用这份快照。
-  return locked.source.kind==='system-digest'?{...locked,roleVersion:Number(role.version)}:locked
+  return {...locked,...(locked.source.kind==='system-digest'?{roleVersion:currentRole.version}:{}),assertCurrent:admission.assertCurrent}
  }
  private async saveState(db:PoolClient,plan:CurrentPlan,after:string):Promise<ScheduleState>{
   const next=nextScheduleOccurrence(plan.fields.trigger,after)
@@ -195,7 +206,7 @@ export class PlanOccurrenceService{
  }
  async recover(owner:string,input:unknown):Promise<{nextAt:string;occurrenceId:string}>{
   const value=this.input(owner,input),db=await this.pool.connect()
-  try{await db.query('begin');const plan=await this.current(db,owner,value.planId),state=await this.saveState(db,plan,value.now);await db.query('commit');return {nextAt:state.nextAt,occurrenceId:state.occurrenceId}}
+  try{await db.query('begin');const plan=await this.current(db,owner,value.planId);const previous=plan.workDefinition?(await db.query('select * from teloa_plan_schedule_state where owner_id=$1 and plan_id=$2 for update',[owner,plan.id])).rows[0]:undefined;const state=previous?readState(previous,plan):await this.saveState(db,plan,plan.workDefinition?plan.updatedAt:value.now);plan.assertCurrent();await db.query('commit');return {nextAt:state.nextAt,occurrenceId:state.occurrenceId}}
   catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async claim(owner:string,input:unknown):Promise<{occurrence:PlanOccurrence|null;dispatch:boolean;skip?:PlanScheduleSkip}>{
@@ -205,44 +216,78 @@ export class PlanOccurrenceService{
    const row=(await db.query('select * from teloa_plan_schedule_state where plan_id=$1 and owner_id=$2 for update',[plan.id,owner])).rows[0] as Record<string,unknown>|undefined
    let state=row?readState(row,plan):await this.saveState(db,plan,plan.updatedAt)
    if(state.planVersion!==plan.version||state.configVersion!==plan.configVersion)state=await this.saveState(db,plan,plan.updatedAt)
-   if(state.nextAt>value.now){await db.query('commit');return {occurrence:null,dispatch:false}}
+   if(plan.workDefinition&&!plan.workDefinition.triggers.some(t=>t.kind==='schedule')){plan.assertCurrent();await db.query('commit');return {occurrence:null,dispatch:false}}
+   if(state.nextAt>value.now){plan.assertCurrent();await db.query('commit');return {occurrence:null,dispatch:false}}
    // 只取尚未结束的候选；未知状态仍落入候选，由读取白名单显式拒绝。
    const history=(await db.query(occurrenceOverview+` where o.owner_id=$1 and o.plan_id=$2 and (
     (t.id is not null and t.state not in ('completed','cancelled')) or
     (t.id is null and p.state='active' and o.plan_version=p.version and o.config_version=p.config_version)
    ) order by o.scheduled_at,o.id limit 1`,[owner,plan.id])).rows.map(observedOccurrence)
    const blocking=history.find(({occurrence,task})=>task?!['completed','cancelled'].includes(task.state):!occurrence.invalidated)
-   if(blocking){
+   if(blocking&&plan.workDefinition?.overlap!=='independent'){
     const reason=blocking.task?'previous-task-unfinished':'previous-pending'
     await db.query(`insert into teloa_plan_schedule_skips(plan_id,owner_id,plan_version,config_version,occurrence_id,scheduled_at,skipped_at,reason,blocking_claim_id,task_id)
      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict(plan_id,config_version,occurrence_id) do nothing`,[plan.id,owner,plan.version,plan.configVersion,state.occurrenceId,state.nextAt,value.now,reason,blocking.occurrence.id,blocking.task?.id??null])
     const skip=readSkip((await db.query(skipOverview+' where s.plan_id=$1 and s.config_version=$2 and s.occurrence_id=$3',[plan.id,plan.configVersion,state.occurrenceId])).rows[0])
-    await this.saveState(db,plan,value.now)
-    await db.query('commit');return {occurrence:null,dispatch:false,skip}
+    if(!plan.workDefinition)await this.saveState(db,plan,value.now)
+    plan.assertCurrent();await db.query('commit');return {occurrence:null,dispatch:false,skip}
    }
+   const firstDue=state.nextAt;let omitted=0
+   if(plan.workDefinition){while(true){const next=nextScheduleOccurrence(plan.fields.trigger,state.nextAt);if(next.at>value.now)break;if(++omitted>3660)throw new WorkError('teloa/conflict','错过周期过多，请本人核对恢复边界。');state={...state,nextAt:next.at,occurrenceId:next.occurrenceId}}}
    // 精确旧领取沿用原回执和游标推进；不为既有事实重新申请新工作准入。
    const previous=(await db.query('select * from teloa_plan_occurrences where plan_id=$1 and owner_id=$2 and config_version=$3 and occurrence_id=$4 for share',[plan.id,owner,plan.configVersion,state.occurrenceId])).rows[0]
    if(previous){
     const occurrence=readOccurrence(previous),next=nextScheduleOccurrence(plan.fields.trigger,value.now)
     await db.query('update teloa_plan_schedule_state set plan_version=$2,config_version=$3,next_at=$4,occurrence_id=$5,updated_at=$6 where plan_id=$1',[plan.id,plan.version,plan.configVersion,next.at,next.occurrenceId,value.now])
-    await db.query('commit');return {occurrence,dispatch:false}
+    plan.assertCurrent();await db.query('commit');return {occurrence,dispatch:false}
    }
    const admission=combineWorkAccessLeases([
+    plan,
     await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:plan.id,operation:'run'}),
     await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId:state.occurrenceId,source:'schedule'}),
    ])
    const occurrenceId=this.identity.id(),taskRequestId=this.identity.id()
    if(!uuid(occurrenceId)||!uuid(taskRequestId))throw new WorkError('teloa/storage-unavailable','无法生成稳定的日程领取身份。')
-   const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion}
+   const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{})}
    admission.assertCurrent()
    const inserted=(await db.query(`insert into teloa_plan_occurrences(id,owner_id,plan_id,plan_version,config_version,occurrence_id,scheduled_at,claimed_at,task_request_id,snapshot,snapshot_hash)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict(plan_id,config_version,occurrence_id) do nothing returning *`,[occurrenceId,owner,plan.id,plan.version,plan.configVersion,state.occurrenceId,state.nextAt,value.now,taskRequestId,JSON.stringify(snapshot),snapshotHash(snapshot)])).rows[0] as Record<string,unknown>|undefined
    const saved=inserted??(await db.query('select * from teloa_plan_occurrences where plan_id=$1 and config_version=$2 and occurrence_id=$3 for share',[plan.id,plan.configVersion,state.occurrenceId])).rows[0]
    const occurrence=readOccurrence(saved),next=nextScheduleOccurrence(plan.fields.trigger,value.now)
+   if(inserted&&omitted)await db.query('insert into teloa_plan_schedule_coalesces(owner_id,claim_id,first_due_at,last_due_at,omitted_count) values($1,$2,$3,$4,$5)',[owner,occurrence.id,firstDue,state.nextAt,omitted])
    admission.assertCurrent()
    await db.query('update teloa_plan_schedule_state set plan_version=$2,config_version=$3,next_at=$4,occurrence_id=$5,updated_at=$6 where plan_id=$1',[plan.id,plan.version,plan.configVersion,next.at,next.occurrenceId,value.now])
    admission.assertCurrent();await db.query('commit');return {occurrence,dispatch:!!inserted}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ /** 持久可信事件进入原领取台账；不通过浏览器或模型接口暴露。 */
+ async claimEventInTransaction(db:PoolClient,owner:string,input:{planId:string;definitionVersion:number;event:WorkEvent;controlGeneration:number;now:string},checkSource:()=>Promise<void>):Promise<PlanOccurrence|null>{
+  const event=input.event,identity='event:'+event.id
+  if(event.ownerId!==owner)throw new WorkError('teloa/forbidden','事件不属于当前本人。')
+  const plan=await this.current(db,owner,input.planId),definition=plan.workDefinition
+  if(!definition||definition.definitionVersion!==input.definitionVersion)throw new WorkError('teloa/version-conflict','事件绑定的长期定义已变化。')
+  const trigger=definition.triggers.find(t=>t.kind==='local-event'&&t.eventKind===event.kind&&t.sourceId===event.sourceId)
+  if(!trigger)throw new WorkError('teloa/forbidden','事件不属于当前长期定义。')
+  const control=(await db.query('select * from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,definition.definitionControlId])).rows[0]
+  if(!control||control.state!=='active'||control.generation!==input.controlGeneration)throw new WorkError('teloa/version-conflict','长期工作的控制世代已变化。')
+  const queued=(await db.query('select * from teloa_plan_work_events where owner_id=$1 and plan_id=$2 and definition_version=$3 and event_id=$4 for update',[owner,plan.id,input.definitionVersion,event.id])).rows[0]
+  if(!queued)throw new WorkError('teloa/forbidden','事件未登记到本轮定义。')
+  if(queued.state==='superseded')return null
+  if(queued.state==='claimed'){const prior=(await db.query('select * from teloa_plan_occurrences where id=$1 and owner_id=$2',[queued.claim_id,owner])).rows[0];if(!prior)throw corrupt();return readOccurrence(prior)}
+  const blocking=(await db.query(occurrenceOverview+` where o.owner_id=$1 and o.plan_id=$2 and ((t.id is not null and t.state not in ('completed','cancelled')) or(t.id is null and o.plan_version=p.version and o.config_version=p.config_version)) order by o.scheduled_at,o.id limit 1`,[owner,plan.id])).rows
+  if(definition.overlap==='forbid'&&blocking.length)return null
+  // 即使显式并行也不绕过额度；实际模型调用还会再次预留同一账户。
+  const budget=(await db.query('select policy from teloa_work_budget_accounts where owner_id=$1 and id=$2 for share',[owner,definition.budgetAccountId])).rows[0]
+  if(!budget||!same(budget.policy,definition.budget))throw new WorkError('teloa/conflict','长期工作额度设置已变化，请重新核对。')
+  const usage=(await db.query("select coalesce(sum(case when state='settled' then actual_tokens else reserved_tokens end),0) as tokens,coalesce(sum(reserved_rounds),0) as rounds,count(*) filter(where state in ('reserved','unknown') and reserved_tokens>0) as concurrent from teloa_work_budget_reservations where owner_id=$1 and budget_account_id=$2 and state<>'released'",[owner,definition.budgetAccountId])).rows[0]
+  if(Number(usage.tokens)>=definition.budget.maxTokens||Number(usage.rounds)>=definition.budget.maxGoalRounds||Number(usage.concurrent)>=definition.budget.maxConcurrent)throw new WorkError('teloa/conflict','长期工作累计额度已用完。')
+  await checkSource()
+  const admission=combineWorkAccessLeases([await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:plan.id,operation:'run'}),await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId:identity,source:'local-event'})])
+  const id=this.identity.id(),requestId=this.identity.id(),snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion,workDefinition:definition}
+  plan.assertCurrent();admission.assertCurrent()
+  const saved=(await db.query('insert into teloa_plan_occurrences(id,owner_id,plan_id,plan_version,config_version,occurrence_id,scheduled_at,claimed_at,task_request_id,snapshot,snapshot_hash) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *',[id,owner,plan.id,plan.version,plan.configVersion,identity,event.createdAt,input.now,requestId,JSON.stringify(snapshot),snapshotHash(snapshot)])).rows[0]
+  await db.query("update teloa_plan_work_events set state='claimed',claim_id=$5 where owner_id=$1 and plan_id=$2 and definition_version=$3 and event_id=$4",[owner,plan.id,input.definitionVersion,event.id,id])
+  plan.assertCurrent();admission.assertCurrent();return readOccurrence(saved)
  }
  /** 本人明确点“立即运行”时创建一次独立领取；不前移或改写下一次日程游标。 */
  async trigger(owner:string,input:unknown):Promise<{occurrence:PlanOccurrence;dispatch:boolean}>{
@@ -275,12 +320,13 @@ export class PlanOccurrenceService{
    ) order by o.claimed_at,o.id limit 1`,[owner,plan.id])).rows.map(observedOccurrence)
    if(history.find(({occurrence,task})=>task?!['completed','cancelled'].includes(task.state):!occurrence.invalidated))throw new WorkError('teloa/conflict','当前计划已有未结束执行，不能再次立即运行。')
    const admission=combineWorkAccessLeases([
+    plan,
     await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:plan.id,operation:'run'}),
     await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId,source:'manual'}),
    ])
    const id=this.identity.id()
    if(!uuid(id))throw new WorkError('teloa/storage-unavailable','无法生成稳定的立即运行身份。')
-   const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion}
+   const snapshot={fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{})}
    admission.assertCurrent()
    const saved=(await db.query(`insert into teloa_plan_occurrences(id,owner_id,plan_id,plan_version,config_version,occurrence_id,scheduled_at,claimed_at,task_request_id,snapshot,snapshot_hash)
     values($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10) returning *`,[id,owner,plan.id,plan.version,plan.configVersion,occurrenceId,now,row.requestId,JSON.stringify(snapshot),snapshotHash(snapshot)])).rows[0]
@@ -306,7 +352,7 @@ export class PlanOccurrenceService{
   try{
    await db.query('begin');const claim=await this.storedClaim(db,owner,value),plan=await this.current(db,owner,claim.planId)
    if(plan.version!==claim.planVersion||plan.configVersion!==claim.configVersion||!same(plan.fields,claim.fields)||!same(plan.source,claim.source)||plan.roleVersion!==claim.roleVersion)throw new WorkError('teloa/version-conflict','计划或员工依据已变化，停止派发。')
-   await db.query('commit');return claim
+   plan.assertCurrent();await db.query('commit');return claim
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async pending(owner:string):Promise<PlanOccurrence[]>{
@@ -503,15 +549,18 @@ export class PlanOccurrenceService{
    const parent=await lockConversationTaskParent(db,owner,occurrence.taskRequestId)
    await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['teloa/task-create',owner,occurrence.taskRequestId])])
    const existing=(await db.query('select id from teloa_tasks where owner_id=$1 and request_id=$2',[owner,occurrence.taskRequestId])).rows[0]
+   let assignment: {assertCurrent:()=>void}|undefined
    if(!existing){
     assertConversationTaskOpen(parent)
     const plan=await this.current(db,owner,occurrence.planId,true)
+    assignment=plan
     if(plan.version!==occurrence.planVersion||plan.configVersion!==occurrence.configVersion||!same(plan.fields,occurrence.fields)||!same(plan.source,occurrence.source)||plan.roleVersion!==occurrence.roleVersion)throw new WorkError('teloa/version-conflict','计划或员工依据已变化，停止派发。')
    }
    const tasks=new TaskService(this.pool,{id:this.identity.id,now:()=>now})
-   const task=await tasks.createInTransaction(db,owner,occurrence.taskRequest)
+   // 首次创建就固定可核的 claim 来源；Task、执行授权、谱系和关联一起提交。
+   const task=await tasks.createInTransaction(db,owner,occurrence.taskRequest,{kind:'plan-occurrence',claimId:occurrence.id})
    const association=await this.associate(db,owner,occurrence,task.id)
-   await db.query('commit');return {occurrence,task,association}
+   assignment?.assertCurrent();await db.query('commit');return {occurrence,task,association}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  // 调用者已持有任务执行所需的锁；这里只读取固定来源，不再反向锁岗位或计划。
@@ -551,7 +600,7 @@ export class PlanOccurrenceService{
    if(!stored)throw new WorkError('teloa/forbidden','持续计划不存在或不属于当前本人。')
    const plan=readPlan(stored),cursorRow=(await db.query('select * from teloa_plan_schedule_state where plan_id=$1 and owner_id=$2',[plan.id,owner])).rows[0]
    const cursor=cursorRow?readState(cursorRow,plan):null
-   const nextAt=plan.state==='active'&&cursor?.planVersion===plan.version&&cursor.configVersion===plan.configVersion?cursor.nextAt:null
+   const nextAt=(!plan.workDefinition||plan.workDefinition.triggers.some(t=>t.kind==='schedule'))&&plan.state==='active'&&cursor?.planVersion===plan.version&&cursor.configVersion===plan.configVersion?cursor.nextAt:null
    const recent=(await db.query(occurrenceOverview+' where o.owner_id=$1 and o.plan_id=$2 order by o.scheduled_at desc,o.id desc limit 1',[owner,plan.id])).rows[0]
    const skipped=(await db.query(skipOverview+' where s.owner_id=$1 and s.plan_id=$2 order by s.scheduled_at desc,s.occurrence_id desc limit 1',[owner,plan.id])).rows[0]
    const result={planId:plan.id,planVersion:plan.version,state:plan.state,nextAt,latest:recent?observedOccurrence(recent):null,latestSkip:skipped?readSkip(skipped):null}

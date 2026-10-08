@@ -25,10 +25,10 @@ function source(value:unknown,owner:string):IndustryTaskSource{
  return row
 }
 function task(value:unknown,owner:string):WorkTask{
- const row=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'].concat(['groupId','skills']))
- if(!uuid(row.id)||row.ownerId!==owner||!integer(row.version)||!workTaskStates.some(state=>state===row.state)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||(row.assigneeRoleId===null?row.assigneeRoleVersion!==null:!uuid(row.assigneeRoleId)||!integer(row.assigneeRoleVersion)))throw invalid()
+ const row=exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'].concat(['groupId','skills','contentVersion','completionPolicy']))
+ if(!uuid(row.id)||row.ownerId!==owner||!integer(row.version)||(row.contentVersion!==undefined&&(!Number.isSafeInteger(row.contentVersion)||Number(row.contentVersion)<=0))||!workTaskStates.some(state=>state===row.state)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||(row.assigneeRoleId===null?row.assigneeRoleVersion!==null:!uuid(row.assigneeRoleId)||!integer(row.assigneeRoleVersion)))throw invalid()
  let definition:ReturnType<typeof taskDefinition>
- try{definition=taskDefinition({title:row.title,goal:row.goal,scope:row.scope,groupId:row.groupId,skills:row.skills})}catch{throw invalid()}
+ try{definition=taskDefinition({title:row.title,goal:row.goal,scope:row.scope,groupId:row.groupId,skills:row.skills,completionPolicy:row.completionPolicy})}catch{throw invalid()}
  return {...(row as unknown as WorkTask),...definition}
 }
 export function createIndustryTasksHandler(owner:string,get:()=>Promise<Ports>){

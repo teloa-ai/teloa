@@ -138,7 +138,7 @@ export function taskKnowledgeAuthorization(ownerId:string,target:TaskExecutionSc
  // 退回 `[target.scope]`——最坏也只是改前的行为，不能让「岗位声明得多」把通用任务从能跑变成 forbidden。
  const union=target.scope==='general'&&roleScopes?.length?[...new Set(['general',...roleScopes])]:[target.scope]
  const scopeIds=union.length>16||union.some(scope=>scope.length>64)?[target.scope]:union
- return {actor:{ownerId,kind:'agent' as const,scopeIds:[...scopeIds]},targetScopes:[...scopeIds]}
+ return {actor:{ownerId,kind:'agent' as const,scopeIds:[...scopeIds]},targetScopes:[...scopeIds],...(target.knowledgeIds===undefined?{}:{knowledgeIds:target.knowledgeIds})}
 }
 
 export async function resolveDshTaskPreset(ctx:Context,agentPresetId:string|undefined,signal:AbortSignal):Promise<string>{
@@ -167,11 +167,11 @@ export async function prepareDshTaskSession(ctx:Context,sessionId:string,agentPr
 }
 
 /** 公开 SessionController 解析身份；有固定模型时经附件准入 + Agent 队列发送，SessionStore 落盘。 */
-export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string}>,loadKnowledge?:TaskRunPorts['loadKnowledge'],resolveManaged?:ManagedRunSkillResolver,readManagedAvailability?:ReadManagedSkillAvailability,ensureRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>,loadExactManaged?:ExactManagedSkillLoader,readRoleScopes?:ReadRoleScopes,runtimeLinks?:TaskRunRuntimeLinks,prepareModel?:Parameters<typeof createTaskModelRouting>[1],declaredSkillSecrets?:(skill:string)=>Promise<ResolvedSkillSecrets|undefined>,nativeInput?:DshTaskNativeInput):DshTaskRunPorts{
+export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string}>,loadKnowledge?:TaskRunPorts['loadKnowledge'],resolveManaged?:ManagedRunSkillResolver,readManagedAvailability?:ReadManagedSkillAvailability,ensureRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>,loadExactManaged?:ExactManagedSkillLoader,readRoleScopes?:ReadRoleScopes,runtimeLinks?:TaskRunRuntimeLinks,prepareModel?:Parameters<typeof createTaskModelRouting>[1],declaredSkillSecrets?:(skill:string)=>Promise<ResolvedSkillSecrets|undefined>,nativeInput?:DshTaskNativeInput,goal?:Pick<TaskRunPorts,'goalObservation'|'stopGoal'>):DshTaskRunPorts{
  const store=Reflect.get(ctx,'sessions') as unknown as SessionStore
  const ensureModels=createTaskModelRouting(ctx,prepareModel)
  if(Reflect.get(ctx,'jobs')&&!runtimeLinks)throw new WorkError('teloa/dependency-unavailable','后台工作关联存储未配置。')
- const background=runtimeLinks?createTaskRunBackground(ctx,runtimeLinks):undefined
+ const background=runtimeLinks?createTaskRunBackground(ctx,runtimeLinks,undefined,taskRunRuntimeId,goal?.goalObservation):undefined
  if(background)ctx.effect(()=>background.dispose)
  // 停止后日志 seq 的冻结计时。只为「已请求停止」的记录建条目，收口或恢复运行即清除。
  const stopFreeze=new Map<string,StopFreeze>()
@@ -255,6 +255,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   return agent
  }
  const ports:DshTaskRunPorts={
+  ...goal,
   resolvePreset,
   prepareSession,
   ensureModels:(agent,run)=>{ensureModels(agent,run)},
@@ -271,6 +272,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    if(!inputTarget)throw new WorkError('teloa/conflict','执行发送缺少可信任务关联。')
    // 服务端 Run 快照在第一次 await 前复制，等待许可不能移植请求或任务关联身份。
    const run=Object.freeze(structuredClone(input)),target=Object.freeze(structuredClone(inputTarget))
+   if(run.roleSnapshot&&!nativeInput)throw new WorkError('teloa/unavailable','工作服务正在准备，请稍后重试。')
    if(typeof run.nativeRequestId!=='string'||!run.nativeRequestId)throw new WorkError('teloa/forbidden','执行请求身份未就绪。')
    const context=Object.freeze({producer:'task-run' as const,identity:JSON.stringify([owner,run.id,run.taskId,run.taskVersion,run.linkVersion,run.sessionId,run.nativeRequestId])})
    const operation=async()=>{
@@ -372,8 +374,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    signal.throwIfAborted()
    const agent=await resolve(run)
    signal.throwIfAborted()
+   await ports.stopGoal?.(run)
    await background?.cancel(run,signal)
-   const events=readSessionEvents(agent.session),observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,readSessionEvents(agent.session)))
+   const events=readSessionEvents(agent.session),goalState=await ports.goalObservation?.(run,events),observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),goalState)
    if(observed.state==='ended')return
    if(observed.state!=='active'||(agent.inbox.nextTurn.length>0||agent.inbox.nextStep.length>0))throw new WorkError('teloa/conflict','尚未确认原请求正在执行，或会话仍有排队消息，请先核对执行会话。')
    let turnStart=0
@@ -382,7 +385,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    if(mixed)throw new WorkError('teloa/conflict','本轮已混入其他请求，请在原生会话中处理。')
    // 日志上轮次未闭合 ≠ agent 真有活跃活动。上游契约写明：无活跃活动时取消是 no-op，
    // 也不会为后续工作预置取消——那样的"成功"只会伪装成已停止，所以这里回一个可分辨的冲突。
-   if(agent.status!=='running')throw new WorkError('teloa/conflict','这次执行已经没有在跑的动作，等待原生收口。')
+   if(agent.status!=='running'){if(goalState&&agent.status==='idle')return;throw new WorkError('teloa/conflict','这次执行已经没有在跑的动作，等待原生收口。')}
    // cancel 是同步方法；身份判定与取消之间不让出执行权，防止误停后续轮次。
    // 回执只承诺"请求已递交"（收敛要等原生到达静止），保留它是为了让这次递交有据可查。
    const receipt=ctx.sessionController.cancel({sessionId:brandString<SessionId>(run.sessionId)})

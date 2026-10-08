@@ -11,6 +11,7 @@ import {readSessionEvents} from './session-events.ts'
 import {createTaskRunBackground,taskRunRuntimeId} from './task-run-background.ts'
 import {taskRunTeamContinuations} from './task-run-team-records.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
+import type {TaskRunGoalObservationReader} from './task-tool-guard.ts'
 import {subagentReservationId,type SubagentDelegationPorts} from './subagent-delegation.ts'
 import type {TaskToolPolicy,TaskToolPolicyReader} from './task-tool-guard.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
@@ -31,7 +32,7 @@ export async function stopTaskRunChildren(ctx:Context,run:Pick<TaskRun,'sessionI
 
 export type TaskRunTeamAccess={authorizeMember:(agent:Agent,policy:TaskToolPolicy,signal:AbortSignal)=>Promise<boolean>;continuations:(root:Agent,requestId:string,events:readonly SessionEvent[])=>Promise<ReadonlySet<string>>}
 /** 官方 Team 保存 roster/mailbox/DAG；本适配只负责业务授权、共用额度与收口。 */
-export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts,readPolicy:TaskToolPolicyReader,links:TaskRunRuntimeLinks){
+export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts,readPolicy:TaskToolPolicyReader,links:TaskRunRuntimeLinks,goalObservation?:TaskRunGoalObservationReader){
  const creating=new Set<string>(),admitted=new Set<string>(),bound=new Map<string,Promise<void>>(),settled=new Set<string>()
  const stopping=new Map<string,{requestId:string;grants:readonly TaskRunTeamLink[]}>(),stopFailures=new Set<string>()
  const memberKey=(lead:string,name:string)=>lead+':'+name
@@ -49,11 +50,11 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
   const stop=stopping.get(session.id)
   if(!stop||event.type!=='user/message'||event.surfaceOp!=='append')return
   // 让原生追加事务先退出；取消可能清空 inbox，不能在 append 的发布栅栏内重入。
-  void Promise.resolve().then(()=>{
+  void Promise.resolve().then(async()=>{
    const root=ctx.agents.get(session.id)
    if(!root)return
    const events=readSessionEvents(root.session)
-   if(observeTaskRunTimeline(events,stop.requestId,taskRunTeamContinuations(events,stop.grants)).authorized&&root.status==='running')root.cancel({kind:'user'})
+   if(observeTaskRunTimeline(events,stop.requestId,taskRunTeamContinuations(events,stop.grants),undefined,await goalObservation?.(root.id,events)).authorized&&root.status==='running')root.cancel({kind:'user'})
   }).catch(()=>{stopFailures.add(session.id)})
  })
  const bind=async(grant:TaskRunTeamLink,childId:string)=>{
@@ -206,7 +207,7 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
    await ctx.subagents.drainContinuableChildren(root,ids)
    // 官方 continuation 在撤销成员后会唤醒 Lead 的 subagent-settled 轮；它仍属于此次停止。
    const events=readSessionEvents(root.session),continuations=taskRunTeamContinuations(events,grants)
-   if(observeTaskRunTimeline(events,run.nativeRequestId,continuations).authorized&&root.status==='running')root.cancel({kind:'user'})
+   if(observeTaskRunTimeline(events,run.nativeRequestId,continuations,undefined,await goalObservation?.(root.id,events)).authorized&&root.status==='running')root.cancel({kind:'user'})
   },
   dispose(){disposeWrapper();disposeStopObserver();background.dispose()},
  }

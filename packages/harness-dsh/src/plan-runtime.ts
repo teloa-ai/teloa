@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto'
-import {PlanService,MarketContentStore,PlanOccurrenceService,PlanSchedulerStatusService,ObjectConversationService,type ConversationService,type TaskRun,type TaskRunService} from '@teloa/backend'
+import {PlanService,MarketContentStore,PlanOccurrenceService,PlanSchedulerStatusService,ObjectConversationService,type ConversationService,type PlanOccurrence,type TaskRun,type TaskRunService} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {PlanCoordinator} from './plan-coordinator.ts'
 import {PlanDshDispatcher} from './plan-dispatch-dsh.ts'
@@ -73,6 +73,14 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
  const executionContext=async(db:Parameters<PlanOccurrenceService['executionContext']>[0],value:string,taskId:string)=>{
   actor(value);return (await services()).occurrences.executionContext(db,owner,taskId)
  }
+ const dispatchOccurrence=async(occurrence:PlanOccurrence,signal:AbortSignal)=>{
+  actor(occurrence.ownerId);signal.throwIfAborted()
+  const runtime=await services(signal)
+  const dispatched=await runtime.occurrences.dispatchTask(owner,{claimId:occurrence.id,taskRequestId:occurrence.taskRequestId,now:now()})
+  signal.throwIfAborted()
+  const run=await dispatchExecution(owner,{claimId:occurrence.id,taskId:dispatched.task.id,taskCreatedVersion:1,taskTitle:occurrence.fields.title,roleId:occurrence.fields.roleId,roleVersion:occurrence.roleVersion},signal)
+  return {occurrence,task:dispatched.task,run:run.run}
+ }
  const trigger=async(input:unknown,signal:AbortSignal)=>{
   signal.throwIfAborted()
   const runtime=await services(signal),claimed=await runtime.occurrences.trigger(owner,input)
@@ -83,7 +91,7 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
   const run=await dispatchExecution(owner,{claimId:claimed.occurrence.id,taskId:dispatched.task.id,taskCreatedVersion:1,taskTitle:claimed.occurrence.fields.title,roleId:claimed.occurrence.fields.roleId,roleVersion:claimed.occurrence.roleVersion},signal)
   return {occurrence:claimed.occurrence,task:dispatched.task,run:run.run}
  }
- return {coordinator,overview,status,executionHistory,executionContext,trigger,readPorts:{
+ return {coordinator,overview,status,executionHistory,executionContext,trigger,dispatchOccurrence,readPorts:{
   overview:async(value:string,input:unknown)=>{actor(value);return overview(input)},
   status:async(value:string,input:unknown)=>{actor(value);return status(input)},
   executionHistory:async(value:string,input:unknown)=>{actor(value);return executionHistory(input)},

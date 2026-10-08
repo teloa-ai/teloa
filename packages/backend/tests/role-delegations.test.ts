@@ -1,0 +1,61 @@
+import test,{before,after} from 'node:test'
+import assert from 'node:assert/strict'
+import {randomUUID} from 'node:crypto'
+import {setupRoleWork,loadRoleWorkModule,roleFixture,insertRoleRun,identity,ownerAuthority,delegationFields} from './role-work-test-fixture.ts'
+let env:Awaited<ReturnType<typeof setupRoleWork>>,api:Record<string,any>
+before(async()=>{env=await setupRoleWork();api=await loadRoleWorkModule('role-delegations');const consent=await loadRoleWorkModule('twin-execution-consents');if(consent.initializeTwinExecutionConsents)await consent.initializeTwinExecutionConsents(env.pool);if(api.initializeRoleDelegations)await api.initializeRoleDelegations(env.pool)})
+after(async()=>{await env?.close()})
+const service=()=>{assert.equal(typeof api.RoleDelegationService,'function','需要真实委托生命周期服务');return new api.RoleDelegationService(env.pool,identity,ownerAuthority)}
+test('委托并发保存只产生一份；角色默认身份不变，过期或扩大权限拒绝',async()=>{
+ const {owner,role}=await roleFixture(env.pool),delegations=service(),command={requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:null,action:'save',fields:delegationFields}
+ const [a,b]=await Promise.all([delegations.change(owner,command),delegations.change(owner,command)])
+ assert.deepEqual(a,b);assert.equal(a.roleVersion,1)
+ await assert.rejects(delegations.change(owner,{...command,fields:{...delegationFields,safeRecovery:true}}),{code:'teloa/conflict'})
+ const ungranted=await roleFixture(env.pool)
+ await assert.rejects(new api.RoleDelegationService(env.pool,identity).change(ungranted.owner,{...command,roleId:ungranted.role.id,requestId:randomUUID()}),{code:'teloa/forbidden'})
+ await assert.rejects(delegations.change(ungranted.owner,{...command,roleId:ungranted.role.id,requestId:randomUUID(),fields:{...delegationFields,allowedTools:['write_all']}}),{code:'teloa/forbidden'})
+ await assert.rejects(delegations.change(owner,{...command,requestId:randomUUID(),authorization:'self'}),{code:'teloa/invalid-input'})
+ assert.equal((await env.pool.query('select state from teloa_roles where id=$1',[role.id])).rows[0].state,'active')
+ const current=await delegations.get(owner,{roleId:role.id});assert.equal(current.delegations.length,1);assert.equal(current.consents.length,0)
+ await assert.rejects(delegations.get('other',{roleId:role.id}),{code:'teloa/forbidden'})
+})
+test('暂停结束依据真实Run；未收口为pausing/ending，静态读取不伪造完成',async()=>{
+ const {owner,role,taskId}=await roleFixture(env.pool),delegations=service()
+ const saved=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:null,action:'save',fields:delegationFields})
+ const runId=await insertRoleRun(env.pool,owner,role.id,taskId)
+ const paused=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:saved.version,action:'pause'})
+ assert.equal(paused.state,'pausing');assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,false)
+ await assert.rejects(delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:paused.version,action:'resume'}),{code:'teloa/conflict'})
+ await env.pool.query("update teloa_task_runs set state='ended',evidence=$2 where id=$1",[runId,JSON.stringify({state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'aborted'})])
+ assert.equal((await delegations.get(owner,{roleId:role.id})).delegations[0].state,'pausing')
+ const settled=await delegations.reconcile(owner,{roleId:role.id,expectedVersion:paused.version});assert.equal(settled.state,'paused')
+ assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,true)
+ const resumed=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:settled.version,action:'resume'})
+ const second=await insertRoleRun(env.pool,owner,role.id,taskId)
+ const ending=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:resumed.version,action:'end'});assert.equal(ending.state,'ending')
+ await env.pool.query("update teloa_task_runs set state='ended',evidence=$2 where id=$1",[second,JSON.stringify({state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'aborted'})])
+ const ended=await delegations.reconcile(owner,{roleId:role.id,expectedVersion:ending.version});assert.equal(ended.state,'ended')
+ assert.equal((await env.pool.query('select state from teloa_roles where id=$1',[role.id])).rows[0].state,'active')
+})
+test('工具编辑闸核对未收口孩子/未知运行关联，角色版本变更保留历史但不续签',async()=>{
+ const {owner,role,taskId}=await roleFixture(env.pool),delegations=service()
+ const saved=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:null,action:'save',fields:delegationFields})
+ await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:1,expectedVersion:saved.version,action:'pause'})
+ const runId=await insertRoleRun(env.pool,owner,role.id,taskId,'ended')
+ await env.pool.query("insert into teloa_task_run_subagents(owner_id,run_id,reservation_id,state,created_at) values($1,$2,'child-reserved','reserved',now())",[owner,runId])
+ assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,false)
+ const db=await env.pool.connect();try{await db.query('begin');await assert.rejects(api.assertRoleDelegationsInactive(db,owner,role),{code:'teloa/conflict'});await db.query('rollback')}finally{db.release()}
+ await env.pool.query("update teloa_task_run_subagents set state='abandoned',ended_at=now(),stop_reason='not-submitted' where reservation_id='child-reserved'")
+ assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,true)
+ await env.pool.query("update teloa_task_runs set evidence='{}' where id=$1",[runId])
+ assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,false)
+ await env.pool.query('update teloa_task_runs set evidence=$2 where id=$1',[runId,JSON.stringify({state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'aborted'})])
+ const invalidFlow=randomUUID()
+ await env.pool.query("insert into teloa_task_run_flows(flow_id,owner_id,run_id,request_id,request_spec,definition_version,state,steps,created_at,updated_at) values($1,$2,$3,$4,'{}',1,'completed','[]',now(),now())",[invalidFlow,owner,runId,randomUUID()])
+ assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,false)
+ await env.pool.query("insert into teloa_task_run_runtime_links(owner_id,run_id,kind,native_id,session_id,payload) values($1,$2,'job','owner:test:session','session',$3)",[owner,runId,JSON.stringify({record:'owner',runtimeId:'test',requestId:randomUUID()})])
+ assert.equal((await delegations.get(owner,{roleId:role.id})).canEditExecution,false)
+ await env.pool.query('update teloa_roles set version=2 where id=$1',[role.id])
+ const current=await delegations.get(owner,{roleId:role.id});assert.equal(current.roleVersion,2);assert.equal(current.delegations[0].roleVersion,1)
+ await assert.rejects(delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:2,expectedVersion:saved.version,action:'resume'}),{code:'teloa/version-conflict'})
+})

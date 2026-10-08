@@ -3,6 +3,24 @@ import type { PlanCreateFields, PlanSource, PlanUpdateFields, SavedPlan } from '
 import { isPlanNotificationPolicy, type PlanFields } from './continuous-preview.ts'
 import type { PlanTemplate } from './plan-template.ts'
 import { canReceiveTask, type PreviewRole } from './role-preview.ts'
+import type {PlanApi,PlanAction} from './plan-api.ts'
+import type {WorkControlApi} from './work-control-api.ts'
+
+/** 定义暂停/结束先通知真实执行收尾；恢复必须由候选核验协调器批准，再启用计划。 */
+export async function persistentPlanAction(api:PlanApi,controls:WorkControlApi|undefined,plan:SavedPlan,action:PlanAction,note?:string):Promise<SavedPlan>{
+ if(!plan.workDefinition)return action==='enable'&&plan.completionPolicy?.kind==='verified'?api.changeConfirmed(plan.id,plan.version,action,note):api.change(plan.id,plan.version,action,note)
+ if(!controls)throw Error('长期工作控制服务尚未接入。')
+ let control=await controls.get(plan.workDefinition.definitionControlId)
+ if(control.ownerId!==plan.ownerId||control.scope!=='definition')throw Error('长期定义控制不属于当前计划。')
+ if(action==='enable'){
+  if(control.state==='paused'){const candidates=await controls.inspect(control.id);control=await controls.resume(control,candidates.map(v=>v.runId))}
+  if(control.state!=='active')throw Error('当前长期工作仍在收尾或已结束，不能启动。')
+  return api.changeConfirmed(plan.id,plan.version,action,note)
+ }
+ if(action==='pause'&&control.state==='active')await controls.change(control,'pause')
+ if(action==='archive'&&control.state!=='stopped'&&control.state!=='stopping')await controls.change(control,'stop')
+ return api.change(plan.id,plan.version,action,note)
+}
 
 const uuid=(value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const hash=(value:string|null):value is string=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value)
@@ -30,5 +48,5 @@ export function persistentPlanUpdate(fields:PlanFields,plan:SavedPlan):PlanUpdat
  if(fields.scope!==plan.scope||fields.roleId!==plan.roleId)throw Error('已保存计划不能在编辑时更换业务范围或负责员工。')
  if(fields.trigger.kind==='event')throw Error('业务事件触发尚未接入真实计划服务，计划未保存。')
  if(!isPlanNotificationPolicy(fields.notificationPolicy))throw Error('请本人核对并选择通知策略，计划未保存。')
- return {title:fields.title.trim(),goal:fields.goal.trim(),dataScope:fields.dataScope.trim(),delivery:fields.delivery.trim(),trigger:readScheduleTrigger(fields.trigger),notificationPolicy:fields.notificationPolicy}
+ return {title:fields.title.trim(),goal:fields.goal.trim(),dataScope:fields.dataScope.trim(),delivery:fields.delivery.trim(),trigger:readScheduleTrigger(fields.trigger),notificationPolicy:fields.notificationPolicy,...(fields.completionPolicy?{completionPolicy:fields.completionPolicy}:{})}
 }

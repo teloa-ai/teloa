@@ -2,13 +2,27 @@ import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-tool-jobs'
 import {WorkError} from '@teloa/contract'
 import {taskRunTeamMessageKey} from './task-run-team-records.ts'
+import type {GoalObservationContext} from '@teloa/contract'
+import {nativeInputIdentity} from './native-input-access.ts'
+
+/** 原生 source 只是路由提示；必须有同 Run 的持久受理票据和精确 Inbox 提交事实。 */
+function ownsGoalMessage(events:readonly SessionEvent[],event:Extract<SessionEvent,{type:'user/message'}>,context?:GoalObservationContext):boolean{
+ if(!context)return false
+ const source=event.data.source as unknown as Record<string,unknown>,b=context.binding
+ if(source.kind!=='goal'||Object.keys(source).some(key=>!['kind','goalId','revision','round'].includes(key)))return false
+ const receipts=context.continuations.filter(r=>r.state==='accepted'&&r.ownerId===b.ownerId&&r.runId===b.runId&&r.sessionId===b.sessionId&&r.goalId===b.goalId&&r.controlId===b.controlId&&r.controlGeneration<=b.controlGeneration&&r.hostGeneration<=b.hostGeneration&&r.revision<=b.revision&&r.goalId===source.goalId&&r.revision===source.revision&&r.round===source.round&&r.messageId===event.data.id)
+ if(receipts.length!==1)return false
+ const r=receipts[0]!,accepted=r.acceptedSeq===null?undefined:events[r.acceptedSeq]
+ if(!accepted||accepted.type!=='agent/inbox/spliced'||accepted.seq>=event.seq||accepted.data.inserted.length!==1)return false
+ try{return nativeInputIdentity(event.data).payloadSha256===r.payloadSha256&&nativeInputIdentity(accepted.data.inserted[0]!).payloadSha256===r.payloadSha256}catch{return false}
+}
 
 export type TaskRunObservation = {state:'unobserved'}
  | {state:'active';turn:number;messageSeq:number}
  | {state:'ended';turn:number;messageSeq:number;endSeq:number;reason:string}
 
 /** 原请求保持证据锚点；只有官方后台通知可续接，其他人类/插件轮会切断续接资格。 */
-export function observeTaskRunTimeline(events:readonly SessionEvent[],requestId:string,teamMessages:ReadonlySet<string>=new Set(),visitOwned?:(event:SessionEvent)=>void):{observation:TaskRunObservation;turn?:number;authorized:boolean}{
+export function observeTaskRunTimeline(events:readonly SessionEvent[],requestId:string,teamMessages:ReadonlySet<string>=new Set(),visitOwned?:(event:SessionEvent)=>void,goal?:GoalObservationContext):{observation:TaskRunObservation;turn?:number;authorized:boolean}{
  if(!requestId.trim())throw new WorkError('teloa/invalid-input','执行请求身份不能为空。')
  let open:number|undefined,owned=false,foreign=false,lastOwnedTurn:number|undefined
  let result:TaskRunObservation={state:'unobserved'}
@@ -33,21 +47,24 @@ export function observeTaskRunTimeline(events:readonly SessionEvent[],requestId:
     if(open===undefined||result.state!=='unobserved')corrupt()
     result={state:'active',turn:open!,messageSeq:event.seq};owned=true;lastOwnedTurn=open
    }else if(result.state!=='unobserved'){
-    if((source.kind==='tool-jobs'||teamMessages.has(taskRunTeamMessageKey(event)??''))&&!foreign&&open!==undefined&&(result.state==='active'||result.reason==='completed')){
+    const goalOwned=ownsGoalMessage(events,event,goal)
+    if((source.kind==='tool-jobs'||teamMessages.has(taskRunTeamMessageKey(event)??'')||goalOwned)&&!foreign&&open!==undefined&&(result.state==='active'||result.reason==='completed'||goalOwned)){
      result={state:'active',turn:result.turn,messageSeq:result.messageSeq};owned=true;lastOwnedTurn=open
-    }else if(source.kind==='user'||!owned){
+    }else if(source.kind==='user'||source.kind==='goal'||!owned){
      foreign=true
     }
    }
   }
   if(owned&&!foreign)visitOwned?.(event)
  }
+ // 暂停和受阻仍是可继续的 Goal，不等同本轮业务完成；终止由明确停止路径收口。
+ if(!foreign&&result.state==='ended'&&goal&&(goal.goalPhase!=='complete'||goal.pendingRound||goal.childrenOutstanding))result={state:'active',turn:result.turn,messageSeq:result.messageSeq}
  return {observation:result,authorized:owned&&!foreign,...(lastOwnedTurn===undefined?{}:{turn:lastOwnedTurn})}
 }
 
 /** 读取完整原生日志；终轮仅代表执行收口候选，后台工作由官方服务另行核验。 */
-export function observeTaskRun(events:readonly SessionEvent[],requestId:string,teamMessages?:ReadonlySet<string>):TaskRunObservation{
- return observeTaskRunTimeline(events,requestId,teamMessages).observation
+export function observeTaskRun(events:readonly SessionEvent[],requestId:string,teamMessages?:ReadonlySet<string>,goal?:GoalObservationContext):TaskRunObservation{
+ return observeTaskRunTimeline(events,requestId,teamMessages,undefined,goal).observation
 }
 
 export type StopFreeze={seq:number;since:number}

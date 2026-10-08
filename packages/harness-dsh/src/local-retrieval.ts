@@ -25,8 +25,8 @@ export type LocalRetrievalPorts={
  owner:string
  conversation:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:'pending'|'ready';scopeIds:readonly string[]}>
  readTaskPolicy:TaskToolPolicyReader
- /** 受管任务的主体与目标范围（`taskKnowledgeAuthorization` 的结果，岗位范围已收窄）；普通会话不调。 */
- taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[]}>
+ /** 受管任务的主体、目标范围与可信资料许可；普通会话不调，空许可不得回落全部资料。 */
+ taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null}>
  /** 本人主体（含全部已登记范围）：只用于界面端点，模型工具永远拿不到它。 */
  humanActor:()=>Promise<ResourceActor>
  retrieval:()=>Promise<Pick<RetrievalIndexService,'search'|'enroll'|'remove'|'status'|'buildPending'|'reconcile'>>
@@ -251,7 +251,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  })
 
  // —— 工具：主体判定与参数核对在前置守卫与正文各做一次（确认期间身份可能变化）。 ——
- const subject=async(exec:Pick<ToolExecution,'agent'|'signal'>):Promise<{actor:ResourceActor;targetScopes:string[]}>=>{
+ const subject=async(exec:Pick<ToolExecution,'agent'|'signal'>):ReturnType<LocalRetrievalPorts['taskAuthorization']>=>{
   if(!exec.agent)throw new WorkError('teloa/not-bound','本地检索需要已绑定的工作会话。')
   const session=exec.agent.session,sessionId=session.id
   if(session.header.origin==='subagent')throw forbidden('子 Agent 会话不能使用本地检索。')
@@ -273,18 +273,20 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
    await waitForSelection()
-   const input=searchInput(args),{actor,targetScopes}=await subject(exec)
+   const input=searchInput(args),{actor,targetScopes,knowledgeIds}=await subject(exec)
    // 授权核验之后才取模型：未就绪不推理、不准备。
    const embedder=requireEmbedder()
    const generation=selectionGeneration
    const retrieval=await ports.retrieval()
-   const indexes=await retrieval.status(actor,embedder.profileHash)
-   if(!pauseKnown)await pauseLoaded
-   // 仅整理本人已经加入的资料，沿现有单飞流程；查询取消不撤回已经受理的整理。
-   autoBuild(indexes.items)
-   await waitBuild(exec.signal)
+   const indexes=await retrieval.status(actor,embedder.profileHash,knowledgeIds)
+   // 受限任务只查询已整理的许可资料；不能借自动整理取得本人全量资料的正文或passage。
+   if(knowledgeIds===undefined||knowledgeIds===null){
+    if(!pauseKnown)await pauseLoaded
+    autoBuild(indexes.items)
+    await waitBuild(exec.signal)
+   }
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
-   const result=await retrieval.search(actor,targetScopes,input,embedder,exec.signal)
+   const result=await retrieval.search(actor,targetScopes,input,embedder,exec.signal,knowledgeIds)
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
    exec.signal.throwIfAborted()
    return JSON.stringify(readRetrievalSearchResult(result))

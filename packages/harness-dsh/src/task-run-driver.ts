@@ -1,9 +1,10 @@
 import type {TaskExecutionScope,TaskRun,TaskRunService,TaskRunSkillDatabase} from '@teloa/backend'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
-import {WorkError,type RoleRuntimeConfig,type TaskRunModelPolicy} from '@teloa/contract'
+import {WorkError,type RoleRuntimeConfig,type TaskRunModelPolicy,type WorkControl} from '@teloa/contract'
 import {observeTaskRun,type TaskRunObservation} from './task-run-observation.ts'
 import {readTaskRunGroupResult} from './task-run-group-result.ts'
 import {isTextOnlyTaskRun} from './task-run-background.ts'
+import type {GoalObservationContext} from '@teloa/contract'
 
 /** 恢复例外只认固定单轮的纯文本完成证据；后台续轮及工具/子级迹象都保守拒绝。 */
 function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:TaskRunObservation):boolean{
@@ -29,6 +30,8 @@ function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:Ta
 }
 
 export type TaskRunPorts={
+ /** 真实持久 round/definition 状态；暂停不把原生取消结束倒推为业务终态。 */
+ controlState?:(run:TaskRun)=>Promise<WorkControl['state']>
  stableStart?:<T>(operation:()=>Promise<T>)=>Promise<T>
  resolvePreset?:(agentPresetId:undefined|string,signal:AbortSignal)=>Promise<string>
  prepareSession?:(sessionId:string,agentPresetId:undefined|string,signal:AbortSignal)=>Promise<string>
@@ -44,7 +47,11 @@ export type TaskRunPorts={
  subagentState?:(run:TaskRun,signal:AbortSignal)=>Promise<'none'|'outstanding'>
  /** 官方后台工作及排队的官方续轮尚未结清时，Run 必须保持 active。 */
  backgroundState?:(run:TaskRun)=>Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:boolean}>
+ /** 持久工作步骤尚待回执；业务等待不属于原生活动，不阻塞暂停/结束收尾。 */
+ flowState?:(run:TaskRun)=>Promise<'none'|'outstanding'>
  continuations?:(run:TaskRun,events:readonly SessionEvent[])=>Promise<ReadonlySet<string>>
+ goalObservation?:(run:Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>,events:readonly SessionEvent[])=>Promise<GoalObservationContext|undefined>
+ stopGoal?:(run:TaskRun)=>Promise<void>
  /** 只取消服务端登记归属本 Run 的子会话；回执不代表已经退出。 */
  stopChildren?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  /**
@@ -126,7 +133,7 @@ export class TaskRunDriver{
    if(run.groupContext){
     const events=(await this.ports.events(run)).slice(0,run.evidence.endSeq+1)
     signal?.throwIfAborted()
-    const text=readTaskRunGroupResult(events,run.nativeRequestId,await this.ports.continuations?.(run,events))
+    const text=readTaskRunGroupResult(events,run.nativeRequestId,await this.ports.continuations?.(run,events),await this.ports.goalObservation?.(run,events))
     signal?.throwIfAborted()
     if(text)await this.ports.publishGroupResult?.(run,text)
    }
@@ -138,15 +145,22 @@ export class TaskRunDriver{
   signal?.throwIfAborted()
   const continuations=await this.ports.continuations?.(run,events)
   signal?.throwIfAborted()
-  let observed=observeTaskRun(events,run.nativeRequestId,continuations)
+  const goal=await this.ports.goalObservation?.(run,events)
+  signal?.throwIfAborted()
+  let observed=observeTaskRun(events,run.nativeRequestId,continuations,goal)
   if(observed.state==='unobserved')return run
+  const control=await this.ports.controlState?.(run)
+  signal?.throwIfAborted()
+  if(control==='pausing'||control==='paused')return run
   const children=await this.ports.subagentState?.(run,signal??new AbortController().signal)
   signal?.throwIfAborted()
   const outstanding=background?.outstanding===true||children==='outstanding'
-  if(outstanding&&observed.state==='ended')observed={state:'active',turn:observed.turn,messageSeq:observed.messageSeq}
+  const flowPending=run.stopRequestedAt==null&&control!=='stopping'&&control!=='stopped'&&observed.state==='ended'&&await this.ports.flowState?.(run)==='outstanding'
+  signal?.throwIfAborted()
+  if((outstanding||flowPending)&&observed.state==='ended')observed={state:'active',turn:observed.turn,messageSeq:observed.messageSeq}
   // 旧 owner 只证明宿主世代变化。固定空权限且完整、无工具/子级的单个文本轮，仍以原生结尾为准。
-  const textCompletion=background?.ownerOnly===true&&(continuations?.size??0)===0&&completedTextRun(run,events,observed)
-  if(!outstanding&&background?.interrupted===true&&!textCompletion)observed={state:'ended',turn:observed.turn,messageSeq:observed.messageSeq,endSeq:events.length-1,reason:'interrupted'}
+  const textCompletion=goal===undefined&&background?.ownerOnly===true&&(continuations?.size??0)===0&&completedTextRun(run,events,observed)
+  if(!outstanding&&!flowPending&&background?.interrupted===true&&!textCompletion)observed={state:'ended',turn:observed.turn,messageSeq:observed.messageSeq,endSeq:events.length-1,reason:'interrupted'}
   // 取消落在已无活跃活动的 agent 上是上游文档化的 no-op：原生 turn/end 永远不会来，只等日志
   // 就永远没有终态。三个条件同时成立才收口——记录上已有停止意图、宿主自报不在运行、日志 seq
   // 已冻结够久——并把冻结到的 seq 作为 endSeq 留作依据。少一个条件都按「还在跑」原样回填。
@@ -159,7 +173,7 @@ export class TaskRunDriver{
   const saved=await this.service.record(owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:observed})
   signal?.throwIfAborted()
   if(saved.groupContext&&observed.state==='ended'){
-   const text=readTaskRunGroupResult(events,saved.nativeRequestId,continuations)
+   const text=readTaskRunGroupResult(events,saved.nativeRequestId,continuations,goal)
    if(text)await this.ports.publishGroupResult?.(saved,text)
   }
   return saved

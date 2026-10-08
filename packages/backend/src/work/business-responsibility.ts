@@ -3,6 +3,7 @@ import {WorkError,isBusinessScopeKey,roleSupportsScope,readBusinessResponsibilit
 import {BusinessConfigurationStore} from './business-configuration-store.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {readStoredRole} from './roles.ts'
+import {authorizeRoleTaskAssignment,readCurrentTwinDelegationAuthorization} from './role-task-authorization.ts'
 
 export type BusinessResponsibilityActor={ownerId:string;scopeIds:readonly string[]}
 const forbidden=()=>new WorkError('teloa/forbidden','业务不存在、尚未采用配置或当前主体无权管理负责人。')
@@ -52,15 +53,16 @@ export class BusinessResponsibilityService{
   const row=(await db.query('select * from teloa_business_responsibilities where owner_id=$1 and scope_id=$2 for '+(write?'update':'share'),[actor.ownerId,scope])).rows[0]
   return selection(row,actor.ownerId,scope)
  }
- private async role(db:PoolClient,owner:string,id:string){
-  const row=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,id])).rows[0]
+ private async role(db:PoolClient,owner:string,id:string,lock:'share'|'update'='share'){
+  const row=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for '+lock,[owner,id])).rows[0]
   return row?readStoredRole(row):undefined
  }
  private async project(db:PoolClient,actor:BusinessResponsibilityActor,value:BusinessResponsibility):Promise<BusinessResponsibility>{
   if(value.roleId===null)return value
   const role=await this.role(db,actor.ownerId,value.roleId)
   if(!role)return {...value,availability:'missing',currentRoleVersion:null}
-  const availability=role.kind!=='employee'||!roleSupportsScope(role.scopes,value.scope)?'forbidden':role.state==='active'?'ready':role.state
+  let availability:BusinessResponsibility['availability']=!roleSupportsScope(role.scopes,value.scope)?'forbidden':role.state==='active'?'ready':role.state
+  if(role.kind==='twin'&&availability==='ready'){try{await readCurrentTwinDelegationAuthorization(db,actor.ownerId,role,value.scope)}catch(error){if(!(error instanceof WorkError)||!['teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/invalid-input'].includes(error.code))throw error;availability='forbidden'}}
   try{return readBusinessResponsibility({...value,availability,currentRoleVersion:role.version},value.scope)}catch{throw corrupt()}
  }
  async read(actor:BusinessResponsibilityActor,input:unknown):Promise<BusinessResponsibility>{
@@ -82,16 +84,19 @@ export class BusinessResponsibilityService{
    if(receipt)return this.readReceipt(receipt,request,current)
    if(current.version!==request.expectedVersion)throw new WorkError('teloa/version-conflict','业务负责人已变化，请刷新后核对。')
    const selected={scope:request.scope,version:current.version+1,roleId:request.role?.id??null,selectedRoleVersion:request.role?.expectedVersion??null,availability:request.role?'ready' as const:'none' as const,currentRoleVersion:request.role?.expectedVersion??null}
+   let execution:Awaited<ReturnType<typeof authorizeRoleTaskAssignment>>|undefined
    if(request.role){
-    const role=await this.role(db,actor.ownerId,request.role.id)
-    if(!role||role.kind!=='employee'||!roleSupportsScope(role.scopes,request.scope))throw new WorkError('teloa/forbidden','指定员工不存在或不支持此业务。')
+    const role=await this.role(db,actor.ownerId,request.role.id,'update')
+    if(!role||!roleSupportsScope(role.scopes,request.scope))throw new WorkError('teloa/forbidden','指定同事不存在或不支持此业务。')
     if(role.version!==request.role.expectedVersion)throw new WorkError('teloa/version-conflict','指定员工版本已变化，请重新核对。')
     if(role.state!=='active')throw new WorkError('teloa/conflict','指定员工已暂停或退役，不能设为业务负责人。')
+    execution=await authorizeRoleTaskAssignment(db,this.pool,actor.ownerId,role,request.scope)
    }
    const result=selected
+   execution?.assertCurrent()
    await db.query('insert into teloa_business_responsibilities(owner_id,scope_id,version,role_id,selected_role_version) values($1,$2,$3,$4,$5) on conflict(owner_id,scope_id) do update set version=excluded.version,role_id=excluded.role_id,selected_role_version=excluded.selected_role_version,updated_at=now()',[actor.ownerId,request.scope,result.version,result.roleId,result.selectedRoleVersion])
    await db.query('insert into teloa_business_responsibility_requests(owner_id,request_id,scope_id,request_spec,result) values($1,$2,$3,$4,$5)',[actor.ownerId,request.requestId,request.scope,JSON.stringify(request),JSON.stringify(result)])
-   return result
+   execution?.assertCurrent();return result
   })
  }
  /** 只核对完整原请求；原结果不代表岗位当前可执行，也不能恢复已变更选择。 */

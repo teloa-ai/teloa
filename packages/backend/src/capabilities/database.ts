@@ -2,7 +2,7 @@ import { lstat,mkdir,readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { WorkError,isRecord } from '@teloa/contract'
 import { createPublicReferenceCatalog } from '@teloa/mcp-reference/local'
-import { ResourceService } from './resources.ts'
+import { ResourceService,type ResourceSourceCatalog } from './resources.ts'
 import { IndustryReferenceCatalog,combineReferenceCatalogs } from './industry-reference-catalog.ts'
 import { MarketContentStore } from '../market/content-store.ts'
 import { IndustryLoadService } from '../work/industry-loads.ts'
@@ -23,7 +23,7 @@ export function databaseConnectionAllowed(connectionString:string,deployment?:st
 }
 
 /** `options.deployment`：宿主传入只读启动快照里的 TELOA_DEPLOYMENT（工作区 .env 不能借它放宽主机白名单）；缺省读 process.env 只给脚本用。 */
-export async function openResourceDatabase(path:string,identity:{id:()=>string;now:()=>string},options:{deployment?:string|undefined}={deployment:process.env.TELOA_DEPLOYMENT}):Promise<{pool:Pool;dispatchLocks:Pool;close:()=>Promise<void>;service:ResourceService;knowledge:MarkdownKnowledgeService;knowledgeTree:KnowledgeTreeService;knowledgeResources:KnowledgeResourceService;retrieval:RetrievalIndexService;sources:ReturnType<typeof combineReferenceCatalogs>}>{
+export async function openResourceDatabase(path:string,identity:{id:()=>string;now:()=>string},options:{deployment?:string|undefined;localMaterialCatalog?:(pool:Pool)=>Promise<ResourceSourceCatalog>}={deployment:process.env.TELOA_DEPLOYMENT}):Promise<{pool:Pool;dispatchLocks:Pool;close:()=>Promise<void>;service:ResourceService;knowledge:MarkdownKnowledgeService;knowledgeTree:KnowledgeTreeService;knowledgeResources:KnowledgeResourceService;retrieval:RetrievalIndexService;sources:ReturnType<typeof combineReferenceCatalogs>}>{
   let config:unknown
   try{
     const entry=await lstat(path)
@@ -61,7 +61,9 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
   const market=new MarketContentStore(pool,identity)
   const loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market))
   const knowledge=new MarkdownKnowledgeService(pool,knowledgeRoot,'default',identity)
-  const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,market,loads),new MarkdownKnowledgeCatalog(knowledge))
+  let localMaterials:ResourceSourceCatalog|undefined
+  try{localMaterials=await options.localMaterialCatalog?.(pool)}catch(error){await close();throw error}
+  const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,market,loads),new MarkdownKnowledgeCatalog(knowledge),localMaterials)
   const service=new ResourceService(pool,sources,identity)
   return {pool,dispatchLocks,close,service,knowledge,knowledgeTree:new KnowledgeTreeService(pool,'default',identity),knowledgeResources:new KnowledgeResourceService(pool,knowledge,service),retrieval:new RetrievalIndexService(pool,service,identity),sources}
 }

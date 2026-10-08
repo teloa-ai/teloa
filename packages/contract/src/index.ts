@@ -186,3 +186,20 @@ export type {
 } from './business-record-import-xlsx.ts'
 export {productEventNames,sanitizeProductEvent,type ProductEventName,type ProductAnalyticsEvent} from './product-analytics.ts'
 export {isToolResourceUseSnapshot,type RecordedToolResourceUse,type RecordedNestedToolResourceUse,type ToolResourceUseSnapshot} from './tool-resource-use.ts'
+export type {RoleWorkAuthorization,TwinExecutionConsent,RoleWorkDelegation,RoleMemoryView,RunRoleSnapshot,WorkBudgetPolicy} from './role-work.ts'
+export type {WorkLineage,WorkSource} from './work-lineage.ts'
+
+export {readRoleWorkAuthorization,readRunRoleSnapshot} from './role-work.ts'
+export {readWorkLineage,readWorkSource} from './work-lineage.ts'
+
+export {readGoalRunBinding,readGoalContinuationReceipt} from './task-run-goal.ts'
+export type {GoalRunBinding,GoalContinuationReceipt,GoalObservationContext} from './task-run-goal.ts'
+
+export {readTaskCompletionPolicy,readCompletionCandidate,type TaskCompletionPolicy,type CompletionCandidate} from './task-completion.ts'
+
+export * from './work-control.ts'
+export * from './group-routing-outbox.ts'
+export {readWorkBudgetPolicy,type BudgetReservation} from './work-budget.ts'
+export * from './plan-work.ts'
+export * from './work-events.ts'
+export * from './work-progress.ts'

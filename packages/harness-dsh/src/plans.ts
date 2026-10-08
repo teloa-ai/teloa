@@ -1,11 +1,17 @@
-import {WorkError,isRecord,readScheduleTrigger,taskDefinition} from '@teloa/contract'
+import {readPlanWorkConfiguration,readPlanWorkDefinition} from '@teloa/contract'
+import {WorkError,isRecord,readScheduleTrigger,readTaskCompletionPolicy,taskDefinition} from '@teloa/contract'
 
 export const planEndpoints=['plans/list','plans/get','plans/create','plans/change','plans/trigger'] as const
+/** 只在本人确认 RPC 路由登记，不加入模型/IM 通用端点集合。 */
+export const confirmedPlanEndpoints=['plans/create-confirmed','plans/change-confirmed','plans/configure-work-confirmed'] as const
 export type PlanOperations={
  list:(owner:string,input:unknown)=>Promise<unknown>
  get:(owner:string,input:unknown)=>Promise<unknown>
  create:(owner:string,input:unknown)=>Promise<unknown>
  change:(owner:string,input:unknown)=>Promise<unknown>
+ configureWorkConfirmed?:(owner:string,input:unknown)=>Promise<unknown>
+ createConfirmed?:(owner:string,input:unknown)=>Promise<unknown>
+ changeConfirmed?:(owner:string,input:unknown)=>Promise<unknown>
  trigger?:(owner:string,input:unknown,signal:AbortSignal)=>Promise<unknown>
 }
 
@@ -33,12 +39,13 @@ function source(value:unknown,stored:boolean):void{
  if(row.kind!=='market-content'||Object.keys(row).length!==5||!uuid(row.contentId)||!hash(row.contentHash)||!stableId(row.resourceId)||!semver(row.resourceVersion))throw invalid()
 }
 function fields(value:unknown,creating:boolean):void{
- const keys=['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy',...(creating?['expectedRoleVersion']:[])]
+ const keys=['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy',...(creating?['expectedRoleVersion']:[])]
  const row=object(value,keys)
  try{
   const normalized=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
   if(normalized.title!==row.title||normalized.goal!==row.goal||normalized.scope!==row.scope)throw Error()
   readScheduleTrigger(row.trigger)
+  if(row.completionPolicy!==undefined)readTaskCompletionPolicy(row.completionPolicy)
  }catch{throw invalid()}
  if(!text(row.dataScope,8000)||row.dataScope.trim()!==row.dataScope||!text(row.delivery,8000)||row.delivery.trim()!==row.delivery||!uuid(row.roleId)||creating&&!positive(row.expectedRoleVersion)||creating&&!notificationPolicy(row.notificationPolicy)||!creating&&row.notificationPolicy!==undefined&&!notificationPolicy(row.notificationPolicy))throw invalid()
 }
@@ -47,8 +54,8 @@ function createInput(value:unknown):void{
  if(!uuid(row.requestId))throw invalid();fields(row.fields,true);source(row.source,false)
 }
 function updateFields(value:unknown):void{
- const row=object(value,['title','goal','dataScope','delivery','trigger','notificationPolicy'])
- try{taskDefinition({title:row.title,goal:row.goal,scope:'general'});readScheduleTrigger(row.trigger)}catch{throw invalid()}
+ const row=object(value,['title','goal','dataScope','delivery','trigger','notificationPolicy','completionPolicy'])
+ try{taskDefinition({title:row.title,goal:row.goal,scope:'general'});readScheduleTrigger(row.trigger);if(row.completionPolicy!==undefined)readTaskCompletionPolicy(row.completionPolicy)}catch{throw invalid()}
  if(!text(row.dataScope,8000)||row.dataScope.trim()!==row.dataScope||!text(row.delivery,8000)||row.delivery.trim()!==row.delivery||!notificationPolicy(row.notificationPolicy))throw invalid()
 }
 function changeInput(value:unknown):void{
@@ -65,11 +72,12 @@ function triggerInput(value:unknown):void{
 }
 function plan(value:unknown,owner:string):Record<string,unknown>{
  try{
-  const row=object(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt'])
-  fields({title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{})},false);source(row.source,true)
+  const row=object(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','completionPolicy','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt','workDefinition'])
+  fields({title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{}),...(Object.hasOwn(row,'completionPolicy')?{completionPolicy:row.completionPolicy}:{})},false);source(row.source,true)
   if(!uuid(row.id)||row.ownerId!==owner||!positive(row.roleVersion)||!positive(row.version)||!positive(row.configVersion)||!['paused','active','archived'].includes(String(row.state))||!timestamp(row.createdAt)||!timestamp(row.updatedAt))throw Error()
   const archived=row.state==='archived'
   if(archived?(!text(row.archivedReason,4000)||!timestamp(row.archivedAt)):(row.archivedReason!==null||row.archivedAt!==null))throw Error()
+  if(row.workDefinition!==undefined){const work=readPlanWorkDefinition(row.workDefinition);if(work.definitionVersion!==row.configVersion||JSON.stringify(work.completion)!==JSON.stringify(row.completionPolicy))throw invalidResponse()}
   return row
  }catch{throw invalidResponse()}
 }
@@ -77,7 +85,7 @@ function plan(value:unknown,owner:string):Record<string,unknown>{
 const pick=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{if(!isRecord(value))throw invalidResponse();return Object.fromEntries(keys.map(key=>[key,value[key]]))}
 function triggerResult(value:unknown,owner:string,request:Record<string,unknown>):Record<string,unknown>{
  try{
-  const row=response(value,['occurrence','task','run']),occurrence=response(row.occurrence,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest']),task=pick(row.task,['id','ownerId']),run=pick(row.run,['id','taskId'])
+  const row=response(value,['occurrence','task','run']),occurrence=response(row.occurrence,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest','workDefinition']),task=pick(row.task,['id','ownerId']),run=pick(row.run,['id','taskId'])
   if(occurrence.ownerId!==owner||occurrence.planId!==request.planId||occurrence.taskRequestId!==request.requestId||!uuid(occurrence.id)||!positive(occurrence.planVersion)||occurrence.planVersion!==request.expectedVersion||!positive(occurrence.configVersion)||occurrence.configVersion!==request.expectedConfigVersion||!uuid(task.id)||task.ownerId!==owner||!uuid(run.id)||run.taskId!==task.id)throw Error()
   return {planId:occurrence.planId,claimId:occurrence.id,taskId:task.id,runId:run.id}
  }catch{throw invalidResponse()}
@@ -90,7 +98,7 @@ export function createPlanHandler(owner:string,get:()=>Promise<PlanOperations>){
   if(!planEndpoints.includes(endpoint as typeof planEndpoints[number]))throw new WorkError('teloa/not-found','未提供此持续计划接口。')
   if(endpoint==='plans/list')object(payload,[])
   else if(endpoint==='plans/get'){const row=object(payload,['planId']);if(!uuid(row.planId))throw invalid()}
-  else if(endpoint==='plans/create')createInput(payload)
+  else if(endpoint==='plans/create'){createInput(payload);if(isRecord(payload)&&isRecord(payload.fields)&&readTaskCompletionPolicy(payload.fields.completionPolicy).kind==='verified')throw new WorkError('teloa/forbidden','自动结项策略须由本人明确确认。')}
   else if(endpoint==='plans/trigger')triggerInput(payload)
   else changeInput(payload)
   const service=await get()
@@ -106,3 +114,16 @@ export function createPlanHandler(owner:string,get:()=>Promise<PlanOperations>){
 }
 
 export {plan as readPlanResponse}
+
+
+/** 本人专用路由仍由真实服务检查 OwnerWorkAuthority；没有端口不回退到普通 create/change。 */
+export function createConfirmedPlanHandler(owner:string,get:()=>Promise<PlanOperations>){
+ return async(endpoint:string,payload:unknown):Promise<unknown>=>{
+  if(!text(owner,128))throw new WorkError('teloa/forbidden','需要有效的宿主本人身份。')
+  if(!confirmedPlanEndpoints.includes(endpoint as typeof confirmedPlanEndpoints[number]))throw new WorkError('teloa/not-found','未提供此本人确认接口。')
+  if(endpoint==='plans/configure-work-confirmed'){const row=object(payload,['requestId','planId','expectedVersion','expectedConfigVersion','configuration','fields']);if(!uuid(row.requestId)||!uuid(row.planId)||!positive(row.expectedVersion)||!positive(row.expectedConfigVersion))throw invalid();readPlanWorkConfiguration(row.configuration);if(row.fields!==undefined){const fields=object(row.fields,['title','goal','dataScope','delivery']);if(Object.keys(fields).length!==4)throw invalid();taskDefinition({title:fields.title,goal:fields.goal,scope:'general'});if(!text(fields.dataScope,8000)||!text(fields.delivery,8000))throw invalid()}}else if(endpoint==='plans/create-confirmed')createInput(payload);else changeInput(payload)
+  const service=await get(),operation=endpoint==='plans/configure-work-confirmed'?service.configureWorkConfirmed:endpoint==='plans/create-confirmed'?service.createConfirmed:service.changeConfirmed
+  if(!operation)throw new WorkError('teloa/dependency-unavailable','本人确认自动结项服务尚未接入。')
+  return plan(await operation.call(service,owner,payload),owner)
+ }
+}

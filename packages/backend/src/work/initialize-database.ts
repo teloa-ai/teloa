@@ -1,4 +1,13 @@
+import {initializeTaskRunGoals} from './task-run-goals.ts'
+import {initializeWorkControl} from './work-control.ts'
+import {initializeWorkRecovery} from './work-recovery.ts'
+import {initializeWorkBudgets} from './work-budget.ts'
+import {initializeGroupRoutingOutbox} from './group-routing-outbox.ts'
+import {initializeWorkEvents} from './work-events.ts'
+import {initializeWorkProgress} from './work-progress.ts'
+import {initializeWorkRetries} from './work-retries.ts'
 import {initializeBusinessConversationBindings} from './business-conversation-bindings.ts'
+import {initializeRoleMemoryViews} from './role-memory-views.ts'
 import {initializeBusinessRecords} from './business-records.ts'
 import {initializeBusinessRecordImports} from './business-record-imports.ts'
 import {initializeBusinessConfigurations} from './business-configuration-store.ts'
@@ -153,9 +162,18 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeSecurityActionExecutions(pool)
  // 执行在前、通知在后：投递记录同时引用领取记录、计划、任务与执行。
  await initializeTaskRuns(pool)
+ await initializeTaskRunGoals(pool)
+ await initializeWorkControl(pool)
+ await initializeWorkRecovery(pool)
+ await initializeWorkBudgets(pool)
+ await initializeGroupRoutingOutbox(pool)
+ await initializeWorkEvents(pool)
+ await initializeWorkProgress(pool)
+ await initializeWorkRetries(pool)
  await initializeConversationWork(pool)
  // 岗位记忆要给 `teloa_task_runs` 补列，必须排在执行表之后。
  await initializeRoleMemory(pool)
+ await initializeRoleMemoryViews(pool)
  await initializeRoleDailyLogs(pool)
  await initializeNotificationDeliveries(pool)
  return {businessSqlRole}

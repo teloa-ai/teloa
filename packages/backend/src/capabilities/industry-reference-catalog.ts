@@ -66,10 +66,18 @@ export class IndustryReferenceCatalog{
  }
 }
 
-export function combineReferenceCatalogs(publicCatalog:ResourceSourceCatalog,industryCatalog:ResourceSourceCatalog,markdownCatalog?:ResourceSourceCatalog):ResourceSourceCatalog{
+export function combineReferenceCatalogs(publicCatalog:ResourceSourceCatalog,industryCatalog:ResourceSourceCatalog,markdownCatalog?:ResourceSourceCatalog,localMaterials?:ResourceSourceCatalog):ResourceSourceCatalog{
  return {
-  list:async context=>{const rows=await Promise.all([publicCatalog.list(),industryCatalog.list(context),...(markdownCatalog?[markdownCatalog.list(context)]:[])]),references=rows.flatMap(row=>row.references),ids=new Set<string>();for(const row of references){if(ids.has(row.id))throw new WorkError('teloa/storage-corrupt','工作资料来源目录存在重复身份。');ids.add(row.id)}return {schema:'teloa.reference-list/v1',references}},
-  read:(id,version,context)=>id.startsWith('industry_')?industryCatalog.read(id,version,context):id.startsWith('knowledge_')&&markdownCatalog?markdownCatalog.read(id,version,context):publicCatalog.read(id,version,context),
+  list:async context=>{const rows=await Promise.all([publicCatalog.list(),industryCatalog.list(context),...(markdownCatalog?[markdownCatalog.list(context)]:[]),...(localMaterials?[localMaterials.list(context)]:[])]),references=rows.flatMap(row=>row.references),ids=new Set<string>();for(const row of references){if(ids.has(row.id))throw new WorkError('teloa/storage-corrupt','工作资料来源目录存在重复身份。');ids.add(row.id)}return {schema:'teloa.reference-list/v1',references}},
+  read:(id,version,context)=>id.startsWith('local_material_')&&localMaterials?localMaterials.read(id,version,context):id.startsWith('industry_')?industryCatalog.read(id,version,context):id.startsWith('knowledge_')&&markdownCatalog?markdownCatalog.read(id,version,context):publicCatalog.read(id,version,context),
+  current:async(id,context)=>{
+   if(id.startsWith('local_material_')){if(!localMaterials?.current)throw new WorkError('teloa/unavailable','本机原件的指定来源读取尚未就绪。');return localMaterials.current(id,context)}
+   const catalog=id.startsWith('industry_')?industryCatalog:id.startsWith('knowledge_')&&markdownCatalog?markdownCatalog:publicCatalog
+   if(catalog.current)return catalog.current(id,context)
+   const source=(await catalog.list(context)).references.find(row=>row.id===id)
+   if(!source)throw new WorkError('teloa/source-unavailable','资料来源当前不可读取。')
+   return source
+  },
   // 只有粘贴知识可能超过整段进提示词的上限；公共参考资料与行业资料各自不超过 128 KiB，不登记字节数。
   sizes:async(refs,context)=>{const wanted=refs.filter(ref=>ref.id.startsWith('knowledge_'));return wanted.length&&markdownCatalog?.sizes?await markdownCatalog.sizes(wanted,context):new Map<string,number>()},
  }

@@ -9,7 +9,7 @@ import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {captureRetrievalPreparation,WorkError,readRetrievalSearchResult,retrievalEndpoints,type RetrievalSearchResult,type EmbeddingProviderId} from '@teloa/contract'
-import type {ResourceActor} from '@teloa/backend'
+import type {ResourceActor,RetrievalStatus} from '@teloa/backend'
 import {registerLocalRetrieval,readEmbeddingProvider,knowledgeSearchToolName,embeddingProviderId,type LocalRetrievalPorts,type EmbeddingServiceLike} from '../src/local-retrieval.ts'
 import {retrievalPreparationDetails} from '../../local-embedding/src/preparation-details.ts'
 import {registerTaskToolGuard,type TaskToolPolicy} from '../src/task-tool-guard.ts'
@@ -58,15 +58,16 @@ function stubRetrieval(options:{build?:()=>Promise<void>}={}){
  const calls:{method:string;args:unknown[]}[]=[]
  const record=(method:string,...args:unknown[])=>{calls.push({method,args})}
  const retrieval={
-  async search(actor:ResourceActor,targetScopes:string[],input:unknown,embedder:{profileHash:string;embed:(kind:'query'|'passage',texts:string[],signal:AbortSignal)=>Promise<Float32Array[]>},signal:AbortSignal){
-   record('search',actor,targetScopes,input,embedder.profileHash)
+  async search(actor:ResourceActor,targetScopes:string[],input:unknown,embedder:{profileHash:string;embed:(kind:'query'|'passage',texts:string[],signal:AbortSignal)=>Promise<Float32Array[]>},signal:AbortSignal,knowledgeIds?:readonly string[]|null){
+   record('search',actor,targetScopes,input,embedder.profileHash,...(knowledgeIds===undefined?[]:[knowledgeIds]))
+   if(knowledgeIds?.length===0)return {coverage:{searched:[],pending:[],note:fixture.coverage.note},results:[]}
    // 真实服务会先嵌入查询：这里也调一次，证明适配器把 embed 转给了扩展服务。
    await embedder.embed('query',[(input as {query:string}).query],signal)
    return structuredClone(fixture)
   },
   async enroll(actor:ResourceActor,input:unknown){record('enroll',actor,input)},
   async remove(actor:ResourceActor,input:unknown){record('remove',actor,input)},
-  async status(actor:ResourceActor,hash:string|null){record('status',actor,hash);return {items:[],enrolled:0,chunks:0}},
+  async status(actor:ResourceActor,hash:string|null,knowledgeIds?:readonly string[]|null):Promise<RetrievalStatus>{record('status',actor,hash,...(knowledgeIds===undefined?[]:[knowledgeIds]));return {items:[],enrolled:0,chunks:0}},
   async buildPending(actor:ResourceActor,embedder:{profileHash:string},signal:AbortSignal,opts:{retryFailed?:boolean}={}){
    record('buildPending',actor,embedder.profileHash,opts)
    if(options.build)await Promise.race([options.build(),new Promise<void>(done=>signal.addEventListener('abort',()=>done(),{once:true}))])
@@ -150,6 +151,40 @@ test('受管任务：用 taskKnowledgeAuthorization 给出的主体与目标范�
  const refused=await bare.call({query:'告警处置'})
  assert.equal(refused.isError,true);assert.match(text(refused),/未授权/)
  assert.equal(bare.store.of('search').length,0)
+})
+
+test('受管检索把可信资料许可传给status/search，空群许可无覆盖信息或嵌入',async t=>{
+ let knowledgeIds:readonly string[]|null=[resourceId]
+ const e=await setup({readTaskPolicy:async()=>({allowedTools:[knowledgeSearchToolName]}),taskAuthorization:async()=>({actor:{ownerId:owner,kind:'agent',scopeIds:['general']},targetScopes:['general'],knowledgeIds})})
+ t.after(()=>e.ctx.fiber.dispose())
+ assert.equal((await e.call({query:'已许可的差旅制度A'})).isError,false)
+ assert.deepEqual(e.store.of('status')[0]!.args,[{ownerId:owner,kind:'agent',scopeIds:['general']},profileHash,[resourceId]])
+ assert.deepEqual(e.store.of('search')[0]!.args.at(-1),[resourceId])
+ knowledgeIds=[];e.embedding.embedded.length=0
+ const empty=await e.call({query:'未许可的同范围产品手册B'})
+ assert.equal(empty.isError,false,text(empty))
+ assert.deepEqual(readRetrievalSearchResult(JSON.parse(text(empty))),{coverage:{searched:[],pending:[],note:fixture.coverage.note},results:[]})
+ assert.deepEqual(e.store.of('status').at(-1)!.args.at(-1),[])
+ assert.deepEqual(e.store.of('search').at(-1)!.args.at(-1),[])
+ assert.deepEqual(e.embedding.embedded,[])
+ knowledgeIds=null
+ assert.equal((await e.call({query:'员工原范围'})).isError,false)
+ assert.equal(e.store.of('search').at(-1)!.args.at(-1),null)
+ const forged=await e.call({query:'B',knowledgeIds:[resourceId]})
+ assert.equal(forged.isError,true,'模型不能指定资料许可')
+})
+
+test('受限任务查询不触发本人全量自动整理，待整理只保留许可A',async t=>{
+ const e=await setup({readTaskPolicy:async()=>({allowedTools:[knowledgeSearchToolName]}),taskAuthorization:async()=>({actor:{ownerId:owner,kind:'agent',scopeIds:['general']},targetScopes:['general'],knowledgeIds:[resourceId]})})
+ t.after(()=>e.ctx.fiber.dispose())
+ e.store.retrieval.status=async(actor,hash,ids)=>{
+  e.store.calls.push({method:'status',args:[actor,hash,ids]})
+  return {items:[{sourceId:'src_policy',resourceId,title:'差旅制度A',version:3,state:'stale' as const,chunkCount:null}],enrolled:0,chunks:0}
+ }
+ const result=await e.call({query:'差旅制度'})
+ assert.equal(result.isError,false,text(result))
+ await e.registered.idle()
+ assert.equal(e.store.of('buildPending').length,0,'任务许可不能转成本人全部资料的正文和passage读取')
 })
 
 test('模型未就绪或扩展未启用时报 dependency-unavailable，不调用 prepare、不安装、不检索',async t=>{

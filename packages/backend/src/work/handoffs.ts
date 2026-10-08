@@ -1,7 +1,8 @@
 import type {Pool} from 'pg'
-import {WorkError,isTaskHandoffChange,readTaskHandoffChangeInput,roleSupportsScope,taskInput,type TaskHandoffChange,type TaskHandoffChangeResult,type TaskHandoffParty,type WorkTask} from '@teloa/contract'
+import {WorkError,isTaskHandoffChange,readTaskHandoffChangeInput,taskInput,type TaskHandoffChange,type TaskHandoffChangeResult,type TaskHandoffParty,type WorkTask} from '@teloa/contract'
 import {readStoredRole} from './roles.ts'
 import {readStoredTask} from './tasks.ts'
+import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 export type TaskHandoff={id:string;taskId:string;fromRoleId:string;ownerId:string;roleVersion:number;taskVersion:number;reason:string;createdAt:string;status:'pending'|'resolved'}
 export type HandoffResult={task:WorkTask;handoffId:string;appliedVersion:number}
@@ -67,7 +68,7 @@ export class HandoffService{
    await rejectOpenRuns(client,owner,task.id)
    if((await client.query("select id from teloa_task_handoffs where owner_id=$1 and task_id=$2 and status='pending' limit 1",[owner,task.id])).rows[0])throw new WorkError('teloa/conflict','任务已有待交接记录，请先完成既有交接。')
    const from:TaskHandoffParty=task.assigneeRoleId===null?{kind:'self'}:{kind:'role',roleId:task.assigneeRoleId,roleVersion:task.assigneeRoleVersion!}
-   let to:TaskHandoffParty
+   let to:TaskHandoffParty,execution:Awaited<ReturnType<typeof authorizeRoleTaskAssignment>>|undefined
    if(request.target.kind==='self'){
     if(task.assigneeRoleId===null)throw new WorkError('teloa/conflict','本人已经是当前负责人。')
     to={kind:'self'}
@@ -76,13 +77,14 @@ export class HandoffService{
     const role=roles.get(request.target.roleId)
     if(!role)throw new WorkError('teloa/forbidden','改派员工不存在或不属于当前本人。')
     if(role.version!==request.target.expectedRoleVersion)throw new WorkError('teloa/version-conflict','接任员工已变化，请读取新版本后复核。')
-    if(role.state!=='active'||role.kind!=='employee'||!roleSupportsScope(role.scopes,task.scope))throw new WorkError('teloa/conflict','需要支持该业务的在岗正式员工接任。')
+    execution=await authorizeRoleTaskAssignment(client,this.pool,owner,role,task.scope,task.groupId)
     to={kind:'role',roleId:role.id,roleVersion:role.version}
    }
-   const now=this.identity.now(),updated=await client.query('update teloa_tasks set assignee_role_id=$3,assignee_role_version=$4,version=version+1,updated_at=$5 where id=$1 and owner_id=$2 returning *',[task.id,owner,to.kind==='role'?to.roleId:null,to.kind==='role'?to.roleVersion:null,now]),current=readStoredTask(updated.rows[0])
+   execution?.assertCurrent()
+   const now=this.identity.now(),updated=await client.query('update teloa_tasks set assignee_role_id=$3,assignee_role_version=$4,version=version+1,content_version=content_version+1,execution_authorization=$6,updated_at=$5 where id=$1 and owner_id=$2 returning *',[task.id,owner,to.kind==='role'?to.roleId:null,to.kind==='role'?to.roleVersion:null,now,execution?.authorization?JSON.stringify(execution.authorization):null]),current=readStoredTask(updated.rows[0])
    const change:TaskHandoffChange={requestId:request.requestId,taskId:task.id,baseVersion:task.version,appliedVersion:current.version,from,to,note:request.note,createdAt:now}
    await client.query('insert into teloa_task_handoff_changes(owner_id,request_id,task_id,base_version,request_spec,from_party,to_party,applied_version,note,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',[owner,request.requestId,task.id,task.version,spec,JSON.stringify(from),JSON.stringify(to),current.version,request.note,now])
-   await client.query('commit');return {task:current,change}
+   execution?.assertCurrent();await client.query('commit');return {task:current,change}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
  async resolve(owner:string,input:unknown):Promise<HandoffResult>{
@@ -117,11 +119,12 @@ export class HandoffService{
    if(task.version!==row.expectedTaskVersion||targetRole&&targetRole.version!==row.expectedRoleVersion)throw new WorkError('teloa/version-conflict','任务或接任员工已变化，请读取新版本后复核。')
    if(task.assigneeRoleId!==handoff.fromRoleId||['running','completed','cancelled'].includes(task.state))throw new WorkError('teloa/conflict','任务负责人或执行状态不允许直接接任。')
    await rejectOpenRuns(client,owner,task.id)
-   if(targetRole&&(targetRole.state!=='active'||targetRole.kind!=='employee'||!roleSupportsScope(targetRole.scopes,task.scope)))throw new WorkError('teloa/conflict','需要支持该业务的在岗员工接任。')
-   const now=this.identity.now(),updated=await client.query('update teloa_tasks set assignee_role_id=$3,assignee_role_version=$4,version=version+1,updated_at=$5 where id=$1 and owner_id=$2 returning *',[task.id,owner,targetRole?.id??null,targetRole?.version??null,now]),current=readStoredTask(updated.rows[0])
+   const execution=targetRole?await authorizeRoleTaskAssignment(client,this.pool,owner,targetRole,task.scope,task.groupId):undefined
+   execution?.assertCurrent()
+   const now=this.identity.now(),updated=await client.query('update teloa_tasks set assignee_role_id=$3,assignee_role_version=$4,version=version+1,content_version=content_version+1,execution_authorization=$6,updated_at=$5 where id=$1 and owner_id=$2 returning *',[task.id,owner,targetRole?.id??null,targetRole?.version??null,now,execution?.authorization?JSON.stringify(execution.authorization):null]),current=readStoredTask(updated.rows[0])
    await client.query("update teloa_task_handoffs set status='resolved' where id=$1",[handoff.id])
    await client.query('insert into teloa_handoff_resolutions(handoff_id,request_spec,applied_version,created_at) values($1,$2,$3,$4)',[handoff.id,spec,current.version,now])
-   await client.query('commit');return {task:current,handoffId:handoff.id,appliedVersion:current.version}
+   execution?.assertCurrent();await client.query('commit');return {task:current,handoffId:handoff.id,appliedVersion:current.version}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
 }

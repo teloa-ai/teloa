@@ -4,6 +4,13 @@ import {createTaskApi} from '../src/client/task-api.ts'
 import {taskAttentionDescription} from '../src/client/task-attention-presentation.ts'
 const fields={title:'调查任务',goal:'核对现有证据',scope:'general',groupId:null,skills:[]},id='12345678-1234-4234-8234-123456789012',at='2026-09-11T00:00:00Z'
 const row={...fields,id,ownerId:'owner',version:1,state:'ready',assigneeRoleId:null,assigneeRoleVersion:null,createdAt:at,updatedAt:at}
+test('任务目录及需要你快照接受严格完成策略和内容版本，保留历史缺省',async()=>{
+ const completionPolicy={kind:'verified' as const,verifier:'material-version-summary' as const,verifierVersion:1,authorizationVersion:2},current={...row,contentVersion:2,completionPolicy}
+ assert.deepEqual(await createTaskApi(async()=>[current]).list(),[current])
+ assert.deepEqual(await createTaskApi(async()=>({items:[{task:current,attention:null}]})).attention(),{items:[{task:current,attention:null}]})
+ assert.deepEqual(await createTaskApi(async()=>[row]).list(),[row])
+ for(const invalid of [{...current,completionPolicy:{kind:'verified',verifier:'model-quality',verifierVersion:1,authorizationVersion:2}},{...current,completionPolicy:{kind:'manual',extra:true}},{...current,contentVersion:0},{...current,executionAuthorization:{kind:'self'}}])await assert.rejects(createTaskApi(async()=>[invalid]).list(),/格式/)
+})
 test('交办固定岗位版本，刷新后可恢复原请求且不能改派为本人',async()=>{
  let raw:string|null=null;const requests:unknown[]=[],assignee={roleId:id,expectedVersion:2},journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
  await assert.rejects(createTaskApi(async(_m,p)=>{requests.push(p);throw Error('断线')},journal).create(fields,assignee),/断线/)

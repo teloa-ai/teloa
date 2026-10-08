@@ -47,12 +47,13 @@ function fakeEmbedder(profileHash=profileA,hooks:{onCall?:(kind:string,texts:str
 const signal=()=>new AbortController().signal
 
 function memoryCatalog(){
- const texts=new Map<string,string>(),broken=new Set<string>()
+ const texts=new Map<string,string>(),broken=new Set<string>(),reads:string[]=[]
  return {
-  broken,
+  broken,reads,
   add(id:string,text:string){const version=createHash('sha256').update(text).digest('hex');texts.set(id+'@'+version,text);return version},
   async list(){return {schema:'teloa.reference-list/v1' as const,references:[]}},
   async read(id:string,version:string){
+   reads.push(id)
    if(broken.has(id))throw new Error('磁盘暂不可读')
    const text=texts.get(id+'@'+version)
    if(text===undefined)throw new ReferenceError('reference/version-conflict','资料版本已变化。')
@@ -171,6 +172,38 @@ test('范围外资料不出现在 searched 与 pending，也不计数',async()=>
  const agentStatus=await retrieval.status({...agent,scopeIds:['general']},profileA)
  assert.deepEqual(agentStatus.items.map(item=>item.resourceId).sort(),[general.id,later.id].sort())
  assert.equal(agentStatus.enrolled,undefined);assert.equal(agentStatus.chunks,undefined)
+})
+
+test('可信资料许可在候选SQL收窄同范围A/B，空许可不读取候选正文或嵌入查询',async()=>{
+ const {retrieval,human,agent,add,catalog}=world(),{embedder,calls}=fakeEmbedder()
+ const allowed=await add('允许的差旅制度A',policy),blocked=await add('未委托的产品手册B',handbook),pending=await add('未委托的待整理C',handbook)
+ await retrieval.enroll(human,{sourceIds:[allowed.sourceId,blocked.sourceId]})
+ await retrieval.buildPending(human,embedder,signal())
+ await retrieval.enroll(human,{sourceIds:[pending.sourceId]})
+ calls.length=0;catalog.reads.length=0
+ const ids=[allowed.id]
+ assert.deepEqual((await retrieval.status(agent,profileA,ids)).items.map(item=>item.resourceId),ids)
+ const result=await retrieval.search(agent,['general'],{query:'产品手册开机配对'},embedder,signal(),ids)
+ assert.deepEqual(result.coverage.searched.map(item=>item.resourceId),ids)
+ assert.deepEqual(result.coverage.pending,[],'未委托的同范围待整理资料名称不可见')
+ assert.ok(result.results.length>0&&result.results.every(hit=>hit.resourceId===allowed.id))
+ assert.ok(catalog.reads.length>0&&catalog.reads.every(id=>id===allowed.sourceId),'正文回读只针对获准资料')
+ // 未委托行即使损坏也不能被候选读取器加载，防止先取全体再按ID过滤。
+ const blockedSpec=(await pool.query('select spec from teloa_resources where id=$1',[blocked.id])).rows[0].spec
+ await pool.query('update teloa_resources set spec=$2 where id=$1',[blocked.id,JSON.stringify({...blockedSpec,title:''})])
+ assert.deepEqual((await retrieval.status(agent,profileA,ids)).items.map(item=>item.resourceId),ids)
+ assert.deepEqual((await retrieval.search(agent,['general'],{query:'报销'},embedder,signal(),ids)).coverage.searched.map(item=>item.resourceId),ids)
+ calls.length=0;catalog.reads.length=0
+ assert.deepEqual(await retrieval.status(agent,profileA,[]),{items:[]})
+ assert.deepEqual(await retrieval.status(human,profileA,[]),{items:[]},'受限状态不附带本人全部资料计数')
+ assert.deepEqual(await retrieval.search(agent,['general'],{query:'产品手册'},embedder,signal(),[]),{coverage:{searched:[],pending:[],note:retrievalCoverageNote},results:[]})
+ assert.deepEqual(calls,[]);assert.deepEqual(catalog.reads,[])
+ await assert.rejects(retrieval.status(agent,profileA,['not-a-resource-id']),{code:'teloa/invalid-input'})
+ await assert.rejects(retrieval.search(agent,['general'],{query:'报销'},embedder,signal(),[allowed.id,allowed.id]),{code:'teloa/invalid-input'})
+ await pool.query('update teloa_resources set spec=$2 where id=$1',[blocked.id,JSON.stringify(blockedSpec)])
+ const legacy=await retrieval.search(agent,['general'],{query:'产品手册'},embedder,signal(),null)
+ assert.deepEqual(legacy.coverage.searched.map(item=>item.resourceId).sort(),[allowed.id,blocked.id].sort(),'null保留员工及普通会话原范围')
+ assert.deepEqual(legacy.coverage.pending,[{resourceId:pending.id,title:'未委托的待整理C',reason:'stale'}])
 })
 
 test('profileHash 切换按新配置独立构建，切回复用仍有效的就绪索引',async()=>{

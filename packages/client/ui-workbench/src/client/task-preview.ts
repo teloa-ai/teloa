@@ -1,3 +1,4 @@
+import type {TaskCompletionPolicy} from '@teloa/contract'
 import type { IndustryLoad } from './industry-load.ts'
 import type { IndustryTaskSource } from './industry-task.ts'
 import { businessScopeNames } from './business-directory.ts'
@@ -21,7 +22,7 @@ type Supplement={id:string;source:string;note:string;status:'pending'|'accepted'
 export type PreviewTask={
   storage?:'persistent';id:string;title:string;goal:string;scope:CollaborationScope;object:string;version:number;state:keyof typeof taskStates
   /** 交办时关联的协作群与使用技能；未保存或历史演示任务没有这两项。 */
-  groupId?:string|null;skills?:readonly string[]
+  groupId?:string|null;skills?:readonly string[];completionPolicy?:TaskCompletionPolicy
   need:AttentionKind|null;request:string;authorId:string;assigneeId:string;assigneeHistory:string[];createdAt:string;updatedAt:string
   handoff?:{fromId:string;reason:string;at:string}
   industrySource?:IndustryTaskSource

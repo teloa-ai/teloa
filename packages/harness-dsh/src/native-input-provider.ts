@@ -8,13 +8,15 @@ import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore} 
 export type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore,NativeInputRestoreInput,NativeInputRestoreLease} from './native-input-checkpoint.ts'
 export {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
 export type {NativeInputRecoveryCandidate,NativeInputRecoveryCandidateInput} from './native-input-recovery-candidate.ts'
-export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;restore?:NativeInputRestore}>
+export type NativeInputProviderConfig=Readonly<{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;restore?:NativeInputRestore;requireResident?:boolean}>
 /** 固定宿主在装配前核验真实冷恢复契约，旧核心不能静默忽略恢复配置。 */
 export const nativeInputRestoreVersion=1
 /** 固定宿主在发现待办前核验共享只读筛选契约；候选数据不是恢复授权。 */
 export const nativeInputRecoveryCandidateVersion=1
 /** 真实业务分类、输入组合租约与初始派生准入均由当前核心装配。 */
 export const nativeInputCapabilityVersion=1
+/** 续轮必须共享最终 Session guard，并在模型 step 前确认持久 Goal 票据。 */
+export const nativeInputGoalAdmissionVersion=1
 
 declare module '@deepseek-ai/cordis'{
  interface Context{readonly teloaNativeInput:TeloaNativeInput}
@@ -59,7 +61,7 @@ export class TeloaNativeInput extends Service{
  declare readonly admissions:ReturnType<typeof createNativeProducerAdmissions>
  constructor(ctx:Context,config:NativeInputProviderConfig={}){
   // 必须先验证最终补口，不能先发布一个缺少守卫的准入 Service。
-  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint,config.progress,config.restore),admissions=createNativeProducerAdmissions(input)
+  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint,config.progress,config.restore,config.requireResident??true),admissions=createNativeProducerAdmissions(input)
   super(ctx,'teloaNativeInput')
   Object.defineProperties(this,{
    input:{value:input,enumerable:true,writable:false,configurable:false},

@@ -106,6 +106,14 @@ test('第 7 行：其它情形按启用无下次处理；摘要未读不假称�
  assert.deepEqual(unread,{tone:'info',sentence:'plan.status.activeNoNext',primary:{label:'continuous.detail.triggerOnce',action:{kind:'trigger'}},secondary:{label:'continuous.detail.pause',action:{kind:'pause'}}})
 })
 
+test('长期事件计划等待真实输入，未验收当前任务时明确打开原任务',()=>{
+ const workDefinition={triggers:[{kind:'local-event',eventKind:'material-version'}]} as unknown as import('@teloa/contract').PlanWorkDefinition
+ const base=input({plan:{state:'active',trigger,workDefinition}})
+ assert.equal(planStatusBox(base).sentence,'planWork.waitingEvent')
+ const blocked=planStatusBox({...base,schedule:summary({latest:{occurrence,task:{id:latestTaskId,state:'waiting'}}})})
+ assert.equal(blocked.sentence,'planWork.waitingCurrent');assert.deepEqual(blocked.primary?.action,{kind:'open-task',taskId:latestTaskId})
+})
+
 test('consecutiveSkips：同 claim 同 reason 连续计数，异 claim 截断，空表按 latestSkip 计 1',()=>{
  const latest=skip('2026-09-15T01:00:00.000Z','previous-task-unfinished',claimA)
  const same=[latest,skip('2026-09-14T01:00:00.000Z','previous-task-unfinished',claimA),skip('2026-09-13T01:00:00.000Z','previous-task-unfinished',claimA)]

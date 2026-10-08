@@ -2,6 +2,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {ToolExecution} from '@deepseek-ai/dsh-tools'
 import type {TaskToolArgumentRule} from './task-tool-arguments.ts'
+import {withPresetReadScope} from './preset-read-scope.ts'
 
 const browserPrefix='mcp__playwright-mcp__'
 const computerPrefix='cua_driver_native__'
@@ -18,11 +19,13 @@ export const nativeComputerToolNames=[
  'move_cursor','get_accessibility_tree','zoom',
 ].map(name=>computerPrefix+name)
 export const nativeJobToolNames=['job_output','job_list','job_kill'] as const
-export const nativeGrantToolNames:readonly string[]=[...nativeBrowserToolNames,...nativeComputerToolNames,...nativeJobToolNames]
+/** 固定官方 Goal 工具面；实际变更及续轮仍走当前 Run 的授权与持久票据。 */
+export const nativeGoalToolNames=['get_goal','create_goal','update_goal'] as const
+export const nativeGrantToolNames:readonly string[]=[...nativeBrowserToolNames,...nativeComputerToolNames,...nativeJobToolNames,...nativeGoalToolNames]
 
 /** 前缀仅识别需要拒绝未知工具的边界，不能据此前缀生成授权候选。 */
 export function isNativeToolName(name:string):boolean{
- return name.startsWith(browserPrefix)||name.startsWith(computerPrefix)||(nativeJobToolNames as readonly string[]).includes(name)
+ return name.startsWith(browserPrefix)||name.startsWith(computerPrefix)||(nativeJobToolNames as readonly string[]).includes(name)||(nativeGoalToolNames as readonly string[]).includes(name)
 }
 export function nativeToolNeedsApproval(name:string):boolean{
  return nativeBrowserToolNames.includes(name)||nativeComputerToolNames.includes(name)
@@ -34,17 +37,22 @@ function providerName(ctx:Context,service:'browserUse'|'computerUse'):unknown{
 function providerAvailable(ctx:Context,name:string):boolean{
  if(nativeBrowserToolNames.includes(name))return providerName(ctx,'browserUse')==='playwright-mcp'
  if(nativeComputerToolNames.includes(name))return providerName(ctx,'computerUse')==='cua-driver-native'
+ if((nativeGoalToolNames as readonly string[]).includes(name))return Reflect.get(ctx,'goals')!==undefined
  return (nativeJobToolNames as readonly string[]).includes(name)&&Reflect.get(ctx,'jobs')!==undefined
 }
 /**
  * 只读官方已注册 schemas；不传 Agent 时合并宿主及现存 Agent，不为发现候选创建会话或启动浏览器。
  * Browser 工具属于原生 Agent scope；执行前仍须用调用方 Agent 重新核对，目录中的其他会话不能代授。
  */
-export function nativeToolRules(ctx:Context,agent?:Agent):TaskToolArgumentRule[]{
- const scopes=agent?[agent]:[undefined,...ctx.agents.list()]
+export function nativeToolRules(ctx:Context,agent?:Agent,presetScope?:Parameters<Context['tools']['schemas']>[0]):TaskToolArgumentRule[]{
+ const scopes=presetScope!==undefined?[presetScope]:agent?[agent]:[undefined,...ctx.agents.list()]
  const names=new Set(scopes.flatMap(scope=>ctx.tools.schemas(scope).map(tool=>tool.name)))
  return nativeGrantToolNames.filter(name=>names.has(name)&&providerAvailable(ctx,name))
   .map(name=>({name,anyArguments:true,allowed:[]}))
+}
+/** 首次岗位配置按真实选定预设读取官方工具层，无需创建会话或发模型请求。 */
+export async function nativePresetToolRules(ctx:Context,presetId?:string):Promise<TaskToolArgumentRule[]>{
+ return withPresetReadScope(ctx.agentPresets,async scope=>nativeToolRules(ctx,undefined,scope),presetId)
 }
 /** 工具本身的官方 sandbox 不约束桌面或浏览器；本次授权也不包含任意本机路径写出。 */
 export function nativeToolCallIssue(ctx:Context,exec:ToolExecution):string|undefined{

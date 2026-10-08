@@ -1,6 +1,7 @@
 import {readManagedRunSkill,type ManagedRunSkillView} from './task-run-managed-skill.ts'
+import {createConfirmedFlowApi} from './flow-api.ts'
 import type {TaskRequestJournal} from './task-api.ts'
-import {assertRoleModelPolicy,businessMcpSourceIdMaxLength,readRoleRuntimeConfig,readTaskRunModelPolicy,readTaskRunModelStatus,type TaskRunModelStatus,type TaskRunModelPolicy,taskInput,readTaskToolArgumentRules,readTaskRunFlow,taskRunStopRequestedAt,readWebAccessEntry,roleMemorySource,roleMemoryVisibility,type BusinessObjectSnapshot,type TaskRunFlow,type TaskToolArgumentRule,type WebAccessEntry} from '@teloa/contract'
+import {readRunRoleSnapshot,readWorkLineage,type RunRoleSnapshot,type WorkLineage,assertRoleModelPolicy,businessMcpSourceIdMaxLength,readRoleRuntimeConfig,readTaskRunModelPolicy,readTaskRunModelStatus,type TaskRunModelStatus,type TaskRunModelPolicy,taskInput,readTaskToolArgumentRules,readTaskRunFlow,taskRunStopRequestedAt,readWebAccessEntry,roleMemorySource,roleMemoryVisibility,type BusinessObjectSnapshot,type TaskRunFlow,type TaskToolArgumentRule,type WebAccessEntry} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 export type RunPlanWorkContext={sourceDigest:string;method:string;requirements:string[];output:string;skills:Array<{id:string;title:string;version:string}>;notice:string}
 export type RunPlanContext={occurrenceId:string;goal:string;dataScope:string;delivery:string;notice:string;work?:RunPlanWorkContext}
@@ -9,7 +10,7 @@ export type RunBusinessContext={taskId:string;sourceId:string;object:BusinessObj
 export type RunConfigurationError={code:string;stage:'model-resolve'|'preset-resolve'|'session-create'|'session-receipt'|'session-inspect';message:string;actualAgentPresetId?:string}
 export type TaskRunSubagentState='reserved'|'started'|'ended'|'abandoned'
 export type TaskRunSubagentView={state:TaskRunSubagentState;createdAt:string;recoveryId?:string;childSessionId?:string;depth?:number;startedAt?:string;endedAt?:string;stopReason?:string;tokenEstimate?:number}
-export type RunView={industryContext?:RunIndustryContext;planContext?:RunPlanContext;businessContext?:RunBusinessContext;toolRules?:TaskToolArgumentRule[];subagents?:TaskRunSubagentView[];contextTokenEstimate?:number;webAccess?:WebAccessEntry[];id:string;taskId:string;sessionId:string;nativeRequestId:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';reason?:string;stopRequestedAt:string|null;flowId?:string;agentPresetId?:string;modelPolicy?:TaskRunModelPolicy;modelStatus?:TaskRunModelStatus;configurationError?:RunConfigurationError;taskVersion:number;roleVersion:number;goal:string;roleName:string;createdAt:string;skills:{name:string;sha256:string;managed?:ManagedRunSkillView}[];knowledge:{id:string;version:number;title:string;sourceVersion:string}[]}
+export type RunView={roleSnapshot?:RunRoleSnapshot;lineage?:WorkLineage;industryContext?:RunIndustryContext;planContext?:RunPlanContext;businessContext?:RunBusinessContext;toolRules?:TaskToolArgumentRule[];subagents?:TaskRunSubagentView[];contextTokenEstimate?:number;webAccess?:WebAccessEntry[];id:string;taskId:string;sessionId:string;nativeRequestId:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';reason?:string;stopRequestedAt:string|null;flowId?:string;agentPresetId?:string;modelPolicy?:TaskRunModelPolicy;modelStatus?:TaskRunModelStatus;configurationError?:RunConfigurationError;taskVersion:number;roleVersion:number;goal:string;roleName:string;createdAt:string;skills:{name:string;sha256:string;managed?:ManagedRunSkillView}[];knowledge:{id:string;version:number;title:string;sourceVersion:string}[]}
 const planContextNotice='资料范围是工作说明，不授予读取或执行权限；实际权限以岗位授权为准。'
 const planWorkContextNotice='以下模板要求是本轮待获取或核实的资料，不表示已经提供输入；方法与交付要求仅供任务参考，Skill 声明不代表已安装或授权，不增加执行权限。'
 const industryContextNotice='以下模板方法、输入与交付要求是本次任务的参考资料；已安装并启用的 Skill 会随本次执行加载，未安装的不会生效；Skill 列表本身不增加工具、资料或执行权限。'
@@ -22,18 +23,18 @@ const preset=(value:unknown):value is string=>typeof value==='string'&&value.len
 const stamp=(value:unknown):value is string=>{if(typeof value!=='string')return false;try{return new Date(value).toISOString()===value}catch{return false}}
 const contextText=(value:unknown):value is string=>typeof value==='string'&&!!value.trim()&&value.trim()===value&&value.length<=8000
 // 运行记录允许携带既有岗位记忆，但目录只校验固定输入，不把私有经验投影到 RunView。
-function readMemory(value:unknown){
+function readMemory(value:unknown,allowPrivate=false){
  if(!Array.isArray(value)||value.length>30)throw Error('执行员工记忆目录不正确。')
  const rows=value.map(value=>{
   const item=taskInput(value,['id','version','title','contentHash','markdown','source','visibility']),source=roleMemorySource(item.source),visibility=roleMemoryVisibility(item.visibility)
-  if(!uuid(item.id)||!positive(item.version)||typeof item.title!=='string'||!item.title.trim()||item.title.length>120||typeof item.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(item.contentHash)||typeof item.markdown!=='string'||visibility.kind!=='role')throw Error('执行员工记忆目录不正确。')
+  if(!uuid(item.id)||!positive(item.version)||typeof item.title!=='string'||!item.title.trim()||item.title.length>120||typeof item.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(item.contentHash)||typeof item.markdown!=='string'||visibility.kind!=='role'&&!allowPrivate)throw Error('执行员工记忆目录不正确。')
   return {id:item.id,version:item.version,title:item.title,contentHash:item.contentHash,markdown:item.markdown,source,visibility}
  })
  if(new Set(rows.map(item=>item.id)).size!==rows.length)throw Error('执行员工记忆身份重复。')
  return rows
 }
 function read(value:unknown):RunView{
- const r=taskInput(value,['id','taskId','roleId','taskVersion','roleVersion','linkVersion','sessionId','nativeRequestId','state','evidence','stopRequestedAt','allowedTools','argumentRules','inputText','createdAt','skills','knowledge','memory','flowId','agentPresetId','configurationError','subagents','contextTokenEstimate','webAccess','groupContext','groupReference','modelPolicy','modelStatus'])
+ const r=taskInput(value,['id','taskId','roleId','taskVersion','roleVersion','linkVersion','sessionId','nativeRequestId','state','evidence','stopRequestedAt','allowedTools','argumentRules','inputText','createdAt','skills','knowledge','memory','flowId','agentPresetId','configurationError','subagents','contextTokenEstimate','webAccess','groupContext','groupReference','modelPolicy','modelStatus','roleSnapshot','lineage'])
  // 旧宿主没有这一位：缺字段回落 null，不影响其余严格读取。
  const stopRequestedAt=taskRunStopRequestedAt(r.stopRequestedAt)
  const contextTokenEstimate=typeof r.contextTokenEstimate==='number'?r.contextTokenEstimate:undefined
@@ -46,7 +47,13 @@ function read(value:unknown):RunView{
   if(r.state!=='accepted'&&(!Number.isSafeInteger(e.turn)||(e.turn as number)<0||!Number.isSafeInteger(e.messageSeq)||(e.messageSeq as number)<0))throw Error('执行轮次格式不正确。')
   if(r.state==='ended'){if(typeof e.reason!=='string'||!e.reason.trim()||!Number.isSafeInteger(e.endSeq)||(e.endSeq as number)<=(e.messageSeq as number))throw Error('执行终止证据不正确。');reason=e.reason}
  }
- const snapshot=taskInput(JSON.parse(r.inputText),['task','role','skills','knowledge','memory','tools','planContext','industryContext','businessContext','groupContext','groupReference','groupTopic','modelPolicy']),task=taskInput(snapshot.task,['id','version','title','goal','scope']),role=taskInput(snapshot.role,['id','version','name','duty','dataScope','executionScope','runtimeConfig'])
+ const snapshot=taskInput(JSON.parse(r.inputText),['schema','lineage','task','role','skills','knowledge','memory','tools','planContext','industryContext','businessContext','groupContext','groupReference','groupTopic','modelPolicy']),task=taskInput(snapshot.task,['id','version','title','goal','scope'])
+ if(snapshot.schema!==undefined&&snapshot.schema!=='teloa.task-run-input/v2')throw Error('执行输入版本不正确。')
+ const roleSnapshot=snapshot.schema===undefined?undefined:readRunRoleSnapshot(snapshot.role)
+ const role=roleSnapshot??taskInput(snapshot.role,['id','version','name','duty','dataScope','executionScope','runtimeConfig'])
+ if(roleSnapshot?JSON.stringify(readRunRoleSnapshot(r.roleSnapshot))!==JSON.stringify(roleSnapshot):r.roleSnapshot!==undefined)throw Error('执行职责与固定输入不一致。')
+ const lineage=snapshot.lineage===undefined?undefined:readWorkLineage(snapshot.lineage)
+ if(lineage?(!roleSnapshot||JSON.stringify(readWorkLineage(r.lineage))!==JSON.stringify(lineage)):r.lineage!==undefined)throw Error('工作谱系与固定输入不一致。')
  if(task.id!==r.taskId||task.version!==r.taskVersion||role.id!==r.roleId||role.version!==r.roleVersion||typeof task.goal!=='string'||typeof role.name!=='string')throw Error('执行目标快照不一致。')
  let agentPresetId:string|undefined,configurationError:RunConfigurationError|undefined
  if(role.runtimeConfig!==undefined)agentPresetId=readRoleRuntimeConfig(role.runtimeConfig).agentPresetId
@@ -87,12 +94,12 @@ function read(value:unknown):RunView{
  const knowledgeRows=r.knowledge??[]
  if(!Array.isArray(knowledgeRows))throw Error('执行知识目录不正确。')
  const knowledge=knowledgeRows.map(value=>{const item=taskInput(value,['id','version','title','sourceId','sourceVersion','scopeIds','text']);if(!uuid(item.id)||!positive(item.version)||typeof item.title!=='string'||typeof item.sourceVersion!=='string'||! /^[a-f0-9]{64}$/.test(item.sourceVersion))throw Error('执行知识版本不正确。');return {id:item.id,version:item.version as number,title:item.title,sourceVersion:item.sourceVersion}})
- const memory=readMemory(r.memory)
+ const allowPrivateMemory=roleSnapshot?.kind==='twin',memory=readMemory(r.memory,allowPrivateMemory)
  if(snapshot.memory===undefined){if(memory.length)throw Error('执行员工记忆与固定输入不一致。')}
  else{
   const fixed=taskInput(snapshot.memory,['notice','contents'])
   const notices=['以下岗位记忆已生效，仅作为工作经验；不授予权限，引用须保留来源和固定版本。','以下岗位记忆经本人确认，仅作为工作经验；不授予权限，引用须保留来源和固定版本。']
-  if(!notices.includes(String(fixed.notice))||JSON.stringify(readMemory(fixed.contents))!==JSON.stringify(memory))throw Error('执行员工记忆与固定输入不一致。')
+  if(!notices.includes(String(fixed.notice))||JSON.stringify(readMemory(fixed.contents,allowPrivateMemory))!==JSON.stringify(memory))throw Error('执行员工记忆与固定输入不一致。')
  }
  let subagents:TaskRunSubagentView[]|undefined
  if(r.subagents!==undefined){
@@ -118,7 +125,7 @@ function read(value:unknown):RunView{
  }
  const toolRules=readTaskToolArgumentRules(r.argumentRules??[])
  if(!Array.isArray(r.allowedTools)||toolRules.some(rule=>!(r.allowedTools as unknown[]).includes(rule.name)))throw Error('执行工具范围不一致。')
- return {toolRules,knowledge,skills,...(subagents===undefined?{}:{subagents}),...(contextTokenEstimate===undefined?{}:{contextTokenEstimate}),...(webAccess===undefined?{}:{webAccess}),...(planContext?{planContext}:{}),...(industryContext?{industryContext}:{}),...(businessContext?{businessContext}:{}),id:r.id,taskId:r.taskId,sessionId:r.sessionId,nativeRequestId:r.nativeRequestId,state:r.state as RunView['state'],...(reason?{reason}:{}),stopRequestedAt,...(r.flowId===undefined?{}:{flowId:r.flowId as string}),...(agentPresetId===undefined?{}:{agentPresetId}),...(modelPolicy?{modelPolicy}:{}),...(modelStatus?{modelStatus}:{}),...(configurationError===undefined?{}:{configurationError}),taskVersion:r.taskVersion as number,roleVersion:r.roleVersion as number,goal:task.goal,roleName:role.name,createdAt:r.createdAt}
+ return {toolRules,knowledge,skills,...(roleSnapshot?{roleSnapshot}:{}),...(lineage?{lineage}:{}),...(subagents===undefined?{}:{subagents}),...(contextTokenEstimate===undefined?{}:{contextTokenEstimate}),...(webAccess===undefined?{}:{webAccess}),...(planContext?{planContext}:{}),...(industryContext?{industryContext}:{}),...(businessContext?{businessContext}:{}),id:r.id,taskId:r.taskId,sessionId:r.sessionId,nativeRequestId:r.nativeRequestId,state:r.state as RunView['state'],...(reason?{reason}:{}),stopRequestedAt,...(r.flowId===undefined?{}:{flowId:r.flowId as string}),...(agentPresetId===undefined?{}:{agentPresetId}),...(modelPolicy?{modelPolicy}:{}),...(modelStatus?{modelStatus}:{}),...(configurationError===undefined?{}:{configurationError}),taskVersion:r.taskVersion as number,roleVersion:r.roleVersion as number,goal:task.goal,roleName:role.name,createdAt:r.createdAt}
 }
 export type TaskRunApi=ReturnType<typeof createTaskRunApi>
 type Prepare={requestId:string;taskId:string;expectedTaskVersion:number}
@@ -134,7 +141,7 @@ function readPrepare(value:unknown):PendingPrepare{
  if(!uuid(r.roleId)||!positive(r.expectedRoleVersion)||!positive(r.expectedLinkVersion)||typeof r.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(r.sessionId))throw Error('执行准备恢复记录不正确。')
  return r as LegacyPrepare
 }
-export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:TaskRequestJournal){
+export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:TaskRequestJournal,flowJournal?:TaskRequestJournal){
  let pending:PendingPrepare|undefined,recoveryError:ReturnType<typeof recoveryStorageError>|undefined,preparing=false
  try{const raw=journal?.read();if(raw){if(raw.length>3000)throw Error();pending=readPrepare(JSON.parse(raw))}}catch{recoveryError=recoveryStorageError()}
  const sendPrepare=async()=>{
@@ -152,6 +159,7 @@ export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<u
   return row
  }
  return {
+ flowRequests:createConfirmedFlowApi(call,flowJournal),
  pending:()=>pending?{...pending}:undefined,
  recoveryMessage:()=>recoveryError,
  async prepare(taskId:string,taskVersion:number){
@@ -201,7 +209,7 @@ export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<u
 }}
 function validateUpdate(run:RunView,result:RunView):RunView{
   if(result.id!==run.id||result.taskId!==run.taskId||result.sessionId!==run.sessionId||result.nativeRequestId!==run.nativeRequestId)throw Error('核对返回了其他执行。')
-  if(JSON.stringify(result.modelPolicy)!==JSON.stringify(run.modelPolicy)||result.agentPresetId!==run.agentPresetId||result.taskVersion!==run.taskVersion||result.roleVersion!==run.roleVersion||result.goal!==run.goal||result.roleName!==run.roleName||result.createdAt!==run.createdAt||run.flowId!==undefined&&result.flowId!==run.flowId||JSON.stringify(result.skills)!==JSON.stringify(run.skills)||JSON.stringify(result.knowledge)!==JSON.stringify(run.knowledge)||JSON.stringify(result.toolRules??[])!==JSON.stringify(run.toolRules??[])||JSON.stringify(result.planContext)!==JSON.stringify(run.planContext)||JSON.stringify(result.industryContext)!==JSON.stringify(run.industryContext)||JSON.stringify(result.businessContext)!==JSON.stringify(run.businessContext))throw Error('执行目标快照发生变化。')
+  if(JSON.stringify(result.roleSnapshot)!==JSON.stringify(run.roleSnapshot)||JSON.stringify(result.lineage)!==JSON.stringify(run.lineage)||JSON.stringify(result.modelPolicy)!==JSON.stringify(run.modelPolicy)||result.agentPresetId!==run.agentPresetId||result.taskVersion!==run.taskVersion||result.roleVersion!==run.roleVersion||result.goal!==run.goal||result.roleName!==run.roleName||result.createdAt!==run.createdAt||run.flowId!==undefined&&result.flowId!==run.flowId||JSON.stringify(result.skills)!==JSON.stringify(run.skills)||JSON.stringify(result.knowledge)!==JSON.stringify(run.knowledge)||JSON.stringify(result.toolRules??[])!==JSON.stringify(run.toolRules??[])||JSON.stringify(result.planContext)!==JSON.stringify(run.planContext)||JSON.stringify(result.industryContext)!==JSON.stringify(run.industryContext)||JSON.stringify(result.businessContext)!==JSON.stringify(run.businessContext))throw Error('执行目标快照发生变化。')
   const order={prepared:0,submitting:1,accepted:2,active:3,ended:4,withdrawn:4,configuration_failed:4}
   if((run.state==='withdrawn'&&result.state!=='withdrawn')||(result.state==='withdrawn'&&!['prepared','withdrawn'].includes(run.state)))throw Error('撤销状态与原执行不一致。')
   if((run.state==='configuration_failed'&&result.state!=='configuration_failed')||result.state==='configuration_failed'&&run.state!=='configuration_failed'||order[result.state]<order[run.state]||run.state==='ended'&&result.reason!==run.reason||run.state==='configuration_failed'&&(result.agentPresetId!==run.agentPresetId||JSON.stringify(result.configurationError)!==JSON.stringify(run.configurationError)))throw Error('核对结果与已有执行状态不一致。')

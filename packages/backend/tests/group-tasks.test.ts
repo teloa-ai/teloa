@@ -46,8 +46,8 @@ async function employeeReply(goal='给出可审计的研判结论。'){
  const resource=await groups.saveResource(owner,{requestId:randomUUID(),groupId:group.id,resourceId:randomUUID(),expectedVersion:0,title:'EDR 告警证据',markdown:'# alert-001\n\n进程树与主机证据。'})
  const root=await groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'请分析 alert-001 的影响。',references:[{kind:'group-resource',id:resource.id,version:resource.version}]})
  const taskRequest={requestId:randomUUID(),groupId:group.id,messageId:root.id,expectedGroupVersion:group.version,goal,assignee:{roleId:role.id,expectedVersion:2}}
- const created=await groupTasks.create(owner,taskRequest)
  await grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:2,action:'save',resources:[{kind:'group-resource',id:resource.id,version:resource.version}],canPost:true,canAutoRun:false})
+ const created=await groupTasks.create(owner,taskRequest)
  const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,sessionId,ownerId:owner,status:'ready'})
  await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:created.task.id,expectedObjectVersion:created.task.version,sessionId,expectedLinkVersion:0,action:'link'})
  const runs=new TaskRunService(pool,identity,inspect,{allowedTools:[],groupContext:(db,actor,task,currentRole)=>import('../src/work/task-run-group-context.ts').then(({readRunGroupContext})=>readRunGroupContext(db,actor,task,currentRole))})

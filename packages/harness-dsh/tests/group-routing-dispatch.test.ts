@@ -7,12 +7,14 @@ import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import type {Context} from '@deepseek-ai/cordis'
 import {WorkError,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingOutputSchema,type GroupReactionEmoji,type GroupTaskCreateInput} from '@teloa/contract'
-import {CollaborationService,GroupReactionService,GroupRoutingDecisionService,RoleLifecycleService,RoleService,RoleToolGrantService,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,initializeCollaboration,initializeGroupAgentGrants,initializeGroupReactions,initializeGroupRoutingDecisions,initializeResources,initializeRoleLifecycle,initializeRoleToolGrants,initializeRoles,initializeTasks,openResourceDatabase} from '@teloa/backend'
+import {CollaborationService,GroupAgentGrantService,GroupReactionService,GroupRoutingDecisionService,RoleDelegationService,RoleLifecycleService,RoleService,RoleToolGrantService,TwinExecutionConsentService,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,initializeCollaboration,initializeGroupAgentGrants,initializeGroupReactions,initializeGroupRoutingDecisions,initializeResources,initializeRoleLifecycle,initializeRoleToolGrants,initializeRoles,initializeTasks,initializeTaskRuns,initializeTaskRunSubagents,initializeTaskRunRuntimeLinks,initializeTaskRunFlows,openResourceDatabase} from '@teloa/backend'
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
 import {createTaskRunGroupPublisher} from '../src/task-run-group-publisher.ts'
 import type {GroupRoutingCandidate} from '../src/group-routing.ts'
 import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,type GroupRoutingDispatchPorts} from '../src/group-routing-dispatch.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import type {GroupRoutingOutboxPorts} from '../src/group-routing-outbox-driver.ts'
+import type {GroupRoutingOutboxService} from '../../backend/src/work/group-routing-outbox.ts'
 
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 /** 跳数与停下闸都按消息先后判定，测试时钟必须逐次前进。 */
@@ -34,6 +36,7 @@ before(async()=>{
  pool=(await openResourceDatabase(config,identity)).pool
  await initializeResources(pool);await initializeRoles(pool);await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializeRoleToolGrants(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool)
  await initializeGroupReactions(pool);await initializeGroupRoutingDecisions(pool)
+ await initializeTaskRuns(pool);await initializeTaskRunSubagents(pool);await initializeTaskRunRuntimeLinks(pool);await initializeTaskRunFlows(pool)
  decisions=new GroupRoutingDecisionService(pool,identity)
  reactions=new GroupReactionService(pool,identity)
 },{timeout:180000})
@@ -47,7 +50,7 @@ const endedTurn=(requestId:string,text:string)=>[
  {seq:3,time:3,type:'turn/end',data:{turn:0,reason:{kind:'stop'}}},
 ]
 
-type ModelOptions={answer?:string;broken?:boolean;onPrompt?:()=>void}
+type ModelOptions={answer?:string;broken?:boolean;onPrompt?:()=>void|Promise<void>}
 /** 只桩原生会话面：路由通道本身（T8）照真跑，模型输出仍要过 `groupRoutingOutput` 的封闭集合判据。 */
 function modelHarness(options:ModelOptions){
  const calls={prompt:[] as Record<string,unknown>[],warn:[] as string[]}
@@ -61,7 +64,7 @@ function modelHarness(options:ModelOptions){
    create:async(request:{sessionId:string})=>({sessionId:request.sessionId}),
    prompt:async(request:Record<string,unknown>)=>{
     calls.prompt.push(request)
-    options.onPrompt?.()
+    await options.onPrompt?.()
     if(options.broken)throw Error('模型通道不可用')
     events=endedTurn(String(request.requestId),options.answer??'')
     return {accepted:true as const}
@@ -117,7 +120,7 @@ function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()
   },
   group:(actor,groupId,db)=>readRoutingGroup(actor,groupId,db),
   message:(actor,messageId)=>readRoutingMessage(actor,messageId,pool),
-  candidates:async(actor,groupId,db)=>typeof options.candidates==='function'?options.candidates():options.candidates??readRoutingCandidates(actor,groupId,db),
+  candidates:async(actor,groupId,db)=>typeof options.candidates==='function'?options.candidates():options.candidates??readRoutingCandidates(actor,groupId,db,pool),
   topic:(actor,groupId,rootId,db)=>readRoutingTopic(actor,groupId,rootId,db),
   createTask:async(_actor,input)=>{
    recorded.lockedDuring.createTask.push(held>0)
@@ -348,7 +351,7 @@ test('输出里出现候选集外的 roleId：整条判 parse-failed，一个表
  assert.equal((await pool.query('select count(*)::int c from teloa_group_reactions where owner_id=$1 and message_id=$2',[f.owner,message.id])).rows[0].c,0)
 })
 
-test('候选 SQL：不把本人那一行当同事（M15），分身、未授权与范围不匹配的都不入候选',async()=>{
+test('候选 SQL：不把本人那一行当同事（M15），未获本人执行许可的分身和范围不匹配岗位不入候选',async()=>{
  const owner=randomUUID(),roles=new RoleService(pool,identity),groups=new CollaborationService(pool,identity)
  const role=(name:string,kind:'employee'|'twin',scopes:string[])=>roles.create(owner,{requestId:randomUUID(),fields:{name,kind,scopes,duty:'照看订单',dataScope:'固定资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
  const a=await role('售后','employee',['SOC']),b=await role('物流','employee',['SOC'])
@@ -358,15 +361,15 @@ test('候选 SQL：不把本人那一行当同事（M15），分身、未授权�
  // 范围不匹配的那位手工签一版 active 授权：判据必须由候选读口自己拒掉，不能只靠默认签发跳过。
  await pool.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
   values($1,$2,$3,1,$4,$5,'active','[]'::jsonb,true,true,$6,'{}'::jsonb,$7)`,[group.id,owner,outsider.id,group.version,outsider.version,randomUUID(),identity.now()])
- // 分身同样手工签一版：kind 这一条判据必须在读口里成立（默认签发跳过它，但库里可以有行）。
+ // 分身默认已有只读范围，手工追加自动Run；读口仍须核对本人委托与同意，不能只相信这一行。
  await pool.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
-  values($1,$2,$3,1,$4,$5,'active','[]'::jsonb,true,true,$6,'{}'::jsonb,$7)`,[group.id,owner,twin.id,group.version,twin.version,randomUUID(),identity.now()])
+  values($1,$2,$3,2,$4,$5,'active','[]'::jsonb,true,true,$6,'{}'::jsonb,$7)`,[group.id,owner,twin.id,group.version,twin.version,randomUUID(),identity.now()])
  // 物流那位关掉发言权：只有 canAutoRun 的同事会在回帖时被挡住，候选集必须提前把他排除（J1）。
  await pool.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
   values($1,$2,$3,2,$4,$5,'active','[]'::jsonb,false,true,$6,'{}'::jsonb,$7)`,[group.id,owner,b.id,group.version,b.version,randomUUID(),identity.now()])
  const client=await pool.connect()
  let listed:GroupRoutingCandidate[]
- try{listed=await readRoutingCandidates(owner,group.id,client)}finally{client.release()}
+ try{listed=await readRoutingCandidates(owner,group.id,client,pool)}finally{client.release()}
  assert.deepEqual(listed.map(candidate=>candidate.roleId),[a.id])
  assert.equal(listed[0]!.roleVersion,a.version)
  const message=await groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,rootId:root.id,text:'谁来接这一单？'})
@@ -387,6 +390,57 @@ test('通用工作群的候选集含跨范围岗位：general 对任何在岗同
  let listed:GroupRoutingCandidate[]
  try{listed=await readRoutingCandidates(owner,group.id,client)}finally{client.release()}
  assert.deepEqual([...listed.map(candidate=>candidate.roleId)].sort(),[soc.id,appsec.id].sort())
+})
+
+/** 全部许可来自本人服务写口；测试不能靠一行 can_auto_run 冒充分身的执行同意。 */
+async function twinFixture(){
+ const owner=randomUUID(),roles=new RoleService(pool,identity),groups=new CollaborationService(pool,identity)
+ const initial=await roles.create(owner,{requestId:randomUUID(),fields:{name:'工作分身',kind:'twin',scopes:['SOC'],duty:'核验告警',dataScope:'群内固定证据',executionScope:'仅按本人委托执行',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
+ await new RoleToolGrantService(pool,identity.now,async()=>{}).change(owner,{roleId:initial.id,expectedRoleVersion:initial.version,action:'save',rules:[{name:'read_reference',allowed:[{id:'one',version:'v1'}]}]})
+ const role=(await roles.get(owner,initial.id))!
+ const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'分身协作群',scope:'SOC',announcement:'仅处理明确授权的证据。',rules:openGroupRules,memberRoleIds:[role.id]}})
+ const root=await groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'请核验这条告警。'})
+ const authority={authorize:async()=>({assertCurrent(){}})},grants=new GroupAgentGrantService(pool,identity.now),consents=new TwinExecutionConsentService(pool,identity,authority)
+ const delegation=await new RoleDelegationService(pool,identity,authority).change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:role.version,expectedVersion:null,action:'save',fields:{scope:'SOC',allowedTools:['read_reference'],knowledgeIds:[],memoryViewId:null,groupIds:[group.id],safeRecovery:false}})
+ const authorization={kind:'delegation' as const,delegationId:delegation.id,delegationVersion:delegation.version}
+ const activate=async(canPost=true,canAutoRun=true)=>grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:[],canPost,canAutoRun})
+ const confirm=()=>consents.confirm(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:role.version,authorization})
+ const candidates=async(withPool=true)=>{
+  const db=await pool.connect()
+  try{await db.query('begin');return await readRoutingCandidates(owner,group.id,db,withPool?pool:undefined)}finally{await db.query('rollback');db.release()}
+ }
+ return {owner,role,group,root,delegation,activate,confirm,candidates,consents}
+}
+
+test('Twin路由候选仅在本人当前委托、同意与群Run/发言授权均有效时出现',async()=>{
+ const f=await twinFixture()
+ assert.deepEqual(await f.candidates(),[])
+ const consent=await f.confirm();await f.activate()
+ assert.deepEqual((await f.candidates()).map(item=>[item.roleId,item.roleVersion]),[[f.role.id,f.role.version]])
+ assert.deepEqual(await f.candidates(false),[])
+ await f.activate(false,true);assert.deepEqual(await f.candidates(),[])
+ await f.activate(true,false);assert.deepEqual(await f.candidates(),[])
+ await f.activate();assert.equal((await f.candidates()).length,1)
+ // 另一群即使有伪造的自动Run标记，也不能借用当前委托给原群的授权范围。
+ const other=await new CollaborationService(pool,identity).create(f.owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'未被委托的群',scope:'SOC',announcement:'不能借用原群授权。',rules:openGroupRules,memberRoleIds:[f.role.id]}})
+ await pool.query(`insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at)
+  values($1,$2,$3,2,$4,$5,'active','[]'::jsonb,true,true,$6,'{}'::jsonb,$7)`,[other.id,f.owner,f.role.id,other.version,f.role.version,randomUUID(),identity.now()])
+ const db=await pool.connect()
+ try{await db.query('begin');assert.deepEqual(await readRoutingCandidates(f.owner,other.id,db,pool),[])}finally{await db.query('rollback');db.release()}
+ await f.consents.revoke(f.owner,{requestId:randomUUID(),consentId:consent.id,expectedVersion:consent.version})
+ assert.deepEqual(await f.candidates(),[])
+ assert.equal((await readRoutingMessage(f.owner,f.root.id,pool))?.text,'请核验这条告警。')
+})
+
+test('Twin群路由模型等待期间撤销同意，决策不接单、不加表情、不创建任务',async()=>{
+ const f=await twinFixture(),consent=await f.confirm();await f.activate()
+ const {ports,recorded}=makePorts(f.owner,{})
+ const {ctx,calls}=modelHarness({answer:output([f.role.id],[{roleId:f.role.id,emoji:'👍'}]),onPrompt:async()=>{await f.consents.revoke(f.owner,{requestId:randomUUID(),consentId:consent.id,expectedVersion:consent.version})}})
+ await dispatchGroupRouting(ctx,f.owner,f.root.id,ports,signal())
+ assert.equal(calls.prompt.length,1)
+ assert.deepEqual((await readDecision(f.owner,f.root.id))?.respond,[])
+ assert.deepEqual((await reactions.list(f.owner,{groupId:f.group.id,messageIds:[f.root.id]})).items,[])
+ assert.equal(recorded.createTask.length,0)
 })
 
 test('改使命（暂停→改定义→恢复在岗）之后候选集仍含他：岗位版本 +1 不再静默停掉直接回应',async()=>{
@@ -455,4 +509,13 @@ test('同事回帖成功后按新消息 id 触发一次路由；被授权判据�
 test('触发点异常不外冒：回帖已确认写入，观察循环不为路由重试',async()=>{
  const publisher=createTaskRunGroupPublisher({post:async()=>({id:randomUUID()}),route:()=>{throw Error('路由端口坏了')},report:()=>{}})
  await assert.doesNotReject(()=>publisher(publisherRun as never,'回帖正文。'))
+})
+
+test('新宿主终态决策与outbox使用同连接；已claimed重入只恢复投递，不再询问路由模型',async()=>{
+ const f=await fixture(),p=makePorts(f.owner,{candidates:[candidateOf(f.a.id,1,'售后')]}),model=modelHarness({answer:output([f.a.id])})
+ let recorded=0,drained=0
+ const outbox={recordRecipients:async(db:Parameters<GroupRoutingOutboxService['recordRecipients']>[0],owner:string,input:Parameters<GroupRoutingOutboxService['recordRecipients']>[2])=>{assert.equal(await decisions.claimed(db,owner,input.messageId),true);recorded++;return []},pending:async()=>{drained++;return []}} as unknown as GroupRoutingOutboxPorts['outbox']&Pick<GroupRoutingOutboxService,'recordRecipients'>
+ p.ports.delivery={outbox,createTask:p.ports.createTask,prepare:p.ports.prepare,start:p.ports.start,readRun:async()=>{throw Error('没有待办不查Run')},reconcile:async()=>{throw Error('没有待办不查Run')},report:()=>{}}
+ await dispatchGroupRouting(model.ctx,f.owner,f.root.id,p.ports,signal());await dispatchGroupRouting(model.ctx,f.owner,f.root.id,p.ports,signal())
+ assert.equal(recorded,1);assert.equal(drained,2);assert.equal(model.calls.prompt.length,1);assert.equal(p.recorded.createTask.length,0)
 })

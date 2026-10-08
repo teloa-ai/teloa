@@ -4,6 +4,7 @@ import {readStoredRole} from './roles.ts'
 import {ensureAutoDreamPlan,pauseAutoDreamPlan,type AutoDreamPorts} from './auto-dream-plans.ts'
 import {renewRoleGrants} from './collaboration.ts'
 import {workAccess} from './work-access.ts'
+import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 export type RoleLifecycleResult={role:DigitalRole;appliedVersion:number;handoffTaskIds:string[]}
 export async function initializeRoleLifecycle(pool:Pool):Promise<void>{
@@ -46,7 +47,7 @@ export class RoleLifecycleService{
     await client.query('commit');return {role,appliedVersion,handoffTaskIds:ids}
    }
    if(role.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','员工已变化，请读取新版本后复核。')
-   if(role.kind==='twin')throw new WorkError('teloa/conflict','分身是个人空间的默认代拟身份，不能暂停或退役。')
+   if(role.kind==='twin')throw new WorkError('teloa/conflict','分身身份不能暂停或退役，请单独停用执行委托。')
    if(role.state==='retired'||row.action==='pause'&&role.state!=='active'||row.action==='resume'&&role.state!=='paused')throw new WorkError('teloa/conflict','当前员工状态不能执行此操作。')
    const now=this.identity.now(),handoffTaskIds:string[]=[]
    // 与新交办共用岗位行锁；以后任务接任/结束也须按岗位→任务的次序加锁。
@@ -72,7 +73,7 @@ export class RoleLifecycleService{
     else await pauseAutoDreamPlan(client,this.autoDream,owner,current.id)
    }
    await client.query('insert into teloa_role_transitions(role_id,base_version,request_spec,handoff_task_ids,created_at) values($1,$2,$3,$4,$5)',[role.id,role.version,spec,JSON.stringify(handoffTaskIds),now])
-   admission?.assertCurrent();await client.query('commit');return {role:current,appliedVersion:current.version,handoffTaskIds}
+   invalidateRoleWorkEligibility(owner,role.id);admission?.assertCurrent();await client.query('commit');return {role:current,appliedVersion:current.version,handoffTaskIds}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
 }

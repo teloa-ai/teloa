@@ -28,8 +28,10 @@ export function createTaskMaterialKnowledgeLoader(
 ){
  return async(target:TaskExecutionScope,_role:DigitalRole,database:TaskRunSkillDatabase,signal:AbortSignal):Promise<TaskRun['knowledge']>=>{
   signal.throwIfAborted()
-  const references=await (await get()).executionRefsInTransaction(database,owner,target.taskId,target.taskVersion)
+  const saved=await (await get()).executionRefsInTransaction(database,owner,target.taskId,target.taskVersion)
+  const references=target.knowledgeIds==null?saved:saved.filter(ref=>target.knowledgeIds!.includes(ref.id))
   signal.throwIfAborted()
+  if(!references.length)return []
   const knowledge=readRunKnowledge(await read(target,references,database,signal))
   if(JSON.stringify(knowledge.map(item=>({id:item.id,version:item.version})))!==JSON.stringify(references))throw new WorkError('teloa/version-conflict','任务知识版本已变化，请重新核对执行准备。')
   return knowledge

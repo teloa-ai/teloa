@@ -39,9 +39,10 @@ type HarnessOptions={
  mixIn?:boolean
  promptDelayMs?:number
  seed?:unknown[]
+ resident?:'missing'|'deny'
 }
 function harness(options:HarnessOptions){
- const calls={resolve:[] as (string|undefined)[],inspect:0,create:[] as {sessionId:string;agentPreset?:string}[],prompt:[] as Record<string,unknown>[],warn:[] as string[],error:[] as string[],order:[] as string[]}
+ const calls={resolve:[] as (string|undefined)[],inspect:0,create:[] as {sessionId:string;agentPreset?:string}[],prompt:[] as Record<string,unknown>[],warn:[] as string[],error:[] as string[],order:[] as string[],bind:[] as Record<string,unknown>[],release:0}
  const routingWhilePrompting:boolean[]=[]
  let events:unknown[]=[...(options.seed??[])]
  let turns=0
@@ -58,6 +59,7 @@ function harness(options:HarnessOptions){
   if(!options.dropTurnEnd)events.push({seq:events.length,time:events.length,type:'turn/end',data:{turn,reason:{kind:'stop'}}})
  }
  const ctx={
+  get:(name:string)=>name==='teloaResidentInputAdmission'&&options.resident!=='missing'?{bindRouting:async(input:Record<string,unknown>)=>{calls.bind.push(input);if(options.resident==='deny')throw Error('原来源已暂停');return ()=>{calls.release++}}}:undefined,
   logger:{warn:(message:string)=>{calls.warn.push(message)},error:(message:string)=>{calls.error.push(message)}},
   agentPresets:{resolve:async(id?:string)=>{
    calls.resolve.push(id)
@@ -155,6 +157,17 @@ test('一次路由只 prompt 一次，请求身份与会话身份都是确定性
  // 问话期间这条会话就是路由会话——判据是 id 的结构，与「有没有人正在问」无关。
  assert.deepEqual(routingWhilePrompting,[true])
  assert.deepEqual(calls.warn,[])
+ assert.deepEqual(calls.bind,[{sessionId:sessionOf(),day,groupId,messageId,nativeRequestId:requestOf()}])
+ assert.equal(calls.release,1)
+})
+
+test('受控路由来源服务缺失或拒绝时不提交原生输入，也不回落到无预算会话',async()=>{
+ for(const resident of ['missing','deny'] as const){const {ctx,calls}=harness({answer:answerOf([roleA]),resident});assert.deepEqual(await route(ctx),{kind:'degraded'});assert.equal(calls.prompt.length,0);assert.equal(calls.release,0);assert.equal(calls.bind.length,resident==='missing'?0:1)}
+})
+
+test('已有原生回执只读原结论，不重新取得派发租约；解析失败也释放原上下文',async()=>{
+ const ok=harness({answer:answerOf([roleA])});await route(ok.ctx);await route(ok.ctx);assert.equal(ok.calls.prompt.length,1);assert.equal(ok.calls.bind.length,1);assert.equal(ok.calls.release,1)
+ const invalid=harness({answer:'not-json'});assert.deepEqual(await route(invalid.ctx),{kind:'parse-failed'});assert.equal(invalid.calls.bind.length,1);assert.equal(invalid.calls.release,1)
 })
 
 test('会话按每群每天一条派生：同日同群第二次复用，不再 create',async()=>{

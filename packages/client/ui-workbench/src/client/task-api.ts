@@ -15,20 +15,21 @@ function readAssignee(value:unknown):TaskAssignee|undefined{
 }
 function read(value:unknown):WorkTask{
  try{
-  const row=taskInput(value,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills']))
-  const {id,ownerId,version,state,createdAt,updatedAt,assigneeRoleId,assigneeRoleVersion,...fields}=row
+  const row=taskInput(value,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy']))
+  const {id,ownerId,version,state,createdAt,updatedAt,assigneeRoleId,assigneeRoleVersion,contentVersion,...fields}=row
   if(typeof id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)||typeof ownerId!=='string'||!ownerId||!Number.isSafeInteger(version)||(version as number)<1||typeof state!=='string'||!['ready','running','paused','waiting','blocked','completed','cancelled'].includes(state)||typeof createdAt!=='string'||!Number.isFinite(Date.parse(createdAt))||typeof updatedAt!=='string'||!Number.isFinite(Date.parse(updatedAt)))throw Error()
   if(assigneeRoleId===null?assigneeRoleVersion!==null:typeof assigneeRoleId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(assigneeRoleId)||!Number.isSafeInteger(assigneeRoleVersion)||(assigneeRoleVersion as number)<1)throw Error()
-  return {...taskDefinition(fields),id,ownerId,version:version as number,state:state as WorkTask['state'],createdAt,updatedAt,assigneeRoleId:assigneeRoleId as string|null,assigneeRoleVersion:assigneeRoleVersion as number|null}
+  if(contentVersion!==undefined&&(!Number.isSafeInteger(contentVersion)||(contentVersion as number)<1))throw Error()
+  return {...(contentVersion===undefined?{}:{contentVersion:contentVersion as number}),...taskDefinition(fields),id,ownerId,version:version as number,state:state as WorkTask['state'],createdAt,updatedAt,assigneeRoleId:assigneeRoleId as string|null,assigneeRoleVersion:assigneeRoleVersion as number|null}
  }catch{throw Error('任务服务返回的内容格式不正确。')}
 }
 export type TaskRequestJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 export function createTaskApi(call:Call,journal?:TaskRequestJournal){
- let pending:{requestId:string;fields:TaskDefinition;assignee:TaskAssignee|undefined;key:string}|undefined
+ let pending:{requestId:string;fields:TaskDefinition;assignee:TaskAssignee|undefined;key:string;ownerConfirmed?:boolean}|undefined
  let recoveryError:ReturnType<typeof recoveryStorageError>|undefined,creating=false
  try{
   const content=journal?.read()
-  if(content){const row=taskInput(JSON.parse(content),['schema','requestId','fields','assignee']);if(row.schema!=='teloa.task-create/v1'||typeof row.requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(row.requestId))throw Error();const fields=taskDefinition(row.fields),assignee=readAssignee(row.assignee);pending={requestId:row.requestId,fields,assignee,key:JSON.stringify({fields,assignee})}}
+  if(content){const row=taskInput(JSON.parse(content),['schema','requestId','fields','assignee','ownerConfirmed']);if((row.schema!=='teloa.task-create/v1'&&row.schema!=='teloa.task-create/v2')||row.schema==='teloa.task-create/v2'&&row.ownerConfirmed!==true||row.schema==='teloa.task-create/v1'&&row.ownerConfirmed!==undefined||typeof row.requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(row.requestId))throw Error();const fields=taskDefinition(row.fields),assignee=readAssignee(row.assignee);pending={requestId:row.requestId,fields,assignee,...(row.ownerConfirmed===true?{ownerConfirmed:true}:{}),key:JSON.stringify({fields,assignee,...(row.ownerConfirmed===true?{ownerConfirmed:true}:{})})}}
  }catch{recoveryError=recoveryStorageError()}
  return {
   recoveryMessage:()=>recoveryError,
@@ -36,7 +37,7 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
   discard(){const had=pending!==undefined||recoveryError!==undefined;try{journal?.clear()}catch{/* 清不掉不该变成第二道墙 */}pending=undefined;recoveryError=undefined;return had},
   pendingFields:()=>pending?taskDefinition(pending.fields):undefined,
   pendingAssignee:()=>pending?.assignee?{...pending.assignee}:undefined,
-  async recoverCreate():Promise<WorkTask>{if(!pending)throw Error('没有待核对的任务创建。');return this.create(pending.fields,pending.assignee)},
+  async recoverCreate():Promise<WorkTask>{if(!pending)throw Error('没有待核对的任务创建。');return this.create(pending.fields,pending.assignee,pending.ownerConfirmed===true)},
   async list(){const value=await call('tasks/list',{});if(!Array.isArray(value))throw Error('任务目录格式不正确。');const rows=value.map(read);if(new Set(rows.map(row=>row.id)).size!==rows.length)throw Error('任务目录格式不正确：重复身份。');return rows},
   async attention():Promise<{items:TaskAttentionItem[]}>{
    const response=await call('tasks/attention',{})
@@ -67,16 +68,17 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
    if(result.id!==taskId||result.version!==expectedVersion+1||result.title!==fields.title.trim()||result.goal!==fields.goal.trim())throw Error('任务编辑响应与原请求不一致，请刷新核对。')
    return result
   },
-  async create(input:TaskDefinition,target?:TaskAssignee){
+  async createConfirmed(input:TaskDefinition,target:TaskAssignee){return this.create(input,target,true)},
+  async create(input:TaskDefinition,target?:TaskAssignee,ownerConfirmed=false){
    if(recoveryError)throw recoveryError
    if(creating)throw Error('任务创建正在核对，请等待当前请求结束。')
-   const fields=taskDefinition(input),assignee=readAssignee(target),key=JSON.stringify({fields,assignee})
+   const fields=taskDefinition(input),assignee=readAssignee(target),key=JSON.stringify({fields,assignee,...(ownerConfirmed?{ownerConfirmed:true}:{})})
    if(pending&&pending.key!==key)throw Error('上次创建结果尚待核对，请先用原内容重试，避免重复创建任务。')
-   pending??={requestId:crypto.randomUUID(),fields,assignee,key}
+   pending??={requestId:crypto.randomUUID(),fields,assignee,key,...(ownerConfirmed?{ownerConfirmed:true}:{})}
    creating=true
    try{
-    journal?.write(JSON.stringify({schema:'teloa.task-create/v1',requestId:pending.requestId,fields:pending.fields,...(pending.assignee?{assignee:pending.assignee}:{})}))
-    const result=read(await call('tasks/create',{requestId:pending.requestId,fields:pending.fields,...(pending.assignee?{assignee:pending.assignee}:{})}))
+    journal?.write(JSON.stringify({schema:pending.ownerConfirmed?'teloa.task-create/v2':'teloa.task-create/v1',...(pending.ownerConfirmed?{ownerConfirmed:true}:{}),requestId:pending.requestId,fields:pending.fields,...(pending.assignee?{assignee:pending.assignee}:{})}))
+    const result=read(await call(pending.ownerConfirmed?'tasks/create-confirmed':'tasks/create',{requestId:pending.requestId,fields:pending.fields,...(pending.assignee?{assignee:pending.assignee}:{})}))
     if(JSON.stringify(taskDefinition({title:result.title,goal:result.goal,scope:result.scope,groupId:result.groupId,skills:result.skills}))!==JSON.stringify(fields))throw Error('任务响应与创建内容不一致，请核对原请求。')
     if(result.version===1&&(result.assigneeRoleId!==(assignee?.roleId??null)||result.assigneeRoleVersion!==(assignee?.expectedVersion??null)))throw Error('任务负责人响应与交办不一致，请核对原请求。')
     journal?.clear();pending=undefined;return result
@@ -87,6 +89,6 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
 
 export function projectSavedTask(task:WorkTask):PreviewTask{
  const assignee=task.assigneeRoleId??'self'
- return {id:task.id,title:task.title,goal:task.goal,scope:task.scope as PreviewTask['scope'],groupId:task.groupId,skills:task.skills,version:task.version,state:task.state,storage:'persistent',object:'本机任务',need:null,request:'',authorId:'self',assigneeId:assignee,assigneeHistory:[assignee],createdAt:task.createdAt,updatedAt:task.updatedAt,result:'',evidence:[],history:[],supplements:[],approvalRequired:false,risk:'未提出外部动作',execution:'not_started'}
+ return {id:task.id,title:task.title,goal:task.goal,scope:task.scope as PreviewTask['scope'],groupId:task.groupId,skills:task.skills,version:task.version,state:task.state,storage:'persistent',...(task.completionPolicy===undefined?{}:{completionPolicy:task.completionPolicy}),object:'本机任务',need:null,request:'',authorId:'self',assigneeId:assignee,assigneeHistory:[assignee],createdAt:task.createdAt,updatedAt:task.updatedAt,result:'',evidence:[],history:[],supplements:[],approvalRequired:false,risk:'未提出外部动作',execution:'not_started'}
 }
 export {read as readSavedTask}

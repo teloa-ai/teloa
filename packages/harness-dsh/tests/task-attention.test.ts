@@ -4,6 +4,17 @@ import {createTaskAttentionHandler} from '../src/task-attention.ts'
 
 const owner='local:teloa-owner',id='11111111-1111-4111-8111-111111111111'
 const task={id,ownerId:owner,version:3,state:'blocked',createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T01:00:00.000Z',title:'核对资料',goal:'形成核对结果',scope:'general',assigneeRoleId:null,assigneeRoleVersion:null}
+test('需要你任务内容版本与完成策略兼容旧回包并严格读取新增字段',async()=>{
+ const read=(value:unknown)=>createTaskAttentionHandler(owner,async()=>({list:async()=>({items:[{task:value,attention:{kind:'error',reason:'task-blocked'}}]})}))({})
+ const policies=[{kind:'manual'},{kind:'verified',verifier:'material-version-summary',verifierVersion:1,authorizationVersion:2}]
+ assert.deepEqual((await read(task)).items[0]!.task,task)
+ for(const completionPolicy of policies){const current={...task,contentVersion:2,completionPolicy};assert.deepEqual((await read(current)).items[0]!.task,current)}
+ for(const fields of [
+  ...[null,0,-1,1.5,'2',Number.MAX_SAFE_INTEGER+1].map(contentVersion=>({contentVersion})),
+  ...[null,{kind:'manual',extra:true},{kind:'verified',verifier:'unknown',verifierVersion:1,authorizationVersion:1},{kind:'verified',verifier:'system-digest',verifierVersion:0,authorizationVersion:1},{kind:'verified',verifier:'system-digest',verifierVersion:1}].map(completionPolicy=>({completionPolicy})),
+  {unexpected:true},
+ ])await assert.rejects(read({...task,...fields}),{code:'teloa/invalid-host-response'})
+})
 test('真实需要你只读入口从宿主取本人身份并拒绝额外参数',async()=>{
  const calls:unknown[]=[],page={items:[{task,attention:{kind:'error',reason:'task-blocked'}}]}
  const handle=createTaskAttentionHandler(owner,async()=>({list:async(actor,input)=>{calls.push([actor,input]);return page}}))

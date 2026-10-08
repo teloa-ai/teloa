@@ -9,6 +9,8 @@ import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {initializeTasks,TaskService} from '../src/work/tasks.ts'
 import {ObjectConversationService,initializeObjectConversations} from '../src/work/object-conversations.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import {TwinExecutionConsentService} from '../src/work/twin-execution-consents.ts'
+import {ownerAuthority} from './role-work-test-fixture.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool,observer:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -22,6 +24,23 @@ before(async()=>{
  await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await observer?.end();await container?.stop()})
+
+test('Twin Task 上下文沿本人原任务确认续作，撤销后保持历史关联并拒绝新上下文',{timeout:20000},async()=>{
+ const owner=randomUUID(),role=await new RoleService(pool,identity).ensurePersonalTwin(owner)
+ const task=await new TaskService(pool,identity,ownerAuthority).createConfirmed(owner,{requestId:randomUUID(),fields:{title:'核对原任务',goal:'仅续作本人已确认的目标',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}})
+ const sessionId='twin-task-'+randomUUID(),conversationId=randomUUID(),inspect=async(actor:string,id:string)=>({id:conversationId,sessionId:id,ownerId:actor,status:'ready'}),service=new ObjectConversationService(pool,inspect,identity.now)
+ await service.change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,sessionId,expectedLinkVersion:0,action:'link'})
+ const input={taskId:task.id,sessionId,expectedTaskVersion:task.version},context=await service.taskContext(owner,input)
+ assert.equal(context.task.id,task.id);assert.equal(context.role?.id,role.id);assert.equal(context.role?.kind,'twin');assert.equal(context.link.active,true)
+ assert.equal(pool.waitingCount,0,'单连接上下文核验不能二次借池')
+ await assert.rejects(service.taskContext(randomUUID(),input),{code:'teloa/forbidden'})
+ await assert.rejects(service.taskContext(owner,{...input,expectedTaskVersion:task.version+1}),{code:'teloa/version-conflict'})
+ const consents=new TwinExecutionConsentService(pool,identity),[consent]=await consents.get(owner,{roleId:role.id})
+ assert.ok(consent);assert.deepEqual(consent.authorization,{kind:'task',taskId:task.id,taskContentVersion:1})
+ await consents.revoke(owner,{requestId:randomUUID(),consentId:consent.id,expectedVersion:consent.version})
+ await assert.rejects(new ObjectConversationService(pool,inspect,identity.now).taskContext(owner,input),{code:'teloa/forbidden'})
+ assert.equal((await service.bySession(owner,{sessionId}))[0]?.active,true);assert.equal(pool.waitingCount,0)
+})
 
 async function fixture(kind:'task'|'role'){
  const owner=randomUUID(),sessionId='daily_'+randomUUID().replaceAll('-','')
