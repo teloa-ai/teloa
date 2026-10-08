@@ -488,7 +488,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
      {!cloud&&openLocalModels&&<div className={css.actions}><button type="button" className={css.primary} onClick={()=>openLocalModels(entry.id)}>{t('market.catalog.official.modelLocalOpen')}</button></div>}
      {cloud&&openModels&&<div className={css.actions}><button type="button" className={css.primary} onClick={openModels}>{t('market.catalog.official.modelConfigure')}</button></div>}
      <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
-      <p>{provider===null?'Ollama':provider.kind==='pi-ai'?'pi-ai '+provider.id:provider.api+' · '+endpointHost(provider.baseURL)}</p>
+      <p>{provider===null?'Ollama':provider.kind==='pi-ai'?'pi-ai '+provider.id:provider.api+' · '+provider.baseURL}</p>
       <p><a href={entry.model.license.url} target="_blank" rel="noreferrer">{entry.model.license.name}</a> · {t(entry.model.license.tier==='commercial'?'market.catalog.official.modelTierCommercial':'market.catalog.official.modelTierRestricted')}</p>
       <p>{t('market.catalog.official.reviewed',{date:entry.review.reviewedAt})}</p>
       <p className={css.mono}>{entry.id}@{entry.version}</p>

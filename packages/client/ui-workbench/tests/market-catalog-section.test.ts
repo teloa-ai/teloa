@@ -238,6 +238,12 @@ test('role 卡：徽标、来源方案、所需技能、「创建为同事」按
  assert.doesNotMatch(role+model,/工作空间|单空间|实例|投影|尚未加载|内容待读取|人类/)
 })
 
+test('自定义端点的模型卡在来源详情给出协议与完整接口地址，照填即可接入',()=>{
+ const base=modelEntry()
+ const html=cards([{entry:{...base,model:{...base.model,cloud:{...base.model.cloud,provider:{kind:'custom',api:'anthropic-messages',baseURL:'https://api.example.com/anthropic'}}}},artifact:null,addedContentId:null} as never],{openModels:()=>{}})
+ assert.match(html,/anthropic-messages · https:\/\/api\.example\.com\/anthropic/)
+})
+
 test('role 卡已添加回执：created 显示「已创建，默认暂停」，existing 显示「已添加」，都可查看',()=>{
  const created=cards([roleItem()],{roleReceipts:{'teloa.role.test-role':{roleId:'r1',status:'created'}},openRole:()=>{}})
  assert.match(created,/已创建，默认暂停[\s\S]*<button[^>]*>查看/);assert.doesNotMatch(created,/创建为员工/)
