@@ -30,6 +30,8 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
   const native=useSessions(value=>value.byId)
   const profile=usePersonalProfile()
   const application=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getSnapshot,applicationPresentation.getSnapshot)
+  // 宿主分配执行位置时不提供更换与管理执行位置入口。
+  const hostAssigned=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getExecutionPlacement,applicationPresentation.getExecutionPlacement)==='host-assigned'
   const [error,setError]=useState<string>(),[opening,setOpening]=useState(false)
   const recentWorkHidden=browserRecentWorkHiddenStore()
   const [hiddenRecentIds,setHiddenRecentIds]=useState<readonly string[]>(()=>recentWorkHidden.read())
@@ -65,9 +67,11 @@ export function WorkNavigation({onSearch,view,colorScheme,actions,work,managemen
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(createTask)}><ListTodo size={15}/><span>{t('navigation.newTask')}</span></button>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>actions.openPlans())}><CalendarClock size={15}/><span>{t('navigation.newContinuous')}</span></button>
         <button type="button" role="menuitem" disabled={!groupsAllowed} onClick={()=>{if(applicationPresentation.can('groups'))fromNewWorkMenu(createGroup)}}><Users size={15}/><span>{t('home.action.newGroup')}</span></button>
+        {!hostAssigned&&<>
         <div className={css.newWorkMenuDivider}/>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>create({chooseWorkspace:true}))}><FolderOpen size={15}/><span>{t('conversationDialog.otherLocation')}</span></button>
         <button type="button" role="menuitem" onClick={()=>fromNewWorkMenu(()=>actions.openDirectory())}><Settings2 size={15}/><span>{t('conversationDialog.manage')}</span></button>
+        </>}
       </div>}
     </div>
     <button type="button" className={css.searchNav} aria-label={t('navigation.search')} onClick={onSearch||actions.focusConversationSearch}><Search size={15}/><span>{t('navigation.search')}</span><kbd>⌘ K</kbd></button>

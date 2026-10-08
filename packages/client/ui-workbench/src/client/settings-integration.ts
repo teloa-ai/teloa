@@ -16,6 +16,7 @@ import { WorkspaceSettings } from './WorkspaceSettings.js'
 import type { WebAccessApi } from './web-access-api.js'
 import {ImChannelsSettingsPage,type ImChannelsSettingsProps} from './ImChannelsSettingsPage.js'
 import type {TeloaTranslate} from './i18n/index.js'
+import {applicationPresentation} from './application-presentation.js'
 
 /** 不以声明或单一厂商弹窗阻挡设置；模型配置统一进入原生模型页。主动补录密钥仍归原插件。 */
 const REPLACED_ONBOARDING_STEPS=new Set(['welcome-notice','deepseek-official'])
@@ -37,7 +38,8 @@ function directory(ctx:Context,key:'settings.section'|'settings.onboarding'|'sid
 }
 
 export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close:()=>void;selection:SettingsNavigation},t:TeloaTranslate,webAccessApi:WebAccessApi,runtimeSettings:RuntimeSettingsSurface,imChannels:ImChannelsSettingsProps,localModels?:{api:LocalModelsApi;focus:LocalModelsFocus}):void{
-  ctx.inject(['workspaces','connection'],child=>{
+  // 应用桥在装配前已读取；宿主分配执行位置时不提供执行位置分区及其本机目录管理。
+  if(applicationPresentation.getExecutionPlacement()==='user-selected')ctx.inject(['workspaces','connection'],child=>{
     const workspaces=child.workspaces as unknown as IWorkspaces
     const connection=Reflect.get(child,'connection') as unknown as ConnectionHandle
     const management=new WorkspaceManagement({

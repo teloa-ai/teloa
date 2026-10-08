@@ -1,4 +1,8 @@
 import type {ConversationWorkspace} from './work-presentation.js'
+import {applicationPresentation} from './application-presentation.ts'
+
+/** 宿主经应用桥声明执行位置由宿主分配；没有应用桥或未声明时由用户选择。 */
+const placedByHost=()=>applicationPresentation.getExecutionPlacement()==='host-assigned'
 
 export type ConversationWorkspaceDecision=
   |{kind:'create';workspaceId:undefined|string}
@@ -12,14 +16,17 @@ type ResolveInput={
   recovering?:boolean
   pendingWorkspaceId?:string|undefined
   chooseOther?:boolean
+  hostAssigned?:boolean
 }
 
 /**
  * 全局会话把当前或默认执行位置交给 DSH 决定；业务空间只复用已登记的明确绑定。
  * 登记列表的第一项不代表 DSH 当前执行位置，不能据此猜测。
+ * 宿主分配执行位置时一律交给宿主，不读业务绑定也不弹出选择；待恢复的创建仍由本人决定重试或另建。
  */
-export function resolveConversationWorkspace({workspaces,registryReady=true,scope,preferredWorkspaceId,recovering=false,pendingWorkspaceId,chooseOther=false}:ResolveInput):ConversationWorkspaceDecision{
+export function resolveConversationWorkspace({workspaces,registryReady=true,scope,preferredWorkspaceId,recovering=false,pendingWorkspaceId,chooseOther=false,hostAssigned=placedByHost()}:ResolveInput):ConversationWorkspaceDecision{
   if(recovering)return {kind:'select',reason:'recovery',...(pendingWorkspaceId!==undefined?{initialWorkspaceId:pendingWorkspaceId}:{})}
+  if(hostAssigned)return {kind:'create',workspaceId:undefined}
   if(chooseOther)return {kind:'select',reason:'requested'}
   if(scope===undefined||scope==='general')return {kind:'create',workspaceId:undefined}
   if(!registryReady)return {kind:'select',reason:'unavailable'}
@@ -29,6 +36,24 @@ export function resolveConversationWorkspace({workspaces,registryReady=true,scop
   }
   if(workspaces.length===1)return {kind:'create',workspaceId:workspaces[0]!.workspaceId}
   return {kind:'select',reason:workspaces.length?'ambiguous':'missing'}
+}
+
+type HomeWorkspaceInput={
+  remembered:string|null|undefined
+  currentWorkspaceId:string|undefined
+  workspaces:readonly Pick<ConversationWorkspace,'workspaceId'>[]
+  hostAssigned?:boolean
+}
+
+/**
+ * 首页待用会话的执行位置：同一待用会话沿用已发出的位置；用户选择时再取当前会话所在或唯一登记的位置，
+ * 都没有就要求先选择。宿主分配时不替宿主挑选，交给宿主落位。
+ */
+export function resolveHomeNativeWorkspace({remembered,currentWorkspaceId,workspaces,hostAssigned=placedByHost()}:HomeWorkspaceInput):string|undefined{
+  const workspaceId=remembered??(hostAssigned?undefined:currentWorkspaceId??(workspaces.length===1?workspaces[0]!.workspaceId:undefined))
+  if(workspaceId)return workspaceId
+  if(hostAssigned)return undefined
+  throw Object.assign(Error('请先在新建会话中选择执行位置。'),{code:'teloa/home-location-required'})
 }
 
 type StorageLike={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}

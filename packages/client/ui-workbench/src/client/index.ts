@@ -127,6 +127,7 @@ import { createBusinessSpaceApi } from './business-space-api.js'
 import { createBusinessScopeApi } from './business-scope-api.js'
 import { configureEdition, createEditionApi } from './edition.js'
 import {applicationPresentation} from './application-presentation.js'
+import {resolveHomeNativeWorkspace} from './conversation-workspace-resolution.js'
 import {createSessionCapabilityPresentation} from './session-capability-presentation.js'
 import {SessionCapabilityNotice} from './SessionCapabilityNotice.js'
 import {createBusinessTaskApi} from './business-task-api.js'
@@ -551,11 +552,9 @@ export async function apply(ctx: Context): Promise<void> {
         const selected=mainSession.getSnapshot()
         const previous=available.find(row=>selected&&row.sessionIds.includes(selected))
         const key='teloa.home-native-workspace/'+id
-        const remembered=navigationStorage.getItem(key)
-        const workspaceId=remembered??previous?.workspaceId??(available.length===1?available[0]!.workspaceId:undefined)
-        if(!workspaceId)throw Object.assign(Error('请先在新建会话中选择执行位置。'),{code:'teloa/home-location-required'})
-        navigationStorage.setItem(key,workspaceId)
-        const created=await child.sessions.create({sessionId,workspaceId:brandString<WorkspaceId>(workspaceId)})
+        const workspaceId=resolveHomeNativeWorkspace({remembered:navigationStorage.getItem(key),currentWorkspaceId:previous?.workspaceId,workspaces:available})
+        if(workspaceId)navigationStorage.setItem(key,workspaceId)
+        const created=await child.sessions.create({sessionId,...(workspaceId?{workspaceId:brandString<WorkspaceId>(workspaceId)}:{})})
         if(created!==sessionId)throw Error('待用会话身份不一致。')
       }
       return id

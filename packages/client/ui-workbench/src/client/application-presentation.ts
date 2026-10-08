@@ -5,7 +5,8 @@ import {resolveProductLocale} from './i18n/locale.ts'
 import type {WorkCapability} from '@teloa/contract'
 export type {WorkCapability} from '@teloa/contract'
 export type ApplicationCapabilities=Readonly<{schema:'teloa.application-capabilities/v1';capabilities:Readonly<Record<WorkCapability,boolean>>;reason:null|'subscription-required'|'subscription-expired'|'checking'|'unavailable'}>
-export type ApplicationBridge={presentation:()=>Promise<unknown>;openAccount:()=>Promise<unknown>;navigationStorageScope?:()=>Promise<string>;capabilities?:()=>Promise<unknown>;subscribeCapabilities?:(listener:(value:unknown)=>void)=>()=>void;openSubscription?:()=>Promise<unknown>}
+export type ExecutionPlacement='user-selected'|'host-assigned'
+export type ApplicationBridge={presentation:()=>Promise<unknown>;openAccount:()=>Promise<unknown>;navigationStorageScope?:()=>Promise<string>;capabilities?:()=>Promise<unknown>;subscribeCapabilities?:(listener:(value:unknown)=>void)=>()=>void;openSubscription?:()=>Promise<unknown>;readonly execution?:unknown}
 declare global{interface Window{teloaApplication?:ApplicationBridge}}
 
 // v1 的 Free 是兼容宿主判别，展示名称统一为社区版 / Community；不改变身份或权益。
@@ -30,6 +31,13 @@ export function readApplicationCapabilities(value:unknown):ApplicationCapabiliti
  return Object.freeze({schema:communityCapabilities.schema,capabilities:Object.freeze({...flags}) as ApplicationCapabilities['capabilities'],reason:value.reason as ApplicationCapabilities['reason']})
 }
 
+// 执行位置只决定是否让用户选择位置；宿主分配时由宿主落位，不授予或扩大执行许可。缺省保持用户选择。
+export function readExecutionPlacement(value:unknown):ExecutionPlacement{
+ if(value===undefined)return 'user-selected'
+ if(!exact(value,['placement'])||value.placement!=='host-assigned')throw invalid()
+ return 'host-assigned'
+}
+
 // 仅为宿主展示身份；版本名称不能授予业务权益或执行许可。
 export function readApplicationPresentation(value:unknown):ApplicationPresentation{
  if(!exact(value,['schema','product','account'])||value.schema!==community.schema||typeof value.product!=='string'||!['Free','Pro','Enterprise'].includes(value.product))throw invalid()
@@ -39,7 +47,7 @@ export function readApplicationPresentation(value:unknown):ApplicationPresentati
 }
 
 export function createApplicationPresentationStore(){
- let snapshot=community,capabilities=communityCapabilities,bridge:ApplicationBridge|undefined,navigationStorageScope:string|undefined,generation=0,identityRevision=0,releaseCapabilities:(()=>void)|undefined,refreshCapabilities:(()=>Promise<void>)|undefined
+ let snapshot=community,capabilities=communityCapabilities,placement:ExecutionPlacement='user-selected',bridge:ApplicationBridge|undefined,navigationStorageScope:string|undefined,generation=0,identityRevision=0,releaseCapabilities:(()=>void)|undefined,refreshCapabilities:(()=>Promise<void>)|undefined
  const listeners=new Set<()=>void>(),publish=()=>{for(const listener of listeners)listener()}
  const refresh=async()=>{
   const current=bridge,owner=generation,revision=++identityRevision
@@ -58,16 +66,18 @@ export function createApplicationPresentationStore(){
   can:(capability:WorkCapability)=>capabilities.capabilities[capability],
   async refresh(){const owner=generation;await refreshCapabilities?.();if(owner===generation)await refresh()},
   getNavigationStorageScope:()=>navigationStorageScope,
+  getExecutionPlacement:()=>placement,
   subscribe(listener:()=>void){listeners.add(listener);return ()=>{listeners.delete(listener)}},
   async configure(candidate?:ApplicationBridge){
    const owner=++generation
    releaseCapabilities?.();releaseCapabilities=undefined;refreshCapabilities=undefined
-   bridge=undefined;navigationStorageScope=undefined;snapshot=community;capabilities=candidate===undefined?communityCapabilities:capabilitySnapshot(false,'checking');publish()
+   bridge=undefined;navigationStorageScope=undefined;snapshot=community;placement='user-selected';capabilities=candidate===undefined?communityCapabilities:capabilitySnapshot(false,'checking');publish()
    if(candidate!==undefined&&(!candidate||typeof candidate.presentation!=='function'||typeof candidate.openAccount!=='function'||candidate.navigationStorageScope!==undefined&&typeof candidate.navigationStorageScope!=='function'))throw invalid()
+   const requested=readExecutionPlacement(candidate?.execution)
    const next=candidate?readApplicationPresentation(await candidate.presentation()):community
    const scope=next.product!=='Free'&&candidate?.navigationStorageScope?readWorkbenchNavigationStorageScope(await candidate.navigationStorageScope()):undefined
    if(generation!==owner)throw invalid()
-   bridge=candidate;navigationStorageScope=scope;snapshot=next
+   bridge=candidate;navigationStorageScope=scope;snapshot=next;placement=next.product==='Free'?'user-selected':requested
    capabilities=next.product==='Free'?communityCapabilities:capabilitySnapshot(false,typeof candidate?.capabilities==='function'?'checking':'unavailable');publish()
    if(next.product!=='Free'&&candidate){
     let revision=0
@@ -79,7 +89,7 @@ export function createApplicationPresentationStore(){
     }
    }
    if(generation!==owner)throw invalid()
-   return ()=>{if(generation!==owner)return;generation++;releaseCapabilities?.();releaseCapabilities=undefined;refreshCapabilities=undefined;bridge=undefined;navigationStorageScope=undefined;snapshot=community;capabilities=communityCapabilities;publish()}
+   return ()=>{if(generation!==owner)return;generation++;releaseCapabilities?.();releaseCapabilities=undefined;refreshCapabilities=undefined;bridge=undefined;navigationStorageScope=undefined;snapshot=community;placement='user-selected';capabilities=communityCapabilities;publish()}
   },
   async openAccount(){if(!bridge||!snapshot.account)throw invalid();await bridge.openAccount()},
   async openSubscription(){if(!bridge||!snapshot.account)throw invalid();if(bridge.openSubscription!==undefined){if(typeof bridge.openSubscription!=='function')throw invalid();await bridge.openSubscription()}else await bridge.openAccount()},
