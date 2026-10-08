@@ -78,17 +78,19 @@ export const dshEnvRestoreNotice=(dshHome:string)=>'DSH 目录下的 .env 不随
 export interface BackupCopyOptions{
  allowMissingGeneratedLink?:(input:Readonly<{source:string,path:string,target:string}>)=>boolean|Promise<boolean>
 }
+export const isGeneratedBackupDirectory=(path:string)=>/^profiles\/(?:[^/]+\/(?:\.dsh-module-fallback\/)?)?node_modules$/.test(path)
+export const isBackupCopyPath=(path:string,isFile=false)=>!/^\.credentials\./.test(path)&&!/^mcp\/credentials(?:\/|$)/.test(path)&&path!=='.env'&&!(isFile&&path.split('/').at(-1)==='session.lock')
 export async function copyBackupData(source:string,target:string,releaseRoot:string,skipGenerated=false,options:BackupCopyOptions={}):Promise<void>{
  await mkdir(target,{recursive:true,mode:0o700})
  async function visit(from:string,to:string,generated:boolean){
   for(const entry of await readdir(from,{withFileTypes:true})){
    const src=join(from,entry.name),dst=join(to,entry.name)
-   const skip=generated||skipGenerated&&/^profiles\/(?:[^/]+\/(?:\.dsh-module-fallback\/)?)?node_modules$/.test(relative(source,src))
+   const skip=generated||skipGenerated&&isGeneratedBackupDirectory(relative(source,src))
    // 凭据不随备份（规格 §3.5）：根目录下 `.credentials.*` 一律跳过——凭据文件、改名留存与隔离的明文副本、
    // 原子写崩溃残留的明文 `.credentials.yaml.<hex>.tmp`，以及本就不该复制的锁与接管互斥文件；受管 MCP 旧凭据目录同样跳过。
    // 根目录下的 `.env`（DSH 的用户环境层，可能含明文密钥）同样跳过，备份与恢复输出提示本人自行保存。
    const rel=relative(source,src).split(sep).join('/')
-   if(/^\.credentials\./.test(rel)||/^mcp\/credentials(?:\/|$)/.test(rel)||rel==='.env')continue
+   if(!isBackupCopyPath(rel))continue
    if(entry.isSymbolicLink()){
     // DSH 根据当前发行重建这一目录；只允许省略指向当前版本的生成链接。
     if(skip){
@@ -113,7 +115,7 @@ export async function copyBackupData(source:string,target:string,releaseRoot:str
    }else if(entry.isFile()){
     if(skip)throw Error('生成的依赖目录含本地扩展文件，不能省略备份。')
     // 操作系统锁及派生缓存重建，避免复制过期 PID 或源机器锁身份。
-    if(entry.name==='session.lock')continue
+    if(!isBackupCopyPath(rel,true))continue
     await copyFile(src,dst);await chmod(dst,0o600)
    }else throw Error('数据含不支持的文件类型，备份已停止。')
   }
