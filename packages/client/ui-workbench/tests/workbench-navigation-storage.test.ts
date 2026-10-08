@@ -12,7 +12,7 @@ test('原生重建 WebContents 后恢复导航、首页待用会话及执行位�
  const navigation={...emptyWorkbenchNavigationState(),view:'messages' as const,detail:{open:true,target:{kind:'artifact' as const,source:{kind:'session' as const,id:'real-session'},sessionId:'real-session'}}}
  persistWorkbenchNavigationState(first,navigation)
  let ids=0;const calls:string[]=[]
- const port={identity:()=>`draft-${++ids}`,isBlank:()=>true,create:async(id:string)=>{calls.push(id);return id}}
+ const port={identity:()=>`draft-${++ids}`,isBlank:()=>true,create:async(id:string)=>{calls.push(id);return id},adopt:async()=>{}}
  assert.equal(await new HomeNativeController({...port,storage:first}).prepare(),'draft-1')
  first.setItem('teloa.home-native-workspace/draft-1','workspace-1')
  const rebuilt=createWorkbenchNavigationStorage(scope,{localStorage,sessionStorage:memory()})

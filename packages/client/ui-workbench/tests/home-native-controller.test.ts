@@ -23,18 +23,18 @@ test('显式初始 provider 在非首页也启动，首页等待同一真实请�
  assert.throws(()=>initial.register(async()=>undefined),/已有提供者/)
 })
 
-test('初始首页沿官方当前引用 ready 核空并认领，不新建另一份空稿',async()=>{
+test('初始首页沿官方当前引用 ready 核空并认领，先领养进工作目录，不新建另一份空稿',async()=>{
  const listeners=new Set<()=>void>(),binding={sessionId:'official'},storage=memory(),calls:string[]=[]
  let current:any,finish!:(value:unknown)=>void
  const ready=new Promise(resolve=>{finish=resolve}),sessions={binding:()=>binding,using:async(id:string,options:any,operation:any)=>{calls.push(id+':'+options.source);try{return await operation({ready,binding})}finally{calls.push('released')}}}
- const controller=new HomeNativeController({storage,identity:()=> 'extra',isBlank:()=>true,create:async id=>{calls.push('create');return id}})
+ const controller=new HomeNativeController({storage,identity:()=> 'extra',isBlank:()=>true,create:async id=>{calls.push('create');return id},adopt:async id=>{calls.push('adopt:'+id+':'+storage.getItem('teloa.home-native-session/v1'))}})
  const initial=prepareInitialNativeSession({current:{getSnapshot:()=>current,subscribe:listener=>{listeners.add(listener);return()=>{listeners.delete(listener)}}},sessions:()=>sessions as any,isBlank:async()=>true},new AbortController().signal,async()=>undefined)
  await Promise.resolve();assert.deepEqual(calls,[])
  current='official';for(const listener of [...listeners])listener()
  await Promise.resolve();assert.deepEqual(calls,['official:controllerOperation'])
  finish(binding);const proof=await initial
  assert.ok(proof);assert.equal(await controller.claimPrepared(proof.sessionId,proof.assertCurrent),true)
- assert.equal(await controller.prepare(),'official');assert.deepEqual(calls,['official:controllerOperation','released']);assert.equal(controller.owns('official'),true)
+ assert.equal(await controller.prepare(),'official');assert.deepEqual(calls,['official:controllerOperation','released','adopt:official:null']);assert.equal(controller.owns('official'),true)
 })
 
 test('初始等待取消或核空期间选择/绑定变化不能认领与改写归属',async()=>{
@@ -65,30 +65,59 @@ test('官方引用 ready 返回前的较新选择不能被初始原稿接续认�
 })
 
 test('认领初始会话要求真实空历史，取消与另一份待用身份变化仍失败关闭',async()=>{
+ const adopted:string[]=[],adopt=async(id:string)=>{adopted.push(id)}
  for(const blank of [false,undefined]){
-  const storage=memory(),controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:()=>blank,create:async id=>id})
+  const storage=memory(),controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:()=>blank,create:async id=>id,adopt})
   assert.equal(await controller.claimPrepared('initial',()=>{}),false)
   assert.equal(controller.owns('initial'),false);assert.equal(storage.getItem('teloa.home-native-session/v1'),null)
  }
- const storage=memory(),controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:async()=>{storage.setItem('teloa.home-native-session/v1','newer');return true},create:async id=>id})
+ const storage=memory(),controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:async()=>{storage.setItem('teloa.home-native-session/v1','newer');return true},create:async id=>id,adopt})
  await assert.rejects(controller.claimPrepared('initial',()=>{}),/身份已变化/)
  assert.equal(storage.getItem('teloa.home-native-session/v1'),'newer');assert.equal(controller.owns('initial'),false)
+ assert.deepEqual(adopted,[])
+})
+
+test('认领领养失败不认领、不写入待用身份；下一次进入首页以同一会话重试领养',async()=>{
+ const storage=memory(),adopted:string[]=[];let failures=1
+ const controller=new HomeNativeController({storage,identity:()=>{throw Error('不应另建待用会话')},isBlank:()=>true,create:async()=>{throw Error('不应另建待用会话')},adopt:async id=>{adopted.push(id);if(failures-- >0)throw Error('network response lost')}})
+ await assert.rejects(controller.claimPrepared('official',()=>{}),/network response lost/)
+ assert.equal(controller.owns('official'),false);assert.equal(storage.getItem('teloa.home-native-session/v1'),null)
+ assert.equal(await controller.claimPrepared('official',()=>{}),true)
+ assert.deepEqual(adopted,['official','official']);assert.equal(controller.owns('official'),true)
+})
+
+test('领养期间选择或待用身份变化时认领失败关闭，不写入待用身份',async()=>{
+ for(const change of ['selection','draft'] as const){
+  const storage=memory();let current=true
+  const controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:()=>true,create:async id=>id,adopt:async()=>{if(change==='selection')current=false;else storage.setItem('teloa.home-native-session/v1','newer')}})
+  await assert.rejects(controller.claimPrepared('official',()=>{if(!current)throw Error('原生初始会话或本人作用域已变化。')}),change==='selection'?/作用域已变化/:/身份已变化/)
+  assert.equal(storage.getItem('teloa.home-native-session/v1'),change==='selection'?null:'newer');assert.equal(controller.owns('official'),false)
+ }
+})
+
+test('新建待用会话与认领共用领养端口：建会话后先领养再核空，领养失败保留同一身份重试',async()=>{
+ const storage=memory(),calls:string[]=[];let ids=0,failures=1
+ const controller=new HomeNativeController({storage,identity:()=>`s-${++ids}`,isBlank:id=>{calls.push('blank:'+id);return true},create:async id=>{calls.push('create:'+id);return id},adopt:async id=>{calls.push('adopt:'+id);if(failures-- >0)throw Error('lost')}})
+ await assert.rejects(controller.prepare(),/lost/);assert.equal(storage.getItem('teloa.home-native-session/v1'),'s-1');assert.equal(controller.owns('s-1'),false)
+ assert.equal(await controller.prepare(),'s-1');assert.equal(ids,1)
+ assert.deepEqual(calls,['create:s-1','adopt:s-1','blank:s-1','create:s-1','adopt:s-1','blank:s-1'])
 })
 
 test('已有待用草稿身份仍由原生历史恢复，不被官方默认空白会话覆盖',async()=>{
  const storage=memory();storage.setItem('teloa.home-native-session/v1','original')
- const created:string[]=[],controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:()=>true,create:async id=>{created.push(id);return id}})
+ const created:string[]=[],adopted:string[]=[],controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:()=>true,create:async id=>{created.push(id);return id},adopt:async id=>{adopted.push(id)}})
  assert.equal(await controller.claimPrepared('official-default',()=>{}),false)
  assert.equal(storage.getItem('teloa.home-native-session/v1'),'original')
  assert.equal(await controller.prepare(),'original');assert.deepEqual(created,['original'])
  assert.equal(await controller.claimPrepared('explicit-owned-draft',()=>{},true),true)
  assert.equal(storage.getItem('teloa.home-native-session/v1'),'explicit-owned-draft')
  assert.equal(controller.owns('explicit-owned-draft'),true)
+ assert.deepEqual(adopted,['original','explicit-owned-draft'])
 })
 
 test('待用会话并发、刷新和创建回包丢失重试使用同一身份',async()=>{
  const storage=memory(),calls:string[]=[];let failures=1,ids=0
- const port={storage,identity:()=>`s-${++ids}`,isBlank:(_id:string)=>true,create:async(id:string)=>{calls.push(id);if(failures-- >0)throw Error('lost');return id}}
+ const port={storage,identity:()=>`s-${++ids}`,isBlank:(_id:string)=>true,create:async(id:string)=>{calls.push(id);if(failures-- >0)throw Error('lost');return id},adopt:async()=>{}}
  const controller=new HomeNativeController(port)
  await assert.rejects(controller.prepare(),/lost/)
  const restored=new HomeNativeController(port)
@@ -100,7 +129,7 @@ test('待用会话并发、刷新和创建回包丢失重试使用同一身份',
 
 test('仅明确已发送的待用会话换新，未知恢复状态不产生第二份',async()=>{
  let blank:boolean|undefined=true,ids=0
- const controller=new HomeNativeController({storage:memory(),identity:()=>`s-${++ids}`,isBlank:id=>id==='s-1'?blank:true,create:async id=>id})
+ const controller=new HomeNativeController({storage:memory(),identity:()=>`s-${++ids}`,isBlank:id=>id==='s-1'?blank:true,create:async id=>id,adopt:async()=>{}})
  assert.equal(await controller.prepare(),'s-1');blank=undefined
  await assert.rejects(controller.prepare(),/核对/);assert.equal(ids,1);blank=false
  assert.equal(await controller.prepare(),'s-2')
@@ -108,17 +137,17 @@ test('仅明确已发送的待用会话换新，未知恢复状态不产生第�
 
 test('刷新恢复旧待用ID必须等真实历史加载；已发送ID不adopt不开放，改准备新空白',async()=>{
  const storage=memory();storage.setItem('teloa.home-native-session/v1','old')
- const calls:string[]=[];let finish!:(blank:boolean)=>void
- const controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:id=>id==='old'?new Promise<boolean>(resolve=>{finish=resolve}):true,create:async id=>{calls.push(id);return id}})
+ const calls:string[]=[],adopted:string[]=[];let finish!:(blank:boolean)=>void
+ const controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:id=>id==='old'?new Promise<boolean>(resolve=>{finish=resolve}):true,create:async id=>{calls.push(id);return id},adopt:async id=>{adopted.push(id)}})
  const preparing=controller.prepare();await Promise.resolve();await Promise.resolve()
  assert.deepEqual(calls,[]);assert.equal(controller.owns('old'),false)
- finish(false);assert.equal(await preparing,'new');assert.deepEqual(calls,['new']);assert.equal(controller.owns('old'),false);assert.equal(controller.owns('new'),true)
+ finish(false);assert.equal(await preparing,'new');assert.deepEqual(calls,['new']);assert.deepEqual(adopted,['new']);assert.equal(controller.owns('old'),false);assert.equal(controller.owns('new'),true)
 })
 
 test('同ID创建回包返回后才加载的真实消息也必须复核，未知恢复不清原身份',async()=>{
  const storage=memory();storage.setItem('teloa.home-native-session/v1','old')
  let exists=false,unknown=true;const created:string[]=[]
- const controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:id=>id==='new'?true:!exists?undefined:unknown?undefined:false,create:async id=>{exists=true;created.push(id);return id}})
+ const controller=new HomeNativeController({storage,identity:()=> 'new',isBlank:id=>id==='new'?true:!exists?undefined:unknown?undefined:false,create:async id=>{exists=true;created.push(id);return id},adopt:async()=>{}})
  await assert.rejects(controller.prepare(),/核对/);assert.equal(storage.getItem('teloa.home-native-session/v1'),'old')
  unknown=false;assert.equal(await controller.prepare(),'new');assert.deepEqual(created,['old','new'])
 })
@@ -160,7 +189,7 @@ test('read旧版本不能解除未知写入，精确内容和版本对上才恢�
 
 test('真实已发送回执退役待用会话，过时blank与迟到回执不能复用旧会话或清新草稿',async()=>{
  let ids=0
- const controller=new HomeNativeController({storage:memory(),identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>id})
+ const controller=new HomeNativeController({storage:memory(),identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>id,adopt:async()=>{}})
  assert.equal(await controller.prepare(),'s-1')
  controller.accept('s-1');assert.equal(await controller.prepare(),'s-2')
  controller.accept('s-1');assert.equal(await controller.prepare(),'s-2')

@@ -55,7 +55,7 @@ test('真实发送后返回首页，旧ready与回执不能抢在延迟准备前
  const effects:Array<()=>void>=[],react={createElement:(type:unknown,props:unknown,...children:unknown[])=>({type,props,children}),useEffect:(effect:()=>void)=>effects.push(effect),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
  new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:new Proxy({},{get:(_,key)=>key})},exports,react)
  const storage=new Map<string,string>();let ids=0,release:(()=>void)|undefined
- const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>{if(id==='s-2')await new Promise<void>(resolve=>{release=resolve});return id}})
+ const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>{if(id==='s-2')await new Promise<void>(resolve=>{release=resolve});return id},adopt:async()=>{}})
  const navigation:string[]=[],render=(sessionId:string,accepted:boolean)=>exports.HomeNativeConversation({home:true,ready:true,sessionId,overview:'overview',content:'native',isHomeDraft:()=>controller.owns(sessionId),accept:()=>controller.accept(sessionId),acceptance:{subscribe:()=>()=>{},getSnapshot:()=>accepted},engaged:(id:string)=>navigation.push(id),useSession:(select:any)=>select({blank:!accepted,promptAttempted:accepted,pendingSubmissions:[]})})
  assert.equal(await controller.prepare(),'s-1')
  render('s-1',true);effects.splice(0).forEach(effect=>effect());assert.deepEqual(navigation,['s-1'])
@@ -74,7 +74,7 @@ test('待用会话从对话页发送也退役草稿身份，回首页不会把�
  const react={createElement:()=>null,useEffect:(effect:()=>void)=>effect(),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
  new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:{}},exports,react)
  const storage=new Map<string,string>();let ids=0
- const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>id}),navigation:string[]=[]
+ const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>id,adopt:async()=>{}}),navigation:string[]=[]
  const sessionId=await controller.prepare(),props={ready:true,sessionId,isHomeDraft:()=>controller.owns(sessionId),accept:()=>controller.accept(sessionId),acceptance:{subscribe:()=>()=>{},getSnapshot:()=>true},engaged:(id:string)=>navigation.push(id),useSession:(select:any)=>select({blank:false,promptAttempted:true,pendingSubmissions:[]})}
  exports.HomeNativeConversation({...props,home:false});assert.equal(controller.owns(sessionId),false)
  exports.HomeNativeConversation({...props,home:true});assert.deepEqual(navigation,[]);assert.equal(await controller.prepare(),'s-2')

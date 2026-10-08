@@ -1,5 +1,6 @@
 type Storage={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}
-type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;create:(id:string)=>Promise<string>;refresh?:()=>Promise<void>}
+/** create 只建立或恢复原生会话；adopt 以已持久化的同一领养请求把待用会话加入工作目录，须幂等。 */
+type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;create:(id:string)=>Promise<string>;adopt:(id:string)=>Promise<void>;refresh?:()=>Promise<void>}
 const draftKey='teloa.home-native-session/v1'
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
 
@@ -14,7 +15,7 @@ export function homeNativeAdoptionRequestId(storage:Storage,sessionId:string,ide
  return requestId
 }
 
-/** 这里只持久保存待用会话身份；正文、引用和附件始终归官方输入所有。 */
+/** 这里只持久保存待用会话身份；正文、引用和附件始终归官方输入所有。交给首页的待用会话（新建或认领）都已领养进工作目录。 */
 export class HomeNativeController{
  private readonly port:HomePort
  private pending:Promise<string>|undefined
@@ -29,10 +30,13 @@ export class HomeNativeController{
   const previous=this.port.storage.getItem(draftKey)
   assertCurrent()
   if(previous&&previous!==sessionId&&!explicit)return false
+  const unchanged=()=>{assertCurrent();if(this.pending||this.port.storage.getItem(draftKey)!==previous)throw Error('待用会话身份已变化，请重试。')}
   const blank=await this.port.isBlank(sessionId)
-  assertCurrent()
-  if(this.pending||this.port.storage.getItem(draftKey)!==previous)throw Error('待用会话身份已变化，请重试。')
+  unchanged()
   if(blank!==true)return false
+  // 先领养再认领：失败即不认领，首页不开放该会话；下次进入首页以同一领养请求重试。
+  await this.port.adopt(sessionId)
+  unchanged()
   this.port.storage.setItem(draftKey,sessionId);this.ready=sessionId
   return true
  }
@@ -48,6 +52,7 @@ export class HomeNativeController{
     if(this.ready===id){if(before!==true)throw Error('待用会话历史尚未核对，请重试。');return id}
     const actual=await this.port.create(id)
     if(actual!==id)throw Error('待用会话身份不一致，已停止接入。')
+    await this.port.adopt(actual)
     // 创建也可能是在恢复已存在的相同身份；消息加载前不能把它开放为新草稿。
     const blank=await this.port.isBlank(actual)
     if(blank===false){this.accept(actual);continue}

@@ -558,10 +558,13 @@ export async function apply(ctx: Context): Promise<void> {
         const created=await child.sessions.create({sessionId,workspaceId:brandString<WorkspaceId>(workspaceId)})
         if(created!==sessionId)throw Error('待用会话身份不一致。')
       }
-      const binding=await call('conversations/adopt',{sessionId:id,requestId:homeNativeAdoptionRequestId(navigationStorage,id),title:child.sessions.list.getSnapshot().byId[sessionId]?.title||'通用工作会话'})
+      return id
+    },
+    adopt:async id=>{
+      const child=requireWorkContext()
+      const binding=await call('conversations/adopt',{sessionId:id,requestId:homeNativeAdoptionRequestId(navigationStorage,id),title:child.sessions.list.getSnapshot().byId[brandString<SessionId>(id)]?.title||'通用工作会话'})
       if(!isConversation(binding)||binding.sessionId!==id)throw Error('待用会话绑定未确认。')
       await work.refreshDirectory()
-      return id
     },
   })
   let initialSessionPrepared=false
