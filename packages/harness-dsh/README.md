@@ -45,10 +45,10 @@ assertNativeInputProviders(ctx, providers)
 
 | 接口 | 说明 |
 | --- | --- |
-| `loadNativeInputProviders({compatibilityAPIs, requireCheckpoint?})` | `compatibilityAPIs` 是宿主已核对并应用的官方兼容补丁清单，形如 `{[包名]: 清单 api}`。缺少 `nativeInputRequiredAPIs` 中任一能力时拒绝（`requireCheckpoint: true` 时还要求 `nativeInputCheckpointAPIs`），此时不导入任何执行模块。返回冻结的 `{input, controller, subagent, recoveryCandidate?}`，只有这个返回值能用于后续两步。 |
+| `loadNativeInputProviders({compatibilityAPIs, requireCheckpoint?})` | `compatibilityAPIs` 是宿主已核对并应用的官方兼容补丁清单，形如 `{[包名]: 清单 api}`。缺少 `nativeInputRequiredAPIs` 中任一能力时拒绝（`requireCheckpoint: true` 时还要求 `nativeInputCheckpointAPIs`），消息列出包名与缺少的能力名，此时不导入任何执行模块。返回冻结的 `{input, controller, subagent, recoveryCandidate?}`，只有这个返回值能用于后续两步。 |
 | `composeNativeInput(rows, {providers, runtimeRoot, inputProvider?, resolve?})` | `rows` 是官方 `applyEntryPatches` 得到的完整生效树（含父组），不会被修改。返回补丁列表，下表列出它生成的行。`runtimeRoot` 是宿主私有运行目录，必须已存在且为规范绝对路径。`inputProvider` 可换成宿主自己的原生输入提供方模块（例如配置了持久确认的包装）。`resolve` 用于解析实际安装的官方包，默认按本包依赖解析，与受管类继承的官方类同源。 |
 | `assertNativeInputClientFaces(finalRows, {resolve?})` | 只读核对。被替换的官方包若声明了浏览器面，启用行中必须恰好有一个按官方发现规则提供它的来源。相对路径入口依赖所属子树的解析基址，不计入。 |
-| `assertNativeInputProviders(ctx, providers)` | 实际装配的 `teloaNativeInput`、`sessionController`、`subagents` 必须是受管提供方或其子类。 |
+| `assertNativeInputProviders(ctx, providers, {resolve?})` | 实际装配的 `teloaNativeInput`、`sessionController`、`subagents` 必须是受管提供方或其子类。组合里有浏览器端（存在官方 `clientModules` 服务）时，还核对它的模块表含被替换官方包的浏览器面：宿主漏做组合后核对时，这里是第二道失败关闭。没有浏览器组合时不做这一项。 |
 
 ### 生成的行
 
@@ -64,10 +64,14 @@ assertNativeInputProviders(ctx, providers)
 
 ### 浏览器面载体
 
-- 从实际安装、已应用兼容补丁的官方包读取，版本必须等于本包 `engines.dsh`。
+- 从实际安装、已应用兼容补丁的官方包读取，版本必须等于本包 `engines.dsh`，不符时消息写明“安装为 X，核心固定 Y”。
+- 入口取 `exports["./client"]`：字符串直接取；条件对象按 `browser`、`import`、`default` 取第一个。几个条件指向不同文件时拒绝，因为官方发现只读字符串或 `default`，无法确定实际读取的内容；没有该导出或形态无法识别时，消息分别写明。
 - 载体包的名称与版本同官方，只含官方 `client.js`、原样的 `dsh.client` 声明，以及什么也不做的宿主一半（`apply(){}`）。`teloaClientFace` 字段记录 schema `teloa.native-client-face/v1` 和 `client.js` 的 sha256。
 - 写在 `runtimeRoot/native-client-faces/<行>-<内容摘要>/`，目录 0700、文件 0600。先在同级临时目录（`.staging-*`）写好再整体改名，中途退出最多留下临时目录，不会留下不完整的载体。
-- 已有载体逐项核对文件集合、类型、链接数、权限和字节。被改动或权限被放宽时保留现场并拒绝启动，不会自动覆盖。
+- 已有载体逐项核对文件集合、类型、链接数、权限和字节。被改动、类型或权限无效（例如运行目录经复制迁移后权限变宽）时保留现场并拒绝启动，不会自动覆盖；消息写明出问题的目录绝对路径。
+- **恢复方法**：载体内容只由官方安装决定。确认无须留证后，删除消息里给出的目录（载体目录或 `native-client-faces/` 本身）并重新启动，即可按当前安装重新生成。
+- 组合成功后自动删除超过 1 小时的 `.staging-*` 临时目录（中途退出的残留）。未满 1 小时的可能属于正在启动的另一进程，保留；链接和普通文件不处理。
+- 升级 DSH 或兼容补丁后，旧内容摘要的载体目录不再被引用，本接口不自动删除。当前载体目录就是返回补丁中 `teloa-client-face-*` 行入口所在的目录；宿主可按自己的保留规则，在没有运行中实例引用时删除 `native-client-faces/` 下其他摘要目录。
 - 官方浏览器面带懒加载分块文件时拒绝，载体只承载单文件。
 
 ### 失败时拒绝启动
@@ -82,11 +86,11 @@ assertNativeInputProviders(ctx, providers)
 4. 删除自建的浏览器面载体生成，不再单独插入载体行，`composeNativeInput` 的返回值已经包含载体行。不要从返回值中筛掉任何补丁。
 5. 宿主之后若还要替换受管行（例如换成自己的子类），保留这一步，按 `teloa-managed-session-controller` 等行编号定位。随后对最终生效树调用 `assertNativeInputClientFaces`。
 6. 启动后改用 `assertNativeInputProviders` 核对服务实例，删除自建的同类核对。
-7. 运行目录里旧的自建载体目录不再被引用，可以留到下次清理。新载体在 `native-client-faces/` 下。
+7. 运行目录里旧的自建载体目录不再被引用，宿主按自己的保留规则清理即可。新载体在 `native-client-faces/` 下，非当前摘要的目录同样按保留规则清理（见“浏览器面载体”）。
 8. 用宿主自己的发行形态验证：工作台首屏能加载、会话服务可用；保留“插件图包含 `@deepseek-ai/dsh-api-session-controller` 浏览器面”的断言。
 
 若上游 DSH 以后支持替换提供方沿用原包的浏览器面与远程调用描述，本接口会删除载体逻辑，宿主调用方式不变。
 
 ## English
 
-`@teloa/harness-dsh/native-input-composition` is a host-side composition API for hosts that enable native input admission by replacing the official session controller and subagent host rows with the managed providers from this package. DSH client-module discovery reads `dsh.client` only from the package root of each enabled row, so a bare row replacement drops the official browser face (the workbench `sessions` service). The API centralizes the compatibility check (`loadNativeInputProviders`), the row replacement patches including the `typert-loader` package list (`composeNativeInput`), and a carrier package for the browser face, generated from the actually installed, patched official package and always inserted as its own row whenever a row that declares a browser face is replaced. After all overlays, `assertNativeInputClientFaces` verifies that exactly one enabled source provides each replaced browser face; `assertNativeInputProviders` verifies the booted services. Every failure throws `NativeInputCompositionError` with a stated reason so the host can refuse to start. The community edition itself does not call this API, and its composition is unchanged. See the migration steps above for hosts that maintain their own copies.
+`@teloa/harness-dsh/native-input-composition` is a host-side composition API for hosts that enable native input admission by replacing the official session controller and subagent host rows with the managed providers from this package. DSH client-module discovery reads `dsh.client` only from the package root of each enabled row, so a bare row replacement drops the official browser face (the workbench `sessions` service). The API centralizes the compatibility check (`loadNativeInputProviders`), the row replacement patches including the `typert-loader` package list (`composeNativeInput`), and a carrier package for the browser face, generated from the actually installed, patched official package and always inserted as its own row whenever a row that declares a browser face is replaced. After all overlays, `assertNativeInputClientFaces` verifies that exactly one enabled source provides each replaced browser face; `assertNativeInputProviders` verifies the booted services and, when the composition has a browser side, checks the official `clientModules` graph as a second fail-closed guard. Every failure throws `NativeInputCompositionError` with a stated reason so the host can refuse to start; carrier failures name the directory, which can be deleted (once no evidence needs to be kept) to regenerate it on the next start. Stale `.staging-*` directories older than one hour are removed after a successful composition; carrier directories for older digests are left to the host's retention policy. The community edition itself does not call this API, and its composition is unchanged. See the migration steps above for hosts that maintain their own copies.

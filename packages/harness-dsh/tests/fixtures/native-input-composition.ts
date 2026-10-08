@@ -63,11 +63,19 @@ export function findRow(rows:readonly Row[],id:string):Row|undefined{
  return undefined
 }
 
+export type ClientModules={graph:()=>{entries:Array<{id:string}>};clientPath:(id:string)=>string|undefined}
+
+/** 用官方 dsh-client-modules 的真实发现逻辑扫描启用行，返回浏览器模块表（包名 → client 文件）。 */
+export async function discoveredClientModules(rows:readonly Row[]):Promise<Map<string,string>>{
+ const registry=await clientModuleRegistry(rows)
+ return new Map(registry.graph().entries.map(entry=>[entry.id,registry.clientPath(entry.id)??'']))
+}
+
 /**
- * 用官方 dsh-client-modules 的真实发现逻辑扫描启用行，返回浏览器模块表（包名 → client 文件）。
+ * 官方 ClientModuleRegistry 服务（启动后 `ctx.get('clientModules')` 的同一实现），对启用行完成首次扫描。
  * Loader 只提供条目表；裸包名从官方 dsh 依赖树解析，与宿主一致。
  */
-export async function discoveredClientModules(rows:readonly Row[]):Promise<Map<string,string>>{
+export async function clientModuleRegistry(rows:readonly Row[]):Promise<ClientModules>{
  const controllerRequire=createRequire(officialManifestPath),modulesPath=controllerRequire.resolve('@deepseek-ai/dsh-client-modules')
  const cordis=await import(pathToFileURL(createRequire(modulesPath).resolve('@deepseek-ai/cordis')).href) as {Context:new()=>{provide:(name:string,value:unknown)=>void;plugin:(plugin:unknown)=>Promise<unknown>;get:(name:string)=>unknown}}
  const {ClientModuleRegistry}=await import(pathToFileURL(modulesPath).href) as {ClientModuleRegistry:unknown}
@@ -84,6 +92,5 @@ export async function discoveredClientModules(rows:readonly Row[]):Promise<Map<s
  const ctx=new cordis.Context()
  ctx.provide('loader',{entries:()=>entries,internal:undefined})
  await ctx.plugin(ClientModuleRegistry)
- const registry=ctx.get('clientModules') as {graph:()=>{entries:Array<{id:string}>};clientPath:(id:string)=>string|undefined}
- return new Map(registry.graph().entries.map(entry=>[entry.id,registry.clientPath(entry.id)??'']))
+ return ctx.get('clientModules') as ClientModules
 }

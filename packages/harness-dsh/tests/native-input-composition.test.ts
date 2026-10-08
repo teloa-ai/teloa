@@ -2,13 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
 import {createRequire,registerHooks} from 'node:module'
-import {chmod,cp,mkdtemp,readFile,readdir,realpath,rm,writeFile} from 'node:fs/promises'
+import {readFileSync} from 'node:fs'
+import {chmod,cp,lutimes,mkdir,mkdtemp,readFile,readdir,realpath,rm,stat,symlink,utimes,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
-import {dirname,join,relative} from 'node:path'
+import {basename,dirname,join,relative,resolve as resolvePath} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
-import {applyPatches,communityRows,compatibilityAPIs,discoveredClientModules,dshVersion,findRow,officialManifestPath,projectRoot,sessionControllerPackage,type Row} from './fixtures/native-input-composition.ts'
+import {applyPatches,clientModuleRegistry,communityRows,compatibilityAPIs,discoveredClientModules,dshVersion,findRow,officialManifestPath,projectRoot,sessionControllerPackage,type Row} from './fixtures/native-input-composition.ts'
 
-// 基线取自尚未加载组合接口的进程：后面的默认组合用例逐字节对照它。
+// 基线取自本进程加载组合接口之前：末尾用例据此证明“同一提交内加载并调用接口不改变社区默认组合”。
 const baseline=JSON.stringify(communityRows())
 const resolved:string[]=[]
 registerHooks({resolve(specifier,context,next){const result=next(specifier,context);resolved.push(result.url);return result}})
@@ -20,6 +21,8 @@ const require=createRequire(import.meta.url)
 const sha256=(bytes:Uint8Array|string)=>createHash('sha256').update(bytes).digest('hex')
 const providerModule=/\/(?:native-input-provider|managed-session-controller|managed-subagent)\.(?:ts|js)$/
 const facePatch=(patch:unknown)=>JSON.stringify(patch).includes('teloa-client-face-')
+const faceDirectory=(rows:readonly Row[])=>dirname(fileURLToPath(findRow(rows,'teloa-client-face-session-controller')?.name??''))
+const managedServices=(compat:Awaited<ReturnType<typeof load>>):Record<string,unknown>=>({teloaNativeInput:Object.create(compat.input.prototype),sessionController:Object.create(compat.controller.prototype),subagents:Object.create(compat.subagent.prototype)})
 const official=JSON.parse(await readFile(officialManifestPath,'utf8')) as {dsh:{client:unknown};exports:{'./client':{default:string}}}
 const officialClient=await readFile(join(dirname(officialManifestPath),official.exports['./client'].default))
 
@@ -234,22 +237,127 @@ test('启动后核对实际装配的是受管提供方实例',async()=>{
  assert.throws(()=>composition.assertNativeInputProviders({get:name=>services[name]},{...compat}),NativeInputCompositionError)
 })
 
-test('社区版默认组合不调用该接口、结果与现状逐字节一致',async t=>{
- // 社区版自身的组合入口都不引用该接口：bundle 补丁、启动脚本、CLI 与 harness 内其他源码
+test('载体被改动或权限无效时，拒绝消息给出载体目录与恢复办法，删除后重新生成',async t=>{
+ const compat=await providers(),rows=communityRows(),runtimeRoot=await temporary(t)
+ const first=await compose(rows,{providers:compat,runtimeRoot}),directory=faceDirectory(applyPatches(rows,first)),base=dirname(directory)
+ const refused=async(path:string)=>{
+  const error:unknown=await compose(rows,{providers:compat,runtimeRoot}).then(()=>undefined,(caught:unknown)=>caught)
+  assert.ok(error instanceof NativeInputCompositionError,String(error))
+  assert.ok(error.message.includes('（'+path+'）'),error.message)
+  assert.match(error.message,/确认无须留证后删除该目录并重新启动/)
+ }
+ const recover=async(path:string)=>{await rm(path,{recursive:true,force:true});assert.deepEqual(await compose(rows,{providers:compat,runtimeRoot}),first)}
+ // 内容被改动
+ await writeFile(join(directory,'client.js'),'changed');await refused(directory);await recover(directory)
+ // 载体目录权限放宽（例如运行目录经复制迁移）
+ await chmod(directory,0o755);await refused(directory);await recover(directory)
+ // 载体目录被换成指向别处的链接
+ await rm(directory,{recursive:true});await symlink(await temporary(t),directory);await refused(directory);await recover(directory)
+ // 载体根目录权限放宽
+ await chmod(base,0o755);await refused(base);await recover(base)
+})
+
+test('版本不符与能力缺失的拒绝消息写明实际值与缺项',async t=>{
+ const compat=await providers(),rows=communityRows(),complete=compatibilityAPIs(),loop='@deepseek-ai/dsh-agent-loop'
+ const resolve=await installedPackage(t,root=>editManifest(root,manifest=>{manifest.version='0.0.0-other'}))
+ await assert.rejects(compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve}),{name:'NativeInputCompositionError',message:/安装为 0\.0\.0-other，核心固定 /})
+ await assert.rejects(compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve}),{message:new RegExp('核心固定 '+dshVersion.replaceAll('.','\\.')+'。')})
+ const partial={...complete,[loop]:(complete[loop]??[]).filter(name=>name!=='AgentLoop.requireWorkAdmission'&&name!=='AgentLoop.installRestoreAdmission')}
+ await assert.rejects(load({compatibilityAPIs:partial}),{name:'NativeInputCompositionError',message:/@deepseek-ai\/dsh-agent-loop：AgentLoop\.requireWorkAdmission、AgentLoop\.installRestoreAdmission）/})
+ const absent:Record<string,unknown>={...complete};delete absent['@deepseek-ai/dsh-compaction-basic']
+ await assert.rejects(load({compatibilityAPIs:absent}),{message:/@deepseek-ai\/dsh-compaction-basic：BasicCompactionEngine\.summaryRequestOwner）/})
+ const durable={...complete,[loop]:(complete[loop]??[]).filter(name=>name!=='AgentLoop.installProgressCheckpoint')}
+ await assert.rejects(load({compatibilityAPIs:durable,requireCheckpoint:true}),{message:/@deepseek-ai\/dsh-agent-loop：AgentLoop\.installProgressCheckpoint）/})
+})
+
+test('原生输入栈实际调用的官方准入与检查点补口都在必需能力表内',()=>{
+ // 从受管提供方出发沿相对导入走完本包内的原生输入栈，提取实际调用的 require*/install* 补口名称。
+ const source=fileURLToPath(new URL('../src/',import.meta.url)),files=new Set<string>()
+ const queue=['native-input-provider.ts','managed-session-controller.ts','managed-subagent.ts'].map(name=>join(source,name))
+ for(let file=queue.pop();file!==undefined;file=queue.pop()){
+  if(files.has(file))continue
+  files.add(file)
+  for(const match of readFileSync(file,'utf8').matchAll(/(?:from|import)\s*\(?\s*'(\.{1,2}\/[^']+\.ts)'/g))queue.push(resolvePath(dirname(file),match[1]??''))
+ }
+ const text=[...files].map(file=>readFileSync(file,'utf8')).join('\n')
+ // 本包自己声明的辅助函数（如 installNativeAdmission）不是官方补口
+ const local=new Set([...text.matchAll(/\bfunction\s+([A-Za-z]+)/g)].map(match=>match[1]))
+ const called=new Set([...text.matchAll(/\b(?:require|install)[A-Z][A-Za-z]*(?:Admission|Checkpoint)\b/g)].map(match=>match[0]).filter(name=>!local.has(name)))
+ const declared=[...Object.values(composition.nativeInputRequiredAPIs),...Object.values(composition.nativeInputCheckpointAPIs)].flat()
+ const covered=(name:string)=>declared.some(api=>api===name||api.endsWith('.'+name)||api.startsWith(name+'('))
+ assert.ok(files.size>=5,String(files.size))
+ for(const name of ['requireInputAdmission','installPromptAdmission','requireAppendAdmission','installStreamAdmission','requireRestoreAdmission','installProgressCheckpoint'])assert.ok(called.has(name),name)
+ assert.deepEqual([...called].filter(name=>!covered(name)),[])
+})
+
+test('启动后核对工作台模块表含被替换官方包的浏览器面，作为第二道失败关闭',async t=>{
+ const compat=await providers(),rows=communityRows(),services=managedServices(compat)
+ const patches=await compose(rows,{providers:compat,runtimeRoot:await temporary(t)})
+ const withFace=await clientModuleRegistry(applyPatches(rows,patches)),withoutFace=await clientModuleRegistry(applyPatches(rows,patches.filter(patch=>!facePatch(patch))))
+ const ctx=(clientModules:unknown)=>({get:(name:string)=>name==='clientModules'?clientModules:services[name]})
+ assert.doesNotThrow(()=>composition.assertNativeInputProviders(ctx(withFace),compat))
+ // 宿主漏做组合后核对时，启动后的官方模块表仍能拦下缺面
+ assert.throws(()=>composition.assertNativeInputProviders(ctx(withoutFace),compat),{name:'NativeInputCompositionError',message:/模块表缺少会话控制器的浏览器面/})
+ for(const malformed of [null,{},{graph:()=>null},{graph:()=>({entries:'x'})},{graph:()=>{throw Error('x')}}])assert.throws(()=>composition.assertNativeInputProviders(ctx(malformed),compat),NativeInputCompositionError)
+ // 没有浏览器组合（无 clientModules 服务）时没有浏览器面需要保留
+ assert.doesNotThrow(()=>composition.assertNativeInputProviders(ctx(undefined),compat))
+})
+
+test('组合成功后清理过期的临时目录，不动当前载体、其他摘要目录、文件与链接',async t=>{
+ const compat=await providers(),rows=communityRows(),runtimeRoot=await temporary(t),outside=await temporary(t)
+ const patches=await compose(rows,{providers:compat,runtimeRoot}),current=faceDirectory(applyPatches(rows,patches)),base=dirname(current)
+ const old=new Date(Date.now()-2*60*60*1000)
+ for(const name of ['.staging-old','.staging-fresh','session-controller-0000000000000000'])await mkdir(join(base,name),{mode:0o700})
+ await writeFile(join(base,'.staging-old','client.js'),'partial',{mode:0o600})
+ await writeFile(join(base,'.staging-file'),'x',{mode:0o600})
+ await symlink(outside,join(base,'.staging-link'))
+ for(const name of ['.staging-old','.staging-file','session-controller-0000000000000000'])await utimes(join(base,name),old,old)
+ await lutimes(join(base,'.staging-link'),old,old);await utimes(outside,old,old)
+ assert.deepEqual(await compose(rows,{providers:compat,runtimeRoot}),patches)
+ assert.deepEqual((await readdir(base)).sort(),['.staging-file','.staging-fresh','.staging-link',basename(current),'session-controller-0000000000000000'].sort())
+ assert.ok((await stat(outside)).isDirectory())
+})
+
+test('浏览器面导出按 browser、import、default 取值，无法识别或互相矛盾时给出专门原因',async t=>{
+ const compat=await providers(),rows=communityRows()
+ const clientExport=(client:unknown)=>(root:string)=>editManifest(root,manifest=>{
+  const next={...manifest.exports as Record<string,unknown>}
+  if(client===undefined)delete next['./client'];else next['./client']=client
+  manifest.exports=next
+ })
+ const run=async(client:unknown)=>compose(rows,{providers:compat,runtimeRoot:await temporary(t),resolve:await installedPackage(t,clientExport(client))})
+ for(const client of ['./lib/client.js',{browser:'./lib/client.js'},{types:'./lib/types/client/index.d.ts',import:'./lib/client.js'},{browser:'./lib/client.js',default:'lib/client.js'}]){
+  assert.deepEqual(await readFile(join(faceDirectory(applyPatches(rows,await run(client))),'client.js')),officialClient,JSON.stringify(client))
+ }
+ const cases:Array<[unknown,RegExp]>=[
+  [undefined,/没有导出浏览器面/],
+  [{node:'./lib/client.js'},/浏览器面导出形态无法识别/],
+  [{browser:{default:'./lib/client.js'}},/浏览器面导出形态无法识别/],
+  [42,/浏览器面导出形态无法识别/],
+  [{browser:'./lib/index.js',default:'./lib/client.js'},/指向不同文件/],
+  [{browser:'../outside.js'},/不在包内/],
+ ]
+ for(const [client,message] of cases)await assert.rejects(run(client),{name:'NativeInputCompositionError',message},JSON.stringify(client))
+})
+
+test('社区版默认组合不调用该接口；同一提交内加载并调用接口不改变社区默认组合',async t=>{
+ // 社区版自身的源码、组合补丁、启动脚本与容器配置都不引用该接口（各包测试目录与本接口的导出声明除外）。
+ // 跳过隐藏目录：其中只有其他测试并发创建、随即删除的临时目录与运行目录，不是源码。
  const files:string[]=[]
  const walk=async(directory:string)=>{
   for(const entry of await readdir(directory,{withFileTypes:true})){
    const path=join(directory,entry.name)
-   if(entry.isDirectory()){if(!['node_modules','lib'].includes(entry.name))await walk(path)}
-   else if(/\.(?:ts|mts|mjs|js|json|ya?ml)$/.test(entry.name))files.push(path)
+   if(entry.isDirectory()){if(!entry.name.startsWith('.')&&!['node_modules','lib','dist','tests'].includes(entry.name))await walk(path)}
+   else if(/\.(?:ts|tsx|mts|mjs|js|json|ya?ml)$/.test(entry.name))files.push(path)
   }
  }
- for(const directory of ['packages/bundle','packages/cli/src','packages/harness-dsh/src','scripts'])await walk(join(projectRoot,directory))
+ for(const directory of ['packages','scripts'])await walk(join(projectRoot,directory))
  files.push(join(projectRoot,'Dockerfile'),join(projectRoot,'compose.yaml'))
- const self=fileURLToPath(new URL('../src/native-input-composition.ts',import.meta.url))
- assert.ok(files.length>50)
- for(const path of files.filter(path=>path!==self))assert.doesNotMatch(await readFile(path,'utf8'),/native-input-composition|nativeInputCompos|composeNativeInput/,path)
- // 本进程已加载接口并完成多次组合，社区版默认组合仍与加载前逐字节一致
+ const own=new Set([fileURLToPath(new URL('../src/native-input-composition.ts',import.meta.url)),fileURLToPath(new URL('../package.json',import.meta.url))])
+ assert.ok(files.some(path=>path.includes('/packages/backend/'))&&files.some(path=>path.includes('/packages/client/')))
+ for(const path of files.filter(path=>!own.has(path)))assert.doesNotMatch(await readFile(path,'utf8'),/native-input-composition|nativeInputCompos|composeNativeInput/,path)
+ // 本进程加载接口并完成多次组合后，重算的社区默认组合与加载前的基线逐字节一致。
+ // 基线与重算出自同一提交，只证明接口的加载与调用不影响社区组合；跨提交的组合变化不在本用例范围内。
  const rows=communityRows()
  assert.equal(JSON.stringify(rows),baseline)
  for(const [id,name] of [['session-controller',sessionControllerPackage],['subagent','@deepseek-ai/dsh-subagent']] as const){

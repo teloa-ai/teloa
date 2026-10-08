@@ -77,7 +77,8 @@ export async function loadNativeInputProviders(options:NativeInputLoadOptions):P
  for(const required of requireCheckpoint?[nativeInputRequiredAPIs,nativeInputCheckpointAPIs]:[nativeInputRequiredAPIs]){
   for(const [name,names] of Object.entries(required)){
    const declared=Object.hasOwn(apis,name)?apis[name]:undefined
-   if(!Array.isArray(declared)||!names.every(api=>declared.includes(api)))throw refuse('缺少原生输入准入所需的官方兼容能力（'+name+'）。')
+   const missing=Array.isArray(declared)?names.filter(api=>!declared.includes(api)):names
+   if(missing.length)throw refuse('缺少原生输入准入所需的官方兼容能力（'+name+'：'+missing.join('、')+'）。')
   }
  }
  const [input,controller,subagent]=await Promise.all([import('./native-input-provider.ts'),import('./managed-session-controller.ts'),import('./managed-subagent.ts')])
@@ -169,11 +170,36 @@ export function assertNativeInputClientFaces(rows:readonly unknown[],options:Rea
  }
 }
 
-/** 启动后核对：实际装配的服务必须是经核对导入的受管提供方（或其子类）。 */
-export function assertNativeInputProviders(ctx:Readonly<{get:(name:string)=>unknown}>,providers:NativeInputProviders):void{
+/**
+ * 启动后核对：实际装配的服务必须是经核对导入的受管提供方（或其子类）。组合里有浏览器端
+ * （`clientModules` 服务存在）时，再按官方模块表核对被替换官方包的浏览器面，作为组合后核对之外的
+ * 第二道失败关闭；没有浏览器组合时没有浏览器面需要保留。
+ * @throws {NativeInputCompositionError} 服务不是受管提供方，或模块表缺少浏览器面、无法读取。
+ */
+export function assertNativeInputProviders(ctx:Readonly<{get:(name:string)=>unknown}>,providers:NativeInputProviders,options:Readonly<{resolve?:Resolve}>={}):void{
  if(!loaded.has(providers))throw refuse('提供方未经兼容核对。')
  const expected=[['teloaNativeInput',providers.input,'原生输入准入服务'],['sessionController',providers.controller,'会话控制器'],['subagents',providers.subagent,'子代理']] as const
  for(const [service,type,label] of expected)if(!(ctx.get(service) instanceof type))throw refuse('启动后的'+label+'不是受管提供方。')
+ const modules=ctx.get('clientModules')
+ if(modules===undefined)return
+ const ids=clientModuleIds(modules),resolve=options?.resolve??defaultResolve
+ for(const provider of providerRows){
+  if(webFace(officialManifest(provider,resolve).manifest)&&!ids.has(provider.source))throw refuse('工作台模块表缺少'+provider.label+'的浏览器面（'+provider.source+'），工作台将无法使用相应服务。')
+ }
+}
+
+/** 读取官方 clientModules 服务当前模块表中的包名。 */
+function clientModuleIds(modules:unknown):Set<string>{
+ const unreadable='无法读取工作台的浏览器模块表。'
+ let entries:unknown
+ try{
+  const graph:unknown=typeof modules==='object'&&modules!==null?Reflect.get(modules,'graph'):undefined
+  if(typeof graph!=='function')throw refuse(unreadable)
+  const composed:unknown=Reflect.apply(graph,modules,[])
+  entries=record(composed)?composed.entries:undefined
+ }catch(error){throw error instanceof NativeInputCompositionError?error:refuse(unreadable,error)}
+ if(!Array.isArray(entries)||entries.some(entry=>!record(entry)||typeof entry.id!=='string'))throw refuse(unreadable)
+ return new Set(entries.map(entry=>(entry as Row).id as string))
 }
 
 function indexRows(rows:unknown):Map<string,Located[]>{
@@ -233,6 +259,11 @@ const inside=(parent:string,child:string)=>{const value=relative(parent,child);r
 
 /** 官方按包发布懒加载分块（与 client 同目录）；载体只承载单文件浏览器面。 */
 const clientChunk=/^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
+/** 超过此时长的 `.staging-*` 视为中途退出的残留；未满时长的可能属于正在启动的另一进程。 */
+const stagingRetentionMs=60*60*1000
+/** 载体内容只由官方安装决定，删除后重新启动会按当前安装重新生成。 */
+const recovery='确认无须留证后删除该目录并重新启动，即可重新生成。'
+const shown=(value:unknown)=>typeof value==='string'?value.slice(0,64):'无效值'
 const hostHalf='// 只承载固定官方包的浏览器面；宿主服务由受管提供方提供，本模块不启动任何服务。\nexport function apply(){}\n'
 
 /**
@@ -244,13 +275,12 @@ const hostHalf='// 只承载固定官方包的浏览器面；宿主服务由受�
 async function prepareClientFace(provider:Provider,resolve:Resolve,runtimeRoot:string):Promise<string|undefined>{
  const {path,manifest}=officialManifest(provider,resolve),client=clientDeclaration(manifest),subject='官方'+provider.label+'包（'+provider.source+'）'
  if(client===undefined)return undefined
- if(manifest.version!==coreDshVersion())throw refuse('实际安装的'+subject+'不是核心固定的 DSH 版本。')
+ const expected=coreDshVersion()
+ if(manifest.version!==expected)throw refuse(subject+'安装为 '+shown(manifest.version)+'，核心固定 '+expected+'。')
  if(!record(client)||client.platform!=='web')throw refuse(subject+'的浏览器面声明无效。')
- const entry=record(manifest.exports)?manifest.exports['./client']:undefined
- const declared=typeof entry==='string'?entry:record(entry)&&typeof entry.default==='string'?entry.default:undefined
- const packageRoot=await realpath(dirname(path)),clientPath=declared===undefined?undefined:resolvePath(packageRoot,declared)
+ const packageRoot=await realpath(dirname(path)),clientPath=clientExport(manifest,packageRoot,subject)
  let real:string|undefined
- try{if(clientPath!==undefined&&inside(packageRoot,clientPath))real=await realpath(clientPath)}catch(error){throw refuse(subject+'的浏览器面无法读取。',error)}
+ try{if(inside(packageRoot,clientPath))real=await realpath(clientPath)}catch(error){throw refuse(subject+'的浏览器面无法读取。',error)}
  if(real===undefined||!inside(packageRoot,real)||!(await lstat(real)).isFile())throw refuse(subject+'的浏览器面不在包内。')
  if((await readdir(dirname(real))).some(name=>clientChunk.test(name)))throw refuse(subject+'的浏览器面带有分块文件，载体无法完整承载。')
  const bytes=await readFile(real)
@@ -272,7 +302,37 @@ async function prepareClientFace(provider:Provider,resolve:Resolve,runtimeRoot:s
   }
  }
  await verifyFace(target,files)
+ await sweepStaging(base)
  return pathToFileURL(join(target,'index.mjs')).href
+}
+
+/**
+ * `exports["./client"]` 取浏览器面入口：字符串形态直接取；条件对象按 browser、import、default 取第一个。
+ * 官方发现只读字符串或 default，几个条件同时存在却指向不同文件时无法确定官方实际读取的内容，拒绝。
+ */
+function clientExport(manifest:Row,packageRoot:string,subject:string):string{
+ const entry=record(manifest.exports)?manifest.exports['./client']:undefined
+ if(entry===undefined)throw refuse(subject+'没有导出浏览器面（exports["./client"]）。')
+ if(typeof entry==='string')return resolvePath(packageRoot,entry)
+ const conditions=record(entry)?['browser','import','default'].filter(key=>entry[key]!==undefined).map(key=>entry[key]):[]
+ if(!conditions.length||conditions.some(value=>typeof value!=='string'))throw refuse(subject+'的浏览器面导出形态无法识别。')
+ const paths=new Set(conditions.map(value=>resolvePath(packageRoot,value as string)))
+ if(paths.size>1)throw refuse(subject+'的浏览器面导出在 browser、import、default 之间指向不同文件，无法确定官方发现读取的内容。')
+ return [...paths][0] as string
+}
+
+/** 删除超过保留时长的临时目录；只处理本目录下的实际目录，不跟随链接。清理失败不影响本次组合，下次启动再试。 */
+async function sweepStaging(base:string):Promise<void>{
+ const cutoff=Date.now()-stagingRetentionMs
+ let names:string[]
+ try{names=await readdir(base)}catch{return}
+ for(const name of names.filter(name=>name.startsWith('.staging-'))){
+  const path=join(base,name)
+  try{
+   const info=await lstat(path)
+   if(info.isDirectory()&&!info.isSymbolicLink()&&info.mtimeMs<cutoff)await rm(path,{recursive:true,force:true})
+  }catch{}
+ }
 }
 
 function coreDshVersion():string{
@@ -282,13 +342,13 @@ function coreDshVersion():string{
 }
 
 async function privateDirectory(path:string):Promise<void>{
- try{await mkdir(path,{mode:0o700})}catch(error){if(code(error)!=='EEXIST')throw refuse('无法建立浏览器面载体目录。',error)}
+ try{await mkdir(path,{mode:0o700})}catch(error){if(code(error)!=='EEXIST')throw refuse('无法建立浏览器面载体目录（'+path+'）。',error)}
  const info=await lstat(path)
- if(!info.isDirectory()||info.isSymbolicLink()||info.mode&0o077||await realpath(path)!==path)throw refuse('浏览器面载体目录的类型或权限无效。')
+ if(!info.isDirectory()||info.isSymbolicLink()||info.mode&0o077||await realpath(path)!==path)throw refuse('浏览器面载体目录的类型或权限无效（'+path+'）。'+recovery)
 }
 
 async function verifyFace(target:string,files:ReadonlyMap<string,Uint8Array>):Promise<void>{
- const changed=()=>refuse('浏览器面载体已变化，保留现场。')
+ const changed=()=>refuse('浏览器面载体已变化或类型、权限无效（'+target+'），保留现场。'+recovery)
  const info=await lstat(target)
  if(!info.isDirectory()||info.isSymbolicLink()||info.mode&0o077||await realpath(target)!==target)throw changed()
  if(JSON.stringify((await readdir(target)).sort())!==JSON.stringify([...files.keys()].sort()))throw changed()
