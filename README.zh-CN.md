@@ -1,6 +1,6 @@
-# Teloa · AI-Native Team Studio
+![Teloa · AI-Native Team Studio。让每个人，都拥有自己的 AI 团队。](assets/brand/readme-hero-zh-CN.png)
 
-**让每个人，都拥有自己的 AI 团队。**
+[快速开始](#快速开始) · [社区与表情](#社区与许可) · [安装指南](https://docs.teloa.ai/start/quickstart)
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -13,6 +13,10 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 **你提出目标，AI 团队交付成果。** 你负责方向、职责分配、访问范围、审批规则和成果验收；员工在这些边界内执行并交接工作。你仍可以直接提出任务，无需先配齐整支团队。**Teloa 社区版** 是面向个人、自行部署的版本，使用 **DeepSeek Harness（DSH）**作为智能体运行引擎。
 
 **社区版面向个人使用：** 一个用户在自己的电脑上，通过 Web 界面管理多位 AI 员工。本仓库提供 [Apache-2.0](LICENSE) 许可的社区版源码，当前源码版本为 **0.2.0-alpha.7**。
+
+> **为什么做 Teloa？** 我们相信，AI 团队的身份、能力与工作积累，应该能够长期延续，并由用户掌握。
+>
+> [阅读《从 Agent 到 AI Organization：我们为什么做 Teloa》](https://www.teloa.ai/blog/why-teloa/)。
 
 ## 可以做什么
 
@@ -211,6 +215,10 @@ Teloa 的三个版本共享同一产品核心，面向不同的使用场景。�
 各版本均使用自备的模型服务与 API 密钥，模型费用另计。外部集成需要兼容服务及相应凭据。停止会话不能保证所有外部请求立即中断。
 
 ## 社区与许可
+
+![小松鼠 Teloa 的六种社区表情：暗中观察、吃瓜、拿捏、CPU 烧了、已读乱回、下班秒跑。](assets/brand/community-reactions-zh-CN.png)
+
+认识一下，小松鼠 Teloa。更多社区图片见[品牌素材](https://www.teloa.ai/brand-kit/)，使用前请阅读[图片使用说明](assets/brand/README.md)。
 
 - 问题与功能建议：[GitHub Issues](https://github.com/teloa-ai/teloa/issues)。
 - 参与贡献：[贡献指南](CONTRIBUTING.md)与 [DCO](DCO.md)。

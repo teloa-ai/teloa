@@ -1,6 +1,6 @@
-# Teloa · AI-Native Team Studio
+![Teloa · AI-Native Team Studio. An AI team of your own. For everyone.](assets/brand/readme-hero-en.png)
 
-**An AI team of your own. For everyone.**
+[Quick start](#quick-start) · [Community and reactions](#community-and-license) · [Installation guide](https://docs.teloa.ai/en/start/quickstart)
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -13,6 +13,10 @@ Teloa is an **AI-Native Team Studio** for building, managing, and running teams 
 **You set the goal. Your AI team delivers.** You guide the work, assign responsibilities, define access and approval rules, and review deliverables. Employees carry out work and hand over results within those boundaries. You can also make a direct request without setting up a full team first. **Teloa Community** is the self-hosted personal edition, using **DeepSeek Harness (DSH)** as its agent runtime.
 
 **Community edition:** one human user, multiple AI employees, running on your computer through a Web interface. This repository provides the Community source code under [Apache-2.0](LICENSE). The current source version is **0.2.0-alpha.7**.
+
+> **Why Teloa?** We believe an AI team's identity, capabilities and work experience should endure, and remain in the user's hands.
+>
+> [Read “From Agent to AI Organization: Why Teloa”](https://www.teloa.ai/en/blog/why-teloa/).
 
 ## What you can do
 
@@ -211,6 +215,10 @@ Teloa's three editions share the same product core and serve different working n
 All editions use your own model service and API keys; model usage is billed separately. External integrations require compatible services and credentials. Stopping a conversation does not guarantee immediate cancellation of every external request.
 
 ## Community and license
+
+![Teloa squirrel reactions: Sneak peek, Tea time, Nailed it, Brain overload, Auto-reply and Clocking out.](assets/brand/community-reactions-en.png)
+
+Meet Teloa, our squirrel companion. Find more community artwork in the [brand kit](https://www.teloa.ai/en/brand-kit/) and see the [image usage notes](assets/brand/README.md).
 
 - Bugs and proposals: [GitHub Issues](https://github.com/teloa-ai/teloa/issues).
 - Contributions: [guide](CONTRIBUTING.md) and [DCO](DCO.md).
