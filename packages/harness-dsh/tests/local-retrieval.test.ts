@@ -751,7 +751,7 @@ test('切换模型先取消旧整理并等待真实收尾，再持久化与开�
  assert.deepEqual(writes,[]);assert.equal(builds,1)
  const query=e.call({query:'报销'})
  await new Promise<void>(resolve=>setImmediate(resolve))
- assert.deepEqual(embedding.embedded,[],'切换收尾期间查询等待，不使用旧模型')
+ assert.equal(embedding.embedded.length,0,'切换收尾期间查询等待，不使用旧模型')
  settled.resolve();await selecting;await e.registered.idle()
  assert.deepEqual(writes,[gemmaProviderId]);assert.equal(builds,2)
  assert.equal((await query).isError,false)

@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import {createServer,type IncomingMessage,type ServerResponse} from 'node:http'
 import {setTimeout as sleep} from 'node:timers/promises'
@@ -7,7 +7,7 @@ import {createOllamaEmbeddingProvider,embeddingGemma2Digest,embeddingGemma2Model
 
 const nativeVector=()=>Array.from({length:768},(_,i)=>i===0?2:0)
 const json=(res:ServerResponse,value:unknown,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value))}
-async function server(t:test.TestContext,handle:(req:IncomingMessage,res:ServerResponse,body:Record<string,unknown>)=>void|Promise<void>){
+async function server(t:TestContext,handle:(req:IncomingMessage,res:ServerResponse,body:Record<string,unknown>)=>void|Promise<void>){
  const requests:{path:string;body:Record<string,unknown>}[]=[]
  const instance=createServer(async(req,res)=>{
   let bytes='';for await(const chunk of req)bytes+=String(chunk)

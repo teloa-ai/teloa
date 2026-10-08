@@ -21,7 +21,9 @@ test('预期配置深拷贝、键序规范化；工件/路径/许可/版本/内�
  for(const patch of [{catalogVersion:'2'},{profileHash:'c'.repeat(64)},{memoryRisk:false},{preparationDetails:{...expected.preparationDetails,license:'new'}},{preparationDetails:{...expected.preparationDetails,runtimeDirectory:'/changed'}}]){
   assert.equal(sameRetrievalPreparation(expected,{...expected,...patch}),false)
  }
- const copy=captureRetrievalPreparation(provider);copy.preparationDetails.files[0]!.bytes=20
+ const copy=captureRetrievalPreparation(provider)
+ assert.ok(copy.preparationDetails.kind===undefined)
+ copy.preparationDetails.files[0]!.bytes=20
  assert.equal(provider.preparationDetails.files[0]!.bytes,1)
  assert.equal(sameRetrievalPreparation(expected,copy),false)
 })
