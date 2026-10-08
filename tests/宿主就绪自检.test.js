@@ -11,6 +11,11 @@ import { findStartupUrl, authorizeSession, assertTeloaReady, guardTeloaReadiness
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const starter = fileURLToPath(new URL('../scripts/启动DSH.mjs', import.meta.url))
+const defaultTeloaBundles = [
+  '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-experimental-agent-team-profile', '@teloa/bundle', '@teloa/im-gateway',
+  '@deepseek-ai/dsh-experimental-voice-input-bundle',
+]
 const freePort = () => new Promise(done => {
   const probe = createSocketServer()
   probe.listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => done(port)) })
@@ -345,7 +350,7 @@ test('启动器真跑：profile 里 @teloa/im-gateway 的模块位置是无法�
   assert.ok(!refused.stderr.includes(home.base), '诊断不得回显路径')
 })
 
-test('启动器真跑：源码 profile 登记的 IM 来源不是本程序目录时以官方值补登记，不进组合', async t => {
+test('启动器真跑：源码 profile 登记的 IM 来源不是本程序目录时补登记并加载内置组合，本地检索只登记', async t => {
   const home = await isolatedHome(t), port = await freePort()
   const profileDir = join(home.dshHome, 'profiles', 'teloa')
   await mkdir(join(home.base, '旧程序目录'))
@@ -359,11 +364,13 @@ test('启动器真跑：源码 profile 登记的 IM 来源不是本程序目录�
   assert.doesNotMatch(started.stderr, /补登记未完成/)
   const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
   assert.equal(manifest.dependencies['@teloa/im-gateway'], 'link:' + join(root, 'packages', 'im-gateway'))
-  assert.ok(!manifest.dsh.profile.bundles.includes('@teloa/im-gateway'), '补登记不进组合')
+  assert.deepEqual(manifest.dsh.profile.bundles, defaultTeloaBundles, 'Team、内置 IM 与首次语音默认加载，不启用其他可选扩展')
+  assert.equal(manifest.dependencies['@teloa/local-embedding'], 'link:' + join(root, 'packages', 'local-embedding'))
+  assert.equal(manifest.teloa.voiceInputDefaultV1, true)
   assert.equal(await realpath(join(profileDir, 'node_modules', '@teloa', 'im-gateway')), await realpath(join(root, 'packages', 'im-gateway')))
 })
 
-test('启动器真跑：源码/容器补登记不经包管理器——第三方依赖装不上（离线、store 属主不符）时照常以官方值补登记，有渠道的老用户随即迁移启用', async t => {
+test('启动器真跑：源码/容器补登记不经包管理器——第三方依赖装不上时照常加载内置组合，保留第三方登记与原渠道', async t => {
   const home = await isolatedHome(t), port = await freePort()
   const profileDir = join(home.dshHome, 'profiles', 'teloa')
   // 第三方依赖指向不存在的本地目录：任何一次包管理器安装都会整体失败；补登记若仍经包管理器就会失败并推迟迁移。
@@ -373,15 +380,18 @@ test('启动器真跑：源码/容器补登记不经包管理器——第三方�
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@teloa/bundle', '@vendor/missing'], patchReload: 'startup' } },
   }, null, 2) + '\n')
   await mkdir(join(home.runtimeRoot, 'im-gateway'), { recursive: true })
-  await writeFile(join(home.runtimeRoot, 'im-gateway', 'channels.json'), JSON.stringify({ channels: [{ kind: 'telegram', id: 'stub' }] }))
+  const channels = JSON.stringify({ channels: [{ kind: 'telegram', id: 'stub' }] })
+  await writeFile(join(home.runtimeRoot, 'im-gateway', 'channels.json'), channels)
   const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
   assert.equal(started.status, 0, (started.stderr || '').trim())
   assert.doesNotMatch(started.stderr, /补登记未完成|迁移未完成/)
   const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
   assert.equal(manifest.dependencies['@teloa/im-gateway'], 'link:' + join(root, 'packages', 'im-gateway'))
   assert.equal(manifest.dependencies['@vendor/missing'], 'file:' + join(home.base, '不存在'), '第三方登记原样保留')
-  assert.deepEqual(manifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@teloa/bundle', '@teloa/im-gateway', '@vendor/missing'], 'IM 排在第三方之前')
-  assert.deepEqual(JSON.parse(await readFile(join(profileDir, 'teloa-官方扩展.json'), 'utf8')), { 'im-gateway-optional-v1': 'enabled' })
+  assert.deepEqual(manifest.dsh.profile.bundles, [...defaultTeloaBundles, '@vendor/missing'], '官方随附组合排在第三方之前，第三方组合原样保留')
+  assert.equal(manifest.teloa.voiceInputDefaultV1, true)
+  await assert.rejects(stat(join(profileDir, 'teloa-官方扩展.json')), { code: 'ENOENT' }, '内置 IM 不再写旧可选迁移票据')
+  assert.equal(await readFile(join(home.runtimeRoot, 'im-gateway', 'channels.json'), 'utf8'), channels, '默认加载不重配或启用渠道')
   assert.equal(await realpath(join(profileDir, 'node_modules', '@teloa', 'im-gateway')), await realpath(join(root, 'packages', 'im-gateway')))
 })
 
@@ -403,15 +413,26 @@ test('启动器真跑：--version 等检查分支不做补登记与迁移，也�
   await assert.rejects(stat(join(profileDir, 'teloa-官方扩展.json')), { code: 'ENOENT' }, '不写迁移记录')
 })
 
-test('启动器真跑：模块链接指向本程序目录时照常起宿主；迁移记录读不出只告警不阻断', async t => {
-  const home = await isolatedHome(t), port = await freePort()
-  const profileDir = join(home.dshHome, 'profiles', 'teloa')
-  await mkdir(join(profileDir, 'node_modules', '@teloa'), { recursive: true })
-  await symlink(join(root, 'packages', 'im-gateway'), join(profileDir, 'node_modules', '@teloa', 'im-gateway'))
-  await writeFile(join(profileDir, 'teloa-官方扩展.json'), '{ 不是合法 JSON')
-  const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
-  assert.equal(started.status, 0, (started.stderr || '').trim())
-  assert.match(started.stderr, /官方扩展迁移未完成/)
+test('启动器真跑：旧可选迁移记录损坏不再读取；模块链接正确时仍只加载已登记官方来源的 IM', async t => {
+  for (const registered of [false, true]) {
+    const home = await isolatedHome(t), port = await freePort()
+    const profileDir = join(home.dshHome, 'profiles', 'teloa')
+    await mkdir(join(profileDir, 'node_modules', '@teloa'), { recursive: true })
+    await symlink(join(root, 'packages', 'im-gateway'), join(profileDir, 'node_modules', '@teloa', 'im-gateway'))
+    if (registered) {
+      const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
+      manifest.dependencies = { '@teloa/im-gateway': 'link:' + join(root, 'packages', 'im-gateway') }
+      await writeFile(join(profileDir, 'package.json'), JSON.stringify(manifest))
+    }
+    const legacyRecord = '{ 不是合法 JSON'
+    await writeFile(join(profileDir, 'teloa-官方扩展.json'), legacyRecord)
+    const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+    assert.equal(started.status, 0, (started.stderr || '').trim())
+    assert.doesNotMatch(started.stderr, /官方扩展迁移未完成/)
+    assert.equal(await readFile(join(profileDir, 'teloa-官方扩展.json'), 'utf8'), legacyRecord, '保留旧票据，不读取或改写')
+    const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
+    assert.equal(manifest.dsh.profile.bundles.includes('@teloa/im-gateway'), registered, '模块链接不能替代官方来源登记')
+  }
 })
 
 test('启动器真跑：--dump-config 等检查分支不建工作区目录', async t => {
