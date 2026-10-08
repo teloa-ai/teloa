@@ -15,7 +15,7 @@ import {localizeWorkError} from './i18n/errors.js'
 
 export type ResourceManagerNavigationState={query:string;category:NonNullable<ResourceManagerFilters['category']>;selectedId:string|undefined;mobileLayer:'directory'|'detail'}
 
-export function ResourceManager({localRetrievalApi,api,visible,selectedDraftId,targetResource,clearTarget,openConversation,navigationState,onNavigationChange}:{localRetrievalApi?:LocalRetrievalApi|undefined;api:ResourceApi;visible:boolean;selectedDraftId:string|null;targetResource:{id:string;request:number}|null;clearTarget:()=>void;openConversation:()=>void;navigationState?:Partial<ResourceManagerNavigationState>;onNavigationChange?:(state:ResourceManagerNavigationState)=>void}){
+export function ResourceManager({localRetrievalApi,api,visible,selectedDraftId,targetResource,clearTarget,openConversation,onExtensions,navigationState,onNavigationChange}:{localRetrievalApi?:LocalRetrievalApi|undefined;api:ResourceApi;visible:boolean;selectedDraftId:string|null;targetResource:{id:string;request:number}|null;clearTarget:()=>void;openConversation:()=>void;onExtensions?:(()=>void)|undefined;navigationState?:Partial<ResourceManagerNavigationState>;onNavigationChange?:(state:ResourceManagerNavigationState)=>void}){
   const {locale,t}=useI18n()
   const [directory,setDirectory]=useState<ResourceDirectory>({drafts:[],resources:[]}),[sources,setSources]=useState<SourceReference[]>([]),[knowledgeTree,setKnowledgeTree]=useState<KnowledgeTree>()
   const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>()
@@ -133,7 +133,7 @@ export function ResourceManager({localRetrievalApi,api,visible,selectedDraftId,t
   const directoryFocus=useDirectoryFocus(visible,mobileDetailOpen?(editing?.id??selectedNodeId??selectedResourceId):undefined)
   return <section className={css.page} data-mobile-detail={mobileDetailOpen?'open':'directory'} hidden={!visible} aria-label={t('knowledge.manager.title')}>
     {error&&<p className={css.message} role="alert">{error}</p>}{notice&&<p className={css.message} role="status">{notice}</p>}
-    {localRetrievalApi&&<div className={css.retrieval}><LocalRetrievalResources api={localRetrievalApi} resource={selectedResource} visible={visible}/></div>}
+    {localRetrievalApi&&<div className={css.retrieval}><LocalRetrievalResources api={localRetrievalApi} resource={selectedResource} visible={visible} onExtensions={onExtensions}/></div>}
     <div {...directoryFocus} className={css.workspace}>
       <WikiKnowledgeTree
         tree={directoryTree}

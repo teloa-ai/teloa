@@ -5,7 +5,7 @@ import {retrievalEndpoints,retrievalLimits,embeddingPreparationPhases,readEmbedd
 const rejects=(fn:()=>unknown,message?:RegExp)=>assert.throws(fn,(error:any)=>error?.code==='teloa/invalid-input'&&(message===undefined||message.test(error.message)))
 
 test('端点与上限是编译期常量',()=>{
- assert.deepEqual(retrievalEndpoints,['retrieval/status','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel'])
+ assert.deepEqual(retrievalEndpoints,['retrieval/status','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'])
  assert.deepEqual(retrievalLimits,{maxEnrollments:500,maxSourceBytes:2*1024*1024,maxChunks:50000,maxQueryChars:500,maxResults:8,maxExcerptBytes:2048,maxTotalExcerptBytes:16384,dimensions:1024,vectorBytes:4096})
  assert.equal(retrievalLimits.vectorBytes,retrievalLimits.dimensions*4)
 })

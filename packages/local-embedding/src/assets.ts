@@ -120,7 +120,7 @@ const classify=(error:unknown):Reason=>{
  if(/^(ECONNRESET|ECONNREFUSED|EPIPE|ENETUNREACH|EHOSTUNREACH|UND_ERR_SOCKET|UND_ERR_CLOSED)$/.test(code)||error instanceof TypeError)return 'network'
  return 'unknown'
 }
-const describe:Record<Reason,string>={network:'网络连接中断',dns:'域名解析失败',timeout:'连接超时',certificate:'证书校验失败',http:'服务器响应异常',integrity:'文件校验不符',storage:'写入本机磁盘失败',unknown:'未知错误'}
+const describe:Record<Reason,string>={network:'网络连接中断',dns:'域名解析失败',timeout:'连接超时',certificate:'证书校验失败',http:'服务器响应异常',integrity:'文件校验不符',storage:'写入本机磁盘失败','runtime-version':'请更新 Ollama 后重试','runtime-unsupported':'这台电脑暂不支持此模型，请选择其他检索模型',unknown:'未知错误'}
 
 export type PrepareAssetsOptions={
  dir:string;files:readonly AssetFile[];allowedHosts:readonly string[];redirectHosts:readonly string[]

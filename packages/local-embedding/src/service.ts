@@ -1,14 +1,14 @@
-import {WorkError,embeddingMemoryRisk,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails} from '@teloa/contract'
+import {WorkError,embeddingMemoryRisk,type EmbeddingDownloadSource,type EmbeddingPreparationState,type EmbeddingVariant,type RetrievalPreparationDetails} from '@teloa/contract'
 import {managedInstallErrorCode} from '@teloa/harness-dsh/managed-package-install'
-import {AssetDownloadError,type EmbeddingVariant} from './assets.ts'
+import {AssetDownloadError} from './assets.ts'
 import {embeddingDimensions} from './pooling.ts'
 
 export type EmbeddingKind='query'|'passage'
 export type EmbeddingInput={kind:EmbeddingKind;texts:string[]}
-/** 一个已加载模型的推理子进程（宿主拥有其生命周期）。 */
+/** 推理引擎：宿主子进程或外部本机服务的请求句柄。 */
 export type EmbeddingEngine={
  embed(kind:EmbeddingKind,texts:string[],signal:AbortSignal):Promise<{vectors:Float32Array[];truncated:number}>
- /** 终止子进程并等待其进程范围退出。 */
+ /** 释放提供器拥有的请求与资源；外部服务进程不属于提供器。 */
  close():Promise<void>
  /** 子进程退出（含崩溃）时 resolve。 */
  exited:Promise<unknown>
@@ -17,10 +17,12 @@ export type EmbeddingProviderOptions={
  preparationDetails?:RetrievalPreparationDetails
  id:string;catalogId:string;catalogVersion:string;variant:EmbeddingVariant;profileHash:string
  /** 运行时阶段：check 只核对，install 经受管安装（不可中途终止，取消时不再等待其结果）。 */
- runtime:{resource:string;source:string;check():Promise<boolean>;install():Promise<string>}
+ runtime:{resource:string;source:string;managed?:boolean;check():Promise<boolean>;install(signal?:AbortSignal):Promise<string>}
  /** resource：工件阶段开始时（尚无字节进度，例如复核已在位的文件）显示的首个文件；source：本次准备的下载来源。 */
  assets:{resource:string;inspect():Promise<'complete'|'missing'>;prepare(signal:AbortSignal,onProgress:(state:{resource:string;completedBytes:number;totalBytes:number})=>void,source:EmbeddingDownloadSource):Promise<void>}
  startEngine(signal:AbortSignal):Promise<EmbeddingEngine>
+ /** 仅在本人显式准备时执行能力探针；启用检查和按需唤醒不会额外发送探针文本。 */
+ verifyPreparedEngine?:(engine:EmbeddingEngine,signal:AbortSignal)=>Promise<void>
  idleTimeoutMs:number
  /** 宿主物理内存：快照据此给出 memoryRisk（≤ 8 GiB 且 fp32），准备确认卡与设置页提示内存风险。 */
  totalMemoryBytes:number
@@ -86,28 +88,32 @@ export function createEmbeddingProvider(options:EmbeddingProviderOptions){
   const install=managedInstallErrorCode(error)
   if(install||(error instanceof WorkError&&error.code==='teloa/forbidden'))return {phase:'failed',message:(error as WorkError).message.slice(0,500),download:{resource:options.runtime.resource,source:options.runtime.source,reason:install==='install-timeout'?'timeout':install===undefined?'integrity':'unknown'}}
   if(timedOut)return {phase:'failed',message:'准备超过时限，已中止；请检查网络后重试。'}
+  if(error instanceof WorkError)return {phase:'failed',message:error.message.slice(0,500)}
   return {phase:'failed',message:'加载本地检索模型失败，请重新准备。'}
  }
 
  /** 来源只作用于本次准备，不保存；缺省官方。 */
  const prepare=(request:{source?:EmbeddingDownloadSource}={})=>{
-  if(preparing||state.phase==='ready'||state.phase==='standby')return
+  if(preparing||state.phase==='ready'||state.phase==='standby'&&!options.verifyPreparedEngine)return
   const controller=new AbortController()
   const deadline=AbortSignal.timeout(options.prepareTimeoutMs??2*60*60_000)
   const signal=AbortSignal.any([controller.signal,lifetime.signal,deadline])
   const task={controller,published:false,done:Promise.resolve()}
   task.done=(async()=>{
    await inspected
-   if(state.phase==='ready'||state.phase==='standby')return
+   if(state.phase==='ready'||state.phase==='standby'&&!options.verifyPreparedEngine)return
    try{
     // 先运行时后工件（关键决定 2）；npm 安装不能中途终止，取消后不再等待它，装完的目录下次核对后直接复用。
-    publish({phase:'downloading',stage:'runtime',resource:options.runtime.resource,completedBytes:0})
-    await until(options.runtime.install(),signal)
+    if(options.runtime.managed!==false)publish({phase:'downloading',stage:'runtime',resource:options.runtime.resource,completedBytes:0})
+    if(options.runtime.managed===false)await options.runtime.install(signal)
+    else await until(options.runtime.install(),signal)
+    signal.throwIfAborted()
     publish({phase:'downloading',stage:'assets',resource:options.assets.resource,completedBytes:0})
     await options.assets.prepare(signal,progress=>{if(!signal.aborted)publish({phase:'downloading',stage:'assets',...progress})},request.source??'official')
     publish({phase:'loading',startedAt:now()})
     const next=await options.startEngine(signal)
-    if(signal.aborted){await next.close();signal.throwIfAborted()}
+    try{await options.verifyPreparedEngine?.(next,signal);signal.throwIfAborted()}
+    catch(error){await next.close();throw error}
     attach(next)
     task.published=true
     publish({phase:'ready'})

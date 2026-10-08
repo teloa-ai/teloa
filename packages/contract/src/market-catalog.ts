@@ -16,7 +16,8 @@ export type {MarketFunctionKey,MarketIndustryKey,MarketEntryKind} from './market
  */
 export const marketCatalogCompatibility=['verified','needs-configuration','content-only','unsupported'] as const
 export type MarketCatalogCompatibility=typeof marketCatalogCompatibility[number]
-export type MarketCatalogText={'zh-CN':string;en:string}
+/** 简体中文与英文保留旧条目形状；繁体台湾用词只在已提供时读取，不自动翻译。 */
+export type MarketCatalogText={'zh-CN':string;en:string;'zh-TW'?:string}
 export const skillSecretMethods=['GET','POST','PUT','PATCH','DELETE'] as const
 export type SkillSecretMethod=typeof skillSecretMethods[number]
 export type MarketCatalogSkillSecretEndpoint={origin:string;pathPrefixes:string[]}
@@ -231,7 +232,7 @@ export type MarketCatalogModelInfo=
  |(MarketCatalogModelCommon&{form:'cloud';cloud:MarketCatalogModelCloud;local:null;variants:null})
  |(MarketCatalogModelCommon&{form:'local-general';cloud:null;local:{runtime:'ollama'};variants:MarketCatalogModelVariant[]})
  |(MarketCatalogModelBase&{form:'local-specialist';usage:['speech-to-text'];native:{kind:'dsh-speech';providerId:'sensevoice-local'}})
- |(MarketCatalogModelBase&{form:'local-specialist';usage:['embedding'];native:{kind:'teloa-embedding';providerId:'qwen3-embedding-0.6b'}})
+ |(MarketCatalogModelBase&{form:'local-specialist';usage:['embedding'];native:{kind:'teloa-embedding';providerId:'qwen3-embedding-0.6b'|'embeddinggemma-2'}})
 /** 本地垂类模型的已审绑定：用法决定唯一的原生准备器；`teloa-embedding` 是 Teloa 扩展而非 DSH 原生能力。 */
 export type MarketCatalogLocalSpecialist=Extract<MarketCatalogModelInfo,{form:'local-specialist'}>
 type LocalSpecialistBinding<T=MarketCatalogLocalSpecialist>=T extends {form:'local-specialist';usage:unknown;native:unknown}?Pick<T,'usage'|'native'>:never
@@ -344,8 +345,9 @@ export function marketCatalogGithubFileRepositoryPath(directory:string,file:{pat
  return source
 }
 function localized(value:unknown,label:string,max=500):MarketCatalogText{
- const row=exact(value,['zh-CN','en'],label)
- return {'zh-CN':text(row['zh-CN'],label+'（简体中文）',max),en:text(row.en,label+'（英文）',max)}
+ const traditional=isRecord(value)&&Object.hasOwn(value,'zh-TW')
+ const row=exact(value,['zh-CN','en',...(traditional?['zh-TW']:[])],label)
+ return {'zh-CN':text(row['zh-CN'],label+'（简体中文）',max),en:text(row.en,label+'（英文）',max),...(traditional?{'zh-TW':text(row['zh-TW'],label+'（繁体中文）',max)}:{})}
 }
 const secretEnvVar=/^[A-Z][A-Z0-9_]{1,63}$/
 // 注入头名与附加头名允许 `_`（规格 2026-09-27 §4.2，东方财富 `em_api_key` 实需）；禁用判定按 normalizedHeaderName 归一后比对。
@@ -1038,6 +1040,7 @@ const nullableInt=(value:unknown,label:string):number|null=>{if(value===null)ret
 const localSpecialistBindings:readonly LocalSpecialistBinding[]=[
  {usage:['speech-to-text'],native:{kind:'dsh-speech',providerId:'sensevoice-local'}},
  {usage:['embedding'],native:{kind:'teloa-embedding',providerId:'qwen3-embedding-0.6b'}},
+ {usage:['embedding'],native:{kind:'teloa-embedding',providerId:'embeddinggemma-2'}},
 ]
 function readNativeModel(value:unknown,usage:readonly string[]):LocalSpecialistBinding{
  const native=exact(value,['kind','providerId'],'原生模型')

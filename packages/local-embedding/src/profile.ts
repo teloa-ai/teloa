@@ -36,5 +36,10 @@ const canonical=(value:unknown):string=>{
 /** 对规范化 JSON（键排序）做 sha256：字段顺序无关，任一字段变化即为新索引版本。 */
 export function profileHash(profile:EmbeddingProfile):string{
  if(profile.dimensions!==embeddingDimensions||profile.pooling!=='last-token'||profile.normalize!=='l2')throw new Error('嵌入配置偏离固定取值（1024 维、last-token、L2）。')
+ return embeddingConfigurationHash(profile)
+}
+
+/** 各提供器共用稳定摘要算法，模型原生维度与存储适配由各自配置显式绑定。 */
+export function embeddingConfigurationHash(profile:unknown):string{
  return createHash('sha256').update(canonical(profile)).digest('hex')
 }

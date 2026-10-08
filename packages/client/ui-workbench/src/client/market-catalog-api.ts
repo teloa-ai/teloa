@@ -191,4 +191,4 @@ export function createMarketCatalogApi(call:Call,newId:()=>string=()=>crypto.ran
  }
 }
 
-export const catalogText=(value:{'zh-CN':string;en:string},locale:string)=>locale.startsWith('zh')?value['zh-CN']:value.en
+export const catalogText=(value:{'zh-CN':string;'zh-TW'?:string;en:string},locale:string)=>locale==='zh-TW'&&value['zh-TW']?value['zh-TW']:locale.startsWith('zh')?value['zh-CN']:value.en

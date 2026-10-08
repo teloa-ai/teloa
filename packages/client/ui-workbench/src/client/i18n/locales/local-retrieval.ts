@@ -1,9 +1,9 @@
 export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  [
   "retrieval.model.title",
-  "本地中文检索",
-  "本機中文檢索",
-  "Local Chinese retrieval",
+  "本地检索",
+  "本機檢索",
+  "Local retrieval",
   "ローカル中国語検索",
   "로컬 중국어 검색",
   "Truy xuất tiếng Trung cục bộ",
@@ -728,19 +728,6 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
   "{count} trechos"
  ],
  [
-  "retrieval.resources.hint",
-  "需要先在市场「模型」里准备检索模型；没准备好时点加入，会等模型就绪后自动整理。资料更新后，打开资料页时会自动跟上；移出不会删除资料本身。",
-  "需要先在市場「模型」裡準備檢索模型；沒準備好時點加入，會等模型就緒後自動整理。資料更新後，打開資料頁時會自動跟上；移出不會刪除資料本身。",
-  "Prepare the search model in Market > Models first. If you add resources before it is ready, they are organized automatically once the model is ready. After a resource changes, it catches up automatically when you open the Resources page; removing a resource here does not delete it.",
-  "先にマーケットの「モデル」で検索モデルを準備してください。準備前に追加した資料は、モデルの準備ができしだい自動で整理されます。資料を更新した後は、資料ページを開いたときに自動で反映されます。ここで外しても資料自体は削除されません。",
-  "먼저 마켓의 「모델」에서 검색 모델을 준비하세요. 준비 전에 추가한 자료는 모델이 준비되면 자동으로 정리됩니다. 자료를 고친 뒤에는 자료 페이지를 열 때 자동으로 반영되며, 여기서 빼도 자료 자체는 삭제되지 않습니다.",
-  "Hãy chuẩn bị mô hình tìm kiếm trong Chợ > Mô hình trước. Nếu thêm tài liệu khi mô hình chưa sẵn sàng, tài liệu sẽ được tự động sắp xếp khi mô hình sẵn sàng. Sau khi tài liệu được cập nhật, nó sẽ tự bắt kịp khi bạn mở trang Tài liệu; bỏ ra ở đây không xóa tài liệu.",
-  "Primero prepara el modelo de búsqueda en Mercado > Modelos. Si añades recursos antes de que esté listo, se organizarán solos en cuanto lo esté. Cuando cambies un recurso, se pondrá al día automáticamente al abrir la página Recursos; quitarlo aquí no lo elimina.",
-  "Préparez d’abord le modèle de recherche dans Marché > Modèles. Si vous ajoutez des ressources avant qu’il soit prêt, elles seront organisées automatiquement dès qu’il le sera. Après une modification, la ressource est mise à jour automatiquement à l’ouverture de la page Ressources ; la retirer ici ne la supprime pas.",
-  "Bereite zuerst unter Markt > Modelle das Suchmodell vor. Unterlagen, die du vorher aufnimmst, werden automatisch geordnet, sobald das Modell bereit ist. Nach einer Änderung wird die Unterlage automatisch nachgezogen, wenn du die Seite Unterlagen öffnest; Entfernen löscht die Unterlage selbst nicht.",
-  "Primeiro prepare o modelo de busca em Mercado > Modelos. Se adicionar recursos antes de ele estar pronto, eles serão organizados automaticamente assim que estiver. Depois que um recurso muda, ele é atualizado automaticamente ao abrir a página Recursos; remover aqui não apaga o recurso."
- ],
- [
   "retrieval.index.excluded",
   "未加入",
   "未加入",
@@ -833,9 +820,9 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  ],
  [
   "retrieval.resources.summary",
-  "让员工按意思在你的资料里查找内容，全程在你的电脑上完成，资料不会上传。",
-  "讓員工按意思在你的資料裡查找內容，全程在你的電腦上完成，資料不會上傳。",
-  "Lets employees find things in your resources by meaning. Everything runs on your computer; nothing is uploaded.",
+  "开启后，员工会在需要时自动查找你加入的资料。",
+  "開啟後，員工會在需要時自動查找你加入的資料。",
+  "Once enabled, employees automatically search your added resources when needed.",
   "従業員が意味で資料の中を探せるようにします。すべてあなたのコンピューター上で行い、資料はアップロードされません。",
   "직원이 뜻으로 자료 안을 찾을 수 있게 합니다. 모든 과정은 내 컴퓨터에서 진행되며 자료는 업로드되지 않습니다.",
   "Giúp nhân viên tìm nội dung trong tài liệu của bạn theo ý nghĩa. Mọi việc diễn ra trên máy của bạn; tài liệu không được tải lên.",
@@ -921,5 +908,20 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
   "Les {count} ressources de la même source sont retirées ensemble",
   "Alle {count} Unterlagen derselben Quelle werden zusammen entfernt",
   "Os {count} recursos da mesma fonte são removidos juntos"
- ]
+ ],
+ ["retrieval.resources.model", "检索模型", "檢索模型", "Search model", "Search model", "Search model", "Search model", "Search model", "Search model", "Search model", "Search model"],
+ ["retrieval.setup.modelDownload", "首次使用需下载 {model}（{size}）。准备好后可选择用于知识库检索。", "首次使用需要下載 {model}（{size}）。準備好後可選擇用於知識庫檢索。", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search.", "First use downloads {model} ({size}). Once ready, you can choose it for knowledge search."],
+ ["retrieval.setup.title", "开启资料检索", "開啟資料檢索", "Enable resource search", "Enable resource search", "Enable resource search", "Enable resource search", "Enable resource search", "Enable resource search", "Enable resource search", "Enable resource search"],
+ ["retrieval.setup.download", "首次使用需下载 {model}（{size}）。准备好后会自动整理这份资料。", "首次使用需要下載 {model}（{size}）。準備好後會自動整理這份資料。", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically.", "First use downloads {model} ({size}), then organizes this resource automatically."],
+ ["retrieval.setup.enable", "下载并开启", "下載並開啟", "Download and enable", "Download and enable", "Download and enable", "Download and enable", "Download and enable", "Download and enable", "Download and enable", "Download and enable"],
+ ["retrieval.setup.details", "下载详情", "下載詳情", "Download details", "Download details", "Download details", "Download details", "Download details", "Download details", "Download details", "Download details"],
+ ["retrieval.setup.ollama", "需要安装并启动 Ollama 0.40.0 或更新版本。", "需要安裝並啟動 Ollama 0.40.0 或更新版本。", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later."],
+ ["retrieval.setup.installOllama", "安装 Ollama", "安裝 Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama"],
+ ["retrieval.model.select", "用于知识库检索", "用於知識庫檢索", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search"],
+ ["retrieval.model.selected", "正在用于知识库检索", "正在用於知識庫檢索", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search"]
+,
+ ["retrieval.setup.retry","重试加入","重試加入","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding"]
+,
+ ["retrieval.failure.runtime-version","请更新 Ollama 后重试。","請更新 Ollama 後重試。","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again."],
+ ["retrieval.failure.runtime-unsupported", "这台电脑暂不支持此模型，请选择其他检索模型。", "這台電腦暫不支援此模型，請選擇其他檢索模型。", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model."]
 ] as const

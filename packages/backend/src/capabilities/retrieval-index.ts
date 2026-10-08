@@ -302,11 +302,11 @@ export class RetrievalIndexService{
   })
  }
 
- /** 物理清理失效索引：资料撤回或改版、正文版本或范围不符、分块器或配置摘要不是当前值。 */
+ /** 物理清理失效绑定与旧配置未完成索引；合法的旧配置就绪索引保留，切回时可复用。 */
  private async purge(ownerId:string|null,profileHash:string|null):Promise<number>{
   const rows=await this.tx(async client=>(await client.query(`
    delete from teloa_retrieval_indexes i
-   where ($1::text is null or i.owner_id=$1) and (i.chunker<>$2 or ($3::text is not null and i.profile_hash<>$3)
+   where ($1::text is null or i.owner_id=$1) and (i.chunker<>$2 or ($3::text is not null and i.profile_hash<>$3 and i.state<>'ready')
     or not exists(select 1 from teloa_resources r where r.id=i.resource_id and r.owner_id=i.owner_id and r.status='active' and r.revision=i.resource_version
      and r.spec->>'sourceId'=i.source_id and r.spec->>'sourceVersion'=i.source_version and r.spec->'scopeIds'=i.scope_ids))
    returning i.id`,[ownerId,retrievalChunker,profileHash])).rows)
@@ -314,7 +314,7 @@ export class RetrievalIndexService{
   return rows.length
  }
 
- /** 宿主启动时的对账：清理全部本人的失效行；给出当前配置摘要时一并清理其他配置的索引。 */
+ /** 宿主启动时的对账：清理全部本人的失效绑定；给出当前配置摘要时一并清理其他配置的未完成索引。 */
  async reconcile(profileHash?:string):Promise<{removed:number}>{
   if(profileHash!==undefined&&!hex64(profileHash))throw bad('本地检索模型配置摘要不正确。')
   return {removed:await this.purge(null,profileHash??null)}

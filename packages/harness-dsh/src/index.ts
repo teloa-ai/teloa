@@ -157,7 +157,7 @@ import {GroupReactionService,GroupRoutingDecisionService} from '@teloa/backend'
 import {readHomeSkills} from './home-skills.ts'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
-import { mkdir, readFile as readTextFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile as readTextFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -173,7 +173,7 @@ import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-file-reference'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ConversationService, FileConversationRepository, CopyService, FileCopyRepository, CopyRejectedError, CopyPendingError, sessionInput } from '@teloa/backend'
-import { WorkError,roleSupportsScope,taskInput,groupRoutedReactionRequestId,isRecord,officialExtensionPackages,readPageCreateAtomicSkillDraft,readTaskHandoffChangeInput,imChannelEndpoints,bundledExtensionEndpoints,retrievalEndpoints,localModelEndpoints,modelOptionEndpoints,type CapabilitySnapshot } from '@teloa/contract'
+import { WorkError,roleSupportsScope,taskInput,groupRoutedReactionRequestId,isRecord,officialExtensionPackages,readPageCreateAtomicSkillDraft,readTaskHandoffChangeInput,imChannelEndpoints,bundledExtensionEndpoints,retrievalEndpoints,localModelEndpoints,modelOptionEndpoints,embeddingProviderIds,type EmbeddingProviderId,type CapabilitySnapshot } from '@teloa/contract'
 import { registerResources,resourceEndpoints } from './resources.ts'
 import { createCredentialStoreHandler,credentialStoreEndpoints } from './credential-store.ts'
 import {createSkillSecretStore,declaredSkillSecretsResolver,isManagedSkillWinner,skillSecretEndpoints} from './skill-secrets.ts'
@@ -1515,6 +1515,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 模型服务只经公开 ctx.reflect 发现（与上面 bundledExtensionLoaded 同一读口）：扩展停用时工具报 dependency-unavailable 并给启用引导，不引入扩展源码。
   // 本人普通会话在模型就绪后默认可用；受管任务按岗位整工具授权（task-tool-guard 清单闸），主体与目标范围沿 readExecutionKnowledge 同一条 taskKnowledgeAuthorization。
   const retrievalPausePath=resolve(runtimeRoot,'retrieval-auto-paused.json')
+  const retrievalModelSelectionPath=resolve(runtimeRoot,'model-selection.json')
   const localRetrieval=registerLocalRetrieval(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
    taskAuthorization:async(sessionId,signal)=>{
@@ -1536,9 +1537,22 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     read:async()=>{try{return JSON.parse(await readTextFile(retrievalPausePath,'utf8'))?.paused===true}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return false;throw error}},
     write:async paused=>{if(paused)await writeFile(retrievalPausePath,JSON.stringify({paused:true})+'\n',{mode:0o600});else await rm(retrievalPausePath,{force:true})},
    },
+   modelSelection:{
+    read:async()=>{
+     let value:unknown
+     try{value=JSON.parse(await readTextFile(retrievalModelSelectionPath,'utf8'))}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return 'qwen3-embedding-0.6b';throw error}
+     if(!isRecord(value)||Object.keys(value).length!==1||!(embeddingProviderIds as readonly unknown[]).includes(value.providerId))throw new WorkError('teloa/storage-corrupt','本地检索模型选择记录损坏，请修复后重试。')
+     return value.providerId as EmbeddingProviderId
+    },
+    write:async id=>{
+     if(!(embeddingProviderIds as readonly unknown[]).includes(id))throw new WorkError('teloa/invalid-input','本地检索模型选择不正确。')
+     const staging=retrievalModelSelectionPath+'.'+randomUUID()+'.tmp'
+     try{await writeFile(staging,JSON.stringify({providerId:id})+'\n',{mode:0o600,flag:'wx'});await rename(staging,retrievalModelSelectionPath)}finally{await rm(staging,{force:true})}
+    },
+   },
   })
   resources.beforeDatabaseClose(localRetrieval.dispose)
-  // 启动对账只在进程内调用（清理失效索引与其他配置的索引），不暴露为 RPC；失败只记告警，不挡装配。
+  // 启动对账只在进程内调用（清理失效绑定与其他配置的未完成索引），不暴露为 RPC；失败只记告警，不挡装配。
   const retrievalReconcile=runtimeAdmission.run(()=>localRetrieval.reconcile()).catch(error=>ctx.logger.warn('Teloa 本地检索启动对账未完成：%s',codeOf(error,'teloa/dependency-unavailable')))
   resources.beforeDatabaseClose(()=>retrievalReconcile)
   // 内置技能创建器：字节来自随发行固定的官方目录快照，只登记到本人普通会话；准备失败时技能草案一律拒绝，不静默退回。

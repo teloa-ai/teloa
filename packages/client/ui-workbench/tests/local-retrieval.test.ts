@@ -191,14 +191,14 @@ test('确认卡的下载来源单选：官方默认选中，镜像写明第三�
  assert.deepEqual(calls.filter((_row,i)=>i%2===1),[{expected,source:'hf-mirror'},{expected}])
 })
 
-test('本地检索区块说人话：一句用途、只报已加入份数、每份资料一行加入或移出、重建收进更多、底部一句说明',()=>{
+test('本地检索区块只呈现用途和真实状态，不再常驻工程操作说明',()=>{
  const plain=(html:string)=>html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')
  const excluded=renderIndex({status:{items:[],enrolled:0,chunks:0,building:false}})
- assert.match(plain(excluded),/本地检索 让员工按意思在你的资料里查找内容，全程在你的电脑上完成，资料不会上传。/)
+ assert.match(plain(excluded),/本地检索 开启后，员工会在需要时自动查找你加入的资料。/)
  assert.match(plain(excluded),/已加入 0 份资料/)
  assert.doesNotMatch(excluded,/索引块/,'统计不再报索引块数')
  assert.match(plain(excluded),/检索测试资料 · 未加入 加入/)
- assert.match(plain(excluded),/需要先在市场「模型」里准备检索模型；没准备好时点加入，会等模型就绪后自动整理。资料更新后，打开资料页时会自动跟上；移出不会删除资料本身。/)
+ assert.doesNotMatch(plain(excluded),/需要先在市场|模型就绪|打开资料页时|索引块/)
  assert.doesNotMatch(excluded,/来源与许可|加入与移出均按资料来源生效|取消保留已完成索引/)
  const ready={items:[{...index.items[0],state:'ready',chunkCount:4},{sourceId:'knowledge_two',resourceId:'resource-two',title:'第二份资料',version:2,state:'stale',chunkCount:null}],enrolled:2,chunks:4,building:false}
  const enrolled=renderIndex({status:ready})
@@ -217,4 +217,37 @@ test('本地检索区块说人话：一句用途、只报已加入份数、每�
  buttons(tree).find(props=>props.children===t('retrieval.resources.rebuild')).onClick()
  buttons(tree).filter(props=>props.children===t('retrieval.resources.remove'))[1].onClick()
  assert.deepEqual(calls,['rebuild','remove:knowledge_two'])
+})
+
+test('EmbeddingGemma 2可按受审provider准备并显式选用，默认读取和取消仍兼容',async()=>{
+ const {ollamaPreparationDetails}=await import('../../../local-embedding/src/ollama.ts')
+ const gemma={...provider,id:'embeddinggemma-2',catalogId:'teloa.model.embeddinggemma-2',variant:'ollama',preparationDetails:ollamaPreparationDetails()}
+ const status={...model,provider:gemma,selectedProviderId:'qwen3-embedding-0.6b'}
+ const calls:{endpoint:string,payload:unknown}[]=[]
+ const api=createLocalRetrievalApi(async(endpoint,payload)=>{calls.push({endpoint,payload});return status})
+ await api.modelStatus(undefined,'embeddinggemma-2')
+ const {prepareConfirmedModel}=await import('../lib/types/client/LocalRetrievalModelPanel.js')
+ await prepareConfirmedModel(api,captureRetrievalPreparation(gemma as never),{catalogId:gemma.catalogId,catalogVersion:gemma.catalogVersion},new AbortController().signal)
+ await api.select('embeddinggemma-2',gemma.profileHash)
+ await api.cancelPreparation(undefined,'embeddinggemma-2')
+ assert.deepEqual(calls.map(c=>c.payload),[{providerId:'embeddinggemma-2'},{providerId:'embeddinggemma-2'},{expected:captureRetrievalPreparation(gemma as never)},{providerId:'embeddinggemma-2',profileHash:gemma.profileHash},{providerId:'embeddinggemma-2'}])
+ const ready={...status,provider:{...gemma,preparation:{phase:'ready'}}}
+ assert.match(renderModel({status:ready,catalogId:gemma.catalogId,onSelect:()=>{}}),/>用于知识库检索</)
+ assert.match(renderModel({status:{...ready,selectedProviderId:gemma.id},catalogId:gemma.catalogId,onSelect:()=>{}}),/disabled=""[^>]*>正在用于知识库检索/)
+})
+test('就地首次开启只突出一次下载与自动整理，细节收起；准备中没有绕过收尾的第二个取消',()=>{
+ const first=renderModel({compact:true,joining:true,confirming:true})
+ assert.match(first,/首次使用需下载/);assert.match(first,/准备好后会自动整理这份资料/)
+ assert.match(first,/<details><summary>下载详情<\/summary>/)
+ assert.match(first,/>下载并开启</)
+ const progress=renderModel({compact:true,status:{...model,provider:{...provider,preparation:{phase:'downloading',stage:'assets',resource:'model.onnx',completedBytes:20,totalBytes:100}}}})
+ assert.equal((progress.match(/<button/g)??[]).length,1)
+ assert.match(progress,/取消准备/);assert.doesNotMatch(progress,/model.onnx|第 2 步/)
+ assert.match(renderModel({compact:true,error:'未能加入，请重试',status:{...model,provider:{...provider,preparation:{phase:'ready'}}},onRetry:()=>{}}),/>重试加入</)
+})
+
+test('查看检索模型不承诺自动加入资料，首次准备后仍须明确选择',()=>{
+ const preview=renderModel({compact:true,confirming:true})
+ assert.match(preview,/准备好后可选择用于知识库检索/)
+ assert.doesNotMatch(preview,/自动整理这份资料|下载并开启/)
 })

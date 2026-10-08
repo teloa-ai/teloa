@@ -50,7 +50,12 @@
 .rowText { min-width: 0; color: var(--teloa-muted); font-size: var(--teloa-font-control); overflow-wrap: anywhere; }
 .row .button { min-height: 30px; padding: 4px 12px; flex: none; }
 .together { display: block; margin-top: 2px; font-size: var(--teloa-font-caption); color: var(--teloa-muted); font-weight: var(--teloa-weight-regular); }
-.hint { margin: 0; color: var(--teloa-muted); font-size: var(--teloa-font-caption); line-height: var(--teloa-leading-body); }
+.setup { margin: 8px 0; }
+.setup h2 { margin-top: 0; }
+.setup .confirm { margin-top: 8px; }
+.setup .confirm > details { margin-bottom: 12px; color: var(--teloa-muted); font-size: var(--teloa-font-caption); }
+.settingsHeader { margin: 12px 0 4px; font-size: var(--teloa-font-control); }
+.settingsHeader select { font: inherit; padding: 6px 10px; color: var(--teloa-text); background: var(--teloa-surface); border: 1px solid var(--teloa-border); border-radius: 8px; }
 .info { color: var(--teloa-muted); font-size: var(--teloa-font-caption); }
 .info summary { cursor: pointer; width: max-content; }
 .info ul { margin: 6px 0; padding-left: 18px; }

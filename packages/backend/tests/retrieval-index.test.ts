@@ -140,15 +140,16 @@ test('撤回提交后的第一次检索就不再命中，覆盖范围也不再�
  assert.deepEqual((await retrieval.status(human,profileA)).items,[{sourceId:doc.sourceId,resourceId:null,title:null,version:null,state:'unavailable',chunkCount:null}])
 })
 
-test('移出检索在事务内删除索引与向量',async()=>{
+test('移出检索在事务内删除所有模型的索引与向量',async()=>{
  const {retrieval,human,add}=world(),{embedder}=fakeEmbedder()
  const doc=await add('差旅报销制度',policy),keep=await add('产品手册',handbook)
  await retrieval.enroll(human,{sourceIds:[doc.sourceId,keep.sourceId]})
  await retrieval.buildPending(human,embedder,signal())
+ await retrieval.buildPending(human,fakeEmbedder(profileB).embedder,signal())
  await retrieval.remove(human,{sourceIds:[doc.sourceId]})
  assert.equal(await count('select count(*)::int as count from teloa_retrieval_indexes where resource_id=$1',[doc.id]),0)
  assert.equal(await count('select count(*)::int as count from teloa_retrieval_enrollments where owner_id=$1',[human.ownerId]),1)
- assert.equal(await count('select count(*)::int as count from teloa_retrieval_chunks c join teloa_retrieval_indexes i on i.id=c.index_id where i.resource_id=$1',[keep.id]),chunkRetrievalText(handbook).length)
+ assert.equal(await count('select count(*)::int as count from teloa_retrieval_chunks c join teloa_retrieval_indexes i on i.id=c.index_id where i.resource_id=$1',[keep.id]),2*chunkRetrievalText(handbook).length)
  const result=await retrieval.search(human,['general'],{query:'报销审批'},embedder,signal())
  assert.deepEqual(result.coverage.searched.map(item=>item.resourceId),[keep.id])
  assert.ok(result.results.every(hit=>hit.resourceId===keep.id))
@@ -172,7 +173,7 @@ test('范围外资料不出现在 searched 与 pending，也不计数',async()=>
  assert.equal(agentStatus.enrolled,undefined);assert.equal(agentStatus.chunks,undefined)
 })
 
-test('profileHash 变化后旧索引不可用，按新配置重建后清理旧配置',async()=>{
+test('profileHash 切换按新配置独立构建，切回复用仍有效的就绪索引',async()=>{
  const {retrieval,human,add}=world(),a=fakeEmbedder(profileA),b=fakeEmbedder(profileB)
  const doc=await add('差旅报销制度',policy)
  await retrieval.enroll(human,{sourceIds:[doc.sourceId]})
@@ -183,9 +184,30 @@ test('profileHash 变化后旧索引不可用，按新配置重建后清理旧�
  assert.equal((await retrieval.status(human,profileB)).items[0]!.state,'stale')
  assert.equal((await retrieval.status(human,null)).items[0]!.state,'stale')
  await retrieval.buildPending(human,b.embedder,signal())
+ assert.equal(b.passages().length,2,'新模型不复用旧模型的向量')
  assert.ok((await retrieval.search(human,['general'],{query:'报销'},b.embedder,signal())).results.length>0)
- assert.deepEqual((await pool.query('select profile_hash from teloa_retrieval_indexes where owner_id=$1',[human.ownerId])).rows.map(row=>row.profile_hash),[profileB])
+ assert.deepEqual((await pool.query('select profile_hash from teloa_retrieval_indexes where owner_id=$1 order by profile_hash',[human.ownerId])).rows.map(row=>row.profile_hash),[profileA,profileB])
+ assert.equal((await retrieval.status(human,profileA)).items[0]!.state,'ready')
+ const switchedBack=fakeEmbedder(profileA)
+ assert.deepEqual(await retrieval.buildPending(human,switchedBack.embedder,signal()),{ready:0,failed:0})
+ assert.equal(switchedBack.passages().length,0,'切回已完成的模型索引无需重复推理')
+ assert.ok((await retrieval.search(human,['general'],{query:'报销'},switchedBack.embedder,signal())).results.length>0)
+ assert.equal((await retrieval.status(human,profileB)).items[0]!.state,'ready')
  await assert.rejects(retrieval.search(human,['general'],{query:'报销'},{...b.embedder,profileHash:'not-a-hash'},signal()),{code:'teloa/invalid-input'})
+})
+
+test('新模型推理失败时不混用旧模型，启动对账仍保留旧模型就绪索引',async()=>{
+ const {retrieval,human,add}=world(),a=fakeEmbedder(profileA),b=fakeEmbedder(profileB,{dimensions:1023})
+ const doc=await add('差旅报销制度',policy)
+ await retrieval.enroll(human,{sourceIds:[doc.sourceId]})
+ await retrieval.buildPending(human,a.embedder,signal())
+ await assert.rejects(retrieval.buildPending(human,b.embedder,signal()),{code:'teloa/dependency-unavailable'})
+ const unavailable=await retrieval.search(human,['general'],{query:'报销'},b.embedder,signal())
+ assert.deepEqual(unavailable.results,[])
+ assert.deepEqual(unavailable.coverage.pending,[{resourceId:doc.id,title:'差旅报销制度',reason:'building'}])
+ await retrieval.reconcile(profileB)
+ assert.equal((await retrieval.status(human,profileA)).items[0]!.state,'ready')
+ assert.ok((await retrieval.search(human,['general'],{query:'报销'},a.embedder,signal())).results.length>0)
 })
 
 test('上限：500 份加入、5 万块、查询 500 字，向量长度不是 4096 字节时拒写',async()=>{
@@ -225,18 +247,30 @@ test('上限：500 份加入、5 万块、查询 500 字，向量长度不是 40
  assert.deepEqual(await retrieval.buildPending(human,embedder,signal()),{ready:0,failed:0},'失败的资料不在每次任务中反复重试')
 })
 
-test('reconcile 清理撤回、改版、旧分块器与旧配置的失效行',async()=>{
+test('reconcile 保留合法模型就绪索引，清理撤回、绑定变化与旧模型未完成索引',async()=>{
  const {retrieval,resources,human,add}=world(),{embedder}=fakeEmbedder()
  const withdrawn=await add('差旅报销制度',policy),kept=await add('产品手册',handbook)
  await retrieval.enroll(human,{sourceIds:[withdrawn.sourceId,kept.sourceId]})
  await retrieval.buildPending(human,embedder,signal())
+ await retrieval.buildPending(human,fakeEmbedder(profileB).embedder,signal())
  await resources.withdraw(human,{resourceId:withdrawn.id,expectedVersion:1})
- const keptIndex=(await pool.query('select * from teloa_retrieval_indexes where resource_id=$1',[kept.id])).rows[0]
- await pool.query("insert into teloa_retrieval_indexes(id,owner_id,resource_id,resource_version,source_id,source_version,scope_ids,profile_hash,chunker,state,chunk_count,failure,created_at) values($1,$2,$3,1,$4,$5,$6,$7,'teloa.chunk.zh/v0','ready',0,null,now())",[randomUUID(),human.ownerId,kept.id,kept.sourceId,kept.sourceVersion,JSON.stringify(kept.scopeIds),profileA])
- await pool.query("insert into teloa_retrieval_indexes(id,owner_id,resource_id,resource_version,source_id,source_version,scope_ids,profile_hash,chunker,state,chunk_count,failure,created_at) values($1,$2,$3,1,$4,$5,$6,$7,$8,'ready',0,null,now())",[randomUUID(),human.ownerId,kept.id,kept.sourceId,kept.sourceVersion,JSON.stringify(kept.scopeIds),profileB,retrievalChunker])
+ const keptIndexes=(await pool.query('select id from teloa_retrieval_indexes where resource_id=$1 order by id',[kept.id])).rows.map(row=>row.id)
+ const invalidBindings=[
+  {resourceVersion:2},
+  {sourceId:withdrawn.sourceId},
+  {sourceVersion:'0'.repeat(64)},
+  {scopeIds:['design']},
+  {chunker:'teloa.chunk.zh/v0'},
+  {state:'building'},
+  {state:'failed',failure:{code:'teloa/dependency-unavailable',message:'本地检索模型暂不可用。'}},
+ ]
+ for(const [index,binding] of invalidBindings.entries()){
+  const row={resourceVersion:1,sourceId:kept.sourceId,sourceVersion:kept.sourceVersion,scopeIds:kept.scopeIds,chunker:retrievalChunker,state:'ready',failure:null,...binding}
+  await pool.query("insert into teloa_retrieval_indexes(id,owner_id,resource_id,resource_version,source_id,source_version,scope_ids,profile_hash,chunker,state,chunk_count,failure,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,now())",[randomUUID(),human.ownerId,kept.id,row.resourceVersion,row.sourceId,row.sourceVersion,JSON.stringify(row.scopeIds),String(index).repeat(64),row.chunker,row.state,row.failure===null?null:JSON.stringify(row.failure)])
+ }
  const removed=await retrieval.reconcile(profileA)
- assert.ok(removed.removed>=3)
- assert.deepEqual((await pool.query('select id from teloa_retrieval_indexes where owner_id=$1',[human.ownerId])).rows.map(row=>row.id),[keptIndex.id])
+ assert.ok(removed.removed>=9)
+ assert.deepEqual((await pool.query('select id from teloa_retrieval_indexes where owner_id=$1 order by id',[human.ownerId])).rows.map(row=>row.id),keptIndexes)
  assert.equal(await count('select count(*)::int as count from teloa_retrieval_chunks c where not exists(select 1 from teloa_retrieval_indexes i where i.id=c.index_id)',[]),0)
  assert.equal((await retrieval.reconcile()).removed>=0,true)
 })

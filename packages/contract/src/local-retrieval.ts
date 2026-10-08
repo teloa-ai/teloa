@@ -9,13 +9,16 @@ import {isRecord,resourceId,resourceVersion} from './resources.ts'
  * 区分「运行时安装」与「模型工件下载」两段进度。
  */
 /** retrieval/cancel 只取消后台索引（清补跑并等待收尾），不取消模型准备或移除已提交向量；仅本人界面调用。 */
-export const retrievalEndpoints=['retrieval/status','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel'] as const
+export const retrievalEndpoints=['retrieval/status','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'] as const
 export type RetrievalEndpoint=typeof retrievalEndpoints[number]
 export const retrievalLimits={maxEnrollments:500,maxSourceBytes:2*1024*1024,maxChunks:50000,maxQueryChars:500,maxResults:8,maxExcerptBytes:2048,maxTotalExcerptBytes:16384,dimensions:1024,vectorBytes:4096} as const
 
 /** 发行默认变体（关键决定 9；改默认是设计约束，扩展 runtime/assets.json 的 defaultVariant 须与之一致）。 */
 export const embeddingDefaultVariant='fp32' as const
-export type EmbeddingVariant='fp32'|'int8'
+export type EmbeddingVariant='fp32'|'int8'|'ollama'
+export const embeddingProviderIds=['qwen3-embedding-0.6b','embeddinggemma-2'] as const
+export type EmbeddingProviderId=typeof embeddingProviderIds[number]
+export const embeddingProviderForCatalog=(id:string):EmbeddingProviderId|undefined=>id==='teloa.model.qwen3-embedding-0-6b'?'qwen3-embedding-0.6b':id==='teloa.model.embeddinggemma-2'?'embeddinggemma-2':undefined
 /**
  * 模型文件下载来源：官方 Hugging Face 或国内镜像 hf-mirror.com（第三方社区镜像）。选镜像只改写下载主机、路径不变，
  * 文件仍按固定字节数与 sha256 核对，完整性不依赖镜像；选择只作用于本次准备，不保存。
@@ -34,7 +37,7 @@ export const embeddingPreparationPhases=['unprepared','checking','downloading','
 export type EmbeddingPreparationPhase=typeof embeddingPreparationPhases[number]
 export const embeddingPreparationStages=['runtime','assets'] as const
 export type EmbeddingPreparationStage=typeof embeddingPreparationStages[number]
-export const embeddingDownloadFailureReasons=['network','dns','timeout','certificate','http','integrity','storage','unknown'] as const
+export const embeddingDownloadFailureReasons=['network','dns','timeout','certificate','http','integrity','storage','runtime-version','runtime-unsupported','unknown'] as const
 export type EmbeddingDownloadFailure={resource:string;source:string;reason:typeof embeddingDownloadFailureReasons[number]}
 export type EmbeddingPreparationState=
  |{phase:'unprepared'|'ready'|'standby'|'cancelled'}

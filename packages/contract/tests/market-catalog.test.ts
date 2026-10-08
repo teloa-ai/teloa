@@ -40,6 +40,22 @@ test('合法目录条目原样读出，返回的是副本',()=>{
  assert.deepEqual([...marketCatalogCompatibility],['verified','needs-configuration','content-only','unsupported'])
 })
 
+test('市场三语言文案：可选zh-TW保留地区译文，双语言旧条目不变，未知语言与无效译文拒绝',()=>{
+ const row=sample()
+ row.skill.title['zh-TW']='技能建立器'
+ row.skill.summary['zh-TW']='依固定流程建立或修改技能。'
+ row.modifications[0]['zh-TW']='改用 Teloa 草稿流程。'
+ row.compatibility.conditions=[{'zh-CN':'需提供资料','zh-TW':'須提供資料',en:'Provide source material'}]
+ assert.deepEqual(readMarketCatalogEntry(row),row)
+ assert.deepEqual(readMarketCatalogEntry(sample()),sample())
+ for(const value of ['',null,undefined,'x'.repeat(501)]){
+  const invalid=sample();invalid.skill.summary['zh-TW']=value
+  rejects(()=>readMarketCatalogEntry(invalid))
+ }
+ const unknown=sample();unknown.skill.title.fr='Créateur'
+ rejects(()=>readMarketCatalogEntry(unknown))
+})
+
 test('目录条目逐项反例一律拒绝',()=>{
  const cases:((row:Record<string,any>)=>void)[]=[
   row=>{row.extra=1},
@@ -662,6 +678,18 @@ test('本地垂类模型第二种已审绑定：embedding 配 teloa-embedding/qw
  // 语音条目配 teloa-embedding 同样被拒，且是绑定错配而非别的校验先失败
  const mismatched=structuredClone(speech);mismatched.model.native={kind:'teloa-embedding',providerId:'qwen3-embedding-0.6b'}
  assert.throws(()=>readMarketCatalogEntry(mismatched),(error:any)=>error?.code==='teloa/invalid-input'&&/模型用法与原生模型准备器不匹配/.test(error.message))
+})
+
+test('EmbeddingGemma 2本地检索绑定：接受embeddinggemma-2，仅允许embedding用法与固定原生绑定',async()=>{
+ const {readFile}=await import('node:fs/promises')
+ const row=JSON.parse(await readFile(new URL('../../../tests/fixtures/public-market/catalog/models/teloa.model.sensevoice.json',import.meta.url),'utf8'))
+ row.id='teloa.model.embeddinggemma-2'
+ row.model={...row.model,modelId:'embeddinggemma-2',title:{'zh-CN':'本地检索','zh-TW':'本機檢索',en:'Local retrieval'},usage:['embedding'],native:{kind:'teloa-embedding',providerId:'embeddinggemma-2'}}
+ assert.deepEqual(readMarketCatalogEntry(row),row)
+ for(const patch of [{usage:['chat']},{usage:['speech-to-text']},{usage:['embedding','chat']},{native:{kind:'dsh-speech',providerId:'embeddinggemma-2'}},{native:{kind:'teloa-embedding',providerId:'embeddinggemma-2',downloadUrl:'https://example.com/model'}}]){
+  const invalid=structuredClone(row);Object.assign(invalid.model,patch)
+  rejects(()=>readMarketCatalogEntry(invalid))
+ }
 })
 
 import {readFileSync} from 'node:fs'

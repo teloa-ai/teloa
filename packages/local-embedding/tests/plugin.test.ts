@@ -11,7 +11,9 @@ import * as plugin from '../src/index.ts'
 import {embeddingProfile,profileHash} from '../src/profile.ts'
 import {assetsCacheDir,type AssetsManifest} from '../src/assets.ts'
 import {retrievalPreparationDetails} from '../src/preparation-details.ts'
+import {embeddingGemma2ProfileHash,ollamaPreparationDetails} from '../src/ollama.ts'
 import assets from '../runtime/assets.json' with {type:'json'}
+const unavailableOllama:typeof fetch=async()=>{throw new TypeError('隔离测试：Ollama 未运行')}
 
 test('插件：inject subprocess 与 teloaWork；启用只检查（不 spawn、不安装、不下载），缺缓存为 unprepared；停用撤服务且不动运行时与缓存',async t=>{
  assert.equal(plugin.name,'teloa-local-embedding')
@@ -27,12 +29,15 @@ test('插件：inject subprocess 与 teloaWork；启用只检查（不 spawn、�
  const ctx=new Context()
  ctx.provide('teloaWork',{runtimeRoot:join(root,'runtime')})
  ctx.provide('subprocess',{spawn:(spec:unknown)=>{spawned.push(spec);throw new Error('不应启动子进程')}})
- const fiber=ctx.plugin(plugin,{homePath:home,totalmem:8*1024**3,env:{}})
+ const fiber=ctx.plugin(plugin,{homePath:home,totalmem:8*1024**3,env:{},ollama:{fetch:unavailableOllama}})
  await fiber
  const service=ctx.get('teloaEmbedding') as plugin.TeloaEmbeddingService
  assert.ok(service)
- for(let i=0;i<200&&service.snapshot().providers[0]!.preparation.phase==='checking';i++)await new Promise(done=>setTimeout(done,5))
- assert.deepEqual(service.snapshot(),{providers:[{id:'qwen3-embedding-0.6b',location:'host-local',catalogId:'teloa.model.qwen3-embedding-0-6b',catalogVersion:'1.0.0',profileHash:profileHash(embeddingProfile(assets as AssetsManifest,'fp32')),variant:'fp32',totalMemoryBytes:8*1024**3,memoryRisk:true,preparation:{phase:'unprepared'},preparationDetails:retrievalPreparationDetails('fp32',cache,join(root,'runtime','packages','onnxruntime-node@1.30.0'))}]})
+ for(let i=0;i<200&&service.snapshot().providers.some(provider=>provider.preparation.phase==='checking');i++)await new Promise(done=>setTimeout(done,5))
+ assert.deepEqual(service.snapshot(),{providers:[
+  {id:'qwen3-embedding-0.6b',location:'host-local',catalogId:'teloa.model.qwen3-embedding-0-6b',catalogVersion:'1.0.0',profileHash:profileHash(embeddingProfile(assets as AssetsManifest,'fp32')),variant:'fp32',totalMemoryBytes:8*1024**3,memoryRisk:true,preparation:{phase:'unprepared'},preparationDetails:retrievalPreparationDetails('fp32',cache,join(root,'runtime','packages','onnxruntime-node@1.30.0'))},
+  {id:'embeddinggemma-2',location:'host-local',catalogId:'teloa.model.embeddinggemma-2',catalogVersion:'1.0.0',profileHash:embeddingGemma2ProfileHash(),variant:'ollama',totalMemoryBytes:8*1024**3,memoryRisk:false,preparation:{phase:'unprepared'},preparationDetails:ollamaPreparationDetails()},
+ ]})
  await assert.rejects(service.embed('qwen3-embedding-0.6b',{kind:'query',texts:['报销']},new AbortController().signal),{code:'teloa/dependency-unavailable'})
  assert.equal(spawned.length,0)
  await fiber.dispose()
@@ -55,7 +60,7 @@ test('验收开关只认启动进程层：工作区 .env 写 ACCEPTANCE=1、VARI
   ctx.provide('launchEnvironment',createLaunchEnvironmentSnapshot(layers))
   ctx.provide('teloaWork',{runtimeRoot:join(root,'runtime')})
   ctx.provide('subprocess',{spawn:()=>{throw new Error('不应启动子进程')}})
-  const fiber=ctx.plugin(plugin,{homePath:(...segments:string[])=>join(root,'home',...segments),totalmem:16*1024**3})
+  const fiber=ctx.plugin(plugin,{homePath:(...segments:string[])=>join(root,'home',...segments),totalmem:16*1024**3,ollama:{fetch:unavailableOllama}})
   await fiber
   const variant=(ctx.get('teloaEmbedding') as plugin.TeloaEmbeddingService).snapshot().providers[0]!.variant
   await fiber.dispose()

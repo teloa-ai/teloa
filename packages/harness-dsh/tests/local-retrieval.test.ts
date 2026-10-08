@@ -8,14 +8,18 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {captureRetrievalPreparation,WorkError,readRetrievalSearchResult,retrievalEndpoints,type RetrievalSearchResult} from '@teloa/contract'
+import {captureRetrievalPreparation,WorkError,readRetrievalSearchResult,retrievalEndpoints,type RetrievalSearchResult,type EmbeddingProviderId} from '@teloa/contract'
 import type {ResourceActor} from '@teloa/backend'
 import {registerLocalRetrieval,readEmbeddingProvider,knowledgeSearchToolName,embeddingProviderId,type LocalRetrievalPorts,type EmbeddingServiceLike} from '../src/local-retrieval.ts'
 import {retrievalPreparationDetails} from '../../local-embedding/src/preparation-details.ts'
 import {registerTaskToolGuard,type TaskToolPolicy} from '../src/task-tool-guard.ts'
 
 const owner='local:teloa-owner',sessionId='retrieval-session',profileHash='a'.repeat(64),sha='b'.repeat(64)
-const preparationDetails=retrievalPreparationDetails('fp32','/test/models','/test/runtime')
+const preparationDetails=(()=>{
+ const value=retrievalPreparationDetails('fp32','/test/models','/test/runtime')
+ if(value.kind==='ollama')throw new Error('Qwen 测试须使用 ONNX 准备信息。')
+ return value
+})()
 const resourceId='11111111-1111-4111-8111-111111111111'
 const human:ResourceActor={ownerId:owner,kind:'human',scopeIds:['general','design']}
 const fixture:RetrievalSearchResult={
@@ -38,6 +42,17 @@ function stubEmbedding(phase:string,hooks:{onEmbed?:()=>void}={}){
 }
 
 const expectedFor=(service:EmbeddingServiceLike)=>captureRetrievalPreparation(readEmbeddingProvider(service.snapshot(),embeddingProviderId)!)
+
+const gemmaProviderId='embeddinggemma-2',gemmaProfileHash='c'.repeat(64)
+function dualEmbedding(gemmaPhase='ready'){
+ const qwen=stubEmbedding('ready'),rows=(qwen.service.snapshot() as {providers:Record<string,unknown>[]}).providers
+ rows.push({id:gemmaProviderId,location:'host-local',catalogId:'teloa.model.embeddinggemma-2',catalogVersion:'1.0.0',profileHash:gemmaProfileHash,variant:'ollama',totalMemoryBytes:16*1024**3,memoryRisk:false,preparation:{phase:gemmaPhase},preparationDetails:{kind:'ollama',modelName:'EmbeddingGemma 2',license:'Apache-2.0',upstreamRepo:'https://huggingface.co/google/embeddinggemma-2',runtime:{name:'Ollama',endpoint:'http://127.0.0.1:11434',managed:false,minimumVersion:'0.40.0'},model:{name:'embeddinggemma-2:latest',source:'registry.ollama.ai',digest:'sha256:'+sha,bytes:1_325_205_612},nativeDimensions:768,storageDimensions:1024,downloadSources:[{id:'official',host:'registry.ollama.ai'}]}})
+ const service:EmbeddingServiceLike={...qwen.service,snapshot:()=>structuredClone({providers:rows}),embed:async(id,input)=>{
+  qwen.embedded.push({id,kind:input.kind,texts:[...input.texts]})
+  return {profileHash:id===gemmaProviderId?gemmaProfileHash:profileHash,vectors:input.texts.map(()=>new Float32Array(1024))}
+ }}
+ return {...qwen,service,rows}
+}
 
 function stubRetrieval(options:{build?:()=>Promise<void>}={}){
  const calls:{method:string;args:unknown[]}[]=[]
@@ -173,7 +188,7 @@ test('服务端结果不合契约时工具拒绝输出',async t=>{
 
 test('模型端点：状态只读；prepare/cancel 只转给 teloaEmbedding；扩展未启用时 dependency-unavailable 并附启用指引',async t=>{
  const e=await setup({},{phase:'unprepared'});t.after(()=>e.ctx.fiber.dispose())
- assert.deepEqual(retrievalEndpoints.filter(endpoint=>endpoint.startsWith('retrieval-model/')),['retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel'])
+ assert.deepEqual(retrievalEndpoints.filter(endpoint=>endpoint.startsWith('retrieval-model/')),['retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'])
  const status=await e.handle('retrieval-model/status',{}) as {enabled:boolean;provider:{id:string;preparation:{phase:string};profileHash:string;memoryRisk:boolean}|null;building:boolean;guidance:string|null}
  assert.equal(status.enabled,true);assert.equal(status.provider!.id,embeddingProviderId);assert.equal(status.provider!.preparation.phase,'unprepared');assert.equal(status.provider!.profileHash,profileHash);assert.equal(status.building,false);assert.equal(status.guidance,null)
  assert.equal(e.embedding.prepared.length,0,'读状态不触发准备')
@@ -621,4 +636,209 @@ test('本人停止整理的选择跨重启保留：下次启动读到后不自�
  const again=await make('unprepared')
  await again.e.handle('retrieval-model/prepare',{expected:expectedFor(again.e.embedding.service)})
  assert.equal(saved,false,'本人重新准备模型也清除记录')
+})
+
+test('停止整理和选用模型串行保存暂停选择，端点等待本次写入完成',{timeout:5000},async t=>{
+ const embedding=dualEmbedding(),pauseStarted=deferred(),pauseDone=deferred(),resumeStarted=deferred(),resumeDone=deferred(),writes:boolean[]=[]
+ let saved=false,stopped=false,selected=false
+ const e=await setup({embedding:()=>embedding.service,autoPause:{read:async()=>saved,write:async paused=>{
+  writes.push(paused)
+  if(paused){pauseStarted.resolve();await pauseDone.promise}else{resumeStarted.resolve();await resumeDone.promise}
+  saved=paused
+ }}})
+ t.after(async()=>{pauseDone.resolve();resumeDone.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const stopping=e.handle('retrieval/cancel',{}).then(()=>{stopped=true})
+ await pauseStarted.promise
+ const selecting=e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash}).then(()=>{selected=true})
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(writes,[true],'恢复写入须等停止写入完成，不能让落盘顺序倒置')
+ assert.equal(stopped,false,'停止端点不能在记录保存前报告完成')
+ assert.equal(selected,false)
+ pauseDone.resolve()
+ await resumeStarted.promise
+ await stopping
+ assert.equal(selected,false,'选用端点也等待恢复选择写入完成')
+ resumeDone.resolve()
+ await selecting
+ assert.deepEqual(writes,[true,false]);assert.equal(saved,false,'最后一次本人选择跨重启保持为恢复整理')
+})
+
+test('选用 Ollama 先做固定文本能力探针，并在当前 profile 与就绪状态仍有效时才保存',{timeout:5000},async t=>{
+ for(const outcome of ['unsupported','returned-profile-changed','current-profile-changed','no-longer-ready','ready'] as const){
+  const embedding=dualEmbedding('standby'),writes:EmbeddingProviderId[]=[],probes:unknown[]=[]
+  const embed=embedding.service.embed
+  embedding.service.embed=async(id,input,signal)=>{
+   probes.push({id,kind:input.kind,texts:[...input.texts]})
+   if(outcome==='unsupported')throw new WorkError('teloa/dependency-unavailable','当前 Ollama 不支持此模型。')
+   const result=await embed(id,input,signal)
+   if(outcome==='returned-profile-changed')return {...result,profileHash:'d'.repeat(64)}
+   if(outcome==='current-profile-changed')embedding.rows[1]!.profileHash='d'.repeat(64)
+   if(outcome==='no-longer-ready')embedding.rows[1]!.preparation={phase:'failed',message:'模型已不可用。'}
+   return result
+  }
+  const e=await setup({embedding:()=>embedding.service,modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id)}}})
+  t.after(async()=>{await e.registered.dispose();await e.ctx.fiber.dispose()})
+  const selecting=e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash})
+  if(outcome==='ready'){
+   await selecting
+   assert.deepEqual(writes,[gemmaProviderId])
+   assert.equal((await e.handle('retrieval-model/status',{}) as {selectedProviderId:string}).selectedProviderId,gemmaProviderId)
+  }else{
+   await assert.rejects(selecting,{code:outcome==='unsupported'||outcome==='no-longer-ready'?'teloa/dependency-unavailable':'teloa/conflict'},outcome)
+   assert.deepEqual(writes,[],outcome)
+   assert.equal((await e.handle('retrieval-model/status',{}) as {selectedProviderId:string}).selectedProviderId,embeddingProviderId)
+   assert.deepEqual(e.store.of('buildPending'),[],outcome)
+  }
+  assert.deepEqual(probes,[{id:gemmaProviderId,kind:'query',texts:['Teloa']}],outcome)
+  assert.deepEqual(embedding.prepared,[],'选用已有模型不会下载或准备')
+ }
+})
+
+test('显式模型选择：准备另一模型不切换，选择后查询和整理使用其 profile，重启仍保留选择',async t=>{
+ const embedding=dualEmbedding(),writes:EmbeddingProviderId[]=[]
+ let saved:EmbeddingProviderId=embeddingProviderId
+ const modelSelection={read:async()=>saved,write:async(id:EmbeddingProviderId)=>{saved=id;writes.push(id)}}
+ const e=await setup({embedding:()=>embedding.service,modelSelection});t.after(async()=>{await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const inspected=await e.handle('retrieval-model/status',{providerId:gemmaProviderId}) as {provider:{id:string};selectedProviderId:string}
+ assert.equal(inspected.provider.id,gemmaProviderId);assert.equal(inspected.selectedProviderId,embeddingProviderId)
+ const expected=captureRetrievalPreparation(readEmbeddingProvider(embedding.service.snapshot(),gemmaProviderId)!)
+ await e.handle('retrieval-model/prepare',{expected})
+ assert.deepEqual(embedding.prepared,[gemmaProviderId])
+ assert.deepEqual(writes,[])
+ assert.equal((await e.handle('retrieval-model/status',{}) as {provider:{id:string}}).provider.id,embeddingProviderId)
+ await e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash})
+ await e.registered.idle()
+ assert.deepEqual(writes,[gemmaProviderId])
+ assert.equal((await e.handle('retrieval-model/status',{}) as {selectedProviderId:string}).selectedProviderId,gemmaProviderId)
+ assert.ok(e.store.of('buildPending').every(call=>call.args[1]===gemmaProfileHash))
+ assert.equal((await e.call({query:'报销'})).isError,false)
+ assert.deepEqual(embedding.embedded,[{id:gemmaProviderId,kind:'query',texts:['Teloa']},{id:gemmaProviderId,kind:'query',texts:['报销']}])
+ await e.handle('retrieval-model/cancel',{})
+ await e.handle('retrieval-model/cancel',{providerId:embeddingProviderId})
+ assert.deepEqual(embedding.cancelled,[gemmaProviderId,embeddingProviderId])
+ const restarted=await setup({embedding:()=>embedding.service,modelSelection});t.after(async()=>{await restarted.registered.dispose();await restarted.ctx.fiber.dispose()})
+ assert.equal((await restarted.handle('retrieval-model/status',{}) as {provider:{id:string}}).provider.id,gemmaProviderId)
+ await restarted.handle('retrieval/enroll',{sourceIds:['src_policy']});await restarted.registered.idle()
+ assert.deepEqual(restarted.store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
+})
+
+test('持久选择尚在加载时界面、工具、对账与整理均等待，不误用默认 Qwen',async t=>{
+ const loaded=deferred(),embedding=dualEmbedding()
+ const e=await setup({embedding:()=>embedding.service,modelSelection:{read:async()=>{await loaded.promise;return gemmaProviderId},write:async()=>{}}})
+ t.after(async()=>{loaded.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const requests=[e.handle('retrieval/enroll',{sourceIds:['src_policy']}),e.registered.reconcile(),e.call({query:'报销'})]
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(e.store.calls,[]);assert.deepEqual(embedding.embedded,[])
+ loaded.resolve();await Promise.all(requests);await e.registered.idle()
+ assert.deepEqual(e.store.of('reconcile').map(call=>call.args[0]),[gemmaProfileHash])
+ assert.deepEqual(e.store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
+ assert.deepEqual(e.store.of('search').map(call=>call.args[3]),[gemmaProfileHash])
+})
+
+test('切换模型先取消旧整理并等待真实收尾，再持久化与开始新 profile',{timeout:5000},async t=>{
+ const embedding=dualEmbedding(),started=deferred(),aborted=deferred(),settled=deferred(),writes:EmbeddingProviderId[]=[]
+ const e=await setup({embedding:()=>embedding.service,modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id)}}})
+ t.after(async()=>{settled.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
+ let builds=0
+ e.store.retrieval.buildPending=async(_actor,embedder,signal)=>{
+  builds++;if(builds===1){assert.equal(embedder.profileHash,profileHash);started.resolve();signal.addEventListener('abort',aborted.resolve,{once:true});await settled.promise}
+  else assert.equal(embedder.profileHash,gemmaProfileHash)
+  return {ready:1,failed:0}
+ }
+ await e.handle('retrieval/reindex',{});await started.promise
+ const selecting=e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash})
+ await aborted.promise
+ assert.deepEqual(writes,[]);assert.equal(builds,1)
+ const query=e.call({query:'报销'})
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(embedding.embedded,[],'切换收尾期间查询等待，不使用旧模型')
+ settled.resolve();await selecting;await e.registered.idle()
+ assert.deepEqual(writes,[gemmaProviderId]);assert.equal(builds,2)
+ assert.equal((await query).isError,false)
+ assert.deepEqual(embedding.embedded.map(call=>call.id),[gemmaProviderId,gemmaProviderId])
+})
+
+test('模型选择损坏或读取失败时关闭检索，不静默回退 Qwen',async t=>{
+ for(const read of [async()=> 'unknown' as EmbeddingProviderId,async()=>{throw new Error('选择记录不可读')}]){
+  const embedding=dualEmbedding(),e=await setup({embedding:()=>embedding.service,modelSelection:{read,write:async()=>{}}})
+  t.after(async()=>{await e.registered.dispose();await e.ctx.fiber.dispose()})
+  await assert.rejects(e.handle('retrieval/status',{}))
+  await assert.rejects(e.handle('retrieval/enroll',{sourceIds:['src_policy']}))
+  await assert.rejects(e.registered.reconcile())
+  assert.equal((await e.call({query:'报销'})).isError,true)
+  assert.deepEqual(e.store.calls,[]);assert.deepEqual(embedding.embedded,[])
+ }
+})
+
+test('选择只接受受审 provider、当前 profile 与 ready/standby，写入失败不改变现有选择',async t=>{
+ const embedding=dualEmbedding(),writes:string[]=[]
+ const e=await setup({embedding:()=>embedding.service,modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id);throw new Error('选择写入失败')}}})
+ t.after(async()=>{await e.registered.dispose();await e.ctx.fiber.dispose()})
+ for(const payload of [{providerId:'unknown',profileHash:gemmaProfileHash},{providerId:gemmaProviderId,profileHash:'f'.repeat(64)},{providerId:gemmaProviderId,profileHash:gemmaProfileHash,force:true}])await assert.rejects(e.handle('retrieval-model/select',payload))
+ embedding.rows[1]!.preparation={phase:'unprepared'}
+ await assert.rejects(e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash}),{code:'teloa/dependency-unavailable'})
+ assert.deepEqual(writes,[])
+ embedding.rows[1]!.preparation={phase:'standby'}
+ await assert.rejects(e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash}),{code:'teloa/storage-unavailable'})
+ assert.deepEqual(writes,[gemmaProviderId])
+ assert.equal((await e.handle('retrieval-model/status',{}) as {selectedProviderId:string}).selectedProviderId,embeddingProviderId)
+ assert.deepEqual(e.store.of('buildPending'),[])
+})
+
+test('主动检索发现已加入资料更新后自动整理并等待结果，不要求打开资料页',{timeout:5000},async t=>{
+ const store=stubRetrieval(),started=deferred(),settled=deferred()
+ const e=await setup({retrieval:async()=>({...store.retrieval,
+  status:async()=>({items:[{sourceId:'src_policy',resourceId,title:'差旅报销制度',version:4,state:'stale' as const,chunkCount:null}],enrolled:1,chunks:0}),
+  buildPending:async()=>{started.resolve();await settled.promise;return {ready:1,failed:0}},
+ })})
+ t.after(async()=>{settled.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const query=e.call({query:'报销'})
+ await started.promise
+ assert.equal(store.of('search').length,0,'更新后的资料先完成整理，再进行检索')
+ assert.deepEqual(store.of('enroll'),[],'查询不会自动加入未授权资料')
+ assert.deepEqual(e.embedding.prepared,[],'查询不会自动下载模型')
+ settled.resolve()
+ assert.equal((await query).isError,false)
+ assert.equal(store.of('search').length,1)
+})
+
+test('模型切换与宿主停止等待已开始的对账清理实际收尾',{timeout:5000},async t=>{
+ const embedding=dualEmbedding(),store=stubRetrieval(),started=deferred(),release=deferred(),stopStarted=deferred(),stopRelease=deferred(),writes:EmbeddingProviderId[]=[]
+ const originalReconcile=store.retrieval.reconcile
+ let cleanups=0,disposed=false
+ store.retrieval.reconcile=async hash=>{
+  const first=++cleanups===1
+  const checkpoint=first?started:stopStarted;checkpoint.resolve()
+  await (first?release:stopRelease).promise
+  return originalReconcile(hash)
+ }
+ const e=await setup({embedding:()=>embedding.service,retrieval:async()=>store.retrieval,modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id)}}})
+ t.after(async()=>{release.resolve();stopRelease.resolve();if(!disposed)await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const cleanup=e.registered.reconcile();await started.promise
+ const selecting=e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash})
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(writes,[],'旧 profile 清理未收尾前不能保存新选择')
+ assert.deepEqual(store.of('buildPending'),[],'旧 purge 不能和新 profile 整理重叠')
+ release.resolve();await Promise.all([cleanup,selecting]);await e.registered.idle()
+ assert.deepEqual(writes,[gemmaProviderId])
+ assert.deepEqual(store.of('reconcile').map(call=>call.args[0]),[profileHash])
+ assert.deepEqual(store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
+ const stoppingCleanup=e.registered.reconcile();await stopStarted.promise
+ const closing=e.registered.dispose().then(()=>{disposed=true})
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(disposed,false,'清理仍占用数据库时不能完成宿主停止')
+ stopRelease.resolve();await Promise.all([stoppingCleanup,closing])
+})
+
+test('尚未进入清理的旧 profile 对账跨模型切换后跳过，不阻塞选择',{timeout:5000},async t=>{
+ const embedding=dualEmbedding(),store=stubRetrieval(),reading=deferred(),release=deferred(),writes:EmbeddingProviderId[]=[]
+ let reads=0
+ const e=await setup({embedding:()=>embedding.service,retrieval:async()=>{if(++reads===1){reading.resolve();await release.promise}return store.retrieval},modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id)}}})
+ t.after(async()=>{release.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const cleanup=e.registered.reconcile();await reading.promise
+ await e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash});await e.registered.idle()
+ assert.deepEqual(writes,[gemmaProviderId],'只等待已经进入实际清理的任务')
+ assert.deepEqual(store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
+ release.resolve();await cleanup
+ assert.deepEqual(store.of('reconcile'),[],'不能下发跨切换保留下来的旧 hash')
 })

@@ -14,8 +14,10 @@ import {createRuntimeStage} from './runtime.ts'
 import {createEmbeddingProvider,createEmbeddingService,type TeloaEmbeddingService} from './service.ts'
 import assetsManifest from '../runtime/assets.json' with {type:'json'}
 import {retrievalPreparationDetails} from './preparation-details.ts'
+import {createOllamaEmbeddingProvider,type OllamaEmbeddingOptions} from './ollama.ts'
 
 export type {TeloaEmbeddingService} from './service.ts'
+export {createOllamaEmbeddingProvider,embeddingGemma2ProviderId,embeddingGemma2CatalogId,embeddingGemma2CatalogVersion,embeddingGemma2Model,embeddingGemma2Digest,embeddingGemma2Profile,embeddingGemma2ProfileHash,ollamaPreparationDetails} from './ollama.ts'
 export const name='teloa-local-embedding'
 /**
  * subprocess：推理子进程由宿主 `ctx.subprocess` 拥有；teloaWork：取宿主运行目录，运行时装在 `runtimeRoot/packages`
@@ -27,7 +29,7 @@ export const embeddingProviderId='qwen3-embedding-0.6b'
 declare module '@deepseek-ai/cordis'{interface Context{teloaEmbedding:TeloaEmbeddingService}}
 
 /** 只供测试注入；宿主装载时不传。 */
-export type LocalEmbeddingOptions={homePath?:(...segments:string[])=>string;totalmem?:number;env?:Record<string,string|undefined>}
+export type LocalEmbeddingOptions={homePath?:(...segments:string[])=>string;totalmem?:number;env?:Record<string,string|undefined>;ollama?:Pick<OllamaEmbeddingOptions,'endpoint'|'fetch'>}
 
 /**
  * 发行默认 fp32（关键决定 9）；int8 只在验收宿主（TELOA_BROWSER_ACCEPTANCE=1）且两个验收开关都打开时供 功能验证 并测。
@@ -71,6 +73,9 @@ export function apply(ctx:Context,options:LocalEmbeddingOptions={}):void{
   // 日志只记阶段与错误类别，不记路径、下载地址或文本。
   onChange:state=>{if(state.phase==='failed')ctx.logger.warn(`本地检索模型准备失败（${state.download?.reason??'load'}）。`)},
  })
- ctx.effect(()=>()=>provider.dispose())
- ctx.provide('teloaEmbedding',createEmbeddingService([provider]))
+ const ollama=createOllamaEmbeddingProvider({...options.ollama,totalMemoryBytes:options.totalmem??totalmem(),onChange:state=>{
+  if(state.phase==='failed')ctx.logger.warn(`EmbeddingGemma 2 准备失败（${state.download?.reason??'load'}）。`)
+ }})
+ ctx.effect(()=>async()=>{await Promise.all([provider.dispose(),ollama.dispose()])})
+ ctx.provide('teloaEmbedding',createEmbeddingService([provider,ollama]))
 }
