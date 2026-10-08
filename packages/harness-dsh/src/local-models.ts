@@ -1,3 +1,4 @@
+import {assessLocalModelFit} from './local-model-fit.ts'
 import {readOllamaAddress} from './ollama-address.ts'
 import {homedir,totalmem} from 'node:os'
 import {join,dirname} from 'node:path'
@@ -99,7 +100,7 @@ export function createLocalModelsHandler(deps:LocalModelsDeps){
   }
  const hardware=()=>{
   const h=deps.hardware?.()??{totalMemBytes:totalmem(),arch:process.arch,platform:process.platform}
-  return {totalGb:h.totalMemBytes/2**30,unified:h.arch==='arm64'&&h.platform==='darwin'}
+  return {totalGb:h.totalMemBytes/2**30,unified:h.arch==='arm64'&&h.platform==='darwin',arch:h.arch,platform:h.platform}
  }
  const variants=():Variant[]=>deps.catalog().flatMap(entry=>entry.model.form==='local-general'?entry.model.variants.map((variant,index)=>({entry,variant,index})):[])
  const findVariant=(entryId:string,index:number):Variant=>{
@@ -146,7 +147,13 @@ export function createLocalModelsHandler(deps:LocalModelsDeps){
   const rows:LocalModelRow[]=variants().map(v=>{
    const name=v.variant.sources[0].name;catalogNames.add(name)
    const record=state.records.find(item=>item.name===name),tag=runtime.tags.find(item=>item.name===name)
-   return {entryId:v.entry.id,version:v.entry.version,variant:v.index,name,title:v.entry.model.title,quant:v.variant.quant,sizeBytes:v.variant.sizeBytes,fit:fit(hw.totalGb,v.variant.hardware),licenseTier:v.entry.model.license.tier,licenseName:v.entry.model.license.name,licenseURL:v.entry.model.license.url,restrictions:v.entry.model.license.restrictions,catalogDigest:v.variant.sources[0].digest,status:rowStatus(v,record,tag,runtime.state,address),loaded:runtime.running.some(row=>row.name===name),runtimeContextLength:runtime.running.find(row=>row.name===name&&row.digest===tag?.digest)?.contextLength??null}
+   const loaded=runtime.running.find(row=>row.name===name)
+   // 默认 8K 只用于未加载的受审工件；未知实际容量或换版权重不得伪称内存够用。
+   const verified=!tag||tag.digest===v.variant.sources[0].digest
+   const contextTokens=loaded?(verified&&loaded.digest===tag?.digest?loaded.contextLength:null):8192
+   const assessed=address.local&&verified&&contextTokens!==null?assessLocalModelFit({hardware:{totalMemBytes:Math.round(hw.totalGb*2**30),arch:hw.arch,platform:hw.platform},ollamaName:name,quant:v.variant.quant,sizeBytes:v.variant.sizeBytes,contextTokens}):undefined
+   const memoryEstimate=assessed&&assessed.basis.catalogDigest===v.variant.sources[0].digest?{sourceVersion:assessed.basis.sourceVersion,contextTokens:assessed.contextTokens,contextSupported:assessed.contextSupported,requiredMemoryBytes:assessed.requiredMemoryBytes,availableMemoryBytes:assessed.availableMemoryBytes,fit:assessed.fit}:undefined
+   return {...(memoryEstimate?{memoryEstimate}:{}),entryId:v.entry.id,version:v.entry.version,variant:v.index,name,title:v.entry.model.title,quant:v.variant.quant,sizeBytes:v.variant.sizeBytes,fit:fit(hw.totalGb,v.variant.hardware),licenseTier:v.entry.model.license.tier,licenseName:v.entry.model.license.name,licenseURL:v.entry.model.license.url,restrictions:v.entry.model.license.restrictions,catalogDigest:v.variant.sources[0].digest,status:rowStatus(v,record,tag,runtime.state,address),loaded:runtime.running.some(row=>row.name===name),runtimeContextLength:runtime.running.find(row=>row.name===name&&row.digest===tag?.digest)?.contextLength??null}
   })
   const result:LocalModelsOverview={
    runtime:{state:runtime.state,version:runtime.version,outdated:runtime.outdated,address:{baseURL:address.baseURL,custom:state.address.custom,local:address.local}},

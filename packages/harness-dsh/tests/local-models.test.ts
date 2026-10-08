@@ -530,3 +530,30 @@ test('另一个模型加载占锁时可立即取消排队请求，迟到队列�
  first.abort();await firstStopped;await e.handler.dispose()
  assert.equal(e.stub!.calls.filter(row=>row.path==='/api/chat').length,before+1)
 })
+
+
+test('内存估算只对应受审的本机工件和实际上下文，远端与摘要漂移不伪称适配',async t=>{
+ const e=await stand({running:['qwen3:4b'],models:[{name:'qwen3:4b',size:2497293931,digest:qwen4bDigest,allocatedContext:32768}]});t.after(e.close)
+ const first=await e.overview(),model=e.row(first,'qwen3:4b')
+ assert.equal(model.memoryEstimate?.sourceVersion,'1.1.16')
+ assert.equal(model.memoryEstimate?.contextTokens,32768)
+ assert.equal(model.memoryEstimate?.contextSupported,true)
+ assert.ok(model.memoryEstimate!.requiredMemoryBytes>7*GiB)
+ const changed=catalog.map(entry=>entry.id===qwen.id?{...entry,model:{...entry.model,variants:qwenVariants.map(v=>({...v,sources:[{...v.sources[0],digest:'sha256:'+'f'.repeat(64)}]}))}} as MarketCatalogModelEntry:entry)
+ const mismatch=await stand(null,{catalog:()=>changed});t.after(mismatch.close)
+ assert.equal(mismatch.row(await mismatch.overview(),'qwen3:4b').memoryEstimate,undefined)
+ await e.invoke('local-models/address',{requestId:rid(),baseURL:'http://remote.example:11434'})
+ assert.ok((await e.overview()).rows.every(row=>row.memoryEstimate===undefined))
+})
+
+
+test('已加载模型的容量未知或当前摘要漂移时，不用8K和旧Q4工件伪称内存够用',async t=>{
+ for(const model of [
+  {name:'qwen3:4b',size:2497293931,digest:qwen4bDigest,allocatedContext:null},
+  {name:'qwen3:4b',size:2497293931,digest:'sha256:'+'e'.repeat(64),allocatedContext:4096}
+ ]){
+  const e=await stand({running:['qwen3:4b'],models:[model]});t.after(e.close)
+  const current=e.row(await e.overview(),'qwen3:4b')
+  assert.equal(current.loaded,true);assert.equal(current.memoryEstimate,undefined)
+ }
+})

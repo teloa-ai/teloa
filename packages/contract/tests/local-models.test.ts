@@ -79,3 +79,13 @@ test('总览与拉取作业读取器：合法回包原样通过，缺字段/多�
  assert.throws(()=>readLocalModelsOverview({...overview,extra:1}),/格式/)
  assert.throws(()=>readLocalModelsOverview({...overview,offCatalog:[{name:'x',sizeBytes:1}]}),/格式/)
 })
+
+
+test('内存评估是可选、固定来源且有上下文的估计；旧总览兼容、异常估算拒绝',()=>{
+ const row={entryId:'teloa.model.local.qwen3',version:'1.0.0',variant:0,name:'qwen3:8b',title:{'zh-CN':'通义千问 3',en:'Qwen3'},quant:'Q4_K_M',sizeBytes:5_200_000_000,fit:'good',licenseTier:'commercial',licenseName:'Apache 2.0',licenseURL:'https://www.apache.org/licenses/LICENSE-2.0',restrictions:[],catalogDigest:'sha256:'+'a'.repeat(64),status:'ready',loaded:false}
+ const overview={runtime:{state:'running',version:'0.40.1',outdated:false,address:{baseURL:'http://127.0.0.1:11434',custom:false,local:true}},hardware:{totalMemGb:32,unified:true,diskFreeBytes:120_000_000_000},rows:[row],offCatalog:[],pull:null}
+ const memoryEstimate={sourceVersion:'1.1.16',contextTokens:8192,contextSupported:true,requiredMemoryBytes:6*2**30,availableMemoryBytes:24*2**30,fit:'good'}
+ assert.equal(readLocalModelsOverview(overview).rows[0]?.memoryEstimate,undefined)
+ assert.deepEqual(readLocalModelsOverview({...overview,rows:[{...row,memoryEstimate}]}).rows[0]?.memoryEstimate,memoryEstimate)
+ for(const bad of [{...memoryEstimate,contextTokens:0},{...memoryEstimate,requiredMemoryBytes:-1},{...memoryEstimate,availableMemoryBytes:NaN},{...memoryEstimate,sourceVersion:'latest'},{...memoryEstimate,tps:100}])assert.throws(()=>readLocalModelsOverview({...overview,rows:[{...row,memoryEstimate:bad}]}),/格式/)
+})

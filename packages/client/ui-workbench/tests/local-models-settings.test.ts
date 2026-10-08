@@ -71,3 +71,14 @@ test('只显示已加载模型的实测容量，未知不能填成标称上限�
  assert.match(confirm,/加载模型并核验可用上下文/)
  assert.doesNotMatch(render({confirmation:{kind:'remove',name:'custom:latest',overview}}),/加载模型并核验可用上下文/)
 })
+
+
+test('本机模型按明确上下文显示内存估计，不冒充速度、实际加载容量或远端硬件',()=>{
+ const memoryEstimate={sourceVersion:'1.1.16',contextTokens:8192,contextSupported:true,requiredMemoryBytes:5*2**30,availableMemoryBytes:24*2**30,fit:'good'}
+ const next={...overview,rows:[{...row,memoryEstimate}]}
+ const html=render({overview:next})
+ assert.match(html,/内存充裕（估算）/);assert.match(html,/按 8,192 上下文估算，约需 5 GiB 内存/)
+ assert.doesNotMatch(html,/tokens\/s|当前上下文 8,192/)
+ const remote=render({overview:{...next,runtime:{...next.runtime,address:{baseURL:'http:\/\/remote.lan:11434',custom:true,local:false}}}})
+ assert.doesNotMatch(remote,/内存充裕|约需 5 GiB/)
+})

@@ -1028,3 +1028,14 @@ or <https://docs.python.org/3/license.html> for the canonical text. Summary:
 OSI-approved, permits use, modification, and redistribution including in
 proprietary and GPL-licensed works; imposes no obligation beyond retaining
 the license text.
+
+
+### llmfit model memory assessment (MIT)
+
+The local model memory assessment includes six architecture records and a small
+adaptation of memory estimation formulas from llmfit v1.1.16 (commit
+`2ac77f5e0d13221c7e2a2414769fe62f660d225c`), Copyright (c) 2026 Alex Jones.
+The complete MIT license is retained in
+`packages/harness-dsh/src/local-model-fit.ts`; the exact sources and Teloa changes
+are documented in `packages/harness-dsh/LOCAL-MODEL-FIT-PROVENANCE.md`.
+No llmfit executable, Rust runtime, network service or model weights are included.

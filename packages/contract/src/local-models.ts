@@ -19,7 +19,9 @@ export type LocalModelStatus=(typeof localModelStatuses)[number]
 export const pullJobPhases=['pulling','verifying','done','failed','cancelled'] as const
 export type PullJobPhase=(typeof pullJobPhases)[number]
 
-export type LocalModelRow={entryId:string;version:string;variant:number;name:string;title:MarketCatalogText;quant:string;sizeBytes:number;fit:'good'|'slow'|'poor';licenseTier:'commercial'|'restricted';licenseName:string;licenseURL:string;restrictions:MarketCatalogText[];catalogDigest:string|null;status:LocalModelStatus;loaded:boolean;runtimeContextLength?:number|null}
+/** 只评估内存；不代表实测速度、完整能力或当前已加载的上下文。 */
+export type LocalModelMemoryEstimate={sourceVersion:'1.1.16';contextTokens:number;contextSupported:boolean;requiredMemoryBytes:number;availableMemoryBytes:number;fit:'good'|'slow'|'poor'}
+export type LocalModelRow={entryId:string;version:string;variant:number;name:string;title:MarketCatalogText;quant:string;sizeBytes:number;fit:'good'|'slow'|'poor';licenseTier:'commercial'|'restricted';licenseName:string;licenseURL:string;restrictions:MarketCatalogText[];catalogDigest:string|null;status:LocalModelStatus;loaded:boolean;runtimeContextLength?:number|null;memoryEstimate?:LocalModelMemoryEstimate}
 export type PullJobView={pullId:string;name:string;phase:PullJobPhase;completed:number;total:number|null;error:string|null}
 export type LocalModelsOverview={
  runtime:{state:'missing'|'running';version:string|null;outdated:boolean;address:{baseURL:string;custom:boolean;local:boolean}}
@@ -108,13 +110,18 @@ function readRuntimeContext(row:Record<string,unknown>):{runtimeContextLength?:n
  return {runtimeContextLength:value as number|null}
 }
 function readLocalModelRow(value:unknown):LocalModelRow{
- const row=exact(value,['entryId','version','variant','name','title','quant','sizeBytes','fit','licenseTier','licenseName','licenseURL','restrictions','catalogDigest','status','loaded',...(isRecord(value)&&Object.hasOwn(value,'runtimeContextLength')?['runtimeContextLength']:[])])
+ const row=exact(value,['entryId','version','variant','name','title','quant','sizeBytes','fit','licenseTier','licenseName','licenseURL','restrictions','catalogDigest','status','loaded',...(isRecord(value)&&Object.hasOwn(value,'runtimeContextLength')?['runtimeContextLength']:[]),...(isRecord(value)&&Object.hasOwn(value,'memoryEstimate')?['memoryEstimate']:[])])
  if(!str(row.entryId,120)||!catalogId.test(row.entryId)||!str(row.version,80)||!semver.test(row.version)||!nonNegative(row.variant)||row.variant>5)throw shape()
  if(!str(row.quant,16)||!/^[A-Za-z0-9_]{1,16}$/.test(row.quant)||!nonNegative(row.sizeBytes)||!oneOf(['good','slow','poor'] as const,row.fit)||!oneOf(['commercial','restricted'] as const,row.licenseTier))throw shape()
  if(!str(row.licenseName,256)||!str(row.licenseURL,2048))throw shape()
  try{const url=new URL(row.licenseURL);if(url.protocol!=='https:'||url.username||url.password)throw shape()}catch{throw shape()}
  if(!Array.isArray(row.restrictions)||row.restrictions.length>20||(row.catalogDigest!==null&&(typeof row.catalogDigest!=='string'||!ollamaDigestPattern.test(row.catalogDigest)))||!oneOf(localModelStatuses,row.status)||typeof row.loaded!=='boolean')throw shape()
- return {entryId:row.entryId,version:row.version,variant:row.variant,name:modelName(row.name),title:localizedText(row.title),quant:row.quant,sizeBytes:row.sizeBytes,fit:row.fit,licenseTier:row.licenseTier,licenseName:row.licenseName,licenseURL:row.licenseURL,restrictions:row.restrictions.map(localizedText),catalogDigest:row.catalogDigest as string|null,status:row.status,loaded:row.loaded,...readRuntimeContext(row)}
+ return {entryId:row.entryId,version:row.version,variant:row.variant,name:modelName(row.name),title:localizedText(row.title),quant:row.quant,sizeBytes:row.sizeBytes,fit:row.fit,licenseTier:row.licenseTier,licenseName:row.licenseName,licenseURL:row.licenseURL,restrictions:row.restrictions.map(localizedText),catalogDigest:row.catalogDigest as string|null,status:row.status,loaded:row.loaded,...readRuntimeContext(row),...(row.memoryEstimate===undefined?{}:{memoryEstimate:readMemoryEstimate(row.memoryEstimate)})}
+}
+function readMemoryEstimate(value:unknown):LocalModelMemoryEstimate{
+ const row=exact(value,['sourceVersion','contextTokens','contextSupported','requiredMemoryBytes','availableMemoryBytes','fit'])
+ if(row.sourceVersion!=='1.1.16'||!nonNegative(row.contextTokens)||row.contextTokens===0||row.contextTokens>0xffff_ffff||typeof row.contextSupported!=='boolean'||!nonNegative(row.requiredMemoryBytes)||row.requiredMemoryBytes===0||!nonNegative(row.availableMemoryBytes)||!oneOf(['good','slow','poor'] as const,row.fit))throw shape()
+ return {sourceVersion:row.sourceVersion,contextTokens:row.contextTokens,contextSupported:row.contextSupported,requiredMemoryBytes:row.requiredMemoryBytes,availableMemoryBytes:row.availableMemoryBytes,fit:row.fit}
 }
 export function readLocalModelsOverview(value:unknown):LocalModelsOverview{
  const row=exact(value,['runtime','hardware','rows','offCatalog','pull'])
