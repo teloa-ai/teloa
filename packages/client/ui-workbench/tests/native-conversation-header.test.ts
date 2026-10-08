@@ -26,11 +26,11 @@ function expose(source:string,exports:string):string{
 }
 
 async function patchedConversationSource(){
- const basename='dsh-client-ui-conversation-0.2.0-rc.2-empty-header-utilities',compat=join(root,'packages/harness-dsh/compat')
+ const basename='dsh-client-ui-conversation-0.2.1-alpha.1-empty-header-utilities',compat=join(root,'packages/harness-dsh/compat')
  const metadata=JSON.parse(await readFile(join(conversationRoot,'package.json'),'utf8')),manifest=JSON.parse(await readFile(join(compat,basename+'.json'),'utf8'))
  const original=await readFile(join(conversationRoot,'lib/client.js')),patch=await readFile(join(compat,basename+'.patch')),digest=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
- assert.equal(manifest.schema,'teloa.dsh-compat-patch/v1');assert.equal(manifest.package,metadata.name);assert.equal(manifest.version,metadata.version)
- assert.equal(manifest.upstreamCommit,'639ed015397290b3745d163aafe02ffee4aa3f84');assert.equal(digest(patch),manifest.patchSha256)
+ assert.equal(metadata.version,'0.2.1-alpha.1');assert.equal(manifest.schema,'teloa.dsh-compat-patch/v1');assert.equal(manifest.package,metadata.name);assert.equal(manifest.version,metadata.version)
+ assert.equal(manifest.upstreamCommit,'5badb15009ae1756c3afe0ae0cef1faafc290ccc');assert.equal(digest(patch),manifest.patchSha256)
  assert.equal(manifest.files.length,1);assert.equal(manifest.files[0].path,'lib/client.js');assert.equal(digest(original),manifest.files[0].beforeSha256)
  const target=join(temp,'official-conversation');await mkdir(join(target,'lib'),{recursive:true});await writeFile(join(target,'lib/client.js'),original)
  const patchPath=join(temp,'header.patch');await writeFile(patchPath,patch)
@@ -44,7 +44,7 @@ before(async()=>{
  temp=await mkdtemp(join(tmpdir(),'teloa-native-header-'))
  if(evidence)await mkdir(evidence,{recursive:true})
  const conversation=expose(await patchedConversationSource(),'\t\texports.headerFixture={ConversationHeader,ConversationSessionHeader};')
- assert.equal(JSON.parse(await readFile(join(sidebarRoot,'package.json'),'utf8')).version,'0.2.0-rc.2')
+ assert.equal(JSON.parse(await readFile(join(sidebarRoot,'package.json'),'utf8')).version,'0.2.1-alpha.1')
  const sidebar=expose(await readFile(join(sidebarRoot,'lib/client.js'),'utf8'),'\t\texports.headerFixture={ExpandButton};')
  const officialRequire=createRequire(createRequire(join(root,'package.json')).resolve('@deepseek-ai/dsh/package.json'))
  const frontend=join(dirname(officialRequire.resolve('@deepseek-ai/dsh-web-frontend/package.json')),'dist/assets')

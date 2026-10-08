@@ -141,20 +141,45 @@ test('精简字形与原字标在工作台用到的尺寸上视觉一致',async 
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
  const page=await browser.newPage()
  // 按字形覆盖率（透明度）比较：原文件带固定颜色，精简字形用 currentColor，着色由使用方决定。
- const differences=await page.evaluate(async({original,minified}:{original:string;minified:string})=>{
+ // 4× 栅格化后对每个目标像素的 16 个样本取均值，避免微小坐标取整触发的边缘采样量化差异主导误差。
+ // 仍在实际使用的目标尺寸上比较，保留原阈值；平移、缺字与轮廓变形须被同一判据拒绝。
+ const controls=[
+  ['路径平移',TELOA_LOGOTYPE_SVG.replace('<path ',"<path transform='translate(1.5 0)' ")],
+  ['缺失首字母',TELOA_LOGOTYPE_SVG.replace(/d='M[^z]+z/,"d='")],
+  ['轮廓变形',TELOA_LOGOTYPE_SVG.replace('M.5-2.5h105','M.5-2.5h100')],
+ ] as const
+ for(const [name,svg] of controls)assert.notEqual(svg,TELOA_LOGOTYPE_SVG,name+'对照确实改变字形')
+ const differences=await page.evaluate(async({original,minified,controls}:{original:string;minified:string;controls:readonly(readonly[string,string])[]})=>{
   const load=(svg:string)=>new Promise<HTMLImageElement>((done,fail)=>{const image=new Image();image.onload=()=>done(image);image.onerror=fail;image.src='data:image/svg+xml,'+encodeURIComponent(svg)})
-  const [a,b]=[await load(original),await load(minified)]
+  const [a,...candidates]=await Promise.all([original,minified,...controls.map(([,svg])=>svg)].map(load))
+  const samples=4
   return [96,192,384].map(width=>{
    const height=Math.ceil(width*108.79/567.33)
-   const coverage=(image:HTMLImageElement)=>{const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const context=canvas.getContext('2d')!;context.drawImage(image,0,0,width,width*108.79/567.33);return context.getImageData(0,0,width,height).data}
-   const left=coverage(a),right=coverage(b);let max=0,sum=0
-   for(let at=3;at<left.length;at+=4){const delta=Math.abs(left[at]!-right[at]!);max=Math.max(max,delta);sum+=delta}
-   return {width,max,mean:sum/(left.length/4)}
+   const coverage=(image:HTMLImageElement)=>{
+    const canvas=document.createElement('canvas');canvas.width=width*samples;canvas.height=height*samples
+    const context=canvas.getContext('2d')!;context.drawImage(image,0,0,width*samples,width*108.79/567.33*samples)
+    const data=context.getImageData(0,0,canvas.width,canvas.height).data,alpha:number[]=[]
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+     let sum=0
+     for(let dy=0;dy<samples;dy++)for(let dx=0;dx<samples;dx++)sum+=data[((y*samples+dy)*canvas.width+x*samples+dx)*4+3]!
+     alpha.push(sum/(samples*samples))
+    }
+    return alpha
+   }
+   const left=coverage(a!)
+   const compare=(image:HTMLImageElement)=>{
+    const right=coverage(image);let max=0,sum=0
+    for(let at=0;at<left.length;at++){const delta=Math.abs(left[at]!-right[at]!);max=Math.max(max,delta);sum+=delta}
+    return {max,mean:sum/left.length}
+   }
+   return {width,...compare(candidates[0]!),controls:candidates.slice(1).map((image,index)=>({name:controls[index]![0],...compare(image)}))}
   })
- },{original:source,minified:TELOA_LOGOTYPE_SVG})
- for(const {width,max,mean} of differences){
+ },{original:source,minified:TELOA_LOGOTYPE_SVG,controls})
+ for(const {width,max,mean,controls} of differences){
+  t.diagnostic(JSON.stringify({width,max,mean,controls}))
   assert.ok(mean<0.1,width+'px 平均差 '+mean)
   assert.ok(max<=128,width+'px 最大差 '+max+'（只允许边缘抗锯齿的个别采样差）')
+  for(const control of controls)assert.ok(control.mean>=0.1||control.max>128,width+'px '+control.name+'应超过视觉一致性阈值')
  }
 })
 

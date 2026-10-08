@@ -392,7 +392,7 @@ test('业务首页新建开启独立搭建；技能页仍准备普通会话，�
  assert.deepEqual(intents,[{builder:true},{goal:'帮我创建技能'}])
 })
 
-test('设置页「前往市场「扩展」」经 store 发出类目请求：市场页已挂载时也按新 serial 切到扩展类目',async()=>{
+test('打开市场扩展类目经 store 发出请求：市场页已挂载时也按新 serial 切到扩展类目',async()=>{
  const store=createWorkbenchStore().create()
  assert.deepEqual(store.getSnapshot().marketCategoryRequest,{category:'home',serial:0})
  store.actions.openDirectory()
@@ -407,6 +407,5 @@ test('设置页「前往市场「扩展」」经 store 发出类目请求：市�
  const frame=await readFile(frameUrl,'utf8')
  assert.match(frame,/const openMarketCategory=\(category:MarketCategory\|'home'\)=>actions\.openMarketCategory\(category\)/)
  assert.match(frame,/<MarketPage [^\n]*forceCategory=\{state\.marketCategoryRequest\}/)
- const index=await readFile(new URL('../src/client/index.ts',import.meta.url),'utf8')
- assert.match(index,/openMarket:\(\)=>\{const bound=requireActions\(\);[^}]*\}\)\}\);bound\.closeSettings\(\);bound\.openMarketCategory\('plugin'\)\}/)
+ // 内置 IM 已直接在设置里配置，不再保留旧的“去市场安装”接线；能力页市场入口在上方单独核对。
 })
