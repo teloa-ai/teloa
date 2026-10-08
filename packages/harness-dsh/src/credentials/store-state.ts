@@ -1,5 +1,5 @@
 import {randomBytes,randomUUID} from 'node:crypto'
-import {appendFile,mkdir,open,readFile,realpath,rm,stat,writeFile} from 'node:fs/promises'
+import {appendFile,mkdir,readFile,realpath} from 'node:fs/promises'
 import {basename,dirname,isAbsolute,join,relative} from 'node:path'
 import {withFileLock,writeFileAtomic} from '@deepseek-ai/dsh-atomic-write'
 import {keyIdOf,readHeader} from './envelope.ts'
@@ -28,53 +28,23 @@ export class CredentialStoreLocked extends Error{
 export const isCredentialStoreLocked=(error:unknown):error is CredentialStoreLocked=>typeof error==='object'&&error!==null&&(error as {credentialStoreLocked?:unknown}).credentialStoreLocked===true
 const metaSchema='teloa.credentials-meta/v1'
 /**
- * `waitMs`：首次初始化等锁上限；`upgradeWaitMs`：明文档每次启动尝试升级时的等锁上限，超时就维持明文（不算降级）。
- * `staleMs`：锁文件存在超过它就视为孤儿（远超临界区最长耗时：钥匙串探测 3 s + 写密钥文件与 meta），覆盖持锁 PID 被复用的情况。
- * `guardStaleMs`：接管互斥文件超龄阈值，远大于它的持有时间（几毫秒）。
+ * `waitMs`：首次初始化等锁上限；`upgradeWaitMs`：明文档每次启动尝试升级时的等锁上限，超时 auto 维持原明文（非降级）、显式档位锁定。
+ * 持锁 PID 存活、不可确认退出或被复用时，锁再旧也只能等待；超时绝不据此删锁。
  */
-export const lockWait={waitMs:30_000,upgradeWaitMs:10_000,staleMs:120_000,guardStaleMs:10_000}
+export const lockWait={waitMs:30_000,upgradeWaitMs:10_000}
 const lockBusy=Symbol('lock-busy')
-const ownerAlive=(pid:number):boolean=>{
- if(pid===process.pid)return true
- try{process.kill(pid,0);return true}catch(error){return (error as NodeJS.ErrnoException).code!=='ESRCH'}
-}
-/** 锁文件是孤儿（持锁进程已不存在或锁超龄）时返回它的身份（inode + 纳秒 mtime）；同一句柄上读内容与 stat，二者属于同一个文件。 */
-async function orphanLockId(lockPath:string):Promise<string|undefined>{
- let handle
- try{handle=await open(lockPath,'r')}catch{return undefined}
- try{
-  const [text,info]=await Promise.all([handle.readFile('utf8'),handle.stat({bigint:true})])
-  const pid=Number.parseInt(text,10)
-  const stale=(Number.isSafeInteger(pid)&&pid>0&&!ownerAlive(pid))||Date.now()-Number(info.mtimeMs)>=lockWait.staleMs
-  return stale?`${info.ino}-${info.mtimeNs}`:undefined
- }catch{return undefined}finally{await handle.close()}
-}
 /**
- * 孤儿锁接管（`dsh-atomic-write` 的 withFileLock 自身从不清理）。只有以 O_EXCL 建成接管互斥文件的进程才能删锁，
- * 且在互斥文件内重新核对锁的身份仍是同一把孤儿锁才删，不会误删别人刚建的新锁。
- * 互斥文件名绑定孤儿锁身份，只在“核对 + 删除”几毫秒内存在；它超龄说明接管者崩溃在窗口内，
- * 此时不删它（删它会让两个接管者同时在窗口内），而是改用下一级互斥文件，最多三级。
+ * 兼容提供方的接管预检入口，只经固定 DSH 的 withFileLock 协议尝试一次、不等待。
+ * alpha.1 已原生按 PID 记录互斥接管已退出进程；另行按 inode/mtime 删锁会与原生接管竞争并误删新锁。
+ * 预检未取得锁交给调用方随后正常等锁，文件年龄不是退出证据。原生 claim 崩溃残留仍等待/超时，不能旁路。
+ * 旧 inode 互斥残留不再参与接管，保留给宿主停止后的显式 reset 精确清理。
  * 不支持在不同 PID 命名空间（如容器与宿主）之间共享同一 DSH_HOME：对方的 PID 在这里看来已不存在。
  */
 export async function clearStaleLock(filename:string):Promise<void>{
- const lockPath=`${filename}.lock`,id=await orphanLockId(lockPath)
- if(id===undefined)return
- const guard=(level:number)=>`${lockPath}.takeover-${id}-${level}`
- for(let level=0;level<3;level++){
-  try{await writeFile(guard(level),`${process.pid}\n`,{flag:'wx',mode:0o600})}
-  catch{
-   const age=await stat(guard(level)).then(info=>Date.now()-info.mtimeMs,()=>undefined)
-   if(age===undefined||age<lockWait.guardStaleMs)return // 别人正在接管或已接管完这把孤儿锁，去 withFileLock 排队
-   continue
-  }
-  try{if(await orphanLockId(lockPath)===id)await rm(lockPath,{force:true})}
-  finally{for(let done=level;done>=0;done--)await rm(guard(done),{force:true})}
-  return
- }
+ await withFileLock(filename,async()=>{},{waitMs:0}).catch(()=>{})
 }
 /** 等锁超时返回 lockBusy；临界区内抛出的错误原样抛出。 */
 async function withMetaLock<T>(paths:StorePaths,waitMs:number,operation:()=>Promise<T>):Promise<T|typeof lockBusy>{
- await clearStaleLock(paths.meta)
  let entered=false
  try{return await withFileLock(paths.meta,()=>{entered=true;return operation()},{waitMs})}catch(error){if(entered)throw error;return lockBusy}
 }

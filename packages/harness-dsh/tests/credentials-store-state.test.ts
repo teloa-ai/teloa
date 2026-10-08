@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {createHash} from 'node:crypto'
 import {chmod,mkdir,readFile,stat,symlink,utimes,writeFile} from 'node:fs/promises'
 import {fork,spawnSync} from 'node:child_process'
 import {readdir} from 'node:fs/promises'
 import {fileURLToPath} from 'node:url'
-import {join} from 'node:path'
+import {basename,join} from 'node:path'
 import {lockWait,resolveStore,storePaths} from '../src/credentials/store-state.ts'
 import {keyIdOf,seal} from '../src/credentials/envelope.ts'
 import {defaultKeyDir,loadNativeKeyring} from '../src/credentials/key-sources.ts'
@@ -182,35 +183,64 @@ test('meta 损坏 → meta-invalid；明文档旁出现 .enc → meta-invalid',a
  assert.deepEqual(await resolveStore(paths2,'auto',{keyring:memoryKeyring().port,env:{},keyDir:join(home2,'k')}),{mode:'locked',reason:'meta-invalid'})
 })
 
-test('孤儿锁：持锁进程已退出 → 接管，首次初始化与明文升级都不等满超时',async t=>{
+test('孤儿锁（含超龄）：持锁进程已退出 → 接管，首次初始化与明文升级都不等满超时',async t=>{
  const dead=spawnSync(process.execPath,['-e','process.stdout.write(String(process.pid))']).stdout.toString()
  const home=await tempHome(t),paths=storePaths(home),keyDir=join(await tempHome(t),'k')
  await writeFile(`${paths.meta}.lock`,`${dead}\n`)
+ const old=new Date(Date.now()-3_600_000)
+ await utimes(`${paths.meta}.lock`,old,old)
  const started=Date.now()
  assert.equal((await resolveStore(paths,'auto',{keyring:memoryKeyring().port,env:{},keyDir})).mode,'encrypted')
  const home2=await tempHome(t),paths2=storePaths(home2)
  await resolveStore(paths2,'auto',{keyring:undefined,env:{},keyDir:join(home2,'k')})
  await writeFile(`${paths2.meta}.lock`,`${dead}\n`)
+ await utimes(`${paths2.meta}.lock`,old,old)
  assert.equal((await resolveStore(paths2,'auto',{keyring:memoryKeyring().port,env:{},keyDir})).mode,'encrypted')
  assert.ok(Date.now()-started<5_000)
 })
 
-test('锁超龄视为孤儿（覆盖 PID 复用）；活锁等待超时：明文档维持明文、首次初始化锁定而不抛出',async t=>{
+test('超龄活锁不接管；等待超时：明文 auto 维持明文、显式档位与首次初始化锁定而不抛出',async t=>{
  const saved={...lockWait}
  t.after(()=>Object.assign(lockWait,saved))
  Object.assign(lockWait,{waitMs:200,upgradeWaitMs:200})
  const home=await tempHome(t),paths=storePaths(home),keyDir=join(await tempHome(t),'k'),lock=`${paths.meta}.lock`
- await writeFile(lock,'1\n')
+ const record=`${process.pid}\n`
+ await writeFile(lock,record)
  const old=new Date(Date.now()-3_600_000)
  await utimes(lock,old,old)
- assert.equal((await resolveStore(paths,'auto',{keyring:memoryKeyring().port,env:{},keyDir})).mode,'encrypted')
+ assert.deepEqual(await resolveStore(paths,'auto',{keyring:memoryKeyring().port,env:{},keyDir}),{mode:'locked',reason:'store-unavailable'})
+ assert.equal(await readFile(lock,'utf8'),record)
  const home2=await tempHome(t),paths2=storePaths(home2)
- await writeFile(`${paths2.meta}.lock`,'1\n')
+ await writeFile(`${paths2.meta}.lock`,record)
  assert.deepEqual(await resolveStore(paths2,'auto',{keyring:memoryKeyring().port,env:{},keyDir}),{mode:'locked',reason:'store-unavailable'})
  const home3=await tempHome(t),paths3=storePaths(home3)
  await resolveStore(paths3,'auto',{keyring:undefined,env:{},keyDir:join(home3,'k')})
- await writeFile(`${paths3.meta}.lock`,'1\n')
+ await writeFile(`${paths3.meta}.lock`,record)
  assert.equal((await resolveStore(paths3,'auto',{keyring:memoryKeyring().port,env:{},keyDir})).mode,'plaintext')
+ for(const preference of ['keyring','file'] as const)assert.deepEqual(await resolveStore(paths3,preference,{keyring:memoryKeyring().port,env:{},keyDir}),{mode:'locked',reason:'store-unavailable'})
+ assert.equal(JSON.parse(await readFile(paths3.meta,'utf8')).tier,'plaintext')
+ assert.equal(await readFile(`${paths3.meta}.lock`,'utf8'),record)
+})
+
+test('官方接管孤儿锁后，旧接管者不得删除正在持有的新锁',{timeout:15_000},async t=>{
+ const home=await tempHome(t),paths=storePaths(home)
+ await writeFile(`${paths.meta}.lock`,`${spawnSync(process.execPath,['-e','0']).pid}\n`)
+ const child=fileURLToPath(new URL('./fixtures/credentials-lock-takeover.ts',import.meta.url))
+ const result=spawnSync(process.execPath,[child,paths.meta],{encoding:'utf8',timeout:10_000})
+ assert.equal(result.status,0,result.stderr||result.error?.message)
+ assert.deepEqual((await readdir(home)).filter(name=>name.includes('.lock')),[])
+})
+
+test('官方接管 claim 的崩溃残留即使超龄也不旁路：等待超时锁定，锁与 claim 原样保留',async t=>{
+ const saved=lockWait.waitMs;lockWait.waitMs=200;t.after(()=>{lockWait.waitMs=saved})
+ const home=await tempHome(t),paths=storePaths(home),lock=`${paths.meta}.lock`
+ const record=`${spawnSync(process.execPath,['-e','0']).pid}\n`,claim=`${lock}.takeover-${createHash('sha256').update(record).digest('hex').slice(0,16)}`
+ await writeFile(lock,record);await writeFile(claim,record)
+ const old=new Date(Date.now()-3_600_000)
+ await utimes(lock,old,old);await utimes(claim,old,old)
+ assert.deepEqual(await resolveStore(paths,'auto',{keyring:memoryKeyring().port,env:{},keyDir:join(await tempHome(t),'k')}),{mode:'locked',reason:'store-unavailable'})
+ assert.equal(await readFile(lock,'utf8'),record);assert.equal(await readFile(claim,'utf8'),record)
+ assert.deepEqual((await readdir(home)).sort(),[basename(lock),basename(claim)].sort())
 })
 
 test('XDG_CONFIG_HOME / APPDATA 为相对路径时忽略',()=>{
@@ -254,7 +284,7 @@ test('多进程并发接管孤儿锁（8 进程 × 首次初始化/明文升级�
  }
 })
 
-test('接管者崩溃留下的互斥文件超龄 → 改用下一级互斥文件完成接管，结束后不残留',async t=>{
+test('旧 inode 接管互斥文件的超龄残留不妨碍原生接管；保留给宿主停止后的显式维护',async t=>{
  const home=await tempHome(t),paths=storePaths(home),lock=`${paths.meta}.lock`
  await writeFile(lock,`${spawnSync(process.execPath,['-e','0']).pid}\n`)
  const info=await stat(lock,{bigint:true}),guard=`${lock}.takeover-${info.ino}-${info.mtimeNs}-0`
@@ -264,5 +294,5 @@ test('接管者崩溃留下的互斥文件超龄 → 改用下一级互斥文件
  const started=Date.now()
  assert.equal((await resolveStore(paths,'auto',{keyring:memoryKeyring().port,env:{},keyDir:join(await tempHome(t),'k')})).mode,'encrypted')
  assert.ok(Date.now()-started<5_000)
- assert.deepEqual((await readdir(home)).filter(name=>name.includes('.lock')),[])
+ assert.deepEqual((await readdir(home)).filter(name=>name.includes('.lock')),[basename(guard)])
 })
