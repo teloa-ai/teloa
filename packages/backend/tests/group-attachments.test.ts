@@ -13,6 +13,8 @@ import {GroupAttachmentService,initializeGroupAttachments,readActiveAttachment,t
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 
 let container:StartedPostgreSqlContainer,pool:Pool
+const disconnected:Promise<void>[]=[]
+let connectedClients=0
 // 可推进的时钟：复活件要能按「这次上传的时间」排到列表顶部，固定时钟看不出这件事。
 let clock=Date.parse('2026-09-21T09:00:00.000Z')
 const identity={id:randomUUID,now:()=>new Date(clock+=1000).toISOString()}
@@ -22,9 +24,20 @@ before(async()=>{
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start()
  pool=new Pool({connectionString:container.getConnectionUri()})
+ pool.on('connect',client=>{
+  connectedClients++
+  disconnected.push(new Promise<void>(done=>client.once('end',()=>{connectedClients--;done()})))
+ })
  await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAttachments(pool)
 })
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{
+ try{
+  await pool?.end()
+  // pg-pool 的 end 先移除池内客户端；socket 关闭后才安全停止 PostgreSQL。
+  await Promise.all(disconnected)
+  assert.equal(connectedClients,0,'停止数据库前必须等所有客户端连接关闭')
+ }finally{await container?.stop()}
+})
 
 /** 图片归一化前缀：宿主会重编码图片，桩端口照样改字节，保证「sha256 算原字节」这条判据有锚。 */
 const normalizedPrefix=Buffer.from('归一化')
