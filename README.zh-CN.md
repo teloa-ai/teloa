@@ -1,22 +1,148 @@
-![Teloa · AI-Native Team Studio。让每个人，都拥有自己的 AI 团队。](assets/brand/readme-hero-zh-CN.png)
+<p align="center">
+  <a href="https://www.teloa.ai/"><img src="assets/brand/readme-hero-zh-CN.png" alt="Teloa · AI-Native Team Studio。让每个人，都拥有自己的 AI 团队。" width="100%"></a>
+</p>
 
-[快速开始](#快速开始) · [社区与表情](#社区与许可) · [安装指南](https://docs.teloa.ai/start/quickstart)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache-2.0 开源许可"></a>
+  <a href="https://www.npmjs.com/package/@teloa/cli"><img src="https://img.shields.io/npm/v/@teloa/cli?style=flat-square&amp;logo=npm&amp;label=npm" alt="npm 发布版本"></a>
+  <a href="https://hub.docker.com/r/teloa/teloa"><img src="https://img.shields.io/badge/Docker-Hub-2496ED?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker Hub 镜像"></a>
+  <a href="https://github.com/teloa-ai/teloa/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/teloa-ai/teloa/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="主分支构建状态"></a>
+</p>
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-[官网](https://www.teloa.ai/) · [使用文档](https://docs.teloa.ai/) · [资源市场](https://market.teloa.ai/) · [问题反馈](https://github.com/teloa-ai/teloa/issues)
+<p align="center">
+  <a href="https://www.teloa.ai/">官网</a> · <a href="https://docs.teloa.ai/">文档</a> · <a href="https://market.teloa.ai/">资源市场</a> · <a href="#快速开始">快速开始</a> · <a href="#版本选择">版本选择</a> · <a href="CONTRIBUTING.md">参与贡献</a>
+</p>
 
-Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Studio**。你可以从一位研究员、内容策划或开发工程师开始，为它明确职责，提供知识、技能、工具、记忆与权限，让不同岗位协作交付成果。这些岗位是使用示例，可自行配置。
+# Teloa — 让每个人，都拥有自己的 AI 团队
 
-**AI 员工是长期工作角色。** 它有职责与授权，保留有来源的岗位经验；一次任务结束后，身份与配置仍可用于后续工作。你可以像与同事合作一样讨论方案、跟进进展和提出修改。
+Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Studio**。为员工配置职责、知识、技能、工具、记忆与权限，让不同岗位在同一个工作平台中协作交付成果。你可以先从一个具体任务开始，再逐步建立自己的团队和工作方式。
 
-**你提出目标，AI 团队交付成果。** 你负责方向、职责分配、访问范围、审批规则和成果验收；员工在这些边界内执行并交接工作。你仍可以直接提出任务，无需先配齐整支团队。**Teloa 社区版** 是面向个人、自行部署的版本，使用 **DeepSeek Harness（DSH）**作为智能体运行引擎。
+本仓库维护 **Teloa 社区版**：面向个人与开发者，使用 [Apache-2.0](LICENSE) 许可，自行部署在自己的电脑上，在个人 Web 工作台中管理多位 AI 员工。当前运行引擎为 **DeepSeek Harness（DSH）**。
 
-**社区版面向个人使用：** 一个用户在自己的电脑上，通过 Web 界面管理多位 AI 员工。本仓库提供 [Apache-2.0](LICENSE) 许可的社区版源码，当前源码版本为 **0.2.0-alpha.7**。
+![Teloa 中文工作台：AI 员工与职责](https://docs.teloa.ai/assets/screenshots/team.ace3d08ce890.png)
 
-> **为什么做 Teloa？** 我们相信，AI 团队的身份、能力与工作积累，应该能够长期延续，并由用户掌握。
->
-> [阅读《从 Agent 到 AI Organization：我们为什么做 Teloa》](https://www.teloa.ai/blog/why-teloa/)。
+*真实产品界面，使用示例员工与工作数据；首次安装无需导入演示数据。*
+
+## 为什么选择 Teloa
+
+- **长期工作的 AI 员工。** 职责、配置与有来源的岗位经验可以延续，任务结束后仍能继续合作。
+- **围绕成果组织协作。** 用群、项目、任务与业务记录承接工作，跟进进度、处理审批并取得成果。
+- **按自己的方式搭建。** 组合知识、技能、工具与自动化，用自然语言配置业务记录和看板。
+- **由你掌握工作边界。** 自行部署，选择模型服务，管理数据、访问范围与授权；远程服务的数据使用见[安全与数据](#安全与数据)。
+
+[阅读《从 Agent 到 AI Organization：我们为什么做 Teloa》→](https://www.teloa.ai/blog/why-teloa/)
+
+## 快速开始
+
+需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。
+
+### npm 原生安装
+
+需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**npm 11.12.1 及以上的 11.x**，以及运行中的本机 Docker 引擎，用于独立 PostgreSQL 数据库。将精确版本安装到新建命令目录，无需全局安装或编译源码。
+
+```sh
+mkdir teloa-command
+cd teloa-command
+npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7
+./node_modules/.bin/teloa up
+./node_modules/.bin/teloa doctor
+./node_modules/.bin/teloa status
+```
+
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，已有安装更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
+
+<details>
+<summary><strong>Docker Hub + Compose</strong></summary>
+
+### Docker Hub + Compose
+
+先安装带 Compose 的 Docker，并启动 Docker 引擎。正式镜像及以下配置已验 **Linux ARM64**；**amd64 尚未验证**。Teloa、DSH 与 PostgreSQL 均在容器内运行，本机不需要安装 Node.js 或 pnpm。
+
+将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.0-alpha.7`，沿用持久数据卷与自动生成的数据库口令。
+
+```sh
+mkdir teloa-community
+cd teloa-community
+curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
+docker compose pull
+docker compose up -d --no-build
+docker compose ps
+docker compose logs --tail=50 app
+```
+
+等待 `db` 与 `app` 显示健康；一次性 `init` 服务成功退出属于正常行为。使用应用日志中的完整认证链接进入，采用所配置的本机端口（默认 3100）。端口被占用时，先在该目录 `.env` 中填写 `TELOA_PORT=3101`。不要公开认证链接。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
+
+容器中的工具执行容器内的程序，挂载文件夹不会获得本机应用的操作权限。
+
+</details>
+
+<details>
+<summary><strong>Docker Compose 源码构建</strong></summary>
+
+### Docker Compose 源码构建
+
+先安装带 Compose 的 Docker，并启动 Docker 引擎。此方式将 Teloa 与 PostgreSQL 一起运行在容器中，本机不需要安装 Node.js 或 pnpm。
+
+```sh
+git clone https://github.com/teloa-ai/teloa.git
+cd teloa
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=50 app
+```
+
+等待 `db` 和 `app` 显示健康。`init` 是一次性初始化服务，成功退出属于正常行为。使用应用日志中的**完整认证链接**进入，默认地址使用 `127.0.0.1:3100`。端口已被占用时，先在本地 `.env` 中填写 `TELOA_PORT=3101`，启动后将认证链接的端口改为该端口。
+
+初始化时自动生成数据库凭据，数据保存在持久卷中。暂停与继续同一安装：
+
+```sh
+docker compose stop
+docker compose start
+```
+
+容器中的工具调用容器内的程序，挂载文件夹不会获得本机应用的操作权限。需要使用电脑上的程序时，选择本机源码运行。
+
+</details>
+
+<details>
+<summary><strong>本机源码运行</strong></summary>
+
+### 本机源码运行
+
+需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**pnpm 11.7.0**，以及用于 PostgreSQL 的本机 Docker 引擎。此方式在电脑上运行 Teloa 与 DSH，数据库运行在 Docker 中。
+
+当前主分支固定 DSH **0.2.1-alpha.1**，包含默认语音输入；已发布的 npm 和 Docker 版本独立更新，请勿将源码能力视为旧发行包已包含的功能。
+
+```sh
+git clone https://github.com/teloa-ai/teloa.git
+cd teloa
+pnpm install --frozen-lockfile
+pnpm build
+pnpm check:dsh
+pnpm setup:database
+pnpm setup:dsh
+pnpm dev:dsh
+```
+
+使用终端输出的完整认证地址进入。macOS 或 Linux 下可用 `TELOA_DSH_PORT=3101 pnpm dev:dsh` 指定其他 Web 端口。源码安装的运行数据保存在 `.runtime/`，默认工作目录是 `.runtime/teloa/workspace`。
+
+首次点击语音入口时，按提示准备本地 SenseVoice 模型并允许麦克风访问。仅显示入口不会下载模型或开始录音；取消准备保留草稿。转写在本机完成，发送后的文本按所选模型服务处理。停用语音后，后续启动保留你的选择。
+
+部署和故障排查见[安装指南](https://docs.teloa.ai/start/quickstart)与[本地开发指南](https://docs.teloa.ai/develop/local-development)。升级前先备份数据。
+
+</details>
+
+## 完成第一项工作
+
+1. 进入**设置 → 模型**，配置支持的模型服务，先确认普通对话能得到回应。模型密钥只填写在设置中。
+2. 创建一位 **AI 员工**，写清职责，选择可用资料，设置工具与审批边界。
+3. 打开员工会话，提出具体要求，例如：「整理这些文件，列明来源，并指出还不能确定的地方。」
+4. 需要跟踪的工作创建或批准为任务，查看实际进度，在**需要你**中处理请求，并核对最终成果。
+5. 按需要用业务或项目组织相关工作，再添加看板或定时计划。
 
 ## 可以做什么
 
@@ -33,10 +159,6 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 | **连接器与市场** | 通过 MCP 接入支持的外部工具；单独添加员工、技能、连接器、任务模板、业务看板，也可以组合成方案。 |
 | **自动化** | 为重复工作设置计划并查看运行记录；需要单独启用计划，并保持运行环境在线。 |
 | **模型配置** | 使用自己的凭据配置运行引擎支持的模型服务；员工的模型设置与业务权限分别管理。 |
-
-![Teloa 中文 AI 员工目录](https://docs.teloa.ai/assets/screenshots/team.ace3d08ce890.png)
-
-*真实产品界面，使用示例员工与工作数据。首次安装不需要导入这套演示数据。*
 
 ## 这些能力怎样配合
 
@@ -70,100 +192,28 @@ flowchart LR
 
 SOC 是首个完整业务流程场景。客户交付、内容运营、电商零售、软件研发、教育培训、门店服务和其他安全方向是**后续场景示例**，不代表这些集成已经完成。见[行业场景与业务组合](https://docs.teloa.ai/tutorials/industry-examples)和 [SOC 使用教程](https://docs.teloa.ai/tutorials/soc-triage)。
 
-## 快速开始
+<a id="数据权限与版本定位"></a>
 
-需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。
+## 版本选择
 
-### npm 原生安装
+Teloa 的三个版本共享同一产品核心，面向不同的使用场景。本仓库维护社区版的开源代码。
 
-需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**npm 11.12.1 及以上的 11.x**，以及运行中的本机 Docker 引擎，用于独立 PostgreSQL 数据库。将精确版本安装到新建命令目录，无需全局安装或编译源码。
+| 版本 | 定位与使用场景 |
+| --- | --- |
+| 社区版 | 面向个人与开发者的开源版本，自行部署与配置，用 AI 员工、协作、任务、自动化和技能搭建自己的工作平台。 |
+| 专业版 | 面向个人与专业用户的 Mac 原生应用，开箱即用，在本机执行任务、操作文件与应用；通过手机随时新建、跟进和接续工作。 |
+| 企业版 | 面向企业与组织，部署在企业云或内网，统一管理成员、共享 AI 员工、权限与审计，连接企业内部数据、系统和业务流程。 |
 
-```sh
-mkdir teloa-command
-cd teloa-command
-npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7
-./node_modules/.bin/teloa up
-./node_modules/.bin/teloa doctor
-./node_modules/.bin/teloa status
-```
+## 文档导航
 
-Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，已有安装更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
-
-### Docker Hub + Compose
-
-先安装带 Compose 的 Docker，并启动 Docker 引擎。正式镜像及以下配置已验 **Linux ARM64**；**amd64 尚未验证**。Teloa、DSH 与 PostgreSQL 均在容器内运行，本机不需要安装 Node.js 或 pnpm。
-
-将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.0-alpha.7`，沿用持久数据卷与自动生成的数据库口令。
-
-```sh
-mkdir teloa-community
-cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
-docker compose pull
-docker compose up -d --no-build
-docker compose ps
-docker compose logs --tail=50 app
-```
-
-等待 `db` 与 `app` 显示健康；一次性 `init` 服务成功退出属于正常行为。使用应用日志中的完整认证链接进入，采用所配置的本机端口（默认 3100）。端口被占用时，先在该目录 `.env` 中填写 `TELOA_PORT=3101`。不要公开认证链接。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
-
-容器中的工具执行容器内的程序，挂载文件夹不会获得本机应用的操作权限。
-
-### Docker Compose 源码构建
-
-先安装带 Compose 的 Docker，并启动 Docker 引擎。此方式将 Teloa 与 PostgreSQL 一起运行在容器中，本机不需要安装 Node.js 或 pnpm。
-
-```sh
-git clone https://github.com/teloa-ai/teloa.git
-cd teloa
-docker compose up -d --build
-docker compose ps
-docker compose logs --tail=50 app
-```
-
-等待 `db` 和 `app` 显示健康。`init` 是一次性初始化服务，成功退出属于正常行为。使用应用日志中的**完整认证链接**进入，默认地址使用 `127.0.0.1:3100`。端口已被占用时，先在本地 `.env` 中填写 `TELOA_PORT=3101`，启动后将认证链接的端口改为该端口。
-
-初始化时自动生成数据库凭据，数据保存在持久卷中。暂停与继续同一安装：
-
-```sh
-docker compose stop
-docker compose start
-```
-
-容器中的工具调用容器内的程序，挂载文件夹不会获得本机应用的操作权限。需要使用电脑上的程序时，选择本机源码运行。
-
-### 本机源码运行
-
-需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**pnpm 11.7.0**，以及用于 PostgreSQL 的本机 Docker 引擎。此方式在电脑上运行 Teloa 与 DSH，数据库运行在 Docker 中。
-
-当前主分支固定 DSH **0.2.1-alpha.1**，包含默认语音输入；已发布的 npm 和 Docker 版本独立更新，请勿将源码能力视为旧发行包已包含的功能。
-
-```sh
-git clone https://github.com/teloa-ai/teloa.git
-cd teloa
-pnpm install --frozen-lockfile
-pnpm build
-pnpm check:dsh
-pnpm setup:database
-pnpm setup:dsh
-pnpm dev:dsh
-```
-
-使用终端输出的完整认证地址进入。macOS 或 Linux 下可用 `TELOA_DSH_PORT=3101 pnpm dev:dsh` 指定其他 Web 端口。源码安装的运行数据保存在 `.runtime/`，默认工作目录是 `.runtime/teloa/workspace`。
-
-首次点击语音入口时，按提示准备本地 SenseVoice 模型并允许麦克风访问。仅显示入口不会下载模型或开始录音；取消准备保留草稿。转写在本机完成，发送后的文本按所选模型服务处理。停用语音后，后续启动保留你的选择。
-
-部署和故障排查见[安装指南](https://docs.teloa.ai/start/quickstart)与[本地开发指南](https://docs.teloa.ai/develop/local-development)。升级前先备份数据。
-
-## 完成第一项工作
-
-1. 进入**设置 → 模型**，配置支持的模型服务，先确认普通对话能得到回应。模型密钥只填写在设置中。
-2. 创建一位 **AI 员工**，写清职责，选择可用资料，设置工具与审批边界。
-3. 打开员工会话，提出具体要求，例如：「整理这些文件，列明来源，并指出还不能确定的地方。」
-4. 需要跟踪的工作创建或批准为任务，查看实际进度，在**需要你**中处理请求，并核对最终成果。
-5. 按需要用业务或项目组织相关工作，再添加看板或定时计划。
-
-常用指南：[第一项任务](https://docs.teloa.ai/start/first-task) · [AI 员工](https://docs.teloa.ai/guides/colleagues) · [群协作](https://docs.teloa.ai/guides/groups) · [业务与看板](https://docs.teloa.ai/guides/business) · [市场资源](https://docs.teloa.ai/guides/market)。
+| 你想做什么 | 从这里开始 |
+| --- | --- |
+| 安装与完成第一项工作 | [安装指南](https://docs.teloa.ai/start/quickstart) · [第一项任务](https://docs.teloa.ai/start/first-task) |
+| 组建 AI 团队 | [AI 员工](https://docs.teloa.ai/guides/colleagues) · [群协作](https://docs.teloa.ai/guides/groups) |
+| 搭建业务与扩展能力 | [业务与看板](https://docs.teloa.ai/guides/business) · [市场资源](https://docs.teloa.ai/guides/market) |
+| 了解行业工作方式 | [行业场景](https://docs.teloa.ai/tutorials/industry-examples) · [SOC 教程](https://docs.teloa.ai/tutorials/soc-triage) |
+| 维护与升级 | [备份与升级](https://docs.teloa.ai/deploy/backup) · [安全政策](SECURITY.md) |
+| 开发与贡献 | [本地开发](https://docs.teloa.ai/develop/local-development) · [贡献指南](CONTRIBUTING.md) |
 
 ## 架构与开发
 
@@ -172,6 +222,9 @@ pnpm dev:dsh
 | **AI Team** | 员工、协作、业务、项目、任务与自动化。 |
 | **Agent Studio** | 每位员工的职责、知识、技能、工具和权限。 |
 | **Agent Harness** | 模型、运行环境、工具、沙箱、审批与运行事件；当前使用 DSH。 |
+
+<details>
+<summary>源码结构与验证命令</summary>
 
 源码将业务服务、运行引擎适配和界面分别组织：
 
@@ -200,19 +253,15 @@ pnpm test:bindings
 
 行为改动还需运行相应的后端或引擎测试，部分测试需要 Docker 和隔离数据库。运行数据和凭据不要入库。贡献流程与 DCO 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## 数据、权限与版本定位
+</details>
+
+## 安全与数据
 
 应用数据保存在运行 Teloa 的设备上。使用远程模型或授权外部工具时，工作所需的上下文会发送给对应服务。自行部署不代表所有推理都在本地完成。权限模型与已知限制见[安全政策](SECURITY.md)。
 
-Teloa 的三个版本共享同一产品核心，面向不同的使用场景。本仓库维护社区版的开源代码。
-
-| 版本 | 定位与使用场景 |
-| --- | --- |
-| 社区版 | 面向个人与开发者的开源版本，自行部署与配置，用 AI 员工、协作、任务、自动化和技能搭建自己的工作平台。 |
-| 专业版 | 面向个人与专业用户的 Mac 原生应用，开箱即用，在本机执行任务、操作文件与应用；通过手机随时新建、跟进和接续工作。 |
-| 企业版 | 面向企业与组织，部署在企业云或内网，统一管理成员、共享 AI 员工、权限与审计，连接企业内部数据、系统和业务流程。 |
-
 各版本均使用自备的模型服务与 API 密钥，模型费用另计。外部集成需要兼容服务及相应凭据。停止会话不能保证所有外部请求立即中断。
+
+发现安全问题时，请遵循 [SECURITY.md](SECURITY.md) 私下报告。普通问题与建议请使用 [GitHub Issues](https://github.com/teloa-ai/teloa/issues)。
 
 ## 社区与许可
 
