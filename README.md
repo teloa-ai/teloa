@@ -36,11 +36,9 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 
 [Read “From Agent to AI Organization: Why Teloa” →](https://www.teloa.ai/en/blog/why-teloa/)
 
-<p align="center">
-  <a href="https://www.teloa.ai/en/#film"><img src="https://www.teloa.ai/assets/videos/teloa-poster-en.d734a215190e.webp" alt="Teloa AI team: triage, investigation, threat hunting, and response" width="840"></a>
-</p>
+https://github.com/user-attachments/assets/8bc8a96a-475a-454c-8179-a271e2140b0c
 
-<p align="center"><a href="https://www.teloa.ai/en/#film">▶ Watch the 40-second film</a></p>
+[Watch in 1080p with subtitles →](https://www.teloa.ai/en/#film)
 
 *An illustrated SOC scenario with simulated data, plus the actual product interface.*
 

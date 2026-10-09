@@ -36,11 +36,9 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 [阅读《从 Agent 到 AI Organization：我们为什么做 Teloa》→](https://www.teloa.ai/blog/why-teloa/)
 
-<p align="center">
-  <a href="https://www.teloa.ai/#film"><img src="https://www.teloa.ai/assets/videos/teloa-poster-zh-CN.0f0e9494d19d.webp" alt="Teloa AI 团队：告警研判、深入调查、威胁狩猎与响应处置" width="840"></a>
-</p>
+https://github.com/user-attachments/assets/4f53f542-c15e-444f-a232-3a02e0245597
 
-<p align="center"><a href="https://www.teloa.ai/#film">▶ 观看 40 秒宣传片</a></p>
+[观看 1080p 高清字幕版 →](https://www.teloa.ai/#film)
 
 *通过模拟 SOC 案例与真实产品界面，了解 AI 团队如何分工协作、交付成果。*
 
