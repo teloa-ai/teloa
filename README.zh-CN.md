@@ -36,6 +36,14 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 [阅读《从 Agent 到 AI Organization：我们为什么做 Teloa》→](https://www.teloa.ai/blog/why-teloa/)
 
+<p align="center">
+  <a href="https://www.teloa.ai/#film"><img src="https://www.teloa.ai/assets/videos/teloa-poster-zh-CN.0f0e9494d19d.webp" alt="Teloa AI 团队：告警研判、深入调查、威胁狩猎与响应处置" width="840"></a>
+</p>
+
+<p align="center"><a href="https://www.teloa.ai/#film">▶ 观看 40 秒宣传片</a></p>
+
+*通过模拟 SOC 案例与真实产品界面，了解 AI 团队如何分工协作、交付成果。*
+
 ## 快速开始
 
 需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。

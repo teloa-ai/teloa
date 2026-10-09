@@ -36,6 +36,14 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 
 [Read “From Agent to AI Organization: Why Teloa” →](https://www.teloa.ai/en/blog/why-teloa/)
 
+<p align="center">
+  <a href="https://www.teloa.ai/en/#film"><img src="https://www.teloa.ai/assets/videos/teloa-poster-en.d734a215190e.webp" alt="Teloa AI team: triage, investigation, threat hunting, and response" width="840"></a>
+</p>
+
+<p align="center"><a href="https://www.teloa.ai/en/#film">▶ Watch the 40-second film</a></p>
+
+*An illustrated SOC scenario with simulated data, plus the actual product interface.*
+
 ## Quick start
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits. **0.2.0-alpha.7** is available through [npm](https://www.npmjs.com/package/@teloa/cli) and [Docker Hub](https://hub.docker.com/r/teloa/teloa). Choose native npm installation for local programs, or Docker Hub for container deployment. Source builds remain available below.
