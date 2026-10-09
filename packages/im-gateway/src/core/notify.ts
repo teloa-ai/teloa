@@ -1,6 +1,6 @@
 /**
- * 通知推送的 IM 适配器（规格 §9）：经 teloaWork.notifications.addAdapter 挂到宿主广播适配器上，旁路投递。
- * 广播沿用 primary.channel（local-log）去重，本适配器失败不影响回执，广播只记 channel 与错误码。
+ * 通知推送的 IM 适配器（规格 §9）：经 teloaWork.notifications.addAdapter 挂到宿主广播适配器上。
+ * 广播沿用 primary.channel（local-log）去重；本人已绑定目标时，IM 失败须保留为失败，不能被日志回执覆盖。
  * 正文只含结论固定文案、任务 id、运行 id 与工作台链接（有则附），不含标题、正文、结果内容；
  * 只推给本 owner 的绑定者私聊（配对时记下的 chatId），在线渠道里取第一个。安全动作只推送、不在 IM 决定。
  * 发送经出站（渠道限流、同聊天串行）；同一运行同一结论在内存里只推一次，driver 重试拿回同一回执（审查 L2）。
@@ -13,7 +13,7 @@ export type NotificationInput={
  idempotencyKey:string;ownerId:string;claimId:string;planId:string;taskId:string;runId:string
  policy:'always'|'attention'|'failure';conclusion:'policy-always'|'attention-required'|'execution-failed'
 }
-export type NotificationAdapter={channel:string;deliver:(input:NotificationInput,signal:AbortSignal)=>Promise<{receiptId:string}>}
+export type NotificationAdapter={channel:string;isConfigured?:(ownerId:string)=>Promise<boolean>;deliver:(input:NotificationInput,signal:AbortSignal)=>Promise<{receiptId:string}>}
 
 export type NotifyDeps={
  bindings:{list(channelId?:string):Promise<ImBinding[]>}
@@ -53,6 +53,7 @@ export function createImNotificationAdapter(deps:NotifyDeps):NotificationAdapter
  }
  return {
   channel:'im',
+  async isConfigured(ownerId){return (await deps.bindings.list()).some(row=>row.ownerId===ownerId&&Boolean(row.chatId))},
   async deliver(input,signal){
    signal.throwIfAborted()
    const key=`${input.runId}\n${input.conclusion}`

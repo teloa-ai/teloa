@@ -18,6 +18,9 @@ export type NotificationChannelInput={
 
 export type NotificationChannelAdapter={
  channel:string
+ /** 插件已加载不代表本人有接收目标；已配置但离线仍返回 true，读取失败必须抛出。 */
+ isConfigured?:(ownerId:string)=>Promise<boolean>
+ /** 重试沿用同一 idempotencyKey；适配器须按该身份去重，并返回原成功回执。 */
  deliver:(input:NotificationChannelInput,signal:AbortSignal)=>Promise<{receiptId:string}>
 }
 
@@ -80,9 +83,11 @@ const safeErrorCode=/^[A-Za-z0-9_./-]{1,64}$/
 /**
  * channel 沿用 primary.channel：后端按 channel 去重（stableId 与已投递判定都含 channel），
  * 换成广播适配器后升级前已投递的运行不会重投；IM 等追加适配器只是旁路投递，不进入去重键。
- * deliver 依次调各适配器（primary 在前，IM 等追加在后），任一成功即回执 `broadcast:<idempotencyKey>`，
- * 全部失败才抛最后一个错误。单个适配器失败不影响其它适配器投递，失败只记 channel 与错误码（不记原文）；
- * signal 已中止时不调任何适配器。
+ * 已配置的追加适配器全部成功才回执 `broadcast:<idempotencyKey>`；日志成功不能抵消实际发送失败。
+ * 没有本人配置的追加目标时保持 primary 行为；已配置但离线保留失败，下一次沿原编号重试。
+ * 重试继续向适配器提供相同幂等键；成功侧须自行去重。本函数不承诺外部渠道跨重启恰好一次。
+ * 候选集合在本次开始时固定，调用前复核注册；中途移除不发送，新挂接留到下次。
+ * 失败只记 channel 与错误码（不记原文）；signal 中止时停止后续调用并保留真实租约状态。
  */
 export function createBroadcastNotificationAdapter(primary:NotificationChannelAdapter,logger:BroadcastLogger):BroadcastNotificationAdapter{
  const extra=new Set<NotificationChannelAdapter>()
@@ -91,16 +96,35 @@ export function createBroadcastNotificationAdapter(primary:NotificationChannelAd
   add(adapter){extra.add(adapter);return ()=>{extra.delete(adapter)}},
   async deliver(input,signal){
    signal.throwIfAborted()
-   let delivered=false,lastError:unknown
-   for(const adapter of [primary,...extra]){
-    try{await adapter.deliver(input,signal);delivered=true}
-    catch(error){
-     lastError=error
+   const targets=[...extra]
+   let localDelivered=false,required=false,failed=false,lastError:unknown
+   const report=(adapter:NotificationChannelAdapter,error:unknown)=>{
      const code=error instanceof Error&&'code' in error&&typeof error.code==='string'&&safeErrorCode.test(error.code)?error.code:'unknown'
      logger.warn('通知适配器投递失败：channel=%s code=%s',adapter.channel,code)
+   }
+   try{await primary.deliver(input,signal);signal.throwIfAborted();localDelivered=true}
+   catch(error){signal.throwIfAborted();lastError=error;report(primary,error)}
+   for(const adapter of targets){
+    signal.throwIfAborted()
+    if(!extra.has(adapter))continue
+    let sending=false
+    try{
+     const configured=adapter.isConfigured?await adapter.isConfigured(input.ownerId):true
+     signal.throwIfAborted()
+     if(!extra.has(adapter))continue
+     if(typeof configured!=='boolean')throw new Error('notification target configuration is invalid')
+     if(!configured)continue
+     required=true
+     sending=true
+     await adapter.deliver(input,signal)
+     signal.throwIfAborted()
+    }catch(error){
+     signal.throwIfAborted()
+     if(!sending&&!extra.has(adapter))continue
+     failed=true;lastError=error;report(adapter,error)
     }
    }
-   if(!delivered)throw lastError
+   if(failed||!required&&!localDelivered)throw lastError
    return {receiptId:'broadcast:'+input.idempotencyKey}
   },
  }

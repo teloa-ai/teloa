@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {NotificationChannelInput} from '../../harness-dsh/src/notification-deliveries.ts'
 import {createImNotificationAdapter} from '../src/core/notify.ts'
+import {createBroadcastNotificationAdapter,createLocalNotificationAdapter} from '../../harness-dsh/src/notification-deliveries.ts'
 import type {ImBinding} from '../src/core/bindings.ts'
 import type {ImChannelAdapter} from '../src/core/types.ts'
 import {recordingCardAdapter} from './approval-fakes.ts'
@@ -36,6 +37,26 @@ test('channel 为 im；正文等于固定模板：结论文案 + task id + run i
  assert.deepEqual(tg.sent,[{chatId:'100',text:'任务运行已完成\ntask t1t1t1t1-0000-4000-8000-000000000003\nrun r1r1r1r1-0000-4000-8000-000000000004'}])
  assert.equal(receipt.receiptId,'im:telegram:msg-1')
  assert.doesNotMatch(tg.sent[0]!.text,/p1p1p1p1|c1c1c1c1|notification:v1|always/)
+})
+
+test('配置状态按本人私聊绑定判断，已绑定但暂时离线仍是待投递目标',async()=>{
+ assert.equal(await setup({bindings:[]}).notify.isConfigured?.(input().ownerId),false)
+ assert.equal(await setup({bindings:[bindingOf()]}).notify.isConfigured?.(input().ownerId),false)
+ assert.equal(await setup({bindings:[bindingOf({chatId:'100',ownerId:'another-owner'})]}).notify.isConfigured?.(input().ownerId),false)
+ assert.equal(await setup({online:[]}).notify.isConfigured?.(input().ownerId),true)
+})
+
+test('多适配器部分失败后原编号重试，成功的 IM 不重复发送',async()=>{
+ const {notify,tg}=setup(),broadcast=createBroadcastNotificationAdapter(createLocalNotificationAdapter({info(){}}),{warn(){}})
+ let failing=true
+ const keys:string[]=[]
+ broadcast.add(notify);broadcast.add({channel:'other',deliver:async request=>{keys.push(request.idempotencyKey);if(failing)throw new Error('offline');return {receiptId:'other'}}})
+ const request=input(),signal=new AbortController().signal
+ await assert.rejects(broadcast.deliver(request,signal),/offline/)
+ failing=false
+ await broadcast.deliver(request,signal)
+ assert.equal(tg.sent.length,1)
+ assert.deepEqual(keys,[request.idempotencyKey,request.idempotencyKey])
 })
 
 test('三种结论的固定文案；有工作台地址时附在末行',async()=>{

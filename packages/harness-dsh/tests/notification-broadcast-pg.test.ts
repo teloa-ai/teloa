@@ -57,9 +57,10 @@ test('I1：升级前已按 local-log 投递的运行，换成广播适配器后�
 async function wired(local:NotificationChannelAdapter['deliver'],im:NotificationChannelAdapter['deliver']){
  const owner=await endedRun(),service=new NotificationDeliveryService(pool,{id:randomUUID,now:()=>new Date().toISOString()})
  const broadcast=createBroadcastNotificationAdapter({channel:'local-log',deliver:local},{warn(){}});broadcast.add({channel:'im',deliver:im})
- const result=await new NotificationDeliveryDriver(service,broadcast,{now:()=>new Date().toISOString(),limit:50}).deliver(owner,new AbortController().signal)
- const rows=(await pool.query('select status,channel,error from teloa_notification_deliveries where owner_id=$1',[owner])).rows as {status:string;channel:string;error:{code:string}|null}[]
- return {result,rows}
+ const options={now:()=>new Date().toISOString(),limit:50}
+ const result=await new NotificationDeliveryDriver(service,broadcast,options).deliver(owner,new AbortController().signal)
+ const rows=(await pool.query('select id,status,channel,error from teloa_notification_deliveries where owner_id=$1',[owner])).rows as {id:string;status:string;channel:string;error:{code:string}|null}[]
+ return {result,rows,owner,broadcast,options}
 }
 
 test('功能验证：一条投递 → delivered 1，local 与 im 桩各收到一次、同一 idempotencyKey；投递行 channel 仍为 local-log',async()=>{
@@ -71,10 +72,19 @@ test('功能验证：一条投递 → delivered 1，local 与 im 桩各收到一
  assert.deepEqual(rows.map(row=>[row.status,row.channel]),[['delivered','local-log']])
 })
 
-test('功能验证：im 桩抛错、local 成功 → 仍 delivered 1',async()=>{
- const {result,rows}=await wired(async()=>({receiptId:'l'}),async()=>{throw new Error('im: no bound channel')})
- assert.deepEqual(result,{materialized:1,attempted:1,delivered:1,failed:0})
- assert.deepEqual(rows.map(row=>row.status),['delivered'])
+test('IM 失败持久为 failed；新驱动以原编号重试成功，此后不再投递',async()=>{
+ let offline=true
+ const keys:string[]=[]
+ const {result,rows,owner,broadcast,options}=await wired(async()=>({receiptId:'l'}),async input=>{keys.push(input.idempotencyKey);if(offline)throw new Error('im offline');return {receiptId:'im'}})
+ assert.deepEqual(result,{materialized:1,attempted:1,delivered:0,failed:1})
+ assert.deepEqual(rows.map(row=>[row.status,row.error?.code]),[['failed','teloa/notification-unavailable']])
+ offline=false
+ const recovered=new NotificationDeliveryDriver(new NotificationDeliveryService(pool,{id:randomUUID,now:()=>new Date().toISOString()}),broadcast,options)
+ assert.deepEqual(await recovered.deliver(owner,new AbortController().signal),{materialized:1,attempted:1,delivered:1,failed:0})
+ assert.deepEqual(keys,[rows[0]!.id,rows[0]!.id])
+ assert.deepEqual((await pool.query('select id,status,attempts from teloa_notification_deliveries where owner_id=$1',[owner])).rows,[{id:rows[0]!.id,status:'delivered',attempts:2}])
+ assert.deepEqual(await recovered.deliver(owner,new AbortController().signal),{materialized:0,attempted:0,delivered:0,failed:0})
+ assert.equal(keys.length,2)
 })
 
 test('功能验证：local 与 im 都抛错 → failed 1，fail 记 teloa/notification-unavailable',async()=>{

@@ -9,15 +9,30 @@ function adapter(channel:string,behaviour:'ok'|Error):NotificationChannelAdapter
  return row
 }
 
-test('I1：channel 沿用 primary.channel（升级前后投递去重键不变）；primary 成功、追加适配器抛错仍回执且 receiptId 以 broadcast: 开头',async()=>{
+test('channel 沿用 primary.channel；日志成功不能掩盖已配置通知渠道的发送失败',async()=>{
  const primary=adapter('local-log','ok'),im=adapter('im-telegram',new Error('Authorization: Bearer secret'))
  const broadcast=createBroadcastNotificationAdapter(primary,{warn(){}})
  assert.equal(broadcast.channel,'local-log')
  broadcast.add(im)
- const receipt=await broadcast.deliver(input,new AbortController().signal)
- assert.equal(receipt.receiptId,'broadcast:'+input.idempotencyKey)
+ await assert.rejects(broadcast.deliver(input,new AbortController().signal),{message:'Authorization: Bearer secret'})
  assert.equal(primary.calls,1)
  assert.equal(im.calls,1)
+})
+
+test('所有追加通知渠道均需成功，单个发送成功不能掩盖其他接收方失败',async()=>{
+ const primary=adapter('local-log','ok'),im=adapter('im-telegram','ok'),slack=adapter('im-slack',new Error('slack unavailable'))
+ const broadcast=createBroadcastNotificationAdapter(primary,{warn(){}})
+ broadcast.add(im);broadcast.add(slack)
+ await assert.rejects(broadcast.deliver(input,new AbortController().signal),{message:'slack unavailable'})
+ assert.equal(im.calls,1);assert.equal(slack.calls,1)
+})
+
+test('日志回执返回后已中止，不再发送 IM 或完成通知',async()=>{
+ const controller=new AbortController(),im=adapter('im-telegram','ok')
+ const primary:NotificationChannelAdapter={channel:'local-log',deliver:async()=>{controller.abort();return {receiptId:'log'}}}
+ const broadcast=createBroadcastNotificationAdapter(primary,{warn(){}});broadcast.add(im)
+ await assert.rejects(broadcast.deliver(input,controller.signal),{name:'AbortError'})
+ assert.equal(im.calls,0)
 })
 
 test('primary 抛错、追加适配器成功也算送达',async()=>{
@@ -61,9 +76,44 @@ test('M3：适配器失败记录 channel 与安全错误码，不记错误原文
  const slack=adapter('im-slack',new Error('xoxb-secret-token leaked'))
  const broadcast=createBroadcastNotificationAdapter(primary,{warn:(...args:unknown[])=>records.push(args)})
  broadcast.add(im);broadcast.add(slack)
- await broadcast.deliver(input,new AbortController().signal)
+ await assert.rejects(broadcast.deliver(input,new AbortController().signal))
  assert.equal(records.length,2)
  assert.ok(records[0]!.includes('im-telegram')&&records[0]!.includes('ECONNRESET'))
  assert.ok(records[1]!.includes('im-slack')&&records[1]!.includes('unknown'))
  assert.ok(!JSON.stringify(records).includes('secret'))
+})
+
+test('默认加载插件但本人未配置通知目标时，跳过该插件而不制造发送失败',async()=>{
+ const primary=adapter('local-log','ok'),im=Object.assign(adapter('im','ok'),{isConfigured:async(ownerId:string)=>{assert.equal(ownerId,input.ownerId);return false}})
+ const broadcast=createBroadcastNotificationAdapter(primary,{warn(){}});broadcast.add(im)
+ assert.deepEqual(await broadcast.deliver(input,new AbortController().signal),{receiptId:'broadcast:'+input.idempotencyKey})
+ assert.equal(im.calls,0);assert.equal(primary.calls,1)
+})
+
+test('通知目标读取失败不能降为未配置，也不能被日志成功覆盖',async()=>{
+ const primary=adapter('local-log','ok'),im=Object.assign(adapter('im','ok'),{isConfigured:async()=>{throw new Error('binding unavailable')}})
+ const broadcast=createBroadcastNotificationAdapter(primary,{warn(){}});broadcast.add(im)
+ await assert.rejects(broadcast.deliver(input,new AbortController().signal),{message:'binding unavailable'})
+ assert.equal(im.calls,0)
+})
+
+test('前序回执等待期间移除追加适配器，不再向已移除目标发送',async()=>{
+ let dispose=()=>{}
+ const primary:NotificationChannelAdapter={channel:'local-log',deliver:async()=>{dispose();return {receiptId:'log'}}},im=adapter('im','ok')
+ const broadcast=createBroadcastNotificationAdapter(primary,{warn(){}});dispose=broadcast.add(im)
+ await broadcast.deliver(input,new AbortController().signal)
+ assert.equal(im.calls,0)
+})
+
+test('配置读取等待期间移除插件，随后读取失败也不再要求该目标投递',async()=>{
+ let started!:()=>void,reject!: (error:Error)=>void
+ const checking=new Promise<void>(resolve=>{started=resolve})
+ const pending=new Promise<boolean>((_,fail)=>{reject=fail})
+ const im=Object.assign(adapter('im','ok'),{isConfigured:async()=>{started();return pending}})
+ const broadcast=createBroadcastNotificationAdapter(adapter('local-log','ok'),{warn(){}}),dispose=broadcast.add(im)
+ const delivery=broadcast.deliver(input,new AbortController().signal)
+ await checking
+ dispose();reject(new Error('binding unavailable'))
+ assert.deepEqual(await delivery,{receiptId:'broadcast:'+input.idempotencyKey})
+ assert.equal(im.calls,0)
 })
