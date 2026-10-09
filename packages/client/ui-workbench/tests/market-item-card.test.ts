@@ -9,8 +9,8 @@ import type {MarketItem} from '../src/client/market-preview.ts'
 // 与 market-solution-presentation.test.ts 同一条路子：.tsx 走 tsc 产物，CSS Modules 换成类名代理，
 // 所以下面断言里的 class 名就是源码里写的键名（itemList / itemCard / …）。
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|svg|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier),
+ load:(url,context,next)=>/\.(svg|webp)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
 const {MarketResourceCatalog}=await import('../lib/types/client/MarketResourceCatalog.js')
 const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')
@@ -29,7 +29,7 @@ test('条目卡是单列列表：一层 itemList 容器 + 整行按钮，行内�
  assert.equal((html.match(/class="itemCard"/g)??[]).length,1)
  assert.doesNotMatch(html,/class="catalogGrid"/)
  assert.doesNotMatch(html,/class="catalogCard"/)
- assert.match(html,/class="itemArt"/)
+ assert.match(html,/class="icon[^"]*"/)
  assert.match(html,/class="itemMain"/)
  assert.match(html,/class="resourceTitle">周报整理</)
  assert.match(html,/class="resourceDescription">把散落的进展整理成一份周报。</)
@@ -51,9 +51,9 @@ test('适用范围与来源收进行内第二行「范围 · 来源」，不再�
 
 test('同事行用本人形象，其余类型用类型图标',()=>{
  const staff=catalog([item({id:'role-a',kind:'role',title:'研究助理'})],'role')
- assert.match(staff,/class="avatarWrap[^"]*"/)
+ assert.match(staff,/class="icon avatar"[^>]*>.*researcher\.webp/)
  assert.doesNotMatch(staff,/class="itemArt"/)
- assert.match(catalog([item()],'skill'),/class="itemArt"[^>]*>.*lucide-sparkles/)
+ assert.match(catalog([item()],'skill'),/class="icon skill"[^>]*>.*lucide-braces/)
 })
 
 test('conflict 条目在行里给「有冲突」记号，不落「可添加」',()=>{

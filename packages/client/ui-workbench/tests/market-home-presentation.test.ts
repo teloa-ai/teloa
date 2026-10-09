@@ -1,3 +1,4 @@
+import './fixtures/brand-asset-hooks.ts'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
@@ -129,7 +130,7 @@ test('市场顶层直接展示已选定的资源分类，保留搜索和资源�
     readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8'),
     readFile(new URL('../src/client/MarketResourceCatalog.tsx',import.meta.url),'utf8'),
   ])
-  assert.match(source,/t\('market\.home\.heroTitle'\)/)
+  assert.match(source,/market\.home\.heroTitle/)
   assert.match(source,/aria-label=\{t\('market\.search\.aria'\)\}/)
   assert.match(source,/aria-label=\{t\('market\.category\.aria'\)\}/)
   assert.match(source,/const visibleCategories=visibleMarketCategories\(catalogCounts\)/)
@@ -145,8 +146,8 @@ test('市场顶层直接展示已选定的资源分类，保留搜索和资源�
   assert.doesNotMatch(source,/market\.home\.loadedTitle/)
   assert.doesNotMatch(source,/market\.home\.recentTitle/)
   assert.doesNotMatch(source,/market\.createImport\.menu/)
-  assert.match(source,/const solutionCategory=kind==='home'\|\|kind==='industry'/)
-  assert.match(source,/const atomicCategory=solutionCategory\|\|kind==='intents'\?'agent':kind/)
+  assert.match(source,/const solutionCategory=\(!props\.inCapabilityCenter&&kind==='home'\)\|\|kind==='industry'/)
+  assert.match(source,/const atomicCategory=solutionCategory\|\|kind==='intents'\|\|kind==='home'\?'agent':kind/)
   assert.match(source,/const listKind:MarketCategory=solutionCategory\?'industry':atomicCategory/)
   // 方案卡有两处合法投影：首页方案与“已添加”均复用同一组件，不能再各造一套卡片实现。
   assert.equal((source.match(/<SolutionCards /g)??[]).length,2)

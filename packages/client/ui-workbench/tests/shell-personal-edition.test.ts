@@ -116,11 +116,11 @@ test('同一帧内连续点击「我的分身」只发起一次打开',()=>{
  finish()
 })
 
-test('左栏市场入口总是回到市场目录，不沿用上一条资源详情',()=>{
+test('左栏能力中心入口进入我的能力目录，不沿用市场详情',()=>{
  const opened:number[]=[]
- const actions=new Proxy({},{get:(_,key)=>key==='openMarket'?()=>opened.push(1):()=>{}})
+ const actions=new Proxy({},{get:(_,key)=>key==='openCapabilityCatalog'?()=>opened.push(1):()=>{}})
  const render=mount('WorkNavigation.tsx',{...baseProps,actions})
- const market=buttons(render()).find(button=>text(button)==='navigation.v2.market')!
+ const market=buttons(render()).find(button=>text(button)==='capabilityCenter.title')!
  market.props.onClick()
  assert.deepEqual(opened,[1])
 })

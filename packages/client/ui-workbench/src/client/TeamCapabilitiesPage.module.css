@@ -23,3 +23,10 @@
  .detail{grid-column:auto}
 }
 @media(min-width:721px) and (max-width:1000px){.workspace{grid-template-columns:minmax(0,1fr)}.detail{grid-column:1/-1}.rowList{max-height:360px}}
+
+/* 能力中心首屏只呈现列表，详情由用户选择后展开。 */
+@media(min-width:721px){.workspace[data-center=true]{grid-template-columns:minmax(0,1fr)}.workspace[data-center=true][data-detail-open=true]{grid-template-columns:minmax(0,1fr) minmax(280px,340px)}.workspace[data-center=true] .rowList>button{grid-template-columns:44px minmax(0,1fr) minmax(90px,auto) 16px}.workspace[data-center=true] .rowList{max-height:none}}
+.search{display:flex;gap:10px;align-items:center;margin:16px;padding:9px 12px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-background)}.search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control)}.search:focus-within{outline:2px solid var(--teloa-text);outline-offset:2px}.search button,.closeDetail{display:inline-flex;align-items:center;justify-content:center;padding:4px;border:0;background:transparent;color:var(--teloa-muted);cursor:pointer}.closeDetail{float:right}.closeDetail:focus-visible{outline:2px solid var(--teloa-text)}
+@media(min-width:721px) and (max-width:1100px){.workspace[data-center=true][data-detail-open=true]{grid-template-columns:minmax(0,1fr)}.workspace[data-center=true] .detail{grid-column:1/-1}}
+
+.tools{padding-left:18px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}

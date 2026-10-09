@@ -69,7 +69,7 @@ test('对话、任务与自动化并列，自动化直接进入计划目录',asy
   assert.match(chrome,/\['messages','navigation\.v2\.conversations',MessageSquare\]/)
   assert.match(chrome,/\['tasks','navigation\.tasks',CheckSquare\]/)
   assert.match(chrome,/\['plans','navigation\.plans',CalendarClock\]/)
-  assert.match(chrome,/const active=view===id;/)
+  assert.match(chrome,/const active=view===id\|\|\(id==='capabilities'&&view==='market'\);/)
   assert.doesNotMatch(chrome,/\(view==='tasks'\|\|view==='plans'\)&&id==='home'/)
 })
 

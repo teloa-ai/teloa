@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import {LayoutGrid,CheckCheck,CheckSquare,Globe2,MessageSquare,Bot,Blocks,Library,CalendarClock,FolderKanban,Sparkles,X} from 'lucide-react'
+import {LayoutGrid,CheckCheck,CheckSquare,Globe2,MessageSquare,Bot,Library,CalendarClock,FolderKanban,Sparkles,X} from 'lucide-react'
 import type {WorkbenchView} from './store.js'
 import {useI18n} from './i18n/provider.js'
 import {applicationProductName,type ApplicationPresentation} from './application-presentation.js'
@@ -11,7 +11,7 @@ import css from './WorkbenchFrame.module.css'
 export const primaryNavigation=[
  ['home','navigation.home',LayoutGrid],['attention','navigation.attention',CheckCheck],['messages','navigation.v2.conversations',MessageSquare],['tasks','navigation.tasks',CheckSquare],['projects','navigation.projects',FolderKanban],['plans','navigation.plans',CalendarClock],
  ['team','navigation.v2.colleagues',Bot],['spaces','navigation.v2.business',Globe2],
- ['resources','navigation.v2.library',Library],['capabilities','navigation.capabilities',Sparkles],['market','navigation.v2.market',Blocks],
+ ['resources','navigation.v2.library',Library],['capabilities','capabilityCenter.title',Sparkles],
 ] as const
 
 export function WorkbenchNavigationBrand({product,colorScheme,onClose}:{product:ApplicationPresentation['product'];colorScheme:'light'|'dark';onClose:()=>void}){
@@ -21,5 +21,5 @@ export function WorkbenchNavigationBrand({product,colorScheme,onClose}:{product:
 
 export function WorkbenchNavigationItems({view,onSelect,needCount=0,attentionKnown=true}:{view:WorkbenchView;onSelect:(view:WorkbenchView)=>void;needCount?:number;attentionKnown?:boolean}){
  const {t}=useI18n()
- return <nav aria-label={t('navigation.main')}>{primaryNavigation.map(([id,key,Icon])=>{const active=view===id;return <div key={id}>{(id==='team'||id==='resources')&&<div className={clsx(css.navLabel,css.navGroupLabel)}>{t(id==='team'?'navigation.group.team':'navigation.group.resources')}</div>}<button type="button" className={clsx(css.navItem,active&&css.active)} aria-current={active?'page':undefined} onClick={()=>onSelect(id)}><Icon size={16}/><span>{t(key)}</span>{id==='attention'&&needCount>0&&<span className={css.count} aria-label={attentionKnown?undefined:t('attention.count.partial',{count:needCount})}>{needCount}{!attentionKnown&&'+'}</span>}</button></div>})}</nav>
+ return <nav aria-label={t('navigation.main')}>{primaryNavigation.map(([id,key,Icon])=>{const active=view===id||(id==='capabilities'&&view==='market');return <div key={id}>{(id==='team'||id==='resources')&&<div className={clsx(css.navLabel,css.navGroupLabel)}>{t(id==='team'?'navigation.group.team':'navigation.group.resources')}</div>}<button type="button" className={clsx(css.navItem,active&&css.active)} aria-current={active?'page':undefined} onClick={()=>onSelect(id)}><Icon size={16}/><span>{t(key)}</span>{id==='attention'&&needCount>0&&<span className={css.count} aria-label={attentionKnown?undefined:t('attention.count.partial',{count:needCount})}>{needCount}{!attentionKnown&&'+'}</span>}</button></div>})}</nav>
 }

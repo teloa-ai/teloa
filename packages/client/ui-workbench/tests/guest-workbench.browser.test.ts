@@ -32,7 +32,7 @@ test('访客复用工作导航、保留输入，浏览不读取本人存储或�
  await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true})
  await navigation.waitFor()
- for(const label of ['工作台','需要你','对话','任务','项目','自动化','员工','业务','资料','能力','市场'])assert.equal(await navigation.getByRole('button',{name:label,exact:true}).count(),1,label)
+ for(const label of ['工作台','需要你','对话','任务','项目','自动化','员工','业务','资料','能力中心'])assert.equal(await navigation.getByRole('button',{name:label,exact:true}).count(),1,label)
  assert.equal(await page.getByLabel('想完成什么工作？',{exact:true}).inputValue(),'原草稿')
  assert.equal(await page.getByLabel('想完成什么工作？',{exact:true}).getAttribute('maxlength'),'4000')
  const longPrompt='长'.repeat(4000)

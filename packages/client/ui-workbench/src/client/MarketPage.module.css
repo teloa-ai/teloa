@@ -113,3 +113,5 @@
 .catalogNotice{margin:-6px 0 22px;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
 .listStack{display:grid;gap:12px;min-width:0}
 .resourceCatalog{display:grid;gap:12px;min-width:0}
+
+.center .container{padding:20px 24px 32px;max-width:none}.center .categoryViewport{margin:0 0 16px}.center .globalSearch input,.center .globalSearch input:focus{border:0;outline:0;box-shadow:none;padding:0}.center .catalogNotice{background:transparent;border:0;padding:0;color:var(--teloa-muted)}

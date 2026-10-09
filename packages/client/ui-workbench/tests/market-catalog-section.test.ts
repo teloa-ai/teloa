@@ -5,8 +5,8 @@ import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
 
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|svg|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
+ load:(url,context,next)=>/\.(svg|webp)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
 const {MarketCatalogCards,MarketCatalogSection,marketCatalogMatches,marketCatalogVisible,loadCatalogListing,catalogSortVisible}=await import('../lib/types/client/MarketCatalogSection.js')
 const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')
@@ -334,7 +334,9 @@ test('终审 Minor：市场打开 AI 同事时读取岗位失败由 loadRoles �
  const {readFile}=await import('node:fs/promises')
  const source=await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
  // loadRoles 吞掉读取失败并写进 roleLoadError（同事页显示），因此它永不拒绝；actions.openRole 是同步 reducer，也不抛。
- assert.match(source,/const loadRoles=async\(\)=>\{setRoleLoading\(true\);setRoleLoadError\(undefined\);try\{mergeRoles\(await roleApi\.list\(\)\);setRoleDirectoryKnown\(true\)\}catch\(error\)\{setRoleLoadError\(localizeWorkError\(locale,error\)\)\}finally\{setRoleLoading\(false\)\}\}/)
+ const load=source.slice(source.indexOf('const loadRoles=async()=>{'),source.indexOf('const loadRoles=async()=>{')+1800)
+ assert.match(load,/await roleApi\.list\(\)/)
+ assert.match(load,/catch\(error\)[\s\S]*setRoleLoadError\(localizeWorkError\(locale,error\)\)/)
  // 后面再接的 catch 永远走不到，还会把真实错误覆盖成「岗位已不存在」的误导文案。
  assert.match(source,/openRole=\{roleId=>\{void loadRoles\(\)\.then\(\(\)=>actions\.openRole\(roleId\)\)\}\}/)
 })

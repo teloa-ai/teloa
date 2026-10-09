@@ -27,7 +27,7 @@ test('团队能力列表键盘选择与 aria-selected 使用同一真实状态',
   const source=await read('TeamCapabilitiesPage.tsx')
   assert.match(source,/role="listbox"/)
   assert.match(source,/role="option" aria-selected=\{selected\?\.key===row\.key\}/)
-  assert.match(source,/tabIndex=\{selected\?\.key===row\.key\?0:-1\}/)
+  assert.match(source,/tabIndex=\{selected\?\.key===row\.key\|\|\(!selected&&index===0\)\?0:-1\}/)
   for(const key of ['ArrowDown','ArrowUp','Home','End'])assert.match(source,new RegExp(`'${key}'`))
 })
 
@@ -35,8 +35,8 @@ test('资料目录以树和正文为主，筛选不再占据目录，390px 主�
   const [source,styles]=await Promise.all([read('ResourceManager.tsx'),read('ResourceManager.module.css')])
   assert.doesNotMatch(source,/DirectoryFilterPopover/)
   assert.doesNotMatch(source,/ResourceManagerFacetFilters/)
-  assert.match(source,/treeSearch/)
-  assert.match(source,/knowledge.manager.search/)
+  assert.match(source,/librarySearch/)
+  assert.match(source,/library.search/)
   assert.match(styles,/@media\(max-width:720px\)\{[\s\S]*\.treeHeader>div>button[^{]*\{[^}]*min-height:44px[^}]*min-width:44px/)
   assert.match(styles,/@media\(max-width:720px\)\{[\s\S]*\.treeBranch>summary[^{]*\{[^}]*min-height:44px/)
   assert.match(styles,/@media\(max-width:720px\)\{[\s\S]*\.governanceMenu>summary[^{]*\{[^}]*min-height:44px[^}]*min-width:44px/)
@@ -109,7 +109,7 @@ test('异步目录就绪前不清除冷刷新恢复的详情选择',async()=>{
     read('MarketPage.tsx'),
     read('WorkbenchFrame.tsx'),
   ])
-  assert.match(team,/if\(state\.catalogStatus!==['"]ready['"][^)]*\)return/)
+  assert.match(team,/if\(inCapabilityCenter\|\|state\.catalogStatus!==['"]ready['"][^)]*\)return/)
   assert.match(resource,/if\(!knowledgeTree\)return/)
   assert.match(market,/catalogReadyRef\.current\?\./)
   assert.match(frame,/onCatalogReady=\{availableIds=>/)
@@ -120,7 +120,7 @@ test('异步目录就绪前不清除冷刷新恢复的详情选择',async()=>{
 test('行业目录恢复等待行业加载目录完成',async()=>{
   const [team,frame]=await Promise.all([read('TeamCapabilitiesPage.tsx'),read('WorkbenchFrame.tsx')])
   assert.match(team,/industryLoadsReady:boolean/)
-  assert.match(team,/if\(state\.catalogStatus!==['"]ready['"]\|\|!industryLoadsReady\)return/)
+  assert.match(team,/if\(inCapabilityCenter\|\|state\.catalogStatus!==['"]ready['"]\|\|!industryLoadsReady\)return/)
   assert.match(frame,/industryLoadDirectory/)
   assert.match(frame,/if\(industryLoadDirectory!==['"]ready['"]\)return/)
   assert.match(frame,/<TeamCapabilitiesPage[^\n]+industryLoadsReady=\{industryLoadDirectory===['"]ready['"]\}/)

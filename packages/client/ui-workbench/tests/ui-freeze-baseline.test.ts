@@ -23,7 +23,7 @@ test('导航按日常工作、团队与业务、资源排序，设置固定底�
   const navMatch = chrome.match(/const primaryNavigation=\[([\s\S]*?)\]\s*as const/)
   assert.ok(navMatch)
   const ids = [...(navMatch?.[1] ?? '').matchAll(/\['([a-z]+)'/g)].map(row => row[1])
-  assert.deepEqual(ids, ['home','attention','messages','tasks','projects','plans','team','spaces','resources','capabilities','market'])
+  assert.deepEqual(ids, ['home','attention','messages','tasks','projects','plans','team','spaces','resources','capabilities'])
   const footer=source.slice(source.indexOf('<div className={css.navFooter}>'))
   assert.match(footer,/navigation.v2.settings/)
   assert.doesNotMatch(footer,/navigation.tasks|navigation.capabilities|navigation.v2.library|navigation.v2.market|navigation.v2.other/)

@@ -8,8 +8,8 @@ import {renderToStaticMarkup} from 'react-dom/server'
 // 官方方案详情按原型 `市场方案.jsx` 的产品页：hero（插画 + 标题 + 一句话 + 一个主按钮）→「添加后你会得到」七行 → 小字折叠「来源与版本」。
 // 七行不另存数据：宿主从方案包清单算出，这里只核对渲染口径与本机方案产品页一致（顺序、标签、计数、附注、空行不显示）。
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|svg|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
+ load:(url,context,next)=>/\.(svg|webp)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
 const {CatalogSolutionProduct}=await import('../lib/types/client/MarketCatalogSection.js')
 const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')

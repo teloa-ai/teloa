@@ -10,7 +10,8 @@ import {localizeWorkError} from './i18n/errors.js';
 const displayTime = (value: string, locale: string) => new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 const displaySize = (bytes: number, locale: string) => bytes < 1024 ? `${bytes.toLocaleString(locale)} B` : `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
 
-export function KnowledgeDocument({ api, resource, source, onPublished, onCopy, onWithdraw, onNotice, onError }: {
+export function KnowledgeDocument({ onDirtyChange, api, resource, source, onPublished, onCopy, onWithdraw, onNotice, onError }: {
+    onDirtyChange?:((dirty:boolean)=>void)|undefined;
     api: ResourceApi;
     resource: WorkResource;
     source: SourceReference | undefined;
@@ -21,6 +22,8 @@ export function KnowledgeDocument({ api, resource, source, onPublished, onCopy, 
     onError: (message: string) => void;
 }) {
     const {locale,t}=useI18n();
+    const currentIdentity=useRef({api,id:resource.id,owner:resource.ownerId});currentIdentity.current={api,id:resource.id,owner:resource.ownerId};
+    const isCurrent=()=>currentIdentity.current.api===api&&currentIdentity.current.id===resource.id&&currentIdentity.current.owner===resource.ownerId;
     const categoryLabels: Record<string, string> = { 'business-context': t("knowledge.ui.001"), policy: t("knowledge.ui.002"), sop: t("knowledge.ui.003"), criteria: t("knowledge.ui.004"), reference: t("knowledge.ui.005"), 'template-asset': t("knowledge.ui.006"), 'system-data-guide': t("knowledge.ui.007") };
 const scopeLabel = (value: string) => value === 'general' ? t("knowledge.ui.008") : value;
     const knowledge = source?.knowledge;
@@ -34,6 +37,7 @@ const scopeLabel = (value: string) => value === 'general' ? t("knowledge.ui.008"
     const [versions, setVersions] = useState<KnowledgeVersionSummary[]>([]), [selected, setSelected] = useState<KnowledgeVersion>(), [markdown, setMarkdown] = useState(''), [baseline, setBaseline] = useState(''), [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [inspectorOpen, setInspectorOpen] = useState(false);
     const generation = useRef(0), revisionRequest = useRef(crypto.randomUUID()), moreMenu = useRef<HTMLDetailsElement>(null);
     const latest = versions.at(-1), dirty = markdown !== baseline, isHistorical = !!latest && selected?.version !== latest.version;
+    useEffect(()=>{onDirtyChange?.(dirty);return ()=>onDirtyChange?.(false)},[dirty,onDirtyChange]);
     const toggleInspector = () => { setInspectorOpen(value => !value); moreMenu.current?.removeAttribute('open'); };
     const read = async (version: number) => {
         if (!knowledge)
@@ -90,7 +94,7 @@ const scopeLabel = (value: string) => value === 'general' ? t("knowledge.ui.008"
                 setLoading(false);
         }
     };
-    useEffect(() => { revisionRequest.current = crypto.randomUUID(); void refresh(); return () => { generation.current++; }; }, [knowledge?.knowledgeId]);
+    useEffect(() => { setBusy(false);revisionRequest.current = crypto.randomUUID(); void refresh(); return () => { generation.current++; }; }, [api,knowledge?.knowledgeId,resource.ownerId]);
     useEffect(()=>{
         if(!localMaterial||knowledge)return;
         const controller=new AbortController(),key=localReadKey;
@@ -106,45 +110,51 @@ const scopeLabel = (value: string) => value === 'general' ? t("knowledge.ui.008"
     const save = async () => {
         if (!knowledge || !latest || !selected || isHistorical || !dirty || !markdown.trim())
             return;
+        const token=generation.current;
         setBusy(true);
         try {
             const saved = await api.reviseKnowledgeResource({ requestId: revisionRequest.current, knowledgeId: knowledge.knowledgeId, expectedKnowledgeVersion: latest.version, resourceId: resource.id, expectedResourceVersion: resource.version, markdown }), version = saved.knowledge.version;
+            if(!isCurrent()||token!==generation.current)return;
             revisionRequest.current = crypto.randomUUID();
             setSelected(version);
             setBaseline(version.markdown);
             setMarkdown(version.markdown);
             setVersions(rows => [...rows.filter(row => row.version !== version.version), version]);
             await onPublished(saved.resource.id);
-            onNotice(t('knowledge.savedNotice',{version:version.version}));
+            if(isCurrent()&&token===generation.current)onNotice(t('knowledge.savedNotice',{version:version.version}));
         }
         catch (error) {
+            if(!isCurrent()||token!==generation.current)return;
             onError(localizeWorkError(locale,error));
             await refresh().catch(() => { });
         }
         finally {
-            setBusy(false);
+            if(isCurrent()&&token===generation.current)setBusy(false);
         }
     };
     const restore = async () => {
         if (!knowledge || !latest || !selected || !isHistorical)
             return;
+        const token=generation.current;
         setBusy(true);
         try {
             const saved = await api.restoreKnowledgeResource({ requestId: revisionRequest.current, knowledgeId: knowledge.knowledgeId, expectedKnowledgeVersion: latest.version, resourceId: resource.id, expectedResourceVersion: resource.version, restoreVersion: selected.version }), version = saved.knowledge.version;
+            if(!isCurrent()||token!==generation.current)return;
             revisionRequest.current = crypto.randomUUID();
             setSelected(version);
             setBaseline(version.markdown);
             setMarkdown(version.markdown);
             setVersions(rows => [...rows.filter(row => row.version !== version.version), version]);
             await onPublished(saved.resource.id);
-            onNotice(t('knowledge.restoredNotice',{source:selected.version,version:version.version}));
+            if(isCurrent()&&token===generation.current)onNotice(t('knowledge.restoredNotice',{source:selected.version,version:version.version}));
         }
         catch (error) {
+            if(!isCurrent()||token!==generation.current)return;
             onError(localizeWorkError(locale,error));
             await refresh().catch(() => { });
         }
         finally {
-            setBusy(false);
+            if(isCurrent()&&token===generation.current)setBusy(false);
         }
     };
     if (!knowledge)

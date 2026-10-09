@@ -1,6 +1,5 @@
 const rows=[
  ['track','跟踪本机文件','追蹤本機檔案','Track a local file'],
- ['files','本机文件','本機檔案','Local files'],
  ['path','工作文件夹内的相对路径','工作資料夾內的相對路徑','Path relative to the working folder'],
  ['boundary','登记本人工作文件夹中的 Markdown 原件。核对草稿并加入资料后才可引用；登记不会执行任务或扩大员工、分身的授权。','登記本人工作資料夾中的 Markdown 原件。核對草稿並加入資料後才可引用；登記不會執行任務或擴大員工、分身的授權。','Register an original Markdown file in your working folder. Review and apply its draft before use. Registration does not run tasks or extend role permissions.'],
  ['save','登记并准备草稿','登記並準備草稿','Register and prepare draft'],

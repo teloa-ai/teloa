@@ -93,7 +93,6 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['navigation.v2.conversations','对话','對話','Conversations','会話','대화','Trò chuyện','Conversaciones','Discussions','Unterhaltungen','Conversas'],
   ['navigation.v2.business','业务','業務','Business','業務','업무','Nghiệp vụ','Negocio','Activité','Geschäft','Negócio'],
   ['navigation.v2.library','资料','資料','Library','資料','자료','Tài liệu','Biblioteca','Bibliothèque','Bibliothek','Biblioteca'],
-  ['navigation.v2.market','市场','市場','Market','マーケット','마켓','Chợ ứng dụng','Mercado','Marché','Markt','Mercado'],
   ['navigation.v2.settings','设置','設定','Settings','設定','설정','Cài đặt','Ajustes','Réglages','Einstellungen','Definições'],
   ['navigation.group.team','团队与业务','團隊與業務','Team and business','チームと業務','팀과 업무','Nhóm và nghiệp vụ','Equipo y negocio','Équipe et activité','Team und Geschäft','Equipe e negócios'],
   ['navigation.group.resources','资源','資源','Resources','リソース','리소스','Tài nguyên','Recursos','Ressources','Ressourcen','Recursos'],

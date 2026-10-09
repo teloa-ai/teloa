@@ -32,7 +32,7 @@ import type {ConnectorAuth,MarketCatalogConnectorEntry} from '@teloa/contract'
 /** `kinds` 限定显示哪类条目（技能分类只看技能、行业模板分类只看方案）；缺省全部显示。`onCounts` 回报 Teloa 官方目录全量五类计数（来源筛选只影响当前列表）。
  * `onDetailChange` 告诉页面当前是否停在某条详情上，页面据此收起工具行，详情独占正文。
  * `localRows` 给了就进入「一个页签一个列表」：本机条目（含内置示例）排在官方条目前面，共用一套行业 / 功能筛选与结果行，不再另起目录标题。 */
-export type MarketCatalogSectionProps={initialEntryId?:string;onBack?:()=>void;api:MarketCatalogApi;query:string;openContent:(contentId:string)=>Promise<void>|void;openConnection?:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void;openSkillSecrets?:(skill:string,title:string)=>void;describeSkillSecrets?:(skill:string)=>Promise<SkillSecretsState>;openRole?:(roleId:string)=>void;openModels?:()=>void;openLocalModels?:(entryId:string)=>void;openLocalModel?:(()=>void)|undefined;openRetrievalModel?:((catalogId:string,version:string)=>void)|undefined;onCounts?:(counts:MarketCatalogListCounts)=>void;kinds?:readonly MarketEntryKind[]|undefined;onDetailChange?:(open:boolean)=>void;localRows?:readonly MarketListRow[]|undefined;label?:string;onResetQuery?:()=>void;solutionTeam?:CatalogSolutionTeam|undefined}
+export type MarketCatalogSectionProps={cardLayout?:boolean;initialEntryId?:string;onBack?:()=>void;api:MarketCatalogApi;query:string;openContent:(contentId:string)=>Promise<void>|void;openConnection?:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void;openSkillSecrets?:(skill:string,title:string)=>void;describeSkillSecrets?:(skill:string)=>Promise<SkillSecretsState>;openRole?:(roleId:string)=>void;openModels?:()=>void;openLocalModels?:(entryId:string)=>void;openLocalModel?:(()=>void)|undefined;openRetrievalModel?:((catalogId:string,version:string)=>void)|undefined;onCounts?:(counts:MarketCatalogListCounts)=>void;kinds?:readonly MarketEntryKind[]|undefined;onDetailChange?:(open:boolean)=>void;localRows?:readonly MarketListRow[]|undefined;label?:string;onResetQuery?:()=>void;solutionTeam?:CatalogSolutionTeam|undefined}
 /**
  * 官方方案产品页接上本机团队步骤（设计约束）：主按钮「添加到我的团队」在当前页先把官方包加到本机，再就地展开与本机方案页同一个团队确认步骤；
  * 「先问问它适不适合我」以官方包内容为依据发起问答。由市场页提供，单独使用（测试、深链）时不接，主按钮退回「添加方案」。
@@ -126,7 +126,7 @@ type RoleReceipt={roleId:string;status:'created'|'existing'}
 /** 评价区只在宿主给了 reviews 接口且汇总 `enabled:true` 时显示（规格 §14）：在线市场未启用、汇总读取失败或旧宿主一律不显示、不再发评价请求。 */
 export const reviewsEnabled=(api:Pick<MarketCatalogApi,'reviews'>,ratings:MarketRatings|undefined):boolean=>api.reviews!==undefined&&ratings?.enabled===true
 
-export function MarketCatalogSection({initialEntryId,onBack,api,query,openContent,openConnection,openSkillSecrets,describeSkillSecrets,openRole,openModels,openLocalModels,openLocalModel,openRetrievalModel,onCounts,kinds,onDetailChange,localRows,label,onResetQuery,solutionTeam}:MarketCatalogSectionProps){
+export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query,openContent,openConnection,openSkillSecrets,describeSkillSecrets,openRole,openModels,openLocalModels,openLocalModel,openRetrievalModel,onCounts,kinds,onDetailChange,localRows,label,onResetQuery,solutionTeam}:MarketCatalogSectionProps){
  const {t,locale,number}=useI18n()
  const [marketplace,setMarketplace]=useState<MarketplaceFilter>(undefined)
  const [listing,setListing]=useState<MarketCatalogCollection>()
@@ -291,7 +291,7 @@ export function MarketCatalogSection({initialEntryId,onBack,api,query,openConten
  }
  const merged=localRows!==undefined
  const filtered=!!query.trim()||marketplace!==undefined||taxonomy.industry!==null||taxonomy.fn!==null
- const layout=kinds?.length===1&&kinds[0]==='solution'?'grid':'list'
+ const layout=cardLayout||kinds?.length===1&&kinds[0]==='solution'?'grid':'list'
  const version=listing?t('market.catalog.official.version',{version:listing.catalogVersion}):undefined
  return <section ref={sectionRef} className={css.section} aria-label={label??t('market.catalog.official.title')}>
   {/* 单独使用（连接页深链等）时保留目录标题；页面里与本机条目合成一个列表时不再另起标题，只写结果行 */}

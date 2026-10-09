@@ -15,13 +15,13 @@ registerHooks({
   if(context.parentURL?.startsWith(sourceRoot)&&specifier.startsWith('.')&&specifier.endsWith('.js')){
    for(const extension of ['.ts','.tsx']){const url=new URL(specifier.slice(0,-3)+extension,context.parentURL);if(existsSync(url))return {url:url.href,shortCircuit:true}}
   }
-  if(specifier.endsWith('.module.css')||/\.(svg|jpg)$/.test(specifier))return {url:new URL(specifier,context.parentURL).href,shortCircuit:true}
+  if(specifier.endsWith('.module.css')||/\.(svg|jpg|webp)$/.test(specifier))return {url:new URL(specifier,context.parentURL).href,shortCircuit:true}
   return next(specifier,context)
  },
  load(url,context,next){
   if(url==='teloa-test-stub:markdown-text')return {format:'module',shortCircuit:true,source:'export const MarkdownText=({text})=>text'}
   if(url.endsWith('.module.css'))return {format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}
-  if(/\.(svg|jpg)$/.test(url))return {format:'module',shortCircuit:true,source:'export default "fixture-asset"'}
+  if(/\.(svg|jpg|webp)$/.test(url))return {format:'module',shortCircuit:true,source:'export default "fixture-asset"'}
   if(url.startsWith(sourceRoot)&&/\.tsx?$/.test(url))return {format:'module',shortCircuit:true,source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{fileName:new URL(url).pathname,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText}
   return next(url,context)
  },

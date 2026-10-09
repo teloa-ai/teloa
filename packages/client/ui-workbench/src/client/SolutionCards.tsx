@@ -1,14 +1,13 @@
+import {ResourceIcon} from './ResourceIcon.js'
 import {isIndustryManifest} from './industry-manifest.ts'
-import {capabilityIcons} from './capability-icons.js'
 import clsx from 'clsx'
-import {ArrowUpRight, Boxes, Check, Plus, RefreshCw, TriangleAlert, type LucideIcon} from 'lucide-react'
+import {ArrowUpRight, Check, Plus, RefreshCw, TriangleAlert, type LucideIcon} from 'lucide-react'
 import type { MarketItem } from './market-preview.js'
 import type { IndustryLoadRecord } from './industry-load-api.js'
 import type { IndustryResourceKind } from './industry-manifest.js'
 import { marketCatalogItemCopy, type MarketCategory } from './market-home-presentation.js'
 import { composeFromManifest, compositionSummary } from './industry-composition.js'
 import { solutionInstalled, solutionMark, type SolutionMark } from './market-solution-presentation.js'
-import { StaffAvatar } from './StaffAvatar.js'
 import { staffAvatarSeed } from './staff-avatar-seed.js'
 import { useI18n } from './i18n/provider.js'
 import type { TeloaTranslate } from './i18n/index.js'
@@ -35,13 +34,10 @@ export function StateMark({ mark, t }: { mark: SolutionMark; t: TeloaTranslate }
 }
 
 // 条目卡左侧 40px 形象：同事是本人形象，其余用类型图标。图标只是装饰，类型本身在详情里有文字。
-const rowIcon: Partial<Record<IndustryResourceKind | MarketCategory, LucideIcon>> = capabilityIcons
 
 /** 条目卡的形象位，资源目录（`IndustryResourceKind`）与通用目录（`MarketCategory`）共用一处，两边形象不会长歪。 */
 export function ItemArt({ kind, title, seed }: { kind: IndustryResourceKind | MarketCategory; title: string; seed: string }) {
- if (kind === 'role' || kind === 'agent') return <StaffAvatar initial={[...title][0] ?? ''} seed={seed} size="md" />
- const Icon = rowIcon[kind] ?? Boxes
- return <span className={css.itemArt} aria-hidden="true"><Icon size={17} /></span>
+ return <ResourceIcon kind={kind} title={title} id={seed}/>
 }
 
 export type SolutionCardsProps = {

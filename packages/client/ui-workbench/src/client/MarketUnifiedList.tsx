@@ -115,7 +115,7 @@ export function MarketListRows({rows,layout='list'}:{rows:readonly MarketListRow
  if(layout==='grid')return <ul className={css.grid}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 方案卡内容多（一句话 + 包含），可访问名只取标题、标签与状态 */}
   <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={[row.title,row.tag,row.mark&&stateMarkLabel(row.mark,t)].filter(Boolean).join(', ')} aria-current={row.current?'page':undefined} onClick={row.open}>
-   <span className={clsx(pageCss.bundleArt,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>
+   {row.art.kind==='industry'?<span className={clsx(pageCss.bundleArt,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>:<ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed}/>}
    <span className={css.rowMain}>
     <span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{tag(row)}{row.mark&&<StateMark mark={row.mark} t={t}/>}</span>
     <span className={css.gridPitch}>{row.summary}</span>

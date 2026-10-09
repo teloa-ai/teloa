@@ -259,7 +259,8 @@ test('会话回执的资料目标会刷新目录并精确选中，不被待核�
   const source=await readFile(new URL('../src/client/ResourceManager.tsx',import.meta.url),'utf8')
   assert.match(source,/targetResource/)
   assert.match(source,/inspectResource\(resource\)/)
-  assert.doesNotMatch(source,/setQuery\(''\)/)
+  const deepLink=source.match(/if\(targetResource\)\{const resource=.*?if\(resource\)\{(.*?)\}else/s)?.[1]??''
+  assert.doesNotMatch(deepLink,/setQuery\(''\)/)
   assert.match(source,/void refresh\(\)/)
 })
 

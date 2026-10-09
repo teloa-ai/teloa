@@ -65,7 +65,7 @@ function cssModulesInlinePlugin(id: string, registrationModule?: string): Tsdown
     // importer 永远不会落在 lib/types 下。这条前提只在 entry 固定时成立——
     // 未来若引入 host/client 两阶段构建（entry 改指向编译产物），这里要补回反查分支。
     resolveId(source: string, importer: string | undefined) {
-      if (/\.(svg|jpe?g)$/i.test(source)) return '\0teloa-image:' + resolvePath(dirname(importer || ''), source)
+      if (/\.(svg|jpe?g|webp)$/i.test(source)) return '\0teloa-image:' + resolvePath(dirname(importer || ''), source)
       if (!source.endsWith('.module.css')) return null
       const abs = importer !== undefined ? resolvePath(dirname(importer), source) : source
       return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
@@ -74,7 +74,7 @@ function cssModulesInlinePlugin(id: string, registrationModule?: string): Tsdown
       if (virtualId.startsWith('\0teloa-image:')) {
         const fileId = virtualId.slice('\0teloa-image:'.length)
         const asset = await readFile(fileId)
-        const mimeType = fileId.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg'
+        const mimeType = fileId.endsWith('.svg') ? 'image/svg+xml' : fileId.endsWith('.webp') ? 'image/webp' : 'image/jpeg'
         return 'export default ' + JSON.stringify(`data:${mimeType};base64,${asset.toString('base64')}`)
       }
       if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
