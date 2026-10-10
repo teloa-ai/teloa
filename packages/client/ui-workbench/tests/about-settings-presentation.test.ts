@@ -4,9 +4,11 @@ import {readFile} from 'node:fs/promises'
 import {supportQrKind} from '../src/client/support-qr.ts'
 import {ABOUT_PLAN_MESSAGE_ROWS} from '../src/client/i18n/locales/about-plans.ts'
 
+const readContactView=async()=> (await Promise.all(['AboutSettings.tsx','OfficialAboutContacts.tsx','CommunityAboutContacts.tsx'].map(name=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')))).join('\n')
+
 test('关于页默认只显示紧凑联系入口，二维码按需在单一弹窗中呈现',async()=>{
   const [view,styles]=await Promise.all([
-    readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8'),
+    readContactView(),
     readFile(new URL('../src/client/AboutSettings.module.css',import.meta.url),'utf8'),
   ])
 
@@ -23,7 +25,7 @@ test('关于页默认只显示紧凑联系入口，二维码按需在单一弹�
 
 test('关于页二维码弹窗提供关闭文案并保留三个明确入口',async()=>{
   const [view,messages,locale]=await Promise.all([
-    readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8'),
+    readContactView(),
     readFile(new URL('../src/client/i18n/messages.ts',import.meta.url),'utf8'),
     readFile(new URL('../src/client/i18n/locales/zh-CN.ts',import.meta.url),'utf8'),
   ])
@@ -39,21 +41,21 @@ test('只有简体中文界面使用微信收款码，繁中与其他语言使�
   for(const locale of ['zh-Hant','zh-TW','zh-HK'] as const)assert.equal(supportQrKind(locale),'paypal',locale)
   for(const locale of ['en','ja','ko','vi','es','fr','de','pt'] as const)assert.equal(supportQrKind(locale),'paypal',locale)
 
-  const view=await readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8')
+  const view=await readContactView()
   assert.match(view,/paypal-support\.jpg/)
   assert.match(view,/supportQrKind\(locale\)/)
   assert.match(view,/paypalQrCode,viewBox:'290 940 600 600'/)
 })
 
 test('构建基础只留标题与一句话致谢，不再显示 DSH 标识与版本号（用户 2026-09-20）',async()=>{
- const view=await readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8')
+ const view=await readContactView()
  assert.doesNotMatch(view,/dshMarkPath|__DSH_VERSION__|about\.dshMark|about\.version'/)
  assert.match(view,/<p className=\{css\.foundationLine\}>\{t\('about\.foundationDescription'\)\}<\/p>/)
  assert.doesNotMatch(view,/about\.foundation'/)
 })
 
 test('关于页列出 Max Luo、Morgan Chen、Caleb Pan，联系方式只保留一份且仍归属 Max Luo',async()=>{
-  const view=await readFile(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8')
+  const view=await readContactView()
   assert.match(view,/<strong>Max Luo<\/strong>/)
   assert.match(view,/<strong>Morgan Chen<\/strong>/)
   assert.match(view,/<strong>Caleb Pan<\/strong>/)

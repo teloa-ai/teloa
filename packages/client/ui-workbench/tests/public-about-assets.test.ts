@@ -15,7 +15,7 @@ test('没有 resource 的源码副本仍能通过正式图片解析器内嵌四�
     const packageRoot=join(temp,'packages/client/ui-workbench')
     await mkdir(packageRoot,{recursive:true})
     await cp(fileURLToPath(new URL('../src',import.meta.url)),join(packageRoot,'src'),{recursive:true})
-    const entry=join(packageRoot,'src/client/AboutSettings.tsx')
+    const entry=join(packageRoot,'src/client/CommunityAboutContacts.tsx')
     const config=clientBundle('@teloa/client-ui-workbench',entry)[1]!
     const isAsset=(id:string)=>/\.(?:module\.css|jpe?g|svg)$/i.test(id)
     // 只核对本组件的静态输入；其余业务模块保留外部引用，不加载宿主或浏览器。

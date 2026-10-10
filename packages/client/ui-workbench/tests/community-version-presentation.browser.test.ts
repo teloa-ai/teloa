@@ -4,6 +4,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises'
 import {fileURLToPath} from 'node:url'
 import {join} from 'node:path'
 import {build} from 'vite'
+import {aboutContactBuildProfile} from '../about-contact-profile.ts'
 // @ts-expect-error 既有独立无界面浏览器夹具。
 import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
 
@@ -17,7 +18,7 @@ window.versionFixture={mount:async(locale,product)=>{await applicationPresentati
 
 before(async()=>{
  temp=await mkdtemp(join(root,'.runtime-community-presentation-'));await writeFile(join(temp,'fixture.tsx'),entry)
- const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"',__TELOA_VERSION__:'"0.2.0-alpha.7"'},build:{write:false,minify:false,rollupOptions:{treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'CommunityPresentationFixture',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',resolve:{alias:aboutContactBuildProfile('community').alias},define:{'process.env.NODE_ENV':'"development"',__TELOA_VERSION__:'"0.2.0-alpha.7"'},build:{write:false,minify:false,rollupOptions:{treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'CommunityPresentationFixture',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);script=bundle.output.find(item=>item.type==='chunk')!.code
  browser=await loadPlaywright().chromium.launch(launchOptions())
 })
