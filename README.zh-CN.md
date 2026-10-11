@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.teloa.ai/">官网</a> · <a href="https://docs.teloa.ai/">文档</a> · <a href="https://market.teloa.ai/">资源市场</a> · <a href="#快速开始">快速开始</a> · <a href="#版本选择">版本选择</a> · <a href="CONTRIBUTING.md">参与贡献</a>
+  <a href="https://www.teloa.ai/">官网</a> · <a href="https://docs.teloa.ai/">文档</a> · <a href="https://market.teloa.ai/">资源市场</a> · <a href="https://www.teloa.ai/blog/">博客</a> · <a href="https://security.teloa.ai/?lang=zh-CN">AI 安全研究</a> · <a href="https://github.com/teloa-ai/teloa">GitHub</a> · <a href="#快速开始">快速开始</a> · <a href="#版本选择">版本选择</a> · <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
 
 # Teloa — 让每个人，都拥有自己的 AI 团队
@@ -219,6 +219,7 @@ Teloa 的三个版本共享同一产品核心，面向不同的使用场景。�
 | 搭建业务与扩展能力 | [业务与看板](https://docs.teloa.ai/guides/business) · [市场资源](https://docs.teloa.ai/guides/market) |
 | 了解行业工作方式 | [行业场景](https://docs.teloa.ai/tutorials/industry-examples) · [SOC 教程](https://docs.teloa.ai/tutorials/soc-triage) |
 | 维护与升级 | [备份与升级](https://docs.teloa.ai/deploy/backup) · [安全政策](SECURITY.md) |
+| 了解智能体安全与评估平台 | [Teloa AI Security](https://security.teloa.ai/?lang=zh-CN) · [安全基线自评](https://security.teloa.ai/agent-baseline-assessor/?lang=zh-CN) |
 | 开发与贡献 | [本地开发](https://docs.teloa.ai/develop/local-development) · [贡献指南](CONTRIBUTING.md) |
 
 ## 架构与开发
@@ -267,7 +268,9 @@ pnpm test:bindings
 
 各版本均使用自备的模型服务与 API 密钥，模型费用另计。外部集成需要兼容服务及相应凭据。停止会话不能保证所有外部请求立即中断。
 
-发现安全问题时，请遵循 [SECURITY.md](SECURITY.md) 私下报告。普通问题与建议请使用 [GitHub Issues](https://github.com/teloa-ai/teloa/issues)。
+[Teloa AI Security](https://security.teloa.ai/?lang=zh-CN) 将 Teloa 开发中的安全设计问题整理为开放研究与工具。其[企业智能体身份与授权安全基线](https://github.com/teloa-ai/agent-baseline-assessor)包含 **240 条要求、三个等级（L1–L3）与七种语言版本**，并提供[在线自评工具](https://security.teloa.ai/agent-baseline-assessor/?lang=zh-CN)。基线描述评估目标，不构成安全认证，也不代表 Teloa 已实现全部要求；应按具体产品版本、部署范围与证据逐条评估。
+
+安全报告请遵循 [SECURITY.md](SECURITY.md)：默认提交脱敏的公开 [Issue](https://github.com/teloa-ai/teloa/issues)；可能造成重大影响的问题，建议先私下联系 [security@teloa.ai](mailto:security@teloa.ai)。公开内容请去除凭据、隐私与尚未公开的漏洞利用细节。普通问题与建议同样通过 GitHub Issues 提交。
 
 ## 社区与许可
 

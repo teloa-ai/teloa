@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.teloa.ai/en/">Website</a> · <a href="https://docs.teloa.ai/en/">Docs</a> · <a href="https://market.teloa.ai/en/">Market</a> · <a href="#quick-start">Quick start</a> · <a href="#product-editions">Editions</a> · <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="https://www.teloa.ai/en/">Website</a> · <a href="https://docs.teloa.ai/en/">Docs</a> · <a href="https://market.teloa.ai/en/">Market</a> · <a href="https://www.teloa.ai/en/blog/">Blog</a> · <a href="https://security.teloa.ai/">AI Security</a> · <a href="https://github.com/teloa-ai/teloa">GitHub</a> · <a href="#quick-start">Quick start</a> · <a href="#product-editions">Editions</a> · <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 # Teloa — An AI team of your own. For everyone.
@@ -219,6 +219,7 @@ Teloa's three editions share the same product core and serve different working n
 | Configure businesses and extend capabilities | [Businesses and dashboards](https://docs.teloa.ai/en/guides/business) · [Market](https://docs.teloa.ai/en/guides/market) |
 | Explore industry workflows | [Industry examples](https://docs.teloa.ai/en/tutorials/industry-examples) · [SOC walkthrough](https://docs.teloa.ai/en/tutorials/soc-triage) |
 | Maintain and upgrade an installation | [Backup and upgrades](https://docs.teloa.ai/en/deploy/backup) · [Security policy](SECURITY.md) |
+| Explore agent security and assess your platform | [Teloa AI Security](https://security.teloa.ai/) · [Baseline self-assessment](https://security.teloa.ai/agent-baseline-assessor/?lang=en) |
 | Develop and contribute | [Local development](https://docs.teloa.ai/en/develop/local-development) · [Contributing](CONTRIBUTING.md) |
 
 ## Architecture and development
@@ -267,7 +268,9 @@ Application data is stored on the machine running Teloa. Remote models and autho
 
 All editions use your own model service and API keys; model usage is billed separately. External integrations require compatible services and credentials. Stopping a conversation does not guarantee immediate cancellation of every external request.
 
-Report security issues privately through [SECURITY.md](SECURITY.md). Use [GitHub Issues](https://github.com/teloa-ai/teloa/issues) for ordinary bugs and proposals.
+[Teloa AI Security](https://security.teloa.ai/) turns security design questions from Teloa development into open research and tools. Its [Enterprise Agent Identity and Authorization Security Baseline](https://github.com/teloa-ai/agent-baseline-assessor) provides **240 requirements across three levels (L1–L3)**, with **seven language versions** and an [online self-assessment tool](https://security.teloa.ai/agent-baseline-assessor/?lang=en). The baseline defines assessment goals; it is not a certification or a claim that Teloa implements every requirement. Assess a specific product version and deployment against evidence.
+
+Follow [SECURITY.md](SECURITY.md) for security reports: use a sanitized public [Issue](https://github.com/teloa-ai/teloa/issues) by default; for potentially high-impact issues, we recommend contacting [security@teloa.ai](mailto:security@teloa.ai) privately first. Keep credentials, private data and unpublished exploit details out of public reports. Ordinary bugs and proposals also go to GitHub Issues.
 
 ## Community and license
 
