@@ -18,7 +18,8 @@ const validPreset=(v:unknown):v is string=>typeof v==='string'&&/^[a-z0-9][-a-z0
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v)
 function validRunExecutor(run:Record<string,unknown>):boolean{
  if(run.executor===undefined)return validRequestId(run.roleId)&&positive(run.roleVersion)
- try{const executor=readWorkExecutor(run.executor);return executor.kind==='owner'&&executor.grantVersion===1&&run.roleId===null&&run.roleVersion===null}catch{return false}
+ // 只核形状：本人授权版本为正安全整数（重配置后可 >1）；与计划当前授权版本的等值由 OwnerWorkAuthority.current 在准入处核对。
+ try{const executor=readWorkExecutor(run.executor);return executor.kind==='owner'&&Number.isSafeInteger(executor.grantVersion)&&executor.grantVersion>0&&run.roleId===null&&run.roleVersion===null}catch{return false}
 }
 function validateRows(value:unknown):StoredConversation[] {
   const bad=()=>{throw new WorkError('teloa/storage-corrupt','公共会话存储损坏，已停止读取，请核对原文件。')}

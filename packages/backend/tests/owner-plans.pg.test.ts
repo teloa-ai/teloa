@@ -211,3 +211,33 @@ test('启用后暂停的本人计划仅经明确重配置路径接受 paused 定
  await tamper(randomUUID());await assert.rejects(configure(d.owner,dPaused),{code:'teloa/forbidden'});await tamper(d.controlId)
  assert.equal((await configure(d.owner,dPaused)).configVersion,dPaused.configVersion+1)
 })
+test('重配置后本人计划授权 v2 可建执行会话并通过准入；过期 v1、伪造 v3 在准入处拒绝，非法形状在会话与契约层拒绝，未重配置 v1 照常',async()=>{
+ sourceActive=true;confirmed=true
+ const {WorkControlService}=await import('../src/work/work-control.ts'),{OwnerWorkAuthority}=await import('../src/work/owner-work-authority.ts'),{PlanOccurrenceService}=await import('../src/work/plan-occurrences.ts'),{ConversationService,FileConversationRepository}=await import('../src/work/conversations.ts'),{isConversation}=await import('@teloa/contract'),{mkdtemp}=await import('node:fs/promises'),{tmpdir}=await import('node:os')
+ const plans=new PlanService(pool,clock,undefined,undefined,undefined,undefined,authority),occurrences=new PlanOccurrenceService(pool,clock,undefined,undefined,authority)
+ const controls=new WorkControlService(pool,clock,{ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled:true,unknownOperationIds:[]})})
+ const file=join(await mkdtemp(join(tmpdir(),'teloa-owner-grant-')),'conversations.json'),existing=new Set<string>(),host={create:async(id:string)=>{existing.add(id);return id},inspect:async(id:string)=>{if(!existing.has(id))throw Error('missing')}}
+ const conversations=new ConversationService(new FileConversationRepository(file),host,{id:randomUUID,now:clock.now})
+ const runs=new api.TaskRunService(pool,clock,async(actor:string,id:string)=>({id:randomUUID(),ownerId:actor,sessionId:id,status:'ready'}),{allowedTools:[],ownerPlans:authority,planContext:(db,actor,id,completion,includeMethodSource)=>occurrences.executionContext(db,actor,id,completion,includeMethodSource)})
+ const dispatchFor=async(owner:string,plan:{id:string;version:number;configVersion:number})=>{const claim=(await occurrences.trigger(owner,{requestId:randomUUID(),planId:plan.id,expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,now:clock.now()})).occurrence;return (await occurrences.dispatchTask(owner,{claimId:claim.id,taskRequestId:claim.taskRequestId,now:clock.now()})).task}
+ const session=async(owner:string,task:{id:string},executor:unknown)=>conversations.createRun(owner,{requestId:randomUUID(),title:'本人计划执行'},{sessionId:'task-run-'+randomUUID(),taskId:task.id,taskVersion:1,roleId:null,roleVersion:null,agentPresetId:'teloa-standard',executor:executor as never})
+ const admit=async(owner:string,executor:{kind:'owner';grantId:string;grantVersion:number})=>{const db=await pool.connect();try{await db.query('begin');return await new OwnerWorkAuthority(pool,authority).current(db,owner,executor)}finally{await db.query('rollback');db.release()}}
+ // 正式重配置得到授权 v2：任务、执行会话、准备目标与准入都按当前计划授权通过。
+ const owner=randomUUID(),created=await plans.createConfirmed(owner,await sourceBackedInput(owner)),enabled=await plans.changeConfirmed(owner,{requestId:randomUUID(),planId:created.id,expectedVersion:created.version,action:'enable'})
+ const paused=await plans.change(owner,{requestId:randomUUID(),planId:enabled.id,expectedVersion:enabled.version,action:'pause'}),controlId=paused.workDefinition!.definitionControlId,current=await controls.get(owner,{controlId})
+ await controls.reconcile(owner,{controlId,generation:(await controls.change(owner,{requestId:randomUUID(),controlId,expectedVersion:current.version,action:'pause',scope:'definition',roundControlId:null})).generation})
+ const reconfigured=await plans.configureWorkConfirmed(owner,{requestId:randomUUID(),planId:paused.id,expectedVersion:paused.version,expectedConfigVersion:paused.configVersion,configuration})
+ const active=await plans.changeConfirmed(owner,{requestId:randomUUID(),planId:reconfigured.id,expectedVersion:reconfigured.version,action:'enable'});assert.equal(active.executor?.grantVersion,2)
+ const task=await dispatchFor(owner,active);assert.deepEqual(task.executor,active.executor)
+ const v2=await session(owner,task,active.executor);assert.equal(v2.purpose,'task-run');assert.deepEqual(v2.run?.executor,active.executor);assert.equal(isConversation(v2),true)
+ assert.equal((await new ConversationService(new FileConversationRepository(file),host,{id:randomUUID,now:clock.now}).bySession(owner,v2.sessionId))?.run?.executor?.grantVersion,2)
+ assert.deepEqual((await runs.preparationTarget(owner,{taskId:task.id,expectedTaskVersion:1})).executor,active.executor)
+ assert.equal((await admit(owner,{kind:'owner',grantId:active.id,grantVersion:2})).executor.grantVersion,2)
+ for(const grantVersion of [1,3])await assert.rejects(admit(owner,{kind:'owner',grantId:active.id,grantVersion}),{code:'teloa/forbidden'})
+ for(const grantVersion of [0,-1,1.5,'2'])await assert.rejects(session(owner,task,{kind:'owner',grantId:active.id,grantVersion}),{code:'teloa/invalid-input'})
+ for(const grantVersion of [0,1.5,'2'])assert.equal(isConversation({...v2,run:{...v2.run,executor:{...v2.run!.executor,grantVersion}}}),false)
+ // 未重配置计划仍是授权 v1，会话与准入照常。
+ const other=randomUUID(),first=await plans.createConfirmed(other,await sourceBackedInput(other)),firstActive=await plans.changeConfirmed(other,{requestId:randomUUID(),planId:first.id,expectedVersion:first.version,action:'enable'});assert.equal(firstActive.executor?.grantVersion,1)
+ const firstTask=await dispatchFor(other,firstActive),v1=await session(other,firstTask,firstActive.executor);assert.equal(v1.run?.executor?.grantVersion,1);assert.equal(isConversation(v1),true)
+ assert.equal((await admit(other,{kind:'owner',grantId:firstActive.id,grantVersion:1})).executor.grantVersion,1)
+})
