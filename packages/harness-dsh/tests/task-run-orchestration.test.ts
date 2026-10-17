@@ -84,8 +84,11 @@ test('服务器 Flow 薄口沿官方 fresh 生命周期固定预留；原回执�
  assert.deepEqual(events,['teloa-workflow-spawn'])
  assert.deepEqual(await env.orchestration.startFlow(input,AbortSignal.timeout(5000)),receipt)
  assert.equal(env.calls.filter(c=>c.kind==='reserve').length,1)
- env.finish();await new Promise(resolve=>setTimeout(resolve,20))
+ env.finish()
+ // settle 在子级结果落定后异步写入：等编排状态确认结算收口（有界），不靠固定 20ms 竞争。
+ for(const deadline=Date.now()+5000;(await env.orchestration.state(run)).outstanding&&Date.now()<deadline;)await new Promise(resolve=>setTimeout(resolve,10))
  assert.equal(env.calls.filter(c=>c.kind==='settle').length,1)
+ assert.deepEqual(await env.orchestration.state(run),{outstanding:false,interrupted:false})
 })
 
 test('Flow 薄口拒绝父身份/当前工具不符，在真实预留前关闭',async t=>{
