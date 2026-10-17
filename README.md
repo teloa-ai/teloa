@@ -61,7 +61,7 @@ npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart), and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup) before updating an existing installation. To install the earlier registry release instead, use `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. This preview is for new installations: if Teloa is already installed in `~/.teloa`, start the preview with a separate `--home` and `--port`. `teloa upgrade` installs versions from the npm registry, where 0.2.0-beta.2 is not published, so an existing 0.2.0-alpha.7 installation keeps its version. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). To install the earlier registry release instead, use `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`.
 
 <details>
 <summary><strong>Docker Hub with Compose (0.2.0-alpha.7)</strong></summary>

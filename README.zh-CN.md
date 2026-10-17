@@ -61,7 +61,7 @@ npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download
 ./node_modules/.bin/teloa status
 ```
 
-Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，已有安装更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。如需安装注册表中的上一版本，使用 `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`。
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。本预览版面向新安装：如果 `~/.teloa` 中已有安装，请用独立的 `--home` 与 `--port` 启动预览版。`teloa upgrade` 从 npm 注册表安装版本，而 0.2.0-beta.2 未发布到注册表，因此已有的 0.2.0-alpha.7 安装会保持原版本。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。如需安装注册表中的上一版本，使用 `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`。
 
 <details>
 <summary><strong>Docker Hub + Compose（0.2.0-alpha.7）</strong></summary>
