@@ -5,7 +5,7 @@ import type {Agent} from '@deepseek-ai/dsh-agent'
 import {SessionId,SessionSeq} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import {combineWorkAccessLeases,workAccess,readOwnerPlanPolicy,readStoredTaskRun,readStoredConversationWorkContext,type OwnerPlanAuthority,type OwnerPlanSource,type TaskRun} from '@teloa/backend'
-import {WorkError,readMethodReuseSource,readMethodReuseAcceptedSource,readModelReference,readOwnerPlanFields,readPlanWorkConfiguration,readTaskRunModelPolicy,workUuid,type MethodReuseIntent} from '@teloa/contract'
+import {WorkError,readMethodReuseSource,readMethodReuseAcceptedSource,readModelReference,readOwnerPlanFields,readPlanWorkConfiguration,readTaskRunModelPolicy,workUuid,type MethodReuseIntent,type TaskToolArgumentRule} from '@teloa/contract'
 import {nativeToolRules} from './native-tool-access.ts'
 import {workspaceFileToolRules} from './workspace-file-access.ts'
 import {taskRunToolRules,webToolRules} from './role-tool-grants.ts'
@@ -13,6 +13,7 @@ import {resolveTaskModelPolicy} from './task-model-dsh.ts'
 import {resolveDshTaskPreset} from './task-run-dsh.ts'
 import {readSessionEvents} from './session-events.ts'
 import {ownerExternalHarnessToolRules} from './external-harness-policy.ts'
+import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
 type PoolClient=Parameters<OwnerPlanAuthority['verifySource']>[0]
 
 type Ports={
@@ -43,6 +44,11 @@ function sourceValue(input:OwnerPlanSource):OwnerPlanSource{
  const source=readMethodReuseSource(reference)
  if(!acceptedSource&&!source.taskId)throw denied()
  return {kind,...source,...(acceptedSource?{acceptedSource:readMethodReuseAcceptedSource(acceptedSource)}:{})}
+}
+/** 本人计划只冻结真实授权：技能接口代发按真实逐技能授权展开为逐项 {skill}，形状候选（anyArguments）不等于勾选任何技能，不冻结。 */
+function ownerGrantedTools(allowedTools:readonly string[],argumentRules:readonly TaskToolArgumentRule[]|undefined){
+ const skills=skillHttpGrantedSkills(argumentRules),rules=argumentRules?.flatMap(rule=>rule.name!==skillHttpToolName?[rule]:skills.length?[{name:skillHttpToolName,allowed:skills.map(skill=>({skill}))}]:[])
+ return {allowedTools:allowedTools.filter(name=>name!==skillHttpToolName||skills.length>0),...(rules?{argumentRules:rules}:{})}
 }
 /** 认证浏览器确认链的宿主端口；不注册模型工具，不自行创建、启用或启动计划。 */
 export function createOwnerPlanHost(ctx:Context,ports:Ports):OwnerPlanAuthority{
@@ -104,7 +110,7 @@ export function createOwnerPlanHost(ctx:Context,ports:Ports):OwnerPlanAuthority{
    // 只读取原路由身份；显式备用仍由原模型策略读口验证，绝不猜全局默认备用。
    const modelPolicy=readTaskRunModelPolicy(await resolveTaskModelPolicy(ctx,{model:selected.primary,...(selected.fallback?{fallbackModel:selected.fallback}:{})},signal))
    current()
-   const policy=readOwnerPlanPolicy(run?.executor?.kind==='owner'?{allowedTools:run.allowedTools,modelPolicy,...(run.argumentRules?{argumentRules:run.argumentRules}:{}),agentPresetId:presetId}:{allowedTools:rules.map(rule=>rule.name),modelPolicy,argumentRules:rules,agentPresetId:presetId})
+   const policy=readOwnerPlanPolicy({...(run?.executor?.kind==='owner'?ownerGrantedTools(run.allowedTools,run.argumentRules):ownerGrantedTools(rules.map(rule=>rule.name),rules)),modelPolicy,agentPresetId:presetId})
    const definitions=policy.allowedTools.map(name=>[name,ctx.tools.get(name,agent)] as const)
    const admission=combineWorkAccessLeases([sourceLease,await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:source.acceptedSource?.sessionId??null,objectId:input.requestId,operation:'create'}),{assertCurrent:()=>{current();if(definitions.some(([name,definition])=>ctx.tools.get(name,agent)!==definition))throw changed()}}])
    admission.assertCurrent();return {policy,admission}

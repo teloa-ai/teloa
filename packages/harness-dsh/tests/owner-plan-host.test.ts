@@ -120,3 +120,38 @@ test('来源核验后异步等待期间原本人消息被替换，最终capture�
  f.agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:source.acceptedSource.requestId},content:[{type:'text',text:'不要保存。'}]}),{surfaceOp:{op:'replace',startSeq:source.acceptedSource.messageSeq,endSeq:source.acceptedSource.messageSeq},sourceEventSeqs:[source.acceptedSource.messageSeq]} as never)
  release!();await assert.rejects(pending,{code:'teloa/version-conflict'});assert.deepEqual(f.adapter.requests,[]);assert.deepEqual(f.executions,[])
 })
+
+async function ownerPreparation(f:Awaited<ReturnType<typeof fixture>>,planned:()=>unknown){
+ const text=await readFile(new URL('../src/index.ts',import.meta.url),'utf8'),file=ts.createSourceFile('index.ts',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+ let expression:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{if(ts.isBinaryExpression(node)&&node.left.getText(file)==='runPorts.prepareOwnerPolicy')expression=node.right;ts.forEachChild(node,visit)};visit(file);assert.ok(expression)
+ const values={ctx:f.ctx,owner,brandString:(id:string)=>id,WorkError,taskRunToolRules,nativeToolRules,workspaceFileToolRules,webToolRules,validateReferenceToolRules,ownerExternalHarnessToolRules,validateOwnerToolRules,realpathSync,runService:async()=>({preparationTarget:async()=>({ownerPlanPolicy:planned()})}),taskMaterialService:async()=>({list:async()=>[]}),readRunKnowledge:(value:unknown)=>value,readExecutionKnowledge:async()=>[]}
+ const body=ts.transpileModule('const callback='+expression.getText(file),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText
+ return new Function(...Object.keys(values),body+';return callback')(...Object.values(values)) as NonNullable<TaskRunPorts['prepareOwnerPolicy']>
+}
+test('本人计划只冻结真实技能代发授权：形状候选不冻结且原计划可准备，真实逐技能授权只留逐项规则，整工具冻结仍拒绝',async t=>{
+ const target={taskId:manualSource.taskId,taskVersion:2,sessionId:'',linkVersion:1,scope:'general'},signal=AbortSignal.timeout(5000)
+ const f=await fixture(t),captured=await f.authority.capture(owner,{requestId,fields,source,configuration,intent:'save-paused'},f.db)
+ let planned:unknown=captured.policy;const prepare=await ownerPreparation(f,()=>planned)
+ const prepared=await prepare(f.agent.session.id,'teloa-standard',signal,{...target,sessionId:f.agent.session.id})
+ assert.deepEqual(prepared.allowedTools,captured.policy.allowedTools)
+ assert.equal(captured.policy.allowedTools.includes('teloa_skill_http'),false);assert.equal(captured.policy.argumentRules?.some(rule=>rule.name==='teloa_skill_http'),false)
+ assert.ok(captured.policy.allowedTools.includes('get_goal'));assert.ok(captured.policy.argumentRules?.some(rule=>rule.name==='get_goal'&&rule.anyArguments))
+ // 篡改或旧错误冻结：把整工具形状写成已授予仍由原验证器严格拒绝。
+ planned={...captured.policy,allowedTools:[...captured.policy.allowedTools,'teloa_skill_http'],argumentRules:[...captured.policy.argumentRules!,{name:'teloa_skill_http',anyArguments:true,allowed:[]}]}
+ await assert.rejects(prepare(f.agent.session.id,'teloa-standard',signal,{...target,sessionId:f.agent.session.id}),{code:'teloa/forbidden'})
+ const read={name:'read',allowed:[],workspaceFiles:'default-workspace' as const}
+ // 人工源 owner Run 带真实逐技能授权：只冻结逐项 {skill}，准备时原验证器通过。
+ const granted:TaskRun={...completedSource(),allowedTools:['read','teloa_skill_http'],argumentRules:[read,{name:'teloa_skill_http',allowed:[{skill:'demo-skill'}]}]}
+ const g=await fixture(t,manualSource,granted),real=await g.authority.capture(owner,{requestId,fields,source:manualSource,configuration,intent:'save-paused'},g.db)
+ assert.deepEqual(real.policy.allowedTools,['read','teloa_skill_http']);assert.deepEqual(real.policy.argumentRules,[read,{name:'teloa_skill_http',allowed:[{skill:'demo-skill'}]}])
+ planned=real.policy;const prepareReal=await ownerPreparation(g,()=>planned)
+ assert.deepEqual((await prepareReal(g.agent.session.id,'teloa-standard',signal,{...target,sessionId:g.agent.session.id})).argumentRules,real.policy.argumentRules)
+ // 人工源 owner Run 只有整工具形状或缺规则：没有真实授权，不冻结技能代发。
+ for(const argumentRules of [[read,{name:'teloa_skill_http',anyArguments:true as const,allowed:[]}],undefined]){
+  const {argumentRules:_original,...base}=completedSource(),shape:TaskRun={...base,allowedTools:['read','teloa_skill_http'],...(argumentRules?{argumentRules}:{})}
+  const h=await fixture(t,manualSource,shape),none=await h.authority.capture(owner,{requestId,fields,source:manualSource,configuration,intent:'save-paused'},h.db)
+  assert.deepEqual(none.policy.allowedTools,['read']);assert.equal(none.policy.argumentRules?.some(rule=>rule.name==='teloa_skill_http')??false,false)
+ }
+ assert.deepEqual(f.adapter.requests,[]);assert.deepEqual(f.executions,[]);assert.deepEqual(g.adapter.requests,[])
+})
