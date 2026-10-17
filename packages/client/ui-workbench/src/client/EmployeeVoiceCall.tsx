@@ -24,14 +24,29 @@ export function EmployeeVoiceCall({api,role,target:providedTarget,sessionId,open
  const startTime=useRef<number>(),started=useRef(false),controls=useRef<{hangup:()=>Promise<void>;mute:()=>Promise<void>;interrupt:()=>Promise<void>;send:()=>void;play:()=>Promise<void>;sessionId:string}|undefined>()
  const done=useRef(false)
  const [surface,setSurface]=useState<HTMLElement|null>(null)
- const panelRef=useRef<HTMLElement|null>(null),positionRef=useRef<{x:number;y:number;maxWidth:number;maxHeight:number}>(),drag=useRef<{pointerId:number;handle:HTMLElement;start:{x:number;y:number};origin:{x:number;y:number};moved:boolean}>()
+ const panelRef=useRef<HTMLElement|null>(null),positionRef=useRef<{x:number;y:number;maxWidth:number;maxHeight:number}>(),preferredRef=useRef<{x:number;y:number}>(),drag=useRef<{pointerId:number;handle:HTMLElement;start:{x:number;y:number};origin:{x:number;y:number};moved:boolean}>()
  const [position,setPosition]=useState<typeof positionRef.current>(),[dragging,setDragging]=useState(false)
- function place(point:{x:number;y:number}){
+ const viewportBounds=()=>{const viewport=window.visualViewport;return {x:viewport?.offsetLeft??0,y:viewport?.offsetTop??0,width:viewport?.width??window.innerWidth,height:viewport?.height??window.innerHeight}}
+ /** chosen 表示本人拖动或键盘移动：记住本人位置，之后只按视口收回显示坐标，不再自动让位。 */
+ function place(point:{x:number;y:number},chosen=false){
   const box=panelRef.current?.getBoundingClientRect();if(!box?.width||!box.height)return
-  const viewport=window.visualViewport,bounds={x:viewport?.offsetLeft??0,y:viewport?.offsetTop??0,width:viewport?.width??window.innerWidth,height:viewport?.height??window.innerHeight}
-  const next={...companionSafePoint(point,box,bounds,[]),maxWidth:Math.max(0,bounds.width-32),maxHeight:Math.max(0,bounds.height-16)},previous=positionRef.current
+  const bounds=viewportBounds(),safe=companionSafePoint(point,box,bounds,[])
+  if(chosen)preferredRef.current=safe
+  const next={...safe,maxWidth:Math.max(0,bounds.width-32),maxHeight:Math.max(0,bounds.height-16)},previous=positionRef.current
   if(previous&&previous.x===next.x&&previous.y===next.y&&previous.maxWidth===next.maxWidth&&previous.maxHeight===next.maxHeight)return
   positionRef.current=next;setPosition(next)
+ }
+ /** 本人未移动时沿用样式默认位置并随视口重算；助手通话只为小松鼠及其留言、迷你聊天小窗让位，窄屏保持原布局。 */
+ function fitDefault(panel:HTMLElement){
+  const style=panel.style,inline=[style.left,style.top,style.right,style.bottom]
+  if(positionRef.current){style.left='';style.top='';style.right='';style.bottom=''}
+  const box=panel.getBoundingClientRect()
+  if(positionRef.current){style.left=inline[0]!;style.top=inline[1]!;style.right=inline[2]!;style.bottom=inline[3]!}
+  if(!box.width||!box.height)return
+  const obstacles=target.kind==='assistant'&&!window.matchMedia('(max-width: 760px)').matches?Array.from(document.querySelectorAll<HTMLElement>('[data-assistant-companion],[data-assistant-companion]>[role="region"],[data-assistant-mini-chat]'),element=>element.getBoundingClientRect()):[]
+  const safe=companionSafePoint(box,box,viewportBounds(),obstacles)
+  if(Math.abs(safe.x-box.x)<1&&Math.abs(safe.y-box.y)<1){if(positionRef.current){positionRef.current=undefined;setPosition(undefined)}return}
+  place(safe)
  }
  function releaseDrag(){
   const current=drag.current;drag.current=undefined;setDragging(false)
@@ -47,19 +62,24 @@ export function EmployeeVoiceCall({api,role,target:providedTarget,sessionId,open
   const current=drag.current;if(!current||current.pointerId!==event.pointerId)return
   const dx=event.clientX-current.start.x,dy=event.clientY-current.start.y
   if(Math.hypot(dx,dy)>5)current.moved=true
-  if(current.moved){event.preventDefault();place({x:current.origin.x+dx,y:current.origin.y+dy})}
+  if(current.moved){event.preventDefault();place({x:current.origin.x+dx,y:current.origin.y+dy},true)}
  }
  function endDrag(event:ReactPointerEvent<HTMLElement>){if(drag.current?.pointerId!==event.pointerId)return;if(event.type==='pointerup')moveDrag(event);releaseDrag()}
  function moveWithKeyboard(event:ReactKeyboardEvent<HTMLElement>){
   const step=({ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0},ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1}} as Record<string,{x:number;y:number}>)[event.key],box=panelRef.current?.getBoundingClientRect()
   if(!step||!box)return
-  event.preventDefault();event.stopPropagation();const distance=event.shiftKey?40:16;place({x:box.x+step.x*distance,y:box.y+step.y*distance})
+  event.preventDefault();event.stopPropagation();const distance=event.shiftKey?40:16;place({x:box.x+step.x*distance,y:box.y+step.y*distance},true)
  }
  useEffect(()=>{
   const panel=panelRef.current;if(!panel)return
-  const fit=()=>{const box=panel.getBoundingClientRect();place(positionRef.current??{x:box.x,y:box.y})},observer=new ResizeObserver(fit)
-  observer.observe(panel);fit();window.addEventListener('resize',fit);window.visualViewport?.addEventListener('resize',fit);window.visualViewport?.addEventListener('scroll',fit)
-  return()=>{observer.disconnect();window.removeEventListener('resize',fit);window.visualViewport?.removeEventListener('resize',fit);window.visualViewport?.removeEventListener('scroll',fit);releaseDrag()}
+  let frame=0
+  const fit=()=>{frame=0;if(preferredRef.current)place(preferredRef.current);else fitDefault(panel)}
+  const schedule=()=>{if(!frame)frame=requestAnimationFrame(fit)},observer=new ResizeObserver(schedule)
+  // 小松鼠及其小窗的开关、移动只改 DOM；按帧合并后重新让位，忽略通话条自身变化。
+  const mutations=target.kind==='assistant'?new MutationObserver(records=>{if(records.some(record=>!panel.contains(record.target)))schedule()}):undefined
+  observer.observe(panel);fit();mutations?.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden','aria-hidden','inert']})
+  window.addEventListener('resize',schedule);window.visualViewport?.addEventListener('resize',schedule);window.visualViewport?.addEventListener('scroll',schedule)
+  return()=>{observer.disconnect();mutations?.disconnect();if(frame)cancelAnimationFrame(frame);window.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('resize',schedule);window.visualViewport?.removeEventListener('scroll',schedule);releaseDrag()}
  },[surface])
  useEffect(()=>{
   // 原生模态层会使外部控件 inert；只移动控制条的展示，不重新建立媒体或会话。
