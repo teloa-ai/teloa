@@ -64,8 +64,9 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   host.close(); decoy.close(); process.exit(0)
 })
 
-decoy.listen(0, '127.0.0.1', () => {
-  host.listen(port, '127.0.0.1', () => {
+// 先占住测试分配的端口再让诱饵取临时端口：反过来时诱饵的 listen(0) 可能恰好拿到刚由 freePort 释放的同一端口，宿主随即 EADDRINUSE。
+host.listen(port, '127.0.0.1', () => {
+  decoy.listen(0, '127.0.0.1', () => {
     const line = 'dsh web: http://127.0.0.1:' + port + '/?token=' + token
     // 一直不打印启动地址，用来模拟用户在地址出现前按下 Ctrl-C。
     if (mode === '静默长驻') return
