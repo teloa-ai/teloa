@@ -35,6 +35,8 @@ export type CatalogEmployeeReceipt={roleId:string|null;status:'created'|'existin
 export type LegacyCatalogRoleReceipt={roleId:string;status:'created'|'existing';skills:string[]}
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+/** 与另一路并发推进同一加载时等它落定的上限：处理中项与摘要冲突同一口径（一键准备自身等待上限 20 秒）；员工已建而方法尚未绑定只是几次查询的间隙。 */
+const SETTLE_MS=20000,BIND_MS=3000,POLL_MS=200
 const hostBad=()=>new WorkError('teloa/invalid-host-response','员工安装读取到的服务回应格式不正确。')
 const lower=(value:unknown)=>typeof value==='string'?value.toLowerCase():''
 function derivedId(parts:string[]):string{
@@ -108,24 +110,39 @@ export function createCatalogEmployeeInstaller(owner:string,get:()=>Promise<Cata
    }catch(error){if(error instanceof WorkError&&error.code==='teloa/invalid-host-response')throw error;installs.set(method.instanceId,{state:'failed'})}
   }
   // 方法全部装好才建员工：员工首建即可绑定实际原生名，不留空方法员工。
-  let readiness=readReadiness(await ports.prepare('industry-loads/readiness',{loadId:load.id},{activate:false}))
-  if(methods.every(method=>installs.get(method.instanceId)?.state==='done')&&readiness.auto>0){
-   // 并发的另一次已推进状态（摘要变化）或已无可自动项时不重做，按最终清单如实回报。
-   try{await ports.prepare('industry-loads/prepare',{loadId:load.id,expectedDigest:readiness.digest},{activate:false})}
-   catch(error){if(!(error instanceof WorkError&&['teloa/version-conflict','teloa/conflict'].includes(error.code)))throw error}
+  // 另一路（另一服务实例或进程；同一安装器内已由 lanes 串行）可能正推进同一加载：prepare 遇摘要冲突、清单里仍有处理中项、
+  // 员工已建而方法尚未绑定，都是对方的中间态。有界地续做并重读到落定，不把中间态当作本次回执；超时才如实回 pending 或待检查。
+  const names=methods.map(method=>installs.get(method.instanceId)?.nativeName),methodsDone=methods.every(method=>installs.get(method.instanceId)?.state==='done')
+  const settleUntil=Date.now()+SETTLE_MS
+  let bindUntil:number|undefined
+  let readiness=readReadiness(await ports.prepare('industry-loads/readiness',{loadId:load.id},{activate:false})),conflicted=false,executed=false
+  let role:Record<string,unknown>|undefined
+  for(;;){
+   if(methodsDone&&readiness.auto>0){
+    try{await ports.prepare('industry-loads/prepare',{loadId:load.id,expectedDigest:readiness.digest},{activate:false});conflicted=false;executed=true}
+    catch(error){if(!(error instanceof WorkError&&['teloa/version-conflict','teloa/conflict'].includes(error.code)))throw error;conflicted=true}
+    readiness=readReadiness(await ports.prepare('industry-loads/readiness',{loadId:load.id},{activate:false}))
+   }
+   const listedRoles=await ports.roles('industry-roles/list',{})
+   if(!isRecord(listedRoles)||!Array.isArray(listedRoles.items))throw hostBad()
+   const instance=listedRoles.items.filter(isRecord).find(row=>lower(row.loadId)===load.id&&lower(row.itemInstanceId)===roleItem.instanceId)
+   role=instance&&isRecord(instance.role)?instance.role:undefined
+   if(role&&(typeof role.id!=='string'||!UUID.test(role.id)||typeof role.state!=='string'||!Array.isArray(role.skills)||role.skills.some(name=>typeof name!=='string')))throw hostBad()
+   const now=Date.now(),skills=role?role.skills as string[]:[]
+   // 对方仍在推进：摘要冲突后仍有可自动项、或清单有处理中项；对方刚建好首版员工、尚未绑定方法（本次已执行过准备的不等：绑定缺口是真缺口）。
+   const peerBusy=(conflicted&&readiness.auto>0||readiness.rows.some(row=>row.state==='pending'))&&now<settleUntil
+   const unbound=!executed&&methodsDone&&!!role&&role.version===1&&!names.every(name=>name!==undefined&&skills.includes(name))
+   // 绑定窗口自首次看到未绑定的首版员工起算：此前等对方准备资料与建员工的耗时不吃掉它。
+   const peerBinding=unbound&&now<(bindUntil??=now+BIND_MS)
+   if(!peerBusy&&!peerBinding)break
+   await new Promise<void>(resolve=>setTimeout(resolve,POLL_MS))
    readiness=readReadiness(await ports.prepare('industry-loads/readiness',{loadId:load.id},{activate:false}))
   }
-  const listedRoles=await ports.roles('industry-roles/list',{})
-  if(!isRecord(listedRoles)||!Array.isArray(listedRoles.items))throw hostBad()
-  const instance=listedRoles.items.filter(isRecord).find(row=>lower(row.loadId)===load.id&&lower(row.itemInstanceId)===roleItem.instanceId)
-  const role=instance&&isRecord(instance.role)?instance.role:undefined
-  if(role&&(typeof role.id!=='string'||!UUID.test(role.id)||typeof role.state!=='string'||!Array.isArray(role.skills)||role.skills.some(name=>typeof name!=='string')))throw hostBad()
   const roleId=role?String(role.id).toLowerCase():null,bound=role?role.skills as string[]:[]
   const resources:CatalogEmployeeResource[]=readiness.rows.filter(row=>row.itemInstanceId!==roleItem.instanceId).map(row=>{
    const install=installs.get(row.itemInstanceId),state=install?.state==='failed'||install?.state==='conflict'?install.state:resourceState(row)
    return {kind:row.kind,title:row.title,state,...(install?.nativeName?{nativeName:install.nativeName}:{})}
   })
-  const names=methods.map(method=>installs.get(method.instanceId)?.nativeName)
   const methodsBound=names.every(name=>name!==undefined&&bound.includes(name))
   const installed=roleId!==null&&resources.every(row=>row.state==='done'||row.state==='optional'||row.state==='needs-user')
   const complete=installed&&methodsBound

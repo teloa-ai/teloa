@@ -104,9 +104,14 @@ function snapshot({parent=true}:{parent?:boolean}={}):OfficialCatalogSnapshot{
  return {indexSha256:sha(JSON.stringify(index)),index,files}
 }
 
+/** 并发屏障：只在这一套服务实例上让对应步骤停住，不改产品状态；放行前别的服务实例照常推进。 */
+type Hooks={beforeInstantiate?:()=>Promise<void>;beforeRoleCreate?:()=>Promise<void>;beforeRoleEdit?:()=>Promise<void>}
 /** 同一本人的一套服务；每次调用都是新实例，模拟刷新、重启或换新服务后只能从数据库读回。 */
-function services(owner:string,snap:OfficialCatalogSnapshot=snapshot()){
+function services(owner:string,snap:OfficialCatalogSnapshot=snapshot(),hooks:Hooks={}){
  const market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),refs=new IndustryReferenceCatalog(pool,market,loads),sources=combineReferenceCatalogs(createPublicReferenceCatalog(),refs),resources=new ResourceService(pool,sources,identity),knowledge=new IndustryKnowledgeService(pool,identity,loads,sources,resources),roles=new RoleService(pool,identity),industryRoles=new IndustryRoleService(pool,identity,loads,new IndustryRoleSource(market,loads),knowledge,roles)
+ if(hooks.beforeInstantiate){const run=industryRoles.instantiate.bind(industryRoles);industryRoles.instantiate=async(...args)=>{await hooks.beforeInstantiate!();return run(...args)}}
+ if(hooks.beforeRoleCreate){const run=roles.create.bind(roles);roles.create=async(...args)=>{await hooks.beforeRoleCreate!();return run(...args)}}
+ if(hooks.beforeRoleEdit){const run=roles.edit.bind(roles);roles.edit=async(...args)=>{await hooks.beforeRoleEdit!();return run(...args)}}
  const catalog=new OfficialCatalogService(market,snap,{catalogRoleIds:(ownerId,entries,contentHash)=>industryRoles.catalogRoleIds(ownerId,entries,contentHash)})
  const files=new ManagedSkillFiles(join(root,owner.replace(/[^a-z0-9]/gi,''),'skills'),async directory=>{const text=await readFile(join(directory,'SKILL.md'),'utf8'),name=/^name:\s*(.+)$/m.exec(text)![1]!.trim(),description=/^description:\s*(.+)$/m.exec(text)![1]!.trim();return {name,description,modelInvocable:true,userInvocable:true,bodyHash:sha(text)}},()=>{})
  const skills=new SkillInstallationService(pool,identity,new SkillInstallSource(market,loads),files)
@@ -218,6 +223,51 @@ slow('并发：同一安装器与两套独立服务同时添加，只建一位�
  const theirs=full(await services(other).installer()(triage))
  assert.equal(theirs.status,'created');assert.ok(!ids.has(theirs.roleId));assert.equal((await ownerRoles(other)).length,1)
 },{timeout:180000})
+
+// 并发的中间态：另一服务实例停在某一步时，后到的一路不能抢先回 pending/null 或未绑定方法的半成品，要得到同一位员工的完成回执。
+// 屏障只停住对方那一套服务实例的对应步骤，放行前这一路自行推进或等待。
+const gate=()=>{let open!:()=>void;const wait=new Promise<void>(resolve=>{open=resolve});return {open,wait}}
+const pause=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))
+async function converged(owner:string,receipts:CatalogEmployeeReceipt[]){
+ assert.equal(new Set(receipts.map(row=>row.roleId)).size,1);assert.ok(receipts[0]!.roleId);assert.ok(receipts.every(row=>row.install.complete))
+ assert.equal((await ownerRoles(owner)).length,1);assert.equal((await services(owner).loads.list(owner,{})).items.length,1);assert.equal((await services(owner).skills.list(owner,{})).items.length,1)
+ assert.equal((await pool.query('select count(*)::int as n from teloa_industry_role_instances where owner_id=$1',[owner])).rows[0].n,1)
+}
+
+slow('并发：一路持旧清单、对方已推进摘要并停在员工实例化之前；摘要冲突后这一路得到同一位已建员工的完成回执',async()=>{
+ const owner='local:'+randomUUID(),read=gate(),resume=gate(),parked=gate(),release=gate();let held=false
+ const stale=services(owner).installer(ports=>({...ports,prepare:async(endpoint,payload,options)=>{const value=await ports.prepare(endpoint,payload,options);if(endpoint==='industry-loads/readiness'&&!held){held=true;read.open();await resume.wait};return value}}))(triage).then(full)
+ await read.wait // 这一路：加载已建、方法已装、清单与摘要已读，停在用它调 prepare 之前
+ const peer=services(owner,undefined,{beforeInstantiate:async()=>{parked.open();await release.wait}}).installer()(triage).then(full)
+ await parked.wait // 对方：资料已准备（摘要已变），停在员工实例化之前，库里还没有员工
+ resume.open()
+ await pause(1000)
+ release.open()
+ await converged(owner,await Promise.all([stale,peer]))
+},{timeout:120000})
+
+slow('并发：对方在建员工中停到方法绑定窗口之外才建好首版员工，再停在绑定之前；这一路等到同一位已绑定方法的员工',async()=>{
+ const owner='local:'+randomUUID(),creating=gate(),create=gate(),binding=gate(),bind=gate()
+ const peer=services(owner,undefined,{beforeRoleCreate:async()=>{creating.open();await create.wait},beforeRoleEdit:async()=>{binding.open();await bind.wait}}).installer()(triage).then(full)
+ await creating.wait // 对方：员工实例已登记，员工本体尚未建
+ const late=services(owner).installer()(triage).then(full)
+ await pause(3500) // 超过方法绑定等待上限（3 秒）：绑定窗口须自首次看到首版员工起算，不被此前等对方建员工的耗时用掉
+ create.open()
+ await binding.wait // 对方：首版员工已建，停在绑定方法之前
+ await pause(1000)
+ bind.open()
+ await converged(owner,await Promise.all([peer,late]))
+},{timeout:120000})
+
+slow('并发：对方已建首版员工、停在绑定方法之前时到达；这一路等到方法绑定完成的同一位员工',async()=>{
+ const owner='local:'+randomUUID(),binding=gate(),bind=gate()
+ const peer=services(owner,undefined,{beforeRoleEdit:async()=>{binding.open();await bind.wait}}).installer()(triage).then(full)
+ await binding.wait // 对方：首版员工已建，停在绑定方法之前
+ const late=services(owner).installer()(triage).then(full)
+ await pause(1000)
+ bind.open()
+ await converged(owner,await Promise.all([peer,late]))
+},{timeout:120000})
 
 slow('未知条目、漂移版本与来源不可用拒绝：不建员工、不留下加载',async()=>{
  const owner='local:'+randomUUID()
