@@ -6,7 +6,7 @@ import {isLocalMaterialSourceId} from './local-material-registration.js'
 import {LocalRetrievalResources} from './LocalRetrievalResources.js'
 import type {BundledExtensionsApi} from './bundled-extensions-api.js'
 import type {LocalRetrievalApi} from './local-retrieval-api.js'
-import { useEffect,useRef,useState,type ReactNode } from 'react'
+import { useEffect,useMemo,useRef,useState,type ReactNode } from 'react'
 import { ChevronDown,FileText,Folder,FolderInput,FolderPlus,MessageSquare,MoreHorizontal,Pencil,RefreshCw,Search,Plus } from 'lucide-react'
 import { encodeResourceReference,type KnowledgeTree,type ResourceDirectory,type ResourceDraft,type SourceReference,type WorkResource } from '@teloa/contract'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -14,7 +14,7 @@ import { isResourceDraft } from '@teloa/contract'
 import type { ResourceApi } from './resource-api.js'
 import {KnowledgeDocument} from './KnowledgeDocument.js'
 import { useDirectoryFocus } from './directory-focus.js'
-import { libraryResourceDirectory,buildKnowledgeDirectoryTree,canGovernKnowledgeNode,defaultKnowledgeSelection,defaultResourceSelection,filterResourceManagerDirectory,knowledgeBreadcrumbs,knowledgeMoveTargets,normalizeResourceSourceSelection,resourceSourceFacts,type KnowledgeDirectoryBranch,type ResourceManagerFilters } from './resource-manager-presentation.js'
+import { libraryResourceDirectory,localizeKnowledgeRoot,buildKnowledgeDirectoryTree,canGovernKnowledgeNode,defaultKnowledgeSelection,defaultResourceSelection,filterResourceManagerDirectory,knowledgeBreadcrumbs,knowledgeMoveTargets,normalizeResourceSourceSelection,resourceSourceFacts,type KnowledgeDirectoryBranch,type ResourceManagerFilters } from './resource-manager-presentation.js'
 import css from './ResourceManager.module.css'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
@@ -26,7 +26,9 @@ export type ResourceManagerNavigationState={query:string;category:NonNullable<Re
 export function ResourceManager({preferenceStorage,onUseResource,localRetrievalApi,api,visible,selectedDraftId,targetResource,clearTarget,openConversation,bundledExtensionsApi,navigationState,onNavigationChange}:{preferenceStorage?:WorkbenchNavigationStorage|undefined;onUseResource?:((resource:WorkResource)=>void)|undefined;localRetrievalApi?:LocalRetrievalApi|undefined;api:ResourceApi;visible:boolean;selectedDraftId:string|null;targetResource:{id:string;request:number}|null;clearTarget:()=>void;openConversation:(request:LibraryPreparationRequest)=>void;bundledExtensionsApi?:BundledExtensionsApi|undefined;navigationState?:Partial<ResourceManagerNavigationState>;onNavigationChange?:(state:ResourceManagerNavigationState)=>void}){
   const {locale,t}=useI18n()
   const currentApi=useRef(api);currentApi.current=api
-  const [directory,setDirectory]=useState<ResourceDirectory>({drafts:[],resources:[]}),[sources,setSources]=useState<SourceReference[]>([]),[knowledgeTree,setKnowledgeTree]=useState<KnowledgeTree>()
+  const [directory,setDirectory]=useState<ResourceDirectory>({drafts:[],resources:[]}),[sources,setSources]=useState<SourceReference[]>([]),[loadedKnowledgeTree,setKnowledgeTree]=useState<KnowledgeTree>()
+  // 根节点标题只在显示层本地化；目录操作只用节点身份与修订号，发起会话等请求仍取服务端原始目录。
+  const knowledgeRootTitle=t('knowledge.space.rootTitle'),knowledgeTree=useMemo(()=>loadedKnowledgeTree&&localizeKnowledgeRoot(loadedKnowledgeTree,knowledgeRootTitle),[loadedKnowledgeTree,knowledgeRootTitle])
   const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>()
   const [browseNodeId,setBrowseNodeId]=useState<string|undefined>(navigationState?.browseNodeId)
   const [libraryView,setLibraryView]=useState<LibraryView>(navigationState?.libraryView??'recent'),[preferences,setPreferences]=useState<LibraryPreferences>({recent:[],favorites:[]}),[loadedApi,setLoadedApi]=useState<ResourceApi>(),[documentDirty,setDocumentDirty]=useState(false),[documentReferenceReady,setDocumentReferenceReady]=useState(false),[pendingLeave,setPendingLeave]=useState<(()=>void)>()
@@ -165,7 +167,7 @@ export function ResourceManager({preferenceStorage,onUseResource,localRetrievalA
   const changeLibraryView=(view:LibraryView)=>beforeLeave(()=>{formGeneration.current++;setLibraryView(view);setEditing(undefined);setTracking(false);setMobileDetailOpen(false);setSelectedResourceId(undefined);setSelectedNodeId(knowledgeTree?.space.rootNodeId);setDocumentDirty(false);rememberNavigation({libraryView:view,selectedId:undefined,mobileLayer:'directory'})})
   const spaceResourceIds=new Set(knowledgeTree?.nodes.filter(node=>node.type==='page'&&node.path.includes(browseNodeId??knowledgeTree.space.rootNodeId)).flatMap(node=>node.type==='page'?directory.resources.filter(resource=>pageNodeFor(resource,knowledgeTree,sources)?.id===node.id).map(resource=>resource.id):[]))
   const rows=libraryRows(knowledgeDirectory,sources,{view:libraryView,query,preferences,resourceIds:spaceResourceIds,tree:knowledgeTree})
-  const prepareMaterials=()=>beforeLeave(()=>openConversation(libraryPreparationRequest(knowledgeTree,libraryView==='space'?browseNodeId:folderParentId,locale)))
+  const prepareMaterials=()=>beforeLeave(()=>openConversation(libraryPreparationRequest(loadedKnowledgeTree,libraryView==='space'?browseNodeId:folderParentId,locale)))
   const startLocalRegistration=()=>beforeLeave(()=>{formGeneration.current++;setTracking(true);setEditing(undefined);setSelectedResourceId(undefined);setSelectedNodeId(folderParentId);setMobileDetailOpen(true);setError(undefined)})
   const renderedFormGeneration=formGeneration.current
   const directoryFocus=useDirectoryFocus(visible,mobileDetailOpen?(editing?.id??selectedNodeId??selectedResourceId):undefined,!tracking)

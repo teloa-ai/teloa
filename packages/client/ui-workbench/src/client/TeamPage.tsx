@@ -30,7 +30,8 @@ import type { BindingClient } from './binding-client.js';
 import { RoleKnowledge } from './RoleKnowledge.js';
 import type { ResourceApi } from './resource-api.js';
 import { RoleLifecycle, RoleLifecycleRecovery, type RoleLifecycleDraft, type RoleLifecyclePort } from './RoleLifecycle.js';
-import { roleLifecyclePath, roleMemoryPath, roleSkillNotice, roleStatusLabel, roleWorkPath, twinDisplayName } from './team-presentation.js';
+import { roleLifecyclePath, roleMemoryPath, roleMemorySourceTitle, roleSkillNotice, roleStatusLabel, roleWorkPath, twinDisplayName } from './team-presentation.js';
+import { planDisplayTitle } from './plan-source-presentation.js';
 import type { TwinDraftInput } from './TwinDraftEditor.js';
 import { TwinProfile } from './TwinProfile.js';
 import twinCss from './TwinProfile.module.css';
@@ -260,7 +261,7 @@ export function TeamPage({ skillTitleReader,phone,templateSharing,delegations,ro
             {describing&&pageCreate&&sharedTemplates&&<div><CreateEntry entity={'share' as PageCreateEntity} directSentence descriptionPlaceholderKey="create.sentence.placeholder.employee" sentenceDraft={{key:'teloa.team-template-creation-input/v1',storage:sharedTemplates.storage}} api={pageCreate.api} prepare={pageCreate.prepare} openMarket={pageCreate.openMarket} renderConfirmation={({preview})=><button type="button" onClick={()=>{try{sharedTemplates.openDraft(readSharePackage((JSON.parse(preview.draft.body) as {package:unknown}).package))}catch{setAssignmentError(t('templateShare.invalid'))}}}>{t('templateShare.previewShare')}</button>}/></div>}
             <div className={teamCss.rosterBar}>
               <label className={teamCss.rosterSearch}><Search size={16}/><input aria-label={t('team.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('team.search')}/>{query && <button type="button" className={teamCss.rosterSearchClear} aria-label={t('team.page.searchClear')} title={t('team.page.searchClear')} onClick={() => setQuery('')}><X size={14}/></button>}</label>
-              <label className={teamCss.businessFilter}>{employeeCopy(locale,'business')}<select value={businessFilter} onChange={event=>setBusinessFilter(event.target.value)}><option value="all">{employeeCopy(locale,'allBusinesses')}</option>{scopeLabels.map(label=><option key={label.scope} value={label.scope}>{label.title}</option>)}</select></label>
+              <label className={teamCss.businessFilter}>{employeeCopy(locale,'business')}<select value={businessFilter} onChange={event=>setBusinessFilter(event.target.value)}><option value="all">{employeeCopy(locale,'allBusinesses')}</option>{scopeLabels.map(label=><option key={label.scope} value={label.scope}>{collaborationScopes[label.scope]??label.title}</option>)}</select></label>
               <span className={teamCss.statusPills} role="group" aria-label={t('team.stateFilter')}>
                 {statusPills.map(([id, label]) => <button key={id} type="button" aria-pressed={status === id} onClick={() => setStatus(id)}>{label}</button>)}
               </span>
@@ -279,7 +280,7 @@ export function TeamPage({ skillTitleReader,phone,templateSharing,delegations,ro
         : detailPane}
     </div>
     {!embedded&&role&&<ContextDrawer open title={roleDisplayName(role)} close={()=>select(null)} className={role.kind==='twin'?(twinCss.detailDrawer??''):''}><div className={teamCss.employeeDrawer}>{detailPane}</div></ContextDrawer>}
-    {sharingTeam&&sharedTemplates&&<TeamTemplateShare origin="directory" roles={directoryRoles.filter(item=>item.storage==='persistent'&&(businessFilter==='all'||item.scopes.includes(businessFilter)))} open close={()=>setSharingTeam(false)} scope={businessFilter==='all'?'general':businessFilter} title={businessFilter==='all'?t('navigation.team'):scopeLabels.find(label=>label.scope===businessFilter)?.title??businessFilter}/>}
+    {sharingTeam&&sharedTemplates&&<TeamTemplateShare origin="directory" roles={directoryRoles.filter(item=>item.storage==='persistent'&&(businessFilter==='all'||item.scopes.includes(businessFilter)))} open close={()=>setSharingTeam(false)} scope={businessFilter==='all'?'general':businessFilter} title={businessFilter==='all'?t('navigation.team'):collaborationScopes[businessFilter]??scopeLabels.find(label=>label.scope===businessFilter)?.title??businessFilter}/>}
     {creating&&<RoleForm work={work} resourceApi={resourceApi} runtimeConfigs={runtimeConfigs} initial={(!isSandbox?persistence?.pendingFields():undefined)??creationDraft} onDraft={setCreationDraft} retryPending={!isSandbox&&!!persistence?.pendingFields()} persistent={!!persistence&&!isSandbox} close={()=>setCreating(false)} save={async fields=>{
       if(!applicationPresentation.can('people'))return
       const id=persistence&&!isSandbox?await persistence.create(fields):crypto.randomUUID()
@@ -439,7 +440,7 @@ export function RoleDetail({ skillTitleReader,phone,templateSharing,delegations,
             const base = t(memory.source.kind === 'daily-digest' ? 'roleMemory.sourceDaily' : 'roleMemory.sourceHabit');
             return memory.sourceAvailable ? base : base + ' · ' + t('roleMemory.sourceGone');
         }
-        return t('team.memory.source', { title: memory.sourceTitle, kind: memory.source.kind, version: memory.source.version, availability: memory.sourceAvailable ? '' : t('team.memory.sourceUnavailable') });
+        return t('team.memory.source', { title: roleMemorySourceTitle(memory, t), kind: memory.source.kind, version: memory.source.version, availability: memory.sourceAvailable ? '' : t('team.memory.sourceUnavailable') });
     };
     // 私有记忆的 30 条上限在服务端只回 teloa/conflict；确认被拒时给出这一处的专属说明，不让本人只看到一句通用冲突。
     const localizeMemoryError = (memory: RoleMemory, error: unknown) =>
@@ -584,7 +585,7 @@ export function RoleDetail({ skillTitleReader,phone,templateSharing,delegations,
       await roleEditSlot.run(original,async()=>{if(original.role.storage==='persistent'){if(!persistence)throw Error(t('team.assignment.unavailable'));await persistence.edit(original.role,value)}else change({type:'edit',roleId:original.role.id,expectedVersion:original.role.version,...value,now:new Date().toISOString()})})
       if(isActionCurrent())setForm(current=>current==='edit'?undefined:current)
     }}/>}
-    {form === 'retire' && <RetirementForm plans={state.continuous.plans.filter(plan => plan.fields.roleId === role.id && !plan.archived).map(plan => ({ id: plan.id, title: plan.fields.title }))} role={role} unfinished={unfinished.map(task => ({ id: task.id, title: task.title, needs:list(taskNeeds(task).map(need => t(attentionKinds[need]))) }))} close={() => setForm(undefined)} save={reason => { change({ type: 'lifecycle', roleId: role.id, expectedVersion: role.version, action: 'retire', reason, now: new Date().toISOString() }); setForm(undefined); }}/>}
+    {form === 'retire' && <RetirementForm plans={state.continuous.plans.filter(plan => plan.fields.roleId === role.id && !plan.archived).map(plan => ({ id: plan.id, title: planDisplayTitle(plan.fields.title, plan.systemDigest, t) }))} role={role} unfinished={unfinished.map(task => ({ id: task.id, title: task.title, needs:list(taskNeeds(task).map(need => t(attentionKinds[need]))) }))} close={() => setForm(undefined)} save={reason => { change({ type: 'lifecycle', roleId: role.id, expectedVersion: role.version, action: 'retire', reason, now: new Date().toISOString() }); setForm(undefined); }}/>}
     {form==='assign'&&actionView?.kind==='assign'&&actionView.owner===work&&actionView.key===actionKey&&<AssignmentForm key={actionOrigin.epoch} role={role} initial={actionView.draft.value} onDraft={value=>{actionView.draft.value=value;publishDraft()}} pending={actionView.draft.pending} close={()=>closeAction(actionView)} save={async value=>{
       const view=actionView,draft=view.draft,drafts=actionDrafts(work)
       await submitActionDraft(draft,async()=>{let id:string;if(draft.role.storage==='persistent'){if(!persistence)throw Error(t('team.assignment.unavailable'));if(draft.role.kind==='twin'){if(!persistence.assignConfirmed)throw Error(t('roleDelegation.unavailable'));id=await persistence.assignConfirmed(draft.role,value)}else id=await persistence.assign(draft.role,value)}else{id=crypto.randomUUID();change({type:'assign',roleId:draft.role.id,id,...value,now:new Date().toISOString()})}if(isActionCurrent())openTask(id)},()=>{if(drafts.assign===draft)drafts.assign=undefined;publishDraft()})

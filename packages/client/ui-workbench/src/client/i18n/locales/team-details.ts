@@ -290,6 +290,10 @@ export const TEAM_DETAIL_MESSAGE_ROWS = [
   ['team.hire.cancel','不招了','不招了','Never mind','採用しない','채용하지 않기','Thôi không tuyển nữa','No contratar','Annuler l’embauche','Nicht einstellen','Não contratar'],
   // 分身个人主页（原型 原型.jsx:459-462 的 twinView）：名字按用户名拼「{name} 的分身」，不显示存储里的第一人称名。
   ['team.twin.displayName','{name} 的分身','{name} 的分身','{name}’s twin','{name} の分身','{name}의 분신','Bản sao của {name}','El doble de {name}','Le double de {name}','Zwilling von {name}','O duplo de {name}'],
+  // 分身内置默认职责三项：服务端以中文写入且不迁移，字段仍逐字等于原文时才按当前语言显示（新增词条只定稿简繁英，其余语言回退英文）。
+  ['team.twin.default.duty','按本人确认的偏好整理资料、代拟回复和判断建议。正式批准由本人完成。','依本人確認的偏好整理資料、代擬回覆和判斷建議。正式批准由本人完成。','Organizes materials, drafts replies, and suggests judgments based on preferences you confirm. Formal approval stays with you.'],
+  ['team.twin.default.dataScope','本人可见且明确提供的资料；私人偏好不自动共享。','本人可見且明確提供的資料；私人偏好不自動共享。','Materials you can see and explicitly provide; private preferences are not shared automatically.'],
+  ['team.twin.default.executionScope','仅代拟；不能代批、冒充本人或直接外发。','僅代擬；不能代批、冒充本人或直接外發。','Drafting only; it cannot approve for you, impersonate you, or send anything externally.'],
   ['team.twin.stage','代拟阶段','代擬階段','Drafting stage','代筆フェーズ','대필 단계','Giai đoạn soạn thay','Etapa de redacción','Phase de rédaction','Entwurfsphase','Fase de redação'],
   ['team.twin.subtitle',"代表 {name} 的工作偏好","代表 {name} 的工作偏好","Represents {name}’s work preferences",'{name} の仕事の好みを代表 · 分身であることを明示','{name}의 업무 선호를 대변 · 분신 신분을 명확히 표시','Đại diện cho sở thích làm việc của {name} · ghi rõ danh tính bản sao','Representa las preferencias de trabajo de {name} · identidad de doble señalada','Représente les préférences de travail de {name} · identité de double affichée','Vertritt die Arbeitsvorlieben von {name} · Zwillingsidentität klar gekennzeichnet','Representa as preferências de trabalho de {name} · identidade de duplo indicada'],
   ['team.twin.tabsAria','分身工作区','分身工作區','Twin workspace','分身の作業スペース','분신 작업 공간','Không gian làm việc của bản sao','Espacio de trabajo del doble','Espace de travail du double','Arbeitsbereich des Zwillings','Espaço de trabalho do duplo'],

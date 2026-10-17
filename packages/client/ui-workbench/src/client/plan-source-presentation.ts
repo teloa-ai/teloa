@@ -8,6 +8,14 @@ export type SavedPlanSourcePresentation=
  |{kind:'system-digest';label:string;summary:string}
  |{kind:'method-reuse';label:string;summary:string;artifactId:string;version:number;basisHash:string}
 
+/**
+ * Auto Dream 系统计划（来源 `system-digest`）的标题由服务端以中文固定写入且不允许改名；
+ * 按来源身份显示当前语言的 dailyLog.title，其余计划原样显示。只用于显示，编辑与回传仍用原标题。
+ */
+export function planDisplayTitle(title:string,systemDigest:boolean|undefined,t:T):string{
+ return systemDigest?t('dailyLog.title'):title
+}
+
 /** 只呈现计划服务持久化的来源身份，不从当前页面目录推测模板名称。 */
 export function describeSavedPlanSource(source:PlanSource,t:T):SavedPlanSourcePresentation{
  if(source.kind==='method-reuse')return {kind:'method-reuse',label:t('p6.planSource.method.label'),summary:t('p6.planSource.method.summary'),artifactId:source.artifactId,version:source.version,basisHash:source.basisHash}

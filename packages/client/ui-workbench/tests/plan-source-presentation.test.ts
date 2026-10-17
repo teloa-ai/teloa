@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {describeSavedPlanSource} from '../src/client/plan-source-presentation.ts'
+import {describeSavedPlanSource,planDisplayTitle} from '../src/client/plan-source-presentation.ts'
 const copy:Record<string,string>={
  'p6.planSource.manual.label':'手动创建',
  'p6.planSource.manual.summary':'由本人创建，未关联市场模板。',
@@ -52,4 +52,11 @@ test('市场计划只展示持久来源中的固定内容与资源身份，不�
 test('成果方法来源保留固定成果版本，不误标为市场或手动计划',()=>{
  const source={kind:'method-reuse' as const,artifactId:'22222222-2222-4222-8222-222222222222',version:2,basisHash:'b'.repeat(64),taskId:'33333333-3333-4333-8333-333333333333'}
  assert.deepEqual(describeSavedPlanSource(source,t),{kind:'method-reuse',label:'p6.planSource.method.label',summary:'p6.planSource.method.summary',artifactId:source.artifactId,version:2,basisHash:source.basisHash})
+})
+
+test('Auto Dream 系统计划按来源身份显示当前语言的计划名，其他计划即使同名也原样显示',()=>{
+ const en=(key:string)=>key==='dailyLog.title'?'Auto Dream · Daily digest':key
+ assert.equal(planDisplayTitle('Auto Dream · 每日小结',true,en),'Auto Dream · Daily digest')
+ assert.equal(planDisplayTitle('Auto Dream · 每日小结',false,en),'Auto Dream · 每日小结')
+ assert.equal(planDisplayTitle('每周复盘',undefined,en),'每周复盘')
 })

@@ -104,6 +104,16 @@ export function defaultKnowledgeSelection(tree:KnowledgeTree,directory:ResourceD
   return {nodeId:page?.id??tree.space.rootNodeId,resourceId:page?.resourceId}
 }
 
+/**
+ * 知识空间根节点（type==='space'）由服务端以中文「知识库」建立且不可重命名（backend capabilities/knowledge-tree.ts）。
+ * 只在显示层把仍为该原文的根节点与空间标题换成当前语言；节点身份、修订号与原数据不变。
+ */
+const builtinKnowledgeRootTitle='知识库'
+export function localizeKnowledgeRoot(tree:KnowledgeTree,rootTitle:string):KnowledgeTree{
+  const shown=(title:string)=>title===builtinKnowledgeRootTitle?rootTitle:title
+  return {...tree,space:{...tree.space,title:shown(tree.space.title)},nodes:tree.nodes.map(node=>node.type==='space'?{...node,title:shown(node.title)}:node)}
+}
+
 export function knowledgeBreadcrumbs(tree:KnowledgeTree,nodeId:string):KnowledgeNode[]{
   const byId=new Map(tree.nodes.map(node=>[node.id,node])),node=byId.get(nodeId),root=byId.get(tree.space.rootNodeId)
   if(!node)return root?[root]:[]

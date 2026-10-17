@@ -2,6 +2,7 @@ import {BookOpen,BriefcaseBusiness,ChevronRight,Clock3,LockKeyhole,ShieldCheck,U
 import {useEffect,useRef,useState,type ReactNode} from 'react'
 import type {RoleWorkDelegation,WorkResource} from '@teloa/contract'
 import type {PreviewRole} from './role-preview.js'
+import {roleFieldText} from './team-presentation.js'
 import type {RoleDelegationMessageKey} from './i18n/locales/role-delegation.js'
 import {ContextDrawer} from './ContextDrawer.js'
 import {roleToolLabel} from './RoleToolGrants.js'
@@ -31,7 +32,7 @@ export function RoleDelegationOverview({role,current,status,toolNames,knowledge,
   {pending&&<p className={css.notice}>{t('roleDelegation.pending')} <button type="button" onClick={()=>show()}>{t('roleDelegation.recover')}</button></p>}
   <div className={css.columns}><div><div className={css.sectionTitle}><h3>{t('roleDelegation.overview.work')}</h3><span>{t(current?'roleDelegation.overview.saved':'roleDelegation.overview.configured')}</span></div>
    <div className={css.card}>
-    {row(BriefcaseBusiness,'roleDelegation.overview.duty',<p className={css.duty}>{role.duty||t('roleDelegation.overview.empty')}</p>)}
+    {row(BriefcaseBusiness,'roleDelegation.overview.duty',<p className={css.duty}>{roleFieldText(role,'duty',t)||t('roleDelegation.overview.empty')}</p>)}
     {row(BookOpen,'roleDelegation.overview.material',tags(materials,materialIds.length-materials.length))}
     {row(Wrench,'roleDelegation.overview.tools',tags(tools))}
     {row(Users,'roleDelegation.overview.groups',tags(collaborators,groupIds.length-collaborators.length))}

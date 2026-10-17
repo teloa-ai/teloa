@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFile} from 'node:fs/promises'
 import type {KnowledgeTree,ResourceDirectory,SourceReference} from '@teloa/contract'
-import {activeWorkResources,buildKnowledgeDirectoryTree,buildKnowledgeWikiTree,buildResourceManagerFacets,canGovernKnowledgeNode,defaultKnowledgeSelection,defaultResourceSelection,filterResourceManagerDirectory,filterResourceManagerStatus,knowledgeBreadcrumbs,knowledgeMoveTargets,normalizeResourceSourceSelection,pendingResourceDrafts,resourceManagerCopy,resourceGovernanceFacts,resourceListMetadata,resourceScopeLabel,resourceStatusDirectory,withdrawnWorkResources,workResourceCategories,workResourceSources} from '../src/client/resource-manager-presentation.ts'
+import {activeWorkResources,buildKnowledgeDirectoryTree,buildKnowledgeWikiTree,buildResourceManagerFacets,canGovernKnowledgeNode,defaultKnowledgeSelection,defaultResourceSelection,filterResourceManagerDirectory,filterResourceManagerStatus,knowledgeBreadcrumbs,knowledgeMoveTargets,localizeKnowledgeRoot,normalizeResourceSourceSelection,pendingResourceDrafts,resourceManagerCopy,resourceGovernanceFacts,resourceListMetadata,resourceScopeLabel,resourceStatusDirectory,withdrawnWorkResources,workResourceCategories,workResourceSources} from '../src/client/resource-manager-presentation.ts'
 
 const directory:ResourceDirectory={
   drafts:[
@@ -80,6 +80,20 @@ test('知识面包屑直接来自真实节点路径，目录根与未知节点�
     ['page_security','真实调查页面','page'],
   ])
   assert.deepEqual(knowledgeBreadcrumbs(knowledgeTree,'missing').map(item=>item.title),['知识库'])
+})
+
+test('英文界面把服务端中文根节点显示为当前语言，节点身份与原数据不变，自定义根标题原样保留',()=>{
+  const shown=localizeKnowledgeRoot(knowledgeTree,'Knowledge base')
+  assert.equal(shown.space.title,'Knowledge base')
+  assert.equal(buildKnowledgeDirectoryTree(shown,directory,sources,'').title,'Knowledge base')
+  assert.deepEqual(knowledgeBreadcrumbs(shown,'folder_incident').map(item=>item.title),['Knowledge base','安全运营','事件响应'])
+  assert.deepEqual(knowledgeMoveTargets(shown,'page_security').map(item=>item.label),['Knowledge base','Knowledge base / 安全运营'])
+  assert.deepEqual(shown.nodes.map(node=>node.id),knowledgeTree.nodes.map(node=>node.id))
+  assert.equal(shown.space.directoryRevision,knowledgeTree.space.directoryRevision)
+  assert.equal(knowledgeTree.space.title,'知识库')
+  assert.equal(knowledgeTree.nodes[0]!.title,'知识库')
+  const custom={...knowledgeTree,space:{...knowledgeTree.space,title:'团队资料'},nodes:knowledgeTree.nodes.map(node=>node.type==='space'?{...node,title:'团队资料'}:node)}
+  assert.equal(localizeKnowledgeRoot(custom,'Knowledge base').nodes[0]!.title,'团队资料')
 })
 
 test('知识目录治理保护根节点，移动文件夹时排除自身、后代与当前父目录',()=>{

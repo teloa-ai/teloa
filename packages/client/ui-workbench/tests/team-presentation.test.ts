@@ -1,6 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { roleLifecyclePath, roleMemoryPath, roleSkillNotice, roleWorkPath } from '../src/client/team-presentation.ts'
+import { existsSync } from 'node:fs'
+import { registerHooks } from 'node:module'
+import { roleFieldText, roleLifecyclePath, roleMemoryPath, roleMemorySourceTitle, roleSkillNotice, roleWorkPath } from '../src/client/team-presentation.ts'
+// 与 i18n-messages.test.ts 相同：直接读当前源码词表，避免旧构建产物掩盖本轮词条。
+registerHooks({resolve(specifier,context,next){
+  if(specifier.endsWith('.js')&&specifier.startsWith('.')&&context.parentURL?.includes('/ui-workbench/src/client/i18n/')){
+    const source=new URL(specifier.slice(0,-3)+'.ts',context.parentURL)
+    if(existsSync(source))return next(source.href,context)
+  }
+  return next(specifier,context)
+}})
+const {translateMessage}=await import('../src/client/i18n/messages.ts')
 const copy:Record<string,string>={
   'team.presentation.memory.candidate.label':'Awaiting your review',
   'team.presentation.memory.candidate.summary':"The source is recorded. Review it before adding it to the employee scope.",
@@ -61,4 +72,22 @@ test('岗位说明、生命周期和记忆路径随当前语言变化',()=>{
   })
   assert.equal(roleWorkPath(true,en),'After saving, open the task to review its goal and evidence, then start execution.')
   assert.match(roleSkillNotice(en),/^A Skill is a reusable method/)
+})
+
+test('分身字段仍等于服务端内置中文原文时按当前语言显示，本人改过或员工同文时原样显示',()=>{
+  const tEn=((key:string)=>translateMessage('en',key as never)) as never
+  const twin={kind:'twin',duty:'按本人确认的偏好整理资料、代拟回复和判断建议。正式批准由本人完成。',dataScope:'本人可见且明确提供的资料；私人偏好不自动共享。',executionScope:'仅代拟；不能代批、冒充本人或直接外发。'}
+  assert.equal(roleFieldText(twin,'duty',tEn),'Organizes materials, drafts replies, and suggests judgments based on preferences you confirm. Formal approval stays with you.')
+  assert.equal(roleFieldText(twin,'dataScope',tEn),'Materials you can see and explicitly provide; private preferences are not shared automatically.')
+  assert.equal(roleFieldText(twin,'executionScope',tEn),'Drafting only; it cannot approve for you, impersonate you, or send anything externally.')
+  assert.equal(roleFieldText({...twin,duty:'只整理我的周报。'},'duty',tEn),'只整理我的周报。')
+  assert.equal(roleFieldText({...twin,kind:'employee'},'duty',tEn),twin.duty)
+  assert.equal(roleFieldText(twin,'duty',((key:string)=>translateMessage('zh-Hant',key as never)) as never),'依本人確認的偏好整理資料、代擬回覆和判斷建議。正式批准由本人完成。')
+  assert.equal(roleFieldText(twin,'duty',((key:string)=>translateMessage('ja',key as never)) as never),'Organizes materials, drafts replies, and suggests judgments based on preferences you confirm. Formal approval stays with you.')
+})
+
+test('本人反馈来源按来源类别显示当前语言，其他来源保留服务端标题',()=>{
+  const tEn=((key:string)=>translateMessage('en',key as never)) as never
+  assert.equal(roleMemorySourceTitle({source:{kind:'self-feedback'},sourceTitle:'本人反馈'},tEn),'Personal feedback')
+  assert.equal(roleMemorySourceTitle({source:{kind:'task'},sourceTitle:'整理周报'},tEn),'整理周报')
 })

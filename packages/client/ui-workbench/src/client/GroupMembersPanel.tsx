@@ -4,7 +4,7 @@ import type {GroupAgentGrantRead} from '@teloa/contract'
 import type {PreviewRole} from './role-preview.js'
 import type {PreviewTask} from './task-preview.js'
 import {EmployeeAvatar} from './EmployeeAvatar.js'
-import {twinDisplayName} from './team-presentation.js'
+import {roleFieldText,twinDisplayName} from './team-presentation.js'
 import {personalAvatarInitials} from './personal-profile.js'
 import {TwinAvatar} from './TwinAvatar.js'
 import {useI18n} from './i18n/provider.js'
@@ -34,12 +34,12 @@ export function GroupMembersPanel({groupId,grantBlocks,members,roles,tasks,profi
   return [status,reason].filter(Boolean).join(' · ')
  }
  const needle=query.trim().toLocaleLowerCase()
- const rows=members.map(id=>{const role=roles.find(item=>item.id===id),name=id==='self'?profileName:role?.kind==='twin'?twinDisplayName(profileName,t):role?.name??t('collaboration.message.historicalMember');return {id,role,name}}).filter(row=>[row.name,row.role?.duty??''].some(value=>value.toLocaleLowerCase().includes(needle)))
+ const rows=members.map(id=>{const role=roles.find(item=>item.id===id),name=id==='self'?profileName:role?.kind==='twin'?twinDisplayName(profileName,t):role?.name??t('collaboration.message.historicalMember');return {id,role,name,duty:role?roleFieldText(role,'duty',t):''}}).filter(row=>[row.name,row.duty].some(value=>value.toLocaleLowerCase().includes(needle)))
  return <section className={css.panel} aria-label={t('group.panel.members')}>
   <header className={css.header}><h3>{t('group.panel.members')} <span>{members.length}</span></h3><button type="button" aria-label={t('collaboration.form.addMembers')} title={t('collaboration.form.addMembers')} disabled={blocked} onClick={addMembers}><Plus size={17} aria-hidden/></button></header>
   <label className={css.search}><Search size={15} aria-hidden/><input value={query} aria-label={t('group.members.search')} placeholder={t('group.members.search')} onChange={event=>setQuery(event.target.value)}/></label>
   {error&&<p className={css.error} role="alert">{error}</p>}
-  <div className={css.rows}>{rows.map(({id,role,name})=>{const read=grants?.[id],assigned=tasks.filter(task=>task.assigneeId===id),person=<>{role?.kind==='employee'?<EmployeeAvatar avatarKey={role.avatarKey} size="md"/>:role?.kind==='twin'?<TwinAvatar initials={personalAvatarInitials(profileName)}/>:<span className={css.human} aria-hidden>{name.slice(0,1)}</span>}<span className={css.identity}><strong>{name}</strong><small className={css.duty} title={role?.duty}>{id==='self'?t('collaboration.message.selfRole'):role?.duty}</small>{role&&<small>{assigned.length?t('collaboration.view.employeeWork',{count:assigned.length}):t('collaboration.view.employeeNoWork')}</small>}{role&&configureGrant&&<small>{grantText(role,read)}</small>}</span></>;return <article className={css.row} key={id}>
+  <div className={css.rows}>{rows.map(({id,role,name,duty})=>{const read=grants?.[id],assigned=tasks.filter(task=>task.assigneeId===id),person=<>{role?.kind==='employee'?<EmployeeAvatar avatarKey={role.avatarKey} size="md"/>:role?.kind==='twin'?<TwinAvatar initials={personalAvatarInitials(profileName)}/>:<span className={css.human} aria-hidden>{name.slice(0,1)}</span>}<span className={css.identity}><strong>{name}</strong><small className={css.duty} title={role?duty:undefined}>{id==='self'?t('collaboration.message.selfRole'):role?duty:undefined}</small>{role&&<small>{assigned.length?t('collaboration.view.employeeWork',{count:assigned.length}):t('collaboration.view.employeeNoWork')}</small>}{role&&configureGrant&&<small>{grantText(role,read)}</small>}</span></>;return <article className={css.row} key={id}>
    {role&&openRole?<button type="button" className={css.person} aria-label={name} onClick={()=>openRole(id)}>{person}</button>:<div className={css.person}>{person}</div>}
    {role&&<div className={css.actions}>{talkRole&&<button type="button" aria-label={t('group.members.chatAria',{name})} title={t('group.members.chatAria',{name})} disabled={!!opening} onClick={()=>void chat(id)}>{opening===id?<LoaderCircle size={14} aria-hidden className={css.loading}/>:<MessageSquare size={14} aria-hidden/>}{t('group.members.chat')}</button>}{configureGrant&&<button type="button" aria-label={t('group.members.grantAria',{name})} title={t('group.members.grantAria',{name})} disabled={blocked||!read} onClick={()=>configureGrant(id)}><ShieldCheck size={14} aria-hidden/>{t('group.members.grant')}</button>}</div>}
   </article>})}</div>

@@ -18,6 +18,8 @@ export const KNOWLEDGE_DIRECTORY_MESSAGE_ROWS = [
  ['knowledge.role.noneAvailable','当前范围没有可用知识。','目前範圍沒有可用知識。','No knowledge is available for this scope.','この範囲で利用できる知識はありません。','현재 범위에 사용 가능한 지식이 없습니다.','Không có tri thức khả dụng trong phạm vi này.','No hay conocimiento disponible para este ámbito.','Aucune connaissance disponible pour ce périmètre.','Für diesen Bereich ist kein Wissen verfügbar.','Não há conhecimento disponível para este âmbito.'],
  ['knowledge.role.selected','已指定','已指定','Assigned','指定済み','지정됨','Đã chỉ định','Asignado','Attribué','Zugewiesen','Atribuído'],
  ['knowledge.manager.title','资料','資料','Library','ライブラリ','라이브러리','Thư viện','Biblioteca','Bibliothèque','Bibliothek','Biblioteca'],
+ // 知识空间根节点由服务端以中文「知识库」建立且不可重命名；只在显示层按当前语言呈现（简繁英定稿，其余语言回退英文）。
+ ['knowledge.space.rootTitle','知识库','知識庫','Knowledge base'],
  ['knowledge.manager.detailAria','知识详情','知識詳情','Knowledge details','知識の詳細','지식 세부 정보','Chi tiết tri thức','Detalles del conocimiento','Détails des connaissances','Wissensdetails','Detalhes do conhecimento'],
  ['knowledge.manager.back','返回目录','返回目錄','Back to directory','ディレクトリに戻る','디렉터리로 돌아가기','Quay lại thư mục','Volver al directorio','Retour au répertoire','Zurück zum Verzeichnis','Voltar ao diretório'],
  ['knowledge.manager.breadcrumbAria','知识路径','知識路徑','Knowledge path','知識パス','지식 경로','Đường dẫn tri thức','Ruta de conocimiento','Chemin de connaissance','Wissenspfad','Caminho do conhecimento'],

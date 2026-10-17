@@ -101,6 +101,21 @@ const render = (props: Record<string, unknown>) => renderToStaticMarkup(createEl
   labels, tasks: [] as PreviewTask[], selected: null, fold: {toggled: []}, onFoldChange: () => {}, searching: false, onSelect: () => {}, onHire: () => {}, ...props,
 })))
 
+test('英文界面的业务列按本地化业务名显示，分身内置默认职责按当前语言显示，改过的职责原样显示', async () => {
+  const {BusinessScopeProvider} = await import('../lib/types/client/business-scope-context.js')
+  const en = (key: string, params?: Record<string, string | number>) => translateMessage('en', key as never, params)
+  const enRuntime = {t: en, subscribe: () => () => {}, getSnapshot: () => ({locale: 'en' as const, dshLocale: 'en', revision: 1})}
+  const twin: PreviewRole = {...role('twin', ['general'], '按本人确认的偏好整理资料、代拟回复和判断建议。正式批准由本人完成。'), kind: 'twin'}
+  const markup = renderToStaticMarkup(createElement(I18nProvider, {runtime: enRuntime as never}, createElement(BusinessScopeProvider as never, {labels}, createElement(StaffRoster as never, {
+    labels, roles: [twin, role('custom', ['general', 'SOC'], '只整理我的周报。第二句')], tasks: [] as PreviewTask[], selected: null, fold: {toggled: []}, onFoldChange: () => {}, searching: false, onSelect: () => {}, onHire: () => {},
+  }))))
+  assert.match(markup, /General work/)
+  assert.doesNotMatch(markup, /通用工作/)
+  assert.match(markup, /Organizes materials, drafts replies, and suggests judgments based on preferences you confirm/)
+  assert.doesNotMatch(markup, /按本人确认的偏好/)
+  assert.match(markup, /只整理我的周报/)
+})
+
 test('StaffRoster 真实渲染：分区标题来自 labels、空闲成员回退 team.roster.idle', () => {
   const markup = render({roles})
   assert.match(markup, /通用工作/)

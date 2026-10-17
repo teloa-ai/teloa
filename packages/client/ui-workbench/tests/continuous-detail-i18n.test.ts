@@ -19,7 +19,9 @@ test('ContinuousPage 目录之后的固定用户界面中文全部通过详情�
   assert.match(source,/function PlanDetail[\s\S]*?const \{locale,t,dateTime\}=useI18n\(\)/)
   assert.match(source,/function PlanForm[\s\S]*?const \{locale,t\}=useI18n\(\)/)
   assert.match(source,/function SchedulePreview[\s\S]*?const \{dateTime,t\}=useI18n\(\)/)
-  for(const preserved of ['plan.fields.title','plan.fields.goal','run.input','run.result','run.output','display.summary'])assert.match(source,new RegExp(`\\{${preserved.replaceAll('.','\\.')}\\}`),preserved)
+  // 计划名仍显示原标题；只有来源为 system-digest 的 Auto Dream 系统计划按当前语言显示固定名称。
+  assert.match(source,/planDisplayTitle\(plan\.fields\.title,plan\.systemDigest,t\)/)
+  for(const preserved of ['plan.fields.goal','run.input','run.result','run.output','display.summary'])assert.match(source,new RegExp(`\\{${preserved.replaceAll('.','\\.')}\\}`),preserved)
 })
 
 test('持续计划详情简繁英定稿完整，既有翻译保留且新增词条按英文回退',()=>{

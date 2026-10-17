@@ -8,6 +8,7 @@ import type {WorkTask} from '@teloa/contract'
 import type {PlanApi,PlanExecutionDirectoryInput,PlanExecutionRunState,SavedPlan} from './plan-api.js'
 import {appendPlanExecutionHistory,createPlanExecutionHistoryRequestGate,type PlanExecutionHistoryPage} from './plan-execution-history.js'
 import type {PreviewRole} from './role-preview.js'
+import {planDisplayTitle} from './plan-source-presentation.js'
 import pageCss from './TaskPage.module.css'
 import css from './PlanExecutionDirectory.module.css'
 import light from './light-actions.module.css'
@@ -39,7 +40,7 @@ export function PlanExecutionDirectory({api,plans,roles,scopes,fixedScope,fixedR
   setState(previous=>previous.key===key?{...previous,more:true,error:''}:previous)
   void api.directory({...input,cursor}).then(next=>{if(requests.current.current(request))setState(previous=>{if(previous.key!==key||!previous.page)return previous;try{return {...previous,page:appendPlanExecutionHistory(previous.page,next),more:false,error:''}}catch(cause){return {...previous,more:false,error:localizeWorkError(locale,cause),errorPhase:'more'}}})},cause=>{if(requests.current.current(request))setState(previous=>previous.key===key?{...previous,more:false,error:localizeWorkError(locale,cause),errorPhase:'more'}:previous)})
  }
- const titles=new Map(plans.map(plan=>[plan.id,plan.title])),roleOptions=roles.filter(role=>role.storage==='persistent')
+ const titles=new Map(plans.map(plan=>[plan.id,planDisplayTitle(plan.title,plan.source.kind==='system-digest',t)])),roleOptions=roles.filter(role=>role.storage==='persistent')
  const hasFilters=!!query.trim()||scope!==(fixedScope??'')||roleId!==(fixedRoleId??'')||!!runState
  const clearFilters=()=>{setScope(fixedScope??'');setRoleId(fixedRoleId??'');setQuery('');setRunState('')}
  return <section className={css.layout} aria-label={t('plan.directory.aria')}>

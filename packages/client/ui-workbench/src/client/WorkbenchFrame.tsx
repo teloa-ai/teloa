@@ -228,7 +228,8 @@ import { RoleForm, TeamPage } from './TeamPage.js'
 import { rolePeople,roleName } from './role-preview.js'
 import { TaskForm } from './TaskPage.js'
 import { changeTeamPreview } from './team-preview.js'
-import { twinDisplayName } from './team-presentation.js'
+import { roleFieldText, twinDisplayName } from './team-presentation.js'
+import { planDisplayTitle } from './plan-source-presentation.js'
 import { BusinessPage,BusinessDefinitionCreatePreview } from './BusinessPage.js'
 import {createBusinessShareApi} from './business-share-flow.js'
 import {createBusinessShareSource} from './business-share-source.js'
@@ -1040,7 +1041,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     spaces:scopeLabels.filter(label=>savedIndustryLoads.some(load=>load.space.scope===label.scope)).map(label=>({...label,storage:'persistent' as const})),
     knowledge:workspaceSearchKnowledge,
     capabilities:workspaceSearchCapabilities,
-    plans:savedPlans.map(plan=>({id:plan.id,title:plan.title,goal:plan.goal,roleName:plan.roleId===null?t('continuous.ownerAgent'):roleName(tasks.roles,plan.roleId,t),state:plan.state})),
+    plans:savedPlans.map(plan=>({id:plan.id,title:planDisplayTitle(plan.title,plan.source.kind==='system-digest',t),goal:plan.goal,roleName:plan.roleId===null?t('continuous.ownerAgent'):roleName(tasks.roles,plan.roleId,t),state:plan.state})),
     // 市场搜索不另造目录或示例：读取时才取当前市场状态，避免搜索快照把已移除条目带回页面。
     // 「先问问」临时带进来的官方方案只随问答草稿存在，不是本机内容，不进全局搜索
     get market(){return searchableMarketItems().map(item=>({id:item.id,...localizedMarketItemCopy(item,locale),detailKey:marketItemGroup(item)}))},
@@ -2393,7 +2394,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           {!builderVisible&&conversationVisible&&current&&projectApi.runtime&&<ProjectConversationContext sessionId={current} api={projectApi} resolved={setConversationProject} className={css.objectContext} openProject={project=>openContextBusiness({scope:project.scope as CollaborationScope,section:'projects',id:project.id})} newConversation={(project,mode)=>{void projectConversationActions.create(project,mode,projectRuntimeCopy(locale).newConversation).catch(error=>setServerRecoveryNotice(localizeWorkError(locale,error)))}}/>}
           {!builderVisible&&conversationVisible&&conversationObject&&contextLinked&&(conversationObject.object.kind==='role'&&contextRole
             ? <section className={css.conversationContext} aria-label={t('frame.context.sourceAria')}>
-                <span title={contextRole.duty}>{dutyLead(contextRole.duty)}</span>
+                <span title={roleFieldText(contextRole,'duty',t)}>{dutyLead(roleFieldText(contextRole,'duty',t))}</span>
                 {contextScope&&<button type="button" className={css.contextSource} title={t('frame.context.sourceAria')} onClick={()=>openContextBusiness({scope:contextScope,section:'overview'})}>{localizedScopeNames[contextScope]??contextScope}<ChevronRight size={12}/></button>}
                 {contextRole.state!=='active'&&<StatusLabel label={t(contextRole.state==='paused'?'role.state.paused':'role.state.retired')} mark={contextRole.state==='paused'?'paused':'retired'} tone="muted"/>}
               </section>

@@ -9,7 +9,8 @@ import type { PreviewRole } from './role-preview.js';
 import type { PreviewTask } from './task-preview.js';
 import type { RosterFoldState } from './team-roster-fold.js';
 import { useI18n } from './i18n/provider.js';
-import { twinDisplayName } from './team-presentation.js';
+import { roleFieldText, twinDisplayName } from './team-presentation.js';
+import { useBusinessScopes } from './business-scope-context.js';
 import { defaultPersonalDisplayName, personalAvatarInitials, personalDisplayName } from './personal-profile.js';
 import { TwinAvatar } from './TwinAvatar.js';
 import rosterCss from './StaffRoster.module.css';
@@ -50,7 +51,9 @@ export function StaffRoster({roles,labels,tasks,onSelect,onTalk,onPhone,onOpenTa
  const copy=(key:Parameters<typeof directoryChoiceCopy>[1])=>directoryChoiceCopy(locale,key)
  const displayName=(role:PreviewRole)=>role.kind==='twin'?twinDisplayName(profileName,t):role.name
  const unique=sortRoster(roles,sort,locale,displayName)
- const scopeName=(scope:string)=>labels.find(label=>label.scope===scope)?.title??scope
+ // 内置业务（如 general）的服务端标题是中文原文；按已本地化的业务名显示，目录外的标识才回退标签标题或原值。
+ const scopeNames=useBusinessScopes()
+ const scopeName=(scope:string)=>scopeNames[scope]??labels.find(label=>label.scope===scope)?.title??scope
  return <div className={rosterCss.rosterStack}><div className={rosterCss.tableViewport}><table className={rosterCss.rosterTable} aria-label={employeeCopy(locale,'employeeDirectory')}><thead><tr><th scope="col">{copy('name')} · {copy('duty')}</th><th scope="col">{copy('business')}</th><th scope="col">{copy('current')}</th><th scope="col">{copy('contact')}</th></tr></thead><tbody>{unique.map(item=>{
   const status=rosterMemberStatus(item),name=item.kind==='twin'?twinDisplayName(profileName,t):item.name
   const task=tasks.filter(task=>task.assigneeId===item.id&&!['completed','cancelled'].includes(task.state)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]
@@ -58,7 +61,7 @@ export function StaffRoster({roles,labels,tasks,onSelect,onTalk,onPhone,onOpenTa
   return <tr key={item.id} data-roster-id={item.id}><td>
    <button type="button" data-teloa-entry={item.id} className={rosterCss.cardIdentity} onClick={()=>onSelect(item.id)}>
     {item.kind==='twin'?<TwinAvatar initials={profileInitials}/>:<EmployeeAvatar avatarKey={item.avatarKey}/>}
-    <span className={rosterCss.personMain}><strong>{name}</strong><small>{dutyLead(item.duty)}</small></span>
+    <span className={rosterCss.personMain}><strong>{name}</strong><small>{dutyLead(roleFieldText(item,'duty',t))}</small></span>
     <ChevronRight size={15}/>
    </button></td><td><small className={rosterCss.cardScopes}>{list(item.scopes.map(scopeName))}</small></td><td>
    <span className={rosterCss.status} data-roster-status={status}>{status==='twin'?<><Fingerprint size={12}/>{statusLabel}</>:<StatusLabel label={statusLabel} mark={status==='active'?'enabled':status==='paused'?'paused':'retired'} tone={status==='active'?'good':'muted'}/>}</span>

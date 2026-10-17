@@ -248,6 +248,9 @@ test('持久计划投影使用配置版本和状态修订，不伪造调度历�
  assert.deepEqual(projectSavedPlan({...row,version:4,configVersion:1,state:'archived',archivedReason:'工作结束',archivedAt:later,updatedAt:later}),{
  id:planId,version:1,revision:4,fields:{title:fields.title,goal:fields.goal,scope:'general',dataScope:fields.dataScope,delivery:fields.delivery,roleId,trigger,notificationPolicy:'attention'},enabled:false,archived:true,history:[],
  })
+ const digest=projectSavedPlan({...row,title:'Auto Dream · 每日小结',source:{kind:'system-digest',roleId}})
+ assert.equal(digest.systemDigest,true);assert.equal(digest.fields.title,'Auto Dream · 每日小结')
+ assert.equal(Object.hasOwn(projectSavedPlan({...row,source:{kind:'manual'}}),'systemDigest'),false)
  assert.throws(()=>projectSavedPlan({...row,scope:'x'.repeat(81)}),/业务身份/);assert.throws(()=>projectSavedPlan({...row,scope:'  '}),/业务身份/)
 })
 

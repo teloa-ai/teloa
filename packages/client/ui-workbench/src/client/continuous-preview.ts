@@ -14,7 +14,8 @@ export const planNotificationPolicyLabels:Record<PlanNotificationPolicy,string>=
 export const isPlanNotificationPolicy=(value:unknown):value is PlanNotificationPolicy=>planNotificationPolicies.some(policy=>policy===value)
 export type PlanFields={groupId?:string|null;title:string;scope:CollaborationScope;goal:string;dataScope:string;delivery:string;roleId:string;trigger:PlanTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
 type PlanHistory={text:string;at:string}
-type ContinuousPlanRecord={id:string;version:number;revision:number;template?:PlanTemplate;enabled:boolean;archived:boolean;handoff?:{fromId:string;reason:string};history:PlanHistory[]}
+/** `systemDigest` 仅由持久计划来源 `system-digest`（Auto Dream 系统计划）投影而来，供显示层本地化固定标题，不参与编辑与回传。 */
+type ContinuousPlanRecord={id:string;version:number;revision:number;template?:PlanTemplate;enabled:boolean;archived:boolean;handoff?:{fromId:string;reason:string};history:PlanHistory[];systemDigest?:true}
 export type ContinuousPlan=ContinuousPlanRecord&({fields:PlanFields;executor?:never}|{fields:Omit<PlanFields,'roleId'>&{scope:'general';roleId:null};executor:OwnerPlanExecutor})
 export type PlanRun={id:string;planId:string;occurrenceId:string;revision:number;snapshot:{version:number;fields:PlanFields;template?:PlanTemplate};actor:{id:string;name:string};input:string;state:'running'|'completed'|'failed';result:string;output:string;createdAt:string;finishedAt?:string;retryOf?:string;resolution?:{note:string;at:string};taskId?:string;artifact?:ArtifactRef}
 export type ContinuousPreview={plans:ContinuousPlan[];runs:PlanRun[];loaded:boolean}

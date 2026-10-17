@@ -9,6 +9,11 @@ export function roleMemoryPath(status:'candidate'|'confirmed'|'withdrawn',t?:Tel
   return {label:'已撤回',summary:'已撤回，不再作为员工参考；历史与来源保留。',next:'查看撤回记录'}
 }
 
+/** 「本人反馈」来源的标题由服务端以中文固定写入（backend work/role-memory.ts）；按来源类别显示当前语言，其余来源原样显示。 */
+export function roleMemorySourceTitle(memory:{source:{kind:string};sourceTitle:string},t:TeloaTranslate):string{
+  return memory.source.kind==='self-feedback'?t(key('team.memory.selfFeedback')):memory.sourceTitle
+}
+
 export function roleLifecyclePath(state:'active'|'paused'|'retired',t?:TeloaTranslate){
   if(t)return {label:t(key(`team.presentation.lifecycle.${state}.label`)),summary:t(key(`team.presentation.lifecycle.${state}.summary`)),next:t(key(`team.presentation.lifecycle.${state}.next`))}
   if(state==='paused')return {label:'暂停接收新工作',summary:'不再接收新交办与后续触发；已开始工作可收尾，外部操作需单独核对。',next:'核对已在途工作'}
@@ -32,6 +37,21 @@ export function roleSkillNotice(t?:TeloaTranslate){
 export function twinDisplayName(profileName:string,t?:TeloaTranslate):string{
   const name=profileName.trim()
   return t?t('team.twin.displayName',{name}):`${name} 的分身`
+}
+
+/**
+ * 分身内置默认的职责、可读资料与执行范围由服务端以中文写入（backend work/roles.ts personalTwinFields），存量数据不迁移。
+ * 仅当分身字段仍逐字等于该原文时显示当前语言的默认文案；本人改过的文字原样显示，存储与回传值不变。
+ */
+const personalTwinDefaults={
+  duty:'按本人确认的偏好整理资料、代拟回复和判断建议。正式批准由本人完成。',
+  dataScope:'本人可见且明确提供的资料；私人偏好不自动共享。',
+  executionScope:'仅代拟；不能代批、冒充本人或直接外发。',
+} as const
+export type TwinDefaultField=keyof typeof personalTwinDefaults
+export function roleFieldText(role:{kind:string}&Readonly<Record<TwinDefaultField,string>>,field:TwinDefaultField,t:TeloaTranslate):string{
+  const value=role[field]
+  return role.kind==='twin'&&value===personalTwinDefaults[field]?t(key(`team.twin.default.${field}`)):value
 }
 
 // 目录分区行与个人主页身份栏此前各写一份同样的四档状态映射；抽成一处，两边共用同一口径（team.roster.status.*）。
