@@ -46,7 +46,7 @@ https://github.com/user-attachments/assets/8bc8a96a-475a-454c-8179-a271e2140b0c
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.0-beta.3** is the current preview. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.3) and has been verified on macOS arm64; other operating systems have not been verified for this preview. The npm registry and [Docker Hub](https://hub.docker.com/r/teloa/teloa) still provide the earlier **0.2.0-alpha.7**. Source builds remain available below.
+**0.2.0-beta.4** is the current preview. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.4) and has been verified on macOS arm64; other operating systems have not been verified for this preview. The npm registry and [Docker Hub](https://hub.docker.com/r/teloa/teloa) still provide the earlier **0.2.0-alpha.7**. Source builds remain available below.
 
 ### Native installation from the GitHub Release
 
@@ -55,13 +55,13 @@ Use **Node.js 24.x** or **22.x from 22.19 onward**, **npm 11.x from 11.12.1 onwa
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.3/teloa-cli-0.2.0-beta.3.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.4/teloa-cli-0.2.0-beta.4.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.0-beta.3 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.0-beta.3` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). To install the earlier registry release instead, use `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.0-beta.4 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.0-beta.4` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). To install the earlier registry release instead, use `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`.
 
 <details>
 <summary><strong>Docker Hub with Compose (0.2.0-alpha.7)</strong></summary>

@@ -1,5 +1,5 @@
 {
-  "name":"@teloa/xiaozhi-mcp","version":"0.2.0-beta.3","private":true,"type":"module",
+  "name":"@teloa/xiaozhi-mcp","version":"0.2.0-beta.4","private":true,"type":"module",
   "exports":{".":"./src/index.ts","./bridge":"./src/bridge.ts","./package.json":"./package.json","./cordis.patch.yml":"./cordis.patch.yml"},
   "engines":{"dsh":"0.2.1-rc.2"},
   "dsh":{"bundle":{"patch":"./cordis.patch.yml"}},
