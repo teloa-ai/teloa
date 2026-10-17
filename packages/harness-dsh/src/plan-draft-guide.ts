@@ -1,7 +1,7 @@
 import type {PageCreatePlanDraft,PlanWorkConfiguration} from '@teloa/contract'
 
 const schedule={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'09:30',timezone:'Asia/Singapore' as const}
-const work:PlanWorkConfiguration={completion:{kind:'manual'},triggers:[{kind:'schedule',schedule}],budget:{maxGoalRounds:4,maxTokens:10000,maxElapsedMs:600000,maxConcurrent:1,maxRetries:1,stagnationRounds:2,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}
+const work:PlanWorkConfiguration={completion:{kind:'manual'},triggers:[{kind:'schedule',schedule}],budget:{maxGoalRounds:4,maxTokens:2000000,maxElapsedMs:600000,maxConcurrent:1,maxRetries:1,stagnationRounds:2,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}
 export const methodPlanDraftExample:PageCreatePlanDraft={definition:{executor:{kind:'owner'},roleId:null,scope:'general',title:'资料每日摘要',goal:'沿已认可方法整理本人提供的资料',dataScope:'仅原成果列明的本人资料',delivery:'摘要与待确认事项',trigger:schedule,notificationPolicy:'attention'},work,intent:'save-paused',source:{artifactId:'11111111-1111-4111-8111-111111111111',version:1,basisHash:'a'.repeat(64)}}
 export const configurePlanDraftExample:PageCreatePlanDraft={kind:'configure-work',planId:'22222222-2222-4222-8222-222222222222',expectedVersion:1,expectedConfigVersion:1,work,intent:'save-paused'}
 const methodPlanDraftWireExample=JSON.stringify(methodPlanDraftExample,(key,value)=>(key==='roleId'||key==='money')&&value===null?undefined:value)
