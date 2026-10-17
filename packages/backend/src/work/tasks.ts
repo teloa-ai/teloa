@@ -43,6 +43,10 @@ export async function initializeTasks(pool:Pool):Promise<void>{
 function requestFields({groupId,skills,...base}:ReturnType<typeof taskDefinition>){
  return {...base,...(groupId===null?{}:{groupId}),...(skills.length?{skills}:{})}
 }
+/** 创建请求指纹的唯一规范形：创建重试与计划领取核对共用，默认 groupId/skills 显式或省略视为同一请求。 */
+export function taskRequestSpec(definition:ReturnType<typeof taskDefinition>,assignee:unknown){
+ return {fields:requestFields(definition),assignee}
+}
 function configurationGroupName(fields:ReturnType<typeof taskConfigurationFields>,value:unknown):string|null|undefined{
  if(value===undefined)return undefined
  if(fields.groupId===undefined||value===null&&fields.groupId!==null||value!==null&&(typeof value!=='string'||!value.trim()||value.length>120||fields.groupId===null))throw new WorkError('teloa/invalid-input','原群名称与任务配置的群身份不一致。')
@@ -68,7 +72,7 @@ function readCreate(owner:string,input:unknown){
   if(!uuid(row.requestId))throw new WorkError('teloa/invalid-input','需要有效的任务请求 ID。')
   const assignee=row.assignee===undefined?null:taskInput(row.assignee,['roleId','expectedVersion'])
   if(assignee&&(!uuid(assignee.roleId)||!Number.isSafeInteger(assignee.expectedVersion)||(assignee.expectedVersion as number)<1))throw new WorkError('teloa/invalid-input','负责人身份或版本不合法。')
-  return {requestId:row.requestId.toLowerCase(),fields,assignee,spec:JSON.stringify({fields:requestFields(fields),assignee})}
+  return {requestId:row.requestId.toLowerCase(),fields,assignee,spec:JSON.stringify(taskRequestSpec(fields,assignee))}
 }
 export function readStoredTask(row:Record<string,unknown>):WorkTask{
  try{

@@ -13,7 +13,7 @@ import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,isRecord,nextScheduleOccurrence,readScheduleTrigger,roleSupportsScope,taskDefinition,workTaskStates,readTaskCompletionPolicy,type TaskCompletionPolicy,type ScheduleTrigger,type WorkTask} from '@teloa/contract'
-import {initializeTasks,TaskService,readStoredTask} from './tasks.ts'
+import {initializeTasks,TaskService,readStoredTask,taskRequestSpec} from './tasks.ts'
 import {readStoredTaskRun} from './task-runs.ts'
 import {initializePlans,planSource,planNotificationPolicies,verifyPlanSource,type PlanNotificationPolicy,type PlanSource,type PlanMarketSources} from './plans.ts'
 import {readStoredRole} from './roles.ts'
@@ -84,6 +84,8 @@ function readPlan(row:Record<string,unknown>):CurrentPlan{
  const fields=readFields(row.definition)
  return {id:plan.id,ownerId:plan.ownerId,version:plan.version,configVersion:plan.configVersion,state:plan.state,updatedAt:plan.updatedAt,fields,source:plan.source,roleVersion:plan.roleVersion,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{})}
 }
+/** 领取冻结的任务请求按任务侧唯一规范形核对；默认 groupId/skills 的显式与省略不构成冲突，非默认值仍逐字比较。 */
+function frozenTaskRequestSpec(occurrence:PlanOccurrence){return taskRequestSpec(taskDefinition(occurrence.taskRequest.fields),occurrence.taskRequest.assignee??null)}
 function expectedOccurrence(trigger:ScheduleTrigger,scheduledAt:string){return nextScheduleOccurrence(trigger,new Date(Date.parse(scheduledAt)-1).toISOString())}
 function readState(row:Record<string,unknown>,plan:CurrentPlan):ScheduleState{
  try{
@@ -446,7 +448,7 @@ export class PlanOccurrenceService{
      if(hasLink){
       if(row.linked_owner_id!==owner||row.linked_request_id!==occurrence.taskRequestId||!uuid(row.linked_task_id)||!isRecord(row.task_record))throw corrupt()
       const storedTask=readStoredTask({...row.task_record,created_at:row.task_created_at,updated_at:row.task_updated_at})
-      const fixedRequest={fields:occurrence.taskRequest.fields,assignee:occurrence.taskRequest.assignee??null}
+      const fixedRequest=frozenTaskRequestSpec(occurrence)
       if(storedTask.ownerId!==owner||storedTask.id!==row.linked_task_id||row.task_record.request_id!==occurrence.taskRequestId||!isDeepStrictEqual(row.task_record.request_spec,fixedRequest))throw corrupt()
       task={id:storedTask.id,state:storedTask.state}
      }else if(row.task_record!==null)throw corrupt()
@@ -521,7 +523,7 @@ export class PlanOccurrenceService{
    const occurrence=readOccurrence(row)
    if(row.linked_owner_id!==owner||row.linked_request_id!==occurrence.taskRequestId||!isRecord(row.task_record))throw corrupt()
    const task=readStoredTask({...row.task_record,created_at:row.task_created_at,updated_at:row.task_updated_at})
-   const spec={fields:occurrence.taskRequest.fields,assignee:occurrence.taskRequest.assignee??null}
+   const spec=frozenTaskRequestSpec(occurrence)
    if(task.id!==row.linked_task_id||task.ownerId!==owner||row.task_record.request_id!==occurrence.taskRequestId||!isDeepStrictEqual(row.task_record.request_spec,spec))throw corrupt()
    const job={claimId:occurrence.id,taskId:task.id,taskCreatedVersion:1 as const,taskTitle:occurrence.fields.title,roleId:occurrence.fields.roleId,roleVersion:occurrence.roleVersion,...(task.executor?.kind==='owner'?{executor:task.executor}:{})}
    let item:PendingPlanExecution|null
@@ -564,7 +566,7 @@ export class PlanOccurrenceService{
  private async associate(db:PoolClient,owner:string,claim:PlanOccurrence,taskId:string):Promise<{claimId:string;taskRequestId:string;taskId:string}>{
    await db.query('select id from teloa_plan_occurrences where id=$1 for update',[claim.id])
    const task=(await db.query('select * from teloa_tasks where id=$1 and owner_id=$2 for share',[taskId,owner])).rows[0]
-   const spec={fields:claim.taskRequest.fields,assignee:claim.taskRequest.assignee??null}
+   const spec=frozenTaskRequestSpec(claim)
    const matches=task&&task.request_id===claim.taskRequestId&&(await db.query('select request_spec=$2::jsonb as matches from teloa_tasks where id=$1',[task.id,JSON.stringify(spec)])).rows[0]?.matches
    if(!matches)throw new WorkError('teloa/conflict','任务不属于该次固定领取请求。')
    const prior=(await db.query('select * from teloa_plan_task_links where claim_id=$1',[claim.id])).rows[0]
@@ -612,7 +614,7 @@ export class PlanOccurrenceService{
   if(!stored)throw corrupt()
   const occurrence=readOccurrence(stored)
   if(occurrence.ownerId!==owner||occurrence.taskRequestId!==taskRow.request_id||task.goal!==occurrence.fields.goal||task.scope!==occurrence.fields.scope)throw corrupt()
-  const spec={fields:occurrence.taskRequest.fields,assignee:occurrence.taskRequest.assignee??null}
+  const spec=frozenTaskRequestSpec(occurrence)
   if(!(await db.query('select request_spec=$2::jsonb as matches from teloa_tasks where id=$1',[task.id,JSON.stringify(spec)])).rows[0]?.matches)throw corrupt()
   await this.verifyBusinessEvent(db,owner,occurrence)
   if(occurrence.source.kind==='method-reuse')await verifyPlanSource(owner,occurrence.source,this.marketSources,db,this.ownerPlans)

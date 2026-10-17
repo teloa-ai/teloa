@@ -134,3 +134,39 @@ test('owner 标记不能扩大业务、群、观察源或伪造本人确认；�
  await api.initializePlans(pool)
  assert.equal((await plans.get(owner,{planId:plan.id})).roleId,null)
 })
+test('计划领取按同一规范请求指纹核对：默认 groupId/skills 显式与省略同一请求，非默认值、负责人、owner 与 requestId 篡改仍拒绝',async()=>{
+ sourceActive=true;confirmed=true
+ const owner=randomUUID(),plans=new PlanService(pool,clock,undefined,undefined,undefined,undefined,authority),base=await sourceBackedInput(owner)
+ const plan=await plans.createConfirmed(owner,{...base,fields:{...base.fields,groupId:null},intent:'create-and-enable'})
+ const {PlanOccurrenceService}=await import('../src/work/plan-occurrences.ts'),occurrences=new PlanOccurrenceService(pool,clock,undefined,undefined,authority)
+ const claim=(await occurrences.trigger(owner,{requestId:randomUUID(),planId:plan.id,expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,now:clock.now()})).occurrence
+ assert.equal(claim.taskRequest.fields.groupId,null)
+ const dispatch={claimId:claim.id,taskRequestId:claim.taskRequestId,now:clock.now()},{task}=await occurrences.dispatchTask(owner,dispatch)
+ const stored=(await pool.query('select request_spec from teloa_tasks where id=$1',[task.id])).rows[0].request_spec
+ assert.equal(Object.hasOwn(stored.fields,'groupId'),false);assert.equal(Object.hasOwn(stored.fields,'skills'),false)
+ assert.equal((await occurrences.dispatchTask(owner,dispatch)).task.id,task.id)
+ const context=async()=>{const db=await pool.connect();try{await db.query('begin');return await occurrences.executionContext(db,owner,task.id)}finally{await db.query('rollback');db.release()}}
+ const accepted=async()=>{
+  assert.equal((await context())?.occurrenceId,claim.id)
+  const history=await occurrences.executionHistory(owner,{planId:plan.id,limit:50});assert.equal(history.errors,undefined);assert.equal(history.items.find(item=>item.claimId===claim.id)?.task?.id,task.id)
+  const pending=await occurrences.pendingExecutions(owner,{limit:50});assert.equal(pending.errors,undefined);assert.equal(pending.items.find(item=>item.job.claimId===claim.id)?.job.taskId,task.id)
+ }
+ await accepted()
+ // 任务侧沿同一规范函数：显式 groupId:null/skills:[] 与省略是同一请求，非空 skills 是不同请求。
+ const tasks=new api.TaskService(pool,clock),requestId=randomUUID(),fields={title:'规范请求',goal:'核对默认字段表示',scope:'general'}
+ const explicit=await tasks.create(owner,{requestId,fields:{...fields,groupId:null,skills:[]}})
+ assert.equal((await tasks.create(owner,{requestId,fields})).id,explicit.id)
+ await assert.rejects(tasks.create(owner,{requestId,fields:{...fields,skills:['other-skill']}}),{code:'teloa/conflict'})
+ for(const tampered of [{...stored,fields:{...stored.fields,groupId:randomUUID()}},{...stored,fields:{...stored.fields,skills:['tampered-skill']}},{...stored,assignee:{roleId:randomUUID(),expectedVersion:1}}]){
+  await pool.query('update teloa_tasks set request_spec=$2::jsonb where id=$1',[task.id,JSON.stringify(tampered)])
+  await assert.rejects(context(),{code:'teloa/storage-corrupt'})
+  assert.ok((await occurrences.executionHistory(owner,{planId:plan.id,limit:50})).errors?.some(error=>error.claimId===claim.id))
+  assert.ok((await occurrences.pendingExecutions(owner,{limit:50})).errors?.some(error=>error.claimId===claim.id))
+  await assert.rejects(occurrences.linkTask(owner,{claimId:claim.id,taskRequestId:claim.taskRequestId,taskId:task.id}),{code:'teloa/conflict'})
+ }
+ await pool.query('update teloa_tasks set request_spec=$2::jsonb where id=$1',[task.id,JSON.stringify(stored)])
+ await accepted()
+ await assert.rejects(occurrences.dispatchTask(randomUUID(),dispatch))
+ await assert.rejects(occurrences.dispatchTask(owner,{...dispatch,taskRequestId:randomUUID()}))
+ assert.equal((await pool.query('select count(*)::int n from teloa_tasks where owner_id=$1',[owner])).rows[0].n,2)
+})
