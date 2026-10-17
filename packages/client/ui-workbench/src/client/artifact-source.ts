@@ -19,8 +19,8 @@ export function resolveArtifactSource(state:TaskPreview,ref:ArtifactSourceRef,co
  * 这份来源是持久任务，拉取只能先跳过。来源身份从头到尾没变过，所以键必须把「台账已
  * 认出它是持久任务」一起算进去，台账到位时键才会变、effect 才会补拉，面板也才回填。
  */
-export function artifactListFetchKey(target:{source:ArtifactSourceRef}|null,tasks:readonly PreviewTask[]):string{
-  const source=target?.source
+export function artifactListFetchKey(target:{source:ArtifactSourceRef}|null,tasks:readonly PreviewTask[],selectedTaskId?:string|null):string{
+  const source=target?.source??(selectedTaskId?{kind:'task' as const,id:selectedTaskId}:undefined)
   if(source?.kind==='session')return 'session '+source.id
   if(source?.kind==='task'&&tasks.some(task=>task.id===source.id&&task.storage==='persistent'))return 'task '+source.id
   return ''

@@ -33,7 +33,7 @@ export type BusinessHomeOrigin = 'view' | 'target' | 'enter' | 'back-home';
  *
  * - `enter`：调用方明确要进某个范围的内页（卡片、`enterBusiness`、恢复到一个精确内页位置），
  *   一律置 false。它**不看** `targetChanged`：从别处打开的目标常常与当前目标深度相等
- *   （冷启动默认就是 `{scope:'SOC',section:'overview'}`），只靠「目标取值变了」判会把用户留在首页。
+ *   （冷启动默认就是 `{scope:'general',section:'overview'}`），只靠「目标取值变了」判会把用户留在首页。
  * - `target`：目标取值真的变了才算用户打开了一个范围；恢复期先 `settleBusinessTarget` 把已见取值推平，
  *   这里就读到「没变」，不翻这一位。
  * - `view`：换到业务视图（左栏点「业务」）回首页；视图没变不翻。
@@ -70,13 +70,19 @@ export function businessHomeCards(
     snapshot: { roles: readonly PreviewRole[]; dataSources: readonly IndustryDataSourceInstance[]; attention: readonly AttentionItem[]; tasks: readonly PreviewTask[]; locale: string; loads?: readonly IndustryLoadRecord[]; plans?: readonly { scope: string; state: string; title: string }[] },
 ): BusinessHomeCard[] {
     return labels
+        // 删除配置后，迁移为历史可读性重新登记的自动范围不再是一项当前业务。
+        // 有在岗/暂停员工、当前任务、资料源、加载或例行工作时继续保留；标签仍供历史深链使用。
+        .filter(label => label.kind !== 'legacy' || !label.scope.startsWith('business_') || label.activeLoads > 0
+            || businessHomeSources(snapshot.dataSources, label.scope) > 0 || businessHomeWorking(snapshot.tasks, label.scope) > 0 || businessHomeAttention(snapshot.attention, label.scope) > 0
+            || snapshot.roles.some(role => role.kind === 'employee' && role.state !== 'retired' && roleSupportsScope(role.scopes, label.scope))
+            || (snapshot.plans ?? []).some(plan => plan.scope === label.scope && plan.state !== 'archived'))
         .map((label): BusinessHomeCard => {
             const sources = businessHomeSources(snapshot.dataSources, label.scope);
             const staff = businessHomeStaff(snapshot.roles, label.scope);
             return {
                 scope: label.scope,
                 // 卡摘要与范围内页面板读同一份计数，不在首页另算一套。
-                composition: composeFromWorkspace({ scope: label.scope, loads: snapshot.loads ?? [], roles: snapshot.roles, ...(snapshot.plans ? { plans: snapshot.plans } : {}) }).map(section => section.count),
+                composition: composeFromWorkspace({ scope: label.scope, loads: snapshot.loads ?? [], roles: snapshot.roles.filter(role => role.state !== 'retired'), ...(snapshot.plans ? { plans: snapshot.plans } : {}) }).map(section => section.count),
                 title: label.title,
                 kind: label.kind,
                 sources,

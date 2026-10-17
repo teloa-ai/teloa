@@ -56,12 +56,12 @@ test('新同事在岗即带一条启用的 Auto Dream 每日小结计划，范�
  assert.equal(plan.roleId,role.id)
 })
 
-test('分身不产生系统计划，零系统计划时设置读不出来',async()=>{
+test('分身不产生系统计划；零系统计划时设置按默认开启（23:30 新加坡）',async()=>{
  const owner=randomUUID(),{roles}=services()
- assert.equal(await readAutoDreamSetting(pool,owner),undefined)
+ assert.deepEqual(await readAutoDreamSetting(pool,owner),{enabled:true,trigger:AUTO_DREAM_DEFAULT_TRIGGER})
  await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['general']),name:'我的分身',kind:'twin'}})
  assert.equal((await systemPlans(owner)).length,0)
- assert.equal(await readAutoDreamSetting(pool,owner),undefined)
+ assert.deepEqual(await readAutoDreamSetting(pool,owner),{enabled:true,trigger:AUTO_DREAM_DEFAULT_TRIGGER})
 })
 
 test('系统计划随岗位暂停、复岗与退役同步，反复切换仍只有一条',async()=>{
@@ -78,17 +78,45 @@ test('系统计划随岗位暂停、复岗与退役同步，反复切换仍只�
  assert.equal((await readAutoDreamSetting(pool,owner))?.enabled,true)
 })
 
-test('本人关掉小结后新同事跟随设置，只建不启用',async()=>{
+test('Auto Dream 默认开启：某位员工的小结被本人暂停只影响该员工，新同事仍建启用计划，原暂停不被唤醒',async()=>{
  const owner=randomUUID(),{roles,plans}=services()
  const first=await roles.create(owner,{requestId:randomUUID(),fields:employee(['SOC'])})
  const current=(await systemPlans(owner))[0]!
- await plans.change(owner,{planId:current.id,requestId:randomUUID(),expectedVersion:current.version,action:'pause'})
- assert.deepEqual(await readAutoDreamSetting(pool,owner),{enabled:false,trigger:AUTO_DREAM_DEFAULT_TRIGGER})
+ const paused=await plans.change(owner,{planId:current.id,requestId:randomUUID(),expectedVersion:current.version,action:'pause'})
+ assert.deepEqual(await readAutoDreamSetting(pool,owner),{enabled:true,trigger:AUTO_DREAM_DEFAULT_TRIGGER},'不再从暂停的计划推断全局关闭')
  const second=await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['SOC']),name:'核对岗'}})
  const all=await systemPlans(owner)
  assert.equal(all.length,2)
- assert.equal(all.find(plan=>plan.roleId===first.id)?.state,'paused')
- assert.equal(all.find(plan=>plan.roleId===second.id)?.state,'paused')
+ const kept=all.find(plan=>plan.roleId===first.id)!
+ assert.equal(kept.state,'paused');assert.equal(kept.version,paused.version,'不批量唤醒原有暂停计划')
+ assert.equal(all.find(plan=>plan.roleId===second.id)?.state,'active')
+})
+
+test('新同事沿用最早系统计划的时刻与时区，即使那条已被暂停',async()=>{
+ const owner=randomUUID(),{roles,plans}=services()
+ await roles.create(owner,{requestId:randomUUID(),fields:employee(['SOC'])})
+ const original=(await systemPlans(owner))[0]!
+ const trigger={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'21:15',timezone:'Asia/Shanghai'}
+ const updated=await plans.change(owner,{planId:original.id,requestId:randomUUID(),expectedVersion:original.version,expectedConfigVersion:original.configVersion,action:'update',fields:{title:original.title,goal:original.goal,dataScope:original.dataScope,delivery:original.delivery,trigger,notificationPolicy:original.notificationPolicy,completionPolicy:original.completionPolicy}})
+ await plans.change(owner,{planId:updated.id,requestId:randomUUID(),expectedVersion:updated.version,action:'pause'})
+ assert.deepEqual(await readAutoDreamSetting(pool,owner),{enabled:true,trigger})
+ const second=await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['SOC']),name:'核对岗'}})
+ const plan=(await systemPlans(owner)).find(item=>item.roleId===second.id)!
+ assert.equal(plan.state,'active');assert.deepEqual(plan.trigger,trigger)
+})
+
+test('本人手动暂停的小结不会因员工复岗重新启用，已有日程和修订号不变',async()=>{
+ const owner=randomUUID(),{roles,plans,lifecycle}=services()
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
+ const original=(await systemPlans(owner))[0]!
+ const paused=await plans.change(owner,{planId:original.id,requestId:randomUUID(),expectedVersion:original.version,action:'pause',note:'本人暂时不需要每日小结'})
+ await lifecycle.change(owner,command(role.id,role.version,'pause'))
+ await lifecycle.change(owner,command(role.id,role.version+1,'resume'))
+ const current=(await systemPlans(owner))[0]!
+ assert.equal(current.state,'paused');assert.equal(current.version,paused.version)
+ assert.deepEqual(current.trigger,paused.trigger)
+ const savedRole=await roles.get(owner,role.id);assert.ok(savedRole)
+ assert.equal(savedRole.state,'active')
 })
 
 test('未接线端口的岗位与生命周期服务照旧工作，不碰系统计划',async()=>{
@@ -193,4 +221,11 @@ test('零业务范围与零计划的直呼路径都返回 undefined，不报错'
  assert.equal(await inTransaction(client=>ensureAutoDreamPlan(client,ports,owner,{...role,scopes:[]})),undefined)
  assert.equal(await inTransaction(client=>pauseAutoDreamPlan(client,ports,owner,role.id)),undefined)
  assert.equal((await systemPlans(owner)).length,0)
+})
+
+
+test('私有系统小结不能通过普通计划编辑扩大发布到群',async()=>{
+ const owner=randomUUID(),{roles,plans}=services();await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
+ const plan=(await systemPlans(owner))[0]!
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:plan.trigger,notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy,groupId:randomUUID()}}),{code:'teloa/forbidden'})
 })

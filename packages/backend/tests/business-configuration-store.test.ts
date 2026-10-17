@@ -1,4 +1,5 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
@@ -66,7 +67,7 @@ async function managedFixture(){
  a.scopeIds=[draft.scope]
  const definition={format:'teloa.business-object-type/v1',id:'ticket',version:'1.0.0',domain:draft.scope,title:'工单',unit:'条',lead:'跟进事项',sourceId:draft.candidate.sources[0]!.sourceId,fields:[{name:'state',label:'状态',type:'text',required:true,from:'状态'}]}
  const page={id:'home',title:'记录',kind:'records',objectType:'ticket',fields:['state'],allowCreate:true,allowEdit:true,allowArchive:true}
- const space=await new BusinessSpaceService(pool,identity).ensurePersonal(a.ownerId)
+ const space=await withLegacySecurityScopes(pool,a.ownerId,new BusinessSpaceService(pool,identity).ensurePersonal(a.ownerId))
  const db=await pool.connect()
  await db.query('begin')
  await lockBusinessConfiguration(db,a.ownerId,draft.scope)
@@ -123,7 +124,7 @@ test('旧 draft/apply/revert 与受管登记争锁；等待登记提交后不能
  const legacy=new BusinessLocalDefinitionService(pool,identity)
  const definition={format:'teloa.business-view/v1',id:'risk',version:'1.0.0',domain:'SOC',title:'风险',kind:'distribution',chart:'bar',objectType:'ticket',dimension:{field:'state',limit:3},measures:[{id:'total',label:'数量',aggregation:'count'}],filters:[],sort:{by:'measure',measureId:'total',direction:'desc'},limit:3}
  const draft=await legacy.draft(a,{scope:'SOC',kind:'view',definition,requestId:randomUUID()})
- const space=await new BusinessSpaceService(pool,identity).ensurePersonal(a.ownerId)
+ const space=await withLegacySecurityScopes(pool,a.ownerId,new BusinessSpaceService(pool,identity).ensurePersonal(a.ownerId))
  const db=await pool.connect()
  await db.query('begin');await lockBusinessConfiguration(db,a.ownerId,'SOC')
  await db.query('update teloa_business_scopes set configuration_managed=true where owner_id=$1 and scope=$2',[a.ownerId,'SOC'])

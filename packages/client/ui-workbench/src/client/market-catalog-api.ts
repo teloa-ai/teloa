@@ -1,4 +1,4 @@
-import {emptyMarketCatalogCounts,marketEntryKinds,readMarketCatalogEntry,readMarketCatalogListContents,readMarketCatalogListSecretGroup,type MarketCatalogArtifact,type MarketCatalogListContents,type MarketCatalogEntry,type MarketCatalogListSecretGroup,type MarketCatalogListCounts,type MarketCatalogListRequest,type MarketCatalogListSkipped} from '@teloa/contract'
+import {emptyMarketCatalogCounts,marketConnectorArtifactOptional,marketEntryKinds,readMarketCatalogEntry,readMarketCatalogListContents,readMarketCatalogListSecretGroup,type MarketCatalogArtifact,type MarketCatalogListContents,type MarketCatalogEntry,type MarketCatalogListSecretGroup,type MarketCatalogListCounts,type MarketCatalogListRequest,type MarketCatalogListSkipped} from '@teloa/contract'
 
 import type {MarketReviewsApi} from './market-reviews-api.js'
 import {validateIndustryManifest,type IndustryManifest} from './industry-manifest.ts'
@@ -7,16 +7,21 @@ type Call=(endpoint:string,payload:unknown)=>Promise<unknown>
 export type MarketCatalogItem={entry:MarketCatalogEntry;artifact:MarketCatalogArtifact|null;addedContentId:string|null;addedRoleId:string|null;secretGroup:MarketCatalogListSecretGroup|null;contents?:MarketCatalogListContents}
 /** 官方方案产品页的数据：方案包清单（已按清单格式复核）与判定为只读的接入源资源标识。 */
 export type MarketCatalogSolutionPackage={manifest:IndustryManifest;readOnlyResources:string[]}
+/** 目录员工完整资源安装的单项状态：needs-user 只表示已登记、待本人授权的连接或模型设置。 */
+/** conflict 表示本人已有内容不同的同名方法：未另装、未覆盖，需本人处理。 */
+export type CatalogRoleResource={kind:string;title:string;state:'done'|'pending'|'failed'|'conflict'|'needs-user'|'optional';nativeName?:string}
+export type CatalogRoleInstall={complete:boolean;loadId:string;roleState:string|null;next:'resume'|'connect'|'retry'|'review'|null;resources:CatalogRoleResource[]}
+/** 目录员工添加回执：旧 v1 无 install；skills 在完整资源安装中为员工实际绑定的原生名。 */
+export type CatalogRoleReceipt={roleId:string|null;status:'created'|'existing'|'pending';skills:string[];install?:CatalogRoleInstall}
 export type MarketCatalogListing={catalogVersion:string;items:MarketCatalogItem[];nextCursor:string|null;counts:MarketCatalogListCounts;skipped:MarketCatalogListSkipped}
 /** reviews 缺省时（旧宿主、测试替身）应用不显示评价。 */
 export type MarketCatalogApi=ReturnType<typeof createMarketCatalogApi>&{reviews?:MarketReviewsApi}
 /** 市场二期安装量榜单：条目 ID → 累计安装量与近 7 日安装量。 */
 export type MarketCatalogRanking=ReadonlyMap<string,{installs:number;recent:number}>
 export type MarketCatalogSource=NonNullable<MarketCatalogListRequest['marketplace']>
-export const marketCatalogSources=['teloa','claude-code','codex','dsh','openclaw','clawhub','hermes'] as const satisfies readonly MarketCatalogSource[]
-export const marketCatalogSourceLabels:Record<MarketCatalogSource,string>={teloa:'Teloa', 'claude-code':'Claude Code',codex:'Codex',dsh:'DSH',openclaw:'OpenClaw',clawhub:'ClawHub',hermes:'Hermes'}
-/** 仅用于客户端合并结果；不改变宿主回包契约。 */
-export type MarketCatalogCollection=MarketCatalogListing&{unavailableSources:MarketCatalogSource[]}
+/** 条目原始来源的显示名：只用于详情里的来源说明；目录本身只有 Teloa 官方一个。 */
+export const marketCatalogSourceLabels:Record<MarketCatalogSource,string>={teloa:'Teloa', 'claude-code':'Claude Code',codex:'Codex',dsh:'DSH',openclaw:'OpenClaw',clawhub:'ClawHub',hermes:'Hermes',cursor:'Cursor'}
+/** 条目的原始来源（upstream 条目的 origin.marketplace），不是目录提供方。 */
 export const catalogEntrySource=(entry:MarketCatalogEntry):MarketCatalogSource=>entry.delivery==='upstream'?entry.origin.marketplace:'teloa'
 export const catalogEntryTitle=(entry:MarketCatalogEntry)=>entry.kind==='skill'?entry.skill.title:entry.kind==='solution'?entry.solution.title:entry.kind==='dashboard'?entry.dashboard.title:entry.kind==='role'?entry.role.title:entry.kind==='connector'?entry.connector.title:entry.model.title
 /** 只导航到当前可读目录里的资源，不把资源 ID 当内容 UUID；推荐优先且保持其余来源顺序。 */
@@ -30,8 +35,11 @@ export function catalogAlternatives(entry:MarketCatalogEntry,items:readonly Mark
  }).sort((a,b)=>Number(b.recommended)-Number(a.recommended))
 }
 
-/** 每个来源固定版本、读完所有分页；异常游标或上限后的剩余页不能冒充完整目录。 */
-async function allPages(api:Pick<MarketCatalogApi,'list'>,marketplace:MarketCatalogSource):Promise<MarketCatalogListing>{
+/**
+ * 读取 Teloa 官方目录：宿主按固定来源审核后一次给出全部当前条目（原始来源、上游与许可保留在各条目里），客户端不再逐个查询外部来源。
+ * 固定目录版本、读完所有分页；异常游标或上限后的剩余页不能冒充完整目录。`marketplace` 只接受 teloa，保留给已显式传入的调用方。
+ */
+export async function loadCatalogListing(api:Pick<MarketCatalogApi,'list'>,marketplace:'teloa'='teloa'):Promise<MarketCatalogListing>{
  const items:MarketCatalogItem[]=[],seenIds=new Set<string>(),seenCursors=new Set<string>()
  let cursor:string|null=null,first:MarketCatalogListing|undefined
  for(let page=0;page<20;page++){
@@ -48,32 +56,6 @@ async function allPages(api:Pick<MarketCatalogApi,'list'>,marketplace:MarketCata
   seenCursors.add(cursor)
  }
  throw Error('teloa/source-unavailable')
-}
-
-/** 「全部来源」读取每个原生目录来源（sources 首项须为 teloa）；上游不可读时保留其他来源并明确报告。计数仍是 Teloa 官方目录计数。 */
-export async function loadCatalogListing(api:Pick<MarketCatalogApi,'list'>,marketplace?:MarketCatalogSource,sources:readonly MarketCatalogSource[]=marketCatalogSources):Promise<MarketCatalogCollection>{
- if(marketplace)return {...await allPages(api,marketplace),unavailableSources:[]}
- const results=await Promise.allSettled(sources.map(source=>allPages(api,source)))
- const official=results[0]!
- if(official.status==='rejected')throw official.reason
- const items:MarketCatalogItem[]=[],unavailableSources:MarketCatalogSource[]=[]
- results.forEach((result,index)=>{
-  if(result.status==='fulfilled')items.push(...result.value.items)
-  else unavailableSources.push(sources[index]!)
- })
- return {...official.value,items,unavailableSources}
-}
-/** 上游来源只收技能：当前分类不含技能时只读 Teloa 目录。 */
-export function catalogSourcesForKinds(kinds:readonly MarketCatalogEntry['kind'][]|undefined):readonly MarketCatalogSource[]{
- return !kinds||kinds.includes('skill')?marketCatalogSources:['teloa']
-}
-/** 按分类懒加载来源：先读所需来源；可见资源的其他来源指向未读目录时再补读全部来源，推荐导航不因懒加载失效。 */
-export async function loadCatalogListingForKinds(api:Pick<MarketCatalogApi,'list'>,kinds:readonly MarketCatalogEntry['kind'][]|undefined):Promise<MarketCatalogCollection>{
- const sources=catalogSourcesForKinds(kinds),first=await loadCatalogListing(api,undefined,sources)
- if(sources.length===marketCatalogSources.length)return first
- const ids=new Set(first.items.map(item=>item.entry.id))
- const dangling=first.items.some(({entry})=>(!kinds||kinds.includes(entry.kind))&&'alternatives' in entry&&(entry.alternatives??[]).some(item=>!ids.has(item.entryId)))
- return dangling?loadCatalogListing(api):first
 }
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -111,9 +93,9 @@ function listing(value:unknown):MarketCatalogListing{
    if(input.addedRoleId!==null&&!uuid(input.addedRoleId))throw Error()
    const entry=readMarketCatalogEntry(input.entry)
    if(entry.kind!=='role'&&input.addedRoleId!==null)throw Error()
-   // 上游条目 artifact 为 null；模型条目无工件，回包必须恰为 null
+   // 上游条目 artifact 为 null；模型条目无工件，回包必须恰为 null；在线索引的非 stdio 连接器可为 null
    if(entry.kind==='model'&&input.artifact!==null)throw Error()
-   const art=entry.delivery==='upstream'||entry.kind==='model'?null:artifact(input.artifact)
+   const art=entry.delivery==='upstream'||entry.kind==='model'||input.artifact===null&&marketConnectorArtifactOptional(entry)?null:artifact(input.artifact)
    return {entry,artifact:art,addedContentId:input.addedContentId as string|null,addedRoleId:input.addedRoleId as string|null,secretGroup:readMarketCatalogListSecretGroup(input.secretGroup,entry),...(hasContents?{contents:readMarketCatalogListContents(input.contents,entry)}:{})}
   })
   const count=(v:unknown)=>Number.isSafeInteger(v)&&(v as number)>=0
@@ -151,11 +133,14 @@ export function createMarketCatalogApi(call:Call,newId:()=>string=()=>crypto.ran
     return map
    }catch{return new Map()}
   },
-  async add(entryId:string):Promise<{contentId:string}>{
+  /** expected：所选来源的条目版本与树指纹；带上时宿主在下载前核对指纹，回执的版本与指纹也须与所选一致。 */
+  async add(entryId:string,expected?:{version:string;treeHash:string}):Promise<{contentId:string}>{
    if(typeof entryId!=='string'||!entryId||entryId.length>120)throw Error('官方目录资源标识不正确。')
-   const requestId=awaiting.get(entryId)??newId();awaiting.set(entryId,requestId)
+   if(expected!==undefined&&(typeof expected.version!=='string'||!expected.version||expected.version.length>80||typeof expected.treeHash!=='string'||!/^[0-9a-f]{64}$/.test(expected.treeHash)))throw Error('所选来源的版本或指纹格式不正确。')
+   // 重试沿用原请求身份；所选指纹不同即另一请求，不借旧请求身份改写校验值
+   const key=entryId+'\n'+(expected?.treeHash??''),requestId=awaiting.get(key)??newId();awaiting.set(key,requestId)
    try{
-    const value=await call('market-catalog/add',{requestId,entryId})
+    const value=await call('market-catalog/add',{requestId,entryId,...(expected?{expectedTreeHash:expected.treeHash}:{})})
     let contentId:string
     try{
      const row=record(value)&&Object.keys(value).length===2&&'receipt' in value&&'content' in value?value:null
@@ -165,11 +150,12 @@ export function createMarketCatalogApi(call:Call,newId:()=>string=()=>crypto.ran
      const source=record(receipt.source)&&Object.keys(receipt.source).length===6&&'kind' in receipt.source&&'catalog' in receipt.source&&'catalogVersion' in receipt.source&&'entryId' in receipt.source&&'entryVersion' in receipt.source&&'treeHash' in receipt.source?receipt.source:null
      if(!source)throw Error()
      if(receipt.requestId!==requestId||!uuid(receipt.contentId)||source.kind!=='catalog'||source.entryId!==entryId||!record(row.content)||row.content.id!==receipt.contentId)throw Error()
+     if(expected&&(source.entryVersion!==expected.version||source.treeHash!==expected.treeHash))throw Error()
      contentId=receipt.contentId as string
     }catch{throw Error('官方目录添加回执与原请求不一致。')}
-    awaiting.delete(entryId)
+    awaiting.delete(key)
     return {contentId}
-   }catch(error){if(rejected(error))awaiting.delete(entryId);throw error}
+   }catch(error){if(rejected(error))awaiting.delete(key);throw error}
   },
   /** 官方方案「添加后你会得到」：只发条目标识；清单按格式完整复核，版本须与回包版本一致，只读接入源须去重且都指向清单里的连接。 */
   async solutionPackage(entryId:string):Promise<MarketCatalogSolutionPackage>{
@@ -181,12 +167,37 @@ export function createMarketCatalogApi(call:Call,newId:()=>string=()=>crypto.ran
     return {manifest,readOnlyResources:readOnly as string[]}
    }catch{throw Error('官方方案内容回包格式不正确。')}
   },
-  /** AI 同事条目一键建岗；不传 requestId，宿主按（本人, 条目, 版本）派生并幂等，重复添加返回 existing。 */
-  async addRole(entryId:string,version:string):Promise<{roleId:string;status:'created'|'existing';skills:string[]}>{
+  /** AI 员工添加前的组成预览：固定派生包清单按清单格式完整复核，只含这一位员工。 */
+  async rolePackage(entryId:string):Promise<{packageId:string;packageVersion:string;manifest:IndustryManifest}>{
+   const value=await call('market-catalog/role',{entryId})
+   try{
+    if(!record(value)||Object.keys(value).length!==5||value.entryId!==entryId||typeof value.version!=='string'||typeof value.packageId!=='string'||typeof value.packageVersion!=='string')throw Error()
+    const manifest=validateIndustryManifest(value.manifest)
+    if(manifest.resources.filter(resource=>resource.kind==='role').length!==1)throw Error()
+    return {packageId:value.packageId,packageVersion:value.packageVersion,manifest}
+   }catch{throw Error('AI 员工组成回包格式不正确。')}
+  },
+  /**
+   * AI 员工条目添加；不传 requestId，宿主按（本人, 条目, 版本）派生并幂等，重复添加返回 existing，未完成的资源再添加一次续做。
+   * 旧 v1 员工回原三键；完整资源安装另带 install 摘要（员工未建立时 roleId 为 null、status 为 pending）。
+   */
+  async addRole(entryId:string,version:string):Promise<CatalogRoleReceipt>{
    if(typeof entryId!=='string'||!entryId||entryId.length>120||typeof version!=='string'||!version)throw Error('官方目录资源标识不正确。')
    const value=await call('market-catalog/add',{entryId,version,kind:'role'})
-   if(!record(value)||Object.keys(value).length!==3||!uuid(value.roleId)||(value.status!=='created'&&value.status!=='existing')||!Array.isArray(value.skills)||value.skills.some(item=>typeof item!=='string'))throw Error('AI 员工添加回执格式不正确。')
-   return {roleId:value.roleId,status:value.status,skills:value.skills as string[]}
+   const bad=()=>Error('AI 员工添加回执格式不正确。')
+   if(!record(value)||!Array.isArray(value.skills)||value.skills.some(item=>typeof item!=='string'))throw bad()
+   if(value.install===undefined){
+    if(Object.keys(value).length!==3||!uuid(value.roleId)||(value.status!=='created'&&value.status!=='existing'))throw bad()
+    return {roleId:value.roleId,status:value.status,skills:value.skills as string[]}
+   }
+   const install=value.install
+   if(Object.keys(value).length!==4||(value.roleId===null?value.status!=='pending':!uuid(value.roleId)||(value.status!=='created'&&value.status!=='existing')))throw bad()
+   if(!record(install)||typeof install.complete!=='boolean'||!uuid(install.loadId)||(install.roleState!==null&&typeof install.roleState!=='string')||(install.next!==null&&!['resume','connect','retry','review'].includes(install.next as string))||!Array.isArray(install.resources))throw bad()
+   const resources=install.resources.map(row=>{
+    if(!record(row)||typeof row.kind!=='string'||typeof row.title!=='string'||!['done','pending','failed','conflict','needs-user','optional'].includes(row.state as string)||row.nativeName!==undefined&&typeof row.nativeName!=='string')throw bad()
+    return {kind:row.kind,title:row.title,state:row.state as CatalogRoleResource['state'],...(typeof row.nativeName==='string'?{nativeName:row.nativeName}:{})}
+   })
+   return {roleId:value.roleId as string|null,status:value.status as CatalogRoleReceipt['status'],skills:value.skills as string[],install:{complete:install.complete,loadId:install.loadId,roleState:install.roleState as string|null,next:install.next as CatalogRoleInstall['next'],resources}}
   },
  }
 }

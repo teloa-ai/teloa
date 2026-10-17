@@ -1,0 +1,11 @@
+/* 轻量跳转：去往另一个具体对象（任务、计划、执行、资料等），保留可读文字，不画描边按钮。
+   双类提高特异性，覆盖页面容器对 button 的默认描边样式；实质保存、授权、删除等动作不使用此样式。 */
+.link.link{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:2px 0;border:0;border-radius:4px;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);text-align:left;cursor:pointer}
+.link.link:hover:not(:disabled){background:transparent;color:var(--teloa-accent);text-decoration:underline}
+.link.link:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.link.link:disabled{opacity:.5;cursor:default}
+.link.link>svg{flex:none;color:var(--teloa-muted)}
+/* 标题内返回：放在标题上方，弱化为说明色文字加箭头 */
+.back.back{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;min-height:28px;margin:0 0 6px;padding:2px 0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.back.back:hover:not(:disabled){background:transparent;color:var(--teloa-text)}
+.back.back:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}

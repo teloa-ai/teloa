@@ -9,7 +9,7 @@ import {homedir} from 'node:os'
 import test from 'node:test'
 import {host,type RpcHandler} from './fixtures/production-host.ts'
 import {PostgreSqlContainer} from '@testcontainers/postgresql'
-import {createSecurityEndpointIsolateDefinition,initializePlanOccurrences,initializeResources,initializeRoles,initializeTaskRuns,initializeTasks,openResourceDatabase,SecurityApprovalService,SecurityActionExecutionService,SecurityRequestJournal} from '@teloa/backend'
+import {BusinessScopeService,BusinessSpaceService,createSecurityEndpointIsolateDefinition,initializePlanOccurrences,initializeResources,initializeRoles,initializeTaskRuns,initializeTasks,openResourceDatabase,SecurityApprovalService,SecurityActionExecutionService,SecurityRequestJournal} from '@teloa/backend'
 import {apply} from '../src/index.ts'
 import {readSecurityActionPanel} from '@teloa/contract'
 
@@ -124,6 +124,8 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   await runtime.ready(join(root,'.runtime/dsh'))
   await apply(runtime.ctx,{projectRoot:root})
   await apply(runtime.ctx,{projectRoot:root})
+  const personal=await new BusinessSpaceService(db,{id:randomUUID,now:()=>new Date().toISOString()}).current(ownerId)
+  await BusinessScopeService.ensure(db,ownerId,{spaceId:personal.id,scope:'SOC',title:'安全运营',kind:'builtin'})
   const rpc=runtime.rpc
   assert.ok(runtime.tools.length>0,'production apply 必须实际调用 tools.register')
   assert.equal(runtime.tools.some(value=>Reflect.get(value as object,'name')==='teloa_security_execute_approved_action'),false)
@@ -148,7 +150,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   ] as const){
     const requestId=randomUUID(),payload={requestId,...body}
     const lostReply=await rpc(endpoint,payload,new AbortController().signal)
-    assert.equal(lostReply.ok,true)
+    assert.equal(lostReply.ok,true,endpoint+': '+JSON.stringify(lostReply.error))
     assert.deepEqual(lostReply.receipt,{requestId})
     const secondBrowserList=await call(rpc,'requests/pending/list',{}) as Array<{requestId:string;endpoint:string}>
     assert.deepEqual(secondBrowserList.map(row=>[row.requestId,row.endpoint]),[[requestId,endpoint]])

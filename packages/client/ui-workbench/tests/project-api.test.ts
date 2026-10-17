@@ -16,6 +16,13 @@ test('目录拒绝其他业务、重复身份和损坏响应',async()=>{
  for(const result of [[{...row,scope:'SOC'}],[row,row],{}])await assert.rejects(createProjectApi(async()=>result).list('general'))
  await assert.rejects(createProjectApi(async()=>({project:{...row,id:'bad'},items:[],summary:{totalTasks:0,completedTasks:0,cancelledTasks:0,attentionTasks:0}})).get(row.id))
 })
+test('项目资料元信息只匹配当前业务、有效资料与相同来源版本',async()=>{
+ const sourceVersion='a'.repeat(64),base={id:row.id,ownerId:'self',title:'同名资料',sourceId:'local-file',sourceVersion,scopeIds:['general'],version:1,status:'active',createdAt:row.createdAt,updatedAt:row.updatedAt}
+ const api=createProjectApi(async endpoint=>endpoint==='resources/list'?{drafts:[],resources:[base,{...base,id:'20000000-0000-4000-8000-000000000001',scopeIds:['SOC']},{...base,id:'30000000-0000-4000-8000-000000000001',status:'withdrawn'}]}:[{id:'local-file',title:'原始资料.md',source:'local',version:sourceVersion,bytes:10}])
+ assert.deepEqual(await api.materialMetadata('general'),{[row.id]:{sourceTitle:'原始资料.md',updatedAt:row.updatedAt}})
+ const stale=createProjectApi(async endpoint=>endpoint==='resources/list'?{drafts:[],resources:[base]}:[{id:'local-file',title:'后来替换的内容',source:'local',version:'b'.repeat(64),bytes:10}])
+ assert.deepEqual(await stale.materialMetadata('general'),{[row.id]:{updatedAt:row.updatedAt}},'不把同一来源的新版本标题冒充当前资料的来源')
+})
 test('编辑校验身份、版本和字段，候选类型不能偷换',async()=>{
  for(const value of [{...row,version:1},{...row,version:2,title:'different'},{...row,version:2,id:'20000000-0000-4000-8000-000000000001'}])await assert.rejects(createProjectApi(async()=>value).edit(row.id,1,fields))
  assert.equal((await createProjectApi(async()=>({...row,version:2})).edit(row.id,1,fields)).version,2)

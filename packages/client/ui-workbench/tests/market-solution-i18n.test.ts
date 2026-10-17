@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises'
 import {MARKET_SOLUTION_MESSAGE_ROWS} from '../src/client/i18n/locales/market-solution.ts'
 import {MARKET_INDUSTRY_MESSAGE_ROWS} from '../src/client/i18n/locales/market-industry.ts'
 import {MARKET_PAGE_MESSAGE_ROWS} from '../src/client/i18n/locales/market-page.ts'
+import {capabilityCenterMessages} from '../src/client/i18n/locales/capability-center.ts'
 import {MESSAGE_KEYS} from '../lib/types/client/i18n/messages.js'
 import {chineseUiLiterals} from './i18n-ast.ts'
 
@@ -77,8 +78,10 @@ test('市场工具行里搜索框旁有「问一问」按钮，走产品页同�
   for (const key of ['market.solution.ask', 'market.solution.askDraft', 'market.solution.askDraftEmpty']) assert.ok(registered.has(key), `缺 ${key}`)
   // 按钮紧挨着全局搜索框，同一条工具行里；工具行整体排在页签之下。
   assert.ok(source.indexOf('<nav className={css.categories}') < source.indexOf('className={css.toolRow}'), '工具行必须排在页签之下')
-  const row = source.slice(source.indexOf('className={css.toolRow}'), source.indexOf('className={css.toolMenu}'))
-  assert.match(row, /css\.globalSearch/)
+  const rowStart=source.indexOf('className={css.toolRow}')
+  const row=source.slice(rowStart,source.indexOf('</div>}',rowStart))
+  assert.match(row, /searchControl/)
+  assert.match(source, /const searchControl=<label className=\{clsx\(css\.globalSearch,/)
   assert.match(row, /t\('market\.solution\.ask'\)/)
   // 搜索词有无决定用哪条草稿，最终都交给既有的 props.prepare，不新起端点。
   assert.match(source, /trimmed\?t\('market\.solution\.askDraft',\{query:trimmed\}\):t\('market\.solution\.askDraftEmpty'\)/)
@@ -88,15 +91,15 @@ test('市场工具行里搜索框旁有「问一问」按钮，走产品页同�
 test('问一问的两条草稿都带上人话提问，占位符只出现在带搜索词的那条', () => {
   const draft = MARKET_SOLUTION_MESSAGE_ROWS.find(row => row[0] === 'market.solution.askDraft')!
   const empty = MARKET_SOLUTION_MESSAGE_ROWS.find(row => row[0] === 'market.solution.askDraftEmpty')!
-  assert.equal(draft[1], '我想找一个能帮我做 {query} 的方案，有推荐吗？')
-  assert.equal(empty[1], '我想找一个适合我的方案，有推荐吗？')
+  assert.equal(draft[1], '我想找能帮我做 {query} 的 AI 员工或团队，有推荐吗？')
+  assert.equal(empty[1], '有适合我的 AI 员工或团队吗？')
   assert.ok(draft.slice(1).every(value => value.includes('{query}')), 'askDraft 十列都要带 {query}')
   assert.ok(empty.slice(1).every(value => !/\{[^}]+\}/.test(value)), 'askDraftEmpty 不带占位符')
 })
 
 test('market-industry.ts 分类导航七行改值后仍是十一列，且顺序与人话名对上规格 §5.1', () => {
   const order = ['industry', 'agent', 'skill', 'connector', 'knowledge', 'work-template', 'plugin']
-  const expectZh = ['方案', '员工', '技能', '连接', '资料', '任务模板', '扩展']
+  const expectZh = ['模板', '员工', '技能', '连接', '资料', '任务模板', '应用']
   for (const [index, id] of order.entries()) {
     const row = MARKET_INDUSTRY_MESSAGE_ROWS.find(candidate => candidate[0] === 'market.presentation.category.' + id)!
     assert.ok(row, id)
@@ -107,7 +110,8 @@ test('market-industry.ts 分类导航七行改值后仍是十一列，且顺序�
 })
 
 test('market-page.ts 就地改值与新增的词条仍是十一列', () => {
-  for (const key of ['market.home.heroTitle', 'market.search.placeholder', 'market.industry.loadWorkspace', 'market.title', 'market.addedCount', 'market.tool.import', 'market.tool.create']) {
+  assert.equal(MARKET_PAGE_MESSAGE_ROWS.some(row=>(row[0] as string)==='market.home.heroTitle'),false,'已退场过场句不再保留孤儿词条')
+  for (const key of ['market.search.placeholder', 'market.industry.loadWorkspace', 'market.title', 'market.addedCount']) {
     const row = MARKET_PAGE_MESSAGE_ROWS.find(candidate => candidate[0] === key)!
     assert.ok(row, key)
     assert.equal(row.length, 11, key)
@@ -120,12 +124,27 @@ test('孤儿键 market.intent.countPrefix 已删除，且全仓无残留引用',
   assert.ok(!MESSAGE_KEYS.includes('market.intent.countPrefix' as never))
 })
 
-test('C1 页头与工具行的新词条齐全：标题「市场」、徽标「已添加 · N」、两个下拉入口', () => {
+test('B 版页头保留市场与真实计数，统一创建或导入入口的三种定稿语言齐全', async () => {
   const rows = new Map(MARKET_PAGE_MESSAGE_ROWS.map(row => [row[0] as string, row]))
   assert.equal(rows.get('market.title')![1], '市场')
   assert.equal(rows.get('market.addedCount')![1], '已添加 · {count}')
-  assert.equal(rows.get('market.tool.import')![1], '导入')
-  assert.equal(rows.get('market.tool.create')![1], '自己做一个')
+  // 2026-10-14：独立「我的能力」入口退出，已添加页签内是「我的应用」与「我的资源」
+  for (const [locale,create,apps,resources] of [['zh-CN','创建或导入','我的应用','我的资源'],['zh-Hant','建立或匯入','我的應用程式','我的資源'],['en','Create or import','My apps','My resources']] as const) {
+    assert.equal(capabilityCenterMessages[locale]['capabilityCenter.createOrImport'],create)
+    assert.equal(capabilityCenterMessages[locale]['capabilityCenter.myApps'],apps)
+    assert.equal(capabilityCenterMessages[locale]['capabilityCenter.myResources'],resources)
+  }
+  assert.equal('capabilityCenter.mineTitle' in capabilityCenterMessages['zh-CN'],false,'旧「我的能力」标题词条已删除，不留第二事实源')
+  const source=await readFile(new URL('MarketPage.tsx',clientRoot),'utf8')
+  assert.match(source,/t\('capabilityCenter\.createOrImport'\)/)
+  assert.doesNotMatch(source,/capabilityCenter\.mineTitle/)
+  const appsSource=await readFile(new URL('MarketAppsDirectory.tsx',clientRoot),'utf8')
+  assert.match(appsSource,/text\('market\.apps\.mine',\{count:mineCount\}\)/)
+  for (const key of ['market.tool.import','market.tool.create']) {
+    assert.equal(rows.has(key),false,'旧的两套工具文案已退场')
+    assert.equal(source.includes(key),false,'新页头不能又出现两个重复下拉入口')
+    assert.equal(MESSAGE_KEYS.includes(key as never),false,'退场词条不能留下孤儿键')
+  }
   // 徽标的计数占位符十列都要在，否则某些语言会丢掉数字。
   assert.ok(rows.get('market.addedCount')!.slice(1).every(value => value.includes('{count}')), 'market.addedCount 十列都要带 {count}')
 })

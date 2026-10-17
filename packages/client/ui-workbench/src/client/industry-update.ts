@@ -57,5 +57,5 @@ export function compareIndustryUpdate(context:IndustryUpdateContext,load:Industr
   else if(inspection.state!=='parsed')pending.push(resource.title+'：'+inspection.message)
  }
  return {resources,relationChanges:core.relationChanges,entrypointChanges:core.entrypointChanges,kindChanges:core.kindChanges,relationsChanged:core.relationsChanged,entrypointsChanged:core.entrypointsChanged,positioningChanged:core.positioningChanged,localRoles,
- tasks:context.tasks.filter(task=>task.industrySource?.loadId===load.id||roleIds.has(task.assigneeId)),plans:context.plans.filter(plan=>plan.template?.industry?.loadId===load.id||roleIds.has(plan.fields.roleId)),blockers:blocked,pending,sameContent:load.contentHash===candidate.packageContent.hash}
+ tasks:context.tasks.filter(task=>task.industrySource?.loadId===load.id||roleIds.has(task.assigneeId)),plans:context.plans.filter(plan=>plan.template?.industry?.loadId===load.id||plan.fields.roleId!==null&&roleIds.has(plan.fields.roleId)),blockers:blocked,pending,sameContent:load.contentHash===candidate.packageContent.hash}
 }

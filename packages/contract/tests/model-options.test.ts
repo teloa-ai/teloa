@@ -11,3 +11,10 @@ test('模型目录拒绝地址、凭据、错误原文和重复身份',()=>{
   const value=directory();edit(value);assert.throws(()=>readModelOptionsDirectory(value))
  }
 })
+
+test('仅允许无敏感字段的明确缺密钥标记，旧目录投影不变',()=>{
+ const value=directory(),marked={...value,groups:value.groups.map(group=>({...group,credentialMissing:true}))}
+ assert.deepEqual(readModelOptionsDirectory(marked),marked)
+ for(const credentialMissing of [false,'missing',{},null])assert.throws(()=>readModelOptionsDirectory({...marked,groups:[{...marked.groups[0],credentialMissing}]}))
+ assert.throws(()=>readModelOptionsDirectory({...marked,groups:[{...marked.groups[0],credentialRef:'PRIVATE_KEY'}]}))
+})

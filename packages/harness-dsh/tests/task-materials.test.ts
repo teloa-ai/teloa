@@ -65,6 +65,15 @@ test('任务知识加载拒绝正文读取时被静默换成其他版本',async(
  await assert.rejects(load(target,{} as never,database,new AbortController().signal),{code:'teloa/version-conflict'})
 })
 
+test('员工Run支持30引用不改变任务自身知识加载的8项限制',async()=>{
+ const target:TaskExecutionScope={taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'SOC'},database={query:async()=>({rows:[]})} as unknown as TaskRunSkillDatabase
+ const text='任务固定正文',sourceVersion=createHash('sha256').update(text).digest('hex')
+ const rows=Array.from({length:9},(_,index)=>({id:'10000000-0000-4000-8000-'+String(index+1).padStart(12,'0'),version:1,title:'依据',sourceId:'source-'+index,sourceVersion,scopeIds:['SOC'],text}))
+ const service={executionRefsInTransaction:async()=>rows.map(({id,version})=>({id,version}))}
+ const load=createTaskMaterialKnowledgeLoader('local-owner',async()=>service as never,async()=>rows)
+ await assert.rejects(load(target,{} as never,database,new AbortController().signal),{code:'teloa/storage-corrupt'})
+})
+
 test('添加任务知识前先按资料体积预检，超限时不写任务',async()=>{
  const calls:unknown[]=[]
  const service={list:async()=>[],add:async()=>{calls.push('add');return {task:{},material:{}}}} as unknown as Pick<TaskMaterialService,'list'|'add'>

@@ -2,6 +2,7 @@ import {isIndustryManifest} from './industry-manifest.ts'
 import type {MarketItem} from './market-preview.ts'
 import type {IndustryResourceKind} from './industry-manifest.ts'
 import type {LocalizedMetadata} from '@teloa/contract'
+import {canonicalMarketItemId,marketItemId} from './market-item-identity.ts'
 
 export type MarketResourceUse={templateId:string;templateTitle:string;localizedTitle?:LocalizedMetadata;industry:string;resourceId:string}
 export const resourceVisibilityLabels={public:'公共',personal:'本人',team:'团队（演示）',unknown:'来源待核对'} as const
@@ -17,7 +18,7 @@ export function marketResourceIndex(items:readonly MarketItem[]):MarketResourceE
  const digests=new Map<string,string>()
  for(const item of items){
   const kind=itemKind(item);if(!kind)continue
-  const key=keyOf('catalog',item.id,item.version),existing=entries.get(key)
+  const key=keyOf('catalog',marketItemId(item),item.version),existing=entries.get(key)
   const digest=item.packageContent?.hash||item.hash
   if(existing){if(existing.kind!==kind||(digest&&digests.has(key)&&digests.get(key)!==digest))existing.status='conflict';if(digest&&!digests.has(key))digests.set(key,digest);continue}
   if(digest)digests.set(key,digest)
@@ -29,7 +30,9 @@ export function marketResourceIndex(items:readonly MarketItem[]):MarketResourceE
    // 包内编号仅在来源条目内有效；未发布的同名文件不自动合并为公共资源。
    const id=resource.source.kind==='public'?resource.source.id:resource.id
    const resolved=item.packageContent?.resolved?.find(row=>row.resourceId===resource.id)
-   const key=resolved?.sourceKind==='atomic-skill'?keyOf('catalog',resolved.sourceItemId,resource.version):keyOf(resource.source.kind==='public'?'catalog':'package:'+item.id,id,resource.version)
+   const sources=resolved?.sourceKind==='atomic-skill'?items.filter(row=>canonicalMarketItemId(row)===resolved.sourceItemId&&row.atomicSkill?.hash===resolved.sourceHash&&(resolved.sourceContentId===undefined||row.contentStorage?.contentId===resolved.sourceContentId)):[]
+   const fixedSource=sources.length===1?sources[0]:undefined
+   const key=resolved?.sourceKind==='atomic-skill'?keyOf('catalog',fixedSource?marketItemId(fixedSource):resolved.sourceItemId,resource.version):keyOf(resource.source.kind==='public'?'catalog':'package:'+marketItemId(item),id,resource.version)
    let entry=entries.get(key)
    if(!entry){entry={visibility:resource.source.kind==='local'?item.visibility:'unknown',owner:'unknown',key,id,version:resource.version,kind:resource.kind,title:resource.title,...(resource.localized?.title?{localizedTitle:resource.localized.title}:{}),capabilities:[],uses:[],status:'reference'};entries.set(key,entry)}
    if(entry.kind!==resource.kind)entry.status='conflict'

@@ -1,7 +1,7 @@
-import {roleDefinition,roleInput,roleWriteDefinition,type DigitalRole,type RoleDefinition} from '@teloa/contract'
+import {roleDefinition,roleInput,roleWriteDefinition,readRoleProfile,type RoleProfile,type DigitalRole,type RoleDefinition} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 type Call=(endpoint:string,input:unknown)=>Promise<unknown>
-const roleFields=(value:DigitalRole):RoleDefinition=>roleDefinition({name:value.name,kind:value.kind,scopes:value.scopes,duty:value.duty,dataScope:value.dataScope,executionScope:value.executionScope,skills:value.skills,knowledge:value.knowledge,...(value.responsibility===undefined?{}:{responsibility:value.responsibility}),...(value.runtimeConfig===undefined?{}:{runtimeConfig:value.runtimeConfig})})
+const roleFields=(value:RoleDefinition):RoleDefinition=>roleDefinition({...(value.avatarKey===undefined?{}:{avatarKey:value.avatarKey}),name:value.name,kind:value.kind,scopes:value.scopes,duty:value.duty,dataScope:value.dataScope,executionScope:value.executionScope,skills:value.skills,knowledge:value.knowledge,...(value.responsibility===undefined?{}:{responsibility:value.responsibility}),...(value.runtimeConfig===undefined?{}:{runtimeConfig:value.runtimeConfig})})
 const sameFields=(value:DigitalRole,fields:RoleDefinition)=>JSON.stringify(roleFields(value))===JSON.stringify(fields)
 const withoutResponsibility=(fields:RoleDefinition)=>{const {responsibility:_responsibility,...rest}=fields;return JSON.stringify(rest)}
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
@@ -13,7 +13,7 @@ const createRejected=(error:unknown)=>!!error&&typeof error==='object'&&'rejecte
 export type RoleApi=ReturnType<typeof createRoleApi>
 export function readSavedRole(value:unknown):DigitalRole{
  try{
-  const row=roleInput(value,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig'])
+  const row=roleInput(value,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig','avatarKey'])
   const {id,ownerId,version,state,createdAt,updatedAt,...fields}=row
   if(!uuid(id)||typeof ownerId!=='string'||!ownerId||!Number.isSafeInteger(version)||(version as number)<1||!['active','paused','retired'].includes(String(state))||!iso(createdAt)||!iso(updatedAt)||updatedAt<createdAt)throw Error()
   return {...roleDefinition(fields),id,ownerId,version:version as number,state:state as DigitalRole['state'],createdAt,updatedAt}
@@ -36,12 +36,13 @@ export function createRoleApi(call:Call,journal?:RoleRequestJournal,newId=()=>cr
   discard(){const had=pending!==undefined||recoveryError!==undefined;try{journal?.clear()}catch{/* 清不掉不该变成第二道墙 */}pending=undefined;recoveryError=undefined;return had},
   pendingFields:()=>pending?roleWriteDefinition(pending.legacy?{...pending.fields,responsibility:emptyResponsibility()}:pending.fields):undefined,
   async list(){const value=await call('roles/list',{});if(!Array.isArray(value))throw Error('员工目录格式不正确。');const rows=value.map(read);if(new Set(rows.map(row=>row.id)).size!==rows.length)throw Error('员工目录格式不正确：重复身份。');return rows},
-  async create(input:RoleDefinition){
+  async create(input:RoleDefinition,requestId?:string){
    if(recoveryError)throw recoveryError
    if(creating)throw requestError('teloa/role-create-busy','员工创建正在核对，请等待当前请求结束。')
    const fields=roleWriteDefinition(input),key=JSON.stringify(fields)
+   if(requestId!==undefined&&(!uuid(requestId)||pending&&pending.requestId!==requestId))throw requestError('teloa/role-create-pending','请先核对原员工创建请求。')
    if(pending&&(pending.legacy?withoutResponsibility(pending.fields)!==withoutResponsibility(fields):pending.key!==key))throw requestError('teloa/role-create-pending','上次创建结果尚待核对，请先用原内容重试，避免重复创建员工。')
-   pending??={requestId:newId(),fields,key,legacy:false,attempted:false}
+   pending??={requestId:requestId??newId(),fields,key,legacy:false,attempted:false}
    creating=true
    try{
     write()
@@ -58,6 +59,13 @@ export function createRoleApi(call:Call,journal?:RoleRequestJournal,newId=()=>cr
     clear();pending=undefined;return result
    }finally{creating=false}
   },
-  async edit(id:string,version:number,fields:RoleDefinition){const normalized=roleWriteDefinition(fields),row=read(await call('roles/edit',{roleId:id,expectedVersion:version,fields:normalized}));if(row.id!==id||row.version!==version+1||!sameFields(row,normalized))throw Error('员工保存响应与目标、版本或字段不一致，请刷新核对。');return row}
+  async updateProfile(id:string,version:number,baseline:RoleDefinition,input:RoleProfile){
+   const profile=readRoleProfile(input),expectedProfile=readRoleProfile({name:baseline.name,...(baseline.avatarKey?{avatarKey:baseline.avatarKey}:{})})
+   const {name:_name,avatarKey:_avatar,...execution}=roleFields(baseline),expected=roleDefinition({...execution,...profile})
+   const row=read(await call('roles/profile',{roleId:id,expectedVersion:version,expectedProfile,profile}))
+   if(row.id!==id||row.version!==version||!sameFields(row,expected))throw Error('员工保存响应与目标、版本或字段不一致，请刷新核对。')
+   return row
+  },
+  async edit(id:string,version:number,fields:RoleDefinition,baseline?:RoleProfile){const normalized=roleWriteDefinition(fields),row=read(await call('roles/edit',{roleId:id,expectedVersion:version,fields:normalized,...(baseline?{expectedProfile:readRoleProfile(baseline)}:{})}));if(row.id!==id||row.version!==version+1||!sameFields(row,normalized))throw Error('员工保存响应与目标、版本或字段不一致，请刷新核对。');return row}
  }
 }

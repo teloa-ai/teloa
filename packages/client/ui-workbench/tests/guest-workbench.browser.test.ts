@@ -14,13 +14,14 @@ test('访客复用工作导航、保留输入，浏览不读取本人存储或�
  const temp=await mkdtemp(join(root,'.runtime-guest-workbench-'))
  t.after(()=>rm(temp,{recursive:true,force:true}))
  await writeFile(join(temp,'entry.ts'),`import {mountGuestWorkbench} from ${JSON.stringify(entry)}; const state=window.guestTest={calls:[],prompt:'原草稿'};state.handle=mountGuestWorkbench(document.getElementById('root'),{product:'Pro',initialPrompt:state.prompt,maxPromptLength:4000,onPromptChange:value=>{state.prompt=value},onStart:()=>state.calls.push('start'),onAccount:()=>state.calls.push('account')});`)
- const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'entry.ts'),name:'GuestWorkbenchTest',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',plugins:[{name:'guest-host-crypto-boundary',enforce:'pre',resolveId:id=>id==='node:crypto'?'test-blocked-host-crypto':undefined,load:id=>id==='test-blocked-host-crypto'?"function blocked(){throw Error('访客浏览不得执行宿主摘要或验签')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}":undefined}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'entry.ts'),name:'GuestWorkbenchTest',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result
  assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code
  const styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
- const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
- const page=await browser.newPage({viewport:{width:1400,height:900}});t.after(()=>page.close())
+ t.signal.throwIfAborted()
+ const browser=await loadPlaywright().chromium.launch(launchOptions()),closeBrowser=()=>browser.close();t.after(closeBrowser);t.signal.addEventListener('abort',closeBrowser,{once:true});if(t.signal.aborted){await closeBrowser();t.signal.throwIfAborted()}
+ const page=await browser.newPage({viewport:{width:1400,height:900},colorScheme:'light'});t.after(()=>page.close())
  const errors:string[]=[],requests:string[]=[]
  page.on('pageerror',(error:Error)=>errors.push(error.message))
  await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
@@ -32,9 +33,28 @@ test('访客复用工作导航、保留输入，浏览不读取本人存储或�
  await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true})
  await navigation.waitFor()
- for(const label of ['工作台','需要你','对话','任务','项目','自动化','员工','业务','资料','能力中心'])assert.equal(await navigation.getByRole('button',{name:label,exact:true}).count(),1,label)
+ for(const label of ['工作台','对话','项目','员工','业务','资料','市场','应用'])assert.equal(await navigation.getByRole('button',{name:label,exact:true}).count(),1,label)
+ for(const label of ['需要你','任务','自动化'])assert.equal(await navigation.getByRole('button',{name:label,exact:true}).count(),0,label+' 不重复一级导航')
+ await navigation.getByRole('button',{name:'应用',exact:true}).click()
+ assert.equal(await navigation.getByRole('button',{name:'应用',exact:true}).getAttribute('aria-current'),'page')
+ assert.equal(await navigation.getByRole('button',{name:'市场',exact:true}).getAttribute('aria-current'),null)
+ await page.getByRole('heading',{name:'应用',exact:true}).waitFor()
+ await navigation.getByRole('button',{name:'市场',exact:true}).click()
+ assert.equal(await navigation.getByRole('button',{name:'市场',exact:true}).getAttribute('aria-current'),'page')
+ assert.equal(await navigation.getByRole('button',{name:'应用',exact:true}).getAttribute('aria-current'),null)
+ await page.getByRole('heading',{name:'市场',exact:true}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>(window as any).guestTest.calls),[],'浏览市场和应用入口不能自动登录或建立连接')
+ await navigation.getByRole('button',{name:'工作台',exact:true}).click()
  assert.equal(await page.getByLabel('想完成什么工作？',{exact:true}).inputValue(),'原草稿')
  assert.equal(await page.getByLabel('想完成什么工作？',{exact:true}).getAttribute('maxlength'),'4000')
+ const hub=page.getByRole('navigation',{name:'工作台',exact:true})
+ for(const label of ['需要你','任务','自动化','总览']){
+  await hub.getByRole('button',{name:label,exact:true}).click()
+  assert.equal(await hub.getByRole('button',{name:label,exact:true}).getAttribute('aria-current'),'page')
+  assert.equal(await navigation.getByRole('button',{name:'工作台',exact:true}).getAttribute('aria-current'),'page')
+ }
+ assert.deepEqual(await page.evaluate(()=>(window as any).guestTest.calls),[],'浏览次级入口仍不读取本人服务或自动登录')
+ assert.equal(await page.getByLabel('想完成什么工作？',{exact:true}).inputValue(),'原草稿')
  const longPrompt='长'.repeat(4000)
  await page.getByLabel('想完成什么工作？',{exact:true}).fill(longPrompt+'额外')
  assert.equal(await page.getByLabel('想完成什么工作？',{exact:true}).inputValue(),longPrompt)
@@ -65,7 +85,9 @@ test('访客复用工作导航、保留输入，浏览不读取本人存储或�
  assert.equal(await page.getByText('max@example.test',{exact:true}).count(),0)
  assert.equal(await page.evaluate(()=>(window as any).guestTest.prompt),'整理这一周反馈','宿主更新草稿不回写为用户编辑')
  await page.evaluate(()=>(window as any).guestTest.handle.update({account:null}))
- await page.getByRole('button',{name:'切换深色主题',exact:true}).click()
+ assert.equal(await page.getByRole('button',{name:/切换(?:深|浅)色主题/}).count(),0,'主题入口已统一进入设置，左栏不保留重复开关')
+ await page.emulateMedia({colorScheme:'dark'})
+ await page.waitForFunction(()=>document.querySelector('[data-guest-workbench]')?.getAttribute('data-theme')==='dark')
  assert.equal(await page.locator('[data-guest-workbench]').getAttribute('data-theme'),'dark')
  await page.setViewportSize({width:390,height:844})
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
@@ -84,12 +106,13 @@ test('宿主设置复用平台布局与主题，导航保留真实节点及草�
  const appearance=document.createElement('section');appearance.textContent='宿主外观内容';
  const original=document.getElementById('original');original.append(account,appearance);state.account=account;
  state.handle=mountGuestWorkbench(document.getElementById('root'),{product:'Pro',initialPrompt:state.prompt,onPromptChange:value=>{state.prompt=value},onStart:()=>state.calls.push('start'),onAccount:()=>state.calls.push('account'),settings:{entries:[{id:'account',label:'账号',content:account},{id:'appearance',label:'外观',content:appearance}],onSelect:id=>state.selected.push(id),onClose:async()=>{state.calls.push('close');throw Error('宿主关闭守卫拒绝')}}});`)
- const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'entry.ts'),name:'GuestSettingsTest',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',plugins:[{name:'guest-host-crypto-boundary',enforce:'pre',resolveId:id=>id==='node:crypto'?'test-blocked-host-crypto':undefined,load:id=>id==='test-blocked-host-crypto'?"function blocked(){throw Error('访客浏览不得执行宿主摘要或验签')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}":undefined}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'entry.ts'),name:'GuestSettingsTest',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result
  assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code
  const styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
- const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ t.signal.throwIfAborted()
+ const browser=await loadPlaywright().chromium.launch(launchOptions()),closeBrowser=()=>browser.close();t.after(closeBrowser);t.signal.addEventListener('abort',closeBrowser,{once:true});if(t.signal.aborted){await closeBrowser();t.signal.throwIfAborted()}
  const page=await browser.newPage({viewport:{width:1400,height:900},colorScheme:'light'});t.after(()=>page.close())
  const errors:string[]=[],requests:string[]=[]
  page.on('pageerror',(error:Error)=>errors.push(error.message))
@@ -121,7 +144,9 @@ test('宿主设置复用平台布局与主题，导航保留真实节点及草�
  assert.deepEqual(await page.evaluate(()=>(window as any).guestTest.selected),['account','appearance','account'])
  assert.equal(await page.evaluate(()=>{try{(window as any).guestTest.handle.openSettings('missing');return false}catch{return true}}),true)
  assert.equal(await page.getByLabel('宿主输入',{exact:true}).inputValue(),'宿主保留的新输入')
- await page.getByRole('button',{name:'切换深色主题',exact:true}).click()
+ assert.equal(await page.getByRole('button',{name:/切换(?:深|浅)色主题/}).count(),0,'主题入口已统一进入设置，左栏不保留重复开关')
+ await page.emulateMedia({colorScheme:'dark'})
+ await page.waitForFunction(()=>document.querySelector('[data-guest-workbench]')?.getAttribute('data-theme')==='dark')
  assert.equal(await page.evaluate(()=>getComputedStyle((window as any).guestTest.account).color),'rgb(233, 236, 228)')
  await page.getByRole('button',{name:'宿主操作',exact:true}).click()
  await page.setViewportSize({width:390,height:844})
@@ -160,13 +185,14 @@ test('设置左导航等宿主确认关闭，拒绝或未确认时保留设置�
  const state=window.guestTest={closeCalls:0,mode:'reject'};
  const content=document.createElement('section');content.textContent='宿主设置内容';
  state.handle=mountGuestWorkbench(document.getElementById('root'),{product:'Pro',initialPrompt:'不能丢失的草稿',onPromptChange:()=>{},onStart:()=>{},onAccount:()=>{},settings:{entries:[{id:'account',label:'用户中心',content}],onClose:()=>{state.closeCalls++;if(state.mode==='reject')throw Error('尚不能关闭');return new Promise(resolve=>state.resolveClose=resolve)}}});`)
- const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'entry.ts'),name:'GuestSettingsNavigationTest',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',plugins:[{name:'guest-host-crypto-boundary',enforce:'pre',resolveId:id=>id==='node:crypto'?'test-blocked-host-crypto':undefined,load:id=>id==='test-blocked-host-crypto'?"function blocked(){throw Error('访客浏览不得执行宿主摘要或验签')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}":undefined}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'entry.ts'),name:'GuestSettingsNavigationTest',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result
  assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code
  const styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
- const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
- const page=await browser.newPage({viewport:{width:1400,height:900}});t.after(()=>page.close())
+ t.signal.throwIfAborted()
+ const browser=await loadPlaywright().chromium.launch(launchOptions()),closeBrowser=()=>browser.close();t.after(closeBrowser);t.signal.addEventListener('abort',closeBrowser,{once:true});if(t.signal.aborted){await closeBrowser();t.signal.throwIfAborted()}
+ const page=await browser.newPage({viewport:{width:1400,height:900},colorScheme:'light'});t.after(()=>page.close())
  const errors:string[]=[],requests:string[]=[]
  page.on('pageerror',(error:Error)=>errors.push(error.message))
  await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
@@ -186,13 +212,13 @@ test('设置左导航等宿主确认关闭，拒绝或未确认时保留设置�
  await page.evaluate(()=>(window as any).guestTest.mode='hold')
  await navigation.getByRole('button',{name:'项目',exact:true}).click()
  await page.waitForFunction(()=>(window as any).guestTest.closeCalls===3)
- await navigation.getByRole('button',{name:'任务',exact:true}).click()
+ await navigation.getByRole('button',{name:'工作台',exact:true}).click()
  await page.getByRole('button',{name:'新建',exact:true}).click()
  assert.equal(await settings.count(),1)
  assert.equal(await page.evaluate(()=>(window as any).guestTest.closeCalls),3,'关闭等待中不能重复请求或覆盖目的页')
  await page.evaluate(()=>(window as any).guestTest.resolveClose())
  await page.evaluate(()=>Promise.resolve())
- await navigation.getByRole('button',{name:'任务',exact:true}).click()
+ await navigation.getByRole('button',{name:'工作台',exact:true}).click()
  assert.equal(await settings.count(),1,'回调返回不等于宿主已确认关闭')
  assert.equal(await page.evaluate(()=>(window as any).guestTest.closeCalls),3)
  await page.evaluate(()=>(window as any).guestTest.handle.closeSettings())

@@ -15,6 +15,16 @@ export type PlanStatusInput={
  stamp:(at:string)=>string;t:TeloaTranslate
 }
 
+/** 长期定义生效后，旧表单日程只是历史字段，不能代替当前触发条件。 */
+export function effectivePlanTriggerLabel(plan:Pick<PlanStatusInput['plan'],'trigger'|'workDefinition'>,t:TeloaTranslate):string{
+ if(!plan.workDefinition)return triggerLabel(plan.trigger,t)
+ return plan.workDefinition.triggers.map(trigger=>{
+  if(trigger.kind==='schedule')return triggerLabel(trigger.schedule,t)
+  const keys={'material-version':'planWork.material','group-message':'planWork.groupMessage','child-completed':'planWork.childCompleted','approval-result':'planWork.approvalResult','business-object-version':'planWork.businessObject','business-sync-result':'planWork.businessSync'} as const
+  return t(keys[trigger.eventKind])
+ }).join(' · ')
+}
+
 /** 从最新一条起数连续、reason 相同、blockingClaimId 相同的跳过条数；skips 为空或首条与 latestSkip 不同则用 latestSkip 计 1。 */
 export function consecutiveSkips(skips:readonly PlanScheduleSkip[],latestSkip:PlanScheduleSkip|null):number{
  if(!latestSkip)return 0
@@ -31,12 +41,13 @@ export function consecutiveSkips(skips:readonly PlanScheduleSkip[],latestSkip:Pl
 /** 六态映射：自上而下第一条命中即返回；只读宿主给的调度事实，不在浏览器补造下次时间。 */
 export function planStatusBox(input:PlanStatusInput):PlanStatusBoxModel{
  const {plan,schedule,skips,latestExecution,stamp,t}=input
- const timezone=plan.trigger.kind==='schedule'?plan.trigger.timezone:''
+ const scheduleTrigger=plan.workDefinition?plan.workDefinition.triggers.find(trigger=>trigger.kind==='schedule')?.schedule:plan.trigger.kind==='schedule'?plan.trigger:undefined
+ const timezone=scheduleTrigger?.timezone??''
  const trigger:PlanStatusButton={label:t('continuous.detail.triggerOnce'),action:{kind:'trigger'}}
  const pause:PlanStatusButton={label:t('continuous.detail.pause'),action:{kind:'pause'}}
  if(plan.state==='archived')return {tone:'muted',sentence:t('plan.status.archived'),detail:t('continuous.detail.status.archived')}
- if(schedule&&!schedule.available)return {tone:'warn',sentence:t('plan.status.unavailable'),detail:t('plan.schedule.unavailable'),primary:trigger}
- if(plan.state==='paused')return {tone:'muted',sentence:t('plan.status.paused',{trigger:triggerLabel(plan.trigger,t)}),...(schedule?.available?{detail:t('continuous.detail.status.pausedConnected')}:{}),primary:{label:t('continuous.detail.resume'),action:{kind:'resume'}}}
+ if(schedule&&!schedule.available)return {tone:'warn',sentence:t('plan.status.unavailable'),detail:t('plan.schedule.unavailable'),...(scheduleTrigger?{primary:trigger}:{})}
+ if(plan.state==='paused')return {tone:'muted',sentence:t('plan.status.paused',{trigger:effectivePlanTriggerLabel(plan,t)}),...(schedule?.available?{detail:t('continuous.detail.status.pausedConnected')}:{}),primary:{label:t('continuous.detail.resume'),action:{kind:'resume'}}}
  const overview=schedule?.overview
  const latestSkip=overview?.latestSkip
  // 跳过晚于最近一次成功领取才算「当前被卡住」；更早的跳过已被后来的领取解开，落到第 5–7 行。

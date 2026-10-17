@@ -22,8 +22,14 @@ export function readRoleWorkAuthorization(value:unknown):RoleWorkAuthorization{
  return {...parsed,delegationId:parsed.delegationId.toLowerCase()}
 }
 const epochs=new Map<string,number>(),key=(owner:string,roleId:string)=>JSON.stringify([owner,roleId.toLowerCase()])
+const listeners=new Map<string,Set<()=>void>>()
+/** 当前岗位变更只撤销旧媒体/输入租约，不中断已经受理的业务任务。 */
+export function subscribeRoleWorkEligibility(owner:string,roleId:string,notify:()=>void):()=>void{
+ const id=key(owner,roleId),set=listeners.get(id)??new Set<()=>void>();listeners.set(id,set);set.add(notify)
+ return ()=>{set.delete(notify);if(!set.size&&listeners.get(id)===set)listeners.delete(id)}
+}
 /** 修改执行定义/工具后由集成者调用；只封旧租约，不授予新权限。 */
-export function invalidateRoleWorkEligibility(owner:string,roleId:string):void{const id=key(owner,roleId);epochs.set(id,(epochs.get(id)??0)+1)}
+export function invalidateRoleWorkEligibility(owner:string,roleId:string):void{const id=key(owner,roleId);epochs.set(id,(epochs.get(id)??0)+1);for(const notify of [...listeners.get(id)??[]])try{notify()}catch{/* 通知失败不能阻止原执行租约失效。 */}}
 export function roleWorkEpoch(owner:string,roleId:string):number{return epochs.get(key(owner,roleId))??0}
 export async function roleWorkTransaction<T>(pool:Pool,work:(db:PoolClient)=>Promise<T>):Promise<T>{
  const db=await pool.connect()

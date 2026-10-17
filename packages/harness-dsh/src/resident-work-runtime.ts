@@ -4,25 +4,29 @@ import {Session,SessionId,SessionLogOffset,type SessionEvent} from '@deepseek-ai
 import {foldGoal} from '@deepseek-ai/dsh-goal'
 import {boundContextSummary} from '@deepseek-ai/dsh-llm'
 import {finalAssistantOutput} from '@deepseek-ai/dsh-subagent'
-import {WorkError,artifactContent,taskInput,readRetrievalSearchResult,groupRoutingRequestId,groupRoutingSessionId,type WorkControlChange} from '@teloa/contract'
-import {ArtifactService,taskArtifactSource,taskArtifactSessions,GroupRoutingOutboxService,WorkLineageService,WorkControlService,WorkRecoveryService,WorkBudgetService,TaskRunGoalService,TaskRunRuntimeLinkService,TaskCompletionService,readStoredTask,WorkEventService,MarketContentStore,WorkProgressService,WorkRetryService,combineWorkAccessLeases,readTrustedGroupMessageRunSource,RoleWorkEligibilityService,workAccess,type TaskRunService,type TaskRun,type OwnerWorkAuthority,type ResourceService,type RoleDailyLogService,type WorkAccessLease,type WorkResumeInput,type WorkRecoveryCheckpoint,type TaskExecutionScope,type ConversationService} from '@teloa/backend'
+import {WorkError,artifactContent,taskInput,readRetrievalSearchResult,groupRoutingAttemptRequestId,groupRoutingSessionId,type WorkControlChange} from '@teloa/contract'
+import {ArtifactService,taskArtifactSource,taskArtifactSessions,GroupRoutingOutboxService,WorkLineageService,WorkControlService,WorkRecoveryService,WorkBudgetService,TaskRunGoalService,TaskRunRuntimeLinkService,TaskCompletionService,readStoredTask,WorkEventService,MarketContentStore,WorkProgressService,WorkRetryService,combineWorkAccessLeases,readTrustedGroupMessageRunSource,readCurrentGroupRoutingAttempt,readGroupRunAppendIds,RoleWorkEligibilityService,workAccess,type TaskRunService,type TaskRun,type OwnerWorkAuthority,type ResourceService,type RoleDailyLogService,type WorkAccessLease,type WorkResumeInput,type WorkRecoveryCheckpoint,type TaskExecutionScope,type ConversationService} from '@teloa/backend'
 import {createTaskRunGoal} from './task-run-goal.ts'
 import {createTaskCompletionVerifiers} from './task-completion-verifiers.ts'
 import {WorkControlDriver} from './work-control-driver.ts'
 import {WorkRecoveryCoordinator,controlledWorkRestore} from './work-recovery-coordinator.ts'
 import {TaskRunDriver,type TaskRunPorts} from './task-run-driver.ts'
+import {assertSafeTaskRunRetry} from './task-run-retry-proof.ts'
+import {TaskRunSubagentService,TaskRunWebAccessService} from '@teloa/backend'
 import {nativeInputRecoveryCandidate,type NativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
 import {createOrdinaryNativeRestoreAuthorization} from './ordinary-native-restore.ts'
 import {nativeInputIdentity} from './native-input-access.ts'
-import {taskRunTeamContinuations} from './task-run-team-records.ts'
+import {taskRunTeamContinuations,taskRunTeamRelayGrant} from './task-run-team-records.ts'
 import {readSessionEvents} from './session-events.ts'
 import {taskKnowledgeAuthorization} from './task-run-dsh.ts'
 import {inspectNativeProgressRound} from './work-stagnation.ts'
 import {drainGroupRoutingOutbox,drainGroupRoutingWakes,type GroupRoutingOutboxPorts} from './group-routing-outbox-driver.ts'
 import type {TeloaNativeInput} from './native-input-provider.ts'
-import type {ResidentRoutingBudget} from './resident-model-budget.ts'
+import {runBudgetTerminal,type ResidentRoutingBudget} from './resident-model-budget.ts'
 import {isRoutingSession} from './group-routing.ts'
 import type {NativeCheckpointSnapshot,NativeInputRestore,NativeInputRestoreInput,NativeInputRestoreLease} from './native-input-checkpoint.ts'
+import {taskRunOwnerSettlement} from './task-run-owner-settlement.ts'
+import {taskRunRuntimeId} from './task-run-background.ts'
 
 type Pool=TaskRunService['pool']
 type Permit=Awaited<ReturnType<WorkRecoveryService['begin']>>
@@ -32,6 +36,8 @@ export type ResidentWorkRuntimeOptions={
  runs:()=>Promise<TaskRunService>;resources:ResourceService;dailyLogs:()=>Promise<RoleDailyLogService>
  executionScope:(db:Parameters<TaskRunService['readVerifiedInTransaction']>[0],owner:string,runId:string,mode:'active'|'completion')=>Promise<TaskExecutionScope>
  approval?:NonNullable<ConstructorParameters<typeof WorkEventService>[2]>['approval']
+ business?:NonNullable<ConstructorParameters<typeof WorkEventService>[2]>['business']
+ businessOrigin?:NonNullable<ConstructorParameters<typeof WorkEventService>[2]>['businessOrigin']
  verifyInitialMessage:(run:TaskRun,message:NativeInputRestoreInput['messages'][number],acceptedAt:number)=>Promise<boolean>
  ordinaryConversations?:Pick<ConversationService,'repository'>
  report:(code:string)=>void
@@ -54,13 +60,50 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
  const attached=()=>{if(closed||!binding)throw unavailable();return binding}
  const driver=async()=>new TaskRunDriver(await runs(),attached().ports)
  const authority={authorize:async(value:string,request:Readonly<{requestId:string;controlId:string}>)=>{assertOwner(value);return options.ownerAuthority.authorize(value,{requestId:request.requestId,roleId:request.controlId,operation:'resume'})}}
- const controls=new WorkControlService(pool,identity,{hostGeneration:()=>generation,ownerAuthority:authority,inspectRun:async(value,input)=>{assertOwner(value);if(!controlDriver)throw unavailable();const proof=await controlDriver.inspectRun(value,input),operations=(await pool.query("select e.operation_id,e.state from teloa_security_action_executions e join teloa_security_actions a on a.owner_id=e.owner_id and a.id=e.action_id join teloa_task_runs r on r.owner_id=a.owner_id and r.task_id=a.task_id where r.owner_id=$1 and r.id=$2 and e.state not in ('succeeded','failed')",[value,input.runId])).rows;return {settled:proof.settled&&operations.length===0,unknownOperationIds:[...proof.unknownOperationIds,...operations.filter(row=>row.state==='dispatching'||row.state==='effect_unknown').map(row=>'security:'+row.operation_id)]}}})
+ const zeroWorkFailure=async(run:TaskRun,signal:AbortSignal)=>{
+  const [children,web]=await Promise.all([new TaskRunSubagentService(pool,identity).listMany(owner,[run.id]),new TaskRunWebAccessService(pool,identity).listMany(owner,[run.id])])
+  await assertSafeTaskRunRetry(run,attached().ports,signal,{subagents:children.get(run.id)??[],webAccess:web.get(run.id)??[]})
+ }
+ const controls=new WorkControlService(pool,identity,{hostGeneration:()=>generation,ownerAuthority:authority,inspectRun:async(value,input)=>{
+  assertOwner(value);if(!controlDriver)throw unavailable()
+  let proof=await controlDriver.inspectRun(value,input).catch(()=>({settled:false,unknownOperationIds:[] as string[]}))
+  // 完整官方零副作用失败证明可收口暂停；不把冷 idle 或 owner 本身当完成证据。
+  if(!proof.settled)try{await zeroWorkFailure(await(await runs()).get(value,{runId:input.runId}),new AbortController().signal);proof={settled:true,unknownOperationIds:[]}}catch{}
+  const operations=(await pool.query("select e.operation_id,e.state from teloa_security_action_executions e join teloa_security_actions a on a.owner_id=e.owner_id and a.id=e.action_id join teloa_task_runs r on r.owner_id=a.owner_id and r.task_id=a.task_id where r.owner_id=$1 and r.id=$2 and e.state not in ('succeeded','failed')",[value,input.runId])).rows
+  return {settled:proof.settled&&operations.length===0,unknownOperationIds:[...proof.unknownOperationIds,...operations.filter(row=>row.state==='dispatching'||row.state==='effect_unknown').map(row=>'security:'+row.operation_id)]}
+ }})
  const restarted=await controls.disarmForRestart(owner,{hostGeneration:generation})
  const snapshot=async(sessionId:string):Promise<NativeCheckpointSnapshot>=>{
   const agent=ctx.agents.get(SessionId(sessionId))
   if(agent){if(!await ctx.sessions.flush(agent.session))throw unavailable();return {header:agent.session.header,events:[...readSessionEvents(agent.session)],inheritedEventCount:Number(agent.session.inheritedEventCount)}}
   const handle=await ctx.sessionPersistence.open(SessionId(sessionId),'read')
   try{return {header:handle.header,events:(await handle.read()).events,inheritedEventCount:Number(handle.inheritedEventCount)}}finally{await handle.close()}
+ }
+ const settleRunBudget=async(run:TaskRun)=>{
+  if(run.state!=='ended'||run.evidence?.state!=='ended')return
+  const fixed=await snapshot(run.sessionId),proof=runBudgetTerminal(run,{sessionId:fixed.header.id,events:fixed.events,inheritedEventCount:fixed.inheritedEventCount})
+  if(proof)await budgets.recordRunTerminal(owner,proof)
+ }
+ const settleRunOwner=async(run:TaskRun)=>{
+  if(closed||!binding||run.state!=='ended')return
+  const proof=await taskRunOwnerSettlement(ctx,run,{runtimeId:taskRunRuntimeId,ports:binding.ports,listLinks:()=>binding!.runtimeLinks.list(owner,{runId:run.id}),nativeInput,now:identity.now})
+  if(proof)await new TaskRunRuntimeLinkService(pool).recordOwnerSettlement(owner,proof)
+ }
+ let ownerScanAfter:{createdAt:string;id:string}|undefined
+ const reconcileOwnerSettlements=async(signal:AbortSignal)=>{
+  if(closed||!binding)return
+  // 仅原存活宿主补写漏回调；新宿主不以空 jobs 表替旧进程的未知工作作证。
+  const rows=(await pool.query(`select distinct r.id,r.created_at from teloa_task_runs r join teloa_task_run_runtime_links l on l.owner_id=r.owner_id and l.run_id=r.id where r.owner_id=$1 and r.state='ended' and l.kind='job' and l.payload->>'record'='owner' and l.payload->>'runtimeId'=$2 and l.owner_settlement is null and ($3::timestamptz is null or (r.created_at,r.id)>($3::timestamptz,$4::uuid)) order by r.created_at,r.id limit 100`,[owner,taskRunRuntimeId,ownerScanAfter?.createdAt??null,ownerScanAfter?.id??null])).rows
+  for(const row of rows){signal.throwIfAborted();try{await settleRunOwner(await(await runs()).get(owner,{runId:row.id}))}catch(error){options.report(error instanceof WorkError?error.code:'teloa/unavailable')}ownerScanAfter={createdAt:row.created_at.toISOString(),id:row.id}}
+  if(rows.length<100)ownerScanAfter=undefined
+ }
+ let budgetScanAfter:{createdAt:string;id:string}|undefined
+ const reconcileRunBudgets=async(signal:AbortSignal)=>{
+  // 正常回调前宿主退出时，只补原已结束 Run 的未知用量时钟；不恢复执行或释放预留。
+  // 每轮最多100项，失败也前移；读至尾部后下一轮重查，缺失日志不能饿死后续可信终态。
+  const rows=(await pool.query(`select distinct r.id,r.created_at from teloa_work_budget_reservations b join teloa_work_retry_claims c on c.owner_id=b.owner_id and c.model_request_id=b.model_request_id join teloa_work_retries retry on retry.owner_id=c.owner_id and retry.operation_id=c.operation_id join teloa_task_runs r on r.owner_id=retry.owner_id and r.id=retry.run_id where b.owner_id=$1 and b.state='unknown' and b.elapsed_ended_at is null and b.settled_at is null and r.state='ended' and ($2::timestamptz is null or (r.created_at,r.id)>($2::timestamptz,$3::uuid)) order by r.created_at,r.id limit 100`,[owner,budgetScanAfter?.createdAt??null,budgetScanAfter?.id??null])).rows
+  for(const row of rows){signal.throwIfAborted();try{await settleRunBudget(await(await runs()).get(owner,{runId:row.id}))}catch(error){options.report(error instanceof WorkError?error.code:'teloa/unavailable')}budgetScanAfter={createdAt:row.created_at.toISOString(),id:row.id}}
+  if(rows.length<100)budgetScanAfter=undefined
  }
  const ordinaryProvenance=new Map<string,number>()
  const invalidateOrdinaryRestore=(sessionId:string)=>{if(typeof sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(sessionId))throw unavailable();ordinaryProvenance.set(sessionId,(ordinaryProvenance.get(sessionId)??0)+1)}
@@ -76,7 +119,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   if(pending&&!nativeInputRecoveryCandidate({snapshot:fixed,inbox}))unknown.push('checkpoint:roots-unverified')
   const last=[...fixed.events].reverse().find(event=>event.type==='turn/start'||event.type==='turn/end')
   if(last?.type==='turn/start')unknown.push('checkpoint:unfinished-turn')
-  for(const link of await new TaskRunRuntimeLinkService(pool).listInTransaction(client,owner,{runId:run.id})){if(link.kind==='browser'&&link.payload.status==='dirty')unknown.push('browser:'+link.payload.dispatchId);if(link.kind==='job'&&link.payload.record==='job'&&['running','stopping'].includes(link.payload.status))unknown.push('job:'+link.nativeId)}
+  for(const link of await new TaskRunRuntimeLinkService(pool).listInTransaction(client,owner,{runId:run.id})){if(link.kind==='browser'&&link.payload.status==='dirty')unknown.push('browser:'+link.payload.dispatchId);if(link.kind==='job'&&link.payload.record==='job'&&['running','stopping'].includes(link.payload.status))unknown.push('job:'+link.nativeId);if(link.kind==='external'&&['reserved','running','stopping','unknown'].includes(link.payload.status))unknown.push('external:'+link.payload.provider+':'+link.payload.reservationId)}
   const external=(await client.query("select e.operation_id from teloa_security_action_executions e join teloa_security_actions a on a.owner_id=e.owner_id and a.id=e.action_id where e.owner_id=$1 and a.task_id=$2 and e.state not in ('succeeded','failed')",[value,run.taskId])).rows;unknown.push(...external.map(row=>'security:'+row.operation_id))
   return {reason:unknown.length||!accepted&&run.state!=='prepared'?'unknown':accepted?'accepted':'unaccepted',checkpointSha256:hash(fixed),hasPendingInput:pending,unknownOperationIds:unknown}
   }finally{if(!db)client.release()}
@@ -146,10 +189,20 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
    const message=actual.messages[i]!,root=actual.roots[i]!,accepted=actual.acceptedEvents[i]!,source=message.source
    if(root.sessionId!==run.sessionId||nativeInputIdentity(message,root.nativeRequestId??undefined).payloadSha256!==root.payloadSha256)throw unavailable()
    if(source.kind==='user'){
-    if(Object.keys(source).some(key=>!['kind','rpcId'].includes(key))||Reflect.get(source,'rpcId')!==run.nativeRequestId||root.nativeRequestId!==run.nativeRequestId||!await options.verifyInitialMessage(run,message,accepted.time))throw unavailable()
+    const rpcId=Reflect.get(source,'rpcId')
+    // 本人在原群对活动 Run 的追加：只认宿主为本 Run 会话持久登记过的同一原生请求身份，不凭消息正文或来源猜测。
+    const appended=rpcId!==run.nativeRequestId&&typeof rpcId==='string'&&root.nativeRequestId===rpcId&&(await readGroupRunAppendIds(pool,owner,run.sessionId)).includes(rpcId)
+    if(Object.keys(source).some(key=>!['kind','rpcId'].includes(key))||!appended&&(rpcId!==run.nativeRequestId||root.nativeRequestId!==run.nativeRequestId||!await options.verifyInitialMessage(run,message,accepted.time)))throw unavailable()
    }else if(source.kind==='goal'){
     const matches=stored.continuations.filter(receipt=>receipt.state==='accepted'&&receipt.ownerId===owner&&receipt.runId===run.id&&receipt.sessionId===run.sessionId&&receipt.controlId===run.lineage!.roundControlId&&receipt.messageId===message.id&&receipt.goalId===source.goalId&&receipt.revision===source.revision&&receipt.round===source.round&&receipt.payloadSha256===root.payloadSha256&&receipt.acceptedSeq===accepted.seq)
     if(!stored.binding||Object.keys(source).some(key=>!['kind','goalId','revision','round'].includes(key))||root.nativeRequestId!==null||matches.length!==1)throw unavailable()
+   }else if(source.kind==='agent-message'){
+    if(Object.keys(source).some(key=>!['kind','form','senderSessionId'].includes(key))||source.form!=='relay'||root.nativeRequestId!==null||!team.has(JSON.stringify(['agent-message',source.senderSessionId,message.id])))throw unavailable()
+    const grant=taskRunTeamRelayGrant(input.snapshot.events,grants,source.senderSessionId,accepted.seq)
+    const children=(await pool.query('select reservation_id from teloa_task_run_subagents where owner_id=$1 and run_id=$2 and child_session_id=$3',[owner,run.id,source.senderSessionId])).rows
+    if(!grant||children.length!==1||grant.payload.reservationId!==children[0].reservation_id||hash(message.content[0])!==hash({type:'text',text:`Team message from ${grant.payload.name}:`}))throw unavailable()
+    const child=await snapshot(source.senderSessionId)
+    if(child.header.parentSession!==run.sessionId)throw unavailable()
    }else if(source.kind==='team-message'){
     if(Object.keys(source).some(key=>!['kind','teamId','messageId','senderId','senderName'].includes(key))||source.teamId!==run.sessionId||root.nativeRequestId!==null||!team.has(JSON.stringify([source.teamId,source.messageId,source.senderId,source.senderName])))throw unavailable()
     const queued=input.snapshot.events.filter(event=>event.seq<accepted.seq&&event.type==='team/message/queued'&&event.data.teamId===source.teamId&&event.data.message.id===source.messageId)
@@ -201,7 +254,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   const current=(await resources.executionKnowledgeInTransaction(input.db,auth.actor,auth.targetScopes,[source.resourceId]))[0];if(!current)throw unavailable();return current
  },saveMaterialSummaryArtifact:async(input,delivery)=>({receiptId:delivery.requestId,artifact:await artifacts.createInTransaction(input.db,input.ownerId,{requestId:delivery.requestId,source:await taskArtifactSource(input.db,input.ownerId,input.task.id,true),content:delivery.content})})})
  const settleRun=async(value:string,run:TaskRun)=>{
-  assertOwner(value);if(run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||!binding)return
+  assertOwner(value);try{await settleRunOwner(run)}catch(error){options.report(error instanceof WorkError?error.code:'teloa/unavailable')}await settleRunBudget(run);if(run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||!binding)return
   const row=(await pool.query('select * from teloa_tasks where owner_id=$1 and id=$2',[owner,run.taskId])).rows[0];if(!row)throw unavailable();const task=readStoredTask(row);if(task.completionPolicy?.kind!=='verified'||task.state!=='waiting')return
   const ports=attached().ports,events=await ports.events(run),observedGoal=await ports.goalObservation?.(run,events),background=await ports.backgroundState?.(run),children=await ports.subagentState?.(run,new AbortController().signal)
   const service=new TaskCompletionService(pool,identity,{readRun:(db,actor,id)=>runs().then(api=>api.readVerifiedInTransaction(db,actor,id)),readLineage:(db,actor,id)=>lineage.readInTransaction(db,actor,{taskId:id}),verifiers,settlement:async(db,actor,current)=>{
@@ -214,15 +267,18 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   await service.complete(owner,{requestId:requestId(['verified-completion',owner,run.id]),taskId:task.id,expectedVersion:task.version,candidate:{runId:run.id,terminalEventSeq:run.evidence.endSeq,receiptIds:[],artifactIds:[]}})
   await progress.recordRunProgress(value,run.id)
  }
- const events=new WorkEventService(pool,identity,{material:async(db,value,resourceId)=>{assertOwner(value);const row=(await db.query('select spec from teloa_resources where owner_id=$1 and id=$2',[value,resourceId])).rows[0];if(!row||!Array.isArray(row.spec.scopeIds))throw unavailable();const scopes=row.spec.scopeIds as string[],current=(await resources.executionKnowledgeInTransaction(db,{ownerId:value,kind:'agent',scopeIds:scopes},scopes,[resourceId]))[0];if(!current)throw unavailable();return {sourceVersion:current.sourceVersion,contentSha256:createHash('sha256').update(current.text).digest('hex')}},...(options.approval?{approval:options.approval}:{})},new MarketContentStore(pool,identity))
+ const events=new WorkEventService(pool,identity,{material:async(db,value,resourceId)=>{assertOwner(value);const row=(await db.query('select spec from teloa_resources where owner_id=$1 and id=$2',[value,resourceId])).rows[0];if(!row||!Array.isArray(row.spec.scopeIds))throw unavailable();const scopes=row.spec.scopeIds as string[],current=(await resources.executionKnowledgeInTransaction(db,{ownerId:value,kind:'agent',scopeIds:scopes},scopes,[resourceId]))[0];if(!current)throw unavailable();return {sourceVersion:current.sourceVersion,contentSha256:createHash('sha256').update(current.text).digest('hex')}},...(options.approval?{approval:options.approval}:{}),...(options.business?{business:options.business}:{}),...(options.businessOrigin?{businessOrigin:options.businessOrigin}:{})},new MarketContentStore(pool,identity))
  const routingInputs=new Map<string,ResidentRoutingBudget>()
  const bindRouting=async(input:{sessionId:string;day:string;groupId:string;messageId:string;nativeRequestId:string}):Promise<()=>void>=>{
-  if(closed||!/^\d{4}-\d{2}-\d{2}$/.test(input.day)||input.sessionId!==groupRoutingSessionId(owner,input.groupId,input.day)||input.nativeRequestId!==groupRoutingRequestId(owner,input.groupId,input.messageId)||routingInputs.has(input.sessionId))throw unavailable()
+  if(closed||!/^\d{4}-\d{2}-\d{2}$/.test(input.day)||input.sessionId!==groupRoutingSessionId(owner,input.groupId,input.day)||routingInputs.has(input.sessionId))throw unavailable()
   const db=await pool.connect()
   try{
    await db.query('begin')
    const group=(await db.query('select * from teloa_groups where owner_id=$1 and id=$2',[owner,input.groupId])).rows[0],message=(await db.query('select * from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,input.groupId,input.messageId])).rows[0]
    if(!group||group.archived||!message)throw unavailable()
+   // 原生请求身份必须对应本消息当前仍待定案的那一次尝试：第一尝试沿原公式，重试使用带尝试版本的身份。
+   const attempt=await readCurrentGroupRoutingAttempt(db,owner,input.messageId)
+   if(attempt.decision!==null||input.nativeRequestId!==groupRoutingAttemptRequestId(owner,input.groupId,input.messageId,attempt.attemptVersion))throw unavailable()
    const source=await readTrustedGroupMessageRunSource(db,owner,{groupId:input.groupId,messageId:input.messageId}),leases:WorkAccessLease[]=[]
    let budgetAccountId:string|null=null,controlGeneration=1
    if(message.author_id==='self'){
@@ -252,10 +308,43 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   return(await runs()).skillScope(owner,{sessionId})
  }
  const acquire=async(input:{sessionId:string;producer:string}):Promise<WorkAccessLease|null>=>{if(closed)throw unavailable();if(isRoutingSession(input.sessionId)){if(input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return(await resolveRouting(input.sessionId))!.lease}const run=await resolveRun(input.sessionId);if(!run)return null;return combineWorkAccessLeases([await(await runs()).executionAdmission(owner,run.id),(await controls.acquireForRun(owner,{runId:run.id,mode:'new-input'})).lease,...(recoveringInputs.has(input.sessionId)?[recoveringInputs.get(input.sessionId)!]:[])])}
+ const prepareRetry=async(run:TaskRun,signal:AbortSignal):Promise<void>=>{
+  if(closed)throw unavailable();signal.throwIfAborted();await zeroWorkFailure(run,signal)
+  if(!run.lineage||run.lineage.ownerId!==owner||run.lineage.definitionControlId!==null)throw unavailable()
+  const control=await controls.get(owner,{controlId:run.lineage.roundControlId})
+  const seal=await authority.authorize(owner,{requestId:requestId(['task-run-retry-resume',owner,run.id,control.generation]),controlId:control.id})
+  const db=await pool.connect();let resumed
+  try{
+   await db.query('begin')
+   const host=(await db.query('select generation from teloa_work_control_hosts where owner_id=$1 for share',[owner])).rows[0]
+   if(closed||host?.generation!==generation)throw unavailable()
+   const service=await runs(),role=await service.retryAdmissionInTransaction(db,owner,run.id),current=await service.readVerifiedInTransaction(db,owner,run.id)
+   if(hash(current)!==hash(run))throw unavailable()
+   const lease=combineWorkAccessLeases([seal,role,await budgets.admissionInTransaction(db,owner,run.lineage.budgetAccountId),await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:control.id,operation:'resume'})])
+   const now=await controls.retryControlInTransaction(db,owner,{controlId:control.id})
+   if(now.version!==control.version||now.generation!==control.generation)throw unavailable()
+   if((await db.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and id<>$3 and state not in ('ended','withdrawn','configuration_failed')",[owner,run.taskId,run.id])).rowCount)throw new WorkError('teloa/conflict','原任务已有在途或未知执行，不能恢复后重复派发。')
+   signal.throwIfAborted();lease.assertCurrent()
+   if(now.state==='paused')resumed=await controls.resumeInTransaction(db,owner,{controlId:now.id,expectedVersion:now.version},lease)
+   signal.throwIfAborted();lease.assertCurrent();await db.query('commit')
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+  if(resumed)await controls.publishResume(owner,resumed)
+ }
 
- return {outbox,budgets,controls,recovery,goals,goal,retries,events,progress,lineage,acquire,restore,authorizeRestoreRoots,invalidateOrdinaryRestore,resolveRun,bindRouting,resolveRouting,hostGeneration:()=>generation,settleRun,
-  async attachRunDriver(value:RunDriverBinding){binding=value;controlDriver=new WorkControlDriver({controls,runs:{get:async(actor,input)=>{assertOwner(actor);return(await runs()).get(actor,input)}},lineage,driver:{stop:async(actor,input,signal)=>(await driver()).stop(actor,input,signal)},ports:value.ports,runtimeLinks:value.runtimeLinks});for(const control of restarted)await controlDriver.apply(owner,control,new AbortController().signal)},
-  async pump(delivery:GroupRoutingOutboxPorts,route:(owner:string,messageId:string,signal:AbortSignal)=>Promise<void>,signal:AbortSignal){await drainGroupRoutingWakes(owner,{outbox,route,report:options.report},signal);await drainGroupRoutingOutbox(owner,delivery,signal);
+ return {outbox,budgets,controls,recovery,goals,goal,retries,events,progress,lineage,acquire,prepareRetry,restore,authorizeRestoreRoots,invalidateOrdinaryRestore,resolveRun,bindRouting,resolveRouting,hostGeneration:()=>generation,settleRun,
+  async attachRunDriver(value:RunDriverBinding){
+   binding=value
+   await reconcileOwnerSettlements(new AbortController().signal)
+   await reconcileRunBudgets(new AbortController().signal)
+   const pausePorts={...value.ports,stop:async(run:TaskRun,signal:AbortSignal)=>{
+    // 宿主启动的暂停不得为了取消一个已证实零副作用的终轮而重新 materialize 它。
+    if(run.state==='ended')try{await zeroWorkFailure(run,signal);return}catch{signal.throwIfAborted()}
+    await value.ports.stop(run,signal)
+   }}
+   controlDriver=new WorkControlDriver({controls,runs:{get:async(actor,input)=>{assertOwner(actor);return(await runs()).get(actor,input)}},lineage,driver:{stop:async(actor,input,signal)=>(await driver()).stop(actor,input,signal)},ports:pausePorts,runtimeLinks:value.runtimeLinks})
+   for(const control of restarted)await controlDriver.apply(owner,control,new AbortController().signal)
+  },
+  async pump(delivery:GroupRoutingOutboxPorts,route:(owner:string,messageId:string,signal:AbortSignal)=>Promise<void>,signal:AbortSignal){await reconcileOwnerSettlements(signal);await reconcileRunBudgets(signal);await drainGroupRoutingWakes(owner,{outbox,route,report:options.report},signal);await drainGroupRoutingOutbox(owner,delivery,signal);
    const children=(await pool.query("select s.run_id,s.reservation_id from teloa_task_run_subagents s where s.owner_id=$1 and s.state='ended' and not exists(select 1 from teloa_work_events e where e.owner_id=s.owner_id and e.payload->>'kind'='child-completed' and e.payload->>'parentRunId'=s.run_id::text and e.payload->>'reservationId'=s.reservation_id) order by s.ended_at limit 100",[owner])).rows
    for(const child of children){signal.throwIfAborted();const db=await pool.connect();try{await db.query('begin');await events.appendSource(db,{kind:'child-completed',sourceId:child.run_id,receiptId:child.reservation_id});await db.query('commit')}catch(error){await db.query('rollback');options.report(error instanceof WorkError?error.code:'teloa/unavailable')}finally{db.release()}}
    // Run commit 后崩溃可以丢失 callback；只核真实已完成 Run 和等待验收 Task，不重新执行。

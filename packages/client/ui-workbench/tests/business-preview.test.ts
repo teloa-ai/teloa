@@ -4,9 +4,10 @@ import { emptyTaskPreview } from '../src/client/task-preview.ts'
 import { changeTeamPreview } from '../src/client/team-preview.ts'
 import { changeBusinessWork, withBusinessExamples } from '../src/client/business-work-preview.ts'
 import { queryObjects, objectKey, operationStates, businessAttention } from '../src/client/business-preview.ts'
+import { withLegacySecurityScopes } from './fixtures/legacy-security-scopes.ts'
 
 const now='2026-09-11T02:00:00Z'
-const example=()=>withBusinessExamples(emptyTaskPreview(),now)
+const example=()=>withBusinessExamples(withLegacySecurityScopes(emptyTaskPreview()),now)
 const op=(state:ReturnType<typeof example>,id='op-contain')=>state.business.operations.find(item=>item.id===id)!
 const run=(state:ReturnType<typeof example>,id='run-investigate')=>state.business.runs.find(item=>item.id===id)!
 

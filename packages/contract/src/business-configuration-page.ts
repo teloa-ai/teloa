@@ -32,7 +32,7 @@ export type BusinessConfigurationCurrentResponse={scope:string;version:number;ma
 export type BusinessConfigurationDraftResponseVersioned=Omit<BusinessConfigurationDraftResponse,'candidate'>&{candidate:BusinessConfigurationCandidate|BusinessConfigurationCandidateV2}
 export type BusinessConfigurationCurrentResponseVersioned=Omit<BusinessConfigurationCurrentResponse,'manifest'>&{manifest:BusinessConfigurationManifest|BusinessConfigurationManifestV2}
 export type BusinessConfigurationApplyResult={scope:string;version:number;configurationHash:string;requestId:string}
-export type BusinessConfigurationPreviewResponse={draftId:string;revision:number;candidateHash:string;baseVersion:number;dependencyHash:string;receipt:string;changes:{rows:BusinessDefinitionDiffRow[];truncated:boolean};issues:[]}
+export type BusinessConfigurationPreviewResponse={draftId:string;revision:number;candidateHash:string;baseVersion:number;dependencyHash:string;receipt:string;changes:{rows:BusinessDefinitionDiffRow[];truncated:boolean};issues:[];impact?:BusinessTemplateUpgradeImpact}
 const bad=()=>new WorkError('teloa/invalid-host-response','业务配置回包格式或身份不一致。')
 const invalid=()=>new WorkError('teloa/invalid-input','业务配置请求格式不正确。')
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)
@@ -141,12 +141,13 @@ export function readBusinessConfigurationApplyResult(value:unknown):BusinessConf
  return r as BusinessConfigurationApplyResult
 }
 export function readBusinessConfigurationPreviewResponse(value:unknown):BusinessConfigurationPreviewResponse{
- const r=exact(value,['draftId','revision','candidateHash','baseVersion','dependencyHash','receipt','changes','issues'])
+ const r=exact(value,['draftId','revision','candidateHash','baseVersion','dependencyHash','receipt','changes','issues'],['impact'])
  if(!uuid(r.draftId)||!positive(r.revision)||!natural(r.baseVersion)||!hash(r.candidateHash)||!hash(r.dependencyHash)||!hash(r.receipt)||!Array.isArray(r.issues)||r.issues.length)throw bad()
  const c=exact(r.changes,['rows','truncated'])
  if(!Array.isArray(c.rows)||c.rows.length>200||typeof c.truncated!=='boolean'||c.truncated&&c.rows.length!==200)throw bad()
  for(const value of c.rows){const row=exact(value,['path','before','after']);if(typeof row.path!=='string'||!row.path||row.path.length>512||!/^[$a-zA-Z0-9_.\[\]-]+$/.test(row.path)||[row.before,row.after].some(v=>v!==null&&(typeof v!=='string'||v.length>2_097_152))||row.before===row.after)throw bad()}
  if(!unique(c.rows.map(v=>(v as {path:string}).path)))throw bad()
+ if(r.impact!==undefined)readBusinessTemplateUpgradeImpact(r.impact)
  return r as BusinessConfigurationPreviewResponse
 }
 export type BusinessConfigurationPageRequest={scope:string;pageId:string;timeRange?:BusinessTimeRange}|{sessionId:string;draftId:string;expectedRevision:number;pageId:string;timeRange?:BusinessTimeRange}
@@ -174,4 +175,10 @@ export function readBusinessBuilderRequest(endpoint:string,input:unknown):Record
   else if(key==='previewReceipt'){if(!hash(v))throw invalid()}
  }
  return r
+}
+import {readBusinessTemplateUpgradeImpact,type BusinessTemplateUpgradeImpact} from './business-template-upgrade-impact.ts'
+
+/** 仅明确拒绝固定预览凭证时允许释放旧保存意图；未知网络结果不能据此重发。 */
+export function businessConfigurationPreviewReceiptRejected(error:unknown):boolean{
+ return isRecord(error)&&error.code==='teloa/conflict'&&isRecord(error.details)&&error.details.reason==='preview-receipt-invalid'
 }

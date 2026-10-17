@@ -1,0 +1,11 @@
+This directory contains selected source files from 78/xiaozhi-esp32,
+revision d7a1c05308fb6e116ffb44b9e2c6e67b3366302a.
+Upstream: https://github.com/78/xiaozhi-esp32
+License: MIT; see LICENSE and the copyright notices in individual files.
+
+Teloa-specific additions are maintained separately under tools/ and main/teloa/.
+The source provenance manifest records the original upstream file digests.
+
+Copyright 2026 Teloa contributors. Teloa-specific firmware code and tools
+are distributed under MIT. Mascot artwork retains Apache-2.0 and the font
+derivative retains SIL OFL 1.1; see THIRD_PARTY_NOTICES.md.

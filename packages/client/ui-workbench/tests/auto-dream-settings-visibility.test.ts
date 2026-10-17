@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
+import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
 import * as React from 'react'
 import * as contract from '@teloa/contract'
 import type {PlanApi,SavedPlan} from '../src/client/plan-api.ts'
@@ -12,7 +13,7 @@ import type {AutoDreamSettingApi} from '../src/client/AutoDreamSettingsPage.tsx'
  * 第三轮修复复现与回归：AutoDreamSettings 挂载点（GeneralSettings 内的 `settings.general.item`）
  * 承载在一个只用 CSS 隐藏、从不随 `state.view` 卸载的 `<section>` 下，组件原来的
  * `useEffect(()=>{load()},[api])` 只在应用启动那一刻拉一次 `api.list()`——启动时通常还没有
- * 在岗同事，拉到空列表后就永远卡死（开关 disabled，`run()` 的 `finally load()` 也从未被触发）。
+ * 在岗同事，拉到空列表后生成时间控件就一直不可用。
  *
  * 修法：WorkbenchFrame.tsx 新增一条模块级可见性广播（`publishSettingsPanelVisible`/
  * `subscribeSettingsPanelVisible`），AutoDreamSettings 订阅后只在「设置页当前可见」时才
@@ -27,7 +28,8 @@ import type {AutoDreamSettingApi} from '../src/client/AutoDreamSettingsPage.tsx'
  */
 
 const stamp='2026-09-21T00:00:00.000Z'
-const plan=(patch:Partial<SavedPlan> = {}):SavedPlan=>({
+type SavedRolePlan=Extract<SavedPlan,{roleId:string}>
+const plan=(patch:Partial<SavedRolePlan> = {}):SavedRolePlan=>({
  id:'11111111-1111-4111-8111-111111111111',ownerId:'local:owner',title:'Auto Dream · 每日小结',goal:'目标',
  scope:'general',dataScope:'数据范围',delivery:'交付说明',roleId:'22222222-2222-4222-8222-222222222222',roleVersion:1,
  trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'23:30',timezone:'Asia/Singapore'},notificationPolicy:'silent',
@@ -41,6 +43,7 @@ type Element=React.ReactElement<Record<string,any>>
 const elements=(node:React.ReactNode):Element[]=>{
  if(Array.isArray(node))return node.flatMap(elements)
  if(!React.isValidElement<Record<string,any>>(node))return []
+ if(typeof node.type==='function'&&node.type.name==='ToolbarIconButton')return elements((node.type as (props:Record<string,any>)=>React.ReactNode)(node.props))
  return [node,...elements(node.props.children)]
 }
 
@@ -64,6 +67,7 @@ function mount(initial:Props){
  const inert=new Proxy({},{get:()=>()=>null})
  const stub=(id:string):unknown=>{
   if(id==='react')return hooks
+  if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton:toolbarIconComponent(hooks)}
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id==='lucide-react')return inert
   if(id==='@teloa/contract')return contract
@@ -98,22 +102,21 @@ function makeApi(listImpl:()=>Promise<SavedPlan[]>):{api:AutoDreamSettingApi;cal
  const calls={list:0}
  const api:AutoDreamSettingApi={
   list:async()=>{calls.list++;return listImpl()},
-  setEnabled:async()=>{throw Error('setEnabled 未被覆写')},
   setTrigger:async()=>{throw Error('setTrigger 未被覆写')},
  }
  return {api,calls}
 }
 
-test('设置页不可见时挂载：不拉取计划，开关保持 disabled',async()=>{
+test('设置页不可见时不拉取计划，也不再呈现 Auto Dream 总开关',async()=>{
  const {api,calls}=makeApi(async()=>[])
  const app=mount({api})
  await app.flush()
  assert.equal(calls.list,0,'设置页尚不可见就不该拉取')
- const toggle=app.find(el=>el.type==='input'&&el.props.role==='switch')
- assert.equal(toggle.props.disabled,true)
+ assert.equal(elements(app.render()).filter(el=>el.props.role==='switch').length,0)
+ assert.equal(app.find(el=>el.type==='input'&&el.props.type==='time').props.disabled,true)
 })
 
-test('设置页由不可见变为可见：重新拉取全量计划，开关随之可用并反映最新状态',async()=>{
+test('设置页变为可见时重新拉取计划，生成时间可编辑且没有总开关',async()=>{
  // 挂载时 visible=false，effect 里 load() 被跳过，listImpl 一次都不会跑；
  // 唯一一次真正的 list() 发生在 publish(true) 之后，因此这里直接喂一条 active 计划。
  const {api,calls}=makeApi(async()=>[plan({state:'active'})])
@@ -125,16 +128,15 @@ test('设置页由不可见变为可见：重新拉取全量计划，开关随�
  await app.flush()
 
  assert.equal(calls.list,1,'设置页一旦可见就必须重新 list()')
- const toggle=app.find(el=>el.type==='input'&&el.props.role==='switch')
- assert.equal(toggle.props.disabled,false)
- assert.equal(toggle.props['aria-checked'],true)
+ assert.equal(elements(app.render()).filter(el=>el.props.role==='switch').length,0)
+ assert.equal(app.find(el=>el.type==='input'&&el.props.type==='time').props.disabled,false)
 })
 
 test('设置页反复隐藏/再次显示：每次显示都用最新全量重新拉取，不吃上一次显示时的旧快照',async()=>{
  let call=0
- // 挂载时 visible=false 不发起请求，所以下标 0 就是「第一次显示」拉到的数据（只有一条 paused）；
- // 下标 1 是「隐藏后台外新增了一位同事」再显示时拉到的数据（新增一条 active）。
- const rows=[[plan({id:'44444444-4444-4444-8444-444444444444',state:'paused'})],[plan({id:'44444444-4444-4444-8444-444444444444',state:'paused'}),plan({id:'55555555-5555-4555-8555-555555555555',state:'active'})]]
+ const laterTrigger={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'08:00',timezone:'UTC' as const}
+ // 再显示时读取后台最新生成时刻，手动暂停的计划不决定全局开关。
+ const rows=[[plan({state:'paused'})],[plan({state:'paused',trigger:laterTrigger}),plan({id:'55555555-5555-4555-8555-555555555555',state:'active',trigger:laterTrigger})]]
  const {api,calls}=makeApi(async()=>{const value=rows[call]!;call=Math.min(call+1,rows.length-1);return value})
  const app=mount({api})
  await app.flush()
@@ -142,8 +144,7 @@ test('设置页反复隐藏/再次显示：每次显示都用最新全量重新�
  app.publishSettingsPanelVisible(true)
  await app.flush()
  assert.equal(calls.list,1)
- assert.equal(app.find(el=>el.type==='input'&&el.props.role==='switch').props.disabled,false)
- assert.equal(app.find(el=>el.type==='input'&&el.props.role==='switch').props['aria-checked'],false,'第一次显示时台外还没有 active 计划')
+ assert.equal(app.find(el=>el.type==='input'&&el.props.type==='time').props.value,'23:30')
 
  app.publishSettingsPanelVisible(false)
  await app.flush()
@@ -151,17 +152,20 @@ test('设置页反复隐藏/再次显示：每次显示都用最新全量重新�
  await app.flush()
 
  assert.equal(calls.list,2,'再次显示必须再拉一次，而不是复用上一次显示时的快照')
- const toggle=app.find(el=>el.type==='input'&&el.props.role==='switch')
- assert.equal(toggle.props['aria-checked'],true,'第二次拉到的新计划必须反映在开关上')
+ assert.equal(app.find(el=>el.type==='input'&&el.props.type==='time').props.value,'08:00')
+ assert.equal(app.find(el=>el.type==='select').props.value,'UTC')
+ assert.equal(elements(app.render()).filter(el=>el.props.role==='switch').length,0)
 })
 
-test('页内两行：开关行与生成时刻行的标题、说明与控件都在，且不再渲染升级期提示 dailyLog.skipped',async()=>{
+test('只保留生成时刻与最近日志，不再渲染总开关及其关闭说明',async()=>{
  const {api}=makeApi(async()=>[plan({state:'active'})])
  const app=mount({api})
  app.publishSettingsPanelVisible(true)
  await app.flush()
  const texts=elements(app.render()).flatMap(el=>typeof el.props.children==='string'?[el.props.children]:[])
- for(const key of ['autoDream.name','dailyLog.switchTitle','dailyLog.switchHint','dailyLog.triggerTitle','dailyLog.triggerHint'])assert.ok(texts.includes(key),'缺少 '+key)
+ for(const key of ['autoDream.name','dailyLog.triggerTitle','dailyLog.triggerHint','autoDream.recent.title'])assert.ok(texts.includes(key),'缺少 '+key)
+ for(const key of ['dailyLog.switch','dailyLog.switchTitle','dailyLog.switchHint'])assert.ok(!texts.includes(key),'不应再显示 '+key)
+ assert.equal(elements(app.render()).filter(el=>el.props.role==='switch').length,0)
  assert.ok(!texts.includes('dailyLog.skipped'),'升级期提示不该再常驻')
  assert.ok(!texts.includes('dailyLog.timeHint'))
  assert.equal(app.find(el=>el.type==='input'&&el.props.type==='time').props.value,'23:30')
@@ -194,7 +198,9 @@ test('日志读取失败显示未知，刷新后恢复真实状态且不播报 0
  app.publishSettingsPanelVisible(true);await app.flush()
  assert.equal(app.find(el=>el.props.role==='img').props['aria-label'],'autoDream.recent.unavailable')
  assert.ok(elements(app.render()).some(el=>el.props.children==='autoDream.recent.unavailable'))
- app.find(el=>el.type==='button'&&el.props.children==='autoDream.recent.refresh').props.onClick()
+ const refresh=app.find(el=>el.type==='button'&&el.props['aria-label']==='autoDream.recent.refresh')
+ assert.equal(refresh.props.title,'autoDream.recent.refresh')
+ refresh.props.onClick()
  await app.flush()
  assert.equal(calls,2)
  assert.equal(app.find(el=>el.props.role==='img').props['aria-label'],'4/7')

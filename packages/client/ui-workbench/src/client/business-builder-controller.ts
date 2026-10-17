@@ -116,11 +116,15 @@ export class BusinessBuilderController{
   const flow=this.state.flow
   if(!flow||this.state.status!=='ready'){if(sessionId)this.block(sessionId,checking);return}
   if(this.creation)return
-  if(this.state.checkedSessionId===(sessionId??null))return
+  const native=this.ports.switching.read()
+  const bound=!sessionId||native.mainSessionId===sessionId&&native.bindingSessionId===sessionId&&native.bindingReady
+  if(bound&&this.state.checkedSessionId===(sessionId??null))return
   const selection=++this.selection
   this.offWatch?.();this.offWatch=undefined;this.watchSession=undefined
   if(!sessionId){flow.leave();this.state.daily?.leave();this.publish({checkedSessionId:null,sessionKind:null});return}
-  flow.leave();this.state.daily?.leave();this.block(sessionId,checking);this.publish({checkedSessionId:undefined,error:null})
+  flow.leave();this.state.daily?.leave();this.block(sessionId,checking);this.publish({checkedSessionId:undefined,sessionKind:null,error:null})
+  // 原生选中先于 ensure 回执；工作绑定就绪后由同一选择通知继续核对。
+  if(!bound)return
   try{
    const binding=await this.state.api!.bySession({sessionId})
    if(selection!==this.selection||flow!==this.state.flow)return

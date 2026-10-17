@@ -7,6 +7,8 @@ import { restoreRecoveredText } from './resource-recovery.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import css from './ResourceRecovery.module.css'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {RefreshCw} from 'lucide-react'
 
 export function ResourceRecovery({sessionId,session,input,inputActions,api,work}:PropsRuntime<'conversation.input.dock'> & {api:ResourceApi;work:BindingClient}){
   const {locale,t,dateTime}=useI18n()
@@ -44,7 +46,7 @@ export function ResourceRecovery({sessionId,session,input,inputActions,api,work}
     <div className={css.body}>
       <p className={css.muted}>{t('resourceRecovery.description')}</p>
       {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
-      <button type="button" className={css.button} disabled={loading} onClick={()=>void read()}>{t('resourceRecovery.refresh')}</button>
+      <ToolbarIconButton label={t('resourceRecovery.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void read()}/>
       {blocked&&<p className={css.muted}>{t('resourceRecovery.blocked')}</p>}
       {active?.failures.map(failure=><section key={failure.endSeq} className={css.failure} aria-label={t('resourceRecovery.failureAria',{turn:failure.turn})}>
         <strong>{failure.reason}</strong><small className={css.muted}>{t('resourceRecovery.failureMeta',{at:dateTime(failure.at),turn:failure.turn})}</small>

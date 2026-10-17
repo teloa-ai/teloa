@@ -17,13 +17,17 @@ const baseline = JSON.parse(await readFile(new URL('./fixtures/ui-freeze-baselin
 const clientRoot = new URL('../src/client/', import.meta.url)
 const read = (name: string) => readFile(new URL(name, clientRoot), 'utf8')
 
-test('导航按日常工作、团队与业务、资源排序，设置固定底部', async () => {
+test('最新确认的工作台收纳需要你、任务及自动化；其余导航与设置保持', async () => {
   const source = await read('WorkNavigation.tsx')
   const chrome = await read('WorkbenchNavigationChrome.tsx')
   const navMatch = chrome.match(/const primaryNavigation=\[([\s\S]*?)\]\s*as const/)
   assert.ok(navMatch)
   const ids = [...(navMatch?.[1] ?? '').matchAll(/\['([a-z]+)'/g)].map(row => row[1])
-  assert.deepEqual(ids, ['home','attention','messages','tasks','projects','plans','team','spaces','resources','capabilities'])
+  assert.deepEqual(ids, ['home','messages','projects','team','spaces','resources','market'])
+  const hubMatch=chrome.match(/const workbenchHubNavigation=\[([^\n]+)\]/)
+  const hubDefinitions=hubMatch?.[1]
+  assert.ok(hubDefinitions)
+  assert.deepEqual([...hubDefinitions.matchAll(/\['([a-z]+)'/g)].map(row=>row[1]),['home','attention','tasks','plans'])
   const footer=source.slice(source.indexOf('<div className={css.navFooter}>'))
   assert.match(footer,/navigation.v2.settings/)
   assert.doesNotMatch(footer,/navigation.tasks|navigation.capabilities|navigation.v2.library|navigation.v2.market|navigation.v2.other/)
@@ -31,18 +35,15 @@ test('导航按日常工作、团队与业务、资源排序，设置固定底�
   assert.match(chrome,/<nav aria-label=\{t\('navigation\.main'\)\}>/)
 })
 
-test('zh-CN 的 navigation.capabilities 恒为「能力」', () => {
-  assert.equal(catalogs['zh-CN']['navigation.capabilities'], '能力')
+test('旧能力导航词条已退出，不能重新出现独立能力入口', () => {
+  assert.ok(!MESSAGE_KEYS.includes('navigation.capabilities' as never))
+  for(const catalog of Object.values(catalogs))assert.ok(!('navigation.capabilities' in catalog))
 })
 
-test('navigation.capabilities 与 teamCapability.title 十一列逐字相同', () => {
-  const locales = ['zh-CN', 'zh-Hant', 'en', 'ja', 'ko', 'vi', 'es', 'fr', 'de', 'pt'] as const
-  for (const locale of locales) {
-    assert.equal(
-      catalogs[locale]['navigation.capabilities'],
-      catalogs[locale]['teamCapability.title'],
-      `${locale} 列 navigation.capabilities 与 teamCapability.title 不一致`,
-    )
+test('市场与应用沿用当前定稿的简繁英名称', () => {
+  for(const [locale,market,apps] of [['zh-CN','市场','应用'],['zh-Hant','市場','應用程式'],['en','Marketplace','Apps']] as const){
+    assert.equal(catalogs[locale]['market.title'],market)
+    assert.equal(catalogs[locale]['market.apps.title'],apps)
   }
 })
 
@@ -128,7 +129,7 @@ test('个人版界面不渲染空间名：市场产品页的「看看它带进�
 // 市场包、业务卡摘要、业务范围内页三处只读 packages/client/ui-workbench/src/client/industry-composition.ts
 // 这一份共享模块，顺序、标签、措辞逐字相同；公开黄金钉死定稿值，原型镜像在 test:prototype 单独核对。
 
-test('COMPOSITION_ROWS 七行 id 顺序恒为 staff/skill/knowledge/source/board/method/extension，zh-CN 主标签逐字恒定', async () => {
+test('COMPOSITION_ROWS 保留七行 id 原顺序，zh-CN 主标签等于当前已批准基线', async () => {
   const {COMPOSITION_ROWS} = await import('../lib/types/client/industry-composition.js')
   assert.deepEqual(COMPOSITION_ROWS.map(row => row.id), baseline.compositionRows.map((row: {id: string}) => row.id))
   const expectedLabels = Object.fromEntries(baseline.compositionRows.map((row: {id: string; label: string}) => [row.id, row.label]))

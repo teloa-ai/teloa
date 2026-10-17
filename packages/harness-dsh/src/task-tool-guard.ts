@@ -3,6 +3,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import type {PreToolDecision,ToolDefinition,ToolExecution} from '@deepseek-ai/dsh-tools'
 import {isNativeToolName,nativeToolCallIssue,nativeToolNeedsApproval} from './native-tool-access.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
+import {taskRunTeamMessageKey} from './task-run-team-records.ts'
 import {readSessionEvents} from './session-events.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
 import type {SubagentDelegationPorts} from './subagent-delegation.ts'
@@ -16,6 +17,8 @@ import {workspaceFileToolNames,isWorkspaceFileRule} from '@teloa/contract'
 import type {TaskRunWorkspaceFileAccess} from './workspace-file-access.ts'
 import type {GoalObservationContext} from '@teloa/contract'
 import type {SessionEvent} from '@deepseek-ai/dsh-session'
+import {recheckNativeAutoReviewPermissions} from './native-auto-review-guard.ts'
+import {ownsDeliveryReviewSubmission} from './task-delivery-review.ts'
 export type TaskRunGoalObservationReader=(sessionId:string,events:readonly SessionEvent[])=>Promise<GoalObservationContext|undefined>
 
 export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];stopRequested?:boolean}
@@ -49,10 +52,11 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
  // 技能代发只能由本人按岗位授予（规格 2026-09-27 §5.1）；AI 员工不能自授。
  if(selfAuthorized.has(skillHttpToolName))throw Error('自授权工具不能包含技能代发工具。')
  if(workspaceFileToolNames.some(name=>selfAuthorized.has(name)))throw Error('自授权工具不能包含工作目录文件工具。')
- const removeFileGuard=ctx.on('tools/execute',async(exec,next)=>{await workspaceFiles?.recheck(exec);return next()})
+ const removeFileGuard=ctx.on('tools/execute',async(exec,next)=>{await workspaceFiles?.recheck(exec);recheckNativeAutoReviewPermissions(exec);return next()})
  // 官方 monotonic guard 在审批结束后执行：确认期间卸载、换 provider 或替换工具不能执行旧定义。
  const checkedNative=new WeakMap<ToolExecution,ToolDefinition>()
  const checkedCleanup=new WeakSet<ToolExecution>()
+ const checkedManaged=new WeakMap<ToolExecution,{rootId:string;policy:TaskToolPolicy;definition:ToolDefinition}>()
  const checkedOrchestration=new WeakMap<ToolExecution,{definition:ToolDefinition;rootId:string;policy:TaskToolPolicy|null}>()
  const removeNativeGuard=ctx.tools.guard(exec=>{
   const definition=checkedNative.get(exec)
@@ -69,6 +73,20 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   if(checked.policy===null?policy!==null:policy===null||policy.nativeRequestId!==checked.policy.nativeRequestId||policy.stopRequested||!policy.allowedTools.includes(exec.name))throw Error('本次编排授权已变化，请重新确认后再试。')
   if(policy?.argumentRules!==undefined&&!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments))throw Error('编排参数已超出本次任务授权。')
   exec.signal.throwIfAborted()
+  recheckNativeAutoReviewPermissions(exec)
+  return next()
+ })
+ // 原生审核与人工审批均可能等待；受限子级也必须复核同一根任务，不能漏掉祖先的 Auto。
+ const removeManagedGuard=ctx.on('tools/execute',async(exec,next)=>{
+  const checked=checkedManaged.get(exec)
+  if(!checked)return next()
+  exec.signal.throwIfAborted()
+  const policy=await readPolicy(checked.rootId,exec.signal)
+  if(!policy||policy.nativeRequestId!==checked.policy.nativeRequestId||policy.stopRequested||!policy.allowedTools.includes(exec.name))throw Error('本次任务授权已变化，请重新确认后再试。')
+  if(policy.argumentRules!==undefined&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.argumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments)))throw Error('工具参数已超出本次任务授权。')
+  if(ctx.tools.get(exec.name,exec.agent)!==checked.definition)throw Error('任务工具已变更，请重新确认后再试。')
+  exec.signal.throwIfAborted()
+  recheckNativeAutoReviewPermissions(exec)
   return next()
  })
  const removePreExecute=ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{
@@ -102,7 +120,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
     const requestId=policy.nativeRequestId,events=readSessionEvents(lineage.root)
     const root=ctx.agents.get(lineage.root.id)
     authorizationStage='team-continuations'
-    const continuations=root?await team?.continuations(root,requestId,events):undefined
+    const continuations=root?await team?.continuations(root,requestId,events,policy.allowedTools):undefined
     authorizationStage='goal-observation'
     const goal=await goalObservation?.(lineage.root.id,events)
     authorizationStage='turn-observation'
@@ -110,7 +128,8 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
     if(!teamMember&&!orchestrationChild&&observed.observation.state!=='active')return {kind:'deny',reason:'当前工具调用不属于获准执行的原生轮次。'}
     let start=events.length-1
     while(start>=0&&events[start]!.type!=='turn/start')start--
-    const mixed=events.slice(start+1).some(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'&&(!('rpcId' in event.data.source)||event.data.source.rpcId!==requestId))
+    // 宿主登记过的群追加（同一 rpcId 在续接集合里）属于本 Run 的冻结范围，不算混入；其余本人/插件输入仍判混入。
+    const mixed=events.slice(start+1).some(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'&&(!('rpcId' in event.data.source)||event.data.source.rpcId!==requestId)&&!continuations?.has(taskRunTeamMessageKey(event)??''))
     if(mixed)return {kind:'deny',reason:'本轮混入其他请求，请在独立执行会话中重试。'}
     if(!teamMember&&!orchestrationChild&&!observed.authorized)return {kind:'deny',reason:'当前工具调用不属于获准执行的原生轮次。'}
    }
@@ -123,6 +142,9 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   if(exec.signal.aborted)return {kind:'deny',reason:'本次工具调用已取消。'}
   if(policy!==null&&exec.name==='plugin_manager')return {kind:'deny',reason:'受管任务不能修改 Teloa 的扩展，请由本人在创造模式中操作。'}
   if(orchestrationChild&&orchestration?.ownsStructuredOutput(exec))return next()
+  if(orchestrationChild&&orchestration&&!orchestration.toolAllowed(exec))return {kind:'deny',reason:'工具超出本次 Flow 子工作授权范围。'}
+  // 交付复核的结构化回执：同上，只认本 agent 存活复核租约在自身作用域登记的同一定义、且正在接收本单元唯一一次提交；不进岗位授权清单。
+  if(policy!==null&&!teamMember&&!orchestrationChild&&ownsDeliveryReviewSubmission(exec))return next()
   if(selfAuthorized.has(exec.name)){
    if(teamMember||orchestrationChild)return {kind:'deny',reason:'临时助手不能借用负责人的员工记忆或群身份，请通过团队消息交回结果。'}
    if(policy===null||policy.nativeRequestId===undefined)return {kind:'deny',reason:'当前会话没有可核验的运行工具授权。'}
@@ -189,6 +211,11 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    const issue=await workspaceFiles.check(exec,lineage.root,policy)
    if(issue!==undefined)return {kind:'deny',reason:issue}
   }
+  if(policy!==null&&!cleanup&&!(orchestrationTools as readonly string[]).includes(exec.name)){
+   const definition=ctx.tools.get(exec.name,exec.agent)
+   if(!definition)return {kind:'deny',reason:'本次任务工具已断开，请重新启用后再试。'}
+   checkedManaged.set(exec,{rootId:policySessionId,policy,definition})
+  }
   if((orchestrationTools as readonly string[]).includes(exec.name)){
    const definition=ctx.tools.get(exec.name,exec.agent)
    if(!definition)return {kind:'deny',reason:'当前运行模式未提供此编排工具。'}
@@ -196,8 +223,9 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    const decision=await next()
    const approval=ctx.get('approval')
    const permissions=ctx.get('permissionPresets')
-   // DSH 0.2 Auto 使用 ask + 模型审查，不能把 ask 当作必然由本人批准。
-   if((decision.kind==='allow'||decision.kind==='ask')&&(permissions?.current(exec.agent.session)==='auto'||approval&&(approval.overrideOf(exec.agent.session)??approval.config.policy??'ask')==='never'))return {kind:'deny',reason:'当前权限模式不会请求人工确认；请切换到允许人工确认的权限模式后再执行脚本或迭代任务。'}
+   // Auto 交给原生审核；PTC 内层调用仍逐次进入同一守卫，不能由容器入口替代授权。
+   if(permissions?.current(exec.agent.session)==='auto')return decision
+   if((decision.kind==='allow'||decision.kind==='ask')&&approval&&(approval.overrideOf(exec.agent.session)??approval.config.policy??'ask')==='never')return {kind:'deny',reason:'当前权限模式不会请求人工确认；请切换到允许人工确认的权限模式后再执行脚本或迭代任务。'}
    return decision.kind==='allow'?{kind:'ask',reason:'请确认本次脚本或迭代执行；员工授权不会代替逐次确认。'}:decision
   }
   if(policy!==null&&isNativeToolName(exec.name)){
@@ -208,10 +236,10 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    checkedNative.set(exec,definition)
    const decision=await next()
    if(cleanup){browserCleanup!.decision(exec,decision);return decision}
-   if(decision.kind!=='allow'||!nativeToolNeedsApproval(exec.name))return decision
+   if(decision.kind!=='allow'||!nativeToolNeedsApproval(exec.name)||ctx.get('permissionPresets')?.current(exec.agent.session)==='auto')return decision
    return {kind:'ask',reason:'请确认本次浏览器或电脑操作；员工授权不会代替逐次确认。'}
   }
   return next()
  })
- return ()=>{removePreExecute();removeNativeGuard();removeOrchestrationGuard();removeFileGuard()}
+ return ()=>{removePreExecute();removeNativeGuard();removeOrchestrationGuard();removeManagedGuard();removeFileGuard()}
 }

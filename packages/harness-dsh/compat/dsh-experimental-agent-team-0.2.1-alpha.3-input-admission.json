@@ -1,0 +1,21 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-experimental-agent-team",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "patchSha256": "7fc154a63a37f71c3e938a21c73034250dae59b3244116d25eaaef39c774d352",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "b2d337d10c841773e4e69836475f5c21dce8cd87beb70d73413a7868e9403322",
+      "afterSha256": "7ff0e06940196c2f6978ef454634dc8595fc6f001d443e4c84589b4ae053d31e"
+    }
+  ],
+  "api": [
+    "TeamService.sendMessage.rootInputAdmission"
+  ],
+  "scope": {
+    "boundary": "Only the Lead Inbox publication is admitted through the existing Subagent prompt seam; Team roster, lifecycle, sender identity, and delivery remain native.",
+    "default": "Without the optional Subagent admission seam, preserve native Free behavior."
+  }
+}

@@ -11,9 +11,27 @@ export class PromptPreparation{
   private rows:PreparedPrompt[]=[]
   private listeners=new Set<()=>void>()
   private transferring=new Set<string>()
+  // 自动带入只属于 prepare 的这次意图；跨卡片重挂载也不重复失败或回填已处理的草稿。
+  private automaticInsert=new Map<string,'manual'|'attempted'>()
+  private insertionFailures=new Map<string,{error:unknown}>()
   getSnapshot=()=>this.rows
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
   private publish(rows:PreparedPrompt[]){this.rows=rows;for(const listener of this.listeners)listener()}
+  claimAutomaticInsert(id:string,sessionId:string,input:PreparedInputSnapshot,ready=true){
+    const row=this.rows.find(value=>value.id===id)
+    if(!row||row.sessionId!==sessionId||row.status!=='pending'||row.transfer||this.automaticInsert.has(id)||this.transferring.has(id))return false
+    // 已有内容是本人需要处理的冲突；清空它不等于重新选择旧预设。
+    if(input.draft.length||input.attachmentIds.length){this.automaticInsert.set(id,'manual');return false}
+    if(!ready||input.running||input.phase!=='plain')return false
+    this.automaticInsert.set(id,'attempted');return true
+  }
+  insertionFailure(id:string){return this.insertionFailures.get(id)}
+  failInsertion(id:string,error:unknown){
+    if(!this.rows.some(row=>row.id===id&&(row.status==='pending'||row.status==='stale')))return
+    if(!this.automaticInsert.has(id))this.automaticInsert.set(id,'manual')
+    this.insertionFailures.set(id,{error});this.publish([...this.rows])
+  }
+  clearInsertionFailure(id:string){if(this.insertionFailures.delete(id))this.publish([...this.rows])}
   prepare(input:Omit<PreparedPrompt,'status'>){if(input.skills&&(input.skills.length>8||new Set(input.skills.map(skill=>skill.name)).size!==input.skills.length||input.skills.some(skill=>!skill.name||/[\s/]/.test(skill.name)||!skill.source||!skill.provider)))throw Error('技能选择无效，最多选择8个不同名称的技能。');if(this.rows.some(row=>row.id===input.id))throw Error('准备记录编号冲突。');if(input.resources){if(input.resources.length>8||new Set(input.resources.map(row=>row.id)).size!==input.resources.length)throw Error('最多选择8份不同资料。');for(const resource of input.resources)encodeResourceReference(resource)}this.publish([...this.rows,structuredClone({...input,status:'pending' as const})])}
   invalidate(sourceId:string){this.publish(this.rows.map(row=>row.sourceId===sourceId&&row.status==='pending'?{...row,status:'stale'}:row))}
   dismiss(id:string){this.publish(this.rows.map(row=>row.id===id?{...row,status:'dismissed'}:row))}
@@ -27,6 +45,7 @@ export class PromptPreparation{
     const current=()=>{const row=this.rows.find(value=>value.id===id);if(!row||row.sessionId!==sessionId||row.status!=='pending')throw Error('准备记录或目标会话状态已变化。');return row}
     const check=(snapshot:PreparedInputSnapshot)=>{if(snapshot.running||snapshot.phase!=='plain'||snapshot.attachmentIds.length)throw Error('原生输入状态已变化，请稍后核对。')}
     const row=current(),initial=port.read();check(initial)
+    if(!row.text.trim()&&!row.resources?.length&&!row.skills?.length)throw Error('此请求没有可恢复文字，请重新选择要带入的内容。')
     if(!row.transfer?.textInserted&&initial.draft)throw Error('原生输入已有草稿，请先处理现有内容。')
     this.transferring.add(id)
     try{

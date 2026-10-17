@@ -1,22 +1,58 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
+import {existsSync} from 'node:fs'
+import {registerHooks} from 'node:module'
+// 验证当前源码词表，避免旧构建产物掩盖本轮词条变更。
+registerHooks({resolve(specifier,context,next){
+ if(specifier.endsWith('.js')&&specifier.startsWith('.')&&context.parentURL?.includes('/ui-workbench/src/client/i18n/')){
+  const source=new URL(specifier.slice(0,-3)+'.ts',context.parentURL)
+  if(existsSync(source))return next(source.href,context)
+ }
+ return next(specifier,context)
+}})
+const {
   MAIN_LOCALES,
   REGION_LOCALES,
   fallbackChain,
   resolveProductLocale,
   validateFallbackGraph,
-} from '../lib/types/client/i18n/locale.js'
-import {
+}=await import('../src/client/i18n/locale.ts')
+const {
   MESSAGE_KEYS,
   catalogs,
   regionCatalogs,
   translateMessage,
   validateCatalogs,
-} from '../lib/types/client/i18n/messages.js'
+}=await import('../src/client/i18n/messages.ts')
 import {correctionMistranslation, lockSense, plainLanguageExemptions, plainLanguageJargon} from '../../../../tests/plain-language-jargon.mjs'
+import {AUTO_DREAM_MESSAGE_ROWS} from '../src/client/i18n/locales/auto-dream.ts'
 
 const expectedKeys = [...MESSAGE_KEYS].sort()
+
+test('本轮白话词条保留隐私、结果未知与额度边界，未定稿语言继续英文回退',()=>{
+ const keys=['templateShare.excluded','roleDelegation.status.pausing','roleDelegation.status.ending','roleDelegation.pending','planWork.checkBoundary','planWork.budget.boundary','knowledge.local.unavailable'] as const
+ for(const locale of MAIN_LOCALES.filter(value=>!['zh-CN','zh-Hant','en'].includes(value))){
+  for(const key of keys)assert.equal(translateMessage(locale,key),translateMessage('en',key),`${locale}:${key} 保留现有回退合同`)
+ }
+ for(const [locale,privacy,pending,budget] of [
+  ['zh-CN',/账号.*登录密钥.*私人记忆.*会话.*权限.*工作进度/,/结果尚未确认.*核对原请求/,/子任务.*累计原用量.*尚未确认.*预留额度.*不显示为零/],
+  ['zh-Hant',/帳號.*登入金鑰.*私人記憶.*對話.*權限.*工作進度/,/結果尚未確認.*核對原請求/,/子任務.*累計原用量.*尚未確認.*預留額度.*不顯示為零/],
+  ['en',/Accounts.*sign-in secrets.*private memory.*conversations.*permissions.*work progress/,/unresolved.*Check its result/,/subtask.*accumulated usage.*Reserved capacity.*unconfirmed/],
+ ] as const){
+  assert.match(translateMessage(locale,'templateShare.excluded'),privacy)
+  assert.match(translateMessage(locale,'roleDelegation.pending'),pending)
+  assert.match(translateMessage(locale,'planWork.budget.boundary'),budget)
+ }
+})
+
+test('Auto Dream 计划状态仅定稿简繁英，暂停、归档和未知分别表达',()=>{
+ const rows=AUTO_DREAM_MESSAGE_ROWS.filter(row=>row[0].startsWith('dailyLog.schedule.'))
+ assert.equal(rows.length,4)
+ for(const row of rows){
+  assert.equal(row.length,4,'本轮只新增简繁英，不补译其它语言')
+  for(const [locale,index] of [['zh-CN',1],['zh-Hant',2],['en',3]] as const)assert.equal(translateMessage(locale,row[0] as never),row[index])
+ }
+})
 
 test('工作概览先维护简繁英，保留港台差异，其余语言新词条回退英文',()=>{
  assert.equal(translateMessage('zh-CN','overview.title'),'工作概览')
@@ -64,13 +100,13 @@ const localizedMarketTemplateValues = {
     '作者',
     '授權條款',
     '執行環境管理',
-    'Teloa 管理業務定義與使用綁定；DSH 管理原生技能、MCP 與執行環境。',
+    '使用前，請安裝並設定範本所需的技能與應用程式。',
     '連線與執行環境',
     '原始清單與驗證',
     '查看原始內容與版本',
     '匯出清單定義',
     '返回市集',
-    '能力使用方案 v',
+    '配置草稿 v',
     '單個技能的內容',
     '技能內容',
   ],
@@ -84,13 +120,13 @@ const localizedMarketTemplateValues = {
     'Author',
     'License',
     'Environment management',
-    'Teloa manages business definitions and usage bindings; DSH manages native Skills, MCP connections, and run environments.',
+    'Install and configure the skills and apps required by the template before use.',
     'Connections and environment',
     'Original resource list and checks',
     'View source and versions',
     'Export resource list',
     'Back to marketplace',
-    'Capability plan v',
+    'Capability draft v',
     'Content of a single skill',
     'Skill content',
   ],
@@ -265,7 +301,8 @@ test('地区中文只回退人工繁中，DSH zh 归一到简中', () => {
 })
 
 test('市场模板治理入口使用当地文案，非中文词典不混入汉字', () => {
-  for (const locale of Object.keys(localizedMarketTemplateValues) as Array<keyof typeof localizedMarketTemplateValues>) {
+  // 用户当前只定稿简繁英；其他既有语言继续验证可用，不以过时逐字译文阻止按约定回退。
+  for (const locale of ['zh-Hant','en'] as const) {
     assert.deepEqual(
       localizedMarketTemplateKeys.map(key => translateMessage(locale, key)),
       localizedMarketTemplateValues[locale],
@@ -326,18 +363,18 @@ test('第一批核心页面词条在十套主语言中提供人工翻译与变�
 
 test('一级导航、创建入口和状态使用当地产品常用短语',()=>{
   const expected={
-    'zh-CN':['需要你','资料','能力','新建工作会话','添加 AI 员工','新建协作群','依据已过时'],
-    'zh-Hant':['需要你','資料','能力','新增工作對話','新增 AI 員工','新增群組','依據已過時'],
-    en:['Needs your attention','Library','Capabilities','New work session',"Add AI employee",'New group','Evidence out of date'],
-    ja:['確認が必要','ライブラリ','ケイパビリティ','新しい作業会話',"AI 従業員を追加",'新しいグループ','根拠が古くなっています'],
-    ko:['확인 필요','라이브러리','역량','새 작업 대화',"AI 직원 추가",'새 그룹','근거가 오래됨'],
-    vi:['Cần bạn xử lý','Thư viện','Năng lực','Phiên làm việc mới',"Thêm nhân viên AI",'Nhóm mới','Bằng chứng đã cũ'],
-    es:['Requiere tu atención','Biblioteca','Capacidades','Nueva sesión de trabajo',"Añadir empleado de IA",'Nuevo grupo','Evidencia desactualizada'],
-    fr:['À traiter','Bibliothèque','Capacités','Nouvelle session de travail',"Ajouter un employé IA",'Nouveau groupe','Preuve obsolète'],
-    de:['Zu erledigen','Bibliothek','Leistungen','Neue Arbeitssitzung',"KI-Mitarbeiter hinzufügen",'Neue Gruppe','Nachweis veraltet'],
-    pt:['Requer atenção','Biblioteca','Capacidades','Nova sessão de trabalho',"Adicionar funcionário de IA",'Novo grupo','Evidência desatualizada'],
+    'zh-CN':['需要你','资料','市场','新建工作会话','添加 AI 员工','新建协作群','依据已过时'],
+    'zh-Hant':['需要你','資料','市場','新增工作對話','新增 AI 員工','新增群組','依據已過時'],
+    en:['Needs your attention','Library','Marketplace','New work session',"Add AI employee",'New group','Evidence out of date'],
+    ja:['確認が必要','ライブラリ','マーケット','新しい作業会話',"AI 従業員を追加",'新しいグループ','根拠が古くなっています'],
+    ko:['확인 필요','라이브러리','마켓','새 작업 대화',"AI 직원 추가",'새 그룹','근거가 오래됨'],
+    vi:['Cần bạn xử lý','Thư viện','Chợ ứng dụng','Phiên làm việc mới',"Thêm nhân viên AI",'Nhóm mới','Bằng chứng đã cũ'],
+    es:['Requiere tu atención','Biblioteca','Mercado','Nueva sesión de trabajo',"Añadir empleado de IA",'Nuevo grupo','Evidencia desactualizada'],
+    fr:['À traiter','Bibliothèque','Place de marché','Nouvelle session de travail',"Ajouter un employé IA",'Nouveau groupe','Preuve obsolète'],
+    de:['Zu erledigen','Bibliothek','Marktplatz','Neue Arbeitssitzung',"KI-Mitarbeiter hinzufügen",'Neue Gruppe','Nachweis veraltet'],
+    pt:['Requer atenção','Biblioteca','Mercado','Nova sessão de trabalho',"Adicionar funcionário de IA",'Novo grupo','Evidência desatualizada'],
   } as const
-  const keys=['navigation.attention','navigation.resources','navigation.capabilities','navigation.newConversation','team.action.new','home.action.newGroup','status.stale'] as const
+  const keys=['navigation.attention','navigation.resources','market.title','navigation.newConversation','team.action.new','home.action.newGroup','status.stale'] as const
   for(const locale of MAIN_LOCALES)assert.deepEqual(keys.map(key=>translateMessage(locale,key)),expected[locale],locale)
   assert.equal(translateMessage('zh-Hant','shell.settings'),'設定')
   assert.equal(translateMessage('ko','status.completed'),'완료')
@@ -420,7 +457,6 @@ test('回退图拒绝未知目标、空词条式节点和循环', () => {
 
 test('Auto Dream 与群提及新增词条在十套主语言齐全，禁系统词', () => {
   const autoDreamZhCn = {
-    "dailyLog.switchTitle": "开启 Auto Dream",
     "dailyLog.triggerTitle": "生成时刻",
     "dailyLog.triggerHint": "每天这个时刻生成，保存后按新时刻安排下一次生成。",
     "autoDream.recent.title": "最近 7 天",
@@ -448,7 +484,6 @@ test('Auto Dream 与群提及新增词条在十套主语言齐全，禁系统词
     'autoDream.name': 'Auto Dream',
     'dailyLog.title': 'Auto Dream · 每日小结',
     'dailyLog.entry': '工作日志',
-    'dailyLog.empty': '今天没有可核对的工作证据，未生成小结。',
     'dailyLog.evidence': '当日证据',
     'dailyLog.candidates': '相关记忆',
     'dailyLog.candidateHint': 'Auto Dream 自动保存记忆，你可以查看来源或撤回不再适用的内容。',
@@ -456,8 +491,6 @@ test('Auto Dream 与群提及新增词条在十套主语言齐全，禁系统词
     'dailyLog.pruneHintHint': '与今天的证据不一致，要不要撤回？不点就继续生效。',
     'dailyLog.pruneStale': '这条建议已失效。',
     'dailyLog.discard': '丢弃这份日志',
-    'dailyLog.switch': 'Auto Dream',
-    'dailyLog.switchHint': "关掉后员工不再生成每日小结、分身不再生成习惯观察；已有的日志保留。",
     'habitLog.title': 'Auto Dream · 习惯观察',
     'habitLog.hint': '只看你自己的操作：放行与拒绝、对成果的修订、交办的写法、群里的纠正。',
     'habitLog.promote': '补充观察',
@@ -473,15 +506,14 @@ test('Auto Dream 与群提及新增词条在十套主语言齐全，禁系统词
     'group.mention.pick': '提及员工',
     'group.mention.limit': "一条消息最多提及 8 位员工。",
     'group.mention.notMember': "该员工不在本群，无法提及。",
-    'group.mention.formOpened': '已为你打开建任务表单，负责人已填好。',
-    'group.mention.readyOnly': '提及只会新建待办任务，不会自动开始、完成或审批。',
     'group.mention.all': '提及全员',
     'group.mention.allNotice': "已通知全员，员工会各自回应。",
     'group.grant.canAutoRun': '允许本群自动开始运行',
     'group.grant.canAutoRunHint': "关掉时，提及这位员工只会新建待办任务。",
   } as const
   const newKeys = [...Object.keys(autoDreamZhCn), ...Object.keys(groupMentionZhCn)] as Array<typeof MESSAGE_KEYS[number]>
-  assert.equal(newKeys.length, 57)
+  assert.equal(newKeys.length, 51)
+  for(const removed of ['dailyLog.switch','dailyLog.switchHint','dailyLog.switchTitle'])assert.ok(!MESSAGE_KEYS.includes(removed as never),'默认开启的 Auto Dream 不再保留全局开关文案')
   // 按语言分派禁词表：只对本次两份新词表 37 键做该断言，不卷入全仓既有词表。
   // （原先此处记的例外「连接人类与 AI 员工」已在终审回写里改为「连接人与 AI 同事」，
   //   全仓既有词表当前已无「人类」；把断言扩到全表是另一件事，本轮不做。）
@@ -522,14 +554,15 @@ test('市场 role / model 新词条：每键 11 列、10 语言非空、zh-CN �
   assert.doesNotMatch(translateMessage('en',key as never,params),/workspace|instance|\bhumans?\b/i)
  }
  assert.equal(translateMessage('zh-CN','market.catalog.official.newerApp' as never,{count:3}),'有 3 项需更新应用后可用')
- assert.equal(translateMessage('zh-CN','market.catalog.official.roleFromSolution' as never,{packageId:'soc-operations',version:'1.0.0'}),'来自方案 soc-operations@1.0.0')
+ assert.equal(translateMessage('zh-CN','market.catalog.official.roleFromSolution' as never,{packageId:'soc-operations',version:'1.0.0'}),'来自模板 soc-operations@1.0.0')
 })
 
-// 白话守卫：全量十语词条不再出现工程术语。禁词表与豁免表（带理由）共用 tests/plain-language-jargon.mjs，
+// 白话守卫：已定稿简繁英词条不再出现工程术语；其余语言保留原词条与回退合同，不在本轮补译。
+// 禁词表与豁免表（带理由）共用 tests/plain-language-jargon.mjs，
 // 宿主确认卡、市场站 copy() 文案由 tests/plain-language-copy.test.mjs 用同一张表扫描。只扫描词条文本，不扫键名等机器标识。
-test('面向用户的十语词条使用白话，不出现工件、快照、钉版、上游、回执、实例等工程术语', () => {
+test('已定稿简繁英词条使用白话，不出现工件、快照、钉版、上游、回执、实例等工程术语', () => {
   const hits:string[]=[]
-  for (const locale of MAIN_LOCALES) {
+  for (const locale of ['zh-CN','zh-Hant','en'] as const) {
     for (const key of MESSAGE_KEYS) {
       if (Object.hasOwn(plainLanguageExemptions, key)) continue
       const value = translateMessage(locale, key)

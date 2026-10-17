@@ -18,7 +18,6 @@ export const BUSINESS_RECORD_MESSAGE_ROWS = [
  ['business.records.edit','编辑记录','編輯記錄','Edit record','記録を編集','기록 편집','Sửa bản ghi','Editar registro','Modifier','Eintrag bearbeiten','Editar registo'],
  ['business.records.save','保存记录','儲存記錄','Save record','記録を保存','기록 저장','Lưu bản ghi','Guardar registro','Enregistrer','Eintrag speichern','Guardar registo'],
  ['business.records.cancel','取消','取消','Cancel','キャンセル','취소','Hủy','Cancelar','Annuler','Abbrechen','Cancelar'],
- ['business.records.close','关闭详情','關閉詳情','Close details','詳細を閉じる','상세 닫기','Đóng chi tiết','Cerrar detalles','Fermer les détails','Details schließen','Fechar detalhes'],
  ['business.records.saving','正在保存…','正在儲存…','Saving…','保存中…','저장 중…','Đang lưu…','Guardando…','Enregistrement…','Wird gespeichert…','A guardar…'],
  ['business.records.saved','记录已保存。','記錄已儲存。','Record saved.','記録を保存しました。','기록을 저장했습니다.','Đã lưu bản ghi.','Registro guardado.','Enregistrement effectué.','Eintrag gespeichert.','Registo guardado.'],
  ['business.records.required','请填写此项。','請填寫此項。','This field is required.','この項目は必須です。','필수 항목입니다.','Trường này là bắt buộc.','Este campo es obligatorio.','Ce champ est obligatoire.','Dieses Feld ist erforderlich.','Este campo é obrigatório.'],

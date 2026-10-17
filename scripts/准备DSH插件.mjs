@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath,pathToFileURL } from 'node:url'
 import { compositionSnapshot, compositionViolations, scheduleCompositionFacts } from '../packages/harness-dsh/src/composition-safety.ts'
 import { projectRoot, verifyDshPackages } from './核对DSH依赖.mjs'
@@ -38,7 +38,7 @@ export async function installOptionalNativeBundles({profileDir,profileName,insta
   if(result.exitCode!==0)throw Error('DSH 可选插件准备失败，退出码 '+result.exitCode+'。')
  }finally{await suppressPendingBundles(profileDir)}
 }
-export function verifyConfig(source) {
+export function verifyConfig(source,{nativeInputProvider='@teloa/harness-dsh/native-input-provider'}={}) {
   const rows=new Map()
   let current
   for(const line of source.split('\n')){
@@ -55,7 +55,7 @@ export function verifyConfig(source) {
     'ui-settings-general': ["name: '@deepseek-ai/dsh-client-ui-settings-general'",'disabled: true'],
     'ui-settings-plugins': ["name: '@deepseek-ai/dsh-client-ui-settings-plugins'",'disabled: true'],
     'client-hmr': ["name: '@deepseek-ai/dsh-client-hmr'",'disabled: true'],
-    'connection': ["name: '@deepseek-ai/dsh-client-connection'",'- webRuntime','- webServer'],
+    'connection': ["name: '@deepseek-ai/dsh-client-connection'",'- webStartup','- webServer'],
     'session-telemetry-otel': ["name: '@deepseek-ai/dsh-session-telemetry-otel'",'mode: DISABLED'],
     'desktop-product-telemetry': ["name: '@deepseek-ai/dsh-host-product-telemetry-otel'",'disabled: true'],
     'teloa-product-telemetry': ["name: '@teloa/harness-dsh/product-telemetry'",'https://metrics.teloa.ai/v1/product-events','channel: teloa_product_analytics'],
@@ -63,20 +63,23 @@ export function verifyConfig(source) {
     'sandbox-policy': ["name: '@deepseek-ai/dsh-sandbox-policy'",'mode: workspace-write'],
     'approval': ["name: '@deepseek-ai/dsh-user-approval'",'policy: ask'],
     'tools': ["name: '@deepseek-ai/dsh-tools'",'mode: native'],
+    'working-directory': ["name: '@deepseek-ai/dsh-working-directory'",'disabled: true'],
+    'teloa-working-directory': ["name: '@teloa/harness-dsh/native-working-directory'",'disabled: false'],
     // 宿主平面这两行本就被上游关着；模型可见面由 Agent 预设平面决定（见下面的 teloa-agent-preset）。
     'tool-workflow': ["name: '@deepseek-ai/dsh-tool-workflow'",'disabled: true'],
-    'tool-ralph': ["name: '@deepseek-ai/dsh-tool-ralph'",'disabled: true'],
     // 部署默认保持 Teloa，官方四种预设开放；plugins 正文由下方摘要复验。
     'agent-preset-registry': ["name: '@deepseek-ai/dsh-agent-preset-registry'",'default: teloa-standard','- teloaToolResourceProvenance'],
     'teloa-agent-preset': ["name: '@deepseek-ai/dsh-agent-preset'",'id: teloa-standard'],
     'preset-standard': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
     'preset-ptc': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
+    'preset-ptc-persistent': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
+    'preset-ptc-python': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
     'preset-minimal': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
     'preset-cordis': ["name: '@deepseek-ai/dsh-agent-preset'",'disabled: false'],
     'session-query-sqlite': ["name: '@deepseek-ai/dsh-session-query-sqlite'",'openAt: first-search','session-search.sqlite'],
     'teloa-ui-workbench': ["name: '@teloa/client-ui-workbench'"],
     'teloa-harness-dsh': ["name: '@teloa/harness-dsh'"],
-    'teloa-native-input': ["name: '@teloa/harness-dsh/native-input-provider'"],
+    'teloa-native-input': [],
     'teloa-managed-session-controller': ["name: '@teloa/harness-dsh/managed-session-controller'"],
     'teloa-managed-subagent': ["name: '@teloa/harness-dsh/managed-subagent'"],
     'teloa-managed-goal-round-driver': ["name: '@teloa/harness-dsh/managed-goal-round-driver'"],
@@ -94,6 +97,11 @@ export function verifyConfig(source) {
   const { parse }=createRequire(resolve(projectRoot,'packages/harness-dsh/package.json'))('yaml')
   const document=parse(source,{customTags:[{tag:'tag:yaml.org,2002:js',resolve:expression=>({__jsExpr:expression})}]})
   if(!Array.isArray(document))throw Error('DSH 组合配置不是插件行列表。')
+  const inputName=document.find(row=>row.id==='teloa-native-input')?.name
+  // 官方 CLI 把绝对模块路径转储为 file URL；两种写法必须指向本次核验的同一个载体。
+  const inputNames=[nativeInputProvider]
+  if(isAbsolute(nativeInputProvider))inputNames.push(pathToFileURL(nativeInputProvider).href)
+  if(!inputNames.includes(inputName))throw Error('DSH 组合配置中的 teloa-native-input 未保留本次核验的输入提供方。')
   const reminder=scheduleCompositionFacts(document)
   if(!reminder.scheduleServicePinned)throw Error('DSH 原生提醒服务应唯一保留。')
   if(!reminder.scheduleUiDisabled)throw Error('DSH 原生自动化入口应保持关闭。')
@@ -133,7 +141,11 @@ try {
   })
   const dump=await run([resolve(projectRoot,'scripts/启动DSH.mjs'),'--dump-config'],{capture:true})
   if(dump.stderr.trim())throw Error('DSH 组合配置存在未命中的补丁或诊断：'+dump.stderr.trim())
-  verifyConfig(dump.stdout)
+  // 与启动器共用受管组合生成和摘要核验；按本次实际载体核对，不接受任意路径。
+  const {prepareManagedNativeProfile}=await import('./runtime/native-runtime-entry.mjs')
+  const runtimeRoot=resolve(process.env.TELOA_RUNTIME_ROOT||resolve(projectRoot,'.runtime/teloa'))
+  const {inputProvider}=await prepareManagedNativeProfile({programRoot:projectRoot,runtimeRoot,dshHome,profileName,workspaceRoot:resolve(process.env.TELOA_WORKSPACE_ROOT||resolve(runtimeRoot,'workspace'))})
+  verifyConfig(dump.stdout,{nativeInputProvider:inputProvider})
   console.log('Teloa 插件已接入独立 profile；重启本项目 DSH 后生效。')
 }catch(error){console.error(error.message);process.exitCode=1}
 }

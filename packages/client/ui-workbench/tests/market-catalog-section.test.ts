@@ -3,10 +3,11 @@ import test from 'node:test'
 import {registerHooks} from 'node:module'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
+import ts from 'typescript'
 
 registerHooks({
- resolve:(specifier,context,next)=>/\.(module\.css|svg|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>/\.(svg|webp)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|svg|webp|png)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
+ load:(url,context,next)=>/\.(svg|webp|png)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
 const {MarketCatalogCards,MarketCatalogSection,marketCatalogMatches,marketCatalogVisible,loadCatalogListing,catalogSortVisible}=await import('../lib/types/client/MarketCatalogSection.js')
 const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')
@@ -50,9 +51,9 @@ test('区块首屏显示读取中；搜索匹配标题、用途与作者',()=>{
 test('方案条目：显示标题、简介、能力要点（前两条）与官方徽标',()=>{
  const solutionItem={entry:solutionEntry(),artifact:{files:[{path:'teloa.json',sha256:'a'.repeat(64),size:1},{path:'LICENSE',sha256:'b'.repeat(64),size:1}],treeHash:'c'.repeat(64)},addedContentId:null} as never
  const html=cards([solutionItem])
- assert.match(html,/通用办公/);assert.match(html,/日常办公自动化方案/);assert.match(html,/Teloa 官方方案/)
+ assert.match(html,/通用办公/);assert.match(html,/日常办公自动化方案/);assert.match(html,/Teloa 官方模板/)
  assert.match(html,/现在可做/);assert.match(html,/起草邮件与会议纪要/);assert.match(html,/整理工作计划/)
- assert.match(html,/添加方案/);assert.doesNotMatch(html,/添加到我的技能/)  // 方案按钮不能沿用技能文案
+ assert.match(html,/添加模板/);assert.doesNotMatch(html,/添加到我的技能/)  // 方案按钮不能沿用技能文案
  assert.doesNotMatch(html,/生成周报/)  // 第 3 条不在前两条内，不显示
  assert.doesNotMatch(html,/原作者 /)     // 方案无原作者信息行
 })
@@ -62,6 +63,15 @@ test('搜索可匹配方案字段',()=>{
  assert.equal(marketCatalogMatches(solutionItem,'办公'),true)
  assert.equal(marketCatalogMatches(solutionItem,'office'),true)
  assert.equal(marketCatalogMatches(solutionItem,'anthropic'),false)
+})
+
+test('看板添加动作不使用技能专属文案',()=>{
+ const base=solutionEntry()
+ const dashboard={entry:{...base,kind:'dashboard',dashboard:{...base.solution,packageId:'sample-board'}},artifact:null,addedContentId:null}
+ const html=cards([dashboard])
+ assert.match(html,/>添加<\/button>/)
+ assert.doesNotMatch(html,/添加到我的技能/)
+ assert.match(cards([dashboard],{},'en'),/>Add<\/button>/)
 })
 
 const upstreamEntry=(compatibility:Record<string,unknown>={})=>({format:'teloa.market-catalog-entry/v1',id:'clawhub.byungkyu.gmail',kind:'skill',delivery:'upstream',version:'1.0.0',taxonomy:{functions:['office-docs'],industries:['general']},
@@ -126,51 +136,35 @@ test('种类过滤：技能分类只显示技能，行业模板分类只显示�
  assert.deepEqual(kindsOf(marketCatalogVisible([skill,solution],onlySolution,['skill'])),[])
 })
 
-test('全部来源读取六个上游的全部分页，单来源筛选独立读取，来源失败保留其他结果并报告',async()=>{
- const official={entry:{id:'teloa.office'}},up=(id:string)=>({entry:{id}})
- const calls:unknown[]=[]
- const api={list:async(request?:Record<string,unknown>)=>{calls.push(request)
-  if(!request?.marketplace||request.marketplace==='teloa')return {catalogVersion:'2026.9.25',items:[official],nextCursor:null}
-  if(request.marketplace!=='clawhub')return {catalogVersion:'2026.9.25',items:[up(String(request.marketplace)+'.a')],nextCursor:null}
-  return request.cursor?{catalogVersion:'2026.9.25',items:[up('clawhub.b')],nextCursor:null}:{catalogVersion:'2026.9.25',items:[up('clawhub.a')],nextCursor:'clawhub.a'}}}
- const all=await loadCatalogListing(api as never,undefined)
- assert.deepEqual(all.items.map((item:{entry:{id:string}})=>item.entry.id),['teloa.office','claude-code.a','codex.a','dsh.a','openclaw.a','clawhub.a','clawhub.b','hermes.a'])
- assert.equal(calls.length,8)
- assert.ok(calls.some(request=>(request as {cursor?:string}).cursor==='clawhub.a'))
- const onlyUpstream=await loadCatalogListing(api as never,'clawhub')
- assert.deepEqual(onlyUpstream.items.map((item:{entry:{id:string}})=>item.entry.id),['clawhub.a','clawhub.b'])
- const failing={list:async(request?:Record<string,unknown>)=>{if(request?.marketplace==='clawhub')throw Error('offline');return api.list(request)}}
- const partial=await loadCatalogListing(failing as never,undefined)
- assert.equal(partial.items.some((item:{entry:{id:string}})=>item.entry.id==='codex.a'),true)
- assert.deepEqual(partial.unavailableSources,['clawhub'])
- await assert.rejects(loadCatalogListing(failing as never,'clawhub'),/offline/)
- // 宿主上游索引损坏/未加载时报 WorkError（不再回空列表），同样归入「来源暂时无法读取」
- const corrupt={list:async(request?:Record<string,unknown>)=>{if(request?.marketplace&&request.marketplace!=='teloa')throw Object.assign(Error('上游资源索引完整性校验失败'),{code:'teloa/storage-corrupt'});return api.list(request)}}
- const unreadable=await loadCatalogListing(corrupt as never,undefined)
- assert.deepEqual(unreadable.items.map((item:{entry:{id:string}})=>item.entry.id),['teloa.office'])
- assert.deepEqual(unreadable.unavailableSources,['claude-code','codex','dsh','openclaw','clawhub','hermes'])
+test('市场只读一个 Teloa 官方目录：只请求 teloa 并读完全部分页（含原始来源为上游的条目），不再逐个查询外部来源',async()=>{
+ const calls:Record<string,unknown>[]=[]
+ const api={list:async(request:Record<string,unknown>={})=>{calls.push(request)
+  return request.cursor?{catalogVersion:'2026.10.14',items:[{entry:{id:'clawhub.byungkyu.gmail'}},{entry:{id:'cursor.pstack.a'}}],nextCursor:null}:{catalogVersion:'2026.10.14',items:[{entry:{id:'teloa.office'}}],nextCursor:'page-2'}}}
+ const listing=await loadCatalogListing(api as never)
+ assert.deepEqual(listing.items.map((item:{entry:{id:string}})=>item.entry.id),['teloa.office','clawhub.byungkyu.gmail','cursor.pstack.a'])
+ assert.deepEqual(calls.map(request=>request.marketplace),['teloa','teloa'],'每一页都只请求 Teloa 官方目录')
+ assert.equal(calls[1]!.cursor,'page-2')
+ assert.equal('unavailableSources' in listing,false,'单一目录没有「部分来源不可读」状态')
+ const api$=await import('../lib/types/client/market-catalog-api.js') as Record<string,unknown>
+ for(const name of ['marketCatalogSources','catalogSourcesForKinds','loadCatalogListingForKinds'])assert.equal(name in api$,false,name+' 已移除，不能再绕转外部来源查询')
+ // 官方目录读取失败直接报告，不以部分结果冒充完整目录
+ await assert.rejects(loadCatalogListing({list:async()=>{throw Error('offline')}} as never),/offline/)
 })
 
-test('目录区块按当前分类读取来源：上游来源只有技能，非技能分类只读 Teloa 目录',async()=>{
- const {catalogSourcesForKinds}=await import('../lib/types/client/market-catalog-api.js')
- const all=['teloa','claude-code','codex','dsh','openclaw','clawhub','hermes']
- assert.deepEqual(catalogSourcesForKinds(undefined),all)
- assert.deepEqual(catalogSourcesForKinds(['skill']),all)
- assert.deepEqual(catalogSourcesForKinds(['skill','solution']),all)
- for(const kinds of [['solution'],['role'],['model'],['connector'],['solution','role']] as const)assert.deepEqual(catalogSourcesForKinds(kinds),['teloa'],kinds.join())
- const calls:unknown[]=[]
- const api={list:async(request?:Record<string,unknown>)=>{calls.push(request?.marketplace);return {catalogVersion:'2026.9.25',items:[],nextCursor:null}}}
- const listing=await loadCatalogListing(api as never,undefined,['teloa'])
- assert.deepEqual(calls,['teloa']);assert.deepEqual(listing.unavailableSources,[])
- // 非技能分类里可见资源的其他来源指向上游技能时，再补读上游来源，推荐导航不因懒加载失效
- const {loadCatalogListingForKinds}=await import('../lib/types/client/market-catalog-api.js')
- const connector=(alternatives:unknown[])=>({entry:{id:'teloa.remote',kind:'connector',delivery:'managed',alternatives}})
- for(const [alternatives,expected] of [[[],['teloa']],[[{entryId:'teloa.other'}],['teloa']],[[{entryId:'clawhub.calendly'}],['teloa',...all]]] as const){
-  const seen:unknown[]=[]
-  const scoped={list:async(request?:Record<string,unknown>)=>{seen.push(request?.marketplace);return {catalogVersion:'2026.9.25',items:request?.marketplace==='teloa'?[connector([...alternatives]),{entry:{id:'teloa.other',kind:'connector',delivery:'managed'}}]:[],nextCursor:null}}}
-  await loadCatalogListingForKinds(scoped as never,['connector'])
-  assert.deepEqual(seen,expected,JSON.stringify(alternatives))
+test('目录区块不再出现来源筛选或来源并列导航；分类切换不另读来源',async()=>{
+ const html=render(createElement(MarketCatalogSection,{api:{list:()=>new Promise(()=>{}),add:async()=>({contentId:''}),ranking:async()=>new Map()},query:'',openContent:()=>{}} as never))
+ assert.doesNotMatch(html,/来源筛选|Claude Code|ClawHub|Codex|Cursor|Teloa 官方<\/button>/)
+ const {mount}=await import('./market-component-harness.ts')
+ const seen:unknown[]=[]
+ const api={list:async(request:Record<string,unknown>={})=>{seen.push(request.marketplace);return {catalogVersion:'2026.10.14',items:[],nextCursor:null,counts:{dashboard:0,skill:0,connector:0,model:0,solution:0,role:0},skipped:{unknownKind:0,newerApp:0}}},ranking:async()=>new Map(),add:async()=>({contentId:''})}
+ const modules={'./market-catalog-api.js':await import('../lib/types/client/market-catalog-api.js'),'./market-taxonomy-filter.js':await import('../lib/types/client/market-taxonomy-filter.js')}
+ for(const kinds of [undefined,['skill'],['connector']]){
+  const app=mount('MarketCatalogSection.tsx',modules)
+  app.render('MarketCatalogSection',{api,query:'',kinds,openContent:()=>{}})
+  for(const effect of app.effects)effect()
+  await new Promise(resolve=>setTimeout(resolve,0))
  }
+ assert.deepEqual(seen,['teloa','teloa','teloa'],'任何分类都只读一次 Teloa 官方目录')
 })
 
 test('上游 GitHub 来源链接逐段编码，空格与非 ASCII 路径生成规范链接',async()=>{
@@ -181,24 +175,24 @@ test('上游 GitHub 来源链接逐段编码，空格与非 ASCII 路径生成�
  assert.match(html,/href="https:\/\/github.com\/example\/skills\/tree\/a{40}\/skills\/my%20notes\/%E4%B8%AD%E6%96%87"/)
 })
 
-test('来源重复游标或超过分页上限时不把截断目录当作完整结果',async()=>{
+test('目录重复游标或超过分页上限时不把截断目录当作完整结果',async()=>{
  const broken={list:async()=>({catalogVersion:'test',items:[],nextCursor:'same'})}
- await assert.rejects(loadCatalogListing(broken as never,'codex'))
+ await assert.rejects(loadCatalogListing(broken as never))
  let page=0
  const huge={list:async()=>({catalogVersion:'test',items:[],nextCursor:String(++page)})}
- await assert.rejects(loadCatalogListing(huge as never,'hermes'))
+ await assert.rejects(loadCatalogListing(huge as never))
  assert.equal(page,20)
 })
 
-test('跨页目录版本变化或重复资源时拒绝该来源；完整 20 页允许读取',async()=>{
+test('跨页目录版本变化或重复资源时拒绝读取；完整 20 页允许读取',async()=>{
  for(const reason of ['version','duplicate']){
   let page=0
   const api={list:async()=>{page++;return {catalogVersion:reason==='version'?String(page):'1',items:[{entry:{id:reason==='duplicate'?'same':String(page)}}],nextCursor:page===1?'first':null}}}
-  await assert.rejects(loadCatalogListing(api as never,'dsh'))
+  await assert.rejects(loadCatalogListing(api as never))
  }
  let page=0
  const complete={list:async()=>({catalogVersion:'1',items:[{entry:{id:String(++page)}}],nextCursor:page<20?String(page):null})}
- assert.equal((await loadCatalogListing(complete as never,'dsh')).items.length,20)
+ assert.equal((await loadCatalogListing(complete as never)).items.length,20)
 })
 
 
@@ -228,8 +222,8 @@ const modelItem=()=>({entry:modelEntry(),artifact:null,addedContentId:null}) as 
 
 test('role 卡：徽标、来源方案、所需技能、「创建为同事」按钮；模型卡：徽标、国内可达、价格档、「去配置」按钮而非添加',()=>{
  const role=cards([roleItem()])
- assert.match(role,/AI 员工/);assert.match(role,/来自方案 test-sol@1\.0\.0/);assert.match(role,/所需技能：tool-a/);assert.match(role,/可在市场添加，或加载所属方案/);assert.match(role,/<button[^>]*>创建为员工/)
- assert.doesNotMatch(role,/添加到我的技能|添加方案/)
+ assert.match(role,/AI 员工/);assert.match(role,/来自模板 test-sol@1\.0\.0/);assert.match(role,/所需技能：tool-a/);assert.match(role,/可在市场添加，或加载所属模板/);assert.match(role,/<button[^>]*>创建为员工/)
+ assert.doesNotMatch(role,/添加到我的技能|添加模板/)
  const model=cards([modelItem()],{openModels:()=>{}})
  assert.match(model,/国内直连/);assert.match(model,/价格：低/);assert.match(model,/<button[^>]*>去配置/);assert.doesNotMatch(model,/<button[^>]*>添加/)
  assert.doesNotMatch(model,/sk-|API_KEY|密钥：|<input/)
@@ -246,9 +240,9 @@ test('自定义端点的模型卡在来源详情给出协议与完整接口地�
 
 test('role 卡已添加回执：created 显示「已创建，默认暂停」，existing 显示「已添加」，都可查看',()=>{
  const created=cards([roleItem()],{roleReceipts:{'teloa.role.test-role':{roleId:'r1',status:'created'}},openRole:()=>{}})
- assert.match(created,/已创建，默认暂停[\s\S]*<button[^>]*>查看/);assert.doesNotMatch(created,/创建为员工/)
+ assert.match(created,/已创建，默认暂停[\s\S]*<button[^>]*aria-label="查看"[^>]*title="查看"[^>]*><svg/);assert.doesNotMatch(created,/创建为员工/)
  const existing=cards([roleItem()],{roleReceipts:{'teloa.role.test-role':{roleId:'r1',status:'existing'}},openRole:()=>{}})
- assert.match(existing,/已添加[\s\S]*<button[^>]*>查看/)
+ assert.match(existing,/已添加[\s\S]*<button[^>]*aria-label="查看"[^>]*title="查看"[^>]*><svg/)
 })
 
 test('搜索命中 roleId / modelId；kinds 过滤 role 与 model；newerApp>0 时区块底部恰一行提示',async()=>{
@@ -267,7 +261,7 @@ test('搜索命中 roleId / modelId；kinds 过滤 role 与 model；newerApp>0 �
 
 test('功能验证 审查：role 列表带 addedRoleId 时首屏即显示「已添加」并可查看同一岗位；非 role 忽略',()=>{
  const html=cards([roleItem({addedRoleId:'44444444-4444-4444-8444-444444444444'})],{openRole:()=>{}})
- assert.match(html,/已添加[\s\S]*<button[^>]*>查看/);assert.doesNotMatch(html,/创建为员工/)
+ assert.match(html,/已添加[\s\S]*<button[^>]*aria-label="查看"[^>]*title="查看"[^>]*><svg/);assert.doesNotMatch(html,/创建为员工/)
  assert.match(cards([roleItem({addedRoleId:null})]),/<button[^>]*>创建为员工/)
 })
 
@@ -314,7 +308,7 @@ test('终审 Minor：unsupported 的 AI 同事卡不渲染「创建为同事」�
  const unsupported=(patch:Record<string,unknown>={})=>roleItem({...patch,entry:{...roleEntry(),compatibility:{...roleEntry().compatibility,status:'unsupported',conditions:[{'zh-CN':'需要新版 Teloa',en:'Requires newer Teloa'}]}}})
  const html=cards([unsupported()],{addRole:()=>{}})
  assert.doesNotMatch(html,/<button[^>]*>创建为员工/);assert.match(html,/需要新版 Teloa/)
- assert.match(cards([unsupported({addedRoleId:'44444444-4444-4444-8444-444444444444'})],{openRole:()=>{}}),/<button[^>]*>查看/)
+ assert.match(cards([unsupported({addedRoleId:'44444444-4444-4444-8444-444444444444'})],{openRole:()=>{}}),/<button[^>]*aria-label="查看"[^>]*title="查看"[^>]*><svg/)
 })
 
 test('unsupported 条目没写 conditions：技能卡与 AI 同事卡都显示兜底文案，不留空白操作区',()=>{
@@ -333,12 +327,16 @@ test('终审 Minor：模型条目 baseURL 无法解析时来源详情显示原�
 test('终审 Minor：市场打开 AI 同事时读取岗位失败由 loadRoles 自己落错误提示，不留未处理的拒绝，也不挂永不触发的 catch',async()=>{
  const {readFile}=await import('node:fs/promises')
  const source=await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
- // loadRoles 吞掉读取失败并写进 roleLoadError（同事页显示），因此它永不拒绝；actions.openRole 是同步 reducer，也不抛。
+ // loadRoles 吞掉读取失败并写进 roleLoadError；查看员工只开预览，保留市场来源。
  const load=source.slice(source.indexOf('const loadRoles=async()=>{'),source.indexOf('const loadRoles=async()=>{')+1800)
  assert.match(load,/await roleApi\.list\(\)/)
  assert.match(load,/catch\(error\)[\s\S]*setRoleLoadError\(localizeWorkError\(locale,error\)\)/)
  // 后面再接的 catch 永远走不到，还会把真实错误覆盖成「岗位已不存在」的误导文案。
- assert.match(source,/openRole=\{roleId=>\{void loadRoles\(\)\.then\(\(\)=>actions\.openRole\(roleId\)\)\}\}/)
+ const file=ts.createSourceFile('WorkbenchFrame.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),callbacks:ts.ArrowFunction[]=[]
+ const visit=(node:ts.Node)=>{if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==='MarketPage')for(const attr of node.attributes.properties){if(ts.isJsxAttribute(attr)&&attr.name.getText(file)==='openRole'&&attr.initializer&&ts.isJsxExpression(attr.initializer)&&attr.initializer.expression&&ts.isArrowFunction(attr.initializer.expression))callbacks.push(attr.initializer.expression)}ts.forEachChild(node,visit)}
+ visit(file);assert.equal(callbacks.length,1)
+ const calls:unknown[][]=[],open=new Function('actions','loadRoles','return ('+callbacks[0]!.getText(file)+')')({previewRole:(id:string)=>calls.push(['preview',id]),openRole:()=>{throw Error('查看员工不能切走市场')}},()=>{calls.push(['load']);return Promise.resolve()})
+ open('original-role');assert.deepEqual(calls,[['preview','original-role'],['load']])
 })
 
 test('Teloa 内置技能（无上游）的元信息用专用词条「Teloa 内置 · 许可」，不借用筛选按钮的「Teloa 官方」',()=>{
@@ -590,7 +588,55 @@ test('官方方案卡片小字：宿主带了包含计数就写「包含：…�
  const t=(key:string,params?:Record<string,string|number>)=>translateMessage('zh-CN',key as never,params)
  const solutionItem=(contents?:Record<string,number>)=>({entry:solutionEntry(),artifact:null,addedContentId:null,addedRoleId:null,secretGroup:null,...(contents?{contents}:{})}) as never
  const row=(value:unknown)=>catalogListRow(value as never,{t:t as never,locale:'zh-CN',number:(n:number)=>String(n),openEntry:()=>{}})
- assert.equal(row(solutionItem({role:2,knowledge:1,skill:7,'work-template':4,plan:1})).facts,'包含：2 位员工 · 7 项技能 · 1 份资料 ｜ 4 个任务模板')
+ assert.equal(row(solutionItem({role:2,knowledge:1,skill:7,'work-template':4,plan:1})).facts,'包含：2 位员工 · 7 项技能 · 1 份资料 ｜ 4 项安排')
  assert.equal(row(solutionItem({role:1,mcp:2})).facts,'包含：1 位员工 ｜ 2 个接入源')
  assert.equal(row(solutionItem()).facts,'只有说明，不含程序 · Teloa')
+})
+
+test('原始来源为上游的条目在列表里统一以 Teloa 为目录提供方；原作者与原始来源只在详情的来源说明里',async()=>{
+ const {catalogListRow}=await import('../lib/types/client/MarketCatalogSection.js')
+ const t=(key:string,params?:Record<string,string|number>)=>translateMessage('zh-CN',key as never,params)
+ const row=(value:unknown)=>catalogListRow(value as never,{t:t as never,locale:'zh-CN',number:(n:number)=>String(n),openEntry:()=>{}})
+ for(const value of [upstreamItem(),item()]){
+  const listed=row(value)
+  assert.match(listed.facts,/ · Teloa$/);assert.equal(listed.credit,'Teloa')
+  assert.doesNotMatch(listed.facts+listed.credit,/ClawHub|byungkyu|Anthropic/,'列表不并列原始来源，也不把原作者写成发布方')
+ }
+ // 详情仍区分原作者与原始来源，不声称 Teloa 原创
+ assert.match(cards([upstreamItem()]),/ClawHub · byungkyu/)
+ assert.match(cards([item()]),/原作者 Anthropic · 许可 Apache-2.0/)
+})
+
+test('旧目录区块：连接器点「连接」直接进原连接页，不发目录内容添加请求；没有连接端口时明确不可用，也不发请求',async()=>{
+ const {mount,nodes}=await import('./market-component-harness.ts')
+ const {connectorEntry}=await import('./market-navigation-fixture.ts')
+ const entry=connectorEntry(),calls:string[]=[]
+ // 目录 add 按生产后端边界模拟：official-catalog.add 对 connector 明确拒绝（连接不是内容）。
+ const api={
+  list:async()=>({catalogVersion:'2026.9.27',items:[{entry,artifact:null,addedContentId:null,addedRoleId:null,secretGroup:null}],nextCursor:null,counts:{dashboard:0,skill:0,connector:1,model:0,solution:0,role:0},skipped:{unknownKind:0,newerApp:0}}),
+  ranking:async()=>new Map(),
+  add:async(id:string)=>{calls.push('add:'+id);throw Error('连接不能添加为内容，请用 teloa_mcp_connect 或 市场 > 连接 添加。')},
+ }
+ const modules={'./market-catalog-api.js':await import('../lib/types/client/market-catalog-api.js'),'./market-taxonomy-filter.js':await import('../lib/types/client/market-taxonomy-filter.js')}
+ // 停在该条目的详情：区块直接渲染卡片，卡片的 add 回调就是区块内的添加闭包
+ const cardsOf=async(props:Record<string,unknown>)=>{
+  const app=mount('MarketCatalogSection.tsx',modules)
+  app.render('MarketCatalogSection',props)
+  for(const effect of app.effects)effect()
+  await new Promise(resolve=>setTimeout(resolve,0))
+  const cards=()=>nodes(app.render('MarketCatalogSection',props)).find(node=>typeof node.type==='function'&&node.type.name==='MarketCatalogCards')!
+  return cards
+ }
+ const base={api,query:'',kinds:['connector'],initialEntryId:entry.id,openContent:async(id:string)=>{calls.push('content:'+id)}}
+ const withPort=await cardsOf({...base,openConnection:(id:string)=>{calls.push('connection:'+id)}})
+ const item=withPort().props.items[0]
+ assert.equal(item.entry.id,entry.id)
+ await withPort().props.add(item)
+ assert.deepEqual(calls.splice(0),['connection:'+entry.id],'有连接端口：直接进原连接页，不调用目录内容添加')
+ assert.equal(withPort().props.busy,undefined);assert.deepEqual(withPort().props.addErrors,{})
+ const withoutPort=await cardsOf(base)
+ await withoutPort().props.add(withoutPort().props.items[0])
+ assert.deepEqual(calls,[],'没有连接端口：不发目录内容添加请求，也不打开内容页')
+ assert.equal(withoutPort().props.busy,undefined)
+ assert.deepEqual(withoutPort().props.addErrors,{[entry.id]:'market.apps.connectionServiceUnavailable'},'明确提示连接服务不可用')
 })

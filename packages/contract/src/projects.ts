@@ -11,7 +11,7 @@ export type ProjectDefinition={scope:string;title:string;goal:string;dueDate:str
 export type WorkProject=ProjectDefinition&{id:string;ownerId:string;version:number;createdAt:string;updatedAt:string}
 export type ProjectItem=ProjectLink&{title:string|null;state:string|null;version:number|null;available:boolean;origin:'direct'|'automation'|'task-output';attention:'error'|'review'|null}
 export type ProjectSummary={totalTasks:number;completedTasks:number;cancelledTasks:number;attentionTasks:number}
-export type ProjectDetail={project:WorkProject;items:ProjectItem[];summary:ProjectSummary;references:ProjectReferenceItem[]}
+export type ProjectDetail={project:WorkProject;items:ProjectItem[];summary:ProjectSummary;references:ProjectReferenceItem[];linkedGroups?:ProjectReferenceItem[]}
 /** 总览入参：`state` 为 `null` 表示全部状态，`'current'` 表示非归档（其余取值为单一生命周期）。 */
 export type ProjectOverviewInput={scope:string|null;state:ProjectDefinition['state']|'current'|null;cursor:string|null;limit:number}
 export type ProjectOverviewPage={rows:WorkProject[];nextCursor:string|null}
@@ -69,11 +69,15 @@ export function projectSummary(items:readonly ProjectItem[]):ProjectSummary{
  return {totalTasks:tasks.length,completedTasks:tasks.filter(item=>item.state==='completed').length,cancelledTasks:tasks.filter(item=>item.state==='cancelled').length,attentionTasks:tasks.filter(item=>item.attention!==null).length}
 }
 export function readProjectDetail(value:unknown):ProjectDetail{
- const row=projectInput(value,['project','items','summary','references']);if(!Array.isArray(row.items)||!Array.isArray(row.references))throw invalid()
+ const row=projectInput(value,['project','items','summary','references','linkedGroups']);if(!Array.isArray(row.items)||!Array.isArray(row.references))throw invalid()
  const project=readProject(row.project),items=row.items.map(readProjectItem),summary=projectSummary(items),given=projectInput(row.summary,Object.keys(summary)),references=row.references.map(readProjectReferenceItem)
  if(new Set(items.map(item=>item.kind+':'+item.id)).size!==items.length||Object.entries(summary).some(([key,n])=>given[key]!==n))throw invalid()
  if(new Set(references.map(referenceKey)).size!==references.length)throw invalid()
- return {project,items,summary,references}
+ if(row.linkedGroups===undefined)return {project,items,summary,references}
+ if(!Array.isArray(row.linkedGroups)||row.linkedGroups.length>10000)throw invalid()
+ const linkedGroups=row.linkedGroups.map(readProjectReferenceItem)
+ if(linkedGroups.some(item=>item.kind!=='group')||new Set(linkedGroups.map(referenceKey)).size!==linkedGroups.length)throw invalid()
+ return {project,items,summary,references,linkedGroups}
 }
 /** 总览分页游标：`${updatedAt ISO}|${id}`，与后端 `order by updated_at desc,id`（同 list）的 keyset 一一对应。 */
 const projectCursor=(v:unknown):v is string=>{

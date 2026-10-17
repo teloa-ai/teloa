@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { projectRoot } from '../scripts/核对DSH依赖.mjs'
+import { createRemoteProfile } from '../packages/native-remote/profile.mjs'
 
 const read = path => JSON.parse(readFileSync(resolve(projectRoot, path), 'utf8'))
 
@@ -16,4 +17,10 @@ test('宿主、客户端与组合插件清单声明的兼容 DSH 版本与固定
   }
   // 两份基线文件各自记了一次上游 commit；不一致时无法判断锁定的到底是哪一版。
   assert.equal(baseline.commit, versions.sourceCommit, 'dsh-baseline.json.commit 必须与 dsh-package-versions.json.sourceCommit 一致')
+})
+
+test('独立 SSH 配方与社区固定包族使用相同版本', () => {
+  const {manifest} = createRemoteProfile({host:'acceptance',node:'/opt/node',helper:'/opt/teloa/helper.mjs',helperHash:'a'.repeat(64),workspace:'/srv/work'})
+  const versions = read('config/dsh-package-versions.json').versions
+  for (const [name, version] of Object.entries(manifest.dependencies)) assert.equal(version, versions[name], name)
 })

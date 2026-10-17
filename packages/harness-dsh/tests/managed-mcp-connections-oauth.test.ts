@@ -756,9 +756,15 @@ test('官方目录 OAuth 配方：新旧 auth 结构均可解析；白名单制�
  const {readMarketCatalogIndex}=await import('@teloa/contract')
  const {createHash}=await import('node:crypto')
  const {officialCatalogIndex}=await import('../../backend/src/market/official-catalog-snapshot.ts')
+ const {retiredOAuthConnectorEntries}=await import('./fixtures/retired-catalog-entries.ts')
  const index=readMarketCatalogIndex(officialCatalogIndex,text=>createHash('sha256').update(text).digest('hex'))
+ // 当前目录（2026.10.14.5）的连接器精确集合；Supabase 远端、GitLab、Composio 已下架，其 OAuth 配方（动态注册、只读 scope、空 scope）
+ // 仍是受管连接的协议能力，用已下架条目夹具（固定来源与摘要）继续核对正负边界，不混入当前目录。
+ assert.deepEqual(index.entries.filter(entry=>entry.kind==='connector').map(entry=>entry.id),['teloa.mcp-figma','teloa.mcp-github','teloa.mcp-linear','teloa.mcp-notion-remote','teloa.mcp-sentry','teloa.mcp-slack'])
  const byId=new Map(index.entries.map(entry=>[entry.id,entry]))
- const connector=(id:string)=>{const entry=byId.get(id);assert.ok(entry&&entry.kind==='connector',id);return entry as MarketCatalogConnectorEntry}
+ const retiredById=new Map(retiredOAuthConnectorEntries.map(entry=>[entry.id,entry]))
+ for(const id of retiredById.keys())assert.equal(byId.has(id),false,id+' 已不在当前目录')
+ const connector=(id:string)=>{const entry=byId.get(id)??retiredById.get(id);assert.ok(entry&&entry.kind==='connector',id);return entry as MarketCatalogConnectorEntry}
  for(const id of ['teloa.mcp-supabase-remote','teloa.mcp-gitlab']){
   const entry=connector(id)
   assert.equal(entry.connector.auth.kind==='oauth'&&entry.connector.auth.supported,true,id)
@@ -787,7 +793,8 @@ test('官方目录 OAuth 配方：新旧 auth 结构均可解析；白名单制�
  assert.equal(composio.compatibility.status,'needs-configuration')
 
  const root=await tempRoot(t)
- const managed=createManagedMcpConnectionHandler((await makeCtx(t)).ctx,root,id=>byId.get(id)?.kind==='connector'?byId.get(id) as MarketCatalogConnectorEntry:undefined,undefined,testManager())
+ const lookup=(id:string)=>byId.get(id)??retiredById.get(id)
+ const managed=createManagedMcpConnectionHandler((await makeCtx(t)).ctx,root,id=>lookup(id)?.kind==='connector'?lookup(id) as MarketCatalogConnectorEntry:undefined,undefined,testManager())
  t.after(()=>managed.dispose())
  await assert.rejects(managed.handler('mcp-connections/add',{catalogId:'teloa.mcp-figma'}),{code:'teloa/dependency-unavailable'})
  assert.equal((await managed.handler('mcp-connections/add',{catalogId:'teloa.mcp-composio'}) as ManagedMcpConnectionRecord).status,'pending-oauth')
@@ -812,10 +819,11 @@ test('安全自查：RPC 回包白名单——add / oauth-start / oauth-status /
  assert.equal((await callback(s,{state,code:'good-code'})).status,200)
  replies.push(await statusOf(s,rec.id),await s.handler('mcp-connections/get',{id:rec.id}),await s.handler('mcp-connections/list',{}),await s.handler('mcp-connections/oauth-start',{id:rec.id}))
  replies.push(await s.handler('mcp-connections/disconnect',{id:rec.id}))
- const allowed=new Set(['id','catalogId','serverName','status','errorMessage','tools','createdAt','updatedAt','items','name','fullName','readOnly'])
+ // sourceScopeSupport（d57b56c）：公开记录里的常量能力声明，只允许字面量 'unsupported'，不能携带任何来源派生值。
+ const allowed=new Set(['id','catalogId','serverName','status','errorMessage','tools','sourceScopeSupport','createdAt','updatedAt','items','name','fullName','readOnly'])
  const walk=(value:unknown):void=>{
   if(Array.isArray(value)){value.forEach(walk);return}
-  if(value&&typeof value==='object')for(const [key,child] of Object.entries(value)){assert.ok(allowed.has(key),`回包含非白名单字段 ${key}`);walk(child)}
+  if(value&&typeof value==='object')for(const [key,child] of Object.entries(value)){assert.ok(allowed.has(key),`回包含非白名单字段 ${key}`);if(key==='sourceScopeSupport')assert.equal(child,'unsupported','sourceScopeSupport 只能是常量 unsupported');walk(child)}
  }
  for(const reply of replies){
   walk(reply)

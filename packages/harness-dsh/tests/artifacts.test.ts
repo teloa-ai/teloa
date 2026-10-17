@@ -17,3 +17,17 @@ test('捕获必须匹配重新读取的文件版本，不能由客户端提交�
  await assert.rejects(handle('artifacts/capture',{...input,path:'.runtime/private'},signal),{code:'teloa/invalid-input'});assert.equal(reads,0)
  await assert.rejects(handle('artifacts/capture',input,signal),{code:'teloa/version-conflict'});assert.equal(reads,1)
 })
+test('会话成果目录先验证本人就绪绑定，不能客户端指定任务或他人身份绕过来源',async()=>{
+ let databaseReads=0
+ const handle=createArtifactHandler('owner',{pool:async()=>{databaseReads++;throw Error('未授权前不应读取数据库')},conversation:async()=>({id:'binding',ownerId:'other',title:'来源',scopeIds:['general'],version:1,status:'ready',requestedSessionId:'s1',sessionId:'s1',createdAt:'2026-09-11T00:00:00Z'}),readFile:async()=>{throw Error('不应读取文件')},id:()=>'',now:()=>''}),signal=new AbortController().signal
+ await assert.rejects(handle('artifacts/conversation/list',{sessionId:'s1'},signal),{code:'teloa/not-bound'})
+ await assert.rejects(handle('artifacts/conversation/list',{sessionId:'s1',taskId:'forged'},signal),{code:'teloa/invalid-input'})
+ assert.equal(databaseReads,0)
+})
+test('会话成果目录返回当前会话身份；读取中工作绑定变化则不交付目录',async()=>{
+ let reads=0,change=false
+ const pool={query:async()=>({rows:[]})} as unknown as Awaited<ReturnType<Parameters<typeof createArtifactHandler>[1]['pool']>>
+ const handle=createArtifactHandler('owner',{pool:async()=>pool,conversation:async()=>({id:change&&++reads>1?'new-binding':'binding',ownerId:'owner',title:'来源',scopeIds:['general'],version:1,status:'ready',requestedSessionId:'s1',sessionId:'s1',createdAt:'2026-09-11T00:00:00Z'}),readFile:async()=>{throw Error('不应读取文件')},id:()=>'',now:()=>''}),signal=new AbortController().signal
+ assert.deepEqual(await handle('artifacts/conversation/list',{sessionId:'s1'},signal),{sessionId:'s1',artifacts:[]})
+ change=true;await assert.rejects(handle('artifacts/conversation/list',{sessionId:'s1'},signal),{code:'teloa/version-conflict'})
+})

@@ -8,7 +8,14 @@ import type {BusinessDataSourcePort} from './business-data.ts'
 export type BusinessSyncFetchInput={scope:string;cursor?:string;pageToken?:string;pageSize:number;signal?:AbortSignal}
 export type BusinessSyncFetchPage={items:unknown[];nextCursor?:string;capturedAt:string}
 /** 一次拉取一页；抛 WorkError('teloa/source-unavailable') 表示源不可读。实现方不落库。 */
-export interface BusinessSyncSourcePort{readonly key:string;fetch(input:BusinessSyncFetchInput):Promise<BusinessSyncFetchPage>}
+export interface BusinessSyncSourcePort{
+ readonly key:string
+ /** 非秘密授权世代摘要；换授权不能复用同一映射的旧水位和对象身份。 */
+ readonly bindingKey?:string
+ fetch(input:BusinessSyncFetchInput):Promise<BusinessSyncFetchPage>
+ /** 宿主来源协调器持有提交许可；回调必须在 COMMIT 前调用核验口。 */
+ withCurrent?<T>(write:(assertCurrent:()=>Promise<void>)=>Promise<T>):Promise<T>
+}
 /**
  * 按映射声明给出同步源，由 harness 提供。`mcp-tool` 来源在 功能验证 接线：按 Spike A 第 8 项结论走
  * `ctx.tools.get(mcpToolFullName(serverName,tool)).execute(args,{signal})` 内部直调（不经 `ctx.tools.execute`，

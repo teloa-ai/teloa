@@ -2,7 +2,7 @@ import type {ISessions,SessionBinding,SessionReference} from '@deepseek-ai/dsh-a
 import type {IJobs} from '@deepseek-ai/dsh-api-job-controller/client'
 import type {ObservableSnapshot} from '@deepseek-ai/dsh-client-store'
 import type {SubagentAddress,SubagentCatalogEntry} from '@deepseek-ai/dsh-subagent/client'
-import type {ToolResourceUseSnapshot} from '@teloa/contract'
+import type {ToolResourceUseSnapshot,ExternalHarnessWorkView} from '@teloa/contract'
 import {conversationOverviewRoundScopes,createConversationOverviewModel,type ConversationOverviewArtifact,type ConversationOverviewChild,type ConversationOverviewRoundScope,type ConversationOverviewSnapshot,type ConversationOverviewWork} from './conversation-overview-model.ts'
 import {collectConversationOverviewResources,type ConversationOverviewRelatedResourceSession} from './conversation-overview-resources.ts'
 
@@ -19,13 +19,14 @@ export type ConversationOverviewSessionOptions={
  readonly artifacts?:ObservableSnapshot<readonly ConversationOverviewArtifact[]>
  readonly resourceUseSnapshots?:ObservableSnapshot<readonly ToolResourceUseSnapshot[]>
  readonly executorName?:()=>string|undefined
+ readonly external?:{state:ObservableSnapshot<readonly ExternalHarnessWorkView[]>;refresh:()=>Promise<void>;stop:(sessionId:string,activationId:string)=>Promise<void>}
 }
 type Child={catalog:SubagentCatalogEntry;address:SubagentAddress;reference:SessionReference;binding:SessionBinding;off:(()=>void)[];failed:boolean}
 type Stop={status:'stopping'|'unknown';epoch:number;throughSeq:number}
 const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 function catalogRows(value:unknown):SubagentCatalogEntry[]{
  if(!Array.isArray(value))return []
- return value.filter((row:unknown)=>record(row)&&typeof row.id==='string'&&typeof row.createdAt==='number'&&['one-shot','continuable','unknown'].includes(String(row.mode))) as SubagentCatalogEntry[]
+ return value.filter((row:unknown)=>record(row)&&typeof row.id==='string'&&typeof row.createdAt==='number'&&['one-shot','continuable','external','unknown'].includes(String(row.mode))) as SubagentCatalogEntry[]
 }
 function sameAddress(left:SubagentAddress|undefined,right:SubagentAddress):boolean{
  return left?.parentSessionId===right.parentSessionId&&left.childSessionId===right.childSessionId&&(left.mode===right.mode||right.mode==='unknown')
@@ -49,6 +50,10 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
  const activity={getSnapshot:()=>revision,subscribe:(listener:()=>void)=>{activityListeners.add(listener);return()=>{activityListeners.delete(listener)}}}
  const childCurrent=(child:Child)=>!child.failed&&sessions.binding(child.catalog.id)===child.binding&&!child.binding.session.getSnapshot().removed&&sameAddress(child.binding.session.getSnapshot().subagent?.address,child.address)
  const readChildren=():ConversationOverviewChild[]=>catalogRows(catalog.getSnapshot()).map(row=>{
+  if(row.mode==='external'){
+   const external=options.external?.state.getSnapshot().find(work=>work.activationId===row.id)
+   return {...row,parentAvailable:connected(),...external?{external}:{}}
+  }
   const child=children.get(row.id)
   if(!child||!childCurrent(child)||!connected())return row
   const state=child.binding.session.getSnapshot(),timing=child.binding.session.projections.faceOf('subagentTiming').getSnapshot()
@@ -88,7 +93,7 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
   const stop=stops.get(work.id)
   if(['completed','failed','stopped'].includes(work.status)){stops.delete(work.id);return work}
   if(!connected())return {...work,status:'unknown',canStop:false}
-  if(work.childSessionId){
+  if(work.childSessionId&&!work.external){
    const child=children.get(work.childSessionId)
    if(!child||!childCurrent(child))return {...work,status:'unknown',canStop:false}
    if(child.binding.session.getSnapshot().lastAgentError)return {...work,status:'failed',canStop:false,detail:child.binding.session.getSnapshot().lastAgentError!}
@@ -115,6 +120,8 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
   const rows=current()?catalogRows(catalog.getSnapshot()):[],ids=new Set<string>(rows.map(row=>row.id))
   for(const [id,child] of children)if(!ids.has(id)){children.delete(id);releaseChild(child)}
   for(const row of rows){
+   // 外部 activation 没有本地 Session，不能向会话控制器伪造读取地址。
+   if(row.mode==='external')continue
    const previous=children.get(row.id)
    if(previous){previous.catalog=row;continue}
    const address:SubagentAddress={parentSessionId:binding.sessionId,childSessionId:row.id,mode:row.mode},generation=epoch
@@ -160,7 +167,11 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
   // 只呈现请求中；accepted不是已停止，名册/turn终态才负责收敛。
   stops.set(work.id,{status:'stopping',epoch:generation,throughSeq});changed()
   try{
-   if(latest.jobId){
+   if(latest.external){
+    if(!options.external||!latest.childSessionId||latest.parentSessionId!==binding.sessionId)throw Error('外部工作不属于当前父会话。')
+    await options.external.stop(binding.sessionId,latest.childSessionId)
+    assertCurrent();if(generation!==epoch)throw Error('会话代际已变化（generation）。')
+   }else if(latest.jobId){
     const row=jobs.state.getSnapshot().rows[binding.sessionId]?.find(job=>job.id===latest.jobId)
     if(!row||row.owner!==binding.sessionId||row.status!=='running')throw Error('工作owner或运行状态已变化。')
     const result=await jobs.kill(binding.sessionId,row.id);assertCurrent();if(generation!==epoch)throw Error('会话代际已变化（generation）。');admitted(result)
@@ -181,6 +192,7 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
  }
  const reconcileWork=async(work:ConversationOverviewWork):Promise<void>=>{
   const latest=workCurrent(work),generation=epoch,child=latest.childSessionId?children.get(latest.childSessionId):undefined
+  if(latest.external)await options.external?.refresh()
   await sessions.refresh();assertCurrent();if(generation!==epoch)throw Error('会话代际已变化（generation）。')
   await sessions.refreshProjections(binding.sessionId);assertCurrent();if(generation!==epoch)throw Error('会话代际已变化（generation）。')
   if(child&&children.get(child.catalog.id)===child&&childCurrent(child)){await sessions.refreshProjections(child.catalog.id);assertCurrent();if(generation!==epoch)throw Error('会话代际已变化（generation）。')}
@@ -197,6 +209,7 @@ export function createConversationOverviewSession(options:ConversationOverviewSe
    if(options.pendingInteraction)off.push(options.pendingInteraction.subscribe(changed))
    if(options.artifacts)off.push(options.artifacts.subscribe(changed))
    if(options.resourceUseSnapshots)off.push(options.resourceUseSnapshots.subscribe(changed))
+   if(options.external)off.push(options.external.state.subscribe(changed))
    detachModel=model.attach();syncChildren()
   }
   let released=false

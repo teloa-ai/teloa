@@ -8,8 +8,8 @@ import type {AttentionItem} from '../src/client/attention-item.ts'
 
 // 和 evidence-list.test.ts 同样的取巧：.tsx 走 tsc 产物，CSS Modules 换成类名代理。
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
+ load:(url,context,next)=>url.endsWith('.webp')?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
 const {AttentionDecisionCard}=await import('../lib/types/client/AttentionDecisionCard.js')
 const {TaskPage}=await import('../lib/types/client/TaskPage.js')
@@ -91,7 +91,8 @@ test('需要你不被上一次任务选择替换成任务详情',()=>{
   switchMode:noop,openSource:noop,team:noop,openRole:noop,openBusiness:noop,saveTemplate:noop,
  } as never))
  assert.match(html,/<h1>需要你<\/h1>/)
- assert.match(html,/待审批、待补充资料和待核对的事项/)
+ // 01d046e：页头只留标题与计数，冗余页面说明已删除。
+ assert.doesNotMatch(html,/待审批、待补充资料和待核对的事项/)
  assert.match(html,/隔离主机/)
  assert.doesNotMatch(html,/旧任务目标/)
 })

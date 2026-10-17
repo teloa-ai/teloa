@@ -301,6 +301,20 @@ test('工具授权只读岗位资料的来源与版本，不读正文，超大�
  await set.service.withdraw(set.actor,{resourceId:big!.id,expectedVersion:1})
  await assert.rejects(set.service.executionKnowledgeReferences(agent,['general'],[big!.id]),{code:'teloa/resource-withdrawn'})
 })
+
+test('合法员工12/30资料引用经真实数据库完整读取，授权元数据不读正文，31仍拒绝',async()=>{
+ const set=await memoryResources(Array.from({length:30},(_,index)=>({title:'员工固定依据 '+index,text:'明确依据 '+index}))),agent={...set.actor,kind:'agent' as const}
+ for(const count of [12,30]){
+  const ids=set.resources.slice(0,count).map(row=>row.id).reverse(),before=set.catalog.reads
+  const metadata=await set.service.executionKnowledgeReferences(agent,['general'],ids)
+  assert.deepEqual(metadata.map(row=>row.id),ids);assert.equal(set.catalog.reads,before)
+  const contents=await set.service.executionKnowledge(agent,['general'],ids)
+  assert.deepEqual(contents.map(row=>row.id),ids);assert.equal(set.catalog.reads,before+count)
+ }
+ const tooMany=[...set.resources.map(row=>row.id),randomUUID()]
+ await assert.rejects(set.service.executionKnowledgeReferences(agent,['general'],tooMany),{code:'teloa/invalid-input'})
+ await assert.rejects(set.service.executionKnowledge(agent,['general'],tooMany),{code:'teloa/invalid-input'})
+})
 test('任务引用与消息引用恰好 256 KiB 通过',async()=>{
  const set=await memoryResources([{title:'刚好',text:'e'.repeat(256*1024)}]),[exact]=set.resources,agent={...set.actor,kind:'agent' as const}
  const rows=await inTransaction(client=>set.service.executionKnowledgeReferencesInTransaction(client,agent,['general'],[{id:exact!.id,version:exact!.version}]))

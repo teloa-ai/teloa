@@ -1,0 +1,36 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-session-persistence",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "cc0b6d3a224133af611b428d5a49020e300f86c3b4ba28037aeb219029bde3eb",
+      "afterSha256": "eece16fcc350ff779e53ae4433ec2d3f9d01a7453ca6b290523374758abd384e"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "dbaf738284416ceb76e365cf2844d50527750e4af97aaad2d3f4f1bd006faf5a",
+      "afterSha256": "f7388fb1eb5869f9d8e20c3c5c9283da5d2c52261c2be9482f0e8d2f5f577ab1"
+    }
+  ],
+  "patchSha256": "87f8cfb135ed056a5b0646e4e3b7cd35d22a606c1a0c64b8d5159879a4a70519",
+  "api": [
+    "SessionPersistence.openWithAdmission",
+    "SessionOpenAdmissionInput",
+    "SessionOpenAdmissionLease",
+    "SessionOpenAdmission",
+    "SessionAdmissionUnsupportedError"
+  ],
+  "scope": {
+    "admission": "Public openWithAdmission(id, admission, options?) returns the same owned write SessionHandle. Exact deeply frozen validated sessionId/header/events/inheritedEventCount and caller-supplied signal; async policy returns a frozen own synchronous assertCurrent data method returning undefined.",
+    "ownership": "Single writer and OS lease are retained through preparation, async admission, migration publication and handle transfer. No read/reopen fallback; cancellation consumes late policy results and releases ownership before rejection. JSONL backend teardown also cancels and joins admitted opens that do not yet have handles, even when the caller omitted a signal.",
+    "migration": "JSONL prepares historical formats read-only, then checks current lease before migration staging, writes and final publication. Original historical bytes are retained. Actual persistence/cleanup is joined; already committed generations are not rolled back.",
+    "free": "Ordinary open/create behavior is unchanged. Base openWithAdmission explicitly throws SessionAdmissionUnsupportedError; no implicit fallback.",
+    "limitations": [
+      "Storage carries evidence and synchronous freshness only, not business authorization or a durable acceptance certificate.",
+      "Revocation after a committed write cannot undo it. Consumers must retain the lease check through their own setup/publication and before model dispatch."
+    ]
+  }
+}

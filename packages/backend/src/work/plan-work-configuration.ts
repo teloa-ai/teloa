@@ -1,3 +1,5 @@
+import type {BusinessWorkSourceReader} from './business-work-event-source.ts'
+import {authorizePlanGroupReport} from './plan-group-report.ts'
 import {isDeepStrictEqual} from 'node:util'
 import type {PoolClient,Pool} from 'pg'
 import {WorkError,taskDefinition,type RoleWorkAuthorization} from '@teloa/contract'
@@ -10,17 +12,19 @@ import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
 import {authorizeOwnerWork,type OwnerWorkAuthority} from './twin-execution-consents.ts'
 
 /** 由原 PlanService 的本人专用入口调用；授权及控制身份全部来自真实服务端记录。 */
-export async function configurePlanWork(pool:Pool,clock:{id:()=>string;now:()=>string},authority:OwnerWorkAuthority|undefined,owner:string,input:unknown):Promise<PersistentPlan>{
+export async function configurePlanWork(pool:Pool,clock:{id:()=>string;now:()=>string},authority:OwnerWorkAuthority|undefined,owner:string,input:unknown,businessSource?:BusinessWorkSourceReader):Promise<PersistentPlan>{
  const v=workObject(input,['requestId','planId','expectedVersion','expectedConfigVersion','configuration',...(input&&typeof input==='object'&&Object.hasOwn(input,'fields')?['fields']:[])]),configuration=readPlanWorkConfiguration(v.configuration)
- const edit=v.fields===undefined?undefined:workObject(v.fields,['title','goal','dataScope','delivery'])
+ const edit=v.fields===undefined?undefined:workObject(v.fields,['title','goal','dataScope','delivery',...(v.fields&&typeof v.fields==='object'&&Object.hasOwn(v.fields,'groupId')?['groupId']:[])])
+ if(edit&&Object.hasOwn(edit,'groupId')&&edit.groupId!==null&&!workUuid(edit.groupId))throw new WorkError('teloa/invalid-input','计划汇报群身份不正确。')
  if(edit){taskDefinition({title:edit.title,goal:edit.goal,scope:'general'});for(const key of ['dataScope','delivery'])if(typeof edit[key]!=='string'||!edit[key].trim()||edit[key].length>8000)throw new WorkError('teloa/invalid-input','长期工作目标或交付字段不正确。')}
  if(!workUuid(v.requestId)||!workUuid(v.planId)||!Number.isSafeInteger(v.expectedVersion)||Number(v.expectedVersion)<1||!Number.isSafeInteger(v.expectedConfigVersion)||Number(v.expectedConfigVersion)<1||!authority||!owner.trim())throw new WorkError('teloa/forbidden','请本人确认长期工作定义。')
  if(configuration.budget.money!==null)throw new WorkError('teloa/invalid-input','当前没有可靠金额计价，请使用轮次和 token 上限。')
  const db=await pool.connect()
  try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/plan-work/'+owner+'/'+v.requestId])
   const prior=(await db.query('select * from teloa_plan_changes where owner_id=$1 and request_id=$2',[owner,v.requestId])).rows[0]
-  if(prior){if(!isDeepStrictEqual(prior.request_spec,v))throw new WorkError('teloa/conflict','原长期定义请求已保存其他设置。');const result=receiptPlan(prior.result);if(result.id!==v.planId||result.ownerId!==owner||result.version!==Number(v.expectedVersion)+1||result.configVersion!==Number(v.expectedConfigVersion)+1||!result.workDefinition||edit&&Object.entries(edit).some(([key,value])=>result[key as 'title']!==(value as string).trim())||!isDeepStrictEqual(readPlanWorkConfiguration({completion:result.workDefinition.completion,triggers:result.workDefinition.triggers,budget:result.workDefinition.budget,overlap:result.workDefinition.overlap,missed:result.workDefinition.missed,safeRecovery:result.workDefinition.safeRecovery}),configuration))throw new WorkError('teloa/storage-corrupt','长期定义回执不匹配。');await db.query('commit');return result}
+  if(prior){if(!isDeepStrictEqual(prior.request_spec,v))throw new WorkError('teloa/conflict','原长期定义请求已保存其他设置。');const result=receiptPlan(prior.result);if(result.id!==v.planId||result.ownerId!==owner||result.version!==Number(v.expectedVersion)+1||result.configVersion!==Number(v.expectedConfigVersion)+1||!result.workDefinition||edit&&Object.entries(edit).some(([key,value])=>result[key as 'title']!==(key==='groupId'?value:(value as string).trim()))||!isDeepStrictEqual(readPlanWorkConfiguration({completion:result.workDefinition.completion,triggers:result.workDefinition.triggers,budget:result.workDefinition.budget,overlap:result.workDefinition.overlap,missed:result.workDefinition.missed,safeRecovery:result.workDefinition.safeRecovery}),configuration))throw new WorkError('teloa/storage-corrupt','长期定义回执不匹配。');await db.query('commit');return result}
   const observed=(await db.query('select * from teloa_plans where owner_id=$1 and id=$2',[owner,v.planId])).rows[0];if(!observed)throw new WorkError('teloa/forbidden','计划不存在或不属于本人。')
+  if(observed.role_id===null)throw new WorkError('teloa/forbidden','本人计划须由原本人确认入口配置，不能借用员工委托。')
   const role=readStoredRole((await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,observed.role_id])).rows[0]),plan=readStoredPlan((await db.query('select * from teloa_plans where owner_id=$1 and id=$2 for update',[owner,v.planId])).rows[0])
   if(plan.version!==v.expectedVersion||plan.configVersion!==v.expectedConfigVersion)throw new WorkError('teloa/version-conflict','计划版本已变化，请重新核对。')
   if(plan.state!=='paused'||plan.source.kind==='system-digest')throw new WorkError('teloa/conflict','请先暂停原计划并完成当前工作，再配置长期定义。')
@@ -29,9 +33,15 @@ export async function configurePlanWork(pool:Pool,clock:{id:()=>string;now:()=>s
   if(rows.length!==1)throw new WorkError('teloa/forbidden','长期工作需要当前角色版本唯一且明确的本人委托。')
   const delegation=readStoredRoleWorkDelegation(rows[0]),authorization:RoleWorkAuthorization={kind:'delegation',delegationId:delegation.id,delegationVersion:delegation.version}
   if(!delegation.allowedTools.length||configuration.safeRecovery&&!delegation.safeRecovery)throw new WorkError('teloa/forbidden','请先确认所需工具与安全恢复的委托范围。')
-  const admission=await new RoleWorkEligibilityService(pool).authorize(owner,{roleId:role.id,expectedRoleVersion:role.version,scope:plan.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:null},db)
+  const admission=await new RoleWorkEligibilityService(pool).authorize(owner,{roleId:role.id,expectedRoleVersion:role.version,scope:plan.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:(edit&&Object.hasOwn(edit,'groupId')?edit.groupId as string|null:plan.groupId)??null},db)
+  await authorizePlanGroupReport(db,owner,edit&&Object.hasOwn(edit,'groupId')?edit.groupId as string|null:plan.groupId,role,plan.scope)
   for(const trigger of configuration.triggers){
    if(trigger.kind==='schedule'){if(!isDeepStrictEqual(trigger.schedule,plan.trigger))throw new WorkError('teloa/invalid-input','长期定义时间必须与原计划日程一致。');continue}
+   if('sourceRef' in trigger){
+    if(trigger.sourceRef.scope!==plan.scope||!businessSource)throw new WorkError('teloa/forbidden','业务事件未包含在当前本人委托范围或宿主来源中。')
+    const source=await businessSource(db,owner,trigger.sourceRef);if(!source.active)throw new WorkError('teloa/source-unavailable','业务事件来源已撤回。')
+    continue
+   }
    if(trigger.eventKind==='material-version'){if(!delegation.knowledgeIds.includes(trigger.sourceId)||!(await db.query("select 1 from teloa_resources where owner_id=$1 and id=$2 and status='active'",[owner,trigger.sourceId])).rowCount)throw new WorkError('teloa/forbidden','资料事件未包含在本人当前委托中。')}
    else if(trigger.eventKind==='group-message'){if(!delegation.groupIds.includes(trigger.sourceId))throw new WorkError('teloa/forbidden','群事件未包含在本人委托中。');await new RoleWorkEligibilityService(pool).authorize(owner,{roleId:role.id,expectedRoleVersion:role.version,scope:plan.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:trigger.sourceId},db)}
    else if(trigger.eventKind==='child-completed'){if(!(await db.query('select 1 from teloa_task_runs where owner_id=$1 and id=$2 and role_id=$3',[owner,trigger.sourceId,role.id])).rowCount)throw new WorkError('teloa/forbidden','子工作来源不属于当前负责角色。')}
@@ -45,8 +55,8 @@ export async function configurePlanWork(pool:Pool,clock:{id:()=>string;now:()=>s
   else await db.query('insert into teloa_work_budget_accounts(id,owner_id,policy,created_at) values($1,$2,$3,$4)',[budgetId,owner,JSON.stringify(configuration.budget),now])
   await db.query("insert into teloa_work_controls(id,owner_id,kind,root_task_id,budget_account_id,state,generation,created_at,updated_at) values($1,$2,'definition',null,$3,'active',1,$4,$4)",[controlId,owner,budgetId,now])
   await db.query('insert into teloa_work_plan_bindings(owner_id,plan_id,config_version,definition_control_id,budget_account_id,created_at) values($1,$2,$3,$4,$5,$6)',[owner,plan.id,configVersion,controlId,budgetId,now])
-  const workDefinition=readPlanWorkDefinition({schema:'teloa.plan-work/v2',definitionVersion:configVersion,definitionControlId:controlId,budgetAccountId:budgetId,authorization,...configuration})
-  const edited=edit?Object.fromEntries(Object.entries(edit).map(([key,value])=>[key,(value as string).trim()])):{}
+  const workDefinition=readPlanWorkDefinition({schema:configuration.triggers.some(t=>t.kind==='local-event'&&'sourceRef' in t)?'teloa.plan-work/v3':'teloa.plan-work/v2',definitionVersion:configVersion,definitionControlId:controlId,budgetAccountId:budgetId,authorization,...configuration})
+  const edited=edit?Object.fromEntries(Object.entries(edit).map(([key,value])=>[key,key==='groupId'?value:(value as string).trim()])):{}
   const saved=readStoredPlan((await db.query('update teloa_plans set work_definition=$3,definition=jsonb_set(definition||$8::jsonb,\'{completionPolicy}\',$4::jsonb),version=version+1,config_version=$5,role_version=$6,updated_at=$7 where owner_id=$1 and id=$2 returning *',[owner,plan.id,JSON.stringify(workDefinition),JSON.stringify(configuration.completion),configVersion,role.version,now,JSON.stringify(edited)])).rows[0])
   await db.query('insert into teloa_plan_changes(owner_id,request_id,plan_id,request_spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[owner,v.requestId,plan.id,JSON.stringify(v),JSON.stringify(saved),now])
   lease.assertCurrent();admission.assertCurrent();await db.query('commit');return saved

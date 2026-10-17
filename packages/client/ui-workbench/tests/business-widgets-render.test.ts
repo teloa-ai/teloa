@@ -33,3 +33,12 @@ test('看板有时间范围、组件没接入：标题下注明「不随时间�
  assert.doesNotMatch(card({...widget,timeFilter:{table:'soc_alert',column:'_observed_at'}},true),/data-range-unbound|不随时间范围变化/)
  assert.doesNotMatch(card(widget,false),/data-range-unbound|不随时间范围变化/)
 })
+
+
+test('刷新失败保留上次指标，并展示失败原因与过期提示',()=>{
+ const html=render({...result([{name:'n',type:'number'}],[[7]]),stale:true,refreshError:{code:'teloa/source-unavailable',reason:'来源暂不可用'}})
+ assert.match(html,/data-widget-refresh-failed="alert-count"/)
+ assert.match(html,/>7</)
+ assert.doesNotMatch(html,/data-widget-failed=/)
+ assert.match(html,/上次统计/)
+})

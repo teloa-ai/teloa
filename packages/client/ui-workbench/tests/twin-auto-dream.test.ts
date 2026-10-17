@@ -5,6 +5,8 @@ import {readFileSync} from 'node:fs'
 import {registerHooks} from 'node:module'
 import ts from 'typescript'
 import * as React from 'react'
+import {employeeCopy} from '../src/client/employee-copy.ts'
+import {personalAvatarInitials,personalDisplayName} from '../src/client/personal-identity.ts'
 import type {PreviewRole, TeamChange} from '../src/client/role-preview.ts'
 
 /**
@@ -55,12 +57,17 @@ function mount(initial:Props){
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
-  if(id==='lucide-react')return {Fingerprint:()=>null,LockKeyhole:()=>null}
+  if(id==='lucide-react')return {Fingerprint:()=>null,LockKeyhole:()=>null,MessageCircle:()=>null,UserRound:()=>null}
+  // 此手动调度器验证页签；图标尺寸、名称、点击与真实保存由浏览器用例覆盖。
+  if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton:({label,icon,...props}:Record<string,unknown>)=>React.createElement('button',{...props,'aria-label':label,title:label})}
   if(id.endsWith('.module.css'))return {default:cssProxy}
   if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({t:zh,locale:'zh-CN',dateTime:(value:string)=>String(value).slice(0,10)})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>cause instanceof Error?cause.message:String(cause)}
   if(id.endsWith('team-presentation.js'))return {twinDisplayName}
+  if(id.endsWith('employee-copy.js'))return {employeeCopy}
+  if(id.endsWith('personal-profile.js'))return {personalAvatarInitials,personalDisplayName}
   // 代拟稿写入路径不是本任务范围（T11 未改一行），给个占位标记即可，不重实现 TwinDraftEditor。
+  if(id.endsWith('TwinAvatar.js'))return {TwinAvatar:()=>React.createElement('span',{'data-teloa-twin-avatar':''})}
   if(id.endsWith('TwinDraftEditor.js'))return {TwinDraftEditor:()=>React.createElement('div',{'data-twin-draft-editor-stub':'1'})}
   throw Error('未声明的组件依赖：'+id)
  }

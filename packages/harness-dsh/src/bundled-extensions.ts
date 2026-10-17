@@ -35,7 +35,8 @@ export function createBundledExtensionHandler(deps:BundledExtensionDeps){
    // 启用前扩展尚未加载，按发行默认变体判断；准备确认卡另以扩展快照里的实际变体为准。
    ...(entry.id==='local-embedding'?{memoryRisk:embeddingMemoryRisk({totalMemoryBytes:deps.totalMemoryBytes??totalmem(),variant:embeddingDefaultVariant})}:{})}
  }
- return async(endpoint:string,payload:unknown):Promise<unknown>=>{
+ return async(endpoint:string,payload:unknown,signal?:AbortSignal,beforeCommit?:()=>Promise<void>):Promise<unknown>=>{
+  const assertCurrent=async()=>{signal?.throwIfAborted();await beforeCommit?.();signal?.throwIfAborted()}
   if(endpoint==='bundled-extensions/list'){taskInput(payload,[]);return Promise.all(bundledExtensions.map(row=>view(row.id)))}
   if(endpoint==='bundled-extensions/set'){
    const input=readBundledExtensionSetInput(payload)
@@ -43,10 +44,14 @@ export function createBundledExtensionHandler(deps:BundledExtensionDeps){
    const entry=bundledExtensions.find(row=>row.id===input.extensionId)!
    // 同一把 profile 锁串行：并发点击、原生扩展管理与市场安装逐个进行，写盘与热套用之间不会插进别的改动。
    await withProfileLock(deps.profileDir,async()=>{
+    await assertCurrent()
+    if(input.expected){const current=await view(input.extensionId);if(current.version!==input.expected.version||current.state!==input.expected.state)throw new WorkError('teloa/version-conflict','官方扩展版本或状态已变化，请重新读取后配置。')}
     const manifestPath=join(deps.profileDir,'package.json')
     let before:string
-    try{before=await readFile(manifestPath,'utf8');await setBundledExtensionLocked(deps.profileDir,deps.programRoot,entry.packageName,input.enabled)}
+    try{before=await readFile(manifestPath,'utf8');await setBundledExtensionLocked(deps.profileDir,deps.programRoot,entry.packageName,input.enabled,assertCurrent)}
     catch(error){
+     signal?.throwIfAborted()
+     if(error instanceof WorkError)throw error
      if(error instanceof Error&&error.message===bundledSourceMismatch)throw new WorkError('teloa/forbidden',bundledSourceMismatch)
      throw new WorkError('teloa/storage-unavailable','DSH profile 清单写入失败，官方扩展状态未改变。')
     }

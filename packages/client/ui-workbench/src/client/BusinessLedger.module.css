@@ -115,3 +115,8 @@
  .table td{padding:14px 11px;font-size:var(--teloa-font-caption)}
  .sheet dl{grid-template-columns:84px minmax(0,1fr)}
 }
+
+/* 对象轻详情保留原目录，提交动作仍使用同一记录的固定身份。 */
+.objectDrawer{padding:24px;display:grid;gap:16px;min-width:0}
+.objectDrawer>.sheet{margin-top:0}
+.objectDrawer>button{justify-self:start}

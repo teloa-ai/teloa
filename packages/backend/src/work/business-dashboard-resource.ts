@@ -137,7 +137,8 @@ export class BusinessDashboardResourceService{
  }
 
  async prepareUpgrade(actor:BusinessConfigurationActor,input:unknown){
-  const row=taskInput(input,['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices'])
+  const row=taskInput(input,['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices','mode'])
+  if(row.mode!==undefined&&row.mode!=='upgrade'&&row.mode!=='restore')throw invalid()
   if(!uuid(row.requestId)||!uuid(row.adoptionId)||!uuid(row.candidateContentId)||typeof row.candidateContentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.candidateContentHash)||!localId(row.resourceId)||!Number.isSafeInteger(row.expectedConfigurationVersion)||Number(row.expectedConfigurationVersion)<1)throw invalid()
   const externalRequest=row.requestId.toLowerCase(),specHash=businessConfigurationHash({...row,requestId:externalRequest,adoptionId:row.adoptionId.toLowerCase(),candidateContentId:row.candidateContentId.toLowerCase()})
   const prior=(await this.pool.query('select spec_hash,draft_id,result from teloa_business_dashboard_preparations where owner_id=$1 and request_id=$2',[actor.ownerId,externalRequest])).rows[0]
@@ -167,7 +168,8 @@ export class BusinessDashboardResourceService{
   const source=reference?await this.ports.market.get({ownerId:actor.ownerId,kind:'human'},{contentId:reference.sourceContentId}):content
   if(reference&&source.hash!==reference.sourceHash)throw new WorkError('teloa/source-unavailable','候选看板的固定引用摘要不匹配。')
   const incoming=readMarketBusinessConfigurationResource(source,reference?.sourceResourceId??row.resourceId)
-  if(incoming.id!==original.id||compareSemver(incoming.version,original.version)<=0)throw new WorkError('teloa/conflict','请选择同一看板的更新版本。')
+  const direction=compareSemver(incoming.version,original.version)
+  if(incoming.id!==original.id||(row.mode==='restore'?direction>=0:direction<=0))throw new WorkError('teloa/conflict',row.mode==='restore'?'请选择同一模板的旧版本；恢复仅改变配置。':'请选择同一看板的更新版本。')
   const current=await this.ports.configuration.current(actor,{scope:adoption.scope})
   if(!current||current.version!==row.expectedConfigurationVersion)throw new WorkError('teloa/version-conflict','业务配置已变化，请重新核对升级差异。')
   const candidate=readBusinessConfigurationCandidateV2({...current.manifest,definitions:current.leaves.map(leaf=>({kind:leaf.kind,definition:JSON.parse(leaf.body)}))})

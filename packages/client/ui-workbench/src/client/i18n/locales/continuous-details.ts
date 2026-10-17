@@ -8,6 +8,10 @@ const label={
  delivery:['交付要求','交付要求','Delivery requirements','納品要件','납품 요구 사항','Yêu cầu bàn giao','Requisitos de entrega','Exigences de livraison','Lieferanforderungen','Requisitos de entrega'],
 } as const satisfies Record<string,Texts>
 export const CONTINUOUS_DETAIL_MESSAGE_ROWS=[
+ ['continuous.report.group','汇报群','匯報群組','Report to group'],
+ ['continuous.report.none','不向群汇报','不向群組匯報','No group report'],
+ ['continuous.report.unavailable','原汇报群暂不可用','原匯報群組暫時無法使用','Original report group unavailable'],
+ ['continuous.report.description','本轮运行完成后，由负责员工向所选群汇报结果。触发和发布都会核对原权限；群或权限变化时保留原结果并停止发布。','本輪執行完成後，由負責員工向所選群組匯報結果。觸發與發佈都會核對原有權限；群組或權限變更時保留原結果並停止發佈。','After this run completes, the employee reports its result to the selected group. Original permissions are checked at trigger and publication; changes preserve the result and stop publication.'],
  r('continuous.detail.goal',...label.goal),r('continuous.detail.trigger',...label.trigger),r('continuous.form.notificationPolicy',...label.notification),r('continuous.detail.dataScope',...label.dataScope),r('continuous.detail.delivery',...label.delivery),
  r('continuous.common.demoSuffix','（演示）','（示範）',' (demo)','（デモ）',' (데모)',' (bản thử)',' (demo)',' (démo)',' (Demo)',' (demonstração)'),
  r('continuous.common.saving','正在保存…','正在儲存…','Saving…','保存中…','저장 중…','Đang lưu…','Guardando…','Enregistrement…','Wird gespeichert…','Salvando…'),

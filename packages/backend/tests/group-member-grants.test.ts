@@ -178,11 +178,14 @@ test('归档群不补签',async()=>{
  assert.deepEqual(await f.rows(),[])
 })
 
-test('分身成员：不签发',async()=>{
+test('分身成员仅获空资料直接回应授权，不签发自动运行权限',async()=>{
  const f=await emptyGroup()
  const twin=await f.roles.create(f.owner,{requestId:randomUUID(),fields:{...roleFields,name:'我的分身',kind:'twin' as const}})
  await f.members([twin.id])
- assert.deepEqual(await f.rows(twin.id),[])
+ const rows=await f.rows(twin.id)
+ assert.equal(rows.length,1)
+ assert.deepEqual(rows.map(row=>({roleId:row.role_id,canPost:row.can_post,canAutoRun:row.can_auto_run,resources:row.resources})),[{roleId:twin.id,canPost:true,canAutoRun:false,resources:[]}])
+ assert.deepEqual(rows.filter(row=>row.can_auto_run),[])
 })
 
 test('已归档群加成员：群编辑照常成功但不签发；取消归档时把全体成员补签一遍',async()=>{

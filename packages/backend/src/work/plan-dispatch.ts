@@ -11,11 +11,11 @@ export type PlanDispatchResult={occurrence:PlanOccurrence;task:WorkTask;associat
 const corrupt=()=>new WorkError('teloa/storage-corrupt','持续计划领取、任务请求或派发回执身份不一致，已停止派发。')
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 function fixedSnapshot(row:PlanOccurrence){
- return {id:row.id,ownerId:row.ownerId,planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,claimedAt:row.claimedAt,taskRequestId:row.taskRequestId,fields:row.fields,source:row.source,roleVersion:row.roleVersion,taskRequest:row.taskRequest}
+ return {id:row.id,ownerId:row.ownerId,planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,claimedAt:row.claimedAt,taskRequestId:row.taskRequestId,fields:row.fields,source:row.source,roleVersion:row.roleVersion,taskRequest:row.taskRequest,...(row.reportGroup?{reportGroup:row.reportGroup}:{})}
 }
 function checkRequest(row:PlanOccurrence){
  if(!uuid(row.id)||!uuid(row.taskRequestId)||row.taskRequest?.requestId!==row.taskRequestId)throw corrupt()
- if(!isDeepStrictEqual(row.taskRequest.fields,{title:row.fields.title,goal:row.fields.goal,scope:row.fields.scope,...(row.fields.completionPolicy?{completionPolicy:row.fields.completionPolicy}:{})})||!isDeepStrictEqual(row.taskRequest.assignee,{roleId:row.fields.roleId,expectedVersion:row.roleVersion}))throw corrupt()
+ if(!isDeepStrictEqual(row.taskRequest.fields,{title:row.fields.title,goal:row.fields.goal,scope:row.fields.scope,...(Object.hasOwn(row.fields,'groupId')?{groupId:row.fields.groupId}:{}),...(row.fields.completionPolicy?{completionPolicy:row.fields.completionPolicy}:{})})||!isDeepStrictEqual(row.taskRequest.assignee,{roleId:row.fields.roleId,expectedVersion:row.roleVersion}))throw corrupt()
 }
 
 /**

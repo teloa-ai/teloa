@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import {readFile} from 'node:fs/promises'
 import {fileURLToPath} from 'node:url'
 import {join,dirname} from 'node:path'
-import {WorkError,readMarketCatalogEntry,type MarketCatalogUpstreamSkillEntry,type MarketIndexSkipped} from '@teloa/contract'
+import {WorkError,readMarketCatalogEntry,assertUpstreamPluginsConsistent,type MarketCatalogConnectorEntry,type MarketCatalogUpstreamSkillEntry,type MarketIndexSkipped} from '@teloa/contract'
 import {officialUpstreamIndexSha256} from './official-upstream-index-sha256.ts'
 
 const sha256=(value:string)=>createHash('sha256').update(value).digest('hex')
@@ -13,12 +13,17 @@ let cache:Map<string,MarketCatalogUpstreamSkillEntry>|WorkError|undefined
 // 在线索引采用后的上游目录：签名与结构都通过才整份替换（official-catalog-remote.ts），优先于随发行打包的索引。
 let remote:Map<string,MarketCatalogUpstreamSkillEntry>|undefined
 
+// 在线索引采用的连接器（非 stdio，见 official-catalog-remote.ts）；与上游条目同一次整份替换，与快照的取舍由 OfficialCatalogService 决定。
+let remoteConnectors:ReadonlyMap<string,MarketCatalogConnectorEntry>=new Map()
 let remoteSkipped:MarketIndexSkipped={unknownKind:0,newerApp:0}
-/** 原子替换在线上游目录；只由验签通过的在线索引调用。v2 索引带跳过计数，v1 传缺省全 0。 */
-export function adoptRemoteUpstreamEntries(entries:readonly MarketCatalogUpstreamSkillEntry[],skipped:MarketIndexSkipped={unknownKind:0,newerApp:0}):void{
+/** 原子替换在线上游目录与在线连接器；只由验签通过的在线索引调用。v2 索引带跳过计数，v1 传缺省全 0。 */
+export function adoptRemoteUpstreamEntries(entries:readonly MarketCatalogUpstreamSkillEntry[],skipped:MarketIndexSkipped={unknownKind:0,newerApp:0},connectors:readonly MarketCatalogConnectorEntry[]=[]):void{
  remote=new Map(entries.map(entry=>[entry.id,entry]))
+ remoteConnectors=new Map(connectors.map(entry=>[entry.id,entry]))
  remoteSkipped={...skipped}
 }
+/** 最近一次采用的在线连接器；从未采用时为空。 */
+export function listRemoteConnectorEntries():MarketCatalogConnectorEntry[]{return [...remoteConnectors.values()]}
 /** 最近一次采用的在线索引跳过计数；供 market-catalog/list 回包给界面显示「有 N 项需更新应用后可用」。 */
 export function remoteIndexSkipped():MarketIndexSkipped{return {...remoteSkipped}}
 
@@ -43,6 +48,8 @@ export async function loadOfficialUpstreamIndex():Promise<void>{
     throw corrupt()
    }
   }
+  // 插件分组按目录整体核对：同一 pluginId 的成员须固定同一原仓、提交与声明，不一致按索引损坏停用
+  try{assertUpstreamPluginsConsistent([...map.values()])}catch{throw corrupt()}
   cache=map
  }catch(error){
   cache=error instanceof WorkError?error:corrupt()

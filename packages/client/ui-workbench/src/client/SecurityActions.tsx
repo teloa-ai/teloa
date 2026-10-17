@@ -1,3 +1,5 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {RefreshCw} from 'lucide-react'
 import {useEffect,useRef,useState} from 'react'
 import type {SecurityAction,SecurityActionPanel} from '@teloa/contract'
 import type {BusinessTaskApi} from './business-task-api.js'
@@ -50,6 +52,7 @@ type Props={taskId:string;taskVersion:number;api:SecurityActionApi;sourceApi:Bus
 export function SecurityActions({taskId,taskVersion,api,sourceApi,attention,attentionKnown,focus,invalidateAttention,changed}:Props){
  const {locale,t}=useI18n(),[panel,setPanel]=useState<SecurityActionPanel>(),[source,setSource]=useState<Awaited<ReturnType<BusinessTaskApi['source']>>>(),[verified,setVerified]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),lock=useRef(false),generation=useRef(0)
  const [title,setTitle]=useState(''),[goal,setGoal]=useState(''),[reason,setReason]=useState(''),[targets,setTargets]=useState<string[]>([]),[supersedes,setSupersedes]=useState<string>(),form=useRef<HTMLFormElement>(null),proposal=useRef<HTMLDetailsElement>(null)
+ const [proposedAction,setProposedAction]=useState<{id:string;version:number}>()
  const [discardedCommands,setDiscardedCommands]=useState<SecurityActionCommand[]>([])
  const load=async(signal?:AbortSignal)=>{
   const version=++generation.current;setVerified(false)
@@ -94,8 +97,8 @@ export function SecurityActions({taskId,taskVersion,api,sourceApi,attention,atte
  const allowed=panel?.proposal.tools.find(tool=>tool.tool==='security.endpoint.isolate')?.allowedTargets??[]
  const validReason=reason.trim().length>0&&reason.trim().length<=1000&&!/[\x00-\x1f\x7f]/.test(reason)
  return <section className={css.root} aria-label={t('security.title')}>
-  <header><h3>{t('security.title')}</h3><button type="button" disabled={busy} onClick={()=>void act(async()=>{})}>{t('taskExecution.refresh')}</button></header>
-  {source&&<p className={css.muted}>{source.reference.type} · {source.reference.id} · v{source.reference.version} · {source.reference.snapshotHash}</p>}
+  <header><h3>{t('security.title')}</h3><ToolbarIconButton label={t('taskExecution.refresh')} icon={RefreshCw} disabled={busy} onClick={()=>void act(async()=>{})}/></header>
+  {source&&<details className={css.provenance}><summary>{t('task.detail.businessSourceVersion')} · v{source.reference.version}</summary><p className={css.muted}>{source.reference.type} · {source.reference.id} · v{source.reference.version} · {source.reference.snapshotHash}</p></details>}
   {(!verified||!attentionKnown)&&<p role="status">{t('security.unverified')}</p>}
   {error&&<p role="alert">{error}</p>}{broken.map(kind=><p role="alert" key={kind}>{t('security.command.'+kind)}: {localizeWorkError(locale,api.recoveryError(kind))} {t('recovery.nextStep')} <button type="button" onClick={()=>{api.discardRecovery(kind);setDiscardedCommands(current=>[...current,kind])}}>{t('recovery.discard')}</button></p>)}
   {discardedCommands.length>0&&<p role="status">{t('recovery.discarded')}</p>}
@@ -103,8 +106,8 @@ export function SecurityActions({taskId,taskVersion,api,sourceApi,attention,atte
   <div className={css.buttons}>{pending.map(kind=>{const saved=api.pending(kind)!;return <button key={kind} type="button" disabled={busy} onClick={()=>void act(async()=>{await api.recover(kind);if(saved.context.panel.taskId!==taskId)await api.list(saved.context.panel.taskId)},saved.context.panel.taskId)}>{t('security.recover')} · {t('security.command.'+kind)} · {saved.context.panel.taskId}</button>})}</div>
   {panel&&<>
    {!panel.actions.length&&<p className={css.muted}>{t('security.empty')}</p>}
-   {panel.actions.map(action=><SecurityActionCard key={action.id} action={action} panel={panel} attention={attention} known={verified&&attentionKnown} busy={busy} disabled={blocked} disabledCommands={disabledCommands} focus={focus?.actionId===action.id?focus.revision:undefined} run={run} repropose={action=>{if(proposal.current)proposal.current.open=true;setSupersedes(action.id);setTitle(action.title);setGoal(action.goal);setReason(String(action.params.reason??''));setTargets(action.targetSet.filter(v=>allowed.includes(v)));form.current?.querySelector('input')?.focus();form.current?.scrollIntoView({block:'nearest'})}}/>)}
-   {allowed.length>0&&<details ref={proposal}><summary>{t('security.propose')}</summary><form ref={form} className={css.form} onSubmit={event=>{event.preventDefault();if(proposalBlocked||!source||!validReason||!targets.length)return;void act(async()=>{await api.propose({requestId:crypto.randomUUID(),taskId,expectedTaskVersion:taskVersion,title:title.trim(),goal:goal.trim(),tool:'security.endpoint.isolate',targetSet:targets,params:{reason:reason.trim()},...(supersedes?{supersedesActionId:supersedes}:{})},{panel,taskVersion,source:{taskId:source.taskId,ownerId:source.ownerId,sourceId:source.sourceId,reference:source.reference}});setTitle('');setGoal('');setReason('');setTargets([]);setSupersedes(undefined)})}}>
+   {panel.actions.map(action=><SecurityActionCard key={action.id} action={action} panel={panel} attention={attention} known={verified&&attentionKnown} busy={busy} disabled={blocked} disabledCommands={disabledCommands} focus={focus?.actionId===action.id?focus.revision:proposedAction?.id===action.id?proposedAction.version:undefined} run={run} repropose={action=>{if(proposal.current)proposal.current.open=true;setSupersedes(action.id);setTitle(action.title);setGoal(action.goal);setReason(String(action.params.reason??''));setTargets(action.targetSet.filter(v=>allowed.includes(v)));form.current?.querySelector('input')?.focus();form.current?.scrollIntoView({block:'nearest'})}}/>)}
+   {allowed.length>0&&<details ref={proposal}><summary>{t('security.propose')}</summary><form ref={form} className={css.form} onSubmit={event=>{event.preventDefault();if(proposalBlocked||!source||!validReason||!targets.length)return;void act(async()=>{const created=await api.propose({requestId:crypto.randomUUID(),taskId,expectedTaskVersion:taskVersion,title:title.trim(),goal:goal.trim(),tool:'security.endpoint.isolate',targetSet:targets,params:{reason:reason.trim()},...(supersedes?{supersedesActionId:supersedes}:{})},{panel,taskVersion,source:{taskId:source.taskId,ownerId:source.ownerId,sourceId:source.sourceId,reference:source.reference}});setProposedAction({id:created.id,version:created.version});if(proposal.current)proposal.current.open=false;setTitle('');setGoal('');setReason('');setTargets([]);setSupersedes(undefined)})}}>
     <h4>{t(supersedes?'security.repropose':'security.propose')}</h4>
     <label>{t('task.form.title')}<input required maxLength={120} value={title} onChange={event=>setTitle(event.target.value)}/></label>
     <label>{t('task.form.goalScope')}<textarea required maxLength={8000} value={goal} onChange={event=>setGoal(event.target.value)}/></label>

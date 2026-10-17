@@ -73,10 +73,35 @@ test('群目录按置顶和最近更新时间稳定排序，供刷新后的客�
  assert.deepEqual((await groups.list(owner,{})).map(group=>group.id),[pinned.id,second.id,first.id])
 })
 
-test('成员只接受本人当前在岗的数字岗位；群业务范围不限制成员来源（2026-09-21 用户裁定 B）',async()=>{
-  const {owner,groups,roles}=setup(),role=await roles.create(owner,{requestId:randomUUID(),fields:roleFields})
+test('主讨论与话题回复推进目录最近活动，重放消息不改变时间或群版本',async()=>{
+ let tick=0
+ const clock={id:randomUUID,now:()=>new Date(Date.parse('2026-10-11T01:30:00.000Z')+tick++*60_000).toISOString()}
+ const owner=randomUUID(),groups=new CollaborationService(pool,clock)
+ const first=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:fields()})
+ const second=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{...fields(),name:'另一个群'}})
+ const main=await groups.send(owner,{requestId:randomUUID(),groupId:first.id,expectedVersion:1,text:'人工主讨论'})
+ assert.deepEqual((await groups.list(owner,{})).map(group=>group.id),[first.id,second.id])
+ assert.equal((await groups.list(owner,{}))[0]?.updatedAt,main.createdAt)
+ const request={requestId:randomUUID(),groupId:first.id,expectedVersion:1,text:'人工话题回复',rootId:main.id}
+ const reply=await groups.send(owner,request)
+ assert.equal((await groups.list(owner,{}))[0]?.updatedAt,reply.createdAt)
+ assert.equal((await groups.get(owner,{groupId:first.id})).group.updatedAt,reply.createdAt)
+ await groups.send(owner,request)
+ assert.equal((await groups.list(owner,{}))[0]?.updatedAt,reply.createdAt)
+ assert.equal((await groups.get(owner,{groupId:first.id})).group.version,first.version)
+ const stored=await pool.query('select updated_at from teloa_groups where id=$1',[first.id])
+ assert.equal(stored.rows[0].updated_at.toISOString(),first.createdAt,'最近活动从消息投影，群设置时间不被改写')
+})
+
+test('明确建群可纳本人暂停岗位但不执行；群业务范围不限制成员来源',async()=>{
+  const {owner,groups,roles,grants,groupTasks}=setup(),role=await roles.create(owner,{requestId:randomUUID(),fields:roleFields})
   await pool.query("update teloa_roles set state='paused' where id=$1",[role.id]) // 创建后直接在岗，本用例要的是暂停岗位
-  await assert.rejects(groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:fields([role.id])}),{code:'teloa/conflict'})
+  const paused=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:fields([role.id])})
+  assert.equal((await pool.query('select state from teloa_roles where id=$1',[role.id])).rows[0].state,'paused')
+  const grant=await grants.get(owner,{groupId:paused.id,roleId:role.id})
+  assert.equal(grant.status,'invalidated');assert.deepEqual(grant.grant?.resources,[])
+  const message=await groups.send(owner,{requestId:randomUUID(),groupId:paused.id,expectedVersion:paused.version,text:'只保留团队关系'})
+  await assert.rejects(groupTasks.create(owner,{requestId:randomUUID(),groupId:paused.id,messageId:message.id,expectedGroupVersion:paused.version,goal:'核对',assignee:{roleId:role.id,expectedVersion:role.version}}),{code:'teloa/conflict'})
   await pool.query("update teloa_roles set state='active' where id=$1",[role.id])
   // 岗位只支持 SOC，群业务范围是 AppSec：成员不限业务范围，可正常加入。
   const crossScope=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{...fields([role.id]),scope:'AppSec'}})
@@ -200,8 +225,8 @@ test('群消息任务运行上下文只读取来源引用的已授权固定资�
  const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:fields([role.id])})
  const resource=await groups.saveResource(owner,{requestId:randomUUID(),groupId:group.id,resourceId:randomUUID(),expectedVersion:0,title:'生产告警证据',markdown:'# prod-03\n\n固定上下文。'})
  const message=await groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'请给出研判结论。',references:[{kind:'group-resource',id:resource.id,version:resource.version}]})
- const created=await groupTasks.create(owner,{requestId:randomUUID(),groupId:group.id,messageId:message.id,expectedGroupVersion:group.version,goal:'形成结论。',assignee:{roleId:role.id,expectedVersion:role.version}})
  await grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:[{kind:'group-resource',id:resource.id,version:resource.version}],canPost:false,canAutoRun:false})
+ const created=await groupTasks.create(owner,{requestId:randomUUID(),groupId:group.id,messageId:message.id,expectedGroupVersion:group.version,goal:'形成结论。',assignee:{roleId:role.id,expectedVersion:role.version}})
  const {readRunGroupContext}=await import('../src/work/task-run-group-context.ts')
  const db=await pool.connect()
  try{

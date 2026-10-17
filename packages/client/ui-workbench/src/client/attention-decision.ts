@@ -3,6 +3,7 @@ import type {AttentionItem,AttentionKind,AttentionTarget} from './attention-item
 import type {SecurityActionApi,SecurityActionAttention,SecurityActionCommand,SecurityActionContext} from './security-action-api.js'
 import {securityActionControls} from './security-action-presentation.ts'
 import type {MessageKey} from './i18n/messages.js'
+import type {WorkAttentionReasonKey} from './task-attention-presentation.js'
 
 export const ATTENTION_EXPANDED_KEY='teloa.attention-expanded/v1'
 export type AttentionDecisionRowKey='source'|'basis'|'next'|'risk'
@@ -39,7 +40,17 @@ const securityNextStepOverrides:Partial<Record<SecurityActionAttention['reason']
  'external-accepted':'attention.next.observePending',
  'effect-unknown':'attention.next.observePending',
 }
+const workNextStepOverrides:Partial<Record<WorkAttentionReasonKey,MessageKey>>={
+ 'attention.work.reason.businessChangeReview':'attention.work.next.businessChange',
+ 'attention.work.reason.businessChangeStale':'attention.work.next.businessChange',
+ 'attention.work.reason.businessSyncFailed':'attention.work.next.businessSync',
+ 'attention.work.reason.pageCreateDraft':'attention.work.next.pageDraft',
+}
 export function attentionNextStepKey(item:Pick<AttentionItem,'kind'|'reason'>):MessageKey{
+ if(item.reason.kind==='message'){
+  const workNext=workNextStepOverrides[item.reason.key as WorkAttentionReasonKey]
+  if(workNext!==undefined)return workNext
+ }
  if(item.reason.kind==='message'&&item.reason.key.startsWith(SECURITY_REASON_PREFIX)){
   const override=securityNextStepOverrides[item.reason.key.slice(SECURITY_REASON_PREFIX.length) as SecurityActionAttention['reason']]
   if(override!==undefined)return override

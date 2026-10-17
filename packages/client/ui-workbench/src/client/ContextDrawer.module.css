@@ -1,0 +1,13 @@
+/* 共同轻详情容器；复用工作台字体、颜色与焦点令牌。 */
+.drawer.drawer{position:fixed;inset:0 0 0 auto;margin:0;box-sizing:border-box;width:min(560px,100vw);max-width:100vw;height:100dvh;max-height:100dvh;padding:0;border:0;border-left:1px solid var(--teloa-border);border-radius:0;overflow:hidden;background:var(--teloa-surface);color:var(--teloa-text);box-shadow:var(--teloa-shadow);font:inherit}
+.drawer::backdrop{background:var(--teloa-backdrop)}
+.drawer[open]{display:flex;flex-direction:column}
+.header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:16px;min-height:68px;padding:16px 24px;box-sizing:border-box;border-bottom:1px solid var(--teloa-border)}
+.header h2{min-width:0;margin:0;font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);overflow-wrap:anywhere}
+.drawer>.header>button{box-sizing:border-box;display:grid;place-items:center;flex:none;width:32px;min-width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);cursor:pointer}
+.drawer>.header>button>svg{width:20px;height:20px;flex:none}
+.header button:hover{background:var(--teloa-hover);color:var(--teloa-text)}
+.header button:disabled{opacity:.45;cursor:default}
+.content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
+.drawer :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:600px){.header{padding:16px 20px}}

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {LlmAdapter,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {LlmAdapter,LlmError,ProviderRequestId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {SessionId} from '@deepseek-ai/dsh-session'
 import {patchedSessionFixture} from './fixtures/native-final-session.ts'
 import {until} from './fixtures/native-schedule-admission.ts'
@@ -9,6 +9,7 @@ import {setupRoleWork,roleFixture,identity,ownerAuthority} from '../../backend/t
 import {ObjectConversationService} from '../../backend/src/work/object-conversations.ts'
 import {TaskRunService} from '../../backend/src/work/task-runs.ts'
 import {TaskService} from '../../backend/src/work/tasks.ts'
+import {ConversationWorkService,initializeConversationWork} from '../../backend/src/work/conversation-work.ts'
 import {WorkAccess} from '../../backend/src/work/work-access.ts'
 import {WorkControlService,initializeWorkControl} from '../../backend/src/work/work-control.ts'
 import {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy} from '../../backend/src/work/work-budget.ts'
@@ -16,16 +17,97 @@ import {initializeWorkRetries} from '../../backend/src/work/work-retries.ts'
 import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {installResidentModelBudget} from '../src/resident-model-budget.ts'
 
-test('真实原生模型流按实际用量结算；累计额度耗尽在下次请求前拒绝',{timeout:30000},async t=>{
+test('路由本地缺凭据且无输出/用量时结算零token；传输未知、已有输出或取消仍保留预留',{timeout:30000},async t=>{
+ const db=await setupRoleWork();t.after(db.close)
+ await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
+ const f=await patchedSessionFixture(t),{owner}=await roleFixture(db.pool,'employee')
+ const {agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'budget-local-error',model:'finite',maxTokens:32}})
+ const controls=new WorkControlService(db.pool,identity),budgets=new WorkBudgetService(db.pool,identity,ownerAuthority),input=createNativeWorkInput(f.ctx,new WorkAccess())
+ const close=installResidentModelBudget(f.ctx,{owner,pool:db.pool,identity,runs:async()=>new TaskRunService(db.pool,identity,async()=>{throw Error('路由不读取任务会话')}),controls,budgets,resolveRun:async()=>null,resolveRouting:async id=>id===agent.id?{budgetAccountId:null,controlGeneration:1,operationId:'owner-source-message',lease:{assertCurrent(){}}}:null,nativeInput:input,report:()=>{}})
+ t.after(()=>{close();input.close()})
+ let code='MISSING_CREDENTIAL',output=false,streamCalls=0,status:number|undefined
+ class LocalFailure extends LlmAdapter{
+  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model}}
+  async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{
+   streamCalls++
+   if(output){yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text:'已有输出'};yield {type:'block-end',index:0,block:{type:'text',text:'已有输出'}}}
+   throw new LlmError('合成本机错误，不发送网络请求',code,status===undefined?undefined:{status})
+  }
+ }
+ f.ctx.llm.registerAdapter(['budget-local-error'],new LocalFailure())
+ async function send(text:string){
+  const message=createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text}]})
+  await input.withNewInput(agent,message,{producer:'prompt',identity:'owner-source-message'},()=>agent.followup(message))
+  await until(()=>agent.status==='idle'&&agent.inbox.nextTurn.length===0)
+ }
+ await send('只有本机凭据缺失')
+ const first=await db.pool.query('select state,actual_tokens from teloa_work_budget_reservations where owner_id=$1',[owner])
+ assert.deepEqual(first.rows,[{state:'settled',actual_tokens:0}])
+ const empty=await budgets.readOwner(owner);assert.equal(empty.usedTokens,0);assert.equal(empty.concurrent,0)
+ code='TRANSPORT';await send('传输结果不能猜成未发送')
+ const uncertain=await budgets.readOwner(owner);assert.ok(uncertain.usedTokens>0);assert.equal(uncertain.concurrent,1)
+ code='MISSING_CREDENTIAL';output=true;await send('已经有输出时不能按本地未发送结算')
+ const emitted=await budgets.readOwner(owner);assert.ok(emitted.usedTokens>uncertain.usedTokens);assert.equal(emitted.concurrent,2)
+ code='ABORTED';output=false;await send('取消不能据此认定没有发送')
+ const aborted=await budgets.readOwner(owner);assert.ok(aborted.usedTokens>emitted.usedTokens);assert.equal(aborted.concurrent,3)
+ code='MISSING_CREDENTIAL';status=401;await send('带HTTP状态的拒绝不能当本机未发送')
+ const final=await budgets.readOwner(owner);assert.ok(final.usedTokens>aborted.usedTokens);assert.equal(final.concurrent,4)
+ assert.equal(streamCalls,5,'每条输入只走一次官方流，不自动重试')
+ assert.deepEqual((await db.pool.query('select state,actual_tokens from teloa_work_budget_reservations where owner_id=$1 order by created_at,id',[owner])).rows,[{state:'settled',actual_tokens:0},{state:'unknown',actual_tokens:null},{state:'unknown',actual_tokens:null},{state:'unknown',actual_tokens:null},{state:'unknown',actual_tokens:null}])
+})
+
+test('主Run本地缺凭据零结算并等待本人处理，不把认证失败当可自动重试；传输仍未知',{timeout:30000},async t=>{
+ const db=await setupRoleWork();t.after(db.close)
+ await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
+ const f=await patchedSessionFixture(t),{owner,role}=await roleFixture(db.pool,'employee')
+ await db.pool.query("update teloa_roles set state='active' where id=$1",[role.id])
+ const task=await new TaskService(db.pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'本地认证结算',goal:'读取已授权原文',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}),taskId=task.id
+ const {agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'budget-local-error',model:'finite',maxTokens:32}})
+ const conversationId=randomUUID(),inspect=async()=>({id:conversationId,ownerId:owner,sessionId:agent.id,status:'ready'})
+ await new ObjectConversationService(db.pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:taskId,expectedObjectVersion:1,sessionId:agent.id,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(db.pool,identity,inspect),run=await runs.prepare(owner,{requestId:randomUUID(),taskId,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId:agent.id,expectedLinkVersion:1},undefined,undefined,undefined,async()=> 'default-agent')
+ await runs.claim(owner,{runId:run.id});assert.ok(run.lineage)
+ const controls=new WorkControlService(db.pool,identity),budgets=new WorkBudgetService(db.pool,identity,ownerAuthority),input=createNativeWorkInput(f.ctx,new WorkAccess()),reports:string[]=[]
+ const close=installResidentModelBudget(f.ctx,{owner,pool:db.pool,identity,runs:async()=>runs,controls,budgets,resolveRun:async id=>id===agent.id?await runs.get(owner,{runId:run.id}):null,nativeInput:input,report:code=>reports.push(code)})
+ t.after(()=>{close();input.close()})
+ let code='MISSING_CREDENTIAL',streamCalls=0,status:number|undefined,providerRequestId:ReturnType<typeof ProviderRequestId>|undefined
+ class LocalFailure extends LlmAdapter{
+  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model}}
+  async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{streamCalls++;throw new LlmError('合成本机错误，不发送网络请求',code,{...(status===undefined?{}:{status}),...(providerRequestId===undefined?{}:{requestId:providerRequestId})})}
+ }
+ f.ctx.llm.registerAdapter(['budget-local-error'],new LocalFailure())
+ async function send(text:string){
+  const message=createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text}]})
+  await input.withNewInput(agent,message,{producer:'task-run',identity:run.id},()=>agent.followup(message))
+  await until(()=>agent.status==='idle'&&agent.inbox.nextTurn.length===0)
+ }
+ await send(run.inputText)
+ assert.deepEqual((await db.pool.query("select state,actual_tokens from teloa_work_budget_reservations where owner_id=$1 and kind='retry'",[owner])).rows,[{state:'settled',actual_tokens:0}])
+ assert.equal((await budgets.readOwner(owner)).concurrent,0);assert.deepEqual(reports,['resident-model/authentication'])
+ assert.deepEqual((await db.pool.query('select state,next_attempt_at,completed from teloa_work_retries where owner_id=$1',[owner])).rows,[{state:'owner-wait',next_attempt_at:null,completed:false}])
+ code='TRANSPORT';await send('原请求传输结果未知')
+ assert.equal((await budgets.readOwner(owner)).concurrent,1);assert.deepEqual(reports,['resident-model/authentication','resident-model/unknown'])
+ code='MISSING_CREDENTIAL';status=403;await send('HTTP拒绝保留原权限失败分类')
+ assert.equal((await budgets.readOwner(owner)).concurrent,2);assert.deepEqual(reports,['resident-model/authentication','resident-model/unknown','resident-model/permission'])
+ status=undefined;providerRequestId=ProviderRequestId('provider-original-request');await send('已有提供方请求身份不能当本机未发送')
+ assert.equal((await budgets.readOwner(owner)).concurrent,3);assert.deepEqual(reports,['resident-model/authentication','resident-model/unknown','resident-model/permission','resident-model/unknown'])
+ assert.equal(streamCalls,4,'认证失败等待本人处理，不自动重试')
+ assert.deepEqual((await db.pool.query("select state,actual_tokens from teloa_work_budget_reservations where owner_id=$1 and kind='retry' order by created_at,id",[owner])).rows,[{state:'settled',actual_tokens:0},{state:'unknown',actual_tokens:null},{state:'unknown',actual_tokens:null},{state:'unknown',actual_tokens:null}])
+})
+
+for(const general of [false,true])test((general?'本人无员工快照':'员工')+'真实原生模型流按实际用量结算；累计额度耗尽在下次请求前拒绝',{timeout:30000},async t=>{
  const db=await setupRoleWork();t.after(db.close)
  await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
  const f=await patchedSessionFixture(t),{agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'budget',model:'finite',maxTokens:32}})
  const {owner,role}=await roleFixture(db.pool,'employee')
  await db.pool.query("update teloa_roles set state='active' where id=$1",[role.id])
- const task=await new TaskService(db.pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'用量核对',goal:'核对资料',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}),taskId=task.id
+ await initializeConversationWork(db.pool)
+ const source={sessionId:'source-'+randomUUID(),requestId:randomUUID(),messageId:'source',messageSeq:1}
+ if(general)await new ConversationWorkService(db.pool,identity.now,async()=>({ownerId:owner,sessionId:source.sessionId,status:'ready',submitted:true})).reserve(owner,{...source,executor:'general',kind:'task',scope:'general',title:'本人用量核对',goal:'核对资料'})
+ const tasks=new TaskService(db.pool,identity),task=general?await tasks.createForConversation(owner,{sessionId:source.sessionId,requestId:source.requestId,executor:'general'}):await tasks.create(owner,{requestId:randomUUID(),fields:{title:'用量核对',goal:'核对资料',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}),taskId=task.id
  const conversationId=randomUUID(),inspect=async()=>({id:conversationId,ownerId:owner,sessionId:agent.id,status:'ready'})
  await new ObjectConversationService(db.pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:taskId,expectedObjectVersion:1,sessionId:agent.id,expectedLinkVersion:0,action:'link'})
- const runs=new TaskRunService(db.pool,identity,inspect),run=await runs.prepare(owner,{requestId:randomUUID(),taskId,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId:agent.id,expectedLinkVersion:1},undefined,undefined,undefined,async()=> 'default-agent')
+ const runs=new TaskRunService(db.pool,identity,inspect),run=general?await runs.prepareOwner(owner,{requestId:randomUUID(),taskId,expectedTaskVersion:1,executor:task.executor,sessionId:agent.id,expectedLinkVersion:1},{agentPresetId:'default-agent'}):await runs.prepare(owner,{requestId:randomUUID(),taskId,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId:agent.id,expectedLinkVersion:1},undefined,undefined,undefined,async()=> 'default-agent')
  await runs.claim(owner,{runId:run.id})
  assert.ok(run.lineage)
  const controls=new WorkControlService(db.pool,identity),budgets=new WorkBudgetService(db.pool,identity,ownerAuthority),input=createNativeWorkInput(f.ctx,new WorkAccess())

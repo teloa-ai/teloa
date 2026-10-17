@@ -10,7 +10,7 @@ import {WorkError,marketCatalogTreeHash} from '@teloa/contract'
 import {initializeMarketContents,MarketContentStore,type MarketActor} from '../src/market/content-store.ts'
 import {OfficialCatalogService,filterCatalogEntries,sortCatalogEntries,type OfficialCatalogSnapshot} from '../src/market/official-catalog.ts'
 import {officialCatalogFiles,officialCatalogIndex,officialCatalogIndexSha256} from '../src/market/official-catalog-snapshot.ts'
-import {loadOfficialUpstreamIndex,listUpstreamEntries} from '../src/market/official-upstream.ts'
+import {loadOfficialUpstreamIndex,listUpstreamEntries,adoptRemoteUpstreamEntries} from '../src/market/official-upstream.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date('2026-09-25T12:00:00.000Z').toISOString()}
@@ -51,24 +51,56 @@ before(async()=>{
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop()})
 
- test('随发行固定的快照加载成功，十五个技能、十八个方案、十四个 AI 同事与十八个模型，内置创建器与看板设计可取字节',async()=>{
+// 期望来自市场仓已审目录（由市场仓固定提交派生，不从本仓快照反推）：hosted 是托管快照，upstream 是上游索引。
+type Reviewed={catalogVersion:string;total:number;solutions:string[];hosted:{count:number;byKind:Record<string,string[]>};upstream:{count:number;byMarketplace:Record<string,string[]>}}
+const reviewedCatalog=async():Promise<Reviewed>=>JSON.parse(await readFile(new URL('../../../tests/fixtures/reviewed-catalog-20261014.json',import.meta.url),'utf8'))
+const kindCounts=(byKind:Record<string,string[]>)=>({solution:0,dashboard:0,role:0,skill:0,connector:0,model:0,...Object.fromEntries(Object.entries(byKind).map(([kind,ids])=>[kind,ids.length]))})
+type ListRequest=NonNullable<Parameters<OfficialCatalogService['list']>[1]>
+/** 跟随 nextCursor 遍历到底，返回全部条目与每页长度。 */
+async function traverse(service:OfficialCatalogService,request:ListRequest={}){
+ const items=[],sizes:number[]=[];let cursor:string|undefined
+ do{const page=await service.list(human(),{...request,...(cursor?{cursor}:{})});items.push(...page.items);sizes.push(page.items.length);cursor=page.nextCursor??undefined}while(cursor)
+ return {items,sizes}
+}
+
+ test('随发行固定的已审目录加载成功：不带来源的旧宿主列表精确等于托管快照，旧行业方案退出，当前固定技能、Grok 应用和原生语音可读',async()=>{
  const {store}=stub(),service=new OfficialCatalogService(store),listed=await service.list(human())
- // 期望值取自同步进来的镜像版本文件，快照版本须与 tests/fixtures/public-market/ 镜像一致
- assert.equal(listed.catalogVersion,(await readFile(new URL('../../../tests/fixtures/public-market/catalog-version.txt',import.meta.url),'utf8')).trim())
- assert.equal(listed.counts.role,14);assert.equal(listed.counts.model,18)
- // 全量超过一页 50 条：方案与技能按 kind 各取一页核对
- const ofKind=async(kind:'solution'|'skill')=>(await service.list(human(),{kind})).items
- assert.deepEqual((await ofKind('solution')).map(item=>item.entry.id),['teloa.appsec','teloa.cn-workspace','teloa.code-review','teloa.detection','teloa.ecommerce','teloa.finance','teloa.grc','teloa.growth','teloa.incident','teloa.marketing','teloa.office','teloa.project','teloa.recruiting','teloa.research','teloa.sales','teloa.soc','teloa.support','teloa.video'])
- assert.deepEqual((await ofKind('skill')).map(item=>[item.entry.id,item.entry.delivery]),[['anthropic.commit','install'],['anthropic.feature-dev','install'],['anthropic.internal-comms','install'],['anthropic.mcp-builder','install'],['anthropic.modernize-assess','install'],['anthropic.modernize-extract-rules','install'],['anthropic.review-pr','install'],['hermes.grounded-citations','install'],['hermes.meeting-action-items','install'],['hermes.simplify-code','install'],['openai.security-best-practices','install'],['openai.security-threat-model','install'],['openai.skill-creator','builtin'],['openclaw.github','install'],['teloa.dashboard-designer','builtin']])
+ const reviewed=await reviewedCatalog(),hostedIds=Object.values(reviewed.hosted.byKind).flat().sort()
+ assert.equal(reviewed.hosted.count,hostedIds.length)
+ assert.equal(listed.catalogVersion,reviewed.catalogVersion)
+ // 旧宿主契约（不传 marketplace）只列托管快照，不混入上游：计数与完整遍历都精确等于已审托管集合
+ assert.deepEqual(listed.counts,kindCounts(reviewed.hosted.byKind))
+ const legacy=await traverse(service)
+ assert.deepEqual(legacy.items.map(item=>item.entry.id).sort(),hostedIds)
+ assert.ok(legacy.items.every(item=>item.entry.delivery!=='upstream'))
+ const ofKind=async(kind:'solution'|'skill')=>(await traverse(service,{kind})).items
+ assert.deepEqual((await ofKind('solution')).map(item=>item.entry.id),reviewed.solutions)
+ assert.deepEqual((await ofKind('skill')).map(item=>[item.entry.id,item.entry.delivery]),[['anthropic.commit','install'],['anthropic.feature-dev','install'],['anthropic.internal-comms','install'],['anthropic.mcp-builder','install'],['anthropic.modernize-assess','install'],['anthropic.modernize-extract-rules','install'],['anthropic.review-pr','install'],['openai.security-best-practices','install'],['openai.security-threat-model','install'],['openai.skill-creator','builtin'],['teloa.dashboard-designer','builtin']])
  assert.ok(listed.items.every(item=>item.addedContentId===null&&!('artifact' in item.entry)))
  const creator=service.builtin('teloa-skill-creator')
  assert.equal(creator.entry.id,'openai.skill-creator')
  assert.ok(creator.files.some(file=>file.path==='SKILL.md'&&new TextDecoder().decode(file.bytes).startsWith('---\nname: teloa-skill-creator\n')))
- const designer=service.builtin('teloa-dashboard-designer')
- assert.equal(designer.entry.id,'teloa.dashboard-designer')
- assert.equal(designer.entry.version,'1.1.0')
- assert.ok(designer.files.some(file=>file.path==='SKILL.md'&&new TextDecoder().decode(file.bytes).startsWith('---\nname: teloa-dashboard-designer\n')))
+ assert.equal(service.builtin('teloa-dashboard-designer').entry.id,'teloa.dashboard-designer')
+ assert.ok(service.builtin('teloa-dashboard-designer').files.some(file=>file.path==='SKILL.md'))
+ assert.equal(service.hasEntry('teloa.soc'),false)
  assert.throws(()=>service.builtin('internal-comms'),{code:'teloa/source-unavailable'})
+})
+
+test('统一 Teloa 目录：托管快照与上游索引合并后完整分页遍历不重不漏，精确等于已审 115 条',async()=>{
+ const service=new OfficialCatalogService(stub().store),reviewed=await reviewedCatalog()
+ const hostedIds=Object.values(reviewed.hosted.byKind).flat(),upstreamIds=Object.values(reviewed.upstream.byMarketplace).flat()
+ assert.equal(hostedIds.length+upstreamIds.length,reviewed.total)
+ const {items,sizes}=await traverse(service,{marketplace:'teloa'})
+ const ids=items.map(item=>item.entry.id)
+ assert.equal(new Set(ids).size,ids.length,'分页不应重复')
+ assert.deepEqual([...ids].sort(),[...hostedIds,...upstreamIds].sort())
+ assert.deepEqual(sizes,[50,50,reviewed.total-100])
+ // 原来源只作溯源：上游条目仍标 upstream，托管条目不是
+ const upstream=new Set(upstreamIds)
+ assert.ok(items.every(item=>(item.entry.delivery==='upstream')===upstream.has(item.entry.id)),'托管与上游口径不能混')
+ const first=await service.list(human(),{marketplace:'teloa'})
+ // 上游只有技能条目
+ assert.deepEqual(first.counts,{...kindCounts(reviewed.hosted.byKind),skill:reviewed.hosted.byKind.skill!.length+upstreamIds.length})
 })
 
 test('快照任何一处被改都让整个目录停用',async()=>{
@@ -106,17 +138,17 @@ test('添加请求：只接受本人，内置条目与未知条目拒绝，trust
 
 test('真库：添加后以 catalog 来源固定，重放同回执，目录回显已添加',async()=>{
  const self=human(),store=new MarketContentStore(pool,identity),service=new OfficialCatalogService(store),requestId=randomUUID()
- const first=await service.add(self,{requestId,entryId:'hermes.meeting-action-items'})
- assert.equal(first.content.kind,'atomic-skill');assert.equal(first.content.logicalId,'meeting-action-items')
+ const first=await service.add(self,{requestId,entryId:'anthropic.internal-comms'})
+ assert.equal(first.content.kind,'atomic-skill');assert.equal(first.content.logicalId,'internal-comms')
  assert.equal(first.receipt.source.kind,'catalog')
- assert.deepEqual(first.content.provides,[{resourceId:'meeting-action-items',kind:'skill',version:'1.0.0',path:'meeting-action-items/SKILL.md'}])
- const again=await service.add(self,{requestId,entryId:'hermes.meeting-action-items'})
+ assert.deepEqual(first.content.provides,[{resourceId:'internal-comms',kind:'skill',version:'1.0.0',path:'internal-comms/SKILL.md'}])
+ const again=await service.add(self,{requestId,entryId:'anthropic.internal-comms'})
  assert.equal(again.content.id,first.content.id)
  const replayed=await store.getImport(self,{requestId})
  assert.deepEqual(replayed.receipt.source,first.receipt.source)
  const listed=await service.list(self)
- assert.equal(listed.items.find(item=>item.entry.id==='hermes.meeting-action-items')?.addedContentId,first.content.id)
- assert.equal((await service.list(human())).items.find(item=>item.entry.id==='hermes.meeting-action-items')?.addedContentId,null)
+ assert.equal(listed.items.find(item=>item.entry.id==='anthropic.internal-comms')?.addedContentId,first.content.id)
+ assert.equal((await service.list(human())).items.find(item=>item.entry.id==='anthropic.internal-comms')?.addedContentId,null)
 })
 
 test('真库：catalog 来源字段不全或多余一律拒绝',async()=>{
@@ -165,8 +197,11 @@ test('真库：方案条目添加得到 industry-template，provides 含角色�
 
 test('stub：上游条目 compatibility.status=unsupported 被拒绝且未发起下载',async()=>{
  const {store,calls}=stub(),service=new OfficialCatalogService(store)
- // clawhub.byungkyu.gmail 在生成后的上游索引中 status=unsupported
- await assert.rejects(service.add(human(),{requestId:randomUUID(),entryId:'clawhub.byungkyu.gmail'}),{code:'teloa/invalid-input'})
+ // 以仍收录的原技能注入 unsupported 状态，验证拒绝发生于下载之前；不能用已下架的未知 ID 冒充此用例。
+ const fixed=listUpstreamEntries(),entry=fixed.find(row=>row.id==='anthropic.frontend-design')!
+ adoptRemoteUpstreamEntries(fixed.map(row=>row.id===entry.id?{...entry,compatibility:{...entry.compatibility,status:'unsupported' as const}}:row))
+ try{await assert.rejects(service.add(human(),{requestId:randomUUID(),entryId:entry.id}),error=>error instanceof Error&&/暂不支持/.test(error.message))}finally{adoptRemoteUpstreamEntries(fixed)}
+
  assert.equal(calls.length,0,'store.import 不应被调用（拒绝应在下载前发生）')
 })
 
@@ -212,19 +247,21 @@ test('纯函数：filterCatalogEntries 按 query 与 kind 过滤，sortCatalogEn
 })
 
 test('list：Teloa 分支 query / kind / sort 生效，分页在过滤排序之后',async()=>{
- const service=new OfficialCatalogService(stub().store)
+ const service=new OfficialCatalogService(stub().store),reviewed=await reviewedCatalog()
  const queried=await service.list(human(),{query:'创建器'})
  assert.deepEqual(queried.items.map(item=>item.entry.id),['openai.skill-creator'])
  const solutions=await service.list(human(),{kind:'solution'})
- assert.equal(solutions.items.length,18);assert.ok(solutions.items.every(item=>item.entry.kind==='solution'))
+ assert.deepEqual(solutions.items.map(item=>item.entry.id),reviewed.solutions);assert.equal(solutions.counts.solution,reviewed.solutions.length);assert.equal(solutions.nextCursor,null)
  const named=await service.list(human(),{kind:'skill',sort:'name'}),names=named.items.map(item=>(item.entry as {skill:{name:string}}).skill.name)
  assert.deepEqual(names,[...names].sort())
- const paged=await service.list(human(),{kind:'solution',limit:3})
+ const paged=await service.list(human(),{marketplace:'teloa',kind:'skill',limit:3})
  assert.equal(paged.items.length,3);assert.equal(paged.nextCursor,paged.items[2]!.entry.id)
- const rest=await service.list(human(),{kind:'solution',limit:3,cursor:paged.nextCursor!})
- assert.equal(rest.items.length,3);assert.ok(rest.items.every(item=>item.entry.kind==='solution'))
- const upstream=await service.list(human(),{marketplace:'clawhub',kind:'connector'})
- assert.equal(upstream.items.length,0)
+ const rest=await service.list(human(),{marketplace:'teloa',kind:'skill',limit:3,cursor:paged.nextCursor!})
+ const skillTotal=reviewed.hosted.byKind.skill!.length+reviewed.upstream.count
+ assert.equal(rest.items.length,3);assert.ok(rest.items.every(item=>item.entry.kind==='skill'));assert.equal(rest.counts.skill,skillTotal);assert.equal(rest.items.some(item=>paged.items.some(prior=>prior.entry.id===item.entry.id)),false)
+ // 上游来源只有技能，按连接器筛选为空且不翻页
+ const upstream=await service.list(human(),{marketplace:'cursor',kind:'connector'})
+ assert.equal(upstream.items.length,0);assert.equal(upstream.nextCursor,null);assert.equal(upstream.counts.skill,reviewed.upstream.byMarketplace.cursor!.length)
 })
 
 const roleFixture=()=>({format:'teloa.market-catalog-entry/v1',id:'teloa.role.test-role',kind:'role',delivery:'install',version:'1.0.0',upstream:null,
@@ -268,9 +305,9 @@ test('list：counts 在过滤前算全量六类，kind=role / model 可筛，que
  assert.equal(service.getRoleEntry('teloa.test-sol'),undefined)
  // 市场二期榜单过滤：任何类型的现存条目都算，不存在的不算
  assert.deepEqual(['teloa.test-sol','teloa.model.test-model','teloa.role.test-role','teloa.gone'].map(id=>service.hasEntry(id)),[true,true,true,false])
- // 上游索引条目（ClawHub 等）与 list/add 同源，同样算现存
- const upstreamId=listUpstreamEntries()[0]!.id
- assert.match(upstreamId,/^clawhub\./)
+ // Teloa 收录的原技能与 list/add 同源；已退出资源不能重新被当作现存
+ const upstreamId=listUpstreamEntries().find(entry=>entry.id==='anthropic.frontend-design')!.id
+ assert.equal(upstreamId,'anthropic.frontend-design')
  assert.equal(service.hasEntry(upstreamId),true)
  assert.equal(service.hasEntry('clawhub.nobody.gone'),false)
  assert.equal(service.roleEntryForAdd('teloa.role.test-role').role.scope,'test')
@@ -307,17 +344,18 @@ test('add：expectedTreeHash 不等拒绝、相等导入；连接器条目不能
  assert.equal(calls.length,0)
  await service.add(human(),{requestId:randomUUID(),entryId:'anthropic.internal-comms',expectedTreeHash:treeHash})
  assert.equal(calls.length,1);assert.equal(calls[0]!.input.source.treeHash,treeHash)
- await assert.rejects(service.add(human(),{requestId:randomUUID(),entryId:'teloa.mcp-amap'}),error=>error instanceof Error&&(error as {code?:string}).code==='teloa/invalid-input'&&/teloa_mcp_connect/.test(error.message))
+ await assert.rejects(service.add(human(),{requestId:randomUUID(),entryId:'teloa.mcp-slack'}),error=>error instanceof Error&&(error as {code?:string}).code==='teloa/invalid-input'&&/teloa_mcp_connect/.test(error.message))
  assert.equal(calls.length,1)
  // 上游条目：treeHash 由 upstream.files 推出，不等时在下载前拒绝
- await assert.rejects(service.add(human(),{requestId:randomUUID(),entryId:'clawhub.ivangdavila.git',expectedTreeHash:'0'.repeat(64)}),{code:'teloa/version-conflict'})
+ await assert.rejects(service.add(human(),{requestId:randomUUID(),entryId:'anthropic.frontend-design',expectedTreeHash:'0'.repeat(64)}),{code:'teloa/version-conflict'})
  assert.equal(calls.length,1)
 })
 
-test('getConnectorPackageLock：每个 stdio 连接器都随附与配方一致的完整 lock（v3、根只钉配方包、逐条 sha512）；远端连接器、非连接器、目录损坏返回 undefined',()=>{
- const service=new OfficialCatalogService(stub().store,snapshot())
- const stdio=(officialCatalogIndex as {entries:{id:string;kind:string;connector?:{recipe:{transport:string}}}[]}).entries.filter(entry=>entry.kind==='connector'&&entry.connector!.recipe.transport==='stdio')
- assert.ok(stdio.length>=7)
+test('getConnectorPackageLock：原已审 stdio 完整 lock 保留隔离覆盖（v3、根只钉配方包、逐条 sha512）；远端连接器、非连接器、目录损坏返回 undefined',async()=>{
+ const original=JSON.parse(await readFile(new URL('../../../tests/fixtures/retired-stdio-20261014.json',import.meta.url),'utf8'))
+ const service=new OfficialCatalogService(stub().store,original)
+ const stdio=(original.index as {entries:{id:string;kind:string;connector?:{recipe:{transport:string}}}[]}).entries.filter(entry=>entry.kind==='connector'&&entry.connector!.recipe.transport==='stdio')
+ assert.equal(stdio.length,7)
  for(const {id} of stdio){
   const recipe=service.getConnectorEntry(id)!.connector.recipe
   assert.equal(recipe.transport,'stdio')
@@ -333,7 +371,7 @@ test('getConnectorPackageLock：每个 stdio 连接器都随附与配方一致�
  assert.equal(service.getConnectorPackageLock('teloa.mcp-deepwiki'),undefined)
  assert.equal(service.getConnectorPackageLock('anthropic.internal-comms'),undefined)
  assert.equal(service.getConnectorPackageLock('missing.entry'),undefined)
- const broken=snapshot();(broken.index as any).entries[0].artifact.treeHash='0'.repeat(64)
+ const broken=structuredClone(original);(broken.index as any).entries[0].artifact.treeHash='0'.repeat(64)
  assert.equal(new OfficialCatalogService(stub().store,broken).getConnectorPackageLock(stdio[0]!.id),undefined)
 })
 

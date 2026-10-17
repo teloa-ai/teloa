@@ -38,3 +38,8 @@ details>.title{cursor:pointer}
 .notice{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 12px;border-radius:8px;background:var(--teloa-warn-bg);font-size:var(--teloa-font-caption)}
 .limits{margin:0;padding-left:18px;display:grid;gap:6px;font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}
 .alert{margin:0;padding:8px 12px;border-radius:8px;background:var(--teloa-warn-bg);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+
+.embedded{padding:0;border-top:0}
+.embedded .row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px}
+.embedded .rowText{display:grid;gap:6px}
+.embedded .actions{grid-column:1/-1}

@@ -71,10 +71,10 @@ test('七行的标签、副标、单位、附注、模式、空态与全部状�
   const value=(catalog as Record<string,string>)[key as string]
   assert.ok(value&&value.trim().length>0,locale+' 缺少词条 '+String(key))
  }
- assert.equal(zh('composition.row.method'),'任务模板')
+ assert.equal(zh('composition.row.method'),'工作安排')
  assert.equal(zh('composition.question.board'),'管哪些东西、怎么看')
  assert.equal(zh('composition.extension.note'),'工作室通用')
- assert.equal(zh('composition.empty.source'),'还没接东西，需要时从市场或「连接」添加')
+ assert.equal(zh('composition.empty.source'),'暂无应用连接')
  assert.equal(zh('composition.empty.board'),'这个业务还没有可看的东西')
 })
 
@@ -99,7 +99,7 @@ test('看板行数「几类东西 · 几张视图」，任务模板行附注数�
   {id:'method',count:1,detail:{automations:1,actions:2}},
  ])
  assert.equal(zh('composition.unit.board',{count:3,views:2}),'3 类东西 · 2 张视图')
- assert.equal(zh('composition.note.method',{automations:1,actions:2}),'其中 1 个设成了自动化 · 2 个动作挂在对象上')
+ assert.equal(zh('composition.note.method',{automations:1,actions:2}),'1 项自动化 · 2 项业务动作')
 })
 
 test('连接器副标两档加审批标记：数据源读、执行工具写且需审批、MCP 保守判写但不带审批，判不出返回 undefined',()=>{
@@ -126,7 +126,7 @@ test('摘要名词计数：段内「 · 」、段间「｜」，单段不带分�
  ]))
  assert.equal(
   compositionSummary(full,zh as never,plain),
-  '2 位员工 · 1 项技能 · 1 份资料 ｜ 2 个接入源 ｜ 3 类东西 · 1 张视图 ｜ 2 个任务模板 ｜ 1 个扩展',
+  '2 位员工 · 1 项技能 · 1 份资料 ｜ 2 个接入源 ｜ 3 类东西 · 1 张视图 ｜ 2 项安排 ｜ 1 个应用',
  )
  assert.equal(compositionSummary(composeFromManifest(manifest([resource('s1','skill')])),zh as never,plain),'1 项技能')
  assert.equal(compositionSummary([],zh as never,plain),'')
@@ -237,7 +237,7 @@ test('两种半空的行也进摘要：只有自动化或动作时任务模板�
  assert.equal(compositionSummary(actions.map(row=>row.count),zh as never,plain),'1 个动作挂在对象上')
  // 只有持续计划（自动化）时同理。
  const automations=composeFromWorkspace({scope:'general',loads:[],roles:[],plans:[{scope:'general',state:'active',title:'每周整理'}]})
- assert.equal(compositionSummary(automations.map(row=>row.count),zh as never,plain),'其中 1 个设成了自动化')
+ assert.equal(compositionSummary(automations.map(row=>row.count),zh as never,plain),'1 项自动化')
  // 只有视图、没有对象类型：看板行仍然摆出来，视图数照说。
  const board=composeFromWorkspace({scope:'general',loads:[load([item('business-view',1)])],roles:[]})
  assert.deepEqual(board.map(row=>row.id),['board'])

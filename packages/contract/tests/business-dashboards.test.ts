@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
  businessDashboardEndpoints,businessDashboardLimits,businessTimeRanges,businessWidgetKinds,isBusinessMatchField,isBusinessMatchValue,
- readBusinessDashboardDefinition,readBusinessDashboardPage,readBusinessDashboardSummaries,readBusinessWidgetDefinition,validateWidgetResultShape,
+ readBusinessWidgetResult,readBusinessDashboardDefinition,readBusinessDashboardPage,readBusinessDashboardSummaries,readBusinessWidgetDefinition,validateWidgetResultShape,
 } from '../src/business-dashboards.ts'
 import {businessDefinitionCanonicalBody} from '../src/business-definitions.ts'
 import {isPendingRequestEndpoint,pendingRequestEndpoints} from '../src/pending-requests.ts'
@@ -291,4 +291,13 @@ test('按字段取值过滤的共用判据：字段为对象字段标识或 _id�
   assert.match(source,/isBusinessMatchValue\(/,file+' 引用契约取值判据')
   assert.doesNotMatch(source,/length>200|length<=200|\[a-z0-9\]\[a-z0-9_-\]\{0,62\}/,file+' 不再自写一份判据')
  }
+})
+
+
+test('刷新失败与上次成功结果分别表达，只允许成功且过期的结果携带 refreshError',()=>{
+ const result={widgetId:'alert-count',definitionHash:'a'.repeat(64),computedAt:'2026-09-25T00:00:00.000Z',status:'ok',columns:[{name:'n',type:'number'}],rows:[[7]],rowCount:1,truncated:false,bytes:5,stale:true,refreshError:{code:'teloa/source-unavailable',reason:'来源暂不可用'}}
+ assert.deepEqual(readBusinessWidgetResult(result),result)
+ assert.throws(()=>readBusinessWidgetResult({...result,stale:false}),hostInvalid)
+ assert.throws(()=>readBusinessWidgetResult({...result,status:'failed',error:result.refreshError}),hostInvalid)
+ assert.throws(()=>readBusinessWidgetResult({...result,refreshError:{code:'bogus',reason:'失败'}}),hostInvalid)
 })

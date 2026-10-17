@@ -3,12 +3,16 @@ import {initializeWorkControl} from './work-control.ts'
 import {initializeWorkRecovery} from './work-recovery.ts'
 import {initializeWorkBudgets} from './work-budget.ts'
 import {initializeGroupRoutingOutbox} from './group-routing-outbox.ts'
+import {initializeGroupRoutingAttempts} from './group-routing-attempts.ts'
+import {initializeGroupWorkInputs} from './group-work-inputs.ts'
 import {initializeWorkEvents} from './work-events.ts'
 import {initializeWorkProgress} from './work-progress.ts'
 import {initializeWorkRetries} from './work-retries.ts'
 import {initializeBusinessConversationBindings} from './business-conversation-bindings.ts'
 import {initializeRoleMemoryViews} from './role-memory-views.ts'
 import {initializeBusinessRecords} from './business-records.ts'
+import {initializeBusinessChangeSets} from './business-change-sets.ts'
+import {initializeBusinessObjectWork} from './business-object-work-links.ts'
 import {initializeBusinessRecordImports} from './business-record-imports.ts'
 import {initializeBusinessConfigurations} from './business-configuration-store.ts'
 import {initializeBusinessDashboardResources} from './business-dashboard-resource.ts'
@@ -17,8 +21,13 @@ import {initializeResources} from '../capabilities/schema.ts'
 import {initializeRoles} from './roles.ts'
 import {initializeTasks} from './tasks.ts'
 import {initializeProjects} from './projects.ts'
+import {initializeProjectContext} from './project-context.ts'
+import {initializeProjectRuntime} from './project-runtime.ts'
+import {initializeProjectMemoryExtraction} from './project-memory-extraction.ts'
+import {initializeProjectPersonalMemory} from './project-personal-memory.ts'
 import {initializePlans} from './plans.ts'
 import {initializeCollaboration} from './collaboration.ts'
+import {initializeGroupWorkLinks} from './group-work-links.ts'
 import {initializeGroupAgentGrants} from './group-agent-grants.ts'
 import {initializeGroupTasks} from './group-tasks.ts'
 import {initializeGroupAttachments} from './group-attachments.ts'
@@ -61,6 +70,7 @@ import {initializeBusinessWidgets} from './business-widgets.ts'
 import {initializeBusinessDashboards} from './business-dashboards.ts'
 import {initializeBusinessDefinitions} from './business-definition-local.ts'
 import {initializePageCreateDrafts} from './page-create-drafts.ts'
+import {initializeMethodReuse} from './method-reuse.ts'
 import {initializeBusinessTasks} from './business-tasks.ts'
 import {initializeSecurityRequests} from '../security/request-journal.ts'
 import {initializeSecurityActions} from '../security/actions.ts'
@@ -93,8 +103,13 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeRoles(pool)
  await initializeTasks(pool)
  await initializeProjects(pool)
+ await initializeProjectContext(pool)
+ await initializeProjectRuntime(pool)
+ await initializeProjectMemoryExtraction(pool)
+ await initializeProjectPersonalMemory(pool)
  await initializePlans(pool)
  await initializeCollaboration(pool)
+ await initializeGroupWorkLinks(pool)
  await initializeGroupAgentGrants(pool)
  await initializeGroupTasks(pool)
  // 附件原件仓是本人级的，但 `uploaded_in_group_id` 外键指向群，必须排在群表之后。
@@ -135,6 +150,8 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeBusinessData(pool)
  await initializeBusinessSnapshotReferences(pool)
  await initializeBusinessRecords(pool)
+ await initializeBusinessChangeSets(pool)
+ await initializeBusinessObjectWork(pool)
  await initializeBusinessRecordImports(pool)
  // 快照数据仓语义：三个安全转换函数与当前版本 / 保留清理两条索引，依附快照表。
  await initializeBusinessWarehouse(pool)
@@ -155,6 +172,7 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeBusinessResponsibilities(pool)
  await initializeBusinessConversationBindings(pool)
  await initializePageCreateDrafts(pool)
+ await initializeMethodReuse(pool)
  await initializeBusinessTasks(pool)
  await initializeSecurityRequests(pool)
  await initializeSecurityActions(pool)
@@ -167,6 +185,8 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeWorkRecovery(pool)
  await initializeWorkBudgets(pool)
  await initializeGroupRoutingOutbox(pool)
+ await initializeGroupRoutingAttempts(pool)
+ await initializeGroupWorkInputs(pool)
  await initializeWorkEvents(pool)
  await initializeWorkProgress(pool)
  await initializeWorkRetries(pool)

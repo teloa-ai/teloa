@@ -1,0 +1,1389 @@
+{
+ "source": {
+  "catalogVersion": "2026.10.7.1",
+  "indexSha256": "b4698aacabbd4c8ee863282b34f0a6128444eb2511f2c0534efe086864b088d6",
+  "commit": "a655079",
+  "retiredIn": "2026.10.14.5"
+ },
+ "entries": [
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.model.local.qwen3",
+   "kind": "model",
+   "delivery": "reference",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "other"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "model": {
+    "modelId": "qwen3-local",
+    "title": {
+     "zh-CN": "Qwen3（本机）",
+     "en": "Qwen3 (local)"
+    },
+    "summary": {
+     "zh-CN": "通义千问 Qwen3 开源模型，经 Ollama 在本机运行；4B / 8B / 14B 三档，支持工具调用与思考模式。",
+     "en": "Open-weight Qwen3 running locally via Ollama; 4B / 8B / 14B sizes with tool calling and thinking mode."
+    },
+    "capabilities": {
+     "tools": true,
+     "vision": false,
+     "reasoning": true,
+     "structured": true
+    },
+    "contextWindow": 40960,
+    "license": {
+     "spdx": "Apache-2.0",
+     "name": "Apache License 2.0",
+     "url": "https://www.apache.org/licenses/LICENSE-2.0",
+     "tier": "commercial",
+     "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+     {
+      "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+      "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+     }
+    ],
+    "usage": [
+     "chat"
+    ],
+    "form": "local-general",
+    "cloud": null,
+    "local": {
+     "runtime": "ollama"
+    },
+    "variants": [
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 2497293931,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "qwen3:4b",
+        "digest": "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 8,
+       "recommendedRamGb": 16,
+       "vramGb": null
+      },
+      "models": {
+       "id": "qwen3:4b",
+       "contextWindow": 40960,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     },
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 5225388164,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "qwen3:8b",
+        "digest": "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 16,
+       "recommendedRamGb": 16,
+       "vramGb": null
+      },
+      "models": {
+       "id": "qwen3:8b",
+       "contextWindow": 40960,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     },
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 9276198565,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "qwen3:14b",
+        "digest": "sha256:bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 16,
+       "recommendedRamGb": 32,
+       "vramGb": null
+      },
+      "models": {
+       "id": "qwen3:14b",
+       "contextWindow": 40960,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     }
+    ]
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "Apache-2.0",
+    "files": [],
+    "url": "https://www.apache.org/licenses/LICENSE-2.0"
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+      "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+     "ollama"
+    ]
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": null
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.model.local.llama3.1",
+   "kind": "model",
+   "delivery": "reference",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "other"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "model": {
+    "modelId": "llama3-1-local",
+    "title": {
+     "zh-CN": "Llama 3.1（本机）",
+     "en": "Llama 3.1 (local)"
+    },
+    "summary": {
+     "zh-CN": "Meta Llama 3.1 8B 指令模型，经 Ollama 在本机运行；128K 上下文，支持工具调用。",
+     "en": "Meta Llama 3.1 8B instruct running locally via Ollama; 128K context with tool calling."
+    },
+    "capabilities": {
+     "tools": true,
+     "vision": false,
+     "reasoning": false,
+     "structured": true
+    },
+    "contextWindow": 131072,
+    "license": {
+     "spdx": "custom",
+     "name": "Llama 3.1 Community License",
+     "url": "https://www.llama.com/llama3_1/license/",
+     "tier": "restricted",
+     "restrictions": [
+      {
+       "zh-CN": "Llama 3.1 社区许可：须署名“Built with Llama”；月活超 7 亿须另行申请许可。",
+       "en": "Llama 3.1 Community License: attribution “Built with Llama” is required; over 700M monthly active users needs a separate license from Meta."
+      }
+     ]
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+     {
+      "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+      "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+     }
+    ],
+    "usage": [
+     "chat"
+    ],
+    "form": "local-general",
+    "cloud": null,
+    "local": {
+     "runtime": "ollama"
+    },
+    "variants": [
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 4920753328,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "llama3.1:8b",
+        "digest": "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 8,
+       "recommendedRamGb": 16,
+       "vramGb": null
+      },
+      "models": {
+       "id": "llama3.1:8b",
+       "contextWindow": 131072,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     }
+    ]
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://www.llama.com/llama3_1/license/"
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+      "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+     "ollama"
+    ]
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": null
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.model.local.deepseek-r1",
+   "kind": "model",
+   "delivery": "reference",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "other"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "model": {
+    "modelId": "deepseek-r1-local",
+    "title": {
+     "zh-CN": "DeepSeek-R1（本机）",
+     "en": "DeepSeek-R1 (local)"
+    },
+    "summary": {
+     "zh-CN": "DeepSeek-R1 推理模型的 Qwen2.5 蒸馏版，经 Ollama 在本机运行；7B / 14B 两档，长思维链推理。",
+     "en": "Qwen2.5-distilled DeepSeek-R1 reasoning models running locally via Ollama; 7B / 14B sizes with long chain-of-thought."
+    },
+    "capabilities": {
+     "tools": false,
+     "vision": false,
+     "reasoning": true,
+     "structured": false
+    },
+    "contextWindow": 131072,
+    "license": {
+     "spdx": "MIT",
+     "name": "MIT License",
+     "url": "https://opensource.org/license/mit",
+     "tier": "commercial",
+     "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+     {
+      "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+      "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+     },
+     {
+      "zh-CN": "权重按 MIT 发布；7B / 14B 的基座为 Qwen2.5（Apache-2.0），基座许可同样适用。",
+      "en": "Weights are released under MIT; the 7B / 14B bases are Qwen2.5 (Apache-2.0) and that base license also applies."
+     }
+    ],
+    "usage": [
+     "chat"
+    ],
+    "form": "local-general",
+    "cloud": null,
+    "local": {
+     "runtime": "ollama"
+    },
+    "variants": [
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 4683075440,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "deepseek-r1:7b",
+        "digest": "sha256:755ced02ce7befdb13b7ca74e1e4d08cddba4986afdb63a480f2c93d3140383f"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 8,
+       "recommendedRamGb": 16,
+       "vramGb": null
+      },
+      "models": {
+       "id": "deepseek-r1:7b",
+       "contextWindow": 131072,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     },
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 8988112209,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "deepseek-r1:14b",
+        "digest": "sha256:c333b7232bdb521236694ffbb5f5a6b11cc45d98e9142c73123b670fca400b09"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 16,
+       "recommendedRamGb": 32,
+       "vramGb": null
+      },
+      "models": {
+       "id": "deepseek-r1:14b",
+       "contextWindow": 131072,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     }
+    ]
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "MIT",
+    "files": [],
+    "url": "https://opensource.org/license/mit"
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+      "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+     "ollama"
+    ]
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": null
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.model.local.gemma3",
+   "kind": "model",
+   "delivery": "reference",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "other"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "model": {
+    "modelId": "gemma3-local",
+    "title": {
+     "zh-CN": "Gemma 3（本机）",
+     "en": "Gemma 3 (local)"
+    },
+    "summary": {
+     "zh-CN": "Google Gemma 3 开源多模态模型，经 Ollama 在本机运行；4B / 12B 两档，支持图片输入，128K 上下文。",
+     "en": "Google's open-weight multimodal Gemma 3 running locally via Ollama; 4B / 12B sizes with image input and 128K context."
+    },
+    "capabilities": {
+     "tools": false,
+     "vision": true,
+     "reasoning": false,
+     "structured": false
+    },
+    "contextWindow": 131072,
+    "license": {
+     "spdx": "custom",
+     "name": "Gemma Terms of Use",
+     "url": "https://ai.google.dev/gemma/terms",
+     "tier": "restricted",
+     "restrictions": [
+      {
+       "zh-CN": "Gemma 使用条款与禁止使用政策适用；再分发须附带条款。",
+       "en": "The Gemma Terms of Use and Prohibited Use Policy apply; redistribution must include the terms."
+      }
+     ]
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+     {
+      "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+      "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+     }
+    ],
+    "usage": [
+     "chat"
+    ],
+    "form": "local-general",
+    "cloud": null,
+    "local": {
+     "runtime": "ollama"
+    },
+    "variants": [
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 3338801804,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "gemma3:4b",
+        "digest": "sha256:a2af6cc3eb7fa8be8504abaf9b04e88f17a119ec3f04a3addf55f92841195f5a"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 8,
+       "recommendedRamGb": 16,
+       "vramGb": null
+      },
+      "models": {
+       "id": "gemma3:4b",
+       "contextWindow": 131072,
+       "maxTokens": 8192,
+       "input": [
+        "text",
+        "image"
+       ]
+      }
+     },
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 8149190253,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "gemma3:12b",
+        "digest": "sha256:f4031aab637d1ffa37b42570452ae0e4fad0314754d17ded67322e4b95836f8a"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 16,
+       "recommendedRamGb": 32,
+       "vramGb": null
+      },
+      "models": {
+       "id": "gemma3:12b",
+       "contextWindow": 131072,
+       "maxTokens": 8192,
+       "input": [
+        "text",
+        "image"
+       ]
+      }
+     }
+    ]
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://ai.google.dev/gemma/terms"
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+      "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+     "ollama"
+    ]
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": null
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.model.local.phi4",
+   "kind": "model",
+   "delivery": "reference",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "other"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "model": {
+    "modelId": "phi4-local",
+    "title": {
+     "zh-CN": "Phi-4（本机）",
+     "en": "Phi-4 (local)"
+    },
+    "summary": {
+     "zh-CN": "Microsoft Phi-4 14B 小模型，经 Ollama 在本机运行；数学与推理见长，16K 上下文。",
+     "en": "Microsoft Phi-4 14B running locally via Ollama; strong at math and reasoning, 16K context."
+    },
+    "capabilities": {
+     "tools": false,
+     "vision": false,
+     "reasoning": true,
+     "structured": false
+    },
+    "contextWindow": 16384,
+    "license": {
+     "spdx": "MIT",
+     "name": "MIT License",
+     "url": "https://opensource.org/license/mit",
+     "tier": "commercial",
+     "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "experimental",
+    "notes": [
+     {
+      "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+      "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+     }
+    ],
+    "usage": [
+     "chat"
+    ],
+    "form": "local-general",
+    "cloud": null,
+    "local": {
+     "runtime": "ollama"
+    },
+    "variants": [
+     {
+      "quant": "Q4_K_M",
+      "format": "gguf",
+      "sizeBytes": 9053116391,
+      "sources": [
+       {
+        "kind": "ollama",
+        "name": "phi4:14b",
+        "digest": "sha256:ac896e5b8b34a1f4efa7b14d7520725140d5512484457fab45d2a4ea14c69dba"
+       }
+      ],
+      "hardware": {
+       "minRamGb": 16,
+       "recommendedRamGb": 32,
+       "vramGb": null
+      },
+      "models": {
+       "id": "phi4:14b",
+       "contextWindow": 16384,
+       "maxTokens": 8192,
+       "input": [
+        "text"
+       ]
+      }
+     }
+    ]
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "MIT",
+    "files": [],
+    "url": "https://opensource.org/license/mit"
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+      "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": [
+     "ollama"
+    ]
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": null
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.model.minimax",
+   "kind": "model",
+   "delivery": "reference",
+   "version": "1.0.1",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "other"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "model": {
+    "modelId": "minimax",
+    "title": {
+     "zh-CN": "MiniMax",
+     "en": "MiniMax"
+    },
+    "summary": {
+     "zh-CN": "MiniMax 开放平台国内站，国内直连，长上下文，适合 Agent 与工具调用。",
+     "en": "MiniMax platform (China site): reachable directly in China, long context, suited to agents and tool calling."
+    },
+    "capabilities": {
+     "tools": true,
+     "vision": false,
+     "reasoning": true,
+     "structured": false
+    },
+    "contextWindow": 1000000,
+    "license": {
+     "spdx": "custom",
+     "name": "MiniMax 开放平台用户协议",
+     "url": "https://platform.minimaxi.com/protocol/user-agreement",
+     "tier": "commercial",
+     "restrictions": []
+    },
+    "cnReachable": "direct",
+    "support": "supported",
+    "notes": [
+     {
+      "zh-CN": "2026-10-07 按 MiniMax 官方资料核实服务地址与模型名。",
+      "en": "Service address and model ids verified against MiniMax's official materials on 2026-10-07."
+     },
+     {
+      "zh-CN": "请按 Anthropic 兼容接口接入，思考过程与回复正文分开显示；经 OpenAI 兼容接口接入时，思考原文会混在回复里。MiniMax-M3 在该接口默认不开启思考。",
+      "en": "Connect through the Anthropic-compatible API so the model's reasoning is shown apart from the reply; through the OpenAI-compatible API, raw reasoning is mixed into the reply. MiniMax-M3 does not think by default on this API."
+     }
+    ],
+    "usage": [
+     "chat"
+    ],
+    "form": "cloud",
+    "cloud": {
+     "provider": {
+      "kind": "custom",
+      "api": "anthropic-messages",
+      "baseURL": "https://api.minimax.cn/anthropic"
+     },
+     "models": [
+      {
+       "id": "MiniMax-M3",
+       "name": "MiniMax-M3",
+       "contextWindow": 1000000,
+       "maxTokens": null,
+       "input": [
+        "text"
+       ]
+      },
+      {
+       "id": "MiniMax-M2.7",
+       "name": "MiniMax-M2.7",
+       "contextWindow": 204800,
+       "maxTokens": null,
+       "input": [
+        "text"
+       ]
+      }
+     ],
+     "priceBand": "low",
+     "credentialLabel": {
+      "zh-CN": "MiniMax API 密钥",
+      "en": "MiniMax API key"
+     },
+     "signupUrl": "https://platform.minimax.cn"
+    },
+    "local": null,
+    "variants": null
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "custom",
+    "files": [],
+    "url": "https://platform.minimaxi.com/protocol/user-agreement"
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+      "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-10-07",
+    "reviewer": "Teloa"
+   },
+   "artifact": null
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.mcp-supabase-remote",
+   "kind": "connector",
+   "delivery": "managed",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "dev-tools",
+     "cloud-ops"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "connector": {
+    "serverName": "supabase_remote",
+    "title": {
+     "zh-CN": "Supabase 远程（OAuth）",
+     "en": "Supabase Remote (OAuth)"
+    },
+    "summary": {
+     "zh-CN": "Supabase 官方托管远程 MCP 服务，默认以只读模式（read_only=true）连接：可查看项目与数据表、以只读数据库用户执行查询、查看日志与安全建议、查看边缘函数。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，令牌自动刷新，不需要填写访问令牌。",
+     "en": "Supabase's official hosted remote MCP service, connected in read-only mode (read_only=true) by default: browse projects and tables, run queries as a read-only database user, read logs and advisors, and view Edge Functions. Authorized by Teloa via OAuth (dynamic client registration + PKCE) with automatic token refresh; no access token needs to be entered."
+    },
+    "auth": {
+     "kind": "oauth",
+     "supported": true,
+     "scopes": [
+      "organizations:read",
+      "projects:read",
+      "database:read",
+      "analytics:read",
+      "edge_functions:read",
+      "environment:read"
+     ]
+    },
+    "recipe": {
+     "transport": "streamable-http",
+     "url": "https://mcp.supabase.com/mcp?read_only=true"
+    },
+    "tools": [
+     {
+      "name": "list_organizations",
+      "description": {
+       "zh-CN": "列出组织",
+       "en": "List organizations"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_projects",
+      "description": {
+       "zh-CN": "列出项目",
+       "en": "List projects"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_project",
+      "description": {
+       "zh-CN": "获取项目详情",
+       "en": "Get project details"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_project_url",
+      "description": {
+       "zh-CN": "获取项目 API 地址",
+       "en": "Get project API URL"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_tables",
+      "description": {
+       "zh-CN": "列出数据表",
+       "en": "List tables"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_extensions",
+      "description": {
+       "zh-CN": "列出数据库扩展",
+       "en": "List database extensions"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_migrations",
+      "description": {
+       "zh-CN": "列出迁移",
+       "en": "List migrations"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "execute_sql",
+      "description": {
+       "zh-CN": "执行 SQL",
+       "en": "Execute SQL"
+      },
+      "readOnly": false
+     },
+     {
+      "name": "get_logs",
+      "description": {
+       "zh-CN": "查询日志",
+       "en": "Get logs"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_advisors",
+      "description": {
+       "zh-CN": "获取安全与性能建议",
+       "en": "Get security and performance advisors"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "generate_typescript_types",
+      "description": {
+       "zh-CN": "生成 TypeScript 类型",
+       "en": "Generate TypeScript types"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_edge_functions",
+      "description": {
+       "zh-CN": "列出边缘函数",
+       "en": "List Edge Functions"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_edge_function",
+      "description": {
+       "zh-CN": "获取边缘函数",
+       "en": "Get an Edge Function"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_branches",
+      "description": {
+       "zh-CN": "列出开发分支",
+       "en": "List development branches"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "search_docs",
+      "description": {
+       "zh-CN": "搜索 Supabase 文档",
+       "en": "Search Supabase docs"
+      },
+      "readOnly": true
+     }
+    ],
+    "upstreamUrl": "https://supabase.com/docs/guides/getting-started/mcp"
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "LicenseRef-Supabase-Terms",
+    "files": [
+     "LICENSE"
+    ]
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+      "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+     },
+     {
+      "zh-CN": "官方文档确认托管服务默认使用动态客户端注册；本机回环回调（127.0.0.1）尚未实测",
+      "en": "Official docs confirm the hosted server uses dynamic client registration by default; the loopback callback (127.0.0.1) has not been tested yet"
+     },
+     {
+      "zh-CN": "授权只申请服务端公开的资源配置里列出的只读 scope（组织、项目、数据库、分析、边缘函数、环境）；服务端是否按 scope 收窄令牌尚未实测，未收窄时令牌仍具全部权限。连接设置另带 read_only=true（官方参数：以只读 Postgres 用户执行查询，写工具不注册）",
+      "en": "Authorization requests only the read scopes listed in the server's published resource configuration (organizations, projects, database, analytics, edge functions, environment); whether the server narrows the token by scope is untested, and without narrowing the token still carries full permissions. The connection settings also set read_only=true (official parameter: queries run as a read-only Postgres user and write tools are not registered)"
+     },
+     {
+      "zh-CN": "建议只连接非生产项目；只读模式下迁移、部署函数等写工具不可用，存储功能组不在默认启用范围",
+      "en": "Prefer non-production projects; write tools such as migrations and function deploys are unavailable in read-only mode, and the storage feature group is not enabled by default"
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": {
+    "files": [
+     {
+      "path": "LICENSE",
+      "sha256": "cf1c4e2cee5335925a79976f98842dc555b2e87275594f94add1ee16cf7f2118",
+      "size": 385
+     }
+    ],
+    "treeHash": "baf001d783dee8c2092891466c86f4786b7d3cb02def6133c1348104fa21b193"
+   }
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.mcp-gitlab",
+   "kind": "connector",
+   "delivery": "managed",
+   "version": "1.0.0",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "dev-tools"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "connector": {
+    "serverName": "gitlab",
+    "title": {
+     "zh-CN": "GitLab（OAuth，Beta）",
+     "en": "GitLab (OAuth, Beta)"
+    },
+    "summary": {
+     "zh-CN": "GitLab 官方 MCP 服务（GitLab.com），可查看项目、代码、提交、合并请求、流水线与工作项，并可创建或更新工作项、合并请求与评论。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权，令牌自动刷新。",
+     "en": "GitLab's official MCP server (GitLab.com) for browsing projects, code, commits, merge requests, pipelines and work items, and for creating or updating work items, merge requests and notes. Authorized by Teloa via OAuth (dynamic client registration + PKCE) with automatic token refresh."
+    },
+    "auth": {
+     "kind": "oauth",
+     "supported": true,
+     "scopes": [
+      "mcp"
+     ]
+    },
+    "recipe": {
+     "transport": "streamable-http",
+     "url": "https://gitlab.com/api/v4/mcp"
+    },
+    "tools": [
+     {
+      "name": "list_projects",
+      "description": {
+       "zh-CN": "列出项目",
+       "en": "List projects"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_project",
+      "description": {
+       "zh-CN": "获取项目详情",
+       "en": "Get project details"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "search",
+      "description": {
+       "zh-CN": "在 GitLab 中搜索",
+       "en": "Search GitLab"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_repository_file",
+      "description": {
+       "zh-CN": "读取仓库文件",
+       "en": "Read a repository file"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_repository_tree",
+      "description": {
+       "zh-CN": "列出仓库目录",
+       "en": "List repository tree"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_branches",
+      "description": {
+       "zh-CN": "列出分支",
+       "en": "List branches"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_commits",
+      "description": {
+       "zh-CN": "列出提交",
+       "en": "List commits"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_commit",
+      "description": {
+       "zh-CN": "获取提交详情",
+       "en": "Get commit details"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "list_merge_requests",
+      "description": {
+       "zh-CN": "列出合并请求",
+       "en": "List merge requests"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_merge_request",
+      "description": {
+       "zh-CN": "获取合并请求详情",
+       "en": "Get merge request details"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_merge_request_diffs",
+      "description": {
+       "zh-CN": "获取合并请求差异",
+       "en": "Get merge request diffs"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "save_merge_request",
+      "description": {
+       "zh-CN": "创建或更新合并请求",
+       "en": "Create or update a merge request"
+      },
+      "readOnly": false
+     },
+     {
+      "name": "list_work_items",
+      "description": {
+       "zh-CN": "列出工作项",
+       "en": "List work items"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_work_item",
+      "description": {
+       "zh-CN": "获取工作项详情",
+       "en": "Get work item details"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "save_work_item",
+      "description": {
+       "zh-CN": "创建或更新工作项",
+       "en": "Create or update a work item"
+      },
+      "readOnly": false
+     },
+     {
+      "name": "save_note",
+      "description": {
+       "zh-CN": "添加评论",
+       "en": "Add a note"
+      },
+      "readOnly": false
+     },
+     {
+      "name": "list_pipelines",
+      "description": {
+       "zh-CN": "列出流水线",
+       "en": "List pipelines"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_pipeline",
+      "description": {
+       "zh-CN": "获取流水线详情",
+       "en": "Get pipeline details"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_job",
+      "description": {
+       "zh-CN": "获取作业详情与日志",
+       "en": "Get job details and log"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "get_user",
+      "description": {
+       "zh-CN": "获取用户信息",
+       "en": "Get user information"
+      },
+      "readOnly": true
+     }
+    ],
+    "upstreamUrl": "https://docs.gitlab.com/user/model_context_protocol/mcp_server/"
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "LicenseRef-GitLab-Terms",
+    "files": [
+     "LICENSE"
+    ]
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需在 市场 > 连接 页由本人在浏览器中完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+      "en": "The owner must complete OAuth authorization in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+     },
+     {
+      "zh-CN": "官方状态为 Beta；GitLab.com 需在顶级群组设置中允许访问 MCP 服务器",
+      "en": "Officially in Beta; on GitLab.com, MCP server access must be allowed in the top-level group settings"
+     },
+     {
+      "zh-CN": "官方文档确认支持动态客户端注册与 mcp scope；本机回环回调（127.0.0.1）尚未实测",
+      "en": "Official docs confirm dynamic client registration and the mcp scope; the loopback callback (127.0.0.1) has not been tested yet"
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-26",
+    "reviewer": "Teloa"
+   },
+   "artifact": {
+    "files": [
+     {
+      "path": "LICENSE",
+      "sha256": "3841ef8f0a71ca8f4e75982998f3bba78d6e115abcde75ef7c50f8231fa1d330",
+      "size": 391
+     }
+    ],
+    "treeHash": "22f1acdb20dc115e8819542edb6df29724cdf3c318f4acf5a963c842bee21474"
+   }
+  },
+  {
+   "format": "teloa.market-catalog-entry/v1",
+   "id": "teloa.mcp-composio",
+   "kind": "connector",
+   "delivery": "managed",
+   "version": "1.0.2",
+   "upstream": null,
+   "taxonomy": {
+    "functions": [
+     "automation"
+    ],
+    "industries": [
+     "general"
+    ]
+   },
+   "connector": {
+    "serverName": "composio",
+    "title": {
+     "zh-CN": "Composio MCP（1500+ 应用集成）",
+     "en": "Composio MCP (1500+ App Integrations)"
+    },
+    "summary": {
+     "zh-CN": "Composio 官方远程 MCP（Composio Connect），用少量通用工具发现并执行 1000 多个应用的操作。由 Teloa 以 OAuth（动态客户端注册 + PKCE）授权；各应用的账号连接和令牌由 Composio 平台保管，请求经 Composio 服务器转发。",
+     "en": "Composio's official remote MCP (Composio Connect) that discovers and runs actions across 1000+ apps through a few general tools. Authorized by Teloa via OAuth (dynamic client registration + PKCE); app connections and tokens are held by the Composio platform, and requests are relayed through Composio's servers."
+    },
+    "auth": {
+     "kind": "oauth",
+     "supported": true,
+     "scopes": []
+    },
+    "recipe": {
+     "transport": "streamable-http",
+     "url": "https://connect.composio.dev/mcp"
+    },
+    "tools": [
+     {
+      "name": "COMPOSIO_SEARCH_TOOLS",
+      "description": {
+       "zh-CN": "搜索可用的应用工具",
+       "en": "Search available app tools"
+      },
+      "readOnly": true
+     },
+     {
+      "name": "COMPOSIO_MULTI_EXECUTE_TOOL",
+      "description": {
+       "zh-CN": "执行已连接应用的工具",
+       "en": "Execute tools on connected apps"
+      },
+      "readOnly": false
+     }
+    ],
+    "upstreamUrl": "https://docs.composio.dev/mcp"
+   },
+   "modifications": [],
+   "license": {
+    "spdx": "LicenseRef-Composio-Terms",
+    "files": [
+     "LICENSE"
+    ]
+   },
+   "compatibility": {
+    "status": "needs-configuration",
+    "teloa": ">=0.2.0-alpha.6",
+    "dsh": "0.1.7-rc.1",
+    "conditions": [
+     {
+      "zh-CN": "需在 市场 > 连接 页由本人在浏览器中用 Composio 账户完成 OAuth 授权；服务器部署需在配置文件设置 oauth.publicCallbackUrl",
+      "en": "The owner must complete OAuth authorization with a Composio account in a browser from Market > Connections; server deployments must set oauth.publicCallbackUrl in the config file"
+     },
+     {
+      "zh-CN": "Composio 是聚合平台：你在 Composio 连接的各个应用，其账号令牌由 Composio 保管，每次调用都经 Composio 服务器转发到对应应用。COMPOSIO_MULTI_EXECUTE_TOOL 可以修改已连接应用里的数据，Teloa 对它的每次调用逐次确认。",
+      "en": "Composio is an aggregation platform: it holds the account tokens of every app you connect there, and each call is relayed through Composio's servers to that app. COMPOSIO_MULTI_EXECUTE_TOOL can change data in connected apps, and Teloa asks for confirmation on every call."
+     },
+     {
+      "zh-CN": "服务地址为 connect.composio.dev/mcp（旧地址 mcp.composio.dev/mcp 已停用）。授权服务器公开的配置信息支持动态客户端注册（token_endpoint_auth_method none）与 PKCE S256，令牌与注册由 login.composio.dev 处理；2026-09-27 实测客户端注册成功、授权页正常跳转到 Composio 登录页。",
+      "en": "The service address is connect.composio.dev/mcp (the old address mcp.composio.dev/mcp is retired). The authorization server's published configuration supports dynamic client registration (token_endpoint_auth_method none) and PKCE S256, with tokens and registration handled by login.composio.dev; on 2026-09-27 client registration succeeded and the authorization page redirected to the Composio sign-in page."
+     },
+     {
+      "zh-CN": "同一套 OAuth 流程已在 Cloudflare 连接器上用真实账户走通（注册、授权、令牌交换、工具调用）。",
+      "en": "The same OAuth flow has been run end to end with a real account on the Cloudflare connector (registration, consent, token exchange, tool calls)."
+     },
+     {
+      "zh-CN": "登录 Composio 之后的令牌交换与工具调用未经 Teloa 真实账户实测，工具清单按官方文档列出；使用中遇到问题请在资源详情页点「问题反馈」。",
+      "en": "Token exchange and tool calls after signing in to Composio have not been tested with a real account by Teloa, and the tool list follows the official documentation; if something does not work, use Report a problem on the resource page."
+     }
+    ]
+   },
+   "requires": {
+    "tools": [],
+    "network": true,
+    "runtimes": []
+   },
+   "review": {
+    "status": "approved",
+    "reviewedAt": "2026-09-28",
+    "reviewer": "Teloa"
+   },
+   "artifact": {
+    "files": [
+     {
+      "path": "LICENSE",
+      "sha256": "d0ec0c60873bbd8ed1d2a86c203a2468877ef2877d7c29eea427d66e5523e9f4",
+      "size": 361
+     }
+    ],
+    "treeHash": "d5720605978d5a062863c276a621545bfa2e20532e24e0882e40b49033b0b2fb"
+   }
+  }
+ ]
+}

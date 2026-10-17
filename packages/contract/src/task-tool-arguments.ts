@@ -9,9 +9,17 @@
  */
 export const workspaceFileToolNames=['read','write','edit'] as const
 /** 目录身份由宿主和根会话核对；客户端只能回传服务端给出的默认工作目录范围。 */
-export type TaskToolArgumentRule={name:string;allowed:Record<string,string|number|boolean|null>[];anyArguments?:true;workspaceFiles?:'default-workspace'}
+export type TaskToolArgumentRule={name:string;allowed:Record<string,string|number|boolean|null>[];anyArguments?:true;workspaceFiles?:'default-workspace';externalHarness?:'owner-general';workspaceRoot?:string}
 export function isWorkspaceFileRule(rule:TaskToolArgumentRule):boolean{
- return rule.workspaceFiles==='default-workspace'&&(workspaceFileToolNames as readonly string[]).includes(rule.name)&&rule.allowed.length===0&&rule.anyArguments===undefined
+ return rule.workspaceFiles==='default-workspace'&&(workspaceFileToolNames as readonly string[]).includes(rule.name)&&rule.allowed.length===0&&rule.anyArguments===undefined&&rule.externalHarness===undefined&&rule.workspaceRoot===undefined
+}
+/** 仅描述本人外部工具的固定参数面；本人、原生批准和实时目录许可仍由宿主独立核对。 */
+export function isOwnerExternalHarnessRule(rule:TaskToolArgumentRule):boolean{
+ const root=rule.workspaceRoot
+ return rule.externalHarness==='owner-general'&&['subagent_codex','subagent_claude_code'].includes(rule.name)&&rule.allowed.length===0&&rule.anyArguments===undefined&&rule.workspaceFiles===undefined&&typeof root==='string'&&root.length>0&&!/[\x00-\x1f\x7f]/.test(root)&&(/^(?:\/|[A-Za-z]:[\\/])/.test(root))&&!root.split(/[\\/]/).some(part=>part==='.'||part==='..')
+}
+function ownerExternalHarnessArguments(rule:TaskToolArgumentRule,args:unknown):boolean{
+ return fields(args)&&Object.keys(args).every(key=>['prompt','description','cwd'].includes(key))&&typeof args.prompt==='string'&&!!args.prompt.trim()&&typeof args.description==='string'&&!!args.description.trim()&&(args.cwd===undefined||args.cwd===rule.workspaceRoot)
 }
 /** 这里只核对官方工具的参数形状；真实目录与别名边界必须在宿主实际 I/O 处再核对。 */
 function workspaceFileArguments(name:string,args:unknown):boolean{
@@ -34,17 +42,18 @@ export function readTaskToolArgumentRules(rules:unknown):TaskToolArgumentRule[]{
  if(!Array.isArray(rules)||rules.length>128)throw Error('工具参数授权格式不正确。')
  const names=new Set<string>()
  for(const rule of rules){
-  if(typeof rule!=='object'||rule===null||Object.keys(rule).some(key=>key!=='name'&&key!=='allowed'&&key!=='anyArguments'&&key!=='workspaceFiles')||typeof rule.name!=='string'||!rule.name.trim()||names.has(rule.name)||!Array.isArray(rule.allowed)||rule.allowed.length>128||!rule.allowed.every(fields)||'anyArguments'in rule&&(rule.anyArguments!==true||rule.allowed.length>0)||'workspaceFiles'in rule&&(!isWorkspaceFileRule(rule)||'anyArguments'in rule))throw Error('工具参数授权格式不正确。')
+  if(typeof rule!=='object'||rule===null||Object.keys(rule).some(key=>!['name','allowed','anyArguments','workspaceFiles','externalHarness','workspaceRoot'].includes(key))||typeof rule.name!=='string'||!rule.name.trim()||names.has(rule.name)||!Array.isArray(rule.allowed)||rule.allowed.length>128||!rule.allowed.every(fields)||'anyArguments'in rule&&(rule.anyArguments!==true||rule.allowed.length>0)||'workspaceFiles'in rule&&(!isWorkspaceFileRule(rule)||'anyArguments'in rule)||('externalHarness'in rule||'workspaceRoot'in rule)&&!isOwnerExternalHarnessRule(rule))throw Error('工具参数授权格式不正确。')
   names.add(rule.name)
  }
  // 缺省时不写出 anyArguments：既有调用方用 JSON.stringify 逐字串比规则，多一个 undefined 键都会不一致。
- return rules.map(rule=>({name:rule.name,allowed:rule.allowed.map((args:Record<string,string|number|boolean|null>)=>Object.fromEntries(Object.keys(args).sort().map(key=>[key,args[key]!]))),...(rule.anyArguments===true?{anyArguments:true as const}:{}),...(rule.workspaceFiles==='default-workspace'?{workspaceFiles:'default-workspace' as const}:{})}))
+ return rules.map(rule=>({name:rule.name,allowed:rule.allowed.map((args:Record<string,string|number|boolean|null>)=>Object.fromEntries(Object.keys(args).sort().map(key=>[key,args[key]!]))),...(rule.anyArguments===true?{anyArguments:true as const}:{}),...(rule.workspaceFiles==='default-workspace'?{workspaceFiles:'default-workspace' as const}:{}),...(rule.externalHarness==='owner-general'?{externalHarness:'owner-general' as const,workspaceRoot:rule.workspaceRoot!}:{})}))
 }
 export function taskToolArgumentsAllowed(rules:unknown,name:string,args:unknown):boolean{
  let parsed:TaskToolArgumentRule[]
  try{parsed=readTaskToolArgumentRules(rules)}catch{return false}
  const rule=parsed.find(rule=>rule.name===name)
  if(rule&&isWorkspaceFileRule(rule))return workspaceFileArguments(name,args)
+ if(rule&&isOwnerExternalHarnessRule(rule))return ownerExternalHarnessArguments(rule,args)
  // 任意参数仍要求工具调用的顶层是参数对象；对象内的数组与嵌套 JSON 由工具自身 schema 校验。
  if(rule?.anyArguments===true)return argumentsObject(args)
  if(!fields(args))return false

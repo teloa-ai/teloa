@@ -2,6 +2,7 @@ import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,i
 import type {RoleToolGrantService} from '@teloa/backend'
 import {isNativeToolName,nativeGrantToolNames} from './native-tool-access.ts'
 import {businessResultToolNames} from './business-result-tools.ts'
+import {businessChangeSetToolNames} from './business-change-set-tools.ts'
 import {knowledgeSearchToolName} from './local-retrieval.ts'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
 export const roleToolGrantEndpoints=['role-tools/get','role-tools/change','role-tools/candidates']
@@ -27,9 +28,10 @@ export const subagentTaskToolRule:TaskToolArgumentRule={name:subagentTaskToolNam
  * 技能代发 `teloa_skill_http` 例外（规格 2026-09-27 §5.1 审查修复 R1 M-1）：授权按「岗位 × 技能」逐项保存为 `{name,allowed:[{skill}]}`，
  * 这里给的整工具形状只作运行准备复核时的**形状候选**——保存时已按授权页枚举候选逐项核对，运行准备只校验形状，
  * 调用时再按已勾选技能、运行技能快照与当前受管选定安装三重核对（`skill-http-tool.ts`）。授权页候选由 `roleGrantPageRules` 换成逐技能枚举。
+ * `orchestration` 缺省为全部编排名（运行准备只做形状复核）；授权页传岗位预设实际提供的编排工具（`presetOrchestrationToolNames`）。
  */
-export function taskRunToolRules(available:readonly TaskToolArgumentRule[]):TaskToolArgumentRule[]{
- return [...available,subagentTaskToolRule,...[...teamDelegationTools,...orchestrationTools,...businessResultToolNames,knowledgeSearchToolName,skillHttpToolName].map(name=>({name,anyArguments:true as const,allowed:[]}))]
+export function taskRunToolRules(available:readonly TaskToolArgumentRule[],orchestration:readonly string[]=orchestrationTools):TaskToolArgumentRule[]{
+ return [...available,subagentTaskToolRule,...[...teamDelegationTools,...orchestration.filter(name=>(orchestrationTools as readonly string[]).includes(name)),...businessResultToolNames,...businessChangeSetToolNames,knowledgeSearchToolName,skillHttpToolName].map(name=>({name,anyArguments:true as const,allowed:[]}))]
 }
 /**
  * 外发类工具：`@deepseek-ai/dsh-tool-web` 注册的两个模型可见工具名
@@ -44,7 +46,7 @@ export function taskRunToolRules(available:readonly TaskToolArgumentRule[]):Task
  */
 export const externalEgressTools=['web_fetch','web_search'] as const
 /** 岗位授权规则的静态基线；行业 MCP 另由服务端的逐角色活动连接候选补充。 */
-export const roleGrantToolNames=[referenceReadTool,...mcpResourceTools,subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...workspaceFileToolNames,...businessResultToolNames,knowledgeSearchToolName,skillHttpToolName] as readonly string[]
+export const roleGrantToolNames=[referenceReadTool,...mcpResourceTools,subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...workspaceFileToolNames,...businessResultToolNames,...businessChangeSetToolNames,knowledgeSearchToolName,skillHttpToolName] as readonly string[]
 // 技能代发只能按岗位授予（规格 2026-09-27 §5.1）：不进外发类工具（那会被上网闸按 web_fetch 口径改判），自授权集由任务守卫装配期拒绝。
 if((externalEgressTools as readonly string[]).includes(skillHttpToolName))throw Error('技能代发工具不能列入外发类工具。')
 /** 授权页上技能代发候选的展示信息：技能名、来源（岗位本身技能 / 行业职责技能）、目录声明的目标 origin、是否已保存密钥（读不出来时省略）。 */
@@ -181,4 +183,4 @@ export function delegationToolAllowed(allowedTools:readonly string[]|null,name:s
  return allowedTools===null
 }
 /** 静态允许带 `anyArguments` 的工具名；行业 MCP 仅在服务端给出逐工具候选时允许该形式。 */
-export const unconstrainedGrantToolNames=[subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...businessResultToolNames,knowledgeSearchToolName] as readonly string[]
+export const unconstrainedGrantToolNames=[subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...businessResultToolNames,...businessChangeSetToolNames,knowledgeSearchToolName] as readonly string[]

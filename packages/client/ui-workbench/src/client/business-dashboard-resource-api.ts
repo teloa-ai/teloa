@@ -5,7 +5,7 @@ import type {BusinessBuilderApplyInput,BusinessBuilderPreviewInput} from './busi
 type Call=(endpoint:string,input:unknown,signal?:AbortSignal)=>Promise<unknown>
 export type DashboardPrepareInput={requestId:string;contentId:string;contentHash:string;resourceId:string;target:{kind:'new';title:string}|{kind:'existing';scope:string;expectedVersion:number};objectMapping?:Record<string,string>}
 export type DashboardUpgradeChoice='keep-local'|'use-incoming'
-export type DashboardUpgradeInput={requestId:string;adoptionId:string;candidateContentId:string;candidateContentHash:string;resourceId:string;expectedConfigurationVersion:number;choices?:Record<string,DashboardUpgradeChoice>}
+export type DashboardUpgradeInput={requestId:string;adoptionId:string;candidateContentId:string;candidateContentHash:string;resourceId:string;expectedConfigurationVersion:number;choices?:Record<string,DashboardUpgradeChoice>;mode?:'upgrade'|'restore'}
 export type DashboardUpgradeConflict={key:string;entity:'definition'|'page'|'home-page';id:string;kind?:string;baseline:unknown;current:unknown;incoming:unknown}
 export type DashboardPreviewInput=Omit<BusinessBuilderPreviewInput,'sessionId'>
 export type DashboardApplyInput=Omit<BusinessBuilderApplyInput,'sessionId'>

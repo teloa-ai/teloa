@@ -41,3 +41,12 @@ test('成果拉取 effect 以拉取键为依赖，不再只盯来源身份', asy
   const wiring=source.slice(start,source.indexOf('\n',source.indexOf('artifactApi.list',start)))
   assert.match(wiring,/\[artifactFetchKey,artifactApi\]/,'依赖里少了拉取键，台账晚到就再也不会补拉')
 })
+
+test('进入原持久任务就拉取成果，不要求先打开成果面板；当前面板优先于任务页选择',()=>{
+ const rows=[task('t1','persistent'),task('t2','persistent'),task('local','local')]
+ assert.equal(artifactListFetchKey(null,rows,'t1'),'task t1')
+ assert.equal(artifactListFetchKey(null,[],'t1'),'')
+ assert.equal(artifactListFetchKey(null,rows,'local'),'')
+ assert.equal(artifactListFetchKey({source:{kind:'session',id:'s1'}},rows,'t1'),'session s1')
+ assert.equal(artifactListFetchKey({source:{kind:'task',id:'t2'}},rows,'t1'),'task t2')
+})

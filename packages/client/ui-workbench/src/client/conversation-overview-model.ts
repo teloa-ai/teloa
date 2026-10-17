@@ -1,5 +1,6 @@
 import type {SessionBinding,SessionEventLikeEntry,SessionSnapshot} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {ConversationOverviewResourceGroup} from './conversation-overview-resources.js'
+import type {ExternalHarnessWorkView} from '@teloa/contract'
 
 export type ConversationOverviewStatus='idle'|'running'|'waiting'|'stopping'|'stopped'|'failed'|'completed'|'unknown'
 export type ConversationOverviewEventEntry=Extract<SessionEventLikeEntry,{type:'event'}>
@@ -27,6 +28,7 @@ export type ConversationOverviewWork={
  readonly jobId?:string
  readonly childSessionId?:string
  readonly runId?:string
+ readonly external?:boolean
  readonly detail?:string
  readonly progress?:string
  readonly startedAt?:number
@@ -51,7 +53,7 @@ export type ConversationOverviewSnapshot={
 export type ConversationOverviewSource<T>={getSnapshot:()=>T;subscribe:(listener:()=>void)=>()=>void}
 /** JobView 的公开只读字段；不会把浏览器模型耦合到宿主 JobRegistry。 */
 export type ConversationOverviewJob={readonly id:string;readonly kind:string;readonly label:string;readonly owner?:string;readonly status:string;readonly progress?:string;readonly detail?:string;readonly startedAt:number;readonly finishedAt?:number}
-export type ConversationOverviewChild={readonly id:string;readonly mode:'one-shot'|'continuable'|'unknown';readonly label?:string;readonly createdAt:number;readonly running?:boolean;readonly parentAvailable?:boolean;readonly entries?:readonly SessionEventLikeEntry[];readonly lastTurnCompleted?:boolean}
+export type ConversationOverviewChild={readonly id:string;readonly mode:'one-shot'|'continuable'|'external'|'unknown';readonly label?:string;readonly createdAt:number;readonly running?:boolean;readonly parentAvailable?:boolean;readonly entries?:readonly SessionEventLikeEntry[];readonly lastTurnCompleted?:boolean;readonly external?:ExternalHarnessWorkView}
 /** 只接受生产者提供的稳定关系，禁止按名称、标签或启动时间猜测同一执行。 */
 export type ConversationOverviewWorkLink={readonly jobId:string;readonly childSessionId:string}
 export type ConversationOverviewInput={
@@ -166,6 +168,10 @@ function todoSteps(sessionId:string,todos:unknown,seq:number|undefined):Conversa
  return rows.map((row,index)=>({id:`${sessionId}:todo:${seq??'projection'}:${index}`,content:row!.content as string,status:row!.status==='in_progress'?'running':row!.status as 'pending'|'completed',source:'todo',sessionId,...(seq===undefined?{}:{seq})}))
 }
 function childStatus(child:ConversationOverviewChild):{status:ConversationOverviewStatus;detail?:string;finishedAt?:number}{
+ if(child.mode==='external'){
+  const status=child.external?.status??'unknown'
+  return {status:status==='aborted'?'stopped':status==='reserved'?'waiting':status,...(['completed','failed','aborted'].includes(status)?{finishedAt:child.external!.observedAt}:{})}
+ }
  if(child.running===true)return {status:'running'}
  const latest=lastEntry(ownEntries(child.entries??[]),entry=>entry.event.type==='turn/start'||entry.event.type==='turn/end')?.event
  if(latest?.type==='turn/end')return {status:terminalStatus(latest.data.reason.kind),detail:latest.data.reason.kind,finishedAt:latest.time}
@@ -194,7 +200,7 @@ export function projectConversationOverviewSnapshot(input:ConversationOverviewIn
  for(const child of children.values()){
   if(linkedChildren.has(child.id))continue
   const state=childStatus(child)
-  work.push({id:`${input.sessionId}:child:${child.id}`,kind:'subagent',label:child.label??child.id,...state,sessionId:child.id,parentSessionId:input.sessionId,childSessionId:child.id,startedAt:child.createdAt,canStop:state.status==='running'&&child.mode!=='unknown'&&child.parentAvailable!==false,canOpenRecord:true})
+  work.push({id:`${input.sessionId}:child:${child.id}`,kind:'subagent',label:child.label??child.id,...state,sessionId:child.mode==='external'?input.sessionId:child.id,parentSessionId:input.sessionId,childSessionId:child.id,...child.mode==='external'?{external:true}:{},startedAt:child.createdAt,canStop:state.status==='running'&&child.mode!=='unknown'&&(child.mode!=='external'||child.external?.canStop===true)&&child.parentAvailable!==false,canOpenRecord:child.mode!=='external'})
  }
  let status:ConversationOverviewStatus
  if(input.session.removed||input.session.openState!=='open'||input.connected===false)status='unknown'
@@ -243,6 +249,6 @@ function catalogChildren(value:unknown):ConversationOverviewChild[]{
  if(!Array.isArray(value))return []
  return value.flatMap(item=>{
   const child=record(item)
-  return child&&typeof child.id==='string'&&typeof child.createdAt==='number'&&['one-shot','continuable','unknown'].includes(String(child.mode))?[{id:child.id,createdAt:child.createdAt,mode:child.mode as ConversationOverviewChild['mode'],...(typeof child.label==='string'?{label:child.label}:{})}]:[]
+  return child&&typeof child.id==='string'&&typeof child.createdAt==='number'&&['one-shot','continuable','external','unknown'].includes(String(child.mode))?[{id:child.id,createdAt:child.createdAt,mode:child.mode as ConversationOverviewChild['mode'],...(typeof child.label==='string'?{label:child.label}:{})}]:[]
  })
 }

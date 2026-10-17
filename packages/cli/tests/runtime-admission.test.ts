@@ -47,8 +47,11 @@ test('目录观察仍执行原认证处理并保留取消；其他方法和相�
  }
 })
 test('从官方包依赖范围加载网关，拒绝未验证的载体版本',async()=>{
- assert.equal(typeof await loadHost('@deepseek-ai/dsh-api-gateway','0.2.1-alpha.1'),'function')
+ assert.equal(typeof await loadHost('@deepseek-ai/dsh-api-gateway','0.2.1-rc.2'),'function')
  await assert.rejects(loadHost('@deepseek-ai/dsh-api-gateway','unverified'),/版本尚未验证/)
+})
+test('实际发行网关入口按固定alpha.3装配停止保护',async()=>{
+ const runtime=await import('../src/runtime-gateway.ts');assert.equal(typeof runtime.default,'function')
 })
 test('HTTP 关闸返回 503，管理通道保留认证处理，解闸后业务可用',async()=>{
  const gate=new RuntimeAdmission(),routes:any[]=[]
@@ -69,13 +72,16 @@ test('官方 wireStream 入口关闸后不解析请求，解闸后恢复官方�
  const gatewayRequire=createRequire(dsh.resolve('@deepseek-ai/dsh-api-gateway/package.json'))
  const {Context}=await import(dsh.resolve('@deepseek-ai/cordis'))
  const {default:Registry}=await import(gatewayRequire.resolve('@deepseek-ai/dsh-typert-registry'))
+ const {default:RemoteAccess}=await import(gatewayRequire.resolve('@deepseek-ai/dsh-api-remote-access'))
  const {default:Gateway}=await import(dsh.resolve('@deepseek-ai/dsh-api-gateway'))
+ const {Peer}=await import(gatewayRequire.resolve('@deepseek-ai/dsh-client-connection'))
  const ctx=new Context(),gate=new RuntimeAdmission()
  t.after(async()=>{gate.resume();await ctx.fiber.dispose()})
- await ctx.plugin(Registry);await ctx.plugin(guardedGateway(Gateway,gate))
+ await ctx.plugin(Registry);await ctx.plugin(RemoteAccess);await ctx.plugin(guardedGateway(Gateway,gate))
  const gateway=Reflect.get(ctx,'typertGateway')
- const open=()=>gateway.wireStream.open('acceptance/missing',{args:{}},undefined,undefined,new AbortController().signal)
- const local=()=>gateway.stream({namespace:'acceptance',method:'missing',args:{}})
+ const peer=new Peer(ctx,{principal:{kind:'owner'}})
+ const open=()=>gateway.wireStream.open('acceptance/missing',{args:{}},undefined,peer,new AbortController().signal)
+ const local=()=>gateway.stream({namespace:'acceptance',method:'missing',args:{},peer})
  await gate.quiesce()
  await assert.rejects(open,/停止/)
  await assert.rejects(local,/停止/)

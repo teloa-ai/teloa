@@ -3,7 +3,7 @@
   "id": "teloa.model.minimax",
   "kind": "model",
   "delivery": "reference",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "upstream": null,
   "taxonomy": {
     "functions": [
@@ -45,15 +45,19 @@
     "support": "supported",
     "notes": [
       {
-        "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
-        "en": "Service address and model ids verified against official docs on 2026-09-26."
+        "zh-CN": "2026-10-07 按 MiniMax 官方资料核实服务地址与模型名。",
+        "en": "Service address and model ids verified against MiniMax's official materials on 2026-10-07."
+      },
+      {
+        "zh-CN": "请按 Anthropic 兼容接口接入，思考过程与回复正文分开显示；经 OpenAI 兼容接口接入时，思考原文会混在回复里。MiniMax-M3 在该接口默认不开启思考。",
+        "en": "Connect through the Anthropic-compatible API so the model's reasoning is shown apart from the reply; through the OpenAI-compatible API, raw reasoning is mixed into the reply. MiniMax-M3 does not think by default on this API."
       }
     ],
     "cloud": {
       "provider": {
         "kind": "custom",
-        "api": "openai-completions",
-        "baseURL": "https://api.minimax.cn/v1"
+        "api": "anthropic-messages",
+        "baseURL": "https://api.minimax.cn/anthropic"
       },
       "models": [
         {
@@ -109,7 +113,7 @@
   },
   "review": {
     "status": "approved",
-    "reviewedAt": "2026-09-26",
+    "reviewedAt": "2026-10-07",
     "reviewer": "Teloa"
   }
 }

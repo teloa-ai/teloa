@@ -1,5 +1,5 @@
 import {isArtifactFile} from '@teloa/contract'
-import {artifactMarkdown,type Artifact,type ArtifactSourceRef} from './artifact-preview.ts'
+import {artifactMarkdown,createArtifact,type Artifact,type ArtifactSource,type ArtifactSourceRef} from './artifact-preview.ts'
 import {fileBytes,fileText,fileImageType,type ArtifactFile} from './artifact-files.ts'
 import type {ArtifactApi} from './artifact-api.ts'
 import type {ConversationOverviewArtifact} from './conversation-overview-model.js'
@@ -23,25 +23,32 @@ function snapshotFile(file:ArtifactFile):Pick<Extract<ConversationOverviewRegist
 
 /** 仅转换已注册成果。每份引用保存自己的版本内容，不再读取实时文件。 */
 export function projectConversationOverviewArtifacts(sessionId:string,artifacts:readonly Artifact[],t:TeloaTranslate):ConversationOverviewRegisteredArtifacts{
+ return projectRegisteredArtifactVersions({kind:'session',id:sessionId},artifacts,t)
+}
+
+/** 共享固定版本复用同一快照投影；task 来源仍保留原任务身份，不借作原生会话。 */
+export function projectRegisteredArtifactVersions(expected:Extract<ArtifactSourceRef,{kind:'session'|'task'}>,artifacts:readonly Artifact[],t:TeloaTranslate):ConversationOverviewRegisteredArtifacts{
+ // 兼容概况模型的来源键字段；任务预览不使用此键绑定原生输入或导航。
+ const sessionId=expected.id
  const rows:ConversationOverviewArtifact[]=[],references=new Map<string,ConversationOverviewRegisteredArtifactRef>(),seen=new Set<string>()
  for(const input of artifacts){
   if(input.storage!=='persistent')continue
-  if(input.source.kind!=='session'||input.source.id!==sessionId)throw invalid('成果不属于来源会话。','teloa/forbidden')
+  if(input.source.kind!==expected.kind||input.source.id!==expected.id)throw invalid('成果不属于来源会话。','teloa/forbidden')
   if(seen.has(input.id)||!input.versions.length)throw invalid('成果身份或版本目录不正确。')
   seen.add(input.id)
   const artifact=structuredClone(input),numbers=artifact.versions.map(version=>version.number)
   if(numbers.some(number=>!Number.isSafeInteger(number)||number<1)||new Set(numbers).size!==numbers.length)throw invalid('成果版本身份不正确。')
   const latest=Math.max(...numbers)
   for(const version of [...artifact.versions].sort((left,right)=>right.number-left.number)){
-   if(version.source.ref.kind!=='session'||version.source.ref.id!==sessionId)throw invalid('成果版本不属于来源会话。','teloa/forbidden')
+   if(version.source.ref.kind!==expected.kind||version.source.ref.id!==expected.id)throw invalid('成果版本不属于来源会话。','teloa/forbidden')
    const isHistorical=version.number!==latest,source=Object.freeze({...version.source.ref}),markdown=artifactMarkdown(artifact,version.number,t)
    const exportName=downloadName('teloa-'+artifact.id+'-v'+version.number+'.md')
-   const row:ConversationOverviewArtifact=Object.freeze({id:JSON.stringify(['registered',sessionId,artifact.id,version.number,'markdown']),sessionId,path:exportName,label:version.title+'.md',kind:'Markdown',status:'unknown',version:'v'+version.number,isHistorical})
+   const row:ConversationOverviewArtifact=Object.freeze({id:JSON.stringify(['registered',sessionId,artifact.id,version.number,'markdown']),sessionId,path:exportName,label:/\.(?:md|markdown|mdown)$/i.test(version.title)?version.title:version.title+'.md',kind:'Markdown',status:'unknown',version:'v'+version.number,isHistorical})
    rows.push(row);references.set(row.id,Object.freeze({kind:'markdown',row,artifactId:artifact.id,version:version.number,sessionId,source,markdown,text:markdown,previewKind:'markdown',imageType:null,bytes:new TextEncoder().encode(markdown),downloadName:exportName,mimeType:'text/markdown;charset=utf-8'}))
    const fileIds=new Set<string>()
    for(const file of version.files??[]){
     if(!isArtifactFile(file))throw invalid('成果文件快照格式不正确。')
-    if(file.sessionId!==sessionId)throw invalid('成果文件不属于来源会话。','teloa/forbidden')
+    if(expected.kind==='session'&&file.sessionId!==sessionId)throw invalid('成果文件不属于来源会话。','teloa/forbidden')
     const id=JSON.stringify(['registered',sessionId,artifact.id,version.number,'file',file.id,file.sha256])
     if(fileIds.has(id))throw invalid('同一成果版本重复引用文件。')
     fileIds.add(id)
@@ -62,10 +69,39 @@ export function conversationOverviewFileReference(row:ConversationOverviewArtifa
  return Object.freeze({kind:'file',row:Object.freeze(snapshotRow),sessionId:file.sessionId,source:Object.freeze({kind:'session' as const,id:file.sessionId}),...snapshotFile(file)})
 }
 
-export async function loadConversationOverviewArtifacts(api:Pick<ArtifactApi,'list'>,sessionId:string,t:TeloaTranslate):Promise<ConversationOverviewRegisteredArtifacts>{
- return projectConversationOverviewArtifacts(sessionId,await api.list(sessionId),t)
+export async function loadConversationOverviewArtifacts(api:Pick<ArtifactApi,'conversation'>,sessionId:string,t:TeloaTranslate):Promise<ConversationOverviewRegisteredArtifacts>{
+ const artifacts=await api.conversation(sessionId),rows:ConversationOverviewArtifact[]=[],references=new Map<string,ConversationOverviewRegisteredArtifactRef>(),seen=new Set<string>()
+ for(const artifact of artifacts){
+  if(seen.has(artifact.id)||artifact.source.kind!=='task'&&(artifact.source.kind!=='session'||artifact.source.id!==sessionId))throw invalid('会话成果目录身份不一致。','teloa/forbidden')
+  seen.add(artifact.id)
+  const projection=projectRegisteredArtifactVersions(artifact.source,[artifact],t)
+  for(const reference of projection.references.values()){
+   // sessionId 是当前展示上下文；source 和文件快照始终保留真实归属。
+   const row=Object.freeze({...reference.row,sessionId})
+   rows.push(row);references.set(row.id,Object.freeze({...reference,row,sessionId}))
+  }
+ }
+ return {rows:Object.freeze(rows),references}
 }
 /** 预览与下载都取同一份引用；下载返回副本，避免调用方修改存档中的内容。 */
 export function conversationOverviewArtifactDownload(reference:ConversationOverviewRegisteredArtifactRef){
  return {name:reference.downloadName,type:reference.mimeType,bytes:reference.bytes.slice()}
+}
+
+/** 预览中的单个固定文件可直接收存；既有相同快照只打开原版本，未决保存仍沿原 journal 核对。 */
+export async function saveConversationOverviewFile(api:Pick<ArtifactApi,'list'|'save'|'pendingFor'>,source:ArtifactSource,file:ArtifactFile,isCurrent:()=>boolean){
+ if(source.ref.kind!=='session'||file.sessionId!==source.ref.id||!isArtifactFile(file)||!isCurrent())throw invalid('文件与当前会话来源不一致。','teloa/source-unavailable')
+ const snapshot=structuredClone(file),sessionId=source.ref.id
+ if(!api.pendingFor(sessionId).some(row=>row.key==='create:'+sessionId)){
+  const artifacts=await api.list(sessionId)
+  if(!isCurrent())throw invalid('文件来源已切换。','teloa/source-unavailable')
+  for(const artifact of artifacts){
+   if(artifact.source.kind!=='session'||artifact.source.id!==sessionId)throw invalid('成果不属于来源会话。','teloa/forbidden')
+   for(const version of [...artifact.versions].reverse())if(version.files?.some(row=>row.sessionId===snapshot.sessionId&&row.path===snapshot.path&&row.sha256===snapshot.sha256))return {artifact,id:artifact.id,version:version.number}
+  }
+ }
+ if(!isCurrent())throw invalid('文件来源已切换。','teloa/source-unavailable')
+ const candidate=createArtifact({id:crypto.randomUUID(),source,title:snapshot.path.split('/').at(-1)!,sections:[{id:'file',title:'文件快照',text:snapshot.path}],files:[snapshot],note:'本人保存预览中的文件快照。',now:new Date().toISOString()})
+ const saved=await api.save(candidate,true)
+ return {artifact:saved,id:saved.id,version:saved.versions.at(-1)!.number}
 }

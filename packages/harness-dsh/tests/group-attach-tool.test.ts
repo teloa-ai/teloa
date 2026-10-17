@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import type {Context} from '@deepseek-ai/cordis'
-import {groupAttachToolName,registerGroupAttachTool,type GroupAttachRunContext} from '../src/group-attach-tool.ts'
+import {WorkError} from '@teloa/contract'
+import {groupAttachToolName,registerGroupAttachTool,type GroupAttachRunContext,type GroupAttachToolPorts} from '../src/group-attach-tool.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
 import {roleMemoryProposalToolName} from '../src/role-memory.ts'
 import {roleDailyDigestToolNames} from '../src/role-daily-log.ts'
@@ -19,8 +20,9 @@ const requestId='22222222-2222-4222-8222-222222222222'
 const path='out/report.md'
 const sha=(value:string)=>value.repeat(64).slice(0,64)
 
-function harness(context:(sessionId:string)=>Promise<GroupAttachRunContext|undefined>){
+function harness(context:(sessionId:string)=>Promise<GroupAttachRunContext|undefined>,storage:Partial<GroupAttachToolPorts>={}){
  const tools:Tool[]=[],pre:PreHandler[]=[],disposed:((value:{id:string})=>void)[]=[]
+ const saved=new Map<string,{files:{path:string;sha256:string}[];noVision:boolean}>(),entry=(sessionId:string,nativeRequestId:string)=>{const key=sessionId+'\0'+nativeRequestId;let value=saved.get(key);if(!value){value={files:[],noVision:false};saved.set(key,value)}return value}
  const ctx={
   agents:{get:()=>undefined},
   tools:{register:(tool:Tool)=>{tools.push(tool)}},
@@ -30,7 +32,9 @@ function harness(context:(sessionId:string)=>Promise<GroupAttachRunContext|undef
    return ()=>{}
   },
  } as unknown as Context
- const registry=registerGroupAttachTool(ctx,{context:async id=>context(id)})
+ const registry=registerGroupAttachTool(ctx,{context:async id=>context(id),
+  declare:async(sessionId,nativeRequestId,claim)=>{const value=entry(sessionId,nativeRequestId),duplicate=value.files.some(file=>file.path===claim.path&&file.sha256===claim.sha256);if(!duplicate){if(value.files.length>=8)throw new WorkError('teloa/conflict','本次运行最多声明 8 个文件');value.files.push(claim)}return {...structuredClone(value),duplicate}},
+  markNoVision:async(sessionId,nativeRequestId)=>{const value=entry(sessionId,nativeRequestId);value.noVision=true;return structuredClone(value)},...storage})
  const tool=tools.find(item=>item.name===groupAttachToolName)!
  const gate=async(name:string,agent:boolean,signal=new AbortController().signal)=>{
   let reached=false
@@ -42,6 +46,26 @@ function harness(context:(sessionId:string)=>Promise<GroupAttachRunContext|undef
 
 const exec={agent:{session},signal:new AbortController().signal,callId:'call-1'}
 const inGroup=async():Promise<GroupAttachRunContext>=>({canPost:true,nativeRequestId:requestId})
+
+test('声明先持久化才返回成功，失败不留内存假声明；无视觉标记同样等待持久化',async()=>{
+ const writes:unknown[]=[],manifest={files:[] as {path:string;sha256:string}[],noVision:false}
+ let fail=true,release:()=>void=()=>{}
+ const held=new Promise<void>(resolve=>{release=resolve})
+ const {tool,registry}=harness(inGroup,{
+  declare:async(sessionId,nativeRequestId,claim)=>{if(fail)throw Error('offline');writes.push([sessionId,nativeRequestId,claim]);manifest.files.push(claim);return {...manifest,duplicate:false}},
+  markNoVision:async(sessionId,nativeRequestId)=>{await held;writes.push([sessionId,nativeRequestId,'noVision']);manifest.noVision=true;return manifest},
+ })
+ await assert.rejects(tool.execute({path,sha256:sha('a')},exec),{code:'teloa/dependency-unavailable'})
+ assert.deepEqual(registry.claims('run-session',requestId),[])
+ fail=false
+ await tool.execute({path,sha256:sha('a')},exec)
+ assert.deepEqual(writes,[['run-session',requestId,{path,sha256:sha('a')}]]);assert.deepEqual(registry.claims('run-session',requestId),manifest.files)
+ const marking=registry.markNoVision('run-session',requestId)
+ assert.equal(registry.noVision('run-session',requestId),false)
+ release();await marking
+ assert.equal(registry.noVision('run-session',requestId),true)
+ assert.equal(writes.length,2)
+})
 
 test('没有群执行上下文的运行里工具不可用，闸给固定中文理由且不含会话身份',async()=>{
  const {tool,gate}=harness(async()=>undefined)
@@ -126,10 +150,10 @@ test('登记表按 (sessionId, nativeRequestId) 归集，清空后不跨轮次�
  assert.deepEqual(registry.claims('run-session',requestId),[])
 })
 
-test('无视觉登记只落在本次运行身份上，取用后仍随清空一起消失',async()=>{
+test('无视觉缓存只落在本次运行身份上，持久确认后取用，清空缓存不跨轮次残留',async()=>{
  const {registry}=harness(inGroup)
  assert.equal(registry.noVision('run-session',requestId),false)
- registry.markNoVision('run-session',requestId)
+ await registry.markNoVision('run-session',requestId)
  assert.equal(registry.noVision('run-session',requestId),true)
  assert.equal(registry.noVision('run-session','33333333-3333-4333-8333-333333333333'),false)
  registry.clear('run-session',requestId)
@@ -170,24 +194,25 @@ const wiring=await readFile(new URL('../src/index.ts',import.meta.url),'utf8'),s
 test('装配：自授权集在既有两族之后追加本工具，顺序与既有两项不变',()=>{
  // 自授权集已抽成常量模块（会话内安装一期 功能验证）；尾部允许再追加别的自授权工具（本工具之后已有 teloa_group_react），但既有两族与本工具的相对次序不许动。
  assert.equal(selfAuthorizedSource.includes('[roleMemoryProposalToolName,...roleDailyDigestToolNames,groupAttachToolName'),true)
- assert.equal(wiring.includes('[...selfAuthorizedToolNames],async(sessionId,signal)=>{'),true)
+ assert.equal(wiring.includes('[...selfAuthorizedToolNames],readTaskBusinessBinding,subagentDelegation,'),true)
  // 工具名只以常量进入装配，不写字面量：另起一份清单绕过登记闸会红。
  assert.equal(wiring.includes(`'${groupAttachToolName}'`),false);assert.equal(selfAuthorizedSource.includes(`'${groupAttachToolName}'`),false)
  assert.equal(wiring.includes('registerGroupAttachTool(toolRegistrationContext,{context:'),true)
 })
 
 test('装配：运行上下文的 groupContext 端口绑上附件字节端口（T7 评审 HIGH）',()=>{
- assert.equal(wiring.includes('groupContext:(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts)'),true)
- // 后端策略类型与其余五处四参调用不动：全仓只有这一处传第五参。
+ assert.equal(wiring.includes('groupContext:async(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool)'),true)
+ // 附件字节与真实连接池共同进入运行上下文，不能回落成缺失这两个端口的裸函数。
  assert.equal(wiring.includes('groupContext:readRunGroupContext'),false)
  assert.equal(wiring.includes('const runGroupFilePorts:RunGroupFilePorts={readAttachmentBytes:'),true)
 })
 
-test('装配：发布器同时拿到声明文件、无视觉登记与两个端口，定版服务按四参构造',()=>{
+test('装配：发布器拿到声明文件、无视觉登记、附件字节与群路由持久服务',()=>{
  for(const anchor of [
-  'run:(sessionId,nativeRequestId)=>({files:groupAttachClaims.claims(sessionId,nativeRequestId),noVision:groupAttachClaims.noVision(sessionId,nativeRequestId)})',
+  'run:async(sessionId,nativeRequestId)=>(await groupResultManifests()).read(owner,{sessionId,nativeRequestId})',
+  'new GroupRunResultManifestService((await resources.database()).pool,runGroupFilePorts)',
   'clear:(sessionId,nativeRequestId)=>groupAttachClaims.clear(sessionId,nativeRequestId)',
-  ',artifacts,runGroupFilePorts).post(owner,redactRunMessage(input,safeKnown))',
+  ',artifacts,runGroupFilePorts,groupRoutingPersistence).post(owner,redactRunMessage(input,safeKnown))',
   "readArtifactFile('artifacts/files/read',{sessionId,path:claim.path},signal)",
   'runPorts.groupPrompt={',
  ])assert.equal(wiring.includes(anchor),true,anchor)

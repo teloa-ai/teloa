@@ -1,0 +1,2 @@
+/** 内置员工头像键；身份定义与可移植模板共享同一白名单。 */
+export const ROLE_AVATAR_KEYS = Object.freeze(['ui-designer', 'project', 'researcher', 'sales', 'supporter', 'commerce', 'developer', 'product-manager', 'data-analyst', 'qa-tester', 'it-operations', 'security-analyst', 'marketing', 'content-writer', 'brand-designer', 'hr', 'recruiter', 'finance', 'legal', 'procurement', 'admin', 'executive-assistant', 'business-analyst', 'trainer', 'general', 'general-research', 'general-creative', 'general-execution'])

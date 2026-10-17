@@ -7,6 +7,7 @@ import base from './TaskPage.module.css'
 import {useI18n} from './i18n/provider.js'
 import {localizedMarketItemCopy} from './market-home-presentation.js'
 import {localizedIndustryResourceTitle} from './industry-template-presentation.js'
+import {findMarketItem,fixedMarketItemId} from './market-item-identity.ts'
 const choiceKey=(choice:IndustryReferenceChoice)=>JSON.stringify([choice.resourceId,choice.sourceContentId??null,choice.sourceItemId,choice.sourceResourceId,choice.sourceHash])
 export function IndustryReferences({item,items,save,embedded=false,requireAll=false}:{item:MarketItem;items:readonly MarketItem[];save:(item:MarketItem)=>void|Promise<void>;embedded?:boolean;requireAll?:boolean}){
  const {locale,t}=useI18n()
@@ -16,13 +17,18 @@ export function IndustryReferences({item,items,save,embedded=false,requireAll=fa
  if(!isIndustryManifest(item.manifest)||!item.packageContent)return null
  const refs=item.manifest.resources.filter(row=>row.source.kind==='public')
  if(!refs.length)return null
+ // 已固定包只展示原快照；同字节的另一声明也不能替换其中固定的 sourceContentId。
+ if(item.contentStorage)return <section className={css.sheet} aria-label={t('market.industry.references.aria')}><h3>{t('market.industry.references.title')}</h3><dl>{refs.map(resource=>{
+  const fixed=item.packageContent!.resolved?.find(row=>row.resourceId===resource.id),source=fixed?.sourceContentId?findMarketItem(items,fixedMarketItemId(fixed.sourceContentId)):undefined
+  return <div key={resource.id}><dt>{localizedIndustryResourceTitle(resource,locale)}</dt><dd>{fixed?(source?localizedMarketItemCopy(source,locale).title+' · '+source.author+' · '+source.license:fixed.sourceResourceId)+' · '+fixed.version+' · '+fixed.sourceHash.slice(0,10):t('market.industry.inspection.unresolved')}</dd></div>
+ })}</dl></section>
  const submit=()=>{const token=++generation.current;setBusy(true);setError('')
   void resolveIndustryReferences(item,items,Object.values(selected)).then(next=>save(next)).catch(()=>{if(token===generation.current)setError(t('market.industry.references.failed'))}).finally(()=>{if(token===generation.current)setBusy(false)})
  }
  const fields=<>{refs.map(resource=>{
   const resourceTitle=localizedIndustryResourceTitle(resource,locale)
   const candidates=referenceCandidates(item,items,resource.id),current=selected[resource.id],stale=current&&!candidates.some(row=>choiceKey(row)===choiceKey(current))
-  return <div key={resource.id}><label>{resourceTitle}<select aria-label={t('market.industry.references.sourceAria',{title:resourceTitle})} disabled={busy} value={current?choiceKey(current):''} onChange={event=>{const choice=candidates.find(row=>choiceKey(row)===event.target.value);setSelected(previous=>{const next={...previous};if(choice)next[resource.id]=choice;else delete next[resource.id];return next});setError('')}}><option value="">{requireAll?t('market.industry.references.chooseFixed'):t('market.industry.references.defer')}</option>{stale&&<option value={choiceKey(current)}>{t('market.industry.references.stale')}</option>}{candidates.map(choice=>{const sourceItem=items.find(row=>row.id===choice.sourceItemId);return <option key={choiceKey(choice)} value={choiceKey(choice)}>{sourceItem?localizedMarketItemCopy(sourceItem,locale).title:choice.sourceItemId} · {resource.version} · {choice.sourceHash.slice(0,10)}</option>})}</select></label>{!candidates.length&&<p>{['plan','plugin'].includes(resource.kind)?t('market.industry.references.mappingNeeded'):t('market.industry.references.noSkill')}</p>}</div>
+  return <div key={resource.id}><label>{resourceTitle}<select aria-label={t('market.industry.references.sourceAria',{title:resourceTitle})} disabled={busy} value={current?choiceKey(current):''} onChange={event=>{const choice=candidates.find(row=>choiceKey(row)===event.target.value);setSelected(previous=>{const next={...previous};if(choice)next[resource.id]=choice;else delete next[resource.id];return next});setError('')}}><option value="">{requireAll?t('market.industry.references.chooseFixed'):t('market.industry.references.defer')}</option>{stale&&<option value={choiceKey(current)}>{t('market.industry.references.stale')}</option>}{candidates.map(choice=>{const sourceItem=findMarketItem(items,choice.sourceContentId!==undefined?fixedMarketItemId(choice.sourceContentId):choice.sourceItemId);return <option key={choiceKey(choice)} value={choiceKey(choice)}>{sourceItem?localizedMarketItemCopy(sourceItem,locale).title:choice.sourceItemId}{sourceItem?' · '+sourceItem.author+' · '+sourceItem.license:''} · {resource.version} · {choice.sourceHash.slice(0,10)}</option>})}</select></label>{!candidates.length&&<p>{['plan','plugin'].includes(resource.kind)?t('market.industry.references.mappingNeeded'):t('market.industry.references.noSkill')}</p>}</div>
  })}<button type={embedded?'button':'submit'} disabled={busy||requireAll&&!refs.every(resource=>selected[resource.id])} onClick={embedded?submit:undefined}>{busy?t('market.industry.references.saving'):requireAll?t('market.industry.references.fixTemplate'):t('market.industry.references.save')}</button></>
  return <section className={css.sheet} aria-label={t('market.industry.references.aria')}><h3>{t('market.industry.references.title')}</h3><p>{t('market.industry.references.help')}</p>{error&&<p role="alert">{error}</p>}{embedded?<div className={base.form}>{fields}</div>:<form className={base.form} onSubmit={event=>{event.preventDefault();submit()}}>{fields}</form>}</section>
 }

@@ -1,8 +1,14 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
+import {presentGroupMessages,readStoredGroupMessage as readMessage} from './group-message-presentation.ts'
+import {GroupMessagePageService} from './group-message-pages.ts'
+import {GroupReadingService,initializeGroupReading} from './group-reading.ts'
+import {GroupMentionService} from './group-mentions.ts'
+import {groupMessageBodyInput,type GroupMessageBody} from '@teloa/contract'
+import {groupMessageListColumns,readGroupMessageBody} from './group-message-body.ts'
 import {workAccess} from './work-access.ts'
 import {assertBusinessScopeRegistered} from './business-scopes.ts'
-import {WorkError,roleSupportsScope,groupChangeInput,groupCreateInput,groupDefinition,groupListInput,groupMessageListInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupSendInput,isGroup,isGroupMember,isGroupMessage,isGroupResource,isGroupResourceVersion,roleDefinition,type Group,type GroupChangeInput,type GroupDefinition,type GroupMember,type GroupMention,type GroupMessage,type GroupResource,type GroupResourceSaveInput,type GroupResourceVersion,type GroupResourceWithdrawInput,type DigitalRole,normalizeReferences,type GroupSendInput,type MessageReference} from '@teloa/contract'
+import {WorkError,roleSupportsScope,groupChangeInput,groupCreateInput,groupDefinition,groupListInput,groupMessageListInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupSendInput,isGroup,isGroupMember,isGroupResource,isGroupResourceVersion,roleDefinition,type Group,type GroupChangeInput,type GroupDefinition,type GroupMember,type GroupMention,type GroupMessage,type GroupResource,type GroupResourceSaveInput,type GroupResourceVersion,type GroupResourceWithdrawInput,type DigitalRole,type GroupSendInput,type MessageReference} from '@teloa/contract'
 import {readActiveAttachment} from './group-attachments.ts'
 import {readGroupAgentGrant} from './group-agent-grants.ts'
 import {readStoredRole} from './roles.ts'
@@ -59,22 +65,11 @@ function stamp(value:unknown):string{
 function readGroup(row:Record<string,unknown>):Group{
   try{
     const fields=groupDefinition(row.definition)
-    const value={id:row.id,ownerId:row.owner_id,version:row.version,name:fields.name,scope:fields.scope,announcement:fields.announcement,rules:fields.rules,pinned:row.pinned,archived:row.archived,createdAt:stamp(row.created_at),updatedAt:stamp(row.updated_at)}
+    const value={id:row.id,ownerId:row.owner_id,version:row.version,name:fields.name,scope:fields.scope,...(fields.purpose===undefined?{}:{purpose:fields.purpose}),announcement:fields.announcement,rules:fields.rules,...(fields.source?{source:fields.source}:{}),...(fields.coordinatorRoleId?{coordinatorRoleId:fields.coordinatorRoleId}:{}),pinned:row.pinned,archived:row.archived,createdAt:stamp(row.created_at),updatedAt:stamp(row.activity_at??row.updated_at),...(row.member_count===undefined?{}:{memberCount:row.member_count})}
     if(!isGroup(value))throw Error('invalid group')
     return value
   }catch{
     throw new WorkError('teloa/storage-corrupt','群定义记录损坏，已停止读取。')
-  }
-}
-
-function readMessage(row:Record<string,unknown>):GroupMessage{
-  try{
-    const base={id:row.id,groupId:row.group_id,rootId:row.root_id,authorId:row.author_id,text:row.text,references:normalizeReferences(row.reference_snapshot),createdAt:stamp(row.created_at)}
-    const value=base.authorId==='self'?{...base,mentions:row.mention_snapshot}:{...base,taskId:row.task_id,runId:row.run_id}
-    if(!isGroupMessage(value))throw Error('invalid message')
-    return value
-  }catch{
-    throw new WorkError('teloa/storage-corrupt','群消息记录损坏，已停止读取。')
   }
 }
 
@@ -86,6 +81,12 @@ function readMember(row:Record<string,unknown>):GroupMember{
   }catch{
     throw new WorkError('teloa/storage-corrupt','群成员记录损坏，已停止读取。')
   }
+}
+
+async function groupMemberCount(db:PoolClient,owner:string,groupId:string):Promise<number>{
+  const count=(await db.query('select count(*)::int as count from teloa_group_members where owner_id=$1 and group_id=$2',[owner,groupId])).rows[0]?.count
+  if(!Number.isSafeInteger(count)||count<1||count>31)throw new WorkError('teloa/storage-corrupt','群成员记录损坏，已停止读取。')
+  return count
 }
 
 function readResource(row:Record<string,unknown>):GroupResource{
@@ -157,7 +158,15 @@ export async function initializeCollaboration(pool:Pool):Promise<void>{
     );
     alter table teloa_group_messages add column if not exists task_id uuid;
     alter table teloa_group_messages add column if not exists run_id uuid;
+    alter table teloa_group_messages add column if not exists full_text text;
+    alter table teloa_group_messages add column if not exists full_text_meta jsonb;
     do $$ begin
+      if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_full_text_v1') then
+        alter table teloa_group_messages add constraint teloa_group_messages_full_text_v1 check(
+          (full_text is null and full_text_meta is null) or
+          (author_id<>'self' and full_text is not null and full_text_meta is not null and jsonb_typeof(full_text_meta)='object')
+        );
+      end if;
       if exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_author_id_check') then
         alter table teloa_group_messages drop constraint teloa_group_messages_author_id_check;
       end if;
@@ -191,7 +200,26 @@ export async function initializeCollaboration(pool:Pool):Promise<void>{
       foreign key(resource_id,owner_id,group_id) references teloa_group_resources(id,owner_id,group_id) on delete cascade
     );
     alter table teloa_group_messages add column if not exists mention_snapshot jsonb not null default '[]'::jsonb;
+    -- 引用回复与结构化全员意图（规格 §6.1）：可空关系列；同群约束由复合外键兜底，原正文不回写。
+    alter table teloa_group_messages add column if not exists reply_to_message_id uuid;
+    alter table teloa_group_messages add column if not exists mention_all boolean not null default false;
+    do $$ begin
+      if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_reply_same_group_v1') then
+        alter table teloa_group_messages add constraint teloa_group_messages_reply_same_group_v1 foreign key(reply_to_message_id,group_id) references teloa_group_messages(id,group_id);
+      end if;
+      if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_relation_self_v1') then
+        alter table teloa_group_messages add constraint teloa_group_messages_relation_self_v1 check((reply_to_message_id is null and mention_all=false) or author_id='self');
+      end if;
+    end $$;
   `)
+  await pool.query(`alter table teloa_group_messages add column if not exists mention_self boolean not null default false;
+   create index if not exists teloa_group_messages_mention_self_v1 on teloa_group_messages(owner_id,group_id,created_at desc,id desc) where mention_self;
+   do $$ begin
+    if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_mention_self_v1') then
+     alter table teloa_group_messages add constraint teloa_group_messages_mention_self_v1 check(not mention_self or author_id<>'self');
+    end if;
+   end $$`)
+  await initializeGroupReading(pool)
 }
 
 export class CollaborationService{
@@ -201,10 +229,20 @@ export class CollaborationService{
 
   constructor(pool:Pool,identity:{id:()=>string;now:()=>string},routing?:CollaborationService['routing']){this.pool=pool;this.identity=identity;this.routing=routing}
 
+  reading(owner:string,input:unknown){return new GroupReadingService(this.pool,this.identity).read(owner,input)}
+  markRead(owner:string,input:unknown){return new GroupReadingService(this.pool,this.identity).mark(owner,input)}
+  attention(owner:string,input:unknown){return new GroupMentionService(this.pool).summary(owner,input)}
+  mentionMessages(owner:string,input:unknown){return new GroupMentionService(this.pool).list(owner,input)}
+
   async list(owner:string,input:unknown):Promise<Group[]>{
     ownerId(owner)
     groupListInput(input)
-    return (await this.pool.query('select * from teloa_groups where owner_id=$1 order by pinned desc,updated_at desc,id',[owner])).rows.map(readGroup)
+    // 最近活动来自实际消息，包含主讨论、话题与原生运行回帖；也能修正既有群的历史时间。
+    // 不修改群设置版本与授权续签身份，消息重放也不会产生新的活动时间。
+    return (await this.pool.query(`select g.*,greatest(g.created_at,coalesce(
+      (select max(m.created_at) from teloa_group_messages m where m.owner_id=g.owner_id and m.group_id=g.id),g.created_at)) as activity_at,
+      (select count(*)::int from teloa_group_members members where members.owner_id=g.owner_id and members.group_id=g.id) as member_count
+      from teloa_groups g where g.owner_id=$1 order by g.pinned desc,activity_at desc,g.id`,[owner])).rows.map(readGroup)
   }
 
   async get(owner:string,input:unknown):Promise<{group:Group;members:GroupMember[]}>{
@@ -212,38 +250,42 @@ export class CollaborationService{
     const request=groupGetInput(input),client=await this.pool.connect()
     try{
       await client.query('begin')
-      const found=await client.query('select * from teloa_groups where id=$1 and owner_id=$2 for share',[request.groupId,owner])
+      const found=await client.query(`select g.*,greatest(g.created_at,coalesce(
+        (select max(m.created_at) from teloa_group_messages m where m.owner_id=g.owner_id and m.group_id=g.id),g.created_at)) as activity_at
+        from teloa_groups g where g.id=$1 and g.owner_id=$2 for share of g`,[request.groupId,owner])
       if(!found.rows[0])throw new WorkError('teloa/forbidden','群不存在或不属于当前本人。')
       const group=readGroup(found.rows[0])
       const members=(await client.query('select group_id,role_id,created_at from teloa_group_members where group_id=$1 and owner_id=$2 order by created_at,member_key',[group.id,owner])).rows.map(readMember)
-      if(members.length===0||members.filter(member=>member.roleId===null).length!==1)throw new WorkError('teloa/storage-corrupt','群成员记录损坏，未找到唯一的本人成员。')
+      if(members.length===0||members.length>31||members.filter(member=>member.roleId===null).length!==1)throw new WorkError('teloa/storage-corrupt','群成员记录损坏，未找到唯一的本人成员。')
       await client.query('commit')
-      return {group,members}
+      return {group:{...group,memberCount:members.length},members}
     }catch(error){await client.query('rollback');throw error}finally{client.release()}
   }
 
   async create(owner:string,input:unknown):Promise<Group>{
     ownerId(owner)
-    const request=groupCreateInput(input),spec=JSON.stringify(request.fields),client=await this.pool.connect()
+    const request=groupCreateInput(input),definition=JSON.stringify(request.fields),spec=request.expectedMembers===undefined?definition:JSON.stringify({fields:request.fields,expectedMembers:request.expectedMembers}),client=await this.pool.connect()
     try{
       await client.query('begin')
       await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['teloa/group-create',owner,request.requestId])])
       const existing=await client.query('select *,request_spec=$3::jsonb as same_request from teloa_groups where owner_id=$1 and request_id=$2 for update',[owner,request.requestId,spec])
       if(existing.rows[0]){
         if(!existing.rows[0].same_request)throw new WorkError('teloa/conflict','同一请求不能创建不同群。')
-        const group=readGroup(existing.rows[0])
+        const group=readGroup(existing.rows[0]);group.memberCount=await groupMemberCount(client,owner,group.id)
         await client.query('commit')
         return group
       }
       // 业务范围必须已登记在标签表（规格 §3.2）；判据在任何写之前，未登记时整笔事务不留痕迹。
       await assertBusinessScopeRegistered(client,owner,request.fields.scope)
-      await this.validateMembers(client,owner,request.fields.memberRoleIds)
+      await this.validateSource(client,owner,request.fields)
+      await this.validateMembers(client,owner,request.fields.memberRoleIds,request.expectedMembers)
       const id=this.identity.id(),now=this.identity.now()
       const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:id,operation:'create'})
       admission.assertCurrent()
-      const saved=await client.query("insert into teloa_groups(id,owner_id,request_id,request_spec,definition,version,pinned,archived,created_at,updated_at) values($1,$2,$3,$4,$4,1,false,false,$5,$5) returning *",[id,owner,request.requestId,spec,now])
+      const saved=await client.query("insert into teloa_groups(id,owner_id,request_id,request_spec,definition,version,pinned,archived,created_at,updated_at) values($1,$2,$3,$4,$5,1,false,false,$6,$6) returning *",[id,owner,request.requestId,spec,definition,now])
       const group=readGroup(saved.rows[0])
       await this.replaceMembers(client,owner,group,request.fields.memberRoleIds,now)
+      group.memberCount=await groupMemberCount(client,owner,group.id)
       admission.assertCurrent()
       await client.query('commit')
       return group
@@ -270,14 +312,18 @@ export class CollaborationService{
       const current=readGroup(found.rows[0])
       if(current.version!==request.expectedVersion)throw new WorkError('teloa/version-conflict','群设置已变化，请刷新后核对。')
       if(groupDefinition(found.rows[0].definition).memberRoleIds.some(id=>!lockedRoles.includes(id)))throw new WorkError('teloa/version-conflict','群成员已变化，请重新核对。')
-      await this.validateMembers(client,owner,request.fields.memberRoleIds)
-      const definition:GroupDefinition={name:request.fields.name,scope:current.scope,announcement:request.fields.announcement,rules:{...request.fields.rules},memberRoleIds:[...request.fields.memberRoleIds]}
+      await this.validateMembers(client,owner,request.fields.memberRoleIds,request.expectedMembers)
+      const purpose=request.fields.purpose??current.purpose
+      const coordinatorRoleId=request.fields.coordinatorRoleId===undefined?current.coordinatorRoleId:request.fields.coordinatorRoleId??undefined
+      if(coordinatorRoleId&&!request.fields.memberRoleIds.some(id=>id.toLowerCase()===coordinatorRoleId))throw new WorkError('teloa/conflict','移除协调者时须明确清除或改选本群协调者。')
+      const definition:GroupDefinition={name:request.fields.name,scope:current.scope,...(purpose===undefined?{}:{purpose}),announcement:request.fields.announcement,rules:{...request.fields.rules},memberRoleIds:[...request.fields.memberRoleIds],...(current.source?{source:current.source}:{}),...(coordinatorRoleId?{coordinatorRoleId}:{})}
       const now=this.identity.now()
       const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:current.id,operation:'edit'})
       admission.assertCurrent()
       const saved=await client.query('update teloa_groups set definition=$3,version=version+1,pinned=$4,archived=$5,updated_at=$6 where id=$1 and owner_id=$2 returning *',[current.id,owner,JSON.stringify(definition),request.fields.pinned,request.fields.archived,now])
       const group=readGroup(saved.rows[0])
       await this.replaceMembers(client,owner,group,request.fields.memberRoleIds,now)
+      group.memberCount=await groupMemberCount(client,owner,group.id)
       // 取消归档的那一笔把全体成员补过一遍：归档期间加进来的人在当时被整段跳过，差集此后再也认不出他们。
       if(current.archived&&!group.archived)await this.grantMembers(client,owner,group,[...new Set(request.fields.memberRoleIds)],now)
       // 群版本 +1 会让既有授权行整体判 `invalidated`（`group-agent-grants.ts:113`）：不续签的话，一次改群名就让「直接回应」全体停摆。
@@ -310,11 +356,13 @@ export class CollaborationService{
       if(group.version!==request.expectedVersion)throw new WorkError('teloa/version-conflict','群设置已变化，请刷新后再发送。')
       if(group.archived)throw new WorkError('teloa/conflict','已归档群不能发送新消息。')
       if(request.rootId!==undefined)await this.assertRoot(client,owner,group.id,request.rootId)
+      // 引用回复只认同一本人、同一群的已存消息；原作者由宿主读取，请求里没有作者字段可冒充。
+      if(request.replyToMessageId!==undefined&&!(await client.query('select 1 from teloa_group_messages where id=$1 and owner_id=$2 and group_id=$3 for share',[request.replyToMessageId,owner,group.id])).rowCount)throw new WorkError('teloa/forbidden','引用的消息不属于当前本人群。')
       await this.assertReferences(client,owner,group.id,request.references??[])
       await this.assertMentions(client,owner,group.id,group.scope,request.mentions??[])
       const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:group.id,operation:'run'})
       admission.assertCurrent()
-      const now=this.identity.now(),saved=await client.query("insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,text,reference_snapshot,mention_snapshot,created_at) values($1,$2,$3,$4,$5,$6,'self',$7,$8,$9,$10) returning *",[this.identity.id(),owner,group.id,request.requestId,spec,request.rootId??null,request.text,JSON.stringify(request.references??[]),JSON.stringify(request.mentions??[]),now])
+      const now=this.identity.now(),saved=await client.query("insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,text,reference_snapshot,mention_snapshot,reply_to_message_id,mention_all,created_at) values($1,$2,$3,$4,$5,$6,'self',$7,$8,$9,$10,$11,$12) returning *",[this.identity.id(),owner,group.id,request.requestId,spec,request.rootId??null,request.text,JSON.stringify(request.references??[]),JSON.stringify(request.mentions??[]),request.replyToMessageId??null,request.mentionAll===true,now])
       const message=readMessage(saved.rows[0])
       await this.routing?.recordWake(client,owner,{groupId:message.groupId,messageId:message.id})
       admission.assertCurrent()
@@ -332,13 +380,32 @@ export class CollaborationService{
       if(!found.rows[0])throw new WorkError('teloa/forbidden','群不存在或不属于当前本人。')
       if(request.rootId!==undefined){
         await this.assertRoot(client,owner,request.groupId,request.rootId)
-        const rows=await client.query('select * from teloa_group_messages where owner_id=$1 and group_id=$2 and (id=$3 or root_id=$3) order by (id=$3) desc,created_at,id',[owner,request.groupId,request.rootId])
+        const rows=await client.query(`select ${groupMessageListColumns} from teloa_group_messages where owner_id=$1 and group_id=$2 and (id=$3 or root_id=$3) order by (id=$3) desc,created_at,id`,[owner,request.groupId,request.rootId])
+        const messages=await presentGroupMessages(client,owner,rows.rows.map(readMessage))
         await client.query('commit')
-        return rows.rows.map(readMessage)
+        return messages
       }
-      const rows=await client.query('select * from teloa_group_messages where owner_id=$1 and group_id=$2 order by created_at,id',[owner,request.groupId])
+      const rows=await client.query(`select ${groupMessageListColumns} from teloa_group_messages where owner_id=$1 and group_id=$2 order by created_at,id`,[owner,request.groupId])
+      const messages=await presentGroupMessages(client,owner,rows.rows.map(readMessage))
       await client.query('commit')
-      return rows.rows.map(readMessage)
+      return messages
+    }catch(error){await client.query('rollback');throw error}finally{client.release()}
+  }
+
+  messagePage(owner:string,input:unknown){return new GroupMessagePageService(this.pool).page(owner,input)}
+  messageSearch(owner:string,input:unknown){return new GroupMessagePageService(this.pool).search(owner,input)}
+
+  /** 认证工作台按原群、原消息读取固定全文；不会触发运行、路由或改动任何消息。 */
+  async messageBody(owner:string,input:unknown):Promise<GroupMessageBody>{
+    ownerId(owner)
+    const request=groupMessageBodyInput(input),client=await this.pool.connect()
+    try{
+      await client.query('begin')
+      await this.assertGroupReadable(client,owner,request.groupId)
+      const row=(await client.query('select id,group_id,author_id,text,full_text,full_text_meta from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3 for share',[owner,request.groupId,request.messageId])).rows[0]
+      if(!row)throw new WorkError('teloa/forbidden','消息不存在或不属于当前本人群。')
+      const body=readGroupMessageBody(row)
+      await client.query('commit');return body
     }catch(error){await client.query('rollback');throw error}finally{client.release()}
   }
 
@@ -481,19 +548,38 @@ export class CollaborationService{
     return ids
   }
 
-  private async validateMembers(client:PoolClient,owner:string,roleIds:readonly string[]):Promise<void>{
+  /** 固定来源仅在明确建群时采用；同事务锁住加载与岗位映射，来源不会由浏览器自报成立。 */
+  private async validateSource(client:PoolClient,owner:string,fields:GroupDefinition):Promise<void>{
+    const source=fields.source;if(!source)return
+    const load=(await client.query('select owner_id,content_id,content_hash,mapping_hash,scope,status from teloa_industry_loads where id=$1 and owner_id=$2 for share',[source.loadId,owner])).rows[0]
+    if(!load)throw new WorkError('teloa/forbidden','团队来源不存在或不属于当前本人。')
+    if(load.status!=='active'||load.content_id!==source.contentId||load.content_hash!==source.contentHash||load.mapping_hash!==source.mappingHash||load.scope!==fields.scope)throw new WorkError('teloa/conflict','团队固定来源或加载映射已变化，请重新核对。')
+    const items=(await client.query('select local_id,instance_id,kind,carried_from from teloa_industry_load_items where load_id=$1 order by local_id for share',[source.loadId])).rows
+    if(!items.length||items.some(row=>typeof row.local_id!=='string'||!uuid(row.instance_id)||row.carried_from!==null&&!uuid(row.carried_from)))throw new WorkError('teloa/storage-corrupt','团队来源映射损坏。')
+    const digest=createHash('sha256').update(JSON.stringify(items.map(row=>[row.local_id,String(row.instance_id).toLowerCase()]).sort(([a],[b])=>a!<b!?-1:a!>b!?1:0))).digest('hex')
+    if(digest!==source.mappingHash)throw new WorkError('teloa/storage-corrupt','团队来源映射摘要不一致。')
+    const itemIds=items.filter(row=>row.kind==='role').map(row=>row.carried_from??row.instance_id)
+    const roles=itemIds.length?(await client.query('select role_id from teloa_industry_role_instances where owner_id=$1 and item_instance_id=any($2::uuid[]) for share',[owner,itemIds])).rows:[]
+    const mapped=new Set(roles.filter(row=>uuid(row.role_id)).map(row=>String(row.role_id).toLowerCase()))
+    if(fields.memberRoleIds.some(id=>!mapped.has(id.toLowerCase())))throw new WorkError('teloa/forbidden','团队成员不属于该固定加载的岗位映射。')
+  }
+
+  private async validateMembers(client:PoolClient,owner:string,roleIds:readonly string[],expectedMembers?:readonly GroupMention[]):Promise<void>{
     for(const roleId of [...new Set(roleIds)].sort()){
       const found=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for update',[roleId,owner])
       if(!found.rows[0])throw new WorkError('teloa/forbidden','群成员员工不存在或不属于当前本人。')
-      // 群成员可来自任何业务范围（2026-09-21 用户裁定 B）：只保留岗位归属、定义完整性与在岗判据，范围只在建任务时校验。
+      // 岗位行锁持续到成员写入和默认授权提交；审批固定的版本不能被临时的新版本替代。
+      if(expectedMembers&&found.rows[0].version!==expectedMembers.find(member=>member.roleId===roleId)?.expectedVersion)throw new WorkError('teloa/version-conflict','群成员岗位版本已变化，请重新核对成员。')
+      // 成员关系与执行资格分离；暂停员工可在本人确认后入群，执行口仍强制在岗。范围只在建任务时校验。
       try{roleDefinition(found.rows[0].definition)}catch{throw new WorkError('teloa/storage-corrupt','群成员员工定义损坏，不能加入协作群。')}
-      if(found.rows[0].state!=='active')throw new WorkError('teloa/conflict','只有在岗员工可以加入协作群。')
+      if(!['active','paused'].includes(found.rows[0].state))throw new WorkError('teloa/conflict','已退役员工不能加入协作群。')
     }
   }
 
   /**
    * 拉员工进群默认允许直接回应（规格 §2.5 的 C1）：成员写口是全量替换，所以「本次新增」必须在 `replaceMembers` 删成员之前算。
    * 只给此前从未有授权行的新成员保存空资源与 canPost=true；员工默认 canAutoRun=true，Twin 默认 false。
+   * 暂停成员只先保存默认群范围，执行口仍须在岗；成员确认不启动工作或排程。
    * 有行一律跳过——既不覆盖本人自己调过的授权，也不复活已撤销的那一版。移出成员不动它的授权行。
    */
   private async grantNewMembers(client:PoolClient,owner:string,group:Group,roleIds:readonly string[],now:string):Promise<void>{
@@ -503,20 +589,20 @@ export class CollaborationService{
     // 成员表里有一行 member_key='self' 且 role_id 为 null；按群成员取员工的查询一律带 role_id is not null。
     const current=await client.query('select role_id from teloa_group_members where group_id=$1 and owner_id=$2 and role_id is not null for update',[group.id,owner])
     const existing=new Set(current.rows.map(row=>String(row.role_id)))
-    await this.grantMembers(client,owner,group,[...new Set(roleIds)].filter(roleId=>!existing.has(roleId)),now)
+    await this.grantMembers(client,owner,group,[...new Set(roleIds)].filter(roleId=>!existing.has(roleId)),now,true)
   }
 
   /**
    * 逐个签发默认授权：已有任何一版授权行（含 `revoked`）一律跳过。
-   * 在岗、业务范围、群可用性仍走原判据；Twin 的空资源默认授权只允许保存群范围，不能用于自动运行。
+   * 只有本人明确新增成员可纳暂停岗位；历史补签仍限在岗。业务范围、群可用性与 Twin 执行边界不变。
    * 返回本次实际签出的行数，只给 `backfillDefaultGrants` 报数用。
    */
-  private async grantMembers(client:PoolClient,owner:string,group:Group,roleIds:readonly string[],now:string):Promise<number>{
+  private async grantMembers(client:PoolClient,owner:string,group:Group,roleIds:readonly string[],now:string,allowPaused=false):Promise<number>{
     let signed=0
     for(const roleId of roleIds){
       const found=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[roleId,owner])
       const role=readStoredRole(found.rows[0])
-      if(role.state!=='active'||!roleSupportsScope(role.scopes,group.scope))continue
+      if((role.state!=='active'&&!(allowPaused&&role.state==='paused'))||!roleSupportsScope(role.scopes,group.scope))continue
       const previous=await client.query('select grant_version from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for update',[group.id,roleId])
       if(previous.rows[0])continue
       const canAutoRun=role.kind==='employee'

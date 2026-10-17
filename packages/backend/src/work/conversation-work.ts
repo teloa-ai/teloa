@@ -1,3 +1,4 @@
+import {revokeOwnerWorkLeases} from './owner-work-epochs.ts'
 import {initializeConversationWorkRequests,workRequestChildId,lockConversationTaskChild,assertConversationTaskChildUnoccupied} from './conversation-work-task-protection.ts'
 export {workRequestChildId} from './conversation-work-task-protection.ts'
 import type {Pool,PoolClient} from 'pg'
@@ -15,8 +16,8 @@ export type ConversationWorkContext={sessionId:string;scopeId:string;roleId:stri
 export type WorkRequestTarget={roleId:string;roleVersion:number;name:string;scope:string;unavailable:null|'paused'|'retired'}
 export type WorkResponsibilitySnapshot={version:number;roleId:string|null}
 export type WorkRequestFailure={code:string;message:string}
-export type ConversationWorkRequest={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;targets:WorkRequestTarget[];failures:Record<string,WorkRequestFailure>;reference?:BusinessObjectReference;stoppedAt:string|null;createdAt:string}
-export type ConversationWorkReserveInput={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;roleId?:string;expectedRoleVersion?:number;reference?:BusinessObjectReference}
+export type ConversationWorkRequest={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';executor?:'general';scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;targets:WorkRequestTarget[];failures:Record<string,WorkRequestFailure>;reference?:BusinessObjectReference;stoppedAt:string|null;createdAt:string}
+export type ConversationWorkReserveInput={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';executor?:'general';scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;roleId?:string;expectedRoleVersion?:number;reference?:BusinessObjectReference}
 type Inspect=(owner:string,sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string;submitted:boolean}>
 export type ConversationWorkGuardOperation={kind:'read'|'freeze'|'reserve'}|{kind:'set';scopeId:string;roleId:string|null;hasContext:boolean}
 export type ConversationWorkPreparedGuard=(db:PoolClient,operation:ConversationWorkGuardOperation)=>Promise<void>
@@ -57,10 +58,12 @@ function reportTargets(input:unknown):WorkRequestTarget[]{
  return rows
 }
 function reserveInput(input:unknown):ConversationWorkReserveInput{
- const row=taskInput(input,['requestId','sessionId','messageId','messageSeq','kind','scope','title','goal','roleId','expectedRoleVersion','reference','allBusinesses','sourceText','responsibility','expectedReportTargets'])
+ const row=taskInput(input,['requestId','sessionId','messageId','messageSeq','kind','executor','scope','title','goal','roleId','expectedRoleVersion','reference','allBusinesses','sourceText','responsibility','expectedReportTargets'])
  const fields=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
  if(!uuid(row.requestId)||!session(row.sessionId)||typeof row.messageId!=='string'||!row.messageId||row.messageId.length>200||!Number.isSafeInteger(row.messageSeq)||Number(row.messageSeq)<0||!['task','report'].includes(String(row.kind)))throw new WorkError('teloa/invalid-input','交办来源或类型不正确。')
- if(row.kind==='task'? !uuid(row.roleId)||!positive(row.expectedRoleVersion):row.roleId!==undefined||row.expectedRoleVersion!==undefined||row.reference!==undefined)throw new WorkError('teloa/invalid-input','明确交办需要真实负责人及版本，汇报集合由服务端固定。')
+ const general=row.executor==='general'
+ if(row.executor!==undefined&&!general||general&&(row.kind!=='task'||fields.scope!=='general'||row.roleId!==undefined||row.expectedRoleVersion!==undefined||row.reference!==undefined||row.responsibility!==undefined))throw new WorkError('teloa/invalid-input','通用交办必须明确选择通用执行，不能混入员工、业务归属或对象授权。')
+ if(!general&&(row.kind==='task'? !uuid(row.roleId)||!positive(row.expectedRoleVersion):row.roleId!==undefined||row.expectedRoleVersion!==undefined||row.reference!==undefined))throw new WorkError('teloa/invalid-input','明确交办需要真实负责人及版本，汇报集合由服务端固定。')
  if(row.allBusinesses!==undefined&&(row.allBusinesses!==true||row.kind!=='report'||fields.scope!=='general'))throw new WorkError('teloa/invalid-input','跨业务汇报必须明确选择全部业务，并由通用工作承载协调。')
  if(row.sourceText!==undefined&&(typeof row.sourceText!=='string'||!row.sourceText.trim()||row.sourceText.length+fields.goal.length>7400))throw new WorkError('teloa/invalid-input','完整原指令与任务目标超过本次交办上限，请将长材料保存为资料后引用。')
  let responsibility:WorkResponsibilitySnapshot|undefined
@@ -73,7 +76,7 @@ function reserveInput(input:unknown):ConversationWorkReserveInput{
  if(expectedReportTargets&&row.kind!=='report')throw new WorkError('teloa/invalid-input','只有汇报请求可以固定员工名单。')
  const reference=row.reference===undefined?undefined:businessObjectReference(row.reference)
  if(reference&&reference.scope!==fields.scope)throw new WorkError('teloa/invalid-input','调查事件与责任业务不一致。')
- return {requestId:row.requestId.toLowerCase(),sessionId:row.sessionId,messageId:row.messageId,messageSeq:Number(row.messageSeq),kind:row.kind as 'task'|'report',scope:fields.scope,title:fields.title,goal:fields.goal,...(row.sourceText===undefined?{}:{sourceText:row.sourceText as string}),...(row.allBusinesses===true?{allBusinesses:true}:{}),...(row.kind==='task'?{roleId:(row.roleId as string).toLowerCase(),expectedRoleVersion:Number(row.expectedRoleVersion)}:{}),...(reference?{reference}:{}),...(responsibility?{responsibility}:{}),...(expectedReportTargets?{expectedReportTargets}:{})}
+ return {requestId:row.requestId.toLowerCase(),sessionId:row.sessionId,messageId:row.messageId,messageSeq:Number(row.messageSeq),kind:row.kind as 'task'|'report',scope:fields.scope,title:fields.title,goal:fields.goal,...(general?{executor:'general'}:{}),...(row.sourceText===undefined?{}:{sourceText:row.sourceText as string}),...(row.allBusinesses===true?{allBusinesses:true}:{}),...(row.kind==='task'&&!general?{roleId:(row.roleId as string).toLowerCase(),expectedRoleVersion:Number(row.expectedRoleVersion)}:{}),...(reference?{reference}:{}),...(responsibility?{responsibility}:{}),...(expectedReportTargets?{expectedReportTargets}:{})}
 }
 export function readStoredConversationWorkRequest(row:Record<string,unknown>):ConversationWorkRequest{
  try{
@@ -84,11 +87,11 @@ export function readStoredConversationWorkRequest(row:Record<string,unknown>):Co
    if(!uuid(t.roleId)||!positive(t.roleVersion)||typeof t.name!=='string'||!t.name.trim()||!session(t.scope)||![null,'paused','retired'].includes(t.unavailable as null))throw Error()
    return t as WorkRequestTarget
   })
-  if(new Set(targets.map(t=>t.roleId)).size!==targets.length||input.kind==='task'&&(targets.length!==1||targets[0]!.roleId!==input.roleId||targets[0]!.roleVersion!==input.expectedRoleVersion||targets[0]!.scope!==input.scope))throw Error()
+  if(new Set(targets.map(t=>t.roleId)).size!==targets.length||input.kind==='task'&&(input.executor==='general'?targets.length!==0:targets.length!==1||targets[0]!.roleId!==input.roleId||targets[0]!.roleVersion!==input.expectedRoleVersion||targets[0]!.scope!==input.scope))throw Error()
   if(input.expectedReportTargets&&JSON.stringify(input.expectedReportTargets)!==JSON.stringify(reportTargets(targets)))throw Error()
-  const failures=taskInput(row.failures,targets.map(target=>target.roleId)) as Record<string,WorkRequestFailure>
+  const failures=taskInput(row.failures,input.executor==='general'?['general']:targets.map(target=>target.roleId)) as Record<string,WorkRequestFailure>
   for(const failure of Object.values(failures)){taskInput(failure,['code','message']);if(typeof failure.code!=='string'||!/^teloa\/[a-z0-9-]+$/.test(failure.code)||typeof failure.message!=='string'||!failure.message.trim()||failure.message.length>1000)throw Error()}
-  return {requestId:input.requestId,sessionId:input.sessionId,messageId:input.messageId,messageSeq:input.messageSeq,kind:input.kind,scope:input.scope,title:input.title,goal:input.goal,...(input.sourceText?{sourceText:input.sourceText}:{}),...(input.allBusinesses?{allBusinesses:true}:{}),targets,failures,...(input.reference?{reference:input.reference}:{}),...(input.responsibility?{responsibility:input.responsibility}:{}),...(input.expectedReportTargets?{expectedReportTargets:input.expectedReportTargets}:{}),stoppedAt:row.stopped_at===null?null:(row.stopped_at as Date).toISOString(),createdAt:row.created_at.toISOString()}
+  return {requestId:input.requestId,sessionId:input.sessionId,messageId:input.messageId,messageSeq:input.messageSeq,kind:input.kind,scope:input.scope,title:input.title,goal:input.goal,...(input.executor?{executor:input.executor}:{}),...(input.sourceText?{sourceText:input.sourceText}:{}),...(input.allBusinesses?{allBusinesses:true}:{}),targets,failures,...(input.reference?{reference:input.reference}:{}),...(input.responsibility?{responsibility:input.responsibility}:{}),...(input.expectedReportTargets?{expectedReportTargets:input.expectedReportTargets}:{}),stoppedAt:row.stopped_at===null?null:(row.stopped_at as Date).toISOString(),createdAt:row.created_at.toISOString()}
  }catch{throw corrupt()}
 }
 export type ConversationWorkReservationPrepared={
@@ -101,7 +104,7 @@ export type ConversationWorkReservationPrepared={
 }
 /** 调用者已按 C→P→context 取得保护；只使用传入连接，不借池或提交事务。 */
 export async function reserveConversationWorkInTransaction(db:PoolClient,owner:string,value:unknown,preparedGuard:ConversationWorkReservationPrepared):Promise<ConversationWorkRequest>{
- actor(owner);const input=reserveInput(value),spec=JSON.stringify(input),taskChild=input.kind==='task'?workRequestChildId(input.requestId,'task',input.roleId!):null,guard=preparedGuard.guard
+ actor(owner);const input=reserveInput(value),spec=JSON.stringify(input),taskChild=input.kind==='task'?workRequestChildId(input.requestId,'task',input.roleId):null,guard=preparedGuard.guard
    await guard?.(db,{kind:'reserve'})
    const previous=(await db.query('select *,request_spec=$3::jsonb as same from teloa_conversation_work_requests where owner_id=$1 and request_id=$2',[owner,input.requestId,spec])).rows[0]
    if(previous){if(!previous.same)throw new WorkError('teloa/conflict','同一用户消息已有不同交办，请先核对原请求。');return readStoredConversationWorkRequest(previous)}
@@ -120,14 +123,14 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
     }else if(input.responsibility)throw new WorkError('teloa/invalid-input','此业务尚未采用负责人配置，不能附加负责人快照。')
    }
    await assertBusinessScopeRegistered(db,owner,input.scope)
-   const roles=(await db.query('select * from teloa_roles where owner_id=$1 and ($2::uuid is null or id=$2) order by id for share',[owner,input.roleId??null])).rows.map(readStoredRole)
+   const roles=input.executor==='general'?[]:(await db.query('select * from teloa_roles where owner_id=$1 and ($2::uuid is null or id=$2) order by id for share',[owner,input.roleId??null])).rows.map(readStoredRole)
    await guard?.(db,{kind:'reserve'})
    const allowed=input.kind==='report'?(preparedGuard.scopes?await preparedGuard.scopes(db,owner):input.allBusinesses?null:[input.scope]):null
    if(input.kind==='report'&&(!allowed||!Array.isArray(allowed)||allowed.some(scope=>!session(scope))||!allowed.includes(input.scope)))throw new WorkError('teloa/forbidden','无法核对汇报当前业务授权范围。')
    // 汇报固定本人确认的员工名单；明确交办可选择已由本人委托执行的分身。
    const eligible=roles.filter(role=>input.kind==='report'?role.kind==='employee'&&(input.allBusinesses===true?role.scopes.some(scope=>allowed!.includes(scope)):role.scopes.includes(input.scope)):roleSupportsScope(role.scopes,input.scope))
    let assignment:WorkAccessLease|undefined
-   if(input.kind==='task'){
+   if(input.kind==='task'&&input.executor!=='general'){
     const role=eligible[0];if(!role)throw new WorkError('teloa/forbidden','指定角色不存在或不支持责任业务。')
     assertRoleWorkRole(role,input.expectedRoleVersion!)
     if(role.kind==='twin'){
@@ -140,7 +143,7 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
    if(input.expectedReportTargets&&JSON.stringify(targets)!==JSON.stringify(input.expectedReportTargets))throw new WorkError('teloa/version-conflict','汇报员工名单、版本、状态或授权范围已变化，请重新确认。')
    const admission=combineWorkAccessLeases([
     ...(assignment?[assignment]:[]),
-    await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:input.sessionId,objectId:input.roleId??input.requestId,operation:'run'}),
+    await workAccess.authorize({kind:'capability',capability:input.executor==='general'?'general-agent':'people',ownerId:owner,sessionId:input.sessionId,objectId:input.roleId??input.requestId,operation:'run'}),
     await workAccess.authorize({kind:'conversation-work-reserve',ownerId:owner,requestId:input.requestId,sessionId:input.sessionId}),
    ])
    preparedGuard.onAdmission(admission);admission.assertCurrent()
@@ -224,7 +227,7 @@ export class ConversationWorkService{
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async reserve(owner:string,value:unknown):Promise<ConversationWorkRequest>{
-  actor(owner);const input=reserveInput(value),taskChild=input.kind==='task'?workRequestChildId(input.requestId,'task',input.roleId!):null
+  actor(owner);const input=reserveInput(value),taskChild=input.kind==='task'?workRequestChildId(input.requestId,'task',input.roleId):null
   await this.inspectSession(owner,input.sessionId);const guard=await this.guard?.(owner,input.sessionId),db=await this.pool.connect()
   let admission:WorkAccessLease|undefined
   try{
@@ -252,14 +255,16 @@ export class ConversationWorkService{
    try{
     await db.query('begin');await this.lock(db,owner,'request:'+requestId);signal.throwIfAborted()
     const saved=readStoredConversationWorkRequest((await db.query('update teloa_conversation_work_requests set stopped_at=coalesce(stopped_at,$3) where owner_id=$1 and request_id=$2 returning *',[owner,requestId,this.now()])).rows[0])
+    if(saved.executor==='general')revokeOwnerWorkLeases(owner,requestId)
     await db.query('commit');return saved
    }catch(error){await db.query('rollback');throw error}finally{db.release()}
   })
  }
- async failure(owner:string,requestId:string,roleId:string,failure:WorkRequestFailure|null):Promise<void>{
-  actor(owner);if(!uuid(requestId)||!uuid(roleId))throw new WorkError('teloa/invalid-input','交办成员身份不正确。')
+ async failure(owner:string,requestId:string,roleId:string|null,failure:WorkRequestFailure|null):Promise<void>{
+  actor(owner);if(!uuid(requestId)||roleId!==null&&!uuid(roleId))throw new WorkError('teloa/invalid-input','交办执行身份不正确。')
   if(failure&&(typeof failure.code!=='string'||!/^teloa\/[a-z0-9-]+$/.test(failure.code)||typeof failure.message!=='string'||!failure.message.trim()||failure.message.length>1000))throw new WorkError('teloa/invalid-input','交办失败原因不正确。')
-  await this.pool.query(`update teloa_conversation_work_requests set failures=case when $4::jsonb is null then failures-$3 else jsonb_set(failures,array[$3],$4::jsonb) end,notified_at=null where owner_id=$1 and request_id=$2 and targets @> $5::jsonb`,[owner,requestId,roleId,failure===null?null:JSON.stringify(failure),JSON.stringify([{roleId}])])
+  const key=roleId??'general'
+  await this.pool.query(`update teloa_conversation_work_requests set failures=case when $4::jsonb is null then failures-$3 else jsonb_set(failures,array[$3],$4::jsonb) end,notified_at=null where owner_id=$1 and request_id=$2 and ((request_spec->>'executor'='general' and $3='general' and targets='[]'::jsonb) or targets @> $5::jsonb)`,[owner,requestId,key,failure===null?null:JSON.stringify(failure),JSON.stringify([{roleId}])])
  }
  async pendingNotifications(owner:string):Promise<ConversationWorkRequest[]>{actor(owner);return (await this.pool.query('select * from teloa_conversation_work_requests where owner_id=$1 and notified_at is null order by created_at,request_id',[owner])).rows.map(readStoredConversationWorkRequest)}
  async notified(owner:string,requestId:string):Promise<void>{actor(owner);if(!uuid(requestId))throw new WorkError('teloa/invalid-input','交办身份不正确。');await this.pool.query('update teloa_conversation_work_requests set notified_at=$3 where owner_id=$1 and request_id=$2',[owner,requestId,this.now()])}

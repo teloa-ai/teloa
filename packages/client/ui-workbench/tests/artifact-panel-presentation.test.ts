@@ -7,7 +7,7 @@ import {ArtifactPanelMoreActions,artifactPanelArtifacts,artifactPanelMoreActions
 
 const source=await readFile(new URL('../src/client/ArtifactPanel.tsx',import.meta.url),'utf8')
 
-test('成果目录为空时才进入独立创建模式',()=>{
+test('成果目录为空时保留空态，既有成果仍按主稿与时间选择',()=>{
  assert.deepEqual(artifactPanelStart([]),{mode:'create',selected:null})
  assert.deepEqual(artifactPanelStart([{id:'older',primary:false,updatedAt:'2026-09-11T00:00:00Z'},{id:'latest',primary:false,updatedAt:'2026-09-12T00:00:00Z'}]),{mode:'read',selected:'latest'})
  assert.deepEqual(artifactPanelStart([{id:'latest',primary:false,updatedAt:'2026-09-12T00:00:00Z'},{id:'main',primary:true,updatedAt:'2026-09-10T00:00:00Z'}]),{mode:'read',selected:'main'})

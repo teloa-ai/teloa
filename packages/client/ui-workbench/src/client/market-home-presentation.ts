@@ -5,15 +5,85 @@ import type {IndustryResourceKind} from './industry-manifest.ts'
 import type {MarketResourceEntry} from './market-resource-index.ts'
 import {marketRuntimeForItem,type MarketSkillRuntime} from './market-runtime-state.ts'
 import type {TeloaTranslate} from './i18n/index.ts'
-import type {MarketCatalogListCounts,MarketEntryKind} from '@teloa/contract'
+import type {MarketCatalogListCounts,MarketCatalogListItem,MarketEntryKind} from '@teloa/contract'
 
 export type MarketCategory='industry'|'dashboard'|'agent'|'skill'|'plugin'|'connector'|'model'|'knowledge'|'work-template'
+/** 市场主目录（方案 B「员工／团队」）：一位 AI 员工、一组 AI 员工；应用从旁侧常驻快捷入口到达，不作为主标签。 */
+export type MarketPrimaryView='employees'|'teams'|'apps'
+export type MarketBrowseKind=MarketCategory|MarketPrimaryView|'home'|'intents'|'resources'
+export type MarketAdvancedEntry=MarketCategory|'apps'
+export type MarketGroupKey='market.primary.employees'|'market.primary.teams'|'market.primary.apps'|'market.primary.methodsGroup'|'market.primary.connectGroup'|'market.primary.businessGroup'|'market.primary.runtimeGroup'|'market.presentation.category.dashboard'
+export function marketResourceGroup(category:MarketCategory|IndustryResourceKind):MarketGroupKey{
+ if(category==='agent'||category==='role')return 'market.primary.employees'
+ if(category==='model')return 'market.primary.runtimeGroup'
+ if(category==='plugin')return 'market.primary.connectGroup'
+ if(category==='industry'||category==='dashboard'||category==='business-configuration')return 'market.primary.businessGroup'
+ if(category==='skill'||category==='knowledge'||category==='work-template'||category==='plan')return 'market.primary.methodsGroup'
+ return 'market.primary.apps'
+}
+
+/** 方案里的员工数；没有清单时为 undefined（旧条目不猜组成）。团队卡第三行与员工／团队归类共用。 */
+export function solutionRoleCount(item:Pick<MarketItem,'manifest'>):number|undefined{
+ if(!item.manifest||!('resources'in item.manifest))return undefined
+ return item.manifest.resources.filter(row=>row.kind==='role').length
+}
+
+/** 原资源保持各自身份；此映射只决定用户从哪个常用入口找到它：含一位员工的模板归 AI 员工，多位员工归团队方案。 */
+export function marketPrimaryItem(item:MarketItem,view:MarketPrimaryView):boolean{
+ const category=marketCategoryOf(item)
+ if(view==='apps')return category==='connector'||category==='plugin'
+ if(category==='agent')return view==='employees'
+ if(category==='dashboard')return view==='teams'
+ if(category!=='industry')return false
+ const roles=solutionRoleCount(item)
+ // 旧条目没有清单：仍当作一组员工保留在团队方案里，不因未知组成隐藏
+ if(roles===undefined)return view==='teams'
+ return view==='employees'?roles===1:roles>1
+}
+
+/** 本机条目在搜索结果与卡片上的归组：员工／团队按组成判，其余按原资源类型分组。 */
+export function marketItemGroup(item:MarketItem):MarketGroupKey{
+ if(marketCategoryOf(item)==='dashboard')return 'market.presentation.category.dashboard'
+ if(marketPrimaryItem(item,'employees'))return 'market.primary.employees'
+ if(marketPrimaryItem(item,'teams'))return 'market.primary.teams'
+ return marketResourceGroup(marketCategoryOf(item))
+}
+
+/** 旧宿主没有组成计数时保留方案（归团队方案），不能因未知计数隐藏原适配模板。 */
+export function marketPrimaryCatalogItem(item:MarketCatalogListItem,view:MarketPrimaryView):boolean{
+ if(view==='apps')return item.entry.kind==='connector'
+ if(item.entry.kind==='role')return view==='employees'
+ if(item.entry.kind==='dashboard')return view==='teams'
+ if(item.entry.kind!=='solution')return false
+ if(!item.contents)return view==='teams'
+ const roles=item.contents.role??0
+ return view==='employees'?roles===1:roles>1
+}
+
+/** 官方条目的归组，与本机条目同一判据。 */
+export function marketCatalogItemGroup(item:MarketCatalogListItem):MarketGroupKey{
+ if(item.entry.kind==='dashboard')return 'market.presentation.category.dashboard'
+ if(marketPrimaryCatalogItem(item,'employees'))return 'market.primary.employees'
+ if(marketPrimaryCatalogItem(item,'teams'))return 'market.primary.teams'
+ const kind=item.entry.kind
+ return marketResourceGroup(kind==='role'?'agent':kind==='solution'?'industry':kind)
+}
+
 // 顺序即导航顺序：先方案，再同事与技能，接着接入方式（连接、模型），最后资料 / 模板 / 扩展。
 // 五个目录 kind（industry→solution、agent→role、skill、connector、model）的相对顺序必须等于 marketEntryKinds（规格 §4）。
 // 只留顺序不留中文名：名字统一由 market.presentation.category.* 词条给出。
 export const MARKET_CATEGORIES:readonly MarketCategory[]=['industry','dashboard','agent','skill','connector','model','knowledge','work-template','plugin']
 /** 类别 → 官方目录条目 kind；没有目录 kind 的类别（资料、模板、扩展）不列。 */
 export const marketCategoryKind:Partial<Record<MarketCategory,MarketEntryKind>>={industry:'solution',dashboard:'dashboard',agent:'role',skill:'skill',connector:'connector',model:'model'}
+/**
+ * 重新进入市场时只回到方案 B 的主目录：旧方案类别回到团队方案、旧连接器类别回到连接应用，其余技术类别回到 AI 员工。
+ * 既有对象技术类别仍可经业务配置请求主动进入，这里只决定恢复落点。
+ */
+export function marketEntryCategory(kind:MarketBrowseKind):MarketBrowseKind{
+  if(kind==='industry'||kind==='dashboard')return 'teams'
+  if(kind==='connector'||kind==='resources'||kind==='plugin')return 'apps'
+  return kind==='employees'||kind==='teams'||kind==='apps'||kind==='intents'?kind:'home'
+}
 /** 导航恢复到 model 但目录已无模型条目（counts.model 为 0）时回退首页；counts 未就绪时不动。 */
 export function restoredMarketCategory<K extends string>(kind:K,counts:MarketCatalogListCounts|undefined):K|'home'{
   return kind==='model'&&counts&&counts.model===0?'home':kind
@@ -95,15 +165,7 @@ export function marketCategoryOf(item:MarketItem):MarketCategory{
   return item.resourceKind==='knowledge'?'knowledge':'connector'
 }
 
-/** 页尾引导块只在首页且不是方案卡落地时出现（home 无搜索词时永远是 solutionLanding，等价于「首页 + 搜索态」）；
- * skill/resource/connector/work-template/intents 等其余页签一律不挂引导块。 */
-export function showMarketGuide(input:{hasItem:boolean;itemId:string|null;intentId:string|null;kind:MarketCategory|'home'|'intents';solutionView:boolean}):boolean{
-  return !input.hasItem&&!input.itemId&&!input.intentId&&input.kind==='home'&&!input.solutionView
-}
-
-const loaded=(item:MarketItem,loads:readonly LoadIdentity[]):boolean=>loads.some(load=>
-  load.contentId===item.contentStorage?.contentId||load.templateId===item.manifest?.id,
-)
+const loaded=(item:MarketItem,loads:readonly LoadIdentity[]):boolean=>loads.some(load=>item.contentStorage?load.contentId===item.contentStorage.contentId:load.templateId===item.manifest?.id)
 
 export function marketItemPresentation(item:MarketItem,loads:readonly LoadIdentity[],runtime?:MarketSkillRuntime,t?:TeloaTranslate){
   const category=marketCategoryOf(item)
@@ -126,7 +188,7 @@ export function marketItemPresentation(item:MarketItem,loads:readonly LoadIdenti
 }
 
 const resourceTypeLabels:Record<IndustryResourceKind,string>={
-  role:'员工',knowledge:'知识',skill:'技能',mcp:'MCP',plugin:'扩展','data-source':'数据源','execution-tool':'执行工具','work-template':'任务模板',plan:'持续计划',
+  role:'员工',knowledge:'知识',skill:'技能',mcp:'MCP',plugin:'应用','data-source':'数据源','execution-tool':'执行工具','work-template':'任务模板',plan:'持续计划',
   'object-type':'对象类型','business-view':'业务视图','business-action':'业务动作','business-configuration':'业务看板',
 }
 

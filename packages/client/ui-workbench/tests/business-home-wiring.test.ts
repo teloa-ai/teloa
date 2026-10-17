@@ -199,7 +199,7 @@ test('七行的「去配置」只落到既有入口：没有为它新开页面�
  const route=frame.slice(start,end)
  for(const pattern of [
   /target\.kind==='team'\)openStaffOfScope\(target\.scope\)/,
-  /target\.kind==='capabilities'\)actions\.navigate\('capabilities'\)/,
+  /target\.kind==='capabilities'\)actions\.openCapabilityCatalog\(\)/,
   /target\.kind==='knowledge'\)actions\.openResources\(\)/,
   /target\.kind==='connectors'\)\{actions\.rememberDirectory\('capabilities',\{category:writeDirectoryFilterCategory\(\{category:'source'/,
   /target\.kind==='plans'\)actions\.openPlans\(\{kind:'plans',scope:target\.scope\}\)/,

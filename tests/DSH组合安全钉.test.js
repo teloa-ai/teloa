@@ -188,7 +188,7 @@ test('补丁以字面量钉住这些取值', async () => {
   assert.match(patch, /- id: sandbox-policy\n(?:\s*#.*\n)*\s+config:\n\s+mode: workspace-write\n\s+workspaceRoot: !!js process\.cwd\(\)\n/, '补丁必须钉住 workspace-write 与 process.cwd() 兜底根')
   assert.match(patch, /- id: tools\n\s+config:\n\s+mode: native\n/, '补丁必须以字面量钉住 native')
   assert.match(patch, /- id: tool-workflow\n\s+disabled: true\n/, '补丁必须以字面量关闭 workflow 工具入口')
-  assert.match(patch, /- id: tool-ralph\n\s+disabled: true\n/, '补丁必须以字面量关闭 ralph 工具入口')
+  assert.equal(dumpRows().some(row=>row.name==='@deepseek-ai/dsh-tool-ralph'&&!row.disabled), false, '宿主不加载可选 Ralph 工具，入口只由显式预设提供')
   // 引擎行反过来必须留着：Agent 预设把 workflowEngine 绑在 workflow-ptc 上，关掉它任何会话都建不起来。
   assert.match(patch, /- id: ptc-runtime\n\s+disabled: false\n/, '补丁必须保持 ptc-runtime 启用')
   assert.match(patch, /- id: agent-preset-registry\n(?:\s*#.*\n)*\s+inject:\n\s+- loader\n\s+- sessionProjections\n\s+- teloaToolResourceProvenance\n\s+config:\n\s+default: teloa-standard\n/, '补丁必须保持官方注册器、明确来源依赖与运行身份')
@@ -219,25 +219,29 @@ test('Teloa 自带预设面向日常协作，启用受管 workflow 和显式 Ral
   for (const id of ['tool-subagent', 'tool-subagent-fork', 'tool-subagent-control', 'tool-subagent-list-agents']) {
     assert.equal(delegation.find(row => row.id === id)?.disabled, true, id + ' 应由官方 Team 工具替代')
   }
-  assert.doesNotMatch(dumpBlock('subagent'), /^\s+disabled: true$/m, '旧子会话的原生读取与控制服务应保留')
+  // 原服务由受管适配器继承；同时启用两者会重复登记 subagents。
+  assert.match(dumpBlock('subagent'), /^\s+disabled: true$/m, '未经过输入授权门的原服务应被受管适配器替代')
+  const managedSubagent = dumpRows().find(row => row.id === 'teloa-managed-subagent')
+  assert.equal(managedSubagent?.name, '@teloa/harness-dsh/managed-subagent')
+  assert.equal(managedSubagent?.disabled, false, '受管子会话的原生读取与控制服务应保留')
   assert.equal(declaration.name, '@deepseek-ai/dsh-agent-preset')
-  assert.equal(declaration.config.name, 'Teloa 标准模式')
+  assert.equal(declaration.config.name, '标准模式')
 })
 
 test('组合树上 ptc-runtime 保持启用，两条工具入口保持关闭', () => {
   assert.doesNotMatch(dumpBlock('ptc-runtime'), /^\s+disabled: true$/m, 'ptc-runtime 关闭会让 Agent 预设挂载失败、任何 sessions.create 都失败')
-  for (const id of ['tool-workflow', 'tool-ralph']) {
+  for (const id of ['tool-workflow']) {
     assert.match(dumpBlock(id), /^\s+disabled: true$/m, id + ' 应由预设作用域提供，宿主入口必须关闭')
   }
 })
 
-test('组合树中五份预设可用，注册器部署默认身份保持不变', () => {
+test('组合树中原预设与两种可选代码组合可用，注册器部署默认身份保持不变', () => {
   const rows = dumpRows()
   const registry = rows.find(row => row.id === 'agent-preset-registry')
   assert.equal(registry.name, '@deepseek-ai/dsh-agent-preset-registry')
   assert.equal(registry.config.default, 'teloa-standard')
   const active = rows.filter(row => row.name === '@deepseek-ai/dsh-agent-preset' && !row.disabled)
-  assert.deepEqual(active.map(row => row.config.id).sort(), ['cordis', 'minimal', 'ptc', 'standard', 'teloa-standard'])
+  assert.deepEqual(active.map(row => row.config.id).sort(), ['cordis', 'minimal', 'ptc', 'ptc-persistent', 'ptc-python', 'standard', 'teloa-standard'])
   assert.equal(rows.some(row => row.id === 'agent-presets'), false)
 })
 

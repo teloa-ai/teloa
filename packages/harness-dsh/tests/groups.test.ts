@@ -2,6 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {createGroupHandler} from '../src/groups.ts'
+
+test('分页和全文检索固定宿主本人，非法游标及伪owner在打开服务前拒绝',async()=>{
+ const groupId=randomUUID(),messageId=randomUUID(),calls:unknown[]=[],handle=createGroupHandler('local:owner',async()=>({messagePage:async(...args:unknown[])=>{calls.push(args);return {page:true}},messageSearch:async(...args:unknown[])=>{calls.push(args);return {search:true}}}) as never,()=>{})
+ assert.deepEqual(await handle('groups/messages/page',{groupId,before:messageId,limit:20}),{page:true})
+ assert.deepEqual(await handle('groups/messages/search',{groupId,query:'原正文'}),{search:true})
+ assert.deepEqual((calls as any[]).map(row=>row[0]),['local:owner','local:owner'])
+ await assert.rejects(handle('groups/messages/page',{groupId,before:messageId,after:messageId}),{code:'teloa/invalid-input'})
+ await assert.rejects(handle('groups/messages/search',{groupId,query:'原正文',ownerId:'other'}),{code:'teloa/invalid-input'})
+ assert.equal(calls.length,2)
+})
 import {createGroupAgentGrantHandler} from '../src/group-agent-grants.ts'
 import {createGroupTaskHandler} from '../src/group-tasks.ts'
 
@@ -12,20 +22,21 @@ const create={requestId:randomUUID(),expectedVersion:0 as const,fields:{name:'SO
 const change={requestId:randomUUID(),groupId,expectedVersion:1,fields:{name:'SOC 调查群',announcement:'更新说明。',memberRoleIds:[roleId],pinned:true,archived:false}}
 const send={requestId:randomUUID(),groupId,expectedVersion:2,text:'开始核验。',references}
 
-test('群协作 RPC 固定使用宿主本人，十类端点分别调用服务',async()=>{
- const calls:unknown[]=[],backend={list:async(owner:string,input:unknown)=>{calls.push(['list',owner,input]);return []},get:async(owner:string,input:unknown)=>{calls.push(['get',owner,input]);return {id:groupId}},create:async(owner:string,input:unknown)=>{calls.push(['create',owner,input]);return {id:groupId}},change:async(owner:string,input:unknown)=>{calls.push(['change',owner,input]);return {id:groupId}},messages:async(owner:string,input:unknown)=>{calls.push(['messages',owner,input]);return []},send:async(owner:string,input:unknown)=>{calls.push(['send',owner,input]);return {id:randomUUID()}},resources:async(owner:string,input:unknown)=>{calls.push(['resources',owner,input]);return []},resource:async(owner:string,input:unknown)=>{calls.push(['resource',owner,input]);return {resourceId:referenceId}},saveResource:async(owner:string,input:unknown)=>{calls.push(['saveResource',owner,input]);return {id:referenceId}},withdrawResource:async(owner:string,input:unknown)=>{calls.push(['withdrawResource',owner,input]);return {id:referenceId}},reactions:async(owner:string,input:unknown)=>{calls.push(['reactions',owner,input]);return {items:[]}},toggleReaction:async(owner:string,input:unknown)=>{calls.push(['toggleReaction',owner,input]);return {messageId:'',items:[]}},routing:async(owner:string,input:unknown)=>{calls.push(['routing',owner,input]);return {items:[]}}}
+test('群协作 RPC 固定使用宿主本人，原有读写和按需全文分别调用原服务',async()=>{
+ const calls:unknown[]=[],backend={list:async(owner:string,input:unknown)=>{calls.push(['list',owner,input]);return []},get:async(owner:string,input:unknown)=>{calls.push(['get',owner,input]);return {id:groupId}},create:async(owner:string,input:unknown)=>{calls.push(['create',owner,input]);return {id:groupId}},change:async(owner:string,input:unknown)=>{calls.push(['change',owner,input]);return {id:groupId}},messages:async(owner:string,input:unknown)=>{calls.push(['messages',owner,input]);return []},messageBody:async(owner:string,input:unknown)=>{calls.push(['messageBody',owner,input]);return {}},send:async(owner:string,input:unknown)=>{calls.push(['send',owner,input]);return {id:randomUUID()}},resources:async(owner:string,input:unknown)=>{calls.push(['resources',owner,input]);return []},resource:async(owner:string,input:unknown)=>{calls.push(['resource',owner,input]);return {resourceId:referenceId}},saveResource:async(owner:string,input:unknown)=>{calls.push(['saveResource',owner,input]);return {id:referenceId}},withdrawResource:async(owner:string,input:unknown)=>{calls.push(['withdrawResource',owner,input]);return {id:referenceId}},reactions:async(owner:string,input:unknown)=>{calls.push(['reactions',owner,input]);return {items:[]}},toggleReaction:async(owner:string,input:unknown)=>{calls.push(['toggleReaction',owner,input]);return {messageId:'',items:[]}},routing:async(owner:string,input:unknown)=>{calls.push(['routing',owner,input]);return {items:[]}},routingStatus:async(owner:string,input:unknown)=>{calls.push(['routingStatus',owner,input]);return {items:[]}},retryRouting:async(owner:string,input:unknown)=>{calls.push(['retryRouting',owner,input]);return {messageId:groupId,attemptVersion:2}}}
  const handle=createGroupHandler('local:owner',async()=>backend,()=>{})
  await handle('groups/list',{})
  await handle('groups/get',{groupId})
  await handle('groups/create',create)
  await handle('groups/change',change)
  await handle('groups/messages/list',{groupId})
+ await handle('groups/messages/body',{groupId,messageId:referenceId})
  await handle('groups/messages/send',send)
  await handle('groups/resources/list',{groupId})
  await handle('groups/resources/get',{groupId,resourceId:referenceId,resourceVersion:1})
  await handle('groups/resources/save',{requestId:randomUUID(),groupId,resourceId:referenceId,expectedVersion:0,title:'研判依据',markdown:'# 固定证据'})
  await handle('groups/resources/withdraw',{requestId:randomUUID(),groupId,resourceId:referenceId,expectedVersion:1})
- assert.deepEqual(calls.map(row=>(row as unknown[]).slice(0,2)),[['list','local:owner'],['get','local:owner'],['create','local:owner'],['change','local:owner'],['messages','local:owner'],['send','local:owner'],['resources','local:owner'],['resource','local:owner'],['saveResource','local:owner'],['withdrawResource','local:owner']])
+ assert.deepEqual(calls.map(row=>(row as unknown[]).slice(0,2)),[['list','local:owner'],['get','local:owner'],['create','local:owner'],['change','local:owner'],['messages','local:owner'],['messageBody','local:owner'],['send','local:owner'],['resources','local:owner'],['resource','local:owner'],['saveResource','local:owner'],['withdrawResource','local:owner']])
 })
 
 test('客户端不能伪造 owner、作者、消息身份或在 get 中混入根消息；服务未就绪显式失败',async()=>{
@@ -37,6 +48,7 @@ test('客户端不能伪造 owner、作者、消息身份或在 get 中混入根
  await assert.rejects(handle('groups/messages/send',{...send,messageId:randomUUID()}),{code:'teloa/invalid-input'})
  await assert.rejects(handle('groups/resources/save',{requestId:randomUUID(),groupId,resourceId:referenceId,expectedVersion:0,title:'资料',markdown:'正文',ownerId:'other'}),{code:'teloa/invalid-input'})
  await assert.rejects(handle('groups/get',{groupId,rootId:randomUUID()}),{code:'teloa/invalid-input'})
+ await assert.rejects(handle('groups/messages/body',{groupId,messageId:referenceId,ownerId:'other'}),{code:'teloa/invalid-input'})
  assert.equal(opened,0)
  await assert.rejects(handle('groups/list',{}),{code:'teloa/host-unavailable'})
  assert.equal(opened,1)

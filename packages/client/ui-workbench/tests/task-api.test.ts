@@ -83,3 +83,9 @@ test('运行配置失败可提醒已交办的可恢复任务，并使用明确�
  assert.equal(taskAttentionDescription(attention.reason,key=>key==='task.attention.reason.executionConfigurationFailed'?'Runtime setup is incomplete. Review it before preparing again.':key),'Runtime setup is incomplete. Review it before preparing again.')
  await assert.rejects(createTaskApi(async()=>({items:[{task:row,attention}]})).attention(),/需要你/)
 })
+
+test('通用本人执行完成可在需要你目录验收，普通空负责人仍不可伪造执行来源',async()=>{
+ const task={...row,scope:'general',state:'waiting',assigneeRoleId:null,assigneeRoleVersion:null,executor:{kind:'owner',grantId:'11111111-1111-4111-8111-111111111111',grantVersion:1}},attention={kind:'review',reason:'execution-completed'}
+ assert.equal((await createTaskApi(async()=>({items:[{task,attention}]})).attention()).items[0]?.task.executor?.kind,'owner')
+ await assert.rejects(createTaskApi(async()=>({items:[{task:{...task,executor:undefined},attention}]})).attention())
+})

@@ -1,5 +1,9 @@
 export * from './tasks.ts'
+export * from './devices.ts'
+export * from './assistant-channel.ts'
+export * from './external-harness.ts'
 export * from './projects.ts'
+export * from './project-context.ts'
 export * from './task-runs.ts'
 export * from './business-data.ts'
 export * from './business-spaces.ts'
@@ -7,9 +11,16 @@ export * from './business-scopes.ts'
 export * from './roles.ts'
 export * from './model-policy.ts'
 export * from './collaboration.ts'
+export * from './group-work-links.ts'
 export * from './group-attachments.ts'
 export * from './group-reactions.ts'
 export * from './group-routing.ts'
+export * from './group-message-relation.ts'
+export * from './group-reading.ts'
+export * from './group-mentions.ts'
+export * from './group-messages.ts'
+export * from './personal-profile.ts'
+export * from './group-work-inputs.ts'
 export * from './web-access.ts'
 export * from './resource-history.ts'
 export * from './artifact-files.ts'
@@ -18,11 +29,13 @@ export * from './task-materials.ts'
 export * from './task-handoffs.ts'
 export * from './knowledge.ts'
 export * from './conversation-changes.ts'
+export * from './execution-session-identity.ts'
 export * from './session-capabilities.ts'
 export * from './resource-recovery.ts'
 export * from './work-error.ts'
 export * from './security-actions.ts'
 export * from './industry-definitions.ts'
+export * from './grok-recipe.ts'
 export * from './business-definitions.ts'
 export * from './role-conversation-prompt.ts'
 export * from './business-views-v2.ts'
@@ -46,9 +59,9 @@ export type Conversation = {
   /** 创建时固定的工作区；不是当前归属，旧记录可缺省。 */
   requestedWorkspaceId?: string
   /** 服务端运行编排用途；普通会话缺省。 */
-  purpose?: 'task-run'
+  purpose?: 'task-run' | 'assistant'
   /** 运行专用预约首次派生后固定，客户端不得提交或改写。 */
-  run?: {taskId:string;taskVersion:number;roleId:string;roleVersion:number;agentPresetId:string}
+  run?: {taskId:string;taskVersion:number;roleId:string|null;roleVersion:number|null;agentPresetId:string;executor?:Extract<import('./tasks.ts').WorkExecutor,{kind:'owner'}>}
 }
 
 export type CapabilitySnapshot = {
@@ -68,8 +81,8 @@ export function isConversation(value:unknown):value is Conversation {
   if(value.requestedWorkspaceId!==undefined&&!id(value.requestedWorkspaceId))return false
   if(value.requestId!==undefined&&(typeof value.requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value.requestId)))return false
   const run=value.run
-  const validRun=record(run)&&id(run.taskId)&&Number.isSafeInteger(run.taskVersion)&&Number(run.taskVersion)>0&&id(run.roleId)&&Number.isSafeInteger(run.roleVersion)&&Number(run.roleVersion)>0&&typeof run.agentPresetId==='string'&&/^[a-z0-9][-a-z0-9]{0,119}$/.test(run.agentPresetId)
-  if(value.purpose==='task-run'?!validRun||value.requestId===undefined||value.requestedSessionId!==value.sessionId:value.purpose!==undefined||value.run!==undefined||value.status==='failed')return false
+  const validRun=record(run)&&id(run.taskId)&&Number.isSafeInteger(run.taskVersion)&&Number(run.taskVersion)>0&&(run.executor===undefined?id(run.roleId)&&Number.isSafeInteger(run.roleVersion)&&Number(run.roleVersion)>0:record(run.executor)&&run.executor.kind==='owner'&&id(run.executor.grantId)&&run.executor.grantVersion===1&&Object.keys(run.executor).length===3&&run.roleId===null&&run.roleVersion===null)&&typeof run.agentPresetId==='string'&&/^[a-z0-9][-a-z0-9]{0,119}$/.test(run.agentPresetId)
+  if(value.purpose==='task-run'?!validRun||value.requestId===undefined||value.requestedSessionId!==value.sessionId:!['assistant',undefined].includes(value.purpose as 'assistant'|undefined)||value.run!==undefined||value.status==='failed'||value.purpose==='assistant'&&value.requestId===undefined)return false
   return id(value.id)&&id(value.sessionId)&&id(value.requestedSessionId)&&typeof value.ownerId==='string'&&value.ownerId.length>0&&typeof value.title==='string'&&value.title.trim().length>0&&value.title.length<=200&&Array.isArray(value.scopeIds)&&value.scopeIds.length===1&&value.scopeIds[0]==='general'&&value.version===1&&['ready','pending','failed'].includes(String(value.status))&&typeof value.createdAt==='string'&&Number.isFinite(Date.parse(value.createdAt))
 }
 export function isCapabilitySnapshot(value:unknown):value is CapabilitySnapshot {
@@ -203,3 +216,17 @@ export {readWorkBudgetPolicy,type BudgetReservation} from './work-budget.ts'
 export * from './plan-work.ts'
 export * from './work-events.ts'
 export * from './work-progress.ts'
+export * from './work-attention.ts'
+export * from './method-reuse.ts'
+export * from './template-share.mjs'
+export * from './voice-calls.ts'
+export * from './voice-call-progress.ts'
+export * from './voice-service.ts'
+export * from './business-change-sets.ts'
+export * from './business-work-pagination.ts'
+export * from './business-work-results.ts'
+export * from './business-share-inspection.ts'
+export * from './industry-file-boundary.ts'
+export * from './business-template-upgrade-impact.ts'
+
+export * from './project-runtime.ts'

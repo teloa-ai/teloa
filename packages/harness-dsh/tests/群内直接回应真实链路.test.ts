@@ -32,15 +32,15 @@ import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {openResourceDatabase,groupRelayStopText,groupTopicNotice,runGroupContextHash,type RunGroupContext} from '@teloa/backend'
-import {groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingOutput,groupRoutingOutputSchema,groupRoutingRequestId,workErrorCodes} from '@teloa/contract'
+import {openResourceDatabase,groupRelayStopText,groupConversationNotice,groupTopicNotice,runGroupContextHash,type RunGroupContext} from '@teloa/backend'
+import {groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingOutputV2,groupRoutingOutputSchema,groupRoutingOutputV2Schema,groupRoutingRequestId,workErrorCodes,type GroupRoutingIntent,type GroupRoutingAssignment,type GroupRoutingWorkTarget} from '@teloa/contract'
 import {apply} from '../src/index.ts'
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
-import {isRoutingSession} from '../src/group-routing.ts'
-import {groupRoutingDenyReason} from '../src/group-routing-guard.ts'
+import {groupInstructionRanges,isRoutingSession} from '../src/group-routing.ts'
 import {reactGroupOnlyReason,reactPostReason,reactTopicReason,groupReactToolName} from '../src/group-react-tool.ts'
 import {compositionEntries} from './fixtures/production-host.ts'
-import {installNativeHostServices,ControlledPromptModel,controlTaskQueue} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,ControlledPromptModel,controlTaskQueue} from './fixtures/native-host-services.ts'
+import {nativeToolInvocation} from './fixtures/native-tool-invocation.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
 const repositoryRoot=resolve(dirname(fileURLToPath(import.meta.url)),'..','..','..')
@@ -68,8 +68,12 @@ type Message={id:string;groupId:string;rootId:string|null;authorId:string;text:s
 type Run={id:string;taskId:string;sessionId:string;nativeRequestId:string;state:string;groupContext?:RunGroupContext;inputText?:string}
 type Decision={kind:string;respond:string[];reactions:{roleId:string;emoji:string}[];hops:number;candidateIds:string[];truncatedCandidates:boolean;stopMessageId:string|null;at:string}
 
-const answerOf=(respond:string[],reactions:{roleId:string;emoji:string}[]=[])=>JSON.stringify({schema:groupRoutingOutputSchema,respond,reactions})
-const emptyAnswer=answerOf([])
+/** 生产路由只认 v2 六键（`group-routing.ts` 的 `groupRoutingOutputV2`）；桩按同一契约作答。 */
+const answerOf=(intent:GroupRoutingIntent,respond:string[],reactions:{roleId:string;emoji:string}[]=[],assignments:GroupRoutingAssignment[]=[],workTarget:GroupRoutingWorkTarget|null=null)=>
+ JSON.stringify({schema:groupRoutingOutputV2Schema,intent,respond,reactions,assignments,workTarget})
+const emptyAnswer=answerOf('none',[])
+/** 已退役的 v1 三键：只用于「旧协议单独被拒」那一条，不进任何正例。 */
+const legacyAnswerOf=(respond:string[])=>JSON.stringify({schema:groupRoutingOutputSchema,respond,reactions:[]})
 
 test('群内直接回应从路由到接力停下与表情：真库、真端点、真守卫的跨四包全链路（模型侧为桩）',{timeout:1_800_000},async t=>{
  // ════════════════════ 装配 ════════════════════
@@ -93,14 +97,9 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
 
  const ctx=new Context()
  ctx.provide('loader',compositionEntries())
- await ctx.plugin(LlmRuntime)
- ctx.llm.registerAdapter(['test'],new ControlledPromptModel())
- await ctx.plugin(SessionStore)
- await ctx.plugin(SessionProjectionRegistry)
- await ctx.plugin(SystemPrompt)
- await ctx.plugin(ToolRuntime)
- await ctx.plugin(AgentRegistry)
- await ctx.plugin(AgentLoop,{agents:[]})
+ await installNativeSessions(ctx)
+ const toolLoop=nativeToolInvocation(ctx,{providers:['test'],adapter:new ControlledPromptModel()})
+ const nativeRuns=new Set<string>()
  await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
 
  const workspaces=new Map<string,{id:string;path:string}>()
@@ -152,6 +151,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  }
  /** 同事这一轮说完了：等到轮次开着，再补上助手正文与终轮，`readTaskRunGroupResult` 这才取得回正文。 */
  const finishRun=async(sessionId:string,text:string):Promise<void>=>{
+  if(nativeRuns.has(sessionId)){await toolLoop.finish(agents.get(sessionId)!.agent,text);return}
   const turn=await awaitOpenTurn(sessionId)
   const session=sessionOf(sessionId)
   appendEvent(session,'assistant/message',{turn,step:1,message:createAssistantMessage({source:{provider:'test',model:'test'},content:[{type:'text',text}]}),stream:[]},{surfaceOp:'append'})
@@ -201,12 +201,8 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
    return {accepted:true as const}
   },
  })
- ctx.provide('skills',{
-  list:async()=>[],
-  registerProvider:(factory:(control:{invalidate:()=>void;signal:AbortSignal})=>unknown)=>{factory({invalidate:()=>{},signal:new AbortController().signal});return ()=>{}},
- })
+
  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??teloaAgentPresetId})})
- ctx.provide('fs',{})
  ctx.provide('fileReferences',{})
  let registered:RpcHandler|undefined
  ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(path:string,handler:RpcHandler)=>{assert.equal(path,'/teloa');registered=handler;return ()=>{registered=undefined}}}})
@@ -382,7 +378,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
 
  // ════════════════════ I3 ＋ I4 ＋ I5 ════════════════════
  const firstText='这一单要怎么处理？'
- answers.set(firstText,answerOf([roleA.id]))
+ answers.set(firstText,answerOf('reply',[roleA.id]))
  const firstRequestId=randomUUID()
  const startedAt=Date.now()
  const rootMessage=await call('groups/messages/send',{requestId:firstRequestId,groupId:groupA.id,expectedVersion:groupA.version,text:firstText}) as Message
@@ -424,7 +420,9 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  await t.test('I8 input_text 顶层带 groupTopic：≤20 条、升序、每项恰 5 键、notice 逐字',()=>{
   const topic=firstInput.groupTopic as {notice:string;messages:Record<string,unknown>[]}
   assert.ok(topic,'群任务的执行输入必须带 groupTopic')
-  assert.equal(topic.notice,groupTopicNotice)
+  // 路由派工是 v2 群来源：按连续上下文读取（规格 §3.3），notice 逐字是连续上下文那一句；手工群任务仍沿原话题那一句。
+  assert.equal(topic.notice,groupConversationNotice)
+  assert.notEqual(topic.notice,groupTopicNotice)
   assert.ok(topic.messages.length>=1&&topic.messages.length<=20)
   for(const message of topic.messages)assert.deepEqual(Object.keys(message).sort(),['authorId','authorKind','authorName','createdAt','text'])
   const stamps=topic.messages.map(message=>Date.parse(String(message.createdAt)))
@@ -444,7 +442,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  const midMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:midText,rootId}) as Message
  await awaitDecision(midMessage.id)
  const relayText='收到，这件事要请 @物流二号 接着看一下。'
- answers.set(relayText,answerOf([roleB.id]))
+ answers.set(relayText,answerOf('reply',[roleB.id]))
  await finishRun(firstRun.sessionId,relayText)
  await call('task-runs/reconcile',{runId:firstRun.id})
  const topicAfterFirst=await topicRows(rootId)
@@ -582,45 +580,101 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   assert.equal(String(secondStopRow!.request_id),groupRelayStopRequestId(owner,groupA.id,rootId,2))
  })
 
- // ════════════════════ I18：路由 JSON 的四种坏法 ════════════════════
- const badAnswers=[
-  {label:'非 JSON',text:'我觉得应该让售后一号来回。',mention:true},
-  {label:'多一键',text:JSON.stringify({schema:groupRoutingOutputSchema,respond:[],reactions:[],note:'多一键'}),mention:false},
-  {label:'roleId 不在候选集',text:answerOf([randomUUID()]),mention:false},
-  {label:'emoji 不在十二枚',text:JSON.stringify({schema:groupRoutingOutputSchema,respond:[],reactions:[{roleId:roleA.id,emoji:'🍌'}]}),mention:false},
+ // ════════════════════ I18：路由 JSON 的坏法（v2 判据逐条 ＋ v1 旧协议单独拒绝） ════════════════════
+ // `answer` 拿到的是触发正文：指令范围按这条正文校验，越界与切开代理对都要相对它构造。
+ const badAnswers:{label:string;answer:(text:string)=>string;mention:boolean}[]=[
+  {label:'非 JSON',answer:()=>'我觉得应该让售后一号来回。',mention:true},
+  {label:'v1 旧协议三键',answer:()=>legacyAnswerOf([roleA.id]),mention:false},
+  {label:'多一键',answer:()=>JSON.stringify({...JSON.parse(answerOf('reply',[])),note:'多一键'}),mention:false},
+  {label:'意图不在闭集',answer:()=>JSON.stringify({...JSON.parse(answerOf('reply',[roleA.id])),intent:'delegate'}),mention:false},
+  {label:'roleId 不在候选集',answer:()=>answerOf('reply',[randomUUID()]),mention:false},
+  {label:'emoji 不在十二枚',answer:()=>answerOf('reply',[],[{roleId:roleA.id,emoji:'🍌'}]),mention:false},
+  {label:'work 缺逐人分工',answer:()=>answerOf('work',[roleA.id]),mention:false},
+  {label:'reply 夹带分工',answer:text=>answerOf('reply',[roleA.id],[],[{roleId:roleA.id,instructionRange:{start:0,end:text.length}}]),mention:false},
+  {label:'分工不在 respond',answer:text=>answerOf('work',[roleA.id],[],[{roleId:roleB.id,instructionRange:{start:0,end:text.length}}]),mention:false},
+  {label:'指令范围越界',answer:text=>answerOf('work',[roleA.id],[],[{roleId:roleA.id,instructionRange:{start:0,end:text.length+1}}]),mention:false},
+  {label:'指令范围切开代理对🧾',answer:text=>answerOf('work',[roleA.id],[],[{roleId:roleA.id,instructionRange:{start:0,end:text.indexOf('🧾')+1}}]),mention:false},
+  {label:'reply 夹带工作目标',answer:()=>answerOf('reply',[roleA.id],[],[],{taskId:randomUUID(),runId:null}),mention:false},
+  {label:'stop 目标不在本群工作',answer:()=>answerOf('stop',[],[],[],{taskId:randomUUID(),runId:null}),mention:false},
  ]
- const badResults:{label:string;decision:Decision}[]=[]
+ const sourcesBeforeBad=await countOf('teloa_group_task_sources')
+ const badResults:{label:string;messageId:string;decision:Decision}[]=[]
  for(const bad of badAnswers){
   const text=`坏 JSON 验收：${bad.label}`
-  answers.set(text,bad.text)
+  answers.set(text,bad.answer(text))
   const sent=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text,...(bad.mention?{mentions:[{roleId:roleA.id,expectedVersion:roleA.version}]}:{})}) as Message
-  badResults.push({label:bad.label,decision:await awaitDecision(sent.id)})
+  badResults.push({label:bad.label,messageId:sent.id,decision:await awaitDecision(sent.id)})
  }
- await t.test('I18 四种坏 JSON 都判 parse-failed：有 @ 时退化到 mentions ∩ 候选，没有 @ 就一个字不回',()=>{
-  assert.deepEqual(badResults.map(item=>[item.label,item.decision.kind]),badAnswers.map(bad=>[bad.label,'parse-failed']))
-  assert.deepEqual(badResults[0]!.decision.respond,[roleA.id],'有 @ 时退化到被 @ 且在候选集里的那位')
-  for(const item of badResults.slice(1))assert.deepEqual(item.decision.respond,[],'没有 @ 就不回')
-  for(const item of badResults)assert.deepEqual(item.decision.reactions,[],'退化时一个表情都不落')
+ // 有 @ 的那一条由宿主按结构化目标直接派给 A：等它的运行起来，确保来源计数不与在途派发赛跑。
+ const mentionedBad=await awaitRoutedRun(badResults[0]!.messageId,roleA.id)
+ const sourcesAfterBad=await countOf('teloa_group_task_sources')
+ await t.test('I18 坏 JSON（含 v1 旧协议）整条被拒：有结构化 @ 时宿主直接派给被点名者，没有 @ 就一个字不回、一条任务不建',()=>{
+  // 结构化 @（规格 §3.2）：接收者由宿主固定、模型只判意图；模型答坏时仍按点名派发，记 direct 而不是 parse-failed。
+  assert.deepEqual([badResults[0]!.decision.kind,badResults[0]!.decision.respond],['direct',[roleA.id]],'有 @ 时只派给被 @ 且在候选集里的那位')
+  assert.ok(mentionedBad.taskId,'被点名者的任务必须真的建起来')
+  assert.deepEqual(badResults.slice(1).map(item=>[item.label,item.decision.kind]),badAnswers.slice(1).map(bad=>[bad.label,'parse-failed']))
+  for(const item of badResults.slice(1))assert.deepEqual(item.decision.respond,[],`${item.label}：没有 @ 就不回`)
+  for(const item of badResults)assert.deepEqual(item.decision.reactions,[],`${item.label}：退化时一个表情都不落`)
+  assert.equal(sourcesAfterBad,sourcesBeforeBad+1,'整段只许多出被点名那一位的群任务来源')
+  // v1 三键在 v2 解析器面前就是错形状，不存在「旧协议放行」的兜底分支。
+  assert.throws(()=>groupRoutingOutputV2(legacyAnswerOf([roleA.id]),[roleA.id,roleB.id],[],'任意正文'),{code:'teloa/invalid-input'})
+ })
+
+ // ════════════════════ I18b：work 逐人指令范围的真实派发 ════════════════════
+ // 本人一句话交给两位：模型只能逐字复制宿主算好的原文范围；工作目标由宿主按本人原文切取，不读模型的任何生成文本。
+ const workText='请两位分工处理。售后一号整理退款清单；物流二号核对三张运单。'
+ const workRanges=groupInstructionRanges(workText)
+ const refundRange=workRanges.find(item=>item.text.startsWith('售后一号'))!,waybillRange=workRanges.find(item=>item.text.startsWith('物流二号'))!
+ assert.ok(refundRange&&waybillRange,'前置：宿主切出的范围必须含两位各自的那一句')
+ answers.set(workText,answerOf('work',[roleA.id,roleB.id],[],[{roleId:roleA.id,instructionRange:{start:refundRange.start,end:refundRange.end}},{roleId:roleB.id,instructionRange:{start:waybillRange.start,end:waybillRange.end}}]))
+ const workMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:workText}) as Message
+ const workDecision=await awaitDecision(workMessage.id)
+ const workRunA=await awaitRoutedRun(workMessage.id,roleA.id),workRunB=await awaitRoutedRun(workMessage.id,roleB.id)
+ const workOutbox=(await pool.query('select role_id,execution_mode,instruction_range,stage,task_id from teloa_group_routing_outbox where owner_id=$1 and message_id=$2 order by role_id',[owner,workMessage.id])).rows
+ const goalOf=async(taskId:string)=>{
+  const goal=(await pool.query("select definition->>'goal' as goal from teloa_tasks where owner_id=$1 and id=$2",[owner,taskId])).rows[0]?.goal
+  assert.equal(typeof goal,'string',`任务 ${taskId} 必须固定一段目标正文`)
+  return goal as string
+ }
+ const workGoalA=await goalOf(workRunA.taskId),workGoalB=await goalOf(workRunB.taskId)
+ await t.test('I18b work 逐人指令范围：决策带 intent=work 与两段原文范围，两位各建一条 work 任务，目标只含本人原文中交给自己的那一句',()=>{
+  assert.equal(workDecision.kind,'routed')
+  assert.deepEqual([...workDecision.respond].sort(),[roleA.id,roleB.id].sort())
+  const recorded=workDecision as Decision&{intent?:string;assignments?:GroupRoutingAssignment[];workTarget?:unknown}
+  assert.equal(recorded.intent,'work')
+  assert.equal(recorded.workTarget,null)
+  assert.deepEqual(recorded.assignments,[{roleId:roleA.id,instructionRange:{start:refundRange.start,end:refundRange.end}},{roleId:roleB.id,instructionRange:{start:waybillRange.start,end:waybillRange.end}}])
+  assert.equal(workOutbox.length,2,'两位接收者各一条投递')
+  for(const row of workOutbox){
+   const expected=String(row.role_id)===roleA.id?refundRange:waybillRange
+   assert.equal(String(row.execution_mode),'work')
+   assert.deepEqual(row.instruction_range,{start:expected.start,end:expected.end})
+   assert.equal(row.stage,1)
+  }
+  assert.ok(workGoalA.endsWith(refundRange.text)&&!workGoalA.includes(waybillRange.text),'A 的目标只含交给 A 的那一句')
+  assert.ok(workGoalB.endsWith(waybillRange.text)&&!workGoalB.includes(refundRange.text),'B 的目标只含交给 B 的那一句')
+  assert.equal(workRunA.requestId,groupRoutedTaskRequestId(owner,groupA.id,workMessage.id,roleA.id))
+  assert.equal(workRunB.requestId,groupRoutedTaskRequestId(owner,groupA.id,workMessage.id,roleB.id))
  })
 
  // ════════════════════ I19 / I20 / I21：候选集的三条反例 ════════════════════
  const memberRows=(await pool.query('select member_key,role_id from teloa_group_members where owner_id=$1 and group_id=$2',[owner,groupA.id])).rows
  const twinAnswerText='分身验收：模型硬返回分身。'
- answers.set(twinAnswerText,answerOf([twin.id]))
+ answers.set(twinAnswerText,answerOf('reply',[twin.id]))
  const twinMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:twinAnswerText}) as Message
  const twinDecision=await awaitDecision(twinMessage.id)
  // 「不在候选集」这条判据对三类人是同一条：`firstDecision.candidateIds` 不含它们只是读口的结论，
  // 真正要验的是「模型硬把它塞回来也过不去」。分身那条在 I21，没有发言权那位在 I26（一），
  // 关掉自动开始的这一位补在这里。
  const noAutoAnswerText='不自动验收：模型硬返回关掉自动开始的那位。'
- answers.set(noAutoAnswerText,answerOf([roleNoAuto.id]))
+ answers.set(noAutoAnswerText,answerOf('reply',[roleNoAuto.id]))
  const noAutoMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:noAutoAnswerText}) as Message
  const noAutoDecision=await awaitDecision(noAutoMessage.id)
  const noAutoSources=(await pool.query('select 1 from teloa_group_task_sources where owner_id=$1 and request_id=$2',[owner,groupRoutedTaskRequestId(owner,groupA.id,noAutoMessage.id,roleNoAuto.id)])).rows
  await t.test('I19 canAutoRun 为假的同事不进候选；模型硬返回它也整条 parse-failed，一条群任务都不建',()=>{
   assert.equal(firstDecision.candidateIds.includes(roleNoAuto.id),false)
   assert.equal(noAutoDecision.candidateIds.includes(roleNoAuto.id),false)
-  assert.throws(()=>groupRoutingOutput(answerOf([roleNoAuto.id]),noAutoDecision.candidateIds),{code:'teloa/invalid-input'})
+  assert.throws(()=>groupRoutingOutputV2(answerOf('reply',[roleNoAuto.id]),noAutoDecision.candidateIds,[],noAutoAnswerText),{code:'teloa/invalid-input'})
   assert.equal(noAutoDecision.kind,'parse-failed')
   assert.deepEqual(noAutoDecision.respond,[])
   assert.deepEqual(noAutoSources,[],'被拒的那一轮一条群任务来源都不许落表')
@@ -631,7 +685,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  await t.test('I21 分身与跨范围都不进候选；模型硬返回分身即 teloa/invalid-input；member_key=self 那行不是候选（M15）',()=>{
   assert.equal(firstDecision.candidateIds.includes(twin.id),false,'分身即使手工签了一版 active 授权也不入候选')
   assert.equal(firstDecision.candidateIds.includes(roleOffScope.id),false,'业务范围不匹配的同事不入候选')
-  assert.throws(()=>groupRoutingOutput(answerOf([twin.id]),twinDecision.candidateIds),{code:'teloa/invalid-input'})
+  assert.throws(()=>groupRoutingOutputV2(answerOf('reply',[twin.id]),twinDecision.candidateIds,[],twinAnswerText),{code:'teloa/invalid-input'})
   assert.equal(twinDecision.kind,'parse-failed','硬返回分身的那一轮整条判解析失败')
   assert.deepEqual(twinDecision.respond,[])
   const selfRow=memberRows.find(row=>String(row.member_key)==='self')
@@ -652,22 +706,29 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  const orphanHandle=await createAgent(orphanId,{cwd:'/',origin:'subagent',parentSession:'never-existed-'+randomUUID(),delegationDepth:1})
  let callSeq=0
  const runTool=async(agent:AgentHandle['agent'],name:string,args:Record<string,unknown>):Promise<{isError:boolean}>=>
-  await ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId('chain-'+String(++callSeq)),signal:AbortSignal.timeout(20_000)}) as unknown as {isError:boolean}
+  nativeRuns.has(agent.id)?await toolLoop.invoke(agent,{name,arguments:args,callId:ToolCallId('chain-'+String(++callSeq)),signal:AbortSignal.timeout(20_000)}):await ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId('chain-'+String(++callSeq)),signal:AbortSignal.timeout(20_000)})
+ const selectRun=(run:Run)=>{
+  const agent=agents.get(run.sessionId)!.agent,followup=Reflect.get(Object.getPrototypeOf(agent),'followup')
+  assert.equal(typeof followup,'function')
+  // 只把原 Run 模型 IO 交还真实 Loop，最终原始输入仍由 Task driver 受理。
+  agent.followup=message=>{Reflect.apply(followup,agent,[message])}
+  nativeRuns.add(run.sessionId);toolLoop.select(agent)
+ }
  const deniedRouting=await runTool(routingAgent.agent,groupReactToolName,{messageId:rootId,emoji:'👍'})
  const deniedChild=await runTool(childHandle.agent,groupReactToolName,{messageId:rootId,emoji:'👍'})
  const deniedOrphan=await runTool(orphanHandle.agent,groupReactToolName,{messageId:rootId,emoji:'👍'})
  const reactionsOfRoot=async()=>(await pool.query('select actor_kind,actor_id,emoji,run_id,request_id,withdrawn_at from teloa_group_reactions where owner_id=$1 and message_id=$2 order by created_at',[owner,rootId])).rows
  const afterDeny=await reactionsOfRoot()
- await t.test('I22 路由会话与它的子 Agent 调任何工具都被拒，理由逐字且不泄身份；谱系断链另一条理由',()=>{
+ await t.test('I22 无真实 Loop 受理因果的路由、子 Agent 与断链调用全拒，理由逐字且不泄身份',()=>{
   for(const [label,result] of [['路由会话',deniedRouting],['子 Agent',deniedChild]] as const){
    assert.equal(result.isError,true,`${label}的工具调用必须被拒`)
    const body=JSON.stringify(result)
-   assert.ok(body.includes(groupRoutingDenyReason),`${label}应逐字回「${groupRoutingDenyReason}」，实得 ${body}`)
+   assert.ok(body.includes('工作许可或实际受理因果已失效。'),`${label}必须先被外层最终因果闸拒绝，实得 ${body}`)
    for(const leak of [routingSessionId,childId,groupReactToolName,rootId])assert.equal(body.includes(leak),false,`${label}的理由泄了 ${leak}`)
   }
   assert.equal(deniedOrphan.isError,true)
   const orphanBody=JSON.stringify(deniedOrphan)
-  assert.ok(orphanBody.includes('无法核对任务执行权限，请先恢复授权服务。'))
+  assert.ok(orphanBody.includes('工作许可或实际受理因果已失效。'))
   for(const leak of [orphanId,routingSessionId,groupReactToolName,rootId])assert.equal(orphanBody.includes(leak),false)
   // 这一刻没有任何一次路由在途，闸照样拒——它判的是会话 id 的结构，不是「有没有在跑」。
   // 「超时之后闸仍然在」那一条另有专用用例（`group-routing-channel.test.ts:239`），本用例不重复它。
@@ -715,6 +776,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  assert.equal((legacyInput.groupTopic as {messages:unknown[]}).messages.length,Math.min(20,legacyTopicCount),'话题投影必须恰好是最近 20 条（不足 20 时是全部）')
  delete legacyInput.groupTopic
  await pool.query('update teloa_task_runs set input_text=$3 where owner_id=$1 and id=$2',[owner,legacyRun.id,JSON.stringify(legacyInput)])
+ selectRun(legacyRun)
  const legacyStarted=await call('task-runs/start',{runId:legacyRun.id}) as Run
  await t.test('I11 把 input_text 里的 groupTopic 整键删掉，claim() 仍然成功（在途旧行不被判损坏）',()=>{
   // 两态都算成功且都不是本条的被测面：`record()` 写的是 `mergeRunEvidence(已有证据,{state:'accepted'})`，
@@ -747,6 +809,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  // canPost 为假那一位：给他手工起一次群运行（准备与启动都不看 canPost，发言权在 post 与本工具这一层判）。
  const noPostTask=await call('groups/tasks/create',{requestId:randomUUID(),groupId:groupA.id,messageId:rootId,expectedGroupVersion:groupA.version,goal:'验收无发言授权。',assignee:{roleId:roleNoPost.id,expectedVersion:roleNoPost.version}}) as {task:{id:string;version:number}}
  const noPostRun=await call('task-runs/prepare',{requestId:randomUUID(),taskId:noPostTask.task.id,expectedTaskVersion:noPostTask.task.version}) as Run
+ selectRun(noPostRun)
  await call('task-runs/start',{runId:noPostRun.id})
  const noPostDenied=await runTool(agents.get(noPostRun.sessionId)!.agent,groupReactToolName,{messageId:rootId,emoji:'👍'})
  // 第一道闸（不是群任务的运行）：要用一条**有 Run 作用域但没有 groupContext** 的普通任务运行。
@@ -754,6 +817,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  // 根本走不到本工具的 authorize()——那验的是任务闸，不是这一道。
  const plainTask=await call('tasks/create',{requestId:randomUUID(),fields:{title:'不是群任务','goal':'验收第一道闸',scope:'SOC'},assignee:{roleId:roleA.id,expectedVersion:roleA.version}}) as {id:string;version:number}
  const plainRun=await call('task-runs/prepare',{requestId:randomUUID(),taskId:plainTask.id,expectedTaskVersion:plainTask.version}) as Run
+ selectRun(plainRun)
  await call('task-runs/start',{runId:plainRun.id})
  const ordinaryDenied=await runTool(agents.get(plainRun.sessionId)!.agent,groupReactToolName,{messageId:rootId,emoji:'👍'})
  await t.test('I25 teloa_group_react 四道闸各走一次：群运行、canPost、入参、本话题',()=>{
@@ -801,12 +865,12 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
 
  // ════════════════════ I26：路由表情落表、决策表只追加、岗位会话、错误码 ════════════════════
  const reactionText='路由表情验收：只加表情不派人。'
- answers.set(reactionText,answerOf([],[{roleId:roleB.id,emoji:'🎉'}]))
+ answers.set(reactionText,answerOf('reply',[],[{roleId:roleB.id,emoji:'🎉'}]))
  const reactionMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:reactionText}) as Message
  const reactionDecision=await awaitDecision(reactionMessage.id)
  const routedReaction=(await pool.query('select actor_kind,actor_id,emoji,run_id,request_id from teloa_group_reactions where owner_id=$1 and message_id=$2',[owner,reactionMessage.id])).rows
  const noPostReactionText='路由表情验收：模型硬给没有发言权的那位加表情。'
- answers.set(noPostReactionText,answerOf([],[{roleId:roleNoPost.id,emoji:'🎉'}]))
+ answers.set(noPostReactionText,answerOf('reply',[],[{roleId:roleNoPost.id,emoji:'🎉'}]))
  const noPostReactionMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:noPostReactionText}) as Message
  const noPostReactionDecision=await awaitDecision(noPostReactionMessage.id)
  const noPostReactionRows=(await pool.query('select 1 from teloa_group_reactions where owner_id=$1 and message_id=$2',[owner,noPostReactionMessage.id])).rows
@@ -900,10 +964,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   }
  })
 
- // ════════════════════ 通用范围任务里同事读岗位自己声明的知识（2026-09-21 裁定的接缝）════════════════════
- // 通用群不绑业务数据，岗位知识本就是岗位自身范围内已获准的资料，因此通用范围任务的主体范围取
- // 「general ∪ 岗位范围」。这条要同时守住 prepare 与 start：start 前的复核走的是另一条读口，
- // 它若还按任务范围读，准备得起来的运行会在 start 前被判 forbidden，群里同样静默。
+ // 群只读取群内明确授权原件；岗位声明的私人资料不因岗位加入通用群而分享给群。
  const sourceRefs=await call('resources/sources',{}) as {id:string;version:string}[]
  const knowledgeSource=sourceRefs[0]!
  const knowledgeDraft=await call('resources/create',{requestId:randomUUID(),title:'SOC 范围的岗位资料',sourceId:knowledgeSource.id,sourceVersion:knowledgeSource.version,scopeIds:['SOC']}) as {id:string;version:number}
@@ -912,18 +973,24 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   name:'通用群里的SOC同事',kind:'employee' as const,scopes:['SOC'],duty:'在通用群里按自己的资料回答',dataScope:'群内消息',executionScope:'只做回答与说明',skills:[],knowledge:[scopedResource.id],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:teloaAgentPresetId},
  }}) as Role
  const generalGroup=await call('groups/create',{requestId:randomUUID(),expectedVersion:0,fields:{name:'通用工作群',scope:'general',announcement:'验收通用范围任务读岗位知识。',rules,memberRoleIds:[scopedRole.id]}}) as Group
- const generalMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:generalGroup.id,expectedVersion:generalGroup.version,text:'通用群里的一条消息。'}) as Message
+ const groupMaterial=await call('groups/resources/save',{requestId:randomUUID(),groupId:generalGroup.id,resourceId:randomUUID(),expectedVersion:0,title:'本群明确分享的资料',markdown:'# 本群资料\n\n只有显式授权之后才可读取。'}) as {id:string;version:number}
+ const groupReferences=[{kind:'group-resource',id:groupMaterial.id,version:groupMaterial.version}]
+ const generalMessage=await call('groups/messages/send',{requestId:randomUUID(),groupId:generalGroup.id,expectedVersion:generalGroup.version,text:'通用群里的一条消息。',references:groupReferences}) as Message
  // 这条消息的路由答案没预置，按 emptyAnswer 判「谁都不用回」：本段要的是**手工建的**那条群任务，
  // 但仍要等它的决策行落库，免得 fire-and-forget 的那一趟拖到用例收尾之后。
  await awaitDecision(generalMessage.id)
+ const ungranted=await refuse('groups/tasks/create',{requestId:randomUUID(),groupId:generalGroup.id,messageId:generalMessage.id,expectedGroupVersion:generalGroup.version,goal:'未授权原件不能派给岗位。',assignee:{roleId:scopedRole.id,expectedVersion:scopedRole.version}})
+ assert.equal(ungranted.code,'teloa/forbidden')
+ await call('groups/agent-grants/change',{requestId:randomUUID(),groupId:generalGroup.id,roleId:scopedRole.id,expectedGroupVersion:generalGroup.version,expectedRoleVersion:scopedRole.version,action:'save',resources:groupReferences,canPost:true,canAutoRun:false})
  const generalTask=await call('groups/tasks/create',{requestId:randomUUID(),groupId:generalGroup.id,messageId:generalMessage.id,expectedGroupVersion:generalGroup.version,goal:'在通用群里读岗位资料后回应。',assignee:{roleId:scopedRole.id,expectedVersion:scopedRole.version}}) as {task:{id:string;version:number;scope:string}}
- const generalRun=await call('task-runs/prepare',{requestId:randomUUID(),taskId:generalTask.task.id,expectedTaskVersion:generalTask.task.version}) as Run&{knowledge:{id:string;scopeIds:string[]}[]}
+ const generalRun=await call('task-runs/prepare',{requestId:randomUUID(),taskId:generalTask.task.id,expectedTaskVersion:generalTask.task.version}) as Run&{knowledge:{id:string;scopeIds:string[]}[];groupContext:{materials:{resourceId:string;resourceVersion:number;markdown:string}[]}}
  const generalStarted=await call('task-runs/start',{runId:generalRun.id}) as Run
  const scopedEndpoints=['resources/create','resources/apply','roles/create','groups/tasks/create','task-runs/prepare','task-runs/start'],failuresBefore=failures.length
- await t.test('通用范围群任务：SOC 岗位声明的 SOC 资料真的读得到，prepare 与 start 都不判 forbidden',()=>{
+ await t.test('通用范围群任务排除 SOC 岗位私人资料，显式授权本群原件后 prepare 与 start 才可读取',()=>{
   assert.equal(generalTask.task.scope,'general','群任务的范围跟群走，这一条必须是通用范围')
   assert.deepEqual(scopedResource.scopeIds,['SOC'],'夹具资料必须是 SOC 范围，否则这条守不住任何东西')
-  assert.deepEqual(generalRun.knowledge.map(item=>[item.id,item.scopeIds]),[[scopedResource.id,['SOC']]],'运行快照里必须固定这份 SOC 资料')
+  assert.deepEqual(generalRun.knowledge,[],'角色私人知识不能被带入群执行')
+  assert.deepEqual(generalRun.groupContext.materials.map(item=>[item.resourceId,item.resourceVersion,item.markdown]),[[groupMaterial.id,groupMaterial.version,'# 本群资料\n\n只有显式授权之后才可读取。']],'运行必须固定本群明确授权原件及版本正文')
   assert.notEqual(generalStarted.state,'prepared','start 必须真的把运行推过 prepared')
   assert.deepEqual(failures.slice(failuresBefore).filter(failure=>scopedEndpoints.includes(failure.endpoint)),[],'这一段任何一个端点都不该被拒')
  })

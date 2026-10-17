@@ -22,6 +22,7 @@ function stand(){
   create:record('create',{group:{id:groupId}}),
   change:record('change',{group:{id:groupId}}),
   messages:record('messages',{items:[{id:messageId}]}),
+  messageBody:record('messageBody',{}),
   send:record('send',{message:{id:messageId}}),
   resources:record('resources',{items:[]}),
   resource:record('resource',{resource:null}),
@@ -33,22 +34,28 @@ function stand(){
   reactions:record('reactions',{items:[summary()]}),
   toggleReaction:record('toggleReaction',{messageId,items:[summary()]}),
   routing:record('routing',{items:[view()]}),
+  routingStatus:record('routingStatus',{items:[]}),
+  retryRouting:record('retryRouting',{messageId,attemptVersion:2}),
  }
  return {calls,collaboration,service,handler:createGroupHandler(owner,async()=>service,()=>{})}
 }
 
-test('端点恰好三条进 groupEndpoints，GroupOperations 恰十三个方法',async()=>{
- assert.equal(groupEndpoints.length,13)
- assert.deepEqual(groupEndpoints.slice(10),['groups/reactions/list','groups/reactions/toggle','groups/routing/list'])
+test('表情和路由五个端点保持原服务，增加全文只读入口不改变原读写分发',async()=>{
+ assert.equal(groupEndpoints.length,22)
+ for(const endpoint of ['groups/messages/page','groups/messages/search','groups/reading/get','groups/reading/mark','groups/attention','groups/mentions/list'])assert.ok((groupEndpoints as readonly string[]).includes(endpoint),endpoint)
+ assert.deepEqual(groupEndpoints.slice(-5),['groups/reactions/list','groups/reactions/toggle','groups/routing/list','groups/routing/status','groups/routing/retry'])
  // 服务对象按 GroupOperations 类型传进 createGroupHandler：这里再钉一次键数，少一个或多一个都判红。
  const {handler,calls,service}=stand()
- assert.equal(Object.keys(service).length,13)
+ assert.equal(Object.keys(service).length,16)
  // 既有十个里，撤回原本是分发链末尾的兜底分支，本期改成显式分支，必须仍落到 withdrawResource。
  await handler('groups/resources/withdraw',{requestId,groupId,resourceId:messageId,expectedVersion:1})
  await handler('groups/reactions/list',{groupId,messageIds:[messageId]})
  await handler('groups/reactions/toggle',{requestId,groupId,messageId,emoji:'👍'})
  await handler('groups/routing/list',{groupId,messageIds:[messageId]})
- assert.deepEqual(calls.map(call=>call.name),['withdrawResource','reactions','toggleReaction','routing'])
+ await handler('groups/routing/status',{groupId,messageIds:[messageId]})
+ await handler('groups/routing/retry',{requestId,groupId,messageId,expectedAttempt:1,expectedGroupVersion:1})
+ await handler('groups/messages/body',{groupId,messageId})
+ assert.deepEqual(calls.map(call=>call.name),['withdrawResource','reactions','toggleReaction','routing','routingStatus','retryRouting','messageBody'])
  assert.ok(calls.every(call=>call.owner===owner))
  // 入参是解析器归一化之后的对象，不是浏览器原样交来的那一个。
  assert.deepEqual(calls[1]?.input,{groupId,messageIds:[messageId]})
@@ -73,7 +80,7 @@ test('endpointSet 里这三条都在，且没有第四条本期新端点',async(
   else literals=found.sort()
  }
  // groups.ts 里恰三条，没有第四条：多写一条就会在这里判红，而它不在 groupEndpoints 里就永远走不到。
- assert.deepEqual(literals,['groups/reactions/list','groups/reactions/toggle','groups/routing/list'])
+ assert.deepEqual(literals,['groups/reactions/list','groups/reactions/toggle','groups/routing/list','groups/routing/retry','groups/routing/status'])
 })
 
 test('未知端点仍走既有 not-found 分支，文案逐字',async()=>{
@@ -117,6 +124,8 @@ test('后端 WorkError 原样透传：三条新端点的失败对象连实例都
   ['groups/reactions/list',{groupId,messageIds:[messageId]},'reactions'],
   ['groups/reactions/toggle',{requestId,groupId,messageId,emoji:'👍'},'toggleReaction'],
   ['groups/routing/list',{groupId,messageIds:[messageId]},'routing'],
+  ['groups/routing/status',{groupId,messageIds:[messageId]},'routingStatus'],
+  ['groups/routing/retry',{requestId,groupId,messageId,expectedAttempt:1,expectedGroupVersion:1},'retryRouting'],
  ] as const
  for(const [endpoint,payload,method] of failures){
   const expected=new Error('boom')

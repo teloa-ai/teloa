@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {WorkError} from '../src/work-error.ts'
-import {businessSourceMappingLimits,evaluateJsonPath,isValidJsonPath,readBusinessSourceMappingDefinition,readBusinessSyncRun,readBusinessSyncStatus,readBusinessSyncRuleState,readBusinessSyncRuleView} from '../src/business-source-mapping.ts'
+import {businessSourceMappingLimits,evaluateJsonPath,isValidJsonPath,usesBusinessTaskResultContext,readBusinessSourceMappingDefinition,readBusinessSyncRun,readBusinessSyncStatus,readBusinessSyncRuleState,readBusinessSyncRuleView} from '../src/business-source-mapping.ts'
 
 const invalid=(run:()=>unknown,message?:string)=>assert.throws(run,(error:unknown)=>error instanceof WorkError&&error.code==='teloa/invalid-input',message)
 const hostInvalid=(run:()=>unknown,message?:string)=>assert.throws(run,(error:unknown)=>error instanceof WorkError&&error.code==='teloa/invalid-host-response',message)
@@ -17,6 +17,19 @@ const soc={
  deletionSemantics:'compare',
  schedule:{kind:'every',seconds:300},acknowledgeShortInterval:false,
 }
+
+test('固定执行上下文按 JSONPath 首段识别，点和括号写法一致；结果正文不冒充宿主身份',()=>{
+ const role=readBusinessSourceMappingDefinition({...soc,source:{kind:'role-result'}})
+ for(const path of ['$.object.id',"$['object'].id",'$.task.id',"$['employee'].id",'$.run.id']){
+  assert.equal(usesBusinessTaskResultContext({...role,mapping:[{path,field:'id'}]}),true,path)
+ }
+ for(const path of ['$.result.object.id','$.object_id','$.tasks.id','$.title']){
+  assert.equal(usesBusinessTaskResultContext({...role,mapping:[{path,field:'id'}]}),false,path)
+ }
+ assert.equal(usesBusinessTaskResultContext({...role,deletedAtPath:"$['object'].deletedAt"}),true)
+ assert.equal(usesBusinessTaskResultContext({...role,incrementalCursor:{path:'$.run.createdAt',kind:'timestamp'}}),true)
+ assert.equal(usesBusinessTaskResultContext({...role,source:{kind:'business-data-port',sourceId:'external'},mapping:[{path:'$.object.id',field:'id'}]}),false)
+})
 
 test('持续规则回包必须固定范围、映射、声明摘要与启停修订；可见行带真实周期',()=>{
  const state={scope:'soc',mappingId:'soc-alert-sync',definitionHash:'a'.repeat(64),enabled:false,revision:0}

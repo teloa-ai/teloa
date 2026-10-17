@@ -1,10 +1,10 @@
 {
   "name": "@teloa/bundle",
-  "version": "0.2.0-alpha.7",
+  "version": "0.2.0-beta.2",
   "private": true,
   "type": "module",
   "engines": {
-    "dsh": "0.2.1-alpha.1"
+    "dsh": "0.2.1-rc.2"
   },
   "dsh": {
     "bundle": {
@@ -12,16 +12,21 @@
         "./cordis.patch.yml",
         "./agent-presets/standard.patch.yml",
         "./agent-presets/ptc.patch.yml",
+        "./agent-presets/ptc-persistent.patch.yml",
+        "./agent-presets/ptc-python.patch.yml",
         "./agent-presets/cordis.patch.yml",
         "./agent-presets/teloa-standard/agent.cordis.yml"
       ]
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.1-alpha.1",
-    "@deepseek-ai/dsh-mcp-client": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-ptc-runtime-node": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-experimental-ptc-runtime-python": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2",
     "@teloa/client-ui-workbench": "workspace:*",
     "@teloa/harness-dsh": "workspace:*",
+    "@teloa/realtime-voice": "workspace:*",
     "@teloa/mcp-reference": "workspace:*",
     "dsh-context": "0.65.0"
   }

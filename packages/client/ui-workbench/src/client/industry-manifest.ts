@@ -11,6 +11,8 @@ const relationTargets={
  'role-skill':['skill'],
  'role-connection':['mcp','data-source','execution-tool'],
  'role-work':['work-template','plan'],
+ /** 团队模板明确声明的协调者 → 同包成员；只是静态分工，不授予权限、不建群。 */
+ 'role-coordination':['role'],
 } as const
 export type IndustryRelation={kind:keyof typeof relationTargets;from:string;to:string}
 export type IndustryLocalizedMetadata={title?:LocalizedMetadata;description?:LocalizedMetadata}

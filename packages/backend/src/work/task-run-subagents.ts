@@ -1,5 +1,6 @@
 import type {Pool} from 'pg'
 import {WorkError,taskInput} from '@teloa/contract'
+import {countTaskRunDelegations} from './task-run-runtime-links.ts'
 
 export const taskRunSubagentStates=['reserved','started','ended','abandoned'] as const
 export type TaskRunSubagentState=typeof taskRunSubagentStates[number]
@@ -84,7 +85,7 @@ export class TaskRunSubagentService{
    if(run.stop_requested_at!==null)throw new WorkError('teloa/conflict','本次执行已请求停止，不能派发子 Agent。')
    if(!['submitting','accepted','active'].includes(String(run.state)))throw new WorkError('teloa/conflict','当前 Run 生命周期不能派发子 Agent。')
    const prior=(await db.query('select * from teloa_task_run_subagents where owner_id=$1 and reservation_id=$2 for update',[owner,row.reservationId])).rows[0]
-   const count=Number((await db.query('select count(*)::integer count from teloa_task_run_subagents where owner_id=$1 and run_id=$2',[owner,row.runId])).rows[0]?.count)
+   const count=await countTaskRunDelegations(db,owner,row.runId as string)
    if(prior){const fixed=read(prior);if(fixed.runId!==row.runId)throw new WorkError('teloa/conflict','同一子 Agent 预留不能归属其他 Run。');await db.query('commit');return {reservation:fixed,count}}
    if(count>=row.limit)throw new WorkError('teloa/conflict','本次 Run 已达到子 Agent 累计上限。')
    const saved=(await db.query("insert into teloa_task_run_subagents(owner_id,run_id,reservation_id,state,created_at) values($1,$2,$3,'reserved',$4) returning *",[owner,row.runId,row.reservationId,this.identity.now()])).rows[0]

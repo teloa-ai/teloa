@@ -1,4 +1,5 @@
 import {inspectIndustryContent} from './industry-content.ts'
+import {grokRecipeImportFromFiles} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
 import { readAtomicSkill, validateAtomicSkillMetadata, type AtomicSkillContent, type AtomicSkillMetadata } from './atomic-skill.ts'
 import { atomicSkillCopy, atomicSkillItem } from './atomic-market.ts'
@@ -7,6 +8,7 @@ import { validateIndustryManifest, type IndustryResourceKind } from './industry-
 import { itemFromManifest, type MarketItem, type MarketTrust } from './market-preview.ts'
 import type { IndustryInspection } from './industry-content.ts'
 import {recoveryStorageError} from './recovery-error.ts'
+import {fixedMarketItemId} from './market-item-identity.ts'
 
 type Call=(endpoint:string,payload:unknown)=>Promise<unknown>
 export type MarketContentJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
@@ -108,17 +110,17 @@ function summaryItem(value:StoredSummary):MarketItem{
  if(value.kind==='atomic-skill'){
   const metadata=atomicMetadata(value.metadata)
   const {status,...text}=atomicSkillCopy('stored',{title:metadata.title,localizedTitle:metadata.localized?.title}),stored={status,text}
-  return {id:'atomic-'+value.hash,kind:'skill',resourceKind:'skill',title:metadata.title,version:metadata.version,scope:'general',visibility:'personal',...stored.text,author:value.trust?.publisher??'本人导入',license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',source,owner:'DSH',components:[{name:metadata.title,required:true,status:stored.status}],hash:value.hash,capabilityCategories:[...metadata.categories],...(value.trust?{trust:value.trust}:{}),contentStorage:storage}
+  return {id:fixedMarketItemId(value.id),kind:'skill',resourceKind:'skill',title:metadata.title,version:metadata.version,scope:'general',visibility:'personal',...stored.text,author:value.trust?.publisher??'本人导入',license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',source,owner:'DSH',components:[{name:metadata.title,required:true,status:stored.status}],hash:value.hash,capabilityCategories:[...metadata.categories],...(value.trust?{trust:value.trust}:{}),contentStorage:storage}
  }
  const manifest=validateIndustryManifest(value.metadata),raw=JSON.stringify(manifest,null,2),item=itemFromManifest({manifest,raw,hash:value.hash},source)
- return {...item,id:'directory-'+value.hash,hash:value.hash,...(value.trust?{trust:value.trust}:{}),author:value.trust?.publisher??item.author,license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',contentStorage:storage,compatibility:'行业模板已固定保存；详情字节尚未读取，未加载到工作空间。'}
+ return {...item,id:fixedMarketItemId(value.id),hash:value.hash,...(value.trust?{trust:value.trust}:{}),author:value.trust?.publisher??item.author,license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',contentStorage:storage,compatibility:'行业模板已固定保存；详情字节尚未读取，未加载到工作空间。'}
 }
 async function contentItem(value:StoredContent,sourceContents:readonly StoredContent[]=[]):Promise<MarketItem>{
  const storage={contentId:value.id,createdAt:value.createdAt,loaded:true},source={kind:'stored' as const,contentId:value.id}
  if(value.kind==='atomic-skill'){
   const metadata=atomicMetadata(value.metadata),entry=value.files.find(file=>file.path===value.manifestPath)!
   let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(entry.bytes)}catch{throw Error('市场技能正文不是 UTF-8 文本。')}
-  return {...atomicSkillItem({...metadata,hash:value.hash,entryPath:value.manifestPath,files:structuredClone(value.files),text}),source,...(value.trust?{trust:value.trust}:{}),author:value.trust?.publisher??'本人导入',license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',contentStorage:storage}
+  return {...atomicSkillItem({...metadata,hash:value.hash,entryPath:value.manifestPath,files:structuredClone(value.files),text}),id:fixedMarketItemId(value.id),source,...(value.trust?{trust:value.trust}:{}),author:value.trust?.publisher??'本人导入',license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',contentStorage:storage}
  }
  const manifest=validateIndustryManifest(value.metadata),manifestFile=value.files.find(file=>file.path===value.manifestPath)!
  let raw:string;try{raw=new TextDecoder('utf-8',{fatal:true}).decode(manifestFile.bytes)}catch{throw Error('市场行业清单不是 UTF-8 文本。')}
@@ -144,7 +146,8 @@ async function contentItem(value:StoredContent,sourceContents:readonly StoredCon
  }
  const packageContent:IndustryContent={manifestPath:value.manifestPath,hash:value.hash,baseHash:value.baseHash,files:structuredClone(value.files),resolved,resources:manifest.resources.map(resource=>({id:resource.id,state:resource.source.kind==='public'?(resolved.some(row=>row.resourceId===resource.id)?'available':'unresolved'):(paths.has(root+resource.source.path)?'available':'missing')}))}
  const item=itemFromManifest({manifest,raw,hash:manifestFile.hash},source)
- return {...item,id:'directory-'+value.hash,hash:manifestFile.hash,...(value.trust?{trust:value.trust}:{}),author:value.trust?.publisher??item.author,license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',packageContent,contentStorage:storage,compatibility:'原始文件字节已固定保存；组件语义与宿主兼容性待核对，未加载到工作空间。'}
+ const recipeImport=await grokRecipeImportFromFiles(packageContent.files,packageContent.manifestPath)
+ return {...item,id:fixedMarketItemId(value.id),hash:manifestFile.hash,...(value.trust?{trust:value.trust}:{}),author:value.trust?.publisher??item.author,license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',packageContent,...(recipeImport?{recipeImport}:{}),contentStorage:storage,compatibility:'原始文件字节已固定保存；组件语义与宿主兼容性待核对，未加载到工作空间。'}
 }
 
 export type MarketContentApi=ReturnType<typeof createMarketContentApi>
@@ -171,10 +174,11 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
   return contentItem(stored,await Promise.all(stored.references.map(reference=>getContent(reference.sourceContentId))))
  }
  const getContent=async(contentId:string)=>{if(!uuid(contentId))throw Error('市场内容身份不正确。');const stored=await content(await call('market-content/get',{contentId}));if(stored.id!==contentId)throw Error('市场内容响应与目标身份不一致。');return stored}
- const send=async(payload:Record<string,unknown>,identity:Omit<Pending,'requestId'>)=>{
+ const send=async(payload:Record<string,unknown>,identity:Omit<Pending,'requestId'>,requestId?:string)=>{
   if(recoveryError)throw recoveryError;if(busy)throw Error('市场导入正在核对。')
   if(awaiting&&!samePending(awaiting,identity))throw Error('请先恢复同一市场导入请求，再导入其他内容。')
-  awaiting??={requestId:newId(),...identity};busy=true
+  if(requestId!==undefined&&(!uuid(requestId)||awaiting&&awaiting.requestId!==requestId))throw Error('请先恢复原市场导入请求。')
+  awaiting??={requestId:requestId??newId(),...identity};busy=true
   try{write();const result=await checkedResult(await call('market-content/import',{...payload,requestId:awaiting.requestId}),awaiting);clear();return result}
   catch(error){if(rejected(error))clear();throw error}finally{busy=false}
  }
@@ -193,7 +197,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
    const identity={kind:'atomic-skill' as const,logicalId:value.id,version:value.version,hash:value.hash}
    return send({kind:'atomic-skill',source:{kind:'upload',name:name.trim()},metadata:{id:value.id,title:value.title,version:value.version,categories:[...value.categories],...(value.localized?{localized:value.localized}:{})},trust:uploadTrust(name.trim()),files:requestFiles(value.files)},identity)
   },
-  async importIndustry(item:MarketItem){
+  async importIndustry(item:MarketItem,requestId?:string){
    if(item.source.kind!=='upload')throw Error('首批行业模板持久化只接受上传来源。')
    if(!isIndustryManifest(item.manifest)||!item.packageContent)throw Error('请先读取完整行业模板原始文件。')
    const publicResources=item.manifest.resources.filter(resource=>resource.source.kind==='public')
@@ -201,7 +205,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
    const resolved=item.packageContent.resolved??[]
    const fixed=publicResources.map(resource=>{const value=resolved.find(row=>row.resourceId===resource.id);if(!value?.sourceContentId||!uuid(value.sourceContentId))throw Error('公共技能必须选择带真实 contentId 的已持久化来源。');return {resourceId:value.resourceId,sourceContentId:value.sourceContentId,sourceItemId:value.sourceItemId,sourceResourceId:value.sourceResourceId,sourceHash:value.sourceHash}})
    const identity={kind:'industry-template' as const,logicalId:item.manifest.id,version:item.manifest.version,hash:item.packageContent.hash}
-   return send({kind:'industry-template',source:{kind:'upload',name:item.source.name},manifestPath:item.packageContent.manifestPath,trust:item.trust??uploadTrust(item.source.name),files:requestFiles(item.packageContent.files),references:fixed},identity)
+   return send({kind:'industry-template',source:{kind:'upload',name:item.source.name},manifestPath:item.packageContent.manifestPath,trust:item.trust??uploadTrust(item.source.name),files:requestFiles(item.packageContent.files),references:fixed},identity,requestId)
   },
   pendingGithubImport:()=>awaitingGithub?structuredClone(awaitingGithub):undefined,
   githubRecoveryMessage:()=>githubRecoveryError,
@@ -274,7 +278,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
    const contentId=item.contentStorage?.contentId;if(!contentId)throw Error('市场目录项没有真实 contentId。')
    const stored=await getContent(contentId),sources=await Promise.all(stored.references.map(reference=>getContent(reference.sourceContentId)))
    const expectedKind=item.kind==='skill'?'atomic-skill':item.kind==='bundle'?'industry-template':undefined
-   if(item.contentStorage?.loaded===false&&(stored.kind!==expectedKind||item.id!==(stored.kind==='atomic-skill'?'atomic-':'directory-')+stored.hash||item.version!==stored.version||item.hash!==stored.hash))throw Error('市场内容与目录摘要不一致。')
+   if(item.contentStorage?.loaded===false&&(stored.kind!==expectedKind||item.id!==fixedMarketItemId(stored.id)&&item.id!==(stored.kind==='atomic-skill'?'atomic-':'directory-')+stored.hash||item.version!==stored.version||item.hash!==stored.hash))throw Error('市场内容与目录摘要不一致。')
    return contentItem(stored,sources)
   }
  }

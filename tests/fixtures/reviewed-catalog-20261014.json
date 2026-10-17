@@ -1,0 +1,455 @@
+{
+  "$comment": "DEV 开发验证夹具：从独立已审固定市场 d3e919 的 catalog/ 与 artifacts/ 原件派生，不代表公开提交、生产签名或线上发布。公开发行时须按最终实际公开市场来源重新核对。由市场仓 teloa-ai/marketplace 固定提交的 catalog/ 与 artifacts/ 派生，不从本仓快照生成。hosted 是随发行固定的托管快照（official-catalog-snapshot.ts），不带 marketplace 的旧宿主列表只返回这部分；upstream 是上游索引（official-upstream-index.json），只在 marketplace=teloa 的统一目录与按来源筛选时出现。total=hosted+upstream。",
+  "sourceRepository": "teloa-ai/marketplace",
+  "sourceCommit": "d3e919a31cb83d0e332473cb9d329e2559e91dd4",
+  "catalogVersion": "2026.10.16.2",
+  "total": 115,
+  "solutions": [
+    "teloa.grok-marketing-team",
+    "teloa.grok-product-team",
+    "teloa.grok-sales-team"
+  ],
+  "hosted": {
+    "count": 33,
+    "byKind": {
+      "connector": [
+        "teloa.mcp-figma",
+        "teloa.mcp-github",
+        "teloa.mcp-linear",
+        "teloa.mcp-notion-remote",
+        "teloa.mcp-sentry",
+        "teloa.mcp-slack"
+      ],
+      "dashboard": [
+        "teloa.b2b-sales-followup-dashboard",
+        "teloa.content-ops-dashboard",
+        "teloa.saas-delivery-dashboard"
+      ],
+      "model": [
+        "teloa.model.sensevoice"
+      ],
+      "role": [
+        "teloa.grok-call-followup",
+        "teloa.grok-competitor-watch",
+        "teloa.grok-content-remix",
+        "teloa.grok-feature-ask-collator",
+        "teloa.grok-launch-coordinator",
+        "teloa.grok-meeting-prep",
+        "teloa.grok-newsletter-desk",
+        "teloa.grok-product-performance",
+        "teloa.grok-sales-outbound"
+      ],
+      "skill": [
+        "anthropic.commit",
+        "anthropic.feature-dev",
+        "anthropic.internal-comms",
+        "anthropic.mcp-builder",
+        "anthropic.modernize-assess",
+        "anthropic.modernize-extract-rules",
+        "anthropic.review-pr",
+        "openai.security-best-practices",
+        "openai.security-threat-model",
+        "openai.skill-creator",
+        "teloa.dashboard-designer"
+      ],
+      "solution": [
+        "teloa.grok-marketing-team",
+        "teloa.grok-product-team",
+        "teloa.grok-sales-team"
+      ]
+    }
+  },
+  "upstream": {
+    "count": 82,
+    "byMarketplace": {
+      "claude-code": [
+        "anthropic.build-mcpb",
+        "anthropic.frontend-design",
+        "anthropic.playground"
+      ],
+      "cursor": [
+        "cursor.pstack-architect",
+        "cursor.pstack-arena",
+        "cursor.pstack-automate-me",
+        "cursor.pstack-benchmark-checklist",
+        "cursor.pstack-blast-radius",
+        "cursor.pstack-bro",
+        "cursor.pstack-correct",
+        "cursor.pstack-create-verification-skill",
+        "cursor.pstack-figure-it-out",
+        "cursor.pstack-how",
+        "cursor.pstack-in-your-own-words",
+        "cursor.pstack-interrogate",
+        "cursor.pstack-ketchup",
+        "cursor.pstack-maintain-verification-skill",
+        "cursor.pstack-no-comments",
+        "cursor.pstack-poteto-help",
+        "cursor.pstack-principle-attack-the-premise",
+        "cursor.pstack-principle-boundary-discipline",
+        "cursor.pstack-principle-build-the-lever",
+        "cursor.pstack-principle-encode-lessons-in-structure",
+        "cursor.pstack-principle-exhaust-the-design-space",
+        "cursor.pstack-principle-experience-first",
+        "cursor.pstack-principle-explain-the-number",
+        "cursor.pstack-principle-fix-root-causes",
+        "cursor.pstack-principle-foundational-thinking",
+        "cursor.pstack-principle-guard-the-context-window",
+        "cursor.pstack-principle-laziness-protocol",
+        "cursor.pstack-principle-make-operations-idempotent",
+        "cursor.pstack-principle-migrate-callers-then-delete-legacy-apis",
+        "cursor.pstack-principle-minimize-reader-load",
+        "cursor.pstack-principle-model-the-domain",
+        "cursor.pstack-principle-never-block-on-the-human",
+        "cursor.pstack-principle-outcome-oriented-execution",
+        "cursor.pstack-principle-prove-it-works",
+        "cursor.pstack-principle-redesign-from-first-principles",
+        "cursor.pstack-principle-separate-before-serializing-shared-state",
+        "cursor.pstack-principle-sequence-verifiable-units",
+        "cursor.pstack-principle-subtract-before-you-add",
+        "cursor.pstack-principle-test-behavior-not-implementation",
+        "cursor.pstack-principle-type-system-discipline",
+        "cursor.pstack-recall",
+        "cursor.pstack-reflect",
+        "cursor.pstack-setup-pstack",
+        "cursor.pstack-show-me-your-work",
+        "cursor.pstack-swarm",
+        "cursor.pstack-tdd",
+        "cursor.pstack-teach",
+        "cursor.pstack-technical-writing",
+        "cursor.pstack-typescript-best-practices",
+        "cursor.pstack-unslop",
+        "cursor.pstack-why",
+        "cursor.remotion-remotion-best-practices",
+        "cursor.remotion-remotion-captions",
+        "cursor.remotion-remotion-create",
+        "cursor.remotion-remotion-docs",
+        "cursor.remotion-remotion-interactivity",
+        "cursor.remotion-remotion-maps",
+        "cursor.remotion-remotion-markup",
+        "cursor.remotion-remotion-multimedia",
+        "cursor.remotion-remotion-render",
+        "cursor.remotion-remotion-saas",
+        "cursor.remotion-remotion-studio",
+        "cursor.remotion-remotion-upgrade",
+        "cursor.sentry-sentry-create-alert",
+        "cursor.sentry-sentry-debug-issue",
+        "cursor.sentry-sentry-fix-stack-traces",
+        "cursor.sentry-sentry-get-started",
+        "cursor.sentry-sentry-instrument",
+        "cursor.sentry-sentry-otel-exporter-setup",
+        "cursor.sentry-sentry-setup-releases",
+        "cursor.sentry-sentry-snapshots-cocoa",
+        "cursor.slack-block-kit",
+        "cursor.slack-create-slack-app",
+        "cursor.slack-slack-api",
+        "cursor.slack-slack-cli",
+        "cursor.slack-slack-docs",
+        "cursor.slack-slack-messaging",
+        "cursor.slack-slack-search",
+        "cursor.slack-test-slack-app"
+      ]
+    },
+    "withInstalls": []
+  },
+  "teams": {
+    "teloa.grok-marketing-team": {
+      "packageId": "grok-bot-templates-team-marketing",
+      "version": "1.0.2",
+      "manifestSha256": "a93a2245db339f2bcca20fa3f389e2ca67e77bee86fc1551626eaf36b2aea4b6",
+      "contents": {
+        "knowledge": 11,
+        "role": 3,
+        "skill": 6,
+        "work-template": 2,
+        "mcp": 1
+      },
+      "methods": [
+        "grok-marketing-1-0-2-competitor-watch-working-method",
+        "grok-marketing-1-0-2-diff-competitors",
+        "grok-marketing-1-0-2-content-remix-working-method",
+        "grok-marketing-1-0-2-remix-content",
+        "grok-marketing-1-0-2-newsletter-desk-working-method",
+        "grok-marketing-1-0-2-draft-newsletter"
+      ],
+      "roles": {
+        "competitor-watch": {
+          "knowledge": [
+            "dashboard-guide",
+            "competitor-watch-profile",
+            "competitor-watch-template",
+            "competitor-watch-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-marketing-1-0-2-competitor-watch-working-method",
+            "grok-marketing-1-0-2-diff-competitors"
+          ],
+          "work": [
+            "weekday-competitor-diff"
+          ],
+          "connections": [],
+          "coordinates": [
+            "content-remix",
+            "newsletter-desk"
+          ]
+        },
+        "content-remix": {
+          "knowledge": [
+            "content-remix-profile",
+            "content-remix-template",
+            "content-remix-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-marketing-1-0-2-content-remix-working-method",
+            "grok-marketing-1-0-2-remix-content"
+          ],
+          "work": [],
+          "connections": [
+            "connection-notion-remote"
+          ],
+          "coordinates": []
+        },
+        "newsletter-desk": {
+          "knowledge": [
+            "newsletter-desk-profile",
+            "newsletter-desk-template",
+            "newsletter-desk-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-marketing-1-0-2-newsletter-desk-working-method",
+            "grok-marketing-1-0-2-draft-newsletter"
+          ],
+          "work": [
+            "weekly-newsletter-draft"
+          ],
+          "connections": [],
+          "coordinates": []
+        }
+      },
+      "connections": [
+        {
+          "id": "connection-notion-remote",
+          "serverName": "notion_remote",
+          "tools": [
+            "notion-search",
+            "notion-fetch",
+            "notion-query-data-sources",
+            "notion-get-comments"
+          ],
+          "readOnly": true
+        }
+      ],
+      "roleEntries": [
+        {
+          "id": "teloa.grok-competitor-watch",
+          "path": "roles/competitor-watch.json"
+        },
+        {
+          "id": "teloa.grok-content-remix",
+          "path": "roles/content-remix.json"
+        },
+        {
+          "id": "teloa.grok-newsletter-desk",
+          "path": "roles/newsletter-desk.json"
+        }
+      ]
+    },
+    "teloa.grok-product-team": {
+      "packageId": "grok-bot-templates-team-product",
+      "version": "1.0.1",
+      "manifestSha256": "26ca75ec9dc3a62a2a5e86f17be8e35d51685b837cf2922886654564d12b684f",
+      "contents": {
+        "knowledge": 11,
+        "role": 3,
+        "skill": 6,
+        "work-template": 1,
+        "mcp": 1
+      },
+      "methods": [
+        "grok-product-1-0-1-product-performance-working-method",
+        "grok-product-1-0-1-investigate-perf",
+        "grok-product-1-0-1-feature-ask-collator-working-method",
+        "grok-product-1-0-1-collate-feature-asks",
+        "grok-product-1-0-1-launch-coordinator-working-method",
+        "grok-product-1-0-1-coordinate-launch"
+      ],
+      "roles": {
+        "product-performance": {
+          "knowledge": [
+            "dashboard-guide",
+            "product-performance-profile",
+            "product-performance-template",
+            "product-performance-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-product-1-0-1-product-performance-working-method",
+            "grok-product-1-0-1-investigate-perf"
+          ],
+          "work": [
+            "weekday-perf-health"
+          ],
+          "connections": [
+            "connection-github"
+          ],
+          "coordinates": [
+            "feature-ask-collator",
+            "launch-coordinator"
+          ]
+        },
+        "feature-ask-collator": {
+          "knowledge": [
+            "feature-ask-collator-profile",
+            "feature-ask-collator-template",
+            "feature-ask-collator-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-product-1-0-1-feature-ask-collator-working-method",
+            "grok-product-1-0-1-collate-feature-asks"
+          ],
+          "work": [],
+          "connections": [],
+          "coordinates": []
+        },
+        "launch-coordinator": {
+          "knowledge": [
+            "launch-coordinator-profile",
+            "launch-coordinator-template",
+            "launch-coordinator-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-product-1-0-1-launch-coordinator-working-method",
+            "grok-product-1-0-1-coordinate-launch"
+          ],
+          "work": [],
+          "connections": [
+            "connection-github"
+          ],
+          "coordinates": []
+        }
+      },
+      "connections": [
+        {
+          "id": "connection-github",
+          "serverName": "github",
+          "tools": [
+            "search_repositories",
+            "get_file_contents",
+            "list_issues"
+          ],
+          "readOnly": true
+        }
+      ],
+      "roleEntries": [
+        {
+          "id": "teloa.grok-feature-ask-collator",
+          "path": "roles/feature-ask-collator.json"
+        },
+        {
+          "id": "teloa.grok-launch-coordinator",
+          "path": "roles/launch-coordinator.json"
+        },
+        {
+          "id": "teloa.grok-product-performance",
+          "path": "roles/product-performance.json"
+        }
+      ]
+    },
+    "teloa.grok-sales-team": {
+      "packageId": "grok-bot-templates-team-sales",
+      "version": "1.0.1",
+      "manifestSha256": "8aa63a9810d38808db6dc85014c6fab0fd5c955f156279c402a4df2a09f15652",
+      "contents": {
+        "knowledge": 12,
+        "role": 3,
+        "skill": 7,
+        "work-template": 2
+      },
+      "methods": [
+        "grok-sales-1-0-1-sales-outbound-working-method",
+        "grok-sales-1-0-1-research-accounts",
+        "grok-sales-1-0-1-meeting-prep-working-method",
+        "grok-sales-1-0-1-prep-meeting",
+        "grok-sales-1-0-1-call-followup-working-method",
+        "grok-sales-1-0-1-draft-call-followup",
+        "grok-sales-1-0-1-log-promises"
+      ],
+      "roles": {
+        "sales-outbound": {
+          "knowledge": [
+            "dashboard-guide",
+            "sales-outbound-profile",
+            "sales-outbound-template",
+            "sales-outbound-first-run",
+            "team-definition",
+            "sales-outbound-routine-yaml"
+          ],
+          "methods": [
+            "grok-sales-1-0-1-sales-outbound-working-method",
+            "grok-sales-1-0-1-research-accounts"
+          ],
+          "work": [
+            "nightly-outbound-research"
+          ],
+          "connections": [],
+          "coordinates": [
+            "meeting-prep",
+            "call-followup"
+          ]
+        },
+        "meeting-prep": {
+          "knowledge": [
+            "meeting-prep-profile",
+            "meeting-prep-template",
+            "meeting-prep-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-sales-1-0-1-meeting-prep-working-method",
+            "grok-sales-1-0-1-prep-meeting"
+          ],
+          "work": [
+            "morning-meeting-prep"
+          ],
+          "connections": [],
+          "coordinates": []
+        },
+        "call-followup": {
+          "knowledge": [
+            "call-followup-profile",
+            "call-followup-template",
+            "call-followup-first-run",
+            "team-definition"
+          ],
+          "methods": [
+            "grok-sales-1-0-1-call-followup-working-method",
+            "grok-sales-1-0-1-draft-call-followup",
+            "grok-sales-1-0-1-log-promises"
+          ],
+          "work": [],
+          "connections": [],
+          "coordinates": []
+        }
+      },
+      "connections": [],
+      "roleEntries": [
+        {
+          "id": "teloa.grok-call-followup",
+          "path": "roles/call-followup.json"
+        },
+        {
+          "id": "teloa.grok-meeting-prep",
+          "path": "roles/meeting-prep.json"
+        },
+        {
+          "id": "teloa.grok-sales-outbound",
+          "path": "roles/sales-outbound.json"
+        }
+      ]
+    }
+  }
+}

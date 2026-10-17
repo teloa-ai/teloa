@@ -10,7 +10,7 @@ import type {TaskRunService,WorkControlService} from '@teloa/backend'
 export async function collectLocalMaterialEvents(pool:Pool,owner:string,resources:Pick<ResourceService,'refreshAuthorizedLocalVersionInTransaction'>,events:WorkEventService,actor:(owner:string,scope:string)=>Promise<ResourceActor>,signal:AbortSignal,flowPorts?:{runs:()=>Promise<Pick<TaskRunService,'executionAdmissionInTransaction'|'readVerifiedInTransaction'>>;controls:Pick<WorkControlService,'acquireForRun'>}):Promise<void>{
  const plans=(await pool.query("select * from teloa_plans where owner_id=$1 and state<>'archived' and work_definition is not null",[owner])).rows.map(readStoredPlan)
  const seen=new Set<string>()
- for(const plan of plans){for(const trigger of plan.workDefinition!.triggers){if(trigger.kind!=='local-event'||trigger.eventKind!=='material-version'||seen.has(trigger.sourceId))continue
+ for(const plan of plans){if(plan.roleId===null||plan.roleVersion===null||plan.workDefinition!.authorization.kind==='owner')continue;for(const trigger of plan.workDefinition!.triggers){if(trigger.kind!=='local-event'||trigger.eventKind!=='material-version'||seen.has(trigger.sourceId))continue
   signal.throwIfAborted();const db=await pool.connect()
   try{await db.query('begin')
    const admission=await new RoleWorkEligibilityService(pool).authorize(owner,{roleId:plan.roleId,expectedRoleVersion:plan.roleVersion,scope:plan.scope,inputSchema:'teloa.task-run-input/v2',authorization:plan.workDefinition!.authorization,groupId:null},db)

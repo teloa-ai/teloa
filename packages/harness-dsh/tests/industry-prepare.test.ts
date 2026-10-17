@@ -1,5 +1,5 @@
 import test from 'node:test'
-import type {IndustryModelDependency,IndustryModelProbe} from '@teloa/contract'
+import {WorkError,type IndustryModelDependency,type IndustryModelProbe} from '@teloa/contract'
 import assert from 'node:assert/strict'
 import {createIndustryPrepareHandler,prepareRequestId,type IndustryPreparePorts} from '../src/industry-prepare.ts'
 
@@ -7,20 +7,35 @@ const owner='local:teloa-owner',loadId='77777777-7777-4777-8777-777777777777',ot
 const K='11111111-1111-4111-8111-111111111111',S1='22222222-2222-4222-8222-222222222222',S2='23333333-2222-4222-8222-222222222222',S3='24444444-2222-4222-8222-222222222222',M='44444444-4444-4444-8444-444444444444'
 const R='55555555-5555-4555-8555-555555555555',T='66666666-6666-4666-8666-666666666666',P='88888888-8888-4888-8888-888888888888',G='99999999-9999-4999-8999-999999999999',D='12121212-1212-4121-8121-121212121212'
 const ROLE='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',INST='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-const mutating=new Set(['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/lifecycle'])
+const mutating=new Set(['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/edit','roles/lifecycle'])
+// 原生技能名与正文摘要：绑定只认安装记录与实际观测一致的这一份。
+const NATIVE='grok-0123456789abcdef01234567-skill-0001',BODY='3'.repeat(64)
+const roleDefinition={name:'告警分诊员',kind:'employee',scopes:['soc'],duty:'按模板方法分诊告警。',dataScope:'仅本人提供的告警。',executionScope:'沿用当前授权。',skills:[] as string[],knowledge:[] as string[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}
 const hex=(c:string)=>c.repeat(64)
 // 真实形状：公共技能安装的 source 属于首次安装它的加载（industry-public），本加载只经 usages 映射过去（skill-installations.ts:12、:25）
 const publicSource={kind:'industry-public',contentId:'c0000000-0000-4000-8000-000000000000',contentHash:hex('e'),resourceId:'alert-triage',resourceVersion:'1.0.0',loadId:otherLoad,itemInstanceId:'c1111111-0000-4000-8000-000000000000',sourceContentId:'c2222222-0000-4000-8000-000000000000',sourceContentHash:hex('f'),sourceResourceId:'alert-triage',sourceResourceVersion:'1.0.0'}
 const files=(...paths:string[])=>paths.map(path=>({path,hash:hex('1'),size:10}))
+// 本加载条目经预览解析出的固定引用：公共来源只认同一 sourceContent/sourceResource（首次安装可来自另一加载），自装来源须指回本加载本条目
+const INST2='cccccccc-cccc-4ccc-8ccc-cccccccccccc',LOAD_CONTENT='c4444444-0000-4000-8000-000000000000'
+const fixedPublic={kind:'industry-public',loadId,itemInstanceId:S1,contentId:LOAD_CONTENT,contentHash:hex('8'),resourceId:'alert-triage',resourceVersion:'1.0.0',sourceContentId:publicSource.sourceContentId,sourceContentHash:publicSource.sourceContentHash,sourceResourceId:publicSource.sourceResourceId,sourceResourceVersion:publicSource.sourceResourceVersion}
+const localSource={kind:'industry-local',loadId,itemInstanceId:S1,contentId:LOAD_CONTENT,contentHash:hex('8'),resourceId:'skill-0001',resourceVersion:'1.0.0'}
 
-type Options={models?:IndustryModelProbe;dependencies?:Record<string,IndustryModelDependency[]>;roleFails?:boolean;knowledgeSlow?:boolean;unloaded?:boolean;rolePaused?:boolean;roleNeedsConnector?:boolean;tolerant?:boolean;hold?:boolean;connectorDetached?:boolean;s1Files?:string[];s1Trust?:Record<string,unknown>|null;s1TrustHash?:string;s1Bundle?:string;audit?:unknown[];usageOrphan?:boolean;observeState?:string;failLoadsAt?:number}
+type Options={models?:IndustryModelProbe;dependencies?:Record<string,IndustryModelDependency[]>;roleFails?:boolean;knowledgeSlow?:boolean;unloaded?:boolean;rolePaused?:boolean;roleNeedsConnector?:boolean;tolerant?:boolean;hold?:boolean;connectorDetached?:boolean;s1Files?:string[];s1Trust?:Record<string,unknown>|null;s1TrustHash?:string;s1Bundle?:string;audit?:unknown[];usageOrphan?:boolean;observeState?:string;failLoadsAt?:number
+ // 方法绑定：事先显式安装、无关联方法、绑定前的观测/替换/撤销/来源/关联漂移、本人已改员工、保存或上岗失败、未接入绑定端口
+ skillPreinstalled?:boolean;noRoleSkill?:boolean;bindObserve?:string;bindReplaced?:boolean;bindRevoked?:boolean;atomicSource?:boolean;mappingDrift?:boolean;roleEditedByUser?:boolean;editFails?:boolean;lifecycleFails?:boolean;noRoleRecords?:boolean
+ // 安装身份：自装来源、同名但不同公共来源、绑定前 usage 迁到另一份同版本安装
+ localSkill?:boolean;foreignPublic?:boolean;bindMigrated?:boolean}
+type RoleRecord=typeof roleDefinition&{id:string;ownerId:string;version:number;state:string;createdAt:string;updatedAt:string}
+const roleRecord=(version:number,state:string):RoleRecord=>({...structuredClone(roleDefinition),id:ROLE,ownerId:owner,version,state,createdAt:'2026-10-14T00:00:00.000Z',updatedAt:'2026-10-14T00:00:00.000Z'})
 function world(options:Options={}){
  const calls:[string,any][]=[]
  let release=()=>{},resting=()=>{}
  const held=new Promise<void>(resolve=>{release=resolve}),sleeping=new Promise<void>(resolve=>{resting=resolve})
- type RoleState={state:string;revision:number;role:{id:string;version:number;state:string}|null;failure?:unknown}
- const state={knowledge:undefined as undefined|{state:string;revision:number},kTicks:0,skill:false,mcp:undefined as string|undefined,role:(options.rolePaused?{state:'paused',revision:1,role:{id:ROLE,version:3,state:'paused'}}:undefined) as RoleState|undefined,rTicks:0}
- const relations=[{kind:'role-knowledge',from:R,to:K},{kind:'role-skill',from:R,to:S1},...(options.roleNeedsConnector?[{kind:'role-connection',from:R,to:M}]:[])]
+ type RoleState={state:string;revision:number;failure?:unknown}
+ const state={knowledge:undefined as undefined|{state:string;revision:number},kTicks:0,skill:!!options.skillPreinstalled,mcp:undefined as string|undefined,role:(options.rolePaused?{state:'paused',revision:1}:undefined) as RoleState|undefined,rTicks:0,record:options.rolePaused?roleRecord(3,'paused'):undefined as RoleRecord|undefined,binding:false,migrated:false}
+ const relations=[{kind:'role-knowledge',from:R,to:K},...(options.noRoleSkill?[]:[{kind:'role-skill',from:R,to:S1}]),...(options.roleNeedsConnector?[{kind:'role-connection',from:R,to:M}]:[])]
+ // 另一份安装（INST2）除 ID 外与原安装完全相同：版本也同为 1，只比版本无法发现迁移
+ const installation=(id=INST)=>({id,ownerId:owner,source:options.atomicSource?{kind:'atomic',contentId:'c3333333-0000-4000-8000-000000000000',contentHash:hex('e'),resourceId:'alert-triage',resourceVersion:'1.0.0'}:options.localSkill?localSource:options.foreignPublic?{...publicSource,sourceContentId:'c5555555-0000-4000-8000-000000000000',sourceContentHash:hex('6')}:publicSource,bundleHash:options.s1Bundle??hex('d'),native:{name:NATIVE,description:'告警分诊',modelInvocable:true,userInvocable:true,bodyHash:BODY},state:'installed',version:1,createdAt:'2026-10-14T00:00:00.000Z',updatedAt:'2026-10-14T00:00:00.000Z'})
  const load={id:loadId,status:options.unloaded?'unloaded':'active',templateTitle:'安全运营 SOC',templateVersion:'1.2.0',mappingHash:hex('a'),relations,
   items:[{instanceId:K,kind:'knowledge',title:'分诊指南',required:true,status:'pending-adapter'},{instanceId:S1,kind:'skill',title:'告警分诊',required:true,status:'pending-adapter'},{instanceId:S2,kind:'skill',title:'取证规程',required:false,status:'pending-adapter'},{instanceId:S3,kind:'skill',title:'取证脚本',required:false,status:'pending-adapter'},{instanceId:M,kind:'mcp',title:'SIEM 连接',required:false,status:options.tolerant?'instantiated':'pending-adapter'},{instanceId:R,kind:'role',title:'T1 分析师',required:true,status:options.rolePaused?'active':'pending-adapter'},{instanceId:T,kind:'work-template',title:'告警研判',required:false,status:'pending-adapter'},{instanceId:P,kind:'plan',title:'每日交接',required:false,status:'pending-adapter'},{instanceId:G,kind:'plugin',title:'工单插件',required:false,status:'pending-adapter'},...(options.tolerant?[{instanceId:D,kind:'mcp',title:'已解除连接',required:false,status:'detached'}]:[])]}
  for(const item of load.items)if(options.dependencies?.[item.instanceId])Object.assign(item,{modelDependencies:options.dependencies[item.instanceId]})
@@ -28,27 +43,36 @@ function world(options:Options={}){
  let clock=0,loadReads=0
  const ports:IndustryPreparePorts={
   ...(options.models?{models:options.models}:{}),modelTitle:()=>'本地语音',
-  loads:rec(()=>{if(++loadReads===options.failLoadsAt)throw new Error('宿主暂不可用');return load}),
+  loads:rec(()=>{if(++loadReads===options.failLoadsAt)throw new Error('宿主暂不可用');return options.mappingDrift&&state.binding?{...load,mappingHash:hex('b')}:load}),
   knowledge:rec(endpoint=>{
    if(endpoint==='industry-knowledge/instantiate'){state.knowledge={state:'pending',revision:1};state.kTicks=1;return {}}
    if(state.knowledge?.state==='pending'&&!options.knowledgeSlow&&state.kTicks--<=0)state.knowledge={state:'active',revision:2}
    return {items:state.knowledge?[{loadId,itemInstanceId:K,...state.knowledge}]:[]}
   }),
   roles:rec(endpoint=>{
-   if(endpoint==='industry-roles/instantiate'){state.role={state:'pending',revision:1,role:null};state.rTicks=1;return {}}
-   if(state.role?.state==='pending'&&state.rTicks--<=0)state.role=options.roleFails?{state:'failed',revision:2,role:null,failure:{code:'teloa/conflict',message:'岗位定义冲突。'}}:{state:'paused',revision:2,role:{id:ROLE,version:1,state:'paused'}}
-   return {items:state.role?[{loadId,itemInstanceId:R,...state.role}]:[]}
+   if(endpoint==='industry-roles/instantiate'){state.role={state:'pending',revision:1};state.rTicks=1;return {}}
+   if(state.role?.state==='pending'&&state.rTicks--<=0){
+    if(options.roleFails)state.role={state:'failed',revision:2,failure:{code:'teloa/conflict',message:'岗位定义冲突。'}}
+    else{state.role={state:'paused',revision:2};state.record=roleRecord(1,'paused')}
+   }
+   // 实例行里的岗位投影来自原员工记录，绑定与上岗后的版本随之推进
+   const role=state.role&&state.role.state!=='pending'&&state.role.state!=='failed'&&state.record?{id:ROLE,version:state.record.version,state:state.record.state}:null
+   return {items:state.role?[{loadId,itemInstanceId:R,...state.role,role}]:[]}
   }),
   skills:rec((endpoint,payload)=>{
    if(endpoint==='skill-installations/list'&&options.usageOrphan)return {items:[],usages:[{loadId,itemInstanceId:S1,installationId:INST}]}
-   if(endpoint==='skill-installations/list')return {items:state.skill?[{id:INST,source:publicSource,state:'installed',version:1}]:[],usages:state.skill?[{loadId,itemInstanceId:S1,installationId:INST}]:[]}
+   if(endpoint==='skill-installations/list'){
+    const used=state.migrated||options.bindMigrated&&state.binding?INST2:INST
+    return {items:state.skill?[installation(INST),...(used===INST2?[installation(INST2)]:[])]:[],usages:state.skill&&!(options.bindRevoked&&state.binding)?[{loadId,itemInstanceId:S1,installationId:used}]:[]}
+   }
    if(endpoint==='skill-installations/preview'){
     const id=payload.source.itemInstanceId
     if(id===S1&&options.tolerant)throw new Error('预览失败')
-    return id===S2?{bundleHash:hex('b'),trustHash:hex('c'),files:files('SKILL.md')}:id===S3?{bundleHash:hex('9'),files:files('SKILL.md','scripts/collect.py')}:{bundleHash:options.s1Bundle??hex('d'),files:files(...(options.s1Files??['SKILL.md'])),...(options.s1Trust===null?{}:{trust:options.s1Trust??officialTrust,trustHash:options.s1TrustHash??hex('7')})}
+    return id===S2?{bundleHash:hex('b'),trustHash:hex('c'),files:files('SKILL.md')}:id===S3?{bundleHash:hex('9'),files:files('SKILL.md','scripts/collect.py')}:{source:options.localSkill?localSource:fixedPublic,bundleHash:options.s1Bundle??hex('d'),native:{name:NATIVE,description:'告警分诊',modelInvocable:true,userInvocable:true,bodyHash:BODY},files:files(...(options.s1Files??['SKILL.md'])),...(options.s1Trust===null?{}:{trust:options.s1Trust??officialTrust,trustHash:options.s1TrustHash??hex('7')})}
    }
-   if(endpoint==='skill-installations/install'){state.skill=true;return {installation:{id:INST,source:publicSource,state:'installed'},source:publicSource}}
-   return {installationId:INST,scope:'default-workspace',state:options.observeState??'available'}
+   if(endpoint==='skill-installations/install'){state.skill=true;return {installation:installation(),source:publicSource}}
+   const observed=state.binding&&options.bindObserve?options.bindObserve:options.observeState??'available'
+   return {installationId:INST,scope:'default-workspace',state:observed,current:observed==='available'||observed==='shadowed'?{name:NATIVE,description:'告警分诊',modelInvocable:true,userInvocable:true,bodyHash:state.binding&&options.bindReplaced?hex('4'):BODY,provider:'teloa-market',source:'managed'}:null}
   }),
   mcp:rec(endpoint=>{
    if(endpoint==='industry-mcp-connections/instantiate'){state.mcp=options.connectorDetached?'detached':'needs_connection';return {}}
@@ -57,11 +81,24 @@ function world(options:Options={}){
   }),
   dataSources:rec(()=>({items:[]})),executionTools:rec(()=>({items:[]})),
   plugins:rec(()=>({items:[{loadId,itemInstanceId:G,state:'needs_install',revision:1}]})),
-  lifecycle:async payload=>{calls.push(['roles/lifecycle',payload]);state.role={state:'active',revision:3,role:{id:ROLE,version:2,state:'active'}};return {role:state.role.role}},
+  // 原 roles handler 的列表与 CAS 编辑；上岗同样按版本核对
+  ...(options.noRoleRecords?{}:{roleRecords:rec((endpoint,payload)=>{
+   if(endpoint==='roles/list'){state.binding=true;if(options.roleEditedByUser&&state.record?.version===1)state.record={...state.record,version:2,duty:'本人改过的职责。'};return state.record?[structuredClone(state.record)]:[]}
+   if(endpoint!=='roles/edit')throw new Error('意外的员工接口：'+endpoint)
+   if(options.editFails||!state.record||payload.expectedVersion!==state.record.version)throw new WorkError('teloa/version-conflict','员工已被修改，请读取新版本后复核。')
+   state.record={...state.record,...structuredClone(payload.fields),version:state.record.version+1};return structuredClone(state.record)
+  })}),
+  lifecycle:async payload=>{
+   calls.push(['roles/lifecycle',payload])
+   if(options.lifecycleFails)throw new WorkError('teloa/conflict','员工暂不能上岗。')
+   if(!state.record||(payload as {expectedVersion:number}).expectedVersion!==state.record.version)throw new WorkError('teloa/version-conflict','员工已被修改，请读取新版本后复核。')
+   state.record={...state.record,state:'active',version:state.record.version+1};state.role={state:'active',revision:3}
+   return {role:{id:ROLE,version:state.record.version,state:'active'}}
+  },
   sleep:async()=>{resting();if(options.hold)await held},now:()=>clock++,waitMs:options.knowledgeSlow?3:20000,
   ...(options.audit?{audit:(entry:unknown)=>{options.audit!.push(entry)}}:{}),
  }
- return {calls,release,sleeping,handler:createIndustryPrepareHandler(owner,async()=>ports),writes:()=>calls.filter(([endpoint])=>mutating.has(endpoint))}
+ return {calls,release,sleeping,handler:createIndustryPrepareHandler(owner,async()=>ports),writes:()=>calls.filter(([endpoint])=>mutating.has(endpoint)),record:()=>state.record,migrate:()=>{state.migrated=true}}
 }
 const byId=(r:any,id:string)=>r.rows.find((row:any)=>row.itemInstanceId===id)
 // 官方目录出品的纯内容技能信任声明（official-catalog.ts officialCatalogTrust 的形状）
@@ -81,12 +118,14 @@ test('readiness：按规格 §3 分类（技能经 usages 判已装、带信任�
 test('prepare：按顺序执行、子请求 id 由宿主派生、只上岗本次新建且依赖都就绪的岗位；再读清单技能与岗位为已就绪',async()=>{
  const w=world(),r:any=await w.handler('industry-loads/readiness',{loadId})
  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
- assert.deepEqual(w.writes().map(([endpoint])=>endpoint),['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/lifecycle'])
+ // 新员工上岗前先经原 roles/edit 绑定同一加载已装且可用的方法（v1→v2），再按新版本上岗
+ assert.deepEqual(w.writes().map(([endpoint])=>endpoint),['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/edit','roles/lifecycle'])
  const payload=(endpoint:string)=>w.writes().find(([e])=>e===endpoint)![1]
  assert.equal(payload('industry-knowledge/instantiate').requestId,prepareRequestId(owner,loadId,K,'knowledge',r.digest))
  assert.equal(payload('industry-roles/instantiate').requestId,prepareRequestId(owner,loadId,R,'role',r.digest))
  assert.deepEqual(payload('skill-installations/install'),{requestId:prepareRequestId(owner,loadId,S1,'skill',r.digest),source:{kind:'industry',loadId,itemInstanceId:S1},expectedBundleHash:hex('d'),expectedTrustHash:hex('7')})
- assert.deepEqual(payload('roles/lifecycle'),{roleId:ROLE,expectedVersion:1,action:'resume',reason:'方案一键准备'})
+ assert.deepEqual(payload('roles/edit'),{roleId:ROLE,expectedVersion:1,expectedProfile:{name:roleDefinition.name},fields:{...roleDefinition,skills:[NATIVE]}})
+ assert.deepEqual(payload('roles/lifecycle'),{roleId:ROLE,expectedVersion:2,action:'resume',reason:'方案一键准备'})
  assert.deepEqual(receipt.results.map((x:any)=>[x.step,x.outcome]),[['knowledge','done'],['skill','done'],['mcp','done'],['role','done'],['role-resume','done']])
  assert.deepEqual(receipt.readiness.counts,{ready:3,auto:0,needsUser:4,optional:2,pending:0})
  const again:any=await w.handler('industry-loads/readiness',{loadId})
@@ -105,11 +144,28 @@ test('prepare：原本暂停的岗位归需要你操作、不自动恢复；新�
  assert.equal(byId(receipt.readiness,R).entry,'role-resume')
 })
 
+test('prepare：公开 activate:false 建员工并绑定方法后保持暂停；非法值拒绝且不落写；paused 回执键与默认准备隔离',async()=>{
+ const w=world(),r:any=await w.handler('industry-loads/readiness',{loadId})
+ for(const activate of [true,'false',0,null,{},[]])await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest,activate}),/activate 只能省略或为 false/)
+ assert.equal(w.writes().length,0,'非法 activate 不执行任何写入')
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest,activate:false})
+ // 与宿主内部 options.activate:false 同一语义：员工建好、方法绑定，但不调用 roles/lifecycle 上岗。
+ assert.deepEqual(w.writes().map(([endpoint])=>endpoint),['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/edit'])
+ assert.deepEqual(receipt.results.filter((x:any)=>x.itemInstanceId===R).map((x:any)=>[x.step,x.outcome,x.message]),[['role','done',null],['role-resume','skipped','员工已创建并保持暂停：请检查后在团队页恢复。']])
+ assert.equal(byId(receipt.readiness,R).entry,'role-resume');assert.equal(w.record()!.state,'paused')
+ // 带 skipped 的回执不进缓存：旧摘要再来（无论是否 activate:false）都按最新状态复核后拒绝；新清单里员工归需要你操作，默认准备也没有可一键项，不会补上岗。
+ await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest,activate:false}),/状态已变化/)
+ await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest}),/状态已变化/)
+ const again:any=await w.handler('industry-loads/readiness',{loadId});assert.equal(byId(again,R).state,'needs-user');assert.equal(again.counts.auto,0)
+ await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:again.digest}),/没有可一键完成的项/)
+ assert.equal(w.writes().length,5,'默认准备没有借 paused 结果重复执行或补上岗');assert.equal(w.record()!.state,'paused')
+})
+
 test('prepare：同摘要并发只执行一次并复用全部完成的回执；摘要过期 version-conflict；参数白名单',async()=>{
  const w=world(),r:any=await w.handler('industry-loads/readiness',{loadId})
  const [a,b]=await Promise.all([w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest}),w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})])
  const c=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
- assert.deepEqual(a,b);assert.deepEqual(a,c);assert.equal(w.writes().length,5)
+ assert.deepEqual(a,b);assert.deepEqual(a,c);assert.equal(w.writes().length,6);assert.equal(w.writes().filter(([endpoint])=>endpoint==='roles/edit').length,1)
  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:'0'.repeat(64)}),/状态已变化/)
  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:'zz'}),/64 位/)
  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest,requestId:loadId}),/未知字段/)
@@ -191,7 +247,8 @@ test('prepare：技能观测状态映射到固定枚举，回执不透传原生�
 })
 
 test('prepare：执行后读取最终清单失败时照常返回结果，清单标为待刷新且不缓存',async()=>{
- const w=world({failLoadsAt:4}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ // 第 5 次读加载才是执行后的最终清单（第 4 次是绑定方法前的关联复核）
+ const w=world({failLoadsAt:5}),r:any=await w.handler('industry-loads/readiness',{loadId})
  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
  assert.equal(receipt.readiness,null);assert.equal(receipt.results.length,5);assert.ok(receipt.results.every((x:any)=>x.outcome==='done'))
  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest}),/状态已变化/)
@@ -280,4 +337,130 @@ test('模型按入口阻断且共享探测；不下载，准备后恢复原入�
  phase='disabled'
  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:ready.digest}),/状态已变化/)
  assert.equal(w.writes().length,0)
+})
+
+// ---- 方法绑定：已显式安装且实际可用的同一加载 role-skill，只绑到本批首建的暂停员工（v1），经原 roles/edit 保存后再上岗
+const endpoints=(w:ReturnType<typeof world>)=>w.writes().map(([endpoint])=>endpoint)
+const roleResults=(receipt:any)=>receipt.results.filter((x:any)=>x.itemInstanceId===R).map((x:any)=>[x.step,x.outcome])
+
+test('方法绑定：关联连接仍待本人授权时，已就绪的方法照样按实际原生名绑定，员工保持暂停、不上岗',async()=>{
+ const w=world({skillPreinstalled:true,s1Trust:null,roleNeedsConnector:true}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','skipped']])
+ const record=w.record()!
+ assert.deepEqual([record.version,record.state,record.skills],[2,'paused',[NATIVE]],'methods are bound even though the connection still needs authorization')
+ assert.equal(w.writes().some(([endpoint])=>endpoint==='roles/lifecycle'),false)
+})
+
+test('方法绑定：本人事先显式安装（非一键）的原方法同样绑定到新员工，安装、来源与原记录都不改',async()=>{
+ const w=world({skillPreinstalled:true,s1Trust:null}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ assert.deepEqual([byId(r,S1).state,byId(r,R).state],['ready','auto'])
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.deepEqual(endpoints(w),['industry-knowledge/instantiate','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/edit','roles/lifecycle'])
+ assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','done']])
+ const record=w.record()!
+ assert.deepEqual([record.id,record.version,record.state,record.skills],[ROLE,3,'active',[NATIVE]])
+ assert.deepEqual({...record,skills:[],version:1,state:'paused'},roleRecord(1,'paused'),'除方法外的员工定义原样保留')
+ assert.equal(w.calls.some(([endpoint])=>endpoint==='skill-installations/install'),false,'不静默安装')
+})
+
+test('方法绑定：绑定前复核失败（遮蔽、停用、缺失、替换、撤销、来源不属于该方案、关联漂移）——不保存、不上岗，返回明确缺项',async()=>{
+ const cases:[string,Options,RegExp][]=[
+  ['同名遮蔽',{bindObserve:'shadowed'},/告警分诊.*同名/],
+  ['已停用',{bindObserve:'disabled'},/告警分诊.*停用/],
+  ['未找到',{bindObserve:'missing'},/告警分诊.*未找到/],
+  ['正文被替换',{bindReplaced:true},/告警分诊.*替换/],
+  ['安装已撤销',{bindRevoked:true},/告警分诊.*(未安装|撤销)/],
+  ['来源不属于该方案',{atomicSource:true},/告警分诊.*来源/],
+  ['方案关联漂移',{mappingDrift:true},/关联已变化/],
+ ]
+ for(const [label,options,pattern] of cases){
+  const w=world({skillPreinstalled:true,s1Trust:null,...options}),r:any=await w.handler('industry-loads/readiness',{loadId})
+  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+  assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','skipped']],label)
+  const resume=receipt.results.find((x:any)=>x.step==='role-resume')
+  assert.match(resume.message,pattern,label);assert.match(resume.message,/保持暂停/,label)
+  assert.equal(endpoints(w).some(endpoint=>endpoint==='roles/edit'||endpoint==='roles/lifecycle'),false,label)
+  assert.deepEqual([w.record()!.version,w.record()!.state,w.record()!.skills],[1,'paused',[]],label)
+  if(receipt.readiness)assert.equal(byId(receipt.readiness,R).entry,'role-resume',label)
+ }
+})
+
+test('方法绑定：本人在创建后已改过的员工（不再是首建 v1）不覆盖、不上岗',async()=>{
+ const w=world({skillPreinstalled:true,s1Trust:null,roleEditedByUser:true}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','skipped']])
+ assert.match(receipt.results.find((x:any)=>x.step==='role-resume').message,/已被修改/)
+ assert.equal(endpoints(w).some(endpoint=>endpoint==='roles/edit'||endpoint==='roles/lifecycle'),false)
+ assert.deepEqual([w.record()!.version,w.record()!.duty,w.record()!.skills],[2,'本人改过的职责。',[]])
+})
+
+test('方法绑定：保存冲突如实失败不上岗；保存后上岗失败保留已绑方法、交本人恢复且不重复绑定',async()=>{
+ const conflict=world({skillPreinstalled:true,s1Trust:null,editFails:true}),a:any=await conflict.handler('industry-loads/readiness',{loadId})
+ const failed:any=await conflict.handler('industry-loads/prepare',{loadId,expectedDigest:a.digest})
+ const resume=failed.results.find((x:any)=>x.step==='role-resume')
+ assert.deepEqual([resume.outcome,resume.code],['failed','teloa/version-conflict'])
+ assert.equal(endpoints(conflict).includes('roles/lifecycle'),false);assert.deepEqual(conflict.record()!.skills,[])
+ const stuck=world({skillPreinstalled:true,s1Trust:null,lifecycleFails:true}),b:any=await stuck.handler('industry-loads/readiness',{loadId})
+ const partial:any=await stuck.handler('industry-loads/prepare',{loadId,expectedDigest:b.digest})
+ assert.deepEqual(roleResults(partial),[['role','done'],['role-resume','failed']])
+ assert.deepEqual([stuck.record()!.version,stuck.record()!.state,stuck.record()!.skills],[2,'paused',[NATIVE]])
+ assert.equal(byId(partial.readiness,R).entry,'role-resume')
+ await assert.rejects(stuck.handler('industry-loads/prepare',{loadId,expectedDigest:b.digest}),/状态已变化/)
+ assert.equal(endpoints(stuck).filter(endpoint=>endpoint==='roles/edit').length,1)
+})
+
+test('方法绑定：未接入原员工保存端口时不让空方法员工上岗；没有关联方法的员工照常按 v1 上岗',async()=>{
+ const missing=world({skillPreinstalled:true,s1Trust:null,noRoleRecords:true}),a:any=await missing.handler('industry-loads/readiness',{loadId})
+ const receipt:any=await missing.handler('industry-loads/prepare',{loadId,expectedDigest:a.digest})
+ assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','skipped']])
+ assert.match(receipt.results.find((x:any)=>x.step==='role-resume').message,/方法绑定服务未接入/)
+ assert.equal(endpoints(missing).includes('roles/lifecycle'),false)
+ const plain=world({noRoleSkill:true}),b:any=await plain.handler('industry-loads/readiness',{loadId})
+ await plain.handler('industry-loads/prepare',{loadId,expectedDigest:b.digest})
+ assert.equal(plain.calls.some(([endpoint])=>endpoint==='roles/list'||endpoint==='roles/edit'),false)
+ assert.deepEqual(plain.writes().find(([endpoint])=>endpoint==='roles/lifecycle')![1],{roleId:ROLE,expectedVersion:1,action:'resume',reason:'方案一键准备'})
+})
+
+// ---- 安装身份：摘要固定已装方法的安装 ID、版本、规范来源与正文；绑定前按同一 usage 与方案固定引用重核
+test('安装身份入摘要：确认摘要后 usage 迁到另一份同版本安装（公共或自装来源），旧摘要不可借用、一笔不写',async()=>{
+ for(const [label,options] of [['公共来源',{}],['自装来源',{localSkill:true}]] as [string,Options][]){
+  const w=world({skillPreinstalled:true,s1Trust:null,...options}),r:any=await w.handler('industry-loads/readiness',{loadId})
+  w.migrate()
+  const migrated:any=await w.handler('industry-loads/readiness',{loadId})
+  assert.notEqual(migrated.digest,r.digest,label)
+  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest}),/状态已变化/,label)
+  assert.equal(w.writes().length,0,label)
+ }
+})
+
+test('安装身份：绑定前 usage 迁到另一份同版本安装（公共或自装来源）——不绑定、不上岗，返回明确缺项',async()=>{
+ for(const [label,options] of [['公共来源',{skillPreinstalled:true,s1Trust:null,bindMigrated:true}],['自装来源',{skillPreinstalled:true,s1Trust:null,bindMigrated:true,localSkill:true}],['本次一键安装后被迁走',{bindMigrated:true}]] as [string,Options][]){
+  const w=world(options),r:any=await w.handler('industry-loads/readiness',{loadId})
+  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+  assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','skipped']],label)
+  assert.match(receipt.results.find((x:any)=>x.step==='role-resume').message,/告警分诊.*确认后已变化/,label)
+  assert.equal(endpoints(w).some(endpoint=>endpoint==='roles/edit'||endpoint==='roles/lifecycle'),false,label)
+  assert.deepEqual([w.record()!.version,w.record()!.skills],[1,[]],label)
+ }
+})
+
+test('安装来源：同名同正文但来自另一公共来源的安装，即使按新摘要确认也不绑定、不上岗，且不重新安装',async()=>{
+ const w=world({skillPreinstalled:true,s1Trust:null,foreignPublic:true}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','skipped']])
+ assert.match(receipt.results.find((x:any)=>x.step==='role-resume').message,/告警分诊.*固定来源/)
+ assert.equal(endpoints(w).some(endpoint=>endpoint==='roles/edit'||endpoint==='roles/lifecycle'||endpoint==='skill-installations/install'),false)
+ assert.deepEqual([w.record()!.version,w.record()!.skills],[1,[]])
+})
+
+test('安装来源：同一真正公共来源（首次安装来自另一加载）与严格核对的自装来源都绑定成功；只读预览、不重新安装',async()=>{
+ for(const [label,options] of [['公共来源复用首次另一加载',{}],['本加载自装来源',{localSkill:true}]] as [string,Options][]){
+  const w=world({skillPreinstalled:true,s1Trust:null,...options}),r:any=await w.handler('industry-loads/readiness',{loadId})
+  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+  assert.deepEqual(roleResults(receipt),[['role','done'],['role-resume','done']],label)
+  assert.deepEqual(w.record()!.skills,[NATIVE],label)
+  assert.ok(w.calls.some(([endpoint,payload])=>endpoint==='skill-installations/preview'&&JSON.stringify(payload)===JSON.stringify({source:{kind:'industry',loadId,itemInstanceId:S1}})),label)
+  assert.equal(w.calls.some(([endpoint])=>endpoint==='skill-installations/install'),false,label)
+ }
 })

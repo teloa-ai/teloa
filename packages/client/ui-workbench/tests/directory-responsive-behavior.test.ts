@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
-import {mount,nodes,marketProps} from './market-component-harness.ts'
+import {mount,nodes,marketProps,appsDirectory} from './market-component-harness.ts'
 import {sandboxMarket} from '../src/client/market-preview.ts'
 import {marketResourceIndex} from '../src/client/market-resource-index.ts'
-import {marketCategoryLabel,visibleMarketCategories} from '../src/client/market-home-presentation.ts'
+import {marketCategoryLabel} from '../src/client/market-home-presentation.ts'
 
 const clientRoot=new URL('../src/client/',import.meta.url)
 const read=(name:string)=>readFile(new URL(name,clientRoot),'utf8')
@@ -43,27 +43,34 @@ test('资料目录以树和正文为主，筛选不再占据目录，390px 主�
   assert.match(styles,/@media\(max-width:720px\)\{[\s\S]*\.page button[^{]*\{[^}]*min-height:44px[^}]*min-width:44px/)
 })
 
-test('市场在 390px 保留八个直接分类入口与可触达的单列列表',async()=>{
+test('市场窄窗口保留两主入口与明确分组的原分类，技能仍到达同一列表',async()=>{
   const styles=await read('MarketPage.module.css')
-  const catalogModule=mount('MarketResourceCatalog.tsx').exported,page=mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule})
-  const props=marketProps({category:'home'})
+  // 真实工作台总是注入官方目录 API；技能等原分类经同一官方目录区块（kinds 限定类型）到达，本机资源留在「已添加」
+  const section=function MarketCatalogSection(){return null}
+  const catalogModule=mount('MarketResourceCatalog.tsx').exported,page=mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}})
+  const props={...marketProps({category:'home'}),marketCatalogApi:{list:async()=>({counts:{solution:0,dashboard:0,role:0,skill:0,connector:0,model:0}})}}
   let tree=page.render('TestCatalog',props)
   const nav=nodes(tree).find(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria')!
   const buttons=nodes(nav).filter(node=>node.type==='button')
-  // 未接官方目录（counts 未知）时「模型」隐藏，其余七类直接可见
-  const categories=visibleMarketCategories(undefined)
-  const expected=[...categories.map(category=>marketCategoryLabel(((key:string)=>key) as any,category)),'market.solution.addedTab']
-  assert.deepEqual(buttons.map(node=>node.children[0]),expected)
+  assert.deepEqual(buttons.map(node=>node.children[0]),['market.primary.employees','market.primary.teams'])
   assert.equal(buttons.filter(node=>node.props['aria-current']==='page').length,1)
-  buttons[categories.indexOf('skill')]!.props.onClick()
-  tree=page.render('TestCatalog',props)
+  assert.equal(nodes(tree).some(node=>node.props['aria-label']==='market.primary.advancedAria'),false,'市场不再挂高级分类')
+  const apps=nodes(tree).filter(node=>node.type==='button'&&node.children.includes('market.apps.title'))
+  assert.equal(apps.length,1,'应用是常驻入口，高级菜单不重复')
+  apps[0]!.props.onClick();tree=page.render('TestCatalog',props)
+  // 进入应用后是统一应用目录（自带「应用」标题与搜索），不再重复市场标题、市场分类与应用快捷入口（见 market-primary-navigation）
+  assert.ok(nodes(tree).some(node=>node.type===appsDirectory),'应用入口到达统一应用目录')
+  assert.equal(nodes(tree).some(node=>node.type==='button'&&node.children.includes('market.apps.title')),false,'应用内不重复应用入口')
+  assert.equal(nodes(tree).some(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria'),false,'应用不重复市场分类')
+  tree=mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}}).render('TestCatalog',{...props,navigationState:{category:'skill'}})
   assert.equal(tree.props['data-mobile-layer'],'list')
-  assert.ok(nodes(tree).find(node=>node.type===catalogModule.MarketResourceCatalog))
+  assert.deepEqual(nodes(tree).find(node=>node.type===section)!.props.kinds,['skill'],'技能到达同一官方目录区块且只列技能')
+  assert.equal(nodes(tree).some(node=>node.type===catalogModule.MarketResourceCatalog),false,'不另挂本机技能块')
   assert.match(styles,/\.categories\{[^}]*display:flex[^}]*overflow-x:auto/)
-  assert.match(styles,/\.page \.categories\{[^}]*flex-wrap:nowrap/)
+  assert.match(styles,/\.primaryNavigation \.categories\{[^}]*flex-wrap:nowrap/)
   assert.doesNotMatch(styles,/data-mobile-layer=category[^}]*\.categories\{[^}]*display:grid/)
   assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*data-mobile-layer=detail[^}]*\.categories[^}]*display:none/)
-  assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*\.page button\{[^}]*min-height:44px[^}]*min-width:44px/)
+  assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*\.page button:where\(:not\(\[data-teloa-toolbar-icon\]\)\)\{[^}]*min-height:44px[^}]*min-width:44px/)
   assert.match(styles,/\.resourceDestinations li strong\{[^}]*overflow-wrap:anywhere/)
 })
 
@@ -109,7 +116,9 @@ test('异步目录就绪前不清除冷刷新恢复的详情选择',async()=>{
     read('MarketPage.tsx'),
     read('WorkbenchFrame.tsx'),
   ])
-  assert.match(team,/if\(inCapabilityCenter\|\|state\.catalogStatus!==['"]ready['"][^)]*\)return/)
+  // 我的资源只随外部目录定位恢复选中，不在目录就绪前后自动改写选中项
+  assert.doesNotMatch(team,/remember\(\{selectedId:selected\?\.key\}\)/)
+  assert.match(team,/navigationState\?\.selectedId!==undefined&&navigationState\.selectedId!==selectedKey\)setSelectedKey\(navigationState\.selectedId\)/)
   assert.match(resource,/if\(!knowledgeTree\)return/)
   assert.match(market,/catalogReadyRef\.current\?\./)
   assert.match(frame,/onCatalogReady=\{availableIds=>/)
@@ -120,10 +129,11 @@ test('异步目录就绪前不清除冷刷新恢复的详情选择',async()=>{
 test('行业目录恢复等待行业加载目录完成',async()=>{
   const [team,frame]=await Promise.all([read('TeamCapabilitiesPage.tsx'),read('WorkbenchFrame.tsx')])
   assert.match(team,/industryLoadsReady:boolean/)
-  assert.match(team,/if\(inCapabilityCenter\|\|state\.catalogStatus!==['"]ready['"]\|\|!industryLoadsReady\)return/)
+  assert.match(team,/if\(!visible\|\|!industryLoadsReady\)return/)
+  assert.match(team,/skillRuntime:industryLoadsReady&&skillRuntime\.loadsKey===skillLoadsKey\?skillRuntime:\{loadsKey:skillLoadsKey,state:'loading',facts:\[\]\}/)
   assert.match(frame,/industryLoadDirectory/)
   assert.match(frame,/if\(industryLoadDirectory!==['"]ready['"]\)return/)
-  assert.match(frame,/<TeamCapabilitiesPage[^\n]+industryLoadsReady=\{industryLoadDirectory===['"]ready['"]\}/)
+  assert.match(frame,/mine=\{\{[^\n]+industryLoadsReady:industryLoadDirectory===['"]ready['"]/)
 })
 
 test('三个目录页接入统一滚动记录和手机返回原行焦点协议',async()=>{
@@ -137,16 +147,19 @@ test('三个目录页接入统一滚动记录和手机返回原行焦点协议',
     assert.match(source,/data-teloa-pane="directory"/)
     assert.match(source,/data-teloa-pane="detail"/)
   }
-  assert.match(market,/data-teloa-pane=\{item\|\|inlineSelectedId\?'detail':'directory'\}/)
+  // 详情成为共享抽屉后，主入口目录保持原布局；旧内联资源摘要仍保留分层。
+  assert.match(market,/data-teloa-pane=\{inlineSelectedId&&!primaryView\?'detail':'directory'\}/)
+  assert.match(market,/const itemDrawer=item\?<ContextDrawer/)
+  assert.match(market,/rememberNavigation\(\{selectedId:lastSelectedId,mobileLayer:'list'\}\)/)
   assert.match(focus,/closest(?:<HTMLElement>)?\(['"]\[data-teloa-entry\]['"]\)/)
   assert.match(focus,/original\?\.key\?\?before\.selected/)
 })
 
-test('团队能力移动端返回文案说明真实返回层级',async()=>{
+test('团队能力目录返回分类，轻详情由共享抽屉关闭并保留当前行',async()=>{
   const [team,messages]=await Promise.all([read('TeamCapabilitiesPage.tsx'),read('i18n/locales/team-capability-catalog.ts')])
   assert.doesNotMatch(team,/t\(['"]market\.back['"]\)/)
   assert.match(team,/t\(['"]teamCapability\.back\.categories['"]\)/)
-  assert.match(team,/t\(['"]teamCapability\.back\.directory['"]\)/)
+  assert.match(team,/<ContextDrawer[^>]+close=\{\(\)=>\{setDetailOpen\(false\);setMobileLayer\('list'\);remember\(\{mobileLayer:'list'\}\)/)
   assert.match(messages,/r\(['"]teamCapability\.back\.categories['"]/)
   assert.match(messages,/r\(['"]teamCapability\.back\.directory['"]/)
 })
@@ -174,7 +187,7 @@ test('纯引用选择与返回通过父页面导航回调保持原目录行',()=
   assert.equal(navigation.mobileLayer,'detail')
   tree=child.render('MarketResourceCatalog',childProps())
   const detail=nodes(tree).find(node=>node.props['data-teloa-pane']==='detail')!
-  nodes(detail).find(node=>node.type==='button'&&node.children.includes('market.back'))!.props.onClick()
+  nodes(detail).find(node=>node.type==='button'&&node.props['aria-label']==='market.back')!.props.onClick()
   root=page.render('TestCatalog',props)
   assert.equal(root.props['data-mobile-layer'],'list')
   assert.equal(navigation.selectedId,entry.key)
@@ -194,7 +207,7 @@ test('市场资源子目录在 390px 的触控与摘要规则命中实际 ItemCa
   assert.equal(nodes(tree).find(node=>node.props.role==='listbox')!.props.className,'itemList')
   assert.match(styles,/\.itemList\{[^}]*display:flex[^}]*flex-direction:column/)
   assert.match(styles,/\.page \.itemCard\{[^}]*width:100%[^}]*min-width:0/)
-  assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*\.page button\{[^}]*min-height:44px[^}]*min-width:44px/)
+  assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*\.page button:where\(:not\(\[data-teloa-toolbar-icon\]\)\)\{[^}]*min-height:44px[^}]*min-width:44px/)
   assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*\.resourceCatalog\[data-resource-layer=list\] \.resourceDescription,[\s\S]*\.resourceCatalog\[data-resource-layer=list\] \.resourceFacts,[\s\S]*display:none/)
 })
 

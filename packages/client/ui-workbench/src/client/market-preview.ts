@@ -1,7 +1,8 @@
+import {findMarketItem} from './market-item-identity.ts'
 import type {MarketFunctionKey} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
 import type {AtomicSkillContent} from './atomic-skill.ts'
-import {localizedMetadata,isIndustryPackageFormat,type LocalizedMetadata,type LocalizedMetadataResolution} from '@teloa/contract'
+import {localizedMetadata,isIndustryPackageFormat,isGrokRecipe,convertGrokRecipe,grokRecipeImportFromFiles,readGrokRecipe,validateIndustryFilePath,industryFileLimits,type GrokRecipe,type GrokRecipePluginMapping,type GrokRecipeOptions,type GrokRecipeImport,type LocalizedMetadata,type LocalizedMetadataResolution} from '@teloa/contract'
 import {resolveMarketLocalizedMetadata} from './market-locale-metadata.ts'
 import { validateIndustryManifest, type IndustryLocalizedMetadata, type IndustryManifest, type IndustryResourceKind } from './industry-manifest.ts'
 import type { IndustryContent } from './industry-directory.ts'
@@ -16,11 +17,11 @@ export type MarketSource={kind:'builtin'}|{kind:'created'}|{kind:'paste'}|{kind:
 export type WorkTemplateLocalizedMetadata=IndustryLocalizedMetadata&{requirements?:LocalizedMetadata[];output?:LocalizedMetadata}
 export type ManifestBase={id:string;title:string;version:string;domain:string;description:string;localized?:WorkTemplateLocalizedMetadata;requirements:string[];output:string}
 export type MarketManifest=IndustryManifest|ManifestBase&({format:'teloa.work-template/v1';skills:{id:string;title:string;version:string}[]}|{format:'teloa.business-package/v1';components:{kind:'skill'|'mcp'|'plugin'|'work-template'|'role';path:string;required:boolean}[]})
-export type ParsedManifest={manifest:MarketManifest;hash:string;raw:string}
+export type ParsedManifest={manifest:MarketManifest;hash:string;raw:string;packageContent?:IndustryContent;recipeImport?:GrokRecipeImport}
 export type MarketTrust={publisher:string;repository:{host:'github.com';owner:string;repo:string}|null;license:{status:'declared';value:string}|{status:'missing'};signature:{status:'verified'|'unverified'|'invalid';signer:string|null};compatibility:{teloa:string;dsh:string};plugins:{id:string;version:string;required:boolean}[];externalCapabilities:{id:string;kind:'mcp'|'connection';required:boolean}[];permissions:{id:string;description:string;required:boolean}[];review:{conclusion:'approved'|'needs-review'|'rejected';summary:string}}
 export type MarketItemLocalized={title?:LocalizedMetadata;summary?:LocalizedMetadata;requirements?:LocalizedMetadata[];output?:LocalizedMetadata;author?:LocalizedMetadata;license?:LocalizedMetadata;compatibility?:LocalizedMetadata;components?:{name:LocalizedMetadata;status:LocalizedMetadata}[]}
 /** `functions`：功能分类（市场分类定案 9 类 + 其他），只在本人创建时选了分类才有；没有即「未分类」，Teloa 自带内容的分类见 builtin-market-taxonomy.ts。 */
-export type MarketItem={functions?:MarketFunctionKey[];contentStorage?:{contentId:string;createdAt:string;loaded:boolean};atomicSkill?:AtomicSkillContent;resourceKind?:IndustryResourceKind;capabilityCategories?:string[];installationState?:'not-installed';packageContent?:IndustryContent;trust?:MarketTrust;localized?:MarketItemLocalized;pluginInstallSource?:MarketPluginRegistrySource;id:string;kind:MarketKind;title:string;version:string;scope:string;visibility:keyof typeof marketVisibility;summary:string;requirements:string[];output:string;author:string;license:string;source:MarketSource;protocol?:string;owner:'DSH'|'Teloa';compatibility:string;components:{name:string;required:boolean;status:string}[];manifest?:MarketManifest;hash?:string;raw?:string}
+export type MarketItem={functions?:MarketFunctionKey[];contentStorage?:{contentId:string;createdAt:string;loaded:boolean};atomicSkill?:AtomicSkillContent;resourceKind?:IndustryResourceKind;capabilityCategories?:string[];installationState?:'not-installed';packageContent?:IndustryContent;recipeImport?:GrokRecipeImport;trust?:MarketTrust;localized?:MarketItemLocalized;pluginInstallSource?:MarketPluginRegistrySource;id:string;kind:MarketKind;title:string;version:string;scope:string;visibility:keyof typeof marketVisibility;summary:string;requirements:string[];output:string;author:string;license:string;source:MarketSource;protocol?:string;owner:'DSH'|'Teloa';compatibility:string;components:{name:string;required:boolean;status:string}[];manifest?:MarketManifest;hash?:string;raw?:string}
 export type MarketIntent={id:string;version:number;itemId:string;itemVersion:string;scope:string;target:string;targetRef?:MarketTargetRef;purpose:string;visibility:'personal'|'team';status:'draft'|'withdrawn';createdAt:string;updatedAt:string;sessionId?:string;preparation?:{status:'pending'|'failed'|'ready';message:string}|undefined}
 export type MarketState={items:MarketItem[];intents:MarketIntent[]}
 export const MAX_MANIFEST_BYTES=1024*1024
@@ -58,12 +59,49 @@ export function validateManifest(raw:unknown):MarketManifest{
     return {kind:component.kind as 'skill'|'mcp'|'plugin'|'work-template'|'role',path,required:component.required}
   })}
 }
-export async function parseMarketManifest(raw:string):Promise<ParsedManifest>{
+export async function parseMarketManifest(raw:string,recipeOptions?:Parameters<typeof convertGrokRecipe>[1]):Promise<ParsedManifest>{
   const bytes=new TextEncoder().encode(raw)
   if(bytes.length>MAX_MANIFEST_BYTES)throw Error('清单大小不能超过 1 MiB。')
   let value:unknown;try{value=JSON.parse(raw)}catch{throw Error('JSON 格式无效。')}
+  if(isGrokRecipe(value)){
+    const converted=await convertGrokRecipe(raw,recipeOptions),manifest=validateIndustryManifest(converted.manifest),file=converted.files.find(file=>file.path===converted.manifestPath)!
+    const paths=new Set(converted.files.map(file=>file.path))
+    const packageContent:IndustryContent={manifestPath:converted.manifestPath,hash:converted.hash,files:converted.files,resources:manifest.resources.map(resource=>({id:resource.id,state:resource.source.kind==='local'&&paths.has(resource.source.path)?'available':'missing'}))}
+    return {manifest,raw:new TextDecoder().decode(file.bytes),hash:file.hash,packageContent,recipeImport:converted.report}
+  }
   const manifest=validateManifest(value),digest=await crypto.subtle.digest('SHA-256',bytes)
   return {manifest,raw,hash:Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join('')}
+}
+/** 读取固定原件而非 item.raw（后者是生成的 Teloa 清单）；目录摘要、原件与报告须全部一致。 */
+export async function readGrokRecipeItemSource(item:MarketItem):Promise<{raw:string;recipe:GrokRecipe;sourceHash:string}>{
+  const content=item.packageContent
+  if(!content||!content.files.length||content.files.length>500)throw Error('需要先读取完整的固定模板包。')
+  const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
+  const paths=new Set<string>();let total=0
+  for(const file of content.files){
+    validateIndustryFilePath(file.path)
+    if(paths.has(file.path))throw Error('固定模板文件路径重复。')
+    paths.add(file.path);total+=file.bytes.length
+    if(file.bytes.length>industryFileLimits.fileBytes||total>industryFileLimits.totalBytes)throw Error('固定模板文件超出大小限制。')
+    if(await digest(file.bytes)!==file.hash)throw Error('模板文件已变化，请重新选择原模板。')
+  }
+  const files=[...content.files].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0)
+  if(await digest(new TextEncoder().encode(JSON.stringify({manifestPath:content.manifestPath,files:files.map(file=>[file.path,file.hash])})))!==content.hash)throw Error('模板内容已变化，请重新选择原模板。')
+  const report=await grokRecipeImportFromFiles(files,content.manifestPath)
+  if(!report)throw Error('无法读取模板来源，请重新选择原 recipe.json。')
+  const root=content.manifestPath.includes('/')?content.manifestPath.slice(0,content.manifestPath.lastIndexOf('/')+1):'',file=files.find(file=>file.path===root+'source/recipe.json')
+  if(!file)throw Error('没有找到模板来源文件，请重新选择原 recipe.json。')
+  const raw=new TextDecoder('utf-8',{fatal:true}).decode(file.bytes)
+  return {raw,recipe:readGrokRecipe(JSON.parse(raw)),sourceHash:report.sourceHash}
+}
+/** 仅重新准备导入前草稿；同原件保持来源身份，不改已保存/加载的原对象或隐式新建第二条加载。 */
+export async function reprepareGrokRecipeItem(item:MarketItem,pluginMappings:Readonly<Record<string,GrokRecipePluginMapping>>,options:Pick<GrokRecipeOptions,'scope'>={}):Promise<MarketItem>{
+  if(item.contentStorage)throw Error('已保存的固定模板不能在导入预览中更改；此处不会覆盖原加载或原员工。')
+  const original=await readGrokRecipeItemSource(item),previousScope=isIndustryManifest(item.manifest)&&item.manifest.scope!=='grok-'+original.sourceHash.slice(0,24)?item.manifest.scope:'general'
+  const parsed=await parseMarketManifest(original.raw,{pluginMappings,scope:options.scope??previousScope})
+  if(parsed.recipeImport?.sourceHash!==original.sourceHash)throw Error('模板来源已变化，请重新选择原 recipe.json。')
+  const prepared=itemFromManifest(parsed,{kind:'upload',name:'recipe.json',size:new TextEncoder().encode(original.raw).length})
+  return item.functions?{...prepared,functions:[...item.functions]}:prepared
 }
 export function githubSource(value:string,revision:string):MarketSource{
   try{const url=new URL(value.trim()),parts=url.pathname.split('/').filter(Boolean)
@@ -97,8 +135,9 @@ export function marketTrustPreview(item:MarketItem,t?:TeloaTranslate){
 export function localizedMarketItemMetadata(item:Pick<MarketItem,'title'|'summary'|'localized'>,locale:string):{title:LocalizedMetadataResolution;summary:LocalizedMetadataResolution}{return {title:resolveMarketLocalizedMetadata(item.localized?.title??{original:item.title,defaultLocale:'und',locales:{}},locale),summary:resolveMarketLocalizedMetadata(item.localized?.summary??{original:item.summary,defaultLocale:'und',locales:{}},locale)}}
 export function itemFromManifest(parsed:ParsedManifest,source:MarketSource):MarketItem{
   const manifest=parsed.manifest
+  const content=parsed.packageContent?{packageContent:parsed.packageContent,...(parsed.recipeImport?{recipeImport:parsed.recipeImport}:{})}:{}
   const localized=manifest.localized?{...(manifest.localized.title?{title:manifest.localized.title}:{}),...(manifest.localized.description?{summary:manifest.localized.description}:{}),...('requirements' in manifest.localized&&manifest.localized.requirements?{requirements:manifest.localized.requirements}:{}),...('output' in manifest.localized&&manifest.localized.output?{output:manifest.localized.output}:{})}:undefined
-  if(isIndustryManifest(manifest))return {id:'content-'+parsed.hash,kind:'bundle',title:manifest.title,version:manifest.version,scope:manifest.scope,visibility:'personal',summary:manifest.description,...(localized?{localized}:{}),requirements:['核对资源内容、目标空间与待配置连接'],output:'建立行业工作空间及资源关联',author:'本人导入',license:'清单未注明许可，加载前需核对原许可',source,owner:'Teloa',compatibility:'行业资源及关联已解析；资源内容待读取，未加载到工作空间。',components:manifest.resources.map(resource=>({name:resource.title+' · '+resource.kind,required:resource.required,status:resource.source.kind==='local'?'包内内容待读取：'+resource.source.path:'公共资源待核对：'+resource.source.id+' @'+resource.source.version})),manifest,hash:parsed.hash,raw:parsed.raw}
+  if(isIndustryManifest(manifest))return {...content,id:parsed.packageContent?'directory-'+parsed.packageContent.hash:'content-'+parsed.hash,kind:'bundle',title:manifest.title,version:manifest.version,scope:manifest.scope,visibility:'personal',summary:manifest.description,...(localized?{localized}:{}),requirements:['核对资源内容、目标空间与待配置连接'],output:'建立行业工作空间及资源关联',author:'本人导入',license:'清单未注明许可，加载前需核对原许可',source,owner:'Teloa',compatibility:'行业资源及关联已解析；资源内容待读取，未加载到工作空间。',components:manifest.resources.map(resource=>({name:resource.title+' · '+resource.kind,required:resource.required,status:resource.source.kind==='local'?'包内内容待读取：'+resource.source.path:'公共资源待核对：'+resource.source.id+' @'+resource.source.version})),manifest,hash:parsed.hash,raw:parsed.raw}
   return {id:'content-'+parsed.hash,kind:manifest.format==='teloa.work-template/v1'?'template':'bundle',title:manifest.title,version:manifest.version,scope:manifest.domain,visibility:'personal',summary:manifest.description,...(localized?{localized}:{}),requirements:manifest.requirements,output:manifest.output,author:'本人导入',license:'清单未注明许可，安装前需核对原许可',source,owner:'Teloa',compatibility:manifest.format==='teloa.work-template/v1'?'已解析任务模板；使用前核对输入与所需的技能，不涉及扩展安装。':'已解析清单；依赖内容与 Teloa 兼容性待核验，未安装。',components:manifest.format==='teloa.business-package/v1'?manifest.components.map(item=>({name:item.kind+' · '+item.path,required:item.required,status:'组件待读取，兼容性待验证'})):manifest.skills.map(item=>({name:item.title+' @'+item.version,required:true,status:'引用待核对，未自动加载'})),manifest,hash:parsed.hash,raw:parsed.raw}
 }
 export function importManifest(state:MarketState,parsed:ParsedManifest,source:MarketSource,_now:string):MarketState{
@@ -131,7 +170,7 @@ export function filterMarket(items:MarketItem[],filter:{kind:MarketKind|'all';sc
     &&[...(filter.searchValues?.(item)??[]),item.title,item.summary,item.protocol||'',item.id].some(value=>value.toLocaleLowerCase().includes(query)))
 }
 export function saveMarketIntent(state:MarketState,input:Omit<MarketIntent,'version'|'itemVersion'|'status'|'createdAt'|'updatedAt'> & {now:string;targets?:readonly MarketTarget[]}):MarketState{
-  const item=state.items.find(item=>item.id===input.itemId)
+  const item=findMarketItem(state.items,input.itemId)
   if(!item)throw Error('市场内容不存在。')
   const targetRef=input.targetRef?freezeMarketTarget(input.targetRef,input.targets||[]):undefined
   const id=text(input.id,'草案编号'),scope=targetRef?.scope||text(input.scope,'业务范围',80),target=targetRef?.title||text(input.target,'应用目标',300),purpose=text(input.purpose,'使用需求',4000)

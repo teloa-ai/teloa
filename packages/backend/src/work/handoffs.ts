@@ -22,7 +22,7 @@ function read(row:Record<string,unknown>):TaskHandoff{
  if(!uuid(row.id)||!uuid(row.task_id)||!uuid(row.from_role_id)||typeof row.owner_id!=='string'||!row.owner_id||!Number.isSafeInteger(row.role_version)||(row.role_version as number)<1||!Number.isSafeInteger(row.task_version)||(row.task_version as number)<1||typeof row.reason!=='string'||!row.reason.trim()||!(row.created_at instanceof Date)||!Number.isFinite(row.created_at.getTime())||(row.status!=='pending'&&row.status!=='resolved'))throw new WorkError('teloa/storage-corrupt','交接记录损坏，请核对原记录。')
  return {id:row.id,taskId:row.task_id,fromRoleId:row.from_role_id,ownerId:row.owner_id,roleVersion:row.role_version as number,taskVersion:row.task_version as number,reason:row.reason,createdAt:row.created_at.toISOString(),status:row.status}
 }
-function readChange(row:Record<string,unknown>):TaskHandoffChange{
+export function readStoredTaskHandoffChange(row:Record<string,unknown>):TaskHandoffChange{
  try{
   const createdAt=row.created_at instanceof Date?row.created_at.toISOString():'',change={requestId:row.request_id,taskId:row.task_id,baseVersion:row.base_version,appliedVersion:row.applied_version,from:row.from_party,to:row.to_party,note:row.note,createdAt}
   if(!isTaskHandoffChange(change))throw Error()
@@ -49,7 +49,7 @@ export class HandoffService{
    const prior=(await client.query('select *,request_spec=$3::jsonb as same_request from teloa_task_handoff_changes where owner_id=$1 and request_id=$2',[owner,request.requestId,spec])).rows[0]
    if(prior){
     if(!prior.same_request)throw new WorkError('teloa/conflict','同一请求已记录其他改派安排。')
-    const change=readChange(prior),stored=(await client.query('select * from teloa_tasks where id=$1 and owner_id=$2',[change.taskId,owner])).rows[0]
+    const change=readStoredTaskHandoffChange(prior),stored=(await client.query('select * from teloa_tasks where id=$1 and owner_id=$2',[change.taskId,owner])).rows[0]
     if(!stored)throw new WorkError('teloa/storage-corrupt','改派回执引用的任务不存在。')
     const task=readStoredTask(stored);if(task.version<change.appliedVersion)throw new WorkError('teloa/storage-corrupt','任务版本早于主动改派回执。')
     await client.query('commit');return {task,change}
@@ -73,10 +73,10 @@ export class HandoffService{
     if(task.assigneeRoleId===null)throw new WorkError('teloa/conflict','本人已经是当前负责人。')
     to={kind:'self'}
    }else{
-    if(task.assigneeRoleId===request.target.roleId)throw new WorkError('teloa/conflict','所选员工已经是当前负责人。')
     const role=roles.get(request.target.roleId)
     if(!role)throw new WorkError('teloa/forbidden','改派员工不存在或不属于当前本人。')
     if(role.version!==request.target.expectedRoleVersion)throw new WorkError('teloa/version-conflict','接任员工已变化，请读取新版本后复核。')
+    if(task.assigneeRoleId===role.id&&task.assigneeRoleVersion!>=role.version)throw new WorkError('teloa/conflict','所选员工已经是当前负责人。')
     execution=await authorizeRoleTaskAssignment(client,this.pool,owner,role,task.scope,task.groupId)
     to={kind:'role',roleId:role.id,roleVersion:role.version}
    }

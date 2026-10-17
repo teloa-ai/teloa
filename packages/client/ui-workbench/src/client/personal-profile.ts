@@ -1,5 +1,6 @@
 import {applicationPresentation} from './application-presentation.ts'
 import {usablePersonalName} from './personal-identity.ts'
+import {createPersonalProfileSync} from './personal-profile-sync.ts'
 export {personalDisplayName,personalAvatarInitials} from './personal-identity.ts'
 export type PersonalProfile={displayName:string;email?:string;managed?:true}
 
@@ -27,9 +28,17 @@ function read():PersonalProfile{
 }
 
 let snapshot=read()
+let connection:ReturnType<typeof createPersonalProfileSync>|undefined
 const listeners=new Set<()=>void>()
 const refresh=()=>{const next=read();if(next.displayName===snapshot.displayName)return;snapshot=next;for(const listener of listeners)listener()}
 applicationPresentation.subscribe(()=>{snapshot=read();for(const listener of listeners)listener()})
+
+function publishLocal(displayName:string){
+ if(typeof window!=='undefined')window.localStorage.setItem(key,JSON.stringify({displayName}))
+ if(displayName===snapshot.displayName)return
+ snapshot={displayName}
+ for(const listener of listeners)listener()
+}
 
 export const personalProfile={
   subscribe(listener:()=>void){
@@ -38,12 +47,19 @@ export const personalProfile={
     return ()=>{listeners.delete(listener);if(!listeners.size&&typeof window!=='undefined')window.removeEventListener('storage',refresh)}
   },
   getSnapshot:()=>snapshot,
-  setDisplayName(value:string){
+  connect(call:(endpoint:string,payload:unknown)=>Promise<unknown>){
+    if(applicationPresentation.getSnapshot().account)return ()=>{}
+    connection?.dispose()
+    const current=createPersonalProfileSync(call,{read:()=>({displayName:read().displayName}),write:profile=>publishLocal(profile.displayName)})
+    connection=current
+    void current.ready().catch(()=>{})
+    return ()=>{current.dispose();if(connection===current)connection=undefined}
+  },
+  async ready(){await connection?.ready()},
+  async setDisplayName(value:string){
     if(applicationPresentation.getSnapshot().account)throw Error('账号姓名由账号服务管理。')
     const displayName=normalizePersonalDisplayName(value)
-    if(typeof window!=='undefined')window.localStorage.setItem(key,JSON.stringify({displayName}))
-    if(displayName===snapshot.displayName)return
-    snapshot={displayName}
-    for(const listener of listeners)listener()
+    if(connection)await connection.save(displayName)
+    else publishLocal(displayName)
   },
 }

@@ -21,6 +21,7 @@ export type ManagedMcpConnectionRecord={
  /** 安装失败的明确错误码（可重试）；界面按它给本地化文案 */
  errorCode?:'install-timeout'|'install-failed'
  tools?:{name:string;fullName:string;readOnly:boolean}[]
+ sourceScopeSupport?:'unsupported'
  createdAt:string
  updatedAt:string
 }
@@ -33,7 +34,8 @@ export type ManagedMcpOAuthStatus={status:'pending-oauth'|'connected'|'error';er
 
 function readRecord(value:unknown):ManagedMcpConnectionRecord{
  try{
-  const row=exact(value,['id','catalogId','serverName','status','errorMessage','errorCode','tools','createdAt','updatedAt'])
+  const row=exact(value,['id','catalogId','serverName','status','errorMessage','errorCode','tools','sourceScopeSupport','createdAt','updatedAt'])
+  if(row.sourceScopeSupport!==undefined&&row.sourceScopeSupport!=='unsupported')throw Error()
   if(!uuid(row.id)||typeof row.catalogId!=='string'||!catalogIdPat.test(row.catalogId))throw Error()
   if(typeof row.serverName!=='string'||!serverNamePat.test(row.serverName))throw Error()
   if(!(recordStatuses as readonly unknown[]).includes(row.status))throw Error()
@@ -53,9 +55,12 @@ function readRecord(value:unknown):ManagedMcpConnectionRecord{
   if(row.errorMessage)rec.errorMessage=row.errorMessage as string
   if(row.errorCode)rec.errorCode=row.errorCode as NonNullable<ManagedMcpConnectionRecord['errorCode']>
   if(tools)rec.tools=tools
+  if(row.sourceScopeSupport==='unsupported')rec.sourceScopeSupport='unsupported'
   return rec
  }catch{throw Error('受管 MCP 连接记录格式不正确。')}
 }
+/** 会话工具回执与管理页面沿用同一份连接身份校验。 */
+export const readManagedMcpConnectionRecord=readRecord
 
 /** 可展示为外链的授权入口：授权服务器的 https 地址，或本地宿主的授权入口 http://127.0.0.1:<端口>/oauth/start?state=<32 位十六进制>（下发浏览器绑定 cookie 后跳转） */
 export function oauthAuthorizationUrlAllowed(url:string):boolean{

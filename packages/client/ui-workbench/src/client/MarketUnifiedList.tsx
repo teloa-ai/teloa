@@ -1,5 +1,6 @@
 import clsx from 'clsx'
-import type {ReactNode} from 'react'
+import type {RoleAvatarKey} from '@teloa/contract'
+import {useId,useState,type ReactNode} from 'react'
 import {ArrowUpRight,ChevronRight} from 'lucide-react'
 import {ItemArt,StateMark,stateMarkLabel} from './SolutionCards.js'
 import type {SolutionMark} from './market-solution-presentation.js'
@@ -22,10 +23,15 @@ export type MarketListRow={
  summary:string
  /** 第三行小字：「状态 · 来源」或方案的「包含：…」 */
  facts:string
+ /** 仅使用真实声明的作者或来源，不从审查人推定作者。 */
+ credit?:string
+ group?:string
  /** 行内小标签：内置示例 / 本机；官方条目不带 */
  tag?:string
  mark:SolutionMark|null
- art:{kind:IndustryResourceKind|MarketCategory;seed:string}
+ /** 只有引用或内容冲突的行只可查看，不能暗示可独立添加。 */
+ addable?:boolean
+ art:{kind:IndustryResourceKind|MarketCategory;seed:string;avatarKey?:RoleAvatarKey}
  taxonomy:TaxonomyTags
  open:()=>void
  /** 官方条目写 data-teloa-catalog-entry / data-catalog-row（详情返回时按它找回焦点），本机条目写 data-teloa-entry */
@@ -52,8 +58,9 @@ export function FilterRow({label,aria,sub=false,children}:{label:string;aria:str
  * 两排筛选（行业 / 功能）：行业计数在功能筛选之后统计，功能计数在行业筛选之后统计；计数为 0 的键不出现（已选中的除外）。
  * 选中含二级行业的根键时展开二级行。`children` 放在筛选区末尾（排序、更多筛选）。
  */
-export function MarketFilterBar<T>({rows,tags,filter,onChange,children}:{rows:readonly T[];tags:(row:T)=>TaxonomyTags;filter:TaxonomyFilter;onChange:(filter:TaxonomyFilter)=>void;children?:ReactNode}){
+export function MarketFilterBar<T>({rows,tags,filter,onChange,children,compact:compactRow=false,sidebar=false,simple=false}:{rows:readonly T[];tags:(row:T)=>TaxonomyTags;filter:TaxonomyFilter;onChange:(filter:TaxonomyFilter)=>void;children?:ReactNode;compact?:boolean;/** 只显示工作领域，不显示行业与技术筛选。 */simple?:boolean;/** 方案 B 主目录：用途分类竖排在左栏，其余筛选折叠在分类下方 */sidebar?:boolean}){
  const {t,locale,number}=useI18n()
+ const compact=compactRow||sidebar
  const {industry,fn}=filter
  const industryBase=filterTaxonomyRows(rows,tags,{industry:null,fn})
  const fnBase=filterTaxonomyRows(rows,tags,{industry,fn:null})
@@ -67,22 +74,26 @@ export function MarketFilterBar<T>({rows,tags,filter,onChange,children}:{rows:re
  const subRoot=industry&&isMarketIndustryRoot(industry)&&getIndustrySubKeys(industry).length>0?industry:null
  const label=(axis:'industry'|'function',key:string)=>getTaxonomyLabel(axis,key,locale)??key
  const setIndustry=(value:MarketIndustryKey|null)=>onChange({industry:value,fn})
- return <div className={css.filterBar}>
+ return <div className={clsx(css.filterBar,compact&&css.purposeBar,sidebar&&css.purposeNav)}>
   {/* 词表为空（没有可选键）时不渲染只剩「全部」的一行；「全部」不带数字，总数只在结果行写一次 */}
-  {industryKeys.length>0&&<FilterRow label={t('market.catalog.official.taxonomyIndustryLabel')} aria={t('market.catalog.official.taxonomyIndustryAria')}>
+  {!compact&&industryKeys.length>0&&<FilterRow label={t('market.catalog.official.taxonomyIndustryLabel')} aria={t('market.catalog.official.taxonomyIndustryAria')}>
    <button type="button" aria-pressed={industry===null} onClick={()=>setIndustry(null)}>{t('market.catalog.official.taxonomyAll')}</button>
    {industryKeys.map(key=><button key={key} type="button" aria-pressed={industry===key||(industry!==null&&industry.startsWith(key+'/'))} onClick={()=>setIndustry(key)}>{label('industry',key)}<span>{number(countIndustry(key))}</span></button>)}
   </FilterRow>}
-  {subRoot&&<FilterRow label={label('industry',subRoot)} aria={label('industry',subRoot)} sub>
+  {!compact&&subRoot&&<FilterRow label={label('industry',subRoot)} aria={label('industry',subRoot)} sub>
    <button type="button" aria-pressed={industry===subRoot} onClick={()=>setIndustry(subRoot)}>{t('market.catalog.official.taxonomyAll')}</button>
    {getIndustrySubKeys(subRoot).filter(key=>countIndustry(key)>0||industry===key).map(key=><button key={key} type="button" aria-pressed={industry===key} onClick={()=>setIndustry(key)}>{label('industry',key)}<span>{number(countIndustry(key))}</span></button>)}
   </FilterRow>}
-  {(fnKeys.length>0||showUnclassified)&&<FilterRow label={t('market.catalog.official.taxonomyFunctionLabel')} aria={t('market.catalog.official.taxonomyFunctionAria')}>
+  {(fnKeys.length>0||showUnclassified)&&<FilterRow label={t(compact?'market.primary.purpose':'market.catalog.official.taxonomyFunctionLabel')} aria={t(compact?'market.primary.purposeAria':'market.catalog.official.taxonomyFunctionAria')}>
    <button type="button" aria-pressed={fn===null} onClick={()=>onChange({industry,fn:null})}>{t('market.catalog.official.taxonomyAll')}</button>
    {fnKeys.map(key=><button key={key} type="button" aria-pressed={fn===key} onClick={()=>onChange({industry,fn:key})}>{label('function',key)}<span>{number(countFn(key))}</span></button>)}
    {showUnclassified&&<button type="button" aria-pressed={fn===UNCLASSIFIED} onClick={()=>onChange({industry,fn:UNCLASSIFIED})}>{t('market.catalog.official.taxonomyUnclassified')}<span>{number(unclassified)}</span></button>}
   </FilterRow>}
-  {children}
+  {compact&&!simple?<MoreFilters label={t('market.catalog.official.moreFilters')}><div className={css.filterPanel}>
+   {industryKeys.length>0&&<div><p>{t('market.catalog.official.taxonomyIndustryLabel')}</p><div className={css.chips} role="group" aria-label={t('market.catalog.official.taxonomyIndustryAria')}><button type="button" aria-pressed={industry===null} onClick={()=>setIndustry(null)}>{t('market.catalog.official.taxonomyAll')}</button>{industryKeys.map(key=><button key={key} type="button" aria-pressed={industry===key||(industry!==null&&industry.startsWith(key+'/'))} onClick={()=>setIndustry(key)}>{label('industry',key)}</button>)}</div></div>}
+   {subRoot&&<div><p>{label('industry',subRoot)}</p><div className={css.chips}><button type="button" aria-pressed={industry===subRoot} onClick={()=>setIndustry(subRoot)}>{t('market.catalog.official.taxonomyAll')}</button>{getIndustrySubKeys(subRoot).filter(key=>countIndustry(key)>0||industry===key).map(key=><button key={key} type="button" aria-pressed={industry===key} onClick={()=>setIndustry(key)}>{label('industry',key)}</button>)}</div></div>}
+   {children}
+  </div></MoreFilters>:children}
  </div>
 }
 
@@ -108,26 +119,26 @@ export function MarketEmpty({filtered,onReset}:{filtered:boolean;onReset:()=>voi
 }
 
 /** 条目卡列表：方案用双列方案卡，其余用单列条目卡；一击进入详情。 */
-export function MarketListRows({rows,layout='list'}:{rows:readonly MarketListRow[];layout?:'list'|'grid'}){
+export function MarketListRows({rows,layout='list',showGroups=false}:{rows:readonly MarketListRow[];layout?:'list'|'grid'|'cards';showGroups?:boolean}){
  const {t}=useI18n()
  const dataAttrs=(row:MarketListRow)=>row.catalogId?{'data-catalog-row':row.catalogId}:{'data-teloa-entry':row.key}
  const tag=(row:MarketListRow)=>row.tag?<span className={css.tag}>{row.tag}</span>:null
- if(layout==='grid')return <ul className={css.grid}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
+ if(layout==='grid'||layout==='cards')return <ul className={clsx(css.grid,layout==='cards'&&css.cards)}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 方案卡内容多（一句话 + 包含），可访问名只取标题、标签与状态 */}
   <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={[row.title,row.tag,row.mark&&stateMarkLabel(row.mark,t)].filter(Boolean).join(', ')} aria-current={row.current?'page':undefined} onClick={row.open}>
-   {row.art.kind==='industry'?<span className={clsx(pageCss.bundleArt,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>:<ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed}/>}
+   {row.art.kind==='industry'?<span className={clsx(pageCss.bundleArt,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>:<ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed} avatarKey={row.art.avatarKey}/>}
    <span className={css.rowMain}>
-    <span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{tag(row)}{row.mark&&<StateMark mark={row.mark} t={t}/>}</span>
+    <span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{row.mark&&(layout!=='cards'||row.mark!=='available')&&<StateMark mark={row.mark} t={t}/>}</span>
     <span className={css.gridPitch}>{row.summary}</span>
-    <span className={css.rowFacts}>{row.facts}</span>
+    <span className={css.rowFacts}>{layout==='cards'&&row.credit?row.credit:row.facts}</span>
    </span>
-   <ArrowUpRight size={16} aria-hidden="true"/>
+   {layout==='cards'?<span className={css.cardAction}>{t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}<ArrowUpRight size={13} aria-hidden="true"/></span>:<ArrowUpRight size={16} aria-hidden="true"/>}
   </button>
  </li>)}</ul>
  return <ul className={css.rows}>{rows.map(row=><li key={row.key} className={css.row} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 单列条目卡不设 aria-label：按钮内容（标题、摘要、状态记号的读屏文字）即可访问名 */}
   <button type="button" className={css.rowButton} {...dataAttrs(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
-   <ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed}/>
+   <ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed} avatarKey={row.art.avatarKey}/>
    <span className={css.rowMain}>
     <span className={css.rowTop}><strong className={css.rowTitle}>{row.title}</strong>{tag(row)}</span>
     {row.summary&&<span className={css.rowSummary}>{row.summary}</span>}
@@ -138,4 +149,28 @@ export function MarketListRows({rows,layout='list'}:{rows:readonly MarketListRow
   </button>
   {row.after&&<div className={css.rowAfter}>{row.after}</div>}
  </li>)}</ul>
+}
+
+/** 首页按真实用途分区，不制造精选或安装统计；查看全部继续使用同一筛选。 */
+export function MarketCardSections({rows,grouped,onSelect,showGroups=false}:{rows:readonly MarketListRow[];grouped:boolean;onSelect:(fn:TaxonomyFilter['fn'])=>void;showGroups?:boolean}){
+ const {t,locale}=useI18n()
+ if(!grouped)return <MarketListRows rows={rows} layout="cards" showGroups={showGroups}/>
+ const keys=[...FN_KEYS,UNCLASSIFIED] as const
+ return <div className={css.cardSections}>{keys.map(fn=>{
+  const items=rows.filter(row=>(row.taxonomy.functions[0]??UNCLASSIFIED)===fn)
+  if(!items.length)return null
+  const label=fn===UNCLASSIFIED?t('market.catalog.official.taxonomyUnclassified'):getTaxonomyLabel('function',fn,locale)??fn
+  return <section key={fn}><header><h2>{label}</h2><button type="button" onClick={()=>onSelect(fn)}>{t('market.primary.viewAll')}<ChevronRight size={13}/></button></header><MarketListRows rows={items.slice(0,4)} layout="cards"/></section>
+ })}</div>
+}
+
+/** 方案 B 主目录版面：左栏用途分类（`MarketFilterBar sidebar`），右栏搜索与紧凑卡片；窄窗口下分类回到卡片上方横排。 */
+export function MarketDirectoryLayout({nav,children}:{nav:ReactNode;children:ReactNode}){
+ return <div className={css.directory}><div className={css.directoryNav}>{nav}</div><div className={css.directoryBody}>{children}</div></div>
+}
+
+/** 仅展示模板已有声明；切换分类不会创建、安装或启用内容。 */
+export function MarketTemplateDetails({sections}:{sections:readonly {id:string;title:string;content:ReactNode}[]}){
+ const id=useId(),[active,setActive]=useState(sections[0]?.id)
+ return <section className={css.templateDetails}><nav role="tablist" className={css.detailTabs}>{sections.map(section=><button key={section.id} type="button" role="tab" id={id+'-'+section.id} aria-selected={active===section.id} aria-controls={id+'-panel-'+section.id} tabIndex={active===section.id?0:-1} onClick={()=>setActive(section.id)} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=sections.findIndex(value=>value.id===section.id),next=event.key==='Home'?0:event.key==='End'?sections.length-1:(index+(event.key==='ArrowRight'?1:-1)+sections.length)%sections.length;setActive(sections[next]!.id);document.getElementById(id+'-'+sections[next]!.id)?.focus()}}>{section.title}</button>)}</nav>{sections.map(section=><div key={section.id} id={id+'-panel-'+section.id} role="tabpanel" aria-labelledby={id+'-'+section.id} hidden={active!==section.id} className={css.detailPanel}>{section.content}</div>)}</section>
 }

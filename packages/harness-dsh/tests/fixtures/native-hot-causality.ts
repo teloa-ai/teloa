@@ -14,7 +14,7 @@ import {WorkError} from '@teloa/contract'
 import {createNativeWorkInput} from '../../src/native-work-input.ts'
 import {patchedSessionPackage,type FinalSessionStore} from './native-final-session.ts'
 import {patchedNativePackage} from './native-patched-package.ts'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type {NativeInputCheckpoint,NativeProgressCheckpoint} from '../../src/native-input-checkpoint.ts'
 
 const denied=()=>new WorkError('teloa/forbidden','热运行工作因果已失效。')
@@ -26,19 +26,21 @@ export type StreamAdmissionRuntime=LlmRuntime&{
 export async function patchedHotLlmPackage(t:TestContext){
  const result=await patchedNativePackage<typeof import('@deepseek-ai/dsh-llm')&{
   LlmRuntime:new(ctx:Context)=>StreamAdmissionRuntime
- }>(t,{packageName:'@deepseek-ai/dsh-llm',compatBasename:'dsh-llm-0.2.1-alpha.1-stream-admission'})
+ }>(t,{packageName:'@deepseek-ai/dsh-llm',compatBasename:'dsh-llm-0.2.1-rc.2-stream-admission'})
  return result.namespace
 }
 
 /** 官方 provider kernel 的真实四包补口副本图；Loop 直接复用同一 Tools 副本。 */
-export async function nativeHotKernel(t:TestContext){
+export async function nativeHotKernel(t:TestContext,cold=false){
  const sessionPackage=await patchedSessionPackage(t),llmPackage=await patchedHotLlmPackage(t)
- const toolsPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-tools')>(t,{packageName:'@deepseek-ai/dsh-tools',compatBasename:'dsh-tools-0.2.1-alpha.1-work-admission'})
- const loopPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t,{packageName:'@deepseek-ai/dsh-agent-loop',compatBasename:'dsh-agent-loop-0.2.1-alpha.1-work-admission',overrides:{'@deepseek-ai/dsh-tools':toolsPackage.root}})
+ const toolsPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-tools')>(t,{packageName:'@deepseek-ai/dsh-tools',compatBasename:'dsh-tools-0.2.1-rc.2-work-admission'})
+ const persistenceSeam=cold?await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence')>(t,{packageName:'@deepseek-ai/dsh-session-persistence',compatBasename:'dsh-session-persistence-0.2.1-rc.2-open-admission'}):undefined
+ const persistencePackage=persistenceSeam?await patchedNativePackage<typeof Persistence>(t,{packageName:'@deepseek-ai/dsh-session-persistence-jsonl',compatBasename:'dsh-session-persistence-jsonl-0.2.1-rc.2-open-admission',overrides:{'@deepseek-ai/dsh-session-persistence':persistenceSeam.root}}):undefined
+ const loopPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t,{packageName:'@deepseek-ai/dsh-agent-loop',compatBasename:'dsh-agent-loop-0.2.1-rc.2-work-admission',overrides:{'@deepseek-ai/dsh-tools':toolsPackage.root,...persistenceSeam?{'@deepseek-ai/dsh-session-persistence':persistenceSeam.root}:{}}})
  const ctx=new Context()
  t.after(()=>ctx.fiber.dispose())
  for(const plugin of [llmPackage.LlmRuntime,sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.namespace.ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
- return {ctx,sessionPackage,loopPackage,toolsPackage,sessions:Reflect.get(ctx,'sessions') as unknown as FinalSessionStore,llm:ctx.llm as StreamAdmissionRuntime}
+ return {ctx,sessionPackage,loopPackage,toolsPackage,persistencePackage:persistencePackage?.namespace,sessions:Reflect.get(ctx,'sessions') as unknown as FinalSessionStore,llm:ctx.llm as StreamAdmissionRuntime}
 }
 
 /** 独立 SDK seam 验收不安装业务许可策略；只验证真实 adapter 最终派发底座。 */

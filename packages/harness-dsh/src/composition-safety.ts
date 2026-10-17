@@ -10,6 +10,7 @@ import {dirname,join,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {parse as parseYaml} from 'yaml'
 import {pendingPackageNames,profileBundles,readJsonFile,readPendingPlugins} from './pending-plugins.ts'
+import {derivedPtcPresetBodyDigests} from './generated-ptc-preset-digests.ts'
 
 const record=(value:unknown):value is Record<string,unknown>=>typeof value==='object'&&value!==null&&!Array.isArray(value)
 
@@ -29,6 +30,8 @@ export type CompositionSnapshot={
  sandboxWorkspaceRoot?:unknown
  /** 执行后端 `@deepseek-ai/dsh-sandbox-local` 行是否在组合树里且未被关闭。 */
  sandboxBackendMounted?:boolean
+ /** 当前目录只能由保留原项目授权根的服务提供，原未受限行保持停用。 */
+ workingDirectoryPinned?:boolean
  approvalPolicy?:unknown
  toolsMode?:unknown
  /** 宿主平面的两个工具入口也必须关闭。 */
@@ -83,6 +86,8 @@ export type CompositionSnapshot={
  webFetchProvider?:unknown
  webSearchBaseUrl?:unknown
  webSearchApiKeyEnv?:unknown
+ /** 新版原生检索提供方及其默认端点、凭据引用和原文发送策略。 */
+ webDirectApiPinned?:boolean
  webFetchMaxResponseBytes?:unknown
  webFetchMaxBodyChars?:unknown
  webFetchTimeoutMs?:unknown
@@ -118,10 +123,11 @@ export const teloaAgentPresetRowId='teloa-agent-preset'
 const presetPluginName='@deepseek-ai/dsh-agent-preset'
 const presetRegistryName='@deepseek-ai/dsh-agent-preset-registry'
 export const shippedPresetBodyDigests={
- standard:'29951c164fc127b410a25eb5d078f72fae6e4540ca16fba052cf6786e725feb1',
- ptc:'eb74637994a1df84ca326d0d89ff8de38028a2c118c1e8365253082fa6f2b773',
- minimal:'46f29c9251390c8c34315e49259ea27eb1b973e039dba69f9627447a41fbf4cb',
- cordis:'47f346944a0d617360e87a615717a98d5177c58c87ccf3dbff20fb40c4ed5270',
+ standard:'c7e1750ddb16aedf6372dfdec0be79fdc42d5c558f3e937959b232adc2182730',
+ ptc:'d20b68207b30130161ac278bc5da800616cb430c399ed92369c648ddcdc33c91',
+ minimal:'8cb46068095b0307919f5d3a5c5dd263ffd48a5178131d706d38161e8367e499',
+ cordis:'20a3d4085aa9c62a8f184393eac0c042d5ad636eb60753c4f61548d3b652db74',
+ ...derivedPtcPresetBodyDigests,
 } as const
 const shippedPresetRowIds=Object.keys(shippedPresetBodyDigests).map(id=>'preset-'+id)
 const allowedPresetIds=[teloaAgentPresetId,...Object.keys(shippedPresetBodyDigests)]
@@ -147,6 +153,7 @@ const webRowNames={web:'@deepseek-ai/dsh-web',search:'@deepseek-ai/dsh-web-searc
  * 这里不判「能不能上网」——那是执行态 `task-tool-guard` / `role-tool-grants` 的事。
  */
 function webPinned(snapshot:CompositionSnapshot):boolean{
+ if(snapshot.webDirectApiPinned!==true)return false
  if(snapshot.webRowName!==webRowNames.web||snapshot.webSearchRowName!==webRowNames.search||snapshot.webFetchRowName!==webRowNames.fetch)return false
  if(snapshot.webSearchProvider!=='deepseek-official'||snapshot.webFetchProvider!=='http')return false
  if(snapshot.webSearchBaseUrl!==webSearchBaseUrl||snapshot.webSearchApiKeyEnv!=='DEEPSEEK_API_KEY')return false
@@ -179,7 +186,7 @@ function presetsSafe(value:unknown):boolean{
 export function compositionViolations(snapshot:CompositionSnapshot):CompositionPin[]{
  const violations:CompositionPin[]=[]
  if(snapshot.telemetryMode!=='DISABLED'||snapshot.sessionLogUploadDisabled!==true||snapshot.productAnalyticsPinned!==true)violations.push('telemetry')
- if(snapshot.sandboxMode!=='workspace-write'||!workspaceRootPinned(snapshot.sandboxWorkspaceRoot)||snapshot.sandboxBackendMounted!==true)violations.push('sandbox')
+ if(snapshot.sandboxMode!=='workspace-write'||!workspaceRootPinned(snapshot.sandboxWorkspaceRoot)||snapshot.sandboxBackendMounted!==true||snapshot.workingDirectoryPinned!==true)violations.push('sandbox')
  if(snapshot.approvalPolicy!=='ask')violations.push('approval')
  if(snapshot.toolsMode!=='native'||snapshot.toolWorkflowDisabled!==true||snapshot.toolRalphDisabled!==true||snapshot.scheduleServicePinned!==true||snapshot.scheduleUiDisabled!==true||snapshot.scheduleToolsDisabled!==true||snapshot.presetToolPresentationMode!=='native'||snapshot.presetToolWorkflowDisabled!==false||snapshot.presetToolRalphDisabled!==false||snapshot.presetBodyDigestMatches!==true)violations.push('tools')
  if(snapshot.agentPresetDefault!==teloaAgentPresetId||snapshot.agentPresetRegistryPinned!==true||snapshot.agentPresetDeclarationPinned!==true)violations.push('agentPresets')
@@ -273,7 +280,7 @@ export function presetBodyNormalizedDigest(document:unknown):string{
 }
 
 /** 复核过的声明：standard 换受管派发，带压缩的预设接本地预算薄适配，其余沿用官方。 */
-export const presetBodyDigest='fbeccb5307adb13243f6188adc306fc78bd9e57e3e04a4a464f978e6eda25166'
+export const presetBodyDigest='819cce477072e2b652234c2a81bcaf83f1fa3ef9d9747b713a63544770fd5e66'
 
 function presetBodyFacts(document:unknown):PresetBodyFacts{
  return {...presetBodyReadableFacts(document),digestMatches:Array.isArray(document)&&presetBodyNormalizedDigest(document)===presetBodyDigest}
@@ -308,7 +315,7 @@ function presetWiringPinned(row:CompositionRow):boolean{
  return row.isolate===undefined&&row.inject===undefined&&row.intercept===undefined&&row.group===undefined
 }
 
-/** 五份已核对声明必须唯一、启用且身份一致；不能用别名或额外声明扩张工具面。 */
+/** 已核对声明必须唯一、启用且身份一致；不能用别名或额外声明扩张工具面。 */
 function declarationPinned(rows:readonly CompositionRow[],declaration:CompositionRow|undefined):boolean{
  if(!declaration||declaration.disabled||declaration.name!==presetPluginName||!record(declaration.config)||declaration.config.id!==teloaAgentPresetId||!Array.isArray(declaration.config.plugins)||!presetWiringPinned(declaration))return false
  if(Object.keys(declaration.config).some(key=>!['id','name','description','order','plugins'].includes(key)))return false
@@ -373,10 +380,11 @@ export function compositionSnapshot(rows:readonly CompositionRow[],pending?:{bun
   sandboxWorkspaceRoot:sandbox?.workspaceRoot,
   // 执行后端缺席时上游的 bash 执行器因 inject 悬挂而不装载，但显式钉住这一行更省心。
   sandboxBackendMounted:rowOf('sandbox')!==undefined&&rowOf('sandbox')?.disabled===false,
+  workingDirectoryPinned:replacementPinned(rows,{officialId:'working-directory',officialName:'@deepseek-ai/dsh-working-directory',teloaId:'teloa-working-directory',teloaName:'@teloa/harness-dsh/native-working-directory'}),
   approvalPolicy:configOf('approval')?.policy,
   toolsMode:configOf('tools')?.mode,
   toolWorkflowDisabled:rowDisabled('tool-workflow'),
-  toolRalphDisabled:rowDisabled('tool-ralph'),
+  toolRalphDisabled:rows.filter(row=>row.id==='tool-ralph'||row.name==='@deepseek-ai/dsh-tool-ralph').every(row=>row.disabled===true),
   ...scheduleCompositionFacts(rows),
   agentPresetDefault:agentPresets?.default,
   agentPresetRegistryPinned:registryPinned(rowOf('agent-preset-registry')),
@@ -389,6 +397,13 @@ export function compositionSnapshot(rows:readonly CompositionRow[],pending?:{bun
   webFetchProvider:web?.fetchProvider,
   webSearchBaseUrl:webSearch?.baseURL,
   webSearchApiKeyEnv:webSearch?.apiKeyEnv,
+  webDirectApiPinned:rows.filter(row=>row.name==='@deepseek-ai/dsh-web-deepseek-api'&&row.disabled!==true).length===1
+   &&rowOf('web-deepseek-api')?.name==='@deepseek-ai/dsh-web-deepseek-api'
+   &&configOf('web-deepseek-api')?.baseURL==='https://api.deepseek.com/v1/tools'
+   &&configOf('web-deepseek-api')?.apiKeyEnv==='DEEPSEEK_API_KEY'
+   &&configOf('web-deepseek-api')?.apiKey===undefined
+   &&configOf('web-deepseek-api')?.count===10
+   &&configOf('web-deepseek-api')?.sendOriginalQuestion===false,
   webFetchMaxResponseBytes:webFetch?.maxResponseBytes,
   webFetchMaxBodyChars:webFetch?.maxBodyChars,
   webFetchTimeoutMs:webFetch?.timeoutMs,

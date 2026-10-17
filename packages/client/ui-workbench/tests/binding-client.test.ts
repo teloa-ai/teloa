@@ -10,6 +10,70 @@ function fixture() {
   const port:WorkPort={isNativeChild:()=>false,list:async()=>[],read:async id=>row(id),ensure:async id=>{const d=deferred<Conversation>();calls.set(id,d);return d.promise},catalog:async id=>({schema:'teloa.capabilities/v1',conversation:row(id),observedAt:'2026-09-10T00:00:00Z',skills:[],knowledge:{status:'not-connected'},connections:{status:'not-connected'},writes:{status:'not-implemented'}}),block:(id,reason)=>{blocks.set(id,reason)},create:async input=>({...row('new'),requestId:input.requestId,...(input.workspaceId===undefined?{}:{requestedWorkspaceId:input.workspaceId})}),adopt:async id=>id,open:()=>{},current:()=>undefined}
   return {calls,blocks,port,client:new BindingClient(port)}
 }
+test('专用运行重新选中只读原预约，不走普通 ensure 且保留任务输入保护',async()=>{
+ const f=fixture(),conversation={...row('managed-run'),purpose:'task-run' as const},calls:string[]=[]
+ Object.assign(f.port,{selectBinding:async()=>{calls.push('read-run');return conversation}})
+ f.port.ensure=async()=>{calls.push('ensure');throw Error('专用运行不能普通 ensure')}
+ await f.client.select('managed-run')
+ assert.equal(f.client.getSnapshot().status,'ready');assert.equal(f.client.getSnapshot().conversation,conversation)
+ assert.deepEqual(calls,['read-run']);assert.match(f.blocks.get('managed-run')!,/任务执行编排/)
+})
+test('原任务打开专用运行只核对原生目录，不领养或创建普通会话',async()=>{
+ const f=fixture(),conversation={...row('managed-run'),purpose:'task-run' as const},calls:string[]=[]
+ f.port.read=async()=>conversation;Object.assign(f.port,{readRunSession:async(id:string)=>{calls.push('read-native');return id}})
+ f.port.adopt=async()=>{calls.push('adopt');throw Error('不能创建普通会话')};f.port.open=()=>{calls.push('open')}
+ await f.client.openSession('managed-run')
+ assert.deepEqual(calls,['read-native','open']);assert.match(f.blocks.get('managed-run')!,/任务执行编排/)
+})
+test('助手创建消费服务端唯一身份，不校验其他浏览器请求键；原生领养与上下文成功后才打开',async()=>{
+ const f=fixture(),opened:string[]=[],calls:string[]=[],canonical={...row('canonical'),purpose:'assistant' as const,requestId:'12345678-1234-4234-8234-123456789012',title:'Teloa 小松鼠助手'}
+ f.port.assistant=async()=>canonical;f.port.adopt=async id=>{calls.push('adopt');return id};f.port.open=id=>opened.push(id)
+ assert.equal((await f.client.createAssistant({beforeOpen:async value=>{assert.equal(value,canonical);calls.push('context')}})).sessionId,'canonical')
+ assert.deepEqual(calls,['adopt','context']);assert.deepEqual(opened,['canonical'])
+})
+test('助手未知回包和取消/较新导航不抢回视图，不把普通会话或错误领养当默认身份',async()=>{
+ for(const change of ['cancel','navigation','ordinary','adopt','unknown']){
+  const f=fixture(),gate=deferred<void>(),opened:string[]=[];let active=true,current='old'
+  f.port.current=()=>current;f.port.open=id=>opened.push(id)
+  f.port.assistant=async()=>{await gate.promise;if(change==='unknown')throw Error('unknown');return {...row('canonical'),...(change==='ordinary'?{}:{purpose:'assistant' as const})}}
+  f.port.adopt=async id=>change==='adopt'?'wrong':id
+  const pending=f.client.createAssistant({mayOpen:()=>active})
+  if(change==='cancel')active=false;if(change==='navigation')current='new'
+  gate.resolve()
+  if(['ordinary','adopt','unknown'].includes(change))await assert.rejects(pending);else await pending
+  assert.deepEqual(opened,[],change)
+ }
+})
+test('主聊接替迟到导航且创建回包失败时，解除原导航临时阻断并保留A原输入',async()=>{
+ const f=fixture(),adoption=deferred<string>(),entered=deferred<void>(),opened:string[]=[]
+ f.port.current=()=> 'A';f.port.ensure=async id=>row(id);f.port.open=id=>opened.push(id)
+ await f.client.select('A')
+ f.port.adopt=async id=>{if(id==='B'){entered.resolve();return adoption.promise}return id}
+ const previous=f.client.openConversation(row('B'));await entered.promise
+ assert.match(f.blocks.get('A')!,/正在打开/)
+ f.port.assistant=async()=>{throw Error('unknown assistant response')}
+ await assert.rejects(f.client.createAssistant(),/unknown assistant response/)
+ adoption.resolve('B');assert.equal(await previous,'cancelled')
+ assert.equal(f.blocks.get('A'),undefined);assert.equal(f.client.getSnapshot().sessionId,'A');assert.deepEqual(opened,[])
+})
+test('目录恢复助手pending走助手服务而不是普通创建，仍核对原session和请求身份',async()=>{
+ const pending={...row('original'),status:'pending' as const,purpose:'assistant' as const,title:'Teloa 小松鼠助手',requestId:'12345678-1234-4234-8234-123456789012'}
+ for(const wrong of [false,true]){
+  const f=fixture(),opened:string[]=[]
+  f.port.create=async()=>{throw Error('ordinary create forbidden')}
+  f.port.assistant=async()=>({...pending,status:'ready',...(wrong?{sessionId:'other'}:{})})
+  f.port.open=id=>opened.push(id)
+  if(wrong)await assert.rejects(f.client.openConversation(pending));else assert.equal(await f.client.openConversation(pending),'opened')
+  assert.deepEqual(opened,wrong?[]:['original'])
+ }
+})
+test('已选主聊不能冒充本次未取消的打开回执，取消时原身份仍可读',async()=>{
+ const f=fixture(),gate=deferred<void>(),opened:string[]=[],canonical={...row('original'),purpose:'assistant' as const}
+ f.port.current=()=> 'original';f.port.open=id=>opened.push(id);f.port.ensure=async()=>canonical;await f.client.select('original')
+ let allowed=true;f.port.assistant=async()=>{await gate.promise;return canonical}
+ const pending=f.client.createAssistantResult({mayOpen:()=>allowed});allowed=false;gate.resolve()
+ const result=await pending;assert.equal(result.conversation.sessionId,'original');assert.equal(result.result,'cancelled');assert.deepEqual(opened,[])
+})
 test('打开回执来自真实原生打开，选中投影迟到仍返回 opened',async()=>{
   const f=fixture(),opened:string[]=[]
   f.port.ensure=async id=>row(id);f.port.current=()=> 'B';f.port.open=id=>opened.push(id)
@@ -346,7 +410,8 @@ test('任务运行会话按精确绑定打开，不要求进入普通工作目�
   f.port.read=async sessionId=>{reads++;assert.equal(sessionId,run.sessionId);return run}
   f.port.ensure=async()=>{ensures++;throw Error('运行会话不能走普通绑定入口')}
   f.port.current=()=>current
-  f.port.adopt=async sessionId=>sessionId
+  f.port.adopt=async()=>{throw Error('专用运行不得领养')}
+  f.port.readRunSession=async sessionId=>sessionId
   f.port.open=sessionId=>{current=sessionId;opened.push(sessionId)}
   await f.client.openSession(run.sessionId)
   // 原生会话切换通知会紧随 open 到达；专用运行会话必须沿用刚完成的精确读取，
@@ -471,4 +536,27 @@ test('显式创建标题回包不一致时不领养、不绑定、不打开',asy
  f.port.adopt=async id=>{adopted++;return id};f.port.open=()=>{opened++}
  await assert.rejects(f.client.create({title:'新业务',beforeOpen:async()=>{bound++}}))
  assert.equal(adopted,0);assert.equal(bound,0);assert.equal(opened,0)
+})
+
+test('openSessionResult报告本次真实dispatch，自身布局commit中止signal仍是opened，旧接口保留void',async()=>{
+ const f=fixture(),abort=new AbortController(),opened:string[]=[]
+ f.port.ensure=async id=>row(id);f.port.current=()=> 'A';f.port.open=id=>{opened.push(id);abort.abort()}
+ await f.client.select('A')
+ assert.equal(await f.client.openSessionResult('A',abort.signal,()=>true),'opened')
+ assert.equal(abort.signal.aborted,true);assert.deepEqual(opened,['A'])
+ const compatible:Promise<void>=f.client.openSession('A')
+ assert.equal(await compatible,undefined);assert.deepEqual(opened,['A','A'])
+})
+test('openSessionResult在同ID已选时仍区分read/adopt期间外部取消，不以当前ID伪造commit',async()=>{
+ for(const stage of ['read','adopt'] as const){
+  const f=fixture(),abort=new AbortController(),gate=deferred<void>(),opened:string[]=[]
+  f.port.current=()=> 'A';f.port.ensure=async id=>row(id);f.port.open=id=>opened.push(id)
+  await f.client.select('A');const before=f.client.getSnapshot()
+  f.port.read=async id=>{if(stage==='read')await gate.promise;return row(id)}
+  f.port.adopt=async id=>{if(stage==='adopt')await gate.promise;return id}
+  const pending=f.client.openSessionResult('A',abort.signal,()=>true)
+  await new Promise(resolve=>setImmediate(resolve));abort.abort();gate.resolve()
+  assert.equal(await pending,'cancelled',stage)
+  assert.deepEqual(opened,[],stage);assert.deepEqual(f.client.getSnapshot(),before,stage)
+ }
 })

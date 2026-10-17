@@ -1,0 +1,84 @@
+# 叠加在 compose.yaml 上；独立 pgvector 数据卷，不复用业务数据库。
+services:
+  app:
+    environment:
+      TELOA_MEMORY_API_URL: http://memory:8888
+      TELOA_MEMORY_ALLOW_HTTP: "1"
+      TELOA_MEMORY_API_TOKEN_FILE: /run/secrets/memory-api-token
+    secrets:
+      - memory-api-token
+  memory-db:
+    image: pgvector/pgvector:0.8.2-pg16@sha256:00ba258a66dac104fd5171074a0084462a64a1369d8513f3d0a634e2f24d15bc
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hindsight
+      POSTGRES_DB: hindsight
+      POSTGRES_PASSWORD_FILE: /run/secrets/memory-db-password
+    secrets:
+      - memory-db-password
+    volumes:
+      - memory-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hindsight -d hindsight"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  memory:
+    image: ghcr.io/vectorize-io/hindsight-api:0.10.3@sha256:f80f304db313cbc8775acd601fda7d094f5854ebf9bc252d8134eb9276d56b40
+    init: true
+    restart: unless-stopped
+    # 上游以环境变量读密钥；从只读 secret 文件装配，避免写入 Compose 配置。
+    entrypoint:
+      - python
+      - -c
+      - |
+        import os
+        from pathlib import Path
+        from urllib.parse import quote
+        def secret(name):
+            value = Path('/run/secrets/' + name).read_text().strip()
+            if not value: raise RuntimeError('Empty memory secret')
+            return value
+        os.environ['HINDSIGHT_API_LLM_API_KEY'] = secret('memory-llm-key')
+        os.environ['HINDSIGHT_API_TENANT_API_KEY'] = secret('memory-api-token')
+        os.environ['HINDSIGHT_API_DATABASE_URL'] = 'postgresql://hindsight:' + quote(secret('memory-db-password'), safe='') + '@memory-db:5432/hindsight'
+        os.execv('/app/start-all.sh', ['/app/start-all.sh'])
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: ${TELOA_MEMORY_LLM_PROVIDER:-deepseek}
+      HINDSIGHT_API_LLM_MODEL: ${TELOA_MEMORY_LLM_MODEL:-deepseek-v4-flash}
+      HINDSIGHT_API_LLM_BASE_URL: ${TELOA_MEMORY_LLM_BASE_URL:-https://api.deepseek.com}
+      HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      HINDSIGHT_API_WORKER_ID: teloa-memory-1
+      HINDSIGHT_API_LLM_MAX_CONCURRENT: "2"
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: local
+      HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL: intfloat/multilingual-e5-small
+      HINDSIGHT_API_RERANKER_PROVIDER: local
+      HINDSIGHT_API_RERANKER_LOCAL_MODEL: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION_NATIVE_LANGUAGE: simple
+      HF_HOME: /home/hindsight/.cache/huggingface
+    secrets:
+      - memory-db-password
+      - memory-api-token
+      - memory-llm-key
+    volumes:
+      - memory-model-cache:/home/hindsight/.cache/huggingface
+    depends_on:
+      memory-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health/ready',timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 300s
+      retries: 10
+    stop_grace_period: 60s
+secrets:
+  memory-db-password:
+    file: ${TELOA_MEMORY_SECRETS_DIR:?请配置独立记忆密钥目录}/db-password
+  memory-api-token:
+    file: ${TELOA_MEMORY_SECRETS_DIR:?请配置独立记忆密钥目录}/api-token
+  memory-llm-key:
+    file: ${TELOA_MEMORY_SECRETS_DIR:?请配置独立记忆密钥目录}/llm-key
+volumes:
+  memory-postgres-data:
+  memory-model-cache:

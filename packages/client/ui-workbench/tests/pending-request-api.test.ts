@@ -5,6 +5,16 @@ import {createPendingRequestApi} from '../src/client/pending-request-api.ts'
 const requestId='61a2a1d4-0d7b-4c1a-8c39-2a1d63a52b18'
 const row={requestId,endpoint:'tasks/create',createdAt:'2026-09-18T00:00:00.000Z',updatedAt:'2026-09-18T00:01:00.000Z'}
 
+test('只读原请求预览携带取消信号，验证身份，不恢复、不收讫确认',async()=>{
+ const signal=new AbortController().signal,calls:unknown[][]=[],preview={...row,summary:'合成任务',payload:{requestId,fields:{title:'合成任务',goal:'仅用于验收'}}}
+ const api=createPendingRequestApi(async(endpoint,payload,cancel)=>{calls.push([endpoint,payload,cancel]);return preview})
+ assert.deepEqual(await api.preview(requestId.toUpperCase(),signal),preview)
+ assert.deepEqual(calls,[['requests/pending/preview',{requestId},signal]])
+ for(const value of [{...preview,requestId:'71a2a1d4-0d7b-4c1a-8c39-2a1d63a52b18'},{...preview,payload:{requestId:'wrong'}},{...preview,payload:{requestId,credentials:'must not render'}},{...preview,extra:'unknown'}])await assert.rejects(createPendingRequestApi(async()=>value).preview(requestId),/预览/)
+ const controller=new AbortController();controller.abort();let read=false
+ await assert.rejects(createPendingRequestApi(async()=>{read=true;return preview}).preview(requestId,controller.signal),{name:'AbortError'});assert.equal(read,false)
+})
+
 test('服务端待核对目录只读取元数据，恢复只发送请求身份',async()=>{
  const calls:unknown[][]=[]
  const api=createPendingRequestApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return endpoint==='requests/pending/list'?[row]:endpoint==='requests/pending/ack'?{requestId}:{ok:true}})

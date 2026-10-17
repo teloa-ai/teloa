@@ -15,7 +15,7 @@ export function WorkspaceSettings({management}:{management:WorkspaceManagement})
   const operationError=state.error
   useEffect(()=>{if(removing&&!state.rows.some(row=>row.workspaceId===removing)&&!state.pending){setRemoving(undefined);setConfirmed(false);heading.current?.focus()}},[removing,state.rows,state.pending])
   return <section className={css.page} aria-label={t('workspaceSettings.title')}>
-    <h2 ref={heading} tabIndex={-1}>{t('workspaceSettings.title')}</h2><p>{t('workspaceSettings.description')}</p>
+    <h2 ref={heading} tabIndex={-1}>{t('workspaceSettings.title')}</h2>
     {!state.ready&&<p role="status">{t('workspaceSettings.waiting')}</p>}
     {operationError!==undefined&&operationError!==null&&<p role="alert">{isWorkspaceManagementMessage(operationError)?t(operationError.key,operationError.params):localizeWorkError(locale,operationError)}</p>}
     {(operationError===undefined||operationError===null)&&state.sourceError&&<p role="alert">{localizeWorkError(locale,state.sourceError)}</p>}

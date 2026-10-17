@@ -30,6 +30,10 @@ test('模型 readiness RPC 保留所有实际阶段、必需标记和入口；�
   const receipt={loadId,digest:hash,results:[],readiness:expected}
   assert.deepEqual((await createIndustryLoadApi(async()=>receipt).prepare(loadId,hash)).readiness,expected)
  }
+ // 公开载荷只在分享接收明确要求时附带 activate:false；缺省与非 false 的选项都不改变原一键准备请求。
+ const sent:unknown[]=[],api=createIndustryLoadApi(async(_method,payload)=>{sent.push(payload);return {loadId,digest:hash,results:[],readiness}})
+ await api.prepare(loadId,hash);await api.prepare(loadId,hash,{activate:false});await api.prepare(loadId,hash,{activate:undefined as never})
+ assert.deepEqual(sent,[{loadId,expectedDigest:hash},{loadId,expectedDigest:hash,activate:false},{loadId,expectedDigest:hash}])
  for(const invalid of [
   [],[{...model,phase:'installed'}],[{...model,required:1}],[{...model,version:'^1.0.0'}],[{...model,title:''}],
   [{...model,downloadUrl:'https://example.com/weights'}],[model,model],
@@ -60,6 +64,15 @@ test('get与list使用固定端点并严格解析记录',async()=>{
  const calls:unknown[]=[];const api=createIndustryLoadApi(async(method,payload)=>{calls.push([method,payload]);return method==='industry-loads/list'?{items:[record]}:record})
  assert.deepEqual(await api.get(loadId),record);assert.deepEqual(await api.list(),[record])
  assert.deepEqual(calls,[['industry-loads/get',{loadId}],['industry-loads/list',{}]])
+})
+
+test('团队加载包含业务看板配置时保留完整记录，不使整个已添加目录读取失败',async()=>{
+ const configuration={...record.items[1],localId:'sales-dashboard',kind:'business-configuration',title:'销售看板',required:true,status:'instantiated'}
+ const loaded={...record,items:[record.items[0],configuration]}
+ const api=createIndustryLoadApi(async method=>method==='industry-loads/list'?{items:[loaded]}:loaded)
+ assert.deepEqual(await api.get(loadId),loaded)
+ assert.deepEqual(await api.list(),[loaded])
+ await assert.rejects(createIndustryLoadApi(async()=>({...loaded,items:[{...configuration,kind:'unknown-configuration'}]})).get(loadId),/格式/)
 })
 
 test('拒绝损坏身份、状态、空间、关系与重复资源',async()=>{

@@ -1,11 +1,17 @@
-import {catalogAlternatives,catalogEntryTitle,catalogEntrySource,catalogText,loadCatalogListingForKinds,marketCatalogSourceLabels,marketCatalogSources} from './market-catalog-api.js'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {catalogAlternatives,catalogEntryTitle,catalogText,loadCatalogListing} from './market-catalog-api.js'
 import {formatBytes} from './local-models-api.js'
 import {Children,Fragment,cloneElement,useEffect,useMemo,useRef,useState,type ReactElement,type ReactNode} from 'react'
 import {type MarketCatalogCompatibility,type MarketCatalogListCounts,type MarketEntryKind} from '@teloa/contract'
 import {useI18n} from './i18n/provider.js'
+import {ContextDrawer} from './ContextDrawer.js'
+import {ItemArt} from './SolutionCards.js'
+import {marketCatalogItemGroup,marketPrimaryCatalogItem,type MarketPrimaryView} from './market-home-presentation.js'
 import {localizeWorkError} from './i18n/errors.js'
-import type {MarketCatalogApi,MarketCatalogItem,MarketCatalogCollection,MarketCatalogRanking,MarketCatalogSource} from './market-catalog-api.js'
-import {skillSecretsBadge,type SkillSecretsState} from './skill-secrets-api.js'
+import type {CatalogRoleReceipt,MarketCatalogApi,MarketCatalogItem,MarketCatalogListing,MarketCatalogRanking} from './market-catalog-api.js'
+import type {IndustryManifest} from './industry-manifest.js'
+import type {SkillSecretsState} from './skill-secrets-api.js'
+import {SkillSecretsBadgeButton} from './SkillSecretsBadgeButton.js'
 import css from './MarketCatalogSection.module.css'
 import {MarketReviews} from './MarketReviews.js'
 import {MarketDerivativeChanges} from './MarketDerivativeChanges.js'
@@ -13,7 +19,7 @@ import {TeloaFeedbackForm} from './TeloaFeedback.js'
 import {TeloaFeedbackModel,type FeedbackPayload,type FeedbackResult} from './TeloaFeedbackClient.js'
 import type {MarketCatalogEntry,MarketRatings} from '@teloa/contract'
 import clsx from 'clsx'
-import {ArrowLeft,Check,MessageSquare,Plus} from 'lucide-react'
+import {ArrowLeft,ArrowUpRight,Check,MessageSquare,Plus} from 'lucide-react'
 import pageCss from './MarketPage.module.css'
 import staffCss from './StaffAvatar.module.css'
 import {StaffAvatar} from './StaffAvatar.js'
@@ -24,15 +30,15 @@ import type {MarketItem} from './market-preview.js'
 import type {MarketCatalogSolutionPackage} from './market-catalog-api.js'
 import type {SolutionMark} from './market-solution-presentation.js'
 import type {TeloaTranslate} from './i18n/index.js'
-import {FilterRow,MarketEmpty,MarketFilterBar,MarketListRows,MarketResultLine,MoreFilters,moreFilterCss,type MarketListRow} from './MarketUnifiedList.js'
+import {FilterRow,MarketDirectoryLayout,MarketEmpty,MarketFilterBar,MarketListRows,MarketCardSections,MarketTemplateDetails,MarketResultLine,type MarketListRow} from './MarketUnifiedList.js'
 import {filterTaxonomyRows,taxonomySearchTerms,type TaxonomyFilter} from './market-taxonomy-filter.js'
 
 import type {ConnectorAuth,MarketCatalogConnectorEntry} from '@teloa/contract'
 
-/** `kinds` 限定显示哪类条目（技能分类只看技能、行业模板分类只看方案）；缺省全部显示。`onCounts` 回报 Teloa 官方目录全量五类计数（来源筛选只影响当前列表）。
+/** `kinds` 限定显示哪类条目（技能分类只看技能、行业模板分类只看方案）；缺省全部显示。`onCounts` 回报 Teloa 官方目录全量计数。
  * `onDetailChange` 告诉页面当前是否停在某条详情上，页面据此收起工具行，详情独占正文。
  * `localRows` 给了就进入「一个页签一个列表」：本机条目（含内置示例）排在官方条目前面，共用一套行业 / 功能筛选与结果行，不再另起目录标题。 */
-export type MarketCatalogSectionProps={cardLayout?:boolean;initialEntryId?:string;onBack?:()=>void;api:MarketCatalogApi;query:string;openContent:(contentId:string)=>Promise<void>|void;openConnection?:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void;openSkillSecrets?:(skill:string,title:string)=>void;describeSkillSecrets?:(skill:string)=>Promise<SkillSecretsState>;openRole?:(roleId:string)=>void;openModels?:()=>void;openLocalModels?:(entryId:string)=>void;openLocalModel?:(()=>void)|undefined;openRetrievalModel?:((catalogId:string,version:string)=>void)|undefined;onCounts?:(counts:MarketCatalogListCounts)=>void;kinds?:readonly MarketEntryKind[]|undefined;onDetailChange?:(open:boolean)=>void;localRows?:readonly MarketListRow[]|undefined;label?:string;onResetQuery?:()=>void;solutionTeam?:CatalogSolutionTeam|undefined}
+export type MarketCatalogSectionProps={search?:ReactNode;/** 方案 B 主目录（员工／团队）：用途分类竖排左栏，右栏搜索加紧凑卡片 */sidebar?:boolean;presentation?:MarketPrimaryView|undefined;cardLayout?:boolean;initialEntryId?:string;onBack?:()=>void;api:MarketCatalogApi;query:string;openContent:(contentId:string)=>Promise<void>|void;openConnection?:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void;openSkillSecrets?:(skill:string,title:string)=>void;describeSkillSecrets?:(skill:string)=>Promise<SkillSecretsState>;openRole?:(roleId:string)=>void;openModels?:()=>void;openLocalModels?:(entryId:string)=>void;openLocalModel?:(()=>void)|undefined;openRetrievalModel?:((catalogId:string,version:string)=>void)|undefined;onCounts?:(counts:MarketCatalogListCounts)=>void;kinds?:readonly MarketEntryKind[]|undefined;onDetailChange?:(open:boolean)=>void;localRows?:readonly MarketListRow[]|undefined;label?:string;onResetQuery?:()=>void;solutionTeam?:CatalogSolutionTeam|undefined}
 /**
  * 官方方案产品页接上本机团队步骤（设计约束）：主按钮「添加到我的团队」在当前页先把官方包加到本机，再就地展开与本机方案页同一个团队确认步骤；
  * 「先问问它适不适合我」以官方包内容为依据发起问答。由市场页提供，单独使用（测试、深链）时不接，主按钮退回「添加方案」。
@@ -107,7 +113,6 @@ export function marketCatalogVisible(items:readonly MarketCatalogItem[],query:st
 /** newerApp>0 才显示一行提示，且只在市场首页（不限 kinds）显示：计数不分类型，放在类别页会误导；unknownKind 只记日志不显示（对本机永远不可用，提示无行动价值）。 */
 export function catalogSkippedHint(skipped:{unknownKind:number;newerApp:number},kinds?:readonly MarketEntryKind[]):number|null{return !kinds&&skipped.newerApp>0?skipped.newerApp:null}
 
-type MarketplaceFilter=MarketCatalogSource|undefined
 export type MarketCatalogSort='default'|'installs'|'popular'
 /** 排序只在榜单有数据时生效：安装量按累计排，热门按近 7 日排；同值保持原顺序（Array.prototype.sort 是稳定排序）。 */
 export function sortCatalogItems(items:readonly MarketCatalogItem[],ranking:MarketCatalogRanking,sort:MarketCatalogSort):MarketCatalogItem[]{
@@ -121,15 +126,16 @@ export function catalogSortVisible(items:readonly MarketCatalogItem[],ranking:Ma
 }
 
 
-type RoleReceipt={roleId:string;status:'created'|'existing'}
+type RoleReceipt=Pick<CatalogRoleReceipt,'roleId'|'status'>&Partial<Pick<CatalogRoleReceipt,'skills'|'install'>>
+/** 添加前的员工组成预览：读到固定派生包清单后才能确认；关闭不添加。 */
+export type RolePlan={status:'loading'}|{status:'failed'}|{status:'ready';packageId:string;packageVersion:string;manifest:IndustryManifest}
 
 /** 评价区只在宿主给了 reviews 接口且汇总 `enabled:true` 时显示（规格 §14）：在线市场未启用、汇总读取失败或旧宿主一律不显示、不再发评价请求。 */
 export const reviewsEnabled=(api:Pick<MarketCatalogApi,'reviews'>,ratings:MarketRatings|undefined):boolean=>api.reviews!==undefined&&ratings?.enabled===true
 
-export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query,openContent,openConnection,openSkillSecrets,describeSkillSecrets,openRole,openModels,openLocalModels,openLocalModel,openRetrievalModel,onCounts,kinds,onDetailChange,localRows,label,onResetQuery,solutionTeam}:MarketCatalogSectionProps){
+export function MarketCatalogSection({search,sidebar=false,presentation,cardLayout,initialEntryId,onBack,api,query,openContent,openConnection,openSkillSecrets,describeSkillSecrets,openRole,openModels,openLocalModels,openLocalModel,openRetrievalModel,onCounts,kinds,onDetailChange,localRows,label,onResetQuery,solutionTeam}:MarketCatalogSectionProps){
  const {t,locale,number}=useI18n()
- const [marketplace,setMarketplace]=useState<MarketplaceFilter>(undefined)
- const [listing,setListing]=useState<MarketCatalogCollection>()
+ const [listing,setListing]=useState<MarketCatalogListing>()
  const [readError,setReadError]=useState<string>()
  const [entryHistory,setEntryHistory]=useState<Array<{entryId:string;fromId?:string}>>(()=>initialEntryId?[{entryId:initialEntryId}]:[])
  const selectedEntryId=entryHistory.at(-1)?.entryId
@@ -159,6 +165,7 @@ export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query
  const [busy,setBusy]=useState<string>()
  const [addErrors,setAddErrors]=useState<Record<string,string>>({})
  const [roleReceipts,setRoleReceipts]=useState<Record<string,RoleReceipt>>({})
+ const [rolePlans,setRolePlans]=useState<Record<string,RolePlan>>({})
  const [revision,setRevision]=useState(0)
  const [taxonomy,setTaxonomy]=useState<TaxonomyFilter>({industry:null,fn:null})
  const [ratings,setRatings]=useState<MarketRatings>()
@@ -183,9 +190,10 @@ export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query
  useEffect(()=>{
   let active=true
   setListing(undefined);setReadError(undefined)
-  void loadCatalogListingForKinds(api,kinds).then(value=>{if(active){setListing(value);onCounts?.(value.counts)}},error=>{if(active)setReadError(localizeWorkError(locale,error))})
+  // 一个 Teloa 官方目录：分类只筛选已读结果，不按分类另读来源
+  void loadCatalogListing(api).then(value=>{if(active){setListing(value);onCounts?.(value.counts)}},error=>{if(active)setReadError(localizeWorkError(locale,error))})
   return()=>{active=false}
- },[api,revision,kinds?.join()])
+ },[api,revision])
  // 停在官方方案详情时读方案包清单，产品页据此列「添加后你会得到」；换条目或重试时重读
  const selectedSolution=listing?.items.find(item=>item.entry.id===selectedEntryId&&item.entry.kind==='solution')?.entry.id
  const [solutionPackage,setSolutionPackage]=useState<{entryId:string;state:CatalogSolutionPackageState}>()
@@ -231,36 +239,52 @@ export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query
  const add=async(item:MarketCatalogItem)=>{
   const id=item.entry.id
   if(item.entry.kind==='role'||item.entry.kind==='model')return
-  setBusy(id);setAddErrors(current=>{const {[id]:_,...rest}=current;return rest})
+  setAddErrors(current=>{const {[id]:_,...rest}=current;return rest})
+  // 连接不是内容：后端目录 add 对 connector 明确拒绝，直接进入原连接页由本人明确动作建立连接；没有连接端口时明确不可用，不发内容添加请求。
+  if(item.entry.kind==='connector'){
+   if(openConnection)openConnection(id,item.entry as MarketCatalogConnectorEntry)
+   else setAddErrors(current=>({...current,[id]:t('market.apps.connectionServiceUnavailable')}))
+   return
+  }
+  setBusy(id)
   let contentId:string
   try{
    contentId=(await api.add(id)).contentId
    setListing(current=>current&&{...current,items:current.items.map(row=>row.entry.id===id?{...row,addedContentId:contentId}:row)})
   }catch(error){setAddErrors(current=>({...current,[id]:t('market.catalog.official.addFailed',{reason:localizeWorkError(locale,error)})}));setBusy(undefined);return}
-  if(item.entry.kind==='connector'&&openConnection){openConnection(id,item.entry as MarketCatalogConnectorEntry);setBusy(undefined);return}
   try{await openContent(contentId)}catch(error){setAddErrors(current=>({...current,[id]:t('market.catalog.official.openFailed',{reason:localizeWorkError(locale,error)})}))}
   finally{setBusy(undefined)}
  }
- const addRole=async(item:MarketCatalogItem)=>{
+ // 「创建为员工」先读固定派生包并就地列出组成；只有本人确认才添加，取消不发任何写请求。
+ const previewRole=async(item:MarketCatalogItem)=>{
+  const id=item.entry.id
+  if(item.entry.kind!=='role')return
+  setAddErrors(current=>{const {[id]:_,...rest}=current;return rest})
+  setRolePlans(current=>({...current,[id]:{status:'loading'}}))
+  try{const value=await api.rolePackage(id);setRolePlans(current=>id in current?{...current,[id]:{status:'ready',...value}}:current)}
+  catch{setRolePlans(current=>id in current?{...current,[id]:{status:'failed'}}:current)}
+ }
+ const cancelRole=(id:string)=>setRolePlans(current=>{const {[id]:_,...rest}=current;return rest})
+ const confirmRole=async(item:MarketCatalogItem)=>{
   const id=item.entry.id
   if(item.entry.kind!=='role')return
   setBusy(id);setAddErrors(current=>{const {[id]:_,...rest}=current;return rest})
   try{
    const receipt=await api.addRole(id,item.entry.version)
-   setRoleReceipts(current=>({...current,[id]:{roleId:receipt.roleId,status:receipt.status}}))
-   // 已添加（existing）同样跳转到该岗位：不重复建岗
-   openRole?.(receipt.roleId)
+   setRoleReceipts(current=>({...current,[id]:receipt}))
+   cancelRole(id)
+   // 完整就绪（或旧 v1 已有）即跳转到该员工；资源未完成时留在卡片上如实列出并可继续
+   if(receipt.roleId&&(!receipt.install||receipt.install.complete))openRole?.(receipt.roleId)
   }catch(error){setAddErrors(current=>({...current,[id]:t('market.catalog.official.addFailed',{reason:localizeWorkError(locale,error)})}))}
   finally{setBusy(undefined)}
  }
  const skippedHint=listing?catalogSkippedHint(listing.skipped,kinds):null
- // kinds + query + 来源过滤后的官方条目；本机条目只在「全部来源」下出现（它们不属于任何外部来源）
- const baseItems=marketCatalogVisible((listing?.items??[]).filter(item=>!marketplace||catalogEntrySource(item.entry)===marketplace),query,kinds)
- const unavailableSources=listing?.unavailableSources.filter(source=>!marketplace||source===marketplace)??[]
+ // kinds + query 过滤后的官方条目
+ const baseItems=marketCatalogVisible((listing?.items??[]).filter(item=>!presentation||marketPrimaryCatalogItem(item,presentation)),query,kinds)
  // 从官方目录添加过的条目在本机也有一份内容：只留官方那一行（带「已添加」记号），不重复列出
  const addedContent=new Set((listing?.items??[]).flatMap(item=>item.addedContentId?[item.addedContentId]:[]))
  // 目录读完前先不显示带内容编号的本机行（可能是已添加的官方条目，读完就会被合并掉），避免闪现；读取失败时照常显示
- const local=marketplace?[]:(localRows??[]).filter(row=>!row.contentId||(listing?!addedContent.has(row.contentId):!!readError))
+ const local=(localRows??[]).filter(row=>!row.contentId||(listing?!addedContent.has(row.contentId):!!readError))
  // 本机条目（含内置示例）排在前面，官方条目按排序方式排在后面；两者同一套行业 / 功能筛选
  const officialRows=sortCatalogItems(baseItems,ranking,sort).map(item=>catalogListRow(item,{t,locale,number,ranking,roleReceipt:roleReceipts[item.entry.id],openEntry,after:<CatalogAlternativeLinks entry={item.entry} items={listing?.items??[]} openEntry={openEntry}/>}))
  const allRows=[...local,...officialRows]
@@ -270,7 +294,8 @@ export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query
   try{await openContent(contentId)}
   catch(error){if(entryId)setAddErrors(current=>({...current,[entryId]:t('market.catalog.official.openFailed',{reason:localizeWorkError(locale,error)})}))}
  }
- const renderCards=(rows:readonly MarketCatalogItem[])=><MarketCatalogCards items={rows} catalogItems={listing?.items??[]} openEntry={openEntry} ranking={ranking} busy={busy} addErrors={addErrors} add={item=>void add(item)} open={contentId=>void openAdded(contentId)} addRole={item=>void addRole(item)} roleReceipts={roleReceipts} {...(openConnection?{openConnection}:{})} {...(openSkillSecrets?{openSkillSecrets}:{})} {...(describeSkillSecrets?{describeSkillSecrets}:{})} {...(openRole?{openRole}:{})} {...(openModels?{openModels}:{})} {...(openLocalModels?{openLocalModels}:{})} {...(reviewSlot?{reviewSlot}:{})} openLocalModel={openLocalModel} openRetrievalModel={openRetrievalModel}/>
+ const renderCards=(rows:readonly MarketCatalogItem[])=><MarketCatalogCards catalogVersion={listing?.catalogVersion} items={rows} catalogItems={listing?.items??[]} openEntry={openEntry} ranking={ranking} busy={busy} addErrors={addErrors} add={item=>void add(item)} open={contentId=>void openAdded(contentId)} addRole={item=>void previewRole(item)} confirmRole={item=>void confirmRole(item)} cancelRole={cancelRole} rolePlans={rolePlans} roleReceipts={roleReceipts} {...(openConnection?{openConnection}:{})} {...(openSkillSecrets?{openSkillSecrets}:{})} {...(describeSkillSecrets?{describeSkillSecrets}:{})} {...(openRole?{openRole}:{})} {...(openModels?{openModels}:{})} {...(openLocalModels?{openLocalModels}:{})} {...(reviewSlot?{reviewSlot}:{})} openLocalModel={openLocalModel} openRetrievalModel={openRetrievalModel}/>
+ let detail:ReactNode=null
  if(selectedEntryId){
   const selected=listing?.items.find(item=>item.entry.id===selectedEntryId)
   if(selected?.entry.kind==='solution'){
@@ -278,44 +303,41 @@ export function MarketCatalogSection({cardLayout,initialEntryId,onBack,api,query
    const pkg:CatalogSolutionPackageState=solutionPackage?.entryId===id?solutionPackage.state:{status:'loading'}
    // 是否已在团队：方案包读到后按清单标识与版本判断，与本机方案页同一判据（不依赖本机列表是否已读回这份内容）
    const loaded=pkg.status==='ready'&&!!solutionTeam?.installed({manifest:pkg.manifest})
-   return <section ref={sectionRef} className={css.section} aria-label={t('market.catalog.official.detailTitle')}>
+   detail=<ContextDrawer title={catalogText(catalogEntryTitle(selected.entry),locale)} close={backFromEntry} className={css.detailDrawer??''}><section className={css.section} aria-label={t('market.catalog.official.detailTitle')}>
     <CatalogSolutionProduct item={selected} pkg={pkg} busy={busy} error={addErrors[id]} add={()=>void add(selected)} {...(solutionTeam?{team:{loaded,links:loaded&&pkg.status==='ready'?solutionTeam.loadLinks({manifest:pkg.manifest}):null,panel:!loaded&&teamPanel?.entryId===id?solutionTeam.form(teamPanel.item,()=>setTeamPanel(undefined)):null,addToTeam:()=>void addToTeam(selected)},ask:{busy:asking,run:()=>void askFit(selected,pkg)}}:{})} open={contentId=>void openAdded(contentId)} back={backFromEntry} retry={()=>setSolutionRevision(value=>value+1)} after={<><CatalogAlternativeLinks entry={selected.entry} items={listing?.items??[]} openEntry={openEntry}/>{reviewSlot?.(selected.entry)}</>}/>
-   </section>
-  }
-  return <section ref={sectionRef} className={clsx(css.section,css.detailView)} aria-label={t('market.catalog.official.detailTitle')}>
-   <button type="button" className={css.backLink} onClick={backFromEntry}><ArrowLeft size={15}/>{t('market.catalog.connector.back')}</button>
-   <header className={css.header}><h2 tabIndex={-1} data-catalog-detail-title>{t('market.catalog.official.detailTitle')}</h2></header>
+   </section></ContextDrawer>
+  }else detail=<ContextDrawer title={selected?catalogText(catalogEntryTitle(selected.entry),locale):t('market.catalog.official.detailTitle')} close={backFromEntry} className={css.detailDrawer??''}><section className={clsx(css.section,css.detailView)} aria-label={t('market.catalog.official.detailTitle')}>
+   <ToolbarIconButton className={css.backLink} label={t('market.catalog.connector.back')} icon={ArrowLeft} onClick={backFromEntry}/>
+   {!selected&&<header className={css.header}><h2 tabIndex={-1} data-catalog-detail-title>{t('market.catalog.official.detailTitle')}</h2></header>}
    {!listing&&!readError&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
    {selected?renderCards([selected]):(listing||readError)&&<p className={css.error} role="status">{t('market.catalog.official.entryUnavailable')}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
-  </section>
+  </section></ContextDrawer>
  }
  const merged=localRows!==undefined
- const filtered=!!query.trim()||marketplace!==undefined||taxonomy.industry!==null||taxonomy.fn!==null
+ const filtered=!!query.trim()||taxonomy.industry!==null||taxonomy.fn!==null
  const layout=cardLayout||kinds?.length===1&&kinds[0]==='solution'?'grid':'list'
- const version=listing?t('market.catalog.official.version',{version:listing.catalogVersion}):undefined
- return <section ref={sectionRef} className={css.section} aria-label={label??t('market.catalog.official.title')}>
-  {/* 单独使用（连接页深链等）时保留目录标题；页面里与本机条目合成一个列表时不再另起标题，只写结果行 */}
-  {!merged&&<header className={css.header}><h2>{t('market.catalog.official.title')}</h2>{version&&<span>{version}</span>}</header>}
-  <MarketFilterBar rows={allRows} tags={row=>row.taxonomy} filter={taxonomy} onChange={setTaxonomy}>
+ const filterBar=<MarketFilterBar simple={!!search} compact={!!search&&!sidebar} sidebar={sidebar} rows={allRows} tags={row=>row.taxonomy} filter={taxonomy} onChange={setTaxonomy}>
    {catalogSortVisible(baseItems,ranking)&&<FilterRow label={t('market.catalog.official.sortLabel')} aria={t('market.catalog.official.sortAria')}>
     {(['default','installs','popular'] as const).map(value=><button key={value} type="button" aria-pressed={sort===value} onClick={()=>setSort(value)}>{t(sortKeys[value])}</button>)}
    </FilterRow>}
-   <MoreFilters label={t('market.catalog.official.moreFilters')}>
-    <div className={moreFilterCss.chips} role="group" aria-label={t('market.catalog.official.sourceFilterAria')}>
-     <button type="button" onClick={()=>setMarketplace(undefined)} aria-pressed={marketplace===undefined}>{t('market.catalog.official.filterAll')}</button>
-     {marketCatalogSources.map(source=><button key={source} type="button" onClick={()=>setMarketplace(source)} aria-pressed={marketplace===source}>{source==='teloa'?t('market.catalog.official.filterTeloa'):source==='clawhub'?t('market.catalog.official.filterClawHub'):marketCatalogSourceLabels[source]}</button>)}
-    </div>
-   </MoreFilters>
   </MarketFilterBar>
+ // 方案 B 主目录：一类一个平铺卡片网格（不再按用途分区）；搜索时带组别。其余入口保持按用途分区与「查看全部」。
+ const list=rows.length?sidebar?<MarketListRows rows={rows} layout="cards" showGroups={!!query.trim()&&!presentation}/>:search?<MarketCardSections rows={rows} showGroups={!!query.trim()&&!presentation} grouped={!query.trim()&&taxonomy.fn===null} onSelect={fn=>setTaxonomy(current=>({...current,fn}))}/>:<MarketListRows rows={rows} layout={layout}/>:merged?<MarketEmpty filtered={filtered} onReset={()=>{setTaxonomy({industry:null,fn:null});onResetQuery?.()}}/>:<p className={css.status}>{t('market.catalog.official.empty')}</p>
+ const body=<>
+  {search}
   {readError&&<p className={css.error} role="alert">{t('market.catalog.official.readFailed',{reason:readError})}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
-  {unavailableSources.length>0&&<p className={css.error} role="status">{t('market.catalog.official.sourcesUnavailable',{sources:unavailableSources.map(source=>marketCatalogSourceLabels[source]).join(', ')})}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
   {!listing&&!readError&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
-  {(listing||local.length>0)&&!(marketplace&&unavailableSources.length)&&<>
-   <MarketResultLine count={rows.length} {...(merged&&version?{suffix:version}:{})}/>
-   {rows.length?<MarketListRows rows={rows} layout={layout}/>:merged?<MarketEmpty filtered={filtered} onReset={()=>{setTaxonomy({industry:null,fn:null});setMarketplace(undefined);onResetQuery?.()}}/>:<p className={css.status}>{t('market.catalog.official.empty')}</p>}
+  {(listing||local.length>0)&&<>
+   {(!search||filtered)&&<MarketResultLine count={rows.length}/>}
+   {list}
   </>}
   {skippedHint!==null&&<p className={css.status} role="status">{t('market.catalog.official.newerApp',{count:skippedHint})}</p>}
- </section>
+ </>
+ return <><section ref={sectionRef} className={css.section} aria-label={label??t('market.catalog.official.title')}>
+  {/* 单独使用（连接页深链等）时保留目录标题；页面里与本机条目合成一个列表时不再另起标题，只写结果行 */}
+  {!merged&&<header className={css.header}><h2>{t('market.catalog.official.title')}</h2></header>}
+  {sidebar?<MarketDirectoryLayout nav={filterBar}>{body}</MarketDirectoryLayout>:<>{filterBar}{body}</>}
+ </section>{detail}</>
 }
 
 const catalogSummary=(entry:MarketCatalogEntry)=>entry.kind==='skill'?entry.skill.summary:entry.kind==='solution'?entry.solution.summary:entry.kind==='dashboard'?entry.dashboard.summary:entry.kind==='role'?entry.role.summary:entry.kind==='connector'?entry.connector.summary:entry.model.summary
@@ -325,42 +347,62 @@ const catalogArtKind=(kind:MarketEntryKind)=>kind==='role'?'agent' as const:kind
 export function catalogItemMark(item:MarketCatalogItem,receipt?:RoleReceipt):SolutionMark|null{
  const {entry}=item
  if(entry.kind==='model')return null
- if(item.addedContentId||item.addedRoleId||receipt||entry.delivery==='builtin')return 'added'
+ if(item.addedContentId||item.addedRoleId||receipt?.roleId||entry.delivery==='builtin')return 'added'
  if(entry.compatibility.status==='unsupported')return null
  if(entry.kind==='skill'&&entry.license.spdx==='NOASSERTION')return null
  if(entry.kind==='connector'&&oauthAllowlistBlocked(entry.connector.auth))return null
  return 'available'
 }
 
-/** 官方条目换成统一列表行：第三行小字是「兼容状态 · 来源 · 安装量」；点开进入目录详情。 */
+/** 官方条目换成统一列表行：第三行小字是「兼容状态 · Teloa · 安装量」；目录提供方统一为 Teloa，原作者与原始来源只在详情的来源说明里。点开进入目录详情。 */
 export function catalogListRow(item:MarketCatalogItem,{t,locale,number,ranking,roleReceipt,openEntry,after}:{t:TeloaTranslate;locale:string;number:(value:number)=>string;ranking?:MarketCatalogRanking|undefined;roleReceipt?:RoleReceipt|undefined;openEntry:(entryId:string)=>void;after?:ReactNode}):MarketListRow{
  const {entry}=item,installs=ranking?.get(entry.id)?.installs??0
  const state=entry.kind==='model'
   ?t(entry.model.form==='cloud'?(entry.model.cnReachable==='direct'?'market.catalog.official.modelReachDirect':entry.model.cnReachable==='mirror'?'market.catalog.official.modelReachMirror':'market.catalog.official.modelReachProxy'):entry.model.form==='local-general'?'market.catalog.official.modelLocalBadge':'market.catalog.official.localModelBadge')
   :t(compatibilityKeys[entry.compatibility.status])
- const source=entry.delivery==='upstream'?marketCatalogSourceLabels[catalogEntrySource(entry)]:'Teloa'
+ const source='Teloa'
  const contains=item.contents?compositionSummary(composeFromCounts(item.contents),t,number):''
  return {
   key:'catalog:'+entry.id,catalogId:entry.id,title:catalogText(catalogEntryTitle(entry),locale),summary:catalogText(catalogSummary(entry),locale),
   // 官方方案带了包含计数时照原型方案卡写「包含：…」，与本机方案卡同一套摘要
   facts:contains?t('market.solution.contains',{list:contains}):[state,source,...(installs>0?[t('market.catalog.official.installs',{count:number(installs)})]:[])].join(' · '),
-  mark:catalogItemMark(item,roleReceipt),art:{kind:catalogArtKind(entry.kind),seed:entry.id},taxonomy:entry.taxonomy,open:()=>openEntry(entry.id),
+  // 团队方案卡的第三行先写「N 位 AI 员工」（原型 B card-meta），再写目录提供方
+  credit:marketPrimaryCatalogItem(item,'teams')&&item.contents?.role?t('market.primary.teamMembers',{count:number(item.contents.role)})+' · '+source:source,
+  group:t(marketCatalogItemGroup(item)),
+  mark:catalogItemMark(item,roleReceipt),art:{kind:catalogArtKind(entry.kind),seed:entry.id,...(entry.kind==='role'&&entry.role.definition.avatarKey?{avatarKey:entry.role.definition.avatarKey}:{})},taxonomy:entry.taxonomy,open:()=>openEntry(entry.id),
   ...(after?{after}:{}),
  }
 }
 
-export type MarketCatalogCardsProps={catalogItems?:readonly MarketCatalogItem[];openEntry?:(entryId:string,fromId:string)=>void;items:readonly MarketCatalogItem[];busy:string|undefined;addErrors:Readonly<Record<string,string>>;add:(item:MarketCatalogItem)=>void;open:(contentId:string)=>void;openConnection?:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void;openSkillSecrets?:(skill:string,title:string)=>void;describeSkillSecrets?:(skill:string)=>Promise<SkillSecretsState>;addRole?:(item:MarketCatalogItem)=>void;openRole?:(roleId:string)=>void;openModels?:()=>void;openLocalModels?:(entryId:string)=>void;openLocalModel?:(()=>void)|undefined;openRetrievalModel?:((catalogId:string,version:string)=>void)|undefined;roleReceipts?:Readonly<Record<string,RoleReceipt>>;ranking?:MarketCatalogRanking;reviewSlot?:(entry:MarketCatalogEntry)=>ReactNode}
+export type MarketCatalogCardsProps={catalogVersion?:string|undefined;catalogItems?:readonly MarketCatalogItem[];openEntry?:(entryId:string,fromId:string)=>void;items:readonly MarketCatalogItem[];busy:string|undefined;addErrors:Readonly<Record<string,string>>;add:(item:MarketCatalogItem)=>void;open:(contentId:string)=>void;openConnection?:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void;openSkillSecrets?:(skill:string,title:string)=>void;describeSkillSecrets?:(skill:string)=>Promise<SkillSecretsState>;addRole?:(item:MarketCatalogItem)=>void;confirmRole?:(item:MarketCatalogItem)=>void;cancelRole?:(entryId:string)=>void;rolePlans?:Readonly<Record<string,RolePlan>>;openRole?:(roleId:string)=>void;openModels?:()=>void;openLocalModels?:(entryId:string)=>void;openLocalModel?:(()=>void)|undefined;openRetrievalModel?:((catalogId:string,version:string)=>void)|undefined;roleReceipts?:Readonly<Record<string,RoleReceipt>>;ranking?:MarketCatalogRanking;reviewSlot?:(entry:MarketCatalogEntry)=>ReactNode}
 
-/** 「已添加」技能卡片的密钥入口：挂载时查一次状态（不轮询）作按钮文字，失败或未提供查询时只写「密钥」；点击进入技能密钥页。 */
-function SkillSecretsBadgeButton({skill,title,describe,open}:{skill:string;title:string;describe:((skill:string)=>Promise<SkillSecretsState>)|undefined;open:(skill:string,title:string)=>void}){
+/** 员工组成预览：按七行分类列出这一位员工会带来的资源标题，说明边界，确认后才添加。 */
+function RolePlanPanel({plan,busy,retry,confirm,cancel}:{plan:RolePlan;busy:boolean;retry:()=>void;confirm:()=>void;cancel:()=>void}){
  const {t}=useI18n()
- const [label,setLabel]=useState(()=>t('market.skillSecrets.open'))
- useEffect(()=>{
-  let active=true
-  describe?.(skill).then(state=>{if(active)setLabel(skillSecretsBadge(state,t))},()=>{})
-  return()=>{active=false}
- },[describe,skill])
- return <button type="button" onClick={()=>open(skill,title)}>{label}</button>
+ if(plan.status==='loading')return <p className={css.status} role="status">{t('templateShare.catalogRoleLoading')}</p>
+ if(plan.status==='failed')return <p className={css.error} role="alert">{t('templateShare.catalogRoleUnavailable')}<button type="button" onClick={retry}>{t('market.catalog.official.retry')}</button><button type="button" onClick={cancel}>{t('templateShare.catalogRoleCancel')}</button></p>
+ const groups=COMPOSITION_ROWS.map(row=>({row,titles:plan.manifest.resources.filter(resource=>(row.kinds as readonly string[]).includes(resource.kind)).map(resource=>resource.title)})).filter(group=>group.titles.length)
+ return <section className={css.details} aria-label={t('templateShare.catalogRoleIncludes')} data-catalog-role-plan>
+  <h4>{t('templateShare.catalogRoleIncludes')}</h4>
+  <ul>{groups.map(({row,titles})=><li key={row.id}><strong>{t(row.label)}</strong> {titles.join('、')}</li>)}</ul>
+  <p>{t('templateShare.catalogRoleBoundary',{source:plan.packageId+'@'+plan.packageVersion})}</p>
+  <div className={css.actions}><button type="button" className={css.primary} disabled={busy} onClick={confirm}>{busy?t('market.catalog.official.adding'):t('templateShare.catalogRoleConfirm')}</button><button type="button" disabled={busy} onClick={cancel}>{t('templateShare.catalogRoleCancel')}</button></div>
+ </section>
+}
+
+/** 完整资源安装的回执说明：实际绑定的方法、未完成的资源与下一步；旧 v1 回执没有 install，不显示。 */
+function RoleInstallNote({receipt}:{receipt:RoleReceipt}){
+ const {t}=useI18n(),install=receipt.install
+ if(!install)return null
+ const unfinished=install.resources.filter(row=>row.state==='pending'||row.state==='failed'),conflicts=install.resources.filter(row=>row.state==='conflict')
+ return <div className={css.status} role="status" data-catalog-role-install={install.complete?'complete':'incomplete'}>
+  {receipt.skills&&receipt.skills.length>0&&<p>{t('templateShare.catalogRoleMethods',{methods:receipt.skills.join('、')})}</p>}
+  {unfinished.length>0&&<p>{t('templateShare.catalogRoleIncomplete',{items:unfinished.map(row=>row.title).join('、')})}</p>}
+  {conflicts.length>0&&<p>{t('templateShare.catalogRoleConflict',{items:conflicts.map(row=>row.title).join('、')})}</p>}
+  {install.next==='review'&&<p>{t('templateShare.catalogRoleReview')}</p>}
+  {install.next==='connect'&&<p>{t('templateShare.catalogRoleConnect')}</p>}
+  {install.complete&&install.roleState==='paused'&&<p>{t('templateShare.catalogRolePaused')}</p>}
+ </div>
 }
 
 /** GitHub 固定提交目录链接：路径逐段编码（空格、非 ASCII 等），前缀固定为 github.com。 */
@@ -376,13 +418,13 @@ function appendSlot(card:ReactElement<{children?:ReactNode}>,slot:ReactNode):Rea
  return slot?cloneElement(card,undefined,...Children.toArray(card.props.children),slot):card
 }
 
-export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addErrors,add,open,openConnection,openSkillSecrets,describeSkillSecrets,addRole,openRole,openModels,openLocalModels,openLocalModel,openRetrievalModel,roleReceipts,ranking,reviewSlot}:MarketCatalogCardsProps){
+export function MarketCatalogCards({items,catalogVersion,catalogItems=items,openEntry,busy,addErrors,add,open,openConnection,openSkillSecrets,describeSkillSecrets,addRole,confirmRole,cancelRole,rolePlans,openRole,openModels,openLocalModels,openLocalModel,openRetrievalModel,roleReceipts,ranking,reviewSlot}:MarketCatalogCardsProps){
  const {t,locale,number}=useI18n()
  return items.length?<ul className={css.list}>{items.map(item=>appendSlot((()=>{
    const {entry}=item
    const installs=ranking?.get(entry.id)?.installs??0
    const installsBadge=installs>0?<span className={css.badge}>{t('market.catalog.official.installs',{count:number(installs)})}</span>:null
-   const actions=<div className={css.actions}>{entry.delivery==='builtin'?<span>{t('market.catalog.official.builtin')}</span>:item.addedContentId?<><span>{t('market.catalog.official.added')}</span><button type="button" onClick={()=>entry.kind==='connector'&&openConnection?openConnection(entry.id,entry as MarketCatalogConnectorEntry):open(item.addedContentId!)}>{t('market.catalog.official.view')}</button>{entry.kind==='skill'&&entry.secrets?.length&&openSkillSecrets?<SkillSecretsBadgeButton skill={entry.skill.name} title={catalogText(entry.skill.title,locale)} describe={describeSkillSecrets} open={openSkillSecrets}/>:null}</>:<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>add(item)}>{busy===entry.id?t('market.catalog.official.adding'):entry.kind==='solution'?t('market.catalog.official.addSolution'):entry.kind==='connector'?t('market.catalog.official.addConnector'):t('market.catalog.official.add')}</button>}</div>
+   const actions=<div className={css.actions}>{entry.delivery==='builtin'?<span>{t('market.catalog.official.builtin')}</span>:item.addedContentId?<><span>{t('market.catalog.official.added')}</span><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>entry.kind==='connector'&&openConnection?openConnection(entry.id,entry as MarketCatalogConnectorEntry):open(item.addedContentId!)}/>{entry.kind==='skill'&&entry.secrets?.length&&openSkillSecrets?<SkillSecretsBadgeButton skill={entry.skill.name} title={catalogText(entry.skill.title,locale)} describe={describeSkillSecrets} open={openSkillSecrets}/>:null}</>:<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>add(item)}>{busy===entry.id?t('market.catalog.official.adding'):entry.kind==='solution'?t('market.catalog.official.addSolution'):entry.kind==='dashboard'?t('market.apps.action.add'):entry.kind==='connector'?t('market.catalog.official.addConnector'):t('market.catalog.official.add')}</button>}</div>
    const errorNode=addErrors[entry.id]&&<p className={css.error} role="alert">{addErrors[entry.id]}</p>
    const feedback=<MarketResourceFeedback entry={entry}/>
    if(entry.kind==='skill'){
@@ -401,7 +443,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
       <SecretGroupLine group={item.secretGroup} entryId={entry.id}/>
       {unsupported&&<p className={css.meta}>{unsupported}</p>}
       {effectiveActions}{errorNode}
-      <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+      <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
        {up.kind==='github'&&<p><a href={githubTreeUrl(up.repository,up.commit,up.path)} target="_blank" rel="noreferrer">{t('market.catalog.official.openUpstream')}</a></p>}
        {installsSource&&entry.origin.installs!==null&&<p>{t('market.catalog.official.originInstalls',{count:number(entry.origin.installs)})} · <a href={installsSource.url} target="_blank" rel="noreferrer">{t(installsSource.scope==='plugin'?'market.catalog.official.installsSourcePlugin':'market.catalog.official.installsSource',{site:endpointHost(installsSource.url),date:entry.origin.countedAt})}</a></p>}
        {entry.modifications.length?<ul>{entry.modifications.map((change,index)=><li key={index}>{catalogText(change,locale)}</li>)}</ul>:<p>{t('market.catalog.official.noModifications')}</p>}
@@ -424,7 +466,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
      <p className={css.meta}>{upstream&&derivation?t('market.catalog.official.derivedFrom',{author:upstream.author,owner:upstream.repository.owner,repo:upstream.repository.repo,license:entry.license.spdx}):upstream?t('market.catalog.official.upstream',{author:upstream.author,license:entry.license.spdx}):t('market.catalog.official.builtinSource',{license:entry.license.spdx})}</p>
      <SecretGroupLine group={item.secretGroup} entryId={entry.id}/>
      {actions}{errorNode}
-     <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+     <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
       {upstream&&upstreamUrl&&<p><a href={upstreamUrl} target="_blank" rel="noreferrer">{t('market.catalog.official.openUpstream')}</a> · {t('market.catalog.official.commit',{commit:upstream.commit.slice(0,12)})}</p>}
       {upstream&&derivation?<MarketDerivativeChanges derivation={derivation} repository={upstream.repository} commit={upstream.commit}/>:<><p>{t('market.catalog.official.modifications')}</p>
       {entry.modifications.length?<ul>{entry.modifications.map((change,index)=><li key={index}>{catalogText(change,locale)}</li>)}</ul>:<p>{t('market.catalog.official.noModifications')}</p>}</>}
@@ -440,15 +482,29 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
    if(entry.kind==='role'){
     // 本次会话的回执优先；否则按列表回显的已建岗位初始化为「已添加」
     const receipt=roleReceipts?.[entry.id]??(item.addedRoleId?{roleId:item.addedRoleId,status:'existing' as const}:undefined)
+    const plan=rolePlans?.[entry.id],roleId=receipt?.roleId,unfinished=!!receipt?.install&&!receipt.install.complete
+    // 未完成的资源可再添加一次续做（同一派生请求，不重复建员工）；查看员工只在员工已建立时出现
+    const roleActions=receipt&&(roleId||unfinished)?<>{!unfinished&&<span>{t(receipt.status==='created'?'market.catalog.official.roleCreated':'market.catalog.official.roleExisting')}</span>}{unfinished&&(receipt.install?.next==='retry'||!roleId)&&<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>confirmRole?.(item)}>{busy===entry.id?t('market.catalog.official.adding'):t('templateShare.catalogRoleContinue')}</button>}{openRole&&roleId&&<ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>openRole(roleId)}/>}</>
+     :entry.compatibility.status==='unsupported'?<span>{entry.compatibility.conditions[0]?catalogText(entry.compatibility.conditions[0],locale):t('market.catalog.official.unsupportedFallback')}</span>
+     :plan?null:<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>addRole?.(item)}>{t('market.catalog.official.addRole')}</button>
     return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-     <div className={css.top}><h3 className={css.name}>{catalogText(entry.role.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}<span className={css.badge}>{t('market.catalog.official.roleBadge')}</span></div>
+     <div className={css.top}><ItemArt kind="agent" title={catalogText(entry.role.title,locale)} seed={entry.id} avatarKey={entry.role.definition.avatarKey}/><h3 className={css.name}>{catalogText(entry.role.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}<span className={css.badge}>{t('market.catalog.official.roleBadge')}</span></div>
      <p className={css.summary}>{catalogText(entry.role.summary,locale)}</p>
-     <p className={css.meta}>{t('market.catalog.official.roleFromSolution',{packageId:entry.role.fromSolution.packageId,version:entry.role.fromSolution.version})}</p>
-     <p className={css.meta}>{t('market.catalog.official.roleSkills',{skills:entry.role.skills.length?entry.role.skills.join(', '):'—'})}{entry.role.skills.length>0&&<> · {t('market.catalog.official.roleSkillsHint')}</>}</p>
-     <div className={css.actions}>{receipt?<><span>{t(receipt.status==='created'?'market.catalog.official.roleCreated':'market.catalog.official.roleExisting')}</span>{openRole&&<button type="button" onClick={()=>openRole(receipt.roleId)}>{t('market.catalog.official.view')}</button>}</>:entry.compatibility.status==='unsupported'?<span>{entry.compatibility.conditions[0]?catalogText(entry.compatibility.conditions[0],locale):t('market.catalog.official.unsupportedFallback')}</span>:<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>addRole?.(item)}>{busy===entry.id?t('market.catalog.official.adding'):t('market.catalog.official.addRole')}</button>}</div>
+     <p>{entry.role.definition.duty}</p>
+     {roleActions&&<div className={css.actions}>{roleActions}</div>}
+     {plan&&!roleId&&!unfinished&&<RolePlanPanel plan={plan} busy={busy===entry.id} retry={()=>addRole?.(item)} confirm={()=>confirmRole?.(item)} cancel={()=>cancelRole?.(entry.id)}/>}
+     {receipt&&<RoleInstallNote receipt={receipt}/>}
      {errorNode}
-     <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
-      <p>{entry.role.definition.duty}</p>
+     <MarketTemplateDetails key={entry.id} sections={[
+      {id:'responsibility',title:t('market.industry.contents.duty'),content:<><p>{entry.role.definition.executionScope}</p><ul>{entry.role.definition.responsibility.deliveryChecks.map(value=><li key={value}>{value}</li>)}</ul></>},
+      {id:'skills',title:t('market.primary.methods'),content:<><p>{t('market.catalog.official.roleSkills',{skills:entry.role.skills.length?entry.role.skills.join(', '):'—'})}</p>{entry.role.skills.length>0&&<p>{t('market.catalog.official.roleSkillsHint')}</p>}</>},
+      {id:'routines',title:t('market.primary.routines'),content:<p>{t('market.primary.noRoutines')}</p>},
+      {id:'dependencies',title:t('market.primary.appsAndPermissions'),content:<><p>{entry.role.definition.dataScope}</p><ul>{entry.requires.tools.map(value=><li key={value}>{value}</li>)}</ul><ul>{entry.role.definition.responsibility.confirmationPoints.map(value=><li key={value}>{value}</li>)}</ul><p>{t('market.primary.templateBoundary')}</p></>},
+     ]}/>
+     <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
+      <p>{t('market.catalog.official.roleFromSolution',{packageId:entry.role.fromSolution.packageId,version:entry.role.fromSolution.version})}</p>
+      <p>{t('market.catalog.solution.source',{license:entry.license.spdx})}{entry.license.url&&<> · <a href={entry.license.url} target="_blank" rel="noreferrer">{t('templateShare.license')}</a></>}</p>
+      {entry.modifications.length>0&&<ul>{entry.modifications.map((change,index)=><li key={index}>{catalogText(change,locale)}</li>)}</ul>}
       <p>{t('market.catalog.official.reviewed',{date:entry.review.reviewedAt})}</p>
       <p className={css.mono}>{entry.id}@{entry.version}</p>
       {feedback}
@@ -466,7 +522,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
       {entry.model.license.tier==='restricted'&&<p className={css.error} role="note">{entry.model.license.restrictions.map(item=>catalogText(item,locale)).join(' ')}</p>}
       <p className={css.meta}>{t(embedding?'retrieval.model.summary':'market.catalog.official.localModelEnable')}</p>
       {entry.compatibility.status!=='unsupported'&&prepare&&<div className={css.actions}><button type="button" className={css.primary} onClick={prepare}>{t(embedding?'retrieval.model.prepare':'market.catalog.official.localModelPrepare')}</button></div>}
-      <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+      <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
        {entry.model.notes.map((note,index)=><p key={index}>{catalogText(note,locale)}</p>)}
        {entry.compatibility.conditions.map((note,index)=><p key={index}>{catalogText(note,locale)}</p>)}
        <p><a href={entry.model.license.url} target="_blank" rel="noreferrer">{entry.model.license.name}</a></p>
@@ -487,7 +543,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
      {entry.model.form==='cloud'?<p className={css.meta}>{t(priceKey)} · {modelIds.join(', ')}</p>:entry.model.variants.map((variant,i)=><p key={i} className={css.meta}>{variant.sources[0].name} · {t('market.catalog.official.modelLocalVariant',{quant:variant.quant,size:formatBytes(variant.sizeBytes),min:variant.hardware.minRamGb,rec:variant.hardware.recommendedRamGb})}</p>)}
      {!cloud&&openLocalModels&&<div className={css.actions}><button type="button" className={css.primary} onClick={()=>openLocalModels(entry.id)}>{t('market.catalog.official.modelLocalOpen')}</button></div>}
      {cloud&&openModels&&<div className={css.actions}><button type="button" className={css.primary} onClick={openModels}>{t('market.catalog.official.modelConfigure')}</button></div>}
-     <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+     <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
       <p>{provider===null?'Ollama':provider.kind==='pi-ai'?'pi-ai '+provider.id:provider.api+' · '+provider.baseURL}</p>
       <p><a href={entry.model.license.url} target="_blank" rel="noreferrer">{entry.model.license.name}</a> · {t(entry.model.license.tier==='commercial'?'market.catalog.official.modelTierCommercial':'market.catalog.official.modelTierRestricted')}</p>
       <p>{t('market.catalog.official.reviewed',{date:entry.review.reviewedAt})}</p>
@@ -501,7 +557,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
     <p className={css.summary}>{catalogText(entry.solution.summary,locale)}</p>
     {(['now','needs','permissions'] as const).map(group=><div key={group}><strong>{t(capabilityGroupKeys[group])}</strong><ul>{entry.solution.capabilities[group].slice(0,2).map((cap,i)=><li key={i}>{catalogText(cap,locale)}</li>)}</ul></div>)}
     {actions}{errorNode}
-    <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+    <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
      <p>{t('market.catalog.official.modifications')}</p>
      {entry.modifications.length?<ul>{entry.modifications.map((change,index)=><li key={index}>{catalogText(change,locale)}</li>)}</ul>:<p>{t('market.catalog.official.noModifications')}</p>}
      {entry.compatibility.conditions.length>0&&<ul>{entry.compatibility.conditions.map((condition,index)=><li key={index}>{catalogText(condition,locale)}</li>)}</ul>}
@@ -516,7 +572,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
     <p className={css.summary}>{catalogText(entry.dashboard.summary,locale)}</p>
     {(['now','needs','permissions'] as const).map(group=><div key={group}><strong>{t(capabilityGroupKeys[group])}</strong><ul>{entry.dashboard.capabilities[group].slice(0,2).map((cap,i)=><li key={i}>{catalogText(cap,locale)}</li>)}</ul></div>)}
     {actions}{errorNode}
-    <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+    <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
      <p>{t('market.catalog.official.modifications')}</p>
      {entry.modifications.length?<ul>{entry.modifications.map((change,index)=><li key={index}>{catalogText(change,locale)}</li>)}</ul>:<p>{t('market.catalog.official.noModifications')}</p>}
      {entry.compatibility.conditions.length>0&&<ul>{entry.compatibility.conditions.map((condition,index)=><li key={index}>{catalogText(condition,locale)}</li>)}</ul>}
@@ -535,7 +591,7 @@ export function MarketCatalogCards({items,catalogItems=items,openEntry,busy,addE
     {oauthFullAccessToken(entry.connector.auth)&&<p className={css.error} role="note">{t('market.catalog.connector.oauthFullAccess')}</p>}
     {previewTools.length>0&&<ul>{previewTools.map(tool=><li key={tool.name}>{catalogText(tool.description,locale)}</li>)}</ul>}
     {connectorActions}{errorNode}
-    <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>
+    <details className={css.details}><summary>{t('market.catalog.official.sourceDetails')}</summary>{catalogVersion&&<p>{t('market.catalog.official.version',{version:catalogVersion})}</p>}
      {entry.compatibility.conditions.length>0&&<ul>{entry.compatibility.conditions.map((condition,index)=><li key={index}>{catalogText(condition,locale)}</li>)}</ul>}
      <p>{entry.requires.network?t('market.catalog.official.networkYes'):t('market.catalog.official.networkNo')}</p>
      <p>{t('market.catalog.official.reviewed',{date:entry.review.reviewedAt})}</p>
@@ -568,14 +624,14 @@ export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,
     ?<p>{conditions[0]??t('market.catalog.official.unsupportedFallback')}</p>
     :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('market.industry.loadWorkspace')}<Plus size={15}/></button>
   :item.addedContentId
-  ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.catalog.official.added')}<Check size={15}/></button><button type="button" onClick={()=>open(item.addedContentId!)}>{t('market.catalog.official.view')}</button></>
+  ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.catalog.official.added')}<Check size={15}/></button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></>
   :entry.compatibility.status==='unsupported'
    ?<p>{conditions[0]??t('market.catalog.official.unsupportedFallback')}</p>
    :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} onClick={add}>{busy===entry.id?t('market.catalog.official.adding'):t('market.catalog.official.addSolution')}<Plus size={15}/></button>
  const rows=pkg.status==='ready'?composeFromManifest(pkg.manifest):[]
  const capabilities=(['now','needs','permissions'] as const).map(group=>[t(capabilityGroupKeys[group]),entry.solution.capabilities[group].map(value=>catalogText(value,locale))] as const)
  return <article className={clsx(pageCss.detail,pageCss.industryDetail)} data-teloa-catalog-entry={entry.id} aria-label={title}>
-  <button type="button" className={css.backLink} onClick={back}><ArrowLeft size={15}/>{t('market.solution.back')}</button>
+  <ToolbarIconButton className={css.backLink} label={t('market.solution.back')} icon={ArrowLeft} onClick={back}/>
   <header className={pageCss.solutionHero}>
    <span className={clsx(pageCss.bundleArt,pageCss.heroArt,staffCss['tone'+staffAvatarSeed(entry.id).tone])} aria-hidden="true"><span/><span/><span/></span>
    <h1 tabIndex={-1} data-catalog-detail-title>{title}</h1>

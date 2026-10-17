@@ -105,3 +105,18 @@ test('详情页有跨业务引用分区：可用引用带业务名与只读标�
  const archived=nodes(view.render('ProjectDetailView',{...props,detail:{...props.detail,project:{...project,state:'archived'}}}))
  assert.equal(archived.filter(node=>node.type==='button'&&(node.props['data-project-reference-remove']!==undefined||node.props['data-project-reference-add']!==undefined)).length,0)
 })
+
+
+test('反向群关联在群分区可打开原群，与直接关联去重；没有项目侧移除或授权动作',()=>{
+ const project:WorkProject={id:'10000000-0000-4000-8000-000000000001',ownerId:'self',version:1,createdAt:'2026-10-12T00:00:00Z',updatedAt:'2026-10-12T00:00:00Z',scope:'general',title:'Launch',goal:'Ship',state:'running',dueDate:null,links:[],references:[]}
+ const group:ProjectReferenceItem={kind:'group',scope:'SOC',id:'20000000-0000-4000-8000-000000000001',title:'Security support',state:'active',version:2,available:true},opened:unknown[]=[]
+ const view=mount('ProjectWorkspace.tsx',{'./project-presentation.js':presentation,'@teloa/contract':contract}),props={detail:{project,items:[],summary:{totalTasks:0,completedTasks:0,cancelledTasks:0,attentionTasks:0},references:[],linkedGroups:[group]},busy:false,back:()=>{},edit:()=>{},add:()=>{},addReference:()=>{},changeState:()=>{},remove:()=>{},removeReference:()=>{},open:(item:unknown)=>opened.push(item),refresh:()=>{},scopeName:(scope:string)=>scope==='SOC'?'Security Ops':scope}
+ const section=nodes(view.render('ProjectDetailView',props)).find(node=>node.type==='section'&&node.props['aria-label']==='project.groups')!
+ assert.ok(section);const inside=nodes(section),button=inside.find(node=>node.type==='button'&&node.children.includes(group.title))!
+ assert.ok(button);button.props.onClick();assert.deepEqual(opened,[group])
+ assert.ok(inside.some(node=>node.children.includes('project.group.originalLink')))
+ assert.equal(inside.filter(node=>node.type==='button').length,1,'原群关系只给原对象入口')
+ const direct:ProjectItem={kind:'group',id:group.id,title:group.title,state:'active',version:2,available:true,origin:'direct',attention:null}
+ const deduplicated=nodes(view.render('ProjectDetailView',{...props,detail:{...props.detail,items:[direct]}}))
+ assert.equal(deduplicated.filter(node=>node.type==='button'&&node.children.includes(group.title)).length,1)
+})

@@ -64,6 +64,7 @@ test('任务、持续工作和市场资源目录在窄屏提供至少 44px 主�
   const entry=nodes(catalog).find(node=>node.props.role==='option')!
   assert.equal(entry.type,'button')
   assert.equal(entry.props.className,'itemCard')
-  assert.match(marketStyles,/@media\(max-width:740px\)\{[\s\S]*\.page button\{[^}]*min-height:44px[^}]*min-width:44px/)
+  // 370b407：轻量图标动作（data-teloa-toolbar-icon）按统一图标尺寸呈现，其余主要按钮在窄屏仍至少 44px。
+  assert.match(marketStyles,/@media\(max-width:740px\)\{[\s\S]*\.page button:where\(:not\(\[data-teloa-toolbar-icon\]\)\)\{[^}]*min-height:44px[^}]*min-width:44px/)
   assert.match(marketStyles,/\.itemCard\[aria-selected=true\]/)
 })

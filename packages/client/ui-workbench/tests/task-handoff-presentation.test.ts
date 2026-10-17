@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises'
 import {activeHandoffCandidates,activeHandoffState} from '../src/client/task-handoff-presentation.ts'
 import type {PreviewRole} from '../src/client/role-preview.ts'
 import type {PreviewTask} from '../src/client/task-preview.ts'
+import {projectSavedTask} from '../src/client/task-api.ts'
 
 const current='16057272-ed9d-44a3-abe4-2ab04e056105'
 const peer='26057272-ed9d-44a3-abe4-2ab04e056105'
@@ -28,6 +29,18 @@ test('主动改派候选包含本人和同范围在岗数字员工，并按完�
 test('通用工作任务的改派候选不按岗位业务声明过滤，业务范围任务仍严格过滤',()=>{
  const generalTask={...task,scope:'general'}
  assert.deepEqual(activeHandoffCandidates(generalTask,roles).map(item=>item.id),['self',peer,otherScope])
+})
+
+test('恢复后的同员工只在原任务明确绑定旧版本时供本人重新交办',()=>{
+ const saved=projectSavedTask({id:task.id,ownerId:'owner',title:task.title,goal:task.goal,scope:task.scope,groupId:null,skills:[],version:task.version,state:task.state,assigneeRoleId:current,assigneeRoleVersion:1,createdAt:task.createdAt,updatedAt:task.updatedAt})
+ assert.deepEqual(activeHandoffCandidates(saved,roles).find(candidate=>candidate.id===current),{kind:'role',id:current,name:'当前调查岗',version:2})
+ const {assigneeRoleVersion:_assignedVersion,...legacy}=saved
+ assert.equal(activeHandoffCandidates(legacy,roles).some(candidate=>candidate.id===current),false)
+ for(const assigneeRoleVersion of [null,0,2,3]){
+  assert.equal(activeHandoffCandidates({...saved,assigneeRoleVersion},roles).some(candidate=>candidate.id===current),false)
+ }
+ assert.equal(activeHandoffCandidates(saved,[role(current,'暂停岗',{state:'paused'})]).some(candidate=>candidate.id===current),false)
+ assert.equal(activeHandoffCandidates(saved,[role(current,'范围已变化',{scopes:['Design']})]).some(candidate=>candidate.id===current),false)
 })
 
 test('被动待交接优先，运行中和终态不提供主动入口，恢复态阻止重复提交',()=>{

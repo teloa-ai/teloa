@@ -2,7 +2,7 @@
 .heading{position:sticky;top:0;z-index:3;background:var(--teloa-background);padding-top:4px}
 .heading>header{padding-bottom:12px;gap:8px}
 .heading h2{flex:1 1 240px}
-.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px;margin:0 0 20px;padding:12px 0 16px;border-bottom:1px solid var(--teloa-border)}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 16px;margin:0 0 16px;padding:4px 0 12px;border-bottom:1px solid var(--teloa-border)}
 .fact,.wideFact{display:grid;grid-template-columns:76px minmax(0,1fr);align-items:start;gap:8px;min-height:34px;padding:2px 0;font-size:var(--teloa-font-control);line-height:1.6}
 .wideFact{grid-column:1/-1}
 .fact dt,.wideFact dt{color:var(--teloa-muted);font-size:var(--teloa-font-caption);padding-top:4px}
@@ -10,10 +10,17 @@
 .fact button.link,.wideFact button.link,.resultBlock button.link{display:inline-flex;align-items:center;gap:7px;min-height:30px;min-width:0;border:0;background:transparent;padding:2px 0;color:var(--teloa-text);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-regular);text-align:left;cursor:pointer}
 .link:hover{color:var(--teloa-accent)!important;text-decoration:underline;text-underline-offset:3px}
 .link>svg{flex:none;color:var(--teloa-muted)}
-.ownerName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ownerName{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
 .ownerActions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0;max-width:100%}
 .ownerActions>.link{max-width:100%}
 .section{margin:0 0 24px;min-width:0}
+.statusPanel{margin:0 0 20px;min-width:0}
+.statusPanel>[data-teloa-status-box]{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0;padding:12px 14px;border-radius:8px;background:var(--teloa-subtle)}
+.statusPanel>[data-teloa-status-box]>p:first-child{flex:1 1 220px;font-size:var(--teloa-font-control);margin:0}
+.statusPanel [data-teloa-attention-reason]{order:2;flex-basis:100%;margin:0;font-size:var(--teloa-font-caption);line-height:1.6}
+.statusPanel>[data-teloa-status-box]>div:has(>[data-teloa-primary]){order:1;display:flex;flex-wrap:wrap;gap:6px;margin:0}
+.statusPanel [data-teloa-primary],.statusPanel>[data-teloa-status-box]>div:has(>[data-teloa-primary])>button{min-height:32px;width:auto;padding:5px 10px;font-size:var(--teloa-font-caption)}
+.statusPanel .error,.statusPanel form{flex-basis:100%}
 .section h3,.resultBlock h3{margin:0 0 12px;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
 .resultBlock{margin:0 0 24px;padding:16px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);min-width:0}
 .resultBlock>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
@@ -37,4 +44,33 @@
 .disclosureBody .section{margin:12px 0 20px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--teloa-font-caption);overflow-wrap:anywhere;color:var(--teloa-muted)}
 .disclosure :focus-visible,.facts :focus-visible,.resultBlock :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-@container (max-width:480px){.facts{grid-template-columns:minmax(0,1fr);gap:4px}.fact,.wideFact{grid-template-columns:72px minmax(0,1fr)}.heading h2{flex-basis:100%}.resultBlock{padding:12px}}
+@container (max-width:480px){.facts{grid-template-columns:minmax(0,1fr);gap:4px}.fact,.wideFact{grid-template-columns:72px minmax(0,1fr)}.resultBlock{padding:12px}}
+
+/* N46：DOM 与窄视图阅读顺序一致；宽面板只将属性区放到右列，所有表单始终挂载。 */
+.layout{container-type:inline-size;container-name:task-detail-body;min-width:0}
+.columns{display:flex;flex-direction:column;min-width:0}
+.slotProgress:empty,.quietStatus:empty{display:none}
+.fact,.wideFact{min-height:30px}
+.fact dd,.wideFact dd{min-height:26px}
+.quietStatus{margin:0 0 16px;min-width:0}
+.quietStatus>*{margin:0 0 8px}
+.resultBlock.resultCompact{padding:2px 0 12px;border:0;border-bottom:1px solid var(--teloa-border);border-radius:0;background:transparent}
+.resultCompact>header{margin:0}
+.detailText{white-space:pre-wrap;overflow-wrap:anywhere}
+.detailTextClamped{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;line-clamp:4;overflow:hidden}
+.detailTextToggle{display:inline-flex;align-items:center;margin-top:4px;padding:2px 0;min-height:28px;border:0;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer}
+.detailTextToggle:hover{color:var(--teloa-text)}
+.detailTextToggle:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@container task-detail-body (min-width:860px){
+ .columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,288px);grid-template-areas:"goal facts" "status facts" "progress side" "result side" "activity side";grid-template-rows:auto auto auto auto minmax(0,1fr);column-gap:32px;align-items:start}
+ .slotGoal{grid-area:goal}.slotStatus{grid-area:status}.slotProgress{grid-area:progress}.slotResult{grid-area:result}.slotActivity{grid-area:activity}
+ .slotFacts{grid-area:facts;grid-template-columns:minmax(0,1fr);gap:0;margin:0 0 8px;padding-top:0;padding-bottom:8px}
+ .slotSide{grid-area:side}
+ .slotFacts,.slotSide{padding-left:20px;border-left:1px solid var(--teloa-border);min-width:0}
+}
+
+/* 当前交接与审批就地可达；编号、时间等低频属性不再包住操作表单。 */
+.actionGroup{min-width:0;padding:10px 0;border-top:1px solid var(--teloa-border)}
+.actionGroup:empty,.actionGroup:has(>div:only-child:empty){display:none}
+.actionGroup>section{margin:0;padding:0;border:0;border-radius:0;background:transparent}
+.actionGroup h3{margin:0 0 8px}

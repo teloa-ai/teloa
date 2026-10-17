@@ -61,6 +61,9 @@ function draft(value:unknown,readers:PageCreateResponseReaders):PageCreateDraft{
  }
 }
 
+/** 会话回执沿用页面的同一份严格读取器，不从助手描述推导实体身份。 */
+export const readPageCreateDraft=(value:unknown,readers:PageCreateResponseReaders={})=>draft(value,readers)
+
 /**
  * 一份草案目录。`expected` 给了就逐字比对实体与范围：一份混着别的实体的目录不是这一页要读的那份，
  * 与其在界面上摆几条不属于这里的草案，不如整条拒收（规格 §五第 7 条）。
@@ -149,11 +152,23 @@ function settleInput(input:PageCreateSettleRequest):PageCreateSettleRequest{
 }
 
 /**
- * 三个端点的客户端一侧。`settle` 只管草案状态、不担保生效（D8）：既有写路径成功之后才调它，
+ * 草稿端点的客户端一侧。`settle` 只管草案状态、不担保生效（D8）：既有写路径成功之后才调它，
  * 那条写路径失败时草案留在 `draft`，这一点不许被当成第二道生效闸。
  */
 export function createPageCreateApi(call:Call,readers:PageCreateResponseReaders={}){
  return {
+  async origin(input:{draftId:string;expectedBodyHash:string},signal?:AbortSignal):Promise<{draftId:string;bodyHash:string;sessionId:string}>{
+   if(!text(input.draftId,200)||!hash(input.expectedBodyHash))throw invalid()
+   const value=exact(await call('page-create-drafts/origin',{draftId:input.draftId,expectedBodyHash:input.expectedBodyHash},signal),['draftId','bodyHash','sessionId'])
+   if(value.draftId!==input.draftId||value.bodyHash!==input.expectedBodyHash||typeof value.sessionId!=='string'||!/^[-\w]{1,128}$/.test(value.sessionId))throw invalid()
+   return {draftId:input.draftId,bodyHash:input.expectedBodyHash,sessionId:value.sessionId}
+  },
+  async read(input:{draftId:string},signal?:AbortSignal):Promise<PageCreateDraft>{
+   if(!text(input.draftId,200))throw Error('需要明确的草案标识。')
+   const value=readPageCreateDraft(await call('page-create-drafts/read',{draftId:input.draftId},signal),readers)
+   if(value.id!==input.draftId)throw invalid()
+   return value
+  },
   async directory(input:PageCreateDirectoryRequest,signal?:AbortSignal):Promise<PageCreateDraftDirectory>{
    const payload=directoryInput(input)
    return readPageCreateDraftDirectory(await call('page-create-drafts/directory',payload,signal),payload,readers)
@@ -170,4 +185,4 @@ export function createPageCreateApi(call:Call,readers:PageCreateResponseReaders=
  }
 }
 
-export type PageCreateApi=ReturnType<typeof createPageCreateApi>
+export type PageCreateApi=Omit<ReturnType<typeof createPageCreateApi>,'origin'>&Partial<Pick<ReturnType<typeof createPageCreateApi>,'origin'>>

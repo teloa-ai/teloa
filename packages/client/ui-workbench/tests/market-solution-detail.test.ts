@@ -34,7 +34,7 @@ function order(...markers: string[]) {
  }
 }
 
-test('产品页纵向顺序：回到市场 → hero → 问一问 → 添加后你会得到 → 唯一的「来源与版本」折叠', () => {
+test('产品页纵向顺序：回到市场 → hero → 问一问 → 按真实组成分类查看 → 资源与用法 → 来源与版本', () => {
  order(
   "t('market.solution.back')",
   "className={css.solutionHero}",
@@ -43,12 +43,12 @@ test('产品页纵向顺序：回到市场 → hero → 问一问 → 添加后�
   "t('market.industry.loadWorkspace')",
   "t('market.solution.askFit')",
   "t('market.solution.youGet')",
+  '<MarketTemplateDetails sections=',
   "className={css.youGet}",
-  'COMPOSITION_ROWS.find',
+  "t('market.solution.contents')",
+  "t('market.industry.otherUsage')",
   "className={css.provenance}",
   "t('market.solution.provenance')",
-  "t('market.industry.otherUsage')",
-  "t('market.solution.contents')",
   "t('market.template.governance.title')",
  )
 })
@@ -56,7 +56,7 @@ test('产品页纵向顺序：回到市场 → hero → 问一问 → 添加后�
 test('「添加后你会得到」按七行分节，顺序、标签、副标、计数与附注全部读共享模块', () => {
  // 行本身、顺序与空行过滤都来自 composeFromManifest；组件不自己写一份分类，也不自己拼中文。
  assert.match(industryBranch, /const rows=composeFromManifest\(manifest\)/)
- assert.match(industryBranch, /rows\.map\(row=>\{/)
+ assert.match(industryBranch, /rows\.filter\(row=>row\.count>0\)\.map\(row=>\{/)
  assert.match(industryBranch, /const meta=COMPOSITION_ROWS\.find\(value=>value\.id===row\.id\)!/)
  assert.match(industryBranch, /<h3>\{t\(meta\.label\)\}<em className=\{css\.solutionGroupQuestion\}>\{t\(meta\.question\)\}<\/em>/)
  assert.match(industryBranch, /t\(meta\.unit,\{count:number\(row\.count\),views:number\(row\.detail\?\.views\?\?0\)\}\)/)
@@ -96,12 +96,12 @@ test('必须保留、只是移位：状态句、已加载入口、其他用法�
  assert.match(industryBranch, /<SolutionLoadLinks loads=\{matchingLoads\} manage=\{props\.manageIndustryLoad\}\/>/)
  assert.match(loadLinks, /loads\.map\(load=><button type="button" key=\{load\.id\} onClick=\{\(\)=>manage\(load\.id\)\}>/)
  assert.match(industryBranch, /t\('market\.industry\.otherUsage'\)/)
- assert.match(industryBranch, /aria-label=\{draft\?t\('market\.intent\.view'\):t\('market\.intent\.create'\)\}/)
+ assert.match(industryBranch, /\{draft&&<button type="button" aria-label=\{t\('market\.intent\.view'\)\}/)
  assert.match(industryBranch, /aria-label=\{t\('market\.conversation\.use'\)\}/)
  assert.match(industryBranch, /<IndustryReferences item=\{item\} items=\{props\.state\.items\} save=\{props\.saveResolved\}\/>/)
  assert.match(industryBranch, /<IndustryUpdatePreview item=\{item\} items=\{props\.state\.items\} spaces=\{props\.spaces\} \{\.\.\.props\.industryReview\}\/>/)
  assert.match(industryBranch, /<IndustryExport item=\{item\}\/>/)
- assert.match(industryBranch, /\{item\.raw&&<section className=\{css\.sheet\}>/)
+ assert.match(industryBranch, /\{item\.raw&&<section className=\{css\.sourceSection\}>/)
  assert.match(industryBranch, /SHA-256：\{item\.hash\}/)
 })
 
@@ -112,17 +112,18 @@ test('来源与版本块里必须能看到「添加只是加入」的提醒，�
  assert.ok(noticeIndex > provenanceStart && noticeIndex < bodyStart, '提醒必须出现在来源与版本折叠区内')
 })
 
-test('合并进折叠块的四段一样不少：其他使用方式、内容清单、来源与运行环境、治理与核对', () => {
+test('内容与用法直接可达，来源折叠保留运行环境、治理与核对', () => {
  const body = industryBranch.slice(industryBranch.indexOf('className={css.provenanceBody}'))
- for (const key of ['market.industry.otherUsage', 'market.solution.contents', 'market.template.sourceRuntimeAria', 'market.template.sourceRuntime.title', 'market.template.governance.title', 'market.template.governance.description']) {
+ for (const key of ['market.template.sourceRuntimeAria', 'market.template.sourceRuntime.title', 'market.template.governance.title', 'market.template.governance.description']) {
   assert.ok(body.includes("t('" + key + "')"), '折叠块里找不到：' + key)
  }
- assert.match(body, /<IndustryContents manifest=\{manifest\} content=\{item\.packageContent\} persisted=\{!!item\.contentStorage\?\.loaded\}\/>/)
+ assert.doesNotMatch(body, /<IndustryContents|market\.industry\.otherUsage/, '长资源清单和使用动作不再藏进来源说明')
+ assert.match(industryBranch, /<IndustryContents manifest=\{manifest\} content=\{item\.packageContent\} persisted=\{!!item\.contentStorage\?\.loaded\}\/>/)
  assert.match(body, /onClick=\{props\.nativeSettings\}/)
 })
 
-test('已加载时主按钮显示已添加并 disabled，同时给出「看看它带进来什么」的入口', () => {
- assert.match(industryBranch, /disabled=\{!!matchingLoads\.length\}[\s\S]{0,80}onClick=\{\(\)=>setActionPanel\('load'\)\}>\{matchingLoads\.length\?t\('market\.solution\.added'\):t\('market\.industry\.loadWorkspace'\)\}/)
+test('已加载时主按钮显示已添加，原内容仍有待核对申请时保留正规恢复入口', () => {
+ assert.match(industryBranch, /disabled=\{!!matchingLoads\.length&&!recoveringCurrentLoad\}[\s\S]{0,80}onClick=\{\(\)=>setActionPanel\('load'\)\}>\{recoveringCurrentLoad\?t\('market\.industry\.load\.reviewResult'\):matchingLoads\.length\?t\('market\.solution\.added'\):t\('market\.industry\.loadWorkspace'\)\}/)
  assert.match(industryBranch, /<SolutionLoadLinks loads=\{matchingLoads\}/)
  assert.match(loadLinks, /t\('market\.solution\.openLoad'\)/)
 })
@@ -137,8 +138,11 @@ test('一键添加只有一个调用点：只保留一次 setActionPanel(\'load\
  assert.equal(calls.length, 1, '只应有一个按钮触发一键添加')
  assert.doesNotMatch(industryBranch, /props\.industryLoads\.save\(/)
  assert.match(industryBranch, /actionPanel==='load'\?<SolutionLoadPanel \{\.\.\.props\} item=\{item\} close=\{\(\)=>setActionPanel\(null\)\}\/>/)
- assert.match(loadPanel, /<IndustryLoadForm embedded item=\{item\}[^>]*load=\{props\.industryLoads\.save\}/, 'IndustryLoadForm 仍应拿到 save 引用，走它自己的两段式确认')
+ assert.match(loadPanel, /<IndustryLoadForm embedded item=\{item\}[^>]*load=\{props\.industryLoads\.save\}/, 'IndustryLoadForm 仍应拿到 save 引用，走它自己的显式核对确认')
  assert.doesNotMatch(loadPanel, /props\.industryLoads\.save\(/)
+ // 外层只留返回；标题与 eyebrow 只由 IndustryLoadForm 自己显示一次，不再重复。
+ assert.doesNotMatch(loadPanel, /market\.industry\.loadEyebrow|<h3>|css\.eyebrow/)
+ assert.match(loadPanel, /<ToolbarIconButton label=\{t\('market\.template\.backToContent'\)\} icon=\{ArrowLeft\} onClick=\{close\}\/>/)
  // 放弃草稿与「已放弃」提示随面板走，本机页与官方页都有
  assert.match(loadPanel, /props\.industryLoads\.api\.discard\(\);setLoadDiscarded\(true\)/)
  assert.match(loadPanel, /t\('recovery\.discarded'\)/)

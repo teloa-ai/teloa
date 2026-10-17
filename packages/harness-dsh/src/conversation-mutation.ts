@@ -4,6 +4,8 @@ import {WorkError} from '@teloa/contract'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {readNativePlainTextMessage,type NativePlainTextMessage} from './native-artifact-message.ts'
 import {readSessionEvents} from './session-events.ts'
+import type {Session} from '@deepseek-ai/dsh-session'
+import {readConversationInstructionIdentity,type ConversationInstructionIdentity} from './conversation-instruction-identity.ts'
 
 type ConversationBinding={ownerId:string;sessionId:string;status:'pending'|'ready'}
 type MutationSession={id:string;header:{origin?:string};inheritedEventCount:number;snapshotEvents:()=>readonly SessionEvent[];surface?:{nodes:Iterable<number>}}
@@ -13,6 +15,28 @@ type OrdinaryMutationInput={owner:string;conversation:(sessionId:string)=>Promis
 export type OrdinaryConversationMutationAuthorization={ownerId:string;sessionId:string}
 export type ConversationMutationAuthorization={ownerId:string;sessionId:string;instruction:NativePlainTextMessage}
 export type ConversationMutationInput={owner:string;conversation:(sessionId:string)=>Promise<ConversationBinding>;readTaskPolicy:TaskToolPolicyReader;agent?:{session:MutationSession};signal:AbortSignal}
+export type ConversationInstructionMutationInput=Omit<ConversationMutationInput,'agent'>&{agent?:{session:Session}}
+export type ConversationInstructionMutationAuthorization={ownerId:string;sessionId:string;instruction:ConversationInstructionIdentity}
+
+export function assertConversationInstructionMutationAuthorization(expected:ConversationInstructionMutationAuthorization|undefined,actual:ConversationInstructionMutationAuthorization):void{
+ if(!expected||expected.ownerId!==actual.ownerId||expected.sessionId!==actual.sessionId||expected.instruction.sessionId!==actual.instruction.sessionId||expected.instruction.messageId!==actual.instruction.messageId||expected.instruction.seq!==actual.instruction.seq)throw new WorkError('teloa/version-conflict','审核期间本人指令已变化，请按当前指令重新执行本次操作。')
+}
+
+/** 能力配置只核验真实用户指令身份，附件、图片和引用不代替也不妨碍本人授权。 */
+export async function authorizeConversationInstructionMutation(input:ConversationInstructionMutationInput):Promise<ConversationInstructionMutationAuthorization>{
+ if(!input.agent)throw new WorkError('teloa/not-bound','能力管理需要真实本人普通会话。')
+ const instruction=readConversationInstructionIdentity(input.agent)
+ const authorization=await authorizeOrdinaryConversationMutation(input,'能力管理')
+ const actual={...authorization,instruction:readConversationInstructionIdentity(input.agent)}
+ assertConversationInstructionMutationAuthorization({...authorization,instruction},actual)
+ return {...authorization,instruction}
+}
+
+export function conversationInstructionMutationRequestId(authorization:ConversationInstructionMutationAuthorization,toolName:string,callId:unknown):string{
+ if(typeof callId!=='string'||!callId.trim()||callId.length>512)throw new WorkError('teloa/invalid-input','能力配置需要真实稳定的工具调用身份。')
+ const digest=createHash('sha256').update(['teloa-conversation-instruction-mutation/v1',authorization.ownerId,authorization.sessionId,authorization.instruction.messageId,String(authorization.instruction.seq),toolName,callId].join('\0')).digest('hex')
+ return `${digest.slice(0,8)}-${digest.slice(8,12)}-5${digest.slice(13,16)}-a${digest.slice(17,20)}-${digest.slice(20,32)}`
+}
 
 export async function authorizeOrdinaryConversationMutation(input:OrdinaryMutationInput,label='平台配置'):Promise<OrdinaryConversationMutationAuthorization>{
  if(!input.agent)throw new WorkError('teloa/not-bound',label+'需要真实本人普通会话。')
@@ -34,14 +58,26 @@ export function hasActiveUserInstruction(session:Pick<MutationSession,'inherited
  return events.some(event=>event.seq>start&&isUserAppendEvent(event))
 }
 
-export async function authorizeConversationMutation(input:ConversationMutationInput):Promise<ConversationMutationAuthorization>{
- const authorization=await authorizeOrdinaryConversationMutation(input,'工作资料保存')
- const session=input.agent!.session
+function activeInstruction(session:MutationSession):NativePlainTextMessage{
  const events=readSessionEvents(session),turnStarts=events.filter(event=>event.type==='turn/start'),start=turnStarts.at(-1)?.seq
  if(start===undefined||start<session.inheritedEventCount)throw new WorkError('teloa/forbidden','当前会话没有可核验的活跃用户指令。')
  const instructions=events.filter((event):event is UserAppendEvent=>event.seq>start&&isUserAppendEvent(event))
  if(instructions.length!==1)throw new WorkError('teloa/forbidden','当前轮次必须且只能有一条真实用户指令。')
- const event=instructions[0]!,instruction=readNativePlainTextMessage(session,{messageId:event.data.id,seq:event.seq})
+ const event=instructions[0]!
+ return readNativePlainTextMessage(session,{messageId:event.data.id,seq:event.seq})
+}
+
+export function assertConversationMutationAuthorization(expected:ConversationMutationAuthorization|undefined,actual:ConversationMutationAuthorization):void{
+ if(!expected||expected.ownerId!==actual.ownerId||expected.sessionId!==actual.sessionId||expected.instruction.messageId!==actual.instruction.messageId||expected.instruction.seq!==actual.instruction.seq||expected.instruction.selectionHash!==actual.instruction.selectionHash)throw new WorkError('teloa/version-conflict','审核期间本人指令已变化，请按当前指令重新执行本次操作。')
+}
+
+export async function authorizeConversationMutation(input:ConversationMutationInput):Promise<ConversationMutationAuthorization>{
+ if(!input.agent)throw new WorkError('teloa/not-bound','工作资料保存需要真实本人普通会话。')
+ // 在任何归属/策略异步查询之前固定指令，等待期间不能把旧参数重新绑定到新轮次。
+ const instruction=activeInstruction(input.agent.session)
+ const authorization=await authorizeOrdinaryConversationMutation(input,'工作资料保存')
+ const actual={...authorization,instruction:activeInstruction(input.agent.session)}
+ assertConversationMutationAuthorization({...authorization,instruction},actual)
  if(input.signal.aborted)throw new WorkError('teloa/conflict','本次工作资料保存操作已取消。')
  return {...authorization,instruction}
 }

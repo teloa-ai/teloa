@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFileSync,readdirSync} from 'node:fs'
-import {localReadOnlyConnections,officialSolutionItem} from '../src/client/market-solution-presentation.ts'
+import {currentSolutionCatalog,localReadOnlyConnections,officialSolutionItem} from '../src/client/market-solution-presentation.ts'
 import {composeFromCounts,composeFromManifest,sourceConnectorMode} from '../src/client/industry-composition.ts'
 import {validateIndustryManifest} from '../src/client/industry-manifest.ts'
 import {sourceLabel} from '../src/client/market-preview.ts'
@@ -44,9 +44,15 @@ test('官方包作为问答依据：标题、简介、准备事项取自目录�
  assert.equal(item.localized?.title?.locales.en,'China workplace collaboration')
 })
 
-test('「先问问」临时带进来的官方方案不进全局搜索，也不算本人来源与待应用方案',()=>{
+test('「先问问」临时带进来的官方方案不进全局搜索与本人目录，市场不再重复解释资源流程',()=>{
  const frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
- assert.match(frame,/get market\(\)\{return marketRef\.current\.items\.filter\(item=>item\.source\.kind!=='catalog'\)/)
+ // 全局搜索与目录核验共用 searchableMarketItems，它只读 currentSolutionCatalog 的本机当前版本目录。
+ assert.match(frame,/const searchableMarketItems=\(\)=>currentSolutionCatalog\(marketRef\.current\.items\)/)
+ assert.match(frame,/get market\(\)\{return searchableMarketItems\(\)/)
+ // 真实过滤行为：来源为官方目录的临时方案不进目录，本机导入与内置来源保留且顺序不变。
+ const temporary=officialSolutionItem(entry,manifest),local={...temporary,id:'local-copy',source:{kind:'builtin' as const}}
+ assert.deepEqual(currentSolutionCatalog([temporary,local]).map(row=>row.id),['local-copy'])
+ assert.deepEqual(currentSolutionCatalog([temporary]),[])
  const page=readFileSync(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
- assert.match(page,/marketPageGuidance\(\{items:state\.items\.filter\(row=>!transientIds\.has\(row\.id\)\),intents:state\.intents\.filter\(intent=>!transientIds\.has\(intent\.itemId\)\)/)
+ assert.doesNotMatch(page, /<GuidedSetup|market\.guide\.summary/)
 })

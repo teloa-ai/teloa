@@ -9,6 +9,16 @@ import {translateMessage} from '../lib/types/client/i18n/messages.js'
 import {createRoleApi} from '../src/client/role-api.ts'
 import {createIndustryRoleApi} from '../src/client/industry-role-api.ts'
 
+test('缺少完整交付复核时提示原记录与重新交办，不泄露原始错误或诱导后台重试',()=>{
+ const error={code:'teloa/delivery-review-required',message:'秘密内部堆栈'}
+ for(const [locale,next] of [['zh-CN',/原执行记录.*核对.*重新交办/],['zh-Hant',/原執行記錄.*核對.*重新交辦/],['en',/original execution record.*review.*submit the task again/]] as const){
+  const message=localizeWorkError(locale,error)
+  assert.match(message,next)
+  assert.doesNotMatch(message,/秘密|内部堆栈|Try again later|稍后重试|稍後重試/)
+ }
+ assert.deepEqual(error,{code:'teloa/delivery-review-required',message:'秘密内部堆栈'})
+})
+
 test('稳定错误 code 映射到稳定 message key', () => {
   assert.equal(errorMessageKey('teloa/invalid-input'), 'error.invalidInput')
   assert.equal(errorMessageKey('teloa/forbidden'), 'error.forbidden')

@@ -86,7 +86,7 @@
 @media(max-width:720px){.page button{min-height:44px;min-width:44px}}
 
 .treeSearch{display:flex;flex:none;align-items:center;gap:7px;margin:0 12px 10px;padding:0 9px;min-height:36px;border:1px solid var(--teloa-border);border-radius:7px;color:var(--teloa-muted);background:var(--teloa-background)}
-.treeSearch:focus-within{outline:2px solid var(--teloa-accent);outline-offset:2px}
+.treeSearch:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .treeSearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
 @media(max-width:760px){.treeSearch{min-height:44px}.treeSearch input{font-size:var(--teloa-font-touch-input)}}
 
@@ -96,7 +96,7 @@
 .libraryHeader p{margin:8px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.6}
 .librarySearch{display:flex;align-items:center;gap:8px;padding:0 12px;min-height:38px;max-width:360px;min-width:220px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-background)}
 .librarySearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control)}
-.librarySearch:focus-within{outline:2px solid var(--teloa-accent);outline-offset:2px}
+.librarySearch:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .views{display:flex;flex-wrap:wrap;gap:4px;padding:0 0 16px;margin-bottom:18px;border-bottom:1px solid var(--teloa-border)}
 .views button{display:flex;align-items:center;gap:7px;min-height:36px;border:0;padding:7px 10px;background:transparent;border-radius:7px;color:var(--teloa-text);text-align:left;font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
 .views button[aria-current=page],.views button:hover{background:var(--teloa-subtle)}
@@ -117,7 +117,7 @@
 .documentToolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
 .unsaved{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--teloa-border);background:var(--teloa-surface);font-size:var(--teloa-font-control)}
 .unsaved p{margin:0;flex:1}
-.views button:focus-visible,.fileName:focus-visible,.favorite:focus-visible{outline:2px solid var(--teloa-accent);outline-offset:2px}
+.views button:focus-visible,.fileName:focus-visible,.favorite:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .libraryHeaderActions{display:flex;align-items:center;gap:12px;min-width:0}
 .addMenu{position:relative;flex:none}
 .addMenu>summary{display:flex;align-items:center;gap:7px;min-height:38px;padding:6px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-text);color:var(--teloa-background);font-size:var(--teloa-font-control);list-style:none;cursor:pointer}
@@ -125,4 +125,4 @@
 .addMenu>div{position:absolute;right:0;top:44px;z-index:8;display:grid;min-width:200px;padding:6px;border:1px solid var(--teloa-border);border-radius:9px;box-shadow:var(--teloa-shadow);background:var(--teloa-surface)}
 .addMenu button{display:flex;align-items:center;gap:8px;min-height:36px;padding:6px 8px;border:0;border-radius:6px;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;cursor:pointer}
 .addMenu button:hover{background:var(--teloa-subtle)}
-.addMenu summary:focus-visible,.addMenu button:focus-visible{outline:2px solid var(--teloa-accent);outline-offset:2px}
+.addMenu summary:focus-visible,.addMenu button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}

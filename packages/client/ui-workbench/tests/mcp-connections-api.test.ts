@@ -1,9 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {createManagedMcpConnectionApi} from '../src/client/mcp-connections-api.ts'
+import {createManagedMcpConnectionApi,readManagedMcpConnectionRecord} from '../src/client/mcp-connections-api.ts'
 
 const id='12345678-1234-4234-8234-123456789012',stamp='2026-09-25T00:00:00.000Z'
 const record=(status:string)=>({id,catalogId:'teloa.mcp-test',serverName:'test_conn',status,createdAt:stamp,updatedAt:stamp})
+test('连接回包明确区分工具只读与尚未提供的资源范围约束',()=>{
+ const parsed=readManagedMcpConnectionRecord({...record('connected'),sourceScopeSupport:'unsupported'})
+ assert.equal(parsed.sourceScopeSupport,'unsupported')
+ assert.throws(()=>readManagedMcpConnectionRecord({...record('connected'),sourceScopeSupport:'trusted-by-readonly'}))
+})
 
 test('受管 MCP 连接 API：readRecord 接受 pending-oauth，未知状态仍拒绝',async()=>{
  const api=(value:unknown)=>createManagedMcpConnectionApi(async()=>value)

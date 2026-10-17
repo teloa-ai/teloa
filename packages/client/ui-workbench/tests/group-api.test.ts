@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {createHash} from 'node:crypto'
 import type {MessageReference} from '@teloa/contract'
 import {createGroupApi} from '../src/client/group-api.ts'
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
@@ -17,6 +18,35 @@ function group(id:string,pinned:boolean,updatedAt=at){return {id,ownerId:'self',
 function entry(id:string,pinned=false,updatedAt=at){return {group:group(id,pinned,updatedAt),members:[{groupId:id,roleId:null,createdAt:at},{groupId:id,roleId,createdAt:at}]}}
 function message(groupId:string,rootId:string|null=null){return {id:messageId,groupId,rootId,authorId:'self' as const,text:'补充证据。',references:[{kind:'group-resource' as const,id:resourceId,version:1}],mentions:[],createdAt:at}}
 function deferred<T>(){let resolve:(value:T)=>void=()=>{},reject:(reason:unknown)=>void=()=>{};const promise=new Promise<T>((ok,bad)=>{resolve=ok;reject=bad});return {promise,resolve,reject}}
+
+test('群全文按原消息固定身份读取并重算摘要，跨群、篡改正文、伪造摘要和等待中的参数变化均不能替换原文',async()=>{
+ const text='# 原结论\n\n'+'固定证据🙂。'.repeat(2000),sha256=createHash('sha256').update(text).digest('hex'),summary={chars:text.length,sha256},body={groupId:groupA,messageId,text,...summary},calls:unknown[]=[]
+ const api=createGroupApi(async(endpoint,input)=>{calls.push([endpoint,input]);return body})
+ assert.deepEqual(await api.messageBody(groupA,messageId,summary),body)
+ assert.deepEqual(calls,[['groups/messages/body',{groupId:groupA,messageId}]])
+ for(const value of [{...body,groupId:groupB},{...body,messageId:resourceId},{...body,text:text.slice(0,-1)+'改'},{...body,sha256:'b'.repeat(64)},{...body,chars:body.chars+1},{...body,ownerId:'other'}])await assert.rejects(createGroupApi(async()=>value).messageBody(groupA,messageId,summary),{code:'teloa/source-unavailable'})
+ const wait=deferred<unknown>(),expected={...summary},reading=createGroupApi(async()=>wait.promise).messageBody(groupA,messageId,expected)
+ expected.sha256='b'.repeat(64);wait.resolve(body)
+ assert.deepEqual(await reading,body,'已发起读取沿用最初的消息身份')
+})
+
+test('群消息目录接受服务端主群位置及冻结作者，刷新缓存保留原引用且拒绝伪造作者类型',async()=>{
+ const employee={id:requestId,groupId:groupA,rootId:messageId,authorId:roleId,taskId:'77777777-7777-4777-8777-777777777777',runId:'88888888-8888-4888-8888-888888888888',text:'主群直接回复',references:[],createdAt:later,contextMode:'main',replyToMessageId:messageId,author:{name:'原岗位名',kind:'employee',version:2}}
+ const api=createGroupApi(async()=>[message(groupA),employee])
+ const saved=await api.messages(groupA)
+ assert.deepEqual(saved.items[1],employee)
+ assert.deepEqual(api.messagesSnapshot(groupA)?.items[1],employee)
+ await assert.rejects(createGroupApi(async()=>[message(groupA),{...employee,author:{...employee.author,kind:'human'}}]).messages(groupA),/群消息目录/)
+})
+
+test('群目录的真实人数来自服务端；详情人数必须与本群原成员一致，旧回包仍兼容',async()=>{
+ const value=entry(groupA),metadata={...value.group,purpose:'核查采购资料',memberCount:2}
+ const api=createGroupApi(async endpoint=>endpoint==='groups/list'?[metadata]:{...value,group:metadata})
+ assert.equal((await api.list()).items[0]?.memberCount,2)
+ assert.equal((await api.get(groupA)).group.purpose,'核查采购资料')
+ await assert.rejects(createGroupApi(async()=>({...value,group:{...metadata,memberCount:1}})).get(groupA),/群详情/)
+ assert.equal((await createGroupApi(async()=>value).get(groupA)).members.length,2)
+})
 
 test('群目录和话题消息读取，验证排序、成员、本人所有者与稳定身份',async()=>{
  const calls:{endpoint:string;payload:unknown}[]=[]
@@ -321,4 +351,18 @@ test('群消息被贴密钥闸拒收：清除恢复记录（不留原文），�
  const other=createGroupApi(async()=>{throw Object.assign(Error('拒绝'),{rejected:true,code:'teloa/invalid-input',details:{reason:'other'}})},journal,()=>requestId)
  await assert.rejects(other.send(groupA,1,'补充证据。'),/拒绝/)
  assert.ok(other.pending(),'其他原因的拒绝未声明无副作用，仍保留恢复请求')
+})
+
+test('团队创建的固定来源与协调者必须由原请求回执逐字段核对，未知保原journal；旧群change省略保持兼容',async()=>{
+ const source={kind:'industry-load' as const,loadId:resourceId,contentId:messageId,contentHash:'a'.repeat(64),mappingHash:'b'.repeat(64)}
+ const fields={name:group(groupA,false).name,scope:'SOC',announcement:'先核对证据。',rules:openGroupRules,memberRoleIds:[roleId],source,coordinatorRoleId:roleId}
+ for(const patch of [{source:{...source,loadId:groupB}},{source:{...source,contentHash:'c'.repeat(64)}},{source:{...source,mappingHash:'d'.repeat(64)}},{coordinatorRoleId:undefined}]){
+  let raw:string|null=null
+  const saved={...group(groupA,false),source,coordinatorRoleId:roleId,...patch}
+  const api=createGroupApi(async(endpoint)=>endpoint==='groups/create'?saved:{...entry(groupA),group:saved},{read:()=>raw,write:value=>{raw=value},clear:()=>{raw=null}},()=>requestId)
+  await assert.rejects(api.create(fields),/回执/);assert.ok(raw);assert.equal(api.pending()?.kind,'create');assert.deepEqual((api.pending() as any).request.fields.source,source)
+ }
+ const saved={...group(groupA,false),source,coordinatorRoleId:roleId}
+ const api=createGroupApi(async(endpoint)=>endpoint==='groups/create'?saved:{...entry(groupA),group:saved})
+ assert.equal((await api.create(fields)).group.source?.loadId,resourceId)
 })

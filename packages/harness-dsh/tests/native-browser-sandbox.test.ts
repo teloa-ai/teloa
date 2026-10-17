@@ -18,13 +18,14 @@ import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime} from '@deepseek-ai/dsh-tools'
 import {LlmRuntime, ToolCallId} from '@deepseek-ai/dsh-llm'
 import {patchedNativePackage} from './fixtures/native-patched-package.ts'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 
 type Launch = {mode:'launch';headless:boolean;executablePath?:string;chromiumSandbox?:boolean;toolCallTimeoutMs?:number}
 type Attach = {mode:'attach';endpoint:string;toolCallTimeoutMs?:number}
 type Provider = {Config:((value:unknown)=>Launch|Attach)&NonNullable<Plugin.Object<Launch|Attach>['Config']>;apply:(ctx:Context,config:Launch|Attach)=>void;inject:string[];name:string;chromiumSandboxVersion:1}
 const anchor=fileURLToPath(new URL('../../native-browser/package.json',import.meta.url))
 const originalProvider=createRequire(anchor).resolve('@deepseek-ai/dsh-experimental-browser-use-playwright-mcp/package.json')
-const basename=(kind:string)=>'dsh-experimental-browser-use-'+kind+'-0.2.1-alpha.1-chromium-sandbox'
+const basename=(kind:string)=>'dsh-experimental-browser-use-'+kind+'-0.2.1-rc.2-chromium-sandbox'
 
 async function packages(t:Parameters<typeof patchedNativePackage>[0]){
  const runtime=await patchedNativePackage(t,{packageName:'@deepseek-ai/dsh-experimental-browser-use-runtime',compatBasename:basename('runtime'),packageAnchor:originalProvider})
@@ -64,6 +65,7 @@ test('实际官方 provider 经原 MCP 生命周期启动：仅 launch true 传�
  t.after(()=>rm(workspace,{recursive:true,force:true}))
  const browser=await import(pathToFileURL(createRequire(anchor).resolve('@deepseek-ai/dsh-browser-use')).href)
  for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry,browser.default])await ctx.plugin(plugin)
+ await installNativeWorkingDirectory(ctx,workspace)
  await ctx.plugin(AgentLoop,{agents:[]})
  const cli=join(dirname(createRequire(originalProvider).resolve('@playwright/mcp/package.json')),'cli.js')
  const mcp=JSON.parse(await readFile(join(dirname(cli),'package.json'),'utf8'))
@@ -98,6 +100,7 @@ test('sandbox true 的实际官方 MCP 能启动已安装 Chromium 并读取隔�
  const address=server.address();assert.ok(address&&typeof address==='object')
  const browser=await import(pathToFileURL(createRequire(anchor).resolve('@deepseek-ai/dsh-browser-use')).href)
  for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry,browser.default])await ctx.plugin(plugin)
+ await installNativeWorkingDirectory(ctx,workspace)
  await ctx.plugin(AgentLoop,{agents:[]})
  await ctx.plugin(provider.namespace,provider.namespace.Config({mode:'launch',headless:true,executablePath:executable,chromiumSandbox:true}))
  const handle=await ctx.agents.create({sessionId:SessionId('sandbox-live'),meta:{cwd:workspace}})

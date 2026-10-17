@@ -65,3 +65,20 @@ test('首页选择也按三方比较，双方修改不同首页须本人明确�
  assert.equal(mergeBusinessDashboardResourceUpgrade({baseline,current,candidate,choices:{'metadata:homePageId':'keep-local'}}).configuration?.homePageId,'alerts')
  assert.equal(mergeBusinessDashboardResourceUpgrade({baseline,current,candidate,choices:{'metadata:homePageId':'use-incoming'}}).configuration?.homePageId,'incoming')
 })
+test('模板升级影响报告统计真实记录，字段删除、类型和状态规则变更均标记阻断',async()=>{
+ const module=await import('../src/work/business-dashboard-resource-upgrade.ts')
+ assert.equal(typeof module.inspectBusinessTemplateUpgradeImpact,'function')
+ const current=dashboardBody().configuration,record={type:'alert',id:'one',fields:[{label:'状态',value:'待核对'}]}
+ const candidate=structuredClone(current)
+ const object=candidate.definitions.find(row=>row.kind==='object-type')!
+ if(object.kind!=='object-type')throw Error('fixture')
+ const field=object.definition.fields[0]!
+ if(!('values' in field))throw Error('fixture enum')
+ field.values=['已处理']
+ const impact=module.inspectBusinessTemplateUpgradeImpact({current,candidate,records:[record,record]})
+ assert.equal(impact.blocked,true);assert.equal(impact.affectedRecords,1)
+ assert.ok(impact.fields.some(row=>row.reason==='changed-rule'))
+ assert.equal(module.inspectBusinessTemplateUpgradeImpact({current,candidate:current,records:[record]}).blocked,false)
+ object.definition.fields=[]
+ assert.ok(module.inspectBusinessTemplateUpgradeImpact({current,candidate,records:[record]}).fields.some(row=>row.reason==='removed-field'))
+})

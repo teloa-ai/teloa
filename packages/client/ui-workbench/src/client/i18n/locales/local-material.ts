@@ -9,7 +9,7 @@ const rows=[
  ['preview','本机文件 · 只读预览','本機檔案 · 唯讀預覽','Local file · read-only preview'],
  ['previewBoundary','正文来自本人已登记的本机原件，只读取所选来源版本。请在工作文件夹中编辑原文件。','正文來自本人已登記的本機原件，只讀取所選來源版本。請在工作資料夾中編輯原檔案。','This preview reads the selected version of your registered local file. Edit the original file in your working folder.'],
  ['changed','文件或资料版本已变化，请刷新资料目录后重新选择。此处不会替换原版本正文。','檔案或資料版本已變更，請重新整理資料目錄後再次選擇。此處不會取代原版本正文。','The file or library record has changed. Refresh the library and select it again. This preview does not replace the original version.'],
- ['unavailable','当前宿主暂不能预览此本机文件，请检查连接后重试。','目前主機暫時無法預覽此本機檔案，請檢查連線後再試。','The current host cannot preview this local file. Check the connection and try again.'],
+ ['unavailable','当前暂时无法预览此本机文件，请检查连接后重试。','目前暫時無法預覽此本機檔案，請檢查連線後再試。','This local file cannot be previewed right now. Check the connection and try again.'],
  ['retry','重新读取原版本','重新讀取原版本','Retry selected version'],
  ['withdrawn','此资料已撤回，保留来源记录；正文不再读取。','此資料已撤回，保留來源記錄；不再讀取正文。','This library item has been withdrawn. Its source record is retained; its content is no longer read.'],
  ['fileVersion','文件版本','檔案版本','File version'],

@@ -8,10 +8,11 @@ import {readSessionEvents} from './session-events.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 import type {TaskRunRuntimeLinks,TaskRunRuntimeLink} from '@teloa/backend'
 import type {GoalObservationContext} from '@teloa/contract'
+import type {} from './native-input-provider.ts'
 type TaskRunJobLink=Extract<TaskRunRuntimeLink,{kind:'job'}>
 
 type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
-type TextBinding=Binding&Partial<Pick<TaskRun,'allowedTools'|'skills'|'stopRequestedAt'|'groupContext'|'flowId'|'subagents'>>
+type TextBinding=Binding&Partial<Pick<TaskRun,'allowedTools'|'skills'|'stopRequestedAt'|'groupContext'|'flowId'|'subagents'|'executor'>>
 const live=(status:JobStatus)=>status==='running'||status==='stopping'
 /** 同一宿主的 root 与 Team 适配共享世代；进程重启才变化。 */
 export const taskRunRuntimeId=randomUUID()
@@ -21,7 +22,11 @@ export function isTextOnlyTaskRun(run:TextBinding):boolean{
 }
 /** 这里只提供旧世代纯文本候选；完整原生完成轮仍由驱动核验，不能据 owner 单独收口。 */
 export function isOwnerOnlyTextRun(run:TextBinding,rows:readonly TaskRunRuntimeLink[],runtimeId:string=taskRunRuntimeId):boolean{
- if(!isTextOnlyTaskRun(run)||!Array.isArray(run.subagents)||run.subagents.length!==0||rows.length!==1)return false
+ return isTextOnlyTaskRun(run)&&onlyOldOwner(run,rows,runtimeId)
+}
+/** 这里只证明没有其他持久后台关联，复核正文及每个实际工具调用仍由驱动严格核验。 */
+function onlyOldOwner(run:TextBinding,rows:readonly TaskRunRuntimeLink[],runtimeId:string):boolean{
+ if(!Array.isArray(run.subagents)||run.subagents.length!==0||rows.length!==1)return false
  const row=rows[0]!
  return row.kind==='job'&&row.payload.record==='owner'&&row.runId===run.id&&row.sessionId===run.sessionId&&row.payload.requestId===run.nativeRequestId&&row.payload.runtimeId!==runtimeId&&row.nativeId==='owner:'+row.payload.runtimeId+':'+run.sessionId
 }
@@ -74,7 +79,21 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
    bind(run)
   },
   dispose,
-  async state(run:TextBinding):Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:true}>{
+  /** 只等待已观察到的原登记写入；不扫描、消费通知或产生新的后台状态。 */
+  async flush(sessionId:string):Promise<void>{
+   await pending.get(sessionId)
+   if(failed.has(sessionId))throw new WorkError('teloa/storage-corrupt','后台工作归属记录未写入，请核对执行。')
+  },
+  /** 仅供零副作用失败轮的显式 retry 复核；精确 owner 登记不是 job，不能据此改变全局完成状态。 */
+  async retryOwnerOnly(run:Binding):Promise<boolean>{
+   await pending.get(run.sessionId)
+   if(failed.has(run.sessionId)||ctx.jobs.list(SessionId(run.sessionId)).some(job=>job.owner===run.sessionId))return false
+   const input=ctx.get('teloaNativeInput')?.input
+   if(input?.hasPendingJobCompletion(run.sessionId)||input?.hasCancelledJobCompletion(run.sessionId))return false
+   const rows=await links.list({runId:run.id}),row=rows[0]
+   return rows.length===1&&row?.kind==='job'&&row.payload.record==='owner'&&row.runId===run.id&&row.sessionId===run.sessionId&&row.payload.requestId===run.nativeRequestId&&row.nativeId==='owner:'+row.payload.runtimeId+':'+run.sessionId
+  },
+  async state(run:TextBinding):Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:true;reviewOnly?:true;cancelled?:true}>{
    bind(run)
    const agent=ctx.agents.get(SessionId(run.sessionId))
    const jobs=ctx.jobs.list(SessionId(run.sessionId)).filter(job=>job.owner===run.sessionId)
@@ -82,11 +101,18 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
    await pending.get(run.sessionId)
    if(failed.has(run.sessionId))throw new WorkError('teloa/storage-corrupt','后台工作归属记录未写入，请核对执行。')
    const {all,rows}=await journal(run)
-   const interrupted=rows.some(row=>{const payload=row.payload;return payload.runtimeId!==runtimeId||(payload.record==='job'&&live(payload.status)&&!jobs.some(job=>job.id===payload.jobId))})
-   return {outstanding:jobs.some(job=>live(job.status)&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))||agent?.status==='running'||(agent?.inbox.nextTurn.length??0)>0||(agent?.inbox.nextStep.length??0)>0,interrupted,...(jobs.length===0&&isOwnerOnlyTextRun(run,all,runtimeId)?{ownerOnly:true as const}:{})}
+   const external=all.filter(row=>row.kind==='external')
+   if(external.some(row=>row.runId!==run.id||row.sessionId!==run.sessionId||row.payload.requestId!==run.nativeRequestId))throw new WorkError('teloa/storage-corrupt','外部工作归属记录与执行不一致。')
+   const externalLive=external.some(row=>row.payload.runtimeId===runtimeId&&['reserved','running','stopping'].includes(row.payload.status))
+   const interrupted=rows.some(row=>{const payload=row.payload;return payload.runtimeId!==runtimeId||(payload.record==='job'&&live(payload.status)&&!jobs.some(job=>job.id===payload.jobId))})||external.some(row=>row.payload.status==='unknown'||row.payload.runtimeId!==runtimeId&&['reserved','running','stopping'].includes(row.payload.status))
+   const completionPending=ctx.get('teloaNativeInput')?.input.hasPendingJobCompletion(run.sessionId)??false
+   const stoppedAt=typeof run.stopRequestedAt==='string'?Date.parse(run.stopRequestedAt):NaN
+   const cancelled=(typeof run.stopRequestedAt==='string'&&ctx.get('teloaNativeInput')?.input.hasCancelledJobCompletion(run.sessionId)===true)||jobs.some(job=>job.status==='killed'&&job.finishedAt!==undefined&&job.finishedAt>=stoppedAt&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))
+   const reviewOnly=jobs.length===0&&run.executor?.kind==='owner'&&run.stopRequestedAt===null&&run.groupContext===undefined&&run.flowId===undefined&&Array.isArray(run.allowedTools)&&Array.isArray(run.skills)&&onlyOldOwner(run,all,runtimeId)
+   return {outstanding:externalLive||completionPending||jobs.some(job=>live(job.status)&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))||agent?.status==='running'||(agent?.inbox.nextTurn.length??0)>0||(agent?.inbox.nextStep.length??0)>0,interrupted,...(cancelled?{cancelled:true as const}:{}),...(jobs.length===0&&isOwnerOnlyTextRun(run,all,runtimeId)?{ownerOnly:true as const}:{}),...(reviewOnly?{reviewOnly:true as const}:{})}
   },
   async cancel(run:Binding,signal:AbortSignal):Promise<void>{
-   bind(run);signal.throwIfAborted();await pending.get(run.sessionId)
+   bind(run);signal.throwIfAborted();ctx.get('teloaNativeInput')?.input.cancelJobCompletions(run.sessionId);await pending.get(run.sessionId)
    const {rows}=await journal(run)
    for(const job of ctx.jobs.list(SessionId(run.sessionId))){
     if(job.owner!==run.sessionId||!live(job.status)||!rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))continue

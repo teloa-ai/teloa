@@ -1,5 +1,6 @@
 import {industryResourceModelDependencies,readIndustryModelObservations,type IndustryModelObservation,type IndustryModelDependency,readIndustryUpdateChoices,type IndustryUpdateChoices} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
+import {industryResourceKinds} from './industry-manifest.ts'
 type Call=(method:string,payload:unknown)=>Promise<unknown>
 export type IndustryLoadStatus='active'|'unloaded'|'superseded'
 /** 继任加载的升级血缘：被替代的加载、它的模板版本，以及当时固定下来的升级计划。 */
@@ -12,7 +13,7 @@ export type IndustryLoadUpgradeResult={superseded:IndustryLoadRecord;successor:I
 /** 卸载被拒绝时宿主回报的在途事实，界面据此列出先要收尾的执行。 */
 export type IndustryLoadUnloadBlocker={kind:'plan-occurrence'|'task-run';id:string}
 export type IndustryLoadJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
-const kinds=['role','knowledge','skill','mcp','plugin','data-source','execution-tool','work-template','plan','object-type','business-view','business-action'] as const
+const kinds=industryResourceKinds
 const statuses=['pending-adapter','skipped','instantiated','active','detached'] as const
 const loadStatuses=['active','unloaded','superseded'] as const
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -157,8 +158,8 @@ export function createIndustryLoadApi(call:Call,journal?:IndustryLoadJournal,unl
   async get(loadId:string){if(!uuid(loadId))throw Error('行业模板加载身份不正确。');const result=record(await call('industry-loads/get',{loadId}));if(result.id!==loadId)throw Error('行业模板加载响应与目标身份不一致。');return result},
   /** 准备就绪清单：只提交加载身份。 */
   async readiness(loadId:string){if(!uuid(loadId))throw Error('行业模板加载身份不正确。');const result=readinessRecord(await call('industry-loads/readiness',{loadId}));if(result.loadId!==loadId.toLowerCase())throw Error('准备清单与目标加载不一致。');return result},
-  /** 一键准备：只提交加载身份与本人确认过的摘要；不传 requestId。 */
-  async prepare(loadId:string,expectedDigest:string){if(!uuid(loadId)||!hash(expectedDigest))throw Error('准备请求参数不正确。');const result=prepareReceipt(await call('industry-loads/prepare',{loadId,expectedDigest}));if(result.loadId!==loadId.toLowerCase())throw Error('准备回执与目标加载不一致。');return result},
+  /** 一键准备：只提交加载身份与本人确认过的摘要；不传 requestId。`activate:false` 只在分享接收使用：建好员工后保持暂停。 */
+  async prepare(loadId:string,expectedDigest:string,options?:{activate:false}){if(!uuid(loadId)||!hash(expectedDigest))throw Error('准备请求参数不正确。');const result=prepareReceipt(await call('industry-loads/prepare',{loadId,expectedDigest,...(options?.activate===false?{activate:false}:{})}));if(result.loadId!==loadId.toLowerCase())throw Error('准备回执与目标加载不一致。');return result},
   async list(includeUnloaded?:boolean){const response=await call('industry-loads/list',includeUnloaded===true?{includeUnloaded:true}:{});let value:Record<string,unknown>;try{value=exact(response,['items']);if(!Array.isArray(value.items))throw Error()}catch{throw Error('行业模板加载目录格式不正确。')}const items=value.items.map(record);if(new Set(items.map(item=>item.id)).size!==items.length)throw Error('行业模板加载目录身份重复。');/** 同一空间下的多个加载各自带自己的业务范围标签，`scope` 因此不参与空间现状的一致性核对。 */
   const spaces=new Map<string,string>();for(const item of items){const snapshot=JSON.stringify({id:item.space.id,name:item.space.name,version:item.space.version}),previous=spaces.get(item.space.id);if(previous&&previous!==snapshot)throw Error('行业模板加载目录中的空间现状不一致。');spaces.set(item.space.id,snapshot)}return items},
  }

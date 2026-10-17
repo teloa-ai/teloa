@@ -1,11 +1,11 @@
 import type {Pool} from 'pg'
-import {WorkError,isRecord} from '@teloa/contract'
+import {WorkError,isRecord,redactSecrets} from '@teloa/contract'
 
 import {pendingRequestEndpoints,isPendingRequestEndpoint,type PendingRequestEndpoint} from '@teloa/contract'
 export {pendingRequestEndpoints,isPendingRequestEndpoint,type PendingRequestEndpoint} from '@teloa/contract'
 
 type RecoveryEndpoint=PendingRequestEndpoint|'market-content/import'
-export type PendingRequest={requestId:string;endpoint:RecoveryEndpoint;createdAt:string;updatedAt:string;lastErrorCode?:string}
+export type PendingRequest={requestId:string;endpoint:RecoveryEndpoint;createdAt:string;updatedAt:string;lastErrorCode?:string;summary?:string}
 export type PendingRequestRecovery=PendingRequest&{payload:Record<string,unknown>}
 
 // 只读兼容升级前已冻结的市场上传；reserve 仍只认共享白名单，不再复制新上传正文。
@@ -42,7 +42,23 @@ function safePayload(value:unknown):Record<string,unknown>{
 function read(row:Record<string,unknown>):PendingRequest{
  if(!uuid(row.request_id)||!endpointSet.has(String(row.endpoint)))throw new WorkError('teloa/storage-corrupt','待恢复请求目录已损坏。')
  if(row.last_error_code!==null&&typeof row.last_error_code!=='string')throw new WorkError('teloa/storage-corrupt','待恢复请求目录已损坏。')
- return {requestId:String(row.request_id).toLowerCase(),endpoint:row.endpoint as RecoveryEndpoint,createdAt:storedStamp(row.created_at),updatedAt:storedStamp(row.updated_at),...(typeof row.last_error_code==='string'?{lastErrorCode:row.last_error_code}:{})}
+ const summary=requestSummary(row.request_spec)
+ return {requestId:String(row.request_id).toLowerCase(),endpoint:row.endpoint as RecoveryEndpoint,createdAt:storedStamp(row.created_at),updatedAt:storedStamp(row.updated_at),...(typeof row.last_error_code==='string'?{lastErrorCode:row.last_error_code}:{}),...(summary?{summary}:{})}
+}
+
+function requestSummary(value:unknown):string|undefined{
+ if(!isRecord(value))return
+ for(const source of [value,...['fields','content','definition','source'].map(key=>isRecord(value[key])?value[key]:undefined)]){
+  if(!source)continue
+  for(const key of ['title','name','goal','text','reason'])if(typeof source[key]==='string'&&source[key].trim())return Array.from(redactSecrets(source[key]).replace(/\s+/gu,' ').trim()).slice(0,120).join('')
+ }
+}
+
+function previewValue(value:unknown):unknown{
+ if(typeof value==='string')return redactSecrets(value)
+ if(Array.isArray(value))return value.map(previewValue)
+ if(isRecord(value))return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,previewValue(item)]))
+ return value
 }
 
 
@@ -107,7 +123,7 @@ export class PendingRequestService{
   await this.pool.query('update teloa_pending_request_registry set state=$3,last_error_code=$4,updated_at=$5 where owner_id=$1 and request_id=$2 and state=\'pending\'',[ownerId,requestId.toLowerCase(),state,code??null,now])
  }
  async list(ownerId:string):Promise<PendingRequest[]>{
-  const rows=(await this.pool.query('select request_id,endpoint,created_at,updated_at,last_error_code from teloa_pending_request_registry where owner_id=$1 and state=\'pending\' order by updated_at desc,request_id',[ownerId])).rows
+  const rows=(await this.pool.query('select request_id,endpoint,request_spec,created_at,updated_at,last_error_code from teloa_pending_request_registry where owner_id=$1 and state=\'pending\' order by updated_at desc,request_id',[ownerId])).rows
   return rows.map(row=>read(row as Record<string,unknown>))
  }
  async readForRecovery(ownerId:string,requestId:string):Promise<PendingRequestRecovery>{
@@ -117,5 +133,10 @@ export class PendingRequestService{
   const base=read(row as Record<string,unknown>),payload=safePayload(row.request_spec)
   if(payload.requestId!==base.requestId)throw new WorkError('teloa/storage-corrupt','待恢复请求身份已损坏。')
   return {...base,payload}
+ }
+ /** 查看冻结的原请求，不重放、不标记结果、不收讫确认；只向本人浏览器提供脱敏展示副本。 */
+ async preview(ownerId:string,requestId:string):Promise<PendingRequestRecovery>{
+  const request=await this.readForRecovery(ownerId,requestId)
+  return {...request,payload:previewValue(request.payload) as Record<string,unknown>}
  }
 }

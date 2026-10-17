@@ -23,7 +23,7 @@ test('本人普通 cold user 根从真实 JSONL/PG 恢复；缺领养、受管�
  await initializeConversationWork(f.pool);await initializeTaskRunRuntimeLinks(f.pool);await initializeTaskRunGoals(f.pool)
  const kernel=await nativeProviderKernel(t);await kernel.ctx.plugin(kernel.loopPackage.AgentLoop,{agents:[]})
  const root=await mkdtemp(join(tmpdir(),'teloa-ordinary-restore-'));t.after(()=>rm(root,{recursive:true,force:true}))
- await kernel.ctx.plugin(kernel.persistencePackage.default,{root:join(root,'history'),compression:'none'})
+ await kernel.ctx.plugin(kernel.persistencePackage,{root:join(root,'history'),compression:'none'})
  const {owner,role,taskId}=await roleFixture(f.pool,'employee'),id=SessionId('ordinary-main'),messages=[1,2].map(i=>createUserMessage({source:{kind:'user',rpcId:'ordinary-'+i},content:[{type:'text',text:'本人原始待办 '+i}]}))
  const events:SessionEvent[]=messages.map((message,i)=>({type:'agent/inbox/spliced',seq:SessionSeq(i),time:i+1,data:{target:'next-turn',start:i,removedCount:0,inserted:[message]}})),session=kernel.sessionPackage.Session.create(id,events,kernel.sessionPackage.Session.create(id).header,kernel.sessionPackage.SessionLogOffset(0))
  const writer=await kernel.ctx.sessionPersistence.create(session.header,{inheritedEventCount:kernel.sessionPackage.SessionLogOffset(0)});await writer.append(session.snapshotEvents());await writer.flush();await writer.close()

@@ -156,8 +156,8 @@ test('自授权集加入这一名之后，四条装配期断言仍全部通过',
 const wiring=await readFile(new URL('../src/index.ts',import.meta.url),'utf8'),selfAuthorizedSource=await readFile(new URL('../src/self-authorized-tools.ts',import.meta.url),'utf8')
 
 test('装配：自授权集在贴回工具之后追加本工具，工具名只以常量进入装配',()=>{
- assert.equal(selfAuthorizedSource.includes('groupAttachToolName,groupReactToolName]'),true)
- assert.equal(wiring.includes('[...selfAuthorizedToolNames],async(sessionId,signal)=>{'),true)
+ assert.match(selfAuthorizedSource,/groupAttachToolName,groupReactToolName(?:,|\])/)
+ assert.equal(wiring.includes('[...selfAuthorizedToolNames],readTaskBusinessBinding,subagentDelegation,'),true)
  assert.equal(wiring.includes(`'${groupReactToolName}'`),false);assert.equal(selfAuthorizedSource.includes(`'${groupReactToolName}'`),false)
  assert.equal(wiring.includes('registerGroupReactTool(toolRegistrationContext,{'),true)
 })
@@ -173,7 +173,7 @@ test('装配：三个端口各自接线，requestId 由确定性派生算出而�
 test('装配：群 RPC 的提供方换成组合对象，三条新端点各接自己的服务',()=>{
  assert.match(wiring,/reactions:\(actor,input\)=>reactions\.list\(actor,input\),toggleReaction:\(actor,input\)=>reactions\.toggle\(actor,input\),routing:\(actor,input\)=>routing\.list\(actor,input\)/)
  // 既有十个仍全部落在 CollaborationService 上。
- assert.match(wiring,/const collaboration=new CollaborationService\(pool,identity\)/)
+ assert.match(wiring,/const collaboration=new CollaborationService\(pool,identity,groupRoutingPersistence\)/)
  for(const method of ['list','get','create','change','messages','resources','resource','saveResource','withdrawResource'])assert.ok(wiring.includes(`${method}:(actor,input)=>collaboration.${method}(actor,input)`),`缺 collaboration.${method} 的接线`)
  // `send` 多包一层「发完过一次路由」（T9 的触发点），写入本身仍然只由 CollaborationService 做。
  assert.match(wiring,/send:async\(actor,input\)=>\{\n\s+const message=await collaboration\.send\(actor,input\)/)

@@ -3,13 +3,14 @@ import test from 'node:test'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
 import {readHomeWorkStatus,changeHomeWorkStatus} from '../src/client/home-work-status.ts'
+import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
 const nodes=(node:any):any[]=>node&&typeof node==='object'&&node.props?[node,...node.children.flatMap(nodes)]:[]
 const text=(node:any):string=>typeof node==='string'?node:node?.children?.map(text).join('')??''
 function statusCard(){
  const source=readFileSync(new URL('../src/client/HomeWorkRequestCard.tsx',import.meta.url),'utf8')
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
- const react={createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children:children.flat(Infinity)}),useState:(initial:any)=>[initial,()=>{}],useEffect:()=>{}}
- const modules:any={react,'./home-work-status.js':{readHomeWorkStatus,changeHomeWorkStatus},'./business-scope-context.js':{useBusinessScopes:()=>({SOC:'安全运营'})},'./i18n/provider.js':{useI18n:()=>({locale:'zh-CN'})},'./i18n/errors.js':{localizeWorkError:(_:any,error:Error)=>error.message}}
+ const react={createElement:(type:any,props:any,...children:any[]):any=>typeof type==='function'?type({...props,children:children.flat(Infinity)}):({type,props:props??{},children:children.flat(Infinity)}),useState:(initial:any)=>[initial,()=>{}],useEffect:()=>{}}
+ const modules:any={react,'lucide-react':{RefreshCw:(props:any)=>react.createElement('svg',props)},'./ToolbarIconButton.js':{ToolbarIconButton:toolbarIconComponent(react)},'./home-work-status.js':{readHomeWorkStatus,changeHomeWorkStatus},'./business-scope-context.js':{useBusinessScopes:()=>({SOC:'安全运营'})},'./i18n/provider.js':{useI18n:()=>({locale:'zh-CN'})},'./i18n/errors.js':{localizeWorkError:(_:any,error:Error)=>error.message}}
  const exports:any={};new Function('require','exports','React',js)((id:string)=>modules[id]??{default:{}},exports,react)
  return exports.HomeWorkStatusCard as (props:any)=>any
 }
@@ -24,6 +25,17 @@ test('真实工具进度卡打开回包任务、显示部分失败，并把停�
  button('真实任务').props.onClick();assert.deepEqual(opened,['actual-task'])
  button('停止剩余工作').props.onClick();await new Promise(resolve=>setImmediate(resolve))
  assert.deepEqual(calls,[['work-requests/stop',{sessionId:'source',requestId:'same'}]])
+ assert.deepEqual(changed,[initial])
+})
+
+test('进度刷新用具名图标，仍只读取原请求，不启停工作',async()=>{
+ const initial=readHomeWorkStatus({sessionId:'source',requestId:'same',title:'分工核查',scope:'SOC',stoppedAt:null,members:[{roleId:'a',name:'同事甲',scope:'SOC',status:'waiting'}]},'source')
+ const calls:any[]=[],changed:any[]=[]
+ const view=statusCard()({initial,onChange:(row:any)=>changed.push(row),openTask:()=>assert.fail('刷新不能跳转任务'),call:async(endpoint:string,payload:any)=>{calls.push([endpoint,payload]);return initial}})
+ const refresh=nodes(view).find(node=>node.type==='button'&&node.props['aria-label']==='刷新进度')
+ assert.ok(refresh);assert.equal(refresh.props.title,'刷新进度');assert.equal(text(refresh),'');assert.equal(refresh.props.disabled,false)
+ refresh.props.onClick();await new Promise(resolve=>setImmediate(resolve))
+ assert.deepEqual(calls,[['work-requests/status',{sessionId:'source',requestId:'same'}]])
  assert.deepEqual(changed,[initial])
 })
 test('确定未启动的岗位变化隐藏原请求重试，保留打开原任务入口；其他失败仍可重试',()=>{

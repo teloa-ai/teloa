@@ -1,5 +1,7 @@
+import {isDeepStrictEqual} from 'node:util'
 import {createHash,randomUUID} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
+import {registeredBusinessSnapshotSources} from './business-snapshot-source.ts'
 import {WorkError,isBusinessScopeKey,businessObjectReference,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,readBusinessRecordList,readBusinessRecordReceipt,readBusinessRecordBatch,readBusinessRichFieldValue,type BusinessRecordBatchResult,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessDataPage,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive,type BusinessRecordTarget} from '@teloa/contract'
 import {readBusinessObjectSnapshot,businessObjectSnapshotHash} from './business-data.ts'
 import type {BusinessDefinitionSourceReader} from './business-definition-source.ts'
@@ -9,8 +11,12 @@ import {assertBusinessRecordFieldValue,assertBusinessRecordUniqueState} from './
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {hasBusinessRecordUniqueConstraints,lockBusinessRecordTypes,readBusinessRecordConstraintState} from './business-record-constraints.ts'
 import {businessRecordSchemaFingerprint,type BusinessRecordBatchDefinitionGuard} from './business-record-schema.ts'
+import type {BusinessRecordBatchPreview,BusinessRecordBatchDefinitionGuardSet} from '@teloa/contract'
+import {markBusinessDataChanged} from './business-data.ts'
+import type {BusinessWorkEventFacts,BusinessWorkEventProducers} from './business-work-event-source.ts'
+import type {BusinessWorkSourceRef} from '@teloa/contract'
 type Actor={ownerId:string;scopeIds:string[]}
-type Dependencies={definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>;warehouse:Pick<BusinessWarehouseService,'assertQuota'|'tombstone'>;references:Pick<BusinessSnapshotReferenceService,'pinInTransaction'>}
+type Dependencies={definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>;warehouse:Pick<BusinessWarehouseService,'assertQuota'|'tombstone'>;references:Pick<BusinessSnapshotReferenceService,'pinInTransaction'>;events?:Pick<BusinessWorkEventProducers,'object'>}
 type Head={source_id:string;current_version:number;created_at:Date}
 type SnapshotRow={object_version:number;source_id:string;snapshot_hash:string;snapshot:unknown}
 type Operation='create'|'edit'|'archive'
@@ -35,6 +41,8 @@ function authorize(actor:Actor,scope?:string){
  if(!actor||typeof actor.ownerId!=='string'||!actor.ownerId.trim()||actor.ownerId!==actor.ownerId.trim()||actor.ownerId.length>128||/[\x00-\x1f\x7f]/.test(actor.ownerId)||!Array.isArray(actor.scopeIds)||new Set(actor.scopeIds).size!==actor.scopeIds.length||actor.scopeIds.some(s=>!isBusinessScopeKey(s))||(scope!==undefined&&!actor.scopeIds.includes(scope)))throw new WorkError('teloa/forbidden','当前主体无权访问此业务范围。')
 }
 function reference(item:BusinessObjectSnapshot):BusinessObjectReference{return {scope:item.scope,type:item.type,id:item.id,version:item.version,snapshotHash:item.snapshotHash}}
+const eventContent=(value:Pick<BusinessObjectSnapshot,'title'|'summary'|'fields'|'deletedAt'>)=>[value.title,value.summary,value.fields,value.deletedAt??null]
+const maxEventNoopVersions=100
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
 function childRequest(requestId:string,index:number):string{
  const bytes=createHash('sha256').update(JSON.stringify(['teloa.business-record-batch-child/v1',requestId,index])).digest().subarray(0,16)
@@ -72,18 +80,35 @@ export class BusinessRecordService{
  private readonly identity:{now:()=>string}
  private readonly dependencies:Dependencies
  constructor(pool:Pool,identity:{now:()=>string},dependencies:Dependencies){this.pool=pool;this.identity=identity;this.dependencies=dependencies}
+ async workEventSourceInTransaction(db:PoolClient,owner:string,source:Extract<BusinessWorkSourceRef,{kind:'business-object'}>,version?:string):Promise<BusinessWorkEventFacts>{
+  const actor={ownerId:owner,scopeIds:[source.scope]};authorize(actor,source.scope)
+  await lockBusinessConfiguration(db,owner,source.scope,'shared')
+  const basis=await this.definitionBasis(db,actor,source),definition=basis.definition,head=await this.head(db,actor,source,definition.sourceId,true)
+  const fixed=version===undefined?head.current_version:Number(version)
+  if(!Number.isSafeInteger(fixed)||fixed<1||String(fixed)!==(version??String(fixed))||fixed>head.current_version)throw new WorkError('teloa/version-conflict','业务记录版本不匹配。')
+  if(head.current_version-fixed>maxEventNoopVersions)throw new WorkError('teloa/source-unavailable','业务事件连续版本超过可核对范围，请重新准备。')
+  const rows=(await db.query('select object_version,source_id,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version between $5 and $6 order by object_version',[owner,source.scope,source.type,source.id,fixed,head.current_version])).rows as SnapshotRow[]
+  if(rows.length!==head.current_version-fixed+1)throw new WorkError('teloa/source-unavailable','业务事件连续历史已不可用。')
+  const snapshots=rows.map((row,index)=>this.readSnapshot(row,{...source,version:fixed+index},definition.sourceId)),object=snapshots[0]!
+  if(snapshots.some(value=>!isDeepStrictEqual(eventContent(value),eventContent(object))))throw new WorkError('teloa/version-conflict','业务记录中间已有实质变更，请基于当前版本重新准备。')
+  return {sourceVersion:String(object.version),basisHash:object.snapshotHash,active:object.deletedAt===undefined,data:{object,definitionHash:businessRecordSchemaFingerprint(definition),configuration:basis.configuration}}
+ }
+
  private async transaction<T>(write:boolean,run:(db:PoolClient)=>Promise<T>):Promise<T>{
   const db=await this.pool.connect()
   try{await db.query(write?'begin':'begin isolation level repeatable read read only');const result=await run(db);await db.query('commit');return result}
   catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
- private async definition(db:PoolClient,actor:Actor,target:BusinessRecordTarget){
+ private async definitionBasis(db:PoolClient,actor:Actor,target:BusinessRecordTarget){
   const reader=this.dependencies.definitions
   const bundles=reader.forScopeVersioned?await reader.forScopeVersioned(db,actor.ownerId,target.scope):await reader.forScope(db,actor.ownerId,target.scope)
   const matches=bundles.flatMap(bundle=>bundle.objectTypes.filter(row=>row.definition.id===target.type).map(row=>({bundle,definition:row.definition})))
   if(matches.length!==1||matches[0]!.bundle.origin.kind!=='local-configuration'||!matches[0]!.bundle.sources.has(matches[0]!.definition.sourceId))throw invalid()
-  return matches[0]!.definition
+  const {definition,bundle}=matches[0]!
+  if(bundle.origin.kind!=='local-configuration')throw invalid()
+  return {definition,configuration:{version:bundle.origin.configurationVersion,hash:bundle.origin.configurationHash}}
  }
+ private async definition(db:PoolClient,actor:Actor,target:BusinessRecordTarget):Promise<BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2>{return (await this.definitionBasis(db,actor,target)).definition}
  private async head(db:PoolClient,actor:Actor,target:BusinessRecordTarget&{id:string},sourceId:string,lock=false):Promise<Head>{
   const row=(await db.query('select source_id,current_version,created_at from teloa_business_record_heads where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4'+(lock?' for update':''),[actor.ownerId,target.scope,target.type,target.id])).rows[0] as Head|undefined
   if(!row){
@@ -97,6 +122,9 @@ export class BusinessRecordService{
  private async snapshot(db:PoolClient,actor:Actor,target:BusinessRecordTarget&{id:string;version:number},sourceId:string,requestedHistory=false):Promise<BusinessObjectSnapshot>{
   const row=(await db.query('select object_version,source_id,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version=$5',[actor.ownerId,target.scope,target.type,target.id,target.version])).rows[0] as SnapshotRow|undefined
   if(!row)throw requestedHistory?new WorkError('teloa/not-found','指定的历史记录版本不存在或已按保留规则清理。'):corrupt()
+  return this.readSnapshot(row,target,sourceId)
+ }
+ private readSnapshot(row:SnapshotRow,target:BusinessRecordTarget&{id:string;version:number},sourceId:string):BusinessObjectSnapshot{
   let stored:ReturnType<typeof readBusinessObjectSnapshot>
   try{stored=readBusinessObjectSnapshot(row.snapshot,target.scope)}catch{throw corrupt()}
   if(row.source_id!==sourceId||stored.source!=='本地记录'||stored.type!==target.type||stored.id!==target.id||stored.version!==target.version||row.object_version!==target.version||businessObjectSnapshotHash(stored)!==row.snapshot_hash)throw corrupt()
@@ -104,12 +132,10 @@ export class BusinessRecordService{
  }
  /** 同步来源拥有独立的固定身份；只读快照，绝不借本地 head 获得写权限。 */
  private async sourcedSnapshot(db:PoolClient,actor:Actor,target:BusinessRecordTarget&{id:string},localSourceId:string,version?:number):Promise<BusinessObjectSnapshot>{
-  const identity=(await db.query('select source_id from teloa_business_sync_object_ids where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 limit 1',[actor.ownerId,target.scope,target.type,target.id])).rows[0] as {source_id:string|null}|undefined
-  if(!identity)throw invalid()
+  const sourceId=(await registeredBusinessSnapshotSources(db,actor.ownerId,target.scope,target.type,[target.id])).get(target.id)
+  if(!sourceId)throw corrupt()
   const current=(await db.query('select object_version,source_id,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 order by object_version desc limit 1',[actor.ownerId,target.scope,target.type,target.id])).rows[0] as SnapshotRow|undefined
-  if(!current||!identity.source_id||current.source_id===localSourceId||identity.source_id!==current.source_id)throw corrupt()
-  const foreign=await db.query("select 1 from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and (source_id<>$5 or snapshot->>'source'='本地记录') limit 1",[actor.ownerId,target.scope,target.type,target.id,current.source_id])
-  if(foreign.rowCount)throw corrupt()
+  if(!current||current.source_id===localSourceId||sourceId!==current.source_id)throw corrupt()
   const decode=(row:SnapshotRow):BusinessObjectSnapshot=>{
    let stored:ReturnType<typeof readBusinessObjectSnapshot>
    try{stored=readBusinessObjectSnapshot(row.snapshot,target.scope)}catch{throw corrupt()}
@@ -273,7 +299,7 @@ export class BusinessRecordService{
   }
  }
  /** 已取得全部head锁并一次性通过配额后写入；单条和批次唯一的快照/引用/回执原语。 */
- private async persist(db:PoolClient,actor:Actor,prepared:Prepared):Promise<BusinessObjectSnapshot>{
+ private async persist(db:PoolClient,actor:Actor,prepared:Prepared,origin?:BusinessRecordBatchSource):Promise<BusinessObjectSnapshot>{
    const {operation,input,requestHash,definition,before,snapshot,now}=prepared
    let item:BusinessObjectSnapshot
    if(operation==='archive'){
@@ -289,6 +315,8 @@ export class BusinessRecordService{
    else await db.query('insert into teloa_business_record_heads(owner_id,scope_id,object_type,object_id,current_version,source_id,created_at) values($1,$2,$3,$4,$5,$6,$7)',[actor.ownerId,input.scope,input.type,item.id,item.version,definition.sourceId,now])
    for(const snapshot of before?[before,item]:[item])await this.dependencies.references.pinInTransaction(db,actor,{reference:reference(snapshot),kind:'record-operation',referenceId:input.requestId})
    await db.query('insert into teloa_business_record_receipts(owner_id,request_id,request_hash,operation,scope_id,result_reference,previous_reference,created_at) values($1,$2,$3,$4,$5,$6,$7,$8)',[actor.ownerId,input.requestId,requestHash,operation,input.scope,JSON.stringify(reference(item)),before?JSON.stringify(reference(before)):null,now])
+   await markBusinessDataChanged(db,actor.ownerId,input.scope)
+   if(!before||!isDeepStrictEqual(eventContent(before),eventContent(item)))await this.dependencies.events?.object(db,actor.ownerId,{kind:'business-object',scope:input.scope,type:input.type,id:item.id},String(item.version),origin)
    return item
  }
  private async write(actor:Actor,operation:Operation,input:WriteInput):Promise<BusinessObjectSnapshot>{
@@ -332,9 +360,30 @@ export class BusinessRecordService{
   return this.transaction(true,db=>this.batchInTransaction(db,actor,value,sourceValue))
  }
  /** 调用方拥有事务；仍沿记录请求→配置→类型→head顺序取得原有锁。 */
- async batchInTransaction(db:PoolClient,actor:Actor,value:unknown,sourceValue?:BusinessRecordBatchSource,expected?:BusinessRecordBatchDefinitionGuard):Promise<BusinessRecordBatchResult>{
+ /** 只准备完整差异；字段、关联与唯一性校验复用真正写入的实现，不落正式记录。 */
+ async previewBatchInTransaction(db:PoolClient,actor:Actor,value:unknown):Promise<BusinessRecordBatchPreview>{
+  const input=readBusinessRecordBatch(value);authorize(actor,input.scope)
+  await lockBusinessConfiguration(db,actor.ownerId,input.scope,'shared')
+  const writes=input.operations.map(({operation,...body},index)=>({operation,input:{...body,scope:input.scope,requestId:childRequest(input.requestId,index)} as WriteInput}))
+  const targets:BusinessObjectSnapshot[]=[],definitions=new Map<string,string>()
+  const define=async(type:string)=>{const definition=await this.definition(db,actor,{scope:input.scope,type});definitions.set(type,businessRecordSchemaFingerprint(definition));return definition}
+  for(const target of await this.writeTargets(db,actor,writes)){
+   const definition=await define(target.type),head=await this.head(db,actor,target,definition.sourceId)
+   targets.push(await this.snapshot(db,actor,{...target,version:head.current_version},definition.sourceId))
+  }
+  const archiving=new Set(writes.flatMap(row=>row.operation==='archive'&&'id' in row.input?[JSON.stringify([row.input.type,row.input.id])]:[])),prepared:Prepared[]=[]
+  for(const row of writes){await define(row.input.type);prepared.push(await this.prepare(db,actor,row.operation,row.input,archiving))}
+  await this.assertUniqueWrites(db,actor,prepared)
+  const guards=[...definitions].sort(([a],[b])=>a<b?-1:a>b?1:0).map(([type,schemaFingerprint])=>({type,schemaFingerprint}))
+  const operations=prepared.map(row=>({operation:row.operation,type:row.input.type,title:row.snapshot?.title??row.before!.title,...(row.before?{before:row.before}:{}),...('fields' in row.input?{fields:row.input.fields.map(field=>({...field,label:row.definition.fields.find(defined=>defined.name===field.name)!.label})),summary:row.snapshot!.summary}:{})}))
+  return {fingerprint:hash({scope:input.scope,operations:input.operations,definitions:guards,targets}),definitions:guards,targets,operations}
+ }
+ async batchInTransaction(db:PoolClient,actor:Actor,value:unknown,sourceValue?:BusinessRecordBatchSource,expected?:BusinessRecordBatchDefinitionGuard|BusinessRecordBatchDefinitionGuardSet):Promise<BusinessRecordBatchResult>{
   const input=readBusinessRecordBatch(value),source=sourceIdentity(sourceValue);authorize(actor,input.scope)
-  if(expected!==undefined){
+  // 守卫来自调用方的不可信输入：null、数组或非对象先按无效输入拒绝，不能让 `in` 运算先抛 TypeError。
+  if(expected!==undefined&&expected!==null&&typeof expected==='object'&&!Array.isArray(expected)&&'guards' in expected){
+   if(expected.scope!==input.scope||expected.receiptPolicy!=='new-only'||!Array.isArray(expected.guards)||expected.guards.length===0||!expected.guards.every(g=>typeof g.type==='string'&&/^[a-f0-9]{64}$/.test(g.schemaFingerprint))||!input.operations.every(op=>expected.guards.some(g=>g.type===op.type))||!/^[a-f0-9]{64}$/.test(expected.previewFingerprint))throw invalid()
+  }else if(expected!==undefined){
    if(expected===null||typeof expected!=='object'||Array.isArray(expected)||Object.keys(expected).length<3||Object.keys(expected).length>4||Object.keys(expected).some(key=>!['scope','type','schemaFingerprint','receiptPolicy'].includes(key))||'receiptPolicy' in expected&&expected.receiptPolicy!=='new-only'||expected.scope!==input.scope||typeof expected.type!=='string'||!input.operations.every(row=>row.type===expected.type)||typeof expected.schemaFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(expected.schemaFingerprint))throw invalid()
   }
   const requestHash=hash({input,source:source??null}),children=input.operations.map((_,index)=>childRequest(input.requestId,index))
@@ -345,17 +394,18 @@ export class BusinessRecordService{
   if(prior){if(prior.request_hash!==requestHash||JSON.stringify(sourceIdentity(prior.source===null?undefined:prior.source))!==JSON.stringify(source))throw conflict();if(JSON.stringify(prior.child_request_ids)!==JSON.stringify(children))throw corrupt();return (await this.replayBatch(db,actor,prior,true)).result}
   for(const requestId of [input.requestId,...children])if(await this.receiptRow(db,actor.ownerId,requestId)||requestId!==input.requestId&&await this.batchRow(db,actor.ownerId,requestId))throw conflict()
   await lockBusinessConfiguration(db,actor.ownerId,input.scope,'shared')
-  if(expected&&businessRecordSchemaFingerprint(await this.definition(db,actor,expected))!==expected.schemaFingerprint)throw new WorkError('teloa/version-conflict','业务对象定义已改变，请重新预览后再提交。')
+  if(expected&&!('guards' in expected)&&businessRecordSchemaFingerprint(await this.definition(db,actor,expected))!==expected.schemaFingerprint)throw new WorkError('teloa/version-conflict','业务对象定义已改变，请重新预览后再提交。')
   const writes=input.operations.map(({operation,...body},index)=>({operation,input:{...body,scope:input.scope,requestId:children[index]!} as WriteInput}))
   await lockBusinessRecordTypes(db,actor.ownerId,input.scope,writes.map(row=>row.input.type))
   await this.lockHeads(db,actor,await this.writeTargets(db,actor,writes))
+  if(expected&&'guards' in expected&&(await this.previewBatchInTransaction(db,actor,input)).fingerprint!==expected.previewFingerprint)throw new WorkError('teloa/version-conflict','审批期间记录、关联或定义已改变，请重新准备。')
   const archivingTargets=new Set(writes.flatMap(row=>row.operation==='archive'&&'id' in row.input?[JSON.stringify([row.input.type,row.input.id])]:[]))
   const prepared:Prepared[]=[]
   for(const row of writes)prepared.push(await this.prepare(db,actor,row.operation,row.input,archivingTargets))
   await this.assertUniqueWrites(db,actor,prepared)
   await this.dependencies.warehouse.assertQuota(db,actor.ownerId,input.scope,prepared.length)
   const items:BusinessObjectSnapshot[]=[]
-  for(const row of prepared)items.push(await this.persist(db,actor,row))
+  for(const row of prepared)items.push(await this.persist(db,actor,row,source))
   await db.query('insert into teloa_business_record_batches(owner_id,request_id,request_hash,scope_id,child_request_ids,source,created_at) values($1,$2,$3,$4,$5,$6,$7)',[actor.ownerId,input.requestId,requestHash,input.scope,children,source?JSON.stringify(source):null,this.identity.now()])
   return {requestId:input.requestId,scope:input.scope,items}
  }

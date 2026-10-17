@@ -63,8 +63,8 @@ export class BusinessSpaceService{
   owner(ownerId)
   await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['business-space-personal',ownerId])])
   const space=await this.personalInTransaction(db,ownerId)
-  // 本人空间一存在就登记内置范围：此后任何写入校验都能在标签表里找到 general/SOC/AppSec，
-  // 存量 `Design` 也在这里补成历史标签，校验不必为"还没登记过"开特例。
+  // 本人空间登记默认通用业务及实际引用的历史范围；合法旧内置 ID 在后续写事务中按需补登记。
+  // 存量 `Design` 也按真实引用补成历史标签，保留原对象的范围。
   await BusinessScopeService.ensureBuiltin(db,ownerId,space.id)
   return space
  }

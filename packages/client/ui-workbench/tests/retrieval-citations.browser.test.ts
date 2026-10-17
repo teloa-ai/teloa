@@ -1,0 +1,45 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
+import {build} from 'vite'
+import {officialFrontendBuiltins} from './fixtures/official-frontend-builtins.ts'
+// @ts-expect-error 复用固定无头浏览器加载器。
+import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
+
+test('固定官方alpha3 Markdown的新旧检索引用打开原片段，普通文件/外链保留且切会话撤回不串来源',{timeout:45000},async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),entryId=root+'__retrieval_citation.tsx'
+ const official=officialFrontendBuiltins(root),primitives=official.primitives
+ const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {MarkdownText,MarkdownDelegateProvider} from '${primitives}';import {RetrievalSourceLinks,RetrievalCitationContent,retrievalCitationTabDefinition} from '${client}RetrievalCitation.tsx';import {resolveRetrievalCitation,readRetrievalSourceAddress} from '${client}retrieval-citations.ts';import {retrievalCitationPath} from '${root}packages/contract/src/index.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+ const sid='original-session',rid='11111111-1111-4111-8111-111111111111',sourceId='local_material_22222222-2222-4222-8222-222222222222',hit={resourceId:rid,resourceVersion:1,title:'原件职责核对',sourceId,sourceVersion:'b'.repeat(64),lines:[0,2],chars:[0,20],heading:'原职责',score:0.7,excerpt:'乙负责整理五条待办。'};
+ const events=(value=hit,call='call-original')=>[{event:{type:'tool/call',seq:1,data:{turn:1,name:'teloa_knowledge_search',callId:call}}},{event:{type:'tool/result',seq:2,data:{turn:1,message:{source:{kind:'tool',callId:call},toolCallId:call,content:[{type:'text',text:JSON.stringify({coverage:{searched:[{resourceId:rid,title:value.title,version:value.resourceVersion}],pending:[],note:'本次已检索资料'},results:[value]})}]}}}}];
+ const original={entries:events()},empty={entries:[]},listeners=new Set(),f=window.citationFixture={session:sid,address:null,active:true,history:original,native:[],external:[],outside:0,hold:false,release:null,render:()=>{},notify:()=>listeners.forEach(fn=>fn()),withdrawReceipt:()=>{f.history=empty;f.notify()},ambiguous:()=>{f.history={entries:[...events(),...events({...hit,resourceVersion:2,sourceVersion:'c'.repeat(64),excerpt:'新版内容不能冒充原件'},'call-later')]};f.notify()}};
+ const ports=new Map();const portFor=id=>{if(ports.has(id))return ports.get(id);const port={sessionId:id,current:()=>f.session===id,events:{subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},getSnapshot:()=>id===sid?f.history:empty},available:async()=>{if(f.hold)return await new Promise(resolve=>f.release=()=>resolve(f.active));return f.active},openResource:address=>{f.address=address;f.render()}};ports.set(id,port);return port};
+ const citation=retrievalCitationPath(sid,hit),markdown='来源：[历史原件]('+sourceId+')，以及[新引用]('+citation+')。\\n\\n[普通文件](docs/report.md#L2) [普通知识文件](knowledge_notes.md) [官方文档](https://example.test/docs)\\n\\n'+String.fromCharCode(96).repeat(3)+'js\\nconsole.log("保留原代码");\\n'+String.fromCharCode(96).repeat(3),labels={code:{copyLabel:'复制代码',copiedLabel:'已复制'},footnotes:'脚注'};
+ const snapshot={locale:'zh-CN',dshLocale:'zh-CN',revision:1},runtime={getSnapshot:()=>snapshot,subscribe:()=>()=>{},t:(key,params)=>translateMessage('zh-CN',key,params)},app=createRoot(document.getElementById('root'));
+ f.render=()=>{const port=portFor(f.session),route=f.address&&readRetrievalSourceAddress(f.address),reference=route&&resolveRetrievalCitation(port.events.getSnapshot().entries,f.session,route.path),definition=retrievalCitationTabDefinition(()=>reference?reference.title+' · v'+reference.resourceVersion:'来源');app.render(<I18nProvider runtime={runtime}><main><div data-chat-flow key={f.session}><MarkdownDelegateProvider openFile={(path,options)=>f.native.push({path,options})} openExternalLink={url=>f.external.push(url)}><MarkdownText text={markdown} labels={labels}/><RetrievalSourceLinks turn={{turn:1,status:'closed'}} port={port}/></MarkdownDelegateProvider></div><button type="button" title={sourceId} onClick={()=>f.outside++}>会话外普通按钮</button></main>{f.address&&<aside aria-label="原生来源页签"><header>{definition.title(f.address)}</header><RetrievalCitationContent sessionId={f.session} address={f.address} port={port}/></aside>}</I18nProvider>)};f.render();`
+ const result=await build({configFile:false,root,logLevel:'error',plugins:[official.plugin,{name:'retrieval-citation-browser',resolveId:id=>id.endsWith('retrieval-citation-browser')?entryId:null,load:id=>id===entryId?entry:null}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:')},lib:{entry:'retrieval-citation-browser',name:'RetrievalCitationBrowser',formats:['iife']}}})
+ const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1300,height:900}});t.after(()=>page.close());page.setDefaultTimeout(3000)
+ const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.route('**/*',(r:any)=>r.abort());await page.setContent('<html><style>body{font:14px system-ui;--teloa-font-control:14px;--teloa-font-caption:12px;--teloa-font-body:15px;--teloa-border:#ddd;--teloa-text:#222;--teloa-muted:#666}main{width:60%;padding:24px}aside{position:absolute;left:65%;right:12px;top:12px;border:1px solid #ddd;padding:12px}pre{white-space:pre-wrap}</style><body><div id="root"></div></body></html>')
+ for(const item of bundle.output)if(item.type==='asset'&&item.fileName.endsWith('.css'))await page.addStyleTag({content:String(item.source)})
+ await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
+ const historical=page.getByRole('button',{name:'历史原件',exact:true}),fresh=page.getByRole('button',{name:'新引用',exact:true}),aside=page.getByRole('complementary',{name:'原生来源页签'})
+ await historical.waitFor();assert.match(await historical.getAttribute('title'),/^local_material_/,'固定alpha3契约：原生Markdown以button/title传decoded file.path')
+ await historical.click();await aside.getByText('乙负责整理五条待办。',{exact:true}).waitFor();assert.equal(await aside.locator('header').first().innerText(),'原件职责核对 · v1')
+ assert.doesNotMatch(await aside.innerText(),/11111111|local_material_|teloa-source|bbbbbbbb/)
+ assert.deepEqual(await page.evaluate(()=>(window as any).citationFixture.native),[])
+ await page.evaluate(()=>{const f=(window as any).citationFixture;f.address=null;f.render()});await fresh.click();await aside.getByText('乙负责整理五条待办。',{exact:true}).waitFor()
+ await page.getByRole('button',{name:'普通文件',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).citationFixture.native),[{path:'docs/report.md',options:{line:2}}])
+ await page.getByRole('button',{name:'普通知识文件',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).citationFixture.native.at(-1)),{path:'knowledge_notes.md',options:undefined});
+ await page.getByRole('link',{name:'官方文档',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).citationFixture.external),['https://example.test/docs'])
+ assert.match(await page.locator('pre code').innerText(),/保留原代码/)
+ await page.getByRole('button',{name:'会话外普通按钮',exact:true}).click();assert.equal(await page.evaluate(()=>(window as any).citationFixture.outside),1)
+ await page.evaluate(()=>{const f=(window as any).citationFixture;f.active=false;f.address=null;f.render()});await historical.click();await aside.getByText('此引用来源暂不可用，请返回原会话重新核对。',{exact:true}).waitFor();assert.doesNotMatch(await aside.innerText(),/乙负责/)
+ await page.evaluate(()=>{const f=(window as any).citationFixture;f.active=true;f.address=null;f.ambiguous();f.render()});await historical.click();await aside.getByText('此引用来源暂不可用，请返回原会话重新核对。',{exact:true}).waitFor()
+ await fresh.click();await aside.getByText('乙负责整理五条待办。',{exact:true}).waitFor();assert.doesNotMatch(await aside.innerText(),/新版内容/)
+ await page.evaluate(()=>{const f=(window as any).citationFixture;f.withdrawReceipt();f.address=null;f.render()});await historical.click();await aside.getByText('此引用来源暂不可用，请返回原会话重新核对。',{exact:true}).waitFor()
+ await page.evaluate(()=>{const f=(window as any).citationFixture;f.ambiguous();f.address=null;f.hold=true;f.render()});await fresh.click();await page.waitForFunction(()=>!!(window as any).citationFixture.release)
+ await page.evaluate(()=>{const f=(window as any).citationFixture;f.session='other-session';f.render();f.release()});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>(window as any).citationFixture.address),null,'切会话后的迟到来源读取不得在新会话打开旧来源')
+ await page.evaluate(()=>(window as any).citationFixture.hold=false);await fresh.click();await aside.getByText('此引用来源暂不可用，请返回原会话重新核对。',{exact:true}).waitFor();assert.doesNotMatch(await aside.innerText(),/乙负责/)
+ assert.deepEqual(errors,[])
+})

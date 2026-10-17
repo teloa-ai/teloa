@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isKnowledgeNode,isKnowledgeSpace,isKnowledgeTree,isKnowledgeTreeMutation,resourceId,resourceVersion,type KnowledgeNode,type KnowledgeSpace,type KnowledgeTree,type KnowledgeTreeMutation} from '@teloa/contract'
+import {WorkError,isKnowledgeNode,isKnowledgeSpace,isKnowledgeTree,isKnowledgeTreeMutation,resourceId,resourceVersion,resourceScopes,type KnowledgeNode,type KnowledgeSpace,type KnowledgeTree,type KnowledgeTreeMutation} from '@teloa/contract'
 import {authorizeResourceActor,type ResourceActor} from './resources.ts'
 
 const bad=()=>new WorkError('teloa/invalid-input','知识目录请求格式不正确或包含未知字段。')
@@ -122,6 +122,20 @@ async function reorder(client:PoolClient,ownerId:string,nodes:KnowledgeNode[],no
 }
 const at=(value:unknown,count:number):number=>{if(value===undefined)return count;if(!Number.isSafeInteger(value)||Number(value)<0||Number(value)>count)throw bad();return Number(value)}
 
+// 本人目录 UI 保留全目录管理；会话工具通过可信选项限制到原会话知识范围。
+export interface KnowledgeTreeMutationOptions{enforceKnowledgeScopes?:boolean}
+async function authorizeMutationKnowledge(client:PoolClient,actor:ResourceActor,tree:KnowledgeTree,spec:Record<string,unknown>):Promise<void>{
+ const rootIds=spec.operation==='move'?[spec.nodeId,spec.parentId]:[spec.nodeId]
+ const roots=rootIds.map(id=>{const node=tree.nodes.find(value=>value.id===id);if(!node)throw new WorkError('teloa/not-found','知识目录节点不存在。');return node})
+  // 个人空间根是共享容器；移回根不涉及其他业务页面的授权。
+  .filter((node,index)=>spec.operation!=='move'||index===0||node.type!=='space')
+ const knowledgeIds=tree.nodes.flatMap(node=>node.type==='page'&&roots.some(root=>root.path.every((part,index)=>node.path[index]===part))?[node.knowledgeId]:[])
+ if(!knowledgeIds.length)return
+ const items=(await client.query('select id,scope_ids from teloa_knowledge_items where owner_id=$1 and workspace_id=$2 and id=any($3::uuid[]) for share',[actor.ownerId,tree.space.workspaceId,knowledgeIds])).rows as {id:string;scope_ids:unknown}[]
+ if(items.length!==knowledgeIds.length)throw corrupt()
+ for(const item of items){if(!resourceScopes(item.scope_ids))throw corrupt();authorizeResourceActor(actor,actor.ownerId,item.scope_ids,true)}
+}
+
 export async function attachKnowledgePage(client:PoolClient,input:{ownerId:string;workspaceId:string;knowledgeId:string;title:string;parentId?:string;expectedDirectoryRevision?:number;position?:number;now:string}):Promise<KnowledgeTreeMutation>{
  if(!stable(input.workspaceId)||!resourceId(input.knowledgeId)||!Number.isFinite(Date.parse(input.now)))throw corrupt()
  const space=await lockSpace(client,input.ownerId,input.workspaceId,input.now)
@@ -146,7 +160,7 @@ export class KnowledgeTreeService{
  private readonly identity:{id:()=>string;now:()=>string}
  constructor(pool:Pool,workspaceId:string,identity:{id:()=>string;now:()=>string}){if(!stable(workspaceId))throw bad();this.pool=pool;this.workspaceId=workspaceId;this.identity=identity}
  private now():string{const value=this.identity.now();if(!Number.isFinite(Date.parse(value)))throw corrupt();return value}
- private async mutation(actor:ResourceActor,requestId:string,spec:Record<string,unknown>,operation:'create-folder'|'move'|'rename',change:(client:PoolClient,space:KnowledgeSpace,now:string)=>Promise<KnowledgeNode>):Promise<KnowledgeTreeMutation>{
+ private async mutation(actor:ResourceActor,requestId:string,spec:Record<string,unknown>,operation:'create-folder'|'move'|'rename',change:(client:PoolClient,space:KnowledgeSpace,now:string)=>Promise<KnowledgeNode>,options:KnowledgeTreeMutationOptions={}):Promise<KnowledgeTreeMutation>{
   authorizeResourceActor(actor,actor.ownerId,[],true)
   const client=await this.pool.connect().catch(()=>{throw unavailable()})
   try{
@@ -156,10 +170,12 @@ export class KnowledgeTreeService{
    if(prior){
     if(prior.operation!==operation||!same(prior.request_spec,spec))throw new WorkError('teloa/conflict','同一请求 ID 不能执行另一项知识目录修改。')
     if(!isKnowledgeTreeMutation(prior.result))throw corrupt()
+    if(options.enforceKnowledgeScopes){const space=await lockSpace(client,actor.ownerId,this.workspaceId,this.now());await authorizeMutationKnowledge(client,actor,await storedTree(client,space),spec)}
     await client.query('commit');return prior.result
    }
    const now=this.now(),space=await lockSpace(client,actor.ownerId,this.workspaceId,now)
-   await storedTree(client,space)
+   const tree=await storedTree(client,space)
+   if(options.enforceKnowledgeScopes)await authorizeMutationKnowledge(client,actor,tree,spec)
    const node=await change(client,space,now),updated=await updateSpace(client,space,now),result={space:updated,node}
    if(!isKnowledgeTreeMutation(result))throw corrupt()
    await client.query('insert into teloa_knowledge_directory_operations(owner_id,request_id,request_spec,operation,result,created_at) values($1,$2,$3,$4,$5,$6)',[actor.ownerId,requestId,JSON.stringify(spec),operation,JSON.stringify(result),now])
@@ -188,7 +204,7 @@ export class KnowledgeTreeService{
    const node=nodeRow((await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and id=$2',[actor.ownerId,id])).rows[0]);siblings.splice(position,0,node);await reorder(client,actor.ownerId,siblings,now);return {...node,siblingOrder:position}
   })
  }
- async renameNode(actor:ResourceActor,input:unknown):Promise<KnowledgeTreeMutation>{
+ async renameNode(actor:ResourceActor,input:unknown,options:KnowledgeTreeMutationOptions={}):Promise<KnowledgeTreeMutation>{
   const row=exact(input,['requestId','nodeId','title','expectedDirectoryRevision'])
   if(!resourceId(row.requestId)||!stable(row.nodeId)||!resourceVersion(row.expectedDirectoryRevision))throw bad()
   const spec={operation:'rename',nodeId:row.nodeId,title:title(row.title),expectedDirectoryRevision:row.expectedDirectoryRevision}
@@ -196,9 +212,9 @@ export class KnowledgeTreeService{
    if(space.directoryRevision!==row.expectedDirectoryRevision)throw new WorkError('teloa/version-conflict','知识目录已变化，请重新读取后操作。')
    const node=await readNode(client,actor.ownerId,row.nodeId as string,true);if(node.spaceId!==space.id||node.type==='space')throw new WorkError('teloa/conflict','知识空间根节点不能重命名或跨空间操作。')
    return nodeRow((await client.query('update teloa_knowledge_nodes set title=$3,updated_at=$4 where owner_id=$1 and id=$2 returning *',[actor.ownerId,node.id,spec.title,now])).rows[0])
-  })
+  },options)
  }
- async moveNode(actor:ResourceActor,input:unknown):Promise<KnowledgeTreeMutation>{
+ async moveNode(actor:ResourceActor,input:unknown,options:KnowledgeTreeMutationOptions={}):Promise<KnowledgeTreeMutation>{
   const row=exact(input,['requestId','nodeId','parentId','expectedDirectoryRevision','position'])
   if(!resourceId(row.requestId)||!stable(row.nodeId)||!stable(row.parentId)||!resourceVersion(row.expectedDirectoryRevision)||(row.position!==undefined&&(!Number.isSafeInteger(row.position)||Number(row.position)<0)))throw bad()
   const spec={operation:'move',nodeId:row.nodeId,parentId:row.parentId,expectedDirectoryRevision:row.expectedDirectoryRevision,position:row.position??null}
@@ -214,6 +230,6 @@ export class KnowledgeTreeService{
    if(oldParent!==parent.id)await reorder(client,actor.ownerId,oldSiblings,now)
    targetSiblings.splice(position,0,moved);await reorder(client,actor.ownerId,targetSiblings,now)
    return {...moved,path:newPath,siblingOrder:position}
-  })
+  },options)
  }
 }

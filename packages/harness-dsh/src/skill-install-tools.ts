@@ -34,7 +34,7 @@ function previewIdentity(value:unknown,expectedBundleHash:string,expectedTrustHa
 /** 自然语言入口只接受固定来源身份，并复用现有严格安装 handler 与默认工作区观测。 */
 export function registerSkillInstallTools(ctx:Context,ports:SkillInstallToolsPorts){
  const definitions=[
-  {name:'teloa_skills_directory' as const,description:'列出本人已保存的原子技能、已加载行业技能、真实安装记录和行业使用关系。先从目录取得锁定来源的身份；目录出现不表示已经授权安装。',parameters:{}},
+  {name:'teloa_skills_directory' as const,description:'列出本人已保存的原子技能、已加载行业技能、真实安装记录和行业使用关系。先从目录取得锁定来源的身份；目录出现不表示已经授权安装。此目录不包含未应用的新建草案；用户查以前写好或保存的技能原稿时，另调用 teloa_create_drafts（entity=skill）按名称查草稿，再用 teloa_create_preview 回读；本目录未命中不能断言没有原稿。',parameters:{}},
   {name:'teloa_skills_preview' as const,description:'预览目录中锁定版本的技能来源，返回完整文件清单、安装包校验值（bundleHash）、信任信息校验值（trustHash）、原生名称、扩展与连接需求和权限。安装前必须使用本次返回的校验值。',parameters:{source:sourceSchema}},
   {name:'teloa_skills_install' as const,description:'安装、复用或继续核对一个锁定版本的技能来源。需要预览返回的 bundleHash 和 trustHash，并由本人确认在当前 Teloa 上的安装行为；不执行技能正文或附件。',parameters:{source:sourceSchema,expectedBundleHash:{type:'string',required:true},expectedTrustHash:{type:'string'}}},
   {name:'teloa_skills_observe' as const,description:'观测一项真实安装在默认工作区是否可用、被同名来源遮蔽或缺失。结果只代表默认工作区。',parameters:{installationId:{type:'string',required:true}}},

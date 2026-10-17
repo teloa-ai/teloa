@@ -1,0 +1,4 @@
+.welcome{display:flex;align-items:center;flex-direction:column;gap:12px;max-width:100%;text-align:center;color:var(--teloa-text)}
+.welcome img{width:54px;height:54px;object-fit:contain}
+.headline{font-size:24px;font-weight:var(--teloa-weight-heading);line-height:1.35;letter-spacing:-.02em}
+.subtitle{color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.6}

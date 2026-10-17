@@ -31,7 +31,8 @@ export async function serveIndex(t:Cleanup,{brand=true,hostRows=[],themePreferen
  t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(WebServer,{host:'127.0.0.1',port:0})
  ctx.provide('connection',{authorizeIndex:()=>true})
- if(themePreference)await ctx.plugin({name:'theme-fixture',apply:(child:any)=>Theme.apply(child,{preference:{get:themePreference},fontSize:{get:()=>14}})})
+ // 固定 alpha3 的 Theme.Config 同时读取三类字号与字体；夹具只提供设置，不改变首页认证。
+ if(themePreference)await ctx.plugin({name:'theme-fixture',apply:(child:any)=>Theme.apply(child,{preference:{get:themePreference},fontSize:{get:()=>14},codeFontSize:{get:()=>11},terminalFontSize:{get:()=>13},textFontFamily:{get:()=>''},codeFontFamily:{get:()=>''},terminalFontFamily:{get:()=>''}})})
  if(hostRows.length)await ctx.plugin({name:'host-rows',apply:(child:any)=>{child.on('webserver/index-inject',(table:Row[])=>{table.push(...hostRows)})}})
  if(brand)await ctx.plugin(await import('../../src/index.ts'))
  await ctx.plugin(FrontendStatic,{distIndex:join(distRoot,'index.html')})

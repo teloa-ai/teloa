@@ -2,15 +2,16 @@ import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,isResourceSpec} from '@teloa/contract'
-import {readWorkEvent,workObject,workUuid,type WorkEvent} from '@teloa/contract'
+import {readWorkEvent,workObject,workUuid,type WorkEvent,type WorkEventV1,type BusinessWorkSourceRef,planWorkEventMatches,readBusinessWorkSourceRef,businessWorkSourceKey} from '@teloa/contract'
 import {readStoredPlan} from './plans.ts'
+import {WorkLineageService} from './work-lineage.ts'
 import {PlanOccurrenceService,type PlanOccurrence,} from './plan-occurrences.ts'
 import type {PlanMarketSources} from './plans.ts'
 import {readStoredSecurityApproval} from '../security/approvals.ts'
-import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
+import type {BusinessWorkSourceReader,BusinessEventOrigin,BusinessEventOriginProof} from './business-work-event-source.ts'
 
 export type TrustedMaterialVersion={sourceVersion:string;contentSha256:string}
-export type WorkEventPorts={material:(db:PoolClient,owner:string,resourceId:string)=>Promise<TrustedMaterialVersion>;approval?:(db:PoolClient,owner:string,actionId:string,actionVersion:number,approvalId:string)=>Promise<void>}
+export type WorkEventPorts={business?:BusinessWorkSourceReader;businessOrigin?:(db:PoolClient,owner:string,origin:BusinessEventOrigin)=>Promise<BusinessEventOriginProof|undefined>;material:(db:PoolClient,owner:string,resourceId:string)=>Promise<TrustedMaterialVersion>;approval?:(db:PoolClient,owner:string,actionId:string,actionVersion:number,approvalId:string)=>Promise<void>}
 const denied=()=>new WorkError('teloa/forbidden','工作事件缺少当前真实来源或执行边界。')
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
@@ -29,14 +30,19 @@ export class WorkEventService{
  /** Flow 收据复用事件原件与真实来源检查；不接受模型上传事件正文。 */
  async verifiedSourceInTransaction(db:PoolClient,owner:string,eventId:string):Promise<{event:WorkEvent;payload:Record<string,any>}>{
   const row=(await db.query('select * from teloa_work_events where owner_id=$1 and id=$2',[owner,eventId])).rows[0];if(!row)throw denied();const event=this.read(row),payload=row.payload
+  if(event.schema==='teloa.work-event/v2'){
+   const current=await this.businessFacts(db,owner,event.sourceRef,event.sourceVersion,payload.origin)
+   if(!current.active||current.basisHash!==event.basisHash||!isDeepStrictEqual(current,payload))throw denied()
+   return {event,payload}
+  }
   if(event.kind==='material-version'){const actual=(await db.query("select * from teloa_resources where owner_id=$1 and id=$2 and status='active' for share",[owner,event.sourceId])).rows[0];if(!actual||!isResourceSpec(actual.spec)||!this.ports)throw denied();const current=await this.ports.material(db,owner,event.sourceId);if(actual.revision!==payload.revision||current.sourceVersion!==payload.sourceVersion||current.contentSha256!==payload.contentSha256)throw denied()}
-  else if(event.kind==='group-message'){if(!(await db.query('select 1 from teloa_group_messages m join teloa_groups g on g.id=m.group_id and g.owner_id=m.owner_id where m.owner_id=$1 and m.id=$2 and m.group_id=$3 and not g.archived for share of m,g',[owner,payload.messageId,event.sourceId])).rows[0])throw denied()}
-  else if(event.kind==='child-completed'){const child=(await db.query("select * from teloa_task_run_subagents where owner_id=$1 and run_id=$2 and reservation_id=$3 for share",[owner,event.sourceId,payload.reservationId])).rows[0];if(!child||child.state!=='ended'||!child.ended_at||date(child.ended_at)!==event.sourceVersion)throw denied()}
+  else if(event.kind==='group-message'){const message=(await db.query('select m.* from teloa_group_messages m join teloa_groups g on g.id=m.group_id and g.owner_id=m.owner_id where m.owner_id=$1 and m.id=$2 and m.group_id=$3 and not g.archived for share of m,g',[owner,payload.messageId,event.sourceId])).rows[0];if(!message||message.task_id!==payload.taskId)throw denied()}
+  else if(event.kind==='child-completed'){const child=(await db.query("select s.*,r.task_id from teloa_task_run_subagents s join teloa_task_runs r on r.id=s.run_id and r.owner_id=s.owner_id where s.owner_id=$1 and s.run_id=$2 and s.reservation_id=$3 for share of s,r",[owner,event.sourceId,payload.reservationId])).rows[0];if(!child||child.state!=='ended'||!child.ended_at||date(child.ended_at)!==event.sourceVersion||child.task_id!==payload.taskId)throw denied()}
   else{const approval=(await db.query('select p.*,a.version as current_version,a.state as action_state,(select request_id from teloa_security_action_requests ar where ar.owner_id=a.owner_id and ar.result_action_id=a.id order by ar.result_action_version limit 1) as operation_request_id from teloa_security_approvals p join teloa_security_actions a on a.id=p.action_id and a.owner_id=p.owner_id where p.owner_id=$1 and p.id=$2 for share of p,a',[owner,payload.approvalId])).rows[0],control=(await db.query('select state,generation from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,payload.roundControlId])).rows[0];if(!approval||readStoredSecurityApproval(approval).decision!=='approved'||approval.current_version!==payload.actionVersion+1||approval.action_state!=='approved'||approval.operation_request_id!==payload.operationRequestId||date(approval.expires_at)<=this.clock.now()||!control||control.state!=='active'||control.generation!==payload.controlGeneration||!this.ports?.approval)throw denied();await this.ports.approval(db,owner,event.sourceId,approval.current_version,payload.approvalId)}
   return {event,payload}
  }
  /** 只能由宿主真实来源回调调用；事件 owner/source/version 从持久原件派生。 */
- async appendSource(db:PoolClient,input:{kind:WorkEvent['kind'];sourceId:string;receiptId?:string}):Promise<WorkEvent>{
+ async appendSource(db:PoolClient,input:{kind:WorkEventV1['kind'];sourceId:string;receiptId?:string}):Promise<WorkEvent>{
   if(!workUuid(input.sourceId))throw denied()
   let owner:string,version:string,sourceEventId:string,payload:Record<string,unknown>
   if(input.kind==='material-version'){
@@ -54,15 +60,49 @@ export class WorkEventService{
   return this.save(db,event,payload)
  }
  /** 兼容服务端已有来源事件；仍重新核对真实记录，不信任参数中的 owner/version。 */
- async appendTrusted(db:PoolClient,owner:string,value:WorkEvent):Promise<WorkEvent>{const event=readWorkEvent(value);if(event.ownerId!==owner)throw denied();const receiptId=event.kind==='group-message'?event.sourceEventId.replace(/^group-message:/,''):event.kind==='approval-result'?event.sourceEventId.replace(/^approval:/,''):event.kind==='child-completed'?event.sourceEventId.split(':')[2]:undefined;const saved=await this.appendSource(db,{kind:event.kind,sourceId:event.sourceId,...(receiptId?{receiptId}:{})});if(saved.ownerId!==owner||saved.sourceEventId!==event.sourceEventId||saved.sourceVersion!==event.sourceVersion)throw denied();return saved}
+ async appendTrusted(db:PoolClient,owner:string,value:WorkEvent):Promise<WorkEvent>{const event=readWorkEvent(value);if(event.schema!=='teloa.work-event/v1'||event.ownerId!==owner)throw denied();const receiptId=event.kind==='group-message'?event.sourceEventId.replace(/^group-message:/,''):event.kind==='approval-result'?event.sourceEventId.replace(/^approval:/,''):event.kind==='child-completed'?event.sourceEventId.split(':')[2]:undefined;const saved=await this.appendSource(db,{kind:event.kind,sourceId:event.sourceId,...(receiptId?{receiptId}:{})});if(saved.ownerId!==owner||saved.sourceEventId!==event.sourceEventId||saved.sourceVersion!==event.sourceVersion)throw denied();return saved}
+ /** 业务服务只能在其原提交事务内调用；复合 key 从不伪装成 UUID。 */
+ async appendBusinessSource(db:PoolClient,owner:string,source:BusinessWorkSourceRef,version:string,origin?:BusinessEventOrigin):Promise<WorkEvent>{
+  const sourceRef=readBusinessWorkSourceRef(source),payload=await this.businessFacts(db,owner,sourceRef,version,origin)
+  const sourceEventId='business:'+digest([businessWorkSourceKey(sourceRef),payload.sourceVersion,payload.basisHash,payload.data])
+  const hex=digest([owner,sourceEventId]),id=hex.slice(0,8)+'-'+hex.slice(8,12)+'-8'+hex.slice(13,16)+'-a'+hex.slice(17,20)+'-'+hex.slice(20,32)
+  const event=readWorkEvent({schema:'teloa.work-event/v2',id,ownerId:owner,sourceEventId,kind:sourceRef.kind==='business-object'?'business-object-version':'business-sync-result',sourceRef,sourceVersion:payload.sourceVersion,basisHash:payload.basisHash,createdAt:this.clock.now()})
+  return this.save(db,event,payload)
+ }
+ private async businessFacts(db:PoolClient,owner:string,source:BusinessWorkSourceRef,version:string,origin?:BusinessEventOrigin){
+  if(!this.ports?.business)throw denied()
+  const facts=await this.ports.business(db,owner,source,version)
+  if(facts.sourceVersion!==version||!/^[a-f0-9]{64}$/.test(facts.basisHash)||typeof facts.active!=='boolean')throw denied()
+  let originRunId=facts.originRunId
+  let originProof:BusinessEventOriginProof|undefined
+  if(origin){
+   const verified=await this.ports.businessOrigin?.(db,owner,origin)
+   if(!verified)throw denied()
+   if(verified.kind==='ordinary-conversation'){if(Object.keys(verified).length!==1||originRunId!==undefined)throw denied()}
+   else if(verified.kind!=='task-run'||Object.keys(verified).length!==2||!workUuid(verified.runId)||originRunId!==undefined&&originRunId!==verified.runId)throw denied()
+   originProof=verified;if(verified.kind==='task-run')originRunId=verified.runId
+  }
+  let originPlanId:string|undefined
+  if(originRunId){
+   if(!workUuid(originRunId))throw denied()
+   const run=(await db.query('select id,task_id from teloa_task_runs where owner_id=$1 and id=$2',[owner,originRunId])).rows[0]
+   if(!run)throw denied()
+   const lineage=await new WorkLineageService(this.pool,this.clock).readInTransaction(db,owner,{taskId:run.task_id})
+   if(!lineage)throw denied()
+   originPlanId=lineage.definition?.planId
+  }
+  return {...facts,...(origin?{origin,originProof}:{}),...(originRunId?{originRunId}:{}),...(originPlanId?{originPlanId}:{})}
+ }
  private async save(db:PoolClient,event:WorkEvent,payload:Record<string,unknown>):Promise<WorkEvent>{
   await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-event/'+event.ownerId+'/'+event.sourceEventId])
   const prior=(await db.query('select * from teloa_work_events where owner_id=$1 and source_event_id=$2',[event.ownerId,event.sourceEventId])).rows[0]
-  if(prior){const saved=this.read(prior);if(saved.kind!==event.kind||saved.sourceId!==event.sourceId||saved.sourceVersion!==event.sourceVersion||!isDeepStrictEqual(prior.payload,payload))throw new WorkError('teloa/conflict','原来源事件已保存其他内容。');return saved}
+  if(prior){const saved=this.read(prior);if(saved.schema!==event.schema||saved.kind!==event.kind||(saved.schema==='teloa.work-event/v1'&&event.schema==='teloa.work-event/v1'?saved.sourceId!==event.sourceId:saved.schema!=='teloa.work-event/v2'||event.schema!=='teloa.work-event/v2'||businessWorkSourceKey(saved.sourceRef)!==businessWorkSourceKey(event.sourceRef))||saved.sourceVersion!==event.sourceVersion||!isDeepStrictEqual(prior.payload,payload))throw new WorkError('teloa/conflict','原来源事件已保存其他内容。');return saved}
   await db.query('insert into teloa_work_events(id,owner_id,source_event_id,event,payload,payload_hash,created_at) values($1,$2,$3,$4,$5,$6,$7)',[event.id,event.ownerId,event.sourceEventId,JSON.stringify(event),JSON.stringify(payload),digest(payload),event.createdAt])
   const plans=(await db.query("select * from teloa_plans where owner_id=$1 and state<>'archived' and work_definition is not null",[event.ownerId])).rows.map(readStoredPlan)
-  for(const plan of plans){const trigger=plan.workDefinition!.triggers.find(t=>t.kind==='local-event'&&t.eventKind===event.kind&&t.sourceId===event.sourceId);if(!trigger||trigger.kind!=='local-event')continue
-   if(trigger.coalesce==='latest')await db.query("update teloa_plan_work_events q set state='superseded' from teloa_work_events e where q.owner_id=$1 and q.plan_id=$2 and q.definition_version=$3 and q.state='pending' and e.owner_id=q.owner_id and e.id=q.event_id and e.event->>'kind'=$4 and e.event->>'sourceId'=$5",[event.ownerId,plan.id,plan.configVersion,event.kind,event.sourceId])
+  for(const plan of plans){const trigger=plan.workDefinition!.triggers.find(t=>planWorkEventMatches(t,event));if(!trigger||trigger.kind!=='local-event')continue
+   if(trigger.coalesce==='latest')await db.query("update teloa_plan_work_events q set state='superseded' from teloa_work_events e where q.owner_id=$1 and q.plan_id=$2 and q.definition_version=$3 and q.state='pending' and e.owner_id=q.owner_id and e.id=q.event_id and e.event->>'kind'=$4 and ((e.event->>'sourceId'=$5::text and $5::text is not null) or (e.event->'sourceRef'=$6::jsonb and $6::jsonb is not null))",[event.ownerId,plan.id,plan.configVersion,event.kind,event.schema==='teloa.work-event/v1'?event.sourceId:null,event.schema==='teloa.work-event/v2'?JSON.stringify(event.sourceRef):null])
+   // 撤回仍固定事实并淘汰旧待办，但不派发；自身链只凭真实 Run/Plan 关联排除。
+   if(event.schema==='teloa.work-event/v2'&&(payload.active!==true||payload.originPlanId===plan.id))continue
    await db.query("insert into teloa_plan_work_events(owner_id,plan_id,definition_version,event_id,source_event_id,state,created_at) values($1,$2,$3,$4,$5,'pending',$6) on conflict do nothing",[event.ownerId,plan.id,plan.configVersion,event.id,event.sourceEventId,event.createdAt])
   }return event
  }
@@ -70,16 +110,7 @@ export class WorkEventService{
   const v=workObject(value,['planId','definitionVersion','eventId','controlGeneration']);if(!workUuid(v.planId)||!workUuid(v.eventId)||!Number.isSafeInteger(v.definitionVersion)||Number(v.definitionVersion)<1||!Number.isSafeInteger(v.controlGeneration)||Number(v.controlGeneration)<1)throw denied()
   const db=await this.pool.connect();try{await db.query('begin')
    const stored=(await db.query('select * from teloa_work_events where owner_id=$1 and id=$2',[owner,v.eventId])).rows[0];if(!stored)throw denied();const event=this.read(stored)
-   const result=await new PlanOccurrenceService(this.pool,this.clock,this.market).claimEventInTransaction(db,owner,{planId:v.planId,definitionVersion:Number(v.definitionVersion),event,controlGeneration:Number(v.controlGeneration),now:this.clock.now()},async()=>{
-    if(event.kind==='material-version'){const actual=(await db.query("select * from teloa_resources where owner_id=$1 and id=$2 and status='active' for share",[owner,event.sourceId])).rows[0];if(!actual||!isResourceSpec(actual.spec)||!this.ports)throw denied();const current=await this.ports.material(db,owner,event.sourceId);if(actual.revision!==stored.payload.revision||current.sourceVersion!==stored.payload.sourceVersion||current.contentSha256!==stored.payload.contentSha256)throw new WorkError('teloa/version-conflict','资料事件已被新版本替代。')}
-    else if(event.kind==='group-message'){
-     const row=(await db.query('select m.id from teloa_group_messages m join teloa_groups g on g.id=m.group_id and g.owner_id=m.owner_id where m.owner_id=$1 and m.id=$2 and m.group_id=$3 and not g.archived for share of m,g',[owner,stored.payload.messageId,event.sourceId])).rows[0],plan=readStoredPlan((await db.query('select * from teloa_plans where owner_id=$1 and id=$2',[owner,v.planId])).rows[0])
-     if(!row||!plan.workDefinition)throw denied()
-     const grant=await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:plan.roleId,expectedRoleVersion:plan.roleVersion,scope:plan.scope,inputSchema:'teloa.task-run-input/v2',authorization:plan.workDefinition.authorization,groupId:event.sourceId},db);grant.assertCurrent()
-    }else if(event.kind==='child-completed'){
-     const child=(await db.query("select s.*,r.task_id from teloa_task_run_subagents s join teloa_task_runs r on r.id=s.run_id and r.owner_id=s.owner_id where s.owner_id=$1 and s.run_id=$2 and s.reservation_id=$3 for share of s,r",[owner,event.sourceId,stored.payload.reservationId])).rows[0]
-     if(!child||child.state!=='ended'||!child.ended_at||date(child.ended_at)!==event.sourceVersion||child.task_id!==stored.payload.taskId)throw denied()
-    }else if(event.kind==='approval-result'){const row=(await db.query('select p.*,a.version as current_version,a.state as action_state,(select request_id from teloa_security_action_requests ar where ar.owner_id=a.owner_id and ar.result_action_id=a.id order by ar.result_action_version limit 1) as operation_request_id from teloa_security_approvals p join teloa_security_actions a on a.id=p.action_id and a.owner_id=p.owner_id where p.owner_id=$1 and p.id=$2 for share of p,a',[owner,stored.payload.approvalId])).rows[0],control=(await db.query('select generation,state from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,stored.payload.roundControlId])).rows[0];if(!row||readStoredSecurityApproval(row).decision!=='approved'||row.current_version!==stored.payload.actionVersion+1||row.action_state!=='approved'||row.operation_request_id!==stored.payload.operationRequestId||date(row.expires_at)<=this.clock.now()||!control||control.generation!==stored.payload.controlGeneration||control.state!=='active'||!this.ports?.approval)throw denied();await this.ports.approval(db,owner,event.sourceId,row.current_version,stored.payload.approvalId)}
+   const result=await new PlanOccurrenceService(this.pool,this.clock,this.market,(db,owner,id)=>this.verifiedSourceInTransaction(db,owner,id)).claimEventInTransaction(db,owner,{planId:v.planId,definitionVersion:Number(v.definitionVersion),event,controlGeneration:Number(v.controlGeneration),now:this.clock.now()},async()=>{await this.verifiedSourceInTransaction(db,owner,event.id)
    })
    await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}

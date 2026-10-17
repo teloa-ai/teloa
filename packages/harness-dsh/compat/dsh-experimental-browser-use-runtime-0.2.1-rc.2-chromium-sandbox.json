@@ -1,0 +1,31 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-experimental-browser-use-runtime",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "api": [
+    "BrowserMcpConfig.chromiumSandbox",
+    "BrowserMcpLaunchConfig.chromiumSandbox"
+  ],
+  "apiVersion": "teloa.browser-chromium-sandbox/v1",
+  "files": [
+    {
+      "path": "lib/types/mcp.js",
+      "beforeSha256": "80010c668d03a87ee10b890a50eabf0f4aecf30eed729c2ad46cf5f55baadbe5",
+      "afterSha256": "74d1a6149084b7392b79a53885b650b351d36311aee36c2d538925915081f53a"
+    },
+    {
+      "path": "lib/types/mcp.d.ts",
+      "beforeSha256": "591240619159247d39c3efebf4f322b24536000a3e1c65678253078fc516cf53",
+      "afterSha256": "fd9e3319958d475f8f50eb0d3b7ce35761e4b9c82294b4d79099ff54ec6bc3ca"
+    }
+  ],
+  "patchSha256": "a51d8abb145c51cca36203f30514978fe2b8eba9ab2370cb1e0bffddc878e2f7",
+  "scope": {
+    "launch": "Optional boolean chromiumSandbox on the original shared launch schema. Only true requests the pinned Playwright MCP --sandbox option.",
+    "default": "False or omission preserves upstream arguments; attachment is unchanged. No --no-sandbox option is added.",
+    "authority": "This configures the browser process only; no work, tool, network or deployment authorization is introduced.",
+    "verification": "Capability version identifies this adapter; actual operating-system sandbox support must be verified by the deployment."
+  }
+}

@@ -1,4 +1,10 @@
 .caption{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);color:var(--teloa-muted);margin:20px 4px 8px}
+.modeTabs{display:flex;gap:20px;border-bottom:1px solid var(--teloa-border);padding-bottom:0;margin:0 42px 28px}
+.workPage .modeTabs button{border:0;border-radius:0;background:transparent;color:var(--teloa-muted);padding:10px 0;border-bottom:2px solid transparent}.workPage .modeTabs button[aria-current]{color:var(--teloa-text);border-bottom-color:var(--teloa-text)}.modeTabs span{font-size:var(--teloa-font-caption);margin-left:4px;color:var(--teloa-muted)}
+.goalStart{box-sizing:border-box;width:100%;max-width:920px;margin:8px auto;padding:16px 42px}.goalStart h2{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);margin:0 0 8px}.goalStart p{color:var(--teloa-muted);margin:0 0 16px}.goalLabel{display:grid;gap:8px}.goalLabel textarea{box-sizing:border-box;width:100%;min-height:110px;resize:vertical;padding:12px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);color:var(--teloa-text);font:inherit;line-height:1.8}.goalFooter{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:12px}.goalFooter small{max-width:440px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}.goalFooter>div{display:flex;gap:8px;flex:none}.goalFooter button{flex:none}.goalLabel textarea:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-1px;box-shadow:none}
+.savedPlans{box-sizing:border-box;width:100%;max-width:920px;margin:16px auto;padding:0 42px}.savedPlans>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.savedPlans h2{font-size:var(--teloa-font-section);margin:0}.workPage .savedPlan{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:12px;border:1px solid var(--teloa-border);margin-bottom:8px;border-radius:8px}.savedPlan>svg{flex:none;color:var(--teloa-muted)}.savedPlan>span:first-of-type{flex:1;min-width:0}.savedPlan strong,.savedPlan small{display:block;overflow-wrap:anywhere}.savedPlan small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);margin-top:4px}.savedPlan strong{font-weight:var(--teloa-weight-medium)}
+@media(min-width:1440px){.modeTabs{width:calc(100% - 84px);max-width:1036px;box-sizing:border-box;align-self:center}}
+@media(max-width:760px){.modeTabs{margin:0 21px 18px}.goalStart{padding:18px 21px;margin:0}.goalFooter{align-items:flex-start;flex-direction:column}}
 .notice{padding:14px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-sidebar)}
 .list{display:flex;flex-direction:column;gap:8px}.list>button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:12px;min-width:0;overflow-wrap:anywhere}.list small{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6}.list strong{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
 .fields{display:flex;gap:12px;flex-wrap:wrap}.fields>label{flex:1;min-width:100px}
@@ -7,7 +13,7 @@
 .sandboxBanner{border-color:var(--teloa-warn);background:var(--teloa-warn-bg)}.sandboxBanner>strong{color:var(--teloa-warn)}
 .workPage{overflow:auto}
 .workPage>header{box-sizing:border-box;width:100%;max-width:1120px;margin:0 auto;padding-left:42px;padding-right:42px;flex-shrink:0}
-.workPage>header{padding-top:38px;padding-bottom:24px;border:0;align-items:flex-start}.workPage>header h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-heading)}.workPage>header p{line-height:1.8}
+.workPage>header{padding-top:26px;padding-bottom:16px;border:0;align-items:flex-start}.workPage>header h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);letter-spacing:normal;line-height:var(--teloa-leading-heading)}.workPage>header p{line-height:1.6;font-size:var(--teloa-font-caption);max-width:650px}
 .workLayout{flex:1 0 420px}
 .overview .workLayout{display:block;flex:1 0 auto;box-sizing:border-box;width:100%;max-width:1120px;margin:0 auto;padding:0 42px 38px}
 .overview [data-teloa-pane="directory"]{padding:0;border:0;background:transparent}.overview [data-teloa-pane="detail"]{display:none}
@@ -27,9 +33,33 @@
 .planBody{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
 @media(max-width:1000px){.planBody{grid-template-columns:1fr}}
 
+/* N46 计划详情分层：状态与下一步全宽在前；属性为紧凑「标签 · 值」行，完整换行不截断；版本、来源与调度健康收为次要信息。 */
+.planStatus{margin:0 0 20px;min-width:0}
+.planMain,.planFacts{min-width:0}
+.planFacts dl>div{grid-template-columns:96px minmax(0,1fr);gap:8px;padding:6px 0;border-top:0}
+.planFacts dl>div>dt{padding-top:2px}
+.planFacts dl>div>dd>span{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+.planMore{margin-top:8px;border-top:1px solid var(--teloa-border);padding-top:4px}
+.planMore>summary{display:flex;align-items:center;min-height:36px;cursor:pointer;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.planMore>summary:hover{color:var(--teloa-text)}
+.planMore>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+/* 单列时（窄窗口或会话抽屉）属性排在活动时间线之前，不再沉到最底下。 */
+.planFacts{grid-column:2;grid-row:1}.planMain{grid-column:1;grid-row:1}
+@media(max-width:1000px){.planFacts,.planMain{grid-column:1;grid-row:auto}}
+.planDrawer .planFacts,.planDrawer .planMain{grid-column:1;grid-row:auto}
+@media(max-width:480px){.planFacts dl>div{grid-template-columns:minmax(0,1fr);gap:2px}}
+
 /* 列表筛选只在有内容或已有条件时显示，与列表共用一行。 */
 .directoryFilters{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .directoryFilters>label{flex:1 1 240px;min-width:180px}
-.directoryFilters>select{flex:0 1 180px;min-width:120px}
 .directoryFilters>button.resetFilters{flex:none;border:0;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
-@media(max-width:600px){.directoryFilters>label{flex-basis:100%;min-width:0}.directoryFilters>select{flex:1 1 120px}.directoryFilters>button.resetFilters{margin-left:auto}}
+.workPage .directoryFilters>label:focus-within{outline:1px solid var(--teloa-focus);outline-offset:-1px}.directoryFilters input:focus-visible{outline:0}
+.workPage [data-teloa-pane=directory]>div:last-child{gap:0;margin-top:12px}
+.workPage button.planRow{flex-direction:row;align-items:center;gap:12px;min-height:70px;padding:14px 10px;border:0;border-bottom:1px solid var(--teloa-border);border-radius:0;background:transparent}
+.planRow>svg{flex:none;color:var(--teloa-muted)}.planRowContent{flex:1;min-width:0}.planRowContent strong,.planRowContent small{display:block}.planRowContent small{margin-top:5px;line-height:1.6}.planRow>span:last-child{flex:none}
+@media(max-width:600px){.directoryFilters>label{min-width:0}.directoryFilters>button.resetFilters{margin-left:auto}}
+
+/* 会话入口复用同一计划详情；关闭抽屉保留原会话和输入。 */
+.embedded{padding:0!important;min-height:0!important;height:0!important;overflow:visible!important}.embedded>header,.embedded>nav,.embedded>p{display:none}.embedded [data-teloa-pane=directory]{display:none}.planDrawer.planDrawer{width:min(760px,100vw)}.planDrawer [data-teloa-pane=detail]{width:100%;box-sizing:border-box;overflow:visible;padding:20px 24px;border:0;background:transparent}.planDrawer [data-teloa-pane=detail]>button:first-child{display:none}.embedded [data-teloa-pane=detail]{min-height:0}.embedded [data-teloa-pane=directory]{display:none}
+
+.drawerPage .workLayout{display:block;box-sizing:border-box;width:100%;max-width:1120px;margin:0 auto;padding:0 42px 38px}.drawerPage [data-teloa-pane=directory]{padding:0;border:0;background:transparent;width:100%}.planDrawer .planBody{grid-template-columns:minmax(0,1fr);gap:20px}.planDrawer [data-teloa-pane=detail]{min-height:0}

@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react'
-import {ArrowDown,ArrowUp,Minus} from 'lucide-react'
+import {ArrowDown,ArrowUp,ArrowUpRight,Minus} from 'lucide-react'
 import {validateWidgetResultShape,type BusinessConfigurationViewRef,type BusinessLedger,type BusinessWidgetCell,type BusinessWidgetDefinition,type BusinessWidgetResult} from '@teloa/contract'
 import {ViewBars,ViewBoardCard,ViewPie,ViewTable,ViewTrend} from './BusinessLedger.js'
 import {durationText,localizedBusinessView,localizedBusinessViewTitle} from './business-definition-localization.js'
@@ -8,6 +8,7 @@ import type {BusinessTarget} from './business-preview.js'
 import {businessChartTheme,renderChart} from './business-chart-renderer.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessDashboardPage.module.css'
+import light from './light-actions.module.css'
 
 /**
  * 看板的六种原生组件与一种声明式图表。组件只摆 `business-widget-presentation.ts` 算好的结果；
@@ -137,6 +138,7 @@ export function BusinessWidget({widget,result,ledger,viewRefs,colorScheme,ranged
  // 成功的结果渲染前再核一次形状（与服务端落库前同一判据），不合格按失败显示，不拿缺列的结果去画。
  const shape=result?.status==='ok'?validateWidgetResultShape(widget,result):null
  const failure=result?.status==='failed'?widgetFailure(result.error):shape!==null?widgetFailure({code:'teloa/invalid-input',reason:shape}):result?undefined:{key:'business.dashboards.error.notComputed' as const}
+ const refreshFailure=result?.refreshError?widgetFailure(result.refreshError):undefined
  const props=result&&!failure?{widget,result}:undefined
  const drilldown=go?widget.drilldown:undefined
  // 组件的 domain 就是它所在的业务范围（看板页回包读取器已核对）。
@@ -144,7 +146,7 @@ export function BusinessWidget({widget,result,ledger,viewRefs,colorScheme,ranged
  const onDatum=drill?(datum:Record<string,unknown>)=>drill(datum as Record<string,BusinessWidgetCell>)?.():undefined
  const title=<h3>{localizedBusinessViewTitle(widget,locale)}</h3>
  return <>
-  {drilldown?<div className={css.widgetTitle}>{title}<button type="button" data-drilldown-open onClick={()=>go!(drilldownTarget(widget.domain,widget,undefined)!)}>{t('business.dashboards.drilldown.open')}</button></div>:title}
+  {drilldown?<div className={css.widgetTitle}>{title}<button type="button" className={light.link} data-drilldown-open onClick={()=>go!(drilldownTarget(widget.domain,widget,undefined)!)}>{t('business.dashboards.drilldown.open')}<ArrowUpRight size={13} aria-hidden/></button></div>:title}
   {ranged&&widget.timeFilter===undefined&&<p className={css.note} data-range-unbound={widget.id}>{t('business.dashboards.range.unbound')}</p>}
   <div className={css.widgetBody}>
    {failure&&<p className={css.failed} role="status" data-widget-failed={widget.id}>{t(failure.key,failure.params)}</p>}
@@ -156,6 +158,7 @@ export function BusinessWidget({widget,result,ledger,viewRefs,colorScheme,ranged
     :widget.kind==='view-ref'?<ViewRefWidget {...props} ledger={ledger} viewRefs={viewRefs}/>
     :<ChartWidget {...props} colorScheme={colorScheme} onDatum={onDatum}/>)}
   </div>
+  {refreshFailure&&<p className={css.failed} role="status" data-widget-refresh-failed={widget.id}>{t(refreshFailure.key,refreshFailure.params)}</p>}
   {result?.stale&&<p className={css.note}>{t('business.dashboards.stale')}</p>}
  </>
 }

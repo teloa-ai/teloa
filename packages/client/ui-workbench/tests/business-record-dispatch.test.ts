@@ -81,6 +81,7 @@ test('记录详情读取在途/失败时不允许将旧选择作为已核实对�
 
 test('同步来源告警可交办，但不显示手工记录编辑和归档操作',async t=>{
  const p=await fixture(t)
+ await p.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click()
  await p.evaluate(()=>{const s=(window as any).dispatchFixture;s.external=true;s.writable=true;s.render()})
  await p.getByRole('button',{name:'客户订单'}).click()
  await p.getByText('同步数据 · 只读').waitFor()
@@ -100,7 +101,7 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  assert.deepEqual(await p.evaluate(()=>(window as any).dispatchFixture.opened),['22222222-2222-4222-8222-222222222222'])
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
  await p.screenshot({path:'/tmp/teloa-record-dispatch/tasks-'+locale+'-'+width+'.png',fullPage:true})
- await p.getByRole('button',{name:locale==='en'?'Close details':'关闭详情',exact:true}).click()
+ await p.getByRole('dialog').getByRole('button',{name:locale==='en'?'Close':'关闭',exact:true}).click()
  assert.equal(await list.count(),0)
  await p.evaluate(()=>{const s=(window as any).dispatchFixture;s.preview=true;s.render()})
  assert.equal(await list.count(),0)

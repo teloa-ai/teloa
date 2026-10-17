@@ -141,6 +141,18 @@ test('普通本人会话的接手同事偏好不扩大身份：无真实role/tas
  assert.equal((await f.call(read)).isError,false);assert.equal((await f.call(write,{operations:[operation]})).isError,false);assert.equal(f.requests.length,1)
 })
 
+test('群明确工作只按原Run授予读取固定目标业务，直接写入、停止、撤权和原生身份变化均拒绝',async t=>{
+ let allowed=[read],stopped=false,valid=true,native='native-task'
+ const f=await fixture({readTaskPolicy:async()=>({allowedTools:allowed,nativeRequestId:'native-task',stopRequested:stopped}),isTaskConversation:async()=>true,groupTask:async(_db,sessionId)=>{if(!valid)throw Error('原群授权撤回');return {ownerId:'self',sessionId,runId:'run',nativeRequestId:native,taskId:'task',taskVersion:1,scope:'sales',groupId:'group',roleId:'role',fingerprint:'fixed'}}} as Partial<BusinessRecordToolsPorts>);t.after(()=>f.ctx.fiber.dispose())
+ f.agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:'native-task'} as never,content:[{type:'text',text:'核对原业务字段并准备草稿'}]}),{surfaceOp:'append'})
+ const result=await f.call(read,{mode:'type',type:'customer'});assert.equal(result.isError,false,JSON.stringify(result));assert.equal(body(result).definition.domain,'sales')
+ assert.equal((await f.call(write,{operations:[operation]})).isError,true);assert.equal(f.requests.length,0);assert.equal(f.approvals.length,0)
+ allowed=[];assert.equal((await f.call(read)).isError,true);allowed=[read]
+ stopped=true;assert.equal((await f.call(read)).isError,true);stopped=false
+ native='another-native';assert.equal((await f.call(read)).isError,true);native='native-task'
+ valid=false;assert.equal((await f.call(read)).isError,true)
+})
+
 test('recent-writes最长合法引用仍有界且保留下一页，归档返回原准确快照身份',async t=>{
  const f=await fixture();t.after(()=>f.ctx.fiber.dispose());f.ports.records.recentBatches=async(_actor,input)=>{
   const item=()=>({requestId:randomUUID(),scope:'sales',source:{sessionId:f.agent.session.id,messageId:'文'.repeat(200),seq:1},createdAt:stamp,operations:Array.from({length:50},(_,i)=>({requestId:randomUUID(),operation:'create' as const,reference:{scope:'sales',type:'类'.repeat(80),id:'录'.repeat(197)+String(i).padStart(3,'0'),version:1,snapshotHash:hash}}))})

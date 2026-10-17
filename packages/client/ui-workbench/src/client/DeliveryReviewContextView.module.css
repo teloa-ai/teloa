@@ -1,0 +1,8 @@
+.card{min-width:0;margin:8px 0;display:grid;gap:8px}
+.provenance{color:var(--teloa-muted,inherit);font-size:inherit;min-width:0;max-width:100%}
+.provenance summary{cursor:pointer;border-radius:4px}
+.provenance summary:focus-visible{outline:2px solid var(--teloa-text);outline-offset:3px}
+.provenance p{margin:6px 0;max-width:64ch;overflow-wrap:anywhere}
+.body{overflow-wrap:anywhere;user-select:text}
+.footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.85em}
+.warning{color:var(--teloa-danger,#b42318)}

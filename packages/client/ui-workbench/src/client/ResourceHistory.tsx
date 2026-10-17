@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, X } from 'lucide-react';
+import { BookOpen, RefreshCw } from 'lucide-react';
+import { ToolbarIconButton } from './ToolbarIconButton.js';
+import {ContextDrawer} from './ContextDrawer.js';
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { ResourceHistoryPage } from '@teloa/contract';
 import type { BindingClient } from './binding-client.js';
@@ -11,19 +13,20 @@ export function ResourceHistory({ sessionId, api, work }: PropsRuntime<'conversa
     api: Pick<ResourceApi, 'history'>;
     work: BindingClient;
 }) {
-    const {locale,t}=useI18n();
+    const {t}=useI18n();
     const binding = useSyncExternalStore(work.subscribe, work.getSnapshot), ready = binding.status === 'ready' && binding.sessionId === sessionId;
     const [open, setOpen] = useState(false);
     useEffect(() => setOpen(false), [sessionId, ready]);
-    return <><button type="button" className={css.trigger} disabled={!ready} onClick={() => setOpen(true)}><BookOpen size={15}/>{t("knowledge.ui.079")}</button>{open && ready && <HistoryDialog key={sessionId} sessionId={sessionId} api={api} close={() => setOpen(false)}/>}</>;
+    return <><button type="button" className={css.trigger} disabled={!ready} aria-label={t('knowledge.ui.079')} title={t('knowledge.ui.079')} aria-expanded={open} onClick={() => setOpen(true)}><BookOpen size={15} aria-hidden="true"/></button>{ready && <HistoryDrawer key={sessionId} open={open} sessionId={sessionId} api={api} close={() => setOpen(false)}/>}</>;
 }
-function HistoryDialog({ sessionId, api, close }: {
+function HistoryDrawer({ sessionId, api, close, open }: {
+    open: boolean;
     sessionId: string;
     api: Pick<ResourceApi, 'history'>;
     close: () => void;
 }) {
     const {locale,t}=useI18n();
-    const dialog = useRef<HTMLDialogElement>(null), closeButton = useRef<HTMLButtonElement>(null), request = useRef<AbortController>(), generation = useRef(0);
+    const request = useRef<AbortController>(), generation = useRef(0);
     const [page, setPage] = useState<ResourceHistoryPage>(), [loading, setLoading] = useState(false), [error, setError] = useState<string>();
     const read = async (beforeSeq?: number) => {
         request.current?.abort();
@@ -48,17 +51,14 @@ function HistoryDialog({ sessionId, api, close }: {
         }
     };
     useEffect(() => {
-        const trigger = document.activeElement, node = dialog.current;
-        node?.showModal();
-        closeButton.current?.focus();
-        void read();
-        return () => { generation.current++; request.current?.abort(); node?.close(); if (trigger instanceof HTMLElement && trigger.isConnected)
-            trigger.focus(); };
-    }, [sessionId, api]);
-    return <dialog ref={dialog} aria-label={t("knowledge.ui.079")} className={css.dialog} onCancel={close}>
-    <header><div><h2>{t("knowledge.ui.081")}</h2><p>{t("knowledge.ui.082")}</p></div><button ref={closeButton} type="button" className={css.icon} aria-label={t("knowledge.ui.083")} onClick={close}><X size={19}/></button></header>
+        if (!open) return;
+        if (!page) void read();
+        return () => { generation.current++; request.current?.abort(); setLoading(false); };
+    }, [open, sessionId, api]);
+    return <ContextDrawer open={open} title={t("knowledge.ui.081")} close={close}><div className={css.history}>
+    {page&&page.items.length>0&&<p className={css.description}>{t("knowledge.ui.082")}</p>}
     <div className={css.body} aria-busy={loading}>
-      <p className={css.hint}>{t("knowledge.ui.084")}</p>
+      {page&&page.items.length>0&&<p className={css.hint}>{t("knowledge.ui.084")}</p>}
       {error && <p className={css.error} role="alert">{error}</p>}
       {loading && <p role="status">{t("knowledge.ui.085")}</p>}
       {!loading && !error && page?.items.length === 0 && <div className={css.empty}><BookOpen size={28}/><h3>{t("knowledge.ui.086")}</h3><p>{t("knowledge.ui.087")}</p></div>}
@@ -72,6 +72,6 @@ function HistoryDialog({ sessionId, api, close }: {
         </div>)}
       </section>)}
       {page?.nextBeforeSeq !== null && page?.nextBeforeSeq !== undefined && <button type="button" className={css.button} disabled={loading} onClick={() => void read(page.nextBeforeSeq!)}>{t("knowledge.ui.102")}</button>}
-    </div><footer><span>{t("knowledge.ui.103")}</span><button type="button" className={css.button} disabled={loading} onClick={() => void read()}>{t("knowledge.ui.104")}</button></footer>
-  </dialog>;
+    </div><footer><span>{t("knowledge.ui.103")}</span><ToolbarIconButton label={t("knowledge.ui.104")} icon={RefreshCw} disabled={loading} onClick={() => void read()}/></footer>
+  </div></ContextDrawer>;
 }

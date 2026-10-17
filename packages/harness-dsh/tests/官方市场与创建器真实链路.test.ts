@@ -7,24 +7,19 @@ import {homedir} from 'node:os'
 import {dirname,join,resolve} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
 import {Context} from '@deepseek-ai/cordis'
-import {ToolRuntime} from '@deepseek-ai/dsh-tools'
-import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {LlmRuntime,ToolCallId,createUserMessage,type Message,type ReasoningEffortId} from '@deepseek-ai/dsh-llm'
-import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
-import {AgentRegistry,type AgentHandle} from '@deepseek-ai/dsh-agent'
-import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {SkillRegistry} from '@deepseek-ai/dsh-skill'
+import {LlmRuntime,ToolCallId,createUserMessage,type ReasoningEffortId} from '@deepseek-ai/dsh-llm'
+import {SessionId} from '@deepseek-ai/dsh-session'
+import {type AgentHandle} from '@deepseek-ai/dsh-agent'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import type {FileSystem} from '@deepseek-ai/dsh-fs'
 import {brandString} from '@deepseek-ai/dsh-brand'
-import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {readMarketCatalogEntry,type MarketCatalogUpstreamSkillEntry} from '@teloa/contract'
 import {adoptRemoteUpstreamEntries,listUpstreamEntries} from '../../backend/src/market/official-upstream.ts'
 import {apply} from '../src/index.ts'
 import {compositionEntries} from './fixtures/production-host.ts'
-import {installNativeHostServices} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,ControlledPromptModel} from './fixtures/native-host-services.ts'
+import {nativeToolInvocation} from './fixtures/native-tool-invocation.ts'
 import {acceptanceFetch,modelAcceptanceFetch,readAcceptanceTags,withLiveAcceptance} from './helpers/live-acceptance.ts'
 
 /**
@@ -40,6 +35,7 @@ const {LocalFileSystem}=await import(pathToFileURL(hostRequire.resolve('@deepsee
 type RpcReply={ok:boolean;value?:unknown;receipt?:{requestId:string};error?:{code?:string;message?:string}}
 type RpcHandler=(endpoint:string,payload:unknown,signal:AbortSignal)=>Promise<RpcReply>
 let container:StartedPostgreSqlContainer,root:string,ctx:Context,rpc:RpcHandler,previousProjectRoot:string|undefined
+let invocation:ReturnType<typeof nativeToolInvocation>
 const agents=new Map<string,AgentHandle>(),originalFetch=globalThis.fetch
 
 async function call(endpoint:string,payload:unknown,signal:AbortSignal=new AbortController().signal):Promise<unknown>{
@@ -69,11 +65,11 @@ before(async()=>{
  process.env.TELOA_PROJECT_ROOT=repositoryRoot
  ctx=new Context()
  ctx.provide('loader',compositionEntries())
- await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(SkillRegistry)
- await ctx.plugin(AgentLoop,{agents:[]})
+ await installNativeSessions(ctx)
  await ctx.plugin(LocalFileSystem,{cwd:root})
  await ctx.plugin(ToolSkill)
  await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
+ invocation=nativeToolInvocation(ctx,{providers:['test'],adapter:new ControlledPromptModel()})
  const workspaces=new Map<string,{id:string;path:string}>()
  ctx.provide('workspaceRegistry',{
   create:async(path:string)=>{const found=[...workspaces.values()].find(entry=>entry.path===path);if(found)return found;const entry={id:'market-workspace-'+(workspaces.size+1),path};workspaces.set(entry.id,entry);return entry},
@@ -105,10 +101,38 @@ after(async()=>{
  if(previousProjectRoot===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=previousProjectRoot
 },{timeout:120000})
 
+/** 随发行固定的本地目录（市场 d3e919a、快照 2026.10.16.2）：33 条含 2 条内置技能；在线签名索引不收录 teloa.dashboard-designer，共 114 条，不是此未采用在线索引的宿主边界。 */
+const CURRENT_SOLUTIONS=['teloa.grok-marketing-team','teloa.grok-product-team','teloa.grok-sales-team']
+const CURRENT_ROLES=['teloa.grok-call-followup','teloa.grok-competitor-watch','teloa.grok-content-remix','teloa.grok-feature-ask-collator','teloa.grok-launch-coordinator','teloa.grok-meeting-prep','teloa.grok-newsletter-desk','teloa.grok-product-performance','teloa.grok-sales-outbound']
+const CURRENT_DASHBOARDS=['teloa.b2b-sales-followup-dashboard','teloa.content-ops-dashboard','teloa.saas-delivery-dashboard']
+const CURRENT_SNAPSHOT_SKILLS:[string,string,null][]=[['anthropic.commit','install',null],['anthropic.feature-dev','install',null],['anthropic.internal-comms','install',null],['anthropic.mcp-builder','install',null],['anthropic.modernize-assess','install',null],['anthropic.modernize-extract-rules','install',null],['anthropic.review-pr','install',null],['openai.security-best-practices','install',null],['openai.security-threat-model','install',null],['openai.skill-creator','builtin',null],['teloa.dashboard-designer','builtin',null]]
+type Listing={catalogVersion:string;items:{entry:{id:string;kind:string;delivery:string};addedContentId:string|null}[];nextCursor:string|null;counts:Record<string,number>}
+
+test('第 0 步：唯一 Teloa 市场精确读取——快照 33 条与上游索引 82 条共 115 条分页读完，3 团队 / 9 员工 / 3 看板 / 6 连接 / 1 模型 / 93 技能',{timeout:60000},async()=>{
+ const ids:string[]=[];let cursor:string|null=null,pages=0
+ do{
+  const page=await call('market-catalog/list',{marketplace:'teloa',limit:50,...(cursor?{cursor}:{})}) as Listing
+  assert.equal(page.catalogVersion,'2026.10.16.2')
+  assert.deepEqual(page.counts,{skill:93,dashboard:3,role:9,solution:3,connector:6,model:1},'计数按全集而非当页')
+  ids.push(...page.items.map(item=>item.entry.id));cursor=page.nextCursor;pages++
+ }while(cursor)
+ assert.equal(pages,3);assert.equal(ids.length,115);assert.equal(new Set(ids).size,115,'115 条唯一，分页不重不漏')
+ const snapshot=await call('market-catalog/list',{limit:50}) as Listing
+ assert.equal(snapshot.nextCursor,null);assert.equal(snapshot.items.length,33,'不传来源的旧宿主只读快照一页')
+ const kindIds=(kind:string)=>snapshot.items.filter(item=>item.entry.kind===kind).map(item=>item.entry.id)
+ assert.deepEqual(kindIds('solution'),CURRENT_SOLUTIONS);assert.deepEqual(kindIds('role'),CURRENT_ROLES);assert.deepEqual(kindIds('dashboard'),CURRENT_DASHBOARDS)
+ assert.deepEqual(kindIds('connector'),['teloa.mcp-figma','teloa.mcp-github','teloa.mcp-linear','teloa.mcp-notion-remote','teloa.mcp-sentry','teloa.mcp-slack']);assert.deepEqual(kindIds('model'),['teloa.model.sensevoice'])
+ assert.deepEqual(kindIds('skill'),CURRENT_SNAPSHOT_SKILLS.map(([id])=>id))
+ // 上游索引 82 条全部是技能且只来自 claude-code / cursor；ClawHub、Hermes、OpenClaw 来源当前为空
+ const upstream=ids.filter(id=>!snapshot.items.some(item=>item.entry.id===id))
+ assert.equal(upstream.length,82);assert.ok(upstream.every(id=>/^(anthropic|cursor)\./.test(id)))
+ for(const marketplace of ['clawhub','hermes','openclaw'])assert.equal((await call('market-catalog/list',{marketplace,limit:50}) as Listing).items.length,0,marketplace)
+})
+
 test('第 1–3 步：官方目录列出固定技能快照，添加内部沟通稿并安装后出现在原生目录',{timeout:180000},async()=>{
- const listed=await call('market-catalog/list',{}) as {catalogVersion:string;items:{entry:{id:string;kind:string;delivery:string};addedContentId:string|null}[]}
- // 方案条目另由第 9 步覆盖，这里只核对技能条目
- assert.deepEqual(listed.items.filter(item=>item.entry.kind==='skill').map(item=>[item.entry.id,item.entry.delivery,item.addedContentId]),[['anthropic.commit','install',null],['anthropic.feature-dev','install',null],['anthropic.internal-comms','install',null],['anthropic.mcp-builder','install',null],['anthropic.modernize-assess','install',null],['anthropic.modernize-extract-rules','install',null],['anthropic.review-pr','install',null],['hermes.grounded-citations','install',null],['hermes.meeting-action-items','install',null],['hermes.simplify-code','install',null],['openai.security-best-practices','install',null],['openai.security-threat-model','install',null],['openai.skill-creator','builtin',null],['openclaw.github','install',null],['teloa.dashboard-designer','builtin',null]])
+ const listed=await call('market-catalog/list',{}) as Listing
+ // 方案条目另由第 9 步覆盖，这里只核对技能条目（当前快照 11 条）
+ assert.deepEqual(listed.items.filter(item=>item.entry.kind==='skill').map(item=>[item.entry.id,item.entry.delivery,item.addedContentId]),CURRENT_SNAPSHOT_SKILLS)
  const requestId=randomUUID()
  const first=await call('market-catalog/add',{requestId,entryId:'anthropic.internal-comms'}) as {receipt:{contentId:string;source:{kind:string}}}
  const again=await call('market-catalog/add',{requestId,entryId:'anthropic.internal-comms'}) as {receipt:{contentId:string}}
@@ -220,10 +244,9 @@ test('GitHub 目录真实链路：确认后按审核清单添加、安装并由 
  const dispose=ctx.on('approval/request',async request=>{reasons.push(request.reason??'');return allowed?'allowed-once':'rejected'})
  try{
   const conversation=await call('conversations/create',{requestId:randomUUID(),title:'添加审核后的技能'}) as {sessionId:string}
-  const handle=agents.get(conversation.sessionId)!,session=handle.agent.session
-  session.append('turn/start',{turn:1})
-  session.append('user/message',createUserMessage({source:{kind:'user',rpcId:brandString<SessionRequestId>('github-catalog-turn')},content:[{type:'text',text:'添加笔记技能'}]}),{surfaceOp:'append'})
-  const run=(name:string,args:Record<string,unknown>,id:string)=>ctx.tools.execute({agent:handle.agent,name,arguments:args,callId:ToolCallId(id),signal:AbortSignal.timeout(30000)})
+  const handle=agents.get(conversation.sessionId)!
+  await invocation.instruction(handle.agent,'添加笔记技能')
+  const run=(name:string,args:Record<string,unknown>,id:string)=>invocation.invoke(handle.agent,{name,arguments:args,callId:ToolCallId(id),signal:AbortSignal.timeout(30000)})
   const decode=(result:Awaited<ReturnType<typeof run>>)=>{assert.equal(result.isError,false,JSON.stringify(result.content));return JSON.parse(result.content.filter(item=>item.type==='text').map(item=>(item as {text:string}).text).join('\n'))}
   const resolved=decode(await run('teloa_market_resolve',{reference:entry.id},'resolve')).candidate
   assert.equal(resolved.kind,'catalog');assert.equal(resolved.entryId,entry.id)
@@ -283,10 +306,9 @@ test('真实资源验收：固定 GitHub 候选经模拟本人批准安装、原
    else assert.ok(expectedRawPaths.has(decodeURIComponent(url.pathname)),'只下载固定提交中的声明文件')
   },120000)
   const conversation=await liveCall('conversations/create',{requestId:randomUUID(),title:'真实固定资源安装验收'}) as {sessionId:string}
-  const handle=agents.get(conversation.sessionId)!,session=handle.agent.session
-  session.append('turn/start',{turn:1})
-  session.append('user/message',createUserMessage({source:{kind:'user',rpcId:brandString<SessionRequestId>('live-catalog-turn')},content:[{type:'text',text:'安装我已审查的 '+entry.id}]}),{surfaceOp:'append'})
-  const run=(name:string,args:Record<string,unknown>,id:string)=>scope.run(120000,signal=>ctx.tools.execute({agent:handle.agent,name,arguments:args,callId:ToolCallId(id),signal}))
+  const handle=agents.get(conversation.sessionId)!
+  await scope.run(120000,signal=>invocation.instruction(handle.agent,'安装我已审查的 '+entry.id,{signal}))
+  const run=(name:string,args:Record<string,unknown>,id:string)=>scope.run(120000,signal=>invocation.invoke(handle.agent,{name,arguments:args,callId:ToolCallId(id),signal}))
   const decode=(result:Awaited<ReturnType<typeof run>>)=>{assert.equal(result.isError,false,JSON.stringify(result.content));return JSON.parse(result.content.filter(item=>item.type==='text').map(item=>(item as {text:string}).text).join('\n'))}
   const resolved=decode(await run('teloa_market_resolve',{reference:entry.id},'live-resolve')).candidate
   assert.equal(reasons.length,0);assert.equal(seen.length,0)
@@ -416,7 +438,7 @@ test('真实资源验收：未审 GitHub 子目录导入按 commit 对象的根�
 })
 const skillBody=JSON.stringify({id:'weekly-report-check',title:'周报核对',version:'1.0.0',categories:[],files:[{path:'SKILL.md',base64:Buffer.from('---\nname: weekly-report-check\ndescription: Check weekly reports against sources.\n---\nCompare each claim with the cited source.\n').toString('base64')}]})
 
-test('第 5–6 步：创建器只进本人普通会话；技能草案在创建器正文可见后才进入本人确认并保存',{timeout:180000},async()=>{
+test('第 5–6 步：创建器只进本人普通会话；正文可见后保存草案，预览应用才确认安装技能',{timeout:180000},async t=>{
  const conversation=await call('conversations/create',{requestId:randomUUID(),title:'新建技能'}) as {sessionId:string;status:string}
  assert.equal(conversation.status,'ready')
  const handle=agents.get(conversation.sessionId)!
@@ -428,20 +450,28 @@ test('第 5–6 步：创建器只进本人普通会话；技能草案在创建�
  const stranger=await ctx.agents.create({sessionId:SessionId(randomUUID()),meta:{cwd:root},agentOptions:{provider:'test',model:'test'}})
  const strangerDecision=await step(stranger,'/teloa-skill-creator 做技能')
  assert.equal(strangerDecision.kind==='enter'?strangerDecision.messages.filter(message=>message.source.kind==='skill-invocation').length:-1,0,'未绑定为本人普通会话的 agent 看不到创建器')
- // 模拟真实回合：本轮一条用户指令，模型直接调用草案工具（未加载创建器）。
- const session=handle.agent.session
- session.append('turn/start',{turn:1})
- session.append('user/message',createUserMessage({source:{kind:'user',rpcId:brandString<SessionRequestId>('market-creator-turn')},content:[{type:'text',text:'帮我做一个周报核对技能'}]}),{surfaceOp:'append'})
+ // 本人输入经过最终受理，真实循环的第一轮尚未加载创建器。
+ await invocation.instruction(handle.agent,'帮我做一个周报核对技能')
  let asks=0
- ctx.on('approval/request',async()=>{asks++;return 'allowed-once'})
- const run=(callId:string)=>ctx.tools.execute({agent:handle.agent,name:'teloa_create_draft',arguments:{entity:'skill',body:skillBody},callId:ToolCallId(callId),signal:AbortSignal.timeout(20000)}) as Promise<{isError:boolean;content:unknown}>
+ t.after(ctx.on('approval/request',async()=>{asks++;return 'allowed-once'}))
+ // 本用例选择原生具体工具的 ask 模式；决定仍经过真实权限链与 ApprovalService。
+ t.after(ctx.on('tools/pre-execute',async(exec,next)=>exec.name==='teloa_create_apply'?{kind:'ask' as const,reason:'本人确认安装周报核对技能'}:next()))
+ const run=(callId:string)=>invocation.invoke(handle.agent,{name:'teloa_create_draft',arguments:{entity:'skill',body:skillBody},callId:ToolCallId(callId),signal:AbortSignal.timeout(20000)})
  const denied=await run('creator-1')
  assert.equal(denied.isError,true);assert.match(JSON.stringify(denied.content),/teloa-skill-creator/);assert.equal(asks,0)
- // 真实循环会把 pre-step 注入的创建器正文追加进会话；这里把宿主产出的那一条原样追加。
- session.append('user/message',injected[0] as Message as never,{surfaceOp:'append'})
+ // 第二轮实际调用原创建器，由真实 pre-step 注入正文并持久化，不能手工追加授权上下文。
+ await invocation.instruction(handle.agent,'/teloa-skill-creator\n帮我做一个周报核对技能')
  const accepted=await run('creator-2')
- assert.equal(accepted.isError,false,JSON.stringify(accepted.content));assert.equal(asks,1)
+ assert.equal(accepted.isError,false,JSON.stringify(accepted.content));assert.equal(asks,0,'可逆草案保存不制造审批')
  assert.match(JSON.stringify(accepted.content),/weekly-report-check/,'草案已保存并回显技能标识')
+ assert.equal(await ctx.skills.get('weekly-report-check'),undefined,'草案保存尚未安装技能')
+ const draft=JSON.parse(accepted.value as string) as {id:string;bodyHash:string}
+ const preview=await invocation.invoke(handle.agent,{name:'teloa_create_preview',arguments:{draftId:draft.id},callId:ToolCallId('creator-preview'),signal:AbortSignal.timeout(20000)})
+ assert.equal(preview.isError,false,JSON.stringify(preview.content));assert.equal(asks,0,'只读预览不制造审批')
+ assert.equal(JSON.parse(preview.value as string).draft.bodyHash,draft.bodyHash)
+ const applied=await invocation.invoke(handle.agent,{name:'teloa_create_apply',arguments:{draftId:draft.id,expectedBodyHash:draft.bodyHash},callId:ToolCallId('creator-apply'),signal:AbortSignal.timeout(20000)})
+ assert.equal(applied.isError,false,JSON.stringify(applied.content));assert.equal(asks,1)
+ assert.equal((await ctx.skills.get('weekly-report-check'))?.provider,'teloa-market','同一会话原生确认后技能已实际安装')
 })
 
 test('第 7 步：快照被改时目录停用，已安装技能不受影响',{timeout:60000},async()=>{
@@ -461,10 +491,10 @@ test('第 8 步：teloa- 前缀保留给内置技能——本人上传同名技�
 })
 
 test('第 9 步：目录里的每个官方方案都能添加、加载到业务、岗位待配置，并用 role-work 关联的任务模板真实建任务',{timeout:300000},async()=>{
- // 全量超过一页 50 条，按 kind 取方案
+ // 按 kind 取方案：当前目录只有 3 个团队方案（营销 / 产品 / 销售）
  const listing=await call('market-catalog/list',{kind:'solution'}) as {items:{entry:{id:string;kind:string;solution?:{packageId:string;scope:string}};addedContentId:string|null}[]}
  const solutions=listing.items.filter(item=>item.entry.kind==='solution')
- assert.equal(solutions.length,18,'首批七个方案、扩充的六个通用方案、第二批四个方案与第三批中国企业办公协同都在目录里')
+ assert.deepEqual(solutions.map(item=>item.entry.id),CURRENT_SOLUTIONS,'当前目录精确的 3 个团队方案')
  for(const {entry} of solutions){
   type Added={receipt:{contentId:string;source:{kind:string;entryId:string}};content:{id:string;kind:string;logicalId:string;hash:string}}
   const {receipt,content}=await call('market-catalog/add',{requestId:randomUUID(),entryId:entry.id}) as Added

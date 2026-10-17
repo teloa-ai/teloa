@@ -34,10 +34,11 @@ test('业务看板资源拒绝未知格式、浮动版本、隐藏运行数据�
  for(const value of [null,{}, {...fixture,format:'teloa.business-dashboard-resource/v2'},{...fixture,id:'../secret'},{...fixture,version:'latest'},{...fixture,records:[{customer:'private'}]},{...fixture,ownerId:'private'},{...fixture,configuration:{...fixture.configuration,format:'teloa.business-configuration/v1'}},{...fixture,configuration:{...fixture.configuration,secret:'private'}},{...fixture,configuration:{...fixture.configuration,sources:[{sourceId:'records',kind:'local-records',path:'/Users/private'}]}}])assert.throws(()=>read(value),invalid)
 })
 
-test('业务看板资源必须有可预览的看板页，所有对象与页面引用闭合',()=>{
+test('业务配置资源接受仅记录页，所有对象与页面引用仍须闭合',()=>{
  const fixture=dashboardResourceFixture()
+ assert.doesNotThrow(()=>read({...fixture,configuration:{...fixture.configuration,pages:[fixture.configuration.pages[0]],homePageId:'alerts'}}))
  for(const configuration of [
-  {...fixture.configuration,pages:[fixture.configuration.pages[0]],homePageId:'alerts'},
+  {...fixture.configuration,pages:[],homePageId:undefined},
   {...fixture.configuration,definitions:fixture.configuration.definitions.filter(row=>row.kind!=='view')},
   {...fixture.configuration,scope:'OTHER'},
   {...fixture.configuration,pages:[fixture.configuration.pages[0],{...fixture.configuration.pages[1],dashboardId:'missing'}]},

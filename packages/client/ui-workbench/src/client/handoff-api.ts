@@ -38,8 +38,9 @@ export function createHandoffApi(call:(method:string,payload:unknown)=>Promise<u
    changeJournal?.write(JSON.stringify({schema:'teloa.handoff-change/v1',request:changePending}))
    const value=await call('handoffs/change',changePending)
    if(!isTaskHandoffChangeResult(value))throw Error('负责人调整响应不一致，请核对原请求。')
-   const expectedTo=changePending.target.kind==='self'?{kind:'self'}:{kind:'role',roleId:changePending.target.roleId,roleVersion:changePending.target.expectedRoleVersion}
-   if(value.change.requestId!==changePending.requestId||value.change.taskId!==changePending.taskId||value.change.baseVersion!==changePending.expectedTaskVersion||value.change.note!==changePending.note||JSON.stringify(value.change.to)!==JSON.stringify(expectedTo))throw Error('负责人调整响应不一致，请核对原请求。')
+   const target=changePending.target,to=value.change.to
+   const sameTarget=target.kind==='self'?to.kind==='self':to.kind==='role'&&to.roleId===target.roleId&&to.roleVersion===target.expectedRoleVersion
+   if(value.change.requestId!==changePending.requestId||value.change.taskId!==changePending.taskId||value.change.baseVersion!==changePending.expectedTaskVersion||value.change.note!==changePending.note||!sameTarget)throw Error('负责人调整响应不一致，请核对原请求。')
    changeJournal?.clear();changePending=undefined;return value
   }catch(cause){if(cause&&typeof cause==='object'&&'rejected' in cause&&cause.rejected===true&&'code' in cause&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict'].includes(String(cause.code))){changeJournal?.clear();changePending=undefined}throw cause}finally{changeBusy=false}
  }

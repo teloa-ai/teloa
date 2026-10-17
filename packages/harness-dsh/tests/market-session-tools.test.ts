@@ -20,6 +20,7 @@ import {roleDailyDigestToolNames} from '../src/role-daily-log.ts'
 import {roleMemoryProposalToolName} from '../src/role-memory.ts'
 import {groupAttachToolName} from '../src/group-attach-tool.ts'
 import {groupReactToolName} from '../src/group-react-tool.ts'
+import {groupMentionToolName} from '../src/group-mention-tool.ts'
 import {createBundledExtensionHandler} from '../src/bundled-extensions.ts'
 import {mkdtemp,mkdir,readFile,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
@@ -50,7 +51,7 @@ const qwen={...common,id:'teloa.model.qwen',kind:'model',delivery:'reference',ve
 const teloaItems=[{entry:pdfTools,artifact:artifact('1'),addedContentId:null,addedRoleId:null},{entry:creator,artifact:artifact('2'),addedContentId:null,addedRoleId:null},{entry:soc,artifact:artifact('3'),addedContentId:null,addedRoleId:null},{entry:github,artifact:artifact('4'),addedContentId:null,addedRoleId:null},{entry:socT1,artifact:roleArtifact,addedContentId:null,addedRoleId:null},{entry:qwen,artifact:null,addedContentId:null,addedRoleId:null}]
 const clawhubItems=[{entry:pdfReader,artifact:null,addedContentId:null,addedRoleId:null},{entry:pdfMail,artifact:null,addedContentId:null,addedRoleId:null}]
 function stubList(payload:Record<string,unknown>){
- const pool=payload.marketplace===undefined||payload.marketplace==='teloa'?teloaItems:payload.marketplace==='clawhub'?clawhubItems:[]
+ const pool=payload.marketplace==='teloa'?[...teloaItems,...clawhubItems]:[]
  const query=typeof payload.query==='string'?payload.query.toLowerCase():''
  const items=pool.filter(item=>(payload.kind===undefined||item.entry.kind===payload.kind)&&(!query||JSON.stringify(item.entry).toLowerCase().includes(query)))
  return {catalogVersion:'2026.9.25',items,nextCursor:null,counts:{solution:1,role:1,skill:2,connector:1,model:1},skipped:{unknownKind:0,newerApp:0}}
@@ -104,7 +105,7 @@ test('注册恰好八个会话内市场工具',async t=>{
  assert.equal(marketSessionToolNames.length,8)
 })
 
-test('search 无任一条件拒绝且不调目录；带 query/kind 对七个市场各调一次并按 installs 降序、标注可添加性',async t=>{
+test('search 无任一条件拒绝且不调目录；带 query/kind 只读一次 Teloa 官方目录并按 installs 降序、标注可添加性',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose())
  assert.equal((await e.call('teloa_market_search',{})).isError,true)
  assert.equal((await e.call('teloa_market_search',{limit:5})).isError,true)
@@ -112,18 +113,18 @@ test('search 无任一条件拒绝且不调目录；带 query/kind 对七个市�
  const result=await e.call('teloa_market_search',{query:'pdf',kind:'skill'})
  assert.equal(result.isError,false)
  const lists=e.calls.filter(([endpoint])=>endpoint==='market-catalog/list')
- assert.equal(lists.length,7)
+ assert.equal(lists.length,1)
  for(const [,payload] of lists){
   const row=payload as Record<string,unknown>
   assert.ok(Object.keys(row).every(key=>['cursor','limit','query','kind','marketplace','sort'].includes(key)))
   assert.equal(row.kind,'skill');assert.equal(row.query,'pdf');assert.equal(row.sort,'installs')
  }
- assert.deepEqual(new Set(lists.map(([,payload])=>(payload as {marketplace?:string}).marketplace)),new Set([undefined,'claude-code','codex','dsh','openclaw','clawhub','hermes']))
+ assert.deepEqual(new Set(lists.map(([,payload])=>(payload as {marketplace?:string}).marketplace)),new Set(['teloa']))
  const body=json(result)
  assert.deepEqual(body.items.map((item:{entryId:string})=>item.entryId),['clawhub.acme.pdf-mail','clawhub.acme.pdf-reader','acme.pdf-tools'])
  assert.equal(body.observed.catalogVersion,'2026.9.25')
  const mail=body.items[0],reader=body.items[1],tools=body.items[2]
- assert.equal(mail.addable,false);assert.match(mail.reason,/第三方网关/);assert.equal(mail.marketplace,'clawhub');assert.equal(mail.compatibility.status,'unsupported');assert.deepEqual(mail.compatibility.conditions,['需经第三方网关授权，暂不可添加。'])
+ assert.equal(mail.addable,false);assert.match(mail.reason,/第三方网关/);assert.equal(mail.marketplace,'teloa');assert.equal(mail.compatibility.status,'unsupported');assert.deepEqual(mail.compatibility.conditions,['需经第三方网关授权，暂不可添加。'])
  assert.equal(reader.addable,true);assert.equal(reader.reason,undefined)
  assert.equal(tools.addable,true);assert.equal(tools.marketplace,'teloa');assert.deepEqual(tools.title,{'zh-CN':'PDF 工具',en:'PDF tools'});assert.equal(tools.license,'MIT');assert.equal(tools.addedContentId,null)
  assert.ok(body.items.every((item:{kind:string})=>item.kind==='skill'))
@@ -150,25 +151,28 @@ test('search 跟随 nextCursor 翻页：目录 67 条、只带行业筛选能找
   if(endpoint!=='market-catalog/list')throw Error('未接通 add')
   const row=payload as {marketplace?:string;cursor?:string;limit:number}
   const start=row.cursor===undefined?0:Number(row.cursor)
-  // clawhub 永远返回下一页，用于核对安全上限
-  if(row.marketplace==='clawhub')return {catalogVersion:'2026.9.25',items:[],nextCursor:String(start+1)}
-  const pool=row.marketplace===undefined?bulk:[]
+  const pool=row.marketplace==='teloa'?bulk:[]
   const next=start+row.limit<pool.length?String(start+row.limit):null
   return {catalogVersion:'2026.9.25',items:pool.slice(start,start+row.limit),nextCursor:next}
  }});t.after(()=>e.ctx.fiber.dispose())
  const body=json(await e.call('teloa_market_search',{industry:'cyber-security'}))
  assert.deepEqual(body.items.map((item:{entryId:string})=>item.entryId),['acme.bulk-60','acme.bulk-61','acme.bulk-62','acme.bulk-63','acme.bulk-64','acme.bulk-65','acme.bulk-66'])
  const lists=e.calls.filter(([endpoint])=>endpoint==='market-catalog/list').map(([,payload])=>payload as {marketplace?:string;cursor?:string})
- assert.deepEqual(lists.filter(row=>row.marketplace===undefined).map(row=>row.cursor),[undefined,'50'])
- assert.equal(lists.filter(row=>row.marketplace==='clawhub').length,10)
+ assert.deepEqual(lists.filter(row=>row.marketplace==='teloa').map(row=>row.cursor),[undefined,'50'])
+ assert.equal(lists.every(row=>row.marketplace==='teloa'),true)
+ const infinite=await setup({catalog:async()=>({catalogVersion:'2026.9.25',items:[],nextCursor:'next'})})
+ t.after(()=>infinite.ctx.fiber.dispose())
+ await infinite.call('teloa_market_search',{industry:'general',limit:1})
+ assert.equal(infinite.calls.filter(([endpoint])=>endpoint==='market-catalog/list').length,10,'无尽分页仍有原安全上限')
+
  // 已取满所需结果就不再翻页
  const e2=await setup({catalog:async(endpoint,payload)=>{
   const row=payload as {marketplace?:string;cursor?:string;limit:number}
-  const start=row.cursor===undefined?0:Number(row.cursor),pool=row.marketplace===undefined?bulk:[]
+  const start=row.cursor===undefined?0:Number(row.cursor),pool=row.marketplace==='teloa'?bulk:[]
   return {catalogVersion:'2026.9.25',items:pool.slice(start,start+row.limit),nextCursor:start+row.limit<pool.length?String(start+row.limit):null}
  }});t.after(()=>e2.ctx.fiber.dispose())
  assert.equal(json(await e2.call('teloa_market_search',{industry:'general',limit:5})).items.length,5)
- assert.equal(e2.calls.filter(([,payload])=>(payload as {marketplace?:string}).marketplace===undefined).length,1)
+ assert.equal(e2.calls.filter(([,payload])=>(payload as {marketplace?:string}).marketplace==='teloa').length,1)
 })
 
 test('search 不触发 ask：未提供 approval 也成功；子 Agent、任务会话、无活跃用户指令分别拒绝',async t=>{
@@ -196,7 +200,7 @@ function githubStub(files:(payload:{owner:string;repo:string;ref:string;path?:st
 }
 const singleSkill=(row:{path?:string})=>{const root=row.path?row.path+'/':'';return [{path:root+'LICENSE',text:'MIT'},{path:root+'SKILL.md',text:skillBody('gh-skill')}]}
 const ghUpstream={...common,id:'claude-code.acme.gh-skill',kind:'skill',delivery:'upstream',version:'0.1.0',taxonomy:{functions:['dev-tools'],industries:['software']},skill:{name:'gh-skill',title:{'zh-CN':'GH 技能',en:'GH skill'},summary:text},upstream:{kind:'github',repository:{host:'github.com',owner:'acme',repo:'skills'},commit:'f'.repeat(40),path:'skills/gh',files:[{path:'SKILL.md',gitBlob:'d'.repeat(40),sha256:'e'.repeat(64),size:null}]},origin:{marketplace:'claude-code',installs:null,installsLabel:'未公开',countedAt:'2026-09-25'},alternatives:[],unsupportedComponents:[]}
-const withGhUpstream:Partial<MarketSessionToolsPorts>={catalog:async(endpoint,payload)=>{if(endpoint!=='market-catalog/list')throw Error('未接通 add');const row=payload as Record<string,unknown>;if(row.marketplace==='claude-code')return {catalogVersion:'2026.9.25',items:[{entry:ghUpstream,artifact:null,addedContentId:null,addedRoleId:null}],nextCursor:null};return stubList(row)}}
+const withGhUpstream:Partial<MarketSessionToolsPorts>={catalog:async(endpoint,payload)=>{if(endpoint!=='market-catalog/list')throw Error('未接通 add');const row=payload as Record<string,unknown>;if(row.marketplace==='teloa')return {catalogVersion:'2026.9.25',items:[{entry:ghUpstream,artifact:null,addedContentId:null,addedRoleId:null}],nextCursor:null};return stubList(row)}}
 
 test('parseMarketReference：GitHub 四种形态、market.teloa.ai 两种形态、裸 id 与名称；其余链接一律拒绝',()=>{
  const gh=(extra:Record<string,unknown>={})=>({kind:'github',owner:'acme',repo:'skills',ref:'HEAD',...extra})
@@ -763,7 +767,7 @@ test('八个会话内安装工具都不在岗位授权白名单、不在自授�
   assert.throws(()=>validateReferenceToolRules([{name,allowed:[{scope:'SOC'}]}],[{name,allowed:[{scope:'SOC'}]}]),{code:'teloa/forbidden'},name)
   assert.equal((selfAuthorizedToolNames as readonly string[]).includes(name),false,name)
  }
- assert.deepEqual([...selfAuthorizedToolNames],[roleMemoryProposalToolName,...roleDailyDigestToolNames,groupAttachToolName,groupReactToolName])
+ assert.deepEqual([...selfAuthorizedToolNames],[roleMemoryProposalToolName,...roleDailyDigestToolNames,groupAttachToolName,groupReactToolName,groupMentionToolName])
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  assert.doesNotThrow(()=>registerTaskToolGuard(ctx,async()=>null,[...selfAuthorizedToolNames]))
@@ -837,12 +841,26 @@ test('A6 / A3：「帮我加个 SOC 告警研判员」→ resolve 得 role 候�
  const result=json(await e.call('teloa_market_add',args))
  assert.equal(reasons.length,1)
  const reason=reasons[0]!
- assert.match(reason,/确认创建 AI 员工“SOC 告警研判员”/);assert.match(reason,/来自方案 soc-operations@1\.0\.1/);assert.match(reason,/此员工需要的技能：alert-triage、shift-handover/);assert.match(reason,/可在市场添加或加载所属方案/);assert.match(reason,/默认暂停，可在 团队 页恢复/)
- assert.doesNotMatch(reason,/SKILL\.md|安装|added|missing/)
+ // 完整资源安装：确认卡说明只添加这一位员工及其方法与资料，方法按固定来源安装并绑定，员工保持暂停，连接另行授权
+ assert.match(reason,/确认创建 AI 员工“SOC 告警研判员”/);assert.match(reason,/来自方案 soc-operations@1\.0\.1/);assert.match(reason,/这一位员工及其方法（alert-triage、shift-handover）与资料/);assert.match(reason,/不添加同团队其他员工/);assert.match(reason,/方法安装后交给这位员工使用/);assert.match(reason,/默认暂停，可在 团队 页恢复/);assert.match(reason,/应用连接与授权仍需你另行确认/)
+ assert.doesNotMatch(reason,/SKILL\.md|added|missing|可在市场添加或加载所属方案/)
  assert.equal(adds.length,1);assert.deepEqual(Object.keys(adds[0] as object).sort(),['entryId','kind','version']);assert.equal((adds[0] as {kind:string}).kind,'role');assert.equal((adds[0] as {version:string}).version,'1.0.1')
  assert.equal(result.roleId,'55555555-5555-4555-8555-555555555555');assert.equal(result.status,'created');assert.deepEqual(result.skills,['alert-triage','shift-handover']);assert.deepEqual(result.next,{page:'team',roleId:result.roleId});assert.equal(result.undo,'团队 > 员工 > 暂停或退役')
  const again=json(await e.call('teloa_market_add',args,'call-2'))
  assert.equal(again.status,'existing');assert.equal(again.roleId,result.roleId);assert.equal(adds.length,2)
+})
+
+test('自然语言添加 AI 员工复用完整资源安装：资源未完成时如实回 pending 与资源状态，不冒充已建员工；再添加一次续做',async t=>{
+ const install={complete:false,loadId:'66666666-6666-4666-8666-666666666666',roleState:null,next:'retry',resources:[{kind:'skill',title:'Alert triage',state:'failed'},{kind:'knowledge',title:'Runbook',state:'done'}]}
+ let calls=0
+ const e=await setup({catalog:async(endpoint,payload)=>{if(endpoint==='market-catalog/list')return stubList(payload as Record<string,unknown>);calls+=1;return calls===1?{roleId:null,status:'pending',skills:[],install}:{roleId:'55555555-5555-4555-8555-555555555555',status:'created',skills:['acme-alert-triage'],install:{...install,complete:true,roleState:'paused',next:'resume',resources:[{kind:'skill',title:'Alert triage',state:'done',nativeName:'acme-alert-triage'},{kind:'knowledge',title:'Runbook',state:'done'}]}}}})
+ t.after(()=>e.ctx.fiber.dispose());approve(e)
+ const args={candidate:{kind:'catalog',entryId:'teloa.role.soc-t1-analyst'},expectedFingerprint:hex('8')}
+ const first=json(await e.call('teloa_market_add',args,'pending-1'))
+ assert.equal(first.roleId,null);assert.equal(first.status,'pending');assert.deepEqual(first.skills,[]);assert.equal(first.install.complete,false);assert.equal(first.install.resources[0].state,'failed')
+ assert.equal(first.next.tool,'teloa_market_add')
+ const second=json(await e.call('teloa_market_add',args,'pending-2'))
+ assert.equal(second.status,'created');assert.deepEqual(second.skills,['acme-alert-triage']);assert.equal(second.install.complete,true);assert.equal(second.install.next,'resume');assert.deepEqual(second.next,{page:'team',roleId:second.roleId})
 })
 
 test('A6：「帮我加个 Qwen3」→ add 对 model 不弹卡、不调任何写端口，只回设置页引导',async t=>{
@@ -1086,7 +1104,7 @@ const xaiSecret={envVarName:'XAI_API_KEY',label:{'zh-CN':'xAI API 密钥',en:'xA
 const secretEntry=(id:string,extra:Record<string,unknown>)=>upstreamEntry(id,'x-search',100,{compatibility:{status:'needs-configuration',teloa:'>=0.2.0-alpha.7',dsh:'0.1.7-rc.1',conditions:[]},requires:{tools:['teloa_skill_http'],network:true,runtimes:[]},...extra})
 /** 声明按条目 id 经 skillSecrets 端口取（与代发同源）；entries 可含同名条目。 */
 async function skillHost(entries:ReturnType<typeof secretEntry>[],t:{after:(fn:()=>unknown)=>void}){
- const list:MarketSessionToolsPorts['catalog']=async(_endpoint,payload)=>({catalogVersion:'2026.9.25',items:(payload as {marketplace?:string}).marketplace==='clawhub'?entries.map(entry=>({entry,artifact:null,addedContentId:null,addedRoleId:null})):[],nextCursor:null})
+ const list:MarketSessionToolsPorts['catalog']=async(_endpoint,payload)=>({catalogVersion:'2026.9.25',items:(payload as {marketplace?:string}).marketplace==='teloa'?entries.map(entry=>({entry,artifact:null,addedContentId:null,addedRoleId:null})):[],nextCursor:null})
  const e=await setup({...addPorts({list,preview:previewFor([{path:'SKILL.md',hash:hex('b'),size:20}],'x-search')}),skillSecrets:id=>(entries.find(entry=>entry.id===id) as {secrets?:MarketCatalogSkillSecret[]}|undefined)?.secrets??[]});t.after(()=>e.ctx.fiber.dispose())
  return {...e,reasons:approve(e)}
 }
@@ -1155,7 +1173,7 @@ test('确认卡到执行之间声明变化：指纹拌入声明指纹，旧指�
 test('同名 GitHub 来源技能：确认卡显示无需密钥、回执无 configure（与其安装后不注入目录密钥一致）；目录同名条目卡片照常列密钥',async t=>{
  const entry=secretEntry('clawhub.acme.x-search',{secrets:[xaiSecret]})
  const ghFiles=(row:{path?:string})=>{const root=row.path?row.path+'/':'';return [{path:root+'LICENSE',text:'MIT'},{path:root+'SKILL.md',text:skillBody('x-search')}]}
- const list:MarketSessionToolsPorts['catalog']=async(_endpoint,payload)=>({catalogVersion:'2026.9.25',items:(payload as {marketplace?:string}).marketplace==='clawhub'?[{entry,artifact:null,addedContentId:null,addedRoleId:null}]:[],nextCursor:null})
+ const list:MarketSessionToolsPorts['catalog']=async(_endpoint,payload)=>({catalogVersion:'2026.9.25',items:(payload as {marketplace?:string}).marketplace==='teloa'?[{entry,artifact:null,addedContentId:null,addedRoleId:null}]:[],nextCursor:null})
  const ghPreview=previewFor([{path:'LICENSE',hash:sha('MIT'),size:3},{path:'SKILL.md',hash:sha(skillBody('x-search')),size:Buffer.byteLength(skillBody('x-search'))}],'x-search')
  const e=await setup({...addPorts({list,preview:ghPreview}),github:githubStub(ghFiles),skillSecrets:id=>id===entry.id?[xaiSecret] as MarketCatalogSkillSecret[]:[]});t.after(()=>e.ctx.fiber.dispose());const reasons=approve(e)
  const gh=json(await e.call('teloa_market_resolve',{reference:'https://github.com/acme/skills/tree/main/skills/x'})).candidate
@@ -1170,7 +1188,7 @@ test('同名 GitHub 来源技能：确认卡显示无需密钥、回执无 confi
 // ---- 审查修复 R1 裁定 4：安装确认卡指纹纳入 httpGuide 与 secretGroup；有组时用组指纹，卡片如实写出与谁共用 ----
 type GroupEntry=ReturnType<typeof secretEntry>&{secrets?:MarketCatalogSkillSecret[];httpGuide?:{'zh-CN':string;en:string};secretGroup?:string}
 async function metaHost(entries:GroupEntry[],t:{after:(fn:()=>unknown)=>void}){
- const list:MarketSessionToolsPorts['catalog']=async(_endpoint,payload)=>({catalogVersion:'2026.9.25',items:(payload as {marketplace?:string}).marketplace==='clawhub'?entries.map(entry=>({entry,artifact:null,addedContentId:null,addedRoleId:null})):[],nextCursor:null})
+ const list:MarketSessionToolsPorts['catalog']=async(_endpoint,payload)=>({catalogVersion:'2026.9.25',items:(payload as {marketplace?:string}).marketplace==='teloa'?entries.map(entry=>({entry,artifact:null,addedContentId:null,addedRoleId:null})):[],nextCursor:null})
  const find=(id:string)=>entries.find(entry=>entry.id===id)
  const e=await setup({...addPorts({list,preview:previewFor([{path:'SKILL.md',hash:hex('b'),size:20}],'x-search')}),
   skillSecrets:id=>structuredClone(find(id)?.secrets??[]),

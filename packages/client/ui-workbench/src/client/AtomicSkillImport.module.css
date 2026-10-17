@@ -1,0 +1,4 @@
+.identity{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;margin:0;overflow-wrap:anywhere}
+.identity small,.metadata>summary{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.metadata>summary{cursor:pointer}
+.fields{display:grid;gap:13px;padding-top:13px}

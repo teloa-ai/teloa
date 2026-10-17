@@ -5,10 +5,16 @@ export function homeTaskScope(scopeId:string,scopeNames:Readonly<Record<string,s
   return scopeId as CollaborationScope
 }
 
+/** 只拟定可编辑名称，不解析业务、负责人或授权。 */
+export function homeTaskTitle(input:string){
+  const goal=input.trim()
+  return (goal.split(/\r?\n/).find(line=>line.trim())??goal).trim().slice(0,60)
+}
+
 export function homeTaskDraft(input:string,scopeId:string,scopeNames:Readonly<Record<string,string>>){
   const goal=input.trim(),scope=homeTaskScope(scopeId,scopeNames)
   if(!goal)throw Error('工作目标不能为空。')
-  const title=(goal.split(/\r?\n/).find(line=>line.trim())??goal).trim().slice(0,60)
+  const title=homeTaskTitle(goal)
   return {title,goal,scope}
 }
 

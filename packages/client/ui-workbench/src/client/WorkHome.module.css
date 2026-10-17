@@ -2,6 +2,7 @@
 .content{box-sizing:border-box;max-width:980px;margin:auto;padding:0 50px 40px}.content *{box-sizing:border-box}.content button,.content textarea,.content select{font:inherit;color:inherit}.content button{cursor:pointer}.content button:disabled{opacity:.5;cursor:default}.content button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .attentionStrip{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3);padding:18px;background:var(--teloa-surface)}
 .attentionStrip strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
+.attentionSummary{min-width:0}.attentionSummary small{display:block;margin-top:4px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .backgroundNote{display:flex;align-items:center;gap:13px;padding-top:25px;color:var(--teloa-muted)}
 .backgroundNote>svg{flex-shrink:0}.backgroundNote p{flex:1;font-size:var(--teloa-font-caption);line-height:1.7;margin:0}
 @media(max-width:740px){.attentionStrip{align-items:flex-start;flex-direction:column;padding:15px}.backgroundNote{flex-wrap:wrap}.backgroundNote .inlineLink{margin-left:30px}.sectionHeading{flex-wrap:wrap}}

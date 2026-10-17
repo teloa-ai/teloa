@@ -13,12 +13,15 @@ import {SessionController} from '@deepseek-ai/dsh-api-session-controller'
 import * as SessionModelScope from '../src/native-session-model.ts'
 import TeloaAttachmentStore from '../src/attachment-guard.ts'
 import {tempHome} from './fixtures/credentials.ts'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
+import {createNativeOwnerPeer} from './fixtures/native-gateway-peer.ts'
 
 const require=createRequire(import.meta.url)
 const officialRequire=createRequire(require.resolve('@deepseek-ai/dsh-api-session-controller/package.json'))
 const gatewayRequire=createRequire(officialRequire.resolve('@deepseek-ai/dsh-api-gateway/package.json'))
 const {default:TypertRegistry}=await import(gatewayRequire.resolve('@deepseek-ai/dsh-typert-registry'))
 const {default:TypertGateway}=await import(officialRequire.resolve('@deepseek-ai/dsh-api-gateway'))
+const {default:RemoteAccessService}=await import(officialRequire.resolve('@deepseek-ai/dsh-api-remote-access'))
 
 class Adapter extends LlmAdapter{
  override async listModels(provider:string){
@@ -45,13 +48,14 @@ async function fixture(t:TestContext){
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry)
  await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
- await ctx.plugin(TeloaAttachmentStore,{dshHome:await tempHome(t)})
- await ctx.plugin(TypertRegistry);await ctx.plugin(TypertGateway)
+ const directory=await tempHome(t)
+ await ctx.plugin(TeloaAttachmentStore,{dshHome:directory})
+ await installNativeWorkingDirectory(ctx,directory)
+ await ctx.plugin(TypertRegistry);await ctx.plugin(RemoteAccessService);await ctx.plugin(TypertGateway)
  let selected:ModelSelection={provider:'test',model:'original'}
  const saves:ModelSelection[]=[]
  ctx.provide('agentDefaultModel',{currentSelection:()=>({...selected}),saveSelection:async(next:ModelSelection)=>{saves.push(next);selected={...next}}})
  ctx.provide('fileUploads',{registerAgentResolver:()=>()=>{},bindPrompt:()=>({commit(){},[Symbol.dispose](){}})})
- ctx.provide('fs',{})
  ctx.provide('sessionQuery',{})
  ctx.provide('workspaceRegistry',{archivedSessionIds:[]})
  ctx.provide('teloaSessionModelScope',{isIdentityLinked:async(id:string)=>id!=='ordinary'})
@@ -59,8 +63,10 @@ async function fixture(t:TestContext){
  await ctx.plugin(SessionController,{nativeOpen:false})
  const scopePlugin=ctx.plugin(SessionModelScope);await scopePlugin
  const agents=await Promise.all(['twin','employee','ordinary'].map(async id=>(await ctx.agents.create({sessionId:SessionId(id),agentOptions:{provider:'test',model:'original'}})).agent))
- const gateway=Reflect.get(ctx,'typertGateway') as {invoke(request:{namespace:string;method:string;args:Record<string,unknown>}):Promise<unknown>}
- const select=(id:string,model:string)=>gateway.invoke({namespace:'session',method:'selectModel',args:{request:{sessionId:id,provider:'test',model}}})
+ const peer=createNativeOwnerPeer(t)
+ const gateway=Reflect.get(ctx,'typertGateway') as {invoke(request:{namespace:string;method:string;args:Record<string,unknown>;peer:typeof peer}):Promise<unknown>}
+ assert.ok(gateway&&typeof gateway.invoke==='function','官方 Gateway 必须完成注入并激活')
+ const select=(id:string,model:string)=>gateway.invoke({namespace:'session',method:'selectModel',args:{request:{sessionId:id,provider:'test',model}},peer})
  return {ctx,adapter,agents,saves,select,scopePlugin,defaultModel:()=>selected}
 }
 

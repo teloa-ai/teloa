@@ -48,6 +48,35 @@ test('无main真实已就绪的空选择不造InputState；未确认连接/选�
  assert.equal(readBuilderSwitchSnapshot({...common,mainSessionId:'s',input:undefined}).input,undefined)
 })
 
+test('首次工作绑定ensure未完成不抢跑业务读取；就绪后按原会话核对，真实失败只显式重试',async()=>{
+ const f=fixture();f.select('cold-home');f.changeInput(undefined)
+ let reads=0,fail=false
+ f.controller.ports.api.bySession=async()=>{reads++;if(fail)throw Object.assign(Error('binding unavailable'),{code:'teloa/not-bound'});return null}
+ await f.controller.connect({})
+ assert.equal(reads,0);assert.equal(f.controller.getSnapshot().checkedSessionId,undefined)
+ assert.equal(f.controller.getSnapshot().error,null);assert.equal(f.blocks.get('cold-home'),'checking')
+ f.changeInput({draft:'原稿',draftRev:1,phase:'plain',attachmentIds:[],occurrences:[],queue:[]})
+ await f.controller.followSession('cold-home')
+ assert.equal(reads,1);assert.equal(f.controller.getSnapshot().checkedSessionId,'cold-home');assert.equal(f.blocks.get('cold-home'),undefined)
+ fail=true;await f.controller.retry();assert.equal(reads,2);assert.equal((f.controller.getSnapshot().error as {code:string}).code,'teloa/not-bound')
+ f.notify();await f.controller.followSession('cold-home');assert.equal(reads,2,'失败不盲重试')
+ fail=false;await f.controller.retry();assert.equal(reads,3);assert.equal(f.controller.getSnapshot().error,null)
+ f.controller.dispose()
+})
+
+test('待用绑定切换先使旧读取失效，旧回包不污染新会话等待与就绪状态',async()=>{
+ const f=fixture();f.select('old')
+ let release!:(value:null)=>void;const reads:string[]=[]
+ f.controller.ports.api.bySession=async({sessionId})=>{reads.push(sessionId);return sessionId==='old'?new Promise<null>(resolve=>{release=resolve}):null}
+ const connecting=f.controller.connect({});await new Promise(resolve=>setImmediate(resolve))
+ f.select('new');f.changeInput(undefined);await f.controller.followSession('new')
+ assert.deepEqual(reads,['old']);release(null);await connecting
+ assert.equal(f.controller.getSnapshot().checkedSessionId,undefined);assert.equal(f.controller.getSnapshot().error,null)
+ f.changeInput({draft:'新原稿',draftRev:1,phase:'plain',attachmentIds:[],occurrences:[],queue:[]});await f.controller.followSession('new')
+ assert.deepEqual(reads,['old','new']);assert.equal(f.controller.getSnapshot().checkedSessionId,'new');assert.equal(f.blocks.get('new'),undefined)
+ f.controller.dispose()
+})
+
 test('权威personal空间namespace在重连稳定、换本人库隔离；身份读取失败没有共享fallback',async()=>{
  const f=fixture();await f.controller.connect({id:1})
  const first=f.controller.getSnapshot().flow!
@@ -195,7 +224,7 @@ test('R1 等待本人身份前先阻止当前main，期间换main与失败均保
  f.controller.ports.identity=async()=>f.space();await f.controller.retry()
  assert.equal(f.controller.getSnapshot().checkedSessionId,'failed-selection');assert.equal(f.blocks.get('failed-selection'),undefined)
  assert.ok(f.blocks.get('initial'));assert.ok(f.blocks.get('next'))
- await f.controller.followSession('next');assert.equal(f.blocks.get('next'),undefined)
+ f.select('next');await f.controller.followSession('next');assert.equal(f.blocks.get('next'),undefined)
 })
 
 

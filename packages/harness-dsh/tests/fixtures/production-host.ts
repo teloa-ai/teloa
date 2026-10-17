@@ -5,16 +5,16 @@ import {createRequire} from 'node:module'
 import {dirname,join} from 'node:path'
 import {parse as parseYaml} from 'yaml'
 import {SessionId} from '@deepseek-ai/dsh-session'
-import {installNativeSessions,installNativeHostServices} from './native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,configureNativeHostTestPorts} from './native-host-services.ts'
 
 const presetDeclaration=parseYaml(readFileSync(new URL('../../../bundle/agent-presets/teloa-standard/agent.cordis.yml',import.meta.url),'utf8'),{customTags:[{tag:'tag:yaml.org,2002:js',resolve:(source:string)=>({__jsExpr:source})}]} )[0].insert[0]
 const require=createRequire(import.meta.url),officialRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const officialPresetRoot=join(dirname(officialRequire.resolve('@deepseek-ai/dsh-web-app/package.json')),'presets')
-const officialPresets=Object.fromEntries(['standard','ptc','minimal','cordis'].map(id=>{
+const officialPresets=Object.fromEntries(['standard','ptc','minimal','cordis','ptc-persistent','ptc-python'].map(id=>{
  const adapted=id!=='minimal'
  const path=adapted?new URL('../../../bundle/agent-presets/'+id+'.patch.yml',import.meta.url):join(officialPresetRoot,id+'.patch.yml')
  const parsed=parseYaml(readFileSync(path,'utf8'),{customTags:[{tag:'tag:yaml.org,2002:js',resolve:(source:string)=>({__jsExpr:source})}]})
- return ['preset-'+id,(adapted?parsed[0]:parsed[0].insert[0]).config]
+ return ['preset-'+id,(adapted&&!id.startsWith('ptc-')?parsed[0]:parsed[0].insert[0]).config]
 }))
 
 export type RpcReply={ok:boolean;value?:unknown;receipt?:{requestId:string};error?:{code?:string}}
@@ -39,6 +39,8 @@ export function compositionEntries(override:Record<string,unknown>={}){
     // 组合树里 workspaceRoot 是 !!js 表达式节点，不是字符串。
     'sandbox-policy':{mode:'workspace-write',workspaceRoot:{__jsExpr:'process.cwd()'}},
     sandbox:{},
+    'working-directory':{},
+    'teloa-working-directory':{},
     approval:{policy:'ask'},
     tools:{mode:'native'},
     // 引擎侧的 ptc-runtime 保持启用（Agent 预设要靠它挂 workflowEngine）；关闭的是两条工具入口。
@@ -57,6 +59,7 @@ export function compositionEntries(override:Record<string,unknown>={}){
     // 边界值被放大等于把跳转链、响应体与等待时间的面积交回补丁层。
     web:{searchProvider:'deepseek-official',fetchProvider:'http'},
     'web-search-deepseek':{baseURL:'https://api.deepseek.com/anthropic/v1',apiKeyEnv:'DEEPSEEK_API_KEY'},
+    'web-deepseek-api':{baseURL:'https://api.deepseek.com/v1/tools',apiKeyEnv:'DEEPSEEK_API_KEY',count:10,sendOriginalQuestion:false},
     'web-fetch-http':{maxResponseBytes:5000000,maxBodyChars:100000,timeoutMs:30000,maxRedirects:3,userAgent:'deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)'},
     // 官方明文凭据行与附件准入行停用，由 Teloa 加密提供方与提交前密钥闸替换。
     credentials:{},
@@ -65,15 +68,17 @@ export function compositionEntries(override:Record<string,unknown>={}){
     'teloa-attachment-guard':{},
     ...override,
   }
-  const disabledRows=new Set(['tool-workflow','tool-ralph','ui-schedule','hmr','credentials','attachment-local','session-log-deepseek','desktop-product-telemetry'])
+  const disabledRows=new Set(['working-directory','tool-workflow','tool-ralph','ui-schedule','hmr','credentials','attachment-local','session-log-deepseek','desktop-product-telemetry'])
   // 上网三行还要钉住"这一行挂的是哪个包"：只按 id 定位挡不住同 id 换实现。
-  const rowNames:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
+  const rowNames:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-deepseek-api':'@deepseek-ai/dsh-web-deepseek-api','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
   for(const id of Object.keys(officialPresets))rowNames[id]='@deepseek-ai/dsh-agent-preset'
   rowNames['session-log-deepseek']='@deepseek-ai/dsh-session-log-deepseek'
   rowNames['desktop-product-telemetry']='@deepseek-ai/dsh-host-product-telemetry-otel'
   rowNames['teloa-product-telemetry']='@teloa/harness-dsh/product-telemetry'
   rowNames['product-analytics']='@deepseek-ai/dsh-client-product-analytics'
   rowNames.schedule='@deepseek-ai/dsh-schedule'
+  rowNames['working-directory']='@deepseek-ai/dsh-working-directory'
+  rowNames['teloa-working-directory']='@teloa/harness-dsh/native-working-directory'
   rowNames['ui-schedule']='@deepseek-ai/dsh-client-ui-schedule'
   // `entry.id` 带所属子树前缀（真实宿主里是根 Include 的条目 id），定位键只能取 `options.id`。
   return {entries:function*(){
@@ -116,16 +121,9 @@ export function host(options:{agents?:boolean;composition?:{entries:()=>Iterable
       return {agent:ctx.agents.get(SessionId(sessionId))}
     },
   })
-  ctx.provide('tools',{register:(definition:unknown)=>{tools.push(definition)},schemas:()=>[],guard:()=>()=>{}})
-  ctx.provide('skills',{
-    list:async()=>[],
-    registerProvider:(factory:(control:{invalidate:()=>void;signal:AbortSignal})=>unknown)=>{
-      factory({invalidate:()=>{},signal:new AbortController().signal})
-      return ()=>{}
-    },
-  })
+  configureNativeHostTestPorts(ctx,{collectTool:definition=>{tools.push(definition)}})
+
   ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'default-agent'})})
-  ctx.provide('fs',{})
   ctx.provide('fileReferences',{})
   ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(path:string,handler:RpcHandler)=>{assert.equal(path,'/teloa');rpc=handler;return ()=>{if(rpc===handler)rpc=undefined}}}})
   return {ctx,tools,modelCalls,ready:async(directory:string)=>{await installNativeSessions(ctx);await installNativeHostServices(ctx,directory)},get rpc(){assert.ok(rpc,'/teloa handler 尚未注册');return rpc}}

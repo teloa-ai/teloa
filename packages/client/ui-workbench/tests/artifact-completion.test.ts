@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { emptyTaskPreview, changeTaskPreview } from '../src/client/task-preview.ts'
 import { changeContinuousWork, withContinuousExamples } from '../src/client/continuous-work.ts'
+import { withLegacySecurityScopes } from './fixtures/legacy-security-scopes.ts'
 const now='2026-09-11T05:00:00Z'
 test('任务完成与主要产物同存，重复提交保留同一引用且不覆盖结果',()=>{
   let state=changeTaskPreview(emptyTaskPreview(),{type:'create',id:'t1',title:'核对',goal:'核对来源',scope:'general',now})
@@ -14,7 +15,7 @@ test('任务完成与主要产物同存，重复提交保留同一引用且不�
   assert.throws(()=>changeTaskPreview(state,{...command,result:'替换历史结果'}),/结果|状态/)
 })
 test('执行完成固定工作稿，失败执行不生成成功产物',()=>{
-  let state=withContinuousExamples(emptyTaskPreview(),now)
+  let state=withContinuousExamples(withLegacySecurityScopes(emptyTaskPreview()),now)
   state=changeContinuousWork(state,{type:'enabled',planId:'plan-general-event',enabled:true,expectedRevision:1,now})
   state=changeContinuousWork(state,{type:'trigger',planId:'plan-general-event',id:'r1',occurrenceId:'o1',input:'资料 A v1',now})
   const command={type:'finish' as const,runId:'r1',expectedRevision:1,outcome:'completed' as const,result:'完成核对',output:'正文工作稿',now}

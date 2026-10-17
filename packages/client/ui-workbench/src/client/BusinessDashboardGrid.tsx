@@ -1,5 +1,5 @@
 import type {CSSProperties} from 'react'
-import type {BusinessConfigurationViewRef,BusinessConfigurationViewRefVersioned,BusinessDashboardDefinition,BusinessLedger,BusinessWidgetDefinition,BusinessWidgetResult,BusinessViewWidgetResultV2} from '@teloa/contract'
+import type {BusinessObjectReference,BusinessConfigurationViewRef,BusinessConfigurationViewRefVersioned,BusinessDashboardDefinition,BusinessLedger,BusinessWidgetDefinition,BusinessWidgetResult,BusinessViewWidgetResultV2} from '@teloa/contract'
 import {BusinessWidget} from './BusinessWidgets.js'
 import {BusinessTypedViewWidget} from './BusinessTypedViewWidget.js'
 import type {BusinessTarget} from './business-preview.js'
@@ -14,9 +14,10 @@ export type BusinessDashboardGridProps={
  colorScheme:'light'|'dark'
  ranged?:boolean
  go?:((target:BusinessTarget)=>void)|undefined
+ openRecord?:((reference:BusinessObjectReference)=>void)|undefined
 }
 /** 共用原有十二列布局和组件，不持有请求、刷新或保存逻辑。 */
-export function BusinessDashboardGrid({dashboard,widgets,results,ledger,viewRefs,colorScheme,ranged=false,go}:BusinessDashboardGridProps){
+export function BusinessDashboardGrid({dashboard,widgets,results,ledger,viewRefs,colorScheme,ranged=false,go,openRecord}:BusinessDashboardGridProps){
  return <div className={css.grid}>{dashboard.layout.map(item=>{
   const widget=widgets.find(entry=>entry.id===item.widget)
   if(!widget)return null
@@ -24,7 +25,7 @@ export function BusinessDashboardGrid({dashboard,widgets,results,ledger,viewRefs
   const result=results.find(result=>result.widgetId===item.widget)
   const legacyRefs=viewRefs?.filter((ref):ref is BusinessConfigurationViewRef=>ref.view.format==='teloa.business-view/v1'&&ref.objectType.format==='teloa.business-object-type/v1')
   return <article key={item.widget} className={css.widget} style={style} data-widget={item.widget}>
-   {result&&'format'in result?<BusinessTypedViewWidget widget={widget} result={result} viewRefs={viewRefs}/>:<BusinessWidget widget={widget} result={result} ledger={ledger} viewRefs={legacyRefs} colorScheme={colorScheme} ranged={ranged} go={go}/>}
+   {result&&'format'in result?<BusinessTypedViewWidget widget={widget} result={result} viewRefs={viewRefs} openRecord={openRecord}/>:<BusinessWidget widget={widget} result={result} ledger={ledger} viewRefs={legacyRefs} colorScheme={colorScheme} ranged={ranged} go={go}/>}
   </article>
  })}</div>
 }

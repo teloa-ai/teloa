@@ -9,12 +9,14 @@ type TaskRunTeamLink=Extract<TaskRunRuntimeLink,{kind:'team'}>
 import {WorkError} from '@teloa/contract'
 import {readSessionEvents} from './session-events.ts'
 import {createTaskRunBackground,taskRunRuntimeId} from './task-run-background.ts'
-import {taskRunTeamContinuations} from './task-run-team-records.ts'
+import {groupRunAppendKey,taskRunTeamContinuations,pendingLegacyTeamMessages} from './task-run-team-records.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
+import {taskRunExternalContinuations} from './task-run-external-continuations.ts'
 import type {TaskRunGoalObservationReader} from './task-tool-guard.ts'
 import {subagentReservationId,type SubagentDelegationPorts} from './subagent-delegation.ts'
 import type {TaskToolPolicy,TaskToolPolicyReader} from './task-tool-guard.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
+import {readEndedTaskRunSession} from './task-run-cold-session.ts'
 
 /** 取消数据库精确登记的在途子级；身份核对失败不借一般谱系扫描扩大取消范围。 */
 export async function stopTaskRunChildren(ctx:Context,run:Pick<TaskRun,'sessionId'>,rows:readonly {childSessionId?:string}[],signal:AbortSignal):Promise<void>{
@@ -30,11 +32,16 @@ export async function stopTaskRunChildren(ctx:Context,run:Pick<TaskRun,'sessionI
  await Promise.all(children.map(child=>child.whenIdle()))
 }
 
-export type TaskRunTeamAccess={authorizeMember:(agent:Agent,policy:TaskToolPolicy,signal:AbortSignal)=>Promise<boolean>;continuations:(root:Agent,requestId:string,events:readonly SessionEvent[])=>Promise<ReadonlySet<string>>}
-/** 官方 Team 保存 roster/mailbox/DAG；本适配只负责业务授权、共用额度与收口。 */
-export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts,readPolicy:TaskToolPolicyReader,links:TaskRunRuntimeLinks,goalObservation?:TaskRunGoalObservationReader){
+type ContinuationBinding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'|'allowedTools'>
+export type TaskRunTeamAccess={authorizeMember:(agent:Agent,policy:TaskToolPolicy,signal:AbortSignal)=>Promise<boolean>;continuations:(root:Agent,requestId:string,events:readonly SessionEvent[],allowedTools:readonly string[])=>Promise<ReadonlySet<string>>}
+/** 官方 Team 保存 roster/DAG 并递送到 Inbox；本适配只负责业务授权、共用额度与收口。 */
+/** 群追加：某原 Run 会话里宿主持久登记过的追加原生请求身份（待核对或已受理）。 */
+export type TaskRunGroupAppends=(sessionId:string)=>Promise<readonly string[]>
+export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts,readPolicy:TaskToolPolicyReader,links:TaskRunRuntimeLinks,goalObservation?:TaskRunGoalObservationReader,groupAppends?:TaskRunGroupAppends){
+ // 续接集合 = 获准 Team 通知 ∪ 本 Run 的群追加 ∪ 严格核验的外部完成通知；观察、工具与停止共用。
+ const withAppends=async(sessionId:string,base:ReadonlySet<string>):Promise<ReadonlySet<string>>=>{const ids=groupAppends?await groupAppends(sessionId):[];return ids.length?new Set([...base,...ids.map(groupRunAppendKey)]):base}
  const creating=new Set<string>(),admitted=new Set<string>(),bound=new Map<string,Promise<void>>(),settled=new Set<string>()
- const stopping=new Map<string,{requestId:string;grants:readonly TaskRunTeamLink[]}>(),stopFailures=new Set<string>()
+ const stopping=new Map<string,ContinuationBinding>(),stopFailures=new Set<string>()
  const memberKey=(lead:string,name:string)=>lead+':'+name
  const authorizedChildren=new Map<string,string>()
  const grantsFor=async(runId:string,sessionId:string,requestId:string)=>{
@@ -45,6 +52,15 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
  const assertGeneration=async(runId:string)=>{
   if((await links.list({runId,kind:'job'})).some(row=>row.kind==='job'&&row.payload.runtimeId!==taskRunRuntimeId))throw new WorkError('teloa/conflict','此执行所属宿主已重启，请核对中断结果；不能自动重放外部动作。')
  }
+ const continuationsFor=async(run:ContinuationBinding,events:readonly SessionEvent[],pendingAsUnadmitted=false):Promise<ReadonlySet<string>>=>{
+  const base=await withAppends(run.sessionId,taskRunTeamContinuations(events,await grantsFor(run.id,run.sessionId,run.nativeRequestId)))
+  try{return new Set([...base,...taskRunExternalContinuations(run,events,await links.list({runId:run.id}),base)])}
+  catch(error){
+   // 工具/取消不能把尚未进入快照的通知当作许可；驱动保留 pending，不能据旧窗口收口。
+   if(pendingAsUnadmitted&&error instanceof WorkError&&error.code==='teloa/execution-pending')return base
+   throw error
+  }
+ }
  const background=createTaskRunBackground(ctx,links,run=>authorizedChildren.get(run.sessionId)===run.id)
  const disposeStopObserver=ctx.on('session/event',(session,event)=>{
   const stop=stopping.get(session.id)
@@ -54,7 +70,7 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
    const root=ctx.agents.get(session.id)
    if(!root)return
    const events=readSessionEvents(root.session)
-   if(observeTaskRunTimeline(events,stop.requestId,taskRunTeamContinuations(events,stop.grants),undefined,await goalObservation?.(root.id,events)).authorized&&root.status==='running')root.cancel({kind:'user'})
+   if(observeTaskRunTimeline(events,stop.nativeRequestId,await continuationsFor(stop,events,true),undefined,await goalObservation?.(root.id,events)).authorized&&root.status==='running')root.cancel({kind:'user'})
   }).catch(()=>{stopFailures.add(session.id)})
  })
  const bind=async(grant:TaskRunTeamLink,childId:string)=>{
@@ -117,7 +133,7 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
   }catch(error){
    const child=ctx.agentTeams.listMembers(root).find(member=>member.role==='teammate'&&member.name===name)
    if(!child)await delegation.release({reservationId})
-   else{ctx.agentTeams.interrupt(root,name);await ctx.subagents.drainContinuableChildren(root,[child.id])}
+   else{ctx.agentTeams.interrupt(root,name);await ctx.subagents.drainChildren(root,[child.id])}
    throw error
   }finally{creating.delete(key);admitted.delete(reservationId)}
  })
@@ -130,18 +146,39 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
   const root=rootFor(run),grants=await grantsFor(run.id,run.sessionId,run.nativeRequestId)
   return {root,grants,members:ctx.agentTeams.listMembers(root)}
  }
+ const coldState=async(run:TaskRun)=>{
+  const unavailable=()=>new WorkError('teloa/session-unavailable','执行负责人会话暂不可用。')
+  const signal=new AbortController().signal
+  const assertBinding=async()=>{
+   const policy=await readPolicy(run.sessionId,signal)
+   // 终态策略已核验本人固定 Run/nativeRequest；只读历史不能调用要求当前执行状态的 skillScope。
+   if(run.state!=='ended'||run.evidence?.state!=='ended'||run.stopRequestedAt!=null||!policy||policy.stopRequested||policy.nativeRequestId!==run.nativeRequestId)throw unavailable()
+  }
+  await assertBinding()
+  // inspect 不激活 Agent。状态读取不能为判断可重试而恢复旧 Inbox、调用模型或重放工具。
+  const grants=await grantsFor(run.id,run.sessionId,run.nativeRequestId)
+  // 冷 Team 历史不自动续接；有授权记录仍由下面的 interrupted 判据拒绝重试。
+  const {session,inbox}=await readEndedTaskRunSession(ctx,run,events=>goalObservation?.(run.sessionId,events)??Promise.resolve(undefined))
+  const team=ctx.sessionProjections.stateOf(session,'agentTeam')
+  if(!team)throw unavailable()
+  await assertBinding()
+  // 若别的受管操作已加载负责人，交还原有实时判据；冷恢复只证明从未派发 Team 的结束轮空闲。
+  if(ctx.agents.get(SessionId(run.sessionId)))return undefined
+  return {outstanding:inbox['next-turn'].length>0||inbox['next-step'].length>0,interrupted:!!team.failure||grants.length>0||team.members.length>0||team.tasks.length>0||team.messages.length>0}
+ }
  return {
   authorizeMember,
-  async continuations(root:Agent,requestId:string,events:readonly SessionEvent[]):Promise<ReadonlySet<string>>{
+  async continuations(root:Agent,requestId:string,events:readonly SessionEvent[],allowedTools:readonly string[]):Promise<ReadonlySet<string>>{
    const runId=await delegation.runId(root.id,new AbortController().signal)
    if(runId)await assertGeneration(runId)
-   return runId?taskRunTeamContinuations(events,await grantsFor(runId,root.id,requestId)):new Set()
+   return runId?continuationsFor({id:runId,sessionId:root.id,nativeRequestId:requestId,allowedTools:[...allowedTools]},events,true):withAppends(root.id,new Set())
   },
   async runContinuations(run:TaskRun,events:readonly SessionEvent[]):Promise<ReadonlySet<string>>{
-   return taskRunTeamContinuations(events,await grantsFor(run.id,run.sessionId,run.nativeRequestId))
+   return continuationsFor(run,events)
   },
   async state(run:TaskRun):Promise<{outstanding:boolean;interrupted:boolean}>{
    if(stopFailures.has(run.sessionId))throw new WorkError('teloa/conflict','停止后的原生通知尚未收口，请核对执行。')
+   if(!ctx.agents.get(SessionId(run.sessionId))){const cold=await coldState(run);if(cold)return cold}
    const {root,grants,members}=await registered(run)
    let outstanding=false,interrupted=false
    const children:Array<{grant:TaskRunTeamLink;id:string}>=[]
@@ -175,13 +212,13 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
       interrupted ||= lastTurn?.type!=='turn/end'||lastTurn.data.reason.kind!=='completed'
      }finally{await handle.close()}
     }
-    outstanding ||= member.status==='running'||member.status==='provisioning'||jobs.outstanding
+    outstanding ||= member.status==='running'||member.status==='provisioning'||jobs.outstanding||(agent!==undefined&&(agent.inbox.nextTurn.length>0||agent.inbox.nextStep.length>0))
     interrupted ||= jobs.interrupted
     children.push({grant,id:member.id})
    }
    const events=readSessionEvents(root.session)
    const authorizedIds=new Set([root.id,...members.filter(member=>grants.some(grant=>grant.payload.name===member.name)).map(member=>member.id)])
-   const pendingMessages=events.some(event=>event.type==='team/message/queued'&&authorizedIds.has(event.data.message.senderId)&&authorizedIds.has(event.data.message.targetId)&&!events.some(delivery=>delivery.type==='team/message/delivered'&&delivery.data.messageId===event.data.message.id))
+   const pendingMessages=pendingLegacyTeamMessages(events).some(message=>authorizedIds.has(SessionId(message.senderId))&&authorizedIds.has(SessionId(message.targetId)))
    const busyRoot=root.status==='running'||root.inbox.nextTurn.length>0||root.inbox.nextStep.length>0
    if(run.stopRequestedAt==null&&!interrupted){
     outstanding ||= pendingMessages||ctx.agentTeams.listTasks(root).some(task=>task.status==='pending'||task.status==='in_progress')
@@ -194,7 +231,7 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
   async stop(run:TaskRun,signal:AbortSignal):Promise<void>{
    signal.throwIfAborted()
    const {root,grants,members}=await registered(run),ids:SessionId[]=[]
-   stopping.set(root.id,{requestId:run.nativeRequestId,grants})
+   stopping.set(root.id,{id:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,allowedTools:run.allowedTools})
    for(const grant of grants){
     const member=members.find(member=>member.role==='teammate'&&member.name===grant.payload.name)
     if(!member||member.status==='failed')continue
@@ -204,9 +241,9 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
     ctx.agentTeams.interrupt(root,member.name);ids.push(member.id)
    }
    // 官方 continuation owner 撤销精确成员的运行与排队活动；完成后才允许 state 收口。
-   await ctx.subagents.drainContinuableChildren(root,ids)
+   await ctx.subagents.drainChildren(root,ids)
    // 官方 continuation 在撤销成员后会唤醒 Lead 的 subagent-settled 轮；它仍属于此次停止。
-   const events=readSessionEvents(root.session),continuations=taskRunTeamContinuations(events,grants)
+   const events=readSessionEvents(root.session),continuations=await continuationsFor(run,events,true)
    if(observeTaskRunTimeline(events,run.nativeRequestId,continuations,undefined,await goalObservation?.(root.id,events)).authorized&&root.status==='running')root.cancel({kind:'user'})
   },
   dispose(){disposeWrapper();disposeStopObserver();background.dispose()},

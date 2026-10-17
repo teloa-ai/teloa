@@ -18,3 +18,7 @@ test('暂停或结束对象、未就绪会话和身份漂移不能建立关联',
  const links=linkObjectConversation([],role,session('a'))
  assert.throws(()=>linkObjectConversation(links,role,{...session('a'),sessionId:'other'}),/身份不一致/)
 })
+test('原创建聊天不能通过已有关系变成专用执行上下文',()=>{
+ const task={...role,kind:'task' as const},conversation=session('origin')
+ assert.throws(()=>linkObjectConversation([{kind:'task',objectId:task.id,objectVersion:1,conversationId:conversation.id,sessionId:conversation.sessionId,sourceOnly:true}],task,conversation),/创建来源/)
+})

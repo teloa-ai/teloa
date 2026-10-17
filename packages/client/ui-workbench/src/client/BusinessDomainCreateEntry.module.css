@@ -3,4 +3,4 @@
 .input{box-sizing:border-box;width:100%;min-width:0;padding:9px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-background);color:var(--teloa-text);font:inherit}
 .hint{margin:0;font-size:var(--teloa-font-caption);line-height:1.8;color:var(--teloa-muted)}
 .alert{margin:0;font-size:var(--teloa-font-caption);line-height:1.8;color:var(--teloa-warn)}
-.input:focus-visible{outline:2px solid var(--teloa-accent);outline-offset:3px}
+.input:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}

@@ -1,6 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,artifactFilePath,groupReferenceMaxFiles,type GroupRunFileClaim} from '@teloa/contract'
+import {WorkError,artifactFilePath,groupRunResultManifest,type GroupRunFileClaim,type GroupRunResultManifest} from '@teloa/contract'
 import {resolveSessionLineage,type LineageSession} from './subagent-lineage.ts'
 
 export const groupAttachToolName='teloa_group_attach'
@@ -10,17 +10,19 @@ export type GroupAttachRunContext={canPost:boolean;nativeRequestId:string}
 export type GroupAttachToolPorts={
  /** 读不出来必须抛，不得回 undefined：那会与「本来就不是群运行」混成一条路。 */
  context:(sessionId:string,signal:AbortSignal)=>Promise<GroupAttachRunContext|undefined>
+ declare:(sessionId:string,nativeRequestId:string,claim:GroupRunFileClaim,signal:AbortSignal)=>Promise<GroupRunResultManifest&{duplicate:boolean}>
+ markNoVision:(sessionId:string,nativeRequestId:string,signal?:AbortSignal)=>Promise<GroupRunResultManifest>
 }
 
 /**
- * 员工声明的贴回意图只记在内存里：不搬字节、不写库。读取、定版与提交都在运行结束后的
- * `GroupRunMessageService.post` 事务里，本表只回答「这次运行声明了哪几个文件」。
+ * 内存只缓存已经持久化的交付意图；恢复发布直接读取原 Run 的持久声明。
+ * 这里不搬字节。读取、核对与定版仍在运行结束后的 `GroupRunMessageService.post` 事务里。
  */
 export type GroupRunClaimRegistry={
  claims:(sessionId:string,nativeRequestId:string)=>GroupRunFileClaim[]
  /** 本轮图片没能交给模型：回帖由发布器前置固定文案，不由模型自陈。 */
  noVision:(sessionId:string,nativeRequestId:string)=>boolean
- markNoVision:(sessionId:string,nativeRequestId:string)=>void
+ markNoVision:(sessionId:string,nativeRequestId:string,signal?:AbortSignal)=>Promise<void>
  clear:(sessionId:string,nativeRequestId:string)=>void
 }
 
@@ -74,10 +76,8 @@ async function authorize(ctx:Context,ports:GroupAttachToolPorts,exec:AttachExecu
  */
 export function registerGroupAttachTool(ctx:Context,ports:GroupAttachToolPorts):GroupRunClaimRegistry{
  const entries=new Map<string,ClaimEntry>()
- const entryOf=(key:string):ClaimEntry=>{
-  const found=entries.get(key)
-  if(found)return found
-  const created:ClaimEntry={files:[],noVision:false}
+ const remember=(key:string,value:unknown):ClaimEntry=>{
+  const created=groupRunResultManifest(value)
   entries.set(key,created)
   if(entries.size>claimEntryLimit){const oldest=entries.keys().next();if(!oldest.done&&oldest.value!==key)entries.delete(oldest.value)}
   return created
@@ -85,7 +85,10 @@ export function registerGroupAttachTool(ctx:Context,ports:GroupAttachToolPorts):
  const registry:GroupRunClaimRegistry={
   claims:(sessionId,nativeRequestId)=>entries.get(entryKey(sessionId,nativeRequestId))?.files.map(claim=>({...claim}))??[],
   noVision:(sessionId,nativeRequestId)=>entries.get(entryKey(sessionId,nativeRequestId))?.noVision??false,
-  markNoVision:(sessionId,nativeRequestId)=>{entryOf(entryKey(sessionId,nativeRequestId)).noVision=true},
+  markNoVision:async(sessionId,nativeRequestId,signal)=>{
+   try{remember(entryKey(sessionId,nativeRequestId),await ports.markNoVision(sessionId,nativeRequestId,signal))}
+   catch(error){if(error instanceof WorkError||signal?.aborted)throw error;throw new WorkError('teloa/dependency-unavailable','未能保存本轮读图状态，请稍后再试。')}
+  },
   clear:(sessionId,nativeRequestId)=>{entries.delete(entryKey(sessionId,nativeRequestId))},
  }
  ctx.tools.register(defineTool({
@@ -96,13 +99,13 @@ export function registerGroupAttachTool(ctx:Context,ports:GroupAttachToolPorts):
   execute:async(args,exec)=>{
    const claim=readClaim(args)
    const {sessionId,nativeRequestId}=await authorize(ctx,ports,exec)
-   const entry=entryOf(entryKey(sessionId,nativeRequestId))
-   const duplicate=entry.files.some(existing=>existing.path===claim.path&&existing.sha256===claim.sha256)
-   if(!duplicate){
-    if(entry.files.length>=groupReferenceMaxFiles)throw new WorkError('teloa/conflict','本次运行最多声明 8 个要贴回群的文件。')
-    entry.files.push(claim)
-   }
-   return JSON.stringify({declared:entry.files.length,duplicate})
+   try{
+    const saved=await ports.declare(sessionId,nativeRequestId,claim,exec.signal)
+    if(!saved||typeof saved.duplicate!=='boolean'||Object.keys(saved).length!==3+Number(Object.hasOwn(saved,'mentionSelf')))throw new WorkError('teloa/invalid-host-response','文件声明回执格式不正确。')
+    const {duplicate,...value}=saved,entry=remember(entryKey(sessionId,nativeRequestId),value)
+    exec.signal.throwIfAborted()
+    return JSON.stringify({declared:entry.files.length,duplicate})
+   }catch(error){if(error instanceof WorkError||exec.signal.aborted)throw error;throw new WorkError('teloa/dependency-unavailable','未能保存本轮文件声明，请稍后再试。')}
   },
  }))
  ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{

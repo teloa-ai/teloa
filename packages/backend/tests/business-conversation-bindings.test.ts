@@ -1,4 +1,5 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir,tmpdir} from 'node:os'
@@ -53,7 +54,7 @@ test('reservation_recovers_each_gap_without_new_draft',async()=>{
  await assert.rejects(f.make().reserve(f.a,{...input,ownerId:'other'}),{code:'teloa/invalid-input'})
 })
 test('daily_requires_current_context 与跨本人、撤权、未登记范围',async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  await assert.rejects(f.make().reserve({...f.a,scopeIds:['missing']},{requestId:randomUUID(),kind:'daily',title:'工作',scope:'missing'}),{code:'teloa/forbidden'})
  const input={requestId:randomUUID(),kind:'daily',title:'工作',scope:'SOC'},r=await f.make().reserve(f.a,input)
  assert.equal(r.draftId,undefined)
@@ -108,7 +109,7 @@ test('两次bind竞争只固定原会话，TaskRun与标题工作区不匹配均
 })
 test('已采用新草案先刷新真实scopeIds；调整业务预约沿用正式配置',async()=>{
  const f=await fixture(),input={requestId:randomUUID(),kind:'builder',title:'新业务'},reserved=await f.make().reserve(f.a,input)
- const draft=await f.drafts.get(f.a,{draftId:reserved.draftId}),space=await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId)
+ const draft=await f.drafts.get(f.a,{draftId:reserved.draftId}),space=await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId))
  const {businessConfigurationHash}=await import('../src/work/business-configuration-store.ts')
  const {insertBusinessDefinitionVersion}=await import('../src/work/business-definition-write.ts')
  const definition={format:'teloa.business-object-type/v1',id:'ticket',version:'1.0.0',domain:draft.scope,title:'工单',unit:'条',lead:'跟进事项',sourceId:draft.candidate.sources[0]!.sourceId,fields:[{name:'state',label:'状态',type:'text',required:true,from:'状态'}]}
@@ -153,7 +154,7 @@ test('已绑定session不能因原生请求身份丢失退回普通会话',async
 })
 
 test('recentDaily按可信原生顺序跨过100条绑定；冷读取零context与零存储写入',{timeout:30000},async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  const natives=[]
  for(let i=0;i<102;i++){
   const input={requestId:randomUUID(),kind:'daily',title:'日常'+i,scope:'SOC'}
@@ -174,7 +175,7 @@ test('recentDaily按可信原生顺序跨过100条绑定；冷读取零context�
 })
 
 test('pending daily优先：原生创建前/context前/context后都保留原预约；全局识别不读context',{timeout:15000},async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  const visible:{sessionId:string;origin?:'subagent'}[]=[],cold=f.make({drafts:f.drafts,conversations:f.conversations,contexts:{context:async()=>{throw Error('pending不可读取context')}},visibleSessions:async()=>visible})
  const input={requestId:randomUUID(),kind:'daily',title:'恢复原预约',scope:'SOC',workspaceId:'work'},r=await cold.reserve(f.a,input)
  assert.deepEqual(await cold.recentDaily(f.a,{scope:'SOC'}),r)
@@ -190,7 +191,7 @@ test('pending daily优先：原生创建前/context前/context后都保留原预
 })
 
 test('recentDaily的目录失败、取消和当前context冲突都不能返回空或写入',{timeout:15000},async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  const cold=f.make({drafts:f.drafts,conversations:f.conversations,contexts:f.contexts,visibleSessions:async signal=>{signal?.throwIfAborted();throw Error('目录失败')}})
  await assert.rejects(cold.recentDaily(f.a,{scope:'SOC'}),/目录失败/)
  const abort=new AbortController();abort.abort(Error('取消'));await assert.rejects(cold.recentDaily(f.a,{scope:'SOC'},abort.signal),/取消/)
@@ -203,7 +204,7 @@ test('recentDaily的目录失败、取消和当前context冲突都不能返回�
 })
 
 test('max1事务守卫：builder拒绝、pending可设置原scope但不能freeze/交办、bound仍固定scope',{timeout:20000},async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  const service=new ConversationWorkService(pool,identity.now,async(owner,sessionId)=>{
   // 原生 inspection 的既有 role/task 查询确实会使用 pool；必须在 checkout 前完成。
   await pool.query('select 1');return {...await f.conversations.bySession(owner,sessionId),submitted:false}
@@ -234,7 +235,7 @@ test('max1事务守卫：builder拒绝、pending可设置原scope但不能freeze
 })
 
 test('两个并发事务耗尽max2池时守卫不二次checkout，set与bind竞态保持预约scope',{timeout:20000},async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  const limited=new Pool({connectionString:container.getConnectionUri(),max:2,connectionTimeoutMillis:2000,statement_timeout:3000})
  try{
   const bindings=new api.BusinessConversationBindingService(limited,identity,{drafts:f.drafts,conversations:f.conversations,contexts:f.contexts})
@@ -253,7 +254,7 @@ test('两个并发事务耗尽max2池时守卫不二次checkout，set与bind竞�
 
 test('R1 max1与耗尽max2时，事务和同事create串行队列交错均不靠checkout超时脱困',{timeout:30000},async()=>{
  for(const max of [1,2])for(const operation of ['freeze','bind'] as const){
-  const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+  const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
   const role=await new api.RoleService(pool,identity).create(f.a.ownerId,{requestId:randomUUID(),fields:{name:'同事',kind:'employee',scopes:['SOC'],duty:'调查',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
   const fixed={requestId:randomUUID(),kind:'daily',title:'串行交错',scope:'SOC'};await f.make().reserve(f.a,fixed)
   const native=await f.conversations.create(f.a.ownerId,{requestId:fixed.requestId,title:fixed.title})
@@ -282,7 +283,7 @@ test('R1 max1与耗尽max2时，事务和同事create串行队列交错均不靠
 })
 
 test('R1 空context消费后保持null：等待checkout期间提交也不能首次设置scope或role',{timeout:15000},async()=>{
- const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId)
+ const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId))
  const n=await f.conversations.create(f.a.ownerId,{requestId:randomUUID(),title:'未选业务的普通会话'})
  const limited=new Pool({connectionString:container.getConnectionUri(),max:1,connectionTimeoutMillis:2000})
  let submitted=false,inspected!:()=>void
@@ -304,7 +305,7 @@ test('R1 空context消费后保持null：等待checkout期间提交也不能首�
 
 test('R1 checkout等待期间普通会话adopt为builder或pending daily，锁内拒绝过期身份',{timeout:15000},async()=>{
  for(const kind of ['builder','daily'] as const){
-  const f=await fixture();await new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId);f.a.scopeIds=['SOC']
+  const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
   const conversations=new ConversationService(f.repository,{create:async id=>id,inspect:async()=>{}},identity)
   const sessionId=randomUUID();await conversations.ensure(f.a.ownerId,{sessionId})
   const requestId=randomUUID(),title='从目录加入';await f.make().reserve(f.a,{requestId,kind,title,...(kind==='daily'?{scope:'SOC'}:{})})

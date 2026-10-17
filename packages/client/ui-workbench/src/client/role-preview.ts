@@ -1,14 +1,14 @@
 import type { CollaborationScope } from './collaboration-preview.js'
 import type {TeloaTranslate} from './i18n/index.js'
-import {roleSupportsScope,type RoleRuntimeConfig} from '@teloa/contract'
+import {roleSupportsScope,type RoleRuntimeConfig,type RoleAvatarKey} from '@teloa/contract'
 import type {RoleDelegationRead} from './role-delegation-api.js'
 export type {RoleRuntimeConfig} from '@teloa/contract'
 
 export const roleStates={active:'role.state.active',paused:'role.state.paused',retired:'role.state.retired'} as const
 export type RoleMemory={id:string;title:string;text:string;source:string;scope:'role'|'private';status:'candidate'|'confirmed'|'withdrawn';version:number;createdAt:string;updatedAt:string}
 export type RoleResponsibility={triggers:string[];autonomousActions:string[];confirmationPoints:string[];escalationRules:string[];deliveryChecks:string[]}
-export type PreviewRole={storage?:'persistent';workAccess?:RoleDelegationRead|undefined;id:string;name:string;kind:'employee'|'twin';scopes:CollaborationScope[];state:keyof typeof roleStates;version:number;duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig;memories:RoleMemory[];history:{text:string;actorId:string;at:string}[];draft?:{body:string;version:number;editorId:string;updatedAt:string};retirementReason?:string}
-export type RoleFields=Pick<PreviewRole,'name'|'kind'|'scopes'|'duty'|'dataScope'|'executionScope'|'skills'|'knowledge'|'responsibility'|'runtimeConfig'>
+export type PreviewRole={updatedAt?:string;avatarKey?:RoleAvatarKey;storage?:'persistent';workAccess?:RoleDelegationRead|undefined;id:string;name:string;kind:'employee'|'twin';scopes:CollaborationScope[];state:keyof typeof roleStates;version:number;duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig;memories:RoleMemory[];history:{text:string;actorId:string;at:string}[];draft?:{body:string;version:number;editorId:string;updatedAt:string};retirementReason?:string}
+export type RoleFields=Pick<PreviewRole,'name'|'kind'|'scopes'|'duty'|'dataScope'|'executionScope'|'skills'|'knowledge'|'responsibility'|'runtimeConfig'|'avatarKey'>
 export type TeamChange=(
   |{type:'create';id:string;fields:RoleFields}
   |({type:'edit';roleId:string;expectedVersion:number}&Omit<RoleFields,'kind'>)
@@ -28,7 +28,15 @@ export const canReceiveTask=(role:WorkRole|undefined,scope:string,groupId?:strin
  return !!access&&access.roleId===role.id&&access.roleVersion===role.version&&access.delegations.some(delegation=>delegation.roleId===role.id&&delegation.roleVersion===role.version&&delegation.state==='active'&&delegation.scope===scope&&(!groupId||delegation.groupIds.includes(groupId))&&access.consents.some(consent=>consent.roleId===role.id&&consent.roleVersion===role.version&&consent.ownerId===delegation.ownerId&&consent.state==='active'&&consent.authorization.kind==='delegation'&&consent.authorization.delegationId===delegation.id&&consent.authorization.delegationVersion===delegation.version))
 }
 export const canConfigureRoleExecution=(role:WorkRole,access:RoleDelegationRead|undefined)=>role.state!=='retired'&&!!access&&access.roleId===role.id&&access.roleVersion===role.version&&access.canEditExecution===true
-export const roleName=(roles:readonly Pick<PreviewRole,'id'|'name'>[],id:string,t?:TeloaTranslate)=>id==='self'?(t?t('role.preview.self'):'我'):roles.find(role=>role.id===id)?.name||(t?t('role.preview.formerMember'):'历史成员')
+export type RoleDirectoryState={known:boolean;loading:boolean;error?:string|undefined}
+export const roleName=(roles:readonly Pick<PreviewRole,'id'|'name'>[],id:string,t?:TeloaTranslate,directory?:RoleDirectoryState)=>{
+ if(id==='self')return t?t('role.preview.self'):'我'
+ const name=roles.find(role=>role.id===id)?.name
+ if(name)return name
+ if(directory?.error)return t?t('task.detail.memberUnavailable'):'成员信息暂不可用'
+ if(directory&&(!directory.known||directory.loading))return t?t('task.detail.memberLoading'):'正在加载成员…'
+ return t?t('role.preview.formerMember'):'历史成员'
+}
 export const rolePeople=(roles:readonly PreviewRole[],t?:TeloaTranslate)=>[{id:'self',name:t?t('role.preview.self'):'我',kind:'human' as const,state:'active' as const},...roles.map(role=>({id:role.id,name:role.name,kind:role.kind==='twin'?'draft' as const:'digital' as const,state:role.state}))]
 
 export function withRoleExamples(roles:PreviewRole[],now:string):PreviewRole[]{

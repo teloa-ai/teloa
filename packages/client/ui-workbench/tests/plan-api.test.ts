@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createPlanApi,projectSavedPlan,type PlanCreateFields,type PlanSource} from '../src/client/plan-api.ts'
+import {planBlock} from '../src/client/continuous-preview.ts'
 
 const planId='11111111-1111-4111-8111-111111111111',roleId='22222222-2222-4222-8222-222222222222',requestId='33333333-3333-4333-8333-333333333333'
 const at='2026-09-11T00:00:00.000Z',later='2026-09-11T01:00:00.000Z'
@@ -8,6 +9,54 @@ const trigger={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:
 const fields:PlanCreateFields={title:'每日核对',goal:'核对新增资料。',scope:'general',dataScope:'本人已授权资料。',delivery:'变化与待核对项。',roleId,expectedRoleVersion:3,trigger,notificationPolicy:'attention'}
 const source:PlanSource={kind:'market-content',contentId:'44444444-4444-4444-8444-444444444444',contentHash:'a'.repeat(64),resourceId:'daily-review',resourceVersion:'1.0.0'}
 const row={id:planId,ownerId:'local:owner',title:fields.title,goal:fields.goal,scope:fields.scope,dataScope:fields.dataScope,delivery:fields.delivery,roleId,roleVersion:3,trigger,notificationPolicy:fields.notificationPolicy,source,version:1,configVersion:1,state:'paused' as const,archivedReason:null,archivedAt:null,createdAt:at,updatedAt:at}
+
+test('本人计划严格回读固定executor和方法来源，投影不伪造员工或依赖员工目录',async()=>{
+ const executor={kind:'owner' as const,grantId:planId,grantVersion:1},completionPolicy={kind:'manual' as const}
+ const method={kind:'method-reuse' as const,artifactId:roleId,version:2,basisHash:'b'.repeat(64),taskId:requestId}
+ const workDefinition={schema:'teloa.plan-work/v3' as const,definitionVersion:1,definitionControlId:roleId,budgetAccountId:requestId,authorization:executor,completion:completionPolicy,triggers:[{kind:'schedule' as const,schedule:trigger}],budget:{maxGoalRounds:9,maxTokens:65536,maxElapsedMs:300000,maxConcurrent:1,maxRetries:1,stagnationRounds:3,money:null},overlap:'forbid' as const,missed:'coalesce' as const,safeRecovery:false}
+ const owner={...row,roleId:null,roleVersion:null,executor,source:method,workDefinition,completionPolicy}
+ const api=createPlanApi(async()=>owner)
+ // 同目录不同id，真实owner记录不能令整个目录失败。
+ const secondId='55555555-5555-4555-8555-555555555555',secondExecutor={...executor,grantId:secondId},second={...owner,id:secondId,executor:secondExecutor,workDefinition:{...workDefinition,authorization:secondExecutor}}
+ assert.deepEqual(await createPlanApi(async()=>[row,second]).list(),[row,second])
+ const saved=await api.get(planId),projected=projectSavedPlan(saved)
+ assert.equal(projected.fields.roleId,null);assert.deepEqual(projected.executor,executor)
+ const {schema:_schema,definitionVersion:_definitionVersion,definitionControlId:_control,budgetAccountId:_budget,authorization:_authorization,...configuration}=workDefinition
+ const configured={...owner,version:2,configVersion:2,executor:{...executor,grantVersion:2},workDefinition:{...workDefinition,definitionVersion:2,authorization:{...executor,grantVersion:2}}}
+ assert.deepEqual(await createPlanApi(async()=>configured,undefined,()=>requestId).configureWorkConfirmed(saved,configuration),configured)
+ assert.match(planBlock(projected,[]),/暂停/);assert.equal(planBlock({...projected,enabled:true},[]),'')
+ for(const invalid of [
+  {...owner,executor:undefined},{...owner,roleVersion:1},{...owner,roleId},
+  {...owner,source:{kind:'manual'}},{...owner,scope:'SOC'},{...owner,groupId:roleId},
+  {...owner,executor:{...executor,grantVersion:2}},
+  {...owner,executor:{...executor,grantId:roleId}},
+  {...owner,workDefinition:{...workDefinition,authorization:{kind:'delegation',delegationId:roleId,delegationVersion:1}}},
+  {...owner,source:{...method,taskId:undefined}},
+  {...row,roleId:null,roleVersion:null}, {...row,executor}, {...owner,ownerGrant:{unexpected:true}},
+ ])await assert.rejects(createPlanApi(async()=>invalid).get(planId),/格式/)
+ const acceptedSource={sessionId:'original-session',messageId:'message-1',messageSeq:2,requestId}
+ const {taskId:_taskId,...messageMethod}=method
+ assert.deepEqual((await createPlanApi(async()=>({...owner,source:{...messageMethod,acceptedSource}})).get(planId)).source,{...messageMethod,acceptedSource})
+})
+
+test('计划固定汇报群随创建、回读与编辑投影保留，旧计划不补造目标',async()=>{
+ const groupId='77777777-7777-4777-8777-777777777777',saved={...row,groupId},calls:unknown[]=[]
+ const api=createPlanApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return saved},undefined,()=>requestId)
+ assert.deepEqual(await api.get(planId),saved)
+ assert.equal(projectSavedPlan(saved).fields.groupId,groupId)
+ assert.equal(Object.hasOwn(projectSavedPlan(row).fields,'groupId'),false)
+ const created=await api.create({...fields,groupId},source)
+ assert.equal(created.groupId,groupId)
+ assert.deepEqual(calls.at(-1),['plans/create',{requestId,fields:{...fields,groupId},source}])
+ await assert.rejects(createPlanApi(async()=>({...row,groupId:'other'})).get(planId),/格式/)
+})
+
+test('会话来源随原计划回读，旧手工计划兼容，非法来源拒绝',async()=>{
+ const linked={...row,source:{kind:'manual' as const,sessionId:'ordinary-session'}}
+ assert.deepEqual(await createPlanApi(async()=>linked).get(planId),linked)
+ assert.deepEqual(await createPlanApi(async()=>({...row,source:{kind:'manual'}})).get(planId),{...row,source:{kind:'manual'}})
+ for(const source of [{kind:'manual',sessionId:''},{kind:'manual',sessionId:'../other'},{kind:'manual',sessionId:'ok',ownerId:'other'}])await assert.rejects(createPlanApi(async()=>({...row,source})).get(planId),/格式/)
+})
 
 test('目录与详情严格校验身份、本人间接范围、重复项和固定字段',async()=>{
  const calls:unknown[][]=[],api=createPlanApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return endpoint==='plans/list'?[row]:row})
@@ -66,6 +115,16 @@ test('长期计划目标编辑未知恢复保留原四字段及本人配置端�
  const configuration={completion:{kind:'manual' as const},triggers:[{kind:'schedule' as const,schedule:trigger}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid' as const,missed:'coalesce' as const,safeRecovery:false},fields={title:'新目标',goal:'核对新来源',dataScope:'当前委托原件',delivery:'本轮交付'},workDefinition={schema:'teloa.plan-work/v2' as const,definitionVersion:2,definitionControlId:planId,budgetAccountId:roleId,authorization:{kind:'delegation' as const,delegationId:requestId,delegationVersion:1},...configuration},result={...row,...fields,version:2,configVersion:2,completionPolicy:configuration.completion,workDefinition}
  let raw:string|null=null,lost=true;const calls:unknown[][]=[],journal={read:()=>raw,write:(v:string)=>{raw=v},clear:()=>{raw=null}},call=async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);if(lost){lost=false;throw Error('未知')}return result}
  await assert.rejects(createPlanApi(call,journal,()=>requestId).configureWorkConfirmed(row,configuration,fields),/未知/);assert.deepEqual(await createPlanApi(call,journal).recover(),result);assert.deepEqual(calls[0],calls[1]);assert.deepEqual((calls[0]![1] as {fields:unknown}).fields,fields);assert.equal(raw,null)
+})
+
+test('已配置长期计划可明确改选汇报群，未知回包保留原目标请求',async()=>{
+ const configuration={completion:{kind:'manual' as const},triggers:[{kind:'schedule' as const,schedule:trigger}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid' as const,missed:'coalesce' as const,safeRecovery:false}
+ const edit={title:row.title,goal:row.goal,dataScope:row.dataScope,delivery:row.delivery,groupId:'77777777-7777-4777-8777-777777777777'}
+ const calls:unknown[]=[];let journal:string|null=null
+ const api=createPlanApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);throw Error('结果未知')},{read:()=>journal,write:value=>{journal=value},clear:()=>{journal=null}},()=>requestId)
+ await assert.rejects(api.configureWorkConfirmed(row,configuration,edit),/结果未知/)
+ assert.deepEqual((calls[0] as [string,{fields:unknown}])[1].fields,edit)
+ assert.equal(JSON.parse(journal!).request.fields.groupId,edit.groupId)
 })
 
 test('执行历史使用默认和显式分页参数并严格解析回包',async()=>{

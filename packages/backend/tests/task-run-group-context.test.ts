@@ -9,13 +9,17 @@ import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontaine
 import type {MessageReference} from '@teloa/contract'
 import {CollaborationService,initializeCollaboration} from '../src/work/collaboration.ts'
 import {GroupTaskService,initializeGroupTasks} from '../src/work/group-tasks.ts'
+import {initializeGroupWorkInputs} from '../src/work/group-work-inputs.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
 import {GroupAgentGrantService,initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {RoleToolGrantService,initializeRoleToolGrants} from '../src/work/role-tool-grants.ts'
 import {RoleDelegationService} from '../src/work/role-delegations.ts'
 import {TwinExecutionConsentService} from '../src/work/twin-execution-consents.ts'
-import {initializeTaskRuns} from '../src/work/task-runs.ts'
+import {HandoffService,initializeHandoffs} from '../src/work/handoffs.ts'
+import {RoleLifecycleService,initializeRoleLifecycle} from '../src/work/role-lifecycle.ts'
+import {ObjectConversationService,initializeObjectConversations} from '../src/work/object-conversations.ts'
+import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
 import {initializeTaskRunSubagents} from '../src/work/task-run-subagents.ts'
 import {initializeTaskRunRuntimeLinks} from '../src/work/task-run-runtime-links.ts'
 import {initializeTaskRunFlows} from '../src/work/task-run-flows.ts'
@@ -55,9 +59,10 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start()
  pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool)
- await initializeTasks(pool)
+ await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializeHandoffs(pool);await initializeObjectConversations(pool)
  await initializeCollaboration(pool)
  await initializeGroupTasks(pool)
+ await initializeGroupWorkInputs(pool)
  await initializeGroupAgentGrants(pool)
  await initializeGroupAttachments(pool)
  await initializeArtifactSnapshots(pool)
@@ -354,4 +359,68 @@ test('端口未接入时文本附件整次失败，不静默给空正文',async(
  const f=await fixture(),saved=await upload(f,'application/json','配置.json',Buffer.from('{"a":1}','utf8'))
  await wire(f,[{kind:'attachment',id:saved.attachmentId,version:1}])
  await assert.rejects(context(f,null),{code:'teloa/dependency-unavailable'})
+})
+
+
+test('群任务在正式重新交办后沿原来源接续，创建时负责人快照不改写',async()=>{
+ const f=await fixture(),lifecycle=new RoleLifecycleService(pool,identity),roles=new RoleService(pool,identity)
+ const original=(await pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[f.task.id])).rows[0]
+ await lifecycle.change(f.owner,{roleId:f.role.id,expectedVersion:1,action:'pause',reason:'暂停后继续'})
+ const resumed=await lifecycle.change(f.owner,{roleId:f.role.id,expectedVersion:2,action:'resume',reason:'恢复原任务'})
+ const nextRole=(await roles.get(f.owner,f.role.id))!
+ await assert.rejects(context({...f,role:nextRole}),{code:'teloa/version-conflict'},'恢复员工本身不能替代重新交办')
+ const changed=await new HandoffService(pool,identity).change(f.owner,{requestId:randomUUID(),taskId:f.task.id,expectedTaskVersion:f.task.version,target:{kind:'role',roleId:f.role.id,expectedRoleVersion:resumed.role.version},note:'本人确认继续同一群任务'})
+ const value=await context({...f,task:changed.task,role:nextRole})
+ assert.equal(value?.taskId,f.task.id);assert.equal(value?.source.messageId,f.source.messageId);assert.equal(value?.roleId,f.role.id);assert.equal(value?.roleVersion,3);assert.equal(value?.grantVersion,2)
+ const edited=await new TaskService(pool,identity).edit(f.owner,{taskId:f.task.id,expectedVersion:changed.task.version,fields:{title:'保留原群任务',goal:f.task.goal}})
+ assert.equal((await context({...f,task:edited,role:nextRole}))?.roleVersion,3,'合理的任务编辑版本不要求再改派一次')
+ const prepare=async(task:typeof f.task,role:typeof f.role)=>{
+  const sessionId=randomUUID(),inspect=async()=>({id:sessionId,sessionId,ownerId:f.owner,status:'ready'})
+  await new ObjectConversationService(pool,inspect,identity.now).change(f.owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,sessionId,expectedLinkVersion:0,action:'link'})
+  const runs=new TaskRunService(pool,identity,inspect,{allowedTools:[],groupContext:(db,owner,current,currentRole)=>readRunGroupContext(db,owner,current,currentRole)})
+  const run=await runs.prepare(f.owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1},undefined,undefined,undefined,async()=> 'default-agent')
+  return {runs,run}
+ }
+ const old=await prepare(edited,nextRole)
+ assert.equal(old.run.taskId,f.task.id);assert.equal(old.run.groupContext?.roleVersion,3)
+ await old.runs.withdraw(f.owner,{runId:old.run.id})
+ const oldRow=(await pool.query('select * from teloa_task_runs where id=$1',[old.run.id])).rows[0]
+ await lifecycle.change(f.owner,{roleId:f.role.id,expectedVersion:3,action:'pause',reason:'再次暂停'})
+ const secondResume=await lifecycle.change(f.owner,{roleId:f.role.id,expectedVersion:4,action:'resume',reason:'再次恢复'})
+ const second=await new HandoffService(pool,identity).change(f.owner,{requestId:randomUUID(),taskId:f.task.id,expectedTaskVersion:edited.version,target:{kind:'role',roleId:f.role.id,expectedRoleVersion:secondResume.role.version},note:'确认当前版本接续'})
+ const finalRole=(await roles.get(f.owner,f.role.id))!,next=await prepare(second.task,finalRole)
+ assert.equal(next.run.taskId,f.task.id);assert.equal(next.run.roleVersion,5);assert.equal(next.run.groupContext?.source.messageId,f.source.messageId);assert.equal(next.run.groupContext?.grantVersion,3)
+ assert.equal((await old.runs.claim(f.owner,{runId:old.run.id})).dispatch,false,'旧准备记录仍是撤回终态，不能恢复发送')
+ assert.deepEqual((await pool.query('select * from teloa_task_runs where id=$1',[old.run.id])).rows[0],oldRow)
+ assert.deepEqual((await pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[f.task.id])).rows[0],original)
+})
+
+test('群任务换代仅认真实当前任务与完整交办链，坏回执、伪任务、未来员工和过期授权均拒绝',async()=>{
+ const f=await fixture(),lifecycle=new RoleLifecycleService(pool,identity),roles=new RoleService(pool,identity)
+ await lifecycle.change(f.owner,{roleId:f.role.id,expectedVersion:1,action:'pause',reason:'调整当前版本'})
+ await lifecycle.change(f.owner,{roleId:f.role.id,expectedVersion:2,action:'resume',reason:'本人恢复'})
+ const role=(await roles.get(f.owner,f.role.id))!,request={requestId:randomUUID(),taskId:f.task.id,expectedTaskVersion:1,target:{kind:'role' as const,roleId:role.id,expectedRoleVersion:3},note:'本人明确接续'}
+ await assert.rejects(context({...f,role,task:{...f.task,assigneeRoleVersion:3}}),{code:'teloa/version-conflict'},'没有实际交办回执，不能靠调用者拼任务放行')
+ const result=await new HandoffService(pool,identity).change(f.owner,request),current={...f,role,task:result.task}
+ assert.ok(await context(current))
+ await assert.rejects(context({...current,task:{...current.task,version:current.task.version+1}}),{code:'teloa/version-conflict'},'伪任务版本')
+ await assert.rejects(context({...current,task:{...current.task,goal:'换掉原目标'}}),{code:'teloa/version-conflict'},'伪任务正文')
+ await assert.rejects(context({...current,role:{...role,version:4},task:{...current.task,assigneeRoleVersion:4}}),{code:'teloa/version-conflict'},'未来员工版本')
+ const original=(await pool.query('select * from teloa_task_handoff_changes where owner_id=$1 and request_id=$2',[f.owner,request.requestId])).rows[0]
+ const write=async(spec:unknown,from:unknown,to:unknown,base:number,applied:number)=>pool.query('update teloa_task_handoff_changes set request_spec=$3,from_party=$4,to_party=$5,base_version=$6,applied_version=$7 where owner_id=$1 and request_id=$2',[f.owner,request.requestId,JSON.stringify(spec),JSON.stringify(from),JSON.stringify(to),base,applied])
+ const changes=[
+  {spec:{...original.request_spec,taskId:randomUUID()},from:original.from_party,to:original.to_party,base:1,applied:2,code:'teloa/storage-corrupt'},
+  {spec:original.request_spec,from:{kind:'role',roleId:randomUUID(),roleVersion:1},to:original.to_party,base:1,applied:2,code:'teloa/version-conflict'},
+  {spec:original.request_spec,from:{...original.from_party,roleVersion:2},to:original.to_party,base:1,applied:2,code:'teloa/version-conflict'},
+  {spec:{...original.request_spec,target:{...request.target,expectedRoleVersion:4}},from:original.from_party,to:{...original.to_party,roleVersion:4},base:1,applied:2,code:'teloa/version-conflict'},
+  {spec:{...original.request_spec,expectedTaskVersion:8},from:original.from_party,to:original.to_party,base:8,applied:9,code:'teloa/version-conflict'},
+ ]
+ for(const change of changes){try{await write(change.spec,change.from,change.to,change.base,change.applied);await assert.rejects(context(current),{code:change.code})}finally{await write(original.request_spec,original.from_party,original.to_party,original.base_version,original.applied_version)}}
+ await pool.query('update teloa_group_agent_grants set role_version=1 where owner_id=$1 and group_id=$2 and role_id=$3 and grant_version=2',[f.owner,f.group.id,role.id])
+ await assert.rejects(context(current),{code:'teloa/version-conflict'},'本人交办不借用旧员工版本授权')
+ await pool.query('update teloa_group_agent_grants set role_version=3 where owner_id=$1 and group_id=$2 and role_id=$3 and grant_version=2',[f.owner,f.group.id,role.id])
+ await new GroupAgentGrantService(pool,identity.now).change(f.owner,{requestId:randomUUID(),groupId:f.group.id,roleId:role.id,expectedGroupVersion:1,expectedRoleVersion:3,action:'revoke',resources:[],canPost:false,canAutoRun:false})
+ await assert.rejects(context(current),{code:'teloa/version-conflict'},'已撤销授权不复活')
+ await pool.query('delete from teloa_group_members where owner_id=$1 and group_id=$2 and role_id=$3',[f.owner,f.group.id,role.id])
+ await assert.rejects(context(current),{code:'teloa/forbidden'},'不再是当前群成员')
 })

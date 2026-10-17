@@ -1,6 +1,9 @@
 import {resourceId,resourceScopes,resourceVersion} from './resources.ts'
 import {taskDefinition,workTaskStates,type WorkTask} from './tasks.ts'
 
+/** 与任务执行输入的固定资料容量共用，不能保存执行器无法接收的第九份引用。 */
+export const taskMaterialLimit=8
+
 export type TaskMaterialRef={
  id:string
  taskId:string
@@ -23,8 +26,9 @@ const record=(value:unknown):value is Record<string,unknown>=>typeof value==='ob
 const stamp=(value:unknown):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value))
 
 function isWorkTask(value:unknown):value is WorkTask{
- if(!record(value)||!exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills']))return false
- try{taskDefinition({title:value.title,goal:value.goal,scope:value.scope,groupId:value.groupId,skills:value.skills})}catch{return false}
+ if(!record(value)||!exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills','contentVersion','completionPolicy']))return false
+ if(value.contentVersion!==undefined&&!resourceVersion(value.contentVersion))return false
+ try{taskDefinition({title:value.title,goal:value.goal,scope:value.scope,groupId:value.groupId,skills:value.skills,...(value.completionPolicy===undefined?{}:{completionPolicy:value.completionPolicy})})}catch{return false}
  return resourceId(value.id)&&typeof value.ownerId==='string'&&!!value.ownerId&&value.ownerId.length<=128&&resourceVersion(value.version)&&workTaskStates.some(state=>state===value.state)&&(value.assigneeRoleId===null?value.assigneeRoleVersion===null:resourceId(value.assigneeRoleId)&&resourceVersion(value.assigneeRoleVersion))&&stamp(value.createdAt)&&stamp(value.updatedAt)
 }
 

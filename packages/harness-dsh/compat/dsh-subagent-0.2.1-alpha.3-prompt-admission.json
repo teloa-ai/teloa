@@ -1,0 +1,43 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-subagent",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "patchSha256": "829cc15c371f26492d304433cbef892d2fe3f09fe7ed1797ba3e088ae70c0f0e",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "9a9572e70fffdb100deb63326167f32bbf63016ce49c0017495dabcb95b44168",
+      "afterSha256": "9a229fa1c5410c600a41b31aed7e160abd6a1b8f7a36e380651f375beff1da97"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "bc0a78235eeb39586769204d70ed8a69cb2a26fe2893cb716b142455c9d705a5",
+      "afterSha256": "b9bfed4bdab826fff82afe3e377b8cb77e4f5a88948e054a45c778802efb584d"
+    }
+  ],
+  "api": [
+    "SubagentPromptAdmissionRequest",
+    "SubagentPromptAdmission",
+    "SubagentPromptAdmissionOptions",
+    "SubagentRuntime.requirePromptAdmission",
+    "SubagentRuntime.installPromptAdmission",
+    "SubagentRuntime.admitPrompt",
+    "SubagentRuntime.startActivation.initialPromptAdmission",
+    "SubagentRuntime.startActivation.completionAdmission",
+    "SubagentPromptAdmissionOptions.requireCompletionAdmission",
+    "SubagentPromptAdmissionOptions.captureCompletion"
+  ],
+  "scope": {
+    "admission": "admitPrompt({kind,mode?,agent,message,sender,delivery,signal},dispatch):Promise<void>",
+    "default": "No provider and not required preserves Free publication; direct driver without Subagent service preserves original publication",
+    "boundary": "The activation manager admits exact initial, live and resumed local input; all native execution and result ownership remain upstream.",
+    "limitations": [
+      "Seed/history is not licensed by this publisher seam",
+      "Source, kind, mode, adjacency, and lineage do not grant accepted-work authorization",
+      "No new request deduplication or durable admission receipt",
+      "Creation/setup may precede initial prompt admission; continuation failures retain original rollback and one-shot caller retains the published handle",
+      "Admission provider must not await reentrant same-child continuation operations"
+    ]
+  }
+}

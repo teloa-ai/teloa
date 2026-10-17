@@ -1,3 +1,4 @@
+import './employee-asset-test-loader.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFile} from 'node:fs/promises'
@@ -69,7 +70,7 @@ test('分身个人主页页头：人类头像 + 「Max 的分身」+ 代拟阶�
  // 「我的分身」是存储里的示例名，界面上任何地方都不该再出现。
  assert.ok(!html.includes('我的分身'),'页面上仍出现存储里的第一人称名「我的分身」')
  // 人类头像：圆形 avatar + human，与同事的六档色块头像刻意不同。
- assert.match(html,/class="avatar human[^"]*"/)
+ assert.match(html,/data-teloa-twin-avatar=""/,'分身使用统一本人头像组件')
  assert.ok(html.includes(zh('team.detail.back')),'「全部员工」返回链接缺失')
 })
 
@@ -133,7 +134,7 @@ test('分身主页不再走同事的六组折叠与身份栏（整页换成分�
 test('已退役数字员工保留只读历史会话入口，不再提供对话与交办入口',()=>{
  const role=twinRole({id:'retired-analyst',name:'已退役分析师',kind:'employee',storage:'persistent',state:'retired',retirementReason:'岗位已结束'})
  const html=render(role,'Max',()=>createElement('div',{'data-history':'kept'},'历史会话'),async()=>true)
- assert.match(html,/data-history="kept"/,'退役后仍应能查看已关联的历史会话')
+ assert.ok(html.includes('>关联会话</button>'),'退役后仍保留按需查看历史会话入口；实际打开由浏览器用例验证')
  assert.ok(html.includes(zh('team.profile.action.history')),'退役身份应直接提供“查看历史会话”')
  assert.ok(!html.includes(zh('team.profile.action.chat')),'退役身份不能再发起新会话')
  assert.ok(!html.includes(zh('team.profile.action.assign')),'退役身份不能再接收新任务')
@@ -144,15 +145,7 @@ test('分身页签在窄屏保持 44px 命中区',async()=>{
  assert.match(styles,/@media\(max-width:760px\)\{[^}]*\.tabs\{[^}]*\}\.tabs button\{min-height:44px!important\}/)
 })
 
-test('退役对象的关联面板只读：可打开历史，但不能创建、关联、准备或解除',async()=>{
- const source=await readFile(new URL('../src/client/ObjectConversations.tsx',import.meta.url),'utf8')
- assert.match(source,/<button type="button" disabled=\{!object\.canStart\|\|blocked\} onClick=\{create\}/)
- assert.ok(source.includes('<select value={chosen} onChange={event=>setChosen(event.target.value)} disabled={!object.canStart||blocked}>'))
- assert.match(source,/disabled=\{!object\.canStart\|\|blocked\|\|!chosen\}/)
- assert.match(source,/disabled=\{blocked\|\|!object\.canStart\|\|!conversation\|\|archived\}/)
- assert.match(source,/disabled=\{blocked\|\|!object\.canStart\} onClick=\{\(\)=>void act\(\(\)=>unlink/)
- assert.match(source,/disabled=\{busy\|\|archived\|\|\(!conversation&&!taskRun\)\} onClick=\{\(\)=>void act\(\(\)=>open/,'打开历史不应受 canStart 限制')
-})
+// 退役对象的关联面板只读：已迁移为真实行为用例，见 object-conversations-source.test.ts 与 object-conversations.browser.test.ts。
 
 const {StaffRoster}=await import('../lib/types/client/StaffRoster.js')
 const rosterMarkup=(profileName?:string)=>renderToStaticMarkup(createElement(I18nProvider,{runtime:runtime as never},createElement(StaffRoster as never,{

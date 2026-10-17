@@ -1,8 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {filterWorkspaceSearchResults,searchWorkspace} from '../src/client/workspace-search.ts'
+import {filterWorkspaceSearchResults,searchWorkspace,workspaceSearchKinds} from '../src/client/workspace-search.ts'
 import {searchableKnowledgeDocuments} from '../src/client/workspace-search-knowledge.ts'
 const source={conversations:[],tasks:[{storage:'persistent' as const,id:'same',title:'研究任务',goal:'核对公开证据',state:'ready' as const,scope:'general' as const}],roles:[{storage:'persistent' as const,id:'same',name:'研究岗位',duty:'核对来源',state:'paused' as const}],groups:[{storage:'persistent' as const,id:'same',name:'研究协作',announcement:'项目沟通',archived:false}],spaces:[{storage:'persistent' as const,scope:'space-research' as const,title:'研究业务'}],knowledge:[],capabilities:[{key:'skill:20000000-0000-4000-8000-000000000001',id:'20000000-0000-4000-8000-000000000001',type:'skill' as const,title:'事件报告',detail:'生成可审阅报告',open:{kind:'installation' as const,id:'skill:20000000-0000-4000-8000-000000000001' as const}}],market:[{id:'market-security-solution',title:'SOC 告警研判方案',summary:'分析告警并形成可审阅结论'}]}
+test('我的资源统一筛选已核验应用与导入资源，保留各自原身份及打开目标',()=>{
+ const rows=searchWorkspace(source,'')
+ const resources=filterWorkspaceSearchResults(rows,'resource')
+ assert.deepEqual(resources.map(row=>row.kind),['capability','market'])
+ assert.deepEqual(resources[0]?.open,source.capabilities[0]!.open)
+ assert.equal(resources[1]?.id,source.market[0]!.id)
+ assert.equal(workspaceSearchKinds.capability,'capabilityCenter.myResources')
+ assert.equal(workspaceSearchKinds.market,'capabilityCenter.myResources')
+ assert.deepEqual(filterWorkspaceSearchResults(rows,'resource'),resources)
+})
+test('全局搜索能按负责员工查找持久自动化并区分同名计划',()=>{
+ const plans=[{id:'plan-a',title:'Auto Dream · 每日小结',goal:'整理经验',roleName:'小研',state:'active' as const},{id:'plan-b',title:'Auto Dream · 每日小结',goal:'整理经验',roleName:'小析',state:'paused' as const}]
+ const all=searchWorkspace({...source,plans},'每日小结').filter(row=>row.kind==='plan')
+ assert.deepEqual(all.map(row=>[row.id,row.detailKey,row.description]),[['plan-a','status.enabled','小研'],['plan-b','status.paused','小析']])
+ assert.deepEqual(searchWorkspace({...source,plans},'小析').map(row=>[row.kind,row.id]),[['plan','plan-b']])
+ assert.deepEqual(searchWorkspace(source,'Auto Dream'),[])
+})
+
 test('搜索按对象分类并保留稳定身份，同名同ID不混淆',()=>{
  const result=searchWorkspace(source,'  研究 ')
  assert.deepEqual(result.map(row=>[row.kind,row.id]),[['task','same'],['group','same'],['role','same'],['business','space-research']])
@@ -66,7 +84,7 @@ test('搜索真实团队能力的名称和说明，结果携带原能力的稳�
 
 test('市场分组只搜索当前传入的可见条目，使用稳定条目 id 与本地化标题和摘要',()=>{
  const result=searchWorkspace(source,'可审阅结论')
- assert.deepEqual(result,[{key:'market:market-security-solution',kind:'market',id:'market-security-solution',title:'SOC 告警研判方案',detailKey:'workspaceSearch.detail.market'}])
+ assert.deepEqual(result,[{key:'market:market-security-solution',kind:'market',id:'market-security-solution',title:'SOC 告警研判方案',detailKey:'capabilityCenter.myResources'}])
  assert.deepEqual(filterWorkspaceSearchResults(searchWorkspace(source,'SOC'),'market').map(row=>row.id),['market-security-solution'])
  assert.deepEqual(searchWorkspace({...source,market:[]},'SOC').filter(row=>row.kind==='market'),[],'移出当前市场目录后不残留搜索结果')
 })

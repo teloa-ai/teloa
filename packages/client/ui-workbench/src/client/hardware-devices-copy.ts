@@ -1,0 +1,21 @@
+const copy={
+ title:['硬件连接','硬件連接','Hardware connections'],name:['小智 MCP','小智 MCP','Xiaozhi MCP'],
+ summary:['用硬件与此工作台的小松鼠助手对话。','用硬件與此工作台的小松鼠助手對話。','Talk to this workspace’s Squirrel assistant through your device.'],
+ connectionTitle:['连接配置','連接設定','Connection'],permissionTitle:['访问授权','存取授權','Access permission'],
+ permissionLabel:['允许提交工作与查询结果','允許提交工作與查詢結果','Allow work requests and result queries'],
+ saveFirst:['保存接入点后，可在此授权并启用连接。','儲存接入點後，可在此授權並啟用連接。','Save an endpoint to review and enable access here.'],
+ details:['连接与数据说明','連接與資料說明','Connection and data details'],enabled:['已授权','已授權','Allowed'],working:['处理中…','處理中…','Working…'],
+ replaceEndpoint:['已保存，粘贴新接入点可替换','已儲存，貼上新接入點可取代','Saved. Paste a new endpoint to replace it.'],
+ lead:['将硬件说出的工作交给此实例的原小松鼠助手，结果交由小智播报。','將硬件語音工作交給此實例的原小松鼠助手，結果由小智播報。','Send hardware requests to this instance’s original Squirrel assistant. Xiaozhi speaks the results.'],
+ absent:['此实例尚未加载小智 MCP 插件。','此實例尚未載入小智 MCP 插件。','The Xiaozhi MCP plugin is not loaded in this instance.'],
+ configure:['配置连接','設定連接','Configure'],endpoint:['官方 MCP 接入点','官方 MCP 接入點','Official MCP endpoint'],save:['保存接入点','儲存接入點','Save endpoint'],saved:['接入点已保存','接入點已儲存','Endpoint saved'],
+ flow:['本阶段经官方小智云转发语音和请求，需要联网。接入点对应整个智能体，使用该智能体的其他设备也可能使用同一授权。','此階段經官方小智雲轉發語音與請求，需要連線。接入點屬於整個智能體，使用該智能體的其他裝置也可能共用授權。','This connection uses the official Xiaozhi cloud and requires internet access. Other devices using the same agent may share this permission.'],
+ consent:['允许向原小松鼠提交工作、准备任务，并将这些工作的结果返回官方小智。副作用操作仍由本人在 Teloa 审批。','允許向原小松鼠提交工作、準備任務，並將這些工作的結果傳回官方小智。涉及變更的操作仍由本人在 Teloa 批核。','Allow requests, task preparation, and returning their results to Xiaozhi. Actions with side effects still require approval in Teloa.'],
+ enable:['授权并启用','授權並啟用','Allow and enable'],test:['检查连接','檢查連接','Check connection'],revoke:['停用并撤销授权','停用並撤銷授權','Disable and revoke'],
+ missing:['未配置接入点','未設定接入點','No endpoint configured'],configured:['已配置接入点','已設定接入點','Endpoint configured'],idle:['尚未连接','尚未連接','Not connected'],connecting:['正在连接','正在連接','Connecting'],ready:['MCP 已连接','MCP 已連接','MCP connected'],retrying:['正在重连','正在重新連接','Reconnecting'],failed:['连接失败，请核对接入点','連接失敗，請核對接入點','Connection failed. Check the endpoint.'],stopped:['连接已停止','連接已停止','Connection stopped'],
+ hint:['接入点加密保存在此实例，不会回显。保存后需单独授权启用。','接入點加密儲存在此實例，不會再次顯示。儲存後須另行授權啟用。','The endpoint is encrypted in this instance and never shown again. Enable access separately after saving.'],
+ console:['小智控制台','小智控制台','Xiaozhi console'],
+ pending:['长任务请再次询问“刚才的任务怎么样”；原助手、审批和成果仍在此工作台。停用连接不会停止已受理工作。','長任務可再問「剛才的任務怎樣」；原助手、批核及成果仍在此工作台。停用連接不會停止已接手的工作。','Ask again for long task results. The original assistant, approvals, and deliverables remain in this workspace. Disabling the connection does not stop accepted work.'],
+ error:['操作未完成，请核对连接或凭据存储后重试。','操作未完成，請核對連接或憑據儲存後重試。','The action did not complete. Check the connection and credential store, then retry.'],refresh:['刷新状态','重新整理狀態','Refresh'],locked:['凭据存储暂不可写，请先核对凭据存储设置。','憑據儲存暫不能寫入，請先核對憑據儲存設定。','The credential store is not writable. Check its settings.'],
+} as const
+export function hardwareDevicesCopy(locale:string,key:keyof typeof copy){return copy[key][locale==='zh-CN'?0:['zh-Hant','zh-HK','zh-TW'].includes(locale)?1:2]}

@@ -1,17 +1,20 @@
 import {isGroupMention,isMessageReference,type GroupMention,type MessageReference} from '@teloa/contract'
 import type {PendingAttachment} from './group-attachment-api.ts'
 
-export type GroupDraftEntry={drafts:Record<string,string>;referenceDrafts:Record<string,MessageReference[]>;mentionDrafts:Record<string,GroupMention[]>;attachmentDrafts:Record<string,PendingAttachment[]>}
+/** `replyDrafts` 是按输入入口保存的引用回复目标（原消息身份）；关闭引用预览只清它，不动正文、附件或 @。 */
+export type GroupDraftEntry={drafts:Record<string,string>;referenceDrafts:Record<string,MessageReference[]>;mentionDrafts:Record<string,GroupMention[]>;attachmentDrafts:Record<string,PendingAttachment[]>;replyDrafts:Record<string,string>}
 export type SavedCollaborationDraftStore={
  readGroupDraftEntry(groupId:string):GroupDraftEntry
  writeGroupDraftText(groupId:string,key:string,text:string):void
  writeGroupReferenceDrafts(groupId:string,key:string,references:readonly MessageReference[]):void
  writeGroupMentionDrafts(groupId:string,key:string,mentions:readonly GroupMention[]):void
  writeGroupAttachmentDrafts(groupId:string,key:string,items:readonly PendingAttachment[]):void
+ writeGroupReplyDraft(groupId:string,key:string,messageId:string|undefined):void
  clearGroupSentDraft(groupId:string,key:string,expected?:GroupDraftEntry):boolean
 }
 
-const emptyEntry=():GroupDraftEntry=>({drafts:{},referenceDrafts:{},mentionDrafts:{},attachmentDrafts:{}})
+const emptyEntry=():GroupDraftEntry=>({drafts:{},referenceDrafts:{},mentionDrafts:{},attachmentDrafts:{},replyDrafts:{}})
+const messageId=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 type DraftStorage=Pick<Storage,'getItem'|'setItem'>
 const storageKey='teloa.group-drafts/v1'
 const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)
@@ -34,14 +37,16 @@ export function createSavedCollaborationDraftStore(storage?:DraftStorage):SavedC
    const rows:unknown=JSON.parse(raw)
    if(record(rows))for(const [id,item] of Object.entries(rows)){
     if(!record(item)||!validMap(item.drafts,value=>typeof value==='string'&&value.length<=8000)||!validMap(item.referenceDrafts,value=>Array.isArray(value)&&value.length<=8&&value.every(ref=>isMessageReference(ref)&&ref.kind!=='attachment'))||!validMap(item.mentionDrafts,value=>Array.isArray(value)&&value.length<=8&&value.every(isGroupMention)))continue
-    table.set(id,{...emptyEntry(),drafts:item.drafts as GroupDraftEntry['drafts'],referenceDrafts:item.referenceDrafts as GroupDraftEntry['referenceDrafts'],mentionDrafts:item.mentionDrafts as GroupDraftEntry['mentionDrafts']})
+    // 引用目标是后加的键：旧存储没有它时按空处理，格式不对只丢这一项，不丢正文。
+    const replyDrafts=validMap(item.replyDrafts,messageId)?item.replyDrafts as GroupDraftEntry['replyDrafts']:{}
+    table.set(id,{...emptyEntry(),drafts:item.drafts as GroupDraftEntry['drafts'],referenceDrafts:item.referenceDrafts as GroupDraftEntry['referenceDrafts'],mentionDrafts:item.mentionDrafts as GroupDraftEntry['mentionDrafts'],replyDrafts})
    }
   }
  }catch{/* 损坏或禁用存储不阻断当前输入。 */}
  const read=(groupId:string):GroupDraftEntry=>table.get(groupId)??emptyEntry()
  const write=(groupId:string,patch:Partial<GroupDraftEntry>):void=>{
   table.set(groupId,{...read(groupId),...patch})
-  try{storage?.setItem(storageKey,JSON.stringify(Object.fromEntries([...table].map(([id,entry])=>[id,{drafts:entry.drafts,mentionDrafts:entry.mentionDrafts,referenceDrafts:Object.fromEntries(Object.entries(entry.referenceDrafts).map(([key,refs])=>[key,refs.filter(ref=>ref.kind!=='attachment')]))}]))))}catch{/* 配额不足时仍保留内存草稿。 */}
+  try{storage?.setItem(storageKey,JSON.stringify(Object.fromEntries([...table].map(([id,entry])=>[id,{drafts:entry.drafts,mentionDrafts:entry.mentionDrafts,replyDrafts:entry.replyDrafts,referenceDrafts:Object.fromEntries(Object.entries(entry.referenceDrafts).map(([key,refs])=>[key,refs.filter(ref=>ref.kind!=='attachment')]))}]))))}catch{/* 配额不足时仍保留内存草稿。 */}
  }
  return {
   readGroupDraftEntry:read,
@@ -49,11 +54,13 @@ export function createSavedCollaborationDraftStore(storage?:DraftStorage):SavedC
   writeGroupReferenceDrafts(groupId,key,references){write(groupId,{referenceDrafts:{...read(groupId).referenceDrafts,[key]:[...references]}})},
   writeGroupMentionDrafts(groupId,key,mentions){write(groupId,{mentionDrafts:{...read(groupId).mentionDrafts,[key]:[...mentions]}})},
   writeGroupAttachmentDrafts(groupId,key,items){write(groupId,{attachmentDrafts:{...read(groupId).attachmentDrafts,[key]:[...items]}})},
+  writeGroupReplyDraft(groupId,key,target){const {[key]:_previous,...rest}=read(groupId).replyDrafts;write(groupId,{replyDrafts:target?{...rest,[key]:target}:rest})},
   clearGroupSentDraft(groupId,key,expected){
    const entry=read(groupId)
    // 回包只能清理发出时的草稿；发送期间继续编辑的正文、引用、提及或附件必须保留。
-   if(expected&&((entry.drafts[key]??'')!==(expected.drafts[key]??'')||(['referenceDrafts','mentionDrafts','attachmentDrafts'] as const).some(field=>JSON.stringify(entry[field][key]??[])!==JSON.stringify(expected[field][key]??[]))))return false
-   write(groupId,{drafts:{...entry.drafts,[key]:''},referenceDrafts:{...entry.referenceDrafts,[key]:[]},mentionDrafts:{...entry.mentionDrafts,[key]:[]},attachmentDrafts:{...entry.attachmentDrafts,[key]:[]}})
+   if(expected&&((entry.drafts[key]??'')!==(expected.drafts[key]??'')||entry.replyDrafts[key]!==expected.replyDrafts[key]||(['referenceDrafts','mentionDrafts','attachmentDrafts'] as const).some(field=>JSON.stringify(entry[field][key]??[])!==JSON.stringify(expected[field][key]??[]))))return false
+   const {[key]:_sent,...replyDrafts}=entry.replyDrafts
+   write(groupId,{drafts:{...entry.drafts,[key]:''},referenceDrafts:{...entry.referenceDrafts,[key]:[]},mentionDrafts:{...entry.mentionDrafts,[key]:[]},attachmentDrafts:{...entry.attachmentDrafts,[key]:[]},replyDrafts})
    return true
   },
  }

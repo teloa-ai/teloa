@@ -83,6 +83,18 @@ test('已启用语音的旧 profile 不重复，迁移后本人停用在重启�
  assert.equal(runtime.withTeloaProfileDefaults(first).dsh.profile.bundles.filter(name=>name===voice).length,1)
 })
 
+test('Auto review 首次可选但不改默认权限；本人停用后不会在重启时重开',()=>{
+ const review='@deepseek-ai/dsh-experimental-auto-review'
+ const before={dsh:{profile:{bundles:['@deepseek-ai/dsh-base','@teloa/bundle'],selection:{preset:'workspace-write'}}},teloa:{other:'keep'}}
+ const first=runtime.withTeloaProfileDefaults(before)
+ assert.equal(first.dsh.profile.bundles.filter(name=>name===review).length,1)
+ assert.equal(first.teloa.autoReviewDefaultV1,true)
+ assert.deepEqual(first.dsh.profile.selection,before.dsh.profile.selection)
+ const disabled={...first,dsh:{...first.dsh,profile:{...first.dsh.profile,bundles:first.dsh.profile.bundles.filter(name=>name!==review)}}}
+ assert.deepEqual(runtime.withTeloaProfileDefaults(disabled),disabled)
+ assert.deepEqual(runtime.withTeloaProfileDefaults(first),first)
+})
+
 test('npm profile 真实初始化和关闭后重启保留语音选择、原生配置及缓存',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-voice-default-'))
  t.after(()=>rm(root,{recursive:true,force:true}))
@@ -93,6 +105,7 @@ test('npm profile 真实初始化和关闭后重启保留语音选择、原生�
  await symlink(join(projectRoot,'packages'),join(programRoot,'packages'))
  const sdkRoot=dirname(createRequire(join(projectRoot,'packages/harness-dsh/package.json')).resolve('@deepseek-ai/dsh-app-boot/package.json'))
  await symlink(sdkRoot,join(programRoot,'node_modules/@deepseek-ai/dsh-app-boot'))
+ await symlink(dirname(createRequire(join(projectRoot,'package.json')).resolve('@deepseek-ai/dsh/package.json')),join(programRoot,'node_modules/@deepseek-ai/dsh'))
  const layout={programRoot,dshHome:join(root,'dsh'),runtimeRoot:join(root,'data'),workspaceRoot:join(root,'work'),profileName:'teloa'}
  const profileDir=await runtime.prepareRuntimeProfile(layout)
  const path=join(profileDir,'package.json'),voice='@deepseek-ai/dsh-experimental-voice-input-bundle'

@@ -77,6 +77,8 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
   {id:'product-analytics',name:'cordis:pin',config:{enabled:true}},
   {id:'sandbox-policy',name:'cordis:pin',config:{mode:'workspace-write',workspaceRoot:{__jsExpr:'process.cwd()'}}},
   {id:'sandbox',name:'cordis:pin'},
+  {id:'working-directory',name:'cordis:pin',disabled:true},
+  {id:'teloa-working-directory',name:'cordis:pin'},
   {id:'approval',name:'cordis:pin',config:{policy:'ask'}},
   {id:'tools',name:'cordis:pin',config:{mode:'native'}},
   {id:'tool-workflow',name:'cordis:pin',disabled:true},
@@ -102,7 +104,9 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
  // 本用例装载占位插件，只替换已验证的模块名，保留 Loader 提供的声明正文和表达式。
  assert.equal(rows.find(row=>row.id==='teloa-agent-preset')?.name,'cordis:preset')
  const names:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
- for(const id of ['standard','ptc','minimal','cordis'])names['preset-'+id]='@deepseek-ai/dsh-agent-preset'
+ for(const entry of compositionEntries().entries())if(entry.options.id.startsWith('preset-'))names[entry.options.id]='@deepseek-ai/dsh-agent-preset'
+ names['working-directory']='@deepseek-ai/dsh-working-directory'
+ names['teloa-working-directory']='@teloa/harness-dsh/native-working-directory'
  names['session-log-deepseek']='@deepseek-ai/dsh-session-log-deepseek'
  names['desktop-product-telemetry']='@deepseek-ai/dsh-host-product-telemetry-otel'
  names['teloa-product-telemetry']='@teloa/harness-dsh/product-telemetry'

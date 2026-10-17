@@ -38,7 +38,7 @@ export function homeRecentContext(
  selfLabel:string,
 ):HomeRecentContext|undefined{
  const fromTask=(task:Pick<PreviewTask,'scope'|'assigneeId'>|undefined,roleId?:string)=>homeTaskContext(task,roles,scopeNames,selfLabel,roleId)
- if(conversation.run)return fromTask(tasks.find(task=>task.id===conversation.run!.taskId),conversation.run.roleId)
+ if(conversation.run)return fromTask(tasks.find(task=>task.id===conversation.run!.taskId),conversation.run.roleId??undefined)
  const contexts=links.filter(link=>link.sessionId===conversation.sessionId&&link.active!==false).flatMap(link=>{
   if(link.kind==='task'){
    const context=fromTask(tasks.find(task=>task.id===link.objectId))

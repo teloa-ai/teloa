@@ -15,9 +15,10 @@ test('团队能力目录固定界面文案全部通过 i18n',()=>{
 
 test('团队能力正式目录不把内存配置方案作为并列一级页签',()=>{
  assert.doesNotMatch(page,/t\('teamCapability\.navigation\.bindings'\)/)
- assert.match(page,/props\.mode==='bindings'[\s\S]+<UnavailableBindings/)
+ // 独立「我的能力／绑定」页已退出：目录内没有 bindings 页签或替代页，绑定入口由 store 落到市场「已添加」
+ assert.doesNotMatch(page,/UnavailableBindings|mode==='bindings'/)
  assert.doesNotMatch(page,/\bCapabilityBindings\b/)
- assert.match(page,/props\.catalog/)
+ assert.doesNotMatch(page,/props\.catalog\b/)
 })
 
 test('行业资源说明不再拼空间名前缀：个人版空间名恒为「我的工作空间」，拼进去对每条资源都一样，且不该在技能页出现「工作空间」字样',()=>{

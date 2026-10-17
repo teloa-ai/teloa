@@ -12,7 +12,7 @@ function fields(value:RoleFields,scopes:Readonly<Record<string,string>>):RoleFie
     triggers:list(value.responsibility.triggers),autonomousActions:list(value.responsibility.autonomousActions),confirmationPoints:list(value.responsibility.confirmationPoints),escalationRules:list(value.responsibility.escalationRules),deliveryChecks:list(value.responsibility.deliveryChecks),
   }
   const runtimeConfig=value.runtimeConfig===undefined?undefined:readRoleRuntimeConfig(value.runtimeConfig)
-  return {name:text(value.name,'员工名称',80),kind:value.kind,scopes:[...new Set(value.scopes)],duty:text(value.duty,'职责'),dataScope:text(value.dataScope,'数据范围'),executionScope:text(value.executionScope,'执行范围'),skills:list(value.skills),knowledge:list(value.knowledge),...(responsibility===undefined?{}:{responsibility}),...(runtimeConfig===undefined?{}:{runtimeConfig})}
+  return {...(value.avatarKey===undefined?{}:{avatarKey:value.avatarKey}),name:text(value.name,'员工名称',80),kind:value.kind,scopes:[...new Set(value.scopes)],duty:text(value.duty,'职责'),dataScope:text(value.dataScope,'数据范围'),executionScope:text(value.executionScope,'执行范围'),skills:list(value.skills),knowledge:list(value.knowledge),...(responsibility===undefined?{}:{responsibility}),...(runtimeConfig===undefined?{}:{runtimeConfig})}
 }
 
 // 与任务共享一次状态更新，避免退役后任务仍可交办，或交接清掉独立审批。

@@ -45,12 +45,14 @@ test('表头恰五列：任务/负责人/状态/需要你/更新时间',()=>{
   assert.deepEqual([...html.matchAll(/<th>([^<]*)<\/th>/g)].map(match=>match[1]),['任务','负责人','状态','需要你','更新时间'])
 })
 
-test('打开详情后只保留三列，群分组也跨三列，避免隐藏列仍挤占任务名称',()=>{
+test('打开详情后负责人并入任务单元，状态单列，完整姓名不会挤成几字',()=>{
  const html=render(createElement(TaskList,{...props,rows,selected:'f1'}))
- assert.deepEqual([...html.matchAll(/<th>([^<]*)<\/th>/g)].map(match=>match[1]),['任务','负责人','状态'])
- assert.match(html,/<td colSpan="3">/)
+ assert.deepEqual([...html.matchAll(/<th>([^<]*)<\/th>/g)].map(match=>match[1]),['任务','状态'])
+ assert.match(html,/<td colSpan="2">/)
  assert.doesNotMatch(html,/<td colSpan="5">/)
  assert.match(html,/尚未核对/)
+ const named=render(createElement(TaskList,{...props,rows:[{...row(task('long')),ownerName:'开发验收·资料编辑已保存'}],selected:'long'}))
+ assert.match(named,/<span class="rowOwner"[^>]*>开发验收·资料编辑已保存<\/span>/)
 })
 
 test('选中行 aria-selected 且 tabIndex 0，其它 -1；持久且未核对的行显示尚未核对',()=>{

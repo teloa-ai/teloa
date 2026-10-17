@@ -1,6 +1,6 @@
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
-import {readMarketCatalogEntry,marketEntryNeedsV2,validateMarketCatalogAlternatives,type MarketCatalogEntry} from './market-catalog.ts'
+import {readMarketCatalogEntry,marketEntryNeedsV2,validateMarketCatalogAlternatives,assertUpstreamPluginsConsistent,type MarketCatalogEntry} from './market-catalog.ts'
 import {marketEntryKinds} from './market-taxonomy.ts'
 import {parseTeloaRange,teloaRangeSatisfies} from './semver-range.ts'
 
@@ -75,6 +75,7 @@ export function readMarketIndexV2(value:unknown,teloaVersion:string):MarketIndex
  noBuiltinWithoutUpstream(entries)
  orderedIds(ids)
  validateMarketCatalogAlternatives(entries,new Set(ids))
+ assertUpstreamPluginsConsistent(entries)
  return {format:'teloa.market-index/v2',catalogVersion,entries,skipped}
 }
 
@@ -91,5 +92,6 @@ export function assembleMarketIndexV2(value:unknown):MarketIndexV2Document{
  noBuiltinWithoutUpstream(entries)
  orderedIds(entries.map(entry=>entry.id))
  validateMarketCatalogAlternatives(entries)
+ assertUpstreamPluginsConsistent(entries)
  return {format:'teloa.market-index/v2',catalogVersion,entries}
 }

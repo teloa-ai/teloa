@@ -1,6 +1,12 @@
 /* 已加入的方案详情：模板名做页面主标题，状态与版本退为次要信息；按钮分主/次/文字/危险四层，分类用分段控件。
    选择器都挂在 .page 下提高一级特异性，压过 MarketPage.module.css 里 .savedDirectory :where(button) 的通用边框样式。 */
 .page{display:grid;gap:18px}
+.roleSummary{display:flex;align-items:flex-start;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--teloa-border)}
+.roleSummaryCopy{display:grid;flex:1;min-width:0;gap:4px;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}
+.roleSummaryCopy strong{font-weight:var(--teloa-weight-medium)}
+.roleSummaryCopy ul{display:grid;gap:4px;list-style:none;padding:0;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.roleSummaryCopy p{margin:0;color:var(--teloa-warn);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.roleDrawer .page{margin:0;padding:20px;border:0;border-radius:0;box-shadow:none}
 .page.emptyState{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 18px;padding:16px 18px}
 .page .emptyDescription{flex:1 1 240px;min-width:0;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
 .page.emptyState button{flex:none}

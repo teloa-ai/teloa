@@ -11,6 +11,7 @@ import {BusinessTaskService,initializeBusinessTasks} from '../src/work/business-
 import {CollaborationService,initializeCollaboration} from '../src/work/collaboration.ts'
 import {GroupTaskService,initializeGroupTasks} from '../src/work/group-tasks.ts'
 import {GroupAgentGrantService,initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
+import {initializeGroupWorkInputs} from '../src/work/group-work-inputs.ts'
 import {groupTaskSourceDigest} from '../src/work/group-task-source-digest.ts'
 import {readRunGroupContext} from '../src/work/task-run-group-context.ts'
 import type {GroupTaskSource} from '@teloa/contract'
@@ -22,7 +23,7 @@ import {TaskRunService,initializeTaskRuns} from '../src/work/task-runs.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 let container:StartedPostgreSqlContainer,pool:Pool,locks:Pool,observer:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
-before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();const connectionString=container.getConnectionUri();pool=new Pool({connectionString,max:1,connectionTimeoutMillis:1500,statement_timeout:4000});locks=new Pool({connectionString,max:2,connectionTimeoutMillis:1500,statement_timeout:4000});observer=new Pool({connectionString,max:2,connectionTimeoutMillis:1500,statement_timeout:4000});await initializeRoles(pool);await initializeTasks(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeGroupTasks(pool);await initializeIndustryTasks(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool)})
+before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();const connectionString=container.getConnectionUri();pool=new Pool({connectionString,max:1,connectionTimeoutMillis:1500,statement_timeout:4000});locks=new Pool({connectionString,max:2,connectionTimeoutMillis:1500,statement_timeout:4000});observer=new Pool({connectionString,max:2,connectionTimeoutMillis:1500,statement_timeout:4000});await initializeRoles(pool);await initializeTasks(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeGroupTasks(pool);await initializeIndustryTasks(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeGroupWorkInputs(pool)})
 after(async()=>{await locks?.end();await observer?.end();await pool?.end();await container?.stop()})
 async function fixture(reserve=true){
  await initializeConversationWork(pool)

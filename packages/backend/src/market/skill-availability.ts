@@ -19,7 +19,7 @@ export type SkillAvailabilityImpact={
  roles:{roleId:string;version:number;state:'active'|'paused'|'retired';name:string}[]
  plans:{planId:string;version:number;state:'paused'|'active'|'archived';roleId:string}[]
  tasks:{taskId:string;version:number;state:string;assigneeRoleId:string|null}[]
- runs:{runId:string;taskId:string;roleId:string;state:string}[]
+ runs:{runId:string;taskId:string;roleId:string|null;state:string}[]
  ordinarySessions:{status:'unknown'}
 }
 export type SkillAvailabilityPreview={installation:SkillInstallation;availability:SkillAvailability;impact:SkillAvailabilityImpact;impactDigest:string;blockers:Array<'installation-not-installed'>}
@@ -117,8 +117,9 @@ export async function assertRunSkillsEnabled(db:PoolClient,ownerId:string,skills
   if(readStoredSkillAvailability(availabilityRow,ownerId).availability==='disabled')throw new WorkError('teloa/conflict','员工声明包含已停用技能，请先恢复后再准备或领取执行。')
  }
 }
-export async function createSkillAvailability(db:PoolClient,ownerId:string,installationId:string,updatedAt:string){
- await db.query("insert into teloa_skill_install_availability(installation_id,owner_id,availability,version,updated_at) values($1,$2,'enabled',1,$3)",[installationId,ownerId,updatedAt])
+/** 与安装记录同一事务写入初始启停；disabled 从文件发布前即生效，原生同步不会出现可加载窗口。 */
+export async function createSkillAvailability(db:PoolClient,ownerId:string,installationId:string,updatedAt:string,availability:SkillAvailabilityValue='enabled'){
+ await db.query('insert into teloa_skill_install_availability(installation_id,owner_id,availability,version,updated_at) values($1,$2,$3,1,$4)',[installationId,ownerId,availability,updatedAt])
 }
 
 function availabilityFromJson(value:unknown,ownerId:string):SkillAvailability{
@@ -148,7 +149,7 @@ async function impact(db:PoolClient,ownerId:string,installation:SkillInstallatio
  const usageRows=(await db.query('select * from teloa_skill_install_usages where owner_id=$1 and installation_id=$2 order by load_id,item_instance_id limit 1001',[ownerId,installation.id])).rows
  const industryUsages=limit(usageRows.map(row=>readUsage(row,ownerId,installation.id)))
  const allRoles=(await db.query('select * from teloa_roles where owner_id=$1 order by id',[ownerId])).rows.map(readStoredRole),affectedRoles=limit(allRoles.filter(role=>role.skills.includes(installation.native.name))),roleIds=new Set(affectedRoles.map(role=>role.id))
- const allPlans=(await db.query('select * from teloa_plans where owner_id=$1 order by id',[ownerId])).rows.map(readStoredPlan),affectedPlans=limit(allPlans.filter(plan=>roleIds.has(plan.roleId)))
+ const allPlans=(await db.query('select * from teloa_plans where owner_id=$1 order by id',[ownerId])).rows.map(readStoredPlan),affectedPlans=limit(allPlans.filter((plan):plan is typeof plan&{roleId:string}=>plan.roleId!==null&&roleIds.has(plan.roleId)))
  const refRows=(await db.query('select r.* from teloa_task_runs r join teloa_task_run_skill_refs s on s.run_id=r.id and s.owner_id=r.owner_id where r.owner_id=$1 and s.installation_id=$2 order by r.id limit 1001',[ownerId,installation.id])).rows,runs=[]
  for(const row of limit(refRows)){const run=readStoredTaskRun(row);await verifyTaskRunSkillRefs(db,ownerId,run.id,run.skills);runs.push({runId:run.id,taskId:run.taskId,roleId:run.roleId,state:run.state})}
  const runTaskIds=new Set(runs.map(run=>run.taskId)),allTasks=(await db.query('select * from teloa_tasks where owner_id=$1 order by id',[ownerId])).rows.map(readStoredTask),affectedTasks=limit(allTasks.filter(task=>task.assigneeRoleId!==null&&roleIds.has(task.assigneeRoleId)||runTaskIds.has(task.id)))

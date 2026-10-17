@@ -1,7 +1,8 @@
+import {usablePersonalName} from '@teloa/contract'
 import type {Context} from '@deepseek-ai/cordis'
-import {WorkError,groupDefinition,roleSupportsScope,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingCandidatesMax,groupRoutingHopLimit,groupRoutingRespondMax,roleDefinition,type GroupReactionEmoji,type GroupRoutingDecision,type GroupTaskCreateInput} from '@teloa/contract'
-import {workAccess,authorizeRoleTaskAssignment,readStoredRole,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,readRunGroupTopic,type GroupRoutingDecisionService,type RunGroupContext,type RunGroupTopicMessage} from '@teloa/backend'
-import {askGroupRouting,type GroupRoutingAsk,type GroupRoutingCandidate} from './group-routing.ts'
+import {WorkError,groupDefinition,roleSupportsScope,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedAttemptTaskRequestId,groupWorkInputRequestId,resolveGroupDirectRecipients,groupRoutingCandidatesMax,groupRoutingHopLimit,groupRoutingRespondMax,roleDefinition,type GroupReactionEmoji,type GroupRoutingDecision,type GroupTaskCreateInput} from '@teloa/contract'
+import {workAccess,groupRoutedExecution,readGroupConversationTopic,authorizeRoleTaskAssignment,readStoredRole,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,readRunGroupTopic,type GroupRoutingAttemptService,type GroupRoutingDecisionService,type GroupWorkInputService,type RunGroupContext,type RunGroupTopicMessage} from '@teloa/backend'
+import {askGroupRouting,type GroupRoutingAsk,type GroupRoutingCandidate,type GroupRoutingWorkCandidate} from './group-routing.ts'
 import {drainGroupRoutingOutbox,type GroupRoutingOutboxPorts} from './group-routing-outbox-driver.ts'
 import {readTrustedGroupMessageRunSource,type GroupRoutingOutboxService} from '@teloa/backend'
 
@@ -10,8 +11,11 @@ type Queryable={query(text:string,values:readonly unknown[]):Promise<{rows:Recor
 /** 话题锁回调里那个真实连接的类型：从决策服务的签名上取，同样不引 `pg`。 */
 type PoolClient=Parameters<Parameters<GroupRoutingDecisionService['withTopicLock']>[3]>[0]
 
-/** 触发消息的只读投影。`mentions` 只对本人消息有值：员工消息（`GroupEmployeeMessage` 9 键）没有这个键。 */
-export type GroupRoutingMessage={groupId:string;rootId:string;authorKind:'self'|'role';authorId:string;authorName:string;text:string;createdAt:string;mentions:string[]}
+/**
+ * 触发消息的只读投影。`mentions` 只对本人消息有值：员工消息（`GroupEmployeeMessage` 9 键）没有这个键。
+ * `mentionAll` 与 `replyAuthorRoleId` 是宿主读出的消息关系：引用对象的作者由宿主按同群同本人读取，客户端不能自报。
+ */
+export type GroupRoutingMessage={groupId:string;rootId:string;authorKind:'self'|'role';authorId:string;authorName:string;text:string;createdAt:string;mentions:string[];mentionAll?:boolean;replyAuthorRoleId?:string|null}
 
 export type GroupRoutingDispatchPorts={
  /** 新宿主必须装配。历史调用可保留旧投递方式，已有决策不会凭当前岗位版本补造待办。 */
@@ -21,8 +25,14 @@ export type GroupRoutingDispatchPorts={
   * 模型调用（段 B）与建任务（段 D）都在锁外（H7/H8）。
   */
  decisions:Pick<GroupRoutingDecisionService,'identity'|'withTopicLock'|'claimed'|'isStopMessage'|'relayGateOpen'|'relayStopRounds'|'hops'|'record'>
- /** C2：群的版本与归档位。 */
- group:(owner:string,groupId:string,db:PoolClient)=>Promise<{version:number;archived:boolean;name:string}|undefined>
+ /** 原消息重试的尝试世代。未装配时只有第一尝试，与旧宿主行为一致。 */
+ attempts?:Pick<GroupRoutingAttemptService,'pending'|'settle'>
+ /** 本群候选工作（continue/stop 的唯一目标来源）与追加回执；未装配时没有追加与停止。 */
+ workCandidates?:(owner:string,groupId:string,messageId:string,db:PoolClient)=>Promise<RoutingWorkCandidate[]>
+ workInputs?:Pick<GroupWorkInputService,'reserveInTransaction'>
+ drainWorkInputs?:(owner:string,signal:AbortSignal)=>Promise<void>
+ /** C2：群的版本与归档位；`mentionAllAllowed` 缺省按群规则缺省（允许）。 */
+ group:(owner:string,groupId:string,db:PoolClient)=>Promise<{version:number;archived:boolean;name:string;mentionAllAllowed?:boolean;coordinatorRoleId?:string}|undefined>
  /**
   * C2：触发消息本身。**不收 db**：话题锁的键要用这条消息的 `groupId`/`rootId`，必须在取锁之前读出来；
   * 群消息行写下之后不再被任何生产路径 update/delete，锁外读是安全的。
@@ -30,7 +40,8 @@ export type GroupRoutingDispatchPorts={
  message:(owner:string,messageId:string)=>Promise<GroupRoutingMessage|undefined>
  /** C2：候选。SQL 必须带 `role_id is not null`（M15）。带出 `roleVersion` 供建任务做 `expectedVersion`。 */
  candidates:(owner:string,groupId:string,db:PoolClient)=>Promise<GroupRoutingCandidate[]>
- topic:(owner:string,groupId:string,rootId:string,db:PoolClient)=>Promise<RunGroupTopicMessage[]>
+ /** 传入触发消息时读连续上下文（主群近期＋当前话题、触发水位与引用锚点）；旧调用只读本话题。 */
+ topic:(owner:string,groupId:string,rootId:string,db:PoolClient,messageId?:string)=>Promise<RunGroupTopicMessage[]>
  /** 段 D，锁外。 */
  createTask:(owner:string,input:GroupTaskCreateInput,signal:AbortSignal)=>Promise<{taskId:string}>
  prepare:(owner:string,input:{requestId:string;taskId:string;expectedTaskVersion:number},signal:AbortSignal)=>Promise<{runId:string}>
@@ -57,7 +68,8 @@ const routedAckEmoji:GroupReactionEmoji='👀'
 const settledCodes=['teloa/conflict','teloa/version-conflict']
 const settled=(error:unknown):boolean=>error instanceof WorkError&&settledCodes.includes(error.code)
 
-type Carried={version:number;name:string;hops:number;candidates:GroupRoutingCandidate[];truncatedCandidates:boolean;topic:RunGroupTopicMessage[]}
+type RoutingWorkCandidate=GroupRoutingWorkCandidate&{version:number}
+type Carried={work:RoutingWorkCandidate[];version:number;name:string;coordinatorRoleId?:string;hops:number;candidates:GroupRoutingCandidate[];truncatedCandidates:boolean;topic:RunGroupTopicMessage[];mentionAllAllowed:boolean;attempt:number;override:string[]|null}
 
 /**
  * 决策行恒是终态、恒一次写成：这里只是把八个键补齐，没有任何「先插占位再回写」的路径。
@@ -97,14 +109,24 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
  const trigger=await ports.message(owner,messageId)
  if(!trigger)return
  const {groupId,rootId}=trigger
+ // 终态只写一次：第一尝试写原决策行，显式重试写对应尝试行；同一函数供段 A 的终态分支与段 C 共用。
+ const record=(db:PoolClient,attempt:number,decision:GroupRoutingDecision)=>attempt===1?ports.decisions.record(db,owner,{groupId,messageId,decision}):ports.attempts?ports.attempts.settle(db,owner,{messageId,attemptVersion:attempt,decision}):Promise.resolve(undefined)
+ // 本消息此刻待定案的尝试：没有原决策即第一尝试；已有原决策时只认仍待定案的显式重试，旧尝试迟到不会重开。
+ const open=async(db:PoolClient):Promise<{attempt:number;override:string[]|null}|undefined>=>{
+  if(!await ports.decisions.claimed(db,owner,messageId))return {attempt:1,override:null}
+  const pending=await ports.attempts?.pending(db,owner,messageId)
+  return pending?{attempt:pending.attemptVersion,override:pending.overrideRecipients?.map(item=>item.roleId)??null}:undefined
+ }
  // 段 A：锁内只跑 SQL 与（触顶时）一条系统消息，读完就提交释放锁。
  const carried=await ports.decisions.withTopicLock(owner,groupId,rootId,async(db):Promise<Carried|undefined>=>{
-  if(await ports.decisions.claimed(db,owner,messageId))return undefined
+  const opened=await open(db)
+  if(!opened)return undefined
+  const {attempt}=opened
   if(await ports.decisions.isStopMessage(db,owner,groupId,messageId))return undefined
   const group=await ports.group(owner,groupId,db)
   if(!group)return undefined
   if(group.archived){
-   await ports.decisions.record(db,owner,{groupId,messageId,decision:decisionOf(now,'archived',await ports.decisions.hops(db,owner,groupId,rootId,messageId),{})})
+   await record(db,attempt,decisionOf(now,'archived',await ports.decisions.hops(db,owner,groupId,rootId,messageId),{}))
    return undefined
   }
   // H2：停下之后在本人真正插话之前一律不放行——不写决策、不调模型。
@@ -117,51 +139,88 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
    // 它自己是一次独立事务（`collaboration.send` 的 `['teloa/group-send',owner,requestId]` 是另一把键，不会自锁），
    // 代价是段 A 短暂占两条连接——规格 §2.7「连接池影响」那一段说的就是这一处。
    const stop=await ports.sendSystem(owner,{requestId:groupRelayStopRequestId(owner,groupId,rootId,round),groupId,expectedVersion:group.version,text:groupRelayStopText,rootId},signal)
-   await ports.decisions.record(db,owner,{groupId,messageId,decision:decisionOf(now,'relay-stopped',hops,{stopMessageId:stop.id})})
+   await record(db,attempt,decisionOf(now,'relay-stopped',hops,{stopMessageId:stop.id}))
    return undefined
   }
-  const {candidates,truncatedCandidates}=limitCandidates(await ports.candidates(owner,groupId,db))
-  if(!candidates.length){
-   await ports.decisions.record(db,owner,{groupId,messageId,decision:decisionOf(now,'no-candidate',hops,{})})
+  // 发言员工不能回应自己；先排除作者，再按原候选上限截取，不让作者占用其他员工的位置。
+  const all=await ports.candidates(owner,groupId,db)
+  const {candidates,truncatedCandidates}=limitCandidates(trigger.authorKind==='role'?all.filter(candidate=>candidate.roleId!==trigger.authorId):all)
+  // 本人对原工作的追加／停止不依赖员工仍可接新回应：候选为空但本群有原工作时仍判断控制意图（规格 §4.4）。
+  const work=trigger.authorKind==='self'&&ports.workCandidates?await ports.workCandidates(owner,groupId,messageId,db):[]
+  if(!candidates.length&&!work.length){
+   await record(db,attempt,decisionOf(now,'no-candidate',hops,{}))
    return undefined
   }
-  return {version:group.version,name:group.name,hops,candidates,truncatedCandidates,topic:await ports.topic(owner,groupId,rootId,db)}
+  const coordinatorRoleId=group.coordinatorRoleId&&candidates.some(candidate=>candidate.roleId===group.coordinatorRoleId)?group.coordinatorRoleId:undefined
+  return {version:group.version,name:group.name,...(coordinatorRoleId?{coordinatorRoleId}:{}),hops,candidates,truncatedCandidates,topic:await ports.topic(owner,groupId,rootId,db,messageId),work,mentionAllAllowed:group.mentionAllAllowed!==false,attempt,override:opened.override}
  })
  if(!carried){if(ports.delivery)await drainGroupRoutingOutbox(owner,ports.delivery,signal,{messageId});return}
  const admission=await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:groupId,operation:'run'})
  admission.assertCurrent();signal.throwIfAborted()
  const candidateIds=carried.candidates.map(candidate=>candidate.roleId)
- // 段 B：锁已释放。三态直接映成 decision.kind，不在这里重新判别通道故障与解析失败。
- const ask:GroupRoutingAsk={groupId,groupName:carried.name,messageId,rootId,trigger:{...trigger,mentions:[...trigger.mentions]},topic:carried.topic,candidates:carried.candidates,hops:carried.hops}
- const answered=await askGroupRouting(ctx,owner,ask,signal)
- admission.assertCurrent();signal.throwIfAborted()
  const shared={candidateIds,truncatedCandidates:carried.truncatedCandidates}
- const decision=answered.kind==='ok'
-  ?decisionOf(now,'routed',carried.hops,{...shared,respond:answered.output.respond.filter(roleId=>candidateIds.includes(roleId)).slice(0,groupRoutingRespondMax),reactions:answered.output.reactions.filter(reaction=>candidateIds.includes(reaction.roleId)).map(reaction=>({...reaction}))})
-  :decisionOf(now,answered.kind==='degraded'?'degraded':'parse-failed',carried.hops,{...shared,respond:degradedRespond(trigger.mentions,candidateIds)})
+ // 结构化目标（规格 §3.2）：本人全员请求 → 结构化 @ → 引用回复的员工，宿主直接选定，不增加一次选人模型调用；
+ // 显式重试的「选择接收者」只作用于本次尝试。被点名者不可回应时记 blocked，不悄悄换成别的员工。
+ const direct=trigger.authorKind==='self'
+  ?resolveGroupDirectRecipients({mentionIds:carried.override??trigger.mentions,replyAuthorRoleId:carried.override?null:trigger.replyAuthorRoleId??null,candidateIds,mentionAll:!carried.override&&trigger.mentionAll===true,mentionAllAllowed:carried.mentionAllAllowed})
+  :{mode:'semantic' as const,recipientIds:[],unavailableIds:[]}
+ let decision:GroupRoutingDecision
+ // 点名对象全部不可回应、且本群没有可控制的原工作时直接 blocked；有原工作时仍要判断是否是对原工作的停止/追加。
+ if(direct.mode==='blocked'&&!carried.work.length)decision=decisionOf(now,'blocked',carried.hops,{...shared})
+ else{
+  // 段 B：锁已释放。结构化目标时接收者已由宿主固定，模型只在这几位里判断意图与原文分工，不选人；
+  // 语义选人时在全部候选里判断。三态直接映成 decision.kind，不在这里重新判别通道故障与解析失败。
+  const fixed=direct.mode==='direct'?direct.recipientIds.slice(0,groupRoutingRespondMax):direct.mode==='blocked'?[]:null
+  const ask:GroupRoutingAsk={groupId,groupName:carried.name,...(carried.coordinatorRoleId?{coordinatorRoleId:carried.coordinatorRoleId}:{}),messageId,rootId,trigger:{...trigger,mentions:[...trigger.mentions]},topic:carried.topic,candidates:fixed?carried.candidates.filter(candidate=>fixed.includes(candidate.roleId)):carried.candidates,hops:carried.hops,attempt:carried.attempt,work:carried.work.map(({taskId,runId,title,state})=>({taskId,runId,title,state}))}
+  const answered=await askGroupRouting(ctx,owner,ask,signal)
+  admission.assertCurrent();signal.throwIfAborted()
+  const control=(intent:string)=>intent==='continue'||intent==='stop'
+  if(answered.kind==='ok'){
+   const output=answered.output
+   // 需要回应时使用宿主确认的全部接收者；记录型（none）与对原工作的控制不强制开回复任务。
+   const chosen=output.respond.filter(roleId=>candidateIds.includes(roleId)&&(!fixed||fixed.includes(roleId))).slice(0,groupRoutingRespondMax)
+   const respond=fixed&&output.intent!=='none'&&!control(output.intent)?fixed:chosen
+   const kind=direct.mode==='blocked'&&!control(output.intent)?'blocked':fixed&&direct.mode==='direct'?'direct':!carried.candidates.length&&!control(output.intent)?'no-candidate':'routed'
+   decision=kind==='blocked'||kind==='no-candidate'?decisionOf(now,kind,carried.hops,{...shared}):decisionOf(now,kind,carried.hops,{...shared,respond,reactions:output.reactions.filter(reaction=>respond.includes(reaction.roleId)||candidateIds.includes(reaction.roleId)).map(reaction=>({...reaction})),intent:output.intent,assignments:output.assignments.filter(item=>respond.includes(item.roleId)),workTarget:output.workTarget})
+  }else decision=direct.mode==='blocked'?decisionOf(now,'blocked',carried.hops,{...shared}):fixed?decisionOf(now,'direct',carried.hops,{...shared,respond:fixed}):!carried.candidates.length?decisionOf(now,'no-candidate',carried.hops,{...shared}):decisionOf(now,answered.kind==='degraded'?'degraded':'parse-failed',carried.hops,{...shared,respond:degradedRespond(trigger.mentions,candidateIds)})
+ }
  // 段 C：并发的两条触发都会跑完段 B，但只有一条能 insert 成功，另一条整条退出、不建任务。
  const written=await ports.decisions.withTopicLock(owner,groupId,rootId,async db=>{
   admission.assertCurrent()
-  if(await ports.decisions.claimed(db,owner,messageId))return undefined
+  // 只认段 A 打开的那一次尝试仍待定案：并发重入、旧尝试迟到或期间又有新重试都整条退出。
+  if((await open(db))?.attempt!==carried.attempt)return undefined
   // 模型等待期间可能撤销本人同意、群授权或改变岗位。先重核当前资格，不能让旧候选接单或加表情。
   const current=await ports.candidates(owner,groupId,db),group=await ports.group(owner,groupId,db)
   const eligible=new Set(group&&!group.archived&&group.version===carried.version
    ?current.filter(item=>carried.candidates.some(prior=>prior.roleId===item.roleId&&prior.roleVersion===item.roleVersion)).map(item=>item.roleId):[])
-  const fixed={...decision,respond:decision.respond.filter(roleId=>eligible.has(roleId)),reactions:decision.reactions.filter(reaction=>eligible.has(reaction.roleId))}
+  // 前序接手者失效时，依赖其成果的后序也失效；不重编号为第一阶段，否则会绕过依赖提前启动。
+  const missingStage=Math.min(...(decision.assignments??[]).filter(item=>!eligible.has(item.roleId)).map(item=>item.stage??1))
+  const dependent=new Set((decision.assignments??[]).filter(item=>(item.stage??1)>missingStage).map(item=>item.roleId))
+  const available=(roleId:string)=>eligible.has(roleId)&&!dependent.has(roleId)
+  // 撤权同步收敛：respond、reactions 与 assignments 一起保留可用接手者，前序与失去依赖的后序都持久呈现失效。
+  const withdrawn=decision.respond.filter(roleId=>!available(roleId))
+  const fixed:GroupRoutingDecision={...decision,respond:decision.respond.filter(available),reactions:decision.reactions.filter(reaction=>available(reaction.roleId)),...(decision.assignments?{assignments:decision.assignments.filter(item=>available(item.roleId))}:{}),...(withdrawn.length?{withdrawn}:{})}
   // 「收到」只给仍可接单的岗位；它与决策同事务落库，独立于模型的表情输出。
-  const acknowledged:{roleId:string;emoji:GroupReactionEmoji}[]=fixed.kind==='routed'
+  const acknowledged:{roleId:string;emoji:GroupReactionEmoji}[]=fixed.kind==='routed'||fixed.kind==='direct'
    ?fixed.respond.filter(roleId=>!fixed.reactions.some(reaction=>reaction.roleId===roleId)).map(roleId=>({roleId,emoji:routedAckEmoji})):[]
-  const recorded=await ports.decisions.record(db,owner,{groupId,messageId,decision:fixed})
+  const recorded=await record(db,carried.attempt,fixed)
   if(!recorded)return undefined
   // 每位接收者的稳定请求与终态决策同事务：提交前失败没有孤儿，提交后退出可由恢复worker补派。
-  if(ports.delivery)await ports.delivery.outbox.recordRecipients(db,owner,{groupId,messageId,decision:recorded,decisionVersion:1})
+  if(ports.delivery)await ports.delivery.outbox.recordRecipients(db,owner,{groupId,messageId,decision:recorded,decisionVersion:carried.attempt})
   // 表情与决策同一个事务：决策行写不进去（并发撞主键）时一个表情都不该落表，否则库里会留下
   // 「没有决策却有路由表情」的孤儿行。代价是一次 insert 加至多 30 条 upsert 都压在这把锁里——
   // 都是毫秒级的本地写，换来的是两张表恒一致。
   for(const reaction of [...fixed.reactions,...acknowledged])await ports.applyReaction(db,owner,{groupId,messageId,roleId:reaction.roleId,emoji:reaction.emoji,requestId:groupRoutedReactionRequestId(owner,messageId,reaction.roleId,reaction.emoji)})
+  // 对原工作的追加／停止：目标只能是段 A 读出的本群候选，版本取当时读到的那一版；回执与终态决策同事务登记。
+  const target=(recorded.intent==='continue'||recorded.intent==='stop')&&recorded.workTarget?carried.work.find(item=>item.taskId===recorded.workTarget!.taskId&&item.runId===recorded.workTarget!.runId):undefined
+  if(target&&ports.workInputs&&trigger.authorKind==='self'){
+   // 登记失败（版本变化、取消）由服务持久记为拒绝回执；其余异常让整笔定案回滚，由唤醒按原身份重试，不定案成「无需处理」。
+   await ports.workInputs.reserveInTransaction(db,owner,{requestId:groupWorkInputRequestId(owner,messageId,target.taskId,carried.attempt),groupId,messageId,taskId:target.taskId,expectedTaskVersion:target.version,operation:recorded.intent as 'continue'|'stop'})
+  }
   admission.assertCurrent()
   return recorded
  })
+ if(written&&ports.drainWorkInputs)await ports.drainWorkInputs(owner,signal)
  if(ports.delivery){await drainGroupRoutingOutbox(owner,ports.delivery,signal,{messageId});return}
  if(!written)return
  // 段 D：锁外。一位没建成不影响别的几位；两码吞掉不重试，其余只记一行。
@@ -172,9 +231,9 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
   const candidate=carried.candidates.find(item=>item.roleId===roleId)
   if(!candidate)continue
   // 建任务与建运行共用同一个确定性身份：一位员工对一条触发消息只可能有这一条任务、这一次运行。
-  const requestId=groupRoutedTaskRequestId(owner,groupId,messageId,roleId)
+  const requestId=groupRoutedAttemptTaskRequestId(owner,groupId,messageId,roleId,carried.attempt)
   try{
-   const {taskId}=await ports.createTask(owner,{requestId,groupId,messageId,expectedGroupVersion:carried.version,goal:groupRoutedTaskGoal,assignee:{roleId,expectedVersion:candidate.roleVersion},trigger:'routed'},signal)
+   const {taskId}=await ports.createTask(owner,{requestId,groupId,messageId,expectedGroupVersion:carried.version,goal:groupRoutedTaskGoal,assignee:{roleId,expectedVersion:candidate.roleVersion},trigger:'routed',...groupRoutedExecution(carried.attempt)},signal)
    const {runId}=await ports.prepare(owner,{requestId,taskId,expectedTaskVersion:routedTaskCreatedVersion},signal)
    const {state}=await ports.start(owner,runId,signal)
    // 运行配置不可用时这一位永远回不了帖，界面上的「员工正在回复…」只能等 30 分钟兜底。
@@ -199,21 +258,36 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
  }
 }
 
+/**
+ * 本群候选工作：只取来自本群的任务（含引用原消息所属的那一项优先），最多 10 项；带当前版本与最近一次运行身份。
+ * 这是 continue/stop 的唯一目标来源，模型不能指向其他群或别人的对象。
+ */
+export async function readRoutingWorkCandidates(owner:string,groupId:string,messageId:string,db:Queryable):Promise<RoutingWorkCandidate[]>{
+ const rows=(await db.query(`select t.id,t.version,t.state,t.definition->>'title' as title,
+   (select r.id from teloa_task_runs r where r.owner_id=t.owner_id and r.task_id=t.id order by r.created_at desc,r.id desc limit 1) as run_id,
+   (t.id=(select reply.task_id from teloa_group_messages m join teloa_group_messages reply on reply.id=m.reply_to_message_id and reply.group_id=m.group_id where m.owner_id=$1 and m.id=$3)) as quoted
+  from teloa_group_task_sources s join teloa_tasks t on t.id=s.task_id and t.owner_id=s.owner_id
+  where s.owner_id=$1 and s.group_id=$2 and t.state<>'cancelled'
+  order by quoted desc nulls last,t.updated_at desc,t.id limit 10`,[owner,groupId,messageId])).rows
+ return rows.map(row=>({taskId:String(row.id),runId:row.run_id===null?null:String(row.run_id),title:String(row.title??''),state:String(row.state),version:row.version as number}))
+}
+
 /** 群的版本、归档位与群名（模型输入只用得到群名）。 */
-export async function readRoutingGroup(owner:string,groupId:string,db:Queryable):Promise<{version:number;archived:boolean;name:string}|undefined>{
+export async function readRoutingGroup(owner:string,groupId:string,db:Queryable):Promise<{version:number;archived:boolean;name:string;mentionAllAllowed:boolean;coordinatorRoleId?:string}|undefined>{
  // 投影不先持群锁；候选读口按 role→group 固定行，避免和本人编辑群、岗位的锁序相反。
  const row=(await db.query('select definition,version,archived from teloa_groups where id=$1 and owner_id=$2',[groupId,owner])).rows[0]
  if(!row)return undefined
  if(!Number.isSafeInteger(row.version)||typeof row.archived!=='boolean')throw new WorkError('teloa/storage-corrupt','群版本或归档状态损坏。')
- return {version:row.version as number,archived:row.archived as boolean,name:groupDefinition(row.definition).name}
+ const definition=groupDefinition(row.definition)
+ return {version:row.version as number,archived:row.archived as boolean,name:definition.name,mentionAllAllowed:definition.rules.mentionAllAllowed,...(definition.coordinatorRoleId?{coordinatorRoleId:definition.coordinatorRoleId}:{})}
 }
 
 /**
- * 触发消息。`authorName` 口径与话题投影逐字同一套（`group-topic.ts`）：本人恒「本人」，
+ * 触发消息。`authorName` 口径与话题投影逐字同一套（`group-topic.ts`）：用户取当前资料姓名（缺失时用「用户」），
  * 员工取岗位名、岗位行读不到时用 roleId 顶名。
  */
-export async function readRoutingMessage(owner:string,messageId:string,db:Queryable):Promise<GroupRoutingMessage|undefined>{
- const row=(await db.query('select group_id,root_id,author_id,text,created_at,mention_snapshot from teloa_group_messages where owner_id=$1 and id=$2',[owner,messageId])).rows[0]
+export async function readRoutingMessage(owner:string,messageId:string,db:Queryable,displayName=''):Promise<GroupRoutingMessage|undefined>{
+ const row=(await db.query('select group_id,root_id,author_id,text,created_at,mention_snapshot,reply_to_message_id,mention_all from teloa_group_messages where owner_id=$1 and id=$2',[owner,messageId])).rows[0]
  if(!row)return undefined
  const author=String(row.author_id),self=author==='self'
  const createdAt=row.created_at
@@ -230,11 +304,19 @@ export async function readRoutingMessage(owner:string,messageId:string,db:Querya
   rootId:row.root_id===null?messageId:String(row.root_id),
   authorKind:self?'self':'role',
   authorId:self?'self':author,
-  authorName:self?'本人':fixed?.roleName??(named?.name as string|undefined)??author,
+  authorName:self?(usablePersonalName(displayName)||'用户'):fixed?.roleName??(named?.name as string|undefined)??author,
   text:String(row.text),
   createdAt:createdAt.toISOString(),
   mentions,
+  mentionAll:self&&row.mention_all===true,
+  // 引用作者只按同一本人、同一群读取；引用本人消息只是上下文锚点，不指定员工。
+  replyAuthorRoleId:self&&row.reply_to_message_id?await replyAuthor(db,owner,String(row.group_id),String(row.reply_to_message_id)):null,
  }
+}
+
+async function replyAuthor(db:Queryable,owner:string,groupId:string,replyTo:string):Promise<string|null>{
+ const author=(await db.query('select author_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,groupId,replyTo])).rows[0]?.author_id
+ return typeof author==='string'&&author!=='self'?author:null
 }
 
 /**
@@ -270,7 +352,7 @@ export async function readRoutingCandidates(owner:string,groupId:string,db:PoolC
    }
   }
   const responsibility=definition.responsibility??{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}
-  candidates.push({roleId:String(row.id),roleVersion:row.version as number,name:definition.name,duty:definition.duty,...responsibility})
+  candidates.push({roleId:String(row.id),roleVersion:row.version as number,name:definition.name,duty:definition.duty,scopes:[...definition.scopes],...responsibility})
  }
  return candidates
 }
@@ -279,6 +361,11 @@ export async function readRoutingCandidates(owner:string,groupId:string,db:PoolC
  * 话题投影：直接用后端那一份（`readRunGroupTopic`），不在宿主侧另写一套截断与显示名规则。
  * 那个函数只读 `groupContext` 的 `groupId` 与 `source.rootId` 两处，这里按这两个键现折一份入参。
  */
-export async function readRoutingTopic(owner:string,groupId:string,rootId:string,db:PoolClient):Promise<RunGroupTopicMessage[]>{
- return (await readRunGroupTopic(db,owner,{groupId,source:{rootId}} as unknown as RunGroupContext))?.messages??[]
+export async function readRoutingTopic(owner:string,groupId:string,rootId:string,db:PoolClient,messageId?:string,displayName=''):Promise<RunGroupTopicMessage[]>{
+ if(messageId){
+  // 本人路由可见面（roleId=null）：与执行员工同一选择器；引用原消息作为锚点保留。
+  const replyTo=(await db.query('select reply_to_message_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,groupId,messageId])).rows[0]?.reply_to_message_id
+  return (await readGroupConversationTopic(db,owner,{groupId,messageId,replyToMessageId:typeof replyTo==='string'?replyTo:null,mode:rootId===messageId?'main':'thread',roleId:null,displayName}))?.messages??[]
+ }
+ return (await readRunGroupTopic(db,owner,{groupId,source:{rootId}} as unknown as RunGroupContext,displayName))?.messages??[]
 }

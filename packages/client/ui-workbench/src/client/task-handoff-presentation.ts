@@ -7,7 +7,10 @@ export type ActiveHandoffCandidate=
 
 export function activeHandoffCandidates(task:PreviewTask,roles:readonly PreviewRole[]):ActiveHandoffCandidate[]{
  const self:ActiveHandoffCandidate[]=task.assigneeId==='self'?[]:[{kind:'self',id:'self',version:null}]
- return [...self,...roles.filter(role=>role.storage==='persistent'&&role.id!==task.assigneeId&&canReceiveTask(role,task.scope,task.groupId??undefined)).map(role=>({kind:'role' as const,id:role.id,name:role.name,version:role.version}))]
+ return [...self,...roles.filter(role=>{
+  const newerVersion=task.storage==='persistent'&&typeof task.assigneeRoleVersion==='number'&&Number.isSafeInteger(task.assigneeRoleVersion)&&task.assigneeRoleVersion>0&&role.version>task.assigneeRoleVersion
+  return role.storage==='persistent'&&(role.id!==task.assigneeId||newerVersion)&&canReceiveTask(role,task.scope,task.groupId??undefined)
+ }).map(role=>({kind:'role' as const,id:role.id,name:role.name,version:role.version}))]
 }
 
 /**

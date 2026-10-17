@@ -236,6 +236,7 @@ test('每个岗位范围最多确认三十条，新 Run 对超限数据确定性
  await pool.query("update teloa_role_memories set state='confirmed',state_version=2,confirmed_at=$2 where owner_id=$1 and id=$3",[f.owner,identity.now(),overflow.id])
  const expected=(await f.service.list(f.human,{roleId:f.role.id})).filter(item=>item.state==='confirmed').sort((a,b)=>b.confirmedAt!.localeCompare(a.confirmedAt!)||b.candidateAt.localeCompare(a.candidateAt)||a.id.localeCompare(b.id)).slice(0,30).map(item=>item.id),selected=await f.service.confirmedForRun(pool,f.owner,{scope:'SOC'},f.role)
  assert.equal(selected.length,30);assert.deepEqual(selected.map(item=>item.id),expected)
+ assert.equal((await f.service.confirmedForExperience(pool,f.owner,'SOC',f.role)).length,31)
 })
 
 test('分身私有记忆最多确认三十条，撤回一条后原本超限的一条可再确认',async()=>{

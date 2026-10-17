@@ -2,16 +2,19 @@ import {AsyncLocalStorage} from 'node:async_hooks'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {BasicCompactionEngine} from '@deepseek-ai/dsh-compaction-basic'
-import type {GenerateOptions,StreamChunk} from '@deepseek-ai/dsh-llm'
+import {isAgentLoopRequest,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {Session,SessionId,SessionLogOffset,interruptedTurnClosers,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
-import type {ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
+import type {ToolExecution,ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
 import type {WorkAccessLease} from '@teloa/backend'
+import type {JobId,JobRegistry,JobView} from '@deepseek-ai/dsh-jobs'
 import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
 import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
 import {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
 import {readSessionEvents} from './session-events.ts'
+import {projectRuntimeInputHooks} from './project-runtime-context.ts'
+import {parseHarnessDirective} from './harness-routing.ts'
 
 type Step={number:number;signal:AbortSignal}
 type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
@@ -36,6 +39,13 @@ type ToolRequest=
  |Readonly<{kind:'body'|'body-end';exec:ToolRunContext}>
 type RestoreRequest=Readonly<{sessionId:string;header:Readonly<SessionHeader>;events:readonly SessionEvent[];inheritedEventCount:number;signal:AbortSignal}>
 type PublishContinuation=(agent:Agent,message:UserMessage,lease:WorkAccessLease,publish:()=>void)=>void
+export type NativeJobCompletion=Readonly<{agent:Agent;message:UserMessage;job:JobView}>
+export type NativeAuxiliaryModelInput=Readonly<{
+ source:Readonly<{ownerId:string;sessionId:string;messageId:string;eventId:string}>
+ options:Readonly<GenerateOptions>
+ /** 宿主组合真实来源/项目策略、本人能力与预算许可；不从 source 字符串授信。 */
+ lease:WorkAccessLease
+}>
 const installed=new WeakSet<Context>()
 const denied=()=>new WorkError('teloa/forbidden','工作许可或实际受理因果已失效。')
 const reason='工作许可或实际受理因果已失效。'
@@ -62,8 +72,17 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  if(installed.has(ctx))throw denied()
  const pending=new WeakMap<UserMessage,PendingInput>(),turns=new Map<Agent,Turn>()
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
+ // 保留同一份真实受理证明，claim 只消费待办，不抹掉后续只读核对所需的根归属。
+ const acceptedInputs=new WeakMap<Session,Map<string,PendingInput>>()
+ const remember=(message:UserMessage,input:PendingInput)=>{
+  const rows=acceptedInputs.get(input.receipt.session)??new Map<string,PendingInput>()
+  if(rows.has(message.id))throw denied()
+  rows.set(message.id,input);acceptedInputs.set(input.receipt.session,rows)
+ }
  const models=new WeakMap<GenerateOptions,Model>(),planned=new WeakMap<ToolExecutionInput,{turn:Turn;step:Step}>()
+ const auxiliaryModels=new WeakMap<object,{entered:boolean;active:boolean;assertCurrent:()=>void}>(),usedAuxiliary=new WeakSet<object>()
  const executions=new WeakMap<ToolRunContext,ToolCause>(),activeTool=new AsyncLocalStorage<ToolCause>()
+ const jobs=new Map<JobId,{registry:JobRegistry;agent:Agent;session:Session;roots:readonly InputCause[];startedAt:number;consumed:boolean;inFlight:boolean;cancelled:boolean;published:boolean;notification:boolean|undefined;abort:AbortController}>()
  const recovering=new Map<string,{publish:(agent:Agent,signal?:AbortSignal)=>void}>(),recoveryAbort=new AbortController()
  let closed=false,loopReady=false
  // 仅覆盖下面的同步最终发布；不向公共事件、工具或调用者暴露继承证明。
@@ -77,6 +96,29 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   return Object.freeze({sessionId,messageId:identity.messageId,nativeRequestId:identity.nativeRequestId??null,payloadSha256:identity.payloadSha256})
  }
  const fixedRoots=(roots:readonly InputCause[])=>{if(closed||roots.length===0)throw denied();for(const receipt of roots)receipt.assertCurrent()}
+ // 绑定发生在实际官方 start 的调用栈中；公开 registered/settled 事件只能展示，不能产生受理根。
+ ctx.inject(['jobs'],child=>{
+  const registry=child.jobs,start=registry.start
+  registry.start=function(spec){
+   const cause=activeTool.getStore()
+   if(cause){if(!cause.active||spec.owner!==cause.agent.id)throw denied();assertTool(cause)}
+   const id=Reflect.apply(start,this,[spec]) as JobId
+   if(cause){
+    assertTool(cause);const job=this.get(id,cause.agent.id)
+    if(job.owner!==cause.agent.id||jobs.has(id))throw denied()
+    jobs.set(id,{registry:this,agent:cause.agent,session:cause.turn.session,roots:[...cause.turn.roots],startedAt:job.startedAt,consumed:false,inFlight:false,cancelled:false,published:false,notification:undefined,abort:new AbortController()})
+   }
+   return id
+  }
+  const remove=registry.events.subscribe({owners:'all'},event=>{if(event.type==='removed'){jobs.get(event.job.id)?.abort.abort(denied());jobs.delete(event.job.id)}})
+  child.effect(()=>()=>{remove();registry.start=start;for(const entry of jobs.values())entry.abort.abort(denied());jobs.clear()})
+ })
+ const jobCurrent=(entry:NonNullable<ReturnType<typeof jobs.get>>,job:JobView)=>{
+  fixedRoots(entry.roots)
+  if(entry.consumed||ctx.agents.get(entry.agent.id)!==entry.agent||entry.agent.session!==entry.session||sessions().get(entry.agent.id)!==entry.session||job.owner!==entry.agent.id||job.startedAt!==entry.startedAt||!['completed','failed','killed'].includes(job.status))throw denied()
+  const actualJob=entry.registry.get(job.id,entry.agent.id)
+  if(actualJob.owner!==job.owner||actualJob.status!==job.status||actualJob.startedAt!==job.startedAt||actualJob.finishedAt!==job.finishedAt||actualJob.kind!==job.kind||actualJob.label!==job.label)throw denied()
+ }
  const rootIdentities=(roots:readonly InputCause[],terminal=false):readonly NativeInputRoot[]=>Object.freeze([...new Set(roots)].map(receipt=>{
   if(terminal){if(sessions().get(receipt.session.id)!==receipt.session||canonical(readSessionEvents(receipt.session).find(event=>event.seq===receipt.event.seq))!==canonical(receipt.event))throw denied()}
   else receipt.assertCurrent()
@@ -186,7 +228,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    request.signal.throwIfAborted()
    if(request.kind==='turn-start'){
     if(turns.has(agent))throw denied()
-    turns.set(agent,{agent,session:agent.session,number:request.turn,signal:request.signal,roots:new Set(),step:undefined});return
+    turns.set(agent,{agent,session:agent.session,number:request.turn,signal:request.signal,roots:new Set(),step:undefined});projectRuntimeInputHooks(ctx)?.turnStart(agent);return
    }
    if(request.kind==='claim'){
     const turn=turns.get(agent),input=pending.get(request.message)
@@ -194,6 +236,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     // claim 仍须核对精确最终回执；同 Session 派生输入只合并其原始授权根。
     input.receipt.assertCurrent();target(turn);pending.delete(request.message)
     for(const root of input.roots)turn.roots.add(root)
+    projectRuntimeInputHooks(ctx)?.claim(agent,request.message)
     return
    }
    if(request.kind==='step-start'){
@@ -255,6 +298,8 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   }catch{cancel(agent);throw denied()}
  }
  install(ctx.llm,'requireStreamAdmission','installStreamAdmission',(options:Readonly<GenerateOptions>)=>{
+  const auxiliary=auxiliaryModels.get(options)
+  if(auxiliary){if(!auxiliary.active)throw denied();auxiliary.assertCurrent();return}
   const model=models.get(options);if(!model)throw denied();assertModel(model)
  })
  install(ctx.tools,'requireWorkAdmission','installWorkAdmission',toolPolicy)
@@ -358,7 +403,8 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
       const message=actualMessages[index]!,event=readSessionEvents(agent.session).find(event=>event.seq===events[index]!.seq)
       if(!event||canonical(event)!==canonical(events[index]))throw denied()
       const receipt:InputCause=Object.freeze({session:agent.session,event,assertCurrent})
-      pending.set(message,{receipt,roots:[receipt]});ids.add(message.id)
+      projectRuntimeInputHooks(ctx)?.accepted(agent,message)
+      const input={receipt,roots:[receipt]};pending.set(message,input);remember(message,input);ids.add(message.id)
      }
      acceptedIds.set(agent.session,ids);assertCurrent()
     }}
@@ -373,6 +419,14 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   return ()=>{loopReady=false}
  })
  ctx.on('llm/stream',async function*(options,next):AsyncIterable<StreamChunk>{
+  const auxiliary=auxiliaryModels.get(options)
+  if(auxiliary){
+   if(auxiliary.entered)throw denied()
+   auxiliary.entered=true;auxiliary.active=true
+   try{auxiliary.assertCurrent();for await(const chunk of next()){auxiliary.assertCurrent();if(chunk.type==='tool-call-delta'||chunk.type==='block-start'&&chunk.blockType==='tool-call'||chunk.type==='block-end'&&chunk.block.type==='tool-call')throw denied();yield chunk}}
+   finally{auxiliary.active=false}
+   return
+  }
   const model=models.get(options)??summaryModel(options)
   if(!model||model.entered)throw denied()
   model.entered=true;model.active=true
@@ -385,16 +439,97 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   const cause=executions.get(exec as ToolRunContext)
   if(!cause){if(!exec.agent)return next();throw denied()}
   assertTool(cause)
+  await projectRuntimeInputHooks(ctx)?.assertTool(exec as ToolRunContext)
+  assertTool(cause)
   return activeTool.run(cause,next)
  },{global:true,prepend:true})
  installed.add(ctx)
  const assertReady=():void=>{if(closed||!loopReady)throw denied()}
  return Object.freeze({
   assertReady,
+  /** 仅投影当前真实受理根，不能凭类型、摘要、复制的 Agent 或冷日志重建继承证明。 */
+  readReviewState(agent:Agent,requestId:string):Readonly<{continuationMessageIds:readonly string[];pendingJobCompletion:boolean;pendingInput:boolean}>{
+   const turn=turns.get(agent)
+   if(!turn||!requestId)throw denied()
+   target(turn);fixedRoots([...turn.roots])
+   const owns=(root:InputCause)=>{
+    if(root.session!==turn.session||root.event.type!=='agent/inbox/spliced'||root.event.data.inserted.length!==1)return false
+    const message=root.event.data.inserted[0]!
+    return message.source.kind==='user'&&Reflect.get(message.source,'rpcId')===requestId
+   }
+   if(!turn.roots.size||[...turn.roots].some(root=>!owns(root)))throw denied()
+   const fixed=(cause:InputCause)=>{
+    cause.assertCurrent()
+    if(cause.session!==turn.session||canonical(readSessionEvents(turn.session).find(event=>event.seq===cause.event.seq))!==canonical(cause.event))throw denied()
+   }
+   const ids:string[]=[]
+   for(const [id,input] of acceptedInputs.get(turn.session)??[]){
+    if(input.roots.length===0||input.roots.some(root=>!turn.roots.has(root)))continue
+    fixed(input.receipt);for(const root of input.roots)fixed(root)
+    const event=input.receipt.event
+    if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1||event.data.inserted[0]!.id!==id)throw denied()
+    if(!input.roots.includes(input.receipt))ids.push(id)
+   }
+   let pendingJobCompletion=false
+   for(const [id,entry] of jobs){
+    if(entry.agent!==agent||entry.session!==turn.session||entry.consumed)continue
+    fixedRoots(entry.roots)
+    if(entry.roots.some(root=>!turn.roots.has(root)))throw denied()
+    const job=entry.registry.get(id,agent.id)
+    if(['completed','failed','killed'].includes(job.status))pendingJobCompletion=true
+   }
+   target(turn)
+   return Object.freeze({continuationMessageIds:Object.freeze(ids),pendingJobCompletion,pendingInput:agent.inbox.nextTurn.length>0||agent.inbox.nextStep.length>0})
+  },
   async whenReady():Promise<void>{
    // Cordis inject 即使依赖已存在也异步启动；缺依赖时 await 会直接结束，随后保持拒绝。
    try{await loopInjection.await()}catch{throw denied()}
    assertReady()
+  },
+  hasPendingJobCompletion(sessionId:string):boolean{
+   for(const [id,entry] of jobs){
+    if(entry.agent.id!==sessionId||entry.consumed)continue
+    try{
+     fixedRoots(entry.roots)
+     if(ctx.agents.get(entry.agent.id)!==entry.agent)throw denied()
+     const job=entry.registry.get(id,entry.agent.id)
+     if(['completed','failed','killed'].includes(job.status))return true
+    }catch{entry.consumed=true}
+   }
+   return false
+  },
+  jobCompletionDecision(job:JobView,notify:boolean):void{
+   const entry=jobs.get(job.id);if(!entry)return
+   const actualJob=entry.registry.get(job.id,entry.agent.id)
+   if(job.owner!==entry.agent.id||job.startedAt!==entry.startedAt||actualJob.owner!==job.owner||actualJob.status!==job.status||actualJob.finishedAt!==job.finishedAt||!['completed','failed','killed'].includes(job.status))throw denied()
+   // 官方已被 job_output 等实际收集或已被模型取消；不会再发布通知，因此没有待受理工作。
+   entry.notification=notify;if(!notify)entry.consumed=true
+  },
+  hasCancelledJobCompletion(sessionId:string):boolean{
+   return [...jobs].some(([id,entry])=>{if(entry.agent.id!==sessionId||!entry.cancelled)return false;try{return ['completed','failed','killed'].includes(entry.registry.get(id,entry.agent.id).status)}catch{return false}})
+  },
+  cancelJobCompletions(sessionId:string):void{for(const entry of jobs.values())if(entry.agent.id===sessionId&&!entry.published&&entry.notification!==false){entry.cancelled=true;entry.consumed=true;entry.abort.abort(denied())}},
+  async withJobCompletion(candidate:NativeJobCompletion,additionalLease:(signal:AbortSignal)=>Promise<WorkAccessLease|null>,publish:()=>void,signal:AbortSignal):Promise<void>{
+   const entry=jobs.get(candidate.job.id)
+   if(!entry||entry.inFlight||entry.consumed||candidate.agent!==entry.agent||candidate.message.source.kind!=='tool-jobs')throw denied()
+   entry.inFlight=true
+   const currentSignal=AbortSignal.any([signal,entry.abort.signal,recoveryAbort.signal])
+   let publication:ContextPublication|undefined
+   try{
+    const assertCurrent=()=>{currentSignal.throwIfAborted();jobCurrent(entry,candidate.job)}
+    assertCurrent()
+    const extra=await additionalLease(currentSignal);assertCurrent();extra?.assertCurrent()
+    const identity=nativeInputIdentity(candidate.message)
+    if(acceptedIds.get(entry.session)?.has(identity.messageId))throw denied()
+    const lease=Object.freeze({assertCurrent(){assertCurrent();extra?.assertCurrent()},assertContinuationCurrent(){fixedRoots(entry.roots);(extra?.assertContinuationCurrent??extra?.assertCurrent)?.call(extra)}})
+    const previous=contextPublication
+    publication={session:entry.session,identity,roots:entry.roots,accepted:false};contextPublication=publication
+    try{publishContinuation(entry.agent,candidate.message,lease,publish);if(!publication.accepted)throw denied()}
+    finally{contextPublication=previous}
+   }finally{
+    // 实际已提交的通知不重发；明确拒绝也不能让停止/结项永久等待通知。
+    entry.published=publication?.accepted===true;entry.consumed=true;entry.inFlight=false
+   }
   },
   accept(receipt:NativeInputAcceptance):void{
    assertNativeInputAcceptanceCurrent(receipt)
@@ -410,7 +545,27 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    const ids=acceptedIds.get(session)??new Set<string>();ids.add(message.id);acceptedIds.set(session,ids)
    // child 首次输入跨 Session，保留它自己的不可伪造回执；不按 source/lineage 授权。
    const cause:InputCause=Object.freeze({session,event,assertCurrent:()=>assertNativeInputAcceptanceCurrent(receipt)})
-   pending.set(message,{receipt:cause,roots:publication?.roots??[cause]})
+   const input={receipt:cause,roots:publication?.roots??[cause]}
+   pending.set(message,input);remember(message,input)
+   projectRuntimeInputHooks(ctx)?.accepted(agent,message,publication!==undefined)
+  },
+  /** 捕获真实工具的原受理根；后台通知仍属于原工作，不能成为新的根。 */
+  captureToolCompletion(sender:Agent){
+   if(isNativeResourceCleanupScope())throw denied()
+   const cause=activeTool.getStore();if(!cause)return
+   if(!cause.active||cause.agent!==sender)throw denied();assertTool(cause)
+   const roots=Object.freeze([...cause.turn.roots])
+   let published=false
+   return (agent:Agent,message:UserMessage,submit:()=>void):void=>{
+    fixedRoots(roots)
+    const identity=nativeInputIdentity(message)
+    if(published||acceptedIds.get(agent.session)?.has(identity.messageId))throw denied()
+    const lease=Object.freeze({assertCurrent:()=>fixedRoots(roots),assertContinuationCurrent:()=>fixedRoots(roots)})
+    const previous=contextPublication,publication:ContextPublication={session:agent.session,identity,roots,accepted:false}
+    contextPublication=publication
+    try{publishContinuation(agent,message,lease,submit);if(!publication.accepted)throw denied()}
+    finally{published=publication.accepted;contextPublication=previous}
+   }
   },
   currentToolLease(sender:Agent):WorkAccessLease|undefined{
    if(isNativeResourceCleanupScope())throw denied()
@@ -422,12 +577,53 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     assertContinuationCurrent(){fixedRoots(captured)},
    })
   },
+  /** 只读此真实工具的受理根；工具参数、通知文本与历史提及不能覆盖本人本次选择。 */
+  harnessDirective(exec:ToolExecution){
+   const cause=executions.get(exec as ToolRunContext);if(!cause||exec.agent!==cause.agent)throw denied()
+   assertTool(cause)
+   const roots=[...cause.turn.roots].filter(root=>root.session===cause.turn.session).sort((a,b)=>b.event.seq-a.event.seq)
+   for(const root of roots){
+    const event=root.event
+    if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)continue
+    const message=event.data.inserted[0]!
+    if(message.source.kind==='user')return parseHarnessDirective(message.content.filter(block=>block.type==='text').map(block=>block.text).join('\n'))
+   }
+   return parseHarnessDirective('')
+  },
   /** 只返回当前真实 request 对象的执行位置；归因字符串或复制 options 不能产生证明。 */
   modelPosition(options:GenerateOptions):Readonly<{sessionId:string;turn:number;step:number}>|null{
    const model=models.get(options);if(!model)return null
    if(!model.active)throw denied();assertModel(model)
    return Object.freeze({sessionId:model.turn.agent.id,turn:model.turn.number,step:model.step?.number??0})
   },
-  close():void{closed=true;recoveryAbort.abort(denied());recovering.clear();for(const agent of turns.keys())cancel(agent);turns.clear()},
+  /** 仅给宿主预算中间层识别已经持独立预算的精确辅助 request；不会返回或创建证明。 */
+  hasAuxiliaryModelAdmission(options:Readonly<GenerateOptions>):boolean{const proof=auxiliaryModels.get(options);if(!proof)return false;proof.assertCurrent();return true},
+  /** 无工具辅助调用只接受宿主真实持久来源与一次性精确 request；不伪造 Loop 位置。 */
+  async *withAuxiliaryModel(input:NativeAuxiliaryModelInput,dispatch:()=>AsyncIterable<StreamChunk>):AsyncIterable<StreamChunk>{
+   const {source,options,lease}=input
+   if(closed||!loopReady||typeof dispatch!=='function'||!source||Object.values(source).some(value=>typeof value!=='string'||!value||value.length>256)||options.sessionId!==source.sessionId||!Object.isFrozen(options)||!Array.isArray(options.messages)||!Object.isFrozen(options.messages)||options.messages.some(message=>!Object.isFrozen(message)||!Object.isFrozen(message.content))||options.tools!==undefined||options.toolHistory!==undefined||isAgentLoopRequest(options as GenerateOptions)||models.has(options as GenerateOptions)||usedAuxiliary.has(options))throw denied()
+   const assertion=Object.getOwnPropertyDescriptor(lease,'assertCurrent')?.value as unknown
+   if(!Object.isFrozen(lease)||typeof assertion!=='function')throw denied()
+   const assertCurrent=()=>{
+    if(closed||!loopReady)throw denied();options.signal?.throwIfAborted()
+    const returned:unknown=Reflect.apply(assertion,lease,[])
+    if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
+   }
+   assertCurrent()
+   usedAuxiliary.add(options)
+   // 冷读不会激活来源会话或重发输入；必须是原会话自有的真实人工 append 消息。
+   const live=sessions().get(SessionId(source.sessionId))
+   const snapshot=live?{events:readSessionEvents(live),inheritedEventCount:live.inheritedEventCount}:await ctx.sessionController.inspect(SessionId(source.sessionId),options.signal)
+   assertCurrent()
+   const matches=snapshot.events.filter(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.id===source.messageId&&event.data.source.kind==='user')
+   if(matches.length!==1||matches[0]!.seq<snapshot.inheritedEventCount)throw denied()
+   const message=matches[0]!
+   if(message.type!=='user/message'||!snapshot.events.some(event=>event.type==='agent/inbox/spliced'&&event.seq>=snapshot.inheritedEventCount&&event.seq<message.seq&&event.data.inserted.length===1&&canonical(event.data.inserted[0])===canonical(message.data)))throw denied()
+   const proof={entered:false,active:false,assertCurrent}
+   auxiliaryModels.set(options,proof)
+   try{assertCurrent();yield* dispatch();if(!proof.entered)throw denied();assertCurrent()}
+   finally{proof.active=false;auxiliaryModels.delete(options)}
+  },
+  close():void{closed=true;recoveryAbort.abort(denied());recovering.clear();jobs.clear();for(const agent of turns.keys())cancel(agent);turns.clear()},
  })
 }

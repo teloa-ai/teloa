@@ -1,4 +1,5 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
@@ -16,6 +17,7 @@ import {initializeBusinessSyncRules} from '../src/work/business-sync-rules.ts'
 import {initializeBusinessSpaces,BusinessSpaceService} from '../src/work/business-spaces.ts'
 import {BusinessSyncService,initializeBusinessSync,mapSourceItem,type BusinessSyncActor} from '../src/work/business-sync.ts'
 import {businessDataPortSyncSource,type BusinessSyncFetchInput,type BusinessSyncFetchPage,type BusinessSyncSourcePort} from '../src/work/business-sync-sources.ts'
+import {BusinessViewV2Computer} from '../src/work/business-view-compute-v2.ts'
 
 /** 同步器真库验收：映射、游标、tombstone、退避、并发锁、配额、原样路径版本规则、到期判定、权限。 */
 
@@ -96,6 +98,91 @@ function harness(mappings:BusinessSourceMappingDefinition[],sources:Record<strin
 }
 
 const item=(id:string,updated:string,extra:Record<string,unknown>={})=>({alert_id:id,sev:'高',meta:{host:'h-'+id},updated_at:updated,...extra})
+
+test('固定业务对象成果：同对象重研判不重复、回放幂等、旧轮次不能覆盖，原始对象不改写',async()=>{
+ const mapped=mappingOf({id:'triage-result',source:{kind:'role-result',roleId:randomUUID()},mapping:[{path:'$.object.id',field:'id'},{path:'$.result.severity',field:'severity'},{path:'$.result.title',field:'title'}],primaryKey:['id']})
+ const h=harness([mapped],{}),reference={scope:'SOC',type:'raw-alert',id:'ALT-1',version:1,snapshotHash:''}
+ const countView={format:'teloa.business-view/v1',id:'result-count',version:'1.0.0',domain:'SOC',title:'成果数',objectType:'soc-alert',kind:'board-card',chart:'number',measures:[{id:'count',label:'成果',aggregation:'count'}],filters:[],limit:1}
+ const readCount=async()=>{
+  const db=await pool.connect()
+  try{await db.query('begin isolation level repeatable read read only');return await new BusinessViewV2Computer({now:()=>CAPTURED}).computeInTransaction(db,h.actor,{scope:'SOC',objectType:record(alertType),view:record(countView)} as never)}
+  finally{await db.query('rollback');db.release()}
+ }
+ const original=readBusinessObjectSnapshot({scope:'SOC',type:'raw-alert',id:'ALT-1',version:1,title:'原始告警',source:'EDR',observedAt:CAPTURED,receivedAt:CAPTURED,quality:'complete',summary:'来源事实',fields:[]},'SOC')
+ reference.snapshotHash=businessObjectSnapshotHash(original)
+ await pool.query('insert into teloa_business_object_snapshots values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[h.owner,'SOC','raw-alert','ALT-1',1,reference.snapshotHash,JSON.stringify(original),'raw-source',CAPTURED])
+ const run={runId:randomUUID(),sessionId:'triage-session',taskId:randomUUID(),roleId:(mapped.source as {roleId:string}).roleId,createdAt:'2026-09-25T11:00:00.000Z',reference}
+ const input={scope:'SOC',mappingId:mapped.id,result:{severity:'高'}}
+ let checks=0
+ const authorize=async()=>{checks+=1;return run}
+ const first=await h.service.ingestTaskResult(h.actor,input,authorize)
+ assert.equal(first.upserted,1)
+ assert.deepEqual((await readCount()).rows[0]!.values,[1],'真实员工成果写入后，类型化看板按同一固定来源身份计数')
+ assert.deepEqual(await h.service.ingestTaskResult(h.actor,input,authorize),first)
+ assert.equal((await h.versions('ALT-1')).filter(row=>row.snapshot.type==='soc-alert').length,1)
+ assert.equal((await h.versions('ALT-1')).find(row=>row.snapshot.type==='soc-alert')!.snapshot.title,'原始告警','缺少成果标题时采用同一固定原对象名称，不显示内部 ID')
+ await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>({...run,roleId:randomUUID()})),{code:'teloa/forbidden'})
+ await assert.rejects(h.service.ingestTaskResult(h.actor,{...input,result:{}},async()=>({...run,runId:randomUUID(),createdAt:'2026-09-25T11:01:00.000Z'})),{code:'teloa/invalid-input'})
+ await assert.rejects(h.service.ingestTaskResult(h.actor,{...input,result:{severity:'低'}},authorize),{code:'teloa/conflict'})
+ const replacementRole=randomUUID()
+ ;(mapped.source as {roleId:string}).roleId=replacementRole
+ const newer={...run,roleId:replacementRole,runId:randomUUID(),createdAt:'2026-09-25T11:05:00.000Z'}
+ const second=await h.service.ingestTaskResult(h.actor,{...input,result:{severity:'低',title:'复核后的告警'}},async()=>newer)
+ assert.equal(second.upserted,1)
+ assert.deepEqual((await readCount()).rows[0]!.values,[1],'同对象新成果版本不重复计数')
+ const sourceRow=(await pool.query('select source_id from teloa_business_sync_object_ids where owner_id=$1 and object_type=$2',[h.owner,'soc-alert'])).rows[0]
+ await pool.query('update teloa_business_object_snapshots set source_id=$2 where owner_id=$1 and object_type=$3',[h.owner,'unrelated','soc-alert'])
+ await assert.rejects(readCount(),{code:'teloa/storage-corrupt'},'未登记的来源仍拒读，不能为通过成果统计绕开来源隔离')
+ await pool.query('update teloa_business_object_snapshots set source_id=$2 where owner_id=$1 and object_type=$3',[h.owner,sourceRow.source_id,'soc-alert'])
+ await pool.query('update teloa_business_sync_object_ids set source_id=$2 where owner_id=$1 and object_type=$3',[h.owner,'other-source','soc-alert'])
+ await assert.rejects(readCount(),{code:'teloa/storage-corrupt'},'来源身份与快照不一致仍拒读')
+ await pool.query('update teloa_business_sync_object_ids set source_id=$2 where owner_id=$1 and object_type=$3',[h.owner,sourceRow.source_id,'soc-alert'])
+ const versions=(await h.versions('ALT-1')).filter(row=>row.snapshot.type==='soc-alert')
+ assert.deepEqual(versions.map(row=>row.object_version),[1,2])
+ assert.equal(versions[1]!.snapshot.title,'复核后的告警','员工明确给出的成果标题保留')
+ assert.equal(versions[1]!.snapshot.summary,'')
+ assert.equal((await h.current()).length,1)
+ const old={...run,roleId:replacementRole,runId:randomUUID(),createdAt:'2026-09-25T11:02:00.000Z'}
+ await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>old),{code:'teloa/version-conflict'})
+ await assert.rejects(h.service.ingestTaskResult({...h.actor,ownerId:'other'},input,async()=>newer),{code:'teloa/forbidden'})
+ await assert.rejects(h.service.ingestTaskResult({...h.actor,scopeIds:['Other']},input,authorize),{code:'teloa/forbidden'})
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_object_snapshots where owner_id=$1 and object_type=$2',[h.owner,'raw-alert'])).rows[0].n,1)
+ assert.ok(checks>=3,'包括回放在内均重验实际执行授权')
+ const changed={...original,version:2,summary:'来源事实已变化'},hash=businessObjectSnapshotHash(changed)
+ await pool.query('insert into teloa_business_object_snapshots values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[h.owner,'SOC','raw-alert','ALT-1',2,hash,JSON.stringify(changed),'raw-source',CAPTURED])
+ await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>({...newer,runId:randomUUID(),createdAt:'2026-09-25T11:10:00.000Z'})),{code:'teloa/version-conflict'})
+})
+
+test('固定对象成果目录携带真实映射与字段约束；角色/范围及旧定义拒绝',async()=>{
+ const roleId=randomUUID(),mapped=mappingOf({id:'triage-schema',source:{kind:'role-result',roleId},mapping:[{path:'$.object.id',field:'id'},{path:'$.result.severity',field:'severity'}]})
+ const h=harness([mapped],{}),original=readBusinessObjectSnapshot({scope:'SOC',type:'raw-alert',id:'SCHEMA-1',version:1,title:'原始告警',source:'EDR',observedAt:CAPTURED,receivedAt:CAPTURED,quality:'complete',summary:'来源事实',fields:[]},'SOC')
+ const reference={scope:'SOC',type:original.type,id:original.id,version:1,snapshotHash:businessObjectSnapshotHash(original)},db=await pool.connect()
+ let resultMappings:Awaited<ReturnType<BusinessSyncService['taskResultMappingsInTransaction']>>
+ try{
+  resultMappings=await h.service.taskResultMappingsInTransaction(db,h.actor,{reference,roleId})
+  assert.deepEqual(resultMappings,[{mapping:mapped,objectType:alertType,definitionHash:'a'.repeat(64),objectTypeDefinitionHash:'a'.repeat(64)}])
+  assert.deepEqual(await h.service.taskResultMappingsInTransaction(db,h.actor,{reference,roleId:randomUUID()}),[])
+  await assert.rejects(h.service.taskResultMappingsInTransaction(db,{...h.actor,scopeIds:['Other']},{reference,roleId}),{code:'teloa/forbidden'})
+ }finally{db.release()}
+ await pool.query('insert into teloa_business_object_snapshots values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[h.owner,'SOC',original.type,original.id,1,reference.snapshotHash,JSON.stringify(original),'raw-source',CAPTURED])
+ const execution={runId:randomUUID(),sessionId:'schema-session',taskId:randomUUID(),roleId,createdAt:CAPTURED,reference,resultMappings:structuredClone(resultMappings)}
+ const input={scope:'SOC',mappingId:mapped.id,result:{severity:'高'}}
+ assert.deepEqual(await h.service.ingestTaskResult(h.actor,input,async()=>execution),{upserted:1,tombstoned:0})
+ mapped.title='已修改成果声明'
+ await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>execution),{code:'teloa/version-conflict'})
+ mapped.title='告警同步';alertType.fields[1]!.label='已修改字段'
+ try{await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>execution),{code:'teloa/version-conflict'})}finally{alertType.fields[1]!.label='严重度'}
+ await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>({...execution,resultMappings:[]})),{code:'teloa/forbidden'})
+ const aborted=new AbortController();aborted.abort()
+ await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>execution,aborted.signal),{name:'AbortError'})
+})
+
+test('固定业务对象成果拒绝由模型指定主键',async()=>{
+ const h=harness([mappingOf({source:{kind:'role-result'},mapping:[{path:'$.result.id',field:'id'},{path:'$.result.severity',field:'severity'}]})],{})
+ const run={runId:randomUUID(),sessionId:'result-session',taskId:randomUUID(),roleId:randomUUID(),createdAt:CAPTURED,reference:{scope:'SOC',type:'raw-alert',id:'ALT-1',version:1,snapshotHash:'a'.repeat(64)}}
+ await assert.rejects(h.service.ingestTaskResult(h.actor,{scope:'SOC',mappingId:'soc-sync',result:{id:'OTHER',severity:'高'}},async()=>run))
+ assert.deepEqual(await h.current(),[])
+})
 
 test('mapSourceItem：路径取值、主键缺失跳过、删除标记、数值转文本、嵌套路径',()=>{
  const mapping=mappingOf()
@@ -384,7 +471,7 @@ test('业务数据端口首页就回 nextCursor===水位：直接报「分页游
 
 test('due：周期未到、已到、退避中',async()=>{
  const h=harness([mappingOf()],{'soc-sync':new ScriptSource()})
- await new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner)
+ await withLegacySecurityScopes(pool,h.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner))
  await pool.query(`insert into teloa_business_local_definition_heads(owner_id,scope_id,kind,local_id,version,revision,updated_at) values($1,'SOC','source-mapping','soc-sync',1,1,now())`,[h.owner])
  const now='2026-09-25T12:00:00.000Z'
  assert.deepEqual(await h.service.due(h.owner,now),[{scope:'SOC',mappingId:'soc-sync'}],'从未成功过即到期')
@@ -589,7 +676,7 @@ test('提交后的保留清理失败不抛给调用方：返回成功的 run，�
 test('状态与到期：单个映射算不出下一次只降级这一个，不拖垮整个范围',async()=>{
  const leap=mappingOf({id:'soc-leap',schedule:{kind:'cron',expression:'0 0 29 2 *',timezone:'UTC'}})
  const h=harness([leap,mappingOf()],{})
- await new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner)
+ await withLegacySecurityScopes(pool,h.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner))
  await pool.query(`insert into teloa_business_local_definition_heads(owner_id,scope_id,kind,local_id,version,revision,updated_at) values($1,'SOC','source-mapping','soc-leap',1,1,now())`,[h.owner])
  // 2096-03-01 之后四年内没有 2 月 29 日（2100 年不闰）：这一条算不出下一次。
  await pool.query(`insert into teloa_business_sync_cursors(owner_id,scope_id,mapping_id,cursor,consecutive_failures,backoff_until,last_ok_at,updated_at) values($1,'SOC','soc-leap',null,0,null,'2096-03-01T00:00:00Z',now())`,[h.owner])
@@ -600,7 +687,7 @@ test('状态与到期：单个映射算不出下一次只降级这一个，不�
 
 test('旧已登记但未受管范围继续 due 与 schedule',async()=>{
  const source=new ScriptSource(),h=harness([mappingOf()],{'soc-sync':source})
- await new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner)
+ await withLegacySecurityScopes(pool,h.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner))
  source.pages=[[]]
  await pool.query("insert into teloa_business_local_definition_heads(owner_id,scope_id,kind,local_id,version,revision,updated_at) values($1,'SOC','source-mapping','soc-sync',1,1,now())",[h.owner])
  assert.deepEqual(await h.service.due(h.owner,h.clock.now),[{scope:'SOC',mappingId:'soc-sync'}])
@@ -612,7 +699,7 @@ test('受管默认暂停：已有生效 mapping 也不到期，schedule 不触�
  await initializeBusinessSpaces(pool)
  const source=new ScriptSource(),h=harness([mappingOf()],{'soc-sync':source})
  source.pages=[[item('managed','2026-09-25T10:00:00.000Z')]]
- await new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner)
+ await withLegacySecurityScopes(pool,h.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner))
  await initializeBusinessRuntime(pool)
  const runtime=new BusinessRuntimeService(pool,{now:()=>CAPTURED}),db=await pool.connect()
  try{await db.query('begin');await runtime.registerInTransaction(db,h.owner,'SOC');await db.query('commit')}finally{db.release()}
@@ -628,7 +715,7 @@ test('业务总开关已开但单条规则未启用：due 和直接 schedule 均
  const source=new ScriptSource(),h=harness([mappingOf()],{'soc-sync':source})
  source.pages=[[]]
  await initializeBusinessSpaces(pool);await initializeBusinessRuntime(pool)
- await new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner)
+ await withLegacySecurityScopes(pool,h.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner))
  const runtime=new BusinessRuntimeService(pool,{now:()=>CAPTURED}),db=await pool.connect()
  try{await db.query('begin');await runtime.registerInTransaction(db,h.owner,'SOC');await db.query('commit')}finally{db.release()}
  await runtime.setSync(h.actor,{scope:'SOC',enabled:true,expectedRevision:1,requestId:randomUUID()})
@@ -646,7 +733,7 @@ test('业务总开关已开但单条规则未启用：due 和直接 schedule 均
 async function managedHarness(source:BusinessSyncSourcePort,overridePool?:Pool){
  await initializeBusinessSpaces(pool);await initializeBusinessRuntime(pool)
  const h=harness([mappingOf()],{'soc-sync':source},overridePool?{pool:overridePool}:{})
- await new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner)
+ await withLegacySecurityScopes(pool,h.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>CAPTURED}).ensurePersonal(h.owner))
  const runtime=new BusinessRuntimeService(pool,{now:()=>CAPTURED}),db=await pool.connect()
  try{await db.query('begin');await runtime.registerInTransaction(db,h.owner,'SOC');await db.query('commit')}finally{db.release()}
  const enabled=await runtime.setSync(h.actor,{scope:'SOC',enabled:true,expectedRevision:1,requestId:randomUUID()})

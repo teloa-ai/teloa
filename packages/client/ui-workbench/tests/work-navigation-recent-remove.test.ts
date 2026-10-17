@@ -113,7 +113,9 @@ test('侧栏账号只显示用户名缩写头像，点击仍进入原设置',()=
  const avatar=nodes(account).find(node=>node.type==='button'&&node.props.className==='profileButton avatar')
  assert.ok(avatar);assert.equal(textOf(avatar),'M');assert.equal(textOf(account).includes('Max'),false)
  avatar.props.onClick();assert.equal(opened,1)
- assert.ok(nodes(account).some(node=>node.type==='button'&&node.props['aria-label']==='navigation.themeDark'))
+ // 主题切换由设置页（宿主主题）承担，账号块只剩缩写头像，不再放主题按钮（2026-10-14 keep theme control in settings）
+ assert.deepEqual(nodes(account).filter(node=>node.type==='button').map(node=>node.props.className),['profileButton avatar'])
+ assert.equal(nodes(view).some(node=>node.type==='button'&&['navigation.themeDark','navigation.themeLight'].includes(node.props['aria-label'])),false)
 })
 
 test('移出最近的隐藏名单本地持久化：重新挂载（模拟刷新）后仍隐藏，其它行不受影响',()=>{

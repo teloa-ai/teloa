@@ -32,18 +32,18 @@ export function TaskList({rows,filter,selected,select,stateLabel,attentionLabel,
     const {task,attention}=item,pinned=pinRank(attention,task.state)<4
     const attentionText=attention.kinds.map(attentionLabel).join(' · ')||(item.task.storage==='persistent'&&item.unverified?t('task.attention.unverified'):'')
     return <tr key={task.id} className={clsx(css.listRow,pinned&&css.listPinned)} role="option" aria-selected={task.id===selected} tabIndex={task.id===selected||(!selected&&index===0)?0:-1} data-teloa-entry={task.id}>
-      <td><button type="button" className={css.tableLink} title={task.title} tabIndex={-1} onClick={()=>select(task.id)}>{task.title}</button><small>{item.scopeLabel} · {taskObjectLabel(task,t)}</small></td>
-      <td title={item.ownerName}>{item.ownerName}</td>
+      <td><button type="button" className={css.tableLink} title={task.title} tabIndex={-1} onClick={()=>select(task.id)}>{task.title}</button><small>{item.scopeLabel} · {taskObjectLabel(task,t)}</small>{selected&&<span className={css.rowOwner} title={item.ownerName}>{item.ownerName}</span>}</td>
+      {!selected&&<td title={item.ownerName}>{item.ownerName}</td>}
       <td><StatusLabel label={stateLabel(task.state)} mark={taskStatusMark(task.state)} tone={attention.kinds.length?'warn':task.state==='completed'?'good':task.state==='cancelled'?'muted':'info'}/>{selected&&attentionText&&<small>{attentionText}</small>}</td>
       {!selected&&<><td>{attentionText||'—'}</td><td>{stamp(task.updatedAt)}</td></>}
     </tr>
   }
   return <div ref={list} className={css.tableWrap} role="listbox" aria-label={t('task.list.aria')} onKeyDown={navigateRows}>
     <table>
-      <thead><tr><th>{t('task.table.task')}</th><th>{t('task.table.owner')}</th><th>{t('task.table.state')}</th>{!selected&&<><th>{t('task.table.attention')}</th><th>{t('task.table.updated')}</th></>}</tr></thead>
+      <thead><tr><th>{t('task.table.task')}</th>{!selected&&<th>{t('task.table.owner')}</th>}<th>{t('task.table.state')}</th>{!selected&&<><th>{t('task.table.attention')}</th><th>{t('task.table.updated')}</th></>}</tr></thead>
       <tbody>
         {formal.map((item,index)=>renderRow(item,index))}
-        {routed.length>0&&<tr className={css.listGroupRow}><td colSpan={selected?3:5}><button type="button" aria-expanded={routedOpen} aria-controls={groupId} onClick={()=>setRoutedOpen(value=>!value)}>{t('task.list.routed',{count:routed.length})}</button></td></tr>}
+        {routed.length>0&&<tr className={css.listGroupRow}><td colSpan={selected?2:5}><button type="button" aria-expanded={routedOpen} aria-controls={groupId} onClick={()=>setRoutedOpen(value=>!value)}>{t('task.list.routed',{count:routed.length})}</button></td></tr>}
       </tbody>
       {routedOpen&&routed.length>0&&<tbody id={groupId}>{routed.map((item,index)=>renderRow(item,formal.length+index))}</tbody>}
     </table>

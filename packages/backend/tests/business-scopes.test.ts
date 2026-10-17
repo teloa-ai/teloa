@@ -52,19 +52,19 @@ test('登记幂等：重复登记不改已有标签的来源与标题',async()=>
  await BusinessScopeService.ensure(pool,ownerId,{scope:'finance-ops',title:'改成别的标题',kind:'legacy',spaceId})
  const found=(await labels(ownerId))['finance-ops']
  assert.equal(found?.title,'财务风控');assert.equal(found?.kind,'domain')
- assert.equal((await pool.query('select count(*)::int n from teloa_business_scopes where owner_id=$1',[ownerId])).rows[0].n,4)
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_scopes where owner_id=$1',[ownerId])).rows[0].n,2)
  for(const bad of [{scope:'',title:'空标签',kind:'domain' as const,spaceId},{scope:'x'.repeat(81),title:'过长',kind:'domain' as const,spaceId},{scope:'ok',title:'  ',kind:'domain' as const,spaceId},{scope:'ok',title:'坏来源',kind:'unknown' as unknown as 'domain',spaceId},{scope:'ok',title:'坏空间',kind:'domain' as const,spaceId:'not-a-uuid'}])
   await assert.rejects(BusinessScopeService.ensure(pool,ownerId,bad),{code:'teloa/invalid-input'})
- assert.equal((await pool.query('select count(*)::int n from teloa_business_scopes where owner_id=$1',[ownerId])).rows[0].n,4)
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_scopes where owner_id=$1',[ownerId])).rows[0].n,2)
 })
 
-test('引导本人空间即登记三个内置范围，库里没有 Design 存量时不补历史标签',async()=>{
+test('引导本人空间只登记通用工作：SOC/AppSec 无引用时不预登记，库里没有 Design 存量时不补历史标签',async()=>{
  const ownerId='local:scope-builtin'
  await personal(ownerId)
  const found=await labels(ownerId)
- assert.deepEqual(Object.keys(found).sort(),['AppSec','SOC','general'])
- assert.deepEqual(Object.values(found).map(item=>item.kind),['builtin','builtin','builtin'])
- assert.equal(found.general?.title,'通用工作');assert.equal(found.SOC?.title,'安全运营');assert.equal(found.AppSec?.title,'应用安全')
+ assert.deepEqual(Object.keys(found),['general'])
+ assert.deepEqual(Object.values(found).map(item=>item.kind),['builtin'])
+ assert.equal(found.general?.title,'通用工作')
  // 重跑幂等：不新增行，也不改已有行。
  await spaces().ensurePersonal(ownerId)
  assert.deepEqual(await labels(ownerId),found)
@@ -89,6 +89,32 @@ test('内置取值无行也算已登记，未登记取值为假',async()=>{
  for(const scope of ['Finance','Design','finance-ops'])assert.equal(await BusinessScopeService.registered(pool,ownerId,scope),false)
  assert.equal(await BusinessScopeService.registered(pool,ownerId,'x'.repeat(81)),false)
  await assert.rejects(BusinessScopeService.registered(pool,'   ','general'),{code:'teloa/forbidden'})
+})
+
+test('需要你范围读取显式报告截断，第501个范围仍可精确读取且不串本人',async()=>{
+ const ownerId='local:scope-attention',spaceId=await personal(ownerId),service=scopes()
+ for(let n=0;n<501;n++)await BusinessScopeService.ensure(pool,ownerId,{scope:'attention-'+String(n).padStart(3,'0'),title:'待办业务'+n,kind:'domain',spaceId})
+ const before=(await pool.query('select * from teloa_business_scopes where owner_id=$1 order by scope',[ownerId])).rows
+ // 原目录保持其既有上限，不能把这个有限目录当成完整的本人范围授权。
+ assert.equal((await service.list(ownerId)).some(item=>item.scope==='attention-500'),false)
+ const global=await service.attentionScopes(ownerId,{})
+ assert.equal(global.scopeIds.length,500)
+ assert.equal(global.truncated,true)
+ assert.equal(global.scopeIds.includes('general'),false)
+ assert.equal(global.scopeIds.includes('attention-500'),false)
+ assert.deepEqual(await service.attentionScopes(ownerId,{scope:'attention-500'}),{scopeIds:['attention-500'],truncated:false})
+ assert.deepEqual(await service.attentionScopes('local:scope-attention-other',{scope:'attention-500'}),{scopeIds:[],truncated:false})
+ assert.deepEqual(await service.attentionScopes(ownerId,{scope:'not-registered'}),{scopeIds:[],truncated:false})
+ assert.deepEqual(await service.attentionScopes(ownerId,{scope:'SOC'}),{scopeIds:[],truncated:false})
+ assert.deepEqual(await service.attentionScopes(ownerId,{scope:'general'}),{scopeIds:['general'],truncated:false})
+ assert.deepEqual(await service.attentionScopes('local:scope-attention-other',{}),{scopeIds:[],truncated:false})
+ assert.deepEqual((await pool.query('select * from teloa_business_scopes where owner_id=$1 order by scope',[ownerId])).rows,before)
+ for(const bad of ['', '   ', 'x'.repeat(129)])await assert.rejects(service.attentionScopes(bad,{}),{code:'teloa/forbidden'})
+ for(const bad of [{scope:''},{scope:'x'.repeat(81)},{scope:'a\n'} ,{ownerId:'other'},null,[]])await assert.rejects(service.attentionScopes(ownerId,bad as never),{code:'teloa/invalid-input'})
+ // 第500项恰好读全时不能伪报截断。
+ await pool.query('delete from teloa_business_scopes where owner_id=$1 and scope=$2',[ownerId,'attention-500'])
+ const complete=await service.attentionScopes(ownerId,{})
+ assert.equal(complete.scopeIds.length,500);assert.equal(complete.truncated,false)
 })
 
 test('标签目录汇总加载、在效加载、任务与群数量',async()=>{
@@ -153,9 +179,11 @@ test('加载成功即登记 scope 标签，加载回包的业务范围就是 sco
 
 test('内置范围恒排在目录最前，且按 general、SOC、AppSec 的声明次序',async()=>{
  const ownerId='local:scope-order',spaceId=await personal(ownerId)
- // 把内置行删掉再登记一个 domain 标签，随后重新引导：内置行的登记时刻晚于 domain，仍必须排在最前。
+ // 把内置行删掉再登记一个 domain 标签，随后补回已有的 SOC/AppSec 行并重新引导：内置行的登记时刻晚于 domain，仍必须排在最前。
  await pool.query('delete from teloa_business_scopes where owner_id=$1',[ownerId])
  await BusinessScopeService.ensure(pool,ownerId,{scope:'finance-ops',title:'财务风控',kind:'domain',spaceId})
+ await BusinessScopeService.ensure(pool,ownerId,{scope:'AppSec',title:'应用安全',kind:'builtin',spaceId})
+ await BusinessScopeService.ensure(pool,ownerId,{scope:'SOC',title:'安全运营',kind:'builtin',spaceId})
  await spaces().ensurePersonal(ownerId)
  assert.deepEqual((await scopes().list(ownerId)).map(item=>item.scope),['general','SOC','AppSec','finance-ops'])
 })
@@ -169,7 +197,7 @@ test('行业模板的 scope 必须能当业务身份用，不合规即拒绝加�
   await assert.rejects(bad.create(ownerId,{requestId:randomUUID(),contentId:randomUUID(),contentHash,target:await intoPersonal(ownerId)}),{code:'teloa/invalid-input',message:'行业模板的业务范围只能是 1–64 位字母、数字、下划线或连字符。'})
  }
  assert.equal((await pool.query('select count(*)::int n from teloa_industry_loads where owner_id=$1',[ownerId])).rows[0].n,0)
- assert.deepEqual(Object.keys(await labels(ownerId)).sort(),['AppSec','SOC','general'])
+ assert.deepEqual(Object.keys(await labels(ownerId)),['general'])
  // 示例模板的取值（安全运营 `SOC`、通用研究 `general`）与 64 位上限都放行。
  for(const [index,scope] of ['SOC','general','x'.repeat(64)].entries()){
   const good=new IndustryLoadService(pool,identity,{read:async()=>({...structuredClone(snapshot),scope})})

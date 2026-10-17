@@ -6,14 +6,15 @@ import {ComposerPopover} from './ComposerPopover.js'
 import {openDialog} from './dialog-focus.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
+import {dialogueCopy} from './dialogue-copy.js'
 import css from './ConversationActions.module.css'
 
 export type ConversationAction='rename'|'copy'|'archive'
 export type ConversationActionTarget={row:Conversation;title:string;blank:boolean;action:ConversationAction}
 const actionKeys={rename:'workDirectory.rename.title',copy:'workDirectory.copy.title',archive:'workDirectory.archive.title'} as const
 
-export function ConversationActionMenu({title,disabled,className,choose}:{title:string;disabled:boolean;className?:string|undefined;choose:(action:ConversationAction)=>void}){
- const {t}=useI18n(),anchor=useRef<HTMLButtonElement>(null),id=useId()
+export function ConversationActionMenu({title,disabled,className,choose,organize}:{title:string;disabled:boolean;className?:string|undefined;choose:(action:ConversationAction)=>void;organize?:()=>void}){
+ const {t,locale}=useI18n(),anchor=useRef<HTMLButtonElement>(null),id=useId()
  const [opened,setOpened]=useState(false)
  const select=(action:ConversationAction)=>{anchor.current?.focus({preventScroll:true});setOpened(false);choose(action)}
  return <>
@@ -21,6 +22,7 @@ export function ConversationActionMenu({title,disabled,className,choose}:{title:
   {opened&&!disabled&&<ComposerPopover anchor={anchor} id={id} label={t('workDirectory.management.aria',{title})} role="menu" width={220} close={()=>setOpened(false)}>
    <button className={css.menuItem} type="button" role="menuitem" onClick={()=>select('rename')}><Pencil size={16}/><span>{t(actionKeys.rename)}</span></button>
    <button className={css.menuItem} type="button" role="menuitem" onClick={()=>select('copy')}><Copy size={16}/><span>{t(actionKeys.copy)}</span></button>
+   {organize&&<button className={css.menuItem} type="button" role="menuitem" onClick={()=>{anchor.current?.focus();setOpened(false);organize()}}>{dialogueCopy(locale,'move')}</button>}
    <div role="separator" className={css.separator}/>
    <button className={css.menuItem} type="button" role="menuitem" onClick={()=>select('archive')}><Archive size={16}/><span>{t(actionKeys.archive)}</span></button>
   </ComposerPopover>}
@@ -68,7 +70,7 @@ export function ConversationActions({target,candidates,management,title,changeTi
      <footer className={css.footer}>{cancelButton}<button className={css.primary} type="submit" disabled={!canRename}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t('workDirectory.rename.save')}</span></button></footer>
     </form>:action==='archive'?<>
      <p id={description} className={css.description}>{t('workDirectory.archive.explanation')}</p>
-     <p className={css.warning}>{t('workDirectory.archive.noRestore')}</p>
+     <p className={css.description}>{dialogueCopy(locale,'archiveHint')}</p>
      {running&&<p role="status" className={css.description}>{t('workDirectory.archive.running')}</p>}
      <footer className={css.footer}>{cancelButton}<button className={css.primary} type="button" disabled={busy||!state.ready||running} onClick={()=>{if(!running)void perform(async()=>{await management.archive(id);close()})}}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t('workDirectory.archive.action')}</span></button></footer>
     </>:<>

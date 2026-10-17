@@ -2,10 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
+import * as icons from 'lucide-react'
+import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
 import * as React from 'react'
+import * as contract from '@teloa/contract'
 import {renderToStaticMarkup} from 'react-dom/server'
 import type {PageCreateDraft,PageCreateDraftDirectory,PageCreateDraftPreview} from '@teloa/contract'
 import type {CreateEntryProps} from '../src/client/CreateEntry.js'
+import type {PageCreateApi} from '../src/client/page-create-api.js'
 import * as presentation from '../src/client/page-create-presentation.ts'
 import {PAGE_CREATE_MESSAGE_ROWS} from '../src/client/i18n/locales/page-create.ts'
 
@@ -18,16 +22,47 @@ const stamp='2026-09-17T01:00:00.000Z'
 const draft=(patch:Partial<PageCreateDraft>={}):PageCreateDraft=>({id:'draft-1',ownerId:'owner',requestId:'request-1',entity:'role',body:'{}',bodyHash:'a'.repeat(64),title:'核对账单',status:'draft',createdAt:stamp,updatedAt:stamp,...patch})
 const directory=(drafts=[draft()]):PageCreateDraftDirectory=>({schema:'teloa.page-create-drafts/v1',entity:'role',readAt:stamp,drafts})
 const preview=(value=draft()):PageCreateDraftPreview=>({schema:'teloa.page-create-draft-preview/v1',draft:value,fields:[{path:'name',value:value.title}],fieldsTruncated:false,consequences:[{kind:'credential',id:'账单来源',required:true}],next:{endpoint:'roles/create',consentKeys:['create.consequence.credential']},computedAt:stamp})
+/** 读取同一草案回包，保留原 id、内容及调用方的取消信号。 */
+function mockApi(ports:Omit<PageCreateApi,'read'>):PageCreateApi{
+ return {...ports,read:async(input,signal)=>{
+  const {draft:value}=await ports.preview(input,signal)
+  assert.equal(value.id,input.draftId,'读取必须返回本人指定的原草案')
+  return value
+ }}
+}
 function deferred<T>(){
  let resolve!:(value:T)=>void, reject!:(reason:unknown)=>void
  const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no})
  return {promise,resolve,reject}
 }
 
+test('创建入口卸载换实体后，旧准备结果不关闭新入口或清除新输入',async()=>{
+ const pending=deferred<void>();let closed=0
+ const app=mount({directSentence:true,prepare:()=>pending.promise,onPrepared:()=>closed++})
+ const input=()=>elements(app.render()).find(node=>node.type==='textarea')!
+ input().props.onChange({target:{value:'旧员工需求'}})
+ const form=elements(app.render()).find(node=>node.type==='form')!
+ const submitted=form.props.onSubmit({preventDefault(){}})
+ app.setProps({entity:'skill'});input().props.onChange({target:{value:'新技能输入'}})
+ pending.resolve();await submitted;await app.flush()
+ assert.equal(closed,0);assert.equal(input().props.value,'新技能输入')
+})
+
+test('确认创建期间更换API，旧写入不能借用新API落定草稿',async()=>{
+ const pending=deferred<string>();let oldSettles=0,newSettles=0
+ const original=mockApi({directory:async()=>directory(),preview:async()=>preview(),settle:async()=>{oldSettles++;return directory([])}})
+ const app=mount({api:original,onConfirm:()=>pending.promise});await app.flush();app.open();await app.flush()
+ const submitted=app.button('确认').props.onClick()
+ app.setProps({api:mockApi({directory:async()=>directory(),preview:async()=>preview(),settle:async()=>{newSettles++;return directory([])}})})
+ pending.resolve('original-content');await submitted;await app.flush()
+ assert.equal(oldSettles,0);assert.equal(newSettles,0)
+})
+
 type Element=React.ReactElement<Record<string,any>>
 const elements=(node:React.ReactNode):Element[]=>{
  if(Array.isArray(node))return node.flatMap(elements)
  if(!React.isValidElement<Record<string,any>>(node))return []
+ if(typeof node.type==='function'&&node.type.name==='ToolbarIconButton')return elements((node.type as (props:Record<string,any>)=>React.ReactNode)(node.props))
  return [node,...elements(node.props.children)]
 }
 const content=(node:React.ReactNode):string=>{
@@ -37,12 +72,13 @@ const content=(node:React.ReactNode):string=>{
 }
 
 /** 执行真实组件函数与 React 文本渲染；仅替换钩子调度，真实运行 effect 清理、延迟回包及按钮回调。 */
-function mount(input:Partial<CreateEntryProps>={}){
- let props:CreateEntryProps={entity:'role',api:{directory:async()=>directory(),preview:async()=>preview(),settle:async()=>directory([])},prepare:()=>{},onConfirm:()=> 'test-created',...input}
+function mount(input:Partial<CreateEntryProps>={},revisionPrepare?:((draft:PageCreateDraft,signal:AbortSignal)=>Promise<void>)){
+ let props:CreateEntryProps={entity:'role',api:mockApi({directory:async()=>directory(),preview:async()=>preview(),settle:async()=>directory([])}),prepare:()=>{},onConfirm:()=> 'test-created',...input}
  let slots:unknown[]=[],cursor=0,dirty=true,key:React.Key|null=null,tree:React.ReactNode
  type Effect={deps:readonly unknown[];cleanup?:(()=>void)|undefined}
  let effects=new Map<number,Effect>(),pending:Array<()=>void>=[]
  const hooks={...React,
+  useContext:()=>revisionPrepare,
   useState:(initial:unknown)=>{const index=cursor++;if(!(index in slots))slots[index]=typeof initial==='function'?(initial as ()=>unknown)():initial;return [slots[index],(next:unknown)=>{const value=typeof next==='function'?(next as (before:unknown)=>unknown)(slots[index]):next;if(!Object.is(value,slots[index])){slots[index]=value;dirty=true}}]},
   useRef:(initial:unknown)=>{const index=cursor++;return slots[index]??(slots[index]={current:initial})},
   useEffect:(run:()=>void|(()=>void),deps:readonly unknown[])=>{
@@ -55,6 +91,10 @@ function mount(input:Partial<CreateEntryProps>={}){
  const exported:Record<string,any>={}
  const require=(id:string)=>{
   if(id==='react')return hooks
+  if(id==='@teloa/contract')return contract
+  if(id.endsWith('page-create-revision-context.js'))return {PageCreateRevisionContext:{}}
+  if(id==='lucide-react')return icons
+  if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton:toolbarIconComponent(hooks)}
   if(id.endsWith('provider.js'))return {useI18n:()=>({t})}
   if(id.endsWith('page-create-presentation.js'))return presentation
   if(id.endsWith('use-dismissible.js'))return {useDismissible:()=>{}}
@@ -89,7 +129,7 @@ function mount(input:Partial<CreateEntryProps>={}){
 
 test('预览完成之前没有确认，读到之后显示三块文本与人话步骤',async()=>{
  const pending=deferred<PageCreateDraftPreview>()
- const app=mount({api:{directory:async()=>directory(),preview:()=>pending.promise,settle:async()=>directory([])}})
+ const app=mount({api:mockApi({directory:async()=>directory(),preview:()=>pending.promise,settle:async()=>directory([])})})
  await app.flush();app.open()
  assert.ok(!elements(app.render()).some(node=>node.type==='button'&&content(node)==='确认'))
  pending.resolve(preview());await app.flush()
@@ -100,7 +140,7 @@ test('预览完成之前没有确认，读到之后显示三块文本与人话�
 
 test('同步确认抛错也退出忙态；必须重新读取预览后才能再确认',async()=>{
  let reads=0,calls=0
- const app=mount({onConfirm:()=>{calls++;throw Object.assign(Error('内部正文不得展示'),{code:'teloa/version-conflict'})},api:{directory:async()=>directory(),preview:async()=>{reads++;return preview()},settle:async()=>directory([])}})
+ const app=mount({onConfirm:()=>{calls++;throw Object.assign(Error('内部正文不得展示'),{code:'teloa/version-conflict'})},api:mockApi({directory:async()=>directory(),preview:async()=>{reads++;return preview()},settle:async()=>directory([])})})
  await app.flush();app.open();await app.flush()
  await app.button('确认').props.onClick();await app.flush()
  assert.equal(calls,1)
@@ -125,7 +165,7 @@ test('调用方打开既有表单后由用户取消，不把取消误报为草�
 test('同一事件循环重复确认只调用一次；既有写路径成功后才按真实落地记录落定草案',async()=>{
  let calls=0,settles=0,after:string|undefined
  const pending=deferred<string>();let settled:unknown
- const app=mount({onConfirm:()=>{calls++;return pending.promise},afterConfirm:value=>{after=value},api:{directory:async()=>directory(),preview:async()=>preview(),settle:async payload=>{settles++;settled=payload;return directory([])}}})
+ const app=mount({onConfirm:()=>{calls++;return pending.promise},afterConfirm:value=>{after=value},api:mockApi({directory:async()=>directory(),preview:async()=>preview(),settle:async payload=>{settles++;settled=payload;return directory([])}})})
  await app.flush();app.open();await app.flush()
  const click=app.button('确认').props.onClick
  const first=click();await click()
@@ -139,7 +179,7 @@ test('同一事件循环重复确认只调用一次；既有写路径成功后�
 
 test('带独立同意流程的既有写路径完成后，才允许自定义确认区落定草案',async()=>{
  let settled:unknown,after:string|undefined
- const app=mount({entity:'extension',onConfirm:()=>{throw Error('插件流程不应走通用确认')},afterConfirm:value=>{after=value},renderConfirmation:({apply})=>React.createElement('button',{type:'button',onClick:()=>void apply('plugin-installation-1')},'完成插件安装'),api:{directory:async()=>({...directory(),entity:'extension'}),preview:async()=>preview(draft({entity:'extension'})),settle:async payload=>{settled=payload;return directory([])}}})
+ const app=mount({entity:'extension',onConfirm:()=>{throw Error('插件流程不应走通用确认')},afterConfirm:value=>{after=value},renderConfirmation:({apply})=>React.createElement('button',{type:'button',onClick:()=>void apply('plugin-installation-1')},'完成插件安装'),api:mockApi({directory:async()=>({...directory(),entity:'extension'}),preview:async()=>preview(draft({entity:'extension'})),settle:async payload=>{settled=payload;return directory([])}})})
  await app.flush();app.open();await app.flush()
  await app.button('完成插件安装').props.onClick();await app.flush()
  assert.deepEqual({...settled as Record<string,unknown>,requestId:'request'},{requestId:'request',draftId:'draft-1',expectedBodyHash:'a'.repeat(64),outcome:'applied',appliedRef:'plugin-installation-1'})
@@ -148,7 +188,7 @@ test('带独立同意流程的既有写路径完成后，才允许自定义确�
 
 test('丢弃逐字提交当前预览摘要，失败保留草案且不误报落地成功',async()=>{
  let sent:unknown
- const app=mount({api:{directory:async()=>directory(),preview:async()=>preview(draft({bodyHash:'b'.repeat(64)})),settle:async payload=>{sent=payload;throw Error('断线')}}})
+ const app=mount({api:mockApi({directory:async()=>directory(),preview:async()=>preview(draft({bodyHash:'b'.repeat(64)})),settle:async payload=>{sent=payload;throw Error('断线')}})})
  await app.flush();app.open();await app.flush()
  await app.button('丢弃').props.onClick();await app.flush()
  assert.deepEqual({...sent as Record<string,unknown>,requestId:'request'}, {requestId:'request',draftId:'draft-1',expectedBodyHash:'b'.repeat(64),outcome:'discarded'})
@@ -158,7 +198,7 @@ test('丢弃逐字提交当前预览摘要，失败保留草案且不误报落�
 
 test('展开另一行后，旧 details 的迟到关闭事件不能收掉新行；旧预览也不能出现在新行',async()=>{
  const second=deferred<PageCreateDraftPreview>()
- const app=mount({api:{directory:async()=>directory([draft(),draft({id:'draft-2',title:'第二条'})]),preview:async({draftId})=>draftId==='draft-1'?preview():second.promise,settle:async()=>directory([])}})
+ const app=mount({api:mockApi({directory:async()=>directory([draft(),draft({id:'draft-2',title:'第二条'})]),preview:async({draftId})=>draftId==='draft-1'?preview():second.promise,settle:async()=>directory([])})})
  await app.flush();app.open();await app.flush()
  app.open('draft-2');app.open('draft-1',false)
  const opened=elements(app.render()).filter(node=>node.type==='details'&&node.props.open)
@@ -171,18 +211,18 @@ test('展开另一行后，旧 details 的迟到关闭事件不能收掉新行�
 
 test('换范围时撤销旧请求与预览，迟到回包不能恢复旧草案',async()=>{
  const pending=deferred<PageCreateDraftDirectory>(),signals:AbortSignal[]=[]
- const app=mount({scope:'SOC',api:{directory:async(_input,signal)=>{signals.push(signal!);return pending.promise},preview:async()=>preview(),settle:async()=>directory([])}})
+ const app=mount({scope:'SOC',api:mockApi({directory:async(_input,signal)=>{signals.push(signal!);return pending.promise},preview:async()=>preview(),settle:async()=>directory([])})})
  app.setProps({scope:'AppSec'})
  assert.equal(signals[0]!.aborted,true)
  assert.equal(signals[1]!.aborted,false)
- app.setProps({api:{directory:async()=>({...directory([]),scope:'AppSec'}),preview:async()=>preview(),settle:async()=>directory([])}})
+ app.setProps({api:mockApi({directory:async()=>({...directory([]),scope:'AppSec'}),preview:async()=>preview(),settle:async()=>directory([])})})
  pending.resolve(directory());await app.flush()
  assert.ok(!app.html().includes('核对账单'))
 })
 
 test('目录读取失败呈现错误和重试，重新读取可以发现新生成的草案',async()=>{
  let reads=0
- const app=mount({api:{directory:async()=>{if(++reads===1)throw Error('坏回包');return directory()},preview:async()=>preview(),settle:async()=>directory([])}})
+ const app=mount({api:mockApi({directory:async()=>{if(++reads===1)throw Error('坏回包');return directory()},preview:async()=>preview(),settle:async()=>directory([])})})
  await app.flush()
  assert.ok(app.html().includes(dictionary.get('create.readFailed')!))
  const alert=elements(app.render()).find(node=>node.props.role==='alert')!
@@ -193,7 +233,7 @@ test('目录读取失败呈现错误和重试，重新读取可以发现新生�
 test('草案标题与三块字段中的 HTML 作为文字转义，不产生元素',async()=>{
  const injected='<img src=x onerror=alert(1)>'
  const data=draft({title:injected})
- const app=mount({api:{directory:async()=>directory([data]),preview:async()=>preview(data),settle:async()=>directory([])}})
+ const app=mount({api:mockApi({directory:async()=>directory([data]),preview:async()=>preview(data),settle:async()=>directory([])})})
  await app.flush();app.open();await app.flush()
  assert.match(app.html(),/&lt;img src=x onerror=alert\(1\)&gt;/)
  assert.doesNotMatch(app.html(),/<img\b/)
@@ -202,8 +242,8 @@ test('草案标题与三块字段中的 HTML 作为文字转义，不产生元�
 test('一句话只进入准备回调，输入不为空才可交给会话，并给出真实的发送和刷新指引',async()=>{
  let prepared:unknown
  const app=mount({prepare:prompt=>{prepared=prompt}})
- await app.flush();app.button('用一句话描述').props.onClick()
- assert.equal(app.button("交给会话里的员工").props.disabled,true)
+ await app.flush();app.button('描述需求').props.onClick()
+ assert.equal(app.button("继续").props.disabled,true)
  const textarea=elements(app.render()).find(node=>node.type==='textarea')!
  textarea.props.onChange({target:{value:'帮我核对账单'}})
  const form=elements(app.render()).find(node=>node.type==='form')!
@@ -219,8 +259,21 @@ test('一句话只进入准备回调，输入不为空才可交给会话，并�
 })
 
 test('预览返回同 id 的另一业务范围时显示错误，不让用户确认错范围草案',async()=>{
- const app=mount({api:{directory:async()=>directory(),preview:async()=>preview(draft({scope:'AppSec'})),settle:async()=>directory([])}})
+ const app=mount({api:mockApi({directory:async()=>directory(),preview:async()=>preview(draft({scope:'AppSec'})),settle:async()=>directory([])})})
  await app.flush();app.open();await app.flush()
  assert.ok(app.html().includes(dictionary.get('create.readFailed')!))
  assert.ok(!elements(app.render()).some(node=>node.type==='button'&&content(node)==='确认'))
+})
+
+test('草稿预览用次要图标回原会话准备修改，不确认不丢弃不新建',async()=>{
+ let confirmations=0,settles=0,creations=0;const pending=deferred<void>(),prepared:PageCreateDraft[]=[]
+ const api=mockApi({origin:async()=>({draftId:'draft-1',bodyHash:'a'.repeat(64),sessionId:'original'}),directory:async()=>directory(),preview:async()=>preview(),settle:async()=>{settles++;return directory([])}})
+ const app=mount({api,prepare:()=>{creations++},onConfirm:()=>{confirmations++;return 'created'}},async(draft,signal)=>{assert.equal(signal.aborted,false);prepared.push(draft);await pending.promise})
+ await app.flush();app.open();await app.flush();const edit=elements(app.render()).find(node=>node.type==='button'&&node.props['aria-label']==='在会话中修改');assert.ok(edit);assert.equal(content(edit),'')
+ const action=edit.props.onClick();assert.equal(app.button(dictionary.get('create.confirm.busy')!).props.disabled,true);assert.equal(prepared.length,1);assert.equal(prepared[0]!.id,'draft-1');assert.equal(prepared[0]!.bodyHash,'a'.repeat(64));assert.equal(confirmations,0);assert.equal(settles,0);assert.equal(creations,0)
+ pending.resolve();await action;await app.flush();assert.equal(app.button('确认').props.disabled,false);assert.equal(confirmations+settles+creations,0)
+})
+test('原会话准备失败保留原稿与预览，不用新建会话代替',async()=>{
+ const api=mockApi({origin:async()=>({draftId:'draft-1',bodyHash:'a'.repeat(64),sessionId:'original'}),directory:async()=>directory(),preview:async()=>preview(),settle:async()=>{throw Error('不得落定')}})
+ const app=mount({api},async()=>{throw Error('unavailable')});await app.flush();app.open();await app.flush();const edit=elements(app.render()).find(node=>node.type==='button'&&node.props['aria-label']==='在会话中修改')!;await edit.props.onClick();await app.flush();assert.ok(app.html().includes('原创建会话暂不可用或草稿已变化'));assert.ok(app.html().includes('核对账单'));assert.equal(app.button('确认').props.disabled,false)
 })

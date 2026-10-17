@@ -1,7 +1,11 @@
+import * as marketIdentity from '../src/client/market-item-identity.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
+import {marketSolutionResourceKinds} from '@teloa/contract'
+import {createIndustryLoadApi} from '../src/client/industry-load-api.ts'
+import {industryResourceDestinationGroups} from '../src/client/industry-template-presentation.ts'
 
 // 方案详情页（已加入的行业模板）：标题层级、按钮层级、白话文案、筛选与列表口径一致。
 type Node={type:unknown;props:Record<string,any>;children:Node[]}
@@ -28,7 +32,7 @@ function mount(props:Record<string,unknown>){
   const details=reason&&typeof reason==='object'&&'details' in reason?(reason as {details?:{blockers?:unknown[]}}).details:undefined
   return Array.isArray(details?.blockers)?details.blockers:[]
  }
- const require=(id:string)=>id==='react'?React:id.endsWith('provider.js')?{useI18n:()=>({locale:'zh-CN',t:(key:string)=>key,dateTime:(value:string)=>value})}:id.endsWith('errors.js')?{localizeWorkError:(_:string,value:unknown)=>String(value)}:id.endsWith('industry-load-api.js')?{readUnloadBlockers:readBlockers}:new Proxy({default:new Proxy({},{get:(_,key)=>String(key)})},{get:(_,key)=>key==='default'?new Proxy({},{get:(_inner,name)=>String(name)}):()=>'none'})
+ const require=(id:string)=>id.endsWith('market-item-identity.js')?marketIdentity:id==='react'?React:id.endsWith('provider.js')?{useI18n:()=>({locale:'zh-CN',t:(key:string)=>key,dateTime:(value:string)=>value})}:id.endsWith('errors.js')?{localizeWorkError:(_:string,value:unknown)=>String(value)}:id.endsWith('industry-load-api.js')?{readUnloadBlockers:readBlockers}:new Proxy({default:new Proxy({},{get:(_,key)=>String(key)})},{get:(_,key)=>key==='default'?new Proxy({},{get:(_inner,name)=>String(name)}):()=>'none'})
  new Function('require','exports','React',js)(require,exports,React)
  return ()=>{cursor=0;return exports.SavedIndustryDirectory(props) as Node}
 }
@@ -102,6 +106,30 @@ test('分类筛选是分段控件：按市场标签命名，业务看板单独�
  assert.equal(counts.reduce((sum,value)=>sum+value,0),load.items.length,'各组加起来等于「全部」')
 })
 
+test('完整业务配置经正式加载解码后仍归业务看板，分类计数与筛选保留全部合法资源',async()=>{
+ const fixed={...load,templateId:'example-team',scope:load.space.scope,relations:[],items:marketSolutionResourceKinds.map((kind,index)=>({
+  ...item(index+1,kind,'资源 '+kind),localId:'resource-'+index,instanceId:'32345678-1234-4234-8234-'+String(index+1).padStart(12,'0'),
+ }))}
+ const decoded=await createIndustryLoadApi(async(method,payload)=>{
+  assert.equal(method,'industry-loads/get');assert.deepEqual(payload,{loadId});return fixed
+ }).get(loadId)
+ const draw=mount({...props([decoded],unload),loadId}),view=draw(),nav=nodes(view).find(node=>node.type==='nav')!
+ const categories=nodes(nav).filter(node=>node.type==='button')
+ const counts=categories.slice(1).map(node=>Number(textN(node).match(/(\d+)$/)![1]))
+ assert.equal(counts.reduce((sum,value)=>sum+value,0),decoded.items.length,'每种宿主合法资源恰好归入一个分类')
+ const boardKinds=industryResourceDestinationGroups.find(group=>group.key==='market.industry.destination.business')!.kinds
+ const expected=decoded.items.filter(item=>boardKinds.includes(item.kind))
+ const board=categories.find(node=>textN(node).startsWith('composition.row.board'))!
+ assert.equal(Number(textN(board).match(/(\d+)$/)![1]),expected.length)
+ board.props.onClick()
+ assert.deepEqual(browserOf(draw()).props.resources.map((row:{instanceId:string})=>row.instanceId),expected.map(row=>row.instanceId),'业务筛选保留原完整配置及旧业务声明身份')
+ categories[0]!.props.onClick()
+ assert.equal(browserOf(draw()).props.resources.length,decoded.items.length)
+ const configuration=decoded.items.find(item=>item.kind==='business-configuration')!
+ const only=mount({...props([{...decoded,items:[configuration]}],unload),loadId})()
+ assert.ok(nodes(only).some(node=>node.type==='button'&&/^composition\.row\.board\s*1$/.test(textN(node))),'只有完整业务配置时也有业务看板入口')
+})
+
 test('资源列表里的类型名与市场标签一致：同事、技能、资料、连接、扩展、持续计划',()=>{
  const browser=browserOf(mount({...props([load],unload),loadId})())
  const label=browser.props.kindLabel as (kind:string)=>string
@@ -138,7 +166,7 @@ test('右侧详情：实例编号、修订号、包名@版本等工程细节只�
  }
 })
 
-test('同事详情用白话：指定的资料、还需要的技能连接和工具、待准备；读屏名只念模板名，不念编号',()=>{
+test('同事详情用白话：指定的资料、模板声明的技能连接和工具；读屏名只念模板名，不念编号',()=>{
  const roleInstance={ownerId:'local:teloa-owner',loadId,contentId:spaceId,contentHash:'a'.repeat(64),itemVersion:'1.0.0',scope:'space-'+spaceId,createdAt:load.createdAt,updatedAt:load.createdAt,
   id:'r',itemInstanceId:id(1),itemLocalId:'l1',state:'active',revision:1,role:{id:'62345678-1234-4234-8234-123456789012',version:1},
   knowledge:[{itemInstanceId:id(2),resourceId:'72345678-1234-4234-8234-123456789012',resourceVersion:2}],omittedKnowledge:[],declarations:[{kind:'skill',itemInstanceId:id(3),status:'pending-adapter'}]}
@@ -151,10 +179,44 @@ test('同事详情用白话：指定的资料、还需要的技能连接和工�
  const all_=tree.map(text).join('\n')
  assert.ok(tree.some(node=>node.type==='h4'&&text(node)==='market.industry.saved.fixed.knowledge.reference'))
  assert.ok(tree.some(node=>node.type==='h4'&&text(node)==='market.industry.saved.declaration.dependence'))
- assert.ok(tree.some(node=>node.type==='li'&&text(node)==='告警研判记录 · market.industry.saved.status.adapterPending'),'所需技能状态统一为「待准备」')
+ // N24：声明快照只记录创建员工时的模板声明；没有可核实的当前状态时只列声明本身，不冒充「待准备」或「可用」。
+ assert.ok(tree.some(node=>node.type==='li'&&text(node)==='告警研判记录'),'读不到准备清单时只列模板声明')
+ assert.ok(!tree.some(node=>node.type==='li'&&text(node).startsWith('告警研判记录 · ')),'不显示初始声明状态')
  assert.ok(!all_.includes('market.industry.saved.to.fit.not.installed.or.authorized'))
  const tech=tree.find(node=>node.type==='details')!,inTech=new Set(nodes(tech))
  assert.ok(tree.filter(node=>(node.children as unknown[]|undefined)?.some(child=>typeof child==='string'&&child.includes('72345678'))).every(node=>inTech.has(node)),'指定资料的编号只在技术详情里')
+})
+
+test('同事详情的模板声明复用准备清单的真实状态：与「都准备好了」同源，跳过项仍写已跳过',()=>{
+ const roleInstance={ownerId:'local:teloa-owner',loadId,contentId:spaceId,contentHash:'a'.repeat(64),itemVersion:'1.0.0',scope:'space-'+spaceId,createdAt:load.createdAt,updatedAt:load.createdAt,
+  id:'r',itemInstanceId:id(1),itemLocalId:'l1',state:'active',revision:1,role:{id:'62345678-1234-4234-8234-123456789012',version:3},
+  knowledge:[],omittedKnowledge:[],declarations:[{kind:'skill',itemInstanceId:id(3),status:'pending-adapter'},{kind:'data-source',itemInstanceId:id(4),status:'pending-adapter'},{kind:'mcp',itemInstanceId:id(8),status:'skipped'}]}
+ const all=props([load],unload)
+ const draw=mount({...all,loadId,readiness,roles:{...all.roles,items:[roleInstance]}})
+ // 只取三条模板声明（「关联资源」另有自己的目录状态，不在本断言范围）
+ const titleOf=(n:number)=>load.items.find(row=>row.instanceId===id(n))?.title??id(n)
+ const declared=()=>{const flat=(value:unknown):Node[]=>Array.isArray(value)?value.flatMap(flat):value&&typeof value==='object'?nodes(value as Node):[];return flat(browserOf(draw()).props.render({id:id(1),...load.items[0]})).filter(node=>node.type==='li').map(text).filter(value=>[3,4,8].some(n=>value.startsWith(titleOf(n))))}
+ const panel=nodes(draw()).find(node=>typeof node.type==='function'&&node.props.loadId===loadId&&'port' in node.props)!
+ assert.equal(panel.props.relations,load.relations,'准备清单按方案关联判断员工依赖')
+ // 清单读到之前：只有模板声明，跳过项照旧
+ const before=declared()
+ assert.deepEqual(before,['告警研判记录','告警数据来源',titleOf(8)+' · market.industry.saved.skipped'])
+ // 宿主清单回报后：与面板同一真实状态
+ panel.props.onRead({loadId,status:'active',title:'安全运营',version:'1.0.2',digest:'9'.repeat(64),counts:{ready:1,auto:0,needsUser:1,optional:0,pending:0},rows:[
+  {itemInstanceId:id(3),kind:'skill',title:'告警研判记录',state:'ready',step:null,entry:null},
+  {itemInstanceId:id(4),kind:'data-source',title:'告警数据来源',state:'needs-user',step:null,entry:'connector-settings'}]})
+ assert.deepEqual(declared(),['告警研判记录 · market.industry.saved.declaration.state.ready','告警数据来源 · market.industry.saved.declaration.state.needsUser',titleOf(8)+' · market.industry.saved.skipped'])
+ // 面板重读开始或失败时回报 undefined：撤下已有的成功快照，只列名称，不把上次的「已就绪」当现在
+ panel.props.onRead(undefined)
+ assert.deepEqual(declared(),before)
+ // 其他加载的清单不能写进本加载
+ panel.props.onRead({loadId:'82345678-1234-4234-8234-123456789012',status:'active',title:'其他方案',version:'1.0.0',digest:'8'.repeat(64),counts:{ready:1,auto:0,needsUser:0,optional:0,pending:0},rows:[{itemInstanceId:id(3),kind:'skill',title:'告警研判记录',state:'ready',step:null,entry:null}]})
+ assert.deepEqual(declared(),before)
+ // 重新核对成功：同一条目的准确状态
+ panel.props.onRead({loadId,status:'active',title:'安全运营',version:'1.0.2',digest:'7'.repeat(64),counts:{ready:1,auto:0,needsUser:1,optional:0,pending:0},rows:[
+  {itemInstanceId:id(3),kind:'skill',title:'告警研判记录',state:'needs-user',step:null,entry:'skill-confirm'},
+  {itemInstanceId:id(4),kind:'data-source',title:'告警数据来源',state:'ready',step:null,entry:null}]})
+ assert.deepEqual(declared(),['告警研判记录 · market.industry.saved.declaration.state.needsUser','告警数据来源 · market.industry.saved.declaration.state.ready',titleOf(8)+' · market.industry.saved.skipped'])
 })
 
 test('方案词条十语白话：不再出现锁定的知识引用、所需依赖、待适配、岗位',async()=>{
@@ -170,4 +232,14 @@ test('方案词条十语白话：不再出现锁定的知识引用、所需依�
  assert.equal(get('market.industry.saved.load.numbering')[1],'本机标识')
  assert.equal(get('market.industry.saved.fixed.knowledge.reference')[1],'指定的资料')
  assert.equal(get('market.industry.saved.status.adapterPending')[1],'待准备')
+})
+
+
+test('两份固定内容字节相同，查看来源仍逐项打开原 contentId，不能退回 hash 别名',()=>{
+ const other={...load,id:'42345678-1234-4234-8234-123456789012',contentId:'52345678-1234-4234-8234-123456789012',templateTitle:'另一署名的安全运营'}
+ const opened:string[]=[],view=mount({...props([load,other],unload),openMarket:(id:string)=>opened.push(id)})()
+ const sources=buttons(view,'market.industry.saved.view.regular.template.sources')
+ assert.equal(sources.length,2);for(const source of sources)source.props.onClick()
+ assert.deepEqual(opened,['stored-'+load.contentId,'stored-'+other.contentId])
+ assert.equal(load.contentHash,other.contentHash)
 })

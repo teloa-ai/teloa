@@ -25,6 +25,12 @@ import {createObjectConversationApi} from '../src/client/object-conversation-api
 import {createRoleMemoryApi} from '../src/client/role-memory-api.ts'
 import {createRoleToolGrantApi} from '../src/client/role-tool-grant-api.ts'
 import {createSkillUpgradeApi} from '../src/client/skill-upgrade-api.ts'
+import {createRoleDelegationApi} from '../src/client/role-delegation-api.ts'
+import {createConfirmedFlowApi} from '../src/client/flow-api.ts'
+import {createWorkBudgetApi} from '../src/client/work-budget-api.ts'
+import {createProjectContextApi} from '../src/client/project-context-api.ts'
+import {projectContextCopy} from '../src/client/project-context-copy.ts'
+import {mount,nodes,type MarketNode} from './market-component-harness.ts'
 
 // M-3：这 22 个模块的恢复错误过去是纯字符串，喂给 localizeWorkError 的渲染处会回落成
 // 通用文案或（直接渲染 recoveryMessage() 的两处）硬吐中文。统一收进 createRecoveryGate
@@ -146,4 +152,78 @@ test('全部渲染恢复错误的组件都是丢弃按钮 + 下一步提示 + �
   if(!withDelegates.includes("'recovery.discarded'"))missing.push(name+' 缺 recovery.discarded')
  }
  assert.deepEqual(missing,[])
+})
+
+const textOf=(node:MarketNode|null)=>nodes(node).flatMap(item=>item.children.filter(value=>typeof value==='string')).join(' ')
+test('项目上下文损坏记录可明确丢弃，关闭抽屉不清理草稿或改动服务端',()=>{
+ const journal=journalOf('{broken'),calls:string[]=[],projectId='11111111-1111-4111-8111-111111111111'
+ const context=createProjectContextApi(async endpoint=>{calls.push(endpoint);throw Error('不应写入服务端')},journal)
+ let closes=0
+ const modules={'./project-context-copy.js':{projectContextCopy}},outer=mount('ProjectContextPanel.tsx',modules),view=mount('ProjectContextPanel.tsx',modules,['ProjectContextScope'])
+ const props={project:{id:projectId,state:'running'},api:{context},open:true,close:()=>{closes++}}
+ const forwarded=outer.render('ProjectContextPanel',props)!
+ assert.equal(forwarded.type.name,'ProjectContextScope','执行身份容器实际委托的恢复内容，不能把未展开子组件当空界面')
+ let tree=view.render('ProjectContextScope',forwarded.props)
+ assert.match(textOf(tree),/recovery.nextStep/)
+ tree!.props.close();assert.equal(closes,1);assert.equal(journal.peek(),'{broken')
+ const discard=nodes(tree).find(node=>node.type==='button'&&textOf(node).includes('recovery.discard'))
+ assert.ok(discard);discard.props.onClick()
+ tree=view.render('ProjectContextScope',forwarded.props)
+ assert.equal(journal.peek(),null);assert.equal(context.recoveryError(),undefined)
+ assert.match(textOf(tree),/recovery.discarded/);assert.deepEqual(calls,[])
+})
+const recoveryComponents=[
+ {file:'RoleDelegation.tsx',name:'RoleDelegation',create:createRoleDelegationApi,props:{role:{id:'11111111-1111-4111-8111-111111111111',name:'本人助手',kind:'employee',state:'active',version:1,scopes:['general'],duty:'核对资料',dataScope:'本人资料',executionScope:'分析',skills:[],knowledge:[],memories:[],history:[]},resources:{directory:async()=>({resources:[]})}}},
+ {file:'TaskRunFlowSetup.tsx',name:'TaskRunFlowSetup',create:createConfirmedFlowApi,props:{runId:'22222222-2222-4222-8222-222222222222',changed:()=>{}}},
+ {file:'WorkBudgetPanel.tsx',name:'WorkBudgetPanel',create:createWorkBudgetApi,props:{budgetAccountId:'33333333-3333-4333-8333-333333333333'}},
+] as const
+for(const item of recoveryComponents)test(`${item.name}：损坏记录没有待核对请求时仍可点击丢弃，确认独立显示且不写远端`,()=>{
+ const journal=journalOf('{broken'),calls:string[]=[]
+ const api=item.create(async(method:string)=>{calls.push(method);throw Error('本用例不应请求远端')},journal)
+ const view=mount(item.file,{'./i18n/errors.js':{localizeWorkError:()=> '记录损坏'},'./business-scope-context.js':{useBusinessScopes:()=>({general:'通用'})}})
+ const props={...item.props,api},render=()=>view.render(item.name,props)
+ let tree=render()
+ assert.equal(api.pending(),undefined)
+ assert.match(textOf(tree),/记录损坏/)
+ assert.match(textOf(tree),/recovery.nextStep/)
+ const discard=nodes(tree).find(node=>node.type==='button'&&textOf(node).includes('recovery.discard'))
+ assert.ok(discard,'恢复错误本身必须提供丢弃按钮')
+ discard.props.onClick()
+ tree=render()
+ assert.equal(journal.peek(),null)
+ assert.equal(api.recoveryMessage(),undefined)
+ assert.ok(nodes(tree).some(node=>node.props.role==='status'&&textOf(node).includes('recovery.discarded')),'确认必须在恢复错误消失后仍可见')
+ assert.ok(!nodes(tree).some(node=>node.props.role==='alert'))
+ assert.deepEqual(calls,[],'丢弃仅清本地记录，不发送保存、撤销或执行请求')
+})
+
+test('流程的丢弃保留输入草稿；已有流程无等待步骤也能处理损坏恢复记录',()=>{
+ const api=createConfirmedFlowApi(forbidden,journalOf('{broken'))
+ const view=mount('TaskRunFlowSetup.tsx',{'./i18n/errors.js':{localizeWorkError:()=> '记录损坏'}})
+ const props={runId:'22222222-2222-4222-8222-222222222222',api,changed:()=>{throw Error('丢弃不修改正式流程')}}
+ let tree=view.render('TaskRunFlowSetup',props)
+ const input=nodes(tree).find(node=>node.type==='textarea')!
+ input.props.onChange({target:{value:'保留我的原工作内容'}})
+ tree=view.render('TaskRunFlowSetup',props)
+ nodes(tree).find(node=>node.type==='button'&&textOf(node).includes('recovery.discard'))!.props.onClick()
+ tree=view.render('TaskRunFlowSetup',props)
+ assert.ok(nodes(tree).some(node=>node.type==='textarea'&&node.props.value==='保留我的原工作内容'))
+ const completed=mount('TaskRunFlowSetup.tsx',{'./i18n/errors.js':{localizeWorkError:()=> '记录损坏'}})
+ const broken=createConfirmedFlowApi(forbidden,journalOf('{broken'))
+ const stamp='2026-10-12T00:00:00.000Z'
+ const flow={flowId:'44444444-4444-4444-8444-444444444444',runId:props.runId,definitionVersion:1,state:'completed',createdAt:stamp,updatedAt:stamp,steps:[{id:'work',title:'核对资料',kind:'work',dependsOn:[],inputSummary:'原工作',state:'succeeded',attempts:1,outputSummary:'完成核对',waitReason:null,startedAt:stamp,updatedAt:stamp,completedAt:stamp}]}
+ const visible=completed.render('TaskRunFlowSetup',{...props,api:broken,flow})
+ assert.match(textOf(visible),/recovery.discard/,'已有流程不得把损坏恢复记录藏起来')
+})
+
+for(const item of recoveryComponents)test(`${item.name}：本地清理失败保留错误，不能误报已丢弃`,()=>{
+ const journal={read:()=>'{broken',write:()=>{},clear:()=>{throw Error('清理失败')}}
+ const api=item.create(forbidden,journal),view=mount(item.file,{'./i18n/errors.js':{localizeWorkError:()=> '记录仍需处理'}})
+ const props={...item.props,api}
+ const tree=view.render(item.name,props)
+ nodes(tree).find(node=>node.type==='button'&&textOf(node).includes('recovery.discard'))!.props.onClick()
+ const after=view.render(item.name,props)
+ assert.ok(api.recoveryMessage())
+ assert.ok(nodes(after).some(node=>node.props.role==='alert'))
+ assert.doesNotMatch(textOf(after),/recovery.discarded/)
 })

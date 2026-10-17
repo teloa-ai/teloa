@@ -5,21 +5,26 @@ import type {ProjectApi} from './project-api.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {openDialog} from './dialog-focus.js'
+import {useDialogDismiss} from './use-dialog-dismiss.js'
 import {projectKindKeys} from './project-presentation.js'
 import css from './ProjectWorkspace.module.css'
 
-export function ProjectRelations({project,api,close,save}:{project:WorkProject;api:ProjectApi;close:()=>void;save:(links:ProjectLink[])=>Promise<void>}){
+export type ProjectRelationsDraft={kind:ProjectLinkKind;query:string;selected:ProjectLink[]}
+export function ProjectRelations({project,api,draft,changeDraft,pending,close,save}:{project:WorkProject;api:ProjectApi;draft?:ProjectRelationsDraft;changeDraft?:(draft:ProjectRelationsDraft)=>void;pending?:Promise<void>|undefined;close:()=>void;save:(links:ProjectLink[])=>Promise<void>}){
  const {t,locale}=useI18n(),dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null)
- const [kind,setKind]=useState<ProjectLinkKind>('task'),[query,setQuery]=useState(''),[rows,setRows]=useState<ProjectItem[]>([]),[selected,setSelected]=useState<ProjectLink[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0)
+ const [value,setValue]=useState<ProjectRelationsDraft>(draft??{kind:'task',query:'',selected:[]}),{kind,query,selected}=value
+ const change=(next:ProjectRelationsDraft)=>{setValue(next);changeDraft?.(next)}
+ const [rows,setRows]=useState<ProjectItem[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(!!pending),[error,setError]=useState(''),[retry,setRetry]=useState(0),dismiss=useDialogDismiss(close,!busy)
  useEffect(()=>openDialog(dialog.current,input.current),[])
- useEffect(()=>{let active=true;setLoading(true);setError('');setRows([]);setSelected([]);const timer=setTimeout(()=>{void api.candidates(project.scope,kind,query).then(value=>{if(active){setRows(value);setLoading(false)}},e=>{if(active){setError(localizeWorkError(locale,e));setLoading(false)}})},180);return()=>{active=false;clearTimeout(timer)}},[api,project.scope,kind,query,retry,locale])
+ useEffect(()=>{if(!pending)return;let active=true;void pending.then(()=>{if(active)setBusy(false)},e=>{if(active){setError(localizeWorkError(locale,e));setBusy(false)}});return()=>{active=false}},[pending,locale])
+ useEffect(()=>{let active=true;setLoading(true);setError('');setRows([]);const timer=setTimeout(()=>{void api.candidates(project.scope,kind,query).then(value=>{if(active){setRows(value);setLoading(false)}},e=>{if(active){setError(localizeWorkError(locale,e));setLoading(false)}})},180);return()=>{active=false;clearTimeout(timer)}},[api,project.scope,kind,query,retry,locale])
  const options=rows.filter(row=>!project.links.some(link=>link.kind===row.kind&&link.id===row.id))
- return <dialog ref={dialog} className={css.dialog} aria-label={t('project.add')} onCancel={e=>{if(busy)e.preventDefault();else close()}}><form className={css.form} onSubmit={async e=>{e.preventDefault();if(busy||loading||error||!selected.length)return;setBusy(true);setError('');try{await save(selected)}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}}>
-  <header><h2>{t('project.add')}</h2><button type="button" disabled={busy} onClick={close} aria-label={t('task.form.close')}><X size={18}/></button></header>
-  <p>{t('project.addHint')}</p><label>{t('project.relationType')}<select aria-label={t('project.relationType')} disabled={busy} value={kind} onChange={e=>{setKind(e.target.value as ProjectLinkKind);setSelected([]);setQuery('')}}>{projectLinkKinds.map(value=><option key={value} value={value}>{t(projectKindKeys[value])}</option>)}</select></label>
-  <label>{t('project.search')}<input ref={input} value={query} disabled={busy} maxLength={120} onChange={e=>setQuery(e.target.value)}/></label>
+ return <dialog ref={dialog} className={css.dialog} aria-label={t('project.add')} {...dismiss}><form className={css.form} onSubmit={async e=>{e.preventDefault();if(busy||loading||error||!selected.length)return;setBusy(true);setError('');try{await save(selected)}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}}>
+  <header><h2>{t('project.add')}</h2><button type="button" disabled={busy} onClick={close} aria-label={t('project.dialog.close')}><X size={18}/></button></header>
+  <p>{t('project.addHint')}</p><label>{t('project.relationType')}<select aria-label={t('project.relationType')} disabled={busy} value={kind} onChange={e=>change({kind:e.target.value as ProjectLinkKind,selected:[],query:''})}>{projectLinkKinds.map(value=><option key={value} value={value}>{t(projectKindKeys[value])}</option>)}</select></label>
+  <label>{t('project.search')}<input ref={input} value={query} disabled={busy} maxLength={120} onChange={e=>change({...value,query:e.target.value})}/></label>
   {error&&<div role="alert" className={css.error}>{error}<button type="button" disabled={busy} onClick={()=>setRetry(n=>n+1)}>{t('project.refresh')}</button></div>}
-  <div className={css.candidates} aria-busy={loading}>{loading?<p role="status">{t('project.loading')}</p>:error?null:!options.length?<p>{t('project.noCandidates')}</p>:options.map(item=><label className={css.check} key={item.id}><input type="checkbox" disabled={busy} checked={selected.some(link=>link.id===item.id)} onChange={e=>setSelected(current=>e.target.checked?[...current,{kind:item.kind,id:item.id}]:current.filter(link=>link.id!==item.id))}/><span>{item.title}</span></label>)}</div>
+  <div className={css.candidates} aria-busy={loading}>{loading?<p role="status">{t('project.loading')}</p>:error?null:!options.length?<p>{t('project.noCandidates')}</p>:options.map(item=><label className={css.check} key={item.id}><input type="checkbox" disabled={busy} checked={selected.some(link=>link.id===item.id)} onChange={e=>change({...value,selected:e.target.checked?[...selected,{kind:item.kind,id:item.id}]:selected.filter(link=>link.id!==item.id)})}/><span>{item.title}</span></label>)}</div>
   {rows.length===100&&<small>{t('project.refineSearch')}</small>}
   <footer><button type="button" onClick={close} disabled={busy}>{t('task.form.cancel')}</button><button type="submit" className={css.primary} disabled={busy||loading||!!error||!selected.length}>{busy?t('task.form.saving'):t('project.addSelected',{count:selected.length})}</button></footer>
  </form></dialog>

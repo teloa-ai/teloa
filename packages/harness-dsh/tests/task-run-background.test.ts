@@ -57,6 +57,36 @@ test('后台读口仅在完整固定空权限且无任何其他关联时提供�
  await links.put({runId:run.id,kind:'browser',nativeId:'old:dispatch',sessionId:run.sessionId,payload:{runtimeId:'old',requestId:run.nativeRequestId,dispatchId:'dispatch',status:'closed'}})
  assert.deepEqual(await background.state(run),{outstanding:false,interrupted:true})
 })
+test('本人有工具权限但仅旧owner登记时只给复核候选，实际后台关联不能混入',async t=>{
+ const {ctx,agent}=await runtime(),links=linkStore()
+ const run={id:'run',sessionId:agent.id,nativeRequestId:'native',executor:{kind:'owner',grantId:'grant',grantVersion:1},allowedTools:['bash'],skills:[],subagents:[],stopRequestedAt:null} as unknown as TaskRun
+ await links.put({runId:run.id,kind:'job',nativeId:'owner:old:'+run.sessionId,sessionId:run.sessionId,payload:{record:'owner',runtimeId:'old',requestId:run.nativeRequestId}})
+ const background=createTaskRunBackground(ctx,links,undefined,'new');t.after(async()=>{background.dispose();await ctx.fiber.dispose()})
+ assert.deepEqual(await background.state(run),{outstanding:false,interrupted:true,reviewOnly:true})
+ await links.put({runId:run.id,kind:'browser',nativeId:'old:dispatch',sessionId:run.sessionId,payload:{runtimeId:'old',requestId:run.nativeRequestId,dispatchId:'dispatch',status:'closed'}})
+ assert.deepEqual(await background.state(run),{outstanding:false,interrupted:true})
+})
+test('retry 专用旧 owner 证明仅认精确单登记，无实际 job、通知或未知关联',async t=>{
+ const {ctx,agent}=await runtime()
+ t.after(()=>ctx.fiber.dispose())
+ const run={id:'run',sessionId:agent.id,nativeRequestId:'native'}
+ const owner:TaskRunRuntimeLink={runId:run.id,kind:'job',nativeId:'owner:old:'+run.sessionId,sessionId:run.sessionId,payload:{record:'owner',runtimeId:'old',requestId:run.nativeRequestId}}
+ let rows:readonly TaskRunRuntimeLink[]=[owner]
+ const links:TaskRunRuntimeLinks={list:async()=>rows,put:async()=>{throw Error('retry 核对不得写关联')}}
+ const background=createTaskRunBackground(ctx,links,undefined,'new');t.after(background.dispose)
+ assert.equal(typeof background.retryOwnerOnly,'function')
+ assert.equal(await background.retryOwnerOnly(run),true)
+ rows=[{...owner,nativeId:'owner:new:'+run.sessionId,payload:{record:'owner',runtimeId:'new',requestId:'native'}}]
+ assert.equal(await background.retryOwnerOnly(run),true,'同宿主的精确零 job 登记也可供显式失败重试核对')
+ for(const entries of [[],[owner,owner],[{...owner,runId:'other'}],[{...owner,sessionId:'other'}],[{...owner,payload:{record:'owner' as const,runtimeId:'new',requestId:'native'}}],[{...owner,payload:{record:'owner' as const,runtimeId:'old',requestId:'foreign'}}],[{...owner,nativeId:'unknown'}],[owner,{...owner,kind:'job' as const,nativeId:'old:external',payload:{record:'job' as const,runtimeId:'old',requestId:'native',jobId:'external',status:'completed' as const}}],[owner,{...owner,kind:'team' as const,payload:{requestId:'native',reservationId:'team',name:'helper'}}],[owner,{...owner,kind:'browser' as const,payload:{runtimeId:'old',requestId:'native',dispatchId:'dispatch',status:'closed' as const}}]]){
+  rows=entries;assert.equal(await background.retryOwnerOnly(run),false)
+ }
+ rows=[owner]
+ ctx.jobs.attachController('task-run-test')
+ const job=ctx.jobs.start({kind:'bash',label:'当前宿主实际 job',owner:agent.id,run:()=>({done:Promise.resolve({status:'completed' as const}),cancel:()=>{}})})
+ await ctx.jobs.wait(job,1000,agent.id)
+ assert.equal(await background.retryOwnerOnly(run),false,'已完成的实际 job 也不是从未执行')
+})
 async function runtime(){
  const ctx=new Context()
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry)

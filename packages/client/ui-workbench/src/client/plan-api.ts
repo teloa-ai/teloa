@@ -1,4 +1,4 @@
-import {readPlanWorkConfiguration,readPlanWorkDefinition,type PlanWorkDefinition,type PlanWorkConfiguration} from '@teloa/contract'
+import {readOwnerPlanFields,readWorkExecutor,readMethodReuseSource,readMethodReuseAcceptedSource,type MethodReuseSource,type MethodReuseAcceptedSource,type OwnerPlanFields,type WorkExecutor,readPlanWorkConfiguration,readPlanWorkDefinition,type PlanWorkDefinition,type PlanWorkConfiguration} from '@teloa/contract'
 import {isRecord,readScheduleTrigger,readTaskCompletionPolicy,taskDefinition,type ScheduleTrigger,type TaskCompletionPolicy} from '@teloa/contract'
 import type {ContinuousPlan} from './continuous-preview.ts'
 import type {CollaborationScope} from './collaboration-preview.ts'
@@ -9,14 +9,16 @@ import {recoveryStorageError} from './recovery-error.ts'
 
 type Call=(endpoint:string,payload:unknown)=>Promise<unknown>
 export type PlanRequestJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
-export type PlanSource={kind:'manual'}|{kind:'market-content';contentId:string;contentHash:string;resourceId:string;resourceVersion:string}|{kind:'system-digest';roleId:string}
+export type PlanSource=({kind:'method-reuse'}&MethodReuseSource&{acceptedSource?:MethodReuseAcceptedSource})|{kind:'manual';sessionId?:string}|{kind:'market-content';contentId:string;contentHash:string;resourceId:string;resourceVersion:string}|{kind:'system-digest';roleId:string}
 export type PlanNotificationPolicy='always'|'attention'|'failure'|'silent'
-export type PlanFields={title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
+export type PlanFields={groupId?:string|null;title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
 export type PlanCreateFields=Omit<PlanFields,'notificationPolicy'>&{notificationPolicy:PlanNotificationPolicy;expectedRoleVersion:number}
-export type SavedPlan=PlanFields&{workDefinition?:PlanWorkDefinition;id:string;ownerId:string;roleVersion:number;source:PlanSource;version:number;configVersion:number;state:'paused'|'active'|'archived';archivedReason:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
+export type OwnerPlanExecutor=Extract<WorkExecutor,{kind:'owner'}>
+type SavedPlanRecord={id:string;ownerId:string;source:PlanSource;version:number;configVersion:number;state:'paused'|'active'|'archived';archivedReason:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
+export type SavedPlan=SavedPlanRecord&((PlanFields&{roleVersion:number;executor?:never;workDefinition?:PlanWorkDefinition})|(Omit<OwnerPlanFields,'executor'>&{roleVersion:null;executor:OwnerPlanExecutor;source:Extract<PlanSource,{kind:'method-reuse'}>;workDefinition:PlanWorkDefinition}))
 export type PlanAction='enable'|'pause'|'archive'
-export type PlanUpdateFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'trigger'|'notificationPolicy'|'completionPolicy'>
-export type PlanWorkEditFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'>
+export type PlanUpdateFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'trigger'|'notificationPolicy'|'completionPolicy'|'groupId'>
+export type PlanWorkEditFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'groupId'>
 export type PlanExecutionRunState='prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed'|'not-started'
 export type PlanExecutionDirectoryInput={limit:number;cursor?:PlanExecutionHistoryCursor;scope?:string;roleId?:string;query?:string;runState?:PlanExecutionRunState}
 export type PlanTriggerResult={planId:string;claimId:string;taskId:string;runId:string}
@@ -32,26 +34,29 @@ const date=(value:unknown):value is string=>{if(typeof value!=='string')return f
 const notificationPolicy=(value:unknown):value is PlanNotificationPolicy=>typeof value==='string'&&['always','attention','failure','silent'].includes(value)
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{if(!isRecord(value)||Object.keys(value).some(key=>!keys.includes(key)))throw Error('持续计划格式不正确。');return value}
 
-function readSource(value:unknown):PlanSource{
- const row=exact(value,['kind','contentId','contentHash','resourceId','resourceVersion','roleId'])
- if(row.kind==='manual'){if(Object.keys(row).length!==1)throw Error('计划来源格式不正确。');return {kind:'manual'}}
+export function readPlanSource(value:unknown):PlanSource{
+ const row=exact(value,['kind','contentId','contentHash','resourceId','resourceVersion','roleId','sessionId','artifactId','version','basisHash','taskId','acceptedSource'])
+ if(row.kind==='method-reuse'){const {kind,acceptedSource,...raw}=row,source=readMethodReuseSource(raw);if(acceptedSource===undefined&&!source.taskId)throw Error('计划来源格式不正确。');return {kind,...source,...(acceptedSource===undefined?{}:{acceptedSource:readMethodReuseAcceptedSource(acceptedSource)})}}
+ if(row.kind==='manual'){if(Object.keys(row).some(key=>!['kind','sessionId'].includes(key))||Object.hasOwn(row,'sessionId')&&(typeof row.sessionId!=='string'||! /^[a-zA-Z0-9_-]{1,128}$/.test(row.sessionId)))throw Error('计划来源格式不正确。');return {kind:'manual',...(typeof row.sessionId==='string'?{sessionId:row.sessionId}:{})}}
  if(row.kind==='system-digest'){if(Object.keys(row).length!==2||!uuid(row.roleId))throw Error('计划来源格式不正确。');return {kind:'system-digest',roleId:row.roleId}}
- if(row.kind!=='market-content'||!uuid(row.contentId)||!hash(row.contentHash)||!stableId(row.resourceId)||!semver(row.resourceVersion))throw Error('计划来源格式不正确。')
+ if(row.kind!=='market-content'||Object.keys(row).length!==5||!uuid(row.contentId)||!hash(row.contentHash)||!stableId(row.resourceId)||!semver(row.resourceVersion))throw Error('计划来源格式不正确。')
  return {kind:'market-content',contentId:row.contentId,contentHash:row.contentHash,resourceId:row.resourceId,resourceVersion:row.resourceVersion}
 }
-function readWorkEdit(value:unknown):PlanWorkEditFields{const v=exact(value,['title','goal','dataScope','delivery']),base=taskDefinition({title:v.title,goal:v.goal,scope:'general'});if(Object.keys(v).length!==4||!text(v.dataScope,8000)||!text(v.delivery,8000))throw Error('长期工作目标格式不正确。');return {title:base.title,goal:base.goal,dataScope:v.dataScope.trim(),delivery:v.delivery.trim()}}
+const readSource=readPlanSource
+function readWorkEdit(value:unknown):PlanWorkEditFields{const v=exact(value,['title','goal','dataScope','delivery','groupId']),base=taskDefinition({title:v.title,goal:v.goal,scope:'general'});if(Object.keys(v).length!==(Object.hasOwn(v,'groupId')?5:4)||!text(v.dataScope,8000)||!text(v.delivery,8000))throw Error('长期工作目标格式不正确。');return {...groupFields(v),title:base.title,goal:base.goal,dataScope:v.dataScope.trim(),delivery:v.delivery.trim()}}
+const groupFields=(row:Record<string,unknown>)=>{if(!Object.hasOwn(row,'groupId'))return {};if(row.groupId!==null&&!uuid(row.groupId))throw Error('计划汇报群身份格式不正确。');return {groupId:row.groupId as string|null}}
 function readFields(value:unknown,creating:boolean):PlanFields|PlanCreateFields{
- const row=exact(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy',...(creating?['expectedRoleVersion']:[])])
+ const row=exact(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy','groupId',...(creating?['expectedRoleVersion']:[])])
  const base=taskDefinition({title:row.title,goal:row.goal,scope:row.scope}),trigger=readScheduleTrigger(row.trigger)
  if(!text(row.dataScope,8000)||!text(row.delivery,8000)||!uuid(row.roleId)||creating&&!positive(row.expectedRoleVersion)||creating&&!notificationPolicy(row.notificationPolicy)||!creating&&row.notificationPolicy!==undefined&&!notificationPolicy(row.notificationPolicy))throw Error('持续计划字段格式不正确。')
- const fields:PlanFields={title:base.title,goal:base.goal,scope:base.scope,dataScope:row.dataScope.trim(),delivery:row.delivery.trim(),roleId:row.roleId,trigger,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy as PlanNotificationPolicy}),...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
+ const fields:PlanFields={...groupFields(row),title:base.title,goal:base.goal,scope:base.scope,dataScope:row.dataScope.trim(),delivery:row.delivery.trim(),roleId:row.roleId,trigger,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy as PlanNotificationPolicy}),...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
  return creating?{...fields,notificationPolicy:row.notificationPolicy as PlanNotificationPolicy,expectedRoleVersion:row.expectedRoleVersion as number}:fields
 }
 function readUpdateFields(value:unknown):PlanUpdateFields{
- const row=exact(value,['title','goal','dataScope','delivery','trigger','notificationPolicy','completionPolicy'])
+ const row=exact(value,['title','goal','dataScope','delivery','trigger','notificationPolicy','completionPolicy','groupId'])
  const base=taskDefinition({title:row.title,goal:row.goal,scope:'general'}),trigger=readScheduleTrigger(row.trigger)
  if(!text(row.dataScope,8000)||!text(row.delivery,8000)||!notificationPolicy(row.notificationPolicy))throw Error('计划更新字段格式不正确。')
- return {title:base.title,goal:base.goal,dataScope:row.dataScope.trim(),delivery:row.delivery.trim(),trigger,notificationPolicy:row.notificationPolicy,...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
+ return {...groupFields(row),title:base.title,goal:base.goal,dataScope:row.dataScope.trim(),delivery:row.delivery.trim(),trigger,notificationPolicy:row.notificationPolicy,...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
 }
 function readChange(value:unknown):Extract<PlanCommand,{kind:'change'}>{
  const row=exact(value,['kind','planId','requestId','expectedVersion','action','note','confirmed'])
@@ -88,19 +93,23 @@ function readTriggerResult(value:unknown,command:Extract<PlanCommand,{kind:'trig
 }
 export function readSavedPlan(value:unknown):SavedPlan{
  try{
-  const row=exact(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','completionPolicy','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt','workDefinition'])
-  const fields=readFields({title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{}),...(Object.hasOwn(row,'completionPolicy')?{completionPolicy:row.completionPolicy}:{})},false) as PlanFields,source=readSource(row.source)
-  if(fields.title!==row.title||fields.goal!==row.goal||fields.scope!==row.scope||fields.dataScope!==row.dataScope||fields.delivery!==row.delivery||!uuid(row.id)||!text(row.ownerId,128)||row.ownerId.trim()!==row.ownerId||!positive(row.roleVersion)||!positive(row.version)||!positive(row.configVersion)||row.version<row.configVersion||!['paused','active','archived'].includes(String(row.state))||!date(row.createdAt)||!date(row.updatedAt)||row.updatedAt<row.createdAt)throw Error()
+  const row=exact(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','completionPolicy','groupId','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt','workDefinition','executor'])
+  const rawFields={title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...groupFields(row),...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{}),...(Object.hasOwn(row,'completionPolicy')?{completionPolicy:row.completionPolicy}:{})}
+  const executor=row.executor===undefined?undefined:readWorkExecutor(row.executor),fields=executor?.kind==='owner'?readOwnerPlanFields({...rawFields,executor:{kind:'owner'}}):readFields(rawFields,false) as PlanFields,source=readSource(row.source)
+  if(executor&&(executor.kind!=='owner'||row.roleId!==null||row.roleVersion!==null||executor.grantId!==row.id||executor.grantVersion!==row.configVersion||source.kind!=='method-reuse'))throw Error()
+  if(fields.title!==row.title||fields.goal!==row.goal||fields.scope!==row.scope||fields.dataScope!==row.dataScope||fields.delivery!==row.delivery||!uuid(row.id)||!text(row.ownerId,128)||row.ownerId.trim()!==row.ownerId||(!executor&&!positive(row.roleVersion))||!positive(row.version)||!positive(row.configVersion)||row.version<row.configVersion||!['paused','active','archived'].includes(String(row.state))||!date(row.createdAt)||!date(row.updatedAt)||row.updatedAt<row.createdAt)throw Error()
   const archived=row.state==='archived'
   if(archived?(!text(row.archivedReason,4000)||row.archivedReason.trim()!==row.archivedReason||!date(row.archivedAt)||row.archivedAt!==row.updatedAt):(row.archivedReason!==null||row.archivedAt!==null))throw Error()
   const workDefinition=row.workDefinition===undefined?undefined:readPlanWorkDefinition(row.workDefinition);if(workDefinition&&(workDefinition.definitionVersion!==row.configVersion||JSON.stringify(workDefinition.completion)!==JSON.stringify(fields.completionPolicy)))throw Error()
-  return {...fields,...(workDefinition?{workDefinition}:{}),id:row.id,ownerId:row.ownerId,roleVersion:row.roleVersion,source,version:row.version,configVersion:row.configVersion,state:row.state as SavedPlan['state'],archivedReason:archived?row.archivedReason as string:null,archivedAt:archived?row.archivedAt as string:null,createdAt:row.createdAt,updatedAt:row.updatedAt}
+  if(executor?(!workDefinition||!same(workDefinition.authorization,executor)||workDefinition.budget.money!==null||workDefinition.triggers.length!==1||workDefinition.triggers[0]?.kind!=='schedule'||!same(workDefinition.triggers[0].schedule,fields.trigger)):workDefinition?.authorization.kind==='owner')throw Error()
+  const record={id:row.id,ownerId:row.ownerId,source,version:row.version,configVersion:row.configVersion,state:row.state as SavedPlan['state'],archivedReason:archived?row.archivedReason as string:null,archivedAt:archived?row.archivedAt as string:null,createdAt:row.createdAt,updatedAt:row.updatedAt}
+  return executor?{...record,...fields,executor,roleVersion:null,source,workDefinition} as SavedPlan:{...record,...fields,...(workDefinition?{workDefinition}:{}),roleVersion:row.roleVersion} as SavedPlan
  }catch{throw Error('持续计划服务返回的内容格式不正确。')}
 }
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value
 const same=(a:unknown,b:unknown)=>JSON.stringify(canonical(a))===JSON.stringify(canonical(b))
-const fixed=(plan:SavedPlan)=>JSON.stringify({title:plan.title,goal:plan.goal,scope:plan.scope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,roleVersion:plan.roleVersion,trigger:plan.trigger,...(plan.notificationPolicy===undefined?{}:{notificationPolicy:plan.notificationPolicy}),...(plan.completionPolicy===undefined?{}:{completionPolicy:plan.completionPolicy}),source:plan.source,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{}),configVersion:plan.configVersion,createdAt:plan.createdAt})
-const fixedCreation=(fields:PlanCreateFields,source:PlanSource,createdAt:string)=>JSON.stringify({title:fields.title,goal:fields.goal,scope:fields.scope,dataScope:fields.dataScope,delivery:fields.delivery,roleId:fields.roleId,roleVersion:fields.expectedRoleVersion,trigger:fields.trigger,notificationPolicy:fields.notificationPolicy,...(fields.completionPolicy===undefined?{}:{completionPolicy:fields.completionPolicy}),source,configVersion:1,createdAt})
+const fixed=(plan:SavedPlan)=>JSON.stringify({title:plan.title,goal:plan.goal,scope:plan.scope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,roleVersion:plan.roleVersion,...(plan.executor?{executor:plan.executor}:{}),trigger:plan.trigger,...(plan.notificationPolicy===undefined?{}:{notificationPolicy:plan.notificationPolicy}),...(plan.completionPolicy===undefined?{}:{completionPolicy:plan.completionPolicy}),...groupFields(plan),source:plan.source,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{}),configVersion:plan.configVersion,createdAt:plan.createdAt})
+const fixedCreation=(fields:PlanCreateFields,source:PlanSource,createdAt:string)=>JSON.stringify({title:fields.title,goal:fields.goal,scope:fields.scope,dataScope:fields.dataScope,delivery:fields.delivery,roleId:fields.roleId,roleVersion:fields.expectedRoleVersion,trigger:fields.trigger,notificationPolicy:fields.notificationPolicy,...(fields.completionPolicy===undefined?{}:{completionPolicy:fields.completionPolicy}),...groupFields(fields),source,configVersion:1,createdAt})
 const clearable=(error:unknown)=>!!error&&typeof error==='object'&&'rejected' in error&&error.rejected===true&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/source-unavailable'].includes(String(error.code))
 
 export type PlanApi=ReturnType<typeof createPlanApi>
@@ -221,5 +230,6 @@ export function createPlanApi(call:Call,journal?:PlanRequestJournal,newId=()=>cr
 export function projectSavedPlan(plan:SavedPlan):ContinuousPlan{
  // 业务范围已是空间内的标签（内置取值或模板 `domain`），不再是 `space-<id>`：只核对 1–80 的标签文本。
  if(typeof plan.scope!=='string'||!plan.scope.trim()||plan.scope.length>80)throw Error('持续计划包含当前界面无法识别的业务身份。')
- return {id:plan.id,version:plan.configVersion,revision:plan.version,fields:{title:plan.title,goal:plan.goal,scope:plan.scope as CollaborationScope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,trigger:{...plan.trigger},...(plan.notificationPolicy===undefined?{}:{notificationPolicy:plan.notificationPolicy}),...(plan.completionPolicy===undefined?{}:{completionPolicy:plan.completionPolicy})},enabled:plan.state==='active',archived:plan.state==='archived',history:[]}
+ const base={id:plan.id,version:plan.configVersion,revision:plan.version,fields:{...groupFields(plan),title:plan.title,goal:plan.goal,scope:plan.scope as CollaborationScope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,trigger:{...plan.trigger},...(plan.notificationPolicy===undefined?{}:{notificationPolicy:plan.notificationPolicy}),...(plan.completionPolicy===undefined?{}:{completionPolicy:plan.completionPolicy})},enabled:plan.state==='active',archived:plan.state==='archived',history:[]}
+ return plan.executor?{...base,fields:{...base.fields,scope:'general',roleId:null},executor:plan.executor}:{...base,fields:{...base.fields,roleId:plan.roleId}}
 }

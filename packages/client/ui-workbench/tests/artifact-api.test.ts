@@ -95,6 +95,7 @@ test('反馈丢回包后刷新仍固定原版本与请求，不能漂移到新�
  const call=async(method:string,payload:any)=>{
   if(method==='artifacts/feedback/add'){requests.push(payload);feedback={id:'87654321-1234-4234-8234-123456789012',artifactId:id,ownerId:'owner',version:payload.version,sectionId:payload.sectionId,text:payload.text,createdAt:at};if(first){first=false;throw Error('回包丢失')}return feedback}
   if(method==='artifacts/feedback/list')return feedback?[feedback]:[]
+  if(method==='artifacts/revision/list')return []
   if(method==='artifacts/versions')return rows
   throw Error('不应调用 '+method)
  }

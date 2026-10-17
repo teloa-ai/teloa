@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createPlanHandler,createConfirmedPlanHandler,planEndpoints} from '../src/plans.ts'
+import {makeOwnerPlanGrant} from '@teloa/backend'
+import {methodPlanDraftExample} from '../src/plan-draft-guide.ts'
 
 const owner='local:owner'
 const planId='11111111-1111-4111-8111-111111111111',roleId='22222222-2222-4222-8222-222222222222',requestId='33333333-3333-4333-8333-333333333333'
@@ -8,6 +10,29 @@ const trigger={kind:'schedule' as const,cadence:'weekly' as const,weekday:2,time
 const fields={title:'每周资料核对',goal:'核对本周资料并形成结论。',scope:'general',dataScope:'本人已授权资料。',delivery:'变化与待核对项。',roleId,expectedRoleVersion:3,trigger,notificationPolicy:'attention' as const}
 const stored={id:planId,ownerId:owner,title:fields.title,goal:fields.goal,scope:fields.scope,dataScope:fields.dataScope,delivery:fields.delivery,roleId,roleVersion:3,trigger,notificationPolicy:fields.notificationPolicy,source:{kind:'manual' as const},version:1,configVersion:1,state:'paused' as const,archivedReason:null,archivedAt:null,createdAt:'2026-09-11T00:00:00.000Z',updatedAt:'2026-09-11T00:00:00.000Z'}
 const operations={list:async()=>[stored],get:async()=>stored,create:async()=>stored,change:async()=>stored}
+
+test('本人计划严格读回真实 executor 并剥离内部策略，旧空岗位不能伪装本人计划',async()=>{
+ const source={kind:'method-reuse' as const,artifactId:requestId,version:1,basisHash:'a'.repeat(64),taskId:roleId}
+ const ownerGrant=makeOwnerPlanGrant(source,{agentPresetId:'teloa-standard',allowedTools:['get_goal'],modelPolicy:{primary:{provider:'minimax',model:'MiniMax-M3',reasoningEffort:'high'}}})
+ const executor={kind:'owner',grantId:planId,grantVersion:1},workDefinition={...methodPlanDraftExample.work,schema:'teloa.plan-work/v3',definitionVersion:1,definitionControlId:requestId,budgetAccountId:roleId,authorization:executor}
+ const row={...stored,roleId:null,roleVersion:null,executor,source,ownerGrant,workDefinition,completionPolicy:workDefinition.completion}
+ const {ownerGrant:_private,...expected}=row
+ const other={...stored,id:roleId}
+ const handler=createPlanHandler(owner,async()=>({...operations,list:async()=>[other,row],get:async()=>row}))
+ assert.deepEqual(await handler('plans/list',{}),[other,expected])
+ assert.deepEqual(await handler('plans/get',{planId}),expected)
+ for(const broken of [{...row,executor:undefined},{...row,ownerGrant:undefined},{...row,workDefinition:undefined},{...row,completionPolicy:undefined},{...row,executor:{...row.executor,grantId:roleId}},{...row,source:{kind:'manual'}},{...stored,roleId:null,roleVersion:null}]){
+  await assert.rejects(createPlanHandler(owner,async()=>({...operations,get:async()=>broken}))('plans/get',{planId}),{code:'teloa/invalid-host-response'})
+ }
+})
+
+test('手工计划可保存来源会话，来源会话不接受空值与路径',async()=>{
+ const source={kind:'manual',sessionId:'ordinary-session'},record={...stored,source}
+ const handler=createPlanHandler(owner,async()=>({...operations,create:async()=>record,get:async()=>record}))
+ assert.deepEqual(await handler('plans/create',{requestId,fields,source}),record)
+ assert.deepEqual(await handler('plans/get',{planId}),record)
+ for(const sessionId of ['', '../other'])await assert.rejects(handler('plans/create',{requestId,fields,source:{kind:'manual',sessionId}}),{code:'teloa/invalid-input'})
+})
 
 test('自动结项策略回包可读取，本人确认操作与普通计划工具隔离',async()=>{
  const completionPolicy={kind:'verified' as const,verifier:'material-version-summary' as const,verifierVersion:1,authorizationVersion:1},record={...stored,completionPolicy}

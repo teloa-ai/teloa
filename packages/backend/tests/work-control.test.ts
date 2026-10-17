@@ -4,6 +4,29 @@ import {randomUUID} from 'node:crypto'
 import {setupRoleWork,roleFixture,insertRoleRun,identity,loadRoleWorkModule} from './role-work-test-fixture.ts'
 import {WorkLineageService} from '../src/work/work-lineage.ts'
 
+test('显式失败重试只恢复宿主重启暂停，不恢复本人暂停、停止或未知来源',{timeout:15000},async()=>{
+ const f=await setupRoleWork()
+ try{
+  const api=await loadRoleWorkModule('work-control');await api.initializeWorkControl(f.pool)
+  const {owner,taskId}=await roleFixture(f.pool,'employee'),db=await f.pool.connect()
+  let source
+  try{await db.query('begin');source=await new WorkLineageService(f.pool,identity).bindTask(db,owner,{taskId,source:{kind:'owner-task',taskId}});await db.query('commit')}finally{db.release()}
+  let host=1
+  const service=new api.WorkControlService(f.pool,identity,{hostGeneration:()=>host,ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled:true,unknownOperationIds:[]})})
+  assert.equal(typeof service.retryControlInTransaction,'function')
+  const read=async()=>{const db=await f.pool.connect();try{await db.query('begin');return await service.retryControlInTransaction(db,owner,{controlId:source.roundControlId})}finally{await db.query('rollback');db.release()}}
+  assert.equal((await read()).state,'active')
+  host=2;const [restart]=await service.disarmForRestart(owner,{hostGeneration:2});await service.reconcile(owner,{controlId:restart.id,generation:restart.generation})
+  const paused=await read();assert.equal(paused.state,'paused')
+  const tx=await f.pool.connect();try{await tx.query('begin');await service.resumeInTransaction(tx,owner,{controlId:paused.id,expectedVersion:paused.version},{assertCurrent(){}});await tx.query('commit')}finally{tx.release()}
+  const active=await read(),manual=await service.change(owner,{requestId:randomUUID(),controlId:active.id,expectedVersion:active.version,action:'pause',scope:'round',roundControlId:null})
+  await service.reconcile(owner,{controlId:manual.id,generation:manual.generation})
+  await assert.rejects(read,{code:'teloa/conflict'})
+  await f.pool.query('update teloa_work_controls set pause_origin=null where owner_id=$1 and id=$2',[owner,manual.id])
+  await assert.rejects(read,{code:'teloa/conflict'})
+ }finally{await f.close()}
+})
+
 test('已结项来源只能沿真实持久谱系取得后继控制许可，外来谱系拒绝且暂停即时封租约',{timeout:15000},async()=>{
  const f=await setupRoleWork()
  try{

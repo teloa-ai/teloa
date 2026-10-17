@@ -3,7 +3,7 @@
 // 这 15 条覆盖三块：①`group.routing.*` 三条——群内直接回应接力时的等待提示、命名等待提示与
 // 停下理由；②`group.reaction.*` 五条——表情回应条与选择浮层的界面文案；
 // ③`collaboration.composer.*` 四条——输入框工具栏（表情/提及/引用/发送提示）；
-// ④`role.conversation.*`——会话头部的岗位身份说明、重新介绍动作与发给当前岗位的短请求。
+// ④`role.conversation.*`——会话头部的只读岗位身份说明。
 //   后两条是修复轮补的：T14 上线前建的岗位会话永远走复用支、补不到引导语，新建支的自动发送
 //   失败当时也没有界面出口；这两件事共用头部那一行（失败落 alert，成功落 status）。
 // 原先还有一条 `group.routing.stopped`（「我先停一下，等你确认再继续。」）：那句话由后端常量
@@ -29,9 +29,6 @@ export const GROUP_REACTION_MESSAGE_ROWS = [
  ['collaboration.composer.references','引用资料','引用資料','Reference materials','資料を引用','자료 인용','Tham chiếu tài liệu','Referenciar materiales','Référencer des documents','Material referenzieren','Referenciar materiais'],
  ['collaboration.composer.enterHint','回车发送，Shift+回车换行','按 Enter 傳送，Shift+Enter 換行','Press Enter to send, Shift+Enter for a new line','Enter で送信、Shift+Enter で改行','Enter로 전송, Shift+Enter로 줄바꿈','Nhấn Enter để gửi, Shift+Enter để xuống dòng','Pulsa Enter para enviar, Shift+Enter para nueva línea','Appuyez sur Entrée pour envoyer, Maj+Entrée pour un retour à la ligne','Eingabetaste zum Senden, Umschalt+Eingabetaste für einen Zeilenumbruch','Prima Enter para enviar, Shift+Enter para nova linha'],
  ['role.conversation.identity','这条对话里，它以「{name}」的岗位身份回答。','這段對話裡，它以「{name}」的職位身份回答。','In this conversation, it answers in the role of “{name}.”','この会話では、「{name}」という職務の立場で回答します。','이 대화에서는 "{name}" 직무 신분으로 답변합니다.','Trong cuộc trò chuyện này, nó trả lời với tư cách vai trò "{name}".','En esta conversación, responde con el rol de "{name}".','Dans cette conversation, il répond avec le rôle de « {name} ».','In diesem Gespräch antwortet es in der Rolle „{name}“.','Nesta conversa, ele responde no papel de "{name}".'],
- ['role.conversation.reintroduce','让它重新自我介绍','讓它重新自我介紹','Ask it to introduce itself again','もう一度自己紹介してもらう','다시 자기소개를 요청','Yêu cầu nó tự giới thiệu lại','Pedirle que se presente de nuevo','Lui demander de se présenter à nouveau','Es bitten, sich noch einmal vorzustellen','Pedir-lhe que se apresente de novo'],
- ['role.conversation.reintroduced','已让它重新自我介绍。','已讓它重新自我介紹。','It has been asked to introduce itself again.','もう一度自己紹介するよう伝えました。','다시 자기소개를 요청했습니다.','Đã yêu cầu nó tự giới thiệu lại.','Se le ha pedido que se presente de nuevo.','Il lui a été demandé de se présenter à nouveau.','Es wurde gebeten, sich noch einmal vorzustellen.','Pediu-se-lhe que se apresentasse de novo.'],
- ['role.conversation.introducePrompt','请简要介绍你当前的岗位职责与边界。','請簡要介紹你目前的職位職責與界限。','Please briefly describe your current role’s responsibilities and boundaries.','現在の職務とその範囲を簡潔に説明してください。','현재 직무의 책임과 범위를 간단히 소개해 주세요.','Hãy giới thiệu ngắn gọn trách nhiệm và giới hạn của vai trò hiện tại của bạn.','Describe brevemente las responsabilidades y los límites de tu función actual.','Décris brièvement les responsabilités et les limites de ton rôle actuel.','Beschreibe kurz die Aufgaben und Grenzen deiner aktuellen Rolle.','Descreve brevemente as responsabilidades e os limites da tua função atual.'],
   ["role.conversation.details", "会话身份", "會話身分", "Conversation identity", "会話の役割", "대화 신원", "Danh tính cuộc trò chuyện", "Identidad de la conversación", "Identité de la conversation", "Gesprächsidentität", "Identidade da conversa"],
   ["role.conversation.close", "关闭身份说明", "關閉身分說明", "Close identity details", "役割の詳細を閉じる", "신원 정보 닫기", "Đóng thông tin danh tính", "Cerrar detalles de identidad", "Fermer les détails d’identité", "Identitätsdetails schließen", "Fechar detalhes da identidade"],
  ['collaboration.message.sourceDetails','执行来源','執行來源','Execution source','実行元','실행 출처','Nguồn thực thi','Origen de ejecución','Source d’exécution','Ausführungsquelle','Origem da execução'],

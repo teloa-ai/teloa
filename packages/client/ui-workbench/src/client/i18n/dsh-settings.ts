@@ -81,5 +81,14 @@ const namespaces:Readonly<Record<string,readonly Row[]>>={
 
 /** 为 DSH 自有设置组件补充 Teloa 提供的外部语言；未覆盖的深层文案继续安全回退英文。 */
 export function installDshSettingsLanguagePack(locale:DshLocalePort,traditionalLocale:'zh-Hant'|'zh-TW'|'zh-HK'):Array<()=>void>{
-  return installDshLanguagePack(locale,traditionalLocale,namespaces)
+  return installDshLanguagePack(locale,traditionalLocale,namespaces,{
+    conversation:{'placeholder.hero':'描述你想建立的內容，/ 呼叫指令，@ 檔案或對話','placeholder.workspace':'選擇工作區以開始'},
+    'settings.agentPreset':{presetStandardName:'標準模式'},
+    'permission.access':{
+      mode:'存取模式，目前：{name}',close:'關閉',
+      'preset.readOnly':'僅可檢視','preset.workspaceWrite':'工作區內修改','preset.fullAccess':'完整存取權',
+      'confirm.title':'啟用完整存取權？','confirm.description':'啟用完整存取權後，Agent 將減少確認步驟，並可直接執行更多操作，包括敏感操作、檔案修改或外部指令。只建議在你信任目前任務時使用。',
+      'confirm.acknowledge':'我已了解風險，並願意繼續','confirm.cancel':'取消','confirm.enable':'啟用完整存取權',
+    },
+  })
 }

@@ -12,8 +12,8 @@ test('业务范围页只经 WorkbenchFrame 装配分享 API，并把入口传给
  assert.match(frame,/createBusinessShareApi\(createBusinessShareSource\(/)
  assert.match(frame,/businessShareApi=\{businessShareApi\}/)
  assert.match(form,/api\.plan\(input\)/)
- assert.match(form,/api\.download\(item\)/)
- assert.match(form,/api\.fix\(item\)/)
+ assert.match(form,/api\.download\(item,inspection\.digest,draft\.description\)/)
+ assert.match(form,/api\.fix\(item,inspection\.digest,draft\.description\)/)
 })
 
 test('分享表单所有用户可见决策都走词典，并复用市场的声明摘要组件',async()=>{

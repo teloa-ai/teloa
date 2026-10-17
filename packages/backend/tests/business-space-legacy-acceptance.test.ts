@@ -153,7 +153,9 @@ test('存量两空间库启动即收敛到单一本人空间，实例与目录�
  assert.deepEqual(settledRole.role!.scopes,['research'])
  assert.deepEqual((await f.roles.list(f.owner,{})).map(row=>row.scopes),[['research']])
  const labels=Object.fromEntries((await f.scopes.list(f.owner)).map(item=>[item.scope,item]))
- assert.equal(labels.general?.kind,'builtin');assert.equal(labels.SOC?.kind,'builtin');assert.equal(labels.AppSec?.kind,'builtin')
+ assert.equal(labels.general?.kind,'builtin');assert.equal(labels.SOC?.kind,'builtin')
+ // AppSec 在这份存量库里没有任何引用：不再预登记；SOC 有存量加载引用，照旧以内置标签出现。
+ assert.equal(labels.AppSec,undefined)
  assert.equal(labels.research?.kind,'domain')
  assert.equal(labels[frozen]?.kind,'legacy')
  assert.equal(labels[frozen]?.title,'研究团队空间（历史）')

@@ -5,7 +5,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import type {PreToolDecision,ToolExecution} from '@deepseek-ai/dsh-tools'
 import type {TaskExecutionScope,TaskRun} from '@teloa/backend'
 import {createSkillHttpAuthorizer,registerSkillHttpTool,runSkillHttp,skillHttpToolName,type SkillHttpAuthorizePorts,type SkillHttpRunSnapshot} from '../src/skill-http-tool.ts'
-import {dshTaskRunPorts,runDateLine,skillHttpRunHint} from '../src/task-run-dsh.ts'
+import {dshTaskRunPorts,runDateLine,skillHttpRunHint,taskSkillUsageNotice} from '../src/task-run-dsh.ts'
 import {createHash} from 'node:crypto'
 import {skillSecretHint} from '../src/skill-secret-hint.ts'
 import type {ResolvedSkillSecrets} from '../src/skill-secrets.ts'
@@ -96,7 +96,7 @@ test('审计 use/deny 在任务会话带 runId、roleId；普通会话省略；�
 
 test('任务会话 POST 同样出 ask 确认卡；权限模式 never 时 deny；授权失败先 deny；确认阶段拒绝的审计带 runId/roleId',async()=>{
  const handlers=new Map<string,(...args:any[])=>Promise<unknown>>(),audit:unknown[]=[]
- const ctx={tools:{register:()=>()=>{}},on:(name:string,h:(...args:any[])=>Promise<unknown>)=>{handlers.set(name,h);return ()=>{}}} as unknown as Context
+ const ctx={get:()=>undefined,tools:{register:()=>()=>{}},on:(name:string,h:(...args:any[])=>Promise<unknown>)=>{handlers.set(name,h);return ()=>{}}} as unknown as Context
  let policy='ask'
  const {authorize}=authorizer()
  registerSkillHttpTool(ctx,{readForUse:async()=>({secrets:[secret],values:{},stale:false}),allow:()=>true,webPolicy:async()=>({version:1,enabled:true,blocked:[]}),audit:event=>audit.push(event),skillVisible:async()=>true,
@@ -113,7 +113,7 @@ test('任务会话 POST 同样出 ask 确认卡；权限模式 never 时 deny；
  assert.deepEqual(await pre(child,post,'c-4'),{kind:'deny',reason:'子 Agent 会话不能调用技能接口。'})
 })
 
-test('提示部件：授予且有声明密钥的受管技能时为 [inputText, 代发提示, 日期行]；未授予时为 [inputText, 日期行]；inputText 逐字不变',async()=>{
+test('提示部件：授予且有声明密钥的受管技能时为 [inputText, 技能约定, 代发提示, 日期行]；未授予时为 [inputText, 技能约定, 日期行]；inputText 逐字不变',async()=>{
  const guide={'zh-CN':'先 GET /v1/models',en:'GET /v1/models first'}
  const declared=async(name:string):Promise<ResolvedSkillSecrets|undefined>=>name==='x-search'?{secrets:[secret],httpGuide:guide}:undefined
  const skills=[{...managedSkill},{name:'plain',provider:'teloa-market',managed:{installationId:'c1234567-1234-4123-8123-123456789abc'}},{name:'x-search-copy',provider:'github'}] as unknown as TaskRun['skills']
@@ -131,8 +131,8 @@ test('提示部件：授予且有声明密钥的受管技能时为 [inputText, �
   assert.equal(run.inputText,'{"task":"固定输入"}','提示不写进 inputText')
   return sent[0]!.content
  }
- assert.deepEqual(await send([skillHttpToolName]),[{type:'text',text:'{"task":"固定输入"}'},{type:'text',text:expected},{type:'text',text:runDateLine()}])
- assert.deepEqual(await send([]),[{type:'text',text:'{"task":"固定输入"}'},{type:'text',text:runDateLine()}])
+ assert.deepEqual(await send([skillHttpToolName]),[{type:'text',text:'{"task":"固定输入"}'},{type:'text',text:taskSkillUsageNotice},{type:'text',text:expected},{type:'text',text:runDateLine()}])
+ assert.deepEqual(await send([]),[{type:'text',text:'{"task":"固定输入"}'},{type:'text',text:taskSkillUsageNotice},{type:'text',text:runDateLine()}])
 })
 
 test('提示读取失败只降级为不带提示并记警告（只记错误类别），不阻断发送',async()=>{
@@ -141,7 +141,7 @@ test('提示读取失败只降级为不带提示并记警告（只记错误类�
  const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}),undefined,undefined,undefined,undefined,loadExact,undefined,undefined,undefined,async()=>{throw Error('db down at 10.0.0.9')})
  const run={taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定',allowedTools:[skillHttpToolName],argumentRules:[grantRule(['x-search'])],skills:[runSkill]} as unknown as TaskRun
  await ports.send(run,AbortSignal.timeout(5000),{taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'SOC'})
- assert.deepEqual(sent[0]!.content,[{type:'text',text:'固定'},{type:'text',text:runDateLine()}])
+ assert.deepEqual(sent[0]!.content,[{type:'text',text:'固定'},{type:'text',text:taskSkillUsageNotice},{type:'text',text:runDateLine()}])
  assert.equal(warned.length,1);assert.doesNotMatch(warned[0]!,/10\.0\.0\.9/)
 })
 
@@ -205,6 +205,6 @@ test('审查修复 R1：提示部件只列本人已勾选的技能；带图片�
  const run={id:'run',taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标',allowedTools:[skillHttpToolName],argumentRules:[grantRule(['x-search'])],skills:[runSkill],groupContext:{taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'m',rootId:'r',createdAt:'2026-09-21T00:00:00.000Z',text:'来源'},materials:[],files:[png]}} as unknown as TaskRun
  await ports.send(run,AbortSignal.timeout(5000),{taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'SOC'})
  const content=sent[0]!.content
- assert.deepEqual(content.map(part=>part.type),['text','text','text','image'])
- assert.equal(content[0]!.text,'固定目标');assert.equal(content[1]!.text,await skillHttpRunHint(run,declared));assert.equal(content[2]!.text,runDateLine())
+ assert.deepEqual(content.map(part=>part.type),['text','text','text','text','image'])
+ assert.equal(content[0]!.text,'固定目标');assert.equal(content[1]!.text,taskSkillUsageNotice);assert.equal(content[2]!.text,await skillHttpRunHint(run,declared));assert.equal(content[3]!.text,runDateLine())
 })

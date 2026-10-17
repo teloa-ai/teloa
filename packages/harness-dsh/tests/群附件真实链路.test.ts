@@ -9,14 +9,14 @@
  *
  * `sessionController.prompt` 由模型桩观察，原生日志通过真实 Session 追加并由 JSONL 落盘；
  * `ctx.llm.resolveModelInfo` 按用例切换视觉三态，Jobs、Team 和权限服务使用官方实现，
- * `ctx.fs` 是落在真实临时工作目录上的窄实现（三道路径闸与四个位置码走的仍是生产代码）。
+ * `ctx.fs` 由原生宿主夹具安装官方文件系统（三道路径闸与四个位置码走的仍是生产代码）。
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {createHash,randomBytes,randomUUID} from 'node:crypto'
-import {readFileSync,realpathSync} from 'node:fs'
+import {readFileSync} from 'node:fs'
 import {createRequire} from 'node:module'
-import {mkdir,mkdtemp,readFile,rm,stat,symlink,writeFile} from 'node:fs/promises'
+import {mkdir,mkdtemp,readFile,rm,symlink,writeFile} from 'node:fs/promises'
 import {homedir} from 'node:os'
 import {dirname,join,resolve} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
@@ -30,7 +30,7 @@ import {openResourceDatabase,groupFileHandleLine,groupModelNoVisionNotice,groupR
 import {groupAttachmentUploadRoutePath,groupRunMessageInput,workErrorCodes} from '@teloa/contract'
 import {apply} from '../src/index.ts'
 import {compositionEntries} from './fixtures/production-host.ts'
-import {installNativeSessions,installNativeHostServices,controlTaskQueue} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,controlTaskQueue,configureNativeHostTestPorts} from './fixtures/native-host-services.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
 const repositoryRoot=resolve(dirname(fileURLToPath(import.meta.url)),'..','..','..')
@@ -63,7 +63,6 @@ async function loadLocalAttachmentStore():Promise<new(...args:never[])=>unknown>
 }
 
 type PromptRecord={sessionId:string;requestId:string;content:Array<Record<string,unknown>>}
-type FsTargetLike={targetKey:string;displayPath:string}
 
 /** 模型结果由用例控制，追加和落盘仍经官方 Session。 */
 function finishSession(session:Session,text:string){
@@ -123,25 +122,11 @@ let uploadRoute:UploadRoute|undefined
    session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:brandString<SessionRequestId>(request.requestId)}}),{surfaceOp:'append'})
   },
  })
- ctx.provide('tools',{register:(definition:unknown)=>{tools.push(definition as {name:string;execute:(args:unknown,exec:unknown)=>Promise<unknown>})},schemas:()=>[],guard:()=>()=>{},restrict:()=>()=>{}})
- ctx.provide('skills',{
-  list:async()=>[],
-  registerProvider:(factory:(control:{invalidate:()=>void;signal:AbortSignal})=>unknown)=>{factory({invalidate:()=>{},signal:new AbortController().signal});return ()=>{}},
- })
+ configureNativeHostTestPorts(ctx,{collectTool:definition=>{tools.push(definition as {name:string;execute:(args:unknown,exec:unknown)=>Promise<unknown>})}})
+
  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'default-agent'})})
  ctx.provide('tokenMeter',{measure:()=>({totalTokens:0})})
- ctx.provide('llm',{resolveModelInfo:async()=>modelInfo,resolveCallConfig:async(config:unknown)=>config})
- // 真实临时工作目录上的窄文件系统：`artifact-files.ts` 的三道闸与位置码走的仍是生产代码。
- ctx.provide('fs',{
-  resolve:async(path:string,opts?:{cwd?:string})=>({targetKey:resolve(opts?.cwd??'/',path),displayPath:path}) as FsTargetLike,
-  contains:(root:FsTargetLike,target:FsTargetLike)=>target.targetKey===root.targetKey||target.targetKey.startsWith(root.targetKey+'/'),
-  processPath:(target:FsTargetLike)=>{try{return realpathSync(target.targetKey)}catch{return target.targetKey}},
-  stat:async(target:FsTargetLike)=>{
-   try{const found=await stat(target.targetKey);return {version:`${String(found.mtimeMs)}-${String(found.size)}`,type:found.isDirectory()?'directory':'file',size:found.size}}
-   catch{return undefined}
-  },
-  readBytes:async(target:FsTargetLike)=>new Uint8Array(await readFile(target.targetKey)),
- })
+ configureNativeHostTestPorts(ctx,{modelMetadata:{resolveModelInfo:async()=>modelInfo,resolveCallConfig:async(config:unknown)=>config}})
  ctx.provide('fileReferences',{list:async()=>[]})
  // 上传走宿主注册的 /api 专用流式路由（与浏览器同一条）：收下路由，runtime.rpc 把上传端点转给它，其余端点照走 /teloa。
  ctx.provide('connection',{
@@ -333,6 +318,8 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  })
 
  // ---------- 第 8 步：从群消息建任务 ----------
+ // 指定负责人时，创建服务也核对消息中的每一份原件；先按真实契约完整授权。
+ await rpcCall('groups/agent-grants/change',{requestId:randomUUID(),groupId:groupA.id,roleId:activeRole.id,expectedGroupVersion:groupA.version,expectedRoleVersion:activeRole.version,action:'save',resources:references,canPost:true,canAutoRun:false})
  const created=await rpcCall('groups/tasks/create',{requestId:randomUUID(),groupId:groupA.id,messageId:String(rootMessage.id),expectedGroupVersion:groupA.version,goal:'给出可审计的研判结论。',assignee:{roleId:activeRole.id,expectedVersion:activeRole.version}}) as {task:{id:string;version:number;scope:string};source:Record<string,unknown>}
  const sourceRow=(await pool.query('select * from teloa_group_task_sources where owner_id=$1 and task_id=$2',[owner,created.task.id])).rows[0]
  const storedSource=await rpcCall('groups/tasks/source',{taskId:created.task.id}) as Record<string,unknown>
@@ -345,6 +332,8 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  })
 
  // ---------- 第 9 步：未授权的群资料整次拒绝，补授权后成功 ----------
+ // 已创建任务不持有永续读取许可；恢复部分授权，验证 prepare 的当前授权复核。
+ await rpcCall('groups/agent-grants/change',{requestId:randomUUID(),groupId:groupA.id,roleId:activeRole.id,expectedGroupVersion:groupA.version,expectedRoleVersion:activeRole.version,action:'save',resources:attachmentGrants,canPost:true,canAutoRun:false})
  const refusedPrepare=await rpcError('task-runs/prepare',{requestId:randomUUID(),taskId:created.task.id,expectedTaskVersion:created.task.version})
  const fullGrant=await rpcCall('groups/agent-grants/change',{requestId:randomUUID(),groupId:groupA.id,roleId:activeRole.id,expectedGroupVersion:groupA.version,expectedRoleVersion:activeRole.version,action:'save',resources:references,canPost:true,canAutoRun:false}) as {grantVersion:number}
  const runOne=await rpcCall('task-runs/prepare',{requestId:randomUUID(),taskId:created.task.id,expectedTaskVersion:created.task.version}) as {id:string;sessionId:string;nativeRequestId:string;state:string;groupContext?:RunGroupContext;inputText:string}
@@ -451,7 +440,8 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
   assert.ok(['image/png','image/jpeg','image/webp'].includes(String((images[0]!.attachment as Record<string,unknown>).mediaType)))
   assert.equal((images[0]!.attachment as Record<string,unknown>).name,'格式验收.jpg')
   const texts=promptOne.content.filter(part=>part.type==='text')
-  assert.equal(texts.length,2,'固定输入与本次运行日期各一个 text 部件')
+  assert.equal(texts.length,3,'固定输入、运行日期与本次原目标各一个 text 部件')
+  assert.equal(texts[2]!.text,'本次任务（按原目标完成交付）：\n'+JSON.parse(String(texts[0]!.text)).task.goal,'任务目标逐字保留，不能用群资料代替')
   assert.ok(String(texts[1]!.text).startsWith('本次运行日期：'))
   // GIF 走文件通道（编排者裁定 1）：它既不成为 image 部件，也不带 mediaType=image/gif。
   assert.equal(images.some(part=>(part.attachment as Record<string,unknown>).name==='动画验收.gif'||(part.attachment as Record<string,unknown>).mediaType==='image/gif'),false,'GIF 不得成为 image 部件')
@@ -472,7 +462,8 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  await attachTool.execute({path:'别名.txt',sha256:sha256(Buffer.from('不该被贴出的运行数据'))},attachExec)
  const beforePublish=await counts()
  finishSession(runOneSession,'已完成研判：需要核对父进程与横向连接。')
- await rpcCall('task-runs/reconcile',{runId:runOne.id})
+ const reconciledOne=await rpcCall('task-runs/reconcile',{runId:runOne.id}) as {state:string}
+ assert.equal(reconciledOne.state,'ended',JSON.stringify(reconciledOne))
  const messagesAfter=await rpcCall('groups/messages/list',{groupId:groupA.id,rootId:String(rootMessage.id)}) as Array<Record<string,unknown>>
  const posted=messagesAfter[messagesAfter.length-1]!
  const afterPublish=await counts()
@@ -577,13 +568,16 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  })
 
  // ---------- 第 20 步：撤回 .md ----------
+ // 先按有效原件创建旧任务，再撤回，以单独验证准备执行时的当前授权复核。
+ const staleTask=await rpcCall('groups/tasks/create',{requestId:randomUUID(),groupId:groupA.id,messageId:String(rootMessage.id),expectedGroupVersion:groupA.version,goal:'撤回后再跑原消息。',assignee:{roleId:activeRole.id,expectedVersion:activeRole.version}}) as {task:{id:string;version:number}}
  await rpcCall('groups/attachments/withdraw',{requestId:randomUUID(),attachmentId:String(markdownRow.attachmentId)})
  const listedAfterWithdraw=await rpcCall('groups/attachments/list',{groupId:groupA.id}) as {items:Array<{attachmentId:string}>}
  const snapshotAfterWithdraw=await rpcCall('groups/messages/list',{groupId:groupA.id,rootId:String(rootMessage.id)}) as Array<Record<string,unknown>>
- const fourthMessage=await rpcCall('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:'第四轮：撤回后再准备。',references:references.filter(item=>item.id!==String(markdownRow.attachmentId))}) as {id:string}
+ const remainingReferences=references.filter(item=>item.id!==String(markdownRow.attachmentId))
+ await rpcCall('groups/agent-grants/change',{requestId:randomUUID(),groupId:groupA.id,roleId:activeRole.id,expectedGroupVersion:groupA.version,expectedRoleVersion:activeRole.version,action:'save',resources:remainingReferences,canPost:false,canAutoRun:false})
+ const fourthMessage=await rpcCall('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text:'第四轮：撤回后再准备。',references:remainingReferences}) as {id:string}
  const fourthTask=await rpcCall('groups/tasks/create',{requestId:randomUUID(),groupId:groupA.id,messageId:fourthMessage.id,expectedGroupVersion:groupA.version,goal:'第四轮研判。',assignee:{roleId:activeRole.id,expectedVersion:activeRole.version}}) as {task:{id:string;version:number}}
- const staleTask=await rpcCall('groups/tasks/create',{requestId:randomUUID(),groupId:groupA.id,messageId:String(rootMessage.id),expectedGroupVersion:groupA.version,goal:'撤回后再跑原消息。',assignee:{roleId:activeRole.id,expectedVersion:activeRole.version}}).catch(()=>undefined) as {task:{id:string;version:number}}|undefined
- const staleRefusal=staleTask===undefined?undefined:await rpcError('task-runs/prepare',{requestId:randomUUID(),taskId:staleTask.task.id,expectedTaskVersion:staleTask.task.version})
+ const staleRefusal=await rpcError('task-runs/prepare',{requestId:randomUUID(),taskId:staleTask.task.id,expectedTaskVersion:staleTask.task.version})
  await t.test('第 20 步：撤回后 list 不再返回，已发消息的引用快照不改写，再准备执行即拒',()=>{
   assert.equal(listedAfterWithdraw.items.some(item=>item.attachmentId===String(markdownRow.attachmentId)),false)
   assert.deepEqual(snapshotAfterWithdraw[0]!.references,references,'已发出消息里的引用快照不得被改写')

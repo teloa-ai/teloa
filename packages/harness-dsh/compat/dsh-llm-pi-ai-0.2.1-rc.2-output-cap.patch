@@ -1,0 +1,46 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1919,7 +1919,7 @@
+ 			name: resolvedModel.name,
+ 			inputModalities: [...resolvedModel.input],
+ 			context: { contextWindow: resolvedModel.contextWindow },
+-			...configuredMaxTokens === void 0 ? {} : { defaultMaxTokens: configuredMaxTokens },
++			defaultMaxTokens: configuredMaxTokens ?? resolvedModel.maxTokens,
+ 			...reasoningInfo(resolvedModel, defaultLevel),
+ 			...conversationUpdates(resolvedModel)
+ 		};
+@@ -1943,6 +1943,7 @@
+ 		try {
+ 			if (options.stop !== void 0) throw new LlmError("llm-pi-ai does not support GenerateOptions.stop", "UNSUPPORTED_OPTION");
+ 			const profile = this.profileOf(snapshot, options.provider);
++			const transportFetch = this.config.resolveFetch?.(options.provider);
+ 			const model = this.modelOf(snapshot, options.provider, options.model);
+ 			const updates = conversationUpdates(model);
+ 			const tools = options.tools ?? [];
+@@ -1982,6 +1983,7 @@
+ 				}, onReplayDegrade);
+ 				const iterator = toStreamChunks(snapshot.models.streamSimple(model, context, {
+ 					...profileOptions(profile, reasoning, apiKey),
++					...transportFetch === void 0 ? {} : { fetch: transportFetch },
+ 					...options.temperature === void 0 ? {} : { temperature: options.temperature },
+ 					...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens },
+ 					...options.sessionId === void 0 ? {} : { sessionId: String(options.sessionId) },
+@@ -2904,6 +2906,7 @@
+ 	const adapter = new PiAiAdapter({
+ 		profiles,
+ 		resolveApiKey,
++		resolveFetch: (provider) => ctx.get("dshLlmHttp")?.forProvider(provider),
+ 		auth,
+ 		resolveAttachments: () => ctx.get("attachments"),
+ 		resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments, (hostPath) => ctx.get("fs")?.processPathFromHostPath(hostPath), ref),
+--- a/lib/types/adapter.d.ts
++++ b/lib/types/adapter.d.ts
+@@ -32,6 +32,8 @@
+ import type { ResolvedPiAiProviderProfile } from './config.ts';
+ /** Constructor options for {@link PiAiAdapter}: the two resolution hooks the plugin owns. */
+ export interface PiAiAdapterOptions {
++    /** Optional host HTTP transport; captured once for the prepared stream. */
++    resolveFetch?: (provider: string) => typeof globalThis.fetch | undefined;
+     /** Current validated profiles by provider route; called once per operation. */
+     profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>;
+     /**

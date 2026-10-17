@@ -47,7 +47,7 @@ assertNativeInputProviders(ctx, providers)
 
 | 接口 | 说明 |
 | --- | --- |
-| `loadNativeInputProviders({compatibilityAPIs, requireCheckpoint?, requireGoal?})` | `compatibilityAPIs` 是宿主已核对并应用的官方兼容补丁清单，形如 `{[包名]: 清单 api}`。缺少 `nativeInputRequiredAPIs` 中任一能力时拒绝；`requireCheckpoint: true` 还要求 `nativeInputCheckpointAPIs`，`requireGoal: true` 还要求 `nativeInputGoalAPIs`。消息列出包名与缺少的能力名，此时不导入任何执行模块。返回冻结的 `{input, controller, subagent, recoveryCandidate?, goal?}`，只有这个返回值能用于后续两步。 |
+| `loadNativeInputProviders({compatibilityAPIs, requireCheckpoint?, requireGoal?, requireJobs?})` | `compatibilityAPIs` 是宿主已核对并应用的官方兼容补丁清单，形如 `{[包名]: 清单 api}`。缺少 `nativeInputRequiredAPIs` 中任一能力时拒绝；`requireCheckpoint: true` 还要求 `nativeInputCheckpointAPIs`，`requireGoal: true` 还要求 `nativeInputGoalAPIs`，`requireJobs: true` 还要求 `nativeInputJobAPIs`。消息列出包名与缺少的能力名，此时不导入任何执行模块。返回冻结的 `{input, controller, subagent, recoveryCandidate?, goal?, jobs?}`，只有这个返回值能用于后续两步。 |
 | `composeNativeInput(rows, {providers, runtimeRoot, inputProvider?, resolve?})` | `rows` 是官方 `applyEntryPatches` 得到的完整生效树（含父组），不会被修改。返回补丁列表，下表列出它生成的行。`runtimeRoot` 是宿主私有运行目录，必须已存在且为规范绝对路径。`inputProvider` 可换成宿主自己的原生输入提供方模块（例如配置了持久确认的包装）。`resolve` 用于解析实际安装的官方包，默认按本包依赖解析，与受管类继承的官方类同源。 |
 | `assertNativeInputClientFaces(finalRows, {resolve?})` | 只读核对。被替换的官方包若声明了浏览器面，启用行中必须恰好有一个按官方发现规则提供它的来源。相对路径入口依赖所属子树的解析基址，不计入。 |
 | `assertNativeInputProviders(ctx, providers, {resolve?})` | 实际装配的 `teloaNativeInput`、`sessionController`、`subagents` 必须是受管提供方或其子类。启用 `requireGoal` 时，还核对实际 `teloaManagedGoalRoundDriver` 与当前 `teloaTaskRunGoal` 是同一提供方。组合里有浏览器端（存在官方 `clientModules` 服务）时，还核对它的模块表含被替换官方包的浏览器面：宿主漏做组合后核对时，这里是第二道失败关闭。没有浏览器组合时不做这一项。 |
@@ -61,6 +61,7 @@ assertNativeInputProviders(ctx, providers)
 | `typert-loader` | `packages` 追加两个官方包名：官方加载器不从子路径入口发现远程调用描述，这里沿用原包的描述。 |
 | `session-controller`、`subagent` | 官方行停用；在原父组插入 `teloa-managed-session-controller`、`teloa-managed-subagent`，保留原配置与依赖。 |
 | `goal-round-driver` | 启用 `requireGoal` 时，官方行停用；在原父组插入 `teloa-managed-goal-round-driver`，保留原配置与依赖。使用核心持久 Goal 准入，不复制官方目标领域与模型循环。 |
+| `tool-jobs` | `requireJobs` 核对固定完成通知补口。已停用的宿主行保持停用，四个已配置 Agent 预设使用 `managed-tool-jobs`；有启用宿主行时在原位置替换，保留原配置。实际工具启动的 Job 只承接同会话原受理根，收集、撤销与停止不会冒充新输入；未验证冷重启 Job 通知恢复。 |
 | `teloa-client-face-session-controller` | 浏览器面载体，与受管行在同一组，但独立成行。官方包没有声明浏览器面时不生成，目前子代理就是这种情况。 |
 
 组合树里已有上述保留行编号，或官方行缺失、重复、被停用、带启用条件、已被替换时，一律拒绝。同一棵树不能组合两次。

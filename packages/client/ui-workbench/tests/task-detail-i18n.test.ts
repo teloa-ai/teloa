@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
+import {existsSync} from 'node:fs'
+import {registerHooks} from 'node:module'
+registerHooks({resolve(specifier,context,next){
+ if(specifier.endsWith('.js')&&specifier.startsWith('.')&&context.parentURL?.includes('/ui-workbench/src/client/i18n/')){
+  const source=new URL(specifier.slice(0,-3)+'.ts',context.parentURL)
+  if(existsSync(source))return next(source.href,context)
+ }
+ return next(specifier,context)
+}})
+const {translateMessage}=await import('../src/client/i18n/messages.ts')
 import {chineseUiLiterals} from './i18n-ast.ts'
 import {TASK_DETAIL_MESSAGE_ROWS} from '../src/client/i18n/locales/task-details.ts'
 
@@ -20,10 +30,15 @@ test('TaskPage 目录之后的固定用户界面中文全部通过详情词典�
   assert.match(source,/const \{locale,t\}=useI18n\(\)/)
 })
 
-test('任务详情词条按十语顺序完整提供，并含真实东亚与越南语翻译',()=>{
+test('任务详情定稿简繁英完整，既有七语保留或按实际词表回退英文',()=>{
   for(const row of TASK_DETAIL_MESSAGE_ROWS){
-    assert.equal(row.length,locales.length+1,row[0])
-    for(const [index,locale] of locales.entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
+    assert.ok(row.length===4||row.length===locales.length+1,row[0]+' 必须为三语定稿或既有十语，不能少列/错位')
+    for(const [index,locale] of locales.entries()){
+      const declared=row[index+1]
+      if(index<3)assert.ok(declared?.trim(),`${row[0]}: ${locale}`)
+      if(declared!==undefined)assert.ok(declared.trim(),`${row[0]}: ${locale} 既有翻译不能为空`)
+      assert.equal(translateMessage(locale,row[0] as Parameters<typeof translateMessage>[1]),declared??row[3],`${row[0]}:${locale} 实际呈现保持翻译或英文回退，不能显示键名`)
+    }
   }
   assert.deepEqual(messageRow('task.detail.currentOwnerLabel'),[
     'task.detail.currentOwnerLabel','当前负责','目前負責','Current owner','現在の担当','현재 담당','Người phụ trách hiện tại','Responsable actual','Responsable actuel','Derzeit zuständig','Responsável atual',

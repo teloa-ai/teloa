@@ -12,7 +12,7 @@ import type {AuthorizationServerMetadata,OAuthClientInformationMixed,OAuthClient
 import type {FetchLike} from '@modelcontextprotocol/sdk/shared/transport.js'
 import {InvalidClientError,InvalidGrantError,UnauthorizedClientError} from '@modelcontextprotocol/sdk/server/auth/errors.js'
 import {lookup as dnsLookup} from 'node:dns/promises'
-import {randomBytes,timingSafeEqual} from 'node:crypto'
+import {randomBytes,randomUUID,timingSafeEqual} from 'node:crypto'
 import {isIP} from 'node:net'
 import {isCredentialStoreLocked} from './credentials/store-state.ts'
 import type {McpSlotStore} from './managed-mcp-credentials.ts'
@@ -49,8 +49,9 @@ const slotAsMetadata='oauth_as_metadata'
 const slotUserClientId='oauth_client_id'
 /** 签发当前令牌时使用的 client_id：刷新与吊销只用它，不受之后用户 client_id 或 DCR 信息变化影响 */
 const slotTokenClientId='oauth_token_client_id'
+const slotGrantId='oauth_grant_id',slotGrantedScope='oauth_granted_scope'
 /** 宿主内部写入的槽；`oauth_client_id` 是用户填写的配置，不在清理范围 */
-const hostWrittenSlots=[slotAccessToken,slotRefreshToken,slotTokenExpiry,slotTokenClientId,slotClientInfo,slotAsMetadata] as const
+const hostWrittenSlots=[slotAccessToken,slotRefreshToken,slotTokenExpiry,slotTokenClientId,slotClientInfo,slotAsMetadata,slotGrantId,slotGrantedScope] as const
 
 /** 持久化的 client 信息：只保留 client_id（public client，永不保存客户端密钥）与注册时的 redirect_uri */
 type StoredClientInformation={client_id:string;redirect_uri:string}
@@ -81,9 +82,11 @@ export async function readTokens(store:McpSlotStore,serverName:string):Promise<S
 }
 
 /** expires_at = now + expires_in*1000（无 expires_in 按 3600 s）；AS 未轮换 refresh_token 时保留旧值；clientId 为签发该令牌的 client */
-export async function saveTokens(slots:McpSlotStore,serverName:string,tokens:OAuthTokens,clientId?:string,now:()=>number=Date.now):Promise<void>{
+export async function saveTokens(slots:McpSlotStore,serverName:string,tokens:OAuthTokens,clientId?:string,now:()=>number=Date.now,renewal=false):Promise<void>{
+ const prior=await slots.read(serverName),scope=tokens.scope===undefined?prior[slotGrantedScope]??'':[...new Set(tokens.scope.split(/\s+/).filter(Boolean))].sort().join(' ')
+ const equivalent=renewal&&prior[slotGrantId]!==undefined&&scope===(prior[slotGrantedScope]??'')&&(clientId===undefined||clientId===prior[slotTokenClientId])
  const expiresAt=now()+(tokens.expires_in??defaultExpiresInSeconds)*1000
- const patch:Record<string,string|undefined>={[slotAccessToken]:tokens.access_token,[slotTokenExpiry]:new Date(expiresAt).toISOString()}
+ const patch:Record<string,string|undefined>={[slotAccessToken]:tokens.access_token,[slotTokenExpiry]:new Date(expiresAt).toISOString(),[slotGrantId]:equivalent?prior[slotGrantId]:randomUUID(),[slotGrantedScope]:scope}
  if(tokens.refresh_token)patch[slotRefreshToken]=tokens.refresh_token
  if(clientId)patch[slotTokenClientId]=clientId
  await slots.patch(serverName,patch)
@@ -91,7 +94,7 @@ export async function saveTokens(slots:McpSlotStore,serverName:string,tokens:OAu
 
 /** 只清令牌槽（access / refresh / expiry / 签发 client_id），保留 client 信息、AS 元数据与用户 client_id */
 export async function clearTokens(slots:McpSlotStore,serverName:string):Promise<void>{
- await slots.patch(serverName,{[slotAccessToken]:undefined,[slotRefreshToken]:undefined,[slotTokenExpiry]:undefined,[slotTokenClientId]:undefined})
+ await slots.patch(serverName,{[slotAccessToken]:undefined,[slotRefreshToken]:undefined,[slotTokenExpiry]:undefined,[slotTokenClientId]:undefined,[slotGrantId]:undefined,[slotGrantedScope]:undefined})
 }
 
 /** 断开或删除连接时清除宿主写入的全部 oauth_* 槽；记录不存在时静默 */
@@ -480,7 +483,7 @@ export class OAuthFlowManager{
    const refreshed=await refreshAuthorization(metadata.issuer,{
     metadata,clientInformation:{client_id:clientId},refreshToken:tokens.refreshToken,resource:new URL(resourceUrl),fetchFn:this.fetchFn,
    })
-   await saveTokens(this.slots,serverName,refreshed,clientId,this.now)
+   await saveTokens(this.slots,serverName,refreshed,clientId,this.now,true)
    return {result:'refreshed'}
   }catch(error){
    if(isCredentialStoreLocked(error))return {result:'skipped'}

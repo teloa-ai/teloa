@@ -54,6 +54,14 @@ export function nativeToolRules(ctx:Context,agent?:Agent,presetScope?:Parameters
 export async function nativePresetToolRules(ctx:Context,presetId?:string):Promise<TaskToolArgumentRule[]>{
  return withPresetReadScope(ctx.agentPresets,async scope=>nativeToolRules(ctx,undefined,scope),presetId)
 }
+/**
+ * 岗位预设实际提供的编排工具：按官方工具注册表在该预设作用域里的可执行视图判断（`tools.get(name, scope)`）。
+ * `run_code` 是 PTC 呈现的保留传输，只在预设 `dsh-agent-tool-presentation` 为 ptc/both 时存在；
+ * `workflow`／`ralph` 只在预设启用 `tool-workflow`／`tool-ralph` 时存在。授权页只给这些，不展示运行永远拿不到的能力。
+ */
+export async function presetOrchestrationToolNames(ctx:Context,names:readonly string[],presetId?:string):Promise<string[]>{
+ return withPresetReadScope(ctx.agentPresets,async scope=>names.filter(name=>ctx.tools.get(name,scope)!==undefined),presetId)
+}
 /** 工具本身的官方 sandbox 不约束桌面或浏览器；本次授权也不包含任意本机路径写出。 */
 export function nativeToolCallIssue(ctx:Context,exec:ToolExecution):string|undefined{
  if(!nativeGrantToolNames.includes(exec.name)||!providerAvailable(ctx,exec.name)||!ctx.tools.get(exec.name,exec.agent))return '原生工具未启用、已断开或不在可授权范围内。'

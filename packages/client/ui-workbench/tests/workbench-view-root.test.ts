@@ -10,5 +10,5 @@ test('面包屑第二级：带选中态的页面回列表根，其余只切回�
  assert.deepEqual(viewRootAction('plans'),{kind:'plans'})
  assert.deepEqual(viewRootAction('attention'),{kind:'attention'})
  assert.deepEqual(viewRootAction('resources'),{kind:'resources'})
- for(const view of ['home','messages','capabilities','settings'] as const)assert.deepEqual(viewRootAction(view),{kind:'navigate',view})
+ for(const view of ['home','messages','settings'] as const)assert.deepEqual(viewRootAction(view),{kind:'navigate',view})
 })

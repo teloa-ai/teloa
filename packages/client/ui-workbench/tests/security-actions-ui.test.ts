@@ -6,6 +6,8 @@ import {registerHooks} from 'node:module'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
 import ts from 'typescript'
+import * as icons from 'lucide-react'
+import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
 import {action,panel,execution,taskId,owner} from './security-action-fixtures.ts'
 import {securityActionControls,securityExecutionPresentation} from '../src/client/security-action-presentation.ts'
 import {confirmTargetMatches,securityDecisionStage,securityExecutionChecks,securityJournalLocks} from '../src/client/attention-decision.ts'
@@ -26,11 +28,11 @@ const transpile=(file:string)=>ts.transpileModule(readFileSync(new URL('../src/c
 function load(){
  const js=transpile('SecurityActions.tsx')
  const states:unknown[]=[],effects:Array<()=>void>=[];let cursor=0
- const React={createElement:(type:unknown,props:Record<string,unknown>|null,...children:Node[])=>({type,props:props??{},children:children.flat(Infinity)}),useState:(initial:unknown)=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?(initial as ()=>unknown)():initial;return [states[i],(v:unknown)=>{states[i]=typeof v==='function'?(v as (old:unknown)=>unknown)(states[i]):v}]},useRef:(v:unknown)=>{const i=cursor++;return states[i]??(states[i]={current:v})},useEffect:(f:()=>void)=>effects.push(f)}
+ const React={createElement:(type:unknown,props:Record<string,unknown>|null,...children:Node[])=>{const node={type,props:props??{},children:children.flat(Infinity)};return typeof type==='function'&&type.name==='ToolbarIconButton'?type({...node.props,children:node.children}):node},useState:(initial:unknown)=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?(initial as ()=>unknown)():initial;return [states[i],(v:unknown)=>{states[i]=typeof v==='function'?(v as (old:unknown)=>unknown)(states[i]):v}]},useRef:(v:unknown)=>{const i=cursor++;return states[i]??(states[i]={current:v})},useEffect:(f:()=>void)=>effects.push(f)}
  const exports:Record<string,any>={}
  // 执行门与审批表单是两个入口共用的真实组件，不许拿桩糊过去：面板的“执行”“批准/拒绝”现在都长在它们里面。
  const gate:Record<string,any>={},form:Record<string,any>={}
- const require=(id:string)=>id==='react'?React:id.endsWith('SecurityExecutionGate.js')?gate:id.endsWith('SecurityDecisionForm.js')?form:id.endsWith('decision-reason-drafts.js')?decisionReasonDrafts:id.endsWith('attention-decision.js')?{securityDecisionStage,securityJournalLocks,securityExecutionChecks,confirmTargetMatches}:id.endsWith('security-action-presentation.js')?{securityActionControls,securityExecutionPresentation}:id.endsWith('security-action-evidence.js')?{securityActionEvidence}:id.endsWith('EvidenceList.js')?{EvidenceList:()=>null}:id.endsWith('security-action-api.js')?{securityActionCommands:['propose','submit','decide','withdraw-submission','withdraw-approval','execute','observe','acknowledge-failure']}:id.endsWith('provider.js')?{useI18n:()=>({locale:'zh-CN',t:(key:string)=>key,dateTime:(v:string)=>v})}:id.endsWith('errors.js')?{localizeWorkError:(_:string,e:{code:string})=>e.code}:{default:new Proxy({},{get:(_,key)=>String(key)})}
+ const require=(id:string)=>id==='react'?React:id==='lucide-react'?icons:id.endsWith('ToolbarIconButton.js')?{ToolbarIconButton:toolbarIconComponent(React)}:id.endsWith('SecurityExecutionGate.js')?gate:id.endsWith('SecurityDecisionForm.js')?form:id.endsWith('decision-reason-drafts.js')?decisionReasonDrafts:id.endsWith('attention-decision.js')?{securityDecisionStage,securityJournalLocks,securityExecutionChecks,confirmTargetMatches}:id.endsWith('security-action-presentation.js')?{securityActionControls,securityExecutionPresentation}:id.endsWith('security-action-evidence.js')?{securityActionEvidence}:id.endsWith('EvidenceList.js')?{EvidenceList:()=>null}:id.endsWith('security-action-api.js')?{securityActionCommands:['propose','submit','decide','withdraw-submission','withdraw-approval','execute','observe','acknowledge-failure']}:id.endsWith('provider.js')?{useI18n:()=>({locale:'zh-CN',t:(key:string)=>key,dateTime:(v:string)=>v})}:id.endsWith('errors.js')?{localizeWorkError:(_:string,e:{code:string})=>e.code}:{default:new Proxy({},{get:(_,key)=>String(key)})}
  new Function('require','exports','React',transpile('SecurityExecutionGate.tsx'))(require,gate,React)
  new Function('require','exports','React',transpile('SecurityDecisionForm.tsx'))(require,form,React)
  new Function('require','exports','React',js)(require,exports,React)
@@ -88,9 +90,9 @@ test('固定来源 hash 不一致不能开放写入口；读失败保留旧面�
  ui.render('SecurityActions',props);ui.effects[0]!();await new Promise(resolve=>setImmediate(resolve))
  const card=(root:Node)=>nodes(root).find(n=>typeof n.type==='function'&&(n.type as Function).name==='SecurityActionCard')!
  assert.equal(card(ui.render('SecurityActions',props)).props.known,true)
- mode='wrong';nodes(ui.render('SecurityActions',props)).find(n=>n.type==='button'&&text(n)==='taskExecution.refresh')!.props.onClick();await new Promise(resolve=>setImmediate(resolve))
+ mode='wrong';nodes(ui.render('SecurityActions',props)).find(n=>n.type==='button'&&n.props['aria-label']==='taskExecution.refresh')!.props.onClick();await new Promise(resolve=>setImmediate(resolve))
  assert.equal(card(ui.render('SecurityActions',props)).props.known,false)
- mode='error';nodes(ui.render('SecurityActions',props)).find(n=>n.type==='button'&&text(n)==='taskExecution.refresh')!.props.onClick();await new Promise(resolve=>setImmediate(resolve))
+ mode='error';nodes(ui.render('SecurityActions',props)).find(n=>n.type==='button'&&n.props['aria-label']==='taskExecution.refresh')!.props.onClick();await new Promise(resolve=>setImmediate(resolve))
  const failed=ui.render('SecurityActions',props);assert.ok(card(failed));assert.equal(card(failed).props.known,false);assert.ok(nodes(failed).some(n=>n.props?.role==='alert'))
 })
 test('其它任务的 execute 未决只占对应命令，当前 submit 可用；恢复仍读取原任务',async()=>{
@@ -234,4 +236,22 @@ test('恢复类词表里的每个键都被真实代码引用，不留只挂了�
   const dynamic=combined.includes("'"+prefix+"'+")||combined.includes('"'+prefix+'"+')
   assert.ok(literal||dynamic,'未接线的词条：'+key)
  }
+})
+
+test('来源校验信息按需展开；成功提议后定位新动作而不自动提交审批',async()=>{
+ const ui=load();let current:typeof panel={...panel,actions:[],approvals:[]},proposed=0,submitted=0
+ const source={taskId,ownerId:owner,sourceId:'security-alert-http',reference:{scope:'SOC',type:'alert',id:'alert-1',version:1,snapshotHash:'c'.repeat(64)}}
+ const api:any={list:async()=>current,pending:()=>undefined,recoveryError:()=>undefined,propose:async()=>{proposed++;const created={...action,state:'proposed' as const,version:1,frozen:null};current={...current,actions:[created]};return created},submit:async()=>submitted++}
+ const props={taskId,taskVersion:1,api,sourceApi:{source:async()=>source},attention:[],attentionKnown:true,invalidateAttention:()=>{},changed:async()=>{}}
+ ui.render('SecurityActions',props);ui.effects[0]!();await new Promise(resolve=>setImmediate(resolve))
+ let tree=ui.render('SecurityActions',props)
+ const provenance=nodes(tree).find(n=>n.type==='details'&&text(n).includes(source.reference.snapshotHash))
+ assert.ok(provenance,'固定来源编号与摘要应在可展开的详情里');assert.ok(!provenance.props.open)
+ for(const [type,value] of [['input','合成动作'],['textarea','合成目标'],['textarea','合成理由']] as const){
+  const controls=nodes(tree).filter(n=>n.type===type&&n.props.type!=='checkbox');const field=type==='input'?controls[0]:controls[value==='合成目标'?0:1];field!.props.onChange({target:{value}})
+ }
+ nodes(tree).find(n=>n.type==='input'&&n.props.type==='checkbox')!.props.onChange({target:{checked:true}})
+ tree=ui.render('SecurityActions',props);await nodes(tree).find(n=>n.type==='form')!.props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve))
+ const updated=ui.render('SecurityActions',props),card=nodes(updated).find(n=>typeof n.type==='function'&&(n.type as Function).name==='SecurityActionCard')!
+ assert.equal(card.props.focus,1,'写后回读的新动作应自动展开并聚焦');assert.equal(proposed,1);assert.equal(submitted,0)
 })

@@ -1,8 +1,40 @@
+import {ArtifactService,taskArtifactSource,taskArtifactSessions,ArtifactRevisionRequestService,MethodReuseService} from '@teloa/backend'
+import {createMethodReuseMessageReader} from './method-reuse-native-source.ts'
+import {assertOwnerReviewMessage} from './conversation-work-instruction.ts'
+import {createOwnerPlanHost} from './owner-plan-host.ts'
+import {registerMethodReuseTools} from './method-reuse-tools.ts'
+import {pageCreateCanonicalBody} from '@teloa/contract'
+import {createPersonalProfileHost,personalProfileEndpoints} from './personal-profile.ts'
+import {createHardwareStore,initializeHardwareDevices} from '@teloa/backend'
+import {hardwareEndpoints,directDeviceEndpoints,hardwareRecord,hardwareOperationId,type HardwareBinding,type Conversation} from '@teloa/contract'
+import {createAssistantChannelHost,readAssistantChannelInstallation} from './assistant-channel-host.ts'
+import {createDirectDeviceStore} from '@teloa/backend'
+import {readDirectDeviceConfig,readDevicePrivateFile,readDevicePairingHelper} from './direct-device-config.ts'
+import {createDirectDeviceHost} from './direct-device-host.ts'
+import {createDeviceMediaOwner} from './device-media-owner.ts'
+import {admitDirectDeviceInput} from './direct-device-admission.ts'
+import {createDeviceApprovals} from './device-approvals.ts'
+import type {ApprovalRequestEvent} from '@deepseek-ai/dsh-user-approval/types'
+import {startDevicePairingRuntime} from './device-pairing-runtime.ts'
+import {resolveSessionLineage} from './subagent-lineage.ts'
+import {createHardwareSourceReader,registerHardwareToolGuard,hardwareInputRequests} from './hardware-input-policy.ts'
+import {readHardwareResult,hardwareWorkReceipt} from './hardware-result-reader.ts'
+import {createDshVoiceSessionReader,observeNativeRequest} from './voice-conversation-driver.ts'
+import {readAssistantVoiceContext} from './voice-assistant-context.ts'
+import {installMiniMaxModelHttp} from './minimax-model-http.ts'
+import type {SessionPromptRequest} from '@deepseek-ai/dsh-api-session-controller'
 import {BusinessDashboardResourceService,BusinessConfigurationStore,BusinessConfigurationDraftService,BusinessConfigurationService,BusinessConfigurationPreviewService,BusinessConfigurationPageService,BusinessConversationBindingService,BusinessResponsibilityService,BusinessRecordService,BusinessRecordImportService,parseBusinessImportCsv,BusinessRuntimeService,BusinessSnapshotReferenceService} from '@teloa/backend'
+import {HindsightMemoryProvider,RoleExperienceService,type MemoryProvider} from '@teloa/backend'
+import {readMemoryConfiguration} from './memory-configuration.ts'
 import {businessDashboardResourceEndpoints,createBusinessDashboardResourceHandler} from './business-dashboard-resource.ts'
 import {businessBuilderEndpoints,createBusinessBuilderHandler} from './business-builder.ts'
 import {registerBusinessBuilderTools} from './business-builder-tools.ts'
 import {registerBusinessRecordTools} from './business-record-tools.ts'
+import {registerBusinessChangeSetTools} from './business-change-set-tools.ts'
+import {registerBusinessWorkTools} from './business-work-tools.ts'
+import {businessWorkEndpoints,createBusinessWorkHandler} from './business-work-results.ts'
+import {BusinessChangeSetService,BusinessObjectWorkLinkService} from '@teloa/backend'
+import {authorizeBusinessConversation} from './business-conversation-authorization.ts'
 import {registerBusinessImportTools} from './business-import-tools.ts'
 import {createBusinessImportFilePort} from './business-import-files.ts'
 import {createBusinessImportXlsxPort} from './business-import-xlsx.ts'
@@ -16,6 +48,7 @@ import {createHostIndustryModelProbe} from './industry-model-readiness.ts'
 import {withPresetReadScope} from './preset-read-scope.ts'
 import {workAccess,combineWorkAccessLeases,RoleDelegationService,TwinExecutionConsentService,RoleMemoryViewService,authorizeRoleTaskAssignment,assertRoleDelegationsInactive,readStoredRole,type OwnerWorkAuthority} from '@teloa/backend'
 import {createNativeSessionCapabilities,readNativeSessionCapabilities} from './native-session-capabilities.ts'
+import {installNativeSessionReferenceDirectory} from './native-session-references.ts'
 import {registerNativeCapabilityTools} from './native-capability-tools.ts'
 export {SecurityActionHttpAdapter,type SecurityActionHttpOptions} from './security-action-http-adapter.ts'
 import {SecurityActionHttpAdapter} from './security-action-http-adapter.ts'
@@ -51,7 +84,9 @@ import type {GroupRoutingOutboxPorts} from './group-routing-outbox-driver.ts'
 import {startPlanScheduler} from './plan-scheduler.ts'
 import {createAutoDreamHabitTick} from './auto-dream-habit-tick.ts'
 import {createPlanScheduleHandler,planScheduleEndpoints} from './plan-schedule.ts'
-import {createPlanHandler,createConfirmedPlanHandler,planEndpoints,confirmedPlanEndpoints} from './plans.ts'
+import {createPlanHandler,createConfirmedPlanHandler,readPlanResponse,planEndpoints,confirmedPlanEndpoints} from './plans.ts'
+import {createConfirmedPlanDraftHandler,confirmedPlanDraftEndpoints} from './page-create-plans.ts'
+import {OwnerExecutionAuthority} from '@teloa/backend'
 import {registerPlanTools,authorizePlanManagement} from './plan-tools.ts'
 import {registerConversationWorkTools} from './conversation-work-tools.ts'
 import {ConversationWorkDispatch} from './conversation-work-dispatch.ts'
@@ -73,15 +108,22 @@ import {readSkillInstallDirectory} from './skill-install-directory.ts'
 import type {IndustryLoadPage,IndustryRoleInstance} from '@teloa/backend'
 import {readRunKnowledge} from '@teloa/backend'
 import type {TaskExecutionScope,TaskRun} from '@teloa/backend'
-import {ConversationKnowledgeService,PlanService,MarketContentStore,RoleToolGrantService} from '@teloa/backend'
+import {ConversationKnowledgeService,PlanService,readStoredPlan,MarketContentStore,RoleToolGrantService} from '@teloa/backend'
 import {createMarketContentHandler,marketContentEndpoints,encodeReceipt as encodeMarketReceipt} from './market-content.ts'
 import {createMarketCatalogHandler,marketCatalogEndpoints} from './market-catalog.ts'
-import {credentialKey,type CredentialProvider} from '@deepseek-ai/dsh-credentials'
+import {createCatalogEmployeeInstaller} from './catalog-employee-install.ts'
+import {credentialKey,credentialRef,type CredentialProvider} from '@deepseek-ai/dsh-credentials'
+import {createVoiceService,voiceServiceEndpoints} from './voice-service.ts'
+import {openLocalVoiceVad} from './local-voice-vad.ts'
+import {createVoiceServiceConfig} from './voice-service-config.ts'
+import {createLocalVoiceRecognition} from './local-voice-recognition.ts'
+import {createBrowserVoiceHost,browserVoiceEndpoints} from './browser-voice-host.ts'
+import type {} from './voice-plugin.ts'
 import {createMarketReviewsHandler,marketReviewEndpoints} from './market-reviews.ts'
 import {createResourceInstallReporter,createSignalActivity,detectExclusion,registerUsageActivity} from './usage-stats.ts'
 import {createSolutionRoleResolver,withResourceInstallReport,withSolutionRoleReport} from './market-install-report.ts'
 import {createMarketRanking} from './market-ranking.ts'
-import {createRoleToolGrantHandler,roleGrantPageRules,roleToolGrantEndpoints,referenceToolRules,skillHttpGrantCandidates,taskRunToolRules,validateReferenceToolRules,webToolRules,type SkillHttpGrantCandidate} from './role-tool-grants.ts'
+import {createRoleToolGrantHandler,orchestrationTools,roleGrantPageRules,roleToolGrantEndpoints,referenceToolRules,skillHttpGrantCandidates,taskRunToolRules,validateReferenceToolRules,webToolRules,type SkillHttpGrantCandidate} from './role-tool-grants.ts'
 import {createWebAccessHandler,webAccessEndpoints} from './web-access.ts'
 import {monitorTaskRuns} from './task-run-monitor.ts'
 import {readSessionEvents,projectSessionEvent} from './session-events.ts'
@@ -89,7 +131,12 @@ import {TaskRunDriver} from './task-run-driver.ts'
 import {createTaskRunGroupPublisher} from './task-run-group-publisher.ts'
 import {ObjectConversationService} from '@teloa/backend'
 import {readRunGroupArtifactImageBytes,TaskRunService,TaskRunSubagentService,TaskRunRuntimeLinkService,type TaskRunRuntimeLinks} from '@teloa/backend'
-import {isTextOnlyTaskRun} from './task-run-background.ts'
+import {isTextOnlyTaskRun,taskRunRuntimeId} from './task-run-background.ts'
+import {registerExternalHarnessAdmission} from './external-harness-admission.ts'
+import {createExternalHarnessAuthorizer,ownerExternalHarnessToolRules,validateOwnerToolRules} from './external-harness-policy.ts'
+import {openExternalHarnessStatus} from './external-harness-status.ts'
+import {createExternalHarnessConsent} from './external-harness-consent.ts'
+import {externalHarnessEndpoints,readExternalHarnessWorkView} from '@teloa/contract'
 import {WebAccessPolicyService,TaskRunWebAccessService} from '@teloa/backend'
 import {registerTaskToolGuard,type TaskToolPolicyReader} from './task-tool-guard.ts'
 import {createTaskRunWorkspaceFileAccess,workspaceFileToolRules} from './workspace-file-access.ts'
@@ -97,16 +144,17 @@ import {registerNativeAutoReviewGuard} from './native-auto-review-guard.ts'
 import {guardDecision,protectedRootsFor,redactRunMessage,registerCredentialGuards} from './credential-guards.ts'
 import {knownSecretValues} from './credentials/known-values.ts'
 import {checkPromptSecrets,groupMessageSecretGate,storedSecretSource} from './prompt-secret-gate.ts'
-import {isNativeToolName,nativeToolRules,nativePresetToolRules} from './native-tool-access.ts'
+import {isNativeToolName,nativeToolRules,nativePresetToolRules,presetOrchestrationToolNames} from './native-tool-access.ts'
 import {createTaskRunTeam,stopTaskRunChildren} from './task-run-team.ts'
 import {createTaskRunOrchestration} from './task-run-orchestration.ts'
 import {createTaskRunBrowser,attachTaskRunBrowser} from './task-run-browser.ts'
 import {assertRoutingGuardRegisteredFirst,registerGroupRoutingGuard} from './group-routing-guard.ts'
 import {assertRoutingPreset,isRoutingSession} from './group-routing.ts'
-import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,type GroupRoutingDispatchPorts} from './group-routing-dispatch.ts'
+import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,readRoutingWorkCandidates,type GroupRoutingDispatchPorts} from './group-routing-dispatch.ts'
 import {readSubagentDelegationLimits} from './subagent-delegation.ts'
 import {registerTaskSubagentTool} from './task-subagent-tool.ts'
 import {createTaskRunHandler,taskRunEndpoints} from './task-runs.ts'
+import {createTaskRunDeliveryReader} from './task-run-delivery-status.ts'
 import {createTaskRunFlowHandler,taskRunFlowEndpoints,createConfirmedTaskRunFlowHandler,confirmedTaskRunFlowEndpoints} from './task-run-flows.ts'
 import {TaskRunFlowDriver} from './task-run-flow-driver.ts'
 import {TaskRunFlowService} from '@teloa/backend'
@@ -114,6 +162,7 @@ import {NotificationDeliveryService} from '@teloa/backend'
 import {NotificationDeliveryDriver,createLocalNotificationAdapter,createBroadcastNotificationAdapter} from './notification-deliveries.ts'
 import {createTaskMaterialHandler,createTaskMaterialKnowledgeLoader,taskMaterialEndpoints} from './task-materials.ts'
 import {dshTaskRunPorts,prepareDshTaskSession,taskKnowledgeAuthorization,pickPromptImages,runDateLine,skillHttpRunHint} from './task-run-dsh.ts'
+import {taskInputWithoutMemory} from './task-memory-input.ts'
 import {resolveDshManagedRoleSkills} from './role-skills-dsh.ts'
 import {TaskTransitions} from '@teloa/backend'
 import {TaskMaterialService} from '@teloa/backend'
@@ -127,12 +176,23 @@ import {createGroupAgentGrantHandler,groupAgentGrantEndpoints} from './group-age
 import {createGroupTaskHandler,groupTaskEndpoints} from './group-tasks.ts'
 import {createGroupAttachmentHandler,createGroupAttachmentUploadRoute,groupAttachmentEndpoints,groupAttachmentUploadEndpoint,toBackendBytePorts} from './group-attachments.ts'
 import {groupAttachToolName,registerGroupAttachTool} from './group-attach-tool.ts'
+import {registerGroupMentionTool} from './group-mention-tool.ts'
 import {registerGroupReactTool} from './group-react-tool.ts'
 import {createAttachmentPorts} from './attachments.ts'
 import {createTaskHandler,taskEndpoints} from './tasks.ts'
 import {createProjectHandler,projectEndpoints} from './projects.ts'
+import {ProjectContextService} from '@teloa/backend'
+import {createProjectContextHandler,projectContextEndpoints} from './project-context.ts'
+import {createProjectRuntimeHost} from './project-runtime-host.ts'
+import {createProjectRuntimeAdapters} from './project-runtime-adapters.ts'
+import {createProjectMemoryVerifiedAdapter} from './project-memory-verified-adapter.ts'
+import {createProjectRuntimeHandler,projectRuntimeEndpoints} from './project-runtime.ts'
 import {ProjectService} from '@teloa/backend'
 import {createTaskAttentionHandler} from './task-attention.ts'
+import {createWorkAttentionHandler} from './work-attention.ts'
+import {createBusinessEventOriginVerifier} from './business-event-origin.ts'
+import {businessWorkSourceReader} from '@teloa/backend'
+import {WorkAttentionService} from '@teloa/backend'
 import {TaskAttentionService,IndustryLoadService,createIndustryLoadSource} from '@teloa/backend'
 import {createIndustryLoadsHandler,industryLoadEndpoints} from './industry-loads.ts'
 import {createIndustryPrepareHandler,industryPrepareEndpoints} from './industry-prepare.ts'
@@ -159,9 +219,11 @@ import {IndustryTaskService,IndustryWorkSource} from '@teloa/backend'
 import {createIndustryTasksHandler,industryTaskEndpoints} from './industry-tasks.ts'
 import {IndustryPlanService,IndustryPlanSource} from '@teloa/backend'
 import {createIndustryPlansHandler,industryPlanEndpoints} from './industry-plans.ts'
-import { RoleService,TaskService,RoleLifecycleService,HandoffService,CollaborationService,GroupAgentGrantService,GroupAttachmentService,GroupTaskService,GroupRunMessageService,readRunGroupContext,type RunGroupFilePorts } from '@teloa/backend'
+import { RoleService,TaskService,RoleLifecycleService,HandoffService,CollaborationService,GroupAgentGrantService,GroupAttachmentService,GroupTaskService,GroupRunMessageService,GroupRunResultManifestService,readRunGroupContext,type RunGroupFilePorts } from '@teloa/backend'
 import {readRunGroupTopic} from '@teloa/backend'
-import {GroupReactionService,GroupRoutingDecisionService} from '@teloa/backend'
+import {GroupReactionService,GroupRoutingAttemptService,GroupRoutingDecisionService,GroupRoutingStatusService,GroupWorkInputService,readGroupRunAppendIds,readGroupRunAppendTarget,readGroupTaskBusinessGrant} from '@teloa/backend'
+import {drainGroupWorkInputs,type GroupWorkInputPorts} from './group-work-input-driver.ts'
+import {groupRunAwaitsApproval} from './group-run-append.ts'
 import {readHomeSkills} from './home-skills.ts'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
@@ -171,7 +233,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionHeader, SessionId, SessionStore } from '@deepseek-ai/dsh-session'
+import {SessionSeq,Session as NativeSession,SessionLogOffset} from '@deepseek-ai/dsh-session'
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
@@ -181,7 +245,8 @@ import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-file-reference'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ConversationService, FileConversationRepository, CopyService, FileCopyRepository, CopyRejectedError, CopyPendingError, sessionInput } from '@teloa/backend'
-import { WorkError,roleSupportsScope,taskInput,groupRoutedReactionRequestId,isRecord,officialExtensionPackages,readPageCreateAtomicSkillDraft,readTaskHandoffChangeInput,imChannelEndpoints,bundledExtensionEndpoints,retrievalEndpoints,localModelEndpoints,modelOptionEndpoints,embeddingProviderIds,type EmbeddingProviderId,type CapabilitySnapshot } from '@teloa/contract'
+import {searchConversationContent} from './conversation-content-search.ts'
+import { WorkError,builtinBusinessScopes,roleSupportsScope,taskInput,groupRoutedReactionRequestId,isRecord,officialExtensionPackages,readPageCreateAtomicSkillDraft,readTaskHandoffChangeInput,imChannelEndpoints,bundledExtensionEndpoints,retrievalEndpoints,localModelEndpoints,modelOptionEndpoints,embeddingProviderIds,type DigitalRole,type EmbeddingProviderId,type CapabilitySnapshot } from '@teloa/contract'
 import { registerResources,resourceEndpoints } from './resources.ts'
 import { createCredentialStoreHandler,credentialStoreEndpoints } from './credential-store.ts'
 import {createSkillSecretStore,declaredSkillSecretsResolver,isManagedSkillWinner,skillSecretEndpoints} from './skill-secrets.ts'
@@ -190,7 +255,7 @@ import {getToolResourceProvenance} from './tool-resource-provenance.ts'
 import {createToolResourceUseSnapshots,resourceUseSnapshotSessionScope} from './tool-resource-use-snapshots.ts'
 import {registerRoleConversationContext} from './role-conversation-context.ts'
 import { createArtifactFileReader,artifactFileEndpoints } from './artifact-files.ts'
-import {createArtifactHandler,artifactEndpoints} from './artifacts.ts'
+import {createArtifactHandler,artifactEndpoints,createArtifactSessionSource,createArtifactSourceResolver} from './artifacts.ts'
 import {readDshModelOptions} from './model-options.ts'
 import {createLocalModelsHandler} from './local-models.ts'
 import {installLocalModelRequests} from './local-model-request.ts'
@@ -202,7 +267,7 @@ import {BusinessDataService} from '@teloa/backend'
 import {createBusinessDataHandler,businessDataEndpoints} from './business-data.ts'
 import {BusinessScopeService,BusinessSpaceService,readEdition} from '@teloa/backend'
 import {createBusinessSpaceHandler,businessSpaceEndpoints} from './business-spaces.ts'
-import {createBusinessScopeHandler,businessScopeEndpoints} from './business-scopes.ts'
+import {createBusinessScopeHandler,businessScopeEndpoints,readBusinessScopeLabels} from './business-scopes.ts'
 import {BusinessLedgerService,BusinessDefinitionSourceReader,BusinessLocalDefinitionService,BusinessDefinitionPreviewService,PageCreateDraftService,PageCreatePreviewService,type BusinessLocalDraftInput} from '@teloa/backend'
 import {createBusinessDefinitionHandler,businessDefinitionEndpoints,activeSourceIds} from './business-definitions.ts'
 import {BusinessWarehouseService,BusinessSyncService,BusinessWidgetService,BusinessDashboardService,BusinessSqlExecutor,businessSqlPoolConfig,businessDataPortSyncSource,type BusinessSyncSourceResolver} from '@teloa/backend'
@@ -213,10 +278,24 @@ import {registerBusinessResultTools} from './business-result-tools.ts'
 import {registerLocalRetrieval,type EmbeddingServiceLike} from './local-retrieval.ts'
 import {createPageCreateDraftHandler,pageCreateDraftEndpoints} from './page-create-drafts.ts'
 import {registerPageCreateTools} from './page-create-tools.ts'
+import {registerEmployeeTools} from './employee-tools.ts'
+import {registerLibraryTools} from './library-tools.ts'
+import {registerGroupTools} from './group-tools.ts'
+import {registerGroupWorkLinkTools} from './group-work-link-tools.ts'
+import {registerProjectTools} from './project-tools.ts'
+import {registerTaskConfigurationTools} from './task-configuration-tools.ts'
+import {registerTaskMaterialTools} from './task-material-tools.ts'
+import {createPlatformTaskDraft} from './task-draft-conversation.ts'
+import {createGroupWorkLinkHandler,groupWorkLinkEndpoints} from './group-work-links.ts'
+import {GroupWorkLinkService} from '@teloa/backend'
+import {registerCapabilityDraftTools,createCapabilityDraftApplication,registerCustomMcpTools} from './capability-draft-tools.ts'
+import {registerCapabilityManagementTools,type CapabilityResource} from './capability-management-tools.ts'
+import {createSkillEditHandler,registerSkillEditTools,skillEditEndpoints} from './skill-edit-tools.ts'
 import {builtinSkillCreatorName,prepareBuiltinSkill,prepareBuiltinSkillCreator,registerBuiltinSkill,registerBuiltinSkillCreator,type BuiltinSkillCreator} from './builtin-skill-creator.ts'
 import {builtinDashboardDesignerName} from './builtin-dashboard-designer.ts'
 import {SecurityAlertHttpSource} from './security-alert-source.ts'
 import {BusinessTaskService} from '@teloa/backend'
+import {withBusinessTaskResultMappings,fixedBusinessTaskResultMapping} from './business-task-result-context.ts'
 import {createBusinessTaskHandler,businessTaskEndpoints,readRunBusinessTaskContext} from './business-tasks.ts'
 import {GithubImportService,GithubSourceService,OfficialCatalogService,officialCatalogBuiltin,loadOfficialUpstreamIndex,OfficialCatalogRemote,type GithubHttpPort} from '@teloa/backend'
 import {detectMarketRemoteExclusion,MARKET_INDEX_PUBLIC_KEY,TELOA_APP_VERSION} from './market-remote.ts'
@@ -236,12 +315,12 @@ export const name='teloa-harness-dsh'
 // 子 Agent 的执行态工具闸需要沿会话谱系读取父 Agent；未声明此依赖时，
 // 子会话首轮会在运行时因 Cordis 拒绝读取 `agents` 而失败。
 // 模型目录和固定 Run 策略直接读取 llm；真实兄弟服务不能靠根 Context 桩隐式访问。
-export const inject=['goals','sessionProjections','teloaNativeInput','llm','connection','sessions','sessionController','workspaceRegistry','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
+export const inject=['goals','sessionProjections','systemPrompt','teloaNativeInput','llm','connection','sessions','sessionController','teloaModelCatalog','workspaceRegistry','storageDomain','workingDirectory','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','approval','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
 const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
-const conversationWorkContextEndpoints=['work-context/read','work-context/set','work-context/eligibility','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
+const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
 export const handoffEndpoints=['handoffs/list','handoffs/resolve','handoffs/change'] as const
-const endpointSet=new Set([...conversationWorkContextEndpoints,...projectEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
+const endpointSet=new Set([...externalHarnessEndpoints,...businessWorkEndpoints,...groupWorkLinkEndpoints,...conversationWorkContextEndpoints,...projectEndpoints,...projectContextEndpoints,...projectRuntimeEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...skillEditEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention','work-attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','conversations/search','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
 
 type HandoffPort=Pick<HandoffService,'list'|'resolve'|'change'>
 export function createHandoffHandler(ownerId:string,get:()=>Promise<HandoffPort>):(endpoint:string,payload:unknown)=>Promise<unknown>{
@@ -287,6 +366,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 安全敏感 TELOA_* 只认启动时继承的进程环境：DSH 已把工作区 .env（模型可写）合入 process.env（launch-env.ts）。
   const trusted=securityEnv(ctx)
   warnIgnoredLaunchEnv(ctx)
+  const memoryConfiguration=readMemoryConfiguration(trusted)
+  const hindsightMemory=memoryConfiguration?new HindsightMemoryProvider(memoryConfiguration):undefined
   registerTeloaLogFile(ctx,resolve(resolveTeloaRuntime(projectRoot,trusted),'harness.log'))
   // 不接受无效环境变量的静默降级：拆分上限是执行边界，宿主应在装配时停止。
   const subagentDelegationLimits=readSubagentDelegationLimits(trusted)
@@ -300,11 +381,16 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 不用磁盘原文代替实际生效的工具面。
   assertCompositionSafety(ctx,await readProfileFacts(resolveTeloaDshHome(projectRoot),resolveTeloaDshProfile(trusted)))
   registerSkillContextDedup(ctx)
+  ctx.effect(()=>installMiniMaxModelHttp(ctx),'Teloa MiniMax 模型连接复用')
   const toolResourceProvenance=getToolResourceProvenance(ctx)
   const toolRegistrationContext=toolResourceProvenance.wrapContext(ctx,{kind:'plugin',providerId:'@teloa/harness-dsh',name:'Teloa'})
   const runtimeRoot=resolveTeloaRuntime(projectRoot,trusted)
+  const personalDisplayProfile=createPersonalProfileHost(resolve(runtimeRoot,'personal-profile.json'),owner,code=>ctx.logger.warn('Teloa 显示资料读取失败：%s',code))
   // 设置 → 凭据存储（规格 §0-1、§0-3）：档位与锁定状态、历史明文副本清单。处理器只挂在 /teloa 连接上（见下），模型工具与进程内调用口够不到。
   const credentialProvider=ctx.credentials as unknown as {status?:()=>{tier:'keyring'|'file'|'plaintext'|null;fault:string|null};livePlaintextPath?:()=>string|undefined;quarantinedPlaintextPaths?:()=>string[];paths?:{dshHome:string}}
+  // 语音厂商各用独立凭据（MINIMAX 沿用原名），不复用模型密钥；模型与音色等非秘密设置按厂商原子写入运行目录。
+  const voiceCredentials=ctx.credentials as unknown as CredentialProvider,voiceCredentialRefs={minimax:credentialRef('MINIMAX_VOICE_API_KEY'),openai:credentialRef('OPENAI_VOICE_API_KEY'),elevenlabs:credentialRef('ELEVENLABS_VOICE_API_KEY')} as const
+  const voiceService=createVoiceService({credentials:{describe:async id=>{const info=await voiceCredentials.describe(voiceCredentialRefs[id]);return {configured:info.configured,writable:info.writable}},set:(id,key)=>voiceCredentials.set(voiceCredentialRefs[id],key),resolve:async id=>(await voiceCredentials.resolve(voiceCredentialRefs[id]))?.value},secure:()=>{const status=credentialProvider.status?.();return !!status&&!status.fault&&(status.tier==='keyring'||status.tier==='file')},config:createVoiceServiceConfig(resolve(runtimeRoot,'voice-service.json')),localRecognition:createLocalVoiceRecognition(()=>ctx.reflect.get('speechToText') as Context['speechToText']|undefined)})
   const realOr=(path:string)=>{try{return realpathSync(path)}catch{return path}}
   const credentialStoreHandler=createCredentialStoreHandler({
     status:()=>credentialProvider.status?.()??{tier:null,fault:'store-unavailable'},
@@ -323,6 +409,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const repository=new FileConversationRepository(resolve(runtimeRoot,'conversations.json'))
   // 启动时主动校验；损坏存储不得表现为一个正常的空工作台。
   await repository.read()
+  await installNativeSessionReferenceDirectory(ctx,{owner,bindings:()=>repository.read()})
   // 工作区不再是仓库根，装配期自己建出来；0o700 与运行目录里其余状态一致。
   await mkdir(workspaceRoot,{recursive:true,mode:0o700})
   const workspace=await ctx.workspaceRegistry.create(workspaceRoot,'Teloa')
@@ -341,6 +428,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       return (await ctx.sessionController.create({workspaceId:target,sessionId:brandString<SessionId>(sessionId)})).sessionId
     },
     inspect:async(sessionId)=>inspectOrdinarySession(id=>ctx.sessionController.inspect(id),brandString<SessionId>(sessionId)),
+    pinAssistantTitle:async sessionId=>{
+      if(ctx.workspaceRegistry.archivedSessionIds.includes(brandString<SessionId>(sessionId)))throw new WorkError('teloa/conflict','助手原主聊已归档，请先从会话目录恢复。')
+      await ctx.sessionController.rename({sessionId:brandString<SessionId>(sessionId),title:'Teloa 小松鼠助手'})
+    },
   },{id:randomUUID,now:()=>new Date().toISOString()},async(actor,roleId)=>{
     const {pool,identity,plans}=await autoDreamPlans()
     return (await new RoleService(pool,identity,{plans}).list(actor,{})).find(role=>role.id===roleId)
@@ -469,10 +560,15 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     catch(error){if(error instanceof WorkError&&(error.code==='teloa/source-unavailable'||error.code==='teloa/dependency-unavailable'))return false;throw error}
    })
    const warehouse=new BusinessWarehouseService(pool,identity),widgets=new BusinessWidgetService(pool,identity,businessSqlExecutor,ledger),references=new BusinessSnapshotReferenceService(pool,identity)
-   const records=new BusinessRecordService(pool,identity,{definitions,warehouse,references})
+   const records=new BusinessRecordService(pool,identity,{definitions,warehouse,references,events:{object:async(...args)=>{
+    if(!residentWork)throw new WorkError('teloa/unavailable','业务变化观察尚未就绪。')
+    return trustedWorkEventProducers(residentWork.events).businessObject(...args)
+   }}})
+   const changes=new BusinessChangeSetService(pool,identity,records)
+   const objectWork=new BusinessObjectWorkLinkService(pool,identity,{authorizeSession:async(db,actor,scope,sessionId)=>{if(actor.ownerId!==owner)throw new WorkError('teloa/forbidden','工作不属于当前本人。');await lockBusinessWorkAuthorization(db,sessionId);await authorizeObjectWorkSession(scope,sessionId,new AbortController().signal)}})
    // CSV 读取复用官方附件仓，导入与普通记录共享同一事务原语及固定来源引用。
    const imports=new BusinessRecordImportService(pool,identity,{definitions,store,records,references,files:createBusinessImportFilePort(attachmentPorts),xlsx:createBusinessImportXlsxPort(),tables:{parse:(bytes,mapping,signal)=>parseBusinessImportCsv(bytes,mapping.delimiter,signal)}})
-   return {pool,local,definitions,ledger,store,drafts,imports,responsibility:new BusinessResponsibilityService(pool),configuration:new BusinessConfigurationService(pool,identity,{drafts,store,definitions,runtime:new BusinessRuntimeService(pool,identity),spaces:new BusinessSpaceService(pool,identity)}),configurationPreview:new BusinessConfigurationPreviewService(pool,drafts,definitions,identity),pages:new BusinessConfigurationPageService(pool,identity,{drafts,store,definitions,executor:businessSqlExecutor}),records,preview:new BusinessDefinitionPreviewService(pool,identity,local,definitions,ledger,{widgets,resolveSource:businessSyncSources}),warehouse,widgets,executor:businessSqlExecutor,sync:new BusinessSyncService(pool,identity,definitions,warehouse,businessSyncSources),dashboards:new BusinessDashboardService(pool,identity,definitions,widgets)}
+   return {pool,local,definitions,ledger,store,drafts,imports,changes,objectWork,responsibility:new BusinessResponsibilityService(pool),configuration:new BusinessConfigurationService(pool,identity,{drafts,store,definitions,runtime:new BusinessRuntimeService(pool,identity),spaces:new BusinessSpaceService(pool,identity)}),configurationPreview:new BusinessConfigurationPreviewService(pool,drafts,definitions,identity),pages:new BusinessConfigurationPageService(pool,identity,{drafts,store,definitions,executor:businessSqlExecutor}),records,preview:new BusinessDefinitionPreviewService(pool,identity,local,definitions,ledger,{widgets,resolveSource:businessSyncSources}),warehouse,widgets,executor:businessSqlExecutor,sync:new BusinessSyncService(pool,identity,definitions,warehouse,businessSyncSources,{sync:async(...args)=>{if(!residentWork)throw new WorkError('teloa/unavailable','业务变化观察尚未就绪。');return trustedWorkEventProducers(residentWork.events).businessSync(...args)}}),dashboards:new BusinessDashboardService(pool,identity,definitions,widgets)}
   }
   const businessDefinitionHandler=createBusinessDefinitionHandler(owner,businessScopeIds,async()=>(await businessDefinitionServices()).ledger,businessDefinitionServices)
   const businessImportHandler=createBusinessImportHandler(owner,businessScopeIds,businessDefinitionServices)
@@ -488,9 +584,41 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     const result=await plugins.preview(owner,{source})
     return {permissionSummary:result.permissionSummary}
    }}
-   return {drafts,preview:new PageCreatePreviewService(pool,identity,drafts,business.preview,extensionPreview,{skill:readPageCreateAtomicSkillDraft})}
+   const preview=new PageCreatePreviewService(pool,identity,drafts,business.preview,extensionPreview,{skill:readPageCreateAtomicSkillDraft})
+   return {drafts,preview:{preview:async(...args:Parameters<PageCreatePreviewService['preview']>)=>{
+    const [actor,input,signal]=args,draft=await drafts.read(actor,input,signal)
+    await (await methodReuseService()).assertDraftCurrent(actor.ownerId,{draftId:draft.id,bodyHash:draft.bodyHash},signal)
+    return preview.preview(...args)
+   }}}
   }
-  const pageCreateDraftHandler=createPageCreateDraftHandler(owner,businessScopeIds,pageCreateServices)
+  const readMethodReuseMessage=createMethodReuseMessageReader(owner,{
+   conversation:id=>service.bySession(owner,id),
+   session:async id=>{
+    const live=ctx.agents.get(brandString<SessionId>(id))
+    if(live)return live.session
+    const cold=await ctx.sessionController.inspect(brandString<SessionId>(id))
+    if(cold.meta.id!==id)throw new WorkError('teloa/source-unavailable','原方法采用会话已不可读取。')
+    return NativeSession.create(brandString<SessionId>(id),cold.events,cold.meta,SessionLogOffset(cold.inheritedEventCount))
+   },
+  })
+  async function methodReuseService(prepared?:{body:unknown;assertCurrent:()=>Promise<void>}):Promise<MethodReuseService>{
+   const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},drafts=(await pageCreateServices()).drafts
+   const resolve=createArtifactSourceResolver(owner,createArtifactSessionSource(owner,id=>service.bySession(owner,id)))
+   const artifacts=new ArtifactService(pool,identity,resolve)
+   return new MethodReuseService(pool,identity,{
+    artifacts,drafts,
+    readAcceptedMessage:async(actor,source)=>{await prepared?.assertCurrent();return readMethodReuseMessage(actor,source)},
+    assertSourceCurrent:async(db,actor,artifact)=>{
+     const current=await resolve(actor,artifact.source,db)
+     if(pageCreateCanonicalBody(current.source)!==pageCreateCanonicalBody(artifact.source))throw new WorkError('teloa/version-conflict','方法成果的原来源已变化。')
+    },
+    prepareBody:async()=>{
+     if(!prepared)throw new WorkError('teloa/forbidden','方法草稿需要同一次原创建器正文。')
+     await prepared.assertCurrent();return prepared.body
+    },
+   })
+  }
+  const pageCreateDraftHandler=createPageCreateDraftHandler(owner,businessScopeIds,pageCreateServices,id=>service.bySession(owner,id))
   const businessTaskService=async()=>{const pool=(await resources.database()).pool,identity={id:randomUUID,now:()=>new Date().toISOString()},market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),definitions=(await businessDefinitionServices()).definitions,executions=new IndustryExecutionToolService(pool,identity,loads,new IndustryExecutionToolSource(market,loads),securityReadiness);return new BusinessTaskService(pool,identity,new TaskService(pool,identity),{definitions,loads,works:new IndustryWorkSource(market,loads,industryModelProbe),executions})}
   const businessTaskHandler=createBusinessTaskHandler(owner,businessScopeIds,async()=>businessTaskService())
   // 版本配置在装配时读一次：取值读不懂就不要启动，省得后面把许可错误当成正常的个人版。
@@ -528,10 +656,11 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   }
   const taskMaterialService=async()=>new TaskMaterialService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()})
   // 添加任务知识前按已固定的知识加上这一份做体积预检：超过整段进提示词上限的资料在这里就拒，不等到执行准备。
-  const taskMaterialHandler=createTaskMaterialHandler(owner,taskMaterialService,async(taskId,resourceId)=>{
+  const checkTaskMaterialBudget=async(taskId:string,resourceId:string)=>{
     const materials=await (await taskMaterialService()).list(owner,{taskId})
     await (await resources.database()).service.checkFullTextBudget(await resources.human(),[...materials.map(material=>material.resourceId),resourceId],'task')
-  })
+  }
+  const taskMaterialHandler=createTaskMaterialHandler(owner,taskMaterialService,checkTaskMaterialBudget)
   const loadTaskKnowledge=createTaskMaterialKnowledgeLoader(owner,taskMaterialService,async(target,references,db,signal)=>{
     const binding=await service.bySession(owner,target.sessionId)
     if(binding.sessionId!==target.sessionId||binding.status!=='ready')throw new WorkError('teloa/forbidden','执行会话身份未就绪。')
@@ -581,17 +710,19 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     return {get:service.get.bind(service),list:service.list.bind(service),preview:service.preview.bind(service),install:(actor,input)=>availabilitySync.change(()=>service.install(actor,input))}
   },async installationId=>{
     await availabilitySync.refresh()
-    const installed=await(await skillInstallationService()).get(owner,{installationId})
-    if(installed.state!=='installed')throw new WorkError('teloa/conflict','安装尚未完成，请先核对原请求。')
-    const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market))
-    const source=installed.source,bundle=await new SkillInstallSource(market,loads,industryModelProbe).read(owner,source.kind==='atomic'?{kind:'atomic',contentId:source.contentId}:{kind:'industry',loadId:source.loadId,itemInstanceId:source.itemInstanceId})
-    if(bundle.bundleHash!==installed.bundleHash)throw new WorkError('teloa/storage-corrupt','安装来源与固定内容不一致。')
-    await managedFiles.verify(installed.id,bundle,installed.native)
-    // 遮蔽判定必须按会话真正的视角来看：原生文件 provider 的项目级根目录由 cwd 选出，
-    // 而会话的 cwd 是默认工作区而不是仓库根。用仓库根去看会扫到一份没有会话使用的目录。
-    const observation=await withPresetReadScope(ctx.agentPresets,scope=>managedNative.observe(installed.native.name,{cwd:workspaceRoot,scope},{path:managedFiles.path(installed.id),bodyHash:installed.native.bodyHash,modelInvocable:installed.native.modelInvocable,userInvocable:installed.native.userInvocable}))
-    const current=observation.current?{name:observation.current.name,description:observation.current.description,modelInvocable:observation.current.modelInvocable,userInvocable:observation.current.userInvocable,bodyHash:observation.current.bodyHash,provider:observation.current.provider,source:observation.current.source}:null
-    return {installationId,scope:'default-workspace',state:observation.state,...(observation.reason?{reason:observation.reason}:{}),current}
+    return availabilitySync.stable(async()=>{
+      const installed=await(await skillInstallationService()).get(owner,{installationId})
+      if(installed.state!=='installed')throw new WorkError('teloa/conflict','安装尚未完成，请先核对原请求。')
+      const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market))
+      const source=installed.source,bundle=await new SkillInstallSource(market,loads,industryModelProbe).read(owner,source.kind==='atomic'?{kind:'atomic',contentId:source.contentId}:{kind:'industry',loadId:source.loadId,itemInstanceId:source.itemInstanceId})
+      if(bundle.bundleHash!==installed.bundleHash)throw new WorkError('teloa/storage-corrupt','安装来源与固定内容不一致。')
+      await managedFiles.verify(installed.id,bundle,installed.native)
+      // 遮蔽判定必须按会话真正的视角来看：原生文件 provider 的项目级根目录由 cwd 选出，
+      // 而会话的 cwd 是默认工作区而不是仓库根。用仓库根去看会扫到一份没有会话使用的目录。
+      const observation=await withPresetReadScope(ctx.agentPresets,scope=>managedNative.observe(installed.native.name,{cwd:workspaceRoot,scope},{path:managedFiles.path(installed.id),bodyHash:installed.native.bodyHash,modelInvocable:installed.native.modelInvocable,userInvocable:installed.native.userInvocable}))
+      const current=observation.current?{name:observation.current.name,description:observation.current.description,modelInvocable:observation.current.modelInvocable,userInvocable:observation.current.userInvocable,bodyHash:observation.current.bodyHash,provider:observation.current.provider,source:observation.current.source}:null
+      return {installationId,scope:'default-workspace',state:observation.state,...(observation.reason?{reason:observation.reason}:{}),current}
+    })
   })
 
   const roleMemoryService=async()=>new RoleMemoryService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()})
@@ -602,6 +733,42 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     return workAccess.authorize({kind:'capability',capability:'people',ownerId:actor,sessionId:null,objectId:request.roleId,operation:request.operation==='resume'?'resume':'edit'})
   }}
   const workIdentity={id:randomUUID,now:()=>new Date().toISOString()}
+  // 来源在常驻任务冷恢复之前登记；没有使用过设备通道的安装不创建硬件表。
+  const channelInstallationId=await readAssistantChannelInstallation(database.pool,owner,runtimeRoot)
+  const channelStore=channelInstallationId?createHardwareStore(database.pool,{ownerId:owner,installationId:channelInstallationId}):undefined
+  const nativeHardware=requireNativeInputProvider(ctx).hardware
+  const directConfig=await readDirectDeviceConfig(runtimeRoot)
+  const directTable=(await database.pool.query("select to_regclass('teloa_direct_captures') as name")).rows[0]?.name
+  const directStore=(directConfig||directTable)&&channelInstallationId?createDirectDeviceStore(database.pool,{ownerId:owner,installationId:channelInstallationId}):undefined
+  if(directConfig){
+   if(!directStore)throw new WorkError('teloa/unavailable','设备直连无法核对本机安装身份。')
+   await directStore.initialize()
+   for(const binding of directConfig.devices)await directStore.register(binding)
+  }
+  // 关闭监听不抹掉已受理输入的受限来源；冷恢复、派生工作仍继承原审批。
+  if(directStore&&(directConfig||directTable))for(const id of await directStore.nativeRequestIds())nativeHardware.remember(id)
+  let channelStoreReady:Promise<void>|undefined
+  const hardwareTable=(await database.pool.query("select to_regclass('teloa_device_inputs') as name")).rows[0]?.name
+  if(hardwareTable&&channelStore){
+   for(const id of await channelStore.nativeRequestIds())nativeHardware.remember(id)
+  }
+  const sourceReader=createHardwareSourceReader({known:id=>nativeHardware.knows(id),
+   readEvents:async id=>{const session=sessionStore.get(brandString<SessionId>(id));return session?readSessionEvents(session):(await ctx.sessionController.inspect(brandString<SessionId>(id))).events},
+   parent:async sessionId=>{
+    const row=(await database.pool.query('select id from teloa_task_runs where owner_id=$1 and session_id=$2 order by created_at desc limit 1',[owner,sessionId])).rows[0]
+    if(!row)return null
+    const source=(await(await runService()).origin(owner,{runId:row.id})).source
+    return source?{sessionId:source.sessionId,messageId:source.messageId}:null
+   },
+  })
+  resources.beforeDatabaseClose(registerHardwareToolGuard(toolRegistrationContext,{hasSource:sourceReader}))
+  const channelContextEpochs=new Map<string,number>()
+  const invalidateChannelContext=(id:string)=>channelContextEpochs.set(id,(channelContextEpochs.get(id)??0)+1)
+  ctx.effect(()=>ctx.on('session/disposed',session=>{invalidateChannelContext(String(session.id))}),'Teloa 助手通道上下文失效')
+  const ownerPlans=createOwnerPlanHost(ctx,{owner,conversation:(actor,sessionId)=>service.bySession(actor,sessionId),verifySource:async(db,actor,value)=>{
+    const {kind:_kind,acceptedSource,...source}=value
+    return (await methodReuseService()).assertPlanSourceInTransaction(db,actor,{source,...(acceptedSource?{acceptedSource}:{})})
+  }})
   const roleDelegationHandler=createRoleDelegationHandler(owner,
     async()=>new RoleDelegationService((await resources.database()).pool,workIdentity,ownerWorkAuthority),
     async()=>new TwinExecutionConsentService((await resources.database()).pool,workIdentity,ownerWorkAuthority))
@@ -639,15 +806,20 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     return db?service.getInTransaction(db,owner):service.get(owner,{})
   }
   let residentWork:Awaited<ReturnType<typeof createResidentWorkRuntime>>|undefined
-  const runService=async()=>new TaskRunService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},(actor,id)=>service.bySession(actor,id),{allowedTools:[],onSettled:async(actor,run)=>{
-    try{if(!residentWork)throw new WorkError('teloa/unavailable','受控工作服务尚未就绪。');await residentWork.settleRun(actor,run)}catch(error){ctx.logger.warn('Teloa 工作交付待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
+  let projectRuntimeHost:ReturnType<typeof createProjectRuntimeHost>|undefined
+  let projectVerified:ReturnType<typeof createProjectMemoryVerifiedAdapter>|undefined
+  let settleOwnerArtifact:((actor:string,run:import('@teloa/backend').TaskRun)=>Promise<void>)|undefined
+  const runService=async()=>new TaskRunService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},(actor,id)=>service.bySession(actor,id),{ownerPlans,allowedTools:[],onSettled:async(actor,run)=>{
+    try{if(!residentWork)throw new WorkError('teloa/unavailable','受控工作服务尚未就绪。');await residentWork.settleRun(actor,run);if(projectRuntimeHost&&projectVerified){const source=await projectVerified.forRun(run);if(source)await projectRuntimeHost.ingest(source)}}catch(error){ctx.logger.warn('Teloa 工作交付待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
+    try{await settleOwnerArtifact?.(actor,run)}catch(error){ctx.logger.warn('Teloa 本人成果待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
     try{
+      if(run.roleId===null)return
       const delegations=new RoleDelegationService((await resources.database()).pool,workIdentity)
       const read=await delegations.get(actor,{roleId:run.roleId})
       const pending=read.delegations.find(item=>item.roleVersion===run.roleVersion&&['pausing','ending'].includes(item.state))
       if(pending)await delegations.reconcile(actor,{roleId:run.roleId,expectedVersion:pending.version})
     }catch(error){ctx.logger.warn('Teloa 执行委托待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
-  },runReservation:(actor,id)=>service.isTaskRunReserved(actor,id),roleMemory:(db,actor,target,role)=>(roleMemoryService()).then(memory=>memory.confirmedForRun(db,actor,roleMemoryRunTarget(target,role),role)),groupContext:async(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool),groupTopic:(db,actor,groupContext)=>readRunGroupTopic(db,actor,groupContext),businessContext:async(db,actor,task)=>readRunBusinessTaskContext(actor,task,async(who,input)=>{const identity={id:randomUUID,now:()=>new Date().toISOString()},pool=(await resources.database()).pool,market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),definitions=(await businessDefinitionServices()).definitions;return new BusinessTaskService(pool,identity,new TaskService(pool,identity),{definitions,loads,works:new IndustryWorkSource(market,loads,industryModelProbe)}).executionContextInTransaction(db,who,input)}),industryContext:async(db,actor,taskId)=>(await industryTaskService()).executionContextInTransaction(db,actor,taskId),planContext:async(db,actor,taskId)=>{const context=await planRuntime.executionContext(db,actor,taskId),work=await(await industryPlanService()).executionContextInTransaction(db,actor,taskId);if(work&&!context)throw new WorkError('teloa/storage-corrupt','行业计划工作依据缺少真实调度关联。');return context?{...context,...(work?{work}:{})}:undefined},industrySkills:(db,actor,taskId,roleId)=>resolveIndustryRunSkillBindings(db,actor,taskId,roleId,industryModelProbe),roleGrants:{
+  },runReservation:(actor,id)=>service.isTaskRunReserved(actor,id),roleMemory:(db,actor,target,role)=>(roleMemoryService()).then(memory=>memory.confirmedForRun(db,actor,roleMemoryRunTarget(target,role),role)),groupContext:async(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool),groupTopic:async(db,actor,groupContext)=>readRunGroupTopic(db,actor,groupContext,await personalDisplayProfile.displayName()),businessContext:async(db,actor,task,authorization)=>{const context=await readRunBusinessTaskContext(actor,task,async(who,input)=>{const identity={id:randomUUID,now:()=>new Date().toISOString()},pool=(await resources.database()).pool,market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),definitions=(await businessDefinitionServices()).definitions;return new BusinessTaskService(pool,identity,new TaskService(pool,identity),{definitions,loads,works:new IndustryWorkSource(market,loads,industryModelProbe)}).executionContextInTransaction(db,who,input)});return withBusinessTaskResultMappings(context,authorization,async context=>{const {sync}=await businessDefinitionServices();return sync.taskResultMappingsInTransaction(db,{ownerId:actor,scopeIds:[task.scope]},{reference:context.object,roleId:authorization.roleId})})},industryContext:async(db,actor,taskId)=>(await industryTaskService()).executionContextInTransaction(db,actor,taskId),planContext:async(db,actor,taskId,completion,includeMethodSource)=>{const context=await planRuntime.executionContext(db,actor,taskId,completion,includeMethodSource),work=await(await industryPlanService()).executionContextInTransaction(db,actor,taskId);if(work&&!context)throw new WorkError('teloa/storage-corrupt','行业计划工作依据缺少真实调度关联。');return context?{...context,...(work?{work}:{})}:undefined},industrySkills:(db,actor,taskId,roleId)=>resolveIndustryRunSkillBindings(db,actor,taskId,roleId,industryModelProbe),roleGrants:{
     // validate 与 recheck 都是**运行准备**路径上对岗位已保存的 argumentRules 的核对（不是授权页），
     // 两处一律恒当总开关开着算候选——`webToolRules(true)`。总开关只由派发前的 `task-tool-guard`
     // 闸 ① 执行（逐字理由「设置中已关闭网页搜索与读取。」），不能让这里的候选缺失把同一运行的其余工具
@@ -660,17 +832,38 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       validateReferenceToolRules(run.argumentRules??[],taskRunToolRules([...referenceToolRules(current),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...(ctx.agents.get(brandString<SessionId>(run.sessionId))?nativeToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId))):await nativePresetToolRules(ctx,run.agentPresetId)),...await workspaceFileToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId)))]))
     },
   }})
-  const resident=await createResidentWorkRuntime(ctx,{owner,pool:database.pool,identity:workIdentity,nativeInput:requireNativeInputProvider(ctx).input,ownerAuthority:ownerWorkAuthority,runs:runService,resources:database.service,dailyLogs:roleDailyLogService,ordinaryConversations:service,
+  const businessEventSource=async(...args:Parameters<ReturnType<typeof businessWorkSourceReader>>)=>{
+    const {records,sync}=await businessDefinitionServices()
+    return businessWorkSourceReader({records,sync})(...args)
+  }
+  const businessEventOrigin=createBusinessEventOriginVerifier(owner,{
+    conversation:(actor,sessionId)=>service.bySession(actor,sessionId),
+    session:async sessionId=>{
+      const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
+      if('error' in resolved)throw new WorkError('teloa/session-unavailable','业务修改的原消息尚不可读取。')
+      const session=resolved.agent.session
+      return {sessionId:session.id,events:readSessionEvents(session),isOwnSeq:(seq:number)=>session.isOwnSeq(SessionSeq(seq))}
+    },
+    run:async(db,actor,sessionId,nativeRequestId)=>{
+      const rows=nativeRequestId===undefined?[]:(await db.query('select id,owner_id,session_id,native_request_id from teloa_task_runs where owner_id=$1 and session_id=$2 and native_request_id=$3 limit 2',[actor,sessionId,nativeRequestId])).rows
+      if(rows.length>1)throw new WorkError('teloa/storage-corrupt','业务修改有重复的执行来源。')
+      const row=rows[0],run=row?{id:row.id as string,ownerId:row.owner_id as string,sessionId:row.session_id as string,nativeRequestId:row.native_request_id as string}:null
+      const hasRuns=run!==null||!!(await db.query('select 1 from teloa_task_runs where owner_id=$1 and session_id=$2 limit 1',[actor,sessionId])).rowCount
+      return {run,hasRuns}
+    },
+  })
+  const resident=await createResidentWorkRuntime(ctx,{business:businessEventSource,businessOrigin:businessEventOrigin,owner,pool:database.pool,identity:workIdentity,nativeInput:requireNativeInputProvider(ctx).input,ownerAuthority:ownerWorkAuthority,runs:runService,resources:database.service,dailyLogs:roleDailyLogService,ordinaryConversations:service,
    executionScope:(db,actor,runId,mode)=>runService().then(api=>api.executionScopeInTransaction(db,actor,{runId,mode})),
    verifyInitialMessage:async(run,message,acceptedAt)=>{
     const hint=await skillHttpRunHint(run,declaredSkillSecrets),date={type:'text' as const,text:runDateLine(new Date(acceptedAt))},images=message.content.filter(part=>part.type==='image')
     const {picked,skipped}=pickPromptImages(run.groupContext?.files??[])
     if(images.length&&(!runPorts.groupPrompt||images.length!==picked.length))return false
-    const text=images.length&&skipped?`${run.inputText}\n\n本轮还有 ${skipped} 张已授权图片未进模型。`:run.inputText
     // 与首次发布共用官方图片准入；只复核同内容对象，不能新增 Input 或选择另一份资料。
     const imageParts=[]
     if(images.length)for(const file of picked){const bytes=file.kind==='attachment'?await runPorts.groupPrompt!.readAttachmentImageBytes({attachmentId:file.id,mediaType:file.mime,bytes:file.bytes,width:file.width??0,height:file.height??0}):await runPorts.groupPrompt!.readArtifactImageBytes({artifactId:file.id,version:file.version,sha256:file.sha256,mediaType:file.mime,bytes:file.bytes,name:file.name});imageParts.push({type:'image' as const,mediaType:file.mime as 'image/png'|'image/jpeg'|'image/webp',data:Buffer.from(bytes).toString('base64'),name:file.name})}
-    for(const extra of hint?[[{type:'text' as const,text:hint}],[]]:[[]]){const expected=await ctx.attachments.admitPromptContent([{type:'text',text},...extra,date,...imageParts]);if(JSON.stringify(expected)===JSON.stringify(message.content))return true}
+    // 启用经验后派发省略冻结员工记忆；原 Run 与旧准入回执依然可逐字核对。
+    const inputs=run.roleSnapshot?.kind==='twin'?[run.inputText]:[...new Set([run.inputText,taskInputWithoutMemory(run.inputText)])]
+    for(const inputText of inputs)for(const extra of hint?[[{type:'text' as const,text:hint}],[]]:[[]]){const text=images.length&&skipped?`${inputText}\n\n本轮还有 ${skipped} 张已授权图片未进模型。`:inputText;const expected=await ctx.attachments.admitPromptContent([{type:'text',text},...extra,date,...imageParts]);if(JSON.stringify(expected)===JSON.stringify(message.content))return true}
     return false
    },
    approval:async(db,actor,actionId,currentActionVersion,approvalId)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','审批不属于当前本人。');const current=await securityApprovals.readForExecution(db,securityPrincipal,{actionId,expectedActionVersion:currentActionVersion});if(current.approval.id!==approvalId)throw new WorkError('teloa/version-conflict','审批回执已变化。')},
@@ -678,9 +871,18 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   residentWork=resident
   // 真实关联写开始前撤销旧普通恢复票据；所有模型/本人入口共用同一个固定服务口。
+  let invalidateVoiceContext:(sessionId:string)=>void=()=>{}
+  let voiceTaskIdentityChanged:(sessionId:string)=>Promise<boolean>=async()=>true
   const guardedObjectConversations=(links:ObjectConversationService)=>({
    taskContext:links.taskContext.bind(links),list:links.list.bind(links),bySession:links.bySession.bind(links),
-   change:(actor:string,input:unknown)=>{const row=taskInput(input,['requestId','kind','objectId','expectedObjectVersion','sessionId','expectedLinkVersion','action','scopeId']);if(typeof row.sessionId==='string')resident.invalidateOrdinaryRestore(row.sessionId);return links.change(actor,input)},
+   change:async(actor:string,input:unknown,signal?:AbortSignal,revalidate?:()=>Promise<void>)=>{
+    const row=taskInput(input,['requestId','kind','objectId','expectedObjectVersion','sessionId','expectedLinkVersion','action','scopeId','sourceOnly'])
+    if(typeof row.sessionId==='string'){resident.invalidateOrdinaryRestore(row.sessionId);if(actor===owner&&row.kind==='role')invalidateVoiceContext(row.sessionId)}
+    const result=await links.change(actor,input,signal,revalidate)
+    // 原交办的Task来源关联不改变主助手身份；只有真实Task执行上下文或未知归属才撤销媒体。
+    if(actor===owner&&typeof row.sessionId==='string'&&row.kind==='task'&&row.sourceOnly!==true){let changed=true;try{changed=await voiceTaskIdentityChanged(row.sessionId)}catch{/* 归属无法核对时撤销旧媒体。 */}if(changed)invalidateVoiceContext(row.sessionId)}
+    return result
+   },
   })
   ctx.provide('teloaResidentInputAdmission',resident)
   ctx.provide('teloaTaskRunGoal',resident.goal)
@@ -726,7 +928,38 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    list:async input=>new TaskRunRuntimeLinkService((await resources.database()).pool).list(owner,input),
    put:async input=>new TaskRunRuntimeLinkService((await resources.database()).pool).put(owner,input),
   }
-  const taskTeam=createTaskRunTeam(ctx,subagentDelegation,readTaskToolPolicy,runtimeLinks,resident.goal.observationForSession)
+  const readTaskBusinessBinding=async(sessionId:string,signal:AbortSignal)=>{
+   signal.throwIfAborted()
+   const pool=(await resources.database()).pool,identity={id:randomUUID,now:()=>new Date().toISOString()}
+   return new BusinessTaskService(pool,identity,new TaskService(pool,identity)).hasBusinessSource(owner,sessionId)
+  }
+  const externalStatus=await openExternalHarnessStatus(ctx,owner).catch(error=>{ctx.logger.warn('外部工作状态服务未就绪，外部引擎暂不可用：%s',codeOf(error,'teloa/unavailable'));return undefined})
+  const authorizeExternal=createExternalHarnessAuthorizer(ctx,{owner,runtimeId:taskRunRuntimeId,readPolicy:readTaskToolPolicy,readBusinessBinding:readTaskBusinessBinding,readInstructionWork:async(source,signal)=>{
+    signal.throwIfAborted()
+    const request=await conversationWork.get(owner,{sessionId:source.sessionId,requestId:source.requestId})
+    signal.throwIfAborted()
+    if(!request)return null
+    if(request.kind!=='task'||request.executor!=='general')return {ownerId:owner,request,taskId:null,runId:null}
+    const status=await workDispatch.status(source.sessionId,source.requestId)
+    signal.throwIfAborted()
+    const member=status.members[0]
+    if(status.requestId!==source.requestId||status.sessionId!==source.sessionId||status.members.length!==1||member?.executor?.kind!=='owner'||member.executor.grantId!==source.requestId)throw new WorkError('teloa/storage-corrupt','原通用交办的执行身份不可核对。')
+    return {ownerId:owner,request,taskId:member.task?.id??null,runId:member.run?.id??null}
+  },ownerRun:async(sessionId,provider,signal)=>{
+    const runs=await runService(),run=await runs.skillScope(owner,{sessionId})
+    if(!run||run.executor?.kind!=='owner'||run.knowledge.length||JSON.parse(run.inputText).artifactRevision||!run.allowedTools.includes(provider==='codex'?'subagent_codex':'subagent_claude_code'))return null
+    const lease=await runs.executionAdmission(owner,run.id);signal.throwIfAborted();lease.assertCurrent();return {runId:run.id,nativeRequestId:run.nativeRequestId,assertCurrent:lease.assertCurrent}
+  }})
+  const externalHarness=registerExternalHarnessAdmission(ctx,{
+   preference:exec=>ctx.teloaNativeInput.input.harnessDirective(exec),
+   authorize:input=>{if(!externalStatus)throw new WorkError('teloa/unavailable','外部工作状态服务正在准备，请稍后重试。');return authorizeExternal(input)},
+   reserve:async permit=>{
+    if(permit.runId===null)return
+    await new TaskRunRuntimeLinkService((await resources.database()).pool).reserveExternal(owner,{runId:permit.runId,requestId:permit.requestId,reservationId:permit.reservationId,runtimeId:permit.runtimeId,workspaceRoot:permit.workspaceRoot,provider:permit.provider,maxPerRun:subagentDelegation.limits.maxPerRun})
+   },links:runtimeLinks,save:metadata=>{if(!externalStatus)throw new WorkError('teloa/unavailable','外部工作状态服务尚未就绪。');return externalStatus.save(metadata)},consent:createExternalHarnessConsent(ctx),
+  })
+  resources.beforeDatabaseClose(async()=>{try{await externalHarness.dispose()}finally{await externalStatus?.close()}})
+  const taskTeam=createTaskRunTeam(ctx,subagentDelegation,readTaskToolPolicy,runtimeLinks,resident.goal.observationForSession,async sessionId=>readGroupRunAppendIds((await resources.database()).pool,owner,sessionId))
   const taskBrowser=createTaskRunBrowser(ctx,runtimeLinks,readTaskToolPolicy)
   const taskOrchestration=createTaskRunOrchestration(ctx,subagentDelegation,readTaskToolPolicy,runtimeLinks,{timeoutMs:600_000,maxRounds:6})
   resources.beforeDatabaseClose(taskOrchestration.dispose)
@@ -736,7 +969,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 凭据读取面的守卫与脱敏（规格 §4，抬门槛不是边界）：全局 prepend，扫全部工具参数；已存值取不到时只按前缀形态脱敏。
   let knownUnavailable=false
   const safeKnown=():readonly string[]=>{try{return knownSecretValues(ctx.credentials)}catch{if(!knownUnavailable){knownUnavailable=true;ctx.logger.warn('凭据提供方不可用，脱敏只按前缀形态')}return []}}
-  const credentialRoots=()=>protectedRootsFor({providerPaths:(ctx.credentials as unknown as {protectedPaths?:()=>string[]}|undefined)?.protectedPaths?.()??[],runtimeRoot,projectRoot,env:process.env})
+  const credentialRoots=()=>protectedRootsFor({providerPaths:[...((ctx.credentials as unknown as {protectedPaths?:()=>string[]}|undefined)?.protectedPaths?.()??[]),...(directConfig?[directConfig.tlsKeyFile,directConfig.tlsCertFile]:[])],runtimeRoot,projectRoot,env:process.env})
   registerCredentialGuards(ctx,{roots:credentialRoots,known:safeKnown})
   const taskWorkspaceFiles=createTaskRunWorkspaceFileAccess(ctx,workspaceRoot,readTaskToolPolicy,path=>guardDecision({file_path:path},{toolName:'read',cwd:workspaceRoot,roots:credentialRoots(),known:[],env:process.env,home:homedir()})!==undefined)
   registerTaskToolGuard(ctx,readTaskToolPolicy,
@@ -745,12 +978,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 加上它自己的 tools/pre-execute 闸（有 groupContext 且 canPost 才放行）——自授权只是让它在群运行里可见。
   // teloa_group_react 同理：它只在群运行里给本话题的消息加一个固定表情，同样不属于那四类，
   // 许可全部由它自己的 authorize()（群上下文 ＋ canPost ＋ 本话题）承担。
-  [...selfAuthorizedToolNames],async(sessionId,signal)=>{
-    // 外发闸只在 web_fetch / web_search 这两个工具上问一次，不在每次工具调用上查库。
-    signal.throwIfAborted()
-    const pool=(await resources.database()).pool,identity={id:randomUUID,now:()=>new Date().toISOString()}
-    return new BusinessTaskService(pool,identity,new TaskService(pool,identity)).hasBusinessSource(owner,sessionId)
-  },subagentDelegation,{
+  [...selfAuthorizedToolNames],readTaskBusinessBinding,subagentDelegation,{
     // 上网闸只在 web_fetch / web_search 这两个工具上问一次，不在每次工具调用上查库（与上面的外发绑定读口同一取法）。
     // 故意不缓存这个读口：本人在设置里关掉总开关或加一条拦截域名，下一次外发就按新策略判，不必重启宿主、不必等任何失效窗口。
     policy:async signal=>{signal.throwIfAborted();return webAccessPolicy()},
@@ -768,7 +996,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   resources.beforeDatabaseClose(registerTaskSubagentTool(toolRegistrationContext,subagentDelegation))
   registerRoleMemoryTools(toolRegistrationContext,{
     owner,
-    run:sessionId=>(runService()).then(service=>service.skillScope(owner,{sessionId})),
+    run:async sessionId=>{const run=await(await runService()).skillScope(owner,{sessionId});return run?.roleId==null||run.roleVersion===null?null:{...run,roleId:run.roleId,roleVersion:run.roleVersion}},
     scope:runId=>(runService()).then(service=>service.executionScope(owner,{runId})),
     create:(actor,input)=>(roleMemoryService()).then(service=>service.create(actor,input)),
   })
@@ -782,19 +1010,26 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   /**
    * 员工声明贴回文件的工具。自授权只解决「在群运行里可见」，能不能用由这里的闸判：
-   * 有群执行上下文且本岗位 canPost 为真才放行，其余一律拒。登记表只记意图，
+   * 有群执行上下文或固定计划汇报目标，且本岗位 canPost 为真才放行。登记表只记意图，
    * 字节读取、核对与定版都在运行结束后的 `post` 事务里。
    */
-  const groupAttachClaims=registerGroupAttachTool(toolRegistrationContext,{context:async(sessionId,signal)=>{
+  const groupResultManifests=async()=>new GroupRunResultManifestService((await resources.database()).pool,runGroupFilePorts)
+  const groupDeclarationContext=async(sessionId:string,signal:AbortSignal)=>{
     signal.throwIfAborted()
     const run=await(await runService()).skillScope(owner,{sessionId})
-    if(!run?.groupContext||run.sessionId!==sessionId||!['accepted','active'].includes(run.state))return undefined
+    if(!run||run.sessionId!==sessionId||!['accepted','active'].includes(run.state))return undefined
+    // skillScope 已重核原任务与计划快照；计划只声明本轮成果，不获得群历史或表情工具权限。
+    const context=run.groupContext??JSON.parse(run.inputText).planContext?.reportGroup
+    if(!context)return undefined
     signal.throwIfAborted()
-    const read=await new GroupAgentGrantService((await resources.database()).pool,()=>new Date().toISOString()).get(owner,{groupId:run.groupContext.groupId,roleId:run.groupContext.roleId})
+    const read=await new GroupAgentGrantService((await resources.database()).pool,()=>new Date().toISOString()).get(owner,{groupId:context.groupId,roleId:run.roleId})
     const grant=read.grant
-    const canPost=read.status==='active'&&grant!==null&&grant.grantVersion===run.groupContext.grantVersion&&grant.canPost
+    const canPost=read.status==='active'&&grant!==null&&grant.grantVersion===context.grantVersion&&grant.canPost
     return {canPost,nativeRequestId:run.nativeRequestId}
-  }})
+  }
+  registerGroupMentionTool(toolRegistrationContext,{context:groupDeclarationContext,declare:async(sessionId,nativeRequestId,signal)=>{await(await groupResultManifests()).mentionSelf(owner,{sessionId,nativeRequestId},signal)}})
+  const groupAttachClaims=registerGroupAttachTool(toolRegistrationContext,{context:groupDeclarationContext,declare:async(sessionId,nativeRequestId,claim,signal)=>(await groupResultManifests()).declare(owner,{sessionId,nativeRequestId,claim},signal),
+  markNoVision:async(sessionId,nativeRequestId,signal)=>(await groupResultManifests()).markNoVision(owner,{sessionId,nativeRequestId},signal)})
   /**
    * 员工给群消息加表情的工具。前两道闸与上面贴回文件那把完全同口径（群执行上下文 ＋ 现读 grant 的 canPost），
    * 再一道是本话题：目标消息必须落在本次运行来源消息所在的那个话题里，跨话题一律拒。
@@ -841,7 +1076,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const resolveManagedRunSkill=createManagedRunSkillResolver(owner,managedRunSkillPorts)
   const runSkillScopes=createManagedRunSkillScope(ctx,{managedRoot:managedFiles.root,verify:createManagedRunSkillVerifier(owner,managedRunSkillPorts)})
   resources.beforeDatabaseClose(()=>runSkillScopes.dispose())
-  // 受管 MCP 连接器：从官方目录快照按 catalogId 查询连接器条目。store 方法（import/findByIdentity）
+  // 受管 MCP 连接器：从官方目录（快照与已采用的在线连接器）按 catalogId 查询连接器条目。store 方法（import/findByIdentity）
   // 在 getConnectorEntry 路径中不被调用，传入 noop 对象仅为满足 OfficialCatalogService 构造签名。
   const officialCatalogForMcp=new OfficialCatalogService({} as unknown as MarketContentStore)
   // 模型二期：本机 Ollama 七端点。路由写入只经 DSH settings / credentials（dsh-base 组合必带，已入 inject）；地址只由本人在设置里填写。
@@ -867,19 +1102,83 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if(resolved.agent.session.id!==run.sessionId)throw new WorkError('teloa/forbidden','运行技能作用域与固定会话不一致。')
     await runSkillScopes.ensure(resolved.agent,{id:run.id,sessionId:run.sessionId,skills:run.skills},signal)
   },(sessionId,installationIds,signal,database)=>resolveDshManagedRoleSkills(ctx,owner,sessionId,installationIds,id=>service.bySession(owner,id),signal,managedRunSkillPorts,database),readRoleScopes,runtimeLinks,(config,signal)=>localModelsHandler.prepareRequest(config,signal),name=>declaredSkillSecrets(name),requireNativeInputProvider(ctx).input,{goalObservation:resident.goal.observation,stopGoal:resident.goal.stop})
+  runPorts.conversationReviewSource=async(run,signal)=>{
+    signal.throwIfAborted();const source=await(await runService()).conversationReviewSource(owner,run)
+    if(!source){signal.throwIfAborted();return null}
+    const binding=await service.bySession(owner,source.source.sessionId);signal.throwIfAborted()
+    if(binding.ownerId!==owner||binding.sessionId!==source.source.sessionId||binding.status!=='ready'||binding.purpose==='task-run')throw new WorkError('teloa/forbidden','本人复核来源会话身份不一致。')
+    const cold=await ctx.sessionController.inspect(brandString<SessionId>(source.source.sessionId));signal.throwIfAborted()
+    assertOwnerReviewMessage(owner,NativeSession.create(brandString<SessionId>(source.source.sessionId),cold.events,cold.meta,SessionLogOffset(cold.inheritedEventCount)),source)
+    return source
+  }
+  runPorts.prepareOwnerPolicy=async(sessionId,agentPresetId,signal,target)=>{
+    signal.throwIfAborted()
+    const agent=ctx.agents.get(brandString<SessionId>(sessionId))
+    if(!agent||agent.session.header.agentPreset!==agentPresetId)throw new WorkError('teloa/forbidden','本人执行会话配置已变化。')
+    const rules=taskRunToolRules([...nativeToolRules(ctx,agent),...await workspaceFileToolRules(ctx,agent),...webToolRules(true)])
+    const externalRules=ownerExternalHarnessToolRules(['subagent_codex','subagent_claude_code'].filter(name=>ctx.tools.get(name,agent)!==undefined),realpathSync(await ctx.workingDirectory.ensure(agent,signal)))
+    const ownerRules=[...rules,...externalRules]
+    const planned=(await(await runService()).preparationTarget(owner,{taskId:target.taskId,expectedTaskVersion:target.taskVersion})).ownerPlanPolicy
+    if(planned){
+      if(planned.agentPresetId!==agentPresetId)throw new WorkError('teloa/version-conflict','本人计划的原运行配置已变化。')
+      const currentNames=new Set(ownerRules.map(rule=>rule.name))
+      if(planned.allowedTools.some(name=>!currentNames.has(name)))throw new WorkError('teloa/forbidden','原计划工具在当前宿主不可用。')
+      validateOwnerToolRules(planned.argumentRules??[],ownerRules)
+      if((await(await taskMaterialService()).list(owner,{taskId:target.taskId})).length)throw new WorkError('teloa/forbidden','本人计划不能借后加任务资料扩大原范围。')
+      signal.throwIfAborted();return {allowedTools:[...planned.allowedTools],...(planned.argumentRules?{argumentRules:structuredClone(planned.argumentRules)}:{}),knowledge:[]}
+    }
+    const materials=await(await taskMaterialService()).list(owner,{taskId:target.taskId})
+    if(materials.some(item=>!item.available))throw new WorkError('teloa/version-conflict','本人选择的任务资料已变化，请核对原引用。')
+    const knowledge=readRunKnowledge(await readExecutionKnowledge({...target,knowledgeIds:materials.map(item=>item.resourceId)},materials.map(item=>item.resourceId),signal,['general']))
+    if(materials.some(item=>!knowledge.some(resource=>resource.id===item.resourceId&&resource.version===item.resourceVersion)))throw new WorkError('teloa/version-conflict','任务资料未按选定版本交接。')
+    const selectedRules=materials.length?rules:ownerRules
+    signal.throwIfAborted();return {allowedTools:selectedRules.map(rule=>rule.name),argumentRules:selectedRules,knowledge}
+  }
+  settleOwnerArtifact=async(actor,run)=>{
+    if(run.executor?.kind!=='owner'||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)return
+    const artifacts=new ArtifactService(database.pool,workIdentity,async(who,expected,db)=>({source:await taskArtifactSource(db,who,expected.id,true),sessionIds:await taskArtifactSessions(db,who,expected.id,true)}))
+    if(await artifacts.ownerRunReceipt(actor,run)){await(await runService()).ownerResultPublished(actor,run.id);return}
+    // 升级前未登记发布待办的旧 Run 只保留原执行记录，不在冷读时隐式新增成果。
+    if(!(await database.pool.query('select id from teloa_task_runs where owner_id=$1 and id=$2 and owner_result_pending=true',[actor,run.id])).rowCount)return
+    const events=await runPorts.events(run),text=readTaskRunGroupResult(events.slice(0,run.evidence.endSeq+1),run.nativeRequestId,await runPorts.continuations?.(run,events),undefined,{requireReview:true,runId:run.id})
+    if(!text?.trim()){await(await runService()).ownerResultBlocked(actor,run.id);throw new WorkError('teloa/delivery-review-required','尚无完整可核对成果，打开原执行记录核对后重新交办。')}
+    const revision=JSON.parse(run.inputText).artifactRevision as {requestId:string}|undefined
+    if(revision){
+      await artifacts.reviseFromRequest(actor,{revisionId:revision.requestId,runId:run.id,text},async(db,id)=>{await(await runService()).executionScopeInTransaction(db,actor,{runId:id,mode:'completion'});return workAccess.authorize({kind:'capability',capability:'general-agent',ownerId:actor,sessionId:run.sessionId,objectId:run.taskId,operation:'run'})})
+    }else{
+      const requestId=workRequestChildId(run.id,'owner-artifact')
+      if(text.length>64000)throw new WorkError('teloa/conflict','成果正文较长，完整内容保留在原执行记录，请本人选择内容后定版。')
+      const sections=[];for(let offset=0;offset<text.length;offset+=16000)sections.push({id:'result-'+sections.length,title:sections.length?'工作成果（续）':'工作成果',text:text.slice(offset,offset+16000)})
+      const source=await taskArtifactSource(database.pool,actor,run.taskId,false)
+      await artifacts.create(actor,{requestId,source,content:{title:source.title,sections,snapshotIds:[],note:'AI 工作成果，待本人核对'}})
+    }
+    await(await runService()).ownerResultPublished(actor,run.id)
+  }
+  runPorts.publishOwnerResult=run=>settleOwnerArtifact!(owner,run)
   // 手动执行与自动化都经执行驱动启动：被原生宿主接受即记一次当日活动
   runPorts.onAccepted=()=>signalActivity()
+  const stopNativeRun=runPorts.stop
+  runPorts.stop=async(run,signal)=>{await externalHarness.stop(run.id,signal);await stopNativeRun(run,signal)}
+  // 小结工具是否进入本轮模型目录，与它们自己的闸同一真源（run → plan 来源为本岗位 system-digest）。
+  runPorts.isDigestRun=async(run,signal)=>{
+   signal.throwIfAborted()
+   return (await(await roleDailyLogService()).digestRun(owner,{runId:run.id}))!==null
+  }
+  if(hindsightMemory)runPorts.employeeExperienceEnabled=async(run,signal)=>{
+   signal.throwIfAborted()
+   return run.roleId===null?false:run.roleSnapshot?run.roleSnapshot.kind==='employee':(await new RoleService(database.pool,workIdentity).get(owner,run.roleId))?.kind==='employee'
+  }
   runPorts.stableStart=availabilitySync.stable
-  runPorts.continuations=taskTeam.runContinuations
+  runPorts.continuations=(run,events)=>taskTeam.runContinuations(run,events)
   const backgroundState=runPorts.backgroundState
   runPorts.backgroundState=async run=>{
    // get 的 Run 不附子级投影；例外须补读全量登记，不能把仅 outstanding 为空当作从未派发。
-   const fixed=isTextOnlyTaskRun(run)?{...run,subagents:await subagentDelegation.list(run.id)}:run
+   const fixed=isTextOnlyTaskRun(run)||run.executor?.kind==='owner'?{...run,subagents:await subagentDelegation.list(run.id)}:run
    const background=await backgroundState?.(fixed)
    // 固定空权限与全关联核对已排除 Team/编排；冷读结果无需恢复负责人 Agent。
-   if(background?.ownerOnly===true)return background
+   if(background?.ownerOnly===true||background?.reviewOnly===true)return background
    const team=await taskTeam.state(run),orchestration=await taskOrchestration.state(run)
-   return {outstanding:background?.outstanding===true||team.outstanding||orchestration.outstanding,interrupted:background?.interrupted===true||team.interrupted||orchestration.interrupted}
+   return {outstanding:background?.outstanding===true||team.outstanding||orchestration.outstanding,interrupted:background?.interrupted===true||team.interrupted||orchestration.interrupted,...(background?.cancelled===true?{cancelled:true}:{})}
   }
   runPorts.stopChildren=async(run,signal)=>{
    const children=await new TaskRunSubagentService((await resources.database()).pool,{now:()=>new Date().toISOString()}).outstanding(owner,run.id)
@@ -900,9 +1199,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
      return bytes
     }catch(error){await client.query('rollback');throw error}finally{client.release()}
    },
-   markNoVision:(sessionId,nativeRequestId)=>groupAttachClaims.markNoVision(sessionId,nativeRequestId),
+   markNoVision:(sessionId,nativeRequestId,signal)=>groupAttachClaims.markNoVision(sessionId,nativeRequestId,signal),
   }
   runPorts.publishGroupResult=createTaskRunGroupPublisher({
+   failure:async(run,code)=>new GroupRunMessageService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()}).failure(owner,{runId:run.id,nativeRequestId:run.nativeRequestId,code}),
    post:async input=>{
     const signal=new AbortController().signal
     // 声明登记时已过 tools/pre-execute 守卫；贴出前按会话 cwd 再判一次，防登记后把文件换成指向凭据的链接。
@@ -923,7 +1223,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     }
     return new GroupRunMessageService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},artifacts,runGroupFilePorts,groupRoutingPersistence).post(owner,redactRunMessage(input,safeKnown))
    },
-   run:(sessionId,nativeRequestId)=>({files:groupAttachClaims.claims(sessionId,nativeRequestId),noVision:groupAttachClaims.noVision(sessionId,nativeRequestId)}),
+   run:async(sessionId,nativeRequestId)=>(await groupResultManifests()).read(owner,{sessionId,nativeRequestId}),
    clear:(sessionId,nativeRequestId)=>groupAttachClaims.clear(sessionId,nativeRequestId),
    // 员工回帖也是一条新群消息：接力由同一道路由判断接手，服务端不解析正文里的 @。
    route:messageId=>{void runtimeAdmission.defer(()=>dispatchGroupRouting(ctx,owner,messageId,groupRoutingDispatchPorts,new AbortController().signal)).catch(error=>ctx.logger.warn('Teloa 群内路由未完成：%s',codeOf(error,'teloa/dependency-unavailable')))},
@@ -936,12 +1236,13 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    return subagents.length?'outstanding':'none'
   }
   runPorts.controlState=run=>resident.controls.stateForRun(owner,{runId:run.id})
+  runPorts.prepareRetry=resident.prepareRetry
   await resident.attachRunDriver({ports:runPorts,runtimeLinks:new TaskRunRuntimeLinkService(database.pool)})
   // 广播适配器：本机日志为 primary，IM 通道插件经 teloaWork.notifications.addAdapter 追加。
   const notificationBroadcast=createBroadcastNotificationAdapter(createLocalNotificationAdapter(ctx.logger),ctx.logger)
   const notificationDriver=new NotificationDeliveryDriver(new NotificationDeliveryService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()}),notificationBroadcast,{now:()=>new Date().toISOString(),limit:50})
   const deliverNotifications=(actor:string,signal:AbortSignal)=>runtimeAdmission.run(()=>notificationDriver.deliver(actor,signal))
-  const planRuntime=createPlanRuntime({owner,getPool:async()=>(await resources.database()).pool,conversations:service,getRunService:runService,runPorts,loadTaskKnowledge,deliverNotifications,reportNotification:code=>ctx.logger.warn('Teloa 通知投递待恢复：%s',code)})
+  const planRuntime=createPlanRuntime({owner,ownerPlans,verifyWorkEvent:resident.events.verifiedSourceInTransaction.bind(resident.events),getPool:async()=>(await resources.database()).pool,conversations:service,getRunService:runService,runPorts,loadTaskKnowledge,deliverNotifications,reportNotification:code=>ctx.logger.warn('Teloa 通知投递待恢复：%s',code)})
   resources.beforeDatabaseClose(startPlanScheduler({
     recover:(now,signal)=>runtimeAdmission.run(()=>planRuntime.coordinator.recover(now,signal)),
     tick:(now,signal)=>runtimeAdmission.run(async()=>{await collectLocalMaterialEvents(database.pool,owner,database.service,resident.events,async(actor,scope)=>({ownerId:actor,kind:'agent',scopeIds:[scope]}),signal,{runs:runService,controls:resident.controls});await dispatchPendingPlanEvents(owner,{events:resident.events,dispatch:async(actor,occurrence,currentSignal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','计划事件不属于当前本人。');await planRuntime.dispatchOccurrence(occurrence,currentSignal)},report:(_eventId,code)=>ctx.logger.warn('Teloa 计划事件待核对：%s',code)},signal);await planRuntime.coordinator.tick(now,signal)}),
@@ -961,21 +1262,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   resources.beforeDatabaseClose(startPlanScheduler({recover:async()=>{},tick:(now,signal)=>runtimeAdmission.run(()=>habitTick(now,signal)),report:(_phase,code)=>ctx.logger.warn('Teloa 分身观察待恢复：%s',code)}))
   const planScheduleHandler=createPlanScheduleHandler(owner,{isAvailable:()=>true,overview:planRuntime.readPorts.overview,getStatus:planRuntime.readPorts.status,executionHistory:planRuntime.readPorts.executionHistory,skipHistory:planRuntime.readPorts.skipHistory})
-  const taskRunHandlerBase=createTaskRunHandler(owner,runService,runPorts,loadTaskKnowledge,{conversations:service,links:guardedObjectConversations(new ObjectConversationService(database.pool,(actor,id)=>service.bySession(actor,id),()=>new Date().toISOString()))},{listMany:(actor,runIds)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds),recover:(actor,input)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).recover(actor,input)},{estimate:async sessionId=>{
+  const taskRunHandler=createTaskRunHandler(owner,runService,runPorts,loadTaskKnowledge,{beforeCreate:sessionId=>resident.invalidateOrdinaryRestore(sessionId),conversations:service,links:guardedObjectConversations(new ObjectConversationService(database.pool,(actor,id)=>service.snapshotBySession(actor,id),()=>new Date().toISOString()))},{listMany:(actor,runIds)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds),recover:(actor,input)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).recover(actor,input)},{estimate:async sessionId=>{
    try{
     const agent=ctx.agents.get(brandString<SessionId>(sessionId)),meter=Reflect.get(ctx,'tokenMeter') as {measure?:(session:unknown)=>{totalTokens?:unknown}}|undefined,total=agent===undefined?undefined:meter?.measure?.(agent.session).totalTokens
     return typeof total==='number'&&Number.isSafeInteger(total)&&total>=0&&total<=2147483647?total:undefined
    }catch{return undefined}
-  }},{listMany:(actor,runIds)=>new TaskRunWebAccessService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds)},createTaskRunModelReader(ctx,runPorts.continuations))
-  const taskRunHandler:typeof taskRunHandlerBase=(...args)=>{
-   const [endpoint,payload]=args
-   if(endpoint==='task-runs/prepare'&&payload&&typeof payload==='object'){
-    const sessionId=Reflect.get(payload,'sessionId'),requestId=Reflect.get(payload,'requestId')
-    if(typeof sessionId==='string')resident.invalidateOrdinaryRestore(sessionId)
-    else if(typeof requestId==='string')resident.invalidateOrdinaryRestore('task-run-'+requestId)
-   }
-   return taskRunHandlerBase(...args)
-  }
+  }},{listMany:(actor,runIds)=>new TaskRunWebAccessService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds)},createTaskRunModelReader(ctx,runPorts.continuations),createTaskRunDeliveryReader({receipt:(actor,run)=>new ArtifactService(database.pool,workIdentity,async(who,expected,db)=>({source:await taskArtifactSource(db,who,expected.id,true),sessionIds:await taskArtifactSessions(db,who,expected.id,true)})).ownerRunReceipt(actor,run),events:run=>runPorts.events(run),...(runPorts.continuations?{continuations:runPorts.continuations}:{}),...(runPorts.goalObservation?{goalObservation:runPorts.goalObservation}:{})}))
   const admitFlowInTransaction=async(db:Parameters<TaskRunService['executionAdmissionInTransaction']>[0],actor:string,runId:string)=>{
    if(actor!==owner)throw new WorkError('teloa/forbidden','Flow 不属于当前本人。')
    const api=await runService(),role=await api.executionAdmissionInTransaction(db,actor,runId),run=await api.readVerifiedInTransaction(db,actor,runId)
@@ -1088,18 +1380,18 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // OAuth 回调路由 /oauth/callback 挂在宿主 HTTP 服务上（inject 含 webServer），令牌刷新定时器每分钟一次；关停时一并撤回
   // 仅浏览器验收宿主（TELOA_BROWSER_ACCEPTANCE=1）且验收脚本给出本机假 MCP 地址时：追加两条夹具连接器并放行环回授权服务器
   const oauthAcceptance=acceptanceOAuthFixture(trusted)
-  const {handler:managedMcpConnectionBase,restoreConnections:restoreMcpConnections,getManagedMcpToolRules,dispose:disposeMcpConnections,callTool:callManagedMcpTool,isReadOnlyTool:isManagedMcpReadOnlyTool,isConnected:isManagedMcpConnected,writeToolLabel:managedMcpWriteToolLabel}=createManagedMcpConnectionHandler(ctx,runtimeRoot,id=>{
+  const {handler:managedMcpConnectionBase,restoreConnections:restoreMcpConnections,getManagedMcpToolRules,dispose:disposeMcpConnections,callTool:callManagedMcpTool,captureSourceAuthority:captureManagedSourceAuthority,withSourceAuthority:withManagedSourceAuthority,isReadOnlyTool:isManagedMcpReadOnlyTool,isConnected:isManagedMcpConnected,writeToolLabel:managedMcpWriteToolLabel}=createManagedMcpConnectionHandler(ctx,runtimeRoot,id=>{
    const fixture=oauthAcceptance?.entry(id)
    if(fixture)return fixture
-   // stdio 配方随条目带上工件里的完整 lock，安装按它 npm ci 并逐条核对
+   // stdio 配方随条目带上工件里的完整 lock，安装按它 npm ci 并逐条核对；在线索引条目由连接记录保存添加时的定义
    const entry=officialCatalogForMcp.getConnectorEntry(id)
-   return entry&&{...entry,packageLock:officialCatalogForMcp.getConnectorPackageLock(id)}
+   return entry&&(officialCatalogForMcp.isRemoteConnector(id)?{...entry,pinDefinition:true as const}:{...entry,packageLock:officialCatalogForMcp.getConnectorPackageLock(id)})
   },undefined,oauthAcceptance?.createOAuthManager)
   const managedMcpConnectionHandler=withResourceInstallReport(managedMcpConnectionBase,reportResourceInstall,catalogEntryVersion)
   resources.beforeDatabaseClose(disposeMcpConnections)
   // 目录声明的写工具在个人会话与执行态调用前都弹官方审批卡
   registerManagedMcpWriteApproval(ctx,managedMcpWriteToolLabel)
-  businessMcpSource=createMcpSyncSource(input=>callManagedMcpTool(input.serverName,input.tool,input.arguments,input.signal??AbortSignal.timeout(60_000)),{connected:isManagedMcpConnected,readOnly:isManagedMcpReadOnlyTool})
+  businessMcpSource=createMcpSyncSource(input=>callManagedMcpTool(input.serverName,input.tool,input.arguments,input.signal??AbortSignal.timeout(60_000),input.authority),{connected:isManagedMcpConnected,readOnly:isManagedMcpReadOnlyTool,capture:captureManagedSourceAuthority,commit:withManagedSourceAuthority})
   const mcpConnectionRestore=runtimeAdmission.run(()=>restoreMcpConnections()).catch(error=>ctx.logger.warn('受管 MCP 连接恢复未完成：%s',codeOf(error,'teloa/dependency-unavailable')))
   resources.beforeDatabaseClose(()=>mcpConnectionRestore)
   // 业务同步与看板刷新：同步来源与受管 MCP 已就绪后才起调度。周期以分钟计，每 30 秒看一次到期项即可（到期判定要逐范围读声明）；
@@ -1111,9 +1403,20 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 方案附带的 AI 员工：查证函数在下方定义，调用发生在建岗之后，所以用箭头函数延迟取用
   const industryRolesHandler=withSolutionRoleReport(industryRolesBase,reportResourceInstall,(loadId,roleId,day)=>solutionRoleEntry(loadId,roleId,day),()=>detectExclusion()===undefined)
   const taskAttentionHandler=createTaskAttentionHandler(owner,async()=>new TaskAttentionService((await resources.database()).pool))
+  const workAttentionHandler=createWorkAttentionHandler(owner,async()=>{
+   const {pool}=await resources.database(),business=await businessDefinitionServices(),{drafts}=await pageCreateServices(),tasks=new TaskAttentionService(pool)
+   return new WorkAttentionService({
+    scopes:async(actor,input)=>new BusinessScopeService(pool).attentionScopes(actor,input),
+    tasks:{list:(actor,input)=>tasks.list(actor,input)},
+    changeSets:{listPage:(actor,input)=>business.changes.listPage(actor,input)},
+    sync:{status:(actor,scope)=>business.sync.status(actor,scope)},
+    drafts:{pendingForAttention:actor=>drafts.pendingForAttention(actor)},
+   })
+  })
   const projectHandler=createProjectHandler(owner,async()=>new ProjectService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()}))
+  const projectContextHandler=createProjectContextHandler(owner,async()=>new ProjectContextService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()}))
   const taskHandler=createTaskHandler(owner,async()=>new TaskService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},ownerWorkAuthority),async()=>new TaskTransitions((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()}))
-  const objectConversations=async()=>guardedObjectConversations(new ObjectConversationService((await resources.database()).pool,(actor,sessionId)=>service.bySession(actor,sessionId),()=>new Date().toISOString()))
+  const objectConversations=async()=>guardedObjectConversations(new ObjectConversationService((await resources.database()).pool,(actor,sessionId)=>service.snapshotBySession(actor,sessionId),()=>new Date().toISOString()))
   ctx.effect(()=>ctx.provide('teloaSessionModelScope',{isIdentityLinked:async(sessionId:string)=>(await (await objectConversations()).bySession(owner,{sessionId})).some(link=>link.kind==='role')}))
   const handleObjectConversations=async(endpoint:string,payload:unknown)=>{
     const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},links=await objectConversations()
@@ -1153,7 +1456,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       ...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),
       // 候选与保存共用执行配置资格，分身保持在岗身份；不把停用委托当成暂停分身。
       // 技能代发换成逐技能枚举（roleGrantPageRules）：没有可代发技能即无此候选，保存同源拒绝。
-      ...(configurable?roleGrantPageRules(taskRunToolRules([...await nativePresetToolRules(ctx,role.runtimeConfig?.agentPresetId),...await workspaceFileToolRules(ctx)]),skillHttp):[]),
+      // 编排工具按岗位预设的真实工具面给候选：标准（native）预设没有 run_code，只有 PTC 预设才有；保存同源校验。
+      ...(configurable?roleGrantPageRules(taskRunToolRules([...await nativePresetToolRules(ctx,role.runtimeConfig?.agentPresetId),...await workspaceFileToolRules(ctx)],await presetOrchestrationToolNames(ctx,orchestrationTools,role.runtimeConfig?.agentPresetId)),skillHttp):[]),
       // 上网的两条候选同此前置条件，并跟着总开关走：关掉时授权页没有可勾项，保存校验也一并拒。
       ...(configurable?webToolRules((await webAccessPolicy(db)).enabled):[]),
     ]
@@ -1173,8 +1477,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     }catch(error){await db.query('rollback');throw error}finally{db.release()}
   },subagentDelegationLimits)
   const webAccessHandler=createWebAccessHandler(owner,async()=>new WebAccessPolicyService((await resources.database()).pool,()=>new Date().toISOString()))
+  const planService=async()=>{
+   const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()}
+   return new PlanService(pool,identity,new MarketContentStore(pool,identity),ownerWorkAuthority,(actor,id)=>service.bySession(actor,id),businessEventSource,ownerPlans)
+  }
   const planOperations:Parameters<typeof createPlanHandler>[1]=async()=>{
-   const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},plans=new PlanService(pool,identity,new MarketContentStore(pool,identity),ownerWorkAuthority)
+   const plans=await planService()
    return {
     configureWorkConfirmed:(actor,input)=>plans.configureWorkConfirmed(actor,input),createConfirmed:(actor,input)=>plans.createConfirmed(actor,input),changeConfirmed:(actor,input)=>plans.changeConfirmed(actor,input),
     list:(actor,input)=>plans.list(actor,input),get:(actor,input)=>plans.get(actor,input),create:(actor,input)=>plans.create(actor,input),change:(actor,input)=>plans.change(actor,input),
@@ -1183,18 +1491,56 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   }
   const planHandler=createPlanHandler(owner,planOperations)
   const confirmedPlanHandler=createConfirmedPlanHandler(owner,planOperations)
+  const confirmedPlanDraftHandler=createConfirmedPlanDraftHandler(owner,{
+   draft:async(draftId,signal)=>{const {drafts}=await pageCreateServices();return drafts.read({ownerId:owner,scopeIds:[...await businessScopeIds()]},{draftId},signal)},
+   method:async(draft,signal)=>(await methodReuseService()).assertDraftCurrent(owner,{draftId:draft.id,bodyHash:draft.bodyHash},signal),
+   plans:planService,
+   operationPlanId:async(requestId,phase,signal)=>{
+    signal?.throwIfAborted()
+    const {pool}=await resources.database()
+    if(phase==='create'){
+     const row=(await pool.query('select * from teloa_plans where owner_id=$1 and request_id=$2',[owner,requestId])).rows[0]
+     return row?readStoredPlan(row).id:null
+    }
+    const row=(await pool.query('select plan_id,request_spec,result from teloa_plan_changes where owner_id=$1 and request_id=$2',[owner,requestId])).rows[0]
+    if(!row)return null
+    if(!isRecord(row.request_spec)||(phase==='enable'?row.request_spec.action!=='enable':!isRecord(row.request_spec.configuration)))throw new WorkError('teloa/storage-corrupt','原计划确认回执的动作不一致。')
+    const result=readPlanResponse(row.result,owner)
+    if(result.id!==row.plan_id)throw new WorkError('teloa/storage-corrupt','原计划确认回执的归属不一致。')
+    return row.plan_id as string
+   },
+  })
   const marketContentHandler=createMarketContentHandler(owner,async()=>{
     const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},market=new MarketContentStore(pool,identity)
     const githubImport=new GithubImportService(market,{read:(ownerId,input)=>new GithubSourceService(pool,{now:identity.now},githubHttp).read(ownerId,input)})
     return {import:(actor,input)=>market.import(actor,input),importGithub:(actor,input)=>githubImport.importIndustry(actor,input),importGithubSkill:(actor,input)=>githubImport.importSkill(actor,input),get:(actor,input)=>market.get(actor,input),getImport:(actor,input)=>market.getImport(actor,input),list:(actor,input)=>market.list(actor,input)}
   })
-  const marketCatalogHandler=withResourceInstallReport(createMarketCatalogHandler(owner,async()=>{
+  const catalogServices=async()=>{
     const {pool,service:resourceService}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()},market=new MarketContentStore(pool,identity)
     const loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),knowledge=new IndustryKnowledgeService(pool,identity,loads,new IndustryReferenceCatalog(pool,market,loads),resourceService)
     const industryRoles=new IndustryRoleService(pool,identity,loads,new IndustryRoleSource(market,loads),knowledge,new RoleService(pool,identity,{plans:new PlanService(pool,identity,market)}))
-    const catalog=new OfficialCatalogService(market,undefined,{catalogRoleIds:(ownerId,entries)=>industryRoles.catalogRoleIds(ownerId,entries)},githubHttp)
+    const catalog=new OfficialCatalogService(market,undefined,{catalogRoleIds:(ownerId,entries,contentHash)=>industryRoles.catalogRoleIds(ownerId,entries,contentHash)},githubHttp)
+    return {catalog,industryRoles}
+  }
+  // 单个目录员工的完整资源安装：复用固定内容 → 加载 → 方法安装 → 原一键准备（保持暂停），各端口取原 handler。
+  const installCatalogEmployee=createCatalogEmployeeInstaller(owner,async()=>{
+    const {catalog,industryRoles}=await catalogServices()
+    return {
+     entry:id=>catalog.roleEntryForAdd(id),
+     locate:entry=>industryRoles.catalogEmployee(owner,entry,(id,generation)=>catalog.roleContentHash(id,generation)),
+     importContent:async input=>{const {content}=await catalog.addRolePackage({ownerId:owner,kind:'human'},input);return {id:content.id,hash:content.hash}},
+     currentSpace:async()=>await businessSpaceHandler('business-spaces/current',{}) as {id:string;version:number},
+     loads:(endpoint,payload)=>industryLoadsHandler(endpoint,payload),
+     skills:(endpoint,payload)=>skillInstallationsHandler(endpoint,payload),
+     roles:(endpoint,payload)=>industryRolesHandler(endpoint,payload),
+     prepare:(endpoint,payload,options)=>industryPrepareHandler(endpoint,payload,undefined,'catalog',options),
+    }
+  })
+  const marketCatalogHandler=withResourceInstallReport(createMarketCatalogHandler(owner,async()=>{
+    const {catalog}=await catalogServices()
     return {list:(actor,request)=>catalog.list(actor,request as Parameters<typeof catalog.list>[1]),add:(actor,input)=>catalog.add(actor,input),solutionPackage:(_actor,input)=>catalog.solutionPackage(input.entryId),
-     addRole:async(actor,input)=>{if(actor.kind!=='human'||!actor.ownerId)throw new WorkError('teloa/forbidden','当前主体无权添加官方目录条目。');return industryRoles.createFromCatalog(actor.ownerId,input,catalog.roleEntryForAdd(input.entryId))}}
+     rolePackage:(_actor,input)=>catalog.rolePackage(input.entryId),
+     addRole:async(actor,input)=>{if(actor.kind!=='human'||actor.ownerId!==owner)throw new WorkError('teloa/forbidden','当前主体无权添加官方目录条目。');return installCatalogEmployee(input)}}
   },encodeMarketReceipt,marketRanking),reportResourceInstall,catalogEntryVersion)
   const solutionRoleEntry=createSolutionRoleResolver({
     load:loadId=>industryLoadsHandler('industry-loads/get',{loadId}),
@@ -1258,14 +1604,17 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 已存值来源与群聊闸、会话发表评价闸共用
   const storedSecrets=storedSecretSource(()=>ctx.credentials,message=>ctx.logger.warn(message))
   const groupSecretGate=groupMessageSecretGate(storedSecrets)
-  // 群协作的十三个读写口不在同一个服务上：既有十个仍是 CollaborationService，表情两个与路由决策一个
-  // 各有自己的表与服务，在这里折成一个提供方，分发仍只有 groupHandler 一处。
+  // 群消息、资料、表情与路由各自维护原服务，在此组合提供方，统一由 groupHandler 分发。
   const groupHandler=createGroupHandler(owner,async()=>{
     const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()}
     const collaboration=new CollaborationService(pool,identity,groupRoutingPersistence),reactions=new GroupReactionService(pool,{now:identity.now}),routing=new GroupRoutingDecisionService(pool,{now:identity.now})
     return {
       list:(actor,input)=>collaboration.list(actor,input),get:(actor,input)=>collaboration.get(actor,input),create:(actor,input)=>collaboration.create(actor,input),change:(actor,input)=>collaboration.change(actor,input),
       messages:(actor,input)=>collaboration.messages(actor,input),
+      messagePage:(actor,input)=>collaboration.messagePage(actor,input),messageSearch:(actor,input)=>collaboration.messageSearch(actor,input),
+      messageBody:(actor,input)=>collaboration.messageBody(actor,input),
+      reading:(actor,input)=>collaboration.reading(actor,input),markRead:(actor,input)=>collaboration.markRead(actor,input),
+      attention:(actor,input)=>collaboration.attention(actor,input),mentionMessages:(actor,input)=>collaboration.mentionMessages(actor,input),
       // 本人发的每一条群消息落库之后同样过一次路由；fire-and-forget，路由不可用不能让群说不了话。
       send:async(actor,input)=>{
         const message=await collaboration.send(actor,input)
@@ -1274,18 +1623,30 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       },
       resources:(actor,input)=>collaboration.resources(actor,input),resource:(actor,input)=>collaboration.resource(actor,input),saveResource:(actor,input)=>collaboration.saveResource(actor,input),withdrawResource:(actor,input)=>collaboration.withdrawResource(actor,input),
       reactions:(actor,input)=>reactions.list(actor,input),toggleReaction:(actor,input)=>reactions.toggle(actor,input),routing:(actor,input)=>routing.list(actor,input),
+      // 原生工具审批只记在原 Run 会话日志里；这里只读日志，不提交任何输入或决定。
+      routingStatus:(actor,input)=>new GroupRoutingStatusService(pool,async sessions=>{const waiting=new Set<string>();for(const id of sessions){const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(id));if(!('error' in resolved)&&groupRunAwaitsApproval(readSessionEvents(resolved.agent.session)))waiting.add(id)}return waiting}).status(actor,input),
+      // 沿原消息重新安排：只登记新尝试并唤醒原消息，随后与发送同一条 fire-and-forget 编排；不发新正文。
+      retryRouting:async(actor,input)=>{
+        const saved=await new GroupRoutingAttemptService(pool,{now:identity.now}).retry(actor,input)
+        void runtimeAdmission.defer(()=>dispatchGroupRouting(ctx,actor,saved.messageId,groupRoutingDispatchPorts,new AbortController().signal)).catch(error=>ctx.logger.warn('Teloa 群内路由未完成：%s',codeOf(error,'teloa/dependency-unavailable')))
+        return saved
+      },
     }
   },groupSecretGate)
+  const groupWorkLinkHandler=createGroupWorkLinkHandler(owner,async()=>new GroupWorkLinkService((await resources.database()).pool,{now:()=>new Date().toISOString()}))
   const groupAgentGrantHandler=createGroupAgentGrantHandler(owner,async()=>new GroupAgentGrantService((await resources.database()).pool,()=>new Date().toISOString()))
   const groupTaskHandler=createGroupTaskHandler(owner,async()=>{const pool=(await resources.database()).pool,identity={id:randomUUID,now:()=>new Date().toISOString()};return new GroupTaskService(pool,identity,new TaskService(pool,identity))})
   // 「谁该回」路由的全部端口。建任务与一键 prepare/start 复用既有分发口（`plan-dispatch-dsh.ts:8,30` 同一条路），
   // 话题锁与决策行归 GroupRoutingDecisionService；宿主这里不另起第二条编排、不自己解析正文里的 @。
   const groupRoutingDispatchPorts:GroupRoutingDispatchPorts={
     decisions:new GroupRoutingDecisionService(database.pool,{now:()=>new Date().toISOString()}),
+    attempts:new GroupRoutingAttemptService(database.pool,{now:()=>new Date().toISOString()}),
+    workCandidates:readRoutingWorkCandidates,
+    workInputs:new GroupWorkInputService(database.pool,{now:()=>new Date().toISOString()}),
     group:readRoutingGroup,
-    message:async(actor,messageId)=>readRoutingMessage(actor,messageId,(await resources.database()).pool),
+    message:async(actor,messageId)=>readRoutingMessage(actor,messageId,(await resources.database()).pool,await personalDisplayProfile.displayName()),
     candidates:(actor,id,db)=>readRoutingCandidates(actor,id,db,database.pool),
-    topic:readRoutingTopic,
+    topic:async(actor,groupId,rootId,db,messageId)=>readRoutingTopic(actor,groupId,rootId,db,messageId,await personalDisplayProfile.displayName()),
     // 三个写端口都再核一次本人：这三条路由绕开了浏览器 RPC 的 owner 固定，身份只能在这里自证。
     createTask:async(actor,input)=>{
       if(actor!==owner)throw new WorkError('teloa/forbidden','群内路由建任务不属于当前本人。')
@@ -1314,7 +1675,27 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    report:code=>ctx.logger.warn('Teloa 群投递待核对：%s',code),
   }
   groupRoutingDispatchPorts.delivery=groupDelivery
-  const pumpResident=(signal:AbortSignal)=>runtimeAdmission.run(()=>resident.pump(groupDelivery,(actor,messageId,currentSignal)=>dispatchGroupRouting(ctx,actor,messageId,groupRoutingDispatchPorts,currentSignal),signal))
+  // 群对原工作的追加与停止：复用一键准备/启动与原工作控制；常驻泵与路由定案后都会排空，未知结果只按原身份核对。
+  const groupWorkInputPorts:GroupWorkInputPorts={inputs:new GroupWorkInputService(database.pool,{now:()=>new Date().toISOString()}),prepare:groupRoutingDispatchPorts.prepare,start:groupRoutingDispatchPorts.start,readRun:async(actor,runId,signal)=>{signal.throwIfAborted();if(actor!==owner)throw new WorkError('teloa/forbidden','群工作追加不属于当前本人。');return(await runService()).get(actor,{runId})},reconcile:groupDelivery.reconcile,
+   stop:async(actor,input,signal)=>{
+    if(actor!==owner)throw new WorkError('teloa/forbidden','群工作停止不属于当前本人。')
+    const lineage=await resident.lineage.read(actor,{taskId:input.taskId})
+    if(!lineage)return 'unknown'
+    const control=await resident.ownerRpc('work-controls/get',{controlId:lineage.roundControlId},signal) as {version:number;state:string}
+    if(control.state==='stopping'||control.state==='stopped')return 'accepted'
+    await resident.ownerRpc('work-controls/change',{requestId:input.requestId,controlId:lineage.roundControlId,expectedVersion:control.version,action:'stop',scope:'round',roundControlId:null},signal)
+    return 'accepted'
+   },
+   report:code=>ctx.logger.warn('Teloa 群工作追加待核对：%s',code),
+   // 活动 Run 即时追加：经官方会话控制器 queue 模式排入原 Run 会话，与本人普通追问同一原生准入；只按固定 rpcId 核对受理证据。
+   append:{
+    target:async(actor,requestId)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','群工作追加不属于当前本人。');return readGroupRunAppendTarget(database.pool,actor,requestId)},
+    events:async sessionId=>{const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId));return 'error' in resolved?[]:readSessionEvents(resolved.agent.session)},
+    run:async(actor,runId,signal)=>{signal.throwIfAborted();if(actor!==owner)throw new WorkError('teloa/forbidden','群工作追加不属于当前本人。');const run=await(await runService()).get(actor,{runId});return {state:run.state,sessionId:run.sessionId}},
+    submit:async(sessionId,nativeRequestId,text,signal)=>{await ctx.sessionController.prompt({sessionId:brandString<SessionId>(sessionId),requestId:brandString<SessionRequestId>(nativeRequestId),mode:'queue' as const,content:[{type:'text',text}]},signal)},
+   }}
+  groupRoutingDispatchPorts.drainWorkInputs=(actor,signal)=>drainGroupWorkInputs(actor,groupWorkInputPorts,signal)
+  const pumpResident=(signal:AbortSignal)=>runtimeAdmission.run(async()=>{await resident.pump(groupDelivery,(actor,messageId,currentSignal)=>dispatchGroupRouting(ctx,actor,messageId,groupRoutingDispatchPorts,currentSignal),signal);await drainGroupWorkInputs(owner,groupWorkInputPorts,signal);if(projectRuntimeHost&&projectVerified){const host=projectRuntimeHost;await projectVerified.recover(signal,source=>host.ingest(source,{retryOnTransient:true}))}})
   resources.beforeDatabaseClose(startPlanScheduler({recover:(_now,signal)=>pumpResident(signal),tick:(_now,signal)=>pumpResident(signal),report:(_phase,code)=>ctx.logger.warn('Teloa 常驻协作待核对：%s',code)}))
   // 运行上下文里的文本类附件要现读正文；只改一个键名走同一处适配，不再写第二份按 kind 的分流。
   // 文件类按 maxBytes 只读前段（文本正文只要前 groupFileTextMaxBytes 字节）；图片仍整张读，交给同一处按 kind 分流的适配。
@@ -1325,20 +1706,68 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     return {upload:(actor,input)=>service.upload(actor,input),list:(actor,input)=>service.list(actor,input),read:(actor,input)=>service.read(actor,input),withdraw:(actor,input)=>service.withdraw(actor,input)}
   })
   const hostTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone
-  const workLinks=guardedObjectConversations(new ObjectConversationService(database.pool,(actor,id)=>service.bySession(actor,id),()=>new Date().toISOString()))
+  const workLinks=guardedObjectConversations(new ObjectConversationService(database.pool,(actor,id)=>service.snapshotBySession(actor,id),()=>new Date().toISOString()))
+  const memoryProvider:MemoryProvider|undefined=hindsightMemory?{
+   retain:async(bank,id,documents,signal)=>{
+    if(!checkPromptSecrets(documents.map(document=>document.content),()=>[...storedSecrets(),...(memoryConfiguration?.token?[memoryConfiguration.token]:[])]).ok)throw new WorkError('teloa/dependency-unavailable','经验中含有密钥信息，未发送到记忆服务。')
+    await hindsightMemory.retain(bank,id,documents,signal)
+   },
+   operation:(bank,id,signal)=>hindsightMemory.operation(bank,id,signal),
+   recall:async(bank,query,signal)=>{
+    if(!checkPromptSecrets([query],()=>[...storedSecrets(),...(memoryConfiguration?.token?[memoryConfiguration.token]:[])]).ok)throw new WorkError('teloa/dependency-unavailable','当前输入含有密钥信息，未发送到记忆服务。')
+    return hindsightMemory.recall(bank,query,signal)
+   },
+  }:undefined
+  const employeeExperience=async(role:DigitalRole,scope:string,query:string,signal:AbortSignal|undefined,authorize:()=>Promise<void>)=>{
+   if(!memoryProvider||!memoryConfiguration||role.kind!=='employee')return ''
+   const pool=(await resources.database()).pool
+   const load=async()=>{
+    signal?.throwIfAborted();await authorize()
+    const current=await new RoleService(pool,workIdentity).get(owner,role.id)
+    if(!current||current.version!==role.version||current.ownerId!==owner||current.kind!=='employee'||current.state==='retired'||!roleSupportsScope(current.scopes,scope))throw new WorkError('teloa/version-conflict','员工记忆范围已变化，请核对后继续。')
+    return (await roleMemoryService()).confirmedForExperience(pool,owner,scope,current)
+   }
+   return (await new RoleExperienceService(pool,memoryProvider,{providerKey:new URL(memoryConfiguration.endpoint).href,timeoutMs:memoryConfiguration.timeoutMs??4000}).read({ownerId:owner,roleId:role.id,roleVersion:role.version,scope,query,...(signal?{signal}:{}),load})).text
+  }
   registerRoleConversationContext(ctx,{
-    owner,
+    owner,privateMemory:input=>projectAdapters.privateMemory(input),
+    memoryEnabled:sessionId=>projectRuntimeHost?.native.legacyRoleExperienceEnabled(sessionId)??Promise.resolve(false),
     conversation:sessionId=>service.bySession(owner,sessionId),
     requestedRoleId:sessionId=>service.requestedRoleId(owner,sessionId),
     links:sessionId=>workLinks.bySession(owner,{sessionId}),
     role:roleId=>new RoleService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()}).get(owner,roleId),
+    // 每个模型步都会读：只取单行名称；范围行仅供展示，读失败按“读不到”处理，不拖垮整轮员工单聊。
+    scopeTitle:async scopeId=>builtinBusinessScopes.find(item=>item.scope===scopeId)?.title??((await database.pool.query('select title from teloa_business_scopes where owner_id=$1 and scope=$2',[owner,scopeId]).catch(()=>({rows:[]}))).rows[0]?.title as string|undefined)??null,
+    ...(memoryProvider?{
+     experience:async({sessionId,role,scopeId,query,signal})=>employeeExperience(role,scopeId,query,signal,async()=>{
+      const binding=await service.bySession(owner,sessionId),links=(await workLinks.bySession(owner,{sessionId})).filter(link=>link.kind==='role'&&link.active)
+      if(links.length!==1||links[0]?.objectId!==role.id||links[0].scopeId!==scopeId||links[0].conversationId!==binding.id)throw new WorkError('teloa/forbidden','员工会话范围已变化，不能读取旧经验。')
+     }),
+     taskExperience:async({sessionId,query,signal})=>{
+      const row=(await database.pool.query("select id from teloa_task_runs where owner_id=$1 and session_id=$2 and state in ('submitting','accepted','active') order by created_at desc,id desc limit 1",[owner,sessionId])).rows[0]
+      if(!row)return ''
+      const runs=await runService(),run=await runs.get(owner,{runId:row.id}),target=await runs.executionScope(owner,{runId:run.id}),role=run.roleId===null?null:await new RoleService(database.pool,workIdentity).get(owner,run.roleId)
+      if(!role||role.kind!=='employee')return ''
+      const text=await employeeExperience(role,target.scope,query,signal,async()=>{
+       const current=await runs.executionScope(owner,{runId:run.id})
+       if(current.sessionId!==sessionId||current.scope!==target.scope||current.taskVersion!==target.taskVersion)throw new WorkError('teloa/version-conflict','任务经验读取范围已变化。')
+      })
+      return {text,replaceFrozenMemory:true as const}
+     },
+    }:{}),
   })
   const isTaskConversation=async(sessionId:string)=>{
    if(!(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='task'))return false
    return !(await database.pool.query('select 1 from teloa_conversation_work_requests where owner_id=$1 and session_id=$2 limit 1',[owner,sessionId])).rowCount
   }
+  voiceTaskIdentityChanged=isTaskConversation
   const sessionCapabilitiesReader=createNativeSessionCapabilities(ctx,{owner,conversations:service,links:workLinks,pool:database.pool,isRoutingSession})
   workAccess.installSessionCapabilities(sessionCapabilitiesReader)
+  const deviceMediaOwner=createDeviceMediaOwner()
+  const browserVoice=createBrowserVoiceHost(ctx,{owner,mediaOwner:deviceMediaOwner,speech:voiceService.speech,configured:voiceService.configured,providerId:voiceService.providerId,conversation:id=>service.bySession(owner,id),requestedRoleId:id=>service.requestedRoleId(owner,id),role:id=>new RoleService(database.pool,workIdentity).get(owner,id),links:workLinks,readHomeContext:id=>conversationWork.context(owner,{sessionId:id}),assistantEligible:async id=>!new Set<string>(ctx.workspaceRegistry.archivedSessionIds).has(id)&&(await conversationWorkEligibility(id)).eligible})
+  invalidateVoiceContext=id=>{browserVoice.invalidateSession(id);invalidateChannelContext(id)}
+  ctx.provide('teloaVoice',Object.freeze({...browserVoice.plugin,speakPcm:voiceService.speakPcm,openPcmSession:voiceService.openPcmSession,openVad:()=>openLocalVoiceVad(dshHome)}))
+  resources.beforeDatabaseClose(()=>browserVoice.dispose())
   ctx.effect(()=>()=>workAccess.releaseSessionCapabilities(sessionCapabilitiesReader),'Teloa 宿主会话能力读取器')
   resources.beforeDatabaseClose(registerNativeCapabilityTools(toolRegistrationContext,owner))
   const conversationWorkEligibility=async(sessionId:string)=>{
@@ -1352,8 +1781,20 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    if('error' in resolved)throw new WorkError('teloa/session-unavailable','当前会话尚不可读取。')
    if(resolved.agent.session.header.origin==='subagent'||await service.isTaskRunReserved(actor,sessionId)||(await workLinks.bySession(actor,{sessionId})).some(link=>link.kind==='role')||await isTaskConversation(sessionId))throw new WorkError('teloa/forbidden','此会话不能改用本人主会话交办上下文。')
    return {...binding,submitted:readSessionEvents(resolved.agent.session).some(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user')}
-  },async(actor,sessionId)=>{const guard=await businessBindings.prepareWorkGuard(actor,sessionId);return (db,input)=>{if(input.kind==='set'||input.kind==='reserve')resident.invalidateOrdinaryRestore(sessionId);return guard(db,input)}},async(db,actor)=>['general',...(await new BusinessScopeService(db).list(actor)).map(item=>item.scope).filter(scope=>scope!=='general')],database.dispatchLocks)
+  },async(actor,sessionId)=>{const guard=await businessBindings.prepareWorkGuard(actor,sessionId);return async(db,input)=>{if(input.kind==='set'&&(await service.snapshotBySession(actor,sessionId)).purpose==='assistant'&&(input.scopeId!=='general'||input.roleId!==null))throw new WorkError('teloa/forbidden','小松鼠主聊保留通用身份，请在独立工作中指定业务与员工。');if(input.kind==='set'||input.kind==='reserve')resident.invalidateOrdinaryRestore(sessionId);if(input.kind==='set')invalidateVoiceContext(sessionId);return guard(db,input)}},async(db,actor)=>['general',...(await new BusinessScopeService(db).list(actor)).map(item=>item.scope).filter(scope=>scope!=='general')],database.dispatchLocks)
   const businessBindings:BusinessConversationBindingService=new BusinessConversationBindingService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()},{drafts:new BusinessConfigurationDraftService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()}),conversations:service,contexts:conversationWork,visibleSessions:async signal=>{const {items}=await ctx.sessionController.list({},signal??new AbortController().signal),archived=new Set(ctx.workspaceRegistry.archivedSessionIds);return items.filter(item=>!archived.has(item.sessionId))}})
+  const projectAdapters=createProjectRuntimeAdapters(ctx,{owner,pool:database.pool,conversations:service,links:workLinks,runs:runService,resources:database.service,roleMemories:roleMemoryService,ownerExecution:new OwnerExecutionAuthority(database.pool,ownerPlans),isBuilder:sessionId=>businessBindings.isBuilder(owner,sessionId)})
+  projectVerified=createProjectMemoryVerifiedAdapter({owner,pool:database.pool,runs:runService,inspect:projectAdapters.inspect,resource:projectAdapters.resource})
+  projectRuntimeHost=createProjectRuntimeHost(ctx,{
+   owner,pool:database.pool,budgets:resident.budgets,
+   ...projectAdapters,loadVerifiedEvidence:projectVerified.loadVerifiedEvidence,verifiedSources:projectVerified.verifiedSources,
+   model:async(sessionId,signal)=>localModelsHandler.prepareRequest(await projectAdapters.model(sessionId,signal),signal),
+   applies:sessionId=>!isRoutingSession(sessionId),
+   checkText:text=>{if(!checkPromptSecrets([text],storedSecrets).ok)throw new WorkError('teloa/forbidden','项目背景含有密钥信息，请先移除后继续。')},
+   report:code=>ctx.logger.warn('Teloa 项目上下文待核对：%s',code),
+  })
+  resources.beforeDatabaseClose(()=>projectRuntimeHost?.dispose())
+  const projectRuntimeHandler=createProjectRuntimeHandler(owner,async()=>{if(!projectRuntimeHost)throw new WorkError('teloa/host-unavailable','项目运行上下文尚未就绪。');return projectRuntimeHost})
   const businessBuilderServices=async()=>{
    const business=await businessDefinitionServices()
    return {...business,preview:business.configurationPreview,bindings:businessBindings}
@@ -1383,6 +1824,31 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    context:sessionId=>conversationWork.context(owner,{sessionId}),
    scopes:async()=>(await new BusinessScopeService((await resources.database()).pool).list(owner)).filter(item=>item.scope!=='general').map(({scope,title})=>({scope,title})),
   }
+  const lockBusinessWorkAuthorization=async(db:{query:(text:string,values:unknown[])=>Promise<unknown>},sessionId:string)=>{
+   await db.query('select session_id from teloa_conversation_work_contexts where owner_id=$1 and session_id=$2 for share',[owner,sessionId])
+  }
+  const authorizeObjectWorkSession=async(scope:string,sessionId:string,signal:AbortSignal)=>{
+   const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
+   if('error' in resolved)throw new WorkError('teloa/session-unavailable','原工作会话尚不可读取。')
+   const current=await authorizeBusinessConversation(businessConversationAuthorization,{agent:resolved.agent,signal},'对象工作')
+   if(current.scope!==scope)throw new WorkError('teloa/forbidden','原会话不属于当前业务。')
+  }
+  const businessWorkHandler=createBusinessWorkHandler(owner,businessScopeIds,businessDefinitionServices,authorizeObjectWorkSession)
+  resources.beforeDatabaseClose(registerBusinessChangeSetTools(toolRegistrationContext,{
+   ...businessConversationAuthorization,
+   readTaskPolicyInTransaction:async(db,id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id},db as Parameters<TaskRunService['executionAdmissionInTransaction']>[0])},
+   changes:{prepare:async(...args)=>(await businessDefinitionServices()).changes.prepare(...args),get:async(...args)=>(await businessDefinitionServices()).changes.get(...args),apply:async(...args)=>(await businessDefinitionServices()).changes.apply(...args)},
+   lockAuthorization:async(db,sessionId)=>lockBusinessWorkAuthorization(db as Parameters<typeof lockBusinessWorkAuthorization>[0],sessionId),
+   // 群明确工作的受限授权：采用事务内用同一连接加锁重读宿主事实。
+   // 采用事务内复用 TaskRunService 执行准入，同一事务锁定并复核当前岗位、本人授权、群许可/委托与停止。
+   groupTask:async(db,sessionId)=>db
+    ?readGroupTaskBusinessGrant(db as Parameters<typeof readGroupTaskBusinessGrant>[0],owner,sessionId,async runId=>(await runService()).executionAdmissionInTransaction(db as Parameters<TaskRunService['executionAdmissionInTransaction']>[0],owner,runId))
+    :readGroupTaskBusinessGrant((await resources.database()).pool,owner,sessionId),
+  }))
+  resources.beforeDatabaseClose(registerBusinessWorkTools(toolRegistrationContext,{
+   ...businessConversationAuthorization,
+   objectWork:{bySession:async(...args)=>(await businessDefinitionServices()).objectWork.bySession(...args),bySessionPage:async(...args)=>(await businessDefinitionServices()).objectWork.bySessionPage(...args),read:async(...args)=>(await businessDefinitionServices()).objectWork.read(...args),resultsPage:async(...args)=>(await businessDefinitionServices()).objectWork.resultsPage(...args),publish:async(...args)=>(await businessDefinitionServices()).objectWork.publish(...args)},
+  }))
   const stopBusinessResponsibilityTools=registerBusinessResponsibilityTools(toolRegistrationContext,{
    ...businessConversationAuthorization,
    roles:async actor=>{if(actor!==owner)throw new WorkError('teloa/forbidden','员工目录不属于当前本人。');const {pool,identity,plans}=await autoDreamPlans();return new RoleService(pool,identity,{plans}).list(owner,{})},
@@ -1391,6 +1857,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   resources.beforeDatabaseClose(()=>{stopBusinessResponsibilityTools()})
   resources.beforeDatabaseClose(registerBusinessRecordTools(toolRegistrationContext,{
    ...businessConversationAuthorization,
+   groupTask:async(_db,sessionId)=>readGroupTaskBusinessGrant((await resources.database()).pool,owner,sessionId),
    definitions:async(actor,scope)=>{
     // 即时授权在checkout前完成；审批不持连接，定义只从已采用来源读取。
     if(actor.ownerId!==owner||actor.scopeIds.length!==1||actor.scopeIds[0]!==scope||!(await businessScopeIds()).includes(scope))throw new WorkError('teloa/forbidden','当前本人未获准读取该业务的记录定义。')
@@ -1452,9 +1919,9 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     }
     return task
    },
-   link:input=>workLinks.change(owner,{requestId:input.requestId,kind:'task',objectId:input.taskId,expectedObjectVersion:input.expectedTaskVersion,sessionId:input.sessionId,expectedLinkVersion:0,action:'link'}),
+   link:input=>workLinks.change(owner,{requestId:input.requestId,kind:'task',objectId:input.taskId,expectedObjectVersion:input.expectedTaskVersion,sessionId:input.sessionId,expectedLinkVersion:0,action:'link',sourceOnly:true}),
    runs:async taskId=>(await runService()).list(owner,{taskId}),
-   run:async(endpoint,payload,signal,parentIdentity)=>{const value=await taskRunHandler(endpoint,payload,signal,parentIdentity);if(Array.isArray(value))throw new WorkError('teloa/invalid-host-response','本次交办没有返回唯一执行。');return value},
+   run:async(endpoint,payload,signal,parentIdentity)=>{const value=await taskRunHandler(endpoint,payload,signal,parentIdentity);if(Array.isArray(value)||!('id'in value))throw new WorkError('teloa/invalid-host-response','本次交办没有返回唯一执行。');return value},
    result:async run=>{const events=await runPorts.events(run);return readTaskRunGroupResult(events.slice(0,run.evidence?.state==='ended'?run.evidence.endSeq+1:0),run.nativeRequestId,await runPorts.continuations?.(run,events))},
    revalidate:async(request,target,signal)=>{
     signal.throwIfAborted()
@@ -1476,14 +1943,80 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    now:()=>new Date().toISOString(),
   })
   deliverConversationWork=()=>runtimeAdmission.run(()=>workDispatch.deliver())
+  const channelWork=new AbortController()
+  const readChannelSession=createDshVoiceSessionReader({sessions:sessionStore,sessionController:ctx.sessionController},{owner,conversation:id=>service.bySession(owner,id)})
+  const verifyChannel=async(binding:Pick<HardwareBinding,'id'|'assistantSessionId'|'contextVersion'>)=>{
+   const sessionId=binding.assistantSessionId,epoch=channelContextEpochs.get(sessionId)??0
+   const snapshot=await readChannelSession(sessionId)
+   const native=sessionStore.get(brandString<SessionId>(sessionId)),header=native?JSON.stringify(native.header):undefined
+   const assertCurrent=()=>{
+    channelWork.signal.throwIfAborted()
+    if((channelContextEpochs.get(sessionId)??0)!==epoch||ctx.workspaceRegistry.archivedSessionIds.includes(brandString<SessionId>(sessionId))||native&&(sessionStore.get(brandString<SessionId>(sessionId))!==native||JSON.stringify(native.header)!==header))throw new WorkError('teloa/forbidden','原助手上下文已经变化。')
+   }
+   await readAssistantVoiceContext(owner,{requestId:binding.id,target:'assistant',sessionId,expectedContextVersion:binding.contextVersion},{
+    readConversation:id=>service.bySession(owner,id),readRequestedRoleId:id=>service.requestedRoleId(owner,id),links:workLinks,
+    readHomeContext:id=>conversationWork.context(owner,{sessionId:id}),assistantEligible:async id=>(await service.bySession(owner,id)).purpose==='assistant'&&!await service.isTaskRunReserved(owner,id),
+   },assertCurrent)
+   if(snapshot.sessionId!==sessionId)throw new WorkError('teloa/forbidden','原助手不属于当前绑定。')
+   return assertCurrent
+  }
+  const readChannelResult=async(operation:import('@teloa/contract').HardwareOperation,binding:Pick<HardwareBinding,'assistantSessionId'>)=>{
+    const snapshot=await readChannelSession(binding.assistantSessionId),native=observeNativeRequest({id:operation.nativeRequestId,text:operation.text},snapshot)
+    const originals=native.message?(await conversationWork.list(owner,{sessionId:binding.assistantSessionId})).filter(request=>request.messageId===native.message!.id):[]
+    const works=await Promise.all(originals.map(request=>workDispatch.status(request.sessionId,request.requestId)))
+    let awaiting=native.state==='active'&&hardwareInputRequests(snapshot.events).includes(operation.nativeRequestId)&&groupRunAwaitsApproval(snapshot.events)
+    for(const member of works.flatMap(work=>work.members))if(member.status==='waiting'&&member.run){
+     const id=brandString<SessionId>(member.run.sessionId),session=sessionStore.get(id)
+     if(groupRunAwaitsApproval(session?readSessionEvents(session):(await ctx.sessionController.inspect(id)).events))awaiting=true
+    }
+    return hardwareWorkReceipt(readHardwareResult(operation,snapshot),works,awaiting)
+  }
+  let directHost:ReturnType<typeof createDirectDeviceHost>|undefined
+  let devicePairing:Awaited<ReturnType<typeof startDevicePairingRuntime>>|undefined
+  const ensureChannel=async()=>{
+   const conversation=await dispatchTeloaEndpoint('conversations/assistant',{},channelWork.signal) as Conversation
+   let context=await conversationWork.context(owner,{sessionId:conversation.sessionId})
+   if(!context)context=await conversationWork.setContext(owner,{requestId:randomUUID(),sessionId:conversation.sessionId,scopeId:'general',roleId:null,expectedVersion:0})
+   if(context.scopeId!=='general'||context.roleId!==null)throw new WorkError('teloa/forbidden','原助手上下文不符合当前授权。')
+   return {assistantSessionId:conversation.sessionId,contextVersion:context.version}
+  }
+  if(directConfig&&directStore){
+   const approvalBelongs=async(binding:import('@teloa/backend').DirectDeviceBinding,request:ApprovalRequestEvent)=>{
+    const root=resolveSessionLineage(ctx,request.agent.session).root
+    if(String(root.id)===binding.assistantSessionId)return true
+    const row=(await database.pool.query('select id from teloa_task_runs where owner_id=$1 and session_id=$2 order by created_at desc limit 1',[owner,String(root.id)])).rows[0]
+    if(!row)return false
+    const source=(await(await runService()).origin(owner,{runId:row.id})).source
+    return source?.sessionId===binding.assistantSessionId
+   }
+   const approvals=createDeviceApprovals(ctx,approvalBelongs,async request=>{for(const binding of directHost?.approvalConnections()??[])if(await approvalBelongs(binding,request))return true;return false})
+   const deviceHost=createDirectDeviceHost({store:directStore,approvals,mediaOwner:deviceMediaOwner,modelPath:directConfig.vadModelPath,speech:voiceService.speech,configured:voiceService.configured,verify:verifyChannel,read:readChannelResult,remember:id=>nativeHardware.remember(id),dispatch:(commit,assertCurrent)=>runtimeAdmission.run(()=>admitDirectDeviceInput(requireNativeInputProvider(ctx),commit,assertCurrent,()=>ctx.sessionController.prompt({requestId:brandString<SessionPromptRequest['requestId']>(commit.id),sessionId:brandString<SessionId>(commit.sessionId),mode:'queue',content:[{type:'text',text:commit.text}]},channelWork.signal)))})
+   directHost=deviceHost
+   ctx.systemPrompt.context({name:'teloa:device-voice',order:117,required:true,interpolate:false,text:context=>context.agent&&sessionStore.get(context.agent.id)===context.agent.session?deviceHost.voiceContext(String(context.agent.id)):''})
+   const {createDeviceGateway}=await import('@teloa/device-gateway')
+   const gateway=createDeviceGateway({listen:directConfig.listen,tls:{key:await readDevicePrivateFile(directConfig.tlsKeyFile),cert:await readDevicePrivateFile(directConfig.tlsCertFile)},authorize:deviceHost.authorize,media:deviceHost.media})
+   resources.beforeDatabaseClose(async()=>{await deviceHost.close();await approvals.close();await gateway.close();await devicePairing?.close()})
+   await gateway.start()
+   devicePairing=await startDevicePairingRuntime(runtimeRoot,directConfig,directStore,ensureChannel)
+   ctx.logger.info('Teloa 设备直连已就绪：%s:%s（独立 WSS）',directConfig.listen.host,directConfig.listen.port)
+  }
+  const assistantChannels=createAssistantChannelHost({
+   store:async()=>{if(!channelStore)throw new WorkError('teloa/unavailable','当前安装身份无法核对。');channelStoreReady??=initializeHardwareDevices(database.pool);await channelStoreReady;return channelStore},
+   allowed:()=>(readCompositionRows(ctx)??[]).some(row=>row.id==='teloa-xiaozhi-mcp'&&row.name==='@teloa/xiaozhi-mcp'&&!row.disabled),
+   ensure:ensureChannel,verify:verifyChannel,workSignal:channelWork.signal,remember:id=>nativeHardware.remember(id),
+   dispatch:(operation,binding,assertCurrent,signal)=>runtimeAdmission.run(()=>nativeHardware.withPrompt({requestId:operation.nativeRequestId,sessionId:binding.assistantSessionId,text:operation.text},assertCurrent,()=>ctx.sessionController.prompt({requestId:brandString<SessionPromptRequest['requestId']>(operation.nativeRequestId),sessionId:brandString<SessionId>(binding.assistantSessionId),mode:'queue',content:[{type:'text',text:operation.text}]},signal))),
+   read:readChannelResult,
+  })
+  resources.beforeDatabaseClose(async()=>{channelWork.abort();await assistantChannels.close()})
   resources.beforeDatabaseClose(registerConversationWorkTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
    isRoleConversation:async sessionId=>(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='role'),
    isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:sessionId=>businessBindings.isPendingDaily(owner,sessionId),
    context:sessionId=>conversationWork.context(owner,{sessionId}),freeze:sessionId=>conversationWork.freeze(owner,{sessionId}),
    roles:async()=>{const {pool,identity,plans}=await autoDreamPlans();return new RoleService(pool,identity,{plans}).list(owner,{})},scopes:async()=>['general',...await businessScopeIds()],
-   business:businessWorkSelection,reference:async reference=>{await (await businessTaskService()).reference(await businessBuilderActor(),reference)},
-   dispatch:(input,signal,revalidate)=>workDispatch.dispatch(input,signal,revalidate),status:(sessionId,requestId)=>requestId===undefined?workDispatch.list(sessionId):workDispatch.status(sessionId,requestId),stop:(sessionId,requestId,signal)=>workDispatch.stop(sessionId,requestId,signal),resume:(sessionId,requestId,signal)=>workDispatch.resume(sessionId,requestId,signal),
+   business:businessWorkSelection,reference:async reference=>{const fixed=await (await businessTaskService()).reference(await businessBuilderActor(),reference);return {title:fixed.object.title}},
+   revisionGoal:source=>new ArtifactRevisionRequestService(database.pool,workIdentity.now).goalForSource(owner,source),
+   dispatch:async(input,signal,revalidate)=>{await new ArtifactRevisionRequestService(database.pool,workIdentity.now).bindSource(owner,input,input.executor);return workDispatch.dispatch(input,signal,revalidate)},status:(sessionId,requestId)=>requestId===undefined?workDispatch.list(sessionId):workDispatch.status(sessionId,requestId),stop:(sessionId,requestId,signal)=>workDispatch.stop(sessionId,requestId,signal),resume:(sessionId,requestId,signal)=>workDispatch.resume(sessionId,requestId,signal),
    facts:async input=>new WorkFactsService(database.pool,()=>new Date().toISOString()).read({ownerId:owner,scopeIds:['general',...await businessScopeIds()]},input),
    data:(input,signal)=>businessDataHandler('business-data/query',input,signal),now:()=>new Date().toISOString(),
   }))
@@ -1541,6 +2074,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     loads:(endpoint,payload)=>industryLoadsHandler(endpoint,payload),
     knowledge:(endpoint,payload)=>industryKnowledgeHandler(endpoint,payload),
     roles:(endpoint,payload)=>industryRolesHandler(endpoint,payload),
+    // 方法绑定只读员工列表、经原编辑（事务与 CAS）保存，不新增员工写入口
+    roleRecords:(endpoint,payload)=>endpoint==='roles/list'||endpoint==='roles/edit'?roleHandler(endpoint,payload):Promise.reject(new WorkError('teloa/not-found','方案准备只使用员工列表与编辑。')),
     skills:(endpoint,payload)=>skillInstallationsHandler(endpoint,payload),
     mcp:(endpoint,payload,signal)=>industryMcpConnectionHandler(endpoint,payload,signal),
     dataSources:(endpoint,payload,signal)=>industryDataSourceHandler(endpoint,payload,signal),
@@ -1643,8 +2178,85 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     readBusinessScope:async(id,signal)=>{signal.throwIfAborted();const pool=(await resources.database()).pool,identity={id:randomUUID,now:()=>new Date().toISOString()};return new BusinessTaskService(pool,identity,new TaskService(pool,identity)).businessSourceScope(owner,id)},
     services:async()=>{const {pool,sync,dashboards,widgets,definitions}=await businessDefinitionServices();return {pool,sync,dashboards,widgets,definitions}},
     scopeIds:businessScopeIds,
+    recordObjectResult:async(input,signal)=>{
+      signal.throwIfAborted()
+      const runs=await runService(),run=await runs.skillScope(owner,{sessionId:input.sessionId})
+      if(!run||run.roleId===null||run.nativeRequestId!==input.nativeRequestId||!run.allowedTools.includes('teloa_business_object_result_record'))throw new WorkError('teloa/forbidden','当前轮次没有固定对象成果授权。')
+      const fixed=fixedBusinessTaskResultMapping(run,input.mappingId,input.result)
+      const {pool,sync}=await businessDefinitionServices(),scopes=await businessScopeIds()
+      return sync.ingestTaskResult({ownerId:owner,scopeIds:[...scopes]},{scope:input.scope,mappingId:fixed.mappingId,result:input.result},async db=>{
+        const target=await runs.executionScopeInTransaction(db,owner,{runId:run.id})
+        const current=(await db.query('select native_request_id,stop_requested_at from teloa_task_runs where owner_id=$1 and id=$2 for share',[owner,run.id])).rows[0]
+        if(target.sessionId!==input.sessionId||target.scope!==input.scope||current?.native_request_id!==input.nativeRequestId||current.stop_requested_at!==null)throw new WorkError('teloa/forbidden','本次成果的执行归属已变化或已停止。')
+        const source=await new BusinessTaskService(pool,workIdentity,new TaskService(pool,workIdentity)).contextInTransaction(db,{ownerId:owner,scopeIds:[input.scope]},{taskId:run.taskId})
+        const frozen=fixed.context
+        if(!source||source.source.reference.scope!==target.scope||frozen.sourceId!==source.source.sourceId||(['scope','type','id','version','snapshotHash'] as const).some(key=>frozen.object[key]!==source.source.reference[key]))throw new WorkError('teloa/forbidden','当前执行没有固定业务对象。')
+        if(run.roleId===null)throw new WorkError('teloa/forbidden','业务成果写回需要原固定员工身份。')
+        return {runId:run.id,taskId:run.taskId,sessionId:run.sessionId,roleId:run.roleId,createdAt:run.createdAt,reference:source.source.reference,resultMappings:fixed.context.resultMappings}
+      },signal)
+    },
   })
   const ordinaryTaskPolicy=async(id:string,signal:AbortSignal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})}
+  const stopEmployeeTools=registerEmployeeTools(toolRegistrationContext,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,roleHandler,lifecycle:changeRoleLifecycle})
+  const stopGroupTools=registerGroupTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
+   isRoleConversation:async id=>(await workLinks.bySession(owner,{sessionId:id})).some(link=>link.kind==='role'),isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:id=>businessBindings.isPendingDaily(owner,id),
+   scopes:async()=>['general',...await businessScopeIds()],roles:async()=>{const roles=await roleHandler('roles/list',{});if(!Array.isArray(roles))throw new WorkError('teloa/invalid-host-response','员工目录格式不正确。');return roles},route:groupHandler,admitText:groupSecretGate,
+  })
+  const stopGroupWorkLinkTools=registerGroupWorkLinkTools(toolRegistrationContext,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:id=>businessBindings.isPendingDaily(owner,id),groups:()=>groupHandler('groups/list',{}),scopes:()=>businessScopeHandler('business-scopes/list',{}),admitText:groupSecretGate,route:groupWorkLinkHandler})
+  const stopProjectTools=registerProjectTools(toolRegistrationContext,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:id=>businessBindings.isPendingDaily(owner,id),scopes:async()=>['general',...await businessScopeIds()],route:projectHandler,admitText:groupSecretGate})
+  const configurationTasks=()=>new TaskService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()},ownerWorkAuthority)
+  const stopTaskConfigurationTools=registerTaskConfigurationTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,isBuilder:isBuilderConversation,isPendingDaily:id=>businessBindings.isPendingDaily(owner,id),
+   list:()=>configurationTasks().list(owner,{}),scopes:async()=>readBusinessScopeLabels(await businessScopeHandler('business-scopes/list',{})).items,
+   groups:async()=>{const groups=await groupHandler('groups/list',{});if(!Array.isArray(groups))throw new WorkError('teloa/invalid-host-response','群目录格式不正确。');return groups},
+   request:requestId=>configurationTasks().configurationRequest(owner,{requestId}),createRequest:requestId=>configurationTasks().createConfigurationRequest(owner,{requestId}),configure:(input,signal,revalidate)=>configurationTasks().configure(owner,input,signal,revalidate),
+   create:(input,signal,revalidate)=>createPlatformTaskDraft({owner,create:(request,signal,check)=>configurationTasks().createConfiguration(owner,request,signal,check),list:()=>configurationTasks().list(owner,{}),conversation:id=>service.bySession(owner,id),links:workLinks},input,signal,revalidate),admitText:groupSecretGate,
+  })
+  const stopTaskMaterialTools=registerTaskMaterialTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,isBuilder:isBuilderConversation,isPendingDaily:id=>businessBindings.isPendingDaily(owner,id),list:()=>configurationTasks().list(owner,{}),
+   resources:async sessionId=>{const binding=await service.bySession(owner,sessionId);return (await(await resources.database()).service.list({ownerId:owner,kind:'agent',scopeIds:binding.scopeIds})).resources},
+   materials:async taskId=>(await taskMaterialService()).list(owner,{taskId}),request:async requestId=>(await taskMaterialService()).request(owner,{requestId}),checkBudget:checkTaskMaterialBudget,
+   add:async(input,signal,revalidate)=>(await taskMaterialService()).add(owner,input,signal,revalidate),admitText:groupSecretGate,
+  })
+  const capabilityDraftApplication=createCapabilityDraftApplication({owner,scopeIds:businessScopeIds,services:pageCreateServices,verifySource:async(draft,signal)=>{await(await methodReuseService()).assertDraftCurrent(owner,{draftId:draft.id,bodyHash:draft.bodyHash},signal)},marketContentHandler,skillInstallationsHandler,skillAvailabilityHandler,businessSpaceHandler,industryLoadsHandler,industryMcpConnectionHandler,industryDataSourceHandler,marketPluginInstallationHandler})
+  const stopCapabilityDraftTools=registerCapabilityDraftTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
+   ...capabilityDraftApplication,
+  })
+  const stopCustomMcpTools=registerCustomMcpTools(toolRegistrationContext,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,handler:managedMcpConnectionHandler})
+  const skillEditHandler=createSkillEditHandler({owner,content:marketContentHandler,installations:skillInstallationsHandler,selection:skillSelectionHandler,availability:skillAvailabilityHandler,admitText:groupSecretGate})
+  const stopSkillEditTools=registerSkillEditTools(toolRegistrationContext,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,handler:skillEditHandler,admitText:groupSecretGate})
+  const capabilityRecord=(value:unknown)=>{if(!isRecord(value))throw new WorkError('teloa/invalid-host-response','能力配置回执格式不正确。');return value}
+  const skillSummary=async(installationId:string):Promise<CapabilityResource>=>{
+   const installation=capabilityRecord(await skillInstallationsHandler('skill-installations/get',{installationId})),source=capabilityRecord(installation.source),native=capabilityRecord(installation.native)
+   const availability=capabilityRecord(await skillAvailabilityHandler('skill-availability/get',{installationId})),selection=capabilityRecord(await skillSelectionHandler('skill-selections/get',{nativeName:native.name}))
+   let title=String(native.name)
+   if(source.kind==='atomic'){const content=capabilityRecord(await marketContentHandler('market-content/get',{contentId:source.contentId}));title=String(capabilityRecord(content.metadata).title)}
+   return {kind:'skill',id:String(source.resourceId),ownerId:owner,title,version:String(source.resourceVersion),state:selection.installationId===installationId?String(availability.availability):'saved',installationId,contentId:String(source.contentId),nativeName:String(native.name)}
+  }
+  const stopCapabilityManagementTools=registerCapabilityManagementTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,admitText:groupSecretGate,
+   skillAvailability:skillAvailabilityHandler,skillSelection:skillSelectionHandler,extensions:bundledExtensionHandler,roleGrants:roleGrantHandler,groupGrants:groupAgentGrantHandler,dataSources:industryDataSourceHandler,executionTools:industryExecutionToolHandler,probe:connectorHandler,
+   describe:async(name,input,value)=>{
+    if(name.endsWith('_list')||name==='teloa_role_tools_candidates'||name==='teloa_skill_selection_preview')return null
+    if(name.startsWith('teloa_skill_')){const result=capabilityRecord(value),current=isRecord(result.current)?result.current:result;return skillSummary(String(input.installationId??current.installationId))}
+    if(name==='teloa_extensions_set'){const result=capabilityRecord(value);return {kind:'extension',id:String(result.id),ownerId:owner,title:result.id==='local-embedding'?'本地检索':'IM 通道',version:String(result.version),state:String(result.state)}}
+    if(name.startsWith('teloa_role_tools_')){const roles=await roleHandler('roles/list',{});if(!Array.isArray(roles))throw new WorkError('teloa/invalid-host-response','员工目录格式不正确。');const role=roles.map(capabilityRecord).find(role=>role.id===input.roleId&&role.ownerId===owner);if(!role)throw new WorkError('teloa/forbidden','员工不属于当前本人。');const result=capabilityRecord(await roleGrantHandler('role-tools/get',{roleId:input.roleId})),grant=isRecord(result.grant)?result.grant:null;return {kind:'role-tools',id:String(role.id),roleId:String(role.id),ownerId:owner,title:String(role.name),version:Number(result.roleVersion),state:grant?grant.state==='active'&&(typeof grant.roleVersion!=='number'||!Number.isSafeInteger(grant.roleVersion)||grant.roleVersion<2||typeof result.roleVersion!=='number'||!Number.isSafeInteger(result.roleVersion)||result.roleVersion<1||grant.roleVersion>result.roleVersion)?'invalidated':String(grant.state):'not-granted'}}
+    if(name.startsWith('teloa_group_agent_grant_')){const found=capabilityRecord(await groupHandler('groups/get',{groupId:input.groupId})),group=capabilityRecord(found.group),result=capabilityRecord(await groupAgentGrantHandler('groups/agent-grants/get',{groupId:input.groupId,roleId:input.roleId}));return {kind:'group-agent-grant',id:String(group.id),groupId:String(group.id),roleId:String(input.roleId),ownerId:owner,title:String(group.name),version:Number(result.groupVersion),state:String(result.status)}}
+    const result=capabilityRecord(value),kind=input.kind as 'data-source'|'mcp'|'execution-tool'
+    const instance=name==='teloa_connector_probe'?capabilityRecord(await(kind==='data-source'?industryDataSourceHandler:kind==='execution-tool'?industryExecutionToolHandler:industryMcpConnectionHandler)((kind==='data-source'?'industry-data-sources':kind==='execution-tool'?'industry-execution-tools':'industry-mcp-connections')+'/get',{instanceId:input.instanceId})):result
+    const load=capabilityRecord(await industryLoadsHandler('industry-loads/get',{loadId:instance.loadId}));const item=Array.isArray(load.items)?load.items.map(capabilityRecord).find(item=>item.instanceId===instance.itemInstanceId):undefined
+    return {kind:'connector',id:String(instance.id),ownerId:owner,title:String(item?.title??instance.itemLocalId),version:Number(instance.revision),state:String(instance.state),connectorKind:kind}
+   },
+  })
+  resources.beforeDatabaseClose(()=>{stopSkillEditTools();stopCapabilityManagementTools()})
+  const stopLibraryTools=registerLibraryTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
+   actor:async(sessionId,kind)=>{const binding=await service.bySession(owner,sessionId);return {ownerId:owner,kind,scopeIds:[...binding.scopeIds]}},
+   services:async()=>{const {service:resourceService,knowledge,knowledgeTree,knowledgeResources}=await resources.database();return {resources:resourceService,knowledge,knowledgeTree,knowledgeResources}},
+  })
+  resources.beforeDatabaseClose(()=>{stopEmployeeTools();stopGroupTools();stopGroupWorkLinkTools();stopProjectTools();stopTaskConfigurationTools();stopTaskMaterialTools();stopCapabilityDraftTools();stopCustomMcpTools();stopLibraryTools()})
   // 端侧中文检索（规格 §7）：公开工具 teloa_knowledge_search、界面端点 retrieval/*、retrieval-model/* 与启动对账。
   // 模型服务只经公开 ctx.reflect 发现（与上面 bundledExtensionLoaded 同一读口）：扩展停用时工具报 dependency-unavailable 并给启用引导，不引入扩展源码。
   // 本人普通会话在模型就绪后默认可用；受管任务按岗位整工具授权（task-tool-guard 清单闸），主体与目标范围沿 readExecutionKnowledge 同一条 taskKnowledgeAuthorization。
@@ -1658,7 +2270,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if(!run||run.sessionId!==sessionId)throw new WorkError('teloa/forbidden','执行会话身份未就绪。')
     const target=await runs.executionScope(owner,{runId:run.id})
     signal.throwIfAborted()
-    return taskKnowledgeAuthorization(owner,target,await readRoleScopes(owner,run.roleId,signal))
+    return taskKnowledgeAuthorization(owner,target,run.roleId===null?['general']:await readRoleScopes(owner,run.roleId,signal))
    },
    // 本人主体覆盖其全部已登记业务范围（与 resources.ts 的 human() 同一口径）；只供界面端点，模型工具拿不到。
    humanActor:async()=>({ownerId:owner,kind:'human',scopeIds:[...new Set(['general',...await businessScopeIds()])]}),
@@ -1703,14 +2315,20 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   }catch(error){ctx.logger.error('Teloa 内置看板设计技能不可用：%o',error)}
   registerPageCreateTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),skillCreator,
-   readTaskPolicy:ordinaryTaskPolicy,
+   readTaskPolicy:ordinaryTaskPolicy,preview:capabilityDraftApplication.preview,
    directory:async input=>{
     const scopes=[...await businessScopeIds()]
     // 新的一类业务的范围键在加载后才登记（0df1b3a 后端同一口径）：这一实体读目录只回已登记清单并标明该键是否已被占用，不按「已获准范围」拦。
     if(input.entity==='business-domain')return {entity:input.entity,scopes,...(input.scope===undefined?{}:{exists:scopes.includes(input.scope)})}
+    if(input.entity==='share')return {entity:'share',format:'teloa.template-share/v2',subjects:['employee','team','skill','mcp','app'],manifestFormats:['teloa.business-package/v2','teloa.business-package/v3','teloa.business-package/v4'],capabilities:['people','automation','connections','business'],staticOnly:true}
     if(input.scope!==undefined&&!scopes.includes(input.scope))throw new WorkError('teloa/forbidden','当前主体未获准读取此业务范围。')
     // 这个目录只提供模型生成草案前所需的身份与名称，不拿对象内容、草案正文或授权状态去凑“上下文”。
     if(input.entity==='business-definition')return {entity:input.entity,scopes}
+    if(input.entity==='plan'){
+     const plans=await planHandler('plans/list',{}),roles=await roleHandler('roles/list',{})
+     if(!Array.isArray(plans)||!Array.isArray(roles)||roles.some(row=>!isRecord(row)||typeof row.id!=='string'||typeof row.name!=='string'||!Number.isSafeInteger(row.version)))throw new WorkError('teloa/invalid-host-response','计划或员工目录返回格式不正确。')
+     return {entity:'plan',scopes,plans,roles:roles.filter(row=>row.state==='active').map(row=>({id:row.id,name:row.name,version:row.version,kind:row.kind,scopes:row.scopes}))}
+    }
     if(input.entity==='role'){
      const rows=await roleHandler('roles/list',{})
      if(!Array.isArray(rows)||rows.some(row=>typeof row!=='object'||row===null||typeof (row as {id?:unknown}).id!=='string'||typeof (row as {name?:unknown}).name!=='string'||typeof (row as {kind?:unknown}).kind!=='string'))throw new WorkError('teloa/invalid-host-response','员工目录返回格式不正确。')
@@ -1726,12 +2344,30 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     }
     return {entity:input.entity,extensions:officialExtensionPackages.map(item=>({packageName:item.packageName,version:item.version,keywords:[...item.keywords]}))}
    },
+   draftDirectory:async(input,signal)=>{
+    const scopeIds=await businessScopeIds(),{drafts}=await pageCreateServices()
+    return drafts.directory({ownerId:owner,scopeIds:[...scopeIds]},input,signal)
+   },
    draft:async input=>{
     const scopeIds=await businessScopeIds(),{drafts}=await pageCreateServices()
     return drafts.draft({ownerId:owner,scopeIds:[...scopeIds]},input)
    },
+   revise:async(input,signal,assertCurrent)=>{
+    const {drafts}=await pageCreateServices(),actor={ownerId:owner,scopeIds:[...await businessScopeIds()]}
+    const current=async()=>{await assertCurrent();if(input.scope!==undefined&&input.entity!=='business-domain'&&!(await businessScopeIds()).includes(input.scope))throw new WorkError('teloa/forbidden','原业务范围已不可用。')}
+    return drafts.revise(actor,input,{assertCurrent:current,method:async(db,draft,body,bodyHash,restoring)=>(await methodReuseService()).reviseDraftInTransaction(db,owner,draft,body,bodyHash,signal,restoring)},signal)
+   },
   })
 
+  registerMethodReuseTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,skillCreator,
+   source:async(input,signal)=>(await methodReuseService()).readSource(owner,input,signal),
+   defaultPlanBudget:async()=>(await resident.budgets.readOwner(owner)).policy,
+   prepare:async(input,signal,assertCurrent)=>{
+    const {body,...fixed}=input
+    return (await methodReuseService({body,assertCurrent})).prepareMethodReuse(owner,fixed,signal)
+   },
+  })
   const readCapabilities=async(sessionId:string,signal?:AbortSignal):Promise<CapabilitySnapshot>=>{
     const conversation=await service.bySession(owner,sessionId)
     const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
@@ -1761,17 +2397,40 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     const extension=teloaWork.dispatchExtension(endpoint,payload,signal)
     if(extension)return extension
     if((imChannelEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/dependency-unavailable','IM 通道服务未就绪。')
+    if((externalHarnessEndpoints as readonly string[]).includes(endpoint)){
+     const input=taskInput(payload,endpoint==='external-harness/stop'?['sessionId','activationId']:['sessionId']),sessionId=sessionInput({sessionId:input.sessionId})
+     await service.bySession(owner,sessionId)
+     if(!externalStatus)throw new WorkError('teloa/unavailable','外部工作状态服务尚未就绪。')
+     if(endpoint==='external-harness/list')return externalStatus.list(sessionId,taskRunRuntimeId).map(row=>{
+      const current=externalHarness.current(sessionId,row.activationId),status=['reserved','running','stopping'].includes(row.status)?current??'unknown':row.status
+      return readExternalHarnessWorkView({...row,status,canStop:status==='running'&&current==='running'})
+     })
+     if(typeof input.activationId!=='string'||!externalStatus.list(sessionId,taskRunRuntimeId).some(row=>row.activationId===input.activationId))throw new WorkError('teloa/forbidden','外部工作不属于当前会话。')
+     const settled=()=>externalStatus.list(sessionId,taskRunRuntimeId).some(row=>row.activationId===input.activationId&&['completed','failed','aborted'].includes(row.status))
+     if(!settled())try{await externalHarness.stopActivation(sessionId,input.activationId,signal)}catch(error){if(!settled())throw error}
+     return {accepted:true}
+    }
     if((bundledExtensionEndpoints as readonly string[]).includes(endpoint))return bundledExtensionHandler(endpoint,payload)
     if((retrievalEndpoints as readonly string[]).includes(endpoint))return localRetrieval.handle(endpoint,payload,signal)
     if((localModelEndpoints as readonly string[]).includes(endpoint))return localModelsHandler.handle(endpoint,payload,signal)
     if((modelOptionEndpoints as readonly string[]).includes(endpoint))return readDshModelOptions(ctx,payload,signal)
+    if(endpoint==='conversations/assistant')return conversationDirectory.mutate(()=>service.ensureAssistant(owner,payload,async(sessionId,register)=>{
+      if(ctx.workspaceRegistry.archivedSessionIds.includes(brandString<SessionId>(sessionId)))return false
+      // 与上下文设置共用同一事务锁，登记之前重新核对；回调不得借用 service 的串行队列。
+      const db=await database.pool.connect()
+      try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['teloa/conversation-work',owner,'context:'+sessionId])])
+        const result=await db.query("select 1 from teloa_conversation_work_contexts c where c.owner_id=$1 and c.session_id=$2 and c.scope_id='general' and c.role_id is null and not exists(select 1 from teloa_object_conversations o where o.owner_id=c.owner_id and o.session_id=c.session_id and o.source_only=false) and not exists(select 1 from teloa_business_conversation_bindings b where b.owner_id=c.owner_id and b.session_id=c.session_id)",[owner,sessionId])
+        if(result.rowCount!==1){await db.query('commit');return false}
+        await register();await db.query('commit');return true
+      }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
+    }))
     if(endpoint==='work-context/read')return conversationWork.context(owner,payload)
     if(endpoint==='work-context/set')return conversationWork.setContext(owner,payload)
     if(endpoint==='work-context/eligibility'){const input=taskInput(payload,['sessionId']);return conversationWorkEligibility(input.sessionId as string)}
     if(endpoint==='work-requests/list'){const input=taskInput(payload,['sessionId']);return workDispatch.list(input.sessionId as string)}
     if(endpoint==='work-requests/status'||endpoint==='work-requests/stop'){const input=taskInput(payload,['sessionId','requestId']);return endpoint==='work-requests/status'?workDispatch.status(input.sessionId as string,input.requestId as string):workDispatch.stop(input.sessionId as string,input.requestId as string,signal)}
     if(endpoint==='work-requests/resume'){const input=taskInput(payload,['sessionId','requestId']);return workDispatch.resume(input.sessionId as string,input.requestId as string,signal)}
-    return (projectEndpoints as readonly string[]).includes(endpoint)?await projectHandler(endpoint,payload):(securityActionEndpoints as readonly string[]).includes(endpoint)?await securityActionHandler(endpoint,payload,signal):(businessSpaceEndpoints as readonly string[]).includes(endpoint)?await businessSpaceHandler(endpoint,payload):(businessScopeEndpoints as readonly string[]).includes(endpoint)?await businessScopeHandler(endpoint,payload):(businessDataEndpoints as readonly string[]).includes(endpoint)?await businessDataHandler(endpoint,payload,signal):(businessBuilderEndpoints as readonly string[]).includes(endpoint)?await businessBuilderHandler(endpoint,payload,signal):(businessDashboardResourceEndpoints as readonly string[]).includes(endpoint)?await businessDashboardResourceHandler(endpoint,payload,signal):(businessImportEndpoints as readonly string[]).includes(endpoint)?await businessImportHandler(endpoint,payload,signal):(businessResponsibilityEndpoints as readonly string[]).includes(endpoint)?await businessResponsibilityHandler(endpoint,payload,signal):(businessDefinitionEndpoints as readonly string[]).includes(endpoint)?await businessDefinitionHandler(endpoint,payload,signal):(businessDashboardEndpoints as readonly string[]).includes(endpoint)?await businessDashboardHandler(endpoint,payload,signal):(pageCreateDraftEndpoints as readonly string[]).includes(endpoint)?await pageCreateDraftHandler(endpoint,payload,signal):(businessTaskEndpoints as readonly string[]).includes(endpoint)?await businessTaskHandler(endpoint,payload):(githubSourceEndpoints as readonly string[]).includes(endpoint)?await githubSourceHandler(endpoint,payload):(marketPluginInstallationEndpoints as readonly string[]).includes(endpoint)?await marketPluginInstallationHandler(endpoint,payload,signal):(skillUpgradePreviewEndpoints as readonly string[]).includes(endpoint)?await skillUpgradePreviewHandler(endpoint,payload):(skillSelectionEndpoints as readonly string[]).includes(endpoint)?await skillSelectionHandler(endpoint,payload):(skillAvailabilityEndpoints as readonly string[]).includes(endpoint)?await skillAvailabilityHandler(endpoint,payload):(skillInstallationEndpoints as readonly string[]).includes(endpoint)?await skillInstallationsHandler(endpoint,payload):(industryPlanEndpoints as readonly string[]).includes(endpoint)?await industryPlansHandler(endpoint,payload):(industryTaskEndpoints as readonly string[]).includes(endpoint)?await industryTasksHandler(endpoint,payload):(industryRoleEndpoints as readonly string[]).includes(endpoint)?await industryRolesHandler(endpoint,payload):(industryKnowledgeEndpoints as readonly string[]).includes(endpoint)?await industryKnowledgeHandler(endpoint,payload):(industryDataSourceEndpoints as readonly string[]).includes(endpoint)?await industryDataSourceHandler(endpoint,payload,signal):(industryExecutionToolEndpoints as readonly string[]).includes(endpoint)?await industryExecutionToolHandler(endpoint,payload,signal):(industryMcpConnectionEndpoints as readonly string[]).includes(endpoint)?await industryMcpConnectionHandler(endpoint,payload,signal):(managedMcpConnectionEndpoints as readonly string[]).includes(endpoint)?await managedMcpConnectionHandler(endpoint,payload):(connectorEndpoints as readonly string[]).includes(endpoint)?await connectorHandler(endpoint,payload,signal):(industryPluginEndpoints as readonly string[]).includes(endpoint)?await industryPluginHandler(endpoint,payload,signal):(industryPrepareEndpoints as readonly string[]).includes(endpoint)?await industryPrepareHandler(endpoint,payload,signal):(industryLoadEndpoints as readonly string[]).includes(endpoint)?await industryLoadsHandler(endpoint,payload):endpoint==='tasks/attention'?await taskAttentionHandler(payload):(planScheduleEndpoints as readonly string[]).includes(endpoint)?await planScheduleHandler(endpoint,payload):(planEndpoints as readonly string[]).includes(endpoint)?await planHandler(endpoint,payload,signal):(marketContentEndpoints as readonly string[]).includes(endpoint)?await marketContentHandler(endpoint,payload):(marketCatalogEndpoints as readonly string[]).includes(endpoint)?await marketCatalogHandler(endpoint,payload):roleToolGrantEndpoints.includes(endpoint)?await roleGrantHandler(endpoint,payload):(webAccessEndpoints as readonly string[]).includes(endpoint)?await webAccessHandler(endpoint,payload):(groupAgentGrantEndpoints as readonly string[]).includes(endpoint)?await groupAgentGrantHandler(endpoint,payload):(groupTaskEndpoints as readonly string[]).includes(endpoint)?await groupTaskHandler(endpoint,payload):(groupAttachmentEndpoints as readonly string[]).includes(endpoint)?await groupAttachmentHandler(endpoint,payload,signal):(taskMaterialEndpoints as readonly string[]).includes(endpoint)?await taskMaterialHandler(endpoint,payload):taskRunEndpoints.includes(endpoint)?await taskRunHandler(endpoint,payload,signal):(taskRunFlowEndpoints as readonly string[]).includes(endpoint)?await taskRunFlowHandler(endpoint,payload,signal):(endpoint==='tasks/context'||endpoint==='object-conversations/list'||endpoint==='object-conversations/session'||endpoint==='object-conversations/change')?await handleObjectConversations(endpoint,payload):artifactEndpoints.includes(endpoint)?await artifactHandler(endpoint,payload,signal):(handoffEndpoints as readonly string[]).includes(endpoint)?await handleHandoffs(endpoint,payload):endpoint==='roles/lifecycle'?await changeRoleLifecycle(payload):(roleMemoryEndpoints as readonly string[]).includes(endpoint)?await roleMemoryHandler(endpoint,payload):(roleDailyLogEndpoints as readonly string[]).includes(endpoint)?await roleDailyLogHandler(endpoint,payload):taskEndpoints.includes(endpoint)?await taskHandler(endpoint,payload):roleEndpoints.includes(endpoint)?await roleHandler(endpoint,payload):(groupEndpoints as readonly string[]).includes(endpoint)?await groupHandler(endpoint,payload):artifactFileEndpoints.includes(endpoint)?await readArtifactFile(endpoint,payload,signal):resourceEndpoints.includes(endpoint)?await resources.handle(endpoint,payload)
+    return (groupWorkLinkEndpoints as readonly string[]).includes(endpoint)?await groupWorkLinkHandler(endpoint,payload,signal):(projectRuntimeEndpoints as readonly string[]).includes(endpoint)?await projectRuntimeHandler(endpoint,payload,signal):(projectContextEndpoints as readonly string[]).includes(endpoint)?await projectContextHandler(endpoint,payload,signal):(projectEndpoints as readonly string[]).includes(endpoint)?await projectHandler(endpoint,payload,signal):(securityActionEndpoints as readonly string[]).includes(endpoint)?await securityActionHandler(endpoint,payload,signal):(businessSpaceEndpoints as readonly string[]).includes(endpoint)?await businessSpaceHandler(endpoint,payload):(businessScopeEndpoints as readonly string[]).includes(endpoint)?await businessScopeHandler(endpoint,payload):(businessDataEndpoints as readonly string[]).includes(endpoint)?await businessDataHandler(endpoint,payload,signal):(businessWorkEndpoints as readonly string[]).includes(endpoint)?await businessWorkHandler(endpoint,payload,signal):(businessBuilderEndpoints as readonly string[]).includes(endpoint)?await businessBuilderHandler(endpoint,payload,signal):(businessDashboardResourceEndpoints as readonly string[]).includes(endpoint)?await businessDashboardResourceHandler(endpoint,payload,signal):(businessImportEndpoints as readonly string[]).includes(endpoint)?await businessImportHandler(endpoint,payload,signal):(businessResponsibilityEndpoints as readonly string[]).includes(endpoint)?await businessResponsibilityHandler(endpoint,payload,signal):(businessDefinitionEndpoints as readonly string[]).includes(endpoint)?await businessDefinitionHandler(endpoint,payload,signal):(businessDashboardEndpoints as readonly string[]).includes(endpoint)?await businessDashboardHandler(endpoint,payload,signal):(pageCreateDraftEndpoints as readonly string[]).includes(endpoint)?await pageCreateDraftHandler(endpoint,payload,signal):(skillEditEndpoints as readonly string[]).includes(endpoint)?await skillEditHandler(endpoint,payload,signal):(businessTaskEndpoints as readonly string[]).includes(endpoint)?await businessTaskHandler(endpoint,payload):(githubSourceEndpoints as readonly string[]).includes(endpoint)?await githubSourceHandler(endpoint,payload):(marketPluginInstallationEndpoints as readonly string[]).includes(endpoint)?await marketPluginInstallationHandler(endpoint,payload,signal):(skillUpgradePreviewEndpoints as readonly string[]).includes(endpoint)?await skillUpgradePreviewHandler(endpoint,payload):(skillSelectionEndpoints as readonly string[]).includes(endpoint)?await skillSelectionHandler(endpoint,payload):(skillAvailabilityEndpoints as readonly string[]).includes(endpoint)?await skillAvailabilityHandler(endpoint,payload):(skillInstallationEndpoints as readonly string[]).includes(endpoint)?await skillInstallationsHandler(endpoint,payload):(industryPlanEndpoints as readonly string[]).includes(endpoint)?await industryPlansHandler(endpoint,payload):(industryTaskEndpoints as readonly string[]).includes(endpoint)?await industryTasksHandler(endpoint,payload):(industryRoleEndpoints as readonly string[]).includes(endpoint)?await industryRolesHandler(endpoint,payload):(industryKnowledgeEndpoints as readonly string[]).includes(endpoint)?await industryKnowledgeHandler(endpoint,payload):(industryDataSourceEndpoints as readonly string[]).includes(endpoint)?await industryDataSourceHandler(endpoint,payload,signal):(industryExecutionToolEndpoints as readonly string[]).includes(endpoint)?await industryExecutionToolHandler(endpoint,payload,signal):(industryMcpConnectionEndpoints as readonly string[]).includes(endpoint)?await industryMcpConnectionHandler(endpoint,payload,signal):(managedMcpConnectionEndpoints as readonly string[]).includes(endpoint)?await managedMcpConnectionHandler(endpoint,payload):(connectorEndpoints as readonly string[]).includes(endpoint)?await connectorHandler(endpoint,payload,signal):(industryPluginEndpoints as readonly string[]).includes(endpoint)?await industryPluginHandler(endpoint,payload,signal):(industryPrepareEndpoints as readonly string[]).includes(endpoint)?await industryPrepareHandler(endpoint,payload,signal):(industryLoadEndpoints as readonly string[]).includes(endpoint)?await industryLoadsHandler(endpoint,payload):endpoint==='tasks/attention'?await taskAttentionHandler(payload):endpoint==='work-attention'?await workAttentionHandler(payload,signal):(planScheduleEndpoints as readonly string[]).includes(endpoint)?await planScheduleHandler(endpoint,payload):(planEndpoints as readonly string[]).includes(endpoint)?await planHandler(endpoint,payload,signal):(marketContentEndpoints as readonly string[]).includes(endpoint)?await marketContentHandler(endpoint,payload):(marketCatalogEndpoints as readonly string[]).includes(endpoint)?await marketCatalogHandler(endpoint,payload):roleToolGrantEndpoints.includes(endpoint)?await roleGrantHandler(endpoint,payload):(webAccessEndpoints as readonly string[]).includes(endpoint)?await webAccessHandler(endpoint,payload):(groupAgentGrantEndpoints as readonly string[]).includes(endpoint)?await groupAgentGrantHandler(endpoint,payload):(groupTaskEndpoints as readonly string[]).includes(endpoint)?await groupTaskHandler(endpoint,payload):(groupAttachmentEndpoints as readonly string[]).includes(endpoint)?await groupAttachmentHandler(endpoint,payload,signal):(taskMaterialEndpoints as readonly string[]).includes(endpoint)?await taskMaterialHandler(endpoint,payload):taskRunEndpoints.some(known=>known===endpoint)?await taskRunHandler(endpoint,payload,signal):(taskRunFlowEndpoints as readonly string[]).includes(endpoint)?await taskRunFlowHandler(endpoint,payload,signal):(endpoint==='tasks/context'||endpoint==='object-conversations/list'||endpoint==='object-conversations/session'||endpoint==='object-conversations/change')?await handleObjectConversations(endpoint,payload):artifactEndpoints.includes(endpoint)?await artifactHandler(endpoint,payload,signal):(handoffEndpoints as readonly string[]).includes(endpoint)?await handleHandoffs(endpoint,payload):endpoint==='roles/lifecycle'?await changeRoleLifecycle(payload):(roleMemoryEndpoints as readonly string[]).includes(endpoint)?await roleMemoryHandler(endpoint,payload):(roleDailyLogEndpoints as readonly string[]).includes(endpoint)?await roleDailyLogHandler(endpoint,payload):taskEndpoints.includes(endpoint)?await taskHandler(endpoint,payload,signal):roleEndpoints.includes(endpoint)?await roleHandler(endpoint,payload):(groupEndpoints as readonly string[]).includes(endpoint)?await groupHandler(endpoint,payload):artifactFileEndpoints.includes(endpoint)?await readArtifactFile(endpoint,payload,signal):resourceEndpoints.includes(endpoint)?await resources.handle(endpoint,payload)
         :endpoint==='conversations/create'?await conversationDirectory.mutate(()=>service.create(owner,payload))
         :endpoint==='session-capabilities/read'?await readNativeSessionCapabilities(owner,payload)
         :endpoint==='conversations/read'?await service.bySession(owner,sessionInput(payload))
@@ -1782,6 +2441,21 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
         :endpoint==='copies/resolve'?await copies.resolve(owner,payload)
         :endpoint==='copies/release'?await copies.release(owner,payload)
         :endpoint==='conversations/list'?await service.list(owner,payload)
+        :endpoint==='conversations/search'?await searchConversationContent({
+          list:()=>service.list(owner,{}),
+          sessions:async requestSignal=>{const query=ctx.get('sessionQuery');if(!query)throw new WorkError('teloa/dependency-unavailable','原生会话检索服务未就绪。');return query.listSessions(requestSignal)},
+          filter:async(sessionId,text)=>{
+            const query=ctx.get('sessionQuery');if(!query)throw new WorkError('teloa/dependency-unavailable','原生会话检索服务未就绪。')
+            const nativeId=brandString<SessionId>(sessionId),documents=await query.filterEvents(nativeId,[{kind:'type',values:['user/message','assistant/message']},{kind:'surface',values:['current']},{kind:'text',text}]),result=[]
+            for(const doc of documents){
+              signal.throwIfAborted()
+              const window=await query.readEvent({sessionId:nativeId,seq:doc.seq,before:0,after:0},signal),event=window.target
+              if(window.session.id!==sessionId||event.seq!==doc.seq||event.type!==doc.type||event.type!=='user/message'&&event.type!=='assistant/message')throw new WorkError('teloa/invalid-host-response','原生正文检索返回了不匹配的消息。')
+              result.push({...doc,source:event.type==='user/message'?event.data.source:event.data.message.source})
+            }
+            return result
+          }
+        },payload,signal)
         // 首页列的是"默认工作区里能用到什么"，取的目录必须与会话实际的 cwd 一致，否则首页与会话各看一份。
         :endpoint==='capabilities/home-skills'?await readHomeSkills(payload,async()=>withPresetReadScope(ctx.agentPresets,scope=>ctx.skills.list({cwd:workspaceRoot,scope,signal})))
         :await readCapabilities(sessionInput(payload),signal)
@@ -1828,8 +2502,33 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   }
   // 群附件上传走 /api 下的专用流式路由（先判长、按本人串行、边读边计数），鉴权与 /teloa 同一个 admit()。
   connection.fetch.register(createGroupAttachmentUploadRoute(groupAttachmentHandler,error=>ctx.logger.warn('Teloa 群附件上传失败：%s',error instanceof Error?(error.stack??error.message):String(error))))
-  connection.rpc.handle('/teloa',async(endpoint,payload,signal)=>{
+  connection.rpc.handle('/teloa',async(endpoint,payload,signal,peer)=>{
     try {
+      if((directDeviceEndpoints as readonly string[]).includes(endpoint)){
+       if(peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','设备直连仅供本人浏览器管理。')
+       signal?.throwIfAborted()
+       if(endpoint==='devices/direct/status'){
+        hardwareRecord(payload,[])
+        const devices=directStore?(await directStore.list()).map(binding=>({id:binding.id,status:binding.status,grantVersion:binding.grantVersion,assistantSessionId:binding.assistantSessionId,allowApprovals:binding.allowApprovals===true})):[]
+        return {ok:true,value:{enabled:!!directHost,devices,helper:devicePairing?await readDevicePairingHelper(projectRoot,devicePairing.ipcPath):null}}
+       }
+       if(endpoint.startsWith('devices/pairing/')){
+        if(!devicePairing)throw new WorkError('teloa/unavailable','本机设备直连尚未启用。')
+        if(endpoint==='devices/pairing/begin')return {ok:true,value:await devicePairing.pairing.begin(payload)}
+        const input=hardwareRecord(payload,['id']);if(endpoint==='devices/pairing/status'&&Object.keys(input).length===0)return {ok:true,value:await devicePairing.pairing.status()};if(!hardwareOperationId(input.id))throw new WorkError('teloa/invalid-input','原配对作业不正确。')
+        return {ok:true,value:endpoint==='devices/pairing/status'?await devicePairing.pairing.status(input.id):await devicePairing.pairing.cancel(input.id)}
+       }
+       const input=hardwareRecord(payload,['bindingId'])
+       if(!hardwareOperationId(input.bindingId)||!directStore)throw new WorkError('teloa/invalid-input','设备绑定不正确。')
+       if(directHost)await directHost.revoke(input.bindingId);else await directStore.revoke(input.bindingId)
+       return {ok:true,value:{revoked:true}}
+      }
+      // 本人连接独占管理端口：不进入 IM 白名单、模型工具或待恢复正文。
+      if((hardwareEndpoints as readonly string[]).includes(endpoint)){
+       if(peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','硬件连接只供本人浏览器管理。')
+       return {ok:true,value:await assistantChannels.handle(endpoint,payload,signal)}
+      }
+      if(((browserVoiceEndpoints as readonly string[]).includes(endpoint)||(voiceServiceEndpoints as readonly string[]).includes(endpoint))&&peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','语音设置与通话仅供本人浏览器连接使用。')
       // 同一官方鉴权通道内的只读失效通知，不登记正文或待恢复写命令。
       if(endpoint==='conversations/watch')return {ok:true,value:await conversationDirectory.watch(payload,signal)}
       // /teloa 的 HTTP 桥会先把整包请求体缓冲进内存：上传不再从这里进，只认专用路由。
@@ -1844,18 +2543,31 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       if((roleDelegationEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await roleDelegationHandler(endpoint,payload)}
       if((residentOwnerEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await resident.ownerRpc(endpoint,payload,signal)}
       if((confirmedPlanEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedPlanHandler(endpoint,payload)}
+      if((confirmedPlanDraftEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedPlanDraftHandler(endpoint,payload,signal)}
       if((confirmedTaskRunFlowEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedTaskRunFlowHandler(endpoint,payload,signal)}
       if((roleMemoryViewEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await roleMemoryViewHandler(endpoint,payload)}
       if(endpoint==='tasks/create-confirmed')return {ok:true,value:await taskHandler(endpoint,payload)}
       if(endpoint==='resources/register-local-material'||endpoint==='resources/read-content')return {ok:true,value:await resources.handle(endpoint,payload)}
       // 凭据存储端点只在本人浏览器连接上分发：不进 endpointSet，dispatchTeloaEndpoint 与 teloaWork.invoke 均不可达。
       if((credentialStoreEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await credentialStoreHandler(endpoint,payload)}
+      if((voiceServiceEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await voiceService.handler(endpoint,payload,signal)}
+      // 显示资料只由本人浏览器管理，不进通用工具、插件调用及待恢复写命令目录。
+      if((personalProfileEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await personalDisplayProfile.handler(endpoint,payload)}
+      if((browserVoiceEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await browserVoice.handler(endpoint,payload,signal)}
       // 技能密钥端点同样只在本人浏览器连接上分发，不进 endpointSet（AI 会话工具、IM、CLI 不可达）。
       if((skillSecretEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await skillSecretStore.handle(endpoint,payload)}
       // 市场评价端点同样只在本人浏览器连接上分发：连接、发表、删除评价不可经 dispatchTeloaEndpoint、teloaWork.invoke（IM/插件）或待恢复重放到达；会话内发表另经原生确认卡。
       if((marketReviewEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await marketReviewsHandler(endpoint,payload)}
       // 周期规则启用属本人持续授权，只在已认证浏览器连接处理；公共端点和扩展调用均不能到达。
       if(endpoint===businessSyncRuleWriteEndpoint||(businessSyncRuntimeEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await businessDashboardHandler(endpoint,payload,signal)}
+      // 原请求预览仅供本人浏览器只读查看，不进入工具/插件的公共分发或待恢复写命令目录。
+      if(endpoint==='requests/pending/preview'){
+        if(!isRecord(payload)||typeof payload.requestId!=='string'||Object.keys(payload).some(key=>key!=='requestId'))throw new WorkError('teloa/invalid-input','查看原请求只能提交请求身份。')
+        signal.throwIfAborted()
+        const value=await pendingRequests.preview(owner,payload.requestId)
+        signal.throwIfAborted()
+        return {ok:true,value}
+      }
       if(!endpointSet.has(endpoint))throw new WorkError('teloa/not-found','未提供此工作接口。')
       const value=endpoint==='requests/pending/list'?await pendingRequests.list(owner):endpoint==='requests/pending/ack'?await (async()=>{
         if(!isRecord(payload)||typeof payload.requestId!=='string'||Object.keys(payload).some(key=>key!=='requestId'))throw new WorkError('teloa/invalid-input','确认待核对请求只能提交请求身份。')
@@ -1887,4 +2599,5 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
   }))
   ctx.provide('teloaWork',teloaWork)
+  ctx.provide('teloaAssistantChannels',assistantChannels.service)
 }

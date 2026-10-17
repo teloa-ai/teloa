@@ -45,6 +45,9 @@ export const correctionMistranslation = {
  * 每条都写明为什么不是工程术语。
  */
 export const plainLanguageExemptions = {
+  'capabilityCenter.searchDiscover': '2026-10-09 用户批准独立连接器分类，其搜索提示复用正式分类名',
+  'capabilityCenter.connectors': '2026-10-09 用户批准技能与连接器独立分类，使用竞品与用户熟悉的产品名词',
+  'capabilityCenter.description': '2026-10-09 能力中心介绍中的连接器为已批准产品分类',
   'navigation.shortcuts': '左栏「已固定」分区：把条目钉在左栏的界面位置，不是版本锁定',
   'navigation.shortcut.pin': '界面操作「固定到左栏」',
   'navigation.shortcut.unpin': '界面操作「取消固定」',
@@ -52,7 +55,5 @@ export const plainLanguageExemptions = {
   'business.dashboards.pin': '界面操作「固定此看板」到左栏',
   'collaboration.action.pin': '群消息置顶（Pin），界面位置义',
   'collaboration.action.unpin': '取消置顶（Unpin），界面位置义',
-  'team.hire.job.pickAria': '招同事第二步的「岗位」选择组：指给同事挑的职位种类（通用、调查等），不是把同事本身叫岗位',
-  'team.hire.fact.job': '工牌预览上的「岗位」一栏：显示所选职位种类，职位义，不是同事的旧叫法',
   'create.sentence.prompt.scopeWithName': '发给模型的提示词：括号里的 manifest 是该字段所在文件的机器名，模型要据此找到字段，按审查建议保留',
 }

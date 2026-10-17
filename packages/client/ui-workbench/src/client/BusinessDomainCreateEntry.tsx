@@ -6,7 +6,7 @@ import {useI18n} from './i18n/provider.js'
 import {businessDomainAutoShortName,businessDomainScopeKeyValid,createEntityNameKey,createSentencePrompt} from './page-create-presentation.js'
 import css from './BusinessDomainCreateEntry.module.css'
 
-type Props={api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string})=>void;openMarket:()=>void;confirm:(preview:PageCreateDraftPreview)=>Promise<string>;open:(loadId:string)=>void}
+type Props={api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string})=>void|Promise<void>;openMarket:()=>void;confirm:(preview:PageCreateDraftPreview)=>Promise<string>;open:(loadId:string)=>void}
 
 /**
  * 新业务的范围在加载后才会登记，因此不能复用已有范围的下拉框，也不能拿 `general` 充数。
@@ -40,8 +40,8 @@ export function BusinessDomainCreateEntry({api,prepare,openMarket,confirm,open}:
   const entityLine=t('create.sentence.prompt.entity',{entity:t(createEntityNameKey('business-domain'))})
   const scopeLine=t('create.sentence.prompt.scope',{scope:value})
   const prefix=[entityLine,scopeLine,t('create.sentence.prompt')].join('\n')+'\n'
-  if(!displayName||!prompt.text.startsWith(prefix)){prepare(prompt);return}
-  prepare(createSentencePrompt('business-domain',value,prompt.text.slice(prefix.length),t,displayName))
+  if(!displayName||!prompt.text.startsWith(prefix))return prepare(prompt)
+  return prepare(createSentencePrompt('business-domain',value,prompt.text.slice(prefix.length),t,displayName))
  }
 
  return <section className={css.entry} aria-label={t('create.businessDomain.scope.aria')}>

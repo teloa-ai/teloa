@@ -1,9 +1,10 @@
 /** 先定稿中英文；其它既有语言只回退，不在开发中反复补译。 */
 const rows = [
  ['title','工作概览','工作概覽','Work overview'],
+ ['moreRoom','请扩大窗口或收起会话目录，以并栏查看工作概览。','請擴闊視窗或收起對話目錄，以並排檢視工作概覽。','Widen the window or close the conversation list to view the work overview beside your conversation.'],
  ['progress','进展','進展','Progress'],
  ['running','运行中','執行中','Running'],
- ['artifacts','成果','成果','Results'],
+ ['artifacts','工作成果','工作成果','Work results'],
  ['usage','本次使用','本次使用','Used this round'],
  ['empty','这段会话还没有工作记录。','此對話還沒有工作記錄。','No work recorded in this conversation yet.'],
  ['earlierSteps','较早步骤 · {count}','較早步驟 · {count}','Earlier steps · {count}'],

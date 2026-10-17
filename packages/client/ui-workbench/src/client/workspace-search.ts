@@ -8,7 +8,7 @@ import type {WorkspaceKnowledgeSearchEntry} from './workspace-search-knowledge.j
 import type {WorkspaceCapabilityOpenTarget,WorkspaceCapabilitySearchRow} from './workspace-capability-search.js'
 
 /** 全局搜索只接收市场当前目录已经呈现的本地化条目，不自行生成候选项。 */
-export type WorkspaceMarketSearchEntry={id:string;title:string;summary:string}
+export type WorkspaceMarketSearchEntry={id:string;title:string;summary:string;detailKey?:MessageKey}
 
 export type WorkspaceSearchSource={
  conversations:readonly PresentedConversation[]
@@ -19,11 +19,14 @@ export type WorkspaceSearchSource={
   knowledge:readonly WorkspaceKnowledgeSearchEntry[]
   capabilities:readonly WorkspaceCapabilitySearchRow[]
   market:readonly WorkspaceMarketSearchEntry[]
+  /** 仅传入本人已读取的持久计划，不把本地示例混进全局目录。 */
+  plans?:readonly {id:string;title:string;goal:string;roleName:string;state:'active'|'paused'|'archived'}[]
 }
-export const workspaceSearchKinds={conversation:'workDirectory.conversation',task:'attention.source.task',group:'shell.messageType.group',role:'navigation.team',business:'navigation.spaces',knowledge:'navigation.resources',capability:'navigation.capabilities',market:'navigation.market'} as const satisfies Record<string,MessageKey>
-export type WorkspaceSearchResult={key:string;kind:keyof typeof workspaceSearchKinds;id:string;title:string;detailKey:MessageKey;open?:WorkspaceCapabilityOpenTarget}
-export type WorkspaceSearchKindFilter='all'|WorkspaceSearchResult['kind']
+export const workspaceSearchKinds={conversation:'workDirectory.conversation',task:'attention.source.task',group:'shell.messageType.group',role:'navigation.team',business:'navigation.spaces',knowledge:'navigation.resources',capability:'capabilityCenter.myResources',market:'capabilityCenter.myResources',plan:'navigation.plans'} as const satisfies Record<string,MessageKey>
+export type WorkspaceSearchResult={key:string;kind:keyof typeof workspaceSearchKinds;id:string;title:string;detailKey:MessageKey;description?:string;open?:WorkspaceCapabilityOpenTarget}
+export type WorkspaceSearchKindFilter='all'|'resource'|WorkspaceSearchResult['kind']
 export function filterWorkspaceSearchResults(rows:readonly WorkspaceSearchResult[],kind:WorkspaceSearchKindFilter):WorkspaceSearchResult[]{
+ if(kind==='resource')return rows.filter(row=>row.kind==='capability'||row.kind==='market')
  return kind==='all'?[...rows]:rows.filter(row=>row.kind===kind)
 }
 /** 会话由调用方传入已接入且未归档的目录；不扩大原生私人会话可见范围。 */
@@ -46,6 +49,9 @@ export function searchWorkspace(source:WorkspaceSearchSource,query:string):Works
  for(const row of source.capabilities){
   if([row.title,row.id,row.detail].some(text=>text.toLocaleLowerCase().includes(needle)))rows.push({key:'capability:'+row.key,kind:'capability',id:row.id,title:row.title,detailKey:capabilityKeys[row.type],open:row.open})
  }
- for(const row of source.market)add('market',row.id,row.title,'workspaceSearch.detail.market',row.summary)
+ for(const row of source.market)add('market',row.id,row.title,row.detailKey??'capabilityCenter.myResources',row.summary)
+ for(const row of source.plans??[]){
+  if([row.title,row.id,row.goal,row.roleName].some(text=>text.toLocaleLowerCase().includes(needle)))rows.push({key:'plan:'+row.id,kind:'plan',id:row.id,title:row.title,detailKey:row.state==='active'?'status.enabled':row.state==='paused'?'status.paused':'status.archived',description:row.roleName})
+ }
  return rows
 }

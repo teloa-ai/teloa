@@ -36,8 +36,8 @@ export function AttentionDecisionCard({id,item,sourceName,scopeName,occurred,sum
   </section>}
   <dl className={css.rows}>
    <div><dt>{t('attention.row.source')}</dt><dd><span className={css.badges}><span className={css.metadata}><Waypoints size={13} aria-hidden="true"/>{sourceName}</span><span className={css.metadata}><Folder size={13} aria-hidden="true"/>{scopeName}</span><span className={css.metadata}><Clock3 size={13} aria-hidden="true"/>{occurred}</span></span></dd></div>
-   <div><dt>{t('attention.row.basis')}</dt><dd><MarkdownPreview markdown={basis} empty={t('evidence.emptyBody')} images={false}/></dd></div>
-   <div><dt>{t('attention.row.next')}</dt><dd>{t(attentionNextStepKey(item))}</dd></div>
+   {item.target.kind!=='pending-request'&&<div><dt>{t('attention.row.basis')}</dt><dd><MarkdownPreview markdown={basis} empty={t('evidence.emptyBody')} images={false}/></dd></div>}
+   {item.target.kind!=='pending-request'&&<div><dt>{t('attention.row.next')}</dt><dd>{t(attentionNextStepKey(item))}</dd></div>}
    {(risk!==undefined||item.target.kind==='security-action')&&<div><dt>{t('attention.row.risk')}</dt><dd>{risk===undefined
     ?t('attention.row.riskUnavailable')
     :<span className={css.badges}>
@@ -46,7 +46,7 @@ export function AttentionDecisionCard({id,item,sourceName,scopeName,occurred,sum
       <span className={css.metadata}>{t('attention.security.targets',{count:risk.targets})}</span>
     </span>}</dd></div>}
   </dl>
-  <EvidenceList entries={evidence} compact/>
+  {(item.target.kind!=='pending-request'||evidence.length>0)&&<EvidenceList entries={evidence} compact/>}
   <div className={css.actions}>{actions}</div>
  </div>
 }

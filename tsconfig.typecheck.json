@@ -10,6 +10,9 @@
     "packages/**/*.ts",
     "packages/**/*.tsx"
   ],
+  "files": [
+    "packages/client/ui-workbench/src/assets.d.ts"
+  ],
   "exclude": [
     "node_modules",
     "packages/client/**",

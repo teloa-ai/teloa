@@ -4,6 +4,9 @@ import {WorkError} from '@teloa/contract'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {UserMessage} from '@deepseek-ai/dsh-session'
 import type {createNativeWorkInput,NativeInputContext} from './native-work-input.ts'
+import type {NativeVoiceInputAdmissions} from './native-voice-input-admission.ts'
+import type {NativeHardwareInputAdmissions} from './native-hardware-input-admission.ts'
+import {combineWorkAccessLeases} from '@teloa/backend'
 
 declare module '@deepseek-ai/dsh-typert-protocol'{
  interface RemoteErrorDetailsMap{
@@ -31,13 +34,16 @@ function context(producer:NativeInputContext['producer'],identity:readonly unkno
  * 仅首次新输入；旧回执由 Controller 核对，seed/fork 与受理任务续作另行接入。
  * 返回固定函数供各服务在启动前安装，不自行创建第二个 guard 或决定业务身份。
  */
-export function createNativeProducerAdmissions(input:Input,goalAdmission?:(candidate:GoalInputCandidate,dispatch:Publisher)=>Promise<void>){
+export function createNativeProducerAdmissions(input:Input,goalAdmission?:(candidate:GoalInputCandidate,dispatch:Publisher)=>Promise<void>,voice?:Pick<NativeVoiceInputAdmissions,'controller'>,hardware?:Pick<NativeHardwareInputAdmissions,'controller'>){
  return Object.freeze({
   async controller(candidate:ControllerInputCandidate,dispatch:Publisher):Promise<void>{
    const binding=candidate.kind==='prompt'
     ?context('prompt',['controller/prompt',candidate.agent.id,candidate.requestId,candidate.mode])
     :context('queue',['controller/queue-edit',candidate.agent.id,candidate.itemId,candidate.target,candidate.previousMessage.id])
-   try{await input.withNewInput(candidate.agent,candidate.message,binding,dispatch)}
+   try{
+    const leases=[voice?.controller(candidate),hardware?.controller(candidate)].filter(lease=>lease!==undefined)
+    await input.withNewInput(candidate.agent,candidate.message,binding,dispatch,undefined,leases.length?combineWorkAccessLeases(leases):undefined)
+   }
    catch(error){
     // 内部准入仍抛业务错误；只有官方 Controller 的传输边界显式转换已知拒绝。
     if(error instanceof WorkError&&(error.code==='teloa/forbidden'||error.code==='teloa/unavailable'))throw new RemoteError(error.code,error.message,{}, {cause:error})

@@ -144,7 +144,7 @@ test('当前状态来自 live Agent，成功重试追加恢复事件，不把旧
 
 test('官方 PTC 缺少轮外关闭入口时如实提示，不伪造脚本轮次绕过工具面',async t=>{
  const f=await fixture(t)
- for(const name of ['dsh-subprocess-local','dsh-sandbox-local','dsh-fs-sandbox','dsh-ptc-runtime-node']){const module=await official(name);await f.ctx.plugin(module.default??module,{})}
+ for(const name of ['dsh-subprocess-local','dsh-sandbox-local','dsh-ptc-runtime-node']){const module=await official(name);await f.ctx.plugin(module.default??module,{})}
  await f.execute();f.agent.ctx.tools.presentAs('ptc')
  f.stop();await f.agent.whenIdle()
  assert.equal(f.calls.filter(call=>call.name===close).length,0,'PTC 不应直接调用已折叠的浏览器工具')

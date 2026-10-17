@@ -18,6 +18,7 @@ import {businessResultToolNames} from '../src/business-result-tools.ts'
 import {knowledgeSearchToolName} from '../src/local-retrieval.ts'
 import {readFileSync} from 'node:fs'
 import {parse} from 'yaml'
+import {businessChangeSetToolNames} from '../src/business-change-set-tools.ts'
 
 test('文件工具只能接收真实候选的工作目录范围，不能伪造任意参数或路径授权',()=>{
  const candidates=['read','write','edit'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace' as const}))
@@ -76,11 +77,11 @@ test('执行态委派工具固定为前台一次性，并给普通会话委派�
  assert.equal(rows.find(row=>row.id==='tool-subagent-fork')!.config!.maxDepth,3)
  const taskRow=rows.find(row=>row.id==='tool-subagent-task')! as {disabled?:unknown;config?:Record<string,unknown>}
  assert.equal(taskRow.disabled,true)
- assert.deepEqual(taskRow.config,{provider:'spawn',toolName:subagentTaskToolName,enableRunInBackground:false,backgroundMode:'one-shot',maxDepth:1})
+ assert.deepEqual(taskRow.config,{provider:'spawn',toolName:subagentTaskToolName,enableRunInBackground:false,maxDepth:1})
 })
 test('整工具授权允许明确列出的委派与外发工具，资料规则仍逐对校验来源版本',()=>{
  // 委派描述、团队消息和外发查询参数不可枚举；默认仍不授予任何岗位。
- assert.ok(roleGrantToolNames.includes(subagentTaskToolName));assert.deepEqual(unconstrainedGrantToolNames,[subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...businessResultToolNames,knowledgeSearchToolName])
+ assert.ok(roleGrantToolNames.includes(subagentTaskToolName));assert.deepEqual(unconstrainedGrantToolNames,[subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...businessResultToolNames,...businessChangeSetToolNames,knowledgeSearchToolName])
  const available=referenceToolRules([{sourceId:'one',sourceVersion:'v1'}] as ResourceContext['contents'])
  const delegation={name:subagentTaskToolName,anyArguments:true as const,allowed:[]}
  validateReferenceToolRules([delegation],taskRunToolRules([]))

@@ -6,17 +6,24 @@ import {fileURLToPath,pathToFileURL} from 'node:url'
 import {execFile} from 'node:child_process'
 import {promisify} from 'node:util'
 
-// 通用机制来自桌面核心兼容流程：固定官方来源、完整上下文 apply、精确前后摘要。
+// 固定官方来源与精确前后摘要；宿主保留完整上下文，客户端窄补丁显式使用零上下文。
 // 社区只创建私有完整包副本；绝不改安装图里的 pnpm store/hardlink 或用户插件。
-const version='0.2.1-alpha.1',upstream='5badb15009ae1756c3afe0ae0cef1faafc290ccc'
+const version='0.2.1-rc.2',upstream='687f282e8625c6b8d11ff58211a90524be2e4317'
 const specs=[
  ['session','append-admission','dsh-session'],['session-controller','input-admission','dsh-api-session-controller'],
- ['subagent','prompt-admission','dsh-subagent'],['subagent-in-process-driver','input-admission','dsh-subagent-in-process-driver'],
+ ['subagent','prompt-admission','dsh-subagent'],
  ['agent-loop','work-admission','dsh-agent-loop'],['agent','announcement-abort','dsh-agent'],
  ['session-persistence','open-admission','dsh-session-persistence'],['session-persistence-jsonl','open-admission','dsh-session-persistence-jsonl'],
- ['llm','stream-admission','dsh-llm'],['tools','work-admission','dsh-tools'],
+ ['llm','stream-admission','dsh-llm'],['tools','scoped-ptc','dsh-tools'],
  ['compaction-basic','summary-request','dsh-compaction-basic'],['goal-round-driver','input-admission','dsh-goal-round-driver'],
+ ['tool-jobs','completion-admission','dsh-tool-jobs'],
 ].map(([part,patch,name])=>({name:'@deepseek-ai/'+name,basename:'dsh-'+part+'-'+version+'-'+patch}))
+// 新版 JSONL 通过函数插件提供服务，公共声明不再导出实现类。
+specs.find(spec=>spec.name==='@deepseek-ai/dsh-session-persistence-jsonl').targets=['lib/index.js']
+specs.push({name:'@deepseek-ai/dsh-experimental-agent-team',basename:'dsh-experimental-agent-team-'+version+'-input-admission',targets:['lib/index.js']})
+specs.push({name:'@deepseek-ai/dsh-client-ui-conversation',basename:'dsh-client-ui-conversation-'+version+'-empty-header-utilities',targets:['lib/client.js'],unidiffZero:true})
+// 提供方未单独配置上限时，固定 SDK 模型已有有限输出上界；将它绑定到原生 prepared call，供受控工作预留额度。
+specs.push({name:'@deepseek-ai/dsh-llm-pi-ai',basename:'dsh-llm-pi-ai-'+version+'-output-cap',targets:['lib/index.js','lib/types/adapter.d.ts']})
 export const nativeRuntimeCompatibilityFiles=Object.freeze(specs.flatMap(spec=>[spec.basename+'.json',spec.basename+'.patch']))
 const hash=value=>createHash('sha256').update(value).digest('hex'),sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const exec=promisify(execFile),trusted=new WeakMap();let installed
@@ -40,7 +47,7 @@ async function sourceFiles(root){
  await visit(root);return files
 }
 function manifestValue(bytes,spec){
- const manifest=JSON.parse(bytes),targets=['lib/index.js','lib/types/index.d.ts']
+ const manifest=JSON.parse(bytes),targets=spec.targets??['lib/index.js','lib/types/index.d.ts']
  if(manifest.schema!=='teloa.dsh-compat-patch/v1'||manifest.package!==spec.name||manifest.version!==version||manifest.upstreamCommit!==upstream||!sha(manifest.patchSha256)||!Array.isArray(manifest.api)||manifest.api.some(api=>typeof api!=='string'||!api)||!Array.isArray(manifest.files)||manifest.files.length!==targets.length)throw refuse('固定官方兼容清单版本、来源或能力不一致。')
  const found=new Set()
  for(const row of manifest.files){if(!row||Object.keys(row).sort().join(',')!=='afterSha256,beforeSha256,path'||!targets.includes(row.path)||found.has(row.path)||!sha(row.beforeSha256)||!sha(row.afterSha256)||row.beforeSha256===row.afterSha256)throw refuse('兼容补丁目标不在固定允许清单。');found.add(row.path)}
@@ -95,7 +102,7 @@ export async function prepareNativeRuntime({programRoot,runtimeRoot}){
     for(const file of row.before){const target=join(copy,file.path);await mkdir(dirname(target),{recursive:true,mode:0o700});const bytes=await readFile(join(row.source,file.path));if(hash(bytes)!==file.sha256)throw refuse('官方输入在复制期间已变化。');await writeFile(target,bytes,{flag:'wx',mode:0o600})}
     const patchPath=join(staging,row.basename+'.patch');await writeFile(patchPath,row.patch,{flag:'wx',mode:0o600})
     const options={cwd:copy,env:{PATH:'/usr/bin:/bin',LANG:'C',LC_ALL:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'},timeout:10000,maxBuffer:1024*1024}
-    await exec('git',['apply','--check','--whitespace=nowarn',patchPath],options);await exec('git',['apply','--whitespace=nowarn',patchPath],options)
+    await exec('git',['apply',...row.unidiffZero?['--unidiff-zero']:[],'--check','--whitespace=nowarn',patchPath],options);await exec('git',['apply',...row.unidiffZero?['--unidiff-zero']:[],'--whitespace=nowarn',patchPath],options)
     for(const file of row.manifest.files)await chmod(join(copy,file.path),0o600)
     await verifyCopy(copy,row.after);await rm(patchPath)
    }
@@ -117,7 +124,14 @@ export function installNativeRuntime(plan){
  if(installed){if(installed.fingerprint!==plan.fingerprint||installed.roots!==JSON.stringify(packages))throw refuse('同一物理宿主不能切换原生执行图。');return installed.hook}
  const remap=(url,from,to)=>{
   if(typeof url!=='string'||!url.startsWith('file:'))return url
-  const path=fileURLToPath(url),row=packages.find(row=>path===row[from]||inside(row[from],path));return row?pathToFileURL(join(row[to],relative(row[from],path))).href:url
+  const path=fileURLToPath(url);let owner
+  for(const row of packages){
+   const local=relative(row[from],path),first=local.split(sep)[0]
+   // sourceFiles 不复制包根 node_modules；其中的依赖保留官方来源，由自身最具体的受管包接管。
+   if(isAbsolute(local)||first==='..'||first==='node_modules')continue
+   if(!owner||row[from].length>owner[from].length)owner=row
+  }
+  return owner?pathToFileURL(join(owner[to],relative(owner[from],path))).href:url
  }
  const hook=registerHooks({resolve(specifier,context,nextResolve){const result=nextResolve(specifier,{...context,parentURL:remap(context.parentURL,'root','source')});return {...result,url:remap(result.url,'source','root')}}})
  installed={fingerprint:plan.fingerprint,roots:JSON.stringify(packages),packages,hook};return hook

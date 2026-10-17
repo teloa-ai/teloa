@@ -4,9 +4,12 @@ import {BusinessConfigurationStore} from './business-configuration-store.ts'
 import type {BusinessConfigurationActor,BusinessConfigurationDraftService} from './business-configuration-drafts.ts'
 import type {BusinessDefinitionSourceReader} from './business-definition-source.ts'
 import {businessConfigurationDependencyHash,issueBusinessConfigurationPreviewReceipt} from './business-configuration-preview-receipt.ts'
+import {inspectBusinessConfigurationRecordImpact} from './business-configuration.ts'
+import {businessDataRevision} from './business-data.ts'
+import type {BusinessTemplateUpgradeImpact} from '@teloa/contract'
 import {assertBusinessConfigurationUniqueRecords} from './business-record-constraints.ts'
 
-export type BusinessConfigurationPreview={draftId:string;revision:number;candidateHash:string;baseVersion:number;dependencyHash:string;receipt:string;changes:{rows:BusinessDefinitionDiffRow[];truncated:boolean};issues:[]}
+export type BusinessConfigurationPreview={draftId:string;revision:number;candidateHash:string;baseVersion:number;dependencyHash:string;receipt:string;changes:{rows:BusinessDefinitionDiffRow[];truncated:boolean};issues:[];impact:BusinessTemplateUpgradeImpact}
 function changes(before:unknown,after:unknown):BusinessConfigurationPreview['changes']{
  const left=businessDefinitionPaths(before),right=businessDefinitionPaths(after),rows:BusinessDefinitionDiffRow[]=[]
  let truncated=false
@@ -41,8 +44,9 @@ export class BusinessConfigurationPreviewService{
    }else await this.definitions.forConfigurationCandidate(db,actor.ownerId,draft.candidate)
    await assertBusinessConfigurationUniqueRecords(db,actor.ownerId,draft.candidate)
    const before=current?{...current.manifest,definitions:current.leaves.map(leaf=>({kind:leaf.kind,definition:JSON.parse(leaf.body)}))}:undefined
-   const dependencyHash=businessConfigurationDependencyHash(current)
-   const result:BusinessConfigurationPreview={draftId:draft.id,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash,receipt:issueBusinessConfigurationPreviewReceipt({ownerId:actor.ownerId,scope:draft.scope,draftId:draft.id,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash}),changes:changes(before,draft.candidate),issues:[]}
+   const impact=await inspectBusinessConfigurationRecordImpact(db,actor.ownerId,draft.candidate,current)
+   const dependencyHash=businessConfigurationDependencyHash(current,await businessDataRevision(db,actor.ownerId,draft.scope))
+   const result:BusinessConfigurationPreview={draftId:draft.id,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash,receipt:issueBusinessConfigurationPreviewReceipt({ownerId:actor.ownerId,scope:draft.scope,draftId:draft.id,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash}),changes:changes(before,draft.candidate),issues:[],impact}
    await db.query('commit')
    return result
   }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}

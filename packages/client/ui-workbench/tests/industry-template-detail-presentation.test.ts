@@ -15,7 +15,7 @@ test('行业模板产品页用「添加后你会得到」取代三栏资源摘�
   assert.match(market, /<h2>\{t\('market\.solution\.youGet'\)\}<\/h2>/)
   assert.match(market, /className=\{css\.youGet\}/)
   assert.match(market, /className=\{css\.actionWorkspace\}/)
-  // 「其他使用方式」不再自成一个折叠，两个动作压进唯一的「来源与版本」折叠正文里。
+  // 使用动作与资源阅读直接可达；来源折叠只承接来源、版本和治理。
   assert.doesNotMatch(market, /className=\{css\.secondaryActions\}/)
   assert.match(market, /className=\{css\.provenanceBody\}/)
   assert.match(market, /aria-label=\{t\('market\.industry\.otherUsage'\)\}/)
@@ -25,7 +25,7 @@ test('行业模板产品页用「添加后你会得到」取代三栏资源摘�
   assert.match(market, /<IndustryLoadForm embedded item=\{item\}/)
   assert.match(market, /:actionPanel\?<section className=\{css\.actionWorkspace\} aria-label=\{t\('market\.intent\.configurePanelAria'\)\}>[\s\S]*?<IndustryIntentPanel /)
   assert.equal(market.match(/className=\{css\.primaryAction\}/g)?.length,1)
-  assert.match(market, /<button type="button" onClick=\{\(\)=>setActionPanel\(null\)\}>.*\{t\('market\.template\.backToContent'\)\}<\/button>/)
+  assert.match(market, /<ToolbarIconButton label=\{t\('market\.template\.backToContent'\)\} icon=\{ArrowLeft\} onClick=\{\(\)=>setActionPanel\(null\)\}\/>/)
 })
 
 test('行业资源浏览器提供可选择的目录和默认资源预览', () => {
@@ -45,11 +45,15 @@ test('工作环境只显示标准落点分类，不重复显示行业资源目�
   assert.match(savedDirectory, /showCategories=\{false\} title=\{selectedGroup\?\.title\}/)
 })
 
-test('加载配置先选目标再确认，不在默认详情堆出完整表单', () => {
-  assert.match(loadForm, /stage==='target'/)
-  assert.match(loadForm, /stage==='review'/)
+test('加载只有一屏核对摘要并须显式确认，不在默认详情堆出完整表单', () => {
+  // 个人版只有本空间一个目的地：去掉空的「选择位置」步骤后，首屏就是核对摘要。
   assert.match(loadForm, /t\('market\.industry\.load\.review'\)/)
-  assert.match(loadForm, /t\('market\.industry\.load\.back'\)/)
+  assert.match(loadForm, /<dt>\{t\('market\.industry\.load\.destination'\)\}<\/dt><dd>\{summary\.target\}<\/dd>/)
+  assert.match(loadForm, /<dt>\{t\('market\.industry\.load\.effect'\)\}<\/dt><dd>\{summary\.effect\}<\/dd>/)
+  assert.doesNotMatch(loadForm, /\bstage\b|market\.industry\.load\.(back|next|stepLocation|stepReview)|<select|<input|<form/)
+  // 写入只有一个入口：显式「加载」按钮触发 submit，submit 内唯一一次 load(...)。
+  assert.equal(loadForm.match(/\bload\(/g)?.length, 1)
+  assert.match(loadForm, /onClick=\{\(\)=>void submit\(\)\}>\{busy\?t\('market\.industry\.load\.loading'\):t\('market\.industry\.load\.confirm'\)\}/)
 })
 
 test('模板详情直接说明资源加载后的统一正式落点',()=>{

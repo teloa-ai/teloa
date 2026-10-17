@@ -5,7 +5,7 @@ import {GROUP_REACTION_MESSAGE_ROWS} from '../src/client/i18n/locales/group-reac
 
 // 群内直接回应与表情一期 功能验证 → T16 收口：`group.routing.*`（3）+ `group.reaction.*`（5）+
 // `collaboration.composer.*`（4）+ `role.conversation.*`（1）= 13 行；2026-09-21 作者与身份修复轮
-// 又补了重新介绍按钮、成功回执和当前语言的短请求，共 19 行。
+// 岗位身份保留只读详情；移除重新介绍动作、提示词与成功回执，共 16 行。
 // 这些键落在 `i18n-orphan-keys.test.ts` 受管的 `group.`／`collaboration.` 命名空间下，
 // 在 T12（表情条接线）/T13（输入框工具栏接线）/T14（岗位身份接线）落地前，orphan 守卫会
 // 对这批新键报红——这是预期状态，不通过加豁免名单或改守卫来压绿，红灯由 T14 收工时一并解除。
@@ -25,16 +25,13 @@ const EXPECTED_KEYS=[
  'collaboration.composer.references',
  'collaboration.composer.enterHint',
  'role.conversation.identity',
- 'role.conversation.reintroduce',
- 'role.conversation.reintroduced',
- 'role.conversation.introducePrompt',
  'role.conversation.details',
  'role.conversation.close',
  'collaboration.message.sourceDetails',
 ]
 
-test('群内直接回应与表情词表 19 行十一列齐全，十种语言无空串，接入主词典',async()=>{
- assert.equal(GROUP_REACTION_MESSAGE_ROWS.length,19)
+test('群内直接回应与只读岗位身份词表 16 行十一列齐全，既有翻译无空串并接入主词典',async()=>{
+ assert.equal(GROUP_REACTION_MESSAGE_ROWS.length,16)
  const forbidden=/工作空间|单空间|实例|投影|尚未加载|内容待读取|\d+\s*项资源|人类/
  const keys=new Set<string>()
  for(const row of GROUP_REACTION_MESSAGE_ROWS){
@@ -45,9 +42,7 @@ test('群内直接回应与表情词表 19 行十一列齐全，十种语言无�
   assert.doesNotMatch(row[1],forbidden,row[0])
  }
  assert.deepEqual([...keys].sort(),[...EXPECTED_KEYS].sort())
- const prompt=GROUP_REACTION_MESSAGE_ROWS.find(row=>row[0]==='role.conversation.introducePrompt')!
- assert.match(prompt[1],/岗位职责与边界/)
- assert.match(prompt[3],/responsibilities and boundaries/)
+ assert.equal([...keys].some(key=>/reintroduce|introducePrompt/.test(key)),false)
  const core=await readFile(new URL('../src/client/i18n/locales/core-pages.ts',import.meta.url),'utf8')
  assert.match(core,/GROUP_REACTION_MESSAGE_ROWS/)
 })

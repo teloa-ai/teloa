@@ -44,7 +44,7 @@ test('引用条目不可用时不得带标题/状态/版本，可用时校验状
  assert.deepEqual(readProjectReferenceItem({...ref('1'),title:null,state:null,version:null,available:false}),{...ref('1'),title:null,state:null,version:null,available:false})
  for(const patch of [{available:false},{state:'success'},{version:0},{title:''},{origin:'direct'},{available:'yes'}])assert.throws(()=>readProjectReferenceItem({...base,...patch}),{code:'teloa/invalid-input'})
 })
-test('详情回包必须含 references 且恰好四键，引用不进 items 与汇总',()=>{
+test('详情回包必须含 references，保留存量四键并严格限定反向群字段，引用不进 items 与汇总',()=>{
  const items:ProjectItem[]=[],references=[{...ref('1'),title:'Task',state:'ready',version:1,available:true}]
  assert.deepEqual(readProjectDetail({project:{...project,references:[ref('1')]},items,summary:projectSummary(items),references}).references,references)
  assert.equal(readProjectDetail({project,items,summary:projectSummary(items),references:[]}).summary.totalTasks,0)
@@ -68,4 +68,14 @@ test('总览回包恰好两键，rows 去重，nextCursor 为 null 或合法游�
  assert.deepEqual(readProjectOverviewPage({rows:[project],nextCursor:null}).rows[0]?.id,id)
  assert.equal(readProjectOverviewPage({rows:[],nextCursor:project.updatedAt+'|'+id}).nextCursor,project.updatedAt+'|'+id)
  for(const value of [{rows:[project,project],nextCursor:null},{rows:[project]},{rows:[project],nextCursor:'x'},{rows:[project],nextCursor:null,extra:1},{rows:{},nextCursor:null}])assert.throws(()=>readProjectOverviewPage(value),{code:'teloa/invalid-input'})
+})
+
+
+test('反向群关系仅为只读群引用，不混入项目定义、任务进度或任意资源',()=>{
+ const detail={project,items:[],summary:projectSummary([]),references:[]}
+ const group={kind:'group',id,scope:'SOC',title:'Security support',state:'active',version:1,available:true}
+ const current=readProjectDetail({...detail,linkedGroups:[group]})
+ assert.deepEqual(current.linkedGroups,[group]);assert.deepEqual(current.summary,detail.summary);assert.deepEqual(current.project.links,[])
+ for(const linkedGroups of [[{...group,kind:'task',state:'ready'}],[group,group],[{...group,available:false}],[{...group,extra:'grant'}],{group}])assert.throws(()=>readProjectDetail({...detail,linkedGroups}),{code:'teloa/invalid-input'})
+ assert.deepEqual(readProjectDetail(detail).linkedGroups,undefined,'存量回执不伪造新的当前关系')
 })

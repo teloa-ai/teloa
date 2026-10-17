@@ -104,7 +104,9 @@ for(const mode of modes)test('真实 '+mode+' 工具体结束后迟到initial拒
  await f.send();await gate.entered;assert.equal(f.adapter.parentCalls,2)
  const fresh=f.counts.fresh;gate.release();await assert.rejects(outcome!,{code:'teloa/forbidden'})
  assert.equal(f.counts.fresh,fresh);assert.equal(f.childRequests().length,0)
- assert.equal(f.candidates.length,1);assert.equal(f.inserted(f.candidates[0]!.agent).length,0)
+ // 后台模式更早在同步 completion factory 截断迟到启动，尚未创建 child。
+ assert.equal(f.candidates.length,mode==='continuable'?0:1)
+ if(f.candidates.length)assert.equal(f.inserted(f.candidates[0]!.agent).length,0)
 })
 
 for(const mode of modes)test('显式无工具cause '+mode+' 首次child仍核对新工作许可',options,async t=>{

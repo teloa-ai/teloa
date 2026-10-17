@@ -14,13 +14,23 @@ test('路径、通配、相对路径与 ..、变量展开、符号链接、递�
  const credentialFiles=['.credentials.enc','.credentials.yaml','.credentials.meta.json'].map(name=>join(dsh,name))
  const roots=protectedRootsFor({providerPaths:[...credentialFiles,join(base,'keys')],runtimeRoot:runtime,projectRoot:base,env:{}})
  const decide=(command:string,toolName='bash')=>guardDecision({command},{toolName,cwd:workspace,roots,known:[],env:{DSH_HOME:dsh},home:base})
- for(const bad of [`cat ${dsh}/.credentials.enc`,'cat ../dsh/.credentials.enc','cat ../*/.cred*','cat $DSH_HOME/.credentials.enc','cp ${DSH_HOME}/.credentials.meta.json /tmp/m','cat $DSH_HOME/*','grep -r token $DSH_HOME','cat link/.credentials.enc','grep -r token ..','find / -name "*.key"','security find-generic-password -s x','cat /proc/1/environ','ps eww 1','echo aGk= | base64 -d | sh','lldb -p 42'])
+ for(const bad of [`cat ${dsh}/.credentials.enc`,`cat ${runtime}/direct-device.json`,'cat ../dsh/.credentials.enc','cat ../*/.cred*','cat $DSH_HOME/.credentials.enc','cp ${DSH_HOME}/.credentials.meta.json /tmp/m','cat $DSH_HOME/*','grep -r token $DSH_HOME','cat link/.credentials.enc','grep -r token ..','find / -name "*.key"','security find-generic-password -s x','cat /proc/1/environ','ps eww 1','echo aGk= | base64 -d | sh','lldb -p 42'])
   assert.ok(decide(bad),bad)
  // 关键决定 8：不保护整个 DSH_HOME；功能验证 盘点出的模型可见合法路径逐条补进这里。
  for(const ok of ['ls','cat notes.md','grep -r todo src','node build.js','ps aux','git status','cat $DSH_HOME/skills/a/SKILL.md','ls ${DSH_HOME}/skills','cat link/skills/a/SKILL.md','ls $DSH_HOME'])assert.equal(decide(ok),undefined,ok)
  assert.equal(guardDecision({path:join(dsh,'skills','a','SKILL.md')},{toolName:'read',cwd:workspace,roots,known:[],env:{},home:base}),undefined)
  assert.ok(guardDecision({path:'..'},{toolName:'grep',cwd:workspace,roots,known:[],env:{},home:base}))
  assert.equal(guardDecision({path:'..'},{toolName:'read',cwd:workspace,roots,known:[],env:{},home:base}),undefined)
+})
+
+test('平台引擎的临时认证目录及改名链接受保护，普通成果目录照常可读',async t=>{
+ const base=await tempHome(t),runtime=join(base,'runtime'),auth=join(runtime,'platform-model-auth'),workspace=join(base,'work')
+ await mkdir(join(auth,'platform-native-one','codex'),{recursive:true});await mkdir(workspace,{recursive:true})
+ await writeFile(join(auth,'platform-native-one','codex','config.toml'),'model_provider="teloa-platform"')
+ await symlink(auth,join(workspace,'cache'))
+ const roots=protectedRootsFor({providerPaths:[],runtimeRoot:runtime,env:{}})
+ for(const path of [join(auth,'platform-native-one','codex','config.toml'),join(workspace,'cache','platform-native-one','codex','config.toml')])assert.ok(guardDecision({path},{toolName:'read',cwd:workspace,roots,known:[],env:{},home:base}))
+ assert.equal(guardDecision({path:'report.md'},{toolName:'read',cwd:workspace,roots,known:[],env:{},home:base}),undefined)
 })
 
 test('参数中出现已存值或其编码形态即拒绝，理由不回显值与路径',()=>{

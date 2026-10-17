@@ -2,6 +2,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,type WorkTask} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
 import {readStoredTaskRun,type TaskRun} from './task-runs.ts'
+import {completedGroupReplies} from './group-reply-attention.ts'
 
 export type TaskAttention={kind:'error'|'review';reason:'task-blocked'|'execution-failed'|'execution-configuration-failed'|'execution-completed'|'task-waiting'}
 export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null}
@@ -31,6 +32,7 @@ export class TaskAttentionService{
    const runRows=(await db.query("select r.* from teloa_task_runs r join teloa_tasks t on t.id=r.task_id and t.owner_id=r.owner_id where r.owner_id=$1 and t.id=any($2::uuid[]) and t.state in ('ready','paused','blocked','waiting') order by r.task_id,r.task_version desc,r.created_at desc,r.id desc",[owner,[...taskIds]])).rows
    const rawRuns=new Map<string,Record<string,unknown>[]>()
    for(const row of runRows){if(!taskIds.has(row.task_id))throw corrupt();const entries=rawRuns.get(row.task_id)??[];entries.push(row);rawRuns.set(row.task_id,entries)}
+   const replyCandidates:{task:WorkTask;run:TaskRun}[]=[]
    const items=tasks.map(task=>{
     const raw=rawRuns.get(task.id)??[],selected=raw.filter((row,index)=>index===0||!['ended','withdrawn','configuration_failed'].includes(String(row.state))||row.role_id===task.assigneeRoleId&&(row.task_state_version===task.version-1||row.state==='configuration_failed'&&row.task_version===task.version))
     const history=selected.map(row=>{const run=readStoredTaskRun(row),stateVersion=row.task_state_version??null;if(stateVersion!==null&&(!Number.isSafeInteger(stateVersion)||Number(stateVersion)<1))throw corrupt();return {run,taskStateVersion:stateVersion as number|null}})
@@ -46,9 +48,12 @@ export class TaskAttentionService{
     }else if(task.state==='waiting'){
      const evidence=currentLatest?.run.evidence
      attention=evidence?.state==='ended'&&evidence.reason==='completed'?{kind:'review',reason:'execution-completed'}:{kind:'review',reason:'task-waiting'}
+     if(attention.reason==='execution-completed'&&currentLatest)replyCandidates.push({task,run:currentLatest.run})
     }
     return {task,attention}
    })
+   const replied=await completedGroupReplies(db,owner,replyCandidates)
+   for(const item of items)if(replied.has(item.task.id))item.attention=null
    return {items}
  }
 }

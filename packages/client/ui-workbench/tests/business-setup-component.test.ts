@@ -39,57 +39,64 @@ after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,for
 async function fixture(t:any,locale='zh-CN',width=390){
  const page=await browser.newPage({viewport:{width,height:1000}});page.setDefaultTimeout(3000);const errors:string[]=[],requests:string[]=[]
  page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()});t.after(async()=>{await page.close();assert.deepEqual(errors,[]);assert.deepEqual(requests,[])})
- await page.setContent('<html lang="'+locale+'"><body><div id="root"></div></body></html>');await page.addStyleTag({content:':root{--teloa-font-page:26px;--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#9e4226;--teloa-on-accent:#fff}body{font-family:system-ui;margin:0}#root{height:100vh}'+styles});await page.addScriptTag({content:script});await page.getByRole('heading',{level:1}).waitFor();return page
+ await page.setContent('<html lang="'+locale+'"><body><div id="root"></div></body></html>');await page.addStyleTag({content:':root{--teloa-font-page:26px;--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#9e4226;--teloa-on-accent:#fff}body{font-family:system-ui;margin:0}#root{height:100vh}'+styles});await page.addScriptTag({content:script});await page.getByRole('heading',{level:1}).waitFor();assert.equal(await page.getByRole('region',{name:locale==='en'?'Employees and capabilities':'员工与能力'}).isVisible(),false);await openSetup(page,locale);return page
 }
+async function openSetup(page:any,locale='zh-CN'){
+ await page.getByRole('button',{name:locale==='en'?'View setup details':'查看配置详情',exact:true}).click()
+ await page.getByRole('dialog',{name:locale==='en'?'View setup details':'查看配置详情',exact:true}).waitFor()
+}
+async function expandSetupRows(panel:any){for(const row of await panel.locator('details').all())if(!await row.evaluate((element:HTMLDetailsElement)=>element.open))await row.locator('summary').first().click()}
 for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'+width+' 四类真实摘要按需展开，键盘动作传当前业务与冻结目标',async t=>{
  const p=await fixture(t,locale,width),en=locale==='en',panel=p.getByRole('region',{name:en?"Employees and capabilities":"员工与能力"})
  await panel.getByText('Mina',{exact:true}).waitFor();assert.deepEqual(await p.evaluate(()=>(window as any).setupFixture.actions),[]);assert.equal(await panel.getByText('audit',{exact:true}).isVisible(),false)
- const summary=panel.locator('summary').first();await summary.focus();await p.keyboard.press('Enter');await panel.getByText('audit',{exact:true}).waitFor()
+ const summary=panel.locator('summary').first();assert.equal(await panel.locator('details').count(),4);await summary.focus();await p.keyboard.press('Enter');assert.equal(await panel.getByText('audit',{exact:true}).isVisible(),false,'负责人展开不带开技能或其他分类');await panel.locator('details').nth(1).locator('summary').focus();await p.keyboard.press('Enter');await panel.getByText('audit',{exact:true}).waitFor();assert.equal(await panel.locator('details').first().evaluate((element:HTMLDetailsElement)=>element.open),true,'展开技能保留负责人详情');await expandSetupRows(panel)
  assert.match(await panel.innerText(),en?/Check before execution/:/执行前核对/);assert.doesNotMatch(await panel.innerText(),/private-uuid/)
  assert.equal(await panel.locator('li').filter({hasText:en?'Unavailable resource':'不可用资料'}).count(),4)
  assert.match(await panel.innerText(),en?/2 more/:/另有 2 项/)
  for(const [name,target] of [[en?'Configure duties':'配置职责',{kind:'role',id:'11111111-1111-4111-8111-111111111111'}],[en?"Configure employee skills":"配置员工技能",{kind:'role',id:'11111111-1111-4111-8111-111111111111'}],[en?"Configure employee resource scopes":"配置员工资料范围",{kind:'role',id:'11111111-1111-4111-8111-111111111111'}],[en?"Business employee directory":"业务员工目录",{kind:'colleagues'}],[en?'Install skills':'安装技能',{kind:'skills'}],[en?'Manage resources':'管理资料',{kind:'resources'}],[en?'Connection directory':'连接目录',{kind:'connections'}],[en?'Configure CRM':'配置 CRM',{kind:'connection',catalogId:'catalog-one'}]]){const button=panel.getByRole('button',{name,exact:true});await button.focus();await p.keyboard.press('Enter');assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1),['sales',en?'A Customer orders':'A 客户订单',target])}
- assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.match(await panel.innerText(),en?/Local connections/:/本机连接/);assert.match(await panel.innerText(),en?/does not mean this business has a confirmed source mapping/:/不代表该业务的来源映射已确认/);await p.getByRole('heading',{level:1}).scrollIntoViewIfNeeded();await p.screenshot({path:'/tmp/teloa-business-setup/'+locale+'-'+width+'.png',fullPage:true});await panel.locator('summary').first().click();await p.getByRole('heading',{level:1}).scrollIntoViewIfNeeded();await p.screenshot({path:'/tmp/teloa-business-setup/'+locale+'-'+width+'-compact.png',fullPage:true})
+ assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.match(await panel.innerText(),en?/Local connections/:/本机连接/);assert.match(await panel.innerText(),en?/does not mean this business has a confirmed source mapping/:/不代表该业务的来源映射已确认/);await p.screenshot({path:'/tmp/teloa-business-setup/'+locale+'-'+width+'.png',fullPage:true});await panel.locator('details').evaluateAll((rows:HTMLDetailsElement[])=>rows.forEach(row=>{row.open=false}));await panel.getByRole('heading',{level:2}).scrollIntoViewIfNeeded();await p.screenshot({path:'/tmp/teloa-business-setup/'+locale+'-'+width+'-compact.png',fullPage:true})
 })
-test('正式业务页未展开准备详情时也能找到外部来源接入路径和原连接目录',async t=>{
+test('正式业务页用本机连接分类保留来源接入路径和原连接目录',async t=>{
  const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"})
  await p.evaluate(()=>(window as any).setupFixture.change({connectionRows:[],owner:'no-connections'}))
- const guide=panel.getByRole('region',{name:'外部数据来源（例如告警）'})
+ await expandSetupRows(panel)
+ const guide=panel.locator('section[aria-label="外部数据来源（例如告警）"]')
  await guide.getByText(/还没有保存受管连接/).waitFor()
  assert.match(await guide.innerText(),/调整业务.*来源映射.*启用同步/)
- assert.equal(await panel.locator('details').first().evaluate((element:HTMLDetailsElement)=>element.open),false)
+ assert.equal(await panel.locator('details').nth(3).evaluate((element:HTMLDetailsElement)=>element.open),true)
  await guide.getByRole('button',{name:'连接目录'}).click()
  assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1),['sales','no-connections 客户订单',{kind:'connections'}])
 })
 test('来源提示只依据本机连接状态，不把已连接或读取失败说成业务已接入',async t=>{
- const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"}),guide=panel.getByRole('region',{name:'外部数据来源（例如告警）'})
+ const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"}),guide=panel.locator('section[aria-label="外部数据来源（例如告警）"]')
+ await expandSetupRows(panel)
  await guide.getByText(/有已连接的受管连接/).waitFor()
  assert.match(await guide.innerText(),/不代表该业务的来源映射已确认或数据已同步/)
  await p.evaluate(()=>(window as any).setupFixture.change({owner:'saved',connectionRows:[{id:'one',catalogId:'catalog-one',serverName:'CRM',status:'saved',updatedAt:'2026-09-30T00:00:00.000Z'}]}))
- await guide.getByText(/暂无已连接的受管连接/).waitFor()
+ await guide.getByText(/暂无已连接的受管连接/).waitFor({state:'attached'});await expandSetupRows(panel);await guide.getByText(/暂无已连接的受管连接/).waitFor()
  await p.evaluate(()=>(window as any).setupFixture.change({owner:'unknown',mode:'unavailable'}))
- await guide.getByText(/连接状态暂时无法核对/).waitFor()
+ await guide.getByText(/连接状态暂时无法核对/).waitFor({state:'attached'});await expandSetupRows(panel);await guide.getByText(/连接状态暂时无法核对/).waitFor()
  assert.doesNotMatch(await guide.innerText(),/已连接的受管连接|已接入当前业务/)
 })
 test('失败重试不遮挡记录；读取不可用不冒充空；未设置可跳过并去业务同事目录',async t=>{
  const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('Mina',{exact:true}).waitFor()
- await p.evaluate(()=>(window as any).setupFixture.change({mode:'failed',owner:'B'}));await panel.getByRole('alert').waitFor();await p.getByRole('button',{name:'新增第一条',exact:true}).waitFor();assert.doesNotMatch(await panel.innerText(),/private detail/)
+ await p.evaluate(()=>(window as any).setupFixture.change({mode:'failed',owner:'B'}));await panel.getByRole('alert').waitFor();await p.getByRole('button',{name:'关闭',exact:true}).click();await p.getByRole('button',{name:'新增第一条',exact:true}).waitFor();await openSetup(p);assert.doesNotMatch(await panel.innerText(),/private detail/)
  await p.evaluate(()=>(window as any).setupFixture.change({mode:'unavailable',availability:'none'}));await panel.getByRole('button',{name:'重试',exact:true}).focus();await p.keyboard.press('Enter');await panel.getByText('未设置，可稍后配置',{exact:true}).waitFor();assert.equal(await panel.getByText('暂时无法核对',{exact:true}).count(),3)
- await panel.locator('summary').first().click();await panel.getByRole('button',{name:'配置职责',exact:true}).click();assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1)[2],{kind:'colleagues'})
+ await expandSetupRows(panel);await panel.getByRole('button',{name:'配置职责',exact:true}).click();assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1)[2],{kind:'colleagues'})
 })
 test('暂停、离岗、缺失、撤掉业务范围如实显示，配置不换成目录其他同事',async t=>{
- const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('Mina',{exact:true}).waitFor();await panel.locator('summary').first().click()
- for(const [availability,label]of [['paused','已暂停'],['retired','已离岗'],['missing','已不存在'],['forbidden','不再支持此业务']]){await p.evaluate((availability:string)=>(window as any).setupFixture.change({availability,owner:availability}),availability);await panel.getByText(label,{exact:true}).waitFor();await panel.locator('summary').first().click();await panel.getByRole('button',{name:'配置职责',exact:true}).click();assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1)[2],availability==='missing'?{kind:'colleagues'}:{kind:'role',id:'11111111-1111-4111-8111-111111111111'})}
+ const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('Mina',{exact:true}).waitFor();await expandSetupRows(panel)
+ for(const [availability,label]of [['paused','已暂停'],['retired','已离岗'],['missing','已不存在'],['forbidden','不再支持此业务']]){await p.evaluate((availability:string)=>(window as any).setupFixture.change({availability,owner:availability}),availability);await panel.getByText(label,{exact:true}).waitFor();await expandSetupRows(panel);await panel.getByRole('button',{name:'配置职责',exact:true}).click();assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1)[2],availability==='missing'?{kind:'colleagues'}:{kind:'role',id:'11111111-1111-4111-8111-111111111111'})}
 })
 test('业务/API/配置代次切换立即清投影，迟到旧回包不污染新准备区',async t=>{
  const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('Mina',{exact:true}).waitFor()
  await p.evaluate(()=>(window as any).setupFixture.change({hold:true,owner:'old'}));await p.waitForFunction(()=>typeof(window as any).setupFixture.release==='function');await panel.getByText("正在核对员工与能力…").waitFor();assert.equal(await panel.getByText('Mina',{exact:true}).count(),0)
- await p.evaluate(()=>(window as any).setupFixture.change({scope:'support',version:2,hash:'b'.repeat(64),hold:false,owner:'new',availability:'none'}));await panel.getByText('未设置，可稍后配置',{exact:true}).waitFor();await p.evaluate(()=>(window as any).setupFixture.release());assert.equal(await panel.getByText('Mina',{exact:true}).count(),0)
+ await p.evaluate(()=>(window as any).setupFixture.change({scope:'support',version:2,hash:'b'.repeat(64),hold:false,owner:'new',availability:'none'}));await openSetup(p);await panel.getByText('未设置，可稍后配置',{exact:true}).waitFor();await p.evaluate(()=>(window as any).setupFixture.release());assert.equal(await panel.getByText('Mina',{exact:true}).count(),0)
  assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.reads)).at(-1)[1],{scope:'support',expectedVersion:2,expectedHash:'b'.repeat(64)})
 })
 test('原责任成功保存、恢复、重新选择仅刷新准备；失败不刷新，所选记录页保留',async t=>{
- const p=await fixture(t);await p.evaluate(()=>(window as any).setupFixture.change({responsibility:true,availability:'none',owner:'ready'}));await p.getByRole('region',{name:"员工与能力"}).getByText('未设置，可稍后配置',{exact:true}).waitFor();await p.getByRole('navigation').getByRole('button',{name:'复核',exact:true}).click()
- const panel=p.getByRole('region',{name:'业务负责人'});await panel.getByRole('combobox').selectOption('11111111-1111-4111-8111-111111111111');await panel.getByRole('button',{name:'保存负责人'}).click();await p.getByRole('region',{name:"员工与能力"}).getByText('Mina',{exact:true}).waitFor();await p.getByRole('heading',{level:2,name:'复核',exact:true}).waitFor()
+ const p=await fixture(t);await p.evaluate(()=>(window as any).setupFixture.change({responsibility:true,availability:'none',owner:'ready'}));await p.getByRole('region',{name:"员工与能力"}).getByText('未设置，可稍后配置',{exact:true}).waitFor();await p.getByRole('button',{name:'关闭',exact:true}).click();await p.getByRole('navigation').getByRole('button',{name:'复核',exact:true}).click();await openSetup(p)
+ const panel=p.getByRole('region',{name:'业务负责人'});await panel.getByRole('combobox').selectOption('11111111-1111-4111-8111-111111111111');await panel.getByRole('button',{name:'保存负责人'}).click();await p.getByRole('region',{name:"员工与能力"}).getByText('Mina',{exact:true}).waitFor();await p.getByRole('button',{name:'关闭',exact:true}).click();await p.getByRole('heading',{level:2,name:'复核',exact:true}).waitFor();await openSetup(p)
  for(const action of ['核对保存结果','重新选择']){await p.evaluate(()=>(window as any).setupFixture.change({pending:true,owner:'pending'}));await panel.getByRole('button',{name:action,exact:true}).waitFor();const n=await p.evaluate(()=>(window as any).setupFixture.reads.length);await panel.getByRole('button',{name:action,exact:true}).click();await p.waitForFunction((n:number)=>(window as any).setupFixture.reads.length===n+1,n)}
  await p.evaluate(()=>(window as any).setupFixture.change({pending:false,availability:'none',mode:'write-failed',owner:'failed'}));await p.getByRole('heading',{level:1,name:'failed 客户订单',exact:true}).waitFor();await panel.getByRole('combobox').selectOption('11111111-1111-4111-8111-111111111111');const n=await p.evaluate(()=>(window as any).setupFixture.reads.length);await panel.getByRole('button',{name:'保存负责人'}).click();await panel.getByRole('alert').waitFor();assert.equal(await p.evaluate(()=>(window as any).setupFixture.reads.length),n)
 })
@@ -102,12 +109,12 @@ test('同一API的scope、version、hash分别变化均清旧投影并重读，�
  const inputs=(await p.evaluate(()=>(window as any).setupFixture.reads)).slice(-3).map((row:any)=>row[1]);assert.deepEqual(inputs,[{scope:'support',expectedVersion:1,expectedHash:'a'.repeat(64)},{scope:'support',expectedVersion:2,expectedHash:'a'.repeat(64)},{scope:'support',expectedVersion:2,expectedHash:'b'.repeat(64)}])
 })
 test('资料六类实情与技能同名/未见可读，清单各最多五项且完整配置入口可用',async t=>{
- const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('Mina',{exact:true}).waitFor();await p.evaluate(()=>(window as any).setupFixture.change({extended:true,mixedKnowledge:true,roleMismatch:true,owner:'metadata'}));await panel.getByText("所选员工不可用",{exact:true}).waitFor();await panel.locator('summary').first().click()
+ const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('Mina',{exact:true}).waitFor();await p.evaluate(()=>(window as any).setupFixture.change({extended:true,mixedKnowledge:true,roleMismatch:true,owner:'metadata'}));await panel.getByText("所选员工不可用",{exact:true}).waitFor();await expandSetupRows(panel)
  for(const label of ['资料可读取','已撤回','不在已授权范围','超出读取大小限制','来源大小待核对','目录已见','目录未见','同名待核对','已连接','已保存，未连接','正在连接','连接失败','等待授权'])await panel.getByText(label,{exact:true}).first().waitFor()
  assert.equal(await panel.locator('ul').count(),3);for(const list of await panel.locator('ul').all())assert.equal(await list.locator('li').count(),5)
  assert.equal(await panel.getByText(/另有 2 项/).count(),3);assert.doesNotMatch(await panel.innerText(),/private-uuid|skill-5|Connection 5/)
  for(const name of ['配置职责',"配置员工技能","配置员工资料范围"]){await panel.getByRole('button',{name,exact:true}).click();assert.deepEqual((await p.evaluate(()=>(window as any).setupFixture.actions)).at(-1)[2],{kind:'colleagues'})}
- await p.evaluate(()=>(window as any).setupFixture.change({extended:false,mixedKnowledge:false,owner:'missing'}));await panel.getByText("所选员工不可用",{exact:true}).waitFor();await panel.locator('summary').first().click();assert.equal(await panel.getByText('已缺失',{exact:true}).count(),4)
+ await p.evaluate(()=>(window as any).setupFixture.change({extended:false,mixedKnowledge:false,owner:'missing'}));await panel.getByText('已缺失',{exact:true}).first().waitFor({state:'attached'});await expandSetupRows(panel);assert.equal(await panel.getByText('已缺失',{exact:true}).count(),4)
 })
 test('current明确缺失的旧业务不挂载准备、不读取准备API',async t=>{
  const p=await fixture(t);await p.getByRole('region',{name:"员工与能力"}).getByText('Mina',{exact:true}).waitFor();const n=await p.evaluate(()=>(window as any).setupFixture.reads.length);await p.evaluate(()=>(window as any).setupFixture.change({mode:'legacy',owner:'legacy'}));await p.getByText('Legacy business',{exact:true}).waitFor();assert.equal(await p.getByRole('region',{name:"员工与能力"}).count(),0);assert.equal(await p.evaluate(()=>(window as any).setupFixture.reads.length),n)

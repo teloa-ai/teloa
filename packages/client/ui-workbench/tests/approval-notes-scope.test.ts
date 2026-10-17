@@ -42,10 +42,12 @@ test('页签正文里的 ApprovalCard 在 provider 之下能渲染，缺 provide
 
 test('ApprovalNotesProvider 与 BusinessScopeProvider 同层包住整个 frame，含 .details 轨道',async()=>{
  const source=await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
- assert.match(source,/<BusinessScopeProvider labels=\{scopeLabels\}><ApprovalNotesProvider><div ref=\{frameRef\}/)
- assert.match(source,/<\/div><\/ApprovalNotesProvider><\/BusinessScopeProvider>/)
+ // 两个 provider 之间允许再夹其他 provider（如模板分享的 TemplateShareProvider），但中间不得出现任何布局元素：
+ // 它们仍是同一层、同样包住整个 frame。
+ const scopeOpened=source.indexOf('<BusinessScopeProvider labels={scopeLabels}>'),opened=source.indexOf('<ApprovalNotesProvider>'),closed=source.indexOf('</ApprovalNotesProvider>')
+ assert.ok(scopeOpened>=0&&opened>scopeOpened&&closed>opened)
+ assert.doesNotMatch(source.slice(scopeOpened,opened),/<(?:div|main|section|aside|nav)\b/,'BusinessScopeProvider 与 ApprovalNotesProvider 之间只能是 provider')
+ assert.match(source,/<\/div><\/ApprovalNotesProvider>(?:<\/\w+Provider>)*<\/BusinessScopeProvider>/)
  assert.doesNotMatch(source,/<ApprovalNotesProvider><main/,'provider 不能只包 <main>')
- const opened=source.indexOf('<ApprovalNotesProvider>'),closed=source.indexOf('</ApprovalNotesProvider>')
- assert.ok(opened>=0&&closed>opened)
  assert.ok(source.slice(opened,closed).includes('className={css.details}'),'.details 轨道必须在 provider 之内')
 })

@@ -1,21 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFile} from 'node:fs/promises'
-import {registerHooks} from 'node:module'
-import {createElement} from 'react'
-import {renderToStaticMarkup} from 'react-dom/server'
+import {createRequire,registerHooks} from 'node:module'
+import {resolve} from 'node:path'
+import {pathToFileURL} from 'node:url'
 import {TASK_DETAIL_MESSAGE_ROWS} from '../src/client/i18n/locales/task-details.ts'
 
 // 真实组件走 tsc 产物；CSS Modules 只替换类名，不模拟组件行为。
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
+ load:(url,context,next)=>url.endsWith('.webp')?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
-const {TaskDetail}=await import('../lib/types/client/TaskDetail.js')
-const {readTaskInputs}=await import('../lib/types/client/task-inputs.js')
-const {emptyBusinessPreview}=await import('../lib/types/client/business-preview.js')
-const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')
-const {translateMessage}=await import('../lib/types/client/i18n/messages.js')
+const builtClientRoot=process.env.TELOA_TEST_BUILT_CLIENT_ROOT?pathToFileURL(resolve(process.env.TELOA_TEST_BUILT_CLIENT_ROOT)+'/'):new URL('../lib/types/client/',import.meta.url)
+const builtRequire=createRequire(new URL('TaskDetail.js',builtClientRoot))
+const {createElement}=builtRequire('react') as typeof import('react')
+const {renderToStaticMarkup}=builtRequire('react-dom/server') as typeof import('react-dom/server')
+const {TaskDetail}=await import(new URL('TaskDetail.js',builtClientRoot).href)
+const {readTaskInputs}=await import(new URL('task-inputs.js',builtClientRoot).href)
+const {emptyBusinessPreview}=await import(new URL('business-preview.js',builtClientRoot).href)
+const {I18nProvider}=await import(new URL('i18n/provider.js',builtClientRoot).href)
+const {translateMessage}=await import(new URL('i18n/messages.js',builtClientRoot).href)
 const noop=()=>{}
 const now='2026-09-21T04:30:00.000Z'
 const runtime={t:(key:string,params?:Record<string,string|number>)=>translateMessage('zh-CN',key as never,params),subscribe:()=>()=>{},getSnapshot:()=>({locale:'zh-CN' as const,dshLocale:'zh',revision:1})}
@@ -26,6 +30,50 @@ const paint=(props:Record<string,unknown>={})=>renderToStaticMarkup(createElemen
  task,approvals:[],artifacts:[],change:noop,back:noop,backHidden:false,openSource:noop,roles:[],team:noop,openRole:noop,business:emptyBusinessPreview(),openBusiness:noop,saveTemplate:noop,...props,
 } as never)))
 const source=await readFile(new URL('../src/client/TaskDetail.tsx',import.meta.url),'utf8')
+
+test('分身负责人沿用资料姓名和同一缩写头像，不改原任务或岗位身份',async()=>{
+ const {personalProfile}=await import(new URL('personal-profile.js',builtClientRoot).href)
+ await personalProfile.setDisplayName('Max Luo')
+ const role={id:'twin-role',name:'旧分身存储名',kind:'twin',scopes:['general'],state:'active',duty:'核对材料',skills:[],knowledge:[]}
+ const assigned={...task,assigneeId:role.id},html=paint({task:assigned,roles:[role]})
+ assert.match(html,/data-teloa-twin-avatar/);assert.match(html,/>ML<\/span>/)
+ assert.match(html,/Max Luo 的分身/)
+ assert.doesNotMatch(html,/旧分身存储名/)
+ assert.equal(assigned.assigneeId,'twin-role')
+})
+
+test('群自动回复任务展示来源原话，保持原执行目标且不编辑内部约束',()=>{
+ const routed={...task,groupId:'group-1',goal:'INTERNAL_REPLY_EXECUTION_CONTRACT',source:{groupId:'group-1',messageId:'msg-1',rootId:'msg-1',text:'@全员 hi',trigger:'routed'}}
+ const html=paint({task:routed,draft:readTaskInputs({},routed as never)})
+ assert.match(html,/<p class="goalLine slotGoal">[\s\S]*?<span[^>]*class="detailText">@全员 hi<\/span><\/p>/)
+ assert.doesNotMatch(html,/INTERNAL_REPLY_EXECUTION_CONTRACT/)
+ assert.doesNotMatch(html,/aria-label="修改任务目标"/)
+ assert.equal(routed.goal,'INTERNAL_REPLY_EXECUTION_CONTRACT','用户显示不改写运行快照')
+})
+
+test('群来源读取中与失败不闪现执行约束，普通群关联任务仍展示本人目标',()=>{
+ const pending={...task,groupId:'group-1',goal:'INTERNAL_REPLY_EXECUTION_CONTRACT'}
+ for(const groupSourceState of ['pending','unavailable']){
+  const row={...pending,groupSourceState}
+  const html=paint({task:row,draft:readTaskInputs({},row as never)})
+  assert.doesNotMatch(html,/INTERNAL_REPLY_EXECUTION_CONTRACT/)
+  assert.doesNotMatch(html,/aria-label="修改任务目标"/)
+ }
+ const manual={...pending,goal:'整理本人资料并形成报告。',groupSourceState:'absent'}
+ const html=paint({task:manual,draft:readTaskInputs({},manual as never)})
+ assert.match(html,/整理本人资料并形成报告。/)
+ assert.match(html,/aria-label="修改任务目标"/)
+})
+
+test('群回复存在旧补充草稿时保留核对提示，不把前后内部执行目标搬进页面',()=>{
+ const routed={...task,groupId:'group-1',goal:'INTERNAL_REPLY_EXECUTION_CONTRACT',source:{groupId:'group-1',messageId:'msg-1',rootId:'msg-1',text:'核对附件中的三条记录。',trigger:'routed'}}
+ const draft={...readTaskInputs({},routed as never),version:1,goal:'OLDER_REPLY_EXECUTION_CONTRACT',fields:{source:'本人补充',materialNote:'补充记录',assignee:'',handoffNote:'',result:''}}
+ const html=paint({task:routed,draft})
+ assert.match(html,/未提交输入/)
+ assert.match(html,/核对附件中的三条记录。/)
+ assert.match(html,/补充记录/)
+ assert.doesNotMatch(html,/INTERNAL_REPLY_EXECUTION_CONTRACT|OLDER_REPLY_EXECUTION_CONTRACT/)
+})
 
 test('持久就绪任务：状态框唯一主按钮是「指派负责人」，待运行表单按需展开',()=>{
  const html=paint()
@@ -52,6 +100,19 @@ test('任务概要区区分负责人和创建者，业务与来源不依赖展�
  assert.doesNotMatch(html,/原作者 我/)
 })
 
+test('当前负责沿用同一员工的已保存形象；旧员工回退通用形象，本人不套用员工头像',()=>{
+ const role={id:'employee-1',name:'小研',kind:'employee',scopes:['general'],state:'active',version:1}
+ for(const [avatarKey,file] of [['security-analyst','security-analyst'],['researcher','researcher'],[undefined,'general']] as const){
+  const html=paint({task:{...task,assigneeId:role.id},roles:[{...role,avatarKey}]})
+  const owner=html.match(/<dt>当前负责<\/dt>[\s\S]*?<\/dd>/)?.[0]??''
+  assert.match(owner,new RegExp('<img[^>]*src="[^"]*/'+file+'\\.webp"'))
+  assert.match(owner,/>小研<\/span>/)
+  assert.doesNotMatch(owner,/>小<\/span>/)
+ }
+ const self=paint().match(/<dt>当前负责<\/dt>[\s\S]*?<\/dd>/)?.[0]??''
+ assert.doesNotMatch(self,/<img/)
+})
+
 test('群来源解析具体群名，使用来源群而非另一个关联群',()=>{
  const html=paint({task:{...task,groupId:'linked',source:{groupId:'origin',messageId:'message-1',rootId:'message-1',text:'调查异常访问'}},groups:[{id:'origin',name:'安全值班群',scope:'SOC'},{id:'linked',name:'复核群',scope:'SOC'}]})
  const summary=html.match(/<dl[^>]*aria-label="任务概要"[\s\S]*?<\/dl>/)?.[0]??''
@@ -69,7 +130,9 @@ test('任务成果显示当前任务的真实标题，固定引用未读到正�
  assert.match(unloaded,/查看工作成果/)
  assert.doesNotMatch(unloaded,/没有工作成果|尚未保存成果/)
  const unloadedResults=unloaded.match(/<section[^>]*aria-label="工作成果"[\s\S]*?<\/section>/)?.[0]??''
- assert.equal(unloadedResults.match(/查看工作成果/g)?.length,1)
+ const fixedResults=unloadedResults.match(/<ul[^>]*class="resultList"[\s\S]*?<\/ul>/)?.[0]??''
+ assert.equal(fixedResults.match(/查看工作成果/g)?.length,1)
+ assert.match(fixedResults,/v1/)
 })
 
 test('没有交接或外部动作内容时不生成空的独立披露，恢复组件仍保持挂载',()=>{
@@ -81,15 +144,16 @@ test('没有交接或外部动作内容时不生成空的独立披露，恢复�
  assert.match(recovery,/data-teloa-anchor="owner"/)
 })
 
-test('审批与交接的关注项变化只增加时间线入口，表单固定在任务信息且只有一份',()=>{
+test('审批与交接表单只常驻一份且不被低频任务信息折叠包住',()=>{
  const pending={id:'action-1',target:{kind:'security-action',taskId:task.id,actionId:'action-1'},occurredAt:now}
  for(const securityItems of [[],[pending],[pending,{...pending,id:'action-2'}]]){
   const html=paint({securityItems,securityActions:createElement('span',null,'未提交的审批草稿'),handoffs:createElement('span',null,'未提交的交接草稿')})
   assert.equal(html.match(/未提交的审批草稿/g)?.length,1)
   assert.equal(html.match(/未提交的交接草稿/g)?.length,1)
-  const configuration=html.slice(html.indexOf('执行配置与任务信息'))
-  assert.match(configuration,/data-teloa-anchor="approval"[^>]*><span>未提交的审批草稿/)
-  assert.match(configuration,/data-teloa-anchor="owner"[^>]*>[\s\S]*?未提交的交接草稿/)
+  assert.match(html,/data-teloa-anchor="approval"[^>]*><span>未提交的审批草稿/)
+  assert.match(html,/data-teloa-anchor="owner"[^>]*>[\s\S]*?未提交的交接草稿/)
+  const configuration=html.slice(html.indexOf('data-teloa-anchor="evidence"'))
+  assert.doesNotMatch(configuration,/未提交的审批草稿|未提交的交接草稿/)
  }
 })
 

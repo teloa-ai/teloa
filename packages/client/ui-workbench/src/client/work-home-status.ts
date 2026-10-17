@@ -1,10 +1,10 @@
-export type AttentionStatus={count:number;known:boolean}
+export type AttentionStatus={count:number;known:boolean;incomplete?:boolean}
 export type PlanStatus={savedPlans:number;examplePlans:number;exampleRuns:number;directory:'loading'|'ready'|'failed'}
 
 type PlanStatusKey='continuous.rolePlans.count'|'attention.persistence.example'|'navigation.plans'|'continuous.detail.runs'|'continuous.saved.description'|'continuous.empty.plans'|'continuous.loading'|'continuous.loading.retry'
 type PlanStatusTranslate=(key:PlanStatusKey,values?:Readonly<Record<string,string|number>>)=>string
 
-export function attentionStatusText(status:AttentionStatus,t:(key:'home.attentionCount'|'attention.home.checking',values?:{count:number})=>string):string{return status.known?t('home.attentionCount',{count:status.count}):t('attention.home.checking')}
+export function attentionStatusText(status:AttentionStatus,t:(key:'home.attentionCount'|'attention.home.checking'|'attention.count.partial',values?:{count:number})=>string):string{return status.known?t('home.attentionCount',{count:status.count}):status.incomplete?t('attention.count.partial',{count:status.count}):t('attention.home.checking')}
 
 export function planStatusText(status:PlanStatus,t:PlanStatusTranslate):string{
   const plans=[

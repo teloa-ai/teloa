@@ -35,6 +35,7 @@ const catalogApi:MarketCatalogApi={
  ranking:async()=>new Map(),
  add:async id=>{called('catalog.add');if(state.failAdd)throw Error('teloa/source-unavailable');state.added.add(id);return {contentId:connectionRecord(id).id}},
  addRole:async()=>{called('catalog.addRole');throw Error('Unexpected role creation')},
+ rolePackage:async()=>{called('catalog.rolePackage');throw Error('Unexpected role preview')},
  solutionPackage:async()=>{called('catalog.solution');if(state.failSolution)throw Error('teloa/source-unavailable');return {manifest:validateIndustryManifest(solutionManifest),readOnlyResources:['lark-read','yuque-read']}},
 }
 const managedApi={

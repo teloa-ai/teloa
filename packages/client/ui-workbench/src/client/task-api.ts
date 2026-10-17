@@ -1,5 +1,5 @@
 import type {PreviewTask} from './task-preview.ts'
-import {taskDefinition,taskInput,type WorkTask,type TaskDefinition} from '@teloa/contract'
+import {readWorkExecutor,taskDefinition,taskInput,type WorkTask,type TaskDefinition} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 export type TaskCompletionRecord={taskId:string;taskVersion:number;artifactId:string;artifactVersion:number;note:string;completedAt:string}
 type Call=(endpoint:string,input:unknown)=>Promise<unknown>
@@ -15,12 +15,14 @@ function readAssignee(value:unknown):TaskAssignee|undefined{
 }
 function read(value:unknown):WorkTask{
  try{
-  const row=taskInput(value,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy']))
-  const {id,ownerId,version,state,createdAt,updatedAt,assigneeRoleId,assigneeRoleVersion,contentVersion,...fields}=row
+  const row=taskInput(value,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy','executor']))
+  const {id,ownerId,version,state,createdAt,updatedAt,assigneeRoleId,assigneeRoleVersion,contentVersion,executor:rawExecutor,...fields}=row
   if(typeof id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)||typeof ownerId!=='string'||!ownerId||!Number.isSafeInteger(version)||(version as number)<1||typeof state!=='string'||!['ready','running','paused','waiting','blocked','completed','cancelled'].includes(state)||typeof createdAt!=='string'||!Number.isFinite(Date.parse(createdAt))||typeof updatedAt!=='string'||!Number.isFinite(Date.parse(updatedAt)))throw Error()
   if(assigneeRoleId===null?assigneeRoleVersion!==null:typeof assigneeRoleId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(assigneeRoleId)||!Number.isSafeInteger(assigneeRoleVersion)||(assigneeRoleVersion as number)<1)throw Error()
   if(contentVersion!==undefined&&(!Number.isSafeInteger(contentVersion)||(contentVersion as number)<1))throw Error()
-  return {...(contentVersion===undefined?{}:{contentVersion:contentVersion as number}),...taskDefinition(fields),id,ownerId,version:version as number,state:state as WorkTask['state'],createdAt,updatedAt,assigneeRoleId:assigneeRoleId as string|null,assigneeRoleVersion:assigneeRoleVersion as number|null}
+  const executor=rawExecutor===undefined?undefined:rawExecutor&&typeof rawExecutor==='object'&&'kind' in rawExecutor&&rawExecutor.kind==='unassigned'?{kind:'unassigned' as const}:readWorkExecutor(rawExecutor)
+  if(executor?.kind==='owner'&&(assigneeRoleId!==null||fields.scope!=='general'))throw Error()
+  return {...(executor?{executor}:{}),...(contentVersion===undefined?{}:{contentVersion:contentVersion as number}),...taskDefinition(fields),id,ownerId,version:version as number,state:state as WorkTask['state'],createdAt,updatedAt,assigneeRoleId:assigneeRoleId as string|null,assigneeRoleVersion:assigneeRoleVersion as number|null}
  }catch{throw Error('任务服务返回的内容格式不正确。')}
 }
 export type TaskRequestJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
@@ -50,7 +52,7 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
 	     else if(task.state==='blocked'){if(attention?.kind!=='error'||!['task-blocked','execution-failed'].includes(attention.reason))throw Error()}
 	     else if(task.state==='waiting'){if(attention?.kind!=='review'||!['execution-completed','task-waiting'].includes(attention.reason))throw Error()}
 	     else if(attention!==null)throw Error()
-     if(attention&&['execution-failed','execution-configuration-failed','execution-completed'].includes(attention.reason)&&task.assigneeRoleId===null)throw Error()
+     if(attention&&['execution-failed','execution-configuration-failed','execution-completed'].includes(attention.reason)&&task.assigneeRoleId===null&&task.executor?.kind!=='owner')throw Error()
      return {task,attention}
     })
     if(new Set(items.map(item=>item.task.id)).size!==items.length)throw Error()
@@ -89,6 +91,6 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
 
 export function projectSavedTask(task:WorkTask):PreviewTask{
  const assignee=task.assigneeRoleId??'self'
- return {id:task.id,title:task.title,goal:task.goal,scope:task.scope as PreviewTask['scope'],groupId:task.groupId,skills:task.skills,version:task.version,state:task.state,storage:'persistent',...(task.completionPolicy===undefined?{}:{completionPolicy:task.completionPolicy}),object:'本机任务',need:null,request:'',authorId:'self',assigneeId:assignee,assigneeHistory:[assignee],createdAt:task.createdAt,updatedAt:task.updatedAt,result:'',evidence:[],history:[],supplements:[],approvalRequired:false,risk:'未提出外部动作',execution:'not_started'}
+ return {...(task.executor?{executor:task.executor}:{}),...(task.contentVersion===undefined?{}:{contentVersion:task.contentVersion}),id:task.id,title:task.title,goal:task.goal,scope:task.scope as PreviewTask['scope'],groupId:task.groupId,skills:task.skills,version:task.version,state:task.state,storage:'persistent',...(task.completionPolicy===undefined?{}:{completionPolicy:task.completionPolicy}),object:'本机任务',need:null,request:'',authorId:'self',assigneeId:assignee,assigneeRoleVersion:task.assigneeRoleVersion,assigneeHistory:[assignee],createdAt:task.createdAt,updatedAt:task.updatedAt,result:'',evidence:[],history:[],supplements:[],approvalRequired:false,risk:'未提出外部动作',execution:'not_started'}
 }
 export {read as readSavedTask}

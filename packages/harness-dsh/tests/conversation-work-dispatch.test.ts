@@ -8,7 +8,7 @@ const request:ConversationWorkRequest={requestId,sessionId:'origin',messageId:'m
 function fixture(){
  let stored=structuredClone(request),task:WorkTask|null=null,run:TaskRun|null=null,sendFailure=false
  const calls:string[]=[]
- const ports:ConversationWorkDispatchPorts={owner:'owner',requests:{reserve:async()=>stored,get:async()=>stored,list:async()=>[stored],withDispatchLock:async(_owner,_request,op)=>op(new AbortController().signal),stop:async()=>stored={...stored,stoppedAt:'2026-09-25T01:00:00.000Z'},failure:async(_owner,_id,role,error)=>{if(error)stored.failures[role]=error;else delete stored.failures[role]},pendingNotifications:async()=>[stored],notified:async()=>{calls.push('notified')}},
+ const ports:ConversationWorkDispatchPorts={owner:'owner',requests:{reserve:async()=>stored,get:async()=>stored,list:async()=>[stored],withDispatchLock:async(_owner,_request,op)=>op(new AbortController().signal),stop:async()=>stored={...stored,stoppedAt:'2026-09-25T01:00:00.000Z'},failure:async(_owner,_id,role,error)=>{const key=role??'general';if(error)stored.failures[key]=error;else delete stored.failures[key]},pendingNotifications:async()=>[stored],notified:async()=>{calls.push('notified')}},
   boundTasks:undefined as never,
   tasks:{request:async()=>task,create:async(_owner,input)=>{calls.push('create');const value=input as {fields:{title:string;goal:string;scope:string}};return task={...value.fields,groupId:null,skills:[],id:taskId,ownerId:'owner',version:1,state:'ready',assigneeRoleId:roleId,assigneeRoleVersion:1,createdAt:request.createdAt,updatedAt:request.createdAt}}},
   link:async()=>{calls.push('link')},runs:async()=>run?[run]:[],
@@ -26,6 +26,44 @@ test('明确交办创建并关联真实 Task/Run；同请求重试先核对且�
  await f.dispatch.dispatch({...request,roleId,expectedRoleVersion:1},signal)
  assert.equal(f.calls.filter(x=>x==='create').length,1);assert.equal(f.calls.filter(x=>x==='task-runs/start').length,1)
  assert.ok(f.calls.includes('task-runs/reconcile'));assert.ok(!JSON.stringify(a).includes('private'))
+})
+
+test('状态回包保留真实Task状态与Run冻结的续改版本，工具received不等于本人结项',async()=>{
+ const f=fixture(),general:ConversationWorkRequest={...request,scope:'general',executor:'general',targets:[]},executor={kind:'owner' as const,grantId:requestId,grantVersion:1}
+ f.setRequest(general)
+ let state:WorkTask['state']='waiting'
+ f.ports.boundTasks={request:async()=>({id:taskId,ownerId:'owner',title:general.title,goal:general.goal,scope:'general',skills:[],groupId:null,version:3,state,executor,assigneeRoleId:null,assigneeRoleVersion:null,createdAt:request.createdAt,updatedAt:request.createdAt}),create:async()=>assert.fail('只读进度不能创建Task')}
+ const fixed={artifactRevision:{requestId:'55555555-5555-4555-8555-555555555555',artifactId:'66666666-6666-4666-8666-666666666666',baseVersion:1,title:'工作成果'}}
+ f.setRun({id:runId,taskId,roleId:null,roleVersion:null,executor,taskVersion:1,linkVersion:1,sessionId:'task-run-'+workRequestChildId(requestId,'run'),nativeRequestId:requestId,state:'ended',evidence:{state:'ended',turn:1,messageSeq:1,endSeq:2,reason:'completed'},stopRequestedAt:null,allowedTools:[],skills:[],knowledge:[],memory:[],inputText:JSON.stringify(fixed),createdAt:request.createdAt})
+ const status=await f.dispatch.status('origin',requestId)
+ assert.equal(status.members[0]?.status,'received')
+ assert.equal(status.members[0]?.task?.state,'waiting')
+ assert.equal(status.members[0]?.task?.version,3)
+ assert.deepEqual(status.members[0]?.run?.artifactRevision,{artifactId:fixed.artifactRevision.artifactId,baseVersion:1,title:'工作成果'})
+ assert.equal(JSON.stringify(status).includes('inputText'),false)
+ state='completed'
+ assert.equal((await f.dispatch.status('origin',requestId)).members[0]?.task?.state,'completed')
+ assert.deepEqual(f.calls,[],'状态读取不执行、不结项、不重派')
+})
+test('通用交办在零员工时独立运行，主聊只作来源；重放不重复发送',async()=>{
+ const f=fixture(),general:ConversationWorkRequest={...request,scope:'general',executor:'general',targets:[]},executor={kind:'owner' as const,grantId:requestId,grantVersion:1}
+ f.setRequest(general)
+ let task:WorkTask|null=null
+ f.ports.boundTasks={request:async()=>task,create:async identity=>{assert.deepEqual(identity,{sessionId:'origin',requestId,executor:'general'});f.calls.push('create');return task={title:general.title,goal:general.goal,scope:'general',groupId:null,skills:[],id:taskId,ownerId:'owner',version:1,state:'ready',assigneeRoleId:null,assigneeRoleVersion:null,executor,createdAt:request.createdAt,updatedAt:request.createdAt}}}
+ f.ports.run=async(endpoint,_input,_signal,parent)=>{
+  f.calls.push(endpoint)
+  if(endpoint==='task-runs/prepare'){assert.equal(parent?.executor,'general');const run:TaskRun={id:runId,taskId,roleId:null,roleVersion:null,executor,taskVersion:1,linkVersion:1,sessionId:'task-run-'+workRequestChildId(requestId,'run'),nativeRequestId:requestId,state:'prepared',evidence:null,stopRequestedAt:null,allowedTools:[],skills:[],knowledge:[],memory:[],inputText:'private',createdAt:request.createdAt};f.setRun(run);return run}
+  if(endpoint==='task-runs/start'){const run={...f.run!,state:'accepted'};f.setRun(run);return run}
+  return f.run!
+ }
+ const signal=new AbortController().signal
+ const status=await f.dispatch.dispatch({...general},signal)
+ assert.equal(status.members[0]?.roleId,null);assert.equal(status.members[0]?.status,'waiting')
+ await f.dispatch.resume('origin',requestId,signal)
+ assert.equal(f.calls.filter(call=>call==='create').length,1);assert.equal(f.calls.filter(call=>call==='task-runs/start').length,1)
+ f.setRun({...f.run!,state:'ended',evidence:{state:'ended',turn:1,messageSeq:1,endSeq:2,reason:'completed'}})
+ assert.equal((await f.dispatch.status('origin',requestId)).counts.received,1)
+ await f.dispatch.deliver();assert.ok(f.calls.includes('publish'))
 })
 test('父交办准备与启动仅向内部 Run 端口传固定父身份',async()=>{
  const f=fixture(),seen:unknown[]=[],original=f.ports.run
@@ -268,3 +306,48 @@ test('交办锁在读取已有运行时失效，不得再关联任务或准备�
   await f.dispatch.stop('origin',requestId,signal)
   assert.equal(f.calls.filter(x=>x==='create').length,1)
  })
+
+test('原卡显式resume可认回单次新Run；自动dispatch仍保留error首失败且不重跑',async()=>{
+ const f=fixture(),signal=new AbortController().signal
+ await f.dispatch.dispatch({...request,roleId,expectedRoleVersion:1},signal)
+ const failed:TaskRun={...f.run!,state:'ended',evidence:{state:'ended',turn:0,messageSeq:1,endSeq:3,reason:'error'}}
+ f.setRun(failed);const history:TaskRun[]=[failed],retryId='66666666-6666-4666-8666-666666666666'
+ f.ports.runs=async()=>[...history].reverse();const old=f.ports.run
+ f.ports.run=async(endpoint,payload,active,parent)=>{
+  if(endpoint==='task-runs/retry'){
+   f.calls.push(endpoint);assert.deepEqual(payload,{runId:failed.id});assert.deepEqual(parent,{sessionId:'origin',requestId,roleId})
+   const retry:TaskRun={...failed,id:retryId,sessionId:'task-run-'+workRequestChildId(requestId,'run-retry:'+failed.id,roleId),state:'prepared',evidence:null}
+   history.push(retry);f.setRun(retry);return retry
+  }
+  const saved=await old(endpoint,payload,active,parent);const i=history.findIndex(row=>row.id===saved.id);if(i>=0)history[i]=saved;return saved
+ }
+ f.calls.length=0
+ await f.dispatch.dispatch({...request,roleId,expectedRoleVersion:1},signal)
+ assert.equal(f.calls.includes('task-runs/retry'),false);assert.equal(history.length,1)
+ const resumed=await f.dispatch.resume('origin',requestId,signal)
+ assert.equal(resumed.members[0]?.run?.id,retryId);assert.equal(resumed.members[0]?.task?.id,taskId);assert.equal(history.length,2)
+ await f.dispatch.resume('origin',requestId,signal)
+ assert.equal(history.length,2);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1)
+ const beforeStop=f.calls.filter(call=>call==='task-runs/stop').length
+ await f.dispatch.stop('origin',requestId,signal)
+ assert.equal(f.calls.filter(call=>call==='task-runs/stop').length,beforeStop+1,'停止原交办也停止新Run')
+ f.setRequest({...f.stored,stoppedAt:null})
+
+ assert.deepEqual(history[0],failed,'原失败的证据和身份保持不变')
+ history[1]={...history[1]!,state:'ended',evidence:{state:'ended',turn:0,messageSeq:1,endSeq:3,reason:'error'}}
+ await f.dispatch.resume('origin',requestId,signal);assert.equal(history.length,2,'一次重试失败不继续制造Run')
+})
+
+test('本人原卡只对已证实 error 显式重试一次；未知、自动刷新与后续失败不重复准备',async()=>{
+ const f=fixture(),general:ConversationWorkRequest={...request,scope:'general',executor:'general',targets:[]},executor={kind:'owner' as const,grantId:requestId,grantVersion:1},signal=new AbortController().signal
+ f.setRequest(general)
+ const task:WorkTask={title:general.title,goal:general.goal,scope:'general',groupId:null,skills:[],id:taskId,ownerId:'owner',version:3,state:'blocked',assigneeRoleId:null,assigneeRoleVersion:null,executor,createdAt:request.createdAt,updatedAt:request.createdAt}
+ f.ports.boundTasks={request:async()=>task,create:async()=>{throw Error('不得另建任务')}}
+ const original:TaskRun={id:runId,taskId,taskVersion:1,roleId:null,roleVersion:null,executor,linkVersion:1,sessionId:'task-run-'+workRequestChildId(requestId,'run'),nativeRequestId:requestId,state:'ended',evidence:{state:'ended',turn:1,messageSeq:1,endSeq:2,reason:'error'},stopRequestedAt:null,allowedTools:[],skills:[],knowledge:[],memory:[],inputText:'private',createdAt:request.createdAt}
+ const runs=[original];f.ports.runs=async()=>runs
+ f.ports.run=async(endpoint,_input,_signal,parent)=>{f.calls.push(endpoint);assert.equal(parent?.executor,'general');if(endpoint==='task-runs/retry'){const run={...original,id:'55555555-5555-4555-8555-555555555555',sessionId:'task-run-'+workRequestChildId(requestId,'run-retry:'+runId),state:'prepared',evidence:null};runs.push(run);return run}if(endpoint==='task-runs/start'){runs[1]={...runs[1]!,state:'ended',evidence:original.evidence};return runs[1]!}throw Error('不得重新准备或核对终态')}
+ await f.dispatch.dispatch(general,signal);assert.deepEqual(f.calls,['link'])
+ await f.dispatch.resume('origin',requestId,signal);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1)
+ await f.dispatch.resume('origin',requestId,signal);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1)
+ assert.equal((await f.dispatch.status('origin',requestId)).members[0]?.run?.id,runs[1]!.id)
+})

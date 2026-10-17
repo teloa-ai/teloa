@@ -5,6 +5,8 @@ import {openDialog} from './dialog-focus.js'
 import {useI18n} from './i18n/provider.js'
 import dialog from './CreateConversationDialog.module.css'
 import css from './BusinessBuilderDirectory.module.css'
+import {RefreshCw} from 'lucide-react'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 /** 服务端精简目录是唯一草案列表；分页不拼接另一份本地正文目录。 */
 export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover?:(requestId:string)=>void;ready?:boolean;flow:BusinessBuilderFlow;open:(binding:BusinessConversationBinding)=>void}){
@@ -15,7 +17,7 @@ export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover
  const refresh=async(cursor?:string)=>{setLoading(true);setFailed(false);try{await flow.refreshDirectory(cursor)}catch{setFailed(true)}finally{setLoading(false)}}
  useEffect(()=>{void refresh()},[flow])
  return <section className={css.directory} aria-label={t('business.builder.directory')}>
-  <header><h2>{t('business.builder.directory')}</h2><button type="button" disabled={loading} onClick={()=>void refresh()}>{t('business.records.refresh')}</button></header>
+  <header><h2>{t('business.builder.directory')}</h2><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void refresh()}/></header>
   {pending&&recover&&<div><p>{pending.title}</p><button type="button" disabled={!ready} onClick={()=>recover(pending!.requestId)}>{t('business.builder.restore')}</button></div>}
   {recoveryFailed&&<p role="alert">{t('business.builder.error')}</p>}
   {loading&&<p role="status">{t('business.builder.loading')}</p>}

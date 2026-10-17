@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {WorkError} from '@teloa/contract'
 import type {Context} from '@deepseek-ai/cordis'
 import type {TaskExecutionScope,TaskRun,TaskRunSkillDatabase} from '@teloa/backend'
 import {dshTaskRunPorts,pickPromptImages,runDateLine,taskKnowledgeAuthorization} from '../src/task-run-dsh.ts'
@@ -291,6 +292,20 @@ test('行业模板逐项输入和交付要求原样交给DSH提示入口，声�
  assert.deepEqual(run.allowedTools,[])
 })
 
+test('启用员工经验时首次派发省略冻结记忆；关闭及分身原路径不变',async()=>{
+ const inputText=JSON.stringify({task:{id:'task',goal:'当前目标'},role:{id:'role'},memory:{contents:['旧确认正文']},knowledge:{contents:['当前知识']}})
+ const run={taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',skills:[],knowledge:[],allowedTools:[],inputText} as unknown as TaskRun
+ const sent:{content:{text:string}[]}[]=[],agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]}}
+ const ctx={sessionController:{resolveAgent:async()=>({agent}),prompt:async(request:typeof sent[number])=>{sent.push(request);return {accepted:true}}}} as unknown as Context
+ const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}))
+ ports.employeeExperienceEnabled=async()=>true
+ await ports.send(run,new AbortController().signal,target)
+ assert.doesNotMatch(sent[0]!.content[0]!.text,/旧确认正文/);assert.match(sent[0]!.content[0]!.text,/当前知识/);assert.match(run.inputText,/旧确认正文/)
+ ports.employeeExperienceEnabled=async()=>false
+ await ports.send(run,new AbortController().signal,target)
+ assert.equal(sent[1]!.content[0]!.text,inputText)
+})
+
 test('行业持续计划的待获取要求和说明完整送入DSH，不伪造输入或安装Skill',async()=>{
  const planWorkContextNotice='以下模板要求是本轮待获取或核实的资料，不表示已经提供输入；方法与交付要求仅供任务参考，Skill 声明不代表已安装或授权，不增加执行权限。'
  const work={sourceDigest:'b'.repeat(64),method:'先查原始来源',requirements:['本轮资料'],output:'带出处的简报',skills:[{id:'research',title:'研究',version:'1.0.0'}],notice:planWorkContextNotice}
@@ -428,6 +443,20 @@ test('视觉能力为 unsupported 时一张图都不发，并把无视觉前置�
  assert.deepEqual(noVision,[['session','native']])
 })
 
+test('无视觉声明保存确认前不发送模型；持久保存失败也不发送未标记的文本轮次',async()=>{
+ const {ports,sent,run}=visionHarness(['text'],[png(16)])
+ let entered!:()=>void,release!:()=>void
+ const saving=new Promise<void>(resolve=>{entered=resolve}),stored=new Promise<void>(resolve=>{release=resolve})
+ ports.groupPrompt!.markNoVision=async()=>{entered();await stored}
+ const sending=ports.send(run,new AbortController().signal,{...target,sessionId:'session'})
+ await saving;assert.deepEqual(sent,[])
+ release();await sending;assert.equal(sent.length,1)
+ const failed=visionHarness(['text'],[png(16)])
+ failed.ports.groupPrompt!.markNoVision=async()=>{throw new WorkError('teloa/dependency-unavailable','offline')}
+ await assert.rejects(failed.ports.send(failed.run,new AbortController().signal,{...target,sessionId:'session'}),{code:'teloa/dependency-unavailable'})
+ assert.deepEqual(failed.sent,[])
+})
+
 test('视觉能力查不到时先发图；被原生以 session/attachment-invalid 拒后去图重发并登记前置句',async()=>{
  for(const modalities of ['throw',undefined] as const){
   const {ports,sent,noVision,run,rejectImages}=visionHarness(modalities,[png(16)])
@@ -512,7 +541,7 @@ test('本次运行日期作为独立 text 部件紧随固定输入，图片与�
 test('发送前按本次运行的授权清单收窄该会话可见的全局工具：未授权的不再出现在工具列表',async()=>{
  const restrictions:Array<{allow?:readonly string[];deny?:readonly string[]}>=[],order:string[]=[]
  const visible=['bash','skill','write','teloa_capabilities','mcp__playwright-mcp__browser_navigate','mcp__playwright-mcp__browser_close',selfAuthorizedToolNames[0]!,'run_code']
- const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]},ctx:{tools:{schemas:(scope:unknown)=>{assert.equal(scope,agent);return visible.map(name=>({name}))},restrict:(filter:{allow?:readonly string[];deny?:readonly string[]})=>{restrictions.push(filter);order.push('restrict');return ()=>{}}}}}
+ const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]},ctx:{tools:{schemas:(scope:unknown)=>{assert.equal(scope,agent);return visible.map(name=>({name}))},restrict:(filter:{allow?:readonly string[];deny?:readonly string[]})=>{restrictions.push(filter);order.push('restrict');return ()=>{}}},on:()=>()=>{}}}
  const ctx={sessionController:{resolveAgent:async()=>({agent}),prompt:async()=>{order.push('prompt');return {accepted:true}}}} as unknown as Context
  const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'})),signal=new AbortController().signal
  const base={taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标'}
@@ -531,7 +560,7 @@ test('发送前按本次运行的授权清单收窄该会话可见的全局工�
 test('收窄之后、交给原生之前就失败：撤掉这次收窄；已交给原生（结果未知）或成功时收窄保留',async()=>{
  const lifted:string[]=[]
  let abortOnRestrict:AbortController|undefined,promptFails=false,label=''
- const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]},ctx:{tools:{schemas:()=>[{name:selfAuthorizedToolNames[0]!}],restrict:()=>{const mine=label;abortOnRestrict?.abort();return ()=>{lifted.push(mine)}}}}}
+ const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]},ctx:{tools:{schemas:()=>[{name:selfAuthorizedToolNames[0]!}],restrict:()=>{const mine=label;abortOnRestrict?.abort();return ()=>{lifted.push(mine)}}},on:()=>()=>{}}}
  const ctx={sessionController:{resolveAgent:async()=>({agent}),prompt:async()=>{if(promptFails)throw new Error('回包丢失');return {accepted:true}}}} as unknown as Context
  const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}))
  const run={taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标',allowedTools:[]} as unknown as TaskRun
@@ -550,7 +579,7 @@ test('收窄之后、交给原生之前就失败：撤掉这次收窄；已交�
 
 test('发送只解析一次执行会话：核对用的就是被收窄、被发送的那一个 agent',async()=>{
  let resolves=0,inspects=0
- const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]},ctx:{tools:{schemas:()=>[],restrict:()=>()=>{}}}}
+ const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[]},ctx:{tools:{schemas:()=>[],restrict:()=>()=>{},guard:()=>()=>{},register:()=>()=>{},get:()=>undefined},on:()=>()=>{}}}
  const ctx={sessionController:{resolveAgent:async()=>{resolves+=1;return {agent}},prompt:async()=>({accepted:true})}} as unknown as Context
  const ports=dshTaskRunPorts(ctx,'owner',async()=>{inspects+=1;return {ownerId:'owner',sessionId:'session',status:'ready'}})
  await ports.send({taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标',allowedTools:[]} as unknown as TaskRun,new AbortController().signal,target)

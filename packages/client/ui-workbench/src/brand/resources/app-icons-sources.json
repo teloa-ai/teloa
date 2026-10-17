@@ -1,0 +1,175 @@
+[
+  {
+    "path": "slack.svg",
+    "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/0af835e2949a9222965522780e5e0810d3c53382/icons/slack.svg",
+    "license": "CC0-1.0",
+    "sourceSha256": "f23c317b279f53dcd2260a6cd2e279f7a696f87dcb3da259d6201f05bbc45b0d",
+    "sha256": "91dc71675827188064fe5db5474bf5e01eac627fd12b3b4667e138140b197b37",
+    "modifications": [
+      "Set brand fill #4A154B"
+    ]
+  },
+  {
+    "path": "pstack.png",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/837067b75aa20ab58d7b2a2f6c0531e37118c596/pstack/assets/logo.png",
+    "license": "MIT",
+    "sourceSha256": "672f6791589ef758b0ced2c4c477913fa2758623c438e265639a0d539ce90695",
+    "sha256": "672f6791589ef758b0ced2c4c477913fa2758623c438e265639a0d539ce90695",
+    "modifications": []
+  },
+  {
+    "path": "remotion.svg",
+    "source": "https://raw.githubusercontent.com/remotion-dev/cursor-plugin/ef694238d2e62c05692944a5082cd08e1367eb1c/skills/remotion-best-practices/assets/remotion-icon.svg",
+    "license": "MIT",
+    "sourceSha256": "5007669bd0555b0f4565b4e7176fa191310ab0039b2ed09d867a9270f5b0ce58",
+    "sha256": "5007669bd0555b0f4565b4e7176fa191310ab0039b2ed09d867a9270f5b0ce58",
+    "modifications": []
+  },
+  {
+    "path": "pstack-LICENSE",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/837067b75aa20ab58d7b2a2f6c0531e37118c596/pstack/LICENSE",
+    "license": "MIT",
+    "sourceSha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
+    "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
+    "modifications": []
+  },
+  {
+    "path": "remotion-LICENSE",
+    "source": "https://raw.githubusercontent.com/remotion-dev/cursor-plugin/ef694238d2e62c05692944a5082cd08e1367eb1c/LICENSE",
+    "license": "MIT",
+    "sourceSha256": "1df205bece1fe707f818658a104844aba9a783e43f716642f5bf1286c18263c0",
+    "sha256": "1df205bece1fe707f818658a104844aba9a783e43f716642f5bf1286c18263c0",
+    "modifications": []
+  },
+  {
+    "path": "cursor-github.svg",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/github/assets/logo.svg",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/github",
+      "serverName": "github"
+    },
+    "sourceSha256": "5b02d8c41edb37734aa70362506d757f27af89a37ff0975baf3871244305976e",
+    "sha256": "5b02d8c41edb37734aa70362506d757f27af89a37ff0975baf3871244305976e",
+    "modifications": []
+  },
+  {
+    "path": "cursor-gmail.svg",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/gmail/assets/logo.svg",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/gmail",
+      "serverName": "gmail"
+    },
+    "sourceSha256": "16b247249328458d1f22b1e6c9766dcce8d75ac6316f4be8c999ca36d33f9d17",
+    "sha256": "16b247249328458d1f22b1e6c9766dcce8d75ac6316f4be8c999ca36d33f9d17",
+    "modifications": []
+  },
+  {
+    "path": "cursor-google-drive.svg",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/google-drive/assets/logo.svg",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/google-drive",
+      "serverName": "google-drive"
+    },
+    "sourceSha256": "474264985c6d8b3d521289c6e1095eb7b7e24f549889c55e7877376c21b715b2",
+    "sha256": "474264985c6d8b3d521289c6e1095eb7b7e24f549889c55e7877376c21b715b2",
+    "modifications": []
+  },
+  {
+    "path": "cursor-google-sheets.svg",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/google-sheets/assets/logo.svg",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/google-sheets",
+      "serverName": "google-sheets"
+    },
+    "sourceSha256": "2f9f850d9e8567a72b5b3d7da9b7c9fdaad3bb70769fd0c1caf94d44650d997e",
+    "sha256": "2f9f850d9e8567a72b5b3d7da9b7c9fdaad3bb70769fd0c1caf94d44650d997e",
+    "modifications": []
+  },
+  {
+    "path": "cursor-google-slides.svg",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/google-slides/assets/logo.svg",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/google-slides",
+      "serverName": "google-slides"
+    },
+    "sourceSha256": "dd71a017db5a7ef05b2c334c4c0c3a8dcf8f268ea6ca643efb11c22f646fbd44",
+    "sha256": "dd71a017db5a7ef05b2c334c4c0c3a8dcf8f268ea6ca643efb11c22f646fbd44",
+    "modifications": []
+  },
+  {
+    "path": "cursor-hubspot.png",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/hubspot/assets/logo.png",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/hubspot",
+      "serverName": "hubspot"
+    },
+    "sourceSha256": "465ab17ed899fcfa0ad4689ad6dddce88c17c56c3280f4fe6d292d35191b2c4a",
+    "sha256": "465ab17ed899fcfa0ad4689ad6dddce88c17c56c3280f4fe6d292d35191b2c4a",
+    "modifications": []
+  },
+  {
+    "path": "cursor-posthog-mcp.png",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/posthog-mcp/assets/logo.png",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/posthog-mcp",
+      "serverName": "posthog"
+    },
+    "sourceSha256": "6e124e773bf0788050f645a441f67d477708cdc98e0f627a1b1c1c47e3a9ef83",
+    "sha256": "6e124e773bf0788050f645a441f67d477708cdc98e0f627a1b1c1c47e3a9ef83",
+    "modifications": []
+  },
+  {
+    "path": "cursor-todoist.png",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/todoist/assets/logo.png",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/todoist",
+      "serverName": "todoist"
+    },
+    "sourceSha256": "dc9f3d3d45d04fad2a1d98215192b4e16e7ba877dde76e455e48fd0c960bed7f",
+    "sha256": "dc9f3d3d45d04fad2a1d98215192b4e16e7ba877dde76e455e48fd0c960bed7f",
+    "modifications": []
+  },
+  {
+    "path": "cursor-trello.png",
+    "source": "https://raw.githubusercontent.com/cursor/plugins/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party/trello/assets/logo.png",
+    "license": "MIT",
+    "licenseFile": "cursor-plugins-LICENSE",
+    "identity": {
+      "plugin": "cursor/plugins:third_party/trello",
+      "serverName": "trello"
+    },
+    "sourceSha256": "4277e90ce7f2e91c18e66f7fe78cd217381a635beb589c5e36a8b9cf43f098d3",
+    "sha256": "4277e90ce7f2e91c18e66f7fe78cd217381a635beb589c5e36a8b9cf43f098d3",
+    "modifications": []
+  },
+  {
+    "path": "sentry-plugin-cursor.svg",
+    "source": "https://raw.githubusercontent.com/getsentry/plugin-cursor/135513f89f293c587fbffb852afdf00a256df32a/assets/logo.svg",
+    "license": "MIT",
+    "licenseFile": "sentry-plugin-cursor-LICENSE",
+    "identity": {
+      "plugin": "cursor:579",
+      "manifestLogo": ".cursor-plugin/plugin.json logo"
+    },
+    "gitBlob": "937a57925e49601d4b3008a578664feb3ed85b72",
+    "sourceSha256": "e5935afc31e5084860e5ddafae804b0620d38345bd09250c9ef081edae0ef733",
+    "sha256": "e5935afc31e5084860e5ddafae804b0620d38345bd09250c9ef081edae0ef733",
+    "modifications": []
+  }
+]

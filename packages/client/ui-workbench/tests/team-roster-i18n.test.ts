@@ -1,3 +1,4 @@
+import './employee-asset-test-loader.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
@@ -17,29 +18,28 @@ import {chineseUiLiterals} from './i18n-ast.ts'
 const clientRoot = new URL('../src/client/', import.meta.url)
 const locales = ['zh-CN', 'zh-Hant', 'en', 'ja', 'ko', 'vi', 'es', 'fr', 'de', 'pt'] as const
 
-test('team.roster.* / team.profile.* / team.page.* 词条十一列齐全、每列非空', () => {
+test('既有团队词条十一列齐全，新增退役入口按定稿三语言精确核对', () => {
   const rows = TEAM_DETAIL_MESSAGE_ROWS.filter(row => row[0].startsWith('team.roster.') || row[0].startsWith('team.profile.') || row[0].startsWith('team.page.'))
   assert.ok(rows.length > 0)
   for (const row of rows) {
-    assert.equal(row.length, locales.length + 1, row[0])
-    for (const [index, locale] of locales.entries()) assert.ok(row[index + 1]?.trim(), `${row[0]}: ${locale}`)
+    // 2026-10-07 起新增词条只定稿 zh-CN / zh-Hant / en 三列，其余语言走统一回退，不为本断言擅自补译；旧词条仍须十一列齐全。
+    assert.equal(row.length, ['team.page.retired.show','team.page.retired.hide'].includes(row[0]) ? 4 : locales.length + 1, row[0])
+    for (const [index, locale] of locales.slice(0, row.length - 1).entries()) assert.ok(row[index + 1]?.trim(), `${row[0]}: ${locale}`)
   }
 })
 
-test('team.roster.count / team.roster.countNote 的占位符在十一列里出现次数一致', () => {
+test('team.roster.count 的占位符在既有语言中出现次数一致', () => {
   const count = TEAM_DETAIL_MESSAGE_ROWS.find(row => row[0] === 'team.roster.count')!
   assert.ok(count)
   const placeholders = [...(count[3]?.match(/\{[^}]+\}/g) ?? [])].sort()
   for (const [index] of locales.slice(3).entries()) assert.deepEqual([...(count[index + 4]?.match(/\{[^}]+\}/g) ?? [])].sort(), placeholders, `team.roster.count: ${locales[index + 3]}`)
-  const note = TEAM_DETAIL_MESSAGE_ROWS.find(row => row[0] === 'team.roster.countNote')!
-  assert.ok(note)
-  assert.ok(note.slice(1).every(value => !/\{[^}]+\}/.test(value)), 'countNote 不带占位符')
+
 })
 
 test('全宽通讯录页头摘要词条齐全，三档计数文案的占位符各列一致', () => {
-  const rows = new Map(TEAM_DETAIL_MESSAGE_ROWS.map(row => [row[0], row]))
-  for (const key of ['team.page.eyebrow', 'team.page.summary', 'team.page.summaryBusy', 'team.page.summaryQuiet', 'team.page.summaryNoEmployees', 'team.page.summaryEmpty'] as const) assert.ok(rows.get(key), `缺 ${key}`)
-  assert.ok(rows.get('team.page.eyebrow')!.slice(1).every(value => !/\{[^}]+\}/.test(value)), 'eyebrow 不带占位符')
+  const rows = new Map<string,readonly string[]>(TEAM_DETAIL_MESSAGE_ROWS.map(row => [row[0], row]))
+  for (const key of ['team.page.summary', 'team.page.summaryBusy', 'team.page.summaryQuiet', 'team.page.summaryNoEmployees', 'team.page.summaryEmpty'] as const) assert.ok(rows.get(key), `缺 ${key}`)
+  assert.equal(rows.has('team.page.eyebrow'),false,'已移除的冗余眉题不能回流')
   for (const [key, expected] of [['team.page.summary', ['{people}', '{waiting}']], ['team.page.summaryBusy', ['{people}', '{busy}']], ['team.page.summaryQuiet', ['{people}']]] as const) {
     for (const [index, locale] of locales.entries()) assert.deepEqual([...(rows.get(key)![index + 1]?.match(/\{[^}]+\}/g) ?? [])].sort(), [...expected].sort(), `${key}: ${locale}`)
   }
@@ -70,15 +70,13 @@ test('TeamPage.tsx 目录栏（TeamPage 函数到 RoleDetail 之前）无裸中�
   assert.deepEqual(chineseUiLiterals(body, 'TeamPage.tsx'), [])
 })
 
-test('目录总数 chip 接线：TeamPage.tsx 在 StaffRoster 之前调用 rosterTotal/rosterHasMultiScope，并用 aria-describedby 关联小字说明', async () => {
+test('目录总数按身份去重，卡片不需要重复分区计数解释', async () => {
   const source = await readFile(new URL('TeamPage.tsx', clientRoot), 'utf8')
-  assert.match(source, /import\s*\{\s*rosterTotal,\s*rosterHasMultiScope[^}]*\}\s*from\s*'\.\/team-roster-grouping\.js'/)
   const chipIndex = source.indexOf("t('team.roster.count'")
   const rosterIndex = source.indexOf('<StaffRoster')
   assert.ok(chipIndex > 0 && rosterIndex > chipIndex, '总数 chip 必须渲染在 <StaffRoster/> 之前')
   assert.match(source, /rosterTotal\(rows\)/)
-  assert.match(source, /rosterHasMultiScope\(rows,\s*scopeLabels\)/)
-  assert.match(source, /aria-describedby=\{rosterHasMultiScope\(rows,\s*scopeLabels\)\s*\?\s*'team-roster-count-note'\s*:\s*undefined\}/)
+  assert.doesNotMatch(source,/team-roster-count-note/)
 })
 
 // 和 team-avatar.test.ts / team-profile-sections.test.ts 同样的取巧：.tsx 走 tsc 产物，CSS Modules 换成类名代理。
@@ -110,18 +108,15 @@ test('StaffRoster 真实渲染：分区标题来自 labels、空闲成员回退 
   assert.match(markup, /手上暂时没有事/)
 })
 
-test('分区副标题按 BusinessScopeLabel.kind 渲染三档人话，「其他」分区不给副标题', () => {
+test('卡片显示真实业务标签，不拿来源分类代替业务归属', () => {
   const mixed: BusinessScopeLabel[] = [
     {scope: 'general', title: '通用工作', kind: 'builtin', loads: 0, activeLoads: 0, tasks: 0, groups: 0},
     {scope: 'SOC', title: '安全运营', kind: 'domain', loads: 0, activeLoads: 0, tasks: 0, groups: 0},
     {scope: 'legacy-ops', title: '老运维', kind: 'legacy', loads: 0, activeLoads: 0, tasks: 0, groups: 0},
   ]
   const markup = render({roles: [role('a', ['general']), role('b', ['SOC']), role('c', ['legacy-ops']), role('d', ['Design'])], labels: mixed})
-  assert.match(markup, /内置员工/)
-  assert.match(markup, /来自行业模板/)
-  assert.match(markup, /历史范围/)
-  assert.match(markup, /其他/)
-  assert.equal(markup.match(/内置员工/g)!.length, 1, '副标题一个分区只出现一次')
+  for(const label of ['通用工作','安全运营','老运维','Design'])assert.ok(markup.includes(label))
+  assert.equal((markup.match(/data-teloa-entry=/g)??[]).length,4)
 })
 
 test('成员行副文案是岗位一句话首句，不再显示 scopes 原值；duty 为空时整行不渲染', () => {
@@ -138,8 +133,8 @@ test('成员行首句兼容中英标点和换行，长语言不会把整段职�
   assert.equal(dutyLead('核对来源\n形成可审阅结论'), '核对来源')
 })
 
-test('搜索态分区头用 aria-disabled 而不是 disabled，仍可聚焦', () => {
+test('搜索态身份卡保留可操作入口，不为搜索禁用员工', () => {
   const markup = render({roles, searching: true})
-  assert.match(markup, /aria-disabled="true"/)
-  assert.doesNotMatch(markup, /<button[^>]*class="groupHead"[^>]*disabled=""/)
+  assert.match(markup, /data-teloa-entry="a"/)
+  assert.doesNotMatch(markup, /<button[^>]*class="cardIdentity"[^>]*disabled=""/)
 })

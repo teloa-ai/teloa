@@ -14,7 +14,7 @@ export function HomeNativeConversation({home,ready,overview,content,notice,engag
  const hero=session===undefined||session.blank&&!session.promptAttempted&&session.pendingSubmissions.length===0
  const showOverview=home&&hero
  useEffect(()=>{if(sessionId&&accepted&&isHomeDraft()){accept();if(home&&homeReady)engaged?.(sessionId)}},[home,homeReady,sessionId,accepted,engaged,accept,isHomeDraft])
- return <section className={showOverview?css.home:css.conversation} aria-busy={home&&!homeReady}>
+ return <section className={showOverview?css.home:css.conversation} data-teloa-home={home||undefined} aria-busy={home&&!homeReady}>
   {notice}
   <div className={showOverview?css.homeConversation:css.body} hidden={home&&!homeReady}>
    {content}

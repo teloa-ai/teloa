@@ -78,7 +78,11 @@ test('宿主接线：skill-secrets 三端点不进 endpointSet，与 credentialS
  assert.doesNotMatch(endpointSetLine,/skillSecretEndpoints/)
  const credentialAt=source.indexOf('credentialStoreEndpoints as readonly string[]).includes(endpoint)')
  const skillAt=source.indexOf('skillSecretEndpoints as readonly string[]).includes(endpoint)')
- assert.ok(credentialAt>0&&skillAt>credentialAt&&skillAt-credentialAt<=400,`skill-secrets 分发应紧随 credentialStoreEndpoints 分发之后（${credentialAt}, ${skillAt}）`)
+ const browserOnlyDispatch=source.slice(credentialAt,skillAt)
+ assert.ok(credentialAt>0&&skillAt>credentialAt,`skill-secrets 应与凭据端点在本人浏览器分发边界（${credentialAt}, ${skillAt}）`)
+ assert.match(browserOnlyDispatch,/voiceServiceEndpoints/);assert.match(browserOnlyDispatch,/browserVoiceEndpoints/)
+ const dispatchCode=browserOnlyDispatch.split('\n').filter(line=>!line.trimStart().startsWith('//')).join('\n')
+ assert.doesNotMatch(dispatchCode,/dispatchTeloaEndpoint|teloaWork\.invoke|endpointSet/,'两类密钥端点之间不能绕入普通工具分发')
 })
 
 test('多变量重新确认（I-2）：声明目标变更后只重存一个变量，其它变量旧值作废，需逐个重新保存',async()=>{
@@ -184,7 +188,8 @@ test('L-6 宿主接线：代发可见性与声明解析都核对胜出者为受�
  const visible=source.slice(source.indexOf('skillVisible:(exec,name,signal)=>availabilitySync.stable(async()=>{'),source.indexOf('readForUse:name=>skillSecretStore.readForUse(name)'))
  assert.match(visible,/isManagedSkillWinner\(await skills\.get\(name,\{cwd:agent\.session\.header\.cwd,scope:agent,signal\}\),managedFiles\.path\(selected\.installationId\)\)/)
  assert.match(visible,/selected\.availability==='disabled'/)
- const resolver=source.slice(source.indexOf('const declaredSkillSecrets=declaredSkillSecretsResolver('),source.indexOf('const skillSecretStore=createSkillSecretStore('))
+ const resolver=source.slice(source.indexOf('const skillSecretsFor='),source.indexOf('const skillSecretStore=createSkillSecretStore('))
+ assert.match(resolver,/declaredSkillSecretsResolver\(officialCatalogForMcp/);assert.match(resolver,/const declaredSkillSecrets=skillSecretsFor\(\)/)
  assert.match(resolver,/isManagedSkillWinner\(/);assert.match(resolver,/managedFiles\.path\(selected\.installationId\)/);assert.match(resolver,/cwd:workspaceRoot/)
  assert.match(resolver,/},availabilitySync\.stable\)/,'生产声明解析必须接入与安装维护相同的稳定读取队列')
 })

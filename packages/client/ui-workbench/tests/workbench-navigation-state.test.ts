@@ -30,6 +30,34 @@ const saved=():WorkbenchNavigationState=>({
   detail:{open:true,target:{kind:'directory-object',view:'tasks',id:'task-2',source:{kind:'directory'}}},
 })
 
+test('成果文件预览恢复原来源、原成果与版本，非法初始内容不落盘',()=>{
+ const target={kind:'artifact' as const,source:{kind:'session' as const,id:'origin'},sessionId:'main',artifactId:'original',version:1,initialView:'files' as const}
+ const state={...saved(),detail:{open:true,target}}
+ assert.deepEqual(readWorkbenchNavigationState(writeWorkbenchNavigationState(state)).detail.target,target)
+ assert.throws(()=>readWorkbenchNavigationState(JSON.stringify({...state,detail:{open:true,target:{...target,initialView:'other'}}})))
+})
+
+test('整理入口遗留显示意图不作废当前群导航，恢复只读且不自动整理',()=>{
+ const target={kind:'artifact' as const,source:{kind:'session' as const,id:'original-session'},sessionId:'original-session',initialAction:'prepare' as const}
+ const legacy={...saved(),view:'messages' as const,messageMode:'groups' as const,selected:{groupId:'original-group',groupRootId:'original-topic'},detail:{open:false,target}}
+ const values=new Map<string,string>([[WORKBENCH_NAVIGATION_STORAGE_KEY,JSON.stringify(legacy)]]),removed:string[]=[]
+ const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value)},removeItem:(key:string)=>{removed.push(key);values.delete(key)}}
+ const recovered=loadWorkbenchNavigationState(storage)
+ assert.equal(recovered.view,'messages');assert.equal(recovered.messageMode,'groups')
+ assert.deepEqual(recovered.selected,legacy.selected);assert.deepEqual(recovered.directories,legacy.directories)
+ assert.deepEqual(recovered.detail,{open:false,target:{kind:'artifact',source:target.source,sessionId:target.sessionId}})
+ assert.deepEqual(removed,[],'合法的新入口不能清除整份导航记录')
+})
+
+test('整理意图仅作用于当次入口，写入导航不改变当前对象或带入编辑动作',()=>{
+ const source={kind:'session' as const,id:'original-session'},target={kind:'artifact' as const,source,sessionId:source.id,initialAction:'prepare' as const}
+ const state={...saved(),detail:{open:true,target}}
+ const recovered=readWorkbenchNavigationState(writeWorkbenchNavigationState(state))
+ assert.deepEqual(recovered.detail,{open:true,target:{kind:'artifact',source,sessionId:source.id}})
+ assert.equal(state.detail.target.initialAction,'prepare','序列化不改写当前显示意图')
+ for(const patch of [{initialAction:'execute'},{artifactId:'fixed',version:1},{initialView:'files'}])assert.throws(()=>readWorkbenchNavigationState(JSON.stringify({...state,detail:{open:true,target:{...target,...patch}}})))
+})
+
 test('损坏的 sessionStorage 记录会被清除并安全回到首页',()=>{
   const values=new Map<string,string>([[WORKBENCH_NAVIGATION_STORAGE_KEY,'{"bad":true}']])
   const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value)},removeItem:(key:string)=>{values.delete(key)}}
@@ -50,15 +78,28 @@ test('工作台状态变更会同步写入恢复记录，刷新不依赖 React e
   },listener=()=>{}
   const dispose=attachWorkbenchNavigationPersistence({getSnapshot:()=>current,subscribe:next=>{listener=next;return()=>{listener=()=>{}}}},storage)
   assert.equal(readWorkbenchNavigationState(values.get(WORKBENCH_NAVIGATION_STORAGE_KEY)!).view,'tasks')
-  current={...current,view:'capabilities',navigationDirectories:{...current.navigationDirectories,capabilities:{category:'{"category":"skill","mobileLayer":"detail"}',selectedId:'find-skills'}}}
+  current={...current,view:'market',navigationDirectories:{...current.navigationDirectories,capabilities:{category:'{"category":"skill","mobileLayer":"detail"}',selectedId:'find-skills'}}}
   listener()
   const persistedState=loadWorkbenchNavigationState(storage)
   assert.deepEqual(persistedState,captureWorkbenchNavigationState(current))
+  assert.equal(persistedState.directories.capabilities?.selectedId,'find-skills','我的资源分组选择随市场一起记录')
   assert.equal(persistedState.directories.resources?.query,undefined)
   dispose()
   current={...current,view:'home'}
   listener()
-  assert.equal(loadWorkbenchNavigationState(storage).view,'capabilities')
+  assert.equal(loadWorkbenchNavigationState(storage).view,'market')
+})
+
+test('旧记录里的独立「我的能力」模块恢复到市场「已添加」，目录记忆与其余选择不丢',()=>{
+  const legacy={...saved(),view:'capabilities',capabilityMode:'bindings',marketMode:'installations',directories:{...saved().directories,capabilities:{category:'{"category":"source","mobileLayer":"list"}',selectedId:'connector:github'},market:{query:'git'}}}
+  const restored=readWorkbenchNavigationState(JSON.stringify(legacy))
+  assert.equal(restored.view,'market')
+  assert.equal(restored.marketMode,'catalog')
+  assert.equal(restored.capabilityMode,'catalog')
+  assert.deepEqual(restored.directories.market,{query:'git',category:'{"category":"intents","mobileLayer":"list"}'})
+  assert.deepEqual(restored.directories.capabilities,{category:'{"category":"source","mobileLayer":"list"}',selectedId:'connector:github'})
+  assert.deepEqual(restored.selected,saved().selected)
+  assert.throws(()=>readWorkbenchNavigationState(JSON.stringify({...legacy,capabilityMode:'other'})),'旧字段仍校验取值')
 })
 
 test('恢复记录拒绝未知字段且无效对象回退首个真实对象',()=>{
@@ -191,13 +232,18 @@ test('store 从恢复记录建立模块与对象状态，并持续记录目录�
   store.actions.selectTask('task-4')
   store.actions.openBusiness({scope:'space-finance',section:'analysis',id:'run-4'})
   store.actions.openPlans({kind:'run',id:'plan-run-4',scope:'space-finance'})
-  store.actions.navigate('capabilities')
-  assert.equal(loadWorkbenchNavigationState(storage).view,'capabilities')
+  store.actions.openCapabilityCatalog()
+  assert.equal(loadWorkbenchNavigationState(storage).view,'market')
+  assert.equal(JSON.parse(loadWorkbenchNavigationState(storage).directories.market?.category??'{}').category,undefined,'受控请求不改写市场目录记忆，由市场页落定后回写')
   assert.equal(store.getSnapshot().navigationDirectories.tasks?.selectedId,'task-4')
   assert.equal(store.getSnapshot().navigationDirectories.spaces?.selectedId,'run-4')
   assert.equal(store.getSnapshot().navigationDirectories.plans?.selectedId,'plan-run-4')
+  store.actions.openGroupTopic('10000000-0000-4000-8000-000000000001','original-topic')
+  store.actions.openConversationObject('original-session',{kind:'role',id:'role-2'})
+  assert.equal(store.getSnapshot().directoryOpen,true,'原对象详情不得收起本人已打开的目录')
   const restored=captureWorkbenchNavigationState(store.getSnapshot())
   const reloaded=createWorkbenchStore('dark',restored).create().getSnapshot()
+  assert.deepEqual(reloaded.groupTarget,{groupId:'10000000-0000-4000-8000-000000000001',rootId:'original-topic'},'刷新恢复同一原群和话题')
   assert.deepEqual(reloaded.businessTarget,{scope:'space-finance',section:'analysis',id:'run-4'})
   assert.deepEqual(reloaded.continuousTarget,{kind:'run',id:'plan-run-4',scope:'space-finance'})
   detach()
@@ -326,4 +372,13 @@ test('固定记录来源刷新与右栏恢复保留版本/hash，拒绝错scope/
  assert.deepEqual(readWorkbenchNavigationState(detail(target)).detail.target,{kind:'conversation-object',sessionId:'s1',objectKind:'business',target})
  for(const patch of [{scope:'other'},{id:'other'},{objectType:'other'},{section:'overview'},{match:{field:'_id',value:reference.id}},{recordReference:{...reference,snapshotHash:'invalid'}}])assert.throws(()=>readWorkbenchNavigationState(detail({...target,...patch})))
  assert.notEqual(businessTargetKey(target),businessTargetKey({...target,recordReference:{...reference,version:4}}))
+})
+
+test('业务员工与群栏目保留范围并可刷新恢复，不当成对象或看板标识',()=>{
+ for(const section of ['employees','groups'] as const){
+  const target={scope:'sales',section}
+  const base={view:'spaces',messageMode:'native',capabilityMode:'catalog',marketMode:'catalog',taskId:null,roleId:null,resourceTarget:null,capabilityBindingId:null,marketItemId:null,marketIntentId:null,installationId:null,continuousTarget:{kind:'plans'},navigationDirectories:{},detail:{open:false,target:null},businessTarget:target} as const
+  const persisted=captureWorkbenchNavigationState(base)
+  assert.deepEqual(restoredBusinessTarget(readWorkbenchNavigationState(writeWorkbenchNavigationState(persisted))),target)
+ }
 })

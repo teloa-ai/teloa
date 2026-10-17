@@ -1,0 +1,38 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-llm",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "4436ded586141b3445289536ac32b37f04b93cbe749c7f183ee02c33260d7df4",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "d18d8ae4c8d961e628708c1e4698e09716a0ebb80e55a672e0bde1029bec1155",
+      "afterSha256": "ac4d5c50fce3f2cd413266b77626f9e9c5d2e8ae85c6058e046f8996088a9548"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "895a2d357b3da2d2ec18eada1271274d43169acaa6591d57bb6e84878e1b88fe",
+      "afterSha256": "0a45e3e0a015d3f8ba875f28feb14e1f0738954b2d72fe1ed11a4e21c9622a26"
+    }
+  ],
+  "api": [
+    "LlmStreamAdmission",
+    "LlmRuntime.requireStreamAdmission",
+    "LlmRuntime.installStreamAdmission",
+    "LlmRuntime.installStreamProjection",
+    "LlmStreamProjection",
+    "LlmStreamDispatched"
+  ],
+  "scope": {
+    "admission": "Synchronous original GenerateOptions check after exact-model resolution and projection, immediately before adapter stream dispatch and each iterator.next",
+    "default": "No provider and not required preserves official Free behavior; required is monotonic and installed policy is unique and immutable",
+    "boundary": "Both regular and prepared calls; final dispatch after arbitrary llm/stream middleware awaits does not depend on listener order",
+    "limitations": [
+      "No input or accepted-task proof is synthesized; consumer must bind an actual trusted root and current step",
+      "Provider resolution may complete before this dispatch gate; failed admission starts no adapter stream",
+      "Already started effects are not rolled back; cancellation and stream cleanup retain official behavior"
+    ],
+    "projection": "Trusted immutable provider-envelope projection before file/image/tool projection. Original frozen request remains the exact admission identity; provider route, controls and tool schemas cannot change. Captured prepared adapter dispatch is retained. Dispatch notification occurs after adapter iterator construction and before first iteration, with final admission rechecked after awaiting it. Notification receives both the admitted envelope and the exact SDK-projected adapter envelope for source/hash audit; Free without notification has no new await."
+  }
+}

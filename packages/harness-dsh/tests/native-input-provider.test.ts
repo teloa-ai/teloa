@@ -1,3 +1,4 @@
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {setImmediate as immediate} from 'node:timers/promises'
@@ -17,7 +18,7 @@ import {workAccess,type WorkAccessRequest} from '@teloa/backend'
 import {TeloaNativeInput} from '../src/native-input-provider.ts'
 import {createManagedSessionController,ManagedSessionController} from '../src/managed-session-controller.ts'
 import {createManagedSubagentRuntime,ManagedSubagentRuntime} from '../src/managed-subagent.ts'
-import {nativeProviderFixture,nativeProviderKernel} from './fixtures/native-input-provider.ts'
+import {nativeProviderFixture,nativeProviderKernel,installStandaloneResidentAdmission} from './fixtures/native-input-provider.ts'
 import {patchedCorePackages} from './fixtures/native-final-session.ts'
 import {patchedControllerPackage,promptRequest,queueRequest,type AdmittingSessionController} from './fixtures/native-controller-admission.ts'
 import {patchedSubagent,deferred,until} from './fixtures/native-subagent-admission.ts'
@@ -55,6 +56,7 @@ for(const delayed of ['llm','tools'] as const)test(`真实 Cordis 延迟 ${delay
  reset()
  const {sessionPackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t),ctx=new Context()
  t.after(()=>ctx.fiber.dispose())
+ installStandaloneResidentAdmission(ctx)
  const delayedPlugin=delayed==='llm'?llmPackage.LlmRuntime:toolsPackage.ToolRuntime
  for(const plugin of [sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,AgentRegistry,llmPackage.LlmRuntime,toolsPackage.ToolRuntime]){
   if(plugin!==delayedPlugin)await ctx.plugin(plugin)
@@ -78,7 +80,7 @@ for(const delayed of ['llm','tools'] as const)test(`真实 Cordis 延迟 ${delay
 test('真实 plugin graph 在 provider 发布前等待；首次 Controller service 通知就使用固定策略',async t=>{
  reset()
  const f=await nativeProviderFixture(t),sdk=await patchedControllerPackage(t),Managed=createManagedSessionController(sdk.SessionController)
- assert.deepEqual(Managed.inject,[...sdk.SessionController.inject,'teloaNativeInput'])
+ assert.deepEqual(Managed.inject,[...sdk.SessionController.inject,'teloaNativeInput','settings','credentials'])
  const fiber=f.ctx.plugin(Managed,{nativeOpen:false});await fiber
  assert.equal(f.ctx.get('sessionController'),undefined)
  let first:Promise<unknown>|undefined,observations=0,proved=false
@@ -94,6 +96,30 @@ test('真实 plugin graph 在 provider 发布前等待；首次 Controller servi
  assert.equal(observations,1);assert.equal(proved,true);assert.equal(seen.length,1);assert.equal(f.agent.inbox.nextTurn.length,1)
  assert.equal(seen[0]?.kind,'native-input')
  if(seen[0]?.kind==='native-input')assert.equal(seen[0].producer,'prompt')
+})
+
+test('真实 Controller 原生目录与管理目录共享来源，凭据变化恢复候选且不改默认或调用模型',async t=>{
+ reset()
+ const f=await nativeProviderFixture(t);await f.ctx.plugin(TeloaNativeInput)
+ class CatalogModel extends NoModel{override async listModels(provider:string){return [{provider,id:'catalog-model',name:'Catalog Model'}]}}
+ const adapter=new CatalogModel(),providers=['missing','ready','ambient']
+ f.ctx.llm.registerAdapter(providers,adapter)
+ f.ctx.llm.registerConfigurableProviders(providers.map(provider=>({provider,displayName:provider,settingsNs:'catalog-test',settingsPath:[provider]})))
+ f.modelReadiness.namespaces=[{ns:'catalog-test',value:{missing:{apiKeyEnv:'MISSING_KEY'},ready:{apiKeyEnv:'READY_KEY'},ambient:{}}}]
+ f.modelReadiness.configured.add('READY_KEY')
+ const {controller}=await managedController(f,t)
+ assert.ok(controller);assert.ok(f.ctx.teloaModelCatalog)
+ let sibling:unknown
+ await f.ctx.plugin({inject:['teloaModelCatalog'],apply(ctx:Context){sibling=ctx.teloaModelCatalog}})
+ assert.ok(sibling)
+ const raw=await f.ctx.teloaModelCatalog.read(),native=await controller.modelCatalog()
+ assert.deepEqual(raw.catalog.groups.map(row=>row.id),providers);assert.deepEqual(raw.missingCredentialProviders,['missing'])
+ assert.deepEqual(native.groups.map(row=>row.id),['ready','ambient']);assert.deepEqual(native.default,{provider:'test',model:'test'})
+ f.modelReadiness.configured.add('MISSING_KEY')
+ assert.deepEqual((await controller.modelCatalog()).groups.map(row=>row.id),providers)
+ assert.deepEqual((await f.ctx.teloaModelCatalog.read()).missingCredentialProviders,[])
+ assert.deepEqual(raw.missingCredentialProviders,['missing']);assert.equal(f.modelReadiness.resolutions,0);assert.equal(adapter.calls,0)
+ assert.doesNotMatch(JSON.stringify(native),/MISSING_KEY|READY_KEY|apiKeyEnv/)
 })
 
 test('单一 Service holder 原始与scoped不可替换；Controller queue-edit 与Task共享一个input',async t=>{
@@ -169,7 +195,8 @@ test('缺最终Session补口不发布provider；缺官方Controller/Subagent补�
 test('真实 managed Subagent plugin 在provider之前等待，首次通知已有固定构造policy/manager',async t=>{
  reset()
  const f=await nativeProviderFixture(t),sdk=await patchedSubagent(t),Managed=createManagedSubagentRuntime(sdk.SubagentRuntime as typeof SubagentRuntime)
- assert.deepEqual(Reflect.get(Managed,'inject'),['teloaNativeInput'])
+ assert.deepEqual(Reflect.get(Managed,'inject'),['workingDirectory','teloaNativeInput'])
+ await installNativeWorkingDirectory(f.ctx)
  const fiber=f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8});await fiber
  assert.equal(f.ctx.get('subagents'),undefined)
  let notifications=0,proved=false
@@ -182,7 +209,7 @@ test('真实 managed Subagent plugin 在provider之前等待，首次通知已�
   proved=true
  })
  await f.ctx.plugin(TeloaNativeInput);await fiber;await immediate()
- assert.equal(notifications,1);assert.equal(proved,true);assert.ok(Reflect.get(f.ctx.subagents,'continuations'))
+ assert.equal(notifications,1);assert.equal(proved,true);assert.ok(Reflect.get(f.ctx.subagents,'manager'))
  assert.equal(seen.length,0)
 })
 
@@ -191,11 +218,11 @@ test('managed Subagent首次start核对独立初始许可，拒绝零写、恢�
  const f=await nativeProviderFixture(t),sdk=await patchedSubagent(t),Managed=createManagedSubagentRuntime(sdk.SubagentRuntime as typeof SubagentRuntime)
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-persistence-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
- await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput);await f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8})
+ await f.ctx.plugin(f.persistencePackage,{root});await f.ctx.plugin(TeloaNativeInput);await installNativeWorkingDirectory(f.ctx,root);await f.ctx.plugin(Managed,{maxDepth:2,maxActiveSubagents:8})
  await f.ctx.plugin(SpawnProvider,{providerName:'spawn'})
  valid=false
  const id=SessionId('initial-admission-denied')
- await assert.rejects(f.ctx.subagents.startContinuable({provider:'spawn',childId:id,label:'initial admission denied',request:{parent:f.agent,prompt:[{type:'text',text:'不能凭seed放行'}]},signal}),forbidden)
+ await assert.rejects(f.ctx.subagents.startActivation({delivery:'parent',provider:'spawn',childId:id,label:'initial admission denied',request:{parent:f.agent,prompt:[{type:'text',text:'不能凭seed放行'}]},signal}),forbidden)
  assert.equal(seen.length,1)
  assert.equal(seen[0]?.kind,'native-input')
  if(seen[0]?.kind==='native-input')assert.equal(seen[0].producer,'subagent')
@@ -207,7 +234,7 @@ test('managed Subagent首次start核对独立初始许可，拒绝零写、恢�
  const model=new NoModel();f.ctx.llm.registerAdapter(['test'],model)
  waiting={entered:deferred(),release:deferred()};t.after(()=>waiting?.release.resolve(undefined))
  valid=true
- const starting=f.ctx.subagents.startContinuable({provider:'spawn',childId:acceptedId,label:'initial admission accepted',request:{parent:f.agent,prompt:[{type:'text',text:'真实首次许可通过'}]},signal})
+ const starting=f.ctx.subagents.startActivation({delivery:'parent',provider:'spawn',childId:acceptedId,label:'initial admission accepted',request:{parent:f.agent,prompt:[{type:'text',text:'真实首次许可通过'}]},signal})
  await waiting.entered.promise
  // 官方 initializeAgent 的 maintenance 已退出，首次准入尚未放行，此时才持有测试屏障。
  const admitted=f.ctx.agents.get(acceptedId)!
@@ -235,7 +262,7 @@ test('过渡创建屏障保留已落seed；冷pending在中断修复前拒绝，
  const f=await nativeProviderFixture(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-seed-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model)
- await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput)
+ await f.ctx.plugin(f.persistencePackage,{root});await f.ctx.plugin(TeloaNativeInput)
  for(const target of ['next-turn','next-step'] as const)for(const inherited of [false,true]){
   const id=SessionId('pending-'+target+'-'+inherited),input=message('seed-not-a-permit')
   const seed:SessionEvent[]=[{type:'agent/inbox/spliced',seq:SessionSeq(0),time:1,data:{target,start:0,removedCount:0,inserted:[input]}}]
@@ -303,7 +330,7 @@ test('空闲持久history正常冷恢复；历史不生成工作证明，后续�
  const f=await nativeProviderFixture(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-idle-cold-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model)
- await f.ctx.plugin(f.persistencePackage.default,{root});await f.ctx.plugin(TeloaNativeInput)
+ await f.ctx.plugin(f.persistencePackage,{root});await f.ctx.plugin(TeloaNativeInput)
  const {controller}=await managedController(f,t)
  for(const completed of [false,true]){
   const id=SessionId('idle-cold-'+completed),historical=message('past-'+completed)
@@ -335,7 +362,7 @@ test('profile等价真实依赖图：agent-loop配置冷pending必须等待provi
  reset()
  const f=await nativeProviderKernel(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-configured-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
- f.ctx.llm.registerAdapter(['controlled'],model);await f.ctx.plugin(f.persistencePackage.default,{root})
+ f.ctx.llm.registerAdapter(['controlled'],model);await f.ctx.plugin(f.persistencePackage,{root})
  const id=SessionId('configured-pending'),input=message('configuration-not-a-permit')
  const seeded=f.sessionPackage.Session.create(id,[{type:'agent/inbox/spliced',seq:SessionSeq(0),time:1,data:{target:'next-turn',start:0,removedCount:0,inserted:[input]}}])
  const writer=await f.ctx.sessionPersistence.create(seeded.header)

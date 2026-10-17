@@ -15,17 +15,17 @@ function configRows() {
     'tool-workflow': '@deepseek-ai/dsh-tool-workflow',
     'tool-ralph': '@deepseek-ai/dsh-tool-ralph',
   }
-  return [
+  return structuredClone([
     ...[...compositionEntries().entries()].map(entry => ({ ...entry.options, disabled: entry.disabled, name: entry.options.name ?? names[entry.options.id], ...(entry.options.id === 'agent-preset-registry' ? { inject: ['loader', 'sessionProjections', 'teloaToolResourceProvenance'] } : {}) })),
     ...['ui-layout', 'ui-sidebar', 'ui-settings-general', 'ui-settings-plugins', 'client-hmr'].map(id => ({ id, name: '@deepseek-ai/dsh-' + (id.startsWith('client-') ? id : 'client-' + id), disabled: true })),
-    { id: 'connection', name: '@deepseek-ai/dsh-client-connection', inject: ['webRuntime', 'webServer'] },
+    { id: 'connection', name: '@deepseek-ai/dsh-client-connection', inject: ['webStartup', 'webServer'] },
     { id: 'session-query-sqlite', name: '@deepseek-ai/dsh-session-query-sqlite', config: { openAt: 'first-search', path: 'session-search.sqlite' } },
     { id: 'teloa-ui-workbench', name: '@teloa/client-ui-workbench' },
     { id: 'teloa-harness-dsh', name: '@teloa/harness-dsh' },
     ...['native-input-provider','managed-session-controller','managed-subagent','managed-goal-round-driver'].map(name=>({id:'teloa-'+(name==='native-input-provider'?'native-input':name),name:'@teloa/harness-dsh/'+name})),
     { id: 'teloa-tool-resource-provenance', name: '@teloa/harness-dsh/tool-resource-provenance' },
     { id: 'teloa-reference-mcp', name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'teloa_reference', cwd: { __jsExpr: 'process.env.TELOA_PROJECT_ROOT' }, failOnStartupError: true, maxInstructionBytes: 2048 } },
-  ]
+  ])
 }
 
 const dump = rows => stringify(rows).replace(/name: "(@[^"\n]+)"/g, "name: '$1'")
@@ -89,4 +89,17 @@ test('插件准备拒绝宿主及嵌套组合重新挂载原生提醒写工具',
       assert.throws(() => verifyConfig(dump(rows)), /提醒工具/)
     }
   }
+})
+
+test('插件准备核对本次受管输入载体，拒绝无声明替换与同名重复',()=>{
+ const nativeInputProvider='/isolated/runtime/native-input-carriers/fixed/native-runtime-input.mjs'
+ const rows=configRows();rows.find(row=>row.id==='teloa-native-input').name=nativeInputProvider
+ assert.doesNotThrow(()=>verifyConfig(dump(rows),{nativeInputProvider}))
+ const cliRows=structuredClone(rows);cliRows.find(row=>row.id==='teloa-native-input').name='file://'+nativeInputProvider
+ assert.doesNotThrow(()=>verifyConfig(dump(cliRows),{nativeInputProvider}))
+ assert.throws(()=>verifyConfig(dump(rows)),/未保留/)
+ const replaced=structuredClone(rows);replaced.find(row=>row.id==='teloa-native-input').name='/different/native-runtime-input.mjs'
+ assert.throws(()=>verifyConfig(dump(replaced),{nativeInputProvider}),/未保留/)
+ const duplicate=structuredClone(rows);duplicate.push({...duplicate.find(row=>row.id==='teloa-native-input')})
+ assert.throws(()=>verifyConfig(dump(duplicate),{nativeInputProvider}),/唯一存在/)
 })

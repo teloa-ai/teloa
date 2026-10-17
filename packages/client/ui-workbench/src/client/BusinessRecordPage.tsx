@@ -1,3 +1,4 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useEffect,useId,useMemo,useRef,useState,useSyncExternalStore,type FormEvent} from 'react'
 import {Archive,ArrowLeft,FileText,Plus,RefreshCw} from 'lucide-react'
 import {businessObjectReference,type BusinessObjectReference,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,encodeBusinessRichFieldValue,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessRichMultiEnumFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectFieldDefinition,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessConfigurationPageContent,type BusinessConfigurationPageContentV2} from '@teloa/contract'
@@ -11,22 +12,24 @@ import type {BusinessImportTargetFactory} from './business-import-integration.js
 import {BusinessImportPanel} from './BusinessImportPanel.js'
 import type {BusinessTarget} from './business-preview.js'
 import css from './BusinessRecordPage.module.css'
+import {ContextDrawer} from './ContextDrawer.js'
+import {BusinessWorkResults} from './BusinessWorkResults.js'
 type RecordField=BusinessObjectFieldDefinition|BusinessRichFieldDefinition
 type RecordPage=Extract<BusinessConfigurationPageContent|BusinessConfigurationPageContentV2,{kind:'records'}>
 export type BusinessRecordTaskList=Pick<BusinessTaskListProps,'api'|'roleName'|'openTask'|'openArtifact'|'openSource'>
-export type BusinessRecordPageProps={importFlow?:BusinessImportTargetFactory|undefined;go?:((target:BusinessTarget)=>void)|undefined;recordReference?:BusinessObjectReference|undefined;taskList?:BusinessRecordTaskList|undefined;projection:BusinessConfigurationPageProjection;flow?:BusinessRecordFlow;capabilities?:BusinessRecordCapabilities;onDispatch?:((reference:BusinessObjectReference)=>void)|undefined}
+export type BusinessRecordPageProps={referenceOnly?:boolean|undefined;importFlow?:BusinessImportTargetFactory|undefined;go?:((target:BusinessTarget)=>void)|undefined;recordReference?:BusinessObjectReference|undefined;taskList?:BusinessRecordTaskList|undefined;projection:BusinessConfigurationPageProjection;flow?:BusinessRecordFlow;capabilities?:BusinessRecordCapabilities;onDispatch?:((reference:BusinessObjectReference)=>void)|undefined}
 // flow 随本人或宿主变化；实例切换时连同详情、分页和在途回包一并隔离。
 const flowKeys=new WeakMap<BusinessRecordFlow,number>()
 let nextFlowKey=0
 function flowKey(flow:BusinessRecordFlow){let key=flowKeys.get(flow);if(key===undefined){key=++nextFlowKey;flowKeys.set(flow,key)}return key}
 const noCapabilities={create:false,edit:false,archive:false}
 /** 候选与正式页面共用展示；候选路径不挂载任何持有 records API 的组件。 */
-export function BusinessRecordPage({projection,flow,importFlow,capabilities=noCapabilities,onDispatch,taskList,recordReference,go}:BusinessRecordPageProps){
+export function BusinessRecordPage({projection,flow,importFlow,capabilities=noCapabilities,onDispatch,taskList,recordReference,go,referenceOnly=false}:BusinessRecordPageProps){
  const {t}=useI18n()
  if(projection.page.kind!=='records')return null
  if(projection.mode==='preview')return <section className={css.page}><RecordHeader page={projection.page}/><p className={css.badge}>{t('business.records.preview')}</p><EmptyRecordPage preview/></section>
  if(!flow)return <section className={css.page}><RecordHeader page={projection.page}/><p role="alert">{t('business.records.unavailable')}</p></section>
- return <SavedRecords key={JSON.stringify([flowKey(flow),projection.scope,projection.page.objectType.id,recordReference])} page={projection.page} scope={projection.scope} flow={flow} importFlow={importFlow} capabilities={capabilities} onDispatch={onDispatch} taskList={taskList} recordReference={recordReference} go={go}/>
+ return <SavedRecords key={JSON.stringify([flowKey(flow),projection.scope,projection.page.objectType.id,recordReference])} page={projection.page} scope={projection.scope} flow={flow} importFlow={importFlow} capabilities={capabilities} onDispatch={onDispatch} taskList={taskList} recordReference={recordReference} go={go} referenceOnly={referenceOnly}/>
 }
 function RecordHeader({page,children}:{page:RecordPage;children?:React.ReactNode}){
  const {locale}=useI18n()
@@ -36,7 +39,7 @@ function EmptyRecordPage({preview=false,onCreate}:{preview?:boolean;onCreate?:()
  const {t}=useI18n()
  return <div className={css.empty}><FileText size={28} aria-hidden="true"/><h3>{t(preview?'business.records.previewTitle':'business.records.empty')}</h3>{(preview||onCreate)&&<p>{t(preview?'business.records.previewNote':'business.records.emptyNote')}</p>}{onCreate&&<button type="button" className={css.primary} onClick={onCreate}><Plus size={16} aria-hidden="true"/>{t('business.records.first')}</button>}</div>
 }
-function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskList,recordReference,go}:{importFlow:BusinessRecordPageProps['importFlow'];go:BusinessRecordPageProps['go'];recordReference:BusinessRecordPageProps['recordReference'];taskList:BusinessRecordPageProps['taskList'];page:RecordPage;scope:string;flow:BusinessRecordFlow;capabilities:BusinessRecordCapabilities;onDispatch:BusinessRecordPageProps['onDispatch']}){
+function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskList,recordReference,go,referenceOnly}:{referenceOnly:boolean;importFlow:BusinessRecordPageProps['importFlow'];go:BusinessRecordPageProps['go'];recordReference:BusinessRecordPageProps['recordReference'];taskList:BusinessRecordPageProps['taskList'];page:RecordPage;scope:string;flow:BusinessRecordFlow;capabilities:BusinessRecordCapabilities;onDispatch:BusinessRecordPageProps['onDispatch']}){
  const {t,locale,dateTime}=useI18n(),definition=page.objectType,session=flow.forTarget(scope,definition.id),state=useSyncExternalStore(session.subscribe,session.getSnapshot,session.getSnapshot)
  const [items,setItems]=useState<BusinessObjectSnapshot[]>([]),[cursor,setCursor]=useState<string>(),[loading,setLoading]=useState(true),[readError,setReadError]=useState(false),[selected,setSelected]=useState<BusinessObjectSnapshot>(),[current,setCurrent]=useState<BusinessObjectSnapshot>(),[detailLoading,setDetailLoading]=useState(false),[detailError,setDetailError]=useState(false),[historyVersion,setHistoryVersion]=useState('1')
  const [fixedSelection,setFixedSelection]=useState(!!recordReference)
@@ -45,9 +48,10 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
  const [importOpen,setImportOpen]=useState(false)
  const importing=useMemo(()=>{if(!rights.create||!importFlow)return;try{return importFlow(scope,definition.id)}catch{return}},[importFlow,scope,definition.id,rights.create])
  // configure 不触发网络；保存时再次核对最新定义与实际能力，旧表单不会悄悄换字段。
- useEffect(()=>{session.configure(definition,rights)},[session,definition,rights.create,rights.edit,rights.archive])
+ useEffect(()=>{if(!referenceOnly)session.configure(definition,rights)},[session,definition,rights.create,rights.edit,rights.archive,referenceOnly])
  useEffect(()=>()=>{alive.current=false;listGeneration.current++;detailGeneration.current++;listAbort.current?.abort();detailAbort.current?.abort()},[])
  const load=async(more=false)=>{
+  if(referenceOnly)return
   const generation=++listGeneration.current;listAbort.current?.abort();const abort=new AbortController();listAbort.current=abort
   setLoading(true);setReadError(false)
   try{
@@ -58,19 +62,19 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
   }catch{if(alive.current&&generation===listGeneration.current)setReadError(true)}
   finally{if(alive.current&&generation===listGeneration.current)setLoading(false)}
  }
- useEffect(()=>{alive.current=true;setItems([]);setCursor(undefined);void load()},[flow,scope,definition.id,definition.sourceId])
+ useEffect(()=>{alive.current=true;if(referenceOnly)return;setItems([]);setCursor(undefined);void load()},[flow,scope,definition.id,definition.sourceId,referenceOnly])
  useEffect(()=>{
-  if(!importing)return
+  if(!importing||referenceOnly)return
   let requestId=importing.getSnapshot().receipt?.requestId
   return importing.subscribe(()=>{const next=importing.getSnapshot().receipt?.requestId;if(next&&next!==requestId){requestId=next;if(alive.current&&importing.isCurrent())void load()}})
- },[importing,flow,scope,definition.id,definition.sourceId])
+ },[importing,flow,scope,definition.id,definition.sourceId,referenceOnly])
  useEffect(()=>{
-  if(!state.result)return
+  if(!state.result||referenceOnly)return
   // 同类型原保存可以结算并刷新目录，但不能替换仍在查看的固定来源。
   if(recordReference&&fixedSelection){void load();return}
   detailGeneration.current++;detailAbort.current?.abort();setDetailLoading(false);setDetailError(false)
   setSelected(state.result);setCurrent(state.result);setFixedSelection(false);setHistoryVersion(String(Math.max(1,state.result.version-1)));void load()
- },[state.result])
+ },[state.result,referenceOnly])
  const read=async(item:BusinessObjectSnapshot,version?:number)=>{
   const generation=++detailGeneration.current;detailAbort.current?.abort();const abort=new AbortController();detailAbort.current=abort
   setDetailLoading(true);setDetailError(false)
@@ -101,21 +105,23 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
  const fields=page.definition.fields.map(name=>definition.fields.find(field=>field.name===name)).filter((field):field is RecordField=>!!field)
  const start=(kind:'create'|'edit'|'archive')=>{session.configure(definition,rights);if(kind==='create')session.create();else if(selected)session[kind](selected)}
  return <section className={css.page} aria-label={page.definition.title}>
-  <RecordHeader page={page}><div className={css.actions}><button type="button" disabled={loading} onClick={()=>void load()}><RefreshCw size={15} aria-hidden="true"/>{t('business.records.refresh')}</button>{rights.create&&importFlow&&<button type="button" disabled={busy||!!state.form||!importing?.isCurrent()} onClick={()=>setImportOpen(true)}>{locale==='en'?'Import a table':'导入表格'}</button>}{rights.create&&<button type="button" className={css.primary} disabled={busy||!!state.form||importOpen} onClick={()=>start('create')}><Plus size={16} aria-hidden="true"/>{t('business.records.new')}</button>}</div></RecordHeader>
+  {!referenceOnly&&<>
+  <RecordHeader page={page}><div className={css.actions}><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void load()}/>{rights.create&&importFlow&&<button type="button" disabled={busy||!!state.form||!importing?.isCurrent()} onClick={()=>setImportOpen(true)}>{locale==='en'?'Import a table':'导入表格'}</button>}{rights.create&&<button type="button" className={css.primary} disabled={busy||!!state.form||importOpen} onClick={()=>start('create')}><Plus size={16} aria-hidden="true"/>{t('business.records.new')}</button>}</div></RecordHeader>
   {rights.create&&importFlow&&!importing&&<p className={css.error} role="alert">{locale==='en'?'Your business connection is unverified. Table import is unavailable.':'本人业务连接尚未确认，暂不能导入表格。'}</p>}
   {importOpen&&importing&&rights.create&&<div><div className={css.actions}><button type="button" onClick={()=>setImportOpen(false)}>{locale==='en'?'Close import':'关闭导入'}</button></div><BusinessImportPanel flow={importing} scope={scope} type={definition.id} definition={definition}/></div>}
   {state.phase==='recovery-error'&&<p className={css.error} role="alert">{t(state.pending?'business.records.storageError.pending':'business.records.storageError')}</p>}
   {state.phase==='saved'&&<p className={css.success} role="status">{t(state.result?.deletedAt?'business.records.archived':'business.records.saved')}</p>}
-  {state.form&&<RecordEditor session={session} definition={definition} api={flow.api} scope={scope} go={go}/>}
+  {state.form&&!fixedSelection&&<RecordEditor session={session} definition={definition} api={flow.api} scope={scope} go={go}/>}
   {readError&&<p className={css.error} role="alert">{t('business.records.readError')} <button type="button" disabled={loading} onClick={()=>void load()}>{t('business.records.retry')}</button></p>}
   {loading&&<p className={css.notice} role="status">{t('business.records.loading')}</p>}
   {!loading&&!readError&&!items.length&&<EmptyRecordPage {...(rights.create&&!state.form&&!busy&&!importOpen?{onCreate:()=>start('create')}:{})}/>}
   {!!items.length&&<div className={css.list} aria-busy={loading}>{items.map(item=><button type="button" key={item.id} className={css.record} onClick={()=>open(item)} aria-pressed={selected?.id===item.id}><span className={css.recordHeading}><strong>{item.title}</strong><small>{dateTime(item.observedAt)}</small></span>{item.summary&&<span className={css.summary}>{item.summary}</span>}<span className={css.fieldStrip}>{fields.slice(0,4).map(field=><span key={field.name}><small>{localizedBusinessFieldLabel(field,locale)}</small><span>{(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceValue key={listGeneration.current} api={flow.api} scope={scope} field={field} value={item.fields.find(value=>value.label===field.from)?.value??''} retryable={false}/>:displayValue(field,item,locale,t)}</span></span>)}</span></button>)}</div>}
   {cursor&&<div className={css.more}><button type="button" disabled={loading} onClick={()=>void load(true)}>{t('business.records.more')}</button></div>}
+  </>}
   {!selected&&detailLoading&&<p role="status">{t('business.records.loading')}</p>}
   {!selected&&detailError&&<p className={css.error} role="alert">{t('business.records.readError')} <button type="button" onClick={()=>void readReference()}>{t('business.records.retry')}</button></p>}
-  {selected&&<section className={css.detail} aria-label={selected.title}>
-   <header className={css.header}><div><span className={css.badge}>{t('business.records.version',{version:selected.version})}{selected.deletedAt&&<> · {t('business.records.archived')}</>}{selected.source!=='本地记录'&&<> · {t('business.records.syncedReadOnly')}</>}</span><h3>{selected.title}</h3><small>{dateTime(selected.observedAt)}</small></div><button type="button" onClick={()=>{detailGeneration.current++;detailAbort.current?.abort();setSelected(undefined);setCurrent(undefined);setDetailLoading(false);setDetailError(false)}}>{t('business.records.close')}</button></header>
+  {selected&&(!state.form||fixedSelection)&&<RecordDetailContainer inline={referenceOnly} title={selected.title} close={()=>{detailGeneration.current++;detailAbort.current?.abort();setSelected(undefined);setCurrent(undefined);setDetailLoading(false);setDetailError(false)}}><section className={css.detail} aria-label={selected.title}>
+   <header className={css.header}><div><span className={css.badge}>{t('business.records.version',{version:selected.version})}{selected.deletedAt&&<> · {t('business.records.archived')}</>}{selected.source!=='本地记录'&&<> · {t('business.records.syncedReadOnly')}</>}</span><small> · {dateTime(selected.observedAt)}</small></div><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={detailLoading} onClick={()=>{void (fixedSelection?readReference():read(selected,historical?selected.version:undefined));void load()}}/></header>
    {detailLoading&&<p role="status">{t('business.records.loading')}</p>}
    {detailError&&<p className={css.error} role="alert">{t('business.records.readError')} <button type="button" onClick={()=>void (fixedSelection?readReference():read(selected,historical?selected.version:undefined))}>{t('business.records.retry')}</button></p>}
    {selected.summary&&<p className={css.summary}>{selected.summary}</p>}
@@ -125,12 +131,17 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
     {onDispatch&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>onDispatch(businessObjectReference({scope:selected.scope,type:selected.type,id:selected.id,version:selected.version,snapshotHash:selected.snapshotHash}))}>{t('business.records.dispatch')}</button>}
     {!historical&&!selected.deletedAt&&selected.source==='本地记录'&&rights.edit&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>start('edit')}>{t('business.records.edit')}</button>}
     {!historical&&!selected.deletedAt&&selected.source==='本地记录'&&rights.archive&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>start('archive')}><Archive size={15} aria-hidden="true"/>{t('business.records.archive')}</button>}
-    {historical&&<button type="button" disabled={detailLoading} onClick={()=>void read(selected)}><ArrowLeft size={15} aria-hidden="true"/>{t('business.records.current')}</button>}
+    {historical&&!referenceOnly&&<button type="button" disabled={detailLoading} onClick={()=>void read(selected)}><ArrowLeft size={15} aria-hidden="true"/>{t('business.records.current')}</button>}
    </div>
    {taskList&&!detailLoading&&!detailError&&<BusinessTaskList {...taskList} scope={scope} object={{type:selected.type,id:selected.id}}/>}
+   {flow.api.work?.enabled&&!detailLoading&&!detailError&&!selected.deletedAt&&<BusinessWorkResults key={JSON.stringify([selected.id,selected.version])} reference={businessObjectReference({scope:selected.scope,type:selected.type,id:selected.id,version:selected.version,snapshotHash:selected.snapshotHash})} title={selected.title} api={flow.api.work} openTask={taskList?.openTask}/>}
    {current&&current.version>1&&<form className={css.history} onSubmit={event=>{event.preventDefault();const version=Number(historyVersion);if(Number.isSafeInteger(version)&&version>=1&&version<current.version)void read(current,version)}}><label>{t('business.records.historyVersion')}<input type="number" min={1} max={current.version-1} step={1} required value={historyVersion} onChange={event=>setHistoryVersion(event.target.value)}/></label><button type="submit" disabled={detailLoading}>{t('business.records.history')}</button></form>}
-  </section>}
+  </section></RecordDetailContainer>}
  </section>
+}
+/** 看板已持有详情抽屉时复用同一固定记录内容，不再挂目录或嵌套第二层窗口。 */
+function RecordDetailContainer({inline,title,close,children}:{inline:boolean;title:string;close:()=>void;children:React.ReactNode}){
+ return inline?<>{children}</>:<ContextDrawer title={title} close={close}>{children}</ContextDrawer>
 }
 type Translate=ReturnType<typeof useI18n>['t']
 function displayValue(field:RecordField,snapshot:BusinessObjectSnapshot,locale:string,t:Translate){

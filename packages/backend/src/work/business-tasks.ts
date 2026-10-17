@@ -102,6 +102,16 @@ function mappedActionInput(input:BusinessActionInput,snapshot:Omit<BusinessObjec
  return value
 }
 
+/** 群任务与对象交办共用固定版本读取，不接受调用方提供正文或 sourceId。调用方先核验目标业务权限。 */
+export async function readFixedBusinessTaskReference(db:PoolClient,owner:string,reference:BusinessObjectReference,lock:boolean):Promise<BusinessTaskReferenceSnapshot>{
+ const found=(await db.query(`select snapshot_hash,snapshot,source_id from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version=$5${lock?' for share':''}`,[owner,reference.scope,reference.type,reference.id,reference.version])).rows[0]
+ if(!found){const other=(await db.query('select 1 from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 limit 1',[owner,reference.scope,reference.type,reference.id])).rows[0];throw new WorkError(other?'teloa/version-conflict':'teloa/forbidden',other?'业务对象版本已变化，请重新选择固定快照。':'业务对象不存在或不属于本人。')}
+ let snapshot:ReturnType<typeof readBusinessObjectSnapshot>;try{snapshot=readBusinessObjectSnapshot(found.snapshot,reference.scope)}catch{throw new WorkError('teloa/storage-corrupt','固定业务对象快照格式不正确。')}
+ if(snapshot.type!==reference.type||snapshot.id!==reference.id||snapshot.version!==reference.version||businessObjectSnapshotHash(snapshot)!==found.snapshot_hash||!text(found.source_id,businessMcpSourceIdMaxLength))throw new WorkError('teloa/storage-corrupt','固定业务对象快照与摘要不一致。')
+ if(found.snapshot_hash!==reference.snapshotHash)throw new WorkError('teloa/version-conflict','业务对象固定快照已变化，请重新核对。')
+ return {reference,object:{...snapshot,snapshotHash:found.snapshot_hash},sourceId:found.source_id}
+}
+
 export class BusinessTaskService{
  private readonly pool:Pool
  private readonly identity:{now:()=>string}
@@ -111,12 +121,7 @@ export class BusinessTaskService{
 
  /** 交办预备与最终创建共用同一固定快照判据；只读入口不会创建任务或改变引用。 */
  private async fixedObject(db:PoolClient,owner:string,reference:BusinessObjectReference,lock:boolean):Promise<BusinessTaskReferenceSnapshot>{
-  const found=(await db.query(`select snapshot_hash,snapshot,source_id from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version=$5${lock?' for share':''}`,[owner,reference.scope,reference.type,reference.id,reference.version])).rows[0]
-  if(!found){const other=(await db.query('select 1 from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 limit 1',[owner,reference.scope,reference.type,reference.id])).rows[0];throw new WorkError(other?'teloa/version-conflict':'teloa/forbidden',other?'业务对象版本已变化，请重新选择固定快照。':'业务对象不存在或不属于本人。')}
-  let snapshot:ReturnType<typeof readBusinessObjectSnapshot>;try{snapshot=readBusinessObjectSnapshot(found.snapshot,reference.scope)}catch{throw new WorkError('teloa/storage-corrupt','固定业务对象快照格式不正确。')}
-  if(snapshot.type!==reference.type||snapshot.id!==reference.id||snapshot.version!==reference.version||businessObjectSnapshotHash(snapshot)!==found.snapshot_hash||!text(found.source_id,businessMcpSourceIdMaxLength))throw new WorkError('teloa/storage-corrupt','固定业务对象快照与摘要不一致。')
-  if(found.snapshot_hash!==reference.snapshotHash)throw new WorkError('teloa/version-conflict','业务对象固定快照已变化，请重新核对。')
-  return {reference,object:{...snapshot,snapshotHash:found.snapshot_hash},sourceId:found.source_id}
+  return readFixedBusinessTaskReference(db,owner,reference,lock)
  }
 
  async reference(actor:BusinessTaskActor,input:unknown):Promise<BusinessTaskReferenceSnapshot>{

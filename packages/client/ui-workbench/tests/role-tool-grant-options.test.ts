@@ -19,8 +19,28 @@ const labels=(html:string)=>[...html.matchAll(/<label[^>]*>.*?<\/label>/g)].map(
 
 test('文件授权使用可理解的当前工作目录名称和真实勾选框，范围说明不隐去',()=>{
  const html=render({roleVersion:3,rules:['read','write','edit'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace'}))},'zh-CN')
- for(const [name,label] of [['read','读取当前工作目录'],['write','写入当前工作目录'],['edit','编辑当前工作目录']])assert.match(html,new RegExp('data-teloa-file-grant="'+name+'"[^>]*>.*?type="checkbox".*?<span>'+label+'</span>'))
+ for(const [name,label] of [['read','读取当前工作目录'],['write','写入当前工作目录'],['edit','编辑当前工作目录']])assert.match(html,new RegExp('data-teloa-file-grant="'+name+'"[^>]*>.*?type="checkbox".*?<span[^>]*>'+label+'</span>'))
  assert.match(html,/应用数据、Git 设置和账号密钥等敏感信息不包含在内/)
+})
+
+test('后台工作、协作与检索授权使用三种定稿语言的动作名称，原工具标识仍可查看',()=>{
+ const names=['job_output','job_list','job_kill','spawn_teammate','send_message','list_agents','wait_agent','interrupt_agent','team_task_create','team_task_list','team_task_get','team_task_update','teloa_knowledge_search']
+ const expected={
+  'zh-CN':['查看后台工作输出','查看后台工作列表','停止后台工作','创建临时协作助手','向协作成员发消息','查看协作成员状态','等待协作进展','中断协作成员本轮工作','创建团队共享任务','查看团队共享任务列表','查看团队共享任务详情','更新团队共享任务','检索已授权资料'],
+  'zh-Hant':['查看背景工作輸出','查看背景工作清單','停止背景工作','建立臨時協作助手','向協作成員傳送訊息','查看協作成員狀態','等待協作進度','中斷協作成員本輪工作','建立團隊共用任務','查看團隊共用任務清單','查看團隊共用任務詳情','更新團隊共用任務','搜尋已授權資料'],
+  en:['View background work output','List background work','Stop background work','Create a temporary assistant','Message a collaborator','View collaborator status','Wait for collaboration updates','Interrupt a collaborator’s current turn','Create a shared team task','List shared team tasks','View a shared team task','Update a shared team task','Search authorized material'],
+ }
+ const rules=[...names.map(name=>({name,allowed:[],anyArguments:true})),{name:'mcp__custom__unknown',allowed:[],anyArguments:true},{name:'constructor',allowed:[],anyArguments:true}]
+ for(const [locale,values] of Object.entries(expected)){
+  const rows=labels(render({roleVersion:3,rules},locale))
+  assert.equal(rows.length,rules.length)
+  for(const [index,name] of names.entries()){
+   assert.ok(rows[index]!.includes('<span title="'+name+'">'+values[index]+'</span>'),rows[index])
+   assert.match(rows[index]!,/type="checkbox"/)
+  }
+  assert.ok(rows[names.length]!.includes('>mcp__custom__unknown</span>'),'未知插件不猜测用途')
+  assert.ok(rows[names.length+1]!.includes('>constructor</span>'),'原型属性不当作内置工具')
+ }
 })
 
 test('技能接口代发候选逐项成行：每项一个带分隔样式的 label，名称与来源、密钥状态分开，英文不连成一串',()=>{

@@ -1,12 +1,14 @@
+import {ArrowLeft} from 'lucide-react'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 // 技能密钥页：密码框 write-only，不预填、提交后清空；只显示「已保存 / 未填写」，并如实显示每个密钥将发往何处。
-import {useEffect,useState,type FormEvent} from 'react'
+import {useEffect,useRef,useState,type FormEvent} from 'react'
 import css from './McpConnectionView.module.css'
 import {useI18n} from './i18n/provider.js'
 import {formatList} from './i18n/format.js'
 import type {SkillSecretVar,SkillSecretsApi,SkillSecretsState} from './skill-secrets-api.js'
 
 type T=(key:string,params?:Record<string,string|number>)=>string
-export type SkillSecretsPresentationProps={title:string;state:SkillSecretsState|null;busy:boolean;error:string;locale:string;t:T;confirmingDelete:boolean;onBack:()=>void;onSave:(values:Record<string,string>)=>void;onAskDelete:()=>void;onCancelDelete:()=>void;onDelete:()=>void}
+export type SkillSecretsPresentationProps={embedded?:boolean;title:string;state:SkillSecretsState|null;busy:boolean;error:string;locale:string;t:T;confirmingDelete:boolean;onBack:()=>void;onSave:(values:Record<string,string>)=>void;onAskDelete:()=>void;onCancelDelete:()=>void;onDelete:()=>void}
 
 /** 目标地址：origin + 路径前缀逐条列出；注入位置按 target 说明（目录公开的声明信息，不含值）。 */
 function destination(v:SkillSecretVar,t:T):string{
@@ -15,7 +17,7 @@ function destination(v:SkillSecretVar,t:T):string{
  return t('market.skillSecrets.destination',{targets,place})
 }
 
-export function SkillSecretsViewPresentation({title,state,busy,error,locale,t,confirmingDelete,onBack,onSave,onAskDelete,onCancelDelete,onDelete}:SkillSecretsPresentationProps){
+export function SkillSecretsViewPresentation({embedded=false,title,state,busy,error,locale,t,confirmingDelete,onBack,onSave,onAskDelete,onCancelDelete,onDelete}:SkillSecretsPresentationProps){
  const submit=(event:FormEvent<HTMLFormElement>)=>{
   event.preventDefault()
   const form=event.currentTarget,values:Record<string,string>={}
@@ -57,26 +59,38 @@ export function SkillSecretsViewPresentation({title,state,busy,error,locale,t,co
   </form>
  }
  return <div className={css.view}>
-  <button type="button" className={css.back} onClick={onBack}>{t('market.skillSecrets.back')}</button>
-  <h2 className={css.title}>{title}</h2>
+  {!embedded&&<><ToolbarIconButton label={t('market.skillSecrets.back')} icon={ArrowLeft} onClick={onBack}/><h2 className={css.title}>{title}</h2></>}
   <p className={css.reason}>{t('market.skillSecrets.hint')}</p>
   {body()}
   {error&&<p className={css.error} role="alert">{error}</p>}
  </div>
 }
-export function SkillSecretsView({skill,title,api,onBack}:{skill:string;title:string;api:SkillSecretsApi;onBack:()=>void}){
+export function SkillSecretsView({skill,title,api,onBack,embedded=false}:{skill:string;title:string;api:SkillSecretsApi;onBack:()=>void;embedded?:boolean}){
  const {t,locale}=useI18n()
+ // 声明指纹不代表连接；同步隔离旧表单与迟答，不让密码草稿跨连接或技能沿用。
+ const owner=useRef({api,skill,active:false})
+ if(owner.current.api!==api||owner.current.skill!==skill)owner.current={api,skill,active:false}
+ const origin=owner.current,[readOrigin,setReadOrigin]=useState(origin)
+ const current=()=>owner.current===origin&&origin.active
  const [state,setState]=useState<SkillSecretsState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[confirmingDelete,setConfirmingDelete]=useState(false)
- useEffect(()=>{let live=true;api.describe(skill).then(next=>{if(live)setState(next)},()=>{if(live)setError(t('market.skillSecrets.failed'))});return ()=>{live=false}},[api,skill])
+ useEffect(()=>{
+  let live=true;origin.active=true
+  setReadOrigin(origin);setState(null);setBusy(false);setError('');setConfirmingDelete(false)
+  api.describe(skill).then(next=>{if(live&&current())setState(next)},()=>{if(live&&current())setError(t('market.skillSecrets.failed'))})
+  return()=>{live=false;origin.active=false}
+ },[api,skill])
  const act=async(task:()=>Promise<SkillSecretsState>)=>{
+  if(!current())return
   setBusy(true);setError('')
-  try{setState(await task())}catch(cause){
+  try{const next=await task();if(current())setState(next)}catch(cause){
+   if(!current())return
    if(cause&&typeof cause==='object'&&'code' in cause&&cause.code==='teloa/version-conflict'){
     // 移除旧表单（也丢弃输入）；只刷新公开声明，绝不拿旧值自动重试保存。
     setState(null)
-    try{setState(await api.describe(skill));setError(`${t('market.skillSecrets.reconfirmShort')}：${t('market.skillSecrets.reconfirm')}`)}catch{setError(t('market.skillSecrets.failed'))}
+    try{const next=await api.describe(skill);if(current()){setState(next);setError(`${t('market.skillSecrets.reconfirmShort')}：${t('market.skillSecrets.reconfirm')}`)}}catch{if(current())setError(t('market.skillSecrets.failed'))}
    }else setError(cause instanceof Error&&cause.message?cause.message:t('market.skillSecrets.failed'))
-  }finally{setBusy(false);setConfirmingDelete(false)}
+  }finally{if(current()){setBusy(false);setConfirmingDelete(false)}}
  }
- return <SkillSecretsViewPresentation key={state?.binding??'unavailable'} title={title} state={state} busy={busy} error={error} locale={locale} t={t as T} confirmingDelete={confirmingDelete} onBack={onBack} onSave={values=>{const binding=state?.binding;if(binding)void act(()=>api.save(skill,values,binding))}} onAskDelete={()=>setConfirmingDelete(true)} onCancelDelete={()=>setConfirmingDelete(false)} onDelete={()=>void act(()=>api.remove(skill))}/>
+ const visible=readOrigin===origin,viewState=visible?state:null
+ return <SkillSecretsViewPresentation key={viewState?.binding??'unavailable'} embedded={embedded} title={title} state={viewState} busy={visible&&busy} error={visible?error:''} locale={locale} t={t as T} confirmingDelete={visible&&confirmingDelete} onBack={onBack} onSave={values=>{const binding=viewState?.binding;if(binding)void act(()=>api.save(skill,values,binding))}} onAskDelete={()=>{if(current())setConfirmingDelete(true)}} onCancelDelete={()=>{if(current())setConfirmingDelete(false)}} onDelete={()=>void act(()=>api.remove(skill))}/>
 }

@@ -10,7 +10,8 @@ export type ArtifactRef={id:string;version:number}
 export type ArtifactSection={id:string;title:string;text:string}
 export type ArtifactVersion={number:number;title:string;sections:ArtifactSection[];source:ArtifactSource;note:string;author:string;at:string;feedbackId?:string;messages?:ArtifactMessage[];files?:ArtifactFile[]}
 export type ArtifactFeedback={id:string;version:number;sectionId:string;text:string;author:string;at:string}
-export type Artifact={storage?:'persistent';links:{object:Extract<ArtifactSourceRef,{kind:'object'}>;objectVersion:string;artifactVersion:number;at:string}[];id:string;source:ArtifactSourceRef;primary:boolean;versions:ArtifactVersion[];feedback:ArtifactFeedback[]}
+export type ArtifactRevision={id:string;feedbackId:string;baseVersion:number;sectionId:string;state:'requested'|'bound'|'completed'|'conflict';taskId:string|null;producedVersion:number|null}
+export type Artifact={produced?:{taskId:string;taskVersion:number;runId:string;version:number}[];revisions?:ArtifactRevision[];storage?:'persistent';links:{object:Extract<ArtifactSourceRef,{kind:'object'}>;objectVersion:string;artifactVersion:number;at:string}[];id:string;source:ArtifactSourceRef;primary:boolean;versions:ArtifactVersion[];feedback:ArtifactFeedback[]}
 export type ArtifactChange=(
   |{type:'feedback';id:string;version:number;sectionId:string;text:string}
   |{type:'revise';expectedVersion:number;sectionId:string;text:string;note:string;feedbackId?:string}

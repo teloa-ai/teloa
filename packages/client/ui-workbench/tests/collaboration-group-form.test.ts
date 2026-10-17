@@ -21,8 +21,7 @@ const keys=(tree:any,type:string)=>nodes(tree).filter(node=>node.type===type).fl
 test('创建协作群弹层只留名称、业务范围、成员下限与边界句，没有公告与群规则',()=>{
  const rendered=page()
  const tree=rendered.render('GroupForm',{people,profileName:'Max',error:undefined,group:undefined,rules:openRules,close:()=>{},save:()=>{}})
- assert.equal(tree.props['aria-label'],'collaboration.action.new')
- assert.deepEqual(keys(tree,'h2'),['collaboration.action.new'])
+ assert.equal(tree.props.title,'collaboration.action.new')
  assert.deepEqual(keys(tree,'legend'),['collaboration.form.memberLimit'])
  assert.ok(nodes(tree).some(node=>node.type==='select'))
  assert.equal(nodes(tree).some(node=>node.type==='textarea'),false)
@@ -57,8 +56,7 @@ test('成员与群设置弹层留公告、成员与职责、三条群规则和�
  const props={people,profileName:'Max',error:undefined,group,rules:{historyVisibleToNewMembers:false,draftsVisibleInGroup:true,mentionAllAllowed:true},close:()=>{},save:(value:unknown)=>{saved=value}}
  let saved:any
  let tree=rendered.render('GroupForm',props)
- assert.equal(tree.props['aria-label'],'collaboration.form.edit')
- assert.deepEqual(keys(tree,'h2'),['collaboration.form.edit'])
+ assert.equal(tree.props.title,'collaboration.form.edit')
  assert.deepEqual(keys(tree,'legend'),['collaboration.form.members'])
  assert.ok(nodes(tree).some(node=>node.type==='textarea'))
  assert.equal(nodes(tree).some(node=>node.type==='select'),false)

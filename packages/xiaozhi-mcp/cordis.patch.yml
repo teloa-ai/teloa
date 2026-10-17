@@ -1,0 +1,4 @@
+# 可选小智连接；仅本人安装并启用的 profile 才加载，不进入 Teloa 默认组合。
+- insert:
+    - id: teloa-xiaozhi-mcp
+      name: '@teloa/xiaozhi-mcp'

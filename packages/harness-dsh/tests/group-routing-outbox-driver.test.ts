@@ -10,9 +10,11 @@ import {TaskService} from '../../backend/src/work/tasks.ts'
 import {CollaborationService} from '../../backend/src/work/collaboration.ts'
 import {GroupAgentGrantService} from '../../backend/src/work/group-agent-grants.ts'
 import {GroupTaskService,initializeGroupTasks} from '../../backend/src/work/group-tasks.ts'
+import {initializeGroupWorkInputs} from '../../backend/src/work/group-work-inputs.ts'
 import {GroupRoutingDecisionService,initializeGroupRoutingDecisions} from '../../backend/src/work/group-routing-decisions.ts'
 import {GroupRoutingOutboxService,initializeGroupRoutingOutbox} from '../../backend/src/work/group-routing-outbox.ts'
 import {TaskRunService} from '../../backend/src/work/task-runs.ts'
+import {WorkControlService,initializeWorkControl} from '../../backend/src/work/work-control.ts'
 import {ObjectConversationService} from '../../backend/src/work/object-conversations.ts'
 import {readRunGroupContext} from '../../backend/src/work/task-run-group-context.ts'
 import {TaskRunDriver} from '../src/task-run-driver.ts'
@@ -56,7 +58,7 @@ test('提交响应丢失只读原Run，持续未知也不会再次start',async()
 })
 test('真实PG + 官方Agent Inbox：首位受理后响应丢失，重启恢复第二位，双worker绝不重复原生入箱',{timeout:45000},async t=>{
  const drain=await driver();assert.equal(typeof drain,'function')
- const f=await setupRoleWork();t.after(()=>f.close());await initializeGroupTasks(f.pool);await initializeGroupRoutingDecisions(f.pool);await initializeGroupRoutingOutbox(f.pool)
+ const f=await setupRoleWork();t.after(()=>f.close());await initializeGroupTasks(f.pool);await initializeGroupWorkInputs(f.pool);await initializeGroupRoutingDecisions(f.pool);await initializeGroupRoutingOutbox(f.pool);await initializeWorkControl(f.pool)
  const {ctx,agent,other}=await nativeProviderFixture(t),access=new WorkAccess();access.installPolicy(async()=>({assertCurrent(){}}));const native=createNativeWorkInput(ctx,access);t.after(()=>native.close())
  const owner=randomUUID(),roles=new RoleService(f.pool,identity),groups=new CollaborationService(f.pool,identity),grants=new GroupAgentGrantService(f.pool,identity.now),recipients:Awaited<ReturnType<RoleService['create']>>[]=[]
  for(const name of ['原生甲','原生乙']){const role=await roles.create(owner,{requestId:randomUUID(),fields:{name,kind:'employee',scopes:['general'],duty:'核对',dataScope:'授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'standard'}}});await f.pool.query("update teloa_roles set state='active',version=2 where id=$1",[role.id]);recipients.push({...role,version:2})}
@@ -67,8 +69,9 @@ test('真实PG + 官方Agent Inbox：首位受理后响应丢失，重启恢复�
  const items=await decisions.withTopicLock(owner,group.id,message.id,async db=>{await decisions.record(db,owner,{groupId:group.id,messageId:message.id,decision});return outbox.recordRecipients(db,owner,{groupId:group.id,messageId:message.id,decision,decisionVersion:1})})
  const agents=new Map([[recipients[0]!.id,agent],[recipients[1]!.id,other]]),conversations=new Map([[agent.id,randomUUID()],[other.id,randomUUID()]]),inspect=async(_owner:string,sessionId:string)=>({id:conversations.get(sessionId as typeof agent.id)!,ownerId:owner,sessionId,status:'ready'}),runs=new TaskRunService(f.pool,identity,inspect,{allowedTools:[],groupContext:(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,undefined,f.pool)}),tasks=new GroupTaskService(f.pool,identity,new TaskService(f.pool,identity)),sent:string[]=[]
  let failSecond=true
- const runDriver=new TaskRunDriver(runs,{check:async()=>{},stop:async()=>{},events:async run=>agents.get(run.roleId)!.session.snapshotEvents(),send:async(run,signal)=>{
-  const target=agents.get(run.roleId)!,input=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:[{type:'text',text:run.inputText}]})
+ const controls=new WorkControlService(f.pool,identity)
+ const runDriver=new TaskRunDriver(runs,{controlState:run=>controls.stateForRun(owner,{runId:run.id}),check:async()=>{},stop:async()=>{},events:async run=>agents.get(run.roleId!)!.session.snapshotEvents(),send:async(run,signal)=>{
+  const target=agents.get(run.roleId!)!,input=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:[{type:'text',text:run.inputText}]})
   await native.withNewInput(target,input,{producer:'task-run',identity:run.id},()=>target.inbox.append('next-turn',input),signal);sent.push(run.id)
   if(run.roleId===recipients[0]!.id)throw Error('原生已受理但传输响应丢失')
  }})

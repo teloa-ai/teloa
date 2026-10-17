@@ -1,0 +1,19 @@
+/* 同一计划的明确编辑态；分组只用细分隔，收起保留表单与原请求状态。 */
+.settings{min-width:0;border-top:1px solid var(--teloa-border);padding:12px 0}
+.settings>header{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:30px}
+.settings>header strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.settings>header small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.settings button.edit{display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:4px 0;min-height:28px;border:0;border-radius:0;background:transparent;font-size:var(--teloa-font-caption);color:var(--teloa-muted);cursor:pointer}
+.editBody{min-width:0;padding-top:8px}
+.editBody[hidden]{display:none}
+.hint,.settings>p{margin:4px 0 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+.editBody fieldset{min-width:0;margin:0;padding:10px 0 14px;border:0;border-bottom:1px solid var(--teloa-border)}
+.editBody legend{padding:0;font-weight:var(--teloa-weight-medium);font-size:var(--teloa-font-caption)}
+.content,.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px 16px;min-width:0}
+.content>label:first-of-type,.content>label:nth-of-type(2){grid-column:1/-1}
+.fields>p{grid-column:1/-1;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.editBody label{min-width:0;font-size:var(--teloa-font-caption)}
+.editBody label:has(>input[type=checkbox]){display:flex;flex-direction:row;align-items:flex-start;gap:8px;line-height:1.6}
+.editBody label>input[type=checkbox]{flex:none;margin-top:3px}
+.editBody label>textarea,.editBody label>select,.editBody label>input:not([type=checkbox]){width:100%}
+.settings :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}

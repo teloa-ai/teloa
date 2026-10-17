@@ -30,10 +30,11 @@
 .error button{font:inherit;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);padding:2px 10px;cursor:pointer}
 .status{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 /* 详情：返回链接 + 一张完整卡片（添加、来源与许可、评价、问题反馈都在这里） */
-.section .backLink{display:inline-flex;align-items:center;gap:6px;justify-self:start;min-height:32px;padding:0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
-.section .backLink:hover{color:var(--teloa-text)}
-.section .backLink:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.backLink{justify-self:start;margin-bottom:8px}
 .detailView{max-width:760px}
+.detailDrawer.detailDrawer{width:min(740px,calc(100vw - 28px))}
+.detailDrawer .section,.detailDrawer .detailView{padding:22px 24px}
+.detailDrawer .detailView .card{padding:0;border:0;border-radius:0}
 .detailView .card{padding:20px 22px;gap:10px}
 .detailView .name{font-size:var(--teloa-font-section)}
 /* 评价正文按纯文本显示：保留换行、长串强制折行 */

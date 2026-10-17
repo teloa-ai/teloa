@@ -8,7 +8,7 @@ const copy:Record<string,string>={
   'team.presentation.lifecycle.paused.label':'Paused for new work',
   'team.presentation.lifecycle.paused.summary':'New assignments and follow-up triggers are paused. Work already started can finish; external actions require separate review.',
   'team.presentation.lifecycle.paused.next':'Review work in progress',
-  'team.presentation.work.persistent':'Assignment saved and awaiting runtime integration. Assigning work does not start an Agent.',
+  'team.presentation.work.persistent':'After saving, open the task to review its goal and evidence, then start execution.',
   'team.presentation.skillNotice':'A Skill is a reusable method, not a required route for every task. Without a suitable Skill, the Harness can solve the problem within its sandbox and existing permissions. It asks for help or delegates only when material, credentials, external access, or a risk boundary is missing.',
 }
 const en=(key:string)=>copy[key]??key
@@ -41,7 +41,7 @@ test('岗位生命周期路径区分暂停、退役与在途工作，不把停�
 })
 
 test('岗位工作路径与 Skill 文案把自主解决和权限申请分开',()=>{
-  assert.equal(roleWorkPath(true),'已保存交办，等待执行接入；交办本身不启动 Agent。')
+  assert.equal(roleWorkPath(true),'保存后前往任务页，核对目标与依据并开始执行。')
   assert.match(roleWorkPath(false),/页面示例/)
   assert.match(roleSkillNotice(),/不是执行任务的必经路由/)
   assert.match(roleSkillNotice(),/沙箱和既有权限/)
@@ -59,6 +59,6 @@ test('岗位说明、生命周期和记忆路径随当前语言变化',()=>{
     summary:'New assignments and follow-up triggers are paused. Work already started can finish; external actions require separate review.',
     next:'Review work in progress',
   })
-  assert.equal(roleWorkPath(true,en),'Assignment saved and awaiting runtime integration. Assigning work does not start an Agent.')
+  assert.equal(roleWorkPath(true,en),'After saving, open the task to review its goal and evidence, then start execution.')
   assert.match(roleSkillNotice(en),/^A Skill is a reusable method/)
 })

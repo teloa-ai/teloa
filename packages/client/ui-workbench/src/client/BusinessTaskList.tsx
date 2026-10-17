@@ -5,6 +5,8 @@ import {BusinessTaskListController,type BusinessTaskListState} from './business-
 import {taskStates} from './task-preview.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessTaskList.module.css'
+import {RefreshCw} from 'lucide-react'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 export type BusinessTaskListProps={
  api:BusinessTaskListApi
@@ -40,7 +42,7 @@ function progressKey(item:BusinessTaskListItem){
 export function BusinessTaskListView({state,object,roleName,openTask,openArtifact,openSource,refresh,more}:ViewProps){
  const {t,dateTime}=useI18n(),busy=state.phase==='loading'||state.loadingMore,title=t(object?'business.tasks.objectTitle':'business.tasks.title')
  return <section className={css.card} aria-label={title} aria-busy={busy}>
-  <header className={css.header}><h2>{title}</h2><button type="button" disabled={busy} onClick={refresh}>{t('taskExecution.refresh')}</button></header>
+  <header className={css.header}><h2>{title}</h2><ToolbarIconButton label={t('taskExecution.refresh')} icon={RefreshCw} disabled={busy} onClick={refresh}/></header>
   <p className={css.hint}>{t('business.tasks.description')}</p>
   {state.phase==='loading'&&<p role="status">{t('taskExecution.loading')}</p>}
   {state.phase==='failed'&&<div role="alert"><p>{t('business.tasks.failed')}</p><button type="button" onClick={refresh}>{t('business.records.retry')}</button></div>}

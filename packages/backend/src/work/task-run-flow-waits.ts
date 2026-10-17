@@ -1,9 +1,9 @@
 import {createHash} from 'node:crypto'
 import type {PoolClient} from 'pg'
-import {WorkError,taskInput,workUuid,type WorkEvent,type TaskRunFlow,type TaskRunFlowStep} from '@teloa/contract'
+import {WorkError,taskInput,workUuid,type WorkEventV1,type TaskRunFlow,type TaskRunFlowStep} from '@teloa/contract'
 import {WorkLineageService} from './work-lineage.ts'
 import type {WorkEventService} from './work-events.ts'
-export type FlowWaitInput={stepId:string;sourceKind:WorkEvent['kind'];sourceId:string}
+export type FlowWaitInput={stepId:string;sourceKind:WorkEventV1['kind'];sourceId:string}
 export type FlowWaitPorts={verifiedSource:WorkEventService['verifiedSourceInTransaction']}
 const denied=()=>new WorkError('teloa/forbidden','等待步骤缺少当前原操作、真实来源或控制世代回执。')
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value,Object.keys(value as object).sort())).digest('hex')
@@ -32,7 +32,7 @@ export async function verifyFlowWait(db:PoolClient,owner:string,flow:TaskRunFlow
  if(b.flowId!==flow.flowId||b.runId!==flow.runId||b.stepId!==step.id||b.attempt!==step.attempts)throw denied()
  const control=(await db.query('select state,generation from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,b.roundControlId])).rows[0];if(!control||control.state!=='active'||control.generation!==b.controlGeneration)throw denied()
  const {event,payload}=await ports.verifiedSource(db,owner,eventId)
- if(event.ownerId!==owner||event.kind!==b.sourceKind||event.sourceId!==b.sourceId)throw denied()
+ if(event.schema!=='teloa.work-event/v1'||event.ownerId!==owner||event.kind!==b.sourceKind||event.sourceId!==b.sourceId)throw denied()
  if(event.kind==='approval-result'){if(payload.operationRequestId!==b.operationRequestId||payload.roundControlId!==b.roundControlId||payload.controlGeneration!==b.controlGeneration)throw denied()}
  else if(event.kind==='material-version'){if(event.sourceVersion===b.baseline)throw denied()}
  else if(event.createdAt<row.created_at.toISOString())throw denied()

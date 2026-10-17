@@ -6,12 +6,15 @@ import type {IndustryKnowledgeInstance,IndustryKnowledgeService} from './industr
 import type {IndustryRoleSnapshot,IndustryRoleSource} from './industry-role-source.ts'
 import type {RoleService} from './roles.ts'
 import {industryReferenceId} from '../capabilities/industry-reference-catalog.ts'
+import type {CatalogRoleContentHash} from '../market/official-catalog.ts'
 
 export type IndustryRoleKnowledge={itemInstanceId:string;instanceId:string;resourceId:string;resourceVersion:number}
 /** `kind:'model'` 不是资源关联：表示模板 `runtimeConfig` 里的首选/备用模型声明已忽略（终审 I-2），`itemInstanceId` 为岗位项自身，`status` 恒为 `skipped`；模型须由本人在岗位设置中选择。 */
 export type IndustryRoleDeclaration={kind:'skill'|'mcp'|'data-source'|'execution-tool'|'model';itemInstanceId:string;status:'pending-adapter'|'skipped'}
 /** 从目录 role 条目直接建岗位的回执（规格 §5）；skills 只列此岗位需要的技能名，一期不导入技能包。 */
 export type CatalogRoleReceipt={roleId:string;status:'created'|'existing';skills:string[]}
+/** 单个目录员工的定位：旧 v1 直接建岗的岗位，及完整资源安装当前代次已有的加载与岗位（均可为空）。 */
+export type CatalogEmployeeLocation={legacyRoleId:string|null;generation:number;loadId:string|null;roleId:string|null;roleState:string|null}
 /** 建岗 requestId 由 (ownerId, entryId, version) 派生：同一人重复添加同一条目版本落到同一条岗位记录。与 plan-tools.ts requestIdentity 同法。 */
 export function catalogRoleRequestId(ownerId:string,entryId:string,version:string):string{return derivedRequestId(['teloa-catalog-role/v1',ownerId,entryId,version])}
 /** 该请求建的岗位已退役时，同一条目版本的下一代请求 id：由上一代请求 id 与退役岗位 id 派生，并发重新添加仍收敛到同一请求。 */
@@ -89,7 +92,8 @@ export class IndustryRoleService{
   const {runtimeConfig:templateRuntime,...templateRest}=template.definition
   const runtimeConfig={...templateRuntime,...(chosen?.model?{model:chosen.model}:{}),...(chosen?.fallbackModel?{fallbackModel:chosen.fallbackModel}:{})}
   const fields=roleDefinition({...templateRest,...(Object.keys(runtimeConfig).length?{runtimeConfig}:{}),scopes:[value.scope],skills:[],knowledge:value.knowledge.map(item=>item.resourceId)})
-  const role=await this.roles.editInTransaction(db,owner,{roleId:value.roleId,expectedVersion:Number(current.version),fields})
+  const currentDefinition=roleDefinition(current.definition)
+  const role=await this.roles.editInTransaction(db,owner,{roleId:value.roleId,expectedVersion:Number(current.version),expectedProfile:{name:currentDefinition.name,...(currentDefinition.avatarKey?{avatarKey:currentDefinition.avatarKey}:{})},fields})
   // 复审 M-b：升级候选模板带模型指定时同样给出可见提示——补记 model/skipped 声明并同步映射摘要与创建回执里的摘要（不动创建定义与下游请求身份）。
   if(template.ignoredModelSelection&&!value.declarations.some(row=>row.kind==='model')){
    const declarations=[...value.declarations,{kind:'model' as const,itemInstanceId:value.itemInstanceId,status:'skipped' as const}]
@@ -102,10 +106,53 @@ export class IndustryRoleService{
  }
  async get(owner:string,input:unknown){own(owner);const data=exact(input,['instanceId']);if(!uuid(data.instanceId))throw invalid();return this.project(await this.row(owner,data.instanceId))}
  async list(owner:string,input:unknown):Promise<IndustryRolePage>{own(owner);exact(input,[]);const rows=(await this.pool.query('select * from teloa_industry_role_instances where owner_id=$1 order by created_at,id',[owner])).rows,items=[];for(const row of rows)items.push(await this.project(this.read(row)));return {items}}
- /** 本人按条目版本已建且未退役的岗位 id，按条目 id 归组；未建或已退役的条目不在结果里。供目录列表回显「已添加」。 */
- async catalogRoleIds(owner:string,entries:readonly Pick<MarketCatalogRoleEntry,'id'|'version'>[]):Promise<Map<string,string>>{
+ /**
+  * 本人按条目版本已建且未退役的岗位 id，按条目 id 归组；未建或已退役的条目不在结果里。供目录列表回显「已添加」。
+  * 先认旧 v1 直接建岗（按派生请求 id）；给出 `contentHash` 时再按完整资源安装的派生链找回岗位。
+  */
+ async catalogRoleIds(owner:string,entries:readonly Pick<MarketCatalogRoleEntry,'id'|'version'>[],contentHash?:CatalogRoleContentHash):Promise<Map<string,string>>{
   own(owner);const result=new Map<string,string>()
   for(const [entryId,found] of await this.catalogRoleRequests(owner,entries))if(found.roleId)result.set(entryId,found.roleId)
+  if(contentHash)for(const [entryId,found] of await this.catalogEmployeeChain(owner,entries.filter(entry=>!result.has(entry.id)),contentHash))if(found.roleId&&found.roleState!=='retired')result.set(entryId,found.roleId)
+  return result
+ }
+ /**
+  * 单个目录员工的当前位置：旧 v1 直接建且未退役的岗位优先（兼容，不替换）；否则给出完整资源安装的当前代次、
+  * 该代已有的加载与岗位。全部按（本人, 条目, 版本）与固定派生内容推出，回执丢失、换新服务后仍落到同一岗位。
+  */
+ async catalogEmployee(owner:string,entry:Pick<MarketCatalogRoleEntry,'id'|'version'>,contentHash:CatalogRoleContentHash):Promise<CatalogEmployeeLocation>{
+  own(owner)
+  const legacy=(await this.catalogRoleRequests(owner,[entry])).get(entry.id)!.roleId
+  const chain=(await this.catalogEmployeeChain(owner,[entry],contentHash)).get(entry.id)!
+  return {legacyRoleId:legacy,...chain}
+ }
+ /**
+  * 完整资源安装的派生链：第 N 代派生包按内容摘要找本人加载（派生包只有一位员工）。该代加载已卸载/被替代、或岗位已退役，
+  * 才进入下一代（新代次得到新的固定内容与加载，不复活旧加载）；各条目同轮批量查询。父包不可解析时停在当前代、无加载。
+  */
+ private async catalogEmployeeChain(owner:string,entries:readonly Pick<MarketCatalogRoleEntry,'id'|'version'>[],contentHash:CatalogRoleContentHash):Promise<Map<string,Omit<CatalogEmployeeLocation,'legacyRoleId'>>>{
+  const result=new Map<string,Omit<CatalogEmployeeLocation,'legacyRoleId'>>(),none=(generation:number)=>({generation,loadId:null,roleId:null,roleState:null})
+  let pending=new Map(entries.map(entry=>[entry.id,1]))
+  while(pending.size){
+   const wanted:[string,string,number][]=[]
+   for(const [entryId,generation] of pending){const hash=contentHash(entryId,generation);if(hash===null)result.set(entryId,none(generation));else wanted.push([entryId,hash,generation])}
+   if(!wanted.length)break
+   const rows=(await this.pool.query(`select l.content_hash,l.id as load_id,l.status,i.role_id,r.state from teloa_industry_loads l
+    left join teloa_industry_load_items it on it.load_id=l.id and it.kind='role'
+    left join teloa_industry_role_instances i on i.owner_id=l.owner_id and i.load_id=l.id and i.item_instance_id=it.instance_id
+    left join teloa_roles r on r.id=i.role_id and r.owner_id=l.owner_id
+    where l.owner_id=$1 and l.content_hash=any($2::text[]) order by l.created_at,l.id`,[owner,wanted.map(([,hash])=>hash)])).rows
+   const next=new Map<string,number>()
+   for(const [entryId,hash,generation] of wanted){
+    const matched=rows.filter(row=>row.content_hash===hash)
+    const live=matched.find(row=>row.status==='active'&&row.state!=='retired')
+    if(live){if(!uuid(live.load_id)||live.role_id!==null&&!uuid(live.role_id))throw corrupt();result.set(entryId,{generation,loadId:live.load_id,roleId:live.role_id,roleState:live.state??null})}
+    else if(!matched.length)result.set(entryId,none(generation))
+    else if(generation>=1000)throw new WorkError('teloa/conflict','该员工的重新添加次数已达上限。')
+    else next.set(entryId,generation+1)
+   }
+   pending=next
+  }
   return result
  }
  /**

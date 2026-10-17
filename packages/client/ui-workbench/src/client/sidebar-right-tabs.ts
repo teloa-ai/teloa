@@ -57,7 +57,7 @@ export function teloaTabDefinition(kind:TeloaTabKind,title:()=>string):SidebarRi
  }
 }
 
-const BUSINESS_SECTIONS=['overview','projects','data','work','analysis','execution','dashboards'] as const
+const BUSINESS_SECTIONS=['overview','projects','data','work','analysis','execution','dashboards','employees','groups'] as const
 const dashboardIdPattern=/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/
 type BusinessSection=typeof BUSINESS_SECTIONS[number]
 

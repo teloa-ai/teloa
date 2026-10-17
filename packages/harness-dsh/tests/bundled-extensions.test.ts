@@ -15,6 +15,17 @@ test('五态判定',()=>{
  assert.equal(bundledExtensionState({inBundles:true,atStart:true,loaded:false}),'failed')
  assert.equal(bundledExtensionState({inBundles:false,atStart:true,loaded:true}),'disable-pending')
 })
+test('带固定预览的启停在 profile 锁内拒绝过期版本与状态，不写清单或热加载',async()=>{
+ const home=await mkdtemp(join(tmpdir(),'teloa-bundled-version-')),profileDir=join(home,'profile')
+ await mkdir(profileDir,{recursive:true})
+ const manifest=JSON.stringify({dependencies:{'@teloa/local-embedding':'link:'+join(projectRoot,'packages/local-embedding')},dsh:{profile:{bundles:['@teloa/bundle']}}})
+ await writeFile(join(profileDir,'package.json'),manifest);let applied=0
+ const handler=createBundledExtensionHandler({profileDir,programRoot:projectRoot,runtimeRoot:join(home,'runtime'),bundlesAtStart:['@teloa/bundle'],loaded:()=>false,version:async()=>'0.2.0',apply:async()=>{applied++;return 'restart-required'}})
+ for(const expected of [{version:'0.1.0',state:'available'},{version:'0.2.0',state:'active'}])await assert.rejects(handler('bundled-extensions/set',{extensionId:'local-embedding',enabled:true,expected}),{code:'teloa/version-conflict'})
+ assert.equal(await readFile(join(profileDir,'package.json'),'utf8'),manifest);assert.equal(applied,0)
+ assert.equal((await handler('bundled-extensions/set',{extensionId:'local-embedding',enabled:true,expected:{version:'0.2.0',state:'available'}}) as {state:string}).state,'enable-pending');assert.equal(applied,1)
+ await assert.rejects(handler('bundled-extensions/set',{extensionId:'local-embedding',enabled:false,expected:{version:'0.2.0',state:'available'}}),{code:'teloa/version-conflict'});assert.equal(applied,1)
+})
 test('启动时不在 bundles 里，即使有挂接也不算 active（防第三方抢先挂接）',async()=>{
  const home=await mkdtemp(join(tmpdir(),'teloa-bundled-foreign-')),profileDir=join(home,'profile')
  await mkdir(profileDir,{recursive:true})

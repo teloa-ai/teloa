@@ -5,6 +5,7 @@ import * as presentation from '../src/client/project-presentation.ts'
 import * as contract from '@teloa/contract'
 import type {WorkProject,ProjectItem} from '@teloa/contract'
 import {mount,nodes} from './market-component-harness.ts'
+import {projectContextCopy} from '../src/client/project-context-copy.ts'
 const project:WorkProject={id:'10000000-0000-4000-8000-000000000001',ownerId:'self',version:1,createdAt:'2026-09-24T00:00:00Z',updatedAt:'2026-09-24T00:00:00Z',scope:'general',title:'Launch',goal:'Ship',state:'running',dueDate:null,links:[{kind:'task',id:'20000000-0000-4000-8000-000000000001'}],references:[]}
 const item:ProjectItem={...project.links[0]!,title:'Report',version:1,state:'waiting',available:true,origin:'direct',attention:'review'}
 test('项目过滤与进度不把取消或零任务当成交付',()=>{
@@ -20,10 +21,11 @@ test('项目过滤与进度不把取消或零任务当成交付',()=>{
  assert.deepEqual(removeProjectLink(referenced,item).references,referenced.references)
 })
 test('详情导航传递准确对象，归档项目保留内容但不提供编辑和移除',()=>{
- const summary={totalTasks:1,completedTasks:0,cancelledTasks:0,attentionTasks:1},opened:ProjectItem[]=[]
- const view=mount('ProjectWorkspace.tsx',{'./project-presentation.js':presentation,'@teloa/contract':contract})
- const props={detail:{project,items:[item],summary,references:[]},busy:false,back:()=>{},edit:()=>{},add:()=>{},addReference:()=>{},changeState:()=>{},remove:()=>{},removeReference:()=>{},open:(value:ProjectItem)=>opened.push(value),refresh:()=>{},scopeName:(scope:string)=>scope}
+ const summary={totalTasks:1,completedTasks:0,cancelledTasks:0,attentionTasks:1},opened:ProjectItem[]=[];let contexts=0
+ const view=mount('ProjectWorkspace.tsx',{'./project-presentation.js':presentation,'@teloa/contract':contract,'./project-context-copy.js':{projectContextCopy}})
+ const props={detail:{project,items:[item],summary,references:[]},context:()=>contexts++,busy:false,back:()=>{},edit:()=>{},add:()=>{},addReference:()=>{},changeState:()=>{},remove:()=>{},removeReference:()=>{},open:(value:ProjectItem)=>opened.push(value),refresh:()=>{},scopeName:(scope:string)=>scope}
  const tree=view.render('ProjectDetailView',props)
+ const context=nodes(tree).find(node=>node.type==='button'&&node.props['aria-label']==='Project context');assert.ok(context);assert.equal(context.props.title,'Project context');assert.ok(context.props['data-teloa-toolbar-icon']);context.props.onClick();assert.equal(contexts,1)
  const open=nodes(tree).find(node=>node.type==='button'&&node.props['data-project-item']===item.id)
  assert.ok(open);open.props.onClick();assert.equal(opened[0]?.id,item.id)
  const archived=view.render('ProjectDetailView',{...props,detail:{...props.detail,project:{...project,state:'archived'}}})

@@ -174,6 +174,28 @@ function artifactFile(id:string,path:string){
  return {schema:'teloa.file-snapshot/v1',sessionId:'session-1',id,path,sha256:id,bytes:4,capturedAt:at,contentBase64:'ZGF0YQ=='}
 }
 
+test('固定成果快照读回保留原文件目标 ID，不把它误当作存储快照 ID',async()=>{
+ const bytes=Buffer.from('预算 6800，已花 6120，剩余 680。\n')
+ const file={schema:'teloa.file-snapshot/v1',sessionId:'session-1',id:createHash('sha256').update('原文件目标').digest('hex'),path:'预算核对.md',sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length,capturedAt:at,contentBase64:bytes.toString('base64')}
+ // 正式 ArtifactSnapshotStore 以完整快照寻址；原文件目标 ID 在不同内容版本间保持同一语义。
+ const savedId=createHash('sha256').update(JSON.stringify(file)).digest('hex')
+ assert.notEqual(savedId,file.id)
+ const calls:{endpoint:string;payload:unknown}[]=[]
+ const api=createGroupAttachmentApi(async(endpoint,payload)=>{
+  calls.push({endpoint,payload})
+  if(endpoint==='artifacts/versions')return [artifactVersion(2,[savedId])]
+  assert.equal(endpoint,'artifacts/snapshot');assert.deepEqual(payload,{snapshotId:savedId});return file
+ })
+ const ref={kind:'artifact' as const,id:artifactId,version:2}
+ const artifact=await api.readArtifactVersion(ref,new AbortController().signal)
+ assert.deepEqual(artifact.versions[0]!.files,[file])
+ for(const opened of [await api.openArtifactFile(ref,savedId),await api.openReference(ref)]){
+  if(!('blobUrl' in opened))throw Error('固定文件应返回字节。')
+  try{assert.equal(await resolveObjectURL(opened.blobUrl)!.text(),bytes.toString())}finally{opened.revoke()}
+ }
+ assert.equal(calls.filter(row=>row.endpoint==='artifacts/snapshot').length,3)
+})
+
 test('openReference 对 artifact 引用先按 artifactId 取版本清单，挑出目标版本再打到 artifacts/snapshot',async()=>{
  const calls:{endpoint:string;payload:unknown}[]=[]
  const artifactRef={kind:'artifact' as const,id:artifactId,version:2}
@@ -261,4 +283,37 @@ test('openReference 对 group-resource 引用打到 groups/resources/get，需�
  assert.deepEqual(calls,[{endpoint:'groups/resources/get',payload:{groupId,resourceId,resourceVersion:2}}])
  assert.deepEqual(opened,{kind:'resource',markdown:'# 固定证据',title:'研判依据'})
  await assert.rejects(api.openReference(reference),/缺少所属群身份/)
+})
+
+test('群固定版本读取只hydrate被引用版本，不读取未共享v3或源目录/反馈',async()=>{
+ const calls:{endpoint:string;payload:unknown}[]=[]
+ const api=createGroupAttachmentApi(async(endpoint,payload)=>{
+  calls.push({endpoint,payload})
+  if(endpoint==='artifacts/versions')return [artifactVersion(1,[otherSnapshotId]),artifactVersion(2,[snapshotId]),artifactVersion(3,['d'.repeat(64)],{content:{title:'未共享私人v3',sections:[{id:'private',title:'私人',text:'不得出现在群预览'}],snapshotIds:['d'.repeat(64)],note:'私人'}})]
+  if(endpoint==='artifacts/snapshot')return artifactFile((payload as {snapshotId:string}).snapshotId,'reports/shared.md')
+  throw Error('不得读取 owner 全目录或反馈')
+ })
+ const artifact=await api.readArtifactVersion({kind:'artifact',id:artifactId,version:2},new AbortController().signal)
+ assert.equal(artifact.versions.length,1);assert.equal(artifact.versions[0]!.number,2)
+ assert.deepEqual(artifact.versions[0]!.files?.map(file=>file.id),[snapshotId])
+ assert.deepEqual(calls,[{endpoint:'artifacts/versions',payload:{artifactId}},{endpoint:'artifacts/snapshot',payload:{snapshotId}}])
+})
+test('群固定版本读取保留task来源，取消后不继续hydrate或返回内容',async()=>{
+ const abort=new AbortController(),calls:string[]=[]
+ const api=createGroupAttachmentApi(async endpoint=>{calls.push(endpoint);abort.abort();return [artifactVersion(2,[],{source:{kind:'task',id:'task-original',scope:'general',version:'v1',title:'原任务'},content:{title:'任务结果',sections:[{id:'body',title:'摘要',text:'已共享任务正文'}],snapshotIds:[],note:'原版本'}})]})
+ await assert.rejects(api.readArtifactVersion({kind:'artifact',id:artifactId,version:2},abort.signal),error=>error instanceof DOMException&&error.name==='AbortError')
+ assert.deepEqual(calls,['artifacts/versions'])
+ const ready=createGroupAttachmentApi(async()=>[artifactVersion(2,[],{source:{kind:'task',id:'task-original',scope:'general',version:'v1',title:'原任务'},content:{title:'任务结果',sections:[{id:'body',title:'摘要',text:'已共享任务正文'}],snapshotIds:[],note:'原版本'}})])
+ assert.deepEqual((await ready.readArtifactVersion({kind:'artifact',id:artifactId,version:2},new AbortController().signal)).source,{kind:'task',id:'task-original'})
+})
+test('群固定版本读取包含该版原消息快照，校验owner与原会话，取消不继续读文件',async()=>{
+ const messageId='e'.repeat(64),message={sessionId:'session-1',messageId:'original',seq:1,role:'assistant',at,text:'原消息定稿',interrupted:false,omittedBlocks:0,images:[]},calls:string[]=[]
+ const version=artifactVersion(2,[],{content:{title:'原消息成果',sections:[],snapshotIds:[],messageSnapshotIds:[messageId],note:'原版'}})
+ const api=createGroupAttachmentApi(async(endpoint)=>{calls.push(endpoint);return endpoint==='artifacts/versions'?[version]:message})
+ const result=await api.readArtifactVersion({kind:'artifact',id:artifactId,version:2},new AbortController().signal)
+ assert.deepEqual(result.versions[0]?.messages,[message]);assert.deepEqual(calls,['artifacts/versions','artifacts/message/snapshot'])
+ for(const patch of [{...version,ownerId:'other'},{...version,source:{...version.source,id:'wrong-session'}}]){
+  const bad=createGroupAttachmentApi(async endpoint=>endpoint==='artifacts/versions'?[patch]:message)
+  await assert.rejects(bad.readArtifactVersion({kind:'artifact',id:artifactId,version:2},new AbortController().signal))
+ }
 })

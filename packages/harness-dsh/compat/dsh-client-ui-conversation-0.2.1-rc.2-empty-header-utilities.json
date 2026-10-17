@@ -1,0 +1,27 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-client-ui-conversation",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "21684521c35f95feaff26278618eaaec62d768ae12f1f82aa56978d7588a4e3b",
+  "files": [
+    {
+      "path": "lib/client.js",
+      "beforeSha256": "8554738cbeeb5218ad1bfa4773ef094363b066d052a1893d7a96797c5bc33a63",
+      "afterSha256": "109f2aa35ab778acc452fb07ba57960019467352ba080b518e9b510e154456ef"
+    }
+  ],
+  "api": [
+    "conversation.session.header.utilities",
+    "conversation.session.header.title"
+  ],
+  "scope": {
+    "default": "Keep the native session utilities outlet available before the first turn; title, actions, tabs and single corner semantics are unchanged; a read-only title seat may replace breadcrumb text, falling back to the original native title",
+    "boundary": "Only the official client renderer is patched. Registered utilities retain their own session, content and authorization conditions; blank rows right-align utilities next to the preserved native corner; the title seat only changes displayed text and preserves navigation, lineage, actions and the durable title log",
+    "limitations": [
+      "All existing session utilities may render for a blank session; no provider or authorization is synthesized",
+      "A sessionless header remains governed by the official ConversationHeader owner boundary"
+    ],
+    "patchContext": "Zero-context hunks; the explicit UI spec enables --unidiff-zero only after full before-SHA verification, with exact after-SHA verification."
+  }
+}

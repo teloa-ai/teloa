@@ -30,7 +30,7 @@ test('个人会话：准入抛 gateway/bad-request，提示只含类别；干净
 
 test('调用顺序回归：controller 在 steer/followup 之前完成附件准入',()=>{
  const path=fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-api-session-controller'))
- const source=readFileSync(path,'utf8'),body=source.slice(source.indexOf('async prompt(request)'))
+ const source=readFileSync(path,'utf8'),body=source.slice(source.indexOf('async prompt(request, source)'))
  const admit=body.indexOf('attachments.admitPromptContent('),steer=body.indexOf('agent.steer(message)'),followup=body.indexOf('agent.followup(message)')
  assert.ok(admit>0&&admit<steer&&admit<followup)
 })

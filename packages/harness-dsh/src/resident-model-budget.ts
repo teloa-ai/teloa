@@ -2,19 +2,42 @@ import {createHash,randomUUID} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import type {GenerateOptions,StreamChunk,TokenUsage,LlmFailure} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm-retry'
-import {SessionId} from '@deepseek-ai/dsh-session'
+import {SessionId,type SessionEvent} from '@deepseek-ai/dsh-session'
 import {WorkError} from '@teloa/contract'
-import {WorkRetryService,combineWorkAccessLeases,type TaskRunService,type TaskRun,type WorkControlService,type WorkBudgetService,type WorkAccessLease} from '@teloa/backend'
+import {WorkRetryService,combineWorkAccessLeases,type TaskRunService,type TaskRun,type WorkControlService,type WorkBudgetService,type WorkAccessLease,type RunBudgetTerminal} from '@teloa/backend'
 import type {createNativeWorkInput} from './native-work-input.ts'
 import {readSessionEvents} from './session-events.ts'
+import {observeTaskRunTimeline} from './task-run-observation.ts'
 
 type Position={sessionId:string;turn:number;step:number}
 export type ResidentRoutingBudget={budgetAccountId:string|null;controlGeneration:number;operationId:string;lease:WorkAccessLease}
-type Options={owner:string;pool:TaskRunService['pool'];identity:{id:()=>string;now:()=>string};runs:()=>Promise<TaskRunService>;controls:WorkControlService;budgets:WorkBudgetService;resolveRun:(sessionId:string)=>Promise<TaskRun|null>;resolveRouting?:(sessionId:string)=>Promise<ResidentRoutingBudget|null>;nativeInput:Pick<ReturnType<typeof createNativeWorkInput>,'modelPosition'>;report:(code:string)=>void}
+type Options={owner:string;pool:TaskRunService['pool'];identity:{id:()=>string;now:()=>string};runs:()=>Promise<TaskRunService>;controls:WorkControlService;budgets:WorkBudgetService;resolveRun:(sessionId:string)=>Promise<TaskRun|null>;resolveRouting?:(sessionId:string)=>Promise<ResidentRoutingBudget|null>;nativeInput:Pick<ReturnType<typeof createNativeWorkInput>,'modelPosition'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'hasAuxiliaryModelAdmission'>>;report:(code:string)=>void}
 type Attempt={run:TaskRun;tokens:number;role:WorkAccessLease}
 const digest=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const unavailable=()=>new WorkError('teloa/unavailable','当前模型请求没有完整的受控工作准入。')
 const count=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>=0
+
+/** 只读同一原生 Run 的持久结束锚点；修复器回填的 turn/end 时间不能替代其正式封口时刻。 */
+export function runBudgetTerminal(run:TaskRun,snapshot:{sessionId:string;events:readonly SessionEvent[];inheritedEventCount:number}):RunBudgetTerminal|null{
+ const evidence=run.evidence
+ if(run.state!=='ended'||evidence?.state!=='ended'||snapshot.sessionId!==run.sessionId||!count(snapshot.inheritedEventCount)||evidence.messageSeq<snapshot.inheritedEventCount||snapshot.events.length<evidence.endSeq+1)return null
+ // 原 Run 的结束锚点冻结在此前缀；后续独立输入不归入原 Run 的消耗。
+ const events=snapshot.events.slice(0,evidence.endSeq+1)
+ try{
+  if(events.some((event,index)=>event.seq!==index||!count(event.time)))return null
+  const observed=observeTaskRunTimeline(events,run.nativeRequestId).observation
+  if(observed.state!=='ended'||observed.turn!==evidence.turn||observed.messageSeq!==evidence.messageSeq||observed.reason!==evidence.reason)return null
+  const message=events[evidence.messageSeq],turnEnd=events[observed.endSeq],terminal=events[evidence.endSeq]
+  if(message?.type!=='user/message'||message.data.source.kind!=='user'||!('rpcId' in message.data.source)||message.data.source.rpcId!==run.nativeRequestId||turnEnd?.type!=='turn/end'||terminal===undefined)return null
+  if(events.slice(evidence.messageSeq+1,evidence.endSeq+1).some(event=>event.type==='user/message'&&['user','goal'].includes(event.data.source.kind)))return null
+  let terminalKind:RunBudgetTerminal['terminalKind']
+  if(observed.endSeq===evidence.endSeq&&terminal.type==='turn/end')terminalKind='turn/end'
+  else if(observed.endSeq+1===evidence.endSeq&&terminal.type==='session/end-seed'&&Object.keys(terminal.data).length===0)terminalKind='session/end-seed'
+  else return null
+  if(terminal.time<message.time||terminal.time<turnEnd.time)return null
+  return {schema:'teloa.work-budget-terminal/v1',runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,turn:evidence.turn,messageSeq:evidence.messageSeq,endSeq:evidence.endSeq,turnEndSeq:observed.endSeq,terminalKind,endedAt:new Date(terminal.time).toISOString()}
+ }catch{return null}
+}
 
 /** 用实际提供方计数，缓存输入与普通输入是互斥项，不按流片段重复累加。 */
 function usedTokens(usage:TokenUsage):number|null{
@@ -22,6 +45,11 @@ function usedTokens(usage:TokenUsage):number|null{
  const sum=usage.inputTokens+usage.outputTokens+(usage.cacheReadTokens??0)+(usage.cacheWriteTokens??0)
  if(usage.totalTokens!==undefined&&(!count(usage.totalTokens)||usage.totalTokens<sum))return null
  const result=usage.totalTokens??sum;return count(result)?result:null
+}
+type ModelFinish=Extract<StreamChunk,{type:'finish'}>['reason']
+/** 固定官方适配器在认证读取阶段、HTTP 之前给出此码；任何输出/用量片段或取消都不能据此推断零消耗。 */
+function unsentCredentialFailure(finish:ModelFinish|undefined,streamActivitySeen:boolean,signal:AbortSignal|undefined):boolean{
+ return !streamActivitySeen&&!signal?.aborted&&finish?.kind==='error'&&finish.failure?.code==='MISSING_CREDENTIAL'&&finish.failure.status===undefined&&finish.failure.requestId===undefined
 }
 function failureOutcome(failure:LlmFailure|undefined,outputSeen:boolean):'transient'|'authentication'|'permission'|'conflict'|'unknown'{
  if(!failure||outputSeen)return 'unknown'
@@ -56,11 +84,13 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   return combineWorkAccessLeases([request.role,budgets.lease(owner,reservation)])
  }})
  const dispose=ctx.on('llm/stream',async function*(request,next):AsyncIterable<StreamChunk>{
+  // 辅助提炼已经组合真实来源、能力与owner预算；只凭private exact-object证明避免重复计费。
+  if(nativeInput.hasAuxiliaryModelAdmission?.(request)){yield* next();return}
   if(!request.sessionId){yield* next();return}
   const run=await options.resolveRun(request.sessionId)
   const routing=run?null:await options.resolveRouting?.(request.sessionId)
   if(!run&&!routing){yield* next();return}
-  if(run&&(!run.roleSnapshot||!run.lineage))throw new WorkError('teloa/conflict','历史任务需要建立新的受控执行，不能自动重放。')
+  if(run&&(!run.roleSnapshot&&run.executor?.kind!=='owner'||!run.lineage))throw new WorkError('teloa/conflict','历史任务需要建立新的受控执行，不能自动重放。')
   const position=nativeInput.modelPosition(request)
   if(!position||position.sessionId!==request.sessionId)throw unavailable()
   // 官方 prepared call 已把提供方输出上限写回原请求；未知上限不能承诺有限预留。
@@ -72,16 +102,17 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    const modelRequestId='routing:'+digest([routing.operationId,position.sessionId,position.turn,operationStep(ctx,position),request.provider,request.model])
    const reservation=routing.budgetAccountId===null?await budgets.reserveOwnerRouting(owner,{modelRequestId,tokens}):await budgets.reserve(owner,{budgetAccountId:routing.budgetAccountId,controlGeneration:routing.controlGeneration,modelRequestId,kind:'routing',tokens,rounds:0})
    const lease=combineWorkAccessLeases([routing.lease,budgets.lease(owner,reservation)])
-   let dispatched=false,usage:number|null=null
+   let dispatched=false,usage:number|null=null,finish:ModelFinish|undefined,streamActivitySeen=false
    try{
     request.signal?.throwIfAborted();lease.assertCurrent();await budgets.markDispatched(owner,{reservationId:reservation.id});dispatched=true
     request.signal?.throwIfAborted();lease.assertCurrent()
     for await(const chunk of next()){
+     if(chunk.type==='finish')finish=chunk.reason;else streamActivitySeen=true
      if(chunk.type==='usage'){const current=usedTokens(chunk.usage);usage=current===null?null:Math.max(usage??0,current)}
      request.signal?.throwIfAborted();lease.assertCurrent();yield chunk
     }
    }finally{
-    if(dispatched)await budgets.settle(owner,{reservationId:reservation.id,modelRequestId,provider:request.provider,providerRequestId:null,tokens:usage,moneyMinorUnits:null,currency:null,receiptId:'routing-attempt:'+digest(modelRequestId)})
+    if(dispatched)await budgets.settle(owner,{reservationId:reservation.id,modelRequestId,provider:request.provider,providerRequestId:null,tokens:unsentCredentialFailure(finish,streamActivitySeen,request.signal)?0:usage,moneyMinorUnits:null,currency:null,receiptId:'routing-attempt:'+digest(modelRequestId)})
     else await budgets.releaseUnaccepted(owner,{reservationId:reservation.id})
    }
    return
@@ -92,7 +123,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   request.signal?.throwIfAborted();role.assertCurrent();controlled.lease.assertCurrent()
   if(pending.has(operationId))throw new WorkError('teloa/execution-pending','原模型请求仍在受理，不重复派发。')
   pending.set(operationId,{run,tokens,role})
-  let claim:Awaited<ReturnType<WorkRetryService['claim']>>|undefined,reservationId:string|undefined,usage:number|null=null,finished=false,outputSeen=false,failure:LlmFailure|undefined,dispatched=false
+  let claim:Awaited<ReturnType<WorkRetryService['claim']>>|undefined,reservationId:string|undefined,usage:number|null=null,finished=false,outputSeen=false,failure:LlmFailure|undefined,dispatched=false,finish:ModelFinish|undefined,streamActivitySeen=false
   try{
    await retries.register(owner,{runId:run.id,operationId})
    claim=await retries.claim(owner,{operationId,requestId:randomUUID(),expectedGeneration:controlled.control.generation})
@@ -103,8 +134,9 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    await budgets.markDispatched(owner,{reservationId});dispatched=true
    request.signal?.throwIfAborted();claim.lease.assertCurrent();controlled.lease.assertCurrent()
    for await(const chunk of next()){
+    if(chunk.type!=='finish')streamActivitySeen=true
     if(chunk.type==='usage'){const current=usedTokens(chunk.usage);usage=current===null?null:Math.max(usage??0,current)}
-    if(chunk.type==='finish'){finished=true;if(chunk.reason.kind==='error'||chunk.reason.kind==='aborted')failure=chunk.reason.failure}
+    if(chunk.type==='finish'){finish=chunk.reason;finished=true;if(chunk.reason.kind==='error'||chunk.reason.kind==='aborted')failure=chunk.reason.failure}
     if(chunk.type==='text-delta'||chunk.type==='reasoning-delta'||chunk.type==='tool-call-delta')outputSeen=true
     request.signal?.throwIfAborted();claim.lease.assertCurrent();controlled.lease.assertCurrent();yield chunk
    }
@@ -112,11 +144,12 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    pending.delete(operationId)
    if(claim?.dispatch){
     const receiptId='model-attempt:'+digest([operationId,claim.attempt])
+    const unsent=unsentCredentialFailure(finish,streamActivitySeen,request.signal)
     if(reservationId){
-     if(dispatched)await budgets.settle(owner,{reservationId,modelRequestId:claim.modelRequestId,provider:request.provider,providerRequestId:null,tokens:usage,moneyMinorUnits:null,currency:null,receiptId})
+     if(dispatched)await budgets.settle(owner,{reservationId,modelRequestId:claim.modelRequestId,provider:request.provider,providerRequestId:null,tokens:unsent?0:usage,moneyMinorUnits:null,currency:null,receiptId})
      else await budgets.releaseUnaccepted(owner,{reservationId})
     }
-    const outcome=finished&&!failure?'success':failureOutcome(failure,outputSeen)
+    const outcome=unsent?'authentication':finished&&!failure?'success':failureOutcome(failure,outputSeen)
     await retries.record(owner,{operationId,attempt:claim.attempt,receiptId,outcome,reason:outcome==='success'?'模型本次请求已完成':outcome==='transient'?'提供方暂时拒绝请求，按有限次数稍后重试':outcome==='authentication'?'模型认证需要本人处理':outcome==='permission'?'模型权限需要本人处理':outcome==='conflict'?'模型请求冲突，需要核对原请求':'原模型请求结果未知，保留现场等待核对'})
     if(outcome!=='success')options.report('resident-model/'+outcome)
    }

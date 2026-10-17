@@ -1,6 +1,8 @@
+import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
-import {staffAvatarComponent} from './staff-avatar-component.ts'
+import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -55,7 +57,8 @@ function baseMembers():GroupMember[]{
  ]
 }
 
-type ApiSetup={mentionAllAllowed?:boolean;members?:GroupMember[];existingMessages?:GroupMessage[];scope?:string}
+type ResourceRow={id:string;groupId:string;ownerId:string;version:number;title:string;withdrawnAt:string|null;createdAt:string;updatedAt:string}
+type ApiSetup={mentionAllAllowed?:boolean;members?:GroupMember[];existingMessages?:GroupMessage[];scope?:string;resources?:ResourceRow[]}
 function makeApi(setup:ApiSetup={}){
  const calls:{endpoint:string;payload:unknown}[]=[]
  const group=baseGroup(!!setup.mentionAllAllowed,setup.scope)
@@ -65,7 +68,7 @@ function makeApi(setup:ApiSetup={}){
  const api={
   get:async(id:string)=>{assert.equal(id,groupId);return snapshot},
   messages:async(id:string,forRoot?:string)=>{assert.equal(id,groupId);if(forRoot!==undefined)throw Error('未预期读话题：'+forRoot);return {items:setup.existingMessages??[]}},
-  resources:async()=>({items:[]}),
+  resources:async()=>({items:setup.resources??[]}),
   agentGrant:async(_groupId:string,roleId:string)=>({groupVersion:1,roleVersion:1,grant:{groupId,roleId,groupVersion:1,roleVersion:1,grantVersion:1,state:'active' as const,resources:[],canPost:true,canAutoRun:false,createdAt:stamp} satisfies GroupAgentGrant,status:'active' as const}),
   list:async()=>({items:[group]}),
   recoveryMessage:()=>undefined,
@@ -114,9 +117,14 @@ function mount(initial:Props){
  const t=(key:string,params?:Record<string,string|number>)=>params?key+':'+JSON.stringify(params):key
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string):unknown=>{
+  const groupResult=groupResultFixtureModule(id);if(groupResult!==undefined)return groupResult
+  if(id==='./GroupChannelBindings.js')return {GroupChannelBindings:()=>null}
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
-  if(id==='./StaffAvatar.js')return staffAvatarComponent
+  if(id==='./ContextDrawer.js')return {ContextDrawer:({open=true,children,title}:any)=>open?React.createElement('dialog',{'aria-label':title},children):null}
+  if(id==='./task-preview.js')return {taskStates:{ready:'status.ready',running:'status.running',paused:'status.paused',waiting:'status.waiting',blocked:'status.blocked',completed:'status.completed',cancelled:'status.cancelled'}}
+  if(id==='./StaffAvatar.js'||id==='./EmployeeAvatar.js'||id==='./TwinAvatar.js')return staffAvatarComponent
+  if(id==='./personal-profile.js')return personalProfileForGroup
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   // SavedCollaborationPage 现在直接读契约里的群附件字面量（类型与上限），夹具按真模块喂。
@@ -131,7 +139,7 @@ function mount(initial:Props){
   if(id.endsWith('saved-collaboration-state.js'))return savedCollaborationState
   if(id.endsWith('saved-collaboration-drafts.js'))return {savedCollaborationDrafts:createSavedCollaborationDraftStore()}
   if(id.endsWith('team-presentation.js'))return {twinDisplayName:(name:string)=>name}
-  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t,time:(value:string)=>value})}
+  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t,time:(value:string)=>value,date:(value:string)=>value.slice(0,10),dateTime:(value:string)=>value})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>String(cause)}
   if(id.endsWith('group-message-refresh.js'))return {scheduleGroupMessageRefresh:()=>()=>{}}
   // 群内直接回应一期 T14 接线后 SavedCollaborationPage 多了这两处依赖；本文件不测表情与折叠行，一律给空实现。
@@ -139,6 +147,11 @@ function mount(initial:Props){
   if(id.endsWith('group-routing-view.js'))return {groupRoutingPending:()=>[]}
   // DSH 平台模块，Node 下装不起来，给透传桩（见 saved-message-markdown-stubs.ts）。
   if(id==='@deepseek-ai/dsh-client-ui-primitives')return markdownPrimitivesStub
+  // 本夹具未接工作关联端口；新组件边界另有源渲染与浏览器用例，不应进入此旧消息测试。
+  if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
+  // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
+  if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }
  const code=ts.transpileModule(readFileSync(new URL('../src/client/SavedCollaborationPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
@@ -155,7 +168,8 @@ function mount(initial:Props){
   }while(dirty)
   return tree
  }
- const flush=async()=>{for(let round=0;round<8;round++){await Promise.resolve();render()}return tree}
+ // 一次事件循环排空真实异步刷新链；不能用固定8个微任务假定目录与覆盖层已返回。
+ const flush=async()=>{for(let round=0;round<8;round++){await new Promise<void>(resolve=>setImmediate(resolve));render()}return tree}
  const expand=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
   if(Array.isArray(node))return node.flatMap(expand)
   if(!React.isValidElement<Record<string,any>>(node))return []
@@ -207,18 +221,37 @@ test('@ 候选只列本群在岗 employee，分身与暂停成员不列入，且
  assert.deepEqual(candidates.map(item=>item.id),[employeeAId,employeeDId])
 })
 
-test('建群成员候选不再按业务范围过滤：跨范围在岗同事都可选，候选行标注各自业务范围',async()=>{
+test('建群成员候选不再按业务范围过滤：跨范围与暂停同事都可选，成员关系不激活员工',async()=>{
  const socId='99999999-9999-4999-9999-999999999999'
  const socEmployee:PreviewRole={...role(socId,'员工SOC','employee','active'),scopes:['SOC'],duty:'安全复核'}
  const extendedRoles=[...roles,socEmployee]
  const {api}=makeApi({})
- const createDirectory:SavedConversationDirectory={refresh:async()=>{},open:()=>{},select:()=>{},createRequest:1,createHandled:()=>{}}
+ const createDirectory:SavedConversationDirectory={refresh:async()=>{},open:()=>{},select:()=>{},createRequest:0,createHandled:()=>{}}
  const app=mount({visible:true,api,directory:createDirectory,target:null,roles:extendedRoles,profileName:'测试者'})
  await app.flush()
+ app.setProps({directory:{...createDirectory,createRequest:1}})
+ await app.flush()
  assert.ok(app.find(el=>el.type==='dialog'&&el.props['aria-label']==='collaboration.action.new'),'创建群弹层必须打开')
+ const name=app.find(el=>el.type==='input'&&el.props.maxLength===80)
+ name.props.onChange({target:{value:'跨业务协作群'}})
+ app.render()
+ const next=app.find(el=>el.type==='button'&&el.props.type==='submit'&&app.contentOf(el)==='collaboration.form.next')
+ assert.equal(next.props.disabled,false,'填写群名后可以进入成员选择')
+ app.find(el=>el.type==='form'&&typeof el.props.onKeyDown==='function').props.onSubmit({preventDefault(){}})
+ await app.flush()
  const socRow=app.find(el=>el.props.className==='groupMemberChoice'&&app.contentOf(el).includes('员工SOC'))
  assert.ok(app.contentOf(socRow).includes('SOC'),'候选行必须标注这位员工的业务范围，即便群当前选的是另一个范围')
- assert.equal(app.findAll(el=>el.props.className==='groupMemberChoice'&&app.contentOf(el).includes('员工乙')).length,0,'非在岗成员依旧不列入候选')
+ const choice=React.Children.toArray(socRow.props.children).find(el=>React.isValidElement<Record<string,any>>(el)&&el.type==='input'&&el.props.type==='checkbox') as React.ReactElement<Record<string,any>>
+ assert.ok(choice,'候选行提供真实成员选择控件')
+ assert.equal(choice.props.disabled,false,'跨业务在岗员工候选必须可选')
+ choice.props.onChange({target:{checked:true}})
+ await app.flush()
+ assert.ok(app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.form.removeMember:{"name":"员工SOC"}'),'选中员工后加入待创建群的成员列表')
+ const pausedRow=app.find(el=>el.props.className==='groupMemberChoice'&&app.contentOf(el).includes('员工乙'))
+ assert.ok(app.contentOf(pausedRow).includes('role.state.paused'),'暂停状态仍明确显示')
+ const pausedChoice=React.Children.toArray(pausedRow.props.children).find(el=>React.isValidElement<Record<string,any>>(el)&&el.type==='input'&&el.props.type==='checkbox') as React.ReactElement<Record<string,any>>
+ assert.equal(pausedChoice.props.disabled,false,'暂停同事可显式加入成员，执行资格仍由原提及和服务端闸门限制')
+ assert.equal(employeeB.state,'paused','成员选择不激活员工')
 })
 
 test('正文敲 @ 弹出候选浮层，继续输入按名字前缀过滤，Esc 关闭',async()=>{
@@ -234,6 +267,24 @@ test('正文敲 @ 弹出候选浮层，继续输入按名字前缀过滤，Esc �
  assert.deepEqual(optionLabels(app),['员工丁'],'继续输入按名字前缀过滤')
  pressKey(app,'Escape')
  assert.equal(optionLabels(app).length,0,'Esc 必须关闭候选浮层')
+})
+
+test('中文输入法组合中的方向键、Esc、Tab、Enter 全部交还输入法，不改候选、不提及、不发送',async()=>{
+ const {api,calls}=makeApi({})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush();typeText(app,'@员工')
+ const current=textareaOf(app).props['aria-activedescendant']
+ for(const key of ['ArrowDown','ArrowUp','Escape','Tab','Enter']){
+  let prevented=false,stopped=false
+  textareaOf(app).props.onKeyDown({key,nativeEvent:{isComposing:true},preventDefault(){prevented=true},stopPropagation(){stopped=true}})
+  app.render()
+  assert.equal(prevented,false,key+' 不拦截输入法操作')
+  assert.equal(stopped,false,key+' 不阻断输入法事件')
+  assert.equal(textareaOf(app).props['aria-activedescendant'],current,key+' 不改变群候选活动项')
+  assert.equal(draftText(app),'@员工')
+  assert.deepEqual(chipLabels(app),[])
+ }
+ assert.equal(calls.filter(call=>call.endpoint==='groups/messages/send').length,0)
 })
 
 test('↑↓ 移动候选、Enter 选中：正文插入 @名字 标记并把这位加进提及列表',async()=>{
@@ -407,8 +458,9 @@ test('未接入群内回应时，发送带两个提及后打开建任务表单�
 
  const dialog=app.find(el=>el.type==='dialog'&&el.props['aria-label']==='collaboration.task.create')
  assert.ok(dialog,'必须自动打开建任务表单')
- assert.ok(app.find(byContent(app,'group.mention.formOpened')))
- assert.ok(app.find(byContent(app,'group.mention.readyOnly')))
+ assert.ok(app.find(byContent(app,'collaboration.task.boundary')),'沿用一份仅创建不执行说明')
+ assert.equal(app.findAll(byContent(app,'group.mention.formOpened')).length,0,'不再堆叠兼容入口教学')
+ assert.equal(app.findAll(byContent(app,'group.mention.readyOnly')).length,0)
  const select=app.find(el=>el.type==='select'&&el.props.value!==undefined&&(el.props.value===employeeAId||el.props.value===''))
  assert.equal(select.props.value,employeeAId,'负责人必须预填第一位被提及的员工')
  const goalField=app.find(el=>el.type==='textarea'&&el.props.required===true)
@@ -443,7 +495,7 @@ test('从既有消息手工点「建任务」不经过提及流程，请求不�
  const {api,calls}=makeApi({existingMessages:[rootMessage]})
  const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
  await app.flush()
- app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.task.create').props.onClick();app.render()
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.task.create').props.onClick();app.render()
  const dialog=app.find(el=>el.type==='dialog'&&el.props['aria-label']==='collaboration.task.create')
  assert.ok(!app.findAll(el=>el.type==='p'&&app.contentOf(el)==='group.mention.formOpened').length,'手工建任务不应出现提及横幅')
  const form=expandForm(app,dialog)
@@ -452,6 +504,17 @@ test('从既有消息手工点「建任务」不经过提及流程，请求不�
  const created=calls.filter(call=>call.endpoint==='groups/tasks/create')
  assert.equal(created.length,1)
  assert.equal('trigger' in (created[0]!.payload as object)?(created[0]!.payload as {trigger?:string}).trigger:undefined,undefined)
+})
+
+test('原消息员工已暂停时不自动指派，不能按同名或旧作者身份猜测负责人',async()=>{
+ const rootMessage:GroupMessage={id:rootMessageId,groupId,rootId:null,authorId:employeeBId,taskId:'77777777-7777-4777-8777-777777777777',runId:'88888888-8888-4888-8888-888888888888',text:'请跟进这份结果',references:[],createdAt:stamp}
+ const {api,calls}=makeApi({existingMessages:[rootMessage]})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.task.create').props.onClick();app.render()
+ const owner=app.find(el=>el.type==='select'&&el.props['aria-label']==='collaboration.task.assignee')
+ assert.equal(owner.props.value,'','暂停的原作者不能被预选为新任务负责人')
+ assert.equal(calls.filter(call=>call.endpoint==='groups/tasks/create').length,0,'打开与预选本身不创建任务')
 })
 
 test('切换到另一个群会清空提及草稿与全员通知，不带旧群残留',async()=>{
@@ -484,7 +547,7 @@ test('撤销群授权恒定提交 canAutoRun:false、canPost:false、resources:[
  const {api,calls}=makeApi({members:soloMembers})
  const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
  await app.flush()
- app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.action.resources').props.onClick();app.render()
+ app.find(el=>el.type==='button'&&el.props.role!=='menuitem'&&el.props['aria-label']==='collaboration.settings.aria').props.onClick();app.render();app.find(el=>el.props.role==='tab'&&app.contentOf(el)==='collaboration.form.tab.permissions').props.onClick();app.render()
  await app.flush()
  const revokeButton=app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.agentGrant.revoke')
  await revokeButton.props.onClick()
@@ -532,12 +595,11 @@ test('@ 候选不按群业务范围过滤，但建任务负责人候选按契约
  const optionValues=(select.props.children as unknown[]).flat(Infinity).filter(React.isValidElement).map(option=>(option.props as {value:string}).value)
  assert.ok(!optionValues.includes(appsecId),'不支持本群范围（SOC）的 AppSec 员工不出现在负责人候选里')
  assert.ok(optionValues.includes(employeeAId)&&optionValues.includes(employeeDId)&&optionValues.includes(socId),'支持本群范围的在岗员工仍是负责人候选')
- assert.ok(app.find(byContent(app,'group.task.scopeHint')),'表单里必须给出业务范围限制的说明')
+ assert.ok(app.find(byContent(app,'group.task.targetHint')),'表单里必须给出固定目标业务与负责人原范围限制的说明')
  await expandForm(app,dialog).props.onSubmit({preventDefault:()=>{}})
  await app.flush()
  const created=calls.filter(call=>call.endpoint==='groups/tasks/create')
- assert.equal(created.length,1)
- assert.equal((created[0]!.payload as {assignee?:unknown}).assignee,undefined,'留空的负责人不得被提交')
+ assert.equal(created.length,0,'具体业务工作必须有支持该目标业务的负责人，不能以未指派任务绕过业务授权')
 })
 
 // 2026-09-21 用户裁定：通用工作（general）群里任意在岗正式同事都是建任务负责人候选，不要求岗位声明包含 general。
@@ -590,3 +652,140 @@ function expandForm(app:ReturnType<typeof mount>,dialog:React.ReactElement<Recor
  }
  throw Error('对话框内没有 form 元素')
 }
+
+/**
+ * 群引用资料改走会话式候选（2026-10-14）：正文 @ 与引用图标到达同一份本群资料候选，员工与资料分组、同名不混淆；
+ * 选资料一次即带入固定版本引用并关闭候选，撤销只能走待发送区标签；资料候选不产生提及，不自动授权。
+ */
+const resourceRow=(id:string,title:string,version:number,withdrawnAt:string|null=null):ResourceRow=>({id,groupId,ownerId:'self',version,title,withdrawnAt,createdAt:stamp,updatedAt:stamp})
+const sameNameResourceId='77777777-7777-4777-8777-777777777777'
+const planResourceId='88888888-8888-4888-8888-888888888888'
+const withdrawnResourceId='99999999-9999-4999-8999-999999999999'
+const referenceResources=()=>[resourceRow(sameNameResourceId,'员工甲',3),resourceRow(planResourceId,'方案资料',2),resourceRow(withdrawnResourceId,'已撤回资料',1,stamp)]
+const optionNodes=(app:ReturnType<typeof mount>)=>app.findAll(el=>el.type==='li'&&el.props.role==='option')
+const sectionLabels=(app:ReturnType<typeof mount>)=>app.findAll(el=>el.type==='li'&&el.props.role==='presentation').map(el=>app.contentOf(el))
+const resourceOption=(app:ReturnType<typeof mount>,title:string)=>app.find(el=>el.type==='li'&&el.props.role==='option'&&String(el.props.id).startsWith('resource-')&&app.contentOf(el).startsWith(title))
+const referenceChips=(app:ReturnType<typeof mount>)=>app.findAll(el=>el.type==='span'&&el.props.className==='attachmentChip').map(el=>app.contentOf(el))
+const referenceIcon=(app:ReturnType<typeof mount>)=>app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.composer.references')
+
+test('正文敲 @ 时员工与本群资料分组列出，同名资料与员工不混淆；选资料只带入固定版本引用、不产生提及',async()=>{
+ const {api,calls}=makeApi({resources:referenceResources()})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ typeText(app,'请看 @员')
+ const listbox=app.find(el=>el.type==='ul'&&el.props.role==='listbox')
+ assert.equal(listbox.props['aria-label'],'group.mention.pickAny','有资料时候选同时覆盖员工与资料')
+ assert.deepEqual(sectionLabels(app),['group.mention.sectionEmployees','group.mention.sectionResources'],'员工与资料各自成组')
+ const ids=optionNodes(app).map(el=>String(el.props.id))
+ assert.deepEqual(ids,['mention-main-'+employeeAId,'mention-main-'+employeeDId,'resource-main-'+sameNameResourceId],'同名员工与资料是两条不同身份的候选')
+ assert.equal(optionOf(app,'员工甲').props.id,'mention-main-'+employeeAId)
+ assert.ok(app.contentOf(resourceOption(app,'员工甲')).includes('collaboration.resources.versionLabel:{"version":3}'),'资料候选标明固定版本')
+ assert.equal(optionNodes(app).some(el=>app.contentOf(el).includes('已撤回资料')),false,'已撤回资料不列入')
+ resourceOption(app,'员工甲').props.onMouseDown({preventDefault:()=>{}});app.render()
+ assert.equal(draftText(app),'请看 ','选资料后去掉正文里的 @过滤词，引用落在待发送区标签')
+ assert.deepEqual(chipLabels(app),[],'选资料不产生提及')
+ assert.deepEqual(referenceChips(app).map(label=>label.startsWith('员工甲')),[true])
+ assert.equal(optionLabels(app).length,0,'选一次就关闭候选')
+ typeText(app,'请看这份资料。')
+ await composerForm(app).props.onSubmit({preventDefault:()=>{}})
+ await app.flush()
+ const sent=calls.filter(call=>call.endpoint==='groups/messages/send')
+ assert.equal(sent.length,1)
+ assert.deepEqual((sent[0]!.payload as {references?:unknown}).references,[{kind:'group-resource',id:sameNameResourceId,version:3}],'引用只带 id 与固定版本')
+ assert.equal((sent[0]!.payload as {mentions?:unknown}).mentions,undefined,'资料引用不写 mentions')
+ assert.equal(calls.some(call=>call.endpoint.includes('grant')),false,'选资料不触发任何员工授权请求')
+})
+
+test('↑↓ 跨过分组标题在员工与资料之间移动，Tab 也能选中资料；Esc 关闭候选',async()=>{
+ const {api}=makeApi({resources:referenceResources()})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ typeText(app,'@')
+ assert.deepEqual(optionNodes(app).map(el=>String(el.props.id).split('-')[0]),['mention','mention','resource','resource'])
+ assert.equal(optionOf(app,'员工甲').props['aria-selected'],true)
+ pressKey(app,'ArrowUp')
+ assert.equal(resourceOption(app,'方案资料').props['aria-selected'],true,'向上越过第一条回到最后一条资料')
+ assert.equal(textareaOf(app).props['aria-activedescendant'],'resource-main-'+planResourceId)
+ pressKey(app,'ArrowDown');pressKey(app,'ArrowDown');pressKey(app,'ArrowDown')
+ assert.equal(resourceOption(app,'员工甲').props['aria-selected'],true,'向下移动跨过分组标题进入资料组')
+ pressKey(app,'Escape')
+ assert.equal(optionLabels(app).length,0,'Esc 关闭候选')
+ typeText(app,'@方')
+ assert.deepEqual(sectionLabels(app),['group.mention.sectionResources'],'只剩资料匹配时只显示资料组')
+ pressKey(app,'Tab')
+ assert.deepEqual(referenceChips(app).map(label=>label.startsWith('方案资料')),[true])
+ assert.equal(draftText(app),'')
+})
+
+test('引用图标与正文 @ 到达同一份资料候选；已引用的资料在候选里禁用，撤销只能走标签',async()=>{
+ const {api}=makeApi({resources:referenceResources()})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ typeText(app,'@')
+ const typedIds=optionNodes(app).map(el=>String(el.props.id)).filter(id=>id.startsWith('resource-'))
+ pressKey(app,'Escape')
+ referenceIcon(app).props.onClick();app.render()
+ const listbox=app.find(el=>el.type==='ul'&&el.props.role==='listbox')
+ assert.equal(listbox.props['aria-label'],'collaboration.composer.references')
+ assert.deepEqual(optionNodes(app).map(el=>String(el.props.id)),typedIds,'图标打开的资料候选与正文 @ 的资料候选一致')
+ assert.deepEqual(sectionLabels(app),['group.mention.sectionResources'],'图标只列资料/文件，不含员工组')
+ resourceOption(app,'方案资料').props.onMouseDown({preventDefault:()=>{}});app.render()
+ assert.equal(optionLabels(app).length,0)
+ assert.equal(referenceIcon(app).props['aria-expanded'],false)
+ referenceIcon(app).props.onClick();app.render()
+ const picked=resourceOption(app,'方案资料')
+ assert.equal(picked.props['aria-disabled'],true,'已引用的资料禁用')
+ assert.ok(app.contentOf(picked).includes('group.mention.referenced'))
+ picked.props.onMouseDown({preventDefault:()=>{}});app.render()
+ assert.deepEqual(referenceChips(app).map(label=>label.startsWith('方案资料')),[true],'再点已引用项不会撤销')
+ assert.equal(optionLabels(app).length,2,'点禁用项不关闭候选')
+ pressKey(app,'Escape')
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.attachment.remove:{"name":"方案资料"}').props.onClick();app.render()
+ assert.deepEqual(referenceChips(app),[])
+ referenceIcon(app).props.onClick();app.render()
+ assert.equal(resourceOption(app,'方案资料').props['aria-disabled'],false,'移除标签后可再次引用')
+})
+
+test('引用已满 8 项时资料候选禁用并给出上限提示',async()=>{
+ const many=Array.from({length:9},(_,index)=>resourceRow('aaaaaaaa-aaaa-4aaa-8aaa-'+String(index).padStart(12,'0'),'资料'+index,1))
+ const {api}=makeApi({resources:many})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ for(let index=0;index<8;index++){referenceIcon(app).props.onClick();app.render();resourceOption(app,'资料'+index).props.onMouseDown({preventDefault:()=>{}});app.render()}
+ assert.equal(referenceChips(app).length,8)
+ referenceIcon(app).props.onClick();app.render()
+ assert.equal(resourceOption(app,'资料8').props['aria-disabled'],true)
+ assert.ok(app.find(el=>el.props.role==='status'&&app.contentOf(el)==='collaboration.attachment.tooMany'))
+})
+
+test('引用图标在光标处插入 @ 并进入只列资料/文件模式：继续输入按关键词过滤本群资料或文件、不列员工，token 消失才退出；选一次带入并关闭',async()=>{
+ const {api,calls}=makeApi({resources:referenceResources()})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ typeText(app,'请看')
+ referenceIcon(app).props.onClick();app.render()
+ assert.equal(draftText(app),'请看 @','图标与 @ 按钮一样在光标处插入触发符')
+ assert.equal(app.find(el=>el.type==='ul'&&el.props.role==='listbox').props['aria-label'],'collaboration.composer.references')
+ assert.deepEqual(optionNodes(app).map(el=>String(el.props.id).split('-')[0]),['resource','resource'],'只列资料/文件，不列员工')
+ typeText(app,'请看 @员')
+ assert.deepEqual(optionNodes(app).map(el=>String(el.props.id)),['resource-main-'+sameNameResourceId],'继续输入沿用同一关键词过滤，同名员工不混入')
+ assert.equal(referenceIcon(app).props['aria-expanded'],true,'输入关键词不会关闭图标打开的候选')
+ typeText(app,'请看 @不存在')
+ assert.equal(optionNodes(app).length,0)
+ assert.ok(app.find(el=>el.type==='li'&&el.props.role==='presentation'&&app.contentOf(el)==='group.materials.noMatch'),'无匹配时留在候选里提示，不静默消失')
+ typeText(app,'请看 @方')
+ pressKey(app,'Enter')
+ assert.deepEqual(referenceChips(app).map(label=>label.startsWith('方案资料')),[true])
+ assert.equal(draftText(app),'请看 ','选中后去掉 @过滤词')
+ assert.equal(optionLabels(app).length,0);assert.equal(referenceIcon(app).props['aria-expanded'],false)
+ // token 被用户删掉才退出只列资料模式；再敲 @ 回到员工+资料的普通候选。
+ referenceIcon(app).props.onClick();app.render()
+ assert.equal(draftText(app),'请看 @')
+ typeText(app,'请看 ')
+ assert.equal(referenceIcon(app).props['aria-expanded'],false);assert.equal(optionLabels(app).length,0)
+ typeText(app,'请看 @')
+ assert.deepEqual(sectionLabels(app),['group.mention.sectionEmployees','group.mention.sectionResources'])
+ pressKey(app,'Escape')
+ assert.equal(draftText(app),'请看 @','Esc 只收起候选，不偷删用户的查询词')
+ assert.equal(calls.filter(call=>call.endpoint==='groups/messages/send').length,0)
+})

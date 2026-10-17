@@ -1,10 +1,17 @@
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,taskInput,roleSupportsScope,groupDefinition,isResourceSpec,readTaskRunFlow,type DigitalRole,type RoleWorkDelegation,type TwinExecutionConsent} from '@teloa/contract'
+import {createHash} from 'node:crypto'
+import {isDeepStrictEqual} from 'node:util'
+import {WorkError,taskInput,roleSupportsScope,groupDefinition,isResourceSpec,readTaskRunFlow,groupRunResultManifest,type DigitalRole,type RoleWorkDelegation,type TwinExecutionConsent} from '@teloa/contract'
 import {readGroupAgentGrant} from './group-agent-grants.ts'
 import {readRoleToolGrant} from './role-tool-grants.ts'
 import {readStoredRoleMemoryView} from './role-memory-views.ts'
 import {readActiveAttachment} from './group-attachments.ts'
 import {runEvidence} from './task-run-evidence.ts'
+import {readStoredTaskRun,type TaskRun} from './task-runs.ts'
+import {readTaskRunOwnerSettlement} from './task-run-runtime-links.ts'
+import {readStoredRunPlanReport} from './task-run-plan-context.ts'
+import {readStoredGroupMessage} from './group-message-presentation.ts'
+import {readTrustedGroupMessageRunSource} from './group-routing-outbox.ts'
 import type {WorkAccessLease} from './work-access.ts'
 import {roleWorkOwner,roleWorkUuid,roleWorkVersion,roleWorkInvalid,roleWorkTransaction,lockRoleWorkRole,assertRoleWorkRole,authorizeOwnerWork,invalidateRoleWorkEligibility,readStoredTwinExecutionConsent,initializeTwinExecutionConsents,type RoleWorkIdentity,type OwnerWorkAuthority} from './twin-execution-consents.ts'
 
@@ -48,25 +55,53 @@ export async function initializeRoleDelegations(pool:Pool):Promise<void>{
   );
  `)
 }
-/** 保守核验现有持久回执；整项谱系及控制驱动在 P2.2 接入，未知关联一律不算已收口。 */
-export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:string):Promise<boolean>{
+/** 群交付独立于原生结束；只消费原Run唯一、可信且无待送的原群回执。 */
+async function settledOwnerGroupDelivery(db:PoolClient,owner:string,raw:Record<string,unknown>,run:TaskRun,legacy:boolean):Promise<boolean>{
+ const plan=readStoredRunPlanReport(raw),context=run.groupContext
+ if(!context&&!plan)return true
+ if(run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||raw.group_publication!=null||raw.group_publication_next_at!=null)return false
+ const manifest=groupRunResultManifest(raw.group_result_manifest)
+ if(legacy&&manifest.files.length)return false
+ const schema=(await db.query("select to_regclass('teloa_group_run_sources') sources,to_regclass('teloa_group_routing_wakes') wakes,to_regclass('teloa_group_routing_outbox') outbox")).rows[0]
+ if(!schema?.sources||!schema.wakes||!schema.outbox)return false
+ const rows=(await db.query('select * from teloa_group_messages where owner_id=$1 and run_id=$2 for share',[owner,run.id])).rows
+ if(rows.length!==1)return false
+ const row=rows[0]!,message=readStoredGroupMessage(row),groupId=context?.groupId??plan!.reportGroup.groupId,rootId=context?.source.rootId??null,requestId=plan?.occurrenceId??run.nativeRequestId
+ if(!('runId'in message)||message.runId!==run.id||message.taskId!==run.taskId||message.authorId!==run.roleId||message.groupId!==groupId||message.rootId!==rootId||row.request_id!==requestId)return false
+ const source=await readTrustedGroupMessageRunSource(db,owner,{groupId,messageId:message.id})
+ if(!source||source.runId!==run.id)return false
+ const wake=(await db.query('select state from teloa_group_routing_wakes where owner_id=$1 and message_id=$2 for share',[owner,message.id])).rows[0]
+ if(wake?.state!=='settled')return false
+ return !(await db.query("select 1 from teloa_group_routing_outbox where owner_id=$1 and (run_id=$2 or (message_id=$3 and role_id=$4)) and state<>'settled' limit 1 for share",[owner,run.id,message.id,run.roleId])).rowCount
+}
+
+async function settledOwnerEffects(db:PoolClient,owner:string,taskId:string):Promise<boolean>{
+ const schema=(await db.query("select to_regclass('teloa_security_actions') actions,to_regclass('teloa_security_action_executions') executions")).rows[0]
+ if(!schema?.actions||!schema.executions)return false
+ return !(await db.query("select 1 from teloa_security_action_executions e join teloa_security_actions a on a.owner_id=e.owner_id and a.id=e.action_id where a.owner_id=$1 and a.task_id=$2 and e.state not in ('succeeded','failed') limit 1",[owner,taskId])).rowCount
+}
+/** 保守核验现有持久回执；整项谱系及控制驱动在 P2.2 接入，未知关联一律不算已收口。
+ * 传入 scope.taskId 时只核验该任务名下的全部执行（不限岗位），且不对回执行加共享锁：
+ * 调用方须已持有该 teloa_tasks 行的 for update 锁作为串行点，与 prepare/claim/record 的「run 锁 → task 锁」次序兼容，避免反向等待。 */
+export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:string,scope?:{taskId:string}):Promise<boolean>{
  const required=['teloa_task_runs','teloa_task_run_subagents','teloa_task_run_runtime_links','teloa_task_run_flows']
  const present=(await db.query('select name,to_regclass(name) is not null as present from unnest($1::text[]) name',[required])).rows
  if(present.some(row=>!row.present))throw new WorkError('teloa/unavailable','执行与子工作回执尚未就绪，不能判定已暂停。')
- const runs=(await db.query('select id,state,evidence from teloa_task_runs where owner_id=$1 and role_id=$2 for share',[owner,roleId])).rows
+ const share=scope?'':' for share'
+ const runs=(await db.query(scope?'select id,state,evidence from teloa_task_runs where owner_id=$1 and task_id=$2':'select id,state,evidence from teloa_task_runs where owner_id=$1 and role_id=$2 for share',[owner,scope?scope.taskId:roleId])).rows
  for(const run of runs){
   if(!['ended','withdrawn','configuration_failed'].includes(run.state))return true
   if(run.state==='ended'){try{if(runEvidence(run.evidence).state!=='ended')return true}catch{return true}}
  }
  const ids=runs.map(run=>run.id);if(!ids.length)return false
- const children=(await db.query('select run_id,reservation_id,state from teloa_task_run_subagents where owner_id=$1 and run_id=any($2::uuid[]) for share',[owner,ids])).rows
+ const children=(await db.query('select run_id,reservation_id,state from teloa_task_run_subagents where owner_id=$1 and run_id=any($2::uuid[])'+share,[owner,ids])).rows
  if(children.some(child=>!['ended','abandoned'].includes(child.state)))return true
- const flows=(await db.query('select * from teloa_task_run_flows where owner_id=$1 and run_id=any($2::uuid[]) for share',[owner,ids])).rows
+ const flows=(await db.query('select * from teloa_task_run_flows where owner_id=$1 and run_id=any($2::uuid[])'+share,[owner,ids])).rows
  for(const flow of flows){
   if(!['completed','compensated'].includes(flow.state))return true
   try{readTaskRunFlow({flowId:flow.flow_id,runId:flow.run_id,definitionVersion:flow.definition_version,state:flow.state,steps:flow.steps,createdAt:flow.created_at.toISOString(),updatedAt:flow.updated_at.toISOString()})}catch{return true}
  }
- const links=(await db.query('select run_id,native_id,session_id,kind,payload from teloa_task_run_runtime_links where owner_id=$1 and run_id=any($2::uuid[]) for share',[owner,ids])).rows
+ const links=(await db.query('select run_id,native_id,session_id,kind,payload,owner_settlement from teloa_task_run_runtime_links where owner_id=$1 and run_id=any($2::uuid[])'+share,[owner,ids])).rows
  for(const link of links){
   const payload=link.payload
   if(!payload||typeof payload!=='object'||Array.isArray(payload)||typeof payload.runtimeId!=='string'&&link.kind!=='team'||!roleWorkUuid(payload.requestId))return true
@@ -84,7 +119,25 @@ export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:stri
    }
    else if(payload.record==='owner'){
     if(keys.length!==3||!['record','runtimeId','requestId'].every(key=>keys.includes(key))||link.native_id!==`owner:${payload.runtimeId}:${link.session_id}`)return true
-    if(!links.some(candidate=>candidate.run_id===link.run_id&&candidate.kind==='job'&&candidate.payload?.record==='job'&&candidate.payload.runtimeId===payload.runtimeId&&candidate.payload.requestId===payload.requestId&&['completed','killed','failed'].includes(candidate.payload.status)))return true
+    if(!links.some(candidate=>candidate.run_id===link.run_id&&candidate.kind==='job'&&candidate.payload?.record==='job'&&candidate.payload.runtimeId===payload.runtimeId&&candidate.payload.requestId===payload.requestId&&['completed','killed','failed'].includes(candidate.payload.status))){
+     // owner 是发送前的宿主登记，并非实际 job。新宿主回执证明真实资源收口；
+     // 旧零工具、零技能例外仍严格保留，群工作另外核对唯一可信交付。历史登记不删除。
+     if(links.filter(row=>row.run_id===link.run_id).length!==1||children.some(row=>row.run_id===link.run_id)||flows.some(row=>row.run_id===link.run_id))return true
+     const raw=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[owner,link.run_id])).rows[0]
+     try{
+      if(!Array.isArray(raw?.allowed_tools)||!Array.isArray(raw?.role_skills))return true
+      const run=readStoredTaskRun(raw)
+      if(run.state!=='ended'||run.evidence?.state!=='ended'||run.flowId!==undefined||run.sessionId!==link.session_id||run.nativeRequestId!==payload.requestId)return true
+      if(link.owner_settlement!==null&&link.owner_settlement!==undefined){
+       const proof=readTaskRunOwnerSettlement(link.owner_settlement)
+       if(proof.runId!==run.id||proof.nativeId!==link.native_id||proof.sessionId!==run.sessionId||proof.nativeRequestId!==run.nativeRequestId||proof.inputSha256!==createHash('sha256').update(run.inputText).digest('hex')||!isDeepStrictEqual(proof.evidence,run.evidence)||proof.observedAt<run.createdAt)return true
+       if(!await settledOwnerEffects(db,owner,run.taskId)||!await settledOwnerGroupDelivery(db,owner,raw,run,false))return true
+      }else{
+       if(run.allowedTools.length||run.skills.length)return true
+       if(run.groupContext!==undefined||readStoredRunPlanReport(raw)){if(!await settledOwnerEffects(db,owner,run.taskId)||!await settledOwnerGroupDelivery(db,owner,raw,run,true))return true}
+      }
+     }catch{return true}
+    }
    }else return true
   }else return true
  }
@@ -126,7 +179,7 @@ export async function readRoleWorkGroupGrant(db:PoolClient,owner:string,role:Dig
  const group=(await db.query('select * from teloa_groups where owner_id=$1 and id=$2 for share',[owner,groupId])).rows[0]
  if(!group||group.archived)throw new WorkError('teloa/forbidden','协作群不属于本人当前业务范围。')
  const definition=groupDefinition(group.definition)
- if(definition.scope!==scope||!definition.memberRoleIds.includes(role.id))throw new WorkError('teloa/forbidden','协作群不属于当前执行身份和业务范围。')
+ if(definition.scope!==scope&&definition.scope!=='general'||!roleSupportsScope(role.scopes,scope)||!definition.memberRoleIds.includes(role.id))throw new WorkError('teloa/forbidden','协作群不属于当前执行身份和业务范围。')
  if(!(await db.query('select 1 from teloa_group_members where owner_id=$1 and group_id=$2 and role_id=$3 for share',[owner,groupId,role.id])).rowCount)throw new WorkError('teloa/forbidden','执行身份不是当前群成员。')
  const row=(await db.query('select * from teloa_group_agent_grants where owner_id=$1 and group_id=$2 and role_id=$3 order by grant_version desc limit 1 for share',[owner,groupId,role.id])).rows[0]
  const grant=row?readGroupAgentGrant(row):null

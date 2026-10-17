@@ -1,4 +1,4 @@
-import {WorkError,isRecord,workTaskStates} from '@teloa/contract'
+import {WorkError,isRecord,workTaskStates,readRunPlanEventContext,readPlanWorkDefinition} from '@teloa/contract'
 import type {PlanExecutionHistoryPage,PlanSkipHistoryPage} from '@teloa/backend'
 import {planExecutionHistoryInput,planExecutionHistoryResponse,type PlanExecutionHistoryInput} from './plan-execution-history.ts'
 import {planSkipHistoryInput,planSkipHistoryResponse,type PlanSkipHistoryInput} from './plan-skip-history.ts'
@@ -29,8 +29,14 @@ function overview(value:unknown,owner:string,planId:string):Record<string,unknow
  const row=response(value,['planId','planVersion','state','nextAt','latest','latestSkip'])
  if(row.planId!==planId||!positive(row.planVersion)||!['active','paused','archived'].includes(String(row.state))||row.nextAt!==null&&!timestamp(row.nextAt)||row.state!=='active'&&row.nextAt!==null)throw invalidResponse()
  if(row.latest!==null){
-  const latest=response(row.latest,['occurrence','task']),occurrence=response(latest.occurrence,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest'])
+  const latest=response(row.latest,['occurrence','task']),occurrence=response(latest.occurrence,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest','workDefinition','reportGroup','event'])
   if(occurrence.ownerId!==owner||occurrence.planId!==planId||!positive(occurrence.planVersion)||(occurrence.planVersion as number)>(row.planVersion as number))throw invalidResponse()
+  if(occurrence.event!==undefined){
+   try{
+    const fixed=readRunPlanEventContext(occurrence.event),definition=readPlanWorkDefinition(occurrence.workDefinition)
+    if(fixed.event.ownerId!==owner||!isRecord(occurrence.fields)||fixed.event.sourceRef.scope!==occurrence.fields.scope||occurrence.occurrenceId!=='event:'+fixed.event.id||definition.schema!=='teloa.plan-work/v3'||definition.definitionVersion!==occurrence.configVersion||!definition.triggers.some(trigger=>trigger.kind==='local-event'&&'sourceRef'in trigger&&trigger.eventKind===fixed.event.kind&&JSON.stringify(trigger.sourceRef)===JSON.stringify(fixed.event.sourceRef)))throw Error()
+   }catch{throw invalidResponse()}
+  }
   if(latest.task!==null){const task=response(latest.task,['id','state']);if(!uuid(task.id)||!workTaskStates.some(state=>state===task.state))throw invalidResponse()}
  }
  if(row.latestSkip!==null){const skip=response(row.latestSkip,['planId','planVersion','configVersion','occurrenceId','scheduledAt','skippedAt','reason','blockingClaimId','taskId']);if(skip.planId!==planId||!positive(skip.planVersion)||(skip.planVersion as number)>(row.planVersion as number))throw invalidResponse()}

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {setImmediate as immediate} from 'node:timers/promises'
-import {subagentFixture,deferred,type Admission,type AdmissionRequest} from './fixtures/native-subagent-admission.ts'
+import {subagentFixture,deferred,promptAdmissionService,type Admission,type AdmissionRequest} from './fixtures/native-subagent-admission.ts'
 import {patchedSessionPackage} from './fixtures/native-final-session.ts'
 import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {WorkAccess} from '../../backend/src/work/work-access.ts'
@@ -24,9 +24,9 @@ test('required 缺provider零新Inbox；原始/scoped共享唯一且不可替换
  await assert.rejects(f.send(f.parent,f.child,'required down'),/provider is unavailable/)
  await assert.rejects(f.send(f.child,f.parent,'required up'),/provider is unavailable/)
  assert.deepEqual(count(f),before)
- const provider:Admission=async(_,dispatch)=>dispatch(),scoped=Reflect.get(f.ctx.extend(),'subagents') as typeof f.service
- f.service.installPromptAdmission(provider);scoped.installPromptAdmission(provider);scoped.requirePromptAdmission()
- assert.throws(()=>f.service.installPromptAdmission(async()=>{}),/provider is unavailable/)
+ const provider:Admission=async(_,dispatch)=>dispatch(),service=promptAdmissionService(f.service),scoped=promptAdmissionService(f.ctx.extend().subagents)
+ service.installPromptAdmission(provider);scoped.installPromptAdmission(provider);scoped.requirePromptAdmission()
+ assert.throws(()=>service.installPromptAdmission(async()=>{}),/provider is unavailable/)
  assert.equal(Reflect.set(f.service,'promptAdmission',{}),false)
  assert.equal(Reflect.set(scoped,'promptAdmission',{}),false)
  await f.prompt('installed');assert.equal(count(f)[1],before[1]!+1)
@@ -57,10 +57,10 @@ test('跨await caller取消和live sender/child residency变化拒绝，无新�
   const h=held(),f=await subagentFixture(t,{admitPrompt:h.provider}),before=count(f),abort=new AbortController()
   const pending=mode==='sender-residency'?f.send(f.child,f.parent,'changed',abort.signal):f.send(f.parent,f.child,'changed',abort.signal)
   await h.entered.promise
-  const id=mode==='sender-residency'?f.child.id:f.child.id,activation=f.registry.resident.get(id)
-  if(mode==='abort')abort.abort(Error('caller stopped'));else f.registry.resident.delete(id)
+  const id=mode==='sender-residency'?f.child.id:f.child.id,activation=f.registry.get(id);assert.ok(activation)
+  if(mode==='abort')abort.abort(Error('caller stopped'));else f.registry.delete(id)
   h.gate.resolve();await assert.rejects(pending);assert.deepEqual(count(f),before)
-  if(mode!=='abort')f.registry.resident.set(id,activation)
+  if(mode!=='abort')f.registry.set(id,activation)
  }
 })
 
@@ -69,12 +69,12 @@ test('等待时exact另一Context同id Agent、live child closing和tree drain�
   const h=held(),f=await subagentFixture(t,{admitPrompt:h.provider}),before=count(f)
   const pending=f.send(f.parent,f.child,'cutoff');await h.entered.promise
   if(mode==='agent'){
-   const other=await subagentFixture(t);await f.registry.get(f.child.id).handle.dispose()
+   const other=await subagentFixture(t),resident=f.registry.get(f.child.id);assert.ok(resident);await resident.handle.dispose()
    const unregister=f.ctx.agents.register(other.child);await unregister;t.after(()=>unregister())
    assert.equal(other.child.id,f.child.id);assert.equal(f.ctx.agents.get(f.child.id),other.child)
   }else if(mode==='closing'){
-   const activation=f.registry.get(f.child.id);const closing=activation.inbox.close(()=>Promise.resolve());await closing
-  }else f.registry.draining=true
+   const activation=f.registry.get(f.child.id);assert.ok(activation);activation.closing=Promise.resolve()
+  }else f.manager.draining=true
   h.gate.resolve();await assert.rejects(pending);assert.deepEqual(count(f),before)
  }
 })
@@ -110,14 +110,14 @@ test('投递回调提交后的异步返回仍已受理；迟到再调用无第�
 
 test('跨await session/handle/parent链条替换不能借原许可，新写为零',async t=>{
  for(const mode of ['target-session','handle-agent','parent-session'] as const){
-  const h=held(),f=await subagentFixture(t,{admitPrompt:h.provider}),before=count(f),activation=f.registry.get(f.child.id),handle=activation.handle
+  const h=held(),f=await subagentFixture(t,{admitPrompt:h.provider}),before=count(f),activation=f.registry.get(f.child.id);assert.ok(activation);const handle=activation.handle
   const pending=f.send(f.parent,f.child,'snapshot changed');await h.entered.promise
-  const original=mode==='handle-agent'?handle.agent:mode==='parent-session'?f.parent.session:f.child.session
+  const originalAgent=handle.agent,originalSession=mode==='parent-session'?f.parent.session:f.child.session
   if(mode==='handle-agent')handle.agent=f.parent
   else Reflect.set(mode==='parent-session'?f.parent:f.child,'session',mode==='parent-session'?f.child.session:f.parent.session)
   h.gate.resolve();await assert.rejects(pending)
-  if(mode==='handle-agent')handle.agent=original
-  else Reflect.set(mode==='parent-session'?f.parent:f.child,'session',original)
+  if(mode==='handle-agent')handle.agent=originalAgent
+  else Reflect.set(mode==='parent-session'?f.parent:f.child,'session',originalSession)
   assert.deepEqual(count(f),before)
  }
 })

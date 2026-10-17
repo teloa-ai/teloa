@@ -13,6 +13,7 @@ export function createDashboardMarketJournal(storage:Pick<Storage,'getItem'|'set
    if(row.prepare&&(row.prepare.contentId!==contentId||typeof row.prepare.requestId!=='string'||typeof row.prepare.resourceId!=='string'||!row.prepare.target))throw Error('看板恢复内容身份不一致。')
    if(row.draft)row.draft=readBusinessConfigurationDraftResponseVersioned(row.draft)
    if(row.upgrade&&(!row.draft||!row.result||row.upgrade.request.adoptionId!==row.draft.id||typeof row.upgrade.request.candidateContentId!=='string'||typeof row.upgrade.request.candidateContentHash!=='string'||typeof row.upgrade.candidateVersion!=='string'))throw Error('看板升级恢复来源不一致。')
+   if(row.upgrade?.request.mode!==undefined&&!['upgrade','restore'].includes(row.upgrade.request.mode))throw Error('模板更新意图不合法。')
    if(row.resourceId!==undefined&&!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/.test(row.resourceId))throw Error('看板恢复资源身份不正确。')
    if(row.result){row.result='requestId' in row.result?readBusinessConfigurationApplyResult(row.result):readDashboardAdoptionIdentity(row.result);if(!row.draft||row.result.scope!==row.draft.scope||row.result.version!==row.draft.baseVersion+1||'draftId' in row.result&&(row.result.draftId!==row.draft.id||row.draft.status!=='applied'))throw Error('看板采用记录身份不一致。')}
    if(row.apply&&(!row.draft||row.apply.draftId!==row.draft.id||row.apply.expectedRevision!==row.draft.revision||row.apply.expectedBaseVersion!==row.draft.baseVersion))throw Error('看板恢复草案身份不一致。')

@@ -82,23 +82,26 @@ export function currentSolutionCatalog(items:readonly MarketItem[]):MarketItem[]
 }
 
 /**
- * 「已添加」的唯一判据：加载记录仍在生效（`status==='active'`），且模板标识与版本都对得上这份方案当前版本。
+ * 「已添加」的唯一判据：加载记录仍在生效，模板标识与版本一致；已固定内容还必须匹配原 contentId 与文件摘要。
  * 卡片与产品页共用它，避免一边只看 templateId、一边还比版本，出现「卡上写已添加、点进去还能再添加」。
  * 卸载（`unloaded`）与被升级取代（`superseded`）都不算已添加：它们是历史，不是当前生效的加载。
  */
+type SolutionIdentity={manifest?:{id?:string;version?:string}|undefined;contentStorage?:{contentId:string}|undefined;packageContent?:{hash:string}|undefined;hash?:string|undefined}
+type SolutionLoadIdentity={status:string;templateId:string;templateVersion:string;contentId?:string|undefined;contentHash?:string|undefined}
 export function solutionInstalled(
- item:{manifest?:{id?:string;version?:string}|undefined},
- loads:readonly {status:string;templateId:string;templateVersion:string}[],
+ item:SolutionIdentity,
+ loads:readonly SolutionLoadIdentity[],
 ):boolean{
  const manifest=item.manifest
  if(!manifest?.id||!manifest.version)return false
- return loads.some(load=>load.status==='active'&&load.templateId===manifest.id&&load.templateVersion===manifest.version)
+ const contentId=item.contentStorage?.contentId,contentHash=item.packageContent?.hash??item.hash
+ return loads.some(load=>load.status==='active'&&load.templateId===manifest.id&&load.templateVersion===manifest.version&&(!item.contentStorage||!!contentHash&&load.contentId===contentId&&load.contentHash===contentHash))
 }
 
 /** 页头「已添加 · N」的唯一口径：逐条复用 solutionInstalled，不另起一套判据。没有清单的条目天然不计。 */
 export function solutionInstalledCount(
- items:readonly {manifest?:{id?:string;version?:string}|undefined}[],
- loads:readonly {status:string;templateId:string;templateVersion:string}[],
+ items:readonly SolutionIdentity[],
+ loads:readonly SolutionLoadIdentity[],
 ):number{
  return items.filter(item=>solutionInstalled(item,loads)).length
 }

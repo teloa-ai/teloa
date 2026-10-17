@@ -12,6 +12,9 @@ import { localizeWorkError } from './i18n/errors.js'
 import css from './RoleDailyLogPanel.module.css'
 
 export type RoleDailyLogPanelProps = {
+  /** 本员工持久化 system-digest 计划的调度快照；只读真实 nextAt，不从全局时间推算。 */
+  schedule?: {state:'active'|'paused'|'archived'|'unknown';nextAt?:string|null;trigger?:Pick<ScheduleTrigger,'time'|'timezone'>} | undefined
+  /** 仅用于观察日标记；不能据此认定计划正在运行。 */
   trigger?: Pick<ScheduleTrigger,'time'|'timezone'> | undefined
   now?: () => string
   roleId: string
@@ -29,7 +32,7 @@ const evidenceKindKey = (kind: RoleDailyLogEvidence['kind']) =>
   : kind === 'run' ? 'taskExecution.title' as const
   : 'task.detail.artifact' as const // artifact / revision：revision 本身就是对某个成果的修订，共用同一个名词。
 
-export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigger, now }: RoleDailyLogPanelProps) {
+export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigger, schedule, now }: RoleDailyLogPanelProps) {
   const { t, locale, dateTime } = useI18n()
   const allowed=useApplicationCapability('people')
   const [logs, setLogs] = useState<RoleDailyLogSummary[]>()
@@ -106,7 +109,12 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
   // 面板名用两份日志各自的标题（dailyLog.title / habitLog.title）；dailyLog.entry 只作同事主页的页签名。
   const panelTitleKey = kind === 'habit-digest' ? 'habitLog.title' as const : 'dailyLog.title' as const
 
-  const today=trigger?autoDreamObservationDay((now??(()=>new Date().toISOString()))(),trigger):undefined
+  const observationTrigger=schedule?.trigger??trigger
+  const today=observationTrigger?autoDreamObservationDay((now??(()=>new Date().toISOString()))(),observationTrigger):undefined
+  const scheduleState=schedule?.state??'unknown'
+  const scheduleMessageKey=scheduleState==='active'?'dailyLog.schedule.waiting' as const:scheduleState==='paused'?'dailyLog.schedule.paused' as const:scheduleState==='archived'?'dailyLog.schedule.archived' as const:'dailyLog.schedule.unknown' as const
+  const nextAt=scheduleState==='active'?schedule?.nextAt:undefined
+  const nextTimezone=schedule?.trigger?.timezone??'UTC'
   const short=(day:string)=>dateTime(day+'T00:00:00.000Z',{month:'2-digit',day:'2-digit',timeZone:'UTC'})
   const remaining=Math.max(0,3-promotedForDetail-promoteCount)
   return <section className={css.panel} aria-label={t(panelTitleKey)}>
@@ -116,7 +124,7 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
       <ul className={css.list}>{logs?.map(log=><li key={log.id}><button type="button" className={clsx(css.day,selected===log.id&&css.dayCurrent,log.state==='discarded'&&css.dayOff)} aria-current={selected===log.id?'true':undefined} onClick={()=>{setSelected(log.id);setActionError(undefined)}}><span className={css.dayTitle}><i className={clsx(css.dot,log.state==='discarded'&&css.dotOff)} aria-hidden="true"/>{log.day===today?<strong>{t('dailyLog.today',{date:short(log.day)})}</strong>:short(log.day)}</span><small>{log.title}{log.state==='discarded'&&<> · {t('create.draft.discarded')}</>}</small></button></li>)}</ul>
     </nav>
     <div className={css.card}>
-      {logs&&logs.length===0&&<div className={css.empty}><strong>{t(kind==='habit-digest'?'habitLog.emptyTitle':'dailyLog.emptyTitle')}</strong>{kind==='daily-digest'&&<p>{t('dailyLog.empty')}</p>}{trigger&&<p>{t('dailyLog.emptyNext',{time:trigger.time,timezone:trigger.timezone})}</p>}</div>}
+      {logs&&logs.length===0&&<div className={css.empty}><strong>{t(kind==='habit-digest'?'habitLog.emptyTitle':'dailyLog.emptyTitle')}</strong><p>{t(scheduleMessageKey)}</p>{nextAt&&<p>{t('dailyLog.emptyNext',{time:dateTime(nextAt,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:nextTimezone}),timezone:nextTimezone})}</p>}</div>}
       {detailError&&<p role="alert">{detailError}</p>}
       {detail&&<article className={css.detail} aria-label={detail.title}>
         <header className={css.cardHead}><div><p className={css.eyebrow}>{t(panelTitleKey)} · {dateTime(detail.createdAt,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}{kind==='habit-digest'&&<> · {t('habitLog.private')}</>}</p><h3>{detail.title}</h3></div>

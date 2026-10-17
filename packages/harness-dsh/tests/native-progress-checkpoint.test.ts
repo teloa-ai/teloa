@@ -29,7 +29,7 @@ async function fixture(t:TestContext,progress?:NativeProgressCheckpoint,checkpoi
  const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,...progress===undefined?{}:{progress},...durable?{checkpoint}:{}})
  return {...f,root,async cold(){
   const cold=await nativeProviderKernel(t)
-  await cold.ctx.plugin(cold.persistencePackage.default,{root,compression:'none'})
+  await cold.ctx.plugin(cold.persistencePackage,{root,compression:'none'})
   await cold.ctx.plugin(cold.loopPackage.AgentLoop,{agents:[]})
   const reader=await cold.ctx.sessionPersistence.open(f.agent.id,'read')
   try{

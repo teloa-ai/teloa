@@ -1,5 +1,5 @@
 import {readIndustryModelObservations,type IndustryModelObservation} from '@teloa/contract'
-import {isGithubRepositoryName,marketCatalogUpstreamTreeHash,MARKET_CATALOG_MAX_FILES,MARKET_CATALOG_MAX_FILE_SIZE,MARKET_CATALOG_MAX_TOTAL_SIZE} from '@teloa/contract'
+import {isGithubRepositoryName,marketCatalogUpstreamTreeHash,marketConnectorArtifactOptional,MARKET_CATALOG_MAX_FILES,MARKET_CATALOG_MAX_FILE_SIZE,MARKET_CATALOG_MAX_TOTAL_SIZE} from '@teloa/contract'
 import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
@@ -46,11 +46,11 @@ export type MarketSessionToolsPorts=Pick<PlanToolsPorts,'owner'|'conversation'|'
 }
 type ActiveSession={id:string;header:{origin?:string};inheritedEventCount:number;seq?:number;snapshotEvents:()=>readonly SessionEvent[]}
 type Exec={agent?:{session:ActiveSession};signal:AbortSignal;callId:unknown}
-type Marketplace='teloa'|'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes'
+type Marketplace='teloa'|'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes'|'cursor'
 
 const names=new Set<string>(marketSessionToolNames)
 const label='会话内安装'
-const marketplaces:readonly Marketplace[]=['teloa','claude-code','codex','dsh','openclaw','clawhub','hermes']
+const marketplaces:readonly Marketplace[]=['teloa']
 const bad=(message:string)=>new WorkError('teloa/invalid-input',message)
 /** 宿主 handler 回包形状不对：与各 handler 自身的 hostBad 同码同文案。 */
 const hostBad=(service:string)=>new WorkError('teloa/invalid-host-response',service+'返回了无效内容。')
@@ -69,7 +69,7 @@ async function authorize(ports:MarketSessionToolsPorts,exec:Exec,args:unknown,na
 // ---- 目录条目读法（所有字段都来自经宿主 handler 复核过的目录回包） ----
 const entryTitle=(entry:MarketCatalogEntry)=>entry.kind==='skill'?entry.skill.title:entry.kind==='solution'?entry.solution.title:entry.kind==='dashboard'?entry.dashboard.title:entry.kind==='connector'?entry.connector.title:entry.kind==='role'?entry.role.title:entry.model.title
 const entrySummary=(entry:MarketCatalogEntry)=>entry.kind==='skill'?entry.skill.summary:entry.kind==='solution'?entry.solution.summary:entry.kind==='dashboard'?entry.dashboard.summary:entry.kind==='connector'?entry.connector.summary:entry.kind==='role'?entry.role.summary:entry.model.summary
-const entryMarketplace=(entry:MarketCatalogEntry):Marketplace=>entry.kind==='skill'&&entry.delivery==='upstream'?entry.origin.marketplace:'teloa'
+const entryMarketplace=(_entry:MarketCatalogEntry):Marketplace=>'teloa'
 const entryInstalls=(entry:MarketCatalogEntry)=>entry.kind==='skill'&&entry.delivery==='upstream'?entry.origin.installs??0:0
 const conditionsText=(entry:MarketCatalogEntry)=>entry.compatibility.conditions.map(item=>item['zh-CN'])
 /** 可添加性：unsupported 与 builtin 不可添加并给出条目自带的中文说明；连接器可添加但走 teloa_mcp_connect；云端模型经 设置 · 模型 配置，本地语音经原生扩展准备。 */
@@ -97,7 +97,7 @@ type Enough={keep:(item:MarketCatalogListItem)=>boolean;want:number}
  * 未给 `want` 时只取一页（名称检索只需判定唯一 / 多候选）。
  */
 async function listMarketplace(ports:MarketSessionToolsPorts,marketplace:Marketplace,request:{query?:string;kind?:MarketCatalogEntry['kind']},enough?:Enough):Promise<ListPage>{
- const base={...(request.query===undefined?{}:{query:request.query}),...(request.kind===undefined?{}:{kind:request.kind}),limit:50,sort:'installs',...(marketplace==='teloa'?{}:{marketplace})}
+ const base={...(request.query===undefined?{}:{query:request.query}),...(request.kind===undefined?{}:{kind:request.kind}),limit:50,sort:'installs',marketplace}
  let page=listPage(await ports.catalog('market-catalog/list',base))
  const items=[...page.items]
  for(let count=1;enough&&page.nextCursor!==null&&count<maxSearchPages&&items.filter(enough.keep).length<enough.want;count++){
@@ -106,7 +106,7 @@ async function listMarketplace(ports:MarketSessionToolsPorts,marketplace:Marketp
  }
  return {catalogVersion:page.catalogVersion,items,nextCursor:page.nextCursor}
 }
-/** 对七个市场各查（内存目录，成本可忽略），合并后按 installs 降序、id 升序。 */
+/** 会话与界面共用一个 Teloa 官方目录，原始出处仅作安装溯源。 */
 async function searchCatalog(ports:MarketSessionToolsPorts,request:{query?:string;kind?:MarketCatalogEntry['kind']},enough?:Enough):Promise<{catalogVersion:string;items:MarketCatalogListItem[]}>{
  const pages=await Promise.all(marketplaces.map(marketplace=>listMarketplace(ports,marketplace,request,enough)))
  const items=pages.flatMap(page=>page.items).sort((a,b)=>entryInstalls(b.entry)-entryInstalls(a.entry)||(a.entry.id<b.entry.id?-1:a.entry.id>b.entry.id?1:0))
@@ -234,6 +234,9 @@ function catalogCandidate(item:MarketCatalogListItem,secretPorts:SecretPorts):Ma
  }else if(entry.kind==='model'){
   // 模型条目无工件（artifact 恒为 null）：指纹取条目本身
   treeHash=createHash('sha256').update(JSON.stringify(entry)).digest('hex');files=[];source=`Teloa 官方目录模型资源 ${entry.id}@${entry.version}`
+ }else if(!item.artifact&&marketConnectorArtifactOptional(entry)){
+  // 在线索引的远端连接器无工件：指纹取条目本身，建连仍走受管连接与本人授权
+  treeHash=createHash('sha256').update(JSON.stringify(entry)).digest('hex');files=[];source=`Teloa 官方在线目录连接资源 ${entry.id}@${entry.version}`
  }else{
   if(!item.artifact)throw hostBad('官方目录服务')
   treeHash=item.artifact.treeHash;files=fileList(item.artifact.files);source=entry.kind==='role'?`Teloa 官方目录 AI 员工资源 ${entry.id}@${entry.version}（来自方案 ${entry.role.fromSolution.packageId}@${entry.role.fromSolution.version}）`:`Teloa 官方目录资源 ${entry.id}@${entry.version}`
@@ -330,12 +333,12 @@ async function resolveGithubCandidate(ctx:GithubContext,source:GithubSource,skil
   preview:{source:sourceText,license:null,files,tier,domains,tools:[],dataEgress:domains.length>0,requiredSecrets:[],secretLabels:[],secretTargets:[],compatibility:{status:'unreviewed',conditions:[]}}}
 }
 
-/** 按 id 精确查找：对七个市场用 id 作 query 查询并跟随分页（目录在内存，页数有上限）。 */
+/** 按 id 精确查找官方目录并跟随分页，保留原安全上限。 */
 async function findCatalogItem(ports:MarketSessionToolsPorts,entryId:string):Promise<MarketCatalogListItem|undefined>{
  for(const marketplace of marketplaces){
   let cursor:string|null=null
   for(let page=0;page<20;page++){
-   const payload={query:entryId,limit:50,sort:'installs',...(marketplace==='teloa'?{}:{marketplace}),...(cursor===null?{}:{cursor})}
+   const payload={query:entryId,limit:50,sort:'installs',marketplace,...(cursor===null?{}:{cursor})}
    const result=listPage(await ports.catalog('market-catalog/list',payload))
    const found=result.items.find(item=>item.entry.id===entryId)
    if(found)return found
@@ -477,7 +480,7 @@ function addReason(candidate:MarketCandidate,install:boolean,preview:InstallPrev
  const license=p.license??'未注明'
  if(candidate.kind==='catalog'&&candidate.entryKind==='role'){
   const skills=candidate.roleSkills??[]
-  return `${prior}确认创建 AI 员工“${candidate.name}”（${p.source}，许可 ${license}，校验值 ${candidate.fingerprint}）？此员工需要的技能：${skills.length?skills.join('、'):'无'}（可在市场添加或加载所属方案）。员工创建后默认暂停，可在 团队 页恢复；不创建方案加载。`
+  return `${prior}确认创建 AI 员工“${candidate.name}”（${p.source}，许可 ${license}，校验值 ${candidate.fingerprint}）？将从所属方案包添加这一位员工及其方法（${skills.length?skills.join('、'):'无'}）与资料，不添加同团队其他员工；方法安装后交给这位员工使用。员工创建后默认暂停，可在 团队 页恢复；应用连接与授权仍需你另行确认。`
  }
  if(!isSkill(candidate)){
   return `${prior}确认添加行业方案“${candidate.name}”（${p.source}，许可 ${license}，校验值 ${candidate.fingerprint}）到本人内容库？加载到空间时会再次确认将创建的对象。`
@@ -510,10 +513,11 @@ async function executeAdd(ctx:AddContext,input:AddInput,requestId:string){
   return {entryId:candidate.entryId,guidance:`模型不在会话里添加：请到 设置 · 模型 配置“${candidate.name}”（新建路由并填写密钥，密钥不经聊天）。`,next:{page:'settings/models'}}
  }
  if(candidate.kind==='catalog'&&candidate.entryKind==='role'){
-  // 不传 requestId：宿主按（本人, 条目, 版本）派生，重复添加同一条目返回 existing 与同一岗位
+  // 不传 requestId：宿主按（本人, 条目, 版本）派生，重复添加同一条目返回 existing 与同一岗位；未完成的资源再添加一次即续做
   const receipt=await ctx.ports.catalog('market-catalog/add',{entryId:candidate.entryId,version:candidate.version,kind:'role'})
-  if(!isRecord(receipt)||typeof receipt.roleId!=='string'||!UUID.test(receipt.roleId)||(receipt.status!=='created'&&receipt.status!=='existing')||!Array.isArray(receipt.skills)||receipt.skills.some(item=>typeof item!=='string'))throw hostBad('官方目录服务')
-  return {roleId:receipt.roleId,status:receipt.status,skills:receipt.skills as string[],next:{page:'team',roleId:receipt.roleId},undo:'团队 > 员工 > 暂停或退役'}
+  const pending=isRecord(receipt)&&receipt.roleId===null&&receipt.status==='pending'&&isRecord(receipt.install)
+  if(!isRecord(receipt)||!pending&&(typeof receipt.roleId!=='string'||!UUID.test(receipt.roleId)||(receipt.status!=='created'&&receipt.status!=='existing'))||!Array.isArray(receipt.skills)||receipt.skills.some(item=>typeof item!=='string')||receipt.install!==undefined&&!isRecord(receipt.install))throw hostBad('官方目录服务')
+  return {roleId:receipt.roleId,status:receipt.status,skills:receipt.skills as string[],...(receipt.install===undefined?{}:{install:receipt.install}),next:typeof receipt.roleId==='string'?{page:'team',roleId:receipt.roleId}:{tool:'teloa_market_add',retry:'再添加一次继续未完成的资源'},undo:'团队 > 员工 > 暂停或退役'}
  }
  let contentValue:unknown
  if(candidate.kind==='catalog'){

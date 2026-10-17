@@ -1,3 +1,5 @@
+import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +30,7 @@ test('固定 DSH 原生注册表发现并加载项目 Skill；正文由原生 pr
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SkillRegistry)
   const fiber=await ctx.plugin(SkillFileSystem,{includeDefaultRoots:false,customSkillDirs:[skills],watch:false})
+  await ctx.plugin(SessionProjectionRegistry);await installNativeWorkingDirectory(ctx,workspace)
   await ctx.plugin(ToolSkill)
   const list=await ctx.skills.list({cwd:projectRoot})
   assert.equal(list.length,1)

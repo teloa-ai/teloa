@@ -5,6 +5,7 @@ export const workErrorCodes = [
   'teloa/version-conflict',
   'teloa/conflict',
   'teloa/dependency-unavailable',
+  'teloa/delivery-review-required',
   'teloa/storage-corrupt',
   'teloa/source-unavailable',
   'teloa/invalid-host-response',
@@ -17,6 +18,7 @@ export const workErrorCodes = [
   'teloa/role-create-busy',
   'teloa/recovery-write-failed',
   'teloa/recovery-clear-failed',
+  'teloa/draft-not-carried',
   // 既有位置接受，不得扩散：穷举 `new WorkError('teloa/...')` 构造点时发现的既有生产码，
   // 文件:行清单见 design specification
   'teloa/run-configuration-failed',
@@ -26,6 +28,7 @@ export const workErrorCodes = [
   'teloa/copy-lineage-mismatch',
   'teloa/copy-result-unknown',
   'teloa/execution-pending',
+  'teloa/budget-exhausted',
   'teloa/file-changed',
   'teloa/file-scope',
   'teloa/file-too-large',

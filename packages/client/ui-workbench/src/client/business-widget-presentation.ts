@@ -1,5 +1,5 @@
-import {isBusinessMatchValue,type BusinessConfigurationViewRef,type BusinessLedger,type BusinessObjectTypeDefinition,type BusinessViewResult,type BusinessWidgetCell,type BusinessWidgetDefinition,type BusinessWidgetResult,type BusinessWidgetThreshold,type WorkErrorCode} from '@teloa/contract'
-import {businessDashboardErrorKey,type BusinessDashboardErrorKey} from './business-dashboard-errors.ts'
+import {isBusinessMatchValue,type BusinessConfigurationViewRef,type BusinessLedger,type BusinessObjectTypeDefinition,type BusinessViewResult,type BusinessWidgetCell,type BusinessWidgetDefinition,type BusinessWidgetResult,type BusinessWidgetThreshold} from '@teloa/contract'
+import {businessDashboardFailure,type BusinessDashboardErrorKey} from './business-dashboard-errors.ts'
 import type {BusinessTarget} from './business-preview.ts'
 
 /**
@@ -48,11 +48,7 @@ export function widgetCells(result:BusinessWidgetResult,format:CellFormat,column
 export type WidgetFailureKey=BusinessDashboardErrorKey
 
 /** 任意失败（组件结果里的 error，或调用抛出的 WorkError）→ 固定词条；映射本身见 `business-dashboard-errors.ts`。 */
-export function widgetFailure(error:unknown):ReturnType<typeof businessDashboardErrorKey>{
- const code=error!==null&&typeof error==='object'&&'code' in error?String((error as {code:unknown}).code):''
- const reason=error!==null&&typeof error==='object'?String((error as {reason?:unknown;message?:unknown}).reason??(error as {message?:unknown}).message??''):''
- return businessDashboardErrorKey({code:code as WorkErrorCode,reason})
-}
+export const widgetFailure=businessDashboardFailure
 
 type ViewShape=Pick<BusinessViewResult,'kind'|'chart'|'measures'>&{dimensionField?:string|undefined}
 /**

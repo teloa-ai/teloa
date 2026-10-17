@@ -1,3 +1,4 @@
+import {businessConfigurationPreviewReceiptRejected} from '@teloa/contract'
 import {WorkError,isRecord,isBusinessScopeKey,readBusinessConversationReserve,readBusinessBuilderRequest,type BusinessConversationReserve,type BusinessConversationBinding,type BusinessConversationDirectory,type BusinessConfigurationDraftResponseVersioned as BusinessConfigurationDraftResponse,type BusinessConfigurationPreviewResponse,type BusinessConfigurationApplyResult,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessTimeRange} from '@teloa/contract'
 import type {InputState} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {BindingClient} from './binding-client.ts'
@@ -32,7 +33,6 @@ const empty=():Journal=>({schema:'teloa.business-builder-journal/v1',creation:nu
 const conflict=(message:string)=>new WorkError('teloa/conflict',message)
 const invalid=()=>new WorkError('teloa/invalid-host-response','业务搭建返回的版本或身份不一致。')
 const code=(error:unknown)=>isRecord(error)?error.code:undefined
-const previewReceiptRejected=(error:unknown)=>isRecord(error)&&error.code==='teloa/conflict'&&isRecord(error.details)&&error.details.reason==='preview-receipt-invalid'
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)
 export type BusinessBuilderState={
  phase:'idle'|'creating'|'recovering'|'ready'|'saving'|'unknown'|'saved'|'error'
@@ -221,7 +221,7 @@ export class BusinessBuilderFlow{
    const journal=this.journal()
    if(journal.save)throw conflict('上次保存结果仍待核对，请先读取原请求回执。')
    const {sessionId,draftId,draft}=this.target(),preview=this.state.preview
-   if(draft.status!=='draft'||!preview||preview.draftId!==draftId||preview.revision!==draft.revision||preview.candidateHash!==draft.hash||preview.baseVersion!==draft.baseVersion)throw conflict('业务草案已变化，请重新预览后保存。')
+   if(draft.status!=='draft'||!preview||preview.impact?.blocked||preview.draftId!==draftId||preview.revision!==draft.revision||preview.candidateHash!==draft.hash||preview.baseVersion!==draft.baseVersion)throw conflict('业务草案已变化或影响现有记录，请重新预览后保存。')
    const input={sessionId,draftId,expectedRevision:draft.revision,expectedBaseVersion:draft.baseVersion,previewReceipt:preview.receipt,requestId:this.ports.id()}
    readBusinessBuilderRequest('business-configuration/apply',input)
    const intent={input,scope:draft.scope,candidateHash:draft.hash}
@@ -245,17 +245,18 @@ export class BusinessBuilderFlow{
      try{result=await this.ports.api.apply(intent.input);applied=true}
      catch(error){
       // 未知网络结果、权限/版本/一般冲突绝不刷新token或修改固定请求。
-      if(!recover||!previewReceiptRejected(error))throw error
+      if(!recover||!businessConfigurationPreviewReceiptRejected(error))throw error
       result=await receipt()
       if(!result){
        const current=await this.ports.api.draft({sessionId:intent.input.sessionId,draftId:intent.input.draftId})
        if(current.status!=='draft'||current.revision!==intent.input.expectedRevision||current.baseVersion!==intent.input.expectedBaseVersion||current.hash!==intent.candidateHash||current.scope!==intent.scope)throw conflict('原草案已变化，不能改写待核对的保存请求。')
        const preview=await this.ports.api.preview({sessionId:intent.input.sessionId,draftId:intent.input.draftId,expectedRevision:intent.input.expectedRevision})
        if(preview.candidateHash!==intent.candidateHash||preview.baseVersion!==intent.input.expectedBaseVersion)throw invalid()
-       const updated={...intent,input:{...intent.input,previewReceipt:preview.receipt}},journal=this.journal()
+       const journal=this.journal()
        if(JSON.stringify(journal.save)!==JSON.stringify(intent))throw conflict('保存恢复记录已变化。')
-       this.write({...journal,save:updated},journal);intent=updated
-       result=await this.ports.api.apply(intent.input);applied=true
+       this.write({...journal,save:null},journal)
+       if(visible())this.publish({draft:current,preview,phase:'ready',error:null})
+       throw new WorkError('teloa/conflict','预览已更新，请本人核对后再次采用。',{reason:'preview-review-required'})
       }
      }
     }
@@ -267,7 +268,7 @@ export class BusinessBuilderFlow{
     if(visible())this.publish({phase:'saved',result,preview:null,error:null})
     return result
    }catch(error){
-    if(visible())this.publish({phase:code(error)==='teloa/version-conflict'||code(error)==='teloa/forbidden'?'error':'unknown',error})
+    if(visible())this.publish({phase:isRecord(error)&&isRecord(error.details)&&error.details.reason==='preview-review-required'?'ready':code(error)==='teloa/version-conflict'||code(error)==='teloa/forbidden'?'error':'unknown',error})
     throw error
    }
   })()

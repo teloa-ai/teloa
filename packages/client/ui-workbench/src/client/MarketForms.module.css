@@ -7,3 +7,60 @@
 .importAs:not(:disabled) .choice:hover{background:var(--teloa-hover)}
 .choice:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .importAs:disabled .choice{opacity:.55;cursor:not-allowed}
+
+/* N24：Grok recipe 导入前的轻量预览；只读清单，状态用文字说明，不做可点开关。 */
+.recipe{display:grid;gap:12px;min-width:0;padding:14px 16px;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
+.recipe h3{margin:0;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
+.recipe>p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+.recipeDuty{display:grid;gap:4px;min-width:0}
+.recipeDuty strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
+.recipeDuty span{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6;overflow-wrap:anywhere}
+.recipeGroups{display:grid;gap:10px;margin:0;padding:0}
+.recipeGroup{display:grid;gap:4px;min-width:0}
+.recipeGroup dt{display:flex;align-items:baseline;gap:6px;color:var(--teloa-text);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.recipeGroup dt span{color:var(--teloa-muted);font-weight:normal}
+.recipeGroup dd{margin:0;min-width:0}
+.recipeGroup ul{display:grid;gap:3px;margin:0;padding:0;list-style:none}
+.recipeGroup li{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0;font-size:var(--teloa-font-caption);line-height:1.6}
+.recipeGroup li>span:first-child{min-width:0;overflow-wrap:anywhere}
+.recipeGroup li>small{flex:none;max-width:48%;color:var(--teloa-muted);font-size:var(--teloa-font-caption);text-align:right;overflow-wrap:anywhere}
+.recipeGroup .empty{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.recipeHash{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.recipeHash code{font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.recipeGroup li.recipeApp{display:grid;gap:5px;padding:6px 0}
+.recipeApp>div{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.recipeApp small,.recipeApp p,.recipeSource p{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6;margin:6px 0}
+.recipeApp summary,.recipeSource summary{cursor:pointer;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.recipeApp>details>label{margin-top:10px}
+.recipeTools{margin:12px 0 0;padding:0;border:0;min-width:0}
+.recipeTools legend{font-size:var(--teloa-font-caption);margin-bottom:7px}
+.recipeTools label{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:8px;font-size:var(--teloa-font-caption);margin:7px 0}
+.recipeTools label[hidden]{display:none!important}
+.recipeTools input[type=checkbox]{flex:none;width:16px;height:16px;min-height:0;padding:0;margin:3px 0;accent-color:var(--teloa-focus)}
+.recipeTools label>span{min-width:0;display:grid;gap:2px}
+.recipeTools small{margin:0;overflow-wrap:anywhere}
+.recipeSource{border-top:1px solid var(--teloa-border);padding-top:10px}
+
+/* N30：导入改用平台右侧抽屉；轻量页签、带图标的文件/文件夹选择；技术说明按需展开。 */
+.drawer.drawer{width:min(520px,100vw)}
+.title{flex:1}
+.body.body{margin:0;padding:16px 24px 24px;border-top:0;gap:14px}
+.notes{display:grid;gap:6px;padding:10px 12px;border-radius:8px;background:var(--teloa-subtle)}
+.notes[hidden]{display:none}
+.notes p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+.body .modes{display:flex;gap:18px;border-bottom:1px solid var(--teloa-border);overflow-x:auto}
+.body .modes button{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
+.body .modes button[aria-pressed=true]{border-bottom-color:var(--teloa-text);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.body .modes button:hover:not(:disabled){background:none;color:var(--teloa-text)}
+.pickers{display:flex;flex-wrap:wrap;gap:8px}
+.body .picker{position:relative;display:inline-flex;flex-direction:row;align-items:center;gap:8px;min-height:36px;box-sizing:border-box;padding:7px 12px;border:1px solid var(--teloa-text);border-radius:8px;background:var(--teloa-text);color:var(--teloa-surface);font-weight:var(--teloa-weight-medium);cursor:pointer}
+.body .picker.secondary{border-color:var(--teloa-border);background:var(--teloa-surface);color:var(--teloa-text)}
+.body .picker.secondary:hover{background:var(--teloa-hover)}
+.body .picker:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.body .picker svg{flex:none}
+.body .hiddenInput{position:absolute;width:1px;height:1px;min-height:0;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.chosen{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.identity{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px}
+.identity small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:normal}
+.members{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.members li{padding:2px 8px;border:1px solid var(--teloa-border);border-radius:999px;font-size:var(--teloa-font-caption)}

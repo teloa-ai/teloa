@@ -1,0 +1,25 @@
+{
+  "name": "@teloa/device-gateway",
+  "version": "0.2.0-beta.2",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts",
+    "./vad": "./src/silero-vad.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@alexanderolsen/libsamplerate-js": "2.1.2",
+    "mpg123-decoder": "1.0.3",
+    "onnxruntime-node": "1.30.0",
+    "opusscript": "0.1.1",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
+  }
+}

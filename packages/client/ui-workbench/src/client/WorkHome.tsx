@@ -17,15 +17,16 @@ import {homeRecentContext,homeTaskContext} from './home-recent-context.js'
 import {homeColleagueWork} from './home-colleague-work.js'
 import {usePersonalProfile} from './use-personal-profile.js'
 import type {ObjectConversationLink} from './object-conversations.js'
+import {assistantConversationTitle} from './assistant-conversation.js'
 
 const workStatusKeys:Record<PresentedConversation['status'],'workDirectory.status.pending'|'workDirectory.status.running'|'workDirectory.status.blank'|'workDirectory.status.idle'|'workDirectory.status.unknown'>={
   pending:'workDirectory.status.pending',running:'workDirectory.status.running',blank:'workDirectory.status.blank',idle:'workDirectory.status.idle',unknown:'workDirectory.status.unknown',
 }
 
 export type HomeCreationKind='task'|'group'|'role'
-type Props={current:string|undefined;visible:boolean;work:BindingClient;management:ConversationManagement;useSessions:UseSessions;workTasks:readonly PreviewTask[];colleagues:readonly Pick<PreviewRole,'id'|'name'|'scopes'>[];conversationLinks:readonly ObjectConversationLink[];open:()=>void;openTask:(id:string)=>void;openTasks:()=>void;plans:()=>void;attention:()=>void;attentionStatus:AttentionStatus;planStatus:PlanStatus}
+type Props={assistantName?:string;current:string|undefined;visible:boolean;work:BindingClient;management:ConversationManagement;useSessions:UseSessions;workTasks:readonly PreviewTask[];colleagues:readonly Pick<PreviewRole,'id'|'name'|'scopes'>[];conversationLinks:readonly ObjectConversationLink[];open:()=>void;openTask:(id:string)=>void;openTasks:()=>void;plans:()=>void;attention:()=>void;attentionStatus:AttentionStatus;planStatus:PlanStatus}
 
-export function WorkHome({current,visible,work,management,useSessions,workTasks,colleagues,conversationLinks,open,openTask,openTasks,plans,attention,attentionStatus,planStatus}:Props) {
+export function WorkHome({assistantName='Teloa',current,visible,work,management,useSessions,workTasks,colleagues,conversationLinks,open,openTask,openTasks,plans,attention,attentionStatus,planStatus}:Props) {
   const {locale,t,dateTime}=useI18n()
   const directory=useSyncExternalStore(work.subscribe,work.getDirectorySnapshot)
   const native=useSessions(value=>value.byId)
@@ -35,7 +36,7 @@ export function WorkHome({current,visible,work,management,useSessions,workTasks,
   const colleagueWork=homeColleagueWork(workTasks)
   const [conversationError,setConversationError]=useState<string>(),[opening,setOpening]=useState<string>()
   const attentionHeading=attentionStatusText(attentionStatus,t)
-  const rows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&!managed.archived.includes(row.conversation.sessionId)):[]
+  const rows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&!managed.archived.includes(row.conversation.sessionId)).map(row=>row.conversation.purpose==='assistant'&&row.title===assistantConversationTitle?{...row,title:assistantName}:row):[]
   // 「继续工作」与原型同构：未结束的任务和会话同列按更新时间倒序，右上角「全部 N 项」进入任务目录。
   const savedTasks=visibleTaskDirectory(workTasks,'saved')
   const recent=[
@@ -61,7 +62,7 @@ export function WorkHome({current,visible,work,management,useSessions,workTasks,
     <div className={css.content}>
       {colleagueWork.count>0&&<p className={css.eyebrow}>{t('home.overview.colleaguesActiveDescription',{count:colleagueWork.count,people:colleagueWork.colleagueCount})}</p>}
       <section className={css.attentionStrip} aria-label={t('home.overview.attention')}>
-        <strong>{attentionHeading}</strong>
+        <div className={css.attentionSummary}><strong>{attentionHeading}</strong>{attentionStatus.incomplete&&<small>{t('attention.work.homeIncomplete')}</small>}</div>
         <button type="button" className={css.inlineLink} onClick={attention}>{t('home.handleTogether')}<ArrowRight size={15} aria-hidden="true"/></button>
       </section>
       <section className={css.recent} aria-label={t('home.continue')}>

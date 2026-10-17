@@ -17,7 +17,7 @@ type Reply={ok:true;value:Confined}|{ok:false;name:string;code:string|undefined;
 type Peer={request<T>(method:string,params:unknown,schema:{parse:(value:unknown)=>T},signal?:AbortSignal):Promise<T>;close(error?:Error):void}
 type Hello={protocol:number;platform:string;workspace:string;root:string}
 
-const compatBasename='dsh-ssh-0.2.1-alpha.1-helper-sandbox-tier'
+const compatBasename='dsh-ssh-0.2.1-rc.2-helper-sandbox-tier'
 const compat=fileURLToPath(new URL('../compat/',import.meta.url))
 const anchor=fileURLToPath(new URL('../../native-remote/package.json',import.meta.url))
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
@@ -42,7 +42,7 @@ const confinedSchema={parse(value:unknown):Confined{
  return value as Confined
 }}
 const helloSchema={parse(value:unknown):Hello{
- assert.ok(isRecord(value)&&value.protocol===1&&typeof value.platform==='string'&&typeof value.workspace==='string'&&typeof value.root==='string')
+ assert.ok(isRecord(value)&&value.protocol===2&&typeof value.platform==='string'&&typeof value.workspace==='string'&&typeof value.root==='string')
  return value as Hello
 }}
 const nullSchema={parse(value:unknown):null{assert.equal(value,null);return null}}
@@ -72,7 +72,7 @@ async function startHelper(t:Cleanup,entry:string,cwd:string,tier:string|undefin
   assert.equal(stderr.join(''),'','helper 不应向 stderr 输出')
  }
  t.after(close)
- const hello=await peer.request('hello',{protocol:1,workspace:cwd,leaseMs:30000},helloSchema)
+ const hello=await peer.request('hello',{protocol:2,workspace:cwd,leaseMs:30000},helloSchema)
  assert.equal(hello.workspace,cwd)
  return {peer,hello,close}
 }
@@ -91,7 +91,7 @@ async function sandboxLocalStandIn(t:Cleanup){
  const upstream=await realpath(createRequire(join(await upstreamRoot(),'package.json')).resolve('@deepseek-ai/dsh-sandbox-local'))
  const dir=await mkdtemp(join(tmpdir(),'teloa-sandbox-local-stand-in-'));t.after(()=>rm(dir,{recursive:true,force:true}))
  await mkdir(join(dir,'lib'))
- await writeFile(join(dir,'package.json'),JSON.stringify({name:'@deepseek-ai/dsh-sandbox-local',version:'0.2.1-alpha.1',type:'module',exports:{'.':'./lib/index.js','./package.json':'./package.json'}}))
+ await writeFile(join(dir,'package.json'),JSON.stringify({name:'@deepseek-ai/dsh-sandbox-local',version:'0.2.1-rc.2',type:'module',exports:{'.':'./lib/index.js','./package.json':'./package.json'}}))
  await writeFile(join(dir,'lib/index.js'),`import {LocalSandboxProvider as Upstream} from ${JSON.stringify(pathToFileURL(upstream).href)};
 export class LocalSandboxProvider extends Upstream{
  constructor(ctx,config){super(ctx,config);this.internals={platform:'linux',probeBwrap:()=>false,probeLandlock:()=>'unusable',landlockLauncher:'/nonexistent/landlock-run'}}
@@ -148,7 +148,7 @@ test('清单 patchSha256 与前后文件摘要一致、无 fuzz',{timeout:60000}
   schema:string;package:string;version:string;api:string[];patchSha256:string;files:Array<{path:string;beforeSha256:string;afterSha256:string}>;scope:Record<string,unknown>
  }
  const patch=await readFile(join(compat,compatBasename+'.patch'))
- assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(receipt.package,'@deepseek-ai/dsh-ssh');assert.equal(receipt.version,'0.2.1-alpha.1')
+ assert.equal(receipt.schema,'teloa.dsh-compat-patch/v1');assert.equal(receipt.package,'@deepseek-ai/dsh-ssh');assert.equal(receipt.version,'0.2.1-rc.2')
  assert.equal(hash(patch),receipt.patchSha256)
  assert.deepEqual(receipt.api,['resolveHelperSandboxTier','ContainerTierSandboxProvider'])
  assert.deepEqual(receipt.files.map(file=>file.path),['lib/helper.js','lib/types/helper-entry.d.ts'])

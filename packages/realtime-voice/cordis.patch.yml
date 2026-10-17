@@ -1,0 +1,4 @@
+# 独立媒体插件；模型、凭据、角色与任务准入继续由社区核心管理。
+- insert:
+    - id: teloa-realtime-voice
+      name: '@teloa/realtime-voice'

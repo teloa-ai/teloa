@@ -50,8 +50,8 @@ function roleDirectory(value:unknown,owner:string):{id:string;version:number;nam
  const result=[] as {id:string;version:number;name:string;scopes:string[]}[]
  for(const item of value){
   try{
-   const row=exact(item,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig'])
-   const definition=roleDefinition({name:row.name,kind:row.kind,scopes:row.scopes,duty:row.duty,dataScope:row.dataScope,executionScope:row.executionScope,skills:row.skills,knowledge:row.knowledge,...(row.responsibility===undefined?{}:{responsibility:row.responsibility}),...(row.runtimeConfig===undefined?{}:{runtimeConfig:row.runtimeConfig})})
+   const row=exact(item,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig','avatarKey'])
+   const definition=roleDefinition({...(row.avatarKey===undefined?{}:{avatarKey:row.avatarKey}),name:row.name,kind:row.kind,scopes:row.scopes,duty:row.duty,dataScope:row.dataScope,executionScope:row.executionScope,skills:row.skills,knowledge:row.knowledge,...(row.responsibility===undefined?{}:{responsibility:row.responsibility}),...(row.runtimeConfig===undefined?{}:{runtimeConfig:row.runtimeConfig})})
    if(!uuid(row.id)||row.ownerId!==owner||!positive(row.version)||!timestamp(row.createdAt)||!timestamp(row.updatedAt))throw Error()
    if(typeof row.state!=='string'||!['active','paused','retired'].includes(row.state))throw Error()
    if(row.state==='active'&&definition.kind==='employee')result.push({id:row.id,version:row.version,name:definition.name,scopes:definition.scopes})
@@ -75,7 +75,7 @@ export function registerPlanTools(ctx:Context,ports:PlanToolsPorts){
   {name:'teloa_plans_list' as const,description:'列出本人真实持续计划。按返回的计划身份和版本操作；未知写入结果先调用本工具核对。',parameters:emptyParameters},
   {name:'teloa_plans_get' as const,description:'读取本人一项真实持续计划的固定定义、状态和版本。计划身份必须来自目录。',parameters:planIdParameters},
   {name:'teloa_plans_history' as const,description:'分页读取本人一项持续计划的真实领取和执行历史。',parameters:historyParameters},
-  {name:'teloa_plans_create' as const,description:'创建本人持续计划，来源固定为手工创建，结果固定为暂停；必须由本人核对通知策略，策略只决定主动提醒方式，不影响领取、执行和历史记录。不支持 Cron、事件触发或模板来源。先查员工目录并使用返回的员工身份和版本。',parameters:createParameters},
+  {name:'teloa_plans_create' as const,description:'创建本人持续计划，来源记录当前会话，结果固定为暂停；必须由本人核对通知策略，策略只决定主动提醒方式，不影响领取、执行和历史记录。本工具仅创建员工日程计划。业务变化触发先读 teloa_create_directory(entity=plan)，再以 teloa_create_draft(entity=plan) 准备 configure-work 草案，由本人在原稿确认；本人方法计划经 teloa_method_reuse 准备，不要求虚构员工。先查员工目录并使用返回的员工身份和版本。',parameters:createParameters},
   {name:'teloa_plans_change' as const,description:'启用、暂停或归档本人持续计划。启用和归档需要本人原生确认；未知结果先查目录，不能盲目重建。',parameters:changeParameters},
   {name:'teloa_plans_update' as const,description:'更新本人持续计划的目标、资料范围、交付方式、通知策略和日程。员工、业务范围和来源保持固定。更新会改变下一次调度配置，必须本人原生确认；先读取计划取得两个当前版本。',parameters:updateParameters},
  ] as const
@@ -99,7 +99,7 @@ export function registerPlanTools(ctx:Context,ports:PlanToolsPorts){
      const row=exact(args,['title','goal','scope','dataScope','delivery','notificationPolicy','roleId','expectedRoleVersion','cadence','weekday','time','timezone'])
      const requestId=requestIdentity(ports.owner,sessionId,definition.name,String(exec.callId))
      const {cadence,weekday,time,timezone,...fields}=row
-     const plan=await ports.planHandler('plans/create',{requestId,fields:{...fields,trigger:{kind:'schedule',cadence,weekday,time,timezone}},source:{kind:'manual'}})
+     const plan=await ports.planHandler('plans/create',{requestId,fields:{...fields,trigger:{kind:'schedule',cadence,weekday,time,timezone}},source:{kind:'manual',sessionId}})
      value={requestId,plan}
     }else if(definition.name==='teloa_plans_change'){
      const row=exact(args,['planId','expectedVersion','action','note'])

@@ -1,5 +1,5 @@
 import {useEffect,useState,type ReactNode} from 'react'
-import {ArrowUpRight} from 'lucide-react'
+import {ArrowLeft,ArrowUpRight} from 'lucide-react'
 import type {BusinessActionRecord,BusinessLedger,BusinessLedgerBlock,BusinessLedgerObject,BusinessObjectTypeDefinition,BusinessViewCoverage,BusinessViewResult} from '@teloa/contract'
 import {businessLedgerBlockUpdated,businessLedgerCacheKeys,businessLedgerFailureKey,ledgerListTruncation,type BusinessLedgerApi} from './business-ledger-api.js'
 import {durationText,localizedBusinessActionTitle,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessObjectType,localizedBusinessView} from './business-definition-localization.js'
@@ -8,6 +8,8 @@ import type {BusinessTarget} from './business-preview.js'
 import {useI18n} from './i18n/provider.js'
 import base from './TaskPage.module.css'
 import css from './BusinessLedger.module.css'
+import light from './light-actions.module.css'
+import {ContextDrawer} from './ContextDrawer.js'
 
 /**
  * 业务定制层的五个固定组件（规格 §5.1）。声明里的每一段文字都只作为 React 文本子节点渲染，
@@ -332,17 +334,15 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
   // 直达链接按未过滤的对象集合解析，不能被此前保存的目录筛选遮住。
   const current=list?.objects?.find(object=>object.id===objectId)
   // 已经固定进台账的对象不因实时来源暂时未连接而消失；连接状态只影响继续同步与执行动作。
-  if(objectId&&(block.source.connected||block.objects>0))return <section className={css.surface} aria-label={t('business.ledger.objectDetail')}>
-   <header className={css.directoryHeader}>
-    <button type="button" onClick={()=>go({scope,section:'data',objectType:definition.id})}>{t('business.ledger.backDirectory',{type:copy.title})}</button>
-    <button type="button" onClick={()=>go({scope,section:'data'})}>{t('business.ledger.back')}</button>
-   </header>
+  const closeObject=()=>go({scope,section:'data',objectType:definition.id,...(match?{match}:{})})
+  const detail=objectId?<ContextDrawer title={current?.title??t('business.ledger.objectDetail')} close={closeObject}><div className={css.objectDrawer}>
+   <button type="button" className={light.back} onClick={closeObject}><ArrowLeft size={14} aria-hidden/>{t('business.ledger.backDirectory',{type:copy.title})}</button>
    {current?<><ObjectSheet object={current} definition={definition} sourceLabel={sourceName}/>{objectActions?.(current,definition.id,block)}</>:<p role="status" className={base.empty}>{t('error.notFound')}</p>}
-  </section>
+  </div></ContextDrawer>:null
   return <section className={css.surface} aria-label={copy.title}>
    <header className={css.directoryHeader}>
     <div><span className={css.lead}>{copy.lead}</span><h2>{copy.title}</h2></div>
-    <button type="button" onClick={()=>go({scope,section:'data'})}>{t('business.ledger.back')}</button>
+    <button type="button" className={light.back} onClick={()=>go({scope,section:'data'})}><ArrowLeft size={14} aria-hidden/>{t('business.ledger.back')}</button>
    </header>
    {match&&<div className={css.sourceNotice} role="note" data-ledger-match><span>{t('business.ledger.match',{field:matchField?localizedBusinessFieldLabel(matchField,locale):match.field==='_id'?t('business.object.id'):match.field,value:matchField?localizedBusinessFieldValue(matchField,match.value,locale):match.value})}</span><button type="button" onClick={()=>go({scope,section:'data',objectType:definition.id})}>{t('business.ledger.matchClear')}</button></div>}
    {!block.source.connected&&!block.objects
@@ -361,7 +361,7 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
           <option value="complete">{t('business.data.quality.complete')}</option>
           <option value="missing">{t('business.data.quality.missing')}</option>
          </select></label></div>
-         <ViewList view={view} definition={definition} sourceLabel={sourceName} select={object=>go({scope,section:'data',objectType:definition.id,id:object.id})}/>
+         <ViewList view={view} definition={definition} sourceLabel={sourceName} select={object=>go({scope,section:'data',objectType:definition.id,id:object.id,...(match?{match}:{})})}/>
          {truncation?.serverTruncated&&<p className={css.note} data-rows-truncated>{t('business.ledger.rowsShown',{total:list!.dimensionValues,count:list!.rows.length})}</p>}
          {truncation?.filtered&&<p className={css.note} data-rows-filtered>{t('business.ledger.filteredShown',{total:list!.rows.length,count:rows.length})}</p>}
          <MissingFields fields={view.missingFields} definition={definition}/>
@@ -372,6 +372,7 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
         <div>{analysisViews.map(view=><section key={view.viewId} className={css.view}><ViewChart view={view} definition={definition}/></section>)}</div>
        </details>}
       </>}
+   {detail}
   </section>
  }
  const snapshotOnly=ledger.blocks.some(row=>!row.source.connected&&row.objects>0)

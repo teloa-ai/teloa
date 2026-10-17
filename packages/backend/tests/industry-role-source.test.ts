@@ -24,6 +24,15 @@ function fixture(definition:unknown,options:{projectedStatus?:string;storedStatu
 
 const valid={format:'teloa.role/v1',name:'分析岗',kind:'employee',duty:'核对',dataScope:'获准资料',executionScope:'代拟',responsibility}
 
+test('固定模板实例化保留内置小松鼠头像，不接受外部头像',async()=>{
+ const f=fixture({...valid,avatarKey:'researcher'}),value=await f.source.read({} as Pool,f.owner,f.loadId,f.itemInstanceId)
+ assert.equal(value.definition.avatarKey,'researcher')
+ for(const avatarKey of ['https://example.com/avatar.png','custom',null]){
+  const invalid=fixture({...valid,avatarKey})
+  await assert.rejects(invalid.source.read({} as Pool,invalid.owner,invalid.loadId,invalid.itemInstanceId),{code:'teloa/source-unavailable'})
+ }
+})
+
 test('读取固定行业岗位定义并返回不可变来源摘要',async()=>{
  const f=fixture(valid),value=await f.source.read({} as Pool,f.owner,f.loadId,f.itemInstanceId)
  assert.equal(value.loadId,f.loadId)

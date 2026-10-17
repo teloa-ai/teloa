@@ -1,8 +1,10 @@
+import {isArtifactRevisionProducer} from './artifact-revision-requests.ts'
 import {runEvidence} from './task-run-evidence.ts'
 import {ArtifactService} from './artifacts.ts'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,type WorkTask} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
+import {roleWorkOutstanding} from './role-delegations.ts'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const targets={start:'running',pause:'paused',resume:'running',cancel:'cancelled',complete:'completed'} as const
 export async function initializeTaskTransitions(pool:Pool){await pool.query(`create table if not exists teloa_task_transitions(
@@ -43,23 +45,26 @@ export class TaskTransitions{
     return saved
    }
    if(task.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','任务版本已变化，请刷新后核对。')
-   if(task.assigneeRoleId){
+   if((task.assigneeRoleId||task.executor?.kind==='owner')&&action==='cancel'){
+    // 通用取消只收口本任务名下已无执行、子工作、流程与运行时关联的员工任务；任务行锁与 prepare 共用，取消提交后旧执行请求读到 cancelled 即不能开始新工作。
+    if(task.assigneeRoleId?await roleWorkOutstanding(client,owner,task.assigneeRoleId,{taskId:task.id}):(await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed')",[owner,task.id])).rowCount)throw new WorkError('teloa/conflict','员工任务仍有执行或子工作未收口，请先停止本轮执行，结束后再取消。',{reason:'task-work-outstanding'})
+   }else if(task.assigneeRoleId||task.executor?.kind==='owner'){
     if(action!=='complete'||task.state!=='waiting')throw new WorkError('teloa/conflict','员工任务须通过执行服务推进；本轮成功后才能验收结项。')
     // 任务行锁与领取/终态投影共用，防止验收与新执行同时推进。
     const active=await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed')",[owner,task.id])
     if(active.rows.length)throw new WorkError('teloa/conflict','仍有未结束的执行，不能结项。')
-    const finished=await client.query("select evidence from teloa_task_runs where owner_id=$1 and task_id=$2 and role_id=$3 and state='ended' and task_state_version=$4",[owner,task.id,task.assigneeRoleId,task.version-1])
+    const finished=await client.query("select evidence from teloa_task_runs where owner_id=$1 and task_id=$2 and role_id is not distinct from $3::uuid and state='ended' and task_state_version=$4",[owner,task.id,task.assigneeRoleId,task.version-1])
     if(finished.rows.length!==1)throw new WorkError('teloa/conflict','当前任务没有可验收的执行结果。')
     let evidence
     try{evidence=runEvidence(finished.rows[0].evidence)}catch{throw new WorkError('teloa/storage-corrupt','执行结束证据损坏，不能结项。')}
     if(evidence.state!=='ended'||evidence.reason!=='completed')throw new WorkError('teloa/conflict','本轮未正常完成，请先处理执行结果。')
    }
-   const allowed=action==='start'?task.state==='ready':action==='pause'?task.state==='running':action==='resume'?task.state==='paused':action==='complete'?(task.assigneeRoleId?task.state==='waiting':task.state==='running'):!['completed','cancelled'].includes(task.state)
+   const allowed=action==='start'?task.state==='ready':action==='pause'?task.state==='running':action==='resume'?task.state==='paused':action==='complete'?(task.assigneeRoleId||task.executor?.kind==='owner'?task.state==='waiting':task.state==='running'):!['completed','cancelled'].includes(task.state)
    if(!allowed)throw new WorkError('teloa/conflict','当前任务状态不能执行此操作。')
    if(artifact){
     const artifacts=new ArtifactService(this.pool,this.identity,async()=>{throw Error('结项不创建成果')})
     const version=await artifacts.readVersion(client,owner,artifact.id as string,artifact.version as number)
-    if(version.source.kind!=='task'||version.source.id!==task.id||version.source.scope!==task.scope||version.source.version!==`${task.version} · ${task.updatedAt}`)throw new WorkError('teloa/version-conflict','交付成果不属于当前任务版本，请先核对任务并修订成果。')
+    if(!(await isArtifactRevisionProducer(client,owner,task.id,version,task.version))&&(version.source.kind!=='task'||version.source.id!==task.id||version.source.scope!==task.scope||version.source.version!==`${task.version} · ${task.updatedAt}`))throw new WorkError('teloa/version-conflict','交付成果不属于当前任务版本，请先核对任务并修订成果。')
     await client.query('insert into teloa_task_completions values($1,$2,$3,$4,$5,$6,$7)',[owner,task.id,task.version+1,artifact.id,artifact.version,(row.note as string).trim(),this.identity.now()])
    }
    const updated=await client.query('update teloa_tasks set state=$3,version=version+1,updated_at=$4 where owner_id=$1 and id=$2 returning *',[owner,task.id,targets[action],this.identity.now()]),saved=readStoredTask(updated.rows[0])
@@ -71,7 +76,7 @@ export class TaskTransitions{
   const row=rows.rows[0]
   if(!uuid(row.artifact_id)||!Number.isSafeInteger(row.artifact_version)||row.artifact_version<1||!Number.isSafeInteger(row.task_version)||row.task_version<2||typeof row.note!=='string'||!row.note.trim()||row.note.length>4000||!(row.completed_at instanceof Date))throw new WorkError('teloa/storage-corrupt','结项记录格式损坏。')
   const version=await new ArtifactService(this.pool,this.identity,async()=>{throw Error('只读结项')}).readVersion(db,owner,row.artifact_id,row.artifact_version)
-  if(version.source.kind!=='task'||version.source.id!==id)throw new WorkError('teloa/storage-corrupt','结项成果来源损坏。')
+  if(!(await isArtifactRevisionProducer(db,owner,id,version,row.task_version-1))&&(version.source.kind!=='task'||version.source.id!==id))throw new WorkError('teloa/storage-corrupt','结项成果来源损坏。')
   return {taskId:id,taskVersion:row.task_version as number,artifactId:row.artifact_id as string,artifactVersion:row.artifact_version as number,note:row.note as string,completedAt:row.completed_at.toISOString()}
  }
  async completion(owner:string,input:unknown){

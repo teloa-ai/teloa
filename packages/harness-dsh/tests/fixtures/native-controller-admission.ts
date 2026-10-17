@@ -25,7 +25,7 @@ const compat=fileURLToPath(new URL('../../compat/',import.meta.url))
 
 export async function patchedControllerPackage(t:Cleanup){
  const source=dirname(await realpath(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-api-session-controller/package.json')))
- const filename='dsh-session-controller-0.2.1-alpha.1-input-admission'
+ const filename='dsh-session-controller-0.2.1-rc.2-input-admission'
  const receipt=JSON.parse(await readFile(join(compat,filename+'.json'),'utf8')) as {
   schema:string;package:string;version:string;patchSha256:string;files:Array<{path:string;beforeSha256:string;afterSha256:string}>
  }
@@ -58,7 +58,8 @@ export async function controllerAdmissionFixture(t:Cleanup){
  const intake={admit:async(content:readonly unknown[])=>structuredClone(content) as unknown[],commit:()=>{}}
  const noop=()=>()=>{}
  // 和固定官方 controller.host 测试一样，仅提供本批不会执行外部 IO 的宿主集成。
- ctx.provide('typert',{lookups:{register:noop,configure:noop},contexts:{configureHost:noop}} as never)
+ // alpha3 构造时还登记 session 资源键（ctx.typert.resources.register）；本批不做 Remote 路由，登记为空操作。
+ ctx.provide('typert',{lookups:{register:noop,configure:noop},contexts:{configureHost:noop},resources:{register:noop}} as never)
  ctx.provide('agentDefaultModel',{currentSelection:()=>({provider:'test',model:'test'}),saveSelection:async()=>{}} as never)
  ctx.provide('workspaceRegistry',{get:()=>undefined,list:()=>[],archivedSessionIds:[]} as never)
  ctx.provide('attachments',{

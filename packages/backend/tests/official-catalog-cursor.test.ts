@@ -5,7 +5,8 @@
 import test,{before} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
-import {marketCatalogTreeHash,WorkError} from '@teloa/contract'
+import {readFileSync} from 'node:fs'
+import {marketCatalogTreeHash,WorkError,type MarketCatalogEntry} from '@teloa/contract'
 import {type MarketActor,type MarketContentStore} from '../src/market/content-store.ts'
 import {OfficialCatalogService,type OfficialCatalogSnapshot} from '../src/market/official-catalog.ts'
 import {loadOfficialUpstreamIndex} from '../src/market/official-upstream.ts'
@@ -95,44 +96,60 @@ test('Teloa 分支：恰好整除时 nextCursor 为 null',async()=>{
  assert.equal(page2.nextCursor,null,'恰好整除最后一页 nextCursor 应为 null')
 })
 
-// ---- 上游分支：无效 cursor --------------------------------------------------
+// ---- 上游分支：期望来自市场仓已审目录（不读本仓上游索引反推）--------------
+const reviewed=JSON.parse(readFileSync(new URL('../../../tests/fixtures/reviewed-catalog-20261014.json',import.meta.url),'utf8')) as {upstream:{byMarketplace:Record<'cursor'|'claude-code',string[]>;withInstalls:string[]}}
+const cursorIds=reviewed.upstream.byMarketplace.cursor,claudeCodeIds=reviewed.upstream.byMarketplace['claude-code']
+type ListRequest=NonNullable<Parameters<OfficialCatalogService['list']>[1]>
+/** 跟随 nextCursor 遍历到底，返回每页条目。 */
+async function traverse(svc:OfficialCatalogService,request:ListRequest){
+ const pages:MarketCatalogEntry[][]=[];let cursor:string|undefined
+ do{const page=await svc.list(actor(),{...request,...(cursor?{cursor}:{})});pages.push(page.items.map(item=>item.entry));cursor=page.nextCursor??undefined}while(cursor)
+ return pages
+}
+const ids=(pages:MarketCatalogEntry[][])=>pages.map(page=>page.map(entry=>entry.id))
+
 test('上游分支：无效 cursor 抛 invalid-input',async()=>{
  const snap=buildMultiSkillSnapshot(1)
  const svc=new OfficialCatalogService(stub() as unknown as MarketContentStore,snap)
  await assert.rejects(
-  ()=>svc.list(actor(),{marketplace:'clawhub',cursor:'upstream.no-such-entry'}),
+  ()=>svc.list(actor(),{marketplace:'cursor',cursor:'upstream.no-such-entry'}),
   (err:unknown)=>{assert.ok(err instanceof WorkError);assert.equal(err.code,'teloa/invalid-input');return true}
  )
 })
 
-// ---- 上游分支：分页边界（使用真实 55 条上游条目）--------------------------
-test('上游分支：首页返回 limit 项，nextCursor 非 null',async()=>{
+// ---- 上游分支：分页边界（真实上游索引，Cursor 来源 79 条）-----------------
+test('上游分支：首页返回 limit 项，nextCursor 指向本页末条',async()=>{
+ // 已审上游条目都没有安装量：默认 installs 排序即按 id 升序；有安装量条目时须改写本文件的期望顺序
+ assert.deepEqual(reviewed.upstream.withInstalls,[])
  const snap=buildMultiSkillSnapshot(1)
  const svc=new OfficialCatalogService(stub() as unknown as MarketContentStore,snap)
- const page1=await svc.list(actor(),{marketplace:'clawhub',limit:3})
- assert.equal(page1.items.length,3)
- assert.notEqual(page1.nextCursor,null)
+ const page1=await svc.list(actor(),{marketplace:'cursor',limit:3})
+ assert.deepEqual(page1.items.map(item=>item.entry.id),cursorIds.slice(0,3))
+ assert.equal(page1.nextCursor,cursorIds[2])
+ assert.deepEqual(page1.counts,{solution:0,dashboard:0,role:0,skill:cursorIds.length,connector:0,model:0})
 })
 
-test('上游分支：末页 nextCursor 为 null',async()=>{
+test('上游分支：按默认上限完整遍历不重不漏，末页 nextCursor 为 null',async()=>{
  const snap=buildMultiSkillSnapshot(1)
  const svc=new OfficialCatalogService(stub() as unknown as MarketContentStore,snap)
- // 用 limit=50（默认）拉两页，第二页应为最后一页
- const page1=await svc.list(actor(),{marketplace:'clawhub',limit:50})
- assert.equal(page1.items.length,50,'第一页 50 条')
- assert.notEqual(page1.nextCursor,null)
- const page2=await svc.list(actor(),{marketplace:'clawhub',limit:50,cursor:page1.nextCursor!})
- assert.ok(page2.items.length>0)
- assert.equal(page2.nextCursor,null,'55 条共 2 页，第二页 nextCursor 应为 null')
+ // limit 超过 50 按 50 截断；79 条共两页
+ const pages=ids(await traverse(svc,{marketplace:'cursor',limit:80}))
+ assert.deepEqual(pages.map(page=>page.length),[50,cursorIds.length-50])
+ assert.deepEqual(pages.flat(),cursorIds)
 })
 
-test('上游分支：恰好整除时（limit=55 或 name 排序）末页 nextCursor 为 null',async()=>{
+test('上游分支：恰好整除时末页 nextCursor 为 null；name 排序遍历完整',async()=>{
  const snap=buildMultiSkillSnapshot(1)
  const svc=new OfficialCatalogService(stub() as unknown as MarketContentStore,snap)
- // 上游 55 条，默认 max limit 50；按 name 排序仍然 55 条
- const page1=await svc.list(actor(),{marketplace:'clawhub',limit:50,sort:'name'})
- assert.equal(page1.items.length,50)
- const page2=await svc.list(actor(),{marketplace:'clawhub',limit:50,sort:'name',cursor:page1.nextCursor!})
- assert.equal(page2.items.length,5,'55 - 50 = 5')
- assert.equal(page2.nextCursor,null)
+ // Claude Code 来源 3 条：limit=3 一页取完，limit=1 三页、第三页即末页
+ const whole=await svc.list(actor(),{marketplace:'claude-code',limit:3})
+ assert.deepEqual(whole.items.map(item=>item.entry.id),claudeCodeIds)
+ assert.equal(whole.nextCursor,null,'恰好整除最后一页 nextCursor 应为 null')
+ assert.deepEqual(ids(await traverse(svc,{marketplace:'claude-code',limit:1})),claudeCodeIds.map(id=>[id]))
+ // name 排序按技能名：两页跨页仍按名有序，且与已审集合相同、不重不漏
+ const named=await traverse(svc,{marketplace:'cursor',sort:'name'})
+ assert.deepEqual(named.map(page=>page.length),[50,cursorIds.length-50])
+ assert.deepEqual(named.flat().map(entry=>entry.id).sort(),cursorIds)
+ const names=named.flat().map(entry=>(entry as {skill:{name:string}}).skill.name)
+ assert.deepEqual(names,[...names].sort())
 })

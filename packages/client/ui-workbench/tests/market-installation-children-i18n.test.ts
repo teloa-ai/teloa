@@ -27,7 +27,7 @@ test('市场安装子流程词典按十语顺序完整提供人工翻译',()=>{
     for(const [index,locale] of locales.entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
   }
   assert.deepEqual(rows.find(row=>row[0]==='market.plugin.install.title'),[
-    'market.plugin.install.title','DSH 扩展安装','DSH 擴充安裝','DSH extension installation','DSH 拡張機能のインストール','DSH 확장 기능 설치','Cài đặt tiện ích mở rộng DSH','Instalación de extensiones DSH','Installation de l’extension DSH','Installation von DSH-Erweiterungen','Instalação da extensão DSH',
+    'market.plugin.install.title','应用安装','應用程式安裝','App installation','DSH 拡張機能のインストール','DSH 확장 기능 설치','Cài đặt tiện ích mở rộng DSH','Instalación de extensiones DSH','Installation de l’extension DSH','Installation von DSH-Erweiterungen','Instalação da extensão DSH',
   ])
   const pluginRows=rows.filter(row=>row[0].startsWith('market.plugin.install.'))
   assert.ok(pluginRows.length>=35)

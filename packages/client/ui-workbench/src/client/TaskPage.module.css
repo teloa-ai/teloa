@@ -1,8 +1,10 @@
 .page{container:task-page / inline-size;height:100%;min-height:0;display:flex;flex-direction:column;color:var(--teloa-text);background:var(--teloa-background)}
-.page button,.dialog button{font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:7px 10px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.page button:where(:not([data-teloa-toolbar-icon])),.dialog button:where(:not([data-teloa-toolbar-icon])){font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:7px 10px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;justify-content:center}
 .page button:hover,.dialog button:hover{background:var(--teloa-hover)}
 .page button:disabled,.dialog button:disabled{opacity:.45;cursor:not-allowed}
 .page :focus-visible,.dialog :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.page :is(input:not([type=checkbox]):not([type=radio]),textarea,select):focus-visible,.dialog :is(input:not([type=checkbox]):not([type=radio]),textarea,select):focus-visible{outline-offset:-1px;box-shadow:none}
+.alignedPage .search input:focus-visible{outline:0;box-shadow:none}
 .preview{display:flex;gap:12px;align-items:baseline;padding:10px 22px;background:var(--teloa-sidebar);border-bottom:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .preview strong{white-space:nowrap;color:var(--teloa-text)}
 .sandboxMode{background:var(--teloa-background)}
@@ -83,7 +85,7 @@
 .alignedPage .filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:12px 16px}
 .alignedPage .search{flex:0 0 auto;min-width:150px;gap:7px;padding:9px 10px;border-radius:7px;color:var(--teloa-muted)}
 .alignedPage .search input{font-size:var(--teloa-font-caption);background:none;border:0;padding:0;line-height:1.5}
-.alignedPage .search:focus-within{outline:1px solid var(--teloa-accent)}
+.alignedPage .search:focus-within{outline:1px solid var(--teloa-focus)}
 .alignedPage .filters select,.alignedPage .directory>select{font-size:var(--teloa-font-caption);padding:9px 10px;border-radius:7px}
 .alignedPage.selectedPage .filters>*{width:100%;flex-basis:100%}
 .alignedPage .tabs{display:flex;flex-shrink:0;gap:16px;padding:0 16px;margin:0;border-bottom:1px solid var(--teloa-border);overflow-x:auto}
@@ -128,6 +130,7 @@
 .alignedPage .attentionIcon{display:grid;place-items:center;flex:0 0 32px;height:32px;border-radius:10px;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .alignedPage .attentionRow strong{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}.alignedPage .attentionRow .rowDescription{font-size:var(--teloa-font-control);line-height:1.7;margin:7px 0}.alignedPage .attentionRow>svg{margin-top:10px;flex-shrink:0;color:var(--teloa-muted)}
 .alignedPage .attentionRowWrap{border-bottom:1px solid var(--teloa-border)}.alignedPage .attentionRowWrap .attentionRow{border-bottom:0}.alignedPage .attentionRowOpen{background:var(--teloa-subtle)}
+.attentionDrawerBody{padding:20px 24px 24px}.attentionDrawerBody>div{padding:0}
 .alignedPage .attentionRowLine{display:flex;align-items:flex-start;gap:6px;min-width:0}.alignedPage .attentionRowLine>.attentionRow{flex:1;min-width:0}
 .alignedPage .attentionJump{display:inline-flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;margin-top:19px;padding:0;border:0;border-radius:7px;background:none;color:var(--teloa-muted);cursor:pointer}.alignedPage .attentionJump:hover{background:var(--teloa-hover);color:var(--teloa-text)}
 @media(max-width:760px){.alignedPage .attentionJump{margin-top:19px}}
@@ -172,7 +175,6 @@
 .alignedPage.fullDetail .layout.hasSelection>.directory{display:none}
 .alignedPage.fullDetail .layout.hasSelection>.detail{position:static;border-left:0;max-height:none;overflow:visible;width:100%;box-sizing:border-box}
 .fullDetail>.pageHeader{display:none}
-.presentationToggle{white-space:nowrap;font-size:var(--teloa-font-caption)!important;padding:5px 9px!important;min-height:30px!important}
 @container task-page (max-width:999px){.alignedPage .presentationToggle{display:none}}
 
 .loadNotice{display:flex;align-items:flex-start;gap:10px;margin:0 28px 20px;padding:14px 16px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);font-size:var(--teloa-font-control);line-height:1.6;overflow-wrap:anywhere}
@@ -187,11 +189,15 @@
 .alignedPage .tableWrap th:first-child{width:42%}
 .alignedPage .tableWrap td:nth-child(3){white-space:nowrap}
 .alignedPage .tableLink{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:clip;overflow-wrap:anywhere;width:100%;min-width:0}
-.alignedPage .layout.hasSelection .tableWrap table{min-width:360px}
+.alignedPage .layout.hasSelection .tableWrap table{min-width:0}
 .alignedPage .layout.hasSelection .tableWrap th:first-child{width:auto}
-.alignedPage .layout.hasSelection .tableWrap th:nth-child(2){width:72px}
-.alignedPage .layout.hasSelection .tableWrap th:nth-child(3){width:82px}
+.alignedPage .layout.hasSelection .tableWrap th:nth-child(2){width:90px}
 .alignedPage .tableWrap td:nth-child(2){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alignedPage .rowOwner{display:block;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.5;margin-top:5px;white-space:normal;overflow-wrap:anywhere}
+.alignedPage .taskHeader{padding-top:26px}
+.alignedPage .taskHeader h1{margin:0 0 6px}
+.alignedPage .taskHeader p{margin:0 0 18px;font-size:var(--teloa-font-caption)}
+.alignedPage.selectedPage>.taskHeader{display:none}
 
 /* 待办名称至多两行，状态与操作各自保留空间。 */
 .alignedPage .attentionRow .rowTitle{align-items:baseline;gap:6px 10px}
@@ -202,3 +208,6 @@
 .runModels>div{display:flex;flex-wrap:wrap;gap:8px}
 .runModels dt{color:var(--teloa-muted)}
 .runModels dd{margin:0}
+
+/* 新建以本次工作为主，已有业务、群与负责人只作紧凑上下文；详细选项按需展开。 */
+.form .createContext{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}.form .createDescription{min-height:180px;max-height:45dvh;line-height:1.65}.createOptions{border-top:1px solid var(--teloa-border);padding-top:10px}.createOptions summary{cursor:pointer;color:var(--teloa-muted);font-size:var(--teloa-font-control);padding:4px 0}.createOptions>div{display:flex;flex-direction:column;gap:13px;margin-top:12px}

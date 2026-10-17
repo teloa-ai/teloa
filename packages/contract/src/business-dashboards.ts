@@ -72,7 +72,7 @@ export const businessDashboardLimits={widgetsPerDashboard:12,dashboardsPerScope:
 /** 结果快照（读侧）：服务端表 `teloa_business_widget_results` 的一行。一期不截断，超限即 failed。 */
 export type BusinessWidgetColumn={name:string;type:'text'|'number'|'boolean'|'datetime'|'null'}
 export type BusinessWidgetCell=string|number|boolean|null
-export type BusinessWidgetResult={widgetId:string;definitionHash:string;computedAt:string;status:'ok'|'failed';columns:BusinessWidgetColumn[];rows:BusinessWidgetCell[][];rowCount:number;truncated:false;bytes:number;error?:{code:WorkErrorCode;reason:string};stale:boolean}
+export type BusinessWidgetResult={widgetId:string;definitionHash:string;computedAt:string;status:'ok'|'failed';columns:BusinessWidgetColumn[];rows:BusinessWidgetCell[][];rowCount:number;truncated:false;bytes:number;error?:{code:WorkErrorCode;reason:string};refreshError?:{code:WorkErrorCode;reason:string};stale:boolean}
 export type BusinessDashboardPage={schema:'teloa.business-dashboard-page/v1';scope:string;dashboard:BusinessDashboardDefinition;widgets:BusinessWidgetDefinition[];results:BusinessWidgetResult[];updatedAt:string|null;nextRefreshAt:string|null;refreshing:boolean
  /** 看板无 `filters` 时为 null；否则 options 与声明一致、selected 是本页结果所按的范围。 */
  timeRange:{selected:BusinessTimeRange;options:BusinessTimeRange[]}|null
@@ -315,8 +315,8 @@ const hash=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{
 const cell=(value:unknown)=>value===null||typeof value==='string'||typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value))
 
 function widgetResult(value:unknown):BusinessWidgetResult{
- const hasError=isRecord(value)&&value.error!==undefined
- const row=exact(value,['widgetId','definitionHash','computedAt','status','columns','rows','rowCount','truncated','bytes',...(hasError?['error']:[]),'stale'],'组件结果格式不正确。')
+ const hasError=isRecord(value)&&value.error!==undefined,hasRefreshError=isRecord(value)&&value.refreshError!==undefined
+ const row=exact(value,['widgetId','definitionHash','computedAt','status','columns','rows','rowCount','truncated','bytes',...(hasError?['error']:[]),...(hasRefreshError?['refreshError']:[]),'stale'],'组件结果格式不正确。')
  if(typeof row.widgetId!=='string'||!localId.test(row.widgetId)||!hash(row.definitionHash)||!utcStamp(row.computedAt))throw bad('组件结果的标识、哈希或计算时刻不合法。')
  if(row.status!=='ok'&&row.status!=='failed')throw invalidEnum('组件结果状态不合法。',row.status,['ok','failed'])
  if(row.status==='ok'?hasError:!hasError)throw bad('组件结果的错误信息与状态不一致：ok 不得带 error，failed 必须带 error。')
@@ -335,14 +335,15 @@ function widgetResult(value:unknown):BusinessWidgetResult{
  if(row.truncated!==false)throw bad('组件结果不截断，truncated 恒为 false。')
  if(!count(row.bytes)||row.bytes>businessDashboardLimits.resultBytes)throw bad('组件结果字节数不合法。')
  if(typeof row.stale!=='boolean')throw bad('组件结果过期标记必须是布尔值。')
- let error:BusinessWidgetResult['error']
- if(hasError){
-  const item=exact(row.error,['code','reason'],'组件结果的错误信息格式不正确。')
+ if(hasRefreshError&&(row.status!=='ok'||row.stale!==true))throw bad('刷新失败信息只能附于过期的成功统计。')
+ const readError=(value:unknown):NonNullable<BusinessWidgetResult['error']>=>{
+  const item=exact(value,['code','reason'],'组件结果的错误信息格式不正确。')
   if(!(workErrorCodes as readonly string[]).includes(item.code as string))throw bad('组件结果的错误码不在已知错误码内。')
   if(typeof item.reason!=='string'||!item.reason.trim()||item.reason.length>2000||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(item.reason))throw bad('组件结果的错误原因不合法。')
-  error={code:item.code as WorkErrorCode,reason:item.reason}
+  return {code:item.code as WorkErrorCode,reason:item.reason}
  }
- return {widgetId:row.widgetId,definitionHash:row.definitionHash,computedAt:row.computedAt,status:row.status,columns,rows,rowCount:row.rowCount as number,truncated:false,bytes:row.bytes,...(error?{error}:{}),stale:row.stale}
+ const error=hasError?readError(row.error):undefined,refreshError=hasRefreshError?readError(row.refreshError):undefined
+ return {widgetId:row.widgetId,definitionHash:row.definitionHash,computedAt:row.computedAt,status:row.status,columns,rows,rowCount:row.rowCount as number,truncated:false,bytes:row.bytes,...(error?{error}:{}),...(refreshError?{refreshError}:{}),stale:row.stale}
 }
 
 /** 单条组件结果（回包读侧，如预览里的 widgetTrial）：形状不符即 `teloa/invalid-host-response`。 */

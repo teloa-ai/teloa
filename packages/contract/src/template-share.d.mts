@@ -1,0 +1,21 @@
+export type TemplateSharePackage={format:'teloa.template-share/v1';id:string;version:string;title:string;description:string;requirements:string[];compatibility:{manifestFormat:'teloa.business-package/v2';capabilities:('people'|'automation')[]};files:{path:string;text:string}[]}
+/** 用户面称 AI 员工、AI 团队；应用、技能、MCP 是可单独分享的原子能力。 */
+export type TemplateShareSubject='employee'|'team'|'app'|'skill'|'mcp'
+export type TemplateShareCapability='people'|'automation'|'connections'|'business'
+export type TemplateShareProvenanceSource={title:string;url?:string;version?:string;license:string;resourceIds:string[]}
+export type TemplateSharePackageV2={format:'teloa.template-share/v2';subject:TemplateShareSubject;id:string;version:string;title:string;description:string;requirements:string[];license:string;trust:{publisher:string};provenance:{sources:TemplateShareProvenanceSource[];modifications?:string};sourceFiles:string[];team?:{coordinatorResourceId:string};compatibility:{manifestFormat:'teloa.business-package/v2'|'teloa.business-package/v3'|'teloa.business-package/v4';capabilities:TemplateShareCapability[]};files:{path:string;text:string}[]}
+export type AnyTemplateSharePackage=TemplateSharePackage|TemplateSharePackageV2
+export type TemplateSharePolicy={receiveMode:'personal-role'|'organization-install'|'preview-only';canPublish:boolean;reason?:string}
+/** 官方市场投稿审核状态；审核通过仍须官方发行，不代表自动上架。 */
+export type TemplateShareSubmissionState='pending'|'approved'|'rejected'|'withdrawn'
+export type TemplateShareSubmission={shareId:string;sha256:string;state:TemplateShareSubmissionState;submittedAt:string;reviewedAt?:string;reason?:string}
+export type TemplateShareReceipt={shareId:string;version:string;sha256:string;shareUrl:string;downloadUrl:string;publishedAt:string;revoked:boolean;submission?:TemplateShareSubmission}
+export type TemplateShareIntent={shareId:string}
+export type TemplateShareBridge={policy():Promise<TemplateSharePolicy>;publish(input:{requestId:string;package:AnyTemplateSharePackage}):Promise<TemplateShareReceipt>;list():Promise<TemplateShareReceipt[]>;revoke(input:{shareId:string}):Promise<unknown>;read(input:{shareId:string}):Promise<{shareId:string;package:AnyTemplateSharePackage;sha256:string}>;pending():TemplateShareIntent|null|Promise<TemplateShareIntent|null>;subscribe(callback:(intent:TemplateShareIntent|null)=>void):()=>void;dismiss(input:{shareId:string}):Promise<unknown>;beginAcceptance?(input:{requestId:string;shareId?:string}):Promise<{acceptanceId:string}>;endAcceptance?(input:{acceptanceId:string}):Promise<unknown>;submit?(input:{shareId:string;licenseAttestation:true;notes?:string}):Promise<TemplateShareSubmission>}
+export function templateShareTextIssue(value:string):string|undefined
+export function readTemplateSharePackage(value:unknown):TemplateSharePackage
+export function readTemplateSharePackageV2(value:unknown):TemplateSharePackageV2
+export function readTemplateShare(value:unknown):AnyTemplateSharePackage
+export function canonicalTemplateShare(value:unknown):string
+export function templateShareDigest(value:unknown):Promise<string>
+export function readTemplateShareSubmission(value:unknown):TemplateShareSubmission

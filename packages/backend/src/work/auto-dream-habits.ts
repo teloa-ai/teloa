@@ -97,11 +97,13 @@ export class AutoDreamHabitService{
 
  /**
   * 后台周期检查与分身目录读取共用此入口。
-  * 开关关闭、设置缺失或当天来源全空时不生成；已有日志则补齐自动保存，返回 undefined。
+  * Auto Dream 默认开启；分身不在岗（暂停或退休）或当天来源全空时不生成；已有日志则补齐自动保存，返回 undefined。
   */
  async ensureForDay(ownerId:string,twin:DigitalRole,nowIso:string):Promise<RoleDailyLog|undefined>{
   if(typeof ownerId!=='string'||!ownerId.trim())return undefined
   if(!twin||twin.kind!=='twin'||twin.ownerId!==ownerId)return undefined
+  // 默认开启不扩大执行：暂停或退休的分身不生成观察（目录读取入口不另行核对状态）。
+  if(twin.state!=='active')return undefined
   if(typeof nowIso!=='string'||!Number.isFinite(Date.parse(nowIso)))return undefined
   const db=await this.pool.connect()
   try{

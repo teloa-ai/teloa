@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {mkdtemp,readFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import {fileURLToPath,pathToFileURL} from 'node:url'
 import {createRequire,registerHooks} from 'node:module'
 import {parse} from 'yaml'
@@ -11,7 +12,7 @@ import {LlmRuntime,ToolCallId} from '@deepseek-ai/dsh-llm'
 import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {ToolRuntime,defineTool,type ToolExecutionResult} from '@deepseek-ai/dsh-tools'
+import {ToolRuntime,defineTool,type ToolExecutionResult,type ToolPresentationMode} from '@deepseek-ai/dsh-tools'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SkillRegistry} from '@deepseek-ai/dsh-skill'
@@ -22,9 +23,13 @@ import {createManagedMcpConnectionHandler,type ManagedConnectorEntry} from '../s
 const source=(providerId:string)=>({kind:'plugin' as const,providerId,name:'扩展 '+providerId})
 const tool=(name='work',presentationMeta:unknown={nativeField:'保留'} ,body:()=>Promise<string>=async()=> '实际结果')=>defineTool({name,description:'来源测试工具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}],presentationMeta:()=>presentationMeta as never},execute:body})
 const meta=(result:ToolExecutionResult)=>result.meta as Record<string,unknown>|undefined
-async function fixture(t:TestContext,mode:'native'|'both'='native'){
- const ctx=new Context();t.after(()=>ctx.fiber.dispose())
+// alpha3 取消了进程级 'both'：根作用域保持 native 直接调用；需要 run_code 的 Agent 用官方 ctx.tools.presentAs('ptc') 声明自己的作用域，
+// 同一进程内 direct 与 PTC 并存（原 both 的覆盖），PTC 子调用仍经真实 DSH 桥派发。
+async function fixture(t:TestContext,mode:ToolPresentationMode='native'){
+ const ctx=new Context(),directory=await mkdtemp(join(tmpdir(),'teloa-resource-cwd-'));t.after(async()=>{await ctx.fiber.dispose();await rm(directory,{recursive:true,force:true})})
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime,{mode});await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
+ // alpha3：带 Agent 的 run_code 与官方 Skill 工具都需要公开 workingDirectory 服务。
+ await installNativeWorkingDirectory(ctx,directory)
  const provenance=getToolResourceProvenance(ctx)
  const create=async(id:string)=>(await ctx.agents.create({sessionId:SessionId(id)})).agent
  const execute=(name='work',agent?:Awaited<ReturnType<typeof create>>,callId='call',args:unknown={})=>ctx.tools.execute({name,arguments:args,callId:ToolCallId(callId),signal:AbortSignal.timeout(5000),...(agent?{agent}:{})})
@@ -87,9 +92,10 @@ test('原生非对象JsonValue meta完整保留，已注册固定模块可显式
 })
 
 test('真实PTC bridge将成功子调用汇入各自outer meta，同callId不同agent不混并发',{timeout:10000},async t=>{
- const f=await fixture(t,'both'),one=await f.create('ptc-one'),two=await f.create('ptc-two')
+ const f=await fixture(t,'native'),one=await f.create('ptc-one'),two=await f.create('ptc-two')
  const runtime={language:'typescript',isolation:'fixture',resolve:(request:unknown)=>request,run:async(spec:{bindings:Array<{functions:Record<string,(args:Record<string,unknown>)=>Promise<unknown>>}>})=>({logs:[],value:await spec.bindings[0]!.functions.work!({})})}
  f.ctx.provide('ptcRuntime',runtime as never)
+ for(const agent of [one,two])agent.ctx.tools.presentAs('ptc')
  one.ctx.tools.register(f.provenance.wrapDefinition(tool(),source('one')))
  two.ctx.tools.register(f.provenance.wrapDefinition(tool(),source('two')))
  const [first,second]=await Promise.all([f.execute('run_code',one,'same-root',{code:'fixture',description:'并发来源一'}),f.execute('run_code',two,'same-root',{code:'fixture',description:'并发来源二'})])
@@ -101,7 +107,7 @@ test('真实PTC bridge将成功子调用汇入各自outer meta，同callId不同
 })
 
 test('真实PTC成功子调用来源经独立snapshot保存，outer失败或取消不抹掉事实、不改变模型消息',{timeout:10000},async t=>{
- const f=await fixture(t,'both'),controller=new AbortController(),rows:ToolResourceUseSnapshot[]=[]
+ const f=await fixture(t,'native'),controller=new AbortController(),rows:ToolResourceUseSnapshot[]=[]
  f.provenance.onNestedUse(async row=>{rows.push(JSON.parse(JSON.stringify(row)))})
  const runtime={language:'typescript',isolation:'fixture',resolve:(request:unknown)=>request,run:async(spec:{program:string;bindings:Array<{functions:Record<string,(args:Record<string,unknown>)=>Promise<unknown>>}>})=>{
   await spec.bindings[0]!.functions.work!({})
@@ -110,7 +116,7 @@ test('真实PTC成功子调用来源经独立snapshot保存，outer失败或取�
  }}
  f.ctx.provide('ptcRuntime',runtime as never)
  for(const mode of ['失败','取消']){
-  const agent=await f.create('ptc-snapshot-'+mode)
+  const agent=await f.create('ptc-snapshot-'+mode);agent.ctx.tools.presentAs('ptc')
   agent.ctx.tools.register(f.provenance.wrapDefinition(tool(),source(mode)))
   agent.session.append('tool/call',{turn:1,step:0,callId:ToolCallId('outer'),name:'run_code',arguments:JSON.stringify({code:mode,description:mode})})
   const before=agent.session.deriveMessages()
@@ -131,17 +137,25 @@ test('真实PTC成功子调用来源经独立snapshot保存，outer失败或取�
 })
 
 test('真实受管MCP注册和成功执行写入稳定server来源，重连后仍保留raw公开工具名',{timeout:10000},async t=>{
- const f=await fixture(t),root=await mkdtemp(join(tmpdir(),'teloa-resource-mcp-'))
+ const f=await fixture(t,'native'),root=await mkdtemp(join(tmpdir(),'teloa-resource-mcp-'))
  t.after(()=>rm(root,{recursive:true,force:true}))
  const entry:ManagedConnectorEntry={format:'teloa.market-catalog-entry/v1' as const,id:'test.resource-mcp',kind:'connector' as const,delivery:'managed' as const,version:'1.0.0',taxonomy:{functions:['automation'],industries:['general']},upstream:null,connector:{serverName:'resource_fixture',title:{'zh-CN':'真实参考连接',en:'Reference connection'},summary:{'zh-CN':'隔离来源验收',en:'Isolated provenance check'},auth:{kind:'none' as const},recipe:{transport:'stdio' as const,package:'@teloa/mcp-reference',version:'1.0.0',integrity:'sha512-'+'A'.repeat(86)+'==',bin:'lib/main.js',args:[]},tools:[{name:'list_references',description:{'zh-CN':'列出参考资料',en:'List references'},readOnly:true}],upstreamUrl:'https://example.com'},modifications:[],license:{spdx:'MIT',files:['LICENSE']},compatibility:{status:'verified' as const,teloa:'>=0.2.0-alpha.6',dsh:'0.2.0-rc.2',conditions:[]},requires:{tools:[],network:false,runtimes:[]},review:{status:'approved' as const,reviewedAt:'2026-10-07',reviewer:'Teloa'}}
- const {handler}=createManagedMcpConnectionHandler(f.ctx,root,()=>entry,async()=>fileURLToPath(new URL('../../mcp-reference/lib/main.js',import.meta.url)))
+ const managed=createManagedMcpConnectionHandler(f.ctx,root,()=>entry,async()=>fileURLToPath(new URL('../../mcp-reference/lib/main.js',import.meta.url))),{handler}=managed
+ t.after(()=>managed.dispose())
+ const agent=await f.create('managed-ptc')
+ f.ctx.provide('ptcRuntime',{language:'typescript',isolation:'fixture',resolve:(request:unknown)=>request,run:async(spec:{bindings:Array<{functions:Record<string,(args:Record<string,unknown>)=>Promise<unknown>>}>})=>({logs:[],value:await spec.bindings[0]!.functions.mcp__resource_fixture__list_references!({})})} as never)
+ agent.ctx.tools.presentAs('ptc')
  const connection=await handler('mcp-connections/add',{catalogId:entry.id}) as {id:string}
  for(let round=0;round<2;round++){
   await handler('mcp-connections/connect',{id:connection.id})
   const result=await f.execute('mcp__resource_fixture__list_references')
   assert.equal(result.isError,false,JSON.stringify(result))
   assert.deepEqual(meta(result)?.teloaResourceUse,{schema:'teloa.resource-use/v1',kind:'mcp',providerId:'resource_fixture',name:'真实参考连接',toolName:'mcp__resource_fixture__list_references',rawToolName:'list_references',state:'used'})
+  const nested=await f.execute('run_code',agent,'managed-'+round,{code:'fixture',description:'本人连接查询'})
+  assert.equal(nested.isError,false,JSON.stringify(nested))
+  assert.equal((meta(nested)?.teloaResourceUses as Array<{providerId:string}>)?.[0]?.providerId,'resource_fixture')
   await handler('mcp-connections/disconnect',{id:connection.id})
+  assert.equal((await f.execute('run_code',agent,'revoked-'+round,{code:'fixture',description:'撤销后查询'})).isError,true)
  }
 })
 
@@ -183,8 +197,9 @@ test('真实Loader贡献按正在注册的Entry模块来源归属，reload更新
 })
 
 test('公开DI依赖先于首次默认预设资源注册，真实Loader的Skill和Web支持direct、PTC及outer取消',{timeout:10000},async t=>{
- const ctx=new Context();t.after(()=>ctx.fiber.dispose())
- await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime,{mode:'both'});await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]});await ctx.plugin(SkillRegistry)
+ const ctx=new Context(),directory=await mkdtemp(join(tmpdir(),'teloa-resource-di-'));t.after(async()=>{await ctx.fiber.dispose();await rm(directory,{recursive:true,force:true})})
+ await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime,{mode:'native'});await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]});await ctx.plugin(SkillRegistry)
+ await installNativeWorkingDirectory(ctx,directory)
  const require=createRequire(import.meta.url),officialRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
  const {Loader}=await import(officialRequire.resolve('@deepseek-ai/cordis-plugin-loader'))
  // 使用公开Node解析钩子，与发行安装的包解析相同，不改依赖目录。
@@ -239,18 +254,20 @@ test('公开DI依赖先于首次默认预设资源注册，真实Loader的Skill�
   if(spec.program==='取消后的搜索'){controller.abort('本人停止');throw new DOMException('本人停止','AbortError')}
   return {logs:[],value}
  }} as never)
+ // alpha3：同一预设再挂一个声明 PTC 展示的 Agent；直接调用断言仍由上方 native Agent 承担。
+ const ptcAgent=(await ctx.agents.create({sessionId:SessionId('default-resource-preset-ptc'),setup:async scoped=>{await ctx.agentPresets.mount(scoped,declaration.config.id);scoped.tools.presentAs('ptc')}})).agent
  for(const description of ['PTC实际查询','取消后的搜索']){
   const callId=ToolCallId(description),args={code:description,description}
-  agent.session.append('tool/call',{turn:1,step:0,callId,name:'run_code',arguments:JSON.stringify(args)})
-  const before=agent.session.deriveMessages()
-  const result=await execute('run_code',args,callId,description==='取消后的搜索'?controller.signal:AbortSignal.timeout(5000))
+  ptcAgent.session.append('tool/call',{turn:1,step:0,callId,name:'run_code',arguments:JSON.stringify(args)})
+  const before=ptcAgent.session.deriveMessages()
+  const result=await ctx.tools.execute({name:'run_code',arguments:args,callId:ToolCallId(callId),agent:ptcAgent,signal:description==='取消后的搜索'?controller.signal:AbortSignal.timeout(5000)})
   assert.equal(result.isError,description==='取消后的搜索',JSON.stringify(result))
   assert.equal(controller.signal.aborted,description==='取消后的搜索')
   const use=snapshots.find(row=>row.parentCallId===callId)?.use
   assert.deepEqual(use?.queries,[description]);assert.deepEqual(use?.sources,sources);assert.equal(use?.answer,'真实搜索回答')
   assert.equal(use?.providerId,'@deepseek-ai/dsh-tool-web');assert.equal(use?.kind,'web')
   if(!result.isError)assert.deepEqual(meta(result)?.teloaResourceUses,[use])
-  assert.deepEqual(agent.session.deriveMessages(),before,'来源证据不进入模型surface')
+  assert.deepEqual(ptcAgent.session.deriveMessages(),before,'来源证据不进入模型surface')
  }
  assert.deepEqual(searched,['本轮查询','PTC实际查询','取消后的搜索'])
  assert.equal(snapshots.length,2)

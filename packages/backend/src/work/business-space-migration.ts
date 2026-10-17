@@ -86,7 +86,7 @@ async function migrate(db:PoolClient,ownerId:string,options:BusinessSpaceMigrati
  // 存量冻结取值恒为 `'space-'+本人某个空间的身份`；先把全集算出来，搬移前后判据一致。
  const spaceNames=new Map((await db.query('select id,name from teloa_business_spaces where owner_id=$1',[ownerId])).rows.map(row=>[text(row.id),text(row.name)]))
  const frozen=new Set([...spaceNames.keys()].map(id=>'space-'+id))
- const loads=tables.has('teloa_industry_loads')?(await db.query('select id,space_id,space_version,content_hash,status,created_at,scope,template_title from teloa_industry_loads where owner_id=$1 order by created_at,id',[ownerId])).rows:[]
+ const loads=tables.has('teloa_industry_loads')?(await db.query('select id,space_id,space_version,content_id,content_hash,status,created_at,scope,template_title from teloa_industry_loads where owner_id=$1 order by created_at,id',[ownerId])).rows:[]
  // 每一条**合规** `scope` 都登记成本人空间下的业务范围标签——单空间旧库一条都不用搬，
  // 但它的模板同样要出现在业务范围目录里，否则该范围下建任务会被判成"未登记"。登记幂等，不覆盖已有行。
  // 不合规的 `scope`（中文、超长等，加载判据 §`isBusinessScopeDomain` 之前入库的存量行）既不登记标签
@@ -158,8 +158,8 @@ const receipt=async(db:PoolClient,ownerId:string,kind:BusinessSpaceMigrationKind
 }
 
 /**
- * 加载归并：按 `content_hash` 分组，每组只有一条能落在本人空间（表上 `unique(owner_id,space_id,content_hash)`）。
- * 本人空间里已有同摘要的那条是既定占位者（搬不走别人也搬不进来），因此它就是保留者；
+ * 加载归并：按固定 `content_id` 与 `content_hash` 分组，每组只有一条能落在本人空间。
+ * 本人空间里已有同固定内容身份与摘要的那条是既定占位者，因此它就是保留者；不同声明对应的 content 互不退役。
  * 否则在非本人空间的候选里取「仍活跃且最新」的一条搬进来。其余候选留在原空间并置为已卸载——
  * 其它空间行按规格保留不删，只是它们的重复加载不再提供可执行血缘。
  *
@@ -168,7 +168,7 @@ const receipt=async(db:PoolClient,ownerId:string,kind:BusinessSpaceMigrationKind
  */
 async function moveLoads(db:PoolClient,ownerId:string,personalId:string,personalVersion:number,loads:readonly Row[],summary:BusinessSpaceMigrationSummary,options:BusinessSpaceMigrationOptions):Promise<void>{
  const groups=new Map<string,Row[]>()
- for(const row of loads)groups.set(text(row.content_hash),[...(groups.get(text(row.content_hash))??[]),row])
+ for(const row of loads){const key=JSON.stringify([text(row.content_id),text(row.content_hash)]);groups.set(key,[...(groups.get(key)??[]),row])}
  for(const group of groups.values()){
   const occupant=group.find(row=>text(row.space_id)===personalId)
   const ranked=[...group].sort((a,b)=>(a.status==='active'?0:1)-(b.status==='active'?0:1)||order(b.created_at,a.created_at)||order(text(b.id),text(a.id)))

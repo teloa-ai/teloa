@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFileSync} from 'node:fs'
+import ts from 'typescript'
 import {homeNativeAdoptionRequestId} from '../src/client/home-native-controller.ts'
 
 const frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
@@ -23,7 +24,15 @@ test('从任务新建关联会话后自动准备固定任务与业务对象上�
 })
 
 test('新建角色与任务的迟到后续只使用已有会话，任务读取后再次核对导航权',()=>{
- assert.match(frame,/const canContinue=\(\)=>mayContinueHomeCreation\(creationLocation,latestState\.current,mainSession\.getSnapshot\(\),conversation\.sessionId\)/)
+ const file=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+ let continuation:ts.ArrowFunction|undefined
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='canContinue'&&node.initializer&&ts.isArrowFunction(node.initializer)&&node.initializer.body.getText(file).includes('mayContinueHomeCreation('))continuation=node.initializer;ts.forEachChild(node,visit)}
+ visit(file);assert.ok(continuation)
+ const body=continuation.body.getText(file)
+ const calls:unknown[][]=[],evaluate=(intent:unknown,allowed=true)=>new Function('intent','creationLocation','latestState','mainSession','conversation','mayContinueHomeCreation','return ('+body+')')(intent,'original-location',{current:'current-location'},{getSnapshot:()=> 'main-snapshot'},{sessionId:'original-session'},(...args:unknown[])=>{calls.push(args);return allowed})
+ assert.equal(evaluate({}),true);assert.deepEqual(calls.pop(),['original-location','current-location','main-snapshot','original-session'])
+ for(const intent of [{signal:{aborted:true}},{continuation:{current:()=>false}},{projectCurrent:()=>false}]){calls.length=0;assert.equal(evaluate(intent),false);assert.deepEqual(calls,[])}
+ assert.equal(evaluate({},false),false)
  assert.match(frame,/if\(!canContinue\(\)\)\{intent\.resolve/)
  assert.match(frame,/await prepareTaskConversation\(object,conversation,canContinue\)/)
  assert.doesNotMatch(frame,/sendRoleIdentity\(object,conversation,canContinue\)/)

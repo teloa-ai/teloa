@@ -17,8 +17,9 @@ import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {initializeTasks,TaskService} from '../src/work/tasks.ts'
 import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
 import {readRunGroupContext,type RunGroupContext} from '../src/work/task-run-group-context.ts'
-import {groupTopicNotice,readRunGroupTopic} from '../src/work/group-topic.ts'
+import {groupTopicNotice,readRunGroupTopic,readGroupConversationTopic} from '../src/work/group-topic.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import {initializeGroupWorkInputs} from '../src/work/group-work-inputs.ts'
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 
 let container:StartedPostgreSqlContainer,pool:Pool
@@ -33,6 +34,7 @@ before(async()=>{
  pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool);await initializeTasks(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeGroupTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool)
  await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeGroupAttachments(pool)
+ await initializeGroupWorkInputs(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 
@@ -52,10 +54,25 @@ async function fixture(){
  if(!run.groupContext)throw Error('群运行必须带群上下文')
  return {owner,groups,group,root,role,runs,run,context:run.groupContext}
 }
-async function topicOf(owner:string,context:RunGroupContext){
+async function topicOf(owner:string,context:RunGroupContext,displayName?:string){
  const db=await pool.connect()
- try{return await readRunGroupTopic(db,owner,context)}finally{db.release()}
+ try{return await readRunGroupTopic(db,owner,context,displayName)}finally{db.release()}
 }
+
+test('群上下文使用本人资料姓名，权限身份与原消息保持不变',async()=>{
+ const f=await fixture(),topic=await topicOf(f.owner,f.context,'Max Luo')
+ assert.equal(topic!.messages[0]!.authorName,'Max Luo')
+ assert.equal(topic!.messages[0]!.authorId,'self')
+ assert.equal(topic!.messages[0]!.authorKind,'self')
+ assert.equal(topic!.messages[0]!.text,f.root.text)
+ assert.match(topic!.notice,/称呼/)
+ const db=await pool.connect()
+ try{
+  const continuous=await readGroupConversationTopic(db,f.owner,{groupId:f.group.id,messageId:f.root.id,replyToMessageId:null,mode:'main',roleId:null,displayName:'Max Luo'})
+  assert.equal(continuous!.messages[0]!.authorName,'Max Luo')
+  assert.equal(continuous!.messages[0]!.authorId,'self')
+ }finally{db.release()}
+})
 
 test('话题为空时返回 undefined（整个键不进 JSON）',async()=>{
  const f=await fixture()

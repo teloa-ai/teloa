@@ -27,9 +27,11 @@ export function isBundledExtensionId(value:unknown):value is BundledExtensionId{
  * 不区分大小写：macOS/Windows 默认文件系统下 `node_modules/@Teloa/…` 与官方目录是同一处。
  */
 export function isReservedOfficialPackage(name:string):boolean{return /^@teloa\//i.test(name)}
-export function readBundledExtensionSetInput(value:unknown):{extensionId:BundledExtensionId;enabled:boolean}{
- const row=exact(value,['extensionId','enabled'])
+export function readBundledExtensionSetInput(value:unknown):{extensionId:BundledExtensionId;enabled:boolean;expected?:{version:string;state:BundledExtensionState}}{
+ const row=exact(value,isRecordWith(value,'expected')?['extensionId','enabled','expected']:['extensionId','enabled'])
  if(!isBundledExtensionId(row.extensionId)||typeof row.enabled!=='boolean')throw bad()
+ if(row.expected!==undefined){const expected=exact(row.expected,['version','state']);if(typeof expected.version!=='string'||expected.version.length>80||!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(expected.version)||!(bundledExtensionStates as readonly unknown[]).includes(expected.state))throw bad();return {extensionId:row.extensionId,enabled:row.enabled,expected:{version:expected.version,state:expected.state as BundledExtensionState}}}
+ if(Object.hasOwn(row,'expected'))throw bad()
  return {extensionId:row.extensionId,enabled:row.enabled}
 }
 export function readBundledExtensionView(value:unknown):BundledExtensionView{

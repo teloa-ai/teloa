@@ -1,9 +1,9 @@
 import {createHash} from 'node:crypto'
-import {WorkError,taskInput,isResourceSpec,promptFullTextMaxBytes,resourceId,resourceVersion,type ResourceContext} from '@teloa/contract'
+import {WorkError,taskInput,isResourceSpec,promptFullTextMaxBytes,resourceId,resourceVersion,roleKnowledgeMaxReferences,type ResourceContext} from '@teloa/contract'
 export type RunKnowledge=ResourceContext['contents'][number]
-export function readRunKnowledge(value:unknown):RunKnowledge[]{
+export function readRunKnowledge(value:unknown,maxReferences:8|typeof roleKnowledgeMaxReferences=roleKnowledgeMaxReferences):RunKnowledge[]{
  try{
-  if(!Array.isArray(value)||value.length>8)throw Error()
+  if(!Array.isArray(value)||value.length>maxReferences)throw Error()
   let bytes=0
   const rows=value.map(item=>{
    const r=taskInput(item,['id','version','title','sourceId','sourceVersion','scopeIds','text'])

@@ -1,7 +1,7 @@
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,projectDefinition,projectInput,projectOverviewInput,projectUuid,projectLinkKinds,readProject,projectSummary,type WorkProject,type ProjectDefinition,type ProjectDetail,type ProjectLinkKind,type ProjectOverviewPage,type ProjectReference} from '@teloa/contract'
 import {BusinessScopeService,assertBusinessScopeRegistered} from './business-scopes.ts'
-import {readProjectItems,readProjectReferenceItems,readProjectRelations,unavailableProjectReference,projectCandidates,projectDerivedItems} from './project-items.ts'
+import {readProjectItems,readProjectReferenceItems,readProjectRelations,unavailableProjectReference,projectCandidates,projectDerivedItems,projectLinkedGroups} from './project-items.ts'
 import {TaskAttentionService} from './task-attention.ts'
 
 /** references 回填是一次性迁移：迁移标记首次落下时才补齐存量缺键行，之后启动只剩一次主键插入尝试。 */
@@ -55,12 +55,13 @@ function read(row:Record<string,unknown>):WorkProject{
  }catch{throw new WorkError('teloa/storage-corrupt','项目记录损坏，请检查原记录。')}
 }
 const same=(a:ProjectDefinition,b:ProjectDefinition)=>JSON.stringify(a)===JSON.stringify(b)
+async function assertMutationCurrent(signal?:AbortSignal,revalidate?:()=>Promise<void>){signal?.throwIfAborted();await revalidate?.();signal?.throwIfAborted()}
 export class ProjectService{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string}
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string}){this.pool=pool;this.identity=identity}
- private async transaction<T>(run:(db:PoolClient)=>Promise<T>,readOnly=false):Promise<T>{
+ private async transaction<T>(run:(db:PoolClient)=>Promise<T>,readOnly=false,signal?:AbortSignal,revalidate?:()=>Promise<void>):Promise<T>{
   const db=await this.pool.connect()
-  try{await db.query(readOnly?'begin isolation level repeatable read read only':'begin');const value=await run(db);await db.query('commit');return value}
+  try{await assertMutationCurrent(signal,revalidate);await db.query(readOnly?'begin isolation level repeatable read read only':'begin');const value=await run(db);await assertMutationCurrent(signal,revalidate);await db.query('commit');return value}
   catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async list(owner:string,input:unknown):Promise<WorkProject[]>{
@@ -89,7 +90,7 @@ export class ProjectService{
    for(const item of items)if(item.kind==='task'&&item.available)item.attention=byId.get(item.id)?.kind??null
    const accessible=new Set<string>();for(const scope of new Set(project.references.map(ref=>ref.scope)))if(await referenceScopeAccessible(db,owner,scope))accessible.add(scope)
    const readable=new Map((await readProjectReferenceItems(db,owner,project.references.filter(ref=>accessible.has(ref.scope)))).map(item=>[referenceKey(item),item]))
-   return {project,items,summary:projectSummary(items),references:project.references.map(ref=>readable.get(referenceKey(ref))??unavailableProjectReference(ref))}
+   return {project,items,summary:projectSummary(items),linkedGroups:await projectLinkedGroups(db,owner,project.id,project.scope),references:project.references.map(ref=>readable.get(referenceKey(ref))??unavailableProjectReference(ref))}
   },true)
  }
  async candidates(owner:string,input:unknown){
@@ -106,7 +107,7 @@ export class ProjectService{
   if(items.some(item=>!item.available))throw new WorkError('teloa/forbidden','关联对象不存在、不可用或不属于当前业务。')
   if(references.some(item=>!item.available))throw referenceForbidden()
  }
- async create(owner:string,input:unknown):Promise<WorkProject>{
+ async create(owner:string,input:unknown,signal?:AbortSignal,revalidate?:()=>Promise<void>):Promise<WorkProject>{
   ownerIdentity(owner);const row=projectInput(input,['requestId','fields']),fields=projectDefinition(row.fields)
   if(!projectUuid(row.requestId)||fields.state!=='planning')throw invalid()
   return this.transaction(async db=>{
@@ -114,11 +115,12 @@ export class ProjectService{
    const existing=(await db.query('select * from teloa_projects where owner_id=$1 and request_id=$2 for update',[owner,row.requestId])).rows[0]
    if(existing){if(!same(projectDefinition(existing.request_spec),fields))throw new WorkError('teloa/conflict','同一请求不能创建不同的项目。');return read({...existing,definition:existing.request_spec,version:1,updated_at:existing.created_at})}
    await assertBusinessScopeRegistered(db,owner,fields.scope);await this.validateRelations(db,owner,fields)
+   await assertMutationCurrent(signal,revalidate)
    const now=this.identity.now(),result=await db.query('insert into teloa_projects(id,owner_id,request_id,request_spec,definition,version,created_at,updated_at) values($1,$2,$3,$4,$4,1,$5,$5) returning *',[this.identity.id(),owner,row.requestId,JSON.stringify(fields),now])
    return read(result.rows[0])
-  })
+  },false,signal,revalidate)
  }
- async edit(owner:string,input:unknown):Promise<WorkProject>{
+ async edit(owner:string,input:unknown,signal?:AbortSignal,revalidate?:()=>Promise<void>):Promise<WorkProject>{
   ownerIdentity(owner);const row=projectInput(input,['projectId','expectedVersion','fields']),fields=projectDefinition(row.fields)
   if(!projectUuid(row.projectId)||!Number.isSafeInteger(row.expectedVersion)||Number(row.expectedVersion)<1)throw invalid()
   return this.transaction(async db=>{
@@ -131,9 +133,10 @@ export class ProjectService{
    const previousFields=projectDefinition(raw.definition)
    if(previous.state==='archived'&&(fields.state==='archived'||!same({...previousFields,state:fields.state},fields)))throw new WorkError('teloa/conflict','请先恢复项目，再编辑内容或关联。')
    await this.validateRelations(db,owner,fields,previousFields)
+   await assertMutationCurrent(signal,revalidate)
    const updated=read((await db.query('update teloa_projects set definition=$3,version=version+1,updated_at=$4 where owner_id=$1 and id=$2 returning *',[owner,row.projectId,JSON.stringify(fields),this.identity.now()])).rows[0])
    await db.query('insert into teloa_project_edits(project_id,base_version,request_spec,result) values($1,$2,$3,$4)',[row.projectId,row.expectedVersion,JSON.stringify(fields),JSON.stringify(updated)])
    return updated
-  })
+  },false,signal,revalidate)
  }
 }

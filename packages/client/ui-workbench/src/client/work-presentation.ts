@@ -16,7 +16,7 @@ export function presentConversations(rows:readonly Conversation[],native:readonl
   const summaries=new Map(native.map(item=>[item.id,item])),needle=query.trim().toLocaleLowerCase()
   return rows.map(conversation=>{
     const summary=summaries.get(conversation.sessionId)
-    const title=summary?.title?.trim()||conversation.title
+    const title=conversation.purpose==='assistant'?conversation.title:summary?.title?.trim()||conversation.title
     const updatedAt=summary&&Number.isFinite(summary.updatedAt)&&summary.updatedAt>0?summary.updatedAt:Date.parse(conversation.createdAt)
     const status:PresentedConversation['status']=conversation.status==='pending'?'pending':!summary?'unknown':summary.running?'running':summary.blank?'blank':'idle'
     const snippet=needle&&conversation.status==='ready'?content?.get(conversation.sessionId):undefined

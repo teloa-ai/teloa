@@ -20,6 +20,7 @@ const {teamCapabilityCatalog}=await import('../src/client/team-capabilities-pres
 
 const pageSource=await readFile(new URL('../src/client/TeamCapabilitiesPage.tsx',import.meta.url),'utf8')
 const frameSource=await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
+const storeSource=await readFile(new URL('../src/client/store.ts',import.meta.url),'utf8')
 
 const conversation:CapabilitySnapshot['conversation']={id:'conversation',sessionId:'session',requestedSessionId:'session',ownerId:'self',title:'当前会话',scopeIds:['general'],version:1,status:'ready',createdAt:'2026-09-12T00:00:00.000Z'}
 const snapshot:CapabilitySnapshot={schema:'teloa.capabilities/v1',conversation,observedAt:'2026-09-12T00:00:00.000Z',skills:[{name:'review',description:'核对资料',source:'/skills/review.md',provider:'local',modelInvocable:true,userInvocable:true}],knowledge:{status:'ready',resources:[{id:'resource',ownerId:'self',title:'调查手册',sourceId:'docs',sourceVersion:'a'.repeat(64),scopeIds:['general'],version:1,status:'active',createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T00:00:00.000Z'}]},connections:{status:'observed',tools:[{name:'mcp__edr__query',description:'查询告警'}]},writes:{status:'not-implemented'}}
@@ -49,8 +50,9 @@ test('尚未接入会话时不呈现永久禁用的刷新入口',()=>{
 
 test('正式能力使用关系不再用页面内 demo 冒充持久化绑定',()=>{
  assert.doesNotMatch(pageSource,/CapabilityBindings/)
- assert.match(pageSource,/teamCapability\.bindingUnavailable\.title/)
- assert.match(pageSource,/teamCapability\.bindingUnavailable\.boundary/)
+ // 独立「我的能力／绑定」页已退出：绑定入口统一落到市场「已添加」，页面里不再有绑定不可用的替代页
+ assert.doesNotMatch(pageSource,/UnavailableBindings|bindingUnavailable/)
+ assert.match(storeSource,/openBinding\(state,id:string\|null,version\?:number\)\{requestMarketCategory\(state,'resources'\)/)
  assert.doesNotMatch(frameSource,/createCapabilityBinding/)
  assert.doesNotMatch(frameSource,/changeCapabilityBinding/)
  assert.doesNotMatch(frameSource,/from ['"]\.\/CapabilityBindings\.js['"]/)

@@ -203,7 +203,12 @@ test('两个不同对象类型写入可同持配置共享锁，排他采用须�
  let waiting=false
  for(let n=0;n<4000;n++){if((await pool.query("select 1 from pg_locks where locktype='advisory' and mode='ExclusiveLock' and not granted")).rowCount){waiting=true;break}await new Promise<void>(r=>setImmediate(r))}
  assert.ok(waiting);await block.query('commit');block.release()
- assert.equal((await Promise.all(pending)).length,2);assert.equal((await adoption).version,2)
+ assert.equal((await Promise.all(pending)).length,2)
+ // 预览回执绑定数据修订号（20d66a7）：等待期间完成的两次记录写入使旧回执失效，排他采用须由本人重新预览后完成。
+ await assert.rejects(adoption,{code:'teloa/conflict',details:{reason:'preview-receipt-invalid'}})
+ const fresh=await f.preview.preview(f.actor,{draftId:draft.id,expectedRevision:1})
+ assert.notEqual(fresh.receipt,preview.receipt)
+ assert.equal((await f.apply.apply(f.actor,{requestId:randomUUID(),draftId:draft.id,expectedRevision:1,expectedBaseVersion:1,previewReceipt:fresh.receipt})).version,2)
 })
 test('配置排他锁持有时记录等待，释放后读取新的真实定义',async()=>{
  const f=await fixture(),block=await pool.connect();await block.query('begin');await lockBusinessConfiguration(block,f.actor.ownerId,f.input.scope)

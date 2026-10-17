@@ -94,12 +94,27 @@ async function planFixture(){
 }
 async function planRows(owner:string){return (await pool.query('select (select jsonb_agg(to_jsonb(o) order by id) from teloa_plan_occurrences o where owner_id=$1) occurrences,(select jsonb_agg(to_jsonb(s) order by plan_id) from teloa_plan_schedule_state s where owner_id=$1) state',[owner])).rows[0]}
 
-test('TaskRun 首次prepared拒绝零持久变更，可信能力request固定真实员工与会话',async()=>{
+test('TaskRun员工资格首次拒绝零持久变更，发送权准入固定真实员工与会话',async()=>{
  const f=await runFixture(),before=await runState(f.task.id,f.run.id),current=state(f.owner),calls=current.requests.length
  current.allowed=false
  await assert.rejects(f.service.claim(f.owner,{runId:f.run.id}),{code:'teloa/forbidden'})
  assert.deepEqual(await runState(f.task.id,f.run.id),before)
- assert.deepEqual(current.requests.slice(calls),[{kind:'capability',capability:'people',ownerId:f.owner,sessionId:f.run.sessionId,objectId:f.run.roleId,operation:'run'}])
+ assert.deepEqual(current.requests.slice(calls),[{kind:'capability',capability:'people',ownerId:f.owner,sessionId:null,objectId:f.run.roleId,operation:'run'}])
+ // 员工资格先核验独立岗位；实际领取发送权再固定原Run的会话与原生请求，不移除任一道许可。
+ current.allowed=true;const sendingCalls=current.requests.length
+ assert.equal((await f.service.claim(f.owner,{runId:f.run.id})).dispatch,true)
+ assert.deepEqual(current.requests.slice(sendingCalls),[
+  {kind:'capability',capability:'people',ownerId:f.owner,sessionId:null,objectId:f.run.roleId,operation:'run'},
+  {kind:'capability',capability:'people',ownerId:f.owner,sessionId:f.run.sessionId,objectId:f.run.roleId,operation:'run'},
+  {kind:'task-run-start',ownerId:f.owner,runId:f.run.id,taskId:f.task.id,sessionId:f.run.sessionId,nativeRequestId:f.run.nativeRequestId},
+ ])
+})
+test('已安排真实员工的任务来源聊天不能绕过上下文接口直接prepare',async()=>{
+ const owner=randomUUID(),role=await activeRole(owner),task=await new TaskService(pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'来源草稿',goal:'核对原聊天',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}})
+ const sessionId=randomUUID(),id=randomUUID(),inspect=async()=>({id,ownerId:owner,sessionId,status:'ready'})
+ await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:1,sessionId,expectedLinkVersion:0,action:'link',sourceOnly:true})
+ await assert.rejects(new TaskRunService(pool,identity,inspect).prepare(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1}),{code:'teloa/forbidden'})
+ assert.equal((await pool.query('select 1 from teloa_task_runs where owner_id=$1 and task_id=$2',[owner,task.id])).rowCount,0)
 })
 test('TaskRun许可到期仍可返回旧accepted回执、读取、停止意图和对账',async()=>{
  const f=await runFixture(),claimed=await f.service.claim(f.owner,{runId:f.run.id})

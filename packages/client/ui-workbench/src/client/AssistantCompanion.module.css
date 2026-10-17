@@ -1,0 +1,35 @@
+/* 沿用已批准的120px透明全身小松鼠：角色之外不包白卡，不用动效虚构工作进展。 */
+.companion{position:fixed;right:28px;bottom:28px;z-index:var(--teloa-z-menu,24);width:140px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:center;box-sizing:border-box;background:transparent;color:var(--teloa-text);font:inherit;font-size:12px;line-height:1.5}
+.companion button{font:inherit;color:inherit;cursor:pointer;box-sizing:border-box}
+.companion button:disabled{opacity:.55;cursor:default}
+.companion button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.controls{width:100%;display:flex;align-items:center;justify-content:flex-end;gap:3px}
+.icon{position:relative;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted)!important;flex:none}
+.controls .icon{width:24px;height:24px;background:var(--teloa-subtle);border:1px solid var(--teloa-border);border-radius:5px}
+.icon:hover{background:var(--teloa-hover);color:var(--teloa-text)!important}
+.pet{display:block;width:120px;height:120px;padding:0!important;border:0!important;background:transparent!important;border-radius:6px;touch-action:none;user-select:none;cursor:grab!important}
+.pet:active,.restore:active{cursor:grabbing!important}
+.pet img{display:block;width:100%;height:100%;object-fit:contain;user-select:none;pointer-events:none;filter:drop-shadow(0 5px 5px #25312412)}
+.name{display:flex;align-items:center;gap:6px;justify-content:center;min-height:26px;max-width:100%;margin-top:2px;padding:3px 10px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);font-size:11px!important;font-weight:500;box-shadow:0 3px 12px #111b1408}
+.name small{font-size:10px;color:var(--teloa-muted)}
+.actions{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:5px}
+.actions sup{position:absolute;top:-2px;right:-2px;border-radius:8px;font-size:9px;background:var(--teloa-surface);border:1px solid var(--teloa-border);min-width:12px;text-align:center}
+.collapsed{display:flex;align-items:center;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:999px;box-shadow:var(--teloa-shadow);padding-right:4px}
+.restore{display:flex;align-items:center;gap:12px;min-height:36px;padding:6px 12px;border:0;border-radius:999px;background:transparent;touch-action:none;cursor:grab!important;user-select:none}
+.panel{position:fixed;width:240px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;box-sizing:border-box;overscroll-behavior:contain;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow);padding:10px;color:var(--teloa-text)}
+.panel header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 2px 6px}
+.panel strong{font-weight:500;font-size:12px}
+.panel p{font-size:12px;line-height:1.7;margin:4px 4px 8px;color:var(--teloa-muted)}
+.poses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.poses button{display:flex;align-items:center;flex-direction:column;gap:3px;padding:5px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:10px}
+.poses button:hover{background:var(--teloa-hover)}
+.poses button[aria-pressed=true]{border-color:var(--teloa-accent);background:var(--teloa-accent-bg,var(--teloa-subtle))}
+.poses img{width:54px;height:54px;object-fit:contain;pointer-events:none}
+.error{background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:8px;padding:8px;font-size:11px;line-height:1.6;color:var(--teloa-warn,var(--teloa-text));overflow-wrap:anywhere}
+
+.status{margin:0;max-width:100%;text-align:center;color:var(--teloa-muted);font-size:10px;line-height:1.5}
+.automatic{width:100%;margin:0 0 7px;padding:6px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-subtle);font-size:11px!important}
+.automatic[aria-pressed=true]{border-color:var(--teloa-accent)}
+.pet img{animation:pose-enter 150ms ease-out}
+@keyframes pose-enter{from{opacity:.8;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.pet img{animation:none}.companion *{transition:none}}

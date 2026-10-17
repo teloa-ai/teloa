@@ -1,11 +1,16 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useEffect,useRef,useState} from 'react'
-import {CalendarClock,Search} from 'lucide-react'
+import {CalendarClock,Search,RefreshCw,ArrowUpRight} from 'lucide-react'
+import {DirectoryFilterPopover} from './DirectoryFilterPopover.js'
+import {directoryChoiceCopy} from './directory-choice-copy.js'
+import directoryCss from './DirectoryPane.module.css'
 import type {WorkTask} from '@teloa/contract'
 import type {PlanApi,PlanExecutionDirectoryInput,PlanExecutionRunState,SavedPlan} from './plan-api.js'
 import {appendPlanExecutionHistory,createPlanExecutionHistoryRequestGate,type PlanExecutionHistoryPage} from './plan-execution-history.js'
 import type {PreviewRole} from './role-preview.js'
 import pageCss from './TaskPage.module.css'
 import css from './PlanExecutionDirectory.module.css'
+import light from './light-actions.module.css'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 
@@ -35,28 +40,28 @@ export function PlanExecutionDirectory({api,plans,roles,scopes,fixedScope,fixedR
   void api.directory({...input,cursor}).then(next=>{if(requests.current.current(request))setState(previous=>{if(previous.key!==key||!previous.page)return previous;try{return {...previous,page:appendPlanExecutionHistory(previous.page,next),more:false,error:''}}catch(cause){return {...previous,more:false,error:localizeWorkError(locale,cause),errorPhase:'more'}}})},cause=>{if(requests.current.current(request))setState(previous=>previous.key===key?{...previous,more:false,error:localizeWorkError(locale,cause),errorPhase:'more'}:previous)})
  }
  const titles=new Map(plans.map(plan=>[plan.id,plan.title])),roleOptions=roles.filter(role=>role.storage==='persistent')
+ const hasFilters=!!query.trim()||scope!==(fixedScope??'')||roleId!==(fixedRoleId??'')||!!runState
+ const clearFilters=()=>{setScope(fixedScope??'');setRoleId(fixedRoleId??'');setQuery('');setRunState('')}
  return <section className={css.layout} aria-label={t('plan.directory.aria')}>
-  <aside className={css.filters}>
-   <h2>{t('plan.directory.filters')}</h2>
-   <div className={pageCss.tabs}><button type="button" aria-pressed={false} onClick={openPlans}>{t('continuous.tab.plans')}</button><button type="button" aria-pressed={true}>{t('continuous.tab.runs')}</button></div>
-   <label className={`${pageCss.search} ${css.search}`}><Search size={16}/><input maxLength={240} aria-label={t('plan.directory.search')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('plan.directory.searchPlaceholder')}/></label>
-   <label>{t('plan.directory.scope')}<select disabled={!!fixedScope} value={scope} onChange={event=>setScope(event.target.value)}><option value="">{t('common.allBusiness')}</option>{Object.entries(scopes).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
-   <label>{t('plan.directory.role')}<select disabled={!!fixedRoleId} value={roleId} onChange={event=>setRoleId(event.target.value)}><option value="">{t('plan.directory.allRoles')}</option>{roleOptions.map(role=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
-   <label>{t('plan.directory.state')}<select value={runState} onChange={event=>setRunState(event.target.value as PlanExecutionRunState|'')}><option value="">{t('plan.directory.allStates')}</option>{Object.entries(runStateKeys).map(([id,key])=><option key={id} value={id}>{t(key)}</option>)}</select></label>
-   <button type="button" onClick={()=>{setScope(fixedScope??'');setRoleId(fixedRoleId??'');setQuery('');setRunState('')}}>{t('plan.directory.clear')}</button>
-  </aside>
+  <div className={css.toolbar}>
+   <label className={css.search}><Search size={16} aria-hidden="true"/><input maxLength={240} aria-label={t('plan.directory.search')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('plan.directory.searchPlaceholder')}/></label>
+   <DirectoryFilterPopover label={t('plan.directory.filters')}><div className={`${directoryCss.filterPanel} ${css.filters}`}>
+    <label>{t('plan.directory.scope')}<select disabled={!!fixedScope} value={scope} onChange={event=>setScope(event.target.value)}><option value="">{t('common.allBusiness')}</option>{Object.entries(scopes).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
+    <label>{t('plan.directory.role')}<select disabled={!!fixedRoleId} value={roleId} onChange={event=>setRoleId(event.target.value)}><option value="">{t('plan.directory.allRoles')}</option>{roleOptions.map(role=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+    <label>{t('plan.directory.state')}<select value={runState} onChange={event=>setRunState(event.target.value as PlanExecutionRunState|'')}><option value="">{t('plan.directory.allStates')}</option>{Object.entries(runStateKeys).map(([id,key])=><option key={id} value={id}>{t(key)}</option>)}</select></label>
+   </div></DirectoryFilterPopover>
+   {hasFilters&&<button type="button" className={css.clear} onClick={clearFilters}>{t('plan.directory.clear')}</button>}
+   <ToolbarIconButton label={t('plan.directory.refresh')} icon={RefreshCw} disabled={loading||current?.more} onClick={()=>setReload(value=>value+1)}/>
+  </div>
   <main className={css.content}>
-   <header><div><h2>{t('plan.directory.title')}</h2><p>{t('plan.directory.description')}</p></div><button type="button" disabled={loading||current?.more} onClick={()=>setReload(value=>value+1)}>{t('plan.directory.refresh')}</button></header>
    {current?.error&&<p className={pageCss.error} role="alert">{current.error}<button type="button" disabled={loading||current.more} onClick={()=>current.errorPhase==='more'?loadMore():setReload(value=>value+1)}>{t('common.retry')}</button></p>}
    {loading&&!page&&<p role="status">{t('plan.directory.loading')}</p>}
    {!!page?.errors?.length&&<p className={css.corrupt} role="status">{t('plan.directory.corrupt',{count:page.errors.length})}</p>}
    <div className={css.records}>{page?.items.map(item=><article key={item.claimId} className={css.record} data-teloa-claim={item.claimId}>
-    <div className={css.recordHeading}><div><strong>{titles.get(item.planId)??item.planId}</strong><small>{t('plan.directory.planId',{id:item.planId})}</small></div><span>{t(runStateKeys[item.run?.state??'not-started'])}</span></div>
-    <p>{t('plan.directory.meta',{time:stamp(item.scheduledAt),version:item.configVersion,claim:item.claimId})}</p>
-    <div className={css.facts}><span>{t('plan.directory.task',{state:item.task?t(taskStateKeys[item.task.state]):t('plan.directory.taskUnlinked')})}</span><span>{t('plan.directory.revision',{version:item.planVersion})}</span></div>
-    {item.task&&<button type="button" onClick={()=>openTask(item.task!.id)}>{t('plan.directory.openTask')}</button>}
+    <div className={css.recordHeading}><div><strong>{titles.get(item.planId)??t('continuous.detail.planTitle')}</strong><small>{stamp(item.scheduledAt)} · {t('plan.directory.task',{state:item.task?t(taskStateKeys[item.task.state]):t('plan.directory.taskUnlinked')})}</small></div><span>{t(runStateKeys[item.run?.state??'not-started'])}</span>{item.task&&<button type="button" className={light.link} onClick={()=>openTask(item.task!.id)}>{t('plan.directory.openTask')}<ArrowUpRight size={13} aria-hidden/></button>}</div>
+    <details className={css.recordDetails}><summary>{directoryChoiceCopy(locale,'executionInfo')}</summary><p>{t('plan.directory.planId',{id:item.planId})}</p><p>{t('plan.directory.meta',{time:stamp(item.scheduledAt),version:item.configVersion,claim:item.claimId})}</p><p>{t('plan.directory.revision',{version:item.planVersion})}</p></details>
    </article>)}</div>
-   {page&&!page.items.length&&!page.errors?.length&&!loading&&!current?.error&&<div className={css.empty}><CalendarClock size={28}/><h3>{t('plan.directory.empty')}</h3><p>{t('plan.directory.emptyHint')}</p></div>}
+   {page&&!page.items.length&&!page.errors?.length&&!loading&&!current?.error&&<div className={css.empty}><CalendarClock size={28} aria-hidden="true"/><h3>{t(hasFilters?'continuous.empty.noMatch':'plan.directory.empty')}</h3><p>{t(hasFilters?'continuous.empty.changeFilters':'plan.directory.emptyHint')}</p>{!hasFilters&&<button type="button" onClick={openPlans}>{directoryChoiceCopy(locale,'viewPlans')}</button>}</div>}
    {page?.cursor&&<button type="button" disabled={loading||current?.more} onClick={loadMore}>{t(current?.more?'plan.directory.moreLoading':'plan.directory.more')}</button>}
   </main>
  </section>

@@ -1,4 +1,4 @@
-import { createHash,randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -18,10 +18,6 @@ import {readSessionEvents} from './session-events.ts'
 
 export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/apply','resources/withdraw','resources/recovery','resources/history','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource']
 const empty=(value:unknown)=>{if(!isRecord(value)||Object.keys(value).length)throw new WorkError('teloa/invalid-input','此查询不接受其他参数。')}
-function requestIdentity(sessionId:string,callId:string):string {
-  const hash=createHash('sha256').update(sessionId+'\0'+callId).digest('hex')
-  return hash.slice(0,8)+'-'+hash.slice(8,12)+'-5'+hash.slice(13,16)+'-a'+hash.slice(17,20)+'-'+hash.slice(20,32)
-}
 export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>,localMaterialPorts?:AuthorizedLocalMaterialPorts){
   // 运行目录与部署形态只认启动时继承的进程环境（launch-env.ts）：决定数据库口令文件位置与数据库主机白名单。
   const trusted=securityEnv(ctx),runtimeRoot=resolveTeloaRuntime(projectRoot,trusted)
@@ -78,18 +74,19 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       default:throw new WorkError('teloa/not-found','未提供此资料接口。')
     }
   }
-  const parameters={title:{type:'string',required:true},sourceId:{type:'string',required:true},sourceVersion:{type:'string',required:true},scopeIds:{type:'array',items:{type:'string'},required:true}} as const
-  for(const operation of ['sources','list','create','update'] as const){
+  // 创建和修改由 library-tools 统一固定本人指令及受管任务边界；这里保留原会话范围的只读查询。
+  for(const operation of ['sources','list'] as const){
     ctx.tools.register(defineTool({
       name:'teloa_resources_'+operation,
-      description:operation==='sources'?'列出可用于 Teloa 工作资料的受控来源及 SHA-256 版本。':operation==='list'?'列出本人工作资料与配置草案。草案尚不可引用，提交需要本人在工作资料界面完成。':operation==='create'?'创建工作资料草案。使用来源目录的 sourceId、sourceVersion；当前范围为 general。只保存草案，不授予读取权限；请本人打开工作资料核对后提交。':'编辑未提交的工作资料草案，必须带上当前 expectedVersion。不能修改已提交资料或跳过本人提交。',
-      parameters:operation==='create'?parameters:operation==='update'?{draftId:{type:'string',required:true},expectedVersion:{type:'integer',required:true},...parameters}:{},
+      description:operation==='sources'?'列出可用于 Teloa 工作资料的受控来源及 SHA-256 版本。':'列出当前会话范围内本人工作资料与配置草案。草案尚不可引用；本人要求提交时可在原会话调用 teloa_library_apply。',
+      parameters:{},
       output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
       execute:async(args,exec)=>{
         if(!exec.agent)throw new WorkError('teloa/not-bound','资料操作需要已绑定的工作会话。')
         const binding=await conversations.bySession(owner,exec.agent.session.id)
         const principal:ResourceActor={ownerId:owner,kind:'agent',scopeIds:binding.scopeIds},{service}=await get()
-        const value=operation==='sources'?await service.sourceDirectory(principal):operation==='list'?await service.list(principal):operation==='create'?await service.create(principal,{...args,requestId:requestIdentity(exec.agent.session.id,exec.callId)}):await service.update(principal,args)
+        empty(args)
+        const value=operation==='sources'?await service.sourceDirectory(principal):await service.list(principal)
         return JSON.stringify(value)
       },
     }))

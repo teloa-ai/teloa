@@ -31,10 +31,11 @@ type ImportInput=AtomicInput|IndustryInput
 type Normalized={kind:MarketContent['kind'];logicalId:string;version:string;hash:string;baseHash:string;manifestPath:string;metadata:Record<string,unknown>;trust:MarketSourceTrust;trustHash:string;files:MarketContent['files'];provides:MarketProvidedResource[];references:MarketContentReference[];requestSpec:Record<string,unknown>;source:MarketImportReceipt['source'];requestId:string}
 
 const kinds=['role','knowledge','skill','mcp','plugin','data-source','execution-tool','work-template','plan','object-type','business-view','business-action','business-configuration'] as const
-// 四条关联的 from 全是 role，不给声明开第五条：动作 → 工作模板的关联由动作声明里的
+// 关联的 from 全是 role，不给声明开新关联：动作 → 工作模板的关联由动作声明里的
 // target.localId 表达，不走 relations，否则同一件事有两个真源。
+// role-coordination：团队模板明确声明的协调者 → 同包成员，只是静态分工，不授予权限、不建群。
 const relationTargets:Record<string,readonly MarketResourceKind[]>={
- 'role-knowledge':['knowledge'],'role-skill':['skill'],'role-connection':['mcp','data-source','execution-tool'],'role-work':['work-template','plan'],
+ 'role-knowledge':['knowledge'],'role-skill':['skill'],'role-connection':['mcp','data-source','execution-tool'],'role-work':['work-template','plan'],'role-coordination':['role'],
 }
 const MAX_FILE=2*1024*1024,MAX_TOTAL=20*1024*1024
 const bad=(message='市场内容请求格式不正确或包含未知字段。')=>new WorkError('teloa/invalid-input',message)

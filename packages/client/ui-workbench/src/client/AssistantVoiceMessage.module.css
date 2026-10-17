@@ -1,0 +1,3 @@
+.message{display:grid;gap:10px;font-size:12px;line-height:1.5;color:var(--teloa-muted)}
+.message p{margin:0}.message [role=alert]{color:var(--teloa-danger)}
+.message>div{display:flex;gap:8px;flex-wrap:wrap}.message button{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--teloa-border);border-radius:7px;background:transparent;color:inherit;font:inherit;cursor:pointer}.message button:disabled{opacity:.5;cursor:default}

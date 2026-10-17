@@ -3,9 +3,26 @@ import assert from 'node:assert/strict'
 import {createRoleApi,readSavedRole} from '../src/client/role-api.ts'
 import {WorkError} from '@teloa/contract'
 import {createRoleHandler} from '../../../harness-dsh/src/roles.ts'
+test('a durable template request can be reconciled after a successful reply without changing identity',async()=>{
+ const requestId='7afba0bf-51f6-4f46-b681-a380423b8701',calls:any[]=[]
+ const api=createRoleApi(async(_endpoint,payload)=>{calls.push(payload);return role})
+ await api.create(fields,requestId);await api.create(fields,requestId)
+ assert.equal(calls[0].requestId,requestId);assert.deepEqual(calls[0],calls[1])
+ await assert.rejects(api.create(fields,'invalid'),/核对/)
+})
 const legacyFields={name:'调查岗',kind:'employee' as const,scopes:['SOC'],duty:'调查',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[]}
 const fields={...legacyFields,responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}
 const role={...fields,id:'16057272-ed9d-44a3-abe4-2ab04e056105',ownerId:'local:owner',version:1,state:'active',createdAt:'2026-09-11T00:00:00.000Z',updatedAt:'2026-09-11T00:00:00.000Z'}
+test('头像经创建、目录和编辑回读保持一致，服务端错配不能默认为保存成功',async()=>{
+ const avatarFields={...fields,avatarKey:'researcher' as const},avatarRole={...role,avatarKey:'researcher' as const}
+ const calls:any[]=[]
+ const api=createRoleApi(async(endpoint,input)=>{calls.push({endpoint,input});return endpoint==='roles/list'?[avatarRole]:endpoint==='roles/edit'?{...avatarRole,version:2}:avatarRole})
+ assert.equal((await api.create(avatarFields)).avatarKey,'researcher')
+ assert.equal((await api.list())[0]?.avatarKey,'researcher')
+ assert.equal((await api.edit(role.id,1,avatarFields)).avatarKey,'researcher')
+ assert.equal(calls[0].input.fields.avatarKey,'researcher')
+ await assert.rejects(createRoleApi(async()=>role).create(avatarFields),/响应与原请求/)
+})
 test('未知创建结果保留同一请求，修改内容不能偷偷另建',async()=>{
  const requests:unknown[]=[],api=createRoleApi(async(_endpoint,input)=>{requests.push(input);if(requests.length===1)throw Error('断线');return role})
  await assert.rejects(api.create(fields),/断线/)
@@ -151,4 +168,15 @@ test('创建回包错配有稳定提示，随后明确拒绝也不能释放原�
  let saved:string|null=null,calls=0;const requests:unknown[]=[],api=createRoleApi(async(_endpoint,input)=>{requests.push(input);if(++calls===1)return {...role,duty:'错配'};throw Object.assign(Error('当前预检拒绝'),{rejected:true,code:'teloa/forbidden'})},{read:()=>saved,write:v=>{saved=v},clear:()=>{saved=null}})
  await assert.rejects(api.create(fields),error=>(error as {code?:unknown}).code==='teloa/invalid-host-response');const before=saved
  await assert.rejects(api.create(fields),error=>(error as {code?:unknown}).code==='teloa/role-create-pending');assert.equal(saved,before);assert.deepEqual(requests[0],requests[1])
+})
+
+test('身份资料保存核对同一岗位版本和原执行定义，不能接受权限或职责被替换的响应',async()=>{
+ const next={...fields,name:'小研',avatarKey:'researcher' as const},calls:unknown[]=[]
+ const api=createRoleApi(async(endpoint,input)=>{calls.push({endpoint,input});return {...role,...next}})
+ const saved=await api.updateProfile(role.id,1,fields,{name:'小研',avatarKey:'researcher'})
+ assert.equal(saved.version,1);assert.equal(saved.name,'小研')
+ assert.deepEqual(calls,[{endpoint:'roles/profile',input:{roleId:role.id,expectedVersion:1,expectedProfile:{name:fields.name},profile:{name:'小研',avatarKey:'researcher'}}}])
+ for(const patch of [{version:2},{duty:'被替换'},{executionScope:'允许外发'}]){
+  await assert.rejects(createRoleApi(async()=>({...role,...next,...patch})).updateProfile(role.id,1,fields,{name:'小研',avatarKey:'researcher'}),/响应与目标、版本或字段不一致/)
+ }
 })

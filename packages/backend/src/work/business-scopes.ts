@@ -18,13 +18,33 @@ const unregistered=()=>new WorkError('teloa/invalid-input','业务范围未登�
  * 行业模板加载在写事务之前用它拒绝不合规的 `domain`；存量迁移用它判断哪些 `domain` 不能拿来改写冻结列。
  */
 export const isBusinessScopeDomain=isBusinessScopeKey
-/** 存量 `Design` 取值可能落在这四处；表缺失就说明该类还没接入，这条判据无从成立。 */
+/**
+ * 本人数据引用某个业务范围的真实落点（按各表实际列）：存量 `Design` 与新装不再预登记的旧内置 SOC/AppSec 共用。
+ * 表缺失就说明该类还没接入，这条判据无从成立。
+ */
 const legacySources:readonly {table:string;sql:string}[]=[
  {table:'teloa_tasks',sql:"select 1 from teloa_tasks where owner_id=$1 and definition->>'scope'=$2 limit 1"},
  {table:'teloa_plans',sql:'select 1 from teloa_plans where owner_id=$1 and scope=$2 limit 1'},
  {table:'teloa_groups',sql:"select 1 from teloa_groups where owner_id=$1 and definition->>'scope'=$2 limit 1"},
  {table:'teloa_industry_role_instances',sql:'select 1 from teloa_industry_role_instances where owner_id=$1 and scope=$2 limit 1'},
+ {table:'teloa_roles',sql:"select 1 from teloa_roles where owner_id=$1 and definition->'scopes' ? $2 limit 1"},
+ {table:'teloa_industry_loads',sql:'select 1 from teloa_industry_loads where owner_id=$1 and scope=$2 limit 1'},
+ {table:'teloa_projects',sql:"select 1 from teloa_projects where owner_id=$1 and definition->>'scope'=$2 limit 1"},
+ {table:'teloa_resources',sql:"select 1 from teloa_resources where owner_id=$1 and spec->'scopeIds' ? $2 limit 1"},
+ {table:'teloa_knowledge_items',sql:'select 1 from teloa_knowledge_items where owner_id=$1 and scope_ids ? $2 limit 1'},
+ {table:'teloa_role_daily_logs',sql:'select 1 from teloa_role_daily_logs where owner_id=$1 and scope_ids ? $2 limit 1'},
+ {table:'teloa_business_object_snapshots',sql:'select 1 from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 limit 1'},
+ {table:'teloa_business_configuration_heads',sql:'select 1 from teloa_business_configuration_heads where owner_id=$1 and scope_id=$2 limit 1'},
 ]
+/** 新装唯一预登记的业务；其余内置取值（SOC/AppSec）仍是合法业务身份，只在本人确有引用或写入时登记。 */
+const defaultBuiltinScope='general'
+const referenced=async(db:Db,ownerId:string,scope:string,tables:Set<string>):Promise<boolean>=>{
+ for(const source of legacySources){
+  if(!tables.has(source.table))continue
+  if((await db.query(source.sql,[ownerId,scope])).rowCount)return true
+ }
+ return false
+}
 const present=async(db:Db,names:readonly string[]):Promise<Set<string>>=>
  new Set((await db.query('select name from unnest($1::text[]) as name where to_regclass(name) is not null',[[...names]])).rows.map(row=>row.name as string))
 const sourceNoun=(value:unknown):value is string=>typeof value==='string'&&!!value.trim()&&value===value.trim()&&value.length<=12&&!/[\x00-\x1f\x7f]/.test(value)
@@ -104,18 +124,13 @@ export class BusinessScopeService{
   return {created:result.rowCount===1}
  }
  /**
-  * 登记三个内置范围；库里确有 `scope='Design'` 的存量行时一并登记为 `legacy` 标签，
-  * 让既有任务、计划、群与岗位实例的该取值继续可读可写。迁移任务会重复做这件事，两边都幂等。
+  * 新装只登记 `general`；其余内置范围（SOC/AppSec）只在本人数据确有引用时登记为 `builtin`，库里确有 `scope='Design'`
+  * 的存量引用时登记为 `legacy` 标签。已有标签行一律不动（`ensure` 不覆盖、不删除）。迁移任务会重复做这件事，两边都幂等。
   */
  static async ensureBuiltin(db:Db,ownerId:string,spaceId:string):Promise<void>{
-  for(const item of builtinBusinessScopes)await BusinessScopeService.ensure(db,ownerId,{scope:item.scope,title:item.title,kind:'builtin',spaceId})
   const tables=await present(db,legacySources.map(source=>source.table))
-  for(const source of legacySources){
-   if(!tables.has(source.table))continue
-   if(!(await db.query(source.sql,[ownerId,legacyBusinessScope.scope])).rowCount)continue
-   await BusinessScopeService.ensure(db,ownerId,{scope:legacyBusinessScope.scope,title:legacyBusinessScope.title,kind:'legacy',spaceId})
-   return
-  }
+  for(const item of builtinBusinessScopes)if(item.scope===defaultBuiltinScope||await referenced(db,ownerId,item.scope,tables))await BusinessScopeService.ensure(db,ownerId,{scope:item.scope,title:item.title,kind:'builtin',spaceId})
+  if(await referenced(db,ownerId,legacyBusinessScope.scope,tables))await BusinessScopeService.ensure(db,ownerId,{scope:legacyBusinessScope.scope,title:legacyBusinessScope.title,kind:'legacy',spaceId})
  }
  /** 写路径的判据：内置取值恒真，缺表视为未接入亦为真，其余取值按表里有没有行。 */
  static async registered(db:Db,ownerId:string,scope:string):Promise<boolean>{
@@ -124,6 +139,19 @@ export class BusinessScopeService{
   if(isBuiltinBusinessScope(scope))return true
   if(!(await present(db,['teloa_business_scopes'])).has('teloa_business_scopes'))return true
   return !!(await db.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[ownerId,scope])).rowCount
+ }
+ /** 「需要你」只读范围：目录截断须显式返回，指定范围按本人精确核对，不受目录上限影响。 */
+ async attentionScopes(ownerId:string,input:{scope?:string}):Promise<{scopeIds:string[];truncated:boolean}>{
+  owner(ownerId)
+  if(typeof input!=='object'||input===null||Array.isArray(input)||Object.keys(input).some(key=>key!=='scope')||input.scope!==undefined&&(!label(input.scope)||input.scope!==input.scope.trim()))throw invalid()
+  // 通用任务沿用独立范围，不要求登记一条业务标签，也不把旧内置命名兼容当作本人业务授权。
+  if(input.scope==='general')return {scopeIds:['general'],truncated:false}
+  if(!(await present(this.pool,['teloa_business_scopes'])).has('teloa_business_scopes'))return {scopeIds:[],truncated:false}
+  const rows=input.scope===undefined
+   ?(await this.pool.query("select scope from teloa_business_scopes where owner_id=$1 and scope<>'general' order by created_at,scope limit 501",[ownerId])).rows
+   :(await this.pool.query('select scope from teloa_business_scopes where owner_id=$1 and scope=$2',[ownerId,input.scope])).rows
+  const scopeIds=rows.slice(0,500).map(row=>{if(!label(row.scope))throw corrupt();return row.scope as string})
+  return {scopeIds,truncated:rows.length>500}
  }
  /** 标签目录：按登记先后列出，并汇总各标签下的加载、任务与群数量。缺表的那一类计 0。 */
  async list(ownerId:string):Promise<BusinessScopeLabel[]>{
@@ -159,7 +187,18 @@ export class BusinessScopeService{
  }
 }
 
-/** 任务、计划与群的写入校验：未登记的业务范围在任何写之前被拒，调用方的事务因此不会留下痕迹。 */
+/**
+ * 任务、计划与群的写入校验：未登记的业务范围在任何写之前被拒，调用方的事务因此不会留下痕迹。
+ * 合法的内置取值（SOC/AppSec）新装不再预登记：写入放行时由调用方传入的同一写事务补登记标签，目录与数据一致；
+ * 没有本人空间的旧装配无处挂标签，照旧只放行。纯查询 `registered` 不写任何东西。
+ */
 export async function assertBusinessScopeRegistered(db:Db,ownerId:string,scope:string):Promise<void>{
  if(!await BusinessScopeService.registered(db,ownerId,scope))throw unregistered()
+ const builtin=builtinBusinessScopes.find(item=>item.scope===scope)
+ if(!builtin)return
+ const tables=await present(db,['teloa_business_scopes','teloa_business_spaces'])
+ if(!tables.has('teloa_business_scopes')||!tables.has('teloa_business_spaces'))return
+ if((await db.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[ownerId,scope])).rowCount)return
+ const space=(await db.query("select id from teloa_business_spaces where owner_id=$1 and kind='personal'",[ownerId])).rows[0]
+ if(space)await BusinessScopeService.ensure(db,ownerId,{scope:builtin.scope,title:builtin.title,kind:'builtin',spaceId:String(space.id)})
 }

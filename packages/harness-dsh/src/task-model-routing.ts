@@ -33,13 +33,24 @@ export function installTaskModelRouting(agent:Agent,input:TaskRunModelPolicy,por
   current=policy.fallback;switched=true
   return true
  }
+ /**
+  * 策略与模型都没给思考档位时，固定任务按 high 请求（与官方 DeepSeek 路由默认一致）。
+  * 官方 pi-ai 的 Anthropic 协议把“未指定”发成 thinking disabled，推理模型会被静默关闭思考。
+  */
+ const withTaskEffort=async(config:LlmCallConfig,signal:AbortSignal):Promise<LlmCallConfig>=>{
+  if(config.reasoningEffort!==undefined)return config
+  const info=await agent.ctx.llm.resolveModelInfo(config.provider,config.model,signal)
+  signal.throwIfAborted()
+  const high=info.reasoning?.efforts.find(effort=>effort.id==='high')
+  return high?{...config,reasoningEffort:high.id}:config
+ }
  const resolve=async(signal:AbortSignal,inherited?:LlmCallConfig):Promise<LlmCallConfig>=>{
   signal.throwIfAborted()
   // 只替换路由/思考档位，保留岗位或原生插件设定的输出预算与采样参数。
   const {provider:_provider,model:_model,reasoningEffort:_effort,...sampling}=inherited??{}
   const proposal=()=>({...sampling,...current}) as LlmCallConfig
   const prepare=async()=>{
-   const config=await agent.ctx.llm.resolveCallConfig(proposal(),signal)
+   const config=await withTaskEffort(await agent.ctx.llm.resolveCallConfig(proposal(),signal),signal)
    return ports.prepareRequest?ports.prepareRequest(config,signal):config
   }
   try{return await prepare()}catch(error){

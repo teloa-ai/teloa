@@ -12,12 +12,13 @@ export const businessTargetKey = (target: BusinessTarget): string =>
     JSON.stringify([target.scope, target.section, target.id ?? null, target.objectType ?? null, ...(target.dashboardId === undefined ? [] : [target.dashboardId]), ...(target.recordReference === undefined ? [] : [target.recordReference.scope,target.recordReference.type,target.recordReference.id,target.recordReference.version,target.recordReference.snapshotHash]), ...(target.match === undefined ? [] : [target.match.field, target.match.value])])
 
 /** 「已见」取值：视图与业务目标各一份，用来判断这次变化是不是用户的动作。 */
-export type BusinessNavSeen = {viewSeen: string; targetSeen: string}
+export type BusinessNavSeen = {viewSeen: string; targetSeen: string; openRequestSeen?:number}
 
 /**
  * 报给装配层的来由：
  * - `view`/`target`：两条 effect 观察到的新取值。
- * - `enter`：调用方明确要进某个范围的内页（卡片、`enterBusiness`）。
+ * - `open-request`：store 的显式打开请求，即使目标相同也进入内页；不参与持久恢复。
+ * - `enter`：内页呈现决策。
  * - `back-home`：页头「← 业务台账」。
  * - `settle`：启动恢复期落定目标——只推平已见取值，不算用户打开了一个范围。
  */
@@ -25,8 +26,9 @@ export type BusinessNavSignal =
     | {kind: 'view'; view: string}
     | {kind: 'target'; target: BusinessTarget}
     | {kind: 'enter'}
+    | {kind: 'open-request'; request:number}
     | {kind: 'back-home'}
-    | {kind: 'settle'; target: BusinessTarget}
+    | {kind: 'settle'; target: BusinessTarget; home?: boolean}
 
 /** 一次装配的结果：新的已见取值，以及首页/内页这一位要不要翻（`null` 表示不翻）。 */
 export type BusinessNavStep = {seen: BusinessNavSeen; home: boolean | null}
@@ -50,13 +52,17 @@ export function businessNavStep(seen: BusinessNavSeen, signal: BusinessNavSignal
             const key = businessTargetKey(signal.target)
             return {seen: {...seen, targetSeen: key}, home: home('target', {target: seen.targetSeen !== key})}
         }
+        case 'open-request': {
+            const changed=signal.request!==(seen.openRequestSeen??0)
+            return {seen:{...seen,openRequestSeen:signal.request,...(changed?{viewSeen:'spaces'}:{})},home:changed?home('enter'):null}
+        }
         case 'enter':
             return {seen: {...seen, viewSeen: 'spaces'}, home: home('enter')}
         case 'back-home':
             return {seen, home: home('back-home')}
         case 'settle': {
             const precise = signal.target.section !== 'overview' || signal.target.id !== undefined
-            return {seen: {...seen, targetSeen: businessTargetKey(signal.target)}, home: precise ? home('enter') : null}
+            return {seen: {...seen, targetSeen: businessTargetKey(signal.target)}, home: signal.home ?? (precise ? home('enter') : null)}
         }
     }
 }

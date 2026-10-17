@@ -1,3 +1,4 @@
+import './employee-asset-test-loader.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -28,7 +29,7 @@ const {translateMessage}=await import('../lib/types/client/i18n/messages.js')
 const zh=(key:string,params?:Record<string,string|number>)=>translateMessage('zh-CN',key as never,params)
 
 // ── RoleDailyLogPanel：真实组件函数 + 手动 hooks 调度 ──────────────────────────────
-type Props={trigger?:{time:string;timezone:'Asia/Singapore'|'Asia/Shanghai'|'UTC'};now?:()=>string;roleId:string;kind:RoleDailyLogKind;api:RoleDailyLogApi;memoryApi:RoleMemoryApi|undefined;promote?:(log:RoleDailyLog,value:{title:string;markdown:string})=>Promise<void>}
+type Props={schedule?:{state:'active'|'paused'|'archived'|'unknown';nextAt?:string|null;trigger?:{time:string;timezone:'Asia/Singapore'|'Asia/Shanghai'|'UTC'}};trigger?:{time:string;timezone:'Asia/Singapore'|'Asia/Shanghai'|'UTC'};now?:()=>string;roleId:string;kind:RoleDailyLogKind;api:RoleDailyLogApi;memoryApi:RoleMemoryApi|undefined;promote?:(log:RoleDailyLog,value:{title:string;markdown:string})=>Promise<void>}
 
 function mount(initial:Props){
  let props=initial
@@ -221,10 +222,10 @@ test('不传 promote（同事 daily-digest）不渲染「记下来」',async()=>
  assert.equal(app.findAll(byContent(app,zh('habitLog.promote'))).length,0)
 })
 
-test('空态：list() 返回 [] 时显示 dailyLog.empty',async()=>{
+test('空态：list() 返回 [] 只能证明没有日志，未读取计划时显示状态待核对',async()=>{
  const app=mount({roleId,kind:'daily-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi()})
  await app.flush()
- assert.ok(app.find(byContent(app,zh('dailyLog.empty'))))
+ assert.ok(app.find(byContent(app,zh('dailyLog.schedule.unknown'))))
 })
 
 test('丢弃这份日志：点击调用 api.discard，成功后该行与详情都置为已丢弃',async()=>{
@@ -277,22 +278,24 @@ const renderRoleDetail=()=>renderToStaticMarkup(createElement(I18nProvider,{runt
  openTask:noop,openGroup:noop,resources:noop,nativeSettings:noop,capabilities:noopNode,plans:noopNode,
 } as never)))
 
-test('同事主页 memory 组的「编辑」态出现「它记得的事 / 工作日志」两个页签，role="tablist" 在位',()=>{
+test('同事主页只有工作、协作与能力三页签，记忆和日志从具名更多菜单进入',()=>{
  const html=renderRoleDetail()
- assert.match(html,/role="tablist"/)
- assert.match(html,/role="tab"/)
+ assert.equal((html.match(/role="tablist"/g)||[]).length,1)
+ assert.equal((html.match(/role="tab"/g)||[]).length,3)
+ assert.match(html,/aria-selected="true"[^>]*>工作<\/button>/)
+ assert.match(html,/aria-label="更多员工操作"/)
  assert.ok(html.includes(zh('team.profile.group.memory')))
  assert.ok(html.includes(zh('dailyLog.entry')))
- assert.match(html,/aria-selected="true"[^>]*>它记得的事<\/button>/,'默认应停在「它记得的事」')
- assert.match(html,/aria-selected="false"[^>]*>工作日志<\/button>/,'「工作日志」页签默认未选中')
+ assert.doesNotMatch(html,/role-memory-tab-|role-memory-panel-/)
 })
 
-test('memory 组页签支持键盘 ←→/Home/End：moveMemoryTab 四个分支齐全且都 preventDefault',async()=>{
+test('同事三主页签保留键盘首尾与方向处理，按需内容不另造一组导航',async()=>{
  const source=await (await import('node:fs/promises')).readFile(new URL('../src/client/TeamPage.tsx',import.meta.url),'utf8')
- const line=source.slice(source.indexOf('const moveMemoryTab ='),source.indexOf('};',source.indexOf('const moveMemoryTab =')))
- for(const key of ['ArrowRight','ArrowLeft','Home','End'])assert.match(line,new RegExp(`event\\.key === '${key}'`),`moveMemoryTab 缺少 ${key} 分支`)
- assert.equal(line.match(/event\.preventDefault\(\)/g)?.length,4,'四个方向都要 preventDefault，否则宿主页面会跟着滚动/翻页')
- assert.match(source,/onKeyDown=\{moveMemoryTab\}/,'页签按钮必须接上 moveMemoryTab')
+ const line=source.slice(source.indexOf('const moveDetailTab='),source.indexOf('const [form,',source.indexOf('const moveDetailTab=')))
+ for(const key of ['ArrowRight','ArrowLeft','Home','End'])assert.match(line,new RegExp(`event\\.key==='${key}'`),`主页签缺少 ${key} 分支`)
+ assert.match(line,/event\.preventDefault\(\)/)
+ assert.match(source,/onKeyDown=\{moveDetailTab\}/)
+ assert.doesNotMatch(source,/moveMemoryTab|role-memory-tab-/)
 })
 
 test('左列按 day 倒序：已丢弃行灰显并显示丢弃态；表头「最近 60 天 · N 份」取代原保留说明',async()=>{
@@ -370,21 +373,35 @@ test('「···」菜单：丢弃在菜单里；有未完成请求时多出「�
  assert.equal(app.findAll(el=>el.type==='button'&&app.contentOf(el)===zh('dailyLog.discard')).length,0,'恢复回包已丢弃后不再出现丢弃项')
 })
 
-test('空态：左列「最近 60 天 · 0 份」，右侧标题 + 说明；传 trigger 时多一句下次生成时刻，不传则没有',async()=>{
+test('空态只根据该员工真实调度回包显示下次时刻，单独配置 trigger 不代表计划在运行',async()=>{
  const trigger={time:'06:00',timezone:'Asia/Singapore' as const}
- const app=mount({roleId,kind:'daily-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi(),trigger,now:()=>'2026-09-20T12:00:00.000Z'})
+ const app=mount({roleId,kind:'daily-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi(),trigger,schedule:{state:'active',nextAt:'2026-09-21T22:00:00.000Z',trigger},now:()=>'2026-09-20T12:00:00.000Z'})
  await app.flush()
  assert.ok(app.find(byContent(app,zh('dailyLog.recentCount',{count:0}))))
  assert.ok(app.find(byContent(app,zh('dailyLog.emptyTitle'))))
- assert.ok(app.find(byContent(app,zh('dailyLog.empty'))))
- assert.ok(app.find(byContent(app,zh('dailyLog.emptyNext',{time:'06:00',timezone:'Asia/Singapore'}))))
+ assert.ok(app.find(byContent(app,zh('dailyLog.schedule.waiting'))))
+ assert.ok(app.find(byContent(app,zh('dailyLog.emptyNext',{time:'2026-09-21',timezone:'Asia/Singapore'}))))
  const plain=mount({roleId,kind:'daily-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi()})
  await plain.flush()
  assert.equal(plain.findAll(el=>plain.contentOf(el).startsWith('下次生成时刻')).length,0)
  const habit=mount({roleId,kind:'habit-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi()})
  await habit.flush()
  assert.ok(habit.find(byContent(habit,zh('habitLog.emptyTitle'))))
- assert.equal(habit.findAll(byContent(habit,zh('dailyLog.empty'))).length,0,'习惯观察空态不说「工作证据」')
+ assert.equal(habit.findAll(byContent(habit,'今天没有可核对的工作证据，未生成小结。')).length,0,'习惯观察空态不冒充工作证据回包')
+})
+
+test('暂停、归档及未知的员工小结计划不宣称下次23:30，也不把空日志归因于没有工作证据',async()=>{
+ for(const state of ['paused','archived','unknown'] as const){
+  const app=mount({roleId,kind:'daily-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi(),trigger:{time:'23:30',timezone:'Asia/Singapore'},schedule:{state,nextAt:'2026-10-11T15:30:00.000Z'}})
+  await app.flush()
+  assert.equal(app.findAll(el=>app.contentOf(el).startsWith('下次生成时刻')).length,0)
+  assert.equal(app.findAll(byContent(app,'今天没有可核对的工作证据，未生成小结。')).length,0)
+  assert.ok(app.find(byContent(app,zh('dailyLog.schedule.'+state))))
+ }
+ const unknown=mount({roleId,kind:'daily-digest',api:makeApi({list:async()=>[]}),memoryApi:makeMemoryApi(),trigger:{time:'23:30',timezone:'Asia/Singapore'}})
+ await unknown.flush()
+ assert.equal(unknown.findAll(el=>unknown.contentOf(el).startsWith('下次生成时刻')).length,0)
+ assert.ok(unknown.find(byContent(unknown,zh('dailyLog.schedule.unknown'))))
 })
 
 test('习惯观察详情：「记下来」是一条折叠行，summary 写着还能记几条；同事日志不渲染折叠行',async()=>{

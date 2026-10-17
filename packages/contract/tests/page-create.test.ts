@@ -12,8 +12,8 @@ const manifest={format:'teloa.business-package/v2',id:'my-soc',domain:'SOC'}
 const readers:PageCreateBodyReaders={manifest:value=>value,skill:value=>value}
 const invalidInput=(error:unknown)=>(error as {code?:string}).code==='teloa/invalid-input'
 
-test('六个 entity 各自分派到既有校验函数；entity 与正文形状不符即 invalid-input',()=>{
- assert.deepEqual([...pageCreateEntities],['business-definition','business-domain','role','skill','connector','extension'])
+test('各 entity 分派到既有校验函数；entity 与正文形状不符即 invalid-input',()=>{
+ assert.deepEqual([...pageCreateEntities],['business-definition','business-domain','role','skill','connector','extension','share','plan'])
  assert.equal((readPageCreateBody('business-definition',objectType) as {id:string}).id,'alert-ticket')
  assert.equal((readPageCreateBody('business-definition',view) as {id:string}).id,'soc-risk-distribution')
  assert.equal((readPageCreateBody('role',role) as {name:string}).name,'SOC 调查岗')

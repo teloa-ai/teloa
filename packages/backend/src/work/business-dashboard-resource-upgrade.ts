@@ -1,4 +1,34 @@
 import {WorkError,isRecord,industryUpdateCanonical,readBusinessConfigurationCandidateV2,type BusinessConfigurationCandidateV2} from '@teloa/contract'
+import type {BusinessConfigurationCandidate,BusinessObjectTypeDefinition,BusinessObjectTypeDefinitionV2,BusinessTemplateUpgradeImpact} from '@teloa/contract'
+import {assertBusinessRecordFieldValue} from './business-record-values.ts'
+
+type Configuration=BusinessConfigurationCandidate|BusinessConfigurationCandidateV2
+type ImpactRecord={type:string;id:string;fields:readonly {label:string;value:string|undefined}[]}
+/** 与配置采用的历史兼容守卫共享判据；只描述影响，不迁移记录或改变授权。 */
+export function inspectBusinessTemplateUpgradeImpact(input:{current:Configuration|undefined;candidate:Configuration;records:readonly ImpactRecord[]}):BusinessTemplateUpgradeImpact{
+ type ObjectType=BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2
+ const objects=(configuration:Configuration|undefined)=>new Map((configuration?.definitions??[]).filter(row=>row.kind==='object-type').map(row=>[row.definition.id,row.definition as ObjectType]))
+ const previous=objects(input.current),next=objects(input.candidate),issues=new Map<string,{row:BusinessTemplateUpgradeImpact['fields'][number];ids:Set<string>}>(),affected=new Set<string>()
+ const add=(type:string,field:string,reason:BusinessTemplateUpgradeImpact['fields'][number]['reason'],records:readonly ImpactRecord[])=>{
+  const key=JSON.stringify([type,field,reason]);let issue=issues.get(key)
+  if(!issue){issue={row:{objectType:type,field,reason,affectedRecords:0},ids:new Set()};issues.set(key,issue)}
+  for(const record of records){const id=JSON.stringify([type,record.id]);issue.ids.add(id);affected.add(id)}
+ }
+ for(const [type,old] of previous){
+  const records=input.records.filter(record=>record.type===type),definition=next.get(type)
+  if(!definition){add(type,'','removed-object',records);continue}
+  if(old.sourceId!==definition.sourceId)add(type,'','changed-source',records)
+  for(const field of old.fields){
+   const changed=definition.fields.find(row=>row.name===field.name)
+   if(!changed)add(type,field.name,'removed-field',records)
+   else if(changed.type!==field.type||changed.from!==field.from||('referenceType' in changed?changed.referenceType:undefined)!==('referenceType' in field?field.referenceType:undefined))add(type,field.name,'changed-type',records)
+   else if('values' in field&&field.values?.some(value=>!('values' in changed)||!changed.values?.includes(value)))add(type,field.name,'changed-rule',records)
+  }
+  for(const record of records)for(const field of definition.fields){try{assertBusinessRecordFieldValue(field,record.fields.find(row=>row.label===field.from)?.value)}catch{add(type,field.name,'invalid-existing-value',[record])}}
+ }
+ for(const record of input.records)if(!previous.has(record.type))add(record.type,'','removed-object',[record])
+ return {blocked:affected.size>0,affectedRecords:affected.size,fields:[...issues.values()].map(issue=>({...issue.row,affectedRecords:issue.ids.size})),newSourceRequirements:input.candidate.definitions.filter(row=>row.kind==='source-mapping'&&!input.current?.definitions.some(old=>old.kind===row.kind&&old.definition.id===row.definition.id&&industryUpdateCanonical(old.definition)===industryUpdateCanonical(row.definition))).map(row=>row.definition.id)}
+}
 
 export type BusinessDashboardUpgradeChoice='keep-local'|'use-incoming'
 export type BusinessDashboardUpgradeConflict={key:string;entity:'definition'|'page'|'home-page';id:string;kind?:string;baseline:unknown;current:unknown;incoming:unknown}

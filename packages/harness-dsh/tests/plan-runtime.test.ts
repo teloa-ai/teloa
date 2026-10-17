@@ -5,7 +5,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises'
 import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {ConversationService,openResourceDatabase,RoleService,PlanService,TaskRunService,initializeRoles,initializeTasks,initializePlans,initializeMarketContents,initializePlanOccurrences,initializeObjectConversations,initializeTaskRuns,initializePlanSchedulerStatus,PlanOccurrenceService,PlanSchedulerStatusService} from '@teloa/backend'
+import {ConversationService,openResourceDatabase,RoleService,PlanService,TaskRunService,WorkControlService,initializeWorkControl,initializeRoles,initializeTasks,initializePlans,initializeMarketContents,initializePlanOccurrences,initializeObjectConversations,initializeTaskRuns,initializePlanSchedulerStatus,PlanOccurrenceService,PlanSchedulerStatusService} from '@teloa/backend'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {TaskExecutionScope,RunSkill,RunKnowledge} from '@teloa/backend'
 import type {Conversation} from '@teloa/contract'
@@ -19,13 +19,14 @@ before(async()=>{
  temporary=await mkdtemp(join(tmpdir(),'teloa-plan-runtime-'));const config=join(temporary,'database.json')
  await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
  pool=(await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()})).pool
- await initializeRoles(pool);await initializeTasks(pool);await initializePlans(pool);await initializeMarketContents(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializePlanSchedulerStatus(pool)
+ await initializeRoles(pool);await initializeTasks(pool);await initializePlans(pool);await initializeMarketContents(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializePlanSchedulerStatus(pool);await initializeWorkControl(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop();if(temporary)await rm(temporary,{recursive:true,force:true})})
 
 async function fixture(){
  const owner=randomUUID();let now='2026-09-12T00:00:00.000Z',rows:Conversation[]=[],beforeRunService:(()=>Promise<void>)|undefined
  const sessions=new Set<string>(),identity={id:randomUUID,now:()=>now}
+ const controls=new WorkControlService(pool,identity,{ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled:true,unknownOperationIds:[]})})
  const conversations=new ConversationService({read:async()=>rows,write:async value=>{rows=structuredClone(value)}},{create:async id=>{sessions.add(id);return id},inspect:async id=>{assert.ok(sessions.has(id))}},identity)
  const content='核对资料来源。',skill:RunSkill={name:'verify-source',provider:'test',source:'fixed',description:'核对来源',content,sha256:createHash('sha256').update(content).digest('hex')}
  const text='可信资料正文',knowledge:RunKnowledge={id:randomUUID(),version:1,title:'参考资料',sourceId:'reference',sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds:['general'],text}
@@ -36,6 +37,7 @@ async function fixture(){
  const calls={sends:0,checks:0,skills:0,skillDatabases:[] as unknown[],knowledge:[] as TaskExecutionScope[]}
  const runPorts:TaskRunPorts={
   resolvePreset:async declared=>declared??'default-agent',
+  controlState:run=>controls.stateForRun(owner,{runId:run.id}),
   check:async(_run,signal)=>{signal.throwIfAborted();calls.checks++},
   loadSkills:async(_session,names,signal,database)=>{signal.throwIfAborted();assert.deepEqual(names,[skill.name]);calls.skills++;calls.skillDatabases.push(database);return [skill]},
   loadKnowledge:async(target,ids,signal)=>{signal.throwIfAborted();assert.deepEqual(ids,[knowledge.id]);calls.knowledge.push(target);return [knowledge]},
@@ -43,7 +45,7 @@ async function fixture(){
  }
  const getRunService=async():Promise<TaskRunService>=>{await beforeRunService?.();return new TaskRunService(pool,identity,(actor,id)=>conversations.bySession(actor,id),{allowedTools:[],runReservation:(actor,id)=>conversations.isTaskRunReserved(actor,id),planContext:(db,actor,taskId)=>runtime.executionContext(db,actor,taskId)})}
  const runtime=createPlanRuntime({owner,getPool:async()=>pool,conversations,getRunService,runPorts})
- return {owner,plan,plans,role,conversations,runtime,runPorts,calls,setNow:(value:string)=>{now=value},setBeforeRunService:(value:(()=>Promise<void>)|undefined)=>{beforeRunService=value},getRunService}
+ return {owner,plan,plans,role,controls,conversations,runtime,runPorts,calls,setNow:(value:string)=>{now=value},setBeforeRunService:(value:(()=>Promise<void>)|undefined)=>{beforeRunService=value},getRunService}
 }
 
 test('创建runtime不读取数据库、不建表、不启动调度',()=>{
@@ -98,6 +100,29 @@ test('本人立即运行复用正式任务与Agent执行链，不改下一次日
  assert.equal(after.nextAt,before.nextAt)
  const again=await f.runtime.trigger(input,signal)
  assert.equal(again.task.id,first.task.id);assert.equal(again.run.id,first.run.id);assert.equal(f.calls.sends,1)
+})
+
+test('计划 Run 已准备后真实控制暂停或控制读口缺失均拒绝领取发送权',async()=>{
+ for(const mode of ['paused','missing'] as const){
+  const f=await fixture(),signal=new AbortController().signal
+  if(mode==='missing')delete f.runPorts.controlState
+  else{
+   const read=f.runPorts.controlState!
+   f.runPorts.controlState=async run=>{
+    assert.equal(run.state,'prepared');assert.ok(run.lineage)
+    const current=await f.controls.get(f.owner,{controlId:run.lineage.roundControlId})
+    const pausing=await f.controls.change(f.owner,{requestId:randomUUID(),controlId:current.id,expectedVersion:current.version,action:'pause',scope:'round',roundControlId:null})
+    const paused=await f.controls.reconcile(f.owner,{controlId:pausing.id,generation:pausing.generation})
+    assert.equal(paused.state,'paused')
+    return read(run)
+   }
+  }
+  await assert.rejects(f.runtime.trigger({planId:f.plan.id,requestId:randomUUID(),expectedVersion:f.plan.version,expectedConfigVersion:f.plan.configVersion,now:'2026-09-12T00:31:00.000Z'},signal),{code:'teloa/forbidden'})
+  const runs=(await pool.query('select id,state,evidence from teloa_task_runs where owner_id=$1',[f.owner])).rows
+  assert.equal(runs.length,1);assert.equal(runs[0].state,'prepared');assert.equal(runs[0].evidence,null)
+  assert.equal(f.calls.sends,0);assert.equal(f.calls.checks,1,'只有 prepare 检查，领取前不得进入发送检查')
+  if(mode==='paused')assert.equal(await f.controls.stateForRun(f.owner,{runId:runs[0].id}),'paused')
+ }
 })
 
 test('计划岗位未声明 preset 时解析并固定宿主真实默认配置',async()=>{

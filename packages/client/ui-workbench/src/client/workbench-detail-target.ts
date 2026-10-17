@@ -10,7 +10,7 @@ export type WorkbenchDetailTarget=
  |{kind:'directory-object';view:'tasks'|'team'|'spaces'|'resources'|'capabilities'|'market'|'plans';id:string;version?:number;source:{kind:'directory'|'attention'|'search'}}
  |{kind:'conversation-object';sessionId:string;objectKind:'task'|'role';id:string;version?:number}
  |{kind:'conversation-object';sessionId:string;objectKind:'business';target:BusinessTarget}
- |({kind:'artifact';source:ArtifactSourceRef;sessionId?:string}&({artifactId:string;version?:number}|{artifactId?:never;version?:never}))
+ |({kind:'artifact';source:ArtifactSourceRef;sessionId?:string;initialView?:'files';initialAction?:'prepare'}&({artifactId:string;version?:number}|{artifactId?:never;version?:never}))
 
 export type WorkbenchDetailState={open:boolean;target:WorkbenchDetailTarget|null}
 
@@ -19,8 +19,15 @@ export function closeDetail(state:WorkbenchDetailState):WorkbenchDetailState{ret
 
 /** 会话来源本身就是绑定；任务、执行、业务来源只有显式 sessionId 才随会话清理。 */
 function boundSession(target:WorkbenchDetailTarget):string|undefined{
+ if('sessionId' in target&&target.sessionId)return target.sessionId
  if(target.kind==='artifact'&&target.source.kind==='session')return target.source.id
  return 'sessionId' in target?target.sessionId:undefined
+}
+
+/** 独立任务、群和业务入口呈现已授权读取的原成果；原生会话仍严格使用当前会话绑定。 */
+export function workbenchDetailSession(state:WorkbenchDetailState,sessionId:string|undefined,inConversation:boolean):string|undefined{
+ if(!inConversation&&state.target?.kind==='artifact'&&state.target.source.kind==='session')return state.target.sessionId??state.target.source.id
+ return sessionId
 }
 
 /** 会话 → 这个会话上一次开着的详情目标。只活在内存里，不随导航记录落盘。 */
@@ -78,12 +85,12 @@ export function conversationLedgerNeeded(view:string,messageMode:string,state:Wo
  return view==='messages'&&messageMode==='native'&&state.open&&state.target?.kind==='conversation-object'
 }
 
-export function artifactDetailTarget(source:ArtifactSourceRef,artifact?:ArtifactRef,sessionId?:string):Extract<WorkbenchDetailTarget,{kind:'artifact'}>{
- const target={kind:'artifact' as const,source,...(sessionId?{sessionId}:{})}
+export function artifactDetailTarget(source:ArtifactSourceRef,artifact?:ArtifactRef,sessionId?:string,initialView?:'files',initialAction?:'prepare'):Extract<WorkbenchDetailTarget,{kind:'artifact'}>{
+ const target={kind:'artifact' as const,source,...(sessionId?{sessionId}:{}),...(initialView?{initialView}:{}),...(!artifact&&initialAction?{initialAction}:{})}
  return artifact?{...target,artifactId:artifact.id,version:artifact.version}:target
 }
 
 export function artifactPanelTarget(target:WorkbenchDetailTarget|null){
  if(target?.kind!=='artifact')return null
- return {source:target.source,...(target.artifactId?{artifact:{id:target.artifactId,...(target.version!==undefined?{version:target.version}:{})}}:{})}
+ return {source:target.source,...(target.artifactId?{artifact:{id:target.artifactId,...(target.version!==undefined?{version:target.version}:{})}}:{}),...(target.initialView?{initialView:target.initialView}:{}),...(!target.artifactId&&target.initialAction?{initialAction:target.initialAction}:{})}
 }

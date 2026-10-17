@@ -35,3 +35,11 @@ test('岗位保存前先按资料体积预检，超限时不写岗位；列表�
  assert.deepEqual(checked,[['a','b'],['c'],['big'],['a','big']])
  assert.deepEqual(calls,['list','create','edit','edit','create'])
 })
+
+test('身份资料接口只接受姓名头像，复用本人身份且不经过知识预检',async()=>{
+ let received:unknown;const backend={list:async()=>[],create:async()=>({}),edit:async()=>({}),updateProfile:async(owner:string,input:unknown)=>{received={owner,input};return {saved:true}}}
+ const handle=createRoleHandler('local:owner',async()=>backend,async()=>{throw Error('身份资料不能重新校验知识')})
+ const input={roleId:'r',expectedVersion:1,expectedProfile:{name:'原名字'},profile:{name:'新名字',avatarKey:'researcher'}}
+ assert.deepEqual(await handle('roles/profile',input),{saved:true});assert.deepEqual(received,{owner:'local:owner',input})
+ await assert.rejects(handle('roles/profile',{...input,fields:{executionScope:'外发'}}),{code:'teloa/invalid-input'})
+})

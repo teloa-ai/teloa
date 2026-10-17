@@ -1,10 +1,12 @@
 import {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react'
+import {RefreshCw} from 'lucide-react'
 import {businessObjectReference} from '@teloa/contract'
 import type {BusinessRecordApi} from './business-record-api.js'
 import type {BusinessTarget} from './business-preview.js'
 import {BusinessReferenceReader,readBusinessReference,readBusinessReferencePage,businessReferenceSelection,businessMultiReferenceChange,type BusinessReferenceField,type BusinessReferenceRecord,type BusinessReferenceState} from './business-record-reference.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessRecordPage.module.css'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 function useReference(api:BusinessRecordApi,scope:string,type:string,value:string){
  const reader=useMemo(()=>new BusinessReferenceReader(api,{scope,type,id:value}),[api,scope,type,value])
  const state=useSyncExternalStore(reader.subscribe,reader.getSnapshot,reader.getSnapshot)
@@ -67,6 +69,7 @@ function ReferencePicker({api,apiKey,scope,field,value,change,disabled,inputProp
  }
  const selected=state.status==='ready'?state.record:undefined
  const options=items.filter(record=>!ids?.includes(record.id))
+ const reload=()=>{void load();void reader.read();setRefresh(previous=>previous+1)}
  return <div className={css.referenceField}>
   <select {...inputProps} value={multi?'':value} required={multi?false:inputProps.required} disabled={disabled||choosing||multi&&!ids} aria-busy={loading||choosing} onChange={event=>void choose(event.target.value)}>
    <option value="">{t('business.records.choose')}</option>
@@ -83,7 +86,7 @@ function ReferencePicker({api,apiKey,scope,field,value,change,disabled,inputProp
   {loading&&<small role="status">{t('business.records.reference.loading')}</small>}
   <div className={css.actions}>
    {value&&<button type="button" disabled={disabled||choosing} onClick={()=>multi?updateMulti('','clear'):void choose('')}>{t('business.records.reference.clear')}</button>}
-   <button type="button" disabled={disabled||loading||choosing} onClick={()=>{void load();void reader.read();setRefresh(previous=>previous+1)}}>{t(error?'business.records.retry':'business.records.refresh')}</button>
+   {error?<button type="button" disabled={disabled||loading||choosing} onClick={reload}>{t('business.records.retry')}</button>:<ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={disabled||loading||choosing} onClick={reload}/>}
    {cursor&&<button type="button" disabled={disabled||loading||choosing} onClick={()=>void load(true)}>{t('business.records.more')}</button>}
   </div>
  </div>

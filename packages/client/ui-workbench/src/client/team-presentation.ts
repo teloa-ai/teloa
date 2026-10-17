@@ -17,7 +17,7 @@ export function roleLifecyclePath(state:'active'|'paused'|'retired',t?:TeloaTran
 }
 
 export function roleWorkPath(persistent:boolean,t?:TeloaTranslate){
-  return t?t(persistent?'team.presentation.work.persistent':'team.presentation.work.demo'):persistent?'已保存交办，等待执行接入；交办本身不启动 Agent。':'这是页面示例交办，不会启动 Agent 或外部操作。'
+  return t?t(persistent?'team.presentation.work.persistent':'team.presentation.work.demo'):persistent?'保存后前往任务页，核对目标与依据并开始执行。':'这是页面示例交办，不会启动 Agent 或外部操作。'
 }
 
 export function roleSkillNotice(t?:TeloaTranslate){

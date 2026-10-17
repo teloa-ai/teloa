@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs'
 import ts from 'typescript'
 import {createHomeContextApi} from '../src/client/home-native-controller.ts'
 import {homeNativeCopy} from '../src/client/home-native-copy.ts'
+import {emptyTaskRunChatSource} from '../src/client/task-run-chat-presentation.ts'
+import {canReceiveHomeWorkAssignee} from '../src/client/home-work-assignee.ts'
 
 type Node={type:unknown;props:any;children:any[]}
 const nodes=(node:any):Node[]=>node&&typeof node==='object'&&'props'in node?[node,...node.children.flatMap(nodes)]:[]
@@ -20,7 +22,7 @@ function mount(props:any){
   useRef:(value:any)=>{const id=cursor++;return states[id]??(states[id]={current:value})},
   useEffect:(effect:()=>void,deps:any[])=>{const id=cursor++;if(!states[id]||deps.some((item,index)=>item!==states[id][index])){states[id]=deps;effects.push(effect)}},
  }
- const modules:any={'react':react,'./home-native-copy.js':{homeNativeCopy},'./business-scope-context.js':{useBusinessScopes:()=>({general:'通用工作',SOC:'安全运营',AppSec:'应用安全'})},'./i18n/provider.js':{useI18n:()=>({locale:'zh-CN'})},'./i18n/errors.js':{localizeWorkError:(_:unknown,value:Error)=>value.message}}
+ const modules:any={'./task-run-chat-presentation.js':{emptyTaskRunChatSource},'./home-work-assignee.js':{canReceiveHomeWorkAssignee},'react':react,'./home-native-copy.js':{homeNativeCopy},'./business-scope-context.js':{useBusinessScopes:()=>({general:'通用工作',SOC:'安全运营',AppSec:'应用安全'})},'./i18n/provider.js':{useI18n:()=>({locale:'zh-CN'})},'./i18n/errors.js':{localizeWorkError:(_:unknown,value:Error)=>value.message}}
  const exports:any={};new Function('require','exports','React',js)((id:string)=>modules[id]??{default:{}},exports,react)
  return ()=>{cursor=0;const view=exports.HomeComposerContext(props);for(const effect of effects.splice(0))effect();return view}
 }

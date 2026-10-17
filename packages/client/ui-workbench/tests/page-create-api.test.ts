@@ -14,6 +14,12 @@ registerHooks({resolve(specifier,context,next){
  return next(specifier,context)
 }})
 const {createPageCreateApi,readPageCreateDraftDirectory,readPageCreateDraftPreview}=await import('../src/client/page-create-api.ts')
+const {pageCreateDraftRevisionNavigation}=await import('../src/client/page-create-revision-context.ts')
+const {BindingClient}=await import('../src/client/binding-client.ts')
+const {createWorkbenchStore}=await import('../src/client/store.ts')
+const {createWorkbenchLayout}=await import('../src/client/workbench-layout.ts')
+const {createSettingsNavigation}=await import('../src/client/settings-navigation.ts')
+const {homeCreationLocation}=await import('../src/client/home-creation-navigation.ts')
 
 const stamp='2026-09-17T01:00:00.000Z'
 const bodyHash='a'.repeat(64)
@@ -46,7 +52,7 @@ function recorder(reply:(method:string,payload:unknown)=>unknown){
  return {api,calls}
 }
 
-test('三选可用性矩阵：六支 × hasForm/hasMarket 的组合逐格对得上，不摆必然被拒的按钮',()=>{
+test('三选可用性矩阵：各实体 × hasForm/hasMarket 的组合逐格对得上，不摆必然被拒的按钮',()=>{
  const grid=pageCreateEntities.flatMap(entity=>[[false,false],[true,false],[false,true],[true,true]].map(([hasForm,hasMarket])=>
   [entity+'/'+String(hasForm)+'/'+String(hasMarket),createOptions({entity,hasForm:hasForm!,hasMarket:hasMarket!}).join('+')] as const))
  assert.deepEqual(Object.fromEntries(grid),{
@@ -66,6 +72,11 @@ test('三选可用性矩阵：六支 × hasForm/hasMarket 的组合逐格对得�
   // 「用一句话描述」没有落点故不出现，只剩「去市场挑」。
   'extension/false/false':'','extension/true/false':'',
   'extension/false/true':'market','extension/true/true':'market',
+  // 模板由会话生成静态组成，不增加一套手填大表单。
+  'share/false/false':'sentence','share/true/false':'sentence',
+  'share/false/true':'sentence+market','share/true/true':'sentence+market',
+  'plan/false/false':'sentence','plan/true/false':'sentence+form',
+  'plan/false/true':'sentence+market','plan/true/true':'sentence+form+market',
  })
 })
 
@@ -222,6 +233,62 @@ test('预览身份必须与请求逐字相同，取消信号透传三个端点',
  await api.settle({requestId:'req-discard',draftId:'draft-1',outcome:'discarded',expectedBodyHash:bodyHash},controller.signal)
  await assert.rejects(api.preview({draftId:'another-draft'},controller.signal),{code:'teloa/invalid-host-response'})
  assert.equal(calls.length,4)
+})
+
+test('回原会话只提交原稿与摘要，逐字核对只读回包并透传取消',async()=>{
+ const controller=new AbortController(),calls:unknown[]=[]
+ const api=createPageCreateApi(async(method,payload,signal)=>{assert.equal(signal,controller.signal);calls.push({method,payload});return {draftId:'draft-1',bodyHash,sessionId:'original-chat'}})
+ assert.deepEqual(await api.origin({draftId:'draft-1',expectedBodyHash:bodyHash,...{ownerId:'forged'}},controller.signal),{draftId:'draft-1',bodyHash,sessionId:'original-chat'})
+ assert.deepEqual(calls,[{method:'page-create-drafts/origin',payload:{draftId:'draft-1',expectedBodyHash:bodyHash}}])
+ for(const value of [
+  {draftId:'someone-else',bodyHash,sessionId:'original-chat'},
+  {draftId:'draft-1',bodyHash:'b'.repeat(64),sessionId:'original-chat'},
+  {draftId:'draft-1',bodyHash,sessionId:'../other'},
+  {draftId:'draft-1',bodyHash,sessionId:'original-chat',text:'must-not-inject'},
+ ])await assert.rejects(createPageCreateApi(async()=>value).origin({draftId:'draft-1',expectedBodyHash:bodyHash}),{code:'teloa/invalid-host-response'})
+ await assert.rejects(api.origin({draftId:'draft-1',expectedBodyHash:'stale'},controller.signal))
+ assert.equal(calls.length,1)
+})
+
+async function revisionNavigationFixture(initial='original-chat'){
+ const store=createWorkbenchStore().create(),settings=createSettingsNavigation(),controller=new AbortController(),target='original-chat',opened:string[]=[]
+ const layout=createWorkbenchLayout(store.actions,()=>false,settings,{getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:listener=>store.subscribe(listener)})
+ let selected:string|undefined=initial,current=true,afterCommit=()=>{}
+ const conversation:import('@teloa/contract').Conversation={id:'original-binding',ownerId:'local:owner',title:'原创建会话',scopeIds:['general'],version:1,status:'ready',sessionId:target,requestedSessionId:target,createdAt:stamp}
+ const port:import('../src/client/binding-client.ts').WorkPort={list:async()=>[conversation],read:async()=>conversation,ensure:async id=>({...conversation,...(id===target?{}:{id:'other-binding',sessionId:id,requestedSessionId:id})}),isNativeChild:()=>false,catalog:async()=>{throw Error('不读取能力')},block:()=>{},create:async()=>{throw Error('不能新建')},adopt:async id=>id,current:()=>selected,open:id=>{selected=id;opened.push(id);layout.selectPanel(null);afterCommit()}}
+ const work=new BindingClient(port);await work.select(initial);store.actions.openAttention()
+ const navigation=pageCreateDraftRevisionNavigation({cancelSignal:controller.signal,navigationSignal:layout.beginNavigation(),current:()=>current,location:()=>homeCreationLocation(store.getSnapshot()),isNativeConversation:()=>store.getSnapshot().view==='messages'&&store.getSnapshot().messageMode==='native',mainSession:()=>selected,boundSession:()=>work.getSnapshot().sessionId})
+ return {store,layout,work,port,target,navigation,controller,opened,conversation,changeConnection:()=>current=false,selectOther:()=>selected='other-chat',afterCommit:(action:()=>void)=>afterCommit=action}
+}
+test('原稿导航在真实layout和BindingClient成功打开后自abort，仍保留原会话准备资格',async()=>{
+ for(const initial of ['original-chat','other-chat']){
+  const f=await revisionNavigationFixture(initial)
+  try{
+   assert.equal(f.work.getSnapshot().sessionId,initial);assert.equal(f.navigation.mayOpen(),true)
+   assert.equal(await f.work.openSessionResult(f.target,f.navigation.signal,f.navigation.mayOpen),'opened')
+   assert.equal(f.navigation.signal.aborted,true,'正式layout.selectPanel(null)必须真的撤销导航信号')
+   assert.deepEqual(f.opened,[f.target]);assert.equal(f.store.getSnapshot().view,'messages')
+   assert.equal(f.navigation.isOpened(f.target),true,'成功提交后改用本人取消、连接和双会话身份核对')
+   assert.equal(f.navigation.isOpened('other-chat'),false)
+  }finally{f.layout.dispose()}
+ }
+})
+test('原稿导航仍拒绝打开前后本人取消、其他目标导航与连接换代',async()=>{
+ for(const when of ['before','after'])for(const change of ['cancel','location','connection','session']){
+  const f=await revisionNavigationFixture()
+  const mutate=()=>{if(change==='cancel')f.controller.abort();else if(change==='location')f.store.actions.navigate('projects');else if(change==='connection')f.changeConnection();else f.selectOther()}
+  try{
+   if(when==='before'){
+    let release!:(value:typeof f.conversation)=>void;f.port.read=()=>new Promise(resolve=>release=resolve)
+    const pending=f.work.openSessionResult(f.target,f.navigation.signal,f.navigation.mayOpen);mutate();release(f.conversation)
+    assert.equal(await pending,'cancelled',change);assert.deepEqual(f.opened,[])
+   }else{
+    f.afterCommit(mutate)
+    assert.equal(await f.work.openSessionResult(f.target,f.navigation.signal,f.navigation.mayOpen),'opened',change);assert.deepEqual(f.opened,[f.target])
+   }
+   assert.equal(f.navigation.isOpened(f.target),false,when+' '+change)
+  }finally{f.layout.dispose()}
+ }
 })
 
 test('预览文件正文超过 8192 字但未到正文上限时仍完整保留',()=>{

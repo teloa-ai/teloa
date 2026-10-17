@@ -1,10 +1,15 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {setTimeout as delay} from 'node:timers/promises'
 import {Pool} from 'pg'
 import type {StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {WorkError,readBusinessDashboardPage,readBusinessDashboardSummaries,type BusinessWidgetDefinition} from '@teloa/contract'
+import {WorkError,readBusinessSourceMappingDefinition,readBusinessDashboardPage,readBusinessDashboardSummaries,type BusinessWidgetDefinition} from '@teloa/contract'
+import {BusinessSqlExecutor} from '../src/work/business-sql-executor.ts'
+import {BusinessSyncService} from '../src/work/business-sync.ts'
+import {BusinessWarehouseService} from '../src/work/business-warehouse.ts'
+import {businessObjectSnapshotHash,readBusinessObjectSnapshot} from '../src/work/business-data.ts'
 import type {BusinessSqlExecution} from '../src/work/business-sql-executor.ts'
 import {BusinessLedgerService} from '../src/work/business-view-compute.ts'
 import {BusinessWidgetService,initializeBusinessWidgets} from '../src/work/business-widgets.ts'
@@ -15,9 +20,9 @@ import {dashboardOf,definitionsOf,riskView,startDatabase,widget} from './busines
 
 /** 看板服务真库验收（计划 功能验证 第 5–7、10 条）：只读快照、刷新互斥与幂等、到期判定、权限。 */
 
-let container:StartedPostgreSqlContainer,pool:Pool
-before(async()=>{({container,pool}=await startDatabase())},{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+let container:StartedPostgreSqlContainer,pool:Pool,reader:Pool
+before(async()=>{({container,pool,reader}=await startDatabase())},{timeout:120000})
+after(async()=>{await reader?.end();await pool?.end();await container?.stop()})
 
 const count=widget({id:'alert-count',kind:'metric',query:'select count(*) as value from alert_ticket',metric:{valueColumn:'value'}})
 const table=widget({id:'alert-table',kind:'table',query:'select _id from alert_ticket'})
@@ -48,6 +53,24 @@ function harness(widgets:BusinessWidgetDefinition[]=[count,table],options:{hangF
  return {owner,actor,state,executor,widgetService,service}
 }
 const rows=async(owner:string)=>(await pool.query('select count(*)::int as n from teloa_business_widget_results where owner_id=$1',[owner])).rows[0].n as number
+
+test('数据变化持久唤醒看板，刷新后消费该变化；自动运行暂停不提前刷新',async()=>{
+ const f=harness([count]),now=new Date().toISOString()
+ await withLegacySecurityScopes(pool,f.owner,new BusinessSpaceService(pool,{id:randomUUID,now:()=>now}).ensurePersonal(f.owner))
+ await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
+ // 执行器的计算时刻固定在九月，以下时刻用于排除周期到期。
+ const early='2026-09-25T00:00:02.000Z'
+ assert.deepEqual(await f.service.due(f.owner,early),[])
+ await pool.query('insert into teloa_business_data_changes(owner_id,scope_id,revision) values($1,$2,1)',[f.owner,'SOC'])
+ assert.equal((await f.service.read(f.actor,{scope:'SOC',dashboardId:'soc-overview'})).results[0]!.stale,true)
+ const rebuilt=new BusinessDashboardService(pool,{id:randomUUID,now:()=>now},definitionsOf(f.state),f.widgetService)
+ assert.deepEqual(await rebuilt.due(f.owner,early),[{scope:'SOC',dashboardId:'soc-overview'}])
+ assert.equal((await rebuilt.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})).results[0]!.stale,false)
+ assert.deepEqual(await rebuilt.due(f.owner,early),[])
+ await pool.query('update teloa_business_data_changes set revision=revision+1 where owner_id=$1',[f.owner])
+ await new BusinessRuntimeService(pool,{now:()=>now}).pauseScheduledWork(f.actor,{scope:'SOC',requestId:randomUUID()})
+ assert.deepEqual(await rebuilt.due(f.owner,early),[])
+})
 const rejectsWith=(promise:Promise<unknown>,code:string,reason?:RegExp)=>assert.rejects(promise,(error:unknown)=>{
  assert.ok(error instanceof WorkError,String(error));assert.equal(error.code,code,error.message);if(reason)assert.match(error.message,reason);return true
 })
@@ -147,7 +170,7 @@ test('due：看板周期 300s 按最新结果判到期；组件覆盖 60s 只该
 
 test('恢复暂停共享运行门控：due 与迟到定时请求不计算，旧成果可读、本人可手动刷新与重新启用',async()=>{
  const f=harness([count]),identity={id:randomUUID,now:()=>new Date().toISOString()}
- await new BusinessSpaceService(pool,identity).ensurePersonal(f.owner)
+ await withLegacySecurityScopes(pool,f.owner,new BusinessSpaceService(pool,identity).ensurePersonal(f.owner))
  const runtime=new BusinessRuntimeService(pool,identity)
  const first=await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
  const at='2026-10-04T12:00:00.000Z'
@@ -178,7 +201,7 @@ test('恢复暂停共享运行门控：due 与迟到定时请求不计算，旧�
 
 test('定时刷新持运行锁至提交：暂停完成后不会再开始新计算，旧刷新回执仍可只读重放',async()=>{
  const f=harness([count]),identity={id:randomUUID,now:()=>new Date().toISOString()}
- await new BusinessSpaceService(pool,identity).ensurePersonal(f.owner)
+ await withLegacySecurityScopes(pool,f.owner,new BusinessSpaceService(pool,identity).ensurePersonal(f.owner))
  const runtime=new BusinessRuntimeService(pool,identity)
  const requestId=randomUUID(),pauseRequestId=randomUUID()
  let release!:()=>void,started!:()=>void
@@ -442,4 +465,70 @@ test('全新库并发首启：结果表建表与迁移都在同一把咨询锁�
   assert.equal(columns.length,1)
   assert.equal((await scoped.query('select count(*)::int as n from teloa_business_dashboard_migrations')).rows[0].n,1)
  }finally{await scoped.end();await pool.query(`drop schema ${schema} cascade`)}
+})
+
+
+test('失败刷新保留成功统计、持久退避，恢复时只重试失败组件',async()=>{
+ const f=harness(),clock={now:'2026-09-25T00:00:10.000Z'}
+ const service=new BusinessDashboardService(pool,{id:randomUUID,now:()=>clock.now},definitionsOf(f.state),f.widgetService)
+ const first=await service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
+ await pool.query('insert into teloa_business_data_changes values($1,$2,1)',[f.owner,'SOC'])
+ const compute=f.widgetService.compute.bind(f.widgetService)
+ f.widgetService.compute=async(ctx,widget,...rest)=>widget.id===table.id?{widgetId:widget.id,definitionHash:first.results[1]!.definitionHash,computedAt:clock.now,status:'failed',columns:[],rows:[],rowCount:0,truncated:false,bytes:0,error:{code:'teloa/source-unavailable',reason:'来源暂不可用'},stale:false}:compute(ctx,widget,...rest)
+ const failedRequest={requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'}
+ const failed=await service.refresh(f.actor,failedRequest)
+ assert.equal(failed.results[1]!.status,'ok')
+ assert.deepEqual(failed.results[1]!.rows,first.results[1]!.rows)
+ assert.equal((failed.results[1] as unknown as {refreshError?:{code:string}}).refreshError?.code,'teloa/source-unavailable')
+ assert.doesNotThrow(()=>readBusinessDashboardPage(failed,'SOC'))
+ const rebuilt=new BusinessDashboardService(pool,{id:randomUUID,now:()=>clock.now},definitionsOf(f.state),f.widgetService)
+ assert.deepEqual(await rebuilt.due(f.owner,clock.now),[])
+ clock.now='2026-09-25T00:01:11.000Z'
+ assert.deepEqual(await rebuilt.due(f.owner,clock.now),[{scope:'SOC',dashboardId:'soc-overview',widgetIds:[table.id]}])
+ f.widgetService.compute=async(...args)=>({...await compute(...args),computedAt:clock.now})
+ const recovered=await rebuilt.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'},undefined,{widgetIds:[table.id]})
+ assert.equal(recovered.results[1]!.stale,false)
+ assert.equal('refreshError' in recovered.results[1]!,false)
+ assert.equal((await rebuilt.refresh(f.actor,failedRequest)).results[1]!.computedAt,failed.results[1]!.computedAt,'失败回执重放不能读到未来成功统计')
+})
+
+test('非默认范围手动刷新重新计算数据或声明过期的 all 组件',async()=>{
+ const f=rangedHarness()
+ await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
+ await pool.query('insert into teloa_business_data_changes values($1,$2,1)',[f.owner,'SOC'])
+ const fresh=await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview',timeRange:'30d'})
+ assert.equal(fresh.results[1]!.stale,false)
+ assert.equal(f.intervals.filter(value=>value===null).length,2)
+ f.state.widgets=f.state.widgets.map(widget=>widget.id===count.id?{...widget,title:'新标题'}:widget)
+ await f.service.refresh(f.actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview',timeRange:'90d'})
+ assert.equal(f.intervals.filter(value=>value===null).length,3)
+})
+
+
+test('SOC 成果→真实只读 SQL→看板：回放不唤醒，重新研判更改统计且不重复计数',async()=>{
+ const owner='pipeline:'+randomUUID(),actor={ownerId:owner,scopeIds:['SOC']},identity={id:randomUUID,now:()=>new Date().toISOString()}
+ const metric=widget({id:'high-count',kind:'metric',query:"select count(*) as value from alert_ticket where severity='高'",metric:{valueColumn:'value'}})
+ const base=definitionsOf({widgets:[metric],dashboards:[dashboardOf([metric.id])]})
+ const mapping=readBusinessSourceMappingDefinition({format:'teloa.business-source-mapping/v1',id:'triage',version:'1.0.0',domain:'SOC',title:'研判成果',objectType:'alert-ticket',source:{kind:'role-result'},mapping:[{path:'$.object.id',field:'result_id'},{path:'$.result.severity',field:'severity'},{path:'$.result.host',field:'host'},{path:'$.result.verdict',field:'verdict'}],primaryKey:['result_id'],deletionSemantics:'compare',schedule:{kind:'every',seconds:300},acknowledgeShortInterval:false})
+ const definitions={forScope:async(...args:Parameters<typeof base.forScope>)=>(await base.forScope(...args)).map(bundle=>({...bundle,objectTypes:bundle.objectTypes.map(record=>({...record,definition:{...record.definition,fields:[...record.definition.fields,{name:'result_id',label:'来源对象',from:'来源对象',type:'text' as const,required:true}]}})),mappings:[{source:bundle.objectTypes[0]!.source,definition:mapping}]}))}
+ const widgets=new BusinessWidgetService(pool,identity,new BusinessSqlExecutor(reader,identity,'role'),new BusinessLedgerService(pool,identity,definitions as never))
+ const dashboards=new BusinessDashboardService(pool,identity,definitions,widgets)
+ const sync=new BusinessSyncService(pool,identity,definitions,new BusinessWarehouseService(pool,identity),async()=>{throw Error('不调用外部源')})
+ const source=readBusinessObjectSnapshot({scope:'SOC',type:'raw-alert',id:'ALT-1',version:1,title:'告警',source:'EDR',observedAt:identity.now(),receivedAt:identity.now(),quality:'complete',summary:'原始事实',fields:[]},'SOC')
+ const reference={scope:'SOC',type:source.type,id:source.id,version:1,snapshotHash:businessObjectSnapshotHash(source)}
+ await pool.query('insert into teloa_business_object_snapshots values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[owner,'SOC',source.type,source.id,1,reference.snapshotHash,JSON.stringify(source),'raw',identity.now()])
+ const refresh=()=>dashboards.refresh(actor,{requestId:randomUUID(),scope:'SOC',dashboardId:'soc-overview'})
+ assert.deepEqual((await refresh()).results[0]!.rows,[[0]])
+ let run={runId:randomUUID(),taskId:randomUUID(),sessionId:'fixture',roleId:randomUUID(),createdAt:'2026-10-10T01:00:00.000Z',reference}
+ const input={scope:'SOC',mappingId:'triage',result:{severity:'高',host:'server-1',verdict:'等你确认'}}
+ await sync.ingestTaskResult(actor,input,async()=>run)
+ assert.equal((await dashboards.due(owner,identity.now())).length,1)
+ assert.deepEqual((await refresh()).results[0]!.rows,[[1]])
+ await sync.ingestTaskResult(actor,input,async()=>run)
+ assert.deepEqual(await dashboards.due(owner,identity.now()),[])
+ for(const result of [{...input.result,severity:'错误枚举'},{...input.result,host:''}])await assert.rejects(sync.ingestTaskResult(actor,{...input,result},async()=>({...run,runId:randomUUID(),createdAt:'2026-10-10T01:02:00.000Z'})),{code:'teloa/invalid-input'})
+ run={...run,runId:randomUUID(),createdAt:'2026-10-10T01:05:00.000Z'}
+ await sync.ingestTaskResult(actor,{...input,result:{...input.result,severity:'低'}},async()=>run)
+ assert.deepEqual((await refresh()).results[0]!.rows,[[0]])
+ assert.equal((await pool.query("select count(*)::int n from (select distinct on(object_id) * from teloa_business_object_snapshots where owner_id=$1 and object_type='alert-ticket' order by object_id,object_version desc) s",[owner])).rows[0].n,1)
 })

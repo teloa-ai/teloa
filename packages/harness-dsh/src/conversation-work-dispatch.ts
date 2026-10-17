@@ -3,7 +3,7 @@ import type {ReassignmentRunTargets} from '@teloa/backend'
 import {workRequestChildId,type ConversationWorkRequest,type ConversationWorkReserveInput,type ConversationWorkService,type TaskRun,type TaskService,type WorkRequestTarget,type ConversationTaskIdentity} from '@teloa/backend'
 
 export type WorkMemberStatus='received'|'waiting'|'unavailable'|'failed'|'stopped'
-export type ConversationWorkMember={roleId:string;name:string;scope:string;status:WorkMemberStatus;reason?:string;task?:Pick<WorkTask,'id'|'title'|'scope'|'version'|'state'|'assigneeRoleId'>;run?:Pick<TaskRun,'id'|'state'|'evidence'|'stopRequestedAt'|'sessionId'>;result?:string}
+export type ConversationWorkMember={roleId:string|null;executor?:import('@teloa/contract').WorkExecutor;name:string;scope:string;status:WorkMemberStatus;reason?:string;task?:Pick<WorkTask,'id'|'title'|'scope'|'version'|'state'|'assigneeRoleId'>;run?:Pick<TaskRun,'id'|'state'|'evidence'|'stopRequestedAt'|'sessionId'>&{artifactRevision?:{artifactId:string;baseVersion:number;title:string}};result?:string}
 export type ConversationWorkStatus={requestId:string;sessionId:string;kind:'task'|'report';title:string;scope:string;observedAt:string;stoppedAt:string|null;counts:Record<WorkMemberStatus,number>;members:ConversationWorkMember[];reassignment?:BusinessReassignmentReceipt;sourceReference?:BusinessObjectReference}
 export type ConversationWorkDispatchPorts={
  owner:string
@@ -25,8 +25,26 @@ export type ConversationWorkDispatchPorts={
 const parentIdentity=(request:ConversationWorkRequest,target:WorkRequestTarget):ConversationTaskIdentity=>({sessionId:request.sessionId,requestId:request.requestId,roleId:target.roleId})
 const taskIdentity=(request:ConversationWorkRequest,target:WorkRequestTarget)=>workRequestChildId(request.requestId,'task',target.roleId)
 const executionSession=(requestId:string,roleId:string)=>'task-run-'+workRequestChildId(requestId,'run',roleId)
+const retrySession=(request:ConversationWorkRequest,target:WorkRequestTarget,failed:TaskRun)=>'task-run-'+workRequestChildId(request.requestId,'run-retry:'+failed.id,target.roleId)
+function executionSlot(request:ConversationWorkRequest,target:WorkRequestTarget,runs:TaskRun[]){
+ const originals=runs.filter(run=>run.sessionId===executionSession(request.requestId,target.roleId))
+ if(originals.length>1)throw new WorkError('teloa/storage-corrupt','原交办存在重复固定执行，请核对运行记录。')
+ const original=originals[0],retries=original?runs.filter(run=>run.sessionId===retrySession(request,target,original)):[]
+ if(retries.length>1)throw new WorkError('teloa/storage-corrupt','原交办存在重复重试执行，请核对运行记录。')
+ return {original,run:retries[0]??original,retried:retries.length>0}
+}
 const terminal=(run:TaskRun)=>['ended','withdrawn','configuration_failed'].includes(run.state)
 const projection=(task:WorkTask)=>({id:task.id,title:task.title,scope:task.scope,version:task.version,state:task.state,assigneeRoleId:task.assigneeRoleId})
+/** 仅展示正式 Run 已冻结的修订来源；不读取模型回复，也不把目标版本当作已发布。 */
+function runProjection(run:TaskRun):NonNullable<ConversationWorkMember['run']>{
+ const value={id:run.id,state:run.state,evidence:run.evidence,stopRequestedAt:run.stopRequestedAt,sessionId:run.sessionId}
+ let input:unknown
+ try{input=JSON.parse(run.inputText)}catch{return value} // 兼容旧的纯文本运行输入。
+ if(!input||typeof input!=='object'||!('artifactRevision'in input)||input.artifactRevision===undefined)return value
+ const source=input.artifactRevision as Record<string,unknown>,uuid=(id:unknown)=>typeof id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)
+ if(!source||typeof source!=='object'||!uuid(source.requestId)||!uuid(source.artifactId)||!Number.isSafeInteger(source.baseVersion)||(source.baseVersion as number)<1||!Number.isSafeInteger((source.baseVersion as number)+1)||typeof source.title!=='string')throw new WorkError('teloa/storage-corrupt','原运行的成果修订来源无法核对。')
+ return {...value,artifactRevision:{artifactId:source.artifactId as string,baseVersion:source.baseVersion as number,title:source.title}}
+}
 const previousRoleChangeMessages=new Set(['原接手同事的状态、版本或业务授权已变化，请先核对原交办。','原接手员工的状态、版本或业务授权已变化，请先核对原交办。'])
 const roleChangeFailure={code:'teloa/version-conflict',message:'原接手员工已暂停、版本或业务授权已变化；本次执行未启动，请由本人核对原交办并重新安排。'} as const
 const isRoleChangeFailure=(failure:ConversationWorkRequest['failures'][string]|undefined)=>failure?.code===roleChangeFailure.code&&(failure.message===roleChangeFailure.message||previousRoleChangeMessages.has(failure.message))
@@ -39,9 +57,10 @@ export class ConversationWorkDispatch{
  private readTask(request:ConversationWorkRequest,target:WorkRequestTarget){return request.kind==='task'?this.ports.boundTasks.request(parentIdentity(request,target)):this.ports.tasks.request(this.ports.owner,{requestId:taskIdentity(request,target)})}
  private async current(sessionId:string,requestId:string){const value=await this.ports.requests.get(this.ports.owner,{sessionId,requestId});if(!value)throw new WorkError('teloa/not-found','没有找到此会话的交办请求。');await this.authorize(value);return value}
  private async authorize(request:ConversationWorkRequest){await this.ports.authorize?.([...new Set([request.scope,...request.targets.map(target=>target.scope)])])}
- async dispatch(input:ConversationWorkReserveInput,signal:AbortSignal,revalidate?:()=>Promise<void>):Promise<ConversationWorkStatus>{
+ async dispatch(input:ConversationWorkReserveInput,signal:AbortSignal,revalidate?:()=>Promise<void>,explicitRetry=false):Promise<ConversationWorkStatus>{
   signal.throwIfAborted()
   const {ports}=this,request=await ports.requests.reserve(ports.owner,input)
+  if(request.executor==='general')return this.dispatchGeneral(request,signal,revalidate,explicitRetry)
   // 每个成员各取一次锁：停止意图可以在两个成员之间落盘，不能等整批派完才受理停止。
   try{for(const target of request.targets){
    signal.throwIfAborted()
@@ -68,16 +87,20 @@ export class ConversationWorkDispatch{
       }
      }
      if(task.assigneeRoleId!==target.roleId||task.assigneeRoleVersion!==target.roleVersion||task.scope!==target.scope)throw new WorkError('teloa/conflict','原任务的负责人或业务已变化，不能重新派发。')
-     const runs=await ports.runs(task.id)
+     const runs=await ports.runs(task.id),fixed=executionSlot(request,target,runs)
      const references=parseResourceReferences(request.sourceText??'').map(reference=>({...reference,id:reference.id.toLowerCase()}))
      if(references.length&&!runs.length){if(!ports.materials)throw new WorkError('teloa/unavailable','任务资料交接暂未就绪，不能丢弃原引用后执行。');task=await ports.materials(taskRequestId,task,references,activeSignal)}
      activeSignal.throwIfAborted()
      // 原会话保留任务关系；其身份始终是主助手，真正岗位运行另用专属会话。
-     await ports.link({requestId:workRequestChildId(request.requestId,'link',target.roleId),taskId:task.id,expectedTaskVersion:runs[0]?.taskVersion??task.version,sessionId:request.sessionId})
+     await ports.link({requestId:workRequestChildId(request.requestId,'link',target.roleId),taskId:task.id,expectedTaskVersion:fixed.original?.taskVersion??task.version,sessionId:request.sessionId})
      activeSignal.throwIfAborted()
-     let run=runs.find(candidate=>candidate.sessionId===executionSession(request.requestId,target.roleId))
+     let run=fixed.run
      if(!run&&runs.length)throw new WorkError('teloa/conflict','原任务已有其他执行，请核对任务后继续。')
      await validateRole();await revalidate?.();activeSignal.throwIfAborted()
+     if(explicitRetry&&request.kind==='task'&&run===fixed.original&&run?.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='error'&&run.stopRequestedAt===null){
+      // 仅原卡的显式恢复进入宿主证明口；自动dispatch和其他terminal仍只核对原记录。
+      run=await ports.run('task-runs/retry',{runId:run.id},activeSignal,parentIdentity(request,target))
+     }
      if(!run)run=await ports.run('task-runs/prepare',{requestId:workRequestChildId(request.requestId,'run',target.roleId),taskId:task.id,expectedTaskVersion:task.version},activeSignal,request.kind==='task'?parentIdentity(request,target):undefined)
      activeSignal.throwIfAborted()
      await validateRole();await revalidate?.();activeSignal.throwIfAborted()
@@ -101,18 +124,19 @@ export class ConversationWorkDispatch{
  }
  async status(sessionId:string,requestId:string):Promise<ConversationWorkStatus>{
   const request=await this.current(sessionId,requestId),{ports}=this,members:ConversationWorkMember[]=[]
+  if(request.executor==='general')return this.generalStatus(request)
   for(const target of request.targets){
    const base={roleId:target.roleId,name:target.name,scope:target.scope}
    if(target.unavailable){members.push({...base,status:'unavailable',reason:target.unavailable==='paused'?'员工已暂停':'员工已退役'});continue}
    const task=await this.readTask(request,target),failure=request.failures[target.roleId]
    if(!task){members.push({...base,status:request.stoppedAt?'stopped':failure?'failed':'waiting',...(failure?{reason:failure.message}:{})});continue}
-   const runs=await ports.runs(task.id),run=runs.find(candidate=>candidate.sessionId===executionSession(request.requestId,target.roleId))
+   const runs=await ports.runs(task.id),fixed=executionSlot(request,target,runs),run=fixed.run
    if(!run){members.push({...base,task:projection(task),status:request.stoppedAt?'stopped':failure?'failed':'waiting',...(failure?{reason:failure.message}:{})});continue}
-   const r={id:run.id,state:run.state,evidence:run.evidence,stopRequestedAt:run.stopRequestedAt,sessionId:run.sessionId}
+   const r=runProjection(run)
    const result=run.state==='ended'?await ports.result(run):undefined
    const roleChanged=run.state==='prepared'&&isRoleChangeFailure(failure)
    const status:WorkMemberStatus=run.state==='configuration_failed'||roleChanged?'failed':run.state==='withdrawn'||run.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run.state==='ended'?run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&!!result?'received':'failed':'waiting'
-   const reason=run.configurationError?.message??(roleChanged?roleChangeFailure.message:status==='failed'?(result?'本次执行未正常完成，请核对阶段结果。':'本次执行没有可核验的最终回复。'):status==='waiting'?failure?.message:undefined)
+   const reason=run.configurationError?.message??(roleChanged?roleChangeFailure.message:status==='failed'?(fixed.retried?'本次重试未完成，请核对这次运行记录；不会继续自动创建执行。':failure?.message??(result?'本次执行未正常完成，请核对阶段结果。':'本次执行没有可核验的最终回复。')):status==='waiting'?failure?.message:undefined)
    members.push({...base,task:projection(task),run:r,status,...(reason?{reason}:{}),...(result?{result}:{})})
   }
   const counts:ConversationWorkStatus['counts']={received:0,waiting:0,unavailable:0,failed:0,stopped:0}
@@ -125,19 +149,72 @@ export class ConversationWorkDispatch{
   return {...(reassignment?{reassignment,...(request.reference?{sourceReference:request.reference}:{})}:{}),requestId:request.requestId,sessionId,kind:request.kind,title:request.title,scope:request.scope,observedAt:ports.now(),stoppedAt:request.stoppedAt,counts,members}
  }
  async list(sessionId:string):Promise<ConversationWorkStatus[]>{const requests=await this.ports.requests.list(this.ports.owner,{sessionId});return Promise.all(requests.map(request=>this.status(sessionId,request.requestId)))}
+ private generalIdentity(request:ConversationWorkRequest):ConversationTaskIdentity{return {sessionId:request.sessionId,requestId:request.requestId,executor:'general'}}
+ private generalRun(request:ConversationWorkRequest,runs:TaskRun[]){
+  const found=runs.filter(run=>run.sessionId==='task-run-'+workRequestChildId(request.requestId,'run'))
+  if(found.length>1)throw new WorkError('teloa/storage-corrupt','本人原工作有重复执行记录。')
+  const original=found[0],retries=original?runs.filter(run=>run.sessionId==='task-run-'+workRequestChildId(request.requestId,'run-retry:'+original.id)):[]
+  if(retries.length>1)throw new WorkError('teloa/storage-corrupt','本人工作有重复重试记录。')
+  for(const run of [...found,...retries])if(run.roleId!==null||run.executor?.kind!=='owner'||run.executor.grantId!==request.requestId||run.executor.grantVersion!==1)throw new WorkError('teloa/storage-corrupt','本人执行与原交办身份不一致。')
+  return {original,run:retries[0]??original,retried:retries.length>0}
+ }
+ private async dispatchGeneral(request:ConversationWorkRequest,signal:AbortSignal,revalidate?:()=>Promise<void>,explicitRetry=false){
+  const {ports}=this,identity=this.generalIdentity(request)
+  try{await ports.requests.withDispatchLock(ports.owner,request.requestId,async lockSignal=>{
+   const active=AbortSignal.any([signal,lockSignal]);active.throwIfAborted()
+   const current=await this.current(request.sessionId,request.requestId)
+   if(current.stoppedAt)return
+   try{
+    await revalidate?.();active.throwIfAborted()
+    let task=await ports.boundTasks.request(identity)??await ports.boundTasks.create(identity)
+    if(task.executor?.kind!=='owner'||task.executor.grantId!==request.requestId||task.assigneeRoleId!==null||task.scope!=='general')throw new WorkError('teloa/conflict','原通用任务的执行身份已变化。')
+    const runs=await ports.runs(task.id),fixed=this.generalRun(request,runs)
+    const references=parseResourceReferences(request.sourceText??'')
+    if(references.length&&!runs.length){if(!ports.materials)throw new WorkError('teloa/unavailable','原资料尚未完成交接。');task=await ports.materials(workRequestChildId(request.requestId,'task'),task,references,active)}
+    active.throwIfAborted()
+    await ports.link({requestId:workRequestChildId(request.requestId,'link'),taskId:task.id,expectedTaskVersion:fixed.original?.taskVersion??task.version,sessionId:request.sessionId})
+    active.throwIfAborted();await revalidate?.();active.throwIfAborted()
+    if(!fixed.run&&runs.length)throw new WorkError('teloa/conflict','原任务已有其他执行，请核对原记录。')
+    let run=fixed.run
+    if(explicitRetry&&run===fixed.original&&run?.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='error'&&run.stopRequestedAt===null)run=await ports.run('task-runs/retry',{runId:run.id},active,identity)
+    if(!run)run=await ports.run('task-runs/prepare',{requestId:workRequestChildId(request.requestId,'run'),taskId:task.id,expectedTaskVersion:task.version},active,identity)
+    active.throwIfAborted();await revalidate?.();active.throwIfAborted()
+    if(run.state==='prepared')await ports.run('task-runs/start',{runId:run.id},active,identity)
+    else if(!terminal(run))await ports.run('task-runs/reconcile',{runId:run.id},active)
+    active.throwIfAborted();await ports.requests.failure(ports.owner,request.requestId,null,null)
+   }catch(error){if(active.aborted)throw active.reason;await ports.requests.failure(ports.owner,request.requestId,null,publicFailure(error))}
+  })}catch(error){if(signal.aborted)await this.stop(request.sessionId,request.requestId,new AbortController().signal);throw error}
+  return this.status(request.sessionId,request.requestId)
+ }
+ private async generalStatus(request:ConversationWorkRequest):Promise<ConversationWorkStatus>{
+  const {ports}=this,task=await ports.boundTasks.request(this.generalIdentity(request)),runs=task?await ports.runs(task.id):[],run=this.generalRun(request,runs).run,failure=request.failures.general
+  const result=run?.state==='ended'?await ports.result(run):undefined
+  const status:WorkMemberStatus=run?.state==='configuration_failed'?'failed':run?.state==='withdrawn'||run?.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run?.state==='ended'?run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&!!result?'received':'failed':!run&&request.stoppedAt?'stopped':!run&&failure?'failed':'waiting'
+  const executor={kind:'owner' as const,grantId:request.requestId,grantVersion:1}
+  const member:ConversationWorkMember={roleId:null,executor,name:'通用 Agent',scope:'general',status,...(task?{task:projection(task)}:{}),...(run?{run:runProjection(run)}:{}),...(result?{result}:{}),...(status==='failed'||status==='waiting'&&failure?{reason:run?.configurationError?.message??failure?.message??'本次执行没有可核验的最终回复。'}:{})}
+  const counts:ConversationWorkStatus['counts']={received:0,waiting:0,unavailable:0,failed:0,stopped:0};counts[status]++
+  await this.authorize(request)
+  return {requestId:request.requestId,sessionId:request.sessionId,kind:'task',title:request.title,scope:'general',observedAt:ports.now(),stoppedAt:request.stoppedAt,counts,members:[member]}
+ }
  /** 新一轮用户明确重试时使用已保存的定义，不能用当前消息再生成一份交办。 */
  async resume(sessionId:string,requestId:string,signal:AbortSignal):Promise<ConversationWorkStatus>{
   signal.throwIfAborted();const request=await this.current(sessionId,requestId),target=request.targets[0]
-  return this.dispatch({requestId:request.requestId,sessionId,messageId:request.messageId,messageSeq:request.messageSeq,kind:request.kind,scope:request.scope,title:request.title,goal:request.goal,...(request.sourceText?{sourceText:request.sourceText}:{}),...(request.allBusinesses?{allBusinesses:true}:{}),...(request.reference?{reference:request.reference}:{}),...(request.responsibility?{responsibility:request.responsibility}:{}),...(request.expectedReportTargets?{expectedReportTargets:request.expectedReportTargets}:{}),...(request.kind==='task'&&target?{roleId:target.roleId,expectedRoleVersion:target.roleVersion}:{})},signal)
+  return this.dispatch({requestId:request.requestId,sessionId,messageId:request.messageId,messageSeq:request.messageSeq,kind:request.kind,scope:request.scope,title:request.title,goal:request.goal,...(request.executor?{executor:request.executor}:{}),...(request.sourceText?{sourceText:request.sourceText}:{}),...(request.allBusinesses?{allBusinesses:true}:{}),...(request.reference?{reference:request.reference}:{}),...(request.responsibility?{responsibility:request.responsibility}:{}),...(request.expectedReportTargets?{expectedReportTargets:request.expectedReportTargets}:{}),...(request.kind==='task'&&target?{roleId:target.roleId,expectedRoleVersion:target.roleVersion}:{})},signal,undefined,true)
  }
  async stop(sessionId:string,requestId:string,signal:AbortSignal):Promise<ConversationWorkStatus>{
   signal.throwIfAborted()
   const {ports}=this,request=await ports.requests.stop(ports.owner,{sessionId,requestId})
+  if(request.executor==='general'){
+   const task=await ports.boundTasks.request(this.generalIdentity(request)),run=task?this.generalRun(request,await ports.runs(task.id)).run:undefined
+   if(run&&!terminal(run))try{await ports.run(run.state==='prepared'?'task-runs/withdraw':'task-runs/stop',{runId:run.id},signal)}catch(error){if(signal.aborted)throw error;await ports.requests.failure(ports.owner,request.requestId,null,publicFailure(error))}
+   return this.status(sessionId,requestId)
+  }
   for(const target of request.targets){
    const task=await this.readTask(request,target)
    if(!task)continue
-   for(const run of await ports.runs(task.id)){
-    if(run.sessionId!==executionSession(request.requestId,target.roleId)||terminal(run))continue
+   const runs=await ports.runs(task.id),fixed=executionSlot(request,target,runs),sessions=new Set([executionSession(request.requestId,target.roleId),...(fixed.original?[retrySession(request,target,fixed.original)]:[])])
+   for(const run of runs){
+    if(!sessions.has(run.sessionId)||terminal(run))continue
     try{await ports.run(run.state==='prepared'?'task-runs/withdraw':'task-runs/stop',{runId:run.id},signal)}
     catch(error){if(signal.aborted)throw error;await ports.requests.failure(ports.owner,request.requestId,target.roleId,publicFailure(error))}
    }

@@ -8,3 +8,31 @@ test('journal写失败释放busy；明确拒绝释放请求，存储失败保留
 test('atomic安装可被industry-public与不同load引用复用，但真实源串包被拒绝',async()=>{const industry={kind:'industry-public' as const,loadId:'44444444-4444-4444-8444-444444444444',itemInstanceId:'55555555-5555-4555-8555-555555555555',contentId:'66666666-6666-4666-8666-666666666666',contentHash:'e'.repeat(64),sourceContentId:source.contentId,sourceContentHash:source.contentHash,sourceResourceId:source.resourceId,sourceResourceVersion:source.resourceVersion,resourceId:'industry-research',resourceVersion:'1.0.0'},industryInput={kind:'industry' as const,loadId:industry.loadId,itemInstanceId:industry.itemInstanceId},industryRequest={...request,source:industryInput};assert.deepEqual(await createSkillInstallApi(async()=>({installation:record,source:industry})).install(industryRequest),record);const another={...industry,loadId:'77777777-7777-4777-8777-777777777777',itemInstanceId:'88888888-8888-4888-8888-888888888888'},anotherRequest={...request,requestId:'99999999-9999-4999-8999-999999999999',source:{kind:'industry' as const,loadId:another.loadId,itemInstanceId:another.itemInstanceId}};assert.deepEqual(await createSkillInstallApi(async()=>({installation:record,source:another})).install(anotherRequest),record);await assert.rejects(createSkillInstallApi(async()=>({installation:record,source:{...industry,sourceContentHash:'f'.repeat(64)}})).install(industryRequest),/一致/)})
 test('默认工作区观测严格区分可用、遮蔽、变化和缺失',async()=>{const current={...native,provider:'filesystem',source:'/managed/skill'};for(const value of [{installationId:record.id,scope:'default-workspace',state:'available',current},{installationId:record.id,scope:'default-workspace',state:'shadowed',reason:'different-source',current},{installationId:record.id,scope:'default-workspace',state:'shadowed',reason:'content-changed',current},{installationId:record.id,scope:'default-workspace',state:'missing',current:null}])assert.deepEqual(await createSkillInstallApi(async()=>value).observe(record.id),value);for(const value of [{installationId:record.id,scope:'other',state:'available',current},{installationId:record.id,scope:'default-workspace',state:'available',reason:'different-source',current},{installationId:record.id,scope:'default-workspace',state:'shadowed',current}])await assert.rejects(createSkillInstallApi(async()=>value).observe(record.id),/格式/)})
 test('原生合法长名称和长描述不会被客户端自造上限拒绝',async()=>{const longName=Array.from({length:80},()=> 'segment').join('-'),longDescription='描'.repeat(3000),value={...preview,native:{...native,name:longName,description:longDescription}};assert.equal((await createSkillInstallApi(async()=>value).preview(input)).native.description,longDescription)})
+
+test('完整员工与团队共用同一行业方法：核对新加载使用关系、固定字节与原安装，恢复不另装',async()=>{
+ const oldSource={kind:'industry-local' as const,loadId:'44444444-4444-4444-8444-444444444444',itemInstanceId:'55555555-5555-4555-8555-555555555555',contentId:source.contentId,contentHash:source.contentHash,resourceId:source.resourceId,resourceVersion:source.resourceVersion}
+ const actualSource={...oldSource,loadId:'66666666-6666-4666-8666-666666666666',itemInstanceId:'77777777-7777-4777-8777-777777777777',contentId:'88888888-8888-4888-8888-888888888888',contentHash:'e'.repeat(64)}
+ const saved={...record,source:oldSource},wanted={...request,source:{kind:'industry' as const,loadId:actualSource.loadId,itemInstanceId:actualSource.itemInstanceId}}
+ const usage={loadId:actualSource.loadId,itemInstanceId:actualSource.itemInstanceId,installationId:saved.id}
+ let raw:string|null=null,reads=0
+ const api=createSkillInstallApi(async method=>{
+  if(method==='skill-installations/install')return {installation:saved,source:actualSource}
+  assert.equal(method,'skill-installations/list');if(!reads++)throw Error('回执核对断线')
+  return {items:[saved],usages:[usage]}
+ },{read:()=>raw,write:v=>raw=v,clear:()=>raw=null})
+ await assert.rejects(api.install(wanted),/断线/)
+ assert.deepEqual(api.pending(),wanted)
+ assert.deepEqual(await api.recover(),saved)
+ assert.equal(raw,null)
+ for(const [response,directory] of [
+  [{installation:saved,source:actualSource},{items:[saved],usages:[]}],
+  [{installation:saved,source:actualSource},{items:[{...saved,native:{...native,bodyHash:'f'.repeat(64)}}],usages:[usage]}],
+  [{installation:saved,source:{...actualSource,resourceVersion:'2.0.0'}},{items:[saved],usages:[usage]}],
+  [{installation:{...saved,bundleHash:'f'.repeat(64)},source:actualSource},{items:[saved],usages:[usage]}],
+  [{installation:saved,source:{...actualSource,itemInstanceId:oldSource.itemInstanceId}},{items:[saved],usages:[usage]}],
+ ] as const){
+  const bad=createSkillInstallApi(async method=>method==='skill-installations/install'?response:directory)
+  await assert.rejects(bad.install(wanted),/一致/)
+  assert.deepEqual(bad.pending(),wanted)
+ }
+})

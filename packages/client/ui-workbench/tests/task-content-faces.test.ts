@@ -38,6 +38,7 @@ function transpile(absPath:string):string{
 }
 
 function resolveSibling(fromAbsPath:string,specifier:string):string{
+ if(/\.tsx?$/.test(specifier)){const exact=resolvePath(dirname(fromAbsPath),specifier);if(existsSync(exact))return exact}
  const withoutExt=specifier.replace(/\.js$/,'')
  const base=resolvePath(dirname(fromAbsPath),withoutExt)
  for(const ext of ['.ts','.tsx'])if(existsSync(base+ext))return base+ext
@@ -79,6 +80,9 @@ function mountComponent(relFile:string,exportName:string,props:any){
  const hooks:any={...React,
   useState:(initialValue:unknown)=>{const index=cursor++;if(!(index in slots))slots[index]=typeof initialValue==='function'?(initialValue as ()=>unknown)():initialValue;return [slots[index],(next:unknown)=>{const value=typeof next==='function'?(next as (before:unknown)=>unknown)(slots[index]):next;if(!Object.is(value,slots[index])){slots[index]=value;dirty=true}}]},
   useRef:(initialValue:unknown)=>{const index=cursor++;return slots[index]??(slots[index]={current:initialValue})},
+  // 这些独立内容面不挂 Provider；准备控制器的默认 Context 与真实 React 一样为 undefined。
+  useContext:()=>undefined,
+  useCallback:(callback:()=>void,deps:readonly unknown[])=>{const index=cursor++,previous=slots[index] as {callback:()=>void;deps:readonly unknown[]}|undefined;if(!previous||deps.length!==previous.deps.length||deps.some((value,depIndex)=>!Object.is(value,previous.deps[depIndex])))slots[index]={callback,deps};return (slots[index] as {callback:()=>void}).callback},
   useId:()=>{const index=cursor++;if(!(index in slots))slots[index]='test-id-'+index;return slots[index]},
   useSyncExternalStore:(_subscribe:unknown,getSnapshot:()=>unknown)=>getSnapshot(),
   useEffect:(run:()=>void|(()=>void),deps:readonly unknown[])=>{
@@ -99,7 +103,10 @@ function mountComponent(relFile:string,exportName:string,props:any){
  const Component=moduleObj.exports[exportName] as (value:unknown)=>React.ReactNode
  const render=():React.ReactNode=>{
   let guard=0
-  do{assert.ok(guard++<20,'组件不应无限重渲染');dirty=false;cursor=0;pending=[];tree=Component(props);for(const run of pending)run()}while(dirty)
+  do{assert.ok(guard++<20,'组件不应无限重渲染');dirty=false;cursor=0;pending=[];tree=Component(props)
+   // TaskExecutions 的身份 key 包装没有 hooks；实际内容面的 hooks/effects 必须在渲染阶段调度。
+   if(relFile==='TaskExecutions.tsx'&&React.isValidElement(tree)&&typeof tree.type==='function')tree=(tree.type as (value:unknown)=>React.ReactNode)(tree.props)
+   for(const run of pending)run()}while(dirty)
   return tree
  }
  const flush=async():Promise<React.ReactNode>=>{for(let round=0;round<8;round++){await Promise.resolve();render()}return tree}
@@ -143,6 +150,7 @@ const runFixture=(overrides:any={}):any=>({
 function makeRunApi(rows:any[]):any{
  return {
   pending:()=>undefined,recoveryMessage:()=>undefined,discard:()=>false,
+  origin:async(taskId:string)=>contract.readTaskRunOrigin({taskId,runId:null,source:null}),
   list:async()=>rows,
   prepare:async()=>{throw Error('未使用')},
   recoverPrepare:async()=>{throw Error('未使用')},
@@ -153,6 +161,14 @@ function makeRunApi(rows:any[]):any{
  }
 }
 const runProps=(row:any,extra:any={}):any=>({taskId:row.taskId,taskVersion:1,taskState:'ready',assigned:true,api:makeRunApi([row]),open:async()=>{},changed:()=>{},...extra})
+/** 受控 IO 按请求队列交付；来源核对等待期间预先返回的数据不得丢给上一条已完成请求。 */
+function controlledRunList(){
+ const waiting:Array<(rows:any[])=>void>=[],responses:any[][]=[]
+ return {
+  list:()=>new Promise<any[]>(resolve=>{const next=responses.shift();if(next!==undefined)resolve(next);else waiting.push(resolve)}),
+  resolve:(rows:any[])=>{const next=waiting.shift();if(next)next(rows);else responses.push(rows)},
+ }
+}
 
 test('运行首次读取失败后刷新成功仍向父级回传完整快照',async()=>{
  const row=runFixture(),received:any[][]=[]
@@ -161,7 +177,7 @@ test('运行首次读取失败后刷新成功仍向父级回传完整快照',asy
  const app=mountComponent('TaskExecutions.tsx','TaskExecutions',runProps(row,{api,face:'timeline',onRuns:(rows:any[],verified:boolean)=>{if(verified)received.push(rows)}}))
  await app.flush()
  assert.equal(received.length,0,'失败不能伪造空快照')
- app.find(el=>el.type==='button'&&app.contentOf(el)===zh('taskExecution.refresh')).props.onClick()
+ app.find(el=>el.type==='button'&&el.props['aria-label']===zh('taskExecution.refresh')).props.onClick()
  await app.flush()
  assert.equal(listCalls,2)
  assert.deepEqual(received.at(-1),[row],'刷新成功必须同步父详情')
@@ -181,7 +197,7 @@ test('TaskExecutions face=timeline：onRuns 收到一条 run；无 <h3>；sectio
  assert.equal(app.findAll(el=>el.type==='p'&&app.contentOf(el)===zh('taskExecution.boundary')).length,0,'boundary 段落不再渲染')
  const prepare=app.find(el=>el.type==='button'&&el.props['data-teloa-focus']==='prepare')
  assert.equal(app.contentOf(prepare),zh('taskExecution.prepare'))
- assert.equal(app.findAll(el=>el.type==='button'&&app.contentOf(el).includes(zh('taskExecution.refresh'))).length,1,'刷新按钮仍在')
+ assert.equal(app.findAll(el=>el.type==='button'&&el.props['aria-label']===zh('taskExecution.refresh')).length,1,'刷新按钮仍在')
 })
 
 test('TaskExecutions 不传 face：仍渲染 <h3> 标题（回归保护），不传 onRuns 也不报错',async()=>{
@@ -265,8 +281,9 @@ test('任务页装配回传运行快照，并挂入时间线和属性内容面',
 
 test('运行快照回传同状态下的原因变化与空列表，加载前不伪造已确认空快照',async()=>{
  const row=runFixture()
- let rows=[row],resolveList:((rows:any[])=>void)|undefined
- const api={...makeRunApi([]),list:()=>new Promise<any[]>(resolve=>{resolveList=resolve})}
+ let rows=[row]
+ const controlled=controlledRunList(),resolveList=controlled.resolve
+ const api={...makeRunApi([]),list:controlled.list}
  const received:any[][]=[]
  const app=mountComponent('TaskExecutions.tsx','TaskExecutions',runProps(row,{api,face:'timeline',onRuns:(value:any[],verified:boolean)=>{if(verified)received.push(value)}}))
  app.render()
@@ -276,11 +293,11 @@ test('运行快照回传同状态下的原因变化与空列表，加载前不�
  assert.equal(received.length,1)
  assert.equal(received[0],rows)
  rows=[{...row,reason:'error',endedAt:'2026-09-21T01:00:00.000Z'}]
- app.find(el=>el.type==='button'&&app.contentOf(el)===zh('taskExecution.refresh')).props.onClick()
+ app.find(el=>el.type==='button'&&el.props['aria-label']===zh('taskExecution.refresh')).props.onClick()
  resolveList!(rows)
  await app.flush()
  assert.equal(received.at(-1)![0].reason,'error')
- app.find(el=>el.type==='button'&&app.contentOf(el)===zh('taskExecution.refresh')).props.onClick()
+ app.find(el=>el.type==='button'&&el.props['aria-label']===zh('taskExecution.refresh')).props.onClick()
  resolveList!([])
  await app.flush()
  assert.deepEqual(received.at(-1),[],'成功读取空列表也要同步给父级')
@@ -288,8 +305,9 @@ test('运行快照回传同状态下的原因变化与空列表，加载前不�
 
 test('已读到空运行列表后，重新读取及刷新失败撤回已确认空状态',async()=>{
  const row=runFixture(),received:{rows:any[];verified:boolean}[]=[]
- let fail=false,resolveList:((rows:any[])=>void)|undefined
- const api={...makeRunApi([]),list:()=>fail?Promise.reject(Error('连接断开')):new Promise<any[]>(resolve=>{resolveList=resolve})}
+ let fail=false
+ const controlled=controlledRunList(),resolveList=controlled.resolve
+ const api={...makeRunApi([]),list:()=>fail?Promise.reject(Error('连接断开')):controlled.list()}
  const props=runProps(row,{api,face:'timeline',onRuns:(rows:any[],verified:boolean)=>received.push({rows,verified})})
  const app=mountComponent('TaskExecutions.tsx','TaskExecutions',props)
  app.render();resolveList!([]);await app.flush()
@@ -299,7 +317,7 @@ test('已读到空运行列表后，重新读取及刷新失败撤回已确认�
  resolveList!([]);await app.flush()
  assert.equal(received.at(-1)!.verified,true)
  fail=true
- app.find(el=>el.type==='button'&&app.contentOf(el)===zh('taskExecution.refresh')).props.onClick()
+ app.find(el=>el.type==='button'&&el.props['aria-label']===zh('taskExecution.refresh')).props.onClick()
  await app.flush()
  assert.equal(received.at(-1)!.verified,false,'失败必须撤销已确认空状态')
 })

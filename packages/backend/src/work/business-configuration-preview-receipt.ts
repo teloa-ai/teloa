@@ -5,8 +5,8 @@ import {businessConfigurationHash,type BusinessConfigurationCurrent} from './bus
 const secret=randomBytes(32)
 export type BusinessConfigurationPreviewReceiptBinding={ownerId:string;draftId:string;scope:string;revision:number;candidateHash:string;baseVersion:number;dependencyHash:string}
 /** 正式 manifest 摘要已覆盖所有固定叶子引用，不纳入无关市场变化。 */
-export function businessConfigurationDependencyHash(current:BusinessConfigurationCurrent|undefined):string{
- return businessConfigurationHash({baseVersion:current?.version??0,configurationHash:current?.hash??null})
+export function businessConfigurationDependencyHash(current:BusinessConfigurationCurrent|undefined,dataRevision='0'):string{
+ return businessConfigurationHash({baseVersion:current?.version??0,configurationHash:current?.hash??null,dataRevision})
 }
 function sign(binding:BusinessConfigurationPreviewReceiptBinding):string{
  return createHmac('sha256',secret).update(JSON.stringify(['teloa.business-configuration-preview-receipt/v1',binding.ownerId,binding.draftId,binding.scope,binding.revision,binding.candidateHash,binding.baseVersion,binding.dependencyHash])).digest('hex')

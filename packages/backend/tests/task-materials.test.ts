@@ -44,6 +44,21 @@ test('添加知识固定资源快照并推进任务版本，目录只返回本�
  await assert.rejects(service.add(owner,{requestId:randomUUID(),taskId:value.id,expectedTaskVersion:2,resourceId:selected.id,expectedResourceVersion:1,ownerId:'forged'}),{code:'teloa/invalid-input'})
 })
 
+test('保存时遵守执行器的八份任务资料上限；拒绝第九份不推进版本，原请求仍可恢复',async()=>{
+ const {owner,value}=await task(),service=new TaskMaterialService(pool,identity)
+ let version=value.version,first:Parameters<TaskMaterialService['add']>[1],saved
+ for(let i=0;i<8;i++){
+  const selected=await resource(owner,'general','资料 '+i),input={requestId:randomUUID(),taskId:value.id,expectedTaskVersion:version,resourceId:selected.id,expectedResourceVersion:1}
+  const result=await service.add(owner,input);version=result.task.version
+  if(i===0){first=input;saved=result}
+ }
+ const ninth=await resource(owner,'general','第九份资料')
+ await assert.rejects(service.add(owner,{requestId:randomUUID(),taskId:value.id,expectedTaskVersion:version,resourceId:ninth.id,expectedResourceVersion:1}),{code:'teloa/conflict'})
+ assert.equal((await service.list(owner,{taskId:value.id})).length,8)
+ assert.equal((await new TaskService(pool,identity).list(owner,{}))[0]!.version,version)
+ assert.deepEqual(await service.add(owner,first),saved)
+})
+
 test('相同请求恢复原任务与引用，变化后的请求内容明确冲突',async()=>{
  const {owner,value}=await task(),selected=await resource(owner),service=new TaskMaterialService(pool,identity),input={requestId:randomUUID(),taskId:value.id,expectedTaskVersion:1,resourceId:selected.id,expectedResourceVersion:1}
  const saved=await service.add(owner,input)
@@ -52,6 +67,29 @@ test('相同请求恢复原任务与引用，变化后的请求内容明确冲�
  assert.deepEqual(await new TaskMaterialService(pool,identity).add(owner,input),saved)
  await assert.rejects(service.add(owner,{...input,resourceId:randomUUID()}),{code:'teloa/conflict'})
  assert.equal((await service.list(owner,{taskId:value.id}))[0]!.available,false)
+})
+
+test('任务资料持久回执可按本人请求恢复原引用，不依赖已改名或撤回的当前目录',async()=>{
+ const {owner,value}=await task(),selected=await resource(owner),service=new TaskMaterialService(pool,identity),input={requestId:randomUUID(),taskId:value.id,expectedTaskVersion:1,resourceId:selected.id,expectedResourceVersion:1}
+ assert.equal(await service.request(owner,{requestId:input.requestId}),null)
+ const result=await service.add(owner,input)
+ await pool.query("update teloa_tasks set definition=jsonb_set(definition,'{title}','\"改名任务\"'::jsonb),version=version+1 where id=$1",[value.id])
+ await pool.query("update teloa_resources set status='withdrawn',revision=revision+1 where id=$1",[selected.id])
+ assert.deepEqual(await service.request(owner,{requestId:input.requestId}),{input,result})
+ assert.equal(await service.request('other',{requestId:input.requestId}),null)
+ await assert.rejects(service.request(owner,{requestId:input.requestId,ownerId:'other'}),{code:'teloa/invalid-input'})
+})
+
+test('本人指令在实际资料写入前变化或取消，原任务及资料引用事务不落库',async()=>{
+ for(const mode of ['cancel','instruction','after-write']){
+  const {owner,value}=await task(),selected=await resource(owner),service=new TaskMaterialService(pool,identity),input={requestId:randomUUID(),taskId:value.id,expectedTaskVersion:1,resourceId:selected.id,expectedResourceVersion:1},controller=new AbortController()
+  if(mode==='cancel')controller.abort()
+  let checks=0
+  await assert.rejects(service.add(owner,input,controller.signal,async()=>{checks++;if(mode==='instruction'||mode==='after-write'&&checks===3)throw Error('原指令已变化')}))
+  assert.equal((await new TaskService(pool,identity).list(owner,{}))[0]!.version,1)
+  assert.deepEqual(await service.list(owner,{taskId:value.id}),[])
+  assert.equal(await service.request(owner,{requestId:input.requestId}),null)
+ }
 })
 
 test('拒绝跨本人、跨业务、撤回、版本不符与重复资源',async()=>{

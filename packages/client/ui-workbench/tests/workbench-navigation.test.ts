@@ -6,6 +6,8 @@ import ts from 'typescript'
 import {openAttentionItem,type AttentionItem} from '../src/client/attention-item.ts'
 import {marketSkillInstallationSelection} from '../src/client/market-installation-selection.ts'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {WorkbenchActions} from '../src/client/store.ts'
+import {captureWorkbenchNavigationState} from '../src/client/workbench-navigation-state.ts'
 
 const frameUrl=new URL('../src/client/WorkbenchFrame.tsx',import.meta.url)
 
@@ -16,6 +18,29 @@ const sourceHooks=registerHooks({resolve(specifier,context,next){
   return next(specifier,context)
 }})
 const {createWorkbenchStore,shouldFollowCurrentSession}=await import('../src/client/store.ts')
+
+test('Frame 任务负责人入口预览员工时保留来源任务与原详情种子',async()=>{
+ const file=ts.createSourceFile('WorkbenchFrame.tsx',await readFile(frameUrl,'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+ let entry:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==='TaskPage'){const attr=node.attributes.properties.find(property=>ts.isJsxAttribute(property)&&property.name.getText(file)==='openRole');if(attr&&ts.isJsxAttribute(attr)&&attr.initializer&&ts.isJsxExpression(attr.initializer))entry=attr.initializer.expression}ts.forEachChild(node,visit)};visit(file)
+ assert.ok(entry&&ts.isPropertyAccessExpression(entry)&&entry.expression.getText(file)==='actions','直接执行 Frame 的实际负责人接线')
+ const store=createWorkbenchStore().create();store.actions.openTask('source-task');store.actions.rememberDirectory('tasks',{query:'原筛选',scrollTop:240});store.actions.openConversationObject('source-session',{kind:'task',id:'source-task'});store.actions.retainDetailForSession('other-session')
+ const before=store.getSnapshot(),action=store.actions[entry.name.text as keyof typeof store.actions] as (id:string)=>void
+ action('owner-role')
+ const after=store.getSnapshot();assert.equal(after.view,'tasks');assert.equal(after.taskId,'source-task');assert.deepEqual(after.navigationDirectories,before.navigationDirectories);assert.deepEqual(after.detail,before.detail);assert.deepEqual(after.detailSeeds,before.detailSeeds)
+})
+
+test('关联员工预览是单个临时目标，旧关闭无效，明确导航清预览而不改原详情',()=>{
+ for(const view of ['tasks','plans','spaces','projects','messages','market','team'] as const){
+  const store=createWorkbenchStore().create();store.actions.navigate(view);store.actions.selectRole('directory-role');store.actions.openArtifacts({kind:'task',id:'original-artifact'});store.actions.previewRole('role-a')
+  const first=store.getSnapshot().rolePreview!;store.actions.previewRole('role-b');store.actions.closeRolePreview(first.request)
+  assert.equal(store.getSnapshot().rolePreview?.id,'role-b');assert.equal(store.getSnapshot().roleId,'directory-role');assert.equal(store.getSnapshot().view,view)
+  const restored=createWorkbenchStore('light',captureWorkbenchNavigationState(store.getSnapshot())).create();assert.equal(restored.getSnapshot().rolePreview,null);assert.equal(restored.getSnapshot().view,view)
+  store.actions.closeRolePreview(store.getSnapshot().rolePreview!.request);assert.equal(store.getSnapshot().rolePreview,null);assert.equal(store.getSnapshot().detail.open,true)
+ }
+ const routes:Array<(actions:WorkbenchActions)=>void>=[a=>a.navigate('home'),a=>a.openDirectory(),a=>a.openTask('another-task'),a=>a.openBusiness({scope:'general',section:'overview'}),a=>a.openGroupTopic('group','root'),a=>a.openMessages('native'),a=>a.openPlans({kind:'plans'}),a=>a.openMarketCategory('apps'),a=>a.openRole('main-role')]
+ for(const route of routes){const store=createWorkbenchStore().create();store.actions.openArtifacts({kind:'task',id:'original-artifact'});const detail=store.getSnapshot().detail;store.actions.previewRole('role-a');route(store.actions);assert.equal(store.getSnapshot().rolePreview,null);assert.deepEqual(store.getSnapshot().detail,detail)}
+})
 
 test('读取任务成果的来源会话时，原生主面板同步不关闭独立成果面板',()=>{
  const store=createWorkbenchStore().create()
@@ -99,6 +124,19 @@ test('会话搜索停留在统一目录根态，不把当前 DSH 会话冒充搜
   assert.equal(state.searchFocusRequest,1)
 })
 
+test('全局正文查询以独立请求交给目录，同词重搜不被旧已处理回执清除',()=>{
+ const store=createWorkbenchStore().create()
+ store.actions.focusConversationSearch('  语音  ')
+ const first=store.getSnapshot().searchFocusRequest
+ assert.equal(store.getSnapshot().searchFocusQuery,'语音')
+ store.actions.focusConversationSearch('语音')
+ assert.equal(store.getSnapshot().searchFocusRequest,first+1)
+ store.actions.completeConversationSearchRequest(first)
+ assert.equal(store.getSnapshot().searchFocusQuery,'语音')
+ store.actions.completeConversationSearchRequest(first+1)
+ assert.equal(store.getSnapshot().searchFocusQuery,undefined)
+})
+
 test('设置内部完成操作后返回进入前的工作视图且保留页面草稿身份',()=>{
   const store=createWorkbenchStore().create()
   store.actions.openResources('draft-1')
@@ -144,15 +182,22 @@ test('进入需要你总是回到决策队列，清除旧任务选择但保留�
   assert.deepEqual(state.navigationDirectories.tasks,{query:'审计',category:'open'})
 })
 
-test('绑定详情返回目录仍留在业务绑定，只有原生目录入口才切换页签',()=>{
+test('绑定入口与原生目录入口都落到市场「已添加」：独立「我的能力」页已退出，分组记忆沿用 capabilities 目录',()=>{
   const store=createWorkbenchStore().create()
   store.actions.openBinding('binding-1')
+  assert.equal(store.getSnapshot().view,'market')
+  assert.equal(store.getSnapshot().marketMode,'catalog')
+  assert.deepEqual(store.getSnapshot().marketCategoryRequest,{category:'resources',serial:1})
+  assert.equal(store.getSnapshot().navigationDirectories.capabilities?.selectedId,'binding-1')
   store.actions.openBinding(null)
-  assert.equal(store.getSnapshot().capabilityMode,'bindings')
   assert.equal(store.getSnapshot().capabilityBindingId,null)
+  assert.equal(store.getSnapshot().navigationDirectories.capabilities?.selectedId,undefined)
+  store.actions.rememberDirectory('capabilities',{category:'{"category":"source","mobileLayer":"list"}',query:'git'})
   store.actions.openCapabilityCatalog()
-  assert.equal(store.getSnapshot().capabilityMode,'catalog')
-  assert.equal(store.getSnapshot().view,'capabilities')
+  assert.equal(store.getSnapshot().view,'market')
+  assert.deepEqual(store.getSnapshot().marketCategoryRequest,{category:'resources',serial:3})
+  assert.deepEqual(store.getSnapshot().navigationDirectories.capabilities,{category:'{"category":"source","mobileLayer":"list"}',query:'git'},'再次进入保留分组与搜索')
+  assert.equal(store.getSnapshot().navOpen,false)
 })
 
 test('异常入口固定指定配置版本，普通打开不会沿用另一绑定的历史版本',()=>{
@@ -338,27 +383,31 @@ test('业务面板「接入」落点改记忆「接入源」分节，不再写�
  const end=frame.indexOf('\n  }',start)
  assert.ok(start>=0&&end>start,'没有抓到七行落点的装配段')
  const route=frame.slice(start,end)
- assert.match(route,/target\.kind==='connectors'\)\{actions\.rememberDirectory\('capabilities',\{category:writeDirectoryFilterCategory\(\{category:'source',mobileLayer:'list'\}\)\}\);actions\.navigate\('capabilities'\)\}/)
+ assert.match(route,/target\.kind==='connectors'\)\{actions\.rememberDirectory\('capabilities',\{category:writeDirectoryFilterCategory\(\{category:'source',mobileLayer:'list'\}\)\}\);actions\.openCapabilityCatalog\(\)\}/)
+ assert.doesNotMatch(route,/navigate\('capabilities'\)/,'独立能力页已退出，落点统一走市场「已添加」')
  assert.doesNotMatch(route,/category:'connection'/)
 })
 
+/** 我的资源并入市场「已添加」后，原能力页装配段是 MarketPage 的 `mine={{…}}` 对象。 */
+function mineWiring(frame:string){
+ const start=frame.indexOf('mine={{')
+ const end=frame.indexOf('}} nativeSettings=',start)
+ assert.ok(start>=0&&end>start,'没有抓到我的资源装配段')
+ return frame.slice(start,end)
+}
+
 test('能力页保留业务名称和共享派发，任务模板目录不接收自动化计划',async()=>{
  const frame=await readFile(frameUrl,'utf8')
- const start=frame.indexOf('<TeamCapabilitiesPage ')
- const end=frame.indexOf('/>',start)
- assert.ok(start>=0&&end>start,'没有抓到能力页装配段')
- const wiring=frame.slice(start,end)
- assert.doesNotMatch(wiring,/plans=/)
- assert.match(wiring,/businessNames=\{localizedScopeNames\}/)
- assert.match(wiring,/go=\{openComposition\}/)
+ const wiring=mineWiring(frame)
+ assert.doesNotMatch(wiring,/plans:/)
+ assert.match(wiring,/businessNames:localizedScopeNames/)
+ assert.match(wiring,/go:openComposition/)
+ assert.doesNotMatch(frame,/<TeamCapabilitiesPage/,'Frame 不再单独挂载独立能力页')
 })
 
 test('扩展的页内新建入口重新接上能力页，WorkbenchFrame 把真实插件安装 API 与市场落点一起交给它',async()=>{
  const frame=await readFile(frameUrl,'utf8')
- const start=frame.indexOf('<TeamCapabilitiesPage ')
- const end=frame.indexOf('/>',start)
- assert.ok(start>=0&&end>start,'没有抓到能力页装配段')
- const wiring=frame.slice(start,end)
+ const wiring=mineWiring(frame)
  assert.match(wiring,/marketPluginInstallApi:marketPluginInstallApi/)
  assert.match(wiring,/openExtensionMarket:\(\)=>openMarketCategory\('plugin'\)/)
  const page=await readFile(new URL('../src/client/TeamCapabilitiesPage.tsx',import.meta.url),'utf8')
@@ -384,10 +433,12 @@ test('业务首页新建开启独立搭建；技能页仍准备普通会话，�
  const intents:unknown[]=[],requestCreation=(intent:unknown)=>intents.push(intent)
  const addBusiness=new Function('requestCreation','return '+attribute('BusinessHome','addBusiness').getText())(requestCreation) as ()=>void
  addBusiness()
- const pageCreate=attribute('TeamCapabilitiesPage','pageCreate') as ts.ObjectLiteralExpression
- const prepare=pageCreate.properties.find(prop=>ts.isPropertyAssignment(prop)&&prop.name.getText()==='prepare') as ts.PropertyAssignment
+ const mine=attribute('MarketPage','mine') as ts.ObjectLiteralExpression
+ const pageCreate=mine.properties.find(prop=>ts.isPropertyAssignment(prop)&&prop.name.getText()==='pageCreate') as ts.PropertyAssignment
+ assert.ok(pageCreate,'我的资源装配应带 pageCreate')
+ const prepare=(pageCreate.initializer as ts.ObjectLiteralExpression).properties.find(prop=>ts.isPropertyAssignment(prop)&&prop.name.getText()==='prepare') as ts.PropertyAssignment
  assert.ok(prepare)
- const prepareSkill=new Function('requestCreation','return '+prepare.initializer.getText())(requestCreation) as (prompt:{text:string;sourceId:string})=>void
+ const prepareSkill=new Function('preparePageCreation','return '+prepare.initializer.getText())((prompt:{text:string})=>requestCreation({goal:prompt.text})) as (prompt:{text:string;sourceId:string})=>void
  prepareSkill({text:'帮我创建技能',sourceId:'skill:草稿显示名'})
  assert.deepEqual(intents,[{builder:true},{goal:'帮我创建技能'}])
 })
@@ -406,6 +457,6 @@ test('打开市场扩展类目经 store 发出请求：市场页已挂载时也�
  assert.deepEqual(store.getSnapshot().marketCategoryRequest,{category:'plugin',serial:2})
  const frame=await readFile(frameUrl,'utf8')
  assert.match(frame,/const openMarketCategory=\(category:MarketCategory\|'home'\)=>actions\.openMarketCategory\(category\)/)
- assert.match(frame,/<MarketPage [^\n]*forceCategory=\{state\.marketCategoryRequest\}/)
+ assert.match(frame,/<MarketPage [^\n]*forceCategory:pendingMarketCategory/);assert.match(frame,/onForceCategoryHandled=\{completeMarketCategory\}/)
  // 内置 IM 已直接在设置里配置，不再保留旧的“去市场安装”接线；能力页市场入口在上方单独核对。
 })

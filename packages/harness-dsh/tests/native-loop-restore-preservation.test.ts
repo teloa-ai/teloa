@@ -19,7 +19,7 @@ for(const window of ['session-publish','agent-publish','publish-microtask'] as c
   const f=await nativeProviderKernel(t),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-restore-preservation-'))),model=new NoModel()
   t.after(()=>rm(root,{recursive:true,force:true}))
   f.ctx.llm.registerAdapter(['controlled'],model)
-  await f.ctx.plugin(f.persistencePackage.default,{root,compression:'none'})
+  await f.ctx.plugin(f.persistencePackage,{root,compression:'none'})
   await f.ctx.plugin(f.loopPackage.AgentLoop,{agents:[]})
   const loop=f.ctx.get('agentLoop') as unknown as {requireRestoreAdmission():void;installRestoreAdmission(policy:()=>unknown):void}
   let current=true

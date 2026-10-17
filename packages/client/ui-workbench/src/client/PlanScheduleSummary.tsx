@@ -4,6 +4,8 @@ import {useI18n} from './i18n/provider.js'
 import css from './TaskPage.module.css'
 import own from './ContinuousPage.module.css'
 import summary from './PlanScheduleSummary.module.css'
+import {ArrowUpRight} from 'lucide-react'
+import light from './light-actions.module.css'
 
 type Props={value?:ScheduleSummary;loading?:boolean;error?:string;retry?:()=>void;openTask:(id:string)=>void}
 
@@ -22,8 +24,8 @@ export function PlanScheduleSummary({value,loading=false,error,retry,openTask}:P
    {health===null?<p className={own.notice}>{t('plan.schedule.healthUnknown')}</p>:health.health==='healthy'?<p className={own.notice}>{t('plan.schedule.healthy',{time:stamp(health.lastSuccessAt!)})}</p>:<p className={css.error} role="alert">{t('plan.schedule.failed',{code:health.failureCode??'—',time:stamp(health.lastAttemptAt)})}{health.lastSuccessAt&&<> · {t('plan.schedule.lastSuccess',{time:stamp(health.lastSuccessAt)})}</>}</p>}
    {overview===null?<p>{t('plan.schedule.overviewMissing')}</p>:<>
     <p>{overview.nextAt?t('plan.schedule.next',{time:stamp(overview.nextAt)}):t(noNext)}</p>
-    {latest?<div className={summary.facts}><div className={summary.item}><strong>{t('plan.schedule.latest',{time:stamp(latest.occurrence.scheduledAt)})}</strong><small>{t('plan.execution.claimed',{time:stamp(latest.occurrence.claimedAt)})} · {t('plan.execution.config',{version:latest.occurrence.configVersion})}</small>{latest.task?<><small>{t('plan.schedule.linkedTask',{state:t(taskStates[latest.task.state])})}</small><button type="button" onClick={()=>openTask(latest.task!.id)}>{t('plan.execution.openTask')}</button></>:<small>{t('plan.schedule.noLinkedTask')}</small>}</div></div>:<p>{t('plan.schedule.empty')}</p>}
-    {skip&&<div className={summary.facts}><div className={summary.item}><strong>{t('plan.schedule.latestSkip',{reason:t(skip.reason==='previous-pending'?'plan.schedule.skipPending':'plan.schedule.skipRunning')})}</strong><small><time dateTime={skip.scheduledAt}>{stamp(skip.scheduledAt)}</time> · {t('plan.schedule.recorded',{time:stamp(skip.skippedAt)})}</small>{skip.taskId&&<button type="button" onClick={()=>openTask(skip.taskId!)}>{t('plan.schedule.openBlockingTask')}</button>}</div></div>}
+    {latest?<div className={summary.facts}><div className={summary.item}><strong>{t('plan.schedule.latest',{time:stamp(latest.occurrence.scheduledAt)})}</strong><small>{t('plan.execution.claimed',{time:stamp(latest.occurrence.claimedAt)})} · {t('plan.execution.config',{version:latest.occurrence.configVersion})}</small>{latest.task?<><small>{t('plan.schedule.linkedTask',{state:t(taskStates[latest.task.state])})}</small><button type="button" className={light.link} onClick={()=>openTask(latest.task!.id)}>{t('plan.execution.openTask')}<ArrowUpRight size={13} aria-hidden/></button></>:<small>{t('plan.schedule.noLinkedTask')}</small>}</div></div>:<p>{t('plan.schedule.empty')}</p>}
+    {skip&&<div className={summary.facts}><div className={summary.item}><strong>{t('plan.schedule.latestSkip',{reason:t(skip.reason==='previous-pending'?'plan.schedule.skipPending':'plan.schedule.skipRunning')})}</strong><small><time dateTime={skip.scheduledAt}>{stamp(skip.scheduledAt)}</time> · {t('plan.schedule.recorded',{time:stamp(skip.skippedAt)})}</small>{skip.taskId&&<button type="button" className={light.link} onClick={()=>openTask(skip.taskId!)}>{t('plan.schedule.openBlockingTask')}<ArrowUpRight size={13} aria-hidden/></button>}</div></div>}
    </>}
   </>}
  </section>

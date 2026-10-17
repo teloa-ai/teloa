@@ -36,6 +36,8 @@ export async function createRuntime(t){
  await ctx.plugin((await official('dsh-sandbox-policy')).SandboxPolicyService,{mode:'workspace-write'})
  ctx.provide('shell',{sandboxMode:'workspace-write'})
  await ctx.plugin((await official('dsh-permission-presets')).PermissionPresetService)
+ await ctx.plugin((await official('dsh-fs-sandbox')).default,{})
+ await ctx.plugin((await official('dsh-working-directory')).WorkingDirectoryService,{defaultDirectory:process.cwd()})
  class ScriptedAdapter extends LlmAdapter{
   requests=[];script=[]
   async resolveModel(provider,model){return {provider,id:model,name:model}}

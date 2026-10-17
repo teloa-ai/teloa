@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {registerHooks} from 'node:module'
-import {createSettingsNavigation} from '../src/client/settings-navigation.ts'
+import * as settingsNavigation from '../src/client/settings-navigation.ts'
+const {createSettingsNavigation}=settingsNavigation
 import {createWorkbenchLayout} from '../src/client/workbench-layout.ts'
 import type {MainPanelId} from '@deepseek-ai/dsh-client-ui-layout/client'
 import {mount,nodes} from './market-component-harness.ts'
@@ -12,6 +13,22 @@ registerHooks({resolve(specifier,context,next){
   return next(specifier,context)
 }})
 const {createWorkbenchStore}=await import('../src/client/store.ts')
+
+test('原生目录快捷键使用当前工作台的同一目录动作，卸载后恢复原动作',()=>{
+ const store=createWorkbenchStore().create(),settings=createSettingsNavigation()
+ const layout=createWorkbenchLayout(store.actions,()=>false,settings,{getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:listener=>store.subscribe(listener)})
+ let calls=0
+ const release=layout.leaseSidebarToggle(()=>{calls++})
+ const before=store.getSnapshot().directoryOpen
+ layout.toggleSidebar()
+ assert.equal(calls,1)
+ assert.equal(store.getSnapshot().directoryOpen,before,'原生入口不直接改写已让位的目录偏好')
+ release();layout.toggleSidebar()
+ assert.equal(store.getSnapshot().directoryOpen,!before)
+ const old=layout.leaseSidebarToggle(()=>{calls+=10}),latest=layout.leaseSidebarToggle(()=>{calls+=100})
+ old();layout.toggleSidebar();assert.equal(calls,101,'旧组件卸载不能解除新组件动作')
+ latest();layout.dispose()
+})
 
 test('原生插件入口打开设置内的连接与运行环境，保留返回位置',()=>{
   const store=createWorkbenchStore().create(),settings=createSettingsNavigation()
@@ -28,7 +45,7 @@ test('原生插件入口打开设置内的连接与运行环境，保留返回�
   layout.selectPanel('plugins' as MainPanelId)
   assert.equal(settings.getSnapshot(),'teloa-native-panels','再次进入时覆盖旧的设置页签')
   store.actions.closeSettings()
-  assert.equal(store.getSnapshot().view,'capabilities')
+  assert.equal(store.getSnapshot().view,'market','我的资源归属市场，返回位置是市场')
   layout.dispose()
 })
 
@@ -66,7 +83,7 @@ test('其他原生面板和会话导航保持原行为，未知面板不改变�
 })
 
 test('设置外部入口、目录按钮和引导步骤共享同一个选中态',()=>{
-  const page=mount('SettingsShell.tsx'),layout=mount('SettingsLayout.tsx'),selection=createSettingsNavigation()
+  const page=mount('SettingsShell.tsx',{'./settings-navigation.js':settingsNavigation}),layout=mount('SettingsLayout.tsx'),selection=createSettingsNavigation()
   const rows=[{id:'general',label:'通用设置',order:0},{id:'teloa-native-panels',label:'连接与运行环境',order:1}]
   const props={selection,mainSession:{getSnapshot:()=>undefined,subscribe:()=>()=>{}},connection:{state:{getSnapshot:()=>'connected',subscribe:()=>()=>{}}},useSessions:(select:any)=>select({phase:'ready',byId:{}}),sections:{getSnapshot:()=>rows,subscribe:()=>()=>{}},onboarding:{getSnapshot:()=>[{id:'setup'}],subscribe:()=>()=>{}},open:()=>{},close:()=>{},renderSlot:(name:string,slotProps:any,options:any)=>({type:'slot',props:{name,...slotProps,...options},children:[]})}
   const render=()=>nodes(page.render('SettingsShell',props))

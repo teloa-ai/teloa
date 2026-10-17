@@ -1,6 +1,7 @@
 import type {Pool,PoolClient} from 'pg'
 import {
  WorkError,
+ taskMaterialLimit,
  isResourceSpec,
  isTaskMaterialAddInput,
  isTaskMaterialList,
@@ -93,9 +94,22 @@ export class TaskMaterialService{
    return items
   })
  }
- async add(owner:string,input:unknown):Promise<TaskMaterialResult>{
-  actor(owner);const value=request(input),spec=JSON.stringify(value)
+ async request(owner:string,input:unknown):Promise<{input:TaskMaterialAddInput;result:TaskMaterialResult}|null>{
+  actor(owner)
+  if(typeof input!=='object'||input===null||Array.isArray(input)||Object.keys(input).length!==1||!Object.hasOwn(input,'requestId')||!resourceId((input as {requestId?:unknown}).requestId))throw bad()
   return this.tx(async db=>{
+   const row=(await db.query('select * from teloa_task_material_requests where owner_id=$1 and request_id=$2',[owner,(input as {requestId:string}).requestId.toLowerCase()])).rows[0]
+   if(!row)return null
+   if(!isTaskMaterialAddInput(row.request_spec))throw corrupt()
+   const fixed=request(row.request_spec),result=await this.recover(db,owner,row)
+   if(fixed.requestId!==row.request_id||fixed.taskId!==result.task.id||fixed.expectedTaskVersion+1!==result.task.version||fixed.resourceId!==result.material.resourceId||fixed.expectedResourceVersion!==result.material.resourceVersion)throw corrupt()
+   return {input:fixed,result}
+  })
+ }
+ async add(owner:string,input:unknown,signal?:AbortSignal,revalidate?:()=>Promise<void>):Promise<TaskMaterialResult>{
+  actor(owner);signal?.throwIfAborted();const value=request(input),spec=JSON.stringify(value)
+  return this.tx(async db=>{
+   await revalidate?.();signal?.throwIfAborted()
    await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['task-material-request',owner,value.requestId])])
    const previous=(await db.query('select *,request_spec=$3::jsonb same_request from teloa_task_material_requests where owner_id=$1 and request_id=$2',[owner,value.requestId,spec])).rows[0]
    if(previous){if(previous.same_request!==true)throw new WorkError('teloa/conflict','同一请求 ID 已添加其他任务知识。');return this.recover(db,owner,previous)}
@@ -113,12 +127,16 @@ export class TaskMaterialService{
    // 项目引用不改变此处范围判定；见 2026-09-25 计划 功能验证。
    if(!selected.scopeIds.every(scope=>scope===task.scope))throw new WorkError('teloa/forbidden','当前任务业务范围无权使用这份知识。')
    if((await db.query('select id from teloa_task_materials where task_id=$1 and resource_id=$2',[task.id,selected.id])).rows[0])throw new WorkError('teloa/conflict','这份知识已加入当前任务。')
+   if(Number((await db.query('select count(*)::int as count from teloa_task_materials where owner_id=$1 and task_id=$2',[owner,task.id])).rows[0]?.count)>=taskMaterialLimit)throw new WorkError('teloa/conflict','任务最多固定 8 份资料。请将更多内容整理成一份资料或使用本地检索。')
+   // 原生审核及等锁期间可能已更换本人指令；真正写入前复核，失败由同一事务回滚。
+   await revalidate?.();signal?.throwIfAborted()
    const now=this.identity.now(),id=this.identity.id(),fixed={title:selected.title,sourceId:selected.sourceId,sourceVersion:selected.sourceVersion,scopeIds:selected.scopeIds}
    const updated=readStoredTask((await db.query('update teloa_tasks set version=version+1,updated_at=$3 where owner_id=$1 and id=$2 returning *',[owner,task.id,now])).rows[0])
    await db.query('insert into teloa_task_materials(id,owner_id,task_id,task_version,resource_id,resource_version,snapshot,created_at) values($1,$2,$3,$4,$5,$6,$7,$8)',[id,owner,task.id,updated.version,selected.id,selected.version,JSON.stringify(fixed),now])
    const savedMaterial=material((await db.query('select * from teloa_task_materials where id=$1',[id])).rows[0],true,owner),result={task:updated,material:savedMaterial}
    if(!isTaskMaterialResult(result))throw corrupt()
    await db.query('insert into teloa_task_material_requests(owner_id,request_id,request_spec,task_id,material_id,result,created_at) values($1,$2,$3,$4,$5,$6,$7)',[owner,value.requestId,spec,task.id,id,JSON.stringify(result),now])
+   await revalidate?.();signal?.throwIfAborted()
    return result
   })
  }

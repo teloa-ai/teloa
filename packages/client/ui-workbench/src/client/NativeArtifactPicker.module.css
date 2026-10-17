@@ -6,3 +6,4 @@
 .image{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--teloa-border);padding-top:12px;min-width:0}
 .thumbnail,.expandedImage{max-width:100%;width:auto;height:auto;object-fit:contain;align-self:flex-start;border:1px solid var(--teloa-border);border-radius:8px}.thumbnail{max-height:360px}.expandedImage{max-height:70vh}
 .picker button,.choice button{align-self:flex-start}.choice button{max-width:100%}
+.messagePreview{max-height:150px;overflow:hidden;overflow-wrap:anywhere;font-size:var(--teloa-font-control);line-height:1.6}.messagePreview h1,.messagePreview h2,.messagePreview h3{margin:0 0 6px;font-size:var(--teloa-font-control);line-height:1.5}.messagePreview p{line-height:1.6}.original h1,.original h2,.original h3{font-size:var(--teloa-font-control);line-height:1.5}

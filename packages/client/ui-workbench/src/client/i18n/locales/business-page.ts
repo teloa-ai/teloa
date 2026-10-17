@@ -520,19 +520,6 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Criar tarefa de investigação"
   ],
   [
-    "business.task.description",
-    "锁定当前来源、版本和校验值；创建后在正式任务中继续调查。",
-    "鎖定目前來源、版本和校驗值；建立後在正式任務中繼續調查。",
-    "Locks the current source, version, and checksum before continuing in a saved task.",
-    "現在のソース、バージョン、チェックサムを固定してから、保存済みタスクで調査を続けます。",
-    "현재 소스, 버전 및 체크섬을 고정한 뒤 저장된 작업에서 조사를 계속합니다.",
-    "Cố định nguồn, phiên bản và mã kiểm tra hiện tại trước khi tiếp tục trong nhiệm vụ đã lưu.",
-    "Fija la fuente, versión y suma de verificación actuales antes de continuar en una tarea guardada.",
-    "Fige la source, la version et la somme de contrôle actuels avant de poursuivre dans une tâche enregistrée.",
-    "Fixiert Quelle, Version und Prüfsumme, bevor die Untersuchung in einer gespeicherten Aufgabe fortgesetzt wird.",
-    "Fixa a origem, versão e soma de verificação atuais antes de continuar numa tarefa guardada."
-  ],
-  [
     "business.task.goal",
     "调查目标",
     "調查目標",
@@ -663,19 +650,6 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Negócio"
   ],
   [
-    "business.home.subtitle",
-    "管理业务数据、员工和任务。",
-    "管理業務資料、員工和任務。",
-    "Manage business data, employees, and tasks.",
-    "業務データ、担当者、タスクを管理します。",
-    "업무 데이터, 직원 및 작업을 관리합니다.",
-    "Quản lý dữ liệu nghiệp vụ, nhân viên và nhiệm vụ.",
-    "Gestiona los datos de negocio, los empleados y las tareas.",
-    "Gérez les données métier, les employés et les tâches.",
-    "Verwalten Sie Geschäftsdaten, Mitarbeiter und Aufgaben.",
-    "Gerir dados de negócio, funcionários e tarefas."
-  ],
-  [
     "business.home.add",
     "创建业务",
     "建立業務",
@@ -755,9 +729,9 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
   ],
   [
     "business.home.line.none",
-    "接入{noun}后，可查看业务数据。",
-    "接入{noun}後，可查看業務資料。",
-    "Connect {noun} to view business data.",
+    "查看已保存的业务内容，或接入{noun}。",
+    "查看已儲存的業務內容，或接入{noun}。",
+    "View saved business content or connect {noun}.",
     "{noun}を接続すると業務データを確認できます。",
     "{noun}을(를) 연결하면 업무 데이터를 확인할 수 있습니다.",
     "Kết nối {noun} để xem dữ liệu nghiệp vụ.",
@@ -765,19 +739,6 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Connectez {noun} pour consulter les données métier.",
     "Verbinden Sie {noun}, um Geschäftsdaten anzusehen.",
     "Ligue {noun} para consultar os dados de negócio."
-  ],
-  [
-    "business.home.noStaff",
-    "还没有员工负责",
-    "還沒有員工負責",
-    "No employee assigned yet",
-    "担当の従業員はまだいません",
-    "아직 담당 직원이 없습니다",
-    "Chưa có nhân viên phụ trách",
-    "Aún no hay ningún empleado asignado",
-    "Aucun employé n’est encore affecté",
-    "Noch kein Mitarbeiter zuständig",
-    "Ainda sem funcionário responsável"
   ],
   [
     "business.home.waiting",
@@ -1111,7 +1072,7 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
   ["business.more.dashboards","业务看板","業務看板","Business dashboards","業務ダッシュボード","업무 대시보드","Bảng theo dõi nghiệp vụ","Tableros del negocio","Tableaux de bord métier","Geschäfts-Dashboards","Painéis do negócio"],
   ["business.more.adjustment","调整业务定义","調整業務定義","Adjust business definitions","業務定義を調整","업무 정의 조정","Điều chỉnh định nghĩa nghiệp vụ","Ajustar definiciones del negocio","Ajuster les définitions métier","Geschäftsdefinitionen anpassen","Ajustar definições do negócio"],
   ["business.more.connector","数据连接","資料連線","Data connections","データ接続","데이터 연결","Kết nối dữ liệu","Conexiones de datos","Connexions de données","Datenverbindungen","Ligações de dados"],
-  ["business.more.sources","方案资源","方案資源","Solution resources","ソリューションのリソース","솔루션 리소스","Tài nguyên giải pháp","Recursos de la solución","Ressources de la solution","Lösungsressourcen","Recursos da solução"],
+  ["business.more.sources","业务资源","業務資源","Business resources","ソリューションのリソース","솔루션 리소스","Tài nguyên giải pháp","Recursos de la solución","Ressources de la solution","Lösungsressourcen","Recursos da solução"],
   ["business.more.advanced","高级设置","進階設定","Advanced settings","詳細設定","고급 설정","Cài đặt nâng cao","Configuración avanzada","Paramètres avancés","Erweiterte Einstellungen","Definições avançadas"],
   ["business.more.manualDefinition","手动定义","手動定義","Define manually","手動で定義","직접 정의","Định nghĩa thủ công","Definir manualmente","Définir manuellement","Manuell definieren","Definir manualmente"],
   ["business.more.shareBusiness","分享业务","分享業務","Share this business","この業務を共有","이 업무 공유","Chia sẻ nghiệp vụ này","Compartir este negocio","Partager cette activité","Geschäftsbereich teilen","Partilhar este negócio"],
@@ -1129,19 +1090,6 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Voltar aos negócios"
   ],
   [
-    "business.done.eyebrow",
-    "已记录",
-    "已記錄",
-    "Recorded",
-    "記録済み",
-    "기록됨",
-    "Đã ghi nhận",
-    "Registrado",
-    "Enregistré",
-    "Erfasst",
-    "Registado"
-  ],
-  [
     "business.done.title",
     "已完成任务",
     "已完成任務",
@@ -1155,19 +1103,6 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Tarefas concluídas"
   ],
   [
-    "business.done.description",
-    "保留这个业务已经结项的任务和结果。",
-    "保留這個業務已經結項的任務和結果。",
-    "Completed and cancelled tasks in this business stay here with their results.",
-    "この業務で完了または取り消したタスクと結果をここに残します。",
-    "이 업무에서 완료되거나 취소된 작업과 결과를 여기에 보관합니다.",
-    "Lưu các nhiệm vụ đã hoàn tất hoặc đã hủy cùng kết quả của nghiệp vụ này tại đây.",
-    "Aquí se conservan las tareas finalizadas o canceladas de este negocio y sus resultados.",
-    "Les tâches terminées ou annulées de cette activité et leurs résultats restent ici.",
-    "Hier bleiben abgeschlossene oder abgebrochene Aufgaben dieses Bereichs mit ihren Ergebnissen erhalten.",
-    "As tarefas concluídas ou canceladas deste negócio e os seus resultados ficam aqui."
-  ],
-  [
     "business.done.empty.title",
     "还没有已结项的工作",
     "還沒有已結項的工作",
@@ -1179,19 +1114,6 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Aucun travail terminé pour le moment",
     "Noch keine abgeschlossene Arbeit",
     "Ainda não há trabalho concluído"
-  ],
-  [
-    "business.done.empty.description",
-    "完成一项任务后，它会保留在这里供你回看。",
-    "完成一項任務後，它會保留在這裡供你回看。",
-    "When a task is completed, it remains here for review.",
-    "タスクを完了すると、ここで振り返ることができます。",
-    "작업을 완료하면 여기에서 다시 확인할 수 있습니다.",
-    "Khi một nhiệm vụ hoàn tất, nhiệm vụ đó sẽ được lưu tại đây để xem lại.",
-    "Cuando una tarea se complete, quedará aquí para revisarla.",
-    "Lorsqu’une tâche est terminée, elle reste ici pour être consultée.",
-    "Nach dem Abschluss bleibt eine Aufgabe hier zur Nachschau erhalten.",
-    "Quando uma tarefa for concluída, ficará aqui para consulta."
   ],
   [
     "business.directory.stage.aria",

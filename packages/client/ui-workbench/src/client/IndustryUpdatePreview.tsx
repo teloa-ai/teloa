@@ -1,3 +1,5 @@
+import {ArrowUpRight} from 'lucide-react'
+import light from './light-actions.module.css'
 import {isIndustryManifest} from './industry-manifest.ts'
 import {useState} from 'react'
 import {IndustryUpdateForm} from './IndustryUpdateForm.js'
@@ -25,6 +27,7 @@ const relationKeys={
   'role-skill':'market.industry.updatePreview.relation.skill',
   'role-connection':'market.industry.updatePreview.relation.connection',
   'role-work':'market.industry.updatePreview.relation.work',
+  'role-coordination':'templateShare.coordinator',
 } as const
 const fieldKeys={
   name:'market.industry.updatePreview.field.name',
@@ -144,15 +147,15 @@ export function IndustryUpdatePreview({item,items,spaces,context,open,loads:reco
         <strong>{role.name} · {role.state==='missing'?t('role.state.missing'):t(roleStates[role.state as keyof typeof roleStates])}</strong>
         <span>{role.fields.length?t('market.industry.updatePreview.localChanges',{fields:role.fields.map(field=>fieldKeys[field as keyof typeof fieldKeys]?t(fieldKeys[field as keyof typeof fieldKeys]):field).join(' · ')}):t('market.industry.updatePreview.loadedDefinition')}</span>
         {role.kindChanged&&<span role="status">{t('market.industry.updatePreview.roleKindChanged')}</span>}
-        {role.roleId&&<button type="button" onClick={()=>open('role',role.roleId!)}>{t('market.industry.updatePreview.viewRole',{name:role.name})}</button>}
+        {role.roleId&&<button type="button" className={light.link} onClick={()=>open('role',role.roleId!)}>{t('market.industry.updatePreview.viewRole',{name:role.name})}<ArrowUpRight size={13} aria-hidden/></button>}
       </div>)}
       <p>{t('market.industry.updatePreview.relatedCounts',{tasks:diff.tasks.length,plans:diff.plans.length})}</p>
-      {diff.tasks.map(task=><button key={task.id} type="button" onClick={()=>open('task',task.id)}>{t('market.industry.updatePreview.viewTask',{title:task.title})}</button>)}
+      {diff.tasks.map(task=><button key={task.id} type="button" className={light.link} onClick={()=>open('task',task.id)}>{t('market.industry.updatePreview.viewTask',{title:task.title})}<ArrowUpRight size={13} aria-hidden/></button>)}
       {diff.plans.map(plan=><div className={css.component} key={plan.id}>
         <strong>{plan.fields.title}</strong>
         <span>{t(plan.archived?'market.industry.updatePreview.planArchived':plan.enabled?'market.industry.updatePreview.planEnabled':'market.industry.updatePreview.planPaused')} · {triggerLabel(plan.fields.trigger,t)} · {t('market.industry.updatePreview.planRevision',{revision:plan.revision})}</span>
         {plan.revision>1&&<span>{t('market.industry.updatePreview.planAdjusted')}</span>}
-        <button type="button" onClick={()=>open('plan',plan.id)}>{t('market.industry.updatePreview.viewPlan',{title:plan.fields.title})}</button>
+        <button type="button" className={light.link} onClick={()=>open('plan',plan.id)}>{t('market.industry.updatePreview.viewPlan',{title:plan.fields.title})}<ArrowUpRight size={13} aria-hidden/></button>
       </div>)}
       <IndustryUpdateForm key={loadId+candidateId} context={context} record={selected!} baseline={baseline!} candidate={candidate!} diff={diff} saved={saved} upgrade={upgrade}/>
       </>}

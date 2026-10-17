@@ -1,0 +1,106 @@
+/* 分享卡沿用工作台字体、主题令牌及 StaffAvatar 的员工身份色。 */
+.drawer{position:fixed;inset:0 0 0 auto;margin:0;max-height:100dvh;height:100dvh;width:min(540px,100vw);max-width:100vw;border:0;border-left:1px solid var(--teloa-border,#e3e4de);background:var(--teloa-background,#fcfcfb);color:var(--teloa-text,#242723);padding:0;overflow-y:auto;box-sizing:border-box;box-shadow:var(--teloa-shadow,-12px 0 40px #0002);font-family:var(--teloa-design-font,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);font-size:var(--teloa-font-body,14px);line-height:1.6}
+.drawer::backdrop{background:var(--teloa-backdrop,#10181466)}
+.header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--teloa-border,#e3e4de);gap:16px;background:var(--teloa-background,#fcfcfb)}
+.drawer .header h2{margin:0;font-size:var(--teloa-font-dialog,18px);font-weight:600;line-height:1.4}
+.drawer .header button{display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--teloa-muted,#646860);cursor:pointer}
+.drawer .header button:hover{background:var(--teloa-hover,#eae9e5);color:var(--teloa-text,#242723)}
+.body{padding:24px;display:grid;gap:16px;overflow-wrap:anywhere}
+.drawer .body p{margin:0;line-height:1.7}
+.drawer .body button{font:inherit;font-size:var(--teloa-font-control,13px);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:9px 14px;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-surface,#fff);color:inherit;cursor:pointer;line-height:1.5}
+.drawer .body button:hover{background:var(--teloa-subtle,#f7f7f5)}
+.drawer .body button:disabled{opacity:.5;cursor:default}
+.drawer .body .primary{min-height:44px;background:var(--teloa-text,#242723);border-color:var(--teloa-text,#242723);color:var(--teloa-surface,#fff);font-weight:500}
+.drawer .body .primary:hover{background:var(--teloa-text,#242723);border-color:var(--teloa-text,#242723);color:var(--teloa-surface,#fff)}
+.drawer .body .primary:hover:not(:disabled){opacity:.88}
+.drawer .intro,.drawer .note{font-size:var(--teloa-font-control,13px);color:var(--teloa-muted,#646860)}
+.card{border:1px solid var(--teloa-border,#e3e4de);border-radius:16px;overflow:hidden;background:var(--teloa-surface,#fff)}
+.cover{position:relative;display:grid;place-items:center;height:168px;overflow:hidden;background:color-mix(in srgb,var(--staff-bg,#3f6f5b) 12%,var(--teloa-surface,#fff))}
+.cover::before,.cover::after{content:'';position:absolute;width:210px;height:210px;border-radius:50%;border:1px solid color-mix(in srgb,var(--staff-bg,#3f6f5b) 14%,transparent);transform:rotate(-20deg)}
+.cover::before{left:-65px;top:40px}
+.cover::after{right:-65px;bottom:40px}
+.portrait{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;border-radius:30px;padding:8px;background:color-mix(in srgb,var(--teloa-surface,#fff) 62%,transparent);box-shadow:0 6px 20px #1523190a}
+.portraitGroup{position:relative;z-index:1;display:flex;align-items:center}
+.portraitGroup .portrait{margin-left:-14px;padding:5px;border-radius:22px}
+.portraitGroup .portrait:first-child{margin-left:0}
+.portraitMore{position:relative;z-index:1;margin-left:8px;font-size:var(--teloa-font-control,13px);color:var(--teloa-muted,#646860)}
+.capabilityIcon{display:block;flex:none;color:var(--teloa-muted,#646860)}
+.subject{font-size:var(--teloa-font-caption,12px);color:var(--teloa-muted,#646860);letter-spacing:.2px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
+.facts dt{color:var(--teloa-muted,#646860);font-weight:400}
+.facts dd{margin:0;display:grid;gap:2px}
+.option{display:flex;align-items:center;gap:8px;font-weight:400}
+.composition{display:grid;gap:10px}
+.composition ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.composition li{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-surface,#fff);font-size:var(--teloa-font-control,13px)}
+.composition li>span{flex:1;min-width:0;display:grid;gap:2px}
+.composition li small{color:var(--teloa-muted,#646860)}
+.composition li em{font-style:normal;font-size:var(--teloa-font-caption,12px);color:var(--teloa-muted,#646860);flex:none}
+.composition li .stateGood{color:var(--teloa-good,#2f6c51)}
+.composition li .stateBad{color:var(--teloa-warn,#865511)}
+.composition label.option{display:flex;align-items:center;gap:8px;font-weight:400}
+.composition select,.detailContent select{font:inherit;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-background,#fcfcfb);color:inherit;padding:8px 10px;min-height:38px}
+.drawer .body .secondary{background:transparent}
+.status{position:absolute;right:16px;top:16px;z-index:1;display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--teloa-surface,#fff);color:var(--teloa-muted,#646860);font-size:var(--teloa-font-caption,12px);line-height:1.6}
+.status>span{width:5px;height:5px;border-radius:50%;background:currentColor}
+.statusGood{color:var(--teloa-good,#2f6c51);background:var(--teloa-good-bg,#eaf3ed)}
+.cardContent{padding:22px 24px 24px;display:grid;gap:10px}
+.drawer .cardContent h3{font-size:22px;line-height:1.4;letter-spacing:-.3px;font-weight:600;margin:0}
+/* 无员工的能力包不套头像封面；状态、类型与标题在同一紧凑身份区。 */
+.compactCard .cardContent{padding:18px 20px;gap:8px}
+.compactIdentity{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0}
+.identityText{display:grid;gap:2px;min-width:0}
+.drawer .compactIdentity h3{font-size:var(--teloa-font-body,14px);line-height:1.5;letter-spacing:normal;overflow-wrap:anywhere}
+.compactIdentity .status{position:static;justify-self:start;max-width:100%}
+@media(max-width:600px){.compactIdentity{grid-template-columns:22px minmax(0,1fr)}.compactIdentity .status{grid-column:2}}
+.cardContent .description{font-size:var(--teloa-font-body,14px);color:var(--teloa-muted,#646860);white-space:pre-wrap}
+.descriptionClamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cardMeta{display:flex;align-items:center;flex-wrap:wrap;gap:5px 10px;font-size:var(--teloa-font-caption,12px);color:var(--teloa-muted,#646860);margin-top:3px}
+.cardActions{display:grid;gap:10px;margin-top:12px}
+.cardActions .note{text-align:center}
+.drawer .shareLink{display:flex;align-items:flex-start;gap:7px;background:var(--teloa-subtle,#f7f7f5);border:1px solid var(--teloa-border,#e3e4de);border-radius:7px;padding:8px 10px;font-size:var(--teloa-font-caption,12px);color:var(--teloa-muted,#646860);user-select:text}
+.shareLink svg{flex:none;margin-top:3px}
+.drawer .privacy{display:flex;align-items:flex-start;gap:8px;font-size:var(--teloa-font-caption,12px);color:var(--teloa-muted,#646860);padding:0 2px}
+.privacy svg{flex:none;margin-top:2px}
+.disclosure{border:1px solid var(--teloa-border,#e3e4de);border-radius:10px;background:var(--teloa-surface,#fff);min-width:0}
+.disclosure>summary{display:flex;align-items:center;gap:8px;list-style:none;padding:13px 14px;cursor:pointer;font-size:var(--teloa-font-control,13px);font-weight:500}
+.disclosure>summary::-webkit-details-marker{display:none}
+.disclosure>summary::after{content:'';width:6px;height:6px;border-right:1.5px solid var(--teloa-muted,#646860);border-bottom:1.5px solid var(--teloa-muted,#646860);transform:rotate(45deg);margin:-3px 3px 0 auto;flex:none}
+.disclosure[open]>summary::after{transform:rotate(225deg);margin-top:3px}
+.summaryMeta{font-size:12px;color:var(--teloa-muted,#646860);font-weight:400}
+.detailContent{border-top:1px solid var(--teloa-border,#e3e4de);padding:16px;display:grid;gap:12px;font-size:var(--teloa-font-control,13px)}
+.detailContent label{display:grid;gap:7px;font-weight:500}
+.detailContent input,.detailContent textarea{font:inherit;font-weight:400;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-background,#fcfcfb);color:inherit;padding:10px;min-width:0}
+.detailContent textarea{min-height:100px;resize:vertical}
+.detailContent ul{padding-left:18px;margin:0}
+.actions{display:flex;flex-wrap:wrap;gap:6px 8px}
+.drawer .body .textButton{border:0;background:transparent;color:var(--teloa-muted,#646860);padding:4px 0;min-height:28px;justify-self:start}
+.drawer .body .textButton:hover{color:var(--teloa-text,#242723);background:transparent;text-decoration:underline}
+.drawer .actions .textButton{padding:8px}
+.file,.detailContent .file{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:9px 14px;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-surface,#fff);font-size:var(--teloa-font-control,13px);font-weight:400;cursor:pointer}
+.file:hover{background:var(--teloa-subtle,#f7f7f5)}
+.file:has(input:disabled){opacity:.5;cursor:default}
+.fileInput{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;padding:0!important;border:0!important}
+.file:focus-within{outline:2px solid var(--teloa-focus,#646860);outline-offset:2px}
+.drawer .alert,.drawer .notice{padding:12px 14px;border-radius:9px;background:var(--teloa-warn-bg,#fcf1db);color:var(--teloa-warn,#865511);font-size:var(--teloa-font-control,13px)}
+.drawer .notice{display:grid;gap:8px;background:var(--teloa-subtle,#f7f7f5);color:var(--teloa-muted,#646860);border:1px solid var(--teloa-border,#e3e4de)}
+.drawer .notice p{font-size:inherit}
+.drawer .success{display:flex;align-items:center;justify-content:center;gap:7px;color:var(--teloa-good,#2f6c51);font-size:var(--teloa-font-control,13px)}
+.empty{display:grid;justify-items:center;text-align:center;gap:12px;padding:36px 24px;border:1px dashed var(--teloa-border,#e3e4de);border-radius:14px;background:var(--teloa-surface,#fff)}
+.emptyIcon{display:grid;place-items:center;width:60px;height:60px;border-radius:18px;background:var(--teloa-subtle,#f7f7f5);color:var(--teloa-muted,#646860)}
+.drawer .empty h3{font-size:18px;font-weight:600;margin:0}
+.savedLink{display:grid;gap:8px;padding:12px;border-radius:8px;background:var(--teloa-subtle,#f7f7f5)}
+.savedLink small{color:var(--teloa-muted,#646860)}
+.drawer :focus-visible{outline:2px solid var(--teloa-focus,#646860);outline-offset:2px}
+@media(max-width:600px){.body{padding:20px;gap:14px}.header{padding:16px 20px}.cardContent{padding:20px}.cover{height:156px}}
+
+/* 包内文件只读单项阅读；切换不改变原包、草稿或投稿状态。 */
+.fileReader{display:grid;gap:12px;min-width:0}
+.fileReader nav{display:flex;flex-direction:column;max-height:200px;overflow:auto;border-bottom:1px solid var(--teloa-border)}
+.fileReader nav button{font:inherit;text-align:left;overflow-wrap:anywhere;border:0;border-bottom:1px solid var(--teloa-border);border-radius:0;background:transparent;color:var(--teloa-muted);padding:9px 0;min-height:36px;cursor:pointer}
+.fileReader nav button[aria-pressed=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.fileReader nav button:hover{background:var(--teloa-hover)}
+.fileReader section{min-width:0}
+.fileReader h4{margin:0 0 8px;font:inherit;font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
+.fileReader pre{margin:0;max-height:min(46dvh,360px);overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.7}
+.fileReader button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-2px}

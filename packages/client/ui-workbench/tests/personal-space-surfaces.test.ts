@@ -71,24 +71,30 @@ test('左栏顶部不再有空间入口与切换箭头；账号块提供「我�
  assert.match(frame,/const profile=usePersonalProfile\(\)/)
  const profileHook=await read('use-personal-profile.ts')
  assert.match(profileHook,/const profile=useSyncExternalStore\(personalProfile\.subscribe,personalProfile\.getSnapshot,personalProfile\.getSnapshot\)/)
- // 分身只负责本人代拟与判断建议，不进入数字员工的岗位资料/任务拆分授权面。
- assert.match(frame,/role\?\.kind==='employee'&&<RoleToolGrants/)
+ // 能力配置随角色详情提供；分身执行仍通过独立的委托配置入口。
+ assert.match(frame,/capabilities=\{id=>\{const role=tasks\.roles\.find/)
+ assert.match(frame,/role&&<RoleToolGrants/)
+ const team=await read('TeamPage.tsx')
+ assert.match(team,/configuration=\{\(\)=>[\s\S]*?capabilities\(role\.id\)/)
  // 2026-09-20 用户裁定面包屑可点：显示名成为回工作台的按钮，页名成为回列表根的按钮。
  assert.match(frame,/<button type="button" className=\{clsx\(css\.crumb,css\.workspaceName\)\} onClick=\{\(\)=>actions\.navigate\('home'\)\}>\{profile\.displayName\}<\/button>/)
- assert.match(frame,/aria-current="page" onClick=\{\(\)=>openViewRoot\(state\.view\)\}><strong>\{labels\[state\.view\]\}<\/strong><\/button>/)
+ // 方案 B：左栏「应用」与「市场」并列，停在统一应用目录时页名面包屑写「应用」，其余视图仍用视图标签。
+ assert.match(frame,/aria-current=\"page\" onClick=\{\(\)=>isWorkbenchHubView\(state\.view\)\?actions\.navigate\('home'\):openViewRoot\(state\.view\)\}><strong>\{isWorkbenchHubView\(state\.view\)\?t\('navigation\.home'\):marketAppsPage\?t\('market\.apps\.title'\):labels\[state\.view\]\}<\/strong><\/button>/)
  assert.doesNotMatch(frame.slice(frame.indexOf('css.crumb,css.workspaceName')-5,frame.indexOf('css.crumb,css.workspaceName')+160),/shell\.workspace\.mine/)
  // WorkbenchFrame 把直接会话入口传给左栏：有历史按最近活跃打开，零历史复用既有创建链路。
  assert.match(frame,/openTwin=\{async\(\)=>\{await openTwinConversation\(\)\}\}/)
  assert.match(frame,/objectConversationApi\.list\('role',role\.id\)/)
  assert.match(frame,/const recent=latestRoleConversation\(presentConversations\(/)
  assert.match(frame,/if\(!recent\)\{[\s\S]{0,180}await requestRoleCreation\(object,role\.scopes\)[\s\S]{0,40}return true/)
- assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object,scopes:available\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')
+ assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')
  assert.equal(frame.match(/canStart:roleCanStartConversation\(role\.state\)/g)?.length,3,'暂停只是不再接新任务，仍应能开始聊天；只有离职阻断新会话')
  assert.match(frame,/roleConversationOpening\.current\.has\(roleId\)/,'所有分身与AI 员工直达入口应共用防重复打开锁')
- assert.match(frame,/return createWork\(decision\.workspaceId,intent,true\)\.catch\(\(\)=>\{\}\)/,'自动创建必须把 Promise 交回调用者，岗位锁才能覆盖完整创建过程')
+ assert.match(frame,/return createWork\(decision\.workspaceId,intent,true\)\.then\(\(\)=>\{\},\(\)=>\{\}\)/,'自动创建必须把 Promise 交回调用者，岗位锁才能覆盖完整创建过程')
  const roleContext=frame.slice(frame.indexOf("conversationObject.object.kind==='role'&&contextRole"),frame.indexOf('nativeConversation',frame.indexOf("conversationObject.object.kind==='role'&&contextRole")))
- assert.equal(roleContext.match(/navigation\.newConversation/g)?.length,1,'岗位上下文只保留页内的新建会话主入口')
- assert.match(frame,/\{!contextRole&&<button type="button" role="menuitem"/,'岗位会话顶部更多菜单只在非岗位会话提供新建入口')
+ assert.equal(roleContext.match(/navigation\.newConversation/g)?.length??0,0,'岗位身份行不重复提供低频新建入口')
+ const menu=frame.slice(frame.indexOf('<DetailsMenu menuRef={messageContextMenu}'),frame.indexOf('</DetailsMenu>',frame.indexOf('<DetailsMenu menuRef={messageContextMenu}')))
+ assert.equal(menu.match(/>\{t\('navigation\.newConversation'\)\}/g)?.length,1,'原会话菜单只有一个新建入口，并适用于岗位与普通会话')
+ assert.match(menu,/!peopleAllowed\|\|contextRole\.state==='retired'/,'新建岗位会话仍核对人员能力与离职状态')
 })
 
 test('业务范围内页页头只剩范围名与摘要条：没有「我的工作空间」、没有「个人版 · 单空间」、没有范围下拉',async()=>{
@@ -108,10 +114,10 @@ test('业务范围内页页头只剩范围名与摘要条：没有「我的工�
   assert.doesNotMatch(page,/business-space-create|business\.workspace\.editCurrent|BusinessSpaceForm/)
 })
 
-test('市场加载表单只有一条只读目的地，新建空间项被门控，提交的目标是本空间的 existing',async()=>{
+test('市场加载表单一步核对：只读目的地与影响直接可见，没有空选择步骤或禁用的新空间入口；点击前零写入，提交的目标是本空间的 existing',async()=>{
  const spaceId='11111111-1111-4111-8111-111111111111',contentId='22222222-2222-4222-8222-222222222222',contentHash='a'.repeat(64)
  const sent:unknown[]=[]
- const item={id:'directory-'+contentHash,contentStorage:{contentId,loaded:true},manifest:{format:'teloa.business-package/v2',domain:'research',scope:'research',resources:[{kind:'role'},{kind:'knowledge'}]}}
+ const item={id:'stored-'+contentId,contentStorage:{contentId,loaded:true},packageContent:{hash:contentHash},manifest:{format:'teloa.business-package/v2',domain:'research',scope:'research',resources:[{kind:'role'},{kind:'knowledge'}]}}
  const space={id:spaceId,name:'我的工作空间',description:'',version:4,kind:'personal',createdAt:'2026-09-11T00:00:00.000Z',updatedAt:'2026-09-11T00:00:00.000Z'}
  const modules={
   'market-home-presentation.js':{localizedMarketItemCopy:()=>({title:'调查行业模板'})},
@@ -119,23 +125,19 @@ test('市场加载表单只有一条只读目的地，新建空间项被门控�
   'industry-template-presentation.js':{industryResourceDestinationGroups:[{key:'market.industry.destination.role',kinds:['role']},{key:'market.industry.destination.knowledge',kinds:['knowledge']}],isBusinessDeclarationPackage:()=>false},
  }
  const render=mount('IndustryLoadForm.tsx',{item,space,pending:undefined,recoveryError:undefined,load:async(input:unknown)=>{sent.push(input)},recover:async()=>{}},modules)
- const target=render()
- // 目的地是一行只读文案，范围名取自标签目录（与切换器、目录组标题同源），没有任何目的地选择器。
- const destination='market.industry.load.personalDestination:'+JSON.stringify({domain:'调查行业'})
- assert.ok(nodes(target).some(node=>node.type==='p'&&text(node)===destination),'缺少只读目的地行')
- assert.equal(nodes(target).filter(node=>node.type==='select').length,0,'目的地不再是二选一')
- assert.equal(nodes(target).filter(node=>node.type==='input').length,0,'不再要求填新空间名')
- // 「新建空间…」在门控里，自己没有 onClick。
- const gated=nodes(target).find(node=>node.type===gateMarker)
- assert.ok(gated,'新建空间项必须被 EditionGate 包住')
- assert.equal(gated.props.feature,'industry-load-new-space')
- const entry=nodes(gated).find(node=>node.type==='button')!
- assert.equal(text(entry),'market.industry.load.newSpace')
- assert.equal(entry.props.onClick,undefined)
- // 下一步 → 核对页 → 确认：提交的目标固定是本空间。
- nodes(target).find(node=>node.type==='form')!.props.onSubmit({preventDefault(){}})
  const review=render()
+ // 个人版只有本空间：首屏即核对摘要，目的地是只读文案（范围名取自标签目录），没有选择器、空步骤或禁用的新空间入口。
+ const destination='market.industry.load.personalDestination:'+JSON.stringify({domain:'调查行业'})
+ assert.ok(nodes(review).some(node=>node.type==='dd'&&text(node)===destination),'缺少只读目的地')
+ assert.ok(nodes(review).some(node=>node.type==='dd'&&text(node)==='market.industry.load.existingEffect'),'缺少加载影响')
+ assert.equal(nodes(review).filter(node=>node.type==='select').length,0,'目的地不是选择项')
+ assert.equal(nodes(review).filter(node=>node.type==='input'||node.type==='form').length,0,'不再有选择位置的表单步骤')
+ assert.equal(nodes(review).some(node=>node.type===gateMarker),false,'不显示禁用的新空间入口')
+ assert.equal(buttons(review,'market.industry.load.next').length,0,'没有“继续”空步骤')
+ // 点击前零写入；显式「加载」才提交，目标固定是本空间与其预期版本。
+ assert.equal(sent.length,0,'渲染核对摘要不写入')
  assert.equal(buttons(review,'market.industry.load.confirm').length,1)
+ assert.equal(buttons(review,'market.industry.load.confirm')[0]!.props.disabled,false)
  buttons(review,'market.industry.load.confirm')[0]!.props.onClick()
  await new Promise(resolve=>setTimeout(resolve,0))
  assert.equal(sent.length,1)
@@ -145,17 +147,26 @@ test('市场加载表单只有一条只读目的地，新建空间项被门控�
  assert.equal(input.contentId,contentId)
  assert.equal(input.contentHash,contentHash)
  assert.match(input.requestId,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
- // 核对页的目的地与第一步同一句话。
- assert.ok(nodes(review).some(node=>node.type==='dd'&&text(node)===destination))
  // 标签目录里没有这个 domain（首次加载的新范围）时用模板标题，不把内部 scope 代码露给用户。
  const bare=mount('IndustryLoadForm.tsx',{item,space,pending:undefined,recoveryError:undefined,load:async()=>{},recover:async()=>{}},{...modules,'business-scope-context.js':{useBusinessScopes:()=>({})}})()
- assert.ok(nodes(bare).some(node=>node.type==='p'&&text(node)==='market.industry.load.personalDestination:'+JSON.stringify({domain:'调查行业模板'})))
- assert.ok(!nodes(bare).some(node=>node.type==='p'&&text(node).includes('"domain":"research"')),'不显示内部 scope 代码')
+ assert.ok(nodes(bare).some(node=>node.type==='dd'&&text(node)==='market.industry.load.personalDestination:'+JSON.stringify({domain:'调查行业模板'})))
+ assert.ok(!nodes(bare).some(node=>text(node).includes('"domain":"research"')),'不显示内部 scope 代码')
  // 空间还没读到时不给提交，并用 role="status" 说明原因。
  const unread=mount('IndustryLoadForm.tsx',{item,space:undefined,pending:undefined,recoveryError:undefined,load:async()=>{throw Error('不该被调用')},recover:async()=>{}},modules)()
  const status=nodes(unread).find(node=>node.props.role==='status')
  assert.equal(text(status),'market.industry.load.spaceUnavailable')
- assert.equal(buttons(unread,'market.industry.load.next')[0]!.props.disabled,true)
+ assert.equal(buttons(unread,'market.industry.load.confirm')[0]!.props.disabled,true)
+ // 固定正文被标记已读取却缺包时，不能从旧 hash 页面别名重建来源。
+ const damaged=mount('IndustryLoadForm.tsx',{item:{...item,id:'directory-'+contentHash,packageContent:undefined},space,pending:undefined,recoveryError:undefined,load:async()=>{throw Error('来源不完整不得提交')},recover:async()=>{}},modules)()
+ assert.equal(buttons(damaged,'market.industry.load.confirm')[0]!.props.disabled,true)
+ // 上次请求待核对：不能另起新请求，只能经原 recover 核对同一请求。
+ const pendingInput={requestId:'33333333-3333-4333-8333-333333333333',contentId,contentHash,target:{kind:'existing',spaceId,expectedVersion:4}}
+ let recovered=0
+ const waiting=mount('IndustryLoadForm.tsx',{item,space,pending:pendingInput,recoveryError:undefined,load:async()=>{throw Error('待核对时不得新建请求')},recover:async()=>{recovered++}},modules)()
+ assert.equal(buttons(waiting,'market.industry.load.confirm')[0]!.props.disabled,true)
+ buttons(waiting,'market.industry.load.reviewResult')[0]!.props.onClick()
+ await new Promise(resolve=>setTimeout(resolve,0))
+ assert.equal(recovered,1)
 })
 
 test('已保存行业目录按业务范围标签分组，组标题是标签名，条目仍是模板标题，不再出现空间名',()=>{
@@ -205,7 +216,7 @@ test('已保存行业目录的读屏名用模板语义词条，不再借用“�
  assert.match(directory,/market\.industry\.saved\.loadTemplateAria',\{name:load\.templateTitle\}/)
  assert.doesNotMatch(directory,/market\.industry\.saved\.loadAria/)
  // 读屏只念模板名，编号不念（编号在技术详情里）。
- assert.match(edition,/["']market\.industry\.saved\.loadTemplateAria["'],["']方案 \{name\}["']/)
+ assert.match(edition,/["']market\.industry\.saved\.loadTemplateAria["'],["']模板 \{name\}["']/)
  // 指定方案未添加与当前业务没有方案仍是两种状态；省去重复标题，用说明区分。
  assert.match(directory,/market\.industry\.saved\.the\.current\.template\.only\.contains\.resource\.statements\.in/)
  assert.match(directory,/market\.industry\.saved\.scopeEmpty/)
@@ -250,15 +261,16 @@ test('关于页只保留版本与本机部署，个人版不在同页重复出�
  assert.match(corePages,/\.\.\.EDITION_MESSAGE_ROWS,/)
  // 第二期摘掉空间名、范围切换器与个人版副标题之后，这五条词条零调用点、随实现一起删（复审 M4；
  // navigation.spaceSwitcher 与 about.edition.personalSingleSpace 全仓 .tsx 也已零引用，UI 定型审计一并删除）。
- for(const removed of ['navigation.spaceFallback','business.scope.switcherAria','edition.personal.subtitle','navigation.spaceSwitcher','about.edition.personalSingleSpace'])assert.ok(!EDITION_MESSAGE_ROWS.some(row=>row[0]===removed),removed)
- const added=['market.industry.load.personalDestination','market.industry.load.newSpace','market.industry.saved.scopeEmpty','market.industry.saved.loadTemplateAria','market.workspace.loadedPersonal','market.industry.load.spaceUnavailable']
+ // N24 加载表单收为一步核对后，禁用的「新建空间…」入口与其门控标签零调用点，随实现一起删。
+ for(const removed of ['navigation.spaceFallback','business.scope.switcherAria','edition.personal.subtitle','navigation.spaceSwitcher','about.edition.personalSingleSpace','market.industry.load.newSpace','edition.gate.feature.newSpace'])assert.ok(!EDITION_MESSAGE_ROWS.some(row=>row[0]===removed),removed)
+ const added=['market.industry.load.personalDestination','market.industry.saved.scopeEmpty','market.industry.saved.loadTemplateAria','market.workspace.loadedPersonal','market.industry.load.spaceUnavailable']
  const keys:string[]=EDITION_MESSAGE_ROWS.map(row=>row[0])
  for(const key of added)assert.ok(keys.includes(key),key)
  for(const row of EDITION_MESSAGE_ROWS){
   assert.equal(row.length,11,row[0])
   for(const value of row)assert.ok(String(value).trim(),row[0])
  }
- assert.equal(EDITION_MESSAGE_ROWS.find(row=>row[0]==='market.industry.saved.scopeEmpty')![1],'当前业务还没有添加方案。')
+ assert.equal(EDITION_MESSAGE_ROWS.find(row=>row[0]==='market.industry.saved.scopeEmpty')![1],'当前业务还没有添加模板。')
 })
 
 test('加载成功后重读本人空间记录：连续加载第二个模板不会撞版本冲突',async()=>{
@@ -271,7 +283,9 @@ test('加载成功后重读本人空间记录：连续加载第二个模板不�
  const 加载路径=frame.slice(frame.indexOf('industryLoads={{api:industryLoadApi'),frame.indexOf('planFromTemplate='))
  assert.ok(加载路径.includes('save:async(input:IndustryLoadCreateInput)'),'没有截到加载接线')
  assert.equal(加载路径.split('loadBusinessDirectory()').length-1,2,'加载成功与恢复两条路径都应重读本人空间与标签目录')
+ // 加载与恢复成功后都进入同一 loadId 的原准备清单，不跳到没有准备入口的通用业务总览。
  for(const 片段 of [
-  'mergeIndustryLoad(row);void loadBusinessDirectory().catch(()=>{});void loadIndustryLoads().catch(()=>{});enterBusiness(',
+  'mergeIndustryLoad(row);void loadBusinessDirectory().catch(()=>{});void loadIndustryLoads().catch(()=>{});actions.openIndustryResources({loadId:row.id})',
  ])assert.equal(加载路径.split(片段).length-1,2,片段)
+ assert.doesNotMatch(加载路径,/enterBusiness\(/,'加载与恢复成功不再进入通用业务总览')
 })

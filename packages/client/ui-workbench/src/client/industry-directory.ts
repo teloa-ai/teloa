@@ -1,13 +1,14 @@
 import {isIndustryManifest} from './industry-manifest.ts'
+import {industryFileLimits,validateIndustryFilePath,isGrokRecipe} from '@teloa/contract'
 import type { ResolvedIndustryReference } from './industry-reference.ts'
 import { itemFromManifest, MAX_MANIFEST_BYTES, parseMarketManifest, type MarketItem } from './market-preview.ts'
 
 export type IndustryFileInput={path:string;size:number;read:()=>Promise<Uint8Array>}
 export type IndustryContent={resolved?:ResolvedIndustryReference[];baseHash?:string;manifestPath:string;hash:string;files:{path:string;hash:string;bytes:Uint8Array}[];resources:{id:string;state:'available'|'missing'|'unresolved'}[]}
-export const INDUSTRY_FILE_LIMIT=2*1024*1024,INDUSTRY_TOTAL_LIMIT=20*1024*1024
+export const INDUSTRY_FILE_LIMIT=industryFileLimits.fileBytes,INDUSTRY_TOTAL_LIMIT=industryFileLimits.totalBytes
 const MAX_FILE=INDUSTRY_FILE_LIMIT,MAX_TOTAL=INDUSTRY_TOTAL_LIMIT
 const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
-export const validateIndustryPath=(path:string)=>{if(!path||path.length>500||path.startsWith('/')||path.split('/').some(part=>!part||part==='.'||part==='..')||/[\\:?%#\u0000-\u001f\u007f]/.test(path))throw Error('目录文件路径无效：'+path)}
+export const validateIndustryPath=validateIndustryFilePath
 
 /** 只读取用户选择的文件，不执行脚本，不解析符号链接或访问外部来源。 */
 export async function readIndustryFiles(inputs:readonly IndustryFileInput[]):Promise<IndustryContent['files']>{
@@ -40,6 +41,7 @@ async function itemFromFiles(allFiles:IndustryContent['files'],manifestPath:stri
  let raw:string
  try{raw=new TextDecoder('utf-8',{fatal:true}).decode(content.bytes)}catch{throw Error('行业清单必须为 UTF-8 文本。')}
  const parsed=await parseMarketManifest(raw)
+ if(parsed.packageContent)return itemFromManifest(parsed,{kind:'upload',name,size:content.bytes.byteLength})
  if(!isIndustryManifest(parsed.manifest))throw Error('目录加载需使用完整行业资源 v2/v3 清单；旧清单仍可单独导入。')
  const resources=parsed.manifest.resources.map(resource=>({id:resource.id,state:resource.source.kind==='public'?'unresolved' as const:paths.has(root+resource.source.path)?'available' as const:'missing' as const}))
  const hash=await digest(new TextEncoder().encode(JSON.stringify({manifestPath,files:files.map(file=>[file.path,file.hash])})))
@@ -55,13 +57,13 @@ export async function discoverIndustryTemplates(inputs:readonly IndustryFileInpu
  const files=await readIndustryFiles(inputs),results:IndustryDiscovery[]=[]
  for(const file of files){
   if(!/\.json$/i.test(file.path))continue
-  const named=file.path.split('/').at(-1)==='teloa.json'
+  const named=['teloa.json','recipe.json'].includes(file.path.split('/').at(-1)??'')
   let recognized=named
   try{
    if(file.bytes.byteLength>MAX_MANIFEST_BYTES){if(named)throw Error('行业清单不能超过1MiB。');continue}
    const raw=new TextDecoder('utf-8',{fatal:true}).decode(file.bytes)
    const value:unknown=JSON.parse(raw)
-   recognized=named||!!(value&&typeof value==='object'&&typeof Reflect.get(value,'format')==='string'&&Reflect.get(value,'format').startsWith('teloa.business-package/'))
+   recognized=named||isGrokRecipe(value)||!!(value&&typeof value==='object'&&typeof Reflect.get(value,'format')==='string'&&Reflect.get(value,'format').startsWith('teloa.business-package/'))
    if(!recognized)continue
    if(results.length>=50)throw Error('一次目录发现最多支持50个行业清单，请选择更小的目录。')
    results.push({path:file.path,item:await itemFromFiles(files,file.path,name)})

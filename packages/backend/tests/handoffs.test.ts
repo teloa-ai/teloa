@@ -8,6 +8,7 @@ import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontaine
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
 import {RoleLifecycleService,initializeRoleLifecycle} from '../src/work/role-lifecycle.ts'
+import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {HandoffService,initializeHandoffs} from '../src/work/handoffs.ts'
 import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
 import {ObjectConversationService,initializeObjectConversations} from '../src/work/object-conversations.ts'
@@ -15,7 +16,7 @@ import {testRoleResponsibility} from './role-test-fixture.ts'
 import {initializeRoleDelegations} from '../src/work/role-delegations.ts'
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
-before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeHandoffs(pool);await initializeRoleDelegations(pool)})
+before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializeCollaboration(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeHandoffs(pool);await initializeRoleDelegations(pool)})
 after(async()=>{await pool?.end();await container?.stop()})
 async function fixture(){const owner=randomUUID(),roles=new RoleService(pool,identity),tasks=new TaskService(pool,identity),lifecycle=new RoleLifecycleService(pool,identity),service=new HandoffService(pool,identity);const make=async()=>roles.create(owner,{requestId:randomUUID(),fields:{name:'调查',kind:'employee',scopes:['SOC'],duty:'调查',dataScope:'资料',executionScope:'声明',skills:[],knowledge:[],responsibility:testRoleResponsibility}});const from=await make(),to=await make(),task=await tasks.create(owner,{requestId:randomUUID(),fields:{title:'待交接',goal:'核对',scope:'SOC'},assignee:{roleId:from.id,expectedVersion:1}});await lifecycle.change(owner,{roleId:from.id,expectedVersion:1,action:'retire',reason:'职责交接'});const handoff=(await service.list(owner,{}))[0]!;const input={handoffId:handoff.id,expectedTaskVersion:1,toRoleId:to.id,expectedRoleVersion:1,note:'接续原目标'};return {owner,from,to,task,handoff,input,service,tasks,lifecycle}}
 async function activeFixture(assignee:'role'|'self'='role'){
@@ -148,4 +149,19 @@ test('接任岗位再次退役后保留连续交接，旧请求不能恢复旧�
  const old=await f.service.resolve(f.owner,f.input)
  assert.equal(old.appliedVersion,2);assert.equal(old.task.version,3);assert.equal(old.task.assigneeRoleId,third.id)
  assert.ok((await f.service.list(f.owner,{})).every(row=>row.status==='resolved'))
+})
+
+
+test('同员工版本换代必须由本人重新交办，固定新版本并保留幂等审计',async()=>{
+ const f=await activeFixture(),pause=await f.lifecycle.change(f.owner,{roleId:f.from.id,expectedVersion:1,action:'pause',reason:'暂时停止'}),resume=await f.lifecycle.change(f.owner,{roleId:f.from.id,expectedVersion:pause.role.version,action:'resume',reason:'恢复原工作'})
+ const request={requestId:randomUUID(),taskId:f.task.id,expectedTaskVersion:1,target:{kind:'role' as const,roleId:f.from.id,expectedRoleVersion:resume.role.version},note:'确认由当前员工接续原任务'}
+ const result=await f.service.change(f.owner,request)
+ assert.equal(result.task.id,f.task.id);assert.equal(result.task.assigneeRoleId,f.from.id);assert.equal(result.task.assigneeRoleVersion,3);assert.equal(result.task.version,2);assert.equal(result.task.contentVersion,2)
+ assert.deepEqual(result.change.from,{kind:'role',roleId:f.from.id,roleVersion:1});assert.deepEqual(result.change.to,{kind:'role',roleId:f.from.id,roleVersion:3})
+ assert.deepEqual((await f.service.change(f.owner,request)).change,result.change)
+ await assert.rejects(f.service.change(f.owner,{...request,requestId:randomUUID(),expectedTaskVersion:2}),{code:'teloa/conflict'})
+ await assert.rejects(f.service.change(f.owner,{...request,requestId:randomUUID(),expectedTaskVersion:2,target:{...request.target,expectedRoleVersion:4}}),{code:'teloa/version-conflict'})
+ await pool.query('update teloa_tasks set assignee_role_version=4 where id=$1',[f.task.id])
+ await assert.rejects(f.service.change(f.owner,{...request,requestId:randomUUID(),expectedTaskVersion:2}),{code:'teloa/conflict'},'真实任务中的未来负责人版本不能借同员工交办降级')
+ assert.equal((await pool.query('select 1 from teloa_task_handoff_changes where owner_id=$1 and task_id=$2',[f.owner,f.task.id])).rowCount,1)
 })

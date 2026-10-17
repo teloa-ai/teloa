@@ -47,6 +47,20 @@ test('主动改派保存独立请求并在成功后清理',async()=>{
  assert.equal(api.pendingChange(),undefined)
 })
 
+test('真实存储任务的内容版本与字段顺序不造成假失败',async()=>{
+ let raw:string|null=null
+ const journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
+ const api=createHandoffApi(async(_method,payload)=>{
+  const result=activeResult((payload as any).requestId,{task:{...activeTask,contentVersion:2}})
+  return {...result,change:{...result.change,to:{roleVersion:2,roleId:target,kind:'role'}}}
+ },undefined,journal)
+ const result=await api.change(id,2,{kind:'role',roleId:target,expectedRoleVersion:2},'接续调查')
+ assert.equal(result.task.contentVersion,2)
+ assert.equal(result.task.assigneeRoleId,target)
+ assert.equal(api.pendingChange(),undefined)
+ assert.equal(raw,null)
+})
+
 test('主动改派丢回包后刷新复用同一 requestId 和完整参数',async()=>{
  let raw:string|null=null,first:any,second:any
  const journal={read:()=>raw,write:(v:string)=>{raw=v},clear:()=>{raw=null}}

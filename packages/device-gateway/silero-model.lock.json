@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "repository": "https://github.com/snakers4/silero-vad",
+  "tag": "v6.2",
+  "revision": "be95df9152c0d7618fa1edfeb296fc3dae32376f",
+  "license": "MIT",
+  "licenseUrl": "https://raw.githubusercontent.com/snakers4/silero-vad/be95df9152c0d7618fa1edfeb296fc3dae32376f/LICENSE",
+  "model": {
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/be95df9152c0d7618fa1edfeb296fc3dae32376f/src/silero_vad/data/silero_vad.onnx",
+    "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+    "size": 2327524
+  },
+  "testAudio": {
+    "url": "https://raw.githubusercontent.com/snakers4/silero-vad/be95df9152c0d7618fa1edfeb296fc3dae32376f/tests/data/test.wav",
+    "sha256": "89f17d9c94c4b31eb320f424628bcbc920abaddbee6e2760fd868bfb1d9a2e47",
+    "size": 1920044,
+    "license": "MIT (repository LICENSE; no separate test-data license at this revision)"
+  }
+}

@@ -5,7 +5,7 @@ export const businessDashboardResourceEndpoints=['business-dashboard-resources/e
 const inputKeys:Record<string,readonly string[]>={
  'business-dashboard-resources/export':['scope','id','version'],
  'business-dashboard-resources/prepare':['requestId','contentId','contentHash','resourceId','target','objectMapping'],
- 'business-dashboard-resources/prepare-upgrade':['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices'],
+ 'business-dashboard-resources/prepare-upgrade':['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices','mode'],
  'business-dashboard-resources/adoption':['draftId'],
  'business-dashboard-resources/preview':['draftId','expectedRevision'],
  'business-dashboard-resources/apply':['requestId','draftId','expectedRevision','expectedBaseVersion','previewReceipt'],

@@ -67,12 +67,12 @@ test('统一搜索按群名称与公告匹配，归档独立于执行位置，�
 
 test('统一对话目录的新增文案完整覆盖十语言，不将群搜索描述成正文搜索',()=>{
  const rows=WORK_DIRECTORY_MESSAGE_ROWS.filter(row=>row[0].startsWith('conversationDirectory.'))
- const keys=new Set(rows.map(row=>row[0]))
- for(const key of ['conversationDirectory.direct','conversationDirectory.groups','conversationDirectory.subtitle','conversationDirectory.groupSearch','conversationDirectory.landingTitle','conversationDirectory.landingDescription'] as const)assert.ok(keys.has(key),key)
+ const keys=new Set<string>(rows.map(row=>row[0]))
+ for(const key of ['conversationDirectory.direct','conversationDirectory.groups','conversationDirectory.groupSearch','conversationDirectory.landingTitle','conversationDirectory.landingDescription'] as const)assert.ok(keys.has(key),key)
  for(const row of rows){assert.equal(row.length,11);for(const value of row.slice(1))assert.ok(value.trim(),row[0])}
  assert.equal(rows.find(row=>row[0]==='conversationDirectory.direct')?.[1],'一对一')
  assert.equal(rows.find(row=>row[0]==='conversationDirectory.groups')?.[1],'群')
- assert.equal(rows.find(row=>row[0]==='conversationDirectory.subtitle')?.[1],'一对一和群都在这里，按最近活动排列')
+ assert.equal(keys.has('conversationDirectory.subtitle'),false,'已移除的冗余副标题不能回流')
  assert.equal(rows.find(row=>row[0]==='conversationDirectory.groupSearch')?.[1],'群按名称和公告搜索')
  assert.equal(rows.find(row=>row[0]==='conversationDirectory.landingTitle')?.[1],'选择一段对话')
 })

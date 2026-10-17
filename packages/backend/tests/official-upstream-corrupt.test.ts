@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
 import {registerHooks} from 'node:module'
 import type {MarketActor} from '../src/market/content-store.ts'
 
@@ -13,15 +14,24 @@ const {listUpstreamEntries,getUpstreamEntry,loadOfficialUpstreamIndex}=await imp
 const self:MarketActor={ownerId:'local:self',kind:'human'}
 const store={findByCatalogSources:async()=>{throw Error('上游损坏时不得查询已添加状态')},findByIdentity:async()=>null} as unknown as ConstructorParameters<typeof OfficialCatalogService>[0]
 
-test('上游索引已加载但损坏：来源列表报 storage-corrupt；按条目查询降级为查不到；Teloa 目录照常可读',async()=>{
+const reviewed=JSON.parse(readFileSync(new URL('../../../tests/fixtures/reviewed-catalog-20261014.json',import.meta.url),'utf8')) as {hosted:{byKind:Record<string,string[]>};upstream:{byMarketplace:Record<string,string[]>}}
+const upstreamId=reviewed.upstream.byMarketplace.cursor![0]!
+
+test('上游索引已加载但损坏：来源列表与统一 Teloa 目录都报 storage-corrupt；按条目查询降级为查不到；旧宿主托管列表照常可读',async()=>{
  await loadOfficialUpstreamIndex()
  assert.throws(()=>listUpstreamEntries(),{code:'teloa/storage-corrupt'})
  const service=new OfficialCatalogService(store)
- for(const marketplace of ['clawhub','codex','openclaw','hermes','dsh','claude-code'] as const){
+ // 协议仍接受的每个来源筛选都必须报错，不能冒充空来源
+ for(const marketplace of ['cursor','claude-code','codex','dsh','openclaw','clawhub','hermes'] as const){
   await assert.rejects(service.list(self,{marketplace}),{code:'teloa/storage-corrupt'},marketplace)
  }
- assert.equal(getUpstreamEntry('clawhub.jaaneek.x-search'),undefined)
- assert.equal(service.hasEntry('clawhub.jaaneek.x-search'),false)
- assert.deepEqual(service.getSkillSecretsByEntry('clawhub.jaaneek.x-search'),[])
- assert.ok((await service.list(self,{marketplace:'teloa'})).items.length>0)
+ // 统一 Teloa 目录合并托管快照与上游：缺了上游就不是完整目录，整份拒绝，不回一半
+ await assert.rejects(service.list(self,{marketplace:'teloa'}),{code:'teloa/storage-corrupt'})
+ assert.equal(getUpstreamEntry(upstreamId),undefined)
+ assert.equal(service.hasEntry(upstreamId),false)
+ assert.deepEqual(service.getSkillSecretsByEntry(upstreamId),[])
+ // 不带 marketplace 的旧宿主契约只列托管快照，不依赖上游索引：精确等于已审托管集合
+ const legacy=await service.list(self)
+ assert.equal(legacy.nextCursor,null)
+ assert.deepEqual(legacy.items.map(item=>item.entry.id).sort(),Object.values(reviewed.hosted.byKind).flat().sort())
 })

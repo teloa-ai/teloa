@@ -1,3 +1,4 @@
+export {createPlanPreview,isPlanPreviewConsequence} from './page-create-plan-preview.ts'
 import {officialExtensionPackages,roleWriteDefinition,readPageCreateAtomicSkillDraft,type PageCreateDraftDirectory,type PageCreateDraftPreview,type PageCreateEntity} from '@teloa/contract'
 
 /** 传输编码留在契约中，用户核对的是入口正文和附件名称。 */
@@ -41,6 +42,8 @@ const placeholderKeys={
  skill:'create.sentence.placeholder.skill',
  connector:'create.sentence.placeholder.connector',
  extension:'create.sentence.placeholder.extension',
+ share:'create.sentence.placeholder.share',
+ plan:'create.sentence.placeholder.plan',
 } as const
 
 /** 一句话预备进会话时要点名的实体名词，按 entity 取，六类各一条。 */
@@ -51,6 +54,8 @@ const entityNameKeys={
  skill:'create.entity.skill',
  connector:'create.entity.connector',
  extension:'create.entity.extension',
+ share:'create.entity.share',
+ plan:'create.entity.plan',
 } as const
 
 const consequenceKeys={
@@ -68,7 +73,7 @@ const draftStatusKeys={
 
 const nextKeys={
  role:'create.next.role',skill:'create.next.skill',connector:'create.next.connector',
- extension:'create.next.extension','business-domain':'create.next.businessDomain','business-definition':'create.next.businessDefinition',
+ extension:'create.next.extension','business-domain':'create.next.businessDomain','business-definition':'create.next.businessDefinition',share:'create.next.share',plan:'create.next.plan',
 } as const
 /** 给用户的是既有步骤名称，端点名仍仅供调用方核对落点。 */
 export function createNextKey(entity:PageCreateEntity):typeof nextKeys[PageCreateEntity]{return nextKeys[entity]}
@@ -81,7 +86,7 @@ export function createNextKey(entity:PageCreateEntity):typeof nextKeys[PageCreat
 export function createOptions({entity,hasForm,hasMarket}:{entity:PageCreateEntity;hasForm:boolean;hasMarket:boolean}):CreateOption[]{
  const options:CreateOption[]=[]
  if(entity!=='extension'||officialExtensionPackages.length>0)options.push('sentence')
- if(hasForm&&entity!=='business-domain'&&entity!=='extension')options.push('form')
+ if(hasForm&&entity!=='business-domain'&&entity!=='extension'&&entity!=='share')options.push('form')
  if(hasMarket)options.push('market')
  return options
 }

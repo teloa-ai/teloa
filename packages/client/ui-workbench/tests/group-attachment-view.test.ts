@@ -1,6 +1,8 @@
+import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
-import {staffAvatarComponent} from './staff-avatar-component.ts'
+import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -177,9 +179,18 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
  }
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string):unknown=>{
+  if(id==='./GroupMaterialsPanel.js'){
+   const exported:Record<string,any>={},code=ts.transpileModule(readFileSync(new URL('../src/client/GroupMaterialsPanel.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
+   new Function('require','exports','React',code)(require,exported,hooks);return exported
+  }
+  const groupResult=groupResultFixtureModule(id);if(groupResult!==undefined)return groupResult
+  if(id==='./GroupChannelBindings.js')return {GroupChannelBindings:()=>null}
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
-  if(id==='./StaffAvatar.js')return staffAvatarComponent
+  if(id==='./ContextDrawer.js')return {ContextDrawer:({open=true,children,title}:any)=>open?React.createElement('dialog',{'aria-label':title},children):null}
+  if(id==='./task-preview.js')return {taskStates:{ready:'status.ready',running:'status.running',paused:'status.paused',waiting:'status.waiting',blocked:'status.blocked',completed:'status.completed',cancelled:'status.cancelled'}}
+  if(id==='./StaffAvatar.js'||id==='./EmployeeAvatar.js'||id==='./TwinAvatar.js')return staffAvatarComponent
+  if(id==='./personal-profile.js')return personalProfileForGroup
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id==='@teloa/contract')return contract
@@ -193,7 +204,7 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
   if(id.endsWith('saved-collaboration-state.js'))return savedCollaborationState
   if(id.endsWith('saved-collaboration-drafts.js'))return {savedCollaborationDrafts:stubs.drafts??createSavedCollaborationDraftStore()}
   if(id.endsWith('team-presentation.js'))return {twinDisplayName:(name:string)=>name}
-  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t,time:(value:string)=>value})}
+  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t,time:(value:string)=>value,date:(value:string)=>value.slice(0,10),dateTime:(value:string)=>value})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>String(cause)}
   if(id.endsWith('group-message-refresh.js'))return {scheduleGroupMessageRefresh:()=>()=>{}}
   // 群内直接回应一期 T14 接线后 SavedCollaborationPage 多了这两处依赖；本文件不测表情与折叠行，一律给空实现。
@@ -201,6 +212,11 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
   if(id.endsWith('group-routing-view.js'))return {groupRoutingPending:()=>[]}
   // DSH 平台模块，Node 下装不起来，给透传桩（见 saved-message-markdown-stubs.ts）。
   if(id==='@deepseek-ai/dsh-client-ui-primitives')return markdownPrimitivesStub
+  // 本夹具未接工作关联端口；新组件边界另有源渲染与浏览器用例，不应进入此旧消息测试。
+  if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
+  // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
+  if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }
  const code=ts.transpileModule(readFileSync(new URL('../src/client/SavedCollaborationPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
@@ -221,12 +237,13 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
  const expand=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
   if(Array.isArray(node))return node.flatMap(expand)
   if(!React.isValidElement<Record<string,any>>(node))return []
+  if(node.props.hidden)return []
   if(typeof node.type==='function')return expand((node.type as (p:unknown)=>React.ReactNode)(node.props))
   return [node,...expand((node.props as {children?:React.ReactNode}).children)]
  }
  return {
   render,flush,contentOf,
-  all:()=>expand(render()),
+  all:()=>expand(render()),within:expand,
   setProps:(patch:Partial<Props>)=>{props={...props,...patch};render()},
   find:(match:(el:React.ReactElement<Record<string,any>>)=>boolean)=>{const matches=expand(render()).filter(match);assert.equal(matches.length,1,'元素身份必须唯一，命中 '+matches.length+' 个');return matches[0]!},
   findAll:(match:(el:React.ReactElement<Record<string,any>>)=>boolean)=>expand(render()).filter(match),
@@ -242,7 +259,8 @@ const byAria=(app:App,label:string)=>(el:React.ReactElement<Record<string,any>>)
 const composer=(app:App)=>app.find(el=>el.type==='form'&&String(el.props.className).startsWith('composer'))
 const sendButton=(app:App)=>app.find(el=>el.type==='button'&&el.props.type==='submit'&&el.props['aria-label']==='collaboration.composer.send')
 const textareaOf=(app:App)=>app.find(el=>el.type==='textarea'&&el.props['aria-label']==='collaboration.composer.aria')
-const openInfoPanel=(app:App)=>{app.find(byAria(app,'collaboration.action.resources')).props.onClick();app.render()}
+const openMaterials=(app:App)=>{app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.view.materials').props.onClick();app.render()}
+const openPermissions=(app:App)=>{app.find(el=>el.type==='button'&&el.props.role!=='menuitem'&&el.props['aria-label']==='collaboration.settings.aria').props.onClick();app.render();app.find(el=>el.props.role==='tab'&&app.contentOf(el)==='collaboration.form.tab.permissions').props.onClick();app.render()}
 
 test('回形针按钮的 aria-label 走词条，拖放与粘贴各触发一次同样的上传',async()=>{
  const {api}=makeApi()
@@ -385,11 +403,12 @@ test('三类引用各渲染出对应形态；图片走 blob: 地址，全树零 
  assert.ok(String(download.props.href).startsWith('blob:'))
  assert.equal(app.findAll(el=>el.type==='img'&&el.props.alt==='说明.md').length,0,'文件卡不内嵌预览')
  assert.ok(app.findAll(el=>app.contentOf(el).includes('4.0 KiB')).length>0,'文件卡给出大小与类型')
- assert.ok(app.findAll(el=>el.type==='p'&&app.contentOf(el).startsWith('collaboration.message.references')).length>0,'群资料引用的呈现照旧')
+ assert.ok(app.findAll(el=>el.type==='article'&&app.contentOf(el).includes('collaboration.view.materials')&&app.contentOf(el).includes('v2')).length>0,'群资料用同一文档行，保留固定版本')
+ assert.equal(app.findAll(el=>el.type==='p'&&app.contentOf(el).startsWith('collaboration.message.references')).length,0,'不再显示不可点击的内部ID占位')
  assert.equal(app.all().filter(el=>el.props.dangerouslySetInnerHTML!==undefined).length,0,'全树不得有 dangerouslySetInnerHTML')
 })
 
-test('成果引用给成果卡与跳转入口；SVG 成果文件只给下载不内嵌',async()=>{
+test('成果引用给成果卡与群内固定版本预览入口；SVG 成果文件只给下载不内嵌',async()=>{
  const opened:Record<string,OpenedRow>={}
  opened[artifactId]={mime:'image/svg+xml',name:'架构图.svg'}
  const {api}=makeApi({messages:[employeeMessage('m2',[{kind:'artifact',id:artifactId,version:2}])]})
@@ -398,10 +417,11 @@ test('成果引用给成果卡与跳转入口；SVG 成果文件只给下载不�
  const app=mount({visible:true,api,attachments,openArtifact:id=>jumped.push(id),directory:directory(),target,roles,profileName:'测试者'})
  await app.flush()
  assert.ok(app.findAll(el=>app.contentOf(el).includes(t('collaboration.reference.artifactCard',{title:'架构图.svg',version:2,count:1}))).length>0,'成果卡逐字走 artifactCard 词条')
- assert.equal(app.findAll(el=>el.type==='img').length,0,'SVG 成果文件一律不内嵌')
+ assert.equal(app.findAll(el=>el.type==='img'&&!String(el.props.className).includes('squirrel')).length,0,'SVG 成果文件一律不内嵌')
  assert.equal(app.find(el=>el.type==='a'&&el.props.download==='架构图.svg').props.download,'架构图.svg','只给下载')
- app.find(el=>el.type==='button'&&app.contentOf(el)===t('collaboration.reference.openArtifact')).props.onClick()
- assert.deepEqual(jumped,[artifactId])
+ await app.find(el=>el.type==='button'&&app.contentOf(el)==='架构图.svg').props.onClick()
+ await app.flush()
+ assert.deepEqual(jumped,[],'群固定版本预览不得跳转来源全成果管理面板')
  // 单文件成果卡沿用旧「无需点开即可见」体验：describeArtifact 取标题/文件清单后自动懒取那一个文件的字节，不必等用户展开。
  assert.deepEqual(calls.filter(call=>call.endpoint==='describeArtifact').map(call=>call.payload),[{id:artifactId,version:2}])
  assert.deepEqual(calls.filter(call=>call.endpoint==='openArtifactFile').map(call=>call.payload),[{id:artifactId,version:2,snapshotId:artifactId+':snap'}])
@@ -418,10 +438,11 @@ test('成果关联多个文件时先只显示标题与文件数，点开才逐�
  await app.flush()
  assert.ok(app.findAll(el=>app.contentOf(el).includes(t('collaboration.reference.artifactCard',{title:'调查报告',version:3,count:2}))).length>0,'成果卡标题与文件数先到位')
  assert.equal(calls.filter(call=>call.endpoint==='openArtifactFile').length,0,'展开前不该有任何文件的字节请求')
- assert.ok(app.findAll(el=>app.contentOf(el)===snapshotA.slice(0,8)).length>0,'未取到字节前文件行先用 snapshotId 前 8 位占位')
+ assert.equal(app.findAll(el=>app.contentOf(el)===snapshotA.slice(0,8)).length,0,'未取字节时不暴露内部snapshotId')
+ assert.ok(app.findAll(el=>el.props.role==='status'&&app.contentOf(el)==='collaboration.state.loading').length>0,'文件尚未加载给明确状态')
  const card=app.find(el=>el.type==='details'&&app.contentOf(el).includes('调查报告'))
  assert.equal(card.props.open,false,'关联多个文件时默认收起')
- card.props.onToggle({target:{open:true}})
+ card.props.onToggle({currentTarget:{open:true}})
  await app.flush()
  assert.deepEqual(calls.filter(call=>call.endpoint==='openArtifactFile').map(call=>call.payload).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))),[
   {id:artifactId,version:3,snapshotId:snapshotA},
@@ -453,8 +474,9 @@ test('员工消息的引用只读呈现，没有任何加引用或改引用的�
  const message=app.find(el=>el.type==='article'&&app.contentOf(el).includes('已完成核对。'))
  const controls=[message,...app.all().filter(el=>app.contentOf(el)==='已完成核对。')]
  assert.ok(controls.length>0)
- const labels=app.findAll(el=>['collaboration.resources.reference','collaboration.resources.remove'].includes(app.contentOf(el)))
+ const labels=app.within(message).filter(el=>el.type==='button'&&['collaboration.composer.references','group.mention.referenced'].includes(el.props['aria-label']))
  assert.equal(labels.length,0,'员工消息一侧不得出现任何加引用/改引用入口')
+ assert.equal(app.findAll(el=>el.type==='button'&&el.props['aria-label']==='collaboration.composer.references').length,1,'唯一资料引用入口仍在本人输入区')
  assert.equal(app.findAll(el=>el.type==='input'&&el.props.type==='file').length,1,'文件选择器只属于本人输入区')
 })
 
@@ -479,43 +501,37 @@ test('大图弹层走既有 openDialog 打开，Esc 关闭后焦点交回 return
  assert.deepEqual(focusCalls,[opener],'焦点交回触发它的那个按钮，而不是当时的 activeElement')
 })
 
-test('侧栏「资料与文件」两分节都在，资料分节的列表逐字不变',async()=>{
+test('资料并栏保持原资料及文件身份；只读查看与修订分别提供，成果不重复汇总',async()=>{
  const resource={id:resourceId,groupId,version:2,title:'核对口径',withdrawnAt:null,createdAt:stamp,updatedAt:stamp}
- const base=mount({visible:true,api:makeApi({resources:[resource]}).api,directory:directory(),target,roles,profileName:'测试者'})
- await base.flush()
- openInfoPanel(base)
- const before=base.contentOf(base.find(el=>el.props.className==='resourceList'))
  const {attachments}=makeAttachments({files:[attachment({name:'旧.png',createdAt:'2026-09-20T01:00:00.000Z'}),attachment({attachmentId:docId,kind:'file',mime:'text/markdown',name:'新.md',bytes:4096,width:null,height:null,createdAt:'2026-09-21T02:00:00.000Z'})]})
  const app=mount({visible:true,api:makeApi({resources:[resource]}).api,attachments,directory:directory(),target,roles,profileName:'测试者'})
- await app.flush()
- openInfoPanel(app)
- await app.flush()
- const card=app.find(el=>el.props.className==='relationshipCard'&&app.contentOf(el).includes(t('collaboration.access.materials.title')))
- assert.ok(app.contentOf(card).includes(t('collaboration.attachment.section')),'第二分节「文件」必须在同一张卡里')
- assert.ok(app.contentOf(card).includes(t('collaboration.attachment.sectionHint')))
- const lists=app.findAll(el=>el.props.className==='resourceList')
- assert.equal(lists.length,2,'两个分节各一份列表')
- assert.equal(app.contentOf(lists[0]!),before,'资料分节的列表逐字不变')
- const fileNames=app.findAll(el=>el.type==='strong'&&['旧.png','新.md'].includes(app.contentOf(el))).map(el=>app.contentOf(el))
- assert.deepEqual(fileNames,['新.md','旧.png'],'文件按 createdAt 倒序')
+ await app.flush();openMaterials(app);await app.flush()
+ const resources=app.findAll(el=>el.type==='article'&&app.contentOf(el).includes('核对口径'))
+ assert.equal(resources.length,1,'资料只在一个共享文档行呈现')
+ assert.ok(app.contentOf(resources[0]!).includes('v2'),'原资料版本不变')
+ assert.equal(app.findAll(el=>el.type==='h4'&&app.contentOf(el)==='collaboration.view.results').length,0,'资料不另建重复成果汇总')
+ const files=app.findAll(el=>el.type==='button'&&el.props.className==='fileName').map(el=>app.contentOf(el))
+ assert.deepEqual(files,['新.md','旧.png'],'文件仍按 createdAt 倒序且名称进入只读预览')
+ assert.equal(app.findAll(el=>el.type==='button'&&el.props['aria-label']===t('group.materials.edit',{name:'核对口径'})).length,1,'修订是独立动作')
 })
 
-test('群里没有文件时文件分节给空态词条',async()=>{
+test('群无资料或附件时并栏保留空态，添加仅通过顶栏加号菜单',async()=>{
  const {attachments}=makeAttachments({files:[]})
  const app=mount({visible:true,api:makeApi().api,attachments,directory:directory(),target,roles,profileName:'测试者'})
- await app.flush()
- openInfoPanel(app)
- await app.flush()
+ await app.flush();openMaterials(app);await app.flush()
  assert.ok(app.findAll(el=>app.contentOf(el)===t('collaboration.attachment.sectionEmpty')).length>0)
+ assert.equal(app.findAll(el=>el.type==='summary'&&el.props['aria-label']===t('group.materials.add')).length,1,'资料顶栏只保留一个加号入口')
+ assert.equal(app.findAll(el=>el.type==='button'&&el.props.role==='menuitem'&&app.contentOf(el)===t('collaboration.attachment.add')).length,1,'菜单保留原添加附件动作')
+ assert.equal(app.findAll(el=>el.type==='button'&&el.props.role!=='menuitem'&&app.contentOf(el)===t('collaboration.attachment.add')).length,0,'空态不再重复放大按钮')
 })
 
 test('撤回确认弹层的正文逐字含「已存的字节不会被删除。」，确认后才上网',async()=>{
  const {attachments,calls}=makeAttachments({files:[attachment({})]})
  const app=mount({visible:true,api:makeApi().api,attachments,directory:directory(),target,roles,profileName:'测试者'})
  await app.flush()
- openInfoPanel(app)
+ openMaterials(app)
  await app.flush()
- app.find(el=>el.type==='button'&&app.contentOf(el)===t('collaboration.attachment.withdraw')&&el.props.className==='replyButton').props.onClick()
+ app.find(el=>el.type==='button'&&app.contentOf(el)===t('collaboration.attachment.withdraw')).props.onClick({currentTarget:{closest:()=>({removeAttribute:()=>{}})}})
  await app.flush()
  const confirmDialog=app.find(el=>el.type==='dialog'&&el.props['aria-label']===t('collaboration.attachment.withdraw'))
  assert.ok(app.contentOf(confirmDialog).includes('已存的字节不会被删除。'),'确认正文必须逐字写明字节不删')
@@ -533,7 +549,7 @@ test('授权面按 kind 分三组，勾选后提交的 resources 就是勾选那
  const {attachments}=makeAttachments({files:[attachment({})],opened:{[artifactId]:'fail'}})
  const app=mount({visible:true,api,attachments,directory:directory(),target,roles,profileName:'测试者'})
  await app.flush()
- openInfoPanel(app)
+ openPermissions(app)
  await app.flush()
  app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.agentGrant.configure'&&el.props.className==='replyButton').props.onClick()
  await app.flush()
@@ -547,7 +563,7 @@ test('授权面按 kind 分三组，勾选后提交的 resources 就是勾选那
  app.render()
  labelled('图.png').props.children[0].props.onChange()
  app.render()
- labelled(artifactId.slice(0,8)).props.children[0].props.onChange()
+ labelled(t('collaboration.reference.artifactUnavailable')).props.children[0].props.onChange()
  app.render()
  app.find(el=>el.type==='form'&&app.contentOf(el).includes(t('collaboration.grant.canPost.attachmentNote'))).props.onSubmit({preventDefault:()=>{}})
  await app.flush()
@@ -565,7 +581,7 @@ test('群里还没有出现过成果引用时，授权面成果组给空态词�
  const {attachments}=makeAttachments()
  const app=mount({visible:true,api,attachments,directory:directory(),target,roles,profileName:'测试者'})
  await app.flush()
- openInfoPanel(app)
+ openPermissions(app)
  await app.flush()
  app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.agentGrant.configure'&&el.props.className==='replyButton').props.onClick()
  await app.flush()
@@ -593,15 +609,16 @@ test('授权面按固定版本区分：同一份成果的两个版本是两条�
  const {attachments}=makeAttachments({artifactFiles:{[artifactId]:{title:'核对报告',snapshotIds:[]}}})
  const app=mount({visible:true,api,attachments,directory:directory(),target,roles,profileName:'测试者'})
  await app.flush()
- openInfoPanel(app)
+ openPermissions(app)
  await app.flush()
  app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.agentGrant.configure'&&el.props.className==='replyButton').props.onClick()
  await app.flush()
- const rows=app.findAll(el=>el.props.className==='memberChoice'&&app.contentOf(el).includes(artifactId.slice(0,8)))
+ const rows=app.findAll(el=>el.props.className==='memberChoice'&&app.contentOf(el).includes('核对报告'))
  assert.equal(rows.length,2,'同一份成果的两个版本各占一行')
+ assert.ok(rows.every(row=>!app.contentOf(row).includes(artifactId.slice(0,8))),'授权候选显示成果名称与固定版本，不用内部标识代替名称')
  rows[0]!.props.children[0].props.onChange()
  app.render()
- const checked=app.findAll(el=>el.props.className==='memberChoice'&&app.contentOf(el).includes(artifactId.slice(0,8))).map(el=>el.props.children[0].props.checked)
+ const checked=app.findAll(el=>el.props.className==='memberChoice'&&app.contentOf(el).includes('核对报告')).map(el=>el.props.children[0].props.checked)
  assert.deepEqual(checked,[true,false],'勾中一个版本不得把另一个版本也判成已勾')
  app.find(el=>el.type==='form'&&app.contentOf(el).includes(t('collaboration.grant.canPost.attachmentNote'))).props.onSubmit({preventDefault:()=>{}})
  await app.flush()
@@ -617,7 +634,7 @@ test('授权面不把界面上已经看不见的旧授权原样重存回去',asy
  const {attachments}=makeAttachments({files:[]})
  const app=mount({visible:true,api,attachments,directory:directory(),target,roles,profileName:'测试者'})
  await app.flush()
- openInfoPanel(app)
+ openPermissions(app)
  await app.flush()
  app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.agentGrant.configure'&&el.props.className==='replyButton').props.onClick()
  await app.flush()

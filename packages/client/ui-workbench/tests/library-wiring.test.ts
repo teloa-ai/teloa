@@ -6,7 +6,7 @@ import {translateMessage} from '../lib/types/client/i18n/messages.js'
 import {LIBRARY_MESSAGE_KEYS} from '../src/client/i18n/locales/library.ts'
 const frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
 test('真实Frame资料入口携带固定版本与业务范围进入准备流程，不自动发送',()=>{
- const expression=frame.match(/<ResourceManager[^\n]+onUseResource=\{resource=>(.*?)\} onExtensions=/)?.[1]
+ const expression=frame.match(/<ResourceManager[^\n]+onUseResource=\{resource=>(.*?)\} bundledExtensionsApi=/)?.[1]
  assert.ok(expression)
  const calls:any[]=[]
  const invoke=new Function('requestCreation','t','resource',expression.replace(' as CollaborationScope',''))

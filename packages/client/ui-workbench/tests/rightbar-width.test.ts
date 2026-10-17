@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFile} from 'node:fs/promises'
+import ts from 'typescript'
+import type {WorkbenchView} from '../src/client/store.ts'
+import type {WorkbenchNavigationState} from '../src/client/workbench-navigation-state.ts'
 import {
- CENTER_MIN,RIGHTBAR_DEFAULT_RATIO,RIGHTBAR_KEYBOARD_STEP,RIGHTBAR_MIN,RIGHTBAR_OVERLAY_WIDTH,RIGHTBAR_WIDTH_KEY,
- clampRightbarWidth,defaultRightbarWidth,directoryTrackWidth,navigationTrackWidth,
- readRightbarWidth,resizeRightbarWidth,rightbarCanShow,rightbarHandleVisible,rightbarTrackWidth,rightbarWidthRange,
+ CENTER_MIN,RIGHTBAR_DEFAULT_RATIO,RIGHTBAR_KEYBOARD_STEP,RIGHTBAR_MIN,RIGHTBAR_DOCKED_MIN_VIEWPORT,RIGHTBAR_WIDTH_KEY,
+ clampRightbarWidth,collapseRightbarForDirectory,defaultRightbarWidth,directoryNeedsRoom,directoryShown,groupPanelReport,directoryTrackWidth,navigationTrackWidth,
+ readRightbarWidth,resizeRightbarWidth,rightbarCanShow,rightbarDirectoryForOpening,rightbarHandleVisible,rightbarTrackWidth,rightbarWidthRange,
  stepRightbarWidth,writeRightbarWidth,
 } from '../src/client/rightbar-width.ts'
 
@@ -18,7 +21,7 @@ test('宽度契约取 DSH ui-layout 的常量而不是自定值',()=>{
  assert.equal(RIGHTBAR_DEFAULT_RATIO,0.45)
  assert.equal(RIGHTBAR_WIDTH_KEY,'teloa-details-width')
  assert.equal(RIGHTBAR_KEYBOARD_STEP,16)
- assert.equal(RIGHTBAR_OVERLAY_WIDTH,420)
+ assert.equal(RIGHTBAR_DOCKED_MIN_VIEWPORT,CENTER_MIN+RIGHTBAR_MIN)
 })
 
 test('轨道占用按现行断点计算，窄屏的导航与目录都是覆盖层不占轨道',()=>{
@@ -37,8 +40,8 @@ test('停靠模式的上限同时受 70% 与中栏 400px 约束',()=>{
  assert.deepEqual(rightbarWidthRange(1440,true),{min:300,max:556})
  // 关掉会话目录后中栏让出 280
  assert.deepEqual(rightbarWidthRange(1440,false),{min:300,max:836})
- // 覆盖模式（<=1380）不压中栏，只受 70% 约束
- assert.deepEqual(rightbarWidthRange(1200,true),{min:300,max:840})
+ // 窄桌面同样保留中栏 400px 与真实目录列宽
+ assert.deepEqual(rightbarWidthRange(1200,true),{min:300,max:336})
  // 视口极窄时下限优先，range 退化成一个点
  assert.deepEqual(rightbarWidthRange(390,false),{min:300,max:300})
 })
@@ -71,22 +74,70 @@ test('偏好无损：视口与会话目录来回切换后宽度能回到原值',
  assert.equal(rightbarTrackWidth(preferred,1920,false),700)
 })
 
-test('覆盖模式的轨道宽度是固定抽屉，与 CSS 共用同一个数',()=>{
- // 1200 视口曾经出现"面板 540 溢出轨道 420"，现在两边都取这里的返回值
- assert.equal(rightbarTrackWidth(540,1200,true),420)
- assert.equal(rightbarTrackWidth(346,768,false),420)
- // 70% 上限在 600 这种窄屏会先于 420 生效之前先被"铺满"接管
- assert.equal(rightbarTrackWidth(346,740,false),740)
- assert.equal(rightbarTrackWidth(999,560,false),560)
- // 恰好 600 宽的覆盖抽屉：min(420, floor(600*0.7)=420)
- assert.equal(rightbarTrackWidth(999,860,false),420)
+test('窄桌面工作概览按实际可用列宽夹取，不覆盖会话',()=>{
+ assert.equal(rightbarTrackWidth(540,1200,true),336)
+ assert.equal(rightbarTrackWidth(346,768,false),346)
+ assert.equal(rightbarTrackWidth(346,740,false),340)
+ assert.equal(rightbarTrackWidth(999,860,false),460)
+ assert.equal(rightbarTrackWidth(999,560,false),300)
 })
 
-test('canShow 真算：中栏被压到 400 以下即为假，覆盖模式恒真',()=>{
+test('空间不足时 canShow 收起概览，而非返回可覆盖输入的宽度',()=>{
  assert.equal(rightbarCanShow(1440,true,520),true)
  assert.equal(rightbarCanShow(1440,true,560),false)
- assert.equal(rightbarCanShow(1200,true,840),true)
- assert.equal(rightbarCanShow(390,false,300),true)
+ assert.equal(rightbarCanShow(1200,true,336),true)
+ assert.equal(rightbarCanShow(900,true,300),false)
+ assert.equal(rightbarCanShow(700,false,300),true)
+ assert.equal(rightbarCanShow(699,false,300),false)
+ assert.equal(rightbarCanShow(390,false,300),false)
+})
+
+test('打开右栏时目录让出窄桌面空间，963px 不再因差一像素拒绝打开',()=>{
+ for(const viewport of [768,900,963,1081,1163]){
+  const directory=rightbarDirectoryForOpening(viewport,true)
+  assert.equal(directory,false,`${viewport}px 应让出目录空间`)
+  assert.equal(rightbarCanShow(viewport,directory,rightbarTrackWidth(9999,viewport,directory)),true)
+ }
+ for(const viewport of [964,1080,1164,1440,1920])assert.equal(rightbarDirectoryForOpening(viewport,true),true,`${viewport}px 足够时保留目录`)
+ for(const viewport of [390,740,767])assert.equal(rightbarDirectoryForOpening(viewport,true),true,'不改变原生小窗口全屏契约')
+ assert.equal(rightbarDirectoryForOpening(963,false),false)
+})
+
+test('目录让位只在渲染期派生：本人目录选择不变，面板收起或放宽后原目录回来',()=>{
+ const none={rightbar:false,groupPanel:false},rail={rightbar:true,groupPanel:false},group={rightbar:false,groupPanel:true}
+ assert.equal(directoryShown(963,true,rail),false,'963px 概览打开时让出目录')
+ assert.equal(directoryShown(963,true,none),true,'概览收起后原目录回来')
+ assert.equal(directoryShown(1440,true,rail),true,'空间足够时目录与概览并存')
+ assert.equal(directoryShown(963,false,none),false,'本人关闭的目录不会被面板打开')
+ // 群侧栏按原型 platform-preview.css：≤1450px 打开时目录让位。
+ for(const viewport of [741,963,1100,1381,1440,1450])assert.equal(directoryShown(viewport,true,group),false,viewport+'px 群面板打开时让出目录')
+ for(const viewport of [1451,1600,1920])assert.equal(directoryShown(viewport,true,group),true,viewport+'px 群面板与目录并存')
+ for(const viewport of [390,740])assert.equal(directoryShown(viewport,true,group),true,'窄屏目录是本人打开的覆盖层，不随面板让位')
+ assert.equal(directoryNeedsRoom(963,rail),true);assert.equal(directoryNeedsRoom(1440,rail),false)
+ assert.equal(directoryNeedsRoom(1440,group),true);assert.equal(directoryNeedsRoom(1600,group),false);assert.equal(directoryNeedsRoom(963,none),false)
+})
+
+test('群侧栏上报按群身份撤回：旧群迟到的关闭不覆盖新群',()=>{
+ assert.equal(groupPanelReport(undefined,'a',true),'a')
+ assert.equal(groupPanelReport('b','a',false),'b','切到 B 后 A 的卸载回调不清掉 B')
+ assert.equal(groupPanelReport('a','a',false),undefined)
+})
+
+test('本人打开目录只经公开导航接口收起本会话右栏，不关页签',()=>{
+ let toggles=0
+ const face=(expanded:boolean,mounted='s1')=>({mounted:{getSnapshot:()=>mounted,subscribe:()=>()=>{}},isExpanded:()=>expanded,toggleExpanded:()=>{toggles++}})
+ assert.equal(collapseRightbarForDirectory(face(true) as never,'s1'),true);assert.equal(toggles,1)
+ assert.equal(collapseRightbarForDirectory(face(false) as never,'s1'),false,'已收起不再切换')
+ assert.equal(collapseRightbarForDirectory(face(true,'other') as never,'s1'),false,'不收起其他会话的右栏')
+ assert.equal(collapseRightbarForDirectory(undefined,'s1'),false);assert.equal(collapseRightbarForDirectory(face(true) as never,undefined),false)
+ assert.equal(toggles,1)
+})
+
+test('工作台不再因让位改写本人目录选择，目录入口按实际可见状态响应',()=>{
+ assert.doesNotMatch(frame,/actions\.closeSidebar\(\)\s*\},\[railShown/,'让位不能调用 closeSidebar')
+ assert.match(frame,/const directoryVisible=directoryShown\(viewportWidth,state\.directoryOpen,directoryOccupants\)/)
+ assert.match(frame,/aria-expanded=\{directoryVisible\}/)
+ assert.match(frame,/state\.view==='messages'&&directoryVisible&&/)
 })
 
 test('喂给 DSH 的 canShow 取轨道实际宽度，任何偏好都不会让 RightbarSeat 关栏',()=>{
@@ -101,8 +152,9 @@ test('喂给 DSH 的 canShow 取轨道实际宽度，任何偏好都不会让 Ri
 test('把手只在停靠模式出现',()=>{
  assert.equal(rightbarHandleVisible(1440),true)
  assert.equal(rightbarHandleVisible(1381),true)
- assert.equal(rightbarHandleVisible(1380),false)
- assert.equal(rightbarHandleVisible(700),false)
+ assert.equal(rightbarHandleVisible(1380),true)
+ assert.equal(rightbarHandleVisible(700),true)
+ assert.equal(rightbarHandleVisible(699),false)
 })
 
 test('向左拖变宽，键盘左右箭头各走 16px，其它按键不改宽度',()=>{
@@ -164,11 +216,11 @@ test('z-index 全部走令牌，Teloa 浮层在 DSH fullscreen 之上、移动�
  for(const literal of ['z-index:20','z-index:24','z-index:25','z-index:30','z-index:41','z-index:42','z-index:48','z-index:100'])assert.doesNotMatch(css,new RegExp(literal.replace('-','\\-')))
 })
 
-test('覆盖模式不再有第二个宽度真源：420/70vw/100% 三处字面量都换成同一个变量',()=>{
+test('概览保持非模态并栏，不再随窄桌面断点绝对定位覆盖输入',()=>{
  assert.doesNotMatch(css,/width:420px/)
  assert.doesNotMatch(css,/max-width:70vw/)
- assert.match(css,/@media\(max-width:1380px\)\{[^@]*\.detailsOpen \.details\{[^}]*width:var\(--teloa-details-width/)
- assert.match(frame,/const detailsWidth=rightbarTrackWidth\(detailsPreferred,viewportWidth,state\.directoryOpen\)/)
+ assert.doesNotMatch(css,/\.detailsOpen \.details\{[^}]*position:absolute/)
+ assert.match(frame,/const detailsWidth=rightbarTrackWidth\(detailsPreferred,viewportWidth,detailsDirectoryOpen\)/)
 })
 
 test('宽度在渲染期从偏好派生，不留"下一帧再夹"的 effect',()=>{
@@ -198,18 +250,36 @@ test('拖拽走指针捕获，监听挂把手而不是 window，并跟随最新�
 })
 
 test('把手是带值的 separator，aria-controls 指向它调的轨道，Enter 等价于双击',()=>{
- assert.match(frame,/id=\{DETAILS_TRACK_ID\} role="region" className=\{css\.details\}/)
+ assert.match(frame,/id=\{DETAILS_TRACK_ID\} role="region" hidden=\{!conversationVisible\|\|builderVisible\} className=\{css\.details\}/)
  assert.match(frame,/aria-controls=\{DETAILS_TRACK_ID\} aria-valuenow=\{detailsWidth\} aria-valuemin=\{detailsRange\.min\} aria-valuemax=\{detailsRange\.max\}/)
  assert.match(frame,/if\(event\.key==='Enter'\)\{event\.preventDefault\(\);restoreDetailsWidth\(\)/)
 })
 
-test('折叠态不入无障碍树由 DSH 面板负责：Teloa 只放把手与 rightbar 插槽，不自写 hidden',()=>{
+test('原生折叠态仍由 DSH 面板负责，首页、群与目录隐藏整条上一会话轨道',()=>{
  // 依赖 @deepseek-ai/dsh-client-ui-sidebar-right 的 .panel：它是 visibility:hidden，
  // 展开才加 [data-sidebar-right-open]{visibility:visible}，并写 aria-hidden={!expanded}。
  // 该包不在本包依赖里，无法直接断言其源码；这里改为钉住 Teloa 侧的前提——
  // 轨道里除了把手就只有 renderSlot('rightbar')，没有 Teloa 自己的可读内容。
  const track=frame.split('id={DETAILS_TRACK_ID}')[1]!.split('</div>')[0]!
  assert.match(track,/renderSlot\('rightbar'/)
- assert.doesNotMatch(track,/hidden=/)
+ assert.match(track,/hidden=\{!conversationVisible\|\|builderVisible\}/,'首页、群与目录不暴露上一原生会话工具')
+ assert.doesNotMatch(track,/hidden=\{!?railShown\}/,'不覆盖 DSH 自己的展开/折叠状态')
  assert.equal(track.split('<').filter(part=>part.startsWith('button')||part.startsWith('div')||part.startsWith('section')).length,1)
+ // 执行实际 Frame 的纯展示守卫，不能仅因它们的名字存在就认定旧会话已被隐藏。
+ const source=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),initializers=new Map<string,ts.Expression>(),names=new Set(['conversationVisible','nativeMainVisible','railShown'])
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&names.has(node.name.text)&&node.initializer){assert.equal(initializers.has(node.name.text),false,'展示守卫必须唯一');initializers.set(node.name.text,node.initializer)}ts.forEachChild(node,visit)}
+ visit(source);for(const name of names)assert.ok(initializers.has(name),name)
+ const hidden=track.match(/hidden=\{([^}]+)\}/)?.[1];assert.ok(hidden)
+ type State=Pick<WorkbenchNavigationState,'messageMode'>&{view:WorkbenchView;rightbar:{shown:boolean}}
+ const presentation=new Function('state','nativePanelVisible','builderVisible',`const conversationVisible=${initializers.get('conversationVisible')!.getText(source)};const nativeMainVisible=${initializers.get('nativeMainVisible')!.getText(source)};const railShown=${initializers.get('railShown')!.getText(source)};return {nativeMainVisible,railShown,hidden:${hidden}}`) as (state:State,nativePanelVisible:boolean,builderVisible:boolean)=>{nativeMainVisible:boolean;railShown:boolean;hidden:boolean}
+ for(const view of ['home','attention','tasks','plans','projects','team','spaces','market','resources','settings'] as const){
+  const value=presentation({view,messageMode:'native',rightbar:{shown:true}},false,false)
+  assert.equal(value.hidden,true,view+' 不暴露上一会话右栏');assert.equal(value.railShown,false,view+' 不展示上一会话停靠轨道')
+  if(view==='home')assert.equal(value.nativeMainVisible,true,'首页可复用原生输入，但不因此显示会话右栏')
+ }
+ for(const messageMode of ['directory','groups'] as const)assert.deepEqual(presentation({view:'messages',messageMode,rightbar:{shown:true}},false,false),{nativeMainVisible:false,railShown:false,hidden:true},messageMode+' 保留旧会话状态也不能显示其右栏')
+ assert.deepEqual(presentation({view:'messages',messageMode:'native',rightbar:{shown:false}},false,false),{nativeMainVisible:true,railShown:false,hidden:false},'原会话收起仍交由 DSH 的 seat 管理，不隐藏整条挂载轨道')
+ assert.deepEqual(presentation({view:'messages',messageMode:'native',rightbar:{shown:true}},false,false),{nativeMainVisible:true,railShown:true,hidden:false},'原会话可正常展开工作概览')
+ assert.equal(presentation({view:'messages',messageMode:'native',rightbar:{shown:true}},false,true).hidden,true,'业务构建视图不能暴露上一会话右栏')
+ assert.deepEqual(presentation({view:'messages',messageMode:'native',rightbar:{shown:true}},true,false),{nativeMainVisible:true,railShown:false,hidden:true},'原生设置等面板仍可显示主列，但隔离原会话右栏')
 })

@@ -1,4 +1,5 @@
-import {readPlanWorkConfiguration,readPlanWorkDefinition} from '@teloa/contract'
+import {readPlanWorkConfiguration,readPlanWorkDefinition,readOwnerPlanFields,readWorkExecutor,readMethodReuseSource,readMethodReuseAcceptedSource} from '@teloa/contract'
+import {readOwnerPlanGrant,type OwnerPlanSource} from '@teloa/backend'
 import {WorkError,isRecord,readScheduleTrigger,readTaskCompletionPolicy,taskDefinition} from '@teloa/contract'
 
 export const planEndpoints=['plans/list','plans/get','plans/create','plans/change','plans/trigger'] as const
@@ -33,14 +34,22 @@ const notificationPolicy=(value:unknown):value is 'always'|'attention'|'failure'
  * system-digest 只在读回包（stored=true）时接受——它由服务端随员工在岗自动建出，客户端不得经 plans/create 提交。
  */
 function source(value:unknown,stored:boolean):void{
- const row=object(value,['kind','contentId','contentHash','resourceId','resourceVersion','roleId'])
- if(row.kind==='manual'){if(Object.keys(row).length!==1)throw invalid();return}
+ if(isRecord(value)&&value.kind==='method-reuse'){
+  const {kind:_kind,acceptedSource,...fixed}=object(value,['kind','artifactId','version','basisHash','taskId','acceptedSource'])
+  const parsed=readMethodReuseSource(fixed)
+  if(acceptedSource!==undefined)readMethodReuseAcceptedSource(acceptedSource)
+  else if(!parsed.taskId)throw invalid()
+  return
+ }
+ const row=object(value,['kind','contentId','contentHash','resourceId','resourceVersion','roleId','sessionId'])
+ if(row.kind==='manual'){if(Object.keys(row).some(key=>!['kind','sessionId'].includes(key))||Object.hasOwn(row,'sessionId')&&(typeof row.sessionId!=='string'||! /^[a-zA-Z0-9_-]{1,128}$/.test(row.sessionId)))throw invalid();return}
  if(row.kind==='system-digest'){if(!stored||Object.keys(row).length!==2||!uuid(row.roleId))throw invalid();return}
  if(row.kind!=='market-content'||Object.keys(row).length!==5||!uuid(row.contentId)||!hash(row.contentHash)||!stableId(row.resourceId)||!semver(row.resourceVersion))throw invalid()
 }
 function fields(value:unknown,creating:boolean):void{
- const keys=['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy',...(creating?['expectedRoleVersion']:[])]
+ const keys=['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy','groupId',...(creating?['expectedRoleVersion']:[])]
  const row=object(value,keys)
+ if(Object.hasOwn(row,'groupId')&&row.groupId!==null&&!uuid(row.groupId))throw invalid()
  try{
   const normalized=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
   if(normalized.title!==row.title||normalized.goal!==row.goal||normalized.scope!==row.scope)throw Error()
@@ -54,7 +63,8 @@ function createInput(value:unknown):void{
  if(!uuid(row.requestId))throw invalid();fields(row.fields,true);source(row.source,false)
 }
 function updateFields(value:unknown):void{
- const row=object(value,['title','goal','dataScope','delivery','trigger','notificationPolicy','completionPolicy'])
+ const row=object(value,['title','goal','dataScope','delivery','trigger','notificationPolicy','completionPolicy','groupId'])
+ if(Object.hasOwn(row,'groupId')&&row.groupId!==null&&!uuid(row.groupId))throw invalid()
  try{taskDefinition({title:row.title,goal:row.goal,scope:'general'});readScheduleTrigger(row.trigger);if(row.completionPolicy!==undefined)readTaskCompletionPolicy(row.completionPolicy)}catch{throw invalid()}
  if(!text(row.dataScope,8000)||row.dataScope.trim()!==row.dataScope||!text(row.delivery,8000)||row.delivery.trim()!==row.delivery||!notificationPolicy(row.notificationPolicy))throw invalid()
 }
@@ -72,20 +82,33 @@ function triggerInput(value:unknown):void{
 }
 function plan(value:unknown,owner:string):Record<string,unknown>{
  try{
-  const row=object(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','completionPolicy','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt','workDefinition'])
-  fields({title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{}),...(Object.hasOwn(row,'completionPolicy')?{completionPolicy:row.completionPolicy}:{})},false);source(row.source,true)
-  if(!uuid(row.id)||row.ownerId!==owner||!positive(row.roleVersion)||!positive(row.version)||!positive(row.configVersion)||!['paused','active','archived'].includes(String(row.state))||!timestamp(row.createdAt)||!timestamp(row.updatedAt))throw Error()
+  const row=object(value,['id','ownerId','title','goal','scope','dataScope','delivery','roleId','roleVersion','trigger','notificationPolicy','completionPolicy','groupId','source','version','configVersion','state','archivedReason','archivedAt','createdAt','updatedAt','workDefinition','executor','ownerGrant'])
+  const definition={title:row.title,goal:row.goal,scope:row.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger:row.trigger,...(Object.hasOwn(row,'groupId')?{groupId:row.groupId}:{}),...(Object.hasOwn(row,'notificationPolicy')?{notificationPolicy:row.notificationPolicy}:{}),...(Object.hasOwn(row,'completionPolicy')?{completionPolicy:row.completionPolicy}:{})}
+  source(row.source,true)
+  if(row.roleId===null){
+   if(row.workDefinition===undefined||row.completionPolicy===undefined)throw Error()
+   const executor=readWorkExecutor(row.executor)
+   if(row.roleVersion!==null||executor.kind!=='owner'||executor.grantId!==row.id||executor.grantVersion!==row.configVersion||!isRecord(row.source)||row.source.kind!=='method-reuse')throw Error()
+   readOwnerPlanFields({...definition,executor:{kind:'owner'}})
+   readOwnerPlanGrant(row.ownerGrant,row.source as OwnerPlanSource)
+  }else{
+   if(Object.hasOwn(row,'executor')||Object.hasOwn(row,'ownerGrant')||!positive(row.roleVersion))throw Error()
+   fields(definition,false)
+  }
+  if(!uuid(row.id)||row.ownerId!==owner||!positive(row.version)||!positive(row.configVersion)||!['paused','active','archived'].includes(String(row.state))||!timestamp(row.createdAt)||!timestamp(row.updatedAt))throw Error()
   const archived=row.state==='archived'
   if(archived?(!text(row.archivedReason,4000)||!timestamp(row.archivedAt)):(row.archivedReason!==null||row.archivedAt!==null))throw Error()
-  if(row.workDefinition!==undefined){const work=readPlanWorkDefinition(row.workDefinition);if(work.definitionVersion!==row.configVersion||JSON.stringify(work.completion)!==JSON.stringify(row.completionPolicy))throw invalidResponse()}
-  return row
+  if(row.workDefinition!==undefined){const work=readPlanWorkDefinition(row.workDefinition);if(work.definitionVersion!==row.configVersion||JSON.stringify(work.completion)!==JSON.stringify(row.completionPolicy)||(row.roleId===null)!==(work.authorization.kind==='owner')||work.authorization.kind==='owner'&&work.authorization.grantId!==row.id)throw invalidResponse()}
+  // 固定工具与模型策略只留在宿主内部，页面及模型只读公开计划身份与配置。
+  const {ownerGrant:_ownerGrant,...publicPlan}=row
+  return publicPlan
  }catch{throw invalidResponse()}
 }
 /** 立即运行回包里的 task/run 是完整的任务与运行对象（后端原样回传），这里只取用到的字段做归属核对，多余键不算格式错误。 */
 const pick=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{if(!isRecord(value))throw invalidResponse();return Object.fromEntries(keys.map(key=>[key,value[key]]))}
 function triggerResult(value:unknown,owner:string,request:Record<string,unknown>):Record<string,unknown>{
  try{
-  const row=response(value,['occurrence','task','run']),occurrence=response(row.occurrence,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest','workDefinition']),task=pick(row.task,['id','ownerId']),run=pick(row.run,['id','taskId'])
+  const row=response(value,['occurrence','task','run']),occurrence=response(row.occurrence,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest','workDefinition','reportGroup']),task=pick(row.task,['id','ownerId']),run=pick(row.run,['id','taskId'])
   if(occurrence.ownerId!==owner||occurrence.planId!==request.planId||occurrence.taskRequestId!==request.requestId||!uuid(occurrence.id)||!positive(occurrence.planVersion)||occurrence.planVersion!==request.expectedVersion||!positive(occurrence.configVersion)||occurrence.configVersion!==request.expectedConfigVersion||!uuid(task.id)||task.ownerId!==owner||!uuid(run.id)||run.taskId!==task.id)throw Error()
   return {planId:occurrence.planId,claimId:occurrence.id,taskId:task.id,runId:run.id}
  }catch{throw invalidResponse()}
@@ -121,7 +144,7 @@ export function createConfirmedPlanHandler(owner:string,get:()=>Promise<PlanOper
  return async(endpoint:string,payload:unknown):Promise<unknown>=>{
   if(!text(owner,128))throw new WorkError('teloa/forbidden','需要有效的宿主本人身份。')
   if(!confirmedPlanEndpoints.includes(endpoint as typeof confirmedPlanEndpoints[number]))throw new WorkError('teloa/not-found','未提供此本人确认接口。')
-  if(endpoint==='plans/configure-work-confirmed'){const row=object(payload,['requestId','planId','expectedVersion','expectedConfigVersion','configuration','fields']);if(!uuid(row.requestId)||!uuid(row.planId)||!positive(row.expectedVersion)||!positive(row.expectedConfigVersion))throw invalid();readPlanWorkConfiguration(row.configuration);if(row.fields!==undefined){const fields=object(row.fields,['title','goal','dataScope','delivery']);if(Object.keys(fields).length!==4)throw invalid();taskDefinition({title:fields.title,goal:fields.goal,scope:'general'});if(!text(fields.dataScope,8000)||!text(fields.delivery,8000))throw invalid()}}else if(endpoint==='plans/create-confirmed')createInput(payload);else changeInput(payload)
+  if(endpoint==='plans/configure-work-confirmed'){const row=object(payload,['requestId','planId','expectedVersion','expectedConfigVersion','configuration','fields']);if(!uuid(row.requestId)||!uuid(row.planId)||!positive(row.expectedVersion)||!positive(row.expectedConfigVersion))throw invalid();readPlanWorkConfiguration(row.configuration);if(row.fields!==undefined){const fields=object(row.fields,['title','goal','dataScope','delivery','groupId']);if(Object.hasOwn(fields,'groupId')&&fields.groupId!==null&&!uuid(fields.groupId))throw invalid();if(Object.keys(fields).length!==(Object.hasOwn(fields,'groupId')?5:4))throw invalid();taskDefinition({title:fields.title,goal:fields.goal,scope:'general'});if(!text(fields.dataScope,8000)||!text(fields.delivery,8000))throw invalid()}}else if(endpoint==='plans/create-confirmed')createInput(payload);else changeInput(payload)
   const service=await get(),operation=endpoint==='plans/configure-work-confirmed'?service.configureWorkConfirmed:endpoint==='plans/create-confirmed'?service.createConfirmed:service.changeConfirmed
   if(!operation)throw new WorkError('teloa/dependency-unavailable','本人确认自动结项服务尚未接入。')
   return plan(await operation.call(service,owner,payload),owner)

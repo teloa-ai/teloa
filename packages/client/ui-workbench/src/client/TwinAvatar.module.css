@@ -1,0 +1,6 @@
+/* 分身头像：与原 TeamPage .avatar + .human 同尺寸与配色；缩写居中、角标可溢出容器而不被裁切。 */
+.twin{position:relative;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;border-radius:50%;background:var(--teloa-hover);color:var(--teloa-text);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:1}
+.initials{display:block;max-width:100%;text-align:center;white-space:nowrap;letter-spacing:0}
+.badge{position:absolute;right:-3px;bottom:-3px;box-sizing:content-box;padding:1px;border-radius:3px;background:var(--teloa-background)}
+.sm{flex-basis:22px;width:22px;height:22px;font-size:var(--teloa-font-caption)}
+.sm>.badge{right:-2px;bottom:-2px}

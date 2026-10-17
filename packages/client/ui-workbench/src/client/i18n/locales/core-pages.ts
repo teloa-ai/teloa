@@ -1,3 +1,4 @@
+import {MARKET_APPS_MESSAGE_ROWS} from './market-apps.js'
 import {BUSINESS_DAILY_MESSAGE_ROWS} from './business-daily.js'
 import {BUSINESS_CONFIGURATION_MESSAGE_ROWS} from './business-configuration.js'
 import {BUSINESS_BUILDER_MESSAGE_ROWS} from './business-builder.js'
@@ -64,6 +65,7 @@ import {AUTO_DREAM_MESSAGE_ROWS} from './auto-dream.js'
 import {GROUP_MENTION_MESSAGE_ROWS} from './group-mention.js'
 import {GROUP_ATTACHMENT_MESSAGE_ROWS} from './group-attachment.js'
 import {GROUP_REACTION_MESSAGE_ROWS} from './group-reaction.js'
+import {GROUP_CONTINUITY_MESSAGE_ROWS} from './group-continuity.js'
 import {WEB_ACCESS_MESSAGE_ROWS} from './web-access.js'
 import {MARKET_TAXONOMY_MESSAGE_ROWS} from './market-taxonomy.js'
 import {IM_CHANNELS_MESSAGE_ROWS} from './im-channels.js'
@@ -72,12 +74,77 @@ import {BUNDLED_EXTENSIONS_MESSAGE_ROWS} from './bundled-extensions.js'
 import {APPLICATION_CAPABILITY_MESSAGE_ROWS} from './application-capabilities.js'
 
 /**
- * 聚合词表只需保证每行完整覆盖十种产品语言。显式行类型避免持续追加词表时让声明产物展开成
+ * 新词条定稿简繁英，其余语言保留旧译文或回退英文。显式行类型避免持续追加词表时让声明产物展开成
  * 数千项字面量联合；各专题词表仍保留自己的精确键集并由静态词表测试核对接线。
  */
-type CorePageMessageRow=readonly [string,string,string,string,string,string,string,string,string,string,string]
+type CorePageMessageRow=readonly [string,string,string,string]|readonly [string,string,string,string,string,string,string,string,string,string,string]
 
 export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
+  ...MARKET_APPS_MESSAGE_ROWS,
+  ['p6.planSource.conversation.label','会话中创建','對話中建立','Created in a conversation'],
+  ['p6.planSource.conversation.summary','来自原会话中的工作安排。','來自原對話中的工作安排。','Created from an assignment in the original conversation.'],
+  ['p6.planSource.method.label','成果方法','成果方法','From a work result'],
+  ['p6.planSource.method.version','成果版本 v{version}','成果版本 v{version}','Work result v{version}'],
+  ['p6.planSource.method.artifact','来源成果：','來源成果：','Source result: '],
+  ['p6.planSource.method.summary','基于本人认可的这一版成果创建。','根據本人認可的這一版成果建立。','Created from the version of the work result you accepted.'],
+  ['continuous.ownerAgent','通用 Agent','通用 Agent','General Agent'],
+  ['planWork.ownerBoundary','按本人确认的日程、工具和累计额度执行。','按本人確認的日程、工具及累計額度執行。','Uses the schedule, tools, and cumulative limits you confirmed.'],
+  ['planWork.ownerConfirm','我确认在原本人授权内更新日程、完成条件和累计额度。','我確認在原本人授權內更新日程、完成條件及累計額度。','I confirm these schedule, completion policy, and cumulative limits within my existing authorization.'],
+  ['p6.planSource.conversation.open','打开原会话','開啟原對話','Open original conversation'],
+  ['workbench.hub.overview','总览','總覽','Overview'],
+  ['workbench.create.taskPrompt','帮我创建一项任务。请在这个会话里帮助我明确目标、负责员工和交付要求；先保存，不开始执行。','幫我建立一項任務。請在這個會話裡協助我釐清目標、負責員工和交付要求；先儲存，不開始執行。','Help me create a task in this conversation. Clarify the goal, employee and deliverable; save it without starting execution.'],
+  ['workbench.create.planPrompt','帮我创建一条自动化计划：{goal}。请查找真实在岗员工，缺少关键条件时再询问；按我明确选择的时间和通知方式保存暂停计划，不启用或立即执行。','幫我建立一條自動化計劃：{goal}。請查找實際在職員工，缺少關鍵條件時再詢問；依我明確選擇的時間和通知方式儲存暫停計劃，不啟用或立即執行。','Create an automation plan: {goal}. Find an available employee and ask only for missing essential details. Save it paused using my chosen schedule and notification policy; do not enable or run it.'],
+  ['workbench.create.employee','负责员工：{name}。','負責員工：{name}。','Responsible employee: {name}.'],
+  ['about.editions.version','版本','版本','Edition'],
+  ['about.editions.audience','适用对象','適用對象','Who it is for'],
+  ['about.editions.usage','使用方式','使用方式','How it works'],
+  ['about.editions.community.audience','个人与开发者','個人與開發者','Individuals and developers'],
+  ['about.editions.community.usage','开源、自行部署；运行环境与数据由你管理。','開源、自行部署；執行環境與資料由你管理。','Open source and self-hosted; you manage your installation and data.'],
+  ['about.editions.pro.audience','个人与专业用户','個人與專業用戶','Individuals and professionals'],
+  ['about.editions.pro.usage','Mac 原生工作台，本机执行；手机接续原会话、审批与成果。','Mac 原生工作台，本機執行；手機接續原會話、審批與成果。','A native Mac workspace with local execution; continue conversations, approvals and results on your phone.'],
+  ['about.editions.enterprise.audience','企业与组织','企業與組織','Companies and organizations'],
+  ['about.editions.enterprise.usage','企业云或内网部署；组织成员、共享员工、SSO、权限与审计。','企業雲端或內網部署；組織成員、共用員工、SSO、權限與審計。','Deploy in company clouds or private networks, with organization members, shared employees, SSO, permissions and audit.'],
+  ['task.detail.groupSourceLoading','正在读取来源消息…','正在讀取來源訊息…','Loading the source message…'],
+  ['task.detail.groupSourceUnavailable','来源消息暂时无法读取，请刷新任务列表重试。','來源訊息暫時無法讀取，請重新整理任務清單再試。','Unable to read the source message. Refresh the task list to retry.'],
+  ['task.detail.groupReply','回应群里的资料或附件。','回應群組裡的資料或附件。','Respond to the group materials or attachments.'],
+ ['group.materials.back','返回群讨论','返回群討論','Back to group discussion'],
+ ['group.members.search','搜索姓名或职责','搜尋姓名或職責','Search name or responsibilities'],
+ ['group.members.chat','对话','對話','Chat'],
+ ['group.members.chatAria','与{name}对话','與{name}對話','Chat with {name}'],
+ ['group.members.chatFailed','暂时无法打开该员工的会话，请重试。','暫時無法開啟這位員工的對話，請重試。','Unable to open this employee’s conversation. Try again.'],
+ ['group.members.grant','授权','授權','Access'],
+ ['group.members.grantAria','{name}的本群授权','{name}的本群組授權','{name}’s access in this group'],
+ ['group.members.grantUnknown','授权待核对','授權待核對','Access not yet verified'],
+ ['group.members.notServing','不服务本群业务','不服務本群組業務','Not part of this group’s business'],
+ ['group.members.inactive','不在岗','不在職','Not active'],
+ ['group.members.notServingHint','可加入，但不能在此业务工作','可加入，但不能在此業務工作','Can join, but can’t work in this business'],
+ ['group.grant.notServing','{name}不服务本群业务。可使用跨业务协作群，或在员工档案中调整服务业务。','{name}不服務本群組業務。可使用跨業務協作群組，或在員工檔案中調整服務業務。','{name} doesn’t serve this business. Use a cross-business group or update their business coverage in their profile.'],
+ ['group.grant.inactive','{name}当前不在岗，不能获得本群授权。','{name}目前不在職，不能獲得本群組授權。','{name} isn’t active, so they can’t get access in this group.'],
+ ['group.grant.openProfile','打开员工档案','開啟員工檔案','Open employee profile'],
+ ['group.scope.crossBusiness','跨业务协作（通用）','跨業務協作（通用）','Cross-business (General)'],
+ ['group.scope.crossBusinessHint','所有业务的员工都能在此群协作。','所有業務的員工都能在此群組協作。','Employees from any business can work in this group.'],
+ ['group.scope.dedicatedHint','只有服务该业务的员工能在此群工作。','只有服務該業務的員工能在此群組工作。','Only employees in this business can work in this group.'],
+ ['group.members.chatHint','对话进入员工的原单聊；本群草稿保留。','對話會開啟員工原來的單聊；本群組草稿會保留。','Chat opens the employee’s original conversation. Your group draft is kept.'],
+ ['group.settings.purpose','群说明','群組說明','Description'],
+ ['group.directory.manage','群操作：{name}','群組操作：{name}','Group actions: {name}'],
+ ['group.materials.count','{count} 项资料','{count} 項資料','{count} shared resources'],
+ ['group.materials.add','添加群资料','新增群資料','Add group resources'],
+ ['group.materials.search','搜索群资料','搜尋群資料','Search group resources'],
+ ['group.materials.accessHelp','员工如何使用这些资料？','員工如何使用這些資料？','How do employees use these resources?'],
+ ['group.materials.accessHelpBody','在成员的授权中选择可使用的群资料；知识库、技能和连接沿用员工已有配置。','在成員的授權中選擇可使用的群組資料；知識庫、技能和連接沿用員工已有設定。','Select accessible group resources in member permissions. Knowledge, skills and connections follow each employee’s existing configuration.'],
+ ['group.materials.openMembers','查看成员与授权','查看成員與授權','View members and permissions'],
+ ['group.materials.reference','引用{name}','引用{name}','Reference {name}'],
+ ['group.materials.more','资料操作：{name}','資料操作：{name}','Resource actions: {name}'],
+ ['group.materials.edit','修订{name}','修訂{name}','Edit {name}'],
+ ['group.materials.noMatch','没有匹配的资料','沒有符合的資料','No matching resources'],
+ ['group.materials.scopeHint','这里只展示当前群共享的资料；引用会带入当前讨论，员工授权仍单独设置。','這裡只顯示目前群組共用的資料；引用會帶入目前討論，員工授權仍個別設定。','Only resources shared with this group appear here. Referencing adds them to the current discussion; employee access is configured separately.'],
+ ['group.header.more','更多群操作','更多群組操作','More group actions'],
+ ['group.header.newTask','新建群任务','新增群組任務','New group task'],
+ ['group.panel.start','开始','開始','Start'],
+ ['group.panel.members','成员','成員','Members'],
+ ['group.panel.startHint','查看当前群的工作、资料和成员','查看目前群組的工作、資料和成員','Explore this group’s work, resources and members'],
+  ['conversationDirectory.employeeTitle','与{name}对话','與{name}對話','Chat with {name}'],
+  ['project.group.originalLink','由原群关联','由原群關聯','Linked from the original group'],
   ...APPLICATION_CAPABILITY_MESSAGE_ROWS,
   ...BUSINESS_CONFIGURATION_MESSAGE_ROWS,
   ...BUSINESS_DAILY_MESSAGE_ROWS,
@@ -94,6 +161,7 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['navigation.v2.business','业务','業務','Business','業務','업무','Nghiệp vụ','Negocio','Activité','Geschäft','Negócio'],
   ['navigation.v2.library','资料','資料','Library','資料','자료','Tài liệu','Biblioteca','Bibliothèque','Bibliothek','Biblioteca'],
   ['navigation.v2.settings','设置','設定','Settings','設定','설정','Cài đặt','Ajustes','Réglages','Einstellungen','Definições'],
+  ['navigation.group.work','工作','工作','Work','Work','Work','Work','Work','Work','Work','Work'],
   ['navigation.group.team','团队与业务','團隊與業務','Team and business','チームと業務','팀과 업무','Nhóm và nghiệp vụ','Equipo y negocio','Équipe et activité','Team und Geschäft','Equipe e negócios'],
   ['navigation.group.resources','资源','資源','Resources','リソース','리소스','Tài nguyên','Recursos','Ressources','Ressourcen','Recursos'],
   ['continuous.v2.title','自动化','自動化','Automations','自動化','자동화','Tự động hóa','Automatizaciones','Automatisations','Automatisierungen','Automações'],
@@ -102,12 +170,26 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['continuous.empty.noMatch','没有匹配的结果','沒有符合的結果','No matching results','一致する結果はありません','일치하는 결과가 없습니다','Không có kết quả phù hợp','No hay resultados coincidentes','Aucun résultat correspondant','Keine passenden Ergebnisse','Nenhum resultado correspondente'],
   ['continuous.empty.changeFilters','调整搜索词或筛选条件，查看其他结果。','調整搜尋詞或篩選條件，查看其他結果。','Try another search or adjust the filters.','検索語や絞り込み条件を変更してください。','검색어나 필터를 변경해 보세요.','Thử từ khóa khác hoặc điều chỉnh bộ lọc.','Prueba otra búsqueda o ajusta los filtros.','Essayez une autre recherche ou ajustez les filtres.','Versuchen Sie einen anderen Suchbegriff oder passen Sie die Filter an.','Tente outra pesquisa ou ajuste os filtros.'],
   ['continuous.v2.description','按时间或事件执行。每次执行会创建任务并记录结果；结果需要继续处理时，可创建跟进任务。','按時間或事件執行。每次執行會建立任務並記錄結果；結果需要繼續處理時，可建立跟進任務。','Run on a schedule or event. Each run creates a task and records its result; follow-up tasks can continue work on the result.','日時やイベントに応じて実行します。毎回タスクを作成して結果を記録し、必要に応じてフォローアップのタスクで処理を続けられます。','시간이나 이벤트에 따라 실행합니다. 매 실행마다 작업을 만들고 결과를 기록하며, 추가 처리가 필요하면 후속 작업을 만들 수 있습니다.','Chạy theo lịch hoặc sự kiện. Mỗi lần chạy tạo một nhiệm vụ và lưu kết quả; có thể tạo nhiệm vụ tiếp nối để xử lý kết quả.','Se ejecuta por horario o evento. Cada ejecución crea una tarea y registra el resultado; las tareas de seguimiento pueden continuar su tratamiento.','Exécution selon un horaire ou un événement. Chaque exécution crée une tâche et enregistre son résultat ; des tâches de suivi peuvent poursuivre le traitement.','Ausführung nach Zeitplan oder Ereignis. Jeder Lauf erstellt eine Aufgabe und speichert das Ergebnis; Folgeaufgaben können die Bearbeitung fortsetzen.','Execução por horário ou evento. Cada execução cria uma tarefa e regista o resultado; tarefas de seguimento podem continuar o tratamento.'],
-  ['attention.v2.description','查看待审批、待补充资料和待核对的事项，并决定下一步处理。','查看待審批、待補充資料和待核對的事項，並決定下一步處理。','Review items awaiting approval, materials, or verification and decide what to do next.','承認、資料追加、確認が必要な項目を確認し、次の対応を決めます。','승인, 자료 보완 또는 확인이 필요한 항목을 보고 다음 조치를 결정하세요.','Xem các mục chờ phê duyệt, bổ sung tài liệu hoặc xác minh và quyết định bước xử lý tiếp theo.','Revisa los elementos pendientes de aprobación, documentos o verificación y decide el siguiente paso.','Consultez les éléments en attente d’approbation, de documents ou de vérification et décidez de la suite.','Prüfen Sie Einträge, die auf Freigabe, Unterlagen oder Prüfung warten, und entscheiden Sie über den nächsten Schritt.','Reveja os itens que aguardam aprovação, documentos ou verificação e decida o próximo passo.'],
   ['attention.v2.filter','按类型查看','按類型查看','View by type','種類で表示','유형별 보기','Xem theo loại','Ver por tipo','Afficher par type','Nach Typ anzeigen','Ver por tipo'],
   ['attention.v2.eyebrow','待处理事项','待處理事項','Pending items','対応待ちの項目','처리 대기 항목','Mục cần xử lý','Elementos pendientes','Éléments à traiter','Offene Einträge','Itens pendentes'],
   ['attention.v2.count','{count} 项','{count} 項','{count} items','{count} 件','{count}개','{count} mục','{count} elementos','{count} éléments','{count} Punkte','{count} itens'],
   ['attention.v2.search','搜索名称、对象编号或产物','搜尋名稱、物件編號或產物','Search names, object IDs, or outputs','名前、対象ID、または成果物を検索','이름, 객체 ID 또는 결과물 검색','Tìm theo tên, mã đối tượng hoặc kết quả','Busca nombres, ID de objeto o resultados','Recherchez un nom, un identifiant ou un résultat','Namen, Objekt-IDs oder Ergebnisse suchen','Pesquise nomes, IDs de objetos ou resultados'],
   ['attention.partial','部分待办暂时无法加载，列表可能不完整。请重试。','部分待辦暫時無法載入，清單可能不完整。請重試。','Some pending items could not be loaded. The list may be incomplete. Please retry.','一部の対応事項を読み込めませんでした。一覧が不完全な可能性があります。再試行してください。','일부 할 일을 불러올 수 없어 목록이 불완전할 수 있습니다. 다시 시도하세요.','Không tải được một số mục cần xử lý. Danh sách có thể chưa đầy đủ. Hãy thử lại.','No se pudieron cargar algunos pendientes. La lista puede estar incompleta. Vuelve a intentarlo.','Certains éléments à traiter n’ont pas pu être chargés. La liste peut être incomplète. Réessayez.','Einige offene Einträge konnten nicht geladen werden. Die Liste ist möglicherweise unvollständig. Versuchen Sie es erneut.','Não foi possível carregar alguns itens pendentes. A lista pode estar incompleta. Tente novamente.'],
+  ['attention.work.reason.businessChangeReview','业务修改等待核对与确认。','業務修改等待核對與確認。','Review and confirm the business changes.'],
+  ['attention.work.reason.businessChangeStale','业务修改的依据已变化，请打开原修改重新核对。','業務修改的依據已變更，請開啟原修改重新核對。','The basis for these changes has changed. Open the original changes to review them again.'],
+  ['attention.work.reason.businessSyncFailed','资料同步失败，请打开原连接查看失败与恢复方式。','資料同步失敗，請開啟原連接查看失敗及恢復方式。','Data sync failed. Open the original connection to review the failure and recovery options.'],
+  ['attention.work.reason.pageCreateDraft','原草稿等待你查看与确认，尚未采用。','原草稿等待你查看與確認，尚未採用。','The original draft awaits your review and confirmation. It has not been adopted.'],
+  ['attention.work.source.businessChange','业务修改','業務修改','Business changes'],
+  ['attention.work.title.businessChange','业务修改','業務修改','Business changes'],
+  ['attention.work.title.businessSync','同步失败','同步失敗','Sync failed'],
+  ['attention.work.source.businessSync','资料同步','資料同步','Data sync'],
+  ['attention.work.source.pageDraft','待确认草稿','待確認草稿','Draft to review'],
+  ['attention.work.more','继续载入','繼續載入','Load more'],
+  ['attention.work.moreHint','当前列表尚未完整，请继续载入或重试。','目前清單尚未完整，請繼續載入或重試。','The list is incomplete. Load more or retry.'],
+  ['attention.work.homeIncomplete','待办尚未完整，打开「需要你」继续载入或重试。','待辦尚未完整，開啟「需要你」繼續載入或重試。','The list is incomplete. Open Needs your attention to load more or retry.'],
+  ['attention.work.next.businessChange','打开原业务修改，核对当前依据与版本后再决定。','開啟原業務修改，核對目前依據與版本後再決定。','Open the original business changes and check the current basis and version before deciding.'],
+  ['attention.work.next.businessSync','打开原资料连接，查看本次失败与可用恢复方式。','開啟原資料連接，查看本次失敗及可用恢復方式。','Open the original data connection to inspect this failure and its available recovery options.'],
+  ['attention.work.next.pageDraft','打开原草稿查看内容，确认后才采用。','開啟原草稿查看內容，確認後才採用。','Open the original draft to review its content. Adopt it only after confirming.'],
   ['attention.partial.retry','重试','重試','Retry','再試行','다시 시도','Thử lại','Reintentar','Réessayer','Erneut versuchen','Tentar novamente'],
   ['attention.count.partial','至少 {count} 项','至少 {count} 項','At least {count} items','少なくとも{count}件','최소 {count}개','Ít nhất {count} mục','Al menos {count} elementos','Au moins {count} éléments','Mindestens {count} Punkte','Pelo menos {count} itens'],
   ['attention.empty.none','没有需要你处理的事项','沒有需要你處理的事項','Nothing needs your action','対応が必要な項目はありません','처리할 항목이 없습니다','Không có mục nào cần bạn xử lý','No hay nada que requiera tu acción','Aucun élément ne nécessite votre intervention','Nichts erfordert Ihre Aktion','Nada precisa da sua ação'],
@@ -120,7 +202,6 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['team.refresh','刷新已保存员工','重新整理已儲存員工','Refresh saved employees','保存済みの従業員を更新','저장된 직원 새로고침','Làm mới nhân viên đã lưu','Actualizar empleados guardados','Actualiser les employés enregistrés','Gespeicherte Mitarbeiter aktualisieren','Atualizar funcionários guardados'],
   ['team.stateFilter','员工状态','員工狀態','Employee status','従業員の状態','직원 상태','Trạng thái nhân viên','Estado del empleado','État du employé','Status der Mitarbeiter','Estado do funcionário'],
   ['team.landingTitle','员工管理','員工管理','Employee management','担当者の管理','직원 관리','Quản lý nhân viên','Gestión de empleados','Gestion des employés','Mitarbeiterverwaltung','Gestão de funcionários'],
-  ['team.landingDescription','查看员工职责、授权范围和任务，管理在岗状态。分身用于代拟；暂停或退役后仍可查看历史记录。','查看員工職責、授權範圍和任務，管理在崗狀態。分身用於代擬；暫停或退役後仍可查看歷史記錄。','View employees’ duties, permissions, and tasks, and manage their status. Your double drafts on your behalf. History remains available after pausing or retiring an employee.','担当者の職責、権限、タスクを確認し、稼働状態を管理します。分身は下書きを作成します。一時停止や退役後も履歴を確認できます。','직원의 업무, 권한 및 작업을 확인하고 활동 상태를 관리하세요. 분신은 초안을 작성합니다. 직원을 일시 중지하거나 퇴역시킨 후에도 기록을 볼 수 있습니다.','Xem trách nhiệm, quyền và nhiệm vụ của nhân viên, quản lý trạng thái hoạt động. Bản sao soạn thảo giúp bạn. Vẫn xem được lịch sử sau khi tạm dừng hoặc cho nghỉ.','Consulta las responsabilidades, los permisos y las tareas de los empleados y gestiona su estado. Tu doble prepara borradores. El historial sigue disponible tras pausar o retirar a un empleado.','Consultez les responsabilités, autorisations et tâches des employés et gérez leur statut. Votre double prépare les brouillons. L’historique reste disponible après la suspension ou le retrait d’un employé.','Sehen Sie Aufgaben, Berechtigungen und Tätigkeiten der Mitarbeiter an und verwalten Sie ihren Status. Ihr Doppelgänger erstellt Entwürfe. Der Verlauf bleibt nach dem Pausieren oder Stilllegen verfügbar.','Veja as responsabilidades, permissões e tarefas dos funcionários e gira o estado. O seu duplo prepara rascunhos. O histórico continua disponível após pausar ou retirar um funcionário.'],
   ['task.directory.attention','待办目录','待辦目錄','Attention directory','要対応一覧','확인할 항목','Danh mục cần xử lý','Directorio pendiente','Répertoire des éléments à traiter','Offene Punkte','Diretório pendente'],
   ['task.directory.all','任务目录','任務目錄','Task directory','タスク一覧','작업 목록','Danh mục nhiệm vụ','Directorio de tareas','Répertoire des tâches','Aufgabenverzeichnis','Diretório de tarefas'],
   ['task.scopeFilter','任务业务范围','任務業務範圍','Task business scope','タスクの業務範囲','작업 업무 범위','Phạm vi nghiệp vụ của nhiệm vụ','Ámbito de la tarea','Périmètre métier de la tâche','Aufgabenbereich','Âmbito da tarefa'],
@@ -159,7 +240,7 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['attention.recovery.industryLoad','行业模板加载尚待核对。','行業範本載入尚待核對。','The industry template load still needs review.','業界テンプレートの読み込みは確認待ちです。','산업 템플릿 로드를 확인해야 합니다.','Việc tải mẫu ngành vẫn cần được xác minh.','La carga de la plantilla de industria aún requiere revisión.','Le chargement du modèle sectoriel doit encore être vérifié.','Das Laden der Branchenvorlage muss noch geprüft werden.','O carregamento do modelo setorial ainda precisa de revisão.'],
   ['attention.recovery.skillInstall','技能安装尚待核对。','技能安裝尚待核對。','The Skill installation still needs review.','スキルのインストールは確認待ちです。','스킬 설치를 확인해야 합니다.','Việc cài đặt kỹ năng vẫn cần được xác minh.','La instalación de habilidad aún requiere revisión.','L’installation de la compétence doit encore être vérifiée.','Die Skill-Installation muss noch geprüft werden.','A instalação da competência ainda precisa de revisão.'],
   ['attention.recovery.serverRequest','一项已保存的工作请求尚待核对。','一項已儲存的工作請求尚待核對。','A saved work request still needs review.','保存済みの作業リクエストを確認する必要があります。','저장된 작업 요청을 확인해야 합니다.','Một yêu cầu công việc đã lưu vẫn cần được xác minh.','Una solicitud de trabajo guardada aún requiere revisión.','Une demande de travail enregistrée doit encore être vérifiée.','Eine gespeicherte Arbeitsanfrage muss noch geprüft werden.','Um pedido de trabalho guardado ainda precisa de revisão.'],
-  ['attention.recovery.ackUnknown','原请求已核对，但尚未收到答复。请以刷新后的目录为准。','原請求已核對，但尚未收到答覆。請以重新整理後的目錄為準。','The original request was recovered, but no response has been received yet. Check the refreshed list.','元のリクエストは復元されましたが、まだ応答がありません。更新後の一覧をご確認ください。','원래 요청은 복구되었지만 아직 회신을 받지 못했습니다. 새로고침된 목록을 확인하세요.','Yêu cầu gốc đã được khôi phục nhưng chưa nhận được phản hồi. Hãy kiểm tra danh sách đã cập nhật.','La solicitud original se ha recuperado, pero aún no se ha recibido respuesta. Consulta la lista actualizada.','La demande initiale a été récupérée, mais aucune réponse n’a encore été reçue. Consultez la liste actualisée.','Die ursprüngliche Anfrage wurde wiederhergestellt, eine Rückmeldung steht jedoch noch aus. Prüfen Sie die aktualisierte Liste.','O pedido original foi recuperado, mas ainda não foi recebida resposta. Consulte a lista atualizada.'],
+  ['attention.recovery.ackUnknown','原操作已返回结果，但收讫确认尚待核对。请以刷新后的目录为准。','原操作已回傳結果，但收訖確認仍待核對。請以重新整理後的目錄為準。','The original operation returned a result, but its acknowledgement is uncertain. Check the refreshed list.','元のリクエストは復元されましたが、まだ応答がありません。更新後の一覧をご確認ください。','원래 요청은 복구되었지만 아직 회신을 받지 못했습니다. 새로고침된 목록을 확인하세요.','Yêu cầu gốc đã được khôi phục nhưng chưa nhận được phản hồi. Hãy kiểm tra danh sách đã cập nhật.','La solicitud original se ha recuperado, pero aún no se ha recibido respuesta. Consulta la lista actualizada.','La demande initiale a été récupérée, mais aucune réponse n’a encore été reçue. Consultez la liste actualisée.','Die ursprüngliche Anfrage wurde wiederhergestellt, eine Rückmeldung steht jedoch noch aus. Prüfen Sie die aktualisierte Liste.','O pedido original foi recuperado, mas ainda não foi recebida resposta. Consulte a lista atualizada.'],
   ['attention.recovery.serverTitle','已保存的工作请求','已儲存的工作請求','Saved work request','保存済みの作業リクエスト','저장된 작업 요청','Yêu cầu công việc đã lưu','Solicitud de trabajo guardada','Demande de travail enregistrée','Gespeicherte Arbeitsanfrage','Pedido de trabalho guardado'],
   ['attention.recovery.localTime','待核对','待核對','Awaiting review','確認待ち','검토 대기','Đang chờ xác minh','Pendiente de revisión','En attente de vérification','Prüfung ausstehend','A aguardar revisão'],
   ['attention.persistence.serverRecovery','已保存','已儲存','Saved','保存済み','저장됨','Đã lưu','Guardada','Enregistrée','Gespeichert','Guardado'],
@@ -170,7 +251,7 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['attention.source.binding','能力绑定','能力綁定','Capability binding','機能バインド','기능 바인딩','Liên kết năng lực','Vinculación de capacidad','Association de capacité','Fähigkeitsbindung','Vinculação de capacidade'],
   ['attention.source.installation','安装','安裝','Installation','インストール','설치','Cài đặt','Instalación','Installation','Installation','Instalação'],
   ['attention.source.localRecovery','本机待核对','本機待核對','Local review needed','ローカル確認待ち','로컬 확인 대기','Cần xác minh cục bộ','Revisión local pendiente','Vérification locale requise','Lokale Prüfung erforderlich','Revisão local pendente'],
-  ['attention.source.serverRecovery','已保存待核对','已儲存待核對','Saved review needed','保存済みの確認待ち','저장된 검토 대기','Cần xác minh đã lưu','Revisión guardada pendiente','Vérification enregistrée requise','Gespeicherte Prüfung ausstehend','Revisão guardada pendente'],
+  ['attention.source.serverRecovery','原工作请求','原工作請求','Original work request','保存済みの確認待ち','저장된 검토 대기','Cần xác minh đã lưu','Revisión guardada pendiente','Vérification enregistrée requise','Gespeicherte Prüfung ausstehend','Revisão guardada pendente'],
   ['continuous.default.dataScope','本次工作明确提供并获准读取的资料。','本次工作明確提供並獲准讀取的資料。','Materials explicitly provided and approved for this work.','この作業で明示的に提供され、参照が許可された資料。','이번 작업에 명시적으로 제공되고 읽기 승인을 받은 자료입니다.','Tài liệu được cung cấp rõ ràng và cho phép đọc trong công việc này.','Material proporcionado explícitamente y autorizado para este trabajo.','Documents explicitement fournis et autorisés pour ce travail.','Für diese Arbeit ausdrücklich bereitgestellte und freigegebene Unterlagen.','Materiais fornecidos explicitamente e autorizados para este trabalho.'],
   ['continuous.default.delivery','可审阅工作成果与来源说明。','可審閱工作成果與來源說明。','Reviewable work output with source notes.','確認できる作業成果と出典の説明。','검토 가능한 작업 결과와 출처 설명입니다.','Kết quả có thể xem xét kèm mô tả nguồn.','Resultado revisable con notas de procedencia.','Résultat vérifiable accompagné des sources.','Prüfbares Arbeitsergebnis mit Quellenangaben.','Resultado verificável com indicação das fontes.'],
   ['continuous.saved.description','查看已保存的自动化及其执行记录','查看已儲存的自動化及其執行記錄','View saved automations and their run history','保存済みの自動化と実行履歴を確認','저장된 자동화 및 실행 기록 보기','Xem tự động hóa đã lưu và lịch sử chạy','Ver las automatizaciones guardadas y su historial','Consulter les automatisations enregistrées et leur historique','Gespeicherte Automatisierungen und ihren Verlauf ansehen','Ver automações guardadas e o seu histórico'],
@@ -185,6 +266,8 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...PROJECT_WORKSPACE_MESSAGE_ROWS,
   ...ARTIFACT_PANEL_MESSAGE_ROWS,
   ...CONVERSATION_DIALOG_MESSAGE_ROWS,
+  ['conversationDialog.draftNotCarried','草稿含引用、附件或正在提交，暂不能带到其他执行位置；原草稿已保留。可移除引用和附件或等提交完成后再更换。','草稿含引用、附件或正在傳送，暫時無法帶到其他執行位置；原草稿已保留。可移除引用和附件或等傳送完成後再更換。','This draft has references, attachments, or a send in progress, so it can’t move to another execution location yet. Your draft is kept. Remove references and attachments, or wait for the send to finish, then change location.'],
+  ['conversationDialog.draftKept','草稿没有带到新的执行位置，已回到原会话并保留草稿。','草稿沒有帶到新的執行位置，已回到原會話並保留草稿。','The draft didn’t move to the new execution location. You’re back in the original conversation with your draft kept.'],
   ...APPROVAL_CARD_MESSAGE_ROWS,
   ...KNOWLEDGE_DIRECTORY_MESSAGE_ROWS,
   ...KNOWLEDGE_DOCUMENT_MESSAGE_ROWS,
@@ -233,6 +316,7 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...GROUP_MENTION_MESSAGE_ROWS,
   ...GROUP_ATTACHMENT_MESSAGE_ROWS,
   ...GROUP_REACTION_MESSAGE_ROWS,
+  ...GROUP_CONTINUITY_MESSAGE_ROWS,
   ...WEB_ACCESS_MESSAGE_ROWS,
   ...MARKET_TAXONOMY_MESSAGE_ROWS,
   ...IM_CHANNELS_MESSAGE_ROWS,
@@ -246,5 +330,5 @@ const localeIndexes = {'zh-CN':1,'zh-Hant':2,en:3,ja:4,ko:5,vi:6,es:7,fr:8,de:9,
 
 export const corePageMessages = Object.fromEntries(Object.entries(localeIndexes).map(([locale,index])=>[
   locale,
-  Object.fromEntries(CORE_PAGE_MESSAGE_ROWS.map(row=>[row[0],row[index]])),
+  Object.fromEntries(CORE_PAGE_MESSAGE_ROWS.map(row=>[row[0],row[index]??row[3]])),
 ])) as Readonly<Record<keyof typeof localeIndexes,Readonly<Record<CorePageMessageKey,string>>>>

@@ -4,6 +4,7 @@ import {WorkError,isRecord,readEmbeddingPreparationState,readRetrievalSearchResu
 import type {Embedder,ResourceActor,RetrievalIndexService} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {captureRetrievalPreparation,sameRetrievalPreparation,readRetrievalPrepareInput,readRetrievalPreparationDetails,type RetrievalPreparationDetails} from '@teloa/contract'
+import {retrievalCitationPath} from '@teloa/contract'
 
 /** 公开检索工具名（规格 §7.1）；岗位授权候选与 `task-tool-guard` 的清单都按这个名字。 */
 export const knowledgeSearchToolName='teloa_knowledge_search'
@@ -268,7 +269,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  }
  ctx.tools.register(defineTool({
   name:knowledgeSearchToolName,
-  description:'回答需要本人工作资料中的信息时，主动使用此工具检索已加入且当前会话有权读取的资料。资料更新后自动整理，再返回带原文位置（行、字符区间、标题路径）的有界摘录与覆盖范围。coverage.searched 是本次实际检索的资料，coverage.pending 是已加入但尚不可检索的资料；如有 pending，应如实说明覆盖范围，不能把尚未检索的资料当成已核实。只接受 query（1–500 字）与 limit（1–8，默认 5），不能指定资料、范围或路径。',
+  description:'回答需要本人工作资料中的信息时，主动使用此工具检索已加入且当前会话有权读取的资料。资料更新后自动整理，再返回带原文位置（行、字符区间、标题路径）的有界摘录与覆盖范围。引用来源时使用 [资料标题](citationPath)，逐字使用该命中的 citationPath，不把 sourceId、resourceId 或本机路径当链接。coverage.searched 是本次实际检索的资料，coverage.pending 是已加入但尚不可检索的资料；如有 pending，应如实说明覆盖范围，不能把尚未检索的资料当成已核实。只接受 query（1–500 字）与 limit（1–8，默认 5），不能指定资料、范围或路径。',
   parameters:{query:{type:'string',required:true},limit:{type:'integer'}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
@@ -289,7 +290,8 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
    const result=await retrieval.search(actor,targetScopes,input,embedder,exec.signal,knowledgeIds)
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
    exec.signal.throwIfAborted()
-   return JSON.stringify(readRetrievalSearchResult(result))
+   const verified=readRetrievalSearchResult(result)
+   return JSON.stringify(readRetrievalSearchResult({...verified,results:verified.results.map(hit=>({...hit,citationPath:retrievalCitationPath(exec.agent!.session.id,hit)}))}))
   },
  }))
  const removePreExecute=ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{

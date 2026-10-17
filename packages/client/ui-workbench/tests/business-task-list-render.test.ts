@@ -44,7 +44,7 @@ test('同一正式业务页区分未执行、Run结束待验收与固定版本�
 
 test('无负责人/不可见岗位诚实展示，不把当前业务负责人冒充任务负责人',()=>{
  assert.match(render(ready),/role-one/)
- assert.match(render({...ready,items:[{task:{...task,assigneeRoleId:null,assigneeRoleVersion:null},source:null,progress:null,completion:null}]}),/还没有负责人/)
+ assert.match(render({...ready,items:[{task:{...task,assigneeRoleId:null,assigneeRoleVersion:null},source:null,progress:null,completion:null}]}),/尚未指派 AI 员工/)
 })
 
 test('只有真实来源且宿主提供导航才显示对象入口',()=>{

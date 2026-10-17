@@ -1,5 +1,6 @@
+import light from './light-actions.module.css'
 import { openDialog } from './dialog-focus.js'
-import { ArrowRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUpRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { bindingFormKey, type BindingForms, type BindingForm } from './capability-work.js'
 import { type BindingChange, type BindingFields, type CapabilityBinding, type CapabilityPreview } from './capability-preview.js'
@@ -57,7 +58,7 @@ function BindingDetail({ binding, ...props }: CapabilityBindingsProps & { bindin
   const act = (change: BindingChange) => { try { props.change({...change,now:new Date().toISOString()}); if(change.type==='check')props.clearForm(binding.id,versionNumber);setError(''); return true } catch (error) { setError(localizeWorkError(locale,error)); return false } }
   const command = { id: binding.id, expectedRevision: binding.revision, now: new Date().toISOString() }
   return <article className={css.detail} aria-label={t('capability.detail.aria')}>
-    <div className={base.buttons}><button type="button" onClick={() => props.select(null)}>{t('capability.directory.back')}</button><button type="button" onClick={props.attention}>{t('capability.attention.back')}</button></div><h2>{binding.title}</h2><p>{availabilityLabel(binding,props.targets,t)}</p><small>{binding.id} · {t('capability.revision',{revision:binding.revision})}</small>
+    <div className={base.buttons}><button type="button" className={light.back} onClick={() => props.select(null)}><ArrowLeft size={14} aria-hidden/>{t('capability.directory.back')}</button><button type="button" className={light.link} onClick={props.attention}>{t('capability.attention.back')}<ArrowUpRight size={13} aria-hidden/></button></div><h2>{binding.title}</h2><p>{availabilityLabel(binding,props.targets,t)}</p><small>{binding.id} · {t('capability.revision',{revision:binding.revision})}</small>
     {error && <p role="alert" className={css.notice}>{error}</p>}
     <div className={css.tags}><span>{marketTargetKindLabel(t,binding.target.kind)} · {binding.target.title}</span><span>{binding.target.scope}</span><span>{t('capability.target.version')} v{binding.target.version}</span><span>{t('capability.source')} {binding.source.itemVersion}</span></div>
     <div className={css.columns}><div><section className={css.sheet}>

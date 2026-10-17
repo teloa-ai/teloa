@@ -7,6 +7,7 @@ import type {BusinessDefinitionBundle,BusinessDefinitionSourceReader} from './bu
 import type {BusinessSyncTrigger} from './business-sync.ts'
 import {businessDashboardMigrationLock,businessWidgetDefinitionHash,businessWidgetResultOf,type BusinessWidgetComputeContext,type BusinessWidgetService} from './business-widgets.ts'
 import {assertScheduledSync,lockBusinessRuntime,scheduledSyncAllowed} from './business-runtime.ts'
+import {businessDataRevision} from './business-data.ts'
 
 export type BusinessDashboardActor={ownerId:string;scopeIds:string[]}
 
@@ -107,8 +108,8 @@ export class BusinessDashboardService{
  private readonly pool:Pool
  private readonly identity:{id:()=>string;now:()=>string}
  private readonly definitions:Pick<BusinessDefinitionSourceReader,'forScope'>
- private readonly widgets:Pick<BusinessWidgetService,'compute'|'persist'|'latest'>
- constructor(pool:Pool,identity:{id:()=>string;now:()=>string},definitions:Pick<BusinessDefinitionSourceReader,'forScope'>,widgets:Pick<BusinessWidgetService,'compute'|'persist'|'latest'>){
+ private readonly widgets:Pick<BusinessWidgetService,'compute'|'persist'|'latest'|'latestSuccessful'>
+ constructor(pool:Pool,identity:{id:()=>string;now:()=>string},definitions:Pick<BusinessDefinitionSourceReader,'forScope'>,widgets:Pick<BusinessWidgetService,'compute'|'persist'|'latest'|'latestSuccessful'>){
   this.pool=pool;this.identity=identity;this.definitions=definitions;this.widgets=widgets
  }
 
@@ -176,11 +177,16 @@ export class BusinessDashboardService{
      await lockBusinessRuntime(db,owner,scope,'shared')
      await assertScheduledSync(db,owner,scope)
     }
+    const revision=await businessDataRevision(db,owner,scope)
+    const consumed=(await db.query('select widget_id,time_range,revision from teloa_business_dashboard_data_revisions where owner_id=$1 and scope_id=$2 and dashboard_id=$3',[owner,scope,dashboardId])).rows
     let targets=options.widgetIds===undefined?located.widgets:located.widgets.filter(widget=>options.widgetIds!.includes(widget.id))
     // 非默认范围的按需刷新：未接入组件的结果不随范围变，已有 all 结果即直接复用、不重算；还没有才补算一次。
     if(located.dashboard.filters&&selected!==defaultRange(located.dashboard)){
      const reusable=await this.widgets.latest(db,owner,scope,dashboardId,new Map(targets.filter(widget=>!widget.timeFilter).map(widget=>[widget.id,'all'] as const)))
-     targets=targets.filter(widget=>widget.timeFilter||!reusable.has(widget.id))
+     targets=targets.filter(widget=>{
+      const result=reusable.get(widget.id),used=consumed.find(row=>row.widget_id===widget.id&&row.time_range==='all')
+      return widget.timeFilter||!result||result.status!=='ok'||result.definitionHash!==businessWidgetDefinitionHash(widget)||BigInt(String(used?.revision??'0'))<BigInt(revision)
+     })
     }
     const ctx:BusinessWidgetComputeContext={
      ownerId:owner,scope,now:this.identity.now(),db,
@@ -192,6 +198,11 @@ export class BusinessDashboardService{
      const timeRange=widgetRange(located.dashboard,widget,selected)
      const result=await this.widgets.compute(ctx,widget,undefined,signal,timeRange)
      await this.widgets.persist(db,owner,scope,dashboardId,result,options.trigger??'manual',timeRange)
+     // 失败保留未消费版本，并持久化组件退避；不会触发每个调度 tick 重算整板。
+     const retryAfter=result.status==='ok'?null:new Date(Date.parse(ctx.now)+60_000).toISOString()
+     await db.query(`insert into teloa_business_dashboard_data_revisions(owner_id,scope_id,dashboard_id,widget_id,time_range,revision,retry_after) values($1,$2,$3,$4,$5,$6,$7)
+      on conflict(owner_id,scope_id,dashboard_id,widget_id,time_range) do update set
+       revision=case when excluded.retry_after is null then excluded.revision else teloa_business_dashboard_data_revisions.revision end,retry_after=excluded.retry_after`,[owner,scope,dashboardId,widget.id,timeRange,result.status==='ok'?revision:'0',retryAfter])
      batch.push({widgetId:widget.id,computedAt:result.computedAt,timeRange})
     }
     await db.query('insert into teloa_business_dashboard_refreshes(owner_id,request_id,scope_id,dashboard_id,results,time_range) values($1,$2,$3,$4,$5,$6)',[owner,requestId,scope,dashboardId,JSON.stringify(batch),selected])
@@ -221,13 +232,18 @@ export class BusinessDashboardService{
      if(!await scheduledSyncAllowed(db,ownerId,scope))return
      const bundles=await this.definitions.forScope(db,ownerId,scope)
      const latest=await this.latestStamps(db,ownerId,scope)
+     const revision=await businessDataRevision(db,ownerId,scope)
+     const consumed=(await db.query('select dashboard_id,widget_id,time_range,revision,retry_after from teloa_business_dashboard_data_revisions where owner_id=$1 and scope_id=$2',[ownerId,scope])).rows
      for(const record of bundles.flatMap(bundle=>bundle.dashboards)){
       const {dashboard,widgets}=locate(bundles,record.definition.id)
       const selected=defaultRange(dashboard)
-      const expired=widgets.filter(widget=>nextBusinessSyncOccurrence(widget.refresh??dashboard.refresh,latest.get(stampKey(dashboard.id,widget.id,widgetRange(dashboard,widget,selected)))??epoch)<=now)
-      if(!expired.length)continue
-      if(expired.some(widget=>widget.refresh===undefined))due.push({scope,dashboardId:dashboard.id})
-      else due.push({scope,dashboardId:dashboard.id,widgetIds:expired.map(widget=>widget.id)})
+      const state=(widget:BusinessWidgetDefinition)=>consumed.find(row=>row.dashboard_id===dashboard.id&&row.widget_id===widget.id&&row.time_range===widgetRange(dashboard,widget,selected))
+      const available=widgets.filter(widget=>!state(widget)?.retry_after||state(widget)!.retry_after.toISOString()<=now)
+      const pending=available.filter(widget=>BigInt(String(state(widget)?.revision??'0'))<BigInt(revision))
+      const expired=available.filter(widget=>nextBusinessSyncOccurrence(widget.refresh??dashboard.refresh,latest.get(stampKey(dashboard.id,widget.id,widgetRange(dashboard,widget,selected)))??epoch)<=now)
+      if(!pending.length&&!expired.length)continue
+      const targets=pending.length?new Set([...pending,...expired].map(widget=>widget.id)):new Set((expired.some(widget=>widget.refresh===undefined)?available:expired).map(widget=>widget.id))
+      due.push(targets.size===widgets.length?{scope,dashboardId:dashboard.id}:{scope,dashboardId:dashboard.id,widgetIds:[...targets]})
      }
     })
    }catch(error){if(error instanceof WorkError)continue;throw error}
@@ -237,15 +253,23 @@ export class BusinessDashboardService{
 
  private async page(db:PoolClient,owner:string,scope:string,located:Located,results:Map<string,BusinessWidgetResult>,selected:BusinessTimeRange,refreshing?:boolean):Promise<BusinessDashboardPage>{
   const {dashboard,widgets}=located
+  const failed=widgets.filter(widget=>results.get(widget.id)?.status==='failed')
+  if(failed.length){
+   const prior=await this.widgets.latestSuccessful(db,owner,scope,dashboard.id,new Map(failed.map(widget=>[widget.id,widgetRange(dashboard,widget,selected)])),new Map(failed.map(widget=>[widget.id,results.get(widget.id)!.computedAt])))
+   results=new Map(results)
+   for(const widget of failed){const previous=prior.get(widget.id),error=results.get(widget.id)?.error;if(previous&&error)results.set(widget.id,{...previous,refreshError:error,stale:true})}
+  }
   const stamps=[...results.values()].map(result=>result.computedAt)
   const updatedAt=stamps.length?stamps.reduce((a,b)=>a>b?a:b):null
   const now=this.identity.now()
+  const revision=await businessDataRevision(db,owner,scope)
+  const consumed=(await db.query('select widget_id,time_range,revision from teloa_business_dashboard_data_revisions where owner_id=$1 and scope_id=$2 and dashboard_id=$3',[owner,scope,dashboard.id])).rows
   return {
    schema:'teloa.business-dashboard-page/v1',scope,dashboard,widgets,
    results:widgets.map(widget=>{
     const hash=businessWidgetDefinitionHash(widget),found=results.get(widget.id)
     // 结果按当时的声明算出；声明摘要变了，这条结果就是过期的，界面据此提示「声明已更新，等待下次刷新」。
-    if(found)return {...found,stale:found.definitionHash!==hash}
+    if(found)return {...found,stale:found.refreshError!==undefined||found.definitionHash!==hash||BigInt(String(consumed.find(row=>row.widget_id===widget.id&&row.time_range===widgetRange(dashboard,widget,selected))?.revision??'0'))<BigInt(revision)}
     return {widgetId:widget.id,definitionHash:hash,computedAt:now,status:'failed',columns:[],rows:[],rowCount:0,truncated:false,bytes:0,error:{code:'teloa/not-found',reason:'尚未计算'},stale:false}
    }),
    updatedAt,

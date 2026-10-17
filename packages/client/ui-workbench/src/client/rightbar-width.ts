@@ -3,15 +3,15 @@
 //
 // 关键约定：存储与组件状态里放的是「用户偏好」，不是夹过的值。夹一律发生在渲染期。
 // 存夹过的值有两处损失：换窄屏再换回宽屏拿不回原偏好；开关会话目录来回一次宽度只收不放。
+import type {ISidebarRight} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+
 export const RIGHTBAR_MIN=300
 export const RIGHTBAR_MAX_RATIO=0.7
 export const RIGHTBAR_DEFAULT_RATIO=0.45
 export const CENTER_MIN=400
-/** 1380px 及以下轨道转覆盖模式，中栏不再被压缩。 */
-export const RIGHTBAR_DOCKED_MIN_VIEWPORT=1381
-/** 覆盖模式的抽屉宽度，与 WorkbenchFrame.module.css 的覆盖轨道共用这一个数。 */
-export const RIGHTBAR_OVERLAY_WIDTH=420
-/** 740px 及以下抽屉铺满视口。 */
+/** 主栏与工作概览最小宽度之和；不足时由原生 canShow 收起，保留开启入口。 */
+export const RIGHTBAR_DOCKED_MIN_VIEWPORT=CENTER_MIN+RIGHTBAR_MIN
+/** 740px 及以下目录不占轨道。 */
 export const RIGHTBAR_FULL_WIDTH_MAX_VIEWPORT=740
 export const RIGHTBAR_KEYBOARD_STEP=16
 export const RIGHTBAR_WIDTH_KEY='teloa-details-width'
@@ -33,9 +33,7 @@ export function directoryTrackWidth(viewportWidth:number,directoryOpen:boolean):
 
 export function rightbarWidthRange(viewportWidth:number,directoryOpen:boolean):{min:number;max:number}{
  const ratioMax=Math.floor(viewportWidth*RIGHTBAR_MAX_RATIO)
- const centerMax=docked(viewportWidth)
-  ?viewportWidth-navigationTrackWidth(viewportWidth)-directoryTrackWidth(viewportWidth,directoryOpen)-CENTER_MIN
-  :ratioMax
+ const centerMax=viewportWidth-navigationTrackWidth(viewportWidth)-directoryTrackWidth(viewportWidth,directoryOpen)-CENTER_MIN
  return {min:RIGHTBAR_MIN,max:Math.max(RIGHTBAR_MIN,Math.min(ratioMax,centerMax))}
 }
 
@@ -66,12 +64,10 @@ export function writeRightbarWidth(storage:Pick<Storage,'setItem'>,width:number)
 /**
  * 轨道实际宽度：CSS 变量与 renderSlot('rightbar') 的 width 必须同时取这一个数，
  * 否则 DSH 面板的 style={{width}} 会与 Teloa 轨道错位（面板溢出轨道或轨道留白条）。
- * 覆盖模式的抽屉是固定尺寸，用户偏好只在停靠模式生效。
+ * 所有可容纳的桌面宽度均为非模态并栏，不覆盖会话输入。
  */
 export function rightbarTrackWidth(preferredWidth:number,viewportWidth:number,directoryOpen:boolean):number{
- if(docked(viewportWidth))return clampRightbarWidth(preferredWidth,viewportWidth,directoryOpen)
- if(viewportWidth<=RIGHTBAR_FULL_WIDTH_MAX_VIEWPORT)return viewportWidth
- return Math.min(RIGHTBAR_OVERLAY_WIDTH,Math.floor(viewportWidth*RIGHTBAR_MAX_RATIO))
+ return clampRightbarWidth(preferredWidth,viewportWidth,directoryOpen)
 }
 
 /**
@@ -80,8 +76,60 @@ export function rightbarTrackWidth(preferredWidth:number,viewportWidth:number,di
  * 而 layout effect 先于父组件的 passive effect 跑，任何「下一帧再夹」的写法都会先关栏再变窄。
  */
 export function rightbarCanShow(viewportWidth:number,directoryOpen:boolean,width:number):boolean{
- if(!docked(viewportWidth))return true
  return viewportWidth-navigationTrackWidth(viewportWidth)-directoryTrackWidth(viewportWidth,directoryOpen)-width>=CENTER_MIN
+}
+
+/** 打开右栏时，目录是否还能继续占据并栏轨道。 */
+export function rightbarDirectoryForOpening(viewportWidth:number,directoryOpen:boolean):boolean{
+ // 原生 768px 以下的全屏规则保持；桌面空间足够时也不改变目录选择。
+ if(!directoryOpen||viewportWidth<768||rightbarCanShow(viewportWidth,true,RIGHTBAR_MIN))return directoryOpen
+ // 只有目录让出后能保留会话 400px 与右栏 300px，才允许让出这条轨道。
+ if(rightbarCanShow(viewportWidth,false,RIGHTBAR_MIN))return false
+ return directoryOpen
+}
+
+/** 原型 platform-preview.css：≤1450px 打开群侧栏时会话目录让位。 */
+export const GROUP_PANEL_DIRECTORY_MAX_VIEWPORT=1450
+
+/** 正在并栏展开、可能占用目录轨道的面板。普通会话右栏与群侧栏不会同屏。 */
+export type DirectoryOccupants={rightbar:boolean;groupPanel:boolean}
+
+/**
+ * 目录此刻是否绘制。让位只在渲染期派生，不改写本人的 directoryOpen：
+ * 面板收起或窗口放宽后原目录自动回来。
+ */
+export function directoryShown(viewportWidth:number,directoryOpen:boolean,occupants:DirectoryOccupants):boolean{
+ if(!directoryOpen)return false
+ if(occupants.rightbar&&!rightbarDirectoryForOpening(viewportWidth,true))return false
+ // 740px 及以下目录是本人打开的覆盖层，不随群侧栏让位。
+ return !(occupants.groupPanel&&viewportWidth>RIGHTBAR_FULL_WIDTH_MAX_VIEWPORT&&viewportWidth<=GROUP_PANEL_DIRECTORY_MAX_VIEWPORT)
+}
+
+/** 群页上报群侧栏展开状态后的当前展开群：按群身份撤回，旧群迟到的关闭不能覆盖新群。 */
+export function groupPanelReport(current:string|undefined,groupId:string,open:boolean):string|undefined{
+ return open?groupId:current===groupId?undefined:current
+}
+
+/** 本人主动要看目录时，是否须先收起占位面板；收起只隐藏面板，页签、草稿与偏好保留。 */
+export function directoryNeedsRoom(viewportWidth:number,occupants:DirectoryOccupants):boolean{
+ return !directoryShown(viewportWidth,true,occupants)
+}
+
+/** 仅通过公开导航接口收起本会话右栏，页签与草稿保留；其他会话的右栏不受影响。 */
+export function collapseRightbarForDirectory(face:Pick<ISidebarRight,'mounted'|'isExpanded'|'toggleExpanded'>|undefined,sessionId:string|undefined):boolean{
+ if(!face||!sessionId||face.mounted.getSnapshot()!==sessionId||!face.isExpanded())return false
+ face.toggleExpanded()
+ return true
+}
+
+/** 固定 DSH 在 768px 以下自动全屏且跳过 canShow；桌面概况只能保留入口并收起。 */
+export function canShowConversationOverview(viewportWidth:number,canShow=true):boolean{return viewportWidth>=768&&canShow}
+
+/** 仅通过公开导航接口收起当前概况，不关闭页签，也不修改原生展示模式。 */
+export function collapseOverviewWithoutRoom(face:Pick<ISidebarRight,'mounted'|'active'|'isExpanded'|'toggleExpanded'>|undefined,sessionId:string|undefined,viewportWidth:number,canShow:boolean):boolean{
+ if(!face||!sessionId||canShowConversationOverview(viewportWidth,canShow)||face.mounted.getSnapshot()!==sessionId||face.active()?.kind!=='teloa.overview'||!face.isExpanded())return false
+ face.toggleExpanded()
+ return true
 }
 
 export function rightbarHandleVisible(viewportWidth:number):boolean{return docked(viewportWidth)}

@@ -13,15 +13,16 @@ import {registerTaskSubagentTool} from '../src/task-subagent-tool.ts'
 import type {SubagentDelegationPorts} from '../src/subagent-delegation.ts'
 import {subagentTaskToolName} from '../src/role-tool-grants.ts'
 
-async function setup(result:{stopReason:string;output:{type:string;text?:string}[];diagnostic?:string}|Error={stopReason:'completed',output:[{type:'text',text:'已完成'}]},estimate?:number,portOverrides:Partial<SubagentDelegationPorts>={},dispose:()=>Promise<void>=async()=>{}){
+type Result={stopReason:string;output:{type:string;text?:string}[];diagnostic?:string}
+async function setup(result:Result|Promise<Result>|Error={stopReason:'completed',output:[{type:'text',text:'已完成'}]},estimate?:number,portOverrides:Partial<SubagentDelegationPorts>={},dispose:()=>Promise<void>=async()=>{}){
  const ctx=new Context();await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('task-subagent-parent'),agentOptions:{provider:'test',model:'test'}})
  const calls:{name:string;input:unknown}[]=[]
  let disposeCount=0,sequence=0
- ctx.provide('subagents',{start:async(name:string,input:unknown)=>{
-  calls.push({name,input});const id='child_'+(++sequence)
+ ctx.provide('subagents',{startActivation:async(input:{provider:string;request:unknown;delivery:string})=>{
+  calls.push({name:input.provider,input});const id='child_'+(++sequence)
   if(estimate!==undefined)await ctx.agents.create({sessionId:SessionId(id),agentOptions:{provider:'test',model:'test'}})
-  return {id,result:result instanceof Error?Promise.reject(result):Promise.resolve(result),dispose:async()=>{disposeCount++;await dispose()}}
+  return {childId:id,result:result instanceof Error?Promise.reject(result):Promise.resolve(result),dispose:async()=>{disposeCount++;await dispose()}}
  }})
  if(estimate!==undefined)Object.defineProperty(ctx,'tokenMeter',{value:{measure:()=>({totalTokens:estimate})}})
  const records:{kind:string;input:unknown}[]=[]
@@ -35,11 +36,12 @@ async function setup(result:{stopReason:string;output:{type:string;text?:string}
  return {ctx,agent,calls,records,call,disposeCount:()=>disposeCount}
 }
 
-test('每次执行态子任务直接把预留与 start 返回的子会话身份绑定',async t=>{
+test('每次执行态子任务直接把预留与 activation 返回的子会话身份绑定',async t=>{
  const env=await setup();t.after(()=>env.ctx.fiber.dispose())
  const [first,second]=await Promise.all([env.call('研判甲','检查第一条告警','call-a'),env.call('研判乙','检查第二条告警','call-b')])
  assert.equal(first.isError,false);assert.equal(second.isError,false)
  assert.equal(env.calls.length,2);assert.equal(env.disposeCount(),2)
+ assert.ok(env.calls.every(call=>(call.input as {delivery:string}).delivery==='caller'))
  const binds=env.records.filter(item=>item.kind==='bind').map(item=>item.input)
  assert.equal(binds.length,2)
  assert.deepEqual(binds.map(input=>({childSessionId:(input as {childSessionId:string}).childSessionId,depth:(input as {depth:number}).depth})),[{childSessionId:'child_1',depth:1},{childSessionId:'child_2',depth:1}])
@@ -53,7 +55,7 @@ test('委派层数上限原样传给子 Agent provider，不让静态默认值�
  const result=await env.call('两层边界','验证 provider 取得运行态深度上限','call-depth-two')
  assert.equal(result.isError,false)
  assert.equal(env.calls.length,1)
- assert.equal((env.calls[0]!.input as {maxDepth:unknown}).maxDepth,2)
+ assert.equal((env.calls[0]!.input as {request:{maxDepth:unknown}}).request.maxDepth,2)
 })
 
 test('子会话启动前失败时释放预留，已发布但结算失败时保守中止',async t=>{
@@ -101,4 +103,18 @@ test('子会话清理失败不覆盖已结算的任务结果',async t=>{
  assert.equal(result.isError,false)
  assert.equal(env.disposeCount(),1)
  assert.deepEqual(env.records.filter(item=>item.kind==='settle').map(item=>item.input),[{childSessionId:'child_1',stopReason:'completed'}])
+})
+
+test('activation 已接纳后取消父调用会释放真实句柄，并且只释放一次',async t=>{
+ let finish!:(value:Result)=>void
+ const result=new Promise<Result>(resolve=>{finish=resolve})
+ const env=await setup(result,undefined,{},async()=>{finish({stopReason:'aborted',output:[]})});t.after(()=>env.ctx.fiber.dispose())
+ const abort=new AbortController(),pending=env.call('等待中的子任务','等待父级取消','call-cancel',abort.signal)
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(env.calls.length,1)
+ abort.abort()
+ const receipt=await pending
+ assert.equal(receipt.isError,true)
+ assert.equal(env.disposeCount(),1)
+ assert.equal(env.records.filter(row=>row.kind==='settle').length,1)
 })

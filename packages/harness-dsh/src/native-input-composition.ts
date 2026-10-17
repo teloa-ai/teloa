@@ -36,13 +36,13 @@ const table=(value:Record<string,string[]>)=>Object.freeze(Object.fromEntries(Ob
 export const nativeInputRequiredAPIs=table({
  '@deepseek-ai/dsh-session':['requireAppendAdmission()','installAppendAdmission(policy)'],
  '@deepseek-ai/dsh-api-session-controller':['requireInputAdmission()','installInputAdmission(policy)'],
- '@deepseek-ai/dsh-subagent':['SubagentRuntime.requirePromptAdmission','SubagentRuntime.installPromptAdmission'],
- '@deepseek-ai/dsh-subagent-in-process-driver':['startInProcessRun (unchanged signature)'],
+ '@deepseek-ai/dsh-subagent':['SubagentRuntime.requirePromptAdmission','SubagentRuntime.installPromptAdmission','SubagentRuntime.startActivation.initialPromptAdmission','SubagentRuntime.startActivation.completionAdmission','SubagentPromptAdmissionOptions.requireCompletionAdmission','SubagentPromptAdmissionOptions.captureCompletion'],
+ '@deepseek-ai/dsh-experimental-agent-team':['TeamService.sendMessage.rootInputAdmission'],
  '@deepseek-ai/dsh-agent-loop':['AgentLoop.requireWorkAdmission','AgentLoop.installWorkAdmission','AgentLoop.requireRestoreAdmission','AgentLoop.installRestoreAdmission'],
  '@deepseek-ai/dsh-agent':['AgentRegistry.announce'],
  '@deepseek-ai/dsh-session-persistence':['SessionPersistence.openWithAdmission'],
- '@deepseek-ai/dsh-session-persistence-jsonl':['JsonlSessionPersistence.openWithAdmission'],
- '@deepseek-ai/dsh-llm':['LlmRuntime.requireStreamAdmission','LlmRuntime.installStreamAdmission'],
+ '@deepseek-ai/dsh-session-persistence-jsonl':['sessionPersistence.openWithAdmission'],
+ '@deepseek-ai/dsh-llm':['LlmRuntime.requireStreamAdmission','LlmRuntime.installStreamAdmission','LlmRuntime.installStreamProjection'],
  '@deepseek-ai/dsh-tools':['ToolRuntime.requireWorkAdmission','ToolRuntime.installWorkAdmission'],
  '@deepseek-ai/dsh-compaction-basic':['BasicCompactionEngine.summaryRequestOwner'],
 })
@@ -51,6 +51,7 @@ export const nativeInputCheckpointAPIs=table({
  '@deepseek-ai/dsh-agent-loop':['AgentLoop.requireInputCheckpoint','AgentLoop.installInputCheckpoint','AgentLoop.requireProgressCheckpoint','AgentLoop.installProgressCheckpoint'],
 })
 export const nativeInputGoalAPIs=table({'@deepseek-ai/dsh-goal-round-driver':['GoalInputAdmission','GoalRoundDriverOptions','requireGoalInputAdmission','installGoalInputAdmission']})
+export const nativeInputJobAPIs=table({'@deepseek-ai/dsh-tool-jobs':['JobCompletionAdmission','JobCompletionOptions','completionAdmissionVersion','observeCompletionDecision(job,notify)']})
 
 export type NativeInputProviders=Readonly<{
  input:typeof TeloaNativeInput
@@ -59,12 +60,14 @@ export type NativeInputProviders=Readonly<{
  /** 仅在 requireCheckpoint 时提供：只读的冷恢复候选筛选。 */
  recoveryCandidate?:typeof nativeInputRecoveryCandidate
  goal?:typeof createTaskRunGoal
+ jobs?:true
 }>
 export type NativeInputLoadOptions=Readonly<{
  /** 宿主已核对并应用的官方兼容补丁清单：包名 → 清单 `api`。 */
  compatibilityAPIs:unknown
  requireCheckpoint?:boolean
  requireGoal?:boolean
+ requireJobs?:boolean
 }>
 /** 只有经本模块兼容核对后导入的提供方才能用于组合与启动核对。 */
 const loaded=new WeakSet<object>()
@@ -78,9 +81,11 @@ export async function loadNativeInputProviders(options:NativeInputLoadOptions):P
  if(typeof requireCheckpoint!=='boolean')throw refuse('持久确认选项无效。')
  const requireGoal=options?.requireGoal??false
  if(typeof requireGoal!=='boolean')throw refuse('Goal 准入选项无效。')
+ const requireJobs=options?.requireJobs??false
+ if(typeof requireJobs!=='boolean')throw refuse('后台通知准入选项无效。')
  const apis=options?.compatibilityAPIs
  if(!record(apis))throw refuse('宿主没有提供已应用的官方兼容能力清单。')
- for(const required of [nativeInputRequiredAPIs,...requireCheckpoint?[nativeInputCheckpointAPIs]:[],...requireGoal?[nativeInputGoalAPIs]:[]]){
+ for(const required of [nativeInputRequiredAPIs,...requireCheckpoint?[nativeInputCheckpointAPIs]:[],...requireGoal?[nativeInputGoalAPIs]:[],...requireJobs?[nativeInputJobAPIs]:[]]){
   for(const [name,names] of Object.entries(required)){
    const declared=Object.hasOwn(apis,name)?apis[name]:undefined
    const missing=Array.isArray(declared)?names.filter(api=>!declared.includes(api)):names
@@ -90,7 +95,8 @@ export async function loadNativeInputProviders(options:NativeInputLoadOptions):P
  const [input,controller,subagent]=await Promise.all([import('./native-input-provider.ts'),import('./managed-session-controller.ts'),import('./managed-subagent.ts')])
  const base={input:input.TeloaNativeInput,controller:controller.ManagedSessionController,subagent:subagent.ManagedSubagentRuntime}
  const goal=requireGoal?(await import('./task-run-goal.ts')).createTaskRunGoal:undefined
- const providers:NativeInputProviders=Object.freeze({...base,...requireCheckpoint?{recoveryCandidate:input.nativeInputRecoveryCandidate}:{},...goal?{goal}:{}})
+ if(requireJobs&&input.nativeInputJobAdmissionVersion!==1)throw refuse('公共核心不支持后台通知准入。')
+ const providers:NativeInputProviders=Object.freeze({...base,...requireCheckpoint?{recoveryCandidate:input.nativeInputRecoveryCandidate}:{},...goal?{goal}:{},...requireJobs?{jobs:true as const}:{}})
  loaded.add(providers)
  return providers
 }
@@ -104,8 +110,9 @@ const providerRows:readonly Provider[]=[
  {id:'subagent',source:'@deepseek-ai/dsh-subagent',target:'teloa-managed-subagent',name:'@teloa/harness-dsh/managed-subagent',face:'teloa-client-face-subagent',label:'子代理'},
 ]
 const goalProvider:Provider={id:'goal-round-driver',source:'@deepseek-ai/dsh-goal-round-driver',target:'teloa-managed-goal-round-driver',name:'@teloa/harness-dsh/managed-goal-round-driver',face:'teloa-client-face-goal-round-driver',label:'目标续轮'}
+const jobProvider:Provider={id:'tool-jobs',source:'@deepseek-ai/dsh-tool-jobs',target:'teloa-managed-tool-jobs',name:'@teloa/harness-dsh/managed-tool-jobs',face:'teloa-client-face-tool-jobs',label:'后台完成通知'}
 const inputRowId='teloa-native-input'
-const reserved=new Set([inputRowId,...[...providerRows,goalProvider].flatMap(row=>[row.target,row.face])])
+const reserved=new Set([inputRowId,...[...providerRows,goalProvider,jobProvider].flatMap(row=>[row.target,row.face])])
 const moduleRequire=createRequire(import.meta.url)
 const defaultResolve:Resolve=specifier=>moduleRequire.resolve(specifier)
 
@@ -132,8 +139,11 @@ export async function composeNativeInput(rows:readonly unknown[],options:NativeI
  const inputProvider=options.inputProvider??'@teloa/harness-dsh/native-input-provider'
  if(typeof inputProvider!=='string'||!inputProvider)throw refuse('原生输入准入服务的模块名无效。')
  const runtimeRoot=await canonicalRoot(options.runtimeRoot),resolve=options.resolve??defaultResolve
- const rowsToReplace=options.providers.goal?[...providerRows,goalProvider]:providerRows
  const tree=indexRows(rows)
+ // 官方 host 的 JobTools 通常已停用，工具只在选定 Agent preset 内加载；不能为接线启用全局工具。
+ const jobRow=options.providers.jobs?tree.get(jobProvider.id):undefined
+ if(options.providers.jobs&&(!jobRow||jobRow.length!==1||jobRow[0]!.row.name!==jobProvider.source))throw refuse('后台完成通知的官方行不唯一或来源不符。')
+ const rowsToReplace=[...providerRows,...options.providers.goal?[goalProvider]:[],...options.providers.jobs&&jobRow![0]!.row.disabled!==true?[jobProvider]:[]]
  const loop=only(tree,'agent-loop','@deepseek-ai/dsh-agent-loop','代理循环').row
  const loopConfig=loop.config??{}
  if(!record(loopConfig))throw refuse('代理循环的配置格式无效。')
@@ -154,6 +164,20 @@ export async function composeNativeInput(rows:readonly unknown[],options:NativeI
   patches.push({id:provider.id,name:provider.source,disabled:true},{...placement,insert:[{...structuredClone(found.row),id:provider.target,name:provider.name}]})
   return {provider,placement}
  })
+ // 平台认证只包裹已启用的官方外部提供方；原生工具、权限和安装来源保持。
+ if(tree.has('teloa-platform-models'))only(tree,'teloa-platform-models','@teloa/harness-dsh/platform-models','平台模型认证')
+ else patches.push({insert:[{id:'teloa-platform-models',name:'@teloa/harness-dsh/platform-models'}]})
+ for(const [id,source,engine] of [
+  ['subagent-codex','@deepseek-ai/dsh-subagent-codex','codex'],
+  ['subagent-claude-code','@deepseek-ai/dsh-subagent-claude-code','claude-code'],
+ ] as const){
+  const entries=tree.get(id)
+  if(!entries)continue
+  const found=only(tree,id,source,'外部引擎')
+  if(found.row.disabled===true)continue
+  const placement=found.parent===undefined?{}:{id:found.parent}
+  patches.push({id,name:source,disabled:true},{...placement,insert:[{id:'teloa-platform-native-'+engine,name:'@teloa/harness-dsh/platform-native-provider',config:{engine,native:structuredClone(found.row.config??{})}}]})
+ }
  // 替换即保面：声明了浏览器面的官方包必定同时插入载体行，宿主不能只取替换。组合树全部核对通过后才写载体。
  for(const {provider,placement} of placements){
   const face=await prepareClientFace(provider,resolve,runtimeRoot)
@@ -190,6 +214,7 @@ export function assertNativeInputProviders(ctx:Readonly<{get:(name:string)=>unkn
  const expected=[['teloaNativeInput',providers.input,'原生输入准入服务'],['sessionController',providers.controller,'会话控制器'],['subagents',providers.subagent,'子代理']] as const
  for(const [service,type,label] of expected)if(!(ctx.get(service) instanceof type))throw refuse('启动后的'+label+'不是受管提供方。')
  if(providers.goal){const goal=ctx.get('teloaTaskRunGoal'),driver=ctx.get('teloaManagedGoalRoundDriver');if(!record(goal)||typeof goal.admit!=='function'||!record(driver)||driver.goal!==goal||driver.version!==1)throw refuse('启动后的目标续轮不是受管提供方。')}
+ if(providers.jobs){const input=ctx.get('teloaNativeInput');if(!record(input)||!record(input.input)||typeof input.input.withJobCompletion!=='function'||typeof input.input.cancelJobCompletions!=='function')throw refuse('启动后的后台通知缺少最终准入。')}
  const modules=ctx.get('clientModules')
  if(modules===undefined)return
  const ids=clientModuleIds(modules),resolve=options?.resolve??defaultResolve

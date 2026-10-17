@@ -1,0 +1,358 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1137,6 +1137,81 @@
+ 	}
+ };
+ //#endregion
++// Teloa compatibility micro-extension: exact initial, live, and resumed input publication.
++function createPromptAdmission(options) {
++	let required = options.requirePromptAdmission === true;
++	let provider;
++	const install = (candidate) => {
++		if (typeof candidate !== "function" || provider !== void 0 && provider !== candidate) throw new SubagentError("subagent prompt admission provider is unavailable", "CONTINUATION_UNAVAILABLE");
++		provider = candidate;
++	};
++	if (options.admitPrompt !== void 0) install(options.admitPrompt);
++	return Object.freeze({
++		require() { required = true; },
++		install,
++		async run(request, publish, logger) {
++			const candidate = provider;
++			if (candidate === void 0) {
++				if (required) throw new SubagentError("subagent prompt admission provider is unavailable", "CONTINUATION_UNAVAILABLE");
++				publish();
++				return;
++			}
++			const session = request.agent.session;
++			const payload = JSON.stringify(request.message);
++			let startSeq;
++			let publishing = false;
++			let active = true;
++			let consumed = false;
++			let accepted = false;
++			const stop = request.agent.ctx.on("session/event", (subject, event) => {
++				if (publishing && subject === session && event.seq >= startSeq && event.type === "agent/inbox/spliced" && event.data.inserted.some((message) => JSON.stringify(message) === payload)) accepted = true;
++			});
++			const dispatch = () => {
++				if (!active || consumed) throw new SubagentError("subagent prompt admission scope is closed", "CONTINUATION_UNAVAILABLE");
++				consumed = true;
++				startSeq = session.seq;
++				publishing = true;
++				try {
++					const returned = publish();
++					if (returned !== void 0) {
++						void Promise.resolve(returned).catch(() => {});
++						throw new SubagentError("subagent publication must be synchronous void", "CONTINUATION_UNAVAILABLE");
++					}
++					accepted = true;
++				} finally {
++					publishing = false;
++				}
++			};
++			try {
++				await candidate(Object.freeze(request), dispatch);
++				if (!accepted) throw new SubagentError("subagent prompt was not admitted", "CONTINUATION_UNAVAILABLE");
++			} catch (error) {
++				if (!accepted) throw error;
++				logger.warn("subagent prompt: admission callback failed after Inbox acceptance");
++			} finally {
++				active = false;
++				stop();
++			}
++		}
++	});
++}
++// Capture before the first startup await; this closure belongs to one activation.
++function createCompletionAdmission(options) {
++ const capture = options.captureCompletion;
++ const required = options.requireCompletionAdmission === true;
++ if (capture !== void 0 && typeof capture !== "function") throw new SubagentError("subagent completion admission factory is unavailable", "CONTINUATION_UNAVAILABLE");
++ return (parent, delivery, sender = parent) => {
++  if (delivery === "caller") return;
++  if (capture === void 0) {
++   if (required) throw new SubagentError("subagent completion admission factory is unavailable", "CONTINUATION_UNAVAILABLE");
++   return;
++  }
++  const provider = capture(parent, sender);
++  if (typeof provider !== "function") throw new SubagentError("subagent completion admission provider is unavailable", "CONTINUATION_UNAVAILABLE");
++  const admission = createPromptAdmission({ requirePromptAdmission: true, admitPrompt: provider });
++  return (request, publish, logger) => admission.run(request, publish, logger);
++ };
++}
+ //#region lib/types/manager.js
+ /**
+ * Owns subagent startup, message admission, cold resume, and execution lifetimes.
+@@ -1392,6 +1467,7 @@
+ 		const request = spec.request;
+ 		const parent = request.parent;
+ 		this.assertAdmitting(parent);
++		const completionAdmission = this.host.captureCompletion(parent, spec.delivery);
+ 		const persistence = spec.delivery === "caller" ? this.ctx.get("sessionPersistence") : this.requirePersistence();
+ 		assertSubagentMaxDepth(request.maxDepth);
+ 		const childId = spec.childId ?? brandString(randomUUID());
+@@ -1452,6 +1528,7 @@
+ 					composition: { agentPreset: request.agentPreset },
+ 					signal: spec.signal,
+ 					delivery: spec.delivery,
++					completionAdmission,
+ 					outputSchema: spec.request.outputSchema
+ 				});
+ 				established = activation;
+@@ -1483,6 +1560,7 @@
+ 	async startExternal(spec) {
+ 		const parent = spec.request.parent;
+ 		this.assertAdmitting(parent);
++		const completionAdmission = this.host.captureCompletion(parent, spec.delivery);
+ 		const pendingId = brandString(randomUUID());
+ 		const releaseHold = this.holdOwnership(parent, pendingId);
+ 		let activation;
+@@ -1495,6 +1573,7 @@
+ 				parent,
+ 				signal: spec.signal,
+ 				delivery: spec.delivery,
++				completionAdmission,
+ 				start: (signal) => this.host.startExternal(spec.provider, {
+ 					...spec.request,
+ 					cwd,
+@@ -1541,7 +1620,7 @@
+ 		const senderActivation = this.resident.get(sender.id);
+ 		if (senderActivation !== void 0 && senderActivation.kind === "local" && senderActivation.handle.agent === sender && senderActivation.parent.id === targetId) {
+ 			options.signal.throwIfAborted();
+-			return this.sendToParent(senderActivation, sender, content);
++			return this.sendToParent(senderActivation, sender, content, options.signal);
+ 		}
+ 		if (sender.session.header.parentSession === targetId) throw new SubagentError(`agent "${sender.id}" is not a resident continuable child and cannot send to parent "${targetId}"`, "UNAUTHORIZED");
+ 		return this.deliverToChild(sender, targetId, content, {
+@@ -1839,6 +1918,7 @@
+ 			...resource,
+ 			parent,
+ 			delivery: inputs.delivery ?? "parent",
++			completionAdmission: inputs.completionAdmission,
+ 			result: Promise.withResolvers(),
+ 			closing: void 0,
+ 			ancestry: new WeakSet(resource.kind === "external" ? parentLineage : [resource.handle.agent, ...parentLineage]),
+@@ -2031,13 +2111,13 @@
+ 		let failure;
+ 		if (failures.length === 1) failure = failures[0];
+ 		else if (failures.length > 1) failure = new SubagentError(`subagent "${childId}" activation teardown failed at ${failures.length} boundaries: ` + failures.map((item) => detail(item)).join("; "), "ACTIVATION_TEARDOWN_FAILED", { cause: new AggregateError(failures) });
+-		this.resident.delete(childId);
+-		activation.releaseSlot();
+ 		const terminal = failure === void 0 ? result : {
+ 			output: [],
+ 			stopReason: "error"
+ 		};
+-		this.notifySettlement(activation, result);
++		await this.notifySettlement(activation, result);
++		this.resident.delete(childId);
++		activation.releaseSlot();
+ 		this.releaseOwnership(childId);
+ 		activation.observer.settle(terminal);
+ 		if (resultFailure === void 0) activation.result.resolve(result);
+@@ -2045,17 +2125,20 @@
+ 		if (failure !== void 0) throw failure;
+ 	}
+ 	/** Deliver the captured execution result to the durable direct parent after cleanup. */
+-	notifySettlement(activation, terminal) {
++	async notifySettlement(activation, terminal) {
+ 		if (!activation.announced || activation.delivery === "caller") return;
+ 		try {
+ 			const parent = this.ctx.agents.get(activation.parent.id);
+ 			if (parent !== activation.parent) return;
++			const session = parent.session;
+ 			const message = createSettlementMessage(activation.childId, terminal, activationAgent(activation) !== void 0);
+-			if (this.closingTeardownFor(parent) !== void 0) {
+-				parent.inject(message);
+-				return;
+-			}
+-			this.sendWaking(parent, message, parent.status === "idle" ? "queue" : "steer");
++			const publish = () => {
++				if (this.ctx.agents.get(parent.id) !== parent || parent.session !== session) throw new SubagentError("subagent parent is no longer live", "UNAUTHORIZED");
++				if (this.closingTeardownFor(parent) !== void 0) parent.inject(message);
++				else this.sendWaking(parent, message, parent.status === "idle" ? "queue" : "steer");
++			};
++			if (activation.completionAdmission === void 0) publish();
++			else await activation.completionAdmission({ agent: parent, message, childId: activation.childId }, publish, this.ctx.logger);
+ 		} catch (error) {
+ 			this.ctx.logger.warn(`subagent "${activation.childId}" settlement notice was not delivered to its parent: ` + errorChain(error));
+ 		}
+@@ -2105,7 +2188,7 @@
+ 						return;
+ 					}
+ 				}
+-				const messageId = this.submitAdmitted(activation, content, options, parent);
++				const messageId = await this.submitAdmitted(activation, content, options, parent);
+ 				this.announce(activation);
+ 				return messageId;
+ 			});
+@@ -2116,14 +2199,19 @@
+ 		}
+ 	}
+ 	/** Deliver one resident continuable child's message to its live direct parent. */
+-	sendToParent(activation, sender, content) {
++	async sendToParent(activation, sender, content, signal) {
+ 		/* v8 ignore next 6 -- only synchronous re-entrant teardown can open this
+ 		* transaction between exact-agent authorization and this no-await span. */
+ 		if (activation.closing !== void 0) throw new SubagentError(`subagent "${sender.id}" activation is being disposed; the message was not delivered`, "ACTIVATION_CLOSING");
+ 		const parent = this.ctx.agents.get(activation.parent.id);
+ 		if (parent !== activation.parent) throw new SubagentError("direct parent is not live; the message was not delivered", "PARENT_UNAVAILABLE");
+ 		const message = createAgentMessage(sender, content);
+-		this.sendAgentMessage(parent, message);
++		const session = parent.session;
++		await this.host.admitPrompt({ kind: "live", agent: parent, message, sender, delivery: "steer", signal }, () => {
++			signal.throwIfAborted();
++			if (this.resident.get(sender.id) !== activation || activation.closing !== void 0 || this.ctx.agents.get(parent.id) !== parent || parent.session !== session || this.ctx.get("sessions")?.get(parent.id) !== session) throw new SubagentError("parent residency changed before prompt admission", "CONTINUATION_UNAVAILABLE");
++			this.sendAgentMessage(parent, message);
++		});
+ 		return message.id;
+ 	}
+ 	/** Send one Agent message while translating only the target's own rejection. */
+@@ -2139,6 +2227,9 @@
+ 	* supplies every reconstruction input; no subagent provider is dispatched.
+ 	*/
+ 	async coldResume(parent, childId, content, options) {
++		const completionSender = options.source?.kind === "agent-message" && options.source.form === "relay" ? this.ctx.agents.get(options.source.senderSessionId) : parent;
++		if (completionSender === void 0) throw new SubagentError("subagent sender is no longer live", "UNAUTHORIZED");
++		const completionAdmission = this.host.captureCompletion(parent, "parent", completionSender);
+ 		const env_1 = {
+ 			stack: [],
+ 			error: void 0,
+@@ -2179,7 +2270,8 @@
+ 						persona: descriptor.persona,
+ 						toolFilter: descriptor.toolFilter
+ 					},
+-					signal: options.signal
++					signal: options.signal,
++					completionAdmission
+ 				});
+ 			} catch (error) {
+ 				options.signal.throwIfAborted();
+@@ -2201,7 +2293,7 @@
+ 				await this.assertImageCapable(requireLocalActivation(activation).handle.agent, options.signal);
+ 				if (activation.closing !== void 0) throw new SubagentError(`subagent "${activation.childId}" is closing`, "ACTIVATION_CLOSING");
+ 			}
+-			const messageId = this.submitAdmitted(activation, content, options, parent);
++			const messageId = await this.submitAdmitted(activation, content, options, parent, commit === void 0 ? "resume" : "initial");
+ 			commit?.();
+ 			this.announce(activation);
+ 			return messageId;
+@@ -2215,20 +2307,20 @@
+ 		}
+ 	}
+ 	/** Build and submit one message across the final synchronous admission cutoff. */
+-	submitAdmitted(activation, content, options, parent) {
+-		const message = options.source === void 0 ? createAgentMessage(parent, content) : createUserMessage({
+-			content,
+-			source: options.source
++	async submitAdmitted(activation, content, options, parent, kind = "live") {
++		const message = options.source === void 0 ? createAgentMessage(parent, content) : createUserMessage({ content, source: options.source });
++		const agent = requireLocalActivation(activation).handle.agent;
++		const session = agent.session, parentSession = parent.session;
++		const request = { kind, ...kind === "initial" ? { mode: "continuable" } : {}, agent, message, sender: parent, delivery: options.delivery, signal: options.signal };
++		await this.host.admitPrompt(request, () => {
++			options.signal.throwIfAborted();
++			this.assertAdmitting(parent);
++			if (this.resident.get(activation.childId) !== activation || requireLocalActivation(activation).handle.agent !== agent || agent.session !== session || parent.session !== parentSession || this.ctx.agents.get(agent.id) !== agent || this.ctx.agents.get(parent.id) !== parent || this.ctx.get("sessions")?.get(agent.id) !== session || this.ctx.get("sessions")?.get(parent.id) !== parentSession || !this.ctx.agents.isOwnedBy(agent.id, parent)) throw new SubagentError("subagent residency changed before prompt admission", "CONTINUATION_UNAVAILABLE");
++			this.authorizeLineage(parent, activation.childId, activation.parent.id);
++			this.acquireOwnership(parent, activation.childId);
++			try { this.deliver(activation, message, options.delivery); }
++			finally { this.wake(activation); }
+ 		});
+-		options.signal.throwIfAborted();
+-		this.assertAdmitting(parent);
+-		this.authorizeLineage(parent, activation.childId, activation.parent.id);
+-		this.acquireOwnership(parent, activation.childId);
+-		try {
+-			this.deliver(activation, message, options.delivery);
+-		} finally {
+-			this.wake(activation);
+-		}
+ 		return message.id;
+ 	}
+ 	/** Refuse image content for a child whose fixed model accepts text only. */
+@@ -2988,8 +3080,10 @@
+ 		* composes into the carrier.
+ 		*/
+ 		emitLifecycle;
+-		constructor(ctx, config) {
++		constructor(ctx, config, options = {}) {
+ 			super(ctx, "subagents");
++			Object.defineProperty(this, "promptAdmission", { value: createPromptAdmission(options), writable: false, configurable: false });
++			const captureCompletion = createCompletionAdmission(options);
+ 			this.config = config;
+ 			this.emitLifecycle = createLifecycleEmitter(this.ctx, (parent) => scopeTarget(this, parent));
+ 			ctx.inject(["agents"], (childCtx) => {
+@@ -2998,7 +3092,9 @@
+ 						return this.expectProvider(name).start(request);
+ 					},
+ 					prepareContinuable: (name, request) => this.prepareContinuable(name, request),
+-					observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent)
++					observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
++					admitPrompt: (request, dispatch) => this.promptAdmission.run(request, dispatch, this.ctx.logger),
++					captureCompletion
+ 				}, () => this.config.maxActiveSubagents.get());
+ 				this.manager = manager;
+ 				childCtx.effect(() => () => {
+@@ -3020,6 +3116,9 @@
+ 		* @param configured - Explicit tool limit, or provider-managed for external delegation.
+ 		* @returns The numeric limit, or undefined when the provider owns depth enforcement.
+ 		*/
++		requirePromptAdmission() { this.promptAdmission.require(); }
++		installPromptAdmission(provider) { this.promptAdmission.install(provider); }
++		admitPrompt(request, dispatch) { return this.promptAdmission.run(request, dispatch, this.ctx.logger); }
+ 		resolveMaxDepth(configured) {
+ 			if (configured === "provider-managed") return void 0;
+ 			if (configured !== void 0) return configured;
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -31,7 +31,7 @@
+ import { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+ import type { Scoped } from '@deepseek-ai/dsh-scope';
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm';
++import type { ContentBlock, MessageId, UserMessage } from '@deepseek-ai/dsh-llm';
+ import type { Agent } from '@deepseek-ai/dsh-agent';
+ import type { SessionId } from '@deepseek-ai/dsh-session';
+ import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
+@@ -100,6 +100,23 @@
+     maxActiveSubagents: Volatile<number>;
+     /** Default delegation depth for tools without an explicit limit; defaults to 1. */
+     maxDepth: Volatile<number>;
++}
++/** Exact input; classification is context, not accepted-work authorization. */
++export type SubagentPromptAdmissionRequest = Readonly<{
++    readonly agent: Agent;
++    readonly message: UserMessage;
++    readonly sender: Agent;
++    readonly delivery: 'queue' | 'steer';
++    readonly signal: AbortSignal;
++}> & (Readonly<{ kind: 'initial'; mode: 'continuable' | 'one-shot' }> | Readonly<{ kind: 'live' | 'resume' }>);
++/** Dispatch is synchronous, once, and usable only until this admission settles. */
++export type SubagentPromptAdmission = (request: Readonly<SubagentPromptAdmissionRequest>, dispatch: () => void) => Promise<void>;
++export type SubagentCompletionAdmission = (request: Readonly<{ agent: Agent; message: UserMessage; childId: string }>, dispatch: () => void) => Promise<void>;
++export interface SubagentPromptAdmissionOptions {
++    readonly requireCompletionAdmission?: boolean;
++    readonly captureCompletion?: (parent: Agent, sender: Agent) => SubagentCompletionAdmission;
++    readonly requirePromptAdmission?: boolean;
++    readonly admitPrompt?: SubagentPromptAdmission;
+ }
+ /** Named provider registry with managed activations, durable discovery, and local child messaging. */
+ export declare class SubagentRuntime extends TypertRemoteService {
+@@ -120,7 +137,10 @@
+      * composes into the carrier.
+      */
+     private readonly emitLifecycle;
+-    constructor(ctx: Context, config: Config);
++    constructor(ctx: Context, config: Config, options?: SubagentPromptAdmissionOptions);
++    requirePromptAdmission(): void;
++    installPromptAdmission(provider: SubagentPromptAdmission): void;
++    admitPrompt(request: Readonly<SubagentPromptAdmissionRequest>, dispatch: () => void): Promise<void>;
+     /**
+      * Resolve a delegation tool's depth policy against the current user setting.
+      * @param configured - Explicit tool limit, or provider-managed for external delegation.
+@@ -316,4 +336,4 @@
+     private assertCapabilities;
+ }
+ export default SubagentRuntime;
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=index.d.ts.map

@@ -7,6 +7,7 @@ import type {PlanScheduleOccurrence,PlanScheduleSkip,PlanScheduleSummary} from '
 import type {PlanExecutionHistoryItem} from '../src/client/plan-execution-history.ts'
 import type {TeloaTranslate} from '../src/client/i18n/index.ts'
 import {CONTINUOUS_DETAIL_MESSAGE_ROWS} from '../src/client/i18n/locales/continuous-details.ts'
+import {readPlanWorkDefinition} from '@teloa/contract'
 
 // 本任务新增的 24 条 plan.status.* / plan.timeline.* / plan.rail.* / plan.menu.* 词条在 T9 接线 PlanDetail 之前没有 src/client 引用。
 // i18n-orphan-keys 守卫今天不管 `plan.` 命名空间（NAMESPACES 里没有），所以此时不会报孤儿；T9 接线后由 PlanDetail 真实引用，不加豁免。
@@ -24,6 +25,17 @@ const skip=(scheduledAt:string,reason:PlanScheduleSkip['reason'],blockingClaimId
 const summary=(overview:Partial<NonNullable<PlanScheduleSummary['overview']>>={}):PlanScheduleSummary=>({available:true,overview:{planId,planVersion:3,state:'active',nextAt:null,latest:null,latestSkip:null,...overview},health:null})
 const execution=(run:PlanExecutionHistoryItem['run']):PlanExecutionHistoryItem=>({claimId:claimA,planId,occurrenceId:occurrence.occurrenceId,planVersion:3,configVersion:1,scheduledAt:occurrence.scheduledAt,claimedAt:occurrence.claimedAt,task:{id:taskId,state:'running'},run})
 const input=(overrides:Partial<PlanStatusInput>={}):PlanStatusInput=>({plan:{state:'active',trigger},schedule:summary(),skips:[],latestExecution:null,stamp,t,...overrides})
+
+test('有效长期定义覆盖旧日程，暂停事件不展示每日触发，混合触发保留真实各项',()=>{
+ const work=readPlanWorkDefinition({schema:'teloa.plan-work/v3',definitionVersion:1,definitionControlId:planId,budgetAccountId:claimA,authorization:{kind:'delegation',delegationId:claimA,delegationVersion:1},completion:{kind:'manual'},triggers:[{kind:'local-event',eventKind:'business-object-version',sourceRef:{kind:'business-object',scope:'SOC',type:'lead',id:'lead-1'},coalesce:'latest'}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false})
+ const paused=planStatusBox(input({plan:{state:'paused',trigger,workDefinition:work}}))
+ assert.match(paused.sentence,/planWork\.businessObject/);assert.doesNotMatch(paused.sentence,/09:00|continuous\.trigger\.daily/)
+ const unavailable=planStatusBox(input({plan:{state:'active',trigger,workDefinition:work},schedule:{available:false,overview:null,health:null}}))
+ assert.equal(unavailable.primary,undefined,'事件来源不可用不能冒出手动日程触发')
+ const mixed=readPlanWorkDefinition({...work,triggers:[...work.triggers,{kind:'schedule',schedule:{...trigger,time:'10:30'}}]})
+ const combined=planStatusBox(input({plan:{state:'paused',trigger,workDefinition:mixed}}))
+ assert.match(combined.sentence,/planWork\.businessObject/);assert.match(combined.sentence,/10:30/);assert.doesNotMatch(combined.sentence,/09:00/)
+})
 
 test('第 1 行：归档优先于一切',()=>{
  const model=planStatusBox(input({plan:{state:'archived',trigger},schedule:{available:false,overview:null,health:null}}))
@@ -148,9 +160,9 @@ test('PlanDetail 已换到对象页骨架：状态框、时间线、属性栏接
  const styles=readFileSync(new URL('../src/client/ContinuousPage.module.css',import.meta.url),'utf8')
  for(const needle of ['planStatusBox(','planTimelineEvents(','<ObjectPageHeader','<StatusBox','<EventTimeline','<PropertyRail',"ariaLabel={t('plan.status.aria')}",'focusObjectAnchor(root.current,anchor,','data-teloa-anchor="archive"','data-teloa-anchor="trigger-demo"'])assert.ok(source.includes(needle),needle)
  for(const key of ['plan.status.aria','plan.timeline.aria','plan.timeline.empty','plan.timeline.fold.skip','plan.rail.aria','plan.rail.health','plan.rail.healthAt','plan.menu.more','continuous.detail.status.sandbox'])assert.ok(source.includes(`'${key}'`),key)
- for(const gone of ['own.planGrid','own.planSheet','own.planFacts','ScheduleSummaryView','continuous.detail.specification','continuous.detail.controls','continuous.detail.record','dangerouslySetInnerHTML'])assert.ok(!source.includes(gone),gone)
- for(const gone of ['.planGrid','.planSheet','.planFacts'])assert.ok(!styles.includes(gone),gone)
- assert.ok(styles.includes('.planBody{'))
+ for(const gone of ['own.planGrid','own.planSheet','ScheduleSummaryView','continuous.detail.specification','continuous.detail.controls','continuous.detail.record','dangerouslySetInnerHTML'])assert.ok(!source.includes(gone),gone)
+ for(const gone of ['.planGrid','.planSheet'])assert.ok(!styles.includes(gone),gone)
+ assert.ok(styles.includes('.planBody{'));assert.ok(source.includes('own.planFacts'));assert.ok(styles.includes('.planFacts{'),'紧凑状态属性使用既有共同样式')
  const savedSource=source.slice(source.indexOf('\nfunction SavedPlanSource'))
  assert.ok(savedSource.includes('objectCss.mono'))
  assert.ok(savedSource.includes('{display.summary}'))

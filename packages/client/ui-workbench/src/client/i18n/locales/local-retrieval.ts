@@ -1,4 +1,11 @@
 export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
+ ['retrieval.citation.sources','来源','來源','Sources'],
+ ['retrieval.citation.unavailable','此引用来源暂不可用，请返回原会话重新核对。','此引用來源暫時無法使用，請返回原對話重新核對。','This source is unavailable. Return to the original conversation to check it.'],
+ ['retrieval.citation.loading','正在读取引用来源…','正在讀取引用來源…','Loading source…'],
+ ['retrieval.citation.original','引用原片段','引用原片段','Cited excerpt'],
+ ['retrieval.citation.version','版本 {version}','版本 {version}','Version {version}'],
+ ['retrieval.citation.snapshot','本次检索时的固定原文片段','本次檢索時的固定原文片段','Original excerpt captured by this search'],
+ ['retrieval.citation.lines','第 {start}–{end} 行','第 {start}–{end} 行','Lines {start}–{end}'],
  [
   "retrieval.model.title",
   "本地检索",
@@ -25,32 +32,8 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
   "Ausgewählte Unterlagen auf dem Gerät mit Teloa durchsuchen. Downloads erfordern eine Bestätigung.",
   "Pesquise os recursos escolhidos no dispositivo que executa o Teloa. Os downloads exigem confirmação."
  ],
- [
-  "retrieval.model.disabled",
-  "请先在市场「扩展」启用本地中文检索，并按提示重启。",
-  "請先在市場「擴展」啟用本機中文檢索，並依提示重新啟動。",
-  "Enable Local Chinese retrieval in Market > Extensions, then restart as instructed.",
-  "マーケットの「拡張」でローカル中国語検索を有効にし、案内に従って再起動してください。",
-  "마켓 > 확장에서 로컬 중국어 검색을 활성화하고 안내에 따라 다시 시작하세요.",
-  "Bật Truy xuất tiếng Trung cục bộ trong Chợ > Tiện ích, rồi khởi động lại theo hướng dẫn.",
-  "Activa la búsqueda local en chino en Mercado > Extensiones y reinicia según las indicaciones.",
-  "Activez la recherche locale en chinois dans Marché > Extensions, puis redémarrez selon les instructions.",
-  "Lokale chinesische Suche unter Markt > Erweiterungen aktivieren und wie angegeben neu starten.",
-  "Ative a busca local em chinês em Mercado > Extensões e reinicie conforme indicado."
- ],
- [
-  "retrieval.model.extensions",
-  "前往扩展",
-  "前往擴展",
-  "Open extensions",
-  "拡張を開く",
-  "확장 열기",
-  "Mở tiện ích",
-  "Abrir extensiones",
-  "Ouvrir les extensions",
-  "Erweiterungen öffnen",
-  "Abrir extensões"
- ],
+ ["retrieval.model.disabled", "请先启用本地检索，再准备检索模型。", "請先啟用本機檢索，再準備檢索模型。", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model.", "Enable local retrieval, then prepare a search model."],
+ ["retrieval.model.extensions", "启用本地检索", "啟用本機檢索", "Enable local retrieval", "Enable local retrieval", "Enable local retrieval", "Enable local retrieval", "Enable local retrieval", "Enable local retrieval", "Enable local retrieval", "Enable local retrieval"],
  [
   "retrieval.model.prepare",
   "准备检索模型",
@@ -924,5 +907,10 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
 ,
  ["retrieval.failure.runtime-version","请更新 Ollama 后重试。","請更新 Ollama 後重試。","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again.","Update Ollama and try again."],
  ["retrieval.failure.runtime-unsupported", "这台电脑暂不支持此模型，请选择其他检索模型。", "這台電腦暫不支援此模型，請選擇其他檢索模型。", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model.", "This computer cannot run this model yet. Choose another search model."],
- ["retrieval.model.close", "关闭模型设置", "關閉模型設定", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings"]
+ ["retrieval.model.close", "关闭模型设置", "關閉模型設定", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings", "Close model settings"],
+ ["retrieval.resources.settings", "检索设置", "檢索設定", "Search settings", "Search settings", "Search settings", "Search settings", "Search settings", "Search settings", "Search settings", "Search settings"],
+ ["retrieval.resources.pending", "待加入：{title}", "待加入：{title}", "Waiting to add: {title}", "Waiting to add: {title}", "Waiting to add: {title}", "Waiting to add: {title}", "Waiting to add: {title}", "Waiting to add: {title}", "Waiting to add: {title}", "Waiting to add: {title}"],
+ ["retrieval.resources.resume", "继续准备", "繼續準備", "Continue setup", "Continue setup", "Continue setup", "Continue setup", "Continue setup", "Continue setup", "Continue setup", "Continue setup"],
+ ["retrieval.resources.abandon", "取消加入", "取消加入", "Cancel adding", "Cancel adding", "Cancel adding", "Cancel adding", "Cancel adding", "Cancel adding", "Cancel adding", "Cancel adding"],
+ ["retrieval.resources.activationUnavailable", "本地检索暂不可配置，请重试。", "本機檢索暫時無法設定，請重試。", "Local retrieval cannot be configured. Please try again.", "Local retrieval cannot be configured. Check the current host.", "Local retrieval cannot be configured. Check the current host.", "Local retrieval cannot be configured. Check the current host.", "Local retrieval cannot be configured. Check the current host.", "Local retrieval cannot be configured. Check the current host.", "Local retrieval cannot be configured. Check the current host.", "Local retrieval cannot be configured. Check the current host."]
 ] as const

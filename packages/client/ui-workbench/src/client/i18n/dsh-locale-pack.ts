@@ -29,6 +29,7 @@ export function installDshLanguagePack(
   locale:DshLocalePort,
   traditionalLocale:'zh-Hant'|'zh-TW'|'zh-HK',
   namespaces:Readonly<Record<string,readonly DshPackRow[]>>,
+  traditionalOnly:Readonly<Record<string,Readonly<Record<string,string>>>>={},
 ):Array<()=>void>{
   const disposers:Array<()=>void>=[]
   const installedLocales:ReadonlyArray<readonly [string,DshPackLocale]>=[
@@ -36,7 +37,11 @@ export function installDshLanguagePack(
     ...DSH_PACK_LOCALES.filter(id=>id!=='zh-Hant').map(id=>[id,id] as const),
   ]
   for(const [target,source] of installedLocales){
-    for(const [namespace,rows] of Object.entries(namespaces))disposers.push(locale.register(namespace,target,dshPackDictionary(rows,source)))
+    const keys=new Set([...Object.keys(namespaces),...(source==='zh-Hant'?Object.keys(traditionalOnly):[])])
+    for(const namespace of keys){
+      const rows=namespaces[namespace],dictionary=rows?dshPackDictionary(rows,source):{}
+      disposers.push(locale.register(namespace,target,source==='zh-Hant'?{...dictionary,...traditionalOnly[namespace]}:dictionary))
+    }
   }
   return disposers
 }

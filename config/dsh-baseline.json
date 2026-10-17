@@ -1,15 +1,15 @@
 {
   "purpose": "Teloa 社区版固定 DSH 依赖基线",
   "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-  "tag": "dsh-v0.2.1-alpha.1",
-  "commit": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "tag": "dsh-v0.2.1-rc.2",
+  "commit": "687f282e8625c6b8d11ff58211a90524be2e4317",
   "verifiedFrom": "官方固定 tag 与 npm 精确版本；兼容补丁校验后准备输入",
-  "verifiedAt": "2026-10-08",
+  "verifiedAt": "2026-10-17",
   "integration": "Cordis 配置补丁、客户端 slot、服务提供方及经摘要核验的准入兼容补丁",
   "plannedProfile": "teloa",
   "port": 3100,
   "runtimeDirectory": ".runtime/dsh",
-  "cliPackage": "@deepseek-ai/dsh@0.2.1-alpha.1",
+  "cliPackage": "@deepseek-ai/dsh@0.2.1-rc.2",
   "packageVersions": "config/dsh-package-versions.json",
-  "verifiedDependencyCount": 301
+  "verifiedDependencyCount": 320
 }

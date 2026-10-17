@@ -23,8 +23,9 @@ import {PostgreSqlContainer} from '@testcontainers/postgresql'
 import {openResourceDatabase,type TaskRun} from '@teloa/backend'
 import {apply} from '../src/index.ts'
 import {compositionEntries,type RpcHandler} from './fixtures/production-host.ts'
-import {installNativeHostServices} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,publishNativeFixtureInput,installNativeJobTools} from './fixtures/native-host-services.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import type {ResidentInputAdmission} from '../src/native-work-input.ts'
 
 const owner='local:teloa-owner'
 const delay=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))
@@ -35,7 +36,7 @@ async function until(check:()=>boolean|Promise<boolean>,label:string){
 const finalText=(sessionId:string)=>'后台进程已经退出，结果已核对：'+sessionId
 class ScriptedJobsModel extends LlmAdapter{
  readonly calls=new Map<string,number>()
- override async resolveModel(provider:string,id:string){return {provider,id,name:id}}
+ override async resolveModel(provider:string,id:string){return {provider,id,name:id,defaultMaxTokens:1024}}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
   const sessionId=String(options.sessionId),call=this.calls.get(sessionId)??0
   this.calls.set(sessionId,call+1)
@@ -44,6 +45,8 @@ class ScriptedJobsModel extends LlmAdapter{
    yield {type:'block-start',index:0,blockType:'tool-call'}
    yield {type:'tool-call-delta',index:0,id,name,argumentsDelta:args}
    yield {type:'block-end',index:0,block:{type:'tool-call',id,name,arguments:args}}
+   // 本地脚本提供确定的保守计数（每字节计一 token），不能把缺失用量永久留作未知请求。
+   yield {type:'usage',usage:{inputTokens:Buffer.byteLength(JSON.stringify(options.messages),'utf8'),outputTokens:Buffer.byteLength(args,'utf8')}}
    yield {type:'finish',reason:{kind:'tool-calls'}}
    return
   }
@@ -51,6 +54,7 @@ class ScriptedJobsModel extends LlmAdapter{
   yield {type:'block-start',index:0,blockType:'text'}
   yield {type:'text-delta',index:0,text}
   yield {type:'block-end',index:0,block:{type:'text',text}}
+  yield {type:'usage',usage:{inputTokens:Buffer.byteLength(JSON.stringify(options.messages),'utf8'),outputTokens:Buffer.byteLength(text,'utf8')}}
   yield {type:'finish',reason:{kind:'stop'}}
  }
 }
@@ -70,10 +74,9 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
  await mkdir(join(root,'.runtime/dsh/profiles/teloa'),{recursive:true})
  await writeFile(join(root,'.runtime/dsh/profiles/teloa/package.json'),JSON.stringify({dsh:{profile:{bundles:[],patchReload:'startup'}}}))
  ctx.provide('loader',compositionEntries())
- await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry)
- await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
+ await installNativeSessions(ctx)
  await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
- await ctx.plugin(JobTools,{completionDelivery:'wakeup'})
+ await installNativeJobTools(ctx,{completionDelivery:'wakeup'})
  const model=new ScriptedJobsModel();ctx.llm.registerAdapter(['scripted-jobs'],model)
  const workspaces=new Map<string,{id:string;path:string}>()
  ctx.provide('workspaceRegistry',{
@@ -81,8 +84,8 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
   get:(id:string)=>workspaces.get(id),list:()=>[...workspaces.values()],
  })
  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
- ctx.provide('skills',{list:async()=>[],registerProvider:(factory:(control:{invalidate:()=>void;signal:AbortSignal})=>unknown)=>{factory({invalidate:()=>{},signal:new AbortController().signal});return ()=>{}}})
- ctx.provide('fs',{});ctx.provide('fileReferences',{})
+
+ ctx.provide('fileReferences',{})
  ctx.provide('sessionController',{
   create:async(input:{sessionId?:string;agentPreset?:string;workspaceId?:string}={})=>{
    const sessionId=SessionId(input.sessionId??randomUUID()),cwd=workspaces.get(input.workspaceId??'')?.path??root
@@ -93,7 +96,7 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
   resolveAgent:async(id:string)=>({agent:ctx.agents.get(SessionId(id))!}),
   modelCatalog:async()=>({default:{provider:'scripted-jobs',model:'controlled'}}),
   prompt:async(input:{sessionId:string;requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{
-   ctx.agents.get(SessionId(input.sessionId))!.followup(createUserMessage({content:input.content,source:{kind:'user',rpcId:brandString<SessionRequestId>(input.requestId)}}))
+   await publishNativeFixtureInput(ctx,ctx.agents.get(SessionId(input.sessionId))!,createUserMessage({content:input.content,source:{kind:'user',rpcId:brandString<SessionRequestId>(input.requestId)}}))
    return {accepted:true}
   },
   cancel:({sessionId}:{sessionId:string})=>{ctx.agents.get(SessionId(sessionId))!.cancel({kind:'user'},{keepInbox:true});return {accepted:true}},
@@ -182,7 +185,7 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
   await until(()=>events(run).some(event=>event.type==='user/message'&&event.data.source.kind==='tool-jobs'),'官方完成通知必须唤醒同一 owner')
   await ctx.agents.get(SessionId(run.sessionId))!.whenIdle()
   assert.equal(await readFile(job.exited,'utf8'),'completed');assert.notEqual(job.child.exitCode,null)
-  const ended=await reconcile(run);assert.equal(ended.state,'ended');assert.equal(ended.evidence?.state==='ended'&&ended.evidence.reason,'completed')
+  const ended=await reconcile(run);assert.equal(ended.state,'ended');assert.equal(ended.evidence?.state==='ended'&&ended.evidence.reason,'completed',JSON.stringify(events(run).slice(-8)))
   const again=await reconcile(run);assert.deepEqual(again.evidence,ended.evidence)
   assert.equal(model.calls.get(run.sessionId),4,'初轮与官方续轮分别执行一次工具并给出结果')
   assert.equal(statusChecks.get(run.sessionId),1,'真实完成续轮仍能使用 Run 的固定授权')
@@ -201,6 +204,7 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
   await until(()=>ctx.jobs.get(job.id,SessionId(run.sessionId)).status==='killed','停止必须等生产者 close 后才能终态')
   await ctx.agents.get(SessionId(run.sessionId))!.whenIdle()
   assert.equal(await readFile(job.exited,'utf8'),'cancelled');assert.notEqual(job.child.exitCode,null)
+  await until(async()=>(await reconcile(run)).state==='ended','停止必须等真实后台退出且宿主日志冻结后收口')
   const ended=await reconcile(run);assert.equal(ended.state,'ended');assert.equal(ended.evidence?.state==='ended'&&ended.evidence.reason,'aborted')
   assert.deepEqual((await call<TaskRun>('task-runs/stop',{runId:run.id})).evidence,ended.evidence)
   assert.equal(statusChecks.get(run.sessionId),undefined,'停止后的官方续轮也不能调用已撤销的工具')
@@ -210,4 +214,24 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
  const linked=(await pool.query("select run_id,session_id,payload from teloa_task_run_runtime_links where owner_id=$1 and payload->>'record'='job'",[owner])).rows
  assert.equal(linked.length,6)
  for(const {run,job} of [...completed,...stopping]){const rows=linked.filter(row=>row.run_id===run.id);assert.equal(rows.length,1);assert.equal(rows[0].session_id,run.sessionId);assert.equal(rows[0].payload.jobId,job.id);assert.equal(rows[0].payload.status,ctx.jobs.get(job.id,SessionId(run.sessionId)).status)}
+ await t.test('Job 已实际完成但原通知还在准入复核时停止：取消等待、日志冻结后中止，不发布旧占位回复',async()=>{
+  const run=await createRun('群交办','通知等待时停止'),job=await firstRound(run)
+  const resident=Reflect.get(ctx,'teloaResidentInputAdmission') as ResidentInputAdmission|undefined
+  assert.ok(resident);assert.equal(typeof resident.acquire,'function')
+  const acquire=resident.acquire
+  let entered=false,release!:()=>void
+  resident.acquire=async input=>{if(input.sessionId===run.sessionId){entered=true;await new Promise<void>(resolve=>{release=resolve})}return acquire(input)}
+  try{
+   await writeFile(job.release,'release')
+   await until(()=>entered,'真实通知必须进入居民执行准入复核等待')
+   assert.equal(ctx.jobs.get(job.id,SessionId(run.sessionId)).status,'completed')
+   assert.equal((await reconcile(run)).state,'active','真实完成通知未受理时不能提前结项')
+   const stopping=await call<TaskRun>('task-runs/stop',{runId:run.id});assert.equal(stopping.state,'active')
+   release()
+   await until(async()=>(await reconcile(run)).state==='ended','已取消完成通知必须按宿主冻结事实中止')
+   const ended=await reconcile(run);assert.equal(ended.evidence?.state==='ended'&&ended.evidence.reason,'aborted')
+   assert.equal(model.calls.get(run.sessionId),2,'停止通知等待之后不得发出下一模型请求')
+   assert.deepEqual(await deliveries(run),[],'原占位回复不能冒充成功群回帖')
+  }finally{release?.();resident.acquire=acquire}
+ })
 })

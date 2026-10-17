@@ -1,18 +1,31 @@
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -1742,6 +1742,28 @@
+@@ -1742,6 +1742,41 @@
  * The abstract `llm` service: an adapter registry plus a streaming model-call
  * API, interceptable via the `llm/stream` waterfall.
  */
 +// Deployment-owned synchronous gate at the final adapter boundary. Free has no gate by default.
 +function createStreamAdmission() {
-+ let required = false, policy;
++ let required = false, policy, projection, dispatched;
 + return Object.freeze({
 +  require() { required = true; },
 +  install(candidate) {
 +   if (policy !== void 0 || typeof candidate !== "function") throw new Error("LLM stream admission is already installed or invalid");
 +   policy = candidate;
 +  },
++  installProjection(candidate, onDispatched) {
++   if (projection !== void 0 || typeof candidate !== "function" || onDispatched !== void 0 && typeof onDispatched !== "function") throw new Error("LLM stream projection is already installed or invalid");
++   projection = candidate; dispatched = onDispatched;
++  },
++  project(original, resolved) {
++   if (projection === void 0) return resolved;
++   const projected = Reflect.apply(projection, void 0, [original, resolved]);
++   if (!projected || typeof projected !== "object" || typeof projected.then === "function" || !Object.isFrozen(projected) || !Array.isArray(projected.messages) || !Object.isFrozen(projected.messages)) throw new LlmError("LLM stream projection must return a frozen request", "STREAM_ADMISSION_UNAVAILABLE");
++   const mutable = new Set(["messages", "system", "toolHistory", "sessionId"]);
++   for (const key of new Set([...Object.keys(resolved), ...Object.keys(projected)])) if (!mutable.has(key) && projected[key] !== resolved[key]) throw new LlmError("LLM stream projection cannot change route, controls or tools", "STREAM_ADMISSION_UNAVAILABLE");
++   return projected;
++  },
++  dispatched(original, projected, admitted) { if (dispatched !== void 0) return Reflect.apply(dispatched, void 0, [original, projected, admitted]); },
 +  assert(options) {
 +   if (policy === void 0) {
 +    if (required) throw new LlmError("LLM stream admission provider is unavailable", "STREAM_ADMISSION_UNAVAILABLE");
@@ -29,7 +42,7 @@
  let LlmRuntime = (() => {
  	let _classSuper = TypertRemoteService;
  	let _instanceExtraInitializers = [];
-@@ -1799,7 +1821,10 @@
+@@ -1799,7 +1834,11 @@
  		discoveries = /* @__PURE__ */ new Map();
  		constructor(ctx) {
  			super(ctx, "llm");
@@ -37,21 +50,48 @@
  		}
 +		requireStreamAdmission() { this.streamAdmission.require(); }
 +		installStreamAdmission(policy) { this.streamAdmission.install(policy); }
++		installStreamProjection(policy, dispatched) { this.streamAdmission.installProjection(policy, dispatched); }
  		/** Notify topology observers without letting one broken listener veto the commit. */
  		emitAdaptersUpdated() {
  			for (const listener of this.ctx.events.dispatch("emit", ["llm/adapters-updated"])) try {
-@@ -2314,7 +2339,9 @@
+@@ -2300,21 +2339,29 @@
+ 					...options,
+ 					...resolvedConfig
+ 				};
+-				let projectedMessages = resolvedOptions.messages;
++				this.streamAdmission.assert(options);
++				const admittedOptions = this.streamAdmission.project(options, resolvedOptions);
++				this.streamAdmission.assert(options);
++				let projectedMessages = admittedOptions.messages;
+ 				if (projectedMessages.some((message) => contentHasFile(message.content))) projectedMessages = projectFilesToText(projectedMessages, (ref) => this.fileReadPath(ref));
+ 				if (modelInfo.inputModalities !== void 0 && !modelInfo.inputModalities.includes("image") && projectedMessages.some((message) => contentHasImage(message.content))) projectedMessages = projectImagesForTextModel(projectedMessages);
+-				const projectedTools = projectToolUpdates(projectedMessages, resolvedOptions.tools, modelInfo.toolUpdate, resolvedOptions.toolHistory);
++				const projectedTools = projectToolUpdates(projectedMessages, admittedOptions.tools, modelInfo.toolUpdate, admittedOptions.toolHistory);
+ 				projectedMessages = projectedTools.messages;
+-				let projectedOptions = resolvedOptions;
+-				if (projectedMessages !== resolvedOptions.messages || projectedTools.tools !== resolvedOptions.tools) {
++				let projectedOptions = admittedOptions;
++				if (projectedMessages !== admittedOptions.messages || projectedTools.tools !== admittedOptions.tools) {
+ 					projectedOptions = {
+-						...resolvedOptions,
++						...admittedOptions,
+ 						messages: projectedMessages,
+ 						...projectedTools.tools === void 0 ? {} : { tools: projectedTools.tools }
  					};
- 					if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions);
+-					if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions);
++					if (Object.isFrozen(admittedOptions)) deepFreeze(projectedOptions);
  				}
 -				iterator = dispatch(this.forAdapter(projectedOptions, adapter))[Symbol.asyncIterator]();
 +				const dispatchOptions = this.forAdapter(projectedOptions, adapter);
 +				this.streamAdmission.assert(options);
 +				iterator = dispatch(dispatchOptions)[Symbol.asyncIterator]();
++				const notification = this.streamAdmission.dispatched(options, dispatchOptions, admittedOptions);
++				if (notification !== void 0) await notification;
++				this.streamAdmission.assert(options);
  			} catch (error) {
  				yield adapterFailureChunk(error, options.signal);
  				return;
-@@ -2324,7 +2351,8 @@
+@@ -2324,7 +2371,8 @@
  				while (true) {
  					let item;
  					try {
@@ -63,12 +103,15 @@
  							value: next.value
 --- a/lib/types/index.d.ts
 +++ b/lib/types/index.d.ts
-@@ -233,11 +233,17 @@
+@@ -233,11 +233,22 @@
   * The abstract `llm` service: an adapter registry plus a streaming model-call
   * API, interceptable via the `llm/stream` waterfall.
   */
 +/** Synchronous deployment gate; errors prevent final adapter dispatch or further iteration. */
 +export type LlmStreamAdmission = (options: Readonly<GenerateOptions>) => void;
++/** Trusted immutable provider envelope; original loop identity remains unchanged. */
++export type LlmStreamProjection = (original: Readonly<GenerateOptions>, resolved: Readonly<GenerateOptions>) => Readonly<GenerateOptions>;
++export type LlmStreamDispatched = (original: Readonly<GenerateOptions>, projected: Readonly<GenerateOptions>, admitted: Readonly<GenerateOptions>) => void | Promise<void>;
  export declare class LlmRuntime extends TypertRemoteService {
      private adapters;
      private directory;
@@ -78,6 +121,8 @@
 +    requireStreamAdmission(): void;
 +    /** Install exactly one immutable same-process gate. Not a Remote API. */
 +    installStreamAdmission(policy: LlmStreamAdmission): void;
++    /** Install one provider envelope projection without changing the captured adapter registration. */
++    installStreamProjection(policy: LlmStreamProjection, dispatched?: LlmStreamDispatched): void;
      /** Notify topology observers without letting one broken listener veto the commit. */
      private emitAdaptersUpdated;
      /** Contained-listener diagnostic shared by the sync and async failure paths. */

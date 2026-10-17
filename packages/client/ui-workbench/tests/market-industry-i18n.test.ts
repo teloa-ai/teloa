@@ -45,28 +45,17 @@ test('市场与行业模板词典按十语顺序完整提供',()=>{
   ])
 })
 
-test('市场固定文案不以英文复制冒充当地语言',()=>{
+test('市场固定文案简繁英定稿，其余语言保留既有译文或英文回退',()=>{
   const rows=[...MARKET_INDUSTRY_MESSAGE_ROWS,...MARKET_SKILL_CONTROL_MESSAGE_ROWS]
-  const technicalOnly=(value:string)=>value
-    .replace(/\{[^}]+\}/g,'')
-    .replace(/\b(?:Skill|Plugin|MCP|DSH|Teloa|SHA-256|ID|bytes|Destination|Signature|Optional|Link|Team|Name)\b/gi,'')
-    .replace(/[^\p{L}]+/gu,'')==='' 
   for(const row of rows){
-    const english=row[3]!
-    if(technicalOnly(english))continue
-    for(const [offset,locale] of locales.slice(3).entries()){
-      // Extensions 本身也是法语的标准名称，不为躲开同形词检查而硬造译名。
-      if(row[0]==='market.presentation.category.plugin'&&locale==='fr')assert.equal(row[offset+4],'Extensions')
-      else if(row[0]==='market.industry.resource.plugin'&&locale==='fr')assert.equal(row[offset+4],'Extension')
-      // 德语界面沿用外来词 Skill（Fähigkeit 已用作「能力」），技能页签与技能落点写 Skills。
-      else if((row[0]==='market.presentation.category.skill'||row[0]==='market.industry.destination.capabilities')&&locale==='de')assert.equal(row[offset+4],'Skills')
-      else assert.notEqual(row[offset+4],english,`${row[0]}: ${locale} copied English`)
+    for(const [index,locale] of locales.slice(0,3).entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
+    // 延期语言保留已有内容；旧英文回退不必随本轮英文重新措辞，也不冒称已完成翻译。
+    for(const [offset,value] of row.slice(4).entries()){
+      assert.ok(value.trim(),`${row[0]}: ${locales[offset+3]}`)
+      assert.doesNotMatch(value,/\n_|障害者|장애인|Discapacitado/,`${row[0]} contains a damaged or misleading translation`)
     }
-    for(const value of row.slice(4))assert.doesNotMatch(value,/\n_|障害者|장애인|Discapacitado/,`${row[0]} contains a damaged or misleading translation`)
   }
-  // 技能是可翻译的普通名词；品牌、协议和文件名保留原有专名。
-  for(const token of ['Teloa','DSH','MCP','SHA-256','SKILL.md','ZIP'])for(const row of rows.filter(value=>value[3].includes(token)&&value[0]!=='market.presentation.category.skill'))for(const [offset,locale] of locales.slice(3).entries())assert.match(row[offset+4]!,new RegExp(token.replace('.','\\.')),`${row[0]}: ${locale} changed ${token}`)
-  assert.deepEqual(rows.find(row=>row[0]==='market.presentation.status.disabled')?.slice(3),['Disabled','無効','사용 안 함','Đã tắt','Desactivado','Désactivé','Deaktiviert','Desativado'])
+  assert.deepEqual(rows.find(row=>row[0]==='market.presentation.status.disabled')?.slice(1,4),['已停用','已停用','Disabled'])
 })
 
 test('三类业务定制声明的类型名进十一列词表且零回落',()=>{

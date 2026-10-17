@@ -2,7 +2,7 @@ import {WorkError,type GroupTaskCreateInput,type GroupDispatchItem} from '@teloa
 import type {GroupRoutingOutboxService} from '@teloa/backend'
 
 export type GroupRoutingOutboxPorts={
- outbox:Pick<GroupRoutingOutboxService,'pending'|'claim'|'assertDispatch'|'taskInput'|'receipt'|'reserveSubmission'|'settle'>
+ outbox:Pick<GroupRoutingOutboxService,'pending'|'claim'|'assertDispatch'|'taskInput'|'receipt'|'reserveSubmission'|'settle'>&Partial<Pick<GroupRoutingOutboxService,'releaseStages'>>
  createTask:(owner:string,input:GroupTaskCreateInput,signal:AbortSignal)=>Promise<{taskId:string}>
  prepare:(owner:string,input:{requestId:string;taskId:string;expectedTaskVersion:number},signal:AbortSignal)=>Promise<{runId:string}>
  /** 复用 TaskRunDriver.start 的持久 claim；禁止适配成直接 prompt。 */
@@ -18,6 +18,8 @@ const blocked=(error:unknown)=>error instanceof WorkError&&['teloa/forbidden','t
 
 /** 每位接收者分别恢复。未知提交只核对原 Run；prepared 才证明未取得原生发送权。 */
 export async function drainGroupRoutingOutbox(owner:string,ports:GroupRoutingOutboxPorts,signal:AbortSignal,input:{messageId?:string}={}):Promise<void>{
+ // 依赖交接：前序阶段的可信成果已贴回本群的后序阶段先转为待投递，再与其他待办一起按原身份派发。
+ await ports.outbox.releaseStages?.(owner,input)
  const pending=await ports.outbox.pending(owner,input)
  for(const candidate of pending){
   signal.throwIfAborted()

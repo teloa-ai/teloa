@@ -14,10 +14,10 @@ test('市场页面的固定用户界面文案全部来自词典',async()=>{
   assert.doesNotMatch(source,/market\.page\.\d+/,'不得以编号词条代替界面语义')
 })
 
-test('市场页面词典按十语顺序完整提供代表性人工翻译',()=>{
+test('市场页面词典保留既有语言，当前变更定稿简繁英',()=>{
   for(const row of MARKET_PAGE_MESSAGE_ROWS){
-    assert.equal(row.length,locales.length+1,row[0])
-    for(const [index,locale] of locales.entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
+    assert.ok(row.length===4||row.length===locales.length+1,row[0])
+    for(const [index,locale] of locales.slice(0,row.length-1).entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
   }
   assert.deepEqual(MARKET_PAGE_MESSAGE_ROWS.find(row=>row[0]==='market.industry.loadWorkspace'),[
     'market.industry.loadWorkspace','添加到我的团队','新增到我的團隊','Add to my team','自分のチームに追加','내 팀에 추가','Thêm vào đội của tôi','Añadir a mi equipo','Ajouter à mon équipe','Zu meinem Team hinzufügen','Adicionar à minha equipa',

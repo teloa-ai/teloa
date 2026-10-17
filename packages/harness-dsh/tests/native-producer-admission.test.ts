@@ -8,7 +8,7 @@ import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {createNativeProducerAdmissions} from '../src/native-producer-admission.ts'
 import {controllerAdmissionFixture,promptRequest,queueRequest} from './fixtures/native-controller-admission.ts'
 import {patchedSessionPackage} from './fixtures/native-final-session.ts'
-import {subagentFixture} from './fixtures/native-subagent-admission.ts'
+import {subagentFixture,promptAdmissionService} from './fixtures/native-subagent-admission.ts'
 import {scheduleFixture,until} from './fixtures/native-schedule-admission.ts'
 
 const forbidden={code:'teloa/forbidden'},signal=new AbortController().signal
@@ -78,7 +78,7 @@ test('统一 Subagent policy 复用一个最终 guard；上下行实际入Inbox�
  access.installPolicy(async request=>{seen.push(request);return {assertCurrent(){}}})
  let work:ReturnType<typeof createNativeWorkInput>|undefined
  const f=await subagentFixture(t,{},true,{sessionPackage,beforeService({ctx}){work=createNativeWorkInput(ctx,access)}})
- const policies=createNativeProducerAdmissions(work!);f.service.requirePromptAdmission();f.service.installPromptAdmission(policies.subagent)
+ const policies=createNativeProducerAdmissions(work!),service=promptAdmissionService(f.service);service.requirePromptAdmission();service.installPromptAdmission(policies.subagent)
  const down=await f.send(f.parent,f.child,'真实下行'),up=await f.send(f.child,f.parent,'真实上行')
  assert.equal(f.ledger(f.child).at(-1)?.id,down);assert.equal(f.ledger(f.parent).at(-1)?.id,up);assert.equal(seen.length,2)
  for(const row of seen){assert.equal(row.kind,'native-input');if(row.kind==='native-input')assert.equal(row.producer,'subagent')}

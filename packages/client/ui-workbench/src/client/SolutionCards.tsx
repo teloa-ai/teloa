@@ -1,4 +1,5 @@
 import {ResourceIcon} from './ResourceIcon.js'
+import type {RoleAvatarKey} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
 import clsx from 'clsx'
 import {ArrowUpRight, Check, Plus, RefreshCw, TriangleAlert, type LucideIcon} from 'lucide-react'
@@ -36,8 +37,8 @@ export function StateMark({ mark, t }: { mark: SolutionMark; t: TeloaTranslate }
 // 条目卡左侧 40px 形象：同事是本人形象，其余用类型图标。图标只是装饰，类型本身在详情里有文字。
 
 /** 条目卡的形象位，资源目录（`IndustryResourceKind`）与通用目录（`MarketCategory`）共用一处，两边形象不会长歪。 */
-export function ItemArt({ kind, title, seed }: { kind: IndustryResourceKind | MarketCategory; title: string; seed: string }) {
- return <ResourceIcon kind={kind} title={title} id={seed}/>
+export function ItemArt({ kind, title, seed, avatarKey }: { kind: IndustryResourceKind | MarketCategory; title: string; seed: string;avatarKey?:RoleAvatarKey|undefined }) {
+ return <ResourceIcon kind={kind} title={title} id={seed} avatarKey={avatarKey}/>
 }
 
 export type SolutionCardsProps = {

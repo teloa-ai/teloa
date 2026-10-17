@@ -7,6 +7,8 @@ import TeloaPluginManager,{protectedNativePlugin,pendingNativeBundle,marketManag
 test('原生插件管理保护宿主必需行与预设，仍可启停可选能力',()=>{
  for(const id of ['sandbox-policy','teloa-harness-dsh','teloa-ui-workbench','teloa-agent-preset','agent-preset-registry','preset-standard','agent-team','tool-agent-team','ui-agent-team','teloa-session-model-scope','teloa-tool-resource-provenance'])assert.equal(protectedNativePlugin({patchId:id,moduleName:'any'}),true,id)
  assert.equal(protectedNativePlugin({moduleName:'@teloa/harness-dsh',entryId:'include:other-name'}),true)
+ assert.equal(protectedNativePlugin({moduleName:'@teloa/harness-dsh/native-working-directory'}),true)
+ for(const id of ['working-directory','teloa-working-directory','preset-ptc-persistent','preset-ptc-python'])assert.equal(protectedNativePlugin({patchId:id,moduleName:'any'}),true,id)
  assert.equal(protectedNativePlugin({moduleName:'@teloa/im-gateway'}),true)
  assert.equal(protectedNativePlugin({moduleName:'any',entryId:'x:teloa-im-gateway'}),true)
  // 本地中文检索继续作为可选官方扩展，原生页不能单独关掉其必需行

@@ -27,7 +27,27 @@ function removeApprovedScheduleTool(plugins:Record<string,unknown>[]){
  plugins.splice(index,1)
 }
 
-test('官方真实补丁与 Teloa bundle 按发行顺序组合后五份预设通过安全复验',async()=>{
+/** 后台通知保留官方工具面，只替换已锁定的一行 provider 以核验原受理根。 */
+function useManagedJobTools(plugins:Record<string,unknown>[]){
+ const rows=plugins.filter(row=>row.id==='tool-jobs')
+ assert.equal(rows.length,1,'锁定官方预设必须恰有一行后台工具')
+ assert.deepEqual(rows[0],{id:'tool-jobs',name:'@deepseek-ai/dsh-tool-jobs'})
+ rows[0]!.name='@teloa/harness-dsh/managed-tool-jobs'
+}
+
+/** PTC 呈现在官方 ptcRuntime 子上下文注册 systemPrompt 段；仅认可 ptc/both 行新增这一项行级 inject，返回命中行数。 */
+function injectApprovedPresentationPrompt(plugins:Record<string,unknown>[]){
+ let injected=0
+ for(const row of plugins.filter(row=>row.id==='tool-presentation')){
+  assert.equal(row.name,'@deepseek-ai/dsh-agent-tool-presentation')
+  assert.equal(row.inject,undefined,'官方工具呈现行已自带 inject，需重新复核')
+  const mode=(row.config as {mode?:string}|undefined)?.mode
+  if(mode==='ptc'||mode==='both'){row.inject=['systemPrompt'];injected++}
+ }
+ return injected
+}
+
+test('官方真实补丁与 Teloa bundle 按发行顺序组合后包含两个可选代码预设并通过安全复验',async()=>{
  const boot=await import(pathToFileURL(officialRequire.resolve('@deepseek-ai/dsh-app-boot')).href)
  const patches:unknown[]=[]
  for(const name of ['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']){
@@ -40,16 +60,20 @@ test('官方真实补丁与 Teloa bundle 按发行顺序组合后五份预设通
  for(const path of manifest.dsh.bundle.patch)patches.push(parseDocument(await readFile(new URL(path,bundle),'utf8')))
  const rows=boot.composeEntries(patches).map((row:Record<string,unknown>)=>({...row,disabled:row.disabled===true}))
  assert.deepEqual(compositionViolations(compositionSnapshot(rows,{bundles:[],packages:[]})),[])
- assert.deepEqual(rows.filter((row:Record<string,unknown>)=>row.name==='@deepseek-ai/dsh-agent-preset'&&!row.disabled).map((row:{config:{id:string}})=>row.config.id).sort(),['cordis','minimal','ptc','standard','teloa-standard'])
+ assert.deepEqual(rows.filter((row:Record<string,unknown>)=>row.name==='@deepseek-ai/dsh-agent-preset'&&!row.disabled).map((row:{config:{id:string}})=>row.config.id).sort(),['cordis','minimal','ptc','ptc-persistent','ptc-python','standard','teloa-standard'])
 })
 
-test('官方覆盖由锁定声明生成，仅含受管派发、本地压缩预算适配和模型定时入口移除',async()=>{
+test('官方覆盖由锁定声明生成，仅含受管派发、后台通知、本地压缩预算适配和模型定时入口移除',async()=>{
  assert.equal(existsSync(overlayUrl),true,'缺少受管 standard 覆盖')
  const official=parseDocument(await readFile(join(presetRoot,'standard.patch.yml'),'utf8'))[0].insert[0]
  const overlay=parseDocument(await readFile(overlayUrl,'utf8'))[0]
  assert.equal(overlay.id,'preset-standard')
  const expected=structuredClone(official.config)
+ expected.name='DSH 原生标准模式'
+ expected.description='DSH 原生工具与提示词组合。'
  removeApprovedScheduleTool(expected.plugins)
+ useManagedJobTools(expected.plugins)
+ assert.equal(injectApprovedPresentationPrompt(expected.plugins),0,'standard 不应有 PTC 呈现依赖')
  const delegation=expected.plugins.find((row:{id:string})=>row.id==='delegation')
  delegation.config.find((row:{id:string})=>row.id==='workflow-ptc').config.provider='teloa-workflow-spawn'
  expected.plugins.find((row:{id:string})=>row.id==='compaction').config.find((row:{id:string})=>row.id==='compaction-basic').name='@teloa/harness-dsh/local-compaction'
@@ -65,6 +89,8 @@ test('官方覆盖由锁定声明生成，仅含受管派发、本地压缩预�
   else{
    const adapted=parseDocument(await readFile(new URL('../../bundle/agent-presets/'+id+'.patch.yml',import.meta.url),'utf8'))[0]
    removeApprovedScheduleTool(native.config.plugins)
+   useManagedJobTools(native.config.plugins)
+   assert.equal(injectApprovedPresentationPrompt(native.config.plugins),id==='ptc'?1:0,id+' PTC 呈现依赖行数')
    native.config.plugins.find((row:{id:string})=>row.id==='compaction').config.find((row:{id:string})=>row.id==='compaction-basic').name='@teloa/harness-dsh/local-compaction'
    assert.deepEqual(adapted.config,native.config,id+' 未增加无关改动')
    assert.equal(presetBodyNormalizedDigest(adapted.config.plugins),shippedPresetBodyDigests[id],id)
@@ -74,7 +100,7 @@ test('官方覆盖由锁定声明生成，仅含受管派发、本地压缩预�
 })
 
 test('官方正文的 PTC 模式、派发 provider 或任何插件被改动时仍拒绝启动',()=>{
- for(const preset of ['standard','ptc','minimal','cordis']){
+ for(const preset of ['standard','ptc','minimal','cordis','ptc-persistent','ptc-python']){
   const rows=[...compositionEntries().entries()].map(entry=>({...entry.options,disabled:entry.disabled}))
   const row=rows.find(row=>row.id==='preset-'+preset)!
   const config=structuredClone(row.config) as {plugins:Record<string,unknown>[]}
@@ -87,7 +113,7 @@ test('官方正文的 PTC 模式、派发 provider 或任何插件被改动时�
 test('本人可选择每个官方默认预设，而部署默认仍固定 Teloa',async()=>{
  const rows=[...compositionEntries().entries()].map(entry=>({...entry.options,disabled:entry.disabled}))
  const registry=rows.find(row=>row.id==='agent-preset-registry')!
- for(const selectedDefault of ['teloa-standard','standard','ptc','minimal','cordis']){
+ for(const selectedDefault of ['teloa-standard','standard','ptc','minimal','cordis','ptc-persistent','ptc-python']){
   registry.config={default:'teloa-standard',selectedDefault}
   assert.deepEqual(compositionViolations(compositionSnapshot(rows,{bundles:[],packages:[]})),[],selectedDefault)
  }

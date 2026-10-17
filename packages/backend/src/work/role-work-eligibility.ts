@@ -7,10 +7,12 @@ import {roleWorkOwner,roleWorkUuid,roleWorkVersion,roleWorkInvalid,roleWorkTrans
 import {readStoredRoleWorkDelegation,assertRoleDelegationFields,readRoleWorkGroupGrant} from './role-delegations.ts'
 import {readGroupTaskSource} from './group-tasks.ts'
 import {readTrustedGroupMessageRunSource} from './group-routing-outbox.ts'
+import {readStoredRunPlanReport} from './task-run-plan-context.ts'
+import {PlanOccurrenceService} from './plan-occurrences.ts'
 import {readStoredTaskRun} from './task-runs.ts'
 import {readStoredTask} from './tasks.ts'
 
-export type RoleWorkEligibilityInput={roleId:string;expectedRoleVersion:number;scope:string;inputSchema:'teloa.task-run-input/v2';authorization:RoleWorkAuthorization;groupId:string|null}
+export type RoleWorkEligibilityInput={roleId:string;expectedRoleVersion:number;scope:string;inputSchema:'teloa.task-run-input/v2';authorization:RoleWorkAuthorization;groupId:string|null;reportTaskId?:string}
 /** null 表示沿已有 Task 工具/知识授权判据；数组表示本次必须取交集，空数组不能回落成全部。 */
 export type RoleWorkExecutionLimits={allowedTools:string[]|null;knowledgeIds:string[]|null;memoryViewId:string|null;groupIds:string[]|null}
 export type RoleWorkAdmission={role:DigitalRole;snapshot:RunRoleSnapshot;limits:RoleWorkExecutionLimits;assertCurrent:()=>void}
@@ -31,8 +33,8 @@ export class RoleWorkEligibilityService{
    const raw=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2 for share',[owner,source.runId])).rows[0]
    if(!raw)throw new WorkError('teloa/forbidden','源运行不属于本人。')
    const fixed=await readTrustedGroupMessageRunSource(db,owner,{groupId,messageId},this.pool);if(!fixed||!isDeepStrictEqual(fixed,source))throw new WorkError('teloa/storage-corrupt','原群消息来源已变化。')
-   const run=readStoredTaskRun(raw),snapshot=run.roleSnapshot
-   if(!snapshot||!run.lineage||run.state!=='ended'||run.groupContext?.groupId!==groupId||run.id!==source.runId||run.taskId!==source.taskId||run.roleId!==source.roleId||run.roleVersion!==source.roleVersion||!isDeepStrictEqual(run.lineage,source.lineage))throw new WorkError('teloa/storage-corrupt','群路由来源与原运行快照不一致。')
+   const run=readStoredTaskRun(raw),snapshot=run.roleSnapshot,report=readStoredRunPlanReport(raw)
+   if(!snapshot||!run.lineage||run.state!=='ended'||(run.groupContext?.groupId??report?.reportGroup.groupId)!==groupId||run.id!==source.runId||run.taskId!==source.taskId||run.roleId!==source.roleId||run.roleVersion!==source.roleVersion||!isDeepStrictEqual(run.lineage,source.lineage))throw new WorkError('teloa/storage-corrupt','群路由来源与原运行快照不一致。')
    if(role.id!==snapshot.id||role.version!==snapshot.version)throw new WorkError('teloa/storage-corrupt','原运行职责快照与来源身份不一致。')
    const stored=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,run.taskId])).rows[0]
    if(!stored)throw new WorkError('teloa/forbidden','原任务不属于该运行来源。')
@@ -49,17 +51,18 @@ export class RoleWorkEligibilityService{
    }
    const group=(await db.query('select * from teloa_groups where owner_id=$1 and id=$2 for share',[owner,groupId])).rows[0]
    if(!group||group.archived)throw new WorkError('teloa/forbidden','当前协作群已不可执行。')
-   const scope=groupDefinition(group.definition).scope
+   // 接力核对原工作自己的业务目标；general 群只提供交流边界，不改写原 Task 的固定范围。
+   const scope=task.scope
    await readRoleWorkGroupGrant(db,owner,role,groupId,scope,true)
-   const admission=await this.authorizeFixed(owner,{roleId:role.id,expectedRoleVersion:snapshot.version,scope,inputSchema:'teloa.task-run-input/v2',authorization:snapshot.authorization,groupId},db,completedTarget)
+   const admission=await this.authorizeFixed(owner,{roleId:role.id,expectedRoleVersion:snapshot.version,scope,inputSchema:'teloa.task-run-input/v2',authorization:snapshot.authorization,groupId,...(report?{reportTaskId:task.id}:{})},db,completedTarget)
    if(admission.role.kind!==snapshot.kind||!isDeepStrictEqual(admission.snapshot.twinConsent,snapshot.twinConsent))throw new WorkError('teloa/version-conflict','原执行身份或分身本人回执已变化，不能继续原消息接力。')
    admission.assertCurrent();return admission
   }
   return client?authorize(client):roleWorkTransaction(this.pool,authorize)
  }
  private async authorizeFixed(owner:string,input:RoleWorkEligibilityInput,client?:PoolClient,completedTarget?:{scope:string;groupId:string|null}):Promise<RoleWorkAdmission>{
-  roleWorkOwner(owner);const row=taskInput(input,['roleId','expectedRoleVersion','scope','inputSchema','authorization','groupId'])
-  if(!roleWorkUuid(row.roleId)||!roleWorkVersion(row.expectedRoleVersion)||typeof row.scope!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(row.scope)||row.inputSchema!=='teloa.task-run-input/v2'||row.groupId!==null&&!roleWorkUuid(row.groupId))throw roleWorkInvalid()
+  roleWorkOwner(owner);const row=taskInput(input,['roleId','expectedRoleVersion','scope','inputSchema','authorization','groupId','reportTaskId'])
+  if(!roleWorkUuid(row.roleId)||!roleWorkVersion(row.expectedRoleVersion)||typeof row.scope!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(row.scope)||row.inputSchema!=='teloa.task-run-input/v2'||row.groupId!==null&&!roleWorkUuid(row.groupId)||row.reportTaskId!==undefined&&!roleWorkUuid(row.reportTaskId))throw roleWorkInvalid()
   const authorization=readRoleWorkAuthorization(row.authorization),roleId=row.roleId.toLowerCase(),groupId=row.groupId===null?null:(row.groupId as string).toLowerCase(),scope=row.scope,expectedVersion=row.expectedRoleVersion
   const authorize=async(db:PoolClient):Promise<RoleWorkAdmission>=>{
    const role=await lockRoleWorkRole(db,owner,roleId,'share');assertRoleWorkRole(role,expectedVersion)
@@ -77,6 +80,15 @@ export class RoleWorkEligibilityService{
    }
    // 老群 Task 定义可能没有 groupId；真实固定来源仍决定隔离及本轮授权范围。
    const effectiveGroupId=groupSource?.groupId??target.groupId
+   let reportOnly=false
+   if(row.reportTaskId!==undefined){
+    if(groupSource||groupId===null||authorization.kind==='task'&&authorization.taskId!==row.reportTaskId)throw new WorkError('teloa/forbidden','原群任务不能改成计划汇报。')
+    const reportTask=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,row.reportTaskId])).rows[0]
+    if(!reportTask||reportTask.assignee_role_id!==role.id||reportTask.assignee_role_version!==role.version||readStoredTask(reportTask).scope!==scope||readStoredTask(reportTask).groupId!==groupId||authorization.kind==='delegation'&&!isDeepStrictEqual(reportTask.execution_authorization,authorization))throw new WorkError('teloa/forbidden','原计划任务与汇报身份不一致。')
+    const fixed=await new PlanOccurrenceService(this.pool,{id:()=>{throw roleWorkInvalid()}}).executionContext(db,owner,String(row.reportTaskId))
+    if(fixed?.reportGroup?.groupId!==groupId)throw new WorkError('teloa/forbidden','缺少原发生实例的固定汇报目标。')
+    reportOnly=true
+   }
    if(target.scope!==scope||authorization.kind==='task'&&effectiveGroupId!==groupId)throw new WorkError('teloa/forbidden','执行范围与持久任务或委托不一致。')
    let limits:RoleWorkExecutionLimits={allowedTools:null,knowledgeIds:null,memoryViewId:null,groupIds:groupId?[groupId]:null}
    if(authorization.kind==='delegation'){
@@ -84,18 +96,18 @@ export class RoleWorkEligibilityService{
     const delegation=readStoredRoleWorkDelegation(stored)
     await assertRoleDelegationFields(db,owner,role,delegation)
     if(groupId!==null&&!delegation.groupIds.includes(groupId))throw new WorkError('teloa/forbidden','当前协作群未包含在本人委托范围。')
-    if(delegation.memoryViewId!==null&&groupId!==null){
+    if(delegation.memoryViewId!==null&&groupId!==null&&!reportOnly){
      const view=(await db.query('select group_id from teloa_role_memory_views where owner_id=$1 and id=$2',[owner,delegation.memoryViewId])).rows[0]
      if(!view||view.group_id!==groupId)throw new WorkError('teloa/forbidden','群记忆视图不属于本次执行群。')
     }
-    limits={allowedTools:[...delegation.allowedTools],knowledgeIds:[...delegation.knowledgeIds],memoryViewId:groupId===null?null:delegation.memoryViewId,groupIds:[...delegation.groupIds]}
+    limits={allowedTools:[...delegation.allowedTools],knowledgeIds:[...delegation.knowledgeIds],memoryViewId:groupId===null||reportOnly?null:delegation.memoryViewId,groupIds:[...delegation.groupIds]}
    }
    if(groupId!==null){
     // 客户端不能通过本轮输入把服务端固定的自动群任务声明成手动。
-    const requireAutoRun=role.kind==='twin'||authorization.kind==='delegation'||groupSource!==null&&groupSource.trigger!=='manual'
+    const requireAutoRun=reportOnly||role.kind==='twin'||authorization.kind==='delegation'||groupSource!==null&&groupSource.trigger!=='manual'
     await readRoleWorkGroupGrant(db,owner,role,groupId,scope,requireAutoRun)
-    // 群资料由 readRunGroupContext 按固定原件及版本加载；不能把私人资料中心知识带入群。
-    limits.knowledgeIds=[]
+    // 群任务只加载群资料；固定计划只改变汇报目标，保留原任务/委托的知识范围且不获得群历史。
+    if(!reportOnly)limits.knowledgeIds=[]
    }
    let consent:TwinExecutionConsent|null=null
    if(role.kind==='twin'){

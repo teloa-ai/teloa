@@ -5,9 +5,10 @@ import {SessionSeq,snapshotSessionEvent,type SessionStore,type UserMessage} from
 import {workAccess,combineWorkAccessLeases,type WorkAccess,type WorkAccessLease,type WorkAccessRequest} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {createNativeInputGuard,nativeInputIdentity} from './native-input-access.ts'
-import {createNativeWorkCausality} from './native-work-causality.ts'
+import {createNativeWorkCausality,type NativeJobCompletion} from './native-work-causality.ts'
 import {isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
 import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore,NativeInputRestoreInput} from './native-input-checkpoint.ts'
+import {projectRuntimeInputHooks} from './project-runtime-context.ts'
 
 export type NativeInputProducer=Extract<WorkAccessRequest,{kind:'native-input'}>['producer']
 // identity 由拥有实际发布点的 producer 构造。它只绑定上下文，不凭此标记授予许可。
@@ -15,6 +16,7 @@ export type NativeInputContext=Readonly<{producer:NativeInputProducer;identity:s
 /** 宿主实际工作归属的附加准入；不向模型或浏览器公开。 */
 export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer})=>Promise<WorkAccessLease|null>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>}
 type SubagentInput=Readonly<{kind:'initial'|'live'|'resume';agent:Agent;sender:Agent;message:UserMessage;signal?:AbortSignal}>
+type SubagentCompletion=Readonly<{agent:Agent;message:UserMessage;childId:string}>
 const producers=new Set<NativeInputProducer>(['prompt','queue','subagent','schedule','goal','task-run'])
 const denied=()=>new WorkError('teloa/forbidden','当前暂不能提交新输入，请核对运行许可后重试。')
 
@@ -57,7 +59,13 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   if(typeof provider.acquire!=='function')throw denied()
   const lease=await provider.acquire({sessionId,producer});if(lease!==null&&typeof lease?.assertCurrent!=='function')throw denied();return lease
  }
- const controlledRestore:NativeInputRestore|undefined=restore?input=>{const provider=resident();if(requireResident&&!provider?.restore)throw denied();return provider?.restore?provider.restore(input,restore):restore(input)}:undefined
+ const controlledRestore:NativeInputRestore|undefined=restore?async input=>{
+  const provider=resident();if(requireResident&&!provider?.restore)throw denied()
+  const project=await projectRuntimeInputHooks(ctx)?.restore?.(input)
+  const proof=await(provider?.restore?provider.restore(input,restore):restore(input))
+  if(!project)return proof
+  return Object.freeze({...proof,assertCurrent(){proof.assertCurrent();project.assertCurrent()}})
+ }:undefined
  const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit),checkpoint,progress,controlledRestore,sessionId=>access.authorizeSessionCapabilities(sessionId,'restore'))
  const withNewInput=async(agent:Agent,message:UserMessage,context:NativeInputContext,submit:()=>void,signal?:AbortSignal,additionalLease?:WorkAccessLease):Promise<void>=>{
   if(isNativeResourceCleanupScope())throw denied()
@@ -73,22 +81,51 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const capabilities=await access.authorizeSessionCapabilities(agent.id,producer)
   prepared.assertTarget();capabilities.assertCurrent()
   const roleLease=await residentLease(agent.id,producer)
+  const projectLease=await projectRuntimeInputHooks(ctx)?.acquire(agent,message,signal)
   const lease=await access.authorize(request)
-  publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[]]),submit)
+  publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),submit)
  }
  return Object.freeze({
   withNewInput,
+  /** 在真实启动工具仍活动时捕获；结果回流不依赖工具结束后的 ALS。 */
+  captureSubagentCompletion(parent:Agent,sender:Agent=parent){
+   const session=parent.session,continuation=causality.captureToolCompletion(sender)
+   return async(candidate:SubagentCompletion,submit:()=>void):Promise<void>=>{
+    if(candidate.agent!==parent||parent.session!==session||typeof candidate.childId!=='string'||!candidate.childId)throw denied()
+    if(continuation){continuation(parent,candidate.message,submit);return}
+    await withNewInput(parent,candidate.message,{producer:'subagent',identity:JSON.stringify(['settlement',candidate.childId,candidate.message.id])},submit)
+   }
+  },
+  withAuxiliaryModel:causality.withAuxiliaryModel,
+  hasAuxiliaryModelAdmission:causality.hasAuxiliaryModelAdmission,
   modelPosition:causality.modelPosition,
+  harnessDirective:causality.harnessDirective,
+  readReviewState:causality.readReviewState,
+  hasPendingJobCompletion:causality.hasPendingJobCompletion,
+  jobCompletionDecision:causality.jobCompletionDecision,
+  hasCancelledJobCompletion:causality.hasCancelledJobCompletion,
+  cancelJobCompletions:causality.cancelJobCompletions,
+  withJobCompletion(candidate:NativeJobCompletion,publish:()=>void):Promise<void>{
+   const signal=AbortSignal.timeout(15000)
+   return causality.withJobCompletion(candidate,async signal=>{
+    signal.throwIfAborted()
+    return Promise.race([residentLease(candidate.agent.id,'task-run'),new Promise<never>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}))])
+   },publish,signal)
+  },
   async withSubagentInput(candidate:SubagentInput,context:NativeInputContext,submit:()=>void):Promise<void>{
    if(candidate.kind!=='initial'&&candidate.kind!=='live'&&candidate.kind!=='resume')throw denied()
-   if(candidate.kind==='initial'){
+   if(candidate.kind==='initial'||candidate.kind==='live'||candidate.kind==='resume'){
     // 只有当前实际工具体内的派生输入可继承父任务；错 scope/撤销不能降级成新工作。
-    const lease=causality.currentToolLease(candidate.sender)
+    const relay=candidate.message.source.kind==='agent-message'&&candidate.message.source.form==='relay'
+    const sender=relay?ctx.agents.get(candidate.message.source.senderSessionId):candidate.sender
+    if(!sender)throw denied()
+    const lease=causality.currentToolLease(sender)
     if(lease){
      const prepared=prepare(candidate.agent,candidate.message,submit,candidate.signal)
-     const capabilities=await access.authorizeSessionCapabilities(candidate.agent.id,'subagent')
+     const capabilities=candidate.kind==='initial'?await access.authorizeSessionCapabilities(candidate.agent.id,'subagent'):undefined
      const roleLease=await residentLease(candidate.agent.id,'subagent')
-     publish(prepared,combineWorkAccessLeases([capabilities,lease,...roleLease?[roleLease]:[]]),submit);return
+     const projectLease=await projectRuntimeInputHooks(ctx)?.acquire(candidate.agent,candidate.message,candidate.signal,sender)
+     publish(prepared,combineWorkAccessLeases([lease,...capabilities?[capabilities]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),submit);return
     }
    }
    await withNewInput(candidate.agent,candidate.message,context,submit,candidate.signal)

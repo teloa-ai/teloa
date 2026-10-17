@@ -33,3 +33,39 @@ test('分身执行确认逐字核验角色、版本与授权来源，撤销需�
  await assert.rejects(createRoleDelegationApi(async()=>({...receipt,roleVersion:3})).confirm(input))
  await assert.rejects(createRoleDelegationApi(async()=>({...receipt,authorization:{...authorization,delegationVersion:2}})).confirm(input))
 })
+
+test('丢弃损坏恢复记录清理失败时保留原记录和错误，恢复存储后可重试且不写远端',()=>{
+ let raw:string|null='{broken',failClear=true,calls=0
+ const failure=Error('storage cannot clear')
+ const journal={read:()=>raw,write:()=>{throw Error('丢弃不写新恢复记录')},clear:()=>{if(failClear)throw failure;raw=null}}
+ const call=async()=>{calls++;throw Error('丢弃不发送正式请求')}
+ const api=createRoleDelegationApi(call,journal),error=api.recoveryMessage()
+ assert.equal(error?.code,'teloa/storage-corrupt')
+ assert.throws(()=>api.discard(),cause=>cause===failure,'不能吞掉清理异常并报告成功')
+ assert.equal(raw,'{broken')
+ assert.equal(api.recoveryMessage(),error,'内存状态与尚未清理的存储必须保持一致')
+ assert.equal(createRoleDelegationApi(call,journal).recoveryMessage()?.code,'teloa/storage-corrupt','刷新后仍有坏记录，当前页不能先报已丢弃')
+ failClear=false
+ assert.equal(api.discard(),true)
+ assert.equal(raw,null)
+ assert.equal(api.recoveryMessage(),undefined)
+ assert.equal(api.discard(),false)
+ assert.equal(calls,0)
+})
+
+test('丢弃未知委托请求清理失败时保留同一请求身份，成功后才清内存',()=>{
+ let raw:string|null=JSON.stringify({schema:'teloa.role-delegation/v1',endpoint:'role-delegations/change',input:command}),failClear=true,calls=0
+ const failure=Error('storage cannot clear'),journal={read:()=>raw,write:()=>{throw Error('丢弃不改原请求')},clear:()=>{if(failClear)throw failure;raw=null}}
+ const call=async()=>{calls++;throw Error('丢弃不发送正式请求')}
+ const api=createRoleDelegationApi(call,journal),pending=api.pending()
+ assert.ok(pending)
+ assert.throws(()=>api.discard(),cause=>cause===failure)
+ assert.deepEqual(api.pending(),pending,'不能丢掉未知请求的原身份')
+ assert.deepEqual(createRoleDelegationApi(call,journal).pending(),pending,'刷新仍恢复同一请求')
+ assert.equal(api.recoveryMessage(),undefined,'清理失败不把可核对的未知请求伪装成损坏请求')
+ failClear=false
+ assert.equal(api.discard(),true)
+ assert.equal(api.pending(),undefined)
+ assert.equal(raw,null)
+ assert.equal(calls,0)
+})

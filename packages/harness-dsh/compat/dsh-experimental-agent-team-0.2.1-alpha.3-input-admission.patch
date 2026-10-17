@@ -1,0 +1,19 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1606,7 +1606,15 @@
+ 				content,
+ 				source
+ 			});
+-			root.steer(input);
++			const rootSession = root.session;
++      const dispatch = () => {
++        request.signal.throwIfAborted();
++        const current = this.roster.membership(caller);
++        if (this.lifecycle.disposed || current.root !== root || current.name !== membership.name || this.ctx.agents.get(root.id) !== root || root.session !== rootSession || resolveActiveMember(root, this.journal.state(root), request.target).id !== root.id) throw new TeamError("Team membership changed before message acceptance", "TEAM_NOT_MEMBER");
++        root.steer(input);
++      };
++      if (typeof this.ctx.subagents.admitPrompt === "function") await this.ctx.subagents.admitPrompt({ kind: "live", agent: root, message: input, sender: caller, delivery: "steer", signal: request.signal }, dispatch);
++      else dispatch();
+ 			messageId = input.id;
+ 		} else messageId = await steerHostSubagentPrompt(this.ctx.subagents, root, target.id, content, source, request.signal);
+ 		this.activity.notify(membership.id);

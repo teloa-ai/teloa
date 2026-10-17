@@ -1,6 +1,6 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,mkdir,realpath,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,mkdir,realpath,writeFile,readFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createHash} from 'node:crypto'
@@ -11,6 +11,20 @@ import {SkillRegistry,type SkillCandidate} from '@deepseek-ai/dsh-skill'
 import type {FileSystem} from '@deepseek-ai/dsh-fs'
 import {WorkError} from '@teloa/contract'
 import {inspectNativeSkillDirectory,registerManagedSkills} from '../src/managed-skills-native.ts'
+import {ManagedSkillFiles} from '../src/managed-skill-files.ts'
+import {createManagedAvailabilitySync} from '../src/managed-skill-availability-sync.ts'
+import {withPresetReadScope} from '../src/preset-read-scope.ts'
+import ts from 'typescript'
+
+/** 执行宿主实际第三参观测回调，避免测试复制另一份正确接线。 */
+async function hostSkillObserver(bindings:Record<string,unknown>){
+ const source=await readFile(new URL('../src/index.ts',import.meta.url),'utf8'),tree=ts.createSourceFile('index.ts',source,ts.ScriptTarget.Latest,true)
+ let callback:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text==='skillInstallationsHandler'&&node.initializer&&ts.isCallExpression(node.initializer))callback=node.initializer.arguments[2];ts.forEachChild(node,visit)}
+ visit(tree);assert.ok(callback)
+ const code=ts.transpileModule('const observer='+callback.getText(tree)+';return observer',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
+ return new Function(...Object.keys(bindings),code)(...Object.values(bindings)) as (id:string)=>Promise<{installationId:string;state:string}>
+}
 
 // 使用宿主实际 DSH 所依赖的公开本地文件系统服务，避免另选版本或改动依赖清单。
 const hostRequire=createRequire(import.meta.resolve('@deepseek-ai/dsh/package.json'))
@@ -37,6 +51,37 @@ const snapshot=(overrides:Record<string,unknown>={})=>[{
   native:{name:'fixed-method',description:'固定方法',modelInvocable:true,userInvocable:true,bodyHash:digest('正文原生裁剪')},
   ...overrides,
 }]
+
+test('宿主四项并行安装观测持有完整稳定读取，后项刷新不能把原可用技能打断为missing', {timeout:10000},async t=>{
+ const {root,ctx}=await setup(t),rows:ReturnType<typeof snapshot>=[],records=new Map(),bundles=new Map()
+ for(let index=1;index<=4;index++){
+  const id='01997c2d-3c00-7000-8000-'+String(index).padStart(12,'0'),name='fixed-method-'+index,target=await skill(root,id,name)
+  const native={...snapshot()[0]!.native,name},bytes=await readFile(target.path),hash=createHash('sha256').update(bytes).digest('hex'),bundleHash=digest(JSON.stringify([['SKILL.md',hash]]))
+  rows.push({...snapshot()[0]!,installationId:id,native})
+  records.set(id,{id,state:'installed',source:{kind:'atomic',contentId:id},native,bundleHash})
+  bundles.set(id,{entryPath:'SKILL.md',files:[{path:'SKILL.md',hash,bytes}],bundleHash})
+ }
+ let enter!:()=>void,release!:()=>void,gated=true,leases=0,disposed=0
+ const entered=new Promise<void>(done=>{enter=done}),gate=new Promise<void>(done=>{release=done})
+ t.after(()=>release())
+ const manager=registerManagedSkills(ctx,root,{initial:rows,verifyUsable:async id=>{if(id===rows[0]!.installationId&&gated){gated=false;enter();await gate}}})
+ t.after(()=>manager.dispose())
+ const availabilitySync=createManagedAvailabilitySync({deny:()=>manager.denyWhileRefreshing(),read:async()=>rows,replace:value=>manager.replaceAvailability(value)})
+ const managedFiles=new ManagedSkillFiles(root,directory=>inspectNativeSkillDirectory(ctx,directory),path=>manager.invalidate(path))
+ class ReadSource{async read(_owner:string,input:{contentId:string}){return bundles.get(input.contentId)}}
+ const observer=await hostSkillObserver({availabilitySync,skillInstallationService:async()=>({get:async(_owner:string,{installationId}:{installationId:string})=>records.get(installationId)}),resources:{database:async()=>({pool:{}})},randomUUID:()=>installationId,MarketContentStore:class{},IndustryLoadService:class{},createIndustryLoadSource:()=>undefined,SkillInstallSource:ReadSource,industryModelProbe:undefined,managedFiles,managedNative:manager,withPresetReadScope,ctx:{agentPresets:{acquireScope:async()=>{leases++;return {key:undefined,async [Symbol.asyncDispose](){disposed++}}}}},workspaceRoot:root,owner:'isolated-owner',WorkError})
+ const first=observer(rows[0]!.installationId)
+ await entered
+ const rest=rows.slice(1).map(row=>observer(row.installationId))
+ await new Promise<void>(done=>setImmediate(done));release()
+ const result=await Promise.all([first,...rest])
+ assert.deepEqual(result.map(row=>row.state),['available','available','available','available'])
+ assert.deepEqual(result.map(row=>row.installationId),rows.map(row=>row.installationId));assert.equal(leases,4);assert.equal(disposed,4)
+ // 固定文件、包与正文核验不因稳定读取而放宽；错误仍传播。
+ const original=bundles.get(rows[0]!.installationId)
+ bundles.set(rows[0]!.installationId,{...original,bundleHash:'a'.repeat(64)})
+ await assert.rejects(observer(rows[0]!.installationId),{code:'teloa/storage-corrupt'})
+})
 function fallback(ctx:Context){
   return ctx.skills.registerProvider(()=>({
     name:'lower-provider',

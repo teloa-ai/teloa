@@ -165,6 +165,7 @@ export default class TeloaCredentialProvider extends CredentialProvider{
  private volatileEntries():[string,CredentialRecord][]{return this.fault===undefined?[]:[...this.volatile]}
 
  async resolve(ref:CredentialRef):Promise<ResolvedCredential|undefined>{
+  const platform=this.platformSource(ref);if(platform)return platform.resolve()
   const env=launchEnvironmentOf(this.ctx)
   const inherited=env.getFrom(ref,['process'])
   if(inherited&&inherited.value.length>0)return {value:inherited.value,source:'env'}
@@ -176,19 +177,22 @@ export default class TeloaCredentialProvider extends CredentialProvider{
   return user&&user.value.length>0?{value:user.value,source:user.source}:undefined
  }
  async describe(ref:CredentialRef):Promise<CredentialInfo>{
-  const resolved=await this.resolve(ref),writable=this.fault===undefined&&!this.shadowed(ref)
+  const resolved=await this.resolve(ref),writable=!this.platformSource(ref)&&this.fault===undefined&&!this.shadowed(ref)
   return resolved?{configured:true,source:resolved.source,writable}:{configured:false,writable}
  }
  async set(ref:CredentialRef,value:string):Promise<void>{
+  if(this.platformSource(ref))throw Error('平台模型凭据由当前本人账号管理。')
   if(value.length===0)throw new Error(`credentials: an empty value cannot be stored for "${ref}"; use unset`)
   this.assertUnshadowed(ref)
   await this.edit(`set ${ref}`,async doc=>{doc.refs.set(ref,value);return {next:doc,result:undefined}})
  }
  async unset(ref:CredentialRef):Promise<void>{
+  if(this.platformSource(ref))throw Error('平台模型凭据由当前本人账号管理。')
   this.assertUnshadowed(ref)
   await this.edit(`unset ${ref}`,async doc=>doc.refs.delete(ref)?{next:doc,result:undefined}:{result:undefined})
  }
  /** 没有读好过的快照时，记录“不存在”与“读不到”不可混淆：抛锁定错误（关键决定 7）。 */
+ private platformSource(ref:CredentialRef):{resolve:()=>Promise<ResolvedCredential|undefined>}|undefined{return ref==='TELOA_PLATFORM_MODEL_TOKEN'?this.ctx.get('teloaPlatformCredentialSource' as never) as {resolve:()=>Promise<ResolvedCredential|undefined>}|undefined:undefined}
  private assertReadable():void{if(!this.loaded)throw new CredentialStoreLocked(this.fault??'store-unavailable')}
  readRecord(key:CredentialKey):Promise<CredentialRecord|undefined>{
   const held=this.fault===undefined?undefined:this.volatile.get(key)

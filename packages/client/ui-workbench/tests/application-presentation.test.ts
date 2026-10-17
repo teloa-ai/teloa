@@ -40,11 +40,11 @@ test('账号姓名覆盖全部本人资料与欢迎徽标，禁止本机改名�
  Object.defineProperty(globalThis,'window',{configurable:true,value:{localStorage:{getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{writes.push(value);values.set(key,value)}},addEventListener(){},removeEventListener(){}}})
  let close:(()=>void)|undefined
  t.after(()=>{close?.();if(previous)Object.defineProperty(globalThis,'window',previous);else Reflect.deleteProperty(globalThis,'window')})
- personalProfile.setDisplayName('Local name')
+ await personalProfile.setDisplayName('Local name')
  let opened=0
  close=await applicationPresentation.configure({...bridge(),openAccount:async()=>{opened++}})
  assert.deepEqual(personalProfile.getSnapshot(),{displayName:'Alice',email:'alice@example.test',managed:true})
- assert.throws(()=>personalProfile.setDisplayName('Wrong account'))
+ await assert.rejects(personalProfile.setDisplayName('Wrong account'))
  assert.deepEqual(writes,[JSON.stringify({displayName:'Local name'})])
  const locale={getSnapshot:()=>({active:'en'}),bind:(_namespace:string)=>((key:string)=>key)},dispose=installConversationBrand(locale)
  assert.equal(locale.bind('conversation')('hero.preview'),'Pro')

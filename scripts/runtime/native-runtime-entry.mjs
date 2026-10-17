@@ -17,7 +17,7 @@ export async function prepareManagedNativeProfile(layout){
  const sdk=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-app-boot')).href),include=await import(pathToFileURL(official.resolve('@deepseek-ai/cordis-plugin-include')).href)
  const composition=await import(pathToFileURL(createRequire(join(layout.programRoot,'packages/harness-dsh/package.json')).resolve('@teloa/harness-dsh/native-input-composition')).href)
  if(composition.nativeInputCompositionVersion!==1)throw Error('公共核心的原生输入组合版本不正确。')
- const providers=await composition.loadNativeInputProviders({compatibilityAPIs:plan.compatibilityAPIs,requireCheckpoint:true,requireGoal:true})
+ const providers=await composition.loadNativeInputProviders({compatibilityAPIs:plan.compatibilityAPIs,requireCheckpoint:true,requireGoal:true,requireJobs:true})
  const profile=sdk.loadProfileDirectory('dsh',join(layout.dshHome,'profiles',layout.profileName),installAnchor)
  const context={name:layout.profileName,dir:profile.dir,patchPath:profile.patchPath,installAnchor,startedBundles:profile.layers.map(layer=>layer.packageName),cwd:layout.workspaceRoot,home:layout.dshHome,overlays:[],telemetryDisabledEnv:process.env.DSH_TELEMETRY_DISABLED}
  const effective=overlays=>include.applyEntryPatches([],sdk.readProfilePatches('dsh',{...context,overlays},profile),()=>{throw Error('公共原生输入组合不能完整解析。')})
@@ -27,7 +27,7 @@ export async function prepareManagedNativeProfile(layout){
  const bytes=JSON.stringify(overlays,null,2)+'\n',patchFile=join(runtimeRoot,'native-runtime-'+createHash('sha256').update(bytes).digest('hex')+'.patch.json')
  try{await writeFile(patchFile,bytes,{flag:'wx',mode:0o600})}catch(error){if(error.code!=='EEXIST')throw error}
  const saved=await lstat(patchFile);if(!saved.isFile()||saved.isSymbolicLink()||saved.nlink!==1||saved.mode&0o077||!Buffer.from(bytes).equals(await readFile(patchFile)))throw Error('公共原生组合覆盖已变化，保留现场并拒绝启动。')
- return Object.freeze({plan,profile,installAnchor,providers,composition,sdk,patchFile})
+ return Object.freeze({plan,profile,installAnchor,providers,composition,sdk,patchFile,inputProvider})
 }
 
 /** 官方目录清单按入口最近的 manifest 识别包；源码根没有版本，载体身份取实际公共 harness。 */
@@ -79,7 +79,8 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
    const require=createRequire(join(programRoot,'package.json')),bin=join(dirname(require.resolve('@deepseek-ai/dsh/package.json')),'lib/bin.js')
    const managed=checks[0]==='--dump-config'?await prepareManagedNativeProfile(layout):null
    process.argv=[process.execPath,bin,'--profile',profileName,...managed?['--patch',managed.patchFile]:[],...checks]
-   await import(pathToFileURL(bin).href)
+   const {runCli}=await import(pathToFileURL(bin).href)
+   await runCli()
   }else await runManagedNativeProfile(layout,args)
  }catch(error){console.error(error instanceof Error?error.message:'原生运行准备失败。');process.exitCode=1}
 }

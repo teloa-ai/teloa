@@ -3,14 +3,13 @@ import type {ModelReference} from '@teloa/contract'
 import {useI18n} from './i18n/provider.js'
 import css from './TaskPage.module.css'
 
-const label=(model:ModelReference)=>`${model.model} · ${model.provider}${model.reasoningEffort?' · '+model.reasoningEffort:''}`
+const label=(model:ModelReference)=>`${model.model}${model.reasoningEffort?' · '+model.reasoningEffort:''}`
 /** 不根据预设推测实际模型，旧宿主和读取失败都显示尚未核实。 */
 export function TaskRunModels({run,planned=false}:{run:RunView;planned?:boolean}){
  const {t}=useI18n(),policy=run.modelPolicy,status=run.modelStatus
  if(!policy)return null
  if(planned)return <dl className={css.runModels}>
   <div><dt>{t('roleModels.primary')}</dt><dd>{label(policy.primary)}</dd></div>
-  {policy.fallback&&<div><dt>{t('roleModels.fallback')}</dt><dd>{label(policy.fallback)}</dd></div>}
  </dl>
  return <div className={css.runModels}>
   {status?.state==='observed'?<>

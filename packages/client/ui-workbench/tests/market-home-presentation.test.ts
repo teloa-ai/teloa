@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises'
 import test from 'node:test'
 import {registerHooks} from 'node:module'
 import {marketEntryKinds} from '@teloa/contract'
-import {MARKET_CATEGORIES, marketCategoryKind, visibleMarketCategories, restoredMarketCategory, localizedMarketItemCopy, marketCatalogItemCopy, marketCategoryOf, marketItemPresentation, marketResourcePresentation, marketScopeOptions, showMarketGuide} from '../src/client/market-home-presentation.ts'
+import {MARKET_CATEGORIES, marketCategoryKind, visibleMarketCategories, restoredMarketCategory, localizedMarketItemCopy, marketCatalogItemCopy, marketCategoryOf, marketItemPresentation, marketResourcePresentation, marketScopeOptions} from '../src/client/market-home-presentation.ts'
 import {filterMarket, type MarketItem} from '../src/client/market-preview.ts'
 import {translateMessage} from '../lib/types/client/i18n/messages.js'
 import {MAIN_LOCALES} from '../lib/types/client/i18n/locale.js'
@@ -121,7 +121,7 @@ test('市场插件在没有真实生命周期观测时不猜测安装状态',()=
   category:'plugin',type:'plugin',scope:'通用',source:'https://github.com/Nagi-ovo/dsh-visualize · 9667c0e9cf0ea463b9b45b2845de62da34fd918a',ecosystem:'DSH 生态',runtime:'由 DSH 安装并运行',status:'状态未核验',action:'查看并安装',
  })
  assert.deepEqual(marketResourcePresentation({visibility:'public',owner:'DSH',key:'plugin',id:'dsh-visualize',version:'0.1.2',kind:'plugin',title:'dsh-visualize',itemId:'dsh-visualize',capabilities:['可视化'],uses:[],status:'catalogued'},plugin),{
-  type:'扩展',scope:'通用',source:'https://github.com/Nagi-ovo/dsh-visualize · 9667c0e9cf0ea463b9b45b2845de62da34fd918a',ecosystem:'DSH 生态',runtime:'由 DSH 安装并运行',status:'状态未核验',action:'查看并安装',
+  type:'应用',scope:'通用',source:'https://github.com/Nagi-ovo/dsh-visualize · 9667c0e9cf0ea463b9b45b2845de62da34fd918a',ecosystem:'DSH 生态',runtime:'由 DSH 安装并运行',status:'状态未核验',action:'查看并安装',
  })
 })
 
@@ -130,33 +130,39 @@ test('市场顶层直接展示已选定的资源分类，保留搜索和资源�
     readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8'),
     readFile(new URL('../src/client/MarketResourceCatalog.tsx',import.meta.url),'utf8'),
   ])
-  assert.match(source,/market\.home\.heroTitle/)
+  assert.doesNotMatch(source,/market\.home\.heroTitle/)
   assert.match(source,/aria-label=\{t\('market\.search\.aria'\)\}/)
   assert.match(source,/aria-label=\{t\('market\.category\.aria'\)\}/)
-  assert.match(source,/const visibleCategories=visibleMarketCategories\(catalogCounts\)/)
+  assert.doesNotMatch(source,/MARKET_SECONDARY_GROUPS\.map|market\.primary\.more/)
   assert.doesNotMatch(source,/market\.solution\.(tabItems|itemType)/)
   // 可见范围标签仍用词典（详情页）；目录列表不再有可见范围下拉
   assert.match(source,/marketVisibilityLabel\(t,/)
   assert.match(source,/setError\(t\('market\.content\.directoryReadFailed'\)\)/)
   assert.doesNotMatch(source,/>\{title\}<\/button>/)
-  assert.match(source,/visibleCategories\.map/)
+
   assert.doesNotMatch(source,/marketVisibility\[item\.visibility\]/)
   // 「推荐 / 已加载 / 最近」三集合与「导入或创建」折叠已经退场：首页就是方案卡，导入与自建各自成一个下拉。
   assert.doesNotMatch(source,/market\.home\.recommendedTitle/)
   assert.doesNotMatch(source,/market\.home\.loadedTitle/)
   assert.doesNotMatch(source,/market\.home\.recentTitle/)
   assert.doesNotMatch(source,/market\.createImport\.menu/)
-  assert.match(source,/const solutionCategory=\(!props\.inCapabilityCenter&&kind==='home'\)\|\|kind==='industry'/)
-  assert.match(source,/const atomicCategory=solutionCategory\|\|kind==='intents'\|\|kind==='home'\?'agent':kind/)
+  assert.match(source,/const solutionCategory=kind==='industry'/)
+  assert.match(source,/const primaryView:MarketPrimaryView/)
   assert.match(source,/const listKind:MarketCategory=solutionCategory\?'industry':atomicCategory/)
   // 方案卡有两处合法投影：首页方案与“已添加”均复用同一组件，不能再各造一套卡片实现。
   assert.equal((source.match(/<SolutionCards /g)??[]).length,2)
   // 方案页签：本机方案卡与官方目录上下分区，外层是区块栈（区块间距统一）
   assert.match(source,/:solutionCategory\?<section className=\{css\.sectionStack\}/)
-  assert.match(source,/t\('market\.tool\.import'\)/)
-  assert.match(source,/t\('market\.tool\.create'\)/)
+  // 2026-10-15：加号按对象创建与导入分层；格式选择留在导入窗口，不重复占一级菜单。
+  assert.match(source,/<summary aria-label=\{t\('capabilityCenter\.createOrImport'\)\}/)
+  for(const key of ['market.create.employee','market.create.team','market.import.industry','market.import.skill'])assert.match(source,new RegExp("t\\('"+key.replaceAll('.','\\.')+"'\\)"),key)
+  const forms=await readFile(new URL('../src/client/MarketForms.tsx',import.meta.url),'utf8')
+  for(const mode of ["value:'paste'","value:'github'"])assert.ok(forms.includes(mode),'兼容导入格式仍在原导入流程')
+  // 2026-10-14：独立任务模板退出新建入口；任务页「保存为任务模板」仍经 seed 到达同一表单
+  for(const key of ['market.template.create','market.template.createFromConversation'])assert.doesNotMatch(source,new RegExp("t\\('"+key.replaceAll('.','\\.')+"'\\)"),key)
+  assert.match(source,/\(template\|\|seed\)&&<TemplateForm seed=\{seed\|\|undefined\}/)
   assert.match(source,/resourceKinds=\{resourceKinds\}/)
-  assert.match(source,/loadMarketSkillRuntime\(props\.skillInstallApi,props\.skillAvailabilityApi\)/)
+  assert.match(source,/loadMarketSkillRuntime\(props\.skillInstallApi,props\.skillAvailabilityApi,\{verify:false\}\)/)
   assert.match(source,/runtime=\{runtime\}/)
   assert.match(source,/copy=marketCatalogItemCopy\(item,locale\)/)
   assert.match(catalog,/copy=item\?marketCatalogItemCopy\(item,locale\)/)
@@ -173,20 +179,20 @@ test('市场顶层直接展示已选定的资源分类，保留搜索和资源�
   assert.match(catalog,/owner:ecosystem/)
 })
 
-test('C1 页头：eyebrow 是那句人话，<h1> 是「市场」，右上是「已添加 · N」徽标，副标题退场',async()=>{
+test('C1 页头只保留市场标题与紧凑工具，原已添加目录入口保持',async()=>{
   const source=await readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
-  const header=source.slice(source.indexOf('<header className={css.pageHeader}>'),source.indexOf('</header>'))
-  assert.match(header,/<span className=\{css\.eyebrow\}>\{t\('market\.home\.heroTitle'\)\}<\/span>/)
+  const start=source.indexOf('<header className={css.pageHeader}>'),header=source.slice(start,source.indexOf('</header>',start))
+  assert.doesNotMatch(header,/market\.home\.heroTitle/)
   assert.match(header,/<h1>\{t\('market\.title'\)\}<\/h1>/)
   assert.match(header,/t\('market\.addedCount',\{count:addedCount\}\)/)
   assert.doesNotMatch(header,/market\.home\.heroDescription/)
   assert.doesNotMatch(header,/market\.installation\.title/)
-  // 同名「已添加」徽标与页签进入同一目录，安装维护在目录内明确命名。
+  // 已添加只列员工／团队模板，不再嵌入技术资源管理。
   assert.match(header,/className=\{css\.addedBadge\} onClick=\{\(\)=>selectKind\('intents'\)\}/)
-  const addedDirectory=source.slice(source.indexOf("kind==='intents'?<section"),source.indexOf(':solutionCategory?<section'))
-  assert.match(addedDirectory,/onClick=\{\(\)=>props\.installations\.open\(\)\}>\{t\('market\.installation\.title'\)\}/)
-  assert.match(addedDirectory,/market\.solution\.addedDescription/)
-  assert.match(source,/const currentCatalog=currentSolutionCatalog\(state\.items\)/)
+  const addedDirectory=source.slice(source.indexOf("kind==='intents'?<section"),source.indexOf(":primaryView==='apps'"))
+  assert.doesNotMatch(addedDirectory,/TeamCapabilitiesPage|mineApps|installations\.open/)
+  assert.doesNotMatch(addedDirectory,/market\.solution\.addedDescription/)
+  assert.match(source,/const marketItems=mergeMarketItems\(\[\],state\.items\),currentCatalog=currentSolutionCatalog\(marketItems\)/)
   assert.match(source,/const addedSolutions=currentCatalog\.filter\(item=>marketCategoryOf\(item\)==='industry'&&solutionInstalled\(item,props\.industryLoads\.loads\)\)/)
   // 计数与目录共用去重后的当前版本目录，历史版本不能再次出现在卡片或数量里。
   assert.match(source,/const addedCount=solutionInstalledCount\(currentCatalog,props\.industryLoads\.loads\)/)
@@ -194,7 +200,7 @@ test('C1 页头：eyebrow 是那句人话，<h1> 是「市场」，右上是「�
 
 test('方案和方案内原子资源共用当前版本目录，历史版本不重复进入资源库',async()=>{
   const source=await readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
-  assert.match(source,/const currentCatalog=currentSolutionCatalog\(state\.items\)/)
+  assert.match(source,/const marketItems=mergeMarketItems\(\[\],state\.items\),currentCatalog=currentSolutionCatalog\(marketItems\)/)
   assert.equal((source.match(/marketResourceIndex\(currentCatalog\)/g)??[]).length,4,'选择、打开、返回与本机条目计数都必须在当前版本目录里解析')
   assert.match(source,/<MarketResourceCatalog[^>]+items=\{currentCatalog\}/)
   assert.doesNotMatch(source,/<MarketResourceCatalog[^>]+items=\{state\.items\}/)
@@ -220,11 +226,10 @@ test('顶部分类直接切换，窄屏目录也始终可切换类型',async()=>
   ])
   const nav=source.match(/<nav className=\{css\.categories\} aria-label=\{t\('market\.category\.aria'\)\}>([\s\S]*?)<\/nav>/)?.[1]
   assert.ok(nav,'核对市场分类导航自身，而非其他目录的按钮')
-  assert.match(nav,/visibleCategories\.map\(category=><button/)
-  assert.match(nav,/category==='industry'\?solutionCategory:kind===category/)
-  assert.match(nav,/onClick=\{\(\)=>selectKind\(category\)\}/)
-  assert.match(nav,/marketCategoryLabel\(t,category\)/)
-  assert.match(nav,/selectKind\('intents'\)/)
+  assert.match(nav,/selectKind\('employees'\)/)
+  assert.match(nav,/selectKind\('teams'\)/)
+  assert.doesNotMatch(nav,/selectKind\('apps'\)/)
+  assert.doesNotMatch(source,/market\.primary\.more/)
   assert.doesNotMatch(nav,/<select|tabItems/)
   assert.doesNotMatch(source,/market\.solution\.itemType/)
   // 分类列表和资源详情仍分层；仅资源详情可以收起顶部分类。
@@ -232,12 +237,10 @@ test('顶部分类直接切换，窄屏目录也始终可切换类型',async()=>
   assert.doesNotMatch(css,/\[data-mobile-layer=list\] \.categories/)
   assert.doesNotMatch(css,/\[data-mobile-layer=category\] \.categories\{display:grid/)
   assert.match(css,/\.categories\{[^}]*overflow-x:auto/)
-  assert.match(source,/className=\{css\.categoryViewport\}/)
-  assert.match(source,/className=\{css\.categoryScrollHint\} aria-hidden="true"/)
   assert.match(css,/@media\(max-width:740px\)[\s\S]*\.categoryScrollHint\{[^}]*display:flex/)
   assert.match(css,/@media\(max-width:740px\)[\s\S]*\.categoryViewport\{[^}]*max-width:100%[^}]*overflow:hidden/)
   assert.match(css,/@media\(max-width:740px\)[\s\S]*\.categoryViewport \.categories[^}]*scrollbar-width:thin/)
-  assert.match(source,/const showGuide=showMarketGuide\(\{hasItem:!!item,itemId,intentId,kind,solutionView\}\)/)
+  assert.doesNotMatch(source, /<GuidedSetup|market\.guide\.summary/)
 })
 
 test('市场目录只呈现一次本机固定内容边界；任务模板页不再有范围下拉，改为两排行业 / 功能筛选',async()=>{
@@ -249,19 +252,6 @@ test('市场目录只呈现一次本机固定内容边界；任务模板页不�
  assert.doesNotMatch(source,/market\.filter\.scopeAria/)
  assert.doesNotMatch(source,/<option value="security">/)
  assert.doesNotMatch(source,/<option value="Design">/)
-})
-
-test('引导块只在首页且非方案卡落地时出现：skill/resource/connector/work-template/intents 等其余页签一律不挂',()=>{
-  const base={hasItem:false,itemId:null,intentId:null,solutionView:false} as const
-  assert.equal(showMarketGuide({...base,kind:'home'}),true,'首页无搜索词以外的空态显示引导块')
-  for(const kind of ['agent','skill','connector','knowledge','work-template','plugin','industry','intents'] as const){
-    assert.equal(showMarketGuide({...base,kind}),false,`${kind} 页签不挂引导块`)
-  }
-  assert.equal(showMarketGuide({...base,kind:'home',solutionView:true}),false,'home 无搜索词时是 solutionLanding，不挂引导块')
-  assert.equal(showMarketGuide({...base,kind:'industry',solutionView:true}),false,'方案卡落地态不挂引导块')
-  assert.equal(showMarketGuide({hasItem:true,itemId:null,intentId:null,kind:'home',solutionView:false}),false,'已选中条目时不挂引导块')
-  assert.equal(showMarketGuide({hasItem:false,itemId:'item-1',intentId:null,kind:'home',solutionView:false}),false,'itemId 存在时不挂引导块')
-  assert.equal(showMarketGuide({hasItem:false,itemId:null,intentId:'intent-1',kind:'home',solutionView:false}),false,'intentId 存在时不挂引导块')
 })
 
 test('A1：应用类别导航中五个目录 kind 的相对顺序等于 marketEntryKinds',()=>{
@@ -308,7 +298,8 @@ test('功能验证 审查：导航恢复到 model 但目录模型计数为 0 时
 
 test('功能验证 审查：有目录区块的页面类别计数取自 onCounts 回传；list({limit:1}) 只在无区块页面补取一次（行为见 market-resource-navigation）',async()=>{
   const source=await readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
-  assert.equal(source.match(/list\(\{limit:1\}\)/g)?.length,1)
+  // 计数只读 Teloa 官方市场（来源收口后的唯一推荐目录），与 market-resource-navigation 的实际请求一致
+  assert.equal(source.match(/list\(\{marketplace:'teloa',limit:1\}\)/g)?.length,1)
   assert.match(source,/if\(!visible\|\|!api\|\|catalogCounts\|\|catalogSectionShown\)return/)
   const sections=source.match(/<MarketCatalogSection /g)?.length??0
   // 各类型页签共用一个 officialSection（kinds 随页签），另有连接页「查看目录条目」一处

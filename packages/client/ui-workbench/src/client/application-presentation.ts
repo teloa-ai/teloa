@@ -3,10 +3,11 @@ import {readWorkbenchNavigationStorageScope} from './workbench-navigation-storag
 import {resolveProductLocale} from './i18n/locale.ts'
 
 import type {WorkCapability} from '@teloa/contract'
+import type {TemplateShareBridge} from '@teloa/contract'
 export type {WorkCapability} from '@teloa/contract'
 export type ApplicationCapabilities=Readonly<{schema:'teloa.application-capabilities/v1';capabilities:Readonly<Record<WorkCapability,boolean>>;reason:null|'subscription-required'|'subscription-expired'|'checking'|'unavailable'}>
 export type ExecutionPlacement='user-selected'|'host-assigned'
-export type ApplicationBridge={presentation:()=>Promise<unknown>;openAccount:()=>Promise<unknown>;navigationStorageScope?:()=>Promise<string>;capabilities?:()=>Promise<unknown>;subscribeCapabilities?:(listener:(value:unknown)=>void)=>()=>void;openSubscription?:()=>Promise<unknown>;readonly execution?:unknown}
+export type ApplicationBridge={presentation:()=>Promise<unknown>;openAccount:()=>Promise<unknown>;navigationStorageScope?:()=>Promise<string>;capabilities?:()=>Promise<unknown>;subscribeCapabilities?:(listener:(value:unknown)=>void)=>()=>void;openSubscription?:()=>Promise<unknown>;readonly execution?:unknown;readonly templateShares?:TemplateShareBridge}
 declare global{interface Window{teloaApplication?:ApplicationBridge}}
 
 // v1 的 Free 是兼容宿主判别，展示名称统一为社区版 / Community；不改变身份或权益。

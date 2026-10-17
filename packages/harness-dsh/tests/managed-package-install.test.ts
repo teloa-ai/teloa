@@ -6,6 +6,8 @@ import {existsSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {assertAllowedManagedPackage,installLockedPackage,managedInstallTimeoutMs,installManagedPackage,managedPackageInstalled,readManagedPackageLock,sweepManagedPackageStaging,managedPackageAllowlist,managedPackageDir,managedPackageLock,type ManagedPackageRecipe} from '../src/managed-package-install.ts'
+import {copyBackupData,managedRuntimePackageChecks} from '../../cli/src/maintenance.ts'
+import {fileURLToPath} from 'node:url'
 
 const good='sha512-'+'A'.repeat(86)+'=='
 const bad='sha512-'+'B'.repeat(86)+'=='
@@ -32,14 +34,14 @@ const lockFor=(name='@scope/pkg'):Lock=>({name:'teloa-managed-install',version:'
  * 假 npm ci：读 cwd 的 package-lock.json 与 package.json，按 lock 写 node_modules 与 .package-lock.json；
  * 旁路 tamper.json 可改写/增删已装条目，fail.txt 存在时写半成品后以非零退出；逐行记录 argv、环境键、cwd、起止时间与所见 lock/manifest。
  */
-async function fakeNpm(root:string,delayMs=0){
+async function fakeNpm(root:string,delayMs=0,withBin=false){
  const path=join(root,'fake-npm.mjs')
  const log=join(root,'npm-log.jsonl')
  const tamperFile=join(root,'tamper.json')
  const failFile=join(root,'fail.txt')
  await writeFile(path,[
   '#!/usr/bin/env node',
-  "import {appendFileSync,existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs'",
+  "import {appendFileSync,existsSync,mkdirSync,readFileSync,writeFileSync,symlinkSync} from 'node:fs'",
   "import {dirname,join} from 'node:path'",
   'const args=process.argv.slice(2)',
   'const start=Date.now()',
@@ -52,6 +54,7 @@ async function fakeNpm(root:string,delayMs=0){
   `if(existsSync(${JSON.stringify(failFile)}))process.exit(1)`,
   `if(existsSync(${JSON.stringify(tamperFile)}))for(const [key,patch] of Object.entries(JSON.parse(readFileSync(${JSON.stringify(tamperFile)},'utf8'))))patch===null?delete installed[key]:installed[key]={...installed[key],...patch}`,
   "writeFileSync(join(process.cwd(),'node_modules','.package-lock.json'),JSON.stringify({name:lock.name,version:lock.version,lockfileVersion:3,requires:true,packages:installed}))",
+  ...(withBin?["mkdirSync('node_modules/.bin',{recursive:true});mkdirSync('node_modules/semver/bin',{recursive:true});writeFileSync('node_modules/semver/bin/semver.js','#!/usr/bin/env node\\n');symlinkSync('../semver/bin/semver.js','node_modules/.bin/semver')"]:[]),
  ].join('\n'),'utf8')
  await chmod(path,0o755)
  return {
@@ -334,6 +337,28 @@ test('managedPackageInstalled：只核对不安装——未装、装后被改动
  assert.equal(await managedPackageInstalled(root,recipe(),lockFor()),false)
  assert.equal((await npm.runs()).length,1)
  await assert.rejects(managedPackageInstalled(root,recipe(),undefined),{code:'teloa/forbidden'})
+})
+
+test('安装本地推理依赖后仍可安全备份，保留业务文件与未知目录，不复制可重建SDK',async t=>{
+ const temporary=await tempRoot(t),root=join(temporary,'runtime');await mkdir(root)
+ const npm=await fakeNpm(temporary,0,true),recipe=managedPackageAllowlist.find(entry=>entry.package==='onnxruntime-node')!
+ const dir=await installManagedPackage(root,recipe,npm.path),relative='packages/onnxruntime-node@1.30.0'
+ assert.equal(await managedPackageInstalled(root,recipe),true)
+ await writeFile(join(root,'memory.json'),'original user memory')
+ await mkdir(join(root,'packages','custom'),{recursive:true});await writeFile(join(root,'packages','custom','customer.md'),'original customer document')
+ const target=join(temporary,'backup'),options={managedRuntimePackages:await managedRuntimePackageChecks(root,fileURLToPath(new URL('../../../',import.meta.url)))}
+ await copyBackupData(root,target,root,false,options)
+ assert.equal(await readFile(join(target,'memory.json'),'utf8'),'original user memory')
+ assert.equal(await readFile(join(target,'packages','custom','customer.md'),'utf8'),'original customer document')
+ assert.equal(existsSync(join(target,relative)),false)
+ assert.equal(await managedPackageInstalled(root,recipe),true,'备份不修改原安装')
+ assert.equal((await npm.runs()).length,1,'备份复核不能联网重新安装')
+ const manifest=JSON.parse(await readFile(join(dir,'package.json'),'utf8'))
+ await writeFile(join(dir,'package.json'),JSON.stringify({...manifest,custom:'must preserve'}))
+ await assert.rejects(copyBackupData(root,join(temporary,'changed-manifest'),root,false,options),/外链/,'根配置变化也不能默默省略')
+ await writeFile(join(dir,'package.json'),JSON.stringify(manifest))
+ await writeFile(join(dir,'user-note.md'),'must preserve')
+ await assert.rejects(copyBackupData(root,join(temporary,'unrecognized'),root,false,options),/外链/,'SDK根出现额外文件时不能默默省略')
 })
 
 test('L2：启动清扫只删一小时前的 .installing-<uuid> 残留；新近临时目录、正式目录与其它文件不动；index.ts 启动时对按需包与受管 MCP 包两处调用',async t=>{

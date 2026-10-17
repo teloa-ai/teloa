@@ -6,6 +6,7 @@ import ts from 'typescript'
 import {BUSINESS_PAGE_MESSAGE_ROWS} from '../src/client/i18n/locales/business-page.ts'
 import {businessPageSurface,businessSectionAwayFromLedger} from '../src/client/business-page-mode.ts'
 import {businessHomeSources} from '../src/client/business-home-presentation.ts'
+import {businessLibraryText} from '../src/client/business-library-presentation.ts'
 import * as composition from '../src/client/industry-composition.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
 import type {IndustryDataSourceInstance} from '../src/client/industry-data-source-api.ts'
@@ -123,9 +124,12 @@ function pageHarness(){
   if(id.endsWith('industry-composition.js'))return composition
   if(id.endsWith('business-current-presentation.js'))return {businessCurrentTasks:()=>[],businessCurrentWaiting:()=>[],businessCompletedTasks:()=>[]}
   // 声明行按 `IndustryResourceDeclarations` 真实读到的那几项给全，否则「更多」进来的目录那一档一渲染就炸。
-  if(id.endsWith('industry-workspace-projection.js'))return {projectIndustryWorkspace:()=>[1,2,3].map(index=>({destination:'business-data',instanceId:'instance-'+index,title:'来源 '+index,kind:'data-source',version:1,required:true,source:{spaceName:'本人空间',templateTitle:'模板',templateId:'template-1',templateVersion:'1.0.0',contentHash:'a'.repeat(64)}}))}
+  if(id.endsWith('industry-workspace-projection.js'))return {projectIndustryWorkspace:(loads:unknown[])=>loads.length?[1,2,3].map(index=>({destination:'business-data',instanceId:'instance-'+index,title:'来源 '+index,kind:'data-source',version:1,required:true,source:{spaceName:'本人空间',templateTitle:'模板',templateId:'template-1',templateVersion:'1.0.0',contentHash:'a'.repeat(64)}})):[]}
   if(id.endsWith('workbench-navigation-state.js'))return {readDirectoryFilterCategory:()=>({mode:'real',source:'all',quality:'all',period:'all',analysis:'all',execution:'all'}),writeDirectoryFilterCategory:()=>''}
   if(id.endsWith('business-task-presentation.js'))return {businessTasksForMode:()=>[],persistentSocAssignees:()=>[],BusinessTaskActionPanel:()=>null}
+  if(id.endsWith('business-library-presentation.js'))return {businessLibraryText}
+  if(id.endsWith('ToolbarIconButton.js')){const out:Record<string,unknown>={};const iconSource=readFileSync(new URL('../src/client/ToolbarIconButton.tsx',import.meta.url),'utf8');new Function('require','exports','React',ts.transpileModule(iconSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText)(require,out,React);return out}
+  if(id.endsWith('ContextDrawer.js'))return {ContextDrawer:function ContextDrawer(props:Record<string,unknown>){return createElement('context-drawer',props,props.children)}}
   if(id.endsWith('BusinessMoreMenu.js'))return {BusinessMoreMenu:function BusinessMoreMenu(props:Record<string,unknown>){return createElement('business-more-menu',props)}}
   if(id.endsWith('provider.js'))return {useI18n:()=>({locale:'zh-CN',t:(key:string,params?:Record<string,unknown>)=>params?key+':'+JSON.stringify(params):key,number:(value:number)=>String(value),dateTime:(value:string)=>value})}
   if(id.endsWith('.css'))return {default:cssProxy}
@@ -240,10 +244,10 @@ test('「这个业务有什么」：七行按共享模块的顺序摆开，每�
  const panel=nodes(bar).find(node=>node.props.className==='composition')!
  assert.equal(panel.type,'details','面板走原生 <details>，不是自己搭的弹层')
  assert.equal(text(nodes(panel).find(node=>node.type==='summary')),'business.composition.panel')
- // 七行主标签与副标逐字来自共享模块，顺序就是模块里的固定顺序。
+ // 七行主标签逐字来自共享模块，顺序就是模块里的固定顺序（01d046e 删去行内副标，问题句不再随标题重复）。
  const rows=nodes(panel).filter(node=>node.type==='section')
  assert.deepEqual(rows.map(row=>text(nodes(row).find(node=>node.type==='h3'))),
-  composition.COMPOSITION_ROWS.map(row=>row.label+row.question))
+  composition.COMPOSITION_ROWS.map(row=>row.label))
  // 每一项：名字 + 状态词 +「去配置」；状态词只能是词表里的那几条。
  const items=nodes(panel).filter(node=>node.type==='li')
  // 这一例没有台账（宿主还没回话）：看板行按加载声明回落，说「还没进数据」；资料行在岗即「已固定版本」。
@@ -279,7 +283,7 @@ test('面板的两条空态句只给接入源与业务看板，别的行没有�
  const panel=nodes(view).find(node=>node.props.className==='composition')!
  const rows=nodes(panel).filter(node=>node.type==='section')
  assert.deepEqual(rows.map(row=>text(nodes(row).find(node=>node.type==='h3'))),
-  ['composition.row.skillcomposition.question.skill','composition.row.sourcecomposition.question.source','composition.row.boardcomposition.question.board'])
+  ['composition.row.skill','composition.row.source','composition.row.board'])
  assert.deepEqual(nodes(panel).filter(node=>node.type==='p').map(text),['composition.empty.source','composition.empty.board'])
  // 没有 goComposition 就没有「去配置」可点，面板整块不摆，免得摆一个点不动的入口。
  assert.equal(nodes(mountPage(pageProps())).filter(node=>node.props.className==='composition').length,0)
@@ -328,4 +332,54 @@ test('面板在窄屏收成单列',()=>{
 test('看板栏目离开台账、走真实分区面（business-page-mode 不改即成立）',()=>{
  assert.equal(businessSectionAwayFromLedger('dashboards'),true)
  assert.equal(businessPageSurface({mode:'real',section:'dashboards',scope:'SOC'}),'real-section')
+})
+
+
+test('空业务资源只保简短空态与两图标动作，关闭保留原目录，准备带原业务且不自动执行',async()=>{
+ const harness=pageHarness(),navigation:unknown[]=[],prepared:any[]=[],market:unknown[]=[]
+ const props=pageProps({go:(value:unknown)=>navigation.push(value),pageCreate:{api:{},prepare:(value:unknown)=>prepared.push(value),openMarket:()=>market.push(true)}})
+ const menu=nodes(harness.render(props)).find(node=>node.type==='business-more-menu')!
+ menu.props.choose('sources','SOC')
+ const opened=harness.render(props),drawer=nodes(opened).find(node=>node.type==='context-drawer')!
+ assert.ok(drawer,'没有资源也必须进入目的地')
+ assert.equal(drawer.props.title,'business.more.sources')
+ assert.equal(text(nodes(drawer).find(node=>node.type==='h3')),'暂无业务资源')
+ assert.equal(nodes(drawer).filter(node=>node.type==='p').length,1,'仅保原业务标题，不显示冗长空态说明')
+ const actions=nodes(drawer).filter(node=>node.type==='button')
+ assert.deepEqual(actions.map(node=>node.props['aria-label']),['在会话中准备业务资源','打开市场'])
+ assert.deepEqual(actions.map(text),['',''],'动作只显示图标，名称由无障碍标签和tooltip提供')
+ for(const node of actions){assert.equal(node.props.title,node.props['aria-label']);assert.ok('data-teloa-toolbar-icon'in node.props)}
+ assert.deepEqual(navigation,[],'轻详情不改原业务目录')
+ const prepare=nodes(drawer).find(node=>node.type==='button'&&node.props['aria-label']==='在会话中准备业务资源')!
+ prepare.props.onClick()
+ await new Promise(resolve=>setImmediate(resolve))
+ assert.equal(prepared.length,1)
+ assert.equal(prepared[0].title,'安全运营 · 准备业务资源')
+ assert.equal(prepared[0].sourceId,'business:SOC:resources')
+ assert.match(prepared[0].text,/AI 员工、AI 团队、应用、技能、资料及连接/)
+ assert.doesNotMatch(prepared[0].text,/方案/)
+ assert.match(prepared[0].text,/安全运营/)
+ assert.match(prepared[0].text,/SOC/)
+ assert.match(prepared[0].text,/不自动安装、授权、发送或执行/)
+ assert.equal(nodes(harness.render(props)).some(node=>node.type==='context-drawer'),false)
+ menu.props.choose('sources','SOC')
+ nodes(harness.render(props)).find(node=>node.type==='button'&&node.props['aria-label']==='打开市场')!.props.onClick()
+ assert.equal(market.length,1)
+ assert.equal(nodes(harness.render(props)).some(node=>node.type==='context-drawer'),false)
+ menu.props.choose('sources','SOC')
+ nodes(harness.render(props)).find(node=>node.type==='context-drawer')!.props.close()
+ assert.equal(nodes(harness.render(props)).some(node=>node.type==='context-drawer'),false)
+ assert.deepEqual(navigation,[])
+})
+
+
+test('业务资源空态三语使用当前资源概念，保留旧词条供兼容读取',()=>{
+ for(const [locale,empty,prepare,market,title] of [['zh-CN','暂无业务资源','在会话中准备业务资源','打开市场','准备业务资源'],['zh-Hant','暫無業務資源','在會話中準備業務資源','開啟市集','準備業務資源'],['en','No business resources yet','Prepare business resources in a conversation','Open marketplace','Prepare business resources']]){
+  const copy=businessLibraryText(locale!)
+  assert.deepEqual([copy.resourcesEmpty,copy.prepareResourcesAction,copy.openResourcesMarket,copy.resourcesPreparationTitle],[empty,prepare,market,title])
+  assert.ok(copy.prepareResources&&copy.resourcesHint&&copy.resourceGoal('业务','scope'),'兼容词条仍可读')
+  assert.doesNotMatch(copy.resourcesPreparationGoal('业务','scope'),/方案|solution/)
+ }
+ assert.equal(businessLibraryText('zh-HK').openResourcesMarket,'開啟市集')
+ assert.equal(businessLibraryText('zh-TW').openResourcesMarket,'開啟市集')
 })

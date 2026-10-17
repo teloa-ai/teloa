@@ -26,3 +26,16 @@ test('能力绑定与工作目录词典严格提供十套人工翻译',()=>{
   assert.deepEqual(capability.get('capability.binding.title')?.slice(1,7),['业务能力绑定','業務能力綁定','Business capability bindings','業務能力の紐付け','업무 기능 바인딩','Liên kết năng lực nghiệp vụ'])
   assert.deepEqual(directory.get('workDirectory.search.placeholder')?.slice(1,7),['搜索名称与正文','搜尋名稱與正文','Search names and content','名前と本文を検索','이름 및 본문 검색','Tìm tên và nội dung'])
 })
+
+
+test('新员工会话与原群关联文案定稿简繁英，香港用语和其他语言英文回退可用',async()=>{
+ const {translateMessage}=await import('../lib/types/client/i18n/messages.js')
+ assert.equal(translateMessage('zh-CN','conversationDirectory.employeeTitle',{name:'小研'}),'与小研对话')
+ assert.equal(translateMessage('zh-Hant','conversationDirectory.employeeTitle',{name:'小研'}),'與小研對話')
+ assert.equal(translateMessage('zh-HK','conversationDirectory.employeeTitle',{name:'小研'}),'與小研對話')
+ assert.equal(translateMessage('en','conversationDirectory.employeeTitle',{name:'Alice'}),'Chat with Alice')
+ assert.equal(translateMessage('ja','conversationDirectory.employeeTitle',{name:'Alice'}),'Chat with Alice')
+ assert.equal(translateMessage('zh-CN','project.group.originalLink'),'由原群关联')
+ assert.equal(translateMessage('zh-Hant','project.group.originalLink'),'由原群關聯')
+ assert.equal(translateMessage('en','project.group.originalLink'),'Linked from the original group')
+})

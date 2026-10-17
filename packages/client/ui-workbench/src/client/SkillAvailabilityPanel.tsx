@@ -1,3 +1,5 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {RefreshCw} from 'lucide-react'
 import {useEffect,useReducer,useRef,useState} from 'react'
 import type {SkillInstallationRecord} from './skill-install-api.js'
 import type {SkillAvailabilityApi,SkillAvailabilityReceipt,SkillAvailabilityImpact} from './skill-availability-api.js'
@@ -33,7 +35,7 @@ export function SkillAvailabilityPanel({api,record,onChanged,onOpenInstallation}
   {(view.error||recoveryError)&&<p role="alert">{view.error||localizeWorkError(locale,recoveryError)}{recoveryError&&' '+t('recovery.nextStep')}</p>}
   {recoveryError&&<button type="button" onClick={()=>{api.discard();setDiscarded(true)}}>{t('recovery.discard')}</button>}
   {discarded&&<p role="status">{t('recovery.discarded')}</p>}
-  <div className={css.buttons}><button type="button" disabled={busy||view.loading} onClick={()=>setRevision(v=>v+1)}>{t('market.skill.availability.refresh')}</button>
+  <div className={css.buttons}><ToolbarIconButton label={t('market.skill.availability.refresh')} icon={RefreshCw} disabled={busy||view.loading} onClick={()=>setRevision(v=>v+1)}/>
    {current&&!pending&&!recoveryError&&<button type="button" disabled={busy||view.loading} onClick={()=>void inspect(current.availability==='enabled'?'disable':'enable')}>{current.availability==='enabled'?t('market.skill.availability.previewDisable'):t('market.skill.availability.previewEnable')}</button>}
    {pendingHere&&<button type="button" disabled={busy} onClick={()=>void submit(true)}>{t('market.skill.availability.reviewOriginal',{action:label(pending.action)})}</button>}
    {pending&&!pendingHere&&<button type="button" onClick={()=>onOpenInstallation(pending.installationId)}>{t('market.skill.availability.openPending')}</button>}

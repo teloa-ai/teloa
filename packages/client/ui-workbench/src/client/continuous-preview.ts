@@ -4,6 +4,7 @@ import type { PlanTemplate } from './plan-template.ts'
 import { collaborationScopes, type CollaborationScope } from './collaboration-preview.ts'
 import { canReceiveTask, type PreviewRole } from './role-preview.ts'
 import type {TeloaTranslate} from './i18n/index.js'
+import type {OwnerPlanExecutor} from './plan-api.ts'
 
 export type PlanTrigger={kind:'schedule';cadence:'daily'|'weekly';weekday:number;time:string;timezone:string}|{kind:'event';source:string;event:string}
 export const planNotificationPolicies=['always','attention','failure','silent'] as const
@@ -11,9 +12,10 @@ export type PlanNotificationPolicy=typeof planNotificationPolicies[number]
 export const planNotificationPolicyKeys:Record<PlanNotificationPolicy,string>={always:'continuous.form.notification.always',attention:'continuous.form.notification.attention',failure:'continuous.form.notification.failure',silent:'continuous.form.notification.silent'}
 export const planNotificationPolicyLabels:Record<PlanNotificationPolicy,string>={always:'每次都提醒',attention:'需要本人处理时提醒',failure:'仅失败时提醒',silent:'不主动提醒'}
 export const isPlanNotificationPolicy=(value:unknown):value is PlanNotificationPolicy=>planNotificationPolicies.some(policy=>policy===value)
-export type PlanFields={title:string;scope:CollaborationScope;goal:string;dataScope:string;delivery:string;roleId:string;trigger:PlanTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
+export type PlanFields={groupId?:string|null;title:string;scope:CollaborationScope;goal:string;dataScope:string;delivery:string;roleId:string;trigger:PlanTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
 type PlanHistory={text:string;at:string}
-export type ContinuousPlan={id:string;version:number;revision:number;fields:PlanFields;template?:PlanTemplate;enabled:boolean;archived:boolean;handoff?:{fromId:string;reason:string};history:PlanHistory[]}
+type ContinuousPlanRecord={id:string;version:number;revision:number;template?:PlanTemplate;enabled:boolean;archived:boolean;handoff?:{fromId:string;reason:string};history:PlanHistory[]}
+export type ContinuousPlan=ContinuousPlanRecord&({fields:PlanFields;executor?:never}|{fields:Omit<PlanFields,'roleId'>&{scope:'general';roleId:null};executor:OwnerPlanExecutor})
 export type PlanRun={id:string;planId:string;occurrenceId:string;revision:number;snapshot:{version:number;fields:PlanFields;template?:PlanTemplate};actor:{id:string;name:string};input:string;state:'running'|'completed'|'failed';result:string;output:string;createdAt:string;finishedAt?:string;retryOf?:string;resolution?:{note:string;at:string};taskId?:string;artifact?:ArtifactRef}
 export type ContinuousPreview={plans:ContinuousPlan[];runs:PlanRun[];loaded:boolean}
 export type ContinuousTarget={kind:'plans'|'runs'|'plan'|'run';id?:string;scope?:CollaborationScope;roleId?:string}
@@ -47,6 +49,7 @@ export function triggerLabel(trigger:PlanTrigger,t?:TeloaTranslate):string{
 export function planBlock(plan:ContinuousPlan,roles:PreviewRole[],t?:TeloaTranslate):string{
   if(plan.archived)return t?t('continuous.block.archived'):'计划已归档，保留历史，不接受新触发。'
   if(plan.handoff)return t?t('continuous.block.handoff'):'计划等待员工交接。'
+  if(plan.executor)return plan.enabled?'':t?t('continuous.block.paused'):'计划已暂停；恢复后不补跑历史触发。'
   const role=roles.find(item=>item.id===plan.fields.roleId)
   if(role?.state==='paused')return t?t('continuous.block.rolePaused'):'负责员工已暂停，不接受新触发。'
   if(!canReceiveTask(role,plan.fields.scope))return t?t('continuous.block.roleIneligible'):'负责员工当前不具备接续资格。'

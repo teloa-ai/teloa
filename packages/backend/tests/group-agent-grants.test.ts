@@ -13,6 +13,7 @@ import {GroupAttachmentService,initializeGroupAttachments} from '../src/work/gro
 import {artifactVersion as artifactVersionRow,attachmentPorts,uploadFile} from './group-attachment-test-fixture.ts'
 import {GroupAgentGrantService,initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
 import {initializeRoles,RoleService} from '../src/work/roles.ts'
+import {authorizeRoleTaskAssignment} from '../src/work/role-task-authorization.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 
@@ -32,9 +33,9 @@ after(async()=>{await pool?.end();await container?.stop()})
 const roleFields={name:'调查岗',kind:'employee' as const,scopes:['SOC'],duty:'调查',dataScope:'固定证据',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}
 
 /** 建一个已在岗数字员工并加入群，供本人授权用例复用。 */
-async function memberGroup(){
+async function memberGroup(state:'active'|'paused'='active'){
  const owner=randomUUID(),roles=new RoleService(pool,identity),groups=new CollaborationService(pool,identity)
- const role=await roles.create(owner,{requestId:randomUUID(),fields:roleFields})
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:roleFields},{state})
  const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'授权测试群',scope:'SOC',announcement:'固定范围。',rules:openGroupRules,memberRoleIds:[role.id]}})
  return {owner,role,group,groups,grants:new GroupAgentGrantService(pool,identity.now)}
 }
@@ -132,4 +133,60 @@ test('老授权行的旧二元组资源读回按群资料归一化，不判损�
  const read=await grants.get(owner,{groupId:group.id,roleId:role.id})
  assert.deepEqual(read.grant?.resources,normalized)
  assert.equal(read.status,'active')
+})
+
+test('本人可为暂停员工保存固定群资料配置，但配置不恢复员工或取得执行资格',async()=>{
+ const {owner,role,group,groups,grants}=await memberGroup('paused')
+ const resource=await groups.saveResource(owner,{requestId:randomUUID(),groupId:group.id,resourceId:randomUUID(),expectedVersion:0,title:'模板静态资料',markdown:'# 原模板资料'})
+ const resources:MessageReference[]=[{kind:'group-resource',id:resource.id,version:1}]
+ const saved=await grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources,canPost:true,canAutoRun:true})
+ assert.deepEqual(saved.resources,resources)
+ const current=await new RoleService(pool,identity).get(owner,role.id)
+ assert.ok(current)
+ assert.equal(current.state,'paused');assert.equal(current.version,role.version)
+ assert.equal((await grants.get(owner,{groupId:group.id,roleId:role.id})).status,'invalidated')
+ const db=await pool.connect()
+ try{await assert.rejects(authorizeRoleTaskAssignment(db,pool,owner,current,'SOC',group.id),{code:'teloa/conflict'})}finally{db.release()}
+ const revoked=await grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'revoke',resources:[],canPost:false,canAutoRun:false})
+ assert.equal(await groups.backfillDefaultGrants(owner),0)
+ assert.equal((await grants.get(owner,{groupId:group.id,roleId:role.id})).grant?.grantVersion,revoked.grantVersion)
+ assert.equal((await grants.get(owner,{groupId:group.id,roleId:role.id})).status,'revoked')
+})
+
+test('群授权 CAS 使并发保存仅一方成功，撤销后旧配置不能覆盖且原回执仍幂等可读',async()=>{
+ const {owner,role,group,grants}=await memberGroup()
+ const initial=(await grants.get(owner,{groupId:group.id,roleId:role.id})).grant!
+ const base={groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,expectedGrantVersion:initial.grantVersion,action:'save' as const,resources:[],canPost:true,canAutoRun:true}
+ const inputs=[{...base,requestId:randomUUID(),canPost:false},{...base,requestId:randomUUID(),canAutoRun:false}]
+ const attempts=await Promise.allSettled(inputs.map(input=>grants.change(owner,input)))
+ assert.equal(attempts.filter(row=>row.status==='fulfilled').length,1)
+ const rejected=attempts.find(row=>row.status==='rejected')!
+ assert.equal(rejected.status==='rejected'&&rejected.reason.code,'teloa/version-conflict')
+ const winner=attempts.findIndex(row=>row.status==='fulfilled'),saved=attempts[winner]
+ assert.ok(saved)
+ assert.equal(saved.status,'fulfilled');if(saved.status!=='fulfilled')throw Error('缺少并发成功回执')
+ assert.equal(saved.value.grantVersion,initial.grantVersion+1)
+ const revoked=await grants.change(owner,{...base,requestId:randomUUID(),expectedGrantVersion:saved.value.grantVersion,action:'revoke',canPost:false,canAutoRun:false})
+ await assert.rejects(grants.change(owner,{...inputs[winner],requestId:randomUUID()}),{code:'teloa/version-conflict'})
+ assert.deepEqual(await grants.change(owner,inputs[winner]),saved.value,'原请求回读先于当前 CAS，不重复签发')
+ await assert.rejects(grants.change(owner,{...inputs[winner],expectedGrantVersion:revoked.grantVersion}),{code:'teloa/conflict'})
+ const latest=await grants.get(owner,{groupId:group.id,roleId:role.id})
+ assert.equal(latest.status,'revoked');assert.equal(latest.grant?.grantVersion,revoked.grantVersion)
+})
+
+test('授权不存在时 CAS 零可首次保存，旧调用省略 CAS 仍保原幂等语义',async()=>{
+ const owner=randomUUID(),roles=new RoleService(pool,identity),groups=new CollaborationService(pool,identity),grants=new GroupAgentGrantService(pool,identity.now)
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:{...roleFields,scopes:['AppSec']}},{state:'paused'})
+ const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'尚无授权的群',scope:'SOC',announcement:'',rules:openGroupRules,memberRoleIds:[role.id]}})
+ const current=await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:{...roleFields,scopes:['SOC','AppSec']}})
+ assert.equal((await grants.get(owner,{groupId:group.id,roleId:role.id})).grant,null)
+ const base={groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:current.version,action:'save' as const,resources:[],canPost:true,canAutoRun:false}
+ const saved=await grants.change(owner,{...base,requestId:randomUUID(),expectedGrantVersion:0})
+ assert.equal(saved.grantVersion,1)
+ await assert.rejects(grants.change(owner,{...base,requestId:randomUUID(),expectedGrantVersion:0}),{code:'teloa/version-conflict'})
+ const legacy={...base,requestId:randomUUID()},legacySaved=await grants.change(owner,legacy)
+ assert.equal(legacySaved.grantVersion,2)
+ assert.deepEqual(await grants.change(owner,legacy),legacySaved)
+ const spec=(await pool.query('select request_spec from teloa_group_agent_grants where owner_id=$1 and request_id=$2',[owner,legacy.requestId])).rows[0].request_spec
+ assert.equal(Object.hasOwn(spec,'expectedGrantVersion'),false)
 })

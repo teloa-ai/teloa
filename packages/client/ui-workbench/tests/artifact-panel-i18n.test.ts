@@ -1,15 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
-import {chineseUiLiterals} from './i18n-ast.ts'
+import ts from 'typescript'
+import {chineseUiLiterals,type ChineseLiteralAllowlist} from './i18n-ast.ts'
 import {ARTIFACT_PANEL_MESSAGE_ROWS} from '../src/client/i18n/locales/artifact-panel.ts'
 
 const url=new URL('../src/client/ArtifactPanel.tsx',import.meta.url)
+// 旧成果的段落标题是持久元数据；仅允许 savedBody 中的精确兼容匹配，不允许作为新界面文案。
+const legacySectionTitle:ChineseLiteralAllowlist=(value,node)=>{
+  if(value!=='段落'||!ts.isStringLiteral(node)||node.text!=='段落 ')return false
+  const prefix=node.parent,comparison=prefix.parent
+  if(!ts.isBinaryExpression(prefix)||prefix.operatorToken.kind!==ts.SyntaxKind.PlusToken||prefix.left!==node||prefix.right.getText()!=='(index+1)'||!ts.isBinaryExpression(comparison)||comparison.operatorToken.kind!==ts.SyntaxKind.EqualsEqualsEqualsToken||comparison.left.getText()!=='item.title'||comparison.right!==prefix)return false
+  let declaration:ts.Node|undefined=comparison
+  while(declaration&&!ts.isVariableDeclaration(declaration))declaration=declaration.parent
+  return !!declaration&&ts.isVariableDeclaration(declaration)&&declaration.name.getText()==='savedBody'
+}
 
 test('工作成果面板的固定文案全部来自词典',async()=>{
   const source=await readFile(url,'utf8')
   assert.match(source,/useI18n\(/)
-  assert.deepEqual(chineseUiLiterals(source,'artifact-panel-i18n.test.ts'),[])
+  assert.deepEqual(chineseUiLiterals(source,'artifact-panel-i18n.test.ts',legacySectionTitle),[])
+  assert.deepEqual(chineseUiLiterals('<span>段落</span><button title="段落 "/>','ui.tsx',legacySectionTitle),['段落','段落'])
+  assert.deepEqual(chineseUiLiterals("const otherBody=item.title==='段落 '+(index+1)",'other.tsx',legacySectionTitle),['段落'])
 })
 
 

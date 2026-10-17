@@ -1,0 +1,2 @@
+.body{display:grid;gap:16px;min-width:0;padding:20px 24px}
+@media(max-width:600px){.body{padding:20px}}

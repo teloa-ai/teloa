@@ -32,6 +32,11 @@ test('添加结果严格固定任务与引用，拒绝未知字段和损坏任�
  assert.equal(isTaskMaterialResult({task:{...task,version:1},material}),false)
  assert.equal(isTaskMaterialResult({task:{...task,state:'unknown'},material}),false)
 })
+test('真实任务内容版本与结项策略严格回读，扩展字段不能伪造或隐藏损坏',()=>{
+ const current={...task,contentVersion:1,completionPolicy:{kind:'manual'}}
+ assert.equal(isTaskMaterialResult({task:current,material}),true)
+ for(const patch of [{contentVersion:0},{contentVersion:1.5},{contentVersion:'1'},{completionPolicy:{kind:'forged'}},{completionPolicy:{kind:'manual',ownerId:'forged'}},{ownerScope:'forged'}])assert.equal(isTaskMaterialResult({task:{...current,...patch},material}),false)
+})
 
 test('添加命令只接受请求、任务和资源的预期版本',()=>{
  const input={requestId,taskId,expectedTaskVersion:1,resourceId,expectedResourceVersion:3}

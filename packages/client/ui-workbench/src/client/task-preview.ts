@@ -1,4 +1,4 @@
-import type {TaskCompletionPolicy} from '@teloa/contract'
+import type {GroupExecutionMode,GroupTaskSource,TaskCompletionPolicy} from '@teloa/contract'
 import type { IndustryLoad } from './industry-load.ts'
 import type { IndustryTaskSource } from './industry-task.ts'
 import { businessScopeNames } from './business-directory.ts'
@@ -16,13 +16,20 @@ export const taskStates={ready:'status.ready',running:'status.running',paused:'s
 export const attentionKinds={approval:'attention.approval',materials:'attention.materials',connection:'attention.connection',error:'attention.error',review:'attention.review',handoff:'attention.handoff',dispatch:'attention.dispatch',execution:'plan.run.prepared'} as const
 export type AttentionKind=keyof typeof attentionKinds
 /** `authorId` 缺省表示来源仅从群消息任务来源记录还原，服务端未记录原始作者。 */
-export type TaskSource={groupId:string;messageId:string;rootId:string;text:string;authorId?:string;trigger?:'manual'|'mention'|'routed'}
+export type TaskSource={groupId:string;messageId:string;rootId:string;text:string;authorId?:string;trigger?:'manual'|'mention'|'routed';executionMode?:GroupExecutionMode;createdAssignee?:GroupTaskSource['createdAssignee']}
 export type TaskHistoryEntry=({message:LocalizedText;text?:never}|{message?:never;text:string})&{actorId:string;at:string}
 type Supplement={id:string;source:string;note:string;status:'pending'|'accepted'|'rejected'}
 export type PreviewTask={
   storage?:'persistent';id:string;title:string;goal:string;scope:CollaborationScope;object:string;version:number;state:keyof typeof taskStates
+  /** 服务端未提供内容版本时保持未知，不能推断仍是创建时的目标。 */
+  contentVersion?:number
   /** 交办时关联的协作群与使用技能；未保存或历史演示任务没有这两项。 */
   groupId?:string|null;skills?:readonly string[];completionPolicy?:TaskCompletionPolicy
+  /** 来源补拉状态只用于展示，不能改写持久任务或执行快照。 */
+  groupSourceState?:'pending'|'ready'|'absent'|'unavailable'
+  /** 持久任务交办时固定的员工版本；缺省时不推断可以更新交办。 */
+  executor?:import('@teloa/contract').TaskExecutor
+  assigneeRoleVersion?:number|null
   need:AttentionKind|null;request:string;authorId:string;assigneeId:string;assigneeHistory:string[];createdAt:string;updatedAt:string
   handoff?:{fromId:string;reason:string;at:string}
   industrySource?:IndustryTaskSource

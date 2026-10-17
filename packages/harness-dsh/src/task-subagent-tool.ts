@@ -7,8 +7,8 @@ import {subagentReservationId,type SubagentDelegationPorts} from './subagent-del
 import {subagentTaskToolName} from './role-tool-grants.ts'
 
 type ChildResult={output:readonly {type:string;text?:string}[];stopReason:string;diagnostic?:string}
-type ChildRun={id:string;result:Promise<ChildResult>;dispose:()=>Promise<void>}
-type SubagentHost={subagents:{start:(provider:string,input:{label:string;prompt:{type:'text';text:string}[];parent:unknown;signal:AbortSignal;maxDepth:number})=>Promise<ChildRun>}}
+type ChildRun={childId:string;result:Promise<ChildResult>;dispose:()=>Promise<void>}
+type SubagentHost={subagents:{startActivation:(spec:{provider:string;label:string;request:{prompt:{type:'text';text:string}[];parent:unknown;maxDepth:number};signal:AbortSignal;delivery:'caller'})=>Promise<ChildRun>}}
 type TokenMeterHost={agents?:{get:(id:SessionId)=>{session:unknown}|undefined};tokenMeter?:{measure:(session:unknown)=>{totalTokens:unknown}}}
 
 const outputText=(output:readonly {type:string;text?:string}[])=>output.filter(block=>block.type==='text'&&typeof block.text==='string').map(block=>block.text).join('')
@@ -51,26 +51,32 @@ export function registerTaskSubagentTool(ctx:Context,ports:SubagentDelegationPor
    // Run 身份读取是异步的；若期间已取消，不能写入一条随后必然释放的预留记录。
    exec.signal.throwIfAborted()
    const reservationId=subagentReservationId(lineage.root.id,String(exec.callId)),depth=lineage.depth+1
-   let reserved=false,child:ChildRun|undefined,settled=false
+   let reserved=false,child:ChildRun|undefined,settled=false,disposal:Promise<void>|undefined
+   const dispose=()=>disposal??=Promise.resolve().then(()=>child?.dispose())
+   const cancel=()=>{void dispose().catch(()=>{})}
    try{
     await ports.reserve({runId,reservationId,limit:ports.limits.maxPerRun});reserved=true
     exec.signal.throwIfAborted()
-    child=await host.subagents.start('spawn',{label:args.description,prompt:[{type:'text',text:args.prompt}],parent,signal:exec.signal,maxDepth:ports.limits.maxDepth})
-    await ports.bind({reservationId,childSessionId:child.id,depth})
+    child=await host.subagents.startActivation({provider:'spawn',label:args.description,request:{prompt:[{type:'text',text:args.prompt}],parent,maxDepth:ports.limits.maxDepth},signal:exec.signal,delivery:'caller'})
+    // 原生接纳后启动 signal 不再拥有取消；父调用保留精确 activation 句柄。
+    exec.signal.addEventListener('abort',cancel,{once:true})
+    if(exec.signal.aborted){cancel();exec.signal.throwIfAborted()}
+    await ports.bind({reservationId,childSessionId:child.childId,depth})
     const result=await child.result
-    const estimate=tokenEstimate(ctx,child.id)
-    await ports.settle({childSessionId:child.id,stopReason:result.stopReason,...(estimate===undefined?{}:{tokenEstimate:estimate})});settled=true
+    const estimate=tokenEstimate(ctx,child.childId)
+    await ports.settle({childSessionId:child.childId,stopReason:result.stopReason,...(estimate===undefined?{}:{tokenEstimate:estimate})});settled=true
     const failure=outcomeError(result)
     // 子会话诊断来自上游运行时，不能透传给父会话或页面；固定结局足以让父任务决定重试或收口。
     if(failure!==undefined)throw new WorkError('teloa/conflict',failure)
     return outputText(result.output)
    }catch(error){
     if(child===undefined&&reserved){try{await ports.release({reservationId})}catch{throw reportFailure()}}
-    if(child!==undefined&&!settled){try{await ports.abandon({reservationId,childSessionId:child.id,depth,stopReason:'tool-settlement-failed'})}catch{throw reportFailure()}}
+    if(child!==undefined&&!settled){try{await ports.abandon({reservationId,childSessionId:child.childId,depth,stopReason:'tool-settlement-failed'})}catch{throw reportFailure()}}
     throw error
   }finally{
    // 结果已经结算后，子会话的本地清理失败不能改写父任务的真实结局。
-   if(child!==undefined){try{await child.dispose()}catch{ctx.logger.warn('Teloa 子 Agent 清理失败，已保留已结算结果。')}}
+   exec.signal.removeEventListener('abort',cancel)
+   if(child!==undefined){try{await dispose()}catch{ctx.logger.warn('Teloa 子 Agent 清理失败，已保留已结算结果。')}}
   }
   },
  }))

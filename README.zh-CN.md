@@ -121,7 +121,7 @@ docker compose start
 
 需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**pnpm 11.7.0**，以及用于 PostgreSQL 的本机 Docker 引擎。此方式在电脑上运行 Teloa 与 DSH，数据库运行在 Docker 中。
 
-当前主分支固定 DSH **0.2.1-alpha.1**，包含默认语音输入；已发布的 npm 和 Docker 版本独立更新，请勿将源码能力视为旧发行包已包含的功能。
+当前主分支固定 DSH **0.2.1-rc.2**，包含默认语音输入；已发布的 npm 和 Docker 版本独立更新，请勿将源码能力视为旧发行包已包含的功能。
 
 ```sh
 git clone https://github.com/teloa-ai/teloa.git

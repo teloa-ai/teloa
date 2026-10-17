@@ -1,12 +1,14 @@
 import {createHash} from 'node:crypto'
-import {WorkError,isRecord,readMarketCatalogArtifact,readMarketCatalogEntry,readMarketCatalogListContents,readMarketCatalogListSecretGroup,marketCatalogSkillName,marketEntryKinds,type MarketCatalogListItem,type MarketCatalogListCounts,type MarketCatalogListSkipped} from '@teloa/contract'
+import {WorkError,isRecord,marketConnectorArtifactOptional,readMarketCatalogArtifact,readMarketCatalogEntry,readMarketCatalogListContents,readMarketCatalogListSecretGroup,marketCatalogSkillName,marketEntryKinds,type MarketCatalogListItem,type MarketCatalogListCounts,type MarketCatalogListSkipped} from '@teloa/contract'
 
-export const marketCatalogEndpoints=['market-catalog/list','market-catalog/add','market-catalog/ranking','market-catalog/solution'] as const
+export const marketCatalogEndpoints=['market-catalog/list','market-catalog/add','market-catalog/ranking','market-catalog/solution','market-catalog/role'] as const
 export type MarketCatalogOperations={
  list:(actor:{ownerId:string;kind:'human'},request?:Record<string,unknown>)=>Promise<unknown>
  add:(actor:{ownerId:string;kind:'human'},input:unknown)=>Promise<unknown>
- /** AI 员工条目直接建岗；requestId 由后端按（本人, 条目, 版本）派生，宿主不传。 */
+ /** AI 员工条目完整资源安装（旧 v1 员工原样返回）；requestId 由宿主按（本人, 条目, 版本）派生，客户端不传。 */
  addRole:(actor:{ownerId:string;kind:'human'},input:{entryId:string;version:string})=>Promise<unknown>
+ /** AI 员工添加前的组成预览：固定派生包清单；未接线时按依赖不可用拒绝。 */
+ rolePackage?:(actor:{ownerId:string;kind:'human'},input:{entryId:string})=>Promise<unknown>|unknown
  /** 官方方案产品页：方案包清单原文与只读接入源；未接线（测试、只读装配）时按依赖不可用拒绝。 */
  solutionPackage?:(actor:{ownerId:string;kind:'human'},input:{entryId:string})=>Promise<unknown>|unknown
 }
@@ -36,9 +38,9 @@ function encodeList(value:unknown):{catalogVersion:string;items:MarketCatalogLis
    if(!isRecord(item)||Object.keys(item).length!==(hasContents?6:5)||!('secretGroup' in item)||!('entry' in item)||!('artifact' in item)||!(item.addedContentId===null||uuid(item.addedContentId))||!(item.addedRoleId===null||uuid(item.addedRoleId)))throw hostBad()
    const entry=readMarketCatalogEntry(item.entry)
    if(entry.kind!=='role'&&item.addedRoleId!==null)throw hostBad()
-   // 上游条目：artifact 为 null，跳过工件校验；模型条目无工件，回包必须恰为 null
+   // 上游条目：artifact 为 null，跳过工件校验；模型条目无工件，回包必须恰为 null；在线索引的非 stdio 连接器可为 null
    if(entry.kind==='model'&&item.artifact!==null)throw hostBad()
-   const artifact=entry.delivery==='upstream'||entry.kind==='model'?null:readMarketCatalogArtifact(item.artifact,entry,sha256)
+   const artifact=entry.delivery==='upstream'||entry.kind==='model'||item.artifact===null&&marketConnectorArtifactOptional(entry)?null:readMarketCatalogArtifact(item.artifact,entry,sha256)
    return {entry,artifact,addedContentId:item.addedContentId as string|null,addedRoleId:item.addedRoleId as string|null,secretGroup:readMarketCatalogListSecretGroup(item.secretGroup,entry),...(hasContents?{contents:readMarketCatalogListContents(item.contents,entry)}:{})}
   })
   return {catalogVersion:value.catalogVersion,items,nextCursor:value.nextCursor as string|null,counts:{...counts} as MarketCatalogListCounts,skipped:{unknownKind:skipped.unknownKind as number,newerApp:skipped.newerApp as number}}
@@ -56,10 +58,35 @@ function encodeSolutionPackage(value:unknown,entryId:string):{entryId:string;ver
 }
 
 const skillNames=(value:unknown):string[]=>{if(!Array.isArray(value)||value.some(item=>typeof item!=='string'||!marketCatalogSkillName.test(item)))throw hostBad();return value as string[]}
-/** 建岗回执逐字段复核：roleId 为 uuid、status 二值、skills 技能名列表；不透传其他字段。 */
-function encodeRoleReceipt(value:unknown):{roleId:string;status:'created'|'existing';skills:string[]}{
- if(!isRecord(value)||!uuid(value.roleId)||(value.status!=='created'&&value.status!=='existing'))throw hostBad()
- return {roleId:value.roleId.toLowerCase(),status:value.status,skills:[...skillNames(value.skills)]}
+const RESOURCE_STATES=['done','pending','failed','conflict','needs-user','optional'],NEXT=['resume','connect','retry','review']
+type InstallSummary={complete:boolean;loadId:string;roleState:string|null;next:string|null;resources:{kind:string;title:string;state:string;nativeName?:string}[]}
+/** 完整资源安装摘要逐字段复核：只透传固定键；原生名按技能名口径核对。 */
+function encodeInstall(value:unknown):InstallSummary{
+ if(!isRecord(value)||Object.keys(value).length!==5||typeof value.complete!=='boolean'||!uuid(value.loadId)||(value.roleState!==null&&typeof value.roleState!=='string')||(value.next!==null&&!NEXT.includes(value.next as string))||!Array.isArray(value.resources)||value.resources.length>500)throw hostBad()
+ const resources=value.resources.map(row=>{
+  if(!isRecord(row)||typeof row.kind!=='string'||typeof row.title!=='string'||!RESOURCE_STATES.includes(row.state as string)||row.nativeName!==undefined&&(typeof row.nativeName!=='string'||!marketCatalogSkillName.test(row.nativeName)))throw hostBad()
+  return {kind:row.kind,title:row.title,state:row.state as string,...(typeof row.nativeName==='string'?{nativeName:row.nativeName}:{})}
+ })
+ return {complete:value.complete,loadId:value.loadId.toLowerCase(),roleState:value.roleState as string|null,next:value.next as string|null,resources}
+}
+/**
+ * 建岗回执逐字段复核，不透传其他字段。旧 v1 员工：roleId 为 uuid、status 二值、skills 技能名列表（原三键）。
+ * 完整资源安装另带 install 摘要：员工尚未建立时 roleId 为 null、status 为 pending；skills 为员工实际绑定的原生名。
+ */
+function encodeRoleReceipt(value:unknown):{roleId:string|null;status:'created'|'existing'|'pending';skills:string[];install?:InstallSummary}{
+ if(!isRecord(value))throw hostBad()
+ if(value.install===undefined){
+  if(!uuid(value.roleId)||(value.status!=='created'&&value.status!=='existing'))throw hostBad()
+  return {roleId:value.roleId.toLowerCase(),status:value.status,skills:[...skillNames(value.skills)]}
+ }
+ if(value.roleId===null?value.status!=='pending':!uuid(value.roleId)||(value.status!=='created'&&value.status!=='existing'))throw hostBad()
+ return {roleId:typeof value.roleId==='string'?value.roleId.toLowerCase():null,status:value.status as 'created'|'existing'|'pending',skills:[...skillNames(value.skills)],install:encodeInstall(value.install)}
+}
+const semver=/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
+/** 员工组成预览回包复核：条目与请求一致、版本固定、父包身份与清单是带资源表的对象；清单全文由界面按清单格式完整复核。 */
+function encodeRolePackage(value:unknown,entryId:string):{entryId:string;version:string;packageId:string;packageVersion:string;manifest:Record<string,unknown>}{
+ if(!isRecord(value)||value.entryId!==entryId||typeof value.version!=='string'||!semver.test(value.version)||typeof value.packageId!=='string'||!resourceId.test(value.packageId)||typeof value.packageVersion!=='string'||!semver.test(value.packageVersion)||!isRecord(value.manifest)||!Array.isArray(value.manifest.resources)||value.manifest.resources.length>500)throw hostBad()
+ return {entryId,version:value.version,packageId:value.packageId,packageVersion:value.packageVersion,manifest:value.manifest}
 }
 
 /** 仅供认证后的工作台 RPC；不注册为 Agent 工具。添加只把条目固定为本人内容，安装仍走既有安装接口。 */
@@ -82,7 +109,7 @@ export function createMarketCatalogHandler(owner:string,get:()=>Promise<MarketCa
    if('cursor' in payload&&payload.cursor!==undefined&&typeof payload.cursor!=='string')throw invalid()
    if('query' in payload&&payload.query!==undefined&&typeof payload.query!=='string')throw invalid()
    if('kind' in payload&&payload.kind!==undefined&&!(marketEntryKinds as readonly string[]).includes(payload.kind as string))throw invalid()
-   const validMarketplaces=['teloa','claude-code','codex','dsh','openclaw','clawhub','hermes']
+   const validMarketplaces=['teloa','claude-code','codex','dsh','openclaw','clawhub','hermes','cursor']
    if('marketplace' in payload&&payload.marketplace!==undefined&&!validMarketplaces.includes(payload.marketplace as string))throw invalid()
    if('sort' in payload&&payload.sort!==undefined&&!['installs','name'].includes(payload.sort as string))throw invalid()
    const request=keys.length?payload as Record<string,unknown>:undefined
@@ -96,8 +123,15 @@ export function createMarketCatalogHandler(owner:string,get:()=>Promise<MarketCa
    if(!operations.solutionPackage)throw new WorkError('teloa/dependency-unavailable','官方方案内容读取尚未接通。')
    return encodeSolutionPackage(await operations.solutionPackage(actor,{entryId:payload.entryId}),payload.entryId)
   }
+  if(endpoint==='market-catalog/role'){
+   // 只读：恰好一个非空条目标识
+   if(Object.keys(payload).length!==1||!payload.entryId)throw invalid()
+   const operations=await get()
+   if(!operations.rolePackage)throw new WorkError('teloa/dependency-unavailable','AI 员工组成读取尚未接通。')
+   return encodeRolePackage(await operations.rolePackage(actor,{entryId:payload.entryId}),payload.entryId)
+  }
   if(payload.kind==='role'){
-   // AI 员工条目：恰好三键（requestId 由后端按本人 + 条目 + 版本派生，客户端不传），直接建岗位，回包只透传三字段
+   // AI 员工条目：恰好三键（requestId 由宿主按本人 + 条目 + 版本派生，客户端不传）；回包只透传复核过的字段
    if(Object.keys(payload).length!==3||typeof payload.version!=='string'||!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(payload.version))throw invalid()
    return encodeRoleReceipt(await (await get()).addRole(actor,{entryId:payload.entryId,version:payload.version}))
   }

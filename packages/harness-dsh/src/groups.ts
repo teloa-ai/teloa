@@ -1,6 +1,10 @@
-import {WorkError,groupChangeInput,groupCreateInput,groupListInput,groupMessageListInput,groupReactionListInput,groupReactionToggleInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupRoutingListInput,groupSendInput} from '@teloa/contract'
+import {WorkError,groupChangeInput,groupCreateInput,groupListInput,groupMessageListInput,groupReactionListInput,groupReactionToggleInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupRoutingListInput,groupRoutingRetryInput,groupRoutingStatusInput,groupSendInput} from '@teloa/contract'
+import {groupMessageBodyInput} from '@teloa/contract'
+import {groupReadingInput,groupMarkReadInput} from '@teloa/contract'
+import {groupMessagePageInput,groupMessageSearchInput} from '@teloa/contract'
+import {groupMentionsInput} from '@teloa/contract'
 
-export const groupEndpoints=['groups/list','groups/get','groups/create','groups/change','groups/messages/list','groups/messages/send','groups/resources/list','groups/resources/get','groups/resources/save','groups/resources/withdraw','groups/reactions/list','groups/reactions/toggle','groups/routing/list'] as const
+export const groupEndpoints=['groups/list','groups/get','groups/create','groups/change','groups/messages/list','groups/messages/page','groups/messages/search','groups/messages/body','groups/messages/send','groups/reading/get','groups/reading/mark','groups/attention','groups/mentions/list','groups/resources/list','groups/resources/get','groups/resources/save','groups/resources/withdraw','groups/reactions/list','groups/reactions/toggle','groups/routing/list','groups/routing/status','groups/routing/retry'] as const
 
 type GroupOperations={
   list:(owner:string,input:unknown)=>Promise<unknown>
@@ -8,6 +12,13 @@ type GroupOperations={
   create:(owner:string,input:unknown)=>Promise<unknown>
   change:(owner:string,input:unknown)=>Promise<unknown>
   messages:(owner:string,input:unknown)=>Promise<unknown>
+  messagePage?:(owner:string,input:unknown)=>Promise<unknown>
+  messageSearch?:(owner:string,input:unknown)=>Promise<unknown>
+  messageBody:(owner:string,input:unknown)=>Promise<unknown>
+  reading?:(owner:string,input:unknown)=>Promise<unknown>
+  markRead?:(owner:string,input:unknown)=>Promise<unknown>
+  attention?:(owner:string,input:unknown)=>Promise<unknown>
+  mentionMessages?:(owner:string,input:unknown)=>Promise<unknown>
   send:(owner:string,input:unknown)=>Promise<unknown>
   resources:(owner:string,input:unknown)=>Promise<unknown>
   resource:(owner:string,input:unknown)=>Promise<unknown>
@@ -17,6 +28,10 @@ type GroupOperations={
   reactions:(owner:string,input:unknown)=>Promise<unknown>
   toggleReaction:(owner:string,input:unknown)=>Promise<unknown>
   routing:(owner:string,input:unknown)=>Promise<unknown>
+  /** 本人消息的真实处理状态（规格 §6.6），只读。 */
+  routingStatus:(owner:string,input:unknown)=>Promise<unknown>
+  /** 沿原消息重新安排：不发送新正文，只登记新尝试并唤醒原消息。 */
+  retryRouting:(owner:string,input:unknown)=>Promise<unknown>
 }
 
 function groupGetInput(input:unknown):void{
@@ -33,13 +48,22 @@ export function createGroupHandler(owner:string,get:()=>Promise<GroupOperations|
     else if(endpoint==='groups/create')groupCreateInput(payload)
     else if(endpoint==='groups/change')groupChangeInput(payload)
     else if(endpoint==='groups/messages/list')groupMessageListInput(payload)
+    else if(endpoint==='groups/messages/page')groupMessagePageInput(payload)
+    else if(endpoint==='groups/messages/search')groupMessageSearchInput(payload)
+    else if(endpoint==='groups/messages/body')groupMessageBodyInput(payload)
     else if(endpoint==='groups/messages/send')admitText(groupSendInput(payload).text)
+    else if(endpoint==='groups/reading/get')groupReadingInput(payload)
+    else if(endpoint==='groups/reading/mark')groupMarkReadInput(payload)
+    else if(endpoint==='groups/attention')groupListInput(payload)
+    else if(endpoint==='groups/mentions/list')groupMentionsInput(payload)
     else if(endpoint==='groups/resources/list')groupResourceListInput(payload)
     else if(endpoint==='groups/resources/get')groupResourceGetInput(payload)
     else if(endpoint==='groups/resources/save')groupResourceSaveInput(payload)
     else if(endpoint==='groups/resources/withdraw')groupResourceWithdrawInput(payload)
     else if(endpoint==='groups/reactions/list')groupReactionListInput(payload)
     else if(endpoint==='groups/reactions/toggle')groupReactionToggleInput(payload)
+    else if(endpoint==='groups/routing/status')groupRoutingStatusInput(payload)
+    else if(endpoint==='groups/routing/retry')groupRoutingRetryInput(payload)
     else groupRoutingListInput(payload)
     const service=await get()
     if(!service)throw new WorkError('teloa/host-unavailable','群协作服务尚未就绪。')
@@ -48,13 +72,31 @@ export function createGroupHandler(owner:string,get:()=>Promise<GroupOperations|
     if(endpoint==='groups/create')return service.create(owner,payload)
     if(endpoint==='groups/change')return service.change(owner,payload)
     if(endpoint==='groups/messages/list')return service.messages(owner,payload)
+    if(endpoint==='groups/messages/page'||endpoint==='groups/messages/search'){
+      const read=endpoint==='groups/messages/page'?service.messagePage:service.messageSearch
+      if(!read)throw new WorkError('teloa/host-unavailable','群消息分页或检索暂不可用。')
+      return read.call(service,owner,payload)
+    }
+    if(endpoint==='groups/messages/body')return service.messageBody(owner,payload)
     if(endpoint==='groups/messages/send')return service.send(owner,payload)
+    if(endpoint==='groups/attention'||endpoint==='groups/mentions/list'){
+      const read=endpoint==='groups/attention'?service.attention:service.mentionMessages
+      if(!read)throw new WorkError('teloa/host-unavailable','群提及暂不可用。')
+      return read.call(service,owner,payload)
+    }
+    if(endpoint==='groups/reading/get'||endpoint==='groups/reading/mark'){
+      const read=endpoint==='groups/reading/get'?service.reading:service.markRead
+      if(!read)throw new WorkError('teloa/host-unavailable','群阅读位置暂不可用。')
+      return read.call(service,owner,payload)
+    }
     if(endpoint==='groups/resources/list')return service.resources(owner,payload)
     if(endpoint==='groups/resources/get')return service.resource(owner,payload)
     if(endpoint==='groups/resources/save')return service.saveResource(owner,payload)
     if(endpoint==='groups/resources/withdraw')return service.withdrawResource(owner,payload)
     if(endpoint==='groups/reactions/list')return service.reactions(owner,payload)
     if(endpoint==='groups/reactions/toggle')return service.toggleReaction(owner,payload)
+    if(endpoint==='groups/routing/status')return service.routingStatus(owner,payload)
+    if(endpoint==='groups/routing/retry')return service.retryRouting(owner,payload)
     return service.routing(owner,payload)
   }
 }

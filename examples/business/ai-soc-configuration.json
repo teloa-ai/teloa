@@ -1,0 +1,3422 @@
+{
+  "format": "teloa.business-configuration/v1",
+  "scope": "business_ai_soc_example",
+  "title": "AI 安全运营",
+  "sources": [
+    {
+      "sourceId": "ai-soc-records",
+      "kind": "local-records"
+    }
+  ],
+  "definitions": [
+    {
+      "kind": "object-type",
+      "definition": {
+        "format": "teloa.business-object-type/v1",
+        "id": "ai-soc-work-item",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "原始工作",
+        "unit": "项",
+        "lead": "保留案件、告警与任务的原始事实，员工成果独立记录并追溯原会话。",
+        "sourceId": "ai-soc-records",
+        "fields": [
+          {
+            "name": "ticket_id",
+            "label": "来源编号",
+            "type": "text",
+            "required": true,
+            "from": "来源编号"
+          },
+          {
+            "name": "category",
+            "label": "工作类别",
+            "type": "enum",
+            "required": true,
+            "from": "工作类别",
+            "values": [
+              "告警研判",
+              "深度调查",
+              "威胁狩猎",
+              "响应核验",
+              "检测改进"
+            ]
+          },
+          {
+            "name": "severity",
+            "label": "严重度",
+            "type": "enum",
+            "required": true,
+            "from": "严重度",
+            "values": [
+              "紧急",
+              "高",
+              "中",
+              "低"
+            ]
+          },
+          {
+            "name": "created_at",
+            "label": "开始时间",
+            "type": "datetime",
+            "required": true,
+            "from": "开始时间"
+          },
+          {
+            "name": "evidence",
+            "label": "原始证据",
+            "type": "text",
+            "required": false,
+            "from": "原始证据"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "object-type",
+      "definition": {
+        "format": "teloa.business-object-type/v1",
+        "id": "ai-soc-alert",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "告警",
+        "unit": "项",
+        "lead": "持续归并信号，区分员工研判与最终关闭。",
+        "sourceId": "ai-soc-records",
+        "fields": [
+          {
+            "name": "object_id",
+            "label": "业务对象 ID",
+            "type": "text",
+            "required": true,
+            "from": "业务对象 ID"
+          },
+          {
+            "name": "lifecycle",
+            "label": "业务状态",
+            "type": "enum",
+            "required": true,
+            "from": "业务状态",
+            "values": [
+              "待研判",
+              "研判中",
+              "待复核",
+              "已升级",
+              "已关闭"
+            ]
+          },
+          {
+            "name": "outcome",
+            "label": "结论",
+            "type": "enum",
+            "required": true,
+            "from": "结论",
+            "values": [
+              "待判定",
+              "误报",
+              "正常活动",
+              "可疑",
+              "确认威胁"
+            ]
+          },
+          {
+            "name": "work_status",
+            "label": "员工处理状态",
+            "type": "enum",
+            "required": true,
+            "from": "员工处理状态",
+            "values": [
+              "待处理",
+              "处理中",
+              "等你确认",
+              "已完成",
+              "失败"
+            ]
+          },
+          {
+            "name": "severity",
+            "label": "严重度",
+            "type": "enum",
+            "required": true,
+            "from": "严重度",
+            "values": [
+              "紧急",
+              "高",
+              "中",
+              "低"
+            ]
+          },
+          {
+            "name": "employee",
+            "label": "负责员工",
+            "type": "text",
+            "required": true,
+            "from": "负责员工"
+          },
+          {
+            "name": "created_at",
+            "label": "开始时间",
+            "type": "datetime",
+            "required": true,
+            "from": "开始时间"
+          },
+          {
+            "name": "duration",
+            "label": "处理耗时",
+            "type": "duration",
+            "required": false,
+            "from": "处理耗时"
+          },
+          {
+            "name": "source_task",
+            "label": "来源任务",
+            "type": "text",
+            "required": false,
+            "from": "来源任务"
+          },
+          {
+            "name": "evidence",
+            "label": "证据摘要",
+            "type": "text",
+            "required": false,
+            "from": "证据摘要"
+          },
+          {
+            "name": "original",
+            "label": "原始工作",
+            "type": "reference",
+            "required": true,
+            "from": "原始工作",
+            "referenceType": "ai-soc-work-item"
+          }
+        ],
+        "progress": {
+          "stageField": "lifecycle",
+          "unfinished": [
+            "待研判",
+            "研判中",
+            "待复核",
+            "已升级"
+          ],
+          "waitingForYou": [
+            "待复核"
+          ]
+        }
+      }
+    },
+    {
+      "kind": "source-mapping",
+      "definition": {
+        "format": "teloa.business-source-mapping/v1",
+        "id": "ai-soc-alert-result",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "T1 告警研判结果",
+        "objectType": "ai-soc-alert",
+        "source": {
+          "kind": "role-result"
+        },
+        "mapping": [
+          {
+            "path": "$.object.id",
+            "field": "object_id"
+          },
+          {
+            "path": "$.result.lifecycle",
+            "field": "lifecycle"
+          },
+          {
+            "path": "$.result.outcome",
+            "field": "outcome"
+          },
+          {
+            "path": "$.result.work_status",
+            "field": "work_status"
+          },
+          {
+            "path": "$.result.severity",
+            "field": "severity"
+          },
+          {
+            "path": "$.employee.id",
+            "field": "employee"
+          },
+          {
+            "path": "$.result.created_at",
+            "field": "created_at"
+          },
+          {
+            "path": "$.result.duration",
+            "field": "duration"
+          },
+          {
+            "path": "$.task.id",
+            "field": "source_task"
+          },
+          {
+            "path": "$.result.evidence",
+            "field": "evidence"
+          },
+          {
+            "path": "$.result.title",
+            "field": "title"
+          },
+          {
+            "path": "$.result.summary",
+            "field": "summary"
+          },
+          {
+            "path": "$.object.id",
+            "field": "original"
+          }
+        ],
+        "primaryKey": [
+          "object_id"
+        ],
+        "deletionSemantics": "compare",
+        "schedule": {
+          "kind": "every",
+          "seconds": 3600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-total",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "告警总数",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-total-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "告警总数",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-total"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-active",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成告警",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "lifecycle",
+            "op": "in",
+            "values": [
+              "待研判",
+              "研判中",
+              "待复核",
+              "已升级"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-active-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成告警",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-active"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-waiting",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "等你确认"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-waiting-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-waiting"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-lifecycle",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "lifecycle",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-lifecycle-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-lifecycle"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-outcome",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "outcome",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-outcome-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-outcome"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-trend",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增告警",
+        "kind": "trend",
+        "chart": "line",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "created_at",
+          "bucket": "day",
+          "limit": 30
+        },
+        "window": {
+          "field": "created_at",
+          "relative": "last-30d"
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-trend-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增告警",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-trend"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-latency",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "平均耗时",
+            "aggregation": "avg",
+            "field": "duration"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "已完成"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-latency-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-latency"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-alert-list",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "告警明细",
+        "kind": "list",
+        "chart": "table",
+        "objectType": "ai-soc-alert",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-alert-list-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "告警明细",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-alert-list"
+      }
+    },
+    {
+      "kind": "dashboard",
+      "definition": {
+        "format": "teloa.business-dashboard/v1",
+        "id": "ai-soc-alert-board",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "T1 告警研判",
+        "widgets": [
+          "ai-soc-alert-total-widget",
+          "ai-soc-alert-active-widget",
+          "ai-soc-alert-waiting-widget",
+          "ai-soc-alert-lifecycle-widget",
+          "ai-soc-alert-outcome-widget",
+          "ai-soc-alert-trend-widget",
+          "ai-soc-alert-latency-widget",
+          "ai-soc-alert-list-widget"
+        ],
+        "layout": [
+          {
+            "widget": "ai-soc-alert-total-widget",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-alert-active-widget",
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-alert-waiting-widget",
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-alert-lifecycle-widget",
+            "x": 0,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-alert-outcome-widget",
+            "x": 6,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-alert-trend-widget",
+            "x": 0,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-alert-latency-widget",
+            "x": 6,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-alert-list-widget",
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 4
+          }
+        ],
+        "refresh": {
+          "kind": "every",
+          "seconds": 600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "object-type",
+      "definition": {
+        "format": "teloa.business-object-type/v1",
+        "id": "ai-soc-incident",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "事件",
+        "unit": "项",
+        "lead": "关联告警和证据，跟进调查、响应与案件关闭。",
+        "sourceId": "ai-soc-records",
+        "fields": [
+          {
+            "name": "object_id",
+            "label": "业务对象 ID",
+            "type": "text",
+            "required": true,
+            "from": "业务对象 ID"
+          },
+          {
+            "name": "lifecycle",
+            "label": "业务状态",
+            "type": "enum",
+            "required": true,
+            "from": "业务状态",
+            "values": [
+              "调查中",
+              "待响应",
+              "核验中",
+              "已关闭"
+            ]
+          },
+          {
+            "name": "outcome",
+            "label": "结论",
+            "type": "enum",
+            "required": true,
+            "from": "结论",
+            "values": [
+              "待确认",
+              "确认入侵",
+              "非入侵"
+            ]
+          },
+          {
+            "name": "work_status",
+            "label": "员工处理状态",
+            "type": "enum",
+            "required": true,
+            "from": "员工处理状态",
+            "values": [
+              "待处理",
+              "处理中",
+              "等你确认",
+              "已完成",
+              "失败"
+            ]
+          },
+          {
+            "name": "severity",
+            "label": "严重度",
+            "type": "enum",
+            "required": true,
+            "from": "严重度",
+            "values": [
+              "紧急",
+              "高",
+              "中",
+              "低"
+            ]
+          },
+          {
+            "name": "employee",
+            "label": "负责员工",
+            "type": "text",
+            "required": true,
+            "from": "负责员工"
+          },
+          {
+            "name": "created_at",
+            "label": "开始时间",
+            "type": "datetime",
+            "required": true,
+            "from": "开始时间"
+          },
+          {
+            "name": "duration",
+            "label": "处理耗时",
+            "type": "duration",
+            "required": false,
+            "from": "处理耗时"
+          },
+          {
+            "name": "source_task",
+            "label": "来源任务",
+            "type": "text",
+            "required": false,
+            "from": "来源任务"
+          },
+          {
+            "name": "evidence",
+            "label": "证据摘要",
+            "type": "text",
+            "required": false,
+            "from": "证据摘要"
+          },
+          {
+            "name": "original",
+            "label": "原始工作",
+            "type": "reference",
+            "required": true,
+            "from": "原始工作",
+            "referenceType": "ai-soc-work-item"
+          }
+        ],
+        "progress": {
+          "stageField": "lifecycle",
+          "unfinished": [
+            "调查中",
+            "待响应",
+            "核验中"
+          ],
+          "waitingForYou": []
+        }
+      }
+    },
+    {
+      "kind": "source-mapping",
+      "definition": {
+        "format": "teloa.business-source-mapping/v1",
+        "id": "ai-soc-incident-result",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "T2 深度调查结果",
+        "objectType": "ai-soc-incident",
+        "source": {
+          "kind": "role-result"
+        },
+        "mapping": [
+          {
+            "path": "$.object.id",
+            "field": "object_id"
+          },
+          {
+            "path": "$.result.lifecycle",
+            "field": "lifecycle"
+          },
+          {
+            "path": "$.result.outcome",
+            "field": "outcome"
+          },
+          {
+            "path": "$.result.work_status",
+            "field": "work_status"
+          },
+          {
+            "path": "$.result.severity",
+            "field": "severity"
+          },
+          {
+            "path": "$.employee.id",
+            "field": "employee"
+          },
+          {
+            "path": "$.result.created_at",
+            "field": "created_at"
+          },
+          {
+            "path": "$.result.duration",
+            "field": "duration"
+          },
+          {
+            "path": "$.task.id",
+            "field": "source_task"
+          },
+          {
+            "path": "$.result.evidence",
+            "field": "evidence"
+          },
+          {
+            "path": "$.result.title",
+            "field": "title"
+          },
+          {
+            "path": "$.result.summary",
+            "field": "summary"
+          },
+          {
+            "path": "$.object.id",
+            "field": "original"
+          }
+        ],
+        "primaryKey": [
+          "object_id"
+        ],
+        "deletionSemantics": "compare",
+        "schedule": {
+          "kind": "every",
+          "seconds": 3600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-total",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "事件总数",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-total-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "事件总数",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-total"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-active",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成事件",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "lifecycle",
+            "op": "in",
+            "values": [
+              "调查中",
+              "待响应",
+              "核验中"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-active-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成事件",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-active"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-waiting",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "等你确认"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-waiting-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-waiting"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-lifecycle",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "lifecycle",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-lifecycle-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-lifecycle"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-outcome",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "outcome",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-outcome-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-outcome"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-trend",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增事件",
+        "kind": "trend",
+        "chart": "line",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "created_at",
+          "bucket": "day",
+          "limit": 30
+        },
+        "window": {
+          "field": "created_at",
+          "relative": "last-30d"
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-trend-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增事件",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-trend"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-latency",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "平均耗时",
+            "aggregation": "avg",
+            "field": "duration"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "已完成"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-latency-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-latency"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-incident-list",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "事件明细",
+        "kind": "list",
+        "chart": "table",
+        "objectType": "ai-soc-incident",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-incident-list-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "事件明细",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-incident-list"
+      }
+    },
+    {
+      "kind": "dashboard",
+      "definition": {
+        "format": "teloa.business-dashboard/v1",
+        "id": "ai-soc-incident-board",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "T2 深度调查",
+        "widgets": [
+          "ai-soc-incident-total-widget",
+          "ai-soc-incident-active-widget",
+          "ai-soc-incident-waiting-widget",
+          "ai-soc-incident-lifecycle-widget",
+          "ai-soc-incident-outcome-widget",
+          "ai-soc-incident-trend-widget",
+          "ai-soc-incident-latency-widget",
+          "ai-soc-incident-list-widget"
+        ],
+        "layout": [
+          {
+            "widget": "ai-soc-incident-total-widget",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-incident-active-widget",
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-incident-waiting-widget",
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-incident-lifecycle-widget",
+            "x": 0,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-incident-outcome-widget",
+            "x": 6,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-incident-trend-widget",
+            "x": 0,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-incident-latency-widget",
+            "x": 6,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-incident-list-widget",
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 4
+          }
+        ],
+        "refresh": {
+          "kind": "every",
+          "seconds": 600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "object-type",
+      "definition": {
+        "format": "teloa.business-object-type/v1",
+        "id": "ai-soc-hunt",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "狩猎",
+        "unit": "项",
+        "lead": "记录狩猎假设、证据与验证结论。",
+        "sourceId": "ai-soc-records",
+        "fields": [
+          {
+            "name": "object_id",
+            "label": "业务对象 ID",
+            "type": "text",
+            "required": true,
+            "from": "业务对象 ID"
+          },
+          {
+            "name": "lifecycle",
+            "label": "业务状态",
+            "type": "enum",
+            "required": true,
+            "from": "业务状态",
+            "values": [
+              "待启动",
+              "执行中",
+              "待验证",
+              "已完成"
+            ]
+          },
+          {
+            "name": "outcome",
+            "label": "结论",
+            "type": "enum",
+            "required": true,
+            "from": "结论",
+            "values": [
+              "待验证",
+              "发现威胁",
+              "未发现",
+              "证据不足"
+            ]
+          },
+          {
+            "name": "work_status",
+            "label": "员工处理状态",
+            "type": "enum",
+            "required": true,
+            "from": "员工处理状态",
+            "values": [
+              "待处理",
+              "处理中",
+              "等你确认",
+              "已完成",
+              "失败"
+            ]
+          },
+          {
+            "name": "severity",
+            "label": "严重度",
+            "type": "enum",
+            "required": true,
+            "from": "严重度",
+            "values": [
+              "紧急",
+              "高",
+              "中",
+              "低"
+            ]
+          },
+          {
+            "name": "employee",
+            "label": "负责员工",
+            "type": "text",
+            "required": true,
+            "from": "负责员工"
+          },
+          {
+            "name": "created_at",
+            "label": "开始时间",
+            "type": "datetime",
+            "required": true,
+            "from": "开始时间"
+          },
+          {
+            "name": "duration",
+            "label": "处理耗时",
+            "type": "duration",
+            "required": false,
+            "from": "处理耗时"
+          },
+          {
+            "name": "source_task",
+            "label": "来源任务",
+            "type": "text",
+            "required": false,
+            "from": "来源任务"
+          },
+          {
+            "name": "evidence",
+            "label": "证据摘要",
+            "type": "text",
+            "required": false,
+            "from": "证据摘要"
+          },
+          {
+            "name": "original",
+            "label": "原始工作",
+            "type": "reference",
+            "required": true,
+            "from": "原始工作",
+            "referenceType": "ai-soc-work-item"
+          }
+        ],
+        "progress": {
+          "stageField": "lifecycle",
+          "unfinished": [
+            "待启动",
+            "执行中",
+            "待验证"
+          ],
+          "waitingForYou": [
+            "待验证"
+          ]
+        }
+      }
+    },
+    {
+      "kind": "source-mapping",
+      "definition": {
+        "format": "teloa.business-source-mapping/v1",
+        "id": "ai-soc-hunt-result",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "T3 威胁狩猎结果",
+        "objectType": "ai-soc-hunt",
+        "source": {
+          "kind": "role-result"
+        },
+        "mapping": [
+          {
+            "path": "$.object.id",
+            "field": "object_id"
+          },
+          {
+            "path": "$.result.lifecycle",
+            "field": "lifecycle"
+          },
+          {
+            "path": "$.result.outcome",
+            "field": "outcome"
+          },
+          {
+            "path": "$.result.work_status",
+            "field": "work_status"
+          },
+          {
+            "path": "$.result.severity",
+            "field": "severity"
+          },
+          {
+            "path": "$.employee.id",
+            "field": "employee"
+          },
+          {
+            "path": "$.result.created_at",
+            "field": "created_at"
+          },
+          {
+            "path": "$.result.duration",
+            "field": "duration"
+          },
+          {
+            "path": "$.task.id",
+            "field": "source_task"
+          },
+          {
+            "path": "$.result.evidence",
+            "field": "evidence"
+          },
+          {
+            "path": "$.result.title",
+            "field": "title"
+          },
+          {
+            "path": "$.result.summary",
+            "field": "summary"
+          },
+          {
+            "path": "$.object.id",
+            "field": "original"
+          }
+        ],
+        "primaryKey": [
+          "object_id"
+        ],
+        "deletionSemantics": "compare",
+        "schedule": {
+          "kind": "every",
+          "seconds": 3600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-total",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "狩猎总数",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-total-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "狩猎总数",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-total"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-active",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成狩猎",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "lifecycle",
+            "op": "in",
+            "values": [
+              "待启动",
+              "执行中",
+              "待验证"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-active-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成狩猎",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-active"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-waiting",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "等你确认"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-waiting-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-waiting"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-lifecycle",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "lifecycle",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-lifecycle-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-lifecycle"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-outcome",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "outcome",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-outcome-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-outcome"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-trend",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增狩猎",
+        "kind": "trend",
+        "chart": "line",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "created_at",
+          "bucket": "day",
+          "limit": 30
+        },
+        "window": {
+          "field": "created_at",
+          "relative": "last-30d"
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-trend-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增狩猎",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-trend"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-latency",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "平均耗时",
+            "aggregation": "avg",
+            "field": "duration"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "已完成"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-latency-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-latency"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-hunt-list",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "狩猎明细",
+        "kind": "list",
+        "chart": "table",
+        "objectType": "ai-soc-hunt",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-hunt-list-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "狩猎明细",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-hunt-list"
+      }
+    },
+    {
+      "kind": "dashboard",
+      "definition": {
+        "format": "teloa.business-dashboard/v1",
+        "id": "ai-soc-hunt-board",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "T3 威胁狩猎",
+        "widgets": [
+          "ai-soc-hunt-total-widget",
+          "ai-soc-hunt-active-widget",
+          "ai-soc-hunt-waiting-widget",
+          "ai-soc-hunt-lifecycle-widget",
+          "ai-soc-hunt-outcome-widget",
+          "ai-soc-hunt-trend-widget",
+          "ai-soc-hunt-latency-widget",
+          "ai-soc-hunt-list-widget"
+        ],
+        "layout": [
+          {
+            "widget": "ai-soc-hunt-total-widget",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-hunt-active-widget",
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-hunt-waiting-widget",
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-hunt-lifecycle-widget",
+            "x": 0,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-hunt-outcome-widget",
+            "x": 6,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-hunt-trend-widget",
+            "x": 0,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-hunt-latency-widget",
+            "x": 6,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-hunt-list-widget",
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 4
+          }
+        ],
+        "refresh": {
+          "kind": "every",
+          "seconds": 600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "object-type",
+      "definition": {
+        "format": "teloa.business-object-type/v1",
+        "id": "ai-soc-response",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应",
+        "unit": "项",
+        "lead": "授权、执行与效果核验分开记录。",
+        "sourceId": "ai-soc-records",
+        "fields": [
+          {
+            "name": "object_id",
+            "label": "业务对象 ID",
+            "type": "text",
+            "required": true,
+            "from": "业务对象 ID"
+          },
+          {
+            "name": "lifecycle",
+            "label": "业务状态",
+            "type": "enum",
+            "required": true,
+            "from": "业务状态",
+            "values": [
+              "待审批",
+              "已批准",
+              "执行中",
+              "待核验",
+              "已核验",
+              "失败"
+            ]
+          },
+          {
+            "name": "outcome",
+            "label": "结论",
+            "type": "enum",
+            "required": true,
+            "from": "结论",
+            "values": [
+              "未核验",
+              "有效",
+              "无效",
+              "不适用"
+            ]
+          },
+          {
+            "name": "work_status",
+            "label": "员工处理状态",
+            "type": "enum",
+            "required": true,
+            "from": "员工处理状态",
+            "values": [
+              "待处理",
+              "处理中",
+              "等你确认",
+              "已完成",
+              "失败"
+            ]
+          },
+          {
+            "name": "severity",
+            "label": "严重度",
+            "type": "enum",
+            "required": true,
+            "from": "严重度",
+            "values": [
+              "紧急",
+              "高",
+              "中",
+              "低"
+            ]
+          },
+          {
+            "name": "employee",
+            "label": "负责员工",
+            "type": "text",
+            "required": true,
+            "from": "负责员工"
+          },
+          {
+            "name": "created_at",
+            "label": "开始时间",
+            "type": "datetime",
+            "required": true,
+            "from": "开始时间"
+          },
+          {
+            "name": "duration",
+            "label": "处理耗时",
+            "type": "duration",
+            "required": false,
+            "from": "处理耗时"
+          },
+          {
+            "name": "source_task",
+            "label": "来源任务",
+            "type": "text",
+            "required": false,
+            "from": "来源任务"
+          },
+          {
+            "name": "evidence",
+            "label": "证据摘要",
+            "type": "text",
+            "required": false,
+            "from": "证据摘要"
+          },
+          {
+            "name": "original",
+            "label": "原始工作",
+            "type": "reference",
+            "required": true,
+            "from": "原始工作",
+            "referenceType": "ai-soc-work-item"
+          }
+        ],
+        "progress": {
+          "stageField": "lifecycle",
+          "unfinished": [
+            "待审批",
+            "已批准",
+            "执行中",
+            "待核验",
+            "失败"
+          ],
+          "waitingForYou": [
+            "待审批"
+          ]
+        }
+      }
+    },
+    {
+      "kind": "source-mapping",
+      "definition": {
+        "format": "teloa.business-source-mapping/v1",
+        "id": "ai-soc-response-result",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应与核验结果",
+        "objectType": "ai-soc-response",
+        "source": {
+          "kind": "role-result"
+        },
+        "mapping": [
+          {
+            "path": "$.object.id",
+            "field": "object_id"
+          },
+          {
+            "path": "$.result.lifecycle",
+            "field": "lifecycle"
+          },
+          {
+            "path": "$.result.outcome",
+            "field": "outcome"
+          },
+          {
+            "path": "$.result.work_status",
+            "field": "work_status"
+          },
+          {
+            "path": "$.result.severity",
+            "field": "severity"
+          },
+          {
+            "path": "$.employee.id",
+            "field": "employee"
+          },
+          {
+            "path": "$.result.created_at",
+            "field": "created_at"
+          },
+          {
+            "path": "$.result.duration",
+            "field": "duration"
+          },
+          {
+            "path": "$.task.id",
+            "field": "source_task"
+          },
+          {
+            "path": "$.result.evidence",
+            "field": "evidence"
+          },
+          {
+            "path": "$.result.title",
+            "field": "title"
+          },
+          {
+            "path": "$.result.summary",
+            "field": "summary"
+          },
+          {
+            "path": "$.object.id",
+            "field": "original"
+          }
+        ],
+        "primaryKey": [
+          "object_id"
+        ],
+        "deletionSemantics": "compare",
+        "schedule": {
+          "kind": "every",
+          "seconds": 3600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-total",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应总数",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-total-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应总数",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-total"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-active",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成响应",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "lifecycle",
+            "op": "in",
+            "values": [
+              "待审批",
+              "已批准",
+              "执行中",
+              "待核验",
+              "失败"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-active-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成响应",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-active"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-waiting",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "等你确认"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-waiting-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-waiting"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-lifecycle",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "lifecycle",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-lifecycle-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-lifecycle"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-outcome",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "outcome",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-outcome-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-outcome"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-trend",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增响应",
+        "kind": "trend",
+        "chart": "line",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "created_at",
+          "bucket": "day",
+          "limit": 30
+        },
+        "window": {
+          "field": "created_at",
+          "relative": "last-30d"
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-trend-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增响应",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-trend"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-latency",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "平均耗时",
+            "aggregation": "avg",
+            "field": "duration"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "已完成"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-latency-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-latency"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-response-list",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应明细",
+        "kind": "list",
+        "chart": "table",
+        "objectType": "ai-soc-response",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-response-list-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应明细",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-response-list"
+      }
+    },
+    {
+      "kind": "dashboard",
+      "definition": {
+        "format": "teloa.business-dashboard/v1",
+        "id": "ai-soc-response-board",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "响应与核验",
+        "widgets": [
+          "ai-soc-response-total-widget",
+          "ai-soc-response-active-widget",
+          "ai-soc-response-waiting-widget",
+          "ai-soc-response-lifecycle-widget",
+          "ai-soc-response-outcome-widget",
+          "ai-soc-response-trend-widget",
+          "ai-soc-response-latency-widget",
+          "ai-soc-response-list-widget"
+        ],
+        "layout": [
+          {
+            "widget": "ai-soc-response-total-widget",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-response-active-widget",
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-response-waiting-widget",
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-response-lifecycle-widget",
+            "x": 0,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-response-outcome-widget",
+            "x": 6,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-response-trend-widget",
+            "x": 0,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-response-latency-widget",
+            "x": 6,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-response-list-widget",
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 4
+          }
+        ],
+        "refresh": {
+          "kind": "every",
+          "seconds": 600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "object-type",
+      "definition": {
+        "format": "teloa.business-object-type/v1",
+        "id": "ai-soc-detection",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测候选",
+        "unit": "项",
+        "lead": "从回放评估到审批发布，不把建议当作生产改进。",
+        "sourceId": "ai-soc-records",
+        "fields": [
+          {
+            "name": "object_id",
+            "label": "业务对象 ID",
+            "type": "text",
+            "required": true,
+            "from": "业务对象 ID"
+          },
+          {
+            "name": "lifecycle",
+            "label": "业务状态",
+            "type": "enum",
+            "required": true,
+            "from": "业务状态",
+            "values": [
+              "待评估",
+              "回放中",
+              "待审批",
+              "已发布",
+              "已撤回"
+            ]
+          },
+          {
+            "name": "outcome",
+            "label": "结论",
+            "type": "enum",
+            "required": true,
+            "from": "结论",
+            "values": [
+              "待评估",
+              "建议启用",
+              "建议调整",
+              "不采用"
+            ]
+          },
+          {
+            "name": "work_status",
+            "label": "员工处理状态",
+            "type": "enum",
+            "required": true,
+            "from": "员工处理状态",
+            "values": [
+              "待处理",
+              "处理中",
+              "等你确认",
+              "已完成",
+              "失败"
+            ]
+          },
+          {
+            "name": "severity",
+            "label": "严重度",
+            "type": "enum",
+            "required": true,
+            "from": "严重度",
+            "values": [
+              "紧急",
+              "高",
+              "中",
+              "低"
+            ]
+          },
+          {
+            "name": "employee",
+            "label": "负责员工",
+            "type": "text",
+            "required": true,
+            "from": "负责员工"
+          },
+          {
+            "name": "created_at",
+            "label": "开始时间",
+            "type": "datetime",
+            "required": true,
+            "from": "开始时间"
+          },
+          {
+            "name": "duration",
+            "label": "处理耗时",
+            "type": "duration",
+            "required": false,
+            "from": "处理耗时"
+          },
+          {
+            "name": "source_task",
+            "label": "来源任务",
+            "type": "text",
+            "required": false,
+            "from": "来源任务"
+          },
+          {
+            "name": "evidence",
+            "label": "证据摘要",
+            "type": "text",
+            "required": false,
+            "from": "证据摘要"
+          },
+          {
+            "name": "original",
+            "label": "原始工作",
+            "type": "reference",
+            "required": true,
+            "from": "原始工作",
+            "referenceType": "ai-soc-work-item"
+          }
+        ],
+        "progress": {
+          "stageField": "lifecycle",
+          "unfinished": [
+            "待评估",
+            "回放中",
+            "待审批"
+          ],
+          "waitingForYou": [
+            "待审批"
+          ]
+        }
+      }
+    },
+    {
+      "kind": "source-mapping",
+      "definition": {
+        "format": "teloa.business-source-mapping/v1",
+        "id": "ai-soc-detection-result",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测改进结果",
+        "objectType": "ai-soc-detection",
+        "source": {
+          "kind": "role-result"
+        },
+        "mapping": [
+          {
+            "path": "$.object.id",
+            "field": "object_id"
+          },
+          {
+            "path": "$.result.lifecycle",
+            "field": "lifecycle"
+          },
+          {
+            "path": "$.result.outcome",
+            "field": "outcome"
+          },
+          {
+            "path": "$.result.work_status",
+            "field": "work_status"
+          },
+          {
+            "path": "$.result.severity",
+            "field": "severity"
+          },
+          {
+            "path": "$.employee.id",
+            "field": "employee"
+          },
+          {
+            "path": "$.result.created_at",
+            "field": "created_at"
+          },
+          {
+            "path": "$.result.duration",
+            "field": "duration"
+          },
+          {
+            "path": "$.task.id",
+            "field": "source_task"
+          },
+          {
+            "path": "$.result.evidence",
+            "field": "evidence"
+          },
+          {
+            "path": "$.result.title",
+            "field": "title"
+          },
+          {
+            "path": "$.result.summary",
+            "field": "summary"
+          },
+          {
+            "path": "$.object.id",
+            "field": "original"
+          }
+        ],
+        "primaryKey": [
+          "object_id"
+        ],
+        "deletionSemantics": "compare",
+        "schedule": {
+          "kind": "every",
+          "seconds": 3600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-total",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测候选总数",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-total-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测候选总数",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-total"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-active",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成检测候选",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "lifecycle",
+            "op": "in",
+            "values": [
+              "待评估",
+              "回放中",
+              "待审批"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-active-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "未完成检测候选",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-active"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-waiting",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "等你确认"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-waiting-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "等待你确认",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-waiting"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-lifecycle",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "lifecycle",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-lifecycle-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "业务状态分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-lifecycle"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-outcome",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "distribution",
+        "chart": "bar",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "outcome",
+          "limit": 12
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-outcome-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "结论分布",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-outcome"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-trend",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增检测候选",
+        "kind": "trend",
+        "chart": "line",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "dimension": {
+          "field": "created_at",
+          "bucket": "day",
+          "limit": 30
+        },
+        "window": {
+          "field": "created_at",
+          "relative": "last-30d"
+        },
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-trend-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "近 30 天新增检测候选",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-trend"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-latency",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "board-card",
+        "chart": "number",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "平均耗时",
+            "aggregation": "avg",
+            "field": "duration"
+          }
+        ],
+        "filters": [
+          {
+            "field": "work_status",
+            "op": "eq",
+            "values": [
+              "已完成"
+            ]
+          }
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-latency-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "已完成工作平均耗时",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-latency"
+      }
+    },
+    {
+      "kind": "view",
+      "definition": {
+        "format": "teloa.business-view/v1",
+        "id": "ai-soc-detection-list",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测候选明细",
+        "kind": "list",
+        "chart": "table",
+        "objectType": "ai-soc-detection",
+        "measures": [
+          {
+            "id": "value",
+            "label": "对象数",
+            "aggregation": "count"
+          }
+        ],
+        "filters": [],
+        "limit": 30,
+        "sort": {
+          "by": "dimension",
+          "direction": "asc"
+        }
+      }
+    },
+    {
+      "kind": "widget",
+      "definition": {
+        "format": "teloa.business-widget/v1",
+        "id": "ai-soc-detection-list-widget",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测候选明细",
+        "kind": "view-ref",
+        "viewRef": "ai-soc-detection-list"
+      }
+    },
+    {
+      "kind": "dashboard",
+      "definition": {
+        "format": "teloa.business-dashboard/v1",
+        "id": "ai-soc-detection-board",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "检测改进",
+        "widgets": [
+          "ai-soc-detection-total-widget",
+          "ai-soc-detection-active-widget",
+          "ai-soc-detection-waiting-widget",
+          "ai-soc-detection-lifecycle-widget",
+          "ai-soc-detection-outcome-widget",
+          "ai-soc-detection-trend-widget",
+          "ai-soc-detection-latency-widget",
+          "ai-soc-detection-list-widget"
+        ],
+        "layout": [
+          {
+            "widget": "ai-soc-detection-total-widget",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-detection-active-widget",
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-detection-waiting-widget",
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-detection-lifecycle-widget",
+            "x": 0,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-detection-outcome-widget",
+            "x": 6,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-detection-trend-widget",
+            "x": 0,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-detection-latency-widget",
+            "x": 6,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-detection-list-widget",
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 4
+          }
+        ],
+        "refresh": {
+          "kind": "every",
+          "seconds": 600
+        },
+        "acknowledgeShortInterval": false
+      }
+    },
+    {
+      "kind": "dashboard",
+      "definition": {
+        "format": "teloa.business-dashboard/v1",
+        "id": "ai-soc-overview",
+        "version": "1.0.0",
+        "domain": "business_ai_soc_example",
+        "title": "AI 安全运营总览",
+        "widgets": [
+          "ai-soc-alert-active-widget",
+          "ai-soc-incident-active-widget",
+          "ai-soc-hunt-active-widget",
+          "ai-soc-response-active-widget",
+          "ai-soc-detection-active-widget",
+          "ai-soc-alert-waiting-widget",
+          "ai-soc-incident-lifecycle-widget",
+          "ai-soc-response-lifecycle-widget"
+        ],
+        "layout": [
+          {
+            "widget": "ai-soc-alert-active-widget",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-incident-active-widget",
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-hunt-active-widget",
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "widget": "ai-soc-response-active-widget",
+            "x": 0,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-detection-active-widget",
+            "x": 6,
+            "y": 2,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-alert-waiting-widget",
+            "x": 0,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-incident-lifecycle-widget",
+            "x": 6,
+            "y": 5,
+            "w": 6,
+            "h": 3
+          },
+          {
+            "widget": "ai-soc-response-lifecycle-widget",
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 4
+          }
+        ],
+        "refresh": {
+          "kind": "every",
+          "seconds": 600
+        },
+        "acknowledgeShortInterval": false
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "overview",
+      "title": "安全运营总览",
+      "kind": "dashboard",
+      "dashboardId": "ai-soc-overview"
+    },
+    {
+      "id": "alert-board",
+      "title": "T1 告警研判",
+      "kind": "dashboard",
+      "dashboardId": "ai-soc-alert-board"
+    },
+    {
+      "id": "alert-records",
+      "title": "告警明细",
+      "kind": "records",
+      "objectType": "ai-soc-alert",
+      "fields": [
+        "lifecycle",
+        "outcome",
+        "work_status",
+        "severity",
+        "employee",
+        "created_at",
+        "source_task",
+        "original"
+      ],
+      "allowCreate": false,
+      "allowEdit": false,
+      "allowArchive": false
+    },
+    {
+      "id": "incident-board",
+      "title": "T2 深度调查",
+      "kind": "dashboard",
+      "dashboardId": "ai-soc-incident-board"
+    },
+    {
+      "id": "incident-records",
+      "title": "事件明细",
+      "kind": "records",
+      "objectType": "ai-soc-incident",
+      "fields": [
+        "lifecycle",
+        "outcome",
+        "work_status",
+        "severity",
+        "employee",
+        "created_at",
+        "source_task",
+        "original"
+      ],
+      "allowCreate": false,
+      "allowEdit": false,
+      "allowArchive": false
+    },
+    {
+      "id": "hunt-board",
+      "title": "T3 威胁狩猎",
+      "kind": "dashboard",
+      "dashboardId": "ai-soc-hunt-board"
+    },
+    {
+      "id": "hunt-records",
+      "title": "狩猎明细",
+      "kind": "records",
+      "objectType": "ai-soc-hunt",
+      "fields": [
+        "lifecycle",
+        "outcome",
+        "work_status",
+        "severity",
+        "employee",
+        "created_at",
+        "source_task",
+        "original"
+      ],
+      "allowCreate": false,
+      "allowEdit": false,
+      "allowArchive": false
+    },
+    {
+      "id": "response-board",
+      "title": "响应与核验",
+      "kind": "dashboard",
+      "dashboardId": "ai-soc-response-board"
+    },
+    {
+      "id": "response-records",
+      "title": "响应明细",
+      "kind": "records",
+      "objectType": "ai-soc-response",
+      "fields": [
+        "lifecycle",
+        "outcome",
+        "work_status",
+        "severity",
+        "employee",
+        "created_at",
+        "source_task",
+        "original"
+      ],
+      "allowCreate": false,
+      "allowEdit": false,
+      "allowArchive": false
+    },
+    {
+      "id": "detection-board",
+      "title": "检测改进",
+      "kind": "dashboard",
+      "dashboardId": "ai-soc-detection-board"
+    },
+    {
+      "id": "detection-records",
+      "title": "检测候选明细",
+      "kind": "records",
+      "objectType": "ai-soc-detection",
+      "fields": [
+        "lifecycle",
+        "outcome",
+        "work_status",
+        "severity",
+        "employee",
+        "created_at",
+        "source_task",
+        "original"
+      ],
+      "allowCreate": false,
+      "allowEdit": false,
+      "allowArchive": false
+    },
+    {
+      "id": "work-items",
+      "title": "原始工作",
+      "kind": "records",
+      "objectType": "ai-soc-work-item",
+      "fields": [
+        "ticket_id",
+        "category",
+        "severity",
+        "created_at",
+        "evidence"
+      ],
+      "allowCreate": true,
+      "allowEdit": true,
+      "allowArchive": false
+    }
+  ],
+  "homePageId": "overview"
+}

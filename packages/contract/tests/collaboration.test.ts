@@ -13,6 +13,19 @@ const runId='99999999-9999-4999-8999-999999999999'
 const openRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 const fields={name:'调查协作',scope:'SOC',announcement:'先核对证据。',rules:openRules,memberRoleIds:[roleId]}
 
+test('宿主长回复允许完整传入；群流只收摘要与固定全文身份，本人发送仍保留原上限',()=>{
+ const full='# 核对结果\n\n'+'业务结论🙂。'.repeat(2000)
+ assert.equal(groupRunMessageInput({requestId,runId,text:full}).text,full)
+ const formatted='    '+full+'\n  '
+ assert.equal(groupRunMessageInput({requestId,runId,text:formatted}).text===formatted,true,'完整长正文保留原首尾格式')
+ assert.throws(()=>groupSendInput({requestId,groupId,expectedVersion:1,text:full}),{code:'teloa/invalid-input'})
+ const employee={id:messageId,groupId,rootId,authorId:roleId,taskId,runId,text:'# 核对结果\n\n…',references:[],createdAt:'2026-10-15T00:00:00.000Z',fullText:{chars:full.length,sha256:'a'.repeat(64)}}
+ assert.equal(isGroupMessage(employee),true)
+ for(const fullText of [{chars:8000,sha256:'a'.repeat(64)},{chars:full.length,sha256:'bad'},{chars:full.length,sha256:'a'.repeat(64),text:full}])assert.equal(isGroupMessage({...employee,fullText}),false)
+ const {taskId:_task,runId:_run,...human}=employee
+ assert.equal(isGroupMessage({...human,authorId:'self',mentions:[]}),false,'本人消息不能伪造宿主全文快照')
+})
+
 test('群创建只接受固定定义、请求身份和空版本基线，不接受 owner 或 author',()=>{
   assert.deepEqual(groupCreateInput({requestId,expectedVersion:0,fields}),{requestId,expectedVersion:0,fields})
   for(const value of [
@@ -22,6 +35,20 @@ test('群创建只接受固定定义、请求身份和空版本基线，不接�
     {requestId,expectedVersion:0,fields:{...fields,authorId:'forged'}},
     {requestId,expectedVersion:0,fields:{...fields,memberRoleIds:['self']}},
   ])assert.throws(()=>groupCreateInput(value),/群/)
+})
+
+test('群成员预期版本可选且必须与完整成员名单一一对应，不能新增身份、重复或改授权字段',()=>{
+ const expectedMembers=[{roleId,expectedVersion:3}]
+ const create={requestId,expectedVersion:0,fields,expectedMembers}
+ assert.deepEqual(groupCreateInput(create),create)
+ const change={requestId,groupId,expectedVersion:2,fields:{name:fields.name,announcement:fields.announcement,rules:openRules,memberRoleIds:[roleId],pinned:false,archived:false},expectedMembers}
+ assert.deepEqual(groupChangeInput(change),change)
+ for(const bad of [[],[...expectedMembers,...expectedMembers],[{roleId:groupId,expectedVersion:3}],[{roleId,expectedVersion:0}],[{roleId,expectedVersion:3,canAutoRun:true}]]){
+  assert.throws(()=>groupCreateInput({...create,expectedMembers:bad}),{code:'teloa/invalid-input'})
+  assert.throws(()=>groupChangeInput({...change,expectedMembers:bad}),{code:'teloa/invalid-input'})
+ }
+ assert.deepEqual(groupCreateInput({requestId,expectedVersion:0,fields:{...fields,memberRoleIds:[]},expectedMembers:[]}).expectedMembers,[])
+ assert.equal('expectedMembers' in groupCreateInput({requestId,expectedVersion:0,fields}),false)
 })
 
 test('群变更固定业务范围，发送只提交正文、根消息和固定资料版本',()=>{
@@ -103,12 +130,28 @@ test('groupAgentGrantChangeInput 撤销时 canAutoRun 必须为假、save 时三
   assert.deepEqual(groupAgentGrantChangeInput({requestId,groupId,roleId,expectedGroupVersion:1,expectedRoleVersion:1,action:'save',resources:[],canPost:false,canAutoRun:true}),{requestId,groupId,roleId,expectedGroupVersion:1,expectedRoleVersion:1,action:'save',resources:[],canPost:false,canAutoRun:true})
 })
 
+test('群授权可选 CAS 接受零和安全整数，旧调用不添字段并拒绝非法或未知版本键',()=>{
+ const base={requestId,groupId,roleId,expectedGroupVersion:1,expectedRoleVersion:1,action:'save' as const,resources:[],canPost:false,canAutoRun:true}
+ assert.deepEqual(groupAgentGrantChangeInput({...base,expectedGrantVersion:0}),{...base,expectedGrantVersion:0})
+ assert.deepEqual(groupAgentGrantChangeInput({...base,expectedGrantVersion:3}),{...base,expectedGrantVersion:3})
+ assert.equal(Object.hasOwn(groupAgentGrantChangeInput(base),'expectedGrantVersion'),false)
+ for(const expectedGrantVersion of [-1,1.5,Number.MAX_SAFE_INTEGER+1,'1',null,NaN])assert.throws(()=>groupAgentGrantChangeInput({...base,expectedGrantVersion}),{code:'teloa/invalid-input'})
+ assert.throws(()=>groupAgentGrantChangeInput({...base,expectedGrantVersion:1,grantVersion:1}),{code:'teloa/invalid-input'})
+})
+
 test('groupTaskCreateInput 接受可选 trigger，非法值抛出',()=>{
   assert.deepEqual(groupTaskCreateInput({requestId,groupId,messageId,expectedGroupVersion:1,goal:'跟进证据链。',trigger:'mention'}),{requestId,groupId,messageId,expectedGroupVersion:1,goal:'跟进证据链。',trigger:'mention'})
   assert.deepEqual(groupTaskCreateInput({requestId,groupId,messageId,expectedGroupVersion:1,goal:'跟进证据链。',trigger:'routed'}),{requestId,groupId,messageId,expectedGroupVersion:1,goal:'跟进证据链。',trigger:'routed'})
   const withoutTrigger=groupTaskCreateInput({requestId,groupId,messageId,expectedGroupVersion:1,goal:'跟进证据链。'})
   assert.equal('trigger' in withoutTrigger,false)
   assert.throws(()=>groupTaskCreateInput({requestId,groupId,messageId,expectedGroupVersion:1,goal:'跟进证据链。',trigger:'auto'}),/群/)
+})
+
+test('群明确工作固定目标业务与负责人，可选对象必须属于同一业务；旧请求不增加字段',()=>{
+ const base={requestId,groupId,messageId,expectedGroupVersion:1,goal:'维护原业务记录。'},assignee={roleId,expectedVersion:1},businessTarget={scope:'SOC',object:{scope:'SOC',type:'alert',id:'original-alert',version:2,snapshotHash:'a'.repeat(64)}}
+ assert.deepEqual(groupTaskCreateInput({...base,assignee,businessTarget}),{...base,assignee,businessTarget})
+ assert.equal('businessTarget'in groupTaskCreateInput(base),false)
+ for(const patch of [{assignee:undefined,businessTarget},{assignee,businessTarget:{scope:'general'}},{assignee,businessTarget:{...businessTarget,scope:'AppSec'}},{assignee,businessTarget:{scope:'SOC',extra:true}},{assignee,businessTarget,trigger:'routed',executionMode:'reply',routingAttemptVersion:1}])assert.throws(()=>groupTaskCreateInput({...base,...patch}),{code:'teloa/invalid-input'})
 })
 
 test('isGroupRules 仍然只认 3 键',()=>{
@@ -218,4 +261,14 @@ test('groupRunMessageInput 只收路径声明的 files，不传过、超限重�
   assert.throws(()=>groupRunMessageInput({requestId,runId,text:'已定版',files:[claim('a.txt','not-a-hash')]}),/群/)
   assert.throws(()=>groupRunMessageInput({requestId,runId,text:'已定版',references:[]}),/群/)
   assert.throws(()=>groupRunMessageInput({requestId,runId,text:'已定版',attachments:[]}),/群/)
+})
+
+
+test('员工显示位置和作者仅为服务端可读投影，旧九键消息兼容，本人发送不能自报这些字段',()=>{
+ const old={id:messageId,groupId,rootId,authorId:roleId,taskId,runId,text:'正式回复',references:[],createdAt:'2026-10-15T00:00:00Z'}
+ const author={name:'核对员',kind:'employee',version:2}
+ assert.equal(isGroupMessage(old),true)
+ assert.equal(isGroupMessage({...old,contextMode:'main',replyToMessageId:rootId,author}),true)
+ for(const patch of [{contextMode:'unknown'},{replyToMessageId:messageId},{author:{...author,kind:'self'}},{author:{...author,version:0}},{author:{...author,ownerId:'other'}},{ownerId:'other'}])assert.equal(isGroupMessage({...old,...patch}),false)
+ for(const patch of [{contextMode:'main'},{author}])assert.throws(()=>groupSendInput({requestId,groupId,expectedVersion:1,text:'测试',...patch}))
 })

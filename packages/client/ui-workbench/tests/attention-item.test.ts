@@ -8,6 +8,7 @@ import {withContinuousExamples} from '../src/client/continuous-work.ts'
 import {describeTaskProgress} from '../src/client/task-detail-presentation.ts'
 import {translateMessage} from '../lib/types/client/i18n/messages.js'
 import type {BindingFailure} from '../src/client/capability-work.ts'
+import { withLegacySecurityScopes } from './fixtures/legacy-security-scopes.ts'
 
 const now='2026-09-13T08:00:00.000Z'
 const taskId='12345678-1234-4234-8234-123456789012'
@@ -15,8 +16,31 @@ const roleId='87654321-1234-4234-8234-123456789012'
 const savedTask:WorkTask={id:taskId,ownerId:'owner',title:'核对真实任务',goal:'处理执行失败',scope:'general',groupId:null,skills:[],version:2,state:'blocked',assigneeRoleId:roleId,assigneeRoleVersion:1,createdAt:'2026-09-13T07:00:00.000Z',updatedAt:'2026-09-13T07:30:00.000Z'}
 const binding:BindingFailure={id:'binding-failure',bindingId:'binding-1',version:3,title:'资料连接',scope:'general',target:'通用工作',message:'连接不可用',at:'2026-09-13T07:40:00.000Z',active:true}
 
+test('正式工作待办替代旧任务出项，保留新真源身份且不把界面示例计入数量',()=>{
+ const base=snapshot(),digest='d'.repeat(64),bodyHash='b'.repeat(64)
+ const workAttention=[
+  {id:'task:'+taskId,kind:'review' as const,reason:'task-waiting' as const,title:'当前任务',scope:'general',occurredAt:now,source:{kind:'task' as const,taskId,version:3},target:{kind:'task' as const,taskId},basisHash:digest},
+  {id:'business-change-set:change-1',kind:'error' as const,reason:'business-change-stale' as const,title:'原修改待重新核对',scope:'SOC',occurredAt:now,source:{kind:'business-change-set' as const,scope:'SOC',changeSetId:'change-1',revision:3,digest},target:{kind:'business-change-set' as const,scope:'SOC',changeSetId:'change-1'},basisHash:digest},
+  {id:'business-sync:SOC:mapping-1',kind:'error' as const,reason:'business-sync-failed' as const,title:'资料同步失败',scope:'SOC',occurredAt:now,source:{kind:'business-sync' as const,scope:'SOC',mappingId:'mapping-1',runId:'run-1'},target:{kind:'business-sync' as const,scope:'SOC',mappingId:'mapping-1'},basisHash:digest},
+  {id:'page-create-draft:'+roleId,kind:'review' as const,reason:'page-create-draft-pending' as const,title:'待确认员工',occurredAt:now,source:{kind:'page-create-draft' as const,entity:'role' as const,draftId:roleId,bodyHash},target:{kind:'page-create-draft' as const,draftId:roleId},basisHash:digest},
+ ]
+ const items=aggregateAttentionItems({...base,workAttention})
+ assert.equal(items.filter(row=>row.id==='task:'+taskId).length,1)
+ assert.equal(items.find(row=>row.id==='task:'+taskId)?.title,'当前任务','新的工作目录为权威来源，不能沿用旧任务待办')
+ assert.equal(formalAttentionCount(items),4)
+ const stale=items.find(row=>row.id==='business-change-set:change-1')!
+ assert.equal(stale.kind,'error');assert.deepEqual(stale.reason,{kind:'message',key:'attention.work.reason.businessChangeStale'})
+ const calls:unknown[]=[]
+ const actions={openTask:()=>{},openArtifact:()=>{},openGroup:()=>{},openMarket:()=>{},openIndustrySkill:()=>{},openBusiness:()=>{},openPlans:()=>{},openBinding:()=>{},openInstallation:()=>{},openWorkAttention:(source:unknown)=>{calls.push(source)}}
+ for(const input of workAttention.slice(1))openAttentionItem(items.find(row=>row.id===input.id)!,actions)
+ assert.deepEqual(calls,workAttention.slice(1).map(row=>row.source),'打开只传完整原身份/版本/hash，不批准或修改真源')
+ const {openWorkAttention:_,...withoutHandler}=actions
+ assert.throws(()=>openAttentionItem(stale,withoutHandler),/缺少.*打开入口/)
+ assert.equal(aggregateAttentionItems({...base,handoffs:[],workAttention:[]}).some(row=>row.id==='task:'+taskId),false,'权威空目录不得退回旧任务待办')
+})
+
 function snapshot(){
-  let preview=withTaskExamples(emptyTaskPreview(),now)
+  let preview=withTaskExamples(withLegacySecurityScopes(emptyTaskPreview()),now)
   preview=withBusinessExamples(preview,now)
   preview=withContinuousExamples(preview,now)
   preview={...preview,continuous:{...preview.continuous,plans:preview.continuous.plans.map((plan,index)=>index?plan:{...plan,handoff:{fromId:roleId,reason:'原岗位退役'},history:[...plan.history,{text:'等待交接',at:'2026-09-13T07:35:00.000Z'}]})}}

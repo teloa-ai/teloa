@@ -152,6 +152,7 @@ test('⑤ taskCompletionVisible 与 TaskCompletion.tsx 的守卫同判',()=>{
  assert.equal(taskCompletionVisible({storage:'persistent',state:'waiting',assigneeId:roleId}),true)
  assert.equal(taskCompletionVisible({storage:'persistent',state:'running',assigneeId:roleId}),false)
  assert.equal(taskCompletionVisible({storage:'persistent',state:'waiting',assigneeId:'self'}),false)
+ assert.equal(taskCompletionVisible({storage:'persistent',state:'waiting',assigneeId:'self',executor:{kind:'owner',grantId:'11111111-1111-4111-8111-111111111111',grantVersion:1}}),true)
  for(const state of ['completed','running','waiting'] as const)assert.equal(taskCompletionVisible({state,assigneeId:'self'}),false,'沙盒恒假 '+state)
 })
 

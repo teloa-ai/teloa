@@ -3,6 +3,7 @@ import type { IndustryContent } from './industry-directory.ts'
 import { inspectIndustryContent, type IndustryInspection } from './industry-content.ts'
 import type { IndustryResourceKind } from './industry-manifest.ts'
 import type { MarketItem } from './market-preview.ts'
+import {canonicalMarketItemId,mergeMarketItems,sameMarketItem} from './market-item-identity.ts'
 export type IndustryReferenceChoice={resourceId:string;sourceContentId?:string;sourceItemId:string;sourceResourceId:string;sourceHash:string}
 export type ResolvedIndustryReference=IndustryReferenceChoice&{sourceKind?:'atomic-skill';kind:IndustryResourceKind;version:string;inspection:IndustryInspection;sourcePath:string;sourceFiles:IndustryContent['files']}
 
@@ -13,10 +14,9 @@ export async function prepareIndustryReferenceCandidates(item:MarketItem,items:r
  if(references.some(resource=>resource.kind!=='skill'&&resource.kind!=='business-configuration'))throw Error('首批持久化只支持公共技能引用。')
  if(!references.length)return [...items]
  const hydrated=await Promise.all(items.map(candidate=>(candidate.kind==='skill'||references.some(row=>row.kind==='business-configuration')&&candidate.kind==='bundle')&&candidate.contentStorage&&!candidate.contentStorage.loaded?hydrate(candidate):Promise.resolve(candidate)))
- const merged:MarketItem[]=[]
- for(const candidate of hydrated){const index=merged.findIndex(row=>row.contentStorage?.contentId===candidate.contentStorage?.contentId||row.id===candidate.id);if(index<0)merged.push(candidate);else if(candidate.contentStorage||!merged[index]?.contentStorage)merged[index]=candidate}
- return merged
+ return mergeMarketItems([],hydrated)
 }
+const referenceSourceId=(source:MarketItem,kind:IndustryResourceKind)=>kind==='business-configuration'?'directory-'+(source.packageContent?.baseHash??source.packageContent?.hash):canonicalMarketItemId(source)
 
 export function referenceCandidates(item:MarketItem,items:readonly MarketItem[],resourceId:string):IndustryReferenceChoice[]{
  const manifest=isIndustryManifest(item.manifest)?item.manifest:undefined
@@ -26,9 +26,9 @@ export function referenceCandidates(item:MarketItem,items:readonly MarketItem[],
  return items.flatMap(source=>{
   if(source.atomicSkill){
    const skill=source.atomicSkill
-   return target.kind==='skill'&&source.contentStorage?.contentId&&skill.id===reference.id&&skill.version===reference.version?[{resourceId,sourceContentId:source.contentStorage.contentId,sourceItemId:source.id,sourceResourceId:skill.id,sourceHash:skill.hash}]:[]
+   return target.kind==='skill'&&source.contentStorage?.contentId&&skill.id===reference.id&&skill.version===reference.version?[{resourceId,sourceContentId:source.contentStorage.contentId,sourceItemId:canonicalMarketItemId(source),sourceResourceId:skill.id,sourceHash:skill.hash}]:[]
   }
-  if(source.id===item.id||!isIndustryManifest(source.manifest)||!source.packageContent)return []
+  if(sameMarketItem(source,item)||!isIndustryManifest(source.manifest)||!source.packageContent)return []
   const resource=source.manifest.resources.find(row=>row.id===reference.id&&row.kind===target.kind&&row.version===reference.version&&row.source.kind==='local')
   if(!resource)return []
   const inspection=inspectIndustryContent(source.manifest,source.packageContent).find(row=>row.id===resource.id)
@@ -36,7 +36,7 @@ export function referenceCandidates(item:MarketItem,items:readonly MarketItem[],
   if(inspection.definition?.kind==='work-template'&&inspection.definition.manifest.domain!=='general'&&inspection.definition.manifest.domain!==manifest.scope)return []
   if(inspection.definition?.kind==='business-configuration'&&inspection.definition.definition.configuration.scope!=='template'&&inspection.definition.definition.configuration.scope!==manifest.scope)return []
   if(target.kind==='business-configuration'&&(!source.contentStorage?.contentId||source.packageContent.resolved?.length))return []
-  return [{resourceId,...(target.kind==='business-configuration'&&source.contentStorage?.contentId?{sourceContentId:source.contentStorage.contentId}:{}),sourceItemId:target.kind==='business-configuration'?'directory-'+(source.packageContent.baseHash??source.packageContent.hash):source.id,sourceResourceId:resource.id,sourceHash:source.packageContent.hash}]
+  return [{resourceId,...(source.contentStorage?.contentId?{sourceContentId:source.contentStorage.contentId}:{}),sourceItemId:referenceSourceId(source,target.kind),sourceResourceId:resource.id,sourceHash:source.packageContent.hash}]
  })
 }
 
@@ -48,14 +48,16 @@ export async function resolveIndustryReferences(item:MarketItem,items:readonly M
  const resolved:ResolvedIndustryReference[]=choices.map((choice):ResolvedIndustryReference=>{
   const match=referenceCandidates(item,items,choice.resourceId).find(row=>row.sourceContentId===choice.sourceContentId&&row.sourceItemId===choice.sourceItemId&&row.sourceResourceId===choice.sourceResourceId&&row.sourceHash===choice.sourceHash)
   if(!match)throw Error('引用来源不存在、版本不匹配或内容已变化，请重新选择。')
-  const source=items.find(row=>row.contentStorage?.contentId===match.sourceContentId&&match.sourceContentId!==undefined||row.id===match.sourceItemId)!
+  const target=manifest.resources.find(row=>row.id===choice.resourceId)!
+  const sources=items.filter(row=>match.sourceContentId!==undefined?row.contentStorage?.contentId===match.sourceContentId&&referenceSourceId(row,target.kind)===match.sourceItemId:!row.contentStorage&&referenceSourceId(row,target.kind)===match.sourceItemId)
+  if(sources.length!==1)throw Error('引用来源不唯一或固定内容已变化，请重新选择。')
+  const source=sources[0]!
   if(source.atomicSkill){
    const skill=source.atomicSkill,root=skill.entryPath.slice(0,skill.entryPath.lastIndexOf('/')+1)
    const inspection:IndustryInspection={id:skill.id,state:'pending',message:'技能内容已读取，格式和运行条件待检查。',definition:{kind:'skill',text:skill.text,files:skill.files.map(file=>({path:file.path.slice(root.length),hash:file.hash,size:file.bytes.length}))}}
    return {...match,sourceKind:'atomic-skill',kind:'skill',version:skill.version,inspection,sourcePath:skill.entryPath,sourceFiles:structuredClone(skill.files)}
   }
   if(!isIndustryManifest(source.manifest)||!source.packageContent)throw Error('引用来源尚未读取。')
-  const target=manifest.resources.find(row=>row.id===choice.resourceId)!
   const inspection=inspectIndustryContent(source.manifest,source.packageContent).find(row=>row.id===match.sourceResourceId)!
   const sourceResource=source.manifest.resources.find(row=>row.id===match.sourceResourceId)!
   if(sourceResource.source.kind!=='local')throw Error('引用必须有实际本地内容。')

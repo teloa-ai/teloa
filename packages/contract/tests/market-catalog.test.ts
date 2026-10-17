@@ -530,6 +530,24 @@ test('role 条目：definition 六字段、skills、scope、fromSolution 回指�
  assert.throws(()=>readMarketCatalogEntry({...roleSample(),delivery:'reference'}),/install/)
 })
 
+test('role 条目：批准的内置头像原样保留，旧条目不变，未知头像与私有地址拒绝',()=>{
+ const row=roleSample()
+ row.compatibility.teloa='>=0.2.0-alpha.8'
+ row.role.definition.avatarKey='data-analyst'
+ const entry=readMarketCatalogEntry(row)
+ assert.equal(entry.kind,'role')
+ if(entry.kind!=='role')throw Error()
+ assert.equal(entry.role.definition.avatarKey,'data-analyst')
+ assert.deepEqual(entry,row)
+ assert.equal(marketEntryNeedsV2(entry),true)
+ assert.deepEqual(readMarketCatalogEntry(roleSample()),roleSample())
+ for(const avatarKey of ['unknown-employee','https://private.example/avatar.png','/Users/example/avatar.png','']){
+  assert.throws(()=>readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarKey}}}),/岗位定义/)
+ }
+ assert.throws(()=>readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarUrl:'https://example.com/avatar.png'}}}),/岗位定义/)
+ assert.throws(()=>readMarketCatalogEntry({...row,compatibility:{...row.compatibility,teloa:'>=0.2.0-alpha.7'}}),/兼容下界/)
+})
+
 test('model 条目：cloud 要求 local/variants 为 null；non-commercial、http baseURL、未知 provider 一律拒绝',()=>{
  const entry=readMarketCatalogEntry(modelSample())
  if(entry.kind!=='model'||entry.model.form!=='cloud')throw Error()

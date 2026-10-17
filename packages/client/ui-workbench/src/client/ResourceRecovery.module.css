@@ -10,3 +10,5 @@
 .actions{display:flex;flex-wrap:wrap;gap:8px}
 .button{border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;padding:6px 9px;cursor:pointer}
 .button:disabled{opacity:.55;cursor:not-allowed}
+
+.removeReference{margin-inline-start:8px}

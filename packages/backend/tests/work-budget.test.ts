@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {setupRoleWork,roleFixture,identity,ownerAuthority} from './role-work-test-fixture.ts'
+import {setupRoleWork,roleFixture,insertRoleRun,identity,ownerAuthority} from './role-work-test-fixture.ts'
 import {WorkLineageService} from '../src/work/work-lineage.ts'
+import type {RunBudgetTerminal} from '../src/work/work-budget.ts'
 
 test('同一职责并行预留共享上限，未知消耗不释放，重放回执不双计',{timeout:60000},async t=>{
  const env=await setupRoleWork();t.after(env.close)
@@ -24,12 +25,12 @@ test('同一职责并行预留共享上限，未知消耗不释放，重放回�
  await assert.rejects(service.releaseUnaccepted(f.owner,{reservationId:reservation.id}),{code:'teloa/conflict'})
  const receipt={reservationId:reservation.id,modelRequestId:reservation.modelRequestId,providerRequestId:null,tokens:20,moneyMinorUnits:null,currency:null,receiptId:randomUUID()}
  assert.equal((await service.settle(f.owner,receipt)).state,'settled')
- assert.throws(()=>originalLease.assertCurrent(),{code:'teloa/conflict'})
+ assert.throws(()=>originalLease.assertCurrent(),{code:'teloa/budget-exhausted'})
  assert.deepEqual(await service.settle(f.owner,receipt),await service.settle(f.owner,receipt))
  const next=await service.reserve(f.owner,{...base,modelRequestId:randomUUID(),tokens:70}),releasedLease=service.lease(f.owner,next);await service.releaseUnaccepted(f.owner,{reservationId:next.id})
  const replacement=await service.reserve(f.owner,{...base,modelRequestId:randomUUID(),tokens:70})
- assert.throws(()=>releasedLease.assertCurrent(),{code:'teloa/conflict'})
- assert.throws(()=>service.lease(f.owner,next),{code:'teloa/conflict'})
+ assert.throws(()=>releasedLease.assertCurrent(),{code:'teloa/budget-exhausted'})
+ assert.throws(()=>service.lease(f.owner,next),{code:'teloa/budget-exhausted'})
  await service.releaseUnaccepted(f.owner,{reservationId:replacement.id})
  const uncertain=await service.reserve(f.owner,{...base,modelRequestId:randomUUID(),tokens:60});await service.markDispatched(f.owner,{reservationId:uncertain.id})
  const uncertainReceipt={reservationId:uncertain.id,modelRequestId:uncertain.modelRequestId,provider:'provider-a',providerRequestId:'physical-operation-1',tokens:null,moneyMinorUnits:null,currency:null,receiptId:randomUUID()}
@@ -53,4 +54,44 @@ test('同一职责并行预留共享上限，未知消耗不释放，重放回�
  assert.equal(afterDefinitionChange.state,'reserved');assert.equal((await service.read(f.owner,{budgetAccountId:lineage.budgetAccountId})).usedTokens,51)
  await service.releaseUnaccepted(f.owner,{reservationId:afterDefinitionChange.id})
  await assert.rejects(service.read('another-owner',{budgetAccountId:lineage.budgetAccountId}),{code:'teloa/forbidden'})
+})
+
+test('同Run已封口的未知模型预留固定已知耗时，仍保留未知token和并发',{timeout:60000},async t=>{
+ const env=await setupRoleWork();t.after(env.close)
+ const {WorkBudgetService,initializeWorkBudgets}=await import('../src/work/work-budget.ts'),{initializeWorkRetries}=await import('../src/work/work-retries.ts')
+ await initializeWorkBudgets(env.pool);await initializeWorkRetries(env.pool)
+ const f=await roleFixture(env.pool,'employee'),db=await env.pool.connect();let lineage
+ try{await db.query('begin');lineage=await new WorkLineageService(env.pool,identity).bindTask(db,f.owner,{taskId:f.taskId,source:{kind:'owner-task',taskId:f.taskId}});await db.query('commit')}finally{db.release()}
+ const service=new WorkBudgetService(env.pool,identity,ownerAuthority),r=await service.reserve(f.owner,{budgetAccountId:lineage.budgetAccountId,controlGeneration:1,kind:'retry',tokens:500,rounds:0,modelRequestId:'retry:terminal-proof'}),runId=await insertRoleRun(env.pool,f.owner,f.role.id,f.taskId,'ended')
+ await service.markDispatched(f.owner,{reservationId:r.id})
+ const startedAt=new Date(Date.now()-7*3600000).toISOString(),endedAt=new Date(Date.parse(startedAt)+45000).toISOString(),operationId='model:terminal-proof'
+ await env.pool.query('update teloa_task_runs set created_at=$2 where id=$1',[runId,startedAt])
+ await env.pool.query('update teloa_work_budget_reservations set created_at=$2 where id=$1',[r.id,startedAt])
+ await env.pool.query("insert into teloa_work_retries(owner_id,operation_id,run_id,budget_account_id,attempts,max_attempts,state,completed,last_reason,created_at,updated_at) values($1,$2,$3,$4,1,3,'unknown',false,'等待原受理回执',$5,$5)",[f.owner,operationId,runId,lineage.budgetAccountId,startedAt])
+ await env.pool.query("insert into teloa_work_retry_claims(owner_id,request_id,operation_id,attempt,model_request_id,spec) values($1,$2,$3,1,$4,'{}')",[f.owner,randomUUID(),operationId,r.modelRequestId])
+ const run=(await env.pool.query('select session_id,native_request_id,evidence from teloa_task_runs where id=$1',[runId])).rows[0],proof:RunBudgetTerminal={schema:'teloa.work-budget-terminal/v1',runId,sessionId:run.session_id,nativeRequestId:run.native_request_id,turn:0,messageSeq:1,endSeq:2,turnEndSeq:2,terminalKind:'turn/end',endedAt}
+ const admission=async()=>{const c=await env.pool.connect();try{await c.query('begin');await service.admissionInTransaction(c,f.owner,lineage.budgetAccountId)}finally{await c.query('rollback');c.release()}}
+ await assert.rejects(admission,{code:'teloa/budget-exhausted',details:{reason:'elapsed',scope:'work'}},'缺少终态补核的旧预留已把墙钟累计到七小时')
+ assert.deepEqual(await service.recordRunTerminal(f.owner,proof),{closed:1})
+ await assert.doesNotReject(admission,'原Run已结束后闲置时长不能继续耗尽额度')
+ const saved=(await env.pool.query('select state,reserved_tokens,actual_tokens,settled_at,elapsed_ended_at,elapsed_terminal from teloa_work_budget_reservations where id=$1',[r.id])).rows[0]
+ assert.equal(saved.state,'unknown');assert.equal(saved.reserved_tokens,500);assert.equal(saved.actual_tokens,null);assert.equal(saved.settled_at,null);assert.equal(saved.elapsed_ended_at.toISOString(),endedAt);assert.deepEqual(saved.elapsed_terminal,proof)
+ assert.equal((await service.read(f.owner,{budgetAccountId:lineage.budgetAccountId})).concurrent,1);assert.equal((await service.read(f.owner,{budgetAccountId:lineage.budgetAccountId})).usedTokens,500)
+ for(const bad of [{...proof,nativeRequestId:randomUUID()},{...proof,endSeq:3},{...proof,endedAt:new Date(Date.now()+60000).toISOString()}])await assert.rejects(service.recordRunTerminal(f.owner,bad))
+ assert.deepEqual(await service.recordRunTerminal(f.owner,proof),{closed:0})
+ await service.settle(f.owner,{reservationId:r.id,modelRequestId:r.modelRequestId,providerRequestId:null,tokens:null,moneyMinorUnits:null,currency:null,receiptId:randomUUID()})
+ assert.equal((await env.pool.query('select elapsed_ended_at from teloa_work_budget_reservations where id=$1',[r.id])).rows[0].elapsed_ended_at.toISOString(),endedAt,'迟到用量回执也不延长已知耗时')
+ // 子模型预算也映射父Run；仅父会话终态不能证明子会话已结束。
+ const childReservation=await service.reserve(f.owner,{budgetAccountId:lineage.budgetAccountId,controlGeneration:1,kind:'retry',tokens:1,rounds:0,modelRequestId:'retry:child-proof'})
+ await service.markDispatched(f.owner,{reservationId:childReservation.id})
+ await env.pool.query('update teloa_work_budget_reservations set created_at=$2 where id=$1',[childReservation.id,startedAt])
+ await env.pool.query("insert into teloa_work_retries(owner_id,operation_id,run_id,budget_account_id,attempts,max_attempts,state,completed,last_reason,created_at,updated_at) values($1,'model:child-proof',$2,$3,1,3,'unknown',false,'原子模型回执未知',$4,$4)",[f.owner,runId,lineage.budgetAccountId,startedAt])
+ await env.pool.query("insert into teloa_work_retry_claims(owner_id,request_id,operation_id,attempt,model_request_id,spec) values($1,$2,'model:child-proof',1,$3,'{}')",[f.owner,randomUUID(),childReservation.modelRequestId])
+ await env.pool.query("insert into teloa_task_run_subagents(owner_id,run_id,reservation_id,child_session_id,depth,state,created_at,started_at) values($1,$2,'child-budget-proof','child-session',1,'started',$3,$3)",[f.owner,runId,startedAt])
+ for(const state of ['started','ended','abandoned']){
+  if(state!=='started')await env.pool.query('update teloa_task_run_subagents set state=$3,ended_at=$4,stop_reason=$5 where owner_id=$1 and run_id=$2',[f.owner,runId,state,endedAt,state==='ended'?'completed':'unknown'])
+  assert.deepEqual(await service.recordRunTerminal(f.owner,proof),{closed:0},'父终态不得用于封口任何已发布子会话的未知消耗')
+  const child=(await env.pool.query('select state,reserved_tokens,actual_tokens,elapsed_ended_at,settled_at from teloa_work_budget_reservations where id=$1',[childReservation.id])).rows[0]
+  assert.deepEqual(child,{state:'unknown',reserved_tokens:1,actual_tokens:null,elapsed_ended_at:null,settled_at:null})
+ }
 })

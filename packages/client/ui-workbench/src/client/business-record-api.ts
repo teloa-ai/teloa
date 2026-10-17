@@ -1,13 +1,15 @@
 import {readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordList,readBusinessRecordGet,readBusinessRecordReceipt,readBusinessRecordSnapshot,readBusinessRecordPage,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive,type BusinessRecordList,type BusinessRecordGet,type BusinessObjectSnapshot} from '@teloa/contract'
 type Call=(method:string,input:unknown,signal?:AbortSignal)=>Promise<unknown>
+import {createBusinessWorkResultsApi,type BusinessWorkNavigation} from './business-work-results-api.ts'
 const invalid=()=>Object.assign(Error('记录回包与请求不一致。'),{code:'teloa/invalid-host-response'})
 function target(value:unknown,input:{scope:string;type:string;id?:string;version?:number}):BusinessObjectSnapshot{
  const result=readBusinessRecordSnapshot(value,input.scope)
  if(result.type!==input.type||(input.id!==undefined&&result.id!==input.id)||(input.version!==undefined&&result.version!==input.version))throw invalid()
  return result
 }
-export function createBusinessRecordApi(call:Call){
+export function createBusinessRecordApi(call:Call,navigation?:BusinessWorkNavigation){
  return {
+  work:createBusinessWorkResultsApi(call,navigation),
   async create(input:BusinessRecordCreate,signal?:AbortSignal){
    const data=readBusinessRecordCreate(input),result=target(await call('business-records/create',data,signal),{...data,version:1})
    if(result.deletedAt||result.title!==data.title||result.summary!==data.summary)throw invalid();return result
@@ -33,4 +35,4 @@ export function createBusinessRecordApi(call:Call){
   },
  }
 }
-export type BusinessRecordApi=ReturnType<typeof createBusinessRecordApi>
+export type BusinessRecordApi=Omit<ReturnType<typeof createBusinessRecordApi>,'work'>&{work?:ReturnType<typeof createBusinessWorkResultsApi>}

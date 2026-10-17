@@ -1,9 +1,12 @@
 import {projectDefinition,projectInput,projectOverviewInput,projectUuid,readProject,readProjectDetail,readProjectItem,readProjectOverviewPage,type ProjectDefinition,type ProjectLinkKind,type ProjectOverviewInput} from '@teloa/contract'
+import {createProjectContextApi} from './project-context-api.ts'
+import {createProjectRuntimeApi} from './project-runtime-api.ts'
+import {createResourceApi} from './resource-api.ts'
 type Journal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 type Call=(endpoint:string,input:unknown)=>Promise<unknown>
 export type ProjectApi=ReturnType<typeof createProjectApi>
 const fieldsOf=(row:ProjectDefinition)=>projectDefinition({scope:row.scope,title:row.title,goal:row.goal,dueDate:row.dueDate,state:row.state,links:row.links,references:row.references})
-export function createProjectApi(call:Call,journal?:Journal){
+export function createProjectApi(call:Call,journal?:Journal,contextJournal?:Journal,runtimeJournal?:Journal){
  let pending:{requestId:string;fields:ProjectDefinition}|undefined,busy=false,recoveryError:Error|undefined
  try{
   const raw=journal?.read()
@@ -11,6 +14,16 @@ export function createProjectApi(call:Call,journal?:Journal){
  }catch{recoveryError=Error('项目创建恢复记录损坏，请先核对项目目录。')}
  const same=(a:ProjectDefinition,b:ProjectDefinition)=>JSON.stringify(fieldsOf(a))===JSON.stringify(fieldsOf(b))
  return {
+  context:createProjectContextApi(call,contextJournal),
+  runtime:runtimeJournal?createProjectRuntimeApi(call,runtimeJournal):undefined,
+  async materialMetadata(scope:string):Promise<Record<string,{sourceTitle?:string;updatedAt:string}>>{
+   const resources=createResourceApi(call),[directory,sources]=await Promise.all([resources.directory(),resources.sources()])
+   const bySource=new Map(sources.map(source=>[source.id+':'+source.version,source]))
+   return Object.fromEntries(directory.resources.filter(resource=>resource.status==='active'&&resource.scopeIds.includes(scope)).map(resource=>{
+    const sourceTitle=bySource.get(resource.sourceId+':'+resource.sourceVersion)?.title
+    return [resource.id,{updatedAt:resource.updatedAt,...(sourceTitle?{sourceTitle}:{})}]
+   }))
+  },
   pendingFields:()=>pending?fieldsOf(pending.fields):undefined,
   recoveryError:()=>recoveryError,
   discard(){journal?.clear();pending=undefined;recoveryError=undefined},

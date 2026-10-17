@@ -20,7 +20,7 @@ export function readBusinessDashboardResource(value:unknown):BusinessDashboardRe
  if(typeof value.id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/.test(value.id))throw bad('业务看板资源标识不合法。')
  if(typeof value.version!=='string'||value.version.length>80||!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value.version))throw bad('业务看板资源版本必须是固定的三段版本号。')
  const configuration=readBusinessConfigurationCandidateV2(value.configuration)
- if(!configuration.pages.some(page=>page.kind==='dashboard'))throw bad('业务看板资源必须包含可预览的看板页面。')
+ if(!configuration.pages.length)throw bad('业务配置资源必须包含可预览的记录或看板页面。')
  // 同步参数是开放集合，可含账号材料和宿主岗位身份；不可依靠参数名黑名单来猜脱敏。
  if(configuration.definitions.some(row=>row.kind==='source-mapping'))throw bad('业务看板资源不携带已有同步绑定；请在目标业务另行准备。')
  if(configuration.definitions.some(row=>row.kind==='object-type'&&row.definition.defaultAction!==undefined))throw bad('业务看板资源不携带已有默认动作；请在目标业务另行配置。')

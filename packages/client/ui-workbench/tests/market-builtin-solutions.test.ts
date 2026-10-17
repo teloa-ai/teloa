@@ -6,51 +6,41 @@ import * as composition from '../lib/types/client/industry-composition.js'
 import * as avatarSeed from '../lib/types/client/staff-avatar-seed.js'
 import {builtinSolutionCatalog} from '../src/client/market-preview.ts'
 
-// 空库市场回归（design specification 缺陷 1、2）：
-// 内置行业示例包只经 `pnpm setup:workspace` 写进后端内容库，全新安装时正式目录一条方案都没有，
-// 方案页一张卡都不出、连带「问一问」消失；导入对话框的 market.forms.* 词条则随 919bede 被删掉。
+// 最新定稿：官方推荐不补回旧行业示例；本人导入内容与旧深链保留，导入表单词条仍可读。
 
 const solutionCardsMarker=(props:Record<string,unknown>)=>props
 const askLabel='market.solution.ask'
 
 function renderEmptyCatalog(){
  const page=mount('MarketPage.tsx',{'./SolutionCards.js':{SolutionCards:solutionCardsMarker}})
- return page.render('TestCatalog',marketProps({category:'home'},[]))
+ return page.render('TestCatalog',marketProps({category:'industry'},[]))
 }
 
-test('空目录的方案页渲染 Teloa 内置行业方案，并标出「Teloa 内置示例」',()=>{
- const root=renderEmptyCatalog()
- const cards=nodes(root).find(node=>node.type===solutionCardsMarker)
- assert.ok(cards,'空目录时方案页仍然没有渲染方案卡')
- assert.deepEqual((cards.props.items as {id:string}[]).map(item=>item.id),builtinSolutionCatalog().map(item=>item.id))
- const texts=nodes(root).flatMap(node=>node.children.filter((child:unknown)=>typeof child==='string'))
- assert.ok(texts.includes('market.solution.builtinTitle'),'缺少「推荐行业方案」抬头')
- assert.ok(texts.includes('market.solution.builtinNotice'),'缺少「Teloa 内置示例」说明')
+test('空目录不补回已退出的内置行业方案，显示真实空态',()=>{
+ const tree=nodes(renderEmptyCatalog())
+ assert.deepEqual(tree.find(node=>node.type===solutionCardsMarker)?.props.items??[],[])
+ assert.equal(tree.some(node=>node.children.includes('market.solution.builtinNotice')),false)
+ assert.equal(tree.some(node=>node.children.includes('market.search.empty')),true)
 })
 
-test('空目录的方案页仍然出现「问一问」，且提问对象绑定排最前的内置方案',()=>{
- const root=renderEmptyCatalog()
- const ask=nodes(root).find(node=>node.type==='button'&&node.children.includes(askLabel))
- assert.ok(ask,'目录为空时「问一问」按钮消失了')
+test('空目录不以已退出的内置方案准备会话',()=>{
+ const tree=nodes(renderEmptyCatalog())
+ assert.equal(tree.some(node=>node.type==='button'&&node.children.includes(askLabel)),false)
+ assert.equal(tree.some(node=>node.props['data-teloa-entry']),false)
 })
 
-test('内置方案卡真渲染出三张卡：有标题、有状态记号、可点开',()=>{
- const root=renderEmptyCatalog()
- const props=nodes(root).find(node=>node.type===solutionCardsMarker)!.props
- const opened:string[]=[]
+test('本人已导入的旧方案卡仍能按原身份打开，不因目录退出丢失',()=>{
+ const items=builtinSolutionCatalog(),opened:string[]=[]
  const cards=mount('SolutionCards.tsx',{'./industry-composition.js':composition,'./staff-avatar-seed.js':avatarSeed})
- const tree=cards.render('SolutionCards',{...props,open:(id:string)=>opened.push(id)})
- const entries=nodes(tree).filter((node:Node)=>node.type==='button'&&!!node.props['data-teloa-entry'])
- assert.equal(entries.length,builtinSolutionCatalog().length)
- assert.deepEqual(entries.map(node=>node.props['data-teloa-entry']),builtinSolutionCatalog().map(item=>item.id))
- entries[0]!.props.onClick()
- assert.deepEqual(opened,[builtinSolutionCatalog()[0]!.id])
+ const entries=nodes(cards.render('SolutionCards',{items,loads:[],open:(id:string)=>opened.push(id)})).filter((node:Node)=>node.type==='button'&&!!node.props['data-teloa-entry'])
+ assert.deepEqual(entries.map(node=>node.props['data-teloa-entry']),items.map(item=>item.id))
+ entries[0]!.props.onClick();assert.deepEqual(opened,[items[0]!.id])
 })
 
 test('目录里已有正式方案时不再兜底渲染内置清单',()=>{
  const formal={...builtinSolutionCatalog()[1]!,id:'imported-soc'}
  const page=mount('MarketPage.tsx',{'./SolutionCards.js':{SolutionCards:solutionCardsMarker}})
- const root=page.render('TestCatalog',marketProps({category:'home'},[formal]))
+ const root=page.render('TestCatalog',marketProps({category:'industry'},[formal]))
  const cards=nodes(root).find(node=>node.type===solutionCardsMarker)!
  assert.deepEqual((cards.props.items as {id:string}[]).map(item=>item.id),['imported-soc'])
  const texts=nodes(root).flatMap(node=>node.children.filter((child:unknown)=>typeof child==='string'))
@@ -81,4 +71,14 @@ test('「保存工作方式」对话框不出现 market.forms.* 词条键',()=>{
  const forms=mount('MarketForms.tsx',{'./i18n/provider.js':realI18n})
  const tree=forms.render('TemplateForm',{close:()=>{},save:()=>{}})
  assert.deepEqual(renderedStrings(tree).filter(value=>value.includes('market.forms.')),[])
+})
+
+
+test('有官方目录时旧本人导入方案不混入推荐，仍保留原内容状态',()=>{
+ const marker=(props:Record<string,unknown>)=>props,original=builtinSolutionCatalog()[0]!
+ const app=mount('MarketPage.tsx',{'./MarketCatalogSection.js':{MarketCatalogSection:marker}})
+ const props={...marketProps({category:'industry'},[original]),marketCatalogApi:{list:async()=>({items:[],catalogVersion:'2026.10.14.2',nextCursor:null,counts:{skill:92,connector:6,model:1,role:0,solution:0,dashboard:0},skipped:{unknownKind:0,newerApp:0}})}}
+ const section=nodes(app.render('TestCatalog',props)).find(node=>node.type===marker)!
+ assert.deepEqual(section.props.localRows,[],'个人旧内容不能补成 Teloa 官方推荐')
+ assert.equal(props.state.items[0]!.id,original.id,'退出推荐不能删除本人内容')
 })

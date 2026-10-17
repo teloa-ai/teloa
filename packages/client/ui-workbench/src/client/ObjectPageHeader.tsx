@@ -1,6 +1,7 @@
 import {useEffect,useId,useRef,useState,type KeyboardEvent,type ReactNode} from 'react'
 import {ArrowLeft,ArrowUpRight,ChevronRight,Ellipsis,Pencil,UserRound} from 'lucide-react'
 import {StatusLabel} from './StatusLabel.js'
+import clsx from 'clsx'
 import type {StatusMark} from './status-presentation.js'
 import {useDismissible} from './use-dismissible.js'
 import css from './ObjectPage.module.css'
@@ -17,6 +18,7 @@ export function ObjectPageHeader(props:{
  menu?:readonly ObjectMenuItem[];menuLabel:string
  back?:()=>void;backLabel?:string;backHidden?:boolean
  trailing?:ReactNode
+ compact?:boolean
  meta?:string
 }):JSX.Element{
  const {title,onEditTitle,editTitleLabel,status,badges,owner,menu,menuLabel,back,backLabel,backHidden,meta}=props
@@ -29,6 +31,10 @@ export function ObjectPageHeader(props:{
   return ()=>cancelAnimationFrame(frame)
  },[open])
  const onMenuKeyDown=(event:KeyboardEvent<HTMLDivElement>)=>{
+  if(!open)return
+  // 打开后的第一帧焦点可能仍在触发器；Escape 必须先关闭菜单，不冒泡成详情返回。
+  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return}
+  if(event.key==='Tab'){close();return}
   const items=Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')??[])
   if(items.length===0)return
   const index=items.findIndex(item=>item===document.activeElement)
@@ -37,17 +43,17 @@ export function ObjectPageHeader(props:{
   else if(event.key==='ArrowUp')focusAt(index-1)
   else if(event.key==='Home')focusAt(0)
   else if(event.key==='End')focusAt(items.length-1)
-  else if(event.key==='Escape'){event.preventDefault();close()}
-  else if(event.key==='Tab')close()
  }
- return <header className={css.header}>
-  {back&&!backHidden&&<button type="button" className={css.back} onClick={back}><ArrowLeft size={14}/>{backLabel}</button>}
+ const backButton=back&&!backHidden&&<button type="button" className={css.back} aria-label={props.compact?backLabel:undefined} title={props.compact?backLabel:undefined} onClick={back}><ArrowLeft size={14}/>{!props.compact&&backLabel}</button>
+ return <header className={clsx(css.header,props.compact&&css.compactHeader)}>
+  {!props.compact&&backButton}
   <div className={css.titleRow}>
+   {props.compact&&backButton}
    {onEditTitle?<h2 aria-label={title}><button type="button" className={css.titleButton} aria-label={editTitleLabel} onClick={onEditTitle}><span className={css.titleText} title={title}>{title}</span><Pencil size={14}/></button></h2>:<h2 className={css.titleText} title={title}>{title}</h2>}
    {props.trailing}
-   {menu&&menu.length>0&&<div ref={menuRef}>
+   {menu&&menu.length>0&&<div ref={menuRef} onKeyDown={onMenuKeyDown}>
     <button ref={triggerRef} type="button" className={css.menuTrigger} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} aria-label={menuLabel} onClick={()=>setOpen(value=>!value)}><Ellipsis size={16}/></button>
-    {open&&<div id={menuId} role="menu" className={css.menu} aria-label={menuLabel} onKeyDown={onMenuKeyDown}>
+    {open&&<div id={menuId} role="menu" className={css.menu} aria-label={menuLabel}>
      {menu.map(item=><button key={item.id} type="button" role="menuitem" disabled={item.disabled} onClick={()=>{item.onSelect();close()}}>{item.label}</button>)}
     </div>}
    </div>}

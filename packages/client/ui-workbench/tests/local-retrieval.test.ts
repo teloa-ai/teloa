@@ -63,9 +63,9 @@ test('首屏保持简洁；确认态完整显示容量、来源、许可、路�
  for(const text of ['registry.npmjs.org','huggingface.co','onnxruntime-node@1.30.0','Apache-2.0','社区转换','不是原厂发布的文件','M1/M2 8GB','尚未实机验收','host/models/fp32','host/runtime','SHA-256','确认下载并准备'])assert.ok(confirmation.includes(text),text)
  assert.match(confirmation,/2,093,436,928 B/)
 })
-test('未启用仅引导扩展；版本不符、无详情或 INT8 均不能准备；语音不进入本面板',()=>{
+test('未启用就地启用检索；版本不符、无详情或 INT8 均不能准备；语音不进入本面板',()=>{
  const disabled=renderModel({status:{...model,enabled:false,provider:null},confirming:true})
- assert.match(disabled,/前往扩展/);assert.doesNotMatch(disabled,/确认下载并准备|<button[^>]*>准备检索模型/)
+ assert.match(disabled,/启用本地检索/);assert.doesNotMatch(disabled,/确认下载并准备|<button[^>]*>准备检索模型/)
  for(const p of [{...provider,catalogVersion:'2.0.0'},{...provider,preparationDetails:undefined},{...provider,variant:'int8'}]){
   assert.match(renderModel({status:{...model,provider:p}}),/disabled=""[^>]*>准备检索模型/)
  }
@@ -91,10 +91,10 @@ test('资料页显示已加入份数、加入移出、重建/停止整理、所�
  for(const state of ['building','ready','failed','stale'])assert.ok(renderIndex({status:{...index,items:[{...index.items[0],state}]}}).includes(t('retrieval.index.'+state)))
  assert.match(renderIndex({status:{...index,items:[{sourceId:'removed',resourceId:null,title:null,version:null,state:'unavailable',chunkCount:null}]}}),/资料当前不可用/)
 })
-test('新增 10 主语言文案键唯一、列完整、占位符保持一致',()=>{
+test('检索文案兼容简繁英定稿与既有十语，键唯一且占位符保持一致',()=>{
  const keys=new Set<string>()
  for(const row of LOCAL_RETRIEVAL_MESSAGE_ROWS){
-  assert.equal(row.length,11);assert.ok(!keys.has(row[0]));keys.add(row[0])
+  assert.ok([4,11].includes(row.length),row[0]+' 必须为三语定稿或既有十语，不能少列/错位');assert.ok(!keys.has(row[0]));keys.add(row[0])
   const placeholders=(s:string)=>[...s.matchAll(/\{(\w+)\}/g)].map(m=>m[1]).sort()
   for(const text of row.slice(1)){assert.ok(text.trim());assert.deepEqual(placeholders(text),placeholders(row[1]))}
  }

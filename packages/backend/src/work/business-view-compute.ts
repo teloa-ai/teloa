@@ -7,6 +7,7 @@ import {
  type BusinessViewResult,type BusinessViewRow,type BusinessViewWindow,
 } from '@teloa/contract'
 import {readBusinessObjectSnapshot,businessObjectSnapshotHash,type BusinessObjectSnapshot} from './business-data.ts'
+import {registeredBusinessSnapshotSources} from './business-snapshot-source.ts'
 import {equatableFieldTypes,type BusinessDefinitionSourceReader,type BusinessLedgerOverride} from './business-definition-source.ts'
 
 /** 试算覆盖的类型定义与合并代码放在一处（`business-definition-source.ts`），台账这一层只负责把它透过去。 */
@@ -187,6 +188,7 @@ export async function loadBusinessViewSnapshots(db:PoolClient,ownerId:string,sco
   const rows=(await db.query(sql,[ownerId,scope,objectType,SCAN_LIMIT])).rows as Array<{object_id:string;object_version:number;source_id:string;snapshot:unknown;snapshot_hash:string}>
   const truncated=rows.length>businessLedgerLimits.scanRows
   const kept=truncated?rows.slice(0,businessLedgerLimits.scanRows):rows
+  const sourced=sourceId===undefined?new Map<string,string>():await registeredBusinessSnapshotSources(db,ownerId,scope,objectType,kept.filter(row=>row.source_id!==sourceId).map(row=>row.object_id))
   /**
    * 当前版本是 tombstone 的对象不进台账（取最大版本之后再滤，否则被删对象的上一版本会重新冒出来）：
    * 它已不在来源里，且回包快照带 deletedAt 会被宿主严格键集拒绝。截断仍按滤前行数判，与扫描上限同一口径。
@@ -194,7 +196,7 @@ export async function loadBusinessViewSnapshots(db:PoolClient,ownerId:string,sco
   const objects=kept.flatMap(row=>{
    let stored:Omit<BusinessObjectSnapshot,'snapshotHash'>
    try{stored=readBusinessObjectSnapshot(row.snapshot,scope)}catch{throw new WorkError('teloa/storage-corrupt','固定业务对象快照格式不正确。')}
-   if(stored.id!==row.object_id||stored.version!==Number(row.object_version)||(sourceId!==undefined&&row.source_id!==sourceId)||stored.type!==objectType||businessObjectSnapshotHash(stored)!==row.snapshot_hash)throw new WorkError('teloa/storage-corrupt','固定业务对象快照与摘要不一致。')
+   if(stored.id!==row.object_id||stored.version!==Number(row.object_version)||(sourceId!==undefined&&row.source_id!==sourceId&&sourced.get(row.object_id)!==row.source_id)||stored.type!==objectType||businessObjectSnapshotHash(stored)!==row.snapshot_hash)throw new WorkError('teloa/storage-corrupt','固定业务对象快照与摘要不一致。')
    return stored.deletedAt===undefined?[{snapshot:{...stored,snapshotHash:row.snapshot_hash}}]:[]
   })
   return Object.assign(objects,{truncated})

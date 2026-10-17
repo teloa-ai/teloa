@@ -1,11 +1,15 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {RefreshCw} from 'lucide-react'
 import { useEffect,useRef,useState } from 'react'
 import { artifactMessageKey,nativeImagePreviewControl,type ArtifactMessage,type ArtifactImage,type NativeArtifactApi,type NativeArtifactPage } from './artifact-native.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import base from './TaskPage.module.css'
 import css from './NativeArtifactPicker.module.css'
+import {MarkdownPreview} from './knowledge-markdown.js'
+import {artifactMessageCopy} from './artifact-message-copy.js'
 
-export function NativeArtifactPicker({sessionId,api,selected,select}:{sessionId:string;api:NativeArtifactApi;selected:ArtifactMessage[];select:(message:ArtifactMessage)=>void}){
+export function NativeArtifactPicker({sessionId,api,selected,select,assistantName}:{sessionId:string;api:NativeArtifactApi;selected:ArtifactMessage[];select:(message:ArtifactMessage)=>void;assistantName?:string|undefined}){
   const {locale,t,dateTime}=useI18n()
   const [page,setPage]=useState<NativeArtifactPage>(),[loading,setLoading]=useState(false),[error,setError]=useState(''),generation=useRef(0)
   const read=async(beforeSeq?:number)=>{
@@ -23,15 +27,15 @@ export function NativeArtifactPicker({sessionId,api,selected,select}:{sessionId:
     <p>{t('nativeArtifact.description')}</p>
     {error&&<p role="alert" className={base.error}>{error}</p>}{loading&&<p role="status">{t('nativeArtifact.loading')}</p>}
     {page?.items.map(message=><section className={css.choice} key={artifactMessageKey(message)}>
-      <strong>{t(message.role==='user'?'nativeArtifact.userMessage':'nativeArtifact.modelReply')} · {dateTime(message.at)}</strong>
-      <p>{message.text.slice(0,220)||t('nativeArtifact.imageMessage')}{message.text.length>220?'…':''}</p>
-      <small>{t('nativeArtifact.messageMeta',{count:message.images.length,interrupted:message.interrupted?t('nativeArtifact.interruptedSuffix'):'',seq:message.seq})}</small>
-      <details><summary>{t('nativeArtifact.original')}</summary><p className={css.identity}>{message.messageId}</p><p className={css.original}>{message.text||t('nativeArtifact.noText')}</p></details>
-      <button type="button" disabled={selected.some(item=>artifactMessageKey(item)===artifactMessageKey(message))||message.text.length>16000} onClick={()=>select(message)}>{t(selected.some(item=>artifactMessageKey(item)===artifactMessageKey(message))?'nativeArtifact.selected':'nativeArtifact.select')}</button>
+      <strong>{message.role==='user'?t('nativeArtifact.userMessage'):assistantName||artifactMessageCopy(locale,'reply')} · {dateTime(message.at)}</strong>
+      <div className={css.messagePreview}><MarkdownPreview markdown={message.text.slice(0,220)+(message.text.length>220?'…':'')} empty={t('nativeArtifact.imageMessage')} images={false}/></div>
+      {(message.images.length>0||message.interrupted)&&<small>{message.images.length>0&&artifactMessageCopy(locale,'images').replace('{count}',String(message.images.length))}{message.interrupted&&t('nativeArtifact.interruptedSuffix')}</small>}
+      <details><summary>{artifactMessageCopy(locale,'original')}</summary><div className={css.original}><MarkdownPreview markdown={message.text} empty={t('nativeArtifact.noText')} images={false}/></div></details>
+      <button type="button" aria-label={`${t('nativeArtifact.select')} · ${message.role==='user'?t('nativeArtifact.userMessage'):assistantName||artifactMessageCopy(locale,'reply')} · ${message.text.slice(0,60)} · ${dateTime(message.at)}`} disabled={selected.some(item=>artifactMessageKey(item)===artifactMessageKey(message))||message.text.length>16000} onClick={()=>select(message)}>{t(selected.some(item=>artifactMessageKey(item)===artifactMessageKey(message))?'nativeArtifact.selected':'nativeArtifact.select')}</button>
       {message.text.length>16000&&<p>{t('nativeArtifact.tooLong')}</p>}
     </section>)}
     {!loading&&page&&!page.items.length&&<p>{t('nativeArtifact.empty')} {t(page.nextBeforeSeq!==null?'nativeArtifact.emptyOlder':'nativeArtifact.emptyReturn')}</p>}
-    <div className={base.buttons}><button type="button" disabled={loading} onClick={()=>void read()}>{t('nativeArtifact.refresh')}</button>{page?.nextBeforeSeq!==null&&page?.nextBeforeSeq!==undefined&&<button type="button" disabled={loading} onClick={()=>void read(page.nextBeforeSeq!)}>{t('nativeArtifact.older')}</button>}</div>
+    <div className={base.buttons}><ToolbarIconButton label={t('nativeArtifact.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void read()}/>{page?.nextBeforeSeq!==null&&page?.nextBeforeSeq!==undefined&&<button type="button" disabled={loading} onClick={()=>void read(page.nextBeforeSeq!)}>{t('nativeArtifact.older')}</button>}</div>
   </section>
 }
 

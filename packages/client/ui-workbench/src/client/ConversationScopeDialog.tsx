@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import type { CollaborationScope } from './collaboration-preview.js'
 import { openDialog } from './dialog-focus.js'
+import { useDialogDismiss } from './use-dialog-dismiss.js'
 import { useI18n } from './i18n/provider.js'
 import css from './CreateConversationDialog.module.css'
 
@@ -14,7 +15,9 @@ export function ConversationScopeDialog({name,options,close,select}:Props){
   const [selected,setSelected]=useState<CollaborationScope>(options[0]?.id??'')
   const dialog=useRef<HTMLDialogElement>(null),control=useRef<HTMLSelectElement>(null)
   useEffect(()=>openDialog(dialog.current,control.current),[])
-  return <dialog ref={dialog} className={css.dialog} aria-label={t('conversationDialog.scopeTitle')} onCancel={event=>{event.preventDefault();close()}}>
+  // 外点与 Esc 只收起，不选择范围；范围只在“开始会话”时提交。
+  const dismissEvents=useDialogDismiss(close)
+  return <dialog ref={dialog} className={css.dialog} aria-label={t('conversationDialog.scopeTitle')} {...dismissEvents}>
     <form onSubmit={event=>{event.preventDefault();if(selected)select(selected)}}>
       <header><div><h2>{t('conversationDialog.scopeTitle')}</h2><p>{t('conversationDialog.scopeDescription',{name})}</p></div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} onClick={close}><X size={18}/></button></header>
       <label htmlFor="teloa-create-scope">{t('conversationDialog.scope')}</label>

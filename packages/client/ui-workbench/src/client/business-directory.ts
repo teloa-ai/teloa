@@ -15,8 +15,11 @@ export const builtinBusinessNames={general:'通用工作',SOC:'安全运营',App
 export type BuiltinBusinessScope=keyof typeof builtinBusinessNames
 export const builtinBusinessScope=(scope:unknown):scope is BuiltinBusinessScope=>typeof scope==='string'&&Object.hasOwn(builtinBusinessNames,scope)
 
-/** 业务范围目录读到之前的兜底：只有三个内置标签，计数一律为 0。 */
-export const initialBusinessSpaces=():BusinessScopeLabel[]=>(Object.keys(builtinBusinessNames) as BuiltinBusinessScope[]).map(scope=>({scope,title:builtinBusinessNames[scope],kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}))
+/**
+ * 业务范围目录读到之前的兜底：只有「通用工作」，计数为 0。SOC/AppSec 仍是合法的内置取值（`builtinBusinessNames`、
+ * `registeredBusinessScope` 照旧认），但只有服务端目录确有该行时才出现，占位不替用户生成旧业务。
+ */
+export const initialBusinessSpaces=():BusinessScopeLabel[]=>[{scope:'general',title:builtinBusinessNames.general,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}]
 
 /** 只为目录已经返回的标识生成名称；内置词典只负责本地化同名标识，不生成目录记录。 */
 export type BusinessScopeNames=Readonly<Record<string,string>>

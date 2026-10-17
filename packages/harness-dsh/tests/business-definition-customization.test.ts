@@ -1,3 +1,4 @@
+import {selfAuthorizedToolNames} from '../src/self-authorized-tools.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -30,7 +31,8 @@ test('四个定制端点完整装入 RPC，草案写口只在模型工具私有�
  assert.match(source,/createBusinessDefinitionHandler\(owner,businessScopeIds,[^\n]*businessDefinitionServices\)/)
  const skillRegistration=source.indexOf('registerSkillInstallTools(toolRegistrationContext,')
  assert.ok(skillRegistration>0&&source.indexOf('registerBusinessDefinitionTools(toolRegistrationContext,')>skillRegistration)
- const selfAuthorized=source.match(/registerTaskToolGuard\(ctx,readTaskToolPolicy,[\s\S]*?\[([^\]]*)\],async/)?.[1]??''
+ assert.match(source,/registerTaskToolGuard\(ctx,readTaskToolPolicy,[\s\S]*?\[\.\.\.selfAuthorizedToolNames\],readTaskBusinessBinding,subagentDelegation/)
+ const selfAuthorized:readonly string[]=selfAuthorizedToolNames
  assert.ok(selfAuthorized.length>0)
  for(const name of ['businessDefinitionToolNames','teloa_business_definitions_directory','teloa_business_definitions_draft'])assert.equal(selfAuthorized.includes(name),false)
 })

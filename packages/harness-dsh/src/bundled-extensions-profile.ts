@@ -30,11 +30,11 @@ async function officialSource(profileDir:string,manifest:Record<string,unknown>,
 }
 
 /** 调用方必须已经持有 `withProfileLock`。启用前核对来源；停用不核对（只朝更安全的方向改）。 */
-export async function setBundledExtensionLocked(profileDir:string,programRoot:string,packageName:string,enabled:boolean):Promise<void>{
+export async function setBundledExtensionLocked(profileDir:string,programRoot:string,packageName:string,enabled:boolean,beforeCommit?:()=>Promise<void>):Promise<void>{
  if(directories[packageName]===undefined)throw Error(bundledSourceMismatch)
  if(packageName===IM_GATEWAY_PACKAGE&&!enabled)throw Error('IM 通道是内置能力；请在设置中停用具体渠道。')
  if(enabled&&!await officialSource(profileDir,await readJsonFile(join(profileDir,'package.json')),packageName,programRoot))throw Error(bundledSourceMismatch)
- await rewriteProfileBundlesLocked(profileDir,bundles=>enabled?withBundledExtension(bundles,packageName):bundles.filter(name=>name!==packageName))
+ await rewriteProfileBundlesLocked(profileDir,bundles=>enabled?withBundledExtension(bundles,packageName):bundles.filter(name=>name!==packageName),beforeCommit)
 }
 /**
  * 插在 `@teloa/bundle` 之后、任何第三方 bundle 之前（找不到才追加到末尾）：装配按 bundles 顺序进行，

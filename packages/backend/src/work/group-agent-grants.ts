@@ -38,7 +38,7 @@ export function readGroupAgentGrant(row:Record<string,unknown>):GroupAgentGrant{
 }
 
 function requestSpec(input:ReturnType<typeof groupAgentGrantChangeInput>):string{
- return JSON.stringify({groupId:input.groupId,roleId:input.roleId,expectedGroupVersion:input.expectedGroupVersion,expectedRoleVersion:input.expectedRoleVersion,action:input.action,resources:input.resources,canPost:input.canPost,canAutoRun:input.canAutoRun})
+ return JSON.stringify({groupId:input.groupId,roleId:input.roleId,expectedGroupVersion:input.expectedGroupVersion,expectedRoleVersion:input.expectedRoleVersion,action:input.action,resources:input.resources,canPost:input.canPost,canAutoRun:input.canAutoRun,...(input.expectedGrantVersion===undefined?{}:{expectedGrantVersion:input.expectedGrantVersion})})
 }
 
 /**
@@ -88,7 +88,8 @@ export class GroupAgentGrantService{
    if(request.action==='save'){
     if(!context.scopeSupported)throw new WorkError('teloa/forbidden','员工不在本群业务范围内，不能授权。')
     if(context.archived)throw new WorkError('teloa/conflict','已归档群不能新增员工授权。')
-    if(context.roleState!=='active')throw new WorkError('teloa/conflict','只有当前在岗的同事可以获得群授权。')
+    // 本人可先为暂停员工配置资料；实际执行仍由当前在岗状态与有效授权共同核验。
+    if(context.roleState!=='active'&&!(context.roleState==='paused'&&context.roleKind==='employee'))throw new WorkError('teloa/conflict','只有在岗同事或暂停员工可以配置群授权。')
     if(context.roleKind==='twin'&&request.canAutoRun)execution=await authorizeTwinGroupActivation(client,this.pool,owner,context.role,context.scope,request.groupId)
     await this.assertResources(client,owner,request.groupId,request.resources)
    }else if(!context.scopeSupported&&!(await client.query('select 1 from teloa_group_agent_grants where group_id=$1 and role_id=$2 limit 1 for update',[request.groupId,request.roleId])).rows[0]){
@@ -96,6 +97,7 @@ export class GroupAgentGrantService{
     throw new WorkError('teloa/forbidden','员工不在本群业务范围内，没有可撤销的授权。')
    }
    const previous=(await client.query('select grant_version from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for update',[request.groupId,request.roleId])).rows[0]
+   if(request.expectedGrantVersion!==undefined&&request.expectedGrantVersion!==(previous?.grant_version??0))throw new WorkError('teloa/version-conflict','群员工授权已变化，请重新核对。')
    const grantVersion=previous?(previous.grant_version as number)+1:1
    const admission=request.action==='save'?await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:null,objectId:request.groupId,operation:'edit'}):undefined
    admission?.assertCurrent();execution?.assertCurrent()

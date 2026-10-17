@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 
-// 六处 kinds 清单逐字重复，加类型必须同时改：只改后端则加载能过、导入过不去；只改客户端则界面显示未知类型；
+// 六处 kinds 入口必须一致；客户端加载读取器复用行业清单，其余声明仍逐项核对独立期望。
+// 加类型必须同步：只改后端则加载能过、导入过不去；只改客户端则界面显示未知类型；
 // 漏掉两条回包白名单（DSH 适配与客户端读取器）则整条加载被判 `teloa/invalid-host-response`，界面上只看得到
 // 「加载未完成，请重试。」——2026-09-16 隔离宿主验收正是被这两处挡住的，故一并纳入本用例。
 // 这条用例是规格 §3.2 那个代价的唯一守卫，它扫的是源码文本，不依赖任何构建产物。
@@ -32,14 +33,14 @@ test('六处行业资源类型清单逐字一致，且含三类业务定制声�
  const loadsUnion=[...(/export type IndustryLoadResourceKind=(.+)/.exec(loads)[1]).matchAll(/'([a-z-]+)'/g)].map(match=>match[1])
  const clientList=quoted(/export const industryResourceKinds=\[(.+?)\] as const/s.exec(manifest)[1])
  const harnessList=quoted(/\nconst kinds=\[(.+?)\]\n/s.exec(harness)[1])
- const loadApiList=quoted(/\nconst kinds=\[(.+?)\] as const/s.exec(loadApi)[1])
+ assert.match(loadApi,/^import \{industryResourceKinds\} from '\.\/industry-manifest\.ts'$/m)
+ assert.match(loadApi,/^const kinds=industryResourceKinds$/m)
  const marketList=quoted(/const resourceKinds=\[(.+?)\] as const/s.exec(market)[1])
  assert.deepEqual(storeList,expected)
  assert.deepEqual(loadsList,expected)
  assert.deepEqual(loadsUnion,expected)
  assert.deepEqual(clientList,expected)
  assert.deepEqual(harnessList,expected)
- assert.deepEqual(loadApiList,expected.filter(kind=>kind!=='business-configuration'))
  assert.deepEqual(marketList,expected)
 })
 

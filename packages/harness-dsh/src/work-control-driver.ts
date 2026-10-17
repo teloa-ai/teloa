@@ -1,6 +1,7 @@
 import {WorkError,type WorkControl} from '@teloa/contract'
 import type {WorkControlService,WorkLineageService,TaskRunService,TaskRunRuntimeLinkService} from '@teloa/backend'
 import type {TaskRunDriver,TaskRunPorts} from './task-run-driver.ts'
+import {taskRunRuntimeId} from './task-run-background.ts'
 
 type Ports={controls:Pick<WorkControlService,'get'|'reconcile'>;runs:Pick<TaskRunService,'get'>;lineage:Pick<WorkLineageService,'descendants'>;driver:Pick<TaskRunDriver,'stop'>;ports:Pick<TaskRunPorts,'stop'|'stopChildren'|'stopState'|'backgroundState'|'subagentState'|'goalObservation'|'events'>;runtimeLinks:Pick<TaskRunRuntimeLinkService,'list'>}
 /** 取消回执与收尾证明分开：取消已递交不等于外部动作撤销或孩子停止。 */
@@ -37,6 +38,10 @@ export class WorkControlDriver{
   for(const link of links){
    if(link.kind==='browser'&&link.payload.status==='dirty')unknown.push('browser:'+link.payload.dispatchId)
    if(link.kind==='job'&&link.payload.record==='job'&&['running','stopping'].includes(link.payload.status))externalOutstanding=true
+   if(link.kind==='external'&&['reserved','running','stopping','unknown'].includes(link.payload.status)){
+    if(link.payload.status==='unknown'||link.payload.runtimeId!==taskRunRuntimeId)unknown.push('external:'+link.payload.provider+':'+link.payload.reservationId)
+    else externalOutstanding=true
+   }
   }
   if(this.ports.ports.goalObservation){const goal=await this.ports.ports.goalObservation(run,await this.ports.ports.events(run));for(const receipt of goal?.continuations??[])if(['reserved','unknown'].includes(receipt.state))unknown.push('goal:'+receipt.nativeRequestId);if(goal&&goal.goalPhase!=='complete'&&(goal.activation!=='disarmed'||goal.goalPhase==='active'))externalOutstanding=true}
   if(this.pending.has(JSON.stringify([owner,run.id])))externalOutstanding=true

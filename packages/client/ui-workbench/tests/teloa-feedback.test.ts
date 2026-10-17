@@ -32,7 +32,12 @@ test('产品内附带 appVersion；官网模型不给版本时载荷保持四个
   assert.equal('appVersion' in payloads[1]!,false)
 })
 test('产品内两个反馈入口（会话内与关于页）都带应用版本',()=>{
-  for(const file of ['TeloaFeedbackIntegration.ts','AboutSettings.tsx']){
+  const about=readFileSync(new URL('../src/client/AboutSettings.tsx',import.meta.url),'utf8')
+  assert.match(about,/import \{AboutContacts\} from ['"]\.\/AboutContacts\.js['"]/)
+  assert.match(about,/<AboutContacts(?:\s[^>]*)?\/>/,'关于页仍装配联系与反馈入口')
+  const contacts=readFileSync(new URL('../src/client/AboutContacts.tsx',import.meta.url),'utf8')
+  assert.match(contacts,/OfficialAboutContacts/,'品牌联系入口仍转交带版本的正式反馈组件')
+  for(const file of ['TeloaFeedbackIntegration.ts','OfficialAboutContacts.tsx']){
     const source=readFileSync(new URL(`../src/client/${file}`,import.meta.url),'utf8')
     const calls=[...source.matchAll(/new TeloaFeedbackModel\(([^)]*)\)/g)].map(match=>match[1])
     assert.ok(calls.length>0,file)

@@ -1,3 +1,4 @@
+import {employeeCopy} from '../src/client/employee-copy.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {existsSync,readFileSync} from 'node:fs'
@@ -45,7 +46,7 @@ const render=(component:any,props:any)=>renderToStaticMarkup(createElement(I18nP
 const rights=(allowed:boolean)=>({schema:'teloa.application-capabilities/v1',capabilities:{'general-agent':true,'parallel-agents':allowed,groups:allowed,people:allowed,automation:allowed},reason:allowed?null:'subscription-expired'})
 const identity={schema:'teloa.application-presentation/v1',product:'Pro',account:{displayName:'ML',email:'private@example.test'}}
 const configure=()=>applicationPresentation.configure({presentation:async()=>identity,openAccount:async()=>{},capabilities:async()=>rights(false)})
-const button=(html:string,label:string)=>{const match=[...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match=>match[2]!.replace(/<[^>]*>/g,'')===label);assert.ok(match,'missing button '+label);return match[1]!}
+const button=(html:string,label:string)=>{const match=[...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match=>match[1]!.includes(`aria-label="${label}"`)||match[2]!.replace(/<[^>]*>/g,'')===label);assert.ok(match,'missing button '+label);return match[1]!}
 const role={id:'employee',name:'调查员',kind:'employee',scopes:['general'],state:'active',version:2,duty:'核对证据',dataScope:'本人资料',executionScope:'经批准的任务',skills:[],knowledge:[],memories:[],history:[]}
 const rules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 const group={id:'group',name:'已有工作组',scope:'general',announcement:'原公告',rules,pinned:false,archived:false,version:1,createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z'}
@@ -79,7 +80,7 @@ test('员工只读时禁止指派、编辑和恢复，停止、撤销及历史�
   const active=render(RoleLifecycle,{role,api});assert.doesNotMatch(button(active,zh('roleLifecycle.pause')),/disabled/);assert.doesNotMatch(button(active,zh('roleLifecycle.retire')),/disabled/)
   const paused=render(RoleLifecycle,{role:{...role,state:'paused'},api});assert.match(button(paused,zh('roleLifecycle.resume')),/disabled/);assert.doesNotMatch(button(paused,zh('roleLifecycle.retire')),/disabled/)
   const html=render(RoleDetail,{work:{},resourceApi:{},memoryApi:undefined,persistence:undefined,conversations:()=>null,talk:async()=>true,input:{draft:undefined,editing:false},update:noop,role,state:{...emptyTaskPreview(),roles:[role]},collaboration:emptyCollaboration(),change:noop,back:noop,openTask:noop,openGroup:noop,resources:noop,nativeSettings:noop,capabilities:()=>null,plans:()=>null})
-  assert.match(html,/调查员/);assert.match(button(html,zh('team.profile.action.assign')),/disabled/);assert.match(button(html,zh('team.action.edit')),/disabled/);assert.doesNotMatch(button(html,zh('team.profile.action.chat')),/disabled/)
+  assert.match(html,/调查员/);assert.match(button(html,zh('team.profile.action.assign')),/disabled/);assert.match(button(html,employeeCopy('zh-CN','profileEdit')),/disabled/);assert.doesNotMatch(button(html,employeeCopy('zh-CN','chat')),/disabled/)
   const draft=render(TwinDraftEditor,{role:{...role,kind:'twin'},input:{version:2,body:'本人未保存原稿'},update:noop,save:()=>true});assert.match(draft,/readonly=""/);assert.match(draft,/本人未保存原稿/);assert.match(button(draft,zh('twinDraft.save')),/disabled/)
  }finally{close()}
 })

@@ -40,14 +40,14 @@ test('业务角色目录只附当前真实委托；未知/跨身份/旧版本不
 test('负责人选择仅允许已获委托分身，保存仍只写角色归属，不创建Run或本人许可',async()=>{
  const page=mount('BusinessResponsibility.tsx'),writes:unknown[]=[],current={scope:'sales',version:0,roleId:null,selectedRoleVersion:null,currentRoleVersion:null,availability:'none'}
  const props={scope:'sales',roles:{list:()=>rows()},api:{pending:()=>null,reconcile:async()=>current,set:async(value:unknown)=>writes.push(value),read:async()=>({...current,version:1,roleId:twinId})}}
- page.render(props);page.effects[0]!();await setImmediate()
+ page.render(props);for(const effect of page.effects)effect();await setImmediate()
  let view=page.render(props);assert.ok(options(view).includes(twinId))
  nodes(view).find(node=>node.type==='select').props.onChange({target:{value:twinId}})
  view=page.render(props);nodes(view).find(node=>node.type==='button'&&node.children.includes('business.responsibility.save')).props.onClick();await setImmediate()
  assert.equal(writes.length,1);assert.deepEqual((writes[0] as any).role,{id:twinId,expectedVersion:2});assert.deepEqual(Object.keys(writes[0] as object).sort(),['expectedVersion','requestId','role','scope'])
  for(const value of [{...access,consents:[]},{...access,delegations:[{...delegation,state:'paused'}]},new Error('读取未知')]){
   const denied=mount('BusinessResponsibility.tsx'),input={...props,roles:{list:()=>rows(value)}}
-  denied.render(input);denied.effects[0]!();await setImmediate();const deniedView=denied.render(input)
+  denied.render(input);for(const effect of denied.effects)effect();await setImmediate();const deniedView=denied.render(input)
   assert.ok(options(deniedView).includes(employeeId));assert.ok(!options(deniedView).includes(twinId))
  }
 })

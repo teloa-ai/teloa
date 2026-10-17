@@ -115,6 +115,16 @@ function parseJsonPath(path:string):JsonPathSegment[]|undefined{
  return segments
 }
 export function isValidJsonPath(path:string):boolean{return parseJsonPath(path)!==undefined}
+/** 固定对象成果的宿主命名空间；批量模型条目不能自行提供这些执行身份。 */
+export function usesBusinessTaskResultContext(mapping:BusinessSourceMappingDefinition):boolean{
+ if(mapping.source.kind!=='role-result')return false
+ const paths=[...mapping.mapping.map(field=>field.path),mapping.deletedAtPath,mapping.incrementalCursor?.path]
+ return paths.some(path=>{
+  if(path===undefined)return false
+  const root=parseJsonPath(path)?.[0]
+  return root?.kind==='key'&&['object','task','run','employee'].includes(root.name)
+ })
+}
 /** JSONPath 子集求值：路径不合法 throw；路径不存在返回 undefined；不沿原型链取值。末段 `[*]` 返回数组本身，非数组即 undefined。 */
 export function evaluateJsonPath(root:unknown,path:string):unknown{
  const segments=parseJsonPath(path)

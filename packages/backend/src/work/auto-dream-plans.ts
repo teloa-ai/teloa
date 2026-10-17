@@ -37,24 +37,21 @@ export type AutoDreamPorts={plans:Pick<PlanService,'createInTransaction'|'change
 const systemPlanSql="select * from teloa_plans where owner_id=$1 and source->>'kind'='system-digest' and source->>'roleId'=$2 order by created_at,id for update"
 
 /**
- * Auto Dream 的开关与时刻的唯一载体：全部 system-digest 计划。时刻取其中最早创建的一条。
+ * Auto Dream 持续默认开启，不再从任何一条计划的 paused 推断全局关闭。
+ * 单个员工的小结暂停只影响该员工；分身习惯观察与新员工的小结照常进行。
  *
- * 「开」只看**负责岗位仍在岗**的那些计划：随岗位暂停/退役而 paused 的计划记的是岗位状态，不是本人的开关意图，
- * 把它们算进来会让「唯一的员工退役后再招新人」静默落成关闭。在岗员工一个都没有时视为开启（默认开）。
- *
+ * 时刻与时区取全部 system-digest 计划中最早创建的一条（无论它当前是否暂停），一条都没有时用默认 23:30 Asia/Singapore。
  * 任一行损坏即抛 `teloa/storage-corrupt`（`readStoredPlan` 的既有判据）并回滚调用方整笔事务，
- * 这是有意的 fail-closed：读不准设置就不该继续替本人决定要不要写小结。
+ * 这是有意的 fail-closed：读不准时刻就不该继续替本人切日或排程。
  */
-export async function readAutoDreamSetting(db:Pick<PoolClient,'query'>,ownerId:string):Promise<{enabled:boolean;trigger:ScheduleTrigger}|undefined>{
- const rows=(await db.query(`select p.*,r.state role_state from teloa_plans p join teloa_roles r on r.id=p.role_id and r.owner_id=p.owner_id
+export async function readAutoDreamSetting(db:Pick<PoolClient,'query'>,ownerId:string):Promise<{enabled:true;trigger:ScheduleTrigger}>{
+ const rows=(await db.query(`select p.* from teloa_plans p join teloa_roles r on r.id=p.role_id and r.owner_id=p.owner_id
   where p.owner_id=$1 and p.source->>'kind'='system-digest' order by p.created_at,p.id`,[ownerId])).rows
- if(!rows.length)return undefined
- const plans=rows.map(row=>({plan:readStoredPlan(row as Record<string,unknown>),roleState:(row as Record<string,unknown>).role_state}))
- const live=plans.filter(item=>item.roleState==='active')
- return {enabled:!live.length||live.some(item=>item.plan.state==='active'),trigger:plans[0]!.plan.trigger}
+ const plans=rows.map(row=>readStoredPlan(row as Record<string,unknown>))
+ return {enabled:true,trigger:plans[0]?.trigger??AUTO_DREAM_DEFAULT_TRIGGER}
 }
 
-/** 员工转 active（新建或复岗）时确保有一条 active 的系统计划；已存在即按需 enable，不重复建。 */
+/** 新建沿用本人最早小结的时刻并直接启用；复岗只恢复随岗位暂停的小结，不覆盖本人手动暂停。 */
 export async function ensureAutoDreamPlan(db:PoolClient,ports:AutoDreamPorts,ownerId:string,role:DigitalRole):Promise<PersistentPlan|undefined>{
  if(role.kind!=='employee'||role.state!=='active')return undefined
  const found=(await db.query(systemPlanSql,[ownerId,role.id])).rows[0]
@@ -62,6 +59,11 @@ export async function ensureAutoDreamPlan(db:PoolClient,ports:AutoDreamPorts,own
   const plan=readStoredPlan(found as Record<string,unknown>)
   if(plan.state==='active')return plan
   if(plan.state!=='paused')return undefined
+  // 只认最近版本对应的服务端岗位暂停回执，不按可编辑的说明文字推断本人意图。
+  // 手动暂停或暂停后改过配置时版本不匹配，原计划保持暂停。
+  const suspended=(await db.query('select 1 from teloa_plan_changes where owner_id=$1 and plan_id=$2 and request_id=$3 and result->>\'version\'=$4 and result->>\'state\'=\'paused\'',
+   [ownerId,plan.id,cycleRequestId(ownerId,role.id,'pause',plan.version-1),String(plan.version)])).rows.length>0
+  if(!suspended)return plan
   // 岗位暂停期间本人可以把计划所属业务从范围里删掉。那时 enable 会被 `validateRole` 判 `teloa/forbidden`，
   // 而系统计划又不能归档——硬启用等于让这位员工永远复不了岗。原样留在 paused：复岗照常成功，
   // 小结停着，由界面提示本人补回范围（T10 的面）。
@@ -73,14 +75,13 @@ export async function ensureAutoDreamPlan(db:PoolClient,ports:AutoDreamPorts,own
  let scope:string|undefined
  for(const candidate of [...role.scopes].sort())if(await BusinessScopeService.registered(db,ownerId,candidate)){scope=candidate;break}
  if(!scope)return undefined
- // 新员工跟随本人当前的 Auto Dream 设置：时刻照抄，已关就只建不启用。
+ // 新员工的小结默认启用，时刻沿用本人最早一条小结；其它员工的暂停不影响新员工。
  const setting=await readAutoDreamSetting(db,ownerId)
  const created=await ports.plans.createInTransaction(db,ownerId,{
   requestId:autoDreamRequestId(ownerId,role.id,'create'),
-  fields:{title:AUTO_DREAM_PLAN_TITLE,goal:AUTO_DREAM_PLAN_GOAL,scope,dataScope:AUTO_DREAM_PLAN_DATA_SCOPE,delivery:AUTO_DREAM_PLAN_DELIVERY,roleId:role.id,expectedRoleVersion:role.version,trigger:setting?.trigger??AUTO_DREAM_DEFAULT_TRIGGER,notificationPolicy:'silent',completionPolicy:{kind:'verified',verifier:'system-digest',verifierVersion:1,authorizationVersion:1}},
+  fields:{title:AUTO_DREAM_PLAN_TITLE,goal:AUTO_DREAM_PLAN_GOAL,scope,dataScope:AUTO_DREAM_PLAN_DATA_SCOPE,delivery:AUTO_DREAM_PLAN_DELIVERY,roleId:role.id,expectedRoleVersion:role.version,trigger:setting.trigger,notificationPolicy:'silent',completionPolicy:{kind:'verified',verifier:'system-digest',verifierVersion:1,authorizationVersion:1}},
   source:{kind:'system-digest',roleId:role.id},
  })
- if(setting&&!setting.enabled)return created
  return ports.plans.changeInTransaction(db,ownerId,{planId:created.id,requestId:autoDreamRequestId(ownerId,role.id,'enable'),expectedVersion:created.version,action:'enable'})
 }
 

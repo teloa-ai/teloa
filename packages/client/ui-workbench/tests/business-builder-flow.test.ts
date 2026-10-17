@@ -110,7 +110,7 @@ test('完整原生状态guard保留附件/引用/队列，unknown只走既有mon
  assert.equal(await module.checkBusinessBuilderSwitch(f.switching,false),'draft')
  assert.equal(await module.checkBusinessBuilderSwitch(f.switching,true),'ready')
 })
-test('重启凭证失效只在原apply明确拒绝且二次回执为空时用同请求重新预览',async()=>{
+test('预览失效且无成功回执时只重新预览，必须由本人再次采用',async()=>{
  const f=fixture(),flow=f.make();await flow.start({});await flow.preview()
  f.setFail('business-configuration/apply');await assert.rejects(flow.save())
  const original=JSON.parse(f.journal()!).save.input,attempts:unknown[]=[],events:string[]=[]
@@ -123,11 +123,11 @@ test('重启凭证失效只在原apply明确拒绝且二次回执为空时用同
   const value=await f.baseCall(e,r)
   return e==='business-configuration/preview'?{...value as object,receipt:'b'.repeat(64)}:value
  })
- const result=await f.make().recoverSave()
- assert.equal(result.requestId,original.requestId)
- assert.deepEqual(attempts,[original,{...original,previewReceipt:'b'.repeat(64)}])
- assert.deepEqual(events,['business-configuration/receipt','business-configuration/apply','business-configuration/receipt','business-configuration/draft','business-configuration/preview','business-configuration/apply'])
- assert.equal(f.scopes(),3);assert.equal(f.journal(),null)
+ const resumed=f.make()
+ await assert.rejects(resumed.recoverSave(),{code:'teloa/conflict'})
+ assert.deepEqual(attempts,[original])
+ assert.deepEqual(events,['business-configuration/receipt','business-configuration/apply','business-configuration/receipt','business-configuration/draft','business-configuration/preview'])
+ assert.equal(resumed.getSnapshot().phase,'ready');assert.equal(resumed.getSnapshot().preview?.receipt,'b'.repeat(64));assert.equal(f.journal(),null)
 })
 test('网络/权限/版本/一般冲突不能更新预览凭证，固定journal保留',async()=>{
  for(const error of [Error('network'),Object.assign(Error('permission'),{code:'teloa/forbidden'}),Object.assign(Error('version'),{code:'teloa/version-conflict'}),Object.assign(Error('conflict'),{code:'teloa/conflict'}),Object.assign(Error('wrong code'),{code:'teloa/forbidden',details:{reason:'preview-receipt-invalid'}})]){

@@ -6,21 +6,17 @@ import {mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {homedir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
-import {LlmRuntime,LlmAdapter,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
-import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
+import {LlmAdapter,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {SessionId} from '@deepseek-ai/dsh-session'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {brandString} from '@deepseek-ai/dsh-brand'
-import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {ToolRuntime} from '@deepseek-ai/dsh-tools'
-import {AgentRegistry} from '@deepseek-ai/dsh-agent'
-import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {PostgreSqlContainer} from '@testcontainers/postgresql'
 import {BusinessDataService,openResourceDatabase,type TaskRun} from '@teloa/backend'
 import {encodeResourceReference,type BusinessObjectReference} from '@teloa/contract'
 import {apply} from '../src/index.ts'
 import {compositionEntries,type RpcHandler} from './fixtures/production-host.ts'
-import {installNativeHostServices} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,publishNativeFixtureInput} from './fixtures/native-host-services.ts'
+import {nativeToolInvocation} from './fixtures/native-tool-invocation.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {ConversationWorkStatus} from '../src/conversation-work-dispatch.ts'
 import {publishConversationWorkStatus} from '../src/conversation-work-publisher.ts'
@@ -32,7 +28,7 @@ class WorkModel extends LlmAdapter{
  readonly calls=new Map<string,number>();role={id:'',version:0};blockRuns=false;release:undefined|(()=>void)
  readonly instructions=new Map<string,{name:string;arguments:unknown}>()
  readonly repeatDispatch=new Set<string>()
- override async resolveModel(provider:string,id:string){return {provider,id,name:id}}
+ override async resolveModel(provider:string,id:string){return {provider,id,name:id,defaultMaxTokens:1024}}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
   const sessionId=String(options.sessionId),count=this.calls.get(sessionId)??0;this.calls.set(sessionId,count+1)
   if(!sessionId.startsWith('task-run-')&&(count===0||count===1&&this.repeatDispatch.has(sessionId))){
@@ -51,18 +47,18 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
  t.after(async()=>{await ctx.fiber.dispose();await container.stop();if(oldRoot===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=oldRoot;await rm(root,{recursive:true,force:true})})
  const config=join(root,'.runtime/teloa/database.json');await mkdir(join(root,'.runtime/teloa/skills'),{recursive:true});await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
  await mkdir(join(root,'.runtime/dsh/profiles/teloa'),{recursive:true});await writeFile(join(root,'.runtime/dsh/profiles/teloa/package.json'),JSON.stringify({dsh:{profile:{bundles:[],patchReload:'startup'}}}))
- ctx.provide('loader',compositionEntries());await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]});await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
- const model=new WorkModel();ctx.llm.registerAdapter(['scripted-work'],model)
+ ctx.provide('loader',compositionEntries());await installNativeSessions(ctx);await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
+ const model=new WorkModel(),invocation=nativeToolInvocation(ctx,{providers:['scripted-work'],adapter:model})
  const workspaces=new Map<string,{id:string;path:string}>()
  ctx.provide('workspaceRegistry',{create:async(path:string)=>{const prior=[...workspaces.values()].find(x=>x.path===path);if(prior)return prior;const value={id:randomUUID(),path};workspaces.set(value.id,value);return value},get:(id:string)=>workspaces.get(id),list:()=>[...workspaces.values()]})
  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
- ctx.provide('skills',{list:async()=>[],registerProvider:(factory:(control:{invalidate:()=>void;signal:AbortSignal})=>unknown)=>{factory({invalidate:()=>{},signal:new AbortController().signal});return ()=>{}}});ctx.provide('fs',{});ctx.provide('fileReferences',{})
+ ctx.provide('fileReferences',{})
  let loseRunResponse=true
  ctx.provide('sessionController',{
   create:async(input:{sessionId?:string;agentPreset?:string;workspaceId?:string}={})=>{const sessionId=SessionId(input.sessionId??randomUUID()),cwd=workspaces.get(input.workspaceId??'')?.path??root;await ctx.agents.create({sessionId,meta:{cwd,...(input.agentPreset===undefined?{}:{agentPreset:input.agentPreset})},agentOptions:{provider:'scripted-work',model:'fixed'}});return {sessionId,...(input.agentPreset===undefined?{}:{agentPreset:input.agentPreset})}},
   resolveAgent:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));return agent?{agent}:{error:{code:'not-found',message:'missing'}}},
   inspect:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));if(!agent)throw Error('missing');return {sessionId:id,meta:agent.session.header,status:agent.status}},modelCatalog:async()=>({default:{provider:'scripted-work',model:'fixed'}}),
-  prompt:async(input:{sessionId:string;requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{ctx.agents.get(SessionId(input.sessionId))!.followup(createUserMessage({content:input.content,source:{kind:'user',rpcId:brandString<SessionRequestId>(input.requestId)}}));if(input.sessionId.startsWith('task-run-')&&loseRunResponse){loseRunResponse=false;throw Error('已受理后回包丢失')}return {accepted:true}},
+  prompt:async(input:{sessionId:string;requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{await publishNativeFixtureInput(ctx,ctx.agents.get(SessionId(input.sessionId))!,createUserMessage({content:input.content,source:{kind:'user',rpcId:brandString<SessionRequestId>(input.requestId)}}));if(input.sessionId.startsWith('task-run-')&&loseRunResponse){loseRunResponse=false;throw Error('已受理后回包丢失')}return {accepted:true}},
   cancel:({sessionId}:{sessionId:string})=>{ctx.agents.get(SessionId(sessionId))!.cancel({kind:'user'},{keepInbox:true});return {accepted:true}},
  })
  let rpc:RpcHandler|undefined;ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(_path:string,handler:RpcHandler)=>{rpc=handler;return ()=>{}}}})
@@ -106,9 +102,9 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
  const current=await call<ConversationWorkStatus>('work-requests/status',{sessionId:conversation.sessionId,requestId:work.requestId})
  await publishConversationWorkStatus(ctx,current,async()=>{});await publishConversationWorkStatus(ctx,{...current,observedAt:new Date().toISOString()},async()=>{})
  assert.equal(origin.session.snapshotEvents().filter(event=>event.type==='user/message'&&event.data.source.kind==='plugin:teloa.work'&&event.data.source.requestId===work.requestId).length,before,'同结果与刷新时间不能产生重复结果通知')
- const facts=await ctx.tools.execute({agent:origin,name:'teloa_work_facts',arguments:{scope:'SOC',from:'2026-01-01T00:00:00.000Z',to:'2027-01-01T00:00:00.000Z',timezone:'Asia/Singapore'},callId:ToolCallId('facts'),signal:AbortSignal.timeout(15000)})
+ const facts=await invocation.invoke(origin,{name:'teloa_work_facts',arguments:{scope:'SOC',from:'2026-01-01T00:00:00.000Z',to:'2027-01-01T00:00:00.000Z',timezone:'Asia/Singapore'},callId:ToolCallId('facts'),signal:AbortSignal.timeout(15000)})
  assert.equal(facts.isError,false);assert.equal(model.calls.get(run.sessionId),1,'查看事实不得重新唤醒同事')
- const missing=await ctx.tools.execute({agent:origin,name:'teloa_business_data_query',arguments:{scope:'SOC',observedAfter:'2026-08-26T00:00:00.000Z',limit:100},callId:ToolCallId('missing-source'),signal:AbortSignal.timeout(15000)})
+ const missing=await invocation.invoke(origin,{name:'teloa_business_data_query',arguments:{scope:'SOC',observedAfter:'2026-08-26T00:00:00.000Z',limit:100},callId:ToolCallId('missing-source'),signal:AbortSignal.timeout(15000)})
  assert.equal(missing.isError,true);assert.match(JSON.stringify(missing),/来源|未配置|不可/)
  const locked=await rpc!('work-context/set',{requestId:randomUUID(),sessionId:conversation.sessionId,scopeId:'general',roleId:null,expectedVersion:1},AbortSignal.timeout(15000));assert.equal(locked.ok,false)
  await call('work-requests/stop',{sessionId:conversation.sessionId,requestId:work.requestId})

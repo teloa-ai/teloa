@@ -24,6 +24,12 @@ const executionGate=await readFile(new URL('../src/client/SecurityExecutionGate.
 
 const item=(id:string,patch:Partial<AttentionItem>={}):AttentionItem=>({id,kind:'approval',source:'security-action',persistence:'saved',target:{kind:'task',id:'t1'},title:'核对',reason:{kind:'text',text:'依据'},scope:'SOC',occurredAt:'2026-09-15T02:00:00.000Z',...patch})
 
+test('新工作来源的下一步只回原对象，不能承诺在待办中批准、跳过或采用',()=>{
+ for(const key of ['attention.work.reason.businessChangeReview','attention.work.reason.businessChangeStale'] as const)assert.equal(attentionNextStepKey({kind:'approval',reason:{kind:'message',key}}),'attention.work.next.businessChange')
+ assert.equal(attentionNextStepKey({kind:'error',reason:{kind:'message',key:'attention.work.reason.businessSyncFailed'}}),'attention.work.next.businessSync')
+ assert.equal(attentionNextStepKey({kind:'review',reason:{kind:'message',key:'attention.work.reason.pageCreateDraft'}}),'attention.work.next.pageDraft')
+})
+
 const action=(patch:Partial<SecurityAction>={}):SecurityAction=>({id:'a1',ownerId:'o',taskId:'t1',version:2,state:'pending_approval',title:'隔离主机',goal:'隔离 prod-03',tool:'security.endpoint.isolate',riskTier:'high',reversible:'irreversible',playbookVersion:'1.0.0',targetSet:['prod-03'],params:{reason:'C2'},supersedesActionId:null,frozen:null,proposerId:'o',createdAt:'2026-09-15T01:00:00.000Z',updatedAt:'2026-09-15T02:00:00.000Z',...patch} as SecurityAction)
 const panel=(rows:SecurityAction[],patch:Partial<SecurityActionPanel>={}):SecurityActionPanel=>({taskId:'t1',actions:rows,approvals:[],executions:[],proposal:{tools:[{tool:'security.endpoint.isolate',allowedTargets:['prod-03','prod-04']}]},...patch} as SecurityActionPanel)
 const context={panel:panel([]),taskVersion:1,source:{taskId:'t1',ownerId:'o',sourceId:'security-alert-http',reference:{}}} as unknown as SecurityActionContext

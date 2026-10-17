@@ -32,11 +32,12 @@ export function isTaskHandoffChange(value:unknown):value is TaskHandoffChange{
  if(!record(value)||!exact(value,['requestId','taskId','baseVersion','appliedVersion','from','to','note','createdAt'])||!resourceId(value.requestId)||!resourceId(value.taskId)||!resourceVersion(value.baseVersion)||value.appliedVersion!==value.baseVersion+1||!isTaskHandoffParty(value.from)||!isTaskHandoffParty(value.to)||typeof value.note!=='string'||!value.note||value.note!==value.note.trim()||value.note.length>4000||!stamp(value.createdAt))return false
  if(value.from.kind!==value.to.kind)return true
  if(value.from.kind==='self'||value.to.kind==='self')return false
- return value.from.roleId!==value.to.roleId
+ return value.from.roleId!==value.to.roleId||value.to.roleVersion>value.from.roleVersion
 }
 
 function isWorkTask(value:unknown):value is WorkTask{
- if(!record(value)||!exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills']))return false
+ if(!record(value)||!exact(value,['id','ownerId','title','goal','scope','version','state','assigneeRoleId','assigneeRoleVersion','createdAt','updatedAt'],['groupId','skills','contentVersion']))return false
+ if(value.contentVersion!==undefined&&!resourceVersion(value.contentVersion))return false
  try{taskDefinition({title:value.title,goal:value.goal,scope:value.scope,groupId:value.groupId,skills:value.skills})}catch{return false}
  return resourceId(value.id)&&typeof value.ownerId==='string'&&!!value.ownerId&&value.ownerId===value.ownerId.trim()&&value.ownerId.length<=128&&resourceVersion(value.version)&&workTaskStates.some(state=>state===value.state)&&(value.assigneeRoleId===null?value.assigneeRoleVersion===null:resourceId(value.assigneeRoleId)&&resourceVersion(value.assigneeRoleVersion))&&stamp(value.createdAt)&&stamp(value.updatedAt)
 }

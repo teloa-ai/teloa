@@ -1,0 +1,32 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-session",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "api": [
+    "requireAppendAdmission()",
+    "installAppendAdmission(policy)"
+  ],
+  "apiVersion": "teloa.session-append-admission/v1",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "2f5dd07cb5c744a29abbb8003a8a4cefd9e582c6e2538074ca299a0ddd02a3bf",
+      "afterSha256": "63767e4854b4d2e26fb7d91f2aaa0cc2109e58b8de619154c4e8d44d28d8bc3e"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "f3e7b142a37713ec13a40a7269ee871cff83ad8184d84ce58c8b6adcc8107b08",
+      "afterSha256": "3aa13d09ab7047107720a6ff0c07042448453575da3f72289349dbc2d307e2c8"
+    }
+  ],
+  "patchSha256": "35a4c647486e6eb9e16421b59f39bc79732b76effae4832b6a3205db1a8dd7c6",
+  "scope": [
+    "Only attached live appends are checked. Detached seed/restore replay is unchanged.",
+    "The immutable candidate is checked after internal dispatch and callback filter/bind, immediately before log.push.",
+    "The admission is one store-owned synchronous closure. Post-commit observers retain official exception containment.",
+    "Unmodified alpha.1 pre-append listeners cannot detect a later non-throwing dispatch listener invalidating a lease; the existing native-input-access test preserves that control.",
+    "This extension supplies a final check, not asynchronous producer admission or entitlement policy."
+  ]
+}

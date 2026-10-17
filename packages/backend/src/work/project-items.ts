@@ -1,6 +1,9 @@
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,readProjectItem,readProjectReferenceItem,type ProjectItem,type ProjectLink,type ProjectLinkKind,type ProjectReference,type ProjectReferenceItem} from '@teloa/contract'
 
+import {BusinessScopeService} from './business-scopes.ts'
+import {readStoredGroupWorkLinks} from './group-work-links.ts'
+
 type Db=Pool|PoolClient
 // 与群编辑（群→岗位）、计划变更（岗位→计划）和岗位退役（岗位→任务）保持一致。
 const projectLockOrder:readonly ProjectLinkKind[]=['group','role','plan','task','resource','artifact']
@@ -74,4 +77,22 @@ export async function projectDerivedItems(db:PoolClient,owner:string,scope:strin
   for(const artifact of artifacts)if(!merged.has('artifact:'+artifact.id))merged.set('artifact:'+artifact.id,{...artifact,origin:'task-output'})
  }
  return [...merged.values()]
+}
+
+/** 反向展示群里已保存的项目关联；只有一份原关系，不写项目定义或派生任务与授权。 */
+export async function projectLinkedGroups(db:PoolClient,owner:string,projectId:string,scope:string):Promise<ProjectReferenceItem[]>{
+ const rows=(await db.query(`select g.id,g.definition->>'scope' scope,g.definition->>'name' title,g.version,g.archived,l.version link_version,l.links
+  from teloa_group_work_links l join teloa_groups g on g.id=l.group_id and g.owner_id=l.owner_id
+  where l.owner_id=$1 and g.owner_id=$1 and l.links @> $2::jsonb order by g.id limit 10001`,[owner,JSON.stringify([{kind:'project',scope,id:projectId}])])).rows
+ if(rows.length>10000)throw new WorkError('teloa/conflict','项目关联群超过读取上限，请减少原群关联后重试。')
+ const result:ProjectReferenceItem[]=[]
+ for(const row of rows){
+  const stored=readStoredGroupWorkLinks({version:row.link_version,links:row.links})
+  if(!stored.links.some(link=>link.kind==='project'&&link.id===projectId&&link.scope===scope))throw new WorkError('teloa/storage-corrupt','群关联工作记录与项目不一致。')
+  if(typeof row.scope!=='string'||typeof row.archived!=='boolean')throw new WorkError('teloa/storage-corrupt','关联群记录损坏。')
+  if(!await BusinessScopeService.registered(db,owner,row.scope))continue
+  const reference={kind:'group' as const,id:row.id,scope:row.scope}
+  result.push(row.archived?unavailableProjectReference(reference):referenceItem(reference,{id:row.id,title:row.title,state:'active',version:row.version}))
+ }
+ return result
 }

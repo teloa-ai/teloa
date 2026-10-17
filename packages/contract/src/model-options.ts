@@ -3,7 +3,7 @@ import {readModelReference,type ModelReference} from './model-policy.ts'
 
 export const modelOptionEndpoints=['model-options/list'] as const
 export type ModelOption={id:string;name:string;reasoning?:{efforts:{id:string;name:string}[];defaultEffort?:string}}
-export type ModelOptionsDirectory={default:ModelReference|null;groups:{id:string;name:string;remote:boolean;models:ModelOption[]}[];failures:{id:string;name:string}[]}
+export type ModelOptionsDirectory={default:ModelReference|null;groups:{id:string;name:string;remote:boolean;credentialMissing?:true;models:ModelOption[]}[];failures:{id:string;name:string}[]}
 const invalid=()=>new WorkError('teloa/source-invalid','模型目录格式不正确。')
 const record=(value:unknown,keys:string[]):Record<string,unknown>=>{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!keys.includes(key)))throw invalid()
@@ -18,9 +18,9 @@ const rows=<T>(value:unknown,read:(row:unknown)=>T&{id:string},max=10000):T[]=>{
 export function readModelOptionsDirectory(value:unknown):ModelOptionsDirectory{
  const root=record(value,['default','groups','failures'])
  return {default:root.default===null?null:readModelReference(root.default),groups:rows(root.groups,value=>{
-  const group=record(value,['id','name','remote','models']),id=readModelReference({provider:group.id,model:'model'}).provider
-  if(typeof group.remote!=='boolean')throw invalid()
-  return {id,name:label(group.name),remote:group.remote,models:rows(group.models,value=>{
+  const group=record(value,['id','name','remote','models','credentialMissing']),id=readModelReference({provider:group.id,model:'model'}).provider
+  if(typeof group.remote!=='boolean'||group.credentialMissing!==undefined&&group.credentialMissing!==true)throw invalid()
+  return {id,name:label(group.name),remote:group.remote,...(group.credentialMissing===true?{credentialMissing:true as const}:{}),models:rows(group.models,value=>{
    const model=record(value,['id','name','reasoning']),modelId=readModelReference({provider:id,model:model.id}).model
    if(model.reasoning===undefined)return {id:modelId,name:label(model.name)}
    const reasoning=record(model.reasoning,['efforts','defaultEffort']),efforts=rows(reasoning.efforts,value=>{

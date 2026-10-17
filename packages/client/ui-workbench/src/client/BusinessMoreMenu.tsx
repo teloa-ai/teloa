@@ -39,7 +39,7 @@ export function BusinessMoreMenu({scope,choose}:{scope:string;choose:(action:Bus
   document.addEventListener('scroll',position,true)
   return ()=>{window.removeEventListener('resize',position);document.removeEventListener('scroll',position,true)}
  },[open])
- const pick=(action:BusinessMoreAction)=>{setOpen(false);choose(action,scope)}
+ const pick=(action:BusinessMoreAction)=>{ref.current?.querySelector('summary')?.focus();setOpen(false);choose(action,scope)}
  return <details ref={ref} className={css.scopeMore} data-placement={above?'above':'below'} open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary>{t('business.section.more')}<ChevronDown size={13}/></summary>
   <div role="group" aria-label={t('business.section.more.aria')} className={css.scopeMorePanel}>

@@ -39,10 +39,10 @@ test('市场区：每个随附扩展按 id 显示自己的名称、简介与确�
  const embedding={id:'local-embedding',packageName:'@teloa/local-embedding',version:'0.2.0-alpha.6',state:'available',configuredChannels:0}
  const both=render(BundledExtensionsView,{rows:[view('available'),embedding],busy:false,error:undefined,confirming:undefined,onAsk:noop,onConfirm:noop,onCancel:noop,onRetry:noop})
  assert.doesNotMatch(both,/IM 通道/)
- assert.match(both,/本地中文检索/);assert.match(both,/在本机建立资料索引/);assert.match(both,/检索摘录用于当前会话，可能发给远程聊天模型/);assert.match(both,/检索模型需在 市场 · 模型 中另行确认准备/)
+ assert.match(both,/本地中文检索/);assert.match(both,/在本机建立资料索引/);assert.match(both,/检索摘录用于当前会话，可能发给远程聊天模型/);assert.match(both,/检索模型在此处另行确认准备/)
  assert.doesNotMatch(both,/资料不出本机/)
  const enabling=render(BundledExtensionsView,{rows:[{...embedding}],busy:false,error:undefined,confirming:{id:'local-embedding',enabled:true},onAsk:noop,onConfirm:noop,onCancel:noop,onRetry:noop})
- assert.match(enabling,/不会下载/);assert.doesNotMatch(enabling,/IM 通道|渠道/)
+ assert.match(enabling,/不会下载/);assert.match(enabling,/这里另行确认/);assert.doesNotMatch(enabling,/IM 通道|渠道|市场/)
  const disabling=render(BundledExtensionsView,{rows:[{...embedding,state:'active'}],busy:false,error:undefined,confirming:{id:'local-embedding',enabled:false},onAsk:noop,onConfirm:noop,onCancel:noop,onRetry:noop})
  assert.match(disabling,/保留在本机/);assert.doesNotMatch(disabling,/渠道/)
  // 物理内存 ≤ 8 GB 且默认 fp32：行内明确提示内存风险；宿主判定无风险时不提示

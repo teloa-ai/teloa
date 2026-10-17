@@ -1,6 +1,8 @@
+import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
-import {staffAvatarComponent} from './staff-avatar-component.ts'
+import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -72,14 +74,14 @@ function makeApi(setup:ApiSetup={}){
  return {api,calls}
 }
 
-/** 只用得到 upload；uploadHangs 真让待发附件卡死在 uploading，供「上传中不得发送」用。 */
-function makeAttachments(setup:{uploadHangs?:boolean}={}){
+/** 只用得到 upload 与 list；uploadHangs 真让待发附件卡死在 uploading，供「上传中不得发送」用；files 是群内已共享文件目录。 */
+function makeAttachments(setup:{uploadHangs?:boolean;files?:GroupAttachment[]}={}){
  return {
   upload:async(_groupId:string,_expectedVersion:number,file:File,_requestId:string)=>{
    if(setup.uploadHangs)return new Promise<GroupAttachment>(()=>{})
    return {attachmentId:'att-1',ownerId:'self',version:1,kind:'file',mime:file.type,bytes:file.size,sha256:'a'.repeat(64),name:file.name,width:null,height:null,uploadedInGroupId:groupId,state:'active',createdAt:stamp,withdrawnAt:null} satisfies GroupAttachment
   },
-  list:async()=>[],
+  list:async()=>setup.files??[],
   withdraw:async()=>{throw Error('未使用')},
   openReference:async()=>{throw Error('未使用')},
   describeArtifact:async()=>{throw Error('未使用')},
@@ -116,9 +118,14 @@ function mount(initial:Props){
  const t=(key:string,params?:Record<string,string|number>)=>params?key+':'+JSON.stringify(params):key
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string):unknown=>{
+  const groupResult=groupResultFixtureModule(id);if(groupResult!==undefined)return groupResult
+  if(id==='./GroupChannelBindings.js')return {GroupChannelBindings:()=>null}
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
-  if(id==='./StaffAvatar.js')return staffAvatarComponent
+  if(id==='./ContextDrawer.js')return {ContextDrawer:({open=true,children,title}:any)=>open?React.createElement('dialog',{'aria-label':title},children):null}
+  if(id==='./task-preview.js')return {taskStates:{ready:'status.ready',running:'status.running',paused:'status.paused',waiting:'status.waiting',blocked:'status.blocked',completed:'status.completed',cancelled:'status.cancelled'}}
+  if(id==='./StaffAvatar.js'||id==='./EmployeeAvatar.js'||id==='./TwinAvatar.js')return staffAvatarComponent
+  if(id==='./personal-profile.js')return personalProfileForGroup
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id==='@teloa/contract')return contract
@@ -139,6 +146,11 @@ function mount(initial:Props){
   if(id.endsWith('group-routing-view.js'))return {groupRoutingPending:()=>[]}
   // DSH 平台模块，Node 下装不起来，给透传桩（见 saved-message-markdown-stubs.ts）。
   if(id==='@deepseek-ai/dsh-client-ui-primitives')return markdownPrimitivesStub
+  // 本夹具未接工作关联端口；新组件边界另有源渲染与浏览器用例，不应进入此旧消息测试。
+  if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
+  // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
+  if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }
  const code=ts.transpileModule(readFileSync(new URL('../src/client/SavedCollaborationPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
@@ -155,7 +167,7 @@ function mount(initial:Props){
   }while(dirty)
   return tree
  }
- const flush=async()=>{for(let round=0;round<8;round++){await Promise.resolve();render()}return tree}
+ const flush=async()=>{for(let round=0;round<8;round++){await new Promise(resolve=>setImmediate(resolve));render()}return tree}
  const expand=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
   if(Array.isArray(node))return node.flatMap(expand)
   if(!React.isValidElement<Record<string,any>>(node))return []
@@ -382,6 +394,8 @@ test('格式工具复用 Markdown 编辑，工具栏可收起，格式修改不�
  const {api,calls}=makeApi()
  const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
  await app.flush()
+ assert.equal(app.findAll(el=>el.props.role==='toolbar').length,0,'默认输入保持简洁，格式栏按需展开')
+ byLabel(app,'knowledge.ui.073').props.onClick();app.render()
  assert.ok(app.find(el=>el.props.role==='toolbar'))
  byLabel(app,'knowledge.ui.060').props.onClick();app.render()
  assert.equal(draftText(app),'**knowledge.markdown.placeholder.text**')
@@ -391,19 +405,150 @@ test('格式工具复用 Markdown 编辑，工具栏可收起，格式修改不�
  assert.equal(draftText(app),'**knowledge.markdown.placeholder.text**','收起格式工具不能丢草稿')
 })
 
-test('引用资料收进浮层后，已选引用的 chips 仍常驻',async()=>{
- const resource:ResourceRow={id:resourceId,groupId,ownerId:'self',version:1,title:'资料标题',withdrawnAt:null,createdAt:stamp,updatedAt:stamp}
- const {api}=makeApi({resources:[resource]})
+// 群引用资料改走会话式候选（2026-10-14）：引用图标打开输入框上方的资料候选，不再是带搜索框与切换按钮的确认浮层。
+const resourceRow=(version=1):ResourceRow=>({id:resourceId,groupId,ownerId:'self',version,title:'资料标题',withdrawnAt:null,createdAt:stamp,updatedAt:stamp})
+const listboxes=(app:App)=>app.findAll(el=>el.type==='ul'&&el.props.role==='listbox')
+const resourceOptions=(app:App)=>app.findAll(el=>el.type==='li'&&el.props.role==='option'&&String(el.props.id).startsWith('resource-'))
+const referenceChipOf=(app:App,title:string)=>app.findAll(el=>el.type==='span'&&el.props.className==='attachmentChip'&&app.contentOf(el).startsWith(title))
+const pickOption=(app:App,option:React.ReactElement<Record<string,any>>)=>{option.props.onMouseDown({preventDefault:()=>{}});app.render()}
+
+test('引用资料图标打开输入框上方的资料候选：选一次即带入标签、关闭候选并回到输入框，不再有确认表单',async()=>{
+ const {api,calls}=makeApi({resources:[resourceRow(3)]})
  const app=mount({visible:true,api,attachments:makeAttachments(),directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
  await app.flush()
- assert.equal(app.findAll(el=>el.props.role==='dialog'&&el.props['aria-label']==='collaboration.composer.references').length,0,'默认收起')
- byLabel(app,'collaboration.composer.references').props.onClick()
- app.render()
- const picker=app.find(el=>el.props.role==='dialog'&&el.props['aria-label']==='collaboration.composer.references')
- assert.ok(app.contentOf(picker).includes('资料标题'))
- app.find(el=>el.type==='button'&&el.props.title==='collaboration.resources.reference · 资料标题').props.onClick()
- app.render()
- assert.ok(app.find(el=>el.props.className==='attachmentChip'&&app.contentOf(el).includes('资料标题')),'选中引用后 chip 常驻在附件条里')
+ assert.equal(listboxes(app).length,0,'默认收起')
+ assert.equal(byLabel(app,'collaboration.composer.references').props['aria-expanded'],false)
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ assert.equal(app.findAll(el=>el.props.role==='dialog').length,0,'不再弹确认浮层')
+ assert.equal(app.findAll(el=>el.type==='input'&&el.props['aria-label']==='homeResource.search').length,0,'不再有浮层内搜索框')
+ assert.equal(app.findAll(el=>el.type==='button'&&'aria-pressed' in el.props&&String(el.props.title??'').includes('资料标题')).length,0,'不再有切换式引用按钮')
+ const listbox=app.find(el=>el.type==='ul'&&el.props.role==='listbox')
+ assert.equal(listbox.props['aria-label'],'collaboration.composer.references')
+ assert.equal(byLabel(app,'collaboration.composer.references').props['aria-expanded'],true)
+ const [option]=resourceOptions(app)
+ assert.ok(option&&app.contentOf(option).startsWith('资料标题'))
+ assert.ok(app.contentOf(option!).includes('collaboration.resources.versionLabel:{"version":3}'),'候选标明固定版本')
+ assert.equal(option!.props['aria-disabled'],false)
+ assert.equal(textareaOf(app).props['aria-activedescendant'],option!.props.id,'候选打开即由输入框键盘驱动')
+ pickOption(app,option!)
+ assert.equal(listboxes(app).length,0,'选一次就关闭候选')
+ assert.equal(byLabel(app,'collaboration.composer.references').props['aria-expanded'],false)
+ assert.equal(referenceChipOf(app,'资料标题').length,1,'选中后标签常驻在待发送区')
+ assert.equal(sentPayloads(calls).length,0,'选资料不发送')
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ assert.equal(resourceOptions(app)[0]!.props['aria-disabled'],true,'已引用项禁用，不能从候选撤销')
+ pressEnter(app)
+ assert.equal(referenceChipOf(app,'资料标题').length,1,'对禁用项回车不撤销')
+ assert.equal(sentPayloads(calls).length,0,'候选打开时回车不发送')
+ textareaOf(app).props.onKeyDown({key:'Escape',preventDefault:()=>{},stopPropagation:()=>{}});app.render()
+ assert.equal(listboxes(app).length,0,'Esc 收起候选')
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.attachment.remove:{"name":"资料标题"}').props.onClick();app.render()
+ assert.equal(referenceChipOf(app,'资料标题').length,0,'移除走标签')
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ pickOption(app,resourceOptions(app)[0]!)
+ typeText(app,'请核对这份资料。')
+ pressEnter(app)
+ await app.flush()
+ assert.deepEqual((sentPayloads(calls)[0]!.payload as {references?:unknown}).references,[{kind:'group-resource',id:resourceId,version:3}],'发送带 id 与固定版本')
+})
+
+test('候选同时列出本群已共享的文件：点选复用原 attachment 引用而不重新上传；别群带入与已撤回的不列；刚上传完成的待发附件不重复出现且候选里视为已引用',async()=>{
+ const sharedFile=(attachmentId:string,name:string,patch:Partial<GroupAttachment>={}):GroupAttachment=>({attachmentId,ownerId:'self',version:1,kind:'file',mime:'application/pdf',bytes:2048,sha256:'b'.repeat(64),name,width:null,height:null,uploadedInGroupId:groupId,state:'active',createdAt:stamp,withdrawnAt:null,...patch})
+ const files=[sharedFile('att-shared','合同扫描件.pdf'),sharedFile('att-foreign','别群带入.pdf',{uploadedInGroupId:'55555555-5555-4555-8555-555555555555'}),sharedFile('att-gone','已撤回.pdf',{state:'withdrawn',withdrawnAt:stamp}),sharedFile('att-1','回形针.png',{kind:'image',mime:'image/png'})]
+ const uploads:string[]=[]
+ const attachments=makeAttachments({files})
+ const originalUpload=attachments.upload
+ ;(attachments as unknown as {upload:typeof originalUpload}).upload=async(...args:Parameters<typeof originalUpload>)=>{uploads.push(args[2].name);return originalUpload(...args)}
+ const {api,calls}=makeApi({resources:[resourceRow()]})
+ const app=mount({visible:true,api,attachments,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ const sections=app.findAll(el=>el.type==='li'&&el.props.role==='presentation').map(el=>app.contentOf(el))
+ assert.deepEqual(sections,['group.mention.sectionResources','group.mention.sectionFiles'],'资料与文件分组列出')
+ const fileOptions=()=>app.findAll(el=>el.type==='li'&&el.props.role==='option'&&String(el.props.id).startsWith('file-'))
+ assert.deepEqual(fileOptions().map(el=>app.contentOf(el)),['合同扫描件.pdf','回形针.png'],'只列本群上传且仍有效的文件')
+ pickOption(app,fileOptions()[0]!)
+ assert.equal(listboxes(app).length,0)
+ assert.equal(referenceChipOf(app,'合同扫描件.pdf').length,1,'已共享文件以原件名称出标签')
+ assert.deepEqual(uploads,[],'点选已共享文件不重新上传')
+ assert.equal(app.findAll(el=>el.props.role==='status'&&String(app.contentOf(el)).startsWith('collaboration.attachment.pending')).length,0,'不进入待发送上传区')
+ // 新上传仍走原回形针入口；上传完成后同一原件在候选里视为已引用，标签只出现一次。
+ app.find(el=>el.type==='input'&&el.props.type==='file').props.onChange({target:{files:[file('回形针.png','image/png')],value:''}})
+ app.render();await app.flush()
+ assert.deepEqual(uploads,['回形针.png'])
+ assert.equal(app.findAll(el=>el.type==='span'&&el.props.className==='attachmentChip'&&app.contentOf(el).startsWith('回形针.png')).length,1,'刚上传的附件只有待发送行一枚标签')
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ assert.deepEqual(fileOptions().map(el=>[app.contentOf(el).startsWith('回形针.png')||app.contentOf(el).startsWith('合同扫描件.pdf'),el.props['aria-disabled']]),[[true,true],[true,true]],'已引用的两份原件都禁用')
+ textareaOf(app).props.onKeyDown({key:'Escape',preventDefault:()=>{},stopPropagation:()=>{}});app.render()
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.attachment.remove:{"name":"合同扫描件.pdf"}').props.onClick();app.render()
+ assert.equal(referenceChipOf(app,'合同扫描件.pdf').length,0,'已共享文件的引用移除走标签')
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ pickOption(app,fileOptions()[0]!)
+ typeText(app,'请看合同与截图。')
+ pressEnter(app);await app.flush()
+ assert.deepEqual((sentPayloads(calls)[0]!.payload as {references?:unknown}).references,[{kind:'attachment',id:'att-1',version:1},{kind:'attachment',id:'att-shared',version:1}],'发送复用原 attachment id 与固定版本')
+})
+
+test('本群没有资料也没有文件时，图标打开的空态候选 Esc 能关闭、回车不发送；关闭后回车才发送',async()=>{
+ const {api,calls}=makeApi()
+ const app=mount({visible:true,api,attachments:makeAttachments(),directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ typeText(app,'先写好正文')
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ assert.equal(listboxes(app).length,1,'空态也以同一候选呈现')
+ assert.ok(app.find(el=>el.type==='li'&&el.props.role==='presentation'&&app.contentOf(el)==='collaboration.attachment.sectionEmpty'))
+ pressEnter(app)
+ assert.equal(sentPayloads(calls).length,0,'候选开着（即使为空）回车不发送')
+ textareaOf(app).props.onKeyDown({key:'Escape',preventDefault:()=>{},stopPropagation:()=>{}});app.render()
+ assert.equal(listboxes(app).length,0,'空态候选 Esc 必须能关')
+ assert.equal(byLabel(app,'collaboration.composer.references').props['aria-expanded'],false)
+ pressEnter(app);await app.flush()
+ assert.equal(sentPayloads(calls).length,1,'关闭后回车恢复发送')
+})
+
+test('资料撤回后仍保留固定引用标签并可移除，不留下不可见的待发引用',async()=>{
+ const resource=resourceRow(3),{api,calls}=makeApi({resources:[resource]})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ pickOption(app,resourceOptions(app)[0]!)
+ resource.withdrawnAt=stamp
+ typeText(app,'待发送的草稿')
+ assert.equal(referenceChipOf(app,'group.mention.sectionResources').length,1,'名称不可读时仍显示类型标签')
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.attachment.remove:{"name":"group.mention.sectionResources"}').props.onClick();app.render()
+ assert.equal(referenceChipOf(app,'group.mention.sectionResources').length,0)
+ assert.equal(draftText(app),'待发送的草稿')
+ assert.equal(sentPayloads(calls).length,0)
+ pressEnter(app)
+ await app.flush()
+ assert.deepEqual((sentPayloads(calls)[0]!.payload as {references?:unknown}).references,[],'移除后真实发送不含不可读引用')
+})
+
+test('没有附件接口时，已选引用的标签仍可见、可移除',async()=>{
+ const {api}=makeApi({resources:[resourceRow()]})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ byLabel(app,'collaboration.composer.references').props.onClick();app.render()
+ pickOption(app,resourceOptions(app)[0]!)
+ assert.equal(referenceChipOf(app,'资料标题').length,1)
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.attachment.remove:{"name":"资料标题"}').props.onClick();app.render()
+ assert.equal(referenceChipOf(app,'资料标题').length,0)
+})
+
+test('正文 @ 列出资料时，中文输入法确认候选词的回车既不选资料也不发送；普通回车选中资料且不发送',async()=>{
+ const {api,calls}=makeApi({resources:[resourceRow()]})
+ const app=mount({visible:true,api,directory:directory(),target:{groupId,rootId:''},roles,profileName:'测试者'})
+ await app.flush()
+ typeText(app,'@资')
+ assert.equal(resourceOptions(app).length,1)
+ pressEnter(app,{isComposing:true})
+ assert.equal(referenceChipOf(app,'资料标题').length,0,'输入法确认不算选中')
+ assert.equal(resourceOptions(app).length,1,'输入法确认不关闭候选')
+ assert.equal(sentPayloads(calls).length,0)
+ pressEnter(app)
+ assert.equal(referenceChipOf(app,'资料标题').length,1)
+ assert.equal(draftText(app),'','选中后去掉 @过滤词')
+ assert.equal(sentPayloads(calls).length,0,'选资料的回车不是发送')
 })
 
 test('拖放与粘贴三条入口仍进同一个 pick（既有行为未被破坏）',async()=>{

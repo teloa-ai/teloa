@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
+import ts from 'typescript'
 
 test('完整行业资源目录只挂载到数字员工，业务空间使用落点摘要',async()=>{
   const [frame,navigation]=await Promise.all([
@@ -91,7 +92,16 @@ test('工作环境按业务对象分类并保留来源版本与就绪状态',asy
   assert.match(directory,/market\.industry\.saved\.the\.current\.template\.only\.contains\.resource\.statements\.in/)
   assert.doesNotMatch(directory,/market\.industry\.saved\.the\.current\.business\.space\.has\.not\.yet\.loaded/)
   assert.match(directory,/market\.industry\.saved\.load.industry.templates.from.market/)
-  assert.match(directory,/if\(!rows\.length\)\{/)
+  const file=ts.createSourceFile('SavedIndustryDirectory.tsx',directory,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),empty:ts.IfStatement[]=[]
+  const visit=(node:ts.Node)=>{if(ts.isIfStatement(node)&&node.expression.getText(file).includes('!rows.length'))empty.push(node);ts.forEachChild(node,visit)}
+  visit(file);assert.equal(empty.length,2)
+  const evaluate=(node:ts.IfStatement,roleId:string|undefined,rows:unknown[],summaryError?:string,pending=false)=>new Function('roleId','rows','summaryError','pending','return ('+node.expression.getText(file)+')')(roleId,rows,summaryError,pending)
+  assert.equal(evaluate(empty[0]!,'role-1',[]),true)
+  assert.equal(evaluate(empty[0]!,'role-1',[],'read failed'),false,'读取失败的员工来源摘要仍可发现')
+  assert.equal(evaluate(empty[0]!,'role-1',[],undefined,true),false,'待核对请求不能被空目录隐藏')
+  assert.equal(evaluate(empty[1]!,undefined,[]),true)
+  assert.equal(evaluate(empty[1]!,'role-1',[]),false)
+  assert.equal(evaluate(empty[1]!,undefined,[{}]),false)
   assert.match(directory,/market\.industry\.saved\.work.environment.reading.failed/)
 })
 

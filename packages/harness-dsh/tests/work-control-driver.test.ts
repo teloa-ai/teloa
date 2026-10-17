@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
+import {WorkControlDriver} from '../src/work-control-driver.ts'
+import {taskRunRuntimeId} from '../src/task-run-background.ts'
 
 test('暂停走原生取消但不写不可恢复 Run stop；未知外部动作保持停止中',async()=>{
  let api:any;try{api=await import('../src/work-control-driver.ts')}catch(error){if((error as any).code!=='ERR_MODULE_NOT_FOUND')throw error;api={}}
@@ -13,4 +15,14 @@ test('暂停走原生取消但不写不可恢复 Run stop；未知外部动作�
  const proof=await driver.inspectRun(owner,{runId:run.id,action:'pause',generation:2});assert.equal(proof.settled,false);assert.deepEqual(proof.unknownOperationIds,['browser:write:1'])
  unknown=false;assert.equal((await driver.inspectRun(owner,{runId:run.id,action:'pause',generation:2})).settled,true)
  control.state='stopping';await driver.apply(owner,control,new AbortController().signal);assert.equal(business,1)
+})
+
+test('外部预留和运行未结清时不能停妥，旧宿主与unknown只返回待核对',async()=>{
+ let status='running',runtimeId:string=taskRunRuntimeId
+ const run={id:'run',state:'active'},driver=new WorkControlDriver({runs:{get:async()=>run},runtimeLinks:{list:async()=>[{kind:'external',nativeId:'reservation',payload:{provider:'codex',runtimeId,reservationId:'reservation',status}}]},ports:{stopState:async()=>({running:false,settledSeq:3}),backgroundState:async()=>({outstanding:false,interrupted:false}),subagentState:async()=> 'none'}} as never)
+ const input={runId:'run',action:'stop' as const,generation:1}
+ for(status of ['reserved','running','stopping','unknown'])assert.equal((await driver.inspectRun('owner',input)).settled,false,status)
+ status='running';runtimeId='old-host'
+ assert.deepEqual((await driver.inspectRun('owner',input)).unknownOperationIds,['external:codex:reservation'])
+ status='completed';assert.equal((await driver.inspectRun('owner',input)).settled,true)
 })

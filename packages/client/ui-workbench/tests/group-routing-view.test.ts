@@ -1,6 +1,8 @@
+import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule,applicationCapabilityModules} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
-import {staffAvatarComponent} from './staff-avatar-component.ts'
+import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -59,11 +61,14 @@ test('折叠行：relay-stopped 决策本身不产生「正在回复」（respon
 
 test('话题面板进 4 秒闭环：一次重读同时刷消息、话题、表情与路由（教训 b）',()=>{
  const page=source('SavedCollaborationPage.tsx')
- const reload=page.split('\n const reloadSelected=')[1]!.split('\n /**')[0]!
- for(const call of ['api.get(','api.messages(','api.resources(','setTopic(','readMessageOverlays('])assert.ok(reload.includes(call),call)
- // 轮询 effect 的依赖带上 topic：话题里多一条回帖同样会重排下一轮，话题面板不再掉出闭环。
- const loop=page.split('return scheduleGroupMessageRefresh(')[1]!.split('\n')[1]!
- assert.match(loop,/\[visible,selected,messages,rootId,topic,api\]/)
+ const reload=page.split('\n const reloadSelected=')[1]!.split('\n useEffect')[0]!
+ assert.ok(reload.includes('await readGroupContents(id,generation,currentRoot)'), '轮询传入同一原群、视图代次和当前话题')
+ const read=page.split('\n const readGroupContents=')[1]!.split('\n const loadGroup=')[0]!
+ for(const call of ['api.get(','readMessages(id)','api.resources(','readMessages(id,focusRoot)','setTopic(','readMessageOverlays('])assert.ok(read.includes(call),call)
+ assert.ok(read.includes('await Promise.allSettled(['),'消息和资料读取失败各自隔离，不挡住已核验原群')
+ assert.ok(read.includes('reading!==groupReadGeneration.current'),'迟到的旧读取不覆盖本次重试')
+ // 重读的连续性、失败恢复与切群取消由 group-message-recovery.browser.test.ts 验证，
+ // 不再要求轮询依赖消息数组变动——这会让单次失败终止后续读取。
 })
 
 test('轮询三口互不拖累：表情与路由各自 catch，失败不让目录刷新整体失败',()=>{
@@ -184,12 +189,12 @@ const rt=(key:string,params?:Record<string,string|number>)=>{
 }
 
 const previewRole=(id:string,name:string):PreviewRole=>({id,name,kind:'employee',scopes:['general'],state:'active',version:1,duty:'',dataScope:'',executionScope:'',skills:[],knowledge:[],memories:[],history:[]})
-const viewRoles:PreviewRole[]=[previewRole(roleA,'小张'),previewRole(roleB,'小李')]
+const viewRoles:PreviewRole[]=[{...previewRole(roleA,'小张'),avatarKey:'researcher'},previewRole(roleB,'小李')]
 const viewGroup={id:groupId,ownerId:'self',version:3,name:'直接回应群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},pinned:false,archived:false,createdAt:'2026-09-21T01:00:00.000Z',updatedAt:'2026-09-21T01:00:00.000Z'}
 const viewMembers:GroupMember[]=[{groupId,roleId:null,createdAt:'2026-09-21T01:00:00.000Z'},{groupId,roleId:roleA,createdAt:'2026-09-21T01:00:00.000Z'},{groupId,roleId:roleB,createdAt:'2026-09-21T01:00:00.000Z'}]
 const fresh=()=>new Date().toISOString()
 
-type ViewSetup={main?:GroupMessage[];replies?:GroupMessage[];decisions?:GroupRoutingDecisionView[];reactionPending?:boolean}
+type ViewSetup={main?:GroupMessage[];replies?:GroupMessage[];decisions?:GroupRoutingDecisionView[];reactionPending?:boolean;statuses?:contract.GroupRoutingStatusView[];statusFailure?:boolean;statusRead?:()=>Promise<void>}
 function viewFixture(setup:ViewSetup={}){
  const snapshot:GroupSnapshot={group:viewGroup,members:viewMembers}
  const api={
@@ -212,8 +217,9 @@ function viewFixture(setup:ViewSetup={}){
   recover:async()=>{reactionCalls.push({endpoint:'recover'});pendingRequest=undefined;return []},
  } as unknown as GroupReactionApi
  const routingCalls:{ids:string[]}[]=[]
- const routing={list:async(_groupId:string,ids:string[])=>{routingCalls.push({ids});return setup.decisions??[]}} as unknown as GroupRoutingApi
- return {api,reactions,routing,reactionCalls,routingCalls}
+ const statusCalls:{ids:string[]}[]=[]
+ const routing={list:async(_groupId:string,ids:string[])=>{routingCalls.push({ids});return setup.decisions??[]},status:async(_groupId:string,ids:string[])=>{statusCalls.push({ids});await setup.statusRead?.();if(setup.statusFailure)throw Error('本轮状态读取失败');return (setup.statuses??[]).filter(row=>ids.includes(row.messageId))}} as unknown as GroupRoutingApi
+ return {api,reactions,routing,reactionCalls,routingCalls,statusCalls}
 }
 
 /**
@@ -241,6 +247,7 @@ const testMarkdownText=({text}:{text:string}):React.ReactNode=>{
 
 /** 递归加载真实模块：group-routing-view 与 GroupReactionBar 都跑真身，只有外部依赖给桩。 */
 function mountPage(props:Record<string,unknown>){
+ let refresh:(()=>Promise<void>)|undefined
  const slots:unknown[]=[]
  let cursor=0,dirty=true,tree:React.ReactNode
  type Effect={deps:readonly unknown[];cleanup?:(()=>void)|undefined}
@@ -269,9 +276,14 @@ function mountPage(props:Record<string,unknown>){
   return exported
  }
  const require=(id:string):unknown=>{
+  const groupResult=groupResultFixtureModule(id);if(groupResult!==undefined)return groupResult
+  if(id==='./GroupChannelBindings.js')return {GroupChannelBindings:()=>null}
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
-  if(id==='./StaffAvatar.js')return staffAvatarComponent
+  if(id==='./ContextDrawer.js')return {ContextDrawer:({open=true,children,title}:any)=>open?React.createElement('dialog',{'aria-label':title},children):null}
+  if(id==='./task-preview.js')return {taskStates:{ready:'status.ready',running:'status.running',paused:'status.paused',waiting:'status.waiting',blocked:'status.blocked',completed:'status.completed',cancelled:'status.cancelled'}}
+  if(id==='./StaffAvatar.js'||id==='./EmployeeAvatar.js'||id==='./TwinAvatar.js')return staffAvatarComponent
+  if(id==='./personal-profile.js')return personalProfileForGroup
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id==='@teloa/contract')return contract
@@ -285,9 +297,9 @@ function mountPage(props:Record<string,unknown>){
   if(id.endsWith('saved-collaboration-state.js'))return savedCollaborationState
   if(id.endsWith('saved-collaboration-drafts.js'))return {savedCollaborationDrafts:createSavedCollaborationDraftStore()}
   if(id.endsWith('team-presentation.js'))return {twinDisplayName:(name:string)=>name}
-  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t:rt,time:(value:string)=>value})}
+  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t:rt,time:(value:string)=>value,date:(value:string)=>value.slice(0,10),dateTime:(value:string)=>value})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>String(cause)}
-  if(id.endsWith('group-message-refresh.js'))return {scheduleGroupMessageRefresh:()=>()=>{}}
+  if(id.endsWith('group-message-refresh.js'))return {scheduleGroupMessageRefresh:(run:()=>Promise<void>)=>{refresh=run;return ()=>{refresh=undefined}}}
   // 这两条是本轮的重点：真模块、真组件，不给空桩。
   if(id.endsWith('group-routing-view.js'))return groupRoutingView
   if(id.endsWith('GroupReactionBar.js'))return load('GroupReactionBar.tsx')
@@ -296,6 +308,11 @@ function mountPage(props:Record<string,unknown>){
   // 这里换成只认 **加粗** 与 - 列表 两种语法的最小复刻，只为验证 SavedMessage 把 message.text 原样递给它、
   // 渲染出 strong/li 且不残留字面 **；不代表验证过真实 GFM 解析器本身。
   if(id==='@deepseek-ai/dsh-client-ui-primitives')return {MarkdownText:testMarkdownText}
+  // 本夹具未接工作关联端口；新组件边界另有源渲染与浏览器用例，不应进入此旧消息测试。
+  if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
+  // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
+  if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }
  const Component=load('SavedCollaborationPage.tsx').SavedCollaborationPage as (p:unknown)=>React.ReactNode
@@ -312,19 +329,21 @@ function mountPage(props:Record<string,unknown>){
  const expand=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
   if(Array.isArray(node))return node.flatMap(expand)
   if(!React.isValidElement<Record<string,any>>(node))return []
+  if(node.props.hidden)return [] // 与实际 DOM 可见性一致；持久挂载的隐藏话题不能计为第二份消息。
   if(typeof node.type==='function')return expand((node.type as (p:unknown)=>React.ReactNode)(node.props))
   return [node,...expand((node.props as {children?:React.ReactNode}).children)]
  }
  const textOf=(node:React.ReactNode):string=>{
   if(Array.isArray(node))return node.map(textOf).join('')
   if(React.isValidElement<Record<string,any>>(node)){
+   if(node.props.hidden)return '' // 对齐实际 innerText，不把隐藏辅助页算为当前讨论。
    if(typeof node.type==='function')return textOf((node.type as (p:unknown)=>React.ReactNode)(node.props))
    return textOf((node.props as {children?:React.ReactNode}).children)
   }
   return typeof node==='string'||typeof node==='number'?String(node):''
  }
  const flush=async()=>{for(let round=0;round<16;round++){await Promise.resolve();render()}return tree}
- return {render,flush,all:()=>expand(render()),text:()=>textOf(render()),
+ return {render,flush,reload:()=>{assert.ok(refresh);return refresh()},refresh:async()=>{assert.ok(refresh);await refresh();await flush()},all:()=>expand(render()),text:()=>textOf(render()),
   findAll:(match:(el:React.ReactElement<Record<string,any>>)=>boolean)=>expand(render()).filter(match)}
 }
 
@@ -344,7 +363,7 @@ test('真渲染·折叠行：两位以上折叠成通用文案，展开后两个
  const f=viewFixture({main:[root],replies:[root],decisions:[decision({respond:[roleA,roleB]})]})
  const app=mountPage(pageProps(f))
  await app.flush()
- const summaries=app.findAll(el=>el.type==='summary')
+ const summaries=app.findAll(el=>el.type==='summary'&&el.props.children==='员工正在回复…')
  assert.equal(summaries.length,1)
  assert.equal(app.text().includes('小张 正在回复…'),false,'折叠时不应逐个铺开命名行')
  assert.ok(app.text().includes("员工正在回复…"))
@@ -354,7 +373,7 @@ test('真渲染·折叠行：两位以上折叠成通用文案，展开后两个
  assert.equal(app.findAll(el=>el.type==='div'&&el.props.role==='status'&&!!el.props.children).length>0,true)
 })
 
-test('真渲染·同事回帖的作者是群成员名与首字头像，来源收进可展开详情',async()=>{
+test('真渲染·同事回帖复用群成员姓名与员工头像，来源收进可展开详情',async()=>{
  const reply=roleMessage('55555555-5555-4555-8555-555555555555',roleA,fresh())
  const f=viewFixture({main:[selfMessage(messageId,fresh())],replies:[selfMessage(messageId,fresh()),reply]})
  const app=mountPage(pageProps(f))
@@ -364,8 +383,8 @@ test('真渲染·同事回帖的作者是群成员名与首字头像，来源收
  assert.equal(text.includes('AI 员工'),false,'通用标签不再当名字用')
  assert.equal(text.includes('受管回传'),false,'技术来源不挤占作者行')
  assert.equal(app.findAll(el=>el.type==='details'&&String(el.props.className).includes('messageSource')).length,1)
- const avatars=app.findAll(el=>el.type==='text'&&String(el.props.className).includes('avText'))
- assert.ok(avatars.some(el=>String(el.props.children)==='小'),'共享头像取群成员名的首字')
+ const avatars=app.findAll(el=>el.type==='img'&&String(el.props.className).includes('squirrel'))
+ assert.ok(avatars.some(el=>el.props.src==='avatar-researcher.webp'),'消息复用该员工已选形象')
 })
 
 test('真渲染·群里已经不在的成员回帖按「历史成员」兜底，界面上不出现 roleId',async()=>{
@@ -430,6 +449,74 @@ test('叠加层封顶取尾且话题优先：主目录 250 条 + 话题 3 条时
  assert.deepEqual(f.reactionCalls.filter(row=>row.endpoint==='list').at(-1)!.ids,last.ids,'表情与路由用同一份消息身份')
 })
 
+test('大话题仍读取最新回复、根消息与主群最新消息，不挤入其他话题回复',async()=>{
+ const root=selfMessage(messageId,fresh()),latestMain=selfMessage('latest-main',fresh())
+ const replies=[root,...Array.from({length:202},(_,index)=>roleMessage('topic-'+index,roleA,fresh()))]
+ const hiddenTopic=roleMessage('other-topic-reply',roleB,fresh());hiddenTopic.rootId='other-topic'
+ const f=viewFixture({main:[root,...replies.slice(1),hiddenTopic,latestMain],replies})
+ const app=mountPage(pageProps(f));await app.flush()
+ const ids=f.routingCalls.at(-1)!.ids
+ assert.ok(ids.includes('topic-201'),'最新话题回复必须刷新')
+ assert.ok(ids.includes(messageId),'当前话题根消息保留路由与状态')
+ assert.ok(ids.includes('latest-main'),'大话题不能占满主群名额')
+ assert.equal(ids.includes('other-topic-reply'),false,'其他话题回复不占当前两个可见流的名额')
+ assert.ok(ids.length<=200);assert.equal(new Set(ids).size,ids.length)
+ assert.deepEqual(f.reactionCalls.filter(row=>row.endpoint==='list').at(-1)!.ids,ids)
+ assert.ok(app.text().includes(latestMain.text),'覆盖层选择不裁剪原正文')
+})
+
+test('G-A04：大话题刷新同时保留主群直回与最新回复的路由和表情，不串其他话题',async()=>{
+ const root=selfMessage(messageId,fresh()),direct={...roleMessage('direct-main',roleA,fresh(),'主群完整正文。'.repeat(800)),contextMode:'main' as const}
+ const latest=roleMessage('latest-topic',roleB,fresh(),'当前话题最新回复')
+ const replies=[root,direct,...Array.from({length:250},(_,index)=>roleMessage('topic-'+index,roleA,fresh())),latest]
+ const other=roleMessage('other-topic',roleB,fresh(),'其他话题内容');other.rootId='another-root'
+ const setup:ViewSetup={main:[...replies,other],replies},fixture=viewFixture(setup),app=mountPage(pageProps(fixture))
+ await app.flush()
+ const composers=app.findAll(element=>element.type==='textarea')
+ assert.equal(composers.length,2,'原主群和选中话题分别保留输入框')
+ for(const [index,value] of ['主群未发送草稿','当前话题未发送草稿'].entries())composers[index]!.props.onChange({target:{value,selectionStart:value.length}})
+ await app.flush()
+ const ids=fixture.routingCalls.at(-1)!.ids
+ assert.ok(ids.includes(direct.id),'同属话题的主群最新直回仍读取路由')
+ assert.ok(ids.includes(latest.id));assert.ok(ids.includes(root.id));assert.equal(ids.includes(other.id),false)
+ assert.equal(ids.length,200);assert.equal(new Set(ids).size,200)
+ assert.deepEqual(fixture.reactionCalls.filter(row=>row.endpoint==='list').at(-1)!.ids,ids)
+ assert.ok(app.text().includes(direct.text));assert.ok(app.text().includes(latest.text));assert.equal(app.text().includes(other.text),false)
+ const next=roleMessage('next-topic',roleB,fresh(),'轮询后的最新回复');setup.replies!.push(next);setup.main!.push(next)
+ await app.refresh()
+ assert.ok(fixture.routingCalls.at(-1)!.ids.includes('next-topic'))
+ assert.ok(fixture.routingCalls.at(-1)!.ids.includes(direct.id))
+ assert.deepEqual(app.findAll(element=>element.type==='textarea').map(element=>element.props.value),['主群未发送草稿','当前话题未发送草稿'])
+ assert.ok(app.text().includes(next.text),'刷新后仍停留在原话题并显示最新回复')
+})
+
+test('旧工作在消息窗口外独立刷新，失败保留上轮状态，完成后退出持续跟踪',async()=>{
+ const old=selfMessage('old-main-work',fresh()),root=selfMessage(messageId,fresh())
+ const setup:ViewSetup={main:[old,root],replies:[root],statuses:[{messageId:old.id,attemptVersion:1,phase:'running',recipients:[],hintCode:null,canRetry:false}]}
+ const f=viewFixture(setup),app=mountPage(pageProps(f));await app.flush()
+ setup.main!.push(...Array.from({length:250},(_,index)=>selfMessage('new-main-'+index,fresh())))
+ setup.replies!.push(...Array.from({length:250},(_,index)=>({...selfMessage('new-topic-'+index,fresh()),rootId:messageId})))
+ await app.refresh()
+ assert.ok(!f.reactionCalls.filter(row=>row.endpoint==='list').at(-1)!.ids!.includes(old.id),'旧工作已在表情窗口外')
+ assert.ok(f.statusCalls.at(-1)!.ids.includes(old.id),'仍在进行的旧工作必须独立刷新')
+ setup.statusFailure=true;await app.refresh();setup.statusFailure=false
+ await app.refresh()
+ assert.ok(f.statusCalls.at(-1)!.ids.includes(old.id),'一次读取失败不能丢失跟踪中的原工作')
+ setup.statuses![0]!.phase='completed';await app.refresh();await app.refresh()
+ assert.ok(!f.statusCalls.at(-1)!.ids.includes(old.id),'终态回执到达后不继续轮询窗口外的旧工作')
+ assert.ok(f.statusCalls.every(row=>row.ids.length<=200),'独立状态批次仍遵守契约上限')
+})
+
+test('覆盖层读取属于串行刷新完成边界，慢于轮询间隔的响应不会被新一轮持续作废',async()=>{
+ const root=selfMessage(messageId,fresh()),setup:ViewSetup={main:[root],replies:[root]}
+ const f=viewFixture(setup),app=mountPage(pageProps(f));await app.flush()
+ const releases:Array<()=>void>=[];setup.statusRead=()=>new Promise(resolve=>releases.push(resolve))
+ let finished=false;const refreshing=app.reload().then(()=>{finished=true})
+ await app.flush();assert.ok(releases.length>0);assert.equal(finished,false,'覆盖层未结束时不能续排下一轮')
+ for(const release of releases)release()
+ await refreshing;assert.equal(finished,true)
+})
+
 test('重开已有岗位会话也不自动发送身份正文',()=>{
  const frame=source('WorkbenchFrame.tsx')
  const openRole=frame.split('const openRoleConversation=')[1]!.split('const openTwinConversation=')[0]!
@@ -438,12 +525,14 @@ test('重开已有岗位会话也不自动发送身份正文',()=>{
  assert.doesNotMatch(frame,/\bsendRoleIdentity\b/)
 })
 
-test('新建岗位会话不自动发消息，照常清理创建意图并跳转；手动介绍是短请求',async()=>{
+test('新建与切换员工会话不自动发送，主外壳和身份组件没有重新介绍入口或发送路径',async()=>{
  const node=sourceNode('WorkbenchFrame.tsx',node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createWork')
   const calls:unknown[]=[],conversation={id:'conversation',sessionId:'created'},object={kind:'role',id:roleA,version:1,canStart:true}
   let current='previous'
+  // 2e8ac1a：createWork 用 plainCreation 判断是否接替空白会话记忆；取同一份源码实现，岗位意图不接替。
+  const plainCreation=implementation<(intent:unknown)=>boolean>((sourceNode('WorkbenchFrame.tsx',node=>ts.isVariableDeclaration(node)&&node.name.getText()==='plainCreation') as ts.VariableDeclaration).initializer!,{})
   const create=implementation<(workspace:string,intent:unknown)=>Promise<void>>(node,{
-   ...applicationCapabilityModules['./application-presentation.js'],
+   ...applicationCapabilityModules['./application-presentation.js'],plainCreation,
    setCreating:(value:boolean)=>calls.push(['creating',value]),homeCreationLocation:()=> 'origin',latestState:{current:{}},
    resolveConversationObject:()=>object,homeContextApi:{pending:()=>undefined},persistentObject:()=>true,
    work:{create:async(options:{roleId?:string;beforeOpen:(row:unknown)=>Promise<void>;mayOpen:()=>boolean})=>{assert.equal(options.roleId,roleA);assert.equal(options.mayOpen(),true);await options.beforeOpen(conversation);current=conversation.sessionId;return conversation},getSnapshot:()=>({sessionId:current})},
@@ -457,9 +546,6 @@ test('新建岗位会话不自动发消息，照常清理创建意图并跳转�
   })
   await create('workspace',{object,resolve:(ok:boolean)=>calls.push(['resolved',ok])})
   assert.deepEqual(calls,[['creating',true],['resolved',true],['intent',null],['selection',false],['creationError',undefined],['open','native'],['creating',false]])
- const resendNode=sourceNode('WorkbenchFrame.tsx',node=>ts.isVariableDeclaration(node)&&node.name.getText()==='resendRoleIdentity') as ts.VariableDeclaration
- const sent:unknown[]=[]
- const resend=implementation<(id:string,sessionId:string)=>Promise<void>>(resendNode.initializer!,{tasksRef:{current:{roles:[{id:roleA,storage:'persistent'}]}},work:{getSnapshot:()=>({sessionId:'created'})},sendConversationMessage:(...args:unknown[])=>sent.push(args),t:(key:string)=>key==='role.conversation.introducePrompt'?'Please briefly describe your current role’s responsibilities and boundaries.':''})
- await resend(roleA,'created')
- assert.deepEqual(sent,[['created','Please briefly describe your current role’s responsibilities and boundaries.']])
+ assert.doesNotMatch(source('WorkbenchFrame.tsx'),/\bresendRoleIdentity\b|role\.conversation\.introducePrompt/)
+ assert.doesNotMatch(source('RoleConversationIdentity.tsx'),/onResend|role\.conversation\.resend|role\.conversation\.introducePrompt/)
 })

@@ -29,10 +29,10 @@ function services(){
  assert.equal(typeof api.BusinessConfigurationService,'function','须提供原子配置采用服务')
  return {drafts,store,definitions,runtime,spaces,apply:new api.BusinessConfigurationService(pool,identity,{drafts,store,definitions,runtime,spaces}),preview:new api.BusinessConfigurationPreviewService(pool,drafts,definitions,identity)}
 }
-async function fixture(){
+async function fixture(format='teloa.business-configuration/v1'){
  const s=services(),actor={ownerId:randomUUID(),scopeIds:[] as string[]}
- let draft=await s.drafts.begin(actor,{requestId:randomUUID(),title:'工单'})
- const definition={format:'teloa.business-object-type/v1',id:'ticket',version:'1.0.0',domain:draft.scope,title:'工单',unit:'条',lead:'跟进事项',sourceId:draft.candidate.sources[0]!.sourceId,fields:[{name:'state',label:'状态',type:'text',required:true,from:'状态'}]}
+ let draft=await s.drafts.begin(actor,{requestId:randomUUID(),title:'工单',format})
+ const definition={format:format==='teloa.business-configuration/v2'?'teloa.business-object-type/v2':'teloa.business-object-type/v1',id:'ticket',version:'1.0.0',domain:draft.scope,title:'工单',unit:'条',lead:'跟进事项',sourceId:draft.candidate.sources[0]!.sourceId,fields:[{name:'state',label:'状态',type:'text',required:true,from:'状态'}]}
  draft=await s.drafts.revise(actor,{requestId:randomUUID(),draftId:draft.id,expectedRevision:1,patch:{upsertDefinitions:[{kind:'object-type',definition}],upsertPages:[{id:'home',title:'记录',kind:'records',objectType:'ticket',fields:['state'],allowCreate:true,allowEdit:true,allowArchive:true}],homePageId:'home'}})
  const preview=await s.preview.preview(actor,{draftId:draft.id,expectedRevision:draft.revision})
  const input={requestId:randomUUID(),draftId:draft.id,expectedRevision:draft.revision,expectedBaseVersion:0,previewReceipt:preview.receipt}
@@ -49,7 +49,37 @@ test('首次采用原子登记空间、范围、停用runtime和完整配置；�
  assert.equal((await f.runtime.get(f.actor,result.scope)).syncEnabled,false)
  assert.equal((await f.apply.current(f.actor,{scope:result.scope}))?.leaves.length,1)
  assert.equal((await f.drafts.get(f.actor,{draftId:f.draft.id})).status,'applied')
- await assert.rejects(f.apply.apply(f.actor,{...f.input,previewReceipt:'changed'}),{code:'teloa/conflict',details:undefined})
+ await assert.rejects(f.apply.apply(f.actor,{...f.input,previewReceipt:'changed'}),{code:'teloa/conflict'})
+})
+for(const format of ['teloa.business-configuration/v1','teloa.business-configuration/v2'])test(format+' 已有业务调整沿用正式名称，重放及续改保留原定义页面，改名仅经明确patch',async()=>{
+ const f=await fixture(format)
+ assert.equal(f.draft.candidate.title,'工单','新建业务仍采用本人给出的名称')
+ const first=await f.apply.apply(f.actor,f.input);f.actor.scopeIds=[first.scope]
+ const begin={requestId:randomUUID(),title:'新业务',scope:first.scope}
+ const draft=await f.drafts.begin(f.actor,begin)
+ assert.equal(draft.candidate.title,'工单','调整入口的缺省会话标题不能授权重命名业务')
+ assert.equal(draft.baseVersion,1);assert.equal(draft.candidate.format,format)
+ assert.deepEqual(draft.candidate.definitions,f.draft.candidate.definitions)
+ assert.deepEqual(draft.candidate.pages,f.draft.candidate.pages)
+ assert.deepEqual(draft.candidate.sources,f.draft.candidate.sources)
+ assert.equal(draft.candidate.homePageId,f.draft.candidate.homePageId)
+ assert.deepEqual(await services().drafts.begin(f.actor,begin),draft)
+ await assert.rejects(f.drafts.begin(f.actor,{...begin,title:'另一个预约标题'}),{code:'teloa/conflict'})
+ const revised=await f.drafts.revise(f.actor,{requestId:randomUUID(),draftId:draft.id,expectedRevision:draft.revision,patch:{upsertPages:[{...draft.candidate.pages[0],title:'工作记录'}]}})
+ assert.equal(revised.candidate.title,'工单')
+ assert.deepEqual(await services().drafts.get(f.actor,{draftId:draft.id}),revised,'重建服务后继续原草案，不重建或改名')
+ assert.deepEqual(await f.drafts.begin(f.actor,begin),draft,'重复begin返回原回执，不覆盖后续草案')
+ const preview=await f.preview.preview(f.actor,{draftId:draft.id,expectedRevision:revised.revision})
+ const apply={requestId:randomUUID(),draftId:draft.id,expectedRevision:revised.revision,expectedBaseVersion:1,previewReceipt:preview.receipt}
+ const adopted=await f.apply.apply(f.actor,apply)
+ assert.deepEqual(await f.apply.apply(f.actor,apply),adopted)
+ assert.equal((await f.apply.current(f.actor,{scope:first.scope}))?.manifest.title,'工单')
+ assert.equal((await pool.query('select title from teloa_business_scopes where owner_id=$1 and scope=$2',[f.actor.ownerId,first.scope])).rows[0].title,'工单')
+ await adoptNext(f,{title:'客户交付'})
+ const current=await f.apply.current(f.actor,{scope:first.scope})
+ assert.equal(current?.manifest.title,'客户交付','明确改名仍由正式patch采用')
+ assert.equal(current?.leaves[0]?.version,1,'标题与页面变更不重建原字段版本')
+ assert.deepEqual(await f.drafts.begin(f.actor,begin),draft,'当前业务改名也不重写已有begin回执')
 })
 test('正式整体配置预览并采用 source-mapping 后同一 Reader 可读，运行授权默认暂停',async()=>{
  const f=await fixture(),scope=f.draft.scope
@@ -104,7 +134,7 @@ async function historical(f:Awaited<ReturnType<typeof fixture>>){
 }
 test('历史归档记录阻止字段重映射和必填新增，中文label改名保留取值身份',async()=>{
  const f=await fixture(),first=await f.apply.apply(f.actor,f.input);f.actor.scopeIds=[first.scope];await historical(f)
- await assert.rejects(adoptNext(f,{upsertDefinitions:[{kind:'object-type',definition:{...f.definition,fields:[{...f.definition.fields[0],from:'新键'}]}}]}),{code:'teloa/conflict',details:undefined})
+ await assert.rejects(adoptNext(f,{upsertDefinitions:[{kind:'object-type',definition:{...f.definition,fields:[{...f.definition.fields[0],from:'新键'}]}}]}),{code:'teloa/conflict'})
  await assert.rejects(adoptNext(f,{upsertDefinitions:[{kind:'object-type',definition:{...f.definition,fields:[...f.definition.fields,{name:'extra',label:'必填',type:'text',required:true,from:'新增'}]}}]}),{code:'teloa/conflict'})
  assert.equal((await f.apply.current(f.actor,{scope:first.scope}))?.version,1)
  const renamed=await adoptNext(f,{upsertDefinitions:[{kind:'object-type',definition:{...f.definition,fields:[{...f.definition.fields[0],label:'处理状态'}]}}]})

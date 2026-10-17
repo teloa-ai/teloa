@@ -1,0 +1,43 @@
+/* 群关联工作选择器：紧凑搜索、按需筛选与清晰的选择计数；按钮与字体沿用工作台令牌。 */
+.picker{display:flex;flex-direction:column;gap:14px;padding:14px 20px 18px}
+.notice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:8px 10px;border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.6}
+.notice button{flex:none;padding:0;border:0;background:transparent;color:var(--teloa-accent);font:inherit;cursor:pointer}
+.search{display:flex;align-items:center;gap:9px;min-height:38px;padding:0 10px;border:1px solid var(--teloa-border);border-radius:9px;color:var(--teloa-muted)}
+.search:focus-within{border-color:var(--teloa-focus)}
+.search svg{flex:none}
+.picker .search input{flex:1;min-width:0;padding:7px 0;border:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);outline:none;box-shadow:none}
+.filters{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.types{display:flex;gap:3px}
+.types button{flex:none;min-height:30px;padding:5px 9px;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);white-space:nowrap;cursor:pointer}
+.types button:hover{background:var(--teloa-hover)}
+.types button[aria-pressed=true]{background:var(--teloa-subtle);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.types button:disabled{opacity:.5;cursor:default}
+.scope{max-width:200px;min-height:30px;padding:4px 8px;border:1px solid var(--teloa-border);border-radius:6px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
+.section{display:flex;flex-direction:column;min-width:0}
+.section>header{display:flex;align-items:center;gap:6px;min-height:28px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.section>header h3{margin:0;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);color:var(--teloa-text)}
+.section>header span{color:var(--teloa-muted)}
+.row,.candidate{display:flex;align-items:center;gap:10px;min-height:38px;padding:5px 0;border-bottom:1px solid var(--teloa-border)}
+.row:last-child,.candidate:last-child{border-bottom:0}
+.candidate{cursor:pointer;margin:0}
+.candidate input{flex:none;margin:0}
+.row>span,.candidate>span{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden}
+.row strong,.candidate strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.row small,.candidate small{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.remove{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);cursor:pointer}
+.remove:hover{background:var(--teloa-hover);color:var(--teloa-text)}
+.remove:disabled{opacity:.45;cursor:default}
+.link{display:block;max-width:100%;padding:5px 0;border:0;background:transparent;text-align:left;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);overflow-wrap:anywhere;cursor:pointer}
+.link:hover{text-decoration:underline}
+.link:disabled{opacity:.6;cursor:default;text-decoration:none}
+.empty{margin:0;padding:10px 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.footer{display:flex;align-items:center;gap:8px;padding-top:6px;border-top:1px solid var(--teloa-border)}
+.footer>.spacer{flex:1}
+.create{display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:5px 8px;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.create:hover{background:var(--teloa-hover);color:var(--teloa-text)}
+.create:disabled{opacity:.45;cursor:default}
+.picker :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:600px){.picker{padding:12px 16px 16px}.types button,.remove{min-height:36px}}
+/* 概览内“全部关联工作”筛选：只在出现多种工作时显示，尺寸与选择器的业务空间下拉一致。 */
+.listFilter{max-width:170px;min-height:28px;padding:3px 6px;border:1px solid var(--teloa-border);border-radius:6px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);text-overflow:ellipsis}
+.linkActions{display:flex;align-items:center;gap:6px;min-width:0;margin-left:auto}

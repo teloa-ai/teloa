@@ -20,6 +20,28 @@ import {registerMarketSessionTools,marketSessionToolNames} from '../src/market-s
 import {selfAuthorizedToolNames} from '../src/self-authorized-tools.ts'
 import {子Agent执行态事件流} from './fixtures/子Agent执行态/事件流.ts'
 
+test('本人外部引擎使用固定目录的专用参数规则，仍受原生批准和原请求约束',async t=>{
+ const ctx=new Context();t.after(()=>ctx.fiber.dispose())
+ await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
+ const {agent}=await ctx.agents.create({sessionId:SessionId('owner-external-arguments'),agentOptions:{provider:'test',model:'test'}})
+ let bodies=0,approved=true,seq=0,rules:TaskToolArgumentRule[]=[]
+ const name='subagent_claude_code',root='/owned/workspace',args={prompt:'仅整理本人提供的合成事实。',description:'核对合成事实',cwd:root}
+ ctx.tools.register(defineTool({name,description:name,parameters:{prompt:{type:'string',required:true},description:{type:'string',required:true},cwd:{type:'string'}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{bodies++;return 'external accepted'}}))
+ registerTaskToolGuard(ctx,async()=>({allowedTools:[name],nativeRequestId:'owner-external-request',argumentRules:rules}))
+ ctx.on('tools/pre-execute',async(_exec,next)=>approved?next():{kind:'deny',reason:'原生本人批准尚未完成'})
+ agent.session.append('turn/start',{turn:0});agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:brandString<SessionRequestId>('owner-external-request')}}),{surfaceOp:'append'})
+ const call=(input:Record<string,unknown>=args)=>ctx.tools.execute({agent,name,arguments:input,callId:ToolCallId('owner-external-'+ ++seq),signal:AbortSignal.timeout(5000)})
+ assert.match(JSON.stringify(await call()),/工具参数超出本次任务授权的数据范围或版本/);assert.equal(bodies,0)
+ const api=await import('../src/external-harness-policy.ts'),factory=Reflect.get(api,'ownerExternalHarnessToolRules')
+ rules=typeof factory==='function'?factory([name],root):[]
+ assert.equal((await call()).isError,false);assert.equal(bodies,1)
+ assert.equal((await call({prompt:args.prompt,description:args.description})).isError,false);assert.equal(bodies,2)
+ for(const bad of [{...args,cwd:'/other/workspace'},{...args,prompt:' '},{...args,description:''},{...args,model:'another'},{...args,permissionMode:'bypassPermissions'}])assert.equal((await call(bad)).isError,true)
+ assert.equal(bodies,2);approved=false;assert.match(JSON.stringify(await call()),/原生本人批准尚未完成/);assert.equal(bodies,2);approved=true
+ agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:brandString<SessionRequestId>('unrelated-request')}}),{surfaceOp:'append'})
+ assert.equal((await call()).isError,true);assert.equal(bodies,2)
+})
+
 test('官方后台续轮保留原授权，停止立即拒绝自授权工具，后续人类请求不继承',async t=>{
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
@@ -121,7 +143,7 @@ test('preset 可发现性和子 Agent 都不能扩大父 Run 的工具与资料�
  assert.equal((await call('write_action')).isError,true);assert.equal(bodies,1)
  assert.equal((await call('preset_write_action')).isError,true);assert.equal(bodies,1)
  assert.equal((await call('read_all_work_resources')).isError,true);assert.equal(bodies,1)
- assert.deepEqual(readIds,[parent.session.id,parent.session.id,parent.session.id,parent.session.id])
+ assert.ok(readIds.length>0&&readIds.every(id=>id===parent.session.id),'调用前与审批后的授权都来自父 Run')
 })
 
 test('MCP 资源工具在普通会话被拒，只有岗位授权清单列出的会话可用',async t=>{

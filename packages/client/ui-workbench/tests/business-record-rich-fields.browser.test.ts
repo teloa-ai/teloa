@@ -84,7 +84,8 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  const record=page.getByRole('button',{name:new RegExp(title)});await record.waitFor();assert.match(await record.innerText(),/CNY 9007199254740993\.01/)
  const writes=await page.evaluate(()=>(window as any).richFixture.calls.filter((row:any)=>row[0]==='business-records/create'));assert.equal(writes.length,1)
  assert.deepEqual(writes[0][1].fields,[{name:'amount',value:'{"currency":"CNY","decimal":"9007199254740993.01"}'},{name:'tags',value:JSON.stringify([cloud,compliance])}])
- await record.click();await page.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).click()
+ const detail=page.getByRole('dialog',{name:title,exact:true});await detail.waitFor();assert.match(await detail.innerText(),/CNY 9007199254740993\.01/)
+ await detail.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).click()
  assert.equal(await page.getByLabel(amount,{exact:true}).inputValue(),'9007199254740993.01')
  await page.getByRole('combobox',{name:amount+' · '+(en?'Currency':'币种')}).selectOption('USD');await page.getByLabel(amount,{exact:true}).fill('-10.5000')
  await page.getByRole('checkbox',{name:compliance,exact:true}).uncheck();await page.getByRole('button',{name:en?'Save record':'保存记录',exact:true}).click()
@@ -94,6 +95,7 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  assert.equal(await page.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).count(),0)
  await page.getByRole('button',{name:en?'Back to current version':'返回当前版本',exact:true}).click();await page.getByRole('button',{name:en?'Archive record':'归档记录',exact:true}).click()
  await page.getByRole('form',{name:en?'Archive record':'归档记录',exact:true}).getByRole('button',{name:en?'Archive record':'归档记录',exact:true}).click();await page.getByRole('button',{name:en?'Add the first record':'新增第一条',exact:true}).waitFor()
+ await page.getByRole('dialog',{name:title,exact:true}).getByRole('button',{name:en?'Close':'关闭',exact:true}).click()
  // 未受理且失回包时更换当前定义，控件仍必须展示原请求的币种和精确金额。
  await page.evaluate(()=>(window as any).richFixture.offline=true);await page.getByRole('button',{name:en?'Add the first record':'新增第一条',exact:true}).click()
  await page.getByRole('textbox',{name:en?/^Record title/:/^记录标题/}).fill(title+' pending');await page.getByLabel(amount,{exact:true}).fill('9007199254740993.01');await page.getByRole('checkbox',{name:cloud,exact:true}).check()

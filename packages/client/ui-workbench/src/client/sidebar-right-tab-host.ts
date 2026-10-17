@@ -1,6 +1,8 @@
 import type {ReactNode} from 'react'
 import type {TabId} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {TeloaTabKind,TeloaTabSecondaryView} from './sidebar-right-tabs.js'
+import type {ArtifactTarget} from './ArtifactPanel.js'
+import type {ArtifactFile} from './artifact-files.js'
 
 /**
  * 原生右栏页签的内容仍归 Teloa 外壳所有：DSH 提供座位，`WorkbenchFrame` 提供“画什么”。
@@ -17,6 +19,16 @@ import type {TeloaTabKind,TeloaTabSecondaryView} from './sidebar-right-tabs.js'
  * 新增 provider 时一律与 `BusinessScopeProvider` 同层包住整个 frame，不要在座位外再包一层。
  */
 export type TeloaTabHost={
+ /** 概况遵循外壳的真实并栏空间；收起保留同一页签与草稿。 */
+ overviewRoom?:{canShow:()=>boolean;guard:(sessionId:string)=>void}
+ /** 已注册成果共用外壳内的持久预览实例；座位只提供当前会话的挂载点。 */
+ artifactPreview?:{
+  target:(sessionId:string)=>ArtifactTarget|null
+  mount:(sessionId:string,node:HTMLElement)=>()=>void
+  open:(sessionId:string,target:ArtifactTarget)=>void
+  close:(sessionId:string)=>void
+  saveFile?:(sessionId:string,file:ArtifactFile,isCurrent:()=>boolean)=>Promise<{id:string;version:number}>
+ }
  /** 画一个页签的正文；参数不可用（脏参数、对象已不在）时返回 null，由座位显示“目标已不可用”。 */
  render:(kind:TeloaTabKind,view:TeloaTabSecondaryView,params:unknown)=>ReactNode
  /** 这个对象此刻有没有可核对的依据；没有就不出二级切换条。 */

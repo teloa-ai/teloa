@@ -2,6 +2,8 @@ import {Service,type Context} from '@deepseek-ai/cordis'
 import {WorkError} from '@teloa/contract'
 import {createNativeWorkInput} from './native-work-input.ts'
 import {createNativeProducerAdmissions} from './native-producer-admission.ts'
+import {NativeVoiceInputAdmissions} from './native-voice-input-admission.ts'
+import {NativeHardwareInputAdmissions} from './native-hardware-input-admission.ts'
 import {workAccess} from '@teloa/backend'
 import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore} from './native-input-checkpoint.ts'
 
@@ -17,6 +19,8 @@ export const nativeInputRecoveryCandidateVersion=1
 export const nativeInputCapabilityVersion=1
 /** 续轮必须共享最终 Session guard，并在模型 step 前确认持久 Goal 票据。 */
 export const nativeInputGoalAdmissionVersion=1
+/** 实际工具启动的 Job 完成只继承原受理根，不凭完成事件开新工作。 */
+export const nativeInputJobAdmissionVersion=1
 
 declare module '@deepseek-ai/cordis'{
  interface Context{readonly teloaNativeInput:TeloaNativeInput}
@@ -59,15 +63,20 @@ export class TeloaNativeInput extends Service{
  static inject=['sessions','agents','llm','tools']
  declare readonly input:ReturnType<typeof createNativeWorkInput>
  declare readonly admissions:ReturnType<typeof createNativeProducerAdmissions>
+ declare readonly voice:NativeVoiceInputAdmissions
+ declare readonly hardware:NativeHardwareInputAdmissions
  constructor(ctx:Context,config:NativeInputProviderConfig={}){
   // 必须先验证最终补口，不能先发布一个缺少守卫的准入 Service。
-  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint,config.progress,config.restore,config.requireResident??true),admissions=createNativeProducerAdmissions(input)
+  const input=createNativeWorkInput(ctx,workAccess,config.checkpoint,config.progress,config.restore,config.requireResident??true),voice=new NativeVoiceInputAdmissions(),hardware=new NativeHardwareInputAdmissions(),admissions=createNativeProducerAdmissions(input,undefined,voice,hardware)
   super(ctx,'teloaNativeInput')
   Object.defineProperties(this,{
    input:{value:input,enumerable:true,writable:false,configurable:false},
    admissions:{value:admissions,enumerable:true,writable:false,configurable:false},
+   voice:{value:voice,enumerable:true,writable:false,configurable:false},
+   hardware:{value:hardware,enumerable:true,writable:false,configurable:false},
   })
-  ctx.effect(()=>()=>input.close())
+  ctx.on('agent/inbox/inserted',({agent,message})=>voice.captureInserted(agent,message))
+  ctx.effect(()=>()=>{voice.close();hardware.close();input.close()})
  }
 }
 export default TeloaNativeInput

@@ -1,0 +1,17 @@
+/* 状态与控制先于完整核对正文；固定输入只有一个有界阅读面。 */
+.executions{min-width:0;padding:0;border:0;font-size:var(--teloa-font-control)}
+.executions>header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.executions h3{margin:0;font-size:var(--teloa-font-control)}
+.run{min-width:0;padding:12px 0;border-top:1px solid var(--teloa-border)}
+.actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;align-items:center}
+.actions:empty{display:none}
+.run>details{border-top:1px solid var(--teloa-border);margin:0;padding:0}
+.run>details>summary{padding:9px 0;cursor:pointer;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.reviewBody{max-height:26rem;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;min-width:0;padding:0 8px 8px 0;line-height:1.6;overflow-wrap:anywhere}
+.reviewBody>p{margin:6px 0;white-space:pre-wrap}
+.reviewBody>section{margin:8px 0;padding:8px 0;border:0;border-top:1px solid var(--teloa-border);border-radius:0;background:transparent}
+.reviewBody h4{margin:0 0 6px;font-size:var(--teloa-font-caption)}
+.reviewBody dl{gap:4px;margin:0 0 6px}
+.reviewBody ul{margin:4px 0 8px}
+.executions :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:480px){.reviewBody{max-height:22rem}.reviewBody dl>div{grid-template-columns:minmax(0,1fr);gap:2px}}

@@ -88,7 +88,8 @@ test('v2视图看板预览只读使用版本化候选校验并签出原候选回
  const candidate=dashboardCandidate('teloa.business-configuration/v2')
  const unavailable=async():Promise<never>=>{throw Error('不得访问外部来源')}
  const definitions=new BusinessDefinitionSourceReader({get:unavailable,getInTransaction:unavailable},{get:unavailable,getInTransaction:unavailable,listInTransaction:unavailable},{activeSourceIds:unavailable})
- const queries:string[]=[],db={query:async(sql:string)=>{queries.push(sql);return {rows:[{managed:false}]}},release:()=>{}}
+ // 预览现会读取记录快照做影响分析（20d66a7）：只有受管状态查询回一行，其余查询回空，不能把占位行冒充快照。
+ const queries:string[]=[],db={query:async(sql:string)=>{queries.push(sql);return {rows:sql.includes('configuration_managed')?[{managed:false}]:[]}},release:()=>{}}
  const draft={id:draftId,scope,revision:2,baseVersion:0,candidate,hash:businessConfigurationHash(candidate),status:'draft'}
  const preview=new BusinessConfigurationPreviewService({connect:async()=>db} as unknown as Pool,{draftInTransaction:async()=>draft} as never,definitions,{now:()=>new Date().toISOString()})
  const result=await preview.preview({ownerId:'owner',scopeIds:[]},{draftId,expectedRevision:2})

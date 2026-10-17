@@ -1,0 +1,21 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
+import {build} from 'vite'
+// @ts-expect-error 复用本工作树的无头浏览器加载器。
+import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
+
+test('计划表单显式选择汇报群，外点关闭保留目标与草稿且不保存或启用',{timeout:60000},async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__plan_group_report.tsx'
+ const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {PlanForm} from '${client}ContinuousPage.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+ const role={storage:'persistent',id:'22222222-2222-4222-8222-222222222222',name:'原员工',kind:'employee',state:'active',version:1,scopes:['general'],skills:[],knowledge:[],memories:[],history:[]},groupId='33333333-3333-4333-8333-333333333333',f=window.planReportFixture={saved:[],closed:0,reopen:()=>{}},snapshot={locale:'en',dshLocale:'en',revision:1},runtime={t:(key,params)=>translateMessage('en',key,params),getSnapshot:()=>snapshot,subscribe:()=>()=>{}};
+ function App(){const [open,setOpen]=React.useState(true),[fields,setFields]=React.useState({title:'原计划草稿',goal:'核对原资料',scope:'general',roleId:role.id,dataScope:'原授权资料',delivery:'原成果',notificationPolicy:'attention',trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'}});f.reopen=()=>setOpen(true);return <I18nProvider runtime={runtime}>{open&&<PlanForm persistent fixedScope={undefined} fallbackFocus={()=>{}} openMarket={()=>{}} draft={{id:'11111111-1111-4111-8111-111111111111',fields}} roles={[role]} groups={[{id:groupId,name:'原汇报群',scope:'general'}]} patch={setFields} close={()=>{f.closed++;setOpen(false)}} save={async()=>{f.saved.push(fields);setOpen(false)}} reload={undefined}/>}</I18nProvider>};createRoot(document.getElementById('root')).render(<App/>);`
+ const result=await build({configFile:false,root,logLevel:'error',plugins:[{name:'plan-report-fixture',resolveId:id=>id.endsWith('plan-report-fixture')?virtual:null,load:id=>id===virtual?entry:null,transform:(code,id)=>id===client+'ContinuousPage.tsx'?code+'\nexport {PlanForm};':undefined}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:')},lib:{entry:'plan-report-fixture',name:'PlanReportFixture',formats:['iife']}}})
+ const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);const chunk=bundle.output.find(item=>item.type==='chunk');assert.ok(chunk&&chunk.type==='chunk')
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1200,height:900}});t.after(()=>page.close());page.setDefaultTimeout(2500);const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
+ await page.setContent('<!doctype html><html lang="en"><body><div id="root"></div></body></html>');await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:chunk.code})
+ const dialog=page.getByRole('dialog'),group=dialog.getByRole('combobox',{name:'Report to group',exact:true});await group.selectOption('33333333-3333-4333-8333-333333333333')
+ await page.mouse.click(2,2);await dialog.waitFor({state:'detached'});assert.deepEqual(await page.evaluate(()=>(window as any).planReportFixture.saved),[])
+ await page.evaluate(()=>(window as any).planReportFixture.reopen());assert.equal(await group.inputValue(),'33333333-3333-4333-8333-333333333333')
+ await dialog.getByRole('button',{name:'Save paused plan',exact:true}).click();await dialog.waitFor({state:'detached'});const saved=await page.evaluate(()=>(window as any).planReportFixture.saved);assert.equal(saved.length,1);assert.equal(saved[0].groupId,'33333333-3333-4333-8333-333333333333');assert.equal(saved[0].title,'原计划草稿');assert.equal(Object.hasOwn(saved[0],'enabled'),false);assert.deepEqual(errors,[])
+})

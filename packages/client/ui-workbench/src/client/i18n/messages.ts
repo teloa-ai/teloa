@@ -1,3 +1,4 @@
+import {TEMPLATE_SHARE_MESSAGE_KEYS,templateShareMessages,templateShareHongKongMessages} from './locales/template-share.js'
 import {LIBRARY_MESSAGE_KEYS,libraryMessages,libraryHongKongMessages,type LibraryMessageKey} from './locales/library.js'
 import {CAPABILITY_CENTER_MESSAGE_KEYS,capabilityCenterMessages,capabilityCenterHongKongMessages,type CapabilityCenterMessageKey} from './locales/capability-center.js'
 import {LOCAL_MATERIAL_MESSAGE_KEYS,localMaterialMessages,type LocalMaterialMessageKey} from './locales/local-material.js'
@@ -27,12 +28,10 @@ const BASE_MESSAGE_KEYS = [
   'navigation.attention',
   'navigation.team',
   'navigation.spaces',
-  'navigation.market',
   'navigation.resources',
   'navigation.tasks',
   'navigation.plans',
   'navigation.projects',
-  'navigation.capabilities',
   'navigation.newConversation',
   'navigation.creating',
   'navigation.new',
@@ -41,8 +40,6 @@ const BASE_MESSAGE_KEYS = [
   'navigation.recent',
   'navigation.recent.remove',
   'navigation.reading',
-  'navigation.themeDark',
-  'navigation.themeLight',
   'navigation.profileAria',
   'home.title',
   'home.subtitle',
@@ -68,7 +65,6 @@ const BASE_MESSAGE_KEYS = [
   'team.detail.back',
   'team.action.assign',
   'team.action.edit',
-  'task.action.viewAttention',
   'task.action.viewAll',
   'task.search',
   'task.empty.none',
@@ -151,28 +147,28 @@ const BASE_MESSAGE_KEYS = [
   'error.unknown',
 ] as const
 
-export const MESSAGE_KEYS=[...BASE_MESSAGE_KEYS,...OVERVIEW_MESSAGE_KEYS,...ROLE_DELEGATION_MESSAGE_KEYS,...TASK_COMPLETION_MESSAGE_KEYS,...PLAN_WORK_MESSAGE_KEYS,...LOCAL_MATERIAL_MESSAGE_KEYS,...CAPABILITY_CENTER_MESSAGE_KEYS,...LIBRARY_MESSAGE_KEYS] as const
+export const MESSAGE_KEYS=[...BASE_MESSAGE_KEYS,...TEMPLATE_SHARE_MESSAGE_KEYS,...OVERVIEW_MESSAGE_KEYS,...ROLE_DELEGATION_MESSAGE_KEYS,...TASK_COMPLETION_MESSAGE_KEYS,...PLAN_WORK_MESSAGE_KEYS,...LOCAL_MATERIAL_MESSAGE_KEYS,...CAPABILITY_CENTER_MESSAGE_KEYS,...LIBRARY_MESSAGE_KEYS] as const
 export type MessageKey = typeof MESSAGE_KEYS[number]
 export type MessageCatalog = Readonly<Record<typeof BASE_MESSAGE_KEYS[number], string>&Partial<Record<OverviewMessageKey|RoleDelegationMessageKey|TaskCompletionMessageKey|PlanWorkMessageKey|LocalMaterialMessageKey|CapabilityCenterMessageKey|LibraryMessageKey,string>>>
 export type RegionCatalog = Readonly<Partial<Record<MessageKey, string>>>
 export type MessageParams = Readonly<Record<string, string | number>>
 
 export const catalogs: Readonly<Record<MainLocale, Readonly<Record<MessageKey,string>>>> = {
-  'zh-CN': {...zhCNMessages,...overviewMessages['zh-CN'],...roleDelegationMessages['zh-CN'],...taskCompletionMessages['zh-CN'],...planWorkMessages['zh-CN'],...localMaterialMessages['zh-CN'],...capabilityCenterMessages['zh-CN'],...libraryMessages['zh-CN']},
-  'zh-Hant': {...zhHantMessages,...overviewMessages['zh-Hant'],...roleDelegationMessages['zh-Hant'],...taskCompletionMessages['zh-Hant'],...planWorkMessages['zh-Hant'],...localMaterialMessages['zh-Hant'],...capabilityCenterMessages['zh-Hant'],...libraryMessages['zh-Hant']},
-  en: {...enMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  ja: {...jaMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  ko: {...koMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  vi: {...viMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  es: {...esMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  fr: {...frMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  de: {...deMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
-  pt: {...ptMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en']},
+  'zh-CN': {...zhCNMessages,...overviewMessages['zh-CN'],...roleDelegationMessages['zh-CN'],...taskCompletionMessages['zh-CN'],...planWorkMessages['zh-CN'],...localMaterialMessages['zh-CN'],...capabilityCenterMessages['zh-CN'],...libraryMessages['zh-CN'],...templateShareMessages['zh-CN']},
+  'zh-Hant': {...zhHantMessages,...overviewMessages['zh-Hant'],...roleDelegationMessages['zh-Hant'],...taskCompletionMessages['zh-Hant'],...planWorkMessages['zh-Hant'],...localMaterialMessages['zh-Hant'],...capabilityCenterMessages['zh-Hant'],...libraryMessages['zh-Hant'],...templateShareMessages['zh-Hant']},
+  en: {...enMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  ja: {...jaMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  ko: {...koMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  vi: {...viMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  es: {...esMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  fr: {...frMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  de: {...deMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
+  pt: {...ptMessages,...overviewMessages.en,...roleDelegationMessages.en,...taskCompletionMessages.en,...planWorkMessages.en,...localMaterialMessages.en,...capabilityCenterMessages['en'],...libraryMessages['en'],...templateShareMessages['en']},
 }
 
 export const regionCatalogs: Readonly<Record<RegionLocale, RegionCatalog>> = {
   'zh-TW': zhTWMessages,
-  'zh-HK': {...zhHKMessages,...overviewHongKongMessages,...roleDelegationHongKongMessages,...capabilityCenterHongKongMessages,...libraryHongKongMessages},
+  'zh-HK': {...zhHKMessages,...overviewHongKongMessages,...roleDelegationHongKongMessages,...capabilityCenterHongKongMessages,...libraryHongKongMessages,...templateShareHongKongMessages},
 }
 
 type LooseMainCatalogs = Readonly<Record<string, Readonly<Record<string, string>>>>

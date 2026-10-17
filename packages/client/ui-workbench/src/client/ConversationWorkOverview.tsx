@@ -1,7 +1,8 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react'
-import {ArrowLeft,Bot,CheckCircle2,ChevronRight,Circle,Download,ExternalLink,FileText,Globe,Plug,Puzzle,Search,Square,Terminal,WandSparkles} from 'lucide-react'
+import {ArrowLeft,Bot,CheckCircle2,ChevronRight,Circle,ExternalLink,Globe,Plug,Puzzle,Search,Square,Terminal,WandSparkles} from 'lucide-react'
 import type {ConversationOverviewArtifact,ConversationOverviewRound,ConversationOverviewSnapshot,ConversationOverviewStatus,ConversationOverviewStep,ConversationOverviewWork} from './conversation-overview-model.js'
 import type {ConversationOverviewResourceGroup} from './conversation-overview-resources.js'
+import {WorkArtifactCard} from './WorkArtifactCard.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import type {OverviewMessageKey} from './i18n/locales/overview.js'
@@ -14,6 +15,7 @@ export type ConversationWorkOverviewProps=Readonly<{
  onReconcileWork?:(work:ConversationOverviewWork)=>void|Promise<void>
  onPreviewArtifact:(artifact:ConversationOverviewArtifact)=>void|Promise<void>
  onDownloadArtifact?:(artifact:ConversationOverviewArtifact)=>void|Promise<void>
+ citationHistory?:ReactNode
 }>
 type StopRequest=Readonly<{status:'requesting'|'sent'|'unknown';sourceStatus:ConversationOverviewStatus}>
 type ResourceSelection=Readonly<{id:string;sessionId:string;roundId?:string}>
@@ -108,12 +110,12 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
    {status==='unknown'&&<p className={css.note}>{t('overview.unknownHint')}</p>}
   </article>
  }
- const artifactCard=(artifact:ConversationOverviewArtifact)=><article key={artifact.id} className={css.artifactCard}>
-  <button type="button" className={css.artifactPreview} aria-label={t('overview.previewAria',{name:artifact.label})} onClick={()=>invoke(()=>props.onPreviewArtifact(artifact))}>
-   <span className={css.fileIcon}><FileText size={22}/></span><span className={css.fileInfo}><strong>{artifact.label}</strong><small>{artifact.kind}{artifact.status!=='unknown'&&<> · {t(artifact.status==='draft'?'overview.artifact.draft':'overview.artifact.final')}</>}{artifact.version&&<> · {artifact.version}</>}</small></span><ChevronRight size={15}/>
-  </button>
-  {props.onDownloadArtifact&&<button type="button" className={css.iconButton} aria-label={t('overview.downloadAria',{name:artifact.label})} onClick={()=>invoke(()=>props.onDownloadArtifact!(artifact))}><Download size={16}/></button>}
- </article>
+ const artifactCard=(artifact:ConversationOverviewArtifact)=><WorkArtifactCard key={artifact.id} label={artifact.label} detail={<>{artifact.kind}{artifact.status!=='unknown'&&<> · {t(artifact.status==='draft'?'overview.artifact.draft':'overview.artifact.final')}</>}{artifact.version&&<> · {artifact.version}</>}</>} onPreview={()=>invoke(()=>props.onPreviewArtifact(artifact))} onDownload={props.onDownloadArtifact?()=>invoke(()=>props.onDownloadArtifact!(artifact)):undefined}/>
+ const artifactSection=snapshot.artifacts.length>0&&<section className={css.section} aria-label={t('overview.artifacts')}>
+   <SectionHeading label={t('overview.artifacts')} count={currentArtifacts.length}/>
+   {currentArtifacts.length>0?<div className={css.artifacts}>{currentArtifacts.map(artifactCard)}</div>:<p className={css.note}>{t('artifact.panel.text.019')}</p>}
+   {historicalArtifacts.length>0&&<details className={css.history} open={versionsOpen} onToggle={event=>setVersionsOpen(event.currentTarget.open)}><summary><ChevronRight size={13}/>{t('knowledge.ui.035')} · {historicalArtifacts.length}</summary><div className={css.artifacts}>{historicalArtifacts.map(artifactCard)}</div></details>}
+ </section>
  const resourceRows=(groups:readonly ConversationOverviewResourceGroup[],round?:ConversationOverviewRound)=>groups.length?<div className={css.resourceList}>{groups.map(group=><button key={group.id} type="button" className={css.resourceRow} onClick={event=>{trigger.current=event.currentTarget;setResourceSelection({id:group.id,sessionId:snapshot.sessionId,...(round?{roundId:roundIdentity(round)}:{})})}}>
   <ResourceIcon kind={group.kind}/><span>{resourceLabel(group)}</span><span className={css.resourceValue}>{t('overview.resourceRecords',{count:group.evidence.length})}</span><ChevronRight size={14}/>
  </button>)}</div>:<p className={css.note}>{t('overview.noUsage')}</p>
@@ -132,11 +134,7 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
      {snapshot.running.length?<div className={css.workList}>{snapshot.running.map(workCard)}</div>:<p className={css.note}>{t('overview.noRunning')}</p>}
      {snapshot.ended.length>0&&<details className={css.history} open={endedOpen} onToggle={event=>setEndedOpen(event.currentTarget.open)}><summary><ChevronRight size={13}/>{t('overview.endedWork',{count:snapshot.ended.length})}</summary><div className={css.workList}>{snapshot.ended.map(workCard)}</div></details>}
     </section>
-    {snapshot.artifacts.length>0&&<section className={css.section} aria-label={t('overview.artifacts')}>
-     <SectionHeading label={t('overview.artifacts')} count={currentArtifacts.length}/>
-     {currentArtifacts.length>0&&<div className={css.artifacts}>{currentArtifacts.map(artifactCard)}</div>}
-     {historicalArtifacts.length>0&&<details className={css.history} open={versionsOpen} onToggle={event=>setVersionsOpen(event.currentTarget.open)}><summary><ChevronRight size={13}/>{t('knowledge.ui.035')} · {historicalArtifacts.length}</summary><div className={css.artifacts}>{historicalArtifacts.map(artifactCard)}</div></details>}
-    </section>}
+    {artifactSection}
     <section className={css.section} aria-label={t('overview.usage')}>
      <SectionHeading label={t('overview.usage')}/><p className={css.scope}>{t('overview.usageScope')}</p>
      {resourceRows(snapshot.usageGroups,snapshot.currentRound)}
@@ -146,8 +144,9 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
        {resourceRows(entry.usageGroups,entry.round)}
       </section>)}
      </details>}
+     {props.citationHistory}
     </section>
-   </>}
+   </>}{!hasWork&&<>{artifactSection}{props.citationHistory&&<section className={css.section} aria-label={t('overview.usage')}><SectionHeading label={t('overview.usage')}/>{props.citationHistory}</section>}</>}
   </div>
   {resource&&<div className={css.resourceDetail} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeResource()}}}>
    <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={15}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resourceLabel(resource)}</h2><p className={css.scope}>{resourceHistory?t('overview.usageRound',{turn:resourceHistory.round.turn}):t('overview.usageScope')}{resourceHistory&&Number.isFinite(resourceHistory.round.startedAt)&&<> · <time dateTime={new Date(resourceHistory.round.startedAt).toISOString()}>{time(resourceHistory.round.startedAt)}</time></>}</p></header>
@@ -157,7 +156,7 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
 }
 
 function SectionHeading({label,count,children}:{label:string;count?:number;children?:ReactNode}){
- return <h2 className={css.heading}>{label}{count!==undefined&&count>0&&<span className={css.count}>{count}</span>}{children}</h2>
+ return <h2 className={css.heading}>{label}{count!==undefined&&count>=0&&<span className={css.count}>{count}</span>}{children}</h2>
 }
 function ResourceIcon({kind}:{kind:ConversationOverviewResourceGroup['kind']}){
  return kind==='search'?<Globe size={16}/>:kind==='skill'?<WandSparkles size={16}/>:kind==='mcp'?<Plug size={16}/>:<Puzzle size={16}/>

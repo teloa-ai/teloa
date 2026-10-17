@@ -4,7 +4,7 @@ import {isRecord,resourceId,resourceVersion} from './resources.ts'
 /**
  * 端侧中文检索试点（规格 2026-09-27 §5.2、§7.1）的跨边界契约。
  *
- * 检索范围只由服务端依据主体确定；结果不携带资料正文以外的任何路径或下载地址，
+ * 检索范围只由服务端依据主体确定；结果不携带本机路径或下载地址。citationPath 只导航到会话内固定回执，
  * 模型准备状态与 DSH `SpeechPreparationState` 同形，`downloading` 多带一个 `stage`
  * 区分「运行时安装」与「模型工件下载」两段进度。
  */
@@ -54,6 +54,8 @@ export type RetrievalCoverage={
 }
 export type RetrievalSearchHit={
  resourceId:string;resourceVersion:number;title:string;sourceId:string;sourceVersion:string
+ /** 宿主生成的会话内固定引用；它是导航标识，不是文件路径或读取授权。旧回执可缺省。 */
+ citationPath?:string
  /** 分块在原文中的行区间（含首尾，从 0 起）。 */
  lines:[number,number]
  /** 分块在原文中的字符区间（半开区间，从 0 起）。 */
@@ -64,6 +66,21 @@ export type RetrievalSearchHit={
  excerpt:string
 }
 export type RetrievalSearchResult={coverage:RetrievalCoverage;results:RetrievalSearchHit[]}
+export type RetrievalCitationIdentity={sessionId:string;resourceId:string;resourceVersion:number;sourceVersion:string;chars:[number,number]}
+export function retrievalCitationPath(sessionId:string,hit:Pick<RetrievalSearchHit,'resourceId'|'resourceVersion'|'sourceVersion'|'chars'>):string{
+ const path='teloa-source/'+encodeURIComponent(sessionId)+'/'+hit.resourceId+'/'+hit.resourceVersion+'/'+hit.sourceVersion+'/'+hit.chars.join('-')
+ if(!readRetrievalCitationPath(path))throw new WorkError('teloa/invalid-input','检索引用身份格式不正确。')
+ return path
+}
+export function readRetrievalCitationPath(value:unknown):RetrievalCitationIdentity|undefined{
+ if(typeof value!=='string')return
+ const parts=value.split('/');if(parts.length!==6||parts[0]!=='teloa-source')return
+ try{
+  const sessionId=decodeURIComponent(parts[1]!),resourceVersionValue=Number(parts[3]),chars=parts[5]!.split('-').map(Number)
+  if(!sessionId||sessionId.length>128||/[\x00-\x20\x7f/\\]/.test(sessionId)||sessionId==='.'||sessionId==='..'||encodeURIComponent(sessionId)!==parts[1]||!resourceId(parts[2])||!resourceVersion(resourceVersionValue)||String(resourceVersionValue)!==parts[3]||!/^[a-f0-9]{64}$/.test(parts[4]!)||!/^\d+-\d+$/.test(parts[5]!)||!range(chars,true)||chars.join('-')!==parts[5])return
+  return {sessionId,resourceId:parts[2]!,resourceVersion:resourceVersionValue,sourceVersion:parts[4]!,chars}
+ }catch{return}
+}
 
 const badState=()=>new WorkError('teloa/invalid-input','本地检索模型状态格式不正确。')
 const badResult=()=>new WorkError('teloa/invalid-input','检索结果格式不正确。')
@@ -139,17 +156,18 @@ export function readRetrievalSearchResult(value:unknown):RetrievalSearchResult{
  const searched=new Map(coverage.searched.map(item=>[item.resourceId,item.version]))
  let totalBytes=0
  const results=row.results.map(item=>{
-  const r=exact(item,['resourceId','resourceVersion','title','sourceId','sourceVersion','lines','chars','heading','score','excerpt'],[],badResult)
+  const r=exact(item,['resourceId','resourceVersion','title','sourceId','sourceVersion','lines','chars','heading','score','excerpt'],['citationPath'],badResult)
   if(!resourceId(r.resourceId)||!resourceVersion(r.resourceVersion)||searched.get(r.resourceId)!==r.resourceVersion)throw badResult()
   if(!label(r.title,200)||typeof r.sourceId!=='string'||!sourceIdPattern.test(r.sourceId)||typeof r.sourceVersion!=='string'||!sha256.test(r.sourceVersion))throw badResult()
   if(!range(r.lines,false)||!range(r.chars,true))throw badResult()
+  if(r.citationPath!==undefined){const citation=readRetrievalCitationPath(r.citationPath);if(!citation||citation.resourceId!==r.resourceId||citation.resourceVersion!==r.resourceVersion||citation.sourceVersion!==r.sourceVersion||citation.chars[0]!==r.chars[0]||citation.chars[1]!==r.chars[1])throw badResult()}
   if(r.heading!==null&&!label(r.heading,200))throw badResult()
   if(typeof r.score!=='number'||!Number.isFinite(r.score)||r.score<-1||r.score>1)throw badResult()
   if(typeof r.excerpt!=='string'||!r.excerpt.trim())throw badResult()
   const bytes=utf8.encode(r.excerpt).byteLength
   totalBytes+=bytes
   if(bytes>retrievalLimits.maxExcerptBytes||totalBytes>retrievalLimits.maxTotalExcerptBytes)throw badResult()
-  return {resourceId:r.resourceId,resourceVersion:r.resourceVersion,title:r.title,sourceId:r.sourceId,sourceVersion:r.sourceVersion,lines:[r.lines[0],r.lines[1]] as [number,number],chars:[r.chars[0],r.chars[1]] as [number,number],heading:r.heading as string|null,score:r.score,excerpt:r.excerpt}
+  return {resourceId:r.resourceId,resourceVersion:r.resourceVersion,title:r.title,sourceId:r.sourceId,sourceVersion:r.sourceVersion,lines:[r.lines[0],r.lines[1]] as [number,number],chars:[r.chars[0],r.chars[1]] as [number,number],heading:r.heading as string|null,score:r.score,excerpt:r.excerpt,...(r.citationPath===undefined?{}:{citationPath:r.citationPath as string})}
  })
  return {coverage,results}
 }

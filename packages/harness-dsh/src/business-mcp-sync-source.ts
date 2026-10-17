@@ -1,7 +1,8 @@
 import {WorkError,evaluateJsonPath} from '@teloa/contract'
 import type {BusinessSyncSourcePort,BusinessSyncSourceResolver} from '@teloa/backend'
+import type {BusinessSourceAuthority} from './business-source-authority.ts'
 
-export type ManagedMcpToolInvoker=(input:{serverName:string;tool:string;arguments:Record<string,unknown>;signal?:AbortSignal})=>Promise<unknown>
+export type ManagedMcpToolInvoker=(input:{serverName:string;tool:string;arguments:Record<string,unknown>;signal?:AbortSignal;authority?:BusinessSourceAuthority})=>Promise<unknown>
 
 const unavailable=(reason:string)=>new WorkError('teloa/source-unavailable',reason)
 /**
@@ -23,7 +24,12 @@ function nextPageCursor(raw:unknown,path:string):string|undefined{
 }
 
 /** 受管 MCP 连接的两道门：连接是否已建立、某工具是否目录声明为只读（两者都由 `managed-mcp-connections.ts` 给出）。 */
-export type McpSyncToolState={connected(serverName:string):boolean;readOnly(serverName:string,tool:string):boolean}
+export type McpSyncToolState={
+ connected(serverName:string):boolean
+ readOnly(serverName:string,tool:string):boolean
+ capture?:(serverName:string,toolName?:string)=>Promise<BusinessSourceAuthority>
+ commit?:<T>(authority:BusinessSourceAuthority,write:(assertCurrent:()=>Promise<void>)=>Promise<T>,signal?:AbortSignal)=>Promise<T>
+}
 
 /**
  * `mcp-tool` 来源适配（看板同步 / 映射预览试拉共用）。只允许 `managed-mcp-connections.ts` 已连接且目录声明 `readOnly===true`
@@ -47,11 +53,17 @@ export function createMcpSyncSource(invoke:ManagedMcpToolInvoker,tools:McpSyncTo
   if(!tools.connected(source.serverName))throw new WorkError('teloa/source-unavailable','受管连接 '+source.serverName+' 连接未建立。',{sourceState:'disconnected'})
   if(!tools.readOnly(source.serverName,source.tool))throw new WorkError('teloa/forbidden','看板同步只允许只读工具：'+source.serverName+'/'+source.tool+' 不存在或不是只读工具。',{toolGate:true})
   const pagination=source.pagination
+  const authority=await tools.capture?.(source.serverName,source.tool)
+  const assertCurrent=()=>authority&&tools.commit?tools.commit(authority,async verify=>{await verify()}):Promise.resolve()
   // 当前这条分页链的起点与累计字节：不带 pageToken 的首页开一条新链。
   let chain={startedAt:0,bytes:0}
   const port:BusinessSyncSourcePort={
    key:source.serverName+'/'+source.tool,
+   ...(authority?.bindingKey?{bindingKey:authority.bindingKey}:{}),
+   ...(authority&&tools.commit?{withCurrent:<T>(write:(verify:()=>Promise<void>)=>Promise<T>)=>tools.commit!(authority,write)}:{}),
    async fetch(input){
+    input.signal?.throwIfAborted()
+    await assertCurrent()
     input.signal?.throwIfAborted()
     if(input.pageToken===undefined)chain={startedAt:now(),bytes:0}
     else if(pagination&&now()-chain.startedAt>maxChainMs)throw unavailable('受管 MCP 工具分页耗时超过 '+Math.round(maxChainMs/60_000)+' 分钟；未写入。')
@@ -62,16 +74,19 @@ export function createMcpSyncSource(invoke:ManagedMcpToolInvoker,tools:McpSyncTo
     let raw:unknown
     try{
      raw=await new Promise<unknown>((resolve,reject)=>{
+      if(signal.aborted){reject(signal.reason);return}
       const stop=()=>reject(signal.reason)
       signal.addEventListener('abort',stop,{once:true})
-      invoke({serverName:source.serverName,tool:source.tool,arguments:args,signal})
+      invoke({serverName:source.serverName,tool:source.tool,arguments:args,signal,...(authority?{authority}:{})})
        .then(resolve,reject).finally(()=>signal.removeEventListener('abort',stop))
      })
     }catch(error){
      if(input.signal?.aborted)throw error
+     if(error instanceof WorkError&&error.details?.sourceState==='changed')throw error
      if(error instanceof WorkError&&error.details?.sourceState==='disconnected')throw new WorkError('teloa/source-unavailable','受管连接 '+source.serverName+' 连接未建立或已断开。',{sourceState:'disconnected'})
      throw unavailable(timeout.aborted?'受管 MCP 工具超时（超过 '+Math.round(timeoutMs/1000)+' 秒未返回）。':'受管 MCP 工具暂不可读。')
     }
+    await assertCurrent()
     const items=evaluateJsonPath(raw,source.itemsPath)
     if(!Array.isArray(items))throw unavailable('受管 MCP 工具结果里按 itemsPath 取不到记录数组；未写入。')
     if(items.length>input.pageSize)throw unavailable('受管 MCP 工具一次返回 '+items.length+' 条，超过每页上限 '+input.pageSize+'；请调大映射的 pageSize（≤ 100）或收窄工具参数。')

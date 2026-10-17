@@ -1,6 +1,8 @@
+import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
-import {staffAvatarComponent} from './staff-avatar-component.ts'
+import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -8,12 +10,13 @@ import ts from 'typescript'
 import * as React from 'react'
 import {contentOf,markdownPrimitivesStub,testUseMemo} from './saved-message-markdown-stubs.ts'
 import * as contract from '@teloa/contract'
-import type {Group,GroupMember,GroupMessage} from '@teloa/contract'
+import type {Group,GroupChangeFields,GroupMember,GroupMessage} from '@teloa/contract'
 import * as savedCollaborationState from '../src/client/saved-collaboration-state.ts'
 import {createSavedCollaborationDraftStore,type SavedCollaborationDraftStore} from '../src/client/saved-collaboration-drafts.ts'
 import type {PendingAttachment} from '../src/client/group-attachment-api.ts'
 import type {GroupApi,GroupSnapshot} from '../src/client/group-api.js'
-import type {SavedConversationDirectory} from '../src/client/SavedCollaborationPage.js'
+import type {GroupWorkContext,SavedConversationDirectory} from '../src/client/SavedCollaborationPage.js'
+import type {WorkbenchNavigationStorage} from '../src/client/workbench-navigation-state.js'
 
 /**
  * 复现「返回来源话题」后草稿是否丢失：真实运行 SavedCollaborationPage.tsx 的组件函数与
@@ -31,11 +34,16 @@ const replyId='33333333-3333-4333-8333-333333333333'
 
 const group:Group={id:groupId,ownerId:'self',version:1,name:'资料核对群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},pinned:false,archived:false,createdAt:stamp,updatedAt:stamp}
 const member:GroupMember={groupId,roleId:null,createdAt:stamp}
+const changedGroup=(current:Group,fields:GroupChangeFields):Group=>{
+ const {coordinatorRoleId:previous,...group}=current,{coordinatorRoleId:requested,...changes}=fields
+ const coordinatorRoleId=requested===undefined?previous:requested
+ return {...group,...changes,...(coordinatorRoleId?{coordinatorRoleId}:{})}
+}
 const snapshot:GroupSnapshot={group,members:[member]}
 const rootMessage:GroupMessage={id:rootId,groupId,rootId:null,authorId:'self',text:'请核对这批资料并保留来源',references:[],mentions:[],createdAt:stamp}
 const replyMessage:GroupMessage={id:replyId,groupId,rootId,authorId:'self',text:'形成可复核工作结论',references:[],mentions:[],createdAt:stamp}
 
-function makeApi():GroupApi{
+function makeApi(resources:unknown[]=[]):GroupApi{
  return {
   get:async(id:string)=>{assert.equal(id,groupId);return snapshot},
   messages:async(id:string,forRoot?:string)=>{
@@ -44,7 +52,7 @@ function makeApi():GroupApi{
    if(forRoot===rootId)return {items:[rootMessage,replyMessage]}
    throw Error('未预期的话题根：'+forRoot)
   },
-  resources:async()=>({items:[]}),
+  resources:async()=>({items:resources}),
   agentGrant:async()=>({groupVersion:1,roleVersion:1,grant:null,status:'not-granted'}),
   list:async()=>({items:[group]}),
   recoveryMessage:()=>undefined,
@@ -52,7 +60,7 @@ function makeApi():GroupApi{
  } as unknown as GroupApi
 }
 
-type Props={visible:boolean;api:GroupApi;directory?:SavedConversationDirectory;target:{groupId:string;rootId:string}|null;roles:unknown[];profileName:string}
+type Props={preferences?:WorkbenchNavigationStorage;work?:GroupWorkContext;visible:boolean;api:GroupApi;directory?:SavedConversationDirectory;target:{groupId:string;rootId:string}|null;roles:unknown[];profileName:string}
 
 /** 执行真实组件函数与真实 effect 调度；只有顶层组件手动调用，嵌套子组件在展开时按普通函数调用。 */
 function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;scheduleRefresh?:(run:()=>Promise<void>)=>(()=>void)}){
@@ -74,9 +82,15 @@ function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;
  const t=(key:string,params?:Record<string,string|number>)=>params?key+':'+JSON.stringify(params):key
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string):unknown=>{
+  const groupResult=groupResultFixtureModule(id);if(groupResult!==undefined)return groupResult
+  // 本文件核对群草稿和异步回包；渠道读回由 group-channel-bindings.test.ts 单独覆盖。
+  if(id==='./GroupChannelBindings.js')return {GroupChannelBindings:()=>null}
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
   if(id==='react')return hooks
-  if(id==='./StaffAvatar.js')return staffAvatarComponent
+  if(id==='./ContextDrawer.js')return {ContextDrawer:({children,title,open}:any)=>open?React.createElement('dialog',{'aria-label':title},children):null}
+  if(id==='./task-preview.js')return {taskStates:{ready:'status.ready',running:'status.running',paused:'status.paused',waiting:'status.waiting',blocked:'status.blocked',completed:'status.completed',cancelled:'status.cancelled'}}
+  if(id==='./StaffAvatar.js'||id==='./EmployeeAvatar.js'||id==='./TwinAvatar.js')return staffAvatarComponent
+  if(id==='./personal-profile.js')return personalProfileForGroup
   if(id==='lucide-react')return new Proxy({},{get:()=>()=>null})
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   // SavedCollaborationPage 现在直接读契约里的群附件字面量（类型与上限），夹具按真模块喂。
@@ -91,7 +105,7 @@ function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;
   if(id.endsWith('saved-collaboration-state.js'))return savedCollaborationState
   if(id.endsWith('saved-collaboration-drafts.js'))return {savedCollaborationDrafts:options?.draftStore??createSavedCollaborationDraftStore()}
   if(id.endsWith('team-presentation.js'))return {twinDisplayName:(name:string)=>name}
-  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t,time:(value:string)=>value})}
+  if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({locale:'zh-Hans',t,time:(value:string)=>value,date:(value:string)=>value.slice(0,10),dateTime:(value:string)=>value})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>String(cause)}
   if(id.endsWith('group-message-refresh.js'))return {scheduleGroupMessageRefresh:options?.scheduleRefresh??(()=>()=>{})}
   // 群内直接回应一期 T14 接线后 SavedCollaborationPage 多了这两处依赖；本文件不测表情与折叠行，一律给空实现。
@@ -99,6 +113,11 @@ function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;
   if(id.endsWith('group-routing-view.js'))return {groupRoutingPending:()=>[]}
   // DSH 平台模块，Node 下装不起来，给透传桩（见 saved-message-markdown-stubs.ts）。
   if(id==='@deepseek-ai/dsh-client-ui-primitives')return markdownPrimitivesStub
+  // 本夹具未接工作关联端口；新组件边界另有源渲染与浏览器用例，不应进入此旧消息测试。
+  if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
+  // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
+  if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }
  const code=ts.transpileModule(readFileSync(new URL('../src/client/SavedCollaborationPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
@@ -120,6 +139,7 @@ function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;
  const expand=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
   if(Array.isArray(node))return node.flatMap(expand)
   if(!React.isValidElement<Record<string,any>>(node))return []
+  if(node.props.hidden)return []
   if(typeof node.type==='function')return expand((node.type as (p:unknown)=>React.ReactNode)(node.props))
   return [node,...expand((node.props as {children?:React.ReactNode}).children)]
  }
@@ -133,6 +153,122 @@ function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;
 }
 
 const byAria=(label:string)=>(el:React.ReactElement<Record<string,any>>)=>el.props['aria-label']===label
+
+test('刷新重挂从当前群的导航偏好恢复概况，另一群不能继承该面板',async()=>{
+ const rows=new Map([[`teloa.group-panel/v1/${groupId}`,JSON.stringify({schema:'teloa.group-panel/v1',kind:'overview',tab:'work'})]])
+ const preferences={getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value)},removeItem:(key:string)=>{rows.delete(key)}}
+ const secondId='99999999-9999-4999-8999-999999999999',api=makeApi()
+ api.get=async id=>({group:{...group,id},members:[{...member,groupId:id}]})
+ api.messages=async()=>({items:[]})
+ const app=mount({visible:true,api,preferences,target:{groupId,rootId:''},roles:[],profileName:'测试者'})
+ await app.flush()
+ const overview=(el:React.ReactElement<Record<string,any>>)=>el.type==='aside'&&el.props['aria-label']==='overview.title'
+ assert.equal(app.findAll(overview).length,1,'当前群已展开的概况应恢复')
+ app.setProps({target:{groupId:secondId,rootId:''}})
+ await app.flush()
+ assert.equal(app.findAll(overview).length,0,'未保存展开偏好的另一群仍保持关闭')
+})
+
+test('群面板的显式关闭保存为本人关闭偏好，恢复偏好不抢占来源话题',async()=>{
+ const rows=new Map<string,string>(),preferences={getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value)},removeItem:(key:string)=>{rows.delete(key)}}
+ const props:Props={visible:true,api:makeApi(),preferences,target:{groupId,rootId:''},roles:[],profileName:'测试者'}
+ const app=mount(props)
+ await app.flush()
+ app.find(byAria('overview.title')).props.onClick()
+ assert.deepEqual(JSON.parse(rows.get(`teloa.group-panel/v1/${groupId}`)!),{schema:'teloa.group-panel/v1',kind:'overview',tab:'work'})
+ const fromTopic=mount({...props,target:{groupId,rootId}})
+ await fromTopic.flush()
+ assert.equal(fromTopic.findAll(el=>el.type==='aside'&&el.props['aria-label']==='collaboration.panel.topic').length,1)
+ const previousFrame=(globalThis as Record<string,unknown>).requestAnimationFrame
+ ;(globalThis as Record<string,unknown>).requestAnimationFrame=(run:()=>void)=>{run();return 1}
+ try{app.find(byAria('collaboration.panel.close')).props.onClick()}finally{(globalThis as Record<string,unknown>).requestAnimationFrame=previousFrame}
+ assert.deepEqual([...rows.keys()],[`teloa.group-panel/v1/${groupId}`])
+ assert.deepEqual(JSON.parse(rows.get(`teloa.group-panel/v1/${groupId}`)!),{schema:'teloa.group-panel/v1',kind:'closed',tab:'work'})
+ const reloaded=mount(props)
+ await reloaded.flush()
+ assert.equal(reloaded.findAll(el=>el.type==='aside'&&['overview.title','collaboration.panel.topic'].includes(el.props['aria-label'])).length,0)
+})
+
+test('宽屏无偏好默认进入工作概览；本人关闭、已选资料和窄窗分别保持，话题不改写偏好',async()=>{
+ const rows=new Map<string,string>(),preferences={getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value)},removeItem:(key:string)=>{rows.delete(key)}}
+ const host=globalThis as Record<string,unknown>,previousWindow=host.window,previousFrame=host.requestAnimationFrame
+ let width=1600
+ host.window={matchMedia:(query:string)=>({matches:query.includes('min-width')?width>=1381:width<=740})}
+ host.requestAnimationFrame=(run:()=>void)=>{run();return 1}
+ const key=`teloa.group-panel/v1/${groupId}`,props:Props={visible:true,api:makeApi(),preferences,target:{groupId,rootId:''},roles:[],profileName:'测试者'}
+ const panel=(label:string)=>(el:React.ReactElement<Record<string,any>>)=>el.type==='aside'&&el.props['aria-label']===label
+ const sidePanel=(el:React.ReactElement<Record<string,any>>)=>el.type==='aside'&&['overview.title','collaboration.view.materials','group.panel.members','collaboration.panel.topic'].includes(el.props['aria-label'])
+ try{
+  const first=mount(props)
+  await first.flush()
+  assert.equal(first.findAll(panel('overview.title')).length,1,'宽屏且此前无偏好时进入工作概览')
+  assert.equal(rows.size,0,'默认展开不伪造本人偏好')
+  first.find(byAria('collaboration.panel.close')).props.onClick()
+  assert.deepEqual(JSON.parse(rows.get(key)!),{schema:'teloa.group-panel/v1',kind:'closed',tab:'work'})
+  const closed=mount(props)
+  await closed.flush()
+  assert.equal(closed.findAll(sidePanel).length,0,'本人关闭后宽屏也不再自动展开')
+  rows.set(key,JSON.stringify({schema:'teloa.group-panel/v1',kind:'materials',tab:'work'}))
+  const materials=mount(props)
+  await materials.flush()
+  assert.equal(materials.findAll(panel('collaboration.view.materials')).length,1,'已保存的资料选择优先于默认概览')
+  width=700
+  const narrow=mount(props)
+  await narrow.flush()
+  assert.equal(narrow.findAll(sidePanel).length,0,'窄窗不自动盖住讨论')
+  assert.deepEqual(JSON.parse(rows.get(key)!),{schema:'teloa.group-panel/v1',kind:'materials',tab:'work'},'窄窗不改写本人偏好')
+  width=1600
+  const topic=mount({...props,target:{groupId,rootId}})
+  await topic.flush()
+  assert.equal(topic.findAll(panel('collaboration.panel.topic')).length,1)
+  assert.deepEqual(JSON.parse(rows.get(key)!),{schema:'teloa.group-panel/v1',kind:'materials',tab:'work'},'打开来源话题不清除面板偏好')
+ }finally{host.window=previousWindow;host.requestAnimationFrame=previousFrame}
+})
+
+test('A 群设置经隐藏再切 B 群，不混入 B 权限渠道且原群草稿保留',async()=>{
+ const secondId='99999999-9999-4999-8999-999999999999'
+ const second={...group,id:secondId,name:'B 协作群'}
+ const api=makeApi(),writes:string[]=[]
+ api.get=async id=>({group:id===groupId?group:second,members:[{...member,groupId:id}]})
+ api.messages=async()=>({items:[]})
+ api.change=async(id,_version,fields)=>{writes.push(id);return {group:changedGroup(id===groupId?group:second,fields),members:[{...member,groupId:id}]}}
+ const app=mount({visible:true,api,target:{groupId,rootId:''},roles:[],profileName:'测试者'})
+ await app.flush()
+ // 读取真实父组件树，避免手工钩子夹具把各子组件的钩子槽混在一起。
+ const elements=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
+  if(Array.isArray(node))return node.flatMap(elements)
+  if(!React.isValidElement<Record<string,any>>(node))return []
+  return [node,...elements(node.props.children)]
+ }
+ const tree=()=>elements(app.render())
+ const settings=()=>tree().find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.settings.aria')!
+ const form=()=>tree().find(el=>typeof el.type==='function'&&el.type.name==='SavedGroupForm')!
+ const composer=()=>tree().find(el=>typeof el.type==='function'&&el.type.name==='SavedComposer')!
+ composer().props.setText('A 群未发送草稿')
+ settings().props.onClick()
+ assert.equal(form().props.open,true)
+ assert.equal(form().props.form.snapshot.group.id,groupId)
+ assert.equal(form().props.channels.props.groupId,groupId)
+ app.setProps({visible:false})
+ app.setProps({visible:true,target:{groupId:secondId,rootId:''}})
+ await app.flush()
+ assert.equal(form().props.form.snapshot.group.id,groupId,'保留 A 的原编辑对象')
+ assert.equal(form().props.open,false,'B 群不能重开 A 的设置抽屉')
+ assert.equal(form().props.permissions,undefined,'A 设置不能接入 B 的授权面')
+ assert.ok(!form().props.channels,'A 设置不能读取 B 的渠道')
+ assert.equal(composer().props.text,'','B 不继承 A 消息草稿')
+ settings().props.onClick()
+ assert.equal(form().props.open,true)
+ assert.equal(form().props.form.snapshot.group.id,secondId)
+ assert.equal(form().props.channels.props.groupId,secondId)
+ assert.ok(form().props.permissions)
+ await form().props.save({name:'B 群新名称',announcement:'',rules:second.rules,memberRoleIds:[],pinned:false,archived:false})
+ await app.flush()
+ assert.deepEqual(writes,[secondId],'B 的设置只保存 B 对象')
+ app.setProps({target:{groupId,rootId:''}})
+ await app.flush()
+ assert.equal(composer().props.text,'A 群未发送草稿')
+})
 
 test('返回来源话题：话题草稿在组件重新载入同一话题后必须保留',async()=>{
  const api=makeApi()
@@ -311,13 +447,15 @@ test('群设置打开后轮询读到新版本，保存仍使用编辑基线并�
  api.change=async(id,expectedVersion,fields)=>{
   submitted={id,expectedVersion,fields}
   if(expectedVersion!==latest.group.version)throw Object.assign(Error('群设置版本已变化'),{code:'teloa/version-conflict'})
-  latest={...latest,group:{...latest.group,...fields,version:expectedVersion+1}}
+  latest={...latest,group:{...changedGroup(latest.group,fields),version:expectedVersion+1}}
   return latest
  }
  const app=mount({visible:true,api,target:{groupId,rootId:''},roles:[],profileName:'测试者'},
   {scheduleRefresh:run=>{poll=run;return()=>{}}})
  await app.flush()
- app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.settings.aria').props.onClick()
+ const settingsAvatar=app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.settings.aria'&&el.props.role!=='menuitem')
+ const settingsMenu=app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.settings.aria'&&el.props.role==='menuitem')
+ settingsAvatar.props.onClick()
  // 只读父组件产生的表单 props，不展开子组件钩子，确保执行的是父级真实保存闭包。
  const form=()=>{
   const collect=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
@@ -331,6 +469,11 @@ test('群设置打开后轮询读到新版本，保存仍使用编辑基线并�
   return matches[0]!
  }
  assert.equal(form().props.form.snapshot.group.version,1)
+ form().props.close();app.render();assert.equal(form().props.open,false,'头像入口关闭只收起原设置草稿')
+ settingsMenu.props.onClick();app.render()
+ assert.equal(form().props.open,true,'更多菜单仍可重开同一群设置')
+ assert.equal(form().props.form.snapshot.group.id,groupId)
+ assert.equal(form().props.form.snapshot.group.version,1,'两个入口复用同一编辑基线')
  latest={...latest,group:{...latest.group,version:2,announcement:'另一端保存的新公告',rules:{...latest.group.rules,mentionAllAllowed:false}}}
  assert.ok(poll)
  await poll();await app.flush()
@@ -413,4 +556,68 @@ test('同群切到另一话题后旧发送回执不得按旧闭包刷新话题',
  assert.match(panel,/新话题正文/)
  assert.doesNotMatch(panel,/请核对这批资料并保留来源/)
  assert.equal(app.findAll(byAria('collaboration.composer.aria')).length,2,'旧发送完成不得让当前话题编辑器消失')
+})
+
+
+const rawComponent=(tree:React.ReactNode,name:string):React.ReactElement<Record<string,any>>=>{
+ const collect=(node:React.ReactNode):React.ReactElement<Record<string,any>>[]=>{
+  if(Array.isArray(node))return node.flatMap(collect)
+  if(!React.isValidElement<Record<string,any>>(node))return []
+  return typeof node.type==='function'&&node.type.name===name?[node]:collect(node.props.children)
+ }
+ const matches=collect(tree);assert.equal(matches.length,1);return matches[0]!
+}
+const savedTaskRecord={task:{id:'saved-group-task',ownerId:'self',groupId,title:'原群任务',state:'ready',version:1},source:{taskId:'saved-group-task',groupId,messageId:rootId,rootId}} as unknown as import('../src/client/group-api.js').GroupTaskRecord
+
+test('群创建任务的迟到回执立即合并原Task，不随当前群切换改写归属',async()=>{
+ const api=makeApi(),received:unknown[]=[],work={tasks:[],openTask:()=>{},openRole:()=>{},taskSaved:(task:unknown)=>received.push(task)}
+ let resolveTask:((value:typeof savedTaskRecord)=>void)|undefined
+ api.createTask=async()=>await new Promise(resolve=>{resolveTask=resolve})
+ const app=mount({visible:true,api,work,target:{groupId,rootId:''},roles:[],profileName:'测试者'})
+ await app.flush()
+ app.find(el=>el.type==='button'&&el.props['aria-label']==='collaboration.task.create').props.onClick()
+ const form=rawComponent(app.render(),'SavedGroupTaskForm')
+ form.props.create('仅登记来源')
+ app.setProps({visible:false,target:null})
+ resolveTask!(savedTaskRecord);await app.flush()
+ assert.deepEqual(received,[savedTaskRecord.task])
+ assert.equal((received[0] as any).groupId,groupId)
+})
+
+test('恢复群任务创建回执也合并原Task，不重复创建任务或触发运行',async()=>{
+ const api=makeApi(),received:unknown[]=[]
+ api.pending=()=>({kind:'task',request:{groupId}} as ReturnType<GroupApi['pending']>)
+ let recovered=0
+ api.recover=async()=>{recovered++;return savedTaskRecord}
+ const work={tasks:[],openTask:()=>{},openRole:()=>{},taskSaved:(task:unknown)=>received.push(task)}
+ const app=mount({visible:true,api,work,target:{groupId,rootId:''},roles:[],profileName:'测试者'})
+ await app.flush()
+ rawComponent(app.render(),'SavedComposer').props.recoverPending()
+ await app.flush()
+ assert.equal(recovered,1);assert.deepEqual(received,[savedTaskRecord.task])
+})
+
+test('话题输入框里选的资料只进该话题的引用草稿，主输入框与其他话题不带入',async()=>{
+ const resourceId='77777777-7777-4777-8777-777777777777'
+ const draftStore=createSavedCollaborationDraftStore()
+ const api=makeApi([{id:resourceId,groupId,ownerId:'self',version:2,title:'方案资料',withdrawnAt:null,createdAt:stamp,updatedAt:stamp}])
+ const directory:SavedConversationDirectory={refresh:async()=>{},open:()=>{},select:()=>{},createRequest:0,createHandled:()=>{}}
+ const app=mount({visible:true,api,directory,target:{groupId,rootId:''},roles:[],profileName:'测试者'},{draftStore})
+ await app.flush()
+ app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.reply.action').props.onClick()
+ await app.flush()
+ const topicComposer=app.findAll(byAria('collaboration.composer.aria')).at(-1)!
+ topicComposer.props.onChange({target:{value:'@方',selectionStart:2}});app.render()
+ const option=app.find(el=>el.type==='li'&&el.props.role==='option'&&String(el.props.id)==='resource-'+rootId+'-'+resourceId)
+ option.props.onMouseDown({preventDefault:()=>{}});app.render()
+ const entry=draftStore.readGroupDraftEntry(groupId)
+ assert.deepEqual(entry.referenceDrafts[rootId],[{kind:'group-resource',id:resourceId,version:2}],'引用写入当前话题的草稿')
+ assert.deepEqual(entry.referenceDrafts.main??[],[],'主输入框不带入话题里选的资料')
+ const chips=app.findAll(el=>el.type==='span'&&el.props.className==='attachmentChip')
+ assert.equal(chips.length,1,'只有话题输入框显示这枚标签')
+ assert.equal(app.findAll(byAria('collaboration.composer.aria')).at(-1)!.props.value,'','话题正文里的 @过滤词被去掉')
+ assert.equal(app.findAll(byAria('collaboration.composer.aria'))[0]!.props.value,'','主输入框正文不受影响')
+ app.setProps({visible:false});app.setProps({target:{groupId,rootId},visible:true})
+ await app.flush()
+ assert.equal(app.findAll(el=>el.type==='span'&&el.props.className==='attachmentChip').length,1,'返回来源话题后引用草稿仍在')
 })

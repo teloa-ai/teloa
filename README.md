@@ -121,7 +121,7 @@ Container tools run inside the container. Mounting a folder does not give access
 
 Use **Node.js 24.x** or **22.x from 22.19 onward**, **pnpm 11.7.0**, and a running local Docker engine for PostgreSQL. Teloa and DSH run on your computer, while the database runs in Docker.
 
-The current main branch pins DSH **0.2.1-alpha.1** and includes voice input by default. Published npm and Docker releases are updated separately; source features are not necessarily available in an older release.
+The current main branch pins DSH **0.2.1-rc.2** and includes voice input by default. Published npm and Docker releases are updated separately; source features are not necessarily available in an older release.
 
 ```sh
 git clone https://github.com/teloa-ai/teloa.git

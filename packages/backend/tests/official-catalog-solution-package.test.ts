@@ -4,39 +4,80 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {mcpConnectionReadOnly} from '@teloa/contract'
 import {OfficialCatalogService} from '../src/market/official-catalog.ts'
+import {officialCatalogFiles} from '../src/market/official-catalog-snapshot.ts'
 
 const stub={import:async()=>{throw Error('unused')},findByIdentity:async()=>null,findByCatalogSources:async()=>new Map<string,string>()}
 const service=()=>new OfficialCatalogService(stub as never)
-type Manifest={id:string;version:string;resources:{id:string;kind:string}[]}
+type Manifest={id:string;version:string;resources:{id:string;kind:string;source:{kind:string;path?:string}}[];relations:{kind:string;from:string;to:string}[]}
+type ReviewedTeam={packageId:string;version:string;manifestSha256:string;contents:Record<string,number>;methods:string[]
+ roles:Record<string,{knowledge:string[];methods:string[];work:string[];connections:string[];coordinates:string[]}>
+ connections:{id:string;serverName:string;tools:string[];readOnly:boolean}[];roleEntries:{id:string;path:string}[]}
+// 期望来自市场仓已审目录（tests/fixtures/reviewed-catalog-20261014.json 由市场仓固定提交派生），不从本仓快照反推
+const reviewed=JSON.parse(readFileSync(new URL('../../../tests/fixtures/reviewed-catalog-20261014.json',import.meta.url),'utf8')) as {solutions:string[];hosted:{byKind:Record<string,string[]>};teams:Record<string,ReviewedTeam>}
+const teams=Object.entries(reviewed.teams)
+const owner={ownerId:'local:owner',kind:'human' as const}
+/** 随发行固定、加载时已逐字节核对的方案包原文件。 */
+const packageFile=(entryId:string,version:string,path:string)=>Buffer.from(officialCatalogFiles[`${entryId}/${version}/${path}`]!,'base64')
 
-test('官方方案：回包带原样的方案包清单与条目版本，清单身份与目录条目一致',()=>{
- const result=service().solutionPackage('teloa.soc')
- assert.equal(result.entryId,'teloa.soc')
- const manifest=result.manifest as Manifest
- assert.equal(manifest.id,'soc-operations')
- assert.equal(manifest.version,result.version)
- const kinds=manifest.resources.map(resource=>resource.kind)
- assert.equal(kinds.filter(kind=>kind==='role').length,2)
- assert.ok(kinds.includes('skill')&&kinds.includes('knowledge')&&kinds.includes('work-template')&&kinds.includes('plan'))
- // SOC 包里没有连接声明，没有可判定为只读的接入源
- assert.deepEqual(result.readOnlyResources,[])
-})
-
-test('接入源只读判定：包内连接声明的工具在官方连接器目录里全部标为只读才算只读',()=>{
- // 飞书与语雀两个连接只声明了读消息、读文档、搜索这几个工具，官方连接器目录里都标为 readOnly
- assert.deepEqual(service().solutionPackage('teloa.cn-workspace').readOnlyResources,['lark-read','yuque-read'])
-})
-
-test('十八个官方方案都能读出清单，版本与目录条目一致',async()=>{
+test('官方团队方案：回包清单与市场仓原件逐字一致，员工、19 个方法与资料/工作/连接/协调关系与已审清单一致',()=>{
  const catalog=service()
- const listed=await catalog.list({ownerId:'local:owner',kind:'human'},{kind:'solution'})
- assert.ok(listed.items.length>=18)
- for(const {entry} of listed.items){
-  const result=catalog.solutionPackage(entry.id)
-  assert.equal(result.version,entry.version,entry.id)
-  assert.equal((result.manifest as Manifest).version,entry.version,entry.id)
-  assert.equal(entry.kind==='solution'&&(result.manifest as Manifest).id,entry.kind==='solution'&&entry.solution.packageId,entry.id)
+ assert.deepEqual(teams.map(([id])=>id),reviewed.solutions)
+ assert.equal(teams.flatMap(([,team])=>team.methods).length,19)
+ for(const [entryId,team] of teams){
+  const result=catalog.solutionPackage(entryId),manifest=result.manifest as Manifest,bytes=packageFile(entryId,team.version,'teloa.json')
+  assert.equal(result.entryId,entryId);assert.equal(result.version,team.version,entryId)
+  // 回包是原文件解析结果，原文件摘要与市场仓已审原件相同
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),team.manifestSha256,entryId)
+  assert.deepEqual(manifest,JSON.parse(bytes.toString('utf8')),entryId)
+  assert.equal(manifest.id,team.packageId);assert.equal(manifest.version,team.version)
+  assert.deepEqual(manifest.resources.filter(row=>row.kind==='skill').map(row=>row.id),team.methods,entryId)
+  const linked=(role:string,kind:string)=>manifest.relations.filter(link=>link.kind===kind&&link.from===role).map(link=>link.to)
+  assert.deepEqual(manifest.resources.filter(row=>row.kind==='role').map(row=>row.id),Object.keys(team.roles),entryId)
+  for(const [role,expected] of Object.entries(team.roles)){
+   assert.deepEqual({knowledge:linked(role,'role-knowledge'),methods:linked(role,'role-skill'),work:linked(role,'role-work'),connections:linked(role,'role-connection'),coordinates:linked(role,'role-coordination')},expected,entryId+' '+role)
+  }
+  // 关系只从员工出发，全部指向本包已声明的资源
+  const declared=new Set(manifest.resources.map(row=>row.id))
+  assert.ok(manifest.relations.every(link=>Object.hasOwn(team.roles,link.from)&&declared.has(link.to)),entryId)
+  // 目录员工条目逐个指回本团队包里唯一的员工文件
+  for(const {id,path} of team.roleEntries){
+   assert.deepEqual(catalog.getRoleEntry(id)?.role.fromSolution,{packageId:team.packageId,version:team.version,path},id)
+   assert.equal(manifest.resources.filter(row=>row.kind==='role'&&row.source.path===path).length,1,id)
+  }
+ }
+ assert.deepEqual(teams.flatMap(([,team])=>team.roleEntries.map(row=>row.id)).sort(),reviewed.hosted.byKind.role)
+})
+
+test('接入源只读判定：逐个连接按官方连接器目录核对，全部只读工具才算只读，混入写工具或未知工具即按写处理',()=>{
+ const catalog=service(),connectors=reviewed.hosted.byKind.connector!.map(id=>catalog.getConnectorEntry(id)!)
+ for(const [entryId,team] of teams){
+  const result=catalog.solutionPackage(entryId)
+  assert.deepEqual(result.readOnlyResources,team.connections.filter(row=>row.readOnly).map(row=>row.id),entryId)
+  for(const connection of team.connections){
+   const path=(result.manifest as Manifest).resources.find(row=>row.id===connection.id)!.source.path!
+   const definition=JSON.parse(packageFile(entryId,team.version,path).toString('utf8'))
+   assert.deepEqual({serverName:definition.serverName,tools:definition.tools},{serverName:connection.serverName,tools:connection.tools},connection.id)
+   assert.equal(mcpConnectionReadOnly(definition,connectors),connection.readOnly,connection.id)
+   // 同一连接器的写工具或目录未声明的工具一旦加入，判定必须翻转为写
+   const writeTools=connectors.find(entry=>entry.connector.serverName===definition.serverName)!.connector.tools.filter(tool=>!tool.readOnly)
+   assert.ok(writeTools.length>0,connection.id+' 连接器应同时声明写工具，反例才有意义')
+   for(const tool of writeTools)assert.equal(mcpConnectionReadOnly({...definition,tools:[...definition.tools,tool.name]},connectors),false,connection.id+' + '+tool.name)
+   assert.equal(mcpConnectionReadOnly({...definition,tools:[...definition.tools,'undeclared-tool']},connectors),false,connection.id)
+  }
+ }
+})
+
+test('三个官方团队方案与三个业务看板都能读出清单，版本与包标识与目录条目一致',async()=>{
+ const catalog=service()
+ const solutions=await catalog.list(owner,{kind:'solution'}),dashboards=await catalog.list(owner,{kind:'dashboard'})
+ assert.deepEqual(solutions.items.map(item=>item.entry.id),reviewed.solutions);assert.equal(solutions.nextCursor,null)
+ assert.deepEqual(dashboards.items.map(item=>item.entry.id),reviewed.hosted.byKind.dashboard);assert.equal(dashboards.nextCursor,null)
+ for(const {entry} of [...solutions.items,...dashboards.items]){
+  const result=catalog.solutionPackage(entry.id),manifest=result.manifest as Manifest
+  assert.equal(result.version,entry.version,entry.id);assert.equal(manifest.version,entry.version,entry.id)
+  assert.equal(manifest.id,entry.kind==='solution'?entry.solution.packageId:entry.kind==='dashboard'?entry.dashboard.packageId:null,entry.id)
  }
 })
 
@@ -46,11 +87,9 @@ test('不是方案或不存在的条目按无效输入拒绝',()=>{
 })
 
 test('目录列表：官方方案条目带包含计数（按同一份方案包算），其余条目不带这个键',async()=>{
- const listed=await service().list({ownerId:'local:owner',kind:'human'})
- const soc=(await service().list({ownerId:'local:owner',kind:'human'},{kind:'solution'})).items.find(item=>item.entry.id==='teloa.soc')!
- assert.deepEqual(soc.contents,{role:2,knowledge:1,skill:7,'work-template':4,plan:1})
- const cn=(await service().list({ownerId:'local:owner',kind:'human'},{kind:'solution'})).items.find(item=>item.entry.id==='teloa.cn-workspace')!
- assert.deepEqual(cn.contents,{role:1,knowledge:1,skill:5,mcp:2,'work-template':4})
+ const listed=await service().list(owner)
+ assert.equal(listed.nextCursor,null)
+ for(const [entryId,team] of teams)assert.deepEqual(listed.items.find(item=>item.entry.id===entryId)?.contents,team.contents,entryId)
  for(const item of listed.items)if(item.entry.kind!=='solution')assert.equal(Object.hasOwn(item,'contents'),false,item.entry.id)
 })
 

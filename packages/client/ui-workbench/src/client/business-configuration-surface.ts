@@ -7,6 +7,13 @@ const initial=():BusinessConfigurationSurfaceState=>({status:'loading',current:n
 const invalid=()=>new WorkError('teloa/invalid-host-response','正式业务页面与当前配置不一致。')
 const referenceUnavailable=()=>new WorkError('teloa/source-unavailable','关联记录没有正式记录页。',{kind:'record-page-unavailable'})
 export const businessReferencePageUnavailable=(error:unknown)=>error instanceof WorkError&&error.details?.kind==='record-page-unavailable'
+/** 读取正式配置的一页并核对它属于这份 current（版本、摘要与页面声明一致）；完整页与业务总览摘要共用。 */
+export async function readBusinessConfigurationSavedPage(api:Pick<BusinessBuilderApi,'page'>,scope:string,current:BusinessConfigurationCurrentResponse,pageId:string,signal:AbortSignal,timeRange?:BusinessTimeRange):Promise<BusinessConfigurationPageProjection>{
+ const page=await api.page({scope,pageId,...(timeRange===undefined?{}:{timeRange})},signal)
+ const definition=current.manifest.pages.find(page=>page.id===pageId)
+ if(page.mode!=='saved'||page.scope!==scope||page.configurationVersion!==current.version||page.configurationHash!==current.hash||JSON.stringify(readBusinessConfigurationPage(page.page.definition))!==JSON.stringify(definition))throw invalid()
+ return page
+}
 /** 正式配置只读容器；每个scope及认证API/记录flow生命周期使用独立实例。 */
 export class BusinessConfigurationSurfaceController{
  private state=initial()
@@ -51,10 +58,8 @@ export class BusinessConfigurationSurfaceController{
  }
  private async readPage(current:BusinessConfigurationCurrentResponse,pageId:string,signal:AbortSignal,timeRange?:BusinessTimeRange):Promise<void>{
   try{
-   const page=await this.api.page({scope:this.scope,pageId,...(timeRange===undefined?{}:{timeRange})},signal)
+   const page=await readBusinessConfigurationSavedPage(this.api,this.scope,current,pageId,signal,timeRange)
    if(signal.aborted)return
-   const definition=current.manifest.pages.find(page=>page.id===pageId)
-   if(page.mode!=='saved'||page.scope!==this.scope||page.configurationVersion!==current.version||page.configurationHash!==current.hash||JSON.stringify(readBusinessConfigurationPage(page.page.definition))!==JSON.stringify(definition))throw invalid()
    try{this.selection?.set(this.scope,pageId)}catch{/* 页面偏好保存失败不影响已核验的正式页面。 */}
    this.publish({page,pageStatus:'ready',error:null})
   }catch(error){if(!signal.aborted)this.publish({page:null,pageStatus:'failed',error})}

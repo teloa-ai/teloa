@@ -1,3 +1,9 @@
+import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
+import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {Context} from '@deepseek-ai/cordis'
@@ -27,7 +33,9 @@ for(const placement of ['before','after'] as const){
   test(`真实 DSH 双 pre-step：${placement} 注册，${outcome}`,async t=>{
    const ctx=new Context();t.after(()=>ctx.fiber.dispose())
    await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(SkillRegistry)
-   const agent={session:{id:'fixed-session',header:{cwd:'/fixed-workspace'},surface:{nodes:[]},events:[]}} as unknown as Agent
+   const directory=await mkdtemp(join(tmpdir(),'teloa-skill-prestep-'));t.after(()=>rm(directory,{recursive:true,force:true}))
+   await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await installNativeWorkingDirectory(ctx,directory)
+   const agent={ctx,session:ctx.sessions.create(SessionId('fixed-session'),{meta:{cwd:directory}})} as unknown as Agent
    const events:string[]=[],controller=new AbortController(),failure=new Error('固定绑定不可读取')
    let bound=false
    ctx.skills.register({name:'fixed-method',description:'global',content:'global fallback',source:'runtime'})

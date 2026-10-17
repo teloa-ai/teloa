@@ -23,7 +23,7 @@ const permit=(input:NativeInputRestoreInput,assertCurrent:()=>undefined=()=>unde
 async function fixture(t:TestContext,restore?:NativeInputRestore){
  const f=await nativeProviderKernel(t),root=await mkdtemp(join(tmpdir(),'teloa-input-restore-'))
  t.after(()=>rm(root,{recursive:true,force:true}))
- await f.ctx.plugin(f.persistencePackage.default,{root,compression:'none'})
+ await f.ctx.plugin(f.persistencePackage,{root,compression:'none'})
  const provider=f.ctx.plugin(TeloaNativeInput,restore===undefined?{}:{restore});await provider
  const adapter=new HotAdapter();f.ctx.llm.registerAdapter([route.provider],adapter)
  await f.ctx.plugin(f.loopPackage.AgentLoop,{agents:[]})

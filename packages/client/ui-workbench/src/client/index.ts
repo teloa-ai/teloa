@@ -1,4 +1,18 @@
+import {createAssistantCompanionActivity} from './assistant-companion-activity.js'
+import {createAssistantMiniChat} from './assistant-mini-chat.js'
+import {createConversationPlanDirectory} from './conversation-plans.js'
+import {ConversationPlanCard,ConversationPlanTurnCards} from './ConversationPlanCard.js'
+import {ConversationObjectToolCard,ConversationObjectTurnCards} from './ConversationObjectCard.js'
+import {conversationObjectToolNames} from './conversation-object-receipts.js'
+import {createEmployeeVoiceApi} from './employee-voice-api.js'
 import {createWorkControlApi} from './work-control-api.js'
+import {MiniMaxVoiceSettings} from './MiniMaxVoiceSettings.js'
+import {createVoiceServiceApi} from './voice-service-api.js'
+import {createHardwareDevicesApi} from './hardware-devices-api.js'
+import {HardwareDevicesSettings} from './HardwareDevicesSettings.js'
+import {hardwareDevicesCopy} from './hardware-devices-copy.js'
+import {personalProfile} from './personal-profile.js'
+import {voiceServiceCopy} from './voice-service-copy.js'
 import {createDashboardMarketJournal} from './business-dashboard-market-journal.js'
 import {createBusinessDashboardResourceApi} from './business-dashboard-resource-api.js'
 import {insertBusinessRecordInput} from './business-record-input.js'
@@ -12,15 +26,19 @@ import {createBusinessTaskListApi} from './business-task-list-api.js'
 import {createBusinessSetupReader,createGenerationGuardedCall} from './business-setup-navigation.js'
 import {createManagedMcpConnectionApi} from './mcp-connections-api.js'
 import {createBusinessRecordApi} from './business-record-api.js'
+import {checkBusinessBuilderSwitch,switchDecision} from './business-builder-flow.js'
 import {createBusinessImportFlowFactory} from './business-import-integration.js'
 import {createLocalRetrievalApi} from './local-retrieval-api.js'
+import {RetrievalCitationTab,RetrievalSourceLinks,retrievalCitationTabDefinition} from './RetrievalCitation.js'
+import {readRetrievalSourceAddress,resolveRetrievalCitation,retrievalCitationTabId,type RetrievalCitationPort} from './retrieval-citations.js'
 import {createLocalModelsApi,createLocalModelsFocus} from './local-models-api.js'
 import {HomeWorkRequestCard} from './HomeWorkRequestCard.js'
 import {HomeWorkRequestsDock} from './HomeWorkRequestsDock.js'
 import {HomeSubmissionJournal,isDeterministicPromptRejection,type HomeSubmissionMonitor} from './home-native-submission.js'
 import {HomeSubmissionNotice} from './HomeSubmissionNotice.js'
 import {homeNativeCopy} from './home-native-copy.js'
-import {insertHomeCapabilities} from './home-native-capabilities.js'
+import type {AssistantVoiceDraft} from './AssistantVoiceMessage.js'
+import {insertHomeCapabilities,insertAssistantVoiceDraft} from './home-native-capabilities.js'
 import type {CapabilitySelection} from './Capabilities.js'
 import {HomeNativeConversation} from './HomeNativeConversation.js'
 import {HomeComposerContext} from './HomeComposerContext.js'
@@ -61,6 +79,9 @@ import {createRoleWorkDirectory} from './role-work-directory.js'
 import {homeWorkAssigneeOptions} from './home-work-assignee.js'
 import {createWebAccessApi} from './web-access-api.js'
 import {createTaskRunApi} from './task-run-api.js'
+import {TaskRunChatPresentationDirectory,readTaskRunSelectedBinding} from './task-run-chat-presentation.js'
+import {TaskRunConversationTitle,TaskRunUserMessageView} from './TaskRunChatPresentation.js'
+import {DeliveryReviewContextView} from './DeliveryReviewContextView.js'
 import {createTaskMaterialApi} from './task-material-api.js'
 import {createObjectConversationApi} from './object-conversation-api.js'
 import {createHandoffApi} from './handoff-api.js'
@@ -70,6 +91,8 @@ import {createRoleDailyLogApi} from './role-daily-log-api.js'
 import {createTaskTransitionApi} from './task-transition-api.js'
 import {createPendingRequestApi} from './pending-request-api.js'
 import {createTaskApi} from './task-api.js'
+import {createWorkAttentionApi} from './work-attention-api.js'
+import {createBusinessWorkResultsApi} from './business-work-results-api.js'
 import {createProjectApi} from './project-api.js'
 import { nativePreparedInput } from './native-prepared-input.js'
 import { RoleConversationIdentity } from './RoleConversationIdentity.js'
@@ -88,12 +111,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { installConversationBrand } from './conversation-brand.js'
+import {installStandardPresetPresentation} from './StandardPresetPresentation.js'
 import { ConversationBrand } from './ConversationBrand.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import {mainSessionSource,isNativeChildSession,observeMainSessionBinding} from './main-session.js'
+import {readNativeSessionForOpening} from './native-session-opening.js'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -108,7 +133,7 @@ import { ConversationManagement, ForkRejectedError, managementAvailability } fro
 import {followConversationDirectory} from './conversation-directory-follow.js'
 import { ConversationSearch } from './conversation-search.js'
 import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import { BindingStatus, Capabilities, CapabilitiesToolCard } from './Capabilities.js'
+import { BindingStatus, CapabilitiesToolCard } from './Capabilities.js'
 import { WorkbenchFrame, WorkbenchSidebar } from './WorkbenchFrame.js'
 import {AutoDreamSettingsPage,createAutoDreamSettingApi} from './AutoDreamSettingsPage.js'
 import {createAutoDreamRecentApi} from './auto-dream-recent-api.js'
@@ -118,6 +143,7 @@ import { ThemePresenter } from './theme-presenter.js'
 import { createRoleApi } from './role-api.js'
 import { createRoleRuntimeConfigApi } from './role-runtime-config.js'
 import { createGroupApi } from './group-api.js'
+import {createGroupWorkLinkApi} from './group-work-links-api.js'
 import {createImChannelsApi} from './im-channels-api.js'
 import {createBundledExtensionsApi} from './bundled-extensions-api.js'
 import { createGroupAttachmentApi } from './group-attachment-api.js'
@@ -132,24 +158,23 @@ import { createBusinessScopeApi } from './business-scope-api.js'
 import { configureEdition, createEditionApi } from './edition.js'
 import {applicationPresentation} from './application-presentation.js'
 import {resolveHomeNativeWorkspace} from './conversation-workspace-resolution.js'
-import {createSessionCapabilityPresentation} from './session-capability-presentation.js'
+import {createSessionCapabilityPresentation,type SessionCapabilityPresentation} from './session-capability-presentation.js'
 import {SessionCapabilityNotice} from './SessionCapabilityNotice.js'
 import {createBusinessTaskApi} from './business-task-api.js'
 import {createPageCreateApi} from './page-create-api.js'
+import {createPlanDraftApi} from './plan-draft-api.js'
 import {readPageCreateAtomicSkillBody} from './page-create-skill-content.js'
 import { createResourceApi } from './resource-api.js'
 import { resourceSource } from './resource-source.js'
-import { ResourceDraftCard } from './ResourceManager.js'
 import {KnowledgeSaveReceiptCard} from './KnowledgeSaveReceiptCard.js'
 import { ResourceRecovery } from './ResourceRecovery.js'
-import { ResourceHistory } from './ResourceHistory.js'
 import { PromptPreparation } from './prompt-preparation.js'
 import { PreparedPromptCard } from './PreparedPromptCard.js'
 import { createNativeArtifactApi } from './native-artifact-api.js'
 import {createArtifactApi} from './artifact-api.js'
 import {createSnapshotStore} from '@deepseek-ai/dsh-client-store'
 import {ConversationOverviewTab,ConversationOverviewTitle,ConversationOverviewEntry,CONVERSATION_OVERVIEW_KIND,CONVERSATION_OVERVIEW_TAB_ID} from './ConversationOverviewTab.js'
-import {isToolResourceUseSnapshot} from '@teloa/contract'
+import {isToolResourceUseSnapshot,readExternalHarnessWorkView} from '@teloa/contract'
 import { createArtifactFileApi } from './artifact-files.js'
 import { unwrapWorkRpcResult } from './work-rpc-result.js'
 import {ProducedFileCards} from './ProducedFileCards.js'
@@ -227,6 +252,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.slots.inject('settings.general.item',()=>ctx.slots.register({name:'settings.general.item',id:'teloa-personal-profile',order:-100},PersonalProfileSettings))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-auto-dream',order:7,label:()=>requireI18n().t('autoDream.name'),inject:()=>({api:autoDreamSettingApi,recent:autoDreamRecentApi,openRole:(id:string)=>requireActions().openRole(id)})},AutoDreamSettingsPage))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-credential-store',order:8,label:()=>requireI18n().t('credentialStore.title'),inject:()=>({api:credentialStoreApi})},CredentialStoreSettings))
+  ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-voice-service',order:9,label:()=>voiceServiceCopy(requireI18n().getSnapshot().locale,'title'),inject:()=>({api:voiceServiceApi})},MiniMaxVoiceSettings))
   ctx.slots.inject('sidebar',()=>ctx.slots.register({
     name:'sidebar',
     children:{
@@ -246,6 +272,9 @@ export async function apply(ctx: Context): Promise<void> {
   // 每次用都重新取右栏控制面，并接受它会抛：右栏插件可能未装、未就绪，或在开页时拒绝。
   const sidebarRightFace=()=>requireSidebarRight(workContext)
   const mainSession=mainSessionSource(ctx.uiSession)
+  const assistantActivity=createAssistantCompanionActivity()
+  // 小窗只承接已核验的原助手会话身份；读取与发送均走原生会话宿主。
+  const assistantChat=createAssistantMiniChat(assistantActivity)
   // 未决请求日志统一走同源共享存储：关掉标签页不再丢记录，多个标签页读到同一个 requestId
   // （规格 §八 G4，键名逐字沿用不新开）。普通 Web 导航仍属于当前标签页；
   // 原生宿主提供本人/安装范围后，导航及首页待用身份可跨窗口恢复。
@@ -257,14 +286,26 @@ export async function apply(ctx: Context): Promise<void> {
   const call=async(endpoint:string,payload:unknown,signal?:AbortSignal)=>{
     return unwrapWorkRpcResult(await callWithReceipt(endpoint,payload,signal))
   }
+  ctx.effect(()=>{
+    const dispose=personalProfile.connect(call)
+    const refresh=()=>{if(connection.state.getSnapshot()==='connected')void personalProfile.ready().catch(()=>{})}
+    const off=connection.state.subscribe(refresh)
+    return ()=>{off();dispose()}
+  },'teloa: 本人显示资料与原宿主同步')
   const securityActionApi=createSecurityActionApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},Object.fromEntries(securityActionCommands.map(command=>{const key='teloa.security-action.'+command+'/v1';return [command,journal(key)]})),'local:teloa-owner')
   const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-run-prepare/v1'),journal('teloa.flow-command/v1'))
+  const taskRunChat=new TaskRunChatPresentationDirectory(taskRunApi.chatPresentation)
+  ctx.effect(()=>{
+    const off=[connection.state.subscribe(taskRunChat.invalidate),connection.generation.subscribe(taskRunChat.invalidate)]
+    return()=>{for(const dispose of off)dispose();taskRunChat.invalidate()}
+  },'teloa: 运行会话只读呈现与连接世代隔离')
   const taskMaterialApi=createTaskMaterialApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-material-add/v1'))
   // 群命令的结果不明时必须保留原 requestId；服务端未显式声明无副作用，客户端不擅自释放恢复记录。
-  const groupApi=createGroupApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.group-command/v1'),undefined,'local:teloa-owner')
+  const groupApi=createGroupApi(async(endpoint,payload)=>{if(endpoint==='groups/messages/send'){try{await personalProfile.ready()}catch{/* 显示资料不授予权限，也不能阻断原群发言。 */}}const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.group-command/v1'),undefined,'local:teloa-owner')
   // 群附件四个端点都自带 requestId（上传/撤回由调用方给定并在重试时原样重用），幂等靠后端回执，因此不接恢复记录三件套。
   const groupAttachmentApi=createGroupAttachmentApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},undefined,'local:teloa-owner')
   // 表情 toggle 自带 requestId 幂等重放（同 web-access-api 先例），接恢复记录三件套；路由决策纯只读，不接。
+  const groupWorkLinks=createGroupWorkLinkApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.group-work-links/v1'))
   const groupReactionApi=createGroupReactionApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.group-reaction/v1'))
   const groupRoutingApi=createGroupRoutingApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value})
   // 台账只读：没有请求体要留底，因此不接恢复记录三件套。
@@ -291,19 +332,25 @@ export async function apply(ctx: Context): Promise<void> {
     if(['artifacts/create','artifacts/revise'].includes(method))artifactChanges.set(artifactChanges.getSnapshot()+1)
     return value
   },journal('teloa.artifact-save/v1'))
-  const taskTransitions=createTaskTransitionApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-transition/v1'))
-  const pendingRequestApi=createPendingRequestApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value})
+  const taskTransitions=createTaskTransitionApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.task-transition/v1'))
+  const pendingRequestApi=createPendingRequestApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value})
   receiptChanged=pendingRequestApi.notify
   const roleLifecycle=createRoleLifecycleApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-lifecycle/v1'))
   const memoryApi=createRoleMemoryApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-memory-command/v1'))
-  const workControlApi=createWorkControlApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.work-control-command/v1'),undefined,journal('teloa.work-budget-command/v1'))
+  const workControlApi=createWorkControlApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.work-control-command/v1'),undefined,journal('teloa.work-budget-command/v1'))
+  const planDraftApi=createPlanDraftApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{code:result.error.code});return result.value})
   const planApi=createPlanApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.plan-command/v1'))
   const dailyLogApi=createRoleDailyLogApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-daily-log-command/v1'))
-  // Auto Dream 的开关与时间以全部 system-digest 计划为载体，复用既有 planApi（plan-api.ts 已在 a035c00 认得
-  // system-digest：list()/change()/update() 都有逐字段回执核对与 Journal 恢复，映射逻辑见 createAutoDreamSettingApi）。
+  // Auto Dream 默认启用；生成时刻复用 system-digest 计划的既有读取和更新契约。
+  const conversationPlans=createConversationPlanDirectory(planApi)
+  ctx.effect(()=>{const refresh=()=>{if(connection.state.getSnapshot()==='connected')void conversationPlans.refresh().catch(()=>{})};const off=connection.state.subscribe(refresh);refresh();return off},'teloa: 连接恢复后读取会话计划')
   const autoDreamSettingApi=createAutoDreamSettingApi(planApi)
   // 凭据存储状态与历史明文副本：删除必须由本人在设置页确认；不留恢复记录（删除按清单 id 幂等，结果不明时重读状态即可）。
   const credentialStoreApi=createCredentialStoreApi((endpoint,payload)=>call(endpoint,payload))
+  const voiceServiceApi=createVoiceServiceApi(call)
+  const hardwareDevicesApi=createHardwareDevicesApi(call)
+  ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-hardware-devices',order:10,label:()=>hardwareDevicesCopy(requireI18n().getSnapshot().locale,'title'),inject:()=>({api:hardwareDevicesApi})},HardwareDevicesSettings))
+  const employeeVoiceApi=createEmployeeVoiceApi(call)
   const marketContentApi=createMarketContentApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.market-content-import/v1'),()=>crypto.randomUUID(),journal('teloa.market-import-github/v1'))
   const marketCatalogCall=async(endpoint:string,payload:unknown)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value}
   const marketCatalogApi:MarketCatalogApi={...createMarketCatalogApi(marketCatalogCall),reviews:createMarketReviewsApi(marketCatalogCall)}
@@ -337,8 +384,14 @@ export async function apply(ctx: Context): Promise<void> {
   const handoffApi=createHandoffApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.handoff/v1'),journal('teloa.handoff-change/v1'))
   const objectConversationApi=createObjectConversationApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.object-conversation/v1'))
   const taskApi=createTaskApi(call,journal('teloa.task-create/v1'))
-  const projectApi=createProjectApi(call,journal('teloa.project-create/v1'))
-  const roleApi=createRoleApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.role-create/v1'))
+  const attentionCall=(endpoint:string,payload:unknown,signal?:AbortSignal)=>createGenerationGuardedCall(()=>connection.state.getSnapshot()==='connected'?connection.generation.getSnapshot():undefined,(method,input)=>call(method,input,signal))(endpoint,payload)
+  const workAttentionApi=createWorkAttentionApi(attentionCall)
+  const attentionBusinessApi=createBusinessWorkResultsApi(attentionCall,{
+    resume:async sessionId=>{await work.openSession(sessionId);requireActions().openMessages('native')},
+    send:async(sessionId,text)=>{if(mainSession.getSnapshot()!==sessionId)throw Error('原工作会话尚未打开。');sendConversationMessage(sessionId,text)},
+  })
+  const projectApi=createProjectApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.project-create/v1'),journal('teloa.project-context/v1'),journal('teloa.project-runtime/v1'))
+  const roleApi=createRoleApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.role-create/v1'))
   const roleWorkDirectory=createRoleWorkDirectory(roleApi,roleDelegationApi)
   const autoDreamRecentApi=createAutoDreamRecentApi({roles:()=>roleApi.list(),dailyLogs:id=>dailyLogApi.list(id)})
   const runtimeConfigApi=createRoleRuntimeConfigApi(async()=>{
@@ -350,30 +403,38 @@ export async function apply(ctx: Context): Promise<void> {
   const bindingBlocks=new Map<string,string>(),contextBlocks=new Map<string,string>(),submissionBlocks=new Map<string,string>(),businessBlocks=new Map<string,string>(),capabilityBlocks=new Map<string,string>()
   const sessionCapabilities=createSessionCapabilityPresentation((sessionId,signal)=>call('session-capabilities/read',{sessionId},signal))
   ctx.effect(()=>()=>sessionCapabilities.dispose(),'teloa: 会话能力投影释放')
+  // 原生输入与小窗共用同一能力阻断文案；小窗的原助手会话可能不在主视图，另起一份同源分类投影。
+  const capabilityBlockReason=(state:SessionCapabilityPresentation)=>{const copy=state.status==='checking'?'application.capability.checking':state.status==='unavailable'?'application.capability.unavailable':state.deniedCapability?'application.capability.'+(applicationPresentation.getCapabilitySnapshot().reason??'unavailable'):undefined;return copy?requireI18n().t(copy):undefined}
+  const assistantChatCapabilities=createSessionCapabilityPresentation((sessionId,signal)=>call('session-capabilities/read',{sessionId},signal))
+  ctx.effect(()=>()=>assistantChatCapabilities.dispose(),'teloa: 小窗会话能力投影释放')
   const syncComposerBlock=(sessionId:string)=>{
     const reason=businessBlocks.get(sessionId)??bindingBlocks.get(sessionId)??contextBlocks.get(sessionId)??submissionBlocks.get(sessionId)??capabilityBlocks.get(sessionId)
     const blocks=requireWorkContext().conversation.blocks,id=brandString<SessionId>(sessionId)
     if(blocks.storeFor(id).getSnapshot()?.reason!==reason)blocks.set(id,reason?{reason}:undefined)
   }
   const homeContextBlock=(sessionId:string,reason:string|undefined)=>{if(reason)contextBlocks.set(sessionId,reason);else contextBlocks.delete(sessionId);syncComposerBlock(sessionId)}
+  const readConversation=async(sessionId:string)=>{
+    const value=await call('conversations/read',{sessionId})
+    if(!isConversation(value)||value.sessionId!==sessionId)throw Error('工作服务返回的会话格式不正确。')
+    if(sessionCapabilities.getSnapshot().sessionId===sessionId)void sessionCapabilities.refresh()
+    return value
+  }
+  const ensureConversation=async(sessionId:string)=>{
+    const value=await call('conversations/ensure',{sessionId})
+    if(!isConversation(value))throw Error('工作服务返回的绑定格式不正确。')
+    if(sessionCapabilities.getSnapshot().sessionId===sessionId)void sessionCapabilities.refresh()
+    return value
+  }
   const work=new BindingClient({
     list:async signal=>{
       const value=await call('conversations/list',{},signal)
       if(!Array.isArray(value)||!value.every(isConversation))throw Error('工作服务返回的目录格式不正确。')
       return value
     },
-    read:async(sessionId)=>{
-      const value=await call('conversations/read',{sessionId})
-      if(!isConversation(value)||value.sessionId!==sessionId)throw Error('工作服务返回的会话格式不正确。')
-      if(sessionCapabilities.getSnapshot().sessionId===sessionId)void sessionCapabilities.refresh()
-      return value
-    },
-    ensure:async(sessionId)=>{
-      const value=await call('conversations/ensure',{sessionId})
-      if(!isConversation(value))throw Error('工作服务返回的绑定格式不正确。')
-      if(sessionCapabilities.getSnapshot().sessionId===sessionId)void sessionCapabilities.refresh()
-      return value
-    },
+    read:sessionId=>readTaskRunSelectedBinding(taskRunChat,sessionId,()=>readConversation(sessionId)),
+    ensure:ensureConversation,
+    selectBinding:sessionId=>readTaskRunSelectedBinding(taskRunChat,sessionId,()=>ensureConversation(sessionId)),
+    readRunSession:sessionId=>readNativeSessionForOpening(requireWorkContext().sessions,sessionId),
     isNativeChild:sessionId=>isNativeChildSession(requireWorkContext().sessions,brandString<SessionId>(sessionId)),
     homeSkills:async signal=>{const value=await call('capabilities/home-skills',{},signal);if(!isSkillCatalog(value))throw Error('首页技能目录格式不正确。');return value},
     catalog:async(sessionId)=>{
@@ -387,7 +448,12 @@ export async function apply(ctx: Context): Promise<void> {
       if(!isConversation(value))throw Error('工作服务返回的创建结果格式不正确。')
       return value
     },
-    adopt:(sessionId,workspaceId)=>requireWorkContext().sessions.create({sessionId:brandString<SessionId>(sessionId),...(workspaceId===undefined?{}:{workspaceId:brandString<WorkspaceId>(workspaceId)})}),
+    assistant:async input=>{
+      const value=await call('conversations/assistant',input)
+      if(!isConversation(value)||value.purpose!=='assistant'||value.status!=='ready')throw Error('工作服务返回的助手身份不正确。')
+      return value
+    },
+    adopt:sessionId=>readNativeSessionForOpening(requireWorkContext().sessions,sessionId),
     open:sessionId=>requireWorkContext().uiWorkspace.openSession(brandString<SessionId>(sessionId)),
     current:mainSession.getSnapshot,
   })
@@ -477,6 +543,9 @@ export async function apply(ctx: Context): Promise<void> {
   },'local:teloa-owner')
   const createBusinessDashboardResources=(namespace:string,token:typeof businessBuilderApi)=>createBusinessDashboardResourceApi(createGenerationGuardedCall(()=>connection.state.getSnapshot()==='connected'?connection.generation.getSnapshot():undefined,marketCatalogCall,()=>{const current=businessBuilder.getSnapshot();return current.status==='ready'&&current.namespace===namespace&&current.api===token}),createDashboardMarketJournal(localStorage,namespace))
   const createBusinessMcpConnection=(namespace:string,token:typeof businessBuilderApi)=>createManagedMcpConnectionApi(createGenerationGuardedCall(()=>connection.state.getSnapshot()==='connected'?connection.generation.getSnapshot():undefined,marketCatalogCall,()=>{const current=businessBuilder.getSnapshot();return current.status==='ready'&&current.namespace===namespace&&current.api===token}))
+  // 市场「连接应用」与原连接页的全局受管连接：每次调用前后核验同一连接代次，断线或重连后旧调用不能继续；
+  // 不携带业务身份，业务配置仍走上面的 createBusinessMcpConnection（本人与业务代次核验不变）。
+  const managedMcpConnectionApi=createManagedMcpConnectionApi((endpoint,payload)=>createGenerationGuardedCall(()=>connection.state.getSnapshot()==='connected'?connection.generation.getSnapshot():undefined,marketCatalogCall)(endpoint,payload))
   const createBusinessSetup=(namespace:string,token:typeof businessBuilderApi)=>createBusinessSetupReader({namespace,token,identity:businessBuilder.getSnapshot,generation:()=>connection.state.getSnapshot()==='connected'?connection.generation.getSnapshot():undefined,ports:{responsibility:createBusinessResponsibility(namespace,token),roles:roleApi,resources:resourceApi,skills:signal=>work.readHomeSkills(signal),connections:createBusinessMcpConnection(namespace,token)}})
   const insertBusinessRecord=async(reference:BusinessObjectReference,sessionId:string,token:typeof businessBuilderApi,mayInsert:()=>boolean)=>{
     const identity=businessBuilder.getSnapshot(),child=requireWorkContext(),id=brandString<SessionId>(sessionId),binding=child.sessions.binding(id)
@@ -497,6 +566,11 @@ export async function apply(ctx: Context): Promise<void> {
       if(connection.generation.getSnapshot()!==generation)throw Error('业务连接已变化。')
       if(!result.ok)throw Object.assign(Error(result.error.message),{code:result.error.code,details:result.error.details})
       return result.value
+    },{
+      namespace:businessBuilder.getSnapshot().namespace??undefined,storage:localStorage,
+      start:async(reference,title)=>{const binding=await businessBuilder.openDaily({scope:reference.scope,title,newConversation:true});if(!binding.sessionId)throw Error('原生工作会话尚未就绪。');return binding.sessionId},
+      resume:async(sessionId)=>{const decision=await checkBusinessBuilderSwitch(businessBuilder.ports.switching,false);if(decision!=='ready')throw Error('请先处理原输入，草稿没有被覆盖。');await businessBuilder.ports.work.openSession(sessionId,undefined,()=>switchDecision(businessBuilder.ports.switching.read(),false)==='ready')},
+      send:async(sessionId,text)=>{if(mainSession.getSnapshot()!==sessionId)throw Error('原工作会话尚未打开。');sendConversationMessage(sessionId,text)},
     })
     return businessBuilder.createRecordFlow(api)
   }
@@ -526,6 +600,23 @@ export async function apply(ctx: Context): Promise<void> {
     input.setDraft(text)
     if(input.state.getSnapshot().draft!==text)throw Error('原生输入未接受这条消息，未自动发送。')
     input.submit()
+  }
+  // 「更换执行位置」只经官方公开输入门面读写草稿，不触碰编辑器或浏览器存储。
+  const conversationDraftInput=(sessionId:string)=>{
+    const child=requireWorkContext(),scope=child.sessions.scope(brandString<SessionId>(sessionId))
+    return scope?child.conversation.input.for(scope):undefined
+  }
+  const insertAssistantVoiceText=async(draft:AssistantVoiceDraft)=>{
+    const child=requireWorkContext(),scope=child.sessions.scope(brandString<SessionId>(draft.sessionId))
+    const current=()=>!draft.signal.aborted&&mainSession.getSnapshot()===draft.sessionId&&work.getSnapshot().sessionId===draft.sessionId
+    if(!scope||!current())throw Error('会话已切换，留言未加入其他草稿。')
+    const input=child.conversation.input.for(scope)
+    await insertAssistantVoiceDraft(draft.text,{
+      state:input.state,
+      verify:async()=>{const context=await homeContextApi.read(draft.sessionId);if(!current()||!context||context.scopeId!=='general'||context.roleId!==null||context.version!==draft.contextVersion)throw Error('助手会话上下文已变化，留言未加入其他草稿。')},
+      text:request=>current()?scope.bail(scope,'slash/input-insert-text',request):undefined,
+    })
+    if(current())input.focus()
   }
   const capabilityInsertions=new Set<string>()
   const insertConversationCapabilities=(selection:CapabilitySelection)=>{
@@ -595,9 +686,11 @@ export async function apply(ctx: Context): Promise<void> {
   }
 
   const conversationSearch=new ConversationSearch(async(query,signal)=>{
-    const result=await requireWorkContext().sessions.search(query,signal)
-    if(!result.ok)throw Error(result.error.message)
-    return result.value
+    const result=await call('conversations/search',{query},signal)
+    if(!result||typeof result!=='object'||Array.isArray(result)||!Array.isArray((result as {items?:unknown}).items)||typeof (result as {hasMore?:unknown}).hasMore!=='boolean')throw Error('正文检索返回格式不正确。')
+    const value=result as {items:unknown[];hasMore:boolean}
+    if(value.items.length>50||value.items.some(item=>!item||typeof item!=='object'||typeof (item as {sessionId?:unknown}).sessionId!=='string'||typeof (item as {snippet?:unknown}).snippet!=='string'))throw Error('正文检索返回格式不正确。')
+    return value as {items:{sessionId:string;snippet:string}[];hasMore:boolean}
   },()=>work.getDirectorySnapshot().rows.filter(row=>row.status==='ready').map(row=>row.sessionId))
   ctx.effect(()=>()=>conversationSearch.clear(),'teloa: 会话搜索清理')
   ctx.inject(['sessions','workspaces','connection'],child=>{
@@ -610,6 +703,7 @@ export async function apply(ctx: Context): Promise<void> {
       rename:async(id,title)=>sessions.using(brandString<SessionId>(id),{source:'workspaceOperation'},async reference=>{const result=await reference.binding.session.rename(title);if(!result.ok)throw Error(result.error.message)}),
       move:async(workspaceId,id,before)=>{await workspaces.insertSessionBefore(brandString<WorkspaceId>(workspaceId),brandString<SessionId>(id),before===undefined?undefined:brandString<SessionId>(before))},
       archive:id=>workspaces.archiveSession(brandString<SessionId>(id)),
+      restore:id=>workspaces.unarchiveSession(brandString<SessionId>(id)),
       // 宿主在调用 DSH 前落盘；断线后的重试不能重新调用非幂等 fork。
       fork:async id=>{const value=await call('copies/create',{sourceSessionId:id,requestId:crypto.randomUUID()});if(!isCopyAttempt(value))throw Error('副本创建记录格式错误。');if(value.state==='rejected')throw new ForkRejectedError('来源会话暂不支持创建副本，未创建。');if(value.state!=='ready'||!value.childSessionId)throw Error('副本结果仍待核对。');return value.childSessionId},
       copyHistory:async()=>{const value=await call('copies/list',{});if(!Array.isArray(value)||!value.every(isCopyAttempt))throw Error('副本历史返回格式错误。');return value},
@@ -660,7 +754,7 @@ export async function apply(ctx: Context): Promise<void> {
         'teloa.conversation':{kind:'single',scope:'session-maybe'},
       },
       store,
-      inject:(bound: WorkbenchActions)=>{actions=bound;return {navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText:ctx.locale.resolveText.bind(ctx.locale),setTheme:(value:'light'|'dark')=>ctx.theme.setTheme(value),sidebarRightFace,mainSession,openNativePanel:(id:string)=>layout.selectPanel(brandString<MainPanelId>(id)),work,management,conversationSearch,planApi,workControlApi,marketContentApi,marketCatalogApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,roleApi,roleWorkDirectory,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,projectApi,taskRunApi,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,roleDelegationApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,insertBusinessRecord,pageCreateApi,preparation,sendConversationMessage,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}},
+      inject:(bound: WorkbenchActions)=>{actions=bound;return {assistantActivity,assistantChat,employeeVoiceApi,groupChannels:{api:imChannelsApi,openSettings:()=>{settingsNavigation.select('teloa-im-channels');requireActions().openDirectory()}},navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText:ctx.locale.resolveText.bind(ctx.locale),setTheme:(value:'light'|'dark')=>ctx.theme.setTheme(value),sidebarRightFace,mainSession,beginNativeNavigation:()=>layout.beginNavigation(),leaseSidebarToggle:layout.leaseSidebarToggle,openNativePanel:(id:string)=>layout.selectPanel(brandString<MainPanelId>(id)),work,management,conversationSearch,planApi,conversationPlans,workControlApi,marketContentApi,marketCatalogApi,createBusinessDashboardResources,createBusinessMcpConnection,managedMcpConnectionApi,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,roleApi,roleWorkDirectory,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,workAttentionApi,attentionBusinessApi,workAttentionConnection:connection.generation,projectApi,taskRunApi,taskRunChat,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,roleDelegationApi,handoffApi,objectConversationApi,groupApi,groupWorkLinks,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,insertBusinessRecord,pageCreateApi,planDraftApi,preparation,sendConversationMessage,conversationDraftInput,prepareHomeSession,homeContextApi,insertAssistantVoiceText,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}},
     },LocalizedWorkbenchFrame)
     const disposePanels=ctx.slots.subscribe('main',retainMainPanels)
     retainMainPanels()
@@ -674,6 +768,25 @@ export async function apply(ctx: Context): Promise<void> {
   },'teloa: DSH 主题投影')
   // root 必须先提供 layout，再等待依赖 layout 的原生 conversation；避免硬注入成环。
   ctx.inject([...WORK_CONTEXT_INJECT],child=>{
+    // 引用仅借用当前原生会话的可信工具回执，不把 sourceId 或虚拟导航地址交给文件读取口。
+    const citationPorts=new Map<string,{binding:ReturnType<typeof child.sessions.binding>;port:RetrievalCitationPort}>(),emptyCitations={entries:[]}
+    const citationPort=(sessionId:string):RetrievalCitationPort=>{
+      const binding=child.sessions.binding(brandString<SessionId>(sessionId)),cached=citationPorts.get(sessionId)
+      if(cached&&cached.binding===binding)return cached.port
+      const current=()=>binding!==undefined&&child.sessions.binding(brandString<SessionId>(sessionId))===binding&&child.sidebarRight.mounted.getSnapshot()===sessionId
+      let previous:unknown,previousCurrent:boolean|undefined,snapshot:{entries:readonly {event:{type:string;seq:number;data:unknown}}[]}=emptyCitations
+      const port:RetrievalCitationPort={sessionId,current,events:{
+        subscribe:listener=>{const off=[binding?.eventSource.subscribe(listener),child.sessions.list.subscribe(listener),child.sidebarRight.mounted.subscribe(listener)];return()=>{for(const dispose of off)dispose?.()}},
+        getSnapshot:()=>{const events=binding?.eventSource.getSnapshot()??emptyCitations,active=current();if(events!==previous||active!==previousCurrent){previous=events;previousCurrent=active;snapshot={entries:active?events.entries:[]}}return snapshot},
+      },available:async id=>(await resourceApi.directory()).resources.some(resource=>resource.id===id&&resource.status==='active'),openResource:address=>{if(current())child.sidebarRight.openResource(address)}}
+      citationPorts.set(sessionId,{binding,port});return port
+    }
+    const LocalizedRetrievalSources=(props:ComponentProps<typeof RetrievalSourceLinks>)=>createElement(I18nProvider,{runtime:requireI18n()},createElement(RetrievalSourceLinks,props))
+    child.slots.inject('conversation.chat.turnTail',()=>child.slots.register({name:'conversation.chat.turnTail',id:'teloa-retrieval-sources',order:59,inject:sessionId=>({port:citationPort(sessionId)})},LocalizedRetrievalSources))
+    child.slots.inject('conversation.session.header.title',()=>child.slots.register({name:'conversation.session.header.title',inject:()=>({directory:taskRunChat})},TaskRunConversationTitle))
+    child.slots.inject('conversation.chat.node',()=>child.slots.register({name:'conversation.chat.node',key:'user',priority:-100,locale:'chat',inject:sessionId=>({source:taskRunChat.forSession(sessionId),renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}})},TaskRunUserMessageView))
+    // 宿主交付复核的「复核后交付」以可读、可复制的交付卡呈现并标明宿主来源；其余上下文行仍交给原生 context renderer。
+    child.slots.inject('conversation.chat.node',()=>child.slots.register({name:'conversation.chat.node',key:'context',priority:-100,locale:'chat',inject:()=>({renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}})},DeliveryReviewContextView))
     child.slots.inject('conversation.chat.turnTail',()=>child.slots.register({
       name:'conversation.chat.turnTail',id:'teloa-produced-files',order:-100,
       inject:sessionId=>{
@@ -695,6 +808,9 @@ export async function apply(ctx: Context): Promise<void> {
       const controller=rail.sidebarRight as {registerCloseHandler?:unknown;openTab?:unknown}|undefined
       if(typeof registry?.register!=='function'||typeof controller?.registerCloseHandler!=='function'||typeof controller?.openTab!=='function')return
       const runtime=requireI18n()
+      rail.effect(()=>rail.sidebarRightTabs.register(retrievalCitationTabDefinition(address=>{const route=readRetrievalSourceAddress(address),port=route?citationPort(route.sessionId):undefined,reference=route&&port?resolveRetrievalCitation(port.events.getSnapshot().entries,route.sessionId,route.path):undefined;return reference?reference.title+' · v'+reference.resourceVersion:runtime.t('retrieval.citation.sources')})),'teloa: 固定资料来源页签')
+      const LocalizedRetrievalCitation=(props:ComponentProps<typeof RetrievalCitationTab>)=>createElement(I18nProvider,{runtime},createElement(RetrievalCitationTab,props))
+      rail.effect(()=>rail.slots.inject('sidebar.right.pane.tab',()=>rail.slots.register({name:'sidebar.right.pane.tab',key:retrievalCitationTabId,inject:sessionId=>({port:citationPort(sessionId)})},LocalizedRetrievalCitation)),'teloa: 固定资料来源片段')
       const LocalizedTabBody=(props:ComponentProps<typeof SidebarRightTabBody>)=>createElement(I18nProvider,{runtime},createElement(SidebarRightTabBody,props))
       for(const kind of TELOA_RAIL_KINDS){
         rail.effect(()=>{
@@ -730,12 +846,23 @@ export async function apply(ctx: Context): Promise<void> {
           inject:sessionId=>{
             const binding=child.sessions.binding(sessionId)
             const status=ctx.uiSession.sessionStatus
-            return {sessions:child.sessions,jobs:overview.jobs,connection:{getSnapshot:()=>connection.state.getSnapshot()??'disconnected',subscribe:connection.state.subscribe},artifacts:artifactApi,artifactChanges,
+            return {sessions:child.sessions,jobs:overview.jobs,connection:{getSnapshot:()=>connection.state.getSnapshot()??'disconnected',subscribe:connection.state.subscribe},artifacts:artifactApi,artifactChanges,resourceHistory:resourceApi,
               readResourceUses:async(id:string,signal:AbortSignal)=>{
                 if(id!==sessionId||binding===undefined||child.sessions.binding(sessionId)!==binding)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
                 const rows=await call('resource-use/list',{sessionId:id},signal)
                 if(!Array.isArray(rows)||rows.length>2048||!rows.every(isToolResourceUseSnapshot))throw Object.assign(Error(),{code:'teloa/source-unavailable'})
                 return rows
+              },
+              readExternalWork:async(id:string,signal:AbortSignal)=>{
+                if(id!==sessionId||binding===undefined||child.sessions.binding(sessionId)!==binding)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+                const rows=await call('external-harness/list',{sessionId:id},signal)
+                if(!Array.isArray(rows))throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+                return rows.map(readExternalHarnessWorkView)
+              },
+              stopExternalWork:async(id:string,activationId:string,signal:AbortSignal)=>{
+                if(id!==sessionId||binding===undefined||child.sessions.binding(sessionId)!==binding)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+                const receipt=await call('external-harness/stop',{sessionId:id,activationId},signal)
+                if(!receipt||typeof receipt!=='object'||!('accepted' in receipt)||receipt.accepted!==true)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
               },
               pendingInteraction:{getSnapshot:()=>status.getSnapshot().get(sessionId)?.pendingInteraction!==undefined,subscribe:status.subscribe},
               files:createArtifactFileApi(call,id=>{if(id!==sessionId||binding===undefined||child.sessions.binding(sessionId)!==binding)throw Object.assign(Error(),{code:'teloa/source-unavailable'})}),
@@ -746,9 +873,13 @@ export async function apply(ctx: Context): Promise<void> {
         overview.effect(()=>overview.slots.inject('conversation.session.header.utilities',()=>overview.slots.register({name:'conversation.session.header.utilities',id:'teloa-work-overview',order:90,inject:()=>({open:(id:string)=>overview.sidebarRight.openTabIn(brandString<SessionId>(id),CONVERSATION_OVERVIEW_KIND)})},Entry)),'teloa: 手动打开工作概览')
       })
     })
-    child.slots.inject('conversation.hero.brand.mark',()=>child.slots.register({name:'conversation.hero.brand.mark',inject:()=>({theme:brandTheme})},ConversationBrand))
+    installStandardPresetPresentation(child,ctx.locale)
+    child.slots.inject('conversation.hero.brand.mark',()=>child.slots.register({name:'conversation.hero.brand.mark',inject:()=>({theme:brandTheme})},props=>createElement(I18nProvider,{runtime:requireI18n()},createElement(ConversationBrand,props))))
     // 服务必须从声明了依赖的子上下文捕获；外层布局上下文无权读取它们。
     workContext=child
+    child.effect(()=>assistantActivity.attach({sessions:child.sessions,connection:{getSnapshot:()=>connection.state.getSnapshot()??'disconnected',subscribe:connection.state.subscribe}}),'teloa: 原助手会话姿态')
+    child.effect(()=>assistantChat.attach({sessions:child.sessions,connection:{getSnapshot:()=>connection.state.getSnapshot()??'disconnected',subscribe:connection.state.subscribe},input:child.conversation.input,blocks:child.conversation.blocks,status:ctx.uiSession.sessionStatus,
+      capability:{select:id=>assistantChatCapabilities.select(id),getSnapshot:()=>{const state=assistantChatCapabilities.getSnapshot();return {sessionId:state.sessionId,status:state.status,reason:capabilityBlockReason(state)}},subscribe:listener=>{const off=[assistantChatCapabilities.subscribe(listener),requireI18n().subscribe(listener)];return()=>{for(const dispose of off)dispose()}}}}),'teloa: 小松鼠小窗原主聊')
     resolveInitialContext()
     child.effect(()=>{
       let previous:string|undefined
@@ -757,8 +888,8 @@ export async function apply(ctx: Context): Promise<void> {
         if(previous&&previous!==state.sessionId){capabilityBlocks.delete(previous);syncComposerBlock(previous)}
         previous=state.sessionId
         if(!current||state.sessionId!==current)return
-        const copy=state.status==='checking'?'application.capability.checking':state.status==='unavailable'?'application.capability.unavailable':state.deniedCapability?'application.capability.'+(applicationPresentation.getCapabilitySnapshot().reason??'unavailable'):undefined
-        if(copy)capabilityBlocks.set(current,requireI18n().t(copy));else capabilityBlocks.delete(current)
+        const reason=capabilityBlockReason(state)
+        if(reason)capabilityBlocks.set(current,reason);else capabilityBlocks.delete(current)
         syncComposerBlock(current)
       }
       const selected=()=>sessionCapabilities.select(mainSession.getSnapshot())
@@ -809,7 +940,7 @@ export async function apply(ctx: Context): Promise<void> {
     },HomeNativeConversation))
     child.slots.inject('conversation.input.left',()=>child.slots.register({
       name:'conversation.input.left',id:'teloa-work-context',order:80,
-      inject:()=>({api:homeContextApi,work,isNativeChild:(id:string)=>isNativeChildSession(child.sessions,brandString<SessionId>(id)),isAssistantContext:isHomeAssistantContext,block:homeContextBlock,roles:async()=>homeWorkAssigneeOptions((await roleWorkDirectory.list()).map(role=>({...role,storage:'persistent' as const})))}),
+      inject:()=>({api:homeContextApi,work,taskRunChat,isNativeChild:(id:string)=>isNativeChildSession(child.sessions,brandString<SessionId>(id)),isAssistantContext:isHomeAssistantContext,block:homeContextBlock,roles:async()=>homeWorkAssigneeOptions((await roleWorkDirectory.list()).map(role=>({...role,storage:'persistent' as const})))}),
     },HomeComposerContext))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({
       name:'conversation.input.dock',id:'teloa-work-requests',order:-105,
@@ -817,7 +948,7 @@ export async function apply(ctx: Context): Promise<void> {
     },HomeWorkRequestsDock))
 
     child.effect(()=>{const off=observeMainSessionBinding(mainSession,child.sessions,work);return ()=>{off();workContext=undefined}},'teloa: 原生会话绑定同步')
-    child.slots.inject('conversation.input.left',()=>child.slots.register({name:'conversation.input.left',id:'teloa-capabilities',order:90,inject:()=>({work,i18n:requireI18n(),openResources:()=>requireActions().openResources(),openTeamCapabilities:()=>requireActions().navigate('capabilities')})},Capabilities))
+    // 技能走原生 /，资料走原生 @（resourceSource）；不再叠加第二套选择器。
     child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-binding',order:-100,inject:()=>({work,i18n:requireI18n()})},BindingStatus))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-session-capability',order:-98,inject:()=>({reader:sessionCapabilities,i18n:requireI18n()})},SessionCapabilityNotice))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({
@@ -841,11 +972,45 @@ export async function apply(ctx: Context): Promise<void> {
       return {state:child.conversation.input.for(scope).state,running:child.sessions.list.getSnapshot().byId[sessionId]?.running??true,text:request=>scope.bail(scope,'slash/input-insert-text',request),reference:request=>scope.bail(scope,'slash/input-insert-reference',request)}
     }),validateTask:async(row:import('./prompt-preparation.js').PreparedPrompt)=>{const current=await objectConversationApi.taskContext(row.sourceId,row.sessionId,row.sourceVersion);if(JSON.stringify(current)!==row.taskSnapshot){preparation.invalidate(row.sourceId);throw Error('任务、负责员工或会话关联已变化，请返回任务重新准备。')}},openSource:(id:string,kind?:'home'|'task')=>kind==='task'?requireActions().openTask(id):kind==='home'?requireActions().navigate('home'):requireActions().openMarket(undefined,id)})},PreparedPromptCard))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-resource-recovery',order:-90,inject:()=>({api:resourceApi,work})},ResourceRecovery))
-    child.slots.inject('conversation.session.header.utilities',()=>child.slots.register({name:'conversation.session.header.utilities',id:'teloa-resource-history',order:80,inject:()=>({api:resourceApi,work})},ResourceHistory))
     child.slots.inject('conversation.session.header.utilities',()=>child.slots.register({name:'conversation.session.header.utilities',id:'teloa-role-identity',order:70,inject:()=>({readIdentity:(sessionId:string)=>readSessionRoleIdentity(sessionId,{links:id=>objectConversationApi.bySession(id),roles:()=>roleApi.list()})})},RoleConversationIdentity))
     for(const key of ['teloa_work_dispatch','teloa_work_collect_reports','teloa_work_status','teloa_work_stop','teloa_work_resume'])child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:()=>({call,openTask:(id:string)=>requireActions().openTask(id)})},HomeWorkRequestCard))
+    for(const key of ['teloa_plans_create','teloa_plans_change','teloa_plans_update'])child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:()=>({directory:conversationPlans,api:planApi,roleName:async(id:string)=>(await roleApi.list()).find(role=>role.id===id)?.name??''})},ConversationPlanCard))
+    child.slots.inject('conversation.chat.turnTail',()=>child.slots.register({name:'conversation.chat.turnTail',id:'teloa-scheduled-plans',order:60,inject:sessionId=>{
+      const events=child.sessions.binding(sessionId)?.eventSource,empty={entries:[]}
+      return {directory:conversationPlans,api:planApi,roleName:async(id:string)=>(await roleApi.list()).find(role=>role.id===id)?.name??'',events:{subscribe:(listener:()=>void)=>events?.subscribe(listener)??(()=>{}),getSnapshot:()=>events?.getSnapshot()??empty}}
+    }},ConversationPlanTurnCards))
+    const objectCardPorts={readProject:async(id:string)=>(await projectApi.get(id)).project,readTask:async(id:string)=>(await taskApi.list()).find(task=>task.id===id),openProject:(project:import('@teloa/contract').WorkProject)=>requireActions().openBusiness({scope:project.scope,section:'projects',id:project.id}),openTask:(id:string)=>requireActions().openTask(id),readCapability:async(receipt:import('./conversation-object-receipts.js').ConversationObjectReceipt)=>{
+      if(receipt.kind==='extension'){
+       const locale=requireI18n().getSnapshot().locale,copy=(cn:string,tw:string,en:string)=>locale.startsWith('zh')?(/zh-(TW|HK|Hant)/.test(locale)?tw:cn):en
+       const extension=(await bundledExtensionsApi.list()).find(row=>row.id===receipt.id)
+       if(!extension)throw Error('扩展已不可用。')
+       return {id:extension.id,ownerId:'local:teloa-owner',title:extension.id==='local-embedding'?copy('本地检索','本機檢索','Local retrieval'):copy('IM 通道','IM 通道','IM channels'),version:extension.version,state:extension.state,description:extension.id==='local-embedding'?copy('本人资料的本地检索','本人資料的本機檢索','Local retrieval of your resources'):copy('会话消息通道','會話訊息通道','Conversation messaging channels')}
+      }
+      if(receipt.kind!=='connector'||!receipt.connectorKind)throw Error('能力身份不正确。')
+      const instance=await(receipt.connectorKind==='data-source'?industryDataSourceApi:receipt.connectorKind==='execution-tool'?industryExecutionToolApi:industryMcpConnectionApi).get(receipt.id)
+      if(instance.ownerId!=='local:teloa-owner')throw Error('连接能力不属于当前本人。')
+      const load=await industryLoadApi.get(instance.loadId),item=load.items.find(row=>row.instanceId===instance.itemInstanceId)
+      if(load.ownerId!==instance.ownerId||!item)throw Error('连接能力来源已不可用。')
+      return {id:instance.id,ownerId:instance.ownerId,title:item.title,version:instance.revision,state:instance.state,description:load.templateTitle+' · '+instance.scope}
+     },resources:resourceApi,readSkill:async(installationId:string)=>{
+      const installation=await skillInstallApi.get(installationId)
+      if(installation.ownerId!=='local:teloa-owner')throw Error('技能安装不属于当前本人。')
+      if(installation.source.kind!=='atomic'){
+       const [load,availability,selected]=await Promise.all([industryLoadApi.get(installation.source.loadId),skillAvailabilityApi.get(installationId),callWithReceipt('skill-selections/get',{nativeName:installation.native.name})])
+       if(!selected.ok)throw Object.assign(Error(selected.error.message),{code:selected.error.code})
+       return {kind:'industry',installation,load,availability,selection:selected.value}
+      }
+      const result=await callWithReceipt('skill-edits/get',{installationId});if(!result.ok)throw Object.assign(Error(result.error.message),{code:result.error.code});return result.value
+     },openIndustrySkill:(target:{loadId:string;itemInstanceId:string;scope:string})=>requireActions().openIndustryResources(target),openResource:(id:string)=>requireActions().openResource(id),openResources:(draftId?:string)=>requireActions().openResources(draftId),readRole:async(id:string)=>(await roleApi.list()).find(role=>role.id===id),readGroup:async(id:string)=>(await groupApi.get(id)).group,drafts:pageCreateApi,openPlanDraft:planDraftApi.openDraft,mcp:createManagedMcpConnectionApi(marketCatalogCall),openRole:(id:string)=>requireActions().previewRole(id),openGroup:(id:string)=>requireActions().openGroupTopic(id,''),openCapabilities:()=>requireActions().openCapabilityCatalog()}
+    for(const key of conversationObjectToolNames)child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:sessionId=>{
+      const events=child.sessions.binding(sessionId)?.eventSource,empty={entries:[]}
+      return {...objectCardPorts,sessionId,events:{subscribe:(listener:()=>void)=>events?.subscribe(listener)??(()=>{}),getSnapshot:()=>events?.getSnapshot()??empty}}
+    }},ConversationObjectToolCard))
+    child.slots.inject('conversation.chat.turnTail',()=>child.slots.register({name:'conversation.chat.turnTail',id:'teloa-object-receipts',order:61,inject:sessionId=>{
+      const events=child.sessions.binding(sessionId)?.eventSource,empty={entries:[]}
+      return {...objectCardPorts,sessionId,events:{subscribe:(listener:()=>void)=>events?.subscribe(listener)??(()=>{}),getSnapshot:()=>events?.getSnapshot()??empty}}
+    }},ConversationObjectTurnCards))
     child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key:'teloa_capabilities',inject:()=>({work,i18n:requireI18n()})},CapabilitiesToolCard))
-    for(const key of ['teloa_resources_create','teloa_resources_update'])child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:()=>({openResourceDraft:(id:string)=>requireActions().openResources(id)})},ResourceDraftCard))
     child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key:'teloa_knowledge_save_message',inject:()=>({openResources:(resourceId?:string)=>resourceId?requireActions().openResource(resourceId):requireActions().openResources()})},KnowledgeSaveReceiptCard))
   })
   ctx.inject(['inputTriggers'],child=>{

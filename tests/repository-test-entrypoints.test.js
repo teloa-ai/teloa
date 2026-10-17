@@ -32,3 +32,16 @@ test('公开 CI 执行正式工程测试',async()=>{
   assert.doesNotMatch(workflow,/run: pnpm test:prototype/)
   assert.ok(workflow.indexOf('run: pnpm setup:dsh')<workflow.indexOf('run: pnpm test:repo'),'组合测试前必须准备官方 profile')
 })
+
+test('正式契约与业务测试入口包含现有的模块测试',async()=>{
+  const backend=JSON.parse(await readFile(new URL('packages/backend/package.json',root),'utf8'))
+  for(const [directory,command,prefix] of [
+    ['packages/contract/tests/',manifest.scripts['test:contract'],'packages/contract/tests/'],
+    ['packages/backend/tests/',backend.scripts.test,'tests/'],
+  ]){
+    const patterns=command.split(/\s+/)
+    for(const file of (await readdir(new URL(directory,root))).filter(file=>file.endsWith('.test.mjs'))){
+      assert.ok(patterns.includes(prefix+file)||patterns.includes(prefix+'*.test.mjs'),directory+file+' 必须由正式入口执行')
+    }
+  }
+})

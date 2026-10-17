@@ -84,7 +84,7 @@ import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage
 const locale=document.documentElement.lang,en=locale==='en',snapshot={locale,dshLocale:en?'en':'zh',revision:1};
 const runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
 let requestSequence=100;if(!crypto.randomUUID)crypto.randomUUID=()=> '00000000-0000-4000-8000-'+String(++requestSequence).padStart(12,'0');
-const state=window.surfaceFixture={calls:[],actions:[],mode:'saved',owner:'A',scope:'sales',hold:false,release:null,whole:false,section:'overview',talk:false,responsibility:false,taskList:false,dashboard:false,objectType:undefined,id:undefined,match:undefined};
+const state=window.surfaceFixture={calls:[],actions:[],mode:'saved',owner:'A',scope:'sales',chrome:true,hold:false,release:null,holdCurrent:false,releaseCurrent:null,whole:false,workspace:false,section:'overview',talk:false,responsibility:false,taskList:false,dashboard:false,objectType:undefined,id:undefined,match:undefined};
 const stamp='2026-09-29T00:00:00.000Z',hash='a'.repeat(64),choices=new Map();
 const def=(id)=>({id,kind:'records',title:id==='orders'?(en?'Orders':'订单'):(en?'Review':'复核'),objectType:'order',fields:['stage'],allowCreate:true,allowEdit:true,allowArchive:true});
 const object=(scope)=>({format:'teloa.business-object-type/v1',id:'order',version:'1.0.0',domain:scope,title:en?'Order':'订单',unit:en?'items':'单',lead:en?'Start with your first order':'从第一条订单开始',sourceId:'local',fields:[{name:'stage',label:en?'Stage':'阶段',from:'阶段',type:'text',required:false}]});
@@ -102,7 +102,7 @@ const makeServices=owner=>{
  const api=createBusinessBuilderApi(async(endpoint,input)=>{
   state.calls.push([owner,endpoint,input]);
   if(state.mode==='failed')throw Error('private host detail');
-  if(endpoint.endsWith('/current'))return state.mode==='legacy'?null:configuration(input.scope,owner);
+  if(endpoint.endsWith('/current')){const value=state.mode==='legacy'?null:configuration(input.scope,owner);if(state.holdCurrent)return await new Promise(resolve=>{state.releaseCurrent=()=>resolve(value)});return value;}
   const value=input.pageId==='statistics'?dashboardPage(input.scope):page(input.scope,input.pageId);
   if(state.hold&&owner==='A')return await new Promise(resolve=>{state.release=()=>resolve(value)});
   return value;
@@ -120,11 +120,14 @@ const makeServices=owner=>{
 };
 let services=makeServices('A');const app=createRoot(document.getElementById('root'));
 const nothing=()=>{},legacyLedger={read:async input=>{state.calls.push(['legacy','ledger',input]);if(state.dashboard)return ${JSON.stringify(drillLedger)};throw Error('legacy unavailable')}};
-const legacyProps={projectApi:{list:async scope=>{state.calls.push(['legacy','projects',scope]);return []},pendingFields:()=>undefined,recoveryError:()=>undefined},openProjectItem:nothing,backHome:nothing,openStaff:nothing,manageIndustryResources:nothing,industryLoads:[],dataSources:[],visible:true,state:emptyTaskPreview(),go:target=>{state.actions.push(['go',target]);Object.assign(state,{objectType:undefined,id:undefined,match:undefined},target);state.render()},openTask:nothing,openWork:nothing,openMessages:nothing,openGroups:nothing,openResources:nothing,market:nothing,capabilities:()=>null,openPlans:nothing,businessLedgerApi:legacyLedger,businessCustomizationApi:{},businessShareApi:{},pageCreate:{},businessTaskApi:{pending:()=>undefined},createBusinessTask:nothing,recoverBusinessTask:nothing,businessDashboardApi:{list:async()=>({items:[]})},colorScheme:'light'};
+const legacyProps={projectApi:{list:async scope=>{state.calls.push(['legacy','projects',scope]);return []},pendingFields:()=>undefined,recoveryError:()=>undefined},openProjectItem:nothing,backHome:nothing,openStaff:nothing,manageIndustryResources:scope=>state.actions.push(['legacy-settings',scope]),industryLoads:[],dataSources:[],visible:true,state:emptyTaskPreview(),go:target=>{state.actions.push(['go',target]);Object.assign(state,{objectType:undefined,id:undefined,match:undefined},target);state.render()},openTask:nothing,openWork:nothing,openMessages:nothing,openGroups:nothing,openResources:nothing,market:nothing,capabilities:()=>null,openPlans:nothing,businessLedgerApi:legacyLedger,businessCustomizationApi:{},businessShareApi:{},pageCreate:{},businessTaskApi:{pending:()=>undefined},createBusinessTask:nothing,recoverBusinessTask:nothing,businessDashboardApi:{list:async()=>[]},colorScheme:'light'};
+const workspaceServices={groups:{list:async()=>({items:[]})},attention:[],rolesKnown:true,rolesFailed:false,tasksKnown:true,tasksFailed:false,attentionKnown:true,attentionFailed:false,refresh:nothing,openGroup:nothing,createGroup:nothing,talkRole:async()=>{},openAttention:nothing,renderRole:()=>null};
 const responsibilityCurrent={scope:'sales',version:0,roleId:null,selectedRoleVersion:null,currentRoleVersion:null,availability:'none'};
-const responsibility={api:{reconcile:async()=>responsibilityCurrent,read:async()=>responsibilityCurrent,pending:()=>null,canReselect:()=>false,read:async()=>responsibilityCurrent,set:async input=>{state.actions.push(['responsibility-set',input.scope,input.role?.id]);responsibilityCurrent.version++;responsibilityCurrent.roleId=input.role?.id??null;responsibilityCurrent.selectedRoleVersion=input.role?.expectedVersion??null;responsibilityCurrent.currentRoleVersion=input.role?.expectedVersion??null;responsibilityCurrent.availability=input.role?'ready':'none';return responsibilityCurrent}},roles:{list:async()=>[{id:'11111111-1111-4111-8111-111111111111',ownerId:'owner',name:'Mina',kind:'employee',state:'active',version:1,scopes:['sales'],duty:'Customer follow-up',dataScope:'Customers',executionScope:'Read',skills:[],knowledge:[],createdAt:stamp,updatedAt:stamp}]}};
+const responsibility={api:{reconcile:async()=>{state.responsibilityReads=(state.responsibilityReads??0)+1;const value=structuredClone(responsibilityCurrent);if(state.holdResponsibility)return await new Promise(resolve=>(state.pendingResponsibility??=[]).push(()=>resolve(value)));return value},read:async()=>responsibilityCurrent,pending:()=>null,canReselect:()=>false,read:async()=>responsibilityCurrent,set:async input=>{state.actions.push(['responsibility-set',input.scope,input.role?.id]);responsibilityCurrent.version++;responsibilityCurrent.roleId=input.role?.id??null;responsibilityCurrent.selectedRoleVersion=input.role?.expectedVersion??null;responsibilityCurrent.currentRoleVersion=input.role?.expectedVersion??null;responsibilityCurrent.availability=input.role?'ready':'none';return responsibilityCurrent}},roles:{list:async()=>[{id:'11111111-1111-4111-8111-111111111111',ownerId:'owner',name:state.colleagueName??'Mina',kind:'employee',state:state.colleagueState??'active',version:1,scopes:['sales'],duty:'Customer follow-up',dataScope:'Customers',executionScope:'Read',skills:[],knowledge:[],createdAt:stamp,updatedAt:stamp}]}};
 const taskList={api:{list:async input=>{state.calls.push(['task-list',input]);return {items:[{task:{id:'22222222-2222-4222-8222-222222222222',ownerId:'owner',title:'跟进客户',scope:input.scope,version:1,state:'ready',assigneeRoleId:null,assigneeRoleVersion:null,createdAt:stamp,updatedAt:stamp},source:null,progress:null,completion:null}]}}},openTask:id=>state.actions.push(['open-task',id])};
-state.render=()=>{const supplied={...services,...(state.talk?{talk:scope=>state.actions.push(['talk',scope])}:{}),...(state.responsibility?{responsibility}:{}),...(state.taskList?{taskList}:{})};app.render(<I18nProvider runtime={runtime}>{state.whole?<BusinessPage {...legacyProps} target={{scope:state.scope,section:state.section,...(state.objectType?{objectType:state.objectType}:{}),...(state.id?{id:state.id}:{}),...(state.match?{match:state.match}:{}),...(state.recordReference?{recordReference:state.recordReference}:{})}} configuration={supplied}/>:<BusinessConfigurationSurface scope={state.scope} services={supplied} colorScheme="light" backHome={()=>state.actions.push(['back'])} legacy={()=><div data-legacy>Legacy business</div>}/>}</I18nProvider>)};
+const advancedSetup={api:{read:async input=>{state.setupReads=(state.setupReads??0)+1;return {scope:input.scope,configurationVersion:input.expectedVersion,configurationHash:input.expectedHash,observedAt:stamp,colleagues:{status:'unavailable'},skills:{status:'unavailable'},knowledge:{status:'unavailable'},connections:{status:'observed',value:{items:Array.from({length:state.detailRevision?2:1},(_,i)=>({id:'connection-'+i,catalogId:'crm',serverName:'CRM '+i,status:'connected',updatedAt:stamp})),binding:'not-declared'}}}}},open:()=>{}};
+const advancedSync={syncStatus:async()=>{state.syncStatusReads=(state.syncStatusReads??0)+1;return []},syncRules:async()=>{state.syncRuleReads=(state.syncRuleReads??0)+1;return [{mappingId:'mapping-one',title:state.detailRevision?'更新后的同步规则':'原同步规则',revision:state.detailRevision??0,enabled:false,running:false,schedule:{kind:'daily',time:'10:00',timezone:'Asia/Singapore'}}]},syncRuntime:async()=>({managed:true,syncEnabled:true,revision:1})};
+state.render=()=>{const supplied={...services,...(state.talk?{talk:scope=>state.actions.push(['talk',scope])}:{}),...(state.responsibility?{responsibility}:{}),...(state.advanced?{setup:advancedSetup,dashboardApi:advancedSync}:{}),...(state.taskList?{taskList}:{})};app.render(<I18nProvider runtime={runtime}>{state.whole?<BusinessPage {...legacyProps} workspace={state.workspace?workspaceServices:undefined} target={{scope:state.scope,section:state.section,...(state.objectType?{objectType:state.objectType}:{}),...(state.id?{id:state.id}:{}),...(state.match?{match:state.match}:{}),...(state.recordReference?{recordReference:state.recordReference}:{})}} configuration={supplied}/>:<BusinessConfigurationSurface chrome={state.chrome} scope={state.scope} services={supplied} colorScheme="light" backHome={()=>state.actions.push(['back'])} legacy={()=><div data-legacy>Legacy business</div>}/>}</I18nProvider>)};
 state.change=patch=>{Object.assign(state,patch);if(patch.owner)services=makeServices(patch.owner);state.render()};state.render();
 `
 before(async()=>{
@@ -159,8 +162,10 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  await page.getByRole('textbox',{name:en?/^Record title/:/^记录标题/}).fill(en?'First order':'第一笔订单')
  await page.getByLabel(en?'Stage':'阶段',{exact:true}).fill('ready')
  await page.getByRole('button',{name:en?'Save record':'保存记录',exact:true}).click()
- await page.getByRole('button',{name:en?/First order/:/第一笔订单/}).click()
- await page.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).click()
+ const detail=page.getByRole('dialog',{name:en?'First order':'第一笔订单',exact:true});await detail.waitFor()
+ await detail.getByRole('button',{name:en?'Refresh records':'刷新记录',exact:true}).click()
+ await page.waitForFunction(()=>(window as any).surfaceFixture.calls.some((c:any)=>c[1]==='business-records/get'))
+ await detail.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).click()
  await page.getByLabel(en?'Stage':'阶段',{exact:true}).fill('closed')
  await page.getByRole('button',{name:en?'Save record':'保存记录',exact:true}).click()
  await page.getByRole('button',{name:en?/First order.*closed/:/第一笔订单.*closed/}).waitFor()
@@ -186,9 +191,166 @@ test('失败不落legacy或加载ledger；current明确null保留旧BusinessPage
  await page.getByRole('button',{name:'重试',exact:true}).click()
  await page.waitForFunction(()=>(window as any).surfaceFixture.calls.some((c:any)=>c[0]==='legacy'))
 })
+test('业务看板首屏展示内容，配置在抽屉；关闭保留选页并恢复入口焦点',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true,dashboard:true}))
+ await page.getByRole('button',{name:'手动刷新',exact:true}).click()
+ await page.getByRole('navigation',{name:'业务页面'}).getByRole('button',{name:'订单统计',exact:true}).click()
+ await page.getByRole('heading',{name:'订单统计',exact:true}).waitFor()
+ assert.equal(await page.getByRole('region',{name:'业务负责人'}).count(),0,'看板首屏不能被配置表单占满')
+ const trigger=page.getByRole('button',{name:'查看配置详情',exact:true})
+ await trigger.click()
+ const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true})
+ await drawer.getByRole('region',{name:'业务负责人'}).waitFor()
+ await page.keyboard.press('Escape')
+ assert.equal(await page.getByRole('dialog').count(),0)
+ assert.equal(await trigger.evaluate((el:HTMLElement)=>el===document.activeElement),true)
+ assert.equal(await page.getByRole('heading',{name:'订单统计',exact:true}).count(),1)
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[],'关闭配置不自动保存或启动工作')
+})
+test('业务设置在所有业务页签复用配置抽屉，关闭保留负责人草稿且不写数据',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,workspace:true,responsibility:true,section:'employees'}))
+ const settings=page.getByRole('button',{name:'业务设置',exact:true})
+ for(const tab of ['总览','业务内容','统计看板','AI 员工','协作群','项目']){
+  await page.getByRole('navigation',{name:'业务页面',exact:true}).first().getByRole('button',{name:tab,exact:true}).click()
+  await settings.click()
+  const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true});await drawer.waitFor()
+  await drawer.getByRole('button',{name:'调整业务',exact:true}).waitFor()
+  const selection=drawer.getByRole('combobox',{name:'选择员工',exact:true});await selection.waitFor()
+  await selection.selectOption('11111111-1111-4111-8111-111111111111')
+  await drawer.getByRole('button',{name:'关闭',exact:true}).click()
+  await settings.click();await drawer.waitFor()
+  assert.equal(await selection.inputValue(),'11111111-1111-4111-8111-111111111111')
+  await drawer.getByRole('button',{name:'关闭',exact:true}).click()
+ }
+ const actions=await page.evaluate(()=>(window as any).surfaceFixture.actions)
+ assert.equal(actions.some((item:any)=>['legacy-settings','responsibility-set'].includes(item[0])),false)
+ const calls=await page.evaluate(()=>(window as any).surfaceFixture.calls)
+ assert.equal(calls.some((item:any)=>/\/(create|edit|archive|apply|revise)$/.test(item[1])),false)
+ await settings.click()
+ await page.getByRole('dialog',{name:'查看配置详情',exact:true}).getByRole('button',{name:'调整业务',exact:true}).click()
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((item:any)=>item[0]==='adjust')),[['adjust','sales']])
+})
+test('业务设置读取失败可在原业务重试，只有明确旧业务才进入模板配置',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,workspace:true,section:'employees',mode:'failed'}))
+ await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true});await drawer.getByRole('alert').waitFor()
+ assert.doesNotMatch(await drawer.innerText(),/private host detail/)
+ assert.equal(await page.evaluate(()=>(window as any).surfaceFixture.actions.some((item:any)=>item[0]==='legacy-settings')),false)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({mode:'saved'}))
+ await drawer.getByRole('button',{name:'重试',exact:true}).click()
+ await drawer.getByRole('button',{name:'调整业务',exact:true}).waitFor()
+ await drawer.getByRole('button',{name:'关闭',exact:true}).click()
+ await page.evaluate(()=>(window as any).surfaceFixture.change({mode:'legacy'}))
+ await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ await page.waitForFunction(()=>(window as any).surfaceFixture.actions.some((item:any)=>item[0]==='legacy-settings'))
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((item:any)=>item[0]==='legacy-settings')),[['legacy-settings','sales']])
+ assert.equal(await drawer.count(),0)
+})
+test('业务设置关闭与切换范围丢弃迟到配置；通用工作没有业务设置',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,workspace:true,section:'employees',holdCurrent:true}))
+ const settings=page.getByRole('button',{name:'业务设置',exact:true})
+ await settings.click()
+ const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true});await drawer.waitFor()
+ await page.waitForFunction(()=>(window as any).surfaceFixture.releaseCurrent!==null)
+ await drawer.getByRole('button',{name:'关闭',exact:true}).click()
+ await page.evaluate(()=>{const state=(window as any).surfaceFixture;state.releaseCurrent();state.releaseCurrent=null})
+ assert.equal(await drawer.count(),0)
+ await settings.click();await drawer.waitFor()
+ await page.waitForFunction(()=>(window as any).surfaceFixture.releaseCurrent!==null)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({scope:'support',holdCurrent:false}))
+ await page.evaluate(()=>(window as any).surfaceFixture.releaseCurrent())
+ await page.getByRole('heading',{level:1,name:'support',exact:true}).waitFor()
+ assert.equal(await drawer.count(),0)
+ await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ await drawer.getByRole('button',{name:'调整业务',exact:true}).click()
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((item:any)=>item[0]==='adjust')),[['adjust','support']])
+ await page.evaluate(()=>(window as any).surfaceFixture.change({scope:'general'}))
+ await settings.waitFor({state:'hidden'})
+ assert.equal(await settings.count(),0)
+ assert.equal(await drawer.count(),0)
+ assert.equal(await page.evaluate(()=>(window as any).surfaceFixture.actions.some((item:any)=>item[0]==='legacy-settings')),false)
+})
+test('嵌入业务保留平台按钮尺寸与圆角，不退回浏览器默认样式',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({chrome:false}))
+ const button=page.getByRole('navigation',{name:'业务页面'}).getByRole('button').first()
+ const dimensions=await button.evaluate((el:HTMLElement)=>({height:el.getBoundingClientRect().height,radius:Number.parseFloat(getComputedStyle(el).borderRadius)}))
+ assert.ok(dimensions.height>=36,'嵌入页面的操作目标至少 36px')
+ assert.ok(dimensions.radius>=7,'嵌入和独立容器使用同一平台样式')
+})
+test('关闭配置抽屉不提交负责人草稿，重新打开保留未保存的选择',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true}))
+ const trigger=page.getByRole('button',{name:'查看配置详情',exact:true})
+ await trigger.click()
+ const selection=page.getByRole('dialog',{name:'查看配置详情',exact:true}).getByRole('combobox',{name:'选择员工',exact:true})
+ const employee='11111111-1111-4111-8111-111111111111'
+ await selection.selectOption(employee)
+ await page.keyboard.press('Escape')
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[])
+ await trigger.click()
+ assert.equal(await selection.inputValue(),employee,'关闭仅收起抽屉，不能丢弃未保存的选择')
+ await page.getByRole('button',{name:'保存负责人',exact:true}).click()
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[['responsibility-set','sales',employee]])
+})
+test('配置详情每次重开读取最新准备、负责人和同步规则，保留未提交选择且关闭不写入',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true,advanced:true}))
+ const trigger=page.getByRole('button',{name:'查看配置详情',exact:true}),drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true})
+ await trigger.click()
+ const selection=drawer.getByRole('combobox',{name:'选择员工',exact:true}),employee='11111111-1111-4111-8111-111111111111'
+ await selection.selectOption(employee);await drawer.getByText('原同步规则',{exact:true}).waitFor()
+ const reads=await page.evaluate(()=>{const f=(window as any).surfaceFixture;return [f.setupReads,f.responsibilityReads,f.syncRuleReads,f.syncStatusReads]})
+ await page.keyboard.press('Escape')
+ await page.evaluate(()=>(window as any).surfaceFixture.change({detailRevision:1,colleagueName:'Mina 新职责'}))
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).surfaceFixture;return [f.setupReads,f.responsibilityReads,f.syncRuleReads,f.syncStatusReads]}),reads,'关闭期间不发后台配置读取')
+ await trigger.click()
+ await drawer.getByText('更新后的同步规则',{exact:true}).waitFor()
+ await selection.getByRole('option',{name:'Mina 新职责',exact:true}).waitFor({state:'attached'})
+ assert.equal(await selection.inputValue(),employee)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).surfaceFixture;return [f.setupReads,f.responsibilityReads,f.syncRuleReads,f.syncStatusReads]}),reads.map((count:number)=>count+1))
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[])
+ await page.keyboard.press('Escape')
+ await page.evaluate(()=>(window as any).surfaceFixture.change({colleagueState:'paused'}))
+ await trigger.click();await page.waitForFunction(()=>{const select=document.querySelector('dialog[open] select') as HTMLSelectElement|null;return select&&!select.disabled})
+ assert.equal(await selection.inputValue(),employee,'候选失效时仍保留本人草稿')
+ assert.equal(await drawer.getByRole('button',{name:'保存负责人',exact:true}).isDisabled(),true,'重开读到已暂停员工后不得继续提交')
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[])
+})
+test('配置详情关闭后重开不接收上一轮迟到负责人目录',async t=>{
+ const page=await browserFixture(t)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true,holdResponsibility:true}))
+ const trigger=page.getByRole('button',{name:'查看配置详情',exact:true}),drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true})
+ await trigger.click();await page.waitForFunction(()=>(window as any).surfaceFixture.pendingResponsibility?.length===1)
+ await page.keyboard.press('Escape')
+ await page.evaluate(()=>(window as any).surfaceFixture.change({holdResponsibility:false,colleagueName:'Mina 最新岗位'}))
+ await trigger.click();const selection=drawer.getByRole('combobox',{name:'选择员工',exact:true})
+ await selection.getByRole('option',{name:'Mina 最新岗位',exact:true}).waitFor({state:'attached'})
+ await page.evaluate(()=>{for(const release of (window as any).surfaceFixture.pendingResponsibility)release()})
+ assert.equal(await selection.getByRole('option',{name:'Mina',exact:true}).count(),0)
+ assert.equal(await selection.getByRole('option',{name:'Mina 最新岗位',exact:true}).count(),1)
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[])
+})
+for(const width of [390,1400])test(width+' 配置抽屉标题、调整按钮与内容保持标准边距，窄窗不横溢',async t=>{
+ const page=await browserFixture(t,'zh-CN',width)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true,advanced:true,whole:true,workspace:true,section:'employees'}))
+ await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true})
+ await drawer.getByRole('combobox',{name:'选择员工',exact:true}).waitFor()
+ const spacing=await drawer.evaluate((dialog:HTMLDialogElement)=>{
+  const box=dialog.getBoundingClientRect(),heading=dialog.querySelector('header h2')!.getBoundingClientRect(),adjust=[...dialog.querySelectorAll('button')].find(button=>button.textContent?.includes('调整'))!.getBoundingClientRect(),content=dialog.querySelector('section')!.getBoundingClientRect()
+  return {heading:heading.left-box.left,adjust:adjust.left-box.left,content:content.left-box.left,overflow:dialog.scrollWidth>dialog.clientWidth||document.documentElement.scrollWidth>innerWidth}
+ })
+ assert.ok(spacing.heading>=20,JSON.stringify(spacing));assert.ok(spacing.adjust>=20,JSON.stringify(spacing));assert.ok(spacing.content>=20,JSON.stringify(spacing));assert.equal(spacing.overflow,false)
+})
 test('正式业务页可选已有同事负责人，保存只写归属不启动任务',async t=>{
  const page=await browserFixture(t,'zh-CN',390)
  await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true}))
+ await page.getByRole('button',{name:'查看配置详情',exact:true}).click()
  const panel=page.getByRole('region',{name:'业务负责人'})
  await panel.getByRole('combobox',{name:"选择员工"}).selectOption('11111111-1111-4111-8111-111111111111')
  await panel.getByRole('button',{name:'保存负责人'}).click()
@@ -252,9 +414,9 @@ test('正式看板经真实go打开对象清单、匹配清单和固定对象，
   const expected:BusinessTarget={scope:'sales',section:'data',objectType:'order',...(kind==='match'?{match:{field:'stage',value:'ready'}}:kind==='id'?{id:'record-one',match:{field:'_id',value:'record-one'}}:{})}
   await page.waitForFunction(()=> (window as any).surfaceFixture.calls.some((c:any)=>c[1]==='ledger'&&c[2].objectType==='order'))
   assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((a:any)=>a[0]==='go').at(-1)[1]),expected)
-  await page.getByText('工单 record-one',{exact:true}).waitFor()
+  await page.getByRole('button',{name:'工单 record-one',exact:true}).waitFor()
   if(kind==='match')assert.match(await page.locator('[data-ledger-match]').innerText(),/ready/)
-  if(kind==='id')await page.getByRole('heading',{name:'工单 record-one',exact:true}).waitFor()
+  if(kind==='id'){const drawer=page.getByRole('dialog',{name:'工单 record-one',exact:true});await drawer.waitFor();await drawer.getByRole('heading',{level:3,name:'工单 record-one',exact:true}).waitFor();await drawer.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await drawer.count(),0);await page.getByRole('button',{name:'工单 record-one',exact:true}).waitFor()}
   const calls=await page.evaluate(()=>(window as any).surfaceFixture.calls)
   assert.ok(calls.some((c:any)=>c[1]==='ledger'&&c[2].objectType==='order'&&JSON.stringify(c[2].match)===JSON.stringify(expected.match)))
   assert.equal(calls.filter((c:any)=>c[1]==='business-configuration/current').length,before)

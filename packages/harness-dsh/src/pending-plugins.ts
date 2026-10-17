@@ -62,7 +62,7 @@ export async function readJsonFile(path:string,maxBytes=1024*1024):Promise<Recor
  * 把它现有的权限位抄到临时文件上，否则每一次改写都会把目标悄悄放宽成 umask 默认值。
  * 目标还不存在时就按默认权限新建。
  */
-export async function writeAtomic(path:string,text:string,mode?:number):Promise<void>{
+export async function writeAtomic(path:string,text:string,mode?:number,beforeCommit?:()=>Promise<void>):Promise<void>{
  let target=mode
  if(target===undefined){
   try{target=(await stat(path)).mode&0o777}catch{target=undefined}
@@ -72,6 +72,8 @@ export async function writeAtomic(path:string,text:string,mode?:number):Promise<
   await writeFile(temporary,text,target===undefined?{}:{mode:target})
   // writeFile 的 mode 只在新建时生效，且会被 umask 削一刀；显式 chmod 才能保证逐位一致。
   if(target!==undefined)await chmod(temporary,target)
+  // 可选宿主守卫在原子替换前执行；拒绝时仅清除本次临时文件，不改原清单。
+  await beforeCommit?.()
   await rename(temporary,path)
  }catch(error){
   await rm(temporary,{force:true}).catch(()=>{})
@@ -133,14 +135,14 @@ export function profileBundles(manifest:Record<string,unknown>):string[]{
  * 只改 `dsh.profile.bundles` 一个键；profile 清单的其余内容逐字保留。
  * 调用方必须已经持有 `withProfileLock`。
  */
-export async function rewriteProfileBundlesLocked(profileDir:string,change:(bundles:string[])=>string[]):Promise<void>{
+export async function rewriteProfileBundlesLocked(profileDir:string,change:(bundles:string[])=>string[],beforeCommit?:()=>Promise<void>):Promise<void>{
  const manifest=await readJsonFile(join(profileDir,'package.json'))
  const dsh=record(manifest.dsh)?manifest.dsh:{},profile=record(dsh.profile)?dsh.profile:{}
  const current=profileBundles(manifest)
  const next=change([...current])
  if(next.length===current.length&&next.every((name,index)=>name===current[index]))return
  const updated={...manifest,dsh:{...dsh,profile:{...profile,bundles:next}}}
- await writeAtomic(join(profileDir,'package.json'),JSON.stringify(updated,null,2)+'\n')
+ await writeAtomic(join(profileDir,'package.json'),JSON.stringify(updated,null,2)+'\n',undefined,beforeCommit)
 }
 
 /** 整份 profile 清单的原子写。调用方必须已经持有 `withProfileLock`。 */

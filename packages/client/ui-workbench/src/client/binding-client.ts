@@ -11,11 +11,16 @@ export interface WorkPort {
   list(signal?:AbortSignal):Promise<Conversation[]>
   read(sessionId:string):Promise<Conversation>
   ensure(sessionId:string):Promise<Conversation>
+  /** 选中恢复时可借用已核验的专用预约；普通会话仍委派 ensure。 */
+  selectBinding?(sessionId:string):Promise<Conversation>
+  /** 只读核对已有原生运行目录，不创建或领养普通会话。 */
+  readRunSession?(sessionId:string):Promise<string>
   isNativeChild(sessionId:string):boolean
   homeSkills?(signal?:AbortSignal):Promise<CapabilitySnapshot['skills']>
   catalog(sessionId:string):Promise<CapabilitySnapshot>
   block(sessionId:string,reason:string|undefined):void
   create(input:ConversationCreation&Readonly<{title?:string}>):Promise<Conversation>
+  assistant?(input:Readonly<{workspaceId?:string}>):Promise<Conversation>
   adopt(sessionId:string,workspaceId?:string):Promise<string>
   open(sessionId:string):void
   current():string|undefined
@@ -28,6 +33,7 @@ export class BindingClient {
   private catalogGeneration=0
   private creation:ConversationCreation|undefined
   private creating:Promise<Conversation>|undefined
+  private assisting:Promise<{conversation:Conversation;result:ConversationOpenResult}>|undefined
   private opening=0
   private releaseOpeningBlock:(()=>void)|undefined
   private listing=0
@@ -54,10 +60,10 @@ export class BindingClient {
     this.publish({sessionId,status:sessionId&&!nativeChild?'loading':'idle',conversation:undefined,error:undefined,capabilities:undefined,catalogStatus:'idle',catalogError:undefined})
     if(!sessionId||nativeChild)return
     try {
-      const conversation=await this.port.ensure(sessionId)
+      const conversation=await (this.port.selectBinding?.(sessionId)??this.port.ensure(sessionId))
       if(generation!==this.generation)return
       if(conversation.sessionId!==sessionId||conversation.status!=='ready')throw Error('返回的工作会话绑定与当前会话不一致。')
-      this.publish({status:'ready',conversation});this.port.block(sessionId,undefined)
+      this.publish({status:'ready',conversation});this.port.block(sessionId,conversation.purpose==='task-run'?taskRunInputBlock:undefined)
     }catch(error){
       if(generation!==this.generation)return
       const reason=error instanceof Error?error.message:'工作会话绑定读取失败。'
@@ -73,20 +79,24 @@ export class BindingClient {
     catch(error){if(listing===this.listing&&!signal?.aborted){this.directory={...this.directory,status:'failed',error};this.publish({})}}
   }
   async openSession(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<void> {
+    await this.openSessionResult(sessionId,signal,mayOpen)
+  }
+  /** 只有本次已派发原生打开才回执 opened；当前同 ID 不能证明未取消的导航。 */
+  async openSessionResult(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<ConversationOpenResult> {
     // 新入口使旧导航失效时，先撤下旧导航自己的临时阻断；read 未完成也不能遗留它。
     this.releaseOpeningBlock?.()
     const navigation={opening:++this.opening,generation:this.generation,previous:this.port.current(),mayOpen}
     const valid=()=>!signal?.aborted&&this.opening===navigation.opening&&this.generation===navigation.generation&&this.port.current()===navigation.previous&&mayOpen?.()!==false
-    if(!valid())return
+    if(!valid())return 'cancelled'
     const conversation=await this.port.read(sessionId)
-    if(!valid())return
+    if(!valid())return 'cancelled'
     if(conversation.sessionId!==sessionId||conversation.status!=='ready')throw Error('返回的工作会话绑定与目标会话不一致。')
     const previous=this.state
     const commit=()=>{
       this.publish({sessionId,status:'ready',conversation,error:undefined,capabilities:undefined,catalogStatus:'idle',catalogError:undefined})
       this.port.block(sessionId,conversation.purpose==='task-run'?taskRunInputBlock:undefined)
     }
-    try {await this.openResolvedConversation(conversation,signal,true,{...navigation,commit})}
+    try {return await this.openResolvedConversation(conversation,signal,true,{...navigation,commit})}
     catch(error){
       if(this.generation===navigation.generation&&this.opening===navigation.opening&&this.port.current()===navigation.previous&&this.state.sessionId===sessionId&&this.state.conversation===conversation)this.publish(previous)
       throw error
@@ -116,10 +126,13 @@ export class BindingClient {
     signal?.addEventListener('abort',cancel,{once:true})
     try {
       const creation=conversation.status==='pending'&&conversation.requestId?{requestId:conversation.requestId,title:conversation.title,...(conversation.requestedWorkspaceId===undefined?{}:{workspaceId:conversation.requestedWorkspaceId})}:undefined
-      const target=resolved?conversation:creation?await this.port.create({...creation,title:conversation.title}):await this.port.ensure(conversation.sessionId)
+      const target=resolved?conversation:conversation.purpose==='task-run'?await this.port.read(conversation.sessionId):creation?conversation.purpose==='assistant'
+        ?await (this.port.assistant?.({... (conversation.requestedWorkspaceId===undefined?{}:{workspaceId:conversation.requestedWorkspaceId})})??Promise.reject(Error('助手身份服务尚未接入。')))
+        :await this.port.create({...creation,title:conversation.title}):await this.port.ensure(conversation.sessionId)
+      if(creation&&conversation.purpose==='assistant'&&(target.purpose!=='assistant'||target.status!=='ready'||target.sessionId!==conversation.sessionId))throw Error('助手恢复回执与原预约不一致。')
       const recovery=creation??(this.creation?.requestId===target.requestId?this.creation:undefined)
       if(recovery)this.assertCreationResult(target,recovery)
-      const sessionId=await this.port.adopt(target.sessionId,target.requestedWorkspaceId)
+      const sessionId=target.purpose==='task-run'?await (this.port.readRunSession?.(target.sessionId)??Promise.reject(Error('运行专用会话只读目录尚未接入。'))):await this.port.adopt(target.sessionId,target.requestedWorkspaceId)
       if(sessionId!==target.sessionId)throw Error('原生会话领养身份不一致。')
       if(recovery&&this.creation?.requestId===recovery.requestId)this.creation=undefined
       if(signal?.aborted||opening!==this.opening||generation!==this.generation||navigation&&(this.port.current()!==previous||navigation.mayOpen?.()===false))return 'cancelled'
@@ -153,6 +166,38 @@ export class BindingClient {
     this.creation=undefined
     this.publish({})
     void this.refreshDirectory()
+  }
+  /** 默认主聊由服务端预约；无论浏览器请求身份如何都只领养原助手。 */
+  createAssistant(options:Pick<CreateConversationOptions,'workspaceId'|'beforeOpen'|'mayOpen'>={}):Promise<Conversation>{
+    return this.createAssistantResult(options).then(value=>value.conversation)
+  }
+  createAssistantResult(options:Pick<CreateConversationOptions,'workspaceId'|'beforeOpen'|'mayOpen'>={}):Promise<{conversation:Conversation;result:ConversationOpenResult}>{
+    if(!this.port.assistant)return Promise.reject(Error('助手身份服务尚未接入。'))
+    if(this.assisting)return this.assisting
+    this.releaseOpeningBlock?.()
+    let previousState:BindingState|undefined,committed:Conversation|undefined
+    const previous=this.port.current(),generation=this.generation,opening=++this.opening
+    const operation=(async()=>{try{
+      const row=await this.port.assistant!({... (options.workspaceId===undefined?{}:{workspaceId:options.workspaceId})})
+      if(row.purpose!=='assistant'||row.status!=='ready')throw Error('助手身份回执不正确，未打开其他会话。')
+      const sessionId=await this.port.adopt(row.sessionId,row.requestedWorkspaceId)
+      if(sessionId!==row.sessionId)throw Error('助手原生领养身份不一致。')
+      await options.beforeOpen?.(row)
+      const opened=this.port.current()===previous&&this.generation===generation&&this.opening===opening&&options.mayOpen?.()!==false
+      if(opened){
+        previousState=this.state;committed=row
+        this.publish({sessionId,status:'ready',conversation:row,error:undefined,capabilities:undefined,catalogStatus:'idle',catalogError:undefined})
+        this.port.block(sessionId,undefined);this.port.open(sessionId)
+      }
+      void this.refreshDirectory()
+      return {conversation:row,result:opened?'opened' as const:'cancelled' as const}
+    }catch(error){
+      if(previousState&&this.port.current()===previous&&this.generation===generation&&this.opening===opening&&this.state.conversation===committed)this.publish(previousState)
+      throw error
+    }})()
+    this.assisting=operation
+    void operation.then(()=>{this.assisting=undefined},()=>{this.assisting=undefined})
+    return operation
   }
   create(options:CreateConversationOptions={}):Promise<Conversation> {
     const title=options.title===undefined?undefined:options.title.trim()

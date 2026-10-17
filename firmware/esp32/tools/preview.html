@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Teloa · 小松鼠的日常</title>
+<style>
+:root{--forest:#2f6c51;--cream:#fcfcfb;--ink:#242723;--muted:#646860;--line:#e3e4de;--room:#eaf3ed;--shadow:#c9d9ce;--desk:#d6e5d9;--edge:#abc4b2;--page:#f3f2ef}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+main{max-width:1040px;margin:56px auto;padding:32px;display:grid;grid-template-columns:1fr 410px;gap:64px;align-items:center}
+.eyebrow{color:var(--forest);letter-spacing:2px;font-size:12px;font-weight:600}h1{font-size:34px;line-height:1.4;margin:14px 0 18px;letter-spacing:-1px}p{color:var(--muted);max-width:440px}small{font-size:12px;color:var(--muted)}
+.switches{display:flex;flex-wrap:wrap;gap:8px;margin:26px 0 16px}
+.switches button,.options button{border:1px solid var(--line);border-radius:8px;background:var(--cream);color:var(--ink);padding:8px 13px;font:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--forest);outline-offset:4px}
+.switches button[aria-pressed=true]{border-color:var(--forest);background:var(--room);color:var(--forest)}
+.options{display:flex;gap:16px;align-items:center;margin:20px 0}
+.tip{padding-top:20px;border-top:1px solid var(--line);font-size:13px}.tip p{margin:6px 0}
+.screen{width:360px;height:360px;border-radius:50%;overflow:hidden;position:relative;background:var(--cream);box-shadow:0 0 0 12px var(--ink),0 20px 64px #24272320;font:20px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:24px auto;touch-action:manipulation}
+.screen>*{position:absolute;text-align:center}.icons{top:25px;left:77px;width:206px;display:flex;justify-content:space-between;font-size:17px;color:var(--muted)}.name{top:54px;left:65px;width:230px}.status{top:82px;left:55px;width:250px}
+.floor{top:229px;left:75px;width:210px;height:24px;border-radius:50%;background:var(--room)}
+.shadow{top:239px;left:120px;width:120px;height:10px;border-radius:50%;background:var(--shadow)}
+.squirrel{left:92px;top:80px;width:176px;height:176px;transform-origin:88px 150px;cursor:pointer;border:0;background:none;padding:0}
+.squirrel img{width:176px;height:176px;pointer-events:none}
+.desk{left:128px;top:222px;width:104px;height:18px;border:1px solid var(--edge);border-radius:5px;background:var(--desk);pointer-events:none}
+.dot{width:7px;height:7px;top:106px;border-radius:5px;background:var(--forest)}
+.effect{left:145px;top:107px;width:70px;color:var(--forest);pointer-events:none}
+.activity{top:253px;left:55px;width:250px;opacity:.7}
+.subtitle{top:277px;left:45px;width:270px;height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.screen>.primary,.screen>.secondary{top:300px;height:32px;border:0;border-radius:17px;background:var(--room);color:var(--forest);font:inherit;padding:4px 0;line-height:1.2;cursor:pointer}
+.primary{left:166px;width:106px}.secondary{left:88px;width:74px}.approval{top:107px;left:50px;width:260px;height:168px;white-space:pre-wrap;overflow:hidden;text-align:center}
+.screen [hidden]{display:none!important}.caption{text-align:center;font-size:12px;color:var(--muted);min-height:40px}
+body.dark{--cream:#20221f;--ink:#e7e9e3;--muted:#b1b6aa;--line:#3c443d;--room:#283c30;--shadow:#14291d;--desk:#304a39;--edge:#4a6a53;--page:#181c19;--forest:#96c5a5}
+@media(max-width:800px){main{display:flex;flex-direction:column;margin:20px auto;padding:24px 15px;gap:15px}h1{font-size:29px}.screen{margin:20px auto}.preview{width:100%}}
+</style>
+<main><section><div class="eyebrow">TELOA · 小罗同学</div><h1>屏幕里，<br>有它自己的小日常。</h1><p>没事时走走看看、翻书休息。你一开口，它会停下来认真听；有工作时，回到小书桌前陪你忙。</p>
+<div class="switches" aria-label="预览状态"><button data-state="idle" aria-pressed="true">日常生活</button><button data-state="listening">倾听</button><button data-state="thinking">工作</button><button data-state="speaking">播报</button><button data-state="happy">完成</button><button data-state="pairing">配对</button></div>
+<div class="options"><label><input id="quiet" type="checkbox"> 安静模式</label><button id="theme" type="button">切换深浅色</button></div>
+<div class="tip"><strong>轻触小松鼠，跟它打个招呼。</strong><p>左下「说话」控制语音，右下「待确认」打开审批。长按屏幕顶部可切换安静模式。审批和配对时，小动作会停下来。</p></div>
+<small>360 × 360 软件预览 · 从固件实际压缩包解码六张姿势和 48 帧动画<br>统一色板、16 级透明度；语音、审批与配对优先。实际流畅度、功耗和触点仍待实机验证。<br>此预览不连接设备或 Teloa，不开启麦克风，不提交真实审批。</small></section>
+<section class="preview"><div class="screen" id="screen">
+<div class="icons"><span>⌁</span><span>▰</span></div><div class="name">小罗同学</div><div class="status"></div>
+<div class="floor scene"></div><div class="shadow scene"></div><button class="squirrel scene" aria-label="摸摸小松鼠"><img alt="Teloa 绿色毛绒小松鼠"></button><div class="desk scene" hidden></div>
+<div class="dot scene" style="left:155px" hidden></div><div class="dot scene" style="left:174px" hidden></div><div class="dot scene" style="left:193px" hidden></div><div class="effect scene" hidden>+</div>
+<div class="activity scene"></div><div class="subtitle"></div><div class="approval" hidden></div>
+<button class="secondary">说话</button><button class="primary">待确认</button>
+</div><div class="caption" id="hint">它在自己的小房间里，陪你待一会儿。</div></section></main>
+<script>const sprites=__SPRITES__,motion=__MOTION__,animation=__ANIMATION__;</script>
+<script>__SCRIPT__</script>
+</html>

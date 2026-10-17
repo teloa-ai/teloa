@@ -8,7 +8,13 @@
       name: '@teloa/harness-dsh/session-model-scope'
     - id: teloa-tool-resource-provenance
       name: '@teloa/harness-dsh/tool-resource-provenance'
+    - id: teloa-working-directory
+      name: '@teloa/harness-dsh/native-working-directory'
+      disabled: false
 - id: ui-layout
+  disabled: true
+# 保留官方目录服务与日志，公开 SDK 和子级启动也必须受原项目根约束。
+- id: working-directory
   disabled: true
 # Teloa 直接承接原生设置入口，避免工作台再次挂载整套会话侧栏。
 - id: ui-sidebar
@@ -52,11 +58,11 @@
 # 关闭实际服务，配置与插件变更走官方“需要重启”，每次启动重新复验安全钉。
 - id: hmr
   disabled: true
-# 通道注册由 Connection provider 自己挂载到 HTTP 服务；保留原 webRuntime
+# 通道注册由 Connection provider 自己挂载到 HTTP 服务；保留原 webStartup
 # 配置依赖并补齐 webServer，调用方插件才能安全注册自有 RPC 通道。
 - id: connection
   inject:
-    - webRuntime
+    - webStartup
     - webServer
 # 会话遥测默认以 FEEDBACK_ONLY 挂载：用户点一次反馈，就把该会话的完整规范前缀
 # （消息正文、工具参数与结果、system prompt、工具 schema、会话 cwd）交给 OTel 管道上传到外部端点。
@@ -137,8 +143,6 @@
 # 官方 Web 把编排工具放在预设作用域，宿主同名行保持关闭，避免重复注册。
 - id: tool-workflow
   disabled: true
-- id: tool-ralph
-  disabled: true
 # 官方注册器保留本人选择；部署默认面向通用业务，四种官方预设均可选。
 # 生成覆盖只接入 standard 受管派发及三种模式的本地压缩预算，其余官方正文保持原样。
 - id: agent-preset-registry
@@ -187,6 +191,14 @@
   config:
     baseURL: https://api.deepseek.com/anthropic/v1
     apiKeyEnv: DEEPSEEK_API_KEY
+# 新检索沿原生设置显式选择；默认继续原搜索与本机 HTTP 抓取。
+# 只传模型生成的查询，不附带原始用户提示；来源、鉴权与实现一起复验。
+- id: web-deepseek-api
+  config:
+    baseURL: https://api.deepseek.com/v1/tools
+    apiKeyEnv: DEEPSEEK_API_KEY
+    count: 10
+    sendOriginalQuestion: false
 # maxRedirects 从上游默认 5 收到 3：同源跳转三跳足够覆盖 http→https、尾斜杠归一、语言/地区跳转，
 # 再多只是给跳转链留面积。
 # userAgent 逐字写上游默认值（不伪装成浏览器），并一并钉住：它是每次外发对目标站点的自我披露，
@@ -204,6 +216,8 @@
       name: '@teloa/client-ui-workbench'
     - id: teloa-harness-dsh
       name: '@teloa/harness-dsh'
+    - id: teloa-realtime-voice
+      name: '@teloa/realtime-voice'
     # 宿主的 cwd 是工作区而不是仓库根，参考 MCP 的入口只能按启动器给出的仓库根解析。
     # 仓库根只认启动快照的 process 层：DSH 会把工作区 .env（模型可写）合入 process.env，借它就能让宿主在沙箱外起任意脚本。
     # 没有快照（测试、非产品组合）时按上游约定读 process.env。

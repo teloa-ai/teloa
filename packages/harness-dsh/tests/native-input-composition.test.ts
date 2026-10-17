@@ -69,8 +69,9 @@ test('兼容能力核对失败时拒绝组合，核对通过前不导入任何�
  for(const name of ['input','controller','subagent'] as const)assert.equal(typeof basic[name],'function')
  const durable=await load({compatibilityAPIs:complete,requireCheckpoint:true})
  assert.equal(typeof durable.recoveryCandidate,'function')
- // 核心声明的必需能力均出自随附的官方兼容补丁清单
- for(const version of [dshVersion,'0.2.0-rc.2'])await load({compatibilityAPIs:compatibilityAPIs(version),requireCheckpoint:true})
+ // 当前固定版本提供项目模型代次投影；旧清单缺此能力时不能降级运行。
+ await load({compatibilityAPIs:compatibilityAPIs(dshVersion),requireCheckpoint:true})
+ await assert.rejects(load({compatibilityAPIs:compatibilityAPIs('0.2.0-rc.2'),requireCheckpoint:true}),/SubagentRuntime\.startActivation\.initialPromptAdmission/)
 })
 
 test('替换官方会话控制器行时组合结果包含浏览器面载体行',async t=>{
@@ -402,7 +403,8 @@ test('公共启动入口统一受管组合；调用接口不改写官方 profile
   const row=findRow(rows,id);assert.equal(row?.name,name);assert.equal(row?.disabled,undefined)
  }
  for(const id of ['teloa-native-input','teloa-managed-session-controller','teloa-managed-subagent','teloa-client-face-session-controller'])assert.equal(findRow(rows,id),undefined)
- assert.doesNotMatch(baseline,/@teloa\/harness-dsh\/(?:managed-|native-input-provider)/)
+ // Jobs 的受管发布者属于固定 Agent preset；宿主输入/Controller/子代理替换仍只由启动组合插入。
+ assert.doesNotMatch(baseline.replaceAll('@teloa/harness-dsh/managed-tool-jobs','@deepseek-ai/dsh-tool-jobs'),/@teloa\/harness-dsh\/(?:managed-|native-input-provider)/)
  // 默认组合由官方行提供浏览器面，核对只读
  assertFaces(rows);assert.equal(JSON.stringify(rows),baseline)
  // 运行目录内未写入任何载体

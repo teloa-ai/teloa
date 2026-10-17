@@ -5,6 +5,7 @@ import {join,dirname,relative,isAbsolute,resolve,sep} from 'node:path'
 import {tmpdir} from 'node:os'
 import {spawn} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
+import {isDeepStrictEqual} from 'node:util'
 import type {BackupManifest,DatabaseChoice,InstallState,Status} from './contracts.ts'
 import {canonical,exactVersion,within,resolveLayout,programRoot} from './layout.ts'
 import {readPrivateJson,writePrivateJson,writeInstall,withInstallLock} from './state.ts'
@@ -77,6 +78,30 @@ export const dshEnvRestoreNotice=(dshHome:string)=>'DSH 目录下的 .env 不随
 /** 调用方须核验旧安装归属及生成来源；默认仍拒绝所有缺失链接。 */
 export interface BackupCopyOptions{
  allowMissingGeneratedLink?:(input:Readonly<{source:string,path:string,target:string}>)=>boolean|Promise<boolean>
+ /** 仅由已核验发行的受管配方生成；验证失败或目录有额外内容时仍按普通数据备份。 */
+ managedRuntimePackages?:ReadonlyMap<string,()=>Promise<boolean>>
+}
+/** 复用来源发行的固定锁和只读全树校验，不执行安装，不按目录名字直接省略。 */
+export async function managedRuntimePackageChecks(root:string,releaseRoot:string):Promise<ReadonlyMap<string,()=>Promise<boolean>>>{
+ const checks=new Map<string,()=>Promise<boolean>>()
+ const path=join(releaseRoot,'packages/harness-dsh/lib/managed-package-install.js')
+ const info=await lstat(path).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error})
+ // 早期发行没有受管安装器时沿默认严格备份，不凭名字省略任何数据。
+ if(!info)return checks
+ if(!info.isFile())throw Error('受管运行依赖校验器不是发行文件。')
+ const managed=await import(pathToFileURL(path).href)
+ for(const recipe of managed.managedPackageAllowlist){
+  const path=managed.managedPackageDir(root,recipe)
+  if(dirname(path)!==resolve(root,'packages'))throw Error('受管运行依赖路径不正确。')
+  checks.set(relative(root,path).split(sep).join('/'),async()=>{
+   try{
+    const manifest=JSON.parse(await readFile(join(path,'package.json'),'utf8')),lock=JSON.parse(await readFile(join(path,'package-lock.json'),'utf8'))
+    const expected={name:'teloa-managed-install',version:'1.0.0',private:true,dependencies:{[recipe.package]:recipe.version}}
+    return isDeepStrictEqual(manifest,expected)&&isDeepStrictEqual(lock,managed.managedPackageLock(recipe))&&await managed.managedPackageInstalled(root,recipe)
+   }catch{return false}
+  })
+ }
+ return checks
 }
 export const isGeneratedBackupDirectory=(path:string)=>/^profiles\/(?:[^/]+\/(?:\.dsh-module-fallback\/)?)?node_modules$/.test(path)
 export const isBackupCopyPath=(path:string,isFile=false)=>!/^\.credentials\./.test(path)&&!/^mcp\/credentials(?:\/|$)/.test(path)&&path!=='.env'&&!(isFile&&path.split('/').at(-1)==='session.lock')
@@ -110,6 +135,11 @@ export async function copyBackupData(source:string,target:string,releaseRoot:str
     throw Error('数据含不能安全备份的外链；请移除外部链接或另行保存扩展后重试。')
    }
    if(entry.isDirectory()){
+    const check=options.managedRuntimePackages?.get(rel)
+    if(check&&/^packages\/[^/]+$/.test(rel)){
+     const entries=await readdir(src,{withFileTypes:true}),expected=['.teloa-install.json','node_modules','package-lock.json','package.json']
+     if(entries.length===expected.length&&entries.every(item=>expected.includes(item.name)&&(item.name==='node_modules'?item.isDirectory():item.isFile()))&&await check())continue
+    }
     if(!skip)await mkdir(dst,{mode:0o700})
     await visit(src,dst,skip)
    }else if(entry.isFile()){
@@ -177,7 +207,7 @@ export async function createBackup(state:InstallState,output:string):Promise<Bac
   await mkdir(staging,{mode:0o700})
   await transferDatabase(state,join(staging,'database.dump'),'dump')
   await copyBackupData(state.layout.dshHome,join(staging,'dsh'),state.layout.releaseRoot,true)
-  await copyBackupData(state.layout.runtimeRoot,join(staging,'runtime'),state.layout.releaseRoot)
+  await copyBackupData(state.layout.runtimeRoot,join(staging,'runtime'),state.layout.releaseRoot,false,{managedRuntimePackages:await managedRuntimePackageChecks(state.layout.runtimeRoot,state.layout.releaseRoot)})
   await writePrivateJson(join(staging,'installation.json'),{workspaceRoot:state.layout.workspaceRoot,port:state.port})
   const files=await listFiles(staging),manifest:BackupManifest={schema:'teloa.backup/v1',id:randomUUID(),createdAt:new Date().toISOString(),installId:state.id,version:state.version,dataVersion:release.dataVersion,files:await Promise.all(files.map(async path=>({path,sha256:digest(await readFile(join(staging,path)))}))),externalWorkspaceIncluded:false}
   await writePrivateJson(join(staging,'backup-manifest.json'),manifest);await verifyBackup(staging)

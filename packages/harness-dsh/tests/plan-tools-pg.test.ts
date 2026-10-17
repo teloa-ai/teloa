@@ -13,7 +13,7 @@ import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {openResourceDatabase,initializeRoles,initializePlans,RoleService,PlanService,TaskRunService} from '@teloa/backend'
+import {openResourceDatabase,initializeRoles,initializePlans,RoleService,PlanService,TaskRunService,ConversationService,FileConversationRepository} from '@teloa/backend'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {createPlanHandler} from '../src/plans.ts'
 import {registerPlanTools} from '../src/plan-tools.ts'
@@ -33,11 +33,13 @@ test('真实 PostgreSQL 目录与计划写入保持本人、幂等回执、默�
  const owner=randomUUID(),now='2026-09-12T00:00:00.000Z',identity={id:randomUUID,now:()=>now}
  const roles=new RoleService(pool,identity),role=await roles.create(owner,{requestId:randomUUID(),fields:{name:'SOC 核对岗',kind:'employee',scopes:['SOC'],duty:'核对告警',dataScope:'已授权安全资料',executionScope:'只读核对',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'security-analyst'}}})
  await pool.query("update teloa_roles set state='active' where id=$1",[role.id])
- const plans=new PlanService(pool,identity),planHandler=createPlanHandler(owner,async()=>plans)
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('plan-tools-pg'),agentOptions:{provider:'test',model:'test'}})
- registerPlanTools(ctx,{owner,conversation:async sessionId=>({ownerId:owner,sessionId,status:'ready'}),readTaskPolicy:async()=>null,planHandler,scheduleHandler:async()=>{throw Error('本用例不读取历史')},roles,now:()=>now,timezone:()=> 'Asia/Singapore'})
+ const conversations=new ConversationService(new FileConversationRepository(join(temporary,'conversations.json')),{create:async()=>{throw Error('本用例只使用已创建的原生会话')},inspect:async sessionId=>{await ctx.sessions.get(SessionId(sessionId))}},identity)
+ await conversations.adopt(owner,{sessionId:agent.session.id,requestId:randomUUID(),title:'计划来源会话'})
+ const plans=new PlanService(pool,identity,undefined,undefined,(actor,sessionId)=>conversations.bySession(actor,sessionId)),planHandler=createPlanHandler(owner,async()=>plans)
+ registerPlanTools(ctx,{owner,conversation:sessionId=>conversations.bySession(owner,sessionId),readTaskPolicy:async()=>null,planHandler,scheduleHandler:async()=>{throw Error('本用例不读取历史')},roles,now:()=>now,timezone:()=> 'Asia/Singapore'})
  const call=(name:string,args:Record<string,unknown>,callId:string)=>ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId(callId),signal:AbortSignal.timeout(5000)})
  const parse=(result:Awaited<ReturnType<typeof call>>)=>JSON.parse(result.content.filter(item=>item.type==='text').map(item=>item.text).join('\n'))
  const directory=parse(await call('teloa_plans_directory',{},'directory'))
@@ -45,6 +47,7 @@ test('真实 PostgreSQL 目录与计划写入保持本人、幂等回执、默�
  const input={title:'每日告警核对',goal:'核对新增告警。',scope:'SOC',dataScope:'已授权安全资料。',delivery:'变化与待核对项。',notificationPolicy:'attention',roleId:role.id,expectedRoleVersion:1,cadence:'daily',weekday:1,time:'09:30',timezone:'Asia/Singapore'}
  const first=parse(await call('teloa_plans_create',input,'same-create')),replayed=parse(await call('teloa_plans_create',input,'same-create'))
  assert.equal(first.requestId,replayed.requestId);assert.equal(first.plan.id,replayed.plan.id);assert.equal(first.plan.state,'paused')
+ assert.deepEqual(first.plan.source,{kind:'manual',sessionId:agent.session.id})
  const conflictingCreate=await call('teloa_plans_create',{...input,title:'另一项计划'},'same-create')
  assert.equal(conflictingCreate.isError,true);assert.ok(JSON.stringify(conflictingCreate).includes('同一请求不能创建不同的持续计划'))
  assert.equal((await pool.query('select count(*)::int count from teloa_plans where owner_id=$1',[owner])).rows[0].count,1)

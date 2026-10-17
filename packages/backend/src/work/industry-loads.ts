@@ -142,13 +142,22 @@ export async function initializeIndustryLoads(pool:Pool):Promise<void>{
  // 加载表的外键指向业务空间表；空间表连同 `kind` 列与唯一索引统一由业务空间模块定义，这里先建好再建加载表。
  await initializeBusinessSpaces(pool)
  await pool.query(`
- create table if not exists teloa_industry_loads(id uuid primary key,owner_id text not null,content_id uuid not null,content_hash text not null check(content_hash ~ '^[0-9a-f]{64}$'),template_id text not null,template_version text not null,template_title text not null,domain text not null,scope text not null,description text not null,source_snapshot jsonb not null check(jsonb_typeof(source_snapshot)='object'),space_id uuid not null,space_version integer not null check(space_version>0),mapping_hash text check(mapping_hash ~ '^[0-9a-f]{64}$'),relations jsonb not null check(jsonb_typeof(relations)='array'),entrypoints jsonb not null check(jsonb_typeof(entrypoints)='array'),created_at timestamptz not null,unique(owner_id,space_id,content_hash),foreign key(space_id,owner_id) references teloa_business_spaces(id,owner_id));
+ select pg_advisory_xact_lock(hashtextextended('teloa-industry-loads-schema:'||current_schema(),0));
+ create table if not exists teloa_industry_loads(id uuid primary key,owner_id text not null,content_id uuid not null,content_hash text not null check(content_hash ~ '^[0-9a-f]{64}$'),template_id text not null,template_version text not null,template_title text not null,domain text not null,scope text not null,description text not null,source_snapshot jsonb not null check(jsonb_typeof(source_snapshot)='object'),space_id uuid not null,space_version integer not null check(space_version>0),mapping_hash text check(mapping_hash ~ '^[0-9a-f]{64}$'),relations jsonb not null check(jsonb_typeof(relations)='array'),entrypoints jsonb not null check(jsonb_typeof(entrypoints)='array'),created_at timestamptz not null,foreign key(space_id,owner_id) references teloa_business_spaces(id,owner_id));
+ create unique index if not exists teloa_industry_loads_source_identity on teloa_industry_loads(owner_id,space_id,content_id,content_hash);
+ -- 先建立新身份索引，再按列集移除旧约束；不依赖 PostgreSQL 自动截短后的名称，不改既有加载与映射。
+ do $migration$ declare previous record; begin
+  for previous in select c.conname from pg_constraint c where c.conrelid='teloa_industry_loads'::regclass and c.contype='u'
+   and (select array_agg(a.attname::text order by a.attname) from unnest(c.conkey) k(attnum) join pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.attnum)=array['content_hash','owner_id','space_id']::text[]
+  loop execute format('alter table teloa_industry_loads drop constraint %I',previous.conname); end loop;
+ end $migration$;
  alter table teloa_industry_loads add column if not exists scope text;
  update teloa_industry_loads set scope=domain where scope is null;
  alter table teloa_industry_loads alter column scope set not null;
  alter table teloa_industry_loads add column if not exists mapping_hash text check(mapping_hash ~ '^[0-9a-f]{64}$');
  create table if not exists teloa_industry_load_items(load_id uuid not null references teloa_industry_loads(id),local_id text not null,instance_id uuid not null unique,kind text not null,title text not null,version text not null,required boolean not null,status text not null check(status in ('pending-adapter','skipped')),primary key(load_id,local_id));
  create table if not exists teloa_industry_load_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),load_id uuid not null references teloa_industry_loads(id),primary key(owner_id,request_id));
+ create table if not exists teloa_industry_load_request_repairs(owner_id text not null,request_id uuid not null,original_load_id uuid not null references teloa_industry_loads(id),corrected_load_id uuid not null references teloa_industry_loads(id),request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),repaired_at timestamptz not null,primary key(owner_id,request_id),foreign key(owner_id,request_id) references teloa_industry_load_requests(owner_id,request_id),check(original_load_id<>corrected_load_id));
  alter table teloa_industry_loads add column if not exists status text not null default 'active';
  alter table teloa_industry_loads add column if not exists unloaded_at timestamptz;
  alter table teloa_industry_loads drop constraint if exists teloa_industry_loads_status_check;
@@ -240,7 +249,7 @@ export class IndustryLoadService{
   if(initialReceipt){
    if(!initialReceipt.same_request)throw new WorkError('teloa/conflict','同一加载请求不能更换来源或目标。')
    const db=await this.pool.connect()
-   try{await db.query('begin isolation level repeatable read read only');let result:IndustryLoadRecord;try{result=await this.read(db,ownerId,initialReceipt.load_id)}catch{throw corrupt()}if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt();await db.query('commit');return result}catch(error){await db.query('rollback');throw error}finally{db.release()}
+   try{await db.query('begin isolation level repeatable read read only');let result:IndustryLoadRecord;try{result=await this.read(db,ownerId,initialReceipt.load_id)}catch{throw corrupt()}if(result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt();await db.query('commit');if(result.contentId===data.contentId)return result}catch(error){await db.query('rollback');throw error}finally{db.release()}
   }
   await this.assertTarget(ownerId,data.target)
   const snapshot=sourceSnapshot(await this.source.read(ownerId,data.contentId,data.contentHash));scopeLabel(snapshot.scope)
@@ -253,13 +262,29 @@ export class IndustryLoadService{
     if(!receipt.same_request)throw new WorkError('teloa/conflict','同一加载请求不能更换来源或目标。')
     let result:IndustryLoadRecord
     try{result=await this.read(db,ownerId,receipt.load_id)}catch{throw corrupt()}
-    if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
+    if(result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
+    if(result.contentId!==data.contentId)result=await this.repairReceipt(db,ownerId,data,snapshot,now,result)
     await db.query('commit');return result
    }
    const loadId=await this.insert(db,ownerId,data,snapshot,now,{duplicate:'reuse'})
    await db.query('insert into teloa_industry_load_requests values($1,$2,$3,$4)',[ownerId,data.requestId,JSON.stringify(data.spec),loadId])
-   const result=await this.read(db,ownerId,loadId);await db.query('commit');return result
+   const result=await this.read(db,ownerId,loadId)
+   if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
+   await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ /** 只纠正旧 hash 去重造成的 contentId 误绑定：原请求、旧加载及其成果保留，写入仍走原配置锁、权限和空间版本闸。 */
+ private async repairReceipt(db:PoolClient,ownerId:string,data:Input,snapshot:ResolvedIndustryLoadSourceSnapshot,now:string,previous:IndustryLoadRecord):Promise<IndustryLoadRecord>{
+  await this.lockConfiguration(db,ownerId,snapshot.scope)
+  const original=(await db.query('select source_snapshot from teloa_industry_loads where id=$1 and owner_id=$2 for update',[previous.id,ownerId])).rows[0]
+  const current=await this.read(db,ownerId,previous.id)
+  if(!original||current.contentId===data.contentId||current.contentHash!==data.contentHash||current.space.id!==data.target.spaceId||current.status!=='active'||current.upgrade||!same(sourceSnapshot(original.source_snapshot),snapshot))throw corrupt()
+  if((await db.query('select 1 from teloa_industry_load_request_repairs where owner_id=$1 and request_id=$2',[ownerId,data.requestId])).rowCount)throw corrupt()
+  const loadId=await this.insert(db,ownerId,data,snapshot,now,{duplicate:'reuse'}),result=await this.read(db,ownerId,loadId)
+  if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
+  await db.query('insert into teloa_industry_load_request_repairs values($1,$2,$3,$4,$5,$6)',[ownerId,data.requestId,previous.id,loadId,JSON.stringify(data.spec),now])
+  await db.query('update teloa_industry_load_requests set load_id=$3 where owner_id=$1 and request_id=$2',[ownerId,data.requestId,loadId])
+  return result
  }
  /** 配置锁必须早于加载行、空间咨询锁与空间行锁；同事务重复取得为可重入。 */
  private async lockConfiguration(db:PoolClient,ownerId:string,scope:string):Promise<void>{
@@ -269,7 +294,7 @@ export class IndustryLoadService{
  /**
   * 加载写入段：锁住业务空间、登记空间、加载行与加载项，返回加载身份。`create` 与 `upgrade` 共用；
   * 调用方须已在写事务内并已完成回执复放，回执由调用方按各自的回执表写。
-  * 同空间同内容摘要已有加载时，`reuse` 直接复用（原加载语义），`reject` 拒绝（升级不能把已在场的版本当作继任）。
+  * 同空间同固定内容身份与摘要已有加载时，`reuse` 直接复用，`reject` 拒绝（升级不能把已在场的版本当作继任）。
   */
  private async insert(db:PoolClient,ownerId:string,data:Pick<Input,'contentId'|'contentHash'|'target'>,snapshot:ResolvedIndustryLoadSourceSnapshot,now:string,options:{duplicate:'reuse'|'reject';supersedes?:string;carriedFrom?:ReadonlyMap<string,string>}):Promise<string>{
   await this.lockConfiguration(db,ownerId,snapshot.scope)
@@ -280,9 +305,9 @@ export class IndustryLoadService{
    if(space&&space.name!==data.target.name)throw new WorkError('teloa/conflict','业务空间身份已用于其他名称。')
   }else if(!space)throw new WorkError('teloa/forbidden','目标业务空间不存在或不属于当前本人。')
   else if(space.version!==data.target.expectedVersion)throw new WorkError('teloa/version-conflict','目标业务空间版本已变化。')
-  const duplicate=space&&(await db.query('select id,status from teloa_industry_loads where owner_id=$1 and space_id=$2 and content_hash=$3',[ownerId,data.target.spaceId,data.contentHash])).rows[0]
+  const duplicate=space&&(await db.query('select id,status from teloa_industry_loads where owner_id=$1 and space_id=$2 and content_id=$3 and content_hash=$4',[ownerId,data.target.spaceId,data.contentId,data.contentHash])).rows[0]
   if(duplicate){
-   // 同一内容在同一空间只有一条加载行（唯一约束）。已卸载或已被替代的那条不能复活：
+   // 同一固定内容身份与摘要在同一空间只有一条加载行。已卸载或已被替代的那条不能复活：
    // 复用它会让"新加载"既不在目录里、又拒绝一切实例写入，因此两条重复路径都直接拒绝。
    if(duplicate.status!=='active')throw new WorkError('teloa/conflict','同一内容已在此业务空间加载过，并已卸载或被升级替代，不能再次加载。')
    if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本已加载到该业务空间，不能再作为继任加载。')

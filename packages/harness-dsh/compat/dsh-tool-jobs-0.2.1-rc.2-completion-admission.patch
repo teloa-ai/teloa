@@ -1,0 +1,97 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -220,7 +220,10 @@
+ 		job: publicJob(read.job)
+ 	};
+ }
+-function apply(ctx, config) {
++const completionAdmissionVersion = 1;
++function apply(ctx, config, options = {}) {
++	const admitCompletion = options.admitCompletion, observeCompletionDecision = options.observeCompletionDecision;
++	if (options.requireCompletionAdmission !== undefined && typeof options.requireCompletionAdmission !== "boolean" || admitCompletion !== undefined && typeof admitCompletion !== "function" || observeCompletionDecision !== undefined && typeof observeCompletionDecision !== "function" || options.requireCompletionAdmission === true && (typeof admitCompletion !== "function" || typeof observeCompletionDecision !== "function")) throw new Error("Job completion admission is unavailable or invalid");
+ 	const waitDefault = config.waitTimeoutMs ?? 3e4;
+ 	const waitCap = config.maxWaitTimeoutMs ?? 6e5;
+ 	const delivery = config.completionDelivery ?? "wakeup";
+@@ -266,9 +269,10 @@
+ 			return;
+ 		}
+ 		if (event.type !== "settled") return;
+-		if (killedByModel.delete(event.job.id) || event.awaited || event.cause === "teardown" || event.job.owner === void 0) return;
++		if (killedByModel.delete(event.job.id) || event.awaited || event.cause === "teardown" || event.job.owner === void 0) { observeCompletionDecision?.(event.job, false); return; }
+ 		const owner = ctx.get("agents")?.get(event.job.owner);
+-		if (owner === void 0) return;
++		if (owner === void 0) { observeCompletionDecision?.(event.job, false); return; }
++		observeCompletionDecision?.(event.job, true);
+ 		const message = createUserMessage({
+ 			content: [{
+ 				type: "text",
+@@ -280,19 +284,27 @@
+ 				summary: completionSummary(event.job)
+ 			}
+ 		});
+-		if (delivery === "wakeup" && owner.status === "idle") {
+-			if (wakeBudget === void 0) {
+-				owner.followup(message);
+-				return;
+-			}
+-			const spent = spentWakes.get(owner) ?? 0;
+-			if (spent < wakeBudget) {
+-				spentWakes.set(owner, spent + 1);
+-				owner.followup(message);
+-				return;
++		const dispatch = () => {
++			if (ctx.get("agents")?.get(event.job.owner) !== owner || owner.id !== event.job.owner) throw new Error("Job completion owner changed");
++			const current = ctx.jobs.get(event.job.id, owner.id);
++			if (current.owner !== owner.id || current.status !== event.job.status || current.startedAt !== event.job.startedAt || current.finishedAt !== event.job.finishedAt) throw new Error("Job completion changed");
++			if (delivery === "wakeup" && owner.status === "idle") {
++				if (wakeBudget === void 0) {
++					owner.followup(message);
++					return;
++				}
++				const spent = spentWakes.get(owner) ?? 0;
++				if (spent < wakeBudget) {
++					spentWakes.set(owner, spent + 1);
++					owner.followup(message);
++					return;
++				}
+ 			}
+-		}
+-		owner.inject(message);
++			owner.inject(message);
++		};
++		if (admitCompletion) {
++			void Promise.resolve().then(() => admitCompletion({agent: owner, message, job: event.job}, dispatch)).catch(error => console.warn("Job completion was not admitted:", error?.code ?? "unavailable"));
++		} else dispatch();
+ 	});
+ 	ctx.tools.register(defineTool({
+ 		name: "job_output",
+@@ -415,4 +427,4 @@
+ 	}));
+ }
+ //#endregion
+-export { Config, apply, inject, name };
++export { Config, apply, completionAdmissionVersion, inject, name };
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -7,6 +7,9 @@
+  * unless `maxConsecutiveWakes` caps it per owner.
+  * @module @deepseek-ai/dsh-tool-jobs
+  */
++import type { Agent } from '@deepseek-ai/dsh-agent';
++import type { JobView } from '@deepseek-ai/dsh-jobs';
++import type { UserMessage } from '@deepseek-ai/dsh-session';
+ import type { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+ import type { ContextFormed } from '@deepseek-ai/dsh-llm';
+@@ -44,5 +47,9 @@
+     maxConsecutiveWakes?: number;
+ }
+ export declare const Config: z<Config>;
+-export declare function apply(ctx: Context, config: Config): void;
++export declare const completionAdmissionVersion = 1;
++export type JobCompletionCandidate = Readonly<{agent: Agent; message: UserMessage; job: JobView}>;
++export type JobCompletionAdmission = (candidate: JobCompletionCandidate, dispatch: () => void) => Promise<void>;
++export type JobCompletionOptions = Readonly<{requireCompletionAdmission?: boolean; admitCompletion?: JobCompletionAdmission; observeCompletionDecision?: (job: JobView, notify: boolean) => void}>;
++export declare function apply(ctx: Context, config: Config, options?: JobCompletionOptions): void;
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file

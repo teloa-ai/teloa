@@ -3,9 +3,10 @@ import assert from 'node:assert/strict'
 import { changeTeamPreview } from '../src/client/team-preview.ts'
 import { changeTaskPreview, emptyTaskPreview, taskNeeds, withTaskExamples } from '../src/client/task-preview.ts'
 import { canReceiveTask, withRoleExamples } from '../src/client/role-preview.ts'
+import { withLegacySecurityScopes } from './fixtures/legacy-security-scopes.ts'
 
 const now='2026-09-11T02:00:00Z'
-const initial=()=>withTaskExamples(emptyTaskPreview(),now)
+const initial=()=>withTaskExamples(withLegacySecurityScopes(emptyTaskPreview()),now)
 
 test('分身稿保存必须携带原岗位版本，不能省略基线覆盖已有稿',()=>{
   const state=initial()

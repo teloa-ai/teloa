@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
+import {applyPageCreatedBusinessDefinition} from '../src/client/page-create-business-definition.ts'
 
 const [frame,page,ledger,panel,api,entry]=await Promise.all([
  readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8'),
@@ -11,11 +12,18 @@ const [frame,page,ledger,panel,api,entry]=await Promise.all([
  readFile(new URL('../src/client/index.ts',import.meta.url),'utf8'),
 ])
 
-test('装配处把会话定制 API 传进真实台账概览，并在刷新后重读台账',()=>{
+test('装配处把会话定制 API 传进真实台账概览，并在刷新后重读台账',async()=>{
  assert.match(frame,/businessCustomizationApi=\{businessCustomizationApi\}/)
  assert.match(page,/target\.section==='overview'[\s\S]*<BusinessCustomization/)
  assert.match(page,/ledgerVisible&&<BusinessLedgerSurface refreshKey=\{ledgerRevision\}/)
- assert.match(page,/previewReceipt:preview\.receipt/)
+ assert.match(page,/applyPageCreatedBusinessDefinition\(businessCustomizationApi,target\.scope,preview\)/)
+ const preview={draft:{id:'draft-1',scope:'sales',kind:'object',localId:'customer',definitionHash:'a'.repeat(64)},receipt:{id:'fixed-preview'}},calls:Record<string,unknown>[]=[]
+ const api={directory:async(input:unknown)=>{assert.deepEqual(input,{scope:'sales'});return {entries:[{kind:'object',localId:'customer',current:{version:4}}]}},apply:async(input:Record<string,unknown>)=>{calls.push(input);return {kind:'object',localId:'customer',current:{version:5}}}}
+ assert.equal(await applyPageCreatedBusinessDefinition(api as never,'sales',preview as never),'object:customer:5')
+ assert.equal(calls.length,1)
+ const {requestId,...request}=calls[0]!
+ assert.match(String(requestId),/^[0-9a-f-]{36}$/)
+ assert.deepEqual(request,{draftId:'draft-1',expectedDefinitionHash:preview.draft.definitionHash,expectedCurrentVersion:4,previewReceipt:preview.receipt})
 })
 
 test('确认只使用预览回包的回执与纯函数给出的乐观判据；冲突会强制重读预览',()=>{

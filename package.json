@@ -13,8 +13,8 @@
     "check:client": "node scripts/检查客户端构建.mjs",
     "setup:dsh": "node scripts/准备DSH插件.mjs",
     "test:work": "pnpm --filter @teloa/backend test",
-    "test:bindings": "node --test packages/client/ui-workbench/tests/*.test.ts",
-    "test:contract": "node --test packages/contract/tests/*.test.ts",
+    "test:bindings": "node --test packages/client/ui-workbench/tests/*.test.ts packages/client/ui-workbench/tests/role-skill-query-drafts.browser.test.mjs",
+    "test:contract": "node --test packages/contract/tests/*.test.ts packages/contract/tests/*.test.mjs",
     "dev:dsh": "pnpm build && node scripts/启动DSH.mjs",
     "dev:dsh:acceptance": "pnpm build && node scripts/启动浏览器验收.mjs",
     "build": "pnpm -r build",
@@ -38,6 +38,6 @@
     "@types/react": "18.3.1",
     "@types/react-dom": "18.3.1",
     "@types/node": "24.0.0",
-    "@deepseek-ai/dsh": "0.2.1-alpha.1"
+    "@deepseek-ai/dsh": "0.2.1-rc.2"
   }
 }

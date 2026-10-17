@@ -8,10 +8,12 @@ import {emptyCollaboration} from '../src/client/collaboration-preview.ts'
 import {localizeWorkError} from '../lib/types/client/i18n/errors.js'
 
 const label=(scope:string,title:string):BusinessScopeLabel=>({scope,title,kind:'domain',loads:1,activeLoads:1,tasks:0,groups:0})
+/** 存量库服务端目录里已有的旧内置标签行（新装不再预登记，但原样保留）。 */
+const kept=(scope:'SOC'|'AppSec'):BusinessScopeLabel=>({scope,title:builtinBusinessNames[scope],kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0})
 const space=():BusinessSpaceRecord=>({id:'11111111-1111-4111-8111-111111111111',name:'我的工作空间',description:'',version:1,kind:'personal',createdAt:'2026-09-11T00:00:00.000Z',updatedAt:'2026-09-11T00:00:00.000Z'})
 
 test('业务范围标签取代空间身份，任务按标签隔离且未登记范围拒绝',()=>{
- const initial=emptyTaskPreview(),labels=[...initialBusinessSpaces(),label('east','东区安全'),label('west','西区安全')]
+ const initial=emptyTaskPreview(),labels=[...initialBusinessSpaces(),kept('SOC'),kept('AppSec'),label('east','东区安全'),label('west','西区安全')]
  let state={...initial,business:{...initial.business,spaces:labels}}
  state=changeTaskPreview(state,{type:'create',id:'task-east',title:'调查',goal:'核对来源',scope:'east',now:'2026-09-11T00:00:00Z'})
  assert.equal(state.tasks[0]!.scope,'east');assert.equal(state.tasks.filter(row=>row.scope==='west').length,0)
@@ -42,7 +44,7 @@ test('内置范围只剩三个，Design 已不再登记，且目录未读到时�
 
 test('内置范围可以按界面语言呈现，模板登记的标签保留宿主标题',()=>{
  assert.deepEqual(businessScopeNames([],{general:'General work',SOC:'Security operations',AppSec:'Application security'}),{},'内置词典不能自行生成可见目录')
- const names=businessScopeNames([...initialBusinessSpaces(),label('east','东区安全')],{general:'General work',SOC:'Security operations',AppSec:'Application security'})
+ const names=businessScopeNames([...initialBusinessSpaces(),kept('SOC'),label('east','东区安全')],{general:'General work',SOC:'Security operations',AppSec:'Application security'})
  assert.equal(names.general,'General work')
  assert.equal(names.SOC,'Security operations')
  assert.equal(names['east'],'东区安全')
@@ -94,4 +96,14 @@ test('改名失败带稳定 code：界面读到的是版本冲突 / 输入无效
  }
  // 未知错误的兜底文案必须与上面两条都不同，否则 code 加了也白加。
  assert.notEqual(localizeWorkError('zh-CN',{code:'teloa/invalid-input'}),localizeWorkError('zh-CN',{code:'teloa/version-conflict'}))
+})
+
+test('新装占位与冷启动只从通用工作开始；SOC/AppSec 仍是合法旧 ID，但只在服务端目录有行时出现',async()=>{
+ assert.deepEqual(initialBusinessSpaces().map(row=>row.scope),['general'],'目录到达前的占位不替用户生成旧业务')
+ assert.deepEqual(emptyTaskPreview().business.spaces.map(row=>row.scope),['general'])
+ assert.deepEqual(Object.keys(businessScopeNames(initialBusinessSpaces())),['general'])
+ for(const scope of ['SOC','AppSec'])assert.equal(registeredBusinessScope(scope,initialBusinessSpaces()),true,'合法旧 ID 不被客户端误拒')
+ const store=await readFile(new URL('../src/client/store.ts',import.meta.url),'utf8')
+ assert.match(store,/\?\?\{scope:'general',section:'overview'\} as BusinessTarget/,'冷启动默认业务是通用工作')
+ assert.doesNotMatch(store,/\{scope:'SOC',section:'overview'\}/)
 })

@@ -231,5 +231,6 @@ test('更新预览挂在持久化加载目录上：按身份认领基线与已�
  for(const name of ['DataSources','ExecutionTools','McpConnections','Plugins'])
   assert.match(frame,new RegExp('const mergeIndustry'+name+'=[^\\n]*if\\(index>=0&&next\\[index\\]!\\.revision>row\\.revision\\)continue;'),name)
  assert.doesNotMatch(frame,/revision>=row\.revision/)
- assert.match(frame,/if\(\['market','spaces','team','capabilities'\]\.includes\(state\.view\)\)void loadIndustryRoles\(\)/)
+ // 独立「我的能力」视图已并入市场「已添加」页签：岗位事实在市场、业务与团队三个视图进入时读取
+ assert.match(frame,/if\(\['market','spaces','team'\]\.includes\(state\.view\)\)void loadIndustryRoles\(\)/)
 })

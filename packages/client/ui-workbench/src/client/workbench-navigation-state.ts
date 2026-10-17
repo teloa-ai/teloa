@@ -8,26 +8,29 @@ export const WORKBENCH_NAVIGATION_MAX_BYTES=16*1024
 const utf8Bytes=(value:string)=>new TextEncoder().encode(value).byteLength
 
 export type WorkbenchDirectoryId='tasks'|'team'|'resources'|'capabilities'|'market'|'spaces'|'plans'|'projects'
-export type WorkbenchDirectoryNavigation={category?:string;query?:string;selectedId?:string;scrollTop?:number}
-export type WorkbenchDirectoryPatch={category?:string|undefined;query?:string|undefined;selectedId?:string|undefined;scrollTop?:number|undefined}
+export type WorkbenchBusinessPage={scope:string;pageId:string}
+export type WorkbenchDirectoryNavigation={category?:string;query?:string;selectedId?:string;scrollTop?:number;/** 仅业务目录使用，区分本人返回首页与打开范围内页。 */businessHome?:boolean;businessPage?:WorkbenchBusinessPage}
+export type WorkbenchDirectoryPatch={category?:string|undefined;query?:string|undefined;selectedId?:string|undefined;scrollTop?:number|undefined;businessHome?:boolean|undefined;businessPage?:WorkbenchBusinessPage|undefined}
 export type WorkbenchNavigationState={
  schema:typeof WORKBENCH_NAVIGATION_STORAGE_KEY
  view:WorkbenchView
  messageMode:'directory'|'native'|'groups'
  capabilityMode:'catalog'|'bindings'
  marketMode:'catalog'|'installations'|'industry-resources'
- selected:{taskId?:string;roleId?:string;resourceId?:string;capabilityBindingId?:string;marketItemId?:string;marketIntentId?:string;installationId?:string;businessId?:string;planId?:string}
+ selected:{taskId?:string;roleId?:string;resourceId?:string;capabilityBindingId?:string;marketItemId?:string;marketIntentId?:string;installationId?:string;businessId?:string;planId?:string;groupId?:string;groupRootId?:string}
  directories:Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>>
  detail:WorkbenchDetailState
 }
 
-const views:readonly WorkbenchView[]=['home','attention','messages','team','spaces','market','resources','tasks','capabilities','plans','projects','settings']
+const views:readonly WorkbenchView[]=['home','attention','messages','team','spaces','market','resources','tasks','plans','projects','settings']
+/** 旧记录里的独立「我的能力」模块：已并入市场「已添加」，恢复时落到同一位置，不丢其余目录记忆。 */
+const LEGACY_CAPABILITIES_VIEW='capabilities'
 // projects 目录：category 存业务筛选、query 存状态筛选、scrollTop 复用。
 const directoryIds:readonly WorkbenchDirectoryId[]=['tasks','team','resources','capabilities','market','spaces','plans','projects']
 const messageModes=['directory','native','groups'] as const
 const capabilityModes=['catalog','bindings'] as const
 const marketModes=['catalog','installations','industry-resources'] as const
-const selectedKeys=['taskId','roleId','resourceId','capabilityBindingId','marketItemId','marketIntentId','installationId','businessId','planId'] as const
+const selectedKeys=['taskId','roleId','resourceId','capabilityBindingId','marketItemId','marketIntentId','installationId','businessId','planId','groupId','groupRootId'] as const
 const detailKinds=['directory-object','conversation-object','artifact'] as const
 
 export function emptyWorkbenchNavigationState():WorkbenchNavigationState{return {schema:WORKBENCH_NAVIGATION_STORAGE_KEY,view:'home',messageMode:'native',capabilityMode:'catalog',marketMode:'catalog',selected:{},directories:{},detail:{open:false,target:null}}}
@@ -47,7 +50,7 @@ function parseArtifactSource(value:unknown){
  return {kind,id:boundedString(source.id,'成果来源编号'),scope:boundedString(source.scope,'成果范围'),objectType:boundedString(source.objectType,'成果对象类型')}
 }
 
-const businessSections=['overview','projects','data','work','analysis','execution','dashboards'] as const
+const businessSections=['overview','projects','data','work','analysis','execution','dashboards','employees','groups'] as const
 type BusinessSection=typeof businessSections[number]
 /** 看板标识与声明标识同一判据；只在看板栏目出现。 */
 const dashboardIdPattern=/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/
@@ -103,10 +106,16 @@ function parseDetailTarget(value:unknown):WorkbenchDetailTarget|null{
   exact(target,['kind','sessionId','objectKind','id','version'],'会话对象目标')
   return {kind,sessionId:boundedString(target.sessionId,'会话编号'),objectKind,id:boundedString(target.id,'对象编号'),...optionalVersion(target.version)}
  }
- exact(target,['kind','source','sessionId','artifactId','version'],'成果详情目标')
+ exact(target,['kind','source','sessionId','artifactId','version','initialView','initialAction'],'成果详情目标')
  const sessionId=optionalString(target.sessionId,'会话编号'),artifactId=optionalString(target.artifactId,'成果编号'),version=optionalInteger(target.version,'成果版本')
  if(version!==undefined&&!artifactId)throw Error('成果版本缺少成果编号。')
- return {kind,source:parseArtifactSource(target.source),...(sessionId?{sessionId}:{}),...(artifactId?{artifactId,...(version!==undefined?{version}:{})}:{})}
+ const initialView=target.initialView===undefined?undefined:oneOf(target.initialView,['files'] as const,'成果预览内容')
+ // 整理是当次入口的显示意图；旧记录兼容读取，但刷新只恢复来源与阅读位置。
+ if(target.initialAction!==undefined){
+  oneOf(target.initialAction,['prepare'] as const,'成果初始动作')
+  if(artifactId||initialView)throw Error('整理入口不能同时指定已存成果或文件预览。')
+ }
+ return {kind,source:parseArtifactSource(target.source),...(sessionId?{sessionId}:{}),...(artifactId?{artifactId,...(version!==undefined?{version}:{})}:{}),...(initialView?{initialView}:{})}
 }
 
 function optionalVersion(value:unknown):{version?:number}{const version=optionalInteger(value,'详情版本');return version===undefined?{}:{version}}
@@ -123,12 +132,25 @@ export function readWorkbenchNavigationState(raw:string):WorkbenchNavigationStat
  for(const key of selectedKeys){const value=optionalString(selectedRaw[key],'选中对象');if(value)selected[key]=value}
  const directoriesRaw=record(root.directories,'目录状态');exact(directoriesRaw,directoryIds,'目录状态')
  const directories:WorkbenchNavigationState['directories']={}
- for(const id of directoryIds){if(directoriesRaw[id]===undefined)continue;const item=record(directoriesRaw[id],'目录状态');exact(item,['category','query','selectedId','scrollTop'],'目录状态');directories[id]={...optionalNamedString('category',item.category),...optionalNamedString('query',item.query,1000),...optionalNamedString('selectedId',item.selectedId),...(item.scrollTop===undefined?{}:{scrollTop:optionalInteger(item.scrollTop,'目录滚动位置')!})}}
+ for(const id of directoryIds){
+  if(directoriesRaw[id]===undefined)continue
+  const item=record(directoriesRaw[id],'目录状态');exact(item,['category','query','selectedId','scrollTop',...(id==='spaces'?['businessHome','businessPage']:[])],'目录状态')
+  if(item.businessHome!==undefined&&typeof item.businessHome!=='boolean')throw Error('业务首页位置无效。')
+  let businessPage:WorkbenchBusinessPage|undefined
+  if(item.businessPage!==undefined){const page=record(item.businessPage,'业务页面位置');exact(page,['scope','pageId'],'业务页面位置');businessPage={scope:businessScope(page.scope),pageId:boundedString(page.pageId,'业务页面标识',120)}}
+  directories[id]={...optionalNamedString('category',item.category),...optionalNamedString('query',item.query,1000),...optionalNamedString('selectedId',item.selectedId),...(item.scrollTop===undefined?{}:{scrollTop:optionalInteger(item.scrollTop,'目录滚动位置')!}),...(item.businessHome===undefined?{}:{businessHome:item.businessHome as boolean}),...(businessPage?{businessPage}:{})}
+ }
  const detailRaw=record(root.detail,'详情状态');exact(detailRaw,['open','target'],'详情状态');if(typeof detailRaw.open!=='boolean')throw Error('详情状态无效。')
  const target=parseDetailTarget(detailRaw.target)
  // 记录里写着“开着”却根本没给目标，是自相矛盾的记录，仍然拒绝；目标只是读不懂时退成关闭。
  if(detailRaw.open&&!target&&detailRaw.target===null)throw Error('打开的详情缺少目标。')
- return {schema:WORKBENCH_NAVIGATION_STORAGE_KEY,view:oneOf(root.view,views,'工作台模块'),messageMode:oneOf(root.messageMode,messageModes,'消息模式'),capabilityMode:oneOf(root.capabilityMode,capabilityModes,'能力模式'),marketMode:oneOf(root.marketMode,marketModes,'市场模式'),selected,directories,detail:{open:detailRaw.open&&!!target,target}}
+ // capabilityMode 是旧记录字段（独立能力页的目录／绑定模式），只校验、不再恢复为独立模块。
+ oneOf(root.capabilityMode,capabilityModes,'能力模式')
+ const legacyCapabilities=root.view===LEGACY_CAPABILITIES_VIEW
+ const view=legacyCapabilities?'market':oneOf(root.view,views,'工作台模块')
+ const marketMode=legacyCapabilities?'catalog':oneOf(root.marketMode,marketModes,'市场模式')
+ if(legacyCapabilities)directories.market={...directories.market,category:writeDirectoryFilterCategory({category:'intents',mobileLayer:'list'})}
+ return {schema:WORKBENCH_NAVIGATION_STORAGE_KEY,view,messageMode:oneOf(root.messageMode,messageModes,'消息模式'),capabilityMode:'catalog',marketMode,selected,directories,detail:{open:detailRaw.open&&!!target,target}}
 }
 
 function optionalNamedString<K extends string>(key:K,value:unknown,max=4096):{[P in K]?:string}{const result=optionalString(value,key,max);return result===undefined?{}:{[key]:result} as {[P in K]?:string}}
@@ -165,8 +187,7 @@ export function writeWorkbenchNavigationState(state:WorkbenchNavigationState):st
  const raw=JSON.stringify(state)
  if(utf8Bytes(raw)>WORKBENCH_NAVIGATION_MAX_BYTES)throw Error('工作台恢复记录过大。')
  // 写入前走同一条严格解析，避免未知字段或非法值进入存储。
- readWorkbenchNavigationState(raw)
- return raw
+ return JSON.stringify(readWorkbenchNavigationState(raw))
 }
 
 export function restoreAvailableTarget(saved:{id?:string|undefined}|undefined,availableIds:readonly string[]):string|undefined{
@@ -211,7 +232,8 @@ export function attachWorkbenchNavigationPersistence(
 }
 
 type WorkbenchNavigationSnapshot={
- view:WorkbenchView;messageMode:'directory'|'native'|'groups';capabilityMode:'catalog'|'bindings';marketMode:'catalog'|'installations'|'industry-resources'
+ view:WorkbenchView;messageMode:'directory'|'native'|'groups';/** 旧字段：独立能力页已退出，快照可不带，记录固定写 catalog。 */capabilityMode?:'catalog'|'bindings';marketMode:'catalog'|'installations'|'industry-resources'
+ groupTarget?:{groupId:string;rootId:string}|null;
  taskId:string|null;roleId:string|null;resourceTarget:{id:string}|null;capabilityBindingId:string|null;marketItemId:string|null;marketIntentId:string|null;installationId:string|null
  businessTarget:{recordReference?:BusinessObjectReference;scope:string;section:string;id?:string;objectType?:string;dashboardId?:string;match?:{field:string;value:string}};continuousTarget:{kind:string;id?:string;scope?:string;roleId?:string}
  navigationDirectories:Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>>;detail:WorkbenchDetailState
@@ -220,6 +242,7 @@ type WorkbenchNavigationSnapshot={
 export function captureWorkbenchNavigationState(snapshot:WorkbenchNavigationSnapshot):WorkbenchNavigationState{
  const selected:WorkbenchNavigationState['selected']={}
  const assign=(key:keyof typeof selected,value:string|null|undefined)=>{if(value)selected[key]=value}
+ assign('groupId',snapshot.groupTarget?.groupId);if(snapshot.groupTarget?.groupId)assign('groupRootId',snapshot.groupTarget.rootId);
  assign('taskId',snapshot.taskId);assign('roleId',snapshot.roleId);assign('resourceId',snapshot.resourceTarget?.id);assign('capabilityBindingId',snapshot.capabilityBindingId);assign('marketItemId',snapshot.marketItemId);assign('marketIntentId',snapshot.marketIntentId);assign('installationId',snapshot.installationId);assign('businessId',snapshot.businessTarget.id);assign('planId',snapshot.continuousTarget.id)
  const directories:WorkbenchNavigationState['directories']={}
  for(const id of directoryIds){
@@ -230,6 +253,8 @@ export function captureWorkbenchNavigationState(snapshot:WorkbenchNavigationSnap
   if(source.query)next.query=source.query
   if(source.selectedId)next.selectedId=source.selectedId
   if(source.scrollTop!==undefined)next.scrollTop=source.scrollTop
+  if(id==='spaces'&&source.businessHome!==undefined)next.businessHome=source.businessHome
+  if(id==='spaces'&&source.businessPage)next.businessPage={...source.businessPage}
   if(Object.keys(next).length)directories[id]=next
  }
  // 第三段按栏目分派：看板栏目存看板标识，其余栏目存对象类型——两者互斥，复用同一段不加列。
@@ -239,7 +264,7 @@ export function captureWorkbenchNavigationState(snapshot:WorkbenchNavigationSnap
  const continuousRoute=[snapshot.continuousTarget.kind,snapshot.continuousTarget.scope??'',snapshot.continuousTarget.roleId??''].join(':'),continuousFilter=directories.plans?.category?.split('\n').at(-1)
  directories.spaces={...directories.spaces,category:businessRoute+(businessFilter&&businessFilter!==businessRoute?'\n'+businessFilter:'')}
  directories.plans={...directories.plans,category:continuousRoute+(continuousFilter&&continuousFilter!==continuousRoute?'\n'+continuousFilter:'')}
- return {schema:WORKBENCH_NAVIGATION_STORAGE_KEY,view:snapshot.view,messageMode:snapshot.messageMode,capabilityMode:snapshot.capabilityMode,marketMode:snapshot.marketMode,selected,directories,detail:snapshot.detail}
+ return {schema:WORKBENCH_NAVIGATION_STORAGE_KEY,view:snapshot.view,messageMode:snapshot.messageMode,capabilityMode:'catalog',marketMode:snapshot.marketMode,selected,directories,detail:snapshot.detail}
 }
 
 export function restoredBusinessTarget(saved:WorkbenchNavigationState):{scope:BusinessScope;section:BusinessSection;id?:string;objectType?:string;dashboardId?:string;match?:{field:string;value:string};recordReference?:BusinessObjectReference}|undefined{

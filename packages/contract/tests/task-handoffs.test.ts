@@ -23,6 +23,9 @@ test('主动改派回执精确约束双方、正整数版本及任务结构',()=
  const change={requestId,taskId,baseVersion:2,appliedVersion:3,from:{kind:'self' as const},to:{kind:'role' as const,roleId,roleVersion:3},note:'岗位接续',createdAt}
  assert.equal(isTaskHandoffChange(change),true)
  assert.equal(isTaskHandoffChangeResult({task,change}),true)
+ // 实际存储回执带内容版本；该字段不改变交接身份，但必须接受并校验。
+ assert.equal(isTaskHandoffChangeResult({task:{...task,contentVersion:2},change}),true)
+ for(const contentVersion of [0,-1,1.5,'2',null])assert.equal(isTaskHandoffChangeResult({task:{...task,contentVersion},change}),false)
  for(const value of [
   {...change,from:{kind:'self',roleId}},
   {...change,to:{kind:'role',roleId}},
@@ -33,11 +36,13 @@ test('主动改派回执精确约束双方、正整数版本及任务结构',()=
  assert.equal(isTaskHandoffChangeResult({task,change,extra:true}),false)
 })
 
-test('主动改派回执拒绝同一责任方、空白主体和不完整时间',()=>{
+test('主动改派回执允许同员工版本前进，拒绝同版或倒退、空白主体和不完整时间',()=>{
  const createdAt='2026-09-13T00:00:00.000Z',task={id:taskId,ownerId:'owner',title:'调查',goal:'核对',scope:'SOC',version:3,state:'ready' as const,assigneeRoleId:roleId,assigneeRoleVersion:3,createdAt,updatedAt:createdAt}
  const change={requestId,taskId,baseVersion:2,appliedVersion:3,from:{kind:'self' as const},to:{kind:'role' as const,roleId,roleVersion:3},note:'岗位接续',createdAt}
  assert.equal(isTaskHandoffChange({...change,from:{kind:'self'},to:{kind:'self'}}),false)
- assert.equal(isTaskHandoffChange({...change,from:{kind:'role',roleId,roleVersion:2},to:{kind:'role',roleId,roleVersion:3}}),false)
+ assert.equal(isTaskHandoffChange({...change,from:{kind:'role',roleId,roleVersion:2},to:{kind:'role',roleId,roleVersion:3}}),true)
+ assert.equal(isTaskHandoffChange({...change,from:{kind:'role',roleId,roleVersion:3},to:{kind:'role',roleId,roleVersion:3}}),false)
+ assert.equal(isTaskHandoffChange({...change,from:{kind:'role',roleId,roleVersion:3},to:{kind:'role',roleId,roleVersion:2}}),false)
  assert.equal(isTaskHandoffChange({...change,createdAt:'2026-09-13'}),false)
  assert.equal(isTaskHandoffChangeResult({task:{...task,ownerId:'   '},change}),false)
  assert.equal(isTaskHandoffChangeResult({task:{...task,createdAt:'2026-09-13'},change}),false)

@@ -29,14 +29,14 @@ test('真实本人默认会话在官方 Goal 变更体前拒绝未支持能力�
  const db=await setupRoleWork();t.after(()=>db.close())
  await initializeConversationWork(db.pool);await initializeTaskRunRuntimeLinks(db.pool);await initializeTaskRunGoals(db.pool)
  const f=await patchedSessionFixture(t),goalModule=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-goal')).href),goalTools=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-tool-goal')).href)
- const root=await mkdtemp(join(tmpdir(),'teloa-ordinary-goal-'));t.after(()=>rm(root,{recursive:true,force:true}));await f.ctx.plugin(f.persistencePackage.default,{root:join(root,'history'),compression:'none'})
+ const root=await mkdtemp(join(tmpdir(),'teloa-ordinary-goal-'));t.after(()=>rm(root,{recursive:true,force:true}));await f.ctx.plugin(f.persistencePackage,{root:join(root,'history'),compression:'none'})
  await f.ctx.plugin(goalModule.GoalService);await f.ctx.plugin(goalTools,{})
  const {agent}=await f.ctx.agents.create({sessionId:SessionId('ordinary-'+randomUUID()),agentOptions:{provider:'test',model:'test',maxTokens:128}}),owner=randomUUID(),goals=f.ctx.goals,repository=new FileConversationRepository(join(root,'conversations.json'))
  const row={id:randomUUID(),sessionId:agent.id,requestedSessionId:agent.id,ownerId:owner,title:'本人默认会话',scopeIds:['general'] as ['general'],version:1 as const,status:'ready' as const,createdAt:new Date().toISOString()};await repository.write([row])
  const links=new ObjectConversationService(db.pool,async()=>row,identity.now),access=new WorkAccess();access.requirePolicy();access.requireSessionCapabilities();access.installPolicy(async()=>({assertCurrent(){}}));access.installSessionCapabilities(createNativeSessionCapabilities(f.ctx,{owner,conversations:{repository},links,pool:db.pool,isRoutingSession:()=>false}))
  const input=createNativeWorkInput(f.ctx,access),service=new TaskRunGoalService(db.pool,identity,{hostGeneration:()=>1,inspectGoal:async()=>null,admitRound:async()=>{throw Error('普通会话不能借 Task Goal 票据')}})
  const adapter=createTaskRunGoal(f.ctx,service,owner,{nativeInput:input,hostGeneration:()=>1,foldGoal:goalModule.foldGoal});t.after(()=>{adapter.close();input.close()})
- const driver=(await patchedNativePackage<any>(t,{packageName:'@deepseek-ai/dsh-goal-round-driver',compatBasename:'dsh-goal-round-driver-0.2.1-alpha.1-input-admission',packageAnchor:anchor})).namespace;await f.ctx.plugin(driver,{requireInputAdmission:true,admitInput:adapter.admit})
+ const driver=(await patchedNativePackage<any>(t,{packageName:'@deepseek-ai/dsh-goal-round-driver',compatBasename:'dsh-goal-round-driver-0.2.1-rc.2-input-admission',packageAnchor:anchor})).namespace;await f.ctx.plugin(driver,{requireInputAdmission:true,admitInput:adapter.admit})
  let requests=0
  class Model extends LlmAdapter{override async resolveModel(provider:string,model:string){return {provider,id:model,name:model}}async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{requests++;if(requests===1){yield* call('create_goal',{objective:'核对本人目标',max_goal_rounds:2});return}if(requests===2){yield* call('update_goal',{goal_id:'unmanaged-goal',revision:1,action:'resume'});return}if(requests===3){yield* call('get_goal',{});return}yield {type:'finish',reason:{kind:'stop'}}}}
  f.ctx.llm.registerAdapter(['test'],new Model())

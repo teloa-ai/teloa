@@ -24,6 +24,7 @@ function input(value:unknown,keys:readonly string[]):Record<string,unknown>{if(!
 /** 在 WorkLineage 建表后初始化；沿用 ending/ended 存储状态，不改写既有谱系。 */
 export async function initializeWorkControl(pool:Pool):Promise<void>{await pool.query(`
  alter table teloa_work_controls add column if not exists version integer not null default 1 check(version>0);
+ alter table teloa_work_controls add column if not exists pause_origin text check(pause_origin in ('restart','owner'));
  create table if not exists teloa_work_control_requests(
   owner_id text not null,request_id uuid not null,control_id uuid not null,spec jsonb not null,result jsonb not null,created_at timestamptz not null,
   primary key(owner_id,request_id),foreign key(owner_id,control_id) references teloa_work_controls(owner_id,id)
@@ -50,6 +51,14 @@ export class WorkControlService{
  }
  async get(owner:string,value:{controlId:string}):Promise<WorkControl>{roleWorkOwner(owner);const a=input(value,['controlId']);if(!uuid(a.controlId))throw invalid();return this.read(this.pool,owner,a.controlId)}
  async getInTransaction(db:PoolClient,owner:string,value:{controlId:string}):Promise<WorkControl>{roleWorkOwner(owner);const a=input(value,['controlId']);if(!uuid(a.controlId))throw invalid();return this.read(db,owner,a.controlId)}
+ /** 失败重试的窄预检；未知历史来源不能被解释为宿主重启。 */
+ async retryControlInTransaction(db:PoolClient,owner:string,value:{controlId:string}):Promise<WorkControl>{
+  roleWorkOwner(owner);const a=input(value,['controlId']);if(!uuid(a.controlId))throw invalid()
+  const current=await this.read(db,owner,a.controlId,true)
+  const row=(await db.query('select pause_origin from teloa_work_controls where owner_id=$1 and id=$2',[owner,current.id])).rows[0]
+  if(current.scope!=='round'||current.pendingRunIds.length||current.unknownOperationIds.length||current.state!=='active'&&(current.state!=='paused'||row?.pause_origin!=='restart'))throw new WorkError('teloa/conflict','原工作不是已安全收口的宿主重启暂停，不能重试。')
+  return current
+ }
  async stateForRun(owner:string,value:{runId:string}):Promise<WorkControl['state']>{
   roleWorkOwner(owner);const a=input(value,['runId']);if(!uuid(a.runId))throw invalid()
   const run=(await this.pool.query('select task_id from teloa_task_runs where owner_id=$1 and id=$2',[owner,a.runId])).rows[0];if(!run)throw forbidden()
@@ -68,7 +77,7 @@ export class WorkControlService{
   const current=await this.read(db,owner,a.controlId,true);if(current.version!==a.expectedVersion)throw version()
   if(current.state!=='paused'||current.pendingRunIds.length||current.unknownOperationIds.length)throw new WorkError('teloa/conflict','工作尚未安全暂停，不能恢复。')
   combineWorkAccessLeases([seal]).assertCurrent();invalidate(owner,current.id)
-  await db.query("update teloa_work_controls set state='active',generation=generation+1,version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,current.id,this.identity.now()])
+  await db.query("update teloa_work_controls set state='active',pause_origin=null,generation=generation+1,version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,current.id,this.identity.now()])
   await db.query("update teloa_work_control_progress set generation=generation+1,pending_run_ids='{}',unknown_operation_ids='{}' where owner_id=$1 and control_id=$2",[owner,current.id])
   return this.read(db,owner,current.id)
  }
@@ -88,7 +97,7 @@ export class WorkControlService{
    for(const {id} of ids){
     const current=await this.read(db,owner,id),runs=(await db.query(`select r.id from teloa_task_runs r join teloa_task_work_lineage l on l.owner_id=r.owner_id and l.task_id=r.task_id where r.owner_id=$1 and ${current.scope==='definition'?'l.definition_control_id':'l.round_control_id'}=$2 order by r.id`,[owner,id])).rows.map(r=>r.id)
     if(this.ports.hostGeneration!()!==a.hostGeneration)throw forbidden();invalidate(owner,id)
-    await db.query("update teloa_work_controls set state='pausing',generation=generation+1,version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,id,this.identity.now()])
+    await db.query("update teloa_work_controls set state='pausing',pause_origin='restart',generation=generation+1,version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,id,this.identity.now()])
     await db.query(`insert into teloa_work_control_progress(owner_id,control_id,generation,pending_run_ids,unknown_operation_ids) values($1,$2,$3,$4,$5) on conflict(owner_id,control_id) do update set generation=excluded.generation,pending_run_ids=excluded.pending_run_ids,unknown_operation_ids=excluded.unknown_operation_ids`,[owner,id,current.generation+1,runs,current.unknownOperationIds])
     result.push(await this.read(db,owner,id))
    }
@@ -125,7 +134,7 @@ export class WorkControlService{
    // 同一个本机宿主内，同步最终发布 guard 从这里起失效；数据库提交前失效只会保守拒绝旧请求。
    invalidate(owner,current.id)
    const state=request.action==='pause'?'pausing':'stopping',generation=current.generation+1
-   await db.query('update teloa_work_controls set state=$3,generation=$4,version=version+1,updated_at=$5 where owner_id=$1 and id=$2',[owner,current.id,state==='stopping'?'ending':state,generation,this.identity.now()])
+   await db.query("update teloa_work_controls set state=$3,pause_origin='owner',generation=$4,version=version+1,updated_at=$5 where owner_id=$1 and id=$2",[owner,current.id,state==='stopping'?'ending':state,generation,this.identity.now()])
    await db.query(`insert into teloa_work_control_progress(owner_id,control_id,generation,pending_run_ids,unknown_operation_ids) values($1,$2,$3,$4,'{}') on conflict(owner_id,control_id) do update set generation=excluded.generation,pending_run_ids=excluded.pending_run_ids,unknown_operation_ids='{}'`,[owner,current.id,generation,runIds])
    const control=await this.read(db,owner,current.id)
    await db.query('insert into teloa_work_control_requests(owner_id,request_id,control_id,spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[owner,request.requestId,current.id,JSON.stringify(request),JSON.stringify(control),this.identity.now()])

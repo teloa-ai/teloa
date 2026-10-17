@@ -17,7 +17,7 @@
     {"id": "knowledge", "label": "依据资料"},
     {"id": "source", "label": "接入源"},
     {"id": "board", "label": "业务看板"},
-    {"id": "method", "label": "任务模板"},
-    {"id": "extension", "label": "扩展"}
+    {"id": "method", "label": "工作安排"},
+    {"id": "extension", "label": "应用"}
   ]
 }

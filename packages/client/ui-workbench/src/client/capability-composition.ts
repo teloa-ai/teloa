@@ -4,6 +4,7 @@ import type {CapabilitySnapshot} from '@teloa/contract'
 import type {IndustryLoadRecord} from './industry-load-api.js'
 import type {MessageKey} from './i18n/messages.js'
 import type {TeamCapabilityRow} from './team-capabilities-presentation.js'
+import {capabilitySkillLoadsKey,type CapabilitySkillRuntime,type CapabilitySkillStatus} from './capability-skill-runtime.js'
 import {
  CAPABILITY_ROW_IDS,
  compositionTargetScope,
@@ -22,7 +23,7 @@ import {
  * 只有模板包内的 `localId` 与跨版本稳定的 `templateId` 认得出「同一条」。
  */
 export type CapabilityOrigin={kind:'studio'}|{kind:'business';scopes:readonly string[]}
-export type CapabilityItem={native?:RuntimeExtension;key:string;rowId:CompositionRowId;title:string;state:CompositionItemState;mode?:ConnectorMode;approval?:boolean;detail?:MessageKey;origin:CapabilityOrigin;go:CompositionTarget;instanceId?:string;industry?:TeamCapabilityRow['industry']}
+export type CapabilityItem={native?:RuntimeExtension;key:string;rowId:CompositionRowId;title:string;state:CompositionItemState;skillStatus?:CapabilitySkillStatus;mode?:ConnectorMode;approval?:boolean;detail?:MessageKey;origin:CapabilityOrigin;go:CompositionTarget;instanceId?:string;industry?:TeamCapabilityRow['industry']}
 export type CapabilitySection={id:CompositionRowId;items:CapabilityItem[]}
 
 /**
@@ -52,10 +53,12 @@ const industryInfo=(load:IndustryLoadRecord,item:LoadItem):NonNullable<Capabilit
  * 原生（非业务带来的）条目按 Ruling 2 收敛到共享状态词：DSH 技能记 `installed`、
  * observed 工具记 `discovered`，`not-connected` 不产条目、由页面走空态句。
  */
-export function capabilitySections(input:{snapshot?:CapabilitySnapshot;loads:readonly IndustryLoadRecord[];plugins?:readonly IndustryPluginInstance[]}):CapabilitySection[]{
+export function capabilitySections(input:{snapshot?:CapabilitySnapshot;studioSkills?:CapabilitySnapshot['skills'];loads:readonly IndustryLoadRecord[];plugins?:readonly IndustryPluginInstance[];skillRuntime?:CapabilitySkillRuntime}):CapabilitySection[]{
  const byRow=new Map<CompositionRowId,CapabilityItem[]>(CAPABILITY_ROW_IDS.map(id=>[id,[]]))
  const shared=new Map<string,CapabilityItem>()
  const scopes=[...new Set(input.loads.map(load=>load.space.scope))]
+ const skillRuntime=input.skillRuntime?.loadsKey===capabilitySkillLoadsKey(input.loads)?input.skillRuntime:undefined
+ const skillState=(status:CapabilitySkillStatus):CompositionItemState=>status==='installed'?'installed':status==='not-installed'?'pending-install':status==='preparing'?'installing':status==='unlinked'?'pending-authorization':'unverified'
 
  for(const scope of scopes){
   const sections=composeFromWorkspace({scope,loads:input.loads,roles:[],...(input.plugins?{plugins:input.plugins}:{})})
@@ -65,8 +68,10 @@ export function capabilitySections(input:{snapshot?:CapabilitySnapshot;loads:rea
     const located=findLoadItem(input.loads,compItem.id)
     // 业务的做法汇总含自动化和对象动作；能力目录只收可复用的任务模板。
     if(section.id==='method'&&located?.item.kind!=='work-template')continue
+    const skillStatus=section.id==='skill'?skillRuntime?.state==='ready'?skillRuntime.facts.find(fact=>fact.loadId===located?.load.id&&fact.itemInstanceId===compItem.id)?.status??'unverified':skillRuntime?.state==='loading'?'loading':'unverified':undefined
     const base={
-     rowId:section.id,title:compItem.title,state:compItem.state,
+     rowId:section.id,title:compItem.title,state:skillStatus?skillState(skillStatus):compItem.state,
+     ...(skillStatus?{skillStatus}:{}),
      ...(compItem.mode?{mode:compItem.mode}:{}),...(compItem.approval?{approval:true}:{}),
      go:compItem.go,instanceId:compItem.id,
      ...(located?{industry:industryInfo(located.load,located.item)}:{}),
@@ -75,9 +80,9 @@ export function capabilitySections(input:{snapshot?:CapabilitySnapshot;loads:rea
      const mergeKey=section.id+':'+(located?located.load.templateId+'/'+located.item.localId:compItem.id)
      const existing=shared.get(mergeKey)
      if(existing&&existing.origin.kind==='business'){
-      const state=worseState(existing.state,compItem.state)
+      const state=worseState(existing.state,base.state)
       // 状态与配置入口必须指向同一个实例，才能处理其他业务里尚未就绪的能力。
-      shared.set(mergeKey,{...existing,...(state!==existing.state?{instanceId:base.instanceId,industry:base.industry,go:base.go}:{}),state,origin:{kind:'business',scopes:[...new Set([...existing.origin.scopes,scope])]}})
+      shared.set(mergeKey,{...existing,...(state!==existing.state?{instanceId:base.instanceId,industry:base.industry,go:base.go,...(base.skillStatus?{skillStatus:base.skillStatus}:{})}:{}),state,origin:{kind:'business',scopes:[...new Set([...existing.origin.scopes,scope])]}})
      }else{
       shared.set(mergeKey,{...base,key:mergeKey,origin:{kind:'business',scopes:[scope]}})
      }
@@ -89,8 +94,13 @@ export function capabilitySections(input:{snapshot?:CapabilitySnapshot;loads:rea
  }
  for(const item of shared.values())byRow.get(item.rowId)!.push(item)
 
- for(const skill of input.snapshot?.skills??[])
+ // 只合并已在业务行中表示的同一已关联安装；不同来源、未核验或迟到的目录仍独立显示。
+ const representedSkills=new Set(byRow.get('skill')!.filter(item=>item.skillStatus==='installed').flatMap(item=>{const located=item.instanceId?findLoadItem(input.loads,item.instanceId):undefined;return located?[JSON.stringify([located.load.id,item.instanceId])]:[]}))
+ const managedNative=new Set(skillRuntime?.state==='ready'?skillRuntime.facts.filter(fact=>fact.status==='installed'&&fact.linked===true&&!!fact.installationId&&!!fact.nativeName&&!!fact.nativeSource&&!!fact.nativeProvider&&representedSkills.has(JSON.stringify([fact.loadId,fact.itemInstanceId]))).map(fact=>JSON.stringify([fact.nativeName,fact.nativeSource,fact.nativeProvider])):[])
+ for(const skill of input.studioSkills??input.snapshot?.skills??[]){
+  if(managedNative.has(JSON.stringify([skill.name,skill.source,skill.provider])))continue
   byRow.get('skill')!.push({key:'skill:'+skill.name,rowId:'skill',title:skill.name,state:'installed',detail:skill.userInvocable?'teamCapability.status.userInvocable':'teamCapability.status.agentOnly',origin:{kind:'studio'},go:{kind:'capabilities'}})
+ }
  if(input.snapshot?.connections.status==='observed')
   for(const tool of input.snapshot.connections.tools)
    byRow.get('source')!.push({key:'source:'+tool.name,rowId:'source',title:tool.name,state:'discovered',detail:'teamCapability.status.verifyOnCall',origin:{kind:'studio'},go:{kind:'connectors'}})

@@ -6,7 +6,7 @@ export type BusinessShortcut={target:BusinessShortcutTarget}
 
 const key='teloa.personal-business-shortcuts/v1'
 export const businessShortcutLimit=8
-const sections=new Set<BusinessShortcutTarget['section']>(['overview','projects','data','work','analysis','execution','dashboards'])
+const sections=new Set<BusinessShortcutTarget['section']>(['overview','projects','data','work','analysis','execution','dashboards','employees','groups'])
 const dashboardIdPattern=/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/
 
 /** 没有看板标识时键形与旧版逐字相同，旧存储值照读、照去重。 */

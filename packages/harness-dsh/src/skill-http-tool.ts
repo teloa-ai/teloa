@@ -154,7 +154,7 @@ export function skillHttpGrantedSkills(rules:readonly TaskToolArgumentRule[]|und
 /** 审计身份字段：只含 sessionId 与（任务会话才有的）runId、roleId，缺省即省略。 */
 const callerFields=(caller:SkillHttpCaller):SkillHttpCaller=>({sessionId:caller.sessionId,...(caller.runId===undefined?{}:{runId:caller.runId}),...(caller.roleId===undefined?{}:{roleId:caller.roleId})})
 /** 任务会话调用时授权所需的运行快照（`TaskRun` 的子集）。 */
-export type SkillHttpRunSnapshot={id:string;roleId:string;sessionId:string;skills:readonly {name:string;provider:string;managed?:{installationId:string}}[]}
+export type SkillHttpRunSnapshot={id:string;roleId:string|null;sessionId:string;skills:readonly {name:string;provider:string;managed?:{installationId:string}}[]}
 export type SkillHttpAuthorizePorts={
  /** 谱系上溯读口（传 ctx）；与任务工具守卫、岗位记忆共用 `resolveSessionLineage`。 */
  agents:Parameters<typeof resolveSessionLineage<LineageSession>>[0]['agents']
@@ -192,7 +192,7 @@ export function createSkillHttpAuthorizer(ports:SkillHttpAuthorizePorts):(exec:T
   const skill=isRecord(args)&&typeof args.skill==='string'?args.skill:undefined
   if(skill===undefined||!skillHttpGrantedSkills(policy.argumentRules).includes(skill))throw forbidden('本人未勾选该技能的接口代发授权；需要时请在运行结论里说明，由本人到「员工 > 能力」勾选。')
   const run=await hostRead(()=>ports.run(root.id,exec.signal))
-  if(!run||run.sessionId!==root.id)throw forbidden('无法核对本次运行，已拒绝。')
+  if(!run||run.roleId===null||run.sessionId!==root.id)throw forbidden('无法核对本次运行，已拒绝。')
   known.runId=run.id;known.roleId=run.roleId
   const snapshot=run.skills.find(item=>item.name===skill)
   if(!snapshot)throw forbidden('该技能不在本次运行的员工技能中。')
@@ -315,7 +315,7 @@ const fenceLike=new Map([['【','['],['〖','['],['】',']'],['〗',']'],['「',
  * 判定按字符先 NFKC 归一（审查 R1 L4）：半角 ｢｣、竖排表现形式 ﹁﹂﹃﹄ ︻︼ ︗︘ 等兼容字符归一后落在上述括号里即一并替换，不逐个列举近形；
  * 其余字符保留原形（不把全角标点等改成半角，预览仍如实反映请求体）。
  */
-function bodyPreview(body:string):string{
+export function bodyPreview(body:string):string{
  const text=redactSecrets(body,[]).replace(/[\x00-\x1f\x7f-\x9f\xad\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g,' ').replace(/\s+/g,' ').trim()
   .replace(/[^\x00-\x7f]/gu,ch=>fenceLike.get(ch.normalize('NFKC'))??ch)
  const chars=Array.from(text)
@@ -373,13 +373,16 @@ export function registerSkillHttpTool(ctx:Context,ports:RegisterPorts){
   if(!writeMethods.includes(input.method))return decision
   const row={skill:input.skill,origin:input.url.origin,method:input.method,target:input.url.origin+cooldownPath(input.url.pathname),caller}
   const policy=ports.approvalPolicy(exec)
-  if(policy==='never'){approvalDeny(row);return {kind:'deny',reason:'当前权限模式不会请求人工确认；请切换到允许人工确认的权限模式后再调用会改动数据的技能接口。'}}
+  const automatic=!!exec.agent&&ctx.get('permissionPresets')?.current(exec.agent.session)==='auto'
+  if(policy==='never'&&!automatic){approvalDeny(row);return {kind:'deny',reason:'当前权限模式不会请求人工确认；请切换到允许人工确认的权限模式后再调用会改动数据的技能接口。'}}
   const until=cooldown.get(cooldownKey(row))
   if(until!==undefined&&now()<until){
    ports.audit({event:'skill-secret.deny',skill:row.skill,reason:'rate',origin:row.origin,method:row.method,...callerFields(caller)})
    return {kind:'deny',reason:`同一技能接口调用刚在确认阶段被拒绝或无人应答，${Math.ceil((until-now())/1000)} 秒内不再发起确认；${workbenchGuidance}`}
   }
+  // 已明确选择 Auto 时由原生审核决定是否请求本人；保留前置身份、地址与拒绝冷却检查。
   if(policy!==undefined)remember(pending,exec.callId,row)
+  if(automatic)return decision
   // 原生理由在前（与受管 MCP 写工具 managed-mcp-connections.ts 同式），本卡如实列出本次写请求。
   const prior=decision.kind==='ask'?`原生规则同时要求确认：${decision.reason} `:''
   return {kind:'ask',reason:prior+skillHttpConfirmReason(input)}

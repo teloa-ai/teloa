@@ -1,0 +1,21 @@
+--- a/lib/types/mcp.js
++++ b/lib/types/mcp.js
+@@ -10,6 +10,7 @@
+         mode: Schema.const('launch').required(),
+         headless: Schema.boolean().default(true),
+         executablePath: Schema.string().pattern(/\S/u),
++        chromiumSandbox: Schema.boolean(),
+         toolCallTimeoutMs: Schema.number().min(1),
+     }),
+     Schema.object({
+--- a/lib/types/mcp.d.ts
++++ b/lib/types/mcp.d.ts
+@@ -9,6 +9,8 @@
+     headless: boolean;
+     /** Chromium executable; omission uses the upstream server's installation discovery. */
+     executablePath?: string;
++    /** Explicitly enable the upstream Chromium sandbox; omission keeps the provider default. */
++    chromiumSandbox?: boolean;
+     /** Per-call timeout override in milliseconds; omission uses the MCP client default. */
+     toolCallTimeoutMs?: number;
+ }

@@ -2,6 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {chineseUiLiterals} from './i18n-ast.ts'
+import {businessLibraryText} from '../src/client/business-library-presentation.ts'
+import {MARKET_SKILL_CONTROL_MESSAGE_ROWS} from '../src/client/i18n/locales/market-skill-controls.ts'
+import {readFileSync} from 'node:fs'
 import {KNOWLEDGE_DOCUMENT_MESSAGE_ROWS} from '../src/client/i18n/locales/knowledge-document.ts'
 
 for(const name of ['KnowledgeDocument.tsx','KnowledgeMarkdownEditor.tsx','ResourceHistory.tsx'])test(`${name} 固定界面文案与日期格式使用当前语言`,async()=>{
@@ -39,8 +42,11 @@ test('知识文档保存、锁定引用与消息轮次使用准确的产品术�
 
 test('知识文档关键繁中词条不混用简体字',()=>{
   assert.equal(knowledgeRow('knowledge.ui.019')[2],'開啟頁面資訊與版本')
-  assert.equal(knowledgeRow('knowledge.ui.045')[2],'正文已有更新；儲存時會產生新的可引用記錄，已傳送的會話和任務繼續使用原來鎖定的版本。')
-  assert.equal(knowledgeRow('knowledge.ui.083')[2],'關閉資料引用記錄')
+  assert.equal(businessLibraryText('zh-TW').locked,'目前預覽的是這條資料記錄鎖定的正文')
+  assert.equal(businessLibraryText('zh-HK').missingVersion,'鎖定的正文版本無法讀取，請重新核對資料來源。不會改用目前正文。')
+  assert.equal(MARKET_SKILL_CONTROL_MESSAGE_ROWS.find(row=>row[0]==='market.common.close')?.[2],'關閉','引用記錄共用抽屜的關閉文案仍為繁中')
+  assert.match(readFileSync(new URL('../src/client/ResourceHistory.tsx',import.meta.url),'utf8'),/<ContextDrawer open=\{open\} title=\{t\("knowledge\.ui\.081"\)\} close=\{close\}>/,'引用記錄仍接上共同關閉動作')
+  assert.match(readFileSync(new URL('../src/client/ContextDrawer.tsx',import.meta.url),'utf8'),/aria-label=\{t\('market\.common\.close'\)\}/)
 })
 
 test('知识文档技术名词在各语言中保留产品写法',()=>{

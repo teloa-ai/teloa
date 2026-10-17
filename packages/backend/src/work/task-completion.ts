@@ -52,7 +52,7 @@ export class TaskCompletionService{
    if(policy.kind==='manual')return await reject('manual-review')
    if(task.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','任务版本已变化，请重新核对。')
    if(policy.verifierVersion!==1||policy.authorizationVersion!==1||!this.ports.verifiers[policy.verifier])return await reject('verifier-unavailable')
-   if(task.state!=='waiting'||!task.assigneeRoleId)return await reject('run-not-complete')
+   if(task.state!=='waiting'||!task.assigneeRoleId&&task.executor?.kind!=='owner')return await reject('run-not-complete')
    const run=await this.ports.readRun(db,owner,candidate.runId)
    if(run.taskId!==task.id||run.roleId!==task.assigneeRoleId||run.roleVersion!==task.assigneeRoleVersion||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.evidence.endSeq!==candidate.terminalEventSeq)return await reject('run-not-complete')
    const fixed=(await db.query('select task_state_version from teloa_task_runs where owner_id=$1 and id=$2 for share',[owner,run.id])).rows[0]

@@ -1,5 +1,6 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useEffect,useRef,useState} from 'react'
-import {ArrowLeft,RefreshCw} from 'lucide-react'
+import {ArrowLeft,ChevronRight,PackageOpen,Puzzle,RefreshCw} from 'lucide-react'
 import type {MarketPluginInstallPreview,MarketPluginRegistrySource} from '@teloa/contract'
 import type {MarketPluginInstallApi,MarketPluginInstallation} from './market-plugin-install-api.js'
 import {marketPluginCanEnable,marketPluginEnableSpec,marketPluginInstallAction,marketPluginInstallStatus,mergeMarketPluginInstallation} from './market-plugin-install-state.js'
@@ -30,10 +31,29 @@ export function MarketPluginInstallControl({api,source,title,onSaved,onInstalled
 }
 
 
-export function MarketPluginInstallations({api,selected,select,onBrowse}:{api:MarketPluginInstallApi;selected:string|null;select:(id?:string)=>void;onBrowse:()=>void}){
+export function MarketPluginInstallations({api,selected,select,onBrowse,embedded=false}:{api:MarketPluginInstallApi;selected:string|null;select:(id?:string)=>void;onBrowse:()=>void;embedded?:boolean}){
   const {locale,t}=useI18n();const [items,setItems]=useState<MarketPluginInstallation[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true),[revision,setRevision]=useState(0)
   useEffect(()=>{let active=true;setLoading(true);void api.list().then(value=>{if(active){setItems(value.items);setError('')}},cause=>{if(active)setError(localizeWorkError(locale,cause))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[api,revision,locale])
   const record=items.find(item=>item.id===selected)
-  if(record)return <section className={css.page} aria-label={t('market.plugin.install.maintenance.title')}><button type="button" className={css.back} onClick={()=>select()}><ArrowLeft size={15}/>{t('market.plugin.install.action.back')}</button><h1>{t('market.plugin.install.record.title')}</h1><MarketPluginInstallControl api={api} source={record.preview.source} title={record.preview.source.packageName} onSaved={()=>setRevision(value=>value+1)}/>{record.failure&&<p role="alert">{t('market.plugin.install.failure')} · {t(statusKey(marketPluginInstallStatus(record).key))}</p>}<p>{t('market.plugin.install.attempt')} · {record.attempt}</p></section>
-  return <section className={css.page} aria-label={t('market.plugin.install.maintenance.title')}><header className={css.header}><div><h1>{t('market.plugin.install.maintenance.title')}</h1><p>{t('market.plugin.install.title')}</p></div><div className={css.buttons}><button type="button" onClick={onBrowse}>{t('market.plugin.install.action.back')}</button><button type="button" disabled={loading} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={14}/>{t('market.plugin.install.action.refresh')}</button></div></header>{error&&<p role="alert" className={css.error}>{error}</p>}{loading&&!items.length&&<p role="status">{t('market.plugin.install.status.loading')}</p>}<div className={css.list}>{items.map(item=>{const status=marketPluginInstallStatus(item);return <button type="button" key={item.id} onClick={()=>select(item.id)}><span><strong>{item.preview.source.packageName}</strong><small>{item.preview.source.version}</small></span><span>{t(statusKey(status.key))}</span></button>})}</div>{!loading&&!error&&!items.length&&<p>{t('market.plugin.install.empty')}</p>}</section>
+  const pageClass=embedded?`${css.page} ${css.embeddedPage}`:css.page
+  if(record)return <section className={pageClass} aria-label={t('market.plugin.install.maintenance.title')}>
+    <main className={css.detail}>
+      <header className={css.detailHeading}><ToolbarIconButton label={t('market.plugin.install.action.back')} icon={ArrowLeft} onClick={()=>select()}/><h2>{t('market.plugin.install.record.title')}</h2></header>
+      <MarketPluginInstallControl api={api} source={record.preview.source} title={record.preview.source.packageName} onSaved={()=>setRevision(value=>value+1)}/>
+      {record.failure&&<p role="alert">{t('market.plugin.install.failure')} · {t(statusKey(marketPluginInstallStatus(record).key))}</p>}
+      <p>{t('market.plugin.install.attempt')} · {record.attempt}</p>
+    </main>
+  </section>
+  return <section className={pageClass} aria-label={t('market.plugin.install.maintenance.title')}>
+    <header className={embedded?css.directoryHeader:css.header}>
+      {!embedded?<h1>{t('market.plugin.install.title')}</h1>:items.length>0?<span>{t('market.installation.count',{count:items.length})}</span>:null}
+      <div className={css.buttons}>{!embedded&&<ToolbarIconButton label={t('market.back')} icon={ArrowLeft} onClick={onBrowse}/>}<ToolbarIconButton label={t('market.plugin.install.action.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>setRevision(value=>value+1)}/></div>
+    </header>
+    <main className={css.content}>
+      {error&&<p role="alert" className={css.error}>{error}</p>}
+      {loading&&!items.length&&<p role="status" className={css.loading}>{t('market.plugin.install.status.loading')}</p>}
+      {items.length>0&&<div className={css.list}>{items.map(item=>{const status=marketPluginInstallStatus(item);return <button type="button" key={item.id} onClick={()=>select(item.id)}><span className={css.resourceIdentity}><span className={css.rowIcon}><Puzzle size={18} aria-hidden/></span><span><strong>{item.preview.source.packageName}</strong><small>{item.preview.source.version}</small></span></span><span className={css.installationStatus}>{t(statusKey(status.key))}</span><ChevronRight size={16} aria-hidden/></button>})}</div>}
+      {!loading&&!error&&!items.length&&<div className={css.empty}><PackageOpen size={32} aria-hidden/><h2>{t('market.plugin.install.empty')}</h2><button type="button" className={css.browseAction} onClick={onBrowse}>{t('market.installation.browse')}</button></div>}
+    </main>
+  </section>
 }

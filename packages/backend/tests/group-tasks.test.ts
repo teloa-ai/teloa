@@ -21,6 +21,7 @@ import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
 import {groupTaskSourceDigest} from '../src/work/group-task-source-digest.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {groupRoutedTaskGoal} from '../src/work/group-routing-text.ts'
+import {initializeGroupWorkInputs} from '../src/work/group-work-inputs.ts'
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
 
 let container:StartedPostgreSqlContainer,pool:Pool
@@ -33,6 +34,7 @@ before(async()=>{
  pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool);await initializeTasks(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeGroupTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool)
  await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeGroupAttachments(pool)
+ await initializeGroupWorkInputs(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 

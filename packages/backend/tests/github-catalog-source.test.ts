@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
@@ -400,4 +401,43 @@ test('单次树请求的十秒截止通过 HTTP signal 中止请求',async t=>{
  })})
  const rejected=assert.rejects(work,{code:'teloa/source-unavailable'})
  await entered;t.mock.timers.tick(10000);await rejected
+})
+
+
+async function reviewedPlugin(f:ReturnType<typeof fixture>){
+ const index=JSON.parse(await readFile(new URL('../src/market/official-upstream-index.json',import.meta.url),'utf8'))
+ const original=index.entries.find((entry:{id:string})=>entry.id==='cursor.remotion-remotion-maps')
+ return {...original,id:'cursor.notes',skill:{...original.skill,name:'notes'},upstream:f.source,license:{spdx:'MIT',files:['LICENSE']}}
+}
+function supportingFile(f:ReturnType<typeof fixture>,path:string,mode='100644'){
+ const text='export const value = 1;\n'
+ f.texts[path]=text
+ const row={path,gitBlob:blob(text),sha256:sha256(text),size:bytes(text).byteLength}
+ f.source.files.push(row)
+ f.tree.tree.push({path:f.source.path+'/'+path,type:'blob',mode,sha:row.gitBlob,size:row.size})
+ return row
+}
+
+test('Teloa 已审原插件的辅助代码按固定清单下载，不运行，不带入未声明脚本或链接',async()=>{
+ const f=fixture();supportingFile(f,'scripts/prepare.mjs')
+ const entry=await reviewedPlugin(f),files=await downloadGithubCatalogSkill(entry,f.http)
+ assert.equal(files.length,4);assert.deepEqual(files.find(row=>row.path==='scripts/prepare.mjs')!.bytes,bytes(f.texts['scripts/prepare.mjs']!))
+ assert.equal(f.calls.some(call=>call.url.endsWith('scripts/run.py')||call.url.endsWith('/link')),false)
+})
+
+test('允许原插件辅助代码不扩展普通来源；未审条目、隐藏配置和二进制仍在联网前拒绝',async()=>{
+ for(const mode of ['plain','unreviewed','hidden','binary']){
+  const f=fixture();supportingFile(f,mode==='hidden'?'.env':mode==='binary'?'scripts/run.exe':'scripts/prepare.mjs')
+  const entry=await reviewedPlugin(f);if(mode==='unreviewed')entry.review.reviewer='Other'
+  await assert.rejects(downloadGithubCatalogSkill(mode==='plain'?f.source:entry,f.http),{code:'teloa/invalid-input'})
+  assert.equal(f.calls.length,0,mode)
+ }
+})
+
+test('原插件辅助文件也必须核对摘要和普通文件模式，不能借插件身份绕过原校验',async()=>{
+ const f=fixture();supportingFile(f,'assets/data.ts');const entry=await reviewedPlugin(f)
+ f.source.files.at(-1)!.sha256='e'.repeat(64)
+ await assert.rejects(downloadGithubCatalogSkill(entry,f.http),error=>error instanceof Error&&/sha256/.test(error.message))
+ const executable=fixture();supportingFile(executable,'assets/code.ts','100755')
+ await assert.rejects(downloadGithubCatalogSkill(await reviewedPlugin(executable),executable.http),{code:'teloa/source-unavailable'})
 })

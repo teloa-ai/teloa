@@ -1,7 +1,11 @@
+import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
+import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
+import {createHash} from 'node:crypto'
 import {createRequire} from 'node:module'
-import {mkdtemp,realpath,rm} from 'node:fs/promises'
+import {mkdtemp,readFile,realpath,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -10,7 +14,7 @@ import type {FileSystem} from '@deepseek-ai/dsh-fs'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime} from '@deepseek-ai/dsh-tools'
 import {AgentRegistry,type Agent} from '@deepseek-ai/dsh-agent'
-import {SkillRegistry} from '@deepseek-ai/dsh-skill'
+import {SkillRegistry,renderSkillContent} from '@deepseek-ai/dsh-skill'
 import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import {businessWidgetKinds,readBusinessDashboardDefinition,readBusinessSourceMappingDefinition,readBusinessWidgetDefinition} from '@teloa/contract'
@@ -27,8 +31,9 @@ async function setup(t:TestContext){
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-builtin-dashboard-'))),ctx=new Context()
  t.after(async()=>{await ctx.fiber.dispose();await rm(root,{recursive:true,force:true})})
  await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(SkillRegistry);await ctx.plugin(LocalFileSystem,{cwd:root})
+ await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await installNativeWorkingDirectory(ctx,root)
  await ctx.plugin(ToolSkill)
- const agent=(id:string)=>{const target={} as Agent,scope=createScope(ctx,target);Object.assign(target,{ctx:scope.ctx,session:{id,header:{cwd:root},surface:{nodes:[]},events:[]}});return target}
+ const agent=(id:string)=>{const target={} as Agent,scope=createScope(ctx,target);Object.assign(target,{ctx:scope.ctx,session:ctx.sessions.create(SessionId(id),{meta:{cwd:root}})});return target}
  return {ctx,root,agent}
 }
 const ports=(policy:(id:string)=>unknown=()=>null):BuiltinSkillCreatorPorts=>({owner:'owner',conversation:async id=>({ownerId:'owner',sessionId:id,status:'ready'}),readTaskPolicy:async id=>policy(id) as never})
@@ -44,13 +49,40 @@ test('官方目录可取「看板设计」内置条目：含 SKILL.md，frontmat
  assert.ok(skillText().startsWith('---\nname: teloa-dashboard-designer\n'))
 })
 
-test('通用 prepareBuiltinSkill 对技能创建器的输出与原导出逐字段相同',async t=>{
- const {ctx,root}=await setup(t)
+test('技能创建器保留通用解析元数据与固定字节，仅投影可信runtime文本指令',async t=>{
+ const {ctx,root,agent}=await setup(t)
  const builtin=officialCatalogBuiltin(builtinSkillCreatorName)
+ const originalFiles=structuredClone(builtin.files)
  const creator=await prepareBuiltinSkillCreator(ctx,{runtimeRoot:root,treeHash:builtin.treeHash,files:builtin.files})
  const generic=await prepareBuiltinSkill(ctx,{name:builtinSkillCreatorName,runtimeRoot:root,treeHash:builtin.treeHash,files:builtin.files})
- assert.deepEqual(generic,creator)
- assert.equal(generic.rendered,creator.rendered)
+ const {content:originalContent,...originalMetadata}=generic.definition,{content:projectedContent,...projectedMetadata}=creator.definition
+ assert.deepEqual(projectedMetadata,originalMetadata,'名称、来源、路径、资源根目录与调用边界必须逐字段不变')
+ assert.deepEqual(builtin.files,originalFiles,'固定输入字节不得被runtime投影改写')
+ const resourceBase=creator.definition.resourceBase
+ assert.ok(resourceBase?.kind==='directory')
+ const directory=resourceBase.path
+ for(const file of originalFiles){
+  const materialized=await readFile(join(directory,file.path))
+  assert.deepEqual(materialized,Buffer.from(file.bytes),'原资源全文字节必须完整保留：'+file.path)
+  assert.equal(createHash('sha256').update(materialized).digest('hex'),createHash('sha256').update(file.bytes).digest('hex'),'物化文件摘要必须仍对应固定资源：'+file.path)
+ }
+ assert.equal(projectedContent.slice(0,originalContent.length),originalContent,'原解析正文必须逐字完整保留')
+ const guide=projectedContent.slice(originalContent.length)
+ assert.ok(guide.startsWith('\n\n## Teloa runtime text transport (authoritative)\n\n'))
+ assert.match(guide,/files\[\]\.content/);assert.match(guide,/host encodes UTF-8/)
+ assert.match(guide,/do not generate or copy Base64/);assert.match(guide,/exactly one of content or base64/)
+ assert.match(guide,/teloa_create_preview with the returned draft id/)
+ assert.match(guide,/only to save, do not call apply/);assert.match(guide,/rather than creating another same-name draft/)
+ assert.equal(generic.rendered,renderSkillContent(generic.definition))
+ assert.equal(creator.rendered,renderSkillContent(creator.definition),'模型渲染必须包含实际可信definition的完整正文')
+ registerBuiltinSkill(ctx,creator,ports())
+ const decision=await step(ctx,agent('creator-projection-session'),'/'+builtinSkillCreatorName+' 帮我保存核对技能')
+ assert.equal(decision.kind,'enter')
+ if(decision.kind==='enter'){
+  const injected=decision.messages.filter(message=>message.source.kind==='skill-invocation')
+  assert.equal(injected.length,1)
+  assert.deepEqual(injected[0]!.content,[{type:'text',text:creator.rendered}],'真实模型上下文应接收完整可信投影，不能仍注入旧编码指令')
+ }
  await assert.rejects(prepareBuiltinSkill(ctx,{name:builtinDashboardDesignerName,runtimeRoot:root,treeHash:builtin.treeHash,files:builtin.files}),{code:'teloa/dependency-unavailable'},'名字与字节不符即拒绝')
 })
 

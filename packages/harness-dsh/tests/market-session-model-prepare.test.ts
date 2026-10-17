@@ -9,12 +9,15 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {OfficialCatalogService,type MarketContentStore} from '@teloa/backend'
+import {readFile} from 'node:fs/promises'
+import {readMarketCatalogEntry,type MarketCatalogModelEntry} from '@teloa/contract'
 import {registerMarketSessionTools,type MarketSessionToolsPorts} from '../src/market-session-tools.ts'
 import {pullCardFacts} from '../src/model-prepare.ts'
 import type {PullFacts,LocalModelPullInput} from '../src/local-models.ts'
 
-const entry=new OfficialCatalogService({} as MarketContentStore).listLocalModelEntries().find(row=>row.id==='teloa.model.local.qwen3')!
+// 退出推荐不删除本地模型执行能力：用独立原模型夹具持续验证审批边界。
+const retired=JSON.parse(await readFile(new URL('../../../tests/fixtures/retired-models-20261014.json',import.meta.url),'utf8'))
+const entry=readMarketCatalogEntry(retired.entries.find((row:{id:string})=>row.id==='teloa.model.local.qwen3')) as MarketCatalogModelEntry
 const baseFacts:PullFacts={entryId:entry.id,version:entry.version,variant:0,name:'qwen3:4b',title:entry.model.title,quant:'Q4_K_M',baseURL:'http://127.0.0.1:11434',catalogDigest:'sha256:'+'a'.repeat(64),sizeBytes:3*2**30,diskFreeBytes:64*2**30,local:true,licenseTier:'restricted',licenseName:'Apache 2.0',licenseURL:'https://www.apache.org/licenses/LICENSE-2.0',restrictions:[{'zh-CN':'请核对许可',en:'Check license'}],fit:'good',runtime:'running'}
 type Options={subagent?:boolean;task?:boolean;im?:boolean;instruction?:boolean;deny?:boolean;cloud?:boolean;missing?:boolean;priorDeny?:boolean;onApprove?:()=>void;policy?:MarketSessionToolsPorts['readTaskPolicy']}
 async function setup(options:Options={}){

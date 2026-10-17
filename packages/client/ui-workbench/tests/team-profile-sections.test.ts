@@ -1,3 +1,4 @@
+import './employee-asset-test-loader.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {registerHooks} from 'node:module'
@@ -66,16 +67,18 @@ const render=(role:Record<string,unknown>,options:{editing:boolean;capabilitiesM
  plans:noopNode,
 } as never)))
 
-test('「编辑」态：六个分组全部默认折叠，标题与副标题各出现一次',()=>{
+test('能力配置保留六个同级原生分组，默认展开真实工作方式，记忆保留按需入口',()=>{
  const role=baseRole({storage:'persistent'})
  const html=render(role,{editing:true,memoryApi:{recoveryMessage:()=>undefined,pending:()=>false,list:async()=>[]},capabilitiesMarker:'ROLE-TOOL-GRANTS-CONTAINER'})
- assert.doesNotMatch(html,/<details[^>]*\sopen(\s|>)/,'六组默认不带 open')
- // 用 <summary><strong>…</strong><small>…</small> 的具体标签定位，避免像「边界」这种短词被别处文案（如 roleSkillNotice 里的“风险边界”）碰巧命中。
- for(const section of ROLE_PROFILE_SECTIONS){
-  const {title,lead}=roleProfileSectionKeys(section)
-  const summaryMarkup=`<strong>${zh(title)}</strong><small>${zh(lead)}</small>`
-  assert.equal(html.split(summaryMarkup).length-1,1,`分组标题/副标题应恰好出现一次：${title}`)
+ const groups=[...html.matchAll(/<details id="role-profile-section-([^"]+)"([^>]*)>/g)]
+ assert.deepEqual(groups.map(group=>group[1]),['how','tools','reading','limit','runtime','changes'])
+ for(const group of groups)assert.equal(/\sopen(?:\s|=|$)/.test(group[2]!),group[1]==='how',`默认展开状态错误：${group[1]}`)
+ for(const section of ROLE_PROFILE_SECTIONS.filter(section=>section!=='memory')){
+  const {lead}=roleProfileSectionKeys(section)
+  assert.ok(!html.includes(zh(lead)),`不再铺设泛说明副标题：${lead}`)
  }
+ assert.ok(html.includes('1 项自主处理'),'摘要来自真实职责')
+ assert.ok(html.includes('1 份已分配'),'只统计已分配资料，不宣称已读')
 })
 
 test('「编辑」态：既有元素逐项仍在渲染结果里（持久岗位）',()=>{
@@ -91,7 +94,7 @@ test('「编辑」态：既有元素逐项仍在渲染结果里（持久岗位�
  assert.ok(html.includes(zh('team.detail.knowledgeReadDesc')),'授权说明缺失：knowledgeReadDesc')
  assert.ok(html.includes(zh('team.detail.toolsConnectionsDesc')),'授权说明缺失：toolsConnectionsDesc')
  assert.ok(html.includes(zh('team.detail.formalApprovalDesc')),'授权说明缺失：formalApprovalDesc')
- assert.ok(html.includes(zh('team.profile.changes')),'「它的变更记录」次级 details 缺失')
+ assert.ok(html.includes('>变更记录</strong>'),'变更记录同级分组缺失')
  assert.ok(html.includes('变更记录词条-岗位创建'),'history 条目缺失')
 })
 
@@ -105,18 +108,17 @@ test('分身：代拟卡里仍是既有 TwinDraftEditor，判断力样本里演�
  assert.ok(html.includes(zh('team.memory.withdrawDemo')),'记忆演示分支缺少撤回按钮')
 })
 
-test('「查看」态（editing===false）：六组与既有元素都不出现，呈现时间线占位',()=>{
- const role=baseRole({storage:'persistent'})
- const html=render(role,{editing:false,memoryApi:{recoveryMessage:()=>undefined,pending:()=>false,list:async()=>[]},capabilitiesMarker:'ROLE-TOOL-GRANTS-CONTAINER'})
- for(const section of ROLE_PROFILE_SECTIONS){
-  const {title,lead}=roleProfileSectionKeys(section)
-  assert.ok(!html.includes(`<strong>${zh(title)}</strong>`),`查看态不应出现分组标题：${title}`)
-  assert.ok(!html.includes(`<small>${zh(lead)}</small>`),`查看态不应出现分组副标题：${lead}`)
- }
- assert.ok(!html.includes(zh('knowledge.rolePicker')),'查看态不应渲染 RoleKnowledge')
- assert.ok(!html.includes('ROLE-TOOL-GRANTS-CONTAINER'),'查看态不应调用 capabilities(role.id)')
- assert.ok(!html.includes(zh('team.profile.changes')),'查看态不应出现「它的变更记录」')
- assert.ok(html.includes(zh('team.profile.timeline.title')),'查看态应呈现时间线标题')
+test('默认工作页签仅工作内容；记忆与日志按需打开，能力配置保留在隐藏的能力与设备页签',()=>{
+ const html=render(baseRole({storage:'persistent'}),{editing:false,memoryApi:{recoveryMessage:()=>undefined,pending:()=>false,list:async()=>[]},capabilitiesMarker:'ROLE-TOOL-GRANTS-CONTAINER'})
+ assert.match(html,/id="employee-detail-panel-work"[^>]*role="tabpanel"[^>]*aria-labelledby="employee-detail-tab-work"/)
+ assert.match(html,/id="employee-detail-panel-capabilities"[^>]*hidden=""/)
+ assert.ok(html.includes('ROLE-TOOL-GRANTS-CONTAINER'),'配置入口必须保留在能力页签')
+ assert.equal((html.match(/role="tablist"/g)??[]).length,1,'只保留三页签的一组导航')
+ assert.ok(html.includes('>它记得的事</button>'),'记忆入口无需开启编辑态')
+ assert.ok(html.includes('>工作日志</button>'),'日志入口无需开启编辑态')
+ assert.ok(!html.includes('id="role-memory-tab-note"'),'不再常驻第二组页签')
+ assert.ok(!html.includes('id="role-memory-tab-log"'),'不再常驻第二组页签')
+ assert.ok(!html.includes(zh('team.profile.timeline.title')),'不重复堆叠旧动态时间线')
 })
 
 test('个人主页职责只在姓名下呈现一次，「今天在做」之后不再重复',()=>{
@@ -190,30 +192,28 @@ test('T2 身份栏不再常驻「生命周期」与「真实状态/阻断/下一
 test('T5 版本号不在页顶常驻，只在「它的变更记录」的折叠小字里',()=>{
  const role=baseRole()
  const version=zh('team.detail.version',{version:2})
- assert.ok(!render(role,{editing:false}).includes(version),'查看态不应出现版本号')
+ assert.ok(!railOf(render(role,{editing:false})).includes(version),'身份栏不应出现版本号')
  const editing=render(role,{editing:true})
  const changes=editing.slice(editing.indexOf('id="role-profile-changes"'))
  assert.ok(changes.includes(version),'版本号应落在「它的变更记录」的折叠小字里')
 })
 
-test('T10 身份栏动作行顺序照原型：找它说话(主) → 交给它一件事 → 歇一会 → 离职',()=>{
- // 非持久岗位才会渲染歇一会/离职（持久岗位走 RoleLifecycle）。
+test('定稿联系区顺序为对话、语音、邀请；生命周期和完整配置保留在员工管理',()=>{
  const rail=railOf(render(baseRole(),{editing:false}))
- const at=(key:string)=>{const index=rail.indexOf(zh(key));assert.ok(index>=0,`动作缺失：${key}`);return index}
- const order=['team.profile.action.chat','team.profile.action.assign','team.profile.action.pause','team.profile.action.retire'].map(at)
- assert.deepEqual(order,[...order].sort((a,b)=>a-b),'动作行顺序与原型不一致：'+order.join(','))
- assert.match(rail,new RegExp(`class="identityPrimary"[^>]*>${zh('team.profile.action.chat')}<`),'「找它说话」应是唯一的主按钮')
- assert.equal(rail.split('identityPrimary').length-1,1,'主按钮只能有一个')
+ const labels=['对话','语音','邀请'],positions=labels.map(label=>rail.indexOf('aria-label="'+label+'"'))
+ assert.ok(positions.every(index=>index>=0));assert.deepEqual(positions,[...positions].sort((a,b)=>a-b))
+ for(const label of labels){const action=rail.match(new RegExp('<button[^>]*aria-label="'+label+'"[^>]*>([\\s\\S]*?)</button>'));assert.ok(action);assert.equal(action[1]!.replace(/<[^>]*>/g,''),'','联系动作用有提示的图标，不显示文字按钮')}
+ assert.ok(rail.includes('>员工管理</button>'),'身份更多菜单保留员工管理入口')
+ for(const key of ['team.profile.action.pause','team.profile.action.retire','team.action.edit'])assert.ok(!rail.includes(zh(key)),'管理动作按需在抽屉呈现')
 })
 
-test('暂停只停止接新任务：仍可找它说话，交办按钮明确禁用',()=>{
- const rail=railOf(render(baseRole({state:'paused'}),{editing:false,talk:async()=>true}))
- const chat=rail.match(new RegExp(`<button[^>]*>${zh('team.profile.action.chat')}<\\/button>`))?.[0]
- const assign=rail.match(new RegExp(`<button[^>]*>${zh('team.profile.action.assign')}<\\/button>`))?.[0]
- assert.ok(chat,'暂停身份缺少「找它说话」')
- assert.doesNotMatch(chat,/disabled/,'暂停身份仍应允许继续聊天')
- assert.ok(assign,'暂停身份缺少只读的交办动作')
- assert.match(assign,/disabled/,'暂停身份不能接收新任务')
+test('暂停员工可继续原对话，工作页签的交办按钮禁用',()=>{
+ const html=render(baseRole({state:'paused'}),{editing:false,talk:async()=>true})
+ const buttons=html.match(/<button[^>]*>[\s\S]*?<\/button>/g)??[]
+ const chat=buttons.find(button=>button.includes('aria-label="对话"'))
+ const assign=buttons.find(button=>button.includes(zh('team.profile.action.assign')))
+ assert.ok(chat);assert.doesNotMatch(chat,/disabled/)
+ assert.ok(assign);assert.match(assign,/disabled/)
 })
 
 test('T3 身份栏照原型 数字员工形象.module.css:102 固定在视口顶',async()=>{

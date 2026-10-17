@@ -1,11 +1,12 @@
 import { readBusinessDashboardResource, type BusinessDashboardResourceDefinition, readBusinessActionDefinition, readBusinessObjectTypeDefinition, readBusinessViewDefinition, readIndustryDataSourceDefinition, readIndustryMcpConnectionDefinition, readIndustryPluginDefinition, type BusinessActionDefinition, type BusinessObjectTypeDefinition, type BusinessViewDefinition, type IndustryDataSourceDefinition, type IndustryMcpConnectionDefinition, type IndustryPluginDefinition } from '@teloa/contract'
 import { parseIndustryPlan, type IndustryPlanDefinition } from './industry-plan-definition.ts'
+import {readRoleProfile} from '@teloa/contract'
 import { validateManifest, type MarketManifest } from './market-preview.ts'
 import type { IndustryContent } from './industry-directory.ts'
 import type { IndustryManifest } from './industry-manifest.ts'
 import type { RoleFields } from './role-preview.ts'
 
-export type IndustryDefinition={kind:'skill';text:string;files:{path:string;hash:string;size:number}[]}|IndustryPlanDefinition|{kind:'role';fields:Pick<RoleFields,'name'|'kind'|'duty'|'dataScope'|'executionScope'>}|{kind:'knowledge';text:string}|{kind:'work-template';manifest:Extract<MarketManifest,{format:'teloa.work-template/v1'}>}|{kind:'data-source';definition:IndustryDataSourceDefinition}|{kind:'mcp';definition:IndustryMcpConnectionDefinition}|{kind:'plugin';definition:IndustryPluginDefinition}|{kind:'object-type';definition:BusinessObjectTypeDefinition}|{kind:'business-view';definition:BusinessViewDefinition}|{kind:'business-action';definition:BusinessActionDefinition}|{kind:'business-configuration';definition:BusinessDashboardResourceDefinition}
+export type IndustryDefinition={kind:'skill';text:string;files:{path:string;hash:string;size:number}[]}|IndustryPlanDefinition|{kind:'role';fields:Pick<RoleFields,'name'|'kind'|'avatarKey'|'duty'|'dataScope'|'executionScope'>}|{kind:'knowledge';text:string}|{kind:'work-template';manifest:Extract<MarketManifest,{format:'teloa.work-template/v1'}>}|{kind:'data-source';definition:IndustryDataSourceDefinition}|{kind:'mcp';definition:IndustryMcpConnectionDefinition}|{kind:'plugin';definition:IndustryPluginDefinition}|{kind:'object-type';definition:BusinessObjectTypeDefinition}|{kind:'business-view';definition:BusinessViewDefinition}|{kind:'business-action';definition:BusinessActionDefinition}|{kind:'business-configuration';definition:BusinessDashboardResourceDefinition}
 export type IndustryInspection={id:string;state:'parsed'|'invalid'|'pending'|'missing'|'unresolved';message:string;definition?:IndustryDefinition}
 /**
  * 三类业务声明的身份判据，与既有 `plugin` / `work-template` 两支同形。
@@ -24,11 +25,11 @@ function parseRole(raw:string):IndustryDefinition{
  try{value=JSON.parse(raw)}catch{throw Error('员工文件不是有效 JSON。')}
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('员工定义必须为对象。')
  const row=value as Record<string,unknown>
- for(const key of Object.keys(row))if(!['format','name','kind','duty','dataScope','executionScope'].includes(key))throw Error('员工包含未知字段：'+key)
+ for(const key of Object.keys(row))if(!['format','name','kind','duty','dataScope','executionScope','avatarKey'].includes(key))throw Error('员工包含未知字段：'+key)
  if(row.format!=='teloa.role/v1')throw Error('不支持的员工格式。')
  if(row.kind!=='employee'&&row.kind!=='twin')throw Error('员工身份类型必须为员工或分身。')
  const text=(key:string,max=4000)=>{const value=row[key];if(typeof value!=='string'||!value.trim()||value.length>max)throw Error('员工 '+key+' 必须填写且不超过 '+max+' 字。');return value.trim()}
- return {kind:'role',fields:{name:text('name',80),kind:row.kind,duty:text('duty'),dataScope:text('dataScope'),executionScope:text('executionScope')}}
+ return {kind:'role',fields:{...readRoleProfile({name:text('name',80),...(Object.hasOwn(row,'avatarKey')?{avatarKey:row.avatarKey}:{})}),kind:row.kind,duty:text('duty'),dataScope:text('dataScope'),executionScope:text('executionScope')}}
 }
 
 /** 只解析内容，不由模板正文产生权限，也不运行任何脚本。 */

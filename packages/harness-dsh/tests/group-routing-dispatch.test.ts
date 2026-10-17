@@ -6,8 +6,8 @@ import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import type {Context} from '@deepseek-ai/cordis'
-import {WorkError,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingOutputSchema,type GroupReactionEmoji,type GroupTaskCreateInput} from '@teloa/contract'
-import {CollaborationService,GroupAgentGrantService,GroupReactionService,GroupRoutingDecisionService,RoleDelegationService,RoleLifecycleService,RoleService,RoleToolGrantService,TwinExecutionConsentService,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,initializeCollaboration,initializeGroupAgentGrants,initializeGroupReactions,initializeGroupRoutingDecisions,initializeResources,initializeRoleLifecycle,initializeRoleToolGrants,initializeRoles,initializeTasks,initializeTaskRuns,initializeTaskRunSubagents,initializeTaskRunRuntimeLinks,initializeTaskRunFlows,openResourceDatabase} from '@teloa/backend'
+import {WorkError,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutedAttemptTaskRequestId,groupRoutingAttemptRequestId,groupRoutingRequestId,groupRoutingSessionId,groupRoutingOutputV2Schema,groupRoutingCandidatesMax,type GroupReactionEmoji,type GroupTaskCreateInput} from '@teloa/contract'
+import {CollaborationService,GroupAgentGrantService,GroupReactionService,GroupRoutingAttemptService,GroupRoutingDecisionService,initializeGroupRoutingAttempts,initializeGroupRoutingOutbox,readCurrentGroupRoutingAttempt,RoleDelegationService,RoleLifecycleService,RoleService,RoleToolGrantService,TwinExecutionConsentService,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,initializeCollaboration,initializeGroupAgentGrants,initializeGroupReactions,initializeGroupRoutingDecisions,initializeResources,initializeRoleLifecycle,initializeRoleToolGrants,initializeRoles,initializeTasks,initializeTaskRuns,initializeTaskRunSubagents,initializeTaskRunRuntimeLinks,initializeTaskRunFlows,openResourceDatabase} from '@teloa/backend'
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
 import {createTaskRunGroupPublisher} from '../src/task-run-group-publisher.ts'
 import type {GroupRoutingCandidate} from '../src/group-routing.ts'
@@ -35,7 +35,7 @@ before(async()=>{
  await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
  pool=(await openResourceDatabase(config,identity)).pool
  await initializeResources(pool);await initializeRoles(pool);await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializeRoleToolGrants(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool)
- await initializeGroupReactions(pool);await initializeGroupRoutingDecisions(pool)
+ await initializeGroupReactions(pool);await initializeGroupRoutingDecisions(pool);await initializeGroupRoutingOutbox(pool);await initializeGroupRoutingAttempts(pool)
  await initializeTaskRuns(pool);await initializeTaskRunSubagents(pool);await initializeTaskRunRuntimeLinks(pool);await initializeTaskRunFlows(pool)
  decisions=new GroupRoutingDecisionService(pool,identity)
  reactions=new GroupReactionService(pool,identity)
@@ -50,19 +50,28 @@ const endedTurn=(requestId:string,text:string)=>[
  {seq:3,time:3,type:'turn/end',data:{turn:0,reason:{kind:'stop'}}},
 ]
 
-type ModelOptions={answer?:string;broken?:boolean;onPrompt?:()=>void|Promise<void>}
+type ModelOptions={answer?:string;broken?:boolean;onPrompt?:()=>void|Promise<void>;admissionMissing?:boolean}
 /** 只桩原生会话面：路由通道本身（T8）照真跑，模型输出仍要过 `groupRoutingOutput` 的封闭集合判据。 */
 function modelHarness(options:ModelOptions){
- const calls={prompt:[] as Record<string,unknown>[],warn:[] as string[]}
+ const calls={prompt:[] as Record<string,unknown>[],warn:[] as string[],bound:[] as string[],released:[] as string[]},leases=new Map<string,string>()
  let events:unknown[]=[]
  const session={id:'routing',header:{},snapshotEvents:()=>events}
  const ctx={
+  get:(name:string)=>name==='teloaResidentInputAdmission'&&!options.admissionMissing?{bindRouting:async(input:{sessionId:string;day:string;groupId:string;messageId:string;nativeRequestId:string})=>{
+   // 原生模型面替身也必须核对真库消息来源，并在 prompt 生命周期内持有精确来源租约。
+   const message=(await pool.query('select owner_id from teloa_group_messages where group_id=$1 and id=$2',[input.groupId,input.messageId])).rows[0];assert.ok(message)
+   const attempt=await readCurrentGroupRoutingAttempt(pool as never,String(message.owner_id),input.messageId)
+   assert.equal(input.nativeRequestId,groupRoutingAttemptRequestId(String(message.owner_id),input.groupId,input.messageId,attempt.attemptVersion));assert.equal(input.sessionId,groupRoutingSessionId(String(message.owner_id),input.groupId,input.day))
+   assert.equal(leases.has(input.sessionId),false);leases.set(input.sessionId,input.nativeRequestId);calls.bound.push(input.nativeRequestId)
+   return ()=>{assert.equal(leases.get(input.sessionId),input.nativeRequestId);leases.delete(input.sessionId);calls.released.push(input.nativeRequestId)}
+  }}:undefined,
   logger:{warn:(message:string)=>{calls.warn.push(message)}},
   agentPresets:{resolve:async(id?:string)=>({id:id??teloaAgentPresetId})},
   sessionController:{
    inspect:async(id:unknown)=>({meta:{id:String(id),agentPreset:teloaAgentPresetId}}),
    create:async(request:{sessionId:string})=>({sessionId:request.sessionId}),
    prompt:async(request:Record<string,unknown>)=>{
+    assert.equal(leases.get(String(request.sessionId)),request.requestId,'没有精确来源租约不能进入模型')
     calls.prompt.push(request)
     await options.onPrompt?.()
     if(options.broken)throw Error('模型通道不可用')
@@ -75,7 +84,7 @@ function modelHarness(options:ModelOptions){
  return {ctx,calls}
 }
 
-const output=(respond:readonly string[],reaction:readonly {roleId:string;emoji:GroupReactionEmoji}[]=[])=>JSON.stringify({schema:groupRoutingOutputSchema,respond:[...respond],reactions:reaction.map(item=>({...item}))})
+const output=(respond:readonly string[],reaction:readonly {roleId:string;emoji:GroupReactionEmoji}[]=[])=>JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'reply',respond:[...respond],reactions:reaction.map(item=>({...item})),assignments:[],workTarget:null})
 
 const candidateOf=(roleId:string,version:number,name:string):GroupRoutingCandidate=>({roleId,roleVersion:version,name,duty:'照看订单',...testRoleResponsibility})
 
@@ -118,10 +127,11 @@ function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()
    hops:(db,actor,groupId,rootId,messageId)=>decisions.hops(db,actor,groupId,rootId,messageId),
    record:(db,actor,params)=>decisions.record(db,actor,params),
   },
+  attempts:new GroupRoutingAttemptService(pool,identity),
   group:(actor,groupId,db)=>readRoutingGroup(actor,groupId,db),
   message:(actor,messageId)=>readRoutingMessage(actor,messageId,pool),
   candidates:async(actor,groupId,db)=>typeof options.candidates==='function'?options.candidates():options.candidates??readRoutingCandidates(actor,groupId,db,pool),
-  topic:(actor,groupId,rootId,db)=>readRoutingTopic(actor,groupId,rootId,db),
+  topic:(actor,groupId,rootId,db,messageId)=>readRoutingTopic(actor,groupId,rootId,db,messageId),
   createTask:async(_actor,input)=>{
    recorded.lockedDuring.createTask.push(held>0)
    recorded.createTask.push(input)
@@ -152,6 +162,7 @@ test('选中一位：写决策行、建任务带 trigger=routed、prepare 与 st
  const {ctx,calls}=modelHarness({answer:output([f.a.id])})
  await dispatchGroupRouting(ctx,f.owner,message.id,ports,signal())
  assert.equal(calls.prompt.length,1)
+ assert.deepEqual(calls.bound,calls.released);assert.equal(calls.bound.length,1)
  assert.equal(recorded.createTask.length,1)
  assert.equal(recorded.createTask[0]!.trigger,'routed')
  assert.equal(recorded.createTask[0]!.requestId,groupRoutedTaskRequestId(f.owner,f.group.id,message.id,f.a.id))
@@ -174,6 +185,14 @@ test('四段顺序：锁不跨模型调用、不跨建任务',async()=>{
  await dispatchGroupRouting(ctx,f.owner,message.id,built.ports,signal())
  assert.deepEqual(built.recorded.lockedDuring.prompt,[false])
  assert.deepEqual(built.recorded.lockedDuring.createTask,[false])
+})
+test('来源租约缺失不进模型不交办；模型失败仍释放已核对的租约',async()=>{
+ const f=await fixture(),message=await f.self('请核对本话题。'),built=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]}),missing=modelHarness({answer:output([f.a.id]),admissionMissing:true})
+ await dispatchGroupRouting(missing.ctx,f.owner,message.id,built.ports,signal())
+ assert.equal(missing.calls.prompt.length,0);assert.equal(built.recorded.createTask.length,0);assert.equal((await readDecision(f.owner,message.id))?.kind,'degraded')
+ const another=await f.self('再核对本话题。'),broken=modelHarness({broken:true})
+ await dispatchGroupRouting(broken.ctx,f.owner,another.id,built.ports,signal())
+ assert.equal(broken.calls.prompt.length,1);assert.equal(broken.calls.bound.length,1);assert.deepEqual(broken.calls.released,broken.calls.bound);assert.equal(built.recorded.createTask.length,0)
 })
 
 test('同一条消息重放：不增决策行、不再建任务',async()=>{
@@ -213,15 +232,46 @@ test('候选为空：不调模型、写 no-candidate；归档群写 archived',as
  assert.equal((await readDecision(f.owner,archivedTrigger.id))?.kind,'archived')
 })
 
-test('模型不可用且有 mentions：退化按 mentions∩候选集；无 mentions：不回',async()=>{
+test('员工回帖仅剩作者候选：宿主直接no-candidate，不问模型、不预留路由来源、不自回复',async()=>{
+ const f=await fixture(),message=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'本轮结果已交付。')
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
+ ports.workCandidates=async()=>{throw Error('员工回帖不能控制本人的原工作')}
+ const model=modelHarness({answer:output([f.a.id])})
+ await dispatchGroupRouting(model.ctx,f.owner,message,ports,signal())
+ assert.equal(model.calls.prompt.length,0)
+ assert.deepEqual(model.calls.bound,[]);assert.deepEqual(model.calls.released,[])
+ const decision=await readDecision(f.owner,message)
+ assert.equal(decision?.kind,'no-candidate');assert.deepEqual(decision?.candidateIds,[]);assert.deepEqual(decision?.respond,[])
+ assert.deepEqual(recorded.createTask,[]);assert.deepEqual(recorded.prepare,[]);assert.deepEqual(recorded.start,[]);assert.deepEqual(recorded.sendSystem,[])
+ assert.equal((await pool.query('select count(*)::int c from teloa_group_reactions where owner_id=$1 and message_id=$2',[f.owner,message])).rows[0].c,0)
+})
+
+test('员工回帖先排除作者再截候选：其他员工仍可回应，作者不占30位限额',async()=>{
+ const f=await fixture(),message=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'@物流 请核对交接结果。')
+ const others=[candidateOf(f.b.id,f.b.version,'物流'),...Array.from({length:groupRoutingCandidatesMax-1},(_,index)=>candidateOf(randomUUID(),1,'其他员工'+index))]
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'000作者'),...others]})
+ const model=modelHarness({answer:output([f.b.id])})
+ await dispatchGroupRouting(model.ctx,f.owner,message,ports,signal())
+ assert.equal(model.calls.prompt.length,1);assert.deepEqual(model.calls.bound,model.calls.released)
+ const input=JSON.parse((model.calls.prompt[0]!.content as {text:string}[])[0]!.text) as {trigger:{authorKind:string;authorId:string};candidates:{roleId:string}[];work:unknown[]}
+ assert.deepEqual([input.trigger.authorKind,input.trigger.authorId],['role',f.a.id])
+ assert.deepEqual(input.candidates.map(candidate=>candidate.roleId),others.map(candidate=>candidate.roleId));assert.deepEqual(input.work,[])
+ const decision=await readDecision(f.owner,message)
+ assert.equal(decision?.kind,'routed');assert.deepEqual(decision?.respond,[f.b.id]);assert.equal(decision?.truncatedCandidates,false)
+ assert.deepEqual(decision?.candidateIds,others.map(candidate=>candidate.roleId))
+ assert.deepEqual(recorded.createTask.map(task=>task.assignee?.roleId),[f.b.id]);assert.equal(recorded.prepare.length,1);assert.equal(recorded.start.length,1)
+})
+
+test('结构化 @ 由宿主直接选定接收者：模型只判断意图、不可用时仍回应；只派可回应者；无 @ 时模型不可用退化为不回',async()=>{
  const f=await fixture()
  const mentioned=await f.self('@售后 @物流 看一下。',[{roleId:f.a.id,expectedVersion:f.a.version},{roleId:f.b.id,expectedVersion:f.b.version}])
  const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
  const broken=modelHarness({broken:true})
  await dispatchGroupRouting(broken.ctx,f.owner,mentioned.id,ports,signal())
- const degraded=await readDecision(f.owner,mentioned.id)
- assert.equal(degraded?.kind,'degraded')
- assert.deepEqual(degraded?.respond,[f.a.id])
+ const direct=await readDecision(f.owner,mentioned.id)
+ assert.equal(broken.calls.prompt.length,1,'接收者已由宿主固定；模型只判断意图，不可用时仍按直接接收者回应')
+ assert.equal(direct?.kind,'direct')
+ assert.deepEqual(direct?.respond,[f.a.id],'不可回应的物流不被悄悄替换，也不进入派发')
  assert.equal(recorded.createTask.length,1)
  const plain=await f.self('没有点名。')
  await dispatchGroupRouting(modelHarness({broken:true}).ctx,f.owner,plain.id,ports,signal())
@@ -243,8 +293,8 @@ test('第六跳：不调模型、写 relay-stopped、发一条系统消息、sto
  const f=await fixture()
  let last=''
  for(let index=0;index<6;index+=1)last=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'同事第'+index+'跳。')
- const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
- const {ctx,calls}=modelHarness({answer:output([f.a.id])})
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.b.id,f.b.version,'物流')]})
+ const {ctx,calls}=modelHarness({answer:output([f.b.id])})
  await dispatchGroupRouting(ctx,f.owner,last,ports,signal())
  assert.equal(calls.prompt.length,0)
  const decision=await readDecision(f.owner,last)
@@ -269,7 +319,7 @@ test('第六跳：不调模型、写 relay-stopped、发一条系统消息、sto
 
  // 本人插话后恢复；再次触顶用轮次 2。
  await f.self('我来接着说。')
- const afterSelf=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'本人插话之后的第一跳。')
+ const afterSelf=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'@物流 请补充本人插话之后的核对结果。')
  await dispatchGroupRouting(ctx,f.owner,afterSelf,ports,signal())
  assert.equal((await readDecision(f.owner,afterSelf))?.kind,'routed')
  let again=''
@@ -497,17 +547,17 @@ const publisherRun={id:randomUUID(),sessionId:'task-run-1',nativeRequestId:rando
 
 test('同事回帖成功后按新消息 id 触发一次路由；被授权判据挡住时不触发',async()=>{
  const routed:string[]=[],messageId=randomUUID()
- const ok=createTaskRunGroupPublisher({post:async()=>({id:messageId}),route:id=>{routed.push(id)},report:()=>{}})
+ const ok=createTaskRunGroupPublisher({post:async()=>({id:messageId}),failure:async()=>{throw Error('成功消息不登记失败')},route:id=>{routed.push(id)},report:()=>{}})
  await ok(publisherRun as never,'回帖正文。')
  assert.deepEqual(routed,[messageId])
- const blocked:string[]=[]
- const denied=createTaskRunGroupPublisher({post:async()=>{throw new WorkError('teloa/forbidden','x')},route:id=>{blocked.push(id)},report:()=>{}})
+ const blocked:string[]=[],failures:string[]=[]
+ const denied=createTaskRunGroupPublisher({post:async()=>{throw new WorkError('teloa/forbidden','x')},failure:async(run,code)=>{assert.equal(run.id,publisherRun.id);failures.push(code)},route:id=>{blocked.push(id)},report:()=>{}})
  await denied(publisherRun as never,'回帖正文。')
- assert.deepEqual(blocked,[])
+ assert.deepEqual(blocked,[]);assert.deepEqual(failures,['teloa/forbidden'])
 })
 
 test('触发点异常不外冒：回帖已确认写入，观察循环不为路由重试',async()=>{
- const publisher=createTaskRunGroupPublisher({post:async()=>({id:randomUUID()}),route:()=>{throw Error('路由端口坏了')},report:()=>{}})
+ const publisher=createTaskRunGroupPublisher({post:async()=>({id:randomUUID()}),failure:async()=>{throw Error('成功消息不登记失败')},route:()=>{throw Error('路由端口坏了')},report:()=>{}})
  await assert.doesNotReject(()=>publisher(publisherRun as never,'回帖正文。'))
 })
 
@@ -518,4 +568,124 @@ test('新宿主终态决策与outbox使用同连接；已claimed重入只恢复�
  p.ports.delivery={outbox,createTask:p.ports.createTask,prepare:p.ports.prepare,start:p.ports.start,readRun:async()=>{throw Error('没有待办不查Run')},reconcile:async()=>{throw Error('没有待办不查Run')},report:()=>{}}
  await dispatchGroupRouting(model.ctx,f.owner,f.root.id,p.ports,signal());await dispatchGroupRouting(model.ctx,f.owner,f.root.id,p.ports,signal())
  assert.equal(recorded,1);assert.equal(drained,2);assert.equal(model.calls.prompt.length,1);assert.equal(p.recorded.createTask.length,0)
+})
+
+test('引用员工消息：按宿主读出的原作者直接选定；显式 @ 覆盖引用；引用本人消息仍走语义选人',async()=>{
+ const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后'),candidateOf(f.b.id,f.b.version,'物流')]})
+ const answer=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'预算还剩 680 元。')
+ const quoted=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'这个数怎么来的？',replyToMessageId:answer})
+ const model=modelHarness({answer:output([f.b.id])})
+ await dispatchGroupRouting(model.ctx,f.owner,quoted.id,ports,signal())
+ assert.equal(model.calls.prompt.length,1)
+ assert.deepEqual(await readDecision(f.owner,quoted.id).then(row=>[row?.kind,row?.respond]),['direct',[f.a.id]])
+ const overridden=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'@物流 你来核对。',replyToMessageId:answer,mentions:[{roleId:f.b.id,expectedVersion:f.b.version}]})
+ await dispatchGroupRouting(model.ctx,f.owner,overridden.id,ports,signal())
+ assert.deepEqual(await readDecision(f.owner,overridden.id).then(row=>[row?.kind,row?.respond]),['direct',[f.b.id]])
+ const anchored=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'接着上面说。',replyToMessageId:f.root.id})
+ await dispatchGroupRouting(model.ctx,f.owner,anchored.id,ports,signal())
+ assert.equal(model.calls.prompt.length,3,'引用本人消息只是上下文锚点，仍由语义选人')
+ assert.deepEqual(recorded.createTask.map(item=>item.assignee?.roleId),[f.a.id,f.b.id,f.b.id])
+})
+
+test('结构化全员：群规则允许时每位候选直接回应；关闭时 blocked、不问模型、不建任务',async()=>{
+ const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后'),candidateOf(f.b.id,f.b.version,'物流')]})
+ const model=modelHarness({answer:output([f.a.id])})
+ const all=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'@全员 各自说说进度。',mentionAll:true})
+ await dispatchGroupRouting(model.ctx,f.owner,all.id,ports,signal())
+ assert.deepEqual(await readDecision(f.owner,all.id).then(row=>[row?.kind,row?.respond]),['direct',[f.a.id,f.b.id]])
+ const closed=await f.groups.change(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,fields:{name:f.group.name,announcement:f.group.announcement,rules:{...openGroupRules,mentionAllAllowed:false},memberRoleIds:[f.a.id,f.b.id],pinned:false,archived:false}})
+ const denied=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:closed.version,rootId:f.root.id,text:'@全员 再说一次。',mentionAll:true})
+ const before=recorded.createTask.length,asked=model.calls.prompt.length
+ await dispatchGroupRouting(model.ctx,f.owner,denied.id,ports,signal())
+ assert.equal(model.calls.prompt.length,asked,'全员未获允许时不问模型')
+ assert.equal((await readDecision(f.owner,denied.id))?.kind,'blocked')
+ assert.equal(recorded.createTask.length,before)
+})
+
+test('沿原消息重试：新尝试使用带版本的路由与任务身份，原决策保留，迟到重入不覆盖新尝试',async()=>{
+ const f=await fixture(),message=await f.self('帮我看看这单。'),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
+ await dispatchGroupRouting(modelHarness({broken:true}).ctx,f.owner,message.id,ports,signal())
+ assert.equal((await readDecision(f.owner,message.id))?.kind,'degraded')
+ const attempts=new GroupRoutingAttemptService(pool,identity),retry={requestId:randomUUID(),groupId:f.group.id,messageId:message.id,expectedAttempt:1,expectedGroupVersion:f.group.version}
+ assert.deepEqual(await attempts.retry(f.owner,retry),{messageId:message.id,attemptVersion:2})
+ assert.deepEqual(await attempts.retry(f.owner,retry),{messageId:message.id,attemptVersion:2})
+ const model=modelHarness({answer:output([f.a.id])})
+ await Promise.all([dispatchGroupRouting(model.ctx,f.owner,message.id,ports,signal()),dispatchGroupRouting(model.ctx,f.owner,message.id,ports,signal())])
+ assert.ok(model.calls.prompt.every(call=>call.requestId===groupRoutingAttemptRequestId(f.owner,f.group.id,message.id,2)))
+ assert.notEqual(groupRoutingAttemptRequestId(f.owner,f.group.id,message.id,2),groupRoutingRequestId(f.owner,f.group.id,message.id))
+ assert.deepEqual(recorded.createTask.map(item=>item.requestId),[groupRoutedAttemptTaskRequestId(f.owner,f.group.id,message.id,f.a.id,2)])
+ assert.equal((await readDecision(f.owner,message.id))?.kind,'degraded','原决策行保留为旧审计')
+ const settled=(await pool.query('select attempt_version,decision from teloa_group_routing_attempts where owner_id=$1 and message_id=$2',[f.owner,message.id])).rows
+ assert.deepEqual(settled.map(row=>[row.attempt_version,row.decision.kind,row.decision.respond]),[[2,'routed',[f.a.id]]])
+ await dispatchGroupRouting(model.ctx,f.owner,message.id,ports,signal())
+ assert.equal(recorded.createTask.length,1,'已定案的尝试重入不再问模型、不再派工')
+ await assert.rejects(attempts.retry(f.owner,{...retry,requestId:randomUUID(),expectedAttempt:2}),{code:'teloa/conflict'})
+})
+
+const v2=(patch:Record<string,unknown>)=>JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'reply',respond:[],reactions:[],assignments:[],workTarget:null,...patch})
+
+test('依赖派工：模型等待期间撤销唯一前序接手者，后序一起失效，决策仍能落库且不会提前启动',async()=>{
+ const f=await fixture(),text='先售后整理，再物流核对结果。',message=await f.self(text)
+ let priorWithdrawn=false
+ const {ports,recorded}=makePorts(f.owner,{candidates:async()=>[...(priorWithdrawn?[]:[candidateOf(f.a.id,f.a.version,'售后')]),candidateOf(f.b.id,f.b.version,'物流')]})
+ const answer=v2({intent:'work',respond:[f.a.id,f.b.id],assignments:[{roleId:f.a.id,instructionRange:{start:0,end:text.length}},{roleId:f.b.id,instructionRange:{start:0,end:text.length},stage:2}]})
+ await dispatchGroupRouting(modelHarness({answer,onPrompt:()=>{priorWithdrawn=true}}).ctx,f.owner,message.id,ports,signal())
+ const decision=await readDecision(f.owner,message.id)
+ assert.ok(decision,'失效仍应有持久决策，不得因阶段不连续导致事务回滚')
+ assert.deepEqual(decision.respond,[]);assert.deepEqual((decision as {assignments?:unknown}).assignments,[])
+ assert.deepEqual(new Set((decision as {withdrawn?:string[]}).withdrawn),new Set([f.a.id,f.b.id]));assert.equal(recorded.createTask.length,0)
+})
+
+test('固定接收者只限定身份：@员工的记录型消息（none）不开回复任务',async()=>{
+ const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
+ const noted=await f.self('@售后 只记一下，不用回复。',[{roleId:f.a.id,expectedVersion:f.a.version}])
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'none'})}).ctx,f.owner,noted.id,ports,signal())
+ const decision=await readDecision(f.owner,noted.id)
+ assert.deepEqual([decision?.kind,decision?.respond],['direct',[]]);assert.equal(recorded.createTask.length,0)
+})
+
+test('没有可回应员工时，本人对原工作的停止仍登记到原工作（不依赖新派工资格）',async()=>{
+ const f=await fixture(),message=await f.self('停止那项整理。'),taskId=randomUUID(),reserved:unknown[]=[]
+ const {ports}=makePorts(f.owner,{candidates:[]})
+ ports.workCandidates=async()=>[{taskId,runId:null,title:'整理',state:'running',version:3}]
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{reserved.push(input);return {requestId:(input as {requestId:string}).requestId,taskId,taskVersion:3,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:'stop'}}}
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'stop',workTarget:{taskId,runId:null}})}).ctx,f.owner,message.id,ports,signal())
+ assert.equal((await readDecision(f.owner,message.id))?.kind,'routed')
+ assert.deepEqual(reserved.map(item=>(item as {operation:string;taskId:string}).operation),['stop'])
+})
+
+test('本群协调者进入真实路由输入，明确点名优先且不可用协调者不进入候选',async()=>{
+ const f=await fixture(),group=await f.groups.change(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,fields:{name:f.group.name,announcement:f.group.announcement,rules:f.group.rules,memberRoleIds:[f.a.id,f.b.id],pinned:false,archived:false,coordinatorRoleId:f.a.id}})
+ const {ports,recorded}=makePorts(f.owner,{})
+ const message=(text:string,mentions?:{roleId:string;expectedVersion:number}[])=>f.groups.send(f.owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text,...(mentions?{mentions}:{})})
+ const semantic=modelHarness({answer:output([f.a.id])}),first=await message('请协调团队分工并汇总。')
+ await dispatchGroupRouting(semantic.ctx,f.owner,first.id,ports,signal())
+ const input=(call:Record<string,unknown>)=>JSON.parse((call.content as {text:string}[])[0]!.text) as {group:{coordinatorRoleId?:string};candidates:{roleId:string}[]}
+ assert.equal(input(semantic.calls.prompt[0]!).group.coordinatorRoleId,f.a.id);assert.equal(recorded.createTask[0]!.assignee?.roleId,f.a.id)
+ const direct=modelHarness({answer:output([f.a.id])}),second=await message('请物流核对。',[{roleId:f.b.id,expectedVersion:f.b.version}])
+ await dispatchGroupRouting(direct.ctx,f.owner,second.id,ports,signal())
+ assert.deepEqual(input(direct.calls.prompt[0]!).candidates.map(row=>row.roleId),[f.b.id]);assert.equal(input(direct.calls.prompt[0]!).group.coordinatorRoleId,undefined)
+ assert.equal(recorded.createTask.at(-1)!.assignee?.roleId,f.b.id)
+ await new RoleLifecycleService(pool,identity).change(f.owner,{roleId:f.a.id,expectedVersion:f.a.version,action:'pause',reason:'本人暂停'})
+ const afterPause=modelHarness({answer:output([f.b.id])}),third=await message('请汇总当前情况。')
+ await dispatchGroupRouting(afterPause.ctx,f.owner,third.id,ports,signal())
+ assert.equal(input(afterPause.calls.prompt[0]!).group.coordinatorRoleId,undefined)
+ assert.equal((await f.groups.get(f.owner,{groupId:group.id})).group.coordinatorRoleId,f.a.id,'不可用不抹掉群原配置')
+})
+
+test('协调者等待模型期间失去资格仍受段C重核，原工作stop不被协调者改派',async()=>{
+ const f=await fixture(),group=await f.groups.change(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,fields:{name:f.group.name,announcement:f.group.announcement,rules:f.group.rules,memberRoleIds:[f.a.id,f.b.id],pinned:false,archived:false,coordinatorRoleId:f.a.id}})
+ const message=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'请协调分工。'}),{ports,recorded}=makePorts(f.owner,{})
+ let pausedVersion=f.a.version
+ const model=modelHarness({answer:output([f.a.id]),onPrompt:async()=>{pausedVersion=(await new RoleLifecycleService(pool,identity).change(f.owner,{roleId:f.a.id,expectedVersion:f.a.version,action:'pause',reason:'本人暂停'})).role.version}})
+ await dispatchGroupRouting(model.ctx,f.owner,message.id,ports,signal())
+ assert.deepEqual((await readDecision(f.owner,message.id))?.respond,[]);assert.equal(recorded.createTask.length,0)
+ await new RoleLifecycleService(pool,identity).change(f.owner,{roleId:f.a.id,expectedVersion:pausedVersion,action:'resume',reason:'本人明确恢复'})
+ const stop=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'停止原来的整理工作。'}),taskId=randomUUID(),reserved:unknown[]=[]
+ ports.workCandidates=async()=>[{taskId,runId:null,title:'原整理工作',state:'running',version:3}]
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{reserved.push(input);return {requestId:(input as {requestId:string}).requestId,taskId,taskVersion:3,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:'stop'}}}
+ const stopModel=modelHarness({answer:v2({intent:'stop',workTarget:{taskId,runId:null}})})
+ await dispatchGroupRouting(stopModel.ctx,f.owner,stop.id,ports,signal())
+ assert.equal(JSON.parse((stopModel.calls.prompt[0]!.content as {text:string}[])[0]!.text).group.coordinatorRoleId,f.a.id)
+ assert.equal(reserved.length,1);assert.equal(recorded.createTask.length,0)
 })

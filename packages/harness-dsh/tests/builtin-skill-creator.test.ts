@@ -1,3 +1,6 @@
+import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
+import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
@@ -25,9 +28,10 @@ async function setup(t:TestContext){
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-builtin-creator-'))),ctx=new Context()
  t.after(async()=>{await ctx.fiber.dispose();await rm(root,{recursive:true,force:true})})
  await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(SkillRegistry);await ctx.plugin(LocalFileSystem,{cwd:root})
+ await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await installNativeWorkingDirectory(ctx,root)
  await ctx.plugin(ToolSkill)
  const builtin=officialCatalogBuiltin(builtinSkillCreatorName),creator=await prepareBuiltinSkillCreator(ctx,{runtimeRoot:root,treeHash:builtin.treeHash,files:builtin.files})
- const agent=(id:string)=>{const target={} as Agent,scope=createScope(ctx,target);Object.assign(target,{ctx:scope.ctx,session:{id,header:{cwd:root},surface:{nodes:[]},events:[]}});return target}
+ const agent=(id:string,subagent=false)=>{const target={} as Agent,scope=createScope(ctx,target);Object.assign(target,{ctx:scope.ctx,session:ctx.sessions.create(SessionId(id),{meta:{cwd:root,...(subagent?{origin:'subagent'}:{})}})});return target}
  return {ctx,root,builtin,creator,agent}
 }
 const ports=(policy:(id:string)=>unknown=()=>null,status:'ready'|'pending'='ready'):BuiltinSkillCreatorPorts=>({owner:'owner',conversation:async id=>({ownerId:'owner',sessionId:id,status}),readTaskPolicy:async id=>policy(id) as never})
@@ -66,15 +70,15 @@ test('本人普通会话：目录可见，/teloa-skill-creator 注入正文与�
 
 test('任务执行会话、子 Agent、未就绪或非本人会话都不登记创建器',async t=>{
  const {ctx,creator,agent}=await setup(t)
- const cases:[string,BuiltinSkillCreatorPorts,(value:Agent)=>void][]=[
-  ['任务执行',ports(()=>({allowedTools:[]})),()=>{}],
-  ['未就绪',ports(()=>null,'pending'),()=>{}],
-  ['非本人',{...ports(),conversation:async id=>({ownerId:'someone-else',sessionId:id,status:'ready'})},()=>{}],
-  ['读取失败',{...ports(),readTaskPolicy:async()=>{throw Error('down')}},()=>{}],
-  ['子 Agent',ports(),value=>{(value.session.header as {origin?:string}).origin='subagent'}],
+ const cases:[string,BuiltinSkillCreatorPorts,boolean][]=[
+  ['任务执行',ports(()=>({allowedTools:[]})),false],
+  ['未就绪',ports(()=>null,'pending'),false],
+  ['非本人',{...ports(),conversation:async id=>({ownerId:'someone-else',sessionId:id,status:'ready'})},false],
+  ['读取失败',{...ports(),readTaskPolicy:async()=>{throw Error('down')}},false],
+  ['子 Agent',ports(),true],
  ]
- for(const [label,value,mutate] of cases){
-  const scoped=agent('session-'+label);mutate(scoped)
+ for(const [label,value,subagent] of cases){
+  const scoped=agent('session-'+label,subagent)
   const off=registerBuiltinSkillCreator(ctx,creator,value)
   const decision=await step(ctx,scoped,'/teloa-skill-creator 帮我做技能')
   assert.equal(injected(decision).length,0,label)

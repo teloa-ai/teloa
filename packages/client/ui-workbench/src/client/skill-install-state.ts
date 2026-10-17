@@ -10,6 +10,9 @@ export function uniqueSkillInstallations(items:readonly SkillInstallationRecord[
 
 const canonical=(value:SkillInstallSourceIdentity)=>value.kind==='industry-local'?JSON.stringify(['industry-local',value.contentId,value.contentHash,value.resourceId,value.resourceVersion]):value.kind==='industry-public'?JSON.stringify(['atomic',value.sourceContentId,value.sourceContentHash,value.sourceResourceId,value.sourceResourceVersion]):JSON.stringify(['atomic',value.contentId,value.contentHash,value.resourceId,value.resourceVersion])
 
+/** 声明与安装必须为同一固定内容和包；标题或原生名相同不能替代来源/版本校验。 */
+export const skillInstallationMatchesPreview=(record:SkillInstallationRecord,preview:SkillInstallPreview)=>canonical(record.source)===canonical(preview.source)&&record.bundleHash===preview.bundleHash&&record.trustHash===preview.trustHash&&(['name','description','bodyHash','modelInvocable','userInvocable'] as const).every(key=>record.native[key]===preview.native[key])
+
 export function selectSkillInstallation(source:SkillInstallSourceInput,preview:SkillInstallPreview,items:SkillInstallationRecord[],usages:SkillInstallUsage[]){
   if(source.kind==='atomic')return {record:items.find(item=>canonical(item.source)===canonical(preview.source)),linked:true}
   const usage=usages.find(value=>value.loadId===source.loadId&&value.itemInstanceId===source.itemInstanceId)

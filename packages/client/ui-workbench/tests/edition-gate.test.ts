@@ -86,7 +86,11 @@ test('门控提示挂到页面层级；市场加载表单这一处调用点仍�
  assert.match(source,/onIntercept\?\.\(\);show\(\)/,'打开提示前先给调用方收起菜单的机会')
  // 第二期：业务范围内页摘掉了「管理」菜单，business-space-create 只剩特性键本身（下一条用例直接验它）。
  assert.doesNotMatch(page,/EditionGate|data-space-menu-index/)
- assert.match(industryLoad,/<EditionGate feature="industry-load-new-space" label=\{t\('edition\.gate\.feature\.newSpace'\)\}>/)
+ // N24：个人版加载只有本空间一个目的地，表单收为一步核对，不再展示禁用的「新建空间…」死入口。
+ assert.doesNotMatch(industryLoad,/EditionGate|industry-load-new-space|edition\.gate\.feature\.newSpace/)
+ // 特性键本身仍可被门控接管（与 space-switcher 一样留给企业版复用）。
+ const props=editionGateProps('industry-load-new-space',()=>{})
+ assert.equal(props['aria-disabled'],true);assert.equal(props['data-edition-gate'],'industry-load-new-space')
 })
 
 test('space-switcher 特性键留给企业版：不再挂在 WorkNavigation 上，但门控逻辑本身照样接管它',()=>{

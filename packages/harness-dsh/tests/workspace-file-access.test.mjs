@@ -10,7 +10,6 @@ import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
 async function fixture(t){
  const {ctx}=await createRuntime(t),home=await mkdtemp(join(tmpdir(),'teloa-workspace-files-')),cwd=join(home,'work'),outside=join(home,'work-extra')
  t.after(()=>rm(home,{recursive:true,force:true}));await mkdir(cwd);await mkdir(outside)
- await ctx.plugin((await official('dsh-fs-sandbox')).default,{cwd})
  let authorized=true
  const scoped=await createScopedWorkspaceFileSystem(ctx.fs,{cwd,authorize:async()=>{if(!authorized)throw Error('授权已撤销')},protectedPath:path=>path.endsWith('/credentials.txt')})
  return {ctx,cwd,outside,scoped,revoke:()=>{authorized=false}}

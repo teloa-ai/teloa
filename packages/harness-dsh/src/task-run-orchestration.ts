@@ -3,7 +3,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {SessionId} from '@deepseek-ai/dsh-session'
 import {JobId} from '@deepseek-ai/dsh-jobs'
-import type {SubagentProvider,SubagentRun} from '@deepseek-ai/dsh-subagent'
+import type {SubagentProvider,SubagentActivation} from '@deepseek-ai/dsh-subagent'
 import {foldSubagentDescriptor} from '@deepseek-ai/dsh-subagent'
 import type {ToolDefinition,ToolExecution} from '@deepseek-ai/dsh-tools'
 import type {TaskRun,TaskRunRuntimeLinks} from '@teloa/backend'
@@ -12,14 +12,16 @@ import type {SubagentDelegationPorts} from './subagent-delegation.ts'
 import type {TaskToolPolicy,TaskToolPolicyReader} from './task-tool-guard.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
 import {createTaskRunBackground,isOwnerOnlyTextRun,taskRunRuntimeId} from './task-run-background.ts'
+import {installActivationAdmission} from './subagent-activation-admission.ts'
 import {readSessionEvents} from './session-events.ts'
 
 type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
-type Child={binding:Binding;rootId:string;controller:AbortController;run:SubagentRun;ready:boolean;settled:boolean;interrupted:boolean;structured?:ToolDefinition|undefined;result?:SubagentRun['result']}
+type Child={binding:Binding;rootId:string;controller:AbortController;run:SubagentActivation;ready:boolean;settled:boolean;interrupted:boolean;allowedTools?:readonly string[];structured?:ToolDefinition|undefined;result?:SubagentActivation['result']}
 export type TaskRunOrchestrationOptions={timeoutMs?:number;maxRounds?:number}
 export type TaskRunOrchestrationAccess={
  authorizeChild:(agent:Agent,policy:TaskToolPolicy,signal:AbortSignal)=>Promise<boolean>
  ownsStructuredOutput:(exec:ToolExecution)=>boolean
+ toolAllowed:(exec:ToolExecution)=>boolean
 }
 const allowed=(policy:TaskToolPolicy)=>policy.allowedTools.includes('workflow')||policy.allowedTools.includes('ralph')
 const failure=(message:string)=>new WorkError('teloa/forbidden',message)
@@ -32,7 +34,7 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
  const starting=new Map<string,Set<AbortController>>()
  const deadlines=new Set<{cancel:()=>void;clear:()=>void}>()
  // 票据仅由宿主薄口持有，模型传入 provider 参数不能取得固定 Flow 预留身份。
- const flowTickets=new WeakMap<AbortSignal,{runId:string;reservationId:string;nativeRequestId:string}>()
+ const flowTickets=new WeakMap<AbortSignal,{runId:string;reservationId:string;nativeRequestId:string;allowedTools:readonly string[]}>()
  const flowStarts=new Map<string,Promise<{reservationId:string;childSessionId:string}>>()
  const jobDeadlines=new Map<string,{clear:()=>void}>()
  let disposed=false
@@ -54,17 +56,26 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
  }
  const removeProvider=ctx.subagents.registerProvider({
   name:'teloa-workflow-spawn',
-  capabilities:{agentOptions:true,outputSchema:true,depthLimit:true,toolFilter:true,persona:true},
+  capabilities:{agentOptions:true,agentPreset:true,outputSchema:true,depthLimit:true},
   inheritsParentContext:false,
-  async start(request){
+  async prepareContinuable(request){
+   const native=ctx.subagents.getProvider('spawn')
+   if(!native?.prepareContinuable||native.inheritsParentContext)throw failure('官方 fresh 子 Agent 提供方不可用。')
+   return native.prepareContinuable(request)
+  },
+ } satisfies SubagentProvider)
+ const removeAdmission=installActivationAdmission(ctx.subagents,async(spec,start)=>{
+   if(spec.provider!=='teloa-workflow-spawn')return start(spec)
+   const request={...spec.request,signal:spec.signal}
+
    if(disposed)throw failure('原生编排适配已停止。')
    const native=ctx.subagents.getProvider('spawn')
-   if(!native||native.inheritsParentContext||Object.values(native.capabilities).some(value=>!value))throw failure('官方 fresh 子 Agent 提供方不可用。')
+   if(!native?.prepareContinuable||native.inheritsParentContext||Object.values(native.capabilities).some(value=>!value))throw failure('官方 fresh 子 Agent 提供方不可用。')
    const lineage=resolveSessionLineage(ctx,request.parent.session),rootId=lineage.root.id,policy=await readPolicy(rootId,request.signal)
    request.signal.throwIfAborted()
    // 本人会话不伪造业务 Run，完整保留官方默认权限与生命周期。
    const flowTicket=flowTickets.get(request.signal)
-   if(policy===null){if(flowTicket)throw failure('Flow 缺少受管执行授权。');return native.start(request)}
+   if(policy===null){if(flowTicket)throw failure('Flow 缺少受管执行授权。');return start(spec)}
    assertPolicy(policy)
    if(stopped.has(rootId))throw failure('本次执行已停止。')
    const depth=lineage.depth+1
@@ -78,7 +89,8 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
    starts.add(gate);pending.set(rootId,starts)
    const controller=new AbortController()
    const controllers=starting.get(rootId)??new Set<AbortController>();controllers.add(controller);starting.set(rootId,controllers)
-   let reserved=false,child:SubagentRun|undefined,record:Child|undefined
+   let reserved=false,child:SubagentActivation|undefined,record:Child|undefined
+   let removeAbort=()=>{}
    try{
     await delegation.reserve({runId,reservationId,limit:delegation.limits.maxPerRun});reserved=true
     request.signal.throwIfAborted()
@@ -86,38 +98,49 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
     if(!current||current.nativeRequestId!==policy.nativeRequestId)throw failure('原生编排授权身份已变化。')
     assertPolicy(current)
     if(disposed||stopped.has(rootId))throw failure('本次执行已停止。')
-    // 直接委托 provider，避免再走 runtime.start 而重复发布生命周期。
-    child=await native.start({...request,signal:AbortSignal.any([request.signal,controller.signal]),maxDepth:Math.min(request.maxDepth??delegation.limits.maxDepth,delegation.limits.maxDepth)})
-    if(!child.localAgent||child.id!==child.localAgent.id||child.localAgent.session.header.parentSession!==request.parent.id)throw failure('官方子 Agent 身份与请求不一致。')
-    record={binding:{id:runId,sessionId:child.id,nativeRequestId:policy.nativeRequestId!},rootId,controller,run:child,ready:false,settled:false,interrupted:false,...(request.outputSchema===undefined?{}:{structured:ctx.tools.get('structured_output',child.localAgent)})}
-    children.set(child.id,record)
-    await delegation.bind({reservationId,childSessionId:child.id,depth})
+    // 仅调用一次官方 activation；不重复发布 descriptor 或生命周期。
+    child=await start({...spec,signal:AbortSignal.any([request.signal,controller.signal]),request:{...spec.request,maxDepth:Math.min(request.maxDepth??delegation.limits.maxDepth,delegation.limits.maxDepth)}})
+    const publishedActivation=child,acceptedSignal=AbortSignal.any([request.signal,controller.signal])
+    let disposing:Promise<void>|undefined
+    const dispose=()=>disposing??=publishedActivation.dispose()
+    child={...publishedActivation,dispose}
+    const cancel=()=>{void dispose().catch(()=>{if(record)record.interrupted=true})}
+    acceptedSignal.addEventListener('abort',cancel,{once:true})
+    removeAbort=()=>acceptedSignal.removeEventListener('abort',cancel)
+    void publishedActivation.result.finally(removeAbort).catch(()=>{})
+    if(acceptedSignal.aborted)cancel()
+    const localAgent=ctx.agents.get(child.childId)
+    if(!localAgent||child.childId!==localAgent.id||localAgent.session.header.parentSession!==request.parent.id)throw failure('官方子 Agent 身份与请求不一致。')
+    record={binding:{id:runId,sessionId:child.childId,nativeRequestId:policy.nativeRequestId!},rootId,controller,run:child,ready:false,settled:false,interrupted:false,...(flowTicket?{allowedTools:flowTicket.allowedTools}:{}),...(request.outputSchema===undefined?{}:{structured:ctx.tools.get('structured_output',localAgent)})}
+    children.set(child.childId,record)
+    await delegation.bind({reservationId,childSessionId:child.childId,depth})
     await background.start(record.binding)
     request.signal.throwIfAborted()
     if(disposed||stopped.has(rootId))throw failure('本次执行已停止。')
     record.ready=true
     const fixed=record,published=child
     const result=published.result.then(async result=>{
-     try{await delegation.settle({childSessionId:published.id,stopReason:result.stopReason})}
-     catch(error){fixed.interrupted=true;await delegation.abandon({reservationId,childSessionId:published.id,depth,stopReason:'orchestration-settlement-failed'});throw error}
+     try{await delegation.settle({childSessionId:published.childId,stopReason:result.stopReason})}
+     catch(error){fixed.interrupted=true;await delegation.abandon({reservationId,childSessionId:published.childId,depth,stopReason:'orchestration-settlement-failed'});throw error}
      finally{fixed.settled=true}
      fixed.interrupted ||= result.stopReason!=='completed'&&result.stopReason!=='aborted'
      return result
     },async error=>{
      fixed.interrupted=true
-     try{await delegation.abandon({reservationId,childSessionId:published.id,depth,stopReason:'orchestration-result-failed'})}finally{fixed.settled=true}
+     try{await delegation.abandon({reservationId,childSessionId:published.childId,depth,stopReason:'orchestration-result-failed'})}finally{fixed.settled=true}
      throw error
     })
     // 宿主负责等待结算；提前拒绝不能制造 unhandled rejection。
     result.catch(()=>{})
     fixed.result=result
-    return {id:published.id,localAgent:published.localAgent,result,async dispose(){controller.abort();await published.dispose();await result}}
+    return {...published,result,async dispose(){controller.abort();await published.dispose();await result}}
    }catch(error){
+    removeAbort()
     if(record){record.ready=false;record.interrupted=true}
     if(child){
      controller.abort()
      try{await child.dispose()}finally{
-      await delegation.abandon({reservationId,childSessionId:child.id,depth,stopReason:'orchestration-registration-failed'})
+      await delegation.abandon({reservationId,childSessionId:child.childId,depth,stopReason:'orchestration-registration-failed'})
       if(record)record.settled=true
      }
     }else if(reserved)await delegation.release({reservationId})
@@ -127,8 +150,7 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
     releaseGate();starts.delete(gate);if(!starts.size)pending.delete(rootId)
     controllers.delete(controller);if(!controllers.size)starting.delete(rootId)
    }
-  },
- } satisfies SubagentProvider)
+ })
  // 官方 workflow 后台 job 刻意脱离工具 signal，须在工具返回后继续持有同一截止时间。
  const removeWrapper=ctx.on('tools/execute',async(exec,next)=>{
   if(!['workflow','ralph','run_code'].includes(exec.name)||!exec.agent)return next()
@@ -177,6 +199,10 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
    if(!await generation(child.binding.id))throw failure('此执行所属宿主已重启，不能继续执行。')
    signal.throwIfAborted();return true
   },
+  toolAllowed(exec){
+   const child=exec.agent?children.get(exec.agent.id):undefined
+   return child?.allowedTools===undefined||child.allowedTools.includes(exec.name)
+  },
   ownsStructuredOutput(exec){
    const child=exec.agent?children.get(exec.agent.id):undefined
    return exec.name==='structured_output'&&child?.ready===true&&!child.settled&&!stopped.has(child.rootId)&&child.structured!==undefined&&ctx.tools.get(exec.name,exec.agent)===child.structured
@@ -200,11 +226,11 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
     if(!delegation.list)throw failure('Flow 缺少真实子执行预留读口。')
     if((await delegation.list(run.id)).some(row=>row.reservationId===reservationId))throw failure('Flow 原子执行回执待核对，不能重新派发。')
     const controller=new AbortController(),currentSignal=AbortSignal.any([signal,controller.signal])
-    flowTickets.set(currentSignal,{runId:run.id,reservationId,nativeRequestId:run.nativeRequestId!})
+    flowTickets.set(currentSignal,{runId:run.id,reservationId,nativeRequestId:run.nativeRequestId!,allowedTools:execution.allowedTools})
     try{
-     const child=await ctx.subagents.start('teloa-workflow-spawn',{parent,signal:currentSignal,label:step.title,prompt:[{type:'text',text:step.inputSummary}],toolFilter:{allow:execution.allowedTools},maxDepth:delegation.limits.maxDepth})
+     const child=await ctx.subagents.startActivation({provider:'teloa-workflow-spawn',label:step.title,signal:currentSignal,delivery:'caller',request:{parent,prompt:[{type:'text',text:step.inputSummary}],maxDepth:delegation.limits.maxDepth}})
      child.result.catch(()=>{})
-     return {reservationId,childSessionId:child.id}
+     return {reservationId,childSessionId:child.childId}
     }finally{flowTickets.delete(currentSignal)}
    }
    const pendingStart=start();flowStarts.set(reservationId,pendingStart);pendingStart.catch(()=>{})
@@ -234,7 +260,7 @@ export function createTaskRunOrchestration(ctx:Context,delegation:SubagentDelega
    const failed=results.find(result=>result.status==='rejected');if(failed?.status==='rejected')throw failed.reason
   },
   async dispose(){
-   if(disposed)return;disposed=true;removeProvider();removeWrapper();removeJobs()
+   if(disposed)return;disposed=true;removeProvider();removeAdmission();removeWrapper();removeJobs()
    for(const deadline of [...deadlines]){deadline.cancel();deadline.clear()}
    for(const child of children.values())child.controller.abort('原生编排适配卸载。')
    for(const controllers of starting.values())for(const controller of controllers)controller.abort('原生编排适配卸载。')

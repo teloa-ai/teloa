@@ -25,14 +25,14 @@ export function createNativeSessionCapabilities(ctx:Pick<Context,'agents'>,ports
    const binding=(await ports.conversations.repository.read()).find(row=>row.sessionId===root)
    if(!binding||binding.ownerId!==ports.owner||binding.status!=='ready')throw new WorkError('teloa/forbidden','当前会话没有可核验的本人工作归属。')
    const links=await ports.links.bySession(ports.owner,{sessionId:root})
-   if(binding.requestedRoleId||binding.purpose==='task-run'||links.some(link=>link.kind==='role'||link.kind==='task'))capabilities.add('people')
+   if(binding.requestedRoleId||binding.purpose==='task-run'&&binding.run?.executor?.kind!=='owner'||binding.run?.executor?.kind!=='owner'&&links.some(link=>link.kind==='role'||link.kind==='task'))capabilities.add('people')
    const runs=(await ports.pool.query('select role_id,group_context_hash,plan_context_hash from teloa_task_runs where owner_id=$1 and session_id=$2',[ports.owner,root])).rows
    for(const run of runs){
     if(run.role_id)capabilities.add('people')
     if(run.group_context_hash!==null)capabilities.add('groups')
     if(run.plan_context_hash!==null)capabilities.add('automation')
    }
-   if((await ports.pool.query('select 1 from teloa_conversation_work_requests where owner_id=$1 and session_id=$2 union all select 1 from teloa_conversation_work_contexts where owner_id=$1 and session_id=$2 and role_id is not null limit 1',[ports.owner,root])).rows.length)capabilities.add('people')
+   if((await ports.pool.query(`select 1 from teloa_conversation_work_requests where owner_id=$1 and session_id=$2 and request_spec->>'executor' is distinct from 'general' union all select 1 from teloa_conversation_work_contexts where owner_id=$1 and session_id=$2 and role_id is not null limit 1`,[ports.owner,root])).rows.length)capabilities.add('people')
   }
   if(!capabilities.size)capabilities.add('general-agent')
   return Object.freeze({ownerId:ports.owner,capabilities:Object.freeze([...capabilities])})

@@ -183,7 +183,7 @@ test('正式宿主把每日日志服务、两个工具与 Auto Dream 端口都�
  assert.match(source,/import \{createRoleDailyLogHandler,registerRoleDailyDigestTools,roleDailyLogEndpoints\} from '\.\/role-daily-log\.ts'/)
  // 两个小结工具与岗位记忆候选必须在自授权集（已抽成常量模块）的最前两位；后面可以追加别的自授权工具（群附件一期加了 teloa_group_attach）。
  assert.match(selfAuthorized,/\[roleMemoryProposalToolName,\.\.\.roleDailyDigestToolNames[,\]]/)
- assert.match(source,/registerTaskToolGuard\(ctx,readTaskToolPolicy,[\s\S]*?\[\.\.\.selfAuthorizedToolNames\],async/)
+ assert.match(source,/registerTaskToolGuard\(ctx,readTaskToolPolicy,[\s\S]*?\[\.\.\.selfAuthorizedToolNames\],readTaskBusinessBinding,subagentDelegation/)
  assert.match(source,/registerRoleDailyDigestTools\(toolRegistrationContext,\{/)
  // 同事在岗自动带一条 Auto Dream 系统计划：两个岗位生命周期入口都必须带上计划端口。
  assert.match(source,/new RoleLifecycleService\(pool,identity,\{plans\}\)/)
@@ -216,7 +216,8 @@ function roleConstructionsWithoutPlans(source:string){
   const tail=source.slice(match.index,match.index+120)
   // 分身自举不建计划；这份精确的 get 构造只读岗位。其它构造继续要求计划端口。
   const readOnly=/^new RoleService\(database\.pool,\{id:randomUUID,now:\(\)=>new Date\(\)\.toISOString\(\)\}\)\.get\(owner,roleId\)(?=\s*[,;)]|$)/.test(tail)
-  return !tail.includes('plans')&&!tail.includes('ensurePersonalTwin')&&!readOnly
+  const experienceReadOnly=/^new RoleService\((?:database\.pool|pool),workIdentity\)\.get\(owner,(?:role\.id|run\.roleId|id)\)(?=[ \t]*[,;)]|[ \t]*(?:\r?\n|$))(?!\s*[.(\[])/.test(tail)
+  return !tail.includes('plans')&&!tail.includes('ensurePersonalTwin')&&!readOnly&&!experienceReadOnly
  }).map(match=>source.slice(match.index,match.index+120))
 }
 test('能写入的岗位构造带上 Auto Dream 计划端口，分身自举与精确只读 get 例外',async()=>{
@@ -228,6 +229,9 @@ test('岗位构造守卫只放行本人只读 get，不放行相同构造的写�
  const constructor='new RoleService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()})'
  assert.deepEqual(roleConstructionsWithoutPlans(constructor+'.get(owner,roleId),'),[])
  for(const expression of [constructor+'.create(owner,{})',constructor+'.get(other,roleId)',constructor+'.get(owner,roleId).create(owner,{})','new RoleLifecycleService(database.pool,identity).change(owner,{})'])assert.equal(roleConstructionsWithoutPlans(expression).length,1,expression)
+ const experienceConstructor='new RoleService(database.pool,workIdentity)'
+ for(const target of ['role.id','run.roleId','id'])assert.deepEqual(roleConstructionsWithoutPlans(experienceConstructor+`.get(owner,${target}),`),[])
+ for(const expression of [experienceConstructor+'.create(owner,{})',experienceConstructor+'.get(other,id)',experienceConstructor+'.get(owner,id).create(owner,{})',experienceConstructor+'.get(owner,id)\n.create(owner,{})'])assert.equal(roleConstructionsWithoutPlans(expression).length,1,expression)
  assert.deepEqual(roleConstructionsWithoutPlans('new RoleService(database.pool,identity,{plans}).create(owner,{})'),[])
 })
 

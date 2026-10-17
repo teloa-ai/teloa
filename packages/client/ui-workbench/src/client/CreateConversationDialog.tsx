@@ -2,6 +2,7 @@ import { useEffect,useRef,useState,useSyncExternalStore } from 'react'
 import { Folder,X } from 'lucide-react'
 import type { ConversationManagement } from './conversation-management.js'
 import { openDialog } from './dialog-focus.js'
+import { useDialogDismiss } from './use-dialog-dismiss.js'
 import { localizeWorkError } from './i18n/errors.js'
 import { useI18n } from './i18n/provider.js'
 import { applicationPresentation } from './application-presentation.js'
@@ -40,7 +41,9 @@ export function CreateConversationDialog({management,current,initialWorkspaceId,
     finally{pending.current=false}
   }
   const titleKey=changingLocation?'conversationDialog.changeLocationTitle':'conversationDialog.title'
-  return <dialog ref={dialog} className={css.dialog} aria-label={t(titleKey)} onCancel={event=>{event.preventDefault();if(!busy&&!pending.current)close()}}>
+  // 外点与 Esc 只收起窗口，不创建会话；创建进行中不关闭。pending 在事件发生时读取，不依赖重渲染。
+  const dismissEvents=useDialogDismiss(()=>{if(!busy&&!pending.current)close()})
+  return <dialog ref={dialog} className={css.dialog} aria-label={t(titleKey)} {...dismissEvents}>
     <form onSubmit={event=>{event.preventDefault();void submit()}}>
       <header><div><h2>{t(titleKey)}</h2>{!hostAssigned&&<p>{t(changingLocation?'conversationDialog.changeLocationDescription':'conversationDialog.description')}</p>}</div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} disabled={busy} onClick={close}><X size={18}/></button></header>
       {notice&&<p role="status">{notice}</p>}
@@ -58,7 +61,7 @@ export function CreateConversationDialog({management,current,initialWorkspaceId,
       {native.ready&&native.workspaces.length===0&&<p>{t('conversationDialog.empty')}</p>}
       {selected&&!workspace&&native.ready&&!defaultRecovery&&<p role="alert">{t('conversationDialog.removed')}</p>}
       </>}
-      {locked&&!busy&&<div><p>{t('conversationDialog.locked')}</p><button type="button" onClick={startNew}>{t('conversationDialog.startNew')}</button></div>}
+      {locked&&!busy&&<div><p>{t('conversationDialog.locked')}</p>{pendingRequestId&&<button type="button" onClick={startNew}>{t('conversationDialog.startNew')}</button>}</div>}
       {error&&<p role="alert" className={css.error}>{error}</p>}
       <footer>{!hostAssigned&&<button type="button" disabled={busy||locked} onClick={settings}>{t('conversationDialog.manage')}</button>}<span/><button type="button" disabled={busy} onClick={close}>{t('conversationDialog.cancel')}</button><button type="submit" className={css.primary} disabled={busy||!hostAssigned&&(!native.ready||!defaultRecovery&&(!selected||!workspace&&!locked))}>{t(busy?'conversationDialog.creating':locked?'conversationDialog.retry':changingLocation?'conversationDialog.useLocation':'conversationDialog.create')}</button></footer>
     </form>

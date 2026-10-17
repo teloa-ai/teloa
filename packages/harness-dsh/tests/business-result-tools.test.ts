@@ -21,6 +21,28 @@ const mapping=(id:string,source:unknown)=>readBusinessSourceMappingDefinition({f
 const taskPolicy={allowedTools:[...businessResultToolNames],nativeRequestId:'task-run-request'}
 const [record,read,trial]=businessResultToolNames
 
+test('固定对象成果工具：模型不传对象/主体，写口接收实际会话和当前轮次，缺执行或跨范围拒绝',async t=>{
+ const writes:unknown[]=[]
+ const e=await setup({recordObjectResult:async input=>{writes.push(input);return {upserted:1,tombstoned:0}}} as Partial<BusinessResultToolsPorts>);t.after(()=>e.ctx.fiber.dispose())
+ const name='teloa_business_object_result_record'
+ const good=await e.call(name,{mappingId:'agent-results',result:{verdict:'恶意'}})
+ assert.equal(good.isError,false,text(good))
+ assert.deepEqual(writes,[{sessionId,nativeRequestId:'task-run-request',scope,mappingId:'agent-results',result:{verdict:'恶意'}}])
+ assert.equal((await e.call(name,{mappingId:'agent-results',result:{verdict:'恶意'},objectId:'OTHER'})).isError,true)
+ const ordinary=await setup({readTaskPolicy:async()=>null});t.after(()=>ordinary.ctx.fiber.dispose())
+ assert.equal((await ordinary.call(name,{mappingId:'agent-results',result:{}})).isError,true)
+ const absent=await setup();t.after(()=>absent.ctx.fiber.dispose())
+ assert.equal((await absent.call(name,{mappingId:'agent-results',result:{}})).isError,true,'未装配事务写口不能退回批量 ingest')
+ assert.equal(writes.length,1)
+})
+
+test('固定对象成果前置授权与执行阶段换了原生轮次，拒绝把旧参数提交到新轮次',async t=>{
+ let reads=0,writes=0
+ const e=await setup({readTaskPolicy:async()=>({...taskPolicy,nativeRequestId:++reads===1?'original-run':'next-run'}),recordObjectResult:async()=>{writes+=1;return {upserted:1,tombstoned:0}}});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call('teloa_business_object_result_record',{mappingId:'agent-results',result:{verdict:'恶意'}})
+ assert.equal(result.isError,true,text(result));assert.equal(writes,0)
+})
+
 async function setup(overrides:Partial<BusinessResultToolsPorts>={},options:{rows?:number}={}){
  const ctx=new Context();await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId(sessionId),agentOptions:{provider:'test',model:'test'}})
@@ -44,6 +66,19 @@ async function setup(overrides:Partial<BusinessResultToolsPorts>={},options:{row
 }
 const text=(result:{content:Array<{type:string;text?:string}>})=>result.content.filter(item=>item.type==='text').map(item=>item.text).join('\n')
 const items=(count:number)=>Array.from({length:count},(_v,index)=>({title:'成果 '+index}))
+
+test('旧批量成果工具拒绝固定对象模板映射，不能自填员工、任务和原对象身份',async t=>{
+ const template=JSON.parse(await readFile(new URL('../../../examples/business/ai-soc-configuration.json',import.meta.url),'utf8'))
+ const mappings=template.definitions.filter((item:any)=>item.kind==='source-mapping').map((item:any)=>readBusinessSourceMappingDefinition({...item.definition,domain:scope}))
+ let writes=0
+ const e=await setup({services:async()=>({sync:{mappings:async()=>mappings,ingest:async()=>{writes++;return {upserted:1,tombstoned:0}}}} as never)});t.after(()=>e.ctx.fiber.dispose())
+ for(const mapping of mappings){
+  const result=await e.call(record,{scope,mappingId:mapping.id,items:[{object:{id:'MODEL-CHOSEN'},employee:{id:'FAKE-EMPLOYEE'},task:{id:'FAKE-TASK'},result:{title:'伪造成果'}}]})
+  assert.equal(result.isError,true,'固定对象成果必须通过宿主绑定写口')
+  assert.match(text(result),/固定对象/)
+ }
+ assert.equal(writes,0)
+})
 
 test('成果记录：普通主会话 deny「只允许任务会话」；任务会话但映射不是 role-result 也 deny；都不写入',async t=>{
  const main=await setup({readTaskPolicy:async()=>null});t.after(()=>main.ctx.fiber.dispose())

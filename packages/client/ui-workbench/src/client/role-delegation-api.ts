@@ -60,7 +60,7 @@ export function createRoleDelegationApi(call:Call,journal?:RoleDelegationJournal
  const start=(endpoint:Pending['endpoint'],input:unknown)=>{if(recoveryError)throw recoveryError;const next=command(endpoint,input);if(pending&&JSON.stringify(pending)!==JSON.stringify(next))throw Object.assign(Error('请先核对原执行委托请求。'),{code:'teloa/conflict'});pending??=next;return send()}
  return {pending:()=>pending?structuredClone(pending):undefined,recoveryMessage:()=>recoveryError,recover:send,
   /** 仅清理本人选择丢弃的本地恢复记录，不撤销远端委托或执行许可。 */
-  discard(){const had=!!pending||!!recoveryError;try{journal?.clear()}catch{/* 损坏的本地恢复记录不应成为第二道墙。 */}pending=undefined;recoveryError=undefined;return had},
+  discard(){const had=!!pending||!!recoveryError;journal?.clear();pending=undefined;recoveryError=undefined;return had},
   async get(roleId:string){if(!uuid(roleId))return fail();return readRoleDelegationState(await call('role-delegations/get',{roleId}),roleId)},
   async change(input:RoleDelegationChange){return await start('role-delegations/change',input) as RoleWorkDelegation},
   async confirm(input:TwinExecutionConfirm){return await start('twin-execution-consents/confirm',input) as TwinExecutionConsent},

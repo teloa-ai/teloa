@@ -15,7 +15,7 @@ import {ArtifactService} from '../src/work/artifacts.ts'
 import {BusinessScopeService} from '../src/work/business-scopes.ts'
 import {BusinessSpaceService} from '../src/work/business-spaces.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
-import type {ProjectDefinition} from '@teloa/contract'
+import {WorkError,type ProjectDefinition} from '@teloa/contract'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -23,6 +23,28 @@ const fields=(patch:Partial<ProjectDefinition>={}):ProjectDefinition=>({scope:'g
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeTeloaDatabase(pool);await initializeProjects(pool)},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
 async function fixture(){const owner=randomUUID(),service=new ProjectService(pool,identity),task=await new TaskService(pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'First delivery',goal:'Produce a report',scope:'general'}});return {owner,service,task}}
+
+// 保留真实 SQL 与事务，只延迟写入查询响应以复现宿主仍在等待数据库的窗口。
+function delayedWritePool(pattern:RegExp){
+ let entered!:()=>void,release!:()=>void
+ const waiting=new Promise<void>(resolve=>{entered=resolve}),released=new Promise<void>(resolve=>{release=resolve})
+ const delayed=new Proxy(pool,{get(target,key){if(key==='connect')return async()=>{const client=await target.connect();return new Proxy(client,{get(db,property){if(property==='query')return async(...args:any[])=>{const result=await (db.query as any)(...args);if(pattern.test(String(args[0]))){entered();await released}return result};const value=Reflect.get(db,property);return typeof value==='function'?value.bind(db):value}})};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value}})
+ return {pool:delayed,waiting,release:()=>release()}
+}
+for(const operation of ['create','edit'] as const)for(const reason of ['cancel','instruction'] as const)test(`项目 late ${operation} ${reason}：真实写入响应等待期间变化在提交前回滚`,async()=>{
+ const owner=randomUUID(),baseline=new ProjectService(pool,identity),original=operation==='edit'?await baseline.create(owner,{requestId:randomUUID(),fields:fields()}):undefined
+ const delay=delayedWritePool(operation==='create'?/^insert into teloa_projects\(/:/^update teloa_projects set definition=/),service=new ProjectService(delay.pool,identity),cancel=new AbortController()
+ let changed=false
+ const revalidate=async()=>{if(changed)throw new WorkError('teloa/version-conflict','原本人指令已变化')}
+ const input=operation==='create'?{requestId:randomUUID(),fields:fields()}:{projectId:original!.id,expectedVersion:1,fields:fields({title:'不应保存的新标题'})}
+ const pending=service[operation](owner,input,cancel.signal,revalidate)
+ await delay.waiting
+ if(reason==='cancel')cancel.abort();else changed=true
+ delay.release()
+ await assert.rejects(pending,reason==='cancel'?{name:'AbortError'}:{code:'teloa/version-conflict'})
+ if(original){const current=(await baseline.get(owner,{projectId:original.id})).project;assert.equal(current.title,original.title);assert.equal(current.version,1);assert.equal((await pool.query('select count(*)::int as n from teloa_project_edits where project_id=$1',[original.id])).rows[0].n,0)}
+ else assert.deepEqual(await baseline.list(owner,{scope:'general'}),[])
+})
 
 test('并发创建幂等，服务重建后读取，跨本人不可读',async()=>{
  const {owner,service}=await fixture(),input={requestId:randomUUID(),fields:fields()}
@@ -145,7 +167,8 @@ test('跨业务引用只读读回，不进 items/summary，不反向修改对方
  assert.deepEqual(detail.references,[{kind:'task',id:soc.id,scope:'SOC',title:'SOC triage',state:'ready',version:1,available:true}])
  assert.equal(detail.items.length,1);assert.deepEqual(detail.summary,{totalTasks:1,completedTasks:0,cancelledTasks:0,attentionTasks:0})
  assert.deepEqual((await pool.query('select version,definition from teloa_tasks where id=$1',[soc.id])).rows,before)
- assert.deepEqual(Object.keys(detail).sort(),['items','project','references','summary'])
+ assert.deepEqual(Object.keys(detail).sort(),['items','linkedGroups','project','references','summary'])
+ assert.deepEqual(detail.linkedGroups,[],'没有原群关联不能凭业务范围补出群')
 })
 test('被引用资料撤回后显示占位且不报错；引用自动化不触发派生汇入，items 与 summary 不变',async()=>{
  const f=await relatedFixture(),resourceId=randomUUID()

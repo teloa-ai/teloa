@@ -101,7 +101,7 @@ test('真实PG高级创建/编辑/启用/群发消息拒绝并回滚，读记录
  const paused=await plans.change(owner,{requestId:randomUUID(),planId:active.id,expectedVersion:active.version,action:'pause'})
  await assert.rejects(plans.change(owner,{requestId:randomUUID(),planId:paused.id,expectedVersion:paused.version,action:'enable'}),forbidden)
  await pool.query("update teloa_roles set state='paused' where owner_id=$1 and id=$2",[owner,role.id])
- await assert.rejects(roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:{...roleFields,name:'修改员工'}}),forbidden)
+ await assert.rejects(roles.edit(owner,{roleId:role.id,expectedVersion:role.version,expectedProfile:{name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})},fields:{...roleFields,name:'修改员工'}}),forbidden)
  assert.equal((await roles.list(owner,{})).length,1);assert.equal((await groups.messages(owner,{groupId:group.id})).length,0)
  assert.equal((await plans.get(owner,{planId:plan.id})).state,'paused')
  assert.equal((await roles.ensurePersonalTwin(owner)).kind,'twin')

@@ -107,3 +107,12 @@
  .currentList>button{grid-template-columns:auto minmax(0,1fr) auto}
  .currentList>button>.state{display:none}
 }
+
+/* 方案资源作为当前业务轻详情，沿用工作台容器与主题。 */
+.resourceDrawer{padding:24px;display:grid;gap:20px;min-width:0;font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body)}
+.resourceDrawer>p{margin:0;color:var(--teloa-muted)}
+.resourceDrawer section{min-width:0}
+
+.contentOnly{height:auto!important;overflow:visible!important}.contentOnly .content{overflow:visible;flex:none}.contentOnly .container{padding:0;max-width:none}.contentOnly .viewBody{padding-top:0}
+
+.contentTools{display:flex;justify-content:flex-end;margin-bottom:12px}

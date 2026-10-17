@@ -7,7 +7,7 @@ for(const name of ['workflow','ralph'])test(`${name} 岗位授权不能代替逐
  const {ctx,create}=await createRuntime(t),agent=await create('orchestration-'+name)
  let bodies=0,asks=0,managed=true,granted=false,outcome:'allowed-once'|'rejected'='rejected'
  ctx.tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:(_args,v)=>[{type:'text',text:v}]},execute:async()=>{bodies++;return 'ok'}}))
- const orchestration={authorizeChild:async()=>false,ownsStructuredOutput:()=>false}
+ const orchestration={authorizeChild:async()=>false,ownsStructuredOutput:()=>false,toolAllowed:()=>true}
  registerTaskToolGuard(ctx,async()=>managed?{allowedTools:granted?[name]:[]}:null,[],undefined,undefined,undefined,undefined,undefined,orchestration)
  ctx.on('approval/request',async()=>{asks++;return outcome})
  agent.session.append('turn/start',{turn:0})
@@ -24,7 +24,7 @@ for(const change of ['stop','revoke','unmanage','replace'] as const)test(`编排
  let bodies=0,managed=true,granted=true,stop=false
  const register=()=>ctx.tools.register(defineTool({name:'workflow',description:'workflow',parameters:{},output:{schema:{type:'string'},render:(_args,v)=>[{type:'text',text:v}]},execute:async()=>{bodies++;return 'ok'}}))
  const remove=register()
- registerTaskToolGuard(ctx,async()=>managed?{allowedTools:granted?['workflow']:[],stopRequested:stop}:null,[],undefined,undefined,undefined,undefined,undefined,{authorizeChild:async()=>false,ownsStructuredOutput:()=>false})
+ registerTaskToolGuard(ctx,async()=>managed?{allowedTools:granted?['workflow']:[],stopRequested:stop}:null,[],undefined,undefined,undefined,undefined,undefined,{authorizeChild:async()=>false,ownsStructuredOutput:()=>false,toolAllowed:()=>true})
  let answer!:(v:'allowed-once')=>void,asked!:()=>void
  const ready=new Promise<void>(resolve=>{asked=resolve})
  ctx.on('approval/request',async()=>{asked();return new Promise<'allowed-once'>(resolve=>{answer=resolve})})

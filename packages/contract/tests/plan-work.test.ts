@@ -1,6 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 const id='12345678-1234-4234-8234-123456789abc'
+test('本人计划草稿显式区分无员工身份，旧员工草稿可选字段省略且规范化不混入Task技能字段',async()=>{
+ const {readOwnerPlanFields,readRolePlanDraftFields,readPlanWorkDefinition}=await import('../src/plan-work.ts')
+ const fields={title:'本人核对',goal:'核对原已授权资料',scope:'general',dataScope:'已选资料',delivery:'核对结论',trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},notificationPolicy:'attention'}
+ assert.deepEqual(readOwnerPlanFields({...fields,roleId:null,executor:{kind:'owner'}}),{...fields,roleId:null,executor:{kind:'owner'}})
+ assert.deepEqual(readRolePlanDraftFields({...fields,roleId:id,expectedRoleVersion:2}),{...fields,roleId:id,expectedRoleVersion:2})
+ for(const patch of [{scope:'SOC'},{groupId:id},{roleId:id},{executor:{kind:'role'}},{approved:true}])assert.throws(()=>readOwnerPlanFields({...fields,roleId:null,executor:{kind:'owner'},...patch}))
+ const owner={schema:'teloa.plan-work/v3',definitionVersion:2,definitionControlId:id,budgetAccountId:id,authorization:{kind:'owner',grantId:id,grantVersion:2},completion:{kind:'manual'},triggers:[{kind:'schedule',schedule:fields.trigger}],budget:{maxGoalRounds:4,maxTokens:10000,maxElapsedMs:600000,maxConcurrent:1,maxRetries:1,stagnationRounds:2,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}
+ assert.deepEqual(readPlanWorkDefinition(owner),owner)
+ for(const patch of [{schema:'teloa.plan-work/v2'},{authorization:{...owner.authorization,grantVersion:1}},{triggers:[{kind:'local-event',eventKind:'material-version',sourceId:id,coalesce:'latest'}]}])assert.throws(()=>readPlanWorkDefinition({...owner,...patch}))
+})
+test('业务复合来源仅进入v2事件与v3计划，旧UUID记录逐字兼容',async()=>{
+ const events=await import('../src/work-events.ts'),plans=await import('../src/plan-work.ts')
+ const sourceRef={kind:'business-object',scope:'SOC',type:'lead-record',id:'lead-cn-001'},event={schema:'teloa.work-event/v2',id,ownerId:'owner',sourceEventId:'business:'+ 'a'.repeat(64),kind:'business-object-version',sourceRef,sourceVersion:'3',basisHash:'b'.repeat(64),createdAt:'2026-10-17T00:00:00.000Z'}
+ assert.deepEqual(events.readWorkEvent(event),event)
+ assert.throws(()=>events.readWorkEvent({...event,sourceId:id}))
+ assert.throws(()=>events.readWorkEvent({...event,schema:'teloa.work-event/v1'}))
+ const value={schema:'teloa.plan-work/v3',definitionVersion:2,definitionControlId:id,budgetAccountId:id,completion:{kind:'manual'},authorization:{kind:'delegation',delegationId:id,delegationVersion:1},triggers:[{kind:'local-event',eventKind:'business-object-version',sourceRef,coalesce:'latest'}],budget:{maxGoalRounds:32,maxTokens:2000,maxElapsedMs:60000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}
+ assert.deepEqual(plans.readPlanWorkDefinition(value),value)
+ assert.throws(()=>plans.readPlanWorkDefinition({...value,schema:'teloa.plan-work/v2'}))
+ assert.throws(()=>plans.readPlanWorkDefinition({...value,triggers:[{...value.triggers[0],sourceId:id}]}))
+})
 test('长期定义严格读真实委托，事件不能冒充时间触发或缺省自动恢复',async()=>{
  const api=await import('../src/plan-work.ts').catch(()=>null);assert.ok(api,'长期定义契约尚未实现')
  const value={schema:'teloa.plan-work/v2',definitionVersion:2,definitionControlId:id,budgetAccountId:id,completion:{kind:'manual'},authorization:{kind:'delegation',delegationId:id,delegationVersion:1},triggers:[{kind:'local-event',eventKind:'material-version',sourceId:id,coalesce:'latest'}],budget:{maxGoalRounds:32,maxTokens:2000,maxElapsedMs:60000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}

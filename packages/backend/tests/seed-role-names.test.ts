@@ -37,7 +37,7 @@ test('旧中文请求可重放；保留用户后来改的姓名和原始请求�
  const first=await service.create(ownerId,{requestId,fields:legacy},{state:'paused'})
  const input={pool,service,ownerId,requestId,key:'lin-xi',fields}
  assert.equal((await ensureNamedSeedRole(input)).name,'林析')
- const edited=await service.edit(ownerId,{roleId:first.id,expectedVersion:first.version,fields:{...fields,name:'My researcher'}})
+ const edited=await service.edit(ownerId,{roleId:first.id,expectedVersion:first.version,expectedProfile:{name:first.name,...(first.avatarKey?{avatarKey:first.avatarKey}:{})},fields:{...fields,name:'My researcher'}})
  assert.deepEqual(await ensureNamedSeedRole(input),edited)
  assert.equal((await pool.query('select request_spec->>\'name\' name from teloa_roles where id=$1',[first.id])).rows[0].name,'林析')
  await assert.rejects(ensureNamedSeedRole({...input,fields:{...fields,duty:'另一份职责'}}),{code:'teloa/conflict'})

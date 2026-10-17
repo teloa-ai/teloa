@@ -62,7 +62,11 @@ async function cloneDependencies(sourceRoot:string,destination:string):Promise<v
  async function visit(name:string,anchor:string,spec=''):Promise<string>{
   referencedNames.add(name)
   const expectedName=spec.startsWith('npm:')?spec.slice(4,spec.lastIndexOf('@')):name
-  const source=await findInstalledPackage(name,anchor,expectedName),known=copied.get(source)
+  // npm 直接安装 tgz 时不采用包内 overrides，可能给提升的插件另选旧 peer。
+  // 仅还原发行包与基线共同明确钉住的 DSH 根身份；其余依赖仍按原安装图解析。
+  const pinned=baseline.versions[name]
+  const dependencyAnchor=name.startsWith('@deepseek-ai/')&&pinned&&rootPackage.dependencies?.[name]===pinned&&rootPackage.overrides?.[name]===pinned?sourceRoot:anchor
+  const source=await findInstalledPackage(name,dependencyAnchor,expectedName),known=copied.get(source)
   if(known)return known
   const pkg=JSON.parse(await readFile(join(source,'package.json'),'utf8'))
   if(name.startsWith('@deepseek-ai/')&&baseline.versions[name]!==pkg.version)throw Error('DSH 依赖版本不符：'+name)

@@ -43,7 +43,7 @@ function canonicalPath(path:string):string{
  * 不含整个 DSH_HOME：`$DSH_HOME/skills` 等合法读取照常；`.credentials.*.bak-*` 这类同目录副本由文件名标记词拦截。
  */
 export function protectedRootsFor(input:{providerPaths:readonly string[];runtimeRoot:string;projectRoot?:string;env:Readonly<Record<string,string|undefined>>}):string[]{
- const roots=[...input.providerPaths,join(input.runtimeRoot,'database.json'),join(input.runtimeRoot,'postgres.env'),join(input.runtimeRoot,'mcp','credentials'),join(input.runtimeRoot,'backups'),'/run/secrets','/run/teloa-secrets','/run/teloa-credentials']
+ const roots=[...input.providerPaths,join(input.runtimeRoot,'database.json'),join(input.runtimeRoot,'postgres.env'),join(input.runtimeRoot,'direct-device.json'),join(input.runtimeRoot,'device-pairing.key'),join(input.runtimeRoot,'device-pairing'),join(input.runtimeRoot,'mcp','credentials'),join(input.runtimeRoot,'platform-model-auth'),join(input.runtimeRoot,'backups'),'/run/secrets','/run/teloa-secrets','/run/teloa-credentials']
  for(const [name,value] of Object.entries(input.env))if((/_FILE$/.test(name)||name==='CREDENTIALS_DIRECTORY')&&value&&isAbsolute(value))roots.push(value)
  if(input.projectRoot){
   roots.push(join(input.projectRoot,'密钥'))
@@ -160,16 +160,22 @@ export function redactContent(blocks:readonly ContentBlock[],known:readonly stri
 const changed=(before:readonly ContentBlock[],after:readonly ContentBlock[])=>before.some((block,index)=>block.type==='text'&&after[index]?.type==='text'&&block.text!==(after[index] as {text:string}).text)
 /** 返回替换后的决定；未命中返回 undefined，由调用方原样放行。 */
 export function redactToolDecision(result:Readonly<ToolExecutionResult>|{isError:boolean;content:readonly ContentBlock[];error?:{message:string}},decision:PostToolDecision,known:readonly string[]):PostToolDecision|undefined{
- const extra=decision.additionalContexts?{additionalContexts:decision.additionalContexts}:{}
- if(decision.kind==='block'){const feedback=redactContent(decision.feedback,known);return changed(decision.feedback,feedback)?{...decision,feedback}:undefined}
- if('value' in decision&&decision.value!==undefined){const text=JSON.stringify(decision.value),safe=redactSecrets(text,known);return safe===text?undefined:{kind:'accept',content:[{type:'text',text:safe}],...extra}}
+ // post-execute 生产者的补充正文同样会进入下一步模型；保留原消息/source 身份，仅脱敏文本。
+ const contexts=decision.additionalContexts?.map(message=>{
+  const content=redactContent(message.content,known)
+  return changed(message.content,content)?{...message,content}:message
+ })
+ const contextChanged=contexts?.some((message,index)=>message!==decision.additionalContexts?.[index])??false
+ const extra=contexts?{additionalContexts:contexts}:{}
+ if(decision.kind==='block'){const feedback=redactContent(decision.feedback,known);return changed(decision.feedback,feedback)||contextChanged?{...decision,feedback,...extra}:undefined}
+ if('value' in decision&&decision.value!==undefined){const text=JSON.stringify(decision.value),safe=redactSecrets(text,known);return safe===text?contextChanged?{...decision,...extra}:undefined:{kind:'accept',content:[{type:'text',text:safe}],...extra}}
  const base=decision.content??result.content,content=redactContent(base,known)
  if(result.isError){
   const message=result.error?.message??'',safeMessage=redactSecrets(message,known)
-  if(!changed(base,content)&&safeMessage===message)return undefined
+  if(!changed(base,content)&&safeMessage===message)return contextChanged?{...decision,...extra}:undefined
   return {kind:'block',feedback:content.length?content:[{type:'text',text:safeMessage}],...extra}
  }
- return changed(base,content)?{kind:'accept',content,...extra}:undefined
+ return changed(base,content)?{kind:'accept',content,...extra}:contextChanged?{...decision,...extra}:undefined
 }
 export function registerCredentialGuards(ctx:Context,input:{roots:()=>readonly string[];known:()=>readonly string[]}):void{
  const home=homedir()

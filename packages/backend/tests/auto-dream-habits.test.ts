@@ -183,14 +183,19 @@ test('观察日志已写入但自动保存失败，后台重试会补齐同一�
  assert.equal((await f.memory.list(f.human,{roleId:f.twin.id})).length,1)
 })
 
-test('开关关着或没有系统计划时不生成；历史仍可读',async()=>{
+test('Auto Dream 默认开启：零系统计划或其它员工小结暂停都不挡分身观察；历史仍可读',async()=>{
  const f=await world()
- assert.equal(await f.habits.ensureForDay(f.owner,f.twin,nowIso),undefined) // 零系统计划：设置读不出
- await systemPlan(f.owner,f.employee.id,'paused')
- const task=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'核对',goal:'核对来源',scope:'SOC'},assignee:{roleId:f.employee.id,expectedVersion:f.employeeVersion}})
- await run(f.owner,task.id,f.employee.id,f.employeeVersion)
- await approval(f.owner,'关着的开关不应产出观察。')
- assert.equal(await f.habits.ensureForDay(f.owner,f.twin,nowIso),undefined)
+ const evidence=async(w:Awaited<ReturnType<typeof world>>,reason:string)=>{
+  const task=await new TaskService(pool,identity).create(w.owner,{requestId:randomUUID(),fields:{title:'核对',goal:'核对来源',scope:'SOC'},assignee:{roleId:w.employee.id,expectedVersion:w.employeeVersion}})
+  await run(w.owner,task.id,w.employee.id,w.employeeVersion);await approval(w.owner,reason)
+ }
+ // 零系统计划（未接线的员工不建计划）：按默认 23:30 新加坡切日并生成
+ await evidence(f,'零系统计划也应按默认开启观察。')
+ assert.ok(await f.habits.ensureForDay(f.owner,f.twin,nowIso),'零系统计划时按默认开启生成')
+ // 另一位本人：唯一员工的小结已暂停，也不推断成全局关闭
+ const g=await world();await systemPlan(g.owner,g.employee.id,'paused')
+ await evidence(g,'其它员工小结暂停不挡分身观察。')
+ assert.ok(await g.habits.ensureForDay(g.owner,g.twin,nowIso),'其它员工暂停不挡分身观察')
  // 历史日志（其它日期）不受影响，仍可读
  const historicalId=randomUUID()
  await pool.query(`insert into teloa_role_daily_logs(id,owner_id,role_id,role_version,kind,day,state,run_id,title,markdown,scope_ids,evidence,prune_hints,request_id,request_spec,created_at,discarded_at)
@@ -198,6 +203,14 @@ test('开关关着或没有系统计划时不生成；历史仍可读',async()=>
   [historicalId,f.owner,f.twin.id,1,randomUUID(),now])
  const got=await f.logs.get(f.human,{roleId:f.twin.id,logId:historicalId})
  assert.equal(got.log.id,historicalId);assert.equal(got.log.state,'kept')
+})
+
+test('暂停或退休的分身不因默认开启而生成观察',async()=>{
+ const f=await world()
+ const task=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'核对',goal:'核对来源',scope:'SOC'},assignee:{roleId:f.employee.id,expectedVersion:f.employeeVersion}})
+ await run(f.owner,task.id,f.employee.id,f.employeeVersion);await approval(f.owner,'有证据也不应为非在岗分身生成。')
+ for(const state of ['paused','retired'] as const)assert.equal(await f.habits.ensureForDay(f.owner,{...f.twin,state},nowIso),undefined,state)
+ assert.equal((await pool.query("select count(*)::int as n from teloa_role_daily_logs where owner_id=$1 and kind='habit-digest'",[f.owner])).rows[0].n,0)
 })
 
 test('零证据时不生成也不报错',async()=>{

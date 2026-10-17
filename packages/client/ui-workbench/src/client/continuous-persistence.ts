@@ -6,6 +6,13 @@ import { canReceiveTask, type PreviewRole } from './role-preview.ts'
 import type {PlanApi,PlanAction} from './plan-api.ts'
 import type {WorkControlApi} from './work-control-api.ts'
 
+/** 自然语言是工作目标。运行时间和权限必须在原表单明确确认，不从描述猜测或自动启用。 */
+export function planGoalDraft(description:string,fields:PlanFields):PlanFields|null{
+ const goal=description.trim()
+ if(!goal)return null
+ return {...fields,goal,title:goal.split(/\r?\n/)[0]!.slice(0,120)}
+}
+
 /** 定义暂停/结束先通知真实执行收尾；恢复必须由候选核验协调器批准，再启用计划。 */
 export async function persistentPlanAction(api:PlanApi,controls:WorkControlApi|undefined,plan:SavedPlan,action:PlanAction,note?:string):Promise<SavedPlan>{
  if(!plan.workDefinition)return action==='enable'&&plan.completionPolicy?.kind==='verified'?api.changeConfirmed(plan.id,plan.version,action,note):api.change(plan.id,plan.version,action,note)
@@ -48,5 +55,5 @@ export function persistentPlanUpdate(fields:PlanFields,plan:SavedPlan):PlanUpdat
  if(fields.scope!==plan.scope||fields.roleId!==plan.roleId)throw Error('已保存计划不能在编辑时更换业务范围或负责员工。')
  if(fields.trigger.kind==='event')throw Error('业务事件触发尚未接入真实计划服务，计划未保存。')
  if(!isPlanNotificationPolicy(fields.notificationPolicy))throw Error('请本人核对并选择通知策略，计划未保存。')
- return {title:fields.title.trim(),goal:fields.goal.trim(),dataScope:fields.dataScope.trim(),delivery:fields.delivery.trim(),trigger:readScheduleTrigger(fields.trigger),notificationPolicy:fields.notificationPolicy,...(fields.completionPolicy?{completionPolicy:fields.completionPolicy}:{})}
+ return {...(Object.hasOwn(fields,'groupId')?{groupId:fields.groupId}:{}),title:fields.title.trim(),goal:fields.goal.trim(),dataScope:fields.dataScope.trim(),delivery:fields.delivery.trim(),trigger:readScheduleTrigger(fields.trigger),notificationPolicy:fields.notificationPolicy,...(fields.completionPolicy?{completionPolicy:fields.completionPolicy}:{})}
 }

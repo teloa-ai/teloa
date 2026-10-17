@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {businessDashboardErrorKey} from '../src/client/business-dashboard-errors.ts'
+import {businessDashboardErrorKey,businessDashboardReadFailure} from '../src/client/business-dashboard-errors.ts'
 
 test('组件/看板错误码 + reason → 固定词条键：九类各一，只有 SQL 那句带 reason',()=>{
  const cases:Array<[string,string,{key:string;params?:Record<string,string>}]>=[
@@ -25,4 +25,12 @@ test('认不出的错误码或原因一律回落通用句，原文不上屏',()=
  assert.deepEqual(businessDashboardErrorKey({code:'teloa/dependency-unavailable',reason:'数据库暂不可用'}),{key:'business.dashboards.widget.failed'})
  assert.deepEqual(businessDashboardErrorKey({code:'teloa/invalid-input',reason:''}),{key:'business.dashboards.widget.failed'})
  assert.equal(businessDashboardErrorKey({code:'teloa/invalid-input',reason:'x'.repeat(500)}).params?.reason.length,200)
+})
+
+test('读取拒绝与损坏不是瞬时故障；网络失败仍可重试，原始异常不出现在文案',()=>{
+ for(const code of ['teloa/forbidden','teloa/not-found'])assert.deepEqual(businessDashboardReadFailure({code,message:'内部路径和主体'},'business.dashboards.readFailed'),{key:'business.dashboards.error.forbidden',retryable:false})
+ assert.deepEqual(businessDashboardReadFailure({code:'teloa/storage-corrupt',message:'内部记录'},'business.dashboards.readFailed'),{key:'business.dashboards.error.corrupt',retryable:false})
+ assert.deepEqual(businessDashboardReadFailure({code:'teloa/source-unavailable',message:'来源未接入'},'business.dashboards.readFailed'),{key:'business.dashboards.error.source',retryable:false})
+ assert.deepEqual(businessDashboardReadFailure(Error('网络断开'),'business.dashboards.readFailed'),{key:'business.dashboards.readFailed',retryable:true})
+ assert.deepEqual(businessDashboardReadFailure({code:'teloa/dependency-unavailable'},'business.dashboards.sync.rule.readFailed'),{key:'business.dashboards.sync.rule.readFailed',retryable:true})
 })

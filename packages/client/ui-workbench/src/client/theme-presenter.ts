@@ -4,7 +4,7 @@
  * document — `html { color-scheme }` for native UA chrome (scrollbars, form
  * controls), `body[data-ds-dark-theme]` for the token palette, the active
  * theme's alias-token overrides as inline CSS variables on body, the content
- * font-size axis (`--dsh-content-font-size`), and one presenter-owned
+ * font sizes and families by role, and one presenter-owned
  * `meta[name="theme-color"]` for surrounding browser UI. Pure DOM writes, no
  * React involvement; the presenter only ever retracts what it wrote itself,
  * so foreign attributes, metadata, and inline styles survive.
@@ -20,10 +20,8 @@ export const CONTENT_FONT_SIZE_VARIABLE = '--dsh-content-font-size'
 
 /** Applies theme snapshots to the document; one instance per plugin fiber. */
 export class ThemePresenter {
-  /** Token names this presenter wrote in the last apply (its retraction set). */
-  private appliedTokens: string[] = []
-  private readonly originalTypography = new Map(['font-family','font-size','line-height'].map(name=>[name,{value:document.body.style.getPropertyValue(name),priority:document.body.style.getPropertyPriority(name)}]))
-  private readonly appliedTypography = new Map<string,string>()
+  /** Capture original styles once and restore only values still owned by this presenter. */
+  private readonly appliedStyles = new Map<string,{original:string;priority:string;value:string}>()
   /** The single metadata node this presenter inserts and removes. */
   private readonly themeColorMeta: HTMLMetaElement
 
@@ -31,6 +29,28 @@ export class ThemePresenter {
   constructor() {
     this.themeColorMeta = document.createElement('meta')
     this.themeColorMeta.name = 'theme-color'
+  }
+
+  private retractStyle(name:string):void {
+    const prior=this.appliedStyles.get(name)
+    if(!prior)return
+    const style=document.body.style
+    if(style.getPropertyValue(name)===prior.value&&style.getPropertyPriority(name)===''){
+      if(prior.original)style.setProperty(name,prior.original,prior.priority)
+      else style.removeProperty(name)
+    }
+    this.appliedStyles.delete(name)
+  }
+
+  private projectStyles(values:Record<string,string|null>):void {
+    for(const name of this.appliedStyles.keys())if(!(name in values))this.retractStyle(name)
+    const style=document.body.style
+    for(const [name,value] of Object.entries(values)){
+      const prior=this.appliedStyles.get(name)??{original:style.getPropertyValue(name),priority:style.getPropertyPriority(name),value:''}
+      if(value===null)style.removeProperty(name)
+      else style.setProperty(name,value)
+      this.appliedStyles.set(name,{...prior,value:style.getPropertyValue(name)})
+    }
   }
 
   /**
@@ -48,10 +68,11 @@ export class ThemePresenter {
     const body = document.body
     if (scheme === 'dark') body.setAttribute(DARK_ATTRIBUTE, '')
     else body.removeAttribute(DARK_ATTRIBUTE)
-    body.style.setProperty(CONTENT_FONT_SIZE_VARIABLE, `${snapshot.fontSize}px`)
-    for (const name of this.appliedTokens) body.style.removeProperty(name)
-    this.appliedTokens = []
-    const palette=prototypeThemes[scheme]
+    const base=prototypeThemes[scheme]
+    const textFont=snapshot.fontFamilies?.text||base['--teloa-design-font']!
+    const textSize=`${snapshot.fontSizes.text}px`
+    // 留空沿用 Teloa 默认；本人设置同时作用于工作台和原生页面。
+    const palette:Record<string,string>={...base,'--teloa-design-font':textFont,'--teloa-design-text-base':textSize}
     // 仅通过公开设计变量适配原生页面；不依赖原生 DOM 或内部类名。
     const native:Record<string,string>={}
     for(const [name,key] of Object.entries({
@@ -62,12 +83,16 @@ export class ThemePresenter {
       'brand-primary':'accent','brand-text':'accent','brand-primary-invert':'on-accent',
       'interactive-bg-hover':'hover','interactive-bg-active':'hover','interactive-bg-hover-accent':'accent-bg',
     }))native['--dsw-alias-'+name]=palette['--teloa-design-'+key]!
-    native['--dsw-font-family']=palette['--teloa-design-font']!
-    for(const [name,key] of [['font-family','font'],['font-size','text-base'],['line-height','lh']] as const){body.style.setProperty(name,palette['--teloa-design-'+key]!);this.appliedTypography.set(name,body.style.getPropertyValue(name))}
-    for (const [name, value] of Object.entries({...snapshot.active.tokens,...palette,...native})) {
-      body.style.setProperty(name, value)
-      this.appliedTokens.push(name)
-    }
+    native['--dsw-font-family']=textFont
+    this.projectStyles({...snapshot.active.tokens,...palette,...native,
+      [CONTENT_FONT_SIZE_VARIABLE]:textSize,
+      '--dsh-code-font-size':`${snapshot.fontSizes.code??11}px`,
+      '--dsh-terminal-font-size':`${snapshot.fontSizes.terminal??13}px`,
+      '--dsh-font-family-text':snapshot.fontFamilies?.text||null,
+      '--dsh-font-family-code':snapshot.fontFamilies?.code||null,
+      '--dsh-font-family-terminal':snapshot.fontFamilies?.terminal||null,
+      'font-family':textFont,'font-size':textSize,'line-height':base['--teloa-design-lh']!,
+    })
     this.themeColorMeta.content = getComputedStyle(body).backgroundColor
     if (!this.themeColorMeta.isConnected) document.head.append(this.themeColorMeta)
   }
@@ -77,11 +102,7 @@ export class ThemePresenter {
     document.documentElement.style.removeProperty('color-scheme')
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
-    body.style.removeProperty(CONTENT_FONT_SIZE_VARIABLE)
-    for (const name of this.appliedTokens) body.style.removeProperty(name)
-    this.appliedTokens = []
-    for(const [name,value] of this.appliedTypography)if(body.style.getPropertyValue(name)===value){const original=this.originalTypography.get(name)!;if(original.value)body.style.setProperty(name,original.value,original.priority);else body.style.removeProperty(name)}
-    this.appliedTypography.clear()
+    for(const name of this.appliedStyles.keys())this.retractStyle(name)
     this.themeColorMeta.remove()
   }
 }

@@ -10,7 +10,7 @@ import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import {foldConsumedWork} from '@deepseek-ai/dsh-agent'
 import {Session, SessionStore, SessionId, SessionSeq, SessionLogOffset, type SessionEvent} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry, type ProjectionDefinition} from '@deepseek-ai/dsh-session-projection'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {patchedNativePackage} from './fixtures/native-patched-package.ts'
 
 type LoopPackage = typeof import('@deepseek-ai/dsh-agent-loop') & {
@@ -19,7 +19,7 @@ type LoopPackage = typeof import('@deepseek-ai/dsh-agent-loop') & {
 
 async function fixture(t: TestContext, compression: 'none' | 'zstd' = 'none') {
  const pkg = await patchedNativePackage<LoopPackage>(t, {
-  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-alpha.1-work-admission',
+  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-rc.2-work-admission',
  })
  const root = await mkdtemp(join(tmpdir(), 'teloa-inbox-maintenance-')), ctx = new Context()
  t.after(async () => {await ctx.fiber.dispose(); await rm(root, {recursive: true, force: true})})

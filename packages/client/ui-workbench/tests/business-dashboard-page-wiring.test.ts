@@ -5,6 +5,7 @@ import test from 'node:test'
 import ts from 'typescript'
 import * as React from 'react'
 import * as contract from '@teloa/contract'
+import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
 
 const source=(name:string)=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')
 
@@ -12,8 +13,8 @@ test('看板页打开时调度器正在刷新：定时静默重读，直到 refr
  const page=await source('BusinessDashboardPage.tsx')
  assert.match(page,/const dashboardRefreshingPollMs=3000/)
  assert.match(page,/serverRefreshing=state\.status==='ready'&&state\.page\.refreshing/)
- assert.match(page,/if\(!serverRefreshing\|\|refreshing\)return/)
- assert.match(page,/setTimeout\(\(\)=>void api\.read\(\{scope,dashboardId,timeRange:range\},controller\.signal\)/)
+ assert.match(page,/state.status!=='ready'\|\|refreshing/)
+ assert.match(page,/api\.read\(\{scope,dashboardId,timeRange:range\},controller\.signal\)/)
  assert.match(page,/return \(\)=>\{clearTimeout\(timer\);controller\.abort\(\)\}/)
 })
 
@@ -27,10 +28,12 @@ test('看板页组件 key 带业务范围：两个范围里同 id 的看板切�
  * （手法与 auto-dream-settings-visibility.test.ts 一致），不经过 jsdom；子组件 BusinessWidget 只看传入的 props。
  */
 type Element=React.ReactElement<Record<string,any>>
+const ToolbarIconButton=toolbarIconComponent(React)
 const elements=(node:React.ReactNode):Element[]=>{
  if(Array.isArray(node))return node.flatMap(elements)
  if(!React.isValidElement<Record<string,any>>(node))return []
  if(node.type===BusinessDashboardGrid)return [node,...elements(BusinessDashboardGrid(node.props))]
+ if(node.type===ToolbarIconButton)return elements(ToolbarIconButton(node.props))
  return [node,...elements(node.props.children)]
 }
 const presentation=await import('../src/client/business-widget-presentation.ts')
@@ -69,6 +72,7 @@ function mountPage(api:unknown){
   if(id.endsWith('business-definition-localization.js'))return {localizedBusinessViewTitle:(value:{title:string})=>value.title}
   if(id.endsWith('business-widget-presentation.js'))return presentation
   if(id.endsWith('BusinessDashboardGrid.js'))return {BusinessDashboardGrid}
+  if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton}
   throw Error('未预期的依赖：'+id)
  }
  const code=ts.transpileModule(readFileSync(new URL('../src/client/BusinessDashboardPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
@@ -115,6 +119,23 @@ function fakeApi(reply:{read:(input:{timeRange?:string})=>unknown;refresh?:(inpu
 const radios=(app:ReturnType<typeof mountPage>)=>app.all(el=>el.type==='button'&&el.props.role==='radio')
 const choose=(app:ReturnType<typeof mountPage>,label:string)=>app.find(el=>el.type==='button'&&el.props.role==='radio'&&el.props.children===label).props.onClick()
 const refreshes=(calls:Array<{method:string;input:Record<string,unknown>}>)=>calls.filter(call=>call.method==='refresh')
+
+test('持续成果到达时看板静默读取新结果，后台隐藏不读取，离开页面停止轮询',async t=>{
+ const descriptor=Object.getOwnPropertyDescriptor(globalThis,'document'),doc={hidden:false}
+ Object.defineProperty(globalThis,'document',{value:doc,configurable:true})
+ t.after(()=>{if(descriptor)Object.defineProperty(globalThis,'document',descriptor);else Reflect.deleteProperty(globalThis,'document')})
+ t.mock.timers.enable({apis:['setTimeout']})
+ let value=1
+ const {api,calls}=fakeApi({read:()=>{const page=dashPage(null);page.results[0]!.rows=[[value]];return page}})
+ const app=mountPage(api);t.after(()=>app.unmount())
+ await app.flush()
+ value=2;t.mock.timers.tick(15000);await app.flush()
+ assert.equal(calls.length,2)
+ assert.deepEqual(app.all(el=>el.type===BusinessWidgetStub)[0]!.props.result.rows,[[2]])
+ doc.hidden=true;t.mock.timers.tick(15000);await app.flush();assert.equal(calls.length,2)
+ doc.hidden=false;t.mock.timers.tick(15000);await app.flush();assert.equal(calls.length,3)
+ app.unmount();t.mock.timers.tick(60000);assert.equal(calls.length,3)
+})
 
 test('看板没有声明时间范围：不出现范围控件；组件卡不标「不随时间范围变化」',async()=>{
  const {api}=fakeApi({read:()=>dashPage(null)})

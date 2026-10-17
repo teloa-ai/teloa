@@ -12,11 +12,12 @@ import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { AgentLoop } from '@deepseek-ai/dsh-agent-loop'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { PostgreSqlContainer } from '@testcontainers/postgresql'
 import { ConversationService,FileConversationRepository,openResourceDatabase,initializeResources } from '@teloa/backend'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDraft,isSourceReference,isWorkResource,encodeResourceReference,isResourceRecoveryPage,isResourceHistoryPage } from '@teloa/contract'
 import { registerResources,resourceEndpoints } from '../src/resources.ts'
+import {registerLibraryTools} from '../src/library-tools.ts'
 
 // 仅替代外部模型；真实 Agent、工具运行器、pre-step、PG 与原生 JSONL 均参与。
 class ScriptedResourceAdapter extends LlmAdapter {
@@ -62,6 +63,10 @@ async function mount(root:string,adapter:ScriptedResourceAdapter){
       const agent=ctx.agents.list().find(agent=>agent.session.id===id)
       assert.ok(agent)
       return agent.session
+    })
+    registerLibraryTools(ctx,{owner:'test-owner',conversation:id=>conversations.bySession('test-owner',id),readTaskPolicy:async()=>null,
+      actor:async(sessionId,kind)=>({ownerId:'test-owner',kind,scopeIds:[...(await conversations.bySession('test-owner',sessionId)).scopeIds]}),
+      services:async()=>{const {service,knowledge,knowledgeTree,knowledgeResources}=await resources.database();return {resources:service,knowledge,knowledgeTree,knowledgeResources}},
     })
     return {ctx,resources,conversations}
   }catch(error){await ctx.fiber.dispose();throw error}
@@ -126,7 +131,9 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   await agent.whenIdle()
   const toolResult=adapter.requests[1]?.messages.find(message=>message.role==='tool')
   assert.ok(toolResult?.role==='tool'&&!toolResult.isError,'草案工具必须真的执行成功')
-  const draft:unknown=JSON.parse(toolResult.content.filter(block=>block.type==='text').map(block=>block.text).join('\n'))
+  const receipt=JSON.parse(toolResult.content.filter(block=>block.type==='text').map(block=>block.text).join('\n'))
+  assert.equal(receipt.schema,'teloa.library-result/v1');assert.equal(receipt.sourceSession,sessionId)
+  const draft:unknown=receipt.draft
   assert.ok(isResourceDraft(draft))
   const edited=await first.resources.handle('resources/update',{...fields,title:'本人核对后的资料',draftId:draft.id,expectedVersion:draft.version})
   assert.ok(isResourceDraft(edited))

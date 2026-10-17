@@ -82,7 +82,7 @@ test('MarketPluginInstallControl 首次渲染（记录尚未从 useEffect 回来
   reconcile:async()=>{throw Error('不应调用')},
  }
  const html=render(createElement(MarketPluginInstallControl,{api:api as never,source,title:'@example/visualize'}))
- assert.match(html,/DSH 扩展安装/)
+ assert.match(html,/应用安装/)
  assert.doesNotMatch(html,/已安装 · 待启用/)
 })
 

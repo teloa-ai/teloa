@@ -1,32 +1,53 @@
 import {randomUUID} from 'node:crypto'
-import {PlanService,MarketContentStore,PlanOccurrenceService,PlanSchedulerStatusService,ObjectConversationService,type ConversationService,type PlanOccurrence,type TaskRun,type TaskRunService} from '@teloa/backend'
+import {PlanService,MarketContentStore,PlanOccurrenceService,PlanSchedulerStatusService,ObjectConversationService,type ConversationService,type PlanOccurrence,type TaskRun,type TaskRunService,type WorkEventService} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {PlanCoordinator} from './plan-coordinator.ts'
 import {PlanDshDispatcher} from './plan-dispatch-dsh.ts'
 import {TaskRunDriver,type TaskRunPorts} from './task-run-driver.ts'
 import {createTaskRunHandler,type TaskKnowledgeLoader} from './task-runs.ts'
 
+import type {OwnerPlanAuthority} from '@teloa/backend'
+
 export type PlanRuntimeDependencies={
+ ownerPlans?:OwnerPlanAuthority
  owner:string
  getPool:()=>Promise<TaskRunService['pool']>
  conversations:Pick<ConversationService,'createRun'|'runReservation'|'failRunReservation'|'bySession'>
  /** 调用方保留工具授权策略，并将 planContext 配置为 runtime.executionContext。 */
  getRunService:()=>Promise<TaskRunService>
+ verifyWorkEvent?:WorkEventService['verifiedSourceInTransaction']
  runPorts:TaskRunPorts
  loadTaskKnowledge?:TaskKnowledgeLoader
  deliverNotifications?:(owner:string,signal:AbortSignal)=>Promise<unknown>
  reportNotification?:(code:string)=>void
 }
 
+type PlanDispatchResult={occurrence:PlanOccurrence;task:Awaited<ReturnType<PlanOccurrenceService['dispatchTask']>>['task'];run:TaskRun}
+export type PlanRuntime={
+ coordinator:PlanCoordinator
+ overview:(input:unknown)=>ReturnType<PlanOccurrenceService['overview']>
+ executionHistory:(input:unknown)=>ReturnType<PlanOccurrenceService['executionHistory']>
+ status:(input:unknown)=>ReturnType<PlanSchedulerStatusService['get']>
+ executionContext:PlanOccurrenceService['executionContext']
+ trigger:(input:unknown,signal:AbortSignal)=>Promise<PlanDispatchResult>
+ dispatchOccurrence:(occurrence:PlanOccurrence,signal:AbortSignal)=>Promise<PlanDispatchResult>
+ readPorts:{
+  overview:(owner:string,input:unknown)=>ReturnType<PlanOccurrenceService['overview']>
+  status:(owner:string,input:unknown)=>ReturnType<PlanSchedulerStatusService['get']>
+  executionHistory:(owner:string,input:unknown)=>ReturnType<PlanOccurrenceService['executionHistory']>
+  skipHistory:(owner:string,input:unknown)=>ReturnType<PlanOccurrenceService['skipHistory']>
+ }
+}
+
 /** 只组装真实服务；数据库初始化、启动调度和卸载生命周期都由宿主负责。 */
-export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{pageSize?:number}={}){
+export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{pageSize?:number}={}):PlanRuntime{
  const {owner,getPool,conversations,getRunService,runPorts,loadTaskKnowledge}=dependencies
  const now=()=>new Date().toISOString(),identity={id:randomUUID,now}
  const actor=(value:string)=>{if(value!==owner)throw new WorkError('teloa/forbidden','计划运行时只能访问固定宿主本人。')}
  const services=async(signal?:AbortSignal)=>{
   signal?.throwIfAborted();const pool=await getPool();signal?.throwIfAborted()
   const market=new MarketContentStore(pool,identity)
-  return {pool,plans:new PlanService(pool,identity,market),occurrences:new PlanOccurrenceService(pool,identity,market)}
+  return {pool,plans:new PlanService(pool,identity,market,undefined,undefined,undefined,dependencies.ownerPlans),occurrences:new PlanOccurrenceService(pool,identity,market,dependencies.verifyWorkEvent,dependencies.ownerPlans)}
  }
  const dispatchExecution=async(value:string,job:Parameters<PlanDshDispatcher['dispatch']>[1],signal:AbortSignal)=>{
    actor(value);signal.throwIfAborted()
@@ -70,15 +91,15 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
  const overview=async(input:unknown)=>(await services()).occurrences.overview(owner,input)
  const executionHistory=async(input:unknown)=>(await services()).occurrences.executionHistory(owner,input)
  const status=async(input:unknown)=>new PlanSchedulerStatusService(await getPool(),{now}).get(owner,input)
- const executionContext=async(db:Parameters<PlanOccurrenceService['executionContext']>[0],value:string,taskId:string)=>{
-  actor(value);return (await services()).occurrences.executionContext(db,owner,taskId)
+ const executionContext:PlanOccurrenceService['executionContext']=async(db,value,taskId,completion,includeMethodSource)=>{
+  actor(value);return (await services()).occurrences.executionContext(db,owner,taskId,completion,includeMethodSource)
  }
  const dispatchOccurrence=async(occurrence:PlanOccurrence,signal:AbortSignal)=>{
   actor(occurrence.ownerId);signal.throwIfAborted()
   const runtime=await services(signal)
   const dispatched=await runtime.occurrences.dispatchTask(owner,{claimId:occurrence.id,taskRequestId:occurrence.taskRequestId,now:now()})
   signal.throwIfAborted()
-  const run=await dispatchExecution(owner,{claimId:occurrence.id,taskId:dispatched.task.id,taskCreatedVersion:1,taskTitle:occurrence.fields.title,roleId:occurrence.fields.roleId,roleVersion:occurrence.roleVersion},signal)
+  const run=await dispatchExecution(owner,{claimId:occurrence.id,taskId:dispatched.task.id,taskCreatedVersion:1,taskTitle:occurrence.fields.title,roleId:occurrence.fields.roleId,roleVersion:occurrence.roleVersion,...(dispatched.task.executor?.kind==='owner'?{executor:dispatched.task.executor}:{})},signal)
   return {occurrence,task:dispatched.task,run:run.run}
  }
  const trigger=async(input:unknown,signal:AbortSignal)=>{
@@ -88,7 +109,7 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
   const nowValue=input&&typeof input==='object'&&'now' in input?(input as {now?:unknown}).now:undefined
   if(typeof nowValue!=='string')throw new WorkError('teloa/invalid-input','立即运行请求缺少固定时间。')
   const dispatched=await runtime.occurrences.dispatchTask(owner,{claimId:claimed.occurrence.id,taskRequestId:claimed.occurrence.taskRequestId,now:nowValue})
-  const run=await dispatchExecution(owner,{claimId:claimed.occurrence.id,taskId:dispatched.task.id,taskCreatedVersion:1,taskTitle:claimed.occurrence.fields.title,roleId:claimed.occurrence.fields.roleId,roleVersion:claimed.occurrence.roleVersion},signal)
+  const run=await dispatchExecution(owner,{claimId:claimed.occurrence.id,taskId:dispatched.task.id,taskCreatedVersion:1,taskTitle:claimed.occurrence.fields.title,roleId:claimed.occurrence.fields.roleId,roleVersion:claimed.occurrence.roleVersion,...(dispatched.task.executor?.kind==='owner'?{executor:dispatched.task.executor}:{})},signal)
   return {occurrence:claimed.occurrence,task:dispatched.task,run:run.run}
  }
  return {coordinator,overview,status,executionHistory,executionContext,trigger,dispatchOccurrence,readPorts:{

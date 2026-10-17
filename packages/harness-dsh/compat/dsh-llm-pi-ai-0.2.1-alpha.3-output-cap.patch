@@ -1,0 +1,11 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1919,7 +1919,7 @@
+ 			name: resolvedModel.name,
+ 			inputModalities: [...resolvedModel.input],
+ 			context: { contextWindow: resolvedModel.contextWindow },
+-			...configuredMaxTokens === void 0 ? {} : { defaultMaxTokens: configuredMaxTokens },
++			defaultMaxTokens: configuredMaxTokens ?? resolvedModel.maxTokens,
+ 			...reasoningInfo(resolvedModel, defaultLevel),
+ 			...conversationUpdates(resolvedModel)
+ 		};

@@ -7,8 +7,8 @@ import {renderToStaticMarkup} from 'react-dom/server'
 // 真实 TaskDetail 走 tsc 产物；CSS Modules 只替换类名。页头菜单只在打开后才渲染菜单项，静态渲染拿不到，
 // 这里把 ObjectPageHeader 换成把 menu 直接铺开的桩，只为核对 TaskDetail 交给菜单的条目。
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}
+ resolve:(specifier,context,next)=>specifier.endsWith('.webp')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
+ load:(url,context,next)=>url.endsWith('.webp')?{format:'module',shortCircuit:true,source:'export default "fixture-avatar.webp"'}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}
   :url.endsWith('/lib/types/client/ObjectPageHeader.js')?{format:'module',shortCircuit:true,source:"import {createElement as h} from 'react';export function ObjectPageHeader(props){return h('header',null,h('h2',null,props.title),h('div',{role:'menu'},...(props.menu??[]).map(item=>h('button',{key:item.id,type:'button',role:'menuitem','data-teloa-menu-item':item.id,disabled:item.disabled},item.label))))}"}
   :next(url,context),
 })
@@ -32,7 +32,9 @@ test('沙盒就绪任务：··· 菜单里有「开始任务」；持久就绪�
  assert.match(sandbox,/<button[^>]*role="menuitem"[^>]*data-teloa-menu-item="start"[^>]*>开始任务/)
  const persistent=paint({...base,storage:'persistent',state:'ready',assigneeId:'role-1'})
  assert.doesNotMatch(persistent,/data-teloa-menu-item="start"/)
- assert.match(persistent,/data-teloa-menu-item="template"/)
+ // 2026-10-14：独立任务模板与员工模板／技能／自动化重叠，「保存为任务模板」退出 ··· 菜单；已有模板在「已添加 → 我的资源 → 任务模板」查看
+ assert.doesNotMatch(persistent,/data-teloa-menu-item="template"/)
+ assert.doesNotMatch(sandbox,/data-teloa-menu-item="template"/)
  assert.match(paint({...base,storage:'persistent',state:'ready'}),/data-teloa-menu-item="start"/,'本人负责的真实任务保留手动开始入口')
 })
 

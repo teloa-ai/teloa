@@ -14,6 +14,12 @@ const planMessages:Record<string,string>={
 }
 const planT=(key:string,values?:Readonly<Record<string,string|number>>)=>(planMessages[key]??key).replace('{count}',String(values?.count??''))
 
+test('来源不全或待继续载入时概览只显示已知数量下界',()=>{
+ const t=(key:string,values?:{count:number})=>key==='attention.count.partial'?'至少 '+values?.count+' 项':key
+ assert.equal(attentionStatusText({count:3,known:false,incomplete:true},t),'至少 3 项')
+ assert.equal(attentionStatusText({count:0,known:false},t),'attention.home.checking')
+})
+
 test('首页待办状态只说明统一正式待处理数量',()=>{
   const t=(key:string,values?:Record<string,unknown>)=>key==='home.attentionCount'?`${values?.count} items need you`:key
   assert.equal(attentionStatusText({count:3,known:true},t),'3 items need you')

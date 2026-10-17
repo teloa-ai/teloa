@@ -48,3 +48,16 @@ test('工作目录文件授权独立于任意参数授权，限定官方文件�
  assert.throws(()=>readTaskToolArgumentRules([{name:'bash',allowed:[],workspaceFiles:'default-workspace'}]))
  assert.throws(()=>readTaskToolArgumentRules([{name:'read',allowed:[],workspaceFiles:'/forged'}]))
 })
+
+test('本人外部引擎规则只接受官方参数与固定目录，损坏持久规则拒绝且规范化幂等',()=>{
+ for(const name of ['subagent_codex','subagent_claude_code']){
+  const rule={name,allowed:[],externalHarness:'owner-general' as const,workspaceRoot:'/owned/workspace'}
+  assert.deepEqual(readTaskToolArgumentRules([rule]),[rule]);assert.deepEqual(readTaskToolArgumentRules(readTaskToolArgumentRules([rule])),[rule])
+  const args={prompt:'整理已提供的事实',description:'独立核对'}
+  assert.equal(taskToolArgumentsAllowed([rule],name,args),true)
+  assert.equal(taskToolArgumentsAllowed([rule],name,{...args,cwd:rule.workspaceRoot}),true)
+  for(const value of [{...args,cwd:'.'},{...args,cwd:'/other'},{...args,prompt:''},{...args,description:' '},{...args,model:'other'},{...args,env:{}},{...args,agent_preset:'powerful'},null,[]])assert.equal(taskToolArgumentsAllowed([rule],name,value),false)
+  for(const bad of [{...rule,anyArguments:true},{...rule,allowed:[args]},{...rule,workspaceFiles:'default-workspace'},{...rule,externalHarness:'role'},{...rule,workspaceRoot:'relative'},{...rule,workspaceRoot:'/owned/../other'},{...rule,workspaceRoot:undefined},{...rule,extra:true},{name,allowed:[],workspaceRoot:'/owned/workspace'}])assert.throws(()=>readTaskToolArgumentRules([bad]))
+ }
+ assert.throws(()=>readTaskToolArgumentRules([{name:'subagent_task',allowed:[],externalHarness:'owner-general',workspaceRoot:'/owned/workspace'}]))
+})

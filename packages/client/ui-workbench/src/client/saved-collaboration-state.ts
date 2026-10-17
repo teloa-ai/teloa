@@ -29,8 +29,12 @@ export function groupMentionCandidates(members:readonly GroupMember[],roles:read
 }
 
 /** 新回传作者取已验证服务端消息的执行快照；旧消息沿既有历史身份回退。 */
-export function groupMessageIdentity(message:{authorId:string;runId?:string;source?:unknown},roleNames:Readonly<Record<string,string>>,t:TeloaTranslate):{name:string;kind:'human'|'employee'|'twin'}{
- if(!message.runId)return {name:t('collaboration.message.self'),kind:'human'}
+export function groupMessageIdentity(message:{authorId:string;runId?:string;source?:unknown;author?:unknown},roleNames:Readonly<Record<string,string>>,t:TeloaTranslate):{name:string;kind:'human'|'employee'|'twin'}{
+ if(!message.runId)return {name:roleNames.self||t('collaboration.message.self'),kind:'human'}
+ if(message.author&&typeof message.author==='object'){
+  const author=message.author as Record<string,unknown>
+  if(typeof author.name==='string'&&author.name.trim()&&(author.kind==='employee'||author.kind==='twin')&&Number.isSafeInteger(author.version)&&Number(author.version)>0)return {name:author.kind==='twin'?roleNames[message.authorId]??author.name:author.name,kind:author.kind}
+ }
  if(message.source&&typeof message.source==='object'){
   const source=message.source as Record<string,unknown>
   if(source.schema==='teloa.group-run-source/v2'&&source.roleId===message.authorId&&Number.isSafeInteger(source.roleVersion)&&Number(source.roleVersion)>0&&(source.roleKind==='employee'||source.roleKind==='twin')&&typeof source.roleName==='string'&&source.roleName.trim())return {name:source.roleName,kind:source.roleKind}

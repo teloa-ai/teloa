@@ -1,5 +1,6 @@
 import {useState} from 'react'
 import {createRoot} from 'react-dom/client'
+import {createLocalMaterialRegistration} from '../../src/client/local-material-registration.js'
 import {ResourceManager} from '../../src/client/ResourceManager.js'
 import {I18nProvider} from '../../src/client/i18n/provider.js'
 import {translateMessage} from '../../src/client/i18n/messages.js'
@@ -14,20 +15,23 @@ const second={...doc,id:'33333333-3333-4333-8333-333333333333',title:'设计规�
 tree.nodes.push({...root,id:'page-2',parentId:'folder',type:'page',title:second.title,path:['root','folder','page-2'],knowledgeId:second.id,siblingOrder:1})
 let resources:any[]=[doc,local,second]
 const version={knowledgeId:docId,ownerId:'self',sourceId:'knowledge_'+docId,sourceType:'paste',version:1,contentHash:hash,bytes:80,createdAt:stamp,markdown:'# 产品定位\n\n帮助用户更简单地完成工作。\n\n## 使用方式\n选择相关资料，再提出目标。'}
-const calls:string[]=[]
+const calls:string[]=[],reads:number[]=[]
+let publishedVersions=[version]
 const sources:any[]=[{id:doc.sourceId,title:doc.title,source:'产品资料 / 产品定位',version:hash,bytes:80,knowledge:{knowledgeId:docId,knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},{id:local.sourceId,title:local.title,source:'docs/发布检查.md',version:hash,bytes:30}]
-let pauseSave=false,releaseSave:(()=>void)|undefined
+let pauseSave=false,releaseSave:(()=>void)|undefined,failSave=false
 let pauseWithdraw=false,releaseWithdraw:(()=>void)|undefined
-let pauseDirectory=false,releaseDirectory:(()=>void)|undefined
+let pauseDirectory=new URLSearchParams(window.location.search).has('defer-directory'),releaseDirectory:(()=>void)|undefined
 sources.push({...sources[0],id:second.sourceId,title:second.title,source:'产品资料 / 设计规范',knowledge:{...sources[0].knowledge,knowledgeId:second.id}})
-const api:any={reviseKnowledgeResource:async(input:any)=>{if(pauseSave)await new Promise<void>(resolve=>{releaseSave=resolve});return {knowledge:{version:{...version,version:2,markdown:input.markdown}},resource:{...doc,version:2}}},directory:async()=>{const captured=resources;if(pauseDirectory)await new Promise<void>(resolve=>{releaseDirectory=resolve});return {drafts:[],resources:captured}},sources:async()=>sources,knowledgeTree:async()=>tree,listKnowledgeVersions:async()=>[version],readKnowledgeVersion:async()=>version,readContent:async()=>({resource:local,text:'# 发布检查\n\n核对产物与版本。'}),createKnowledgeFolder:async(input:any)=>{const node={...root,id:'new-folder',type:'folder',parentId:input.parentId,title:input.title,path:[...tree.nodes.find((n:any)=>n.id===input.parentId).path,'new-folder']};tree={...tree,space:{...tree.space,directoryRevision:2},nodes:[...tree.nodes,node]};calls.push('folder');return {space:tree.space,node}},withdraw:async(row:any)=>{if(pauseWithdraw)await new Promise<void>(resolve=>{releaseWithdraw=resolve});resources=resources.map(r=>r.id===row.id?{...r,status:'withdrawn',version:r.version+1}:r);return resources.find(r=>r.id===row.id)}}
+const api:any={reviseKnowledgeResource:async(input:any)=>{if(failSave){failSave=false;throw Object.assign(Error('保存暂不可用'),{code:'teloa/dependency-unavailable'})}if(pauseSave)await new Promise<void>(resolve=>{releaseSave=resolve});return {knowledge:{version:{...version,version:2,markdown:input.markdown}},resource:{...doc,version:2}}},directory:async()=>{const captured=resources;if(pauseDirectory)await new Promise<void>(resolve=>{releaseDirectory=resolve});return {drafts:[],resources:captured}},sources:async()=>sources,knowledgeTree:async()=>tree,listKnowledgeVersions:async()=>publishedVersions,readKnowledgeVersion:async(_id:string,requested:number)=>{reads.push(requested);return publishedVersions.find(row=>row.version===requested)},readContent:async()=>({resource:local,text:'# 发布检查\n\n核对产物与版本。'}),createKnowledgeFolder:async(input:any)=>{const node={...root,id:'new-folder',type:'folder',parentId:input.parentId,title:input.title,path:[...tree.nodes.find((n:any)=>n.id===input.parentId).path,'new-folder']};tree={...tree,space:{...tree.space,directoryRevision:2},nodes:[...tree.nodes,node]};calls.push('folder');return {space:tree.space,node}},withdraw:async(row:any)=>{if(pauseWithdraw)await new Promise<void>(resolve=>{releaseWithdraw=resolve});resources=resources.map(r=>r.id===row.id?{...r,status:'withdrawn',version:r.version+1}:r);return resources.find(r=>r.id===row.id)}}
 const snapshot={locale:'zh-CN',dshLocale:'zh',revision:1},i18n={subscribe:()=>()=>{},getSnapshot:()=>snapshot,t:(key:any,params:any)=>translateMessage('zh-CN',key,params)}
+api.localMaterialRequests=createLocalMaterialRegistration(api,{read:()=>null,write:()=>{},clear:()=>{}})
 const memory=new Map<string,string>(),storage={getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,value:string)=>memory.set(key,value),removeItem:(key:string)=>memory.delete(key)}
 function App(){const [dark,setDark]=useState(false),[navigation,setNavigation]=useState<any>({}),[identity,setIdentity]=useState(false),[mountKey,setMountKey]=useState(0),[previewNotice,setPreviewNotice]=useState('')
  const currentApi=identity?otherApi:api
  return <div className={tokens.tokens} style={{...prototypeThemes[dark?'dark':'light'],height:'100vh'} as any}><div style={{display:'flex',gap:12,height:34,alignItems:'center',padding:'0 24px',color:'var(--teloa-muted)',fontSize:12}}>开发预览 · 真实资料库组件 · 示例内容和隔离接口<button onClick={()=>setDark(!dark)}>切换主题</button>{window.location.pathname.endsWith('library-test')&&<><button onClick={()=>setIdentity(!identity)}>切换验收身份</button><button onClick={()=>setMountKey(value=>value+1)}>重载验收组件</button></>}</div><div style={{height:'calc(100vh - 34px)'}}><ResourceManager key={mountKey} api={currentApi} visible selectedDraftId={null} targetResource={null} clearTarget={()=>{}} navigationState={navigation} onNavigationChange={setNavigation} preferenceStorage={storage} openConversation={()=>{calls.push('conversation');setPreviewNotice('正式工作台会进入会话整理资料；此预览仅展示入口。')}} onUseResource={resource=>{calls.push('use:'+resource.id);setPreviewNotice('已选择《'+resource.title+'》。正式工作台会进入任务准备；此预览不会执行。')}}/>{previewNotice&&<div role="status" style={{position:'fixed',bottom:18,right:24,maxWidth:440,padding:14,border:'1px solid var(--teloa-border)',borderRadius:8,background:'var(--teloa-surface)',color:'var(--teloa-text)',boxShadow:'var(--teloa-shadow)',fontSize:13}}>{previewNotice}<button onClick={()=>setPreviewNotice('')} style={{marginLeft:10}}>关闭</button></div>}</div></div>}
 const otherApi={...api,directory:async()=>({drafts:[],resources:[]}),sources:async()=>[],knowledgeTree:async()=>({...tree,space:{...tree.space,ownerId:'other',id:'other-space'},nodes:[{...root,spaceId:'other-space'}]})}
 ;(window as any).__libraryPauseSave=()=>{pauseSave=true}
+;(window as any).__libraryFailSave=()=>{failSave=true}
 ;(window as any).__libraryReleaseSave=()=>{pauseSave=false;releaseSave?.()}
 ;(window as any).__libraryPauseWithdraw=()=>{pauseWithdraw=true}
 ;(window as any).__libraryReleaseWithdraw=()=>{pauseWithdraw=false;releaseWithdraw?.()}
@@ -35,3 +39,8 @@ const otherApi={...api,directory:async()=>({drafts:[],resources:[]}),sources:asy
 ;(window as any).__libraryRelease=()=>{pauseDirectory=false;releaseDirectory?.()}
 ;(window as any).__libraryCalls=calls
 createRoot(document.getElementById('root')!).render(<I18nProvider runtime={i18n as any}><App/></I18nProvider>)
+
+;(window as any).__libraryAddHistory=()=>{const nextHash='b'.repeat(64);publishedVersions=[version,{...version,version:2,contentHash:nextHash,markdown:'# 当前正文\n\n这是第二版正文。'}];sources[0]={...sources[0],source:'knowledge:'+docId+'@2',version:nextHash,knowledge:{...sources[0].knowledge,knowledgeVersion:2}};resources=[{...doc,version:2,sourceVersion:nextHash},{...doc,id:'44444444-4444-4444-8444-444444444444',status:'withdrawn'},{...doc,id:'55555555-5555-4555-8555-555555555555',title:'无法追溯资料',sourceVersion:'c'.repeat(64)}];reads.length=0}
+;(window as any).__libraryReads=reads
+
+;(window as any).__libraryCorruptLocalRequest=()=>{api.localMaterialRequests=createLocalMaterialRegistration(api,{read:()=>'{broken',write:()=>{},clear:()=>{calls.push('discard-local')}})}

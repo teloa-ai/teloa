@@ -85,4 +85,10 @@
 .titleText{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
 .header .titleButton{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start}
 .titleButton>svg{margin-top:7px}
+/* 任务详情的紧凑标题栏；其他对象保持现有页头布局。 */
+.compactHeader .titleRow{flex-wrap:nowrap;gap:8px;align-items:flex-start}
+.compactHeader .titleRow h2{flex:1 1 0;min-width:0;font-size:var(--teloa-font-section)}
+.compactHeader .titleRow>div{flex:none;margin-left:0}
+.compactHeader .back{flex:none;width:28px;min-height:30px;padding:0!important;align-self:flex-start}
+.compactHeader .badges{gap:6px}
 @container object-header (max-width:480px){.titleRow h2{font-size:var(--teloa-font-dialog);letter-spacing:normal;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.badges{gap:6px 10px}}

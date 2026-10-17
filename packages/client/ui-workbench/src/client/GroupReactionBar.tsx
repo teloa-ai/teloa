@@ -41,10 +41,10 @@ export function GroupEmojiPicker({onPick,onClose,labelKey}:{onPick:(emoji:GroupR
 /**
  * actorKind==='role' 用岗位名（roleNames 由调用方喂，本组件绝不把 roleId 直接摆上界面）；
  * `roleNames` 没命中时不回退显示 roleId——直接省略这个 actor（调用方把它计入 `+N`）。
- * 'self' 复用既有「本人」词条，不新造一条。
+ * 'self' 与消息署名共用资料姓名，缺失时用「我」。
  */
 function actorLabel(actor:GroupReactionActor,roleNames:Readonly<Record<string,string>>,t:(key:string,params?:Record<string,string|number>)=>string):string|undefined{
- return actor.actorKind==='self'?t('collaboration.message.selfRole'):roleNames[actor.actorId]
+ return actor.actorKind==='self'?(roleNames.self||t('collaboration.message.self')):roleNames[actor.actorId]
 }
 
 /**

@@ -10,8 +10,11 @@ import {createLocalModelsHandler,type LocalModelsDeps} from '../src/local-models
 import {OllamaClient} from '../src/ollama-client.ts'
 import {createTeloaWorkService} from '../src/teloa-work-service.ts'
 import {startOllamaStub,type StubOptions} from './fixtures/ollama-stub.ts'
+import {retiredLocalModelEntries} from './fixtures/retired-catalog-entries.ts'
 
-const catalog=new OfficialCatalogService({} as unknown as MarketContentStore).listLocalModelEntries()
+// 市场目录 2026.10.14.5 起不再收录 local-general 本机模型条目；本机 Ollama 模型仍是平台能力，
+// 宿主 local-models/* 按目录条目契约工作，这里用已下架条目夹具（固定来源与摘要）作为目录输入。
+const catalog:MarketCatalogModelEntry[]=[...retiredLocalModelEntries]
 const qwen=catalog.find(entry=>entry.id==='teloa.model.local.qwen3')!
 const qwenVariants=qwen.model.form==='local-general'?qwen.model.variants:[]
 const qwen4bDigest=qwenVariants[0]!.sources[0].digest!
@@ -108,7 +111,9 @@ test('下载前磁盘检查期间取消，不创建作业或调用 pull',async t
  assert.equal(await e.invoke('local-models/pull-status',{}),null)
 })
 
-test('目录服务只回 local-general 五条目；变体名称带 tag、首条 qwen3:4b 有目录摘要',()=>{
+test('当前目录没有 local-general 条目；夹具只含 local-general 五条目，变体名称带 tag、首条 qwen3:4b 有目录摘要',()=>{
+ // 当前快照唯一的模型条目是 sensevoice（local-specialist），listLocalModelEntries 必须把它排除
+ assert.deepEqual(new OfficialCatalogService({} as unknown as MarketContentStore).listLocalModelEntries(),[])
  assert.equal(catalog.length,5)
  assert.ok(catalog.every(entry=>entry.kind==='model'&&entry.model.form==='local-general'))
  assert.equal(qwenVariants[0]!.sources[0].name,'qwen3:4b')

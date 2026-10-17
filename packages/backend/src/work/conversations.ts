@@ -1,12 +1,13 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { WorkError, type Conversation, type DigitalRole } from '@teloa/contract'
+import { WorkError,isReservedExecutionSessionId, type Conversation, type DigitalRole, readWorkExecutor } from '@teloa/contract'
 import {workAccess} from './work-access.ts'
 /** 存储层内部字段，与 `requestedWorkspaceId`/`requestedSessionId` 同族：只用于同请求 ID 是否换了岗位的判据，不属对外契约，读回给调用方前一律经 `toPublic` 剥掉。 */
 export type StoredConversation = Conversation & {requestedRoleId?:string}
 export interface ConversationRepository { read():Promise<StoredConversation[]>; write(rows:StoredConversation[]):Promise<void> }
-export interface SessionHost { create(sessionId:string,workspaceId?:string,agentPresetId?:string,signal?:AbortSignal):Promise<string>; inspect(sessionId:string):Promise<void> }
+export interface SessionHost { create(sessionId:string,workspaceId?:string,agentPresetId?:string,signal?:AbortSignal):Promise<string>; inspect(sessionId:string):Promise<void>; pinAssistantTitle?(sessionId:string):Promise<void> }
+export const personalAssistantTitle='Teloa 小松鼠助手'
 
 const fields=['id','ownerId','title','scopeIds','version','status','requestedSessionId','sessionId','createdAt','requestId','requestedWorkspaceId','purpose','run','requestedRoleId']
 const validId=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
@@ -15,14 +16,19 @@ const validTitle=(v:unknown):v is string=>typeof v==='string'&&v.trim().length>0
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0
 const validPreset=(v:unknown):v is string=>typeof v==='string'&&/^[a-z0-9][-a-z0-9]{0,119}$/.test(v)
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v)
+function validRunExecutor(run:Record<string,unknown>):boolean{
+ if(run.executor===undefined)return validRequestId(run.roleId)&&positive(run.roleVersion)
+ try{const executor=readWorkExecutor(run.executor);return executor.kind==='owner'&&executor.grantVersion===1&&run.roleId===null&&run.roleVersion===null}catch{return false}
+}
 function validateRows(value:unknown):StoredConversation[] {
   const bad=()=>{throw new WorkError('teloa/storage-corrupt','公共会话存储损坏，已停止读取，请核对原文件。')}
   if(!object(value)||value.schema!=='teloa.conversations/v1'||Object.keys(value).some(k=>!['schema','rows'].includes(k))||!Array.isArray(value.rows))return bad()
-  const ids=new Set<string>(), sessions=new Set<string>(), requests=new Set<string>()
+  const ids=new Set<string>(), sessions=new Set<string>(), requests=new Set<string>(),assistants=new Set<string>()
   for(const row of value.rows) {
     const run=row.run
     if(!object(row)||Object.keys(row).some(k=>!fields.includes(k))||!validId(row.id)||!validId(row.sessionId)||!validId(row.requestedSessionId)||typeof row.ownerId!=='string'||!row.ownerId||!validTitle(row.title)||row.version!==1||!['pending','ready','failed'].includes(String(row.status))||!Array.isArray(row.scopeIds)||row.scopeIds.length!==1||row.scopeIds[0]!=='general'||typeof row.createdAt!=='string'||!Number.isFinite(Date.parse(row.createdAt))||(row.requestedWorkspaceId!==undefined&&!validId(row.requestedWorkspaceId))||(row.requestId!==undefined&&!validRequestId(row.requestId))||(row.requestedRoleId!==undefined&&!validRequestId(row.requestedRoleId)))return bad()
-    if(row.purpose==='task-run'?(!object(run)||Object.keys(run).some(k=>!['taskId','taskVersion','roleId','roleVersion','agentPresetId'].includes(k))||!validRequestId(row.requestId)||!validRequestId(run.taskId)||!positive(run.taskVersion)||!validRequestId(run.roleId)||!positive(run.roleVersion)||!validPreset(run.agentPresetId)||row.requestedSessionId!==row.sessionId):row.purpose!==undefined||row.run!==undefined||row.status==='failed')return bad()
+    if(row.purpose==='task-run'?(!object(run)||Object.keys(run).some(k=>!['taskId','taskVersion','roleId','roleVersion','agentPresetId','executor'].includes(k))||!validRequestId(row.requestId)||!validRequestId(run.taskId)||!positive(run.taskVersion)||!validRunExecutor(run)||!validPreset(run.agentPresetId)||row.requestedSessionId!==row.sessionId):!['assistant',undefined].includes(row.purpose as 'assistant'|undefined)||row.run!==undefined||row.status==='failed')return bad()
+    if(row.purpose==='assistant'){if(assistants.has(row.ownerId)||!validRequestId(row.requestId)||row.requestedRoleId!==undefined||row.title!==personalAssistantTitle)return bad();assistants.add(row.ownerId)}
     if(ids.has(row.id)||sessions.has(row.sessionId))return bad()
     ids.add(row.id);sessions.add(row.sessionId)
     if(row.requestId){const key=JSON.stringify([row.ownerId,row.requestId]);if(requests.has(key))return bad();requests.add(key)}
@@ -88,22 +94,22 @@ export class ConversationService {
     return row
   }
   list(owner:string,input:unknown):Promise<Conversation[]> {
-    return this.serial(async()=>{inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run').map(row=>this.toPublic(row))})
+    return this.serial(async()=>{inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
   }
-  private createNow(owner:string,input:unknown,run?:{sessionId:string;taskId:string;taskVersion:number;roleId:string;roleVersion:number;agentPresetId:string;signal?:AbortSignal}):Promise<Conversation> {
+  private createNow(owner:string,input:unknown,run?:{sessionId:string;taskId:string;taskVersion:number;roleId:string|null;roleVersion:number|null;agentPresetId:string;executor?:Extract<import('@teloa/contract').WorkExecutor,{kind:'owner'}>;signal?:AbortSignal},assistant=false):Promise<Conversation> {
     return (async()=>{
       const data=inputObject(input,['requestId','title','workspaceId','roleId'])
-      if(!owner||!validRequestId(data.requestId)||!validTitle(data.title)||(data.workspaceId!==undefined&&!validId(data.workspaceId))||(data.roleId!==undefined&&!validRequestId(data.roleId))||(run!==undefined&&(!validId(run.sessionId)||!validRequestId(run.taskId)||!positive(run.taskVersion)||!validRequestId(run.roleId)||!positive(run.roleVersion)||!validPreset(run.agentPresetId))))throw new WorkError('teloa/invalid-input','创建需要有效的请求 ID 与工作标题。')
+      if(!owner||!validRequestId(data.requestId)||!validTitle(data.title)||(data.workspaceId!==undefined&&!validId(data.workspaceId))||(data.roleId!==undefined&&!validRequestId(data.roleId))||(run!==undefined&&(!validId(run.sessionId)||!validRequestId(run.taskId)||!positive(run.taskVersion)||!validRunExecutor(run)||!validPreset(run.agentPresetId))))throw new WorkError('teloa/invalid-input','创建需要有效的请求 ID 与工作标题。')
       const requestedRoleId=data.roleId as string|undefined
       const rows=await this.repository.read()
       let row=rows.find(item=>item.ownerId===owner&&item.requestId===data.requestId)
-      const runSnapshot=run===undefined?undefined:{taskId:run.taskId,taskVersion:run.taskVersion,roleId:run.roleId,roleVersion:run.roleVersion,agentPresetId:run.agentPresetId}
-      if(row&&(row.title!==data.title.trim()||row.requestedWorkspaceId!==data.workspaceId||row.requestedRoleId!==requestedRoleId||(run===undefined?row.purpose==='task-run':row.purpose!=='task-run'||row.requestedSessionId!==run.sessionId||JSON.stringify(row.run)!==JSON.stringify(runSnapshot))))throw new WorkError('teloa/conflict','同一请求 ID 不能改为另一项工作。')
+      const runSnapshot=run===undefined?undefined:{taskId:run.taskId,taskVersion:run.taskVersion,roleId:run.roleId,roleVersion:run.roleVersion,agentPresetId:run.agentPresetId,...(run.executor?{executor:run.executor}:{})}
+      if(row&&(row.title!==data.title.trim()||row.requestedWorkspaceId!==data.workspaceId||row.requestedRoleId!==requestedRoleId||(run===undefined?row.purpose!== (assistant?'assistant':undefined):row.purpose!=='task-run'||row.requestedSessionId!==run.sessionId||JSON.stringify(row.run)!==JSON.stringify(runSnapshot))))throw new WorkError('teloa/conflict','同一请求 ID 不能改为另一项工作。')
       if(row?.status==='failed')throw new WorkError('teloa/preset-unavailable','运行专用会话预约已按配置失败收口。')
       if(row?.status==='ready'){
         if(run===undefined)await this.host.inspect(row.sessionId)
         else{
-          const admission=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:row.sessionId,objectId:run.roleId,operation:'create'})
+          const admission=await workAccess.authorize({kind:'capability',capability:run.executor?'general-agent':'people',ownerId:owner,sessionId:row.sessionId,objectId:run.roleId??run.taskId,operation:'create'})
           admission.assertCurrent()
           const sessionId=await this.host.create(row.requestedSessionId,row.requestedWorkspaceId,run.agentPresetId,run.signal)
           admission.assertCurrent()
@@ -114,10 +120,10 @@ export class ConversationService {
       // 先核对真实岗位及能力，再落预约与调用宿主；旧 ready 回执只读不重新授予执行。
       const roleAgentPresetId=run===undefined&&requestedRoleId!==undefined?await this.resolveRoleAgentPresetId(owner,requestedRoleId):undefined
       const roleId=run?.roleId??requestedRoleId,requestedSessionId=row?.requestedSessionId??run?.sessionId??this.identity.id()
-      const admission=roleId===undefined?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:requestedSessionId,objectId:roleId,operation:'create'})
+      const admission=roleId===undefined&&!run?.executor?undefined:await workAccess.authorize({kind:'capability',capability:run?.executor?'general-agent':'people',ownerId:owner,sessionId:requestedSessionId,objectId:roleId??run!.taskId,operation:'create'})
       if(!row) {
         const sessionId=requestedSessionId
-        row={id:this.identity.id(),ownerId:owner,title:data.title.trim(),scopeIds:['general'],version:1,status:'pending',requestedSessionId:sessionId,sessionId,createdAt:this.identity.now(),requestId:data.requestId,...(data.workspaceId===undefined?{}:{requestedWorkspaceId:data.workspaceId}),...(requestedRoleId===undefined?{}:{requestedRoleId}),...(runSnapshot===undefined?{}:{purpose:'task-run' as const,run:runSnapshot})}
+        row={id:this.identity.id(),ownerId:owner,title:data.title.trim(),scopeIds:['general'],version:1,status:'pending',requestedSessionId:sessionId,sessionId,createdAt:this.identity.now(),requestId:data.requestId,...(data.workspaceId===undefined?{}:{requestedWorkspaceId:data.workspaceId}),...(requestedRoleId===undefined?{}:{requestedRoleId}),...(assistant?{purpose:'assistant' as const}:{}),...(runSnapshot===undefined?{}:{purpose:'task-run' as const,run:runSnapshot})}
         admission?.assertCurrent()
         rows.push(row);await this.repository.write(rows)
       }
@@ -125,7 +131,7 @@ export class ConversationService {
       const sessionId=await this.host.create(row.requestedSessionId,row.requestedWorkspaceId,run?.agentPresetId??roleAgentPresetId,run?.signal)
       admission?.assertCurrent()
       if(!validId(sessionId))throw new WorkError('teloa/invalid-host-response','宿主未返回合法会话身份。')
-      if(run!==undefined&&sessionId!==row.requestedSessionId)throw new WorkError('teloa/invalid-host-response','运行专用会话身份与固定预约不一致。')
+      if((run!==undefined||assistant)&&sessionId!==row.requestedSessionId)throw new WorkError('teloa/invalid-host-response','专用会话身份与固定预约不一致。')
       if(rows.some(other=>other.id!==row.id&&other.sessionId===sessionId))throw new WorkError('teloa/conflict','宿主返回的会话已经绑定另一项工作。')
       const ready:StoredConversation={...row,sessionId,status:'ready'}
       admission?.assertCurrent()
@@ -137,8 +143,35 @@ export class ConversationService {
   create(owner:string,input:unknown):Promise<Conversation> {
     return this.serial(()=>this.createNow(owner,input))
   }
+  /** 本人默认主聊预约由宿主唯一登记；浏览器的请求键、标题与缓存不是身份依据。 */
+  ensureAssistant(owner:string,input:unknown,verifyLegacy:(sessionId:string,register:()=>Promise<void>)=>Promise<boolean>):Promise<Conversation>{
+    return this.serial(async()=>{
+      const data=inputObject(input,['workspaceId'])
+      if(!owner||(data.workspaceId!==undefined&&!validId(data.workspaceId)))throw new WorkError('teloa/invalid-input','助手工作区身份不正确。')
+      if(!this.host.pinAssistantTitle)throw new WorkError('teloa/dependency-unavailable','助手标题服务尚未接入。')
+      const rows=await this.repository.read()
+      let row=rows.find(item=>item.ownerId===owner&&item.purpose==='assistant')
+      if(!row){
+        const legacy=rows.filter(item=>item.ownerId===owner&&item.title===personalAssistantTitle&&item.purpose===undefined&&item.requestId!==undefined&&item.requestedRoleId===undefined&&!isReservedExecutionSessionId(item.sessionId))
+        if(legacy.some(item=>item.status==='pending'))throw new WorkError('teloa/binding-pending','助手旧预约仍待恢复，请先从会话目录恢复原请求。')
+        const candidates:StoredConversation[]=[]
+        for(const item of legacy)if(await verifyLegacy(item.sessionId,async()=>{}))candidates.push(item)
+        if(legacy.length&&candidates.length===0)throw new WorkError('teloa/conflict','旧助手归属尚不能核对，请从会话目录恢复原主聊；未另建会话。')
+        if(candidates.length>1)throw new WorkError('teloa/conflict','存在多个助手历史，请从会话目录核对原主聊；未合并或另建会话。')
+        if(candidates[0]){
+          const candidate=candidates[0];await this.host.inspect(candidate.sessionId)
+          const accepted=await verifyLegacy(candidate.sessionId,async()=>{row={...candidate,purpose:'assistant'};await this.repository.write(rows.map(item=>item.id===candidate.id?row!:item))})
+          if(!accepted||!row)throw new WorkError('teloa/conflict','原助手归属已变化，未登记其他会话。')
+        }
+      }
+      const workspaceId=row?row.requestedWorkspaceId:data.workspaceId
+      const conversation=await this.createNow(owner,{requestId:row?.requestId??randomUUID(),title:personalAssistantTitle,...(workspaceId===undefined?{}:{workspaceId})},undefined,true)
+      await this.host.pinAssistantTitle(conversation.sessionId)
+      return conversation
+    })
+  }
   /** 仅供宿主内的一键执行编排；preset 与预约身份不从客户端读取。 */
-  createRun(owner:string,input:unknown,run:{sessionId:string;taskId:string;taskVersion:number;roleId:string;roleVersion:number;agentPresetId:string;signal?:AbortSignal}):Promise<Conversation> {
+  createRun(owner:string,input:unknown,run:{sessionId:string;taskId:string;taskVersion:number;roleId:string|null;roleVersion:number|null;agentPresetId:string;executor?:Extract<import('@teloa/contract').WorkExecutor,{kind:'owner'}>;signal?:AbortSignal}):Promise<Conversation> {
     return this.serial(()=>this.createNow(owner,input,run))
   }
   /** 精确读取首次派生的运行预约，供回包丢失后的同请求恢复。 */
@@ -159,6 +192,7 @@ export class ConversationService {
       const rows=await this.repository.read(),existing=rows.find(item=>item.sessionId===sessionId)
       if(existing)this.authorize(owner,existing)
       if(existing?.purpose==='task-run'||existing?.status==='pending'||existing?.status==='failed')throw new WorkError('teloa/binding-pending','工作会话正在由任务执行编排，请从原任务恢复。')
+      if(isReservedExecutionSessionId(sessionId))throw new WorkError('teloa/session-not-adoptable','内部执行会话不能作为普通会话接入，请从原任务或原群查看。')
       await this.host.inspect(sessionId)
       if(existing)return this.toPublic(existing)
       if(!owner)throw new WorkError('teloa/forbidden','缺少可信主体。')
@@ -174,6 +208,7 @@ export class ConversationService {
       const rows=await this.repository.read(),existing=rows.find(row=>row.sessionId===data.sessionId)
       if(existing)this.authorize(owner,existing)
       if(existing?.purpose==='task-run'||existing?.status==='pending'||existing?.status==='failed')throw new WorkError('teloa/binding-pending','会话正在由任务执行编排，请从原任务恢复。')
+      if(isReservedExecutionSessionId(data.sessionId))throw new WorkError('teloa/session-not-adoptable','内部执行会话不能作为普通会话接入，请从原任务或原群查看。')
       if(rows.some(row=>row.ownerId===owner&&row.requestId===data.requestId&&row.sessionId!==data.sessionId))throw new WorkError('teloa/conflict','此请求 ID 已关联另一项工作。')
       await this.host.inspect(data.sessionId)
       if(existing?.requestId)return this.toPublic(existing)

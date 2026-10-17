@@ -11,7 +11,7 @@ export type BusinessObject=ObjectRef&{typeTitle:string;source:string;observedAt:
  * `dashboardId` 只在 `section==='dashboards'` 时出现，与 `objectType` 互斥（导航恢复复用同一段存放）。
  * `match` 只在 `section==='data'` 且有 `objectType` 时出现：对象清单只看字段 `field` 等于 `value` 的对象（组件下钻，`_id` 是对象标识）。
  */
-export type BusinessTarget={recordReference?:BusinessObjectReference;scope:CollaborationScope;section:'overview'|'projects'|'data'|'work'|'analysis'|'execution'|'dashboards';id?:string;objectType?:string;dashboardId?:string;match?:{field:string;value:string}}
+export type BusinessTarget={recordReference?:BusinessObjectReference;scope:CollaborationScope;section:'overview'|'projects'|'data'|'work'|'analysis'|'execution'|'dashboards'|'employees'|'groups';id?:string;objectType?:string;dashboardId?:string;match?:{field:string;value:string}}
 export type ProjectConversationRef={id:string;title:string;projectId:string;relation:'main'}|{id:string;title:string;projectId:string;taskId:string;relation:'task'}
 export type ProjectTaskRef={id:string;title:string;state:'ready'|'running'|'completed';owner:string;projectId:string;conversations:Extract<ProjectConversationRef,{relation:'task'}>[]}
 export type ProjectRelationRef={id:string;title:string;projectId:string;detail:string}

@@ -1,0 +1,33 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-llm-pi-ai",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "e6105820a078df288285ae786a984e06bfa2e9da77b9380f540499ee186ffb2a",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "99b5c20830a52f69641df8a18a39206079b0c725201958cce2c4a934f1d4f7cd",
+      "afterSha256": "fb410d2c75fa0c0b1abce533f10d12fe12b03b80c8a5bfdaf7ba87f2c9f4c72e"
+    },
+    {
+      "path": "lib/types/adapter.d.ts",
+      "beforeSha256": "cf9227b050d4638d35810fc2e36bc7fe3939b486b42960cff9a24067e870e46e",
+      "afterSha256": "381d7b88110b4eacf187bf922ab5b4ab9879ce0610b1400965ecbd6b8b08c938"
+    }
+  ],
+  "api": [
+    "LlmResolvedModelInfo.defaultMaxTokens",
+    "PiAiAdapterOptions.resolveFetch",
+    "Context.dshLlmHttp.forProvider"
+  ],
+  "scope": {
+    "admission": "Materialize the configured output limit, or the exact SDK model output maximum, through the existing registration-bound prepareCall snapshot. Capture an optional host fetch for the same provider snapshot without changing payload, credential resolution, retry or work cancellation.",
+    "boundary": "Preserve explicit request and provider limits, model identity, reasoning, context and native stream; do not bypass managed budget admission or add model requests. The transport is optional; absence retains the official fetch. No process-global fetch override.",
+    "source": "The pinned SDK Anthropic Messages API uses options.maxTokens ?? model.maxTokens; the limit is already validated in the fixed route model snapshot.",
+    "limitations": [
+      "This is a finite provider model bound, not a guarantee about response length or business quality.",
+      "No changes to SDK store files or user provider configuration."
+    ]
+  }
+}

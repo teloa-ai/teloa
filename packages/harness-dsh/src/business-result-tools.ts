@@ -1,10 +1,10 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision,type ToolExecution} from '@deepseek-ai/dsh-tools'
-import {WorkError,businessDashboardLimits,businessScopeKeyRule,isBusinessScopeKey,readBusinessDashboardPage,readBusinessWidgetDefinition,taskInput} from '@teloa/contract'
+import {WorkError,businessDashboardLimits,businessScopeKeyRule,isBusinessScopeKey,isRecord,usesBusinessTaskResultContext,readBusinessDashboardPage,readBusinessWidgetDefinition,taskInput} from '@teloa/contract'
 import type {BusinessDashboardService,BusinessDefinitionSourceReader,BusinessSyncService,BusinessWidgetService} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 
-export const businessResultToolNames=['teloa_business_result_record','teloa_business_dashboard_read','teloa_business_sql_trial'] as const
+export const businessResultToolNames=['teloa_business_result_record','teloa_business_dashboard_read','teloa_business_sql_trial','teloa_business_object_result_record'] as const
 type ToolName=typeof businessResultToolNames[number]
 type SqlPool={connect:()=>Promise<{query:(sql:string)=>Promise<unknown>;release:()=>void}>}
 export type BusinessResultToolsPorts={
@@ -16,21 +16,27 @@ export type BusinessResultToolsPorts={
  /** `pool` 只用于在只读可重复读事务里读本范围生效声明（试算的逻辑表），不执行任何用户 SQL。 */
  services:()=>Promise<{sync:BusinessSyncService;dashboards:BusinessDashboardService;widgets:BusinessWidgetService;definitions:Pick<BusinessDefinitionSourceReader,'forScope'>;pool:SqlPool}>
  scopeIds:()=>Promise<readonly string[]>
+ /** 仅宿主绑定：写事务内再核验 Run、对象来源、员工和实际工具授权。 */
+ recordObjectResult?:(input:{sessionId:string;nativeRequestId:string;scope:string;mappingId?:string;result:Record<string,unknown>},signal:AbortSignal)=>Promise<{upserted:number;tombstoned:number}>
 }
 
 /** 一次成果记录的条数上限（同步服务自身上限 100，工具侧收紧到 50）。 */
 const recordItemsLimit=50
 /** 试算回给模型的行数上限：查询仍按完整执行边界跑，只截返回。 */
 const trialRows=50
-const keys:Record<ToolName,readonly string[]>={teloa_business_result_record:['scope','mappingId','items'],teloa_business_dashboard_read:['scope','dashboardId'],teloa_business_sql_trial:['scope','sql']}
+const keys:Record<ToolName,readonly string[]>={teloa_business_result_record:['scope','mappingId','items'],teloa_business_dashboard_read:['scope','dashboardId'],teloa_business_sql_trial:['scope','sql'],teloa_business_object_result_record:['mappingId','result']}
 const names=new Set<string>(businessResultToolNames)
 const forbidden=(message:string)=>new WorkError('teloa/forbidden',message)
 const invalid=(message:string)=>new WorkError('teloa/invalid-input',message)
 const localId=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/.test(value)
 
-type Input={scope:string;mappingId?:string;items?:unknown[];dashboardId?:string;sql?:string}
-function argumentsOf(name:ToolName,args:unknown):Input{
+type Input={scope:string;mappingId?:string;items?:unknown[];dashboardId?:string;sql?:string;result?:Record<string,unknown>}
+function argumentsOf(name:ToolName,args:unknown,boundScope?:string):Input{
  const row=taskInput(args,keys[name])
+ if(name==='teloa_business_object_result_record'){
+  if(!boundScope||(row.mappingId!==undefined&&!localId(row.mappingId))||!isRecord(row.result)||new TextEncoder().encode(JSON.stringify(row.result)).byteLength>64*1024)throw invalid('需要绑定业务对象的成果映射及一份结构化结果。')
+  return {scope:boundScope,...(row.mappingId===undefined?{}:{mappingId:row.mappingId}),result:row.result}
+ }
  if(!isBusinessScopeKey(row.scope)||row.scope==='general')throw invalid('需要明确的业务范围：'+businessScopeKeyRule+'，不能是通用工作（general）。')
  const scope=row.scope
  if(name==='teloa_business_result_record'){
@@ -58,8 +64,9 @@ function argumentsOf(name:ToolName,args:unknown):Input{
  * 三者身份不符在前置守卫一律 deny，正文执行时再核一次（确认期间身份可能变化）。任务会话没有刷新、同步与声明草案的写口。
  */
 export function registerBusinessResultTools(ctx:Context,ports:BusinessResultToolsPorts):()=>void{
+ const fixedExecutions=new WeakMap<ToolExecution,string>()
  /** taskScope：主会话为 undefined（不收窄）；任务会话为其绑定的业务范围。 */
- async function identity(name:ToolName,exec:Pick<ToolExecution,'agent'|'signal'>):Promise<{sessionId:string;taskScope:string|undefined}>{
+ async function identity(name:ToolName,exec:Pick<ToolExecution,'agent'|'signal'>):Promise<{sessionId:string;taskScope:string|undefined;nativeRequestId?:string}>{
   if(!exec.agent)throw forbidden('业务看板工具需要真实会话。')
   const session=exec.agent.session,sessionId=session.id
   if(session.header.origin==='subagent')throw forbidden('子 Agent 会话不能使用业务看板工具。')
@@ -68,7 +75,9 @@ export function registerBusinessResultTools(ctx:Context,ports:BusinessResultTool
   catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/dependency-unavailable','暂时无法核对会话身份。')}
   if(binding.ownerId!==ports.owner||binding.sessionId!==sessionId||binding.status!=='ready')throw forbidden('当前会话未绑定为本人可用工作会话。')
   if(policy?.stopRequested===true)throw forbidden('本次执行已请求停止。')
-  if(name==='teloa_business_result_record'&&(policy===null||!policy.allowedTools.includes(name)))throw forbidden('成果记录只允许任务会话。')
+  const recording=name==='teloa_business_result_record'||name==='teloa_business_object_result_record'
+  if(recording&&(policy===null||!policy.allowedTools.includes(name)))throw forbidden('成果记录只允许任务会话。')
+  if(name==='teloa_business_object_result_record'&&(!policy?.nativeRequestId||!ports.recordObjectResult))throw forbidden('本次执行的固定对象成果写口尚未就绪。')
   if(name!=='teloa_business_result_record'&&policy!==null&&!policy.allowedTools.includes(name))throw forbidden('当前任务未授权使用此工具。')
   let taskScope:string|undefined
   if(policy!==null){
@@ -78,7 +87,7 @@ export function registerBusinessResultTools(ctx:Context,ports:BusinessResultTool
    taskScope=bound
   }
   exec.signal.throwIfAborted()
-  return {sessionId,taskScope}
+  return {sessionId,taskScope,...(policy?.nativeRequestId?{nativeRequestId:policy.nativeRequestId}:{})}
  }
  async function actorFor(scope:string,taskScope:string|undefined){
   if(taskScope!==undefined&&scope!==taskScope)throw forbidden('任务会话只能使用其绑定的业务范围。')
@@ -91,6 +100,7 @@ export function registerBusinessResultTools(ctx:Context,ports:BusinessResultTool
   const mapping=(await sync.mappings(actor,scope)).find(item=>item.id===mappingId)
   if(!mapping)throw invalid('数据源映射不存在于本业务范围。')
   if(mapping.source.kind!=='role-result')throw forbidden('成果记录只接受 AI 员工成果映射（role-result）。')
+  if(usesBusinessTaskResultContext(mapping))throw forbidden('固定对象成果请使用 teloa_business_object_result_record，由宿主绑定原对象和执行身份。')
   return {actor,sync}
  }
  async function sqlTrial(scope:string,sql:string,taskScope:string|undefined,signal:AbortSignal):Promise<unknown>{
@@ -113,17 +123,22 @@ export function registerBusinessResultTools(ctx:Context,ports:BusinessResultTool
  }
 
  const definitions=[
-  {name:businessResultToolNames[0],description:'把本次任务得出的业务成果按 AI 员工成果映射记为业务对象（本人范围，1–50 条）。只在绑定了业务的任务会话可用；条目字段按映射声明的路径取值。',parameters:{scope:{type:'string',required:true},mappingId:{type:'string',required:true},items:{type:'array',items:{type:'object',additionalProperties:true},required:true}}},
+  {name:businessResultToolNames[0],description:'把本次任务得出的业务成果按 AI 员工成果映射记为业务对象（本人范围，1–50 条）。只在绑定了业务的任务会话可用；条目字段按映射声明的路径取值。固定对象、员工和执行身份的映射须用 teloa_business_object_result_record，不接受批量条目自行提供宿主上下文。',parameters:{scope:{type:'string',required:true},mappingId:{type:'string',required:true},items:{type:'array',items:{type:'object',additionalProperties:true},required:true}}},
   {name:businessResultToolNames[1],description:'读取本人一张业务看板的最近结果快照（不触发刷新）：看板声明、组件声明与各组件结果、更新时刻。',parameters:{scope:{type:'string',required:true},dashboardId:{type:'string',required:true}}},
   {name:businessResultToolNames[2],description:'在看板执行边界内试算一条只读 SQL（逻辑表为本范围对象类型），最多返回 50 行，不保存。SQL 不合规时返回 error.reason，据此修改后再试。',parameters:{scope:{type:'string',required:true},sql:{type:'string',required:true}}},
+  {name:businessResultToolNames[3],description:'记录当前任务固定业务对象的最终结构化成果。按本轮 businessContext.resultMappings 的目标字段及约束填写 result，不传本人、对象或版本；宿主绑定原对象与执行轮次。只有一个已授权映射时可省略 mappingId，由宿主确定；多个映射时从该目录选择 mappingId，不猜测标识，也不要求用户提供内部标识。成果映射必须是 role-result，以 $.object.id 为主键，用 $.result.<字段> 读取结果。每轮每映射只能提交一份最终成果；重放不重复统计，重新处理请发起新轮次。写入后看板在自动更新开启时持续汇总。',parameters:{mappingId:{type:'string'},result:{type:'object',additionalProperties:true,required:true}}},
  ] as const
- // 三个工具参数各不相同：类型上只保留公共的 scope（参数由 argumentsOf 严格核对），运行时 schema 原样注册。
+ // 工具参数各不相同：参数由 argumentsOf 严格核对，固定对象工具的 scope 由宿主派生；运行时 schema 原样注册。
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,parameters:definition.parameters as {readonly scope:{readonly type:'string';readonly required:true}},output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
-  const {sessionId,taskScope}=await identity(definition.name,exec),input=argumentsOf(definition.name,args)
+  const {sessionId,taskScope,nativeRequestId}=await identity(definition.name,exec),input=argumentsOf(definition.name,args,taskScope)
+  if(definition.name==='teloa_business_object_result_record'&&fixedExecutions.get(exec)!==nativeRequestId)throw forbidden('本次成果的执行轮次已变化，请重新提交。')
   let value:unknown
   if(definition.name==='teloa_business_result_record'){
    const {actor,sync}=await roleResultMapping(input.scope,input.mappingId!,taskScope)
    value=await sync.ingest(actor,{scope:input.scope,mappingId:input.mappingId!,items:input.items!,sourceId:'role-result:'+sessionId.slice(0,8)},exec.signal)
+  }else if(definition.name==='teloa_business_object_result_record'){
+   await actorFor(input.scope,taskScope)
+   value=await ports.recordObjectResult!({sessionId,nativeRequestId:nativeRequestId!,scope:input.scope,mappingId:input.mappingId!,result:input.result!},exec.signal)
   }else if(definition.name==='teloa_business_dashboard_read'){
    const actor=await actorFor(input.scope,taskScope),{dashboards}=await ports.services()
    const page=await dashboards.read(actor,{scope:input.scope,dashboardId:input.dashboardId!})
@@ -136,10 +151,11 @@ export function registerBusinessResultTools(ctx:Context,ports:BusinessResultTool
   if(!names.has(exec.name))return next()
   try{
    const name=exec.name as ToolName
-   const {taskScope}=await identity(name,exec)
-   const input=argumentsOf(name,exec.arguments)
+   const {taskScope,nativeRequestId}=await identity(name,exec)
+   const input=argumentsOf(name,exec.arguments,taskScope)
    if(name==='teloa_business_result_record')await roleResultMapping(input.scope,input.mappingId!,taskScope)
    else await actorFor(input.scope,taskScope)
+   if(name==='teloa_business_object_result_record')fixedExecutions.set(exec,nativeRequestId!)
   }catch(error){return {kind:'deny',reason:error instanceof WorkError?error.message:'暂时无法核对业务看板工具身份。'}}
   return next()
  })

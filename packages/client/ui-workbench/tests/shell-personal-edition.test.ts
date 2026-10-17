@@ -85,6 +85,47 @@ const baseProps={
  setTheme:()=>{},
 }
 
+test('左栏辅助动作以有名称和提示的图标呈现，点击仍使用原入口',()=>{
+ const calls:string[]=[]
+ const render=mount('WorkNavigation.tsx',{...baseProps,onSearch:()=>calls.push('search'),openAssistant:async()=>{calls.push('assistant')},setAssistantActive:()=>calls.push('companion'),openTwin:async()=>{calls.push('twin')},actions:{openDirectory:()=>calls.push('settings')}})
+ const view=render()
+ for(const label of ['navigation.new','navigation.search','navigation.v2.settings','navigation.twin']){
+  const button=buttons(view).find(row=>row.props['aria-label']===label)
+  assert.ok(button,label);assert.ok(button.props.title,label+' 必须可理解')
+  assert.equal(text(button),'',label+' 不再占用文字导航行')
+  if(label!=='navigation.new')button.props.onClick()
+ }
+ assert.deepEqual(calls,['search','settings','twin'])
+})
+
+test('小松鼠是工作导航之前唯一的具名主聊入口，选中来自原会话',()=>{
+ const calls:string[]=[]
+ const render=mount('WorkNavigation.tsx',{...baseProps,assistantSelected:true,openAssistant:async()=>{calls.push('assistant')}})
+ const view=render(),all=nodes(view),entry=buttons(view).filter(row=>row.props['aria-label']==='Teloa')
+ assert.equal(entry.length,1)
+ assert.equal(text(entry[0]),'Teloa')
+ assert.equal(entry[0]!.props['aria-current'],'page')
+ assert.ok(all.indexOf(entry[0]!)<all.findIndex(row=>row.type==='nav'),'助手入口必须在工作导航之前')
+ entry[0]!.props.onClick();assert.deepEqual(calls,['assistant'])
+})
+
+test('助手行内图标直接控制形象显示，不展开菜单、创建聊天或派活',()=>{
+ const displays:boolean[]=[],chats:string[]=[]
+ const render=mount('WorkNavigation.tsx',{...baseProps,openAssistant:async()=>{chats.push('opened')},setAssistantActive:(active:boolean)=>displays.push(active)})
+ let view=render()
+ assert.equal(nodes(view).filter(row=>row.props.role==='menuitemcheckbox').length,0)
+ assert.equal(buttons(view).some(row=>row.props['aria-label']==='小松鼠选项'),false)
+ const item=buttons(view).find(row=>row.props['aria-label']==='显示页面助手');assert.ok(item)
+ assert.equal(item.props['aria-pressed'],false)
+ assert.equal(item.props['aria-label'],'显示页面助手')
+ assert.equal(nodes(item).filter(row=>row.props['aria-hidden']).length,1)
+ item.props.onClick();view=render({assistantActive:true})
+ assert.deepEqual(displays,[true]);assert.deepEqual(chats,[])
+ assert.equal(nodes(view).filter(row=>row.props.role==='menuitemcheckbox').length,0)
+ const hide=buttons(view).find(row=>row.props['aria-label']==='隐藏页面助手')!;assert.equal(hide.props['aria-pressed'],true)
+ hide.props.onClick();assert.deepEqual(displays,[true,false]);assert.deepEqual(chats,[])
+})
+
 test('左栏静态渲染不含「我的工作空间」「切换工作空间」，含「我的分身」按钮',()=>{
  const render=mount('WorkNavigation.tsx',baseProps)
  const view=render()
@@ -92,7 +133,7 @@ test('左栏静态渲染不含「我的工作空间」「切换工作空间」�
  assert.ok(!html.includes('我的工作空间'),'个人版左栏不应再出现空间字样')
  assert.ok(!html.includes('切换工作空间'),'切换箭头连同空间入口一起被删掉了')
  // 翻译桩把没有插值的 key 原样返回，account 区的按钮就是 navigation.twin 这个 key 本身。
- const twin=buttons(view).find(button=>text(button)==='navigation.twin')
+ const twin=buttons(view).find(button=>button.props['aria-label']==='navigation.twin')
  assert.ok(twin,'账号块下必须有一个「我的分身」入口')
 })
 
@@ -100,7 +141,7 @@ test('点「我的分身」调用由主框架提供的直接会话入口',()=>{
  const opened:number[]=[]
  const render=mount('WorkNavigation.tsx',{...baseProps,openTwin:async()=>{opened.push(1)}})
  const view=render()
- const twin=buttons(view).find(button=>text(button)==='navigation.twin')!
+ const twin=buttons(view).find(button=>button.props['aria-label']==='navigation.twin')!
  twin.props.onClick()
  assert.deepEqual(opened,[1])
 })
@@ -110,28 +151,41 @@ test('同一帧内连续点击「我的分身」只发起一次打开',()=>{
  let finish:()=>void=()=>{}
  const pending=new Promise<void>(resolve=>{finish=resolve})
  const render=mount('WorkNavigation.tsx',{...baseProps,openTwin:()=>{opened.push(1);return pending}})
- const twin=buttons(render()).find(button=>text(button)==='navigation.twin')!
+ const twin=buttons(render()).find(button=>button.props['aria-label']==='navigation.twin')!
  twin.props.onClick();twin.props.onClick()
  assert.deepEqual(opened,[1])
  finish()
 })
 
-test('左栏能力中心入口进入我的能力目录，不沿用市场详情',()=>{
+test('左栏「市场」入口进入方案 B 市场；我的能力改由市场页头与面包屑到达',()=>{
  const opened:number[]=[]
- const actions=new Proxy({},{get:(_,key)=>key==='openCapabilityCatalog'?()=>opened.push(1):()=>{}})
+ const actions=new Proxy({},{get:(_,key)=>key==='openMarket'?()=>opened.push(1):()=>{}})
  const render=mount('WorkNavigation.tsx',{...baseProps,actions})
- const market=buttons(render()).find(button=>text(button)==='capabilityCenter.title')!
+ assert.equal(buttons(render()).some(button=>text(button)==='capabilityCenter.title'),false,'不再保留「能力中心」一级入口')
+ const market=buttons(render()).find(button=>text(button)==='market.title')!
  market.props.onClick()
  assert.deepEqual(opened,[1])
 })
 
-test('左栏自动化入口总是回到计划目录，不沿用上一次计划或执行详情',()=>{
+test('工作台自动化次级入口总是回到计划目录，不沿用上一次计划或执行详情',()=>{
  const opened:unknown[]=[]
  const actions=new Proxy({},{get:(_,key)=>key==='openPlans'?(target:unknown)=>opened.push(target):()=>{}})
  const render=mount('WorkNavigation.tsx',{...baseProps,actions,view:'plans'})
- const plans=buttons(render()).find(button=>text(button)==='navigation.plans')!
- plans.props.onClick()
-  assert.deepEqual(opened,[{kind:'plans'}])
+ assert.equal(buttons(render()).some(button=>text(button)==='navigation.plans'),false,'自动化已移入工作台，不再重复一级入口')
+ const source=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
+ const ast=ts.createSourceFile('WorkbenchFrame.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+ let handler:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{
+  if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText()==='WorkbenchHubNavigation'){
+   const attribute=node.attributes.properties.find(item=>ts.isJsxAttribute(item)&&item.name.getText()==='onSelect') as ts.JsxAttribute|undefined
+   if(attribute?.initializer&&ts.isJsxExpression(attribute.initializer))handler=attribute.initializer.expression
+  }
+  ts.forEachChild(node,visit)
+ }
+ visit(ast);assert.ok(handler,'实际装配必须有次级导航处理器')
+ const select=new Function('actions','return '+handler.getText())(actions)
+ select('plans')
+ assert.deepEqual(opened,[{kind:'plans'}])
 })
 
 test('左栏对话入口打开统一目录根态，不直接落入当前原生会话',()=>{

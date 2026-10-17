@@ -1,8 +1,5 @@
 .view{display:grid;gap:12px;padding:16px}
-.back{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:var(--teloa-font-caption);color:var(--teloa-accent);border:none;background:none;cursor:pointer;padding:0}
-.back:hover{text-decoration:underline}
-.back:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-.title{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
+.title{display:flex;align-items:center;gap:12px;margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
 .status{display:inline-flex;align-items:center;gap:6px;font-size:var(--teloa-font-caption);border-radius:999px;padding:2px 10px;border:1px solid var(--teloa-border);color:var(--teloa-muted)}
 .statusConnected{border-color:var(--teloa-accent);color:var(--teloa-accent)}
 .statusError{border-color:var(--teloa-warn);color:var(--teloa-warn)}

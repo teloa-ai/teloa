@@ -1,0 +1,27 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-session-persistence-jsonl",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "973dd78679b2661d6f492343bc22b124ae958aa597d3b36c698a2c650f909984",
+      "afterSha256": "de9da760d3450a65dfe754741431e0014d9263ead68a721145a6c579cfe89f47"
+    }
+  ],
+  "patchSha256": "d75ff91e743be73a772f6c2d5b8e6f99c0c266a88b79da48722fe1e0e92559ad",
+  "api": [
+    "sessionPersistence.openWithAdmission"
+  ],
+  "scope": {
+    "admission": "Public openWithAdmission(id, admission, options?) returns the same owned write SessionHandle. Exact deeply frozen validated sessionId/header/events/inheritedEventCount and caller-supplied signal; async policy returns a frozen own synchronous assertCurrent data method returning undefined.",
+    "ownership": "Single writer and OS lease are retained through preparation, async admission, migration publication and handle transfer. No read/reopen fallback; cancellation consumes late policy results and releases ownership before rejection. JSONL backend teardown also cancels and joins admitted opens that do not yet have handles, even when the caller omitted a signal.",
+    "migration": "JSONL prepares historical formats read-only, then checks current lease before migration staging, writes and final publication. Original historical bytes are retained. Actual persistence/cleanup is joined; already committed generations are not rolled back.",
+    "free": "Ordinary open/create behavior is unchanged. Base openWithAdmission explicitly throws SessionAdmissionUnsupportedError; no implicit fallback.",
+    "limitations": [
+      "Storage carries evidence and synchronous freshness only, not business authorization or a durable acceptance certificate.",
+      "Revocation after a committed write cannot undo it. Consumers must retain the lease check through their own setup/publication and before model dispatch."
+    ]
+  }
+}

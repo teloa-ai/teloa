@@ -18,8 +18,57 @@ before(async()=>{
 },{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
 
-/** 2026-09-30核对统一初始化链与静态DDL的完整表清单；期待不在测试运行时从被测实现推导。 */
+/** 2026-10-12核对统一初始化链与静态DDL的完整表清单；期待不在测试运行时从被测实现推导。 */
 const expectedTables=[
+ "teloa_artifact_revision_producers",
+ "teloa_artifact_revision_requests",
+ "teloa_method_reuse_requests",
+ "teloa_business_dashboard_data_revisions",
+ "teloa_business_data_changes",
+ "teloa_business_task_result_heads",
+ "teloa_business_task_result_receipts",
+ "teloa_group_routing_outbox",
+ "teloa_group_routing_wakes",
+ "teloa_group_run_sources",
+ "teloa_group_work_link_requests",
+ "teloa_group_work_links",
+ "teloa_memory_installation",
+ "teloa_owner_routing_budget_accounts",
+ "teloa_owner_work_budgets",
+ "teloa_plan_schedule_coalesces",
+ "teloa_plan_work_events",
+ "teloa_role_experience_indexes",
+ "teloa_role_memory_views",
+ "teloa_role_work_delegation_requests",
+ "teloa_role_work_delegations",
+ "teloa_task_configuration_requests",
+ "teloa_task_draft_requests",
+ "teloa_task_run_flow_waits",
+ "teloa_task_run_goal_continuations",
+ "teloa_task_run_goal_revisions",
+ "teloa_task_run_goals",
+ "teloa_task_work_lineage",
+ "teloa_twin_execution_consent_requests",
+ "teloa_twin_execution_consents",
+ "teloa_work_budget_accounts",
+ "teloa_work_budget_changes",
+ "teloa_work_budget_reservations",
+ "teloa_work_control_hosts",
+ "teloa_work_control_progress",
+ "teloa_work_control_requests",
+ "teloa_work_controls",
+ "teloa_work_events",
+ "teloa_work_plan_bindings",
+ "teloa_work_progress",
+ "teloa_work_progress_receipts",
+ "teloa_work_progress_rounds",
+ "teloa_work_recovery_requests",
+ "teloa_work_recovery_tickets",
+ "teloa_work_retries",
+ "teloa_work_retry_claims",
+ "teloa_work_retry_receipts",
+ "teloa_work_stagnation",
+ "teloa_work_stagnation_allowances",
  "teloa_artifact_feedback",
  "teloa_artifact_files",
  "teloa_artifact_message_snapshots",
@@ -76,6 +125,7 @@ const expectedTables=[
  "teloa_group_members",
  "teloa_group_messages",
  "teloa_group_reactions",
+ "teloa_group_read_cursors",
  "teloa_group_resource_requests",
  "teloa_group_resource_versions",
  "teloa_group_resources",
@@ -92,6 +142,7 @@ const expectedTables=[
  "teloa_industry_knowledge_instances",
  "teloa_industry_knowledge_requests",
  "teloa_industry_load_items",
+ "teloa_industry_load_request_repairs",
  "teloa_industry_load_requests",
  "teloa_industry_load_unload_requests",
  "teloa_industry_load_upgrade_requests",
@@ -192,7 +243,35 @@ const expectedTables=[
  "teloa_task_runs",
  "teloa_task_transitions",
  "teloa_tasks",
- "teloa_web_access_policy"
+ "teloa_web_access_policy",
+ // 4a1ed0d：本地业务工作与已批准记录变更（business-change-sets / business-object-work-links / business-sync 成果引用）。
+ "teloa_business_change_requests",
+ "teloa_business_change_sets",
+ "teloa_business_object_work_links",
+ "teloa_business_work_requests",
+ "teloa_business_work_results",
+ "teloa_business_task_result_references",
+ // 925ead8：项目上下文注入、来源可溯记忆提炼、个人记忆与项目运行时（project-context / project-memory-extraction / project-personal-memory / project-runtime）。
+ "teloa_project_contexts",
+ "teloa_project_context_entries",
+ "teloa_project_context_requests",
+ "teloa_project_context_revisions",
+ "teloa_project_context_shares",
+ "teloa_project_context_uses",
+ "teloa_project_conversation_memberships",
+ "teloa_project_extraction_candidates",
+ "teloa_project_extraction_events",
+ "teloa_project_extraction_forgotten_sources",
+ "teloa_project_extraction_retries",
+ "teloa_project_runtime_requests",
+ "teloa_project_runtime_settings",
+ "teloa_personal_memory_entries",
+ "teloa_personal_memory_requests",
+ "teloa_personal_memory_stores",
+ // fda1c9b：群原消息重试尝试历史、群任务交接资料与群对原工作的追加/停止回执（group-routing-attempts / group-tasks / group-work-inputs）。
+ "teloa_group_routing_attempts",
+ "teloa_group_task_handoffs",
+ "teloa_group_work_inputs"
 ].sort()
 const tableNames=async():Promise<string[]>=>
  (await pool.query("select table_name from information_schema.tables where table_schema='public' and table_name like 'teloa\\_%' order by table_name")).rows.map(row=>row.table_name as string)
@@ -224,6 +303,12 @@ test('空库首启一次建全结构，重跑是无操作',async()=>{
  // 这两张表的外键打在 `teloa_group_messages` 的 `unique(id,group_id)` 上，只在群协作一族之后才建得出来。
  assert.ok(first.includes('teloa_group_reactions'),'首启必须建立群消息表情表')
  assert.ok(first.includes('teloa_group_routing_decisions'),'首启必须建立群内路由决策表')
+ // 重试历史只增、追加回执身份与终态不可改由触发器兜底；未结回执按 v2 状态集索引，旧索引已退役。
+ const groupGuards=async()=>({
+  triggers:(await pool.query("select tgname from pg_trigger where not tgisinternal and tgrelid in ('teloa_group_routing_attempts'::regclass,'teloa_group_work_inputs'::regclass) order by tgname")).rows.map(row=>row.tgname as string),
+  indexes:(await pool.query("select indexname from pg_indexes where schemaname='public' and indexname like 'teloa\\_group\\_work\\_inputs\\_open%' order by indexname")).rows.map(row=>row.indexname as string)
+ })
+ assert.deepEqual(await groupGuards(),{triggers:['teloa_group_routing_attempts_append_only','teloa_group_work_inputs_guard'],indexes:['teloa_group_work_inputs_open_v2']})
  // 快照数据仓的四个安全转换函数随首启建出（改写器产物以 public. 限定名调用它们）。
  const functions=async()=>(await pool.query("select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname like 'teloa\\_safe\\_%' order by proname")).rows.map(row=>row.proname as string)
  assert.deepEqual(await functions(),['teloa_safe_boolean','teloa_safe_duration_seconds','teloa_safe_numeric','teloa_safe_timestamptz'])
@@ -231,6 +316,7 @@ test('空库首启一次建全结构，重跑是无操作',async()=>{
  await initializeTeloaDatabase(pool)
  assert.deepEqual(await tableNames(),first)
  assert.deepEqual(await tableIdentities(),identities,'重复初始化不得以同名新表替换已有结构')
+ assert.deepEqual(await groupGuards(),{triggers:['teloa_group_routing_attempts_append_only','teloa_group_work_inputs_guard'],indexes:['teloa_group_work_inputs_open_v2']})
  assert.deepEqual(await functions(),['teloa_safe_boolean','teloa_safe_duration_seconds','teloa_safe_numeric','teloa_safe_timestamptz'])
 })
 
@@ -243,5 +329,5 @@ test('首启之后本人空间与内置范围标签可直接使用',async()=>{
  assert.equal(personal.kind,'personal')
  assert.deepEqual(await spaces.ensurePersonal(ownerId),personal)
  const labels=await new BusinessScopeService(pool).list(ownerId)
- assert.deepEqual(labels.map(label=>[label.scope,label.title,label.kind]),[['general','通用工作','builtin'],['SOC','安全运营','builtin'],['AppSec','应用安全','builtin']])
+ assert.deepEqual(labels.map(label=>[label.scope,label.title,label.kind]),[['general','通用工作','builtin']],'新装只从通用工作开始，SOC/AppSec 不再预登记')
 })

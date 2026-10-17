@@ -56,13 +56,14 @@ test('StaffAvatar.module.css 六档身份色与公开设计黄金逐字一致', 
   assert.doesNotMatch(source, /--staff-(bg|ink|glyph):var\(--teloa-/)
 })
 
-test('个人主页头像：数字员工用 StaffAvatar，分身仍用既有 Fingerprint 角标的 .avatar', async () => {
+test('个人主页头像：数字员工用持久小松鼠形象，分身仍用既有 Fingerprint 角标的 .avatar', async () => {
   const source = await readFile(new URL('TeamPage.tsx', clientRoot), 'utf8')
   const body = source.slice(source.indexOf('function RoleDetail'), source.indexOf('function Dialog'))
-  assert.ok(body.includes('StaffAvatar'), 'AI 员工应使用 StaffAvatar')
-  // 分身整页搬到 TwinProfile.tsx（原型 原型.jsx:459 的 Avatar human），头像写法一字不改地跟着搬过去。
+  assert.ok(body.includes('EmployeeAvatar avatarKey={role.avatarKey}'), 'AI 员工应使用已保存的小松鼠形象')
+  // 分身整页搬到 TwinProfile.tsx（原型 原型.jsx:459 的 Avatar human）；头像统一由 TwinAvatar 渲染（圆形 human 底色 + Fingerprint 角标）。
   const twin = await readFile(new URL('TwinProfile.tsx', clientRoot), 'utf8')
-  assert.ok(twin.includes('teamCss.human'), '分身应保留既有 .human 头像样式')
-  assert.ok(twin.includes('Fingerprint'), '分身角标应保留 Fingerprint')
-  assert.ok(!twin.includes('StaffAvatar'), '分身不应套用AI 员工的六档身份色头像')
+  const twinAvatar = await readFile(new URL('TwinAvatar.tsx', clientRoot), 'utf8')
+  assert.ok(twin.includes('<TwinAvatar initials={profileInitials}'), '分身个人页应复用统一的分身头像')
+  assert.ok(twinAvatar.includes('Fingerprint'), '分身角标应保留 Fingerprint')
+  assert.ok(!twin.includes('StaffAvatar') && !twinAvatar.includes('StaffAvatar'), '分身不应套用AI 员工的六档身份色头像')
 })

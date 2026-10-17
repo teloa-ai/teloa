@@ -1,3 +1,8 @@
+import {initializeArtifactRevisionRequests,isArtifactRevisionProducer} from './artifact-revision-requests.ts'
+import {readStoredTaskRun,type TaskRun} from './task-runs.ts'
+import {workRequestChildId} from './conversation-work-task-protection.ts'
+import {isDeepStrictEqual} from 'node:util'
+import type {WorkAccessLease} from './work-access.ts'
 import type {Pool,PoolClient} from 'pg'
 import {artifactInput,artifactContent,savedArtifactSource,artifactFileTotalBytes,WorkError,type SavedArtifactSource,type SavedArtifactVersion,type ArtifactContent} from '@teloa/contract'
 import {ArtifactMessageStore,initializeArtifactMessages} from './artifact-messages.ts'
@@ -10,7 +15,7 @@ export async function initializeArtifacts(pool:Pool){await initializeArtifactMes
  create table if not exists teloa_artifact_versions (owner_id text not null,artifact_id uuid not null,number integer not null check(number>0),source jsonb not null,content jsonb not null,created_at timestamptz not null,primary key(owner_id,artifact_id,number),foreign key(owner_id,artifact_id) references teloa_artifacts(owner_id,id));
  create table if not exists teloa_artifact_files (owner_id text not null,artifact_id uuid not null,number integer not null,snapshot_id text not null,primary key(owner_id,artifact_id,number,snapshot_id),foreign key(owner_id,artifact_id,number) references teloa_artifact_versions(owner_id,artifact_id,number),foreign key(owner_id,snapshot_id) references teloa_artifact_snapshots(owner_id,snapshot_id));
  create table if not exists teloa_artifact_messages (owner_id text not null,artifact_id uuid not null,number integer not null,snapshot_id text not null,primary key(owner_id,artifact_id,number,snapshot_id),foreign key(owner_id,artifact_id,number) references teloa_artifact_versions(owner_id,artifact_id,number),foreign key(owner_id,snapshot_id) references teloa_artifact_message_snapshots(owner_id,snapshot_id));
-`) }
+`);await initializeArtifactRevisionRequests(pool) }
 type SourceResolver=(owner:string,expected:SavedArtifactSource,client:PoolClient)=>Promise<{source:SavedArtifactSource;sessionIds:readonly string[]}>
 function read(row:Record<string,unknown>):SavedArtifactVersion{
  try{
@@ -21,6 +26,33 @@ function read(row:Record<string,unknown>):SavedArtifactVersion{
 export class ArtifactService{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string};readonly resolve:SourceResolver
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},resolve:SourceResolver){this.pool=pool;this.identity=identity;this.resolve=resolve}
+ /** 冷恢复只读原运行已落定的精确回执，不把存在任意成果当作本次已发布。 */
+ async ownerRunReceipt(owner:string,expected:TaskRun):Promise<boolean>{
+  ownerInput(owner);if(!uuid(expected.id))throw new WorkError('teloa/invalid-input','执行身份不正确。')
+  const db=await this.pool.connect()
+  try{await db.query('begin isolation level repeatable read read only')
+   const stored=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[owner,expected.id])).rows[0]
+   if(!stored)throw new WorkError('teloa/forbidden','原执行不属于本人。')
+   const run=readStoredTaskRun(stored)
+   const identity=(value:TaskRun)=>[value.id,value.taskId,value.sessionId,value.nativeRequestId,value.inputText,value.executor,value.state,value.evidence,value.stopRequestedAt]
+   if(!isDeepStrictEqual(identity(run),identity(expected)))throw new WorkError('teloa/forbidden','成果回执与原执行不一致。')
+   if(run.executor?.kind!=='owner'||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null){await db.query('commit');return false}
+   const revision=JSON.parse(run.inputText).artifactRevision
+   if(revision){
+    const row=(await db.query('select * from teloa_artifact_revision_requests where owner_id=$1 and id=$2',[owner,revision.requestId])).rows[0]
+    if(!row||row.state!=='completed'){await db.query('commit');return false}
+    if(row.task_id!==run.taskId||row.run_id!==run.id||row.artifact_id!==revision.artifactId||row.base_version!==revision.baseVersion||row.section_id!==revision.sectionId||row.produced_version!==revision.baseVersion+1)throw new WorkError('teloa/storage-corrupt','原修订与成果回执不一致。')
+    const saved=await this.readVersion(db,owner,row.artifact_id,row.produced_version),base=await this.readVersion(db,owner,row.artifact_id,row.base_version)
+    if(!await isArtifactRevisionProducer(db,owner,run.taskId,saved)||!isDeepStrictEqual(saved.source,base.source)||saved.content.sections.find(section=>section.id===revision.sectionId)?.text!==row.candidate_text)throw new WorkError('teloa/storage-corrupt','原修订成果与生产回执不一致。')
+   }else{
+    const row=(await db.query('select * from teloa_artifacts where owner_id=$1 and request_id=$2',[owner,workRequestChildId(run.id,'owner-artifact')])).rows[0]
+    if(!row){await db.query('commit');return false}
+    const saved=await this.readVersion(db,owner,row.id,1)
+    if(row.current_version<1||row.source_key!==sourceKey(saved.source)||saved.source.kind!=='task'||saved.source.id!==run.taskId||!isDeepStrictEqual(row.request_spec,{source:saved.source,content:saved.content}))throw new WorkError('teloa/storage-corrupt','原成果与创建回执不一致。')
+   }
+   await db.query('commit');return true
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
  private async validate(client:PoolClient,owner:string,expected:SavedArtifactSource,content:ArtifactContent){
   const resolved=await this.resolve(owner,expected,client),source=savedArtifactSource(resolved.source)
   if(JSON.stringify(source)!==JSON.stringify(expected))throw new WorkError('teloa/version-conflict','成果来源已变化，请核对当前来源后保存。')
@@ -79,6 +111,43 @@ export class ArtifactService{
    const result=await this.append(client,owner,row.artifactId,base+1,source,content);await client.query('commit');return result
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
+ /** 宿主专用：本人明确的后续工作可以修订终态来源，普通 revise 的来源写禁令保持。 */
+ async reviseFromRequest(owner:string,input:{revisionId:string;runId:string;text:string},authorize:(db:PoolClient,runId:string)=>Promise<WorkAccessLease>):Promise<{applied:boolean;artifactId:string;version:number;candidateText?:string}>{
+  ownerInput(owner);artifactInput(input,['revisionId','runId','text'])
+  if(!uuid(input.revisionId)||!uuid(input.runId)||typeof input.text!=='string'||!input.text.trim()||input.text.length>16000)throw new WorkError('teloa/invalid-input','成果续改的候选正文或身份不正确。')
+  const db=await this.pool.connect()
+  try{await db.query('begin')
+   const request=(await db.query('select * from teloa_artifact_revision_requests where owner_id=$1 and id=$2 for update',[owner,input.revisionId])).rows[0]
+   if(!request||!request.task_id)throw new WorkError('teloa/forbidden','修订尚未绑定本人的后续工作。')
+   if(request.state==='completed'||request.state==='conflict'){
+    if(request.run_id!==input.runId||request.candidate_text!==input.text)throw new WorkError('teloa/conflict','原修订已经记录其他候选。')
+    if(request.state==='completed'){
+     const saved=await this.readVersion(db,owner,request.artifact_id,request.produced_version)
+     if(!await isArtifactRevisionProducer(db,owner,request.task_id,saved)||saved.content.sections.find(section=>section.id===request.section_id)?.text!==input.text)throw new WorkError('teloa/storage-corrupt','原修订成果与生产回执不一致。')
+    }
+    await db.query('commit');return {applied:request.state==='completed',artifactId:request.artifact_id,version:request.produced_version??request.base_version,...(request.state==='conflict'?{candidateText:request.candidate_text}:{})}
+   }
+   const stored=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2 for share',[owner,input.runId])).rows[0]
+   if(!stored)throw new WorkError('teloa/forbidden','修订的原生运行不存在。')
+   const run=readStoredTaskRun(stored),fixed=JSON.parse(run.inputText).artifactRevision
+   if(run.taskId!==request.task_id||run.executor?.kind!=='owner'||run.executor.grantId!==request.source_request_id||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null||fixed?.requestId!==request.id||fixed.artifactId!==request.artifact_id||fixed.baseVersion!==request.base_version||fixed.sectionId!==request.section_id)throw new WorkError('teloa/forbidden','候选不是这次固定反馈工作的成功结果。')
+   const admission=await authorize(db,run.id)
+   const head=(await db.query('select * from teloa_artifacts where owner_id=$1 and id=$2 for update',[owner,request.artifact_id])).rows[0]
+   const base=await this.readVersion(db,owner,request.artifact_id,request.base_version)
+   const feedback=(await db.query('select * from teloa_artifact_feedback where owner_id=$1 and id=$2',[owner,request.feedback_id])).rows[0]
+   if(!head||!feedback||feedback.artifact_id!==base.artifactId||feedback.version!==base.number||feedback.section_id!==request.section_id||feedback.body!==fixed.feedback||base.content.sections.find(section=>section.id===request.section_id)?.text!==fixed.originalText||head.source_key!==sourceKey(base.source))throw new WorkError('teloa/storage-corrupt','原成果、反馈与固定修订输入不一致。')
+   admission.assertCurrent()
+   if(head.current_version!==request.base_version||base.content.sections.find(section=>section.id===request.section_id)?.text===input.text){
+    await db.query("update teloa_artifact_revision_requests set state='conflict',run_id=$3,candidate_text=$4 where owner_id=$1 and id=$2",[owner,request.id,run.id,input.text]);await db.query('commit')
+    return {applied:false,artifactId:base.artifactId,version:base.number,candidateText:input.text}
+   }
+   const content=artifactContent({...base.content,sections:base.content.sections.map(section=>section.id===request.section_id?{...section,text:input.text}:section),feedbackId:request.feedback_id,note:'根据本人反馈由 AI 修订指定段落'})
+   const saved=await this.append(db,owner,base.artifactId,base.number+1,base.source,content)
+   await db.query('insert into teloa_artifact_revision_producers values($1,$2,$3,$4,$5,$6,$7)',[owner,base.artifactId,saved.number,request.id,run.taskId,run.id,stored.task_state_version+1])
+   await db.query("update teloa_artifact_revision_requests set state='completed',run_id=$3,produced_version=$4,candidate_text=$5 where owner_id=$1 and id=$2",[owner,request.id,run.id,saved.number,input.text])
+   admission.assertCurrent();await db.query('commit');return {applied:true,artifactId:base.artifactId,version:saved.number}
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
  async readVersion(db:Pick<Pool,'query'>,owner:string,id:string,number:number){
   const rows=await db.query('select * from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3',[owner,id,number])
   if(!rows.rows[0])throw new WorkError('teloa/storage-corrupt','成果版本缺失。')
@@ -109,5 +178,19 @@ export class ArtifactService{
   ownerInput(owner);const key=sourceKey(savedArtifactSource(source))
   const rows=await this.pool.query('select v.*,h.source_key from teloa_artifacts h left join teloa_artifact_versions v on v.owner_id=h.owner_id and v.artifact_id=h.id and v.number=h.current_version where h.owner_id=$1 and h.source_key=$2 order by v.created_at desc,h.id',[owner,key])
   return rows.rows.map(row=>{const version=read(row);if(sourceKey(version.source)!==key)throw new WorkError('teloa/storage-corrupt','成果目录与来源不一致。');return version})
+ }
+ /** 原归属保持；后续任务只通过持久生产回执取得指定版本。 */
+ async listTask(owner:string,source:SavedArtifactSource):Promise<(SavedArtifactVersion&{producer?:{taskId:string;taskVersion:number;runId:string}})[]>{
+  if(source.kind!=='task')throw new WorkError('teloa/invalid-input','需要任务来源。')
+  const own=await this.listSource(owner,source)
+  const produced=await this.pool.query('select * from teloa_artifact_revision_producers where owner_id=$1 and task_id=$2 order by artifact_id,number',[owner,source.id])
+  const rows:(SavedArtifactVersion&{producer?:{taskId:string;taskVersion:number;runId:string}})[]=[...own]
+  for(const receipt of produced.rows){
+   const version=await this.readVersion(this.pool,owner,receipt.artifact_id,receipt.number)
+   if(!await isArtifactRevisionProducer(this.pool,owner,source.id,version,receipt.task_version))throw new WorkError('teloa/storage-corrupt','后续工作成果缺少可信生产回执。')
+   if(rows.some(row=>row.artifactId===version.artifactId))throw new WorkError('teloa/storage-corrupt','后续工作成果目录重复。')
+   rows.push({...version,producer:{taskId:source.id,taskVersion:receipt.task_version,runId:receipt.run_id}})
+  }
+  return rows
  }
 }

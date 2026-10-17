@@ -826,6 +826,19 @@ file, when present, remains the source for its exact text.
 | `@deepseek-ai/node-addon-system` | 0.1.2 |
 | `@deepseek-ai/node-addon-system-darwin-arm64` | 0.1.2 |
 
+## Adapted voice playback: dsh-realtime-voice (MIT)
+
+`packages/realtime-voice/src/client/index.ts` adapts the PCM playback clock,
+prebuffer and interruption design from `client/client.js` in
+[AlexKaiqi/dsh-realtime-voice](https://github.com/AlexKaiqi/dsh-realtime-voice),
+package version 0.3.3, Copyright (c) 2026 dsh-realtime-voice contributors.
+The reviewed upstream file SHA-256 is
+`42849f00896d6ed6539778af30d6faf64dbbb39ef018d7f4bf25a0eb22a12469`.
+Its complete MIT notice is preserved in
+`packages/realtime-voice/LICENSE-MIT.upstream` and included with the runtime
+package. Teloa replaces the host protocol, authentication, resource lifecycle
+and task handoff; the upstream model and tool execution layers are not bundled.
+
 ## Vendored source: dsh-im-gateway (MIT)
 
 `packages/im-gateway` (`@teloa/im-gateway`) vendors a small subset of
@@ -1039,3 +1052,130 @@ The complete MIT license is retained in
 `packages/harness-dsh/src/local-model-fit.ts`; the exact sources and Teloa changes
 are documented in `packages/harness-dsh/LOCAL-MODEL-FIT-PROVENANCE.md`.
 No llmfit executable, Rust runtime, network service or model weights are included.
+
+
+### App identity icons
+
+The application directory uses locally bundled brand graphics for product identification,
+not endorsement. Trademark rights remain with their owners. Slack is adapted from
+Simple Icons (CC0-1.0), commit `0af835e2949a9222965522780e5e0810d3c53382`,
+with the brand fill set to #4A154B. Remotion, pstack and Sentry retain the original icons
+from their pinned MIT-licensed plugin repositories. GitHub, Gmail, Google Drive,
+Google Sheets, Google Slides, HubSpot, PostHog, Todoist and Trello use the original
+logos of the matching connector plugins in `cursor/plugins` at commit
+`ccb5507cec1546dc88135c1139c811e6c59115ba` (`third_party/<name>`, MIT). The source URLs, fixed
+revisions, original and adopted SHA-256 values, and any changes are recorded in
+`packages/client/ui-workbench/src/brand/resources/app-icons-sources.json`.
+The complete permission notices for those bundled icons follow.
+
+#### pstack
+
+Source: https://github.com/cursor/plugins/tree/837067b75aa20ab58d7b2a2f6c0531e37118c596
+
+```text
+MIT License
+
+Copyright (c) 2026 Lauren Tan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### remotion
+
+Source: https://github.com/remotion-dev/cursor-plugin/tree/ef694238d2e62c05692944a5082cd08e1367eb1c
+
+```text
+MIT License
+
+Copyright (c) 2026 Remotion
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### sentry
+
+Source: https://github.com/getsentry/plugin-cursor/tree/135513f89f293c587fbffb852afdf00a256df32a
+
+```text
+MIT License
+
+Copyright (c) 2025 Sentry (https://sentry.io) and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### cursor/plugins connector logos
+
+Source: https://github.com/cursor/plugins/tree/ccb5507cec1546dc88135c1139c811e6c59115ba/third_party (github, gmail, google-drive, google-sheets, google-slides, hubspot, posthog-mcp, todoist, trello; each directory carries this license)
+
+```text
+MIT License
+
+Copyright (c) 2026 Cursor
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

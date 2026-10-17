@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {inflateRawSync} from 'node:zlib'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isRecord,isGithubRepositoryName,MARKET_CATALOG_FORBIDDEN_EXTENSIONS,marketCatalogGithubFileRepositoryPath,type MarketCatalogUpstreamGithub} from '@teloa/contract'
+import {WorkError,isRecord,isGithubRepositoryName,readMarketCatalogEntry,MARKET_CATALOG_FORBIDDEN_EXTENSIONS,marketCatalogGithubFileRepositoryPath,type MarketCatalogUpstreamGithub,type MarketCatalogUpstreamSkillEntry} from '@teloa/contract'
 import type {MarketSourceTrust} from './content-store.ts'
 
 export type GithubHttpRequest={url:string;method:'GET';headers:Readonly<Record<string,string>>;redirect:'manual';signal:AbortSignal}
@@ -315,14 +315,19 @@ async function downloadSubtree(http:GithubHttpPort,spec:RequestSpec&{path:string
 }
 
 /** 目录上游添加的薄适配：复用固定子目录读取，只读取审核清单，不创建另一套来源存储或下载器。 */
-export async function downloadGithubCatalogSkill(source:MarketCatalogUpstreamGithub,http:GithubHttpPort):Promise<{path:string;bytes:Uint8Array}[]>{
+export async function downloadGithubCatalogSkill(input:MarketCatalogUpstreamGithub|MarketCatalogUpstreamSkillEntry,http:GithubHttpPort):Promise<{path:string;bytes:Uint8Array}[]>{
+ // 辅助代码只随 Teloa 已审原插件的完整技能内容下载，不执行。普通来源仍遵守原纯文本规则。
+ const entry=input.kind==='skill'?readMarketCatalogEntry(input):null
+ const reviewedPlugin=entry?.delivery==='upstream'&&entry.review.reviewer==='Teloa'&&entry.origin.marketplace==='cursor'&&!!entry.plugin&&entry.compatibility.status!=='unsupported'
+ const source=entry?.delivery==='upstream'?entry.upstream:input as MarketCatalogUpstreamGithub
  if(source.kind!=='github'||source.repository.host!=='github.com'||!COMMIT.test(source.commit))throw invalid('目录 GitHub 来源必须固定到 github.com 的完整提交。')
  const spec=normalize({requestId:'00000000-0000-4000-8000-000000000000',owner:source.repository.owner,repo:source.repository.repo,ref:source.commit,path:source.path})
  if(!Array.isArray(source.files)||source.files.length<1||source.files.length>MAX_FILES)throw invalid('目录 GitHub 文件数量不正确。')
  const selection=new Map<string,MarketCatalogUpstreamGithub['files'][number]>(),folded=new Set<string>(),sourceFolded=new Set<string>();let total=0
  for(const file of source.files){
   const path=finalPath('root/'+file.path,'root'),parts=path.split('/'),fold=path.toLocaleLowerCase('en-US')
-  if(parts.some(part=>part.startsWith('.'))||parts.slice(0,-1).includes('scripts')||MARKET_CATALOG_FORBIDDEN_EXTENSIONS.test(path))throw invalid('目录 GitHub 文件包含禁止安装的路径。')
+  const supportingCode=reviewedPlugin&&/\.(?:py|sh|bash|zsh|js|mjs|cjs|ts|mts|cts|tsx|jsx|rb|pl|php)$/i.test(path)
+  if(parts.some(part=>part.startsWith('.'))||parts.slice(0,-1).includes('scripts')&&!reviewedPlugin||MARKET_CATALOG_FORBIDDEN_EXTENSIONS.test(path)&&!supportingCode)throw invalid('目录 GitHub 文件包含禁止安装的路径。')
   const repositoryPath=marketCatalogGithubFileRepositoryPath(spec.path!,file).normalize('NFC'),sourceFold=repositoryPath.toLocaleLowerCase('en-US')
   if(sourceFolded.has(sourceFold)||folded.has(fold)||!COMMIT.test(file.gitBlob)||typeof file.sha256!=='string'||!/^[0-9a-f]{64}$/.test(file.sha256)||file.size!==null&&(!Number.isSafeInteger(file.size)||file.size<0||file.size>MAX_FILE_BYTES))throw invalid('目录 GitHub 文件声明无效或重复。')
   total+=file.size??0;selection.set(repositoryPath,{...file,path});folded.add(fold);sourceFolded.add(sourceFold)

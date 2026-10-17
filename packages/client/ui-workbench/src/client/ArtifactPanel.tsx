@@ -1,14 +1,18 @@
 import { TaskArtifactPicker, type TaskArtifactPort } from './TaskArtifactPicker.js';
 import { artifactDraftKey, clearArtifactRevision, recoverArtifactRevision, hasArtifactRevision, type ArtifactDraft as Draft } from './artifact-drafts.js';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react';
+import { ArrowLeft, ArrowUpRight, Download, Maximize2, Minimize2, Save, Send, X } from 'lucide-react';
+import {createPortal} from 'react-dom';
 import clsx from 'clsx';
 import { artifactMarkdown, sourceKey, sourceStamp, type ArtifactRef, type ArtifactSource, type ArtifactSourceRef } from './artifact-preview.js';
 import { resolveArtifactSource, type ArtifactConversation } from './artifact-source.js';
 import type { ArtifactWorkChange } from './artifact-work.js';
 import type { TaskPreview } from './task-preview.js';
-import { artifactMessageKey, copyArtifactMessages, type NativeArtifactApi } from './artifact-native.js';
-import { NativeArtifactPicker, ArtifactMessages } from './NativeArtifactPicker.js';
+import { type NativeArtifactApi } from './artifact-native.js';
+import { ArtifactMessages } from './NativeArtifactPicker.js';
+import {TaskRunArtifactPicker} from './TaskRunArtifactPicker.js';
+import {MarkdownPreview} from './knowledge-markdown.js';
+import type {TaskRunApi} from './task-run-api.js';
 import { ArtifactFiles } from './ArtifactFiles.js';
 import { fileSetKey, type ArtifactFileApi, type ArtifactFileDraft } from './artifact-files.js';
 import { ArtifactPanelMoreActions, artifactPanelArtifacts, artifactPanelMoreActions, artifactPanelStart, type ArtifactPanelView } from './artifact-panel-presentation.js';
@@ -16,14 +20,21 @@ import base from './TaskPage.module.css';
 import css from './ArtifactPanel.module.css';
 import {useI18n} from './i18n/provider.js';
 import {localizeWorkError} from './i18n/errors.js';
+import {useBusinessScopes} from './business-scope-context.js';
+import type {MethodReuseTarget} from '@teloa/contract';
+import {canPrepareArtifactMethodReuse} from './artifact-method-reuse-preparation.ts';
 export type ArtifactTarget = {
     source: ArtifactSourceRef;
     artifact?: {id:string;version?:number};
+    initialView?: 'files';
+    initialAction?: 'prepare';
 };
 export type OpenArtifacts = (source: ArtifactSourceRef, artifact?: ArtifactRef) => void;
 const blank: Draft = { title: '', body: '', note: '', feedback: '', feedbackId: '', stamp: '' };
 type Props = {
+    messageAuthor?:string|undefined;
     taskSources: TaskArtifactPort;
+    taskRuns?: Pick<TaskRunApi,'list'|'chatPresentation'>;
     recovery?: {
         message?: unknown;
         pending: () => {
@@ -38,28 +49,46 @@ type Props = {
     loadError?: string;
     target: ArtifactTarget | null;
     open?: boolean;
+    /** 右栏和更大视图复用同一个实例，版本与反馈草稿不随容器切换重建。 */
+    inline?: boolean;
+    portal?: HTMLElement | null;
     state: TaskPreview;
     conversation: ArtifactConversation | undefined;
     nativeArtifacts: NativeArtifactApi;
     artifactFileApi: ArtifactFileApi;
     close: () => void;
     change: (change: ArtifactWorkChange) => Promise<string | void>;
-    openSource: (ref: ArtifactSourceRef) => void;
+    openSource: (ref: ArtifactSourceRef) => void | Promise<void>;
     openTask: (id: string) => void;
+    revisionIdentity?:object;
+    methodReuseIdentity?:object;
+    requestMethodReuse?:(artifactId:string,version:number,target:MethodReuseTarget,mayContinue?:(afterNavigation?:boolean)=>boolean)=>Promise<void>;
+    requestRevision?:(artifactId:string,version:number,feedbackId:string,mayContinue?:(afterNavigation?:boolean)=>boolean)=>Promise<void>;
 };
-export function ArtifactPanel({ taskSources, recovery, loadError, target, open = true, state, conversation, nativeArtifacts, artifactFileApi, close, change, openSource, openTask }: Props) {
-    const {locale,t}=useI18n();
+export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, loadError, target, open = true, inline = false, portal, state, conversation, nativeArtifacts, artifactFileApi, close, change, openSource, openTask, requestRevision, revisionIdentity, requestMethodReuse, methodReuseIdentity }: Props) {
+    const {locale,t}=useI18n(), scopeNames=useBusinessScopes();
     const dialog = useRef<HTMLDialogElement>(null), [selected, setSelected] = useState<string | null>(null), [versionNumber, setVersion] = useState(1), [sectionId, setSection] = useState(''), [view, setView] = useState<ArtifactPanelView>('preview'), [error, setError] = useState(''), [notice, setNotice] = useState(''), [drafts, setDrafts] = useState<Record<string, Draft>>({}), [linkId, setLinkId] = useState('');
     const targetKey = target ? JSON.stringify(target) : '';
+    const composing = useRef(false);
     const persistentSource = !!target && (target.source.kind === 'session' || target.source.kind === 'task' && state.tasks.some(task => task.id === target.source.id && task.storage === 'persistent'));
     const visibleArtifacts = artifactPanelArtifacts(state.artifacts,persistentSource);
-    const rows = target ? visibleArtifacts.filter(item => sourceKey(item.source) === sourceKey(target.source) || item.links.some(link => sourceKey(link.object) === sourceKey(target.source))) : [];
+    const rows = target ? visibleArtifacts.filter(item => sourceKey(item.source) === sourceKey(target.source) || target.source.kind==='task'&&item.revisions?.some(revision=>revision.taskId===target.source.id) || target.source.kind==='task'&&item.produced?.some(producer=>producer.taskId===target.source.id) || item.links.some(link => sourceKey(link.object) === sourceKey(target.source))) : [];
     const rowsKey = rows.map(item => item.id).join('\0');
     const [busy, setBusy] = useState(false), busyRef = useRef(false), currentTarget = useRef(targetKey);
     currentTarget.current = targetKey;
-    const [pickerOpen, setPickerOpen] = useState(false);
+    const revisionLifetime=useRef(true),revisionPending=useRef<object|null>(null),revisionOwner=useRef({targetKey,open,revisionIdentity,methodReuseIdentity,selected,versionNumber,sectionId});
+    const previousRevisionOwner=revisionOwner.current;
+    if(previousRevisionOwner.targetKey!==targetKey||previousRevisionOwner.open!==open||previousRevisionOwner.revisionIdentity!==revisionIdentity||previousRevisionOwner.methodReuseIdentity!==methodReuseIdentity||previousRevisionOwner.selected!==selected||previousRevisionOwner.versionNumber!==versionNumber||previousRevisionOwner.sectionId!==sectionId)revisionOwner.current={targetKey,open,revisionIdentity,methodReuseIdentity,selected,versionNumber,sectionId};
+    useLayoutEffect(()=>{revisionLifetime.current=true;return()=>{revisionLifetime.current=false}},[]);
+    useLayoutEffect(()=>{
+        if(revisionPending.current&&revisionPending.current!==revisionOwner.current){revisionPending.current=null;busyRef.current=false;setBusy(false);setError('');setNotice('')}
+    },[targetKey,open,revisionIdentity,methodReuseIdentity,selected,versionNumber,sectionId]);
     const [fileDrafts, setFileDrafts] = useState<Record<string, ArtifactFileDraft>>({});
-    useEffect(() => setPickerOpen(false), [targetKey, selected, conversation?.id]);
+    const [expanded,setExpanded]=useState(false);
+    // Esc 退出放大后焦点回到发起放大的按钮：此时焦点可能已落在 body，关闭再重开的默认交接会把焦点拽进名称输入框。
+    const expandToggle=useRef<HTMLButtonElement>(null), restoreToggle=useRef(false);
+    const present=(node:ReactNode)=>portal?createPortal(node,portal):node;
+    const panelClass=clsx(base.dialog,css.panel,inline&&css.inline,inline&&expanded&&css.expanded);
     useLayoutEffect(() => {
         if (!open || !target) return;
         const start = artifactPanelStart(rows.map(item => ({ id: item.id, primary: item.primary, updatedAt: item.versions.at(-1)!.at, versions:item.versions.map(version=>version.number) })), target?.artifact?.id,!!target?.artifact,target?.artifact?.version);
@@ -67,10 +96,12 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
         setSelected(start.selected);
         setVersion(target?.artifact?.id === start.selected ? (target.artifact.version ?? item?.versions.at(-1)?.number ?? 1) : (item?.links.find(link => target && sourceKey(link.object) === sourceKey(target.source))?.artifactVersion || item?.versions.at(-1)?.number || 1));
         setSection('');
-        setView('preview');
+        setView(target.initialView??'preview');
         setError('');
         setNotice('');
         setLinkId('');
+        setExpanded(false);
+        composing.current = false;
     }, [targetKey, open]);
     useEffect(() => {
         if (!target || !rows.length)
@@ -81,7 +112,7 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
             const start = artifactPanelStart(rows.map(item => ({ id: item.id, primary: item.primary, updatedAt: item.versions.at(-1)!.at, versions:item.versions.map(version=>version.number) })), target.artifact?.id,!!target.artifact,target.artifact?.version), item = rows.find(row => row.id === start.selected);
             setVersion(target.artifact?.id === start.selected ? (target.artifact.version ?? item?.versions.at(-1)?.number ?? 1) : (item?.versions.at(-1)?.number || 1));
             setSection('');
-            setView('preview');
+            setView(target.initialView??'preview');
             return start.selected;
         });
     }, [rowsKey, targetKey]);
@@ -90,20 +121,39 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
             return;
         const node = dialog.current, previous = document.activeElement instanceof HTMLElement ? document.activeElement : null, media = window.matchMedia('(max-width:1080px)');
         const show = () => { if (!node)
-            return; const focused = node.contains(document.activeElement) ? document.activeElement as HTMLElement : null; node.close(); if (media.matches)
+            return; const focused = node.contains(document.activeElement) ? document.activeElement as HTMLElement : null; node.close(); if (inline ? expanded : media.matches || !!document.querySelector('dialog[open]:modal'))
             node.showModal();
         else
-            node.show(); focused?.focus(); };
+            node.show(); ((restoreToggle.current ? expandToggle.current : null) || focused || node.querySelector<HTMLElement>('header button'))?.focus(); restoreToggle.current = false; };
         show();
         media.addEventListener('change', show);
         return () => { media.removeEventListener('change', show); node?.close(); if (previous?.isConnected && previous.getClientRects().length)
             previous.focus(); };
-    }, [open, !!target]);
+    }, [open, targetKey, inline, expanded, portal]);
+    useLayoutEffect(()=>{
+        if(!open||!target)return;
+        let frame=0,attempts=0;
+        // 右栏宿主可能下一帧才解除 hidden；只补交给当前预览的返回控件，不夺取已有内部焦点。
+        const focus=()=>{
+            const node=dialog.current,button=node?.querySelector<HTMLButtonElement>('header button');
+            if(!node||!button)return;
+            const active=node.ownerDocument.activeElement;
+            if(active instanceof HTMLElement&&active!==node&&node.contains(active)&&active.getClientRects().length)return;
+            if(button.getClientRects().length)button.focus();else if(attempts++<2)frame=requestAnimationFrame(focus);
+        };
+        focus();return()=>cancelAnimationFrame(frame);
+    },[open,targetKey,portal]);
     if (!open || !target)
         return null;
+    const closingBlocked=busy&&!revisionPending.current;
+    const back=()=>{if(!closingBlocked)close()};
+    const onKeyDown=(event:KeyboardEvent<HTMLDialogElement>)=>{if(event.key!=='Escape'||event.defaultPrevented)return;if(composing.current||event.nativeEvent.isComposing||event.nativeEvent.keyCode===229){event.stopPropagation();event.preventDefault();return}if(!event.currentTarget.matches(':modal')){event.stopPropagation();event.preventDefault();back()}};
+    const onCancel=(event:SyntheticEvent<HTMLDialogElement>)=>{if(event.target!==event.currentTarget)return;event.stopPropagation();event.preventDefault();if(closingBlocked||composing.current)return;if(inline&&expanded){restoreToggle.current=true;setExpanded(false)}else close()};
     const fallback = artifactPanelStart(rows.map(item => ({ id: item.id, primary: item.primary, updatedAt: item.versions.at(-1)!.at, versions:item.versions.map(version=>version.number) })), target.artifact?.id,!!target.artifact,target.artifact?.version);
-    if(fallback.mode==='missing')return <dialog ref={dialog} className={clsx(base.dialog, css.panel)} aria-label={t("artifact.panel.text.006")}><p role="alert">{t('error.notFound')}</p><button type="button" onClick={close}>{t("artifact.panel.text.009")}</button></dialog>;
-    const selectedId = selected && rows.some(item => item.id === selected) ? selected : fallback.selected;
+    if(fallback.mode==='missing')return present(<dialog ref={dialog} className={panelClass} aria-label={t("artifact.panel.text.006")} onKeyDown={onKeyDown} onCancel={onCancel}><p role="alert">{loadError||t('error.notFound')}</p><button type="button" disabled={closingBlocked} onClick={back}>{inline?t('overview.back'):t("artifact.panel.text.009")}</button></dialog>);
+    const retainedDraftKey='new:'+sourceKey(target.source);
+    const retainedDraft=!target.artifact&&(drafts[retainedDraftKey]!==undefined||fileDrafts[retainedDraftKey]!==undefined);
+    const selectedId = retainedDraft ? null : selected && rows.some(item => item.id === selected) ? selected : fallback.selected;
     const artifact = state.artifacts.find(item => item.id === selectedId), version = artifact?.versions.find(item => item.number === versionNumber) || artifact?.versions.at(-1), latest = artifact?.versions.at(-1);
     const section = version?.sections.find(item => item.id === sectionId) || version?.sections[0];
     let source: ArtifactSource | undefined, sourceError = '';
@@ -146,14 +196,17 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
     const markdown = artifact && version ? artifactMarkdown(artifact, version.number,t) : '';
     const choose = (id: string, number?: number) => { const item = state.artifacts.find(item => item.id === id)!; setSelected(id); setVersion(number || item.links.find(link => sourceKey(link.object) === sourceKey(target.source))?.artifactVersion || item.versions.at(-1)!.number); setSection(''); setView('preview'); setError(''); setNotice(''); };
     const sourceBody = target.source.kind === 'analysis' ? state.business.runs.find(item => item.id === target.source.id && item.scope === ('scope' in target.source ? target.source.scope : ''))?.result : target.source.kind === 'object' ? state.business.objects.find(item => item.id === target.source.id && 'scope' in target.source && item.scope === target.source.scope && 'objectType' in target.source && item.type === target.source.objectType)?.summary : target.source.kind === 'task' ? state.tasks.find(item => item.id === target.source.id)?.result : target.source.kind === 'run' ? state.continuous.runs.find(item => item.id === target.source.id)?.output : undefined;
+    const previewBody=drafts[key]?.body??sourceBody??'';
+    const savedBody=version?.sections.every((item,index)=>item.id==='section-'+(index+1)&&item.title==='段落 '+(index+1))?version.sections.map(item=>item.text).join('\n\n'):null;
     const linkOptions = artifactPanelArtifacts(state.artifacts,persistentSource).flatMap(item => item.versions.filter(v => !v.source.private && v.source.scope === source?.scope).map(v => ({ value: JSON.stringify([item.id, v.number]), artifact: { id: item.id, version: v.number }, label: v.title + ' · v' + v.number })));
-    return <dialog ref={dialog} className={clsx(base.dialog, css.panel)} aria-label={t("artifact.panel.text.006")} onCancel={event => { if (busy)
-        event.preventDefault();
-    else
-        close(); }}>
-    <header><div><h2>{t("artifact.panel.text.006")}</h2><p>{persistentSource ? t("artifact.panel.text.007") : t("artifact.panel.text.008")}</p></div><button type="button" aria-label={t("artifact.panel.text.009")} disabled={busy} onClick={close}><X size={18}/></button></header>
+    const goToSource=async(ref:ArtifactSourceRef)=>{try{await openSource(ref);if(currentTarget.current===targetKey)close()}catch(cause){if(currentTarget.current===targetKey)setError(localizeWorkError(locale,cause))}};
+    return present(<dialog ref={dialog} className={panelClass} aria-label={t("artifact.panel.text.006")} onKeyDown={onKeyDown} onCancel={onCancel} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}}>
+    <header>{inline?<><button type="button" className={css.back} disabled={closingBlocked} onClick={back}><ArrowLeft size={15}/>{t('overview.back')}</button><div className={css.previewActions}>{artifact&&version&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={'teloa-'+artifact.id.replace(/[^\w-]/g,'_')+'-v'+version.number+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(markdown)}><Download size={16}/></a>}<button type="button" ref={expandToggle} aria-label={t(expanded?'artifactFiles.collapseImage':'artifactFiles.expandImage')} title={t(expanded?'artifactFiles.collapseImage':'artifactFiles.expandImage')} onClick={()=>setExpanded(value=>!value)}>{expanded?<Minimize2 size={16}/>:<Maximize2 size={16}/>}</button></div></>:<><div><h2>{t("artifact.panel.text.006")}</h2><p>{persistentSource ? t("artifact.panel.text.007") : t("artifact.panel.text.008")}</p></div><button type="button" aria-label={t("artifact.panel.text.009")} disabled={closingBlocked} onClick={close}><X size={18}/></button></>}</header>
     <fieldset disabled={busy} className={css.layout}><aside className={css.directory} aria-label={t("artifact.panel.text.010")}>
       <div className={css.directoryTitle}><strong>{t("artifact.panel.text.011")}</strong><span>{rows.length}{t("artifact.panel.text.012")}</span></div>
+      {rows.map(item => <button type="button" className={css.row} key={item.id} aria-current={item.id === selectedId ? 'page' : undefined} onClick={() => choose(item.id)}><strong>{item.versions.at(-1)!.title}</strong><small>{item.primary ? t("artifact.panel.text.016") : ''}{item.versions.length}{t("artifact.panel.text.017")}{sourceKey(item.source) !== sourceKey(target.source) ? t("artifact.panel.text.018") + item.links.filter(link => sourceKey(link.object) === sourceKey(target.source)).map(link => link.artifactVersion).join('、v') : ''}</small></button>)}
+      {!rows.length && <div className={css.directoryEmpty}><strong>{t("artifact.panel.text.019")}</strong><p>{t("artifact.panel.text.020")}</p></div>}
+    </aside><article className={css.content} aria-label={t("artifact.panel.text.021")}>
       {!!recovery?.message && <p role="alert">{localizeWorkError(locale,recovery.message)}</p>}
       {recovery?.pending().map(item => <button type="button" key={item.key} onClick={async () => { if (busyRef.current)
         return; busyRef.current = true; setBusy(true); try {
@@ -174,38 +227,25 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
         busyRef.current = false;
         setBusy(false);
     } }}>{t("artifact.panel.text.015")}{item.title}</button>)}
-      {rows.map(item => <button type="button" className={css.row} key={item.id} aria-current={item.id === selectedId ? 'page' : undefined} onClick={() => choose(item.id)}><strong>{item.versions.at(-1)!.title}</strong><small>{item.primary ? t("artifact.panel.text.016") : ''}{item.versions.length}{t("artifact.panel.text.017")}{sourceKey(item.source) !== sourceKey(target.source) ? t("artifact.panel.text.018") + item.links.filter(link => sourceKey(link.object) === sourceKey(target.source)).map(link => link.artifactVersion).join('、v') : ''}</small></button>)}
-      {!rows.length && <div className={css.directoryEmpty}><strong>{t("artifact.panel.text.019")}</strong><p>{t("artifact.panel.text.020")}</p></div>}
-    </aside><article className={css.content} aria-label={t("artifact.panel.text.021")}>
       {loadError && (target.source.kind === 'session' || target.source.kind === 'task') && <p role="alert">{loadError}{t("artifact.panel.text.022")}</p>}{busy && <p role="status">{t("artifact.panel.text.023")}</p>}{error && <p role="alert" className={base.error}>{error}</p>}{notice && <p role="status">{notice}</p>}
       {sourceError && <p role="status">{sourceError}{t("artifact.panel.text.024")}</p>}
-      {!artifact ? <section className={css.createMode} aria-label={t("artifact.panel.text.025")}><header><span>{t("artifact.panel.text.026")}</span><h3>{t("artifact.panel.text.027")}</h3><p>{t("artifact.panel.text.028")}</p></header><section className={base.block}><h3>{t("artifact.panel.text.029")}</h3><p>{source?.title || t("artifact.panel.text.030")} · {source?.scope}</p>{source && <button type="button" onClick={() => { openSource(source.ref); close(); }}>{t("artifact.panel.text.031")}</button>}</section><form className={base.form} onSubmit={async (event) => { event.preventDefault(); const id = crypto.randomUUID(); const saved = await act({ type: 'create', id, source: target.source, expectedSource: draft.stamp, title: draft.title, body: draft.body, files: fileDraft.files, ...(draft.messages ? { messages: draft.messages } : {}), now: new Date().toISOString() }); if (saved) {
-            clearDraft();
-            clearFiles();
-            setSelected(typeof saved === 'string' ? saved : id);
-            setVersion(1);
-            setSection('');
-            setView('preview');
-        } }}>
-        {target.source.kind === 'task' && <TaskArtifactPicker taskId={target.source.id} port={taskSources} native={nativeArtifacts} filesApi={artifactFileApi} messages={draft.messages || []} files={fileDraft.files} setMessages={messages => patch({ messages })} setFiles={files => patchFiles({ files })} enabled={!!source}/>} 
-        {target.source.kind === 'session' && <><button type="button" disabled={!source} aria-expanded={pickerOpen} onClick={() => setPickerOpen(value => !value)}>{pickerOpen ? t("artifact.panel.text.032") : t("artifact.panel.text.033")}</button>{pickerOpen && source && <NativeArtifactPicker key={target.source.id} sessionId={target.source.id} api={nativeArtifacts} selected={draft.messages || []} select={message => { try {
-            patch({ messages: copyArtifactMessages([...(draft.messages || []), message], target.source) });
-            setError('');
-        }
-        catch (error) {
-            setError(localizeWorkError(locale,error));
-        } }}/>}<ArtifactMessages messages={draft.messages || []} api={nativeArtifacts} enabled={!!source} remove={message => patch({ messages: (draft.messages || []).filter(item => artifactMessageKey(item) !== artifactMessageKey(message)) })} append={text => { const next = [draft.body, text].filter(Boolean).join('\n\n'); if (next.length > 16000) {
-            setError(t("artifact.panel.text.035"));
-            return;
-        } patch({ body: next }); setError(''); }}/></>}
-        {target.source.kind === 'session' && <ArtifactFiles key={fileKey} sessionId={target.source.id} api={artifactFileApi} files={fileDraft.files} enabled={!!source} form={fileDraft.form} changeForm={form => patchFiles({ form })} changeFiles={files => patchFiles({ files })}/>} 
-        {sourceBody && <button type="button" disabled={!!draft.body.trim()} onClick={() => patch({ body: sourceBody })}>{t("artifact.panel.text.036")}</button>}<label>{t("artifact.panel.text.037")}<input required maxLength={200} value={draft.title} onChange={event => patch({ title: event.target.value })}/></label><label>{t("artifact.panel.text.038")}<textarea required={!fileDraft.files.length} rows={12} maxLength={16000} value={draft.body} onChange={event => patch({ body: event.target.value })} placeholder={t("artifact.panel.text.039")}/></label>
-        <p>{t("artifact.panel.text.040")}</p><button type="submit" disabled={!source || !draft.title.trim() || (!draft.body.trim() && !fileDraft.files.length)}>{persistentSource ? t("artifact.panel.text.041") : t("artifact.panel.text.042")}</button>
-      </form></section> : version ? <>
+      {!artifact ? <section className={css.createMode} aria-label={t("artifact.panel.text.048")}>
+        {target.source.kind==='task'&&persistentSource&&taskRuns&&<TaskRunArtifactPicker preservePreview={!!previewBody||!!fileDraft.files.length} key={sourceKey(target.source)} taskId={target.source.id} api={taskRuns} port={taskSources} native={nativeArtifacts} selected={draft.messages??[]} select={message=>patch({body:message?.text??'',messages:message?[message]:[],stamp:source?sourceStamp(source):''})}/>}
+        <header><h3>{drafts[key]?.title||source?.title||t('artifact.panel.text.019')}</h3>{!previewBody&&!fileDraft.files.length&&<p>{t('artifact.panel.emptyHelp')}</p>}</header>
+        {previewBody&&<section className={css.preview}><div className={css.markdown}><MarkdownPreview markdown={previewBody} images={false}/></div></section>}
+        {!!draft.messages?.length&&<ArtifactMessages messages={draft.messages} api={nativeArtifacts} enabled={!!source}/>}
+        {!!fileDraft.files.length&&<ArtifactFiles sessionId={target.source.id} api={artifactFileApi} files={fileDraft.files} enabled={false} form={{query:'',candidate:null}} changeForm={()=>{}}/>}
+        <div className={css.previewActions}>
+          {source&&(previewBody.trim()||fileDraft.files.length>0)&&<button type="button" aria-label={t('artifact.panel.text.041')} title={t('artifact.panel.text.041')} onClick={async()=>{const id=crypto.randomUUID();const saved=await act({type:'create',id,source:target.source,expectedSource:draft.stamp,title:draft.title||source.title,body:previewBody,files:fileDraft.files,...(draft.messages?{messages:draft.messages}:{}),now:new Date().toISOString()});if(saved){clearDraft();clearFiles();setSelected(typeof saved==='string'?saved:id);setVersion(1);setSection('');setView('preview')}}}><Save size={16}/></button>}
+          {previewBody&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={(source?.title||'teloa-result').replace(/[\/:*?"<>|]/g,'_')+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(previewBody)}><Download size={16}/></a>}
+        </div>
+        {source&&!previewBody&&!fileDraft.files.length&&<button type="button" className={css.sourceLink} title={t('artifact.panel.text.031')} onClick={()=>void goToSource(source.ref)}><span>{t('artifact.panel.text.031')}</span><ArrowUpRight size={15} aria-hidden/></button>}
+      </section> : version ? <>
         <header className={css.artifactHeader}><div><span>{artifact.primary ? t("artifact.panel.text.043") : t("artifact.panel.text.006")} · v{version.number}</span><h3>{version.title}</h3><p>{version.author} · {new Date(version.at).toLocaleString(locale)} · {version.note}</p></div></header>
         <nav className={css.tabs} aria-label={t("artifact.panel.text.044")}><button type="button" aria-current={view === 'preview' ? 'page' : undefined} onClick={() => setView('preview')}>{t("artifact.panel.text.045")}</button><button type="button" aria-current={view === 'files' ? 'page' : undefined} onClick={() => setView('files')}>{t("artifact.panel.text.046")}</button><button type="button" aria-current={view === 'versions' ? 'page' : undefined} onClick={() => setView('versions')}>{t("artifact.panel.text.047")}</button></nav>
-        {view === 'preview' && <section className={css.preview} aria-label={t("artifact.panel.text.048")}>{version.sections.map(item => <section key={item.id} className={base.block}><h4>{item.title}</h4><p className={css.body}>{item.text}</p><button type="button" onClick={() => { setSection(item.id); setView('versions'); }}>{t("artifact.panel.text.049")}</button></section>)}</section>}
-        {view === 'files' && <section className={css.filesView} aria-label={t("artifact.panel.text.046")}><section className={base.block}><h3>{t("artifact.panel.text.029")}</h3><p>{(source || version.source).title} · {(source || version.source).scope}</p>{source && <button type="button" onClick={() => { openSource(source.ref); close(); }}>{t("artifact.panel.text.031")}</button>}<dl className={css.sourceFacts}><dt>{t("artifact.panel.text.050")}</dt><dd>{version.source.ref.kind} · {version.source.ref.id} · {version.source.version}</dd><dt>{t("artifact.panel.text.051")}</dt><dd>{version.source.author}</dd><dt>{t("artifact.panel.text.052")}</dt><dd>{version.source.private ? t("artifact.panel.text.053") : t("artifact.panel.text.054")}</dd></dl>{version.source.evidence.length ? <details><summary>{t("artifact.panel.text.055")}</summary><ul>{version.source.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul></details> : <p>{t("artifact.panel.text.056")}</p>}</section>
+        {view==='preview'&&<div className={css.previewActions}>{!inline&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={'teloa-'+artifact.id.replace(/[^\w-]/g,'_')+'-v'+version.number+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(markdown)}><Download size={16}/></a>}{moreActions.showLinkAndReview&&reviewTask&&<button type="button" aria-label={t('artifact.panel.text.088')} title={t('artifact.panel.text.088')} disabled={reviewTask.reviewArtifact?.id===artifact.id&&reviewTask.reviewArtifact.version===version.number} onClick={()=>act({type:'review',artifact:{id:artifact.id,version:version.number},expectedTaskVersion:reviewTask.version,now:new Date().toISOString()})}><Send size={16}/></button>}</div>}
+        {view === 'preview' && <section className={clsx(css.preview,css.markdown)} aria-label={t("artifact.panel.text.048")}>{savedBody!==null?<MarkdownPreview markdown={savedBody} images={false}/>:version.sections.map(item => <section key={item.id}><h4>{item.title}</h4><MarkdownPreview markdown={item.text} images={false}/></section>)}</section>}
+        {view === 'files' && <section className={css.filesView} aria-label={t("artifact.panel.text.046")}><section className={base.block}><h3>{t("artifact.panel.text.029")}</h3><p>{(source || version.source).title} · {(source || version.source).scope}</p><button type="button" onClick={() => { void goToSource(version.source.ref) }}>{t("artifact.panel.text.031")}</button><dl className={css.sourceFacts}><dt>{t("artifact.panel.text.050")}</dt><dd>{version.source.ref.kind} · {version.source.ref.id} · {version.source.version}</dd><dt>{t("artifact.panel.text.051")}</dt><dd>{version.source.author}</dd><dt>{t("artifact.panel.text.052")}</dt><dd>{version.source.private ? t("artifact.panel.text.053") : t("artifact.panel.text.054")}</dd></dl>{version.source.evidence.length ? <details><summary>{t("artifact.panel.text.055")}</summary><ul>{version.source.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul></details> : <p>{t("artifact.panel.text.056")}</p>}</section>
           <ArtifactMessages key={artifact.id + ':' + version.number} messages={version.messages || []} api={nativeArtifacts} enabled={!!source && source.ref.kind === 'session' && source.ref.id === conversation?.id}/>
           {(artifact.source.kind === 'session' || artifact.source.kind === 'task') ? <section className={base.block}><ArtifactFiles label={t("artifact.panel.text.057") + version.number} sessionId={artifact.source.id} api={artifactFileApi} files={version.files || []} enabled={false} form={{ query: '', candidate: null }} changeForm={() => { }}/>{version.number === latest?.number && !locked && <details><summary>{t("artifact.panel.text.058")}</summary>{artifact.source.kind === 'task' ? <TaskArtifactPicker key={fileKey} filesOnly taskId={artifact.source.id} port={taskSources} native={nativeArtifacts} filesApi={artifactFileApi} messages={[]} files={fileDraft.files} setMessages={() => { }} setFiles={files => patchFiles({ files })} enabled={!!source}/> : <ArtifactFiles key={fileKey} label={t("artifact.panel.text.059")} sessionId={artifact.source.id} api={artifactFileApi} files={fileDraft.files} enabled={!!source} form={fileDraft.form} changeForm={form => patchFiles({ form })} changeFiles={files => patchFiles({ files })}/>}</details>}{version.number === latest?.number && fileSetKey(fileDraft.files) !== fileSetKey(version.files || []) && <div className={base.form}><p>{t("artifact.panel.text.060")}</p><label>{t("artifact.panel.text.061")}<textarea maxLength={4000} value={fileDraft.note} onChange={event => patchFiles({ note: event.target.value })}/></label><button type="button" disabled={!source || locked || !fileDraft.note.trim()} onClick={async () => { if (await act({ type: 'change', id: artifact.id, expectedSource: fileDraft.stamp, change: { type: 'files', expectedVersion: version.number, files: fileDraft.files, note: fileDraft.note, now: new Date().toISOString() } })) {
                 clearFiles();
@@ -214,13 +254,29 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
         </section>}
         {view === 'versions' && <section className={css.versionsView} aria-label={t("artifact.panel.text.047")}><section className={base.block}><h3>{t("artifact.panel.text.070")}</h3><label className={css.version}>{t("artifact.panel.text.071")}<select aria-label={t("artifact.panel.text.072")} value={version.number} onChange={event => { setVersion(Number(event.target.value)); setSection(''); setError(''); setNotice(''); }}>{artifact.versions.map(item => <option key={item.number} value={item.number}>v{item.number} · {item.note}</option>)}</select></label><p>{artifact.versions.length}{t("artifact.panel.text.073")}{version.number}{version.number === latest?.number ? t("artifact.panel.text.074") : t("artifact.panel.text.075")}</p></section>
           {version.sections.map(item => <button type="button" className={css.sectionChoice} key={item.id} aria-pressed={section?.id === item.id} onClick={() => setSection(item.id)}><strong>{item.title}</strong><span>{artifact.feedback.filter(feedback => feedback.version === version.number && feedback.sectionId === item.id).length}{t("artifact.panel.text.076")}</span></button>)}
-          {section && <section className={base.block}><h3>{t("artifact.panel.text.077")}{section.title} · v{version.number}</h3><ol>{artifact.feedback.filter(item => item.version === version.number && item.sectionId === section.id).map(item => <li key={item.id}><p>{item.text}</p><small>{item.author} · {new Date(item.at).toLocaleString(locale)}{artifact.versions.some(v => v.feedbackId === item.id) ? t("artifact.panel.text.078") : ''}</small></li>)}</ol><form className={base.form} onSubmit={async (event) => { event.preventDefault(); if (await act({ type: 'change', id: artifact.id, expectedSource: draft.stamp, change: { type: 'feedback', id: crypto.randomUUID(), version: version.number, sectionId: section.id, text: draft.feedback, now: new Date().toISOString() } }))
+          {section && <section className={base.block}><h3>{t("artifact.panel.text.077")}{section.title} · v{version.number}</h3><ol>{artifact.feedback.filter(item => item.version === version.number && item.sectionId === section.id).map(item => <li key={item.id}><p>{item.text}</p><small>{item.author} · {new Date(item.at).toLocaleString(locale)}{artifact.versions.some(v => v.feedbackId === item.id) ? t("artifact.panel.text.078") : ''}</small>{artifact.revisions?.filter(revision=>revision.feedbackId===item.id).map(revision=><p key={revision.id}>{t(revision.state==='conflict'?'artifact.revision.conflict':revision.state==='completed'?'artifact.revision.completed':'artifact.revision.pending')}{revision.taskId&&<button type="button" onClick={()=>openTask(revision.taskId!)}>{t('artifact.revision.openTask')}</button>}</p>)}{requestRevision&&artifact.storage==='persistent'&&version.source.scope==='general'&&version.number===latest?.number&&!artifact.versions.some(v=>v.feedbackId===item.id)&&<button type="button" disabled={busy} onClick={async()=>{
+                if(busyRef.current)return;
+                const origin=revisionOwner.current;revisionPending.current=origin;busyRef.current=true;setBusy(true);setError('');
+                // Frame 只在本次原生导航已提交后允许入口收起；卸载始终撤销后续派发。
+                const current=(afterNavigation=false)=>revisionLifetime.current&&(afterNavigation||revisionPending.current===origin&&revisionOwner.current===origin);
+                try{await requestRevision(artifact.id,version.number,item.id,current);if(current())setNotice(t('artifact.revision.sent'))}
+                catch(cause){if(current())setError(localizeWorkError(locale,cause))}
+                finally{if(current()){revisionPending.current=null;busyRef.current=false;setBusy(false)}}
+              }}>{t('artifact.revision.send')}</button>}</li>)}</ol><form className={base.form} onSubmit={async (event) => { event.preventDefault(); if (await act({ type: 'change', id: artifact.id, expectedSource: draft.stamp, change: { type: 'feedback', id: crypto.randomUUID(), version: version.number, sectionId: section.id, text: draft.feedback, now: new Date().toISOString() } }))
                 patch({ feedback: '' }); }}><label>{t("artifact.panel.text.079")}<textarea required rows={3} maxLength={4000} value={draft.feedback} onChange={event => patch({ feedback: event.target.value })}/></label><button type="submit" disabled={!draft.feedback.trim()}>{artifact.storage === 'persistent' ? t("artifact.panel.text.080") : t("artifact.panel.text.081")}</button></form></section>}
           <details className={clsx(base.block, css.moreActions)}><summary>{t("artifact.panel.text.082")}</summary>
+            {requestMethodReuse&&canPrepareArtifactMethodReuse(artifact,version.number)&&<div className={base.buttons}>{(['skill','plan'] as const).map(target=><button key={target} type="button" disabled={busy} title={t('artifact.method.prepareOnly')} onClick={async()=>{
+                if(busyRef.current)return;
+                const origin=revisionOwner.current;revisionPending.current=origin;busyRef.current=true;setBusy(true);setError('');
+                const current=(afterNavigation=false)=>revisionLifetime.current&&(afterNavigation||revisionPending.current===origin&&revisionOwner.current===origin);
+                try{await requestMethodReuse(artifact.id,version.number,target,current)}
+                catch(cause){if(current()&&!(cause&&typeof cause==='object'&&'code' in cause&&cause.code==='teloa/cancelled'))setError(localizeWorkError(locale,cause))}
+                finally{if(current()){revisionPending.current=null;busyRef.current=false;setBusy(false)}}
+              }}>{t(target==='skill'?'artifact.method.skill':'artifact.method.plan')}</button>)}</div>}
             <ArtifactPanelMoreActions actions={moreActions} activeBoundary={t("artifact.panel.text.121")} lockedBoundary={t("artifact.panel.text.122")}
               link={target.source.kind === 'object' && source && <form className={base.form} onSubmit={async (event) => { event.preventDefault(); const option = linkOptions.find(item => item.value === linkId); if (option && target.source.kind === 'object')
                 act({ type: 'link', artifact: option.artifact, object: target.source, now: new Date().toISOString() }); }}><label>{t("artifact.panel.text.083")}<select value={linkId} onChange={event => setLinkId(event.target.value)}><option value="">{t("artifact.panel.text.084")}</option>{linkOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button disabled={!linkId} type="submit">{t("artifact.panel.text.085")}</button></form>}
-              review={reviewTask && <section><h3>{t("artifact.panel.text.086")}</h3><p>{t("artifact.panel.text.087")}</p><button type="button" disabled={reviewTask.reviewArtifact?.id === artifact.id && reviewTask.reviewArtifact.version === version.number} onClick={() => act({ type: 'review', artifact: { id: artifact.id, version: version.number }, expectedTaskVersion: reviewTask.version, now: new Date().toISOString() })}>{t("artifact.panel.text.088")}</button></section>}
+              review={null}
               follow={<section><h3>{t("artifact.panel.text.089")}</h3><p>{t("artifact.panel.text.090")}</p><form className={base.form} onSubmit={async (event) => { event.preventDefault(); const id = crypto.randomUUID(); if (await act({ type: 'follow', id, artifact: { id: artifact.id, version: version.number }, goal: draft.followGoal || '', now: new Date().toISOString() })) {
                 close();
                 openTask(id);
@@ -244,5 +300,5 @@ export function ArtifactPanel({ taskSources, recovery, loadError, target, open =
       </> : <p role="alert">{t("artifact.panel.text.118")}</p>}
       {source && (draft.stamp !== sourceStamp(source) || fileDraft.stamp !== sourceStamp(source)) && <section className={base.block}><p>{t("artifact.panel.text.119")}</p><button type="button" onClick={() => { patch({ stamp: sourceStamp(source) }); patchFiles({ stamp: sourceStamp(source) }); }}>{t("artifact.panel.text.120")}</button></section>}
     </article></fieldset>
-  </dialog>;
+  </dialog>);
 }

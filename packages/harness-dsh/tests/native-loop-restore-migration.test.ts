@@ -13,7 +13,7 @@ import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {AgentRegistry, type Agent} from '@deepseek-ai/dsh-agent'
 import {Session, SessionStore, SessionId, SessionSeq, SessionLogOffset, type SessionHeader, type SessionEvent} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {type SessionPersistence, type SessionHandle, type SessionPersistenceOpenOptions} from '@deepseek-ai/dsh-session-persistence'
 import {releasedV3SessionFormatCodec, releasedV4SessionFormatCodec} from '@deepseek-ai/dsh-session-format-v3-to-v4'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
@@ -49,19 +49,19 @@ class DeterministicMigrationModel extends LlmAdapter {
 
 async function fixture(t: TestContext, compression: 'none' | 'zstd' = 'none', originalBackend = false) {
  const seam = await patchedNativePackage<PersistenceModule>(t, {
-  packageName: '@deepseek-ai/dsh-session-persistence', compatBasename: 'dsh-session-persistence-0.2.1-alpha.1-open-admission',
+  packageName: '@deepseek-ai/dsh-session-persistence', compatBasename: 'dsh-session-persistence-0.2.1-rc.2-open-admission',
  })
  const overrides = {'@deepseek-ai/dsh-session-persistence': seam.root}
  const backend = await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence-jsonl')>(t, {
-  packageName: '@deepseek-ai/dsh-session-persistence-jsonl', compatBasename: 'dsh-session-persistence-jsonl-0.2.1-alpha.1-open-admission', overrides,
+  packageName: '@deepseek-ai/dsh-session-persistence-jsonl', compatBasename: 'dsh-session-persistence-jsonl-0.2.1-rc.2-open-admission', overrides,
  })
  const loopPackage = await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t, {
-  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-alpha.1-work-admission', overrides,
+  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-rc.2-work-admission', overrides,
  })
  const root = await mkdtemp(join(tmpdir(), 'teloa-restore-migration-')), ctx = new Context()
  t.after(async () => {await ctx.fiber.dispose(); await rm(root, {recursive: true, force: true})})
  for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry]) await ctx.plugin(plugin)
- const backendFiber = ctx.plugin(originalBackend ? Persistence : backend.namespace.default, {root, compression})
+ const backendFiber = ctx.plugin(originalBackend ? Persistence : backend.namespace, {root, compression})
  await backendFiber
  const persistence = ctx.sessionPersistence as AdmissionPersistence, store = Reflect.get(ctx, 'sessions') as unknown as SessionStore
  const adapter = new DeterministicMigrationModel(); ctx.llm.registerAdapter([route.provider], adapter)
@@ -111,7 +111,7 @@ async function fixture(t: TestContext, compression: 'none' | 'zstd' = 'none', or
  }
  const peer = async () => {
   const other = new Context(); t.after(() => other.fiber.dispose())
-  await other.plugin(SessionStore); await other.plugin(backend.namespace.default, {root, compression})
+  await other.plugin(SessionStore); await other.plugin(backend.namespace, {root, compression})
   return other.sessionPersistence as AdmissionPersistence
  }
  return {ctx, persistence, store, adapter, created, sessions, root, seam, backend, backendFiber, loopPackage, mount, seed, peer,
@@ -381,13 +381,16 @@ test('公开JS/types契约：ES2022深只读候选、异步策略、同步lease�
  const seamRoot = await realpath(f.seam.root), backendRoot = await realpath(f.backend.root), loopRoot = await realpath(f.loopPackage.root)
  await writeFile(path, `
 import {SessionPersistence, SessionAdmissionUnsupportedError, type SessionOpenAdmission, type SessionOpenAdmissionInput, type SessionOpenAdmissionLease} from ${JSON.stringify(join(seamRoot, 'lib/types/index.js'))}
-import Jsonl from ${JSON.stringify(join(backendRoot, 'lib/types/index.js'))}
+import * as Jsonl from ${JSON.stringify(join(backendRoot, 'lib/types/index.js'))}
 import type {AgentLoopRestoreAdmission, AgentLoopRestoreAdmissionLease, AgentLoopWorkAdmissionInput, AgentLoopInputCheckpoint, AgentLoopInputCheckpointInput, AgentLoopInputCheckpointLease} from ${JSON.stringify(join(loopRoot, 'lib/types/index.js'))}
 declare const restorePolicy: AgentLoopRestoreAdmission
 const compatiblePolicy: SessionOpenAdmission = restorePolicy
 declare const input: SessionOpenAdmissionInput
 declare const storage: SessionPersistence
-declare const jsonl: Jsonl
+// alpha3：JSONL 公开入口是函数式插件，注册的服务即上方 seam SessionPersistence；补丁只改实现，不另声明类。
+declare const jsonlConfig: Jsonl.Config
+const installJsonl: (ctx: Parameters<typeof Jsonl.apply>[0], config: Jsonl.Config) => Promise<void> = Jsonl.apply
+const jsonl: SessionPersistence = storage
 const lease: SessionOpenAdmissionLease = Object.freeze({assertCurrent() {return undefined}})
 const wakingLease: AgentLoopRestoreAdmissionLease = Object.freeze({wakePending: true, assertCurrent() {return undefined}})
 // @ts-expect-error only explicit true is a restore wake request

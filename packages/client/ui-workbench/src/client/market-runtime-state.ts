@@ -41,12 +41,12 @@ export function marketRuntimeForItem(item:MarketItem,runtime:MarketSkillRuntime)
  return {status:'已安装，可用性未核验',action:'核对安装',installationId}
 }
 
-/** 目录读取失败影响整体可信度；单条可用性检查失败只降级该安装，不丢掉已安装事实。 */
-export async function loadMarketSkillRuntime(api:Pick<SkillInstallApi,'list'|'observe'>,availabilityApi?:Pick<SkillAvailabilityApi,'get'>):Promise<MarketSkillRuntime>{
+/** 浏览目录只需安装记录；诊断按需核对。单条核对失败不丢掉已安装事实。 */
+export async function loadMarketSkillRuntime(api:Pick<SkillInstallApi,'list'|'observe'>,availabilityApi?:Pick<SkillAvailabilityApi,'get'>,options:{verify?:boolean}={}):Promise<MarketSkillRuntime>{
  try{
   const {items}=await api.list()
   const facts=await Promise.all(items.map(async record=>{
-   if(record.state!=='installed')return {record,availability:null,observation:null} satisfies MarketSkillRuntimeFact
+   if(record.state!=='installed'||options.verify===false)return {record,availability:null,observation:null} satisfies MarketSkillRuntimeFact
    const [availability,observation]=await Promise.allSettled([
     availabilityApi?availabilityApi.get(record.id):Promise.resolve(null),
     api.observe(record.id),

@@ -32,7 +32,7 @@ function* text(value:string):Generator<StreamChunk>{yield {type:'block-start',in
 test('真实 PG 票据 + 官方工具/Goal Driver/Loop 连续两轮，首轮不结项、最终回传最后有效轮',{timeout:20000},async t=>{
  const db=await setupRoleWork();t.after(()=>db.close())
  const f=await patchedSessionFixture(t),goalModule=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-goal')).href),goalTools=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-tool-goal')).href)
- const root=await mkdtemp(join(tmpdir(),'teloa-goal-loop-durable-'));t.after(()=>rm(root,{recursive:true,force:true}));await f.ctx.plugin(f.persistencePackage.default,{root,compression:'none'})
+ const root=await mkdtemp(join(tmpdir(),'teloa-goal-loop-durable-'));t.after(()=>rm(root,{recursive:true,force:true}));await f.ctx.plugin(f.persistencePackage,{root,compression:'none'})
  await f.ctx.plugin(goalModule.GoalService);await f.ctx.plugin(goalTools,{})
  const {agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'test',model:'test'}}),goals=Reflect.get(f.ctx,'goals') as any
  const {owner,role,taskId,authorization}=await roleFixture(db.pool,'employee'),runId=await insertRoleRun(db.pool,owner,role.id,taskId),requestId=randomUUID()
@@ -49,7 +49,7 @@ test('真实 PG 票据 + 官方工具/Goal Driver/Loop 连续两轮，首轮不�
  const input=createNativeWorkInput(f.ctx,new WorkAccess()),adapter=createTaskRunGoal(f.ctx,wrapped,owner,{nativeInput:input,hostGeneration:()=>1,foldGoal:goalModule.foldGoal})
  t.after(()=>{confirmHold.resolve();adapter.close();input.close()})
  registerTaskToolGuard(f.ctx,async id=>id===agent.id?{allowedTools:toolNames,nativeRequestId:requestId}:null,[],undefined,undefined,undefined,undefined,undefined,undefined,undefined,adapter.observationForSession)
- const driver=(await patchedNativePackage<any>(t,{packageName:'@deepseek-ai/dsh-goal-round-driver',compatBasename:'dsh-goal-round-driver-0.2.1-alpha.1-input-admission',packageAnchor:anchor})).namespace
+ const driver=(await patchedNativePackage<any>(t,{packageName:'@deepseek-ai/dsh-goal-round-driver',compatBasename:'dsh-goal-round-driver-0.2.1-rc.2-input-admission',packageAnchor:anchor})).namespace
  await f.ctx.plugin(driver,{requireInputAdmission:true,admitInput:adapter.admit})
  let calls=0,created=false,completed=false
  class Model extends LlmAdapter{

@@ -1,6 +1,7 @@
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import {applicationPresentation,applicationProductName} from './application-presentation.ts'
 export type BrandLocale={bind:(namespace:string)=>Translate;getSnapshot:()=>{active:string}}
+export {standardModeName} from './standard-mode-options.ts'
 const taskTeamCopy:Record<string,readonly [string,string]>={
   trigger:['执行小组','Task team'],
   loading:['正在加载执行小组…','Loading task team…'],

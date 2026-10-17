@@ -4,6 +4,8 @@ import {describeSavedPlanSource} from '../src/client/plan-source-presentation.ts
 const copy:Record<string,string>={
  'p6.planSource.manual.label':'手动创建',
  'p6.planSource.manual.summary':'由本人创建，未关联市场模板。',
+ 'p6.planSource.conversation.label':'会话中创建',
+ 'p6.planSource.conversation.summary':'来自原会话中的工作安排。',
  'p6.planSource.market.label':'市场模板',
  'p6.planSource.market.summary':'基于已保存的市场固定内容创建。',
  'autoDream.name':'Auto Dream',
@@ -16,6 +18,12 @@ test('已保存的手工计划明确说明未关联市场模板',()=>{
   kind:'manual',
   label:'手动创建',
   summary:'由本人创建，未关联市场模板。',
+ })
+})
+
+test('会话创建计划沿持久来源区分原会话，不能误标手动创建或推测当前会话',()=>{
+ assert.deepEqual(describeSavedPlanSource({kind:'manual',sessionId:'original-session'},t),{
+  kind:'conversation',label:'会话中创建',summary:'来自原会话中的工作安排。',sessionId:'original-session',
  })
 })
 
@@ -39,4 +47,9 @@ test('市场计划只展示持久来源中的固定内容与资源身份，不�
   resourceId:'daily-review',
   resourceVersion:'2.3.0',
  })
+})
+
+test('成果方法来源保留固定成果版本，不误标为市场或手动计划',()=>{
+ const source={kind:'method-reuse' as const,artifactId:'22222222-2222-4222-8222-222222222222',version:2,basisHash:'b'.repeat(64),taskId:'33333333-3333-4333-8333-333333333333'}
+ assert.deepEqual(describeSavedPlanSource(source,t),{kind:'method-reuse',label:'p6.planSource.method.label',summary:'p6.planSource.method.summary',artifactId:source.artifactId,version:2,basisHash:source.basisHash})
 })

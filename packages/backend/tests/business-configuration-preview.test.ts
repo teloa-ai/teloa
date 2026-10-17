@@ -5,7 +5,7 @@ import {homedir} from 'node:os'
 import {join} from 'node:path'
 import {Pool} from 'pg'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {initializeBusinessDefinitions,initializeBusinessScopes,initializeBusinessSpaces} from '../src/index.ts'
+import {initializeBusinessData,initializeBusinessDefinitions,initializeBusinessScopes,initializeBusinessSpaces} from '../src/index.ts'
 import * as configuration from '../src/work/business-configuration-drafts.ts'
 import {initializeBusinessConfigurations} from '../src/work/business-configuration-store.ts'
 let pool:Pool,container:StartedPostgreSqlContainer
@@ -14,7 +14,7 @@ before(async()=>{
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start()
  pool=new Pool({connectionString:container.getConnectionUri()})
- await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool);await initializeBusinessDefinitions(pool);await initializeBusinessConfigurations(pool)
+ await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool);await initializeBusinessDefinitions(pool);await initializeBusinessConfigurations(pool);await initializeBusinessData(pool)
 },{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -94,14 +94,16 @@ test('完整预览只读且签名绑定本人、正文、修订与当前基线�
  assert.equal(typeof api.BusinessConfigurationPreviewService,'function','须提供整体预览服务')
  const {verifiesBusinessConfigurationPreviewReceipt}=await import('../src/work/business-configuration-preview-receipt.ts')
  const {a,s,draft,definition,manifest}=await managedFixture()
- const next=await s.begin(a,{requestId:randomUUID(),title:'改名',scope:draft.scope})
+ const begun=await s.begin(a,{requestId:randomUUID(),title:'改名',scope:draft.scope})
+ assert.equal(begun.candidate.title,manifest.title,'预约标题不改正式业务名，预览改名必须先明确修订')
+ const next=await s.revise(a,{requestId:randomUUID(),draftId:begun.id,expectedRevision:begun.revision,patch:{title:'改名'}})
  const preview=new api.BusinessConfigurationPreviewService(pool,s,reader(),identity)
- const result=await preview.preview(a,{draftId:next.id,expectedRevision:1})
- assert.equal(result.baseVersion,1);assert.equal(result.revision,1)
+ const result=await preview.preview(a,{draftId:next.id,expectedRevision:next.revision})
+ assert.equal(result.baseVersion,1);assert.equal(result.revision,next.revision)
  assert.deepEqual(result.issues,[]);assert.ok(result.changes.rows.some(row=>row.path==='title'))
- const binding={ownerId:a.ownerId,scope:draft.scope,draftId:next.id,revision:1,candidateHash:next.hash,baseVersion:1,dependencyHash:result.dependencyHash}
+ const binding={ownerId:a.ownerId,scope:draft.scope,draftId:next.id,revision:next.revision,candidateHash:next.hash,baseVersion:1,dependencyHash:result.dependencyHash}
  assert.equal(verifiesBusinessConfigurationPreviewReceipt(result.receipt,binding),true)
- for(const delta of [{ownerId:'other'},{scope:'SOC'},{draftId:randomUUID()},{revision:2},{candidateHash:'a'.repeat(64)},{baseVersion:2},{dependencyHash:'a'.repeat(64)}])assert.equal(verifiesBusinessConfigurationPreviewReceipt(result.receipt,{...binding,...delta}),false)
+ for(const delta of [{ownerId:'other'},{scope:'SOC'},{draftId:randomUUID()},{revision:next.revision+1},{candidateHash:'a'.repeat(64)},{baseVersion:2},{dependencyHash:'a'.repeat(64)}])assert.equal(verifiesBusinessConfigurationPreviewReceipt(result.receipt,{...binding,...delta}),false)
  assert.equal(verifiesBusinessConfigurationPreviewReceipt('0'.repeat(64),binding),false)
  const leafReceipt=issueBusinessDefinitionPreviewReceipt({ownerId:a.ownerId,scope:draft.scope,draftId:next.id,definitionHash:next.hash,currentVersion:1})
  assert.equal(verifiesBusinessConfigurationPreviewReceipt(leafReceipt,binding),false)
@@ -110,20 +112,20 @@ test('完整预览只读且签名绑定本人、正文、修订与当前基线�
  assert.equal(restarted.status,0,restarted.stderr);assert.equal(restarted.stdout,'false')
 
  const before=(await pool.query('select count(*)::int n from teloa_business_configuration_receipts where owner_id=$1',[a.ownerId])).rows[0].n
- const second=await preview.preview(a,{draftId:next.id,expectedRevision:1})
+ const second=await preview.preview(a,{draftId:next.id,expectedRevision:next.revision})
  assert.deepEqual(second,result)
  assert.equal((await pool.query('select count(*)::int n from teloa_business_configuration_receipts where owner_id=$1',[a.ownerId])).rows[0].n,before)
- const revised=await s.revise(a,{draftId:next.id,expectedRevision:1,requestId:randomUUID(),patch:{upsertDefinitions:[{kind:'object-type',definition:{...definition,fields:[{...definition.fields[0],label:'处理阶段'}]}}]}})
- await assert.rejects(preview.preview(a,{draftId:next.id,expectedRevision:1}),{code:'teloa/version-conflict'})
+ const revised=await s.revise(a,{draftId:next.id,expectedRevision:next.revision,requestId:randomUUID(),patch:{upsertDefinitions:[{kind:'object-type',definition:{...definition,fields:[{...definition.fields[0],label:'处理阶段'}]}}]}})
+ await assert.rejects(preview.preview(a,{draftId:next.id,expectedRevision:next.revision}),{code:'teloa/version-conflict'})
  const changed=await preview.preview(a,{draftId:next.id,expectedRevision:revised.revision})
  assert.notEqual(changed.receipt,result.receipt)
- await assert.rejects(preview.preview(actor(),{draftId:next.id,expectedRevision:2}),{code:'teloa/forbidden'})
+ await assert.rejects(preview.preview(actor(),{draftId:next.id,expectedRevision:revised.revision}),{code:'teloa/forbidden'})
  const fresh=await s.begin(a,{requestId:randomUUID(),title:'空业务'})
  await assert.rejects(preview.preview(a,{draftId:fresh.id,expectedRevision:1}),{code:'teloa/invalid-input'})
  // 真实基线推进后原草案不能重新签发旧 base 的成功预览。
  await pool.query('insert into teloa_business_configuration_versions(owner_id,scope_id,version,manifest,hash,created_at) values($1,$2,2,$3,$4,now())',[a.ownerId,draft.scope,JSON.stringify(manifest),businessConfigurationHash(manifest)])
  await pool.query('update teloa_business_configuration_heads set version=2 where owner_id=$1 and scope_id=$2',[a.ownerId,draft.scope])
- await assert.rejects(preview.preview(a,{draftId:next.id,expectedRevision:2}),{code:'teloa/version-conflict'})
+ await assert.rejects(preview.preview(a,{draftId:next.id,expectedRevision:revised.revision}),{code:'teloa/version-conflict'})
 })
 
 test('受管配置表缺失固定报损坏，缺版本不退回市场；事务回滚恢复隔离夹具',async()=>{

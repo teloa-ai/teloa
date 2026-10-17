@@ -96,7 +96,8 @@ export class BusinessConfigurationDraftService{
     if(!current)throw forbidden()
     if(row.format!==undefined&&row.format!==current.manifest.format)throw new WorkError('teloa/version-conflict','现有业务配置格式与请求不一致。')
     baseVersion=current.version
-    candidate=readBusinessConfigurationCandidateVersioned({...current.manifest,title:row.title,definitions:current.leaves.map(d=>({kind:d.kind,definition:JSON.parse(d.body)}))})
+    // 预约标题不是改名授权；调整继承正式名称，改名仍通过明确的 patch。
+    candidate=readBusinessConfigurationCandidateVersioned({...current.manifest,definitions:current.leaves.map(d=>({kind:d.kind,definition:JSON.parse(d.body)}))})
    }else{
     const sourceId='records-'+this.identity.id().replaceAll('-','')
     candidate=readBusinessConfigurationCandidateVersioned({format:row.format??businessConfigurationFormat,scope,title:row.title,sources:[{sourceId,kind:'local-records'}],definitions:[],pages:[]})

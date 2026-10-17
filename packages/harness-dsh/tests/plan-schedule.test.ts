@@ -26,6 +26,21 @@ function ports(patch:Partial<PlanSchedulePorts>={}):PlanSchedulePorts{
  }
 }
 
+test('业务事件计划调度保留正式event，跨owner、范围与领取身份拒绝',async()=>{
+ const event={event:{schema:'teloa.work-event/v2',id:occurrenceId,ownerId:owner,sourceEventId:'business:fixed',kind:'business-object-version',sourceRef:{kind:'business-object',scope:'general',type:'lead',id:'lead-1'},sourceVersion:'2',basisHash:'a'.repeat(64),createdAt:at},controlGeneration:1,data:{object:{title:'线索甲',version:2}}}
+ const workDefinition={schema:'teloa.plan-work/v3',definitionVersion:1,definitionControlId:planId,budgetAccountId:taskId,authorization:{kind:'delegation',delegationId:occurrenceId,delegationVersion:1},completion:{kind:'manual'},triggers:[{kind:'local-event',eventKind:'business-object-version',sourceRef:event.event.sourceRef,coalesce:'latest'}],budget:{maxGoalRounds:32,maxTokens:2000000,maxElapsedMs:21600000,maxConcurrent:1,maxRetries:3,stagnationRounds:3,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}
+ const fixed={...overview,state:'paused',nextAt:null,latest:{...overview.latest,occurrence:{...overview.latest.occurrence,occurrenceId:'event:'+occurrenceId,event,workDefinition}},latestSkip:null}
+ const handle=createPlanScheduleHandler(owner,ports({overview:async()=>fixed}))
+ assert.deepEqual(await handle('plans/schedule',{planId}),{available:true,overview:fixed,health:{health:planHealth.health,failureCode:planHealth.failureCode,lastAttemptAt:planHealth.lastAttemptAt,lastSuccessAt:planHealth.lastSuccessAt}})
+ for(const invalid of [
+  {...event,event:{...event.event,ownerId:'another-owner'}},
+  {...event,event:{...event.event,sourceRef:{...event.event.sourceRef,scope:'SOC'}}},
+  {...event,event:{...event.event,id:taskId}},
+  {...event,data:null},
+ ])await assert.rejects(createPlanScheduleHandler(owner,ports({overview:async()=>({...fixed,latest:{...fixed.latest,occurrence:{...fixed.latest.occurrence,event:invalid}}})}))('plans/schedule',{planId}),{code:'teloa/invalid-host-response'})
+ await assert.rejects(createPlanScheduleHandler(owner,ports({overview:async()=>({...fixed,latest:{...fixed.latest,occurrence:{...fixed.latest.occurrence,workDefinition:undefined}}})}))('plans/schedule',{planId}),{code:'teloa/invalid-host-response'})
+})
+
 test('未知端点和非法计划身份在检查可用性及读取服务前拒绝',async()=>{
  let availableChecks=0,reads=0
  const handle=createPlanScheduleHandler(owner,ports({isAvailable:()=>{availableChecks++;return true},overview:async()=>{reads++;return overview},getStatus:async()=>{reads++;return planHealth}}))

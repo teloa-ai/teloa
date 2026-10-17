@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
+import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
+import {businessWorkspaceText} from '../src/client/business-workspace-copy.ts'
 import {businessHomeAttention,businessHomeCards,businessHomeSources,businessHomeStaff,businessHomeSummaryParts,businessHomeWorking} from '../src/client/business-home-presentation.ts'
 import {businessScopeNames} from '../src/client/business-directory.ts'
 import type {BusinessScopeLabel} from '../src/client/business-directory.ts'
@@ -36,6 +38,8 @@ function mount(file:string,props:Record<string,unknown>,modules:Record<string,un
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string)=>{
   if(id==='react')return React
+  if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton:toolbarIconComponent(React)}
+  if(id.endsWith('business-workspace-copy.js'))return {businessWorkspaceText}
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   for(const [suffix,value] of Object.entries(modules))if(id.endsWith(suffix))return value
   if(id.endsWith('business-directory.js'))return {businessScopeNames}
@@ -147,8 +151,11 @@ test('首页把范围目录里唯一的来源称呼传给处境句和接入动�
  },{'business-home-presentation.js':{businessHomeCards,businessHomeSummaryParts}})
  const output=text(render())
  assert.ok(output.includes('business.home.situation.noneNoStaff:'+JSON.stringify({sources:'0',staff:'0',noun:'告警源'})))
- assert.ok(output.includes('business.home.line.none:'+JSON.stringify({noun:'告警源'})))
- assert.ok(output.includes('business.home.connect:'+JSON.stringify({noun:'告警源'})))
+ assert.ok(!output.includes('business.home.line.none:'))
+ const connect=nodes(render()).find(node=>node.type==='button'&&node.props['aria-label']===`business.home.connect:${JSON.stringify({noun:'告警源'})} · 安全运营`)
+ assert.ok(connect,'接入图标必须具名，并保留这一业务的来源称呼')
+ assert.equal(connect.props.title,connect.props['aria-label'])
+ assert.equal(text(connect),'','辅助入口不再重复正文')
 })
 
 test('首页静态渲染：一张卡一个范围，处境句带三个数，动作按钮接到对应回调',()=>{
@@ -166,26 +173,27 @@ test('首页静态渲染：一张卡一个范围，处境句带三个数，动�
   addBusiness:()=>calls.push('add'),
  },{'business-home-presentation.js':{businessHomeCards,businessHomeSummaryParts}})
  const view=render()
- // 页头：业务名称、说明和右上「再加一类业务」。
+ // 页头只保留业务名称和创建入口。
  assert.equal(text(nodes(view).find(node=>node.type==='h1')),'business.home.title')
- assert.ok(!text(view).includes('business.home.eyebrow')&&text(view).includes('business.home.subtitle'))
+ assert.ok(!text(view).includes('business.home.eyebrow')&&!text(view).includes('business.home.subtitle'))
  const cards=nodes(view).filter(node=>node.type==='article')
  assert.equal(cards.length,labels.length)
  // 处境句用的是三数读口算出来的数：两个数据源、两位在岗（暂停的不算）；来源名词作为第三个参数一并传下去（B1）。
  assert.ok(text(cards[0]!).includes('business.home.situation.connected:'+JSON.stringify({sources:'2',staff:'2',noun:'business.source.noun'})))
- // 「接入{noun}」与行动句都吃同一个名词，没有第二处写法。
- assert.ok(text(cards[0]!).includes('business.home.connect:'+JSON.stringify({noun:'business.source.noun'})))
- assert.ok(text(cards[0]!).includes('business.home.line.connected:'+JSON.stringify({noun:'business.source.noun'})))
- assert.ok(text(cards[0]!).includes('business.home.line.connected'))
+ // 接入动作保留来源名称，卡片不再重复说明如何打开或接入。
+ assert.ok(nodes(cards[0]!).some(node=>node.type==='button'&&node.props['aria-label']===`business.home.connect:${JSON.stringify({noun:'business.source.noun'})} · 安全运营`))
+ assert.ok(!text(cards[0]!).includes('business.home.line.connected'))
  // 「N 件等你」排掉演示数据，只有有事的范围才摆这个徽标。
  assert.ok(text(cards[0]!).includes('business.home.waiting:'+JSON.stringify({count:'1'})))
  assert.ok(!text(cards[1]!).includes('business.home.waiting'))
  // 2026-09-21 用户裁定改判：通用工作（general）对所有在岗正式同事开放（契约 roleSupportsScope），
  // 卡片不再要求岗位声明包含 general——两位在岗的 SOC 同事同样算这张卡的在岗人手。
- assert.ok(text(cards[1]!).includes('business.home.situation.none:'+JSON.stringify({sources:'0',staff:'2',noun:'business.source.noun'})))
+ assert.ok(text(cards[1]!).includes('2 位在岗员工，可以一起协作'))
+ assert.ok(!text(cards[1]!).includes(businessWorkspaceText('zh-CN','generalDescription')))
+ assert.equal(nodes(cards[1]!).some(node=>node.type==='button'&&String(node.props['aria-label']).startsWith('business.home.connect:')),false,'通用工作不提供必然被拒绝的业务数据接入')
  assert.ok(!text(cards[1]!).includes('business.home.noStaff'))
  // 没有同事负责的范围（这里是没人声明过的 domain 范围）说人话，不摆一串空头像；处境句也换成「还没有数字员工在这里」那一支。
- assert.ok(text(cards[2]!).includes('business.home.noStaff'))
+ assert.ok(!text(cards[2]!).includes('business.home.noStaff'))
  assert.ok(text(cards[2]!).includes('business.home.situation.noneNoStaff'))
  assert.ok(text(cards[0]!).includes('business.home.situation.connected'))
  // 三个正式动作各接各的回调；示例数据不是业务入口。
@@ -199,7 +207,7 @@ test('首页静态渲染：一张卡一个范围，处境句带三个数，动�
 
 test('业务首页的新词条 11 列齐全，且中文里没有「工作空间」这类系统词',()=>{
  const rows=new Map(BUSINESS_PAGE_MESSAGE_ROWS.map(row=>[row[0] as string,row as readonly string[]]))
- const keys=['business.home.title','business.home.subtitle','business.home.add','business.home.staffMore','business.home.empty.title','business.home.empty.description','business.home.directory.loading','business.home.directory.failed','business.scope.pageAria','business.home.situation.connected','business.home.situation.none','business.home.situation.connectedNoStaff','business.home.situation.noneNoStaff','business.home.line.connected','business.home.line.none','business.home.noStaff','business.home.waiting','business.home.staff','business.home.connect','business.home.working','business.home.quiet','business.scope.backHome','business.scope.barAria','business.scope.stat.sources','business.scope.stat.staff','business.scope.stat.automations','business.scope.stat.sourcesValue','business.scope.stat.staffValue','business.scope.stat.automationsValue']
+ const keys=['business.home.title','business.home.add','business.home.staffMore','business.home.empty.title','business.home.empty.description','business.home.directory.loading','business.home.directory.failed','business.scope.pageAria','business.home.situation.connected','business.home.situation.none','business.home.situation.connectedNoStaff','business.home.situation.noneNoStaff','business.home.line.connected','business.home.line.none','business.home.waiting','business.home.staff','business.home.connect','business.home.working','business.home.quiet','business.scope.backHome','business.scope.barAria','business.scope.stat.sources','business.scope.stat.staff','business.scope.stat.automations','business.scope.stat.sourcesValue','business.scope.stat.staffValue','business.scope.stat.automationsValue']
  for(const key of keys){
   const row=rows.get(key)
   assert.ok(row,key)
@@ -345,4 +353,19 @@ test('首页把摘要摆在卡上：每段是按钮，点一下把落点交给�
 test('英文业务入口翻译内置名称且保留用户业务名称',()=>{
  const render=mount('BusinessHome.tsx',{directory:{status:'ready',retry:()=>{}},labels:[label('general','通用工作','builtin'),label('custom','客户原文','domain')],roles:[],dataSources:[],attention:[],tasks:[],open:()=>{},openStaff:()=>{},connect:()=>{},addBusiness:()=>{}},{'business-home-presentation.js':{businessHomeCards,businessHomeSummaryParts},'provider.js':{useI18n:()=>({locale:'en',t:(key:string)=>key==='business.scope.general'?'General work':key,number:String})}})
  const output=text(render());assert.ok(output.includes('General work'));assert.ok(!output.includes('通用工作'));assert.ok(output.includes('客户原文'))
+})
+
+test('退出配置的自动业务范围仅保留历史索引，不因已取消任务重新出现在业务首页',()=>{
+ const scope='business_1b79e27a91be46aba7d6f61ed2e068ab',labels=[label(scope,scope,'legacy')],snapshot={roles:[],dataSources:[],attention:[],tasks:[{id:'old',scope,state:'cancelled',storage:'persistent'}] as PreviewTask[],locale:'zh-CN'}
+ assert.deepEqual(businessHomeCards(labels,snapshot),[])
+ assert.equal(labels[0]!.scope,scope,'原历史范围标签未被修改或丢弃')
+ const paused={...role('r1','仍负责的同事',scope),state:'paused'} as PreviewRole
+ assert.equal(businessHomeCards(labels,{...snapshot,roles:[paused]})[0]?.scope,scope)
+ assert.equal(businessHomeCards(labels,{...snapshot,tasks:[{id:'new',scope,state:'ready',storage:'persistent'}] as PreviewTask[]})[0]?.scope,scope)
+})
+
+test('当前业务摘要不把退役员工计入人数，暂停员工和本人分身仍保留',()=>{
+ const roles=[role('active','在岗','general'),role('paused','暂停','general',{state:'paused'}),role('retired','旧验收','general',{state:'retired'}),role('self','分身','general',{kind:'twin'})]
+ const card=businessHomeCards([label('general','通用工作','builtin')],{roles,dataSources:[],attention:[],tasks:[],locale:'zh-CN'})[0]!
+ assert.equal(card.composition.find(x=>x.id==='staff')?.count,2)
 })

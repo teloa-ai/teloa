@@ -1,7 +1,7 @@
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
 import {type MarketTaxonomy,type MarketEntryKind,readMarketTaxonomy} from './market-taxonomy.ts'
-import {roleDefinition,type RoleResponsibility} from './roles.ts'
+import {roleDefinition,type RoleResponsibility,type RoleAvatarKey} from './roles.ts'
 import {parseTeloaRange,teloaRangeHasLowerBound,teloaRangeSatisfies} from './semver-range.ts'
 export type {MarketTaxonomy} from './market-taxonomy.ts'
 export {marketFunctionKeys,marketIndustryKeys,marketIndustryParent,isMarketIndustryRoot,readMarketTaxonomy,marketEntryKinds} from './market-taxonomy.ts'
@@ -42,6 +42,11 @@ export const marketAlternativesMinimumTeloa='0.2.0-alpha.7'
 /** 二次开发资源（`derivation`）、install 条目原版文件摘要与许可映射（`upstream.files[].sha256|repositoryPath`）、安装量来源（`origin.installsSource`）从此版本提供：
  *  旧版读取器按未知字段整份拒收，条目须用兼容下界排除旧版，且不进 v1 索引；发布与生成共用，发版前须复核。 */
 export const marketDerivativeMinimumTeloa='0.2.0-alpha.7'
+/**
+ * 上游插件分组（`plugin`）与 Cursor 来源（`origin.marketplace:'cursor'`）从此版本提供。旧版 v2 读取器（含同为 0.2.0-alpha.7 的已发构建）遇到未知来源 / 未知字段会整份拒收 v2 并回退 v1，
+ * 只有兼容下界高于旧版上报版本（TELOA_APP_VERSION）时旧版才会逐项按「需更新应用」跳过，所以必须严格高于 0.2.0-alpha.7；新构建须同步把上报版本提到不低于此值才能看到这些条目。不进 v1 索引；发布与生成共用。
+ */
+export const marketPluginMinimumTeloa='0.2.0-alpha.8'
 /** 二次开发修改七类，互斥、按此顺序取优先（security > fixed > removed > adapted > added > improved > localized）。 */
 export const marketDerivativeChangeTypes=['security','fixed','removed','adapted','added','improved','localized'] as const
 export type MarketDerivativeChangeType=typeof marketDerivativeChangeTypes[number]
@@ -175,9 +180,14 @@ export type MarketCatalogUpstreamClawHub={
 }
 export type MarketCatalogUpstreamSource=MarketCatalogUpstreamGithub|MarketCatalogUpstreamClawHub
 /** `installsSource`：安装量的可复核来源地址与口径（`plugin` 为插件整体），`countedAt` 即抓取日期；非 ClawHub 来源有安装量时必填，安装量为 null 时不得给。 */
-export type MarketCatalogOrigin={marketplace:'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes';installs:number|null;installsLabel:string;countedAt:string;installsSource?:{url:string;scope:'resource'|'plugin'}}
-export type MarketCatalogAlternative={entryId:string;marketplace:'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes'|'teloa';installs:number|null;recommended?:true}
+export type MarketCatalogOrigin={marketplace:'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes'|'cursor';installs:number|null;installsLabel:string;countedAt:string;installsSource?:{url:string;scope:'resource'|'plugin'}}
+export type MarketCatalogAlternative={entryId:string;marketplace:'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes'|'cursor'|'teloa';installs:number|null;recommended?:true}
 export type MarketCatalogUnsupportedComponent={kind:'agents'|'commands'|'hooks'|'lsp'|'scripts'|'mcp';count:number}
+/**
+ * 上游插件分组：同一公开插件（pluginId）在同一原仓、固定提交、插件根下的技能声明同一份，界面据此呈现为一个应用并一次安装。
+ * 只是分组与出处声明：每个技能仍是独立条目、独立固定指纹与安装记录；`connectors` 只写目录里已有连接条目的精确标识，不新造工具清单。
+ */
+export type MarketCatalogUpstreamPlugin={marketplace:'cursor';id:string;title:MarketCatalogText;summary:MarketCatalogText;root:string;manifest:{path:string;gitBlob:string;sha256:string};license:{spdx:string};connectors:string[]}
 /** 上游固定来源技能条目：不含工件字节，用户添加时按 `upstream` 固定来源拉取并逐文件核对。 */
 export type MarketCatalogUpstreamSkillEntry={
  format:'teloa.market-catalog-entry/v1'
@@ -199,9 +209,10 @@ export type MarketCatalogUpstreamSkillEntry={
  secrets?:MarketCatalogSkillSecret[]
  httpGuide?:MarketCatalogText
  secretGroup?:string
+ plugin?:MarketCatalogUpstreamPlugin
 }
 /** AI 员工条目（规格 §5）：真源仍是方案 roles/<id>.json；definition = 该文件去掉 format；skills 来自方案 role-skill 关联。 */
-export type MarketCatalogRoleDefinition={name:string;kind:'employee'|'twin';duty:string;dataScope:string;executionScope:string;responsibility:RoleResponsibility}
+export type MarketCatalogRoleDefinition={name:string;kind:'employee'|'twin';duty:string;dataScope:string;executionScope:string;responsibility:RoleResponsibility;avatarKey?:RoleAvatarKey}
 export type MarketCatalogRoleEntry={
  format:'teloa.market-catalog-entry/v1'
  id:string
@@ -273,7 +284,7 @@ export type MarketCatalogListContents=Partial<Record<MarketSolutionResourceKind,
  */
 export type MarketCatalogListSecretGroup={id:string;members:{entryId:string;title:MarketCatalogText}[]}
 /** 分页列表请求；不传任何字段等同于 `{}` 向后兼容（首页 Teloa 官方条目）。 */
-export type MarketCatalogListRequest={cursor?:string;limit?:number;query?:string;kind?:MarketEntryKind;marketplace?:'teloa'|'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes';sort?:'installs'|'name'}
+export type MarketCatalogListRequest={cursor?:string;limit?:number;query?:string;kind?:MarketEntryKind;marketplace?:'teloa'|'claude-code'|'codex'|'dsh'|'openclaw'|'clawhub'|'hermes'|'cursor';sort?:'installs'|'name'}
 /** counts 在过滤前对全量条目一次算出；skipped 来自最近一次采用的 v2 在线索引（无在线索引时全 0）。 */
 export type MarketCatalogListCounts=Record<MarketEntryKind,number>
 export type MarketCatalogListSkipped={unknownKind:number;newerApp:number}
@@ -526,7 +537,8 @@ function usesConnectorExtensions(connector:MarketCatalogConnectorEntry['connecto
 /** v1 冻结索引不能收的条目：旧应用按 exact 键整份拒收未知字段（secrets、全部目录扩展字段与二次开发相关字段），旧版连接器读取器也不认识 OAuth 的 supported 字段。 */
 export function marketEntryNeedsV2(entry:MarketCatalogEntry):boolean{
  if(entry.kind==='dashboard')return true
- if(entry.kind==='skill')return entry.secrets!==undefined||entry.httpGuide!==undefined||entry.secretGroup!==undefined||marketEntryUsesDerivativeFields(entry)
+ if(entry.kind==='role')return entry.role.definition.avatarKey!==undefined
+ if(entry.kind==='skill')return entry.secrets!==undefined||entry.httpGuide!==undefined||entry.secretGroup!==undefined||marketEntryUsesDerivativeFields(entry)||marketEntryUsesPluginFields(entry)
  if(entry.kind!=='connector')return false
  return entry.connector.auth.kind==='oauth'||usesConnectorExtensions(entry.connector)
 }
@@ -542,6 +554,46 @@ export function assertSecretGroupsConsistent(entries:readonly Pick<MarketCatalog
   const first=seen.get(entry.secretGroup)
   if(!first){seen.set(entry.secretGroup,{id:entry.id,shape});continue}
   if(first.shape!==shape)throw bad('共享密钥组 '+entry.secretGroup+' 的声明不一致：'+first.id+' 与 '+entry.id+' 的变量集合或目标 origin 集合不同。')
+ }
+}
+/** 条目是否用了插件分组或 Cursor 来源（旧客户端冻结的来源枚举不认识）；v1 过滤与版本闸共用。 */
+export function marketEntryUsesPluginFields(entry:MarketCatalogEntry):boolean{
+ return entry.kind==='skill'&&entry.delivery==='upstream'&&(entry.plugin!==undefined||entry.origin.marketplace==='cursor')
+}
+function readPluginGate(entry:MarketCatalogEntry):void{
+ if(marketEntryUsesPluginFields(entry)&&!teloaRangeHasLowerBound(entry.compatibility.teloa,marketPluginMinimumTeloa))throw bad('Cursor 来源或带插件分组的条目，Teloa 兼容下界须为 '+marketPluginMinimumTeloa+' 或更高（旧版应用不认识这些字段）。')
+}
+const pluginIdPattern=/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/
+/** 插件分组读法：只收 cursor 来源的 GitHub 固定提交；技能目录与插件清单都须在插件根内（根为 '.' 表示仓库根）。 */
+function readUpstreamPlugin(value:unknown,entry:MarketCatalogUpstreamSkillEntry):MarketCatalogUpstreamPlugin{
+ const row=exact(value,['marketplace','id','title','summary','root','manifest','license','connectors'],'上游插件')
+ if(row.marketplace!=='cursor')throw bad('上游插件分组目前只支持 cursor 来源。')
+ if(entry.origin.marketplace!==row.marketplace)throw bad('上游插件来源必须与条目来源市场一致。')
+ if(entry.upstream.kind!=='github')throw bad('上游插件分组只支持 GitHub 固定提交来源。')
+ const root=row.root==='.'?'.':path(row.root,'插件根目录'),inside=(value:string)=>root==='.'||value===root||value.startsWith(root+'/')
+ if(!inside(entry.upstream.path))throw bad('技能目录必须位于插件根目录内。')
+ const manifestRow=exact(row.manifest,['path','gitBlob','sha256'],'插件清单')
+ const manifest={path:path(manifestRow.path,'插件清单路径'),gitBlob:pattern(manifestRow.gitBlob,hex40,'插件清单 blob 摘要'),sha256:pattern(manifestRow.sha256,hex64,'插件清单 sha256 摘要')}
+ if(!inside(manifest.path))throw bad('插件清单必须位于插件根目录内。')
+ const licenseRow=exact(row.license,['spdx'],'插件许可')
+ const connectors=distinct(list(row.connectors,'插件连接',20).map(id=>pattern(id,catalogId,'插件连接条目标识')),'插件连接条目标识')
+ return {marketplace:'cursor',id:pattern(row.id,pluginIdPattern,'插件标识'),title:localized(row.title,'插件标题',120),summary:localized(row.summary,'插件用途'),root,manifest,license:{spdx:text(licenseRow.spdx,'插件许可',120)},connectors}
+}
+/**
+ * 插件分组一致性：同一 marketplace + pluginId 的成员必须是同一份 plugin 声明、同一原仓与固定提交、同一份未采用组件计数，插件内技能名不重复。
+ * 快照、在线索引读取与发布端组装按目录整体调用；不一致整份拒绝，不按名称或路径猜分组。
+ */
+export function assertUpstreamPluginsConsistent(entries:readonly MarketCatalogEntry[]):void{
+ const seen=new Map<string,{id:string;shape:string;names:Set<string>}>()
+ for(const entry of entries){
+  if(entry.kind!=='skill'||entry.delivery!=='upstream'||!entry.plugin||entry.upstream.kind!=='github')continue
+  const key=entry.plugin.marketplace+':'+entry.plugin.id
+  const shape=JSON.stringify([entry.plugin,entry.upstream.repository,entry.upstream.commit,entry.unsupportedComponents])
+  const first=seen.get(key)
+  if(!first){seen.set(key,{id:entry.id,shape,names:new Set([entry.skill.name])});continue}
+  if(first.shape!==shape)throw bad('上游插件 '+key+' 的分组声明不一致：'+first.id+' 与 '+entry.id+' 的插件声明、原仓、固定提交或未采用组件不同。')
+  if(first.names.has(entry.skill.name))throw bad('上游插件 '+key+' 内技能名重复：'+entry.skill.name+'。')
+  first.names.add(entry.skill.name)
  }
 }
 /** 推荐替代与连接器其他来源的版本闸：带这些新字段的条目，兼容范围须有不低于 marketAlternativesMinimumTeloa 的下界。 */
@@ -904,7 +956,7 @@ function readConnectorEntry(row:Record<string,unknown>):MarketCatalogConnectorEn
 
 /** 其他来源共用读法；推荐只允许显式 true，缺省保持旧条目形状。 */
 export function readAlternatives(value:unknown):MarketCatalogAlternative[]{
- const marketplaces=['claude-code','codex','dsh','openclaw','clawhub','hermes','teloa'] as const
+ const marketplaces=['claude-code','codex','dsh','openclaw','clawhub','hermes','cursor','teloa'] as const
  const alternatives=list(value,'其他来源',50).map(input=>{
   const hasRecommended=isRecord(input)&&Object.hasOwn(input,'recommended')
   const alt=exact(input,['entryId','marketplace','installs',...(hasRecommended?['recommended']:[])],'替代条目')
@@ -961,7 +1013,7 @@ function readUpstreamSkillEntry(row:Record<string,unknown>):MarketCatalogUpstrea
  }else{throw bad('上游来源类型只支持 github 或 clawhub。')}
  const hasInstallsSource=isRecord(row.origin)&&Object.hasOwn(row.origin,'installsSource')
  const origRow=exact(row.origin,['marketplace','installs','installsLabel','countedAt',...(hasInstallsSource?['installsSource']:[])],'来源信息')
- const marketplaces=['claude-code','codex','dsh','openclaw','clawhub','hermes'] as const
+ const marketplaces=['claude-code','codex','dsh','openclaw','clawhub','hermes','cursor'] as const
  if(!(marketplaces as readonly unknown[]).includes(origRow.marketplace))throw bad('来源市场不支持。')
  if(origRow.installs!==null&&(!Number.isSafeInteger(origRow.installs)||(origRow.installs as number)<0))throw bad('安装量必须是非负整数或 null。')
  const origin:MarketCatalogOrigin={marketplace:origRow.marketplace as MarketCatalogOrigin['marketplace'],installs:origRow.installs as number|null,installsLabel:text(origRow.installsLabel,'安装量显示文本',200),countedAt:date(origRow.countedAt,'统计日期')}
@@ -1009,12 +1061,13 @@ function readRoleEntry(row:Record<string,unknown>):MarketCatalogRoleEntry{
  if(row.delivery!=='install')throw bad('AI 员工条目只能以 install 方式交付。')
  if(row.upstream!==null)throw bad('AI 员工条目的 upstream 必须为 null。')
  const roleRow=exact(row.role,['roleId','title','summary','definition','skills','scope','preferredModel','fromSolution'],'岗位信息')
- const definitionRow=exact(roleRow.definition,['name','kind','duty','dataScope','executionScope','responsibility'],'岗位定义')
+ const definitionRow=exact(roleRow.definition,['name','kind','duty','dataScope','executionScope','responsibility',...(isRecord(roleRow.definition)&&Object.hasOwn(roleRow.definition,'avatarKey')?['avatarKey']:[])],'岗位定义')
  // 用契约的岗位读法校验字段边界；scopes/skills/knowledge 不属于条目，创建时才补。
  let checked
  try{checked=roleDefinition({...definitionRow,scopes:['general'],skills:[],knowledge:[]})}catch{throw bad('岗位定义不合法。')}
  if(!checked.responsibility)throw bad('岗位定义必须包含结构化职责。')
- const definition:MarketCatalogRoleDefinition={name:checked.name,kind:checked.kind,duty:checked.duty,dataScope:checked.dataScope,executionScope:checked.executionScope,responsibility:checked.responsibility}
+ const definition:MarketCatalogRoleDefinition={name:checked.name,kind:checked.kind,duty:checked.duty,dataScope:checked.dataScope,executionScope:checked.executionScope,responsibility:checked.responsibility,...(checked.avatarKey===undefined?{}:{avatarKey:checked.avatarKey})}
+ if(definition.avatarKey!==undefined&&(!isRecord(row.compatibility)||typeof row.compatibility.teloa!=='string'||!teloaRangeHasLowerBound(row.compatibility.teloa,'0.2.0-alpha.8')))throw bad('使用内置员工头像的条目，Teloa 兼容下界须为 0.2.0-alpha.8 或更高。')
  const skills=distinct(list(roleRow.skills,'依赖技能',30).map(item=>pattern(item,marketCatalogSkillName,'技能名')),'依赖技能')
  let preferredModel:MarketCatalogRoleEntry['role']['preferredModel']=null
  if(roleRow.preferredModel!==null){
@@ -1143,13 +1196,18 @@ function readModelCloud(value:unknown):MarketCatalogModelCloud{
 export function readMarketCatalogEntry(value:unknown):MarketCatalogEntry{
  if(!isRecord(value))throw bad('目录条目格式不正确或包含未知字段。')
  if(value.kind==='skill'){
-  // secrets / httpGuide / secretGroup 是可选扩展键，先摘出再按 exact 键读主体；后两者只随 secrets 出现。
-  const {secrets,httpGuide,secretGroup,...rest}=value
-  const entry=rest.delivery==='upstream'
+  // secrets / httpGuide / secretGroup / plugin 是可选扩展键，先摘出再按 exact 键读主体；httpGuide、secretGroup 只随 secrets 出现，plugin 只用于上游条目。
+  const {secrets,httpGuide,secretGroup,plugin,...rest}=value
+  let entry:MarketCatalogSkillEntry|MarketCatalogUpstreamSkillEntry=rest.delivery==='upstream'
    ?readUpstreamSkillEntry(exact(rest,['format','id','kind','delivery','version','taxonomy','skill','upstream','origin','alternatives','unsupportedComponents','modifications','license','compatibility','requires','review'],'上游技能条目'))
    :readSkillEntry(exact(rest,['format','id','kind','delivery','version','taxonomy','skill','upstream','modifications','license','compatibility','requires','review',...(Object.hasOwn(rest,'derivation')?['derivation']:[])],'技能条目'))
+  if(plugin!==undefined){
+   if(entry.delivery!=='upstream')throw bad('插件分组 plugin 只能用于上游技能条目。')
+   entry={...entry,plugin:readUpstreamPlugin(plugin,entry)}
+  }
   readAlternativesGate(entry)
   readDerivativeGate(entry)
+  readPluginGate(entry)
   if(secrets===undefined){
    if(httpGuide!==undefined)throw bad('调用指引 httpGuide 只能与 secrets 同时出现。')
    if(secretGroup!==undefined)throw bad('共享密钥组 secretGroup 只能与 secrets 同时出现。')
@@ -1187,9 +1245,13 @@ export function skillFrontmatterName(text:string):string|undefined{
 
 /** 上游确认与导入共用：保留 ClawHub 历史指纹；GitHub 绑定仓库、提交、目录和文件声明（路径、blob、sha256、大小、目录外原路径）。 */
 export function marketCatalogUpstreamTreeHash(source:MarketCatalogUpstreamSource,sha256:(text:string)=>string):string{
- if(source.kind==='clawhub')return sha256(JSON.stringify(source.files.map(file=>[file.path,file.sha256]).sort()))
+ return sha256(marketCatalogUpstreamTreeInput(source))
+}
+/** 上游树摘要的规范输入：宿主同步摘要与浏览器异步摘要（crypto.subtle）共用同一份文本，指纹不会各算各的。 */
+export function marketCatalogUpstreamTreeInput(source:MarketCatalogUpstreamSource):string{
+ if(source.kind==='clawhub')return JSON.stringify(source.files.map(file=>[file.path,file.sha256]).sort())
  const files=[...source.files].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0).map(file=>file.repositoryPath===undefined?[file.path,file.gitBlob,file.sha256,file.size]:[file.path,file.gitBlob,file.sha256,file.size,file.repositoryPath])
- return sha256(JSON.stringify(['github',source.repository.host,source.repository.owner,source.repository.repo,source.commit,source.path,files]))
+ return JSON.stringify(['github',source.repository.host,source.repository.owner,source.repository.repo,source.commit,source.path,files])
 }
 
 /** 工件树摘要：按路径排序后对 [path,sha256,size] 序列求摘要；由调用方提供 sha256，契约包不依赖运行时加密库。 */
@@ -1199,6 +1261,8 @@ export function marketCatalogTreeHash(files:readonly MarketCatalogArtifactFile[]
 }
 
 /** 读取条目工件清单并核对入口、许可与树摘要；不接触字节，字节摘要由持有字节的一方核对。 */
+/** 列表条目可不带工件的连接器：在线索引只发条目不发工件字节，非 stdio 连接器没有要逐字节核对的安装包，由宿主按条目与本人授权建连；stdio 的安装锁随发行工件固定，必须带工件。 */
+export function marketConnectorArtifactOptional(entry:MarketCatalogEntry):boolean{return entry.kind==='connector'&&entry.connector.recipe.transport!=='stdio'}
 export function readMarketCatalogArtifact(value:unknown,entry:MarketCatalogEntry,sha256:(text:string)=>string):MarketCatalogArtifact{
  const row=exact(value,['files','treeHash'],'条目工件')
  const files=list(row.files,'工件文件',500).map(input=>{const file=exact(input,['path','sha256','size'],'工件文件');return {path:path(file.path,'工件文件路径'),sha256:pattern(file.sha256,hex64,'工件文件摘要'),size:size(file.size,'工件文件')}})

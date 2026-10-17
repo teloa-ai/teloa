@@ -1,13 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {createMarketCatalogApi} from '../src/client/market-catalog-api.ts'
+import {createMarketCatalogApi,loadCatalogListing} from '../src/client/market-catalog-api.ts'
 import {catalogEntry} from './market-catalog-fixture.ts'
 
 const contentId='22222222-2222-4222-8222-222222222222',requestId='11111111-1111-4111-8111-111111111111'
 const artifact={files:[{path:'LICENSE.txt',sha256:'a'.repeat(64),size:1},{path:'SKILL.md',sha256:'b'.repeat(64),size:1}],treeHash:'c'.repeat(64)}
 const listing=(extra:Record<string,unknown>={})=>({catalogVersion:'2026.9.25',items:[{entry:catalogEntry(),artifact,addedContentId:null,addedRoleId:null,secretGroup:null,...extra}],counts:{solution:0,role:0,skill:1,connector:0,model:0},skipped:{unknownKind:0,newerApp:0}})
 const receipt=(id=requestId,entryId='anthropic.internal-comms')=>({receipt:{requestId:id,contentId,source:{kind:'catalog',catalog:'teloa-official',catalogVersion:'2026.9.25',entryId,entryVersion:'1.0.0',treeHash:'c'.repeat(64)},createdAt:'2026-09-25T00:00:00.000Z'},content:{id:contentId}})
+test('市场只读取一个 Teloa 官方目录（宿主一次给出全部经审核条目），不再请求任何外部来源',async()=>{
+ const calls:unknown[]=[]
+ const api={list:async(input:unknown)=>{calls.push(input);return {catalogVersion:'2026.10.14.2',items:[],nextCursor:null,counts:{solution:0,dashboard:0,role:0,skill:0,connector:0,model:0},skipped:{unknownKind:0,newerApp:0}}}}
+ await loadCatalogListing(api)
+ assert.deepEqual(calls,[{marketplace:'teloa',limit:50}])
+})
 
 test('目录列表逐条复核，异常回包一律拒绝',async()=>{
  const api=createMarketCatalogApi(async(endpoint,payload)=>{assert.equal(endpoint,'market-catalog/list');assert.deepEqual(payload,{});return listing()})
@@ -50,6 +56,24 @@ test('addRole 只发三键（无 requestId）；回执三键；counts/skipped �
  await assert.rejects(createMarketCatalogApi(async()=>({...receipt,extra:1})).addRole('teloa.role.x','1.0.0'),/回执格式不正确/)
  const withModel=createMarketCatalogApi(async()=>({...listing(),items:[{entry:modelEntry,artifact:null,addedContentId:null,addedRoleId:null,secretGroup:null}]}))
  assert.equal((await withModel.list()).items[0]!.artifact,null)
+})
+
+test('addRole 完整资源安装回执：install 摘要逐项复核；员工未建立时只认 pending + null；rolePackage 只认恰好一位员工的清单',async()=>{
+ const install={complete:false,loadId:'66666666-6666-4666-8666-666666666666',roleState:null,next:'retry',resources:[{kind:'skill',title:'Triage',state:'failed'},{kind:'knowledge',title:'Profile',state:'done'}]}
+ const pending={roleId:null,status:'pending',skills:[],install}
+ assert.deepEqual(await createMarketCatalogApi(async()=>pending).addRole('teloa.role.x','1.0.0'),pending)
+ // 异源同名方法：明确冲突状态原样读出，员工未建立
+ const conflict={...pending,install:{...install,next:'review',resources:[{kind:'skill',title:'Triage',state:'conflict'}]}}
+ assert.deepEqual(await createMarketCatalogApi(async()=>conflict).addRole('teloa.role.x','1.0.0'),conflict)
+ const done={roleId:'44444444-4444-4444-8444-444444444444',status:'created',skills:['acme-triage'],install:{...install,complete:true,roleState:'paused',next:'resume',resources:[{kind:'skill',title:'Triage',state:'done',nativeName:'acme-triage'}]}}
+ assert.deepEqual(await createMarketCatalogApi(async()=>done).addRole('teloa.role.x','1.0.0'),done)
+ for(const bad of [{...pending,status:'created'},{...done,roleId:null},{...done,install:{...done.install,next:'start'}},{...done,install:{...done.install,resources:[{kind:'skill',title:'x',state:'installed'}]}},{...done,extra:1}])
+  await assert.rejects(createMarketCatalogApi(async()=>bad).addRole('teloa.role.x','1.0.0'),/回执格式不正确/)
+ const manifest={format:'teloa.business-package/v3',id:'team-x-a',title:'A',version:'1.0.0',domain:'general',scope:'general',description:'A。',resources:[{id:'a',kind:'role',title:'A',version:'1.0.0',required:true,source:{kind:'local',path:'roles/a.json'}}],relations:[],entrypoints:[]}
+ const calls:unknown[]=[],api=createMarketCatalogApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return {entryId:'teloa.role.x',version:'1.0.0',packageId:'team-x',packageVersion:'1.0.0',manifest}})
+ assert.equal((await api.rolePackage('teloa.role.x')).manifest.resources.length,1);assert.deepEqual(calls,[['market-catalog/role',{entryId:'teloa.role.x'}]])
+ const two={...manifest,resources:[...manifest.resources,{...manifest.resources[0]!,id:'b',source:{kind:'local',path:'roles/b.json'}}]}
+ await assert.rejects(createMarketCatalogApi(async()=>({entryId:'teloa.role.x',version:'1.0.0',packageId:'team-x',packageVersion:'1.0.0',manifest:two})).rolePackage('teloa.role.x'),/组成回包格式不正确/)
 })
 
 const modelEntry={format:'teloa.market-catalog-entry/v1',id:'teloa.model.deepseek',kind:'model',delivery:'reference',version:'1.0.0',upstream:null,
@@ -107,4 +131,26 @@ test('目录列表：方案条目可带包含计数（严格复核），旧回�
  assert.equal(Object.hasOwn((await createMarketCatalogApi(async()=>page()).list()).items[0]!,'contents'),false)
  for(const contents of [{skill:0},{nope:1},null])await assert.rejects(createMarketCatalogApi(async()=>page({contents})).list(),/官方目录回包格式不正确/)
  await assert.rejects(createMarketCatalogApi(async()=>listing({contents:{skill:1}})).list(),/官方目录回包格式不正确/)
+})
+
+test('目录列表：在线索引的远端连接器可不带工件（artifact 为 null）；stdio 连接器与技能缺工件仍拒绝',async()=>{
+ const deepwiki=JSON.parse(readFileSync(new URL('../../../../tests/fixtures/public-market/catalog/connectors/teloa.mcp-deepwiki.json',import.meta.url),'utf8'))
+ const online={...deepwiki,id:'teloa.mcp-online-notes',connector:{...deepwiki.connector,serverName:'online_notes'}}
+ const value=await createMarketCatalogApi(async()=>listing({entry:online,artifact:null})).list()
+ assert.deepEqual(value.items.map(item=>[item.entry.id,item.artifact]),[[online.id,null]])
+ const stdio={...online,connector:{...online.connector,recipe:{transport:'stdio',package:'@example/mcp',version:'1.0.0',integrity:'sha512-'+'A'.repeat(86)+'==',bin:'lib/main.js',args:[]}}}
+ for(const entry of [stdio,catalogEntry()])
+  await assert.rejects(createMarketCatalogApi(async()=>listing({entry,artifact:null})).list(),/官方目录回包格式不正确/)
+})
+
+test('添加可带所选来源的版本与树指纹：请求带 expectedTreeHash，回执版本或指纹与所选不同一律拒绝',async()=>{
+ const sent:unknown[]=[],expected={version:'1.0.0',treeHash:'c'.repeat(64)}
+ const api=createMarketCatalogApi(async(_endpoint,payload)=>{sent.push(payload);return receipt()},()=>requestId)
+ assert.deepEqual(await api.add('anthropic.internal-comms',expected),{contentId})
+ assert.deepEqual(sent,[{requestId,entryId:'anthropic.internal-comms',expectedTreeHash:'c'.repeat(64)}])
+ for(const patch of [{entryVersion:'1.0.1'},{treeHash:'d'.repeat(64)}]){
+  const changed=receipt() as any;changed.receipt.source={...changed.receipt.source,...patch}
+  await assert.rejects(createMarketCatalogApi(async()=>changed,()=>requestId).add('anthropic.internal-comms',expected),/不一致/)
+ }
+ await assert.rejects(api.add('anthropic.internal-comms',{version:'1.0.0',treeHash:'x'}),/不正确/)
 })

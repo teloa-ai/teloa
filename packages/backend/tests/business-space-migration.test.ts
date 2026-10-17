@@ -169,6 +169,23 @@ test('同一内容撞到本人空间唯一键：保留仍活跃且最新的一�
  assert.deepEqual((await f.loads.list(f.owner,{})).items.map(item=>item.id),[older.id])
 })
 
+test('本人空间启动迁移不把同字节不同content声明当作重复加载，不退役其原实例',async()=>{
+ const f=assemble(randomUUID()),base={kind:'industry-template' as const,source:{kind:'upload' as const,name:'固定声明'},manifestPath:'teloa.json',files:files('shared','# 同字节'),references:[]}
+ const old=(await f.market.import({ownerId:f.owner,kind:'human'},{...base,requestId:randomUUID()})).content
+ const next=(await f.market.import({ownerId:f.owner,kind:'human'},{...base,requestId:randomUUID(),trust:{publisher:'Teloa验收',repository:null,license:{status:'declared',value:'MIT'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地声明待审查'}}})).content
+ assert.equal(old.hash,next.hash);assert.notEqual(old.id,next.id)
+ const first=await f.loads.create(f.owner,{requestId:randomUUID(),contentId:old.id,contentHash:old.hash,target:{kind:'new',spaceId:randomUUID(),name:'原空间'}})
+ const second=await f.loads.create(f.owner,{requestId:randomUUID(),contentId:next.id,contentHash:next.hash,target:{kind:'existing',spaceId:first.space.id,expectedVersion:1}})
+ const instance=await f.dataSources.instantiate(f.owner,{requestId:randomUUID(),loadId:second.id,itemInstanceId:instanceOf(second,'alerts')})
+ const before=(await pool.query('select * from teloa_industry_data_source_instances where id=$1',[instance.id])).rows[0]
+ await f.spacesService.ensurePersonal(f.owner);await f.spacesService.ensurePersonal(f.owner)
+ assert.equal((await loadRow(first.id)).status,'active')
+ assert.equal((await loadRow(second.id)).status,'active','不能在宿主启动时误卸载不同固定content身份')
+ assert.deepEqual((await pool.query('select * from teloa_industry_data_source_instances where id=$1',[instance.id])).rows[0],before)
+ assert.equal((await receipts(f.owner)).filter(row=>row.kind==='load-unloaded-duplicate').length,0)
+ assert.deepEqual(new Set((await f.loads.list(f.owner,{})).items.map(item=>item.contentId)),new Set([old.id,next.id]))
+})
+
 test('非本人空间之间同摘要相撞时保留活跃且最新的一条搬入本人空间',async()=>{
  const f=assemble(randomUUID())
  await loadInto(f,randomUUID(),'# 占位模板')

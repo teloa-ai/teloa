@@ -1,5 +1,10 @@
 export const PROJECT_WORKSPACE_MESSAGE_ROWS = [
+["project.dialog.close","关闭项目窗口","關閉專案視窗","Close project dialog"],
 ["project.create","新建项目","新增專案","New project","新しいプロジェクト","새 프로젝트","Dự án mới","Nuevo proyecto","Nouveau projet","Neues Projekt","Novo projeto"],
+["project.create.description","项目描述","專案描述","Project description"],
+["project.create.example","# 客户上线项目\n目标：完成产品试用并交付上线说明。\n需要：整理资料、协调员工、确认交付结果。","# 客戶上線專案\n目標：完成產品試用並交付上線說明。\n需要：整理資料、協調員工、確認交付結果。","# Customer launch\nGoal: complete the trial and deliver a launch guide.\nNeeds: organize material, coordinate employees, confirm deliverables."],
+["project.create.hint","支持 Markdown，全文保存为目标；此步只创建项目。","支援 Markdown，全文儲存為目標；此步只新增專案。","Supports Markdown. The full description becomes the goal; this step only creates the project."],
+["project.create.scope","业务：{name}","業務：{name}","Business: {name}"],
 ["project.edit","编辑项目","編輯專案","Edit project","プロジェクトを編集","프로젝트 편집","Sửa dự án","Editar proyecto","Modifier le projet","Projekt bearbeiten","Editar projeto"],
 ["project.save","保存项目","儲存專案","Save project","保存","프로젝트 저장","Lưu dự án","Guardar proyecto","Enregistrer le projet","Projekt speichern","Guardar projeto"],
 ["project.name","项目名称","專案名稱","Project name","プロジェクト名","프로젝트 이름","Tên dự án","Nombre del proyecto","Nom du projet","Projektname","Nome do projeto"],
@@ -87,10 +92,11 @@ export const PROJECT_WORKSPACE_MESSAGE_ROWS = [
 ["project.reference.addSelected","引用所选（{count}）","引用所選（{count}）","Reference selected ({count})","選択した{count}件を参照","선택 항목 참조 ({count})","Tham chiếu đã chọn ({count})","Referenciar selección ({count})","Référencer la sélection ({count})","Auswahl referenzieren ({count})","Referenciar seleção ({count})"],
 ["project.reference.noBusiness","没有可引用的其他业务。","沒有可引用的其他業務。","No other business to reference.","参照できる他の業務がありません。","참조할 수 있는 다른 업무가 없습니다.","Không có nghiệp vụ khác để tham chiếu.","No hay otro negocio para referenciar.","Aucune autre activité à référencer.","Kein anderer Bereich zum Referenzieren.","Nenhuma outra atividade para referenciar."],
 ["project.overview.title","项目","專案","Projects","プロジェクト","프로젝트","Dự án","Proyectos","Projets","Projekte","Projetos"],
-["project.overview.hint","你在所有业务里的项目。归属不变，点开进入所属业务。","你在所有業務裡的專案。歸屬不變，點開進入所屬業務。","Your projects across all businesses. Ownership stays put; open one to enter its business.","すべての業務にわたるあなたのプロジェクト。所属は変わらず、開くと所属業務に入ります。","모든 업무에 걸친 내 프로젝트입니다. 소속은 그대로이며 열면 해당 업무로 들어갑니다.","Dự án của bạn trong mọi nghiệp vụ. Quyền sở hữu không đổi; mở để vào nghiệp vụ tương ứng.","Tus proyectos en todos los negocios. La pertenencia no cambia; ábrelo para entrar en su negocio.","Vos projets dans toutes les activités. Le rattachement ne change pas ; ouvrez-en un pour entrer dans son activité.","Deine Projekte über alle Bereiche. Die Zuordnung bleibt; öffne eines, um in seinen Bereich zu wechseln.","Os seus projetos em todas as atividades. A pertença não muda; abra um para entrar na sua atividade."],
 ["project.overview.allBusinesses","全部业务","全部業務","All businesses","すべての業務","모든 업무","Tất cả nghiệp vụ","Todos los negocios","Toutes les activités","Alle Bereiche","Todas as atividades"],
 ["project.overview.businessFilter","按业务","按業務","By business","業務で絞り込む","업무별","Theo nghiệp vụ","Por negocio","Par activité","Nach Bereich","Por atividade"],
 ["project.overview.stateFilter","按状态","按狀態","By status","状態で絞り込む","상태별","Theo trạng thái","Por estado","Par statut","Nach Status","Por estado"],
 ["project.overview.loadMore","加载更多","載入更多","Load more","さらに読み込む","더 불러오기","Tải thêm","Cargar más","Charger plus","Mehr laden","Carregar mais"],
 ["project.overview.empty","还没有项目，去业务页新建。","還沒有專案，到業務頁新增。","No projects yet. Create one from a business page.","プロジェクトはまだありません。業務ページから作成してください。","아직 프로젝트가 없습니다. 업무 페이지에서 만들어 주세요.","Chưa có dự án. Hãy tạo từ trang nghiệp vụ.","Aún no hay proyectos. Crea uno desde la página del negocio.","Aucun projet pour le moment. Créez-en un depuis la page d’activité.","Noch keine Projekte. Lege eines auf der Bereichsseite an.","Ainda sem projetos. Crie um na página da atividade."],
+["project.overview.noMatch","没有符合筛选条件的项目","沒有符合篩選條件的專案","No projects match these filters"],
+["project.overview.createInBusiness","前往业务创建","前往業務新增","Create from a business"],
 ] as const

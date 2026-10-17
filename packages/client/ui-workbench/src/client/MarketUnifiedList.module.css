@@ -47,6 +47,44 @@
 .empty button:hover{background:var(--teloa-hover)}
 .empty button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .rowButton[aria-current=page],.gridCard[aria-current=page]{background:var(--teloa-hover)}
+.purposeBar{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px}
+.purposeBar>.filterRow{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.purposeBar .filterLabel{display:none}
+.purposeBar .chips{gap:7px}
+.purposeBar .chips button{border:0;background:var(--teloa-subtle);min-height:32px;padding:6px 13px}
+.purposeBar .chips button[aria-pressed=true]{background:var(--teloa-text);color:var(--teloa-surface)}
+.purposeBar .chips button span{display:none}
+.purposeBar .moreFilters{grid-column:auto}
+.purposeBar>.moreFilters{align-self:flex-start;margin-top:3px}
+.filterPanel{position:absolute;right:0;top:calc(100% + 8px);z-index:var(--teloa-z-menu);display:grid;gap:16px;width:min(420px,100%);padding:16px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+.filterPanel p{margin:0 0 7px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.filterPanel .filterRow{display:grid;grid-template-columns:1fr;gap:4px}
+.purposeBar .filterPanel .filterLabel{display:block;line-height:1.6}
+.purposeBar .filterPanel .chips{gap:6px}
+.grid.cards{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.cards .gridCard{position:relative;flex-direction:column;align-items:flex-start;gap:12px;padding:16px;background:var(--teloa-subtle);border:1px solid transparent;border-radius:var(--teloa-design-r3)}
+.cards .gridCard:hover{border-color:var(--teloa-border);background:var(--teloa-hover)}
+.cards .rowMain{width:100%;gap:6px}
+.cards .rowTop{align-items:flex-start;flex-wrap:wrap;gap:5px 8px}
+.cards .gridTitle{font-size:var(--teloa-font-body);line-height:1.5;flex-basis:100%}
+.cards .gridPitch{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.65;min-height:3.3em}
+.cards .rowFacts{font-size:var(--teloa-font-caption);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cardAction{align-self:flex-end;display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:var(--teloa-font-caption);color:var(--teloa-accent)}
+.resultGroup{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.cardSections{display:grid;gap:28px}
+.cardSections section>header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+.cardSections h2{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
+.cardSections header>button{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.templateDetails{margin-top:16px}
+.detailTabs{display:flex;flex-wrap:wrap;gap:6px 18px;border-bottom:1px solid var(--teloa-border)}
+.detailTabs.detailTabs button{font:inherit;font-size:var(--teloa-font-control);padding:8px 0;border:0;border-radius:0;border-bottom:2px solid transparent;background:transparent;color:var(--teloa-muted);cursor:pointer}
+.detailTabs button[aria-selected=true]{border-bottom-color:var(--teloa-text);color:var(--teloa-text)}
+.detailTabs button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
+.detailPanel{padding-top:16px;font-size:var(--teloa-font-control);line-height:1.8;overflow-wrap:anywhere}
+.detailPanel ul{margin:7px 0;padding-left:20px}
+@media(max-width:1080px){.grid.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:860px){.grid.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){.grid.cards{grid-template-columns:1fr}}
 .moreFilters select{font:inherit;font-size:var(--teloa-font-caption);min-height:30px;padding:3px 8px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text)}
 .moreFields{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px}
 .moreFields label{display:flex;align-items:center;gap:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
@@ -62,3 +100,26 @@
  .grid .gridCard{align-items:flex-start;padding:16px}
  .gridCard>svg:last-child{display:none}
 }
+
+/* 方案 B 主目录：左栏用途分类竖排（原型 B #categories），右栏搜索与三列紧凑卡；应用等其余入口不受影响 */
+.directory{display:grid;grid-template-columns:136px minmax(0,1fr);gap:28px;align-items:start}
+.directoryNav{position:sticky;top:0;min-width:0}
+.directoryBody{display:grid;gap:16px;min-width:0}
+.purposeNav.purposeBar{flex-direction:column;align-items:stretch;gap:12px}
+.purposeNav>.filterRow{flex-direction:column;align-items:stretch;gap:0;flex:none}
+.purposeNav .chips{flex-direction:column;gap:3px}
+.purposeNav .chips button{justify-content:flex-start;width:100%;min-height:34px;padding:7px 12px;border-radius:var(--teloa-design-r2);background:transparent;color:var(--teloa-muted);text-align:left;white-space:normal}
+.purposeNav .chips button:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)}
+.purposeNav .chips button[aria-pressed=true]{background:var(--teloa-subtle);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.purposeNav>.moreFilters{align-self:stretch;margin-top:4px;padding-top:10px;border-top:1px solid var(--teloa-border)}
+.purposeNav .filterPanel{position:static;width:auto;padding:10px 0 0;border:0;box-shadow:none;background:transparent}
+.purposeNav .filterPanel .chips{flex-direction:row}
+.purposeNav .filterPanel .chips button{width:auto;min-height:28px;padding:3px 10px;border:1px solid var(--teloa-border);background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-caption)}
+.purposeNav .filterPanel .chips button[aria-pressed=true]{border-color:var(--teloa-text);background:var(--teloa-text);color:var(--teloa-surface)}
+.directoryBody .grid.cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.directoryBody .cards .gridCard{padding:18px 16px 12px;background:var(--teloa-surface);border-color:var(--teloa-border);border-radius:var(--teloa-design-r3)}
+.directoryBody .cards .gridCard:hover{background:var(--teloa-subtle)}
+.directoryBody .cards .gridPitch{min-height:2.75em}
+@media(max-width:1180px){.directory{grid-template-columns:112px minmax(0,1fr);gap:20px}.directoryBody .grid.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:740px){.directory{display:block}.directoryNav{position:static;margin-bottom:16px}.purposeNav.purposeBar{flex-direction:row;flex-wrap:wrap;align-items:center}.purposeNav>.filterRow{flex-direction:row;flex:1}.purposeNav .chips{flex-direction:row;flex-wrap:wrap;gap:6px}.purposeNav .chips button{width:auto;min-height:32px;padding:6px 13px;background:var(--teloa-subtle);color:var(--teloa-text)}.purposeNav .chips button[aria-pressed=true]{background:var(--teloa-text);color:var(--teloa-surface)}.purposeNav>.moreFilters{align-self:flex-start;border:0;padding:0}.directoryBody .grid.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.directoryBody .grid.cards{grid-template-columns:1fr}}

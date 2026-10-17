@@ -1,6 +1,14 @@
 import type {BusinessScopeKind,BusinessScopeLabel} from './business-directory.js'
 import type {PreviewRole} from './role-preview.js'
 
+export type RosterSort='name'|'duty'
+/** 排序只改变视图，跨业务仍保留同一员工；相同岗位用显示姓名和原 ID 稳定排序。 */
+export function sortRoster<T extends Pick<PreviewRole,'id'|'name'|'duty'>>(roles:readonly T[],sort:RosterSort,locale:string,displayName:(role:T)=>string):T[]{
+ const compare=new Intl.Collator(locale,{numeric:true,sensitivity:'base'}).compare
+ return [...new Map(roles.map(role=>[role.id,role])).values()].sort((a,b)=>
+  (sort==='duty'?compare(a.duty,b.duty):0)||compare(displayName(a),displayName(b))||compare(a.id,b.id))
+}
+
 /** 未登记范围与空 scopes 的兜底分区标识；不用真实业务范围值，避免撞上宿主真实登记的标签。 */
 export const ROSTER_OTHER_SECTION='__other__' as const
 export type RosterSection={id:string;title:string;kind:BusinessScopeKind|'other';members:PreviewRole[]}
@@ -30,6 +38,8 @@ export function rosterSections(roles:readonly PreviewRole[],labels:readonly Busi
 
 /** 总数 chip 数的是去重后的岗位数：跨范围的人在分区里出现多次，但只是同一个人。 */
 export const rosterTotal=(roles:readonly PreviewRole[]):number=>new Set(roles.map(role=>role.id)).size
+/** 退役员工默认不进普通名单：只有搜索命中、本人显式点开「已退役」或正在查看该档案（旧 deep link）时才列出；active/paused 不受影响。 */
+export const rosterShowsRetired=(role:Pick<PreviewRole,'id'|'state'>,view:{searching:boolean;showRetired:boolean;selected:string|null}):boolean=>role.state!=='retired'||view.showRetired||view.searching||role.id===view.selected
 
 /** 界面据此决定要不要出那句「分区人数相加会多于总数」的固定说明，不用每次都对比总数和分区人数之和。 */
 export function rosterHasMultiScope(roles:readonly PreviewRole[],labels:readonly BusinessScopeLabel[]):boolean{

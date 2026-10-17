@@ -1,0 +1,35 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-goal-round-driver",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "patchSha256": "f85958fba4144480b0b8f986fd3ade42d43fa4eedbc6927aafdb358d1934ab3f",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92",
+      "afterSha256": "d3db156bd746a3ca0f903af12deab81ccfa4e064f646e9993912c20d77c0c68d"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "9bf716f0cbebcd5d5e07b24e1943cc6e3f3fdfaeb5ac0ddee380a06cd760e643",
+      "afterSha256": "2ca7c4ec997a24fa1d10348b71dcda81e07df5e979d18bd4209b33cfb3b0f149"
+    }
+  ],
+  "api": [
+    "GoalInputAdmission",
+    "GoalRoundDriverOptions",
+    "requireGoalInputAdmission",
+    "installGoalInputAdmission"
+  ],
+  "scope": {
+    "admission": "admitInput({agent,message,goal:{id,revision},round},dispatch):Promise<void>",
+    "default": "Official behavior is preserved without a provider; required is monotonic and providers cannot be replaced",
+    "scope": "single synchronous exact input dispatch; live Agent/Session/ref/round recheck after awaited admission; committed Inbox proof survives notification failure; model pre-step waits for admission confirmation and refuses unconfirmed committed input",
+    "limitations": [
+      "Business receipt confirmation and native Session flush are not atomic; unknown is never automatically resent",
+      "Restored goals retain official disarmed activation",
+      "Control and budget final leases must come from the host policy"
+    ]
+  }
+}

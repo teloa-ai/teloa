@@ -21,3 +21,13 @@ test('群任务内容版本与完成策略兼容旧回包并严格读取新增�
  await assert.rejects(read(task,{...source,ownerId:'other'}),{code:'teloa/invalid-host-response'})
  await assert.rejects(read(task,{...source,messageId:taskId}),{code:'teloa/invalid-host-response'})
 })
+
+test('跨业务群任务回包必须保留固定业务目标和负责人，不接受换业务或丢失目标的成功回执',async()=>{
+ const roleId='55555555-5555-4555-8555-555555555555',businessTarget={scope:'SOC'},input={...request,assignee:{roleId,expectedVersion:1},businessTarget}
+ const fixed={...source,schema:'teloa.group-task-source/v2',createdAssignee:{roleId,roleVersion:1},replyToMessageId:null,contextMode:'main',routingAttemptVersion:1,executionMode:'work',businessTarget},saved={...task,scope:'SOC',groupId,assigneeRoleId:roleId,assigneeRoleVersion:1}
+ const read=(nextTask:unknown,nextSource:unknown)=>createGroupTaskHandler(owner,async()=>({create:async()=>({task:nextTask,source:nextSource}),source:async()=>nextSource}) as never)('groups/tasks/create',input)
+ assert.equal((await read(saved,fixed) as any).task.scope,'SOC')
+ await assert.rejects(read({...saved,scope:'AppSec'},fixed),{code:'teloa/invalid-host-response'})
+ await assert.rejects(read(saved,{...fixed,businessTarget:{scope:'AppSec'}}),{code:'teloa/invalid-host-response'})
+ const {businessTarget:_drop,...missing}=fixed;await assert.rejects(read(saved,missing),{code:'teloa/invalid-host-response'})
+})

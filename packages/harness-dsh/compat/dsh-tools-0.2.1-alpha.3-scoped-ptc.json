@@ -1,0 +1,40 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-tools",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "patchSha256": "a011486e94964a0018d724ee10a2ab73987e3bd88a5beae11ac2580ec3576e2b",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "614e4f50fff440f3f80cbe047148f7ad0ef2807ca27379e57f7e4f57925642cf",
+      "afterSha256": "906f31ad5f8acd626a46288c8298d7a431461b6d208e435e332325c7ebfc5c42"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "049df0624956583b8ca05badfd6e9115c6933481571dc17965f36f407bdf95f0",
+      "afterSha256": "9ea87d8840e312ca090642e2d4d97387ebba1133f12464e3ee2b5c9ff66e4b59"
+    }
+  ],
+  "api": [
+    "ToolWorkAdmissionRequest",
+    "ToolWorkAdmission",
+    "ToolRuntime.requireWorkAdmission",
+    "ToolRuntime.installWorkAdmission",
+    "ToolRuntime.usePtcRuntime"
+  ],
+  "scope": {
+    "admission": "Synchronous undefined-only create/input + actual ToolRunContext, body + actual fused-signal context, contained body-end cleanup",
+    "default": "No provider and not required preserves Free execution",
+    "boundary": "Exact SDK-minted execution after all private map writes and before pre middleware; captured execute/arguments followed by synchronous final body policy; cleanup only after actual invocation enters",
+    "limitations": [
+      "No source/lineage or callId grants work authorization",
+      "The policy supplies exact root and revocation validation; this SDK seam mints no proofs",
+      "Tool body admission failures remain official tool error results; cleanup failures do not replace them",
+      "No change to AgentLoop, scheduler, tool result schema, model calls, or persistent receipts"
+    ],
+    "ptc": "Nearest scoped binding selects an official runtime; SDK and runtime-specific cached run_code transport agree. Host default, scheduler, approvals, sandbox policy and stateOwner remain official.",
+    "supersedes": "dsh-tools-0.2.1-alpha.3-work-admission",
+    "applicationOrder": "Apply this cumulative revision once to the exact official npm input; do not stack with work-admission."
+  }
+}

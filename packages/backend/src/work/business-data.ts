@@ -71,11 +71,27 @@ export async function initializeBusinessData(pool:Pool):Promise<void>{
    snapshot jsonb not null check(jsonb_typeof(snapshot)='object'), source_id text not null, first_seen_at timestamptz not null,
    primary key(owner_id,scope_id,object_type,object_id,object_version)
  )`)
+ await pool.query(`create table if not exists teloa_business_data_changes(
+  owner_id text not null,scope_id text not null,revision bigint not null check(revision>0),primary key(owner_id,scope_id));
+ create table if not exists teloa_business_dashboard_data_revisions(
+  owner_id text not null,scope_id text not null,dashboard_id text not null,widget_id text not null,time_range text not null,revision bigint not null check(revision>=0),retry_after timestamptz,
+  primary key(owner_id,scope_id,dashboard_id,widget_id,time_range));
+ alter table teloa_business_dashboard_data_revisions add column if not exists retry_after timestamptz;`)
+}
+
+/** 与来源写入同事务登记；计数持久化，重启和刷新失败不会丢掉待更新信号。 */
+export async function markBusinessDataChanged(db:PoolClient,owner:string,scope:string):Promise<void>{
+ await db.query(`insert into teloa_business_data_changes values($1,$2,1)
+  on conflict(owner_id,scope_id) do update set revision=teloa_business_data_changes.revision+1`,[owner,scope])
+}
+
+export async function businessDataRevision(db:PoolClient,owner:string,scope:string):Promise<string>{
+ return String((await db.query('select revision from teloa_business_data_changes where owner_id=$1 and scope_id=$2',[owner,scope])).rows[0]?.revision??'0')
 }
 
 async function persist(db:PoolClient,actor:BusinessDataActor,source:BusinessDataSourcePort,capturedAt:string,item:Omit<BusinessObjectSnapshot,'snapshotHash'>):Promise<BusinessObjectSnapshot>{
  const hash=businessObjectSnapshotHash(item)
- await db.query(`insert into teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version,snapshot_hash,snapshot,source_id,first_seen_at)
+ const inserted=await db.query(`insert into teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version,snapshot_hash,snapshot,source_id,first_seen_at)
    values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict do nothing`,[actor.ownerId,item.scope,item.type,item.id,item.version,hash,JSON.stringify(item),source.id,capturedAt])
  const row=(await db.query(`select snapshot_hash,snapshot,source_id from teloa_business_object_snapshots
    where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version=$5 for share`,[actor.ownerId,item.scope,item.type,item.id,item.version])).rows[0]
@@ -83,6 +99,7 @@ async function persist(db:PoolClient,actor:BusinessDataActor,source:BusinessData
  let stored:Omit<BusinessObjectSnapshot,'snapshotHash'>
  try{stored=readBusinessObjectSnapshot(row.snapshot,item.scope)}catch{throw new WorkError('teloa/storage-corrupt','固定业务对象快照格式不正确。')}
  if(businessObjectSnapshotHash(stored)!==row.snapshot_hash)throw new WorkError('teloa/storage-corrupt','固定业务对象快照与摘要不一致。')
+ if(inserted.rowCount)await markBusinessDataChanged(db,actor.ownerId,item.scope)
  return {...item,snapshotHash:hash}
 }
 

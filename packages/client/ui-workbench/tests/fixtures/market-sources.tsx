@@ -1,6 +1,6 @@
 import {createRoot} from 'react-dom/client'
 import {MarketCatalogSection} from '../../src/client/MarketCatalogSection.js'
-import {marketCatalogSources,type MarketCatalogApi,type MarketCatalogItem} from '../../src/client/market-catalog-api.js'
+import {type MarketCatalogApi,type MarketCatalogItem} from '../../src/client/market-catalog-api.js'
 import {I18nProvider} from '../../src/client/i18n/provider.js'
 import {translateMessage} from '../../src/client/i18n/messages.js'
 import type {TeloaI18n} from '../../src/client/i18n/index.js'
@@ -11,7 +11,7 @@ const locale=(document.documentElement.lang||'zh-CN') as ProductLocale
 const snapshot={locale,dshLocale:'zh',revision:1}
 const runtime={subscribe:()=>()=>{},getSnapshot:()=>snapshot,t:(key,params)=>translateMessage(locale,key,params)} as TeloaI18n
 const state={failSource:document.body.dataset.failSource??'',calls:[] as string[],mutations:0,counts:[] as unknown[]}
-const items=marketCatalogSources.map(source=>({
+const items=['teloa'].map(source=>({
  entry:{...catalogEntry(),id:`${source}.test`,...(source==='teloa'?{}:{delivery:'upstream',origin:{marketplace:source,installs:null,installsLabel:'',countedAt:'2026-09-27'},alternatives:[],unsupportedComponents:[]})},
  artifact:null,addedContentId:null,addedRoleId:null,secretGroup:null,
 })) as unknown as MarketCatalogItem[]
@@ -25,6 +25,7 @@ const api:MarketCatalogApi={
  ranking:async()=>new Map(),
  add:async()=>{state.mutations++;return {contentId:'00000000-0000-4000-8000-000000000001'}},
  addRole:async()=>{state.mutations++;throw Error('Unexpected role creation')},
+ rolePackage:async()=>{throw Error('Unexpected role preview')},
  solutionPackage:async()=>{throw Error('Unexpected solution read')},
 }
 Object.assign(window,{marketSourcesFixture:state})

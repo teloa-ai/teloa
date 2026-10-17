@@ -2,9 +2,10 @@ import type {ILayout,MainPanelId} from '@deepseek-ai/dsh-client-ui-layout/client
 import type {WorkbenchActions} from './store.js'
 import type {SettingsNavigation} from './settings-navigation.js'
 
-type WorkbenchLayout=ILayout&{dispose():void}
+type WorkbenchLayout=ILayout&{dispose():void;leaseSidebarToggle(toggle:()=>void):()=>void}
 export function createWorkbenchLayout(actions:WorkbenchActions,hasMainPanel:(id:MainPanelId)=>boolean,settings:SettingsNavigation,panelInfo:ILayout['panelInfo']):WorkbenchLayout{
   let navigation=new AbortController()
+  let sidebarToggle:(()=>void)|undefined
   return {
     panelInfo,
     selectPanel(panelId){
@@ -26,8 +27,9 @@ export function createWorkbenchLayout(actions:WorkbenchActions,hasMainPanel:(id:
       actions.selectPanel(panelId)
     },
     beginNavigation(){navigation.abort();navigation=new AbortController();return navigation.signal},
-    dispose(){navigation.abort()},
-    toggleSidebar(){actions.toggleSidebar()},
+    dispose(){navigation.abort();sidebarToggle=undefined},
+    leaseSidebarToggle(toggle){sidebarToggle=toggle;return()=>{if(sidebarToggle===toggle)sidebarToggle=undefined}},
+    toggleSidebar(){if(sidebarToggle)sidebarToggle();else actions.toggleSidebar()},
     openRightbar(){actions.openRightbar()},
     closeRightbar(){actions.closeRightbar()},
   }

@@ -1,12 +1,15 @@
 import {createHash} from 'node:crypto'
+import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,artifactContent,groupAttachmentExtensions,groupAttachmentImageMediaTypes,groupAttachmentTextMediaTypes,groupDefinition,groupReferenceMaxFiles,isGroupAgentGrant,isGroupResourceVersion,roleSupportsScope,type DigitalRole,type GroupAgentGrant,type GroupAttachmentKind,type GroupResourceVersion,type GroupTaskSource,type MessageReference,type WorkTask} from '@teloa/contract'
 import {ArtifactSnapshotStore} from './artifact-snapshots.ts'
 import {readGroupAgentGrant} from './group-agent-grants.ts'
 import {readActiveAttachment} from './group-attachments.ts'
-import {readGroupTaskSource} from './group-tasks.ts'
+import {readGroupTaskHandoffs,readGroupTaskSource} from './group-tasks.ts'
 import {readStoredRole} from './roles.ts'
 import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
+import {readStoredTask} from './tasks.ts'
+import {readStoredTaskHandoffChange} from './handoffs.ts'
 
 export type RunGroupMaterial={resourceId:string;resourceVersion:number;title:string;markdown:string}
 /** 引用解析到原件固定版本后的文件面：图片只给元数据，字节由宿主按引用另取；文本类把正文放进 text。 */
@@ -134,6 +137,24 @@ export async function readRunGroupArtifactImageBytes(db:Pick<PoolClient,'query'>
  throw new WorkError('teloa/storage-corrupt','成果图片与运行固定快照不一致。')
 }
 
+/** 原创建负责人是来源事实；换代仅认本人正式交办到当前任务的完整回执链。 */
+async function assertGroupTaskReassignment(db:PoolClient,owner:string,source:GroupTaskSource,task:WorkTask,role:DigitalRole):Promise<void>{
+ const changed=()=>new WorkError('teloa/version-conflict','群任务负责人已变化，请重新交办后再执行。')
+ const roleRow=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,role.id])).rows[0]
+ const taskRow=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,task.id])).rows[0]
+ if(!roleRow||!taskRow||!isDeepStrictEqual(readStoredRole(roleRow),role)||!isDeepStrictEqual(readStoredTask(taskRow),task)||task.assigneeRoleId!==role.id||task.assigneeRoleVersion!==role.version)throw changed()
+ const rows=(await db.query('select * from teloa_task_handoff_changes where owner_id=$1 and task_id=$2 order by applied_version for share',[owner,task.id])).rows
+ if(!rows.length||!source.createdAssignee)throw changed()
+ let party:{kind:'self'}|{kind:'role';roleId:string;roleVersion:number}={kind:'role',...source.createdAssignee},appliedVersion=0
+ for(const row of rows){
+  const change=readStoredTaskHandoffChange(row)
+  // 任务编辑或状态变化可以插入版本；交办链不能倒序、断开或借用未来回执。
+  if(change.taskId!==task.id||change.baseVersion<appliedVersion||change.appliedVersion>task.version||!isDeepStrictEqual(change.from,party))throw changed()
+  party=change.to;appliedVersion=change.appliedVersion
+ }
+ if(!isDeepStrictEqual(party,{kind:'role',roleId:role.id,roleVersion:role.version}))throw changed()
+}
+
 /**
  * 群消息创建的任务只在群、岗位、成员和资料授权仍与来源快照一致时注入上下文。
  * 普通任务不产生群上下文，维持原有执行路径。
@@ -142,7 +163,8 @@ export async function readRunGroupContext(db:PoolClient,owner:string,task:WorkTa
  const sourceRow=(await db.query('select * from teloa_group_task_sources where task_id=$1 and owner_id=$2 for share',[task.id,owner])).rows[0]
  if(!sourceRow)return undefined
  const source=readGroupTaskSource(sourceRow)
- if(source.ownerId!==owner||source.taskId!==task.id||source.createdAssignee===null||source.createdAssignee.roleId!==role.id||source.createdAssignee.roleVersion!==role.version)throw new WorkError('teloa/version-conflict','群任务负责人已变化，请重新从群消息创建任务。')
+ if(source.ownerId!==owner||source.taskId!==task.id||source.createdAssignee===null)throw new WorkError('teloa/version-conflict','群任务来源或负责人已变化，请重新核对。')
+ if(source.createdAssignee.roleId!==role.id||source.createdAssignee.roleVersion!==role.version)await assertGroupTaskReassignment(db,owner,source,task,role)
  if(role.kind==='twin'){
   if(!pool)throw new WorkError('teloa/forbidden','群任务尚未接入分身执行许可核验。')
   // 上层通常已锁岗位；直接调用同样先按 role→group 核对真实当前版本，不能借用调用者的旧角色对象。
@@ -159,26 +181,29 @@ export async function readRunGroupContext(db:PoolClient,owner:string,task:WorkTa
  if(!Number.isSafeInteger(groupRow.version)||(groupRow.version as number)<1||typeof groupRow.archived!=='boolean')throw new WorkError('teloa/storage-corrupt','群版本或归档状态损坏。')
  if(groupRow.version!==source.groupVersion)throw new WorkError('teloa/version-conflict','群设置已变化，请重新从群消息创建任务。')
  if(groupRow.archived)throw new WorkError('teloa/conflict','已归档群不能运行群任务。')
- if(scope!==task.scope||!roleSupportsScope(role.scopes,scope)||role.state!=='active')throw new WorkError('teloa/conflict','群任务负责人当前不能执行此任务。')
+ const target=source.schema==='teloa.group-task-source/v2'?source.businessTarget:undefined
+ if(target&&(scope!=='general'&&scope!==target.scope||target.scope!==task.scope)||!target&&scope!==task.scope||!roleSupportsScope(role.scopes,task.scope)||role.state!=='active')throw new WorkError('teloa/conflict','群任务负责人当前不能执行此任务。')
  const member=(await db.query('select 1 from teloa_group_members where group_id=$1 and owner_id=$2 and role_id=$3 for share',[source.groupId,owner,role.id])).rows[0]
  if(!member)throw new WorkError('teloa/forbidden','任务负责人不再是当前群成员。')
  const grantRow=(await db.query('select * from teloa_group_agent_grants where group_id=$1 and role_id=$2 and owner_id=$3 order by grant_version desc limit 1 for share',[source.groupId,role.id,owner])).rows[0]
  if(!grantRow)throw new WorkError('teloa/forbidden','群员工尚未获得本次任务的资料授权。')
  const grant:GroupAgentGrant=readGroupAgentGrant(grantRow)
  if(grant.state!=='active'||grant.groupVersion!==source.groupVersion||grant.roleVersion!==role.version)throw new WorkError('teloa/version-conflict','群员工授权已变化，请重新核对后再运行。')
- const admission=role.kind==='twin'?(await authorizeRoleTaskAssignment(db,pool!,owner,role,scope,source.groupId)):undefined
+ const admission=role.kind==='twin'?(await authorizeRoleTaskAssignment(db,pool!,owner,role,task.scope,source.groupId)):undefined
  if(role.kind==='twin'&&(!grant.canPost||!grant.canAutoRun))throw new WorkError('teloa/forbidden','分身尚未获得当前群的执行和发言授权。')
  admission?.assertCurrent()
  const authorized=new Map(grant.resources.map(item=>[`${item.kind}:${item.id}`,item.version]))
  const materials:RunGroupMaterial[]=[],files:RunGroupFile[]=[]
- for(const reference of source.references){
-  if(authorized.get(`${reference.kind}:${reference.id}`)!==reference.version)throw new WorkError('teloa/forbidden','群消息引用的原件未获当前员工授权。')
+ // 原消息引用与全部交接成果共用同一授权契约：每一项都须按 kind+id+精确版本出现在当前接手者的群授权里（未共享、已撤回或新版本均拒绝）。
+ const handoffs=await readGroupTaskHandoffs(db,owner,{id:task.id,groupId:source.groupId,messageId:source.messageId})
+ for(const [reference,label] of [...source.references.map(reference=>[reference,'群消息引用'] as const),...handoffs.flatMap(handoff=>handoff.references.map(reference=>[reference,'交接成果引用'] as const))]){
+  if(authorized.get(`${reference.kind}:${reference.id}`)!==reference.version)throw new WorkError('teloa/forbidden',label+'的原件未获当前员工授权。')
   if(reference.kind==='group-resource'){
    const found=(await db.query(`select versions.resource_id,versions.group_id,versions.version,versions.title,versions.markdown,versions.created_at
    from teloa_group_resource_versions versions join teloa_group_resources resources
    on resources.id=versions.resource_id and resources.owner_id=versions.owner_id and resources.group_id=versions.group_id
    where versions.resource_id=$1 and versions.owner_id=$2 and versions.group_id=$3 and versions.version=$4 and resources.withdrawn_at is null for share of versions,resources`,[reference.id,owner,source.groupId,reference.version])).rows[0]
-   if(!found)throw new WorkError('teloa/forbidden','群消息引用的资料版本不存在、已撤回或不属于当前群。')
+   if(!found)throw new WorkError('teloa/forbidden',label+'的资料版本不存在、已撤回或不属于当前群。')
    materials.push(readMaterial(found))
   }else if(reference.kind==='attachment')files.push(await readAttachmentFile(db,owner,reference,ports))
   else for(const file of await readArtifactFiles(db,owner,reference,files.length))files.push(file)

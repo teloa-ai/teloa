@@ -8,22 +8,20 @@ import {homedir} from 'node:os'
 import {dirname,join,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {Context} from '@deepseek-ai/cordis'
-import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
-import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {HarnessError,LlmRuntime,ToolCallId,createUserMessage} from '@deepseek-ai/dsh-llm'
-import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
-import {AgentRegistry,type AgentHandle} from '@deepseek-ai/dsh-agent'
-import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {defineTool} from '@deepseek-ai/dsh-tools'
+import {HarnessError,ToolCallId,createUserMessage} from '@deepseek-ai/dsh-llm'
+import {SessionId} from '@deepseek-ai/dsh-session'
+import {type AgentHandle} from '@deepseek-ai/dsh-agent'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {openResourceDatabase,type TaskRunService} from '@teloa/backend'
 import {apply} from '../src/index.ts'
 import {compositionEntries} from './fixtures/production-host.ts'
-import {installNativeHostServices,ControlledPromptModel,controlTaskQueue} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,ControlledPromptModel,publishNativeFixtureInput} from './fixtures/native-host-services.ts'
 import {compositionSnapshot,compositionViolations,readPresetBodyFacts,readProfileFacts,bundledAgentPresetsRoot} from '../src/composition-safety.ts'
 import {resolveTeloaDshHome,resolveTeloaDshProfile} from '../src/runtime-paths.ts'
+import {nativeToolInvocation} from './fixtures/native-tool-invocation.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
 const owner='local:teloa-owner'
@@ -33,6 +31,7 @@ type RpcReply={ok:boolean;value?:unknown;receipt?:{requestId:string};error?:{cod
 type RpcHandler=(endpoint:string,payload:unknown,signal:AbortSignal)=>Promise<RpcReply>
 
 let container:StartedPostgreSqlContainer,root:string,ctx:Context,rpc:RpcHandler,db:TaskRunService['pool']
+let invocation:ReturnType<typeof nativeToolInvocation>
 let previousProjectRoot:string|undefined
 let fixtures:Server,fixtureOrigin:string
 /** 注入正文：模型看到的「工具取回的网页」，逐字写着要它把本机目录外发。 */
@@ -75,14 +74,8 @@ async function boot(){
 
  ctx=new Context()
  ctx.provide('loader',compositionEntries())
- await ctx.plugin(LlmRuntime)
- ctx.llm.registerAdapter(['test'],new ControlledPromptModel())
- await ctx.plugin(SessionStore)
- await ctx.plugin(SessionProjectionRegistry)
- await ctx.plugin(SystemPrompt)
- await ctx.plugin(ToolRuntime)
- await ctx.plugin(AgentRegistry)
- await ctx.plugin(AgentLoop,{agents:[]})
+ await installNativeSessions(ctx)
+ invocation=nativeToolInvocation(ctx,{providers:['test'],adapter:new ControlledPromptModel()})
  await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
 
  const workspaces=new Map<string,{id:string;path:string}>()
@@ -102,7 +95,7 @@ async function boot(){
    const sessionId=input.sessionId??randomUUID()
    presets.set(sessionId,input.agentPreset)
    const handle=await ctx.agents.create({sessionId:SessionId(sessionId),meta:{cwd:'/',...(input.agentPreset===undefined?{}:{agentPreset:input.agentPreset})},agentOptions:{provider:'test',model:'test'}})
-   controlTaskQueue(ctx,handle.agent)
+   invocation.select(handle.agent)
    agents.set(sessionId,handle)
    return {sessionId,...(input.agentPreset===undefined?{}:{agentPreset:input.agentPreset})}
   },
@@ -113,20 +106,16 @@ async function boot(){
    return handle?{agent:handle.agent}:{error:'not-found'}
   },
   modelCatalog:async()=>({default:{provider:'test',model:'test'}}),
-  // 真实宿主在这里把正文交给模型；本用例只把等价的原生事件写进真实会话日志，不起模型。
-  prompt:(request:{sessionId:string;requestId:string})=>{
-   const agent=agents.get(request.sessionId)
-   assert.ok(agent,'prompt 的目标会话必须已经建起来')
-   agent.agent.session.append('turn/start',{turn:0})
-   agent.agent.session.append('user/message',createUserMessage({content:[{type:'text',text:'执行'}],source:{kind:'user',rpcId:brandString<SessionRequestId>(request.requestId)}}),{surfaceOp:'append'})
+  // 原生模型只脚本化工具 IO；Task driver 的原消息经过真实最终输入受理。
+  prompt:async(request:{sessionId:string;requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{
+   const handle=agents.get(request.sessionId)
+   assert.ok(handle,'prompt 的目标会话必须已经建起来')
+   await publishNativeFixtureInput(ctx,handle.agent,createUserMessage({content:request.content,source:{kind:'user',rpcId:brandString<SessionRequestId>(request.requestId)}}))
+   return {accepted:true}
   },
  })
- ctx.provide('skills',{
-  list:async()=>[],
-  registerProvider:(factory:(control:{invalidate:()=>void;signal:AbortSignal})=>unknown)=>{factory({invalidate:()=>{},signal:new AbortController().signal});return ()=>{}},
- })
+
  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
- ctx.provide('fs',{})
  ctx.provide('fileReferences',{})
  let registered:RpcHandler|undefined
  ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(path:string,handler:RpcHandler)=>{assert.equal(path,'/teloa');registered=handler;return ()=>{}}}})
@@ -170,7 +159,7 @@ type ToolResult={isError:boolean;content:unknown[];error?:{info?:{code?:string}}
 const runTool=async(sessionId:string,name:string,args:Record<string,unknown>):Promise<ToolResult>=>{
  const handle=agents.get(sessionId)
  assert.ok(handle,'工具调用需要真实 Agent 会话')
- return ctx.tools.execute({agent:handle.agent,name,arguments:args,callId:ToolCallId('chain-'+ ++callSeq),signal:AbortSignal.timeout(20000)}) as Promise<ToolResult>
+ return invocation.invoke(handle.agent,{name,arguments:args,callId:ToolCallId('chain-'+ ++callSeq),signal:AbortSignal.timeout(20000)})
 }
 /** 闸的固定中文理由逐字出现在工具结果里；`isError` 为真但理由不对即判红。 */
 function denied(result:ToolResult,reason:string){
@@ -300,7 +289,7 @@ test('第 5 步：运行准备把这一刻的两名冻进 run.allowedTools',{tim
  assert.ok(authorizedRun.allowedTools.includes('web_search'))
 })
 
-/** 真实 start：driver 先复核会话，再 claim，再把正文交给原生会话（本用例写等价原生事件）。 */
+/** 真实 start：driver 先复核会话，再 claim，再把正文交给原生会话（真实最终受理与原生循环）。 */
 async function startRun(run:Run):Promise<Run>{
  const started=await call('task-runs/start',{runId:run.id}) as Run
  assert.ok(['accepted','running'].includes(started.state),`start 后的状态实得 ${started.state}`)

@@ -1,4 +1,4 @@
-import {WorkError,groupTaskCreateInput,isGroupTaskSource,taskDefinition,taskInput,workTaskStates,type GroupTaskSource,type WorkTask} from '@teloa/contract'
+import {WorkError,groupTaskBusinessTarget,groupTaskCreateInput,isGroupTaskSource,taskDefinition,taskInput,workTaskStates,type GroupTaskSource,type WorkTask} from '@teloa/contract'
 import type {GroupTaskRecord,GroupTaskService} from '@teloa/backend'
 
 export const groupTaskEndpoints=['groups/tasks/create','groups/tasks/source'] as const
@@ -34,6 +34,8 @@ export function createGroupTaskHandler(owner:string,get:()=>Promise<Pick<GroupTa
    return parsed
   }
   const input=groupTaskCreateInput(payload),result=exact(await (await get()).create(owner,input),['task','source']),savedTask=task(result.task,owner),savedSource=source(result.source,owner)
+  const target=savedSource.schema==='teloa.group-task-source/v2'?savedSource.businessTarget:undefined
+  if((target===undefined)!==(input.businessTarget===undefined)||target&&(savedTask.scope!==target.scope||JSON.stringify(groupTaskBusinessTarget(target))!==JSON.stringify(input.businessTarget)))throw invalid()
   if(savedSource.taskId.toLowerCase()!==savedTask.id.toLowerCase()||savedSource.groupId.toLowerCase()!==input.groupId.toLowerCase()||savedSource.messageId.toLowerCase()!==input.messageId.toLowerCase()||savedSource.groupVersion!==input.expectedGroupVersion||savedTask.goal!==input.goal||(input.assignee===undefined?savedTask.assigneeRoleId!==null||savedSource.createdAssignee!==null:savedTask.assigneeRoleId?.toLowerCase()!==input.assignee.roleId.toLowerCase()||savedTask.assigneeRoleVersion!==input.assignee.expectedVersion||savedSource.createdAssignee===null||savedSource.createdAssignee.roleId.toLowerCase()!==input.assignee.roleId.toLowerCase()||savedSource.createdAssignee.roleVersion!==input.assignee.expectedVersion))throw invalid()
   return {task:savedTask,source:savedSource}
  }

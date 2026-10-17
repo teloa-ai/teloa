@@ -1,4 +1,5 @@
-import {isGroupAttachment,isGroupAttachmentBytes,isArtifactFile,isGroupResourceVersion,groupAttachmentUploadRoutePath,groupAttachmentImageMediaTypes,groupAttachmentFileMediaTypes,type GroupAttachment,type GroupAttachmentBytes,type GroupAttachmentKind,type ArtifactFile,type MessageReference} from '@teloa/contract'
+import type {Artifact} from './artifact-preview.js'
+import {savedArtifactMessage,isGroupAttachment,isGroupAttachmentBytes,isArtifactFile,isGroupResourceVersion,groupAttachmentUploadRoutePath,groupAttachmentImageMediaTypes,groupAttachmentFileMediaTypes,type GroupAttachment,type GroupAttachmentBytes,type GroupAttachmentKind,type ArtifactFile,type MessageReference} from '@teloa/contract'
 import {fileBytes,fileImageType} from './artifact-files.ts'
 import {read as savedArtifactVersion} from './artifact-api.ts'
 
@@ -137,7 +138,29 @@ export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.r
    if(!isGroupResourceVersion(version)||version.resourceId!==reference.id||version.groupId!==groupId||version.version!==reference.version)throw Error('群资料版本格式不正确。')
    return {kind:'resource',markdown:version.markdown,title:version.title}
   },
-  /** 成果卡的元数据：标题、版本号与该版本关联的文件清单；不取字节，供群消息里的成果卡渲染标题与「N 个文件」。 */
+  /** 本人原件读口，只投影所引用版本；群消息白名单由消费组件复核，不授予跨 owner 权限。 */
+  async readArtifactVersion(reference:ArtifactReference,signal:AbortSignal):Promise<Artifact>{
+   signal.throwIfAborted()
+   const row=await artifactVersion(reference);signal.throwIfAborted()
+   if(row.ownerId!==ownerId||(row.source.kind!=='session'&&row.source.kind!=='task'))throw Error('成果固定版本身份不正确。')
+   const files:ArtifactFile[]=[]
+   for(const id of row.content.snapshotIds){
+    const file=await readArtifactSnapshot(id);signal.throwIfAborted()
+    if(row.source.kind==='session'&&file.sessionId!==row.source.id)throw Error('成果文件与来源不一致。')
+    files.push(file)
+   }
+   const messages=[]
+   for(const snapshotId of row.content.messageSnapshotIds??[]){
+    signal.throwIfAborted()
+    const message=savedArtifactMessage(await call('artifacts/message/snapshot',{snapshotId}));signal.throwIfAborted()
+    if(row.source.kind==='session'&&message.sessionId!==row.source.id)throw Error('消息快照与成果来源不一致。')
+    messages.push(message)
+   }
+   return {id:row.artifactId,source:{kind:row.source.kind,id:row.source.id},storage:'persistent',primary:false,links:[],feedback:[],versions:[{
+    number:row.number,title:row.content.title,sections:row.content.sections,source:{ref:{kind:row.source.kind,id:row.source.id},title:row.source.title,scope:row.source.scope,version:row.source.version,author:'本人',evidence:[],private:row.source.kind==='session'},note:row.content.note,author:'本人',at:row.createdAt,files,messages,
+   }]}
+  },
+  /** 成果卡元数据只取引用版本的标题和文件清单。 */
   async describeArtifact(reference:ArtifactReference):Promise<ArtifactSummary>{
    const version=await artifactVersion(reference)
    return {title:version.content.title,version:version.number,files:version.content.snapshotIds.map(snapshotId=>({snapshotId}))}
@@ -164,7 +187,8 @@ export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.r
  /** 两步读法的第二步：按 snapshotId 读实际文件（与 artifact-api.ts 的 hydrate() 同一条既有读法）。 */
  async function readArtifactSnapshot(snapshotId:string):Promise<ArtifactFile>{
   const file=await call('artifacts/snapshot',{snapshotId})
-  if(!isArtifactFile(file)||file.id!==snapshotId)throw Error('成果文件快照格式不正确。')
+  // 存储快照 ID 对完整快照寻址；file.id 是原文件目标 ID。本人归属、存储身份和字节摘要由正式快照读口复核。
+  if(!isArtifactFile(file))throw Error('成果文件快照格式不正确。')
   return file
  }
 }

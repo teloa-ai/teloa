@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {ISessions,SessionBinding,SessionEventLikeEntry} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {IJobs} from '@deepseek-ai/dsh-api-job-controller/client'
-import type {ToolResourceUseSnapshot} from '@teloa/contract'
-import {createConversationOverviewSession} from '../src/client/conversation-overview-session.ts'
+import type {ToolResourceUseSnapshot,ExternalHarnessWorkView} from '@teloa/contract'
+import {createConversationOverviewSession,type ConversationOverviewSessionOptions} from '../src/client/conversation-overview-session.ts'
 
 function source<T>(value:T){const listeners=new Set<()=>void>();return {getSnapshot:()=>value,subscribe:(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener)}},set:(next:T)=>{value=next;for(const listener of [...listeners])listener()},size:()=>listeners.size}}
 const event=(seq:number,type:string,data:unknown)=>({type:'event',event:{seq,type,data,time:seq*100,...(type==='user/message'?{surfaceOp:'append'}:{})}}) as SessionEventLikeEntry
@@ -15,7 +15,7 @@ function binding(id:string,rest:Partial<typeof base>={}){
  const value={sessionId:id,eventSource:events,session:{...state,sessionId:id,projections:{faceOf:(key:string)=>({subagentCatalog:catalog,subagentTiming:timing,subagent:identity,todos,goal}[key]??source(undefined))},cancel:()=>{cancelCalls++;return cancel()}}} as unknown as SessionBinding
  return {value,state,events,catalog,timing,identity,cancelCalls:()=>cancelCalls,setCancel:(next:typeof cancel)=>{cancel=next}}
 }
-function fixture(){
+function fixture(external?:ConversationOverviewSessionOptions['external']){
  const parent=binding('main',{running:true}),child=binding('child',{running:true,subagent:{address:{parentSessionId:'main',childSessionId:'child',mode:'one-shot'}}})
  const connection=source('connected'),retention=source({referenceCount:1,retainedBy:{}}),list=source({}),bindings=new Map<string,SessionBinding>([['main',parent.value],['child',child.value]])
  const rows=source({rows:{main:[] as readonly {id:string;kind:string;label:string;owner?:string;status:string;startedAt:number}[]},observed:{}})
@@ -25,7 +25,7 @@ function fixture(){
  const sessions={binding:(id:string)=>bindings.get(id),list,retainInfo:()=>retention,retain:(target:unknown,options:unknown)=>{retained.push({target,options});onRetain();return reference()},using:async(target:unknown,options:unknown,operation:(ref:ReturnType<typeof reference>)=>unknown)=>{used.push({target,options});const ref=reference();try{await ref.ready;return await operation(ref)}finally{ref.release()}},refresh:async()=>{refreshes++},refreshProjections:async(id:string)=>{projectionRefreshes.push(id)},subagentAddress:()=>child.state.getSnapshot().subagent?.address} as unknown as ISessions
  const jobs={state:rows,watchRows:()=>{watchCount++;return()=>{watchReleases++}},kill:async(..._args:unknown[])=>{killCalls++;return await kill()}} as unknown as IJobs
  const resourceUseSnapshots=source<readonly ToolResourceUseSnapshot[]>([])
- const service=createConversationOverviewSession({binding:parent.value,sessions,jobs,connection,resourceUseSnapshots})
+ const service=createConversationOverviewSession({binding:parent.value,sessions,jobs,connection,resourceUseSnapshots,...(external?{external}:{})})
  const catalog=()=>parent.catalog.set([{id:'child',mode:'one-shot',label:'Research',createdAt:200}])
  return {parent,child,connection,retention,bindings,list,rows,service,catalog,retained,used,projectionRefreshes,resourceUseSnapshots,onRetain:(next:()=>void)=>{onRetain=next},setReady:(next:typeof ready)=>{ready=next},setKill:(next:typeof kill)=>{kill=next},counts:()=>({watchCount,watchReleases,releases,refreshes,killCalls})}
 }
@@ -167,4 +167,24 @@ test('Goal续轮资源在首human steer后留在原工作历史，后续资源�
  assert.deepEqual(f.service.getSnapshot().usageHistory?.[0]?.usageGroups.map(group=>group.name),['Goal skill'])
  assert.deepEqual(f.service.getSnapshot().usageGroups.map(group=>group.name),['Steer skill'])
  f.service.dispose()
+})
+
+test('外部 activation 目录不会被当成本地 Session 读取或直接取消',async()=>{
+ const f=fixture();f.service.attach()
+ f.parent.catalog.set([{id:'external-child',mode:'external',label:'Codex',createdAt:200}]);await tick()
+ assert.equal(f.retained.length,0)
+ const work=[...f.service.getSnapshot().running,...f.service.getSnapshot().ended].find(item=>item.childSessionId==='external-child')
+ assert.ok(work);assert.equal(work.canStop,false);assert.equal(work.canOpenRecord,false)
+ f.service.dispose()
+})
+
+test('外部状态进入原工作概览，停止只用本人父会话与activation桥，不领养本地Session',async()=>{
+ const row:ExternalHarnessWorkView={activationId:'external-child',provider:'codex',status:'running',canStop:true,observedAt:300},state=source<readonly ExternalHarnessWorkView[]>([row]),calls:unknown[]=[]
+ const f=fixture({state,refresh:async()=>{},stop:async(parent,id)=>{calls.push([parent,id]);state.set([{...row,status:'aborted',canStop:false}])}})
+ const detach=f.service.attach();f.parent.catalog.set([{id:'external-child',mode:'external',label:'Codex',createdAt:200}]);await tick()
+ const work=f.service.getSnapshot().running[0]!
+ assert.equal(work.status,'running');assert.equal(work.canStop,true);assert.equal(work.sessionId,'main');assert.equal(work.canOpenRecord,false)
+ await f.service.stopWork(work)
+ assert.deepEqual(calls,[['main','external-child']]);assert.equal(f.retained.length,0);assert.equal(f.used.length,0);assert.equal(f.service.getSnapshot().ended[0]?.status,'stopped')
+ detach();assert.equal(state.size(),0);f.service.dispose()
 })

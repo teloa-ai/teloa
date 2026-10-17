@@ -1,3 +1,4 @@
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import './fixtures/message-source.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -52,6 +53,7 @@ test('原生 Skill 先校验再去掉重复正文；跨会话、变更、压缩�
   const mountProvider=()=>ctx.plugin(SkillFileSystem,{includeDefaultRoots:false,customSkillDirs:[join(root,'skills')],watch:false})
   let provider=mountProvider();await provider
   const nativeSkill=await ctx.skills.get('read-once',{cwd:root});assert.ok(nativeSkill)
+  await installNativeWorkingDirectory(ctx,root)
   await ctx.plugin(ToolSkill)
   registerSkillContextDedup(ctx)
   const adapter=new RepeatedSkillAdapter()

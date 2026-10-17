@@ -194,7 +194,7 @@ test('对象目录用清单组件，第四列列头取该视图度量的标签�
  assert.match(html,/工单 a-1/)
 })
 
-test('下钻筛选的对象清单顶上有提示条：字段取本地化标题、取值原样，附「看全部」；对象详情与无筛选时不出',async()=>{
+test('下钻筛选的对象清单顶上有提示条：字段取本地化标题、取值原样，附「看全部」；对象抽屉保持原筛选提示，无筛选时不出',async()=>{
  const objects=[ledgerObject('SOC','alert-ticket','a-1')]
  const value=ledger({blocks:[block({views:[listView('SOC','alert-ticket',objects)]})]})
  const zh=await render(value,{objectType:'alert-ticket',match:{field:'severity',value:'高'}})
@@ -204,7 +204,7 @@ test('下钻筛选的对象清单顶上有提示条：字段取本地化标题�
  assert.match(await render(value,{objectType:'alert-ticket',match:{field:'severity',value:'高'}},'en'),/Only objects where Severity is “高”/,'字段标题按界面语言取本地化')
  assert.match(await render(value,{objectType:'alert-ticket',match:{field:'_id',value:'a-1'}}),/只看 对象编号 为「a-1」的对象/)
  assert.doesNotMatch(await render(value,{objectType:'alert-ticket'}),/data-ledger-match/)
- assert.doesNotMatch(await render(value,{objectType:'alert-ticket',objectId:'a-1',match:{field:'_id',value:'a-1'}}),/data-ledger-match/,'对象详情不出提示条')
+ assert.match(await render(value,{objectType:'alert-ticket',objectId:'a-1',match:{field:'_id',value:'a-1'}}),/data-ledger-match/,'对象抽屉不移除原目录筛选提示')
 })
 
 test('声明了进度的对象目录显示业务状态，并以人类来源名替代技术标识',async()=>{
@@ -249,7 +249,8 @@ test('选中的对象展开成字段行加摘要，未在声明里出现的快�
  assert.match(html,/处置人/,'声明里没有的快照字段不能丢')
  assert.match(html,/值班员工/)
  assert.match(html,new RegExp(object.snapshotHash))
- assert.ok(!html.includes('data-view-list'),'对象详情替换目录，不追加在目录后面')
+ assert.ok(html.includes('data-view-list'),'轻详情使用抽屉，原目录保留')
+ assert.match(html,/<dialog[^>]*class="drawer/,'使用共同抽屉容器')
  assert.ok(!html.includes('data-view-distribution'),'详情不夹带目录中的图表')
  assert.match(html,/返回告警工单目录/)
  assert.match(html,/回到全部对象/,'返回目录和返回台账是独立入口')
@@ -273,14 +274,14 @@ test('对象直达失效时给出可返回的未找到状态，不静默退成�
  const html=await render(ledger({blocks:[block({views:[listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','a-1')])]})]}),{objectType:'alert-ticket',objectId:'missing'})
  assert.match(html,/role="status"/)
  assert.match(html,/返回告警工单目录/)
- assert.ok(!html.includes('data-view-list'))
- assert.ok(!html.includes('工单 a-1'))
+ assert.ok(html.includes('data-view-list'),'原目录不因失效详情被替换')
+ assert.ok(html.includes('工单 a-1'))
 })
 
 test('对象详情和类型目录返回台账时都落数据面根，不跳正在处理或残留对象标识',()=>{
  const source=readFileSync(new URL('../src/client/BusinessLedger.tsx',import.meta.url),'utf8')
- const buttons=[...source.matchAll(/<button\s+type="button"\s+onClick=\{\(\)=>go\((\{[^}]+\})\)\}>\{t\('business\.ledger\.back'\)\}<\/button>/g)]
- assert.equal(buttons.length,2,'分别检查详情和目录的返回台账按钮，不命中返回类型目录按钮')
+ const buttons=[...source.matchAll(/<button\s+type="button"(?:\s+className=\{[\w.]+\})?\s+onClick=\{\(\)=>go\((\{[^}]+\})\)\}>(?:<ArrowLeft[^>]*\/>)?\{t\('business\.ledger\.back'\)\}<\/button>/g)]
+ assert.equal(buttons.length,1,'抽屉关闭返回目录，目录只保留一个返回台账按钮')
  for(const button of buttons)assert.equal(button[1],"{scope,section:'data'}")
 })
 

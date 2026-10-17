@@ -3,35 +3,54 @@ import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import {WorkError,type RoleRuntimeConfig,type TaskRunModelPolicy,type WorkControl} from '@teloa/contract'
 import {observeTaskRun,type TaskRunObservation} from './task-run-observation.ts'
 import {readTaskRunGroupResult} from './task-run-group-result.ts'
+import {taskRunPlanReportOccurrence} from './task-run-group-publisher.ts'
 import {isTextOnlyTaskRun} from './task-run-background.ts'
+import {deliveryReviewSource,deliveryReviewToolName} from './task-delivery-review.ts'
 import type {GoalObservationContext} from '@teloa/contract'
 
-/** 恢复例外只认固定单轮的纯文本完成证据；后台续轮及工具/子级迹象都保守拒绝。 */
+/** 恢复例外只认固定单轮纯文本或本 Run 正式复核；其他工具、后台续轮与子级均拒绝。 */
 function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:TaskRunObservation):boolean{
- if(!isTextOnlyTaskRun(run)||observed.state!=='ended'||observed.reason!=='completed')return false
+ if(observed.state!=='ended'||observed.reason!=='completed')return false
  const {turn,messageSeq,endSeq}=observed,end=events[endSeq]
  if(end?.type!=='turn/end'||end.data.turn!==turn)return false
  const start=[...events.slice(0,messageSeq)].reverse().find(event=>event.type==='turn/start')
  if(start?.type!=='turn/start'||start.data.turn!==turn)return false
+ const reviewed=run.executor?.kind==='owner'&&run.stopRequestedAt===null&&run.groupContext===undefined&&run.flowId===undefined&&(run.subagents===undefined||run.subagents.length===0)&&readTaskRunGroupResult(events,run.nativeRequestId,undefined,undefined,{requireReview:true,runId:run.id})!==undefined
+ if(!isTextOnlyTaskRun(run)&&!reviewed)return false
+ const receipt=reviewed?events.slice(start.seq,endSeq).reverse().find(event=>event.type==='user/message'&&event.data.source.kind===deliveryReviewSource):undefined
+ const callIds=new Set(receipt?.type==='user/message'&&receipt.data.source.kind===deliveryReviewSource?receipt.data.source.rounds?.flatMap(round=>round.units.flatMap(unit=>unit.callId?[unit.callId]:[])):[])
+ const reviewCall=(id:string,name:string|undefined)=>reviewed&&name===deliveryReviewToolName&&callIds.has(id)
  let answer=false
  for(const event of events.slice(start.seq,endSeq+1)){
-  if(event.type.startsWith('tool/')||event.type.startsWith('team/')||event.type.startsWith('subagent/'))return false
+  if(event.type.startsWith('team/')||event.type.startsWith('subagent/'))return false
+  if(event.type==='tool/call'){if(!reviewCall(event.data.callId,event.data.name))return false}
+  else if(event.type==='tool/result'){if(!reviewed||!callIds.has(event.data.message.toolCallId))return false}
+  else if(event.type.startsWith('tool/'))return false
   if(event.type==='user/message'){
    const source:string=event.data.source.kind
-   if(event.seq!==messageSeq&&source!=='agent-instructions'&&source!=='runtime-context')return false
+   if(event.seq!==messageSeq&&source!=='agent-instructions'&&source!=='runtime-context'&&!(reviewed&&source===deliveryReviewSource&&Reflect.get(event.data.source,'runId')===run.id))return false
    if(event.data.content.some(block=>block.type!=='text'))return false
   }else if(event.type==='assistant/message'){
-   if(event.data.interrupted===true||event.data.stream.some(chunk=>chunk.type==='tool-call-chunks'))return false
-   if(event.data.message.content.some(block=>block.type!=='text'&&block.type!=='reasoning'))return false
+   if(event.data.interrupted===true||event.data.stream.some(chunk=>chunk.type==='tool-call-chunks'&&!reviewCall(chunk.id,chunk.name)))return false
+   if(event.data.message.content.some(block=>block.type!=='text'&&block.type!=='reasoning'&&!(block.type==='tool-call'&&reviewCall(block.id,block.name))))return false
    answer ||= event.surfaceOp==='append'&&event.data.turn===turn&&event.data.message.content.some(block=>block.type==='text'&&block.text.trim().length>0)
-  }else if(event.type==='assistant/attempt'&&event.data.stream.some(chunk=>chunk.type==='tool-call-chunks'))return false
+  }else if(event.type==='assistant/attempt'&&event.data.stream.some(chunk=>chunk.type==='tool-call-chunks'&&!reviewCall(chunk.id,chunk.name)))return false
  }
  return answer
 }
 
 export type TaskRunPorts={
+ /** 本人普通交办的不可变原文投影；必须经正式 ledger 与固定原生消息核验。 */
+ ownerReviewSource?:(run:TaskRun,signal:AbortSignal)=>Promise<Awaited<ReturnType<TaskRunService['ownerReviewSource']>>>
+ /** 正式会话交办的同源投影；null 仅表示原 Task 确实没有会话父交办。 */
+ conversationReviewSource?:(run:TaskRun,signal:AbortSignal)=>Promise<Awaited<ReturnType<TaskRunService['conversationReviewSource']>>>
+ /** 结束后恢复同一候选的幂等保存；不能重新向模型发送。 */
+ publishOwnerResult?:(run:TaskRun)=>Promise<void>
+ prepareOwnerPolicy?:(sessionId:string,agentPresetId:string,signal:AbortSignal,target:TaskExecutionScope)=>Promise<{allowedTools:readonly string[];argumentRules?:import('@teloa/contract').TaskToolArgumentRule[];knowledge?:TaskRun['knowledge']}>
  /** 真实持久 round/definition 状态；暂停不把原生取消结束倒推为业务终态。 */
  controlState?:(run:TaskRun)=>Promise<WorkControl['state']>
+ /** 原失败轮的显式重试预检，必须先于新会话、准备和领取。 */
+ prepareRetry?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  stableStart?:<T>(operation:()=>Promise<T>)=>Promise<T>
  resolvePreset?:(agentPresetId:undefined|string,signal:AbortSignal)=>Promise<string>
  prepareSession?:(sessionId:string,agentPresetId:undefined|string,signal:AbortSignal)=>Promise<string>
@@ -46,7 +65,9 @@ export type TaskRunPorts={
  /** 收口前核对子级是否已结项；读口失败保持未结清，不妨碍先请求取消。 */
  subagentState?:(run:TaskRun,signal:AbortSignal)=>Promise<'none'|'outstanding'>
  /** 官方后台工作及排队的官方续轮尚未结清时，Run 必须保持 active。 */
- backgroundState?:(run:TaskRun)=>Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:boolean}>
+ backgroundState?:(run:TaskRun)=>Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:boolean;reviewOnly?:boolean;cancelled?:boolean}>
+ /** 仅显式 retry 已证实零输出/零工具的失败轮可消费；不能替代后台完成判据。 */
+ retryOwnerOnlyBackground?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>
  /** 持久工作步骤尚待回执；业务等待不属于原生活动，不阻塞暂停/结束收尾。 */
  flowState?:(run:TaskRun)=>Promise<'none'|'outstanding'>
  continuations?:(run:TaskRun,events:readonly SessionEvent[])=>Promise<ReadonlySet<string>>
@@ -77,6 +98,7 @@ export class TaskRunDriver{
   signal.throwIfAborted()
   const current=await this.service.get(owner,input)
   if(current.state!=='prepared')return current
+  if(current.lineage&&await this.ports.controlState?.(current)!=='active')throw new WorkError('teloa/forbidden','原工作已暂停或停止，请先核对恢复。')
   const target=await this.service.executionScope(owner,input)
   await this.ports.check(current,signal,target)
   signal.throwIfAborted()
@@ -130,12 +152,13 @@ export class TaskRunDriver{
   if(run.state==='prepared'||run.state==='withdrawn'||run.state==='configuration_failed')return run
   // 已落定证据不可被迟到通知改写；交付失败仍能按同一终态重试既有幂等发布器。
   if(run.state==='ended'&&run.evidence?.state==='ended'){
-   if(run.groupContext){
+   if(run.executor?.kind==='owner'&&run.evidence.reason==='completed')await this.ports.publishOwnerResult?.(run)
+   if((run.groupContext||taskRunPlanReportOccurrence(run))&&run.evidence.reason==='completed'){
     const events=(await this.ports.events(run)).slice(0,run.evidence.endSeq+1)
     signal?.throwIfAborted()
     const text=readTaskRunGroupResult(events,run.nativeRequestId,await this.ports.continuations?.(run,events),await this.ports.goalObservation?.(run,events))
     signal?.throwIfAborted()
-    if(text)await this.ports.publishGroupResult?.(run,text)
+    await this.ports.publishGroupResult?.(run,text??'')
    }
    return run
   }
@@ -151,16 +174,19 @@ export class TaskRunDriver{
   if(observed.state==='unobserved')return run
   const control=await this.ports.controlState?.(run)
   signal?.throwIfAborted()
-  if(control==='pausing'||control==='paused')return run
+  // 暂停本身保留原运行；本人随后明确停止时仍核验后台、子级与原生收口，不能让暂停栅栏吞掉停止意图。
+  if((control==='pausing'||control==='paused')&&run.stopRequestedAt==null)return run
   const children=await this.ports.subagentState?.(run,signal??new AbortController().signal)
   signal?.throwIfAborted()
   const outstanding=background?.outstanding===true||children==='outstanding'
   const flowPending=run.stopRequestedAt==null&&control!=='stopping'&&control!=='stopped'&&observed.state==='ended'&&await this.ports.flowState?.(run)==='outstanding'
   signal?.throwIfAborted()
   if((outstanding||flowPending)&&observed.state==='ended')observed={state:'active',turn:observed.turn,messageSeq:observed.messageSeq}
-  // 旧 owner 只证明宿主世代变化。固定空权限且完整、无工具/子级的单个文本轮，仍以原生结尾为准。
-  const textCompletion=goal===undefined&&background?.ownerOnly===true&&(continuations?.size??0)===0&&completedTextRun(run,events,observed)
+  // 旧 owner 只证明宿主世代变化。完整纯文本或严格核过本 Run 全部复核工具回执的单轮，仍以原生结尾为准。
+  const textCompletion=goal===undefined&&(background?.ownerOnly===true||background?.reviewOnly===true)&&(continuations?.size??0)===0&&completedTextRun(run,events,observed)
   if(!outstanding&&!flowPending&&background?.interrupted===true&&!textCompletion)observed={state:'ended',turn:observed.turn,messageSeq:observed.messageSeq,endSeq:events.length-1,reason:'interrupted'}
+  // 停止后同 Run 的真实 Job 被取消时，初轮完成只代表占位回复；必须等待宿主冻结来核实收口。
+  if(!outstanding&&background?.cancelled===true&&run.stopRequestedAt!=null&&observed.state==='ended'&&observed.reason==='completed')observed={state:'active',turn:observed.turn,messageSeq:observed.messageSeq}
   // 取消落在已无活跃活动的 agent 上是上游文档化的 no-op：原生 turn/end 永远不会来，只等日志
   // 就永远没有终态。三个条件同时成立才收口——记录上已有停止意图、宿主自报不在运行、日志 seq
   // 已冻结够久——并把冻结到的 seq 作为 endSeq 留作依据。少一个条件都按「还在跑」原样回填。
@@ -172,9 +198,9 @@ export class TaskRunDriver{
   signal?.throwIfAborted()
   const saved=await this.service.record(owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:observed})
   signal?.throwIfAborted()
-  if(saved.groupContext&&observed.state==='ended'){
+  if((saved.groupContext||taskRunPlanReportOccurrence(saved))&&observed.state==='ended'&&observed.reason==='completed'){
    const text=readTaskRunGroupResult(events,saved.nativeRequestId,continuations,goal)
-   if(text)await this.ports.publishGroupResult?.(saved,text)
+   await this.ports.publishGroupResult?.(saved,text??'')
   }
   return saved
  }

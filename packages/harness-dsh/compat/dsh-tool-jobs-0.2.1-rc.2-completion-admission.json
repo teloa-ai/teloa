@@ -1,0 +1,33 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-tool-jobs",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "bb50f7bc93528cd42992a47cad51070cb581b8d8e02fd077f91f1cae16b67b8e",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "de5707b43480ba37c8e141e6f67674978f3a46d87d58390c18eb1659bb17ec2f",
+      "afterSha256": "bd88de42b1e0c08b1890cc9669ef6bb9394b5763bc88577d36aadde7a3382ec6"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "03f56e906dee56abaaa0cf7227b7cbedcf73af23a7cebf647972680ad37bf98d",
+      "afterSha256": "72842cc7ac832ab8e6c806b58c6049b78581275821dbe5e48dc145fd89bf2191"
+    }
+  ],
+  "api": [
+    "JobCompletionAdmission",
+    "JobCompletionOptions",
+    "completionAdmissionVersion",
+    "observeCompletionDecision(job,notify)"
+  ],
+  "scope": {
+    "admission": "admitCompletion({agent,message,job},dispatch):Promise<void>",
+    "default": "Official behavior remains unchanged without options; a required missing provider refuses construction",
+    "limitations": [
+      "Hot runtime bindings only; restored job notifications do not receive a fabricated input root",
+      "Exact live owner and terminal job are rechecked before synchronous dispatch; denied notices do not mutate native input"
+    ]
+  }
+}

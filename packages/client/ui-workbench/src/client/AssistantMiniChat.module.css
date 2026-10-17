@@ -1,0 +1,43 @@
+/* 小窗沿用工作台令牌与原面板圆角、阴影；非模态，不遮挡页面其余操作。 */
+.window{position:fixed;display:flex;flex-direction:column;width:340px;max-width:calc(100vw - 16px);height:min(460px,calc(100dvh - 16px));box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow);color:var(--teloa-text);font-size:13px;line-height:1.55;overflow:hidden}
+.window:focus{outline:none}
+.window button{font:inherit;color:inherit;cursor:pointer}
+.window button:disabled{opacity:.5;cursor:default}
+.window button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:1px}
+.header{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--teloa-border)}
+.header img{width:24px;height:24px;object-fit:contain;flex:none}
+.header div{display:flex;flex-direction:column;min-width:0;flex:1}
+.header strong{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.header span{font-size:11px;color:var(--teloa-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted)!important;flex:none}
+.icon:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)!important}
+.log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.message{display:flex;flex-direction:column;gap:2px;max-width:100%}
+.message[data-role=user]{align-items:flex-end}
+.message small{font-size:11px;color:var(--teloa-muted)}
+.bubble{margin:0;max-width:85%;padding:6px 10px;border-radius:10px;background:var(--teloa-subtle);border:1px solid var(--teloa-border);white-space:pre-wrap;overflow-wrap:anywhere}
+.message[data-state=sending] .bubble,.message[data-state=queued] .bubble{opacity:.75}
+.markdown{max-width:100%;min-width:0;overflow-wrap:anywhere}
+.markdown>:first-child{margin-top:0}
+.markdown>:last-child{margin-bottom:0}
+.markdown :is(p,ul,ol,pre,blockquote,table){margin:0 0 6px}
+.markdown :is(ul,ol){padding-left:18px}
+.markdown :is(h1,h2,h3,h4,h5,h6){margin:6px 0 4px;font-size:13px;font-weight:600}
+.markdown pre{max-width:100%;overflow-x:auto;padding:6px 8px;border-radius:6px;background:var(--teloa-subtle);font-size:12px}
+.markdown code{font-size:12px}
+.markdown a{color:var(--teloa-accent)}
+.state{margin:auto 0;padding:0 8px;text-align:center;color:var(--teloa-muted);font-size:12px}
+.state p{margin:0 0 8px}
+.state button,.notice button,.older{padding:4px 10px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);font-size:12px!important}
+.state button:hover:not(:disabled),.notice button:hover:not(:disabled),.older:hover:not(:disabled){background:var(--teloa-hover)}
+.older{align-self:center}
+.working{margin:0;color:var(--teloa-muted);font-size:12px}
+.notice{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 10px 6px;padding:6px 8px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle);font-size:12px;color:var(--teloa-warn,var(--teloa-text))}
+.notice p{margin:0;overflow-wrap:anywhere}
+.notice button{flex:none}
+.composer{display:flex;align-items:flex-end;gap:6px;margin:0 10px 10px;padding:6px 6px 6px 10px;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
+.composer:focus-within{border-color:var(--teloa-focus)}
+.composer textarea{flex:1;min-width:0;min-height:22px;max-height:120px;field-sizing:content;resize:none;border:0;padding:3px 0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:1.5;outline:none}
+.composer textarea:disabled{cursor:not-allowed}
+.send{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:var(--teloa-accent);color:var(--teloa-on-accent)!important;flex:none}
+.send:disabled{background:var(--teloa-subtle);color:var(--teloa-muted)!important;opacity:1!important}

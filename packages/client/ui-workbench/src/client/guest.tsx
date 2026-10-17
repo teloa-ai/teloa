@@ -2,8 +2,8 @@ import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'reac
 import {createRoot} from 'react-dom/client'
 import {flushSync} from 'react-dom'
 import clsx from 'clsx'
-import {ArrowUp,Menu,Moon,Plus,Settings2,Sun,UserRound} from 'lucide-react'
-import {WorkbenchNavigationBrand,WorkbenchNavigationItems,primaryNavigation} from './WorkbenchNavigationChrome.js'
+import {ArrowUp,Menu,Plus,Settings2,UserRound} from 'lucide-react'
+import {WorkbenchNavigationBrand,WorkbenchNavigationItems,WorkbenchHubNavigation,primaryNavigation,workbenchHubNavigation} from './WorkbenchNavigationChrome.js'
 import type {WorkbenchView} from './store.js'
 import {I18nProvider,useI18n} from './i18n/provider.js'
 import type {TeloaI18n} from './i18n/index.js'
@@ -74,12 +74,20 @@ function readGuestSettings(element:HTMLElement,settings:GuestWorkbenchSettings|u
 /** 只复用工作台的呈现层；不装配本人资料、导航存储、RPC 或执行服务。 */
 function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;controller:GuestController}){
  const {locale,t}=useI18n(),copy=guestCopy(locale)
- const [view,setView]=useState<WorkbenchView>('home'),[prompt,setPrompt]=useState(options.initialPrompt??'')
+ const [view,setView]=useState<WorkbenchView>('home'),[marketApps,setMarketApps]=useState(false),[prompt,setPrompt]=useState(options.initialPrompt??'')
  const [colorScheme,setColorScheme]=useState<'light'|'dark'>(()=>globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light')
+ // 无本人设置的访客视图沿用系统外观；系统设置改变后同步令牌，不在左栏另设主题开关。
+ useEffect(()=>{
+  const preference=globalThis.matchMedia?.('(prefers-color-scheme: dark)')
+  if(!preference)return
+  const sync=()=>setColorScheme(preference.matches?'dark':'light')
+  sync();preference.addEventListener('change',sync)
+  return ()=>preference.removeEventListener('change',sync)
+ },[])
  const [navOpen,setNavOpen]=useState(false),[pending,setPending]=useState(false),[notice,setNotice]=useState<string>()
  const [account,setAccount]=useState<GuestWorkbenchAccount|null>(null)
  const [selectedSettings,setSelectedSettings]=useState(options.settings?.entries[0]?.id)
- const active=useRef(false),closing=useRef(false),pendingNavigation=useRef<WorkbenchView>(),previousView=useRef<WorkbenchView>('home'),currentView=useRef(view),frame=useRef<HTMLDivElement>(null)
+ const active=useRef(false),closing=useRef(false),pendingNavigation=useRef<{view:WorkbenchView;marketApps:boolean}>(),previousView=useRef<WorkbenchView>('home'),currentView=useRef(view),frame=useRef<HTMLDivElement>(null)
  currentView.current=view
  controller.setPrompt=setPrompt
  controller.setAccount=setAccount
@@ -95,19 +103,20 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
  }
  const closeSettings=()=>{
   if(currentView.current!=='settings'||!options.settings)return
-  const next=pendingNavigation.current??previousView.current
+  const navigation=pendingNavigation.current,next=navigation?.view??previousView.current
+  if(navigation)setMarketApps(navigation.marketApps)
   pendingNavigation.current=undefined;closing.current=false
   currentView.current=next;setView(next);setNavOpen(false);setNotice(undefined);setPending(false)
  }
  controller.openSettings=openSettings
  controller.closeSettings=closeSettings
- const select=(next:WorkbenchView)=>{
+ const select=(next:WorkbenchView,apps=false)=>{
   if(next==='settings'&&options.settings){openSettings();return}
   if(currentView.current==='settings'&&options.settings){
    if(active.current||closing.current)return
-   pendingNavigation.current=next;request('settings-close');return
+   pendingNavigation.current={view:next,marketApps:apps};request('settings-close');return
   }
-  currentView.current=next;setView(next);setNavOpen(false);setNotice(undefined)
+  currentView.current=next;setView(next);setMarketApps(apps);setNavOpen(false);setNotice(undefined)
  }
  const request=(kind:'start'|'account'|'settings-close')=>{
   if(active.current||closing.current)return
@@ -129,21 +138,22 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
   document.addEventListener('keydown',escape)
   return ()=>document.removeEventListener('keydown',escape)
  })
- const row=primaryNavigation.find(([id])=>id===view),title=row?t(row[1]):t('navigation.v2.settings'),Icon=row?.[2]??Settings2
+ const row=primaryNavigation.find(([id])=>id===view),hubRow=workbenchHubNavigation.find(([id])=>id===view),title=view==='market'&&marketApps?t('market.apps.title'):hubRow?t(hubRow[1]):row?t(row[1]):t('navigation.v2.settings'),Icon=row?.[2]??Settings2
  const settingsEntry=options.settings?.entries.find(row=>row.id===selectedSettings)??options.settings?.entries[0]
  return <div ref={frame} data-guest-workbench data-theme={colorScheme} className={clsx(tokens.tokens,css.frame,guestCss.guest,navOpen&&css.navOpen)} style={{...prototypeThemes[colorScheme],colorScheme} as CSSProperties}>
   <aside className={css.navigation} aria-label={t('navigation.main')}>
    <WorkbenchNavigationBrand product={options.product} colorScheme={colorScheme} onClose={()=>setNavOpen(false)}/>
    <button type="button" className={css.newWork} onClick={()=>select('home')}><Plus size={16}/><span>{t('navigation.new')}</span></button>
-   <div className={css.navScroll}><WorkbenchNavigationItems view={view} onSelect={select}/></div>
+   <div className={css.navScroll}><WorkbenchNavigationItems view={view} onSelect={select} marketApps={marketApps} onApps={()=>select('market',true)}/></div>
    <div className={css.navFooter}>
     <button type="button" className={css.navItem} aria-current={view==='settings'?'page':undefined} onClick={()=>select('settings')}><Settings2 size={16}/><span>{t('navigation.v2.settings')}</span></button>
-    <div className={css.account}><button type="button" className={clsx(css.profileButton,css.avatar)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{initials||<UserRound size={15} aria-hidden/>}</button><button type="button" className={css.iconButton} onClick={()=>setColorScheme(value=>value==='dark'?'light':'dark')} aria-label={t(colorScheme==='dark'?'navigation.themeLight':'navigation.themeDark')} title={t(colorScheme==='dark'?'navigation.themeLight':'navigation.themeDark')}>{colorScheme==='dark'?<Sun size={16}/>:<Moon size={16}/>}</button></div>
+    <div className={css.account}><button type="button" className={clsx(css.profileButton,css.avatar)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{initials||<UserRound size={15} aria-hidden/>}</button></div>
    </div>
   </aside>
   {navOpen&&<button type="button" className={css.navMask} aria-label={t('shell.navigation.close')} onClick={()=>setNavOpen(false)}/>}
   <div className={css.workspace}>
    <header className={css.topbar}><button type="button" className={css.mobileNavigation} aria-label={t('shell.navigation.open')} onClick={()=>setNavOpen(true)}><Menu size={17}/></button><strong>{title}</strong><button type="button" className={clsx(css.button,guestCss.headerAccount)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{account?(initials||<UserRound size={15}/>):copy.login}</button></header>
+   <WorkbenchHubNavigation view={view} onSelect={select}/>
    <main className={clsx(css.main,view==='settings'&&options.settings&&guestCss.settingsMain)}>
     {view==='settings'&&options.settings&&settingsEntry?<SettingsLayout label={t('shell.settings')} heading={<span>{t('shell.settings')}</span>} actions={<div className={settingsCss.documentAction}><button type="button" disabled={pending} onClick={()=>request('settings-close')}>{copy.closeSettings}</button></div>} entries={options.settings.entries} selectedId={settingsEntry.id} onSelect={openSettings} notice={notice?<p className={settingsCss.connection} role="status">{notice}</p>:null}>
      <HostSettingsContent element={settingsEntry.content}/>

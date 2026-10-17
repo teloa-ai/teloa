@@ -100,8 +100,9 @@ test('升级三方保留自建页面，未裁决不建草案；本地修改冲�
  await adopt(f,original)
  await f.records.create(f.actor,{scope:original.scope,type:'alert',requestId:randomUUID(),title:'升级不改记录',summary:'',fields:[{name:'state',value:'待核对'}]})
  const local=await f.drafts.begin(f.actor,{requestId:randomUUID(),scope:original.scope,title:'我的运营团队',format:'teloa.business-configuration/v2'})
+ assert.equal(local.candidate.title,'我的安全运营','准备调整不把预约标题当改名授权')
  const localView=local.candidate.definitions.find(item=>item.kind==='view')!
- const revised=await f.drafts.revise(f.actor,{requestId:randomUUID(),draftId:local.id,expectedRevision:1,patch:{upsertDefinitions:[{...localView,definition:{...localView.definition,title:'本地状态说明'}}],upsertPages:[{id:'my-alerts',title:'自建记录页面',kind:'records',objectType:'alert',fields:['state'],allowCreate:true,allowEdit:true,allowArchive:true}],pageOrder:[...local.candidate.pages.map(page=>page.id),'my-alerts']}})
+ const revised=await f.drafts.revise(f.actor,{requestId:randomUUID(),draftId:local.id,expectedRevision:1,patch:{title:'我的运营团队',upsertDefinitions:[{...localView,definition:{...localView.definition,title:'本地状态说明'}}],upsertPages:[{id:'my-alerts',title:'自建记录页面',kind:'records',objectType:'alert',fields:['state'],allowCreate:true,allowEdit:true,allowArchive:true}],pageOrder:[...local.candidate.pages.map(page=>page.id),'my-alerts']}})
  const localPreview=await f.preview.preview(f.actor,{draftId:local.id,expectedRevision:revised.revision})
  await f.configuration.apply(f.actor,{requestId:randomUUID(),draftId:local.id,expectedRevision:revised.revision,expectedBaseVersion:1,previewReceipt:localPreview.receipt})
  const manifest={...dashboardManifest(),version:'1.1.0',resources:dashboardManifest().resources.map(item=>({...item,version:'1.1.0'}))}
@@ -163,9 +164,11 @@ test('升级修订已提交失回包，业务随后推进仍可恢复原草案�
  let fail=true
  const faulty=new BusinessDashboardResourceService(pool,{market:f.market,configuration:f.configuration,preview:f.preview,pages:f.pages,drafts:{begin:f.drafts.begin.bind(f.drafts),get:f.drafts.get.bind(f.drafts),revise:async(...args)=>{const result=await f.drafts.revise(...args);if(fail){fail=false;throw Error('升级修订失回包')}return result}}})
  await assert.rejects(faulty.prepareUpgrade(f.actor,request),/失回包/)
- const other=await f.drafts.begin(f.actor,{requestId:randomUUID(),scope:original.scope,title:'本人最新名称',format:'teloa.business-configuration/v2'})
- const preview=await f.preview.preview(f.actor,{draftId:other.id,expectedRevision:1})
- await f.configuration.apply(f.actor,{requestId:randomUUID(),draftId:other.id,expectedRevision:1,expectedBaseVersion:1,previewReceipt:preview.receipt})
+ const begun=await f.drafts.begin(f.actor,{requestId:randomUUID(),scope:original.scope,title:'本人最新名称',format:'teloa.business-configuration/v2'})
+ assert.equal(begun.candidate.title,'我的安全运营')
+ const other=await f.drafts.revise(f.actor,{requestId:randomUUID(),draftId:begun.id,expectedRevision:begun.revision,patch:{title:'本人最新名称'}})
+ const preview=await f.preview.preview(f.actor,{draftId:other.id,expectedRevision:other.revision})
+ await f.configuration.apply(f.actor,{requestId:randomUUID(),draftId:other.id,expectedRevision:other.revision,expectedBaseVersion:1,previewReceipt:preview.receipt})
  const resumed=await services().resource.prepareUpgrade(f.actor,request)
  assert.ok(resumed.draft);assert.equal(resumed.draft.baseVersion,1)
  await assert.rejects(f.resource.preview(f.actor,{draftId:resumed.draft.id,expectedRevision:resumed.draft.revision}),{code:'teloa/version-conflict'})
@@ -205,4 +208,33 @@ test('导出权威当前配置全图但不读取记录，不包含本人范围�
  assert.deepEqual(exported.excluded,[])
  assert.equal(exported.configurationHash,(await f.configuration.current(f.actor,{scope:draft.scope}))!.hash)
  await assert.rejects(f.resource.exportCurrent({ownerId:'other',scopeIds:[draft.scope]},{scope:draft.scope,id:'shared-soc',version:'1.0.0'}),{code:'teloa/not-found'})
+})
+test('配置预览绑定数据版本：并发新增记录使旧预览失效，重新预览才能采用',async()=>{
+ const f=await fixture(),draft=await f.resource.prepare(f.actor,f.request)
+ await adopt(f,draft)
+ const next=await f.drafts.begin(f.actor,{requestId:randomUUID(),scope:draft.scope,title:'我的安全运营',format:'teloa.business-configuration/v2'})
+ const preview=await f.preview.preview(f.actor,{draftId:next.id,expectedRevision:next.revision})
+ await f.records.create(f.actor,{scope:draft.scope,type:'alert',requestId:randomUUID(),title:'预览后新增',summary:'',fields:[{name:'state',value:'待核对'}]})
+ const input={requestId:randomUUID(),draftId:next.id,expectedRevision:next.revision,expectedBaseVersion:1,previewReceipt:preview.receipt}
+ await assert.rejects(f.configuration.apply(f.actor,input),{code:'teloa/conflict'})
+ const fresh=await f.preview.preview(f.actor,{draftId:next.id,expectedRevision:next.revision})
+ await f.configuration.apply(f.actor,{...input,requestId:randomUUID(),previewReceipt:fresh.receipt})
+ assert.equal((await f.records.list(f.actor,{scope:draft.scope,type:'alert',limit:20})).items.length,1)
+})
+test('明确恢复旧模板只恢复配置，记录与既有采用回执保留；有损恢复仍被阻止',async()=>{
+ const f=await fixture(),original=await f.resource.prepare(f.actor,f.request)
+ const first=await adopt(f,original)
+ await f.records.create(f.actor,{scope:original.scope,type:'alert',requestId:randomUUID(),title:'恢复后仍保留',summary:'',fields:[{name:'state',value:'待核对'}]})
+ const body=dashboardBody();body.version='1.1.0';body.configuration.pages[0]!.title='新版记录入口'
+ const manifest={...dashboardManifest(),version:'1.1.0',resources:dashboardManifest().resources.map(row=>({...row,version:'1.1.0'}))}
+ const {content}=await f.market.import({ownerId:f.actor.ownerId,kind:'human'},{kind:'industry-template',requestId:randomUUID(),source:{kind:'upload',name:'新版模板'},manifestPath:'teloa.json',references:[],files:[['teloa.json',manifest],['configuration.json',body]].map(([path,value])=>({path:path as string,bytes:new TextEncoder().encode(JSON.stringify(value))}))})
+ const upgraded=await f.resource.prepareUpgrade(f.actor,{requestId:randomUUID(),adoptionId:original.id,candidateContentId:content.id,candidateContentHash:content.hash,resourceId:'soc-overview',expectedConfigurationVersion:1})
+ const second=await adopt(f,upgraded.draft!)
+ const before=(await pool.query('select snapshot from teloa_business_object_snapshots where owner_id=$1',[f.actor.ownerId])).rows
+ const restored=await f.resource.prepareUpgrade(f.actor,{mode:'restore',requestId:randomUUID(),adoptionId:upgraded.draft!.id,candidateContentId:f.content.id,candidateContentHash:f.content.hash,resourceId:'soc-overview',expectedConfigurationVersion:2})
+ assert.ok(restored.draft);assert.equal(restored.draft.candidate.pages[0]!.title,original.candidate.pages[0]!.title)
+ await adopt(f,restored.draft)
+ assert.deepEqual((await pool.query('select snapshot from teloa_business_object_snapshots where owner_id=$1',[f.actor.ownerId])).rows,before)
+ assert.deepEqual(await f.configuration.receipt(f.actor,{requestId:first.input.requestId}),first.result)
+ assert.deepEqual(await f.configuration.receipt(f.actor,{requestId:second.input.requestId}),second.result)
 })

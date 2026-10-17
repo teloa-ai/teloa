@@ -12,7 +12,14 @@ export function workRequestChildId(requestId:string,kind:string,roleId=''):strin
 function childIdentity(row:Record<string,unknown>):string|null{
  const spec=row.request_spec
  if(!isRecord(spec)||!uuid(row.request_id)||spec.requestId!==row.request_id)throw corrupt()
- if(spec.kind==='report'){if(row.task_child_request_id!=null)throw corrupt();return null}
+ if(spec.kind==='report'){if(row.task_child_request_id!=null||spec.executor!==undefined)throw corrupt();return null}
+ if(spec.executor==='general'){
+  if(spec.kind!=='task'||spec.scope!=='general'||spec.roleId!==undefined||spec.expectedRoleVersion!==undefined||spec.reference!==undefined||spec.responsibility!==undefined||spec.allBusinesses!==undefined||spec.expectedReportTargets!==undefined||!Array.isArray(row.targets)||row.targets.length!==0)throw corrupt()
+  const child=workRequestChildId(row.request_id,'task')
+  if(row.task_child_request_id!=null&&row.task_child_request_id!==child)throw corrupt()
+  return child
+ }
+ if(spec.executor!==undefined)throw corrupt()
  if(spec.kind!=='task'||!uuid(spec.roleId)||!Array.isArray(row.targets)||row.targets.length!==1)throw corrupt()
  const target=row.targets[0]
  if(!isRecord(target)||target.roleId!==spec.roleId||target.scope!==spec.scope||target.roleVersion!==spec.expectedRoleVersion||!Number.isSafeInteger(spec.expectedRoleVersion)||Number(spec.expectedRoleVersion)<1)throw corrupt()
@@ -74,7 +81,7 @@ export async function assertConversationTaskChildUnoccupied(db:PoolClient,owner:
  if(!(await db.query("select to_regclass('teloa_tasks') as relation")).rows[0]?.relation)return
  if((await db.query('select 1 from teloa_tasks where owner_id=$1 and request_id=$2',[owner,childRequestId])).rowCount)throw new WorkError('teloa/conflict','该任务请求已被独立任务使用，不能绑定为新的交办。')
 }
-export type ConversationTaskIdentity={sessionId:string;requestId:string;roleId:string}
+export type ConversationTaskIdentity={sessionId:string;requestId:string}&({roleId:string;executor?:never}|{executor:'general';roleId?:never})
 export type ConversationTaskParent={stopped:boolean;row:Record<string,unknown>}
 /** 必须在调用者同一事务、task-create/业务快照/角色行锁之前执行。无父请求的旧普通任务不改变行为。 */
 export async function lockConversationTaskParent(db:PoolClient,owner:string,childRequestId:string,identity?:ConversationTaskIdentity):Promise<ConversationTaskParent|null>{
@@ -87,7 +94,7 @@ export async function lockConversationTaskParent(db:PoolClient,owner:string,chil
  const row=(await db.query('select * from teloa_conversation_work_requests where owner_id=$1 and request_id=$2',[owner,hint.request_id])).rows[0]
  if(!row||childIdentity(row)!==childRequestId||row.task_child_request_id!==childRequestId||row.stopped_at!==null&&(!(row.stopped_at instanceof Date)||!Number.isFinite(row.stopped_at.getTime())))throw corrupt()
  if(!identity)throw new WorkError('teloa/conflict','该任务请求属于会话交办，请从原交办核对或恢复。')
- if(row.owner_id!==owner||row.request_id!==identity.requestId||row.session_id!==identity.sessionId||workRequestChildId(identity.requestId,'task',identity.roleId)!==childRequestId)throw new WorkError('teloa/forbidden','原交办的本人、会话或员工身份不一致。')
+ if(row.owner_id!==owner||row.request_id!==identity.requestId||row.session_id!==identity.sessionId||row.request_spec.executor!==identity.executor||workRequestChildId(identity.requestId,'task',identity.roleId)!==childRequestId)throw new WorkError('teloa/forbidden','原交办的本人、会话或执行身份不一致。')
  return {stopped:row.stopped_at!==null,row}
 }
 /** 已成功的原回执可以返回；只有会产生新 Task 的分支在这里拒绝。 */

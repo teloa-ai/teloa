@@ -46,16 +46,15 @@ test('共享目录样式在 280px 内收窄并使用无卡片高密度列表行'
   assert.doesNotMatch(css,/#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(/)
 })
 
-test('会话和协作群组进入同一目录，低频成果与模板进入上下文菜单',async()=>{
+test('会话和协作群组进入同一目录，成果入口保留；普通会话不要求保存模板',async()=>{
   const source=await readFile(new URL('WorkbenchFrame.tsx',clientRoot),'utf8')
   assert.doesNotMatch(source,/<nav className=\{css\.messageTabs\}/)
-  assert.match(source,/<WorkDirectory groups=\{conversationGroups\}/)
+  assert.match(source,/<WorkDirectory organization=\{dialogueOrganization\} conversationPlans=\{conversationPlans\} groups=\{conversationGroups\}/)
   assert.match(source,/openGroup=\{openSavedGroup\}/)
   assert.match(source,/createGroup=\{createDirectoryGroup\}/)
-  const menu=source.slice(source.indexOf('<details ref={messageContextMenu} className={css.messageContext}>'))
-  assert.match(menu,/<summary aria-label=/)
+  const menu=source.slice(source.indexOf('<DetailsMenu menuRef={messageContextMenu}'))
+  assert.match(menu,/<summary data-teloa-conversation-options aria-label=/)
   assert.match(menu,/removeAttribute\('open'\);if\(current\)openArtifacts/)
-  assert.match(menu,/removeAttribute\('open'\);saveConversation\(\)/)
   assert.match(menu,/shell\.artifacts/)
-  assert.match(menu,/shell\.taskTemplate\.save/)
+  assert.doesNotMatch(menu,/shell\.taskTemplate\.save|conversationTemplate|<TemplateForm/,'复用不是普通会话默认收尾')
 })

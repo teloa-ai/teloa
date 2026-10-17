@@ -4,20 +4,23 @@ import {readFile} from 'node:fs/promises'
 
 const read=(name:string)=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')
 
-test('搜索弹层点击卡片外面（backdrop）会关闭，卡片内部（含内边距）点击不会误关',async()=>{
+test('搜索弹层复用配对外点关闭，保留忙碌保护和卡片几何边界',async()=>{
  const source=await read('WorkspaceSearch.tsx')
- // 用几何范围判断，而不是 target===dialog——后者会把 <dialog> 自身的内边距也算作「外面」。
- assert.match(source,/const closeFromBackdrop=\(event:React\.MouseEvent<HTMLDialogElement>\)=>\{/)
- assert.match(source,/if\(busy\)return/)
- assert.match(source,/const rect=event\.currentTarget\.getBoundingClientRect\(\)/)
- assert.match(source,/event\.clientX>=rect\.left&&event\.clientX<=rect\.right&&event\.clientY>=rect\.top&&event\.clientY<=rect\.bottom/)
- assert.match(source,/if\(!inside\)close\(\)/)
- assert.match(source,/onClick=\{closeFromBackdrop\}/)
+ const shared=await read('use-dialog-dismiss.ts')
+ assert.match(source,/useDialogDismiss\(close,!busy\)/)
+ assert.match(source,/\.\.\.dismissEvents/)
+ assert.match(shared,/event\.target!==event\.currentTarget/)
+ assert.match(shared,/event\.currentTarget\.getBoundingClientRect\(\)/)
+ assert.match(shared,/event\.clientX<box\.left\|\|event\.clientX>box\.right\|\|event\.clientY<box\.top\|\|event\.clientY>box\.bottom/)
+ assert.match(shared,/outsidePointer\.current!==undefined&&outsidePointer\.current===event\.pointerId&&outside\(event\)/)
+ assert.match(shared,/if\(dismiss&&canClose\)/)
+ assert.doesNotMatch(source,/onClick=\{closeFromBackdrop\}/)
 })
 
 test('搜索弹层保留叉号按钮与 Esc（onCancel）两种关闭方式',async()=>{
  const source=await read('WorkspaceSearch.tsx')
  assert.match(source,/aria-label=\{t\('workspaceSearch\.closeAria'\)\}[^]*?onClick=\{close\}/)
  assert.match(source,/<X size=\{20\}\/>/)
- assert.match(source,/onCancel=\{event=>\{if\(busy\)event\.preventDefault\(\);else close\(\)\}\}/)
+ const shared=await read('use-dialog-dismiss.ts')
+ assert.match(shared,/onCancel:[^]*?event\.preventDefault\(\);event\.stopPropagation\(\);if\(canClose\)close\(\)/)
 })

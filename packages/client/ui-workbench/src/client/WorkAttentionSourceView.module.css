@@ -1,0 +1,3 @@
+.body{padding:20px 24px;min-width:0}
+.body>p:first-child{margin-top:0}
+@media(max-width:600px){.body{padding:20px}}

@@ -1,5 +1,6 @@
-import {readMarketIndex,readMarketIndexV2,verifyMarketIndex,marketIndexPath,MARKET_INDEX_HOST,MARKET_INDEX_MAX_BYTES,type MarketIndex,type MarketIndexV2,type MarketCatalogUpstreamSkillEntry} from '@teloa/contract'
+import {isRecord,readMarketIndex,readMarketIndexV2,verifyMarketIndex,marketIndexPath,MARKET_INDEX_HOST,MARKET_INDEX_MAX_BYTES,type MarketIndex,type MarketIndexV2,type MarketCatalogConnectorEntry,type MarketCatalogUpstreamSkillEntry} from '@teloa/contract'
 import {adoptRemoteUpstreamEntries} from './official-upstream.ts'
+import {officialCatalogIndex} from './official-catalog-snapshot.ts'
 
 /**
  * 应用拉取签名在线索引（规格 2026-09-25 §4.1；计划 功能验证）。
@@ -7,10 +8,13 @@ import {adoptRemoteUpstreamEntries} from './official-upstream.ts'
  * - 只接受 https 且主机为 market.teloa.ai，禁止重定向，索引不超过 5 MiB，用 ETag 缓存；
  * - 验签（Ed25519，覆盖 index.json 完整字节）与结构校验都通过后，原子替换内存中的在线目录；
  * - 任何一步失败整份拒绝、保留当前目录，只记一条原因，不打扰用户；
- * - 先拉本机支持的最高格式版本 v2（v2/index.json，含全部 kind 与跳过计数），下载、验签或结构任一失败回退 v1（index.json，冻结三类）。
+ * - 先拉本机支持的最高格式版本 v2（v2/index.json，含全部 kind 与跳过计数），下载、验签或结构任一失败回退 v1（index.json，冻结三类）；
+ * - 目录版本只升不降：验签与结构都通过、但 catalogVersion 早于本机随发行固定的目录或已采用的在线目录时，同样整份拒绝（照常回退 v1），
+ *   避免服务端滞后的旧索引覆盖新发行目录；版本按 YYYY.M.D[.N] 各段数值比较，不合规范的版本一律拒绝。
  *
- * 本期只把索引中的上游条目（delivery upstream）替换进浏览与添加入口：这些条目添加时按固定来源逐文件核对；
- * Teloa 官方条目（builtin / install / managed）的工件字节随发行固定，在线索引里的新官方条目应用拿不到字节，
+ * 索引中的上游条目（delivery upstream）替换进浏览与添加入口：这些条目添加时按固定来源逐文件核对；
+ * 非 stdio 连接器（managed）不需要工件字节，替换进官方连接目录，仍经受管连接添加与本人授权；快照同 id / 同服务名的条目优先。
+ * 其余 Teloa 官方条目（builtin / install、stdio 连接器）的工件字节随发行固定，在线索引里的新条目应用拿不到字节，
  * 因此结构上照样校验，但不进入列表，待下一发行随快照更新。
  */
 export type OfficialCatalogRemoteOptions={
@@ -18,6 +22,8 @@ export type OfficialCatalogRemoteOptions={
  publicKey:string
  /** 本机应用版本（semver），v2 索引按 compatibility.teloa 过滤时使用。 */
  teloaVersion:string
+ /** 本机目录版本下限；默认取随发行固定的目录快照（official-catalog-snapshot.ts）的 catalogVersion。测试注入以使用人工夹具版本。 */
+ baselineCatalogVersion?:string
  url?:string
  urlV2?:string
  fetch?:typeof fetch
@@ -38,6 +44,19 @@ class Rejected extends Error{
  constructor(message:string,status?:number){super(message);this.status=status}
 }
 const reject=(message:string,status?:number)=>new Rejected(message,status)
+
+type CatalogVersion={text:string;parts:number[]}
+/** 目录版本 YYYY.M.D 或 YYYY.M.D.N（N 为当日序号，缺省为 0）；不合规范返回 null。 */
+function parseCatalogVersion(text:string):CatalogVersion|null{
+ const match=/^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:\.(\d{1,6}))?$/.exec(text)
+ return match?{text,parts:[Number(match[1]),Number(match[2]),Number(match[3]),Number(match[4]??0)]}:null
+}
+/** 逐段数值比较（2026.10.1 晚于 2026.9.30，2026.10.1.10 晚于 2026.10.1.9），不按字符串。 */
+function compareCatalogVersion(a:CatalogVersion,b:CatalogVersion):number{
+ for(let i=0;i<4;i++){const diff=a.parts[i]!-b.parts[i]!;if(diff)return diff}
+ return 0
+}
+const snapshotCatalogVersion=isRecord(officialCatalogIndex)&&typeof officialCatalogIndex.catalogVersion==='string'?officialCatalogIndex.catalogVersion:''
 
 function validateUrl(value:string):URL{
  let url:URL
@@ -76,9 +95,14 @@ export class OfficialCatalogRemote{
  // 当前采用的格式版本；只对它带 if-none-match，避免回退 v1 后 v2 恢复时被旧 ETag 的 304 拦住而停在 v1。
  private adopted:1|2|null=null
  private index:MarketIndex|MarketIndexV2|null=null
+ // 可采用的最低目录版本：初始为本机固定目录版本，每次采用后抬升到已采用版本，只升不降。
+ private floor:CatalogVersion
  private timer:ReturnType<typeof setInterval>|null=null
  private inflight:Promise<OfficialCatalogRemoteResult>|null=null
  constructor(options:OfficialCatalogRemoteOptions){
+  const baseline=options.baselineCatalogVersion??snapshotCatalogVersion,floor=parseCatalogVersion(baseline)
+  if(!floor)throw new Error('本机目录版本不符合 YYYY.M.D[.N]：'+baseline)
+  this.floor=floor
   this.urls={1:options.url??marketIndexUrl(1),2:options.urlV2??marketIndexUrl(2)}
   this.teloaVersion=options.teloaVersion
   this.fetchImpl=options.fetch??fetch
@@ -114,14 +138,29 @@ export class OfficialCatalogRemote{
   try{parsed=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes))}catch{throw reject(label+'不是合法 JSON。')}
   let index:MarketIndex|MarketIndexV2
   try{index=version===2?readMarketIndexV2(parsed,this.teloaVersion):readMarketIndex(parsed)}catch(error){throw reject(label+'结构不合法：'+(error instanceof Error?error.message:String(error)))}
-  // 结构与签名都通过后才替换，且一次性替换（不做部分采用）：上游条目先采用成功，再记索引与 ETag，失败时状态不变。
+  // 连接器服务名是本机连接与工具公开名的命名空间，索引内重复按结构不合法整份拒绝（快照读取器同样要求唯一）。
+  const connectors=index.entries.filter((entry):entry is MarketCatalogConnectorEntry=>entry.kind==='connector')
+  if(new Set(connectors.map(entry=>entry.connector.serverName)).size!==connectors.length)throw reject(label+'结构不合法：连接器服务名重复。')
+  // 整份替换会移除旧索引没有的条目，因此只接受不早于本机固定目录与已采用目录的版本；不合并新旧条目。
+  const catalogVersion=parseCatalogVersion(index.catalogVersion)
+  if(!catalogVersion)throw reject(label+'目录版本不符合 YYYY.M.D[.N]：'+index.catalogVersion)
+  if(compareCatalogVersion(catalogVersion,this.floor)<0)throw reject(label+'目录版本 '+index.catalogVersion+' 早于本机目录 '+this.floor.text+'，不替换。')
+  // 签名确认发布身份，不能把已退出的第三方目录重新变成用户可浏览的市场渠道。
+  // 原始出处仅用于已审 Teloa 应用的许可与安装溯源；本人自建或已安装的资源不受此目录规则影响。
+  const reviewedSources=new Set(['claude-code','codex','dsh','cursor'])
+  if(index.entries.some(entry=>entry.review.reviewer!=='Teloa'||entry.delivery==='upstream'&&!reviewedSources.has(entry.origin.marketplace)))throw reject(label+'含有不符合 Teloa 官方收录规则的条目。')
+  // stdio 连接器的安装锁随发行工件逐字节固定，在线索引不带工件字节，只记数不采用。
+  const remoteConnectors=connectors.filter(entry=>entry.connector.recipe.transport!=='stdio'),stdio=connectors.length-remoteConnectors.length
+  // 结构与签名都通过后才替换，且一次性替换（不做部分采用）：上游条目与连接器先采用成功，再记索引与 ETag，失败时状态不变。
   const skipped=index.format==='teloa.market-index/v2'?index.skipped:{unknownKind:0,newerApp:0}
-  adoptRemoteUpstreamEntries(index.entries.filter((entry):entry is MarketCatalogUpstreamSkillEntry=>entry.delivery==='upstream'),skipped)
+  adoptRemoteUpstreamEntries(index.entries.filter((entry):entry is MarketCatalogUpstreamSkillEntry=>entry.delivery==='upstream'),skipped,remoteConnectors)
   this.index=index
+  this.floor=catalogVersion
   this.adopted=version
   this.etags[version]=response.headers.get('etag')
   // unknownKind 只进计数与日志（对本机永远不可用，界面不提示）；newerApp 由界面显示一行。
   if(skipped.unknownKind||skipped.newerApp)this.log('info',`v2 索引已采用：跳过未知类型 ${skipped.unknownKind} 项、需更新应用 ${skipped.newerApp} 项。`)
+  if(stdio)this.log('info',`${label}已采用：stdio 连接器 ${stdio} 项需随应用发行提供安装锁，暂不进入在线目录。`)
   return 'adopted'
  }
  /** 先拉本机支持的最高格式版本（v2）；下载、验签或结构任一失败则回退 v1，只记一条原因（v2 尚未发布的 404 记 info，其余 warn）。 */

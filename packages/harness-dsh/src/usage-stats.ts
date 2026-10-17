@@ -80,7 +80,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
  * 使用目录创建作为跨进程原子锁（POSIX 保证 mkdir 原子性）。
  * 若文件损坏/权限错误，返回 undefined（暂停统计，不重新生成）。
  */
-export async function readOrCreateInstallId(runtimeRoot: string): Promise<string | undefined> {
+export async function readOrCreateInstallId(runtimeRoot: string,options:{create?:boolean}={}): Promise<string | undefined> {
   const dir = statsDir(runtimeRoot)
   const idPath = join(dir, ID_FILE)
   const lockPath = join(dir, ID_LOCK)
@@ -107,6 +107,8 @@ export async function readOrCreateInstallId(runtimeRoot: string): Promise<string
     }
   }
 
+  // 安全归属已有持久记录时，调用方可禁止重建丢失身份。
+  if(options.create===false)return undefined
   // File doesn't exist; try to acquire lock via atomic mkdir
   await ensureDir(dir)
   try {
@@ -115,7 +117,7 @@ export async function readOrCreateInstallId(runtimeRoot: string): Promise<string
     if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
       // Another process holds the lock - wait 100ms then retry
       await new Promise<void>(resolve => setTimeout(resolve, 100))
-      return readOrCreateInstallId(runtimeRoot)
+      return readOrCreateInstallId(runtimeRoot,options)
     }
     // Unexpected error acquiring lock - suspend stats
     return undefined

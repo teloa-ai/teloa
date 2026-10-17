@@ -2,6 +2,7 @@ import type { Pool,PoolClient } from 'pg'
 import { ReferenceError,type ReferenceCatalog } from '@teloa/mcp-reference/catalog'
 import { WorkError,isRecord,promptFullTextMaxBytes,isResourceSpec,isResourceDraft,isWorkResource,resourceId,resourceScopes,resourceVersion,retrievalLimits,type ResourceSpec,type ResourceDraft,type WorkResource,type ResourceReference,type ResourceDirectory,type MessageResourceSnapshot,type ResourceContext,type SourceReference } from '@teloa/contract'
 import { normalizeRetrievalText } from './retrieval-chunker.ts'
+import {roleKnowledgeMaxReferences} from '@teloa/contract'
 export type ResourceActor={ownerId:string;kind:'human'|'agent';scopeIds:string[]}
 /** 来源适配器只接收服务端主体；事务内读取复用连接，避免嵌套借用耗尽连接池。 */
 export type ResourceSourceContext={actor:ResourceActor;client?:PoolClient;scopeIds?:string[]}
@@ -32,7 +33,7 @@ export function authorizeResourceActor(actor:ResourceActor,ownerId=actor.ownerId
 }
 function validateRoleKnowledge(actor:ResourceActor,targetScopes:string[],ids:readonly string[]):void {
   authorizeResourceActor(actor)
-  if(!resourceScopes(targetScopes)||!Array.isArray(ids)||ids.length>8||ids.some(id=>!resourceId(id))||new Set(ids).size!==ids.length)throw badInput()
+  if(!resourceScopes(targetScopes)||!Array.isArray(ids)||ids.length>roleKnowledgeMaxReferences||ids.some(id=>!resourceId(id))||new Set(ids).size!==ids.length)throw badInput()
 }
 function expected(input:Record<string,unknown>,key:string):{id:string;version:number}{
   if(!resourceId(input[key])||!resourceVersion(input.expectedVersion))throw badInput()

@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {openDetail,closeDetail,retainDetailForSession,activeDetailTarget,artifactDetailTarget,artifactPanelTarget,conversationLedgerNeeded,type WorkbenchDetailState,type WorkbenchDetailTarget} from '../src/client/workbench-detail-target.ts'
+import {openDetail,closeDetail,retainDetailForSession,activeDetailTarget,artifactDetailTarget,artifactPanelTarget,conversationLedgerNeeded,workbenchDetailSession,type WorkbenchDetailState,type WorkbenchDetailTarget} from '../src/client/workbench-detail-target.ts'
 import type {ArtifactSourceRef} from '../src/client/artifact-preview.ts'
 import {readFile} from 'node:fs/promises'
+import ts from 'typescript'
 
 const closed:WorkbenchDetailState={open:false,target:null}
 // 固定版本必须带成果身份，不能静默丢掉孤立的 version。
@@ -71,17 +72,34 @@ test('成果转换保留全部来源身份和固定版本，非成果目标不�
  assert.equal(artifactPanelTarget({kind:'directory-object',view:'tasks',id:'t1',source:{kind:'directory'}}),null)
 })
 
+test('显式整理意图沿唯一详情目标进入成果面板，普通查看不自动整理',()=>{
+ const source={kind:'session' as const,id:'original-session'}
+ assert.deepEqual(artifactPanelTarget(artifactDetailTarget(source,undefined,source.id,undefined,'prepare')),{source,initialAction:'prepare'})
+ assert.deepEqual(artifactPanelTarget(artifactDetailTarget(source)),{source})
+})
+
+test('任务、群和业务中的原会话成果独立呈现；原生会话以显式当前上下文隔离',()=>{
+ const ref={id:'original-artifact',version:1},source={kind:'session' as const,id:'origin'}
+ const state=openDetail(closed,artifactDetailTarget(source,ref))
+ assert.equal(activeDetailTarget(state,workbenchDetailSession(state,'main',true)),null)
+ assert.deepEqual(activeDetailTarget(state,workbenchDetailSession(state,'main',false)),state.target)
+ const linked=openDetail(closed,artifactDetailTarget(source,ref,'main','files'))
+ assert.deepEqual(activeDetailTarget(linked,'main'),linked.target)
+ assert.equal(activeDetailTarget(linked,'other'),null)
+ assert.deepEqual(artifactPanelTarget(linked.target),{source,artifact:ref,initialView:'files'})
+})
+
 test('Frame 只从唯一目标呈现宿主，成果关闭保留目标与组件草稿',async()=>{
  const frame=await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
  const panel=await readFile(new URL('../src/client/ArtifactPanel.tsx',import.meta.url),'utf8')
- assert.match(frame,/activeDetailTarget\(state\.detail,current\)/)
+ assert.match(frame,/activeDetailTarget\(state\.detail,detailSession\)/)
  assert.doesNotMatch(frame,/\[artifactTarget,setArtifactTarget\]|\[businessPanel,setBusinessPanel\]|\[objectPanelOpen,setObjectPanelOpen\]|state\.detailsOpen|state\.producedFile/)
  // 右栏是否占位改由 DSH 自己报上来的 rightbar 切片决定，不再借用详情目标表达呈现。
  assert.match(frame,/railShown&&css\.detailsOpen/)
  assert.doesNotMatch(frame,/railShown&&<div/)
  assert.match(frame,/open=\{artifactOpen\}/)
  assert.match(panel,/open = true/)
- assert.match(panel,/\[open, !!target\]/)
+ assert.match(panel,/\[open, targetKey, inline, expanded, portal\]/)
 })
 
 // 回归：刷新后落在会话页、页签由 state.detail 重开，而任务与岗位台账只在四个目录视图上装载，
@@ -106,7 +124,11 @@ test('Frame 的任务 / 岗位 / 安全待处理台账装载都接上会话页�
  assert.match(frame,/const conversationLedger=conversationLedgerNeeded\(state\.view,state\.messageMode,state\.detail\)/)
  for(const load of ['loadSecurityAttention','loadTasks','loadRoles']){
   // 判据要同时进条件与依赖：只改条件，装载不会因为详情打开而重跑。
-  assert.match(frame,new RegExp("includes\\(state\\.view\\)\\|\\|conversationLedger\\)void "+load+"\\("),load+' 的装载条件没有接上会话页判据')
-  assert.match(frame,new RegExp(load+"[^\\n]*\\},\\[state\\.view,conversationLedger,"),load+' 的依赖里缺会话页判据')
+  assert.match(frame,new RegExp("includes\\(state\\.view\\)\\|\\|(?:state\\.view==='messages'&&state\\.messageMode==='groups'\\|\\|)?conversationLedger\\)void "+load+"\\("),load+' 的装载条件没有接上会话页判据')
+  const file=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),effects:ts.CallExpression[]=[]
+  const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&node.expression.getText(file)==='useEffect'&&node.arguments[0]?.getText(file).includes(load+'('))effects.push(node);ts.forEachChild(node,visit)}
+  visit(file);assert.equal(effects.length,1,load+' 只有一份装载effect')
+  const dependencies=effects[0]!.arguments[1];assert.ok(dependencies&&ts.isArrayLiteralExpression(dependencies))
+  assert.ok(dependencies.elements.some(node=>node.getText(file)==='conversationLedger'),load+' 的依赖里缺会话页判据')
  }
 })

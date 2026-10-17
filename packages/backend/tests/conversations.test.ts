@@ -19,6 +19,24 @@ async function fixture() {
   const service=new ConversationService(repository,host,identity)
   return {path,created,existing,host,identity,repository,service,failOnce:()=>{failures=1}}
 }
+
+test('未绑定的内部执行身份不能由普通 ensure 或 adopt 接入，保留原执行入口',async()=>{
+ const f=await fixture()
+ for(const sessionId of ['task-run-12345678-1234-4234-8234-123456789012','group-routing-12345678-1234-5234-a234-123456789012']){
+  f.existing.add(sessionId)
+  await assert.rejects(f.service.ensure(owner,{sessionId}),{code:'teloa/session-not-adoptable'})
+  await assert.rejects(f.service.adopt(owner,{sessionId,...request}),{code:'teloa/session-not-adoptable'})
+ }
+ assert.deepEqual(await f.repository.read(),[])
+})
+
+test('历史误接入的内部身份不进入普通目录，原记录仍保留供原执行入口读取',async()=>{
+ const f=await fixture(),sessionId='group-routing-12345678-1234-5234-a234-123456789012'
+ await f.repository.write([{id:'legacy-route',ownerId:owner,title:'内部路由记录',scopeIds:['general'],version:1,status:'ready',sessionId,requestedSessionId:sessionId,createdAt:f.identity.now(),requestId:request.requestId}])
+ assert.deepEqual(await f.service.list(owner,{}),[])
+ assert.equal((await f.repository.read()).length,1)
+ assert.equal((await f.service.bySession(owner,sessionId)).sessionId,sessionId)
+})
 test('并发双击只创建一个工作会话，使用宿主返回的权威身份',async()=>{
   const f=await fixture()
   const [a,b]=await Promise.all([f.service.create(owner,request),f.service.create(owner,request)])

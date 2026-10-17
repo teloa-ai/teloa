@@ -30,7 +30,7 @@ export function IndustryResourceBrowser<T extends Resource>({resources,render,st
  return <div className={showCategories?css.browser:css.browserWithoutTree}>
   {showCategories&&<div className={css.tree} role="group" aria-label={t('market.industry.browser.categories')}>
    <button type="button" aria-label={t('market.industry.browser.allCount',{count:resources.length})} aria-pressed={kind==='all'} onClick={()=>setKind('all')}><Boxes size={15}/>{t('common.all')} · {resources.length}</button>
-   {industryBrowserGroups.map(group=><details key={group.title} open><summary>{t(group.title)}</summary>{group.kinds.map(value=>{const label=kindLabel(value)+' · '+count(value);return <button type="button" key={value} aria-label={label} aria-pressed={kind===value} onClick={()=>setKind(value)}>{label}</button>})}</details>)}
+   {industryBrowserGroups.map(group=><section key={group.title}><h4>{t(group.title)}</h4>{group.kinds.map(value=>{const label=kindLabel(value)+' · '+count(value);return <button type="button" key={value} aria-label={label} aria-pressed={kind===value} onClick={()=>setKind(value)}>{label}</button>})}</section>)}
   </div>}
   <div className={css.main}>
    <div className={css.toolbar}><strong>{title??(kind==='all'?t('market.industry.browser.allResources'):kindLabel(kind))} · {rows.length}</strong><input aria-label={t('market.industry.browser.searchAria')} placeholder={t('market.industry.browser.search')} value={query} onChange={event=>setQuery(event.target.value)}/></div>
@@ -40,7 +40,7 @@ export function IndustryResourceBrowser<T extends Resource>({resources,render,st
      {!rows.length&&<p className={css.empty}>{query?t('market.industry.browser.noMatch'):t('market.industry.browser.emptyKind',{kind:kind==='all'?t('market.industry.browser.resources'):kindLabel(kind)})}</p>}
     </div>
     <section className={css.preview} aria-label={t('market.industry.browser.preview')}>
-     {selected?<><header><span>{kindLabel(selected.kind)}</span><strong>{selected.title}</strong><small>v{selected.version} · {status(selected)}</small></header><div className={css.body}>{render(selected)}</div></>:<div className={css.previewEmpty}><strong>{t('market.industry.browser.select')}</strong><p>{t('market.industry.browser.selectHelp')}</p></div>}
+     {selected?<><header><span>{kindLabel(selected.kind)}</span><strong>{selected.title}</strong><small>v{selected.version} · {status(selected)}</small></header><div className={css.body} data-resource-id={selected.id}>{render(selected)}</div></>:<div className={css.previewEmpty}><strong>{t('market.industry.browser.select')}</strong><p>{t('market.industry.browser.selectHelp')}</p></div>}
     </section>
    </div>
   </div>

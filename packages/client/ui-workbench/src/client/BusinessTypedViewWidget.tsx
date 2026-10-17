@@ -1,4 +1,4 @@
-import {readBusinessViewWidgetResultV2,type BusinessConfigurationViewRefVersioned,type BusinessViewResultV2,type BusinessViewWidgetResultV2,type BusinessWidgetDefinition} from '@teloa/contract'
+import {businessObjectReference,readBusinessViewWidgetResultV2,type BusinessObjectReference,type BusinessConfigurationViewRefVersioned,type BusinessViewResultV2,type BusinessViewWidgetResultV2,type BusinessWidgetDefinition} from '@teloa/contract'
 import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessMeasureLabel,localizedBusinessViewTitle} from './business-definition-localization.js'
 import {useI18n,type I18nValue} from './i18n/provider.js'
 import css from './BusinessTypedViewWidget.module.css'
@@ -66,11 +66,16 @@ function checkedView(widget:BusinessWidgetDefinition,result:unknown,refs:readonl
  }catch{return undefined}
 }
 
-function ExactTable({view,format}:{view:BusinessViewResultV2;format:I18nValue}){
+function ExactTable({view,format,openRecord}:{view:BusinessViewResultV2;format:I18nValue;openRecord?:((reference:BusinessObjectReference)=>void)|undefined}){
  return <div className={css.tableWrap}><table className={css.table}>
   <caption>{view.title}</caption>
   <thead><tr><th scope="col">{view.title}</th>{view.measures.map(measure=><th scope="col" key={measure.id}>{measure.label}{measure.currency&&<> ({measure.currency})</>}</th>)}</tr></thead>
-  <tbody>{view.rows.map((row,position)=><tr key={row.dimension}><th scope="row">{view.chart==='pie'&&<span className={css.swatch} data-series={position%4} aria-hidden="true"/>}{row.label||row.dimension}</th>{view.measures.map((measure,index)=><td key={measure.id}>{valueText(row.values[index]??null,measure,format)}</td>)}</tr>)}</tbody>
+  <tbody>{view.rows.map((row,position)=>{
+   const object=view.kind==='list'?view.objects?.[position]:undefined,title=object?.title||row.label||row.dimension
+   let reference:BusinessObjectReference|undefined
+   try{if(object)reference=businessObjectReference({scope:view.scope,type:view.objectType,id:object.id,version:object.version,snapshotHash:object.snapshotHash})}catch{/* 无合法固定来源的行只读展示，不推断 latest。 */}
+   return <tr key={row.dimension}><th scope="row">{view.chart==='pie'&&<span className={css.swatch} data-series={position%4} aria-hidden="true"/>}{reference&&openRecord?<button type="button" className={dashboardCss.drill} onClick={()=>openRecord(reference)}>{title}</button>:title}</th>{view.measures.map((measure,index)=><td key={measure.id}>{valueText(row.values[index]??null,measure,format)}</td>)}</tr>
+  })}</tbody>
  </table></div>
 }
 
@@ -98,8 +103,8 @@ function Plot({view,measure,index}:{view:BusinessViewResultV2;measure:Measure;in
  </section>
 }
 
-/** 类型化结果独立于旧数字 widget；仅消费声明图形，不宣称或创建下钻入口。 */
-export function BusinessTypedViewWidget({widget,result,viewRefs}:{widget:BusinessWidgetDefinition;result:BusinessViewWidgetResultV2|undefined;viewRefs:readonly BusinessConfigurationViewRefVersioned[]|undefined}){
+/** 类型化结果只在正式清单具备固定记录身份时打开原记录；统计维度与候选预览不冒充记录。 */
+export function BusinessTypedViewWidget({widget,result,viewRefs,openRecord}:{widget:BusinessWidgetDefinition;result:BusinessViewWidgetResultV2|undefined;viewRefs:readonly BusinessConfigurationViewRefVersioned[]|undefined;openRecord?:((reference:BusinessObjectReference)=>void)|undefined}){
  const format=useI18n(),{t,locale,list,dateTime}=format,title=localizedBusinessViewTitle(widget,locale)
  const selected=checkedView(widget,result,viewRefs)
  if(!selected)return <><h3>{title}</h3><p className={dashboardCss.failed} role="alert" data-widget-failed={widget.id}>{t('business.dashboards.error.corrupt')}</p></>
@@ -112,7 +117,7 @@ export function BusinessTypedViewWidget({widget,result,viewRefs}:{widget:Busines
   {currencies.length>1&&<p className={dashboardCss.note} data-typed-currencies>{t('business.typed.currencies',{currencies:list(currencies)})}</p>}
   {view.chart==='number'?<div className={css.metric}><strong>{valueText(view.rows[0]?.values[0]??null,view.measures[0]!,format)}</strong><span>{view.measures[0]!.label}</span></div>:<>
    {view.chart!=='table'&&view.measures.map((measure,index)=><Plot key={measure.id} view={view} measure={measure} index={index}/>)}
-   <ExactTable view={view} format={format}/>
+   <ExactTable view={view} format={format} openRecord={openRecord}/>
   </>}
   {!view.rows.length&&<p className={dashboardCss.note}>{t('business.ledger.empty.objects')}</p>}
   <p className={dashboardCss.note} data-typed-null>{t('business.typed.null')}</p>

@@ -5,7 +5,6 @@ import test from 'node:test'
 const sources=await Promise.all([
   'MarketPage.tsx',
   'CapabilityBindings.tsx',
-  'market-page-guidance.ts',
   'capability-preview.ts',
 ].map(file=>readFile(new URL('../src/client/'+file,import.meta.url),'utf8')))
 const relatedMarketCopy=(await Promise.all([
@@ -19,16 +18,15 @@ const relatedMarketCopy=(await Promise.all([
 ].map(file=>readFile(new URL('../src/client/'+file,import.meta.url),'utf8')))).join('\n')
 
 test('市场把底层草案状态翻译成用户可操作的能力使用方案',()=>{
-  const [market,,guidance]=sources
+  const [market]=sources
   assert.match(market!,/market\.intent\.awaitingConfiguration/)
   assert.doesNotMatch(market!,/配置草案/)
-  assert.doesNotMatch(guidance!,/配置草案/)
   assert.doesNotMatch(relatedMarketCopy,/配置草案/)
-  assert.match(guidance!,/待应用方案/)
+  assert.doesNotMatch(market!,/market-page-guidance|MarketUsageJourney/,'退场的教学页不回到市场')
 })
 
 test('能力绑定用模拟动作表达示例流程，不把演示应用写成真实状态',()=>{
-  const [,bindings,,preview]=sources
+  const [,bindings,preview]=sources
   assert.match(bindings!,/>\{t\('capability\.action\.activate',\{version:versionNumber\}\)\}<\/button>/)
   assert.match(bindings!,/<strong>\{t\('capability\.demo\.label'\)\}<\/strong>/)
   assert.doesNotMatch(bindings!,/演示应用/)

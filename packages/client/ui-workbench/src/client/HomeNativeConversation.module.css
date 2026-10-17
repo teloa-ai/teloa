@@ -15,3 +15,5 @@
 @media(max-width:740px){.homeConversation{height:410px}}
 
 .homeConversation[hidden],.body[hidden]{display:none}
+/* 原生 main 仍保留同一份草稿；首页没有详情栏，不暴露它的展开入口。 */
+:global([data-teloa-home]) :global([data-sidebar-right-expand]){display:none}

@@ -1,0 +1,35 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-api-session-controller",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "api": [
+    "requireInputAdmission()",
+    "installInputAdmission(policy)"
+  ],
+  "apiVersion": "teloa.session-controller-input-admission/v1",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "a9801acb577b03053c5d5a3191ff555c5f1d791d0acddec113bea4511e33b386",
+      "afterSha256": "aa8a245fca27f57dc740743e6546d84c9e13bf90787861db91e1ef8afd6b1ccf"
+    },
+    {
+      "path": "lib/types/index.d.ts",
+      "beforeSha256": "add6ff54e3060811e94c79bb6a82e7d16b3e14cad98c658ea811fb025aaadde4",
+      "afterSha256": "86d63f87ca8dda9f8c9f2dc356dd76c61de041735cb2b0420ecb0e3bfa89de8a"
+    }
+  ],
+  "patchSha256": "0bd7ddb18025fa5d7b36a27a8389aa5aceb988bec489ba8c597bee09e76b92e4",
+  "scope": [
+    "Free without a policy or requirement preserves the original prompt and queue paths.",
+    "Managed prompt serializes only the same exact Agent and rpcId, checking original accepted receipt after waiting and before publication.",
+    "Immutable exact prompt candidates are built after attachments await; managed queue-edit rechecks the exact previous item and target before replacement.",
+    "The publisher callback dispatch is synchronous and single-use during the awaited policy; NativeWorkInput supplies the final exact-payload admission.",
+    "Managed queue-steer is deliberately unavailable until a separate trusted accepted-input continuation is implemented; the old item is retained.",
+    "Seed/fork/replay and subagent initial composition are outside this patch.",
+    "The admission holder is immutable at runtime and shared by scoped service receivers.",
+    "Managed old-receipt lookup verifies the owned exact Agent/Session and excludes inherited user history; Free keeps the original upstream receipt semantics."
+  ]
+}

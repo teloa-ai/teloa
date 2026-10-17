@@ -9,7 +9,8 @@ import type {BusinessDefinitionSourceReader} from './business-definition-source.
 import {lockBusinessRuntime,type BusinessRuntimeService} from './business-runtime.ts'
 import type {BusinessSpaceService} from './business-spaces.ts'
 import {readBusinessObjectSnapshot,businessObjectSnapshotHash} from './business-data.ts'
-import {assertBusinessRecordFieldValue} from './business-record-values.ts'
+import {inspectBusinessTemplateUpgradeImpact} from './business-dashboard-resource-upgrade.ts'
+import {businessDataRevision} from './business-data.ts'
 import {BusinessScopeService} from './business-scopes.ts'
 import {assertBusinessConfigurationUniqueRecords} from './business-record-constraints.ts'
 
@@ -25,14 +26,24 @@ function authorize(actor:BusinessConfigurationActor,scope?:string){
 }
 const cancelled=(signal?:AbortSignal)=>signal?.throwIfAborted()
 /** 检查所有固定历史，归档不免除迁移约束；绝不改写快照。 */
-async function assertCompatibleRecords(db:PoolClient,ownerId:string,candidate:BusinessConfigurationCandidate|BusinessConfigurationCandidateV2,current:BusinessConfigurationCurrent|undefined,signal?:AbortSignal){
+export async function inspectBusinessConfigurationRecordImpact(db:PoolClient,ownerId:string,candidate:BusinessConfigurationCandidate|BusinessConfigurationCandidateV2,current:BusinessConfigurationCurrent|undefined,signal?:AbortSignal){
  const previous=new Map((current?.leaves??[]).filter(leaf=>leaf.kind==='object-type').map(leaf=>[leaf.localId,JSON.parse(leaf.body) as BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2]))
+ const before=current?{...current.manifest,definitions:current.leaves.map(leaf=>({kind:leaf.kind,definition:JSON.parse(leaf.body)}))} as typeof candidate:undefined
+ const impact=inspectBusinessTemplateUpgradeImpact({current:before,candidate,records:[]})
+ const affected=new Set<string>(),counts=new Map<string,Set<string>>()
  const next=new Map(candidate.definitions.filter(item=>item.kind==='object-type').map(item=>[item.definition.id,item.definition as BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2]))
  const migrate=()=>new WorkError('teloa/conflict','配置变化与已有历史记录不兼容，需要先迁移数据。')
  let cursor:[string,string,number]|undefined
  for(;;){
  cancelled(signal)
  const rows=(await db.query('select object_type,object_id,object_version,snapshot_hash,snapshot,source_id from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2'+(cursor?' and (object_type,object_id,object_version)>($3,$4,$5)':'')+' order by object_type,object_id,object_version limit 200',[ownerId,candidate.scope,...(cursor??[])])).rows
+ const syncObjectIds=[...new Set(rows.filter(row=>row.source_id!==previous.get(row.object_type)?.sourceId).map(row=>row.object_id))]
+ const knownSyncSources=new Set<string>()
+ // 本地记录无需同步表；仅按页批量核对执行来源，精简初始化不能因此失效。
+ if(syncObjectIds.length&&(await db.query("select to_regclass('teloa_business_sync_object_ids') is not null as available")).rows[0].available){
+  const sources=(await db.query('select object_type,object_id,source_id from teloa_business_sync_object_ids where owner_id=$1 and scope_id=$2 and object_id=any($3::text[])',[ownerId,candidate.scope,syncObjectIds])).rows
+  for(const source of sources)knownSyncSources.add(JSON.stringify([source.object_type,source.object_id,source.source_id]))
+ }
  for(const row of rows){
   let snapshot:ReturnType<typeof readBusinessObjectSnapshot>
   try{
@@ -40,18 +51,23 @@ async function assertCompatibleRecords(db:PoolClient,ownerId:string,candidate:Bu
    if(snapshot.type!==row.object_type||snapshot.id!==row.object_id||snapshot.version!==row.object_version||businessObjectSnapshotHash(snapshot)!==row.snapshot_hash)throw Error()
   }catch{throw new WorkError('teloa/storage-corrupt','固定业务对象快照身份或摘要损坏。')}
   const old=previous.get(snapshot.type),definition=next.get(snapshot.type)
-  if(!old||!definition||old.sourceId!==definition.sourceId||row.source_id!==old.sourceId)throw migrate()
-  for(const field of old.fields){
-   const changed=definition.fields.find(value=>value.name===field.name)
-   if(!changed||changed.from!==field.from||changed.type!==field.type||('referenceType' in changed?changed.referenceType:undefined)!==('referenceType' in field?field.referenceType:undefined)||('values' in field&&field.values?.some(value=>!('values' in changed)||!changed.values?.includes(value))))throw migrate()
-  }
-  for(const field of definition.fields){
-   try{assertBusinessRecordFieldValue(field,snapshot.fields.find(value=>value.label===field.from)?.value)}catch{throw migrate()}
+  // 同步成果保留执行来源，不能要求它等于对象类型的声明来源；仅接受同一原对象的固定同步归属。
+  if(old&&definition&&(row.source_id!==old.sourceId&&!knownSyncSources.has(JSON.stringify([row.object_type,row.object_id,row.source_id]))))throw migrate()
+  const checked=inspectBusinessTemplateUpgradeImpact({current:before,candidate,records:[snapshot]})
+  if(checked.blocked)affected.add(JSON.stringify([snapshot.type,snapshot.id]))
+  for(const field of checked.fields){
+   const key=JSON.stringify([field.objectType,field.field,field.reason])
+   if(!impact.fields.some(row=>JSON.stringify([row.objectType,row.field,row.reason])===key))impact.fields.push({...field,affectedRecords:0})
+   if(field.affectedRecords){const ids=counts.get(key)??new Set<string>();ids.add(JSON.stringify([snapshot.type,snapshot.id]));counts.set(key,ids)}
   }
  }
  if(rows.length<200)break
  const last=rows[rows.length-1]!;cursor=[last.object_type,last.object_id,last.object_version]
  }
+ impact.affectedRecords=affected.size;impact.blocked=affected.size>0
+ for(const field of impact.fields)field.affectedRecords=counts.get(JSON.stringify([field.objectType,field.field,field.reason]))?.size??0
+ return impact
+
 }
 /** 本人请求锁 → 配置锁 → 草案/head → 本人空间 → runtime → scope行 → 叶子。 */
 export class BusinessConfigurationService{
@@ -100,7 +116,7 @@ export class BusinessConfigurationService{
    if(versioned&&(!reader.forConfigurationCandidateVersioned||!reader.forScopeVersioned))throw new WorkError('teloa/dependency-unavailable','富字段配置读取尚未接入，草案已保留。')
    const current=await this.dependencies.store.currentInTransaction(db,actor.ownerId,draft.scope)
    if(draft.status!=='draft'||draft.revision!==row.expectedRevision||draft.baseVersion!==row.expectedBaseVersion||draft.baseVersion!==(current?.version??0))throw conflict()
-   if(!verifiesBusinessConfigurationPreviewReceipt(row.previewReceipt,{ownerId:actor.ownerId,draftId,scope:draft.scope,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash:businessConfigurationDependencyHash(current)}))throw new WorkError('teloa/conflict','请由本人重新预览当前业务配置后采用。',{reason:'preview-receipt-invalid'})
+   if(!verifiesBusinessConfigurationPreviewReceipt(row.previewReceipt,{ownerId:actor.ownerId,draftId,scope:draft.scope,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash:businessConfigurationDependencyHash(current,await businessDataRevision(db,actor.ownerId,draft.scope))}))throw new WorkError('teloa/conflict','请由本人重新预览当前业务配置后采用。',{reason:'preview-receipt-invalid'})
    if(versioned)await reader.forConfigurationCandidateVersioned!(db,actor.ownerId,draft.candidate)
    else await reader.forConfigurationCandidate(db,actor.ownerId,draft.candidate)
    await assertBusinessConfigurationUniqueRecords(db,actor.ownerId,draft.candidate,signal)
@@ -112,7 +128,8 @@ export class BusinessConfigurationService{
     if(!inserted.created)throw new WorkError('teloa/conflict','业务范围已登记，不能自动接管。')
    }
    await this.dependencies.runtime.registerInTransaction(db,actor.ownerId,draft.scope);cancelled(signal)
-   await assertCompatibleRecords(db,actor.ownerId,draft.candidate,current,signal)
+   const impact=await inspectBusinessConfigurationRecordImpact(db,actor.ownerId,draft.candidate,current,signal)
+   if(impact.blocked)throw new WorkError('teloa/conflict','配置变化与已有历史记录不兼容，需要先迁移数据。',{reason:'template-record-impact',impact})
    const now=this.identity.now(),refs=[]
    for(const item of draft.candidate.definitions){
     cancelled(signal)

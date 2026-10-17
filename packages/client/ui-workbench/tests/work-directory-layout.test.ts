@@ -4,7 +4,11 @@ import {readFile} from 'node:fs/promises'
 import {mount,nodes} from './market-component-harness.ts'
 import {BindingClient,type WorkPort} from '../src/client/binding-client.ts'
 import type {Conversation} from '@teloa/contract'
+import * as dialogueOrganization from '../src/client/dialogue-organization.ts'
+import * as dialogueCopy from '../src/client/dialogue-copy.ts'
 import * as presentation from '../src/client/work-presentation.ts'
+
+const dialogueModules={'./dialogue-organization.js':{...dialogueOrganization,browserDialogueOrganization:()=>{const data=new Map<string,string>();return dialogueOrganization.createDialogueOrganization({getItem:key=>data.get(key)??null,setItem:(key,value)=>{data.set(key,value)}})}},'./dialogue-copy.js':dialogueCopy}
 
 const root=new URL('../src/client/',import.meta.url)
 const read=(name:string)=>readFile(new URL(name,root),'utf8')
@@ -19,7 +23,7 @@ async function openedDirectory(){
   await work.select('B');await work.refreshDirectory()
   function ConversationActions(){}
   function ConversationActionMenu(){}
-  const page=mount('WorkDirectory.tsx',{'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':presentation,'./conversation-search.js':{searchPhase:()=> 'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en',dateTime:()=> '10/07'})},'./i18n/errors.js':{localizeWorkError:(_locale:string,error:unknown)=>error instanceof Error?error.message:String(error)},'./ConversationActions.js':{ConversationActions,ConversationActionMenu}})
+  const page=mount('WorkDirectory.tsx',{...dialogueModules,'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':presentation,'./conversation-search.js':{searchPhase:()=> 'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en',dateTime:()=> '10/07'})},'./i18n/errors.js':{localizeWorkError:(_locale:string,error:unknown)=>error instanceof Error?error.message:String(error)},'./ConversationActions.js':{ConversationActions,ConversationActionMenu}})
   const props={work,management:{subscribe:noop,getSnapshot:()=>({ready:true,baseline:true,workspaces:[],archived:[],pending:{}})},search:{subscribe:noop,getSnapshot:()=>({items:[]})},current:'B',useSessions:(select:any)=>select({byId:{A:{id:'A',title:'A',running:false,blank:false,updatedAt:Date.parse('2026-10-07T00:00:00Z')}},ids:['A']}),onOpened:()=>{mode='native'},focusRequest:0,onClose:()=>{},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]})},selectedGroup:undefined,openGroup:()=>{},createGroup:()=>{}}
   const render=()=>page.render('WorkDirectory',props)
   const click=()=>{const row=nodes(render()).find(node=>node.props['data-session-id']==='A')!;const button=nodes(row).find(node=>node.type==='button'&&node.props.className==='open')!;assert.equal(button.props.disabled,false);button.props.onClick()}
@@ -67,21 +71,23 @@ test('目录副本打开以真实回执恢复，abort 或较新选择不能确�
   }
 })
 
-test('目录头精简为新建，单聊与群共用一条列表，搜索与管理动作保持统一',()=>{
+test('目录不重复标题说明，搜索、新建与筛选同行，单聊与群共用一条列表',()=>{
   const calls:string[]=[],noop=()=>()=>{},snapshot={status:'ready',rows:[]},managed={ready:true,baseline:true,workspaces:[{workspaceId:'ws',title:'Docs',path:'/docs',sessionIds:[]}],archived:[],pending:{}}
   function DirectoryFilterPopover(){}
-  const page=mount('WorkDirectory.tsx',{'./DirectoryFilterPopover.js':{DirectoryFilterPopover},'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':{presentConversations:()=>[],organizeConversations:()=>[]},'./search-phase.js':{searchPhase:()=> 'idle'},'./conversation-search.js':{searchPhase:()=> 'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]}})
+  const page=mount('WorkDirectory.tsx',{...dialogueModules,'./DirectoryFilterPopover.js':{DirectoryFilterPopover},'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':{presentConversations:()=>[],organizeConversations:()=>[]},'./search-phase.js':{searchPhase:()=> 'idle'},'./conversation-search.js':{searchPhase:()=> 'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]}})
   const props={work:{subscribe:noop,getDirectorySnapshot:()=>snapshot,refreshDirectory:()=>calls.push('refresh-conversations')},management:{subscribe:noop,getSnapshot:()=>managed},search:{subscribe:noop,getSnapshot:()=>({items:[]})},current:undefined,useSessions:(select:any)=>select({byId:{},ids:[]}),onOpened:()=>{},focusRequest:0,onClose:()=>calls.push('close'),groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]}),refresh:()=>calls.push('refresh-groups')},selectedGroup:undefined,openGroup:()=>{},createGroup:()=>calls.push('new-group'),onCreateConversation:()=>calls.push('new-conversation'),creating:false}
   let tree=page.render('WorkDirectory',props)
-  const header=nodes(tree).find(node=>node.type==='header')!
-  assert.equal(nodes(header).filter(node=>node.type==='summary').length,1)
-  assert.equal(nodes(header).some(node=>node.children.includes('workDirectory.refresh')),false)
-  assert.equal(nodes(header).some(node=>node.children.includes('workDirectory.close')),false)
-  nodes(header).find(node=>node.type==='button'&&node.children.includes('navigation.newConversation'))!.props.onClick()
-  nodes(header).find(node=>node.type==='button'&&node.children.includes('collaboration.action.new'))!.props.onClick()
+  assert.equal(nodes(tree).some(node=>node.type==='h2'),false)
+  assert.equal(nodes(tree).some(node=>node.children.includes('conversationDirectory.subtitle')),false)
   const searchRow=nodes(tree).find(node=>node.props.className==='searchRow')!
   assert.ok(nodes(searchRow).some(node=>node.type==='input'&&node.props['aria-label']==='workDirectory.search.aria'))
-  const filter=nodes(searchRow).find(node=>node.type===DirectoryFilterPopover)!
+  const add=nodes(searchRow).find(node=>node.type===DirectoryFilterPopover&&node.props.label==='conversationDirectory.new')!
+  assert.ok(add);assert.equal(add.props.closeOnSelect,true)
+  nodes(add).find(node=>node.type==='button'&&node.children.includes('navigation.newConversation'))!.props.onClick()
+  nodes(add).find(node=>node.type==='button'&&node.children.includes('collaboration.action.new'))!.props.onClick()
+  assert.ok(nodes(add).find(node=>node.type==='button'&&node.children.includes('workDirectory.adopt')))
+  assert.equal(nodes(tree).some(node=>node.type==='footer'),false)
+  const filter=nodes(searchRow).find(node=>node.type===DirectoryFilterPopover&&node.props.label==='conversationDirectory.filters')!
   assert.equal(filter.props.label,'conversationDirectory.filters')
   nodes(filter).find(node=>node.type==='button'&&node.children.includes('workDirectory.refresh'))!.props.onClick()
   nodes(filter).find(node=>node.type==='button'&&node.children.includes('workDirectory.close'))!.props.onClick()
@@ -100,7 +106,7 @@ test('目录头精简为新建，单聊与群共用一条列表，搜索与管�
 test('同一目录中的群和一对一仍打开各自真实通道，群详情复用目录并保留授权面',async()=>{
  const [directory,frame,group,collaboration]=await Promise.all([read('WorkDirectory.tsx'),read('WorkbenchFrame.tsx'),read('SavedCollaborationPage.tsx'),read('CollaborationPage.tsx')])
  assert.doesNotMatch(directory,/className=\{css\.section\} aria-label=\{t\('conversationDirectory\.(direct|groups)'\)\}/)
- assert.match(directory,/unifiedRows\.map\(entry=>/)
+ assert.match(directory,/const typedRows=unifiedRows\.filter\(entry=>directoryType===/);assert.match(directory,/\.map\(renderEntry\)/)
  assert.match(directory,/await work\.openConversation\(row\)/)
  assert.match(directory,/onClick=\{\(\)=>openGroup\(group\.id\)\}/)
  assert.match(frame,/const openSavedGroup=.*?setGroupCreateRequest\(0\);actions\.openGroupTopic\(id,''\)/)
@@ -108,8 +114,8 @@ test('同一目录中的群和一对一仍打开各自真实通道，群详情�
  assert.doesNotMatch(frame,/shell\.messageType\.(ai|group)/)
  assert.match(group,/!conversationDirectory&&<aside className=\{css\.directory\}/)
  assert.match(group,/api\.changeAgentGrant\(group\.id,role\.id,group\.version,role\.version,'save',selectedResources,canPost,canAutoRun\)/)
- assert.match(group,/void reloadSelected\(\);void refreshDirectory\(\)/)
- assert.match(group,/scheduleGroupMessageRefresh\(\(\)=>reloadSelected\(selected\)\)/)
+ assert.match(group,/void \(group\?reloadSelected\(\):loadGroup\(selected,selectedRoot\.current\)\);void refreshDirectory\(\)/)
+ assert.match(group,/scheduleGroupMessageRefresh\(async\(\)=>\{await initialGroupRead\.current;if\(selectedGroup\.current===selected\)await refreshSelected\.current\(selected\)\}\)/)
  assert.match(collaboration,/key=\{persistence\.directory\?props\.target\?\.groupId:undefined\}/)
 })
 
@@ -125,7 +131,7 @@ test('对话目录根态只提示选择，点具体条目后才切换到原生�
 
 test('会话列表把标题和时间放在首行，不为每条记录重复类型标签',async()=>{
   const source=await read('WorkDirectory.tsx')
-  assert.match(source,/<span className=\{css\.rowTop\}><strong>\{title\}<\/strong><time/)
+  assert.match(source,/<span className=\{css\.rowTop\}><strong>\{displayTitle\}<\/strong><time/)
   const rows=source.slice(source.indexOf('<div className={clsx(css.rows'),source.indexOf('</div>',source.indexOf('<div className={clsx(css.rows'))+6)
   assert.doesNotMatch(rows,/t\('workDirectory\.conversation'\)/)
 })

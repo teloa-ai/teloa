@@ -9,6 +9,7 @@ import {Context} from '@deepseek-ai/cordis'
 import type {PluginInfo,BundleInfo,ChangeResult} from '@deepseek-ai/dsh-plugin-manager'
 import TeloaPluginManager from '../src/native-plugin-manager.ts'
 import {PENDING_PLUGINS_FILE,pendingBundleConflicts,withProfileLock,writePendingPlugins} from '../src/pending-plugins.ts'
+import {createNativeOwnerPeer} from './fixtures/native-gateway-peer.ts'
 
 const require=createRequire(import.meta.url)
 const officialRequire=createRequire(require.resolve('@deepseek-ai/dsh-plugin-manager/package.json'))
@@ -16,6 +17,7 @@ const {Loader,EntryTree,EntryGroup}=await import(officialRequire.resolve('@deeps
 const {remoteMethods}=await import(officialRequire.resolve('@deepseek-ai/dsh-typert-protocol'))
 const gatewayRequire=createRequire(require.resolve('@deepseek-ai/dsh-api-session-controller/package.json'))
 const {default:TypertGateway}=await import(gatewayRequire.resolve('@deepseek-ai/dsh-api-gateway'))
+const {default:RemoteAccessService}=await import(gatewayRequire.resolve('@deepseek-ai/dsh-api-remote-access'))
 const {default:TypertRegistry}=await import(createRequire(gatewayRequire.resolve('@deepseek-ai/dsh-api-gateway/package.json')).resolve('@deepseek-ai/dsh-typert-registry'))
 
 /** 真实 Loader、Gateway、PluginManager；仅包管理器执行端换成本地夹具，绝不安装包或联网。 */
@@ -88,10 +90,14 @@ writeFileSync('package.json',JSON.stringify(manifest));
  await ctx.loader.root.update([{id:'include',name:'cordis:include',group:true,config:rows}])
  await ctx.plugin(TeloaPluginManager,{fallbackRegistries:[]})
  await ctx.plugin(TypertRegistry)
+ // alpha3 Gateway 的必需服务；直接本机调用沿用官方 owner 语义，不替换远程访问策略。
+ await ctx.plugin(RemoteAccessService)
  await ctx.plugin(TypertGateway)
  // Gateway 是官方 peer 依赖，动态加载处只收窄本夹具消费的公开 invoke 端口。
- const gateway=Reflect.get(ctx,'typertGateway') as {invoke(request:{namespace:string;method:string;args:Record<string,unknown>}):Promise<unknown>}
- const rpc=<T>(method:string,args:Record<string,unknown>={}):Promise<T>=>gateway.invoke({namespace:'pluginManager',method,args}) as Promise<T>
+ const peer=createNativeOwnerPeer(t)
+ const gateway=Reflect.get(ctx,'typertGateway') as {invoke(request:{namespace:string;method:string;args:Record<string,unknown>;peer:typeof peer}):Promise<unknown>}
+ assert.ok(gateway&&typeof gateway.invoke==='function','官方 Gateway 必须完成注入并激活')
+ const rpc=<T>(method:string,args:Record<string,unknown>={}):Promise<T>=>gateway.invoke({namespace:'pluginManager',method,args,peer}) as Promise<T>
  const readProfile=async()=>JSON.parse(await readFile(join(dir,'package.json'),'utf8')) as typeof profile
  return {ctx,dir,patchPath,rpc,readProfile,official}
 }

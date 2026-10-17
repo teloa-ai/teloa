@@ -9,6 +9,8 @@ import {pendingPackageNames,readJsonFile,readPendingPlugins,withProfileLock,writ
 const requiredModules=new Set(['@teloa/harness-dsh','@teloa/client-ui-workbench','@teloa/harness-dsh/plugin-manager','@teloa/im-gateway','@teloa/local-embedding','@teloa/harness-dsh/credentials','@teloa/harness-dsh/attachment-guard','@teloa/harness-dsh/session-model-scope','@teloa/harness-dsh/tool-resource-provenance'])
 const requiredBundles=new Set(['@teloa/bundle','@teloa/im-gateway','@deepseek-ai/dsh-experimental-agent-team-profile'])
 const requiredRows=new Set(['teloa-harness-dsh','teloa-ui-workbench','teloa-reference-mcp','teloa-agent-preset','teloa-native-webserver','teloa-native-gateway','teloa-install-runtime','teloa-plugin-manager','teloa-im-gateway','teloa-local-embedding','teloa-credentials','teloa-attachment-guard','teloa-session-model-scope','teloa-tool-resource-provenance','agent-team','tool-agent-team','ui-agent-team'])
+requiredModules.add('@teloa/harness-dsh/native-working-directory')
+requiredRows.add('teloa-working-directory')
 
 /** 原生管理器没有产品级必需行策略；只补这一层，安装、锁、回滚和配置仍由官方实现。 */
 export function protectedNativePlugin(row:{patchId?:string;entryId?:string;moduleName:string}):boolean{

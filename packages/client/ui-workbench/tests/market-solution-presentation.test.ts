@@ -7,11 +7,13 @@ import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
 import {currentSolutionCatalog,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionMark,solutionMembers,solutionRowResources} from '../src/client/market-solution-presentation.ts'
 import {COMPOSITION_ROWS} from '../src/client/industry-composition.ts'
+import * as composition from '../src/client/industry-composition.ts'
 import type {IndustryManifest,IndustryResource} from '../src/client/industry-manifest.ts'
 import type {MarketItem} from '../src/client/market-preview.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
 import {staffAvatarSeed} from '../src/client/staff-avatar-seed.ts'
 import type {MarketSkillRuntime,MarketSkillRuntimeFact} from '../src/client/market-runtime-state.ts'
+import {mount,nodes,marketProps} from './market-component-harness.ts'
 
 // .tsx 组件不能被 node 直接类型剥离，和 evidence-list.test.ts 一样走 tsc 产物；
 // tsc 不搬运 CSS Modules，所以就地把 *.module.css 换成类名代理，断言只看结构不看样式。
@@ -72,7 +74,7 @@ test('solutionMembers 的 initial 取本地化标题首字符',()=>{
  assert.equal(solutionMembers(source,'en','bundle-x')[0]!.initial,'R')
 })
 
-const item=(patch:Partial<MarketItem>={}):MarketItem=>({id:'bundle-x',kind:'bundle',title:'方案',version:'1.0.0',scope:'general',visibility:'public',summary:'一句话说清添加后会得到什么。',requirements:[],output:'结果',author:'作者',license:'许可',source:{kind:'builtin'},owner:'Teloa',compatibility:'待核对',components:[],...patch})
+const item=(patch:Partial<MarketItem>={}):MarketItem=>({id:'bundle-x',kind:'bundle',title:'方案',version:'1.0.0',scope:'general',visibility:'public',summary:'一句话说清添加后会得到什么。',requirements:[],output:'结果',author:'作者',license:'许可',source:{kind:'builtin'},owner:'Teloa',compatibility:'待核对',components:[],hash:'h',...patch})
 const load=(patch:Partial<IndustryLoadRecord>={}):IndustryLoadRecord=>({id:'load-1',ownerId:'o',contentId:'content-x',contentHash:'h',templateId:'bundle-x',templateVersion:'1.0.0',templateTitle:'方案',domain:'general',scope:'general',description:'说明',targetVersion:1,space:{id:'space-1',name:'空间',version:1,scope:'general'},items:[],relations:[],entrypoints:[],createdAt:'2026-09-15T00:00:00.000Z',mappingHash:'h',status:'active',...patch})
 
 test('方案目录同一逻辑模板只保留最高版本，当前生效版本在同一张卡上显示已添加',()=>{
@@ -140,6 +142,46 @@ test('solutionInstalled：只有生效加载且模板标识与版本都对上才
  assert.equal(solutionInstalled(current,[]),false)
  // 没有清单就没有可比的标识与版本，一律不算已添加。
  assert.equal(solutionInstalled(item(),[load()]),false)
+})
+
+test('固定内容的已添加状态必须匹配 contentId 与内容摘要，不能被同模板同版本的另一来源冒认',()=>{
+ const fixed=item({manifest:manifest([resource('s1','skill')]),contentStorage:{contentId:'content-new',createdAt:'2026-10-16T00:00:00Z',loaded:true}})
+ assert.equal(solutionInstalled(fixed,[load({contentId:'content-old'})]),false)
+ assert.equal(solutionInstalled(fixed,[load({contentId:'content-new',contentHash:'different-bytes'})]),false)
+ assert.equal(solutionInstalled({...fixed,hash:undefined},[load({contentId:'content-new'})]),false)
+ const exact=load({contentId:'content-new'})
+ assert.equal(solutionInstalled(fixed,[exact]),true)
+ assert.equal(solutionInstalledCount([fixed],[load({contentId:'content-old'})]),0)
+ assert.equal(solutionInstalledCount([fixed],[load({contentId:'content-old'}),exact]),1)
+ assert.equal(marketItemMark(fixed,[load({contentId:'content-old'})]),'available')
+})
+
+test('同一固定内容的原加载待核对时，即使已读到生效加载也能打开原核对表单，不另发请求',()=>{
+ const fixed=item({manifest:manifest([resource('s1','skill')]),contentStorage:{contentId:'content-new',createdAt:'2026-10-16T00:00:00Z',loaded:true}})
+ const pending={requestId:'request-original',contentId:'content-new',contentHash:'h',target:{kind:'existing',spaceId:'space-1',expectedVersion:4}}
+ let writes=0
+ const recover=async()=>{writes++},save=async()=>{writes++},api={pending:()=>pending,recoveryMessage:()=>undefined}
+ const props={...marketProps({},[fixed]),item:fixed,draft:undefined,back:()=>{},targets:[],industryLoads:{api,loads:[load({contentId:'content-new'})],recover,save},industryReview:{},spaces:[]}
+ const modules={'./industry-composition.js':composition,'./staff-avatar-seed.js':{staffAvatarSeed}}
+ const source=mount('MarketPage.tsx',modules,['MarketDetail','SolutionLoadPanel'])
+ let tree=nodes(source.render('MarketDetail',props))
+ const review=tree.find(node=>node.type==='button'&&node.children.includes('market.industry.load.reviewResult'))
+ assert.ok(review,'原申请应有正规核对入口，不能被“已添加”禁用按钮盖住')
+ assert.equal(review.props.disabled,false)
+ review.props.onClick()
+ tree=nodes(source.render('MarketDetail',props))
+ const panel=tree.find(node=>node.type?.name==='SolutionLoadPanel')
+ assert.ok(panel);assert.equal(panel.props.item,fixed);assert.equal(writes,0)
+ const formMarker=(value:unknown)=>value,formSource=mount('MarketPage.tsx',{'./IndustryLoadForm.js':{IndustryLoadForm:formMarker}},['SolutionLoadPanel'])
+ const form=nodes(formSource.render('SolutionLoadPanel',{...props,close:()=>{}})).find(node=>node.type===formMarker)
+ assert.ok(form);assert.deepEqual(form.props.pending,pending);assert.equal(form.props.recover,recover);assert.equal(form.props.load,save);assert.equal(writes,0)
+ // 其它来源的待核对申请不能冒用这个恢复入口；正文哈希不匹配也不能继续。
+ for(const other of [{...pending,contentId:'content-other'},{...pending,contentHash:'different-bytes'}]){
+  const isolated=mount('MarketPage.tsx',modules,['MarketDetail'])
+  const buttons=nodes(isolated.render('MarketDetail',{...props,industryLoads:{...props.industryLoads,api:{pending:()=>other}}})).filter(node=>node.type==='button')
+  assert.equal(buttons.some(node=>node.children.includes('market.industry.load.reviewResult')),false)
+  assert.equal(buttons.find(node=>node.children.includes('market.solution.added'))?.props.disabled,true)
+ }
 })
 
 test('solutionInstalled 是方案卡与产品页共用的唯一判据：两处调用的是同一个函数',async()=>{

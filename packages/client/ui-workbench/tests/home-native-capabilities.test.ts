@@ -16,3 +16,19 @@ test('异步核验期间改写草稿时不插入选项',async()=>{
  await assert.rejects(insertHomeCapabilities({resources:[],skills:[{name:'skill-a',provider:'p',source:'s'}]},{state:{getSnapshot:()=>state,subscribe:()=>()=>{}},verify:async()=>{state={...state,draft:'新草稿',draftRev:2}},text:()=>{writes++;return true},reference:()=>true}),/变化/)
  assert.equal(writes,0)
 })
+
+test('语音转写通过原生 CAS 追加正文，保留附件与引用、不提交',async()=>{
+ const {insertAssistantVoiceDraft}=await import('../src/client/home-native-capabilities.ts')
+ let state:any={draft:'已有正文',draftRev:2,phase:'plain',attachmentIds:['image-1'],occurrences:[{ref:'resource-1'}]},writes=0
+ const listeners=new Set<()=>void>()
+ await insertAssistantVoiceDraft('核对最新报告',{state:{getSnapshot:()=>state,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)}},verify:async()=>{},text:request=>{writes++;assert.deepEqual(request,{text:'\n核对最新报告',span:{start:4,end:4,draftRev:2}});state={...state,draft:state.draft+request.text,draftRev:3};listeners.forEach(fn=>fn());return true}})
+ assert.equal(writes,1);assert.equal(state.draft,'已有正文\n核对最新报告');assert.deepEqual(state.attachmentIds,['image-1']);assert.deepEqual(state.occurrences,[{ref:'resource-1'}])
+})
+test('语音插入的异步归属核验期间导航或本人修改草稿不会覆盖原输入',async()=>{
+ const {insertAssistantVoiceDraft}=await import('../src/client/home-native-capabilities.ts')
+ let state:any={draft:'原草稿',draftRev:2,phase:'plain',attachmentIds:[],occurrences:[]},writes=0
+ await assert.rejects(insertAssistantVoiceDraft('转写',{state:{getSnapshot:()=>state,subscribe:()=>()=>{}},verify:async()=>{state={...state,draft:'本人新输入',draftRev:3}},text:()=>{writes++;return true}}),/变化/)
+ assert.equal(writes,0);assert.equal(state.draft,'本人新输入')
+ await assert.rejects(insertAssistantVoiceDraft('转写',{state:{getSnapshot:()=>state,subscribe:()=>()=>{}},verify:async()=>{throw Error('会话已切换')},text:()=>{writes++;return true}}),/切换/)
+ assert.equal(writes,0)
+})

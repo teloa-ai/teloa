@@ -8,6 +8,9 @@ import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontaine
 import {readBusinessSourceMappingDefinition,type BusinessObjectTypeDefinition,type BusinessSourceMappingDefinition} from '@teloa/contract'
 import {BusinessSyncService,BusinessWarehouseService,currentVersionSubquery,initializeBusinessData,initializeBusinessDefinitions,initializeBusinessSync,initializeBusinessWarehouse,openResourceDatabase} from '@teloa/backend'
 import {createMcpSyncSource,type ManagedMcpToolInvoker} from '../src/business-mcp-sync-source.ts'
+import {BusinessSourceAuthorityController} from '../src/business-source-authority.ts'
+import {OAuthFlowManager} from '../src/managed-mcp-oauth.ts'
+import {memorySlotStore} from '../src/managed-mcp-credentials.ts'
 
 /** 同步器接真适配器（`createMcpSyncSource`，受管 MCP 连接用桩 invoke）的端到端真库用例：续页标记、水位与分页链计量在两侧的配合。 */
 
@@ -59,11 +62,11 @@ function stubTool(name:string){
 }
 
 /** `tool.current` 可换：同一主体下模拟映射改版后换一种续页参数的工具。 */
-function harness(mappings:BusinessSourceMappingDefinition[],tool:{current:ManagedMcpToolInvoker}){
+function harness(mappings:BusinessSourceMappingDefinition[],tool:{current:ManagedMcpToolInvoker},state:Parameters<typeof createMcpSyncSource>[1]={connected:()=>true,readOnly:()=>true}){
  const owner='mcp-e2e:'+randomUUID(),actor={ownerId:owner,scopeIds:['SOC']}
  const identity={id:randomUUID,now:()=>new Date().toISOString()}
  const definitions={forScope:async(_db:unknown,_owner:string,scope:string)=>scope!=='SOC'?[]:[{origin:{kind:'market',loadId:'load-1'},scope:'SOC',domain:'SOC',objectTypes:[record(alertType)],views:[],actions:[],mappings:mappings.map(record),widgets:[],dashboards:[],sources:new Map()}] as never}
- const service=new BusinessSyncService(pool,identity,definitions,new BusinessWarehouseService(pool,identity),createMcpSyncSource(input=>tool.current(input),{connected:()=>true,readOnly:()=>true}))
+ const service=new BusinessSyncService(pool,identity,definitions,new BusinessWarehouseService(pool,identity),createMcpSyncSource(input=>tool.current(input),state))
  const run=()=>service.run(actor,{scope:'SOC',mappingId:'soc-mcp',trigger:'manual'})
  const current=async()=>(await pool.query(`select object_id from ${currentVersionSubquery(false)} s`,[owner,'SOC','soc-alert'])).rows.length
  const cursor=async()=>(await pool.query('select cursor from teloa_business_sync_cursors where owner_id=$1',[owner])).rows[0]?.cursor as string|null|undefined
@@ -81,6 +84,28 @@ test('同步器 + 真适配器：三页共 120 条一次落库；每页都带水
  const second=await h.run()
  assert.deepEqual([second.status,second.fetched,second.upserted],['ok',120,0])
  assert.deepEqual(tool.calls,[{status:'open',cursor:at(119)},{status:'open',cursor:at(119),page:'p2'},{status:'open',cursor:at(119),page:'p3'}])
+})
+
+test('来源末页返回前换号：拒绝旧资料，快照和水位零写入',async()=>{
+ const oauth=new OAuthFlowManager({runtimeRoot:root,slots:memorySlotStore()})
+ let current={bindingId:'connection',bindingRevision:1,definitionHash:'a'.repeat(64),resourceScopeHash:'b'.repeat(64),connectionEpoch:'original',scopeSupport:'unsupported' as const}
+ const controller=new BusinessSourceAuthorityController({exclusive:oauth.exclusive.bind(oauth),read:async()=>current}),source=stubTool('page')
+ const invoke:ManagedMcpToolInvoker=async input=>{const result=await source.invoke(input);if(input.arguments.page==='p3')await oauth.exclusive('test',async()=>{current={...current,bindingRevision:2}});return result}
+ const h=harness([mappingOf({cursorArgument:'page',nextCursorPath:'$.next'},true)],{current:invoke},{connected:()=>true,readOnly:()=>true,capture:server=>controller.capture(server),commit:(authority,write,signal)=>controller.commit(authority,write,signal)})
+ assert.equal((await h.run()).status,'failed');assert.equal(await h.current(),0);assert.equal(await h.cursor(),null)
+})
+
+test('已同步映射固定授权世代：等价重连保留水位，换号在网络派发前拒绝且保留旧成果',async()=>{
+ const oauth=new OAuthFlowManager({runtimeRoot:root,slots:memorySlotStore()})
+ let current={bindingId:'connection',bindingKey:'a'.repeat(64),bindingRevision:1,definitionHash:'a'.repeat(64),resourceScopeHash:'b'.repeat(64),connectionEpoch:'original',scopeSupport:'unsupported' as const}
+ const controller=new BusinessSourceAuthorityController({exclusive:oauth.exclusive.bind(oauth),read:async()=>current}),source=stubTool('page')
+ const h=harness([mappingOf({cursorArgument:'page',nextCursorPath:'$.next'},true)],{current:source.invoke},{connected:()=>true,readOnly:()=>true,capture:server=>controller.capture(server),commit:(authority,write,signal)=>controller.commit(authority,write,signal)})
+ assert.equal((await h.run()).status,'ok')
+ current={...current,connectionEpoch:'reconnected'};source.calls.length=0
+ assert.equal((await h.run()).status,'ok');assert.equal(source.calls[0]?.cursor,at(119))
+ current={...current,bindingKey:'c'.repeat(64),bindingRevision:2};source.calls.length=0
+ assert.equal((await h.run()).status,'failed');assert.equal(source.calls.length,0)
+ assert.equal(await h.current(),120);assert.equal(await h.cursor(),at(119))
 })
 
 test('旧水位 + 无 incrementalCursor + 续页参数名为 cursor：第 1 页不带游标、结果完整，且不会一直带着旧值失败',async()=>{

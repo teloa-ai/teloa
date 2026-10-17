@@ -1,3 +1,4 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useRef,useState,useSyncExternalStore,type ReactNode} from 'react'
 import {Check,FileText,RefreshCw} from 'lucide-react'
 import type {BusinessConfigurationApplyResult,BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection} from '@teloa/contract'
@@ -25,7 +26,7 @@ function Panel({flow,renderPage,onOpenSaved}:BusinessBuilderPanelProps){
  // recovering 也表示刚加载持久意图；它本身不证明有网络操作在途。
  const inFlight=busy||['creating','saving'].includes(state.phase)||(state.phase==='recovering'&&!pendingSave&&!canRecoverCreation)
  const locked=inFlight||pendingSave||!!journalError||state.phase==='unknown'
- const preview=state.preview,validPreview=!!draft&&draft.status==='draft'&&pages.length>0&&!!preview&&preview.draftId===draft.id&&preview.revision===draft.revision&&preview.candidateHash===draft.hash&&preview.baseVersion===draft.baseVersion
+ const preview=state.preview,validPreview=!!draft&&draft.status==='draft'&&pages.length>0&&!!preview&&!preview.impact?.blocked&&preview.draftId===draft.id&&preview.revision===draft.revision&&preview.candidateHash===draft.hash&&preview.baseVersion===draft.baseVersion
  const projection=state.page,current=!!projection&&projection.mode==='preview'&&projection.draftId===draft?.id&&projection.revision===draft.revision&&projection.configurationHash===draft.hash
  if(projection&&current&&state.pageStatus==='ready'&&previous.current?.projection!==projection)previous.current={projection,title}
  const displayed=previous.current,stale=!!displayed&&(busy||state.pageStatus!=='ready'||!current||projection?.page.definition.id!==pageId)
@@ -49,9 +50,10 @@ function Panel({flow,renderPage,onOpenSaved}:BusinessBuilderPanelProps){
  })
  const select=(id:string)=>{if(locked)return;setSelected(id);void act(()=>flow.page(id))}
  return <section className={css.panel} aria-label={t('business.builder.panel')}>
-  <header className={css.header}><div><p className={css.eyebrow}>{t('business.builder.title')}</p><h2>{title}</h2><p>{t(state.phase==='saved'||draft?.status==='applied'?'business.builder.savedNote':'business.builder.draftNote')}</p></div><button type="button" onClick={()=>void refresh()} disabled={locked||!draft}><RefreshCw size={16} aria-hidden="true"/>{t('business.builder.refresh')}</button></header>
+  <header className={css.header}><div><p className={css.eyebrow}>{t('business.builder.title')}</p><h2>{title}</h2><p>{t(state.phase==='saved'||draft?.status==='applied'?'business.builder.savedNote':'business.builder.draftNote')}</p></div><ToolbarIconButton label={t('business.builder.refresh')} icon={RefreshCw} onClick={()=>void refresh()} disabled={locked||!draft}/></header>
   {inFlight&&<p className={css.notice} role="status">{t(state.phase==='saving'?'business.builder.saving':state.phase==='recovering'?'business.builder.checking':state.phase==='creating'?'business.builder.creating':'business.builder.loading')}</p>}
   {!!error&&!pendingSave&&<p className={css.error} role="alert">{t(errorKey)}</p>}
+  {preview?.impact&&<BusinessTemplateUpgradeImpact impact={preview.impact}/>}
   {(pendingSave||state.phase==='unknown')&&<div className={css.notice} role="status"><p>{t('business.builder.unknown')}</p><button type="button" disabled={inFlight||!!journalError} onClick={()=>void act(()=>flow.recoverSave())}>{t('business.builder.check')}</button></div>}
   {canRecoverCreation&&!pendingSave&&<div className={css.notice}><p>{t('business.builder.creationPending')}</p><button type="button" disabled={inFlight||!!journalError} onClick={()=>void act(()=>flow.recoverCreation(pendingCreation?undefined:state.binding?.requestId))}>{t('business.builder.restore')}</button></div>}
   {pages.length>0&&<nav className={css.navigation} aria-label={t('business.builder.pages')}>{pages.map(page=><button type="button" key={page.id} aria-pressed={pageId===page.id} disabled={locked} onClick={()=>select(page.id)}>{page.title}</button>)}</nav>}
@@ -59,3 +61,4 @@ function Panel({flow,renderPage,onOpenSaved}:BusinessBuilderPanelProps){
   {state.result?<footer className={css.success}><div><Check size={18} aria-hidden="true"/><span>{t('business.builder.saved')}</span></div>{onOpenSaved&&<button type="button" className={css.primary} onClick={()=>onOpenSaved(state.result!)}>{t('business.builder.open')}</button>}</footer>:!pendingSave&&state.phase!=='unknown'&&<footer className={css.footer}><p>{t('business.builder.saveNote')}</p><button type="button" className={css.primary} disabled={locked||!validPreview||!current||state.pageStatus!=='ready'||projection?.page.definition.id!==pageId||!!error} onClick={()=>void act(()=>flow.save())}>{t('business.builder.save')}</button></footer>}
  </section>
 }
+import {BusinessTemplateUpgradeImpact} from './BusinessTemplateUpgradeImpact.js'

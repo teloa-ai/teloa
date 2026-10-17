@@ -1,9 +1,10 @@
 import type { Pool,PoolClient } from 'pg'
-import { WorkError,roleInput,roleDefinition,roleWriteDefinition,type DigitalRole } from '@teloa/contract'
+import {isDeepStrictEqual} from 'node:util'
+import { WorkError,roleInput,roleDefinition,roleWriteDefinition,readRoleProfile,type DigitalRole } from '@teloa/contract'
 import { ensureAutoDreamPlan,type AutoDreamPorts } from './auto-dream-plans.ts'
 import { renewRoleGrants } from './collaboration.ts'
 import {workAccess} from './work-access.ts'
-import {assertRoleDelegationsInactive} from './role-delegations.ts'
+import {assertRoleDelegationsInactive,roleWorkOutstanding} from './role-delegations.ts'
 import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 
 export async function initializeRoles(pool:Pool):Promise<void>{
@@ -54,9 +55,26 @@ export function readStoredRole(row:Record<string,unknown>):DigitalRole{
 }
 /** 编辑入参的四步校验：`edit` 在取连接前先跑一遍，`editInTransaction` 自己也跑，两个入口的拒绝完全一致。 */
 function editInput(owner:string,input:unknown){
- ownerId(owner);const row=roleInput(input,['roleId','expectedVersion','fields']),definition=roleWriteDefinition(row.fields)
+ ownerId(owner);const row=roleInput(input,['roleId','expectedVersion','fields','expectedProfile']),definition=roleWriteDefinition(row.fields)
  if(!uuid(row.roleId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1)throw new WorkError('teloa/invalid-input','员工身份或版本不合法。')
- return {row,definition}
+ return {row,definition,expectedProfile:row.expectedProfile===undefined?undefined:readRoleProfile(row.expectedProfile)}
+}
+/** 调用者持有岗位排他锁；工作创建、领取及授权也先取该锁，不能在检查后插入旧版本工作。 */
+async function assertEmployeeWorkIdle(client:PoolClient,owner:string,role:DigitalRole):Promise<void>{
+ const tables=['teloa_tasks','teloa_task_runs','teloa_plans','teloa_plan_occurrences','teloa_role_work_delegations']
+ const present=new Set((await client.query('select name from unnest($1::text[]) name where to_regclass(name) is not null',[tables])).rows.map(row=>row.name as string))
+ const busy=()=>new WorkError('teloa/conflict','请先完成或取消关联任务，等待运行及子工作收口；如有活动计划或执行委托，请先暂停后再保存员工资料。',{reason:'role-work-outstanding'})
+ if(present.has('teloa_tasks')&&(await client.query("select 1 from teloa_tasks where owner_id=$1 and assignee_role_id=$2 and state not in ('completed','cancelled') limit 1",[owner,role.id])).rowCount)throw busy()
+ if(present.has('teloa_task_runs')&&await roleWorkOutstanding(client,owner,role.id))throw busy()
+ if(present.has('teloa_role_work_delegations')&&(await client.query("select 1 from teloa_role_work_delegations where owner_id=$1 and role_id=$2 and state in ('active','pausing','ending') limit 1",[owner,role.id])).rowCount)throw busy()
+ if(present.has('teloa_plans')){
+  // 普通计划固定岗位版本；Auto Dream 的未来领取则明确采用当时的当前版本（PlanOccurrenceService.current）。
+  if((await client.query("select 1 from teloa_plans where owner_id=$1 and role_id=$2 and state='active' and (source->>'kind'<>'system-digest' or work_definition is not null) limit 1",[owner,role.id])).rowCount)throw busy()
+  // 系统计划已领取的轮次也有固定岗位快照。只阻止仍可派发且尚未建任务的回执，失效/已消费回执保留。
+  if(present.has('teloa_plan_occurrences')&&(await client.query(`select 1 from teloa_plan_occurrences o join teloa_plans p on p.id=o.plan_id and p.owner_id=o.owner_id
+   where p.owner_id=$1 and p.role_id=$2 and p.state='active' and o.plan_version=p.version and o.config_version=p.config_version
+   and not exists(select 1 from teloa_tasks t where t.owner_id=o.owner_id and t.request_id=o.task_request_id) limit 1`,[owner,role.id])).rowCount)throw busy()
+ }
 }
 export class RoleService{
  readonly pool:Pool
@@ -120,6 +138,29 @@ export class RoleService{
    admission?.assertCurrent();await client.query('commit');return {role,existing:false}
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
+ /** 姓名与头像不改岗位版本；行锁和原资料对照避免并发覆盖，执行快照与群授权保持不变。 */
+ async updateProfile(owner:string,input:unknown):Promise<DigitalRole>{
+  ownerId(owner)
+  const row=roleInput(input,['roleId','expectedVersion','expectedProfile','profile']),profile=readRoleProfile(row.profile),expected=readRoleProfile(row.expectedProfile)
+  if(!uuid(row.roleId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1)throw new WorkError('teloa/invalid-input','员工身份或版本不合法。')
+  const client=await this.pool.connect()
+  try{
+   await client.query('begin')
+   const stored=(await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for update',[row.roleId,owner])).rows[0]
+   if(!stored)throw new WorkError('teloa/forbidden','员工不存在或不属于当前本人。')
+   const role=readStoredRole(stored)
+   if(role.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','员工已被修改，请读取新版本后复核。')
+   if(role.state==='retired')throw new WorkError('teloa/conflict','已退役员工不能修改。')
+   const admission=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:role.id,operation:'edit'})
+   admission.assertCurrent()
+   const current=readRoleProfile({name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})})
+   if(isDeepStrictEqual(current,profile)){await client.query('commit');return role}
+   if(!isDeepStrictEqual(current,expected))throw new WorkError('teloa/version-conflict','员工资料已被修改，请刷新后再保存。')
+   const {name:_name,avatarKey:_avatar,...definition}=roleDefinition(stored.definition)
+   const updated=await client.query('update teloa_roles set definition=$3,updated_at=$4 where id=$1 and owner_id=$2 returning *',[role.id,owner,JSON.stringify({...definition,...profile}),this.identity.now()])
+   const saved=readStoredRole(updated.rows[0]);admission.assertCurrent();await client.query('commit');return saved
+  }catch(error){await client.query('rollback');throw error}finally{client.release()}
+ }
  async edit(owner:string,input:unknown):Promise<DigitalRole>{
   editInput(owner,input) // 入参不合法就不占用连接
   const client=await this.pool.connect()
@@ -134,7 +175,7 @@ export class RoleService{
   * 行业模板升级按 `use-template` 重放模板字段时，岗位改动必须与继任加载同生共死。
   */
  async editInTransaction(client:PoolClient,owner:string,input:unknown):Promise<DigitalRole>{
-  const {row,definition}=editInput(owner,input)
+  const {row,definition,expectedProfile}=editInput(owner,input)
   const result=await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for update',[row.roleId,owner])
   if(!result.rows[0])throw new WorkError('teloa/forbidden','员工不存在或不属于当前本人。')
   const role=readStoredRole(result.rows[0])
@@ -142,7 +183,7 @@ export class RoleService{
   if(receipts.rows[0]){
    if(!receipts.rows[0].same_request)throw new WorkError('teloa/version-conflict','原版本已保存不同修改，请读取新版本后复核。')
    try{
-    const {id,ownerId,version,state,createdAt,updatedAt,...fields}=roleInput(receipts.rows[0].result,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig'])
+    const {id,ownerId,version,state,createdAt,updatedAt,...fields}=roleInput(receipts.rows[0].result,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig','avatarKey'])
     if(typeof createdAt!=='string'||typeof updatedAt!=='string')throw Error()
     const saved=readStoredRole({id,owner_id:ownerId,version,state,created_at:new Date(createdAt),updated_at:new Date(updatedAt),definition:fields})
     if(saved.id!==role.id||saved.ownerId!==owner||saved.version!==(row.expectedVersion as number)+1||saved.version>role.version||JSON.stringify(roleWriteDefinition(fields))!==JSON.stringify(definition))throw Error()
@@ -155,7 +196,17 @@ export class RoleService{
   if(role.kind==='twin'){
    if(role.state!=='active')throw new WorkError('teloa/conflict','个人分身身份当前不可配置。')
    await assertRoleDelegationsInactive(client,owner,role)
-  }else if(role.state!=='paused')throw new WorkError('teloa/conflict','请先暂停员工并核对关联工作。')
+  }else if(role.state!=='paused'){
+   // 联系卡编辑不扩大权限；运行、资料与授权变更仍需暂停。
+   const {id:_id,ownerId:_owner,version:_version,state:_state,createdAt:_created,updatedAt:_updated,name:_name,avatarKey:_avatar,duty:_duty,...currentExecution}=role
+   const {name:_nextName,avatarKey:_nextAvatar,duty:_nextDuty,...nextExecution}=definition
+   if(!isDeepStrictEqual(currentExecution,nextExecution))throw new WorkError('teloa/conflict','请先暂停员工并核对关联工作。')
+  }
+  if(role.kind==='employee')await assertEmployeeWorkIdle(client,owner,role)
+  // 旧调用方若没有资料基线，只允许保留当前姓名头像；不能以不变的执行版本覆盖并发身份修改。
+  const currentProfile=readRoleProfile({name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})})
+  const profileBaseline=expectedProfile??readRoleProfile({name:definition.name,...(definition.avatarKey?{avatarKey:definition.avatarKey}:{})})
+  if(!isDeepStrictEqual(currentProfile,profileBaseline))throw new WorkError('teloa/version-conflict','员工资料已被修改，请刷新后再保存。')
   const admission=await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:role.id,operation:'edit'})
   admission.assertCurrent()
   const now=this.identity.now()

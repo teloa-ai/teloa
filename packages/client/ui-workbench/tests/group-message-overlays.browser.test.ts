@@ -1,0 +1,45 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
+import {build} from 'vite'
+// @ts-expect-error 复用已固定的无头浏览器加载器。
+import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
+
+test('大群与大话题按有限窗口刷新，旧工作独立跟踪且切群不消费迟到覆盖层',{timeout:60000},async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),entryId=root+'__group_overlays.tsx',markdown='\0group-overlays-markdown',crypto='\0group-overlays-crypto'
+ const entry=String.raw`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {SavedCollaborationPage} from '${client}SavedCollaborationPage.tsx';import {createGroupApi} from '${client}group-api.ts';import {createGroupRoutingApi} from '${client}group-routing-api.ts';import {createGroupReactionApi} from '${client}group-reaction-api.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '${client}../../tests/fixtures/group-message-page-rpc.ts';
+ const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0'),at=n=>new Date(Date.UTC(2026,9,15,0,0,n)).toISOString(),ids={group:id(1),other:id(2),role:id(3),root:id(10),old:id(11),latestMain:id(999),latestTopic:id(720)},f=window.overlayFixture={ids,calls:[],phase:'running',hold:false,held:false,release:()=>{},target:{groupId:ids.group,rootId:ids.root},render:()=>{}};
+ document.body.style.margin='0';document.getElementById('root').style.height='100dvh';
+ const group=key=>({id:key,ownerId:'self',version:1,name:key===ids.group?'大群原讨论':'另一群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},pinned:false,archived:false,createdAt:at(0),updatedAt:at(0)});
+ const own=(n,text='主群消息 '+n)=>({id:id(n),groupId:ids.group,rootId:null,authorId:'self',text,references:[],mentions:[],createdAt:at(n)}),topic=Array.from({length:220},(_,index)=>({id:id(501+index),groupId:ids.group,rootId:ids.root,authorId:ids.role,text:'话题回复 '+index,references:[],createdAt:at(501+index),contextMode:'thread',replyToMessageId:ids.root,taskId:id(4),runId:id(5),author:{name:'原话题员工',kind:'employee',version:1}})),rows=[own(10,'话题原消息'),...Array.from({length:220},(_,index)=>own(11+index)),...topic,own(999,'最新主群消息')];
+ const call=async(endpoint,input)=>{f.calls.push([endpoint,input]);if(endpoint==='groups/get')return {group:group(input.groupId),members:[{groupId:input.groupId,roleId:null,createdAt:at(0)},{groupId:input.groupId,roleId:ids.role,createdAt:at(0)}]};if(endpoint==='groups/messages/list')return input.groupId!==ids.group?[]:input.rootId?[rows[0],...topic]:rows;if(endpoint==='groups/messages/page')return groupMessagePageFixture(rows,input);if(endpoint==='groups/reading/get'||endpoint==='groups/reading/mark')return groupMessageReadingFixture(rows,input,f.cursors||(f.cursors={}));if(endpoint==='groups/resources/list')return [];if(endpoint==='groups/agent-grants/get')return {groupVersion:1,roleVersion:1,grant:null,status:'not-granted'};if(endpoint==='groups/reactions/list'||endpoint==='groups/routing/list')return {items:[]};if(endpoint==='groups/routing/status'){if(f.hold&&input.groupId===ids.group){f.held=true;await new Promise(resolve=>f.release=resolve)}return {items:input.groupId===ids.group&&input.messageIds.includes(ids.old)?[{messageId:ids.old,attemptVersion:1,phase:f.phase,recipients:[{roleId:ids.role,name:'原工作员工',taskId:id(4),runId:id(5),phase:f.phase,resultMessageId:null,executionMode:'work'}],hintCode:null,canRetry:false}]:[]}}throw Error('覆盖层不得写入：'+endpoint)};
+ const api=createGroupApi(call),routing=createGroupRoutingApi(call),reactions=createGroupReactionApi(call),roles=[{id:ids.role,name:'原工作员工',kind:'employee',state:'active',scopes:['general'],version:1,duty:'原工作',dataScope:'原资料',executionScope:'核对',skills:[],knowledge:[],memories:[],history:[]}],work={tasks:[{id:id(4),storage:'persistent',title:'原工作',groupId:ids.group,get state(){return f.phase==='completed'?'completed':'running'},assigneeId:ids.role,need:null,source:{groupId:ids.group,messageId:ids.old,rootId:ids.old,text:'原工作'}}],openTask:()=>{},openRole:()=>{}},snapshot={locale:'zh-CN',dshLocale:'zh-CN',revision:1},runtime={getSnapshot:()=>snapshot,subscribe:()=>()=>{},t:(key,params)=>translateMessage('zh-CN',key,params)},app=createRoot(document.getElementById('root'));
+ f.render=()=>flushSync(()=>app.render(<I18nProvider runtime={runtime}><SavedCollaborationPage api={api} routing={routing} reactions={reactions} work={work} visible={true} target={f.target} roles={roles} profileName="Max" directory={{refresh:async()=>{},open:()=>{},select:()=>{},createRequest:0,createHandled:()=>{}}}/></I18nProvider>));f.render();`
+ const result=await build({configFile:false,root,logLevel:'error',resolve:{alias:[{find:'@deepseek-ai/dsh-client-ui-primitives',replacement:markdown},{find:'node:crypto',replacement:crypto}]},plugins:[{name:'group-overlays',resolveId:id=>id.endsWith('group-overlays-test')?entryId:[markdown,crypto].includes(id)?id:null,load:id=>id===entryId?entry:id===markdown?'export const MarkdownText=({text})=>text':id===crypto?'export function createHash(){throw Error("不应执行服务器摘要")};export function randomUUID(){return crypto.randomUUID()};export function createPublicKey(){throw Error("不应执行签名")};export function verify(){throw Error("不应执行签名")}':null}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:'group-overlays-test',name:'GroupOverlaysTest',formats:['iife']}}})
+ const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ const page=await browser.newPage({viewport:{width:1440,height:960}});t.after(()=>page.close());page.setDefaultTimeout(6000)
+ const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
+ await page.route('http://127.0.0.1:49319/group-overlays-test',(route:any)=>route.fulfill({status:200,contentType:'text/html',body:'<html lang="zh-CN"><body><div id="root"></div></body></html>'}))
+ await page.goto('http://127.0.0.1:49319/group-overlays-test');await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
+ const main=page.getByRole('region',{name:'讨论',exact:true}),topic=page.getByRole('complementary',{name:'话题讨论',exact:true}),mainDraft=main.getByRole('textbox'),topicDraft=topic.getByRole('textbox')
+ await main.getByText('最新主群消息',{exact:true}).waitFor();await topic.getByText('话题回复 219',{exact:true}).waitFor()
+ await mainDraft.fill('主群草稿');await topicDraft.fill('话题草稿')
+ const ids=await page.evaluate(()=>(window as any).overlayFixture.ids)
+ const last=await page.evaluate(()=>(window as any).overlayFixture.calls.filter(([endpoint]:any)=>endpoint==='groups/reactions/list').at(-1)[1].messageIds)
+ assert.ok(last.includes(ids.latestMain));assert.ok(last.includes(ids.latestTopic));assert.ok(last.includes(ids.root));assert.ok(!last.includes(ids.old))
+ while(!await main.locator('[data-teloa-message-id="'+ids.old+'"]').count())await main.getByRole('button',{name:'加载更早消息',exact:true}).click()
+ await main.getByText('正在处理',{exact:true}).waitFor();assert.equal(await topic.getByText('正在处理',{exact:true}).count(),0,'原主群工作不冒领为话题工作')
+ await main.locator('[data-teloa-message-id="'+ids.old+'"]').evaluate((node:HTMLElement)=>node.scrollIntoView({block:'center'}))
+ await page.waitForFunction(()=>{const f=(window as any).overlayFixture;return f.calls.filter(([endpoint]:any)=>endpoint==='groups/reactions/list').at(-1)[1].messageIds.includes(f.ids.old)})
+ assert.equal(await mainDraft.inputValue(),'主群草稿');assert.equal(await topicDraft.inputValue(),'话题草稿')
+ await page.evaluate(()=>(window as any).overlayFixture.phase='completed')
+ await main.getByText('正在处理',{exact:true}).waitFor({state:'hidden'});assert.equal(await topicDraft.inputValue(),'话题草稿')
+ await page.evaluate(()=>{const f=(window as any).overlayFixture;f.phase='running';f.hold=true})
+ await page.waitForFunction(()=>(window as any).overlayFixture.held)
+ await page.evaluate(()=>{const f=(window as any).overlayFixture;f.target={groupId:f.ids.other,rootId:''};f.render();f.hold=false;f.release()})
+ await page.getByRole('heading',{name:'另一群',exact:true}).waitFor();assert.equal(await main.getByText('正在处理',{exact:true}).count(),0);assert.equal(await main.locator('[data-teloa-message-id="'+ids.old+'"]').count(),0,'另一群不消费旧群消息与状态')
+ const calls=await page.evaluate(()=>(window as any).overlayFixture.calls)
+ assert.ok(calls.filter(([endpoint]:any)=>['groups/reactions/list','groups/routing/list','groups/routing/status'].includes(endpoint)).every(([,input]:any)=>input.messageIds.length<=200))
+ assert.deepEqual(errors,[])
+})

@@ -20,7 +20,7 @@ const responsibilityTitles:readonly [keyof PromptResponsibility,string][]=[
 export function roleConversationPrompt(role:RoleConversationPromptRole):string{
  const clean=(value:unknown)=>typeof value==='string'?value.trim():''
  // 开头必须是身份陈述而不是「以…身份」的扮演式措辞：后者会让模型先报厂商与模型名、再声明自己在扮演（2026-09-21 实机）。
- const blocks:string[]=[`你是「${clean(role.name)}」——本工作台的一位 AI 员工。在这条对话里始终以${clean(role.name)}的身份说话：被问到身份时，介绍${clean(role.name)}的岗位、职责与边界；可以说明自己是 AI 员工，但不要自称其他产品或厂商的助手，也不要用「扮演」「以…身份」这类措辞把自己和岗位分开。`]
+ const blocks:string[]=[`你是「${clean(role.name)}」——本工作台的一位 AI 员工。按当前岗位工作；被问到身份时介绍岗位、职责与边界，不自称其他产品或厂商的助手，也不用扮演式措辞。临时任务不自动改写岗位、权限或例行计划。`]
  // 空字段整段不出现：标题与值一起消失，不留「数据范围：」这种空标签。
  const facts=([['岗位使命',role.duty],['数据范围',role.dataScope],['执行边界',role.executionScope]] as const).flatMap(([title,value])=>clean(value)?[title+'：'+clean(value)]:[])
  if(facts.length)blocks.push(facts.join('\n'))

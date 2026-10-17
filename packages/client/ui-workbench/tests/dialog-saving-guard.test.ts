@@ -18,7 +18,7 @@ for(const format of ['teloa.business-package/v2','teloa.business-package/v3'])te
  let pending=nodes(tree).find(node=>node.type===marker)!.props.save(item)
  tree=app.render('MarketImportForm',props)
  let prevented=false
- tree.props.onCancel({preventDefault(){prevented=true}})
+ tree.props.onCancel({target:tree,currentTarget:tree,preventDefault(){prevented=true},stopPropagation(){}})
  assert.equal(prevented,true);assert.equal(closed,0)
  assert.equal(nodes(tree).find(node=>node.props['aria-label']==='market.forms.close.market.import')!.props.disabled,true)
  assert.equal(nodes(tree).find(node=>node.type==='button'&&node.children.includes('market.forms.return.file.selection'))!.props.disabled,true)
@@ -44,7 +44,7 @@ test('自动化保存中阻止 Esc 与重复提交，保存失败后保留输入
  const submit=()=>nodes(tree).find(node=>node.type==='form')!.props.onSubmit({preventDefault(){}})
  submit();tree=app.render('PlanForm',props);submit()
  let prevented=false
- tree.props.onCancel({preventDefault(){prevented=true}})
+ tree.props.onCancel({preventDefault(){prevented=true},stopPropagation(){}})
  assert.equal(prevented,true);assert.equal(closed,0)
  assert.equal(nodes(tree).find(node=>node.type==='button'&&node.props['aria-label']==='continuous.form.closeAria')!.props.disabled,true)
  await Promise.resolve();assert.equal(calls,1)
@@ -52,6 +52,8 @@ test('自动化保存中阻止 Esc 与重复提交，保存失败后保留输入
  tree=app.render('PlanForm',props)
  assert.ok(nodes(tree).some(node=>node.props.role==='alert'))
  assert.ok(nodes(tree).some(node=>node.type==='input'&&node.props.value==='需要保留的计划'))
- tree.props.onCancel({preventDefault(){throw Error('失败后应允许退出')}})
+ let cancelled=false
+ tree.props.onCancel({preventDefault(){cancelled=true},stopPropagation(){}})
+ assert.equal(cancelled,true,'共享关闭钩子接管原生取消，再显式关闭窗口')
  assert.equal(closed,1)
 })

@@ -1,3 +1,4 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from 'react'
 import {Download,HardDrive,RefreshCw,ExternalLink} from 'lucide-react'
 import {OLLAMA_MIN_VERSION,readOllamaAddress,type LocalModelsOverview,type LocalModelRow,type LocalModelStatus,type PullJobView} from '@teloa/contract'
@@ -95,7 +96,7 @@ export function LocalModelsView({overview,error,busy,loading,confirmation,acknow
   return <button type="button" disabled={busy||inProgress} onClick={()=>onAsk({kind:'pull',row,overview})}><Download size={14} aria-hidden="true"/>{t(row.status==='route-pending'?'localModels.action.retry':'localModels.action.pull')}</button>
  }
  return <section className={css.page} ref={root} aria-label={t('localModels.title')}>
-  <header className={css.header}><h2>{t('localModels.title')}</h2><button type="button" disabled={busy||loading} onClick={onRefresh}><RefreshCw size={14} aria-hidden="true"/>{t('collaboration.action.refresh')}</button></header>
+  <header className={css.header}><h2>{t('localModels.title')}</h2><ToolbarIconButton label={t('collaboration.action.refresh')} icon={RefreshCw} disabled={busy||loading} onClick={onRefresh}/></header>
   {error&&<p className={css.error} role="alert">{error}</p>}
   {!overview&&loading&&<p role="status">{t('localModels.loading')}</p>}
   {overview&&<>

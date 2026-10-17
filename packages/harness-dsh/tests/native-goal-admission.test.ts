@@ -17,14 +17,14 @@ import {createTaskRunGoal} from '../src/task-run-goal.ts'
 async function durableFixture(t:any){
  const f=await patchedSessionFixture(t),root=await mkdtemp(join(tmpdir(),'teloa-goal-durable-'))
  t.after(()=>rm(root,{recursive:true,force:true}))
- await f.ctx.plugin(f.persistencePackage.default,{root,compression:'none'})
+ await f.ctx.plugin(f.persistencePackage,{root,compression:'none'})
  const {agent}=await f.ctx.agents.create({sessionId:f.sessionPackage.SessionId('durable-goal'),agentOptions:{provider:'test',model:'test'}})
  return {...f,agent}
 }
 
 const anchor=createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json'),official=createRequire(anchor)
 async function driverFixture(t:any,options:any={}){
- const driver=(await patchedNativePackage<any>(t,{packageName:'@deepseek-ai/dsh-goal-round-driver',compatBasename:'dsh-goal-round-driver-0.2.1-alpha.1-input-admission',packageAnchor:anchor})).namespace
+ const driver=(await patchedNativePackage<any>(t,{packageName:'@deepseek-ai/dsh-goal-round-driver',compatBasename:'dsh-goal-round-driver-0.2.1-rc.2-input-admission',packageAnchor:anchor})).namespace
  const f=await patchedSessionFixture(t),goal=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-goal')).href)
  await f.ctx.plugin(goal.GoalService)
  // 挡在模型调用前，真实 Agent/Session/Inbox 仍运行；测试不伪称模型质量。

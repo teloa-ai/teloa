@@ -1,0 +1,61 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -289,6 +289,8 @@
+ * @param signal - optional cancellation forwarded to the adapter.
+ * @returns safe text-only summary blocks and the exact call envelope and output.
+ */
++// Only the concrete default summarizer can publish a live auxiliary request.
++const activeSummaryRequests = /* @__PURE__ */ new WeakMap();
+ async function summarizeWithLlm(ctx, config, input, agent, signal) {
+ 	const latest = agent.session.requestHeader()?.config;
+ 	const configured = config.summarizationProvider.length === 0 ? void 0 : {
+@@ -320,7 +322,15 @@
+ 		purpose: "compaction",
+ 		...signal === void 0 ? {} : { signal }
+ 	};
+-	for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk);
++	Object.freeze(options.messages);
++	if (options.tools !== void 0) Object.freeze(options.tools);
++	Object.freeze(options);
++	activeSummaryRequests.set(options, Object.freeze({ agent, session: agent.session, options, signal }));
++	try {
++		for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk);
++	} finally {
++		activeSummaryRequests.delete(options);
++	}
+ 	const error = finishError(assembler.finish);
+ 	if (error !== void 0) throw error;
+ 	const rawOutput = assembler.blocks();
+@@ -1023,5 +1033,7 @@
+ 		};
+ 	}
+ };
++// Query the fixed official module, never a caller-supplied engine or its overrides.
++Object.defineProperty(BasicCompactionEngine, "summaryRequestOwner", { value: (options) => activeSummaryRequests.get(options), writable: false, configurable: false });
+ //#endregion
+ export { BasicCompactionEngine, BasicCompactionEngine as default };
+--- a/lib/types/index.d.ts
++++ b/lib/types/index.d.ts
+@@ -7,7 +7,8 @@
+ import z from '@deepseek-ai/schemastery';
+ import { CompactionEngine } from '@deepseek-ai/dsh-compaction';
+ import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction';
+-import type { SessionSeq } from '@deepseek-ai/dsh-session';
++import type { Session, SessionSeq } from '@deepseek-ai/dsh-session';
++import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
+ import type { Agent } from '@deepseek-ai/dsh-agent';
+ import type { CommandId } from '@deepseek-ai/dsh-commands/brand';
+ import type { SummarizationInput, SummaryResult } from './summarizer.ts';
+@@ -21,8 +22,12 @@
+  * mutation strategy stays fixed so every pricing decision uses the singleton
+  * token meter.
+  */
++/** Exact default-summary envelope, available only while its real stream is executing. */
++export type BasicSummaryRequest = Readonly<{ agent: Agent; session: Session; options: Readonly<GenerateOptions>; signal: AbortSignal | undefined }>;
+ export declare class BasicCompactionEngine extends CompactionEngine {
+     static inject: string[];
++    /** Immutable module-owned read-only lookup; an engine override cannot publish provenance. */
++    static readonly summaryRequestOwner: (options: Readonly<GenerateOptions>) => BasicSummaryRequest | undefined;
+     static Config: z<BasicCompactionConfig>;
+     /** Resolved and validated compaction configuration. */
+     readonly config: ResolvedConfig;

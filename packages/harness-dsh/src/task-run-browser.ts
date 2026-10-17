@@ -159,7 +159,7 @@ export function attachTaskRunBrowser(ports:TaskRunPorts,browser:ReturnType<typeo
  ports.send=async(run,signal,target)=>{browser.bind(run);await send(run,signal,target)}
  ports.backgroundState=async run=>{
   const previous=await backgroundState?.(run),current=await browser.state(run)
-  return {outstanding:previous?.outstanding===true||current.outstanding,interrupted:previous?.interrupted===true||current.interrupted,...(previous?.ownerOnly===true&&!current.dirty&&!current.outstanding&&!current.interrupted?{ownerOnly:true}:{})}
+  return {outstanding:previous?.outstanding===true||current.outstanding,interrupted:previous?.interrupted===true||current.interrupted,...(previous?.cancelled===true?{cancelled:true}:{}),...(previous?.ownerOnly===true&&!current.dirty&&!current.outstanding&&!current.interrupted?{ownerOnly:true}:{})}
  }
  ports.stopChildren=async(run,signal)=>{
   // 子级取消失败也继续回收已登记页面；任一失败都保留停止中，供下次核对重试。

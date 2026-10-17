@@ -34,8 +34,6 @@
 .identityToday strong{display:block;margin-top:3px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);line-height:1.6}
 .identityOwner{display:flex;align-items:center;gap:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .identityActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;width:100%}
-.teamPage .identityPrimary{border-color:var(--teloa-text);background:var(--teloa-text);color:var(--teloa-background)}
-.teamPage .identityPrimary:hover{opacity:.88}
 .identityEditLink{margin-top:2px;padding:0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);text-decoration:underline;cursor:pointer}
 .identityEditLink:hover{color:var(--teloa-text)}
 .chatPanel{width:100%;margin-top:8px}
@@ -54,19 +52,44 @@
 .timelineBadge[data-tone=warn]{background:var(--teloa-warn-bg);color:var(--teloa-warn)}
 .timelineBadge[data-tone=good]{background:var(--teloa-good-bg);color:var(--teloa-good)}
 
-/* 「编辑」里的五组人话分组 + 次级「它的变更记录」：默认全折叠的 <details>，不用左侧强调竖条，只叠加既有 --teloa-* 令牌。 */
-.sectionList{display:flex;flex-direction:column;gap:10px;margin:14px 0}
-.section{border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
-.section>summary{padding:14px 16px;color:var(--teloa-muted);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);cursor:pointer;list-style-position:inside}
-.section>summary small{display:block;margin-top:2px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular)}
-.section[open]>summary{color:var(--teloa-text);border-bottom:1px solid var(--teloa-border)}
-.sectionBody{padding:4px 16px 16px}
-.sectionBody>h3{margin:10px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
-.sectionBody>h3:first-child{margin-top:4px}
+/* B 紧凑总览：摘要行按已加载事实扫读，详情原地展开，沿用工作台令牌。 */
+.profileSectionHeading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 12px}
+.profileSectionHeading h3,.profileSectionHeading h4{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+.sectionList{display:flex;flex-direction:column;gap:0;margin:0 0 14px}
+.section{min-width:0;border:0;border-top:1px solid var(--teloa-border);border-radius:0;background:transparent}
+.section:last-child{border-bottom:1px solid var(--teloa-border)}
+.section>summary{display:flex;align-items:center;gap:12px;min-height:50px;box-sizing:border-box;padding:12px 0;color:var(--teloa-text);font-size:var(--teloa-font-control);cursor:pointer;list-style:none}
+.section>summary::-webkit-details-marker{display:none}
+.section>summary:hover{background:var(--teloa-subtle)}
+.section>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
+.sectionLabel{display:flex;align-items:center;gap:10px;flex:0 0 126px;min-width:0}
+.sectionLabel>svg{flex:none;color:var(--teloa-muted)}
+.sectionLabel strong{font-weight:var(--teloa-weight-medium)}
+.section>summary .sectionSummary{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular)}
+.section>summary>svg:last-child{flex:none;color:var(--teloa-muted);transition:transform 120ms ease}
+.section[open]>summary>svg:last-child{transform:rotate(90deg)}
+.sectionBody{min-width:0;padding:0 0 20px 26px;overflow-wrap:anywhere;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}
+.sectionBody>p:first-child{margin-top:0}
+.sectionBody>.responsibilities{grid-template-columns:minmax(0,1fr);gap:0;margin:0}
+.sectionBody>.responsibilities>div{display:grid;grid-template-columns:112px minmax(0,1fr);gap:14px;padding:10px 0;border:0;border-radius:0;background:transparent}
+.sectionBody>.responsibilities dd{margin:0;font-size:var(--teloa-font-control)}
+.sectionBody>.facts{margin:12px 0;gap:10px 16px}
+.sectionBody>.profileSectionHeading{margin:0 0 10px}
+.sectionBody>.profileSectionHeading h4{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.sectionBody>section[aria-label]{box-sizing:border-box;padding-left:0;padding-right:0}
+.profileList{margin:0;padding-left:17px}
+.profileMode{display:grid;gap:5px;margin:16px 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.profileMode strong{font-weight:var(--teloa-weight-medium)}
+.profileMode p{margin:0}
+.profileLinks{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.profileBoundary{padding-top:12px;border-top:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+@media(max-width:600px){.sectionLabel{flex-basis:100px;gap:8px}.section>summary{gap:8px}.sectionBody{padding-left:0}.sectionBody>.responsibilities>div{grid-template-columns:minmax(0,1fr);gap:5px}}
+@media(prefers-reduced-motion:reduce){.section>summary>svg:last-child{transition:none}}
 .sectionNote{margin-top:14px;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption)}
 .sectionNote summary{cursor:pointer;color:var(--teloa-muted)}
 
 .formBody{border:0;padding:0;margin:0;min-width:0;display:contents}
+.profileEditor.profileEditor{box-sizing:border-box;padding:24px}
 
 .roleSteps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin:12px 0 10px}
 .roleStepsFour{grid-template-columns:repeat(4,minmax(0,1fr))}.roleSteps button{display:flex;align-items:flex-start;gap:8px;min-width:0;padding:9px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-muted);text-align:left;font:inherit;cursor:pointer}.roleSteps button[aria-current=step]{border-color:var(--teloa-focus);background:var(--teloa-hover);color:var(--teloa-text)}.roleSteps button>span:first-child{display:inline-flex;flex:0 0 21px;align-items:center;justify-content:center;width:21px;height:21px;border:1px solid var(--teloa-border);border-radius:50%;font-size:var(--teloa-font-caption)}.roleSteps button>span:last-child{display:flex;min-width:0;flex-direction:column;gap:2px}.roleSteps strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption)}.roleSteps small{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:var(--teloa-font-caption);line-height:1.35}.stepNote{margin:8px 0 12px!important;padding:9px 11px;border-radius:7px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption)!important;line-height:1.6}.stepHint{margin:8px 0 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}.stepPanel{min-height:290px}.stepPanel>label{margin:12px 0}.inlineNotice{margin:12px 0;padding:10px 12px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}.responsibilityEditor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.responsibilityEditor label{margin:0}.responsibilityEditor textarea{min-height:54px}.responsibilityEditor small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.responsibilities{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.responsibilities>div{padding:10px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle)}.responsibilities dt{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}.responsibilities dd{margin:5px 0 0;font-size:var(--teloa-font-caption);line-height:1.65}.responsibilities ul{margin:0;padding-left:16px}.runtimeHeader{margin:12px 0}.runtimeHeader h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.runtimeHeader p{margin:4px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}.runtimeSummary{display:grid;gap:4px;margin:12px 0;padding:11px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.6}.runtimeSummary strong{font-size:var(--teloa-font-caption)}.runtimeSummary span,.runtimeSummary small{color:var(--teloa-muted)}.capabilityChoice{margin:11px 0;padding:12px;border:1px solid var(--teloa-border);border-radius:8px}.capabilityChoice>div:first-child h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.capabilityChoice>div:first-child p{margin:4px 0 10px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.reviewPanel{min-height:290px;padding:14px;border:1px solid var(--teloa-border);border-radius:9px}.reviewPanel>header{display:flex;align-items:center;gap:10px}.reviewPanel>header h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.reviewPanel>header p{margin:3px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.reviewPanel dl{display:grid;grid-template-columns:72px minmax(0,1fr);gap:9px 14px;margin:18px 0;font-size:var(--teloa-font-caption);line-height:1.55}.reviewPanel dt{color:var(--teloa-muted)}.reviewPanel dd{margin:0;white-space:pre-wrap}.nextActions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:11px;border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption)}.nextActions strong{width:100%;font-size:var(--teloa-font-caption)}.nextActions span{padding:4px 7px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface)}.stepFooter{align-items:center!important;justify-content:space-between!important;margin-top:14px!important}.stepFooter>span{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.stepFooter button{display:inline-flex!important;align-items:center;gap:4px}
@@ -93,7 +116,8 @@
 .limitList>li+li{border-top:1px solid var(--teloa-border)}
 .segment{display:inline-flex;gap:2px;padding:2px;border-radius:7px;background:var(--teloa-subtle);border:1px solid var(--teloa-border);flex:none}
 .segment button{min-height:26px;padding:3px 9px;border:0;border-radius:5px;background:transparent;font-size:var(--teloa-font-caption);color:var(--teloa-muted);cursor:pointer}
-.segmentOn{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.segment button[aria-checked="true"],.segment button[aria-checked="true"]:hover{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium);box-shadow:0 1px 3px var(--teloa-border)}
+.segment button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:1px}
 .previewWrap{display:grid;grid-template-columns:minmax(160px,190px) minmax(0,1fr);gap:18px;align-items:start;margin:10px 0}
 .badgeCard{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;padding:26px 14px 14px;text-align:center;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:12px}
 .badgeHole{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:36px;height:5px;border-radius:999px;background:var(--teloa-hover)}
@@ -133,6 +157,7 @@
 .statusPills{display:inline-flex;flex:none;gap:2px;padding:2px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-subtle)}
 .teamPage .statusPills button{min-height:30px;padding:4px 12px;border:0;border-radius:5px;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
 .teamPage .statusPills button[aria-pressed='true']{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.rosterBar [data-roster-retired-toggle][aria-pressed='true']{background:var(--teloa-surface);color:var(--teloa-text);box-shadow:inset 0 0 0 1px var(--teloa-border)}
 .rosterHire{flex:none}
 /* 选中态：整页只剩个人主页，详情自己居中（沿用 .alignedPage .detail 的 justify-self，所以容器必须是 grid）。 */
 .detailPage{position:relative;display:grid;grid-template-columns:minmax(0,1fr);flex:1;min-width:0;min-height:0}
@@ -160,3 +185,74 @@
 .roleStepsFour.roleStepsFour{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.roleStepsFour.roleStepsFour button{flex-direction:column;align-items:center;justify-content:flex-start;gap:5px;padding:7px 4px;border-color:transparent;text-align:center}.roleStepsFour.roleStepsFour button[aria-current=step]{border-color:var(--teloa-border)}.roleStepsFour.roleStepsFour strong{white-space:normal;overflow:visible;line-height:1.4}.roleStepsFour small{display:none}
 
 .hireDialog.hireDialog{width:min(640px,calc(100vw - 32px))}
+.businessFilter{display:flex;align-items:center;gap:8px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.businessFilter select{max-width:200px;padding:7px 10px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);color:var(--teloa-text);font:inherit}
+.employeeDrawer{padding:24px;box-sizing:border-box;width:100%;min-width:0}
+/* 员工档案由外层抽屉或原生详情栏滚动；正文不再形成第二个裁切选择器的滚动层。 */
+.roleDetail.roleDetail{overflow:visible}
+.employeeDrawer .homepage{display:flex;flex-direction:column;gap:20px;min-width:0;width:100%}
+.teamPage .employeeDrawer>[data-teloa-pane=detail]{padding:0;overflow:visible}
+.teamPage .employeeDrawer>[data-teloa-pane=detail]{width:100%;max-width:none;display:block}
+.teamPage .employeeDrawer>[data-teloa-pane=detail]>header{display:none}
+.employeeDrawer .identityRail{position:static;display:flex;flex-direction:column;align-items:stretch;padding:0;border:0;text-align:left;background:transparent;gap:8px;width:100%;box-sizing:border-box}
+.employeeDrawer .identityRail h2{margin:0;font-size:var(--teloa-font-dialog)}
+.identityHeading{display:flex;align-items:flex-start;gap:12px;min-width:0}
+.identityHeading>div{display:grid;gap:4px;min-width:0}
+.identityHeading p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+.employeeDrawer .identityRail>p{margin:0}
+.employeeDrawer .identityToday,.employeeDrawer .identityOwner{display:none}
+.employeeDrawer .identityActions{display:flex;flex-wrap:wrap;gap:8px}
+.employeeDrawer .homepageBody{min-width:0;width:100%;box-sizing:border-box}
+.employeeManagement{width:100%;padding-top:8px;border-top:1px solid var(--teloa-border)}
+.employeeManagement summary{cursor:pointer;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.managementActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.managementActions>section{flex-basis:100%}
+.rosterActions{display:flex;gap:8px;align-items:center;margin-left:auto;flex-shrink:0}
+.employeeWork>section{margin:0;padding-top:0;border-top:0}
+.employeeWork>section>header h3{font-size:var(--teloa-font-body)}
+.employeeScopes,.deviceNote{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.deviceNote{display:flex;align-items:center;gap:6px}
+.employeeWork{display:grid;gap:8px;margin-bottom:20px;min-width:0}
+.employeeWork h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
+.employeeWork button{display:flex;flex-direction:column;align-items:flex-start!important;text-align:left;min-width:0}
+.employeeWork button small{color:var(--teloa-muted)}
+.employeeDevices{padding:14px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);margin-bottom:20px}
+.employeeDevices summary{cursor:pointer;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
+.employeeDevices h4{display:flex;align-items:center;gap:7px;margin:16px 0 8px}
+.sourceModes{display:flex;gap:8px;flex-wrap:wrap}
+.sourceModes button[aria-pressed=true]{border-color:var(--teloa-focus);background:var(--teloa-hover)}
+.avatarGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;max-height:250px;overflow:auto;padding:4px}
+.avatarOption.avatarOption{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 4px;min-width:0;font-size:var(--teloa-font-caption)}
+.avatarOption small{max-width:100%;overflow-wrap:anywhere}
+
+.avatarOption.avatarOption{position:relative}.avatarOption.avatarOption[aria-checked=true]{border:2px solid var(--teloa-focus);background:var(--teloa-hover);padding:7px 3px}.avatarSelected{position:absolute;top:5px;right:5px;display:flex;align-items:center;justify-content:center;width:19px;height:19px;background:var(--teloa-text);color:var(--teloa-surface);border-radius:50%}
+
+/* 详情沿用工作台令牌：一个身份、一个联系区，页签内查阅原工作和配置。 */
+.contactActions{display:flex;align-items:center;gap:4px;margin-top:10px;min-width:0}
+.contactActions button:disabled{cursor:default}
+.profileActions{display:flex;justify-content:flex-end;margin-top:4px}
+.profileActions button{font-size:var(--teloa-font-caption)}
+.profileMenu{position:relative}.profileMenu>summary{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:32px;height:32px;list-style:none;border-radius:7px;color:var(--teloa-muted);cursor:pointer}.profileMenu>summary::-webkit-details-marker{display:none}.profileMenu>summary:hover{background:var(--teloa-subtle);color:var(--teloa-text)}.profileMenu>summary:focus-visible{outline:2px solid var(--teloa-text);outline-offset:2px}.profileMenu>div{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:grid;min-width:190px;padding:6px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:10px;box-shadow:0 8px 24px #0001}.profileMenu>div>button{width:100%;padding:8px 10px;text-align:left;border:0;background:transparent;border-radius:6px;color:var(--teloa-text);font:inherit;cursor:pointer}.profileMenu>div>button:hover{background:var(--teloa-subtle)}
+.profilePanelBody{padding:24px;min-width:0}.profilePanelBody>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.profilePanelBody h3{font-size:var(--teloa-font-control);margin:0}.profilePanelBody p{font-size:var(--teloa-font-control);line-height:1.7}
+.homepageBody>[role=tabpanel]{padding-top:16px;min-width:0}
+.homepageBody>[role=tabpanel][hidden]{display:none}
+.homepageBody>.tabs{margin:0;border-bottom:1px solid var(--teloa-border);gap:20px}
+.workActions{display:flex;justify-content:flex-end;margin-bottom:12px}
+.employeeWork button strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
+.employeeWork button small{font-size:var(--teloa-font-caption);line-height:1.6}
+.employeeWork button{gap:4px;padding:10px 12px}
+.employeeDevices p{font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}
+.employeeDevices h4:first-child{margin-top:0}
+.employeeScopes{display:flex;align-items:baseline;gap:8px;line-height:1.6;overflow-wrap:anywhere}
+.employeeScopes>span:first-child{flex-shrink:0}
+.scopeNames{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;min-width:0}
+.scopeNames button{border:0;border-radius:3px;padding:0;background:transparent;color:var(--teloa-muted);font:inherit;text-align:start;cursor:pointer}
+.scopeNames button:hover{color:var(--teloa-text);text-decoration:underline;text-underline-offset:3px}
+.scopeNames button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
+.scopeNames button[data-current-scope=true]{color:var(--teloa-text)}
+/* 复杂配置仍分五步，窄抽屉允许换行而不截掉步骤名称。 */
+.roleSteps:not(.roleStepsFour){display:flex;flex-wrap:wrap}
+.roleSteps:not(.roleStepsFour) button{flex:1 1 130px}
+.roleSteps:not(.roleStepsFour) strong{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5}
+
+.identityHeading>.profileActions{display:flex;align-items:center;flex:none;gap:2px;margin-top:0}.identityHeading>div:not(.profileActions){flex:1}

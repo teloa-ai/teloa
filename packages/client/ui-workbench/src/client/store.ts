@@ -10,11 +10,24 @@ import type { TemplateSeed } from './MarketForms.js'
 import type { MarketCategory } from './market-home-presentation.js'
 import {restoredBusinessTarget,restoredContinuousTarget,type WorkbenchDirectoryId,type WorkbenchDirectoryNavigation,type WorkbenchDirectoryPatch,type WorkbenchNavigationState} from './workbench-navigation-state.js'
 
-export type WorkbenchView = 'home' | 'attention' | 'messages' | 'team' | 'spaces' | 'market' | 'resources' | 'tasks' | 'capabilities' | 'plans' | 'projects' | 'settings'
+export type WorkbenchView = 'home' | 'attention' | 'messages' | 'team' | 'spaces' | 'market' | 'resources' | 'tasks' | 'plans' | 'projects' | 'settings'
+/** 市场受控页签：主目录类别之外，`apps` 是统一应用目录，`intents` 是已添加模板，`resources` 仅承接原对象资源的上下文访问。 */
+export type MarketCategoryRequest=MarketCategory|'home'|'apps'|'intents'|'resources'
 
-function showWorkbenchView(state:{view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null}},view:WorkbenchView):void{
+type RolePreviewTarget={id:string;request:number}
+
+function showWorkbenchView(state:{view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null};rolePreview:RolePreviewTarget|null},view:WorkbenchView):void{
   state.view=view
   state.panelInfo.activePanelId=null
+  state.rolePreview=null
+}
+
+type MarketRequestState={view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null};rolePreview:RolePreviewTarget|null;marketMode:'catalog'|'installations'|'industry-resources';marketItemId:string|null;marketIntentId:string|null;industryResourceTarget:unknown;marketCategoryRequest:{category:MarketCategoryRequest;serial:number};navigationDirectories:Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>>;navOpen:boolean}
+/** 市场页常驻挂载、`kind` 只在首次挂载读目录；已挂载时要落到某个类目，靠这条按 serial 递增的受控请求。 */
+function requestMarketCategory(state:MarketRequestState,category:MarketCategoryRequest):void{
+  showWorkbenchView(state,'market');state.marketMode='catalog';state.marketItemId=null;state.marketIntentId=null;state.industryResourceTarget=null
+  state.marketCategoryRequest={category,serial:state.marketCategoryRequest.serial+1}
+  state.navigationDirectories={...state.navigationDirectories,market:directorySelection(state.navigationDirectories.market,null)};state.navOpen=false
 }
 
 const directorySelection=(current:WorkbenchDirectoryNavigation|undefined,id:string|null|undefined):WorkbenchDirectoryNavigation=>{
@@ -29,7 +42,7 @@ export function shouldFollowCurrentSession(previous:string|undefined,current:str
 
 export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',restored?:WorkbenchNavigationState) {
   return defineStore({
-    init: () => ({ detail:restored?.detail??{open:false,target:null} as WorkbenchDetailState, detailSeeds:{} as WorkbenchDetailSeeds, rightbar:{shown:false}, view:restored?.view??'home' as WorkbenchView,settingsReturnView:(restored?.view==='settings'?'home':restored?.view??'home') as Exclude<WorkbenchView,'settings'>,searchFocusRequest:0,marketCategoryRequest:{category:'home',serial:0} as {category:MarketCategory|'home';serial:number},continuousTarget:(restored&&restoredContinuousTarget(restored))??{kind:'plans'} as ContinuousTarget,templatePlanSeed:null as TemplatePlanSeed|null,messageMode:restored?.messageMode??'native' as 'directory'|'native'|'groups', navOpen:false, directoryOpen:true, panelInfo:{activePanelId:null as MainPanelId|null},colorScheme, capabilitiesSession:null as string|null,resourceDraftId:null as string|null,resourceTarget:restored?.selected.resourceId?{id:restored.selected.resourceId,request:1}:null as {id:string;request:number}|null,resourceTargetRequest:restored?.selected.resourceId?1:0,taskId:restored?.selected.taskId??null as string|null,roleId:restored?.selected.roleId??null as string|null,groupTarget:null as {groupId:string;rootId:string}|null,businessTarget:(restored&&restoredBusinessTarget(restored))??{scope:'SOC',section:'overview'} as BusinessTarget,capabilityMode:restored?.capabilityMode??'catalog' as 'catalog'|'bindings',capabilityBindingId:restored?.selected.capabilityBindingId??null as string|null,capabilityVersion:null as number|null,marketMode:(restored?.marketMode==='industry-resources'?'catalog':restored?.marketMode??'catalog') as 'catalog'|'installations'|'industry-resources',installationId:restored?.selected.installationId??null as string|null,industryResourceTarget:null as {loadId?:string;itemInstanceId?:string;scope?:string}|null,marketItemId:restored?.selected.marketItemId??null as string|null,marketIntentId:restored?.selected.marketIntentId??null as string|null,templateSeed:null as TemplateSeed|null,navigationDirectories:restored?.directories??{} as Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>> }),
+    init: () => ({ rolePreview:null as RolePreviewTarget|null,rolePreviewRequest:0, detail:restored?.detail??{open:false,target:null} as WorkbenchDetailState, detailSeeds:{} as WorkbenchDetailSeeds, rightbar:{shown:false}, view:restored?.view??'home' as WorkbenchView,settingsReturnView:(restored?.view==='settings'?'home':restored?.view??'home') as Exclude<WorkbenchView,'settings'>,searchFocusRequest:0,searchFocusQuery:undefined as string|undefined,marketCategoryRequest:{category:'home',serial:0} as {category:MarketCategoryRequest;serial:number},continuousTarget:(restored&&restoredContinuousTarget(restored))??{kind:'plans'} as ContinuousTarget,templatePlanSeed:null as TemplatePlanSeed|null,messageMode:restored?.messageMode??'native' as 'directory'|'native'|'groups', navOpen:false, directoryOpen:true, panelInfo:{activePanelId:null as MainPanelId|null},colorScheme, capabilitiesSession:null as string|null,resourceDraftId:null as string|null,resourceTarget:restored?.selected.resourceId?{id:restored.selected.resourceId,request:1}:null as {id:string;request:number}|null,resourceTargetRequest:restored?.selected.resourceId?1:0,taskId:restored?.selected.taskId??null as string|null,roleId:restored?.selected.roleId??null as string|null,groupTarget:(restored?.selected.groupId?{groupId:restored.selected.groupId,rootId:restored.selected.groupRootId??''}:null) as {groupId:string;rootId:string}|null,businessOpenRequest:0,businessTarget:(restored&&restoredBusinessTarget(restored))??{scope:'general',section:'overview'} as BusinessTarget,capabilityBindingId:restored?.selected.capabilityBindingId??null as string|null,capabilityVersion:null as number|null,marketMode:(restored?.marketMode==='industry-resources'?'catalog':restored?.marketMode??'catalog') as 'catalog'|'installations'|'industry-resources',installationId:restored?.selected.installationId??null as string|null,industryResourceTarget:null as {loadId?:string;itemInstanceId?:string;scope?:string}|null,marketItemId:restored?.selected.marketItemId??null as string|null,marketIntentId:restored?.selected.marketIntentId??null as string|null,templateSeed:null as TemplateSeed|null,navigationDirectories:restored?.directories??{} as Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>> }),
     actions: {
       openDetail(state,target:WorkbenchDetailTarget){state.detail=openDetail(state.detail,target)},
       closeDetail(state){state.detail=closeDetail(state.detail)},
@@ -39,10 +52,10 @@ export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',resto
         const next=retainDetailForSession(state.detail,state.detailSeeds,sessionId)
         state.detail=next.detail;state.detailSeeds=next.seeds
       },
-      openArtifacts(state,source:ArtifactSourceRef,artifact?:ArtifactRef,sessionId?:string){state.detail=openDetail(state.detail,artifactDetailTarget(source,artifact,sessionId));state.directoryOpen=false},
-      openConversationObject(state,sessionId:string,object:{kind:'task'|'role';id:string;version?:number}){state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:object.kind,id:object.id,...(object.version!==undefined?{version:object.version}:{})});state.directoryOpen=false},
+      openArtifacts(state,source:ArtifactSourceRef,artifact?:ArtifactRef,sessionId?:string){state.detail=openDetail(state.detail,artifactDetailTarget(source,artifact,sessionId))},
+      openConversationObject(state,sessionId:string,object:{kind:'task'|'role';id:string;version?:number}){state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:object.kind,id:object.id,...(object.version!==undefined?{version:object.version}:{})})},
       openConversationBusiness(state,sessionId:string,target:BusinessTarget){state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:'business',target});state.directoryOpen=false},
-      navigate(state, view: WorkbenchView) { showWorkbenchView(state,view);state.navOpen=false;if(view==='messages')state.messageMode='native' },
+      navigate(state, view: WorkbenchView) { showWorkbenchView(state,view);state.navOpen=false;if(view==='messages')state.messageMode='native';if(view==='spaces')state.navigationDirectories={...state.navigationDirectories,spaces:{...state.navigationDirectories.spaces,businessHome:true}} },
       openConversationDirectory(state){showWorkbenchView(state,'messages');state.messageMode='directory';state.directoryOpen=true;state.navOpen=false},
       openMessages(state,mode:'native'|'groups'){showWorkbenchView(state,'messages');state.messageMode=mode;state.navOpen=false},
       openResources(state,draftId?:string){showWorkbenchView(state,'resources');state.resourceDraftId=draftId??null;state.resourceTarget=null;state.navOpen=false},
@@ -55,22 +68,28 @@ export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',resto
       openTask(state,id:string){showWorkbenchView(state,'tasks');state.taskId=id;state.navigationDirectories={...state.navigationDirectories,tasks:{...state.navigationDirectories.tasks,selectedId:id}};state.navOpen=false},
       selectTask(state,id:string|null){state.taskId=id;state.navigationDirectories={...state.navigationDirectories,tasks:directorySelection(state.navigationDirectories.tasks,id)}},
       openRole(state,id:string){showWorkbenchView(state,'team');state.roleId=id;state.navigationDirectories={...state.navigationDirectories,team:{...state.navigationDirectories.team,selectedId:id}};state.navOpen=false},
+      // 查看负责人等关联员工只叠加详情，保留来源页及其会话详情；明确前往员工目录仍用 openRole。
+      previewRole(state,id:string){state.rolePreviewRequest++;state.rolePreview={id,request:state.rolePreviewRequest};state.navOpen=false},
+      closeRolePreview(state,request:number){if(state.rolePreview?.request===request)state.rolePreview=null},
       selectRole(state,id:string|null){state.roleId=id;state.navigationDirectories={...state.navigationDirectories,team:directorySelection(state.navigationDirectories.team,id)}},
-      openBinding(state,id:string|null,version?:number){showWorkbenchView(state,'capabilities');state.capabilityMode='bindings';state.capabilityBindingId=id;state.capabilityVersion=id?(version??null):null;state.navigationDirectories={...state.navigationDirectories,capabilities:directorySelection(state.navigationDirectories.capabilities,id)};state.navOpen=false},
-      openCapabilityCatalog(state){showWorkbenchView(state,'capabilities');state.capabilityMode='catalog';state.capabilityBindingId=null;state.capabilityVersion=null;state.navOpen=false},
+      /** 能力绑定入口（关注项等）：按原目录记住绑定选择，只在应用页的上下文抽屉访问。 */
+      openBinding(state,id:string|null,version?:number){requestMarketCategory(state,'resources');state.capabilityBindingId=id;state.capabilityVersion=id?(version??null):null;state.navigationDirectories={...state.navigationDirectories,capabilities:directorySelection(state.navigationDirectories.capabilities,id)}},
+      /** 原「我的能力」目录入口：统一到应用页的上下文抽屉；分组与选中项仍由 `capabilities` 目录记忆承载。 */
+      openCapabilityCatalog(state){requestMarketCategory(state,'resources');state.capabilityBindingId=null;state.capabilityVersion=null},
       openInstallations(state,id?:string){showWorkbenchView(state,'market');state.marketMode='installations';state.installationId=id??null;state.industryResourceTarget=null;state.navigationDirectories={...state.navigationDirectories,market:directorySelection(state.navigationDirectories.market,id)};state.navOpen=false},
       openMarket(state,itemId?:string,intentId?:string){showWorkbenchView(state,'market');state.marketMode='catalog';state.marketItemId=itemId??null;state.marketIntentId=intentId??null;state.industryResourceTarget=null;state.navigationDirectories={...state.navigationDirectories,market:directorySelection(state.navigationDirectories.market,itemId)};state.navOpen=false},
-      /** 市场页常驻挂载、`kind` 只在首次挂载读目录；已挂载时要落到某个类目，靠这条按 serial 递增的受控请求（设置页等 Frame 外入口也走这里）。 */
-      openMarketCategory(state,category:MarketCategory|'home'){showWorkbenchView(state,'market');state.marketMode='catalog';state.marketItemId=null;state.marketIntentId=null;state.industryResourceTarget=null;state.marketCategoryRequest={category,serial:state.marketCategoryRequest.serial+1};state.navigationDirectories={...state.navigationDirectories,market:directorySelection(state.navigationDirectories.market,null)};state.navOpen=false},
+      /** 设置页等 Frame 外入口也走这里；`intents` 即「已添加」。 */
+      openMarketCategory(state,category:MarketCategoryRequest){requestMarketCategory(state,category)},
       openIndustryResources(state,target:{loadId?:string;itemInstanceId?:string;scope?:string}){showWorkbenchView(state,'market');state.marketMode='industry-resources';state.industryResourceTarget={...target};state.navOpen=false},
       openIndustrySkill(state,loadId:string,itemInstanceId:string){showWorkbenchView(state,'market');state.marketMode='industry-resources';state.industryResourceTarget={loadId,itemInstanceId};state.navOpen=false},
       saveTemplate(state,seed:TemplateSeed){showWorkbenchView(state,'market');state.marketMode='catalog';state.templateSeed=seed;state.navOpen=false},
       clearTemplateSeed(state){state.templateSeed=null},
-      openBusiness(state,target:BusinessTarget){showWorkbenchView(state,'spaces');state.businessTarget=target;state.navigationDirectories={...state.navigationDirectories,spaces:directorySelection(state.navigationDirectories.spaces,target.id)};state.navOpen=false},
+      openBusiness(state,target:BusinessTarget){showWorkbenchView(state,'spaces');state.businessOpenRequest++;state.businessTarget=target;state.navigationDirectories={...state.navigationDirectories,spaces:{...directorySelection(state.navigationDirectories.spaces,target.id),businessHome:false}};state.navOpen=false},
       openGroupTopic(state,groupId:string,rootId:string){showWorkbenchView(state,'messages');state.messageMode='groups';state.groupTarget={groupId,rootId};state.navOpen=false},
       toggleNavigation(state) {state.navOpen=!state.navOpen},
       closeNavigation(state) {state.navOpen=false},
-      focusConversationSearch(state) {showWorkbenchView(state,'messages');state.messageMode='directory';state.directoryOpen=true;state.navOpen=false;state.searchFocusRequest++},
+      focusConversationSearch(state,query?:string) {showWorkbenchView(state,'messages');state.messageMode='directory';state.directoryOpen=true;state.navOpen=false;state.searchFocusQuery=query?.trim();state.searchFocusRequest++},
+      completeConversationSearchRequest(state,request:number){if(state.searchFocusRequest===request)state.searchFocusQuery=undefined},
       closeSidebar(state) {state.directoryOpen=false},
       toggleSidebar(state) {state.directoryOpen=!state.directoryOpen},
       selectPanel(state,panelId:MainPanelId|null){
@@ -99,7 +118,7 @@ export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',resto
       rememberDirectory(state,id:WorkbenchDirectoryId,patch:WorkbenchDirectoryPatch){
         const current=state.navigationDirectories[id]
         const next:WorkbenchDirectoryNavigation={...current}
-        for(const key of ['category','query','selectedId','scrollTop'] as const)if(Object.hasOwn(patch,key)){const value=patch[key];if(value===undefined)delete next[key];else Object.assign(next,{[key]:value})}
+        for(const key of ['category','query','selectedId','scrollTop','businessHome','businessPage'] as const)if((!['businessHome','businessPage'].includes(key)||id==='spaces')&&Object.hasOwn(patch,key)){const value=patch[key];if(value===undefined)delete next[key];else Object.assign(next,{[key]:value})}
         // 页面会在挂载时把目录筛选同步回来；相同内容不能再次发布 store 快照，
         // 否则外壳传入的新导航回调会触发无意义重渲染循环。
         const keys=Object.keys(next)
@@ -111,7 +130,6 @@ export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',resto
         if(view==='tasks')state.taskId=id??null
         else if(view==='team')state.roleId=id??null
         else if(view==='resources')state.resourceTarget=null
-        else if(view==='capabilities'){state.capabilityBindingId=id??null;if(!id)state.capabilityVersion=null}
         else if(view==='market'){if(state.marketMode==='catalog')state.marketItemId=id??null;else if(state.marketMode==='installations')state.installationId=id??null}
         state.detail=detail
       },

@@ -22,6 +22,8 @@ import {readFileSync,readdirSync} from 'node:fs'
 import {join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import ts from 'typescript'
+import * as dialogueCopyModule from '../src/client/dialogue-copy.ts'
+import {createDialogueOrganization} from '../src/client/dialogue-organization.ts'
 import * as presentationModule from '../src/client/application-presentation.ts'
 import * as resolution from '../src/client/conversation-workspace-resolution.ts'
 import {mount as mountWithCapabilities,nodes as capabilityNodes} from './market-component-harness.ts'
@@ -75,6 +77,8 @@ const errors={localizeWorkError:(_locale:string,error:unknown)=>String(error)}
 
 function navigationMenu(){
  const render=mountComponent('WorkNavigation.tsx',{
+  '../brand/companion/icon.webp':{default:'fixture-assistant.webp'},
+  './ConversationPlanCard.js':{ConversationPlanClock:()=>null},
   './CapabilityNotice.js':{useApplicationCapability:()=>true},
   './work-presentation.js':{presentConversations:()=>[]},
   './WorkbenchNavigationChrome.js':{WorkbenchNavigationBrand:()=>null,WorkbenchNavigationItems:()=>null},
@@ -84,11 +88,12 @@ function navigationMenu(){
   './i18n/provider.js':i18n,
   './i18n/errors.js':errors,
   './use-dismissible.js':{useDismissible:()=>{}},
+  './dialogue-copy.js':dialogueCopyModule,
   './recent-work-hidden.js':{browserRecentWorkHiddenStore:()=>({read:()=>[],hide:()=>{}})},
  })
  const created:unknown[]=[],noop=()=>()=>{}
  const props={view:'home',colorScheme:'light',actions:new Proxy({},{get:()=>()=>{}}),work:{subscribe:noop,getDirectorySnapshot:()=>({rows:[],status:'ready'}),getSnapshot:()=>({sessionId:undefined}),openConversation:async()=>{}},management:{subscribe:noop,getSnapshot:()=>({baseline:true,archived:[],ready:true})},useSessions:(select:(value:unknown)=>unknown)=>select({byId:{}}),create:(options?:unknown)=>created.push(options??'default'),creating:false,needCount:0,createTask:()=>{},createGroup:()=>{},openTwin:async()=>{},setTheme:()=>{}}
- tree(render(props)).find(node=>node.type==='button'&&node.props['aria-haspopup']==='menu')!.props.onClick()
+ const trigger=tree(render(props)).find(node=>node.type==='button'&&node.props['aria-label']==='navigation.new'&&node.props['aria-haspopup']==='menu')!;assert.ok(trigger);assert.equal(text(trigger),'','新建入口使用图标且保留可访问名称');trigger.props.onClick()
  const view=render(props)
  const items=tree(view).filter(node=>node.props.role==='menuitem')
  return {labels:items.map(text),items,divider:tree(view).some(node=>node.props.className==='newWorkMenuDivider'),created}
@@ -97,6 +102,7 @@ function navigationMenu(){
 function creationDialog(props:Record<string,unknown>={}){
  const render=mountComponent('CreateConversationDialog.tsx',{
   './dialog-focus.js':{openDialog:()=>()=>{}},
+  './use-dialog-dismiss.js':{useDialogDismiss:mountWithCapabilities('use-dialog-dismiss.ts').exported.useDialogDismiss},
   './i18n/errors.js':errors,
   './i18n/provider.js':i18n,
   './application-presentation.js':presentationModule,
@@ -134,7 +140,8 @@ function directoryFilters(){
  function DirectoryFilterPopover(){}
  const page=mountWithCapabilities('WorkDirectory.tsx',{'./DirectoryFilterPopover.js':{DirectoryFilterPopover},'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':{presentConversations:()=>[],organizeConversations:()=>[]},'./conversation-search.js':{searchPhase:()=>'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]}})
  const props={work:{subscribe:noop,getDirectorySnapshot:()=>({status:'ready',rows:[]}),refreshDirectory:()=>{}},management:{subscribe:noop,getSnapshot:()=>({ready:true,baseline:true,workspaces,archived:[],pending:{}})},search:{subscribe:noop,getSnapshot:()=>({items:[]})},current:undefined,useSessions:(select:any)=>select({byId:{},ids:[]}),onOpened:()=>{},focusRequest:0,onClose:()=>{},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]}),refresh:()=>{}},selectedGroup:undefined,openGroup:()=>{},createGroup:()=>{},onCreateConversation:()=>{},creating:false}
- const filter=capabilityNodes(page.render('WorkDirectory',props)).find(node=>node.type===DirectoryFilterPopover)!
+ // 目录顶部现有「新建」与「筛选」两个弹层（69ec6e8），执行位置与排列在筛选弹层里。
+ const filter=capabilityNodes(page.render('WorkDirectory',{...props,organization:createDialogueOrganization({getItem:()=>null,setItem:()=>{}})})).find(node=>node.type===DirectoryFilterPopover&&node.props.label==='conversationDirectory.filters')!
  return capabilityNodes(filter).filter(node=>node.type==='select').map(node=>node.props['aria-label'])
 }
 

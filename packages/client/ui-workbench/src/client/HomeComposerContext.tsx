@@ -8,13 +8,18 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {homeNativeCopy} from './home-native-copy.js'
 import css from './HomeComposerContext.module.css'
+import {emptyTaskRunChatSource,type TaskRunChatPresentationDirectory} from './task-run-chat-presentation.js'
 
-type Props=PropsRuntime<'conversation.input.left'>&{api:HomeContextApi;work:BindingClient;isNativeChild:(id:string)=>boolean;isAssistantContext:(id:string)=>Promise<boolean>;roles:()=>Promise<HomeWorkAssigneeOption[]>;block:(sessionId:string,reason:string|undefined)=>void}
+type Props=PropsRuntime<'conversation.input.left'>&{api:HomeContextApi;work:BindingClient;taskRunChat?:TaskRunChatPresentationDirectory;isNativeChild:(id:string)=>boolean;isAssistantContext:(id:string)=>Promise<boolean>;roles:()=>Promise<HomeWorkAssigneeOption[]>;block:(sessionId:string,reason:string|undefined)=>void}
 /** 选择只写受信上下文；主助手及真正接手岗位仍由后端分别核验。 */
-export function HomeComposerContext({sessionId,useSession,useInput,api,roles,block,work,isNativeChild,isAssistantContext}:Props){
+export function HomeComposerContext({sessionId,useSession,useInput,api,roles,block,work,taskRunChat,isNativeChild,isAssistantContext}:Props){
  const {locale}=useI18n(),scopes=useBusinessScopes(),copy=(key:Parameters<typeof homeNativeCopy>[1])=>homeNativeCopy(locale,key)
  const binding=useSyncExternalStore(work.subscribe,work.getSnapshot)
- const excluded=isNativeChild(sessionId)||binding.sessionId===sessionId&&binding.conversation?.purpose==='task-run'
+ const taskSource=taskRunChat?.forSession(sessionId)??emptyTaskRunChatSource
+ const taskSnapshot=useSyncExternalStore(taskSource.subscribe,taskSource.getSnapshot,taskSource.getSnapshot)
+ useEffect(()=>{if(taskSnapshot.status==='idle')void taskSource.load()},[taskSource,taskSnapshot.status])
+ const run=taskSnapshot.value?.sessionId===sessionId?taskSnapshot.value:null
+ const excluded=isNativeChild(sessionId)||!!run||binding.sessionId===sessionId&&binding.conversation?.purpose==='task-run'
  const bindingReady=binding.sessionId===sessionId&&binding.status==='ready'
  const [objectIdentity,setObjectIdentity]=useState(false)
  const session=useSession(value=>value),input=useInput(value=>value)
@@ -43,6 +48,7 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
   catch(cause){if(current!==generation.current)return;setError(localizeWorkError(locale,cause));setStatus('failed');block(sessionId,copy('failed'))}
  }
  const scopeId=context?.scopeId??'general',roleId=context?.roleId??null
+ if(run)return <div className={css.context}><span className={css.fixed} aria-label={copy('scope')} title={copy('scope')}>{scopes[run.scope]??run.scope}</span></div>
  if(excluded||objectIdentity)return lostAttachments?<div className={css.context}><p className={css.notice} role="status">{copy('attachments')}</p></div>:null
  const readonly=locked||status!=='ready'||!!pending
  return <div className={css.context} aria-busy={status==='loading'||status==='saving'}>

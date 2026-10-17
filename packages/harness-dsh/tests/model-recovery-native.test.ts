@@ -4,9 +4,9 @@ import assert from 'node:assert/strict'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry,installModelSelection,type Agent} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {LlmRuntime,LlmAdapter,LlmError,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk,type LlmCallConfig} from '@deepseek-ai/dsh-llm'
+import {LlmRuntime,LlmAdapter,LlmError,ReasoningEffortId,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk,type LlmCallConfig} from '@deepseek-ai/dsh-llm'
 import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
@@ -20,11 +20,18 @@ import {tempHome,rand} from './fixtures/credentials.ts'
 
 // 真实 DSH loop/工具/事件 + 产品模型路由；只用本地脚本替代外部推理。
 const text:StreamChunk[]=[{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:'done'},{type:'block-end',index:0,block:{type:'text',text:'done'}},{type:'finish',reason:{kind:'stop'}}]
+// 可选思考档位的模型夹具：pi-ai 路由对 reasoning 模型省略档位会显式发 thinking disabled。
+const efforts=(...ids:string[])=>ids.map(id=>({id:ReasoningEffortId(id),name:id}))
+const thinking:Record<string,{efforts:{id:ReturnType<typeof ReasoningEffortId>;name:string}[];defaultEffort?:ReturnType<typeof ReasoningEffortId>}>={
+ 'think-no-default':{efforts:efforts('off','low','medium','high')},
+ 'think-medium-default':{efforts:efforts('off','low','medium','high'),defaultEffort:ReasoningEffortId('medium')},
+ 'think-no-high':{efforts:efforts('off','low')},
+}
 const tool:StreamChunk[]=[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId('write-once'),name:'write_result',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('write-once'),name:'write_result',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}]
 class Adapter extends LlmAdapter{
  requests:GenerateOptions[]=[]
  scripts:(StreamChunk[]|Error)[]=[]
- override async resolveModel(provider:string,model:string){if(model==='missing')throw new LlmError('missing','UNKNOWN_MODEL');return {provider,id:model,name:model,inputModalities:provider==='default'||model==='text-only'?['text'] as const:['text','image'] as const}}
+ override async resolveModel(provider:string,model:string){if(model==='missing')throw new LlmError('missing','UNKNOWN_MODEL');return {provider,id:model,name:model,inputModalities:provider==='default'||model==='text-only'?['text'] as const:['text','image'] as const,...thinking[model]?{reasoning:thinking[model]}:{}}}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(options);const result=this.scripts.shift();assert.ok(result,'模型调用超出预期');if(result instanceof Error)throw result;yield* result}
 }
 async function setup(t:TestContext,persistent=false){
@@ -206,5 +213,24 @@ test('首选在模型解析阶段不可用，首次远程请求也能显示持�
  if(status?.state==='observed'){
   assert.equal(status.model.provider,'remote');assert.equal(status.recovery?.reason,'UNKNOWN_MODEL')
   assert.deepEqual(status.recovery?.from,fixed.modelPolicy.primary)
+ }
+})
+
+test('固定任务模型声明思考档位但无默认值时按 high 请求；岗位档位、模型默认与不支持 high 的模型保持原样',async t=>{
+ const cases:[LlmCallConfig,string|undefined][]=[
+  [{provider:'remote',model:'think-no-default'},'high'],
+  [{provider:'remote',model:'think-no-default',reasoningEffort:ReasoningEffortId('off')},'off'],
+  [{provider:'remote',model:'think-medium-default'},'medium'],
+  [{provider:'remote',model:'think-no-high'},undefined],
+  [{provider:'remote',model:'large'},undefined],
+ ]
+ for(const [primary,expected] of cases){
+  const {agent,adapter}=await setup(t)
+  // 会话原生选择带来的档位不是该 Run 的固定策略，不能沿用。
+  agent.ctx.on('agent/request',async(_payload,next)=>({...await next(),reasoningEffort:ReasoningEffortId('low')}))
+  const routing=installTaskModelRouting(agent,{primary},{isRemote:async()=>true,requiresImages:()=>false,recordRecovery:async()=>{}});t.after(routing.dispose)
+  adapter.scripts.push(text)
+  await run(agent)
+  assert.equal(adapter.requests[0]?.reasoningEffort,expected,primary.model+' '+String(primary.reasoningEffort))
  }
 })

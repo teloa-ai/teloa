@@ -1,3 +1,5 @@
+import './employee-asset-test-loader.ts'
+import {employeeCopy} from '../src/client/employee-copy.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
@@ -53,7 +55,7 @@ test('非嵌入且未选中：一页全宽名单，没有目录栏 aside、没�
   assert.doesNotMatch(markup, /data-teloa-pane="detail"/)
   assert.doesNotMatch(markup, new RegExp(zh('team.landingTitle')))
   assert.match(markup, /<h1>员工<\/h1>/)
-  assert.match(markup, new RegExp(zh('team.page.eyebrow')))
+  assert.doesNotMatch(markup, new RegExp(zh('team.page.eyebrow')))
 })
 
 test('非嵌入且未选中：页头副标题区分暂无待办、有待办和等你处理', () => {
@@ -99,8 +101,8 @@ test('页头「件事在等你」全局去重：跨两个范围的同事，他�
   })
   // 按分区求和会得到 2；这里必须是 1。
   assert.match(markup, /1 位员工在岗，1 件事在等你/)
-  // 同一位同事确实在两个分区里各出现一次（所以这条守卫真的在挡重复计数，而不是分区本身没生效）。
-  assert.equal((markup.match(/data-teloa-entry="role-1"/g) ?? []).length, 2)
+  // 全局卡片按同一员工去重，业务关系继续保留。
+  assert.equal((markup.match(/data-teloa-entry="role-1"/g) ?? []).length, 1)
 })
 
 test('旧筛选记忆里界面不再暴露的状态档折叠回「全部」，名单不被静默过滤', () => {
@@ -110,12 +112,13 @@ test('旧筛选记忆里界面不再暴露的状态档折叠回「全部」，�
   assert.equal((markup.match(/aria-pressed="true"/g) ?? []).length, 1)
 })
 
-test('focusScope 透传给 StaffRoster：被聚焦的分区强制展开', () => {
-  // 七个人超过 ROSTER_FOLD_LIMIT=6，默认折叠；只有 focusScope 命中时才展开。
+test('业务入口聚焦筛选准确员工，卡片不因人数而藏起', () => {
   const many = Array.from({length: 7}, (_, index) => ({...role, id: `role-${index}`, name: `同事${index}`}))
-  const state = {...emptyTaskPreview(), roles: many}
-  assert.doesNotMatch(render({state}), /data-teloa-entry=/)
-  assert.match(render({state, focusScope: 'general'}), /data-teloa-entry=/)
+  const state = {...emptyTaskPreview(), roles: [...many,{...role,id:'other',scopes:['SOC']}]}
+  assert.equal((render({state}).match(/data-teloa-entry=/g)??[]).length,8)
+  const filtered=render({state,focusScope:'general'})
+  assert.equal((filtered.match(/data-teloa-entry=/g)??[]).length,7)
+  assert.doesNotMatch(filtered,/data-teloa-entry="other"/)
 })
 
 test('非嵌入且未选中：状态胶囊三档（全部/正在忙/暂停），全部用 aria-pressed', () => {
@@ -127,13 +130,14 @@ test('非嵌入且未选中：状态胶囊三档（全部/正在忙/暂停），
   // 上一行「恰好三个 aria-pressed」即是它不会回来的回归守卫。
 })
 
-test('非嵌入且已选中：整页只剩个人主页，不再渲染分区头', () => {
+test('非嵌入且已选中：右抽屉显示原身份并保留目录', () => {
   const markup = render({selected: 'role-1'})
   assert.match(markup, /data-teloa-pane="detail"/)
   // 分区头的两个标志：aria-controls 指向 staff-roster-* 折叠面板，以及成员行的 data-teloa-entry。
   assert.doesNotMatch(markup, /aria-controls="staff-roster-/)
-  assert.doesNotMatch(markup, /data-teloa-entry=/)
-  assert.doesNotMatch(markup, /<h1>员工<\/h1>/)
+  assert.match(markup, /data-teloa-entry=/)
+  assert.match(markup, /<h1>员工<\/h1>/)
+  assert.match(markup, /<dialog[^>]*class="drawer"/)
   assert.match(markup, new RegExp(zh('team.detail.back')))
 })
 
@@ -144,7 +148,9 @@ test('沙盒数字员工只能预览，不能进入正式会话或渲染关联�
     talk:async()=>{talks++;return true},
     conversations:()=>{conversationPanels++;return createElement('div',null,'关联管理')},
   })
-  assert.match(markup,/<button[^>]*class="identityPrimary"[^>]*disabled=""[^>]*>找它说话<\/button>/)
+  const chat=[...markup.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match=>match[1]!.includes('aria-label="'+employeeCopy('zh-CN','chat')+'"'))
+  assert.ok(chat,'沙盒员工仍须提供明确的对话入口及不可用说明')
+  assert.match(chat[1]!,/disabled=""/)
   assert.match(markup,/这是预览身份，保存为员工后才能开始会话。/)
   assert.equal(talks,0)
   assert.equal(conversationPanels,0)
@@ -158,7 +164,7 @@ test('沙盒分身同样只预览，不接入账号分身的正式会话',()=>{
     talk:async()=>{throw Error('不应调用')},
     conversations:()=>{conversationPanels++;return createElement('div',null,'关联管理')},
   })
-  assert.match(markup,/<button[^>]*class="chatToggle"[^>]*disabled=""[^>]*>找它说话<\/button>/)
+  assert.match(markup,/<button[^>]*disabled=""[^>]*aria-label="找它说话"[^>]*>[\s\S]*?<\/button>/)
   assert.match(markup,/这是预览身份，保存为员工后才能开始会话。/)
   assert.equal(conversationPanels,0)
 })

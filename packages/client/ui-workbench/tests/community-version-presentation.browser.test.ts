@@ -13,7 +13,8 @@ let browser:any,script:string,temp:string
 const entry=`
 import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {AboutSettings} from '${client}AboutSettings.tsx';import {WorkbenchNavigationBrand} from '${client}WorkbenchNavigationChrome.tsx';import {applicationPresentation} from '${client}application-presentation.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
 const theme={subscribe:()=>()=>{},getSnapshot:()=> 'light'},view=createRoot(document.getElementById('root'));let generation=0;
-window.versionFixture={mount:async(locale,product)=>{await applicationPresentation.configure(product==='Free'?undefined:{presentation:async()=>({schema:'teloa.application-presentation/v1',product,account:{displayName:'Alice',email:'alice@example.test'}}),openAccount:async()=>{}});const snapshot={locale,dshLocale:locale,revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};flushSync(()=>view.render(<I18nProvider key={++generation} runtime={runtime}><div id="brand"><WorkbenchNavigationBrand product={applicationPresentation.getSnapshot().product} colorScheme="light" onClose={()=>{}}/></div><div id="edition">{runtime.t('app.edition.personal')}</div><div id="about"><AboutSettings theme={theme}/></div></I18nProvider>));return applicationPresentation.getSnapshot()}};
+const configure=product=>applicationPresentation.configure(product==='Free'?undefined:{presentation:async()=>({schema:'teloa.application-presentation/v1',product,account:{displayName:'Alice',email:'alice@example.test'}}),openAccount:async()=>{}});
+window.versionFixture={configure,mount:async(locale,product)=>{await configure(product);const snapshot={locale,dshLocale:locale,revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};flushSync(()=>view.render(<I18nProvider key={++generation} runtime={runtime}><div id="brand"><WorkbenchNavigationBrand product={applicationPresentation.getSnapshot().product} colorScheme="light" onClose={()=>{}}/></div><div id="edition">{runtime.t('app.edition.personal')}</div><div id="about"><AboutSettings theme={theme}/></div></I18nProvider>));return applicationPresentation.getSnapshot()}};
 `
 
 before(async()=>{
@@ -24,7 +25,23 @@ before(async()=>{
 })
 after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,force:true})})
 
-test('十语言真实关于页、侧栏与版本标签统一显示社区版；三种宿主各自只高亮当前版本',async t=>{
+test('关于页按三个版本的适用对象与使用方式比较，共用能力只说明一次',async t=>{
+ const page=await browser.newPage({viewport:{width:1440,height:900}});t.after(()=>page.close())
+ await page.route('**/*',(route:any)=>route.abort())
+ const url='http://127.0.0.1/teloa-about-layout-fixture'
+ await page.route(url,(route:any)=>route.fulfill({contentType:'text/html',body:'<div id="root"></div>'}))
+ await page.goto(url);await page.addScriptTag({content:script})
+ await page.evaluate(()=>(window as any).versionFixture.mount('zh-CN','Free'))
+ const table=page.getByRole('table',{name:'版本定位',exact:true})
+ assert.deepEqual(await table.getByRole('columnheader').allTextContents(),['版本','适用对象','使用方式'])
+ assert.equal(await table.locator('tbody tr').count(),3)
+ assert.equal(await table.getByText('当前版本',{exact:true}).count(),1)
+ assert.match(await table.innerText(),/社区版[\s\S]*Pro[\s\S]*Enterprise/)
+ assert.equal(await table.getByRole('button').count(),0,'版本定位不授予功能或购买权限')
+ assert.equal(await page.locator('#about ul').count(),0,'不再堆叠重复的功能清单')
+})
+
+test('简繁英真实关于页保留社区联系；商业宿主只显示官方联系并各自高亮当前版本',async t=>{
  const page=await browser.newPage(),errors:string[]=[],requests:string[]=[]
  let checksPassed=false
  page.setDefaultTimeout(6000);page.on('pageerror',(error:Error)=>errors.push(error.message));page.on('console',(message:any)=>{if(message.type()==='error')errors.push(message.text().slice(0,1000))})
@@ -34,37 +51,48 @@ test('十语言真实关于页、侧栏与版本标签统一显示社区版；�
  const fixtureURL='http://127.0.0.1/teloa-community-version-fixture'
  await page.route(fixtureURL,(route:any)=>route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><div id="root"></div></body></html>'}))
  await page.goto(fixtureURL);await page.addScriptTag({content:script})
- for(const locale of ['zh-CN','zh-Hant','en','ja','ko','vi','es','fr','de','pt']){
+ for(const locale of ['zh-CN','zh-Hant','en']){
   const label=locale==='zh-CN'?'社区版':locale==='zh-Hant'?'社區版':'Community'
   const snapshot=await page.evaluate((locale:string)=>(window as any).versionFixture.mount(locale,'Free'),locale)
   assert.equal(snapshot.product,'Free','展示改名保留兼容协议值');assert.equal(snapshot.account,null)
   await page.locator('#brand [class*="brandTier"]').filter({hasText:label}).waitFor()
   assert.equal(await page.locator('#edition').textContent(),label,locale)
-  assert.deepEqual(await page.locator('#about article > strong').allTextContents(),[label,'Pro','Enterprise'],locale)
-  assert.equal(await page.locator('#about article[class*="planCardCurrent"] > strong').textContent(),label,locale)
-  if(locale==='zh-CN')assert.deepEqual(await page.locator('#about article [class*="planBadge"]').allTextContents(),['当前版本','个人 / 专业','企业团队'])
+  assert.deepEqual(await page.locator('#about tbody tr > th > strong').allTextContents(),[label,'Pro','Enterprise'],locale)
+  assert.equal(await page.locator('#about tr[class*="editionCurrent"] > th > strong').textContent(),label,locale)
+  if(locale==='zh-CN')assert.deepEqual(await page.locator('#about tbody tr[aria-current="true"] [class*="srOnly"]').allTextContents(),['当前版本'])
   assert.doesNotMatch(await page.locator('#about section[class*="plansSection"]').innerText(),/\bFree\b|Personal edition|Alpha|not yet available|planned|Public Web/i,locale)
   assert.equal(await page.locator('img[alt="Teloa"]').count(),2,'产品始终是 Teloa')
+  assert.deepEqual(await page.locator('#about [class*="contactNames"] strong').allTextContents(),['Max Luo','Morgan Chen','Caleb Pan'])
+  assert.deepEqual(await page.locator('#about [class*="contactLinks"] a').evaluateAll((links:any[])=>links.map(link=>link.getAttribute('href'))),['https://teloa.ai','https://github.com/teloa-ai/'])
+  assert.equal(await page.locator('#about [class*="connectionActions"] button').count(),locale==='zh-CN'?3:1)
  }
  for(const product of ['Pro','Enterprise']){
+  // 切换同一个真实组件时，已经打开的个人二维码也必须从商业版移除。
+  await page.evaluate(()=>(window as any).versionFixture.mount('zh-CN','Free'))
+  await page.getByRole('button',{name:'联系作者',exact:true}).click();await page.getByRole('dialog').waitFor()
+  await page.evaluate((product:string)=>(window as any).versionFixture.configure(product),product)
+  await page.waitForFunction(()=>document.querySelectorAll('#about [role="dialog"]').length===0)
   await page.evaluate((product:string)=>(window as any).versionFixture.mount('zh-CN',product),product)
   await page.locator('#brand [class*="brandTier"]').filter({hasText:product}).waitFor()
-  assert.deepEqual(await page.locator('#about article > strong').allTextContents(),['社区版','Pro','Enterprise'])
-  assert.equal(await page.locator('#about article[class*="planCardCurrent"] > strong').textContent(),product)
-  const cards=page.locator('#about article')
-  assert.match(await cards.nth(0).innerText(),/开源核心 · 自行部署/)
-  assert.match(await cards.nth(1).innerText(),/开箱即用的 Mac 原生应用[\s\S]*AI 团队协作与自动化[\s\S]*手机随时新建、跟进与接续工作/)
-  assert.match(await cards.nth(2).innerText(),/企业云或内网部署[\s\S]*组织成员与共享 AI 员工[\s\S]*SSO 与组织身份管理[\s\S]*企业数据与业务系统集成/)
+  assert.deepEqual(await page.locator('#about tbody tr > th > strong').allTextContents(),['社区版','Pro','Enterprise'])
+  assert.equal(await page.locator('#about tr[class*="editionCurrent"] > th > strong').textContent(),product)
+  const cards=page.locator('#about tbody tr')
+  assert.match(await cards.nth(0).innerText(),/开源、自行部署/)
+  assert.match(await cards.nth(1).innerText(),/Mac 原生工作台[\s\S]*本机执行[\s\S]*手机接续原会话、审批与成果/)
+  assert.match(await cards.nth(2).innerText(),/企业云或内网部署[\s\S]*组织成员[\s\S]*共享员工[\s\S]*SSO[\s\S]*权限与审计/)
   const text=await page.locator('#about section[class*="plansSection"]').innerText()
   assert.match(text,/版本定位/)
-  assert.match(text,/三个版本共用 Teloa 核心/)
-  assert.match(text,/自备模型 API 密钥，模型费用另计/)
+  assert.doesNotMatch(text,/三个版本共用 Teloa 核心|自备模型 API 密钥/,'关于页不再重复共享说明')
   assert.doesNotMatch(text,/规划中|尚未开放|公开 Web|Alpha/)
-  for(const [index,position] of ['开源','个人 / 专业','企业团队'].entries()){
-   const expected=['Free','Pro','Enterprise'][index]===product?'当前版本':position
-   assert.equal(await cards.nth(index).locator('[class*="planBadge"]').textContent(),expected)
-  }
-  assert.equal(await page.locator('#about article button').count(),0,'版本说明不虚构购买入口')
+  assert.equal(await page.locator('#about tbody tr[aria-current="true"]').count(),1)
+  assert.equal(await page.locator('#about tbody tr[aria-current="true"]').getByRole('rowheader').textContent(),product+'当前版本')
+  assert.equal(await page.locator('#about tbody button').count(),0,'版本说明不虚构购买入口')
+  assert.equal(await page.locator('#about [class*="contactIdentity"]').count(),0)
+  assert.equal(await page.locator('#about [class*="connectionActions"]').count(),0)
+  assert.deepEqual(await page.locator('#about [class*="contactLinks"] a').evaluateAll((links:any[])=>links.map(link=>link.getAttribute('href'))),['https://teloa.ai'])
+  assert.deepEqual(await page.locator('#about [class*="contactEmails"] a').evaluateAll((links:any[])=>links.map(link=>link.getAttribute('href'))),['mailto:support@teloa.ai','mailto:hi@teloa.ai'])
+  assert.doesNotMatch(await page.locator('#about').innerText(),/Max Luo|Morgan Chen|Caleb Pan|neteyes|白帽子|GitHub|联系作者|关注公众号|打赏作者/)
+  await page.getByRole('button',{name:'提交反馈',exact:true}).click();await page.getByRole('dialog').waitFor()
  }
  checksPassed=true
 })

@@ -6,6 +6,7 @@ import {readFile} from 'node:fs/promises'
 import type {CapabilitySnapshot} from '@teloa/contract'
 import {CAPABILITY_ROW_IDS,COMPOSITION_ROWS,compositionTargetScope,composeFromWorkspace} from '../src/client/industry-composition.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
+import type {CapabilitySkillFact} from '../src/client/capability-skill-runtime.ts'
 
 // capability-composition.ts 真值导入 industry-composition.js；跟 page-create-skill-content.test.ts 同样的取巧：
 // Node 原生 TS 剥离不重写模块说明符，这里把它指回同目录的 .ts 源文件。
@@ -17,6 +18,17 @@ registerHooks({resolve(specifier,context,next){
  return next(specifier,context)
 }})
 const {capabilitySections}=await import('../src/client/capability-composition.ts')
+const {capabilitySkillLoadsKey}=await import('../src/client/capability-skill-runtime.ts')
+
+test('工作室技能目录独立于任务运行的限定技能，空的已核验目录不会回退任务权限',()=>{
+ const skill=(name:string)=>({name,description:name,source:'/skills/'+name,provider:'local',modelInvocable:true,userInvocable:true})
+ const snapshot={skills:[skill('writing-revision')],connections:{status:'not-connected'}} as CapabilitySnapshot
+ const studioSkills=[skill('find-skills'),skill('research')]
+ const rows=capabilitySections({snapshot,studioSkills,loads:[]}).find(row=>row.id==='skill')!.items
+ assert.deepEqual(rows.map(row=>row.title),['find-skills','research'])
+ assert.deepEqual(capabilitySections({snapshot,studioSkills:[],loads:[]}).find(row=>row.id==='skill')!.items,[])
+ assert.deepEqual(snapshot.skills.map(row=>row.name),['writing-revision'])
+})
 
 type LoadItem=IndustryLoadRecord['items'][number]
 const loadItem=(localId:string,instanceId:string,kind:LoadItem['kind'],status:LoadItem['status']='active'):LoadItem=>
@@ -42,6 +54,23 @@ const beta=load('load-beta','beta',[
  loadItem('ext','beta-ext','plugin','active'),
  loadItem('wt','beta-wt','work-template','active'),
 ])
+
+test('业务已核验关联安装只合并同一原生名与来源，保留友好名、原配置动作和独立技能',()=>{
+ const nativeName='writing-bot-writing-revision-b212817e'
+ const skill=(name:string,source='managed-original',provider='teloa-market')=>({name,description:'method',source,provider,modelInvocable:true,userInvocable:true})
+ const native={nativeName,nativeSource:'managed-original',nativeProvider:'teloa-market'}
+ const verified={loadId:alpha.id,itemInstanceId:'alpha-skill',status:'installed' as const,linked:true,installationId:'original-installation',...native}
+ const skills=[skill(nativeName),skill('find-skills'),skill(nativeName+'-independent'),skill(nativeName,'other-original'),skill(nativeName,'managed-original','other-provider')]
+ const compose=(fact:CapabilitySkillFact,loads:readonly IndustryLoadRecord[]=[alpha],key=capabilitySkillLoadsKey(loads))=>capabilitySections({loads,studioSkills:skills,skillRuntime:{loadsKey:key,state:'ready',facts:[fact]}}).find(row=>row.id==='skill')!.items
+ const rows=compose(verified)
+ assert.equal(rows.length,5)
+ assert.equal(rows[0]!.title,'triage-标题');assert.equal(rows[0]!.instanceId,'alpha-skill');assert.equal(rows[0]!.skillStatus,'installed');assert.deepEqual(rows[0]!.go,{kind:'capabilities'})
+ assert.deepEqual(rows.slice(1).map(row=>row.title),['find-skills',nativeName+'-independent',nativeName,nativeName])
+ for(const change of [{...verified,linked:false},{...verified,nativeName:nativeName.toUpperCase()},{...verified,itemInstanceId:'other-instance'},{...verified,loadId:'other-load'}])assert.equal(compose(change).length,6)
+ for(const status of ['unverified','unlinked','installed-unverified','disabled','missing','shadowed','mismatch','not-installed'] as const)assert.equal(compose({...verified,status}).length,6)
+ const drift={...alpha,contentHash:'f'.repeat(64)}
+ assert.equal(compose(verified,[drift],capabilitySkillLoadsKey([alpha])).length,6)
+})
 
 test('capabilitySections 只产出跨业务复用的四行，顺序与 COMPOSITION_ROWS 过滤一致，不含 staff/knowledge/board',()=>{
  const sections=capabilitySections({loads:[]})
@@ -72,16 +101,27 @@ test('同一模板加载到两个业务时技能/接入源/扩展各只出现一
  assert.deepEqual(method.items.map(item=>item.origin),[{kind:'business',scopes:['alpha']},{kind:'business',scopes:['beta']}])
 })
 
-test('合并后状态取最差一档：技能 A 已装、B 只登记时说待安装；接入源 A 连着、B 断了时说断开',()=>{
- const sections=capabilitySections({loads:[alpha,beta]})
+test('合并后按真实安装事实取最差一档：技能 A 已装、B 未安装时说待安装；接入源 A 连着、B 断了时说断开',()=>{
+ const skillRuntime=(loads:readonly IndustryLoadRecord[])=>({loadsKey:capabilitySkillLoadsKey(loads),state:'ready' as const,facts:[{loadId:alpha.id,itemInstanceId:'alpha-skill',status:'installed' as const},{loadId:beta.id,itemInstanceId:'beta-skill',status:'not-installed' as const}]})
+ const sections=capabilitySections({loads:[alpha,beta],skillRuntime:skillRuntime([alpha,beta])})
  assert.equal(sections.find(section=>section.id==='skill')!.items[0]!.state,'pending-install')
  assert.equal(sections.find(section=>section.id==='source')!.items[0]!.state,'disconnected')
  const skill=sections.find(section=>section.id==='skill')!.items[0]!
  assert.equal(skill.instanceId,'beta-skill','配置落点必须对应待安装的实例')
  assert.equal(skill.industry!.spaceName,beta.space.name)
  assert.equal(sections.find(section=>section.id==='source')!.items[0]!.instanceId,'beta-mcp')
- const reversed=capabilitySections({loads:[beta,alpha]}).find(section=>section.id==='skill')!.items[0]!
+ const reversed=capabilitySections({loads:[beta,alpha],skillRuntime:skillRuntime([beta,alpha])}).find(section=>section.id==='skill')!.items[0]!
  assert.equal(reversed.instanceId,'beta-skill','已安装条目不得覆盖待处理实例')
+})
+
+test('声明 active 不能冒充安装事实，旧加载或版本的迟到事实不能应用到当前能力行',()=>{
+ const row=capabilitySections({loads:[alpha]}).find(section=>section.id==='skill')!.items[0]!
+ assert.equal(row.state,'unverified');assert.equal(row.skillStatus,'unverified')
+ const previous={loadsKey:capabilitySkillLoadsKey([alpha]),state:'ready' as const,facts:[{loadId:alpha.id,itemInstanceId:'alpha-skill',status:'installed' as const}]}
+ const updated={...alpha,contentHash:'d'.repeat(64),items:alpha.items.map(item=>item.kind==='skill'?{...item,version:'2.0.0'}:item)}
+ const current=capabilitySections({loads:[updated],skillRuntime:previous}).find(section=>section.id==='skill')!.items[0]!
+ assert.equal(current.state,'unverified');assert.equal(current.skillStatus,'unverified');assert.equal(current.industry!.resourceVersion,'2.0.0')
+ assert.deepEqual(capabilitySections({loads:[{...alpha,status:'unloaded'}],skillRuntime:previous}).find(section=>section.id==='skill')!.items,[])
 })
 
 const conversation:CapabilitySnapshot['conversation']={id:'conversation',sessionId:'session',requestedSessionId:'session',ownerId:'self',title:'当前会话',scopeIds:['general'],version:1,status:'ready',createdAt:'2026-09-20T00:00:00.000Z'}

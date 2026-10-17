@@ -33,7 +33,7 @@ async function setup(overrides:Partial<PlanToolsPorts>={},subagent=false){
   readTaskPolicy:async()=>null,
   planHandler:async(endpoint,payload)=>{calls.push([endpoint,payload]);return endpoint==='plans/list'?[stored]:endpoint==='plans/get'?stored:endpoint==='plans/create'?stored:{...stored,version:2,state:'active',updatedAt:'2026-09-12T00:01:00.000Z'}},
   scheduleHandler:async(_endpoint,payload)=>{calls.push(['plans/executions',payload]);return {items:[],errors:[]}},
-  roles:{list:async(actor,input)=>{calls.push(['roles/list',actor,input]);return [{id:roleId,ownerId:owner,version:3,state:'active',name:'SOC 分析员',kind:'employee',scopes:['SOC'],duty:'核对',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T00:00:00.000Z'}]}},
+  roles:{list:async(actor,input)=>{calls.push(['roles/list',actor,input]);return [{id:roleId,ownerId:owner,version:3,state:'active',avatarKey:'researcher',name:'SOC 分析员',kind:'employee',scopes:['SOC'],duty:'核对',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T00:00:00.000Z'}]}},
   now:()=> '2026-09-12T01:02:03.000Z',timezone:()=> 'Asia/Singapore',...overrides,
  }
  registerPlanTools(ctx,ports)
@@ -64,7 +64,8 @@ test('根输入拒绝身份与未知字段，创建固定 manual 来源并用调
  assert.equal((await env.call('teloa_plans_create',input,'same-create')).isError,false)
  assert.equal((await env.call('teloa_plans_create',input,'same-create')).isError,false)
  const writes=env.calls.filter(row=>row[0]==='plans/create') as [string,{requestId:string;source:unknown;fields:{notificationPolicy:string}}][]
- assert.equal(writes.length,2);assert.match(writes[0]![1].requestId,/^[a-f0-9-]{36}$/);assert.equal(writes[0]![1].requestId,writes[1]![1].requestId);assert.deepEqual(writes[0]![1].source,{kind:'manual'});assert.equal(writes[0]![1].fields.notificationPolicy,'attention')
+ assert.equal(writes.length,2);assert.match(writes[0]![1].requestId,/^[a-f0-9-]{36}$/);assert.equal(writes[0]![1].requestId,writes[1]![1].requestId);assert.deepEqual(writes[0]![1].source,{kind:'manual',sessionId:'plan-ordinary'});assert.equal(writes[0]![1].fields.notificationPolicy,'attention')
+ assert.equal((await env.call('teloa_plans_create',{...input,sessionId:'forged-session'})).isError,true)
  assert.equal((await env.call('teloa_plans_create',{...input,notificationPolicy:'unknown'})).isError,true)
 })
 

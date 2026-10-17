@@ -14,7 +14,7 @@
 .decision input[type=checkbox]{flex-shrink:0}
 .decision button{padding:8px 12px;min-height:36px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);cursor:pointer}
 .decision button:disabled{opacity:.5;cursor:default}
-.decision button:focus-visible,.decision input:focus-visible,.decision textarea:focus-visible{outline:2px solid var(--teloa-accent);outline-offset:3px}
+.decision button:focus-visible,.decision input:focus-visible,.decision textarea:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
 .decision [role=alert]{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-warn)}
 .decision [role=status]{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .checks{display:flex;flex-direction:column;gap:6px;margin:0;font-size:var(--teloa-font-caption)}

@@ -37,6 +37,22 @@ test('目录加载后逐条核对可用性与 DSH 原生观察，单条失败保
  assert.equal(marketRuntimeForItem(item,runtime)!.status,'已安装，可用性未核验')
 })
 
+test('浏览市场只读安装记录，42 项安装不触发逐项诊断且不宣称已可用',async()=>{
+ let lists=0,observations=0,availabilityReads=0
+ const installed=Array.from({length:42},(_,index)=>({...installation,id:`20000000-0000-4000-8000-${String(index+1).padStart(12,'0')}`}))
+ const runtime=await loadMarketSkillRuntime({
+  list:async()=>{lists++;return {items:installed,usages:[]}},
+  observe:async()=>{observations++;throw Error('浏览目录不应诊断')},
+ },{get:async()=>{availabilityReads++;throw Error('浏览目录不应核对授权')}},{verify:false})
+ assert.equal(lists,1)
+ assert.equal(observations,0)
+ assert.equal(availabilityReads,0)
+ assert.equal(runtime.state,'ready')
+ assert.equal(runtime.facts.length,42)
+ assert.deepEqual(marketRuntimeForItem(item,runtime),{status:'已安装，可用性未核验',action:'核对安装',installationId})
+ assert.ok(runtime.facts.every(fact=>fact.availability===null&&fact.observation===null&&!fact.verificationError))
+})
+
 test('插件没有真实生命周期观测时显示状态未核验',()=>{
  const {contentStorage:_,...base}=item
  const plugin:MarketItem={...base,id:'dsh-visualize',kind:'resource',resourceKind:'plugin',source:{kind:'github',url:'https://github.com/Nagi-ovo/dsh-visualize',revision:'fixed'}}

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {readFile} from 'node:fs/promises'
 import {registerHooks} from 'node:module'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
@@ -27,9 +28,9 @@ test('面板：进度不计按需项、三类计数、按组列标题与去处�
  assert.match(html,/连接设置（密钥或授权）：SIEM 连接/);assert.match(html,/按模板建任务（需提供资料）：告警研判/);assert.match(html,/去处理/)
  assert.doesNotMatch(html,/工作空间|单空间|实例|投影|尚未加载|内容待读取|人类/)
 })
-test('面板：确认态按组列出将自动完成的条目（每组最多 10 个）并注明每日小结；回执显示完成/处理中/失败计数',()=>{
+test('面板：确认态列出将准备的内容并保留员工暂停；回执显示完成/处理中/失败计数',()=>{
  const confirming=render({confirming:true})
- assert.match(confirming,/密钥与授权仍需你在对应页面完成/);assert.match(confirming,/每日小结/);assert.match(confirming,/启用资料：分诊指南/)
+ assert.match(confirming,/新员工保持暂停/);assert.match(confirming,/账号授权和计划需另行配置/);assert.doesNotMatch(confirming,/上岗会|启用.*每日小结/);assert.match(confirming,/启用资料：分诊指南/)
  const many={...readiness,counts:{...readiness.counts,auto:12},rows:[...readiness.rows,...Array.from({length:11},(_,i)=>({itemInstanceId:`a111111${i.toString(16)}-1111-4111-8111-111111111111`,kind:'knowledge',title:'资料'+(i+1),state:'auto',step:'knowledge',entry:null}))]}
  assert.match(render({readiness:many,confirming:true}),/启用资料：分诊指南(、资料\d+){9} 等 12 项/)
  const receipt={loadId,digest:'9'.repeat(64),results:[{itemInstanceId:K,title:'分诊指南',step:'knowledge',outcome:'done',code:null,message:null},{itemInstanceId:R,title:'岗位',step:'role-resume',outcome:'skipped',code:null,message:'x'},{itemInstanceId:M,title:'技能',step:'skill',outcome:'failed',code:'teloa/dependency-unavailable',message:'未生效'}],readiness}
@@ -115,4 +116,75 @@ test('api：白名单载荷与回包逐键校验；最终清单待刷新的回�
 test('面板：全部就绪时标题改为「都准备好了」，没有一键准备按钮',()=>{
  const html=render({readiness:{...readiness,counts:{ready:3,auto:0,needsUser:0,optional:1,pending:0},rows:readiness.rows.map(row=>row.state==='optional'?row:{...row,state:'ready',entry:null})}})
  assert.match(html,/<h3[^>]*>都准备好了<\/h3>/);assert.match(html,/需要准备的 3 项里，已就绪 3 项/);assert.doesNotMatch(html,/一键准备/)
+})
+
+// N24：宿主只给本批新建、关联技能与连接都已就绪的员工绑定技能并上岗；关联项还需要你操作时，一键只会建出暂停、无技能的员工，之后也不再补绑。
+// 主按钮因此先去处理那些项，「仍要先创建暂停的员工」降为显式次要入口，只打开原一键确认、不直接执行。
+const WRole='88888888-8888-4888-8888-888888888888',WSkill='99999999-9999-4999-8999-999999999999',WConn='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const writing={...readiness,counts:{ready:0,auto:1,needsUser:1,optional:0,pending:0},rows:[
+ {itemInstanceId:WRole,kind:'role',title:'Writing Bot',state:'auto',step:'role',entry:null},
+ {itemInstanceId:WSkill,kind:'skill',title:'Writing revision',state:'needs-user',step:null,entry:'skill-confirm'}]}
+const writingLinks=[{kind:'role-skill',from:WRole,to:WSkill}]
+const label=(node:{props:{children?:unknown}})=>[node.props.children].flat(Infinity).filter(value=>typeof value==='string').join('')
+function tree(props:Record<string,unknown>){
+ const calls={asked:0,confirmed:0,opened:[] as string[]}
+ const root=IndustryReadinessPresentation({readiness,receipt:undefined,confirming:false,busy:false,error:'',t,localize:()=>'',onAsk:()=>{calls.asked++},onCancel:()=>{},onConfirm:()=>{calls.confirmed++},onOpen:(group:string)=>calls.opened.push(group),...props} as never)
+ const buttons:Array<{props:{onClick:()=>void;children?:unknown}}>=[]
+ const walk=(node:unknown):void=>{if(Array.isArray(node)){node.forEach(walk);return}if(!node||typeof node!=='object')return;const element=node as {type?:string;props?:{children?:unknown}};if(element.type==='button')buttons.push(node as never);walk(element.props?.children)}
+ walk(root)
+ return {calls,button:(text:string)=>buttons.find(node=>label(node)===text)}
+}
+test('面板：员工关联的技能需要你先确认时，主按钮先去处理该技能，不把建出暂停、无技能员工包装成一键就绪',()=>{
+ const html=render({readiness:writing,relations:writingLinks})
+ assert.match(html,/先处理 Writing revision，再准备员工 Writing Bot：现在一键准备只会先建出暂停的员工，之后也不会再替它补上技能或上岗。/)
+ assert.match(html,/primaryButton[^>]*>先去处理</)
+ assert.doesNotMatch(html,/primaryButton[^>]*>一键准备/)
+ assert.match(html,/逐个确认技能（信任说明或脚本）：Writing revision/)
+ const view=tree({readiness:writing,relations:writingLinks})
+ view.button('先去处理')!.props.onClick()
+ assert.deepEqual(view.calls.opened,['capabilities'])
+ assert.equal(view.calls.asked,0);assert.equal(view.calls.confirmed,0)
+ view.button('仍要先创建暂停的员工')!.props.onClick()
+ assert.equal(view.calls.asked,1);assert.equal(view.calls.confirmed,0,'次要入口只打开原确认，不直接执行')
+ const confirming=render({readiness:writing,relations:writingLinks,confirming:true})
+ assert.match(confirming,/创建员工：Writing Bot/)
+ assert.match(confirming,/Writing Bot 会以暂停状态创建；之后再点一键准备也不会替它补上技能或上岗，需要你到员工分组检查后自行恢复。/)
+})
+test('面板：技能已装好、由一键安装的官方技能、与员工无关的待确认项或员工已建好时，保持原一键准备',()=>{
+ for(const state of ['ready','auto'] as const){
+  const rows=writing.rows.map(row=>row.itemInstanceId===WSkill?{...row,state,entry:null,step:state==='auto'?'skill':null}:row)
+  const html=render({readiness:{...writing,rows},relations:writingLinks})
+  assert.match(html,/primaryButton[^>]*>一键准备/);assert.doesNotMatch(html,/先去处理|仍要先创建暂停的员工|再准备员工/)
+ }
+ assert.match(render({readiness:writing,relations:[]}),/primaryButton[^>]*>一键准备/)
+ assert.match(render({readiness:writing}),/primaryButton[^>]*>一键准备/)
+ const created={...writing,rows:writing.rows.map(row=>row.itemInstanceId===WRole?{...row,state:'needs-user',step:null,entry:'role-resume'}:row)}
+ assert.doesNotMatch(render({readiness:created,relations:writingLinks}),/再准备员工|仍要先创建暂停的员工/)
+})
+test('面板：员工关联的连接需要授权时同样先去处理连接；技能与连接都待处理时先去技能',()=>{
+ const conn={itemInstanceId:WConn,kind:'mcp',title:'Docs MCP',state:'needs-user',step:null,entry:'connector-settings'}
+ const connLinks=[{kind:'role-connection',from:WRole,to:WConn}]
+ const onlyConn=tree({readiness:{...writing,rows:[writing.rows[0],conn]},relations:connLinks})
+ onlyConn.button('先去处理')!.props.onClick();assert.deepEqual(onlyConn.calls.opened,['connectors'])
+ const both={...writing,rows:[writing.rows[0],conn,writing.rows[1]]},links=[...connLinks,...writingLinks]
+ const view=tree({readiness:both,relations:links})
+ view.button('先去处理')!.props.onClick();assert.deepEqual(view.calls.opened,['capabilities'])
+ assert.match(render({readiness:both,relations:links}),/先处理 Writing revision、Docs MCP，再准备员工 Writing Bot/)
+})
+test('面板只把当前核对过的清单回报给目录（行为见 industry-readiness-freshness.test.ts），供同事详情复用同一真实状态',async()=>{
+ const source=await readFile(new URL('../src/client/IndustryReadinessPanel.tsx',import.meta.url),'utf8')
+ assert.match(source,/useEffect\(\(\)=>\{onReadRef\.current\?\.\(fresh\?readiness:undefined\)\},\[fresh,readiness\]\)/)
+})
+test('面板：重新核对失败时旧清单只作上次结果——不写「都准备好了」、不给一键准备，并提供重新核对',()=>{
+ const done={...readiness,counts:{ready:2,auto:1,needsUser:0,optional:0,pending:0},rows:readiness.rows.filter(row=>row.state!=='needs-user'&&row.state!=='optional')}
+ let retried=0
+ const html=render({readiness:done,stale:true,error:'准备清单读取失败',onRetry:()=>{retried++}})
+ assert.match(html,/<h3[^>]*>上次核对的结果<\/h3>/)
+ assert.match(html,/刚才没能重新核对，下面是上次核对的结果，实际状态可能已经变化。/)
+ assert.doesNotMatch(html,/都准备好了|一键准备/)
+ assert.match(html,/准备清单读取失败/)
+ const view=tree({readiness:done,stale:true,error:'x',onRetry:()=>{retried++}})
+ view.button('重新核对')!.props.onClick();assert.equal(retried,1)
+ assert.equal(view.calls.asked+view.calls.confirmed,0)
+ assert.match(render({readiness:undefined,error:'首次读取失败',onRetry:()=>{}}),/首次读取失败[\s\S]*重新核对/)
 })

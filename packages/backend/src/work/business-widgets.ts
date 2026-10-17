@@ -118,7 +118,7 @@ export class BusinessWidgetService{
     select owner_id,scope_id,dashboard_id,widget_id,time_range,computed_at from (
      select owner_id,scope_id,dashboard_id,widget_id,time_range,computed_at,row_number() over (order by computed_at desc) as rank
      from teloa_business_widget_results where owner_id=$1 and scope_id=$2 and dashboard_id=$3 and widget_id=$4 and time_range=$5
-    ) ranked where rank>1 and (rank>${keepPerWidget} or computed_at<now()-interval '${retentionDays} days') limit ${pruneBatch})`,[ownerId,scope,dashboardId,result.widgetId,timeRange])
+    ) ranked where computed_at<>(select coalesce(max(computed_at),'epoch'::timestamptz) from teloa_business_widget_results where owner_id=$1 and scope_id=$2 and dashboard_id=$3 and widget_id=$4 and time_range=$5 and status='ok') and rank>1 and (rank>${keepPerWidget} or computed_at<now()-interval '${retentionDays} days') limit ${pruneBatch})`,[ownerId,scope,dashboardId,result.widgetId,timeRange])
  }
 
  /** 每个组件在给定范围下最新的一条结果快照（成功或失败）；该范围下没有结果的组件不出现在返回里，不拿别的范围顶替。 */
@@ -126,6 +126,14 @@ export class BusinessWidgetService{
   const rows=(await db.query(`select distinct on (r.widget_id) r.* from teloa_business_widget_results r
     join unnest($4::text[],$5::text[]) as w(widget_id,time_range) on r.widget_id=w.widget_id and r.time_range=w.time_range
     where r.owner_id=$1 and r.scope_id=$2 and r.dashboard_id=$3 order by r.widget_id,r.computed_at desc`,[ownerId,scope,dashboardId,[...widgetRanges.keys()],[...widgetRanges.values()]])).rows as Array<Record<string,unknown>>
+  return new Map(rows.map(row=>[String(row.widget_id),businessWidgetResultOf(row)]))
+ }
+
+ /** 最新成功统计用于刷新失败时展示；不混用别的时间范围。 */
+ async latestSuccessful(db:PoolClient,owner:string,scope:string,dashboard:string,ranges:Map<string,BusinessTimeRange>,before:Map<string,string>):Promise<Map<string,BusinessWidgetResult>>{
+  const rows=(await db.query(`select distinct on(r.widget_id) r.* from teloa_business_widget_results r
+   join unnest($4::text[],$5::text[],$6::timestamptz[]) as w(widget_id,time_range,computed_at) on r.widget_id=w.widget_id and r.time_range=w.time_range and r.computed_at<=w.computed_at
+   where r.owner_id=$1 and r.scope_id=$2 and r.dashboard_id=$3 and r.status='ok' order by r.widget_id,r.computed_at desc`,[owner,scope,dashboard,[...ranges.keys()],[...ranges.values()],[...ranges.keys()].map(id=>before.get(id))])).rows
   return new Map(rows.map(row=>[String(row.widget_id),businessWidgetResultOf(row)]))
  }
 

@@ -1,4 +1,5 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
@@ -28,7 +29,7 @@ after(async()=>{await pool?.end();await container?.stop()})
 async function fixture(managed:boolean){
  const ownerId='rule:'+randomUUID(),scope='SOC',mappingId='alerts'
  const actor={ownerId,scopeIds:[scope]}
- await new BusinessSpaceService(pool,identity).ensurePersonal(ownerId)
+ await withLegacySecurityScopes(pool,ownerId,new BusinessSpaceService(pool,identity).ensurePersonal(ownerId))
  if(managed){
   const db=await pool.connect()
   try{await db.query('begin');await new BusinessRuntimeService(pool,identity).registerInTransaction(db,ownerId,scope);await db.query('commit')}

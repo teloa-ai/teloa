@@ -5,8 +5,9 @@ import { planTemplate, templatePlanFields } from '../src/client/plan-template.ts
 import { emptyTaskPreview } from '../src/client/task-preview.ts'
 import { withRoleExamples } from '../src/client/role-preview.ts'
 import { changeContinuousWork } from '../src/client/continuous-work.ts'
+import { withLegacySecurityScopes } from './fixtures/legacy-security-scopes.ts'
 const now='2026-09-11T04:40:00Z'
-const base=()=>({...emptyTaskPreview(),roles:withRoleExamples([],now)})
+const base=()=>({...withLegacySecurityScopes(emptyTaskPreview()),roles:withRoleExamples([],now)})
 test('市场模板固定真实清单、摘要和技能引用，演示目录不伪造摘要',async()=>{
   const parsed=await parseMarketManifest(JSON.stringify({format:'teloa.work-template/v1',id:'review',title:'核对资料',version:'1.2',domain:'general',description:'保留来源',requirements:['获准资料'],output:'工作稿',skills:[{id:'brief',title:'资料简报',version:'v3'}]}))
   const item=itemFromManifest(parsed,{kind:'paste'}),template=planTemplate(item)

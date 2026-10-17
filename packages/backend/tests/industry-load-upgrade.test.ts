@@ -345,7 +345,7 @@ test('按选择应用：沿用项投影来源实例状态、候选项仍可实�
 
 test('岗位选 use-template 时按候选模板重放定义并覆盖本地修改，岗位版本 +1 且落编辑回执',async()=>{
  const f=await applyFixture()
- const edited=await f.roleService.edit(f.owner,{roleId:f.role.id,expectedVersion:f.role.version,fields:roleFields(f.role,{name:'本地改名',duty:'本地职责'})})
+ const edited=await f.roleService.edit(f.owner,{roleId:f.role.id,expectedVersion:f.role.version,expectedProfile:{name:f.role.name,...(f.role.avatarKey?{avatarKey:f.role.avatarKey}:{})},fields:roleFields(f.role,{name:'本地改名',duty:'本地职责'})})
  assert.equal(edited.version,2)
  await f.loads.upgrade(f.owner,applyCommand(f,{choices:applyChoices({roles:{[instanceOf(f.load,'analyst')]:'use-template'}})}))
  const replayed=(await f.roleService.list(f.owner,{})).find(row=>row.id===f.role.id)!
@@ -383,7 +383,7 @@ test('复审 M-a/M-b：候选模板带模型指定时 use-template 保留本人�
 
 test('岗位选 keep-local 时一个字都不改，既不动岗位定义也不动版本',async()=>{
  const f=await applyFixture()
- const edited=await f.roleService.edit(f.owner,{roleId:f.role.id,expectedVersion:f.role.version,fields:roleFields(f.role,{name:'本地改名',duty:'本地职责'})})
+ const edited=await f.roleService.edit(f.owner,{roleId:f.role.id,expectedVersion:f.role.version,expectedProfile:{name:f.role.name,...(f.role.avatarKey?{avatarKey:f.role.avatarKey}:{})},fields:roleFields(f.role,{name:'本地改名',duty:'本地职责'})})
  await f.loads.upgrade(f.owner,applyCommand(f,{choices:applyChoices({roles:{[instanceOf(f.load,'analyst')]:'keep-local'}})}))
  const kept=(await f.roleService.list(f.owner,{})).find(row=>row.id===f.role.id)!
  assert.deepEqual([kept.version,kept.name,kept.duty],[edited.version,'本地改名','本地职责'])
@@ -391,8 +391,8 @@ test('岗位选 keep-local 时一个字都不改，既不动岗位定义也不�
 
 test('应用中途失败整笔回滚：继任加载、计划、回执、替代状态与已解除的实例全部不落',async()=>{
  const f=await applyFixture()
- // 运行中的岗位不允许编辑（既有判据），正好用来制造应用中途失败。
- await pool.query("update teloa_roles set state='active' where id=$1",[f.role.id])
+ // 在岗可改联系卡与简介；模板替换执行边界仍需暂停，以真实执行配置差异制造中途失败。
+ await pool.query("update teloa_roles set state='active',definition=jsonb_set(definition,'{executionScope}','\"本人本地授权边界\"'::jsonb) where id=$1",[f.role.id])
  await assert.rejects(f.loads.upgrade(f.owner,applyCommand(f,{choices:applyChoices({roles:{[instanceOf(f.load,'analyst')]:'use-template'}})})),{code:'teloa/conflict',message:'请先暂停员工并核对关联工作。'})
  assert.equal((await f.loads.get(f.owner,{loadId:f.load.id})).status,'active')
  assert.equal((await pool.query('select count(*)::int as count from teloa_industry_loads where owner_id=$1',[f.owner])).rows[0].count,1)

@@ -15,6 +15,17 @@ const now='2026-09-11T12:00:00.000Z',identity={id:randomUUID,now:()=>now}
 const schedule={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'09:00',timezone:'Asia/Singapore' as const}
 const fields=(roleId:string,extra:Partial<PlanFields&{expectedRoleVersion:number}>={}):PlanFields&{expectedRoleVersion:number}=>({title:'每日资料核对',goal:'核对新增资料并形成明确结论。',scope:'general',dataScope:'本人已授权的通用资料。',delivery:'变化、来源和待核对项。',roleId,expectedRoleVersion:1,trigger:schedule,notificationPolicy:'attention',...extra})
 
+test('来源会话原子保存、请求重放保持同一计划，跨本人或无核验端口不得创建',async()=>{
+ const owner=randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'计划同事',kind:'employee',scopes:['general'],duty:'核对',dataScope:'已授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
+ const input={requestId:randomUUID(),fields:fields(role.id),source:{kind:'manual',sessionId:'ordinary-session'}}
+ const inspect=async(actor:string,sessionId:string)=>({ownerId:actor,sessionId,status:'ready'})
+ const service=new PlanService(pool,identity,undefined,undefined,inspect)
+ const created=await service.create(owner,input);assert.deepEqual(created.source,input.source);assert.equal(created.state,'paused')
+ assert.equal((await service.create(owner,input)).id,created.id);assert.deepEqual((await service.get(owner,{planId:created.id})).source,input.source)
+ await assert.rejects(new PlanService(pool,identity).create(owner,{...input,requestId:randomUUID()}),{code:'teloa/forbidden'})
+ await assert.rejects(new PlanService(pool,identity,undefined,undefined,async(_actor,id)=>({ownerId:'other',sessionId:id,status:'ready'})).create(owner,{...input,requestId:randomUUID()}),{code:'teloa/forbidden'})
+})
+
 before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'

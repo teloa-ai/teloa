@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {createRuntime,defineTool,ToolCallId,SessionId} from '../../../tests/native-auto-review-fixture.mjs'
 import {registerNativeAutoReviewGuard} from '../src/native-auto-review-guard.ts'
 
-test('受管执行拒绝 Auto、Full access 与自定义全权限；恢复安全预设才继续',async t=>{
+test('受管执行允许存活 Auto，仍拒绝 Full access 与自定义全权限',async t=>{
  const {ctx,create}=await createRuntime(t),agent=await create('managed')
  const removeAuto=ctx.permissionPresets.registerAuto(()=>{})
  let managed=true,bodies=0,seq=0
@@ -12,7 +12,7 @@ test('受管执行拒绝 Auto、Full access 与自定义全权限；恢复安全
  const call=()=>ctx.tools.execute({agent,name:'probe',arguments:{},callId:ToolCallId('call-'+ ++seq),signal:AbortSignal.timeout(5000)})
  assert.equal((await call()).isError,false)
  ctx.permissionPresets.set(agent.session,'auto')
- assert.match(JSON.stringify(await call()),/受管任务不能使用 Auto review 或 Full access/)
+ assert.equal((await call()).isError,false)
  ctx.permissionPresets.set(agent.session,'danger-full-access')
  assert.equal((await call()).isError,true)
  agent.session.append('approval/policy',{policy:'ask'})
@@ -23,8 +23,21 @@ test('受管执行拒绝 Auto、Full access 与自定义全权限；恢复安全
  managed=true
  ctx.permissionPresets.set(agent.session,'workspace-write')
  assert.equal((await call()).isError,false)
- assert.equal(bodies,3)
+ assert.equal(bodies,4)
  await removeAuto()
+})
+
+test('Auto 未登记或卸载后转为全权限，受管任务不能继续',async t=>{
+ const {ctx,create}=await createRuntime(t),agent=await create('removed-auto')
+ let bodies=0
+ ctx.tools.register(defineTool({name:'probe',description:'test',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{bodies++;return 'executed'}}))
+ registerNativeAutoReviewGuard(ctx,async()=>({allowedTools:['probe']}))
+ const removeAuto=ctx.permissionPresets.registerAuto(()=>{})
+ ctx.permissionPresets.set(agent.session,'auto')
+ await removeAuto()
+ assert.notEqual(ctx.permissionPresets.current(agent.session),'auto')
+ assert.equal((await ctx.tools.execute({agent,name:'probe',arguments:{},callId:ToolCallId('removed'),signal:AbortSignal.timeout(5000)})).isError,true)
+ assert.equal(bodies,0)
 })
 
 test('受管子级逐层核对权限；根、祖先或调用方全权限都不能借谱系绕过',async t=>{

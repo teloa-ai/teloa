@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import {WorkError,isRecord,marketSolutionResourceKinds,mcpConnectionReadOnly,readIndustryMcpConnectionDefinition,type MarketCatalogListContents,readMarketCatalogIndex,emptyMarketCatalogCounts,type MarketCatalogModelEntry,type MarketCatalogEntry,type MarketCatalogSkillEntry,type MarketCatalogSkillSecret,type MarketCatalogText,type MarketCatalogUpstreamSkillEntry,type MarketCatalogConnectorEntry,type MarketCatalogRoleEntry,type MarketCatalogIndex,type MarketCatalogListItem,type MarketCatalogListSecretGroup,type MarketCatalogListRequest,type MarketCatalogListResponse,type MarketCatalogListCounts} from '@teloa/contract'
 import {atomicContentIdentity,industryContentIdentity,marketTrustHash,normalizeMarketSourceTrust,validateManifest,type MarketActor,type MarketContent,type MarketContentStore,type MarketContentReference,type MarketImportReceipt,type MarketSourceTrust} from './content-store.ts'
 import {officialCatalogFiles,officialCatalogIndex,officialCatalogIndexSha256} from './official-catalog-snapshot.ts'
-import {listUpstreamEntries,getUpstreamEntry,remoteIndexSkipped} from './official-upstream.ts'
+import {listUpstreamEntries,getUpstreamEntry,listRemoteConnectorEntries,remoteIndexSkipped} from './official-upstream.ts'
 import {downloadClawHubSkill} from './clawhub-source.ts'
 import {downloadGithubCatalogSkill,type GithubHttpPort} from './github-source.ts'
 import {marketCatalogUpstreamTreeHash} from '@teloa/contract'
@@ -10,9 +10,17 @@ import {marketCatalogUpstreamTreeHash} from '@teloa/contract'
 /** 随发行固定的目录快照；测试可注入篡改后的快照核对拒绝路径。 */
 export type OfficialCatalogSnapshot={indexSha256:string;index:unknown;files:Readonly<Record<string,string>>}
 type CatalogStore=Pick<MarketContentStore,'import'|'findByIdentity'|'findByCatalogSources'>
-/** 目录列表回显本人已建岗位：一页只按条目批量查一次，结果按条目 id 归组；未接线（测试、只读 MCP 装配）时 role 条目 addedRoleId 恒为 null。 */
-type CatalogRoles={catalogRoleIds:(ownerId:string,entries:MarketCatalogRoleEntry[])=>Promise<ReadonlyMap<string,string>>}
+/**
+ * 目录列表回显本人已建岗位：一页只按条目批量查一次，结果按条目 id 归组；未接线（测试、只读 MCP 装配）时 role 条目 addedRoleId 恒为 null。
+ * `contentHash` 给出该员工第 N 代固定派生包的内容摘要（父包不可解析时为 null），用于找回完整资源安装建立的岗位。
+ */
+export type CatalogRoleContentHash=(entryId:string,generation:number)=>string|null
+type CatalogRoles={catalogRoleIds:(ownerId:string,entries:MarketCatalogRoleEntry[],contentHash:CatalogRoleContentHash)=>Promise<ReadonlyMap<string,string>>}
+/** 单个目录员工的固定派生包：只含该员工、它直接关联的资源与父包根目录的许可/修改说明。 */
+export type CatalogRolePackage={entryId:string;version:string;packageId:string;packageVersion:string;generation:number;manifest:Record<string,unknown>}
 type LoadedEntry={entry:MarketCatalogIndex['entries'][number];files:{path:string;bytes:Uint8Array}[]}
+/** 官方列表的一行：快照条目，或在线索引采用的连接器（没有工件字节，artifact 为 null）。 */
+type ListedEntry=LoadedEntry|{entry:(MarketCatalogConnectorEntry|MarketCatalogUpstreamSkillEntry)&{artifact:null};files:LoadedEntry['files']}
 type Loaded={catalogVersion:string;entries:Map<string,LoadedEntry>}
 
 const sha256=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex')
@@ -43,7 +51,7 @@ function load(snapshot:OfficialCatalogSnapshot):Loaded{
  return {catalogVersion:index.catalogVersion,entries}
 }
 
-function publicEntry(entry:LoadedEntry['entry']):MarketCatalogEntry{
+function publicEntry(entry:ListedEntry['entry']):MarketCatalogEntry{
  const {artifact:_,...rest}=entry
  return structuredClone(rest)
 }
@@ -123,6 +131,7 @@ export function filterCatalogEntries<T extends MarketCatalogEntry>(entries:reado
  const query=(request.query??'').trim().toLowerCase()
  return entries.filter(entry=>(request.kind===undefined||entry.kind===request.kind)&&(!query||searchableText(entry).some(text=>text.toLowerCase().includes(query))))
 }
+const connectorNotContent='连接不能添加为内容，请用 teloa_mcp_connect 或 市场 > 连接 添加。'
 const sortName=(entry:MarketCatalogEntry)=>entry.kind==='skill'?entry.skill.name:entry.kind==='solution'?entry.solution.title.en:entry.kind==='dashboard'?entry.dashboard.title.en:entry.kind==='connector'?entry.connector.serverName:entry.kind==='role'?entry.role.roleId:entry.model.modelId
 const installsOf=(entry:MarketCatalogEntry)=>entry.kind==='skill'&&entry.delivery==='upstream'?entry.origin.installs??0:0
 /** 目录列表排序纯函数：installs 降序（Teloa 条目视为 0）再按 id 升序；name 按技能名 / 方案英文标题 / 连接器服务名。 */
@@ -173,6 +182,8 @@ export class OfficialCatalogService{
  private readonly githubHttp:GithubHttpPort|undefined
  /** 方案包解析与复核结果按 entryId@version 缓存（快照随发行固定，同一版本内容不变）；复核失败也缓存，不反复解析。 */
  private readonly solutions=new Map<string,SolutionManifest|WorkError>()
+ /** 派生员工包内容摘要按 entryId@代次 缓存（快照随发行固定）；父包不可解析时缓存 null。 */
+ private readonly roleHashes=new Map<string,string|null>()
  constructor(store:CatalogStore,snapshot:OfficialCatalogSnapshot=defaultSnapshot(),roles?:CatalogRoles,githubHttp?:GithubHttpPort){
   this.store=store;this.roles=roles;this.githubHttp=githubHttp
   try{this.loaded=load(snapshot)}catch(error){this.loaded=error instanceof WorkError?error:corrupt()}
@@ -202,8 +213,14 @@ export class OfficialCatalogService{
    return {catalogVersion:catalog.catalogVersion,items,nextCursor,counts:countCatalogEntries(all),skipped:remoteIndexSkipped()}
   }
   // Teloa 官方条目（向后兼容：不传 marketplace 或 marketplace='teloa'）；过滤排序后再分页
-  const everything=[...catalog.entries.values()].map(({entry})=>entry)
-  const allEntries=sortCatalogEntries(filterCatalogEntries(everything,{...(request?.query===undefined?{}:{query:request.query}),...(request?.kind===undefined?{}:{kind:request.kind})}),request?.sort??'installs').map(entry=>catalog.entries.get(entry.id)!)
+  // 在线连接器与快照条目同页列出；在 await 之前取，避免查询期间在线索引整份替换造成同页不同源
+  const rows=new Map<string,ListedEntry>(catalog.entries)
+  // 当前客户端只有一个 Teloa 官方目录。原来源保留作安装/许可溯源，不再要求用户逐个读取外部市场。
+  // 未传来源的旧宿主保留原快照边界，避免改变它的分页与内置资源契约。
+  if(mp==='teloa')for(const entry of listUpstreamEntries())rows.set(entry.id,{entry:{...entry,artifact:null},files:[]})
+  for(const entry of this.remoteConnectors())rows.set(entry.id,{entry:{...entry,artifact:null},files:[]})
+  const everything=[...rows.values()].map(({entry})=>entry)
+  const allEntries=sortCatalogEntries(filterCatalogEntries(everything,{...(request?.query===undefined?{}:{query:request.query}),...(request?.kind===undefined?{}:{kind:request.kind})}),request?.sort??'installs').map(entry=>rows.get(entry.id)!)
   const teloaLimit=Math.min(request?.limit??50,50)
   let teloaCursorIdx=0
   if(request?.cursor){
@@ -215,10 +232,12 @@ export class OfficialCatalogService{
   const teloaNextCursor=teloaCursorIdx+teloaLimit<allEntries.length?teloaPage.at(-1)?.entry.id??null:null
   const items:MarketCatalogListItem[]=[]
   const pageRoles=teloaPage.flatMap(({entry})=>entry.kind==='role'?[entry]:[])
-  const roleIds=this.roles&&pageRoles.length?await this.roles.catalogRoleIds(actor.ownerId,pageRoles):new Map<string,string>()
+  const roleIds=this.roles&&pageRoles.length?await this.roles.catalogRoleIds(actor.ownerId,pageRoles,(id,generation)=>this.roleContentHash(id,generation)):new Map<string,string>()
   const groupOf=this.secretGroupsForList()
+  const upstreamSources=teloaPage.flatMap(({entry})=>entry.delivery==='upstream'?[{entryId:entry.id,entryVersion:entry.version,treeHash:upstreamTreeHash(entry.upstream),logicalId:entry.skill.name,trustHash:marketTrustHash(normalizeMarketSourceTrust(officialCatalogTrust(entry)))}]:[])
+  const upstreamAdded=upstreamSources.length?await this.store.findByCatalogSources(actor,upstreamSources):new Map<string,string>()
   for(const {entry,files} of teloaPage){
-   let addedContentId:string|null=null
+   let addedContentId:string|null=upstreamAdded.get(entry.id)??null
    if(entry.delivery==='install'&&(entry.kind==='skill'||entry.kind==='solution'||entry.kind==='dashboard')){
     const label='Teloa 官方目录 '+entry.id
     let identity
@@ -254,17 +273,17 @@ export class OfficialCatalogService{
    expectTree(treeHash)
    const catalog=this.catalog()
    if(up.kind==='github'&&!this.githubHttp)throw new WorkError('teloa/dependency-unavailable','GitHub 来源读取尚未接通。')
-   const files=up.kind==='clawhub'?await downloadClawHubSkill(up):await downloadGithubCatalogSkill(up,this.githubHttp!)
+   const files=up.kind==='clawhub'?await downloadClawHubSkill(up):await downloadGithubCatalogSkill(upstreamEntry,this.githubHttp!)
    const source={kind:'catalog' as const,catalog:'teloa-official' as const,catalogVersion:catalog.catalogVersion,entryId:upstreamEntry.id,entryVersion:upstreamEntry.version,treeHash}
    const value=importUpstreamSkillInput(upstreamEntry,files)
    return this.store.import(actor,{kind:'atomic-skill',requestId:input.requestId.toLowerCase(),source,...value})
   }
   // 再查 Teloa 官方快照条目
   const catalog=this.catalog(),found=catalog.entries.get(input.entryId)
-  if(!found)throw bad('官方目录中没有这个资源。')
+  if(!found)throw bad(this.remoteConnectors().some(entry=>entry.id===input.entryId)?connectorNotContent:'官方目录中没有这个资源。')
   if(found.entry.delivery==='builtin')throw bad('内置资源无需添加，新建时会自动使用。')
   if(found.entry.compatibility.status==='unsupported')throw bad('该资源暂不支持在 Teloa 中添加。')
-  if(found.entry.kind==='connector')throw bad('连接不能添加为内容，请用 teloa_mcp_connect 或 市场 > 连接 添加。')
+  if(found.entry.kind==='connector')throw bad(connectorNotContent)
   if(found.entry.kind==='role')throw bad('AI 员工资源请以 kind:"role" 添加（market-catalog/add），将直接创建员工。')
   if(found.entry.kind==='model')throw bad(found.entry.model.form!=='local-specialist'?'模型无需添加，请到 设置 · 模型 配置。':(found.entry.model.usage as readonly string[]).includes('embedding')?'本地检索模型由 Teloa 本地中文检索扩展准备，请从市场模型详情进入「准备本地检索」。':'本地语音由原生扩展准备，请从市场模型详情进入设置。')
   expectTree(found.entry.artifact.treeHash)
@@ -273,19 +292,87 @@ export class OfficialCatalogService{
    const value=importSkillInput(found.entry,found.files)
    return this.store.import(actor,{kind:'atomic-skill',requestId:input.requestId.toLowerCase(),source,...value})
   }
-  // 所有引用先从同一固定目录核对完毕，再保存来源；不使用客户端提交的字节或解析结果。
-  const references:MarketContentReference[]=[]
-  for(const {resource,found:dependency} of this.referenceSources(found)){
+  const references=await this.importReferences(actor,input.requestId,this.referenceSources(found))
+  return this.store.import(actor,{kind:'industry-template',requestId:input.requestId.toLowerCase(),source,manifestPath:'teloa.json',trust:officialCatalogTrust(found.entry),files:found.files.map(f=>({path:f.path,bytes:Uint8Array.from(f.bytes)})),references})
+ }
+ /** 所有引用先从同一固定目录核对完毕，再保存来源；不使用客户端提交的字节或解析结果。 */
+ private async importReferences(actor:MarketActor,requestId:string,sources:ReturnType<OfficialCatalogService['referenceSources']>):Promise<MarketContentReference[]>{
+  const catalog=this.catalog(),references:MarketContentReference[]=[]
+  for(const {resource,found:dependency} of sources){
    const entry=dependency.entry
    if(entry.artifact===null)throw corrupt()
    const fixedSource={kind:'catalog' as const,catalog:'teloa-official' as const,catalogVersion:catalog.catalogVersion,entryId:entry.id,entryVersion:entry.version,treeHash:entry.artifact.treeHash}
-   const requestId=referenceRequestId(input.requestId,entry.id,entry.version)
+   const dependencyRequestId=referenceRequestId(requestId,entry.id,entry.version)
    const added=entry.kind==='skill'
-    ?await this.store.import(actor,{kind:'atomic-skill',requestId,source:fixedSource,...importSkillInput(entry,dependency.files)})
-    :await this.store.import(actor,{kind:'industry-template',requestId,source:fixedSource,manifestPath:'teloa.json',trust:officialCatalogTrust(entry),files:dependency.files.map(f=>({path:f.path,bytes:Uint8Array.from(f.bytes)})),references:[]})
+    ?await this.store.import(actor,{kind:'atomic-skill',requestId:dependencyRequestId,source:fixedSource,...importSkillInput(entry,dependency.files)})
+    :await this.store.import(actor,{kind:'industry-template',requestId:dependencyRequestId,source:fixedSource,manifestPath:'teloa.json',trust:officialCatalogTrust(entry),files:dependency.files.map(f=>({path:f.path,bytes:Uint8Array.from(f.bytes)})),references:[]})
    references.push({resourceId:resource.id,sourceContentId:added.content.id,sourceItemId:(resource.kind==='skill'?'atomic-':'directory-')+added.content.hash,sourceResourceId:resource.source.kind==='public'?resource.source.id:'',sourceHash:added.content.hash})
   }
-  return this.store.import(actor,{kind:'industry-template',requestId:input.requestId.toLowerCase(),source,manifestPath:'teloa.json',trust:officialCatalogTrust(found.entry),files:found.files.map(f=>({path:f.path,bytes:Uint8Array.from(f.bytes)})),references})
+  return references
+ }
+ /**
+  * 单个目录员工的固定派生包（不另建运行引擎，后续仍走原内容 → 加载 → 准备）：
+  * 按条目 `fromSolution` 的包标识 + 版本唯一解析公开父包（零或多命中都拒绝），按 `path` 唯一定位该员工；
+  * 只取该员工与它直接关联的资料、方法、连接、扩展与工作模板（员工到员工的关系不进入，不连带同团队其他员工），
+  * 方法连同整个技能目录、父包根目录的许可与修改说明一起随包，清单其余字段保留父包原文。
+  * 第 N 代（N>1，退役后重新添加）只在清单标识上加代次后缀，得到新的固定内容与加载。
+  * 信任说明取父包条目：派生包的文件逐字节取自父包，审核与许可来源同一份，因此与团队包同一方法的安装可被识别为等价并共用。
+  */
+ private roleDerivation(id:string,generation:number){
+  if(!Number.isSafeInteger(generation)||generation<1)throw bad('员工派生代次不正确。')
+  const catalog=this.catalog(),found=catalog.entries.get(id)
+  if(!found||found.entry.kind!=='role')throw new WorkError('teloa/source-unavailable','官方目录中没有这个 AI 员工资源。')
+  if(found.entry.compatibility.status==='unsupported')throw bad('该资源暂不支持在 Teloa 中添加。')
+  const role=found.entry,from=role.role.fromSolution,unavailable=(message:string)=>new WorkError('teloa/source-unavailable',message)
+  const parents=[...catalog.entries.values()].filter(({entry})=>entry.kind==='solution'&&entry.solution.packageId===from.packageId&&entry.version===from.version)
+  if(parents.length!==1)throw unavailable('AI 员工所属的团队方案在当前目录中找不到对应版本，暂不能完整添加。')
+  const parent=parents[0]!
+  if(parent.entry.compatibility.status==='unsupported')throw unavailable('AI 员工所属的团队方案暂不支持在 Teloa 中添加。')
+  const {manifest,resources}=this.solutionOf(parent),raw=manifest as {resources:{id:string}[];relations:{kind:string;from:string;to:string}[];entrypoints:string[];localized?:unknown;[key:string]:unknown}
+  const roots=resources.filter(resource=>resource.kind==='role'&&resource.source.kind==='local'&&resource.source.path===from.path)
+  if(roots.length!==1)throw unavailable('AI 员工在所属团队方案中找不到唯一对应的员工。')
+  const rootId=roots[0]!.id,kindOf=new Map(resources.map(resource=>[resource.id,resource.kind]))
+  const relations=raw.relations.filter(link=>link.from===rootId&&kindOf.get(link.to)!=='role')
+  const keep=new Set([rootId,...relations.map(link=>link.to)])
+  const exact=new Set<string>(),prefixes:string[]=[]
+  for(const resource of resources)if(keep.has(resource.id)&&resource.source.kind==='local'){
+   const path=resource.source.path,slash=path.lastIndexOf('/')
+   if(resource.kind==='skill'&&slash>0)prefixes.push(path.slice(0,slash+1));else exact.add(path)
+  }
+  const files=parent.files.filter(file=>file.path!=='teloa.json'&&(exact.has(file.path)||prefixes.some(prefix=>file.path.startsWith(prefix))||!file.path.includes('/')))
+  const suffix=generation>1?'-r'+generation:'',summary=role.role.summary['zh-CN']
+  const {localized:_,...rest}=raw
+  const derived={...rest,id:(from.packageId+'-'+rootId).slice(0,120-suffix.length)+suffix,title:role.role.title['zh-CN'].slice(0,120),
+   description:(summary+'（来自 '+from.packageId+'@'+from.version+' 的员工 '+rootId+'）').slice(0,2000),
+   resources:raw.resources.filter(resource=>keep.has(resource.id)),relations,entrypoints:raw.entrypoints.filter(entry=>keep.has(entry))}
+  const sources=this.referenceSources(parent).filter(({resource})=>keep.has(resource.id))
+  return {role,parent,manifest:derived,sources,files:[{path:'teloa.json',bytes:new TextEncoder().encode(JSON.stringify(derived,null,2))},...files.map(file=>({path:file.path,bytes:Uint8Array.from(file.bytes)}))],trust:officialCatalogTrust(parent.entry),label:'Teloa 官方目录 '+role.id}
+ }
+ /** 添加前的组成预览：派生包清单原文（界面按清单格式复核后算组成）；与实际导入同一份派生。 */
+ rolePackage(entryId:string):CatalogRolePackage{
+  const value=this.roleDerivation(entryId,1)
+  return {entryId:value.role.id,version:value.role.version,packageId:value.role.role.fromSolution.packageId,packageVersion:value.role.role.fromSolution.version,generation:1,manifest:value.manifest}
+ }
+ /** 第 N 代派生包的内容摘要（与内容仓同一规范化），父包不可解析时为 null；只读、不导入。 */
+ roleContentHash(entryId:string,generation:number):string|null{
+  const key=entryId+'@'+generation
+  if(this.roleHashes.has(key))return this.roleHashes.get(key)!
+  let value:ReturnType<OfficialCatalogService['roleDerivation']>
+  try{value=this.roleDerivation(entryId,generation)}catch{this.roleHashes.set(key,null);return null}
+  const references=value.sources.map(({resource,identity})=>({resourceId:resource.id,sourceContentId:'00000000-0000-4000-8000-000000000000',sourceItemId:(resource.kind==='skill'?'atomic-':'directory-')+identity.contentHash,sourceResourceId:resource.source.kind==='public'?resource.source.id:'',sourceHash:identity.contentHash}))
+  const hash=industryContentIdentity({manifestPath:'teloa.json',trust:value.trust,files:value.files,sourceLabel:value.label,references}).contentHash
+  this.roleHashes.set(key,hash)
+  return hash
+ }
+ /** 把第 N 代派生包导入本人内容库：来源固定为该员工条目，公共引用与方案添加同一套固定导入。 */
+ async addRolePackage(actor:MarketActor,input:{requestId:string;entryId:string;generation:number}):Promise<{receipt:MarketImportReceipt;content:MarketContent}>{
+  if(!actor||typeof actor.ownerId!=='string'||!actor.ownerId||actor.kind!=='human')throw new WorkError('teloa/forbidden','当前主体无权添加官方目录资源。')
+  if(!uuid(input.requestId))throw bad('官方目录添加请求格式不正确。')
+  const catalog=this.catalog(),value=this.roleDerivation(input.entryId,input.generation),artifact=catalog.entries.get(value.role.id)!.entry.artifact
+  if(artifact===null)throw corrupt()
+  const source={kind:'catalog' as const,catalog:'teloa-official' as const,catalogVersion:catalog.catalogVersion,entryId:value.role.id,entryVersion:value.role.version,treeHash:artifact.treeHash}
+  const references=await this.importReferences(actor,input.requestId,value.sources)
+  return this.store.import(actor,{kind:'industry-template',requestId:input.requestId.toLowerCase(),source,manifestPath:'teloa.json',trust:value.trust,files:value.files,references})
  }
  private referenceSources(found:LoadedEntry):{resource:SolutionManifest['resources'][number];found:LoadedEntry;identity:ReturnType<typeof industryContentIdentity>}[]{
   const {resources}=this.solutionOf(found),scope=validateManifest(packageJson(found,'teloa.json')).scope
@@ -310,13 +397,23 @@ export class OfficialCatalogService{
  /** 内置条目的文件字节，供宿主物化内置技能；不经过内容仓。 */
  builtin(name:string):{entry:MarketCatalogEntry;treeHash:string;files:{path:string;bytes:Uint8Array}[]}{return builtinOf(this.catalog(),name)}
  /** 目录中是否有这个条目（任意类型，含已采用的上游索引条目，与 list/add 同源）；目录损坏时一律为 false。供安装量榜单剔除已下架或不存在的条目。 */
- hasEntry(id:string):boolean{return !(this.loaded instanceof WorkError)&&(this.loaded.entries.has(id)||getUpstreamEntry(id)!==undefined)}
- /** 按 catalogId 查询连接器条目；目录损坏或条目不存在时返回 undefined。 */
+ hasEntry(id:string):boolean{return !(this.loaded instanceof WorkError)&&(this.loaded.entries.has(id)||getUpstreamEntry(id)!==undefined||this.isRemoteConnector(id))}
+ /** 按 catalogId 查询连接器条目（快照优先，再查在线索引采用的连接器）；目录损坏或条目不存在时返回 undefined。 */
  getConnectorEntry(id:string):MarketCatalogConnectorEntry|undefined{
   if(this.loaded instanceof WorkError)return undefined
   const found=this.loaded.entries.get(id)
-  if(!found||found.entry.kind!=='connector')return undefined
-  return publicEntry(found.entry) as MarketCatalogConnectorEntry
+  if(found)return found.entry.kind==='connector'?publicEntry(found.entry) as MarketCatalogConnectorEntry:undefined
+  const remote=this.remoteConnectors().find(entry=>entry.id===id)
+  return remote&&structuredClone(remote)
+ }
+ /** 该连接器条目是否来自在线索引：没有随发行固定的含义，受管连接添加时须保存当时的条目定义。 */
+ isRemoteConnector(id:string):boolean{return this.remoteConnectors().some(entry=>entry.id===id)}
+ /** 在线索引采用的连接器中可用的部分：快照有同 id 或同服务名的条目时以快照为准，在线条目不改写随发行固定的含义；目录损坏时为空。 */
+ private remoteConnectors():MarketCatalogConnectorEntry[]{
+  const loaded=this.loaded
+  if(loaded instanceof WorkError)return []
+  const fixedNames=new Set([...loaded.entries.values()].flatMap(({entry})=>entry.kind==='connector'?[entry.connector.serverName]:[]))
+  return listRemoteConnectorEntries().filter(entry=>!loaded.entries.has(entry.id)&&!fixedNames.has(entry.connector.serverName))
  }
  /** 本机模型条目（kind:'model' 且 form:'local-general'），供宿主 local-models/*；目录损坏时为空。 */
  listLocalModelEntries():MarketCatalogModelEntry[]{

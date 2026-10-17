@@ -23,11 +23,12 @@ test('群协作与任务交接组件的固定中文全部通过协作词典呈�
  }
 })
 
-test('协作词条按十语顺序完整提供，并保留动态正文边界',()=>{
+test('协作词条按三语或历史十语顺序完整提供，并保留动态正文边界',()=>{
  assert.equal(new Set(COLLABORATION_MESSAGE_ROWS.map(row=>row[0])).size,COLLABORATION_MESSAGE_ROWS.length,'duplicate collaboration message key')
  for(const row of COLLABORATION_MESSAGE_ROWS){
-  assert.equal(row.length,locales.length+1,row[0])
-  for(const [index,locale] of locales.entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
+  assert.ok(row.length===4||row.length===locales.length+1,row[0])
+  const translatedLocales=row.length===4?locales.slice(0,3):locales
+  for(const [index,locale] of translatedLocales.entries())assert.ok(row[index+1]?.trim(),`${row[0]}: ${locale}`)
  }
  assert.deepEqual(messageRow('collaboration.directory.title'),[
   'collaboration.directory.title','群协作','群協作','Group collaboration','グループ協働','그룹 협업','Cộng tác nhóm','Colaboración en grupo','Collaboration de groupe','Gruppenzusammenarbeit','Colaboração em grupo',
@@ -43,11 +44,11 @@ test('协作词条按十语顺序完整提供，并保留动态正文边界',()=
 
 test('协作群弹层照原型定稿：创建与设置共用一套词条，不再出现演示与已保存字样',()=>{
  assert.equal(messageRow('collaboration.action.new')[1],'创建协作群')
- assert.equal(messageRow('collaboration.form.edit')[1],'成员与群设置')
+ assert.equal(messageRow('collaboration.form.edit')[1],'群设置')
  assert.equal(messageRow('collaboration.form.announcement')[1],'群公告')
  assert.equal(messageRow('collaboration.form.members')[1],'成员与职责')
  assert.equal(messageRow('collaboration.form.memberLimit')[1],'成员 · 至少 2 位，包含本人')
- assert.equal(messageRow('collaboration.form.memberBoundary')[1],'群与任务独立存在。分身作为独立成员显示，加入群不扩大资料、发言、审批或执行权限。')
+ assert.equal(messageRow('collaboration.form.memberBoundary')[1],'员工加入后可在群内回应，并按群规则自动开始工作；资料与附件需要逐项授权。分身自动运行仍需本人委托。')
  assert.equal(messageRow('collaboration.form.rule.history')[1],'新成员可以查看历史消息')
  assert.equal(messageRow('collaboration.form.rule.drafts')[1],'动作草案在本群可见')
  assert.equal(messageRow('collaboration.form.rule.mentionAll')[1],'允许 @全员')
@@ -60,7 +61,7 @@ test('协作群弹层照原型定稿：创建与设置共用一套词条，不�
 test('协作群页收掉界面演示模式：词条不再出现已保存与演示字样，成员不写人类',()=>{
  assert.equal(messageRow('collaboration.saved.title')[1],'协作群')
  assert.equal(messageRow('collaboration.directory.aria')[1],'协作群目录')
- assert.equal(messageRow('collaboration.directory.savedRecord')[1],'群记录')
+ assert.equal(messageRow('collaboration.directory.group')[1],'群')
  assert.equal(messageRow('collaboration.members.savedCount')[1],'{count} 位成员')
  assert.equal(messageRow('collaboration.state.saved')[1],'已登记')
  assert.equal(messageRow('collaboration.member.human')[1],'成员')
@@ -70,7 +71,7 @@ test('协作群页收掉界面演示模式：词条不再出现已保存与演�
 
 test('协作群入口只渲染持久群页，不再分派界面演示分支',async()=>{
  const source=await readFile(new URL('../src/client/CollaborationPage.tsx',import.meta.url),'utf8')
- assert.match(source,/<SavedCollaborationPage key=/)
+ assert.match(source,/<SavedCollaborationPage[^>]+key=/)
  assert.doesNotMatch(source,/PreviewCollaborationPage|savedGroups|persistence\?/)
 })
 

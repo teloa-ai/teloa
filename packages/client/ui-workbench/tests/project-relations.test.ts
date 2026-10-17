@@ -7,6 +7,9 @@ const source=readFileSync(new URL('../src/client/ProjectRelations.tsx',import.me
 const states:any[]=[],effects:any[]=[];let cursor=0,pending:Array<()=>void>=[]
 const React={createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children:children.flat(Infinity)}),useState(initial:any){const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],(value:any)=>states[i]=typeof value==='function'?value(states[i]):value]},useRef(initial:any){const i=cursor++;return states[i]??(states[i]={current:initial})},useEffect(fn:()=>any,deps:any[]){const i=cursor++;if(!effects[i]||deps.some((value,j)=>value!==effects[i].deps[j])){effects[i]?.cleanup?.();pending.push(()=>effects[i]={deps,cleanup:fn()})}}}
 const modules:Record<string,any>={react:React,'@teloa/contract':{projectLinkKinds:['task','resource']},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en'})},'./i18n/errors.js':{localizeWorkError:()=> 'LOAD FAILED'},'./dialog-focus.js':{openDialog:()=>{}},'./project-presentation.js':{projectKindKeys:{task:'Task',resource:'Resource'}},'./ProjectWorkspace.module.css':{default:{}},'lucide-react':{X:()=>{}}}
+const dismiss:Record<string,unknown>={}
+new Function('require','exports',ts.transpileModule(readFileSync(new URL('../src/client/use-dialog-dismiss.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)((id:string)=>modules[id],dismiss)
+modules['./use-dialog-dismiss.js']=dismiss
 const out:Record<string,any>={}
 new Function('require','exports','React',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText)((id:string)=>modules[id],out,React)
 const task={kind:'task',id:'10000000-0000-4000-8000-000000000001',title:'Previous task'};let saved:unknown

@@ -1,7 +1,10 @@
+import {isDeepStrictEqual} from 'node:util'
 import {createHash,randomUUID} from 'node:crypto'
+import type {BusinessWorkEventFacts,BusinessWorkEventProducers} from './business-work-event-source.ts'
+import type {BusinessWorkSourceRef} from '@teloa/contract'
 import type {Pool,PoolClient} from 'pg'
 import {
- WorkError,businessScopeKeyRule,isBusinessScopeKey,isRecord,evaluateJsonPath,nextBusinessSyncOccurrence,readBusinessSyncRun,
+ WorkError,businessScopeKeyRule,isBusinessScopeKey,isRecord,evaluateJsonPath,usesBusinessTaskResultContext,nextBusinessSyncOccurrence,readBusinessSyncRun,
  businessDashboardLimits,businessSourceMappingLimits,businessSyncTriggers,
  businessObjectTypeV2LegacyShape,
  type BusinessObjectTypeDefinition,type BusinessSourceMappingDefinition,type BusinessSyncRun,type BusinessSyncStatus,type WorkErrorCode,
@@ -12,19 +15,25 @@ import type {BusinessWarehouseService} from './business-warehouse.ts'
 import {BusinessRuntimeGateError,assertScheduledSync,scheduledSyncAllowed,invokeScheduledSync,lockBusinessRuntime,businessRuntimeStateInTransaction} from './business-runtime.ts'
 import {BusinessSyncRuleService} from './business-sync-rules.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
+import {assertBusinessRecordFieldValue} from './business-record-values.ts'
+import {markBusinessDataChanged} from './business-data.ts'
+import type {BusinessObjectReference} from '@teloa/contract'
 import type {BusinessSyncFetchPage} from './business-sync-sources.ts'
-import type {BusinessSyncSourceResolver} from './business-sync-sources.ts'
+import type {BusinessSyncSourceResolver,BusinessSyncSourcePort} from './business-sync-sources.ts'
 
 export type {BusinessSyncRun,BusinessSyncStatus} from '@teloa/contract'
 export type BusinessSyncActor={ownerId:string;scopeIds:string[]}
 export type BusinessSyncTrigger='schedule'|'manual'|'tool'
+/** 宿主在本次写事务内核验的执行身份，绝不从模型参数接收。 */
+export type BusinessTaskResultMapping={mapping:BusinessSourceMappingDefinition;objectType:BusinessObjectTypeDefinition;definitionHash:string;objectTypeDefinitionHash:string}
+export type BusinessTaskResultExecution={runId:string;taskId:string;sessionId:string;roleId:string;createdAt:string;reference:BusinessObjectReference;resultMappings?:BusinessTaskResultMapping[]}
 
 type MappedSnapshot=Omit<BusinessObjectSnapshot,'snapshotHash'|'version'>
 type Snapshot=Omit<BusinessObjectSnapshot,'snapshotHash'>
-type ResolvedMapping={mapping:BusinessSourceMappingDefinition;objectType:BusinessObjectTypeDefinition;definitionHash:string}
+type ResolvedMapping=BusinessTaskResultMapping
 type CursorState={cursor?:string;cursorBasis?:string;consecutiveFailures:number;backoffUntil?:string;lastOkAt?:string}
 type Outcome={fetched:number;upserted:number;tombstoned:number;nextCursor?:string}
-type Fetched={key:string;entries:Array<{item:unknown;capturedAt:string}>}
+type Fetched={key:string;entries:Array<{item:unknown;capturedAt:string}>;cursor?:string;basis?:string;withCurrent?:BusinessSyncSourcePort['withCurrent']}
 
 const text=(value:unknown,max:number):value is string=>typeof value==='string'&&!!value.trim()&&value===value.trim()&&value.length<=max&&!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)
 const localId=/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/
@@ -125,6 +134,18 @@ export async function initializeBusinessSync(pool:Pool):Promise<void>{
  )`)
  // 水位口径：算出水位时的来源与 incrementalCursor 摘要（见 `cursorBasis`）。旧行没有这一列即视为口径不明，下次从头拉一次。
  await pool.query('alter table teloa_business_sync_cursors add column if not exists cursor_basis text')
+ await pool.query(`create table if not exists teloa_business_task_result_receipts(
+  owner_id text not null,run_id uuid not null,mapping_id text not null,request_hash text not null,result jsonb not null,execution jsonb not null,
+  primary key(owner_id,run_id,mapping_id));
+ create table if not exists teloa_business_task_result_heads(
+  owner_id text not null,scope_id text not null,mapping_id text not null,object_type text not null,object_id text not null,
+  source_version integer not null,run_id uuid not null,run_created_at timestamptz not null,
+  primary key(owner_id,scope_id,mapping_id,object_type,object_id));
+ create table if not exists teloa_business_task_result_references(
+  owner_id text not null,scope_id text not null,run_id uuid not null,mapping_id text not null,object_type text not null,object_id text not null,object_version integer not null,
+  primary key(owner_id,run_id,mapping_id,object_type,object_id,object_version),
+  foreign key(owner_id,run_id,mapping_id) references teloa_business_task_result_receipts(owner_id,run_id,mapping_id),
+  foreign key(owner_id,scope_id,object_type,object_id,object_version) references teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version));`)
 }
 
 function actorOf(actor:BusinessSyncActor):void{
@@ -176,9 +197,10 @@ export class BusinessSyncService{
  private readonly identity:{id:()=>string;now:()=>string}
  private readonly definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>
  private readonly warehouse:BusinessWarehouseService
+ private readonly events:Pick<BusinessWorkEventProducers,'sync'>|undefined
  private readonly resolve:BusinessSyncSourceResolver
- constructor(pool:Pool,identity:{id:()=>string;now:()=>string},definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>,warehouse:BusinessWarehouseService,resolve:BusinessSyncSourceResolver){
-  this.pool=pool;this.identity=identity;this.definitions=definitions;this.warehouse=warehouse;this.resolve=resolve
+ constructor(pool:Pool,identity:{id:()=>string;now:()=>string},definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>,warehouse:BusinessWarehouseService,resolve:BusinessSyncSourceResolver,events?:Pick<BusinessWorkEventProducers,'sync'>){
+  this.pool=pool;this.identity=identity;this.definitions=definitions;this.warehouse=warehouse;this.resolve=resolve;this.events=events
   this.rules=new BusinessSyncRuleService(pool,identity,async(db,owner,scope,mappingId)=>{
    const known=(await db.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[owner,scope])).rowCount
    if(!known)return undefined
@@ -188,11 +210,41 @@ export class BusinessSyncService{
   })
  }
 
+ /** 事件观察与执行复核复用真实映射、同事务同步收据；不把一次失败或空轮次当成功变更。 */
+ async workEventSourceInTransaction(db:PoolClient,owner:string,source:Extract<BusinessWorkSourceRef,{kind:'business-sync'}>,version?:string):Promise<BusinessWorkEventFacts>{
+  const scope=scopeOf({ownerId:owner,scopeIds:[source.scope]},source.scope)
+  await lockBusinessConfiguration(db,owner,scope,'shared')
+  const rows=(await this.scopeMappings(db,owner,scope)).filter(row=>row.mapping.id===source.mappingId)
+  if(rows.length!==1)throw unavailable('业务事件映射不存在或来源不唯一。')
+  const resolved=rows[0]!,bundles=this.definitions.forScopeVersioned?await this.definitions.forScopeVersioned(db,owner,scope):await this.definitions.forScope(db,owner,scope)
+  const origins=bundles.filter(bundle=>bundle.mappings.some(row=>row.definition.id===source.mappingId)).map(bundle=>bundle.origin)
+  if(origins.length!==1)throw unavailable('业务事件映射配置不唯一。')
+  const definition={mappingHash:resolved.definitionHash,objectTypeHash:resolved.objectTypeDefinitionHash,configuration:origins[0]!}
+  const latest=(await db.query("select * from teloa_business_sync_runs where owner_id=$1 and scope_id=$2 and mapping_id=$3 and status='ok' and upserted+tombstoned>0 order by started_at desc,run_id desc limit 2",[owner,scope,source.mappingId])).rows
+  if(latest[1]&&latest[0].started_at.getTime()===latest[1].started_at.getTime())throw unavailable('业务事件同步版本顺序不唯一。')
+  const row=latest[0]
+  if(!row){if(version!==undefined)throw unavailable('业务事件尚无成功变更收据。');return {sourceVersion:resolved.definitionHash,basisHash:resolved.definitionHash,active:true,data:definition}}
+  const run=runOf(row,scope)
+  if(version!==undefined&&run.id!==version)throw new WorkError('teloa/version-conflict','业务同步已经有更新结果。')
+  const execution=(await db.query('select execution from teloa_business_task_result_receipts where owner_id=$1 and run_id=$2 and mapping_id=$3',[owner,run.id,source.mappingId])).rows[0]?.execution
+  if(execution&&(execution.runId!==run.id||typeof execution.taskId!=='string'))throw corrupt('业务成果同步原始收据损坏。')
+  const data={...definition,run},basisHash=createHash('sha256').update(JSON.stringify(data)).digest('hex')
+  return {sourceVersion:run.id,basisHash,active:true,data,...(execution?{originRunId:run.id}:{})}
+ }
+
  /** 列出范围内生效的 source-mapping 声明（模板 + 本地当前版本，同 forScope 口径）。 */
  async mappings(actor:BusinessSyncActor,scope:string):Promise<BusinessSourceMappingDefinition[]>{
   actorOf(actor)
   const checked=scopeOf(actor,scope)
   return (await this.readOnly(db=>this.scopeMappings(db,actor.ownerId,checked))).map(row=>row.mapping)
+ }
+
+ /** 与成果写口共用生效定义及配置锁；只公开本对象、当前员工可用的固定对象成果目标。 */
+ async taskResultMappingsInTransaction(db:PoolClient,actor:BusinessSyncActor,input:{reference:BusinessObjectReference;roleId:string}):Promise<BusinessTaskResultMapping[]>{
+  actorOf(actor)
+  const scope=scopeOf(actor,input.reference.scope)
+  await lockBusinessConfiguration(db,actor.ownerId,scope,'shared')
+  return (await this.scopeMappings(db,actor.ownerId,scope)).filter(({mapping})=>mapping.source.kind==='role-result'&&(mapping.source.roleId===undefined||mapping.source.roleId===input.roleId)&&mapping.objectType!==input.reference.type&&mapping.mapping.length>0&&mapping.primaryKey.length===1&&mapping.mapping.some(field=>field.path==='$.object.id'&&field.field===mapping.primaryKey[0])).sort((a,b)=>a.mapping.id.localeCompare(b.mapping.id,'en'))
  }
 
  /**
@@ -234,7 +286,6 @@ export class BusinessSyncService{
    }
    await db.query('commit')
    // 只沿用同一口径下算出的水位（见 `cursorBasis`）；口径变了或映射不再增量即从头拉，失败也不会反复带着旧值重试。
-   const basis=cursorBasis(resolved.mapping),cursor=basis!==undefined&&state?.cursorBasis===basis?state.cursor:undefined
    // 失败只记录与退避：锁仍在本会话手里，记录与退避不会被另一次同步插队。
    const fail=async(error:unknown)=>{
     // 暂停先于来源失败返回时同样丢弃旧请求，不把主动停用计入退避。
@@ -254,33 +305,39 @@ export class BusinessSyncService{
     return run
    }
    let fetched:Fetched
-   try{fetched=await this.fetchAll(scope,resolved,cursor,signal,runtime===undefined?undefined:invoke=>invokeScheduledSync(db,owner,scope,runtime.revision,invoke,error=>{broken=error},()=>this.rules.assertEnabled(db,owner,scope,mappingId,rule!.revision,rule!.definitionHash).then(()=>{})))}
+   try{fetched=await this.fetchAll(scope,resolved,state,signal,runtime===undefined?undefined:invoke=>invokeScheduledSync(db,owner,scope,runtime.revision,invoke,error=>{broken=error},()=>this.rules.assertEnabled(db,owner,scope,mappingId,rule!.revision,rule!.definitionHash).then(()=>{})))}
    catch(error){
     if(signal?.aborted||error instanceof BusinessRuntimeGateError)throw error
     await db.query('begin')
     await this.assertCurrentMapping(db,owner,scope,mappingId,resolved)
     return await fail(error)
    }
-   await db.query('begin')
-   await this.assertCurrentMapping(db,owner,scope,mappingId,resolved)
-   if(runtime!==undefined){
-    await lockBusinessRuntime(db,owner,scope,'shared')
-    await assertScheduledSync(db,owner,scope,runtime.revision)
-    await this.rules.assertEnabled(db,owner,scope,mappingId,rule!.revision,rule!.definitionHash)
+   const commitFetched=async(assertCurrent:()=>Promise<void>)=>{
+    await db.query('begin')
+    await this.assertCurrentMapping(db,owner,scope,mappingId,resolved)
+    if(runtime!==undefined){
+     await lockBusinessRuntime(db,owner,scope,'shared')
+     await assertScheduledSync(db,owner,scope,runtime.revision)
+     await this.rules.assertEnabled(db,owner,scope,mappingId,rule!.revision,rule!.definitionHash)
+    }
+    await db.query('savepoint teloa_business_sync')
+    let outcome:Outcome
+    try{outcome=await this.apply(db,owner,scope,resolved,fetched.cursor,fetched,signal)}
+    catch(error){
+     if(signal?.aborted||error instanceof BusinessRuntimeGateError)throw error
+     await db.query('rollback to savepoint teloa_business_sync')
+     return await fail(error)
+    }
+    const finishedAt=this.identity.now()
+    await db.query(`insert into teloa_business_sync_cursors(owner_id,scope_id,mapping_id,cursor,cursor_basis,consecutive_failures,backoff_until,last_ok_at,updated_at) values($1,$2,$3,$4,$6,0,null,$5,$5)
+      on conflict(owner_id,scope_id,mapping_id) do update set cursor=excluded.cursor,cursor_basis=excluded.cursor_basis,consecutive_failures=0,backoff_until=null,last_ok_at=excluded.last_ok_at,updated_at=excluded.updated_at`,[owner,scope,mappingId,outcome.nextCursor??null,finishedAt,fetched.basis??null])
+    const run=await this.record(db,owner,scope,mappingId,{runId,trigger,startedAt,finishedAt,status:'ok',outcome})
+    if(outcome.upserted+outcome.tombstoned>0)await this.events?.sync(db,owner,{kind:'business-sync',scope,mappingId},run.id)
+    await assertCurrent()
+    await db.query('commit')
+    return run
    }
-   await db.query('savepoint teloa_business_sync')
-   let outcome:Outcome
-   try{outcome=await this.apply(db,owner,scope,resolved,cursor,fetched,signal)}
-   catch(error){
-    if(signal?.aborted||error instanceof BusinessRuntimeGateError)throw error
-    await db.query('rollback to savepoint teloa_business_sync')
-    return await fail(error)
-   }
-   const finishedAt=this.identity.now()
-   await db.query(`insert into teloa_business_sync_cursors(owner_id,scope_id,mapping_id,cursor,cursor_basis,consecutive_failures,backoff_until,last_ok_at,updated_at) values($1,$2,$3,$4,$6,0,null,$5,$5)
-     on conflict(owner_id,scope_id,mapping_id) do update set cursor=excluded.cursor,cursor_basis=excluded.cursor_basis,consecutive_failures=0,backoff_until=null,last_ok_at=excluded.last_ok_at,updated_at=excluded.updated_at`,[owner,scope,mappingId,outcome.nextCursor??null,finishedAt,outcome.nextCursor===undefined?null:basis??null])
-   const run=await this.record(db,owner,scope,mappingId,{runId,trigger,startedAt,finishedAt,status:'ok',outcome})
-   await db.query('commit')
+   const run=fetched.withCurrent?await fetched.withCurrent(commitFetched):await commitFetched(async()=>{})
    // 保留清理在提交之后单独跑：它按批删、可取消，不占着这次写入的事务。
    await this.settle(owner,scope,mappingId,{objectType:resolved.objectType.id,retentionDays:resolved.mapping.retentionDays??businessDashboardLimits.retentionDays},signal)
    return run
@@ -309,11 +366,74 @@ export class BusinessSyncService{
    if(!await this.tryLock(db,owner,scope,mappingId))throw new WorkError('teloa/conflict','同一数据源映射正在写入，请稍后再记录。')
    const resolved=await this.resolveMapping(db,owner,scope,mappingId)
    if(resolved.mapping.source.kind!=='role-result')throw invalidInput('只有 AI 员工成果映射接受直接写入。')
+   if(usesBusinessTaskResultContext(resolved.mapping))throw new WorkError('teloa/forbidden','固定对象成果必须通过宿主绑定的任务成果写口记录。')
    const outcome=await this.write(db,owner,scope,resolved,sourceId,items.map(item=>({item,capturedAt:startedAt})),false,signal)
    await this.record(db,owner,scope,mappingId,{runId,trigger:'tool',startedAt,status:'ok',outcome})
    await db.query('commit')
    await this.settle(owner,scope,mappingId)
    return {upserted:outcome.upserted,tombstoned:outcome.tombstoned}
+  }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
+ }
+
+ /** 固定对象的一轮结构化成果；事务内复核执行、原快照、映射、回执与版本顺序。 */
+ async ingestTaskResult(actor:BusinessSyncActor,input:{scope:string;mappingId:string;result:Record<string,unknown>},authorize:(db:PoolClient)=>Promise<BusinessTaskResultExecution>,signal?:AbortSignal):Promise<{upserted:number;tombstoned:number}>{
+  actorOf(actor)
+  const row=exactInput(input,['scope','mappingId','result']),scope=scopeOf(actor,row.scope),mappingId=mappingIdOf(row.mappingId),owner=actor.ownerId
+  if(!isRecord(row.result)||Buffer.byteLength(JSON.stringify(row.result))>64*1024)throw invalidInput('需要一份不超过 64 KiB 的结构化成果。')
+  const requestHash=createHash('sha256').update(JSON.stringify(row.result,(_key,value)=>isRecord(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0)):value)).digest('hex')
+  const db=await this.pool.connect()
+  try{
+   await db.query('begin')
+   signal?.throwIfAborted()
+   const execution=await authorize(db),reference=execution.reference
+   if(reference.scope!==scope||!Number.isFinite(Date.parse(execution.createdAt)))throw forbidden()
+   await lockBusinessConfiguration(db,owner,scope,'shared')
+   if(!await this.tryLock(db,owner,scope,mappingId))throw new WorkError('teloa/conflict','同一数据源映射正在写入，请稍后再记录。')
+   const resolved=await this.resolveMapping(db,owner,scope,mappingId),{mapping,objectType}=resolved
+   if(execution.resultMappings!==undefined){
+    const fixed=execution.resultMappings.find(item=>item.mapping.id===mappingId)
+    if(!fixed)throw forbidden()
+    if(fixed.definitionHash!==resolved.definitionHash||fixed.objectTypeDefinitionHash!==resolved.objectTypeDefinitionHash||!isDeepStrictEqual(fixed.mapping,mapping)||!isDeepStrictEqual(fixed.objectType,objectType))throw new WorkError('teloa/version-conflict','成果映射或字段声明已变化，请基于当前配置重新处理。')
+   }
+   if(mapping.source.kind!=='role-result'||mapping.source.roleId!==undefined&&mapping.source.roleId!==execution.roleId)throw forbidden()
+   // 成果独立于原始事实；固定主键由宿主提供，模型无法另选对象。
+   const identityFields=mapping.mapping.filter(field=>field.path==='$.object.id').map(field=>field.field)
+   if(mapping.objectType===reference.type||mapping.mapping.length===0||mapping.primaryKey.length!==1||!identityFields.includes(mapping.primaryKey[0]!))throw invalidInput('成果映射必须以 $.object.id 为唯一主键，且使用独立的成果对象类型。')
+   const prior=(await db.query('select request_hash,result,execution from teloa_business_task_result_receipts where owner_id=$1 and run_id=$2 and mapping_id=$3',[owner,execution.runId,mappingId])).rows[0]
+   if(prior){
+    if(prior.request_hash!==requestHash||['scope','type','id','version','snapshotHash'].some(key=>(prior.execution.reference as Record<string,unknown>)[key]!==reference[key as keyof BusinessObjectReference]))throw new WorkError('teloa/conflict','本轮已经记录其他成果。')
+    await db.query('commit');return prior.result
+   }
+   const source=(await db.query('select object_version,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 order by object_version desc limit 1 for share',[owner,scope,reference.type,reference.id])).rows[0]
+   if(!source)throw forbidden()
+   if(source.object_version!==reference.version||source.snapshot_hash!==reference.snapshotHash||source.snapshot.deletedAt!==undefined)throw new WorkError('teloa/version-conflict','业务对象已更新，请基于当前版本重新处理。')
+   const original=readBusinessObjectSnapshot(source.snapshot,scope)
+   if(businessObjectSnapshotHash(original)!==reference.snapshotHash)throw corrupt('原始业务快照与摘要不一致。')
+   const previous=(await db.query('select source_version,run_created_at from teloa_business_task_result_heads where owner_id=$1 and scope_id=$2 and mapping_id=$3 and object_type=$4 and object_id=$5',[owner,scope,mappingId,reference.type,reference.id])).rows[0]
+   if(previous&&(previous.source_version>reference.version||previous.source_version===reference.version&&previous.run_created_at.toISOString()>=execution.createdAt))throw new WorkError('teloa/version-conflict','已有更新轮次的成果，旧轮次未覆盖。')
+   // 声明采用成果标题但模型省略时，继承已核验原对象名称；模型明确标题和原始请求摘要不改写。
+   const resultFields=row.result.title===undefined?{...row.result,title:original.title}:row.result
+   const capturedAt=this.identity.now(),entry={object:reference,task:{id:execution.taskId},run:{id:execution.runId},employee:{id:execution.roleId},result:resultFields}
+   const candidate=mapSourceItem(mapping,objectType,entry,capturedAt)
+   if('skipped' in candidate||candidate.deleted)throw invalidInput('成果字段不完整，或包含不允许的删除标记。')
+   for(const field of objectType.fields)assertBusinessRecordFieldValue(field,candidate.snapshot.fields.find(value=>value.label===field.from)?.value)
+   // 同一来源类型的同一映射跨员工/会话沿用身份，不再以会话短码拆出重复成果。
+   const sourceId='role-result:'+createHash('sha256').update(JSON.stringify([mappingId,reference.type])).digest('hex')
+   const outcome=await this.write(db,owner,scope,resolved,sourceId,[{item:entry,capturedAt}],false,signal,true)
+   // 与原成果回执一起固定精确快照；工作读侧只引用它，不重复生产结构化成果。
+   const resultId=await this.objectId(db,owner,scope,objectType.id,sourceIdentity({...mapping,source:{kind:'role-result'}},sourceId),sourceId,reference.id,false)
+   const saved=(await db.query('select snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 order by object_version desc limit 1',[owner,scope,objectType.id,resultId])).rows[0]
+   const snapshot=readBusinessObjectSnapshot(saved.snapshot,scope)
+   const resultReferences=[{scope,type:snapshot.type,id:snapshot.id,version:snapshot.version,snapshotHash:businessObjectSnapshotHash(snapshot)}]
+   const result={upserted:outcome.upserted,tombstoned:outcome.tombstoned}
+   await this.record(db,owner,scope,mappingId,{runId:execution.runId,trigger:'tool',startedAt:capturedAt,status:'ok',outcome})
+   await db.query('insert into teloa_business_task_result_receipts values($1,$2,$3,$4,$5,$6)',[owner,execution.runId,mappingId,requestHash,JSON.stringify(result),JSON.stringify({...execution,resultReferences})])
+   await db.query('insert into teloa_business_task_result_references values($1,$2,$3,$4,$5,$6,$7)',[owner,scope,execution.runId,mappingId,snapshot.type,snapshot.id,snapshot.version])
+   await db.query(`insert into teloa_business_task_result_heads values($1,$2,$3,$4,$5,$6,$7,$8)
+    on conflict(owner_id,scope_id,mapping_id,object_type,object_id) do update set source_version=excluded.source_version,run_id=excluded.run_id,run_created_at=excluded.run_created_at`,[owner,scope,mappingId,reference.type,reference.id,reference.version,execution.runId,execution.createdAt])
+   if(outcome.upserted+outcome.tombstoned>0)await this.events?.sync(db,owner,{kind:'business-sync',scope,mappingId},execution.runId)
+   signal?.throwIfAborted()
+   await db.query('commit');return result
   }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
  }
 
@@ -427,7 +547,7 @@ export class BusinessSyncService{
    if(!objectType)throw unavailable('数据源映射引用的对象类型不在同一加载内。')
    const definition=objectType.definition
    if(definition.format==='teloa.business-object-type/v2'&&definition.fields.some(field=>'format' in field))throw unavailable('旧数据源映射尚不支持富字段对象类型，已停止同步。')
-   result.push({mapping:record.definition,objectType:definition.format==='teloa.business-object-type/v2'?businessObjectTypeV2LegacyShape(definition):definition,definitionHash:record.source.definitionHash})
+   result.push({mapping:record.definition,objectType:definition.format==='teloa.business-object-type/v2'?businessObjectTypeV2LegacyShape(definition):definition,definitionHash:record.source.definitionHash,objectTypeDefinitionHash:objectType.source.definitionHash})
   }
   if(result.length>businessSourceMappingLimits.mappingsPerScope)throw invalidInput('业务范围 '+scope+' 的数据源映射超过 '+businessSourceMappingLimits.mappingsPerScope+' 个，已停止同步；请先回退多出的映射。')
   return result
@@ -449,8 +569,16 @@ export class BusinessSyncService{
   * 「不前进」= 回包游标已在本条分页链出现过（含刚带出的 pageToken）；业务数据端口的水位与续页共用端口的同一个 cursor 参数，
   * 所以端口来源的水位也算「出现过」，首页就回水位即判出。受管 MCP 工具的水位与续页是两个参数、两套取值，不混比。页数上限见 `maxPages`。
   */
- private async fetchAll(scope:string,resolved:ResolvedMapping,cursor:string|undefined,signal?:AbortSignal,invoke?:(fetch:()=>Promise<BusinessSyncFetchPage>)=>Promise<BusinessSyncFetchPage>):Promise<Fetched>{
+ private async fetchAll(scope:string,resolved:ResolvedMapping,state:CursorState|undefined,signal?:AbortSignal,invoke?:(fetch:()=>Promise<BusinessSyncFetchPage>)=>Promise<BusinessSyncFetchPage>):Promise<Fetched>{
   const source=await this.resolve(resolved.mapping)
+  const prefix=source.bindingKey===undefined?undefined:'binding/'+source.bindingKey+'/'
+  if(prefix!==undefined){
+   if(!/^[a-f0-9]{64}$/.test(source.bindingKey!))throw unavailable('来源授权摘要不合法；未发起同步。')
+   if(state?.cursorBasis?.startsWith('binding/')&&!state.cursorBasis.startsWith(prefix))throw new WorkError('teloa/source-conflict','来源授权已变化；请以新映射绑定本人来源，原映射的记录与成果仍保留。')
+   if(state?.lastOkAt&&!state.cursorBasis?.startsWith('binding/'))throw new WorkError('teloa/source-conflict','旧映射缺少可核实的授权归属；请以新映射绑定本人来源，原记录与成果仍保留。')
+  }
+  const mappingBasis=cursorBasis(resolved.mapping),basis=prefix===undefined?mappingBasis:prefix+(mappingBasis??'full')
+  const cursor=mappingBasis!==undefined&&state?.cursorBasis===basis?state?.cursor:undefined
   const pageSize=resolved.mapping.pageSize??50,entries:Array<{item:unknown;capturedAt:string}>=[],seen=new Set<string>()
   if(cursor!==undefined&&resolved.mapping.source.kind==='business-data-port')seen.add(cursor)
   let next:string|undefined
@@ -466,7 +594,7 @@ export class BusinessSyncService{
    if(page>=maxPages)throw unavailable('数据源分页超过 '+maxPages+' 页；未写入。')
    seen.add(result.nextCursor);next=result.nextCursor
   }
-  return {key:source.key,entries}
+  return {key:source.key,entries,...(cursor===undefined?{}:{cursor}),...(basis===undefined?{}:{basis}),...(source.withCurrent?{withCurrent:source.withCurrent}: {})}
  }
 
  /** 写入（在调用方事务内）：全量 + compare 才对比缺席；增量映射按本批条目推进水位。 */
@@ -513,8 +641,8 @@ export class BusinessSyncService{
   * 端口是版本权威，(对象,版本) 已在且摘要相同跳过、摘要不同 source-conflict、不在则直接插入端口版本；
   * 对象一旦有过 tombstone 即与端口版本号脱钩，此后按内容去重、max+1 写入。
   */
- private async write(db:PoolClient,owner:string,scope:string,resolved:ResolvedMapping,sourceId:string,entries:Array<{item:unknown;capturedAt:string}>,compare:boolean,signal?:AbortSignal):Promise<Omit<Outcome,'nextCursor'>>{
-  const {mapping,objectType}=resolved,raw=mapping.mapping.length===0,type=objectType.id,sourceKey=sourceIdentity(mapping,sourceId)
+ private async write(db:PoolClient,owner:string,scope:string,resolved:ResolvedMapping,sourceId:string,entries:Array<{item:unknown;capturedAt:string}>,compare:boolean,signal?:AbortSignal,fixedObjectResult=false):Promise<Omit<Outcome,'nextCursor'>>{
+  const {mapping,objectType}=resolved,raw=mapping.mapping.length===0,type=objectType.id,sourceKey=sourceIdentity(fixedObjectResult?{...mapping,source:{kind:'role-result'}}:mapping,sourceId)
   const external=new Map<string,{snapshot:MappedSnapshot&{version?:number};deleted:boolean;capturedAt:string}>()
   for(const {item,capturedAt} of entries){
    if(raw){
@@ -588,6 +716,7 @@ export class BusinessSyncService{
   }
   let tombstoned=0
   for(const id of tombstones)if(await this.warehouse.tombstone(db,owner,scope,type,id,sourceId))tombstoned+=1
+  if(inserts.length||tombstoned)await markBusinessDataChanged(db,owner,scope)
   return {fetched:entries.length,upserted:inserts.length,tombstoned}
  }
 

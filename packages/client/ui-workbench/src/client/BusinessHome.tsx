@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ArrowRight, ArrowUpRight, Bell, Plus } from 'lucide-react';
+import { ArrowUpRight, Bell, Plus, Users } from 'lucide-react';
 import type { AttentionItem } from './attention-item.js';
 import { useRef, useState, type ReactNode } from 'react';
 import type { BusinessScopeLabel } from './business-directory.js';
@@ -12,9 +12,11 @@ import type { CompositionTarget } from './industry-composition.js';
 import { businessHomeCards, businessHomeSummaryParts, type BusinessHomeCard } from './business-home-presentation.js';
 import { useI18n } from './i18n/provider.js';
 import { useDismissible } from './use-dismissible.js';
-import { StaffAvatar } from './StaffAvatar.js';
+import { EmployeeAvatar } from './EmployeeAvatar.js';
 import base from './TaskPage.module.css';
 import css from './BusinessHome.module.css';
+import {ToolbarIconButton} from './ToolbarIconButton.js';
+import {businessWorkspaceText} from './business-workspace-copy.js';
 
 export type BusinessHomeProps = {
     labels: readonly BusinessScopeLabel[];
@@ -44,26 +46,25 @@ const AVATAR_LIMIT = 5;
 
 function StaffRow({ staff }: { staff: readonly PreviewRole[] }) {
     const { t, number } = useI18n();
-    if (!staff.length) return <span className={css.noStaff}>{t('business.home.noStaff')}</span>;
+    if (!staff.length) return null;
     const shown = staff.slice(0, AVATAR_LIMIT);
     return <span className={css.staffRow}>
-        {shown.map(role => <span key={role.id} className={css.staffAvatar} title={role.name}><StaffAvatar initial={role.name.slice(0, 1)} seed={role.id} size="sm" /></span>)}
+        {shown.map(role => <span key={role.id} className={css.staffAvatar} title={role.name}><EmployeeAvatar avatarKey={role.avatarKey} size="sm" /></span>)}
         {staff.length > shown.length && <span className={css.staffMore}>{t('business.home.staffMore', { count: number(staff.length - shown.length) })}</span>}
     </span>;
 }
 
 /** 范围标签只在模板来源称呼唯一时给出这一位；否则回落通用名词，避免猜测。 */
 function SpaceCard({ card, open, openStaff, connect, goComposition }: { card: BusinessHomeCard } & Pick<BusinessHomeProps, 'open' | 'openStaff' | 'connect' | 'goComposition'>) {
-    const { t, number } = useI18n();
+    const { t, number, locale } = useI18n();
     const noun = card.sourceNoun ?? t('business.source.noun');
     // 一个东西都没有的业务不摆空摘要；摘要本身在处境句这一块下面，因为按钮不能套按钮。
     const summary = card.composition.length ? businessHomeSummaryParts(card.composition, card.scope, t, number) : [];
     return <article className={css.spaceCard}>
         <button type="button" className={css.spaceOpen} onClick={() => open(card.scope)}>
             <span className={css.spaceName}>{card.title}<ArrowUpRight size={16} /></span>
-            <span className={css.spaceSituation}>{t(card.situationKey, { sources: number(card.sources), staff: number(card.staff.length), noun })}</span>
+            <span className={css.spaceSituation}>{card.scope==='general'?businessWorkspaceText(locale,card.staff.length?'generalStaff':'generalNoStaff').replace('{count}',number(card.staff.length)):t(card.situationKey, { sources: number(card.sources), staff: number(card.staff.length), noun })}</span>
             <span className={css.spaceWork}>{card.working ? t('business.home.working', { count: number(card.working) }) : t('business.home.quiet')}</span>
-            <span className={css.spaceLine}>{t(card.lineKey, { noun })}</span>
         </button>
         {summary.length > 0 && <div className={css.spaceComposition}>
             {summary.map((part, index) => part.go
@@ -74,8 +75,8 @@ function SpaceCard({ card, open, openStaff, connect, goComposition }: { card: Bu
             <StaffRow staff={card.staff} />
             <span className={css.grow} />
             {card.attention > 0 && <span className={css.needPill}><Bell size={12} />{t('business.home.waiting', { count: number(card.attention) })}</span>}
-            <button type="button" className={css.staffLink} onClick={() => openStaff(card.scope)}>{t('business.home.staff')}<ArrowRight size={14} /></button>
-            <button type="button" onClick={() => connect(card.scope)}><Plus size={14} />{t('business.home.connect', { noun })}</button>
+            <ToolbarIconButton label={`${t('business.home.staff')} · ${card.title}`} icon={Users} onClick={() => openStaff(card.scope)}/>
+            {card.scope!=='general'&&<ToolbarIconButton label={`${t('business.home.connect', { noun })} · ${card.title}`} icon={Plus} onClick={() => connect(card.scope)}/>}
         </div>
     </article>;
 }
@@ -96,7 +97,6 @@ export function BusinessHome({ labels, directory, roles, dataSources, attention,
             <header className={css.pageHeader}>
                 <div>
                     <h1>{t('business.home.title')}</h1>
-                    <p className={css.subtitle}>{t('business.home.subtitle')}</p>
                 </div>
                 {createEntry===undefined
                   ? <div className={css.entryActions}><button type="button" disabled={!creationReady} onClick={addBusiness}>{t(builderDirectory===undefined?'business.home.add':'business.builder.new')}</button>{market&&<button type="button" onClick={market}>{t('business.builder.market')}</button>}</div>

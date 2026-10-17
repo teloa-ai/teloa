@@ -1,4 +1,4 @@
-import {writeFile,rename} from 'node:fs/promises'
+import {writeFile,rename,mkdir} from 'node:fs/promises'
 import {resolve} from 'node:path'
 
 /** 晚于 exit 订阅也要结算；快速失败不得把验收清理永远挂住。 */
@@ -16,6 +16,7 @@ export const waitForExit=child=>new Promise((done,fail)=>{
 export async function writeRestartMarker(directory,marker){
  const port=new URL(marker.origin).port
  if(!port||port==='3100')throw Error('重启证据必须属于隔离验收端口。')
+ await mkdir(directory,{recursive:true,mode:0o700})
  const path=resolve(directory,'重启验收代次-'+port+'.json'),temporary=path+'.'+marker.launcher+'.tmp'
  await writeFile(temporary,JSON.stringify(marker),{mode:0o600})
  await rename(temporary,path)

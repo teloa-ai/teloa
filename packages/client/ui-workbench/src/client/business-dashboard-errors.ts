@@ -33,3 +33,18 @@ export function businessDashboardErrorKey(error:{code:WorkErrorCode;reason:strin
  }
  return {key:'business.dashboards.widget.failed'}
 }
+
+const codeOf=(error:unknown)=>error!==null&&typeof error==='object'&&'code' in error?String(error.code):''
+export function businessDashboardFailure(error:unknown):ReturnType<typeof businessDashboardErrorKey>{
+ const reason=error!==null&&typeof error==='object'?String((error as {reason?:unknown;message?:unknown}).reason??(error as {message?:unknown}).message??''):''
+ return businessDashboardErrorKey({code:codeOf(error) as WorkErrorCode,reason})
+}
+
+/** 读取被拒绝、来源未配置或回包损坏时，不诱导用户重复同一个失败请求。 */
+export function businessDashboardReadFailure(error:unknown,fallback:'business.dashboards.readFailed'|'business.dashboards.sync.rule.readFailed'|'business.dashboards.sync.status.readFailed'){
+ const code=codeOf(error)
+ if(['teloa/forbidden','teloa/not-found','teloa/storage-corrupt','teloa/source-unavailable'].includes(code))return {...businessDashboardFailure(error),retryable:false}
+ if(code==='teloa/invalid-host-response')return {key:'business.dashboards.error.corrupt' as const,retryable:false}
+ if(code==='teloa/invalid-input')return {key:'business.dashboards.widget.failed' as const,retryable:false}
+ return {key:fallback,retryable:true}
+}

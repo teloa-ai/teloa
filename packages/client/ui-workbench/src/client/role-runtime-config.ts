@@ -1,8 +1,13 @@
 import {readModelOptionsDirectory,type ModelOptionsDirectory} from '@teloa/contract'
+import {presetDisplayName,singleStandardModeOptions,standardModeName,standardModeDescription} from './standard-mode-options.ts'
+const creatorUnavailableReason='创造模式仅供本人会话使用，不能用于员工运行。'
 
 export type RuntimeConfigItem={
  id:string
+ /** 原值：roster 发布的名称，缺失时为 id；显示名由 presetDisplayName 决定。 */
  label:string
+ /** roster 发布的名称；缺失表示未命名的内置预设，可显示产品名。 */
+ name?:string
  default:boolean
  health:'ready'|'unavailable'
  description?:string
@@ -11,8 +16,8 @@ export type RuntimeConfigItem={
 
 export type RuntimeConfigDirectory={
  status:'ready'
- /** DSH 对未指定运行配置的新会话是否展示选择器；岗位只读取该事实，不写宿主设置。 */
- modeSelectionEnabled:boolean
+ /** 旧版 DSH 的选择器策略；0.2.1-alpha.1 roster 不再公开，缺失时保持未知。 */
+ modeSelectionEnabled?:boolean
  items:RuntimeConfigItem[]
 }
 
@@ -51,16 +56,16 @@ function row(value:unknown):AgentPresetRow{
 export function readRuntimeConfigDirectory(value:unknown):RuntimeConfigDirectory{
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('运行配置目录格式不正确。')
  const roster=value as Record<string,unknown>
- // rc1 目录直接返回声明元数据与选择器策略，不再提供旧目录扫描的 trust/authorable。
- if(Object.keys(roster).some(key=>key!=='presets'&&key!=='modeSelectionEnabled')||!Array.isArray(roster.presets)||typeof roster.modeSelectionEnabled!=='boolean')throw Error('运行配置目录格式不正确。')
+ // 固定版 0.2.1-alpha.1 AgentPresetRoster 只有 presets；兼容旧目录的策略字段，不补造它。
+ if(Object.keys(roster).some(key=>key!=='presets'&&key!=='modeSelectionEnabled')||!Array.isArray(roster.presets)||(roster.modeSelectionEnabled!==undefined&&typeof roster.modeSelectionEnabled!=='boolean'))throw Error('运行配置目录格式不正确。')
  const items=roster.presets.map(row).map(item=>({
-  id:item.id,label:item.name??item.id,default:item.isDefault,
+  id:item.id,label:item.name??item.id,...(item.name===undefined?{}:{name:item.name}),default:item.isDefault,
   health:item.broken===undefined&&item.id!=='cordis'?'ready' as const:'unavailable' as const,
   ...(item.description===undefined?{}:{description:item.description}),
-  ...(item.id==='cordis'?{reason:'创造模式仅供本人会话使用，不能用于员工运行。'}:item.broken===undefined?{}:{reason:item.broken}),
+  ...(item.id==='cordis'?{reason:creatorUnavailableReason}:item.broken===undefined?{}:{reason:item.broken}),
  }))
  if(new Set(items.map(item=>item.id)).size!==items.length||items.filter(item=>item.default).length>1)throw Error('运行配置目录格式不正确。')
- return {status:'ready',modeSelectionEnabled:roster.modeSelectionEnabled,items}
+ return {status:'ready',...(roster.modeSelectionEnabled===undefined?{}:{modeSelectionEnabled:roster.modeSelectionEnabled as boolean}),items}
 }
 
 /** 将 DSH 原生 agentPresets/list 约束在 UI 边界，避免引入业务侧副本。 */
@@ -71,23 +76,44 @@ export function createRoleRuntimeConfigApi(read:()=>Promise<unknown>,models?:()=
 /** 每次读取都是新快照；失败不能沿用旧目录把固定配置误报为可用。 */
 export const runtimeConfigLoading=():RuntimeConfigLoadState=>({status:'loading'})
 export const runtimeConfigReady=(directory:RuntimeConfigDirectory):RuntimeConfigLoadState=>({status:'ready',directory})
-export const runtimeConfigFailed=(error:unknown):RuntimeConfigLoadState=>({status:'error',error:error instanceof Error&&error.message?error.message:'运行配置目录暂不可用。'})
+export const runtimeConfigFailed=(_error:unknown,locale='zh-Hans'):RuntimeConfigLoadState=>({status:'error',error:modeText(locale,'unreadable')})
 
-export function runtimeConfigSummary(agentPresetId:string|undefined,directory?:RuntimeConfigDirectory){
- if(!agentPresetId)return {label:'继承当前默认，未固定',detail:'新执行会在创建时核对当前默认运行配置；本人选择创造模式时，员工使用 Teloa 标准模式。当前员工不会自动写回。',health:'inherited' as const}
- if(!directory)return {label:'运行配置待核对',detail:'尚未读取 DSH 原生运行配置目录，不能确认新的无人值守工作。',health:'unavailable' as const}
+const modeCopy={
+ inherited:['使用默认工作模式','使用預設工作模式','Use the default work mode'],
+ inheritedDetail:['新工作使用当前默认模式；创造模式不可用于员工，将使用标准模式。','新工作使用目前預設模式；創造模式不能用於員工，將使用標準模式。','New work uses the current default. Creator mode is unavailable for employees, so Standard mode is used instead.'],
+ creatorUnavailable:[creatorUnavailableReason,'創造模式僅供本人會話使用，不能用於員工執行。','Creator mode is available only in your own conversations and cannot run employees.'],
+ unavailable:['工作模式待核对','工作模式待核對','Work mode needs review'],
+ unreadable:['暂时无法读取工作模式，请重试后再开始新工作。','暫時無法讀取工作模式，請重試後再開始新工作。','Work modes could not be loaded. Retry before starting new work.'],
+ missing:['原工作模式已不可用，请选择其他模式后再开始新工作。','原工作模式已無法使用，請選擇其他模式後再開始新工作。','The saved work mode is no longer available. Choose another mode before starting new work.'],
+ broken:['所选工作模式暂不可用，请选择其他模式。','所選工作模式暫時無法使用，請選擇其他模式。','The selected work mode is unavailable. Choose another mode.'],
+ ready:['工作模式可用；资料、技能和工具仍按已有授权使用。','工作模式可用；資料、技能和工具仍依既有授權使用。','The work mode is available. Existing permissions still apply to materials, skills, and tools.'],
+ default:['使用当前默认','使用目前預設','Use the current default'],
+ current:['当前默认','目前預設','Current default'],
+ disabled:['不可用','無法使用','Unavailable'],
+ missingOption:['已保存的工作模式 · 当前不可用','已儲存的工作模式 · 目前無法使用','Saved work mode · unavailable'],
+} as const
+const modeText=(locale:string,key:keyof typeof modeCopy)=>modeCopy[key][['zh-hant','zh-tw','zh-hk'].includes(locale.toLowerCase())?1:/^zh(?:$|-cn$|-hans$)/i.test(locale)?0:2]
+
+export function runtimeConfigSummary(agentPresetId:string|undefined,directory?:RuntimeConfigDirectory,locale='zh-Hans'){
+ if(!agentPresetId)return {label:modeText(locale,'inherited'),detail:modeText(locale,'inheritedDetail'),health:'inherited' as const}
+ if(!directory)return {label:modeText(locale,'unavailable'),detail:modeText(locale,'unreadable'),health:'unavailable' as const}
  const item=directory.items.find(candidate=>candidate.id===agentPresetId)
- if(!item)return {label:'运行配置待核对',detail:'已保存的运行配置不在当前 DSH 目录中，不能用于新的无人值守工作。',health:'unavailable' as const}
- if(item.health==='unavailable')return {label:item.label,detail:item.reason??'运行配置当前不可组合。',health:'unavailable' as const}
- return {label:item.label,detail:item.description??'DSH 已确认可组合；执行时仍会核对资料、技能与工具授权。',health:'ready' as const}
+ if(!item)return {label:modeText(locale,'unavailable'),detail:modeText(locale,'missing'),health:'unavailable' as const}
+ const label=presetDisplayName(item,locale)
+ if(item.health==='unavailable')return {label,detail:item.id==='cordis'&&item.reason===creatorUnavailableReason?modeText(locale,'creatorUnavailable'):item.reason??modeText(locale,'broken'),health:'unavailable' as const}
+ return {label,detail:standardModeDescription(item,locale)??modeText(locale,'ready'),health:'ready' as const}
 }
 
-export function runtimeConfigOptions(agentPresetId:string|undefined,directory:RuntimeConfigDirectory){
- const missing=agentPresetId&&!directory.items.some(item=>item.id===agentPresetId)?[{id:agentPresetId,label:`已保存：${agentPresetId} · 当前不存在`,disabled:true}]:[]
+export function runtimeConfigOptions(agentPresetId:string|undefined,directory:RuntimeConfigDirectory,locale='zh-Hans'){
+ const available=singleStandardModeOptions(directory.items.map(item=>({...item,...(item.health==='unavailable'?{broken:item.reason??'unavailable'}:{})})))
+ const legacy=agentPresetId==='standard'&&!available.some(item=>item.id==='standard')&&directory.items.some(item=>item.id==='standard')
+ const missing=agentPresetId&&!directory.items.some(item=>item.id===agentPresetId)?[{id:agentPresetId,label:modeText(locale,'missingOption'),disabled:true}]:[]
+ const name=standardModeName(locale)??'Standard mode',stored=locale.toLowerCase().startsWith('zh')?`${['zh-hant','zh-tw','zh-hk'].includes(locale.toLowerCase())?'已儲存':'已保存'}：${name}`:`Saved: ${name}`
  return [
-  {id:'',label:'继承当前默认（不固定）',disabled:false},
+  {id:'',label:modeText(locale,'default'),disabled:false},
   ...missing,
-  ...directory.items.map(item=>({id:item.id,label:item.label+(item.default?' · 当前默认':'')+(item.health==='unavailable'?' · 不可用':''),disabled:item.health!=='ready'})),
+  ...(legacy?[{id:'standard',label:stored,disabled:true}]:[]),
+  ...available.map(item=>({id:item.id,label:presetDisplayName(item,locale)+(item.default?' · '+modeText(locale,'current'):'')+(item.health==='unavailable'?' · '+modeText(locale,'disabled'):''),disabled:item.health!=='ready'})),
  ]
 }
 

@@ -1,13 +1,16 @@
-import {isRecord,readScheduleTrigger,readTaskCompletionPolicy,readPlanWorkDefinition,taskDefinition,workTaskStates,type PlanWorkDefinition,type TaskCompletionPolicy,type ScheduleTrigger,type WorkTask} from '@teloa/contract'
-import type {PlanNotificationPolicy,PlanSource} from './plan-api.ts'
+import {readOwnerPlanFields,type OwnerPlanFields,isRecord,readScheduleTrigger,readTaskCompletionPolicy,readPlanWorkDefinition,readRunPlanEventContext,type RunPlanEventContext,taskDefinition,workTaskStates,type PlanWorkDefinition,type TaskCompletionPolicy,type ScheduleTrigger,type WorkTask} from '@teloa/contract'
+import {readPlanSource,type PlanNotificationPolicy,type PlanSource} from './plan-api.ts'
 
+type PlanScheduleFields={groupId?:string|null;title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
 export type PlanScheduleOccurrence={
+ event?:RunPlanEventContext
  workDefinition?:PlanWorkDefinition
+ reportGroup?:{groupId:string;groupVersion:number;grantVersion:number}
  id:string;ownerId:string;planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;claimedAt:string;taskRequestId:string
- fields:{title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
- source:PlanSource;roleVersion:number
+ fields:PlanScheduleFields|OwnerPlanFields
+ source:PlanSource;roleVersion:number|null
  invalidated?:{reason:'plan-paused'|'plan-archived'|'plan-version-changed';observedPlanUpdatedAt:string}
- taskRequest:{requestId:string;fields:{title:string;goal:string;scope:string;completionPolicy?:TaskCompletionPolicy};assignee:{roleId:string;expectedVersion:number}}
+ taskRequest:{requestId:string;fields:{groupId?:string|null;title:string;goal:string;scope:string;completionPolicy?:TaskCompletionPolicy};assignee?:{roleId:string;expectedVersion:number}}
 }
 export type PlanScheduleSkip={planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;skippedAt:string;reason:'previous-pending'|'previous-task-unfinished';blockingClaimId:string;taskId:string|null}
 export type PlanSchedulerHealth={health:'healthy'|'failing';failureCode:string|null;lastAttemptAt:string;lastSuccessAt:string|null}
@@ -17,9 +20,6 @@ export type PlanScheduleSummary={available:boolean;overview:PlanScheduleOverview
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
 const text=(value:unknown,max:number):value is string=>typeof value==='string'&&!!value.trim()&&value.trim()===value&&value.length<=max
-const hash=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value)
-const stableId=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/.test(value)
-const semver=(value:unknown):value is string=>typeof value==='string'&&value.length<=80&&/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
 const timestamp=(value:unknown):value is string=>{if(typeof value!=='string')return false;const parsed=new Date(value);return Number.isFinite(parsed.getTime())&&parsed.toISOString()===value}
 const scheduledOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[(?:Asia\/Singapore|Asia\/Shanghai|UTC)\]$/.test(value)
 const manualOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^manual:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -30,27 +30,33 @@ const same=(left:unknown,right:unknown)=>JSON.stringify(left)===JSON.stringify(r
 const notificationPolicy=(value:unknown):value is PlanNotificationPolicy=>typeof value==='string'&&['always','attention','failure','silent'].includes(value)
 
 function source(value:unknown):PlanSource{
- const row=exact(value,['kind','contentId','contentHash','resourceId','resourceVersion','roleId'])
- if(row.kind==='manual'){if(Object.keys(row).length!==1)throw Error();return {kind:'manual'}}
- // 与 plan-api.ts 的 readSource 逐字同口径：Auto Dream 的系统计划来源只有两键。
- if(row.kind==='system-digest'){if(Object.keys(row).length!==2||!uuid(row.roleId))throw Error();return {kind:'system-digest',roleId:row.roleId}}
- if(row.kind!=='market-content'||!uuid(row.contentId)||!hash(row.contentHash)||!stableId(row.resourceId)||!semver(row.resourceVersion))throw Error()
- return {kind:'market-content',contentId:row.contentId,contentHash:row.contentHash,resourceId:row.resourceId,resourceVersion:row.resourceVersion}
+ return readPlanSource(value)
 }
 function fields(value:unknown):PlanScheduleOccurrence['fields']{
- const row=exact(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy']),base=taskDefinition({title:row.title,goal:row.goal,scope:row.scope}),trigger=readScheduleTrigger(row.trigger)
+ if(isRecord(value)&&Object.hasOwn(value,'executor'))return readOwnerPlanFields(value)
+ const row=exact(value,['title','goal','scope','dataScope','delivery','roleId','trigger','notificationPolicy','completionPolicy','groupId']),base=taskDefinition({title:row.title,goal:row.goal,scope:row.scope}),trigger=readScheduleTrigger(row.trigger)
  if(base.title!==row.title||base.goal!==row.goal||base.scope!==row.scope||!text(row.dataScope,8000)||!text(row.delivery,8000)||!uuid(row.roleId)||row.notificationPolicy!==undefined&&!notificationPolicy(row.notificationPolicy))throw Error()
- return {title:base.title,goal:base.goal,scope:base.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy}),...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
+ if(Object.hasOwn(row,'groupId')&&row.groupId!==null&&!uuid(row.groupId))throw Error()
+ return {...(Object.hasOwn(row,'groupId')?{groupId:row.groupId as string|null}:{}),title:base.title,goal:base.goal,scope:base.scope,dataScope:row.dataScope,delivery:row.delivery,roleId:row.roleId,trigger,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy}),...(row.completionPolicy===undefined?{}:{completionPolicy:readTaskCompletionPolicy(row.completionPolicy)})}
 }
 function occurrence(value:unknown):PlanScheduleOccurrence{
- const row=exact(value,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest','workDefinition'])
- const fixedFields=fields(row.fields),fixedSource=source(row.source),request=exact(row.taskRequest,['requestId','fields','assignee']),requestFields=taskDefinition(exact(request.fields,['title','goal','scope','completionPolicy'])),assignee=exact(request.assignee,['roleId','expectedVersion'])
+ const row=exact(value,['id','ownerId','planId','planVersion','configVersion','occurrenceId','scheduledAt','claimedAt','taskRequestId','fields','source','roleVersion','invalidated','taskRequest','workDefinition','reportGroup','event'])
+ const fixedFields=fields(row.fields),fixedSource=source(row.source),request=exact(row.taskRequest,['requestId','fields','assignee']),requestFields=taskDefinition(exact(request.fields,['title','goal','scope','completionPolicy','groupId'])),assignee=request.assignee===undefined?undefined:exact(request.assignee,['roleId','expectedVersion'])
+ let reportGroup:PlanScheduleOccurrence['reportGroup']
+ if(row.reportGroup!==undefined){const v=exact(row.reportGroup,['groupId','groupVersion','grantVersion']);if(!uuid(v.groupId)||v.groupId!==fixedFields.groupId||!positive(v.groupVersion)||!positive(v.grantVersion))throw Error();reportGroup={groupId:v.groupId,groupVersion:v.groupVersion,grantVersion:v.grantVersion}}
+ if(!!fixedFields.groupId!==!!reportGroup)throw Error()
  const workDefinition=row.workDefinition===undefined?undefined:readPlanWorkDefinition(row.workDefinition)
+ const event=row.event===undefined?undefined:readRunPlanEventContext(row.event)
+ if(event&&(event.event.ownerId!==row.ownerId||event.event.sourceRef.scope!==fixedFields.scope||row.occurrenceId!=='event:'+event.event.id||!workDefinition||workDefinition.schema!=='teloa.plan-work/v3'||!workDefinition.triggers.some(trigger=>trigger.kind==='local-event'&&'sourceRef'in trigger&&trigger.eventKind===event.event.kind&&same(trigger.sourceRef,event.event.sourceRef))))throw Error()
  if(workDefinition&&(workDefinition.definitionVersion!==row.configVersion||!same(workDefinition.completion,fixedFields.completionPolicy))||eventOccurrenceIdentity(row.occurrenceId)&&!workDefinition)throw Error()
- if(!uuid(row.id)||!text(row.ownerId,128)||!uuid(row.planId)||!positive(row.planVersion)||!positive(row.configVersion)||row.configVersion>row.planVersion||!occurrenceIdentity(row.occurrenceId)||!timestamp(row.scheduledAt)||!timestamp(row.claimedAt)||row.claimedAt<row.scheduledAt||manualOccurrenceIdentity(row.occurrenceId)&&(row.occurrenceId!=='manual:'+row.taskRequestId||row.claimedAt!==row.scheduledAt)||!uuid(row.taskRequestId)||request.requestId!==row.taskRequestId||!same(requestFields,taskDefinition({title:fixedFields.title,goal:fixedFields.goal,scope:fixedFields.scope,...(fixedFields.completionPolicy?{completionPolicy:fixedFields.completionPolicy}:{})}))||assignee.roleId!==fixedFields.roleId||!positive(assignee.expectedVersion)||!positive(row.roleVersion)||assignee.expectedVersion!==row.roleVersion)throw Error()
+ if(!uuid(row.id)||!text(row.ownerId,128)||!uuid(row.planId)||!positive(row.planVersion)||!positive(row.configVersion)||row.configVersion>row.planVersion||!occurrenceIdentity(row.occurrenceId)||!timestamp(row.scheduledAt)||!timestamp(row.claimedAt)||row.claimedAt<row.scheduledAt||manualOccurrenceIdentity(row.occurrenceId)&&(row.occurrenceId!=='manual:'+row.taskRequestId||row.claimedAt!==row.scheduledAt)||!uuid(row.taskRequestId)||request.requestId!==row.taskRequestId||!same(requestFields,taskDefinition({title:fixedFields.title,goal:fixedFields.goal,scope:fixedFields.scope,groupId:fixedFields.groupId??null,...(fixedFields.completionPolicy?{completionPolicy:fixedFields.completionPolicy}:{})})))throw Error()
+ if(fixedFields.roleId===null){
+  const auth=workDefinition?.authorization
+  if(row.roleVersion!==null||assignee!==undefined||fixedSource.kind!=='method-reuse'||!workDefinition||auth?.kind!=='owner'||auth.grantId!==row.planId||auth.grantVersion!==row.configVersion||workDefinition.budget.money!==null||workDefinition.triggers.length!==1||workDefinition.triggers[0]?.kind!=='schedule'||!same(workDefinition.triggers[0].schedule,fixedFields.trigger))throw Error()
+ }else if(!assignee||assignee.roleId!==fixedFields.roleId||!positive(assignee.expectedVersion)||!positive(row.roleVersion)||assignee.expectedVersion!==row.roleVersion||workDefinition?.authorization.kind==='owner')throw Error()
  let invalidated:PlanScheduleOccurrence['invalidated']
  if(row.invalidated!==undefined){const item=exact(row.invalidated,['reason','observedPlanUpdatedAt']);if(!['plan-paused','plan-archived','plan-version-changed'].includes(String(item.reason))||!timestamp(item.observedPlanUpdatedAt))throw Error();invalidated={reason:item.reason as NonNullable<PlanScheduleOccurrence['invalidated']>['reason'],observedPlanUpdatedAt:item.observedPlanUpdatedAt}}
- return {...(workDefinition?{workDefinition}:{}),id:row.id,ownerId:row.ownerId,planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,claimedAt:row.claimedAt,taskRequestId:row.taskRequestId,fields:fixedFields,source:fixedSource,roleVersion:row.roleVersion,...(invalidated?{invalidated}:{}),taskRequest:{requestId:request.requestId as string,fields:{title:requestFields.title,goal:requestFields.goal,scope:requestFields.scope,...(requestFields.completionPolicy?{completionPolicy:requestFields.completionPolicy}:{})},assignee:{roleId:assignee.roleId as string,expectedVersion:assignee.expectedVersion}}}
+ return {...(event?{event}:{}),...(reportGroup?{reportGroup}:{}),...(workDefinition?{workDefinition}:{}),id:row.id,ownerId:row.ownerId,planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,claimedAt:row.claimedAt,taskRequestId:row.taskRequestId,fields:fixedFields,source:fixedSource,roleVersion:row.roleVersion as number|null,...(invalidated?{invalidated}:{}),taskRequest:{requestId:request.requestId as string,fields:{...(Object.hasOwn(request.fields as object,'groupId')?{groupId:requestFields.groupId}:{}),title:requestFields.title,goal:requestFields.goal,scope:requestFields.scope,...(requestFields.completionPolicy?{completionPolicy:requestFields.completionPolicy}:{})},...(assignee?{assignee:{roleId:assignee.roleId as string,expectedVersion:assignee.expectedVersion as number}}:{})}}
 }
 function skip(value:unknown,planId:string,planVersion:number):PlanScheduleSkip{
  const row=exact(value,['planId','planVersion','configVersion','occurrenceId','scheduledAt','skippedAt','reason','blockingClaimId','taskId'])

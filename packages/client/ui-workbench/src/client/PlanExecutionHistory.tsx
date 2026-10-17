@@ -1,3 +1,5 @@
+import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {RefreshCw,ArrowUpRight} from 'lucide-react'
 import {useEffect,useRef,useState} from 'react'
 import type {PlanApi} from './plan-api.js'
 import {appendPlanExecutionHistory,createPlanExecutionHistoryRequestGate,type PlanExecutionHistoryPage,type PlanExecutionHistoryItem} from './plan-execution-history.js'
@@ -6,6 +8,7 @@ import {localizeWorkError} from './i18n/errors.js'
 import {useI18n} from './i18n/provider.js'
 import pageCss from './TaskPage.module.css'
 import css from './PlanExecutionHistory.module.css'
+import light from './light-actions.module.css'
 
 type Props={planId:string;planVersion:number;api:Pick<PlanApi,'executions'>;openTask:(taskId:string)=>void;face?:'timeline';onPage?:(page:PlanExecutionHistoryPage)=>void}
 type ViewState={key:string;page?:PlanExecutionHistoryPage;loading:boolean;more:boolean;error:string;errorPhase?:'first'|'more'}
@@ -45,7 +48,7 @@ export function PlanExecutionHistory({planId,planVersion,api,openTask,face,onPag
   })
  }
  return <section className={pageCss.block} aria-label={t('plan.execution.aria')} title={face==='timeline'?t('plan.execution.description'):undefined}>
-  <header>{face!=='timeline'&&<h3>{t('plan.execution.title')}</h3>}<button type="button" disabled={loading||current?.more} onClick={()=>setReload(value=>value+1)}>{t('plan.execution.refresh')}</button></header>
+  <header>{face!=='timeline'&&<h3>{t('plan.execution.title')}</h3>}<ToolbarIconButton label={t('plan.execution.refresh')} icon={RefreshCw} disabled={loading||current?.more} onClick={()=>setReload(value=>value+1)}/></header>
   {face!=='timeline'&&<p className={css.scope}>{t('plan.execution.description')}</p>}
   {error&&<p className={pageCss.error} role="alert">{error}<button type="button" disabled={loading||current?.more} onClick={()=>current?.errorPhase==='more'?loadMore():setReload(value=>value+1)}>{t('plan.execution.retry')}</button></p>}
   {loading&&!page&&<p role="status">{t('plan.execution.loading')}</p>}
@@ -66,6 +69,6 @@ export function PlanExecutionRecord({item,openTask,compact=false}:{item:PlanExec
    <small>{t('plan.execution.claimed',{time:stamp(item.claimedAt)})} · {t('plan.execution.revision',{version:item.planVersion})}</small>
    {!compact&&<div className={css.facts}><span>{t('plan.execution.task',{state:item.task?t(taskStates[item.task.state]):t('plan.execution.unlinked')})}</span><span>{t('plan.execution.run',{state:item.run?t(runStates[item.run.state]):t('plan.execution.notStarted')})}</span></div>}
    {item.run&&<small>{t('plan.execution.runHint')}</small>}
-   {item.task&&<button type="button" onClick={()=>openTask(item.task!.id)}>{t('plan.execution.openTask')}</button>}
+   {item.task&&<button type="button" className={light.link} onClick={()=>openTask(item.task!.id)}>{t('plan.execution.openTask')}<ArrowUpRight size={13} aria-hidden/></button>}
   </article>
 }

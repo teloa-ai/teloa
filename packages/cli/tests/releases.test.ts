@@ -44,6 +44,32 @@ test('npm alias 原生包按声明的真实包名核验并保留别名入口',as
  const result=spawnSync(process.execPath,[join(layout.releaseRoot,'bin.js')],{encoding:'utf8'})
  assert.equal(result.status,0,result.stderr);assert.equal(result.stdout.trim(),'42')
 })
+test('本地 tgz 的 DSH peer 漂移只按发行包明确固定的根依赖和 override 还原，错误钉位仍拒绝',async t=>{
+ for(const mode of ['pinned','missing-override','missing-direct','wrong-root'] as const)await t.test(mode,async()=>{
+  const {source,base,layout,manifest}=await fixture(),name='@deepseek-ai/test-runtime',version='0.2.1-rc.2'
+  const root=JSON.parse(await readFile(join(source,'package.json'),'utf8'))
+  if(mode!=='missing-direct')root.dependencies[name]=version
+  if(mode!=='missing-override')root.overrides={[name]:version}
+  const config=JSON.stringify({versions:{[name]:version}}),text=JSON.stringify(root)
+  await writeFile(join(source,'package.json'),text)
+  manifest.files.find(row=>row.path==='package.json')!.sha256=createHash('sha256').update(text).digest('hex')
+  await mkdir(join(source,'config'));await writeFile(join(source,'config/dsh-package-versions.json'),config)
+  manifest.files.push({path:'config/dsh-package-versions.json',sha256:createHash('sha256').update(config).digest('hex')})
+  await writeFile(join(source,'release-manifest.json'),JSON.stringify(manifest))
+  const demo=join(base,'npm/node_modules/demo')
+  await writeFile(join(demo,'package.json'),JSON.stringify({name:'demo',version:'1.0.0',main:'index.js',peerDependencies:{[name]:'>=0.1.5-rc.1'}}))
+  await writeFile(join(demo,'index.js'),`module.exports=require('${name}')`)
+  for(const [directory,actual] of [[join(base,'npm/node_modules',name),'0.1.5-rc.3'],[join(source,'node_modules',name),mode==='wrong-root'?'0.2.1-alpha.3':version]]){
+   await mkdir(directory!,{recursive:true});await writeFile(join(directory!,'package.json'),JSON.stringify({name,version:actual,main:'index.js'}));await writeFile(join(directory!,'index.js'),`module.exports='${actual}'`)
+  }
+  if(mode!=='pinned'){await assert.rejects(api.stageRelease(source,layout),/DSH 依赖版本不符/);return}
+  await api.stageRelease(source,layout);await rename(join(base,'npm'),join(base,'removed-npm'))
+  const result=spawnSync(process.execPath,[join(layout.releaseRoot,'bin.js')],{encoding:'utf8'})
+  assert.equal(result.status,0,result.stderr);assert.equal(result.stdout.trim(),version)
+  const dependencies=JSON.parse(await readFile(join(layout.releaseRoot,'runtime-dependencies.json'),'utf8'))
+  assert.deepEqual(dependencies.filter((row:any)=>row.name===name).map((row:any)=>row.version),[version])
+ })
+})
 test('依赖内部绝对软链在副本中改为内部相对路径',async()=>{
  const {source,base,layout}=await fixture()
  const directory=join(base,'npm/node_modules/demo')

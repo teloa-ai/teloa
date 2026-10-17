@@ -1,7 +1,5 @@
-export function usablePersonalName(value:string):string{
- const name=value.normalize('NFC').trim().replace(/\s+/gu,' ')
- return /[@＠\p{Cc}]/u.test(name)||!/\p{L}/u.test(name)?'':name
-}
+import {usablePersonalName} from '@teloa/contract'
+export {usablePersonalName}
 
 /** 姓名用于展示；邮箱只在账号设置中核对，不从邮箱推导本人姓名。 */
 export function personalDisplayName(value:string,fallback:string):string{return usablePersonalName(value)||fallback}

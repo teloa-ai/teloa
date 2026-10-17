@@ -40,7 +40,7 @@ test('插件安装仍走既有市场安装控件；能力页扩展分节接一�
  assert.doesNotMatch(extensionEntry,/openForm=/,'扩展新建没有「自己填」那一支')
  assert.match(frame,/<MarketPage[\s\S]*?marketPluginInstallApi=\{marketPluginInstallApi\}/)
  // WorkbenchFrame 把真实的插件安装 API 与「去市场挑」目标（扩展分类）一起交给能力页，不是能力页自己另起一份。
- assert.match(frame,/<TeamCapabilitiesPage[\s\S]*?marketPluginInstallApi:marketPluginInstallApi,openExtensionMarket:\(\)=>openMarketCategory\('plugin'\)/)
+ assert.match(frame,/mine=\{\{[\s\S]*?marketPluginInstallApi:marketPluginInstallApi,openExtensionMarket:\(\)=>openMarketCategory\('plugin'\)/)
 })
 
 test('旧行业包创建入口保留显示名与合规范围键，确认仍按固定范围加载真实行业包',async()=>{
@@ -112,4 +112,17 @@ test('页内新建的两条加载确认路径把整包内容哈希（packageCont
  const calls=source.match(/industryLoadApi\.create\(\{requestId:crypto\.randomUUID\(\),contentId:item\.contentStorage\.contentId,contentHash:item\.packageContent\.hash/g)??[]
  assert.equal(calls.length,2,'连接器与新业务两条确认路径都要传 packageContent.hash')
  assert.doesNotMatch(source,/contentHash:item\.hash/)
+})
+
+test('旧行业包描述包装向CreateEntry返回原准备回执，取消不会被判为成功',async()=>{
+ const source=await client('BusinessDomainCreateEntry.tsx'),ast=ts.createSourceFile('entry.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+ let callback:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='handlePrepare')callback=node.initializer;ts.forEachChild(node,visit)};visit(ast);assert.ok(callback)
+ const receipt=Promise.resolve(),prompts:unknown[]=[],prepare=(prompt:unknown)=>{prompts.push(prompt);return receipt}
+ const js=ts.transpileModule('const callback='+callback.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
+ const make=(name:string)=>new Function('name','value','t','createEntityNameKey','createSentencePrompt','prepare',js+';return callback')(name,'sales',t,()=>'create.entity.businessDomain',createSentencePrompt,prepare)
+ const prompt=createSentencePrompt('business-domain','sales','整理业务',t)
+ assert.equal(make('业务名称')(prompt),receipt)
+ assert.equal(make('')(prompt),receipt)
+ assert.equal(prompts.length,2)
 })

@@ -1,4 +1,5 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
@@ -21,7 +22,7 @@ after(async()=>{await pool?.end();await container?.stop()})
 async function setup(){
  await backend.initializeBusinessRuntime(pool)
  const ownerId='runtime:'+randomUUID(),actor={ownerId,scopeIds:['SOC','AppSec']}
- await new BusinessSpaceService(pool,identity).ensurePersonal(ownerId)
+ await withLegacySecurityScopes(pool,ownerId,new BusinessSpaceService(pool,identity).ensurePersonal(ownerId))
  const service=new backend.BusinessRuntimeService(pool,identity)
  const db=await pool.connect()
  try{await db.query('begin');await service.registerInTransaction(db,ownerId,'SOC');await db.query('commit')}

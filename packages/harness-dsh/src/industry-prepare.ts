@@ -6,10 +6,12 @@ import {WorkError,isRecord,taskInput,industryResourceModelDependencies,industryM
  * 只经既有 handler 读写，不绕过它们各自的校验；子请求 requestId 由宿主从（本人, 加载, 条目, 步骤, 摘要）派生，
  * 同一摘要重放得到同一批 id，下游按既有请求回执去重；状态一变摘要随之变，再点一次按新 id 续做。
  * 同一加载串行执行；同摘要的并发调用共用一次执行，各调用方只取消自己的等待。
+ * 新员工上岗前经原 roles/edit 绑定同一加载已显式安装且实际可用的关联方法；面板与会话一键共用本 handler。
  */
 export const industryPrepareEndpoints=['industry-loads/readiness','industry-loads/prepare'] as const
 type Call=(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>
-export type IndustryPreparePorts={loads:Call;models?:IndustryModelProbe;modelTitle?:(id:string)=>string;knowledge:Call;roles:Call;skills:Call;mcp:Call;dataSources:Call;executionTools:Call;plugins:Call;lifecycle:(payload:unknown)=>Promise<unknown>;audit?:(entry:PrepareAudit)=>void;sleep?:(ms:number)=>Promise<void>;now?:()=>number;waitMs?:number}
+/** `roleRecords` 是原员工 handler 的 roles/list 与 roles/edit：新员工上岗前经它把本加载已装且可用的方法写回同一员工（CAS），未接入时不上岗。 */
+export type IndustryPreparePorts={loads:Call;models?:IndustryModelProbe;modelTitle?:(id:string)=>string;knowledge:Call;roles:Call;roleRecords?:Call;skills:Call;mcp:Call;dataSources:Call;executionTools:Call;plugins:Call;lifecycle:(payload:unknown)=>Promise<unknown>;audit?:(entry:PrepareAudit)=>void;sleep?:(ms:number)=>Promise<void>;now?:()=>number;waitMs?:number}
 export type PrepareStep='knowledge'|'skill'|'mcp'|'data-source'|'execution-tool'|'role'|'role-resume'
 export type ReadinessEntry='model-settings'|'connector-settings'|'skill-confirm'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'
 export type ReadinessState='ready'|'auto'|'needs-user'|'optional'|'pending'
@@ -20,7 +22,7 @@ export type IndustryReadiness={loadId:string;status:string;title:string;version:
 export type PrepareResult={itemInstanceId:string;title:string;step:PrepareStep;outcome:'done'|'pending'|'failed'|'skipped';code:string|null;message:string|null}
 /** readiness 为 null 表示执行后读取最终清单失败、待刷新；results 照常返回。 */
 export type PrepareReceipt={loadId:string;digest:string;results:PrepareResult[];readiness:IndustryReadiness|null}
-export type PrepareChannel='panel'|'session'
+export type PrepareChannel='panel'|'session'|'catalog'
 /** 每次真正执行的一键准备写一条汇总（宿主日志）：哪一次、经哪个入口、各步骤结果、装了哪些技能。 */
 export type PrepareAudit={loadId:string;digest:string;channel:PrepareChannel;outcomes:Record<PrepareResult['outcome'],number>;steps:Partial<Record<PrepareStep,number>>;skills:{itemInstanceId:string;trustHash:string|null;outcome:PrepareResult['outcome']}[]}
 
@@ -43,6 +45,9 @@ function readOnlyOfficial(trust:unknown):SkillTrustSummary|null{
 }
 // 原生观测状态只按固定枚举输出，不透传原文
 const observedLabels:Record<string,string>={shadowed:'被同名技能遮蔽',missing:'未找到',disabled:'已停用'}
+// 原生技能名与员工技能名同一口径；员工定义按原字段白名单回写，绑定只替换 skills
+const NATIVE_NAME=/^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const ROLE_FIELDS=['avatarKey','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig'] as const
 const CONTINUE='仍在处理，稍后再点一次「一键准备」继续。'
 const hostBad=()=>new WorkError('teloa/invalid-host-response','方案准备读取到的宿主回包格式不正确。')
 const lower=(value:unknown)=>typeof value==='string'?value.toLowerCase():''
@@ -55,7 +60,9 @@ type LoadItem={instanceId:string;kind:string;title:string;required:boolean;statu
 type Load={id:string;status:string;title:string;version:string;mappingHash:string;items:LoadItem[];relations:{kind:string;from:string;to:string}[]}
 type Fact={state:string;revision:number|null}
 type RoleFact=Fact&{role:{id:string;version:number;state:string}|null}
-type SkillFact={raw:string;revision:number|null;installed:boolean;preparing:boolean;confirm:boolean;bundleHash:string|null;trustHash:string|null;trust?:SkillTrustSummary}
+/** 已登记安装的完整身份：进入准备摘要，绑定前按同一 usage 逐项重核；只比版本不能发现迁到另一份同版本安装。 */
+type Installed={id:string;version:number|null;source:string;bundleHash:string|null;name:string|null;bodyHash:string|null}
+type SkillFact={raw:string;revision:number|null;installed:boolean;preparing:boolean;confirm:boolean;bundleHash:string|null;trustHash:string|null;trust?:SkillTrustSummary;installation?:Installed}
 type Snapshot={load:Load;models:Map<string,IndustryModelObservation[]>;knowledge:Map<string,Fact>;roles:Map<string,RoleFact>;skills:Map<string,SkillFact>;connectors:Map<string,Fact>;plugins:Map<string,Fact>}
 
 function readLoad(value:unknown):Load{
@@ -63,6 +70,19 @@ function readLoad(value:unknown):Load{
  const list=value.items.map(item=>{if(!isRecord(item)||typeof item.instanceId!=='string'||typeof item.kind!=='string'||typeof item.title!=='string'||typeof item.required!=='boolean'||typeof item.status!=='string')throw hostBad();return {instanceId:item.instanceId.toLowerCase(),kind:item.kind,title:item.title,required:item.required,status:item.status,...industryResourceModelDependencies(item.kind,item.modelDependencies)}})
  const relations=value.relations.map(link=>{if(!isRecord(link)||typeof link.kind!=='string'||typeof link.from!=='string'||typeof link.to!=='string')throw hostBad();return {kind:link.kind,from:link.from.toLowerCase(),to:link.to.toLowerCase()}})
  return {id:value.id.toLowerCase(),status:value.status,title:value.templateTitle,version:value.templateVersion,mappingHash:value.mappingHash,items:list,relations}
+}
+const stable=(value:unknown):string=>JSON.stringify(value,(_,item)=>isRecord(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a<b?-1:a>b?1:0)):item)
+const installedOf=(row:Record<string,unknown>):Installed=>{const native=isRecord(row.native)?row.native:{};return {id:lower(row.id),version:revisionOf(row.version),source:stable(row.source),bundleHash:typeof row.bundleHash==='string'?row.bundleHash:null,name:typeof native.name==='string'?native.name:null,bodyHash:typeof native.bodyHash==='string'?native.bodyHash:null}}
+/**
+ * 方案条目的固定引用：自装来源只认同一资源标识与版本——首次安装它的可以是另一加载（团队包与从它派生的单员工包共用同一份方法），
+ * 字节摘要与原生正文由调用处逐项核对（跨加载共用安装须信任说明相同，由安装服务保证）；公共来源只认同一 sourceContent/sourceResource（skill-installations.ts:25）。其余来源不属于方案条目。
+ */
+function fixedReference(source:unknown):string|null{
+ if(!isRecord(source))return null
+ const pick=(keys:readonly string[])=>keys.every(key=>typeof source[key]==='string')?JSON.stringify([source.kind,...keys.map(key=>key.endsWith('Id')&&UUID.test(String(source[key]))?String(source[key]).toLowerCase():source[key])]):null
+ if(source.kind==='industry-local')return pick(['resourceId','resourceVersion'])
+ if(source.kind==='industry-public')return pick(['sourceContentId','sourceContentHash','sourceResourceId','sourceResourceVersion'])
+ return null
 }
 const roleOf=(row:Record<string,unknown>)=>isRecord(row.role)&&typeof row.role.id==='string'&&Number.isSafeInteger(row.role.version)&&typeof row.role.state==='string'?{id:row.role.id,version:Number(row.role.version),state:row.role.state}:null
 
@@ -78,7 +98,7 @@ async function snapshot(ports:IndustryPreparePorts,loadId:string,signal?:AbortSi
  // 已装判定只看 usages：公共技能的安装 source 属于首次安装它的加载（industry-public），本加载经 usages 映射到它（skill-installations.ts:12、:25）
  const listed=await ports.skills('skill-installations/list',{},signal)
  if(!isRecord(listed)||!Array.isArray(listed.items)||!Array.isArray(listed.usages))throw hostBad()
- const installs=new Map(listed.items.filter(isRecord).map(row=>[lower(row.id),{state:String(row.state),revision:revisionOf(row.version)}] as const))
+ const installs=new Map(listed.items.filter(isRecord).map(row=>[lower(row.id),{state:String(row.state),revision:revisionOf(row.version),identity:installedOf(row)}] as const))
  const used=new Map(listed.usages.filter(isRecord).filter(use=>lower(use.loadId)===load.id).map(use=>[lower(use.itemInstanceId),installs.get(lower(use.installationId))] as const))
  const skills=new Map<string,SkillFact>()
  for(const item of load.items){
@@ -87,7 +107,7 @@ async function snapshot(ports:IndustryPreparePorts,loadId:string,signal?:AbortSi
    const found=used.get(item.instanceId)
    // 有使用登记但安装记录缺失：不重装、不当作处理中，归需要你操作
    if(!found){skills.set(item.instanceId,{raw:'missing',revision:null,installed:false,preparing:false,confirm:true,bundleHash:null,trustHash:null});continue}
-   skills.set(item.instanceId,{raw:found.state,revision:found.revision,installed:found.state==='installed',preparing:found.state!=='installed',confirm:false,bundleHash:null,trustHash:null});continue
+   skills.set(item.instanceId,{raw:found.state,revision:found.revision,installed:found.state==='installed',preparing:found.state!=='installed',confirm:false,bundleHash:null,trustHash:null,installation:found.identity});continue
   }
   // 预览逐条捕获：单个技能读不出只让该条目归需要你操作，不拖垮整份清单
   let preview:unknown
@@ -170,8 +190,10 @@ function buildReadiness(s:Snapshot):IndustryReadiness{
  }
  const count=(state:ReadinessState)=>rows.filter(row=>row.state===state).length
  const hashes=[...s.skills].filter(([,v])=>!v.installed&&!v.preparing).map(([id,v])=>[id,v.bundleHash,v.trustHash].join('/')).sort()
+ // 已登记安装按完整身份固定：usage 迁到另一份安装（即便版本相同）都会改变摘要
+ const installations=[...s.skills].filter(([,v])=>v.installation).map(([id,v])=>stable([id,v.installation])).sort()
  // 摘要纳入原始状态与 revision：同一分类下底层状态有任何推进，摘要都会变
- const digest=createHash('sha256').update(JSON.stringify(['teloa-industry-readiness/v2',s.load.id,s.load.mappingHash,facts,hashes])).digest('hex')
+ const digest=createHash('sha256').update(JSON.stringify(['teloa-industry-readiness/v3',s.load.id,s.load.mappingHash,facts,hashes,installations])).digest('hex')
  return {loadId:s.load.id,status:s.load.status,title:s.load.title,version:s.load.version,digest,counts:{ready:count('ready'),auto:count('auto'),needsUser:count('needs-user'),optional:count('optional'),pending:count('pending')},rows}
 }
 
@@ -181,8 +203,11 @@ export function prepareRequestId(owner:string,loadId:string,itemInstanceId:strin
 }
 const failure=(error:unknown)=>error instanceof WorkError?{code:error.code as string,message:error.message}:{code:'teloa/dependency-unavailable',message:'宿主服务暂不可用，请稍后重试。'}
 
-/** 底层执行不接调用方的取消信号：共用这次执行的其他调用方不因首个调用方断开而失败。 */
-async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readiness:IndustryReadiness):Promise<PrepareResult[]>{
+/**
+ * 底层执行不接调用方的取消信号：共用这次执行的其他调用方不因首个调用方断开而失败。
+ * `activate:false`（单个目录员工的完整资源安装）照常实例化资料、建立员工并绑定实际方法，但不代为恢复上岗：员工保持暂停，由本人检查后恢复。
+ */
+async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readiness:IndustryReadiness,activate=true):Promise<PrepareResult[]>{
  const sleep=ports.sleep??((ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))),now=ports.now??Date.now,deadline=now()+(ports.waitMs??20000)
  const results:PrepareResult[]=[],loadId=s.load.id,digest=readiness.digest
  const id=(row:ReadinessRow,step:PrepareStep)=>prepareRequestId(owner,loadId,row.itemInstanceId,step,digest)
@@ -205,10 +230,12 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
   else push(row,'knowledge','failed',failureOf(found.failure,{code:'teloa/source-unavailable',message:'资料启用失败，请到资料分组查看原因。'}))
  }
  // 2 技能：只装可一键的（带信任声明的按预览 trustHash 固定）；观测到 available 才算完成
+ const installedNow=new Map<string,string>()
  for(const row of due('skill')){
   const skill=s.skills.get(row.itemInstanceId)!
   const installed=await attempt(row,'skill',async()=>{const result=await ports.skills('skill-installations/install',{requestId:id(row,'skill'),source:{kind:'industry',loadId,itemInstanceId:row.itemInstanceId},expectedBundleHash:skill.bundleHash,...(skill.trustHash?{expectedTrustHash:skill.trustHash}:{})});if(!isRecord(result)||!isRecord(result.installation)||typeof result.installation.id!=='string')throw hostBad();return result.installation.id})
   if(!installed)continue
+  installedNow.set(row.itemInstanceId,lower(installed.value))
   const observed=await attempt(row,'skill',()=>until(async()=>{const v=await ports.skills('skill-installations/observe',{installationId:installed.value});if(!isRecord(v)||typeof v.state!=='string')throw hostBad();return v.state==='pending'||v.state==='installing'?undefined:v.state}))
   if(!observed)continue
   if(observed.value===undefined)push(row,'skill','pending',CONTINUE)
@@ -236,12 +263,53 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
   if(!found){push(row,'role','pending',CONTINUE);continue}
   if(found.state==='failed'){push(row,'role','failed',failureOf(found.failure,{code:'teloa/conflict',message:'员工创建失败，请到员工分组查看原因。'}));continue}
   push(row,'role','done')
-  // 新岗位默认暂停；只有关联资料、技能、连接都已就绪才视为检查完成、代为恢复，否则保持暂停交本人检查
-  // 关联项缺失于清单（已撤回、已解除等无法归类）同样视为未就绪
-  if(linked(row.itemInstanceId,['role-knowledge','role-skill','role-connection'],false).some(item=>states.get(item.instanceId)!=='ready')){push(row,'role-resume','skipped','员工已创建并保持暂停：关联的资料、技能或连接还没就绪，处理后到员工分组恢复。');continue}
   resume.push(row)
  }
- // 5 上岗：只恢复本次新建的岗位；恢复会一并启用该岗位的每日小结（role-lifecycle.ts:68）
+ // 5a 方法：只给本批首建、未被改过的暂停员工（v1）绑定同一加载已显式安装且实际可用的关联方法，经原 roles/edit（事务与 CAS）保存；
+ // 绑定前重新核对关联、安装来源、原生名与实际可用，任一缺项都保持暂停并返回缺项，不让空方法员工上岗。
+ const bindMethods=async(row:ReadinessRow,role:{id:string;version:number}):Promise<{version:number}|{gap:string}>=>{
+  const methods=linked(row.itemInstanceId,['role-skill'],false)
+  if(!methods.length)return {version:role.version}
+  const gap=(reason:string)=>({gap:'员工已创建并保持暂停：'+reason+'，处理后到员工分组恢复。'})
+  if(!ports.roleRecords)return gap('方法绑定服务未接入')
+  const listedRoles=await ports.roleRecords('roles/list',{})
+  if(!Array.isArray(listedRoles))throw hostBad()
+  const current=listedRoles.find(value=>isRecord(value)&&value.id===role.id)
+  if(!isRecord(current)||current.kind!=='employee'||current.state!=='paused'||current.version!==1||role.version!==1||!Array.isArray(current.skills)||current.skills.length)return gap('员工已被修改，未覆盖其方法设置')
+  const load=readLoad(await ports.loads('industry-loads/get',{loadId}))
+  if(load.id!==loadId||load.status!=='active'||load.mappingHash!==s.load.mappingHash)return gap('方案关联已变化，请重新核对后再准备')
+  const listed=await ports.skills('skill-installations/list',{})
+  if(!isRecord(listed)||!Array.isArray(listed.items)||!Array.isArray(listed.usages))throw hostBad()
+  const names:string[]=[]
+  for(const method of methods){
+   if(!load.relations.some(link=>link.kind==='role-skill'&&link.from===row.itemInstanceId&&link.to===method.instanceId)||!load.items.some(item=>item.instanceId===method.instanceId&&item.kind==='skill'&&item.status!=='skipped'&&item.status!=='detached'))return gap('方案关联已变化，请重新核对后再准备')
+   const label='方法「'+method.title+'」'
+   const usage=listed.usages.filter(isRecord).find(use=>lower(use.loadId)===loadId&&lower(use.itemInstanceId)===method.instanceId)
+   const installation=usage?listed.items.filter(isRecord).find(value=>lower(value.id)===lower(usage.installationId)):undefined
+   if(!installation||installation.state!=='installed')return gap(label+'未安装或已撤销')
+   const native=installation.native
+   if(typeof installation.id!=='string'||!isRecord(native)||typeof native.name!=='string'||!NATIVE_NAME.test(native.name)||native.name.length>80||typeof native.bodyHash!=='string'||!HEX.test(native.bodyHash))throw hostBad()
+   // 同一 usage 仍须指向本人确认时的那份安装：确认前已装的按摘要固定的完整身份比对；本次一键所装的按安装回执 ID 与确认时的预览包摘要比对
+   const confirmed=s.skills.get(method.instanceId),identity=installedOf(installation),installedHere=installedNow.get(method.instanceId)
+   if(confirmed?.installation?stable(identity)!==stable(confirmed.installation):installedHere===undefined||identity.id!==installedHere||identity.bundleHash!==confirmed?.bundleHash)return gap(label+'的安装在确认后已变化')
+   // 只读预览解析本加载条目的固定引用与正文：真实安装须来自同一引用（公共来源允许首次安装在另一加载），不重新安装
+   const fixed=await ports.skills('skill-installations/preview',{source:{kind:'industry',loadId,itemInstanceId:method.instanceId}})
+   if(!isRecord(fixed)||!isRecord(fixed.native)||typeof fixed.bundleHash!=='string')throw hostBad()
+   const reference=fixedReference(installation.source)
+   if(!reference||reference!==fixedReference(fixed.source)||installation.bundleHash!==fixed.bundleHash||native.name!==fixed.native.name||native.bodyHash!==fixed.native.bodyHash)return gap(label+'的安装与方案固定来源不一致')
+   if(names.includes(native.name))return gap(label+'与其他方法同名')
+   const seen=await ports.skills('skill-installations/observe',{installationId:installation.id})
+   if(!isRecord(seen)||typeof seen.state!=='string')throw hostBad()
+   if(seen.state!=='available')return gap(label+(observedLabels[seen.state]??'状态未知'))
+   if(!isRecord(seen.current)||seen.current.name!==native.name||seen.current.bodyHash!==native.bodyHash)return gap(label+'已被替换为其他内容')
+   names.push(native.name)
+  }
+  const fields=Object.fromEntries(ROLE_FIELDS.filter(key=>current[key]!==undefined).map(key=>[key,key==='skills'?names:current[key]]))
+  const saved=await ports.roleRecords('roles/edit',{roleId:role.id,expectedVersion:1,fields,expectedProfile:{name:current.name,...(current.avatarKey===undefined?{}:{avatarKey:current.avatarKey})}})
+  if(!isRecord(saved)||saved.id!==role.id||saved.version!==2||saved.state!=='paused'||!Array.isArray(saved.skills)||saved.skills.join('\0')!==names.join('\0'))throw hostBad()
+  return {version:2}
+ }
+ // 5b 上岗：只恢复本次新建的岗位；恢复会一并启用该岗位的每日小结（role-lifecycle.ts:68）
  for(const row of resume){
   const current=await attempt(row,'role-resume',()=>roleRow(row.itemInstanceId))
   if(!current)continue
@@ -249,11 +317,25 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
   if(!role){push(row,'role-resume','skipped','员工尚未就绪。');continue}
   if(role.state==='active'){push(row,'role-resume','done');continue}
   if(role.state!=='paused'){push(row,'role-resume','skipped','员工当前状态不能上岗。');continue}
-  if(await attempt(row,'role-resume',()=>ports.lifecycle({roleId:role.id,expectedVersion:role.version,action:'resume',reason:'方案一键准备'})))push(row,'role-resume','done')
+  // 方法就绪即先绑定实际安装的原生名：连接仍待本人授权时员工保持暂停，但已经带着真实方法，不留空方法员工。
+  const ready=(kinds:readonly string[])=>!linked(row.itemInstanceId,kinds,false).some(item=>states.get(item.instanceId)!=='ready')
+  let version=role.version
+  if(ready(['role-skill'])){
+   const bound=await attempt(row,'role-resume',()=>bindMethods(row,role))
+   if(!bound)continue
+   if('gap' in bound.value){push(row,'role-resume','skipped',bound.value.gap);continue}
+   version=bound.value.version
+  }
+  if(!activate){push(row,'role-resume','skipped','员工已创建并保持暂停：请检查后在团队页恢复。');continue}
+  // 新岗位默认暂停；只有关联资料、技能、连接都已就绪才视为检查完成、代为恢复，否则保持暂停交本人检查
+  // 关联项缺失于清单（已撤回、已解除等无法归类）同样视为未就绪
+  if(!ready(['role-knowledge','role-skill','role-connection'])){push(row,'role-resume','skipped','员工已创建并保持暂停：关联的资料、技能或连接还没就绪，处理后到员工分组恢复。');continue}
+  if(await attempt(row,'role-resume',()=>ports.lifecycle({roleId:role.id,expectedVersion:version,action:'resume',reason:'方案一键准备'})))push(row,'role-resume','done')
  }
  return results
 }
 
+/** 宿主内部或公开载荷的 `activate:false` 只收紧准备行为：建立并绑定方法后保持暂停。 */
 export function createIndustryPrepareHandler(owner:string,get:()=>Promise<IndustryPreparePorts>){
  const tally=<K extends string>(keys:K[])=>keys.reduce((m,k)=>({...m,[k]:(m[k]??0)+1}),{} as Partial<Record<K,number>>)
  const inflight=new Map<string,Promise<PrepareReceipt>>(),receipts=new Map<string,PrepareReceipt>(),lanes=new Map<string,Promise<unknown>>()
@@ -264,7 +346,7 @@ export function createIndustryPrepareHandler(owner:string,get:()=>Promise<Indust
   const stop=()=>reject(signal.reason);signal.addEventListener('abort',stop,{once:true})
   work.then(resolve,reject).finally(()=>signal.removeEventListener('abort',stop))
  })
- return async(method:string,payload:unknown,signal?:AbortSignal,channel:PrepareChannel='panel'):Promise<IndustryReadiness|PrepareReceipt>=>{
+ return async(method:string,payload:unknown,signal?:AbortSignal,channel:PrepareChannel='panel',options:{activate?:boolean}={}):Promise<IndustryReadiness|PrepareReceipt>=>{
   if(typeof owner!=='string'||!owner.trim())throw new WorkError('teloa/forbidden','需要有效的本人身份。')
   if(method==='industry-loads/readiness'){
    const input=taskInput(payload,['loadId'])
@@ -272,9 +354,11 @@ export function createIndustryPrepareHandler(owner:string,get:()=>Promise<Indust
    return buildReadiness(await snapshot(await get(),input.loadId.toLowerCase(),signal))
   }
   if(method==='industry-loads/prepare'){
-   const input=taskInput(payload,['loadId','expectedDigest'])
+   const input=taskInput(payload,['loadId','expectedDigest','activate'])
    if(typeof input.loadId!=='string'||!UUID.test(input.loadId)||typeof input.expectedDigest!=='string'||!HEX.test(input.expectedDigest))throw new WorkError('teloa/invalid-input','加载身份必须是 UUID，摘要必须是 64 位十六进制。')
-   const loadId=input.loadId.toLowerCase(),expected=input.expectedDigest,key=loadId+'/'+expected
+   // 公开载荷只能收紧：`activate:false` 让本次准备建好员工后保持暂停（分享副本不自动上岗）；其余值一律拒绝，缺省沿用一键准备原语义。宿主内部 options.activate:false 仍最高限制。
+   if(input.activate!==undefined&&input.activate!==false)throw new WorkError('teloa/invalid-input','activate 只能省略或为 false。')
+   const loadId=input.loadId.toLowerCase(),expected=input.expectedDigest,activate=options.activate!==false&&input.activate!==false,key=loadId+'/'+expected+(activate?'':'/paused')
    const done=receipts.get(key);if(done)return structuredClone(done)
    let running=inflight.get(key)
    if(!running){
@@ -286,7 +370,7 @@ export function createIndustryPrepareHandler(owner:string,get:()=>Promise<Indust
      const readiness=buildReadiness(s)
      if(readiness.digest!==expected)throw new WorkError('teloa/version-conflict','方案状态已变化，请重新核对后再确认。')
      if(readiness.counts.auto===0)throw new WorkError('teloa/conflict','该方案当前没有可一键完成的项，其余项请到「准备就绪」里处理。')
-     const results=await execute(owner,ports,s,readiness)
+     const results=await execute(owner,ports,s,readiness,activate)
      // 审计只写日志，写失败不影响已执行的回执
      try{ports.audit?.({loadId,digest:readiness.digest,channel,outcomes:{done:0,pending:0,failed:0,skipped:0,...tally(results.map(row=>row.outcome))},steps:tally(results.map(row=>row.step)),
       skills:results.filter(row=>row.step==='skill').map(row=>({itemInstanceId:row.itemInstanceId,trustHash:s.skills.get(row.itemInstanceId)?.trustHash??null,outcome:row.outcome}))})}catch{/* 见上 */}

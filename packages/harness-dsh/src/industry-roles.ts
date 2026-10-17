@@ -20,10 +20,10 @@ function read(value:unknown,owner:string):IndustryRoleInstance{
   if(item.kind==='model'){if(modelNotice||item.status!=='skipped'||item.itemInstanceId.toLowerCase()!==row.itemInstanceId.toLowerCase())throw invalid();modelNotice=true;continue}
   if(targets.has(item.itemInstanceId.toLowerCase()))throw invalid();targets.add(item.itemInstanceId.toLowerCase())}
  if(['paused','active','retired'].some(state=>state===row.state)){
-  const role=exact(row.role,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig'])
+  const role=exact(row.role,['id','ownerId','version','state','createdAt','updatedAt','name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig','avatarKey'])
   if(!uuid(role.id)||role.ownerId!==owner||!integer(role.version)||role.state!==row.state||!stamp(role.createdAt)||!stamp(role.updatedAt)||role.updatedAt<role.createdAt||row.failure!==null)throw invalid()
   // 原始创建依据与本人后续合法编辑分开；当前岗位范围不必等于模板来源范围。
-  try{roleDefinition({name:role.name,kind:role.kind,scopes:role.scopes,duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:role.skills,knowledge:role.knowledge,...(role.responsibility===undefined?{}:{responsibility:role.responsibility}),...(role.runtimeConfig===undefined?{}:{runtimeConfig:role.runtimeConfig})})}catch{throw invalid()}
+  try{roleDefinition({...(role.avatarKey===undefined?{}:{avatarKey:role.avatarKey}),name:role.name,kind:role.kind,scopes:role.scopes,duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:role.skills,knowledge:role.knowledge,...(role.responsibility===undefined?{}:{responsibility:role.responsibility}),...(role.runtimeConfig===undefined?{}:{runtimeConfig:role.runtimeConfig})})}catch{throw invalid()}
  }else if(row.state==='pending'||row.state==='failed'){
   if(row.role!==null)throw invalid()
   if(row.state==='pending'){if(row.failure!==null)throw invalid()}

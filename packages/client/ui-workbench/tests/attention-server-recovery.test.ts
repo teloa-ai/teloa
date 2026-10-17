@@ -9,6 +9,12 @@ const rows=[{requestId,endpoint:'security-actions/execute',createdAt:'2026-09-18
 const preview=emptyTaskPreview()
 const base={tasks:preview.tasks,taskAttention:[],handoffs:[],business:preview.business,continuous:preview.continuous,savedPlanIds:new Set<string>(),bindings:[]}
 
+test('用可读操作与保存的摘要区分请求，事项仍不携带原载荷或执行动作',()=>{
+ const [item]=serverRecoveryItems([{...rows[0]!,summary:'只整理合成告警'}],'已保存的工作请求',()=> '发送群消息')
+ assert.equal(item!.title,'发送群消息 · 只整理合成告警')
+ assert.deepEqual(item!.target,{kind:'pending-request',requestId});assert.equal(Object.hasOwn(item!,'payload'),false)
+})
+
 test('服务端待恢复请求只投影为通用核对事项，界面不携带命令或载荷',()=>{
  const recoveries=serverRecoveryItems(rows,'已保存的工作请求')
  assert.deepEqual(recoveries,[{id:'recovery:server:'+requestId,kind:'review',source:'server-recovery',target:{kind:'pending-request',requestId},title:'已保存的工作请求',reason:{kind:'message',key:'attention.recovery.serverRequest'},scope:'general',occurredAt:'2026-09-18T00:01:00.000Z'}])

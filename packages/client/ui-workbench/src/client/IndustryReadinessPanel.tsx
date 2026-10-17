@@ -26,9 +26,13 @@ function grouped<K extends string>(rows:IndustryReadinessRow[],state:IndustryRea
 }
 const names=(titles:string[],t:T)=>titles.slice(0,10).join(t('market.industry.prepare.separator'))+(titles.length>10?' '+t('market.industry.prepare.more',{count:titles.length}):'')
 
-export type ReadinessPresentationProps={readiness:IndustryReadiness|undefined;receipt:IndustryPrepareReceipt|undefined;confirming:boolean;busy:boolean;error:string;t:T;localize:(value:{code:string;message:string})=>string;onAsk:()=>void;onCancel:()=>void;onConfirm:()=>void;onOpen:(group:ReadinessGroupId)=>void}
-export function IndustryReadinessPresentation({readiness,receipt,confirming,busy,error,t,localize,onAsk,onCancel,onConfirm,onOpen}:ReadinessPresentationProps){
- if(!readiness)return error?<p role="alert">{error}</p>:null
+export type ReadinessRelation={kind:string;from:string;to:string}
+// 宿主只给本批新建、关联技能与连接都已就绪的员工绑定技能并上岗；关联项还需要你操作时，一键只会建出暂停、无技能的员工，之后也不再补绑
+const roleNeeds=['role-skill','role-connection']
+export type ReadinessPresentationProps={readiness:IndustryReadiness|undefined;receipt:IndustryPrepareReceipt|undefined;confirming:boolean;busy:boolean;error:string;t:T;localize:(value:{code:string;message:string})=>string;onAsk:()=>void;onCancel:()=>void;onConfirm:()=>void;onOpen:(group:ReadinessGroupId)=>void;relations?:readonly ReadinessRelation[]|undefined;stale?:boolean|undefined;onRetry?:(()=>void)|undefined}
+export function IndustryReadinessPresentation({readiness,receipt,confirming,busy,error,t,localize,onAsk,onCancel,onConfirm,onOpen,relations,stale,onRetry}:ReadinessPresentationProps){
+ const retry=onRetry&&<button type="button" className={css.textButton} onClick={onRetry}>{t('market.industry.prepare.retry')}</button>
+ if(!readiness)return error?<p role="alert">{error} {retry}</p>:null
  // 分母不含按需使用的任务模板与周期计划
  const {counts,rows}=readiness,total=counts.ready+counts.auto+counts.needsUser+counts.pending
  const tally=(...outcomes:string[])=>receipt?.results.filter(row=>outcomes.includes(row.outcome)).length??0
@@ -47,8 +51,15 @@ export function IndustryReadinessPresentation({readiness,receipt,confirming,busy
  const actionEntry=(row:IndustryReadinessRow)=>row.entry==='model-settings'&&row.models?.length?null:row.entry
  const todo=[...grouped(rows,'needs-user',actionEntry),...grouped(rows,'optional',actionEntry)]
  const modelRows=rows.filter(row=>row.models?.length)
+ // 可一键创建的员工若关联了需要你操作的技能或连接：先引导去处理（技能优先），一键降为显式次要入口
+ const byId=new Map(rows.map(row=>[row.itemInstanceId,row] as const))
+ const waiting=rows.filter(row=>row.kind==='role'&&row.state==='auto').map(role=>({role,needs:(relations??[]).filter(link=>link.from===role.itemInstanceId&&roleNeeds.includes(link.kind)).map(link=>byId.get(link.to)).filter((row):row is IndustryReadinessRow&{entry:Entry}=>row?.state==='needs-user'&&!!row.entry)})).filter(row=>row.needs.length)
+ const waitingRoles=names(waiting.map(row=>plain(row.role.title)),t)
+ const needs=[...new Map(waiting.flatMap(row=>row.needs).sort((a,b)=>Number(b.kind==='skill')-Number(a.kind==='skill')).map(row=>[row.itemInstanceId,row] as const)).values()]
  return <section className={css.panel} aria-label={t('market.industry.prepare.aria')}>
-  <header className={css.head}><h3>{t(counts.ready>=total&&counts.pending===0?'market.industry.prepare.titleDone':'market.industry.prepare.title')}</h3><p>{t('market.industry.prepare.progress',{ready:counts.ready,total})}</p></header>
+  <header className={css.head}><h3>{t(stale?'market.industry.prepare.titleStale':counts.ready>=total&&counts.pending===0?'market.industry.prepare.titleDone':'market.industry.prepare.title')}</h3><p>{t('market.industry.prepare.progress',{ready:counts.ready,total})}</p></header>
+  {/* 重新核对失败：旧清单只作上次结果保留，不写成现在可用，也不在其上发起一键准备 */}
+  {stale&&<p role="status">{t('market.industry.prepare.staleNote')} {retry}</p>}
   <progress className={css.meter} max={Math.max(total,1)} value={counts.ready} aria-hidden="true"/>
   <ul className={css.counts}>
    <li>{t('market.industry.prepare.auto',{count:counts.auto})}</li>
@@ -60,9 +71,13 @@ export function IndustryReadinessPresentation({readiness,receipt,confirming,busy
    <div className={css.modelHeader}><span>{t(entryKey['model-settings'],{titles:names(modelRows.map(row=>plain(row.title)),t)})}</span><button type="button" className={css.textButton} onClick={()=>onOpen('models')}>{t('market.industry.prepare.open')}</button></div>
    <ul className={css.rows}>{modelRows.flatMap(row=>row.models!.map(model=><li key={row.itemInstanceId+':'+model.catalogId+':'+model.usage}><span>{plain(row.title)} · {plain(model.title)} · v{model.version} · {t(model.required?'market.trust.required':'market.trust.optional')} · {t('market.industry.model.phase.'+model.phase)}</span></li>))}</ul>
   </div>}
-  {counts.auto>0&&!confirming&&<button type="button" className={css.primaryButton} disabled={busy} onClick={onAsk}>{busy?t('market.industry.prepare.running'):t('market.industry.prepare.run')}</button>}
-  {confirming&&<div role="status">
+  {counts.auto>0&&!confirming&&!stale&&(needs.length?<div role="status">
+   <p>{t('market.industry.prepare.orderFirst',{titles:names(needs.map(row=>plain(row.title)),t),roles:waitingRoles})}</p>
+   <p className={css.confirmActions}><button type="button" className={css.primaryButton} onClick={()=>onOpen(entryGroup[needs[0]!.entry])}>{t('market.industry.prepare.handleFirst')}</button> <button type="button" className={css.secondaryButton} disabled={busy} onClick={onAsk}>{t('market.industry.prepare.createPausedAnyway')}</button></p>
+  </div>:<button type="button" className={css.primaryButton} disabled={busy} onClick={onAsk}>{busy?t('market.industry.prepare.running'):t('market.industry.prepare.run')}</button>)}
+  {confirming&&!stale&&<div role="status">
    <p>{t('market.industry.prepare.confirm')}</p>
+   {waiting.length>0&&<p>{t('market.industry.prepare.pausedWarning',{roles:waitingRoles})}</p>}
    <ul className={css.rows}>{auto.map(([key,titles])=><li key={key}>{t(stepKey[key],{titles:names(titles,t)})}</li>)}</ul>
    {trusted.length>0&&<ul className={css.rows}>{trusted.map(row=><li key={row.itemInstanceId}>{t('market.industry.prepare.trustedSkill',{title:plain(row.title),publisher:plain(row.trust!.publisher),license:plain(row.trust!.license??'-')})}</li>)}</ul>}
    <p className={css.confirmActions}><button type="button" className={css.primaryButton} disabled={busy} onClick={onConfirm}>{busy?t('market.industry.prepare.running'):t('market.industry.prepare.confirmRun')}</button> <button type="button" className={css.secondaryButton} disabled={busy} onClick={onCancel}>{t('market.industry.prepare.cancel')}</button></p>
@@ -74,24 +89,40 @@ export function IndustryReadinessPresentation({readiness,receipt,confirming,busy
  </section>
 }
 
-export function IndustryReadinessPanel({loadId,port,refreshKey,onOpen}:{loadId:string;port:ReadinessPort;refreshKey:string;onOpen:(group:ReadinessGroupId)=>void}){
+export function IndustryReadinessPanel({loadId,port,refreshKey,relations,onOpen,onRead}:{loadId:string;port:ReadinessPort;refreshKey:string;relations?:readonly ReadinessRelation[];onOpen:(group:ReadinessGroupId)=>void;onRead?:(value:IndustryReadiness|undefined)=>void}){
  const {locale,t}=useI18n()
  // port 由父组件每次渲染新建；放进 ref 避免 effect 反复读取
  const portRef=useRef(port);portRef.current=port
+ const onReadRef=useRef(onRead);onReadRef.current=onRead
  const [readiness,setReadiness]=useState<IndustryReadiness>(),[receipt,setReceipt]=useState<IndustryPrepareReceipt>(),[confirming,setConfirming]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
- // refreshKey 由目录按本方案条目与各类实例的状态/修订、当前分组算出：相关操作后自动重读
- useEffect(()=>{let live=true;setError('');portRef.current.read(loadId).then(value=>{if(live)setReadiness(value)},reason=>{if(live)setError(localizeWorkError(locale,reason))});return ()=>{live=false}},[loadId,locale,refreshKey])
+ // fresh：readiness 是本加载当前这轮核对读到的。重读开始、读取失败、一键后读不到最终清单时为 false，旧清单只能作上次结果
+ const [fresh,setFresh]=useState(false),[attempt,setAttempt]=useState(0)
+ // 每次读取（含一键准备）领一个序号，只有最新一次的结果能写入；迟到的旧读取一律丢弃
+ const latest=useRef(0)
+ const begin=()=>{const token=++latest.current;return (apply:()=>void)=>{if(token===latest.current)apply()}}
+ // 只把当前核对过的清单回报给目录；没有当前核对时回报 undefined，同事详情随之只列名称，不另读、不猜
+ useEffect(()=>{onReadRef.current?.(fresh?readiness:undefined)},[fresh,readiness])
+ // refreshKey 由目录按本方案条目与各类实例的状态/修订、当前分组算出：相关操作后自动重读；attempt 是本人点「重新核对」
+ useEffect(()=>{
+  const settle=begin()
+  setFresh(false);setError('')
+  setReadiness(current=>current?.loadId===loadId?current:undefined);setReceipt(current=>current?.loadId===loadId?current:undefined)
+  portRef.current.read(loadId).then(value=>settle(()=>{setReadiness(value);setFresh(true)}),reason=>settle(()=>setError(localizeWorkError(locale,reason))))
+  return ()=>{latest.current++}
+ },[loadId,locale,refreshKey,attempt])
  const confirm=async()=>{
   if(!readiness||busy)return
   setBusy(true);setError('')
+  const settle=begin()
+  const reread=async()=>{try{const value=await portRef.current.read(loadId);settle(()=>{setReadiness(value);setFresh(true)});return undefined}catch(reason){return reason}}
   try{
    const result=await portRef.current.prepare(loadId,readiness.digest);setReceipt(result)
-   // 宿主已执行但最终清单待刷新：再读一次，读不到就保留原清单并提示
-   if(result.readiness)setReadiness(result.readiness)
-   else try{setReadiness(await portRef.current.read(loadId))}catch(reason){setError(localizeWorkError(locale,reason))}
+   // 宿主已执行但最终清单待刷新：再读一次，读不到就把原清单留作上次结果并提示
+   if(result.readiness)settle(()=>{setReadiness(result.readiness!);setFresh(true)})
+   else{settle(()=>setFresh(false));const reason=await reread();if(reason!==undefined)settle(()=>setError(localizeWorkError(locale,reason)))}
   }
-  catch(reason){setError(localizeWorkError(locale,reason));try{setReadiness(await portRef.current.read(loadId))}catch{/* 保留原清单，错误已提示 */}}
+  catch(reason){settle(()=>{setFresh(false);setError(localizeWorkError(locale,reason))});await reread()}
   finally{setBusy(false);setConfirming(false)}
  }
- return <IndustryReadinessPresentation readiness={readiness} receipt={receipt} confirming={confirming} busy={busy} error={error} t={t as T} localize={value=>localizeWorkError(locale,value)} onAsk={()=>setConfirming(true)} onCancel={()=>setConfirming(false)} onConfirm={()=>void confirm()} onOpen={onOpen}/>
+ return <IndustryReadinessPresentation readiness={readiness} receipt={receipt} confirming={confirming} busy={busy} error={error} stale={!fresh&&!!error} onRetry={()=>setAttempt(value=>value+1)} t={t as T} localize={value=>localizeWorkError(locale,value)} onAsk={()=>setConfirming(true)} onCancel={()=>setConfirming(false)} onConfirm={()=>void confirm()} onOpen={onOpen} relations={relations}/>
 }

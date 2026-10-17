@@ -1,0 +1,13 @@
+.header{min-width:0;max-width:100%;flex:1}
+.header h1{margin:0;font:inherit}
+.identity{display:flex;align-items:center;gap:10px;min-width:0;max-width:100%;padding:3px 0;border:0;border-radius:7px;background:transparent;color:var(--teloa-text);text-align:left;font:inherit}
+button.identity{cursor:pointer}
+button.identity:hover{background:var(--teloa-hover)}
+button.identity:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
+.avatar{display:flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;overflow:hidden;border-radius:10px;background:var(--teloa-hover)}
+.avatar>img,.avatar>span:not([data-teloa-twin-avatar]){width:100%;height:100%;object-fit:cover}
+/* 分身头像自带固定尺寸与角标：外层不裁切、不加底色，员工形象仍按原样填满。 */
+.avatar:has(>[data-teloa-twin-avatar]){overflow:visible;background:transparent}
+.text{min-width:0;display:flex;flex-direction:column;gap:1px}
+.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);line-height:20px}
+.topic{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:17px}

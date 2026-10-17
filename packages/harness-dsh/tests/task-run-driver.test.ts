@@ -16,6 +16,15 @@ function fixture(){
  const driver=new TaskRunDriver(service,{check:async(_run,_signal,target)=>{assert.deepEqual(target,checkedTarget);checks++},send:async(sent,_signal,target)=>{assert.equal(sent.nativeRequestId,'native');assert.equal(sent.inputText,'固定目标');assert.deepEqual(target,claimedTarget);sends++;if(fail)throw Error('secret transport details')},stop:async stopping=>{stops++;stopped.push(stopping.stopRequestedAt)},events:async()=>events})
  return {driver,run:()=>run,sends:()=>sends,stops:()=>stops,requests:()=>requests,stopped:()=>stopped,checks:()=>checks,fail:()=>{fail=true},events:(value:SessionEvent[])=>{events=value}}
 }
+test('固定整项控制未 active 或读口缺失时，prepare 后仍不可领取发送权',async()=>{
+ for(const state of ['paused','pausing','stopping','stopped',undefined] as const){
+  let claims=0,checks=0,sends=0
+  const run={id:'run',state:'prepared',lineage:{}} as TaskRun
+  const driver=new TaskRunDriver({get:async()=>run,executionScope:async()=>{throw Error('暂停前不能读取发送目标')},claim:async()=>{claims++;throw Error('暂停前不能领取')},record:async()=>run,requestStop:async()=>run},{check:async()=>{checks++},send:async()=>{sends++},stop:async()=>{},events:async()=>[],...(state?{controlState:async()=>state}:{})})
+  await assert.rejects(driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/forbidden'})
+  assert.deepEqual({claims,checks,sends},{claims:0,checks:0,sends:0});assert.equal(run.state,'prepared')
+ }
+})
 test('宿主仅领取者发送固定请求，未知提交重试不重发',async()=>{
  const f=fixture();f.fail()
  await assert.rejects(f.driver.start('owner',{runId:'run'},new AbortController().signal),error=>error instanceof Error&&!error.message.includes('secret')&&error.message.includes('核对'))
@@ -288,6 +297,23 @@ test('停止后宿主不在运行且 seq 冻结即收口为已中止；仍在跑
  assert.deepEqual((await idle.driver.reconcile('owner',{runId:'run'})).evidence,{state:'active',turn:0,messageSeq:1})
  assert.equal(idle.reads(),0)
 })
+test('初轮完成后仍在运行的后台 Job 被停止，不把旧占位回复作为完成结果；日志冻结后中止',async()=>{
+ const f=fixture();await f.driver.start('owner',{runId:'run'},new AbortController().signal)
+ Object.assign(f.run(),{groupContext:{groupId:'group'}})
+ f.events([{seq:0,time:0,type:'turn/start',data:{turn:0}},{seq:1,time:1,type:'user/message',surfaceOp:'append',data:{source:{kind:'user',rpcId:'native'},content:[],id:'message',role:'user'}},{seq:2,time:2,type:'assistant/message',surfaceOp:'append',data:{turn:0,step:1,message:createAssistantMessage({source:{provider:'test',model:'test'},content:[{type:'text',text:'后台还在处理，请等待。'}]}),stream:[]}},{seq:3,time:3,type:'turn/end',data:{turn:0,reason:{kind:'completed'}}}] as SessionEvent[])
+ let posts=0;f.driver.ports.publishGroupResult=async()=>{posts++}
+ let outstanding=true,cancelled=false,settledSeq:number|null=null
+ f.driver.ports.backgroundState=async()=>({outstanding,interrupted:false,cancelled})
+ f.driver.ports.stopState=async()=>({running:false,settledSeq})
+ assert.equal((await f.driver.stop('owner',{runId:'run'},new AbortController().signal)).state,'active')
+ outstanding=false;cancelled=true
+ assert.equal((await f.driver.reconcile('owner',{runId:'run'})).state,'active','原生 Job 已退出但宿主日志尚未冻结，不能用旧 completed 收口')
+ settledSeq=3
+ const stopped=await f.driver.reconcile('owner',{runId:'run'})
+ assert.equal(stopped.state,'ended');assert.equal(stopped.evidence?.state==='ended'&&stopped.evidence.reason,'aborted')
+ assert.deepEqual(await f.driver.stop('owner',{runId:'run'},new AbortController().signal),stopped)
+ await f.driver.reconcile('owner',{runId:'run'});assert.equal(posts,0,'中止及重复核对都不能把旧占位回复发布为成功结果')
+})
 test('执行被原生宿主接受后通知一次；重复启动、发送失败不通知，通知异常不影响结果',async()=>{
  const f=fixture();let notified=0
  ;f.driver.ports.onAccepted=()=>{notified++;throw Error('统计失败')}
@@ -342,6 +368,27 @@ test('本轮已暂停时原生 aborted 或宿主旧世代不终结业务 Run，�
  f.driver.ports.controlState=async()=> 'paused';f.driver.ports.backgroundState=async()=>({outstanding:false,interrupted:true})
  assert.equal((await f.driver.reconcile('owner',{runId:'run'})).state,'accepted');assert.equal(f.run().stopRequestedAt,null)
  await f.driver.start('owner',{runId:'run'},new AbortController().signal);assert.equal(f.sends(),1)
+})
+
+for(const control of ['pausing','paused'] as const)test(`重启${control}后本人明确停止原Run仍能收口，不恢复或重发`,async()=>{
+ const f=fixture();await f.driver.start('owner',{runId:'run'},new AbortController().signal)
+ f.events([{seq:0,time:0,type:'turn/start',data:{turn:0}},{seq:1,time:1,type:'user/message',surfaceOp:'append',data:{source:{kind:'user',rpcId:'native'},content:[],id:'fixed',role:'user'}}] as SessionEvent[])
+ f.driver.ports.controlState=async()=>control;f.driver.ports.backgroundState=async()=>({outstanding:false,interrupted:true})
+ assert.equal((await f.driver.reconcile('owner',{runId:'run'})).state,'accepted','没有本人停止意图时仍保留原暂停运行')
+ const stopped=await f.driver.stop('owner',{runId:'run'},new AbortController().signal)
+ assert.equal(stopped.state,'ended');assert.equal(stopped.evidence?.state==='ended'?stopped.evidence.reason:undefined,'interrupted')
+ assert.equal(f.requests(),1);assert.equal(f.stops(),1);assert.equal(f.sends(),1)
+ assert.equal((await f.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'ended');assert.equal(f.sends(),1)
+})
+
+test('重启暂停后的停止仍等待未收口的后台或子工作，不能用停止意图伪造终态',async()=>{
+ for(const kind of ['background','child'] as const){
+  const f=fixture();await f.driver.start('owner',{runId:'run'},new AbortController().signal)
+  f.events([{seq:0,time:0,type:'turn/start',data:{turn:0}},{seq:1,time:1,type:'user/message',surfaceOp:'append',data:{source:{kind:'user',rpcId:'native'},content:[],id:'fixed',role:'user'}}] as SessionEvent[])
+  f.driver.ports.controlState=async()=> 'paused';f.driver.ports.backgroundState=async()=>({outstanding:kind==='background',interrupted:true});f.driver.ports.subagentState=async()=>kind==='child'?'outstanding':'none'
+  const result=await f.driver.stop('owner',{runId:'run'},new AbortController().signal)
+  assert.notEqual(result.state,'ended');assert.ok(result.stopRequestedAt);assert.equal(f.sends(),1)
+ }
 })
 
 test('提交未知的核验读取或持久化失败不伪造收口，不掩盖原需核对状态',async()=>{
@@ -414,4 +461,36 @@ test('取消时已经发出的固定证据写入可迟到完成，不继续发�
  assert.deepEqual(f.run().evidence,{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'})
  await f.driver.start('owner',{runId:'run'},new AbortController().signal)
  assert.equal(f.sends(),1)
+})
+
+test('普通计划无群来源消息也在原生结束后主动汇报，并可从终态恢复发布',async()=>{
+ let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'accepted',inputText:JSON.stringify({planContext:{occurrenceId:'occurrence',reportGroup:{groupId:'group'}}})} as TaskRun
+ const answer=createAssistantMessage({source:{provider:'test',model:'test'},content:[{type:'text',text:'已完成研判'}]})
+ const events=[
+  {seq:0,time:0,type:'turn/start',data:{turn:0}},
+  {seq:1,time:1,type:'user/message',surfaceOp:'append',data:{source:{kind:'user',rpcId:'native'},content:[],id:'message',role:'user'}},
+  {seq:2,time:2,type:'assistant/message',surfaceOp:'append',data:{turn:0,step:1,message:answer,stream:[]}},
+  {seq:3,time:3,type:'turn/end',data:{turn:0,reason:{kind:'completed'}}},
+ ] as SessionEvent[]
+ const calls:string[]=[]
+ const driver=new TaskRunDriver({
+  get:async()=>run,
+  executionScope:async()=>{throw Error('不应读取')},
+  claim:async()=>{throw Error('不应领取')},
+  requestStop:async()=>{throw Error('不应请求停止')},
+  record:async(_owner,input)=>{calls.push('record');run={...run,state:'ended',evidence:(input as {evidence:TaskRun['evidence']}).evidence};return run},
+ },{check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>events,publishGroupResult:async(saved,text)=>{calls.push('publish');assert.equal(saved.state,'ended');assert.equal(text,'已完成研判')}})
+ const result=await driver.reconcile('owner',{runId:'run'})
+ assert.equal(result.state,'ended')
+ assert.deepEqual(calls,['record','publish'])
+ await driver.reconcile('owner',{runId:'run'});assert.deepEqual(calls,['record','publish','publish'])
+})
+
+test('本人结束后的成果保存失败可恢复同一候选，不重新记录结束或向模型发送',async()=>{
+ const run={id:'owner-run',executor:{kind:'owner',grantId:'11111111-1111-4111-8111-111111111111',grantVersion:1},state:'ended',evidence:{state:'ended',turn:1,messageSeq:2,endSeq:4,reason:'completed'}} as TaskRun
+ let attempts=0
+ const forbidden=async()=>{throw Error('不能重新执行或改写结束证据')}
+ const driver=new TaskRunDriver({get:async()=>run,executionScope:forbidden,claim:forbidden,record:forbidden,requestStop:forbidden},{check:forbidden,send:forbidden,stop:forbidden,events:forbidden,publishOwnerResult:async saved=>{assert.equal(saved,run);if(++attempts===1)throw Error('保存暂不可用')}})
+ await assert.rejects(driver.reconcile('owner',{runId:run.id}),/保存暂不可用/)
+ assert.equal(await driver.reconcile('owner',{runId:run.id}),run);assert.equal(attempts,2)
 })

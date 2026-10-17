@@ -3,7 +3,7 @@ import type {BundleInfo} from '@deepseek-ai/dsh-api-remotes/client'
 import assert from 'node:assert/strict'
 import {runtimeExtensions,createRuntimeExtensionReader} from '../src/client/runtime-extensions.ts'
 
-const bundle=(name:string,extra:Partial<BundleInfo>={}):BundleInfo=>({name,installed:true,enabled:true,optional:false,removable:true,rows:[],overrides:[],...extra})
+const bundle=(name:string,extra:Partial<BundleInfo>={}):BundleInfo=>({name,official:false,availability:'installation',installed:true,enabled:true,optional:false,removable:true,rows:[],overrides:[],...extra})
 test('运行扩展只排除明确系统包，保留未知、可选和被锁定的受管扩展',()=>{
  const rows=runtimeExtensions([
   bundle('@teloa/bundle'),bundle('@deepseek-ai/dsh-base'),bundle('@acme/tools'),

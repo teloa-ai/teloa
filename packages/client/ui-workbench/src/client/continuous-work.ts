@@ -28,6 +28,7 @@ export function changeContinuousWork(state:TaskPreview,change:ContinuousChange,m
   if('planId' in change){
     const plan=value.plans.find(item=>item.id===change.planId)
     if(!plan)throw Error('计划不存在。')
+    if(plan.executor)throw Error('本人计划须通过真实计划服务操作。')
     if(change.type==='trigger'){
       const input=text(change.input,'本次输入'),occurrenceId=text(change.occurrenceId,'触发标识',240)
       const previous=value.runs.find(run=>run.planId===plan.id&&run.occurrenceId===occurrenceId&&!run.retryOf)
@@ -72,6 +73,7 @@ export function changeContinuousWork(state:TaskPreview,change:ContinuousChange,m
     if(run.state!=='failed'||run.resolution)throw Error('只有尚未接续的失败执行可以重试。')
     const plan=value.plans.find(item=>item.id===run.planId)
     if(!plan||plan.version!==run.snapshot.version)throw Error('计划版本已变化，请明确结束旧失败接续，再按新目标触发。')
+    if(plan.executor)throw Error('本人计划须通过真实计划服务操作。')
     const block=planBlock(plan,state.roles);if(block)throw Error(block)
     const role=state.roles.find(role=>role.id===plan.fields.roleId)!
     return addRun({id:change.id,planId:run.planId,occurrenceId:run.occurrenceId,revision:1,snapshot:structuredClone(run.snapshot),actor:{id:role.id,name:role.name},input:run.input,state:'running',result:'',output:'',createdAt:change.now,retryOf:run.id})

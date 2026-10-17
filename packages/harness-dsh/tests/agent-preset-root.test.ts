@@ -17,7 +17,7 @@ test('自带声明通过官方预设列表校验且所有插件模块均已随�
  const declaration=declarations[0]
  assert.equal(declaration.name,'@deepseek-ai/dsh-agent-preset')
  assert.equal(declaration.config.id,teloaAgentPresetId)
- assert.equal(declaration.config.name,'Teloa 标准模式')
+ assert.equal(declaration.config.name,'标准模式')
  assert.equal(entryListProblem(declaration.config.plugins),undefined)
  const check=(entries:Record<string,unknown>[])=>{
   for(const row of entries){

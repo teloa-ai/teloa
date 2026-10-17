@@ -45,7 +45,7 @@ test('正式调用方把当前翻译器传入展示辅助函数',async()=>{
   const [task,team,continuous,business,details]=await Promise.all([
     readFile(new URL('task-status-box.ts',root),'utf8'),readFile(new URL('TeamPage.tsx',root),'utf8'),readFile(new URL('ContinuousPage.tsx',root),'utf8'),readFile(new URL('BusinessPage.tsx',root),'utf8'),readFile(new URL('BusinessDetails.tsx',root),'utf8'),
   ])
-  assert.match(task,/describeTaskProgress\(input\.state,input\.needs,input\.t\)/)
+  assert.match(task,/describeTaskProgress\(input\.state,input\.needs,input\.t,input\.completionPolicy\)/)
   // 个人主页重排（T3）把「记忆」页签整块挪进「编辑」态的「它记得的事」分组占位，T4 落地分组时会带回这两处 roleMemoryPath 调用；
   // 在那之前 roleMemoryPath 暂不在 TeamPage.tsx 里，两条断言先撤，避免卡在一个已知、按计划要补回的过渡态上。
   // roleWorkPath 唯一调用点从旧「工作」页签（带空格的写法）挪到了 AssignmentForm 里既有的无空格写法，随之更新期望字符串。

@@ -63,6 +63,7 @@ const safe={
  sandboxMode:'workspace-write',
  sandboxWorkspaceRoot:{__jsExpr:'process.cwd()'},
  sandboxBackendMounted:true,
+ workingDirectoryPinned:true,
  approvalPolicy:'ask',
  toolsMode:'native',
  toolWorkflowDisabled:true,
@@ -90,6 +91,7 @@ const safe={
  webFetchProvider:'http',
  webSearchBaseUrl:'https://api.deepseek.com/anthropic/v1',
  webSearchApiKeyEnv:'DEEPSEEK_API_KEY',
+ webDirectApiPinned:true,
  webFetchMaxResponseBytes:5000000,
  webFetchMaxBodyChars:100000,
  webFetchTimeoutMs:30000,
@@ -99,6 +101,16 @@ const safe={
  credentialsPinned:true,
  promptAdmissionPinned:true,
 }
+
+test('目录授权根服务必须唯一挂载且原未受限服务停用，不能由别名或换provider绕过',()=>{
+ const base=[...compositionEntries().entries()].map(entry=>({...entry.options,disabled:entry.disabled}))
+ for(const mutate of [
+  (rows:typeof base)=>{rows.find(row=>row.id==='working-directory')!.disabled=false},
+  (rows:typeof base)=>{rows.find(row=>row.id==='teloa-working-directory')!.disabled=true},
+  (rows:typeof base)=>{rows.find(row=>row.id==='teloa-working-directory')!.name='@vendor/directory'},
+  (rows:typeof base)=>{rows.push({...rows.find(row=>row.id==='teloa-working-directory')!,id:'another-directory'})},
+ ]){const rows=structuredClone(base);mutate(rows);assert.ok(compositionViolations(compositionSnapshot(rows,{bundles:[],packages:[]})).includes('sandbox'))}
+})
 /** 装配期复验要用的 profile 事实；没有待启用插件时三项都取空。 */
 const facts={bundles:[] as string[],pendingPackages:[] as string[]}
 
@@ -287,6 +299,23 @@ test('原生声明无需目录根，环境变量不能改变预设来源',()=>{
  }finally{
   if(previous===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=previous
  }
+})
+
+test('新版检索保持原生实现、固定来源与默认不附带用户原文',()=>{
+ const row={id:'web-deepseek-api',name:'@deepseek-ai/dsh-web-deepseek-api',disabled:false,config:{baseURL:'https://api.deepseek.com/v1/tools',apiKeyEnv:'DEEPSEEK_API_KEY',count:10,sendOriginalQuestion:false}}
+ const pinned=(rows:typeof row[])=>compositionSnapshot(rows).webDirectApiPinned
+ assert.equal(pinned([row]),true)
+ for(const config of [
+  {...row.config,baseURL:'https://untrusted.invalid/tools'},
+  {...row.config,apiKeyEnv:'TELOA_PLATFORM_TOKEN'},
+  {...row.config,apiKey:'literal-secret'},
+  {...row.config,sendOriginalQuestion:true},
+ ])assert.equal(pinned([{...row,config}]),false)
+ assert.equal(pinned([{...row,name:'@vendor/web'}]),false)
+ assert.equal(pinned([{...row,disabled:true}]),false)
+ assert.equal(pinned([row,{...row,id:'alias-web-api'}]),false)
+ assert.equal(pinned([]),false)
+ assert.deepEqual(compositionViolations({...safe,webDirectApiPinned:false}),['web'])
 })
 
 test('规范化摘要覆盖完整子插件结构和行序：新增行、换 name 都会改变摘要',()=>{

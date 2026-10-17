@@ -255,8 +255,4 @@ export const EXTENSION_MANAGEMENT_MESSAGE_ROWS = [
   "settings.runtime.purpose",
   "日常配置与管理", "日常設定與管理", "Everyday configuration and management", "日常の設定と管理", "일상적인 설정 및 관리", "Cấu hình và quản lý hằng ngày", "Configuración y gestión diaria", "Configuration et gestion au quotidien", "Konfiguration und Verwaltung im Alltag", "Configuração e gestão diária"
  ],
- [
-  "settings.diagnostics.purpose",
-  "查看组件状态，排查运行问题", "查看元件狀態，排查執行問題", "Inspect component status and troubleshoot problems while running", "コンポーネントの状態を確認し、実行時の問題を調査", "구성 요소 상태를 확인하고 실행 문제를 진단합니다", "Xem trạng thái thành phần và xử lý sự cố vận hành", "Revisa el estado de los componentes y resuelve problemas de ejecución", "Consultez l’état des composants et diagnostiquez les problèmes d’exécution", "Komponentenstatus prüfen und Probleme bei der Ausführung untersuchen", "Consulte o estado dos componentes e resolva problemas de execução"
- ]
 ] as const

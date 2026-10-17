@@ -3,6 +3,21 @@ import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
 import {createObjectConversationApi} from '../src/client/object-conversation-api.ts'
 const id='16057272-ed9d-44a3-abe4-2ab04e056105',request={kind:'task' as const,objectId:id,expectedObjectVersion:1,sessionId:id,expectedLinkVersion:0,action:'link' as const},row={kind:'task',objectId:id,objectVersion:1,conversationId:id,sessionId:id,version:1,active:true,updatedAt:'2026-09-11T00:00:00Z'}
+test('来源关系保留历史入口，但不能混入会话身份或任务执行响应',async()=>{
+ const source={...row,sourceOnly:true},api=createObjectConversationApi(async()=>[source])
+ assert.equal((await api.list('task',id))[0]?.sourceOnly,true)
+ await assert.rejects(api.bySession(id),/会话上下文/)
+ const task={id,ownerId:'local:owner',title:'草稿',goal:'先保存',scope:'general',version:1,state:'ready',assigneeRoleId:null,assigneeRoleVersion:null,createdAt:row.updatedAt,updatedAt:row.updatedAt}
+ await assert.rejects(createObjectConversationApi(async()=>({task,role:null,link:source})).taskContext(id,id,1),/任务上下文/)
+ for(const patch of [{sourceOnly:false},{sourceOnly:'true'},{kind:'role'}])await assert.rejects(createObjectConversationApi(async()=>[{...source,...patch}]).list(patch.kind==='role'?'role':'task',id),/关联/)
+})
+test('来源新关联明确传true，解除只保留服务端固定来源身份',async()=>{
+ const source={...row,sourceOnly:true},api=createObjectConversationApi(async()=>source)
+ assert.equal((await api.change({...request,sourceOnly:true})).sourceOnly,true)
+ const removed=await createObjectConversationApi(async()=>({...source,version:2,active:false})).change({...request,expectedLinkVersion:1,action:'unlink'})
+ assert.equal(removed.sourceOnly,true)
+ for(const patch of [{sourceOnly:false},{kind:'role',sourceOnly:true},{action:'unlink',sourceOnly:true}])await assert.rejects(createObjectConversationApi(async()=>source).change({...request,...patch} as any),/关联/)
+})
 test('关联丢回包刷新恢复原请求，旧关联回执保留当前解除状态',async()=>{
  let raw:string|null=null;const calls:unknown[]=[],journal={read:()=>raw,write:(v:string)=>{raw=v},clear:()=>{raw=null}}
  await assert.rejects(createObjectConversationApi(async(_m,p)=>{calls.push(p);throw Error('断线')},journal).change(request),/断线/)

@@ -9,8 +9,8 @@ import type {MarketItem} from '../src/client/market-preview.ts'
 // 与 market-solution-presentation.test.ts 同一条路子：.tsx 走 tsc 产物，CSS Modules 换成类名代理，
 // 所以下面断言里的 class 名就是源码里写的键名（itemList / itemCard / …）。
 registerHooks({
- resolve:(specifier,context,next)=>/\.(module\.css|svg|webp)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier),
- load:(url,context,next)=>/\.(svg|webp)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>/\.(module\.css|svg|webp|png)$/.test(specifier)?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier),
+ load:(url,context,next)=>/\.(svg|webp|png)$/.test(url)?{format:'module',shortCircuit:true,source:'export default '+JSON.stringify(url)}:url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
 const {MarketResourceCatalog}=await import('../lib/types/client/MarketResourceCatalog.js')
 const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')

@@ -9,10 +9,12 @@ import {BusinessDashboardGrid} from './BusinessDashboardGrid.js'
 import {useI18n} from './i18n/provider.js'
 import base from './TaskPage.module.css'
 import css from './BusinessDashboardPage.module.css'
+import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 type State={status:'loading'}|{status:'failed';reason:{key:WidgetFailureKey|'business.dashboards.readFailed';params?:{reason:string}}}|{status:'ready';page:DashboardPage}
 /** 打开时调度器正在刷新（page.refreshing）：隔这么久静默重读一次，直到刷新结束，按钮不会一直停在「更新中」。 */
 const dashboardRefreshingPollMs=3000
+const dashboardLivePollMs=15000
 const rangeLabels={'24h':'business.dashboards.range.24h','7d':'business.dashboards.range.7d','30d':'business.dashboards.range.30d','90d':'business.dashboards.range.90d',all:'business.dashboards.range.all'} as const satisfies Record<BusinessTimeRange,string>
 
 /** 页面级读取失败：无权与不存在同一句（防枚举），格式坏说格式坏，其余一律「读不出来」。 */
@@ -43,12 +45,15 @@ export function BusinessDashboardPage({scope,dashboardId,api,ledger,colorScheme,
  },[api,scope,dashboardId,attempt])
  const [poll,setPoll]=useState(0),serverRefreshing=state.status==='ready'&&state.page.refreshing
  useEffect(()=>{
-  if(!serverRefreshing||refreshing)return
+  if(state.status!=='ready'||refreshing||!serverRefreshing&&typeof document==='undefined')return
   const controller=new AbortController()
-  const timer=setTimeout(()=>void api.read({scope,dashboardId,timeRange:range},controller.signal).then(
+  const timer=setTimeout(()=>{
+   if(typeof document!=='undefined'&&document.hidden){setPoll(value=>value+1);return}
+   void api.read({scope,dashboardId,timeRange:range},controller.signal).then(
    page=>{if(!controller.signal.aborted)setState({status:'ready',page})},
    ()=>{if(!controller.signal.aborted)setPoll(value=>value+1)},
-  ),dashboardRefreshingPollMs)
+   )
+  },serverRefreshing||state.page.results.some(result=>result.stale)?dashboardRefreshingPollMs:dashboardLivePollMs)
   return ()=>{clearTimeout(timer);controller.abort()}
  },[api,scope,dashboardId,range,serverRefreshing,refreshing,state,poll])
  const refresh=async()=>{
@@ -101,7 +106,7 @@ export function BusinessDashboardPage({scope,dashboardId,api,ledger,colorScheme,
      <select className={css.rangeSelect} aria-label={t('business.dashboards.range.label')} value={ranges.selected} disabled={refreshing} onChange={event=>{const next=ranges.options.find(option=>option===event.target.value);if(next)void choose(next)}}>{ranges.options.map(option=><option key={option} value={option}>{t(rangeLabels[option])}</option>)}</select>
     </div>}
     {backButton}
-    <button type="button" disabled={busy} aria-busy={busy} onClick={()=>void refresh()}><RefreshCw size={14}/>{t(busy?'business.dashboards.refreshing':'business.dashboards.refresh')}</button>
+    <ToolbarIconButton label={t(busy?'business.dashboards.refreshing':'business.dashboards.refresh')} icon={RefreshCw} disabled={busy} aria-busy={busy} onClick={()=>void refresh()}/>
    </div>
   </header>
   {warning==='short-interval'&&<p className={css.notice}>{t('business.dashboards.sync.shortInterval')}</p>}

@@ -1,0 +1,4 @@
+.configuration{margin:4px 0 14px auto;max-width:100%;color:var(--teloa-muted);font-size:var(--teloa-font-caption);}
+.configuration>summary{cursor:pointer;width:fit-content;margin-left:auto;border-radius:6px;padding:4px 8px;}
+.configuration>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px;}
+.configuration[open]{color:var(--teloa-text);}

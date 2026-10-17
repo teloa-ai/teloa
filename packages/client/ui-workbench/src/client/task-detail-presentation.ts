@@ -1,6 +1,12 @@
 import type {TaskCompletionPolicy} from '@teloa/contract'
 import type {AttentionKind} from './task-preview.js'
 import type {TeloaTranslate} from './i18n/index.js'
+import type {CollaborationScope} from './collaboration-preview.js'
+
+/** 只复用任务目标进入会话草稿；旧负责人、执行许可、审批与成果不随之复制。 */
+export function requestTaskRepeat(task:{title:string;goal:string;scope:CollaborationScope},create:(scope:CollaborationScope,goal:string)=>void,t:TeloaTranslate):void{
+ create(task.scope,t('task.detail.repeatPrompt',{title:task.title,goal:task.goal}))
+}
 
 export const taskDetailReadingOrder=['summary','progress','work','results','management'] as const
 

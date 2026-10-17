@@ -46,10 +46,8 @@ test('实体资源单击直达正式详情，返回恢复筛选、选中行与�
  tab.props.onClick()
  root=page.render('TestCatalog',props())
  // 重新进入技能页：跨分类切换时清除上一类的筛选。
- const nextNav=nodes(root).find(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria')!
- const skillTab=nodes(nextNav).find(node=>node.type==='button'&&node.children.includes(presentation.marketCategoryLabel(t as any,'skill')))!
- skillTab.props.onClick()
- assert.deepEqual(catalogProps(page.render('TestCatalog',props())).filters,catalogModule.emptyMarketResourceFilters)
+ assert.equal(navigation.category,'employees','退出资源目录后进入AI员工目录')
+ assert.equal(nodes(root).some(node=>node.props['aria-label']==='market.primary.advancedAria'),false,'退场的高级分类不重新出现')
 })
 
 test('纯引用与身份冲突保留摘要，不能绕过冲突直开安装详情',()=>{
@@ -127,7 +125,7 @@ test('工作模板用两排行业 / 功能筛选与「共 N 项」，详情返�
  assert.deepEqual(bar(tree).props.filter,{industry:null,fn:null})
  assert.equal(nodes(tree).some(node=>node.type==='select'),false,'不再有范围 / 可见范围下拉')
  const header=nodes(tree).find(node=>node.type==='header'&&node.props.className==='pageHeader')!
- assert.equal(nodes(header).filter(node=>node.type==='button').length,1)
+ assert.equal(nodes(header).filter(node=>node.type==='button'&&node.props.className==='addedBadge').length,1)
  assert.equal(nodes(tree).some(node=>node.type==='button'&&node.children.includes('market.home')),false)
  const all=nodes(tree).find(node=>node.type?.name==='MarketCards')!.props.items.length
  bar(tree).props.onChange({industry:'general',fn:null})
@@ -165,33 +163,36 @@ test('同事页顶部接官方 AI 同事区块（kind=role、带 openRole）；�
  const role={...item('role-a'),kind:'role' as const}
  const withRole=nodes(mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}}).render('TestCatalog',{...marketProps({category:'agent'},[role]),marketCatalogApi,openRole,nativeModels}))
  assert.equal(withRole.some(node=>node.type===catalogModule.MarketResourceCatalog),false)
- assert.deepEqual(withRole.find(node=>node.type===section)!.props.localRows.map((row:{title:string})=>row.title),['role-a'])
+ // 2026-10-14 来源收口：本人同事留在「已添加 → 我的资源」，不并进官方同事目录；原身份仍经深链打开
+ assert.deepEqual(withRole.find(node=>node.type===section)!.props.localRows,[])
+ const direct=nodes(mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}}).render('TestCatalog',{...marketProps({category:'agent'},[role]),itemId:'role-a',marketCatalogApi,openRole,nativeModels}))
+ assert.ok(direct.some(node=>node.props.item?.id==='role-a'),'本人同事仍按原身份打开详情')
  const model=nodes(render('model'))
  const modelSection=model.find(node=>node.type===section)!
  assert.deepEqual(modelSection.props.kinds,['model']);assert.equal(modelSection.props.openModels,nativeModels)
  assert.equal(model.some(node=>node.type===catalogModule.MarketResourceCatalog),false)
  // counts 未就绪时导航不出现「模型」
  assert.equal(nodes(render('home')).some(node=>node.children.includes('market.presentation.category.model')),false)
- assert.ok(nodes(render('home')).some(node=>node.children.includes('market.presentation.category.agent')))
+ assert.ok(nodes(render('home')).some(node=>node.children.includes('market.primary.employees')))
 })
 
-test('从无目录区块的页面（资料、任务模板、扩展）进入市场：挂载即取一次计数，「模型」立即出现；有目录区块的页面不另发请求',async()=>{
+test('没有官方目录区块的旧资源页只补取一次计数；员工、团队与应用目录自行回传，主导航不重新出现高级模型分类',async()=>{
  const section=function MarketCatalogSection(){return null}
- // 连接页签现在接官方连接器目录（2026-09-28 版面修正），计数由区块回传，归入下方「有目录区块」一组
- for(const category of ['knowledge','work-template','plugin']){
+ // 旧 plugin 恢复为应用页，计数由官方目录回传；主导航仅保留员工、团队及应用入口。
+ for(const category of ['knowledge','work-template']){
   const requests:unknown[]=[]
   const marketCatalogApi={list:async(request:unknown)=>{requests.push(request);return {counts:{solution:0,role:0,skill:0,connector:0,model:2}}}}
   const component=mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}})
   const props={...marketProps({category},[item('skill-a')]),marketCatalogApi}
   assert.equal(nodes(component.render('TestCatalog',props)).some(node=>node.children.includes('market.presentation.category.model')),false)
   component.effects.forEach(effect=>effect());await new Promise(resolve=>setImmediate(resolve))
-  assert.deepEqual(requests,[{limit:1}],category)
-  assert.ok(nodes(component.render('TestCatalog',props)).some(node=>node.children.includes('market.presentation.category.model')),category)
+  assert.deepEqual(requests,[{marketplace:'teloa',limit:1}],category+' 计数只读 Teloa 官方市场')
+  assert.equal(nodes(component.render('TestCatalog',props)).some(node=>node.children.includes('market.presentation.category.model')),false,category+' 主目录不再注入高级模型分类')
   // 计数已就绪后重渲染不再请求
   component.effects.forEach(effect=>effect());await new Promise(resolve=>setImmediate(resolve))
   assert.equal(requests.length,1,category)
  }
- for(const category of ['home','industry','agent','model','skill','connector']){
+ for(const category of ['home','employees','teams','apps','plugin','industry','agent','model','skill','connector']){
   const requests:unknown[]=[]
   const marketCatalogApi={list:async(request:unknown)=>{requests.push(request);return {counts:{solution:0,role:0,skill:0,connector:0,model:2}}}}
   const component=mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}})

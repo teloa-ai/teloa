@@ -5,8 +5,10 @@ import type {BusinessDashboardApi} from './business-dashboard-api.js'
 import {widgetFailure} from './business-widget-presentation.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessDashboardPage.module.css'
+import {businessDashboardReadFailure} from './business-dashboard-errors.js'
 
-type RuleState={status:'loading'|'failed'}|{status:'ready';rows:BusinessSyncRuleView[];runtime:BusinessRuntimeState}
+type ReadFailure=ReturnType<typeof businessDashboardReadFailure>
+type RuleState={status:'loading'}|{status:'failed';failure:ReadFailure}|{status:'ready';rows:BusinessSyncRuleView[];runtime:BusinessRuntimeState}
 
 function ruleSchedule(schedule:BusinessSyncSchedule,t:ReturnType<typeof useI18n>['t'],number:ReturnType<typeof useI18n>['number']):string{
  if(schedule.kind==='every')return t('business.dashboards.sync.rule.every',{seconds:number(schedule.seconds)})
@@ -16,25 +18,31 @@ function ruleSchedule(schedule:BusinessSyncSchedule,t:ReturnType<typeof useI18n>
 }
 
 /** 数据同步一行：映射数、最近一次同步、连续失败次数，外加「立即同步」。没有映射就整行不摆。 */
-export function BusinessSyncControls({scope,api}:{scope:string;api:BusinessDashboardApi}){
+export function BusinessSyncControls({scope,api,visible=true,mappingId}:{scope:string;api:BusinessDashboardApi;visible?:boolean;mappingId?:string}){
  const {t,number,dateTime}=useI18n()
- const [statuses,setStatuses]=useState<BusinessSyncStatus[]>([]),[running,setRunning]=useState(false),[revision,setRevision]=useState(0),[error,setError]=useState<ReturnType<typeof widgetFailure>|undefined>(undefined)
+ const [statuses,setStatuses]=useState<BusinessSyncStatus[]>(),[statusError,setStatusError]=useState<ReadFailure>(),[running,setRunning]=useState(false),[revision,setRevision]=useState(0),[error,setError]=useState<ReturnType<typeof widgetFailure>|undefined>(undefined)
  const [rules,setRules]=useState<RuleState>({status:'loading'}),[ruleRevision,setRuleRevision]=useState(0),[ruleBusy,setRuleBusy]=useState<string|undefined>(),[scopeBusy,setScopeBusy]=useState(false),[ruleError,setRuleError]=useState(false)
+ const selectedRules=(rows:BusinessSyncRuleView[])=>mappingId===undefined?rows:rows.filter(row=>row.mappingId===mappingId)
+ const retryReads=()=>{setRevision(value=>value+1);setRuleRevision(value=>value+1)}
  useEffect(()=>{
+  if(!visible)return
   const controller=new AbortController()
-  void api.syncStatus({scope},controller.signal).then(value=>{if(!controller.signal.aborted)setStatuses(value)},()=>{if(!controller.signal.aborted)setStatuses([])})
+  setStatuses(undefined);setStatusError(undefined)
+  void api.syncStatus({scope},controller.signal).then(value=>{if(!controller.signal.aborted)setStatuses(mappingId===undefined?value:value.filter(row=>row.mappingId===mappingId))},error=>{if(!controller.signal.aborted)setStatusError(businessDashboardReadFailure(error,'business.dashboards.sync.status.readFailed'))})
   return ()=>controller.abort()
- },[api,scope,revision])
+ },[api,scope,revision,visible,mappingId])
  useEffect(()=>{
+  if(!visible)return
   const controller=new AbortController()
   setRules({status:'loading'})
-  void Promise.all([api.syncRules({scope},controller.signal),api.syncRuntime({scope},controller.signal)]).then(([rows,runtime])=>{if(!controller.signal.aborted)setRules({status:'ready',rows,runtime})},()=>{if(!controller.signal.aborted)setRules({status:'failed'})})
+  void Promise.all([api.syncRules({scope},controller.signal),api.syncRuntime({scope},controller.signal)]).then(([rows,runtime])=>{if(!controller.signal.aborted)setRules({status:'ready',rows:selectedRules(rows),runtime})},error=>{if(!controller.signal.aborted)setRules({status:'failed',failure:businessDashboardReadFailure(error,'business.dashboards.sync.rule.readFailed')})})
   return ()=>controller.abort()
- },[api,scope,ruleRevision])
- if(!statuses.length&&rules.status==='ready'&&!rules.rows.length)return null
- const last=statuses.map(status=>status.lastRun?.finishedAt).filter((value):value is string=>!!value).sort().at(-1)
- const failures=statuses.reduce((sum,status)=>sum+status.consecutiveFailures,0)
+ },[api,scope,ruleRevision,visible,mappingId])
+ if(statuses!==undefined&&!statuses.length&&rules.status==='ready'&&!rules.rows.length)return null
+ const last=statuses?.map(status=>status.lastRun?.finishedAt).filter((value):value is string=>!!value).sort().at(-1)
+ const failures=statuses?.reduce((sum,status)=>sum+status.consecutiveFailures,0)??0
  const run=async()=>{
+  if(!statuses?.length)return
   setRunning(true);setError(undefined)
   try{for(const status of statuses)await api.syncRun({requestId:crypto.randomUUID(),scope,mappingId:status.mappingId})}
   catch(failure){setError(widgetFailure(failure))}
@@ -44,10 +52,10 @@ export function BusinessSyncControls({scope,api}:{scope:string;api:BusinessDashb
   setRuleBusy(rule.mappingId);setRuleError(false)
   try{
    await api.setSyncRule({scope,mappingId:rule.mappingId,enabled:!rule.enabled,expectedRevision:rule.revision,requestId:crypto.randomUUID()})
-   const [rows,runtime]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows,runtime})
+   const [rows,runtime]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows:selectedRules(rows),runtime})
   }catch{
    setRuleError(true)
-   try{const [rows,runtime]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows,runtime})}catch{setRules({status:'failed'})}
+   try{const [rows,runtime]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows:selectedRules(rows),runtime})}catch(error){setRules({status:'failed',failure:businessDashboardReadFailure(error,'business.dashboards.sync.rule.readFailed')})}
   }finally{setRuleBusy(undefined)}
  }
  const changeScope=async(runtime:BusinessRuntimeState)=>{
@@ -57,20 +65,21 @@ export function BusinessSyncControls({scope,api}:{scope:string;api:BusinessDashb
    const [rows,current]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows,runtime:current})
   }catch{
    setRuleError(true)
-   try{const [rows,current]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows,runtime:current})}catch{setRules({status:'failed'})}
+   try{const [rows,current]=await Promise.all([api.syncRules({scope}),api.syncRuntime({scope})]);setRules({status:'ready',rows,runtime:current})}catch(error){setRules({status:'failed',failure:businessDashboardReadFailure(error,'business.dashboards.sync.rule.readFailed')})}
   }finally{setScopeBusy(false)}
  }
  return <section className={css.sync} aria-label={t('business.dashboards.sync.title')}>
   <strong>{t('business.dashboards.sync.title')}</strong>
-  <span>{t('business.dashboards.sync.mappings',{count:number(statuses.length)})}</span>
+  <span>{t('business.dashboards.sync.mappings',{count:statuses===undefined?'—':number(statuses.length)})}</span>
   {last&&<span>{t('business.dashboards.sync.lastRun',{time:dateTime(new Date(last),{dateStyle:'medium',timeStyle:'short'})})}</span>}
   {failures>0&&<span data-failed>{t('business.dashboards.sync.failed',{count:number(failures)})}</span>}
   {error&&<span data-failed role="alert">{t(error.key,error.params)}</span>}
-  {statuses.length>0&&<button type="button" disabled={running} onClick={()=>void run()}><RefreshCw size={14}/>{t(running?'business.dashboards.refreshing':'business.dashboards.sync.run')}</button>}
+  {statuses!==undefined&&statuses.length>0&&<button type="button" disabled={running} onClick={()=>void run()}><RefreshCw size={14}/>{t(running?'business.dashboards.refreshing':'business.dashboards.sync.run')}</button>}
+  {statusError&&rules.status!=='failed'&&<span data-failed role="alert">{t(statusError.key,'params' in statusError?statusError.params:undefined)}{statusError.retryable&&<button type="button" onClick={retryReads}>{t('business.ledger.retry')}</button>}</span>}
   {rules.status==='loading'&&<span role="status">{t('business.dashboards.sync.rule.loading')}</span>}
-  {rules.status==='failed'&&<span data-failed role="alert">{t('business.dashboards.sync.rule.readFailed')} <button type="button" onClick={()=>setRuleRevision(value=>value+1)}>{t('business.ledger.retry')}</button></span>}
+  {rules.status==='failed'&&<span data-failed role="alert">{t(rules.failure.key,'params' in rules.failure?rules.failure.params:undefined)}{rules.failure.retryable&&<button type="button" onClick={retryReads}>{t('business.ledger.retry')}</button>}</span>}
   {ruleError&&<span data-failed role="alert">{t('business.dashboards.sync.rule.updateUnknown')}</span>}
-  {rules.status==='ready'&&rules.rows.length>0&&rules.runtime.managed&&<div className={css.syncRule}>
+  {mappingId===undefined&&rules.status==='ready'&&rules.rows.length>0&&rules.runtime.managed&&<div className={css.syncRule}>
    <span><strong>{t('business.dashboards.sync.scope.title')}</strong><small>{t(rules.runtime.syncEnabled?'business.dashboards.sync.scope.running':'business.dashboards.sync.scope.paused')}</small></span>
    <button type="button" disabled={scopeBusy||ruleBusy!==undefined} onClick={()=>void changeScope(rules.runtime)}>{t(rules.runtime.syncEnabled?'business.dashboards.sync.scope.pause':'business.dashboards.sync.scope.start')}</button>
   </div>}

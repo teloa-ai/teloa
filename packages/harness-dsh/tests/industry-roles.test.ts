@@ -4,7 +4,7 @@ import {WorkError} from '@teloa/contract'
 import {createIndustryRolesHandler} from '../src/industry-roles.ts'
 const id='12345678-1234-4234-8234-123456789012',loadId='22345678-1234-4234-8234-123456789012',itemInstanceId='32345678-1234-4234-8234-123456789012',roleId='42345678-1234-4234-8234-123456789012',stamp='2026-09-12T00:00:00.000Z'
 const responsibility={triggers:['收到调查任务'],autonomousActions:['整理已授权资料'],confirmationPoints:[],escalationRules:['资料冲突时说明阻塞'],deliveryChecks:['附带证据来源']}
-const role={id:roleId,ownerId:'owner',name:'分析员',kind:'employee',scopes:['space-'+loadId],duty:'研究',dataScope:'资料',executionScope:'代拟',skills:[],knowledge:[],responsibility,runtimeConfig:{agentPresetId:'security-analyst'},version:1,state:'paused',createdAt:stamp,updatedAt:stamp}
+const role={avatarKey:'researcher',id:roleId,ownerId:'owner',name:'分析员',kind:'employee',scopes:['space-'+loadId],duty:'研究',dataScope:'资料',executionScope:'代拟',skills:[],knowledge:[],responsibility,runtimeConfig:{agentPresetId:'security-analyst'},version:1,state:'paused',createdAt:stamp,updatedAt:stamp}
 const record={id,ownerId:'owner',loadId,itemInstanceId,itemLocalId:'analyst',scope:'space-'+loadId,definitionHash:'a'.repeat(64),revision:1,state:'paused',role,knowledge:[],omittedKnowledge:[],declarations:[],failure:null,createdAt:stamp,updatedAt:stamp}
 const input={requestId:id,loadId,itemInstanceId}
 test('岗位实例入口固定本人及加载项，拒绝客户端定义与权限',async()=>{

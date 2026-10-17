@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {fileURLToPath} from 'node:url'
+import {build} from 'vite'
+import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
+
+test('原 RoleForm 技能搜索按本人连接和原员工保存，切步骤与关闭重开均恢复；新建独立且不写业务字段',async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__role_skill_query_fixture.tsx'
+ const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+ import {RoleForm} from '${client}TeamPage.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+ const roles=['Alpha','Beta'].map((name,index)=>({id:'role-'+index,name,avatarKey:'general',kind:'employee',storage:'persistent',scopes:['general'],state:'paused',version:1,duty:'Analyze supplied materials',dataScope:'Owner materials',executionScope:'Draft only',skills:[index?'beta-skill':'alpha-skill'],knowledge:['resource-'+index],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},memories:[],history:[]}));
+ const catalog=['alpha-skill','beta-skill'].map(name=>({name,description:name,source:'fixture',provider:'fixture-owner',userInvocable:true,modelInvocable:true})),works=[0,1].map(()=>({readHomeSkills:async()=>catalog})),resources={directory:async()=>({resources:[]}),sources:async()=>[]};
+ const locale='en',snapshot={locale,dshLocale:locale,revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
+ const f=window.roleSkillQuery={owner:()=>{},role:()=>{},open:()=>{},fields:[],saved:[],searchLabel:translateMessage(locale,'homeSkill.search')};
+ function App(){const [owner,setOwner]=useState(0),[index,setIndex]=useState(0),[open,setOpen]=useState(true);f.owner=setOwner;f.role=setIndex;f.open=setOpen;const role=roles[index];return <I18nProvider runtime={runtime}>{open&&<RoleForm key={owner+':'+(role?.id??'new')} work={works[owner]} resourceApi={resources} role={role} initial={role?undefined:{name:'New colleague',avatarKey:'general',kind:'employee',scopes:['general'],duty:'Draft supplied material',dataScope:'Owner material',executionScope:'Draft only',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}} onDraft={value=>f.fields.push({owner,index,value})} close={()=>setOpen(false)} save={value=>f.saved.push(value)}/>}</I18nProvider>}
+ createRoot(document.getElementById('root')).render(<App/>);`
+ const built=await build({configFile:false,root,logLevel:'error',plugins:[{name:'role-skill-query-fixture',resolveId:id=>id.endsWith('role-skill-query-fixture')?virtual:null,load:id=>id===virtual?entry:null}],resolve:{alias:{'@teloa/contract':root+'packages/contract/src/index.ts'}},define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:id=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:'role-skill-query-fixture',name:'RoleSkillQueryFixture',formats:['iife']}}})
+ const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle)
+ const script=bundle.output.find(row=>row.type==='chunk').code,styles=bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});t.after(()=>page.close());page.setDefaultTimeout(5000)
+ const errors=[];page.on('pageerror',error=>errors.push(error.message))
+ await page.route('**/*',route=>route.request().url()==='http://127.0.0.1/role-skill-query-fixture'?route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="en"><div id="root"></div></html>'}):route.abort())
+ await page.goto('http://127.0.0.1/role-skill-query-fixture');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ const label=await page.evaluate(()=>window.roleSkillQuery.searchLabel),dialog=page.getByRole('dialog'),query=page.getByRole('textbox',{name:label,exact:true})
+ const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(null)))))
+ const editCapabilities=async()=>{await dialog.waitFor();await dialog.locator('nav button').nth(2).click();await query.waitFor()}
+ const switchRole=async index=>{await page.evaluate(index=>window.roleSkillQuery.role(index),index);await settle();await editCapabilities()}
+ const reopen=async()=>{await page.evaluate(()=>window.roleSkillQuery.open(true));await editCapabilities()}
+ await editCapabilities();await query.fill('alpha')
+ const searchLayout=await query.evaluate(input=>{const label=input.closest('label'),icon=label.querySelector('svg'),a=input.getBoundingClientRect(),b=icon.getBoundingClientRect();return {direction:getComputedStyle(label).flexDirection,iconBeforeInput:b.right<=a.left,centerDifference:Math.abs(a.y+a.height/2-b.y-b.height/2)}})
+ assert.equal(searchLayout.direction,'row','嵌套员工表单不应把搜索图标和输入框排成两行')
+ assert.equal(searchLayout.iconBeforeInput,true)
+ assert.ok(searchLayout.centerDifference<=2,'搜索图标和输入框保持垂直居中')
+ await dialog.locator('nav button').nth(1).click();await dialog.locator('nav button').nth(2).click();assert.equal(await query.inputValue(),'alpha','内部步骤切换必须保留搜索词')
+ await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});await reopen();assert.equal(await query.inputValue(),'alpha','关闭原表单再打开必须恢复A')
+ await switchRole(1);assert.equal(await query.inputValue(),'');await query.fill('beta')
+ await switchRole(0);assert.equal(await query.inputValue(),'alpha','返回A恢复A，不能取B搜索')
+ await page.evaluate(()=>window.roleSkillQuery.owner(1));await settle();await editCapabilities();assert.equal(await query.inputValue(),'','另一本人连接独立');await query.fill('other owner')
+ await page.evaluate(()=>window.roleSkillQuery.owner(0));await settle();await editCapabilities();assert.equal(await query.inputValue(),'alpha')
+ await page.evaluate(()=>window.roleSkillQuery.role(2));await settle();await dialog.locator('nav button').nth(1).click();await dialog.locator('summary').first().click();await query.waitFor();assert.equal(await query.inputValue(),'','新建入口不继承A/B搜索');await query.fill('new draft')
+ await dialog.locator('nav button').nth(0).click();await dialog.locator('nav button').nth(1).click();await dialog.locator('summary').first().click();assert.equal(await query.inputValue(),'new draft')
+ await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});await page.evaluate(()=>window.roleSkillQuery.open(true));await dialog.locator('nav button').nth(1).click();await dialog.locator('summary').first().click();assert.equal(await query.inputValue(),'new draft')
+ await switchRole(0);assert.equal(await query.inputValue(),'alpha')
+ const state=await page.evaluate(()=>({fields:window.roleSkillQuery.fields,saved:window.roleSkillQuery.saved,storage:Object.keys(localStorage)}))
+ assert.deepEqual(state.saved,[]);assert.deepEqual(state.storage,[])
+ for(const row of state.fields){assert.equal('query'in row.value,false);if(row.index<2){assert.deepEqual(row.value.skills,[row.index?'beta-skill':'alpha-skill']);assert.deepEqual(row.value.knowledge,['resource-'+row.index])}}
+ assert.deepEqual(errors,[])
+})
+
+
+test('员工详情和编辑共用固定技能标题，原身份不改且旧连接迟答不覆盖',async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__role_skill_title_fixture.tsx'
+ const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+ import {RoleDetail,RoleForm} from '${client}TeamPage.tsx';import {HomeSkillPicker} from '${client}HomeSkillPicker.tsx';import {emptyTaskPreview} from '${client}task-preview.ts';import {emptyCollaboration} from '${client}collaboration-preview.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+ const name='package-native-001hash',roles=[1,2].map(version=>({id:'fixed-role',name:'固定员工',kind:'employee',storage:'persistent',scopes:['general'],state:'paused',version,duty:'原职责',dataScope:'原资料',executionScope:'仅草稿',skills:[name],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},memories:[],history:[]}));
+ const triple={name,source:'original-fixed',provider:'local-owner'},catalog=[{...triple,description:'原方法说明',modelInvocable:true,userInvocable:true}],works=[0,1].map(()=>({readHomeSkills:async()=>catalog})),resources={directory:async()=>({resources:[]}),sources:async()=>[]},noop=()=>{},node=()=>null;
+ let release;const readers=[{read:async()=>[{...triple,title:'固定方法一'}]},{read:()=>new Promise(resolve=>{release=()=>resolve([{...triple,title:'迟到旧方法'}])})},{read:async role=>role.version===1?[{...triple,title:'当前连接方法'}]:[]}];
+ const locale='zh-CN',snapshot={locale,dshLocale:'zh',revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot},f=window.skillTitles={saved:[],set:()=>{},release:()=>release?.()};
+ const persistence={loading:false,assignmentPending:false,pendingFields:()=>undefined,edit:async(role,value)=>f.saved.push({roleId:role.id,...value}),lifecycle:{pending:undefined},load:()=>{}};
+ function App(){const [reader,setReader]=useState(0),[owner,setOwner]=useState(0),[index,setIndex]=useState(0),[input,setInput]=useState({editing:false}),[revision,refresh]=useState(0);f.set=(what,value)=>({reader:setReader,owner:setOwner,role:setIndex,render:()=>refresh(v=>v+1)})[what](value);const role=roles[index];return <I18nProvider runtime={runtime}><RoleDetail persistence={persistence} skillTitleReader={readers[reader]} work={works[owner]} role={role} input={input} update={patch=>setInput(v=>({...v,...patch}))} state={{...emptyTaskPreview(),roles}} collaboration={emptyCollaboration()} resourceApi={resources} change={noop} back={noop} openTask={noop} openGroup={noop} resources={noop} nativeSettings={noop} conversations={node} capabilities={node} plans={node}/><aside aria-label="首页原技能选择"><HomeSkillPicker work={works[owner]} selected={[triple]} change={noop}/></aside></I18nProvider>}
+ createRoot(document.getElementById('root')).render(<App/>);`
+ const built=await build({configFile:false,root,logLevel:'error',plugins:[{name:'role-skill-title-fixture',resolveId:id=>id.endsWith('role-skill-title-fixture')?virtual:null,load:id=>id===virtual?entry:null}],resolve:{alias:{'@teloa/contract':root+'packages/contract/src/index.ts'}},define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:id=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:'role-skill-title-fixture',name:'RoleSkillTitleFixture',formats:['iife']}}})
+ const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle)
+ const script=bundle.output.find(row=>row.type==='chunk').code,styles=bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1440,height:1000}});t.after(()=>page.close());page.setDefaultTimeout(4000)
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>route.request().url()==='http://127.0.0.1/role-skill-title-fixture'?route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh-CN"><div id="root"></div></html>'}):route.abort());await page.goto('http://127.0.0.1/role-skill-title-fixture');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ const detail=page.locator('[data-teloa-pane=detail]');await detail.getByRole('tab').last().click();await detail.locator('#role-profile-section-tools > summary').click();await detail.getByText('固定方法一',{exact:true}).waitFor()
+ assert.ok((await page.getByRole('complementary',{name:'首页原技能选择'}).innerText()).includes('/package-native-001hash'))
+ await detail.getByRole('button',{name:'更多员工操作',exact:true}).click();await detail.getByRole('button',{name:'员工管理',exact:true}).click();const management=page.getByRole('dialog',{name:'员工管理',exact:true});await management.getByRole('button',{name:'编辑职责与范围',exact:true}).click();const form=page.getByRole('dialog',{name:'编辑员工',exact:true});await form.locator('nav button').nth(2).click();const search=form.getByRole('textbox',{name:'搜索技能',exact:true});await search.waitFor();await search.fill('固定方法一');assert.equal(await form.getByRole('button',{name:'选择技能 固定方法一',exact:true}).count(),1);assert.equal(await form.getByText('/固定方法一',{exact:true}).count(),0);assert.equal((await form.getByRole('list',{name:'员工已配置',exact:true}).innerText()).includes('package-native-001hash'),false);assert.equal(await form.getByRole('list',{name:'员工已配置',exact:true}).locator('strong').getAttribute('title'),'package-native-001hash');await search.fill('package-native');assert.equal(await form.getByText('固定方法一',{exact:true}).count(),2)
+ await form.getByRole('button',{name:'移除技能 固定方法一',exact:true}).click();await form.getByRole('button',{name:'选择技能 固定方法一',exact:true}).click();await form.locator('nav button').last().click();await form.locator('button[type=submit]').click();await page.waitForFunction(()=>window.skillTitles.saved.length===1);assert.deepEqual(await page.evaluate(()=>window.skillTitles.saved[0].skills),['package-native-001hash']);await form.waitFor({state:'detached'});await page.keyboard.press('Escape');await management.waitFor({state:'detached'})
+ await page.evaluate(()=>window.skillTitles.set('reader',1));await detail.getByText('package-native-001hash',{exact:true}).waitFor();await page.evaluate(()=>window.skillTitles.set('reader',2));await detail.getByText('当前连接方法',{exact:true}).waitFor();await page.evaluate(()=>window.skillTitles.release());assert.equal(await detail.getByText('迟到旧方法',{exact:true}).count(),0);assert.equal(await detail.getByText('当前连接方法',{exact:true}).count(),1)
+ await page.evaluate(()=>window.skillTitles.set('role',1));await detail.getByText('package-native-001hash',{exact:true}).waitFor();assert.equal(await detail.getByText('当前连接方法',{exact:true}).count(),0);assert.deepEqual(errors,[])
+})
+
+test('真实Frame群内本地员工抽屉冷读固定标题，同入口编辑换代后重新核对',{timeout:60000},async t=>{
+ const {readFile,mkdtemp,writeFile,rm}=await import('node:fs/promises'),{join}=await import('node:path'),{default:ts}=await import('typescript')
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url))
+ const source=await readFile(join(root,'packages/client/ui-workbench/tests/business-builder-frame.test.ts'),'utf8'),ast=ts.createSourceFile('fixture.ts',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);let expression
+ const visit=node=>{if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='entry')expression=node.initializer;ts.forEachChild(node,visit)};visit(ast);assert.ok(expression)
+ let entry=new Function('client','return '+expression.getText(ast))(client)
+ const originalStartup="if(!startup.restoreRecord)store.actions.navigate(startup.ensureHandshake?'home':'spaces');"
+ assert.equal(entry.split(originalStartup).length,2,'共享Frame夹具必须准确替换唯一原入口，不能静默落到业务目录')
+ entry=entry.replace(originalStartup,"if(!startup.restoreRecord){if(startup.warmTitles)store.actions.navigate('team');else store.actions.openMessages('groups')}")
+ const setup=String.raw`
+const groupId='10000000-0000-4000-8000-000000000001',messageId='20000000-0000-4000-8000-000000000001',roleId='40000000-0000-4000-8000-000000000001',loadId='50000000-0000-4000-8000-000000000001',roleItemId='60000000-0000-4000-8000-000000000001',skillItemId='60000000-0000-4000-8000-000000000002',contentId='70000000-0000-4000-8000-000000000001',installationId='80000000-0000-4000-8000-000000000001',hash='a'.repeat(64),bodyHash='b'.repeat(64),bundleHash='c'.repeat(64),nativeName='fixed-package-native-hash';
+f.employee={...employee,id:roleId,ownerId:'self',name:'冷群员工',state:'paused',skills:[nativeName]};f.withRole=true;f.loadReads=0;f.instanceReads=0;f.observations=0;f.edits=[];f.denied=[];
+const group={id:groupId,ownerId:'self',version:1,name:'冷启动原群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},pinned:false,archived:false,createdAt:stamp,updatedAt:stamp};
+const message={id:messageId,groupId,rootId:null,authorId:roleId,taskId:'90000000-0000-4000-8000-000000000001',runId:'90000000-0000-4000-8000-000000000002',contextMode:'main',text:'已有群内员工消息',references:[],createdAt:stamp,author:{name:'冷群员工',kind:'employee',version:3}};
+const call=async(endpoint,input)=>{
+ if(endpoint==='groups/list')return [group];
+ if(endpoint==='groups/get')return {group,members:[{groupId,roleId:null,createdAt:stamp},{groupId,roleId,createdAt:stamp}]};
+ if(endpoint==='groups/messages/page')return groupMessagePageFixture([message],input);
+ if(endpoint==='groups/reading/get'||endpoint==='groups/reading/mark')return groupMessageReadingFixture([message],input,f.cursors||(f.cursors={}));
+ if(endpoint==='groups/attention')return {schema:'teloa.group-attention/v1',items:[]};
+ if(endpoint==='groups/resources/list'||endpoint==='groups/attachments/list')return [];
+ if(endpoint==='groups/reactions/list'||endpoint==='groups/routing/list'||endpoint==='groups/routing/status')return {items:[]};
+ if(endpoint==='groups/agent-grants/get')return {groupVersion:1,roleVersion:f.employee.version,grant:null,status:'not-granted'};
+ if(endpoint==='groups/tasks/source')return null;
+ if(endpoint==='groups/work/get')return {groupId,groupVersion:1,version:0,items:[],projectLinks:[]};
+ f.denied.push(endpoint);throw Error('本夹具禁止未声明群端口:'+endpoint);
+};
+props.groupApi=createGroupApi(call);props.groupRoutingApi=createGroupRoutingApi(call);props.groupWorkLinks=createGroupWorkLinkApi(call);props.groupReactionApi=createGroupReactionApi(call);props.groupAttachmentApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>[]:target[key]});
+props.roleApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>[{...f.employee}]:key==='edit'?async(id,version,fields)=>{if(id!==roleId||version!==f.employee.version)throw Error('wrong role CAS');f.edits.push({id,version,fields});f.employee={...f.employee,...fields,version:version+1};return {...f.employee}}:target[key]});
+props.resourceApi={directory:async()=>({resources:[]}),sources:async()=>[]};
+const load={id:loadId,ownerId:'self',contentId,contentHash:hash,templateId:'fixed-team',templateVersion:'1.0.1',templateTitle:'原固定模板',domain:'fixed',description:'原固定范围',targetVersion:1,space:{id:contentId,name:'通用工作',version:1,scope:'general'},entrypoints:[],createdAt:stamp,mappingHash:hash,scope:'general',status:'active',items:[{localId:'employee',instanceId:roleItemId,kind:'role',title:'原员工',version:'1.0.1',required:true,status:'instantiated'},{localId:'original-method',instanceId:skillItemId,kind:'skill',title:'原固定方法',version:'1.0.1',required:true,status:'pending-adapter'}],relations:[{kind:'role-skill',from:roleItemId,to:skillItemId}]};
+props.industryLoadApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>{f.loadReads++;return [load]}:target[key]});
+props.industryRoleApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>{f.instanceReads++;return [{id:roleId,ownerId:'self',loadId,itemInstanceId:roleItemId,itemLocalId:'employee',scope:'general',definitionHash:hash,revision:1,state:'paused',role:{...f.employee},knowledge:[],omittedKnowledge:[],declarations:[],failure:null,createdAt:stamp,updatedAt:stamp}]}:target[key]});
+const native={name:nativeName,description:'固定原方法',modelInvocable:true,userInvocable:true,bodyHash},identity={kind:'industry-local',loadId,itemInstanceId:skillItemId,contentId,contentHash:hash,resourceId:'original-method',resourceVersion:'1.0.1'};
+props.skillInstallApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>({items:[{id:installationId,ownerId:'self',source:identity,bundleHash,native,state:'installed',version:1}],usages:[{loadId,itemInstanceId:skillItemId,installationId}]}):key==='preview'?async input=>{if(input.loadId!==loadId||input.itemInstanceId!==skillItemId)throw Error('wrong fixed preview');return {source:identity,bundleHash,native,files:[]}}:key==='observe'?async id=>{if(id!==installationId)throw Error('wrong installation');f.observations++;return {installationId,scope:'default-workspace',state:'available',current:{...native,source:'fixed-original',provider:'local-owner'}}}:target[key]});
+work.readHomeSkills=async()=>[{...native,source:'fixed-original',provider:'local-owner'}];
+f.openOriginalGroup=()=>store.actions.openGroupTopic(groupId,'');f.labels={mission:runtime.t('team.form.mission')};
+`
+ entry="import {createGroupApi} from '"+client+"group-api.ts';import {createGroupRoutingApi} from '"+client+"group-routing-api.ts';import {createGroupReactionApi} from '"+client+"group-reaction-api.ts';import {createGroupWorkLinkApi} from '"+client+"group-work-links-api.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '"+client+"../../tests/fixtures/group-message-page-rpc.ts';\n"+entry
+ entry=entry.replace("createRoot(document.getElementById('root')).render",setup+"createRoot(document.getElementById('root')).render")
+ const temp=await mkdtemp(join(root,'.runtime-role-title-frame-'));t.after(()=>rm(temp,{recursive:true,force:true}));await writeFile(join(temp,'entry.tsx'),entry)
+ const stubbed=new Set(['WorkDirectory','WorkHome','TaskPage','BusinessPage','MarketPage','TeamCapabilitiesPage','ResourceManager','ArtifactPanel','ProjectOverviewPage','CapabilityTargetPanel','SavedIndustryDirectory','AutoDreamSettingsPage','RoleToolGrants'].map(name=>join(client,name+'.tsx'))),markdown='\0title-markdown',nodeCrypto='\0title-node-crypto'
+ const built=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},resolve:{alias:[{find:'@deepseek-ai/dsh-client-ui-primitives',replacement:markdown},{find:'node:crypto',replacement:nodeCrypto}]},plugins:[{name:'role-title-frame',enforce:'pre',resolveId:id=>[markdown,nodeCrypto].includes(id)?id:null,load:async id=>{
+  if(id===markdown)return 'export const MarkdownText=({text})=>text'
+  if(id===nodeCrypto)return 'export function createHash(){throw Error("禁止服务端摘要")};export function randomUUID(){return crypto.randomUUID()};export function createPublicKey(){throw Error("禁止签名")};export function verify(){throw Error("禁止签名")}'
+  if(!stubbed.has(id))return
+  const text=await readFile(id,'utf8');return [...text.matchAll(/export (?:async )?(?:function|const|class) (\w+)/g)].map(row=>'export const '+row[1]+'=()=>null;').join('\n')
+ }}],build:{write:false,minify:false,rollupOptions:{external:id=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'entry.tsx'),name:'RoleTitleFrame',formats:['iife']}}})
+ const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle);const script=bundle.output.find(row=>row.type==='chunk').code,styles=bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ for(const warm of [false,true])await t.test(warm?'同一群本地抽屉编辑新版本后恢复原固定标题':'冷群入口不依赖先访问员工或市场目录',async()=>{
+  const page=await browser.newPage({viewport:{width:1600,height:1000}});page.setDefaultTimeout(4000);const errors=[];page.on('pageerror',error=>errors.push(error.message));try{
+   await page.route('**/*',route=>route.request().isNavigationRequest()?route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh-CN"><div id="root"></div></html>'}):route.abort());await page.goto('https://fixture.invalid');await page.evaluate(warm=>{window.frameStartup={warmTitles:warm}},warm);await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.waitForFunction(()=>window.frameFixture.controller.getSnapshot().status==='ready')
+   if(warm){await page.waitForFunction(()=>window.frameFixture.instanceReads>0&&window.frameFixture.loadReads>0)}else assert.equal(await page.evaluate(()=>window.frameFixture.instanceReads),0)
+   await page.evaluate(()=>window.frameFixture.openOriginalGroup());const message=page.locator('[data-teloa-message-id="20000000-0000-4000-8000-000000000001"]');await message.getByRole('button',{name:'冷群员工',exact:true}).last().click();const profile=page.getByRole('dialog',{name:'冷群员工',exact:true});await profile.getByRole('tab').last().click();await profile.locator('#role-profile-section-tools > summary').click();await profile.getByText('原固定方法',{exact:true}).waitFor()
+   const state=await page.evaluate(()=>window.frameFixture.state());assert.equal(state.view,'messages');assert.equal(state.rolePreview,null);assert.equal(state.detail.open,false);assert.equal(state.roleId,null)
+   if(warm){const before=await page.evaluate(()=>window.frameFixture.instanceReads);await profile.getByRole('button',{name:'更多员工操作',exact:true}).click();await profile.getByRole('button',{name:'员工管理',exact:true}).click();const management=page.getByRole('dialog',{name:'员工管理',exact:true});await management.getByRole('button',{name:'编辑职责与范围',exact:true}).click();const form=page.getByRole('dialog',{name:'编辑员工',exact:true});await form.locator('nav button').nth(2).click();await form.getByRole('list',{name:'员工已配置',exact:true}).getByText('原固定方法',{exact:true}).waitFor();await form.locator('nav button').first().click();await form.locator('textarea').first().fill('只修改原职责，保留原固定技能');await form.locator('nav button').last().click();await form.locator('button[type=submit]').click();await form.waitFor({state:'detached'});await page.keyboard.press('Escape');await management.waitFor({state:'detached'});await profile.getByText('原固定方法',{exact:true}).waitFor();const final=await page.evaluate(()=>({reads:window.frameFixture.instanceReads,edits:window.frameFixture.edits,version:window.frameFixture.employee.version}));assert.ok(final.reads>before);assert.equal(final.version,4);assert.equal(final.edits.length,1);assert.equal(final.edits[0].fields.duty,'只修改原职责，保留原固定技能');assert.deepEqual(final.edits[0].fields.skills,['fixed-package-native-hash'])}
+   assert.deepEqual(await page.evaluate(()=>window.frameFixture.denied),[]);assert.deepEqual(errors,[])
+  }catch(error){t.diagnostic(JSON.stringify({warm,errors,body:(await page.locator('body').innerText()).slice(-5000),state:await page.evaluate(()=>({snapshot:window.frameFixture?.state(),reads:[window.frameFixture?.loadReads,window.frameFixture?.instanceReads]}))}));throw error}finally{await page.close()}
+ })
+})

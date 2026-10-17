@@ -1,4 +1,5 @@
 import test,{before,after} from 'node:test'
+import {withLegacySecurityScopes} from './legacy-security-scopes.ts'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
@@ -531,7 +532,7 @@ test('页内 business-definition 草案经 applyInTransaction 不能绕过配置
  const {BusinessSpaceService}=await import('../src/work/business-spaces.ts')
  await initializePageCreateDrafts(pool)
  const {actor,service}=plain()
- await new BusinessSpaceService(pool,identity).ensurePersonal(actor.ownerId)
+ await withLegacySecurityScopes(pool,actor.ownerId,new BusinessSpaceService(pool,identity).ensurePersonal(actor.ownerId))
  await pool.query("update teloa_business_scopes set configuration_managed=true where owner_id=$1 and scope='SOC'",[actor.ownerId])
  const id=randomUUID(),body=JSON.stringify(riskView())
  await pool.query("insert into teloa_page_create_drafts(owner_id,id,request_id,entity,scope_id,title,body,body_hash,status,created_at,updated_at) values($1,$2,$3,'business-definition','SOC','风险分布',$4,$5,'draft',now(),now())",[actor.ownerId,id,randomUUID(),body,sha256(body)])

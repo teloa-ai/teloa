@@ -1,13 +1,14 @@
-import type { Conversation } from '@teloa/contract'
+import {isReservedExecutionSessionId,type Conversation} from '@teloa/contract'
 import type { CopyAttempt } from './copy-recovery.js'
 import type { ConversationWorkspace } from './work-presentation.js'
 
 export interface ConversationManagementPort {
   state():{ready:boolean;baseline:boolean;archived:readonly string[];workspaces:readonly ConversationWorkspace[]}
   subscribe(listener:()=>void):()=>void
-  summary(id:string):{running:boolean;blank?:boolean;title?:string;displayTitle?:string}|undefined
+  summary(id:string):{running:boolean;blank?:boolean;title?:string;displayTitle?:string;origin?:'subagent'}|undefined
   rename(id:string,title:string):Promise<void>
   archive(id:string):Promise<void>
+  restore(id:string):Promise<void>
   fork(id:string):Promise<string>
   copyHistory():Promise<readonly CopyAttempt[]>
   releaseCopy(requestId:string):Promise<CopyAttempt>
@@ -16,7 +17,7 @@ export interface ConversationManagementPort {
   adopt(id:string,requestId:string,title:string):Promise<Conversation>
   move(workspaceId:string,id:string,before:string|undefined):Promise<void>
 }
-type Operation='rename'|'fork'|'archive'|'move'|'adopt'
+type Operation='rename'|'fork'|'archive'|'restore'|'move'|'adopt'
 /** 仅用于宿主明确在创建前拒绝的错误；传输错误仍保留结果未知。 */
 export class ForkRejectedError extends Error {}
 type Snapshot={copyHistory:readonly CopyAttempt[];ready:boolean;baseline:boolean;workspaces:readonly ConversationWorkspace[];archived:readonly string[];pending:Readonly<Record<string,Operation>>;copies:Readonly<Record<string,string>>;uncertain:readonly string[]}
@@ -48,7 +49,9 @@ export class ConversationManagement {
     const row=this.rows().find(row=>row.sessionId===id)
     if(!row)throw Error('目标不在本人工作目录中。')
     if(row.status!=='ready')throw Error('工作绑定尚未完成，请先恢复原会话。')
-    if(port.state().archived.includes(id))throw Error('会话已归档。')
+    const archived=port.state().archived.includes(id)
+    if(operation==='restore'&&!archived)throw Error('会话未归档。')
+    if(operation!=='restore'&&archived)throw Error('会话已归档。')
     if(this.snapshot.pending[id])throw Error('这个会话正在处理上一项操作。')
     const summary=port.summary(id)
     if(!summary)throw Error('原生会话尚未同步，请刷新后重试。')
@@ -65,6 +68,8 @@ export class ConversationManagement {
     if(this.snapshot.pending[id])throw Error('这个会话正在处理上一项操作。')
     const summary=port.summary(id)
     if(!summary)throw Error('原生会话尚未同步，请刷新后重试。')
+    if(summary.origin==='subagent')throw Error('子 Agent 会话不能加入普通工作目录，请从原会话查看。')
+    if(isReservedExecutionSessionId(id))throw Error('内部执行会话不能加入普通工作目录，请从原任务或原群查看。')
     const existing=this.rows().find(row=>row.sessionId===id)
     if(existing?.status==='pending')throw Error('会话正在创建，请恢复原请求。')
     if(existing?.status==='ready')return existing
@@ -89,6 +94,10 @@ export class ConversationManagement {
   async archive(id:string){
     const port=this.begin(id,'archive')
     try{await port.archive(id)}finally{this.finish(id)}
+  }
+  async restore(id:string){
+    const port=this.begin(id,'restore')
+    try{await port.restore(id)}finally{this.finish(id)}
   }
   async refreshCopyHistory():Promise<void>{
     const port=this.port

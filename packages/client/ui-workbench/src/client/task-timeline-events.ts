@@ -23,8 +23,8 @@ export type TaskTimelineInput={
 }
 
 /** TaskCompletion.tsx:14 守卫的纯函数版，供 completionVisible 与测试共用。 */
-export function taskCompletionVisible(task:Pick<PreviewTask,'storage'|'state'|'assigneeId'>):boolean{
- return task.storage==='persistent'&&(task.state==='completed'||(task.assigneeId==='self'?task.state==='running':task.state==='waiting'))
+export function taskCompletionVisible(task:Pick<PreviewTask,'storage'|'state'|'assigneeId'|'executor'>):boolean{
+ return task.storage==='persistent'&&(task.state==='completed'||(task.assigneeId==='self'&&task.executor?.kind!=='owner'?task.state==='running':task.state==='waiting'))
 }
 
 /**
@@ -60,7 +60,7 @@ export function taskTimelineEvents(input:TaskTimelineInput):TimelineEvent[]{
   events.push({id:'approval:'+item.id,kind:'approval',at:item.submittedAt,title:t('task.timeline.approval'),foldKey:'approval',...(index===0?{detail:faces.approvalHistory}:{})})
  })
  for(const artifact of artifacts){
-  if(artifact.source.kind!=='task'||artifact.source.id!==task.id)continue
+  if((artifact.source.kind!=='task'||artifact.source.id!==task.id)&&!artifact.produced?.some(producer=>producer.taskId===task.id))continue
   for(const version of artifact.versions)events.push({id:'artifact:'+artifact.id+':'+version.number,kind:'artifact',at:version.at,title:t('task.timeline.artifact',{version:version.number,title:version.title}),foldKey:'artifact',anchor:'artifact'})
  }
  if(task.state==='completed'){

@@ -5,9 +5,19 @@ import {readBusinessObjectTypeDefinition,readBusinessViewDefinition,readBusiness
 import {roleWriteDefinition} from './roles.ts'
 import {readIndustryDataSourceDefinition,readIndustryMcpConnectionDefinition} from './industry-definitions.ts'
 import {readMarketPluginRegistrySource,type MarketPluginRegistrySource} from './market-plugin-installation.ts'
+import {readTemplateShare} from './template-share.mjs'
+import {readOwnerPlanFields,readRolePlanDraftFields,readPlanWorkConfiguration,type OwnerPlanFields,type RolePlanDraftFields,type PlanWorkConfiguration} from './plan-work.ts'
+import {readMethodReuseSource,type MethodReuseSource,type MethodReuseIntent} from './method-reuse.ts'
 
-export const pageCreateEntities=['business-definition','business-domain','role','skill','connector','extension'] as const
+export const pageCreateEntities=['business-definition','business-domain','role','skill','connector','extension','share','plan'] as const
 export type PageCreateEntity=typeof pageCreateEntities[number]
+/** 由宿主核对的原生本人消息；不是模型可声明的授权。 */
+export type PageCreateDraftOrigin={sessionId:string;messageId:string;messageSeq:number;requestId?:string}
+export type PageCreateDraftRevisionInput={draftId:string;expectedBodyHash:string;entity:PageCreateEntity;scope?:string;body:unknown;requestId:string;acceptedSource:PageCreateDraftOrigin}
+export function readPageCreateDraftOrigin(value:unknown):PageCreateDraftOrigin{
+ if(!isRecord(value)||Object.keys(value).some(key=>!['sessionId','messageId','messageSeq','requestId'].includes(key))||typeof value.sessionId!=='string'||!/^[-\w]{1,128}$/.test(value.sessionId)||typeof value.messageId!=='string'||!value.messageId||value.messageId.length>256||/[\x00-\x1f\x7f]/.test(value.messageId)||!Number.isSafeInteger(value.messageSeq)||Number(value.messageSeq)<0||value.requestId!==undefined&&(typeof value.requestId!=='string'||!value.requestId||value.requestId.length>256||/[\x00-\x1f\x7f]/.test(value.requestId)))throw new WorkError('teloa/invalid-input','草稿原生本人消息身份不正确。')
+ return {sessionId:value.sessionId,messageId:value.messageId,messageSeq:Number(value.messageSeq),...(value.requestId===undefined?{}:{requestId:value.requestId as string})}
+}
 
 /** 一条页内新建草案。两态照 `ResourceDraft`（`resources.ts`）；模型侧没有任何路径能写出 applied。 */
 export type PageCreateDraft={
@@ -24,6 +34,22 @@ export type PageCreateDraft={
  appliedRef?:string
 }
 
+/** 可读 Markdown 引用只固定用户所选原稿与摘要，不授予创建、采用或执行权限。 */
+export function encodePageCreateDraftReference(draft:Pick<PageCreateDraft,'id'|'bodyHash'|'title'>):string{
+ if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(draft.id)||!/^[a-f0-9]{64}$/.test(draft.bodyHash)||typeof draft.title!=='string'||!draft.title.trim()||draft.title.length>240||/[\x00-\x1f\x7f]/.test(draft.title))throw new WorkError('teloa/invalid-input','原稿引用不正确。')
+ const title=draft.title.replace(/[\\\[\]]/g,'\\$&')
+ return '['+title+'](teloa://draft/'+draft.id.toLowerCase()+'?bodyHash='+draft.bodyHash+')'
+}
+export function readPageCreateDraftReferences(markdown:string):Array<{draftId:string;bodyHash:string}>{
+ const references:Array<{draftId:string;bodyHash:string}>=[]
+ for(const match of markdown.matchAll(/teloa:\/\/draft\/([^\s<>)]*)/g)){
+  const parsed=/^([a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\?bodyHash=([a-f0-9]{64})$/i.exec(match[1]!)
+  if(!parsed)throw new WorkError('teloa/invalid-input','原稿引用已变化，请重新打开原稿准备修改。')
+  references.push({draftId:parsed[1]!.toLowerCase(),bodyHash:parsed[2]!.toLowerCase()})
+ }
+ return references
+}
+
 /** 预览三块。`business-definition` 一支另带第二期那三块（差异 / 影响范围 / 试算），其余五支只有这三块。 */
 export type PageCreateDraftPreview={
  schema:'teloa.page-create-draft-preview/v1'
@@ -38,6 +64,14 @@ export type PageCreateDraftPreview={
  /** `business-definition` 那一支复用第二期的预览（差异 / 影响范围 / 试算），这一位就是它的回包，本层不重算。 */
  businessPreview?:BusinessDefinitionPreview
  computedAt:string
+}
+
+/** 会话查询原稿的只读结果。创建预览的安装/应用下一步不属于查询结果。 */
+export type PageCreateDraftReadResult={
+ schema:'teloa.page-create-draft-read/v1'
+ ownerId:string;sessionId:string;draft:PageCreateDraft;readAt:string
+ /** 只定位此会话中已核验的原稿卡，不承诺新建、安装、启用或执行。 */
+ next:{kind:'open-original';title:string}
 }
 
 export type PageCreateDraftDirectory={
@@ -211,6 +245,49 @@ export function readPageCreateAtomicSkillDraft(value:unknown):PageCreateAtomicSk
 
 export type PageCreateBodyReaders={manifest?:(value:unknown)=>unknown;skill?:(value:unknown)=>unknown}
 
+export type PageCreatePlanFields=Pick<OwnerPlanFields,'title'|'goal'|'dataScope'|'delivery'|'groupId'>
+export type PageCreatePlanDraft=
+ |{definition:OwnerPlanFields|RolePlanDraftFields;work:PlanWorkConfiguration;intent:MethodReuseIntent;source:MethodReuseSource}
+ |{kind:'configure-work';planId:string;expectedVersion:number;expectedConfigVersion:number;work:PlanWorkConfiguration;fields?:PageCreatePlanFields;intent:MethodReuseIntent}
+const planKeys=(value:unknown,required:readonly string[],optional:readonly string[]=[])=>{
+ if(!isRecord(value)||required.some(key=>!Object.hasOwn(value,key))||Object.keys(value).some(key=>!required.includes(key)&&!optional.includes(key)))throw bad('计划草案包含未知字段或缺少固定输入。')
+ return value
+}
+const planId=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][0-9a-f]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
+/** 草案只描述固定配置与意图；本人执行 grant 和启用确认永远由原采用链取得。 */
+export function readPageCreatePlanDraft(value:unknown):PageCreatePlanDraft{
+ const configure=isRecord(value)&&value.kind==='configure-work'
+ const row=configure?planKeys(value,['kind','planId','expectedVersion','expectedConfigVersion','work'],['fields','intent']):planKeys(value,['definition','work','source'],['intent'])
+ const intent=row.intent===undefined?'save-paused':row.intent
+ if(intent!=='save-paused'&&intent!=='create-and-enable')throw bad('计划草案的采用意图不正确。')
+ const work=readPlanWorkConfiguration(row.work)
+ if(configure){
+  if(!planId(row.planId)||!Number.isSafeInteger(row.expectedVersion)||Number(row.expectedVersion)<1||!Number.isSafeInteger(row.expectedConfigVersion)||Number(row.expectedConfigVersion)<1)throw bad('计划配置草案的身份或版本不正确。')
+  let fields:PageCreatePlanFields|undefined
+  if(row.fields!==undefined){
+   const input=planKeys(row.fields,['title','goal','dataScope','delivery'],['groupId'])
+   const read=(key:'title'|'goal'|'dataScope'|'delivery')=>{
+    const item=input[key],max=key==='title'?120:8000
+    if(typeof item!=='string'||!item.trim()||item.length>max)throw bad('计划配置草案的目标或交付内容不正确。')
+    return item.trim()
+   }
+   fields={title:read('title'),goal:read('goal'),dataScope:read('dataScope'),delivery:read('delivery')}
+   if(Object.hasOwn(input,'groupId')){if(input.groupId!==null&&!planId(input.groupId))throw bad('计划配置草案的群身份不正确。');fields.groupId=input.groupId as string|null}
+  }
+  return {kind:'configure-work',planId:row.planId,expectedVersion:Number(row.expectedVersion),expectedConfigVersion:Number(row.expectedConfigVersion),work,...fields===undefined?{}:{fields},intent}
+ }
+ const owner=isRecord(row.definition)&&Object.hasOwn(row.definition,'executor')
+ const definition=owner?readOwnerPlanFields(row.definition):readRolePlanDraftFields(row.definition)
+ if(owner&&(work.triggers.length!==1||work.triggers[0]?.kind!=='schedule'||JSON.stringify(work.triggers[0].schedule)!==JSON.stringify(definition.trigger)))throw bad('本人计划只使用与原定义一致的时间触发，不继承群或业务事件授权。')
+ return {definition,work,intent,source:readMethodReuseSource(row.source)}
+}
+/** 计划的正式数值额度不是凭据；只在完整严格解析后排除该字段的扫描副本。 */
+export function assertPageCreateNoCredentialKeys(entity:PageCreateEntity,value:unknown):void{
+ if(entity!=='plan'){assertNoCredentialKeys(value);return}
+ const plan=readPageCreatePlanDraft(value),{maxTokens:_tokens,...budget}=plan.work.budget
+ assertNoCredentialKeys({...plan,work:{...plan.work,budget}})
+}
+
 /** 三份业务声明按 `format` 认领各自第一期的 `read*`；本文件一条判据都不新写。 */
 const businessDeclaration=(value:unknown):unknown=>{
  const format=isRecord(value)?value.format:undefined
@@ -232,6 +309,12 @@ const connectorResource=(value:unknown):unknown=>{
  * `entity` 与正文形状不符时由被分派到的那个 `read*` 抛 `teloa/invalid-input`，不在这里另判一遍。
  */
 export function readPageCreateBody(entity:PageCreateEntity,value:unknown,readers:PageCreateBodyReaders={}):unknown{
+ if(entity==='plan')return readPageCreatePlanDraft(value)
+ // 直接生成静态模板，不要求先创建真实员工；包判据与导出/接收共用。
+ if(entity==='share'){
+  const row=exact(value,['package'],'模板草案必须是一份静态分享包。')
+  try{return {package:readTemplateShare(row.package)}}catch{throw bad('模板草案包含无效资源、私有身份或不支持的字段。')}
+ }
  // 「角色」页内新建只对应AI 员工。分身是个人空间初始化的单例身份，
  // 不能让一句话草案先预览、再在真正落库时才被 roles/create 拒绝。
  if(entity==='role'){

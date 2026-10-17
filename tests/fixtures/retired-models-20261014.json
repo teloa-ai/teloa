@@ -1,0 +1,2284 @@
+{
+  "sourceCommit": "4e293b6e844cbc092c2b3aa5f7530cf588d38efc",
+  "entries": [
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.claude",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "claude",
+        "title": {
+          "zh-CN": "Claude（Anthropic）",
+          "en": "Claude (Anthropic)"
+        },
+        "summary": {
+          "zh-CN": "Anthropic 官方 API（Claude 系列）；国内需海外网络。",
+          "en": "Anthropic official API (Claude models); needs an overseas network from China."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": true
+        },
+        "contextWindow": 1000000,
+        "license": {
+          "spdx": "custom",
+          "name": "Anthropic Commercial Terms of Service",
+          "url": "https://www.anthropic.com/legal/commercial-terms",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "proxy-required",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "anthropic"
+          },
+          "models": [
+            {
+              "id": "claude-opus-5-5",
+              "name": "Claude Opus 5.5",
+              "contextWindow": 1000000,
+              "maxTokens": 128000,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "claude-sonnet-5",
+              "name": "Claude Sonnet 5",
+              "contextWindow": 1000000,
+              "maxTokens": 128000,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "claude-haiku-4-5",
+              "name": "Claude Haiku 4.5",
+              "contextWindow": 200000,
+              "maxTokens": 64000,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "high",
+          "credentialLabel": {
+            "zh-CN": "Anthropic API 密钥",
+            "en": "Anthropic API key"
+          },
+          "signupUrl": "https://platform.claude.com"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://www.anthropic.com/legal/commercial-terms"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.deepseek",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "deepseek",
+        "title": {
+          "zh-CN": "DeepSeek",
+          "en": "DeepSeek"
+        },
+        "summary": {
+          "zh-CN": "深度求索官方 API，国内直连，价格低，适合日常对话与长文档处理。",
+          "en": "DeepSeek official API: reachable directly in China, low price, good for everyday chat and long documents."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": false,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 1000000,
+        "license": {
+          "spdx": "custom",
+          "name": "DeepSeek 开放平台服务协议",
+          "url": "https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "deepseek"
+          },
+          "models": [
+            {
+              "id": "deepseek-v4-pro",
+              "name": "DeepSeek V4 Pro",
+              "contextWindow": 1000000,
+              "maxTokens": 384000,
+              "input": [
+                "text"
+              ]
+            },
+            {
+              "id": "deepseek-v4-flash",
+              "name": "DeepSeek V4 Flash",
+              "contextWindow": 1000000,
+              "maxTokens": 384000,
+              "input": [
+                "text"
+              ]
+            }
+          ],
+          "priceBand": "low",
+          "credentialLabel": {
+            "zh-CN": "DeepSeek API 密钥",
+            "en": "DeepSeek API key"
+          },
+          "signupUrl": "https://platform.deepseek.com"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.doubao",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "doubao",
+        "title": {
+          "zh-CN": "豆包（火山方舟）",
+          "en": "Doubao (Volcengine Ark)"
+        },
+        "summary": {
+          "zh-CN": "火山引擎方舟平台的豆包系列，国内直连，OpenAI 兼容接口。",
+          "en": "Doubao models on Volcengine Ark, reachable directly in China through an OpenAI-compatible API."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "custom",
+          "name": "豆包大模型服务协议",
+          "url": "https://www.volcengine.com/docs/82379/1142195",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          },
+          {
+            "zh-CN": "模型版本更新较快，以方舟控制台模型广场的 Model ID 为准。",
+            "en": "Model versions change often; use the Model ID shown in the Ark console model square."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "custom",
+            "api": "openai-completions",
+            "baseURL": "https://ark.cn-beijing.volces.com/api/v3"
+          },
+          "models": [
+            {
+              "id": "doubao-seed-2-1-pro-260628",
+              "name": "Doubao Seed 2.1 Pro",
+              "contextWindow": null,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "low",
+          "credentialLabel": {
+            "zh-CN": "火山方舟 API 密钥",
+            "en": "Volcengine Ark API key"
+          },
+          "signupUrl": "https://console.volcengine.com/ark"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://www.volcengine.com/docs/82379/1142195"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.embeddinggemma-2",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "data-research"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "embeddinggemma-2",
+        "title": {
+          "zh-CN": "EmbeddingGemma 2 本地检索",
+          "en": "EmbeddingGemma 2 local retrieval",
+          "zh-TW": "EmbeddingGemma 2 本機檢索"
+        },
+        "summary": {
+          "zh-CN": "通过本机 Ollama 为知识库文字资料生成向量，支持语义检索；查询和资料处理均在运行 Teloa 的电脑上完成。",
+          "en": "Generate embeddings for text knowledge sources through local Ollama for semantic retrieval. Queries and documents are processed on the computer running Teloa.",
+          "zh-TW": "透過本機 Ollama 為知識庫文字資料產生向量，支援語意檢索；查詢與資料處理均在執行 Teloa 的電腦上完成。"
+        },
+        "capabilities": {
+          "tools": false,
+          "vision": false,
+          "reasoning": false,
+          "structured": false
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "Apache-2.0",
+          "name": "Apache License 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "Google EmbeddingGemma 2，官方模型卡：https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2 。Teloa 目前接入文本知识库检索，不提供图片、音频或视频检索。",
+            "en": "Google EmbeddingGemma 2; official model card: https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2 . Teloa currently integrates text knowledge retrieval; image, audio and video retrieval are not provided.",
+            "zh-TW": "Google EmbeddingGemma 2，官方模型卡：https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2 。Teloa 目前整合文字知識庫檢索，未提供圖片、音訊或影片檢索。"
+          },
+          {
+            "zh-CN": "Ollama 官方 embeddinggemma-2:latest 为 740M 参数模型，工件约 1.3 GB，原生输出 768 维向量。工件体积不代表运行内存；固定版本、摘要和实际下载进度由本地准备器核对。",
+            "en": "The official Ollama embeddinggemma-2:latest model has 740M parameters, about 1.3 GB of artifacts and native 768-dimensional output. File size is not runtime memory. The local preparer verifies the pinned version, digest and actual download progress.",
+            "zh-TW": "Ollama 官方 embeddinggemma-2:latest 為 740M 參數模型，模型檔約 1.3 GB，原生輸出 768 維向量。檔案大小不代表執行時的記憶體用量；固定版本、摘要與實際下載進度由本機準備器核對。"
+          },
+          {
+            "zh-CN": "启用仅检查本机 Ollama 和模型状态，不自动下载。本人确认准备后才拉取官方权重；可取消准备。模型准备完成后本地推理，停用扩展保留 Ollama 缓存。",
+            "en": "Enabling checks local Ollama and model state without downloading. Official weights are pulled only after the owner confirms preparation, which can be cancelled. Inference then runs locally; disabling the extension retains the Ollama cache.",
+            "zh-TW": "啟用時僅檢查本機 Ollama 與模型狀態，不會自動下載。本人確認準備後才下載官方權重，並可取消準備。模型準備完成後在本機推論，停用擴充功能會保留 Ollama 快取。"
+          },
+          {
+            "zh-CN": "下载依赖本机网络连接，尚未验证中国大陆直连可达性。",
+            "en": "Downloads depend on local network access; direct reachability from mainland China has not been verified.",
+            "zh-TW": "下載取決於本機網路連線，尚未驗證中國大陸直接連線的可用性。"
+          }
+        ],
+        "form": "local-specialist",
+        "usage": [
+          "embedding"
+        ],
+        "native": {
+          "kind": "teloa-embedding",
+          "providerId": "embeddinggemma-2"
+        }
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "Apache-2.0",
+        "files": [],
+        "url": "https://www.apache.org/licenses/LICENSE-2.0"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.7",
+        "dsh": "0.2.1-alpha.1",
+        "conditions": [
+          {
+            "zh-CN": "需要 Apple Silicon Mac、支持 MLX 的 Ollama 0.40.0 或更新版本，以及已启用的本地检索扩展。确认下载后可选用于知识库检索；Teloa 不会安装或启动 Ollama。",
+            "en": "Requires an Apple Silicon Mac, Ollama 0.40.0 or later with MLX support, and the local retrieval extension enabled. Confirm download before choosing it for knowledge search; Teloa does not install or start Ollama.",
+            "zh-TW": "需要 Apple Silicon Mac、支援 MLX 的 Ollama 0.40.0 或更新版本，以及已啟用的本機檢索擴充功能。確認下載後可選用於知識庫檢索；Teloa 不會安裝或啟動 Ollama。"
+          },
+          {
+            "zh-CN": "首次拉取权重需能访问 Ollama 官方模型源；准备完成后的文本检索不需要云端模型 API，也不提供聊天能力。实际可用状态以 Teloa 的检查结果为准。",
+            "en": "The initial pull requires access to the official Ollama model registry. Prepared text retrieval needs no cloud model API and provides no chat capability. Teloa's readiness checks determine actual availability.",
+            "zh-TW": "首次下載權重須能連線至 Ollama 官方模型來源；準備完成後的文字檢索不需要雲端模型 API，亦不提供聊天功能。實際可用狀態以 Teloa 的檢查結果為準。"
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "ollama",
+          "Teloa local-embedding"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-10-08",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.gemini",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "gemini",
+        "title": {
+          "zh-CN": "Gemini（Google）",
+          "en": "Gemini (Google)"
+        },
+        "summary": {
+          "zh-CN": "Google Gemini API；国内需海外网络。",
+          "en": "Google Gemini API; needs an overseas network from China."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": true
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "custom",
+          "name": "Gemini API Additional Terms of Service",
+          "url": "https://ai.google.dev/gemini-api/terms",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "proxy-required",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          },
+          {
+            "zh-CN": "按条款须年满 18 岁；免费档提交的内容可能被用于改进 Google 产品并经人工审阅。",
+            "en": "Per the terms you must be 18 or older; content sent on the free tier may be used to improve Google products, including human review."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "google"
+          },
+          "models": [
+            {
+              "id": "gemini-3.8-flash",
+              "name": "Gemini 3.8 Flash",
+              "contextWindow": null,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "low",
+          "credentialLabel": {
+            "zh-CN": "Google AI API 密钥",
+            "en": "Google AI API key"
+          },
+          "signupUrl": "https://aistudio.google.com"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://ai.google.dev/gemini-api/terms"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.glm",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "glm",
+        "title": {
+          "zh-CN": "智谱 GLM",
+          "en": "Zhipu GLM"
+        },
+        "summary": {
+          "zh-CN": "智谱 BigModel 开放平台的 GLM 系列，国内直连，按量付费通用服务地址。",
+          "en": "Zhipu BigModel GLM models, reachable directly in China, via the general pay-as-you-go service address."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": false,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "custom",
+          "name": "智谱开放平台用户协议",
+          "url": "https://docs.bigmodel.cn/cn/terms/user-agreement",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          },
+          {
+            "zh-CN": "这是按量付费通用服务地址；GLM Coding Plan 用户须改用 /api/coding/paas/v4，两者密钥与地址不能混用。",
+            "en": "This is the general pay-as-you-go service address; GLM Coding Plan subscribers must use /api/coding/paas/v4 instead, and keys and addresses cannot be mixed."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "custom",
+            "api": "openai-completions",
+            "baseURL": "https://open.bigmodel.cn/api/paas/v4"
+          },
+          "models": [
+            {
+              "id": "glm-5.3",
+              "name": "GLM-5.3",
+              "contextWindow": null,
+              "maxTokens": null,
+              "input": [
+                "text"
+              ]
+            }
+          ],
+          "priceBand": "mid",
+          "credentialLabel": {
+            "zh-CN": "智谱 API 密钥",
+            "en": "Zhipu API key"
+          },
+          "signupUrl": "https://open.bigmodel.cn"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://docs.bigmodel.cn/cn/terms/user-agreement"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.grok",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "grok",
+        "title": {
+          "zh-CN": "Grok（xAI）",
+          "en": "Grok (xAI)"
+        },
+        "summary": {
+          "zh-CN": "xAI 官方 API（Grok 系列）；国内需海外网络。",
+          "en": "xAI official API (Grok models); needs an overseas network from China."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 500000,
+        "license": {
+          "spdx": "custom",
+          "name": "xAI Enterprise Terms of Service",
+          "url": "https://x.ai/legal/terms-of-service-enterprise",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "proxy-required",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "xai"
+          },
+          "models": [
+            {
+              "id": "grok-4.7",
+              "name": "Grok 4.7",
+              "contextWindow": 500000,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "grok-4.3",
+              "name": "Grok 4.3",
+              "contextWindow": 1000000,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "mid",
+          "credentialLabel": {
+            "zh-CN": "xAI API 密钥",
+            "en": "xAI API key"
+          },
+          "signupUrl": "https://console.x.ai"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://x.ai/legal/terms-of-service-enterprise"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.kimi",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "kimi",
+        "title": {
+          "zh-CN": "Kimi（Moonshot）",
+          "en": "Kimi (Moonshot)"
+        },
+        "summary": {
+          "zh-CN": "月之暗面 Kimi 开放平台，国内直连，长上下文，适合长文档与编程。",
+          "en": "Moonshot Kimi platform: reachable directly in China, long context, good for long documents and coding."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 1048576,
+        "license": {
+          "spdx": "custom",
+          "name": "Kimi 开放平台服务协议",
+          "url": "https://platform.kimi.com/docs/agreement/modeluse",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "moonshotai-cn"
+          },
+          "models": [
+            {
+              "id": "kimi-k3",
+              "name": "Kimi K3",
+              "contextWindow": 1048576,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "kimi-k2.6",
+              "name": "Kimi K2.6",
+              "contextWindow": 262144,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "mid",
+          "credentialLabel": {
+            "zh-CN": "Moonshot API 密钥",
+            "en": "Moonshot API key"
+          },
+          "signupUrl": "https://platform.kimi.com"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://platform.kimi.com/docs/agreement/modeluse"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.local.deepseek-r1",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "deepseek-r1-local",
+        "title": {
+          "zh-CN": "DeepSeek-R1（本机）",
+          "en": "DeepSeek-R1 (local)"
+        },
+        "summary": {
+          "zh-CN": "DeepSeek-R1 推理模型的 Qwen2.5 蒸馏版，经 Ollama 在本机运行；7B / 14B 两档，长思维链推理。",
+          "en": "Qwen2.5-distilled DeepSeek-R1 reasoning models running locally via Ollama; 7B / 14B sizes with long chain-of-thought."
+        },
+        "capabilities": {
+          "tools": false,
+          "vision": false,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 131072,
+        "license": {
+          "spdx": "MIT",
+          "name": "MIT License",
+          "url": "https://opensource.org/license/mit",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+            "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+          },
+          {
+            "zh-CN": "权重按 MIT 发布；7B / 14B 的基座为 Qwen2.5（Apache-2.0），基座许可同样适用。",
+            "en": "Weights are released under MIT; the 7B / 14B bases are Qwen2.5 (Apache-2.0) and that base license also applies."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "local-general",
+        "cloud": null,
+        "local": {
+          "runtime": "ollama"
+        },
+        "variants": [
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 4683075440,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "deepseek-r1:7b",
+                "digest": "sha256:755ced02ce7befdb13b7ca74e1e4d08cddba4986afdb63a480f2c93d3140383f"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 8,
+              "recommendedRamGb": 16,
+              "vramGb": null
+            },
+            "models": {
+              "id": "deepseek-r1:7b",
+              "contextWindow": 131072,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          },
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 8988112209,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "deepseek-r1:14b",
+                "digest": "sha256:c333b7232bdb521236694ffbb5f5a6b11cc45d98e9142c73123b670fca400b09"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 16,
+              "recommendedRamGb": 32,
+              "vramGb": null
+            },
+            "models": {
+              "id": "deepseek-r1:14b",
+              "contextWindow": 131072,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          }
+        ]
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "MIT",
+        "files": [],
+        "url": "https://opensource.org/license/mit"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+            "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "ollama"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.local.gemma3",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "gemma3-local",
+        "title": {
+          "zh-CN": "Gemma 3（本机）",
+          "en": "Gemma 3 (local)"
+        },
+        "summary": {
+          "zh-CN": "Google Gemma 3 开源多模态模型，经 Ollama 在本机运行；4B / 12B 两档，支持图片输入，128K 上下文。",
+          "en": "Google's open-weight multimodal Gemma 3 running locally via Ollama; 4B / 12B sizes with image input and 128K context."
+        },
+        "capabilities": {
+          "tools": false,
+          "vision": true,
+          "reasoning": false,
+          "structured": false
+        },
+        "contextWindow": 131072,
+        "license": {
+          "spdx": "custom",
+          "name": "Gemma Terms of Use",
+          "url": "https://ai.google.dev/gemma/terms",
+          "tier": "restricted",
+          "restrictions": [
+            {
+              "zh-CN": "Gemma 使用条款与禁止使用政策适用；再分发须附带条款。",
+              "en": "The Gemma Terms of Use and Prohibited Use Policy apply; redistribution must include the terms."
+            }
+          ]
+        },
+        "cnReachable": "direct",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+            "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "local-general",
+        "cloud": null,
+        "local": {
+          "runtime": "ollama"
+        },
+        "variants": [
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 3338801804,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "gemma3:4b",
+                "digest": "sha256:a2af6cc3eb7fa8be8504abaf9b04e88f17a119ec3f04a3addf55f92841195f5a"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 8,
+              "recommendedRamGb": 16,
+              "vramGb": null
+            },
+            "models": {
+              "id": "gemma3:4b",
+              "contextWindow": 131072,
+              "maxTokens": 8192,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          },
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 8149190253,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "gemma3:12b",
+                "digest": "sha256:f4031aab637d1ffa37b42570452ae0e4fad0314754d17ded67322e4b95836f8a"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 16,
+              "recommendedRamGb": 32,
+              "vramGb": null
+            },
+            "models": {
+              "id": "gemma3:12b",
+              "contextWindow": 131072,
+              "maxTokens": 8192,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          }
+        ]
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://ai.google.dev/gemma/terms"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+            "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "ollama"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.local.llama3.1",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "llama3-1-local",
+        "title": {
+          "zh-CN": "Llama 3.1（本机）",
+          "en": "Llama 3.1 (local)"
+        },
+        "summary": {
+          "zh-CN": "Meta Llama 3.1 8B 指令模型，经 Ollama 在本机运行；128K 上下文，支持工具调用。",
+          "en": "Meta Llama 3.1 8B instruct running locally via Ollama; 128K context with tool calling."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": false,
+          "reasoning": false,
+          "structured": true
+        },
+        "contextWindow": 131072,
+        "license": {
+          "spdx": "custom",
+          "name": "Llama 3.1 Community License",
+          "url": "https://www.llama.com/llama3_1/license/",
+          "tier": "restricted",
+          "restrictions": [
+            {
+              "zh-CN": "Llama 3.1 社区许可：须署名“Built with Llama”；月活超 7 亿须另行申请许可。",
+              "en": "Llama 3.1 Community License: attribution “Built with Llama” is required; over 700M monthly active users needs a separate license from Meta."
+            }
+          ]
+        },
+        "cnReachable": "direct",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+            "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "local-general",
+        "cloud": null,
+        "local": {
+          "runtime": "ollama"
+        },
+        "variants": [
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 4920753328,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "llama3.1:8b",
+                "digest": "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 8,
+              "recommendedRamGb": 16,
+              "vramGb": null
+            },
+            "models": {
+              "id": "llama3.1:8b",
+              "contextWindow": 131072,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          }
+        ]
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://www.llama.com/llama3_1/license/"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+            "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "ollama"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.local.phi4",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "phi4-local",
+        "title": {
+          "zh-CN": "Phi-4（本机）",
+          "en": "Phi-4 (local)"
+        },
+        "summary": {
+          "zh-CN": "Microsoft Phi-4 14B 小模型，经 Ollama 在本机运行；数学与推理见长，16K 上下文。",
+          "en": "Microsoft Phi-4 14B running locally via Ollama; strong at math and reasoning, 16K context."
+        },
+        "capabilities": {
+          "tools": false,
+          "vision": false,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 16384,
+        "license": {
+          "spdx": "MIT",
+          "name": "MIT License",
+          "url": "https://opensource.org/license/mit",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+            "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "local-general",
+        "cloud": null,
+        "local": {
+          "runtime": "ollama"
+        },
+        "variants": [
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 9053116391,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "phi4:14b",
+                "digest": "sha256:ac896e5b8b34a1f4efa7b14d7520725140d5512484457fab45d2a4ea14c69dba"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 16,
+              "recommendedRamGb": 32,
+              "vramGb": null
+            },
+            "models": {
+              "id": "phi4:14b",
+              "contextWindow": 16384,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          }
+        ]
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "MIT",
+        "files": [],
+        "url": "https://opensource.org/license/mit"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+            "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "ollama"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.local.qwen3",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "qwen3-local",
+        "title": {
+          "zh-CN": "Qwen3（本机）",
+          "en": "Qwen3 (local)"
+        },
+        "summary": {
+          "zh-CN": "通义千问 Qwen3 开源模型，经 Ollama 在本机运行；4B / 8B / 14B 三档，支持工具调用与思考模式。",
+          "en": "Open-weight Qwen3 running locally via Ollama; 4B / 8B / 14B sizes with tool calling and thinking mode."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": false,
+          "reasoning": true,
+          "structured": true
+        },
+        "contextWindow": 40960,
+        "license": {
+          "spdx": "Apache-2.0",
+          "name": "Apache License 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "体积为 registry.ollama.ai 清单各层字节之和（Q4_K_M），内存为约值，以 Ollama /api/show 为准；实验状态，通过本地模型规格 M8 后转为支持。",
+            "en": "Size is the byte total of the layers listed by registry.ollama.ai (Q4_K_M); RAM figures are estimates and Ollama /api/show is authoritative. Experimental until M8 of the local-model spec passes."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "local-general",
+        "cloud": null,
+        "local": {
+          "runtime": "ollama"
+        },
+        "variants": [
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 2497293931,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "qwen3:4b",
+                "digest": "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 8,
+              "recommendedRamGb": 16,
+              "vramGb": null
+            },
+            "models": {
+              "id": "qwen3:4b",
+              "contextWindow": 40960,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          },
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 5225388164,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "qwen3:8b",
+                "digest": "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 16,
+              "recommendedRamGb": 16,
+              "vramGb": null
+            },
+            "models": {
+              "id": "qwen3:8b",
+              "contextWindow": 40960,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          },
+          {
+            "quant": "Q4_K_M",
+            "format": "gguf",
+            "sizeBytes": 9276198565,
+            "sources": [
+              {
+                "kind": "ollama",
+                "name": "qwen3:14b",
+                "digest": "sha256:bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8"
+              }
+            ],
+            "hardware": {
+              "minRamGb": 16,
+              "recommendedRamGb": 32,
+              "vramGb": null
+            },
+            "models": {
+              "id": "qwen3:14b",
+              "contextWindow": 40960,
+              "maxTokens": 8192,
+              "input": [
+                "text"
+              ]
+            }
+          }
+        ]
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "Apache-2.0",
+        "files": [],
+        "url": "https://www.apache.org/licenses/LICENSE-2.0"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要本机已安装并运行 Ollama；拉取权重需联网，使用不需。",
+            "en": "Requires Ollama installed and running on this machine; pulling weights needs network, using them does not."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "ollama"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.minimax",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.1",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "minimax",
+        "title": {
+          "zh-CN": "MiniMax",
+          "en": "MiniMax"
+        },
+        "summary": {
+          "zh-CN": "MiniMax 开放平台国内站，国内直连，长上下文，适合 Agent 与工具调用。",
+          "en": "MiniMax platform (China site): reachable directly in China, long context, suited to agents and tool calling."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": false,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 1000000,
+        "license": {
+          "spdx": "custom",
+          "name": "MiniMax 开放平台用户协议",
+          "url": "https://platform.minimaxi.com/protocol/user-agreement",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-10-07 按 MiniMax 官方资料核实服务地址与模型名。",
+            "en": "Service address and model ids verified against MiniMax's official materials on 2026-10-07."
+          },
+          {
+            "zh-CN": "请按 Anthropic 兼容接口接入，思考过程与回复正文分开显示；经 OpenAI 兼容接口接入时，思考原文会混在回复里。MiniMax-M3 在该接口默认不开启思考。",
+            "en": "Connect through the Anthropic-compatible API so the model's reasoning is shown apart from the reply; through the OpenAI-compatible API, raw reasoning is mixed into the reply. MiniMax-M3 does not think by default on this API."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "custom",
+            "api": "anthropic-messages",
+            "baseURL": "https://api.minimax.cn/anthropic"
+          },
+          "models": [
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax-M3",
+              "contextWindow": 1000000,
+              "maxTokens": null,
+              "input": [
+                "text"
+              ]
+            },
+            {
+              "id": "MiniMax-M2.7",
+              "name": "MiniMax-M2.7",
+              "contextWindow": 204800,
+              "maxTokens": null,
+              "input": [
+                "text"
+              ]
+            }
+          ],
+          "priceBand": "low",
+          "credentialLabel": {
+            "zh-CN": "MiniMax API 密钥",
+            "en": "MiniMax API key"
+          },
+          "signupUrl": "https://platform.minimax.cn"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://platform.minimaxi.com/protocol/user-agreement"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-10-07",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.openai",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "openai",
+        "title": {
+          "zh-CN": "OpenAI",
+          "en": "OpenAI"
+        },
+        "summary": {
+          "zh-CN": "OpenAI 官方 API（GPT 系列）；国内需海外网络。",
+          "en": "OpenAI official API (GPT models); needs an overseas network from China."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": true
+        },
+        "contextWindow": 1050000,
+        "license": {
+          "spdx": "custom",
+          "name": "OpenAI Services Agreement",
+          "url": "https://openai.com/policies/services-agreement/",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "proxy-required",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "openai"
+          },
+          "models": [
+            {
+              "id": "gpt-6-astra",
+              "name": "GPT-6 Astra",
+              "contextWindow": 1050000,
+              "maxTokens": 128000,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "gpt-6-sol",
+              "name": "GPT-6 Sol",
+              "contextWindow": 1050000,
+              "maxTokens": 128000,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "gpt-6-luna",
+              "name": "GPT-6 Luna",
+              "contextWindow": 1050000,
+              "maxTokens": 128000,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "high",
+          "credentialLabel": {
+            "zh-CN": "OpenAI API 密钥",
+            "en": "OpenAI API key"
+          },
+          "signupUrl": "https://platform.openai.com"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://openai.com/policies/services-agreement/"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.openrouter",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "openrouter",
+        "title": {
+          "zh-CN": "OpenRouter（聚合）",
+          "en": "OpenRouter (aggregator)"
+        },
+        "summary": {
+          "zh-CN": "一个密钥接入数百个模型的聚合服务，价格与许可随所选模型；国内需海外网络。",
+          "en": "One key for hundreds of models; price and terms follow the model you pick. Needs an overseas network from China."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": true
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "custom",
+          "name": "OpenRouter Terms of Service",
+          "url": "https://openrouter.ai/terms",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "proxy-required",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          },
+          {
+            "zh-CN": "聚合服务：各模型另受其提供方条款约束，能力与价格以所选模型为准。",
+            "en": "Aggregator: each model is also bound by its provider terms; capabilities and prices follow the chosen model."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "openrouter"
+          },
+          "models": [
+            {
+              "id": "openrouter/auto",
+              "name": "OpenRouter Auto",
+              "contextWindow": null,
+              "maxTokens": null,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": null,
+          "credentialLabel": {
+            "zh-CN": "OpenRouter API 密钥",
+            "en": "OpenRouter API key"
+          },
+          "signupUrl": "https://openrouter.ai"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://openrouter.ai/terms"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.qwen",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "qwen",
+        "title": {
+          "zh-CN": "通义千问（百炼）",
+          "en": "Qwen (Model Studio)"
+        },
+        "summary": {
+          "zh-CN": "阿里云百炼的通义千问系列，国内直连；本预设使用百炼 Token Plan 服务地址。",
+          "en": "Alibaba Cloud Model Studio Qwen models, reachable directly in China; this preset uses the Model Studio Token Plan service address."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": 1000000,
+        "license": {
+          "spdx": "custom",
+          "name": "阿里云百炼服务协议",
+          "url": "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          },
+          {
+            "zh-CN": "此预设需要百炼 Token Plan 专属密钥（sk-sp- 开头），与按量付费密钥不能混用；按量付费请在 设置 · 模型 添加 OpenAI 兼容服务，地址含你自己的业务空间 ID，见百炼文档。",
+            "en": "This preset needs a Model Studio Token Plan key (starts with sk-sp-), which cannot be mixed with pay-as-you-go keys; for pay-as-you-go, add an OpenAI-compatible service under Settings · Models using the address with your own workspace id, as described in the Model Studio docs."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "pi-ai",
+            "id": "qwen-token-plan-cn"
+          },
+          "models": [
+            {
+              "id": "qwen3.8-max",
+              "name": "Qwen3.8 Max",
+              "contextWindow": 1000000,
+              "maxTokens": 131072,
+              "input": [
+                "text",
+                "image"
+              ]
+            },
+            {
+              "id": "qwen3.7-plus",
+              "name": "Qwen3.7 Plus",
+              "contextWindow": 1000000,
+              "maxTokens": 65536,
+              "input": [
+                "text",
+                "image"
+              ]
+            }
+          ],
+          "priceBand": "mid",
+          "credentialLabel": {
+            "zh-CN": "百炼 Token Plan API 密钥",
+            "en": "Model Studio Token Plan API key"
+          },
+          "signupUrl": "https://bailian.console.aliyun.com"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.sensevoice",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "communication"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "sensevoice-local",
+        "title": {
+          "zh-CN": "SenseVoice 本地语音",
+          "en": "SenseVoice local speech"
+        },
+        "summary": {
+          "zh-CN": "在运行 Teloa 的电脑上将语音转成输入框文字；支持中文、粤语、英语、日语和韩语。",
+          "en": "Turn speech into composer text on the computer running Teloa. Supports Mandarin, Cantonese, English, Japanese and Korean."
+        },
+        "capabilities": {
+          "tools": false,
+          "vision": false,
+          "reasoning": false,
+          "structured": false
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "LicenseRef-FunASR",
+          "name": "FunASR Model Open Source License Agreement",
+          "url": "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE",
+          "tier": "restricted",
+          "restrictions": [
+            {
+              "zh-CN": "模型权重遵循 FunASR 模型许可；源码 MIT 许可不替代权重许可，使用和再分发须保留所要求的声明。",
+              "en": "Weights follow the FunASR model license. The source-code MIT license does not replace the weight license; retain the required notices when using or redistributing the model."
+            }
+          ]
+        },
+        "cnReachable": "mirror",
+        "support": "experimental",
+        "notes": [
+          {
+            "zh-CN": "由 DSH 原生语音扩展准备和管理；使用 SenseVoiceSmall ONNX 与 Silero VAD。",
+            "en": "Prepared and managed by the native DSH speech extension using SenseVoiceSmall ONNX and Silero VAD."
+          },
+          {
+            "zh-CN": "默认 INT8 主权重约 239 MB，另有词表和 VAD；文件体积不代表运行内存。具体版本、摘要和下载进度由原生准备器核对。",
+            "en": "The default INT8 main weight is about 239 MB, plus tokens and VAD. File size is not runtime memory; the native preparer verifies versions, hashes and download progress."
+          },
+          {
+            "zh-CN": "安装位置是运行 Teloa 的电脑，不是打开网页的设备。首次准备需要下载；就绪后本地识别。停用扩展保留缓存。",
+            "en": "Installation is on the computer that runs Teloa, not the device viewing this page. Initial preparation requires a download; recognition then runs locally. Disabling the extension retains cached files."
+          }
+        ],
+        "form": "local-specialist",
+        "usage": [
+          "speech-to-text"
+        ],
+        "native": {
+          "kind": "dsh-speech",
+          "providerId": "sensevoice-local"
+        }
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "MIT",
+        "files": [],
+        "url": "https://opensource.org/license/mit"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.7",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "先启用原生「语音输入」扩展并重启 Teloa，再确认准备。原生支持目标含 macOS arm64/x64、Linux glibc arm64/x64、Windows x64；实际就绪状态以 Teloa 的检查为准。",
+            "en": "Enable the native Voice Input extension, restart Teloa, then confirm preparation. Native targets include macOS arm64/x64, Linux glibc arm64/x64 and Windows x64; actual readiness is determined by Teloa's check."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": [
+          "DSH speech-to-text-sensevoice"
+        ]
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    },
+    {
+      "format": "teloa.market-catalog-entry/v1",
+      "id": "teloa.model.siliconflow",
+      "kind": "model",
+      "delivery": "reference",
+      "version": "1.0.0",
+      "upstream": null,
+      "taxonomy": {
+        "functions": [
+          "other"
+        ],
+        "industries": [
+          "general"
+        ]
+      },
+      "model": {
+        "modelId": "siliconflow",
+        "title": {
+          "zh-CN": "硅基流动（聚合）",
+          "en": "SiliconFlow (aggregator)"
+        },
+        "summary": {
+          "zh-CN": "国内模型聚合平台，一个密钥调用多家开源与商用模型，国内直连。",
+          "en": "Model aggregator in China: one key for many open and commercial models, reachable directly in China."
+        },
+        "capabilities": {
+          "tools": true,
+          "vision": false,
+          "reasoning": true,
+          "structured": false
+        },
+        "contextWindow": null,
+        "license": {
+          "spdx": "custom",
+          "name": "硅基流动用户协议",
+          "url": "https://docs.siliconflow.cn/cn/legals/terms-of-service",
+          "tier": "commercial",
+          "restrictions": []
+        },
+        "cnReachable": "direct",
+        "support": "supported",
+        "notes": [
+          {
+            "zh-CN": "2026-09-26 按官方文档核实服务地址与模型名。",
+            "en": "Service address and model ids verified against official docs on 2026-09-26."
+          },
+          {
+            "zh-CN": "聚合服务：各模型另受其许可约束，能力与价格以所选模型为准。",
+            "en": "Aggregator: each model keeps its own license; capabilities and prices follow the chosen model."
+          }
+        ],
+        "usage": [
+          "chat"
+        ],
+        "form": "cloud",
+        "cloud": {
+          "provider": {
+            "kind": "custom",
+            "api": "openai-completions",
+            "baseURL": "https://api.siliconflow.cn/v1"
+          },
+          "models": [
+            {
+              "id": "Pro/deepseek-ai/DeepSeek-R1",
+              "name": "DeepSeek-R1 (Pro)",
+              "contextWindow": null,
+              "maxTokens": null,
+              "input": [
+                "text"
+              ]
+            }
+          ],
+          "priceBand": null,
+          "credentialLabel": {
+            "zh-CN": "硅基流动 API 密钥",
+            "en": "SiliconFlow API key"
+          },
+          "signupUrl": "https://cloud.siliconflow.cn"
+        },
+        "local": null,
+        "variants": null
+      },
+      "modifications": [],
+      "license": {
+        "spdx": "custom",
+        "files": [],
+        "url": "https://docs.siliconflow.cn/cn/legals/terms-of-service"
+      },
+      "compatibility": {
+        "status": "needs-configuration",
+        "teloa": ">=0.2.0-alpha.6",
+        "dsh": "0.1.7-rc.1",
+        "conditions": [
+          {
+            "zh-CN": "需要你在 设置 · 模型 自行填写密钥；目录不含任何凭据。",
+            "en": "You enter your own API key under Settings · Models; the catalog carries no credentials."
+          }
+        ]
+      },
+      "requires": {
+        "tools": [],
+        "network": true,
+        "runtimes": []
+      },
+      "review": {
+        "status": "approved",
+        "reviewedAt": "2026-09-26",
+        "reviewer": "Teloa"
+      }
+    }
+  ]
+}

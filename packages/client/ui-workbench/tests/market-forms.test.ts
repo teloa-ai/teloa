@@ -17,33 +17,33 @@ function mountForms(){
  return mount('MarketForms.tsx',{'./i18n/provider.js':realI18n})
 }
 
-test('市场导入弹层标题统一为「导入」（aria-label 与 h2 逐字一致）',()=>{
+test('市场导入弹层标题统一为「导入模板」（aria-label 与 h2 逐字一致）',()=>{
  const forms=mountForms()
  const tree=forms.render('MarketImportForm',{githubSourceApi,items:[],mode:'upload',close:()=>{},save:()=>{},saveMany:()=>{}})
  const dialog=nodes(tree).find(node=>node.type==='dialog')!
- assert.equal(dialog.props['aria-label'],'导入')
+ assert.equal(dialog.props['aria-label'],'导入模板')
  const h2=nodes(tree).find(node=>node.type==='h2')!
- assert.deepEqual(h2.children,['导入'])
+ assert.deepEqual(h2.children,['导入模板'])
 })
 
-test('市场导入弹层四个页签逐字使用原型文案',()=>{
- const forms=mountForms()
- const tree=forms.render('MarketImportForm',{githubSourceApi,items:[],mode:'upload',close:()=>{},save:()=>{},saveMany:()=>{}})
- const tabs=nodes(tree).filter(node=>node.type==='button'&&Object.hasOwn(node.props,'aria-pressed'))
- assert.deepEqual(tabs.map(tab=>tab.children[0]),['上传行业模板','粘贴清单','从 GitHub 获取','会话创建'])
+// N30：导入只保留文件 / 粘贴 / GitHub 三个轻量页签；自然语言创建由市场单独入口以 conversation 打开，不与导入同排。
+test('市场导入只有文件、粘贴与 GitHub 三个页签，自然语言创建单独打开',()=>{
+ const forms=mountForms(),tabs=(mode:string)=>nodes(forms.render('MarketImportForm',{githubSourceApi,items:[],mode,close:()=>{},save:()=>{},saveMany:()=>{}})).filter(node=>node.type==='button'&&Object.hasOwn(node.props,'aria-pressed'))
+ assert.deepEqual(tabs('upload').map(tab=>tab.children.filter((child:unknown)=>typeof child==='string').join('')),['market.forms.upload','market.forms.paste','market.forms.githubTab'].map(key=>translateMessage('zh-CN',key as never)))
+ assert.deepEqual(tabs('conversation'),[])
 })
 
-test('上传分支出现原型的 JSON 清单读取校验说明',()=>{
+test('上传分支保留支持格式的按需说明',()=>{
  const forms=mountForms()
  const tree=forms.render('MarketImportForm',{githubSourceApi,items:[],mode:'upload',close:()=>{},save:()=>{},saveMany:()=>{}})
- assert.ok(texts(tree).includes('JSON 清单会在本页读取并校验，上限 1 MiB。归档包先保留来源，待 Teloa 解包核验。'))
+ assert.ok(texts(tree).includes('支持 ZIP、JSON 和 recipe.json。'))
 })
 
 for(const mode of ['upload','paste','github','conversation'] as const){
- test(`${mode} 模式底部出现「默认保存在本人草案」说明`,()=>{
+ test(`${mode} 模式保留本人模板与不自动安装授权的按需说明`,()=>{
   const forms=mountForms()
   const tree=forms.render('MarketImportForm',{githubSourceApi,items:[],mode,close:()=>{},save:()=>{},saveMany:()=>{}})
-  assert.ok(texts(tree).includes('默认保存在本人草案。读取清单不会执行包内代码，或安装技能、连接和扩展。'),`${mode} 模式缺少该说明`)
+  assert.ok(texts(tree).includes('仅保存到你的模板，不会自动安装或授权。'),`${mode} 模式缺少该说明`)
  })
 }
 
@@ -108,7 +108,7 @@ test('保存模板「保存范围」选项为「本人草案」「团队草案�
 test('市场导入与保存模板对话框不出现 market.forms.* 词条键（沿用既有守卫口径）',()=>{
  const forms=mountForms()
  const importTree=forms.render('MarketImportForm',{githubSourceApi,items:[],mode:'upload',close:()=>{},save:()=>{},saveMany:()=>{}})
- const templateTree=forms.render('TemplateForm',{close:()=>{},save:()=>{}})
+ const templateTree=mountForms().render('TemplateForm',{close:()=>{},save:()=>{}})
  const leaked=[...nodes(importTree),...nodes(templateTree)].flatMap(node=>[
   ...node.children.filter((child:unknown)=>typeof child==='string') as string[],
   ...Object.values(node.props).filter((value:unknown)=>typeof value==='string') as string[],

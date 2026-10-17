@@ -3,6 +3,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,artifactContent,isRoleMemory,roleMemorySource,roleMemoryVisibility,roleSupportsScope,savedArtifactSource,taskDefinition,type DigitalRole,type RoleMemory,type RoleMemoryProposer,type RoleMemorySource,type RoleMemoryVisibility,type RoleMemoryView} from '@teloa/contract'
 import {readStoredRole} from './roles.ts'
 import {readStoredRoleMemoryView,roleMemoryViewEntries} from './role-memory-views.ts'
+import {initializeRoleExperience} from './role-experience.ts'
 
 export type RoleMemoryActor={ownerId:string;kind:'human'}|{ownerId:string;kind:'agent';roleId:string}
 export type RunRoleMemory={id:string;version:number;title:string;contentHash:string;markdown:string;source:RoleMemorySource;visibility:RoleMemoryVisibility}
@@ -103,7 +104,7 @@ export async function initializeRoleMemory(pool:Pool):Promise<void>{await pool.q
  drop trigger if exists teloa_role_memory_creations_immutable on teloa_role_memory_creations;
  create trigger teloa_role_memory_creations_immutable before update or delete on teloa_role_memory_creations for each row execute function teloa_reject_role_memory_creation_mutation();
  alter table teloa_task_runs add column if not exists role_memory jsonb not null default '[]'::jsonb;
-`)}
+`);await initializeRoleExperience(pool)}
 
 export class RoleMemoryService{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string}
@@ -282,7 +283,7 @@ export class RoleMemoryService{
  confirm(principal:RoleMemoryActor,input:unknown){return this.change(principal,input,'confirm')}
  withdraw(principal:RoleMemoryActor,input:unknown){return this.change(principal,input,'withdraw')}
  // 项目引用不改变此处范围判定；见 2026-09-25 计划 Task 3。
- async confirmedForRun(db:Pick<Pool,'query'>,ownerId:string,target:string|RoleMemoryRunTarget,role:DigitalRole):Promise<RunRoleMemory[]>{
+ async confirmedForRun(db:Pick<Pool,'query'>,ownerId:string,target:string|RoleMemoryRunTarget,role:DigitalRole,limit=roleMemoryRunLimit):Promise<RunRoleMemory[]>{
   actor({ownerId,kind:'human'})
   const selection=typeof target==='string'?{scope:target}:target,scope=selection?.scope
   if(role.ownerId!==ownerId||typeof scope!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(scope)||!roleSupportsScope(role.scopes,scope))throw new WorkError('teloa/forbidden','运行岗位与记忆读取范围不一致。')
@@ -300,8 +301,14 @@ export class RoleMemoryService{
    if(selection.memoryViewId!==null)throw new WorkError('teloa/forbidden','共享记忆视图只用于指定群。')
   }
   const rows=(await db.query(`select * from teloa_role_memories where owner_id=$1 and role_id=$2 and state='confirmed' and visibility->>'kind'=$3 ${role.kind==='employee'?"and visibility->'scopeIds' ? $4":''} order by confirmed_at desc,candidate_at desc,id`,role.kind==='employee'?[ownerId,role.id,'role',scope]:[ownerId,role.id,'private'])).rows,result:RunRoleMemory[]=[]
-  for(const stored of rows){const memory=await this.read(db,ownerId,stored);if(!memory.sourceAvailable)continue;result.push(this.runMemory(memory));if(result.length===roleMemoryRunLimit)break}
-  return readRunRoleMemories(result)
+  for(const stored of rows){const memory=await this.read(db,ownerId,stored);if(!memory.sourceAvailable)continue;result.push(this.runMemory(memory));if(result.length===limit)break}
+  for(let offset=0;offset<result.length;offset+=roleMemoryRunLimit)readRunRoleMemories(result.slice(offset,offset+roleMemoryRunLimit))
+  return result
+ }
+ /** 经验引擎读取员工范围内的完整确认历史；不扩展分身与共享视图权限。 */
+ async confirmedForExperience(db:Pick<Pool,'query'>,ownerId:string,scope:string,role:DigitalRole):Promise<RunRoleMemory[]>{
+  if(role.kind!=='employee')throw new WorkError('teloa/forbidden','经验引擎当前仅接入员工记忆。')
+  return this.confirmedForRun(db,ownerId,scope,role,513)
  }
  private runMemory(memory:RoleMemory):RunRoleMemory{return {id:memory.id,version:memory.content.version,title:memory.title,contentHash:memory.content.contentHash,markdown:memory.content.markdown,source:memory.source,visibility:memory.visibility}}
  /** 只读取本人指定的固定项，任何撤回、改版或来源变化都会使整个视图失效。 */

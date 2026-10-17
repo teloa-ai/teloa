@@ -1,2 +1,7 @@
 # 生成的检索夹具：不在审查 diff 中展开，标为生成文件
 tests/fixtures/local-retrieval/*.json -diff linguist-generated
+# 统一差分的上下文标记是空格，后接官方源码 Tab；保留补丁字节，其余空白检查照常。
+packages/harness-dsh/compat/dsh-tool-jobs-0.2.1-alpha.1-completion-admission.patch whitespace=-space-before-tab
+packages/harness-dsh/compat/dsh-llm-0.2.1-alpha.1-stream-admission.patch whitespace=-space-before-tab
+# RC2 迁移保留官方上下文的 Tab 和空白行，不改已核验的差分摘要。
+packages/harness-dsh/compat/*0.2.1-rc.2*.patch whitespace=-space-before-tab,-blank-at-eol

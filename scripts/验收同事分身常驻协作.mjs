@@ -44,7 +44,7 @@ if(process.env.TELOA_RESIDENT_ACCEPTANCE_WORKER==='1'){
     process.send({kind:'ready',port,url:host.ctx.connection.authenticatedUrl('http://127.0.0.1:'+port+'/'),guardDiagnosticSinkReady})
    }else if(message.kind==='inspect'){
     const {events}=await host.ctx.sessionController.inspect(message.sessionId)
-    const diagnostics=events.filter(event=>event.type==='turn/end'||event.type.includes('error')||event.type==='llm/request'||message.goalDiagnostics&&(event.type.startsWith('tool/')||event.type.startsWith('goal/')||event.type==='assistant/message')).map(event=>{
+    const diagnostics=events.filter(event=>event.type==='turn/end'||event.type.includes('error')||event.type==='llm/request'||message.goalDiagnostics&&(event.type.startsWith('tool/')||event.type.startsWith('goal/')||event.type.startsWith('approval/')||event.type==='assistant/message')).map(event=>{
      if(event.type!=='assistant/message')return {type:event.type,seq:event.seq,data:event.data}
      const {stream,...data}=event.data
      return {type:event.type,seq:event.seq,data:{...data,message:{...data.message,content:data.message.content.filter(block=>block.type!=='reasoning')}}}

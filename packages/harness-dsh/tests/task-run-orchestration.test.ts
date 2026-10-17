@@ -1,3 +1,5 @@
+import {createActivationAdmissionRuntime} from '../src/subagent-activation-admission.ts'
+import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm} from 'node:fs/promises'
@@ -7,7 +9,7 @@ import {Context} from '@deepseek-ai/cordis'
 import {LlmRuntime,LlmAdapter,ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool,type ToolExecution} from '@deepseek-ai/dsh-tools'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
@@ -41,7 +43,7 @@ async function setup(t:TestContext,options:{timeoutMs?:number}={}){
  await ctx.plugin(JsonlSessionPersistence,{root:directory,compression:'none'});await ctx.plugin(LocalJobRegistry,{})
  ctx.jobs.attachController('orchestration-test')
  const adapter=new WaitingAdapter();ctx.llm.registerAdapter(['test'],adapter)
- await ctx.plugin(SubagentRuntime,{maxDepth:1,maxActiveSubagents:6});await ctx.plugin(Spawn,{providerName:'spawn'})
+ await installNativeWorkingDirectory(ctx,directory);await ctx.plugin(createActivationAdmissionRuntime(SubagentRuntime),{maxDepth:1,maxActiveSubagents:6});await ctx.plugin(Spawn,{providerName:'spawn'})
  const {agent:root}=await ctx.agents.create({sessionId:SessionId('orchestration-root'),agentOptions:{provider:'test',model:'test'}})
  const rows=new Map<string,TaskRunRuntimeLink>(),calls:Array<{kind:string;input:unknown}>=[]
  const links:TaskRunRuntimeLinks={list:async input=>[...rows.values()].filter(row=>row.runId===input.runId&&(!input.kind||row.kind===input.kind)),put:async row=>{rows.set(row.kind+':'+row.nativeId,structuredClone(row))}}
@@ -49,7 +51,7 @@ async function setup(t:TestContext,options:{timeoutMs?:number}={}){
  const delegation:SubagentDelegationPorts={limits:{maxDepth:1,maxPerRun:6},list:async()=>[],runId:async()=> 'run',reserve:async input=>{await beforeReserve();calls.push({kind:'reserve',input})},release:async input=>{calls.push({kind:'release',input})},bind:async input=>{calls.push({kind:'bind',input});await beforeBind()},settle:async input=>{calls.push({kind:'settle',input})},abandon:async input=>{calls.push({kind:'abandon',input})}}
  let policy:TaskToolPolicy|null={allowedTools:['workflow','ralph'],nativeRequestId:'native'}
  const orchestration=createTaskRunOrchestration(ctx,delegation,async()=>policy,links,options);t.after(async()=>{await orchestration.dispose()})
- const start=(schema=false,parent=root)=>ctx.subagents.start('teloa-workflow-spawn',{parent,signal:AbortSignal.timeout(5000),prompt:[{type:'text',text:'整理'}],...(schema?{outputSchema:{type:'object' as const,properties:{done:{type:'boolean' as const}},required:['done'],additionalProperties:false}}:{})})
+ const start=(schema=false,parent=root)=>ctx.subagents.startActivation({provider:'teloa-workflow-spawn',label:'test',delivery:'caller',signal:AbortSignal.timeout(5000),request:{parent,prompt:[{type:'text',text:'整理'}],...(schema?{outputSchema:{type:'object' as const,properties:{done:{type:'boolean' as const}},required:['done'],additionalProperties:false}}:{})}})
  const run={id:'run',sessionId:root.id,nativeRequestId:'native',state:'active',stopRequestedAt:null} as unknown as TaskRun
  const call=(name:string,args:Record<string,unknown>={})=>ctx.tools.execute({agent:root,name,arguments:args,callId:ToolCallId(name+'-call'),signal:AbortSignal.timeout(5000)})
  return {ctx,root,run,start,call,orchestration,calls,links,finish:()=>adapter.finish(),setPolicy:(next:TaskToolPolicy|null)=>{policy=next},policy:()=>policy!,beforeBind:(work:()=>Promise<void>)=>{beforeBind=work},beforeReserve:(work:()=>Promise<void>)=>{beforeReserve=work}}
@@ -60,9 +62,9 @@ test('官方 fresh provider 保持一套生命周期并将子运行绑定到共�
  env.ctx.on('subagent/start',info=>{events.push(info.provider)},{global:true})
  const child=await env.start()
  assert.deepEqual(events,['teloa-workflow-spawn'])
- assert.equal(child.localAgent!.session.header.parentSession,env.root.id)
+ assert.equal(env.ctx.agents.get(child.childId)!.session.header.parentSession,env.root.id)
  assert.equal(env.calls.filter(call=>call.kind==='reserve').length,1)
- assert.deepEqual(env.calls.find(call=>call.kind==='bind')?.input,{reservationId:(env.calls[0]!.input as {reservationId:string}).reservationId,childSessionId:child.id,depth:1})
+ assert.deepEqual(env.calls.find(call=>call.kind==='bind')?.input,{reservationId:(env.calls[0]!.input as {reservationId:string}).reservationId,childSessionId:child.childId,depth:1})
  assert.equal((await env.orchestration.state(env.run)).outstanding,true)
  env.finish();assert.equal((await child.result).stopReason,'completed');await child.dispose()
  assert.equal(env.calls.filter(call=>call.kind==='settle').length,1)
@@ -121,7 +123,7 @@ test('岗位无授权、累计配额拒绝及深度超限都发生在创建官�
  env.setPolicy({allowedTools:['workflow'],nativeRequestId:'native'});env.beforeReserve(async()=>{throw Error('quota reached')})
  await assert.rejects(env.start(),/quota reached/);assert.equal(events.length,0)
  env.beforeReserve(async()=>{});const child=await env.start()
- await assert.rejects(env.start(false,child.localAgent!),/层数/)
+ await assert.rejects(env.start(false,env.ctx.agents.get(child.childId)!),/层数/)
  assert.equal(events.length,1)
  await child.dispose()
 })
@@ -138,7 +140,7 @@ test('绑定失败撤回已发布 child 并保守保留 abandoned 配额',async 
 
 test('停止也取消尚未发布身份的官方 startup，不等待原始工具长超时',async t=>{
  const env=await setup(t),entered=deferred(),provider=env.ctx.subagents.getProvider('spawn')!
- provider.start=async request=>{
+ provider.prepareContinuable=async request=>{
   entered.resolve()
   await new Promise<void>((_,reject)=>request.signal.addEventListener('abort',()=>reject(Error('startup aborted')),{once:true}))
   throw Error('unreachable')
@@ -154,24 +156,24 @@ test('普通会话委托官方 spawn，仍不冒充业务 Run 或写岗位配额
  const env=await setup(t);env.setPolicy(null)
  const child=await env.start(true)
  assert.equal(env.calls.length,0)
- assert.equal(env.orchestration.ownsStructuredOutput({name:'structured_output',agent:child.localAgent} as ToolExecution),false)
+ assert.equal(env.orchestration.ownsStructuredOutput({name:'structured_output',agent:env.ctx.agents.get(child.childId)} as ToolExecution),false)
  await child.dispose()
 })
 
 test('原生 descriptor 声明受管 provider 的孤儿 child 不回退旧子工具授权',async t=>{
  const env=await setup(t);env.setPolicy(null)
- const orphan=await env.start(),legacy=await env.ctx.subagents.start('spawn',{parent:env.root,signal:AbortSignal.timeout(5000),prompt:[]})
+ const orphan=await env.start(),legacy=await env.ctx.subagents.startActivation({provider:'spawn',label:'legacy',delivery:'caller',signal:AbortSignal.timeout(5000),request:{parent:env.root,prompt:[]}})
  await new Promise(resolve=>setImmediate(resolve))
  const policy={allowedTools:['workflow'],nativeRequestId:'native'}
- await assert.rejects(env.orchestration.authorizeChild(orphan.localAgent!,policy,AbortSignal.timeout(5000)),/未登记/)
- assert.equal(await env.orchestration.authorizeChild(legacy.localAgent!,policy,AbortSignal.timeout(5000)),false)
+ await assert.rejects(env.orchestration.authorizeChild(env.ctx.agents.get(orphan.childId)!,policy,AbortSignal.timeout(5000)),/未登记/)
+ assert.equal(await env.orchestration.authorizeChild(env.ctx.agents.get(legacy.childId)!,policy,AbortSignal.timeout(5000)),false)
  await orphan.dispose();await legacy.dispose()
 })
 
 test('旧宿主世代禁止重新派发；停止后精确 child 授权失效',async t=>{
  const env=await setup(t),child=await env.start()
  env.setPolicy({...env.policy(),stopRequested:true})
- await assert.rejects(env.orchestration.authorizeChild(child.localAgent!,env.policy(),AbortSignal.timeout(5000)),/停止/)
+ await assert.rejects(env.orchestration.authorizeChild(env.ctx.agents.get(child.childId)!,env.policy(),AbortSignal.timeout(5000)),/停止/)
  env.setPolicy({allowedTools:['workflow'],nativeRequestId:'native'})
  await env.links.put({runId:'run',kind:'job',nativeId:'owner:old:root',sessionId:env.root.id,payload:{record:'owner',runtimeId:'old',requestId:'native'}})
  await assert.rejects(env.start(),/重启/)
@@ -210,4 +212,15 @@ test('后台 workflow 返回后保留耗时约束，只取消此次返回的 own
  const result=await env.call('workflow');assert.equal(result.isError,false)
  await new Promise(resolve=>setTimeout(resolve,80))
  assert.equal(ownedCancelled,true);assert.equal(foreignCancelled,false)
+})
+
+
+test('activation 已受理后 caller 取消仍实际释放子级且只结算一次',async t=>{
+ const env=await setup(t),abort=new AbortController()
+ const child=await env.ctx.subagents.startActivation({provider:'teloa-workflow-spawn',label:'cancel',delivery:'caller',signal:abort.signal,request:{parent:env.root,prompt:[{type:'text',text:'等待取消'}]}})
+ assert.ok(env.ctx.agents.get(child.childId));abort.abort(Error('caller stopped'))
+ assert.equal((await child.result).stopReason,'aborted');await child.dispose()
+ assert.equal(env.ctx.agents.get(child.childId),undefined)
+ assert.equal(env.calls.filter(call=>call.kind==='settle').length,1)
+ assert.equal(env.calls.filter(call=>call.kind==='abandon').length,0)
 })

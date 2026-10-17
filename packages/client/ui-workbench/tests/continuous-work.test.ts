@@ -5,8 +5,9 @@ import { withRoleExamples } from '../src/client/role-preview.ts'
 import { changeTeamPreview } from '../src/client/team-preview.ts'
 import { changeContinuousWork, withContinuousExamples } from '../src/client/continuous-work.ts'
 import { planBlock, continuousAttention, visiblePlanRuns } from '../src/client/continuous-preview.ts'
+import { withLegacySecurityScopes } from './fixtures/legacy-security-scopes.ts'
 const now='2026-09-11T04:30:00Z'
-const base=()=>withContinuousExamples({...emptyTaskPreview(),roles:withRoleExamples([],now)},now)
+const base=()=>withContinuousExamples({...withLegacySecurityScopes(emptyTaskPreview()),roles:withRoleExamples([],now)},now)
 const planId='plan-soc-daily'
 const command=(state:ReturnType<typeof base>,operation:Record<string,unknown>)=>changeContinuousWork(state,{now,...operation} as Parameters<typeof changeContinuousWork>[1])
 const enable=(state:ReturnType<typeof base>)=>command(state,{type:'enabled',planId,expectedRevision:state.continuous.plans.find(plan=>plan.id===planId)!.revision,enabled:true})
@@ -74,8 +75,8 @@ test('触发配置校验、修订冲突和不具备资格的岗位不能绕过',
   assert.throws(()=>command(state,{type:'save',id:plan.id,expectedRevision:99,fields:plan.fields}),/修订/)
   assert.throws(()=>command(state,{type:'save',id:'bad',fields:{...plan.fields,trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'27:01',timezone:'UTC'}}}),/日程/)
   assert.throws(()=>command(state,{type:'save',id:'bad',fields:{...plan.fields,trigger:{kind:'event',source:'',event:'更新'}}}),/来源/)
-  assert.throws(()=>command(state,{type:'save',id:'bad',fields:{...plan.fields,roleId:'twin'}}),/员工/)
-  assert.throws(()=>command(state,{type:'save',id:'bad',fields:{...plan.fields,roleId:'researcher'}}),/员工/)
+  assert.throws(()=>command(state,{type:'save',id:'bad',fields:{...plan.fields,roleId:'twin'}}),/同业务在岗且已获本人执行授权的同事或分身/)
+  assert.throws(()=>command(state,{type:'save',id:'bad',fields:{...plan.fields,roleId:'researcher'}}),/同业务在岗且已获本人执行授权的同事或分身/)
 })
 test('主动交办结果才创建同一普通任务，保留计划与执行来源',()=>{
   let state=fire(enable(base()))

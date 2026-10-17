@@ -2,7 +2,18 @@ import { WorkError } from './work-error.ts'
 import {readModelReference,sameModelRoute,type ModelReference,type TaskRunModelPolicy} from './model-policy.ts'
 export type RoleResponsibility={triggers:string[];autonomousActions:string[];confirmationPoints:string[];escalationRules:string[];deliveryChecks:string[]}
 export type RoleRuntimeConfig={agentPresetId?:string;model?:ModelReference;fallbackModel?:ModelReference}
-export type RoleDefinition={name:string;kind:'employee'|'twin';scopes:string[];duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig}
+import {ROLE_AVATAR_KEYS} from './role-avatars.mjs'
+export {ROLE_AVATAR_KEYS} from './role-avatars.mjs'
+export type RoleAvatarKey = typeof ROLE_AVATAR_KEYS[number]
+export type RoleProfile={name:string;avatarKey?:RoleAvatarKey}
+/** 身份展示字段独立于岗位执行定义，不授予或撤销工作能力。 */
+export function readRoleProfile(value:unknown):RoleProfile{
+ const row=roleInput(value,['name','avatarKey'])
+ if(typeof row.name!=='string'||!row.name.trim()||row.name.length>80||row.avatarKey!==undefined&&!ROLE_AVATAR_KEYS.includes(row.avatarKey as RoleAvatarKey))throw new WorkError('teloa/invalid-input','员工姓名或头像不合法。')
+ return {name:row.name.trim(),...(row.avatarKey===undefined?{}:{avatarKey:row.avatarKey as RoleAvatarKey})}
+}
+export type RoleDefinition={avatarKey?:RoleAvatarKey;name:string;kind:'employee'|'twin';scopes:string[];duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig}
+export const roleKnowledgeMaxReferences=30
 export type WritableRoleDefinition=RoleDefinition&{responsibility:RoleResponsibility}
 /** 能力名称是声明；不代表已安装、可用或获得授权。 */
 export type DigitalRole=RoleDefinition&{id:string;ownerId:string;version:number;state:'active'|'paused'|'retired';createdAt:string;updatedAt:string}
@@ -24,14 +35,15 @@ export function assertRoleModelPolicy(runtime:RoleRuntimeConfig|undefined,policy
  if(runtime?.model&&JSON.stringify(runtime.model)!==JSON.stringify(policy.primary)||runtime?.fallbackModel&&JSON.stringify(runtime.fallbackModel)!==JSON.stringify(policy.fallback))throw new WorkError('teloa/invalid-input','任务模型与员工明确选择不一致。')
 }
 export function roleDefinition(value:unknown):RoleDefinition{
- const row=roleInput(value,['name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig'])
+ const row=roleInput(value,['name','kind','scopes','duty','dataScope','executionScope','skills','knowledge','responsibility','runtimeConfig','avatarKey'])
  const fail=():never=>{throw new WorkError('teloa/invalid-input','员工职责、范围或能力声明不合法。')}
  const text=(v:unknown,max:number):string=>typeof v==='string'&&v.trim().length>0&&v.length<=max?v.trim():fail()
- const list=(v:unknown,ids=false):string[]=>{
-  if(!Array.isArray(v)||v.length>30||(ids&&!v.length))return fail()
+ const list=(v:unknown,ids=false,max=30):string[]=>{
+  if(!Array.isArray(v)||v.length>max||(ids&&!v.length))return fail()
   const items=v.map(item=>text(item,128));if(ids&&items.some(item=>!/^[-a-zA-Z0-9_]+$/.test(item)))return fail()
   return [...new Set(items)]
  }
+ if(row.avatarKey!==undefined&&!ROLE_AVATAR_KEYS.includes(row.avatarKey as RoleAvatarKey))return fail()
  if(row.kind!=='employee'&&row.kind!=='twin')return fail()
  let responsibility:RoleResponsibility|undefined
  if(row.responsibility!==undefined){
@@ -46,7 +58,7 @@ export function roleDefinition(value:unknown):RoleDefinition{
  if(row.runtimeConfig!==undefined){
   runtimeConfig=readRoleRuntimeConfig(row.runtimeConfig)
  }
- return {name:text(row.name,80),kind:row.kind,scopes:list(row.scopes,true),duty:text(row.duty,4000),dataScope:text(row.dataScope,4000),executionScope:text(row.executionScope,4000),skills:list(row.skills),knowledge:list(row.knowledge),...(responsibility?{responsibility}:{}),...(runtimeConfig?{runtimeConfig}:{})}
+ return {...(row.avatarKey===undefined?{}:{avatarKey:row.avatarKey as RoleAvatarKey}),name:text(row.name,80),kind:row.kind,scopes:list(row.scopes,true),duty:text(row.duty,4000),dataScope:text(row.dataScope,4000),executionScope:text(row.executionScope,4000),skills:list(row.skills),knowledge:list(row.knowledge,false,roleKnowledgeMaxReferences),...(responsibility?{responsibility}:{}),...(runtimeConfig?{runtimeConfig}:{})}
 }
 /** 新建和编辑必须显式提交完整职责；运行配置允许保持未固定。 */
 export function roleWriteDefinition(value:unknown):WritableRoleDefinition{

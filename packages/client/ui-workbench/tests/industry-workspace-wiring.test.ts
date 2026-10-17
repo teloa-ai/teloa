@@ -30,9 +30,11 @@ test('业务空间数据页和执行页各自呈现真实加载声明',()=>{
 })
 
 test('工作台把同一真实加载目录传给团队能力和业务空间',()=>{
- assert.match(frame,/<TeamCapabilitiesPage\b/)
+ // 我的资源并入市场「已添加」：同一份真实加载目录经 MarketPage 的 mine 属性传入
+ assert.match(frame,/mine=\{\{[^\n]*industryLoads:savedIndustryLoads/)
  assert.match(frame,/<BusinessPage\b/)
- assert.equal(frame.match(/industryLoads=\{savedIndustryLoads\}/g)?.length,2)
+ assert.equal(frame.match(/industryLoads=\{savedIndustryLoads\}/g)?.length,1)
+ assert.equal(frame.match(/industryLoads:savedIndustryLoads/g)?.length,1)
 })
 
 test('业务概览先呈现真实状态与能力绑定，模板来源只保留紧凑摘要',()=>{

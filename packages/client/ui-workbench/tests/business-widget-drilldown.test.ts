@@ -161,6 +161,7 @@ test('台账：读取带上 match，清单提示条「看全部」清掉 match �
  const api=await import('../src/client/business-ledger-api.ts')
  const ledgerModule=load('BusinessLedger.tsx',{
   './business-ledger-api.js':api,
+  './ContextDrawer.js':{ContextDrawer:({children}:any)=>React.createElement('dialog',null,children)},
   './business-definition-localization.js':await import('../src/client/business-definition-localization.ts'),
   './business-customization-presentation.js':await import('../src/client/business-customization-presentation.ts'),
  })

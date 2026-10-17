@@ -1,0 +1,26 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-llm-pi-ai",
+  "version": "0.2.1-alpha.3",
+  "upstreamCommit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+  "patchSha256": "7df595a0b332aeb4c378f8f04c7595d865b62bba8946a7d5e625113d93e20046",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "99b5c20830a52f69641df8a18a39206079b0c725201958cce2c4a934f1d4f7cd",
+      "afterSha256": "aaf2e2c1dd607a8d119d94aac4869a507673a31f9bfc8c0038a42fc6987eede7"
+    }
+  ],
+  "api": [
+    "LlmResolvedModelInfo.defaultMaxTokens"
+  ],
+  "scope": {
+    "admission": "Materialize the configured output limit, or the exact SDK model output maximum, through the existing registration-bound prepareCall snapshot.",
+    "boundary": "Preserve explicit request and provider limits, model identity, reasoning, context and native stream; do not bypass managed budget admission or add model requests.",
+    "source": "The pinned SDK Anthropic Messages API uses options.maxTokens ?? model.maxTokens; the limit is already validated in the fixed route model snapshot.",
+    "limitations": [
+      "This is a finite provider model bound, not a guarantee about response length or business quality.",
+      "No changes to SDK store files or user provider configuration."
+    ]
+  }
+}

@@ -10,7 +10,7 @@ import {AgentLoop, type Config} from '@deepseek-ai/dsh-agent-loop'
 import {AgentRegistry, type Agent, type ResumeAgentOptions} from '@deepseek-ai/dsh-agent'
 import {Session, SessionStore, SessionId, SessionSeq, SessionLogOffset, type SessionHeader, type SessionEvent} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {SessionAlreadyOwnedError, type SessionPersistence, type SessionHandle, type SessionPersistenceOpenOptions} from '@deepseek-ai/dsh-session-persistence'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime} from '@deepseek-ai/dsh-tools'
@@ -51,19 +51,19 @@ class DeterministicRestoreModel extends LlmAdapter {
 
 async function fixture(t: TestContext, original = false) {
  const seam = original ? undefined : await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence')>(t, {
-  packageName: '@deepseek-ai/dsh-session-persistence', compatBasename: 'dsh-session-persistence-0.2.1-alpha.1-open-admission',
+  packageName: '@deepseek-ai/dsh-session-persistence', compatBasename: 'dsh-session-persistence-0.2.1-rc.2-open-admission',
  })
  const overrides = seam ? {'@deepseek-ai/dsh-session-persistence': seam.root} : {}
  const backend = original ? undefined : await patchedNativePackage<typeof import('@deepseek-ai/dsh-session-persistence-jsonl')>(t, {
-  packageName: '@deepseek-ai/dsh-session-persistence-jsonl', compatBasename: 'dsh-session-persistence-jsonl-0.2.1-alpha.1-open-admission', overrides,
+  packageName: '@deepseek-ai/dsh-session-persistence-jsonl', compatBasename: 'dsh-session-persistence-jsonl-0.2.1-rc.2-open-admission', overrides,
  })
  const pkg = original ? undefined : await patchedNativePackage<typeof import('@deepseek-ai/dsh-agent-loop')>(t, {
-  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-alpha.1-work-admission', overrides,
+  packageName: '@deepseek-ai/dsh-agent-loop', compatBasename: 'dsh-agent-loop-0.2.1-rc.2-work-admission', overrides,
  })
  const root = await mkdtemp(join(tmpdir(), 'teloa-loop-restore-')), ctx = new Context()
  t.after(async () => {await ctx.fiber.dispose(); await rm(root, {recursive: true, force: true})})
  for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry]) await ctx.plugin(plugin)
- await ctx.plugin(backend?.namespace.default ?? Persistence, {root, compression: 'none'})
+ await ctx.plugin(backend?.namespace ?? Persistence, {root, compression: 'none'})
  const persistence = ctx.sessionPersistence as AdmissionPersistence
  const adapter = new DeterministicRestoreModel()
  ctx.llm.registerAdapter([route.provider], adapter)

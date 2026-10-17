@@ -5,6 +5,7 @@
    头像自带底色，主题切换不影响它的对比度）。
    市场方案卡插画（`SolutionCards.tsx` / `MarketPage.tsx` 产品页 hero）直接复用本文件 `.tone0-5`：类名 `.tone0`–`.tone5` 与三个变量名是对外契约，改名要一起改。 */
 .avatarWrap{display:inline-flex;flex:none}
+.squirrel{display:block;width:100%;height:100%;object-fit:contain;border-radius:26%;background:var(--teloa-subtle)}
 .avatarSvg{display:block;width:100%;height:100%;border-radius:26%}
 .sizesm{width:24px;height:24px}
 .sizemd{width:40px;height:40px}

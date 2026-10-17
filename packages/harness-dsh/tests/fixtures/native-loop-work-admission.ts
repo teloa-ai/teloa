@@ -9,7 +9,7 @@ import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,type ToolExecutionInput,type ToolRunContext,type ToolExecutionResult} from '@deepseek-ai/dsh-tools'
 import {LlmRuntime,LlmAdapter,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {patchedNativePackage} from './native-patched-package.ts'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 
 export type LoopWorkInput=Readonly<{agent:Agent;turn:number;signal:AbortSignal}>&(
  |Readonly<{kind:'turn-start'|'turn-end';event:Readonly<SessionEvent>}>
@@ -29,7 +29,7 @@ export type LoopWorkRuntime=AgentLoop&{
  installProgressCheckpoint:(policy:(input:unknown)=>unknown)=>void
 }
 export type LoopWorkPackage=typeof import('@deepseek-ai/dsh-agent-loop')&{AgentLoop:new(ctx:Context,config:import('@deepseek-ai/dsh-agent-loop').Config)=>LoopWorkRuntime}
-export const loopWorkCompat='dsh-agent-loop-0.2.1-alpha.1-work-admission'
+export const loopWorkCompat='dsh-agent-loop-0.2.1-rc.2-work-admission'
 export async function patchedLoopWorkPackage(t:TestContext,overrides?:Readonly<Record<string,string>>){
  return patchedNativePackage<LoopWorkPackage>(t,{packageName:'@deepseek-ai/dsh-agent-loop',compatBasename:loopWorkCompat,...overrides===undefined?{}:{overrides}})
 }

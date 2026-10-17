@@ -1,8 +1,8 @@
-import {WorkError} from '@teloa/contract'
+import {WorkError,readWorkExecutor,type WorkExecutor} from '@teloa/contract'
 import type {TaskRun} from '@teloa/backend'
 import type {TaskRunDriver} from './task-run-driver.ts'
 
-export type PlanDshDispatchJob={claimId:string;taskId:string;taskCreatedVersion:1;taskTitle:string;roleId:string;roleVersion:number}
+export type PlanDshDispatchJob={claimId:string;taskId:string;taskCreatedVersion:1;taskTitle:string;roleId:string|null;roleVersion:number|null;executor?:Extract<WorkExecutor,{kind:'owner'}>}
 export type PlanDshPrepareInput={requestId:string;taskId:string;expectedTaskVersion:number}
 export type PlanDshDispatchPorts={
  /** 必须复用 task-runs/prepare 的受信任一键编排，不接受客户端或计划侧上传岗位配置。 */
@@ -18,12 +18,13 @@ const corrupt=()=>new WorkError('teloa/storage-corrupt','持续计划执行身�
 
 function jobInput(owner:string,value:PlanDshDispatchJob):PlanDshDispatchJob{
  if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要有效的宿主本人身份。')
- if(!value||Object.keys(value).some(key=>!['claimId','taskId','taskCreatedVersion','taskTitle','roleId','roleVersion'].includes(key))||!uuid(value.claimId)||!uuid(value.taskId)||value.taskCreatedVersion!==1||typeof value.taskTitle!=='string'||!value.taskTitle.trim()||value.taskTitle.length>120||!uuid(value.roleId)||!positive(value.roleVersion))throw corrupt()
+ if(!value||Object.keys(value).some(key=>!['claimId','taskId','taskCreatedVersion','taskTitle','roleId','roleVersion','executor'].includes(key))||!uuid(value.claimId)||!uuid(value.taskId)||value.taskCreatedVersion!==1||typeof value.taskTitle!=='string'||!value.taskTitle.trim()||value.taskTitle.length>120)throw corrupt()
+ if(value.executor){if(readWorkExecutor(value.executor).kind!=='owner'||value.roleId!==null||value.roleVersion!==null)throw corrupt()}else if(!uuid(value.roleId)||!positive(value.roleVersion))throw corrupt()
  return {...value,taskTitle:value.taskTitle.trim()}
 }
 
 function runResult(value:TaskRun,job:PlanDshDispatchJob,runId?:string):TaskRun{
- if(!value||typeof value!=='object'||!uuid(value.id)||runId!==undefined&&value.id!==runId||value.taskId!==job.taskId||value.roleId!==job.roleId||value.taskVersion!==job.taskCreatedVersion||value.roleVersion!==job.roleVersion||!session(value.sessionId)||!uuid(value.nativeRequestId)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(value.state))throw corrupt()
+ if(!value||typeof value!=='object'||!uuid(value.id)||runId!==undefined&&value.id!==runId||value.taskId!==job.taskId||value.roleId!==job.roleId||value.taskVersion!==job.taskCreatedVersion||value.roleVersion!==job.roleVersion||job.executor&&JSON.stringify(value.executor)!==JSON.stringify(job.executor)||!job.executor&&value.executor?.kind==='owner'||!session(value.sessionId)||!uuid(value.nativeRequestId)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(value.state))throw corrupt()
  return value
 }
 

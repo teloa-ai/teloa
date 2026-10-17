@@ -37,12 +37,12 @@ test('宽高比常量集中在 logotype.ts 并被 BrandLogo 使用',async()=>{
   assert.doesNotMatch(logo,/618\.3|146\.3/)
 })
 
-test('欢迎区按新字标换算且保持帽高',async()=>{
-  const styles=await readFile(new URL('ConversationBrand.module.css',client),'utf8')
-  assert.doesNotMatch(styles,/618\.3|146\.3/)
-  assert.match(styles,/calc\(var\(--brand-height\)\*567\.33\/108\.79\)/)
-  assert.match(styles,/\.mark\{--brand-height:19px/)
-  assert.match(styles,/max-width:740px\)\{\.mark\{--brand-height:18px\}/)
+test('已选员工优先欢迎区复用原松鼠头像，品牌槽不复制原输入与工作区',async()=>{
+  const [brand,welcome,styles]=await Promise.all([readFile(new URL('ConversationBrand.tsx',client),'utf8'),readFile(new URL('ConversationWelcome.tsx',client),'utf8'),readFile(new URL('ConversationWelcome.module.css',client),'utf8')])
+  assert.match(brand,/<ConversationWelcome\/>/)
+  assert.match(welcome,/companion\/icon\.webp/)
+  assert.match(styles,/width:54px;height:54px/)
+  assert.doesNotMatch(brand+welcome,/textarea|workspace\.select|createSession/)
 })
 
 test('关于页字标与欢迎区同帽高',async()=>{

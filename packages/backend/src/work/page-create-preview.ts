@@ -1,6 +1,6 @@
 import type {Pool} from 'pg'
 import {
- WorkError,pageCreateFieldRows,pageCreateLimits,readMarketPluginRegistrySource,readPageCreateBody,taskInput,
+ WorkError,pageCreateFieldRows,pageCreateLimits,readMarketPluginRegistrySource,readPageCreateBody,readPageCreatePlanDraft,taskInput,
  type MarketPluginPermissionSummary,type PageCreateDraftPreview,type PageCreateEntity,
 } from '@teloa/contract'
 import {validateManifest} from '../market/content-store.ts'
@@ -27,6 +27,8 @@ const next:Record<PageCreateEntity,{endpoint:string;consentKeys:string[]}>= {
  skill:{endpoint:'market-content/import-atomic',consentKeys:[]},
  connector:{endpoint:'market-content/import-industry',consentKeys:['create.consequence.credential','create.consequence.egress']},
  extension:{endpoint:'industry-plugins/preview',consentKeys:['create.consequence.permission']},
+ share:{endpoint:'page-create-drafts/read',consentKeys:[]},
+ plan:{endpoint:'plans/create-confirmed',consentKeys:[]},
 }
 
 /**
@@ -63,7 +65,11 @@ export class PageCreatePreviewService{
    }
    signal?.throwIfAborted()
    const fields=pageCreateFieldRows(body),fieldsTruncated=fields.length>pageCreateLimits.fieldRows
-   const rule=next[draft.entity]
+   let rule=next[draft.entity]
+   if(draft.entity==='plan'){
+    const plan=readPageCreatePlanDraft(body)
+    rule={endpoint:'kind'in plan?'plans/configure-work-confirmed':'executor'in plan.definition?'plans/create-owner-confirmed':'plans/create-confirmed',consentKeys:plan.intent==='create-and-enable'?['create.consequence.permission']:[]}
+   }
    let consequences=consequencesOf(draft.entity,body)
    if(draft.entity==='extension'){
     if(!this.extensionPreview)throw unavailable('扩展权限摘要尚不可用，不能省略权限预览。')
@@ -94,7 +100,8 @@ function consequencesOf(entity:PageCreateEntity,body:unknown):PageCreateDraftPre
   return [{kind:'credential',id:'credential',required:true},{kind:'egress',id:id??'connector',required:true}]
  }
  const impact:Record<Exclude<PageCreateEntity,'connector'|'extension'>,string>={
-  'business-definition':'business-definition-customization','business-domain':'business-scope-registration',role:'role-onboarding',skill:'skill-directory-only',
+  'business-definition':'business-definition-customization','business-domain':'business-scope-registration',role:'role-onboarding',skill:'skill-directory-only',share:'static-template-only',plan:'plan-save-paused',
  }
+ if(entity==='plan'&&readPageCreatePlanDraft(body).intent==='create-and-enable')return [{kind:'impact',id:'plan-create-and-enable',required:true},{kind:'permission',id:'plan-execution-authorization',required:true}]
  return [{kind:'impact',id:impact[entity as Exclude<PageCreateEntity,'connector'|'extension'>],required:true}]
 }

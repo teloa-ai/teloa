@@ -12,7 +12,7 @@ test('任务知识解释与岗位默认知识的区别，并在提交前展示�
   const zh=Object.fromEntries(ARTIFACT_KNOWLEDGE_SECONDARY_MESSAGE_ROWS.map(row=>[row[0],row[1]]))
   assert.equal(zh['taskKnowledge.description'],"任务知识是本项工作的补充上下文；员工的默认知识属于员工配置，不会因这里的选择而改变。")
   assert.equal(zh['taskKnowledge.addDescription'],'仅显示当前任务业务范围内已启用的知识。')
-  assert.equal(zh['taskKnowledge.confirm'],'将锁定“{title}”的资料版本 v{version}，来源版本 {sourceVersion}。')
+  assert.equal(zh['taskKnowledge.confirm'],'将锁定“{title}”的资料版本 v{version}。')
   for(const key of ['taskKnowledge.description','taskKnowledge.addDescription','taskKnowledge.confirm','taskKnowledge.available','taskKnowledge.recover'])assert.match(source,new RegExp(key.replaceAll('.', '\\.')))
 })
 

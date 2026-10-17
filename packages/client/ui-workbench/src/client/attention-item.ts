@@ -5,11 +5,15 @@ import type {ContinuousPreview,ContinuousTarget} from './continuous-preview.js'
 import type {TaskHandoff} from './handoff-api.js'
 import type {TaskAttentionItem} from './task-api.js'
 import type {PreviewTask} from './task-preview.js'
+import type {WorkAttentionItem,WorkAttentionSource} from '@teloa/contract'
+import {workAttentionReasonKey,workAttentionTitle,type WorkAttentionReasonKey,type WorkAttentionTitleKey} from './task-attention-presentation.ts'
 
 export type AttentionKind='approval'|'materials'|'connection'|'error'|'review'|'handoff'|'dispatch'|'execution'
 export type AttentionPersistence='saved'|'local-recovery'|'server-recovery'|'example'
-export type AttentionSource='security-action'|'task'|'handoff'|'business'|'plan'|'binding'|'installation'|'local-recovery'|'server-recovery'
+export type AttentionSource='security-action'|'task'|'handoff'|'business'|'plan'|'binding'|'installation'|'local-recovery'|'server-recovery'|'business-change-set'|'business-sync'|'page-create-draft'
+export type WorkAttentionObjectSource=Exclude<WorkAttentionSource,{kind:'task'}>
 export type AttentionReasonKey=
+  |WorkAttentionReasonKey
   |`security.attention.${SecurityActionAttention['reason']}`
   |'task.attention.reason.taskBlocked'
   |'task.attention.reason.executionFailed'
@@ -26,6 +30,7 @@ export type AttentionReasonKey=
 export type AttentionReason={kind:'message';key:AttentionReasonKey}|{kind:'text';text:string}
 export type InstallationSelection=`skill:${string}`|`plugin:${string}`
 export type AttentionTarget=
+  |{kind:'work-attention';source:WorkAttentionObjectSource}
   |{kind:'security-action';taskId:string;actionId:string}
   |{kind:'task';id:string}
   |{kind:'artifact';source:{kind:'session'|'task';id:string};artifactId:string;version:number}
@@ -51,6 +56,8 @@ export type AttentionItem={
 }
 
 export type AttentionSnapshot={
+  /** 提供后即为任务待办的权威目录；空数组也不能回退旧 tasks/attention。 */
+  workAttention?:readonly WorkAttentionItem[]
   securityAttention?:readonly SecurityActionAttention[]
   tasks:readonly PreviewTask[]
   taskAttention:readonly TaskAttentionItem[]
@@ -67,6 +74,7 @@ export type AttentionLocalRecovery=Omit<AttentionItem,'persistence'>
 export type AttentionServerRecovery=Omit<AttentionItem,'persistence'>
 
 export type AttentionActions={
+  openWorkAttention?:(source:WorkAttentionObjectSource)=>void
   openSecurityAction?:(taskId:string,actionId:string)=>void
   openTask:(id:string)=>void
   openArtifact:(source:{kind:'session'|'task';id:string},artifactId:string,version:number)=>void
@@ -80,7 +88,7 @@ export type AttentionActions={
   openPendingRequest?:(requestId:string)=>void
 }
 
-const sourceKeys={'security-action':'security.title',task:'attention.source.task',handoff:'attention.source.handoff',business:'attention.source.business',plan:'attention.source.plan',binding:'attention.source.binding',installation:'attention.source.installation','local-recovery':'attention.source.localRecovery','server-recovery':'attention.source.serverRecovery'} as const
+const sourceKeys={'security-action':'security.title',task:'attention.source.task',handoff:'attention.source.handoff',business:'attention.source.business',plan:'attention.source.plan',binding:'attention.source.binding',installation:'attention.source.installation','local-recovery':'attention.source.localRecovery','server-recovery':'attention.source.serverRecovery','business-change-set':'attention.work.source.businessChange','business-sync':'attention.work.source.businessSync','page-create-draft':'attention.work.source.pageDraft'} as const
 export const attentionSourceKey=(source:AttentionSource)=>sourceKeys[source]
 export const attentionPersistenceKey=(persistence:AttentionPersistence)=>persistence==='example'?'attention.persistence.example' as const:persistence==='server-recovery'?'attention.persistence.serverRecovery' as const:undefined
 
@@ -97,13 +105,17 @@ const taskReasonKeys:Record<NonNullable<TaskAttentionItem['attention']>['reason'
 }
 const operationReasonKeys:Record<BusinessPreview['operations'][number]['state'],AttentionReasonKey>={pending:'task.detail.operation.pending',approved:'task.detail.operation.approved',rejected:'task.detail.operation.rejected',changes:'task.detail.operation.changes',stale:'task.detail.operation.stale',executing:'task.detail.operation.executing',unknown:'task.detail.operation.unknown',partial:'task.detail.operation.partial',verified:'task.detail.operation.verified'}
 
-export function aggregateAttentionItems(snapshot:AttentionSnapshot):AttentionItem[]{
+export function aggregateAttentionItems(snapshot:AttentionSnapshot,t?:(key:WorkAttentionTitleKey)=>string):AttentionItem[]{
   const items:AttentionItem[]=[]
+  for(const row of snapshot.workAttention??[]){
+    const target:AttentionTarget=row.source.kind==='task'?{kind:'task',id:row.source.taskId}:{kind:'work-attention',source:row.source}
+    items.push({id:row.id,kind:row.kind,source:row.source.kind,persistence:'saved',target,title:workAttentionTitle(row,t),reason:{kind:'message',key:workAttentionReasonKey(row.reason)},scope:row.scope??'general',occurredAt:row.occurredAt})
+  }
   for(const row of snapshot.securityAttention??[]){
     const task=snapshot.taskAttention.find(item=>item.task.id===row.taskId)?.task??snapshot.tasks.find(task=>task.id===row.taskId)
     items.push({id:'security-action:'+row.actionId,kind:row.reason==='approval-required'?'approval':row.reason==='execution-required'?'execution':row.reason==='adapter-unavailable'?'connection':row.reason==='execution-failed'?'error':'review',source:'security-action',persistence:'saved',target:{kind:'security-action',taskId:row.taskId,actionId:row.actionId},title:task?.title??row.taskId,reason:{kind:'message',key:'security.attention.'+row.reason as AttentionReasonKey},scope:task?.scope??'SOC',occurredAt:task?.updatedAt??''})
   }
-  for(const row of snapshot.taskAttention){
+  for(const row of snapshot.workAttention===undefined?snapshot.taskAttention:[]){
     if(!row.attention)continue
     items.push({id:'task:'+row.task.id,kind:row.attention.kind,source:'task',persistence:'saved',target:{kind:'task',id:row.task.id},title:row.task.title,reason:{kind:'message',key:taskReasonKeys[row.attention.reason]},scope:row.task.scope,occurredAt:row.task.updatedAt})
   }
@@ -141,7 +153,8 @@ export function formalAttentionCount(items:readonly AttentionItem[]):number{retu
 
 export function openAttentionItem(item:AttentionItem,actions:AttentionActions):void{
   const target=item.target
-  if(target.kind==='security-action'){if(actions.openSecurityAction)actions.openSecurityAction(target.taskId,target.actionId);else throw Error('缺少外部动作打开入口。')}
+  if(target.kind==='work-attention'){if(actions.openWorkAttention)actions.openWorkAttention(target.source);else throw Error('缺少原工作事项打开入口。')}
+  else if(target.kind==='security-action'){if(actions.openSecurityAction)actions.openSecurityAction(target.taskId,target.actionId);else throw Error('缺少外部动作打开入口。')}
   else if(target.kind==='task')actions.openTask(target.id)
   else if(target.kind==='artifact')actions.openArtifact(target.source,target.artifactId,target.version)
   else if(target.kind==='group')actions.openGroup(target.id)

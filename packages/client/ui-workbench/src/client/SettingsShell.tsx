@@ -1,5 +1,8 @@
+import {directoryChoiceCopy} from './directory-choice-copy.js'
+import {settingsEntryGroup,settingsGroupOrder} from './settings-navigation.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import type {SettingsNavigation} from './settings-navigation.js'
+import {FileCode2} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -25,7 +28,7 @@ export type SettingsShellProps=PropsRenderSlots<Seats>&{
 
 /** 只负责设置组合；配置数据、持久化和引导步骤仍归 DSH。 */
 export function SettingsShell({selection,mainSession,open,close,renderSlot,useSessions,sections,onboarding,connection}:SettingsShellProps){
-  const {t}=useI18n()
+  const {t,locale}=useI18n()
   const rows=useSyncExternalStore(sections.subscribe,sections.getSnapshot),steps=useSyncExternalStore(onboarding.subscribe,onboarding.getSnapshot)
   const connectionState=useSyncExternalStore(connection.state.subscribe,connection.state.getSnapshot)
   const current=useSyncExternalStore(mainSession.subscribe,mainSession.getSnapshot)
@@ -38,7 +41,7 @@ export function SettingsShell({selection,mainSession,open,close,renderSlot,useSe
   const selected=selectedRow?.id
   const entryLabel=(row:SettingsEntry)=>row.id==='general'?t('settings.general'):row.id==='teloa-workspaces'?t('settings.workspace'):row.id==='teloa-about'?t('settings.about'):row.id==='plugins'?t('settings.systemComponents'):row.label
   return <>
-    <SettingsLayout label={t('shell.settings')} heading={renderSlot('settings.header',{})} actions={renderSlot('settings.action',{})} entries={rows.map(row=>({...row,label:entryLabel(row)}))} selectedId={selected} onSelect={selection.select} plainContent={selected==='general'||selected==='teloa-about'} notice={connectionState!=='connected'?<p className={css.connection} role="status">{t(connectionState==='connecting'?'settings.connecting':'settings.disconnected')} <button type="button" onClick={()=>connection.reconnect()}>{t('settings.reconnect')}</button></p>:null}>
+    <SettingsLayout label={t('shell.settings')} heading={renderSlot('settings.header',{})} actions={renderSlot('settings.action',{})} entries={settingsGroupOrder.flatMap(group=>rows.filter(row=>settingsEntryGroup(row.id)===group).map(row=>({...row,label:entryLabel(row),group:directoryChoiceCopy(locale,group)})))} selectedId={selected} onSelect={selection.select} plainContent={selected==='general'||selected==='teloa-about'} notice={connectionState!=='connected'?<p className={css.connection} role="status">{t(connectionState==='connecting'?'settings.connecting':'settings.disconnected')} <button type="button" onClick={()=>connection.reconnect()}>{t('settings.reconnect')}</button></p>:null}>
      {selected?renderSlot('settings.section',{close}, {only:selected}):<p role="status">{t('settings.loading')}</p>}
     </SettingsLayout>
     {step&&renderSlot('settings.onboarding',{stepId:step.id,complete:()=>setCompleted(previous=>new Set([...previous,step.id])),openSection:id=>{selection.select(id);open()}},{only:step.id})}
@@ -88,7 +91,7 @@ export function NativePanelsSettings({surface,webAccessApi}:{surface:RuntimeSett
 export function ComponentStatusSettings({renderSlot}:PropsRenderSlots<'settings.plugins.tab'>){
   const {t}=useI18n()
   return <section className={css.componentStatus} aria-label={t('settings.systemComponents')}>
-    <header className={css.sectionHeading}><h2>{t('settings.systemComponents')}</h2><p>{t('settings.diagnostics.purpose')}</p></header>
+    <header className={css.sectionHeading}><h2>{t('settings.systemComponents')}</h2></header>
     {renderSlot('settings.plugins.tab',{})}
   </section>
 }
@@ -102,5 +105,5 @@ export function SettingsDocumentAction({describe,openDocument,loopback}:{describ
   const pending=useRef(false)
   useEffect(()=>{void describe.ensure().catch(error=>setError(localizeWorkError(locale,error)))},[describe,locale])
   if(!loopback||!state.view?.hasDocument)return null
-  return <div className={css.documentAction}>{error&&<span role="alert">{error}</span>}<button type="button" disabled={busy} onClick={()=>{if(pending.current)return;pending.current=true;setBusy(true);setError(undefined);void openDocument().catch(error=>setError(localizeWorkError(locale,error))).finally(()=>{pending.current=false;setBusy(false)})}}>{t(busy?'settings.document.opening':'settings.document.open')}</button></div>
+  return <div className={css.documentAction}>{error&&<span role="alert">{error}</span>}<button type="button" aria-label={t(busy?'settings.document.opening':'settings.document.open')} title={t('settings.document.open')} disabled={busy} onClick={()=>{if(pending.current)return;pending.current=true;setBusy(true);setError(undefined);void openDocument().catch(error=>setError(localizeWorkError(locale,error))).finally(()=>{pending.current=false;setBusy(false)})}}><FileCode2 size={17} aria-hidden/></button></div>
 }

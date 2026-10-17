@@ -13,6 +13,7 @@ function setup(){
     summary:id=>id==='a'||id==='b'?{title:id,running}:undefined,
     rename:async(id,title)=>{calls.push('rename:'+id+':'+title)},
     archive:async id=>{calls.push('archive:'+id);archived=[...archived,id];listeners.forEach(fn=>fn())},
+    restore:async id=>{calls.push('restore:'+id);archived=archived.filter(value=>value!==id);listeners.forEach(fn=>fn())},
     fork:async id=>{calls.push('fork:'+id);return 'child'},
     copyHistory:async()=>[],
     releaseCopy:async()=>{throw Error('未设置确认记录')},
@@ -24,6 +25,15 @@ function setup(){
   const manager=new ConversationManagement(()=>rows),dispose=manager.attach(port)
   return {manager,port,calls,rows,workspaces,dispose,setRunning:(value:boolean)=>{running=value}}
 }
+
+test('接入前重验内部执行身份及子 Agent，不因标题看似普通而允许加入目录',async()=>{
+ const s=setup()
+ for(const [id,origin] of [['task-run-12345678-1234-4234-8234-123456789012',undefined],['group-routing-12345678-1234-5234-a234-123456789012',undefined],['ordinary-child','subagent']] as const){
+  s.port.summary=()=>({title:'整理资料',running:false,...(origin?{origin}:{})})
+  await assert.rejects(s.manager.adopt(id,'工作'),/原任务|原群|子 Agent/)
+ }
+ assert.deepEqual(s.calls,[])
+})
 
 test('管理仅接受本人已完成绑定的会话；空标题与运行中归档在调用前拒绝',async()=>{
   const s=setup()
@@ -91,6 +101,23 @@ test('归档只跟随 DSH 权威集合，重复归档拒绝，断开后不允许
   s.dispose()
   await assert.rejects(s.manager.archive('b'),/连接/)
   assert.deepEqual(s.calls,['archive:a'])
+})
+
+test('恢复同一已归档会话，保留原绑定与工作区；失败或断线不伪造恢复',async()=>{
+ const s=setup(),before=structuredClone(s.rows),workspace=structuredClone(s.workspaces)
+ await s.manager.archive('a')
+ const restore=s.port.restore;s.port.restore=async()=>{throw Error('恢复失败')}
+ await assert.rejects(s.manager.restore('a'),/恢复失败/)
+ assert.deepEqual(s.manager.getSnapshot().archived,['a'])
+ assert.deepEqual(s.manager.getSnapshot().pending,{})
+ s.port.restore=restore;await s.manager.restore('a')
+ assert.deepEqual(s.manager.getSnapshot().archived,[])
+ assert.deepEqual(s.rows,before);assert.deepEqual(s.workspaces,workspace)
+ await assert.rejects(s.manager.restore('b'),/未归档/)
+ await assert.rejects(s.manager.restore('private'),/本人工作目录/)
+ await s.manager.archive('a');s.dispose()
+ await assert.rejects(s.manager.restore('a'),/连接/)
+ assert.deepEqual(s.calls,['archive:a','restore:a','archive:a'])
 })
 
 test('曾经同步完成不等于当前连接健康；断线保留归档基线但不允许操作',()=>{

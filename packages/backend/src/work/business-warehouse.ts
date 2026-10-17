@@ -76,7 +76,7 @@ export function currentVersionSubquery(includeDeleted:boolean,objectTypeParam:nu
  * 以外键钉住某个对象版本的表：清理若删到它们引用的历史版本会整批 23503 失败，因此逐表排除。
  * 表名只取这里的常量；不存在的表（只装了业务数据那几张的库）直接跳过。
  */
-const referencingTables=['teloa_business_task_sources','teloa_security_actions','teloa_business_snapshot_references'] as const
+const referencingTables=['teloa_business_task_sources','teloa_security_actions','teloa_business_snapshot_references','teloa_business_object_work_links','teloa_business_task_result_references'] as const
 
 export class BusinessWarehouseService{
  private readonly pool:Pool

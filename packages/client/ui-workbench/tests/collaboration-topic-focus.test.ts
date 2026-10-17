@@ -39,7 +39,7 @@ test('触发按钮已从 DOM 移除、不可见或被禁用时，焦点归还助
 
 test('话题侧栏元素接管 tabIndex 并在打开／关闭时驱动焦点归还助手',async()=>{
   const source=await readFile(new URL('SavedCollaborationPage.tsx',root),'utf8')
-  const asideLine=source.split('\n').find(line=>line.includes("aria-label={t(rootId?'collaboration.panel.topic'"))
+  const asideLine=source.split('\n').find(line=>line.includes("aria-label={t(rootId&&!info?'collaboration.panel.topic'"))
   assert.ok(asideLine,'找不到话题讨论侧栏所在行')
   assert.match(asideLine!,/<aside ref=\{panelRef\} tabIndex=\{-1\}/)
   assert.match(asideLine!,/onKeyDown=\{event=>closeDirectoryDetailOnEscape\(event,closePanel\)\}/)

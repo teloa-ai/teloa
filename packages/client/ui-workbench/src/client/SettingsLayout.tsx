@@ -5,7 +5,7 @@ import css from './SettingsShell.module.css'
 import tokens from './theme-tokens.module.css'
 import {mountSettingsSubdialogFocus} from './settings-subdialog-focus.js'
 
-export type SettingsLayoutEntry=Readonly<{id:string;label:string}>
+export type SettingsLayoutEntry=Readonly<{id:string;label:string;group?:string}>
 export type SettingsLayoutProps=Readonly<{
  label:string
  heading:ReactNode
@@ -32,7 +32,7 @@ export function SettingsLayout({label,heading,actions,notice,entries,selectedId,
   {notice}
   <div className={css.layout}>
    <div className={css.navigationViewport}>
-    <nav className={css.navigation} aria-label={label}>{entries.map(row=><button type="button" key={row.id} id={`settings-entry-${row.id}`} aria-current={row.id===selected?.id?'page':undefined} aria-controls="settings-content" title={row.label} onClick={()=>onSelect(row.id)}>{row.label}</button>)}</nav>
+    <nav className={css.navigation} aria-label={label}>{entries.map((row,index)=><span className={css.navigationEntry} key={row.id}>{row.group&&row.group!==row.label&&row.group!==entries[index-1]?.group&&<span className={css.navigationGroup}>{row.group}</span>}<button type="button" key={row.id} id={`settings-entry-${row.id}`} aria-current={row.id===selected?.id?'page':undefined} aria-controls="settings-content" title={row.label} onClick={()=>onSelect(row.id)}>{row.label}</button></span>)}</nav>
     <span className={css.navigationScrollHint} aria-hidden="true"><ChevronRight size={16}/></span>
    </div>
    <div ref={content} id="settings-content" aria-labelledby={selected?`settings-entry-${selected.id}`:undefined} className={clsx(css.content,!plainContent&&css.page)}>{children}</div>

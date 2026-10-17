@@ -1,5 +1,6 @@
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import test from 'node:test'
+import {roleFormDraftModule} from './role-form-drafts-fixture.ts'
 import assert from 'node:assert/strict'
 import {readFileSync,existsSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
@@ -93,6 +94,9 @@ function mountComponent(relFile:string,exportName:string,props:any){
  const hooks:any={...React,
   useState:(initialValue:unknown)=>{const index=cursor++;if(!(index in slots))slots[index]=typeof initialValue==='function'?(initialValue as ()=>unknown)():initialValue;return [slots[index],(next:unknown)=>{const value=typeof next==='function'?(next as (before:unknown)=>unknown)(slots[index]):next;if(!Object.is(value,slots[index])){slots[index]=value;dirty=true}}]},
   useRef:(initialValue:unknown)=>{const index=cursor++;return slots[index]??(slots[index]={current:initialValue})},
+  // 独立运行面没有 Provider，默认准备控制器为 undefined；会话连接由真实浏览器用例覆盖。
+  useContext:()=>undefined,
+  useCallback:(callback:()=>void,deps:readonly unknown[])=>{const index=cursor++,previous=slots[index] as {callback:()=>void;deps:readonly unknown[]}|undefined;if(!previous||deps.length!==previous.deps.length||deps.some((value,depIndex)=>!Object.is(value,previous.deps[depIndex])))slots[index]={callback,deps};return (slots[index] as {callback:()=>void}).callback},
   useId:()=>{const index=cursor++;if(!(index in slots))slots[index]='test-id-'+index;return slots[index]},
   // 测试驱动是「动作后手动 render()/flush()」，不需要真订阅：每次 render 都会重新调用 getSnapshot()。
   useSyncExternalStore:(_subscribe:unknown,getSnapshot:()=>unknown)=>getSnapshot(),
@@ -102,8 +106,9 @@ function mountComponent(relFile:string,exportName:string,props:any){
    pending.push(()=>{previous?.cleanup?.();effects.set(index,{deps,cleanup:run()??undefined})})
   },
  }
- const absPath=join(clientDir,relFile)
+ const absPath=join(clientDir,relFile),draftModule=roleFormDraftModule(hooks)
  const req=(id:string):any=>{
+  if(id==='./role-form-drafts.js')return draftModule
   const special=specialCase(id,hooks)
   if(special!==undefined)return special
   if(id.startsWith('.'))return loadPure(resolveSibling(absPath,id))
@@ -114,7 +119,10 @@ function mountComponent(relFile:string,exportName:string,props:any){
  const Component=moduleObj.exports[exportName] as (value:unknown)=>React.ReactNode
  const render=():React.ReactNode=>{
   let guard=0
-  do{assert.ok(guard++<20,'组件不应无限重渲染');dirty=false;cursor=0;pending=[];tree=Component(props);for(const run of pending)run()}while(dirty)
+  do{assert.ok(guard++<20,'组件不应无限重渲染');dirty=false;cursor=0;pending=[];tree=Component(props)
+   // 先调度按任务身份包装的实际内容面，再刷新其 effects，避免把 hooks 留到纯树查询阶段。
+   if(relFile==='TaskExecutions.tsx'&&React.isValidElement(tree)&&typeof tree.type==='function')tree=(tree.type as (value:unknown)=>React.ReactNode)(tree.props)
+   for(const run of pending)run()}while(dirty)
   return tree
  }
  const flush=async():Promise<React.ReactNode>=>{for(let round=0;round<8;round++){await Promise.resolve();render()}return tree}
@@ -185,18 +193,22 @@ test('总开关关闭时（候选没有 web 规则）整节显示 disabledByGlob
  assert.equal(app.findAll(el=>el.type==='input'&&el.props.type==='checkbox').length,0,'总开关关闭时不应渲染任何上网勾选项')
 })
 
-/**
- * 「已勾选态不丢」这条红线不能靠「点刷新→候选变了→再点刷新→还勾着」去实测：`RoleToolGrants.tsx`
- * 里唯一能换出新候选的路径是 `role.id`/`role.version`/`revision`/`locale` 变化触发的那个 `useEffect`
- * （既有代码、本任务未改），它一进门就 `setSelected([])`——这是给所有候选（资料/子任务拆分/上网）
- * 共用的既有重置，不是本任务能改的范围。真正可核的红线是：本任务新增的上网 fieldset 本身不得再加一层
- * 「候选没有 web 规则时把 selected 里的 web 键摘掉」的清空逻辑——即"不丢"只保证在同一份候选快照内
- * 有效，靠源码里没有额外的 setSelected 调用来核实，而不是跨候选快照断言。
- */
-test('上网候选消失时新增的 fieldset 不额外清空 selected（不丢的红线只在源码层面新增一次 setSelected 调用）',()=>{
- const source=readFileSync(join(clientDir,'RoleToolGrants.tsx'),'utf8')
- const setSelectedCalls=source.match(/setSelected\(/g)??[]
- assert.equal(setSelectedCalls.length,2,'setSelected 应仍只有既有 mount effect 的重置与 toggle 里的更新两处，上网 fieldset 不得新增第三处清空')
+test('上网候选消失后保留原选择并阻止保存，只有本人放弃草稿后才使用新候选',async()=>{
+ let rules:any[]=[{name:'web_search',allowed:[],anyArguments:true}],writes=0
+ const api=makeGrantApi({candidates:async()=>({roleVersion:5,rules}),change:async()=>{writes++;throw Error('撤回候选不得授权')}})
+ const app=mountComponent('RoleToolGrants.tsx','RoleToolGrants',{role:pausedEmployee(),api,resources,changed:()=>{}})
+ await app.flush()
+ app.find(el=>el.type==='input'&&el.props.type==='checkbox').props.onChange({target:{checked:true}})
+ app.render();rules=[]
+ app.find(el=>el.type==='button'&&el.props['aria-label']===zh('roleGrant.refresh')).props.onClick()
+ await app.flush()
+ assert.equal(app.find(el=>el.type==='input'&&el.props.type==='checkbox').props.checked,true)
+ assert.equal(app.find(el=>el.type==='button'&&app.contentOf(el)===zh('roleGrant.save')).props.disabled,true)
+ assert.equal(writes,0)
+ app.find(el=>el.type==='button'&&app.contentOf(el)===zh('collaboration.resources.discardDraft')).props.onClick()
+ await app.flush()
+ assert.equal(app.findAll(el=>el.type==='input'&&el.props.type==='checkbox').length,0)
+ assert.equal(writes,0)
 })
 
 test('同事未暂停时只显示 roleGrant.pauseHint，没有可勾选项（既有行为不变）',async()=>{
@@ -229,6 +241,7 @@ const runFixture=(overrides:any={}):any=>({
 function makeRunApi(rows:any[]):any{
  return {
   pending:()=>undefined,recoveryMessage:()=>undefined,discard:()=>false,
+  origin:async(taskId:string)=>contract.readTaskRunOrigin({taskId,runId:null,source:null}),
   list:async()=>rows,
   prepare:async()=>{throw Error('未使用')},
   recoverPrepare:async()=>{throw Error('未使用')},

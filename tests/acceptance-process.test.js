@@ -27,3 +27,11 @@ test('并行重启宿主各自原子保存带来源的代次',async()=>{
   assert.deepEqual(JSON.parse(await readFile(join(directory,'重启验收代次-41002.json'),'utf8')),b)
  }finally{await rm(directory,{recursive:true,force:true})}
 })
+test('首次隔离启动可在尚不存在的运行目录保存重启代次',async()=>{
+ const temporary=await mkdtemp(join(tmpdir(),'teloa-marker-fresh-')),directory=join(temporary,'fresh','.runtime')
+ const marker={origin:'http://127.0.0.1:41003',profile:'fresh',launcher:6,pid:7,generation:1}
+ try{
+  await writeRestartMarker(directory,marker)
+  assert.deepEqual(JSON.parse(await readFile(join(directory,'重启验收代次-41003.json'),'utf8')),marker)
+ }finally{await rm(temporary,{recursive:true,force:true})}
+})

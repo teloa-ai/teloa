@@ -21,12 +21,35 @@ after(async()=>{await pool?.end();await container?.stop()})
 const input=(requestId=randomUUID())=>({requestId,fields:{name:'待核对数字员工'}})
 const fixture=()=>({owner:randomUUID(),service:new PendingRequestService(pool)})
 
+test('原请求预览只读本人冻结内容，不执行、不确认；摘要可区分且疑似凭据脱敏',async()=>{
+ const {owner,service}=fixture(),request={requestId:randomUUID(),groupId:randomUUID(),text:'请整理合成告警，凭据 sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'}
+ await service.reserve(owner,'groups/messages/send',request,now)
+ const preview=await service.preview(owner,request.requestId.toUpperCase())
+ assert.equal(preview.requestId,request.requestId);assert.equal(preview.endpoint,'groups/messages/send')
+ assert.equal(preview.payload.groupId,request.groupId);assert.match(String(preview.payload.text),/合成告警/);assert.doesNotMatch(JSON.stringify(preview),/sk-proj-/)
+ assert.match(preview.summary!,/合成告警/)
+ assert.equal((await service.list(owner)).length,1,'查看不会确认或移除待核对请求')
+ await assert.rejects(service.acknowledge(owner,request.requestId,now),{code:'teloa/conflict'},'查看不能标记成功执行结果')
+ await assert.rejects(service.preview(randomUUID(),request.requestId),{code:'teloa/not-found'})
+ await service.complete(owner,request.requestId,now)
+ await assert.rejects(service.preview(owner,request.requestId),{code:'teloa/not-found'})
+})
+
+test('结构化成果请求用内容标题区分，预览保留固定来源与各段原文',async()=>{
+ const {owner,service}=fixture(),request={requestId:randomUUID(),source:{kind:'session',id:'test-original',title:'合成原会话'},content:{title:'合成成果第二版',sections:[{title:'事实',text:'只展示这段合成内容'}]}}
+ await service.reserve(owner,'artifacts/create',request,now)
+ assert.equal((await service.list(owner))[0]!.summary,request.content.title)
+ const preview=await service.preview(owner,request.requestId)
+ assert.deepEqual(preview.payload,request);assert.equal((await service.list(owner)).length,1)
+})
+
 test('服务端待恢复目录只暴露元数据，并按本人隔离',async()=>{
  const {owner,service}=fixture(),request=input()
  await service.reserve(owner,'roles/create',request,now)
  const rows=await service.list(owner)
  assert.equal(rows.length,1)
- assert.deepEqual(Object.keys(rows[0]!).sort(),['createdAt','endpoint','requestId','updatedAt'])
+ assert.deepEqual(Object.keys(rows[0]!).sort(),['createdAt','endpoint','requestId','summary','updatedAt'])
+ assert.equal(rows[0]!.summary,'待核对数字员工');assert.equal(Object.hasOwn(rows[0]!,'payload'),false)
  assert.equal(rows[0]!.requestId,request.requestId.toLowerCase())
  assert.equal(rows[0]!.endpoint,'roles/create')
  assert.deepEqual(await service.list(randomUUID()),[])

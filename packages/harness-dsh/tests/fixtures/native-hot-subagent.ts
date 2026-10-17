@@ -9,13 +9,16 @@ import type {Agent} from '@deepseek-ai/dsh-agent'
 import {LlmAdapter,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import type {Session,SessionEvent} from '@deepseek-ai/dsh-session'
 import {defineTool,type ToolRunContext} from '@deepseek-ai/dsh-tools'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {WorkAccess,type WorkAccessRequest} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
+import type {NativeInputCheckpoint} from '../../src/native-input-checkpoint.ts'
 import {createNativeWorkInput} from '../../src/native-work-input.ts'
 import {createNativeProducerAdmissions} from '../../src/native-producer-admission.ts'
 import {nativeHotKernel,textAnswer,hotGate,type HotGate} from './native-hot-causality.ts'
-import {initialSubagentPackages,type AdmissionRequest,type Admission} from './native-subagent-admission.ts'
+import {installNativeWorkingDirectory} from './native-working-directory.ts'
+import {initialSubagentPackages,requireSubagents,type AdmissionRequest,type Admission} from './native-subagent-admission.ts'
+import {createActivationAdmissionRuntime} from '../../src/subagent-activation-admission.ts'
 
 const denied=()=>new WorkError('teloa/forbidden','子任务许可已失效。')
 export type ChildMode='one-shot'|'continuable'
@@ -32,6 +35,7 @@ class ChildAdapter extends LlmAdapter{
  readonly childScripts:Array<readonly StreamChunk[]>=[]
  parentId=''
  parentCalls=0
+ parentScript=parentAnswer
  prepares=0
  childPrepareGate:HotGate|undefined
  override async resolveModel(provider:string,model:string,signal?:AbortSignal){
@@ -41,7 +45,7 @@ class ChildAdapter extends LlmAdapter{
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
   this.requests.push(options)
   if(options.sessionId===this.parentId){
-   const script=this.parentCalls++===0?parentAnswer:textAnswer
+   const script=this.parentCalls++===0?this.parentScript:textAnswer
    for(const chunk of script)yield chunk
   }else{
    for(const chunk of this.childScripts.shift()??textAnswer)yield chunk
@@ -49,12 +53,13 @@ class ChildAdapter extends LlmAdapter{
  }
 }
 
-/** 官方发布者、in-process driver、Loop、Tools 与最终 Session 在同一真实私有补口图。 */
-export async function nativeHotSubagentFixture(t:TestContext,mode:ChildMode='one-shot'){
- const f=await nativeHotKernel(t),{ctx}=f,packages=await initialSubagentPackages(t)
+/** 官方 activation、Loop、Tools 与最终 Session 在同一真实私有补口图。 */
+export async function nativeHotSubagentFixture(t:TestContext,mode:ChildMode='one-shot',cold=false,activationAdmission=false,options:{checkpoint?:NativeInputCheckpoint;provider?:string}={}){
+ const f=await nativeHotKernel(t,cold),{ctx}=f,packages=await initialSubagentPackages(t)
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-hot-child-jsonl-')))
  t.after(()=>rm(root,{recursive:true,force:true}))
- await ctx.plugin(Persistence,{root})
+ await ctx.plugin(f.persistencePackage??Persistence,{root})
+ await installNativeWorkingDirectory(ctx,root)
  const require=createRequire(import.meta.url),subagentEntry=require.resolve('@deepseek-ai/dsh-subagent')
  const query=await import(pathToFileURL(createRequire(subagentEntry).resolve('@deepseek-ai/dsh-session-query')).href)
  class PointQuery extends query.SessionQueryEngine{
@@ -73,11 +78,17 @@ export async function nativeHotSubagentFixture(t:TestContext,mode:ChildMode='one
    assertContinuationCurrent(){counts.continuation++;if(rights.revoked||generation!==rights.generation)throw denied()},
   })
  })
- const work=createNativeWorkInput(ctx,access),admissions=createNativeProducerAdmissions(work)
+ const work=createNativeWorkInput(ctx,access,options.checkpoint),admissions=createNativeProducerAdmissions(work)
  t.after(()=>work.close())
  const candidates:AdmissionRequest[]=[],starts:unknown[]=[],runs:Array<{dispose:()=>Promise<void>}>=[],detached:Array<Promise<unknown>>=[]
+ let beforeCompletion=async(_candidate:unknown,publish:()=>Promise<void>)=>publish()
  let beforeAdmission:Admission=async(candidate,dispatch)=>admissions.subagent(candidate,dispatch)
- const service=new packages.subagent.SubagentRuntime(ctx,{maxActiveSubagents:{get:()=>8},maxDepth:{get:()=>2}},{requirePromptAdmission:true,admitPrompt:async(candidate:AdmissionRequest,dispatch:()=>void)=>{candidates.push(candidate);await beforeAdmission(candidate,dispatch)}})
+ const Runtime=activationAdmission?createActivationAdmissionRuntime(packages.subagent.SubagentRuntime):packages.subagent.SubagentRuntime
+ class HotRuntime extends Runtime{
+  constructor(ctx:unknown,config:unknown){super(ctx,config,{requireCompletionAdmission:true,captureCompletion:(parent:Agent,sender:Agent)=>{const admit=work.captureSubagentCompletion(parent,sender);return (candidate:unknown,dispatch:()=>void)=>beforeCompletion(candidate,()=>admit(candidate as Parameters<typeof admit>[0],dispatch))},requirePromptAdmission:true,admitPrompt:async(candidate:AdmissionRequest,dispatch:()=>void)=>{candidates.push(candidate);await beforeAdmission(candidate,dispatch)}})}
+ }
+ await ctx.plugin(HotRuntime,{maxActiveSubagents:8,maxDepth:2})
+ const service=requireSubagents(ctx)
  await ctx.plugin(packages.spawn,{providerName:'spawn'})
  let parent:Agent
  const events=(agent:Agent=parent)=>observed.get(agent.session)??[]
@@ -85,10 +96,10 @@ export async function nativeHotSubagentFixture(t:TestContext,mode:ChildMode='one
  let toolAction:(exec:ToolRunContext,start:()=>Promise<string>)=>Promise<string|void>=async(_exec,start)=>start()
  const start=async(signal=new AbortController().signal):Promise<string>=>{
   if(mode==='one-shot'){
-   const run=await service.start('spawn',{parent,prompt:[{type:'text',text:'执行真实子任务'}],label:'hot child',signal});runs.push(run);starts.push(run)
+   const run=await service.startActivation({provider:'spawn',delivery:'caller',request:{parent,prompt:[{type:'text',text:'执行真实子任务'}]},label:'hot child',signal});runs.push(run);starts.push(run)
    return outputText((await run.result).output)
   }
-  const initial=await service.startContinuable({provider:'spawn',childId:f.sessionPackage.SessionId('hot-continuable-child'),label:'hot child',request:{parent,prompt:[{type:'text',text:'执行真实子任务'}]},signal});starts.push(initial)
+  const initial=await service.startActivation({delivery:'parent',provider:'spawn',childId:f.sessionPackage.SessionId('hot-continuable-child'),label:'hot child',request:{parent,prompt:[{type:'text',text:'执行真实子任务'}]},signal});starts.push(initial)
   const child=candidates.at(-1)!.agent;await child.whenIdle()
   const answer=events(child).filter(event=>event.type==='assistant/message').at(-1)
   return answer?.type==='assistant/message'?outputText(answer.data.message.content):''
@@ -100,17 +111,18 @@ export async function nativeHotSubagentFixture(t:TestContext,mode:ChildMode='one
   async execute(_args,exec){counts.tools++;return await toolAction(exec,()=>start(exec.signal))??'delegation-finished'},
  }))
  await ctx.plugin(f.loopPackage.namespace.AgentLoop,{agents:[]})
- parent=(await ctx.agents.create({sessionId:f.sessionPackage.SessionId('hot-child-parent'),agentOptions:{provider:'child-test',model:'child-model'}})).agent
- const adapter=new ChildAdapter();adapter.parentId=parent.id;ctx.llm.registerAdapter(['child-test'],adapter)
+ parent=(await ctx.agents.create({sessionId:f.sessionPackage.SessionId('hot-child-parent'),agentOptions:{provider:options.provider??'child-test',model:'child-model'}})).agent
+ const adapter=new ChildAdapter();adapter.parentId=parent.id;ctx.llm.registerAdapter([options.provider??'child-test'],adapter)
  const gates:HotGate[]=[]
  t.after(async()=>{for(const gate of gates)gate.release();await Promise.allSettled(detached);for(const run of runs)await run.dispose()})
  return {
   ...f,parent,mode,work,access,service,candidates,starts,rights,counts,authorizations,adapter,events,start,detached,
   setToolAction(action:typeof toolAction){toolAction=action},
   setAdmission(action:Admission){beforeAdmission=action},
+  setCompletion(action:typeof beforeCompletion){beforeCompletion=action},
   defaultAdmission:admissions.subagent,
-  async send(rpcId='hot-child-input'){
-   const message=createUserMessage({source:{kind:'user',rpcId},content:[{type:'text',text:'调用真实子任务'}]})
+  async send(rpcId='hot-child-input',text='调用真实子任务'){
+   const message=createUserMessage({source:{kind:'user',rpcId},content:[{type:'text',text}]})
    await work.withNewInput(parent,message,{producer:'prompt',identity:rpcId},()=>parent.followup(message))
    await parent.whenIdle();return message
   },
