@@ -12,7 +12,7 @@ import {redactLog} from './diagnostics.ts'
 import {collectEnvironment,type DiagnosticCheck} from './environment.ts'
 import {command} from './process.ts'
 import {assertMaintenanceStopped,createBackup,dshEnvBackupNotice,dshEnvRestoreNotice,restoreBackup} from './maintenance.ts'
-import {upgradeInstall,unregisterInstall} from './upgrade.ts'
+import {upgradeInstall,unregisterInstall,releaseSource} from './upgrade.ts'
 import type {InstallState} from './contracts.ts'
 
 const optionsByCommand:Record<string,string[]>={up:['workspace','port','no-open','database-config'],status:['json'],open:['print-url'],stop:[],restart:['no-open'],logs:['follow'],doctor:['json'],backup:['output'],restore:['from','database-config'],upgrade:['to'],uninstall:[],credentials:['action','confirm']}
@@ -91,6 +91,8 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
   if(parsed.command==='up'){
    if(state){
     if(state.phase==='maintenance')throw Error('安装处于未完成的维护状态，拒绝启动；请使用原备份恢复到新目录。')
+    // 新命令包不会隐式替换原安装；在 stderr 提示保留原数据的显式切换方式，不影响输出解析。
+    if(state.version!==pkg.version)console.error('此安装为 '+state.version+'，当前命令包为 '+pkg.version+'。如需在保留原数据的前提下切换到 '+pkg.version+'，先运行 teloa stop，再运行 teloa upgrade --to '+pkg.version+'。')
     if(options.workspace&&await canonical(String(options.workspace))!==state.layout.workspaceRoot||options.port&&Number(options.port)!==state.port||options['database-config']&&(state.database.kind!=='existing'||await canonical(String(options['database-config']))!==state.database.configFile))throw Error('参数与已有安装配置冲突；不会改变正在使用的目录、端口或数据库。')
     const status=await serviceStatus(state)
     if(status.app==='unknown')throw Error('现有服务失联，拒绝接管。请运行 doctor。')
@@ -120,7 +122,7 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
    console.log('备份已保存：'+await canonical(String(options.output))+'\n含数据库、会话与资料；凭据不随备份，恢复后需重新录入。备份未加密，请存放在受保护的位置。工作文件不包含在内。\n'+dshEnvBackupNotice);return
   }
   if(parsed.command==='upgrade'){
-   const next=await upgradeInstall(state,String(options.to));console.log('当前版本：'+next.version+'；原数据备份路径记录在实例的 upgrade.json。');return
+   const next=await upgradeInstall(state,String(options.to),releaseSource(String(options.to),{version:pkg.version,root:programRoot}));console.log('当前版本：'+next.version+'；原数据备份路径记录在实例的 upgrade.json。');return
   }
   if(parsed.command==='uninstall'){
    await unregisterInstall(state);console.log('本安装服务已注销，数据库、工作文件、会话、模型配置与保留版本均保留。\n如需移除 npm 命令，请另行使用 npm uninstall。');return

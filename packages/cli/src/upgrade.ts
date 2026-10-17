@@ -30,6 +30,10 @@ export async function fetchRelease(state:InstallState,version:string):Promise<st
  verifyRegistryInstall(JSON.parse(await readFile(join(source,'package.json'),'utf8')),JSON.parse(await readFile(join(directory,'package-lock.json'),'utf8')),version)
  await verifyRelease(source);return source
 }
+/** 从官方发行包先安装的新 CLI，明确升级到其自身版本时以该包为候选；其余版本仍从注册表取得。候选同样经过 verifyRelease 与 upgradeInstall 的全部检查。 */
+export function releaseSource(version:string,cli:{version:string;root:string}):typeof fetchRelease{
+ return version===cli.version?async()=>cli.root:fetchRelease
+}
 /** 由调用方持安装锁。下载失败保留旧安装；切换后的失败只保留恢复点，不假装回滚数据库。 */
 export async function upgradeInstall(state:InstallState,version:string,download=fetchRelease):Promise<InstallState>{
  if(!exactVersion(version))throw Error('升级必须指定确切版本。')
