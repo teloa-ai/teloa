@@ -106,6 +106,17 @@ test('第 5 行：最近一次执行运行配置失败',()=>{
  assert.ok(!('hint' in unblocked))
 })
 
+test('第 5 行：配置失败的任务已结束时不劫持下一步；待开始任务仍只提供重新准备',()=>{
+ const failed=(state:'ready'|'cancelled'|'completed')=>({...execution({id:claimB,state:'configuration_failed',sessionId:'s-1',createdAt:occurrence.claimedAt}),task:{id:taskId,state}})
+ for(const state of ['cancelled','completed'] as const){
+  const model=planStatusBox(input({schedule:summary({nextAt:'2026-09-17T01:00:00.000Z'}),latestExecution:failed(state)}))
+  assert.equal(model.tone,'good',state);assert.match(model.sentence,/^plan\.status\.active:/,state)
+  assert.deepEqual([model.primary,model.secondary],[{label:'continuous.detail.triggerOnce',action:{kind:'trigger'}},{label:'continuous.detail.pause',action:{kind:'pause'}}],state)
+ }
+ const ready=planStatusBox(input({schedule:summary({nextAt:'2026-09-17T01:00:00.000Z'}),latestExecution:failed('ready')}))
+ assert.deepEqual(ready,{tone:'warn',sentence:'plan.status.configFailed',detail:'plan.run.configurationFailed',primary:{label:'plan.status.action.rePrepare',action:{kind:'open-task',taskId}}})
+})
+
 test('第 6 行：有下次触发时间的正常态带时区、触发一次与暂停',()=>{
  const model=planStatusBox(input({schedule:summary({nextAt:'2026-09-16T01:00:00.000Z'})}))
  assert.deepEqual(model,{tone:'good',sentence:'plan.status.active:{"time":"@2026-09-16T01:00:00.000Z","timezone":"Asia/Singapore"}',primary:{label:'continuous.detail.triggerOnce',action:{kind:'trigger'}},secondary:{label:'continuous.detail.pause',action:{kind:'pause'}}})

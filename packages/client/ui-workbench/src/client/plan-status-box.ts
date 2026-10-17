@@ -61,7 +61,8 @@ export function planStatusBox(input:PlanStatusInput):PlanStatusBoxModel{
    ...(taskId?{primary:{label:t('plan.status.action.openTask'),action:{kind:'open-task',taskId}}}:{}),
   }
  }
- if(latestExecution?.run?.state==='configuration_failed'&&latestExecution.task)return {tone:'warn',sentence:t('plan.status.configFailed'),detail:t('plan.run.configurationFailed'),primary:{label:t('plan.status.action.rePrepare'),action:{kind:'open-task',taskId:latestExecution.task.id}}}
+ // 已完成或已取消的任务不能再重新准备；其历史留在时间线，不劫持当前计划的下一步。
+ if(latestExecution?.run?.state==='configuration_failed'&&latestExecution.task&&latestExecution.task.state!=='completed'&&latestExecution.task.state!=='cancelled')return {tone:'warn',sentence:t('plan.status.configFailed'),detail:t('plan.run.configurationFailed'),primary:{label:t('plan.status.action.rePrepare'),action:{kind:'open-task',taskId:latestExecution.task.id}}}
  if(plan.workDefinition&&!plan.workDefinition.triggers.some(trigger=>trigger.kind==='schedule')){
   const task=overview?.latest?.task
   if(task&&task.state!=='completed'&&task.state!=='cancelled')return {tone:'info',sentence:t('planWork.waitingCurrent'),primary:{label:t('plan.status.action.openTask'),action:{kind:'open-task',taskId:task.id}},secondary:pause}
