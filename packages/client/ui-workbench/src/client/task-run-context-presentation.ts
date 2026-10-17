@@ -23,7 +23,7 @@ export function taskRunContextSections(run:Pick<RunView,'planContext'|'industryC
    ],
    requirements:work?work.requirements.map(value=>({labelKey:'taskExecution.context.obtain' as const,value})):[],
    skills:work?work.skills.map(({title,version})=>({title,version})):[],
-   notice:[run.planContext.notice,work?.notice].filter(Boolean).join(' '),
+   notice:[run.planContext.notice,run.planContext.methodSource?.notice,work?.notice].filter(Boolean).join(' '),
   })
  }
  if(run.industryContext){
