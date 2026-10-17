@@ -170,3 +170,44 @@ test('计划领取按同一规范请求指纹核对：默认 groupId/skills 显�
  await assert.rejects(occurrences.dispatchTask(owner,{...dispatch,taskRequestId:randomUUID()}))
  assert.equal((await pool.query('select count(*)::int n from teloa_tasks where owner_id=$1',[owner])).rows[0].n,2)
 })
+test('启用后暂停的本人计划仅经明确重配置路径接受 paused 定义控制；ending/ended 与 owner/来源/预算/绑定不符仍拒绝，启用、领取与执行准入不把 paused 当 active',async()=>{
+ sourceActive=true;confirmed=true
+ const {WorkControlService}=await import('../src/work/work-control.ts'),{OwnerWorkAuthority}=await import('../src/work/owner-work-authority.ts'),{PlanOccurrenceService}=await import('../src/work/plan-occurrences.ts')
+ const plans=new PlanService(pool,clock,undefined,undefined,undefined,undefined,authority),occurrences=new PlanOccurrenceService(pool,clock,undefined,undefined,authority)
+ const controls=new WorkControlService(pool,clock,{ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled:true,unknownOperationIds:[]})})
+ const enabled=async()=>{const owner=randomUUID(),created=await plans.createConfirmed(owner,await sourceBackedInput(owner)),active=await plans.changeConfirmed(owner,{requestId:randomUUID(),planId:created.id,expectedVersion:created.version,action:'enable'});return {owner,active,controlId:active.workDefinition!.definitionControlId}}
+ const control=async(owner:string,controlId:string,action:'pause'|'stop',settle=true)=>{const current=await controls.get(owner,{controlId}),changed=await controls.change(owner,{requestId:randomUUID(),controlId,expectedVersion:current.version,action,scope:'definition',roundControlId:null});return settle?controls.reconcile(owner,{controlId,generation:changed.generation}):changed}
+ const state=async(owner:string,id:string)=>(await pool.query('select state from teloa_work_controls where owner_id=$1 and id=$2',[owner,id])).rows[0].state
+ const pausePlan=(owner:string,plan:{id:string;version:number})=>plans.change(owner,{requestId:randomUUID(),planId:plan.id,expectedVersion:plan.version,action:'pause'})
+ const configure=(owner:string,plan:{id:string;version:number;configVersion:number})=>plans.configureWorkConfirmed(owner,{requestId:randomUUID(),planId:plan.id,expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,configuration})
+ // 正例：真实控制服务把定义控制推进到 paused；普通启用（恢复）仍要求 active，明确重配置换新 active 定义与 owner_grant。
+ const a=await enabled(),aPaused=await pausePlan(a.owner,a.active);assert.equal((await control(a.owner,a.controlId,'pause')).state,'paused');assert.equal(await state(a.owner,a.controlId),'paused')
+ await assert.rejects(plans.changeConfirmed(a.owner,{requestId:randomUUID(),planId:aPaused.id,expectedVersion:aPaused.version,action:'enable'}),{code:'teloa/forbidden'})
+ const reconfigured=await configure(a.owner,aPaused)
+ assert.equal(reconfigured.state,'paused');assert.equal(reconfigured.configVersion,aPaused.configVersion+1);assert.equal(reconfigured.executor?.grantVersion,aPaused.configVersion+1)
+ assert.notEqual(reconfigured.workDefinition!.definitionControlId,a.controlId);assert.equal(await state(a.owner,a.controlId),'ended');assert.equal(await state(a.owner,reconfigured.workDefinition!.definitionControlId),'active')
+ const grant=(await pool.query('select owner_grant from teloa_plans where owner_id=$1 and id=$2',[a.owner,aPaused.id])).rows[0].owner_grant;assert.deepEqual(grant.policy,(await authority.capture()).policy)
+ assert.equal((await plans.changeConfirmed(a.owner,{requestId:randomUUID(),planId:reconfigured.id,expectedVersion:reconfigured.version,action:'enable'})).state,'active')
+ // 反例：计划仍 active 而定义控制 paused 时，领取、立即运行与执行准入都不把 paused 当 active；重配置要求计划先暂停。
+ const b=await enabled();assert.equal((await control(b.owner,b.controlId,'pause')).state,'paused')
+ await assert.rejects(occurrences.claim(b.owner,{planId:b.active.id,now:'2026-10-18T03:00:00.000Z'}),{code:'teloa/forbidden'})
+ await assert.rejects(occurrences.trigger(b.owner,{requestId:randomUUID(),planId:b.active.id,expectedVersion:b.active.version,expectedConfigVersion:b.active.configVersion,now:clock.now()}),{code:'teloa/forbidden'})
+ const db=await pool.connect();try{await db.query('begin');await assert.rejects(new OwnerWorkAuthority(pool,authority).current(db,b.owner,b.active.executor!),{code:'teloa/forbidden'})}finally{await db.query('rollback');db.release()}
+ await assert.rejects(configure(b.owner,b.active),{code:'teloa/conflict'})
+ // ending/ended 定义控制一律拒绝重配置。
+ const c=await enabled(),cPaused=await pausePlan(c.owner,c.active);assert.equal((await control(c.owner,c.controlId,'stop',false)).state,'stopping');assert.equal(await state(c.owner,c.controlId),'ending')
+ await assert.rejects(configure(c.owner,cPaused),{code:'teloa/forbidden'})
+ await controls.reconcile(c.owner,{controlId:c.controlId,generation:(await controls.get(c.owner,{controlId:c.controlId})).generation});assert.equal(await state(c.owner,c.controlId),'ended')
+ await assert.rejects(configure(c.owner,cPaused),{code:'teloa/forbidden'})
+ // paused 控制下 owner、来源、预算、绑定任一不符仍拒绝；恢复原值后才可重配置。
+ const d=await enabled(),dPaused=await pausePlan(d.owner,d.active);await control(d.owner,d.controlId,'pause')
+ await assert.rejects(configure(randomUUID(),dPaused))
+ sourceActive=false;await assert.rejects(configure(d.owner,dPaused),/原方法来源已撤回/);sourceActive=true
+ const account=dPaused.workDefinition!.budgetAccountId,policy=(await pool.query('select policy from teloa_work_budget_accounts where owner_id=$1 and id=$2',[d.owner,account])).rows[0].policy
+ await pool.query('update teloa_work_budget_accounts set policy=$3 where owner_id=$1 and id=$2',[d.owner,account,JSON.stringify({...policy,maxTokens:policy.maxTokens+1})]);await assert.rejects(configure(d.owner,dPaused),{code:'teloa/forbidden'})
+ await pool.query('update teloa_work_budget_accounts set policy=$3 where owner_id=$1 and id=$2',[d.owner,account,JSON.stringify(policy)])
+ // 绑定为不可变谱系；仅测试内以 replica 模式模拟存储层篡改，验证重配置仍拒绝错配绑定。
+ const tamper=async(value:string)=>{const client=await pool.connect();try{await client.query('begin');await client.query('set local session_replication_role=replica');await client.query('update teloa_work_plan_bindings set definition_control_id=$4 where owner_id=$1 and plan_id=$2 and config_version=$3',[d.owner,dPaused.id,dPaused.configVersion,value]);await client.query('commit')}catch(error){await client.query('rollback');throw error}finally{client.release()}}
+ await tamper(randomUUID());await assert.rejects(configure(d.owner,dPaused),{code:'teloa/forbidden'});await tamper(d.controlId)
+ assert.equal((await configure(d.owner,dPaused)).configVersion,dPaused.configVersion+1)
+})

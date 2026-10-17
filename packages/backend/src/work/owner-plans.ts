@@ -70,12 +70,15 @@ export async function createOwnerPlan(pool:Pool,clock:{id:()=>string;now:()=>str
   admission.assertCurrent();await db.query('commit');return result
  }catch(error){await db.query('rollback');throw error}finally{db.release()}
 }
-export async function verifyOwnerPlan(db:PoolClient,owner:string,plan:PersistentPlan,authority:OwnerPlanAuthority|undefined,allowPaused=false){
+/** reconfigure 仅供暂停后的明确本人重配置：原定义控制可为 active 或 paused（随后由新 active 定义替换）；其余路径只认 active。 */
+export async function verifyOwnerPlan(db:PoolClient,owner:string,plan:PersistentPlan,authority:OwnerPlanAuthority|undefined,allowPaused=false,reconfigure=false){
+ if(reconfigure&&!allowPaused)throw denied()
+ const controlStates=reconfigure?['active','paused']:['active']
  if(plan.roleId!==null||!plan.executor||!plan.ownerGrant||plan.source.kind!=='method-reuse'||!authority||plan.state!==(allowPaused?'paused':'active')||!plan.workDefinition||!isDeepStrictEqual(plan.executor,plan.workDefinition.authorization))throw denied()
  const source=await authority.verifySource(db,owner,plan.source),control=(await db.query('select * from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,plan.workDefinition.definitionControlId])).rows[0]
  const binding=(await db.query('select * from teloa_work_plan_bindings where owner_id=$1 and plan_id=$2 and config_version=$3',[owner,plan.id,plan.configVersion])).rows[0]
  const account=(await db.query('select policy from teloa_work_budget_accounts where owner_id=$1 and id=$2 for share',[owner,plan.workDefinition.budgetAccountId])).rows[0]
- if(!control||control.state!=='active'||control.kind!=='definition'||control.budget_account_id!==plan.workDefinition.budgetAccountId||!binding||binding.definition_control_id!==control.id||binding.budget_account_id!==control.budget_account_id||!account||!isDeepStrictEqual(account.policy,plan.workDefinition.budget))throw denied()
+ if(!control||!controlStates.includes(control.state)||control.kind!=='definition'||control.budget_account_id!==plan.workDefinition.budgetAccountId||!binding||binding.definition_control_id!==control.id||binding.budget_account_id!==control.budget_account_id||!account||!isDeepStrictEqual(account.policy,plan.workDefinition.budget))throw denied()
  return combineWorkAccessLeases([source,ownerWorkLease(owner,plan.id),await workAccess.authorize({kind:'capability',capability:'general-agent',ownerId:owner,sessionId:plan.source.acceptedSource?.sessionId??null,objectId:plan.id,operation:'run'}),await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:plan.source.acceptedSource?.sessionId??null,objectId:plan.id,operation:'run'})])
 }
 /** 暂停、归档沿原变更回执；启用只能由本人专用入口取得新确认，普通调用不升级授权。 */
@@ -123,7 +126,7 @@ export async function configureOwnerPlan(pool:Pool,clock:{id:()=>string;now:()=>
   assertConfiguration(fields,configuration)
   const approval=await authority.authorize(owner,{requestId:v.requestId,planId:plan.id,expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,operation:'configure',source:plan.source})
   const captured=await authority.capture(owner,{requestId:v.requestId,fields,source:plan.source,configuration,intent:'save-paused'},db)
-  const sourceLease=await verifyOwnerPlan(db,owner,plan,authority,true),lease=combineWorkAccessLeases([approval,captured.admission]),configVersion=plan.configVersion+1,controlId=clock.id(),now=clock.now()
+  const sourceLease=await verifyOwnerPlan(db,owner,plan,authority,true,true),lease=combineWorkAccessLeases([approval,captured.admission]),configVersion=plan.configVersion+1,controlId=clock.id(),now=clock.now()
   sourceLease.assertCurrent()
   await db.query('update teloa_work_budget_accounts set policy=$3,version=version+1 where owner_id=$1 and id=$2',[owner,plan.workDefinition.budgetAccountId,JSON.stringify(configuration.budget)])
   await db.query("update teloa_work_controls set state='ended',generation=generation+1,version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,plan.workDefinition.definitionControlId,now])
