@@ -26,8 +26,8 @@ const nativeSidebar=readFileSync(resolve(clientDir,'native-sidebar-accessibility
 requireCheck(nativeSidebar.includes('root.ownerDocument')&&nativeSidebar.includes('observer.observe(root,')&&nativeSidebar.includes("attributeFilter:['data-sidebar-right-open','data-sidebar-right-panel','aria-selected','hidden']")&&nativeSidebar.includes('observer.disconnect();resize.disconnect();'),'原生右栏桥必须限定当前外壳、公开状态标记并完整解除监听。')
 requireCheck(!/innerHTML|outerHTML|replaceChildren|appendChild|removeChild|document\.querySelector/.test(nativeSidebar),'原生右栏桥不得搬移内容、写正文或越过当前外壳查询。')
 // ComposerSubmenu 仅由隔离测试使用，原生输入接管后不进入正式产物；
-// 正式入口增加原生右栏键盘桥，数量仍精确核对，不放宽到任意观察器。
-const reviewedBundleObserverCount=4
+// 正式入口增加原生右栏键盘桥，以及助手通话浮窗为小松鼠小窗让位的布局观察（只重算自身位置），数量仍精确核对，不放宽到任意观察器。
+const reviewedBundleObserverCount=5
 requireCheck((code.match(/new MutationObserver\(/g)??[]).length===reviewedBundleObserverCount,'产物中的观察器与已复核来源不一致。')
 // 同包按需分块：只认 `client.<名>.js`，各自以 chunk 包装、自包含（不得同步 require 另一个 client*.js），外部引用只取平台模块；入口只经 require.async 取它。
 const chunks=readdirSync(resolve(dir,'lib')).filter(name=>/^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/.test(name))
