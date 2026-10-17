@@ -44,25 +44,27 @@ https://github.com/user-attachments/assets/8bc8a96a-475a-454c-8179-a271e2140b0c
 
 ## Quick start
 
-Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits. **0.2.0-alpha.7** is available through [npm](https://www.npmjs.com/package/@teloa/cli) and [Docker Hub](https://hub.docker.com/r/teloa/teloa). Choose native npm installation for local programs, or Docker Hub for container deployment. Source builds remain available below.
+Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-### Native npm installation
+**0.2.0-beta.2** is the current preview. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.2) and has been verified on macOS arm64; other operating systems have not been verified for this preview. The npm registry and [Docker Hub](https://hub.docker.com/r/teloa/teloa) still provide the earlier **0.2.0-alpha.7**. Source builds remain available below.
+
+### Native installation from the GitHub Release
 
 Use **Node.js 24.x** or **22.x from 22.19 onward**, **npm 11.x from 11.12.1 onward**, and a running local Docker engine for the dedicated PostgreSQL database. Install the exact version into a new command directory; no global installation or source build is required.
 
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.2/teloa-cli-0.2.0-beta.2.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart), and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup) before updating an existing installation.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart), and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup) before updating an existing installation. To install the earlier registry release instead, use `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`.
 
 <details>
-<summary><strong>Docker Hub with Compose</strong></summary>
+<summary><strong>Docker Hub with Compose (0.2.0-alpha.7)</strong></summary>
 
 ### Docker Hub with Compose
 
@@ -155,11 +157,12 @@ See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [loc
 | Capability | How it helps |
 | --- | --- |
 | **Conversations** | Work with text, files and images, use `@` references and `/` commands, and continue in the same context. |
-| **Voice input** | The conversation composer includes voice input by default. Prepare the local recognition model on first use, review the transcript in your draft, and send it when ready. You can disable voice input in Settings. |
+| **Voice input and playback** | The conversation composer includes voice input by default. Prepare the local recognition model on first use, review the transcript in your draft, and send it when ready. Speech playback reads replies aloud with a provider and voice you choose and preview in Settings, using your own credentials. You can disable voice input in Settings. |
 | **Context inspection** | Bundled dsh-context shows context composition, tokens, estimated cost and compaction records through conversation tabs, the right sidebar or `/context`. Provider billing remains authoritative. |
 | **Messaging channels** | Built-in IM Gateway connects Feishu, Lark, Telegram and Slack after you configure and enable each channel in Settings. No separate plugin installation is required. |
 | **AI employees and groups** | Define lasting roles with their own knowledge, skills and access. Bring employees together in a group for discussion and collaboration. |
 | **Tasks and projects** | Assign a concrete goal, see the responsible employee and execution progress, and organize related work and deliverables around a project. |
+| **Deliverables and revisions** | Deliverables keep their versions. Give feedback or revise a selected part in the original conversation; earlier versions stay readable. |
 | **Businesses and dashboards** | Describe records, fields and views in natural language. Review and save the configuration, manage records, and build dashboards over the business data. |
 | **Knowledge and skills** | Provide reference material and reusable working methods. Choose what each employee may use. |
 | **Connectors and the market** | Connect supported external tools through MCP. Add employees, skills, connectors, task templates and business dashboards individually or as part of a solution. |

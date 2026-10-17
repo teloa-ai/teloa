@@ -44,25 +44,27 @@ https://github.com/user-attachments/assets/4f53f542-c15e-444f-a232-3a02e0245597
 
 ## 快速开始
 
-需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。**0.2.0-alpha.7** 已提供 [npm](https://www.npmjs.com/package/@teloa/cli) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 安装渠道。需要使用本机程序时优先选择 npm 原生安装；需要容器部署时选择 Docker Hub。下方仍保留源码构建方式。
+需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。
 
-### npm 原生安装
+当前预览版为 **0.2.0-beta.2**。原生安装包随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.2) 提供，已在 macOS arm64 上验证；其他操作系统尚未针对本预览版验证。npm 注册表与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 仍为此前的 **0.2.0-alpha.7**。下方仍保留源码构建方式。
+
+### 从 GitHub Release 原生安装
 
 需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**npm 11.12.1 及以上的 11.x**，以及运行中的本机 Docker 引擎，用于独立 PostgreSQL 数据库。将精确版本安装到新建命令目录，无需全局安装或编译源码。
 
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.2/teloa-cli-0.2.0-beta.2.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，已有安装更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，已有安装更新前先看[备份与升级](https://docs.teloa.ai/deploy/backup)。如需安装注册表中的上一版本，使用 `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`。
 
 <details>
-<summary><strong>Docker Hub + Compose</strong></summary>
+<summary><strong>Docker Hub + Compose（0.2.0-alpha.7）</strong></summary>
 
 ### Docker Hub + Compose
 
@@ -155,11 +157,12 @@ pnpm dev:dsh
 | 能力 | 使用方式 |
 | --- | --- |
 | **对话** | 使用文字、文件、图片、`@` 引用和 `/` 命令，在同一上下文中继续工作。 |
-| **语音输入** | 会话输入区默认提供语音入口；首次使用按需准备本地识别模型，转写进入草稿，由你确认后发送。可在设置中停用。 |
+| **语音输入与播报** | 会话输入区默认提供语音入口；首次使用按需准备本地识别模型，转写进入草稿，由你确认后发送。语音播报使用你在设置中选择并试听的服务商与音色朗读回复，凭据由你自行配置。语音输入可在设置中停用。 |
 | **上下文观察** | 默认随附 dsh-context；在会话页签、右栏或 `/context` 中查看上下文组成、Token、费用估算与压缩记录。费用以模型服务商账单为准。 |
 | **消息通道** | IM Gateway 内置并默认加载；在设置中配置并启用飞书、Lark、Telegram 或 Slack，无需另装插件。 |
 | **AI 员工与群协作** | 为员工保留长期职责、知识、技能和授权；把多位员工加入工作群，讨论问题、协作完成工作。 |
 | **任务与项目** | 交办明确目标，查看负责人和实际执行进度；用项目归集相关工作与成果。 |
+| **成果与修订** | 成果保留版本；可在原会话中提出反馈或选段修改，旧版本仍可查看。 |
 | **业务与看板** | 用自然语言描述记录、字段和页面，核对后保存配置；管理业务记录，并基于这些数据搭建看板。 |
 | **资料与技能** | 提供判断所需的依据资料和可复用的工作方法，为每位员工选择可使用的内容。 |
 | **连接器与市场** | 通过 MCP 接入支持的外部工具；单独添加员工、技能、连接器、任务模板、业务看板，也可以组合成方案。 |
