@@ -5,10 +5,11 @@ export const workErrorCodes = [
   'teloa/version-conflict',
   'teloa/conflict',
   'teloa/dependency-unavailable',
-  'teloa/delivery-review-required',
   'teloa/storage-corrupt',
   'teloa/source-unavailable',
   'teloa/invalid-host-response',
+  // 正式码之后追加：交付需本人复核
+  'teloa/delivery-review-required',
   // 既有位置接受
   'teloa/storage-unavailable',
   'teloa/not-found',
