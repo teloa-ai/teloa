@@ -7,7 +7,7 @@ test('候选最多持有一包，正式采用后首包立即放行，无需等�
  const control=new AbortController();let finish!:()=>void,finished=false
  const tail=new Promise<void>(resolve=>{finish=resolve}),sent:number[]=[]
  const audio=prepareSpeechPrefix({text:'先说这句。',signal:control.signal,async synthesize(_text,_signal,onAudio){await onAudio(Uint8Array.of(1,0));await tail;await onAudio(Uint8Array.of(2,0));finished=true}})
- await tick();assert.deepEqual(sent,[])
+ await tick();assert.deepEqual(sent,[] as number[])
  const pending=audio.consume(control.signal,async bytes=>{sent.push(bytes[0]!)})
  await tick();assert.deepEqual(sent,[1]);assert.equal(finished,false)
  audio.discard();finish();await pending;assert.deepEqual(sent,[1,2])

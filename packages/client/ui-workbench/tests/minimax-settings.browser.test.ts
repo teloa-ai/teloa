@@ -112,7 +112,7 @@ test('多厂商选择、模型音色与凭据隔离；选择不自动保存，�
 test('紧凑音色选择按中英文分组，双语名称只在一个下拉框中选择，平时只有一个试听动作',async t=>{
  const page=await mount(t,{minimaxReady:true}),select=page.getByRole('combobox',{name:'音色',exact:true})
  assert.equal(await select.locator('option').count(),18)
- assert.deepEqual(await select.locator('optgroup').evaluateAll(nodes=>nodes.map(node=>node.label)),['普通话','English'])
+ assert.deepEqual(await select.locator('optgroup').evaluateAll((nodes:HTMLOptGroupElement[])=>nodes.map(node=>node.label)),['普通话','English'])
  assert.ok((await select.locator('option').allTextContents()).includes('温润男声 · Gentleman'))
  assert.equal(await select.inputValue(),'male-qn-qingse')
  assert.equal(await page.getByRole('region',{name:'音色',exact:true}).getByRole('button').count(),1)

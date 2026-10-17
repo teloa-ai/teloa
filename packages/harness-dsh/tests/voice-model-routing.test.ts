@@ -178,11 +178,11 @@ test('语音工具装配只取本轮许可交集，角色未许可加载端口�
  const loaded=loading.refine(f.agent,assembly,{voice:true,turn:1});assert.ok(loaded.tools.some(tool=>tool.name==='hot_result'))
  assert.equal(loaded.sections.find(s=>s.name==='tool:hot_result')?.text,'原工具执行规则')
  assert.equal(loaded.contexts.find(c=>c.name==='tool:hot_result:depth')?.text,'工具动态范围')
- const revoked=loading.refine(f.agent,{...assembly,tools:[discovery]} as never,{voice:true,turn:1});assert.deepEqual(revoked.tools.map(tool=>tool.name),[voiceToolsName])
+ const revoked=loading.refine(f.agent,{...(assembly as object),tools:[discovery]} as never,{voice:true,turn:1});assert.deepEqual(revoked.tools.map(tool=>tool.name),[voiceToolsName])
  await assert.rejects(forbidden.execute({names:['hot_result']},{agent:f.agent,signal:new AbortController().signal} as never),{code:'teloa/forbidden'})
  loading.refine(f.agent,assembly,{voice:true,turn:1})
  await assert.rejects(forbidden.execute({names:['unavailable_write']},{agent:f.agent,signal:new AbortController().signal} as never),{code:'teloa/forbidden'})
- const restricted=loading.refine(f.agent,{...assembly,tools:[visible]} as never,{voice:true,turn:1});assert.deepEqual(restricted.tools.map(t=>t.name),['hot_result'])
+ const restricted=loading.refine(f.agent,{...(assembly as object),tools:[visible]} as never,{voice:true,turn:1});assert.deepEqual(restricted.tools.map(t=>t.name),['hot_result'])
  await assert.rejects(forbidden.execute({names:['hot_result']},{agent:f.agent,signal:new AbortController().signal} as never),{code:'teloa/forbidden'})
 })
 
