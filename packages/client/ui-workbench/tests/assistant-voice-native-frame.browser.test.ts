@@ -65,7 +65,9 @@ test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷�
  await page.waitForFunction(()=>(window as any).frameFixture?.native.main()==='business-original').catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,...await page.evaluate(()=>({body:document.body.innerText,keys:Object.keys((window as any).frameFixture??{}),main:(window as any).frameFixture?.native?.main()}))}));throw error})
  await page.getByRole('button',{name:'实时通话',exact:true}).click()
  await page.waitForFunction(()=>(window as any).frameFixture.postOpenRefreshPending)
- await page.getByText('正在听，请说话',{exact:true}).waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,...await page.evaluate(()=>{const f=(window as any).frameFixture;return {main:f.native.main(),sameScope:f.native.scope(),directory:f.voiceDirectory().status,navigationAborted:f.lastNativeNavigation?.aborted,text:document.body.innerText}})}));throw error})
+ // 假媒体流可能在监听瞬间触发 VAD 直接进入录音：监听或录音任一合法活动相位都证明通话已真实启动（employee-voice-copy 的 listening/recording）。
+ await page.getByText(/^(正在听，请说话|正在听你说话…)$/).waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,...await page.evaluate(()=>{const f=(window as any).frameFixture;return {main:f.native.main(),sameScope:f.native.scope(),directory:f.voiceDirectory().status,navigationAborted:f.lastNativeNavigation?.aborted,text:document.body.innerText}})}));throw error})
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.voiceStarts.length),1,'活动相位必须来自这一次真实启动')
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.lastNativeNavigation.aborted),true,'官方Layout在自己的会话打开commit后中止导航信号，不等于本人取消留言')
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.voiceDirectory().status),'loading')
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.native.scope()),true)
