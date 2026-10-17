@@ -292,7 +292,7 @@ test('第 5 步：运行准备把这一刻的两名冻进 run.allowedTools',{tim
 /** 真实 start：driver 先复核会话，再 claim，再把正文交给原生会话（真实最终受理与原生循环）。 */
 async function startRun(run:Run):Promise<Run>{
  const started=await call('task-runs/start',{runId:run.id}) as Run
- assert.ok(['accepted','running'].includes(started.state),`start 后的状态实得 ${started.state}`)
+ assert.ok(['accepted','active'].includes(started.state),`start 后的状态实得 ${started.state}`)
  return {...run,...started}
 }
 const runsOf=(taskId:string)=>call('task-runs/list',{taskId}) as Promise<Run[]>
@@ -326,7 +326,7 @@ test('★ 第 7 步：同一运行里真的搜一次，落 kind=search 的第二
 })
 
 test('第 8 步：未勾上网的在岗同事被逐字拒，且一行记录都不增',{timeout:180000},async()=>{
- if(authorizedRun.state!=='running')authorizedRun=await startRun(authorizedRun)
+ if(!['accepted','active'].includes(authorizedRun.state))authorizedRun=await startRun(authorizedRun)
  const other=await hireColleague('上网未授权')
  unauthorizedRun=await startRun(await prepareRun(other,'未授权同事的同一目标'))
  assert.ok(!unauthorizedRun.allowedTools.includes('web_fetch'))
@@ -335,9 +335,9 @@ test('第 8 步：未勾上网的在岗同事被逐字拒，且一行记录都�
  denied(await runTool(unauthorizedRun.sessionId,'web_search',{queries:['同一目标']}),'当前任务未授权使用此工具，请核对员工执行范围。')
  assert.equal(fetchBodies+searchBodies,bodies,'被拒的调用不得进入工具体')
  assert.deepEqual((await allWebRows()).length,before.length,'未授权的外发不许落账')
- // 运行本身不崩：同一会话仍是 running，回包里也没有 webAccess。
+ // 运行本身不崩：同一运行仍处于正式在途状态（accepted 或原生已开轮的 active），回包里也没有 webAccess。
  const listed=(await runsOf(unauthorizedRun.taskId)).find(item=>item.id===unauthorizedRun.id)
- assert.ok(['accepted','running'].includes(String(listed?.state)),'被拒的工具调用不得把运行本身打断')
+ assert.ok(['accepted','active'].includes(String(listed?.state)),'被拒的工具调用不得把运行本身打断')
  assert.equal(listed?.webAccess,undefined)
 })
 
