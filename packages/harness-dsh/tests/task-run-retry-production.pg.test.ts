@@ -6,11 +6,15 @@ import {mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {join,resolve} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {SessionId} from '@deepseek-ai/dsh-session'
+import {brandString} from '@deepseek-ai/dsh-brand'
+import type {GenerateOptions,StreamChunk} from '@deepseek-ai/dsh-llm'
+import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import type {AgentHandle} from '@deepseek-ai/dsh-agent'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {openResourceDatabase,RoleService,ConversationWorkService,TaskRunService,ConversationService,FileConversationRepository,workRequestChildId} from '@teloa/backend'
 import {testRoleResponsibility} from '../../backend/tests/role-test-fixture.ts'
 import {apply} from '../src/index.ts'
+import {conversationWorkRequestId} from '../src/conversation-work-instruction.ts'
 import {compositionEntries,type RpcHandler} from './fixtures/production-host.ts'
 import {installNativeSessions,installNativeHostServices,installNativeSessionController,ControlledPromptModel} from './fixtures/native-host-services.ts'
 import {readSessionEvents} from '../src/session-events.ts'
@@ -25,7 +29,14 @@ test('完整生产装配+PG：结束自动task v3的原冷Run显式重试，不�
  const config=join(root,'.runtime/teloa/database.json');await mkdir(join(root,'.runtime/teloa/skills'),{recursive:true});await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
  await mkdir(join(root,'.runtime/dsh/profiles/teloa'),{recursive:true});await writeFile(join(root,'.runtime/dsh/profiles/teloa/package.json'),JSON.stringify({dsh:{profile:{bundles:[],patchReload:'startup'}}}))
  ctx.provide('loader',compositionEntries());await installNativeSessions(ctx);await installNativeHostServices(ctx,join(root,'.runtime/dsh'))
- class BeforeOutputFailure extends ControlledPromptModel{calls=0;override async *stream(){this.calls++;throw Error('合成模型首输出前失败')}}
+ // calls 只数被测 Run 的模型请求；承载原始人类消息的父会话固定回复一句，不计入。
+ class BeforeOutputFailure extends ControlledPromptModel{
+  calls=0;parent=''
+  override async *stream(options?:GenerateOptions):AsyncIterable<StreamChunk>{
+   if(options&&String(options.sessionId)===this.parent){const text='已收到原交办。';yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'finish',reason:{kind:'stop'}};return}
+   this.calls++;throw Error('合成模型首输出前失败')
+  }
+ }
  const model=new BeforeOutputFailure();ctx.llm.registerAdapter(['controlled'],model)
  await ctx.plugin((await official('dsh-storage')).Storage);await ctx.plugin(await official('dsh-storage-json'),{root:join(root,'domains')});await ctx.plugin(await official('dsh-storage-domain'),{backend:'json'})
  await ctx.plugin((await official('dsh-workspace')).WorkspaceRegistry)
@@ -50,7 +61,14 @@ test('完整生产装配+PG：结束自动task v3的原冷Run显式重试，不�
  const role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'固定同事',kind:'employee',scopes:['general'],duty:'核对',dataScope:'原资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
  await pool.query("update teloa_roles set state='active',version=3 where owner_id=$1 and id=$2",[owner,role.id])
  const requests=new ConversationWorkService(pool,identity.now,async()=>({ownerId:owner,sessionId:parent.sessionId,status:'ready',submitted:false}))
- const request=await requests.reserve(owner,{requestId:randomUUID(),sessionId:parent.sessionId,messageId:'original-human',messageSeq:7,kind:'task',scope:'general',title:'原任务',goal:'核对事实，不执行外部动作',roleId:role.id,expectedRoleVersion:3})
+ // 会话交办必须携带可核对的原始人类消息：经真实 Controller 受理后，按其原生身份固定来源。
+ const origin=handles.get(parent.sessionId);assert.ok(origin,'父会话由完整生产 Controller 创建');model.parent=parent.sessionId
+ const sourceText='请让固定同事核对事实，不执行外部动作。'
+ await ctx.sessionController.prompt({sessionId:SessionId(parent.sessionId),requestId:brandString<SessionRequestId>(randomUUID()),mode:'queue',content:[{type:'text',text:sourceText}]},AbortSignal.timeout(5000));await origin.agent.whenIdle()
+ const human=readSessionEvents(origin.agent.session).find(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user')
+ assert.ok(human&&human.type==='user/message','原始人类消息已由原生日志受理')
+ const humanSource=human.data.source,nativeIdentity='rpcId' in humanSource&&typeof humanSource.rpcId==='string'?humanSource.rpcId:human.data.id
+ const request=await requests.reserve(owner,{requestId:conversationWorkRequestId(owner,parent.sessionId,nativeIdentity),sessionId:parent.sessionId,messageId:human.data.id,messageSeq:human.seq,kind:'task',scope:'general',title:'原任务',goal:'核对事实，不执行外部动作',sourceText,roleId:role.id,expectedRoleVersion:3})
  const input={sessionId:parent.sessionId,requestId:request.requestId}
  const first=await call('work-requests/resume',input)
  const conversations=new ConversationService(new FileConversationRepository(join(root,'.runtime/teloa/conversations.json')),{create:async()=>{throw Error('回读不能创建会话')},inspect:async sessionId=>{await ctx.sessionController.inspect(SessionId(sessionId))}},identity)

@@ -57,7 +57,8 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
  ctx.provide('sessionController',{
   create:async(input:{sessionId?:string;agentPreset?:string;workspaceId?:string}={})=>{const sessionId=SessionId(input.sessionId??randomUUID()),cwd=workspaces.get(input.workspaceId??'')?.path??root;await ctx.agents.create({sessionId,meta:{cwd,...(input.agentPreset===undefined?{}:{agentPreset:input.agentPreset})},agentOptions:{provider:'scripted-work',model:'fixed'}});return {sessionId,...(input.agentPreset===undefined?{}:{agentPreset:input.agentPreset})}},
   resolveAgent:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));return agent?{agent}:{error:{code:'not-found',message:'missing'}}},
-  inspect:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));if(!agent)throw Error('missing');return {sessionId:id,meta:agent.session.header,status:agent.status}},modelCatalog:async()=>({default:{provider:'scripted-work',model:'fixed'}}),
+  // 与官方 Controller.inspect 同形：生产的本人复核来源要从冷读事件核对原始人类消息。
+  inspect:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));if(!agent)throw Error('missing');return {sessionId:id,meta:agent.session.header,events:agent.session.snapshotEvents(),inheritedEventCount:agent.session.inheritedEventCount,status:agent.status}},modelCatalog:async()=>({default:{provider:'scripted-work',model:'fixed'}}),
   prompt:async(input:{sessionId:string;requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{await publishNativeFixtureInput(ctx,ctx.agents.get(SessionId(input.sessionId))!,createUserMessage({content:input.content,source:{kind:'user',rpcId:brandString<SessionRequestId>(input.requestId)}}));if(input.sessionId.startsWith('task-run-')&&loseRunResponse){loseRunResponse=false;throw Error('已受理后回包丢失')}return {accepted:true}},
   cancel:({sessionId}:{sessionId:string})=>{ctx.agents.get(SessionId(sessionId))!.cancel({kind:'user'},{keepInbox:true});return {accepted:true}},
  })

@@ -26,7 +26,9 @@ const pendingName='@fixture/pending'
 const optionalName='@fixture/optional'
 const officialName='@teloa/im-gateway'
 const originalLock='lockfileVersion: fixture-original\n'
-const bundleManifest=(name:string)=>({name,version:'1.0.0',engines:{dsh:'0.1.7-rc.1'},exports:{'./package.json':'./package.json'},dsh:{bundle:{patch:'./cordis.patch.yml'}}})
+/** 官方包管理器自 DSH 0.2.1-rc.2 起以 engines.dsh 单独裁定扩展兼容性（alpha.3 只看 peerDependencies）；夹具扩展声明管理器实际读到的运行时版本，写死旧版本会在安装与启用前被 incompatible-version 拒收，盖住本文件要验证的权限与防冒名检查。 */
+const dshRuntime=(officialRequire('@deepseek-ai/dsh-app-boot/package.json') as {version:string}).version
+const bundleManifest=(name:string)=>({name,version:'1.0.0',engines:{dsh:dshRuntime},exports:{'./package.json':'./package.json'},dsh:{bundle:{patch:'./cordis.patch.yml'}}})
 
 async function fixture(t:TestContext){
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-native-manager-')))

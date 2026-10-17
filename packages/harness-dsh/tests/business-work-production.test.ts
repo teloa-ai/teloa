@@ -84,7 +84,8 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
   create:async(input:{sessionId?:string;agentPreset?:string;workspaceId?:string}={})=>{const sessionId=SessionId(input.sessionId??randomUUID());await ctx.agents.create({sessionId,meta:{cwd:workspaces.get(input.workspaceId??'')?.path??root,...(input.agentPreset?{agentPreset:input.agentPreset}:{})},agentOptions:{provider:'controlled',model:'fixed'}});visible.unshift(sessionId);return {sessionId,...(input.agentPreset?{agentPreset:input.agentPreset}:{})}},
   resolveAgent:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));return agent?{agent}:{error:{code:'not-found',message:'missing'}}},
   rename:async(input:{sessionId:string;title:string})=>{assert.ok(ctx.agents.get(SessionId(input.sessionId)));pinnedTitles.set(input.sessionId,input.title);return {title:input.title,seq:1}},
-  inspect:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));assert.ok(agent);return {sessionId:id,meta:agent.session.header,status:agent.status}},modelCatalog:async()=>({default:{provider:'controlled',model:'fixed'}}),
+  // 与官方 Controller.inspect 同形：生产的本人复核来源要从冷读事件核对原始人类消息。
+  inspect:async(id:string)=>{const agent=ctx.agents.get(SessionId(id));assert.ok(agent);return {sessionId:id,meta:agent.session.header,events:agent.session.snapshotEvents(),inheritedEventCount:agent.session.inheritedEventCount,status:agent.status}},modelCatalog:async()=>({default:{provider:'controlled',model:'fixed'}}),
  })
  let rpc:RpcHandler|undefined;ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(_path:string,handler:RpcHandler)=>{rpc=handler;return ()=>{}}}})
  await apply(ctx,{projectRoot:root});database=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()});const pool=database.pool

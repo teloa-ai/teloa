@@ -93,6 +93,7 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
   {id:'permission',name:'cordis:pin',config:{presets:{'read-only':{sandbox:'read-only',approval:'ask'},'workspace-write':{sandbox:'workspace-write',approval:'ask'}}}},
   {id:'web',name:'cordis:pin',config:{searchProvider:'deepseek-official',fetchProvider:'http'}},
   {id:'web-search-deepseek',name:'cordis:pin',config:{baseURL:'https://api.deepseek.com/anthropic/v1',apiKeyEnv:'DEEPSEEK_API_KEY'}},
+  {id:'web-deepseek-api',name:'cordis:pin',config:{baseURL:'https://api.deepseek.com/v1/tools',apiKeyEnv:'DEEPSEEK_API_KEY',count:10,sendOriginalQuestion:false}},
   {id:'web-fetch-http',name:'cordis:pin',config:{maxResponseBytes:5000000,maxBodyChars:100000,timeoutMs:30000,maxRedirects:3,userAgent:'deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)'}},
   {id:'credentials',name:'cordis:pin',disabled:true},
   {id:'teloa-credentials',name:'cordis:pin',config:{store:'auto'}},
@@ -103,7 +104,7 @@ test('整棵树装起来后判据函数能直接吃这份行快照',async()=>{
  assert.ok(rows)
  // 本用例装载占位插件，只替换已验证的模块名，保留 Loader 提供的声明正文和表达式。
  assert.equal(rows.find(row=>row.id==='teloa-agent-preset')?.name,'cordis:preset')
- const names:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
+ const names:Record<string,string>={hmr:'@deepseek-ai/dsh-hmr','agent-preset-registry':'@deepseek-ai/dsh-agent-preset-registry','teloa-agent-preset':'@deepseek-ai/dsh-agent-preset',web:'@deepseek-ai/dsh-web','web-search-deepseek':'@deepseek-ai/dsh-web-search-deepseek','web-deepseek-api':'@deepseek-ai/dsh-web-deepseek-api','web-fetch-http':'@deepseek-ai/dsh-web-fetch-http',credentials:'@deepseek-ai/dsh-credentials-local','teloa-credentials':'@teloa/harness-dsh/credentials','attachment-local':'@deepseek-ai/dsh-attachment-local','teloa-attachment-guard':'@teloa/harness-dsh/attachment-guard'}
  for(const entry of compositionEntries().entries())if(entry.options.id.startsWith('preset-'))names[entry.options.id]='@deepseek-ai/dsh-agent-preset'
  names['working-directory']='@deepseek-ai/dsh-working-directory'
  names['teloa-working-directory']='@teloa/harness-dsh/native-working-directory'

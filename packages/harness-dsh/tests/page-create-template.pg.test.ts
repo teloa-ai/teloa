@@ -46,7 +46,9 @@ test('强类型应用经真实DSH工具→严格草案服务→Postgres→固定
  const original=await e.preview.preview(e.actor,{draftId:read.id});assert.equal(original.draft.body,read.body);assert.equal(original.draft.bodyHash,read.bodyHash);assert.equal(original.next.endpoint,'page-create-drafts/read');assert.deepEqual(original.next.consentKeys,[])
  const retry=await e.call(args,'same-original-call');assert.equal(retry.isError,false);assert.equal(JSON.parse(retry.value as string).id,read.id);assert.equal((await e.drafts.directory(e.actor,{entity:'share'})).drafts.length,1)
  await assert.rejects(()=>e.drafts.read({ownerId:'local:other',scopeIds:[]},{draftId:read.id}),{code:'teloa/forbidden'})
- const tables=(await pool.query("select table_name from information_schema.tables where table_schema='public' order by table_name")).rows.map(row=>row.table_name);assert.deepEqual(tables,['teloa_page_create_drafts'],'静态草案测试不创建安装、授权、角色或运行实体')
+ const tables=(await pool.query("select table_name from information_schema.tables where table_schema='public' order by table_name")).rows.map(row=>row.table_name);assert.deepEqual(tables,['teloa_page_create_draft_revisions','teloa_page_create_drafts'],'静态草案测试只有草案本身及其修订子表，不创建安装、授权、角色或运行实体')
+ // 修订子表是草案的正式历史（9c9fb82e，外键只指向草案表）；仅保存、从未续改时必须为空。
+ assert.equal((await pool.query('select count(*)::int n from teloa_page_create_draft_revisions')).rows[0].n,0)
 })
 test('真实后端仍拒绝坏关系/缺文件/私有身份，旧body/json/text严格兼容并能原稿预览',async t=>{
  const e=await tools(t),source=template(),{manifest,...pkg}=source

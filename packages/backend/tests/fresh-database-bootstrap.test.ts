@@ -173,6 +173,7 @@ const expectedTables=[
  "teloa_notification_deliveries",
  "teloa_object_conversation_requests",
  "teloa_object_conversations",
+ "teloa_page_create_draft_revisions",
  "teloa_page_create_drafts",
  "teloa_pending_request_registry",
  "teloa_plan_changes",
