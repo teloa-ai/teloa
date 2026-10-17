@@ -23,7 +23,7 @@ Teloa is an **AI-Native Team Studio** for building, managing, and running teams 
 
 This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-source edition for individuals and developers. Deploy it on your own computer and manage multiple AI employees in your personal Web workspace. **DeepSeek Harness (DSH)** supplies the current agent runtime.
 
-![Teloa workspace: AI employees and their responsibilities](https://docs.teloa.ai/assets/screenshots/en/team.ace3d08ce890.png)
+![Teloa workspace: describe a goal and continue work assigned to AI employees](https://docs.teloa.ai/assets/screenshots/en/workbench.72946a04d5fa.png)
 
 *Product interface with example employees and work; a fresh installation does not require demo data.*
 
@@ -195,9 +195,9 @@ For example, in **security operations (SOC)**:
 
 Adding a solution does not automatically connect accounts, authorize employees or start scheduled work. Those choices stay with you.
 
-![SOC business dashboard in English](https://docs.teloa.ai/assets/screenshots/en/business-dashboard.46902db1d51d.png)
+![Content operations overview dashboard with sample records](https://docs.teloa.ai/assets/screenshots/en/business-dashboard.b114facc9a48.png)
 
-*Dashboard using synthetic alert records; this is not live security monitoring.*
+*Dashboards work the same way across businesses. This example uses a marketplace content operations dashboard with 10 sample records in the 0.2.0-beta.3 interface; it is not live data.*
 
 SOC is the first end-to-end business scenario. Customer delivery, content operations, retail, software development, education, store services and other security workflows are **future scenario examples**, rather than completed integrations. See [industry examples](https://docs.teloa.ai/en/tutorials/industry-examples) and the [SOC walkthrough](https://docs.teloa.ai/en/tutorials/soc-triage).
 

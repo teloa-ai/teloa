@@ -23,7 +23,7 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 本仓库维护 **Teloa 社区版**：面向个人与开发者，使用 [Apache-2.0](LICENSE) 许可，自行部署在自己的电脑上，在个人 Web 工作台中管理多位 AI 员工。当前运行引擎为 **DeepSeek Harness（DSH）**。
 
-![Teloa 中文工作台：AI 员工与职责](https://docs.teloa.ai/assets/screenshots/team.ace3d08ce890.png)
+![Teloa 工作台：描述目标，继续交给 AI 员工的工作](https://docs.teloa.ai/assets/screenshots/workbench.72946a04d5fa.png)
 
 *真实产品界面，使用示例员工与工作数据；首次安装无需导入演示数据。*
 
@@ -195,9 +195,9 @@ flowchart LR
 
 添加方案不会自动连接账号、授权员工或启动定时工作。这些配置由你决定。
 
-![中文 SOC 业务看板](https://docs.teloa.ai/assets/screenshots/business-dashboard.46902db1d51d.png)
+![内容运营总览看板（示例数据）](https://docs.teloa.ai/assets/screenshots/business-dashboard.b114facc9a48.png)
 
-*看板使用虚构告警记录，不是实时安全监测数据。*
+*各业务的看板用法相同。此例为 0.2.0-beta.3 界面中市场采用的内容运营看板与 10 条示例记录，不是实时数据。*
 
 SOC 是首个完整业务流程场景。客户交付、内容运营、电商零售、软件研发、教育培训、门店服务和其他安全方向是**后续场景示例**，不代表这些集成已经完成。见[行业场景与业务组合](https://docs.teloa.ai/tutorials/industry-examples)和 [SOC 使用教程](https://docs.teloa.ai/tutorials/soc-triage)。
 
