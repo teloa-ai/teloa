@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
+import {WorkError} from '@teloa/contract'
 import {WorkControlDriver} from '../src/work-control-driver.ts'
 import {taskRunRuntimeId} from '../src/task-run-background.ts'
 
@@ -25,4 +26,15 @@ test('外部预留和运行未结清时不能停妥，旧宿主与unknown只返�
  status='running';runtimeId='old-host'
  assert.deepEqual((await driver.inspectRun('owner',input)).unknownOperationIds,['external:codex:reservation'])
  status='completed';assert.equal((await driver.inspectRun('owner',input)).settled,true)
+})
+
+test('无会话、无 link 的 configuration_failed Run 不读执行日志即收尾；带 link 时仍走完整核查且未收尾不判停妥',async()=>{
+ let events=0,links:unknown[]=[],readable=false
+ const run={id:'run',state:'configuration_failed',sessionId:'task-run-never-created'}
+ const driver=new WorkControlDriver({runs:{get:async()=>run},runtimeLinks:{list:async()=>links},ports:{goalObservation:async()=>null,events:async()=>{events++;if(!readable)throw new WorkError('teloa/forbidden','执行会话身份未就绪。');return []},stopState:async()=>({running:false,settledSeq:null}),backgroundState:async()=>({outstanding:false,interrupted:false}),subagentState:async()=> 'none'}} as never)
+ const input={runId:'run',action:'pause' as const,generation:2}
+ assert.deepEqual(await driver.inspectRun('owner',input),{settled:true,unknownOperationIds:[]});assert.equal(events,0)
+ links=[{kind:'job',nativeId:'job',payload:{record:'job',status:'running'}}]
+ await assert.rejects(driver.inspectRun('owner',input),{code:'teloa/forbidden'});assert.equal(events,1)
+ readable=true;assert.equal((await driver.inspectRun('owner',input)).settled,false);assert.equal(events,2)
 })

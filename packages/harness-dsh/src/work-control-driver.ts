@@ -43,9 +43,10 @@ export class WorkControlDriver{
     else externalOutstanding=true
    }
   }
+  // 未派发或配置失败且无任何 runtime link 的 Run 没有原生会话可读；先收口，避免读取不存在的执行日志而永远停在收尾中。
+  if(['prepared','withdrawn','configuration_failed'].includes(run.state)&&links.length===0)return {settled:true,unknownOperationIds:[]}
   if(this.ports.ports.goalObservation){const goal=await this.ports.ports.goalObservation(run,await this.ports.ports.events(run));for(const receipt of goal?.continuations??[])if(['reserved','unknown'].includes(receipt.state))unknown.push('goal:'+receipt.nativeRequestId);if(goal&&goal.goalPhase!=='complete'&&(goal.activation!=='disarmed'||goal.goalPhase==='active'))externalOutstanding=true}
   if(this.pending.has(JSON.stringify([owner,run.id])))externalOutstanding=true
-  if(['prepared','withdrawn','configuration_failed'].includes(run.state)&&links.length===0)return {settled:true,unknownOperationIds:[]}
   // 冷宿主、丢失检查器或旧 owner footprint 均不能宣布停止。
   if(!this.ports.ports.stopState||!this.ports.ports.backgroundState||!this.ports.ports.subagentState)return {settled:false,unknownOperationIds:unknown}
   const [host,background,children]=await Promise.all([this.ports.ports.stopState(run),this.ports.ports.backgroundState(run),this.ports.ports.subagentState(run,new AbortController().signal)])
