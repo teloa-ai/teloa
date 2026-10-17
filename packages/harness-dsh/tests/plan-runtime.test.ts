@@ -5,7 +5,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises'
 import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {ConversationService,openResourceDatabase,RoleService,PlanService,TaskRunService,WorkControlService,initializeWorkControl,initializeRoles,initializeTasks,initializePlans,initializeMarketContents,initializePlanOccurrences,initializeObjectConversations,initializeTaskRuns,initializePlanSchedulerStatus,PlanOccurrenceService,PlanSchedulerStatusService} from '@teloa/backend'
+import {ConversationService,TaskRunPresetError,openResourceDatabase,RoleService,PlanService,TaskRunService,WorkControlService,initializeWorkControl,initializeRoles,initializeTasks,initializePlans,initializeMarketContents,initializePlanOccurrences,initializeObjectConversations,initializeTaskRuns,initializePlanSchedulerStatus,PlanOccurrenceService,PlanSchedulerStatusService} from '@teloa/backend'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {TaskExecutionScope,RunSkill,RunKnowledge} from '@teloa/backend'
 import type {Conversation} from '@teloa/contract'
@@ -25,9 +25,12 @@ after(async()=>{await pool?.end();await container?.stop();if(temporary)await rm(
 
 async function fixture(){
  const owner=randomUUID();let now='2026-09-12T00:00:00.000Z',rows:Conversation[]=[],beforeRunService:(()=>Promise<void>)|undefined
- const sessions=new Set<string>(),identity={id:randomUUID,now:()=>now}
+ const sessions=new Set<string>(),started=new Set<string>(),identity={id:randomUUID,now:()=>now}
  const controls=new WorkControlService(pool,identity,{ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled:true,unknownOperationIds:[]})})
- const conversations=new ConversationService({read:async()=>rows,write:async value=>{rows=structuredClone(value)}},{create:async id=>{sessions.add(id);return id},inspect:async id=>{assert.ok(sessions.has(id))}},identity)
+ const conversations=new ConversationService({read:async()=>rows,write:async value=>{rows=structuredClone(value)}},{create:async id=>{
+  // 对齐官方 SessionController.createSession：空白会话可复用，已开轮的同名会话改建新身份，回执与固定 sessionId 不符。
+  if(started.has(id))throw new TaskRunPresetError('teloa/preset-unavailable','session-receipt','原生会话创建回执与固定运行配置不一致。')
+  sessions.add(id);return id},inspect:async id=>{assert.ok(sessions.has(id))}},identity)
  const content='核对资料来源。',skill:RunSkill={name:'verify-source',provider:'test',source:'fixed',description:'核对来源',content,sha256:createHash('sha256').update(content).digest('hex')}
  const text='可信资料正文',knowledge:RunKnowledge={id:randomUUID(),version:1,title:'参考资料',sourceId:'reference',sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds:['general'],text}
  const role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'资料核对岗',kind:'employee',scopes:['general'],duty:'核对',dataScope:'限定资料',executionScope:'只读',skills:[skill.name],knowledge:[knowledge.id],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'security-analyst'}}})
@@ -41,7 +44,7 @@ async function fixture(){
   check:async(_run,signal)=>{signal.throwIfAborted();calls.checks++},
   loadSkills:async(_session,names,signal,database)=>{signal.throwIfAborted();assert.deepEqual(names,[skill.name]);calls.skills++;calls.skillDatabases.push(database);return [skill]},
   loadKnowledge:async(target,ids,signal)=>{signal.throwIfAborted();assert.deepEqual(ids,[knowledge.id]);calls.knowledge.push(target);return [knowledge]},
-  send:async()=>{calls.sends++},stop:async()=>{},events:async()=>[],
+  send:async run=>{calls.sends++;started.add(run.sessionId)},stop:async()=>{},events:async()=>[],
  }
  const getRunService=async():Promise<TaskRunService>=>{await beforeRunService?.();return new TaskRunService(pool,identity,(actor,id)=>conversations.bySession(actor,id),{allowedTools:[],runReservation:(actor,id)=>conversations.isTaskRunReserved(actor,id),planContext:(db,actor,taskId)=>runtime.executionContext(db,actor,taskId)})}
  const runtime=createPlanRuntime({owner,getPool:async()=>pool,conversations,getRunService,runPorts})
@@ -192,4 +195,31 @@ test('终态无run的skip通过helper写入真实ack，普通重叠skip不伪造
  const prior=await f.runtime.status({planId:f.plan.id})
  await f.runtime.coordinator.ports.report(f.owner,{phase:'skip',planId:f.plan.id,now:'2026-09-12T01:00:03.000Z',outcome:'skipped',code:'teloa/plan-pending-overlap'},signal)
  assert.deepEqual(await f.runtime.status({planId:f.plan.id}),prior)
+})
+
+test('立即运行与调度恢复并发派发同一 claim：后到者读回同一 Run，不报冲突、不留失败记录',async()=>{
+ const f=await fixture(),signal=new AbortController().signal
+ await f.runtime.coordinator.recover('2026-09-12T00:30:00.000Z',signal)
+ const requestId=randomUUID(),input={planId:f.plan.id,requestId,expectedVersion:f.plan.version,expectedConfigVersion:f.plan.configVersion,now:'2026-09-12T00:31:00.000Z'}
+ // 屏障：先到的立即运行停在 resolvePreset（幂等预检已过、Run 尚未落库）；它之后若有第二路越过预检，会在这里被计数。
+ let calls=0,entered!:()=>void,release!:()=>void
+ const inside=new Promise<void>(resolve=>{entered=resolve}),gate=new Promise<void>(resolve=>{release=resolve})
+ const original=f.runPorts.resolvePreset!
+ f.runPorts.resolvePreset=async(declared,current)=>{if(++calls===1){entered();await gate}return original(declared,current)}
+ const manual=f.runtime.trigger(input,signal).then(run=>({run}),error=>({error}))
+ await inside
+ // 协调周期此时扫到同一 claim（已有任务、尚无 Run），与立即运行使用同一个 requestId 准备。
+ f.setNow('2026-09-12T00:31:01.000Z')
+ const tick=f.runtime.coordinator.tick('2026-09-12T00:31:01.000Z',signal)
+ // 若后到者没被挡住，它会在 1 秒内自己跑完；被挡住时它只能等先到者，这里按上限放行。
+ await Promise.race([tick.then(()=>{},()=>{}),new Promise(done=>setTimeout(done,1000))])
+ release()
+ const result=await manual
+ await tick
+ assert.equal('error' in result,false,'error' in result?String((result.error as {message?:string}).message):'')
+ const runs=(await pool.query('select state,link_version from teloa_task_runs where owner_id=$1',[f.owner])).rows
+ assert.equal(runs.length,1);assert.equal(runs[0].state,'accepted');assert.equal(runs[0].link_version,1)
+ assert.equal(f.calls.sends,1)
+ const status=await f.runtime.status({planId:f.plan.id})
+ assert.equal(status?.health,'healthy');assert.equal(status?.failureCode,null)
 })

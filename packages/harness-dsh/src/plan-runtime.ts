@@ -49,7 +49,7 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
   const market=new MarketContentStore(pool,identity)
   return {pool,plans:new PlanService(pool,identity,market,undefined,undefined,undefined,dependencies.ownerPlans),occurrences:new PlanOccurrenceService(pool,identity,market,dependencies.verifyWorkEvent,dependencies.ownerPlans)}
  }
- const dispatchExecution=async(value:string,job:Parameters<PlanDshDispatcher['dispatch']>[1],signal:AbortSignal)=>{
+ const dispatchExecutionOnce=async(value:string,job:Parameters<PlanDshDispatcher['dispatch']>[1],signal:AbortSignal)=>{
    actor(value);signal.throwIfAborted()
    const runService=await getRunService();signal.throwIfAborted()
    const links=new ObjectConversationService((await services(signal)).pool,(actor,id)=>conversations.bySession(actor,id),now)
@@ -63,6 +63,14 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
    })
    return dispatcher.dispatch(owner,job,signal)
   }
+ // 立即运行与协调周期的恢复扫描会同时拿到同一个 claim。并行派发时后到者会越过 prepare 的幂等预检，
+ // 重放会话创建并以失败记录收口，与先到者已写的 Run 冲突；因此同一 claim 在本进程内串行，后到者经幂等回执读回同一结果。
+ const dispatching=new Map<string,Promise<void>>()
+ const dispatchExecution=async(value:string,job:Parameters<PlanDshDispatcher['dispatch']>[1],signal:AbortSignal)=>{
+  const prior=dispatching.get(job.claimId),run=(async()=>{await prior;signal.throwIfAborted();return dispatchExecutionOnce(value,job,signal)})()
+  const tail=run.then(()=>{},()=>{});dispatching.set(job.claimId,tail)
+  try{return await run}finally{if(dispatching.get(job.claimId)===tail)dispatching.delete(job.claimId)}
+ }
  const coordinator=new PlanCoordinator(owner,{
   plans:{schedulerPlans:async(value,input)=>{actor(value);return (await services()).plans.schedulerPlans(owner,input)}},
   occurrences:{
