@@ -101,7 +101,7 @@ after(async()=>{
  if(previousProjectRoot===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=previousProjectRoot
 },{timeout:120000})
 
-/** 随发行固定的本地目录（市场 d3e919a、快照 2026.10.16.2）：33 条含 2 条内置技能；在线签名索引不收录 teloa.dashboard-designer，共 114 条，不是此未采用在线索引的宿主边界。 */
+/** 随发行固定的本地目录（市场 241811b、快照 2026.10.18.2）：33 条含 2 条内置技能；在线签名索引不收录 teloa.dashboard-designer，共 114 条，不是此未采用在线索引的宿主边界。 */
 const CURRENT_SOLUTIONS=['teloa.grok-marketing-team','teloa.grok-product-team','teloa.grok-sales-team']
 const CURRENT_ROLES=['teloa.grok-call-followup','teloa.grok-competitor-watch','teloa.grok-content-remix','teloa.grok-feature-ask-collator','teloa.grok-launch-coordinator','teloa.grok-meeting-prep','teloa.grok-newsletter-desk','teloa.grok-product-performance','teloa.grok-sales-outbound']
 const CURRENT_DASHBOARDS=['teloa.b2b-sales-followup-dashboard','teloa.content-ops-dashboard','teloa.saas-delivery-dashboard']
@@ -112,7 +112,7 @@ test('第 0 步：唯一 Teloa 市场精确读取——快照 33 条与上游索
  const ids:string[]=[];let cursor:string|null=null,pages=0
  do{
   const page=await call('market-catalog/list',{marketplace:'teloa',limit:50,...(cursor?{cursor}:{})}) as Listing
-  assert.equal(page.catalogVersion,'2026.10.16.2')
+  assert.equal(page.catalogVersion,'2026.10.18.2')
   assert.deepEqual(page.counts,{skill:93,dashboard:3,role:9,solution:3,connector:6,model:1},'计数按全集而非当页')
   ids.push(...page.items.map(item=>item.entry.id));cursor=page.nextCursor;pages++
  }while(cursor)
