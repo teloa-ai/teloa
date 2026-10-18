@@ -43,6 +43,18 @@ export type CompositionCount={id:CompositionRowId;count:number;detail?:{configur
 
 const rowById=(id:CompositionRowId):CompositionRow=>COMPOSITION_ROWS.find(row=>row.id===id)!
 
+/** 数量为 1 时的单数句式（英文；中文两式同文，其余语言沿用原词条）。看板行两个数各自判断单复数。 */
+const UNIT_ONE_KEYS:Readonly<Record<Exclude<CompositionRowId,'board'>,MessageKey>>={staff:'composition.unit.staff.one',skill:'composition.unit.skill.one',knowledge:'composition.unit.knowledge.one',source:'composition.unit.source.one',method:'composition.unit.method.one',extension:'composition.unit.extension.one'}
+const BOARD_UNIT_KEYS:readonly (readonly [MessageKey,MessageKey])[]=[['composition.unit.board','composition.unit.board.oneView'],['composition.unit.board.oneType','composition.unit.board.one']]
+
+/** 一行的计数文字（市场卡摘要、方案产品页与本机方案页共用）：业务看板配置按份数说，其余按该行单位，数量为 1 用单数句式。 */
+export function compositionCountText(row:CompositionCount,t:TeloaTranslate,number:(n:number)=>string):string{
+ const configurations=row.detail?.configurations,views=row.detail?.views??0
+ if(configurations)return t(configurations===1?'market.dashboard.count.one':'market.dashboard.count',{count:number(configurations)})
+ const key=row.id==='board'?BOARD_UNIT_KEYS[row.count===1?1:0]![views===1?1:0]:row.count===1?UNIT_ONE_KEYS[row.id]:rowById(row.id).unit
+ return t(key,{count:number(row.count),views:number(views)})
+}
+
 /** 七行计数的唯一算法：整行一个资源都没有就不返回，界面据此不渲染空行、也不显示「0 位同事」。 */
 function countRows(countOf:(kind:Kind)=>number):CompositionCount[]{
  const rows:CompositionCount[]=[]
@@ -258,7 +270,7 @@ const SUMMARY_SEGMENTS:readonly (readonly CompositionRowId[])[]=[['staff','skill
 export function compositionSummary(rows:readonly CompositionCount[],t:TeloaTranslate,number:(n:number)=>string):string{
  const speak=(row:CompositionCount)=>row.id==='method'&&row.count===0
   ?compositionMethodNote(row.detail,t,number)
-  :row.detail?.configurations?t('market.dashboard.count',{count:number(row.detail.configurations)}):t(rowById(row.id).unit,{count:number(row.count),views:number(row.detail?.views??0)})
+  :compositionCountText(row,t,number)
  const shown=(row:CompositionCount)=>row.id==='method'
   ?row.count>0||(row.detail?.automations??0)>0||(row.detail?.actions??0)>0
   :row.count>0||(row.detail?.views??0)>0||(row.detail?.configurations??0)>0

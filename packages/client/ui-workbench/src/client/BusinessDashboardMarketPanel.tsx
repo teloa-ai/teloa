@@ -2,7 +2,7 @@ import {useEffect,useRef,useState,type ReactNode} from 'react'
 import type {BusinessConfigurationDraftResponseVersioned,BusinessConfigurationPreviewResponse,BusinessConfigurationPageProjectionVersioned,BusinessConfigurationCurrentResponseVersioned,BusinessConfigurationApplyResult,BusinessDashboardResourceDefinition} from '@teloa/contract'
 import type {DashboardMarketAdoption} from './business-dashboard-market-journal.js'
 import type {BusinessDashboardResourceApi,DashboardApplyInput,DashboardPrepareInput} from './business-dashboard-resource-api.js'
-import type {MarketItem} from './market-preview.js'
+import {localizedMarketItemMetadata,type MarketItem} from './market-preview.js'
 import type {BusinessScopeLabel} from './business-directory.js'
 import {inspectIndustryContent} from './industry-content.js'
 import {isIndustryManifest} from './industry-manifest.js'
@@ -16,12 +16,12 @@ const rejected=(error:unknown)=>!!error&&typeof error==='object'&&'code' in erro
 export type BusinessDashboardMarketPanelProps={item:MarketItem;api:BusinessDashboardResourceApi;spaces:readonly BusinessScopeLabel[];colorScheme:'light'|'dark';embedded?:boolean;journalKey?:string;refreshScopes?:(()=>Promise<unknown>)|undefined;onDiscardDraft?:()=>void;openSaved?:(scope:string)=>void;upgrade?:(adoption:{draft:BusinessConfigurationDraftResponseVersioned;result:DashboardMarketAdoption;resource:BusinessDashboardResourceDefinition})=>ReactNode}
 /** 添加固定内容只打开此面板；生成草案、预览与本人采用均为独立操作。 */
 export function BusinessDashboardMarketPanel({item,api,spaces,colorScheme,openSaved,upgrade,journalKey,onDiscardDraft,refreshScopes,embedded=false}:BusinessDashboardMarketPanelProps){
- const {t}=useI18n(),alive=useRef(true),running=useRef(false)
+ const {t,locale}=useI18n(),alive=useRef(true),running=useRef(false)
  const rows=isIndustryManifest(item.manifest)&&item.packageContent?inspectIndustryContent(item.manifest,item.packageContent).filter(row=>row.state==='parsed'&&row.definition?.kind==='business-configuration'):[]
  const contentId=item.contentStorage?.contentId,journalId=journalKey??item.contentStorage?.contentId
  const restored=useRef<{value?:ReturnType<NonNullable<BusinessDashboardResourceApi['journal']>['read']>;error?:unknown}>()
  if(!restored.current){try{restored.current={value:contentId?api.journal?.read(journalId!):undefined}}catch(error){restored.current={error}}}
- const [resourceId,setResourceId]=useState(restored.current.value?.resourceId??restored.current.value?.prepare?.resourceId??rows[0]?.id??''),[scope,setScope]=useState(restored.current.value?.prepare?.target.kind==='existing'?restored.current.value.prepare.target.scope:''),[title,setTitle]=useState(restored.current.value?.prepare?.target.kind==='new'?restored.current.value.prepare.target.title:item.title),[current,setCurrent]=useState<BusinessConfigurationCurrentResponseVersioned|null>(),[mapping,setMapping]=useState<Record<string,string>>({})
+ const [resourceId,setResourceId]=useState(restored.current.value?.resourceId??restored.current.value?.prepare?.resourceId??rows[0]?.id??''),[scope,setScope]=useState(restored.current.value?.prepare?.target.kind==='existing'?restored.current.value.prepare.target.scope:''),[title,setTitle]=useState(restored.current.value?.prepare?.target.kind==='new'?restored.current.value.prepare.target.title:localizedMarketItemMetadata(item,locale).title.value),[current,setCurrent]=useState<BusinessConfigurationCurrentResponseVersioned|null>(),[mapping,setMapping]=useState<Record<string,string>>({})
  const [draft,setDraft]=useState<BusinessConfigurationDraftResponseVersioned|undefined>(restored.current.value?.draft),[preview,setPreview]=useState<BusinessConfigurationPreviewResponse>(),[page,setPage]=useState<BusinessConfigurationPageProjectionVersioned>(),[result,setResult]=useState<DashboardMarketAdoption|undefined>(restored.current.value?.result),[busy,setBusy]=useState(false),[error,setError]=useState(!!restored.current.error),[pending,setPending]=useState<DashboardApplyInput|undefined>(restored.current.value?.apply)
  const [directoryError,setDirectoryError]=useState(false)
  const selected=rows.find(row=>row.id===resourceId)?.definition,objects=selected?.kind==='business-configuration'?selected.definition.configuration.definitions.filter(row=>row.kind==='object-type'):[]

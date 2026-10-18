@@ -62,7 +62,7 @@ const state=(page:any)=>page.evaluate(()=>window.recipeFixture)
 test('粘贴 Grok recipe：先显示原职责、技能、例行任务、应用依赖与记忆的只读预览，不写入；返回保留粘贴内容；确认才经 importIndustry 保存',async t=>{
  const page=await mount(t,'paste'),dialog=page.getByRole('dialog',{name:'导入模板',exact:true}),textarea=dialog.getByRole('textbox',{name:'JSON 清单',exact:true}),preview=dialog.getByRole('region',{name:'模板预览',exact:true})
  const raw=JSON.stringify(recipe,null,2);await textarea.fill(raw)
- await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click();await preview.waitFor()
+ await dialog.getByRole('button',{name:'读取并预览',exact:true}).click();await preview.waitFor()
  const text=await preview.innerText()
  assert.match(text,/市场调研助理/);assert.match(text,/原职责 · 整理公开行业资料并形成简报/)
  assert.match(text,/技能\s*2/);assert.match(text,/竞品速览/);assert.match(text,/周报草稿/)
@@ -76,7 +76,7 @@ test('粘贴 Grok recipe：先显示原职责、技能、例行任务、应用�
  let s=await state(page);assert.deepEqual(s.imports,[]);assert.deepEqual(s.saved,[],'预览不写入')
  await dialog.getByRole('button',{name:'返回修改',exact:true}).click();await preview.waitFor({state:'hidden'})
  assert.equal(await textarea.inputValue(),raw,'返回保留粘贴内容')
- await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click();await preview.waitFor()
+ await dialog.getByRole('button',{name:'读取并预览',exact:true}).click();await preview.waitFor()
  await dialog.getByRole('button',{name:'确认导入',exact:true}).click()
  await page.waitForFunction(()=>window.recipeFixture.saved.length===1)
  s=await state(page)
@@ -86,7 +86,7 @@ test('粘贴 Grok recipe：先显示原职责、技能、例行任务、应用�
 
 test('原插件 ID 匹配已审应用，默认不选；仅显式所选工具写入声明，空工具与同名未知应用不猜测',async t=>{
  const page=await mount(t,'paste'),dialog=page.getByRole('dialog',{name:'导入模板',exact:true})
- await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(mappedRecipe));await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click()
+ await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(mappedRecipe));await dialog.getByRole('button',{name:'读取并预览',exact:true}).click()
  const github=dialog.locator('[data-recipe-plugin="48677658"]'),slack=dialog.locator('[data-recipe-plugin="674"]'),unknown=dialog.locator('[data-recipe-plugin="unknown-id"]')
  await github.getByText('选择对应应用',{exact:true}).click();await github.getByRole('combobox').waitFor()
  assert.equal(await github.getByRole('combobox').inputValue(),'');assert.equal((await state(page)).imports.length,0)
@@ -101,23 +101,23 @@ test('原插件 ID 匹配已审应用，默认不选；仅显式所选工具写�
 
 test('应用目录版本变化拒绝旧工具选择，不导入；重新预览后可再选择',async t=>{
  const page=await mount(t,'paste'),dialog=page.getByRole('dialog',{name:'导入模板',exact:true})
- await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(mappedRecipe));await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click()
+ await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(mappedRecipe));await dialog.getByRole('button',{name:'读取并预览',exact:true}).click()
  const github=dialog.locator('[data-recipe-plugin="48677658"]');await github.getByText('选择对应应用',{exact:true}).click();await github.getByRole('combobox').selectOption('teloa.mcp-github');await github.getByRole('checkbox',{name:/读取公开条目/}).check()
  await page.evaluate(()=>{window.recipeFixture.catalogVersion='2.0.0'});await dialog.getByRole('button',{name:'确认导入',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal((await state(page)).imports.length,0)
 })
 
 test('外点收起预览后保留粘贴，重开重新预览并清空应用选择；内联草稿回调不会循环',async t=>{
  const page=await mount(t,'paste'),dialog=page.getByRole('dialog',{name:'导入模板',exact:true}),raw=JSON.stringify(mappedRecipe)
- await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(raw);await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click()
+ await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(raw);await dialog.getByRole('button',{name:'读取并预览',exact:true}).click()
  const github=dialog.locator('[data-recipe-plugin="48677658"]');await github.getByText('选择对应应用',{exact:true}).click();await github.getByRole('combobox').selectOption('teloa.mcp-github');await github.getByRole('checkbox',{name:/读取公开条目/}).check()
  await page.mouse.click(5,5);await dialog.waitFor({state:'hidden'});assert.equal((await state(page)).imports.length,0)
  await page.evaluate(()=>window.recipeFixture.reopen());await dialog.waitFor();assert.equal(await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).inputValue(),raw);assert.equal(await dialog.getByRole('region',{name:'模板预览',exact:true}).count(),0)
- await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click();await github.getByText('选择对应应用',{exact:true}).click();await github.getByRole('combobox').waitFor();assert.equal(await github.getByRole('combobox').inputValue(),'');assert.ok((await state(page)).parentRenders<12)
+ await dialog.getByRole('button',{name:'读取并预览',exact:true}).click();await github.getByText('选择对应应用',{exact:true}).click();await github.getByRole('combobox').waitFor();assert.equal(await github.getByRole('combobox').inputValue(),'');assert.ok((await state(page)).parentRenders<12)
 })
 
 test('保存中外点和 Esc 都不关闭，待原导入回执返回后才允许收起',async t=>{
  const page=await mount(t,'paste'),dialog=page.getByRole('dialog',{name:'导入模板',exact:true})
- await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(recipe));await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click();await page.evaluate(()=>{window.recipeFixture.holdImport=true});await dialog.getByRole('button',{name:'确认导入',exact:true}).click();await page.waitForFunction(()=>window.recipeFixture.imports.length===1)
+ await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(recipe));await dialog.getByRole('button',{name:'读取并预览',exact:true}).click();await page.evaluate(()=>{window.recipeFixture.holdImport=true});await dialog.getByRole('button',{name:'确认导入',exact:true}).click();await page.waitForFunction(()=>window.recipeFixture.imports.length===1)
  await page.mouse.click(5,5);await page.keyboard.press('Escape');assert.equal(await dialog.count(),1);assert.equal((await state(page)).closed,0)
  await page.evaluate(()=>window.recipeFixture.release?.());await page.waitForFunction(()=>window.recipeFixture.saved.length===1);await dialog.getByRole('button',{name:'确认导入',exact:true}).waitFor();await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.equal((await state(page)).imports.length,1)
 })
@@ -131,7 +131,7 @@ test('上传 recipe.json 走同一预览与确认；原 Teloa 清单粘贴仍按
  const s=await state(page);assert.equal(s.imports.length,1);assert.equal(s.imports[0]!.sourceKind,'upload');assert.equal(s.imports[0]!.name,'recipe.json');assert.equal(s.imports[0]!.recipe,true)
  const plainPage=await mount(t,'paste'),plainDialog=plainPage.getByRole('dialog',{name:'导入模板',exact:true})
  await plainDialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(plain))
- await plainDialog.getByRole('button',{name:'解析页面内预览',exact:true}).click()
+ await plainDialog.getByRole('button',{name:'读取并预览',exact:true}).click()
  await plainPage.waitForFunction(()=>window.recipeFixture.saved.length===1)
  assert.equal(await plainDialog.getByRole('region',{name:'模板预览',exact:true}).count(),0,'原 Teloa 清单不进入 Grok 预览')
  assert.deepEqual((await state(plainPage)).imports,[],'粘贴原清单不经 importIndustry，沿用旧行为')
@@ -141,7 +141,7 @@ test('没有应用与例行任务的 recipe：导入说明只讲保存与后续�
  const page=await mount(t,'paste'),dialog=page.getByRole('dialog',{name:'导入模板',exact:true}),preview=dialog.getByRole('region',{name:'模板预览',exact:true})
  const minimal={profile:{name:'写作伙伴',title:'Writing partner',description:'按原写作方法修改本人提供的文字。'},memory:[],skills:[{name:'Writing revision',description:'修改文字。',content:'# Writing revision\n\n按原方法修改。'}],routines:[],plugins:[]}
  await dialog.getByRole('textbox',{name:'JSON 清单',exact:true}).fill(JSON.stringify(minimal))
- await dialog.getByRole('button',{name:'解析页面内预览',exact:true}).click();await preview.waitFor()
+ await dialog.getByRole('button',{name:'读取并预览',exact:true}).click();await preview.waitFor()
  const text=await preview.innerText()
  assert.match(text,/例行任务\s*0/);assert.match(text,/应用依赖\s*0/);assert.match(text,/导入成功只表示模板已保存/)
  assert.doesNotMatch(text,/设置计划|需设置|配置应用|连接并授权/,'无应用与例行的模板不得提示必需设置')

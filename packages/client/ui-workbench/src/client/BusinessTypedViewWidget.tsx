@@ -1,11 +1,18 @@
 import {businessObjectReference,readBusinessViewWidgetResultV2,type BusinessObjectReference,type BusinessConfigurationViewRefVersioned,type BusinessViewResultV2,type BusinessViewWidgetResultV2,type BusinessWidgetDefinition} from '@teloa/contract'
-import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessMeasureLabel,localizedBusinessViewTitle} from './business-definition-localization.js'
+import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessMeasureLabel,localizedBusinessObjectType,localizedBusinessViewTitle} from './business-definition-localization.js'
 import {useI18n,type I18nValue} from './i18n/provider.js'
 import css from './BusinessTypedViewWidget.module.css'
 import dashboardCss from './BusinessDashboardPage.module.css'
 
 type Measure=BusinessViewResultV2['measures'][number]
 type Value=BusinessViewResultV2['rows'][number]['values'][number]
+type Coverage=BusinessViewResultV2['coverage']
+/** 页面级存档口径：按对象类型取多数组件共用的覆盖范围，页面只说一次。 */
+export type TypedViewSharedCoverage=ReadonlyMap<string,{objectType:BusinessConfigurationViewRefVersioned['objectType'];coverage:Coverage}>
+const coverageKey=(coverage:Coverage)=>coverage.objects+'\0'+(coverage.latestReceivedAt??'')
+function coverageText(coverage:Coverage,format:I18nValue):string{
+ return coverage.latestReceivedAt===null?format.t('business.ledger.coverage.snapshotNever',{count:coverage.objects}):format.t('business.ledger.coverage.snapshot',{count:coverage.objects,at:format.dateTime(new Date(coverage.latestReceivedAt))})
+}
 
 /** 小数正文只分拆字符串，整数分组交给 Intl 的 BigInt 路径，负的小于一金额保留符号。 */
 function moneyText(decimal:string,currency:string,locale:string):string{
@@ -66,10 +73,10 @@ function checkedView(widget:BusinessWidgetDefinition,result:unknown,refs:readonl
  }catch{return undefined}
 }
 
-function ExactTable({view,format,openRecord}:{view:BusinessViewResultV2;format:I18nValue;openRecord?:((reference:BusinessObjectReference)=>void)|undefined}){
- return <div className={css.tableWrap}><table className={css.table}>
-  <caption>{view.title}</caption>
-  <thead><tr><th scope="col">{view.title}</th>{view.measures.map(measure=><th scope="col" key={measure.id}>{measure.label}{measure.currency&&<> ({measure.currency})</>}</th>)}</tr></thead>
+/** 卡片标题已显示组件名：表格名称只给辅助技术；首列表头是行的真实含义（清单为对象类型，分组为维度字段）。 */
+function ExactTable({view,firstColumn,format,openRecord}:{view:BusinessViewResultV2;firstColumn:string;format:I18nValue;openRecord?:((reference:BusinessObjectReference)=>void)|undefined}){
+ return <div className={css.tableWrap}><table className={css.table} aria-label={view.title}>
+  <thead><tr><th scope="col">{firstColumn}</th>{view.measures.map(measure=><th scope="col" key={measure.id}>{measure.label}{measure.currency&&<> ({measure.currency})</>}</th>)}</tr></thead>
   <tbody>{view.rows.map((row,position)=>{
    const object=view.kind==='list'?view.objects?.[position]:undefined,title=object?.title||row.label||row.dimension
    let reference:BusinessObjectReference|undefined
@@ -80,7 +87,7 @@ function ExactTable({view,format,openRecord}:{view:BusinessViewResultV2;format:I
 }
 
 function Plot({view,measure,index}:{view:BusinessViewResultV2;measure:Measure;index:number}){
- const {t}=useI18n(),source=view.rows.map(row=>row.values[index]??null)
+ const format=useI18n(),{t}=format,source=view.rows.map(row=>row.values[index]??null)
  // 饼图的比例只在正值之间计算，负金额不能收紧正值的绘图精度。
  const values=plotValues(view.chart==='pie'?source.map(value=>value!==null&&(typeof value==='number'?value>0:!value.decimal.startsWith('-')&&value.decimal!=='0')?value:null):source)
  const high=Math.max(0,...values.map(value=>value??0)),low=Math.min(0,...values.map(value=>value??0)),span=high-low||1
@@ -91,10 +98,11 @@ function Plot({view,measure,index}:{view:BusinessViewResultV2;measure:Measure;in
  const slices=values.map(value=>Math.max(0,value??0)),total=slices.reduce((sum,value)=>sum+value,0);let start=0
  return <section className={css.plot} data-typed-series={measure.id}>
   <h4>{measure.label}{measure.currency&&<> ({measure.currency})</>}</h4>
-  {view.chart==='bar'?<svg viewBox={`0 0 100 ${Math.max(20,view.rows.length*20)}`} preserveAspectRatio="none" aria-hidden="true" className={css.bars}>
-   <line x1={zero} x2={zero} y1="0" y2={Math.max(20,view.rows.length*20)}/>
-   {values.map((value,position)=>value===null?null:<rect key={view.rows[position]!.dimension} x={Math.min(zero,at(value))} y={position*20+4} width={Math.abs(at(value)-zero)} height="12"/>)}
-  </svg>:view.chart==='line'?<svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true" className={css.lines}>
+  {/* 柱状图按行画：类别名、柱条、精确读数同行，各行共用一套列宽使柱长可比；对照表仍在下方供辅助技术读取。 */}
+  {view.chart==='bar'?<ol className={css.barRows} aria-hidden="true" data-typed-bars>{values.map((value,position)=>{
+   const row=view.rows[position]!
+   return <li key={row.dimension}><span>{row.label}</span><span className={css.barTrack}>{value!==null&&<i style={{marginLeft:Math.min(zero,at(value))+'%',width:Math.abs(at(value)-zero)+'%'}}/>}</span><span>{valueText(source[position]??null,measure,format)}</span></li>
+  })}</ol>:view.chart==='line'?<svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true" className={css.lines}>
    {segments.map((points,part)=>points.length===1?<circle key={part} cx={points[0]!.split(',')[0]} cy={points[0]!.split(',')[1]} r="1"/>:<polyline key={part} fill="none" points={points.join(' ')}/>)}
   </svg>:<>{total>0&&<svg viewBox="0 0 36 36" aria-hidden="true" className={css.pie}>{slices.map((value,position)=>{
    const share=value/total*100,offset=start;start+=share
@@ -104,25 +112,52 @@ function Plot({view,measure,index}:{view:BusinessViewResultV2;measure:Measure;in
 }
 
 /** 类型化结果只在正式清单具备固定记录身份时打开原记录；统计维度与候选预览不冒充记录。 */
-export function BusinessTypedViewWidget({widget,result,viewRefs,openRecord}:{widget:BusinessWidgetDefinition;result:BusinessViewWidgetResultV2|undefined;viewRefs:readonly BusinessConfigurationViewRefVersioned[]|undefined;openRecord?:((reference:BusinessObjectReference)=>void)|undefined}){
- const format=useI18n(),{t,locale,list,dateTime}=format,title=localizedBusinessViewTitle(widget,locale)
+/** 统计页把「— 与 0」口径和多数组件共用的存档覆盖说一次；无法核验的结果不计入。 */
+export function typedViewSharedCoverage(widgets:readonly BusinessWidgetDefinition[],results:readonly unknown[],viewRefs:readonly BusinessConfigurationViewRefVersioned[]|undefined):TypedViewSharedCoverage{
+ const groups=new Map<string,Map<string,{objectType:BusinessConfigurationViewRefVersioned['objectType'];coverage:Coverage;count:number}>>()
+ for(const result of results){
+  if(!result||typeof result!=='object'||!('format'in result))continue
+  const widget=widgets.find(entry=>entry.id===(result as {widgetId?:unknown}).widgetId),selected=widget&&checkedView(widget,result,viewRefs)
+  if(!selected)continue
+  const type=selected.view.objectType,key=coverageKey(selected.view.coverage),group=groups.get(type)??new Map(),entry=group.get(key)
+  if(entry)entry.count++;else group.set(key,{objectType:selected.ref.objectType,coverage:selected.view.coverage,count:1})
+  groups.set(type,group)
+ }
+ return new Map([...groups].map(([type,group])=>{
+  const {objectType,coverage}=[...group.values()].reduce((best,item)=>item.count>best.count?item:best)
+  return [type,{objectType,coverage}]
+ }))
+}
+
+export function BusinessTypedViewNotes({shared}:{shared:TypedViewSharedCoverage}){
+ const format=useI18n(),{t,locale}=format
+ if(!shared.size)return null
+ return <p className={dashboardCss.meta} data-typed-page-notes><span data-typed-null>{t('business.typed.null')}</span>{[...shared.values()].map(({objectType,coverage})=><span key={objectType.id} data-typed-coverage>{shared.size>1?t('business.typed.coverageFor',{type:localizedBusinessObjectType(objectType,locale).title,coverage:coverageText(coverage,format)}):coverageText(coverage,format)}</span>)}</p>
+}
+
+/** sharedCoverage 由统计页提供：通用口径不再逐卡重复，只有与页面口径不同的覆盖范围才在卡内说明。 */
+export function BusinessTypedViewWidget({widget,result,viewRefs,openRecord,sharedCoverage}:{widget:BusinessWidgetDefinition;result:BusinessViewWidgetResultV2|undefined;viewRefs:readonly BusinessConfigurationViewRefVersioned[]|undefined;openRecord?:((reference:BusinessObjectReference)=>void)|undefined;sharedCoverage?:TypedViewSharedCoverage|undefined}){
+ const format=useI18n(),{t,locale,list}=format,title=localizedBusinessViewTitle(widget,locale)
  const selected=checkedView(widget,result,viewRefs)
  if(!selected)return <><h3>{title}</h3><p className={dashboardCss.failed} role="alert" data-widget-failed={widget.id}>{t('business.dashboards.error.corrupt')}</p></>
  const {ref}=selected
  const view={...selected.view,title:localizedBusinessViewTitle(selected.view,locale),measures:selected.view.measures.map(measure=>({...measure,label:localizedBusinessMeasureLabel(measure,locale)})),rows:selected.view.rows.map(row=>({...row,label:dimensionText(row,ref,format)}))}
  const missing=view.missingFields.map(name=>{const field=ref.objectType.fields.find(candidate=>candidate.name===name);return field?localizedBusinessFieldLabel(field,locale):name})
  const currencies=[...new Set(view.measures.flatMap(measure=>measure.currency?[measure.currency]:[]))]
+ const dimension=ref.objectType.fields.find(field=>field.name===ref.view.dimension?.field)
+ const firstColumn=view.kind!=='list'&&dimension?localizedBusinessFieldLabel(dimension,locale):localizedBusinessObjectType(ref.objectType,locale).title
+ const shared=sharedCoverage?.get(view.objectType),ownCoverage=!shared||coverageKey(shared.coverage)!==coverageKey(view.coverage)
  return <><h3>{title}</h3><div className={css.body} data-typed-view={view.chart}>
   {view.dimensionMode==='membership'&&<p className={dashboardCss.note} data-typed-membership>{t('business.typed.membership')}</p>}
   {currencies.length>1&&<p className={dashboardCss.note} data-typed-currencies>{t('business.typed.currencies',{currencies:list(currencies)})}</p>}
   {view.chart==='number'?<div className={css.metric}><strong>{valueText(view.rows[0]?.values[0]??null,view.measures[0]!,format)}</strong><span>{view.measures[0]!.label}</span></div>:<>
    {view.chart!=='table'&&view.measures.map((measure,index)=><Plot key={measure.id} view={view} measure={measure} index={index}/>)}
-   <ExactTable view={view} format={format} openRecord={openRecord}/>
+   <ExactTable view={view} firstColumn={firstColumn} format={format} openRecord={openRecord}/>
   </>}
   {!view.rows.length&&<p className={dashboardCss.note}>{t('business.ledger.empty.objects')}</p>}
-  <p className={dashboardCss.note} data-typed-null>{t('business.typed.null')}</p>
+  {!sharedCoverage&&<p className={dashboardCss.note} data-typed-null>{t('business.typed.null')}</p>}
   {view.measures.some(measure=>measure.rounding)&&<p className={dashboardCss.note} data-typed-rounding>{t('business.typed.rounding',{measures:list(view.measures.filter(measure=>measure.rounding).map(measure=>measure.label))})}</p>}
-  <p className={dashboardCss.note} data-typed-coverage>{view.coverage.latestReceivedAt===null?t('business.ledger.coverage.snapshotNever',{count:view.coverage.objects}):t('business.ledger.coverage.snapshot',{count:view.coverage.objects,at:dateTime(new Date(view.coverage.latestReceivedAt))})}</p>
+  {ownCoverage&&<p className={dashboardCss.note} data-typed-coverage>{coverageText(view.coverage,format)}</p>}
   {missing.length>0&&<p className={dashboardCss.note} data-view-missing>{t('business.typed.missing',{fields:list(missing)})}</p>}
   {view.coverage.truncated&&<p className={dashboardCss.note} data-view-truncated>{t('business.ledger.truncated')}</p>}
   {view.dimensionValues>view.rows.length&&<p className={dashboardCss.note} data-rows-truncated>{t('business.ledger.rowsShown',{total:view.dimensionValues,count:view.rows.length})}</p>}

@@ -20,6 +20,22 @@ export type BusinessBuilderServices={
 const invalid=()=>new WorkError('teloa/invalid-host-response','业务服务回包身份与请求不一致。')
 const forbidden=()=>new WorkError('teloa/forbidden','此会话未绑定当前业务草案。')
 /** 本人身份来自宿主；每次请求重新取真实范围，特别是采用失回包后的receipt。 */
+/**
+ * 页面标题仍是所引用定义原文时，取该定义的标题本地化元数据（与 manifest 同一次读取、同一版本与摘要），
+ * 供导航按界面语言显示内置页名；不读取任何页面数据。
+ */
+function businessConfigurationPageTitles(value:{manifest:{pages:readonly ({id:string;title:string;kind:'records';objectType:string}|{id:string;title:string;kind:'dashboard';dashboardId:string}|{id:string;title:string;kind:string})[]};leaves?:readonly {kind:string;localId:string;body:string}[]}):Record<string,unknown>{
+ const titles:Record<string,unknown>={}
+ for(const page of value.manifest.pages){
+  const target='objectType' in page&&page.kind==='records'?['object-type',page.objectType]:'dashboardId' in page&&page.kind==='dashboard'?['dashboard',page.dashboardId]:undefined
+  const leaf=target&&value.leaves?.find(leaf=>leaf.kind===target[0]&&leaf.localId===target[1])
+  if(!leaf)continue
+  const body=JSON.parse(leaf.body) as {title?:unknown;localized?:{title?:unknown}}
+  if(body.title===page.title&&body.localized?.title!==undefined)titles[page.id]=body.localized.title
+ }
+ return titles
+}
+
 export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<readonly string[]>,get:()=>Promise<BusinessBuilderServices>){
  return async(endpoint:string,payload:unknown,signal?:AbortSignal):Promise<unknown>=>{
   if(!(businessBuilderEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此业务搭建接口。')
@@ -93,7 +109,8 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
   if(endpoint==='business-configuration/current'){
    const value=await services.configuration.current(actor,input)
    if(value===undefined)return null
-   const result=readBusinessConfigurationCurrentResponse({scope:value.scope,version:value.version,manifest:value.manifest,hash:value.hash,createdAt:value.createdAt})
+   const pageTitles=businessConfigurationPageTitles(value)
+   const result=readBusinessConfigurationCurrentResponse({scope:value.scope,version:value.version,manifest:value.manifest,hash:value.hash,createdAt:value.createdAt,...(Object.keys(pageTitles).length?{pageTitles}:{})})
    if(result.scope!==input.scope)throw invalid()
    return result
   }

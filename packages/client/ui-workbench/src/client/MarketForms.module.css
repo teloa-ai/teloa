@@ -64,3 +64,5 @@
 .identity small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:normal}
 .members{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
 .members li{padding:2px 8px;border:1px solid var(--teloa-border);border-radius:999px;font-size:var(--teloa-font-caption)}
+/* 英文按钮整体换行而不是在按钮内折字：底栏本身 flex-wrap */
+.body footer button{white-space:nowrap}

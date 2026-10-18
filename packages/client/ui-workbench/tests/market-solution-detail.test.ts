@@ -59,8 +59,8 @@ test('「添加后你会得到」按七行分节，顺序、标签、副标、�
  assert.match(industryBranch, /rows\.filter\(row=>row\.count>0\)\.map\(row=>\{/)
  assert.match(industryBranch, /const meta=COMPOSITION_ROWS\.find\(value=>value\.id===row\.id\)!/)
  assert.match(industryBranch, /<h3>\{t\(meta\.label\)\}<em className=\{css\.solutionGroupQuestion\}>\{t\(meta\.question\)\}<\/em>/)
- assert.match(industryBranch, /t\(meta\.unit,\{count:number\(row\.count\),views:number\(row\.detail\?\.views\?\?0\)\}\)/)
- assert.match(industryBranch,/t\('market\.dashboard\.count',\{count:number\(row\.detail\.configurations\)\}\)/)
+ // 计数文字（含单复数与业务看板配置份数）由共享模块的 compositionCountText 统一给出
+ assert.match(industryBranch, /\{compositionCountText\(row,t,number\)\}/)
  // 接入源每条都要说清它是拿数据、能操作还是都能；模式词也只从共享模块的词条读。
  // 读写与官方方案页同一口径（设计约束 4）：按包内连接声明对照官方连接器目录判定只读，判定不了才按资源类型的保守口径。
  assert.match(industryBranch, /const label=row\.id==='source'\?connectorModeLabel\(sourceConnectorMode\(resource,readOnlyConnections\)\?\?\{\},t\):undefined/)

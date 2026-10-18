@@ -51,6 +51,25 @@ test('未注入持久选择时本容器刷新仍保留已选真实页面',async(
  const f=fixture();await f.controller.load();await f.controller.select('review');await f.controller.load()
  assert.equal(f.controller.getSnapshot().selectedId,'review')
 })
+test('业务内容与统计看板按页面种类分别列页与记忆选择，切换页签不互相覆盖',async()=>{
+ const board={id:'statistics',kind:'dashboard' as const,title:'订单统计',dashboardId:'statistics'}
+ const widget={format:'teloa.business-widget/v1',version:'1.0.0',domain:'sales',query:'select 1',id:'total',title:'订单总数',kind:'metric',metric:{valueColumn:'n'}}
+ const config:any=current();config.manifest.pages=[board,definition('orders'),definition('review')];config.manifest.homePageId='statistics'
+ config.manifest.definitions.push({kind:'dashboard',localId:'statistics',version:1,definitionHash:hash},{kind:'widget',localId:'total',version:1,definitionHash:hash})
+ const dashboard={mode:'saved',scope:'sales',configurationVersion:1,configurationHash:hash,page:{kind:'dashboard',definition:board,dashboard:{format:'teloa.business-dashboard/v1',id:'statistics',version:'1.0.0',domain:'sales',title:'订单统计',widgets:['total'],layout:[{widget:'total',x:0,y:0,w:12,h:2}],refresh:{kind:'every',seconds:300},acknowledgeShortInterval:false},widgets:[widget],viewRefs:[],timeRange:'all',results:[{widgetId:'total',definitionHash:hash,computedAt:stamp,status:'ok',columns:[{name:'n',type:'number'}],rows:[[1]],rowCount:1,truncated:false,bytes:1,stale:false}]}}
+ const api=createBusinessBuilderApi(async(endpoint,input:any)=>endpoint.endsWith('/current')?config:input.pageId==='statistics'?dashboard:projection(input.pageId))
+ const saved=new Map<string,string>(),selection={get:(scope:string,kind?:string)=>saved.get(scope+'/'+kind),set:(scope:string,id:string,kind?:string)=>{saved.set(scope+'/'+kind,id)}}
+ const records=new BusinessConfigurationSurfaceController(api,'sales',selection,undefined,'records')
+ await records.load();assert.equal(records.getSnapshot().selectedId,'orders','首页是看板时，业务内容默认打开第一个记录页')
+ assert.deepEqual(records.pages(records.getSnapshot().current!).map(page=>page.id),['orders','review'])
+ await records.select('review');await assert.rejects(records.select('statistics'))
+ const boards=new BusinessConfigurationSurfaceController(api,'sales',selection,undefined,'dashboard')
+ await boards.load();assert.equal(boards.getSnapshot().selectedId,'statistics');assert.equal(boards.getSnapshot().pageStatus,'ready')
+ const back=new BusinessConfigurationSurfaceController(api,'sales',selection,undefined,'records')
+ await back.load();assert.equal(back.getSnapshot().selectedId,'review','回到业务内容仍是上次选的记录页')
+ const none=new BusinessConfigurationSurfaceController(createBusinessBuilderApi(async(endpoint,input:any)=>endpoint.endsWith('/current')?current():projection(input.pageId)),'sales',undefined,undefined,'dashboard')
+ await none.load();assert.equal(none.getSnapshot().status,'ready');assert.equal(none.getSnapshot().selectedId,null);assert.equal(none.getSnapshot().page,null)
+})
 test('迟到旧current/page不会覆盖后来的配置版本或页面选择',async()=>{
  const f=fixture(),gate=deferred<unknown>();let n=0
  f.setRoute(async(e,r)=>e.endsWith('/current')?(++n===1?gate.promise:current(2)):projection(r.pageId,2))

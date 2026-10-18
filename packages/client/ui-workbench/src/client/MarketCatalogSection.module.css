@@ -12,7 +12,7 @@
 .stars{display:inline-flex;gap:1px;vertical-align:-1px;color:var(--teloa-accent)}
 .badge{display:inline-flex;align-items:center;border:1px solid var(--teloa-border);border-radius:999px;padding:1px 8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);white-space:nowrap}
 .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
-.actions button{font:inherit;font-size:var(--teloa-font-control);border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);padding:4px 12px;cursor:pointer}
+.actions button{font:inherit;font-size:var(--teloa-font-control);border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);padding:4px 12px;cursor:pointer;white-space:nowrap}
 .actions button:hover:not(:disabled){background:var(--teloa-hover)}
 .actions button:focus-visible,.details summary:focus-visible,.details a:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .actions button:disabled{cursor:default;color:var(--teloa-muted)}

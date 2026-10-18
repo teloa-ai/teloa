@@ -11,9 +11,13 @@
 .table tr:last-child td,.table tr:last-child th{border-bottom:0}
 .plot{min-width:0}
 .plot h4{margin:0 0 5px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
-.bars,.lines{display:block;width:100%;height:100px;overflow:visible}
-.bars rect,.lines circle{fill:var(--teloa-accent)}
-.bars line{stroke:var(--teloa-border);stroke-width:.2}
+.barRows{display:grid;grid-template-columns:fit-content(40%) minmax(64px,1fr) auto;align-items:center;gap:8px 10px;margin:0;padding:0;list-style:none;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}
+.barRows li{display:contents}
+.barRows li>span{min-width:0;overflow-wrap:anywhere}
+.barTrack{display:block;height:8px;border-radius:4px;background:var(--teloa-subtle);overflow:hidden}
+.barTrack i{display:block;height:100%;border-radius:4px;background:var(--teloa-accent)}
+.lines{display:block;width:100%;height:100px;overflow:visible}
+.lines circle{fill:var(--teloa-accent)}
 .lines polyline{stroke:var(--teloa-accent);stroke-width:.6}
 .pie{display:block;width:110px;height:110px;margin:8px auto;transform:rotate(-90deg)}
 .pie circle[data-series='0']{stroke:var(--teloa-accent)}

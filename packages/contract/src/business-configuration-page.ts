@@ -10,6 +10,7 @@ import {readBusinessObjectTypeDefinitionV2,readBusinessObjectTypeDefinitionVersi
 import {readBusinessConfigurationCandidateVersioned,readBusinessConfigurationManifestVersioned,type BusinessConfigurationCandidateV2,type BusinessConfigurationManifestV2} from './business-configuration-v2.ts'
 import {assertBusinessViewV2References,readBusinessViewDefinitionVersioned,readBusinessViewWidgetResultV2,type BusinessViewDefinitionVersioned,type BusinessViewWidgetResultV2} from './business-views-v2.ts'
 import {industryUpdateCanonical} from './industry-update-compare.ts'
+import {localizedMetadata,type LocalizedMetadata} from './localized-metadata.ts'
 
 /** view-ref 的表示元数据直接使用现有视图/对象定义，避免第二套图表契约。 */
 export type BusinessConfigurationViewRef={view:BusinessViewDefinition;objectType:BusinessObjectTypeDefinition}
@@ -28,7 +29,11 @@ export type BusinessConfigurationPageProjectionV2={format:'teloa.business-config
  {mode:'preview';draftId:string;revision:number}|{mode:'saved';configurationVersion:number})
 export type BusinessConfigurationPageProjectionVersioned=BusinessConfigurationPageProjection|BusinessConfigurationPageProjectionV2
 export type BusinessConfigurationDraftResponse={ownerId:string;id:string;scope:string;revision:number;baseVersion:number;candidate:BusinessConfigurationCandidate;hash:string;status:'draft'|'applied';createdAt:string;updatedAt:string}
-export type BusinessConfigurationCurrentResponse={scope:string;version:number;manifest:BusinessConfigurationManifest;hash:string;createdAt:string}
+/**
+ * pageTitles：页面标题仍是所引用定义（看板或对象类型）原文时，宿主从同一版本配置的定义附上其标题本地化元数据，
+ * 让页面导航按界面语言显示内置页名而不读取页面数据；用户改过的页名不附带。
+ */
+export type BusinessConfigurationCurrentResponse={scope:string;version:number;manifest:BusinessConfigurationManifest;hash:string;createdAt:string;pageTitles?:Readonly<Record<string,LocalizedMetadata>>}
 export type BusinessConfigurationDraftResponseVersioned=Omit<BusinessConfigurationDraftResponse,'candidate'>&{candidate:BusinessConfigurationCandidate|BusinessConfigurationCandidateV2}
 export type BusinessConfigurationCurrentResponseVersioned=Omit<BusinessConfigurationCurrentResponse,'manifest'>&{manifest:BusinessConfigurationManifest|BusinessConfigurationManifestV2}
 export type BusinessConfigurationApplyResult={scope:string;version:number;configurationHash:string;requestId:string}
@@ -129,9 +134,20 @@ function draftResponse<T extends BusinessConfigurationCandidate|BusinessConfigur
 export function readBusinessConfigurationDraftResponse(value:unknown):BusinessConfigurationDraftResponse{return draftResponse(value,readBusinessConfigurationCandidate)}
 export function readBusinessConfigurationDraftResponseVersioned(value:unknown):BusinessConfigurationDraftResponseVersioned{return draftResponse(value,readBusinessConfigurationCandidateVersioned)}
 function currentResponse<T extends BusinessConfigurationManifest|BusinessConfigurationManifestV2>(value:unknown,read:(value:unknown)=>T):Omit<BusinessConfigurationCurrentResponse,'manifest'>&{manifest:T}{return response(()=>{
- const r=exact(value,['scope','version','manifest','hash','createdAt']),manifest=read(r.manifest)
+ const r=exact(value,['scope','version','manifest','hash','createdAt'],['pageTitles']),manifest=read(r.manifest)
  if(r.scope!==manifest.scope||!positive(r.version)||!hash(r.hash)||!stamp(r.createdAt))throw bad()
- return {...r,manifest} as Omit<BusinessConfigurationCurrentResponse,'manifest'>&{manifest:T}
+ if(r.pageTitles===undefined)return {...r,manifest} as Omit<BusinessConfigurationCurrentResponse,'manifest'>&{manifest:T}
+ if(!isRecord(r.pageTitles))throw bad()
+ const pageTitles:Record<string,LocalizedMetadata>={}
+ for(const [pageId,metadata] of Object.entries(r.pageTitles)){
+  const page=manifest.pages.find(page=>page.id===pageId)
+  let parsed:LocalizedMetadata
+  try{parsed=localizedMetadata(metadata)}catch{throw bad()}
+  // 只接受本配置声明的页面，且元数据原文必须等于该页标题：不能借此改写页名。
+  if(!page||parsed.original!==page.title)throw bad()
+  pageTitles[pageId]=parsed
+ }
+ return {...r,manifest,pageTitles} as Omit<BusinessConfigurationCurrentResponse,'manifest'>&{manifest:T}
 })}
 export function readBusinessConfigurationCurrentResponse(value:unknown):BusinessConfigurationCurrentResponse{return currentResponse(value,readBusinessConfigurationManifest)}
 export function readBusinessConfigurationCurrentResponseVersioned(value:unknown):BusinessConfigurationCurrentResponseVersioned{return currentResponse(value,readBusinessConfigurationManifestVersioned)}

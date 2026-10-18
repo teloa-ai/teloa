@@ -31,6 +31,14 @@ export function localizedBusinessViewTitle(definition:Pick<BusinessViewDefinitio
  return text(definition.localized?.title,definition.title,locale)
 }
 
+/**
+ * 配置页面标题没有自己的本地化元数据：标题仍是所引用定义（看板或对象类型）的原文时，按该定义的本地化标题显示；
+ * 用户改过的页面标题原样保留，不猜测翻译。
+ */
+export function localizedBusinessPageTitle(page:{title:string},source:{title:string;localized?:{title?:LocalizedMetadata}|undefined}|undefined,locale:string):string{
+ return source&&page.title===source.title?text(source.localized?.title,page.title,locale):page.title
+}
+
 export function localizedBusinessMeasureLabel(measure:Pick<BusinessViewMeasure,'label'|'localized'>,locale:string):string{
  return text(measure.localized?.label,measure.label,locale)
 }

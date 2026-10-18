@@ -24,7 +24,7 @@ import pageCss from './MarketPage.module.css'
 import staffCss from './StaffAvatar.module.css'
 import {StaffAvatar} from './StaffAvatar.js'
 import {staffAvatarSeed} from './staff-avatar-seed.js'
-import {COMPOSITION_EXTENSION_NOTE_KEY,COMPOSITION_ROWS,composeFromCounts,composeFromManifest,compositionMethodNote,compositionSummary,connectorModeLabel,sourceConnectorMode} from './industry-composition.js'
+import {COMPOSITION_EXTENSION_NOTE_KEY,COMPOSITION_ROWS,composeFromCounts,composeFromManifest,compositionCountText,compositionMethodNote,compositionSummary,connectorModeLabel,sourceConnectorMode} from './industry-composition.js'
 import {officialSolutionItem,solutionMembers,solutionRowResources} from './market-solution-presentation.js'
 import type {MarketItem} from './market-preview.js'
 import type {MarketCatalogSolutionPackage} from './market-catalog-api.js'
@@ -622,7 +622,10 @@ export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,
    ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.solution.added')}<Check size={15}/></button>{team.links}</>
    :entry.compatibility.status==='unsupported'
     ?<p>{conditions[0]??t('market.catalog.official.unsupportedFallback')}</p>
-    :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('market.industry.loadWorkspace')}<Plus size={15}/></button>
+    // 已加到本机、还没加进团队：与卡片「已添加」记号和 AI 员工未完成时同一表达——状态「已添加」+「继续添加」打开同一个团队确认步骤 +「查看」本机副本，不再给「添加」主按钮
+    :item.addedContentId
+     ?<div className={css.actions}><span>{t('market.catalog.official.added')}</span><button type="button" className={css.primary} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('templateShare.catalogRoleContinue')}</button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></div>
+     :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('market.industry.loadWorkspace')}<Plus size={15}/></button>
   :item.addedContentId
   ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.catalog.official.added')}<Check size={15}/></button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></>
   :entry.compatibility.status==='unsupported'
@@ -649,7 +652,7 @@ export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,
     const meta=COMPOSITION_ROWS.find(value=>value.id===row.id)!
     const note=row.id==='method'?compositionMethodNote(row.detail,t,number):row.id==='extension'?t(COMPOSITION_EXTENSION_NOTE_KEY):''
     return <div key={row.id}>
-     <h3>{t(meta.label)}<em className={pageCss.solutionGroupQuestion}>{t(meta.question)}</em><span className={pageCss.solutionGroupCount}>{row.detail?.configurations?t('market.dashboard.count',{count:number(row.detail.configurations)}):t(meta.unit,{count:number(row.count),views:number(row.detail?.views??0)})}</span></h3>
+     <h3>{t(meta.label)}<em className={pageCss.solutionGroupQuestion}>{t(meta.question)}</em><span className={pageCss.solutionGroupCount}>{compositionCountText(row,t,number)}</span></h3>
      {row.id==='staff'
       ?<div className={pageCss.memberCards}>{solutionMembers(pkg.manifest,locale,pkg.manifest.id).map(member=><span key={member.id}><StaffAvatar initial={member.initial} seed={member.seed} size="md"/><strong>{member.title}</strong></span>)}</div>
       :<ul>{solutionRowResources(pkg.manifest,row.id,locale).map(resource=>{

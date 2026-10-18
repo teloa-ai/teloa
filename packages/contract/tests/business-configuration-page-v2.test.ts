@@ -37,3 +37,11 @@ test('v2 draft/current 回包版本入口显式分派，严格校验范围与旧
  for(const value of [{...draft,scope:'other'},{...draft,extra:true},{...draft,candidate:{...candidate,format:'teloa.business-configuration/v3'}}])assert.throws(()=>api.readBusinessConfigurationDraftResponseVersioned(value),bad)
  for(const value of [{...current,scope:'other'},{...current,version:0},{...current,extra:true}])assert.throws(()=>api.readBusinessConfigurationCurrentResponseVersioned(value),bad)
 })
+
+test('current 可附页名本地化元数据，但只认本配置页面且原文须等于页名',()=>{
+ const manifest={...candidate,definitions:[{kind:'object-type',localId:'customer',version:1,definitionHash:'a'.repeat(64)}]}
+ const page=manifest.pages[0]!,title={original:page.title,defaultLocale:'zh-CN',locales:{'zh-CN':page.title,en:'Customers'}}
+ const current={scope,version:1,manifest,hash:'a'.repeat(64),createdAt:stamp,pageTitles:{[page.id]:title}}
+ assert.deepEqual(api.readBusinessConfigurationCurrentResponseVersioned(current),current)
+ for(const pageTitles of [{other:title},{[page.id]:{...title,original:'改过的页名'}},{[page.id]:'Customers'},[]])assert.throws(()=>api.readBusinessConfigurationCurrentResponseVersioned({...current,pageTitles}),bad)
+})

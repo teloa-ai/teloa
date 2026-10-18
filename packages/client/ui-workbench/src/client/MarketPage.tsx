@@ -35,7 +35,7 @@ import type {GithubSourceApi} from './github-source-api.js'
 import {localizedMarketItemCopy,localizedMarketItemDetailCopy,localizedMarketResourceEntryTitle,localizedMarketResourceUseTitle,marketCatalogItemCopy,marketCategoryKind,marketCategoryLabel,marketCategoryOf,marketItemPresentation,marketResourcePresentation,marketVisibilityLabel,restoredMarketCategory,marketPrimaryItem,marketItemGroup,marketResourceGroup,solutionRoleCount,type MarketBrowseKind,type MarketPrimaryView,type MarketCategory} from './market-home-presentation.js'
 import { ItemArt, SolutionCards, StateMark } from './SolutionCards.js'
 import {currentSolutionCatalog,localReadOnlyConnections,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionMark,solutionMembers,solutionRowResources} from './market-solution-presentation.js'
-import {COMPOSITION_EXTENSION_NOTE_KEY,COMPOSITION_ROWS,composeFromManifest,compositionMethodNote,compositionSummary,connectorModeLabel,sourceConnectorMode} from './industry-composition.js'
+import {COMPOSITION_EXTENSION_NOTE_KEY,COMPOSITION_ROWS,composeFromManifest,compositionCountText,compositionMethodNote,compositionSummary,connectorModeLabel,sourceConnectorMode} from './industry-composition.js'
 import {ContextDrawer} from './ContextDrawer.js'
 import {StaffAvatar} from './StaffAvatar.js'
 import {loadMarketSkillRuntime,type MarketSkillRuntime} from './market-runtime-state.js'
@@ -473,7 +473,7 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
           // 附注只有两行有：任务模板说自动化与动作的分布，扩展说它是工作室通用的。
           const note=row.id==='method'?compositionMethodNote(row.detail,t,number):row.id==='extension'?t(COMPOSITION_EXTENSION_NOTE_KEY):''
           return {id:row.id,title:t(meta.label),content:<div className={css.youGet}><div>
-          <h3>{t(meta.label)}<em className={css.solutionGroupQuestion}>{t(meta.question)}</em><span className={css.solutionGroupCount}>{row.detail?.configurations?t('market.dashboard.count',{count:number(row.detail.configurations)}):t(meta.unit,{count:number(row.count),views:number(row.detail?.views??0)})}</span></h3>
+          <h3>{t(meta.label)}<em className={css.solutionGroupQuestion}>{t(meta.question)}</em><span className={css.solutionGroupCount}>{compositionCountText(row,t,number)}</span></h3>
           {row.id==='staff'
             ?<div className={css.memberCards}>{members.map(member=><span key={member.id}><StaffAvatar initial={member.initial} seed={member.seed} size="md"/><strong>{member.title}</strong></span>)}</div>
             :<ul>{solutionRowResources(manifest,row.id,locale).map(resource=>{

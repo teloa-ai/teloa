@@ -3,7 +3,7 @@ import {useEffect,useId,useMemo,useRef,useState,useSyncExternalStore,type FormEv
 import {Archive,ArrowLeft,FileText,Plus,RefreshCw} from 'lucide-react'
 import {businessObjectReference,type BusinessObjectReference,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,encodeBusinessRichFieldValue,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessRichMultiEnumFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectFieldDefinition,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessConfigurationPageContent,type BusinessConfigurationPageContentV2} from '@teloa/contract'
 import {useI18n} from './i18n/provider.js'
-import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessObjectType} from './business-definition-localization.js'
+import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessObjectType,localizedBusinessPageTitle} from './business-definition-localization.js'
 import {BusinessRecordFlow,businessDurationInput,businessDurationValue,businessMoneyInput,businessMoneyValue,businessRichRecordDisplay,type BusinessDurationUnit,type BusinessRecordCapabilities,type BusinessRecordSession} from './business-record-flow.js'
 import {BusinessTaskList,type BusinessTaskListProps} from './BusinessTaskList.js'
 import {BusinessRecordReferenceField,BusinessRecordReferenceValue} from './BusinessRecordReferenceField.js'
@@ -33,7 +33,7 @@ export function BusinessRecordPage({projection,flow,importFlow,capabilities=noCa
 }
 function RecordHeader({page,children}:{page:RecordPage;children?:React.ReactNode}){
  const {locale}=useI18n()
- return <header className={css.header}><div><h2>{page.definition.title}</h2><p>{localizedBusinessObjectType(page.objectType,locale).lead}</p></div>{children}</header>
+ return <header className={css.header}><div><h2>{localizedBusinessPageTitle(page.definition,page.objectType,locale)}</h2><p>{localizedBusinessObjectType(page.objectType,locale).lead}</p></div>{children}</header>
 }
 function EmptyRecordPage({preview=false,onCreate}:{preview?:boolean;onCreate?:()=>void}){
  const {t}=useI18n()
@@ -104,11 +104,11 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
  const busy=['saving','unknown','retryable','recovery-error'].includes(state.phase),historical=fixedSelection||!!selected&&!!current&&selected.version!==current.version
  const fields=page.definition.fields.map(name=>definition.fields.find(field=>field.name===name)).filter((field):field is RecordField=>!!field)
  const start=(kind:'create'|'edit'|'archive')=>{session.configure(definition,rights);if(kind==='create')session.create();else if(selected)session[kind](selected)}
- return <section className={css.page} aria-label={page.definition.title}>
+ return <section className={css.page} aria-label={localizedBusinessPageTitle(page.definition,page.objectType,locale)}>
   {!referenceOnly&&<>
-  <RecordHeader page={page}><div className={css.actions}><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void load()}/>{rights.create&&importFlow&&<button type="button" disabled={busy||!!state.form||!importing?.isCurrent()} onClick={()=>setImportOpen(true)}>{locale==='en'?'Import a table':'导入表格'}</button>}{rights.create&&<button type="button" className={css.primary} disabled={busy||!!state.form||importOpen} onClick={()=>start('create')}><Plus size={16} aria-hidden="true"/>{t('business.records.new')}</button>}</div></RecordHeader>
-  {rights.create&&importFlow&&!importing&&<p className={css.error} role="alert">{locale==='en'?'Your business connection is unverified. Table import is unavailable.':'本人业务连接尚未确认，暂不能导入表格。'}</p>}
-  {importOpen&&importing&&rights.create&&<div><div className={css.actions}><button type="button" onClick={()=>setImportOpen(false)}>{locale==='en'?'Close import':'关闭导入'}</button></div><BusinessImportPanel flow={importing} scope={scope} type={definition.id} definition={definition}/></div>}
+  <RecordHeader page={page}><div className={css.actions}><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void load()}/>{rights.create&&importFlow&&<button type="button" disabled={busy||!!state.form||!importing?.isCurrent()} onClick={()=>setImportOpen(true)}>{t('business.records.importTable')}</button>}{rights.create&&<button type="button" className={css.primary} disabled={busy||!!state.form||importOpen} onClick={()=>start('create')}><Plus size={16} aria-hidden="true"/>{t('business.records.new')}</button>}</div></RecordHeader>
+  {rights.create&&importFlow&&!importing&&<p className={css.error} role="alert">{t('business.records.importUnverified')}</p>}
+  {importOpen&&importing&&rights.create&&<div><div className={css.actions}><button type="button" onClick={()=>setImportOpen(false)}>{t('business.records.importClose')}</button></div><BusinessImportPanel flow={importing} scope={scope} type={definition.id} definition={definition}/></div>}
   {state.phase==='recovery-error'&&<p className={css.error} role="alert">{t(state.pending?'business.records.storageError.pending':'business.records.storageError')}</p>}
   {state.phase==='saved'&&<p className={css.success} role="status">{t(state.result?.deletedAt?'business.records.archived':'business.records.saved')}</p>}
   {state.form&&!fixedSelection&&<RecordEditor session={session} definition={definition} api={flow.api} scope={scope} go={go}/>}

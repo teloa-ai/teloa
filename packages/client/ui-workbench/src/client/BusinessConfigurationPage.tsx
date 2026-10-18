@@ -1,11 +1,12 @@
 import {businessObjectReference,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessObjectReference,type BusinessConfigurationViewRefVersioned} from '@teloa/contract'
 import {useEffect,useMemo,useState} from 'react'
 import {BusinessDashboardGrid} from './BusinessDashboardGrid.js'
+import {BusinessTypedViewNotes,typedViewSharedCoverage} from './BusinessTypedViewWidget.js'
 import {BusinessRecordPage,type BusinessRecordTaskList} from './BusinessRecordPage.js'
 import type {BusinessRecordFlow,BusinessRecordCapabilities} from './business-record-flow.js'
 import type {BusinessImportTargetFactory} from './business-import-integration.js'
 import type {BusinessTarget} from './business-preview.js'
-import {localizedBusinessViewTitle} from './business-definition-localization.js'
+import {localizedBusinessPageTitle} from './business-definition-localization.js'
 import type {BusinessBuilderApi} from './business-builder-api.js'
 import {readBusinessConfigurationSavedPage} from './business-configuration-surface.js'
 import {ContextDrawer} from './ContextDrawer.js'
@@ -51,6 +52,7 @@ function DashboardRecordPreview({preview,source,flow,taskList,close,go}:{preview
 export function BusinessConfigurationPage({projection,recordFlow,importFlow,capabilities,colorScheme,go,onDispatch,taskList,recordReference,recordSource}:BusinessConfigurationPageProps){
  const {locale}=useI18n(),{page}=projection
  const origin=useMemo(()=>({}),[projection,recordFlow,recordSource?.api,recordSource?.current]),[preview,setPreview]=useState<RecordPreview>()
+ const shared=useMemo(()=>page.kind==='dashboard'?typedViewSharedCoverage(page.widgets,page.results,page.viewRefs):new Map(),[page])
  if(page.kind==='records')return projection.mode==='preview'?<BusinessRecordPage projection={projection}/>:<BusinessRecordPage projection={projection} {...(recordFlow?{flow:recordFlow}:{})} {...(capabilities?{capabilities}:{})} importFlow={importFlow} onDispatch={onDispatch} go={go} taskList={taskList} recordReference={recordReference?.type===page.objectType.id?recordReference:undefined}/>
  const openRecord=(value:BusinessObjectReference)=>{
   if(projection.mode!=='saved'||!recordFlow||!recordSource||recordSource.current.scope!==projection.scope||recordSource.current.version!==projection.configurationVersion||recordSource.current.hash!==projection.configurationHash)return
@@ -63,9 +65,9 @@ export function BusinessConfigurationPage({projection,recordFlow,importFlow,capa
    if(object&&ref){setPreview({origin,reference,title:object.title,objectType:ref.objectType});return}
   }
  }
- const title=localizedBusinessViewTitle(page.dashboard,locale)
+ const title=localizedBusinessPageTitle(page.definition,page.dashboard,locale)
  return <><section className={css.surface} aria-label={title} data-dashboard={page.dashboard.id}>
-  <header className={css.header}><h2>{title}</h2></header>
-  <BusinessDashboardGrid dashboard={page.dashboard} widgets={page.widgets} results={page.results} viewRefs={page.viewRefs} colorScheme={colorScheme} ranged={page.dashboard.filters!==undefined} go={projection.mode==='saved'?go:undefined} openRecord={projection.mode==='saved'&&recordFlow&&recordSource?openRecord:undefined}/>
+  <header className={css.header}><div><h2>{title}</h2><BusinessTypedViewNotes shared={shared}/></div></header>
+  <BusinessDashboardGrid dashboard={page.dashboard} widgets={page.widgets} results={page.results} viewRefs={page.viewRefs} colorScheme={colorScheme} ranged={page.dashboard.filters!==undefined} go={projection.mode==='saved'?go:undefined} openRecord={projection.mode==='saved'&&recordFlow&&recordSource?openRecord:undefined} sharedCoverage={shared.size?shared:undefined}/>
  </section>{preview?.origin===origin&&recordFlow&&recordSource&&<DashboardRecordPreview key={JSON.stringify(preview.reference)} preview={preview} source={recordSource} flow={recordFlow} taskList={taskList} close={()=>setPreview(undefined)} go={go}/>}</>
 }

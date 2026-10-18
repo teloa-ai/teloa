@@ -29,6 +29,14 @@ test('真实宿主出口按版本读取富字段目录、草案、正式配置�
  assert.deepEqual(await f.handler('business-configuration/page',{scope,pageId:'customers'}),f.page)
  assert.deepEqual(await f.handler('business-configuration/page',{...bound,expectedRevision:3,pageId:'customers'}),f.previewPage)
 })
+test('正式配置附上与定义原文相同页名的本地化元数据，改过的页名不附带',async()=>{
+ const f=fixture(),localized={original:'客户',defaultLocale:'zh-CN',locales:{'zh-CN':'客户',en:'Customers'}}
+ const body=JSON.stringify({...object,localized:{title:localized}}),page={...definition,title:'客户'}
+ f.services.configuration.current=async()=>({...f.current,manifest:{...f.current.manifest,pages:[page]},leaves:[{kind:'object-type',localId:'customer',body}]}) as never
+ assert.deepEqual((await f.handler('business-configuration/current',{scope}) as any).pageTitles,{customers:localized})
+ f.services.configuration.current=async()=>({...f.current,leaves:[{kind:'object-type',localId:'customer',body}]}) as never
+ assert.equal((await f.handler('business-configuration/current',{scope}) as any).pageTitles,undefined)
+})
 test('版本化宿主仍拒绝未知格式、跨owner、跨scope及不属于原请求的页面',async()=>{
  const bad={code:'teloa/invalid-host-response'},f=fixture(),original=f.services.drafts.get
  for(const draft of [{...f.draft,ownerId:'other'},{...f.draft,candidate:{...candidate,format:'teloa.business-configuration/v3'}}]){

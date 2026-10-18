@@ -14,7 +14,9 @@ export type LocalizedIndustryTemplateMetadata={title:LocalizedMetadataResolution
 export const industryResourceDestinationGroups:readonly {key:string;kinds:readonly IndustryResource['kind'][]}[]=[
  {key:'market.industry.destination.roles',kinds:['role']},
  {key:'market.industry.destination.knowledge',kinds:['knowledge']},
- {key:'market.industry.destination.capabilities',kinds:['skill','mcp']},
+ // 技能与接入源分两行：标签写「技能」就只数 skill，与「添加后你会得到」的技能 / 接入源两行同一口径（此前合并计数，6 项技能 + 1 个接入源被写成 7 项技能）。
+ {key:'market.industry.destination.capabilities',kinds:['skill']},
+ {key:'composition.row.source',kinds:['mcp']},
  {key:'market.industry.resource.plugin',kinds:['plugin']},
  {key:'market.industry.destination.tasks',kinds:['work-template']},
  {key:'market.industry.destination.automation',kinds:['plan']},

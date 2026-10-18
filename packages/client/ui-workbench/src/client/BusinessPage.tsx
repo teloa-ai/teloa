@@ -151,7 +151,9 @@ function BusinessContent(props:Props){
  if(props.target.section==='data'&&props.target.objectType&&!props.target.recordReference)return <LegacyBusinessPage {...props}/>
  if(!configuration||props.target.scope==='general'||!['overview','data','dashboards'].includes(props.target.section))return <LegacyBusinessPage {...props}/>
  if(!props.visible)return null
- return <BusinessConfigurationSurface chrome={props.chrome} scope={props.target.scope} recordReference={props.target.recordReference} services={configuration} colorScheme={props.colorScheme} backHome={props.backHome} go={props.go} {...(props.embedded===undefined?{}:{embedded:props.embedded})} {...(props.openFull?{openFull:props.openFull}:{})} legacy={()=><LegacyBusinessPage {...props}/>}/>
+ // 「业务内容」只列记录页、「统计看板」只列看板页；总览（无工作区时）仍列出全部页面。
+ const pageKind=props.target.section==='data'?'records' as const:props.target.section==='dashboards'?'dashboard' as const:undefined
+ return <BusinessConfigurationSurface chrome={props.chrome} pageKind={pageKind} scope={props.target.scope} recordReference={props.target.recordReference} services={configuration} colorScheme={props.colorScheme} backHome={props.backHome} go={props.go} {...(props.embedded===undefined?{}:{embedded:props.embedded})} {...(props.openFull?{openFull:props.openFull}:{})} legacy={()=><LegacyBusinessPage {...props}/>}/>
 }
 
 function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi,openProjectItem,scopeLabels,embedded=false,openFull,automations,plans,goComposition,backHome,openStaff,manageIndustryResources,industryLoads,dataSources,visible,state,target,go,openTask,openWork,openMessages,openGroups,openResources,market,capabilities,openPlans,businessLedgerApi,businessCustomizationApi,businessShareApi,pageCreate,businessTaskApi,createBusinessTask,recoverBusinessTask,isPinned=false,togglePin,businessDashboardApi,colorScheme}:Props){

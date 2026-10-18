@@ -116,10 +116,12 @@ test('接上团队步骤后：主按钮写「添加到我的团队」，不再�
  assert.match(loaded,/disabled=""[^>]*>已在我的团队里/)
  assert.match(loaded,/>看看它带进来什么 · 协同<\/button>/)
  assert.doesNotMatch(loaded,/>查看<\/button>/)
- // 已加到本机但还没进团队：仍是「添加到我的团队」，不是「已添加」
+ // 已加到本机但还没进团队（2026-10-18 用户裁定）：与卡片「已添加」记号、AI 员工未完成时同一表达——
+ // 状态「已添加」+「继续添加」打开同一个团队确认步骤 +「查看」本机副本，不再给「添加到我的团队」主按钮
  const stored=render({item:item({addedContentId:'22222222-2222-4222-8222-222222222222'}),team:team()})
- assert.match(stored,/primaryAction[^"]*"[^>]*>添加到我的团队/)
- assert.doesNotMatch(stored,/>已添加</)
+ assert.doesNotMatch(stored,/添加到我的团队/)
+ assert.match(stored,/>已添加<\/span><button type="button" class="[^"]*primary[^"]*"[^>]*>继续添加<\/button>/)
+ assert.match(stored,/aria-label="查看"/)
 })
 
 test('团队确认步骤就地展开：七行让位给确认步骤，主按钮标明已展开，页面不跳走',()=>{

@@ -604,8 +604,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const configurationSelection=useMemo<BusinessConfigurationSelection>(()=>{
     const selected=new Map<string,string>()
     return {
-      get:scope=>{const page=latestState.current.navigationDirectories.spaces?.businessPage;return page?.scope===scope?page.pageId:selected.get(scope)},
-      set:(scope,pageId)=>{selected.set(scope,pageId);const current=latestState.current,page=current.navigationDirectories.spaces?.businessPage;if(current.view==='spaces'&&current.businessTarget.scope===scope&&(page?.scope!==scope||page.pageId!==pageId))actions.rememberDirectory('spaces',{businessPage:{scope,pageId}})},
+      // 本次会话按页面种类分别记忆（业务内容/统计看板互不覆盖）；持久的目录记忆只保留最近一页，种类不符时由容器忽略。
+      get:(scope,kind)=>{const page=latestState.current.navigationDirectories.spaces?.businessPage;return selected.get(scope+'\0'+(kind??''))??(page?.scope===scope?page.pageId:undefined)},
+      set:(scope,pageId,kind)=>{selected.set(scope+'\0'+(kind??''),pageId);const current=latestState.current,page=current.navigationDirectories.spaces?.businessPage;if(current.view==='spaces'&&current.businessTarget.scope===scope&&(page?.scope!==scope||page.pageId!==pageId))actions.rememberDirectory('spaces',{businessPage:{scope,pageId}})},
     }
   },[builderState.api,builderState.namespace,actions])
   const [setupOrigin,setSetupOrigin]=useState<BusinessSetupOrigin|null>(null)
