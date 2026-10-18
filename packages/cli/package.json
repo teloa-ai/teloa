@@ -1,6 +1,6 @@
 {
   "name": "@teloa/cli",
-  "version": "0.2.0-beta.5",
+  "version": "0.2.0-beta.6",
   "private": true,
   "type": "module",
   "exports": {"./runtime":"./src/runtime-status.ts","./webserver":"./src/runtime-webserver.ts","./gateway":"./src/runtime-gateway.ts"},
