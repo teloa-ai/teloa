@@ -11,11 +11,11 @@ Teloa 用于构建、协作和运行 AI 团队。**Teloa 社区版** 是面向�
 需要 Node.js **22.19+（22.x）或 24.x**、npm **11.12.1+（11.x）**，以及已启动的本机 Docker 引擎（用于独立 PostgreSQL 数据库）。
 
 ```sh
-npm install -g --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.4/teloa-cli-0.2.0-beta.4.tgz
+npm install -g --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.5/teloa-cli-0.2.0-beta.5.tgz
 teloa up
 ```
 
-本版本随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.4) 发布，未发布到 npm 注册表。升级已有安装时，安装本命令包后先运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.0-beta.4`（自定义安装继续传入原 `--home`）。`--to` 等于当前命令包版本时以本包为候选，其他版本从 npm 注册表取得；升级前自动备份，并保留原安装身份与数据。
+本版本随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.5) 发布，未发布到 npm 注册表。升级已有安装时，安装本命令包后先运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.0-beta.5`（自定义安装继续传入原 `--home`）。`--to` 等于当前命令包版本时以本包为候选，其他版本从 npm 注册表取得；升级前自动备份，并保留原安装身份与数据。
 
 默认打开本机 Web 界面，首次进入后在设置中配置模型。在浏览器未自动打开时运行 `teloa open`。默认安装目录为 `~/.teloa`，Web 端口为 3100；新安装可通过 `teloa up --home <目录> --port <端口> --workspace <工作目录>` 指定。
 
@@ -48,7 +48,7 @@ This package includes the Community application and its installation and mainten
 
 Use Node.js **22.19+ (22.x) or 24.x**, npm **11.12.1+ (11.x)**, and a running local Docker engine for the dedicated PostgreSQL database. Run the installation commands above, then configure your model in the Web interface. The default home is `~/.teloa` and the default Web port is 3100. A new installation accepts `--home`, `--port` and `--workspace`; `--no-open` suppresses the browser launch.
 
-Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. This version is published on [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.4), not the npm registry. To upgrade an existing installation, install this command package, run `teloa stop`, then `teloa upgrade --to 0.2.0-beta.4`, passing the original `--home` for a custom installation. When `--to` matches the running package, it is the candidate; other versions come from the npm registry. The upgrade backs up first and keeps the installation identity and data. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
+Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. This version is published on [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.5), not the npm registry. To upgrade an existing installation, install this command package, run `teloa stop`, then `teloa upgrade --to 0.2.0-beta.5`, passing the original `--home` for a custom installation. When `--to` matches the running package, it is the candidate; other versions come from the npm registry. The upgrade backs up first and keeps the installation identity and data. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
 
 To use your own PostgreSQL, supply a protected JSON file containing `connectionString` through `--database-config`. Only a dedicated database named `teloa` on `localhost` or `127.0.0.1` is accepted. It must be empty for a new installation; existing business databases or databases owned by another installation are rejected. Keep this file at mode `0600` and keep credentials out of command lines, repositories and shared logs.
 

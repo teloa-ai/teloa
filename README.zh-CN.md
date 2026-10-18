@@ -46,7 +46,7 @@ https://github.com/user-attachments/assets/4f53f542-c15e-444f-a232-3a02e0245597
 
 需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。
 
-当前预览版为 **0.2.0-beta.4**。原生安装包随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.4) 提供，已在 macOS arm64 上验证；其他操作系统尚未针对本预览版验证。npm 注册表与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 仍为此前的 **0.2.0-alpha.7**。下方仍保留源码构建方式。
+当前预览版为 **0.2.0-beta.5**。原生安装包随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.5) 提供，已在 macOS arm64 上验证；其他操作系统尚未针对本预览版验证。npm 注册表与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 仍为此前的 **0.2.0-alpha.7**。下方仍保留源码构建方式。
 
 ### 从 GitHub Release 原生安装
 
@@ -55,13 +55,13 @@ https://github.com/user-attachments/assets/4f53f542-c15e-444f-a232-3a02e0245597
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.4/teloa-cli-0.2.0-beta.4.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.0-beta.5/teloa-cli-0.2.0-beta.5.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.0-beta.4 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.0-beta.4`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。如需安装注册表中的上一版本，使用 `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`。
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.0-beta.5 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.0-beta.5`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。如需安装注册表中的上一版本，使用 `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`。
 
 <details>
 <summary><strong>Docker Hub + Compose（0.2.0-alpha.7）</strong></summary>
