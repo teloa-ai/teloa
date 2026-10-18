@@ -13,7 +13,7 @@ export const BUSINESS_IMPORT_MESSAGE_ROWS=[
  ["2Map","2 映射","2 對應","2 Map"],
  ["3Confirm","3 确认","3 確認","3 Confirm"],
  ["yourIdentityOrBusinessConnectionChanged","本人或业务连接已变化，请返回原业务核对。","使用者身分或業務連線已變更，請返回原業務核對。","Your identity or business connection changed. Check the original business."],
- ["theOriginalRequestOutcomeIsUnknown","原请求结果未知，文件和映射已冻结。空回执不代表未受理。","原請求結果未知，檔案與欄位對應已固定。空白回執不代表未受理。","The original request outcome is unknown. The file and mapping are frozen. An empty receipt does not mean it was rejected."],
+ ["theOriginalRequestOutcomeIsUnknown","本次导入结果尚未确认，文件和字段对应保持不变。请先核对原请求；未查到结果不表示未受理。","本次匯入結果尚未確認，檔案與欄位對應維持不變。請先核對原請求；未查到結果不表示未受理。","The import outcome is not yet confirmed. The file and field mapping are unchanged. Check the original request first; no result does not mean it was rejected."],
  ["checkOriginalRequest","核对原请求","核對原請求","Check original request"],
  ["resendOriginalRequest","按原请求重递送","重新傳送原請求","Resend original request"],
  ["resendWithOriginalFile","用原文件重递送","使用原檔案重新傳送","Resend with original file"],

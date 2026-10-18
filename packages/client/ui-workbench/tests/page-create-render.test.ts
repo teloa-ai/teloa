@@ -134,7 +134,7 @@ test('预览完成之前没有确认，读到之后显示三块文本与人话�
  assert.ok(!elements(app.render()).some(node=>node.type==='button'&&content(node)==='确认'))
  pending.resolve(preview());await app.flush()
  assert.equal(app.button('确认').props.disabled,false)
- for(const text of ['要建什么','会带来什么','下一步',"员工入职表单",'还需要你另外输入密钥'])assert.ok(app.html().includes(text))
+ for(const text of ['要建什么','会带来什么','下一步','核对并创建员工','还需要你另外输入密钥'])assert.ok(app.html().includes(text))
  assert.ok(!app.html().includes('roles/create'))
 })
 
