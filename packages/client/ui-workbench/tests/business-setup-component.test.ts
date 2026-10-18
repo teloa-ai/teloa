@@ -58,9 +58,16 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
 })
 test('正式业务页用本机连接分类保留来源接入路径和原连接目录',async t=>{
  const p=await fixture(t),panel=p.getByRole('region',{name:"员工与能力"})
- await p.evaluate(()=>(window as any).setupFixture.change({connectionRows:[],owner:'no-connections'}))
- await expandSetupRows(panel)
+ await panel.getByText('Mina',{exact:true}).waitFor()
+ await p.evaluate(()=>(window as any).setupFixture.change({connectionRows:[],owner:'no-connections',hold:true}))
+ await p.waitForFunction(()=>typeof(window as any).setupFixture.release==='function')
+ await panel.getByText('正在核对员工与能力…',{exact:true}).waitFor()
+ assert.equal(await panel.locator('details').count(),0)
+ await p.evaluate(()=>{const state=(window as any).setupFixture;state.hold=false;state.release()})
  const guide=panel.locator('section[aria-label="外部数据来源（例如告警）"]')
+ // 新连接投影挂载后再展开；读取中对空 details 快照操作不会展开后续新行。
+ await guide.getByText(/还没有保存受管连接/).waitFor({state:'attached'})
+ await expandSetupRows(panel)
  await guide.getByText(/还没有保存受管连接/).waitFor()
  assert.match(await guide.innerText(),/调整业务.*来源映射.*启用同步/)
  assert.equal(await panel.locator('details').nth(3).evaluate((element:HTMLDetailsElement)=>element.open),true)
