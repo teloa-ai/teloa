@@ -227,6 +227,8 @@ Teloa 的三个版本共享同一产品核心，面向不同的使用场景。�
 
 ## 架构与开发
 
+ESP32 固件在独立仓库 [teloa-ai/teloa-firmware](https://github.com/teloa-ai/teloa-firmware) 维护。
+
 | 产品层次 | 职责 |
 | --- | --- |
 | **AI Team** | 员工、协作、业务、项目、任务与自动化。 |

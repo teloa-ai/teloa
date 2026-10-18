@@ -227,6 +227,8 @@ Teloa's three editions share the same product core and serve different working n
 
 ## Architecture and development
 
+ESP32 firmware is maintained in [teloa-ai/teloa-firmware](https://github.com/teloa-ai/teloa-firmware).
+
 | Product layer | Responsibility |
 | --- | --- |
 | **AI Team** | Employees, collaboration, businesses, projects, tasks and automation. |
