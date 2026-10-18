@@ -123,9 +123,9 @@ test('扩展与连接配置点击同上下文真实读取，待启用与未授�
  assert.equal(await drawer.locator('input,textarea').count(),0)
  assert.deepEqual(await page.evaluate(()=>(window as any).objectFixture.calls.filter((call:string)=>call.startsWith('connect:')||call.startsWith('disconnect:'))),[])
  assert.deepEqual(await page.evaluate(()=>(window as any).objectFixture.opened),[])
- // 旧「能力中心」按钮已改为已添加页签里的「我的资源」落点，仍经同一 openCapabilities 端口，关闭抽屉后再跳转
+ // 旧「能力中心」按钮改为「打开应用」：经同一 openCapabilities 端口落到应用页，关闭抽屉后再跳转
  assert.doesNotMatch(await drawer.innerText(),/能力中心/)
- await drawer.getByRole('button',{name:'打开我的资源',exact:true}).click();await drawer.waitFor({state:'detached'})
+ await drawer.getByRole('button',{name:'打开应用',exact:true}).click();await drawer.waitFor({state:'detached'})
  assert.deepEqual(await page.evaluate(()=>(window as any).objectFixture.opened),[['capabilities']])
 })
 

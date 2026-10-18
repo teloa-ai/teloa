@@ -326,7 +326,7 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
    if('gap' in bound.value){push(row,'role-resume','skipped',bound.value.gap);continue}
    version=bound.value.version
   }
-  if(!activate){push(row,'role-resume','skipped','员工已创建并保持暂停：请检查后在团队页恢复。');continue}
+  if(!activate){push(row,'role-resume','skipped','员工已创建并保持暂停：请检查后在「员工」中恢复。');continue}
   // 新岗位默认暂停；只有关联资料、技能、连接都已就绪才视为检查完成、代为恢复，否则保持暂停交本人检查
   // 关联项缺失于清单（已撤回、已解除等无法归类）同样视为未就绪
   if(!ready(['role-knowledge','role-skill','role-connection'])){push(row,'role-resume','skipped','员工已创建并保持暂停：关联的资料、技能或连接还没就绪，处理后到员工分组恢复。');continue}

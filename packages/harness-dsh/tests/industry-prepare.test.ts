@@ -151,7 +151,7 @@ test('prepare：公开 activate:false 建员工并绑定方法后保持暂停；
  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest,activate:false})
  // 与宿主内部 options.activate:false 同一语义：员工建好、方法绑定，但不调用 roles/lifecycle 上岗。
  assert.deepEqual(w.writes().map(([endpoint])=>endpoint),['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/edit'])
- assert.deepEqual(receipt.results.filter((x:any)=>x.itemInstanceId===R).map((x:any)=>[x.step,x.outcome,x.message]),[['role','done',null],['role-resume','skipped','员工已创建并保持暂停：请检查后在团队页恢复。']])
+ assert.deepEqual(receipt.results.filter((x:any)=>x.itemInstanceId===R).map((x:any)=>[x.step,x.outcome,x.message]),[['role','done',null],['role-resume','skipped','员工已创建并保持暂停：请检查后在「员工」中恢复。']])
  assert.equal(byId(receipt.readiness,R).entry,'role-resume');assert.equal(w.record()!.state,'paused')
  // 带 skipped 的回执不进缓存：旧摘要再来（无论是否 activate:false）都按最新状态复核后拒绝；新清单里员工归需要你操作，默认准备也没有可一键项，不会补上岗。
  await assert.rejects(w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest,activate:false}),/状态已变化/)

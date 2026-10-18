@@ -924,9 +924,9 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
   ],
   [
     "business.home.empty.description",
-    "创建业务，或从市场选择行业方案。",
-    "建立業務，或從市場選擇行業方案。",
-    "Create a business or choose an industry solution from the market.",
+    "创建业务，或从市场添加 AI 团队模板。",
+    "建立業務，或從市場新增 AI 團隊範本。",
+    "Create a business or add an AI team template from the marketplace.",
     "業務を作成するか、マーケットから業種別ソリューションを選択してください。",
     "업무를 만들거나 마켓에서 산업별 솔루션을 선택하세요.",
     "Tạo nghiệp vụ hoặc chọn giải pháp ngành từ chợ.",

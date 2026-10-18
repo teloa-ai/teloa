@@ -103,7 +103,7 @@ const rows=[
  ['catalogRoleReview','员工的方法与模板不一致，未覆盖你的设置，请打开员工检查。','員工的方法與範本不一致，未覆蓋你的設定，請開啟員工檢查。','The employee’s methods differ from the template. Your settings were not overwritten; open the employee to check.'],
  ['catalogRoleConflict','你已有同名但内容不同的方法：{items}。为不覆盖它，员工暂未添加；处理同名方法后可再次添加。','你已有同名但內容不同的方法：{items}。為不覆蓋它，員工暫未加入；處理同名方法後可再次加入。','You already have a different method with the same name: {items}. To avoid overwriting it, the employee was not added yet; resolve the name clash and add again.'],
  ['catalogRoleConnect','应用连接已登记，需你授权后才可使用。','應用程式連接已登記，需你授權後才可使用。','App connections are registered and need your authorization before use.'],
- ['catalogRolePaused','员工已添加并保持暂停，检查后可在团队页恢复。','員工已加入並保持暫停，檢查後可在團隊頁恢復。','The employee was added and stays paused. Check it, then resume it from the Team page.'],
+ ['catalogRolePaused','员工已添加并保持暂停，检查后可在「员工」中恢复。','員工已加入並保持暫停，檢查後可在「員工」中恢復。','The employee was added and stays paused. Check it, then resume it from Employees.'],
 ] as const
 export type TemplateShareMessageKey=`templateShare.${typeof rows[number][0]}`
 export const TEMPLATE_SHARE_MESSAGE_KEYS=rows.map(r=>`templateShare.${r[0]}` as TemplateShareMessageKey)
