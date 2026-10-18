@@ -165,7 +165,7 @@ See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [loc
 | **Deliverables and revisions** | Deliverables keep their versions. Give feedback or revise a selected part in the original conversation; earlier versions stay readable. |
 | **Businesses and dashboards** | Describe records, fields and views in natural language. Review and save the configuration, manage records, and build dashboards over the business data. |
 | **Knowledge and skills** | Provide reference material and reusable working methods. Choose what each employee may use. |
-| **Connectors and the market** | Connect supported external tools through MCP. Add employees, skills, connectors, task templates and business dashboards individually or as part of a solution. |
+| **Apps and the marketplace** | Add apps and skills under Apps and connect supported external tools through MCP. Add AI employee or AI team templates from the marketplace. |
 | **Automation** | Schedule repeat work and follow its runs. Enable plans explicitly and keep the runtime online. |
 | **Model configuration** | Configure model services supported by the runtime with your own credentials. Employee model settings and permissions remain separate. |
 
@@ -193,7 +193,7 @@ For example, in **security operations (SOC)**:
 4. Follow the task, inspect the evidence and review the deliverable linked to that alert.
 5. Use a dashboard to summarize alert status, severity and trends.
 
-Adding a solution does not automatically connect accounts, authorize employees or start scheduled work. Those choices stay with you.
+Adding a team template does not automatically connect accounts, authorize employees or start scheduled work. Those choices stay with you.
 
 ![Content operations overview dashboard with sample records](https://docs.teloa.ai/assets/screenshots/en/business-dashboard.b114facc9a48.png)
 
