@@ -47,7 +47,7 @@ import {MarketEmpty,MarketFilterBar,MarketListRows,MarketTemplateDetails,MarketR
 import base from './TaskPage.module.css'
 import { useI18n } from './i18n/provider.js'
 import { MarketCatalogSection, type CatalogSolutionTeam } from './MarketCatalogSection.js'
-import { loadCatalogListing, type MarketCatalogApi } from './market-catalog-api.js'
+import { catalogText, loadCatalogListing, type MarketCatalogApi } from './market-catalog-api.js'
 import {McpConnectionView} from './McpConnectionView.js'
 import type {ManagedMcpConnectionApi} from './mcp-connections-api.js'
 import {SkillSecretsView} from './SkillSecretsView.js'
@@ -389,13 +389,22 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
   const itemPresentation=marketItemPresentation(item,props.industryLoads.loads,props.runtime,t)
   // 接入源读写与官方方案页同一口径：包内连接声明对照官方连接器目录，只在方案带连接且有包内文件时读一次目录
   const [catalogConnectors,setCatalogConnectors]=useState<MarketCatalogConnectorEntry[]>([])
+  // 官方看板包的安装包只有原文标题；新建业务的默认名称取同一官方目录条目（包 id 与版本均一致）的多语言标题。
+  const [catalogDashboardTitle,setCatalogDashboardTitle]=useState<Parameters<typeof catalogText>[0]>()
   const needsConnectors=isIndustryManifest(item.manifest)&&!!item.packageContent&&item.manifest.resources.some(resource=>resource.kind==='mcp')
+  const dashboardPackageId=isIndustryManifest(item.manifest)&&item.manifest.resources.some(resource=>resource.kind==='business-configuration')?item.manifest.id:undefined
+  const dashboardPackageVersion=dashboardPackageId&&isIndustryManifest(item.manifest)?item.manifest.version:undefined
   useEffect(()=>{
-    if(!needsConnectors||!props.marketCatalogApi)return
+    if((!needsConnectors&&!dashboardPackageId)||!props.marketCatalogApi)return
     let active=true
-    void loadCatalogListing(props.marketCatalogApi,'teloa').then(value=>{if(active)setCatalogConnectors(value.items.flatMap(row=>row.entry.kind==='connector'?[row.entry]:[]))},()=>{})
+    void loadCatalogListing(props.marketCatalogApi,'teloa').then(value=>{
+      if(!active)return
+      setCatalogConnectors(value.items.flatMap(row=>row.entry.kind==='connector'?[row.entry]:[]))
+      const dashboard=value.items.find(row=>row.entry.kind==='dashboard'&&row.entry.dashboard.packageId===dashboardPackageId&&row.entry.version===dashboardPackageVersion)?.entry
+      if(dashboard?.kind==='dashboard')setCatalogDashboardTitle(dashboard.dashboard.title)
+    },()=>{})
     return()=>{active=false}
-  },[props.marketCatalogApi,needsConnectors])
+  },[props.marketCatalogApi,needsConnectors,dashboardPackageId,dashboardPackageVersion])
   const createIntent=(purposeOverride?:string)=>{
     if(selectedTarget&&!selected)throw Error(t('market.intent.targetUnavailable'))
     const next=saveMarketIntent(props.state,{id:crypto.randomUUID(),itemId:item.id,scope:selected?.scope||scope,target,...(selected?{targetRef:selected}:{}),targets:props.targets,purpose:purposeOverride??purpose,visibility,now:new Date().toISOString()})
@@ -462,7 +471,7 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
         <button type="button" disabled={busy||targetBlocked||draft?.status==='withdrawn'||draft?.preparation?.status==='pending'} onClick={()=>void prepare(t('market.solution.askFitDraft',{name:copy.title}))}><MessageSquare size={13}/>{t('market.solution.askFit')}</button>
       </header>
       {message&&<p role="alert" className={css.notice}>{message}</p>}{notice&&<p role="status">{notice}</p>}
-      {props.dashboardResources&&manifest.resources.some(row=>row.kind==='business-configuration')&&<BusinessDashboardMarketPanel key={item.id} item={item} api={props.dashboardResources} refreshScopes={props.refreshScopes} spaces={props.spaces} colorScheme={props.colorScheme??'light'} {...(props.contentApi?{upgrade:(adoption:Parameters<NonNullable<import('./BusinessDashboardMarketPanel.js').BusinessDashboardMarketPanelProps['upgrade']>>[0])=><BusinessDashboardUpgradePanel item={item} candidates={props.state.items} api={props.dashboardResources!} refreshScopes={props.refreshScopes} adoption={adoption} hydrate={value=>props.contentApi!.hydrate(value)} spaces={props.spaces} colorScheme={props.colorScheme??'light'} {...(props.openBusiness?{openSaved:props.openBusiness}:{})}/>}:{})} {...(props.openBusiness?{openSaved:props.openBusiness}:{})}/>}
+      {props.dashboardResources&&manifest.resources.some(row=>row.kind==='business-configuration')&&<BusinessDashboardMarketPanel key={item.id} item={item} {...(catalogDashboardTitle?{defaultTitle:catalogText(catalogDashboardTitle,locale)}:{})} api={props.dashboardResources} refreshScopes={props.refreshScopes} spaces={props.spaces} colorScheme={props.colorScheme??'light'} {...(props.contentApi?{upgrade:(adoption:Parameters<NonNullable<import('./BusinessDashboardMarketPanel.js').BusinessDashboardMarketPanelProps['upgrade']>>[0])=><BusinessDashboardUpgradePanel item={item} candidates={props.state.items} api={props.dashboardResources!} refreshScopes={props.refreshScopes} adoption={adoption} hydrate={value=>props.contentApi!.hydrate(value)} spaces={props.spaces} colorScheme={props.colorScheme??'light'} {...(props.openBusiness?{openSaved:props.openBusiness}:{})}/>}:{})} {...(props.openBusiness?{openSaved:props.openBusiness}:{})}/>}
       {actionPanel==='load'?<SolutionLoadPanel {...props} item={item} close={()=>setActionPanel(null)}/>:actionPanel?<section className={css.actionWorkspace} aria-label={t('market.intent.configurePanelAria')}>
         <header><div><span className={css.eyebrow}>{t('market.template.useEyebrow')}</span><h3>{draft?t('market.intent.view'):t('market.intent.create')}</h3></div><ToolbarIconButton label={t('market.template.backToContent')} icon={ArrowLeft} onClick={()=>setActionPanel(null)}/></header>
         <IndustryIntentPanel item={item} draft={draft} market={props} selectedTarget={selectedTarget} setSelectedTarget={setSelectedTarget} selected={selected} scope={scope} setScope={setScope} purpose={purpose} setPurpose={setPurpose} visibility={visibility} setVisibility={setVisibility} check={check} targetBlocked={targetBlocked} save={save} setError={setError}/>

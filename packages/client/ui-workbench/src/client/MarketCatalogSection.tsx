@@ -624,7 +624,7 @@ export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,
     ?<p>{conditions[0]??t('market.catalog.official.unsupportedFallback')}</p>
     // 已加到本机、还没加进团队：与卡片「已添加」记号和 AI 员工未完成时同一表达——状态「已添加」+「继续添加」打开同一个团队确认步骤 +「查看」本机副本，不再给「添加」主按钮
     :item.addedContentId
-     ?<div className={css.actions}><span>{t('market.catalog.official.added')}</span><button type="button" className={css.primary} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('templateShare.catalogRoleContinue')}</button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></div>
+     ?<div className={css.actions}><span>{t('market.catalog.official.added')}</span><button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('templateShare.catalogRoleContinue')}</button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></div>
      :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('market.industry.loadWorkspace')}<Plus size={15}/></button>
   :item.addedContentId
   ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.catalog.official.added')}<Check size={15}/></button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></>

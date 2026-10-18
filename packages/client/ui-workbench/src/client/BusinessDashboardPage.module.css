@@ -15,7 +15,7 @@
 .notice{margin:0 0 14px;padding:9px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-warn-bg);color:var(--teloa-text);font-size:var(--teloa-font-caption);line-height:1.7}
 /* 布局的 x/y/w/h 只决定位置与跨度；行高随内容，不再按 h×64px 预留空白，同一行的卡片对齐到较高者。 */
 .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:auto;gap:16px}
-.widget{display:flex;flex-direction:column;gap:10px;min-width:0;padding:16px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);grid-column:var(--widget-column);grid-row:var(--widget-row)}
+.widget{display:flex;flex-direction:column;gap:10px;min-width:0;padding:16px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);grid-column:var(--widget-column);grid-row:var(--widget-row);align-self:start}
 .widget>h3,.widgetTitle>h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
 .widgetTitle{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
 .widgetTitle>h3{min-width:0;overflow-wrap:anywhere}
