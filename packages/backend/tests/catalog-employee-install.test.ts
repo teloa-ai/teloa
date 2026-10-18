@@ -105,7 +105,7 @@ function snapshot({parent=true}:{parent?:boolean}={}):OfficialCatalogSnapshot{
 }
 
 /** 并发屏障：只在这一套服务实例上让对应步骤停住，不改产品状态；放行前别的服务实例照常推进。 */
-type Hooks={beforeInstantiate?:()=>Promise<void>;beforeRoleCreate?:()=>Promise<void>;beforeRoleEdit?:()=>Promise<void>}
+type Hooks={beforeInstantiate?:()=>Promise<void>;beforeRoleCreate?:()=>Promise<void>;beforeRoleEdit?:()=>Promise<void>;beforePublish?:()=>Promise<void>}
 /** 同一本人的一套服务；每次调用都是新实例，模拟刷新、重启或换新服务后只能从数据库读回。 */
 function services(owner:string,snap:OfficialCatalogSnapshot=snapshot(),hooks:Hooks={}){
  const market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),refs=new IndustryReferenceCatalog(pool,market,loads),sources=combineReferenceCatalogs(createPublicReferenceCatalog(),refs),resources=new ResourceService(pool,sources,identity),knowledge=new IndustryKnowledgeService(pool,identity,loads,sources,resources),roles=new RoleService(pool,identity),industryRoles=new IndustryRoleService(pool,identity,loads,new IndustryRoleSource(market,loads),knowledge,roles)
@@ -114,6 +114,7 @@ function services(owner:string,snap:OfficialCatalogSnapshot=snapshot(),hooks:Hoo
  if(hooks.beforeRoleEdit){const run=roles.edit.bind(roles);roles.edit=async(...args)=>{await hooks.beforeRoleEdit!();return run(...args)}}
  const catalog=new OfficialCatalogService(market,snap,{catalogRoleIds:(ownerId,entries,contentHash)=>industryRoles.catalogRoleIds(ownerId,entries,contentHash)})
  const files=new ManagedSkillFiles(join(root,owner.replace(/[^a-z0-9]/gi,''),'skills'),async directory=>{const text=await readFile(join(directory,'SKILL.md'),'utf8'),name=/^name:\s*(.+)$/m.exec(text)![1]!.trim(),description=/^description:\s*(.+)$/m.exec(text)![1]!.trim();return {name,description,modelInvocable:true,userInvocable:true,bodyHash:sha(text)}},()=>{})
+ if(hooks.beforePublish){const run=files.publish.bind(files);files.publish=async(...args)=>{await hooks.beforePublish!();return run(...args)}}
  const skills=new SkillInstallationService(pool,identity,new SkillInstallSource(market,loads),files)
  const roleHandler=createRoleHandler(owner,async()=>roles),lifecycle=new RoleLifecycleService(pool,identity),spaces=new BusinessSpaceService(pool,identity)
  const skillCall=async(endpoint:string,payload:any)=>{
@@ -147,6 +148,8 @@ const full=(value:unknown)=>value as CatalogEmployeeReceipt
 /** 真实 PG 用例需要较长超时：名称、正文、选项按阅读顺序书写。 */
 const slow=(name:string,fn:()=>Promise<void>,options:{timeout:number})=>test(name,options,fn)
 const ownerRoles=async(owner:string)=>(await pool.query('select id,state,version,definition from teloa_roles where owner_id=$1 order by created_at',[owner])).rows
+/** 失败时的诊断：各路回执要点与本人员工、加载、安装、员工实例的实际行数（只读，不改断言）。 */
+const evidence=async(owner:string,receipts:CatalogEmployeeReceipt[])=>{const count=async(table:string)=>(await pool.query(`select count(*)::int as n from ${table} where owner_id=$1`,[owner])).rows[0].n;return JSON.stringify({receipts:receipts.map(row=>({roleId:row.roleId,status:row.status,complete:row.install.complete,next:row.install.next,resources:row.install.resources.map(item=>item.kind+':'+item.state)})),rows:{roles:await count('teloa_roles'),loads:await count('teloa_industry_loads'),installs:await count('teloa_skill_installations'),instances:await count('teloa_industry_role_instances')}})}
 
 test('组成预览只含所选员工及其直接关联资源；父包许可与修改说明随包，员工到员工的关系不进入',()=>{
  const s=services('local:'+randomUUID()),preview=s.catalog.rolePackage('teloa.acme-triage'),manifest=preview.manifest as any
@@ -217,7 +220,7 @@ slow('并发：同一安装器与两套独立服务同时添加，只建一位�
  const owner='local:'+randomUUID(),other='local:'+randomUUID(),shared=services(owner).installer()
  const results=(await Promise.all([shared(triage),shared(triage),services(owner).installer()(triage),services(owner).installer()(triage)])).map(full)
  const ids=new Set(results.map(row=>row.roleId))
- assert.equal(ids.size,1);assert.ok(results.every(row=>row.install.complete))
+ assert.equal(ids.size,1,await evidence(owner,results));assert.ok(results.every(row=>row.install.complete))
  assert.equal((await ownerRoles(owner)).length,1);assert.equal((await services(owner).loads.list(owner,{})).items.length,1);assert.equal((await services(owner).skills.list(owner,{})).items.length,1)
  // 他人：各自独立派生，不读到本人的员工
  const theirs=full(await services(other).installer()(triage))
@@ -229,7 +232,7 @@ slow('并发：同一安装器与两套独立服务同时添加，只建一位�
 const gate=()=>{let open!:()=>void;const wait=new Promise<void>(resolve=>{open=resolve});return {open,wait}}
 const pause=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))
 async function converged(owner:string,receipts:CatalogEmployeeReceipt[]){
- assert.equal(new Set(receipts.map(row=>row.roleId)).size,1);assert.ok(receipts[0]!.roleId);assert.ok(receipts.every(row=>row.install.complete))
+ assert.equal(new Set(receipts.map(row=>row.roleId)).size,1,await evidence(owner,receipts));assert.ok(receipts[0]!.roleId);assert.ok(receipts.every(row=>row.install.complete))
  assert.equal((await ownerRoles(owner)).length,1);assert.equal((await services(owner).loads.list(owner,{})).items.length,1);assert.equal((await services(owner).skills.list(owner,{})).items.length,1)
  assert.equal((await pool.query('select count(*)::int as n from teloa_industry_role_instances where owner_id=$1',[owner])).rows[0].n,1)
 }
@@ -267,6 +270,18 @@ slow('并发：对方已建首版员工、停在绑定方法之前时到达；�
  await pause(1000)
  bind.open()
  await converged(owner,await Promise.all([peer,late]))
+},{timeout:120000})
+
+slow('并发：对方的方法安装已登记、停在发布方法文件之前时读到清单；对方发布后尚未准备时，这一路也续装到同一份安装并得到同一位员工',async()=>{
+ const owner='local:'+randomUUID(),publishing=gate(),publish=gate(),listed=gate(),prepared=gate();let seen=false
+ const peer=services(owner,undefined,{beforePublish:async()=>{publishing.open();await publish.wait}}).installer(ports=>({...ports,prepare:async(endpoint,payload,options)=>{if(endpoint==='industry-loads/prepare')await prepared.wait;return ports.prepare(endpoint,payload,options)}}))(triage).then(full)
+ await publishing.wait // 对方：安装与本加载的使用登记已提交（处理中），停在发布方法文件之前
+ const late=services(owner).installer(ports=>({...ports,skills:async(endpoint,payload)=>{const value=await ports.skills(endpoint,payload);if(endpoint==='skill-installations/list'&&!seen){seen=true;listed.open()};return value}}))(triage).then(full)
+ await listed.wait // 这一路：读到对方处理中的那份安装
+ publish.open() // 对方发布完成；它的一键准备仍停住，库里还没有资料与员工
+ const first=await late
+ prepared.open()
+ await converged(owner,[first,await peer])
 },{timeout:120000})
 
 slow('未知条目、漂移版本与来源不可用拒绝：不建员工、不留下加载',async()=>{

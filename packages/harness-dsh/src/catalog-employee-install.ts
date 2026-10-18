@@ -87,7 +87,8 @@ export function createCatalogEmployeeInstaller(owner:string,get:()=>Promise<Cata
   if(roleItems.length!==1)throw new WorkError('teloa/source-unavailable','员工模板必须恰好包含一位员工。')
   const roleItem=roleItems[0]!,live=(item:LoadItem|undefined):item is LoadItem=>!!item&&item.status!=='skipped'&&item.status!=='detached'
   const methods=load.relations.filter(link=>link.kind==='role-skill'&&link.from===roleItem.instanceId).map(link=>load.items.find(item=>item.instanceId===link.to)).filter(live)
-  // 方法：已有本加载条目的安装登记即沿用；否则预览后按派生请求 id 安装，回执给出实际原生名（不以资源 id 冒充原生名）。
+  // 方法：本加载条目已装好的安装登记即沿用；否则预览后按派生请求 id 安装，回执给出实际原生名（不以资源 id 冒充原生名）。
+  // 登记仍在处理中（另一路正在发布方法文件，或上次中断）也走安装：安装服务按请求幂等，并在发布锁内等对方落定或续做发布，不把对方的中间态当作本次结果。
   const listed=await ports.skills('skill-installations/list',{})
   if(!isRecord(listed)||!Array.isArray(listed.items)||!Array.isArray(listed.usages))throw hostBad()
   const installs=new Map<string,{state:CatalogEmployeeResourceState;nativeName?:string}>()
@@ -95,7 +96,7 @@ export function createCatalogEmployeeInstaller(owner:string,get:()=>Promise<Cata
   for(const method of methods){
    const usage=listed.usages.filter(isRecord).find(use=>lower(use.loadId)===load.id&&lower(use.itemInstanceId)===method.instanceId)
    const found=usage?listed.items.filter(isRecord).find(row=>lower(row.id)===lower(usage.installationId)):undefined
-   if(found){const name=nativeOf(found);installs.set(method.instanceId,found.state==='installed'&&name?{state:'done',nativeName:name}:{state:'pending'});continue}
+   if(found&&found.state==='installed'){const name=nativeOf(found);installs.set(method.instanceId,name?{state:'done',nativeName:name}:{state:'pending'});continue}
    try{
     const source={kind:'industry',loadId:load.id,itemInstanceId:method.instanceId}
     const preview=await ports.skills('skill-installations/preview',{source})
