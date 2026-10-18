@@ -42,7 +42,7 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.1** is the current Community release. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.1) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. [npm](https://www.npmjs.com/package/@teloa/cli) provides the same version. Source builds remain available below.
+**0.2.2** is the current Community release. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.2) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. [npm](https://www.npmjs.com/package/@teloa/cli) provides the same version. Source builds remain available below.
 
 ### What changes in this release
 
@@ -63,27 +63,27 @@ Use **Node.js 24.x** or **22.x from 22.19 onward**, **npm 11.x from 11.12.1 onwa
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.1/teloa-cli-0.2.1.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.2/teloa-cli-0.2.2.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.1 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.1` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For the same version from the npm registry, use `npm install --ignore-scripts @teloa/cli@0.2.1`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.2 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.2` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For the same version from the npm registry, use `npm install --ignore-scripts @teloa/cli@0.2.2`.
 
 <details>
-<summary><strong>Docker Hub with Compose (0.2.1)</strong></summary>
+<summary><strong>Docker Hub with Compose (0.2.2)</strong></summary>
 
 ### Docker Hub with Compose
 
 Install Docker with Compose and start the engine. The published image and the configuration below have been verified on **Linux ARM64**; **amd64 has not been verified**. Teloa, DSH and PostgreSQL run in containers, so host Node.js and pnpm are not required.
 
-Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.1` for both initialization and the application, with persistent data volumes and a generated database password.
+Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.2` for both initialization and the application, with persistent data volumes and a generated database password.
 
 ```sh
 mkdir teloa-community
 cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.1/compose.yaml --output compose.yaml
+curl --fail --location https://docs.teloa.ai/downloads/0.2.2/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
 docker compose ps

@@ -56,4 +56,5 @@ export const plainLanguageExemptions = {
   'collaboration.action.pin': '群消息置顶（Pin），界面位置义',
   'collaboration.action.unpin': '取消置顶（Unpin），界面位置义',
   'create.sentence.prompt.scopeWithName': '发给模型的提示词：括号里的 manifest 是该字段所在文件的机器名，模型要据此找到字段，按审查建议保留',
+  'create.employee.prompt.scope': '发给模型的字段协议提示，需准确区分员工正文 scopes 与工具顶层 scope，不作为界面说明展示',
 }

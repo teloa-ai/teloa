@@ -1,6 +1,6 @@
 {
   "name": "@teloa/native-remote",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "生成独立的官方 SSH Headless profile；不是 Web 插件。",
