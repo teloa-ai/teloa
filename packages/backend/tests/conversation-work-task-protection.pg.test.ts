@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
@@ -24,7 +24,7 @@ import {testRoleResponsibility} from './role-test-fixture.ts'
 let container:StartedPostgreSqlContainer,pool:Pool,locks:Pool,observer:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();const connectionString=container.getConnectionUri();pool=new Pool({connectionString,max:1,connectionTimeoutMillis:1500,statement_timeout:4000});locks=new Pool({connectionString,max:2,connectionTimeoutMillis:1500,statement_timeout:4000});observer=new Pool({connectionString,max:2,connectionTimeoutMillis:1500,statement_timeout:4000});await initializeRoles(pool);await initializeTasks(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeGroupTasks(pool);await initializeIndustryTasks(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeGroupWorkInputs(pool)})
-after(async()=>{await locks?.end();await observer?.end();await pool?.end();await container?.stop()})
+after(async()=>{await locks?.end();await observer?.end();await pool?.end();await stopTestContainer(container)})
 async function fixture(reserve=true){
  await initializeConversationWork(pool)
  const owner=randomUUID(),sessionId='work-'+randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'原执行人',kind:'employee',scopes:['SOC'],duty:'调查',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})

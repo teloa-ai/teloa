@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeRoles} from '../src/work/roles.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
@@ -19,7 +19,7 @@ import {TaskTransitions,initializeTaskTransitions,initializeTaskCompletions} fro
 let container:StartedPostgreSqlContainer,pool:Pool,locks:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{container=await new PostgreSqlContainer('postgres:16-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});locks=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeTasks(pool);await initializeConversationWork(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeCollaboration(pool)},{timeout:180000})
-after(async()=>{await locks?.end();await pool?.end();await container?.stop()})
+after(async()=>{await locks?.end();await pool?.end();await stopTestContainer(container)})
 test('已结项成果通过后续本人工作局部续改；普通写口仍拒绝，原归属和旧版本不变',async()=>{
  await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeArtifactFeedback(pool)
  const owner=randomUUID(),tasks=new TaskService(pool,identity),original=await tasks.create(owner,{requestId:randomUUID(),fields:{title:'原任务',goal:'原目标',scope:'general'}})

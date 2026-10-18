@@ -59,7 +59,8 @@ export class WorkBudgetService{
   return {row,policy:row.policy===null?defaultWorkBudgetPolicy:readWorkBudgetPolicy(row.policy)}
  }
  private async stats(db:PoolClient,owner:string,id:string|null){
-  const row=(await db.query(`select coalesce(sum(case when state='settled' then actual_tokens else reserved_tokens end),0) as tokens,coalesce(sum(reserved_rounds),0) as rounds,count(*) filter(where state in ('reserved','unknown') and reserved_tokens>0) as concurrent,coalesce(sum(case when reserved_tokens>0 then greatest(0,extract(epoch from(coalesce(elapsed_ended_at,settled_at,now())-created_at))*1000) else 0 end),0) as elapsed from teloa_work_budget_reservations where owner_id=$1 and ($2::uuid is null or budget_account_id=$2) and state<>'released'`,[owner,id])).rows[0]
+  // 用量未知仍全额计入 token；只有活动请求占并发，已核验终态不能永久封住下一次工作。
+  const row=(await db.query(`select coalesce(sum(case when state='settled' then actual_tokens else reserved_tokens end),0) as tokens,coalesce(sum(reserved_rounds),0) as rounds,count(*) filter(where (state='reserved' or state='unknown' and elapsed_terminal is null) and reserved_tokens>0) as concurrent,coalesce(sum(case when reserved_tokens>0 then greatest(0,extract(epoch from(coalesce(elapsed_ended_at,settled_at,now())-created_at))*1000) else 0 end),0) as elapsed from teloa_work_budget_reservations where owner_id=$1 and ($2::uuid is null or budget_account_id=$2) and state<>'released'`,[owner,id])).rows[0]
   return {tokens:Number(row.tokens),rounds:Number(row.rounds),concurrent:Number(row.concurrent),elapsed:Number(row.elapsed)}
  }
  async configure(owner:string,input:unknown){
@@ -162,7 +163,7 @@ export class WorkBudgetService{
    if(!run||run.state!=='ended'||run.session_id!==a.sessionId||run.native_request_id!==a.nativeRequestId||evidence?.state!=='ended'||evidence.turn!==a.turn||evidence.messageSeq!==a.messageSeq||evidence.endSeq!==a.endSeq||!(run.created_at instanceof Date)||a.endedAt<run.created_at.toISOString())throw denied()
    // 子模型也沿用父Run预算身份；没有逐请求会话证明时，父终态不能截断任何子会话的未知消耗。
    if((await db.query('select 1 from teloa_task_run_subagents where owner_id=$1 and run_id=$2 and child_session_id is not null limit 1',[owner,a.runId])).rowCount){await db.query('commit');return {closed:0}}
-   const closed=await db.query(`update teloa_work_budget_reservations b set elapsed_ended_at=$4,elapsed_terminal=$5 from teloa_work_retry_claims c join teloa_work_retries retry on retry.owner_id=c.owner_id and retry.operation_id=c.operation_id where b.owner_id=$1 and retry.run_id=$2 and b.budget_account_id=$3 and retry.budget_account_id=b.budget_account_id and c.owner_id=b.owner_id and c.model_request_id=b.model_request_id and b.state='unknown' and b.elapsed_ended_at is null and b.settled_at is null and b.created_at<=$4::timestamptz`,[owner,a.runId,run.budget_account_id,a.endedAt,JSON.stringify(a)])
+   const closed=await db.query(`update teloa_work_budget_reservations b set elapsed_ended_at=least(coalesce(b.elapsed_ended_at,$4),$4),elapsed_terminal=$5 from teloa_work_retry_claims c join teloa_work_retries retry on retry.owner_id=c.owner_id and retry.operation_id=c.operation_id where b.owner_id=$1 and retry.run_id=$2 and b.budget_account_id=$3 and retry.budget_account_id=b.budget_account_id and c.owner_id=b.owner_id and c.model_request_id=b.model_request_id and b.state='unknown' and b.elapsed_terminal is null and b.created_at<=$4::timestamptz`,[owner,a.runId,run.budget_account_id,a.endedAt,JSON.stringify(a)])
    await db.query('commit');return {closed:closed.rowCount??0}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }

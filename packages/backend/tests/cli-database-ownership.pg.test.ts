@@ -5,7 +5,7 @@ import {mkdtemp,mkdir,writeFile,symlink,readFile} from 'node:fs/promises'
 import {homedir,tmpdir} from 'node:os'
 import {join,dirname} from 'node:path'
 import {createRequire} from 'node:module'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {prepareDatabase} from '../../cli/src/database.ts'
 import type {InstallState} from '../../cli/src/contracts.ts'
@@ -28,7 +28,7 @@ before(async()=>{
  await pool.query('create table original_records(id integer primary key,value text not null)')
  await pool.query("insert into original_records values(1,'保留原资料')")
 },{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function original(){return {owner:(await pool.query('select * from teloa_installation order by id')).rows,records:(await pool.query('select * from original_records')).rows,tables:(await pool.query("select tablename from pg_tables where schemaname='public' order by tablename")).rows}}
 test('真实 PG 的同安装数据版本 1 可准备已有连接，原表与内容保持',async()=>{
  const before=await original()

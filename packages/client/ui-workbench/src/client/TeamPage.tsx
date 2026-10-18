@@ -12,6 +12,7 @@ import {ContextDrawer} from './ContextDrawer.js'
 import {EmployeeTemplateShare,TeamTemplateShare,useTemplateShare,type ShareBridge} from './EmployeeTemplateShare.js'
 import {readSharePackage} from './share-package-plan.js'
 import {CreateEntry} from './CreateEntry.js'
+import {EmployeeCreateEntry} from './EmployeeCreateEntry.js'
 import type {PageCreateEntity} from '@teloa/contract'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 import {CapabilityFields,CapabilityNotice,useApplicationCapability} from './CapabilityNotice.js'
@@ -130,7 +131,7 @@ type Props = {
     /** 本人用户名（personalProfile.displayName）：分身在名单与个人主页上按「{用户名} 的分身」显示。 */
     profileName?: string;
     profileInitials?: string;
-    pageCreate?: {api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string})=>void|Promise<void>;openMarket:()=>void};
+    pageCreate?: {api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string},scope?:CollaborationScope)=>void|Promise<void>;openMarket:()=>void};
 };
 type AssignmentFields={title:string;goal:string;scope:CollaborationScope}
 type MemoryFields={title:string;text:string;scope:CollaborationScope}
@@ -281,7 +282,9 @@ export function TeamPage({ skillTitleReader,phone,templateSharing,delegations,ro
     </div>
     {!embedded&&role&&<ContextDrawer open title={roleDisplayName(role)} close={()=>select(null)} className={role.kind==='twin'?(twinCss.detailDrawer??''):''}><div className={teamCss.employeeDrawer}>{detailPane}</div></ContextDrawer>}
     {sharingTeam&&sharedTemplates&&<TeamTemplateShare origin="directory" roles={directoryRoles.filter(item=>item.storage==='persistent'&&(businessFilter==='all'||item.scopes.includes(businessFilter)))} open close={()=>setSharingTeam(false)} scope={businessFilter==='all'?'general':businessFilter} title={businessFilter==='all'?t('navigation.team'):collaborationScopes[businessFilter]??scopeLabels.find(label=>label.scope===businessFilter)?.title??businessFilter}/>}
-    {creating&&<RoleForm work={work} resourceApi={resourceApi} runtimeConfigs={runtimeConfigs} initial={(!isSandbox?persistence?.pendingFields():undefined)??creationDraft} onDraft={setCreationDraft} retryPending={!isSandbox&&!!persistence?.pendingFields()} persistent={!!persistence&&!isSandbox} close={()=>setCreating(false)} save={async fields=>{
+    {creating&&pageCreate&&persistence&&!isSandbox&&!persistence.pendingFields()
+      ?<EmployeeCreateEntry api={pageCreate.api} scope={businessFilter==='all'?'general':businessFilter} scopeName={collaborationScopes[businessFilter==='all'?'general':businessFilter]??businessFilter} storage={templateSharing?.storage??sharedTemplates?.storage} prepare={pageCreate.prepare} create={persistence.create} close={()=>setCreating(false)} created={select}/>
+      :creating&&<RoleForm work={work} resourceApi={resourceApi} runtimeConfigs={runtimeConfigs} initial={(!isSandbox?persistence?.pendingFields():undefined)??creationDraft} onDraft={setCreationDraft} retryPending={!isSandbox&&!!persistence?.pendingFields()} persistent={!!persistence&&!isSandbox} close={()=>setCreating(false)} save={async fields=>{
       if(!applicationPresentation.can('people'))return
       const id=persistence&&!isSandbox?await persistence.create(fields):crypto.randomUUID()
       if(!persistence||isSandbox)change({type:'create',id,fields,now:new Date().toISOString()})

@@ -1,7 +1,7 @@
 import {mkdtemp} from 'node:fs/promises'
 import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {
  readBusinessDashboardDefinition,readBusinessObjectTypeDefinition,readBusinessViewDefinition,readBusinessWidgetDefinition,

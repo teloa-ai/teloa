@@ -8,7 +8,7 @@ import type { IndustryLoadRecord } from './industry-load-api.js'
 import type { IndustryResourceKind } from './industry-manifest.js'
 import { marketCatalogItemCopy, type MarketCategory } from './market-home-presentation.js'
 import { composeFromManifest, compositionSummary } from './industry-composition.js'
-import { solutionInstalled, solutionMark, type SolutionMark } from './market-solution-presentation.js'
+import { solutionAdded, solutionMark, type SolutionMark } from './market-solution-presentation.js'
 import { staffAvatarSeed } from './staff-avatar-seed.js'
 import { useI18n } from './i18n/provider.js'
 import type { TeloaTranslate } from './i18n/index.js'
@@ -60,7 +60,7 @@ export function SolutionCards({ items, loads, selectedId, open }: SolutionCardsP
   const manifest = isIndustryManifest(item.manifest) ? item.manifest : undefined
   // 没有清单就没有可说的组成，整行不渲染，不显示「0 位同事」。
   const contains = manifest ? compositionSummary(composeFromManifest(manifest), t, value => value.toLocaleString(locale)) : ''
-  const loaded = solutionInstalled(item, loads)
+  const loaded = solutionAdded(item, loads)
   const mark = solutionMark({ loaded, restartRequired: false })
   return <button type="button" key={item.id} data-teloa-entry={item.id} className={css.bundleCard} aria-label={copy.title} aria-current={selectedId === item.id ? 'page' : undefined} onClick={() => open(item.id)}>
    <span className={clsx(css.bundleArt, staffCss['tone' + staffAvatarSeed(item.id).tone])} aria-hidden="true"><span /><span /><span /></span>

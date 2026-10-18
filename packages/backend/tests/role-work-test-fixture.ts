@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer} from '@testcontainers/postgresql'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {initializeTasks} from '../src/work/tasks.ts'
@@ -21,7 +21,7 @@ export async function setupRoleWork(){
  await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool)
  await initializeTasks(pool);await pool.query('alter table teloa_tasks add column if not exists content_version integer not null default 1 check(content_version>0)')
  await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeResources(pool)
- return {pool,close:async()=>{await pool.end();await container.stop()}}
+ return {pool,close:async()=>{await pool.end();await stopTestContainer(container)}}
 }
 /** 新模块缺失时由用例的服务契约断言报失败，不用导入错误冒充行为失败。 */
 export async function loadRoleWorkModule(name:string):Promise<Record<string,any>>{

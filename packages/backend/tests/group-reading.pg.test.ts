@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {CollaborationService,initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeRoles} from '../src/work/roles.ts'
@@ -19,7 +19,7 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool);await initializeRoleDelegations(pool);await initializeTasks(pool);await initializeCollaboration(pool);await initializeGroupTasks(pool)
 })
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(){
  const owner=randomUUID(),groups=new CollaborationService(pool,identity)
  const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'阅读位置群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},memberRoleIds:[]}})

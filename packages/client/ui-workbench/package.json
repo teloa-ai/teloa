@@ -1,6 +1,6 @@
 {
   "name": "@teloa/client-ui-workbench",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "exports": {

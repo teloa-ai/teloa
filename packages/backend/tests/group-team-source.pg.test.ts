@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {MarketContentStore,initializeMarketContents} from '../src/market/content-store.ts'
 import {IndustryLoadService,initializeIndustryLoads} from '../src/work/industry-loads.ts'
@@ -27,7 +27,7 @@ before(async()=>{
  useLocalContainerRuntime();container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeMarketContents(pool);await initializeResources(pool);await initializeIndustryLoads(pool);await initializeIndustryKnowledge(pool);await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializeIndustryRoles(pool)
 },{timeout:180000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(){
  const owner=randomUUID(),market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),roles=new RoleService(pool,identity)
  const manifest={format:'teloa.business-package/v2',id:'team',title:'固定团队',version:'1.0.0',domain:'general',description:'明确创建暂停团队，不自动工作。',resources:['lead','member'].map(id=>({id,kind:'role',title:id,version:'1.0.0',required:true,source:{kind:'local',path:id+'.json'}})),relations:[{kind:'role-coordination',from:'lead',to:'member'}],entrypoints:[]}

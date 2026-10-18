@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {isMessageReference,type MessageReference} from '@teloa/contract'
 import {initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
@@ -37,7 +37,7 @@ before(async()=>{
   await initializeArtifacts(pool)
   await initializeGroupAttachments(pool)
 })
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 
 const fields=(memberRoleIds:string[]=[])=>(
   {name:'SOC 调查协作',scope:'SOC',announcement:'围绕固定证据协作。',rules:openGroupRules,memberRoleIds}

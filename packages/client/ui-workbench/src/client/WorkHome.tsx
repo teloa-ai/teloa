@@ -37,7 +37,7 @@ export function WorkHome({assistantName='Teloa',current,visible,work,management,
   const [conversationError,setConversationError]=useState<string>(),[opening,setOpening]=useState<string>()
   const attentionHeading=attentionStatusText(attentionStatus,t)
   const rows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&!managed.archived.includes(row.conversation.sessionId)).map(row=>row.conversation.purpose==='assistant'&&row.title===assistantConversationTitle?{...row,title:assistantName}:row):[]
-  // 「继续工作」与原型同构：未结束的任务和会话同列按更新时间倒序，右上角「全部 N 项」进入任务目录。
+  // 「继续工作」与原型同构：未结束的任务和会话同列按更新时间倒序，右上角明确标注任务数量并进入任务目录，避免混合列表被误读为全部条目数。
   const savedTasks=visibleTaskDirectory(workTasks,'saved')
   const recent=[
     ...rows.map(item=>({kind:'conversation' as const,key:item.conversation.id,order:item.conversation.id,updatedAt:item.updatedAt,item})),

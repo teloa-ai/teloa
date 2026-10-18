@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeTeloaDatabase} from '../src/work/initialize-database.ts'
 import {CollaborationService} from '../src/work/collaboration.ts'
@@ -18,7 +18,7 @@ let container:StartedPostgreSqlContainer,pool:Pool,tick=0
 const identity={id:randomUUID,now:()=>new Date(Date.parse('2026-10-14T09:00:00.000Z')+(tick++)*1000).toISOString()}
 const rules={historyVisibleToNewMembers:false,draftsVisibleInGroup:true,mentionAllAllowed:true}
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeTeloaDatabase(pool)},{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 
 async function employeeReply(owner:string,groupId:string,rootId:string,roleId:string,text:string){
  const id=randomUUID()

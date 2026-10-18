@@ -9,7 +9,7 @@ import {encodeVoiceWav} from '../src/client/voice-microphone.ts'
 // @ts-expect-error 既有无头浏览器加载器。
 import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url))
-let browser:any,temp:string,server:Server,origin:string,script:string
+let browser:any,temp:string,server:Server,origin:string,script:string,styles:string
 before(async()=>{
  temp=await mkdtemp(join(root,'.runtime-employee-voice-'))
  const samples=new Float32Array(48000*5);for(let n=0;n<48000*1.2;n++)samples[n]=.2*Math.sin(2*Math.PI*440*n/48000)
@@ -21,7 +21,7 @@ before(async()=>{
  const mediaSnapshot=()=>({token,closing:false,muted:f.muted,playbackGeneration:call.playbackGeneration,speech:null});const api={transcribe:async(input,signal)=>{f.transcribeInput=input;f.transcribeSignal=signal;return new Promise(resolve=>{f.releaseTranscribe=()=>resolve({requestId:input.requestId,sessionId:input.sessionId,contextVersion:3,text:'留言草稿'})})},readiness:async()=>window.voiceTtsUnavailable?{status:'unavailable',providerId:'openai',reason:'provider-unconfigured'}:{status:'ready',providerId:'minimax'},recognitionReadiness:async()=>{f.recognitionChecks=(f.recognitionChecks||0)+1;return {status:'ready',providerId:'minimax'}},start:async input=>{f.starts++;f.startInput=input;call={...input,id:identity.callId,callGeneration:identity.callGeneration,state:'connecting',failure:null,playbackGeneration:0}},read:async()=>call,media:async()=>{f.mediaReads=(f.mediaReads||0)+1;if(window.voiceDelayMedia&&f.mediaReads===1)return new Promise(resolve=>{f.releaseMedia=()=>resolve(mediaSnapshot())});return mediaSnapshot()},ready:async()=>{call.state='connected'},turn:async()=>({state:'ended',speech:'not-ready',replyExpected:false,reason:'completed'}),closed:async()=>{f.closes++},end:async()=>{f.ends++;if(call){call.state='ended';call.failure=f.failClose?'media-close-failed':null}return {call}},muted:async input=>{f.muted=input.muted;return input},interrupt:async()=>{f.interrupts++;call.playbackGeneration++;return call},audio:async input=>{f.audios++;f.bytes=atob(input.audio).length;f.input=input;return new Promise(resolve=>{f.release=()=>resolve({text:'测试转写',receipt:{state:'unknown',commitId:'test-commit'}})})}};
  const view=createRoot(document.getElementById('root'));f.render=sessionId=>view.render(<I18nProvider runtime={runtime}>{window.voiceMessageEnabled?<AssistantVoiceMessage api={api} prepare={async()=>({sessionId:'original-session',contextVersion:3,isCurrent:()=>f.current!==false,subscribe:listener=>{f.navigation=listener;return()=>{f.navigation=null}}})} insert={async draft=>{f.inserted=draft}}/>:<EmployeeVoiceCall api={api} {...(window.voiceAssistant?{target:{kind:'assistant',name:'Teloa 小松鼠助手',contextVersion:3}}:window.voiceTwin?{target:{...role,kind:'role',roleKind:'twin',initials:'ML',name:'Max Luo 的分身'}}:{role})} sessionId={sessionId} openConversation={()=>{}} dismiss={()=>{view.unmount()}}/>}</I18nProvider>);f.render('original-session');`)
  const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'fixture.tsx'),name:'EmployeeVoiceFixture',formats:['iife']}}})
- const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);script=bundle.output.find(item=>item.type==='chunk')!.code
+ const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);script=bundle.output.find(item=>item.type==='chunk')!.code;styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
  server=createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript; charset=utf-8':'text/html; charset=utf-8');res.end(req.url==='/fixture.js'?script:'<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div></body></html>')});await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+(server.address() as {port:number}).port
  browser=await loadPlaywright().chromium.launch({...launchOptions(),args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--use-file-for-fake-audio-capture='+wav]})
 })
@@ -156,4 +156,35 @@ test('分身通话显示本人缩写和分身身份，导航仍保持同一角�
  assert.equal(await panel.locator('[data-teloa-twin-avatar]').innerText(),'ML')
  assert.equal(await page.evaluate(()=>(window as any).voiceFixture.starts),1)
  await page.getByRole('button',{name:'挂断',exact:true}).click();await page.getByText('通话已结束',{exact:true}).waitFor()
+})
+
+test('窄窗口助手通话同时避开快速聊天与小松鼠，缩放不重拨也不挂断',{timeout:15000},async t=>{
+ const page=await mount(t,false,false,true)
+ await page.setViewportSize({width:390,height:740})
+ await page.addStyleTag({content:'body{margin:0;font-family:system-ui;--teloa-surface:white;--teloa-text:#222;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-section:18px;--teloa-border:#ddd;--teloa-hover:#f6f6f4;--teloa-muted:#777;--teloa-shadow:0 4px 12px #0001}'+styles})
+ await page.evaluate(()=>{
+  const chat=document.createElement('div');chat.dataset.assistantMiniChat=''
+  chat.style.cssText='position:fixed;left:22px;top:44px;width:340px;height:460px;background:#eee;border:1px solid #ddd'
+  chat.innerHTML='<header style="padding:12px">Teloa · 小窗对话</header><p style="padding:12px">原会话与草稿</p>'
+  const pet=document.createElement('div');pet.dataset.assistantCompanion=''
+  pet.style.cssText='position:fixed;right:28px;bottom:28px;width:140px;height:200px;background:#eee;border:1px solid #ddd'
+  pet.textContent='小松鼠与控制区'
+  document.body.append(chat,pet)
+ })
+ const panel=page.getByRole('region',{name:'语音通话',exact:true}),chat=page.locator('[data-assistant-mini-chat]')
+ const clear=async()=>{
+  await page.waitForFunction(()=>{
+   const a=document.querySelector('[aria-label="语音通话"][role="region"]')!.getBoundingClientRect()
+   return [...document.querySelectorAll('[data-assistant-mini-chat],[data-assistant-companion]')].every(node=>{const b=node.getBoundingClientRect();return a.right<=b.left||a.left>=b.right||a.bottom<=b.top||a.top>=b.bottom})
+  })
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+  const a=await panel.boundingBox(),b=await chat.boundingBox()
+  assert.ok(a&&b);assert.ok(a.x>=0&&a.y>=0&&a.x+a.width<=page.viewportSize().width&&a.y+a.height<=page.viewportSize().height)
+ }
+ await clear()
+ if(process.env.TELOA_UI_FIX_EVIDENCE)await page.screenshot({path:join(process.env.TELOA_UI_FIX_EVIDENCE,'voice-mini-chat-390.png')})
+ await page.setViewportSize({width:760,height:740});await clear()
+ if(process.env.TELOA_UI_FIX_EVIDENCE){await page.screenshot({path:join(process.env.TELOA_UI_FIX_EVIDENCE,'voice-mini-chat-760.png')});await writeFile(join(process.env.TELOA_UI_FIX_EVIDENCE,'voice-mini-chat-dom.json'),JSON.stringify(await page.evaluate(()=>({nodes:[...document.body.children].map(node=>({html:node.outerHTML.slice(0,700),box:node.getBoundingClientRect().toJSON()})),region:document.querySelector('[aria-label="语音通话"][role="region"]')?.outerHTML})),null,2))}
+ assert.equal(await page.evaluate(()=>(window as any).voiceFixture.starts),1)
+ assert.equal(await page.evaluate(()=>(window as any).voiceFixture.ends),0)
 })

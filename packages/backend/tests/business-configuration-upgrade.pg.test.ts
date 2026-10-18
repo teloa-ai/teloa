@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {BusinessDefinitionSourceReader} from '../src/work/business-definition-source.ts'
@@ -21,7 +21,7 @@ before(async()=>{
  await api.initializeBusinessSpaces(pool);await api.initializeBusinessScopes(pool);await api.initializeBusinessDefinitions(pool);await api.initializeBusinessConfigurations(pool)
  await api.initializeBusinessRuntime(pool);await api.initializeBusinessData(pool);await api.initializeBusinessWarehouse(pool);await api.initializeBusinessSnapshotReferences(pool);await api.initializeBusinessRecords(pool)
 },{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 
 const actor=()=>({ownerId:'upgrade-config:'+randomUUID(),scopeIds:[] as string[]})
 const unavailable=async():Promise<never>=>{throw Error('配置草案不得读取外部来源')}

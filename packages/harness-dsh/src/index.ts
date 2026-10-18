@@ -1,6 +1,6 @@
 import {ArtifactService,taskArtifactSource,taskArtifactSessions,ArtifactRevisionRequestService,MethodReuseService} from '@teloa/backend'
 import {createMethodReuseMessageReader} from './method-reuse-native-source.ts'
-import {assertOwnerReviewMessage} from './conversation-work-instruction.ts'
+import {assertOwnerReviewMessage,readOwnerReviewMessage} from './conversation-work-instruction.ts'
 import {createOwnerPlanHost} from './owner-plan-host.ts'
 import {registerMethodReuseTools} from './method-reuse-tools.ts'
 import {pageCreateCanonicalBody} from '@teloa/contract'
@@ -1102,8 +1102,14 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if(resolved.agent.session.id!==run.sessionId)throw new WorkError('teloa/forbidden','运行技能作用域与固定会话不一致。')
     await runSkillScopes.ensure(resolved.agent,{id:run.id,sessionId:run.sessionId,skills:run.skills},signal)
   },(sessionId,installationIds,signal,database)=>resolveDshManagedRoleSkills(ctx,owner,sessionId,installationIds,id=>service.bySession(owner,id),signal,managedRunSkillPorts,database),readRoleScopes,runtimeLinks,(config,signal)=>localModelsHandler.prepareRequest(config,signal),name=>declaredSkillSecrets(name),requireNativeInputProvider(ctx).input,{goalObservation:resident.goal.observation,stopGoal:resident.goal.stop})
+  runPorts.onSubmissionError=(run,error)=>ctx.logger.warn('Teloa 执行提交结果待核对：%s（%s）',run.id,codeOf(error,'teloa/execution-pending'))
   runPorts.conversationReviewSource=async(run,signal)=>{
-    signal.throwIfAborted();const source=await(await runService()).conversationReviewSource(owner,run)
+    signal.throwIfAborted();const source=await(await runService()).conversationReviewSource(owner,run,async fixed=>{
+      const binding=await service.bySession(owner,fixed.sessionId);signal.throwIfAborted()
+      if(binding.ownerId!==owner||binding.sessionId!==fixed.sessionId||binding.status!=='ready'||binding.purpose==='task-run')throw new WorkError('teloa/forbidden','本人原消息会话身份不一致。')
+      const cold=await ctx.sessionController.inspect(brandString<SessionId>(fixed.sessionId));signal.throwIfAborted()
+      return readOwnerReviewMessage(owner,NativeSession.create(brandString<SessionId>(fixed.sessionId),cold.events,cold.meta,SessionLogOffset(cold.inheritedEventCount)),fixed)
+    })
     if(!source){signal.throwIfAborted();return null}
     const binding=await service.bySession(owner,source.source.sessionId);signal.throwIfAborted()
     if(binding.ownerId!==owner||binding.sessionId!==source.source.sessionId||binding.status!=='ready'||binding.purpose==='task-run')throw new WorkError('teloa/forbidden','本人复核来源会话身份不一致。')

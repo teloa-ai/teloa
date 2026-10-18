@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises'
 import {registerHooks} from 'node:module'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
-import {currentSolutionCatalog,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionMark,solutionMembers,solutionRowResources} from '../src/client/market-solution-presentation.ts'
+import {currentSolutionCatalog,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionAdded,solutionMark,solutionMembers,solutionRowResources} from '../src/client/market-solution-presentation.ts'
 import {COMPOSITION_ROWS} from '../src/client/industry-composition.ts'
 import * as composition from '../src/client/industry-composition.ts'
 import type {IndustryManifest,IndustryResource} from '../src/client/industry-manifest.ts'
@@ -153,7 +153,7 @@ test('固定内容的已添加状态必须匹配 contentId 与内容摘要，不
  assert.equal(solutionInstalled(fixed,[exact]),true)
  assert.equal(solutionInstalledCount([fixed],[load({contentId:'content-old'})]),0)
  assert.equal(solutionInstalledCount([fixed],[load({contentId:'content-old'}),exact]),1)
- assert.equal(marketItemMark(fixed,[load({contentId:'content-old'})]),'available')
+ assert.equal(marketItemMark(fixed,[load({contentId:'content-old'})]),'added','卡片仅表达本机已收藏，不声称这份内容已在团队使用')
 })
 
 test('同一固定内容的原加载待核对时，即使已读到生效加载也能打开原核对表单，不另发请求',()=>{
@@ -184,10 +184,10 @@ test('同一固定内容的原加载待核对时，即使已读到生效加载�
  }
 })
 
-test('solutionInstalled 是方案卡与产品页共用的唯一判据：两处调用的是同一个函数',async()=>{
+test('收藏卡片和运行详情明确区分本机已添加与团队已使用',async()=>{
  const cards=await readFile(new URL('../src/client/SolutionCards.tsx',import.meta.url),'utf8')
  const page=await readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
- assert.match(cards,/solutionInstalled\(item,\s*loads\)/)
+ assert.match(cards,/solutionAdded\(item,\s*loads\)/)
  assert.match(page,/solutionInstalled\(item,\s*\[load\]\)/)
  assert.doesNotMatch(cards,/loads\.some\(load\s*=>/)
 })
@@ -328,4 +328,17 @@ test('资源目录卡去掉「{类型} · {生态}」与状态句，改挂 State
  assert.match(catalog,/aria-label=\{t\('market\.catalog\.visibility'\)\}/)
  // 状态句仍在详情里逐条写明，只是不再上卡面。
  assert.match(catalog,/t\('market\.catalog\.currentStatus'\)/)
+})
+
+test('本机已添加目录与卡片包含尚未加载及已卸载的收藏，不把内置示例或问答草稿算成收藏',()=>{
+ const manifestValue=manifest([resource('r1','role')])
+ const fixed=item({source:{kind:'stored',contentId:'content-local'},contentStorage:{contentId:'content-local',createdAt:'2026-10-18T00:00:00Z',loaded:true},manifest:manifestValue})
+ assert.equal(solutionAdded(fixed,[]),true)
+ assert.equal(solutionInstalled(fixed,[]),false,'本机已添加不等同于已加入团队')
+ assert.equal(solutionAdded(fixed,[load({status:'unloaded'})]),true)
+ assert.equal(solutionAdded(item({manifest:manifestValue}),[]),false)
+ assert.equal(solutionAdded(item({manifest:manifestValue,source:{kind:'catalog',entryId:'entry',version:'1.0.0'}}),[]),false)
+ const added=render(createElement(SolutionCards as never,{items:[fixed],loads:[],selectedId:undefined,open:()=>{}}))
+ assert.match(added,/已添加/)
+ assert.doesNotMatch(added,/可添加/)
 })

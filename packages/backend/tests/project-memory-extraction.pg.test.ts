@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {WorkError} from '@teloa/contract'
 import {ProjectMemoryExtractionService,initializeProjectMemoryExtraction,type ProjectExtractionEvent,type ProjectExtractionPolicy,type ProjectExtractionProposal,type ProjectMemoryExtractionPorts} from '../src/work/project-memory-extraction.ts'
@@ -17,7 +17,7 @@ before(async()=>{
   create table test_extraction_sources(owner_id text not null,source_id text not null,available boolean not null,primary key(owner_id,source_id));
  `)
 })
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(){
  const owner=randomUUID(),projectId=randomUUID(),sessionId='session-'+randomUUID(),messageId=randomUUID(),sourceId=`message:${sessionId}:${messageId}`
  const event:ProjectExtractionEvent={eventId:randomUUID(),projectId,sessionId,messageId,sourceId,derivedSourceIds:[],bindingVersion:1,policyVersion:1,evidence:[{id:'decision',kind:'decision',text:'请记住：验收使用隔离目录。',assertion:'验收使用隔离目录。'}]}

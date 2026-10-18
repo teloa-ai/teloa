@@ -36,14 +36,14 @@ export function EmployeeVoiceCall({api,role,target:providedTarget,sessionId,open
   if(previous&&previous.x===next.x&&previous.y===next.y&&previous.maxWidth===next.maxWidth&&previous.maxHeight===next.maxHeight)return
   positionRef.current=next;setPosition(next)
  }
- /** 本人未移动时沿用样式默认位置并随视口重算；助手通话只为小松鼠及其留言、迷你聊天小窗让位，窄屏保持原布局。 */
+ /** 本人未移动时沿用样式默认位置并随视口重算；助手通话为小松鼠及其留言、迷你聊天小窗让位，窄窗口同样避障。 */
  function fitDefault(panel:HTMLElement){
   const style=panel.style,inline=[style.left,style.top,style.right,style.bottom]
   if(positionRef.current){style.left='';style.top='';style.right='';style.bottom=''}
   const box=panel.getBoundingClientRect()
   if(positionRef.current){style.left=inline[0]!;style.top=inline[1]!;style.right=inline[2]!;style.bottom=inline[3]!}
   if(!box.width||!box.height)return
-  const obstacles=target.kind==='assistant'&&!window.matchMedia('(max-width: 760px)').matches?Array.from(document.querySelectorAll<HTMLElement>('[data-assistant-companion],[data-assistant-companion]>[role="region"],[data-assistant-mini-chat]'),element=>element.getBoundingClientRect()):[]
+  const obstacles=target.kind==='assistant'?Array.from(document.querySelectorAll<HTMLElement>('[data-assistant-companion],[data-assistant-companion]>[role="region"],[data-assistant-mini-chat]'),element=>element.getBoundingClientRect()):[]
   const safe=companionSafePoint(box,box,viewportBounds(),obstacles)
   if(Math.abs(safe.x-box.x)<1&&Math.abs(safe.y-box.y)<1){if(positionRef.current){positionRef.current=undefined;setPosition(undefined)}return}
   place(safe)

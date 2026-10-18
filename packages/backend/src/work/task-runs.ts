@@ -606,7 +606,7 @@ export class TaskRunService{
   return source
  }
  /** 原会话交办共用一份来源投影；没有父交办的直接员工 Task 保留其原目标。 */
- async conversationReviewSource(owner:string,expected:TaskRun){
+ async conversationReviewSource(owner:string,expected:TaskRun,readOriginalText?:(source:{sessionId:string;messageId:string;messageSeq:number;requestId:string})=>Promise<string>){
   actor(owner);if(!uuid(expected.id))throw new WorkError('teloa/forbidden','本人复核来源身份不正确。')
   const db=await this.pool.connect()
   try{await db.query('begin')
@@ -627,10 +627,12 @@ export class TaskRunService{
    const {task}=current
    const source={sessionId:request.sessionId,messageId:request.messageId,messageSeq:request.messageSeq,requestId:request.requestId}
    if('grant'in current&&(current.grant.plan||!isDeepStrictEqual(current.grant.source,source))||'role'in current&&(fixed.identity.roleId!==run.roleId||fixed.request.targets[0]?.roleVersion!==run.roleVersion)||fixed.task.fields.goal!==task.goal||!isDeepStrictEqual(JSON.parse(run.inputText).task,{id:task.id,version:run.taskVersion,title:task.title,goal:task.goal,scope:task.scope}))throw new WorkError('teloa/version-conflict','本人复核来源与原工作内容不一致。')
-   if(!request.sourceText?.trim())throw new WorkError('teloa/source-unavailable','本人原指令不可读取，不能以派发概述代替。')
+   // 老交办没有复制原文时，只允许宿主从这一条固定本人消息补读；不改历史、不退回模型概述。
+   const sourceText=request.sourceText??await readOriginalText?.(source)
+   if(typeof sourceText!=='string'||!sourceText.trim()||sourceText.length+request.goal.length>7400)throw new WorkError('teloa/source-unavailable','原消息暂不可读取，请回到原会话重新交办；原任务与记录仍保留。',{reason:'conversation-source-unavailable',sessionId:source.sessionId,messageId:source.messageId})
    if('grant'in current)current.grant.admission.assertCurrent();else current.roleAdmission?.assertCurrent()
    await db.query('commit')
-   return {runId:run.id,taskId:run.taskId,taskVersion:run.taskVersion,roleId:run.roleId,roleVersion:run.roleVersion,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),source,sourceText:request.sourceText,summary:request.goal}
+   return {runId:run.id,taskId:run.taskId,taskVersion:run.taskVersion,roleId:run.roleId,roleVersion:run.roleVersion,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),source,sourceText,summary:request.goal}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  /** 发送权只交付一次。提交回包不明时不得再次调用模型；后续只能查原生日志。 */

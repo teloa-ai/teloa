@@ -11,7 +11,7 @@ let browser:any,script:string,styles:string,temp:string
 const entry=`
 import React from 'react';import {createRoot} from 'react-dom/client';
 import {BusinessImportPanel} from '${client}BusinessImportPanel.tsx';import {BusinessImportFlow} from '${client}business-import-flow.ts';import {createBusinessImportApi} from '${client}business-import-api.ts';import {createBusinessRecordApi} from '${client}business-record-api.ts';
-import {I18nProvider} from '${client}i18n/provider.tsx';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';
+import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';
 for(const [key,value] of Object.entries(prototypeThemes.light))document.body.style.setProperty(key,value);
 const stamp='2026-09-30T00:00:00.000Z',hash='a'.repeat(64),id='11111111-1111-4111-8111-111111111111',contactId='44444444-4444-4444-8444-444444444444';let draft,journal=null,n=0;
 const fixture=window.importFixture={calls:[],inspectionFails:false,sourceConflict:false,holdApply:false};let release;fixture.release=()=>release?.();
@@ -31,7 +31,7 @@ case 'business-imports/receipt':return null;
 }});
 const records=createBusinessRecordApi(async(method,input)=>{fixture.calls.push({method,input});if(fixture.relationFails)throw Error('unavailable');return {scope:'sales',type:'contact',id:contactId,version:1,snapshotHash:hash,title:'实际联系人',summary:'',source:'records',observedAt:stamp,receivedAt:stamp,quality:fixture.relationMissing?'missing':'complete',fields:[],...(fixture.archived?{deletedAt:stamp}:{})}});
 const flow=fixture.flow=new BusinessImportFlow({api,records,ownerId:'self',personalSpaceId:'personal-self',scope:'sales',type:'customer',journal:{read:()=>journal,write:value=>journal=value,clear:()=>journal=null},isCurrent:()=>true,id:()=>n++===0?'22222222-2222-4222-8222-222222222222':'33333333-3333-4333-8333-333333333333'});fixture.snapshot=()=>flow.getSnapshot();
-const snapshot={locale:document.documentElement.lang,dshLocale:'zh-CN',revision:1},runtime={t:key=>key,subscribe:()=>()=>{},getSnapshot:()=>snapshot};
+const snapshot={locale:document.documentElement.lang,dshLocale:'zh-CN',revision:1},runtime={t:(key,params)=>translateMessage(document.documentElement.lang,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
 createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><main><BusinessImportPanel flow={flow} scope="sales" type="customer" definition={definition}/></main></I18nProvider>);
 `
 before(async()=>{
@@ -41,9 +41,9 @@ before(async()=>{
  browser=await loadPlaywright().chromium.launch(launchOptions())
 })
 after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,force:true})})
-async function mount(t:any,width=1280){
+async function mount(t:any,width=1280,locale='zh-CN'){
  const page=await browser.newPage({viewport:{width,height:1000}});page.setDefaultTimeout(6000);const errors:string[]=[]
- page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.request().isNavigationRequest()?route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>'}):route.abort())
+ page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.request().isNavigationRequest()?route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="'+locale+'"><body><div id="root"></div></body></html>'}):route.abort())
  t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
  await page.goto('https://fixture.invalid');await page.addStyleTag({content:'*{box-sizing:border-box}body{margin:0;font-family:system-ui}main{max-width:1100px;padding:20px;margin:auto}'+styles});await page.addScriptTag({content:script});return page
 }
@@ -101,3 +101,21 @@ test('mapping_changes_invalidate_confirmation_and_cancel_resume_preserves_host_m
 test('source_conflicts_and_unverified_relations_cannot_be_confirmed',async t=>{const page=await mount(t);await upload(page);await map(page);await page.evaluate(()=>{(window as any).importFixture.sourceConflict=true});await page.getByRole('button',{name:'生成全部行预览',exact:true}).click();await page.getByRole('button',{name:'第2行 · 第1列：此文件已有不同映射的固定批次',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'确认导入',exact:true}).isDisabled(),true);await page.evaluate(()=>{(window as any).importFixture.sourceConflict=false;(window as any).importFixture.relationFails=true});await page.getByRole('button',{name:'生成全部行预览',exact:true}).click();await page.getByRole('alert').filter({hasText:'关联记录尚未核对'}).waitFor();assert.equal(await page.getByRole('button',{name:'确认导入',exact:true}).isDisabled(),true);assert.equal(await page.getByText('实际联系人',{exact:true}).count(),0)})
 test('archived_relation_titles_show_actual_status_and_block_confirmation',async t=>{const page=await mount(t);await upload(page);await map(page);await page.evaluate(()=>{(window as any).importFixture.archived=true});await page.getByRole('button',{name:'生成全部行预览',exact:true}).click();await page.getByText('实际联系人（已归档）',{exact:true}).first().waitFor();assert.equal(await page.getByRole('button',{name:'确认导入',exact:true}).isDisabled(),true)})
 test('missing_relation_snapshot_does_not_claim_a_verified_title_or_enable_confirmation',async t=>{const page=await mount(t);await upload(page);await map(page);await page.evaluate(()=>{(window as any).importFixture.relationMissing=true});await page.getByRole('button',{name:'生成全部行预览',exact:true}).click();await page.getByText('全部6行规范结果',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'确认导入',exact:true}).isDisabled(),true);assert.equal(await page.evaluate(()=>(window as any).importFixture.snapshot().relationsReady),false);assert.equal(await page.getByText('实际联系人',{exact:true}).count(),0);await page.getByText('关联尚未核对',{exact:true}).first().waitFor()})
+
+test('繁体导入使用正式词典并保留台湾列与香港行的地区用词',async t=>{
+ for(const locale of ['zh-Hant','zh-TW','zh-HK']){
+  const page=await mount(t,760,locale)
+  await page.getByRole('heading',{name:'匯入表格',exact:true}).waitFor()
+  await page.getByLabel('CSV 或 XLSX 檔案',{exact:true}).setInputFiles({name:'customers.csv',mimeType:'text/csv',buffer:Buffer.from('fixture file bytes')})
+  await page.getByText('檔案已儲存',{exact:false}).waitFor()
+  await page.getByLabel('分隔字元',{exact:true}).selectOption(',')
+  await page.getByRole('button',{name:'讀取欄名與範例',exact:true}).click()
+  await page.getByText(locale==='zh-HK'?'已完整讀取 6 行資料；以下僅為前 5 行範例，另有 1 行未顯示。':'已完整讀取 6 列資料；以下僅為前 5 列範例，另有 1 列未顯示。',{exact:true}).waitFor()
+  await page.getByLabel('主鍵第1欄',{exact:true}).selectOption('0')
+  assert.equal(await page.getByLabel('費用幣別',{exact:true}).count(),0,'來源資料標籤保持原文，不改使用者資料')
+  assert.equal(await page.getByRole('button',{name:'確認匯入',exact:true}).isDisabled(),true)
+  const body=await page.locator('body').innerText()
+  assert.doesNotMatch(body,/请选择|导入表格|读取表头|businessImport\./)
+  if(locale==='zh-TW'&&process.env.TELOA_UI_FIX_EVIDENCE)await page.screenshot({path:join(process.env.TELOA_UI_FIX_EVIDENCE,'business-import-zh-TW.png'),fullPage:true})
+ }
+})

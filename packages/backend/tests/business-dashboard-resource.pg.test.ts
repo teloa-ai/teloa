@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {MarketContentStore} from '../src/market/content-store.ts'
@@ -24,7 +24,7 @@ before(async()=>{
  pool=new Pool({connectionString:container.getConnectionUri()})
  await api.initializeTeloaDatabase(pool)
 },{timeout:180000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 
 function services(){
  const market=new MarketContentStore(pool,identity),drafts=new BusinessConfigurationDraftService(pool,identity),store=new BusinessConfigurationStore(pool)

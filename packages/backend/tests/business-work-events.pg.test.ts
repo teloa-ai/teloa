@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {BusinessDefinitionSourceReader} from '../src/work/business-definition-source.ts'
@@ -18,7 +18,7 @@ before(async()=>{
  pool=new Pool({connectionString:container.getConnectionUri()})
  await api.initializeTeloaDatabase(pool);await api.initializeBusinessSpaces(pool);await api.initializeBusinessDefinitions(pool);await api.initializeBusinessConfigurations(pool);await api.initializeBusinessRuntime(pool);await api.initializeBusinessData(pool);await api.initializeBusinessWarehouse(pool);await api.initializeBusinessSnapshotReferences(pool);await api.initializeBusinessSync(pool);await api.initializeBusinessRecords(pool)
 },{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 
 async function fixture(withSync=false){
  const drafts=new api.BusinessConfigurationDraftService(pool,identity),store=new api.BusinessConfigurationStore(pool)
@@ -77,6 +77,20 @@ async function planFixture(){
  const plan=await createPlan(),occurrences=new api.PlanOccurrenceService(pool,identity,undefined,(db,owner,id)=>events.verifiedSourceInTransaction(db,owner,id))
  return {...f,owner,object,sourceRef,events,records,readSource,plans,plan,createPlan,role,occurrences,setOriginRun:(value:string)=>{originRun=value}}
 }
+
+test('计划并发只统计活动未知预留，可信封口后仍保留未知token上限',async()=>{
+ const f=await planFixture(),definition=f.plan.workDefinition!
+ await f.records.edit(f.actor,{scope:f.object.scope,type:f.object.type,id:f.object.id,expectedVersion:1,requestId:randomUUID(),fields:[{name:'state',value:'待跟进'}]})
+ const event=(await f.events.pending(f.owner))[0]!,input={planId:f.plan.id,definitionVersion:f.plan.configVersion,eventId:event.event.id,controlGeneration:1},reservationId=randomUUID()
+ await pool.query("insert into teloa_work_budget_reservations(id,owner_id,budget_account_id,control_generation,model_request_id,kind,reserved_tokens,reserved_rounds,state,created_at) values($1,$2,$3,1,$4,'retry',100,0,'unknown',now())",[reservationId,f.owner,definition.budgetAccountId,'prior-'+randomUUID()])
+ await assert.rejects(f.events.claim(f.owner,input),{code:'teloa/conflict'},'未核验的请求仍占唯一并发位')
+ // 模拟宿主已经核验的封口事实；证明来源的完整校验另由 work-budget 用例覆盖。
+ await pool.query('update teloa_work_budget_reservations set elapsed_ended_at=now(),elapsed_terminal=$2,reserved_tokens=2000 where id=$1',[reservationId,JSON.stringify({schema:'fixture-trusted-terminal'})])
+ await assert.rejects(f.events.claim(f.owner,input),{code:'teloa/conflict'},'结束活动不释放未知消耗')
+ await pool.query('update teloa_work_budget_reservations set reserved_tokens=100 where id=$1',[reservationId])
+ assert.ok(await f.events.claim(f.owner,input),'已核验结束不再永久阻塞 maxConcurrent=1 的后继事件')
+ assert.deepEqual((await pool.query('select state,reserved_tokens,actual_tokens from teloa_work_budget_reservations where id=$1',[reservationId])).rows[0],{state:'unknown',reserved_tokens:100,actual_tokens:null})
+})
 
 test('业务复合来源精确合并；claim后变更拒绝派发；原Task准备/开始/提交复核同一版本且冻结原正文',async()=>{
  const f=await planFixture(),first=await f.records.edit(f.actor,{scope:f.object.scope,type:f.object.type,id:f.object.id,expectedVersion:1,requestId:randomUUID(),fields:[{name:'state',value:'已联系'}]})

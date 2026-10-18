@@ -193,9 +193,9 @@ test('C1 页头只保留市场标题与紧凑工具，原已添加目录入口�
   assert.doesNotMatch(addedDirectory,/TeamCapabilitiesPage|mineApps|installations\.open/)
   assert.doesNotMatch(addedDirectory,/market\.solution\.addedDescription/)
   assert.match(source,/const marketItems=mergeMarketItems\(\[\],state\.items\),currentCatalog=currentSolutionCatalog\(marketItems\)/)
-  assert.match(source,/const addedSolutions=currentCatalog\.filter\(item=>marketCategoryOf\(item\)==='industry'&&solutionInstalled\(item,props\.industryLoads\.loads\)\)/)
+  assert.match(source,/const addedSolutions=currentCatalog\.filter\(item=>solutionAdded\(item,props\.industryLoads\.loads\)\)/)
   // 计数与目录共用去重后的当前版本目录，历史版本不能再次出现在卡片或数量里。
-  assert.match(source,/const addedCount=solutionInstalledCount\(currentCatalog,props\.industryLoads\.loads\)/)
+  assert.match(source,/const addedCount=addedSolutions\.length/)
 })
 
 test('方案和方案内原子资源共用当前版本目录，历史版本不重复进入资源库',async()=>{

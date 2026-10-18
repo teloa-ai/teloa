@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {PlanService} from '../src/work/plans.ts'
@@ -17,7 +17,7 @@ const lease={assertCurrent(){}}
 let sourceActive=true,confirmed=true
 const authority={verifySource:async()=>{assert.equal(sourceActive,true,'原方法来源已撤回');return lease},capture:async()=>{assert.equal(confirmed,true,'必须本人确认');return {policy,admission:lease}},authorize:async()=>{assert.equal(confirmed,true,'必须本人确认');return lease}}
 before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').withPullPolicy({shouldPull:()=>false}).start();pool=new Pool({connectionString:container.getConnectionUri()});await api.initializeTeloaDatabase(pool)},{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 function input(){return {requestId:randomUUID(),fields:{executor:{kind:'owner'},roleId:null,title:'每日核对方法',goal:'核对本人已授权资料并总结变化',scope:'general',dataScope:'本人已选择的资料',delivery:'变化与待确认项',trigger:schedule,notificationPolicy:'attention'},configuration,intent:'save-paused',source:{kind:'method-reuse',artifactId:randomUUID(),version:1,basisHash:'a'.repeat(64),acceptedSource:{sessionId:'owner-source',messageId:randomUUID(),messageSeq:4,requestId:randomUUID()}}}}
 async function sourceBackedInput(owner:string){
  const request=input(),source={kind:'session' as const,id:'fixed-method-source',scope:'general',version:'4',title:'原固定行动单'},content={title:'周会行动单',sections:[{id:'actions',title:'行动清单',text:'小林回访，截止2026-10-22；阿文预算复核，截止2026-10-21。'},{id:'risks',title:'风险与下一步',text:'总预算12000，已支出4500，剩余7500；完成状态未知。'}],snapshotIds:[],note:'仅合成资料'}

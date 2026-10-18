@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID,createHash} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {TaskService,initializeTasks,readStoredTask} from '../src/work/tasks.ts'
@@ -21,7 +21,7 @@ import {WorkError,type WorkTask} from '@teloa/contract'
 
 test('owner交付依据只读原已受理本人消息，固定Run/owner/child/来源改变均拒绝',async t=>{
  const container=await new PostgreSqlContainer('postgres:17-alpine').withPullPolicy({shouldPull:()=>false}).start()
- const pool=new Pool({connectionString:container.getConnectionUri()}),locks=new Pool({connectionString:container.getConnectionUri()});t.after(async()=>{await locks.end();await pool.end();await container.stop()})
+ const pool=new Pool({connectionString:container.getConnectionUri()}),locks=new Pool({connectionString:container.getConnectionUri()});t.after(async()=>{await locks.end();await pool.end();await stopTestContainer(container)})
  await initializeRoles(pool);await initializeTasks(pool);await initializeConversationWork(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeCollaboration(pool)
  const owner=randomUUID(),identity={id:randomUUID,now:()=>new Date().toISOString()},source={sessionId:'source-'+randomUUID(),messageId:'own-source',messageSeq:9,requestId:randomUUID()},sourceText='整理一份周会行动单，只用本人给出的合成事实。',goal='整理本周周会行动单。'
  const requests=new ConversationWorkService(pool,identity.now,async()=>({ownerId:owner,sessionId:source.sessionId,status:'ready',submitted:true}),undefined,undefined,locks)
@@ -38,6 +38,18 @@ test('owner交付依据只读原已受理本人消息，固定Run/owner/child/�
  await pool.query("update teloa_conversation_work_requests set request_spec=jsonb_set(request_spec,'{sourceText}',to_jsonb($3::text)) where owner_id=$1 and request_id=$2",[owner,source.requestId,'另一条本人原文'])
  await assert.rejects(service.ownerReviewSource(owner,run),{code:'teloa/version-conflict'},'即使同grant，也不能把改变的原文投给旧Run')
  await pool.query("update teloa_conversation_work_requests set request_spec=jsonb_set(request_spec,'{sourceText}',to_jsonb($3::text)) where owner_id=$1 and request_id=$2",[owner,source.requestId,sourceText])
+ await t.test('旧交办仅从固定原生本人消息恢复原文，不以概述代替、不回写旧记录',async()=>{
+  const legacy={...source,requestId:randomUUID(),messageId:randomUUID()}
+  await requests.reserve(owner,{...legacy,kind:'task',executor:'general',scope:'general',title:'旧交办',goal})
+  const task=await tasks.createForConversation(owner,{sessionId:source.sessionId,requestId:legacy.requestId,executor:'general'}),sessionId='legacy-run-'+randomUUID()
+  await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,sessionId,expectedLinkVersion:0,action:'link'})
+  const run=await service.prepareOwner(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,executor:task.executor,sessionId,expectedLinkVersion:1},{agentPresetId:'teloa-standard'})
+  await assert.rejects(service.conversationReviewSource(owner,run),{code:'teloa/source-unavailable'})
+  const restored=await service.conversationReviewSource(owner,run,async fixed=>{assert.deepEqual(fixed,legacy);return sourceText})
+  assert.equal(restored?.sourceText,sourceText);assert.equal(restored?.summary,goal)
+  await assert.rejects(service.conversationReviewSource(owner,run,async()=>''),{code:'teloa/source-unavailable'})
+  assert.equal((await requests.get(owner,{sessionId:legacy.sessionId,requestId:legacy.requestId}))?.sourceText,undefined)
+ })
  await t.test('员工原交办只读固定role子任务与原文，直接Task无父来源不伪造本人消息',async()=>{
   const role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'查证员工',kind:'employee',scopes:['general'],duty:'核对资料',dataScope:'仅本人给出资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}},{state:'active'})
   const fixedSource={...source,requestId:randomUUID(),messageId:randomUUID()}

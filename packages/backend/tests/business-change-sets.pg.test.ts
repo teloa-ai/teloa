@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {BusinessDefinitionSourceReader} from '../src/work/business-definition-source.ts'
@@ -14,7 +14,7 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
  for(const init of [api.initializeBusinessSpaces,api.initializeBusinessDefinitions,api.initializeBusinessConfigurations,api.initializeBusinessRuntime,api.initializeBusinessData,api.initializeBusinessWarehouse,api.initializeBusinessSnapshotReferences,api.initializeBusinessRecords,api.initializeBusinessSync])await init(pool)
 },{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(extraType=false){
  assert.equal(typeof api.BusinessChangeSetService,'function','须提供持久业务修改草稿')
  await api.initializeBusinessChangeSets(pool)

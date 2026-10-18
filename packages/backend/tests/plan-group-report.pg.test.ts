@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID,createHash} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeTeloaDatabase} from '../src/work/initialize-database.ts'
 import {RoleService} from '../src/work/roles.ts'
@@ -26,7 +26,7 @@ before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeTeloaDatabase(pool)
 },{timeout:180000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 const knowledgeText="原计划已授予的资料。",knowledge={id:randomUUID(),version:1,title:"原计划资料",sourceId:randomUUID(),sourceVersion:createHash("sha256").update(knowledgeText).digest("hex"),scopeIds:["general"],text:knowledgeText}
 async function fixture(canPost=true,knowledgeIds:string[]=[]){
  const owner=randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'定时汇报员工',kind:'employee',scopes:['general'],duty:'核对原资料并汇报',dataScope:'本人已授权资料',executionScope:'只读核对',skills:[],knowledge:knowledgeIds,responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}})

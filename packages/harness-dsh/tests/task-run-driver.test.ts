@@ -27,7 +27,9 @@ test('固定整项控制未 active 或读口缺失时，prepare 后仍不可领�
 })
 test('宿主仅领取者发送固定请求，未知提交重试不重发',async()=>{
  const f=fixture();f.fail()
- await assert.rejects(f.driver.start('owner',{runId:'run'},new AbortController().signal),error=>error instanceof Error&&!error.message.includes('secret')&&error.message.includes('核对'))
+ const diagnostics:unknown[]=[];f.driver.ports.onSubmissionError=(_run,error)=>{diagnostics.push(error)}
+ await assert.rejects(f.driver.start('owner',{runId:'run'},new AbortController().signal),error=>error instanceof Error&&!error.message.includes('secret')&&!JSON.stringify(error).includes('secret')&&error.message.includes('核对')&&error.cause===diagnostics[0])
+ assert.equal((diagnostics[0] as Error).message,'secret transport details')
  assert.equal(f.run().state,'submitting');assert.equal(f.sends(),1)
  await f.driver.start('owner',{runId:'run'},new AbortController().signal)
  assert.equal(f.sends(),1)

@@ -1,9 +1,9 @@
 // 固定资源快照，来源：https://github.com/teloa-ai/marketplace；请勿手工修改资源字节或摘要。
 // 摘要随发行固定；后端加载时逐项核对索引、文件字节与工件树摘要。
-export const officialCatalogIndexSha256='e196fea1b8309daf9a770fc5f6c75627ec9c2d530feb4ac0d968c02c57aea384'
+export const officialCatalogIndexSha256='161983495dda9b3982b0579078a1fea5c5e079068ae20939c04a3d0d43fde166'
 export const officialCatalogIndex:unknown={
  "format": "teloa.market-catalog/v1",
- "catalogVersion": "2026.10.16.2",
+ "catalogVersion": "2026.10.18.2",
  "entries": [
   {
    "format": "teloa.market-catalog-entry/v1",
@@ -4388,12 +4388,14 @@ export const officialCatalogIndex:unknown={
     "dsh": "0.2.1-alpha.1",
     "conditions": [
      {
-      "zh-CN": "添加时一次确认安装包内全部原技能；员工、资料、工作模板与可选连接按 Teloa 方案接收流程逐项启用，不自动运行。",
-      "en": "Adding installs all bundled original skills in one confirmation; employees, references, work templates and optional connections are enabled through Teloa's solution flow and never run on their own."
+      "zh-CN": "添加时一次确认安装包内全部原技能；员工、资料、工作模板与可选连接按团队添加流程逐项启用，不自动运行。",
+      "en": "Adding installs all bundled original skills in one confirmation; employees, references, work templates and optional connections are enabled through the team setup flow and never run on their own.",
+      "zh-TW": "新增時一次確認安裝套件內全部原有技能；員工、資料、工作範本及選用連線依團隊新增流程逐項啟用，不會自動執行。"
      },
      {
-      "zh-CN": "原模板为 Grok Bot 共享云电脑写就（浏览器、/workspace 文件、连接器）；在 Teloa 中浏览与文件能力取决于你授予员工的工具，未授予时员工只按你提供的材料工作。",
-      "en": "The originals were written for Grok Bot's shared cloud computer (browser, /workspace files, connectors); in Teloa browsing and file access depend on the tools you grant, otherwise employees work from the material you provide."
+      "zh-CN": "浏览网页、读取文件和连接应用需先授予相应工具权限；未配置时，员工使用你提供的材料工作。",
+      "en": "Browsing, file access and connected apps require the corresponding tool permissions. Without them, employees work from the material you provide.",
+      "zh-TW": "瀏覽網頁、讀取檔案及連接應用程式前，須先授予相應工具權限；未設定時，員工使用你提供的資料工作。"
      },
      {
       "zh-CN": "未在 Teloa 宿主中用真实模型端到端验证本团队；原仓库的示例输出是虚构样例。",
@@ -5101,12 +5103,14 @@ export const officialCatalogIndex:unknown={
     "dsh": "0.2.1-alpha.1",
     "conditions": [
      {
-      "zh-CN": "添加时一次确认安装包内全部原技能；员工、资料、工作模板与可选连接按 Teloa 方案接收流程逐项启用，不自动运行。",
-      "en": "Adding installs all bundled original skills in one confirmation; employees, references, work templates and optional connections are enabled through Teloa's solution flow and never run on their own."
+      "zh-CN": "添加时一次确认安装包内全部原技能；员工、资料、工作模板与可选连接按团队添加流程逐项启用，不自动运行。",
+      "en": "Adding installs all bundled original skills in one confirmation; employees, references, work templates and optional connections are enabled through the team setup flow and never run on their own.",
+      "zh-TW": "新增時一次確認安裝套件內全部原有技能；員工、資料、工作範本及選用連線依團隊新增流程逐項啟用，不會自動執行。"
      },
      {
-      "zh-CN": "原模板为 Grok Bot 共享云电脑写就（浏览器、/workspace 文件、连接器）；在 Teloa 中浏览与文件能力取决于你授予员工的工具，未授予时员工只按你提供的材料工作。",
-      "en": "The originals were written for Grok Bot's shared cloud computer (browser, /workspace files, connectors); in Teloa browsing and file access depend on the tools you grant, otherwise employees work from the material you provide."
+      "zh-CN": "浏览网页、读取文件和连接应用需先授予相应工具权限；未配置时，员工使用你提供的材料工作。",
+      "en": "Browsing, file access and connected apps require the corresponding tool permissions. Without them, employees work from the material you provide.",
+      "zh-TW": "瀏覽網頁、讀取檔案及連接應用程式前，須先授予相應工具權限；未設定時，員工使用你提供的資料工作。"
      },
      {
       "zh-CN": "未在 Teloa 宿主中用真实模型端到端验证本团队；原仓库的示例输出是虚构样例。",
@@ -5512,12 +5516,14 @@ export const officialCatalogIndex:unknown={
     "dsh": "0.2.1-alpha.1",
     "conditions": [
      {
-      "zh-CN": "添加时一次确认安装包内全部原技能；员工、资料、工作模板与可选连接按 Teloa 方案接收流程逐项启用，不自动运行。",
-      "en": "Adding installs all bundled original skills in one confirmation; employees, references, work templates and optional connections are enabled through Teloa's solution flow and never run on their own."
+      "zh-CN": "添加时一次确认安装包内全部原技能；员工、资料、工作模板与可选连接按团队添加流程逐项启用，不自动运行。",
+      "en": "Adding installs all bundled original skills in one confirmation; employees, references, work templates and optional connections are enabled through the team setup flow and never run on their own.",
+      "zh-TW": "新增時一次確認安裝套件內全部原有技能；員工、資料、工作範本及選用連線依團隊新增流程逐項啟用，不會自動執行。"
      },
      {
-      "zh-CN": "原模板为 Grok Bot 共享云电脑写就（浏览器、/workspace 文件、连接器）；在 Teloa 中浏览与文件能力取决于你授予员工的工具，未授予时员工只按你提供的材料工作。",
-      "en": "The originals were written for Grok Bot's shared cloud computer (browser, /workspace files, connectors); in Teloa browsing and file access depend on the tools you grant, otherwise employees work from the material you provide."
+      "zh-CN": "浏览网页、读取文件和连接应用需先授予相应工具权限；未配置时，员工使用你提供的材料工作。",
+      "en": "Browsing, file access and connected apps require the corresponding tool permissions. Without them, employees work from the material you provide.",
+      "zh-TW": "瀏覽網頁、讀取檔案及連接應用程式前，須先授予相應工具權限；未設定時，員工使用你提供的資料工作。"
      },
      {
       "zh-CN": "未在 Teloa 宿主中用真实模型端到端验证本团队；原仓库的示例输出是虚构样例。",
