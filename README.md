@@ -169,9 +169,9 @@ See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [loc
 
 A **business** organizes records, people and resources. An **AI employee** owns a role; a **skill** supplies a method; **knowledge** provides evidence; a **connector** gives access to a system. A **task** tracks an assignment, a **deliverable** preserves its output, and a **dashboard** summarizes the business records.
 
-![A content operations business in Teloa Community: the records page lists sample records, with dashboards, AI employees, groups and projects in the same business](https://docs.teloa.ai/assets/screenshots/en/business-page.dbe8205a89b9.png)
+![A content operations business in Teloa Community: the records page lists sample records, with dashboards, AI employees, groups and projects in the same business](https://docs.teloa.ai/assets/screenshots/en/business-page.a738c73c3358.png)
 
-*0.2.0-beta.6 interface with sample data. A business keeps records, dashboards, AI employees, groups and projects together; Ask or delegate starts work from here.*
+*0.2.0-beta.7 interface with sample data. A business keeps records, dashboards, AI employees, groups and projects together; Start work begins work from here.*
 
 For example, in **security operations (SOC)**:
 
@@ -183,9 +183,9 @@ For example, in **security operations (SOC)**:
 
 Adding a team template does not automatically connect accounts, authorize employees or start scheduled work. Those choices stay with you.
 
-![Content operations overview dashboard with sample records](https://docs.teloa.ai/assets/screenshots/en/business-dashboard.9e0423873484.png)
+![Content operations overview dashboard with sample records](https://docs.teloa.ai/assets/screenshots/en/business-dashboard.c369ceac1da1.png)
 
-*Dashboards work the same way across businesses. This example uses a marketplace content operations dashboard with 10 sample records in the 0.2.0-beta.6 interface; it is not live data.*
+*Dashboards work the same way across businesses. This example uses a marketplace content operations dashboard with 10 sample records in the 0.2.0-beta.7 interface; it is not live data.*
 
 SOC is the first end-to-end business scenario. Customer delivery, content operations, retail, software development, education, store services and other security workflows are **future scenario examples**, rather than completed integrations. See [industry examples](https://docs.teloa.ai/en/tutorials/industry-examples) and the [SOC walkthrough](https://docs.teloa.ai/en/tutorials/soc-triage).
 
