@@ -88,8 +88,11 @@ test('预览或安装失败时不写 installationId 与回执',async()=>{
 test('并发 install 只有一个推进同一预期版本',async()=>{
  const owner=randomUUID(),identity={id:randomUUID,now:()=>new Date().toISOString()},loads=new IndustryLoadService(pool,identity,source),load=await loads.create(owner,{requestId:randomUUID(),contentId:randomUUID(),contentHash:'d'.repeat(64),target:{kind:'new',spaceId:randomUUID(),name:'并发空间'}})
  const installed:PluginInstallation={...installationFixture,id:randomUUID(),ownerId:owner}
- let installs=0
- const plugins={find:async()=>null,preview:async()=>previewFixture,install:async()=>{installs+=1;return {...installed,state:'preparing' as const}},reconcile:async()=>({...installed,state:'installed-active' as const})}
+ let installs=0,bothArrived!:()=>void
+ const arrived=new Promise<void>(resolve=>{bothArrived=resolve})
+ // 双到达屏障：两路都已通过旧版本预检、进入宿主安装后才一起放行写回。Promise.allSettled 本身不保证这一交错——
+ // 后到者若在首路写回之后才预检，会在调用宿主前合法地拒绝（见下一用例）。
+ const plugins={find:async()=>null,preview:async()=>previewFixture,install:async()=>{installs+=1;if(installs===2)bothArrived();await arrived;return {...installed,state:'preparing' as const}},reconcile:async()=>({...installed,state:'installed-active' as const})}
  const service=new IndustryPluginService(pool,identity,loads,sourceReader(loads),plugins),created=await service.instantiate(owner,{requestId:randomUUID(),loadId:load.id,itemInstanceId:load.items[0]!.instanceId})
  const settled=await Promise.allSettled([service.install(owner,{requestId:randomUUID(),instanceId:created.id,expectedRevision:1,preview:previewFixture}),service.install(owner,{requestId:randomUUID(),instanceId:created.id,expectedRevision:1,preview:previewFixture})])
  assert.equal(settled.filter(result=>result.status==='fulfilled').length,1)
@@ -98,6 +101,19 @@ test('并发 install 只有一个推进同一预期版本',async()=>{
  assert.equal((await service.get(owner,{instanceId:created.id})).revision,2)
  // 两侧都会调用宿主安装：宿主按 (owner,requestId)/(owner,package) 幂等，落败方重试会收敛到同一安装。
  assert.equal(installs,2)
+})
+
+test('首路已推进后才开始的同版本 install 在预检即拒绝，不调用宿主安装',async()=>{
+ const owner=randomUUID(),identity={id:randomUUID,now:()=>new Date().toISOString()},loads=new IndustryLoadService(pool,identity,source),load=await loads.create(owner,{requestId:randomUUID(),contentId:randomUUID(),contentHash:'9'.repeat(64),target:{kind:'new',spaceId:randomUUID(),name:'先后空间'}})
+ const installed:PluginInstallation={...installationFixture,id:randomUUID(),ownerId:owner}
+ let installs=0
+ const plugins={find:async()=>null,preview:async()=>previewFixture,install:async()=>{installs+=1;return {...installed,state:'preparing' as const}},reconcile:async()=>({...installed,state:'installed-active' as const})}
+ const service=new IndustryPluginService(pool,identity,loads,sourceReader(loads),plugins),created=await service.instantiate(owner,{requestId:randomUUID(),loadId:load.id,itemInstanceId:load.items[0]!.instanceId})
+ const first=await service.install(owner,{requestId:randomUUID(),instanceId:created.id,expectedRevision:1,preview:previewFixture})
+ assert.equal(first.revision,2)
+ await assert.rejects(service.install(owner,{requestId:randomUUID(),instanceId:created.id,expectedRevision:1,preview:previewFixture}),{code:'teloa/version-conflict'})
+ assert.equal((await service.get(owner,{instanceId:created.id})).revision,2)
+ assert.equal(installs,1)
 })
 
 test('激活后固定定义被篡改则回落为待安装的漂移投影并停止使用当前安装',async()=>{
