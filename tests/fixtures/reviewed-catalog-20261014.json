@@ -1,8 +1,8 @@
 {
-  "$comment": "DEV 开发验证夹具：从独立已审固定市场 d3e919 的 catalog/ 与 artifacts/ 原件派生，不代表公开提交、生产签名或线上发布。公开发行时须按最终实际公开市场来源重新核对。由市场仓 teloa-ai/marketplace 固定提交的 catalog/ 与 artifacts/ 派生，不从本仓快照生成。hosted 是随发行固定的托管快照（official-catalog-snapshot.ts），不带 marketplace 的旧宿主列表只返回这部分；upstream 是上游索引（official-upstream-index.json），只在 marketplace=teloa 的统一目录与按来源筛选时出现。total=hosted+upstream。",
+  "$comment": "测试期望：从独立公开市场 teloa-ai/marketplace 固定提交 241811b 的 catalog/ 与 artifacts/ 原件核对，不从本仓运行快照反推。hosted 是随发行固定的托管快照（official-catalog-snapshot.ts），不带 marketplace 的旧宿主列表只返回这部分；upstream 是上游索引（official-upstream-index.json），只在 marketplace=teloa 的统一目录与按来源筛选时出现。total=hosted+upstream。",
   "sourceRepository": "teloa-ai/marketplace",
-  "sourceCommit": "d3e919a31cb83d0e332473cb9d329e2559e91dd4",
-  "catalogVersion": "2026.10.16.2",
+  "sourceCommit": "241811b57ed1dc34eecd12dfebb77b177919d27e",
+  "catalogVersion": "2026.10.18.2",
   "total": 115,
   "solutions": [
     "teloa.grok-marketing-team",
