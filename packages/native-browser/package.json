@@ -1,6 +1,6 @@
 {
   "name": "@teloa/native-browser",
-  "version": "0.2.0-beta.6",
+  "version": "0.2.0-beta.7",
   "private": true,
   "type": "module",
   "description": "可选的官方 Playwright Browser Use 组合；安装后仍须显式启用提供方。",
