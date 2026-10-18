@@ -36,8 +36,11 @@ const restored=startup.reload?loadWorkbenchNavigationState(sessionStorage):start
 const store=createWorkbenchStore('light',restored).create();if(!restored)store.actions.navigate('spaces');attachWorkbenchNavigationPersistence(store,sessionStorage);
 const useStore=selector=>selector(useSyncExternalStore(store.subscribe,store.getSnapshot)),useSessions=selector=>selector({byId});
 const work=new BindingClient({list:async()=>[...rows.values()],read:async id=>rows.get(id),ensure:async id=>rows.get(id),isNativeChild:()=>false,catalog:async()=>({skills:[],tools:[]}),block:()=>{},current:()=>selected,open:id=>{selected=id;if(f.nativeOpenView==='messages')store.actions.openMessages('native');else if(f.nativeOpenView)store.actions.navigate(f.nativeOpenView);for(const l of listeners)l()},adopt:async id=>id,create:async p=>{const prior=[...rows.values()].find(row=>row.requestId===p.requestId);if(prior)return prior;f.creates++;if(f.holdCreate)await new Promise(r=>releaseCreate=r);const row={id:crypto.randomUUID(),ownerId:'self',title:p.title,version:1,status:'ready',sessionId:crypto.randomUUID(),requestedSessionId:'fixed',requestId:p.requestId,scopeIds:['general'],createdAt:stamp,...(p.workspaceId?{requestedWorkspaceId:p.workspaceId}:{})};rows.set(row.sessionId,row);byId[row.sessionId]={...row,displayTitle:row.title};if(f.loseCreate){f.loseCreate=false;throw Error('lost native create response')}return row}});
-const api={recentDaily:async({scope})=>{f.recentReads=(f.recentReads||0)+1;if(f.failRecent)throw Error('recent unavailable');return [...reservations.values()].filter(b=>b.kind==='daily'&&b.scope===scope).at(-1)||null},bySession:async({sessionId})=>{f.bindingReads++;if(f.failBinding||f.failBindingAt===f.bindingReads)throw Error('binding transient');return [...reservations.values()].find(b=>b.sessionId===sessionId||b.requestId===rows.get(sessionId)?.requestId)||null},byRequest:async({requestId})=>reservations.get(requestId),reserve:async p=>{let b=reservations.get(p.requestId);if(!b){b={...p,...(p.kind==='builder'?{draftId:crypto.randomUUID()}:{}),createdAt:stamp,updatedAt:stamp};reservations.set(p.requestId,b);draft={id:b.draftId,ownerId:'self',scope:'sales',revision:1,baseVersion:0,status:'draft',hash:'a'.repeat(64),createdAt:stamp,updatedAt:stamp,candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[],definitions:[],pages:[]}}}return b},bind:async p=>{const b={...reservations.get(p.requestId),sessionId:p.sessionId};reservations.set(p.requestId,b);return b},draft:async()=>draft,list:async()=>({items:[...reservations.values()].filter(b=>b.kind==='builder').map(binding=>({binding,draft:{id:binding.draftId,scope:'sales',title:'验收业务',revision:1,status:'draft',updatedAt:stamp}}))}),current:async input=>{f.calls.push('current');return f.formal?{...formal,scope:input.scope,manifest:{...formal.manifest,scope:input.scope,title:input.scope==='support'?'另一业务':'验收业务'}}:null},page:async input=>{f.pageReads=(f.pageReads||0)+1;return ({mode:'saved',scope:input.scope,configurationVersion:1,configurationHash:'a'.repeat(64),page:{kind:'records',definition:input.pageId==='review'?{...pageDefinition,id:'review',title:'复核页'}:pageDefinition,objectType:{...objectType,domain:input.scope},emptyState:'no-records'}})}};
-const pageDefinition={id:'records',title:'客户记录',kind:'records',objectType:'customer',fields:['name'],allowCreate:false,allowEdit:false,allowArchive:false};const objectType={format:'teloa.business-object-type/v1',id:'customer',domain:'sales',version:'1.0.0',title:'客户',unit:'条',lead:'客户',sourceId:'local',fields:[{name:'name',label:'名称',from:'名称',type:'text',required:false}]};const formal={scope:'sales',version:1,hash:'a'.repeat(64),createdAt:stamp,manifest:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[{sourceId:'local',kind:'local-records'}],definitions:[{kind:'object-type',localId:'customer',version:1,definitionHash:'a'.repeat(64)}],pages:[pageDefinition,{...pageDefinition,id:'review',title:'复核页'}],homePageId:'records'}};
+const api={recentDaily:async({scope})=>{f.recentReads=(f.recentReads||0)+1;if(f.failRecent)throw Error('recent unavailable');return [...reservations.values()].filter(b=>b.kind==='daily'&&b.scope===scope).at(-1)||null},bySession:async({sessionId})=>{f.bindingReads++;if(f.failBinding||f.failBindingAt===f.bindingReads)throw Error('binding transient');return [...reservations.values()].find(b=>b.sessionId===sessionId||b.requestId===rows.get(sessionId)?.requestId)||null},byRequest:async({requestId})=>reservations.get(requestId),reserve:async p=>{let b=reservations.get(p.requestId);if(!b){b={...p,...(p.kind==='builder'?{draftId:crypto.randomUUID()}:{}),createdAt:stamp,updatedAt:stamp};reservations.set(p.requestId,b);draft={id:b.draftId,ownerId:'self',scope:'sales',revision:1,baseVersion:0,status:'draft',hash:'a'.repeat(64),createdAt:stamp,updatedAt:stamp,candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[],definitions:[],pages:[]}}}return b},bind:async p=>{const b={...reservations.get(p.requestId),sessionId:p.sessionId};reservations.set(p.requestId,b);return b},draft:async()=>draft,list:async()=>({items:[...reservations.values()].filter(b=>b.kind==='builder').map(binding=>({binding,draft:{id:binding.draftId,scope:'sales',title:'验收业务',revision:1,status:'draft',updatedAt:stamp}}))}),current:async input=>{f.calls.push('current');return f.formal?{...formal,scope:input.scope,manifest:{...formal.manifest,scope:input.scope,title:input.scope==='support'?'另一业务':'验收业务'}}:null},page:async input=>{f.pageReads=(f.pageReads||0)+1;if(input.pageId==='statistics')return dashboardPage(input.scope);return ({mode:'saved',scope:input.scope,configurationVersion:1,configurationHash:'a'.repeat(64),page:{kind:'records',definition:input.pageId==='review'?{...pageDefinition,id:'review',title:'复核页'}:pageDefinition,objectType:{...objectType,domain:input.scope},emptyState:'no-records'}})}};
+// 看板与记录各用真实页面种类，不能再由记录页冒充统计看板。
+const dashboardDefinition={id:'statistics',title:'客户统计',kind:'dashboard',dashboardId:'review'};
+const dashboardPage=scope=>({mode:'saved',scope,configurationVersion:1,configurationHash:'a'.repeat(64),page:{kind:'dashboard',definition:dashboardDefinition,dashboard:{format:'teloa.business-dashboard/v1',id:'review',version:'1.0.0',domain:scope,title:'客户统计',widgets:['customer-count'],layout:[{widget:'customer-count',x:0,y:0,w:12,h:2}],refresh:{kind:'every',seconds:300},acknowledgeShortInterval:false},widgets:[{format:'teloa.business-widget/v1',id:'customer-count',version:'1.0.0',domain:scope,title:'客户总数',kind:'metric',query:'select 0 as n',metric:{valueColumn:'n'}}],viewRefs:[],timeRange:'all',results:[{widgetId:'customer-count',definitionHash:'a'.repeat(64),computedAt:stamp,status:'ok',columns:[{name:'n',type:'number'}],rows:[[0]],rowCount:1,truncated:false,bytes:1,stale:false}]}});
+const pageDefinition={id:'records',title:'客户记录',kind:'records',objectType:'customer',fields:['name'],allowCreate:false,allowEdit:false,allowArchive:false};const objectType={format:'teloa.business-object-type/v1',id:'customer',domain:'sales',version:'1.0.0',title:'客户',unit:'条',lead:'客户',sourceId:'local',fields:[{name:'name',label:'名称',from:'名称',type:'text',required:false}]};const formal={scope:'sales',version:1,hash:'a'.repeat(64),createdAt:stamp,manifest:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[{sourceId:'local',kind:'local-records'}],definitions:[{kind:'object-type',localId:'customer',version:1,definitionHash:'a'.repeat(64)},{kind:'dashboard',localId:'review',version:1,definitionHash:'a'.repeat(64)},{kind:'widget',localId:'customer-count',version:1,definitionHash:'a'.repeat(64)}],pages:[pageDefinition,{...pageDefinition,id:'review',title:'复核页'},dashboardDefinition],homePageId:'records'}};
 const record={scope:'sales',type:'customer',id:'customer-one',version:3,snapshotHash:'b'.repeat(64),title:'客户甲',source:'local',observedAt:stamp,receivedAt:stamp,quality:'complete',summary:'',fields:[]};
 const controller=new BusinessBuilderController({api,work,storage:localStorage,identity:async()=>{if(f.holdIdentity)await new Promise(r=>releaseIdentity=r);if(f.identityFails)throw Error('identity failed');return space.id},subscribeNative:listener=>{nativeListeners.add(listener);return()=>nativeListeners.delete(listener)},contextCall:async(endpoint,p)=>{if(endpoint==='work-context/read')return contexts.get(p.sessionId)||null;const value={sessionId:p.sessionId,scopeId:p.scopeId,roleId:p.roleId,version:1,locked:false};contexts.set(p.sessionId,value);return value},switching:{read:()=>({mainSessionId:selected,bindingSessionId:selected,bindingReady:f.nativeReady,input:!f.nativeReady?undefined:selected?(inputs.get(selected)||emptyInput):null,pendingSubmissions:[],monitor:undefined})},block:(id,reason)=>{if(reason)f.blocks[id]=reason;else delete f.blocks[id]},watch:()=>()=>{},id:()=>crypto.randomUUID()});
 const management=new ConversationManagement(()=>[...rows.values()]);const managementState={ready:true,baseline:true,archived:[],workspaces:[{workspaceId:'workspace',title:'工作目录',path:'/fixture',sessionIds:[]}]};management.attach({state:()=>managementState,subscribe:()=>()=>{},summary:()=>({title:'会话',running:false,blank:false})});
@@ -83,7 +86,8 @@ async function mount(t:any,locale='zh-CN',startup:Record<string,unknown>={}){
 
 async function openSetup(page:any,en=false){
  const panel=page.getByRole('region',{name:en?'Employees and capabilities':'员工与能力'})
- if(!await panel.isVisible())await page.getByRole('button',{name:en?'View setup details':'查看配置详情',exact:true}).click()
+ if(!await panel.isVisible())await page.getByRole('button',{name:en?'Business settings':'业务设置',exact:true}).click()
+ await page.getByRole('dialog',{name:en?'View setup details':'查看配置详情',exact:true}).waitFor()
  await panel.getByText(en?'Not assigned; configure later':'未设置，可稍后配置',{exact:true}).waitFor()
 }
 
@@ -96,16 +100,16 @@ async function reloadFrame(page:any,startup:Record<string,unknown>){
 test('真实Frame刷新精确业务看板不受无关扩展目录失败阻塞，本人回首页后刷新仍留首页',async t=>{
  const startup={formal:true,failIndustry:true},p=await mount(t,'zh-CN',startup)
  await p.evaluate(()=>(window as any).frameFixture.openExact())
- await p.getByRole('heading',{level:2,name:'客户记录',exact:true}).waitFor()
+ await p.getByRole('heading',{level:2,name:'客户统计',exact:true}).waitFor()
  const target=await p.evaluate(()=>(window as any).frameFixture.state().businessTarget)
  await reloadFrame(p,startup)
- await p.getByRole('heading',{level:2,name:'客户记录',exact:true}).waitFor()
+ await p.getByRole('heading',{level:2,name:'客户统计',exact:true}).waitFor()
  assert.deepEqual(await p.evaluate(()=>(window as any).frameFixture.state().businessTarget),target)
  await p.getByRole('navigation',{name:'页面位置',exact:true}).getByRole('button',{name:'业务',exact:true}).click()
  await p.locator('article').getByRole('button',{name:/^验收业务/}).waitFor()
  await reloadFrame(p,startup)
  await p.locator('article').getByRole('button',{name:/^验收业务/}).waitFor()
- assert.equal(await p.getByRole('heading',{level:2,name:'客户记录',exact:true}).isVisible(),false)
+ assert.equal(await p.getByRole('heading',{level:2,name:'客户统计',exact:true}).isVisible(),false)
  assert.deepEqual(await p.evaluate(()=>{const f=(window as any).frameFixture;return [f.creates,f.prepares]}),[0,0])
 })
 
@@ -127,18 +131,20 @@ test('真实Frame刷新对象清单下钻及固定记录保留对象类型、筛
 const legacyBusinessNavigation={schema:'teloa.workbench-navigation/v1',view:'spaces',messageMode:'native',capabilityMode:'catalog',marketMode:'catalog',selected:{},directories:{spaces:{category:'sales:dashboards:review'}},detail:{open:false,target:null}}
 test('真实Frame兼容无首页标记的旧精确看板记录',async t=>{
  const p=await mount(t,'zh-CN',{formal:true,failIndustry:true,savedNavigation:legacyBusinessNavigation})
- await p.getByRole('heading',{level:2,name:'客户记录',exact:true}).waitFor()
+ await p.getByRole('heading',{level:2,name:'客户统计',exact:true}).waitFor()
  assert.deepEqual(await p.evaluate(()=>(window as any).frameFixture.state().businessTarget),{scope:'sales',section:'dashboards',dashboardId:'review'})
 })
 
 test('真实Frame正式业务页签刷新恢复原pageId，切业务不借用另一范围的页签',async t=>{
  const startup={formal:true},p=await mount(t,'zh-CN',startup)
  await p.evaluate(()=>(window as any).frameFixture.openExact())
+ await p.getByRole('navigation',{name:'业务页面',exact:true}).getByRole('button',{name:'业务内容',exact:true}).click()
  await p.getByRole('navigation',{name:'业务页面',exact:true}).getByRole('button',{name:'复核页',exact:true}).click()
  await p.getByRole('heading',{level:2,name:'复核页',exact:true}).waitFor()
  await reloadFrame(p,startup)
  await p.getByRole('heading',{level:2,name:'复核页',exact:true}).waitFor()
  assert.equal(await p.getByRole('navigation',{name:'业务页面',exact:true}).getByRole('button',{name:'复核页',exact:true}).getAttribute('aria-current'),'page')
+ assert.deepEqual(await p.evaluate(()=>(window as any).frameFixture.state().navigationDirectories.spaces.businessPage),{scope:'sales',pageId:'review'})
  await p.evaluate(()=>(window as any).frameFixture.openBusiness({scope:'support',section:'data'}))
  await p.getByRole('heading',{level:2,name:'客户记录',exact:true}).waitFor()
 })
@@ -154,6 +160,7 @@ for(const locale of ['zh-CN','en'])for(const width of [1000,1400])test(locale+'/
  const p=await mount(t,locale,{formal:true}),en=locale==='en'
  await p.setViewportSize({width,height:1000});await p.evaluate(()=>(window as any).frameFixture.openExact())
  const panel=()=>p.getByRole('region',{name:en?"Employees and capabilities":"员工与能力"})
+ await p.getByRole('navigation',{name:en?'Business pages':'业务页面'}).getByRole('button',{name:en?'Records':'业务内容',exact:true}).click()
  await p.getByRole('navigation',{name:en?'Business pages':'业务页面'}).getByRole('button',{name:'复核页',exact:true}).click()
  await p.getByRole('heading',{level:2,name:'复核页',exact:true}).waitFor()
  const target=await p.evaluate(()=>(window as any).frameFixture.state().businessTarget)
@@ -186,8 +193,6 @@ test('真实Frame消费→清请求→另一业务新请求保持单调serial并
  const p=await mount(t,'zh-CN',{formal:true});await p.evaluate(()=>(window as any).frameFixture.openExact())
  const configure=async()=>{
   const panel=p.getByRole('region',{name:"员工与能力"})
-  // 独立业务总览不挂配置面板；沿实际业务内容入口继续核对原配置请求。
-  if(!await panel.isVisible())await p.getByRole('navigation',{name:'业务页面'}).getByRole('button',{name:'业务内容',exact:true}).click()
   await openSetup(p);await panel.locator('summary').filter({has:p.getByText('本机连接',{exact:true})}).click();await panel.getByRole('button',{name:'配置 CRM',exact:true}).click();await p.getByRole('button',{name:/^返回/,exact:false}).waitFor();return p.evaluate(()=>(window as any).frameFixture.marketRequest)
  }
  const first=await configure();assert.equal(first.catalogId,'official-crm')

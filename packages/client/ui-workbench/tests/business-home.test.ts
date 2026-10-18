@@ -335,9 +335,9 @@ test('首页把摘要摆在卡上：每段是按钮，点一下把落点交给�
  assert.ok(summary,'有东西的业务必须在卡上摆摘要行')
  const segments=nodes(summary).filter(node=>node.type==='button')
  assert.deepEqual(segments.map(text),[
-  'composition.unit.staff:'+JSON.stringify({count:'1',views:'0'}),
-  'composition.unit.source:'+JSON.stringify({count:'1',views:'0'}),
-  'composition.unit.extension:'+JSON.stringify({count:'1',views:'0'}),
+  'composition.unit.staff.one:'+JSON.stringify({count:'1',views:'0'}),
+  'composition.unit.source.one:'+JSON.stringify({count:'1',views:'0'}),
+  'composition.unit.extension.one:'+JSON.stringify({count:'1',views:'0'}),
  ])
  for(const segment of segments)segment.props.onClick()
  assert.deepEqual(went,[{kind:'team',scope:'SOC'},{kind:'connectors'},{kind:'market',category:'plugin'}])
