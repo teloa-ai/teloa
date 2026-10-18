@@ -38,6 +38,12 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 
 [See the actual Community workspace →](https://www.teloa.ai/en/#screenshots)
 
+## 30-second workspace tour
+
+https://github.com/user-attachments/assets/39aa63bc-29ac-4c0d-9c38-834039a4fb4d
+
+Community 0.2.1 · Actual interface with sample data. [Watch with captions](https://www.teloa.ai/en/#film)
+
 ## Quick start
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.

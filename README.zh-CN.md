@@ -38,6 +38,12 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 [查看社区版真实界面 →](https://www.teloa.ai/#screenshots)
 
+## 30 秒，看看真实工作台
+
+https://github.com/user-attachments/assets/0aa78740-9807-4900-a866-6c0352fe4eff
+
+社区版 0.2.1 实际界面，使用示例数据。 [观看字幕版](https://www.teloa.ai/#film)
+
 ## 快速开始
 
 需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。
