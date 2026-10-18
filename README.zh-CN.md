@@ -42,7 +42,19 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。
 
-当前预览版为 **0.2.0-beta.7**。原生安装包随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.7) 提供，已在 macOS arm64 上验证；其他操作系统尚未针对本预览版验证。npm 注册表与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 仍为此前的 **0.2.0-alpha.7**。下方仍保留源码构建方式。
+当前预览版为 **0.2.0-beta.7**。原生安装包随 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.7) 提供，已在 macOS arm64 上验证；[Docker Hub](https://hub.docker.com/r/teloa/teloa) 提供同版 **Linux ARM64** 镜像。npm 注册表仍为 **0.2.0-alpha.7**。下方仍保留源码构建方式。
+
+### 本次 Beta 更新重点
+
+- **项目与项目记忆**：专属项目会话，简报、规则、选用资料和有来源的记忆进入模型上下文，可核对本次使用、处理候选与撤回。
+- **资料索引与本地模型**：登记选定的本机 Markdown 文件、建立索引和查看引用；嵌入模型与 Ollama 聊天模型分别准备和管理。检索摘录可能发往所选远程聊天模型。
+- **员工、团队与协作**：完整团队资源、独立员工会话分类、群主消息回复与话题、明确提及，以及 Auto Dream 整理的有来源员工经验。
+- **任务与成果**：Markdown 工作说明、带上下文的草案、审批、成果版本和反馈续改；可将已确认方法保存为技能或暂停的计划草案。
+- **语音与小松鼠**：本地转写、语音留言与通话、三家播报服务、连续播报，MiniMax 中英文音色列表与试听。
+- **执行与文件**：临时执行小组、Workflow / PTC / 本人明确要求的 Ralph、外部编程 Agent 与文件预览；可选浏览器、电脑能力仍需独立配置和授权。
+- **业务与应用**：自然语言业务草案、确认后的记录变更与验收成果关联，更清楚的看板页面，以及市场和应用文案整理。
+
+以上覆盖本版能力与改进，并非全部首次新增。升级前请查看[完整更新说明与使用条件](https://docs.teloa.ai/changelog/)。
 
 ### 从 GitHub Release 原生安装
 
@@ -60,18 +72,18 @@ npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download
 Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.0-beta.7 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.0-beta.7`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。如需安装注册表中的上一版本，使用 `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`。
 
 <details>
-<summary><strong>Docker Hub + Compose（0.2.0-alpha.7）</strong></summary>
+<summary><strong>Docker Hub + Compose（0.2.0-beta.7）</strong></summary>
 
 ### Docker Hub + Compose
 
 先安装带 Compose 的 Docker，并启动 Docker 引擎。正式镜像及以下配置已验 **Linux ARM64**；**amd64 尚未验证**。Teloa、DSH 与 PostgreSQL 均在容器内运行，本机不需要安装 Node.js 或 pnpm。
 
-将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.0-alpha.7`，沿用持久数据卷与自动生成的数据库口令。
+将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.0-beta.7`，沿用持久数据卷与自动生成的数据库口令。
 
 ```sh
 mkdir teloa-community
 cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
+curl --fail --location https://docs.teloa.ai/downloads/0.2.0-beta.7/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
 docker compose ps

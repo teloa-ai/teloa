@@ -42,7 +42,19 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.0-beta.7** is the current preview. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.7) and has been verified on macOS arm64; other operating systems have not been verified for this preview. The npm registry and [Docker Hub](https://hub.docker.com/r/teloa/teloa) still provide the earlier **0.2.0-alpha.7**. Source builds remain available below.
+**0.2.0-beta.7** is the current preview. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.0-beta.7) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. The npm registry still provides **0.2.0-alpha.7**. Source builds remain available below.
+
+### What changes in this Beta
+
+- **Projects and project memory:** dedicated project conversations, briefs, rules, relevant materials and sourced memories in model context, with review and withdrawal controls.
+- **Knowledge and local models:** selected local Markdown files, indexes and cited retrieval; separately prepare embedding models or manage local chat models with Ollama. Retrieved excerpts may reach your chosen remote chat model.
+- **Employees, teams and collaboration:** complete team resources, separate employee conversations, group-stream replies and topics, explicit mentions, and sourced employee experience through Auto Dream.
+- **Tasks and deliverables:** Markdown task descriptions, contextual drafts, approvals, versioned results and feedback-driven revisions; reusable methods can become skills or paused plan drafts.
+- **Voice and the companion:** local transcription, voice messages and calls, three speech providers, continuous playback and MiniMax bilingual voice lists with preview.
+- **Execution and files:** temporary execution teams, Workflow/PTC/explicit Ralph, native coding-agent integrations and file previews; optional browser/desktop tools remain separately configured and authorized.
+- **Business and apps:** natural-language business drafts, approved record changes and accepted-result links, cleaner dashboard pages, and current marketplace/app terminology.
+
+These are the complete Beta capabilities and improvements, not features that are all new. Read the [full update and configuration boundaries](https://docs.teloa.ai/en/changelog/) before upgrading.
 
 ### Native installation from the GitHub Release
 
@@ -60,18 +72,18 @@ npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download
 Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.0-beta.7 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.0-beta.7` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). To install the earlier registry release instead, use `npm install --ignore-scripts @teloa/cli@0.2.0-alpha.7`.
 
 <details>
-<summary><strong>Docker Hub with Compose (0.2.0-alpha.7)</strong></summary>
+<summary><strong>Docker Hub with Compose (0.2.0-beta.7)</strong></summary>
 
 ### Docker Hub with Compose
 
 Install Docker with Compose and start the engine. The published image and the configuration below have been verified on **Linux ARM64**; **amd64 has not been verified**. Teloa, DSH and PostgreSQL run in containers, so host Node.js and pnpm are not required.
 
-Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.0-alpha.7` for both initialization and the application, with persistent data volumes and a generated database password.
+Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.0-beta.7` for both initialization and the application, with persistent data volumes and a generated database password.
 
 ```sh
 mkdir teloa-community
 cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.0-alpha.7/compose.yaml --output compose.yaml
+curl --fail --location https://docs.teloa.ai/downloads/0.2.0-beta.7/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
 docker compose ps
