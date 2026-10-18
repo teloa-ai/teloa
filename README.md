@@ -40,9 +40,9 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 
 ## 30-second workspace tour
 
-https://github.com/user-attachments/assets/39aa63bc-29ac-4c0d-9c38-834039a4fb4d
+https://github.com/user-attachments/assets/24f31f10-8df6-46fc-b631-e54ca66ad3fe
 
-Community 0.2.1 · Actual interface with sample data. [Watch with captions](https://www.teloa.ai/en/#film)
+Community 0.2.2 · Actual interface with sample data. [Watch with captions](https://www.teloa.ai/en/#film)
 
 ## Quick start
 
