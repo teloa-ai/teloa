@@ -173,17 +173,9 @@ pnpm dev:dsh
 
 **业务**组织记录、员工与资源；**AI 员工**承担职责；**技能**提供方法；**资料**提供依据；**连接器**接入系统。**任务**记录一次交办，**成果**保留交付内容，**看板**汇总业务记录与状态。
 
-```mermaid
-flowchart LR
-    goal["目标与业务记录"] --> task["任务"]
-    task --> employee["AI 员工"]
-    knowledge["资料与技能"] --> employee
-    connector["已授权的工具与连接"] --> employee
-    employee --> result["执行进度与成果"]
-    result --> review["本人核对与验收"]
-    review --> records["关联业务记录"]
-    records --> dashboard["业务看板"]
-```
+![Teloa 社区版中的内容运营业务：业务内容页列出示例记录，统计看板、AI 员工、协作群与项目在同一业务内](https://docs.teloa.ai/assets/screenshots/business-page.dbe8205a89b9.png)
+
+*0.2.0-beta.6 界面，示例数据。一个业务把记录、看板、AI 员工、协作群与项目放在一起；“询问或交办”从这里发起工作。*
 
 以**安全运营（SOC）**为例：
 
@@ -195,9 +187,9 @@ flowchart LR
 
 添加团队模板不会自动连接账号、授权员工或启动定时工作。这些配置由你决定。
 
-![内容运营总览看板（示例数据）](https://docs.teloa.ai/assets/screenshots/business-dashboard.b114facc9a48.png)
+![内容运营总览看板（示例数据）](https://docs.teloa.ai/assets/screenshots/business-dashboard.9e0423873484.png)
 
-*各业务的看板用法相同。此例为 0.2.0-beta.3 界面中市场采用的内容运营看板与 10 条示例记录，不是实时数据。*
+*各业务的看板用法相同。此例为 0.2.0-beta.6 界面中市场采用的内容运营看板与 10 条示例记录，不是实时数据。*
 
 SOC 是首个完整业务流程场景。客户交付、内容运营、电商零售、软件研发、教育培训、门店服务和其他安全方向是**后续场景示例**，不代表这些集成已经完成。见[行业场景与业务组合](https://docs.teloa.ai/tutorials/industry-examples)和 [SOC 使用教程](https://docs.teloa.ai/tutorials/soc-triage)。
 
