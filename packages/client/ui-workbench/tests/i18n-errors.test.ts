@@ -65,7 +65,7 @@ test('添加同事的未知、并发和浏览器存储错误使用安全明确�
  assert.doesNotMatch(localizeWorkError('zh-CN',pending),/秘密|稍后再试/)
  const industry=createIndustryRoleApi(async()=>{throw Object.assign(Error('秘密内部堆栈'),{rejected:true,code:'teloa/forbidden'})})
  let industryPending:unknown;try{await industry.instantiate({requestId:'11111111-1111-4111-8111-111111111111',loadId:'22222222-2222-4222-8222-222222222222',itemInstanceId:'33333333-3333-4333-8333-333333333333'})}catch(error){industryPending=error}
- assert.match(localizeWorkError('zh-CN',industryPending),/原方案/)
+ assert.match(localizeWorkError('zh-CN',industryPending),/原模板/)
  for(const [code,hint] of [['teloa/role-create-busy','正在'],['teloa/recovery-write-failed','保存'],['teloa/recovery-clear-failed','清理']])assert.ok(localizeWorkError('zh-CN',{code,message:'秘密内部堆栈'}).includes(hint!))
  for(const code of ['teloa/role-create-pending','teloa/industry-role-pending','teloa/role-create-busy','teloa/recovery-write-failed','teloa/recovery-clear-failed']){
   assert.notEqual(errorMessageKey(code),'error.unknown')
