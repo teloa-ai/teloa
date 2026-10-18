@@ -18,7 +18,7 @@ import {deliveryReviewToolName,createReviewSourceCatalog} from '../src/task-deli
 import {readRevisionSubmission} from '../src/task-delivery-review-protocol.ts'
 import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 import {readSessionEvents} from '../src/session-events.ts'
-import {assertOwnerReviewMessage,conversationWorkRequestId} from '../src/conversation-work-instruction.ts'
+import {assertOwnerReviewMessage,readOwnerReviewMessage,conversationWorkRequestId} from '../src/conversation-work-instruction.ts'
 import {TaskRunDriver} from '../src/task-run-driver.ts'
 const hash=(text:string)=>createHash('sha256').update(text).digest('hex')
 const original='仅用预算12000元、已支出4500元整理一份周会行动单；未知预算需求不作充分性判断。'
@@ -174,6 +174,7 @@ test('无skills owner通过真实SDK三阶段：原始草稿→修正→验收�
   const event=events.find(event=>event.type==='user/message'&&event.data.source.kind==='user');assert.ok(event?.type==='user/message')
   const fixed={source:{sessionId:agent.id,messageId:event.data.id,messageSeq:event.seq,requestId:conversationWorkRequestId('owner',agent.id,'rpc')},sourceText:event.data.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')}
   assert.doesNotThrow(()=>assertOwnerReviewMessage('owner',agent.session,fixed))
+  assert.equal(readOwnerReviewMessage('owner',agent.session,fixed.source),fixed.sourceText)
   for(const patch of [{messageId:'other'},{messageSeq:event.seq+1},{sessionId:'other'},{requestId:'40000000-0000-4000-8000-000000000004'}])assert.throws(()=>assertOwnerReviewMessage('owner',agent.session,{...fixed,source:{...fixed.source,...patch}}),{code:'teloa/forbidden'})
   assert.throws(()=>assertOwnerReviewMessage('other-owner',agent.session,fixed),{code:'teloa/forbidden'})
   assert.throws(()=>assertOwnerReviewMessage('owner',agent.session,{...fixed,sourceText:'被替换的原文'}),{code:'teloa/forbidden'})

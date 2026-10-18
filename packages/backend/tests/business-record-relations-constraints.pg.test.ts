@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {BusinessDefinitionSourceReader} from '../src/work/business-definition-source.ts'
@@ -13,18 +13,16 @@ import {lockBusinessConfiguration} from '../src/work/business-configuration-lock
 import type {BusinessObjectTypeDefinitionV2,BusinessRecordCreate} from '@teloa/contract'
 
 let pool:Pool,container:StartedPostgreSqlContainer
-const open=new Set<PoolClient>()
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 const unavailable=async():Promise<never>=>{throw Error('不得访问市场或外部来源')}
 before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start()
- pool=new Pool({connectionString:container.getConnectionUri()});pool.on('connect',client=>open.add(client));pool.on('remove',client=>open.delete(client))
+ pool=new Pool({connectionString:container.getConnectionUri()})
  await api.initializeBusinessSpaces(pool);await api.initializeBusinessDefinitions(pool);await api.initializeBusinessConfigurations(pool);await api.initializeBusinessRuntime(pool);await api.initializeBusinessData(pool);await api.initializeBusinessWarehouse(pool);await api.initializeBusinessSnapshotReferences(pool);await api.initializeBusinessRecords(pool)
 },{timeout:120000})
-// pool.end() 在各连接 socket 真正关闭前就已回调；须等全部 remove，否则 stop() 的 SIGTERM 会让尚未断开的连接收到 57P01，经池 error 事件在用例结束后变成 uncaughtException。
-after(async()=>{await pool?.end();while(open.size)await new Promise<void>(resolve=>pool.once('remove',()=>resolve()));await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(uniqueFields:string[]|null=['code','customers']){
  const drafts=new api.BusinessConfigurationDraftService(pool,identity),store=new api.BusinessConfigurationStore(pool)
  const definitions=new BusinessDefinitionSourceReader({get:unavailable,getInTransaction:unavailable},{get:unavailable,getInTransaction:unavailable,listInTransaction:async()=>({items:[],hasMore:false})},{activeSourceIds:unavailable},undefined,store)

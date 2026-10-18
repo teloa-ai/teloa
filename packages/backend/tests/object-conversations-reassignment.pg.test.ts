@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {initializeTasks,TaskService} from '../src/work/tasks.ts'
@@ -23,7 +23,7 @@ before(async()=>{
  observer=new Pool({connectionString,max:3,statement_timeout:6000,lock_timeout:4000})
  await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool)
 },{timeout:180_000})
-after(async()=>{await pool?.end();await observer?.end();await container?.stop()})
+after(async()=>{await pool?.end();await observer?.end();await stopTestContainer(container)})
 
 test('Twin Task 上下文沿本人原任务确认续作，撤销后保持历史关联并拒绝新上下文',{timeout:20000},async()=>{
  const owner=randomUUID(),role=await new RoleService(pool,identity).ensurePersonalTwin(owner)

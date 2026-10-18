@@ -34,7 +34,7 @@ import type { MarketContentApi } from './market-content-api.js'
 import type {GithubSourceApi} from './github-source-api.js'
 import {localizedMarketItemCopy,localizedMarketItemDetailCopy,localizedMarketResourceEntryTitle,localizedMarketResourceUseTitle,marketCatalogItemCopy,marketCategoryKind,marketCategoryLabel,marketCategoryOf,marketItemPresentation,marketResourcePresentation,marketVisibilityLabel,restoredMarketCategory,marketPrimaryItem,marketItemGroup,marketResourceGroup,solutionRoleCount,type MarketBrowseKind,type MarketPrimaryView,type MarketCategory} from './market-home-presentation.js'
 import { ItemArt, SolutionCards, StateMark } from './SolutionCards.js'
-import {currentSolutionCatalog,localReadOnlyConnections,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionMark,solutionMembers,solutionRowResources} from './market-solution-presentation.js'
+import {currentSolutionCatalog,localReadOnlyConnections,marketItemMark,marketResourceMark,solutionInstalled,solutionAdded,solutionMark,solutionMembers,solutionRowResources} from './market-solution-presentation.js'
 import {COMPOSITION_EXTENSION_NOTE_KEY,COMPOSITION_ROWS,composeFromManifest,compositionCountText,compositionMethodNote,compositionSummary,connectorModeLabel,sourceConnectorMode} from './industry-composition.js'
 import {ContextDrawer} from './ContextDrawer.js'
 import {StaffAvatar} from './StaffAvatar.js'
@@ -296,7 +296,7 @@ function MarketCatalog(props:MarketProps&{runtime:MarketSkillRuntime;runtimeChan
     // 团队方案卡第三行先写「N 位 AI 员工」（原型 B card-meta），员工卡写作者
     const members=solutionRoleCount(item)??0
     return {key:item.id,title:copy.title,summary:copy.summary,credit:members>1?t('market.primary.teamMembers',{count:members.toLocaleString(locale)}):item.author,group:t(marketItemGroup(item)),facts:contains?t('market.solution.contains' as Parameters<typeof t>[0],{list:contains}):marketItemPresentation(item,props.industryLoads.loads,props.runtime,t).source,
-      tag:builtinIds.has(item.id)?t('market.solution.builtinTag'):t('market.catalog.localTag'),mark:allCategory||primaryView?marketItemMark(item,props.industryLoads.loads,props.runtime):solutionMark({loaded:solutionInstalled(item,props.industryLoads.loads),restartRequired:false}),
+      tag:builtinIds.has(item.id)?t('market.solution.builtinTag'):t('market.catalog.localTag'),mark:allCategory||primaryView?marketItemMark(item,props.industryLoads.loads,props.runtime):solutionMark({loaded:solutionAdded(item,props.industryLoads.loads),restartRequired:false}),
       art:{kind:allCategory||primaryView?marketCategoryOf(item):'industry',seed:item.id},taxonomy:marketItemTaxonomy(item),open:()=>openItem(item.id),current:lastSelectedId===item.id,...(item.contentStorage?{contentId:item.contentStorage.contentId}:{})}
   })
   const resourceListRows=():MarketListRow[]=>filterMarketResources(localResourceRows,{kind:'all',query,referencedIndustry:'all',capability:'all',searchValues:row=>[localizedMarketResourceEntryTitle(row,locale),...row.uses.map(use=>localizedMarketResourceUseTitle(use,locale))]}).map(row=>{
@@ -314,10 +314,10 @@ function MarketCatalog(props:MarketProps&{runtime:MarketSkillRuntime;runtimeChan
   const officialSection=(primaryView||allCategory||catalogKind)&&props.marketCatalogApi?<MarketCatalogSection search={primaryView?searchControl:undefined} presentation={primarySearch?undefined:primaryView} cardLayout={!!primaryView||!!props.inCapabilityCenter} key={primarySearch?'search':primaryView??catalogKind} api={props.marketCatalogApi} onCounts={setCatalogCounts} {...catalogActions} query={query} openContent={openCatalogContent} kinds={catalogKinds} onResetQuery={()=>{setQuery('');rememberNavigation({query:''})}} localRows={[]} label={primaryView?t(primaryView==='apps'?'market.primary.apps':primaryView==='employees'?'market.primary.employees':'market.primary.teams'):allCategory?t('capabilityCenter.all'):marketCategoryLabel(t,listKind)}/>:null
   const templateRows=filterTaxonomyRows(rows,marketItemTaxonomy,templateTaxonomy)
   const primaryFilteredRows=filterTaxonomyRows(primaryRows,row=>row.taxonomy,templateTaxonomy)
-  const addedCount=solutionInstalledCount(currentCatalog,props.industryLoads.loads)
   const localTemplates=currentCatalog.filter(item=>marketCategoryOf(item)==='work-template')
   const nativeApps=currentCatalog.filter(item=>item.resourceKind==='plugin'&&(!query.trim()||[localizedMarketItemCopy(item,locale).title,item.summary].some(value=>value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))))
-  const addedSolutions=currentCatalog.filter(item=>marketCategoryOf(item)==='industry'&&solutionInstalled(item,props.industryLoads.loads))
+  const addedSolutions=currentCatalog.filter(item=>solutionAdded(item,props.industryLoads.loads))
+  const addedCount=addedSolutions.length
   const storedAppContents=marketItems.flatMap<AppsStoredContent>(item=>{
     const contentId=item.contentStorage?.contentId,contentHash=item.packageContent?.hash??item.hash
     if(item.source.kind!=='stored'||!contentId||!contentHash)return []

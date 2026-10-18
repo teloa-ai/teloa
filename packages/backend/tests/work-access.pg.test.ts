@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {workAccess,type WorkAccessRequest} from '../src/work/work-access.ts'
 import {initializeMarketContents} from '../src/market/content-store.ts'
@@ -45,7 +45,7 @@ before(async()=>{
  await initializePlans(pool);await initializePlanOccurrences(pool)
  await initializeBusinessSpaces(pool);await initializeBusinessConversationBindings(pool);await initializeBusinessReassignments(pool)
 },{timeout:120000})
-after(async()=>{await locks?.end();await pool?.end();await container?.stop()})
+after(async()=>{await locks?.end();await pool?.end();await stopTestContainer(container)})
 /** 屏障只延迟本用例的真实PG query回包，SQL已在原事务执行；随后必须实际rollback。 */
 function afterQuery(real:Pool,match:(sql:string)=>boolean,change:()=>void):Pool{
  let consumed=false

@@ -45,7 +45,7 @@ export const zhHantMessages = {
   'team.detail.back': '全部員工',
   'team.action.assign': '交辦任務',
   'team.action.edit': '編輯職責與範圍',
-  'task.action.viewAll': '全部 {count} 項',
+  'task.action.viewAll': '任務 {count} 項',
   'task.search': '搜尋任務、目標或物件',
   'task.empty.none': '目前還沒有任務',
   'task.empty.noMatch': '找不到符合條件的任務',

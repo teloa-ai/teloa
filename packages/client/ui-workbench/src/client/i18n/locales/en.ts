@@ -45,7 +45,7 @@ export const enMessages = {
   'team.detail.back': 'All employees',
   'team.action.assign': 'Assign task',
   'team.action.edit': 'Edit responsibilities and scope',
-  'task.action.viewAll': 'All {count} items',
+  'task.action.viewAll': '{count} tasks',
   'task.search': 'Search tasks, goals, or objects',
   'task.empty.none': 'No tasks yet',
   'task.empty.noMatch': 'No matching tasks',

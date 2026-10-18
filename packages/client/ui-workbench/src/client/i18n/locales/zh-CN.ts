@@ -45,7 +45,7 @@ export const zhCNMessages = {
   'team.detail.back': '全部员工',
   'team.action.assign': '交办任务',
   'team.action.edit': '编辑职责与范围',
-  'task.action.viewAll': '全部 {count} 项',
+  'task.action.viewAll': '任务 {count} 项',
   'task.search': '搜索任务、目标或对象',
   'task.empty.none': '还没有任务',
   'task.empty.noMatch': '没有匹配的任务',

@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
@@ -12,7 +12,7 @@ import {testRoleResponsibility} from './role-test-fixture.ts'
 let container:StartedPostgreSqlContainer,pool:Pool,locks:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri(),max:1,connectionTimeoutMillis:1000,statement_timeout:4000});locks=new Pool({connectionString:container.getConnectionUri(),max:1});await initializeRoles(pool);await initializeTasks(pool);await initializeConversationWork(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool)})
-after(async()=>{await locks?.end();await pool?.end();await container?.stop()})
+after(async()=>{await locks?.end();await pool?.end();await stopTestContainer(container)})
 async function fixture(object=false){
  const owner=randomUUID(),sessionId='origin-'+randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'固定同事',kind:'employee',scopes:['SOC'],duty:'调查',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
  const sourceText='原始指令：保留  空格与\n换行',request={requestId:randomUUID(),sessionId,messageId:'original',messageSeq:1,kind:'task' as const,scope:'SOC',title:'固定目标',goal:'检查业务原件',sourceText,roleId:role.id,expectedRoleVersion:role.version}

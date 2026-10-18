@@ -82,9 +82,9 @@ export function currentSolutionCatalog(items:readonly MarketItem[]):MarketItem[]
 }
 
 /**
- * 「已添加」的唯一判据：加载记录仍在生效，模板标识与版本一致；已固定内容还必须匹配原 contentId 与文件摘要。
- * 卡片与产品页共用它，避免一边只看 templateId、一边还比版本，出现「卡上写已添加、点进去还能再添加」。
- * 卸载（`unloaded`）与被升级取代（`superseded`）都不算已添加：它们是历史，不是当前生效的加载。
+ * 「已使用」的运行判据：加载记录仍在生效，模板标识与版本一致；已固定内容还必须匹配原 contentId 与文件摘要。
+ * 运行详情共用它，不能把已保存到本机的收藏当作已加载到团队。
+ * 卸载（`unloaded`）与被升级取代（`superseded`）都不算正在使用：它们是历史，不是当前生效的加载。
  */
 type SolutionIdentity={manifest?:{id?:string;version?:string}|undefined;contentStorage?:{contentId:string}|undefined;packageContent?:{hash:string}|undefined;hash?:string|undefined}
 type SolutionLoadIdentity={status:string;templateId:string;templateVersion:string;contentId?:string|undefined;contentHash?:string|undefined}
@@ -98,12 +98,17 @@ export function solutionInstalled(
  return loads.some(load=>load.status==='active'&&load.templateId===manifest.id&&load.templateVersion===manifest.version&&(!item.contentStorage||!!contentHash&&load.contentId===contentId&&load.contentHash===contentHash))
 }
 
-/** 页头「已添加 · N」的唯一口径：逐条复用 solutionInstalled，不另起一套判据。没有清单的条目天然不计。 */
+/** 生效加载的数量，供运行状态使用；本机收藏目录使用 solutionAdded。 */
 export function solutionInstalledCount(
  items:readonly SolutionIdentity[],
  loads:readonly SolutionLoadIdentity[],
 ):number{
  return items.filter(item=>solutionInstalled(item,loads)).length
+}
+
+/** 本机已添加与团队已使用是两件事：收藏、卡片和页头统一按已保存内容判断，不把尚未加载的内容漏掉。 */
+export function solutionAdded(item:MarketItem,loads:readonly SolutionLoadIdentity[]):boolean{
+ return marketCategoryOf(item)==='industry'&&item.source.kind!=='catalog'&&(item.source.kind!=='builtin'||!!item.contentStorage||solutionInstalled(item,loads))
 }
 
 export type SolutionMark='added'|'restart'|'available'|'conflict'
@@ -123,7 +128,7 @@ const RUNTIME_MARKS:Readonly<Record<string,SolutionMark>>={
 }
 
 /**
- * 通用目录卡的状态记号：方案按加载记录判（与方案卡同一判据），其余条目按实测安装状态归三档。
+ * 通用目录卡的状态记号：方案按本机收藏判（与方案卡、收藏目录同一判据），其余条目按实测安装状态归三档。
  * 扩展装完要重启才生效，原型 `市场方案.jsx:96` 的 `stateOf` 同样对 plugin 给「需重启」。
  */
 export function marketItemMark(
@@ -132,7 +137,7 @@ export function marketItemMark(
  runtime?:MarketSkillRuntime,
 ):SolutionMark{
  const category=marketCategoryOf(item)
- if(category==='industry')return solutionMark({loaded:solutionInstalled(item,loads),restartRequired:false})
+ if(category==='industry')return solutionMark({loaded:solutionAdded(item,loads),restartRequired:false})
  if(category==='plugin')return 'restart'
  const observed=runtime?marketRuntimeForItem(item,runtime):undefined
  return observed?RUNTIME_MARKS[observed.status]??'available':'available'

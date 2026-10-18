@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeRoles} from '../src/work/roles.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
@@ -15,7 +15,7 @@ const identity={id:randomUUID,now:()=>new Date().toISOString()}
 const admissions:Readonly<WorkAccessRequest>[]=[],deniedOwners=new Set<string>()
 workAccess.installPolicy(async request=>{admissions.push(request);return {assertCurrent:()=>{if(deniedOwners.has('ownerId' in request?request.ownerId:''))throw Error('controlled revoked owner')}}})
 before(async()=>{container=await new PostgreSqlContainer('postgres:16-alpine').start();const connectionString=container.getConnectionUri();pool=new Pool({connectionString,max:1,connectionTimeoutMillis:1000,statement_timeout:4000});locks=new Pool({connectionString,max:1});await initializeRoles(pool);await initializeTasks(pool);await initializeConversationWork(pool)})
-after(async()=>{await locks?.end();await pool?.end();await container?.stop()})
+after(async()=>{await locks?.end();await pool?.end();await stopTestContainer(container)})
 function fixture(connection:Pool=pool){
  const owner=randomUUID(),sessionId='assistant-'+randomUUID(),request={requestId:randomUUID(),sessionId,messageId:'owner-message',messageSeq:3,kind:'task' as const,executor:'general' as const,scope:'general',title:'整理演示文件',goal:'在本次工作目录内整理合成文件',sourceText:'只处理本次合成数据；保留  空格\n和原指令'}
  const service=new ConversationWorkService(connection,identity.now,async(actor,id)=>{if(actor!==owner||id!==sessionId)throw Error('private');return {ownerId:owner,sessionId:id,status:'ready',submitted:true}},undefined,undefined,locks),tasks=new TaskService(connection,identity),parent={sessionId,requestId:request.requestId,executor:'general' as const},child=workRequestChildId(request.requestId,'task')

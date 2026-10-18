@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findStartupUrl, authorizeSession, assertTeloaReady, guardTeloaReadiness } from '../scripts/核对宿主就绪.mjs'
+import {retryStartupPort} from './fixtures/startup-port-retry.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const starter = fileURLToPath(new URL('../scripts/启动DSH.mjs', import.meta.url))
@@ -55,9 +56,35 @@ function starterEnv(home, mode, port, overrides = {}) {
 /** 真跑启动器：把 spawn 目标换成桩宿主，端口临时分配，不碰正式 3100 宿主也不写正式运行目录。 */
 async function runStarter(t, mode, overrides = {}) {
   const home = await isolatedHome(t), port = await freePort()
-  const result = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, mode, port, overrides), encoding: 'utf8', timeout: 30_000 })
-  return { ...result, port, home }
+  const result = await startStarterProcess({ cwd: root, env: starterEnv(home, mode, port, overrides), encoding: 'utf8', timeout: 30_000 })
+  return { ...result, home }
 }
+const startStarterProcess = options => retryStartupPort(port => spawnSync(process.execPath,[starter],{...options,env:{...options.env,TELOA_DSH_PORT:String(port)}}),Number(options.env.TELOA_DSH_PORT),freePort)
+
+test('启动前端口被抢占只换测试端口，最多三次', async () => {
+  const ports = []
+  const result = await retryStartupPort(port => { ports.push(port); return ports.length === 1 ? {status:1,stderr:'端口 '+port+' 不可用；未停止其他服务。'} : {status:0,stdout:'ready'} }, 10001, async () => 10002)
+  assert.deepEqual(ports,[10001,10002]); assert.equal(result.port,10002)
+  let calls = 0
+  await retryStartupPort(() => { calls++; return {status:1,stderr:'EADDRINUSE'} },10001,async()=>10002)
+  assert.equal(calls,3)
+})
+test('就绪后的异常与业务失败不重试', async () => {
+  for (const result of [{status:1,stderr:'就绪自检失败'}, {status:1,stdout:'dsh web: http://127.0.0.1:10001/?token=stub',stderr:'EADDRINUSE'}]) {
+    let calls = 0
+    await retryStartupPort(() => { calls++; return result },10001,async()=>assert.fail('不能重新启动'))
+    assert.equal(calls,1)
+  }
+})
+test('临时端口被外部占用时换测试端口，保留占用服务且宿主只启动一次', async t => {
+  const home=await isolatedHome(t),occupied=createSocketServer()
+  await new Promise((resolve,reject)=>{occupied.once('error',reject);occupied.listen(0,'127.0.0.1',resolve)})
+  t.after(()=>new Promise(resolve=>occupied.close(resolve)))
+  const port=occupied.address().port
+  const result=await startStarterProcess({cwd:root,env:starterEnv(home,'半行令牌',port),encoding:'utf8',timeout:30000})
+  assert.equal(result.status,0,result.stderr);assert.notEqual(result.port,port);assert.equal(occupied.listening,true)
+  assert.equal((result.stdout.match(/桩宿主工作目录:/g)||[]).length,1)
+})
 
 /**
  * 起一个最小 DSH 仿真：根路径发 Cookie，/teloa 通道按 mounted 决定 200 还是 405。
@@ -303,14 +330,14 @@ test('启动器真跑：待启用插件被补回 bundles 时先自愈压制，�
   // 上游 reconcilePlugins 在任何一次 dsh plugin add 之后都会把待启用的包补回 bundles；
   // 起宿主前启动器现在会先朝安全方向自愈一次（把它从 bundles 摘掉），压制成功就照常启动。
   await manifest(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@vendor/plugin'])
-  const healed = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+  const healed = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
   assert.equal(healed.status, 0, (healed.stderr || '').trim())
   const healedManifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
   assert.deepEqual(healedManifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], '自愈后包应已从 bundles 摘掉')
 
   // 包被正常压制着（有待启用记录、但不在 bundles 里）时照常启动：自愈是幂等的空操作。
   await manifest(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
-  const allowed = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', await freePort()), encoding: 'utf8', timeout: 30_000 })
+  const allowed = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', await freePort()), encoding: 'utf8', timeout: 30_000 })
   assert.equal(allowed.status, 0, (allowed.stderr || '').trim())
 })
 
@@ -319,7 +346,7 @@ test('启动器真跑：待启用插件清单读不出时，自愈压制失败�
   const profileDir = join(home.dshHome, 'profiles', 'teloa')
   // 正文不是合法 JSON：readPendingPlugins 按"读不出来"处理，不当成"没有待启用插件"。
   await writeFile(join(profileDir, 'teloa-待启用插件.json'), '{ 不是合法 JSON')
-  const refused = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+  const refused = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
   assert.notEqual(refused.status, 0, '待启用清单读不出来就不能起宿主')
   assert.doesNotMatch(refused.stdout, /桩宿主/, '拒绝发生在起宿主之前')
   assert.ok(!refused.stderr.includes(profileDir), '诊断不得回显路径')
@@ -331,7 +358,7 @@ test('启动器真跑：profile 里 @teloa/im-gateway 的模块链接指向别�
   await mkdir(modules, { recursive: true })
   await mkdir(join(home.base, '别处的包'))
   await symlink(join(home.base, '别处的包'), join(modules, 'im-gateway'))
-  const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+  const started = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
   assert.equal(started.status, 0, (started.stderr || '').trim())
   assert.equal(await realpath(join(modules, 'im-gateway')), await realpath(join(root, 'packages', 'im-gateway')))
   // 启动器按全部随附扩展补链：本地中文检索的链接同样指向本程序目录，且不留临时链接
@@ -343,7 +370,7 @@ test('启动器真跑：profile 里 @teloa/im-gateway 的模块位置是无法�
   const home = await isolatedHome(t), port = await freePort()
   const modules = join(home.dshHome, 'profiles', 'teloa', 'node_modules', '@teloa')
   await mkdir(join(modules, 'im-gateway'), { recursive: true })
-  const refused = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+  const refused = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
   assert.notEqual(refused.status, 0, '实体目录不能替换就不能起宿主')
   assert.doesNotMatch(refused.stdout, /桩宿主/, '拒绝发生在起宿主之前')
   assert.match(refused.stderr, /官方扩展来源/)
@@ -359,7 +386,7 @@ test('启动器真跑：源码 profile 登记的 IM 来源不是本程序目录�
     dependencies: { '@teloa/bundle': 'link:' + join(root, 'packages', 'bundle'), '@teloa/im-gateway': 'link:' + join(home.base, '旧程序目录') },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], patchReload: 'startup' } },
   }, null, 2) + '\n')
-  const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 120_000 })
+  const started = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 120_000 })
   assert.equal(started.status, 0, (started.stderr || '').trim())
   assert.doesNotMatch(started.stderr, /补登记未完成/)
   const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
@@ -382,7 +409,7 @@ test('启动器真跑：源码/容器补登记不经包管理器——第三方�
   await mkdir(join(home.runtimeRoot, 'im-gateway'), { recursive: true })
   const channels = JSON.stringify({ channels: [{ kind: 'telegram', id: 'stub' }] })
   await writeFile(join(home.runtimeRoot, 'im-gateway', 'channels.json'), channels)
-  const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+  const started = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
   assert.equal(started.status, 0, (started.stderr || '').trim())
   assert.doesNotMatch(started.stderr, /补登记未完成|迁移未完成/)
   const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
@@ -426,7 +453,7 @@ test('启动器真跑：旧可选迁移记录损坏不再读取；模块链接�
     }
     const legacyRecord = '{ 不是合法 JSON'
     await writeFile(join(profileDir, 'teloa-官方扩展.json'), legacyRecord)
-    const started = spawnSync(process.execPath, [starter], { cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
+    const started = await startStarterProcess({ cwd: root, env: starterEnv(home, '半行令牌', port), encoding: 'utf8', timeout: 30_000 })
     assert.equal(started.status, 0, (started.stderr || '').trim())
     assert.doesNotMatch(started.stderr, /官方扩展迁移未完成/)
     assert.equal(await readFile(join(profileDir, 'teloa-官方扩展.json'), 'utf8'), legacyRecord, '保留旧票据，不读取或改写')

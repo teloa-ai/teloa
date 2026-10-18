@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {readBusinessConfigurationCandidate,readBusinessConfigurationManifest,readBusinessConfigurationPageProjection} from '@teloa/contract'
 import {BusinessConfigurationDraftService} from '../src/work/business-configuration-drafts.ts'
@@ -33,7 +33,7 @@ before(async()=>{
  await api.initializeBusinessWidgets(pool)
  await api.initializeBusinessSync(pool);await initializeBusinessSyncRules(pool)
 },{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 
 const actor=()=>({ownerId:'v2-config:'+randomUUID(),scopeIds:[] as string[]})
 function objectType(domain:string,sourceId:string){return {format:'teloa.business-object-type/v2',id:'customer',version:'1.0.0',domain,title:'客户',unit:'位',lead:'客户跟进',sourceId,fields:[{name:'state',label:'阶段',type:'enum',required:true,from:'原阶段',values:['新建','完成']},{format:'teloa.business-rich-field/v2',name:'amount',label:'金额',type:'money',required:false,from:'原金额',currencies:['CNY']}]}}

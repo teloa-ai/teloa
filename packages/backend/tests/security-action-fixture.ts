@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer} from '@testcontainers/postgresql'
 import {WorkError,type SecurityAction,type SecurityActionDefinitionCatalog} from '@teloa/contract'
 import {initializeRoles} from '../src/work/roles.ts'
@@ -22,7 +22,7 @@ export async function database(name='test'){
  const container=await new PostgreSqlContainer('postgres:17-alpine').withDatabase(name).start(),pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool);await initializeTasks(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool)
  await initializeSecurityRequests(pool);await initializeSecurityActions(pool);await initializeSecurityApprovals(pool)
- return {pool,close:async()=>{await pool.end();await container.stop()}}
+ return {pool,close:async()=>{await pool.end();await stopTestContainer(container)}}
 }
 export async function fixture(pool:Pool,sourceId='security-alert-http',scope='SOC'){
  const principal={ownerId:randomUUID(),approverId:'local-self',scopeIds:[scope]},tasks=new TaskService(pool,identity)

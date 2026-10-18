@@ -34,3 +34,10 @@ test('最近会话不再把通用工作与本人硬编码成所有会话的归�
   assert.match(source,/home\.recent\.genericContext/)
   assert.doesNotMatch(source,/scope:scopeNames\.general,owner:t\('home\.owner\.me'\)/)
 })
+
+test('继续工作混合会话和任务时，任务入口明确数量口径，不写全部条目',async()=>{
+ const {translateMessage}=await import('../lib/types/client/i18n/messages.js')
+ assert.equal(translateMessage('zh-CN','task.action.viewAll',{count:0}),'任务 0 项')
+ assert.equal(translateMessage('zh-Hant','task.action.viewAll',{count:2}),'任務 2 項')
+ assert.equal(translateMessage('en','task.action.viewAll',{count:0}),'0 tasks')
+})

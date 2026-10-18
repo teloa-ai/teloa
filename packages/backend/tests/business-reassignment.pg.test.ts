@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID,createHash} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool,type PoolClient,type QueryResult} from 'pg'
+import {Pool,type PoolClient,type QueryResult,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import type {Conversation,BusinessReassignmentInstruction} from '@teloa/contract'
 import {BusinessReassignmentService,initializeBusinessReassignments} from '../src/work/business-reassignment.ts'
@@ -43,7 +43,7 @@ before(async()=>{
  await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeArtifactSnapshots(pool);await initializeArtifacts(pool)
  await initializeBusinessDefinitions(pool);await initializeBusinessConfigurations(pool);await initializeBusinessRuntime(pool);await initializeBusinessResponsibilities(pool)
 },{timeout:120000})
-after(async()=>{await pool?.end();await observer?.end();await locks?.end();await container?.stop()})
+after(async()=>{await pool?.end();await observer?.end();await locks?.end();await stopTestContainer(container)})
 async function deadline<T>(promise:Promise<T>):Promise<T>{let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([promise,new Promise<never>((_,reject)=>timer=setTimeout(()=>reject(Error('single-connection operation deadline')),8000))])}finally{clearTimeout(timer)}}
 async function waitForLock(query:string){const until=Date.now()+2500;while(!(await observer.query("select 1 from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and query like $1",[query])).rowCount){assert.ok(Date.now()<until,'必须观察到真实PG锁等待 '+query);await new Promise(resolve=>setTimeout(resolve,10))}}
 function gate(){let open!:()=>void;const promise=new Promise<void>(resolve=>{open=resolve});return {promise,open}}

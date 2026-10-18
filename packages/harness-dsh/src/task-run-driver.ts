@@ -82,6 +82,8 @@ export type TaskRunPorts={
  stopState?:(run:TaskRun)=>Promise<{running:boolean;settledSeq:number|null}>
  /** 执行已被原生宿主接受并落库后通知（如使用统计记活动）；不影响执行结果，异常被吞掉。 */
  onAccepted?:(run:TaskRun)=>void
+ /** 仅宿主诊断读取原异常；不把传输细节回传客户端，也不触发重发。 */
+ onSubmissionError?:(run:TaskRun,error:unknown)=>void
  /** 返回经身份核验、落盘后复制的完整日志，不能用当前压缩表面代替。 */
  events:(run:TaskRun)=>Promise<readonly SessionEvent[]>
  /** 仅由宿主调用；正文来自已确认的原生助手消息，服务端会再次核验群授权。 */
@@ -110,12 +112,15 @@ export class TaskRunDriver{
    const accepted=await this.service.record(owner,{runId:claimed.run.id,sessionId:claimed.run.sessionId,nativeRequestId:claimed.run.nativeRequestId,evidence:{state:'accepted'}})
    try{this.ports.onAccepted?.(accepted)}catch{/* 通知失败不影响已接受的执行 */}
    return accepted
-  }catch{
+  }catch(error){
+   try{this.ports.onSubmissionError?.(claimed.run,error)}catch{/* 诊断失败不改变提交未知语义 */}
    // 包括发送前取消、回包丢失及已接收但数据库回填失败；一律不自动重发。
    // 仍在原宿主时优先落定可核验的原生日志与后台收口，避免把已有证据留到重启后猜测。
    // 核验失败保持提交未知；不能用失败的读取或旧 owner 标记推断完成。
    await this.reconcileSubmission(owner,claimed.run.id,signal)
-   throw new WorkError('teloa/execution-pending','执行提交结果需要核对，请读取原生会话状态；不要重复发送。')
+   const pending=new WorkError('teloa/execution-pending','执行提交结果需要核对，请读取原生会话状态；不要重复发送。')
+   Object.defineProperty(pending,'cause',{value:error,configurable:true})
+   throw pending
   }
  }
  /** 就地核验仅占一个有界机会；底层不可取消的读取返回后也不能再开启迟到落库。 */

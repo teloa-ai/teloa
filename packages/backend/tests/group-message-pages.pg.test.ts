@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeTeloaDatabase} from '../src/work/initialize-database.ts'
 import {CollaborationService} from '../src/work/collaboration.ts'
@@ -15,7 +15,7 @@ import {testRoleResponsibility} from './role-test-fixture.ts'
 let container:StartedPostgreSqlContainer,pool:Pool,tick=0
 const identity={id:randomUUID,now:()=>new Date(Date.parse('2026-10-15T00:00:00.000Z')+tick++).toISOString()}
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeTeloaDatabase(pool)},{timeout:120000})
-after(async()=>{await pool?.end();await container?.stop()})
+after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(){
  const owner=randomUUID(),service=new CollaborationService(pool,identity),group=await service.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'历史群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},memberRoleIds:[]}})
  const send=(text:string,rootId?:string)=>service.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:1,text,...(rootId?{rootId}:{})})
