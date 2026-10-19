@@ -128,3 +128,12 @@ test('任务成果使用真实任务来源，旧任务版本不能被保存时�
  const result=await api.save(artifact,true);assert.equal(result.source.kind,'task');assert.equal(result.storage,'persistent')
  await assert.rejects(createArtifactApi(async()=>({...taskSource,version:'changed'})).save(artifact,true),/来源已变化/)
 })
+test('员工成果目录只读元数据，不按条读取版本、文件或反馈',async()=>{
+ const calls:string[]=[],row={artifactId:id,number:2,title:'周报',source:{kind:'task',id:'87654321-1234-4234-8234-123456789012',scope:'general',version:'1',title:'周报任务'},createdAt:at,updatedAt:at,attribution:'task'}
+ let response:unknown=[row]
+ const api=createArtifactApi(async(method,payload)=>{calls.push(method);assert.deepEqual(payload,{roleId:'role-1'});return response})
+ assert.deepEqual(await api.listByRole('role-1'),[row]);assert.deepEqual(calls,['artifacts/role/list'])
+ response=[row,row];await assert.rejects(api.listByRole('role-1'),/重复/)
+ response=[{...row,attribution:'guess'}];await assert.rejects(api.listByRole('role-1'))
+ response={};await assert.rejects(api.listByRole('role-1'),/格式/)
+})

@@ -363,3 +363,28 @@ test('应用包详情：一个安装按钮与逐项真实状态，不给逐项�
  const running=render(createElement(MarketAppDetailView,{row:pack,close:()=>{},runAction:()=>{},busy:undefined,error:undefined,packRun:{done:1,total:2,running:true,outcomes:[],stopped:null}} as never))
  assert.match(running,/<button[^>]*disabled=""[^>]*>正在安装 1\/2…<\/button>/)
 })
+
+test('应用包内连接按服务名与工具回查官方目录连接：匹配时复用设置连接与真实鉴权状态，未匹配或未读取如实说明',()=>{
+ const resource=(id:string,kind:string,title:string,path:string,required=false)=>({id,kind,title,version:'1.0.0',required,source:{kind:'local',path}})
+ const manifest={format:'teloa.business-package/v2',id:'pkg',title:'文档整理应用',version:'1.0.0',domain:'general',scope:'general',description:'整理文档。',resources:[resource('notes','skill','整理','notes/SKILL.md',true),resource('mcp-docs','mcp','包内文档连接','mcp-docs.json'),resource('mcp-ghost','mcp','未知服务','mcp-ghost.json'),resource('mcp-extra','mcp','越权工具','mcp-extra.json')],relations:[],entrypoints:[]}
+ const file=(path:string,value:unknown)=>({path:'pkg/'+path,hash:'h',bytes:new TextEncoder().encode(JSON.stringify(value))})
+ const mcp=(serverName:string,tools:string[])=>({format:'teloa.mcp-connection/v1',serverName,tools})
+ const content={manifestPath:'pkg/teloa.json',files:[file('mcp-docs.json',mcp('mcp-docs',['search_pages'])),file('mcp-ghost.json',mcp('ghost',['x'])),file('mcp-extra.json',mcp('mcp-docs',['search_pages','delete_all']))]}
+ const stored={itemId:'stored-bundle',contentId:'33333333-3333-4333-8333-333333333333',contentHash:'a'.repeat(64),kind:'bundle',title:'文档整理应用',summary:'整理文档。',version:'1.0.0',publisher:'本人创作'}
+ const rows=presentation.appsDirectoryRows({items:[connector('teloa.mcp-docs')],connections:ready([record('teloa.mcp-docs','connected')]),locale:'zh-CN',storedContents:[stored],packages:[{id:'bundle',manifest,content},{id:'unread',manifest},{id:'stored-bundle',manifest,content}]})
+ const row=(key:string)=>rows.find((item:any)=>item.key===key)
+ const [matched,ghost,extra]=row('package:bundle').connectors
+ assert.equal(matched.catalogId,'teloa.mcp-docs');assert.equal(matched.entry.id,'teloa.mcp-docs');assert.equal(matched.auth,'secret');assert.equal(matched.state.connection,'connected')
+ assert.deepEqual(matched.tools.map((tool:any)=>tool.name),['search_pages'],'只列应用声明使用的工具')
+ for(const item of [ghost,extra]){assert.equal(item.entry,undefined);assert.equal(item.catalogId,undefined);assert.equal(item.unresolved,'not-in-catalog')}
+ assert.ok(row('package:unread').connectors.every((item:any)=>item.unresolved==='unread'&&!item.entry))
+ assert.equal(row('stored:'+stored.contentId).connectors[0].catalogId,'teloa.mcp-docs','已添加的应用包同样回查目录连接')
+ assert.equal(presentation.appsRowShareSource(row('package:bundle')),undefined,'声明资源包仍不伪造分享来源')
+ const opened:any[]=[]
+ const html=render(createElement(MarketAppDetailView,{row:row('package:bundle'),close:()=>{},runAction:(_:unknown,action:unknown)=>opened.push(action),busy:undefined,error:undefined} as never))
+ assert.match(html,/文档服务[\s\S]*已连接[\s\S]*连接设置/)
+ assert.match(html,/未知服务[\s\S]*未在应用目录找到该连接/);assert.match(html,/越权工具[\s\S]*未在应用目录找到该连接/)
+ assert.match(render(createElement(MarketAppDetailView,{row:row('package:unread'),close:()=>{},runAction:()=>{},busy:undefined,error:undefined} as never)),/打开应用包后核对连接/)
+ const en=render(createElement(MarketAppDetailView,{row:row('package:bundle'),close:()=>{},runAction:()=>{},busy:undefined,error:undefined} as never),'en')
+ assert.match(en,/isn’t in the app directory/)
+})

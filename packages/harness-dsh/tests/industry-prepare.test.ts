@@ -7,7 +7,7 @@ const owner='local:teloa-owner',loadId='77777777-7777-4777-8777-777777777777',ot
 const K='11111111-1111-4111-8111-111111111111',S1='22222222-2222-4222-8222-222222222222',S2='23333333-2222-4222-8222-222222222222',S3='24444444-2222-4222-8222-222222222222',M='44444444-4444-4444-8444-444444444444'
 const R='55555555-5555-4555-8555-555555555555',T='66666666-6666-4666-8666-666666666666',P='88888888-8888-4888-8888-888888888888',G='99999999-9999-4999-8999-999999999999',D='12121212-1212-4121-8121-121212121212'
 const ROLE='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',INST='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-const mutating=new Set(['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-roles/instantiate','roles/edit','roles/lifecycle'])
+const mutating=new Set(['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-plugins/instantiate','industry-plugins/install','industry-plugins/enable','industry-roles/instantiate','roles/edit','roles/lifecycle'])
 // 原生技能名与正文摘要：绑定只认安装记录与实际观测一致的这一份。
 const NATIVE='grok-0123456789abcdef01234567-skill-0001',BODY='3'.repeat(64)
 const roleDefinition={name:'告警分诊员',kind:'employee',scopes:['soc'],duty:'按模板方法分诊告警。',dataScope:'仅本人提供的告警。',executionScope:'沿用当前授权。',skills:[] as string[],knowledge:[] as string[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}
@@ -24,7 +24,9 @@ type Options={models?:IndustryModelProbe;dependencies?:Record<string,IndustryMod
  // 方法绑定：事先显式安装、无关联方法、绑定前的观测/替换/撤销/来源/关联漂移、本人已改员工、保存或上岗失败、未接入绑定端口
  skillPreinstalled?:boolean;noRoleSkill?:boolean;bindObserve?:string;bindReplaced?:boolean;bindRevoked?:boolean;atomicSource?:boolean;mappingDrift?:boolean;roleEditedByUser?:boolean;editFails?:boolean;lifecycleFails?:boolean;noRoleRecords?:boolean
  // 安装身份：自装来源、同名但不同公共来源、绑定前 usage 迁到另一份同版本安装
- localSkill?:boolean;foreignPublic?:boolean;bindMigrated?:boolean}
+ localSkill?:boolean;foreignPublic?:boolean;bindMigrated?:boolean
+ // 依赖应用：null 为尚未登记；信任结论、预览失败、安装与启用后的状态；员工经 role-connection 依赖该应用
+ pluginState?:string|null;pluginTrust?:'verified'|'unverified'|'rejected';pluginPreviewFails?:boolean;pluginInstallTo?:string;pluginEnableTo?:string;roleNeedsPlugin?:boolean}
 type RoleRecord=typeof roleDefinition&{id:string;ownerId:string;version:number;state:string;createdAt:string;updatedAt:string}
 const roleRecord=(version:number,state:string):RoleRecord=>({...structuredClone(roleDefinition),id:ROLE,ownerId:owner,version,state,createdAt:'2026-10-14T00:00:00.000Z',updatedAt:'2026-10-14T00:00:00.000Z'})
 function world(options:Options={}){
@@ -32,12 +34,13 @@ function world(options:Options={}){
  let release=()=>{},resting=()=>{}
  const held=new Promise<void>(resolve=>{release=resolve}),sleeping=new Promise<void>(resolve=>{resting=resolve})
  type RoleState={state:string;revision:number;failure?:unknown}
- const state={knowledge:undefined as undefined|{state:string;revision:number},kTicks:0,skill:!!options.skillPreinstalled,mcp:undefined as string|undefined,role:(options.rolePaused?{state:'paused',revision:1}:undefined) as RoleState|undefined,rTicks:0,record:options.rolePaused?roleRecord(3,'paused'):undefined as RoleRecord|undefined,binding:false,migrated:false}
- const relations=[{kind:'role-knowledge',from:R,to:K},...(options.noRoleSkill?[]:[{kind:'role-skill',from:R,to:S1}]),...(options.roleNeedsConnector?[{kind:'role-connection',from:R,to:M}]:[])]
+ const state={knowledge:undefined as undefined|{state:string;revision:number},kTicks:0,skill:!!options.skillPreinstalled,mcp:undefined as string|undefined,role:(options.rolePaused?{state:'paused',revision:1}:undefined) as RoleState|undefined,rTicks:0,record:options.rolePaused?roleRecord(3,'paused'):undefined as RoleRecord|undefined,binding:false,migrated:false,
+  plugin:{state:options.pluginState===undefined?'needs_install':options.pluginState,revision:1} as {state:string|null;revision:number}}
+ const relations=[{kind:'role-knowledge',from:R,to:K},...(options.noRoleSkill?[]:[{kind:'role-skill',from:R,to:S1}]),...(options.roleNeedsConnector?[{kind:'role-connection',from:R,to:M}]:[]),...(options.roleNeedsPlugin?[{kind:'role-connection',from:R,to:G}]:[])]
  // 另一份安装（INST2）除 ID 外与原安装完全相同：版本也同为 1，只比版本无法发现迁移
  const installation=(id=INST)=>({id,ownerId:owner,source:options.atomicSource?{kind:'atomic',contentId:'c3333333-0000-4000-8000-000000000000',contentHash:hex('e'),resourceId:'alert-triage',resourceVersion:'1.0.0'}:options.localSkill?localSource:options.foreignPublic?{...publicSource,sourceContentId:'c5555555-0000-4000-8000-000000000000',sourceContentHash:hex('6')}:publicSource,bundleHash:options.s1Bundle??hex('d'),native:{name:NATIVE,description:'告警分诊',modelInvocable:true,userInvocable:true,bodyHash:BODY},state:'installed',version:1,createdAt:'2026-10-14T00:00:00.000Z',updatedAt:'2026-10-14T00:00:00.000Z'})
  const load={id:loadId,status:options.unloaded?'unloaded':'active',templateTitle:'安全运营 SOC',templateVersion:'1.2.0',mappingHash:hex('a'),relations,
-  items:[{instanceId:K,kind:'knowledge',title:'分诊指南',required:true,status:'pending-adapter'},{instanceId:S1,kind:'skill',title:'告警分诊',required:true,status:'pending-adapter'},{instanceId:S2,kind:'skill',title:'取证规程',required:false,status:'pending-adapter'},{instanceId:S3,kind:'skill',title:'取证脚本',required:false,status:'pending-adapter'},{instanceId:M,kind:'mcp',title:'SIEM 连接',required:false,status:options.tolerant?'instantiated':'pending-adapter'},{instanceId:R,kind:'role',title:'T1 分析师',required:true,status:options.rolePaused?'active':'pending-adapter'},{instanceId:T,kind:'work-template',title:'告警研判',required:false,status:'pending-adapter'},{instanceId:P,kind:'plan',title:'每日交接',required:false,status:'pending-adapter'},{instanceId:G,kind:'plugin',title:'工单插件',required:false,status:'pending-adapter'},...(options.tolerant?[{instanceId:D,kind:'mcp',title:'已解除连接',required:false,status:'detached'}]:[])]}
+  items:[{instanceId:K,kind:'knowledge',title:'分诊指南',required:true,status:'pending-adapter'},{instanceId:S1,kind:'skill',title:'告警分诊',required:true,status:'pending-adapter'},{instanceId:S2,kind:'skill',title:'取证规程',required:false,status:'pending-adapter'},{instanceId:S3,kind:'skill',title:'取证脚本',required:false,status:'pending-adapter'},{instanceId:M,kind:'mcp',title:'SIEM 连接',required:false,status:options.tolerant?'instantiated':'pending-adapter'},{instanceId:R,kind:'role',title:'T1 分析师',required:true,status:options.rolePaused?'active':'pending-adapter'},{instanceId:T,kind:'work-template',title:'告警研判',required:false,status:'pending-adapter'},{instanceId:P,kind:'plan',title:'每日交接',required:false,status:'pending-adapter'},{instanceId:G,kind:'plugin',title:'工单插件',required:false,status:'pending-adapter',version:'1.0.0'},...(options.tolerant?[{instanceId:D,kind:'mcp',title:'已解除连接',required:false,status:'detached'}]:[])]}
  for(const item of load.items)if(options.dependencies?.[item.instanceId])Object.assign(item,{modelDependencies:options.dependencies[item.instanceId]})
  const rec=(fn:(endpoint:string,payload:any)=>unknown)=>async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);return fn(endpoint,payload)}
  let clock=0,loadReads=0
@@ -80,7 +83,15 @@ function world(options:Options={}){
    return {items:state.mcp?[{loadId,itemInstanceId:M,state:state.mcp,revision:1}]:[]}
   }),
   dataSources:rec(()=>({items:[]})),executionTools:rec(()=>({items:[]})),
-  plugins:rec(()=>({items:[{loadId,itemInstanceId:G,state:'needs_install',revision:1}]})),
+  plugins:rec(endpoint=>{
+   const row=()=>({id:PI,loadId,itemInstanceId:G,state:state.plugin.state,revision:state.plugin.revision,definition:{format:'teloa.plugin/v1',registry:'npm',packageName:'@example/ticket',version:'1.0.0'}})
+   if(endpoint==='industry-plugins/list')return {items:state.plugin.state?[row()]:[]}
+   if(endpoint==='industry-plugins/instantiate'){state.plugin={state:'needs_install',revision:1};return row()}
+   if(endpoint==='industry-plugins/preview'){if(options.pluginPreviewFails)throw new WorkError('teloa/dependency-unavailable','DSH 扩展安装服务不可用。');return pluginPreview(options.pluginTrust??'verified')}
+   if(endpoint==='industry-plugins/install'){state.plugin={state:options.pluginInstallTo??'pending-enable',revision:state.plugin.revision+1};return row()}
+   if(endpoint==='industry-plugins/enable'){state.plugin={state:options.pluginEnableTo??'active',revision:state.plugin.revision+1};return row()}
+   throw new Error('意外的扩展接口：'+endpoint)
+  }),
   // 原 roles handler 的列表与 CAS 编辑；上岗同样按版本核对
   ...(options.noRoleRecords?{}:{roleRecords:rec((endpoint,payload)=>{
    if(endpoint==='roles/list'){state.binding=true;if(options.roleEditedByUser&&state.record?.version===1)state.record={...state.record,version:2,duty:'本人改过的职责。'};return state.record?[structuredClone(state.record)]:[]}
@@ -102,6 +113,9 @@ function world(options:Options={}){
 }
 const byId=(r:any,id:string)=>r.rows.find((row:any)=>row.itemInstanceId===id)
 // 官方目录出品的纯内容技能信任声明（official-catalog.ts officialCatalogTrust 的形状）
+// 行业扩展安装预览（market-plugin-installation.ts 的形状）
+const PI='9a9a9a9a-9a9a-4a9a-8a9a-9a9a9a9a9a9a'
+const pluginPreview=(status:'verified'|'unverified'|'rejected')=>({schema:'teloa.market-plugin-install-preview/v1',source:{registry:'npm',packageName:'@example/ticket',version:'1.0.0'},trust:{status,publisher:'Example Labs',integrity:'sha512-AAAA'},bundleHash:hex('5'),permissionSummary:{permissions:[{id:'dsh.bundle',description:'将加载 DSH 宿主配置层。',required:true}]}})
 const officialTrust={publisher:'Teloa 官方目录',repository:null,license:{status:'declared',value:'MIT'},signature:{status:'unverified',signer:null},compatibility:{teloa:'>=0.2.0-alpha.2',dsh:'0.1.6-alpha.1'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'approved',summary:'Teloa 官方目录收录'}}
 
 test('readiness：按规格 §3 分类（技能经 usages 判已装、带信任声明或含脚本的技能逐个确认）、计数与 64 位摘要；参数白名单',async()=>{
@@ -463,4 +477,63 @@ test('安装来源：同一真正公共来源（首次安装来自另一加载�
   assert.ok(w.calls.some(([endpoint,payload])=>endpoint==='skill-installations/preview'&&JSON.stringify(payload)===JSON.stringify({source:{kind:'industry',loadId,itemInstanceId:S1}})),label)
   assert.equal(w.calls.some(([endpoint])=>endpoint==='skill-installations/install'),false,label)
  }
+})
+
+// ---- 依赖应用（扩展）：已核验的随一键安装并启用；需要本人授权、无法核验、待重启或失败的给出原因与下一步 ----
+test('readiness：依赖应用按实例真实状态分类，未登记、待安装、待启用可一键；待重启与失败归需要你操作并带原因',async()=>{
+ const row=async(pluginState:string|null)=>byId(await world({pluginState,roleNeedsPlugin:true}).handler('industry-loads/readiness',{loadId}),G)
+ for(const state of [null,'needs_install','pending-enable']){const r=await row(state);assert.deepEqual([r.state,r.step,r.entry],['auto','plugin',null],String(state))}
+ assert.equal((await row('installing')).state,'pending')
+ assert.equal((await row('active')).state,'ready')
+ for(const state of ['restart-required','failed']){const r=await row(state);assert.deepEqual([r.state,r.entry,r.reason],['needs-user','plugin',state])}
+ // 应用行带方案固定版本；已登记时带 npm 包名，确认卡据此逐项列出
+ assert.deepEqual((await row(null)).app,{version:'1.0.0',packageName:null})
+ assert.deepEqual((await row('needs_install')).app,{version:'1.0.0',packageName:'@example/ticket'})
+})
+
+test('prepare：未被任何员工依赖的应用条目不随一键安装，照旧归需要你操作',async()=>{
+ const w=world({pluginState:null}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ assert.deepEqual([byId(r,G).state,byId(r,G).step,byId(r,G).entry,byId(r,G).reason],['needs-user',null,'plugin',undefined])
+ await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.ok(!w.writes().some(([endpoint])=>endpoint.startsWith('industry-plugins/')))
+})
+
+test('prepare：已核验的依赖应用经原扩展接口登记→安装→启用，子请求 id 由宿主派生；就绪后员工照常上岗',async()=>{
+ const w=world({pluginState:null,roleNeedsPlugin:true}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.deepEqual(w.writes().map(([endpoint])=>endpoint),['industry-knowledge/instantiate','skill-installations/install','industry-mcp-connections/instantiate','industry-plugins/instantiate','industry-plugins/install','industry-plugins/enable','industry-roles/instantiate','roles/edit','roles/lifecycle'])
+ const payload=(endpoint:string)=>w.writes().find(([e])=>e===endpoint)![1]
+ assert.deepEqual(payload('industry-plugins/instantiate'),{requestId:prepareRequestId(owner,loadId,G,'plugin',r.digest),loadId,itemInstanceId:G})
+ assert.deepEqual(payload('industry-plugins/install'),{requestId:prepareRequestId(owner,loadId,G,'plugin-install',r.digest),instanceId:PI,expectedRevision:1,preview:pluginPreview('verified')})
+ assert.deepEqual(payload('industry-plugins/enable'),{instanceId:PI,preview:pluginPreview('verified')})
+ assert.deepEqual(receipt.results.filter((x:any)=>x.itemInstanceId===G).map((x:any)=>[x.step,x.outcome]),[['plugin','done']])
+ assert.equal(byId(receipt.readiness,G).state,'ready')
+ assert.deepEqual(receipt.results.find((x:any)=>x.step==='role-resume').outcome,'done')
+})
+
+test('prepare：需要本人授权或无法核验的应用不安装，给出原因与下一步并归需要你操作；员工保持暂停，不再列为可一键',async()=>{
+ for(const [trust,reason,pattern] of [['unverified','unverified',/查看.*权限/],['rejected','rejected',/不能安装/]] as const){
+  const w=world({pluginState:null,pluginTrust:trust,roleNeedsPlugin:true}),r:any=await w.handler('industry-loads/readiness',{loadId})
+  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+  assert.ok(!w.writes().some(([endpoint])=>endpoint==='industry-plugins/install'||endpoint==='industry-plugins/enable'),trust)
+  const result=receipt.results.find((x:any)=>x.itemInstanceId===G)
+  assert.equal(result.outcome,'skipped');assert.match(result.message,pattern)
+  assert.deepEqual([byId(receipt.readiness,G).state,byId(receipt.readiness,G).reason],['needs-user',reason])
+  assert.equal(receipt.results.find((x:any)=>x.step==='role-resume').outcome,'skipped')
+  assert.ok(!w.writes().some(([endpoint])=>endpoint==='roles/lifecycle'))
+ }
+})
+
+test('prepare：应用启用后待重启时如实说明，员工保持暂停；预览失败按失败返回，下次一键可重试',async()=>{
+ const w=world({pluginState:'pending-enable',pluginEnableTo:'restart-required',roleNeedsPlugin:true}),r:any=await w.handler('industry-loads/readiness',{loadId})
+ const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+ assert.ok(!w.writes().some(([endpoint])=>endpoint==='industry-plugins/install'),'待启用的应用只启用不重装')
+ const result=receipt.results.find((x:any)=>x.itemInstanceId===G)
+ assert.equal(result.outcome,'skipped');assert.match(result.message,/重启/)
+ assert.deepEqual([byId(receipt.readiness,G).state,byId(receipt.readiness,G).reason],['needs-user','restart-required'])
+ assert.ok(!w.writes().some(([endpoint])=>endpoint==='roles/lifecycle'))
+ const f=world({pluginState:'needs_install',pluginPreviewFails:true,roleNeedsPlugin:true}),fr:any=await f.handler('industry-loads/readiness',{loadId})
+ const failed:any=await f.handler('industry-loads/prepare',{loadId,expectedDigest:fr.digest})
+ assert.deepEqual(failed.results.filter((x:any)=>x.itemInstanceId===G).map((x:any)=>[x.step,x.outcome,x.code]),[['plugin','failed','teloa/dependency-unavailable']])
+ assert.equal(byId(failed.readiness,G).state,'auto')
 })

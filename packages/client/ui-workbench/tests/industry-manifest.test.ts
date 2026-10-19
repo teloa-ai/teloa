@@ -124,3 +124,10 @@ test('v4 可携带业务配置资源，旧版拒绝配置资源且不会产生�
  assert.equal(validateIndustryManifest({...raw,format:'teloa.business-package/v4'}).resources[0]?.kind,'business-configuration')
  for(const format of ['teloa.business-package/v2','teloa.business-package/v3'])assert.throws(()=>validateIndustryManifest({...raw,format}),/v4|配置/)
 })
+
+test('员工可以经 role-connection 声明依赖的应用（扩展）',()=>{
+ const raw=definition()
+ raw.resources.push({...resource('helper','plugin','connections/helper.json'),version:'2.1.0'})
+ raw.relations.push({kind:'role-connection',from:'investigator',to:'helper'})
+ assert.deepEqual(validateIndustryManifest(raw).relations.at(-1),{kind:'role-connection',from:'investigator',to:'helper'})
+})

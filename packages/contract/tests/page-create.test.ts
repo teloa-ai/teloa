@@ -136,3 +136,14 @@ test('pageCreateLimits 四个值是字面量且不可写',()=>{
  }
  assert.equal(typeof write,'function')
 })
+
+test('模板草案失败透传固定校验原因，不回显正文、凭据或非契约异常',()=>{
+ const manifest={format:'teloa.business-package/v2',id:'docs-app',version:'1.0.0',title:'文档应用',description:'整理文档',domain:'general',resources:[{id:'notes',kind:'skill',title:'整理',version:'1.0.0',required:true,source:{kind:'local',path:'notes/SKILL.md'}},{id:'mcp-docs',kind:'mcp',title:'文档服务',version:'1.0.0',required:false,source:{kind:'local',path:'mcp-docs.json'}}],relations:[],entrypoints:[]}
+ const pkg={format:'teloa.template-share/v2',subject:'app',id:'docs-app',version:'1.0.0',title:'文档应用',description:'整理文档',requirements:['需连接本人账号：文档服务'],license:'MIT',trust:{publisher:'本人创作'},provenance:{sources:[]},sourceFiles:[],compatibility:{manifestFormat:'teloa.business-package/v2',capabilities:['connections']},files:[{path:'teloa.json',text:JSON.stringify(manifest)},{path:'notes/SKILL.md',text:'---\nname: notes\ndescription: d\n---\nx'},{path:'mcp-docs.json',text:JSON.stringify({format:'teloa.mcp-connection/v1',serverName:'docs',tools:['search']})}]}
+ assert.doesNotThrow(()=>readPageCreateBody('share',{package:pkg}))
+ assert.throws(()=>readPageCreateBody('share',{package:{...pkg,compatibility:{...pkg.compatibility,capabilities:[]}}}),(error:Error)=>/^模板草案/.test(error.message)&&/connections/.test(error.message)&&/mcp/.test(error.message))
+ const secret='API_KEY=abcdefghijklmnopqrstuv123456'
+ assert.throws(()=>readPageCreateBody('share',{package:{...pkg,description:secret}}),(error:Error)=>/credential/.test(error.message)&&!error.message.includes('abcdefghij'))
+ const hostile={...pkg,get files():unknown{throw new TypeError('private /Users/someone/secret')}}
+ assert.throws(()=>readPageCreateBody('share',{package:hostile}),(error:Error)=>/^模板草案/.test(error.message)&&!error.message.includes('/Users/'))
+})

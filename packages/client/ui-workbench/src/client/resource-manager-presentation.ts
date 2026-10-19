@@ -1,10 +1,36 @@
-import type {KnowledgeCategory,KnowledgeNode,KnowledgeTree,ResourceDirectory,ResourceDraft,SourceReference,WorkResource} from '@teloa/contract'
+import type {KnowledgeCategory,KnowledgeNode,KnowledgeTree,ResourceDirectory,ResourceDraft,RoleArtifactSummary,SourceReference,WorkResource} from '@teloa/contract'
 import {isLocalMaterialSourceId} from './local-material-registration.ts'
 
-/** 本机原件使用真实资源段；不冒充知识页或生成假的 knowledgeId。 */
-export function libraryResourceDirectory(directory:ResourceDirectory,sources:SourceReference[]):ResourceDirectory{
- const include=(row:ResourceDraft|WorkResource)=>isLocalMaterialSourceId(row.sourceId)||sources.some(source=>source.id===row.sourceId&&source.knowledge)
+/** 本机原件使用真实资源段；不冒充知识页或生成假的 knowledgeId。
+ *  employeeResourceIds：员工 knowledge 字段引用的资源 ID 集合，传入后这些资源也会包含在目录里。 */
+export function libraryResourceDirectory(directory:ResourceDirectory,sources:SourceReference[],employeeResourceIds?:ReadonlySet<string>):ResourceDirectory{
+ const include=(row:ResourceDraft|WorkResource)=>isLocalMaterialSourceId(row.sourceId)||sources.some(source=>source.id===row.sourceId&&source.knowledge)||(employeeResourceIds?.has(row.id)??false)
  return {drafts:directory.drafts.filter(include),resources:directory.resources.filter(include)}
+}
+
+export type EmployeeKnowledgeGroup={roleId:string;roleName:string;resources:WorkResource[];outputs:RoleArtifactSummary[]}
+
+export type RoleKnowledgeRef={id:string;name:string;kind:'employee'|'twin';state:'active'|'paused'|'retired';knowledge:readonly string[]}
+/** 资料库只为在岗或暂停的员工建分组；已退役员工与分身不列。 */
+export const listedEmployee=(role:Pick<RoleKnowledgeRef,'kind'|'state'>)=>role.kind==='employee'&&role.state!=='retired'
+/** 根据员工定义的 knowledge 引用与宿主归集的工作成果，派生各员工分组（纯前端组合，不改动知识树数据）；有资料或有成果才出分组。 */
+export function buildEmployeeKnowledgeGroups(roles:readonly RoleKnowledgeRef[],directory:ResourceDirectory,outputs:ReadonlyMap<string,readonly RoleArtifactSummary[]>=new Map()):EmployeeKnowledgeGroup[]{
+ const groups:EmployeeKnowledgeGroup[]=[]
+ for(const role of roles){
+  if(!listedEmployee(role))continue
+  const resources=role.knowledge.map(id=>directory.resources.find(r=>r.id===id)).filter((r):r is WorkResource=>r!==undefined)
+  const produced=[...outputs.get(role.id)??[]]
+  if(resources.length||produced.length)groups.push({roleId:role.id,roleName:role.name,resources,outputs:produced})
+ }
+ return groups
+}
+
+/** 搜索时员工分组只保留标题匹配的资料与成果，两者都为空的分组不显示。 */
+export function filterEmployeeKnowledgeGroups(groups:readonly EmployeeKnowledgeGroup[],query:string):EmployeeKnowledgeGroup[]{
+ const needle=query.trim().toLocaleLowerCase()
+ if(!needle)return [...groups]
+ const match=(title:string)=>title.toLocaleLowerCase().includes(needle)
+ return groups.map(group=>({...group,resources:group.resources.filter(resource=>match(resource.title)),outputs:group.outputs.filter(output=>match(output.title))})).filter(group=>group.resources.length>0||group.outputs.length>0)
 }
 
 export const workResourceCategories=[

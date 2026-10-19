@@ -5,7 +5,7 @@ import {ResourceIcon,resourceBrand} from './ResourceIcon.js'
 // 凭据字段 write-only：type="password"，不预填，提交后清空。
 // OAuth：授权链接只以新窗口外链展示，由负责人点击，不自动跳转；错误只显示计划附录固定文案。
 import {useEffect,useRef,useState,type ReactNode} from 'react'
-import type {ConnectorAuthSecretVar,MarketCatalogConnectorEntry} from '@teloa/contract'
+import type {ConnectorAuth,ConnectorAuthSecretVar,MarketCatalogConnectorEntry} from '@teloa/contract'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import type {ManagedMcpConnectionApi,ManagedMcpConnectionRecord,ManagedMcpOAuthStatus} from './mcp-connections-api.js'
@@ -21,6 +21,13 @@ export function credentialKey(v:ConnectorAuthSecretVar,serverName:string):string
  if(v.target==='header')return `header_${serverName}__${v.name.toLowerCase()}`
  if(v.target==='basic')return `basic_pass_${serverName}`
  return `url_path_${serverName}`
+}
+/** 条目缺少或损坏鉴权声明时按暂不支持处理（不给连接按钮），不让连接页因字段缺失抛错。 */
+export function connectorAuthOf(entry:MarketCatalogConnectorEntry,reason:string):ConnectorAuth{
+ const auth:unknown=(entry as {connector?:{auth?:unknown}}).connector?.auth
+ const kind=auth&&typeof auth==='object'?(auth as {kind?:unknown}).kind:undefined
+ if(kind==='none'||kind==='oauth'||kind==='secret'&&Array.isArray((auth as {vars?:unknown}).vars))return auth as ConnectorAuth
+ return {kind:'oauth',supported:false,reason}
 }
 export const basicUserCredentialKey=(serverName:string)=>`basic_user_${serverName}`
 
@@ -310,7 +317,7 @@ export function McpConnectionView({catalogId,entry,api,onBack,catalogApi,onOpenC
  const [loadedConnections,setConnections]=useState<ManagedMcpConnectionRecord[]>()
  const visible=readOrigin===origin,phase:McpConnectionViewPhase=visible?loadedPhase:{phase:'loading'},busy=visible&&pending,connections=visible?loadedConnections:undefined
  const title=catalogText(entry.connector.title,locale)
- const auth=entry.connector.auth
+ const auth=connectorAuthOf(entry,t('market.apps.auth.unsupported'))
  const serverName=entry.connector.serverName
  const oauth=auth.kind==='oauth'&&auth.supported?auth:undefined
 

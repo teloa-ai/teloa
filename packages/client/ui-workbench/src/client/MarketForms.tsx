@@ -1,7 +1,7 @@
 import {isIndustryManifest} from './industry-manifest.ts'
 import { readIndustryArchive } from './industry-archive.js'
 import { IndustryDiscoveryList } from './IndustryDiscoveryList.js'
-import { discoverIndustryTemplates, readIndustryDirectory, type IndustryDiscovery } from './industry-directory.js'
+import { discoverIndustryTemplates, readIndustryDirectory, sharePackageItem, SharePackageImportError, type IndustryDiscovery } from './industry-directory.js'
 import { prepareIndustryReferenceCandidates } from './industry-reference.js'
 import { IndustryReferences } from './IndustryReferences.js'
 import { openDialog } from './dialog-focus.js'
@@ -44,6 +44,7 @@ const githubSkillDrafts=createRoleFormDrafts<GithubSkillInput>(),githubSkillRece
 const githubSkillOwners=new WeakMap<object,WeakMap<object,object>>()
 // 已核回来源与迟到回执只留在原来源/内容 API 组合内，不换请求、不自动重发。
 function githubSkillOwner(source:object,content:object){let contents=githubSkillOwners.get(source);if(!contents){contents=new WeakMap();githubSkillOwners.set(source,contents)}let owner=contents.get(content);if(!owner){owner={};contents.set(content,owner)}return owner}
+const jsonValue=(raw:string):unknown=>{try{return JSON.parse(raw)}catch{return undefined}}
 export function MarketImportForm({githubSourceApi,contentApi,marketCatalogApi,openConnection,items,mode:initial,draft,onDraft,close,save,saveMany}:{githubSourceApi:GithubSourceApi;contentApi?:MarketContentApi;marketCatalogApi?:MarketCatalogApi|undefined;openConnection?:((catalogId:string,entry:MarketCatalogConnectorEntry)=>void)|undefined;items:readonly MarketItem[];mode:MarketImportMode;draft?:MarketImportDraft|undefined;onDraft?:((draft:MarketImportDraft)=>void)|undefined;close:()=>void;save:(item:MarketItem,chat:boolean)=>void;saveMany:(items:MarketItem[])=>void}){
   const {locale,t}=useI18n()
   const dialog=useRef<HTMLDialogElement>(null),generation=useRef(0),aboutId=useId()
@@ -156,9 +157,14 @@ export function MarketImportForm({githubSourceApi,contentApi,marketCatalogApi,op
       }
       let item:MarketItem
       if(mode==='paste'){
-        const parsed=await parseMarketManifest(raw)
-        // 粘贴的 Grok 原件按上传来源固定（原文件名 recipe.json），确认后才经 importIndustry 保存。
-        item=itemFromManifest(parsed,parsed.recipeImport?{kind:'upload',name:'recipe.json',size:new TextEncoder().encode(raw).byteLength}:{kind:'paste'})
+        // AI 创建或他人分享的 v2 分享包先转成行业包；其余清单走原解析。
+        const shared=await sharePackageItem(jsonValue(raw))
+        if(shared)item=shared
+        else{
+          const parsed=await parseMarketManifest(raw)
+          // 粘贴的 Grok 原件按上传来源固定（原文件名 recipe.json），确认后才经 importIndustry 保存。
+          item=itemFromManifest(parsed,parsed.recipeImport?{kind:'upload',name:'recipe.json',size:new TextEncoder().encode(raw).byteLength}:{kind:'paste'})
+        }
       }
       else if(mode==='upload'){
         if(directory.length){
@@ -172,16 +178,21 @@ export function MarketImportForm({githubSourceApi,contentApi,marketCatalogApi,op
           return
         }else if(/\.json$/i.test(file.name)){
           if(file.size>MAX_MANIFEST_BYTES)throw Error(t("market.forms.the.json.list.cannot.exceed.1.mib"))
-          const parsed=await parseMarketManifest(await file.text())
-          if(!isIndustryManifest(parsed.manifest))throw Error(t("market.forms.the.first.v2.industry.templates.are.supported.by"))
-          item=await readIndustryDirectory([{path:file.name,size:file.size,read:async()=>new Uint8Array(await file.arrayBuffer())}],file.name,file.name)
+          const fileText=await file.text()
+          const shared=await sharePackageItem(jsonValue(fileText))
+          if(shared)item=shared
+          else{
+            const parsed=await parseMarketManifest(fileText)
+            if(!isIndustryManifest(parsed.manifest))throw Error(t("market.forms.the.first.v2.industry.templates.are.supported.by"))
+            item=await readIndustryDirectory([{path:file.name,size:file.size,read:async()=>new Uint8Array(await file.arrayBuffer())}],file.name,file.name)
+          }
         }else throw Error(t("market.forms.select.the.zip.industry.template.or.json.list"))
         }
       }else{if(!request.trim())throw Error(t("market.forms.please.fill.in.the.working.methods.and.resource"));item=withFunction(sourceItem(crypto.randomUUID(),title||t("market.forms.industryTemplateDraft.defaultName"),{kind:'conversation',request:request.trim()},'general'),requestFunction)}
       if(item.recipeImport){await stageRecipe(item,token);return}
       if(mode==='upload'){if(!contentApi)throw Error(t("market.forms.market.based.fixed.content.services.are.not.accessible"));if(isIndustryManifest(item.manifest)&&item.manifest.resources.some(resource=>resource.source.kind==='public')){const candidates=await prepareIndustryReferenceCandidates(item,items,row=>contentApi.hydrate(row));if(token===generation.current)setReferencePreview({item,items:candidates});return}item=await contentApi.importIndustry(item)}
       if(generation.current===token)save(item,mode==='conversation')
-    }catch(error){if(generation.current===token)setError(localizeWorkError(locale,error))}finally{if(generation.current===token)setBusy(false)}
+    }catch(error){if(generation.current===token)setError(error instanceof SharePackageImportError?t(`market.forms.shareIssue.${error.issue}`):localizeWorkError(locale,error))}finally{if(generation.current===token)setBusy(false)}
   }
   const pendingGithub=githubSourceApi.pending(),githubRecovery=githubSourceApi.recoveryMessage()
   const previewing=!!referencePreview||!!fixedPreview||!!recipePreview||!!fixedSkill,heading=t(conversation?'market.forms.session.creation':'market.forms.importTitle'),visibleError=error||(skillSnapshot.error?localizeWorkError(locale,skillSnapshot.error):'')

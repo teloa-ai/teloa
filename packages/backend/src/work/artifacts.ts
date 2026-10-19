@@ -4,7 +4,8 @@ import {workRequestChildId} from './conversation-work-task-protection.ts'
 import {isDeepStrictEqual} from 'node:util'
 import type {WorkAccessLease} from './work-access.ts'
 import type {Pool,PoolClient} from 'pg'
-import {artifactInput,artifactContent,savedArtifactSource,artifactFileTotalBytes,WorkError,type SavedArtifactSource,type SavedArtifactVersion,type ArtifactContent} from '@teloa/contract'
+import {artifactInput,artifactContent,savedArtifactSource,artifactFileTotalBytes,WorkError,type SavedArtifactSource,type SavedArtifactVersion,type ArtifactContent,type RoleArtifactSummary} from '@teloa/contract'
+import {BusinessScopeService} from './business-scopes.ts'
 import {ArtifactMessageStore,initializeArtifactMessages} from './artifact-messages.ts'
 import {ArtifactSnapshotStore} from './artifact-snapshots.ts'
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
@@ -192,5 +193,42 @@ export class ArtifactService{
    rows.push({...version,producer:{taskId:source.id,taskVersion:receipt.task_version,runId:receipt.run_id}})
   }
   return rows
+ }
+ /**
+  * 员工工作成果目录（只读引用）：每条成果只列当前版本元数据，按更新时间倒序，最多 50 条。
+  * 归属按真实记录依次判定，先命中的规则即为结论，多员工参与或无法确定的不归入任何员工：
+  * run：任一版本的生产回执所属 Run 由员工执行（本人 Run 不计），且恰好只有一位员工；
+  * task：任务来源，该任务全部 Run 的执行者（本人也算一方）恰好只有该员工；没有任何 Run 时取任务指派；
+  * session：会话来源，该会话恰好一条有效的员工对象会话链接。
+  * 结果再按本人当前可查看的业务范围过滤，失去权限的业务成果不出现在目录里。
+  */
+ async listByRole(owner:string,roleId:string):Promise<RoleArtifactSummary[]>{
+  ownerInput(owner);if(!uuid(roleId))throw new WorkError('teloa/invalid-input','员工身份不正确。')
+  if(!(await this.pool.query('select 1 from teloa_roles where owner_id=$1 and id=$2',[owner,roleId])).rows[0])throw new WorkError('teloa/forbidden','员工不存在或不属于本人。')
+  const rows=(await this.pool.query(`select * from (
+   select h.id as artifact_id,h.current_version as number,cv.source,cv.content->>'title' as title,fv.created_at,cv.created_at as updated_at,
+    case
+     when produced.roles is not null then case when produced.roles=array[$2::uuid] then 'run' end
+     when cv.source->>'kind'='task' then case when runs.total>0 then case when runs.executors=array[$2::text] then 'task' end when t.assignee_role_id=$2::uuid then 'task' end
+     when cv.source->>'kind'='session' then case when links.roles=array[$2::uuid] then 'session' end
+    end as attribution
+   from teloa_artifacts h
+   join teloa_artifact_versions cv on cv.owner_id=h.owner_id and cv.artifact_id=h.id and cv.number=h.current_version
+   join teloa_artifact_versions fv on fv.owner_id=h.owner_id and fv.artifact_id=h.id and fv.number=1
+   left join lateral (select array_agg(distinct r.role_id) as roles from teloa_artifact_revision_producers p join teloa_task_runs r on r.owner_id=p.owner_id and r.id=p.run_id where p.owner_id=h.owner_id and p.artifact_id=h.id and r.role_id is not null) produced on true
+   left join lateral (select count(*)::integer as total,array_agg(distinct coalesce(r.role_id::text,'owner')) as executors from teloa_task_runs r where cv.source->>'kind'='task' and r.owner_id=h.owner_id and r.task_id::text=cv.source->>'id') runs on true
+   left join teloa_tasks t on cv.source->>'kind'='task' and t.owner_id=h.owner_id and t.id::text=cv.source->>'id'
+   left join lateral (select array_agg(c.object_id) as roles from teloa_object_conversations c where cv.source->>'kind'='session' and c.owner_id=h.owner_id and c.session_id=cv.source->>'id' and c.kind='role' and c.active=true) links on true
+   where h.owner_id=$1
+  ) attributed where attribution is not null order by updated_at desc,artifact_id limit 50`,[owner,roleId])).rows
+  const items=rows.map(row=>{
+   if(!uuid(row.artifact_id)||!Number.isSafeInteger(row.number)||row.number<1||typeof row.title!=='string'||!(row.created_at instanceof Date)||!(row.updated_at instanceof Date))throw new WorkError('teloa/storage-corrupt','员工成果目录记录损坏。')
+   let source:SavedArtifactSource;try{source=savedArtifactSource(row.source)}catch{throw new WorkError('teloa/storage-corrupt','员工成果来源记录损坏。')}
+   return {artifactId:row.artifact_id as string,number:row.number as number,title:row.title,source,createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString(),attribution:row.attribution as RoleArtifactSummary['attribution']}
+  })
+  // 与会话成果目录同一业务范围校验：本人当前无权读取的业务成果直接不列，不让整份目录失败。
+  const scopes=new BusinessScopeService(this.pool),allowed=new Set<string>()
+  for(const scope of new Set(items.map(item=>item.source.scope)))if((await scopes.attentionScopes(owner,{scope})).scopeIds.includes(scope))allowed.add(scope)
+  return items.filter(item=>allowed.has(item.source.scope))
  }
 }

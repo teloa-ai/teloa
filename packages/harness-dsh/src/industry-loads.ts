@@ -14,7 +14,7 @@ const exact=(value:unknown,keys:string[])=>{if(!isRecord(value)||Object.keys(val
 const stamp=(value:unknown):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value
 const kinds=['role','knowledge','skill','mcp','plugin','data-source','execution-tool','work-template','plan','object-type','business-view','business-action','business-configuration']
 const statuses=['active','unloaded','superseded']
-const relationTargets:Record<string,string[]>={'role-knowledge':['knowledge'],'role-skill':['skill'],'role-connection':['mcp','data-source','execution-tool'],'role-work':['work-template','plan'],'role-coordination':['role']}
+const relationTargets:Record<string,string[]>={'role-knowledge':['knowledge'],'role-skill':['skill'],'role-connection':['mcp','data-source','execution-tool','plugin'],'role-work':['work-template','plan'],'role-coordination':['role']}
 
 function read(value:unknown,owner:string):IndustryLoadRecord{
  try{

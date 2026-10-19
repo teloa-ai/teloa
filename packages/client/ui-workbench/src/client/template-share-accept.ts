@@ -2,10 +2,10 @@ import {industryTeamSeed,industryTeamRole,type IndustryTeamSeed} from './industr
 import type {MarketCatalogEntry,TemplateShareIntent} from '@teloa/contract'
 import type {RoleFields} from './role-preview.ts'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.ts'
-import type {IndustryLoadCreateInput,IndustryLoadRecord,IndustryReadiness} from './industry-load-api.ts'
+import type {IndustryLoadCreateInput,IndustryLoadRecord,IndustryPluginHoldReason,IndustryReadiness,IndustryReadinessRow} from './industry-load-api.ts'
 import type {MarketItem} from './market-preview.ts'
 import {createTemplateAcceptance,type TemplateAcceptanceResult} from './employee-template-share.ts'
-import {readIndustryDirectory} from './industry-directory.ts'
+import {shareIndustryItem} from './industry-directory.ts'
 import {referenceCandidates,resolveIndustryReferences} from './industry-reference.ts'
 import {hasShareSelection,isSharePackageV2,readSharePackage,sharePackageDigest,sharePackageSummary,type SharePackage,type SharePackageV2,type ShareSummary} from './share-package-plan.ts'
 
@@ -15,13 +15,14 @@ import {hasShareSelection,isSharePackageV2,readSharePackage,sharePackageDigest,s
  *    `role-coordination` 静态关系，随固定内容摘要与加载实例持久保存；
  * 2. 所选公共技能按「公共名 + 固定版本」唯一解析到官方目录条目，零或多命中都拒绝；
  * 3. 固定内容导入、加载、所选技能按 industry 来源逐项安装（技能 usage 绑定到本加载条目，回执给出实际原生名）；
- * 4. 技能全部装好后才调用原 `industry-loads/prepare`：资料实例化、连接登记、岗位按 role.json 原样（含结构化职责与
- *    role-knowledge 资料）建立，并经原 `roles/edit` 绑定实际安装的原生名。
+ * 4. 技能全部装好后才调用原 `industry-loads/prepare`：资料实例化、连接登记、已核验的依赖应用安装启用、岗位按 role.json 原样（含结构化职责与
+ *    role-knowledge 资料）建立，并经原 `roles/edit` 绑定实际安装的原生名；应用按准备后读到的真实状态回报。
  * 每个子请求的 requestId 与选择先持久化再调用；恢复只能继续原选择，不改原请求参数。
  * v1 员工包仍走原 `createTemplateAcceptance` 与原恢复键。
  */
-export type ShareAcceptItemState='done'|'pending'|'failed'|'unavailable'|'skipped'
-export type ShareAcceptItem={resourceId:string;title:string;state:ShareAcceptItemState;installationId?:string;nativeName?:string}
+/** needs-user：依赖应用会改动现有配置待本人查看权限、已启用待重启或固定来源变化待核对，原因见 reason。 */
+export type ShareAcceptItemState='done'|'pending'|'failed'|'unavailable'|'skipped'|'needs-user'
+export type ShareAcceptItem={resourceId:string;title:string;state:ShareAcceptItemState;installationId?:string;nativeName?:string;reason?:IndustryPluginHoldReason}
 export type ShareAcceptanceResult={sha256:string;complete:boolean;roleIds:string[];roles:{resourceId:string;name:string;roleId?:string;state:ShareAcceptItemState}[];coordinatorRoleId?:string;coordinator:ShareAcceptItemState;groupId?:string;loadId?:string;pendingKinds:string[];skills:ShareAcceptItem[];mcp:ShareAcceptItem[];plugins:ShareAcceptItem[];plans:ShareAcceptItem[]}
 export type ShareAcceptChoice={skills:readonly string[];scope:string}
 export type ShareIndustryRole={loadId?:string;itemInstanceId:string;state:string;roleId?:string}
@@ -66,30 +67,16 @@ export function teamCoordination(load:Pick<IndustryLoadRecord,'relations'>,roles
  return {coordinatorRoleId,memberRoleIds:memberRoleIds as string[]}
 }
 
-/** 按冻结选择把 v2 分享包转成可固定保存的业务包：只改目标范围、去掉未选技能、技能正文落到 SKILL.md 目录、写入协调关系。 */
-export async function shareIndustryItem(pkg:SharePackageV2,choice:{scope:string;skills:readonly string[]}):Promise<MarketItem>{
- const byPath=new Map(pkg.files.map(f=>[f.path,f.text])),manifest=JSON.parse(byPath.get('teloa.json')!) as {scope?:string;resources:{id:string;kind:string;source:{kind:string;path?:string}}[];relations:{kind:string;from:string;to:string}[];[key:string]:unknown}
- const dropped=new Set(manifest.resources.filter(r=>r.kind==='skill'&&!choice.skills.includes(r.id)).map(r=>r.id)),moved=new Map<string,string>()
- const resources=manifest.resources.filter(r=>!dropped.has(r.id)).map(r=>{
-  if(r.kind!=='skill'||r.source.kind!=='local'||r.source.path!.endsWith('/SKILL.md'))return r
-  const path=r.id+'/SKILL.md';moved.set(r.source.path!,path);return {...r,source:{kind:'local',path}}
- })
- const removed=new Set(manifest.resources.filter(r=>dropped.has(r.id)&&r.source.kind==='local').map(r=>r.source.path!))
- const removedFolders=[...removed].filter(path=>path.includes('/')).map(path=>path.slice(0,path.lastIndexOf('/')+1))
- const keptPaths=new Set(['teloa.json',...pkg.sourceFiles,...resources.filter(r=>r.source.kind==='local').map(r=>r.source.path!)])
- const keptSkillFolders=resources.filter(r=>r.kind==='skill'&&r.source.kind==='local'&&r.source.path!.includes('/')).map(r=>r.source.path!.slice(0,r.source.path!.lastIndexOf('/')+1))
- // 取消技能时连同它的静态附属文件移出本次内容；其它保留资源的显式文件与技能目录仍属于原组成。
- const removeFile=(path:string)=>!keptPaths.has(path)&&(removed.has(path)||removedFolders.some(folder=>path.startsWith(folder))&&!keptSkillFolders.some(folder=>path.startsWith(folder)))
- const relations=manifest.relations.filter(link=>!dropped.has(link.to))
- if(pkg.team){const lead=pkg.team.coordinatorResourceId;for(const r of resources)if(r.kind==='role'&&r.id!==lead)relations.push({kind:'role-coordination',from:lead,to:r.id})}
- const files=pkg.files.filter(f=>!removeFile(f.path)).map(f=>f.path==='teloa.json'?{path:f.path,text:JSON.stringify({...manifest,scope:choice.scope,resources,relations},null,2)}:moved.has(f.path)?{path:moved.get(f.path)!,text:f.text}:f)
- const encoder=new TextEncoder()
- const item=await readIndustryDirectory(files.map(f=>{const bytes=encoder.encode(f.text);return {path:f.path,size:bytes.length,read:async()=>bytes}}),'teloa.json',pkg.title)
- // 分享方的署名与许可只是声明；保留来源信息，不把离线文件提升为已签名或已审来源。
- return {...item,author:pkg.trust.publisher,license:pkg.license,trust:{publisher:pkg.trust.publisher,repository:null,license:{status:'declared',value:pkg.license},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}}}
-}
+export {shareIndustryItem}
 
-const empty=(summary:ShareSummary,kind:'plugins'|'plans'):ShareAcceptItem[]=>summary[kind].map(r=>({resourceId:r.resourceId,title:r.title,state:'pending'}))
+const empty=(summary:ShareSummary,kind:'plans'):ShareAcceptItem[]=>summary[kind].map(r=>({resourceId:r.resourceId,title:r.title,state:'pending'}))
+/** 依赖应用按一键准备后的清单行回报：已启用算完成；只有安装失败记失败（可再添加重试），其余待确认、不能安装、待重启、来源变化、读不出或未被员工依赖的都交本人处理；其余仍在处理。 */
+function pluginState(row:IndustryReadinessRow|undefined,read:boolean):ShareAcceptItemState{
+ if(!row)return read?'unavailable':'pending'
+ if(row.state==='ready')return 'done'
+ if(row.state!=='needs-user')return 'pending'
+ return row.reason==='failed'?'failed':'needs-user'
+}
 export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:ShareAcceptPorts){
  const legacy=createTemplateAcceptance(storage,{createRole:ports.createRole,...(ports.v1??{})} as Parameters<typeof createTemplateAcceptance>[1])
  let busy=false
@@ -159,6 +146,7 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
    const skills:ShareAcceptItem[]=summary.skills.map(s=>{const step=p.installs[s.resourceId];if(!p.skills.includes(s.resourceId))return {resourceId:s.resourceId,title:s.title,state:'skipped'};return {resourceId:s.resourceId,title:s.title,state:step?.state==='installed'?'done':step?.state==='failed'?'failed':'pending',...(step?.installationId?{installationId:step.installationId}:{}),...(step?.nativeName?{nativeName:step.nativeName}:{})}})
    // 连接只登记定义；需要本人授权的显示为已添加，账号授权仍在连接设置完成。
    const mcp:ShareAcceptItem[]=summary.connections.map(c=>{const row=readiness?.rows.find(r=>r.itemInstanceId===itemOf(c.resourceId)?.instanceId);return {resourceId:c.resourceId,title:c.title,state:!row?(readiness?'unavailable':'pending'):row.state==='ready'||row.entry==='connector-settings'?'done':row.state==='needs-user'?'failed':'pending'}})
+   const plugins:ShareAcceptItem[]=summary.plugins.map(r=>{const row=readiness?.rows.find(x=>x.itemInstanceId===itemOf(r.resourceId)?.instanceId);return {resourceId:r.resourceId,title:r.title,state:pluginState(row,!!readiness),...(row?.reason?{reason:row.reason}:{})}})
    let coordinator:ShareAcceptItemState='skipped',coordinatorRoleId:string|undefined
    if(summary.coordinatorResourceId){const team=teamCoordination(load,instances);if(team){coordinator='done';coordinatorRoleId=team.coordinatorRoleId}else coordinator=load.relations.some(l=>l.kind==='role-coordination')?'pending':'failed'}
    let groupId:string|undefined
@@ -168,7 +156,7 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
     if(seed&&roles.every(role=>role.state==='done')){try{groupId=(await industry.team?.(seed))?.groupId}catch{/* 未核对的群不冒充接收完成。 */}}
     coordinator=groupId?'done':'pending'
    }
-   const result:ShareAcceptanceResult={sha256,complete:false,...(groupId?{groupId}:{}),roleIds:roles.flatMap(r=>r.roleId?[r.roleId]:[]),roles,...(coordinatorRoleId?{coordinatorRoleId}:{}),coordinator,loadId,pendingKinds:[...new Set([...(summary.plans.length?['plan']:[]),...(summary.workTemplates.length?['work-template']:[]),...(summary.plugins.length?['plugin']:[])])],skills,mcp,plugins:empty(summary,'plugins'),plans:empty(summary,'plans')}
+   const result:ShareAcceptanceResult={sha256,complete:false,...(groupId?{groupId}:{}),roleIds:roles.flatMap(r=>r.roleId?[r.roleId]:[]),roles,...(coordinatorRoleId?{coordinatorRoleId}:{}),coordinator,loadId,pendingKinds:[...new Set([...(summary.plans.length?['plan']:[]),...(summary.workTemplates.length?['work-template']:[]),...(plugins.some(p=>p.state!=='done')?['plugin']:[])])],skills,mcp,plugins,plans:empty(summary,'plans')}
    result.complete=roles.every(r=>r.state==='done')&&[...skills,...mcp].every(i=>i.state==='done'||i.state==='skipped')&&(coordinator==='done'||coordinator==='skipped')
    return result
   }finally{busy=false}

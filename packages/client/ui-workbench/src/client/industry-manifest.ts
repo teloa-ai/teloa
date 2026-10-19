@@ -9,7 +9,8 @@ export type IndustryResource={id:string;kind:IndustryResourceKind;title:string;l
 const relationTargets={
  'role-knowledge':['knowledge'],
  'role-skill':['skill'],
- 'role-connection':['mcp','data-source','execution-tool'],
+ /** 员工依赖的连接与应用（扩展）：一键准备先装好这些，员工才上岗。 */
+ 'role-connection':['mcp','data-source','execution-tool','plugin'],
  'role-work':['work-template','plan'],
  /** 团队模板明确声明的协调者 → 同包成员；只是静态分工，不授予权限、不建群。 */
  'role-coordination':['role'],

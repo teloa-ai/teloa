@@ -119,6 +119,7 @@ import {openLocalVoiceVad} from './local-voice-vad.ts'
 import {createVoiceServiceConfig} from './voice-service-config.ts'
 import {createLocalVoiceRecognition} from './local-voice-recognition.ts'
 import {createBrowserVoiceHost,browserVoiceEndpoints} from './browser-voice-host.ts'
+import {installSessionToolLoading} from './tool-loading.ts'
 import type {} from './voice-plugin.ts'
 import {createMarketReviewsHandler,marketReviewEndpoints} from './market-reviews.ts'
 import {createResourceInstallReporter,createSignalActivity,detectExclusion,registerUsageActivity} from './usage-stats.ts'
@@ -281,7 +282,7 @@ import {createMcpSyncSource} from './business-mcp-sync-source.ts'
 import {registerBusinessResultTools} from './business-result-tools.ts'
 import {registerLocalRetrieval,type EmbeddingServiceLike} from './local-retrieval.ts'
 import {createPageCreateDraftHandler,pageCreateDraftEndpoints} from './page-create-drafts.ts'
-import {registerPageCreateTools} from './page-create-tools.ts'
+import {registerPageCreateTools,shareConnectorDirectory} from './page-create-tools.ts'
 import {registerEmployeeTools} from './employee-tools.ts'
 import {registerLibraryTools} from './library-tools.ts'
 import {registerGroupTools} from './group-tools.ts'
@@ -1802,6 +1803,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   voiceTaskIdentityChanged=isTaskConversation
   const sessionCapabilitiesReader=createNativeSessionCapabilities(ctx,{owner,conversations:service,links:workLinks,pool:database.pool,isRoutingSession})
   workAccess.installSessionCapabilities(sessionCapabilitiesReader)
+  // 普通会话平台工具按需加载；须先于下方项目运行上下文登记，使其系统提示快照为收窄后的版本。
+  ctx.effect(()=>installSessionToolLoading(ctx,{isRoutingSession}),'Teloa 普通会话工具按需加载')
   const deviceMediaOwner=createDeviceMediaOwner()
   const browserVoice=createBrowserVoiceHost(ctx,{owner,mediaOwner:deviceMediaOwner,speech:voiceService.speech,configured:voiceService.configured,providerId:voiceService.providerId,conversation:id=>service.bySession(owner,id),requestedRoleId:id=>service.requestedRoleId(owner,id),role:id=>new RoleService(database.pool,workIdentity).get(owner,id),links:workLinks,readHomeContext:id=>conversationWork.context(owner,{sessionId:id}),assistantEligible:async id=>!new Set<string>(ctx.workspaceRegistry.archivedSessionIds).has(id)&&(await conversationWorkEligibility(id)).eligible})
   invalidateVoiceContext=id=>{browserVoice.invalidateSession(id);invalidateChannelContext(id)}
@@ -2359,7 +2362,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     const scopes=[...await businessScopeIds()]
     // 新的一类业务的范围键在加载后才登记（0df1b3a 后端同一口径）：这一实体读目录只回已登记清单并标明该键是否已被占用，不按「已获准范围」拦。
     if(input.entity==='business-domain')return {entity:input.entity,scopes,...(input.scope===undefined?{}:{exists:scopes.includes(input.scope)})}
-    if(input.entity==='share')return {entity:'share',format:'teloa.template-share/v2',subjects:['employee','team','skill','mcp','app'],manifestFormats:['teloa.business-package/v2','teloa.business-package/v3','teloa.business-package/v4'],capabilities:['people','automation','connections','business'],staticOnly:true}
+    if(input.entity==='share'){
+     // 应用模板的连接只能引用已审目录连接：沿目录列表（快照与已采用在线连接）分页读取，只回服务名、工具名与鉴权方式，不回配方、地址或任何凭据。
+     let entries:Parameters<typeof shareConnectorDirectory>[0]=[],cursor:string|null=null
+     do{const page=await officialCatalogForMcp.list({ownerId:owner,kind:'human'},{kind:'connector',limit:50,...(cursor===null?{}:{cursor})});entries=[...entries,...page.items.map(item=>item.entry)];cursor=page.nextCursor}while(cursor!==null)
+     return {entity:'share',format:'teloa.template-share/v2',subjects:['employee','team','skill','mcp','app'],manifestFormats:['teloa.business-package/v2','teloa.business-package/v3','teloa.business-package/v4'],capabilities:['people','automation','connections','business'],staticOnly:true,connectors:shareConnectorDirectory(entries)}
+    }
     if(input.scope!==undefined&&!scopes.includes(input.scope))throw new WorkError('teloa/forbidden','当前主体未获准读取此业务范围。')
     // 这个目录只提供模型生成草案前所需的身份与名称，不拿对象内容、草案正文或授权状态去凑“上下文”。
     if(input.entity==='business-definition')return {entity:input.entity,scopes}

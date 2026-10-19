@@ -104,8 +104,11 @@ const SUBJECTS=['employee','team','app','skill','mcp']
 const MANIFEST_FORMATS=['teloa.business-package/v2','teloa.business-package/v3','teloa.business-package/v4']
 const CAPABILITY_OF={role:'people',plan:'automation',mcp:'connections',plugin:'connections','data-source':'connections','execution-tool':'connections','object-type':'business','business-view':'business','business-action':'business','business-configuration':'business'}
 const CAPABILITIES=['people','automation','connections','business']
+/** 资源类型对应须声明的兼容能力（与 v2 包核验同一张表）；无需声明时为 undefined。 */
+export const templateShareResourceCapability=kind=>Object.hasOwn(CAPABILITY_OF,kind)?CAPABILITY_OF[kind]:undefined
 const V2_KINDS=[...kinds,...Object.keys(CAPABILITY_OF).filter(k=>!kinds.includes(k))]
-const V2_TARGETS={...targets,'role-connection':['mcp','data-source','execution-tool']}
+// 员工依赖的应用（npm 扩展）与连接同属 role-connection：一键准备据此先装好应用、再让员工上岗。
+const V2_TARGETS={...targets,'role-connection':['mcp','data-source','execution-tool','plugin']}
 const TEXT_KINDS=['skill','knowledge']
 // 与 market 内容库的固定公共引用一致：只引用已发布的原子技能或完整业务配置。
 const PUBLIC_KINDS=['skill','business-configuration']
@@ -208,7 +211,7 @@ function manifestV2(value,pkg,files) {
  const declaredJson=new Set(['teloa.json',...pkg.sourceFiles,...rows.filter(r=>r.source.kind==='local'&&r.source.path.endsWith('.json')).map(r=>r.source.path)])
  // 扩展名按不区分大小写判断，避免 .JSON 绕过声明（v1 保持原规则）。
  for(const name of files.keys())if(name.toLowerCase().endsWith('.json')&&!declaredJson.has(name))fail('Template contains an undeclared JSON file.')
- for(const r of rows)if(CAPABILITY_OF[r.kind]&&!pkg.compatibility.capabilities.includes(CAPABILITY_OF[r.kind]))fail('Template resources require an undeclared capability.')
+ for(const r of rows)if(CAPABILITY_OF[r.kind]&&!pkg.compatibility.capabilities.includes(CAPABILITY_OF[r.kind]))fail('Template resources require an undeclared capability: add '+CAPABILITY_OF[r.kind]+' to compatibility.capabilities for '+r.kind+' resources.')
  for(const s of pkg.provenance.sources)for(const id of s.resourceIds)if(!byId.has(id)||!provided(byId.get(id)))fail('Template provenance must describe included resources.')
  return m
 }

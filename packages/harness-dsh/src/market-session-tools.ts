@@ -673,7 +673,7 @@ async function executeLoad(ports:MarketSessionToolsPorts,input:LoadInput,request
 }
 
 // ---- teloa_industry_readiness / teloa_industry_prepare（规格 2026-09-26-方案一键准备 §5） ----
-type Readiness={loadId:string;status:string;title:string;version:string;digest:string;counts:{ready:number;auto:number;needsUser:number;optional:number;pending:number};rows:{itemInstanceId:string;kind:string;title:string;state:string;step:string|null;entry:string|null;trust?:{publisher:string;license:string|null};models?:IndustryModelObservation[]}[]}
+type Readiness={loadId:string;status:string;title:string;version:string;digest:string;counts:{ready:number;auto:number;needsUser:number;optional:number;pending:number};rows:{itemInstanceId:string;kind:string;title:string;state:string;step:string|null;entry:string|null;trust?:{publisher:string;license:string|null};app?:{version:string;packageName:string|null};models?:IndustryModelObservation[]}[]}
 function readinessRecord(value:unknown):Readiness{
  if(!isRecord(value)||typeof value.loadId!=='string'||typeof value.status!=='string'||typeof value.title!=='string'||typeof value.version!=='string'||typeof value.digest!=='string'||!/^[0-9a-f]{64}$/.test(value.digest)||!isRecord(value.counts)||!Array.isArray(value.rows))throw hostBad('方案准备服务')
  const counts=value.counts
@@ -682,7 +682,9 @@ function readinessRecord(value:unknown):Readiness{
   if(!isRecord(row)||typeof row.itemInstanceId!=='string'||typeof row.kind!=='string'||typeof row.title!=='string'||typeof row.state!=='string'||(row.step!==null&&typeof row.step!=='string')||(row.entry!==null&&typeof row.entry!=='string'))throw hostBad('方案准备服务')
   if(row.trust!==undefined&&(!isRecord(row.trust)||typeof row.trust.publisher!=='string'||(row.trust.license!==null&&typeof row.trust.license!=='string')))throw hostBad('方案准备服务')
   const trust=isRecord(row.trust)?{trust:{publisher:String(row.trust.publisher),license:row.trust.license===null?null:String(row.trust.license)}}:{}
-  return {itemInstanceId:row.itemInstanceId,kind:row.kind,title:row.title,state:row.state,step:row.step as string|null,entry:row.entry as string|null,...trust,...(row.models===undefined?{}:{models:readIndustryModelObservations(row.models)})}
+  if(row.app!==undefined&&(!isRecord(row.app)||typeof row.app.version!=='string'||(row.app.packageName!==null&&typeof row.app.packageName!=='string')))throw hostBad('方案准备服务')
+  const app=isRecord(row.app)?{app:{version:String(row.app.version),packageName:row.app.packageName===null?null:String(row.app.packageName)}}:{}
+  return {itemInstanceId:row.itemInstanceId,kind:row.kind,title:row.title,state:row.state,step:row.step as string|null,entry:row.entry as string|null,...trust,...app,...(row.models===undefined?{}:{models:readIndustryModelObservations(row.models)})}
  })
  return {loadId:value.loadId,status:value.status,title:value.title,version:value.version,digest:value.digest,counts:{ready:Number(counts.ready),auto:Number(counts.auto),needsUser:Number(counts.needsUser),optional:Number(counts.optional),pending:Number(counts.pending)},rows}
 }
@@ -717,11 +719,12 @@ async function checkedPrepare(ports:MarketSessionToolsPorts,input:PrepareInput):
  if(readiness.digest!==input.expectedDigest)throw new WorkError('teloa/version-conflict','方案状态已变化，请先用 teloa_industry_readiness 重新读取后再确认。')
  if(readiness.counts.auto===0)throw new WorkError('teloa/conflict','该方案当前没有可一键完成的项，其余项请到行业方案页「准备就绪」里处理。')
  // 随一键安装的技能必须在卡上全部逐项列出；太多放不下时不出卡，改到面板确认（面板逐行全部列出）
+ if(readiness.rows.filter(row=>row.state==='auto'&&row.step==='plugin').length>MAX_TRUSTED_ON_CARD)throw new WorkError('teloa/conflict',`随一键安装的应用超过 ${MAX_TRUSTED_ON_CARD} 个，确认卡放不下逐项清单，请到行业方案页「准备就绪」里核对后点「一键准备」。`)
  if(readiness.rows.filter(row=>row.state==='auto'&&row.trust).length>MAX_TRUSTED_ON_CARD)throw new WorkError('teloa/conflict',`随一键安装的技能超过 ${MAX_TRUSTED_ON_CARD} 个，确认卡放不下逐项清单，请到行业方案页「准备就绪」里核对后点「一键准备」。`)
  return readiness
 }
 const stepLabels:Record<string,string>={knowledge:'启用资料',skill:'安装技能',mcp:'登记连接','data-source':'登记连接','execution-tool':'登记连接',role:'创建员工'}
-const entryLabels:Record<string,string>={'connector-settings':'连接设置','skill-confirm':'逐个确认技能（联网、执行权限、非官方来源或脚本）',plugin:'扩展安装确认','knowledge-retry':'资料启用失败待重试','role-retry':'员工创建失败待重试','role-resume':'恢复暂停的员工','task-form':'按模板建任务','plan-form':'启用周期计划'}
+const entryLabels:Record<string,string>={'connector-settings':'连接设置','skill-confirm':'逐个确认技能（联网、执行权限、非官方来源或脚本）',plugin:'应用待你处理（查看权限、重启后核对或重试）','knowledge-retry':'资料启用失败待重试','role-retry':'员工创建失败待重试','role-resume':'恢复暂停的员工','task-form':'按模板建任务','plan-form':'启用周期计划'}
 /** 卡片里的宿主文本（方案标题、版本、条目标题）：去掉控制与格式字符（含双向覆盖 U+202A–202E、U+2066–2069），合并空白，截到 30 字，外包「」。 */
 function cardText(value:string):string{
  const flat=[...value.replace(/[\p{Cc}\p{Cf}]/gu,ch=>/\s/.test(ch)?' ':'').replace(/\s+/g,' ').trim()]
@@ -740,15 +743,20 @@ function listing(rows:Readiness['rows'],state:string,key:'step'|'entry',labels:R
   return `${label}：${shown.join('、')}${shown.length<titles.length?`${shown.length?' ':''}等 ${titles.length} 项`:''}`
  }).join('；')||'无'
 }
+/** 随一键安装启用的应用逐项列出名称、包名与固定版本，不截断、不占其他组的字数预算；只装已核验、只新增配置的，会改动现有配置的不装。 */
+function appListing(rows:Readiness['rows']):string{
+ const apps=rows.filter(row=>row.state==='auto'&&row.step==='plugin').map(row=>`${cardText(row.title)}（${row.app?cardText((row.app.packageName?row.app.packageName+'@':'v')+row.app.version):'版本见方案'}）`)
+ return apps.length?`将随一键安装并启用的应用（只装已核验、只新增配置的，会改动现有配置的不装、交你确认）：${apps.join('、')}。`:''
+}
 /** 随一键安装、带信任声明的技能全部逐项列出名称与信任摘要（本人点确认即是对它们的一次确认），不截断、不占其他组的字数预算；超过上限在 pre 阶段就拒绝出卡。 */
 function trustedListing(rows:Readiness['rows']):string{
  const trusted=rows.filter(row=>row.state==='auto'&&row.trust).map(row=>`${cardText(row.title)}（发布者${cardText(row.trust!.publisher)}，许可${cardText(row.trust!.license??'未注明')}）`)
  return trusted.length?`将随一键安装的技能（官方目录已审核、纯内容、无联网或执行权限）：${trusted.join('、')}。`:''
 }
 function prepareReason(r:Readiness,prior:string):string{
- const budget={left:CARD_TITLE_BUDGET},trusted=trustedListing(r.rows)
+ const budget={left:CARD_TITLE_BUDGET},trusted=trustedListing(r.rows)+appListing(r.rows)
  // 固定声明放在清单之前：清单只含清洗后的宿主标题，不能伪造成声明
- return `${prior}确认为行业方案${cardText(r.title)}版本${cardText(r.version)}一键准备？新建员工只在关联的资料、技能、连接都已就绪时上岗，上岗会一并启用该员工的每日小结；原本暂停的员工不会自动恢复。密钥与授权只在页面填写，不要发到会话。将自动完成：${listing(r.rows,'auto','step',stepLabels,budget)}。${trusted}需要你到页面处理（不在此处完成）：${listing(r.rows,'needs-user','entry',entryLabels,budget)}。按需使用：${listing(r.rows,'optional','entry',entryLabels,budget)}。`
+ return `${prior}确认为行业方案${cardText(r.title)}版本${cardText(r.version)}一键准备？新建员工只在关联的资料、技能、连接与应用都已就绪时上岗，上岗会一并启用该员工的每日小结；原本暂停的员工不会自动恢复。密钥与授权只在页面填写，不要发到会话。将自动完成：${listing(r.rows,'auto','step',stepLabels,budget)}。${trusted}需要你到页面处理（不在此处完成）：${listing(r.rows,'needs-user','entry',entryLabels,budget)}。按需使用：${listing(r.rows,'optional','entry',entryLabels,budget)}。`
 }
 async function executePrepare(ports:MarketSessionToolsPorts,input:PrepareInput){
  const receipt=await ports.industryPrepare('industry-loads/prepare',{loadId:input.loadId,expectedDigest:input.expectedDigest})

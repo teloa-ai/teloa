@@ -35,7 +35,7 @@ const kinds=['role','knowledge','skill','mcp','plugin','data-source','execution-
 // target.localId 表达，不走 relations，否则同一件事有两个真源。
 // role-coordination：团队模板明确声明的协调者 → 同包成员，只是静态分工，不授予权限、不建群。
 const relationTargets:Record<string,readonly MarketResourceKind[]>={
- 'role-knowledge':['knowledge'],'role-skill':['skill'],'role-connection':['mcp','data-source','execution-tool'],'role-work':['work-template','plan'],'role-coordination':['role'],
+ 'role-knowledge':['knowledge'],'role-skill':['skill'],'role-connection':['mcp','data-source','execution-tool','plugin'],'role-work':['work-template','plan'],'role-coordination':['role'],
 }
 const MAX_FILE=2*1024*1024,MAX_TOTAL=20*1024*1024
 const bad=(message='市场内容请求格式不正确或包含未知字段。')=>new WorkError('teloa/invalid-input',message)

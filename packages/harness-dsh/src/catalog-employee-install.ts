@@ -7,7 +7,7 @@ import {WorkError,isRecord,type MarketCatalogRoleEntry} from '@teloa/contract'
  * 2. 加载到本人当前空间（不新建业务空间）；
  * 3. 员工的方法按本加载条目逐个安装（本人在组成预览确认即授权安装），回执给出实际原生名；
  * 4. 方法全部装好才调用原 `industry-loads/prepare`（`activate:false`）：实例化资料、按 role.json 建员工、经原 `roles/edit`
- *    绑定实际原生名，员工保持暂停；应用连接与上岗仍由本人各自授权。
+ *    绑定实际原生名，员工保持暂停；已核验的依赖应用随之安装启用，需本人授权的连接、应用与上岗仍由本人各自处理。
  * 所有子请求 id 由（本人, 条目, 版本, 代次, 步骤）派生：回执丢失、重启或换新服务后再点一次落到同一内容、加载、安装与员工。
  * 旧 v1 直接建岗的员工原样返回旧回执形状，不被替换。
  */
@@ -28,7 +28,7 @@ export type CatalogEmployeePorts={
 /** conflict：本人已有内容不同的同名方法，未另装、未覆盖，需本人处理后再添加。 */
 export type CatalogEmployeeResourceState='done'|'pending'|'failed'|'conflict'|'needs-user'|'optional'
 export type CatalogEmployeeResource={kind:string;title:string;state:CatalogEmployeeResourceState;nativeName?:string}
-/** next：resume 员工已完整就绪、保持暂停待本人恢复；connect 还有连接待本人授权；retry 有资源未完成，可再次添加续做；review 员工已存在但方法与固定包不一致，请本人检查。 */
+/** next：resume 员工已完整就绪、保持暂停待本人恢复；connect 还有连接或应用待本人授权；retry 有资源未完成，可再次添加续做；review 员工已存在但方法与固定包不一致，请本人检查。 */
 export type CatalogEmployeeNext='resume'|'connect'|'retry'|'review'
 export type CatalogEmployeeReceipt={roleId:string|null;status:'created'|'existing'|'pending';skills:string[];install:{complete:boolean;loadId:string;roleState:string|null;next:CatalogEmployeeNext|null;resources:CatalogEmployeeResource[]}}
 /** 旧 v1 回执：原三键形状不变。 */
@@ -50,10 +50,10 @@ function readLoad(value:unknown):{id:string;items:LoadItem[];relations:{kind:str
  const relations=value.relations.map(link=>{if(!isRecord(link)||typeof link.kind!=='string'||typeof link.from!=='string'||typeof link.to!=='string')throw hostBad();return {kind:link.kind,from:link.from.toLowerCase(),to:link.to.toLowerCase()}})
  return {id:value.id.toLowerCase(),items,relations}
 }
-type Row={itemInstanceId:string;kind:string;title:string;state:string;entry:string|null}
+type Row={itemInstanceId:string;kind:string;title:string;state:string;entry:string|null;reason?:string}
 function readReadiness(value:unknown):{digest:string;auto:number;rows:Row[]}{
  if(!isRecord(value)||typeof value.digest!=='string'||!isRecord(value.counts)||!Number.isSafeInteger(value.counts.auto)||!Array.isArray(value.rows))throw hostBad()
- const rows=value.rows.map(row=>{if(!isRecord(row)||typeof row.itemInstanceId!=='string'||typeof row.kind!=='string'||typeof row.title!=='string'||typeof row.state!=='string'||(row.entry!==null&&typeof row.entry!=='string'))throw hostBad();return {itemInstanceId:row.itemInstanceId.toLowerCase(),kind:row.kind,title:row.title,state:row.state,entry:row.entry as string|null}})
+ const rows=value.rows.map(row=>{if(!isRecord(row)||typeof row.itemInstanceId!=='string'||typeof row.kind!=='string'||typeof row.title!=='string'||typeof row.state!=='string'||(row.entry!==null&&typeof row.entry!=='string'))throw hostBad();if(row.reason!==undefined&&typeof row.reason!=='string')throw hostBad();return {itemInstanceId:row.itemInstanceId.toLowerCase(),kind:row.kind,title:row.title,state:row.state,entry:row.entry as string|null,...(typeof row.reason==='string'?{reason:row.reason}:{})}})
  return {digest:value.digest,auto:Number(value.counts.auto),rows}
 }
 /** 已装方法与本加载条目的预览是否同一份固定方法：行业来源、同资源标识与版本、同字节摘要、同原生正文与信任说明。 */
@@ -61,12 +61,16 @@ function equivalentMethod(row:Record<string,unknown>,preview:Record<string,unkno
  const a=isRecord(row.source)?row.source:{},b=isRecord(preview.source)?preview.source:{},an=isRecord(row.native)?row.native:{},bn=isRecord(preview.native)?preview.native:{}
  return a.kind!=='atomic'&&b.kind!=='atomic'&&a.resourceId===b.resourceId&&a.resourceVersion===b.resourceVersion&&row.bundleHash===preview.bundleHash&&row.trustHash===preview.trustHash&&an.bodyHash===bn.bodyHash
 }
-/** 清单行映射为员工资源状态：连接已登记、只差本人授权的算 needs-user；扩展未装、资料失败等如实保留。 */
-function resourceState(row:Row):CatalogEmployeeResourceState{
+/**
+ * 清单行映射为员工资源状态：连接已登记、只差本人授权的算 needs-user；依赖应用按一键准备读到的真实状态——
+ * 只有安装失败（再添加一次可能成功）记失败，其余待本人确认、不能安装、待重启、来源变化或读不出的都交本人到「扩展」处理，不引导反复重试；资料失败等如实保留。
+ */
+export function catalogEmployeeResourceState(row:Row):CatalogEmployeeResourceState{
  if(row.state==='ready')return 'done'
  if(row.state==='optional')return 'optional'
- if(row.state==='needs-user')return row.entry==='connector-settings'||row.entry==='model-settings'?'needs-user':row.entry==='plugin'?'pending':'failed'
- return 'pending'
+ if(row.state!=='needs-user')return 'pending'
+ if(row.entry==='connector-settings'||row.entry==='model-settings')return 'needs-user'
+ return row.entry==='plugin'&&row.reason!=='failed'?'needs-user':'failed'
 }
 
 export function createCatalogEmployeeInstaller(owner:string,get:()=>Promise<CatalogEmployeePorts>){
@@ -141,7 +145,7 @@ export function createCatalogEmployeeInstaller(owner:string,get:()=>Promise<Cata
   }
   const roleId=role?String(role.id).toLowerCase():null,bound=role?role.skills as string[]:[]
   const resources:CatalogEmployeeResource[]=readiness.rows.filter(row=>row.itemInstanceId!==roleItem.instanceId).map(row=>{
-   const install=installs.get(row.itemInstanceId),state=install?.state==='failed'||install?.state==='conflict'?install.state:resourceState(row)
+   const install=installs.get(row.itemInstanceId),state=install?.state==='failed'||install?.state==='conflict'?install.state:catalogEmployeeResourceState(row)
    return {kind:row.kind,title:row.title,state,...(install?.nativeName?{nativeName:install.nativeName}:{})}
   })
   const methodsBound=names.every(name=>name!==undefined&&bound.includes(name))

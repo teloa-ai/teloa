@@ -21,7 +21,8 @@ export type AppsConnectionState='not-connected'|'pending-oauth'|'connected'|'err
 export type AppsConnectorState={install:AppsInstallState;connection:AppsConnectionState}
 export type AppsAuthRequirement='none'|'secret'|'oauth'|'allowlist'|'unsupported'
 /** `added`：目录内容已添加（原目录 add 回执），与连接记录分开；已添加未建连接时直接进入连接设置，不重复添加。 */
-export type AppsConnector={title:string;catalogId?:string;entry?:MarketCatalogConnectorEntry;added?:boolean;auth?:AppsAuthRequirement;tools:{name:string;description:string;readOnly:boolean}[];state?:AppsConnectorState&{record?:ManagedMcpConnectionRecord}}
+/** `unresolved`：应用包声明的连接未能对应到官方目录连接（not-in-catalog），或包内容尚未读取（unread）；此时没有设置连接动作。 */
+export type AppsConnector={title:string;catalogId?:string;entry?:MarketCatalogConnectorEntry;added?:boolean;auth?:AppsAuthRequirement;tools:{name:string;description:string;readOnly:boolean}[];state?:AppsConnectorState&{record?:ManagedMcpConnectionRecord};unresolved?:'not-in-catalog'|'unread'}
 export type AppsSkill={title:string;summary:string;entryId?:string;item?:MarketCatalogItem;added:boolean;installed:boolean;builtin:boolean}
 export type AppsRowKind='app'|'library'|'skill'|'bundle'|'installed-skill'
 /** 应用包成员：所选来源（条目与版本）与本人已添加的内容；installed 只按真实安装记录判断。 */
@@ -51,7 +52,8 @@ export type AppsRow={
  pack?:AppsPack
  mine:boolean
 }
-export type AppsDeclaredPackage={id:string;manifest:IndustryManifest;source?:{contentId:string;contentHash:string}}
+/** `content`：已读取的包文件，用于按连接声明（serverName 与工具）回查官方目录连接；未读取时连接标为 unread。 */
+export type AppsDeclaredPackage={id:string;manifest:IndustryManifest;source?:{contentId:string;contentHash:string};content?:{manifestPath:string;files:readonly {path:string;bytes:Uint8Array}[]}}
 export type AppsStoredContent={itemId:string;contentId:string;contentHash:string;kind:'skill'|'bundle';title:string;summary:string;version:string;publisher:string}
 /** 目录视图状态：搜索、用途、我的与打开中的详情；宿主保存它即可在连接页或内容页返回后恢复原上下文。 */
 export type AppsView={query:string;category:MarketFunctionKey|'all';mine:boolean;detail?:string}
@@ -135,6 +137,22 @@ export function appsDirectoryRows(input:{items:readonly MarketCatalogItem[];conn
   for(const id of entry.plugin.connectors){const owners=connectorPacks.get(id)??new Set<string>();owners.add(entry.plugin.marketplace+':'+entry.plugin.id);connectorPacks.set(id,owners)}
  }
  const connectorOf=(item:MarketCatalogItem,entry:MarketCatalogConnectorEntry):AppsConnector=>({title:text(entry.connector.title),catalogId:entry.id,entry,added:item.addedContentId!==null,auth:authRequirement(entry.connector.auth),tools:entry.connector.tools.map(tool=>({name:tool.name,description:text(tool.description),readOnly:tool.readOnly})),state:connectorState(entry.id,input.connections)})
+ // 包内连接只是对目录连接的引用：按声明的 serverName 精确对应、声明工具须全部在目录条目内，才复用该条目的设置连接与真实状态；不按标题猜。
+ const declaredConnectors=(declared:AppsDeclaredPackage):AppsConnector[]=>{
+  const content=declared.content,root=content&&content.manifestPath.includes('/')?content.manifestPath.slice(0,content.manifestPath.lastIndexOf('/')+1):''
+  return declared.manifest.resources.filter(row=>row.kind==='mcp'||row.kind==='plugin').map(row=>{
+   if(row.kind!=='mcp')return {title:row.title,tools:[]}
+   if(!content)return {title:row.title,tools:[],unresolved:'unread'}
+   const source=row.source,file=source.kind==='local'?content.files.find(item=>item.path===root+source.path):undefined
+   let value:unknown;try{value=file&&JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(file.bytes))}catch{value=undefined}
+   const declaration=value&&typeof value==='object'&&!Array.isArray(value)?value as {format?:unknown;serverName?:unknown;tools?:unknown}:undefined
+   const tools=declaration?.format==='teloa.mcp-connection/v1'&&Array.isArray(declaration.tools)&&declaration.tools.every(tool=>typeof tool==='string')?declaration.tools as string[]:undefined
+   const item=tools&&tools.length?input.items.find(candidate=>candidate.entry.kind==='connector'&&candidate.entry.connector.serverName===declaration!.serverName&&tools.every(name=>(candidate.entry as MarketCatalogConnectorEntry).connector.tools.some(tool=>tool.name===name))):undefined
+   if(!item||!tools)return {title:row.title,tools:[],unresolved:'not-in-catalog'}
+   const connector=connectorOf(item,item.entry as MarketCatalogConnectorEntry)
+   return {...connector,tools:connector.tools.filter(tool=>tools.includes(tool.name))}
+  })
+ }
  for(const item of input.items){
   const entry=item.entry
   if(entry.kind!=='connector')continue
@@ -186,7 +204,8 @@ export function appsDirectoryRows(input:{items:readonly MarketCatalogItem[];conn
   const matches=content.kind==='skill'?(input.installations??[]).filter(record=>record.source.kind==='atomic'&&record.source.contentId===content.contentId&&record.source.contentHash===content.contentHash):[]
   // 已安装技能保留原安装行、详情与按 installationId 分享的路径；只补尚未安装的固定内容。
   if(matches.some(record=>record.state==='installed'))continue
-  rows.push({key:'stored:'+content.contentId,kind:content.kind,title:content.title,summary:content.summary,version:content.version,publisher:content.publisher,categories:[],connectors:[],entryIds:[],contentId:content.contentId,
+  const declared=content.kind==='bundle'?input.packages?.find(row=>row.id===content.itemId):undefined
+  rows.push({key:'stored:'+content.contentId,kind:content.kind,title:content.title,summary:content.summary,version:content.version,publisher:content.publisher,categories:[],connectors:declared?declaredConnectors(declared):[],entryIds:[],contentId:content.contentId,
    savedState:content.kind==='bundle'||input.installationsKnown===false?'saved':matches.some(record=>record.state==='preparing')?'installing':'saved-pending-install',
    skills:content.kind==='skill'?[{title:content.title,summary:content.summary,added:true,installed:false,builtin:false}]:[],mine:true})
  }
@@ -200,7 +219,7 @@ export function appsDirectoryRows(input:{items:readonly MarketCatalogItem[];conn
   // 应用分组：不含岗位、含技能/连接/扩展任一项的真实资源包；只含岗位的包属于员工模板，不在此列。
   if(resources.some(row=>row.kind==='role')||!resources.some(row=>row.kind==='skill'||row.kind==='mcp'||row.kind==='plugin'))continue
   rows.push({key:'package:'+declared.id,kind:'bundle',title:declared.manifest.title,summary:declared.manifest.description,categories:[],entryIds:[],packageId:declared.id,version:declared.manifest.version,
-   connectors:resources.filter(row=>row.kind==='mcp'||row.kind==='plugin').map(row=>({title:row.title,tools:[]})),
+   connectors:declaredConnectors(declared),
    skills:resources.filter(row=>row.kind==='skill').map(row=>({title:row.title,summary:'',added:false,installed:false,builtin:false})),mine:false})
  }
  return rows
@@ -299,6 +318,7 @@ export function skillStatus(skill:AppsSkill):string{
  */
 export type AppsShareSource={subject:'skill'|'app'|'mcp';skills:{name:string;title:string;resourceId:string;version:string;publicId:string}[];connections:{serverName:string;title:string;tools:string[]}[]}
 export function appsRowShareSource(row:AppsRow):AppsShareSource|undefined{
+ if(row.kind==='bundle')return undefined
  // 公共引用写原技能名与固定版本（契约 localId），不写含点的目录 id；接收方按「名 + 版本」唯一解析回目录条目。
  const skills=row.skills.flatMap(skill=>skill.item?.entry.kind==='skill'&&skill.entryId&&!skill.builtin?[{name:skill.item.entry.skill.name,title:skill.title,resourceId:skill.item.entry.skill.name,version:skill.item.entry.version,publicId:skill.item.entry.skill.name}]:[])
  const connections=row.connectors.flatMap(connector=>connector.entry&&connector.tools.length?[{serverName:connector.entry.connector.serverName,title:connector.title,tools:connector.tools.map(tool=>tool.name)}]:[])

@@ -101,8 +101,10 @@ export function readUnloadBlockers(reason:unknown):IndustryLoadUnloadBlocker[]{
 }
 
 // 方案一键准备（规格 2026-09-26-方案一键准备 §7）：客户端只提交加载身份与本人确认过的摘要；分类、摘要、子请求身份一律由宿主判定。
-/** trust 只出现在随一键安装、带信任声明的技能行上（官方目录已审核、纯内容、无联网或执行权限）。 */
-export type IndustryReadinessRow={itemInstanceId:string;kind:string;title:string;state:'ready'|'auto'|'needs-user'|'optional'|'pending';step:string|null;entry:'model-settings'|'connector-settings'|'skill-confirm'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'|null;trust?:{publisher:string;license:string|null};models?:IndustryModelObservation[]}
+/** trust 只出现在随一键安装、带信任声明的技能行上（官方目录已审核、纯内容、无联网或执行权限）；reason 只出现在需要你处理的依赖应用行上；app 是应用行的固定版本与（已登记时）包名。 */
+export const industryPluginHoldReasons=['unverified','rejected','restart-required','failed','drift','unreadable'] as const
+export type IndustryPluginHoldReason=typeof industryPluginHoldReasons[number]
+export type IndustryReadinessRow={itemInstanceId:string;kind:string;title:string;state:'ready'|'auto'|'needs-user'|'optional'|'pending';step:string|null;entry:'model-settings'|'connector-settings'|'skill-confirm'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'|null;trust?:{publisher:string;license:string|null};models?:IndustryModelObservation[];reason?:IndustryPluginHoldReason;app?:{version:string;packageName:string|null}}
 export type IndustryReadiness={loadId:string;status:IndustryLoadStatus;title:string;version:string;digest:string;counts:{ready:number;auto:number;needsUser:number;optional:number;pending:number};rows:IndustryReadinessRow[]}
 export type IndustryPrepareResult={itemInstanceId:string;title:string;step:string;outcome:'done'|'pending'|'failed'|'skipped';code:string|null;message:string|null}
 /** readiness 为 null：宿主已执行，但最终清单读取失败、待刷新。 */
@@ -112,7 +114,7 @@ function readinessRecord(value:unknown):IndustryReadiness{
  try{
   const row=exact(value,['loadId','status','title','version','digest','counts','rows']),counts=exact(row.counts,['ready','auto','needsUser','optional','pending'])
   if(!uuid(row.loadId)||!(loadStatuses as readonly unknown[]).includes(row.status)||typeof row.title!=='string'||typeof row.version!=='string'||!hash(row.digest)||!Array.isArray(row.rows)||Object.keys(counts).length!==5||!Object.values(counts).every(v=>Number.isSafeInteger(v)&&Number(v)>=0))throw Error()
-  const rows=row.rows.map(item=>{const r=exact(item,['itemInstanceId','kind','title','state','step','entry','trust','models']);if(r.models!==undefined)readIndustryModelObservations(r.models);if(r.trust!==undefined){const trust=exact(r.trust,['publisher','license']);if(typeof trust.publisher!=='string'||(trust.license!==null&&typeof trust.license!=='string'))throw Error()}if(!uuid(r.itemInstanceId)||typeof r.kind!=='string'||typeof r.title!=='string'||!readinessStates.includes(String(r.state))||(r.step!==null&&typeof r.step!=='string')||(r.entry!==null&&!readinessEntries.includes(String(r.entry))))throw Error();return r as unknown as IndustryReadinessRow})
+  const rows=row.rows.map(item=>{const r=exact(item,['itemInstanceId','kind','title','state','step','entry','trust','models','reason','app']);if(r.reason!==undefined&&!(industryPluginHoldReasons as readonly unknown[]).includes(r.reason))throw Error();if(r.app!==undefined){const app=exact(r.app,['version','packageName']);if(typeof app.version!=='string'||(app.packageName!==null&&typeof app.packageName!=='string'))throw Error()}if(r.models!==undefined)readIndustryModelObservations(r.models);if(r.trust!==undefined){const trust=exact(r.trust,['publisher','license']);if(typeof trust.publisher!=='string'||(trust.license!==null&&typeof trust.license!=='string'))throw Error()}if(!uuid(r.itemInstanceId)||typeof r.kind!=='string'||typeof r.title!=='string'||!readinessStates.includes(String(r.state))||(r.step!==null&&typeof r.step!=='string')||(r.entry!==null&&!readinessEntries.includes(String(r.entry))))throw Error();return r as unknown as IndustryReadinessRow})
   return {loadId:row.loadId.toLowerCase(),status:row.status as IndustryLoadStatus,title:row.title,version:row.version,digest:row.digest,counts:counts as IndustryReadiness['counts'],rows}
  }catch{throw Error('准备清单格式不正确。')}
 }

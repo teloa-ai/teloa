@@ -31,3 +31,19 @@ test('会话成果目录返回当前会话身份；读取中工作绑定变化�
  assert.deepEqual(await handle('artifacts/conversation/list',{sessionId:'s1'},signal),{sessionId:'s1',artifacts:[]})
  change=true;await assert.rejects(handle('artifacts/conversation/list',{sessionId:'s1'},signal),{code:'teloa/version-conflict'})
 })
+test('员工成果目录只接受员工身份，返回宿主核对后的只读引用',async()=>{
+ const roleId='11111111-1111-4111-8111-111111111111',artifactId='22222222-2222-4222-8222-222222222222',queries:string[]=[]
+ const pool={query:async(sql:string,args:unknown[])=>{
+  queries.push(sql)
+  if(sql.startsWith('select 1 from teloa_roles'))return {rows:args[1]===roleId?[{'?column?':1}]:[]}
+  if(sql.includes('from teloa_artifacts h'))return {rows:[{artifact_id:artifactId,number:2,title:'周报',source:{kind:'task',id:'33333333-3333-4333-8333-333333333333',scope:'general',version:'1',title:'周报任务'},created_at:new Date('2026-10-01T00:00:00Z'),updated_at:new Date('2026-10-02T00:00:00Z'),attribution:'task'}]}
+  throw Error('未预期的查询：'+sql)
+ }} as unknown as Awaited<ReturnType<Parameters<typeof createArtifactHandler>[1]['pool']>>
+ const handle=createArtifactHandler('owner',{pool:async()=>pool,conversation:async()=>{throw Error('不应读取会话')},readFile:async()=>{throw Error('不应读取文件')},id:()=>'',now:()=>''}),signal=new AbortController().signal
+ await assert.rejects(handle('artifacts/role/list',{roleId,ownerId:'other'},signal),{code:'teloa/invalid-input'})
+ await assert.rejects(handle('artifacts/role/list',{roleId:'not-a-role'},signal),{code:'teloa/invalid-input'})
+ await assert.rejects(handle('artifacts/role/list',{},signal),{code:'teloa/invalid-input'})
+ assert.equal(queries.length,0,'入参不对不访问数据库')
+ assert.deepEqual(await handle('artifacts/role/list',{roleId},signal),[{artifactId,number:2,title:'周报',source:{kind:'task',id:'33333333-3333-4333-8333-333333333333',scope:'general',version:'1',title:'周报任务'},createdAt:'2026-10-01T00:00:00.000Z',updatedAt:'2026-10-02T00:00:00.000Z',attribution:'task'}])
+ await assert.rejects(handle('artifacts/role/list',{roleId:'44444444-4444-4444-8444-444444444444'},signal),{code:'teloa/forbidden'})
+})

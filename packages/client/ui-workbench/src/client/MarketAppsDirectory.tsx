@@ -11,7 +11,7 @@ import {loadCatalogListing,type MarketCatalogApi,type MarketCatalogItem,type Mar
 import type {ManagedMcpConnectionApi} from './mcp-connections-api.js'
 import type {SkillInstallApi,SkillInstallationRecord} from './skill-install-api.js'
 import {installAppPack,type AppPackOutcome} from './market-app-pack-install.js'
-import {appsCategories,appsDirectoryRows,appsRowAction,appsRowShareSource,appsRowStatus,appsSections,skillAction,skillStatus,type AppsConnections,type AppsDeclaredPackage,type AppsStoredContent,type AppsRow,type AppsRowAction,type AppsSection,type AppsSkill,type AppsView} from './market-apps-presentation.js'
+import {appsCategories,appsDirectoryRows,appsRowAction,appsRowShareSource,appsRowStatus,appsSections,skillAction,skillStatus,type AppsConnections,type AppsConnector,type AppsDeclaredPackage,type AppsStoredContent,type AppsRow,type AppsRowAction,type AppsSection,type AppsSkill,type AppsView} from './market-apps-presentation.js'
 import {CapabilityTemplateShare,useTemplateShare} from './EmployeeTemplateShare.js'
 import type {ShareSkillSource} from './share-package-plan.js'
 import {SkillSecretsBadgeButton} from './SkillSecretsBadgeButton.js'
@@ -154,6 +154,13 @@ export function MarketAppsDirectoryView(props:MarketAppsDirectoryViewProps){
 
 export type MarketAppDetailViewProps={row:AppsRow;close:()=>void;runAction:(row:AppsRow,action:AppsRowAction)=>void;busy:string|undefined;error:string|undefined;packRun?:AppsPackRun|undefined}&Pick<MarketAppsDirectoryViewProps,'skillSecrets'>
 
+/** 目录连接条目的设置入口：与目录应用同一动作；状态未知或未对应到目录条目时不给入口。 */
+function ConnectorButton({row,item,runAction}:{row:AppsRow;item:AppsConnector;runAction:MarketAppDetailViewProps['runAction']}){
+ const {text}=useAppsText()
+ if(!item.entry||!item.catalogId||!item.state||item.state.install==='unknown')return null
+ const entry=item.entry,catalogId=item.catalogId,state=item.state
+ return <button type="button" onClick={()=>runAction(row,{kind:state.install==='not-added'&&!item.added?'add-connector':'open-connection',entryId:catalogId,entry})}>{text(state.connection==='not-connected'?'market.apps.action.connect':'market.apps.action.manage')}</button>
+}
 /** 应用包的安装区：一个安装动作、本次结果汇总、未采用组件说明与需要本人连接的应用；逐项状态在技能列表里。 */
 function PackInstallSection({row,run,runAction}:{row:AppsRow;run:AppsPackRun|undefined;runAction:MarketAppDetailViewProps['runAction']}){
  const {text}=useAppsText(),pack=row.pack!,action=appsRowAction(row)
@@ -165,10 +172,7 @@ function PackInstallSection({row,run,runAction}:{row:AppsRow;run:AppsPackRun|und
   {action.kind==='install-pack'&&<p className={css.note}>{text('market.apps.pack.installHint')}</p>}
   {run&&!run.running&&<p className={css.note} role="status">{[text('market.apps.pack.installed',{count:count(['installed','already-installed'])}),...(count(['pending'])?[text('market.apps.pack.pending',{count:count(['pending'])})]:[]),...(count(['failed'])?[text('market.apps.pack.failed',{count:count(['failed'])})]:[])].join('；')}</p>}
   {unsupported>0&&<p className={css.note}>{text('market.apps.pack.unsupported',{count:unsupported})}</p>}
-  {row.connectors.length>0&&<><h3>{text('market.apps.pack.connections')}</h3><ul className={css.lines}>{row.connectors.map(item=>{
-   const known=item.entry&&item.catalogId&&item.state&&item.state.install!=='unknown'
-   return <li key={item.catalogId??item.title}><strong>{item.title}</strong>{known&&<button type="button" onClick={()=>runAction(row,{kind:item.state!.install==='not-added'&&!item.added?'add-connector':'open-connection',entryId:item.catalogId!,entry:item.entry!})}>{text(item.state!.connection==='not-connected'?'market.apps.action.connect':'market.apps.action.manage')}</button>}</li>
-  })}</ul></>}
+  {row.connectors.length>0&&<><h3>{text('market.apps.pack.connections')}</h3><ul className={css.lines}>{row.connectors.map(item=><li key={item.catalogId??item.title}><strong>{item.title}</strong><ConnectorButton row={row} item={item} runAction={runAction}/></li>)}</ul></>}
  </section>
 }
 function packMemberLabel(text:Text,row:AppsRow,entryId:string|undefined,run:AppsPackRun|undefined):string{
@@ -205,14 +209,14 @@ export function MarketAppDetailView({row,close,runAction,busy,error,packRun,skil
    {categories.map(category=><span key={category}>{category}</span>)}
   </div>
   {row.compatibility?.status==='unsupported'&&<p className={css.notice}>{text('market.apps.compat.unsupported')}{row.compatibility.conditions.map(condition=><span key={condition}>{condition}</span>)}</p>}
-  {row.kind!=='app'&&row.kind!=='bundle'&&!row.connectors.length&&<p className={css.note}>{text('market.apps.detail.noConnection')}</p>}
+  {row.kind!=='app'&&!row.connectors.length&&<p className={css.note}>{text('market.apps.detail.noConnection')}</p>}
   {row.pack&&<PackInstallSection row={row} run={packRun} runAction={runAction}/>}
   {tools.length>0&&!row.pack&&<section className={css.detailSection}>
    <h3>{text('market.apps.advanced.tools')}</h3>
    {toolList(tools.slice(0,6))}
    {tools.length>6&&<details className={css.moreTools}><summary>{text('market.apps.seeAll')} · {tools.length}</summary>{toolList(tools.slice(6))}</details>}
   </section>}
-  {row.kind==='bundle'&&<section className={css.detailSection}><h3>{text('market.apps.detail.apps')}</h3><p>{text('market.apps.detail.bundleConnections')}</p><ul className={css.lines}>{row.connectors.map(item=><li key={item.title}><strong>{item.title}</strong></li>)}</ul></section>}
+  {row.kind==='bundle'&&row.connectors.length>0&&<section className={css.detailSection}><h3>{text('market.apps.detail.apps')}</h3><p>{text('market.apps.detail.bundleConnections')}</p><ul className={css.lines}>{row.connectors.map((item,index)=><li key={(item.catalogId??item.title)+':'+index}><span><strong>{item.title}</strong>{item.unresolved?<small>{text(item.unresolved==='unread'?'market.apps.bundle.unread':'market.apps.bundle.notInCatalog')}</small>:item.state&&<small>{[stateLabel(item.state.connection),...(item.auth?[text(('market.apps.auth.'+item.auth) as MarketAppsMessageKey)]:[])].join(' · ')}</small>}</span><ConnectorButton row={row} item={item} runAction={runAction}/></li>)}</ul></section>}
   {row.skills.length>0&&(row.kind==='library'||row.kind==='bundle')&&<section className={css.detailSection}><h3>{text('market.apps.detail.skills')} · {row.skills.length}</h3><ul className={css.lines}>{row.skills.map(skill=>{
    // 应用包只给整体安装，逐项只显示真实状态，不逐个打开内容页
    if(row.pack)return <li key={skill.entryId??skill.title}><span><strong>{skill.title}</strong>{skill.summary&&<small>{skill.summary}</small>}</span><div className={css.memberActions}><small>{packMemberLabel(text,row,skill.entryId,packRun)}</small>{secretAction(skill)}</div></li>

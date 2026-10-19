@@ -27,7 +27,7 @@ function grouped<K extends string>(rows:IndustryReadinessRow[],state:IndustryRea
 const names=(titles:string[],t:T)=>titles.slice(0,10).join(t('market.industry.prepare.separator'))+(titles.length>10?' '+t('market.industry.prepare.more',{count:titles.length}):'')
 
 export type ReadinessRelation={kind:string;from:string;to:string}
-// 宿主只给本批新建、关联技能与连接都已就绪的员工绑定技能并上岗；关联项还需要你操作时，一键只会建出暂停、无技能的员工，之后也不再补绑
+// 宿主只给本批新建、关联技能与连接（含依赖应用）都已就绪的员工绑定技能并上岗；关联项还需要你操作时，一键只会建出暂停、无技能的员工，之后也不再补绑
 const roleNeeds=['role-skill','role-connection']
 export type ReadinessPresentationProps={readiness:IndustryReadiness|undefined;receipt:IndustryPrepareReceipt|undefined;confirming:boolean;busy:boolean;error:string;t:T;localize:(value:{code:string;message:string})=>string;onAsk:()=>void;onCancel:()=>void;onConfirm:()=>void;onOpen:(group:ReadinessGroupId)=>void;relations?:readonly ReadinessRelation[]|undefined;stale?:boolean|undefined;onRetry?:(()=>void)|undefined}
 export function IndustryReadinessPresentation({readiness,receipt,confirming,busy,error,t,localize,onAsk,onCancel,onConfirm,onOpen,relations,stale,onRetry}:ReadinessPresentationProps){
@@ -48,8 +48,12 @@ export function IndustryReadinessPresentation({readiness,receipt,confirming,busy
  const itemCount=(outcome:ReturnType<typeof outcomeOf>)=>itemOutcomes.filter(value=>value===outcome).length
  const trusted=rows.filter(row=>row.state==='auto'&&row.trust)
  const auto=grouped(rows,'auto',row=>row.step?stepOf(row.step):null)
+ // 随一键安装启用的应用逐项列出名称、包名与固定版本，不并入按组截断
+ const apps=rows.filter(row=>row.state==='auto'&&row.step==='plugin')
  const actionEntry=(row:IndustryReadinessRow)=>row.entry==='model-settings'&&row.models?.length?null:row.entry
- const todo=[...grouped(rows,'needs-user',actionEntry),...grouped(rows,'optional',actionEntry)]
+ // 员工依赖的应用需要你处理时逐项写明原因（会改动现有配置、不能安装、待重启、失败等）；未被员工依赖的应用条目没有原因，照旧并入「确认扩展安装」
+ const pluginHolds=rows.filter(row=>row.state==='needs-user'&&row.entry==='plugin'&&row.reason)
+ const todo=[...grouped(rows,'needs-user',row=>row.entry==='plugin'&&row.reason?null:actionEntry(row)),...grouped(rows,'optional',actionEntry)]
  const modelRows=rows.filter(row=>row.models?.length)
  // 可一键创建的员工若关联了需要你操作的技能或连接：先引导去处理（技能优先），一键降为显式次要入口
  const byId=new Map(rows.map(row=>[row.itemInstanceId,row] as const))
@@ -79,12 +83,14 @@ export function IndustryReadinessPresentation({readiness,receipt,confirming,busy
    <p>{t('market.industry.prepare.confirm')}</p>
    {waiting.length>0&&<p>{t('market.industry.prepare.pausedWarning',{roles:waitingRoles})}</p>}
    <ul className={css.rows}>{auto.map(([key,titles])=><li key={key}>{t(stepKey[key],{titles:names(titles,t)})}</li>)}</ul>
+   {apps.length>0&&<ul className={css.rows}>{apps.map(row=><li key={row.itemInstanceId}>{t('market.industry.prepare.appAuto',{title:plain(row.title),detail:row.app?(row.app.packageName?row.app.packageName+'@':'v')+row.app.version:'-'})}</li>)}</ul>}
    {trusted.length>0&&<ul className={css.rows}>{trusted.map(row=><li key={row.itemInstanceId}>{t('market.industry.prepare.trustedSkill',{title:plain(row.title),publisher:plain(row.trust!.publisher),license:plain(row.trust!.license??'-')})}</li>)}</ul>}
    <p className={css.confirmActions}><button type="button" className={css.primaryButton} disabled={busy} onClick={onConfirm}>{busy?t('market.industry.prepare.running'):t('market.industry.prepare.confirmRun')}</button> <button type="button" className={css.secondaryButton} disabled={busy} onClick={onCancel}>{t('market.industry.prepare.cancel')}</button></p>
   </div>}
   {receipt&&<p role="status">{t('market.industry.prepare.result',{done:itemCount('done'),pending:itemCount('pending'),needsUser:itemCount('needsUser'),failed:itemCount('failed')})}</p>}
   {receipt&&tally('failed')>0&&<ul className={css.rows}>{receipt.results.filter(row=>row.outcome==='failed').map(row=><li key={row.itemInstanceId+':'+row.step} role="alert">{plain(row.title)} · {localize({code:row.code??'teloa/dependency-unavailable',message:row.message??''})}</li>)}</ul>}
   {error&&<p role="alert">{error}</p>}
+  {pluginHolds.length>0&&<ul className={css.rows}>{pluginHolds.map(row=><li key={row.itemInstanceId}><span>{t('market.industry.prepare.pluginReason.'+row.reason,{title:plain(row.title)})}</span><button type="button" className={css.textButton} onClick={()=>onOpen('extensions')}>{t('market.industry.prepare.open')}</button></li>)}</ul>}
   {todo.length>0&&<ul className={css.rows}>{todo.map(([entry,titles])=><li key={entry}><span>{t(entryKey[entry],{titles:names(titles,t)})}</span><button type="button" className={css.textButton} onClick={()=>onOpen(entryGroup[entry])}>{t('market.industry.prepare.open')}</button></li>)}</ul>}
  </section>
 }

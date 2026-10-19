@@ -188,3 +188,15 @@ test('面板：重新核对失败时旧清单只作上次结果——不写「�
  assert.equal(view.calls.asked+view.calls.confirmed,0)
  assert.match(render({readiness:undefined,error:'首次读取失败',onRetry:()=>{}}),/首次读取失败[\s\S]*重新核对/)
 })
+test('面板：依赖应用在确认态列为「安装并启用」，需要你处理的应用逐项写明原因并给去处理入口',()=>{
+ const G='99999999-9999-4999-8999-999999999999',H='98888888-9999-4999-8999-999999999999'
+ const rows=[...readiness.rows,{itemInstanceId:G,kind:'plugin',title:'工单应用',state:'auto',step:'plugin',entry:null,app:{version:'1.2.0',packageName:'@example/ticket'}},{itemInstanceId:H,kind:'plugin',title:'告警应用',state:'needs-user',step:null,entry:'plugin',reason:'unverified'}]
+ const withApps={...readiness,counts:{...readiness.counts,auto:2,needsUser:2},rows}
+ assert.match(render({readiness:withApps,confirming:true}),/将随一键安装并启用应用：工单应用（@example\/ticket@1\.2\.0；只装已核验、只新增配置的，会改动现有配置的不装、交你确认）/)
+ const html=render({readiness:withApps})
+ assert.match(html,/告警应用 会改动现有配置，未自动安装：查看改动与权限后自行确认/)
+ assert.doesNotMatch(html,/确认扩展安装/)
+ const unlinked={itemInstanceId:H,kind:'plugin',title:'告警应用',state:'needs-user',step:null,entry:'plugin'}
+ assert.match(render({readiness:{...withApps,rows:[...readiness.rows,unlinked]}}),/确认扩展安装：告警应用/,'未被员工依赖的应用照旧并入确认扩展安装')
+ for(const reason of ['rejected','restart-required','failed','drift','unreadable'])assert.match(render({readiness:{...withApps,rows:[...readiness.rows,{...rows.at(-1),reason}]}}),/告警应用 /,reason)
+})

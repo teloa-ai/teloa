@@ -193,3 +193,17 @@ test('submission receipts carry the fixed digest and a review state only',()=>{
  assert.equal(share.readTemplateShareSubmission({...row,state:'rejected',reviewedAt:'2026-10-15T08:00:00.000Z',reason:'License text is missing.'}).reason,'License text is missing.')
  for(const bad of [{state:'published'},{sha256:V1_SAMPLE_DIGEST.toUpperCase()},{sha256:'abc'},{shareId:'grok-recipe-1'},{submittedAt:'yesterday'},{listed:true},{reviewedAt:'2026-10-13T08:00:00.000Z'},{reason:'Missing license.'}])assert.throws(()=>share.readTemplateShareSubmission({...row,...bad}),undefined,JSON.stringify(bad))
 })
+
+test('v2 能力缺失指明应声明的能力与资源类型，供页内新建如实修正',()=>{
+ const p=app();p.compatibility.capabilities=[]
+ assert.throws(()=>readAny(p),/undeclared capability[^\n]*connections[^\n]*mcp/)
+ assert.equal(share.templateShareResourceCapability('mcp'),'connections')
+ assert.equal(share.templateShareResourceCapability('role'),'people')
+ assert.equal(share.templateShareResourceCapability('plan'),'automation')
+ assert.equal(share.templateShareResourceCapability('skill'),undefined)
+})
+test('an employee declares the apps it depends on through role-connection to a plugin',()=>{
+ const p=v2('employee',{resources:[res('lead','role','roles/lead.json'),{...res('helper','plugin','connections/helper.json'),version:'2.1.0'}],relations:[{kind:'role-connection',from:'lead',to:'helper'}],capabilities:['people','connections'],files:[{path:'roles/lead.json',text:roleText('Lead')},{path:'connections/helper.json',text:pluginBody}]})
+ assert.equal(share.readTemplateSharePackageV2(p).subject,'employee')
+ assert.throws(()=>share.readTemplateSharePackageV2(editV2(structuredClone(p),m=>{m.relations=[{kind:'role-skill',from:'lead',to:'helper'}]})),/relationship/,'应用只经 role-connection 关联')
+})

@@ -1000,6 +1000,15 @@ test('industry_prepare：随一键安装的官方技能在确认卡里逐项列�
  assert.match(reasons[0]!,/将随一键安装的技能（官方目录已审核、纯内容、无联网或执行权限）：「研究简报」（发布者「Teloa 官方目录」，许可「MIT」）。/)
 })
 
+test('industry_prepare：随一键安装启用的依赖应用在确认卡里逐项列出名称、包名与固定版本，不进按组截断',async t=>{
+ const base=readinessBody()
+ const app=(i:number,packageName:string|null)=>({itemInstanceId:`9999999${i}-9999-4999-8999-999999999999`,kind:'plugin',title:'工单应用'+i,state:'auto',step:'plugin',entry:null,app:{version:'1.2.0',packageName}})
+ const body={...base,counts:{...base.counts,auto:4},rows:[...base.rows,app(1,'@example/ticket'),app(2,null)]}
+ const e=await setup({...preparePorts(),industryPrepare:async endpoint=>endpoint==='industry-loads/readiness'?body:{loadId,digest:body.digest,results:[],readiness:null}});t.after(()=>e.ctx.fiber.dispose());const reasons=approve(e)
+ assert.equal((await e.call('teloa_industry_prepare',{loadId,expectedDigest:hex('9')})).isError,false)
+ assert.match(reasons[0]!,/将随一键安装并启用的应用（只装已核验、只新增配置的，会改动现有配置的不装、交你确认）：「工单应用1」（「@example\/ticket@1\.2\.0」）、「工单应用2」（「v1\.2\.0」）。/)
+ assert.match(reasons[0]!,/关联的资料、技能、连接与应用都已就绪时上岗/)
+})
 test('industry_prepare：随一键安装的技能在卡上全部逐项列出、不截断；超出上限拒绝出卡并引导去面板',async t=>{
  const base=readinessBody(),long='很长的官方技能标题'.repeat(5)
  const trustedRows=(n:number)=>Array.from({length:n},(_,i)=>({itemInstanceId:`2222222${i.toString(16)}-2222-4222-8222-222222222222`,kind:'skill',title:long+i,state:'auto',step:'skill',entry:null,trust:{publisher:'Teloa 官方目录',license:'Apache-2.0'}}))

@@ -16,7 +16,8 @@ const team=()=>buildSharePlan({...base,subject:'team',title:'Support team',roles
  connections:[{serverName:'slack',title:'Slack',tools:['send_message']}],bindings:[{roleId:'b',connections:['slack']}]})
 
 /** 内存模拟的加载服务：按导入内容的清单生成条目实例与关系；安装回执给出与资源 id 不同的原生名。 */
-function industry(over:Partial<NonNullable<ShareAcceptPorts['industry']>>={}){
+/** pluginRow：一键准备后读到的依赖应用行（状态、入口与原因），缺省时清单不含应用行。 */
+function industry(over:Partial<NonNullable<ShareAcceptPorts['industry']>>={},pluginRow?:{state:string;entry:string|null;reason?:string}){
  const calls={imports:[] as string[],loads:[] as string[],installs:[] as {itemInstanceId:string;requestId:string}[],prepare:0,manifests:[] as any[]}
  let load:IndustryLoadRecord|undefined
  const roles:{itemInstanceId:string;state:string;roleId?:string}[]=[]
@@ -32,7 +33,7 @@ function industry(over:Partial<NonNullable<ShareAcceptPorts['industry']>>={}){
   },
   getLoad:async()=>load!,
   installSkill:async(source,requestId)=>{calls.installs.push({itemInstanceId:source.itemInstanceId,requestId});const item=load!.items.find(i=>i.instanceId===source.itemInstanceId)!;return {state:'installed',installationId:'inst-'+item.localId,nativeName:'native-'+item.localId}},
-  prepare:async()=>{calls.prepare++;for(const item of load!.items.filter(i=>i.kind==='role'))if(!roles.some(r=>r.itemInstanceId===item.instanceId))roles.push({itemInstanceId:item.instanceId,state:'paused',roleId:'role-'+item.localId});return {rows:load!.items.filter(i=>i.kind==='mcp').map(i=>({itemInstanceId:i.instanceId,kind:'mcp',state:'needs-user',step:null,entry:'connector-settings'}))} as never},
+  prepare:async()=>{calls.prepare++;for(const item of load!.items.filter(i=>i.kind==='role'))if(!roles.some(r=>r.itemInstanceId===item.instanceId))roles.push({itemInstanceId:item.instanceId,state:'paused',roleId:'role-'+item.localId});return {rows:[...load!.items.filter(i=>i.kind==='mcp').map(i=>({itemInstanceId:i.instanceId,kind:'mcp',state:'needs-user',step:null,entry:'connector-settings'})),...(pluginRow?load!.items.filter(i=>i.kind==='plugin').map(i=>({itemInstanceId:i.instanceId,kind:'plugin',step:null,...pluginRow})):[])]} as never},
   roles:async()=>roles.map(r=>({...r})),
   ...over,
  }
@@ -201,5 +202,18 @@ test('team role preparation without an actual saved group cannot report team add
   const result=await createShareAcceptance(storage,{createRole:async()=>'unused',industry:fake.ports}).accept(pkg,{scope:'general',skills:sharePackageSummary(pkg).skills.map(s=>s.resourceId)})
   assert.equal(result.complete,false,'prepared employees are not a saved AI team')
   assert.equal(result.coordinator,'pending','coordination cannot be marked complete without a group receipt')
+ }
+})
+
+test('an employee shared with the apps it depends on binds them and reports each app\'s real prepared state',async()=>{
+ const pkg=buildSharePlan({...base,subject:'employee',roles:[role('a','Lead')],skills:[],plugins:[{packageName:'@example/ticket',version:'1.0.0',title:'Ticket'}]})
+ const manifest=JSON.parse(pkg.files.find(f=>f.path==='teloa.json')!.text),roleId=manifest.resources.find((r:any)=>r.kind==='role').id,pluginId=manifest.resources.find((r:any)=>r.kind==='plugin').id
+ assert.deepEqual(manifest.relations,[{kind:'role-connection',from:roleId,to:pluginId}],'员工主题默认依赖所列应用')
+ const cases=[[{state:'ready',entry:null},'done',undefined,false],[{state:'needs-user',entry:'plugin',reason:'unverified'},'needs-user','unverified',true],[{state:'needs-user',entry:'plugin',reason:'rejected'},'needs-user','rejected',true],[{state:'needs-user',entry:'plugin',reason:'failed'},'failed','failed',true]] as const
+ for(const [row,state,reason,pending] of cases){
+  const {storage}=memory(),fake=industry({},row),flow=createShareAcceptance(storage,{createRole:async()=>'unused',industry:fake.ports})
+  const result=await flow.accept(pkg,{scope:'general',skills:[]})
+  assert.deepEqual(result.plugins,[{resourceId:pluginId,title:'Ticket',state,...(reason?{reason}:{})}],state)
+  assert.equal(result.pendingKinds.includes('plugin'),pending,state)
  }
 })

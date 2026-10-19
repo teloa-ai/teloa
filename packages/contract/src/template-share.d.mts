@@ -16,6 +16,7 @@ export function templateShareTextIssue(value:string):string|undefined
 export function readTemplateSharePackage(value:unknown):TemplateSharePackage
 export function readTemplateSharePackageV2(value:unknown):TemplateSharePackageV2
 export function readTemplateShare(value:unknown):AnyTemplateSharePackage
+export function templateShareResourceCapability(kind:string):TemplateShareCapability|undefined
 export function canonicalTemplateShare(value:unknown):string
 export function templateShareDigest(value:unknown):Promise<string>
 export function readTemplateShareSubmission(value:unknown):TemplateShareSubmission

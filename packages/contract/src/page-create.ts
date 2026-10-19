@@ -313,7 +313,11 @@ export function readPageCreateBody(entity:PageCreateEntity,value:unknown,readers
  // 直接生成静态模板，不要求先创建真实员工；包判据与导出/接收共用。
  if(entity==='share'){
   const row=exact(value,['package'],'模板草案必须是一份静态分享包。')
-  try{return {package:readTemplateShare(row.package)}}catch{throw bad('模板草案包含无效资源、私有身份或不支持的字段。')}
+  // 只透传分享包读取器的固定英文原因（不含正文或取值），其他异常仍只给笼统说明，便于模型按原因修正。
+  try{return {package:readTemplateShare(row.package)}}catch(error){
+   const reason=error instanceof Error&&error.constructor===Error&&/^Template [\x20-\x7e]{1,200}$/.test(error.message)?'原因：'+error.message:''
+   throw bad('模板草案包含无效资源、私有身份或不支持的字段。'+reason)
+  }
  }
  // 「角色」页内新建只对应AI 员工。分身是个人空间初始化的单例身份，
  // 不能让一句话草案先预览、再在真正落库时才被 roles/create 拒绝。

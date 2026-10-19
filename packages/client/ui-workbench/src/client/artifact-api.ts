@@ -1,4 +1,4 @@
-import {artifactInput,artifactContent,savedArtifactMessage,savedArtifactSource,savedArtifactFeedback,isArtifactFile,type SavedArtifactVersion,type ArtifactFile} from '@teloa/contract'
+import {artifactInput,artifactContent,savedArtifactMessage,savedArtifactSource,savedArtifactFeedback,isArtifactFile,roleArtifactSummary,type RoleArtifactSummary,type SavedArtifactVersion,type ArtifactFile} from '@teloa/contract'
 import type {Artifact,ArtifactRevision} from './artifact-preview.js'
 import {recoveryStorageError} from './recovery-error.ts'
 type Call=(method:string,payload:unknown)=>Promise<unknown>
@@ -118,6 +118,8 @@ export function createArtifactApi(call:Call,journal?:ArtifactSaveJournal){
    const value=prepared(key,request.payload);busy=true
    try{persist();if(value.feedback){const result=savedArtifactFeedback(await call('artifacts/feedback/add',request.payload));if(result.artifactId!==value.row.artifactId||result.version!==value.row.version||result.sectionId!==value.row.sectionId||result.text!==value.row.text)throw Error('反馈恢复响应不一致。');const saved=await load(result.artifactId);finish(key);return saved}const result=read(await call(value.creating?'artifacts/create':'artifacts/revise',request.payload));if(result.source.id!==value.source.id||result.number!==(value.creating?1:(value.row.expectedVersion as number)+1)||(!value.creating&&result.artifactId!==value.row.artifactId))throw Error('成果恢复响应不一致。');const saved=await load(result.artifactId);finish(key);return saved}catch(error){if(rejected(error))finish(key);throw error}finally{busy=false}
   },
+  /** 员工工作成果目录：只读元数据，不读版本正文与文件快照；打开某条时再按成果读取。 */
+  async listByRole(roleId:string):Promise<RoleArtifactSummary[]>{const value=await call('artifacts/role/list',{roleId});if(!Array.isArray(value))throw Error('员工成果目录格式不正确。');const rows=value.map(roleArtifactSummary);if(new Set(rows.map(row=>row.artifactId)).size!==rows.length)throw Error('员工成果目录重复。');return rows},
   async list(sessionId:string,kind:'session'|'task'='session'){const value=await call(kind==='task'?'artifacts/task/list':'artifacts/list',kind==='task'?{taskId:sessionId}:{sessionId});if(!Array.isArray(value))throw Error('成果目录格式不正确。');const rows=value.map(read);if(rows.some(row=>row.producer?kind!=='task'||row.producer.taskId!==sessionId:row.source.kind!==kind||row.source.id!==sessionId)||new Set(rows.map(row=>row.artifactId)).size!==rows.length)throw Error('成果目录身份不一致。');return Promise.all(rows.map(async row=>{const artifact=await load(row.artifactId);if(row.producer){if(!artifact.versions.some(v=>v.number===row.number))throw Error('生产版本不存在。');artifact.produced=[{...row.producer,version:row.number}]}return artifact}))},
   async feedback(artifact:Artifact,version:number,sectionId:string,text:string,requestIdentity?:string){
    if(recoveryError)throw recoveryError;if(busy)throw Error('成果请求正在核对，请等待完成。')

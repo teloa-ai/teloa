@@ -8,6 +8,7 @@ import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {sourceInstruction} from './conversation-work-instruction.ts'
 import {readSessionEvents} from './session-events.ts'
 import {registerConversationResultPresentation} from './conversation-result-presentation.ts'
+import {conversationWorkToolNames} from './conversation-work-tool-names.ts'
 
 export const conversationWorkSource='plugin:teloa.work' as const
 declare module '@deepseek-ai/dsh-llm' {interface MessageSourceMap {'plugin:teloa.work':{kind:typeof conversationWorkSource;requestId?:string;receipt?:string;reassignment?:BusinessReassignmentReceipt;sourceReference?:BusinessObjectReference}&ContextFormed}}
@@ -34,7 +35,7 @@ export type ConversationWorkToolsPorts={
  data:(input:unknown,signal:AbortSignal)=>Promise<unknown>
  now:()=>string
 }
-export const conversationWorkToolNames=['teloa_work_directory','teloa_work_dispatch','teloa_work_collect_reports','teloa_work_status','teloa_work_stop','teloa_work_resume','teloa_work_facts','teloa_business_data_query'] as const
+export {conversationWorkToolNames}
 const scopeParameter={scope:{type:'string',required:true}} as const
 const requestParameter={requestId:{type:'string',required:true}} as const
 const goalParameter={goal:{type:'string',required:true,description:'用简明业务语言说明目标、依据和验收要求；不要自行加入平台内部对象、范围、工具或请求标识。业务记录由 reference 绑定；通用成果修订由宿主任务上下文绑定，不传 reference。'}} as const

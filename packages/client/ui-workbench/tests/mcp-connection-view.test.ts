@@ -396,3 +396,13 @@ test('审查修复（设计约束）：凭据表单的目录说明按界面语�
  const zhTw=render({phase:{phase:'secret-empty',vars,serverName:'svc',error:''},locale:'zh-TW'})
  assert.ok(zhTw.includes('PagerDuty API 密钥'))
 })
+
+test('目录条目缺少或损坏鉴权声明时按暂不支持处理，不因 auth 缺失抛错',async()=>{
+ const {connectorAuthOf}=await import('../lib/types/client/McpConnectionView.js')
+ const connector={serverName:'docs',title:{'zh-CN':'文档','en':'Docs'},tools:[]}
+ for(const auth of [undefined,null,{},{kind:'magic'},{kind:'secret'},{kind:'secret',vars:'x'}])assert.deepEqual(connectorAuthOf({connector:{...connector,auth}} as never,'暂不支持'),{kind:'oauth',supported:false,reason:'暂不支持'})
+ assert.deepEqual(connectorAuthOf({} as never,'暂不支持'),{kind:'oauth',supported:false,reason:'暂不支持'})
+ const secret={kind:'secret',vars:[{target:'bearer',label:{'zh-CN':'令牌',en:'Token'},required:true}]}
+ assert.equal(connectorAuthOf({connector:{...connector,auth:secret}} as never,'x'),secret)
+ assert.deepEqual(connectorAuthOf({connector:{...connector,auth:{kind:'none'}}} as never,'x'),{kind:'none'})
+})

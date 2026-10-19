@@ -10,9 +10,9 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {registerPageCreateTools,pageCreateToolNames,type PageCreateToolsPorts} from '../src/page-create-tools.ts'
+import {registerPageCreateTools,pageCreateToolNames,shareConnectorDirectory,type PageCreateToolsPorts} from '../src/page-create-tools.ts'
 import {roleGrantToolNames,validateReferenceToolRules} from '../src/role-tool-grants.ts'
-import {roleWriteDefinition,readPageCreateAtomicSkillDraft,readPageCreatePlanDraft,readPageCreateBody,pageCreateCanonicalBody,encodePageCreateDraftReference,readPageCreateDraftReferences} from '@teloa/contract'
+import {readTemplateShare,roleWriteDefinition,readPageCreateAtomicSkillDraft,readPageCreatePlanDraft,readPageCreateBody,pageCreateCanonicalBody,encodePageCreateDraftReference,readPageCreateDraftReferences} from '@teloa/contract'
 import type {BuiltinSkillCreator} from '../src/builtin-skill-creator.ts'
 import {configurePlanDraftExample} from '../src/plan-draft-guide.ts'
 
@@ -601,4 +601,74 @@ test('原稿 Markdown 引用只显示转义标题，损坏身份或摘要明确�
  assert.deepEqual(readPageCreateDraftReferences(markdown),[{draftId:value.id,bodyHash:value.bodyHash}])
  assert.throws(()=>readPageCreateDraftReferences(markdown.replace(value.bodyHash,'stale')),{code:'teloa/invalid-input'})
  assert.deepEqual(readPageCreateDraftReferences('只修改这份草稿的验证步骤。'),[])
+})
+
+test('带连接应用示例只引用目录连接的服务名与工具，真实DSH结构校验与原分享校验均接受',async t=>{
+ const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
+ const schema=e.ctx.tools.schemas(e.agent).find(item=>item.name==='teloa_create_draft')!,description=schema.description??''
+ const example=/最小结构化带连接应用调用：\n([^\n]+)\n/.exec(description)
+ assert.ok(example,'有连接需求时模型可直接参照带连接示例')
+ const args=JSON.parse(example[1]!),template=args.template
+ assert.equal(template.subject,'app');assert.ok(template.compatibility.capabilities.includes('connections'))
+ const mcp=template.manifest.resources.find((row:{kind:string})=>row.kind==='mcp')
+ assert.equal(mcp.required,false)
+ const file=template.files.find((row:{path:string})=>row.path===mcp.source.path)
+ assert.deepEqual(Object.keys(file.json).sort(),['format','serverName','tools']);assert.equal(file.json.format,'teloa.mcp-connection/v1')
+ assert.ok(template.requirements.some((row:string)=>row.includes(mcp.title)))
+ assert.deepEqual(validateJsonSchemaValue(schema.parameters,args),[])
+ const result=await e.call('teloa_create_draft',args)
+ assert.equal(result.isError,false,JSON.stringify(result.content));assert.equal(e.calls.length,1)
+ const body=(e.calls[0]!.input as {body:{package:unknown}}).body
+ assert.doesNotThrow(()=>readTemplateShare(body.package));assert.doesNotThrow(()=>readPageCreateBody('share',body))
+ assert.match(description,/teloa_create_directory[^。]*entity=share[^。]*serverName/)
+ assert.match(description,/不得写[^。]*auth[^。]*token[^。]*url/)
+ assert.match(description,/设置连接/)
+})
+test('带依赖应用的员工模板示例经 role-connection 声明应用，真实DSH结构校验与原分享校验均接受',async t=>{
+ const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
+ const schema=e.ctx.tools.schemas(e.agent).find(item=>item.name==='teloa_create_draft')!,description=schema.description??''
+ const example=/最小结构化带依赖应用员工模板调用：\n([^\n]+)\n/.exec(description)
+ assert.ok(example,'创建员工时可直接参照带依赖应用的示例')
+ const args=JSON.parse(example[1]!),template=args.template
+ assert.equal(template.subject,'employee');assert.deepEqual([...template.compatibility.capabilities].sort(),['connections','people'])
+ const plugin=template.manifest.resources.find((row:{kind:string})=>row.kind==='plugin'),role=template.manifest.resources.find((row:{kind:string})=>row.kind==='role')
+ assert.equal(plugin.required,false)
+ assert.deepEqual(template.manifest.relations,[{kind:'role-connection',from:role.id,to:plugin.id}])
+ const file=template.files.find((row:{path:string})=>row.path===plugin.source.path)
+ assert.deepEqual(Object.keys(file.json).sort(),['format','packageName','registry','version']);assert.equal(file.json.version,plugin.version)
+ assert.deepEqual(validateJsonSchemaValue(schema.parameters,args),[])
+ const result=await e.call('teloa_create_draft',args)
+ assert.equal(result.isError,false,JSON.stringify(result.content))
+ const body=(e.calls[0]!.input as {body:{package:unknown}}).body
+ assert.doesNotThrow(()=>readTemplateShare(body.package));assert.doesNotThrow(()=>readPageCreateBody('share',body))
+ assert.match(description,/依赖的应用[^。]*role-connection/)
+ assert.match(description,/本人[^。]*包名[^。]*不编造/)
+})
+test('模板能力与资源类型按原分享规则预校验，原因透传给模型且不写草案',async t=>{
+ const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
+ const schema=e.ctx.tools.schemas(e.agent).find(item=>item.name==='teloa_create_draft')!
+ const template=JSON.parse(/最小结构化带连接应用调用：\n([^\n]+)\n/.exec(schema.description??'')![1]!).template
+ const missing=await e.call('teloa_create_draft',{entity:'share',template:{...template,compatibility:{...template.compatibility,capabilities:[]}}},'missing-connections')
+ assert.equal(missing.isError,true);assert.match(JSON.stringify(missing.content),/template\.compatibility\.capabilities[^"]*connections/)
+ const mcpPath=template.manifest.resources.find((row:{kind:string})=>row.kind==='mcp').source.path
+ const runtime=await e.call('teloa_create_draft',{entity:'share',template:{...template,files:template.files.map((row:{path:string;json?:object})=>row.path===mcpPath?{...row,json:{...row.json,url:'https://mcp.example.test/mcp'}}:row)}},'runtime-config')
+ assert.equal(runtime.isError,true);assert.match(JSON.stringify(runtime.content),/原因：Template contains missing or unsupported fields/)
+ assert.equal(e.calls.length,0)
+})
+test('分享目录列出可用已审连接的服务名、工具与鉴权方式，不含配方、地址或密钥',()=>{
+ const text=(zh:string)=>({'zh-CN':zh,en:zh})
+ const entry=(id:string,serverName:string,auth:unknown,patch:Record<string,unknown>={})=>({id,kind:'connector',version:'1.0.0',compatibility:{status:'needs-configuration',teloa:'>=0.2.0',dsh:'>=0.2.0',conditions:[]},connector:{serverName,title:text(serverName+' 服务'),summary:text('说明'),auth,recipe:{transport:'streamable-http',url:'https://mcp.example.test/'+serverName},tools:[{name:'search',description:text('搜索'),readOnly:true},{name:'update',description:text('更新'),readOnly:false}],upstreamUrl:'https://github.com/example/'+serverName},...patch}) as never
+ const rows=shareConnectorDirectory([
+  entry('teloa.mcp-docs','docs',{kind:'secret',vars:[{target:'env',envVarName:'DOCS_TOKEN',label:text('文档令牌'),required:true}]}),
+  entry('teloa.mcp-open','open',{kind:'none'}),
+  entry('teloa.mcp-mail','mail',{kind:'oauth',supported:true,scopes:['mail.read']}),
+  entry('teloa.mcp-blocked','blocked',{kind:'oauth',supported:false,reason:'厂商未开放'}),
+  entry('teloa.mcp-off','off',{kind:'none'},{compatibility:{status:'unsupported',teloa:'>=0.2.0',dsh:'>=0.2.0',conditions:[]}}),
+ ])
+ assert.deepEqual(rows,[
+  {serverName:'docs',title:'docs 服务',tools:['search','update'],auth:'secret',secrets:['文档令牌']},
+  {serverName:'open',title:'open 服务',tools:['search','update'],auth:'none'},
+  {serverName:'mail',title:'mail 服务',tools:['search','update'],auth:'oauth'},
+ ])
+ const raw=JSON.stringify(rows);for(const hidden of ['DOCS_TOKEN','https://','recipe','mail.read','envVarName'])assert.equal(raw.includes(hidden),false,hidden)
 })

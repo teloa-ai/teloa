@@ -1,6 +1,6 @@
 import {ArtifactRevisionRequestService,ArtifactService,ArtifactSnapshotStore,ArtifactFeedbackService,ArtifactMessageStore,taskArtifactSource,taskArtifactSessions,listConversationArtifacts} from '@teloa/backend'
 import {artifactInput,artifactFilePath,savedArtifactMessage,type SavedArtifactMessage,WorkError,type Conversation,type ArtifactFile,type SavedArtifactSource} from '@teloa/contract'
-export const artifactEndpoints=['artifacts/conversation/list','artifacts/revision/request','artifacts/revision/list','artifacts/task/sessions','artifacts/task/source','artifacts/task/list','artifacts/message/capture','artifacts/message/snapshot','artifacts/source','artifacts/capture','artifacts/create','artifacts/revise','artifacts/versions','artifacts/snapshot','artifacts/list','artifacts/feedback/add','artifacts/feedback/list']
+export const artifactEndpoints=['artifacts/conversation/list','artifacts/revision/request','artifacts/revision/list','artifacts/task/sessions','artifacts/task/source','artifacts/task/list','artifacts/role/list','artifacts/message/capture','artifacts/message/snapshot','artifacts/source','artifacts/capture','artifacts/create','artifacts/revise','artifacts/versions','artifacts/snapshot','artifacts/list','artifacts/feedback/add','artifacts/feedback/list']
 /** 成果保存与方法复用共用真实来源读取，不按当前界面或模型文字猜归属。 */
 export function createArtifactSessionSource(owner:string,conversation:(sessionId:string)=>Promise<Conversation>){
  return async(sessionId:unknown):Promise<SavedArtifactSource>=>{
@@ -53,6 +53,7 @@ export function createArtifactHandler(owner:string,ports:{pool:()=>Promise<Artif
   if(endpoint==='artifacts/snapshot'){const row=artifactInput(payload,['snapshotId']);if(typeof row.snapshotId!=='string')throw new WorkError('teloa/invalid-input','快照身份不正确。');return new ArtifactSnapshotStore(pool).read(owner,row.snapshotId)}
   const service=new ArtifactService(pool,{id:ports.id,now:ports.now},createArtifactSourceResolver(owner,source))
   if(endpoint==='artifacts/task/list'){const row=artifactInput(payload,['taskId']);return service.listTask(owner,await taskArtifactSource(pool,owner,row.taskId as string,false))}
+  if(endpoint==='artifacts/role/list'){const row=artifactInput(payload,['roleId']);return service.listByRole(owner,row.roleId as string)}
   if(endpoint==='artifacts/list'){const row=artifactInput(payload,['sessionId']);return service.listSource(owner,await source(row.sessionId))}
   if(endpoint==='artifacts/create'||endpoint==='artifacts/revise'){
    // 服务保留严格命令校验，不能把客户端作者或状态字段透传进数据库。

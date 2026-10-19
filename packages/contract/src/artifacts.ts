@@ -3,6 +3,13 @@ export type SavedArtifactSource={kind:'session'|'task'|'run'|'analysis'|'object'
 export type ArtifactContent={title:string;sections:{id:string;title:string;text:string}[];snapshotIds:string[];messageSnapshotIds?:string[];note:string;feedbackId?:string}
 export type SavedArtifactVersion={artifactId:string;ownerId:string;number:number;source:SavedArtifactSource;content:ArtifactContent;createdAt:string}
 export type SavedArtifactFeedback={id:string;artifactId:string;ownerId:string;version:number;sectionId:string;text:string;createdAt:string}
+/** 员工工作成果目录的一条只读引用：只带当前版本的元数据，正文按需再读。attribution 记录按哪条真实记录归给该员工。 */
+export type RoleArtifactSummary={artifactId:string;number:number;title:string;source:SavedArtifactSource;createdAt:string;updatedAt:string;attribution:'run'|'task'|'session'}
+export function roleArtifactSummary(value:unknown):RoleArtifactSummary{
+ const row=artifactInput(value,['artifactId','number','title','source','createdAt','updatedAt','attribution'])
+ if(typeof row.artifactId!=='string'||!/^[a-f0-9-]{36}$/i.test(row.artifactId)||!Number.isSafeInteger(row.number)||(row.number as number)<1||![row.createdAt,row.updatedAt].every(time=>typeof time==='string'&&Number.isFinite(Date.parse(time)))||!['run','task','session'].includes(row.attribution as string))throw new WorkError('teloa/invalid-input','员工成果目录条目不正确。')
+ return {artifactId:row.artifactId,number:row.number as number,title:text(row.title,200),source:savedArtifactSource(row.source),createdAt:row.createdAt as string,updatedAt:row.updatedAt as string,attribution:row.attribution as RoleArtifactSummary['attribution']}
+}
 export function savedArtifactFeedback(value:unknown):SavedArtifactFeedback{
  const row=artifactInput(value,['id','artifactId','ownerId','version','sectionId','text','createdAt'])
  if(![row.id,row.artifactId].every(id=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id))||!Number.isSafeInteger(row.version)||(row.version as number)<1||typeof row.createdAt!=='string'||!Number.isFinite(Date.parse(row.createdAt)))throw new WorkError('teloa/invalid-input','成果反馈身份或时间不正确。')
