@@ -48,7 +48,7 @@ Community 0.2.2 · Actual interface with sample data. [Watch with captions](http
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.2** is the current Community release. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.2) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. [npm](https://www.npmjs.com/package/@teloa/cli) provides the same version. Source builds remain available below.
+**0.2.3** is the current Community release. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.3) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. [npm](https://www.npmjs.com/package/@teloa/cli) provides the same version. Source builds remain available below.
 
 ### What changes in this release
 
