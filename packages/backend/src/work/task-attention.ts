@@ -5,7 +5,7 @@ import {readStoredTaskRun,type TaskRun} from './task-runs.ts'
 import {completedGroupReplies} from './group-reply-attention.ts'
 
 export type TaskAttention={kind:'error'|'review';reason:'task-blocked'|'execution-failed'|'execution-configuration-failed'|'execution-completed'|'task-waiting'}
-export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null}
+export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null;completedGroupReply?:true}
 export type TaskAttentionPage={items:TaskAttentionItem[]}
 
 function ownerIdentity(owner:string):void{if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
@@ -33,7 +33,7 @@ export class TaskAttentionService{
    const rawRuns=new Map<string,Record<string,unknown>[]>()
    for(const row of runRows){if(!taskIds.has(row.task_id))throw corrupt();const entries=rawRuns.get(row.task_id)??[];entries.push(row);rawRuns.set(row.task_id,entries)}
    const replyCandidates:{task:WorkTask;run:TaskRun}[]=[]
-   const items=tasks.map(task=>{
+   const items:TaskAttentionItem[]=tasks.map(task=>{
     const raw=rawRuns.get(task.id)??[],selected=raw.filter((row,index)=>index===0||!['ended','withdrawn','configuration_failed'].includes(String(row.state))||row.role_id===task.assigneeRoleId&&(row.task_state_version===task.version-1||row.state==='configuration_failed'&&row.task_version===task.version))
     const history=selected.map(row=>{const run=readStoredTaskRun(row),stateVersion=row.task_state_version??null;if(stateVersion!==null&&(!Number.isSafeInteger(stateVersion)||Number(stateVersion)<1))throw corrupt();return {run,taskStateVersion:stateVersion as number|null}})
     if(history.filter(({run})=>active(run.state)).length>1)throw corrupt()
@@ -53,7 +53,7 @@ export class TaskAttentionService{
     return {task,attention}
    })
    const replied=await completedGroupReplies(db,owner,replyCandidates)
-   for(const item of items)if(replied.has(item.task.id))item.attention=null
+   for(const item of items)if(replied.has(item.task.id)){item.attention=null;item.completedGroupReply=true}
    return {items}
  }
 }

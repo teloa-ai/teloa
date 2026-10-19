@@ -253,7 +253,7 @@ export function ShareDraftDrawer({pkg,open,close,onPublished,editable=true}:{pkg
  },[pkg,open])
  if(!shared)return null
  if(!open)return null
- if(!identity||identity.pkg!==pkg)return <ContextDrawer title={t('templateShare.create')} close={close}><p role={error?'alert':'status'}>{t(error?'templateShare.invalid':'templateShare.busy')}</p></ContextDrawer>
+ if(!identity||identity.pkg!==pkg)return <ContextDrawer padded title={t('templateShare.create')} close={close}><p role={error?'alert':'status'}>{t(error?'templateShare.invalid':'templateShare.busy')}</p></ContextDrawer>
  // 同一自然语言草案修改了正文后，旧已冻结的发布尝试不能覆盖新原稿；仅相同摘要恢复同一尝试。
  return <SharePackageDrawer key={identity.digest} open={open} close={close} storage={shared.storage} bridge={shared.bridge} draftKey={'draft/'+pkg.id+'/'+identity.digest} title={t('templateShare.create')} initial={()=>pkg} editable={editable} {...(!editable?{expectedDigest:identity.digest}:{})} {...(onPublished?{onPublished}:{})}/>
 }

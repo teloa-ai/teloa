@@ -11,3 +11,7 @@
 .content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
 .drawer :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 @media(max-width:600px){.header{padding:16px 20px}}
+
+/* 轻详情正文可选统一内边距；已有自行排版的调用保持原样。 */
+.content.padded{padding:20px 24px}
+@media(max-width:600px){.content.padded{padding:20px}}

@@ -28,6 +28,20 @@ test('更多入口先呈现三项操作菜单，选择后才进入对应弹框',
  assert.equal(nodes(page.render('ConversationActionMenu',props)).some(node=>node.props.role==='menuitem'),false)
 })
 
+test('目录成果入口只通知原会话读取，关闭菜单且不触发管理写入',()=>{
+ function ComposerPopover(){}
+ const page=mount('ConversationActions.tsx',{'./ComposerPopover.js':{ComposerPopover}}),calls:string[]=[]
+ const props={title:'已有成果的原会话',disabled:false,choose:(action:string)=>calls.push(action),results:()=>calls.push('read-results')}
+ let tree=page.render('ConversationActionMenu',props)
+ nodes(tree).find(node=>node.props['aria-haspopup']==='menu')!.props.onClick()
+ tree=page.render('ConversationActionMenu',props)
+ const result=nodes(tree).find(node=>node.props.role==='menuitem'&&nodes(node).some(item=>item.children.includes('shell.artifacts')))!
+ assert.ok(result)
+ result.props.onClick()
+ assert.deepEqual(calls,['read-results'])
+ assert.equal(nodes(page.render('ConversationActionMenu',props)).some(node=>node.props.role==='menuitem'),false)
+})
+
 test('重命名是独立表单，未修改、空白、处理中都不能提交；成功后关闭',async()=>{
  const s=setup();let tree=s.render()
  assert.equal(button(tree,'workDirectory.rename.save').props.disabled,true)

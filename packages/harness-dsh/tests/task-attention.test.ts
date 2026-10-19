@@ -49,3 +49,11 @@ test('运行配置失败可以在未运行任务上呈现，且必须属于数�
  const page={items:[{task:{...task,state:'ready'},attention:{kind:'error',reason:'execution-configuration-failed'}}]}
  await assert.rejects(createTaskAttentionHandler(owner,async()=>({list:async()=>page}))({}),{code:'teloa/invalid-host-response'})
 })
+
+test('已完成群回复必须带显式标记才能在等待状态省略待办，普通待审批仍拒绝缺依据',async()=>{
+ const item={task:{...task,state:'waiting',groupId:id,assigneeRoleId:id,assigneeRoleVersion:1},attention:null,completedGroupReply:true}
+ const handle=(row:unknown)=>createTaskAttentionHandler(owner,async()=>({list:async()=>({items:[row]})}))({})
+ assert.deepEqual((await handle(item)).items,[item])
+ for(const bad of [{...item,completedGroupReply:false},{...item,task:{...item.task,state:'blocked'}},{...item,task:{...item.task,groupId:null}},{...item,attention:{kind:'review',reason:'task-waiting'}}])await assert.rejects(handle(bad),{code:'teloa/invalid-host-response'})
+ const {completedGroupReply,...missing}=item;await assert.rejects(handle(missing),{code:'teloa/invalid-host-response'})
+})

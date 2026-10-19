@@ -102,6 +102,9 @@
 
 /* 非原生会话不向辅助技术暴露上一会话的工具页；保留其挂载和状态。 */
 .details[hidden]{display:none}
+.nativeRail,.artifactMount{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
+.nativeRail[hidden],.artifactMount[hidden]{display:none}
+@media(max-width:699px){.detailsOpen .artifactDetails{position:absolute;inset:0 0 0 auto;width:100%;z-index:var(--teloa-z-column-overlay-narrow)}}
 
 /* 工作台次级导航与现有字体、主题及待办计数同源。 */
 .hubNavigation{display:flex;flex:none;gap:4px;padding:0 24px;border-bottom:1px solid var(--teloa-border);overflow-x:auto}

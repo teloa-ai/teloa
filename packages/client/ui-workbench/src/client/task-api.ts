@@ -6,7 +6,7 @@ type Call=(endpoint:string,input:unknown)=>Promise<unknown>
 export type TaskApi=ReturnType<typeof createTaskApi>
 export type TaskAssignee={roleId:string;expectedVersion:number}
 export type TaskAttention={kind:'error'|'review';reason:'task-blocked'|'execution-failed'|'execution-configuration-failed'|'execution-completed'|'task-waiting'}
-export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null}
+export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null;completedGroupReply?:true}
 function readAssignee(value:unknown):TaskAssignee|undefined{
  if(value===undefined)return undefined
  const row=taskInput(value,['roleId','expectedVersion'])
@@ -45,15 +45,17 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
    const response=await call('tasks/attention',{})
    try{
     const value=taskInput(response,['items']);if(!Array.isArray(value.items))throw Error()
-    const items=value.items.map(candidate=>{const item=taskInput(candidate,['task','attention']),task=read(item.task);let attention:TaskAttention|null=null
+    const items=value.items.map(candidate=>{const item=taskInput(candidate,['task','attention','completedGroupReply']),task=read(item.task);let attention:TaskAttention|null=null
 	     if(item.attention!==null){const row=taskInput(item.attention,['kind','reason']);if(typeof row.kind!=='string'||typeof row.reason!=='string'||!['error','review'].includes(row.kind)||!['task-blocked','execution-failed','execution-configuration-failed','execution-completed','task-waiting'].includes(row.reason))throw Error();attention={kind:row.kind as TaskAttention['kind'],reason:row.reason as TaskAttention['reason']}}
+     const replied=item.completedGroupReply!==undefined
+     if(replied&&(item.completedGroupReply!==true||task.state!=='waiting'||attention!==null||!task.groupId||task.assigneeRoleId===null))throw Error()
 	     const configurationFailed=attention?.reason==='execution-configuration-failed'
 	     if(configurationFailed){if(attention?.kind!=='error'||!['ready','paused','blocked','waiting'].includes(task.state))throw Error()}
 	     else if(task.state==='blocked'){if(attention?.kind!=='error'||!['task-blocked','execution-failed'].includes(attention.reason))throw Error()}
-	     else if(task.state==='waiting'){if(attention?.kind!=='review'||!['execution-completed','task-waiting'].includes(attention.reason))throw Error()}
+	     else if(task.state==='waiting'&&!replied){if(attention?.kind!=='review'||!['execution-completed','task-waiting'].includes(attention.reason))throw Error()}
 	     else if(attention!==null)throw Error()
      if(attention&&['execution-failed','execution-configuration-failed','execution-completed'].includes(attention.reason)&&task.assigneeRoleId===null&&task.executor?.kind!=='owner')throw Error()
-     return {task,attention}
+     return {task,attention,...(replied?{completedGroupReply:true as const}:{})}
     })
     if(new Set(items.map(item=>item.task.id)).size!==items.length)throw Error()
     return {items}

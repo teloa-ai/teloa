@@ -32,12 +32,12 @@ test('空成果与旧整理导航均保持预览，迟到的原成果可读且�
  const panel=page.getByRole('dialog')
  await panel.waitFor();assert.equal(await panel.getByRole('textbox').count(),0);assert.equal(await panel.getByRole('button',{name:'整理成果',exact:true}).count(),0)
  await panel.getByRole('button',{name:'放大',exact:true}).click();await page.keyboard.press('Escape');assert.equal(await panel.count(),1)
- await panel.getByRole('button',{name:'返回工作概览',exact:true}).click()
+ await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  const legacy=page.getByRole('button',{name:'工作概览整理入口',exact:true})
  await legacy.click();await panel.waitFor();assert.equal(await panel.getByRole('textbox').count(),0,'历史prepare导航不重新打开已收掉的表单')
  await page.getByRole('button',{name:'加载原成果台账',exact:true}).click();await panel.getByText('不能误开旧正文',{exact:true}).waitFor()
- await panel.getByRole('button',{name:'返回工作概览',exact:true}).click();await page.getByRole('button',{name:'再次查看成果',exact:true}).click()
- await panel.getByText('不能误开旧正文',{exact:true}).waitFor();assert.equal(await panel.getByRole('textbox',{name:'工作成果名称',exact:true}).count(),0)
+ await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click();await page.getByRole('button',{name:'再次查看成果',exact:true}).click()
+ await panel.getByRole('button',{name:/上一份成果/}).click();await panel.getByText('不能误开旧正文',{exact:true}).waitFor();assert.equal(await panel.getByRole('textbox',{name:'工作成果名称',exact:true}).count(),0)
  assert.equal(await page.getByRole('textbox',{name:'会话草稿'}).inputValue(),'保留原输入')
  assert.deepEqual(await page.evaluate(()=>window.artifactFixture.calls),[]);assert.deepEqual(errors,[])
 })
@@ -75,7 +75,7 @@ test('统一成果预览保留原版本、段落反馈和来源，放大收起�
  await page.keyboard.press('Escape')
  assert.equal(await draft.inputValue(),'待提交的段落反馈')
  assert.ok(await page.getByRole('dialog').evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)<=380)
- await page.getByRole('button',{name:'返回工作概览',exact:true}).click()
+ await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  assert.equal(await page.getByRole('dialog').count(),0)
  assert.equal(await page.getByRole('textbox',{name:'会话草稿'}).inputValue(),'继续原任务')
  const groupButton='预览群引用的原成果'
@@ -83,7 +83,7 @@ test('统一成果预览保留原版本、段落反馈和来源，放大收起�
  for(const entry of ['任务成果',groupButton,'业务成果']){
   await page.getByRole('button',{name:entry,exact:true}).click();await page.getByText('正文版本 1',{exact:true}).waitFor()
   await page.getByRole('button',{name:'版本与反馈',exact:true}).click();assert.equal(await draft.inputValue(),'待提交的段落反馈')
-  await page.getByRole('button',{name:'返回工作概览',exact:true}).click()
+  await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  }
  assert.deepEqual(await page.evaluate(()=>window.artifactFixture.calls),[],'导航不保存、不复制成果或反馈')
  assert.deepEqual(await page.evaluate(()=>window.artifactFixture.navigationCalls),Array.from({length:4},()=>[[{kind:'session',id:'main'},{id:'original-artifact',version:1},'main'],'teloa.overview']).flat(),'真实 Frame 路由与群成果卡始终携带原成果和引用版本')
@@ -111,7 +111,7 @@ test('缺失成果 Escape 同步关闭状态，同一成果可重新打开并接
   assert.equal(await page.getByRole('dialog').count(),0)
   await page.getByRole('button',{name:'打开同一成果'}).click();await page.getByRole('alert').waitFor()
   await page.evaluate(()=>window.missingFixture.resolve());await page.getByText('迟到的正文',{exact:true}).waitFor()
-  await page.getByRole('button',{name:inline?'返回工作概览':'关闭产物面板',exact:true}).click()
+  await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  }
  assert.equal(await page.getByRole('textbox',{name:'会话草稿'}).inputValue(),'继续原任务');assert.deepEqual(errors,[])
 })

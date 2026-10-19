@@ -1,5 +1,5 @@
 import {useEffect,useId,useRef,useState,useSyncExternalStore} from 'react'
-import {Archive,Check,Copy,History,LoaderCircle,MoreHorizontal,Pencil,RefreshCw,X} from 'lucide-react'
+import {Archive,Check,Copy,FileText,History,LoaderCircle,MoreHorizontal,Pencil,RefreshCw,X} from 'lucide-react'
 import type {Conversation} from '@teloa/contract'
 import type {ConversationManagement} from './conversation-management.js'
 import {ComposerPopover} from './ComposerPopover.js'
@@ -13,13 +13,14 @@ export type ConversationAction='rename'|'copy'|'archive'
 export type ConversationActionTarget={row:Conversation;title:string;blank:boolean;action:ConversationAction}
 const actionKeys={rename:'workDirectory.rename.title',copy:'workDirectory.copy.title',archive:'workDirectory.archive.title'} as const
 
-export function ConversationActionMenu({title,disabled,className,choose,organize}:{title:string;disabled:boolean;className?:string|undefined;choose:(action:ConversationAction)=>void;organize?:()=>void}){
+export function ConversationActionMenu({title,disabled,className,choose,organize,results}:{title:string;disabled:boolean;className?:string|undefined;choose:(action:ConversationAction)=>void;organize?:()=>void;results?:(()=>void)|undefined}){
  const {t,locale}=useI18n(),anchor=useRef<HTMLButtonElement>(null),id=useId()
  const [opened,setOpened]=useState(false)
  const select=(action:ConversationAction)=>{anchor.current?.focus({preventScroll:true});setOpened(false);choose(action)}
  return <>
   <button ref={anchor} type="button" className={className} aria-label={t('workDirectory.action.manageAria',{title})} aria-haspopup="menu" aria-expanded={opened&&!disabled} aria-controls={opened&&!disabled?id:undefined} disabled={disabled} onClick={()=>setOpened(!opened)}><MoreHorizontal size={16}/></button>
   {opened&&!disabled&&<ComposerPopover anchor={anchor} id={id} label={t('workDirectory.management.aria',{title})} role="menu" width={220} close={()=>setOpened(false)}>
+   {results&&<button className={css.menuItem} type="button" role="menuitem" onClick={()=>{anchor.current?.focus({preventScroll:true});setOpened(false);results()}}><FileText size={16}/><span>{t('shell.artifacts')}</span></button>}
    <button className={css.menuItem} type="button" role="menuitem" onClick={()=>select('rename')}><Pencil size={16}/><span>{t(actionKeys.rename)}</span></button>
    <button className={css.menuItem} type="button" role="menuitem" onClick={()=>select('copy')}><Copy size={16}/><span>{t(actionKeys.copy)}</span></button>
    {organize&&<button className={css.menuItem} type="button" role="menuitem" onClick={()=>{anchor.current?.focus();setOpened(false);organize()}}>{dialogueCopy(locale,'move')}</button>}

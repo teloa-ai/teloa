@@ -1,6 +1,8 @@
 type T=readonly[string,string,string,string,string,string,string,string,string,string]
 const r=<K extends string>(key:K,...x:T)=>[key,...x] as const
 export const ARTIFACT_PANEL_MESSAGE_ROWS=[
+ r('artifact.panel.allResults','全部成果','所有成果','All results',...Array(7).fill('All results') as [string,string,string,string,string,string,string]),
+ r('artifact.panel.listHelp','选择一份成果查看正文、文件和修订记录。','選擇一份成果查看內文、檔案及修訂記錄。','Choose a result to read it, view files and review revisions.',...Array(7).fill('Choose a result to read it, view files and review revisions.') as [string,string,string,string,string,string,string]),
  r("artifact.method.skill","保存为方法","儲存為方法","Save as a method",...Array(7).fill("Save as a method") as [string,string,string,string,string,string,string]),
  r("artifact.method.plan","保存为计划","儲存為計劃","Save as a plan",...Array(7).fill("Save as a plan") as [string,string,string,string,string,string,string]),
  r("artifact.method.prepareOnly","只准备到本人会话，先保存，不启用；仍需本人发送并核对。","只準備到本人對話，先儲存，不啟用；仍須本人傳送並核對。","Prepare in your conversation only. Save paused; review and send it yourself.",...Array(7).fill("Prepare in your conversation only. Save paused; review and send it yourself.") as [string,string,string,string,string,string,string]),

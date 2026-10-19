@@ -81,7 +81,7 @@ test('放大视图在 body 焦点、内部焦点与保存中按 Esc 只退回窄
  const whileBusy=await probe();assert.deepEqual([whileBusy.open,whileBusy.modal],[true,true],'保存中 Esc 不退出放大视图')
  await page.keyboard.press('Escape');await page.waitForTimeout(100)
  const whileBusyAgain=await probe();assert.deepEqual([whileBusyAgain.open,whileBusyAgain.modal],[true,true],'保存中连按 Esc 也不能让对话框被浏览器原生关闭而状态失同步')
- await page.evaluate(()=>window.expandedEscapeFixture.finishSave!());await panel.getByRole('button',{name:'返回工作概览',exact:true}).and(page.locator(':enabled')).waitFor()
+ await page.evaluate(()=>window.expandedEscapeFixture.finishSave!());await panel.getByRole('button',{name:'关闭产物面板',exact:true}).and(page.locator(':enabled')).waitFor()
  await page.keyboard.press('Escape');const afterSave=await probe();assert.deepEqual([afterSave.open,afterSave.modal,afterSave.active],[true,false,'放大'],'保存完成后 Esc 退回窄栏并回到「放大」')
  assert.equal((await page.evaluate(()=>window.expandedEscapeFixture.calls)).length,1,'整个过程只有显式点击的一次保存')
  assert.deepEqual(errors,[])

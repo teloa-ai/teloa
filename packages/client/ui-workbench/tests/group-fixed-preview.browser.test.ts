@@ -7,7 +7,7 @@ import {build} from 'vite'
 // @ts-expect-error 复用既有无头浏览器加载器。
 import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
 
-test('实际群消息和概况共用固定版本抽屉，原文、迟到切群和关闭保留草稿',{timeout:60000},async t=>{
+test('实际群消息和概况共用C右栏，固定版本与迟到切群保留原边界',{timeout:60000},async t=>{
  const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),temp=await mkdtemp(join(root,'.runtime-group-fixed-preview-'))
  t.after(()=>rm(temp,{recursive:true,force:true}))
  await writeFile(join(temp,'fixture.tsx'),`import tokens from '${client}theme-tokens.module.css';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {SavedCollaborationPage} from '${client}SavedCollaborationPage.tsx';import {createGroupAttachmentApi} from '${client}group-attachment-api.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
@@ -29,7 +29,8 @@ test('实际群消息和概况共用固定版本抽屉，原文、迟到切群�
  throw Error('不得读取来源全目录/私人草稿/反馈');
  });
  const attachments={...previews,upload:async(id,version,file,requestId)=>{f.uploads.push([id,version,file.name,file.type,file.size,requestId]);return {attachmentId,ownerId:'self',version:1,kind:'file',mime:file.type,bytes:file.size,sha256:'b'.repeat(64),name:file.name,width:null,height:null,uploadedInGroupId:id,state:'active',createdAt:at,withdrawnAt:null}}};
- function render(){flushSync(()=>view.render(<I18nProvider runtime={runtime}><SavedCollaborationPage visible={f.visible} api={api} work={work} attachments={attachments} target={f.target} roles={roles} profileName="验收本人"/></I18nProvider>))}render();`)
+ const artifactRail={mount:document.getElementById('teloa-details-track'),report:(_token,_groupId,open)=>{document.getElementById('root').style.width=open?'calc(100% - 416px)':'100%';document.getElementById('teloa-details-track').hidden=!open},collapse:0};
+ function render(){flushSync(()=>view.render(<I18nProvider runtime={runtime}><SavedCollaborationPage artifactRail={artifactRail} visible={f.visible} api={api} work={work} attachments={attachments} target={f.target} roles={roles} profileName="验收本人"/></I18nProvider>))}render();`)
  // DSH 消息正文解析由宿主注入；只透传原消息文字，群页面/抽屉/成果 MarkdownPreview 均用真实组件。
  await writeFile(join(temp,'unused-node-crypto.ts'),'export function createHash(){throw Error("不应执行服务器摘要")};export function randomUUID(){return crypto.randomUUID()};export function createPublicKey(){throw Error("不应执行服务签名")};export function verify(){throw Error("不应执行服务签名")}')
  await writeFile(join(temp,'host-markdown.ts'),'export const MarkdownText=({text})=>text')
@@ -39,7 +40,7 @@ test('实际群消息和概况共用固定版本抽屉，原文、迟到切群�
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
  const page=await browser.newPage({viewport:{width:1440,height:960}});t.after(()=>page.close());page.setDefaultTimeout(4000);const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
  // 只由本测试路由提供页面；localhost 安全上下文保留真实 UUID API，其他请求继续拒绝。
- await page.route('http://127.0.0.1:49319/group-fixed-preview-test',async(route:any)=>route.fulfill({status:200,contentType:'text/html',body:'<html lang="zh-CN"><body><div id="root"></div></body></html>'}))
+ await page.route('http://127.0.0.1:49319/group-fixed-preview-test',async(route:any)=>route.fulfill({status:200,contentType:'text/html',body:'<html lang="zh-CN"><body><div id="root"></div><aside id="teloa-details-track" hidden style="position:fixed;right:0;top:0;width:416px;height:100vh"></aside></body></html>'}))
  await page.goto('http://127.0.0.1:49319/group-fixed-preview-test');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  await page.getByText('原始来源消息 current',{exact:true}).waitFor()
  const draft=page.locator('textarea').first();await draft.fill('保留原群草稿')
@@ -55,10 +56,10 @@ test('实际群消息和概况共用固定版本抽屉，原文、迟到切群�
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).fixedPreviewFixture,change=f.writes[0];return {kind:change[0],groupId:change[1],version:change[2],fields:change[3]}}),{kind:'change',groupId:'11111111-1111-4111-8111-111111111111',version:1,fields:{name:'共享成果群已改名',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},memberRoleIds:['33333333-3333-4333-8333-333333333333'],pinned:false,archived:false}},'改名使用原群版本，不丢成员与规则')
  assert.equal(await draft.inputValue(),'保留原群草稿')
  const preview=page.getByRole('button',{name:'预览调查报告',exact:true});await preview.nth(1).click()
- const dialog=page.getByRole('dialog');await dialog.waitFor();assert.match(await dialog.innerText(),/固定正文 v2/);assert.match(await dialog.innerText(),/已共享原消息快照/);assert.doesNotMatch(await dialog.innerText(),/未共享私人v3|私人草稿 A3|历史稿件|操作未完成/)
+ const dialog=page.getByRole('dialog',{name:'工作成果',exact:true});await dialog.waitFor();assert.match(await dialog.innerText(),/固定正文 v2/);assert.equal(await dialog.evaluate((node:HTMLDialogElement)=>node.closest('#teloa-details-track')!==null&&!node.matches(':modal')),true,'进入同一非模态右栏');await dialog.getByRole('button',{name:'文件与来源',exact:true}).click();assert.match(await dialog.innerText(),/已共享原消息快照/);await dialog.getByRole('button',{name:'预览',exact:true}).first().click();await dialog.getByRole('button',{name:'全部成果',exact:true}).click();assert.doesNotMatch(await dialog.innerText(),/未共享私人v3|私人草稿 A3/);await dialog.getByRole('button',{name:'预览调查报告',exact:true}).click();assert.match(await dialog.innerText(),/固定正文 v2/);await dialog.getByRole('button',{name:'放大',exact:true}).click();await page.keyboard.press('Escape');assert.equal(await dialog.evaluate((node:HTMLDialogElement)=>node.matches(':modal')),false);assert.doesNotMatch(await dialog.innerText(),/未共享私人v3|私人草稿 A3|历史稿件|操作未完成/)
  const transcript=page.locator('[data-teloa-message]').first().locator('..'),scroll=await transcript.evaluate((element:HTMLElement)=>({top:element.scrollTop,scrollHeight:element.scrollHeight,clientHeight:element.clientHeight}))
  assert.ok(scroll.scrollHeight>scroll.clientHeight,'真实讨论区应可滚动')
- await page.screenshot({path:'/tmp/teloa-group-fixed-preview.png'});await dialog.getByRole('button',{name:'返回群讨论',exact:true}).click();assert.equal(await draft.inputValue(),'保留原群草稿');assert.equal(await transcript.evaluate((element:HTMLElement)=>element.scrollTop),scroll.top,'关闭预览恢复原讨论滚动')
+ await page.screenshot({path:'/tmp/teloa-group-fixed-preview.png'});await dialog.getByRole('button',{name:'关闭产物面板',exact:true}).click();assert.equal(await draft.inputValue(),'保留原群草稿');assert.equal(await transcript.evaluate((element:HTMLElement)=>element.scrollTop),scroll.top,'关闭预览恢复原讨论滚动')
  // 1440 宽屏且此前无本人偏好：进入群即并栏显示工作概览，入口按钮反映已展开。
  assert.equal(await page.getByRole('button',{name:'工作概览',exact:true}).getAttribute('aria-expanded'),'true')
  const overview=page.getByRole('complementary',{name:'工作概览',exact:true}),current=overview.getByRole('button',{name:'预览调查报告',exact:true});assert.equal(await current.count(),1,'重复共享同一版本只显示一行')
@@ -69,13 +70,13 @@ test('实际群消息和概况共用固定版本抽屉，原文、迟到切群�
  await overview.getByRole('button',{name:'原群核对任务',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).fixedPreviewFixture.openedTasks),['original-task'])
  assert.equal(await draft.inputValue(),'保留原群草稿','打开原关联任务不移动当前群草稿')
  await current.click();await dialog.waitFor();assert.match(await dialog.innerText(),/固定正文 v2/)
- await dialog.getByRole('button',{name:'关闭',exact:true}).click()
+ await dialog.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  const history=page.locator('details').filter({has:page.locator('summary').filter({hasText:'版本记录'})});await history.locator('summary').click()
  await overview.getByRole('button',{name:'预览调查报告',exact:true}).nth(1).click();await dialog.waitFor();assert.match(await dialog.innerText(),/固定正文 v1/);assert.doesNotMatch(await dialog.innerText(),/固定正文 v2|原消息快照/)
- await dialog.getByRole('button',{name:'返回群讨论',exact:true}).click()
+ await dialog.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  await page.getByRole('button',{name:'来源消息',exact:true}).first().click();await page.getByText('原始来源消息 reply',{exact:true}).waitFor()
  const topicDraft=page.locator('textarea').last();await topicDraft.fill('保留话题草稿')
- await page.getByRole('button',{name:'预览调查报告',exact:true}).last().click();await dialog.waitFor();await dialog.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await topicDraft.inputValue(),'保留话题草稿')
+ await page.getByRole('button',{name:'预览调查报告',exact:true}).last().click();await dialog.waitFor();await dialog.getByRole('button',{name:'关闭产物面板',exact:true}).click();assert.equal(await topicDraft.inputValue(),'保留话题草稿')
  await page.evaluate(()=>{const f=(window as any).fixedPreviewFixture;f.hold=true})
  await page.getByRole('button',{name:'预览调查报告',exact:true}).last().click();await dialog.waitFor()
  await page.evaluate(()=>{const f=(window as any).fixedPreviewFixture;f.target={groupId:f.otherId,rootId:''};f.render();f.hold=false;f.release?.()})
@@ -86,7 +87,7 @@ test('实际群消息和概况共用固定版本抽屉，原文、迟到切群�
  await page.evaluate(()=>{const f=(window as any).fixedPreviewFixture;f.hold=true;f.release=null})
  await page.getByRole('button',{name:'预览调查报告',exact:true}).nth(1).click();await dialog.waitFor()
  await page.waitForFunction(()=>typeof (window as any).fixedPreviewFixture.release==='function')
- await dialog.getByRole('button',{name:'关闭',exact:true}).click()
+ await dialog.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  await page.evaluate(()=>{const f=(window as any).fixedPreviewFixture;f.hold=false;f.release?.()})
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
  assert.equal(await dialog.count(),0,'关闭后的迟到回包不得重开')

@@ -304,11 +304,10 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
    // 是否已在团队：方案包读到后按清单标识与版本判断，与本机方案页同一判据（不依赖本机列表是否已读回这份内容）
    const loaded=pkg.status==='ready'&&!!solutionTeam?.installed({manifest:pkg.manifest})
    detail=<ContextDrawer title={catalogText(catalogEntryTitle(selected.entry),locale)} close={backFromEntry} className={css.detailDrawer??''}><section className={css.section} aria-label={t('market.catalog.official.detailTitle')}>
-    <CatalogSolutionProduct item={selected} pkg={pkg} busy={busy} error={addErrors[id]} add={()=>void add(selected)} {...(solutionTeam?{team:{loaded,links:loaded&&pkg.status==='ready'?solutionTeam.loadLinks({manifest:pkg.manifest}):null,panel:!loaded&&teamPanel?.entryId===id?solutionTeam.form(teamPanel.item,()=>setTeamPanel(undefined)):null,addToTeam:()=>void addToTeam(selected)},ask:{busy:asking,run:()=>void askFit(selected,pkg)}}:{})} open={contentId=>void openAdded(contentId)} back={backFromEntry} retry={()=>setSolutionRevision(value=>value+1)} after={<><CatalogAlternativeLinks entry={selected.entry} items={listing?.items??[]} openEntry={openEntry}/>{reviewSlot?.(selected.entry)}</>}/>
+    <CatalogSolutionProduct hideTitle item={selected} pkg={pkg} busy={busy} error={addErrors[id]} add={()=>void add(selected)} {...(solutionTeam?{team:{loaded,links:loaded&&pkg.status==='ready'?solutionTeam.loadLinks({manifest:pkg.manifest}):null,panel:!loaded&&teamPanel?.entryId===id?solutionTeam.form(teamPanel.item,()=>setTeamPanel(undefined)):null,addToTeam:()=>void addToTeam(selected)},ask:{busy:asking,run:()=>void askFit(selected,pkg)}}:{})} open={contentId=>void openAdded(contentId)} back={backFromEntry} retry={()=>setSolutionRevision(value=>value+1)} after={<><CatalogAlternativeLinks entry={selected.entry} items={listing?.items??[]} openEntry={openEntry}/>{reviewSlot?.(selected.entry)}</>}/>
    </section></ContextDrawer>
   }else detail=<ContextDrawer title={selected?catalogText(catalogEntryTitle(selected.entry),locale):t('market.catalog.official.detailTitle')} close={backFromEntry} className={css.detailDrawer??''}><section className={clsx(css.section,css.detailView)} aria-label={t('market.catalog.official.detailTitle')}>
    <ToolbarIconButton className={css.backLink} label={t('market.catalog.connector.back')} icon={ArrowLeft} onClick={backFromEntry}/>
-   {!selected&&<header className={css.header}><h2 tabIndex={-1} data-catalog-detail-title>{t('market.catalog.official.detailTitle')}</h2></header>}
    {!listing&&!readError&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
    {selected?renderCards([selected]):(listing||readError)&&<p className={css.error} role="status">{t('market.catalog.official.entryUnavailable')}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
   </section></ContextDrawer>
@@ -610,7 +609,7 @@ export type CatalogSolutionPackageState={status:'loading'}|{status:'failed'}|({s
  * 七行与本机方案产品页同一套算法与词条（composeFromManifest / COMPOSITION_ROWS / solutionRowResources），数据是宿主从随发行固定的方案包清单读出的；
  * 读不到时只给一句白话说明，不出空标题。目录条目自带的「现在可做 / 还需你提供 / 会请求的权限」与使用条件全部收进「来源与版本」。
  */
-export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,after,team,ask}:{item:MarketCatalogItem;pkg:CatalogSolutionPackageState;busy:string|undefined;error?:string|undefined;add:()=>void;open:(contentId:string)=>void;back:()=>void;retry:()=>void;after?:ReactNode;team?:{loaded:boolean;links?:ReactNode;panel:ReactNode;addToTeam:()=>void}|undefined;ask?:{busy:boolean;run:()=>void}|undefined}){
+export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,after,team,ask,hideTitle=false}:{hideTitle?:boolean;item:MarketCatalogItem;pkg:CatalogSolutionPackageState;busy:string|undefined;error?:string|undefined;add:()=>void;open:(contentId:string)=>void;back:()=>void;retry:()=>void;after?:ReactNode;team?:{loaded:boolean;links?:ReactNode;panel:ReactNode;addToTeam:()=>void}|undefined;ask?:{busy:boolean;run:()=>void}|undefined}){
  const {t,locale,number}=useI18n()
  const entry=item.entry
  if(entry.kind!=='solution')return null
@@ -637,7 +636,7 @@ export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,
   <ToolbarIconButton className={css.backLink} label={t('market.solution.back')} icon={ArrowLeft} onClick={back}/>
   <header className={pageCss.solutionHero}>
    <span className={clsx(pageCss.bundleArt,pageCss.heroArt,staffCss['tone'+staffAvatarSeed(entry.id).tone])} aria-hidden="true"><span/><span/><span/></span>
-   <h1 tabIndex={-1} data-catalog-detail-title>{title}</h1>
+   {!hideTitle&&<h1 tabIndex={-1} data-catalog-detail-title>{title}</h1>}
    <p>{catalogText(entry.solution.summary,locale)}</p>
    {action}
    {ask&&<button type="button" disabled={ask.busy||pkg.status!=='ready'} onClick={ask.run}><MessageSquare size={13}/>{t('market.solution.askFit')}</button>}

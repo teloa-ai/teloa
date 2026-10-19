@@ -66,18 +66,31 @@ test('空白和仅群分类下不可见的单聊不读取身份，切回可见�
  select('group');select('session');await settle();assert.deepEqual(f.calls,['A','B','A','B','C'],'分类回切复用同一代次的身份读取')
 })
 
+test('明确按标题搜索可找到无聊天消息的原会话并直接读取成果，不打开或创建会话',async t=>{
+ const f=fixture(t)
+ f.state.directory.rows.push(conversation('empty'))
+ f.state.native={byId:{empty:{id:'empty',title:'已有成果来源',running:false,blank:true,updatedAt:1}},ids:['empty']}
+ f.render();assert.equal(f.visible().includes('empty'),false,'未搜索时不列出空稿')
+ f.control(node=>node.type==='input'&&node.props['aria-label']==='workDirectory.search.aria').props.onChange({target:{value:'已有成果来源'}})
+ f.render();assert.deepEqual(f.visible(),['empty'])
+ const action=f.control(node=>node.props.title==='已有成果来源'&&typeof node.props.results==='function')
+ action.props.results()
+ assert.deepEqual(f.results,['empty'])
+ assert.deepEqual(f.opens,[])
+})
+
 function fixture(t:TestContext){
  const runtime=reactRuntime(),noop=()=>()=>{}
  t.after(()=>runtime.dispose())
  let store:dialogueOrganization.DialogueOrganization|undefined
  const organization={'./dialogue-organization.js':{...dialogueOrganization,browserDialogueOrganization:()=>{const data=new Map<string,string>();store=dialogueOrganization.createDialogueOrganization({getItem:key=>data.get(key)??null,setItem:(key,value)=>{data.set(key,value)}});return store}},'./dialogue-copy.js':dialogueCopy}
  const page=mount('WorkDirectory.tsx',{react:runtime.react,...organization,'./business-scope-context.js':{useBusinessScopes:()=>({general:'General'})},'./work-presentation.js':presentation,'./session-role-identity.js':roleIdentity,'./conversation-search.js':{searchPhase:()=> 'idle'},'./saved-collaboration-state.js':{visibleSavedGroups:()=>[]},'./i18n/provider.js':{useI18n:()=>({t:(key:string,params?:{name?:string})=>params?.name?key+':'+params.name:key,locale:'en',dateTime:()=> '10/07'})},'./i18n/errors.js':{localizeWorkError:(_locale:string,error:unknown)=>error instanceof Error?error.message:String(error)},'./ConversationActions.js':{ConversationActions:()=>null,ConversationActionMenu:()=>null}})
- const calls:string[]=[],holds:{sessionId:string;resolve:(links:Link[])=>void}[]=[]
+ const results:string[]=[],opens:string[]=[],calls:string[]=[],holds:{sessionId:string;resolve:(links:Link[])=>void}[]=[]
  let holding=false
  const linksFor=(objectId:string|undefined)=>(sessionId:string):Link[]=>objectId&&sessionId==='A'?[{kind:'role',sessionId,objectId,active:true}]:[]
  let objectApi={bySession:(sessionId:string)=>{calls.push(sessionId);if(!holding)return Promise.resolve(linksFor('alice')(sessionId));return new Promise<Link[]>(resolve=>holds.push({sessionId,resolve}))}}
  const state={directory:{status:'ready' as 'ready'|'loading'|'failed',rows:[conversation('A'),conversation('B')],error:undefined as unknown},managed:{ready:true,baseline:true,workspaces:[],archived:[] as string[],pending:{}},native:{byId:{} as Record<string,unknown>,ids:[] as string[]},roles:[{id:'alice',name:'Alice',kind:'employee',avatarKey:'squirrel-general'}] as {id:string;name:string;kind:string;avatarKey:string}[],current:undefined as string|undefined,selectedGroup:undefined as string|undefined}
- const props=()=>({work:{subscribe:noop,getDirectorySnapshot:()=>state.directory,refreshDirectory:async()=>{},openConversation:async()=> 'opened'},management:{subscribe:noop,getSnapshot:()=>state.managed},search:{subscribe:noop,getSnapshot:()=>({items:[],hasMore:false}),clear:()=>{},run:async()=>{}},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]}),refresh:async()=>{}},objectApi,roles:state.roles,useSessions:(select:(value:unknown)=>unknown)=>select(state.native),current:state.current,onOpened:()=>{},focusRequest:0,onClose:()=>{},selectedGroup:state.selectedGroup,openGroup:()=>{},createGroup:()=>{}})
+ const props=()=>({work:{subscribe:noop,getDirectorySnapshot:()=>state.directory,refreshDirectory:async()=>{},openConversation:async(row:Conversation)=>{opens.push(row.sessionId);return 'opened'}},management:{subscribe:noop,getSnapshot:()=>state.managed},search:{subscribe:noop,getSnapshot:()=>({items:[],hasMore:false}),clear:()=>{},run:async()=>{}},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]}),refresh:async()=>{}},objectApi,roles:state.roles,useSessions:(select:(value:unknown)=>unknown)=>select(state.native),current:state.current,onOpened:()=>{},openResults:(id:string)=>results.push(id),focusRequest:0,onClose:()=>{},selectedGroup:state.selectedGroup,openGroup:()=>{},createGroup:()=>{}})
  let tree:MarketNode
  const render=()=>{runtime.begin();tree=page.render('WorkDirectory',props());runtime.commit();return tree}
  const rowOf=(sessionId:string)=>nodes(render()).find(node=>node.props['data-session-id']===sessionId)
@@ -88,7 +101,7 @@ function fixture(t:TestContext){
   assert.ok(row,'目录行 '+sessionId);return String(nodes(row).find(node=>node.type==='strong')!.children[0])}
  const visible=()=>nodes(render()).flatMap(node=>typeof node.props['data-session-id']==='string'?[node.props['data-session-id'] as string]:[])
  const control=(predicate:(node:MarketNode)=>boolean)=>{const node=nodes(tree).find(predicate);assert.ok(node,'控件缺失');return node}
- return {state,calls,render,titleOf,visible,type:()=>store!.getSnapshot().type,control,replaceApi:(next:typeof objectApi)=>{objectApi=next},
+ return {state,calls,results,opens,render,titleOf,visible,type:()=>store!.getSnapshot().type,control,replaceApi:(next:typeof objectApi)=>{objectApi=next},
   hold:(value:boolean)=>{holding=value},
   pendingReads:()=>holds.length,
   /** 放行最早（first）或最新（last）挂起的 count 个读取，A 会话应答指定员工。 */

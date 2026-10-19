@@ -22,7 +22,7 @@ export function IndustryTeamMaterials({open,group,port,references,isCurrent,clos
  const dismiss=()=>{epoch.current++;setBusy(false);close()}
  const currentPreview=origin.current.port===port&&origin.current.id===group.group.id?preview:undefined
  const previewDocument=currentPreview?.documents.find(doc=>doc.id===shown)
- return <ContextDrawer title={t('group.templateMaterials.title')} open={open} close={dismiss} className={css.dialog+' '+css.lightDrawer}>
+ return <ContextDrawer padded title={t('group.templateMaterials.title')} open={open} close={dismiss} className={css.dialog+' '+css.lightDrawer}>
   {error&&<><p role="alert">{error}</p>{preview&&<button type="button" className={css.secondary} disabled={busy||port.canReview?.(group.group.id)===false} onClick={()=>{try{port.review?.(group.group.id);void read()}catch(cause){setError(localizeWorkError(locale,cause))}}}>{t('group.templateMaterials.review')}</button>}</>}
   <p className={css.hint}>{t('group.templateMaterials.boundary')}</p>
   {currentPreview?<><p>{t('group.templateMaterials.recipients',{names:currentPreview.roles.map(role=>role.name+(role.state==='paused'?' · '+t('role.state.paused'):'')).join('、')})}</p><p className={css.hint}>{t('group.templateMaterials.samples')}</p>

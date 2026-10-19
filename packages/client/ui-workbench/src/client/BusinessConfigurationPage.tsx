@@ -42,7 +42,7 @@ function DashboardRecordPreview({preview,source,flow,taskList,close,go}:{preview
   })().catch(()=>{if(!abort.signal.aborted)setRead({status:'failed'})})
   return()=>abort.abort()
  },[preview,source.api,source.current,revision])
- return <ContextDrawer title={preview.title} close={close}>
+ return <ContextDrawer padded={read.status!=='ready'} title={preview.title} close={close}>
   {read.status==='loading'&&<p role="status">{t('business.records.loading')}</p>}
   {read.status==='failed'&&<p role="alert">{t('business.records.readError')} <button type="button" onClick={()=>setRevision(value=>value+1)}>{t('business.records.retry')}</button></p>}
   {read.status==='ready'&&read.page&&<BusinessRecordPage projection={read.page} flow={flow} recordReference={preview.reference} referenceOnly go={go} taskList={taskList}/>}

@@ -354,7 +354,7 @@ function MarketCatalog(props:MarketProps&{runtime:MarketSkillRuntime;runtimeChan
       void props.prepare(target,draft).catch(error=>setError(localizeWorkError(locale,error)))
     }catch(error){setError(localizeWorkError(locale,error))}
   }
-  const resourceDrawer=primaryView&&inlineSelectedId&&resourceSelectedRow&&resourceKinds?.length?<ContextDrawer title={localizedMarketResourceEntryTitle(resourceSelectedRow,locale)} close={()=>selectResource(undefined)} className={css.detailDrawer??''}><MarketResourceCatalog detailOnly filters={resourceFilters} onFiltersChange={setResourceFilters} items={currentCatalog} kind={atomicCategory==='agent'?'role':atomicCategory==='skill'?'skill':'resource'} resourceKinds={resourceKinds} query={query} hideQuery selectedId={resourceSelectedRow.key} detailOpen onSelectedChange={selectResource} open={openResourceItem} runtime={props.runtime} openInstallation={id=>props.installations.open('skill:'+id)}/></ContextDrawer>:null
+  const resourceDrawer=primaryView&&inlineSelectedId&&resourceSelectedRow&&resourceKinds?.length?<ContextDrawer title={localizedMarketResourceEntryTitle(resourceSelectedRow,locale)} close={()=>selectResource(undefined)} className={css.detailDrawer??''}><MarketResourceCatalog detailOnly hideTitle filters={resourceFilters} onFiltersChange={setResourceFilters} items={currentCatalog} kind={atomicCategory==='agent'?'role':atomicCategory==='skill'?'skill':'resource'} resourceKinds={resourceKinds} query={query} hideQuery selectedId={resourceSelectedRow.key} detailOpen onSelectedChange={selectResource} open={openResourceItem} runtime={props.runtime} openInstallation={id=>props.installations.open('skill:'+id)}/></ContextDrawer>:null
   const itemDrawer=item?<ContextDrawer title={localizedMarketItemCopy(item,locale).title} close={()=>{open();setResourceDetailOpen(false);rememberNavigation({selectedId:lastSelectedId,mobileLayer:'list'})}} className={css.detailDrawer??''}><MarketDetail key={draft?.id||item.id} {...props} item={item} draft={draft} contentReadFailed={!!item.contentStorage&&detailReadFailed===item.contentStorage.contentId} back={()=>{const selected=resourceSelectedKey?marketResourceIndex(currentCatalog).find(row=>row.key===resourceSelectedKey):undefined,showSummary=!!selected&&(!selected.itemId||selected.status==='conflict');open();setResourceDetailOpen(showSummary);rememberNavigation({selectedId:resourceSelectedKey??lastSelectedId,mobileLayer:showSummary?'detail':solutionCategory?'category':'list'})}}/></ContextDrawer>:null
   // 新入口按用户想创建的对象分层；兼容的文件格式只在导入内按需选择。
   const fromCreateMenu=(action:()=>void)=>{importMenuRef.current?.querySelector('summary')?.focus();setImportMenuOpen(false);action()}
@@ -437,7 +437,7 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
   if(item.atomicSkill||item.kind==='skill'&&item.contentStorage){
     const skill=item.atomicSkill,repository=item.trust?.repository,readFailed=contentReadFailed||!props.contentApi
     return <article className={css.detail} aria-label={t('market.detail.aria')}>
-      <ToolbarIconButton label={t('market.catalog.back')} icon={ArrowLeft} onClick={back}/><h2>{copy.title}</h2>
+      <ToolbarIconButton label={t('market.catalog.back')} icon={ArrowLeft} onClick={back}/>
       <p>{copy.summary}</p>
       {skill&&item.contentStorage?.loaded&&<SkillInstallControl key={'atomic-'+item.contentStorage.contentId} {...(props.runtimeChanged?{changed:props.runtimeChanged}:{})} api={props.skillInstallApi} source={{kind:'atomic',contentId:item.contentStorage.contentId}} title={copy.title}/>}
       {skill?<section className={css.sheet} aria-label={t('market.skill.atomicContentAria')}><h3>{t('market.skill.contentTitle')}</h3><p>{t('market.skill.originalContentSavedNotice')}</p><pre>{skill.text}</pre><details><summary>{marketCountText(t,locale,'attachment',skill.files.length)}</summary><ul>{skill.files.map(file=><li key={file.path}>{file.path} · {file.bytes.length} {t('market.skill.fileSizeBytesUnit')}</li>)}</ul></details></section>:<p role={readFailed?'alert':'status'}>{t(readFailed?'market.content.detailReadFailed':'market.apps.readingSkillContent')}</p>}
@@ -463,7 +463,6 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
     return <article className={clsx(css.detail,css.industryDetail)} aria-label={t('market.detail.aria')}>
       <ToolbarIconButton className={css.backLink} label={t('market.solution.back')} icon={ArrowLeft} onClick={back}/>
       <header className={css.solutionHero} aria-label={t('market.industry.overviewAria')}>
-        <h1>{copy.title}</h1>
         <p>{copy.summary}</p>
         {/* 一键添加就是今天 industryLoads.loadWorkspace 那个按钮：只换文案与位置，展开逻辑一字不改（走既有 IndustryLoadForm 两段式）。 */}
         {(recoveringCurrentLoad||!manifest.resources.every(row=>row.kind==='business-configuration'))&&<button className={css.primaryAction} type="button" disabled={!!matchingLoads.length&&!recoveringCurrentLoad} aria-expanded={actionPanel==='load'} onClick={()=>setActionPanel('load')}>{recoveringCurrentLoad?t('market.industry.load.reviewResult'):matchingLoads.length?t('market.solution.added'):t('market.industry.loadWorkspace')}{matchingLoads.length&&!recoveringCurrentLoad?<Check size={15}/>:<Plus size={15}/>}</button>}
@@ -515,7 +514,7 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
     </article>
   }
   return <article className={css.detail} aria-label={t('market.detail.aria')}>
-    <ToolbarIconButton label={t('market.catalog.back')} icon={ArrowLeft} onClick={back}/><h2>{copy.title}</h2>
+    <ToolbarIconButton label={t('market.catalog.back')} icon={ArrowLeft} onClick={back}/>
     <div className={css.tags}><span>{marketCategoryLabel(t,marketCategoryOf(item))}</span><span>{itemPresentation.ecosystem}</span><span>{item.scope==='general'?t('market.scope.general'):item.scope}</span><span>{marketVisibilityLabel(t,item.visibility)}</span><span>{item.version}</span>{draft&&<span>{t('market.intent.detailVersionPrefix')}{draft.version} · {draft.status==='withdrawn'?t('market.intent.withdrawn'):t('market.intent.awaitingConfiguration')}</span>}</div>
     <p>{copy.summary}</p>{message&&<p role="alert" className={css.notice}>{message}</p>}{notice&&<p role="status">{notice}</p>}
     {item.kind==='skill'&&item.contentStorage?.loaded&&<SkillInstallControl key={'atomic-'+item.contentStorage.contentId} {...(props.runtimeChanged?{changed:props.runtimeChanged}:{})} api={props.skillInstallApi} source={{kind:'atomic',contentId:item.contentStorage.contentId}} title={copy.title}/>}

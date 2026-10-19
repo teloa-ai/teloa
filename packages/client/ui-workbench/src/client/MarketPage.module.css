@@ -83,7 +83,7 @@
 .page .headerActions .addedBadge{min-height:30px;padding:5px 8px;border:0;font-size:var(--teloa-font-caption)}
 .secondaryTitle{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-medium);margin:18px 0}
 .detailDrawer.detailDrawer{width:min(740px,calc(100vw - 28px))}
-.detailDrawer .detail{padding:22px 24px}
+.detailDrawer .detail{box-sizing:border-box;width:100%;max-width:none;margin:0;padding:22px 24px}
 
 .bundleGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:4px}
 .page .bundleCard{display:flex;align-items:center;gap:16px;min-width:0;padding:20px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3);background:var(--teloa-surface);text-align:left}

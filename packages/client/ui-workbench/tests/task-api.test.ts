@@ -89,3 +89,10 @@ test('通用本人执行完成可在需要你目录验收，普通空负责人�
  assert.equal((await createTaskApi(async()=>({items:[{task,attention}]})).attention()).items[0]?.task.executor?.kind,'owner')
  await assert.rejects(createTaskApi(async()=>({items:[{task:{...task,executor:undefined},attention}]})).attention())
 })
+
+test('任务快照识别已完成群回复，不把无待办交流误判为损坏，也不放行普通等待任务',async()=>{
+ const entry={task:{...row,state:'waiting',groupId:id,assigneeRoleId:id,assigneeRoleVersion:1},attention:null,completedGroupReply:true}
+ assert.equal((await createTaskApi(async()=>({items:[entry]})).attention()).items[0]?.completedGroupReply,true)
+ const {completedGroupReply,...missing}=entry
+ for(const bad of [missing,{...entry,completedGroupReply:false},{...entry,task:{...entry.task,state:'blocked'}},{...entry,task:{...entry.task,groupId:null}}])await assert.rejects(createTaskApi(async()=>({items:[bad]})).attention(),/格式/)
+})

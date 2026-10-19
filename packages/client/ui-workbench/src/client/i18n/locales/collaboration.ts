@@ -1,4 +1,5 @@
 export const COLLABORATION_MESSAGE_ROWS = [
+ ["collaboration.results.sharedOnly","仅查看本群已分享的版本。","只檢視本群組已分享的版本。","Only versions shared with this group are shown."],
  ["group.templateMaterials.review","重新核对","重新核對","Review again"],
  ["group.templateMaterials.title", "模板资料", "範本資料", "Template materials"],
  ["group.templateMaterials.boundary", "所选原文将共享给本群及以下员工，带入输入框后由你发送。", "所選原文將分享給本群組及以下員工，加入輸入框後由你傳送。", "Share the selected original text with this group and these employees, then attach it to your draft for you to send."],

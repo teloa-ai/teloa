@@ -56,3 +56,9 @@
 .alternatives button{font:inherit;color:var(--teloa-accent);background:none;border:0;padding:4px 0;cursor:pointer;text-align:start;overflow-wrap:anywhere;max-width:100%}
 .alternatives button:hover{text-decoration:underline}
 .alternatives button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+
+/* 抽屉标题已给出条目名称，详情卡片不再重复同一标题。 */
+.detailView .name{display:none}
+
+/* 短说明或读取失败时，网格里的方案正文也保持与抽屉标题对齐。 */
+.detailDrawer .section>article{box-sizing:border-box;width:100%;min-width:0;max-width:none;margin:0}

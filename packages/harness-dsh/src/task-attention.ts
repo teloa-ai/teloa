@@ -13,13 +13,15 @@ function read(value:unknown,owner:string):TaskAttentionPage{
   const page=exact(value,['items']);if(!Array.isArray(page.items))throw invalid()
   const ids=new Set<string>()
   for(const value of page.items){
-   const row=exact(value,['task','attention']),task=exact(row.task,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy','executor']))
+   const row=exact(value,['task','attention','completedGroupReply']),task=exact(row.task,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy','executor']))
    const executor=task.executor===undefined?undefined:readWorkExecutor(task.executor)
    if(executor?.kind==='owner'&&(task.assigneeRoleId!==null||task.scope!=='general'))throw invalid()
    if(!uuid(task.id)||ids.has(task.id.toLowerCase())||task.ownerId!==owner||!positive(task.version)||(task.contentVersion!==undefined&&!positive(task.contentVersion))||!workTaskStates.some(state=>state===task.state)||!timestamp(task.createdAt)||!timestamp(task.updatedAt)||task.updatedAt<task.createdAt)throw invalid()
    ids.add(task.id.toLowerCase());taskDefinition({title:task.title,goal:task.goal,scope:task.scope,groupId:task.groupId,skills:task.skills,completionPolicy:task.completionPolicy})
    if(task.assigneeRoleId===null?task.assigneeRoleVersion!==null:!uuid(task.assigneeRoleId)||!positive(task.assigneeRoleVersion))throw invalid()
-   if(task.state==='blocked'||task.state==='waiting'||row.attention!==null){
+   const replied=row.completedGroupReply!==undefined
+   if(replied&&(row.completedGroupReply!==true||task.state!=='waiting'||row.attention!==null||!uuid(task.groupId)||task.assigneeRoleId===null))throw invalid()
+   if(!replied&&(task.state==='blocked'||task.state==='waiting'||row.attention!==null)){
     const attention=exact(row.attention,['kind','reason'])
     const configurationFailed=attention.kind==='error'&&attention.reason==='execution-configuration-failed'
     if(task.state==='blocked'?!configurationFailed&&(attention.kind!=='error'||!['task-blocked','execution-failed'].some(reason=>reason===attention.reason)):task.state==='waiting'?!configurationFailed&&(attention.kind!=='review'||!['task-waiting','execution-completed'].some(reason=>reason===attention.reason)):!configurationFailed)throw invalid()
