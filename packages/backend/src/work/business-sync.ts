@@ -197,9 +197,9 @@ export class BusinessSyncService{
  private readonly identity:{id:()=>string;now:()=>string}
  private readonly definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>
  private readonly warehouse:BusinessWarehouseService
- private readonly events:Pick<BusinessWorkEventProducers,'sync'>|undefined
+ private readonly events:(Pick<BusinessWorkEventProducers,'sync'>&Partial<Pick<BusinessWorkEventProducers,'object'>>)|undefined
  private readonly resolve:BusinessSyncSourceResolver
- constructor(pool:Pool,identity:{id:()=>string;now:()=>string},definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>,warehouse:BusinessWarehouseService,resolve:BusinessSyncSourceResolver,events?:Pick<BusinessWorkEventProducers,'sync'>){
+ constructor(pool:Pool,identity:{id:()=>string;now:()=>string},definitions:Pick<BusinessDefinitionSourceReader,'forScope'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'>>,warehouse:BusinessWarehouseService,resolve:BusinessSyncSourceResolver,events?:Pick<BusinessWorkEventProducers,'sync'>&Partial<Pick<BusinessWorkEventProducers,'object'>>){
   this.pool=pool;this.identity=identity;this.definitions=definitions;this.warehouse=warehouse;this.resolve=resolve;this.events=events
   this.rules=new BusinessSyncRuleService(pool,identity,async(db,owner,scope,mappingId)=>{
    const known=(await db.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[owner,scope])).rowCount
@@ -230,6 +230,44 @@ export class BusinessSyncService{
   if(execution&&(execution.runId!==run.id||typeof execution.taskId!=='string'))throw corrupt('业务成果同步原始收据损坏。')
   const data={...definition,run},basisHash=createHash('sha256').update(JSON.stringify(data)).digest('hex')
   return {sourceVersion:run.id,basisHash,active:true,data,...(execution?{originRunId:run.id}:{})}
+ }
+
+ /**
+ * 已核对同步归属对象的事件事实：只认 `teloa_business_sync_object_ids` 登记、由同一来源写入的固定快照；
+ * 与本地记录读口同一判据——版本不得越过当前头、连续历史完整、中间无实质变更、摘要逐版核对。本地记录头存在的对象不走这里。
+ */
+ async objectEventSourceInTransaction(db:PoolClient,owner:string,source:Extract<BusinessWorkSourceRef,{kind:'business-object'}>,version?:string):Promise<BusinessWorkEventFacts>{
+  const scope=scopeOf({ownerId:owner,scopeIds:[source.scope]},source.scope)
+  await lockBusinessConfiguration(db,owner,scope,'shared')
+  const owned=(await db.query('select source_id from teloa_business_sync_object_ids where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4',[owner,scope,source.type,source.id])).rows[0]
+  if(!owned||typeof owned.source_id!=='string')throw new WorkError('teloa/forbidden','业务对象不是已核对的同步归属，不能作为事件来源。')
+  const definition=await this.objectTypeBasis(db,owner,scope,source.type)
+  const head=Number((await db.query('select max(object_version) as v from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4',[owner,scope,source.type,source.id])).rows[0]?.v)
+  if(!Number.isSafeInteger(head)||head<1)throw unavailable('业务对象尚无固定快照。')
+  const fixed=version===undefined?head:Number(version)
+  if(!Number.isSafeInteger(fixed)||fixed<1||String(fixed)!==(version??String(fixed))||fixed>head)throw new WorkError('teloa/version-conflict','业务对象版本不匹配。')
+  if(head-fixed>maxEventNoopVersions)throw unavailable('业务事件连续版本超过可核对范围，请重新准备。')
+  const rows=(await db.query('select object_id,object_version,source_id,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version between $5 and $6 order by object_version',[owner,scope,source.type,source.id,fixed,head])).rows as Array<Record<string,unknown>>
+  if(rows.length!==head-fixed+1)throw unavailable('业务事件连续历史已不可用。')
+  const snapshots=rows.map(row=>{if(row.source_id!==owned.source_id)throw new WorkError('teloa/forbidden','业务对象快照不属于已核对的同步来源。');return {...storedSnapshot(row,scope,source.type),snapshotHash:String(row.snapshot_hash)}})
+  const object=snapshots[0]!
+  if(snapshots.some(value=>eventContentChanged(object,value)))throw new WorkError('teloa/version-conflict','业务记录中间已有实质变更，请基于当前版本重新准备。')
+  return {sourceVersion:String(object.version),basisHash:object.snapshotHash,active:object.deletedAt===undefined,data:{object,definitionHash:definition.objectTypeHash,configuration:definition.configuration}}
+ }
+
+ /** 类型级订阅的来源事实：只核对该对象类型在本范围有唯一生效声明；它不是事件本体，没有版本。 */
+ async objectTypeSourceInTransaction(db:PoolClient,owner:string,source:Extract<BusinessWorkSourceRef,{kind:'business-object-type'}>):Promise<BusinessWorkEventFacts>{
+  const scope=scopeOf({ownerId:owner,scopeIds:[source.scope]},source.scope)
+  await lockBusinessConfiguration(db,owner,scope,'shared')
+  const definition=await this.objectTypeBasis(db,owner,scope,source.type)
+  return {sourceVersion:definition.objectTypeHash,basisHash:definition.objectTypeHash,active:true,data:{objectTypeHash:definition.objectTypeHash,configuration:definition.configuration}}
+ }
+
+ private async objectTypeBasis(db:PoolClient,owner:string,scope:string,type:string):Promise<{objectTypeHash:string;configuration:unknown}>{
+  const bundles=this.definitions.forScopeVersioned?await this.definitions.forScopeVersioned(db,owner,scope):await this.definitions.forScope(db,owner,scope)
+  const matches=bundles.flatMap(bundle=>bundle.objectTypes.filter(row=>row.definition.id===type).map(row=>({hash:row.source.definitionHash,origin:bundle.origin})))
+  if(matches.length!==1)throw unavailable(matches.length?'业务对象类型声明不唯一。':'业务对象类型不存在或未生效。')
+  return {objectTypeHash:matches[0]!.hash,configuration:matches[0]!.origin}
  }
 
  /** 列出范围内生效的 source-mapping 声明（模板 + 本地当前版本，同 forScope 口径）。 */
@@ -713,9 +751,18 @@ export class BusinessSyncService{
    const inserted=await db.query(`insert into teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version,snapshot_hash,snapshot,source_id,first_seen_at)
      values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict do nothing`,[owner,scope,type,item.id,item.version,businessObjectSnapshotHash(item),JSON.stringify(item),sourceId,capturedAt])
    if(inserted.rowCount!==1)throw new WorkError('teloa/conflict','业务对象版本被并发写入；本次同步未写入。')
+   // 逐对象正式事件与写入同事务：只在标题/摘要/字段/删除位实质变化时发，与本地记录写口同一判据；普通重叠拉取（同值新版本）不制造事件。
+   // 同步批次事件（events.sync）在调用方按本轮 run 另发，两者并存。
+   if(this.events?.object&&eventContentChanged(latest.get(item.id)?.snapshot,item))await this.events.object(db,owner,{kind:'business-object',scope,type,id:item.id},String(item.version))
   }
   let tombstoned=0
-  for(const id of tombstones)if(await this.warehouse.tombstone(db,owner,scope,type,id,sourceId))tombstoned+=1
+  for(const id of tombstones)if(await this.warehouse.tombstone(db,owner,scope,type,id,sourceId)){
+   tombstoned+=1
+   if(this.events?.object){
+    const version=(await db.query('select max(object_version) as v from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4',[owner,scope,type,id])).rows[0]?.v
+    if(Number.isSafeInteger(Number(version)))await this.events.object(db,owner,{kind:'business-object',scope,type,id},String(version))
+   }
+  }
   if(inserts.length||tombstoned)await markBusinessDataChanged(db,owner,scope)
   return {fetched:entries.length,upserted:inserts.length,tombstoned}
  }
@@ -727,6 +774,13 @@ export class BusinessSyncService{
    [owner,scope,mappingId,run.runId,run.trigger,run.startedAt,finishedAt,run.status,run.outcome.fetched,run.outcome.upserted,run.outcome.tombstoned,durationMs,run.error?.code??null,run.error?.reason??null,run.outcome.nextCursor??null,run.status==='throttled'])).rows[0] as Record<string,unknown>
   return runOf(row,scope)
  }
+}
+
+/** 事件事实的连续核对上限，与本地记录读口同值。 */
+const maxEventNoopVersions=100
+/** 与本地记录写口同一「实质变化」判据：标题、摘要、字段、删除位；来源时间戳等不算。 */
+function eventContentChanged(previous:Snapshot|undefined,next:Snapshot):boolean{
+ return !previous||previous.title!==next.title||previous.summary!==next.summary||!isDeepStrictEqual(previous.fields,next.fields)||(previous.deletedAt??null)!==(next.deletedAt??null)
 }
 
 /** 当前版本（含 tombstone）子查询：compare 需要先取最大版本再看是否已删、是否本来源写入，与 `currentVersionSubquery` 同一口径。 */

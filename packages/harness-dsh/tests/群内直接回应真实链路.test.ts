@@ -605,17 +605,14 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   const sent=await call('groups/messages/send',{requestId:randomUUID(),groupId:groupA.id,expectedVersion:groupA.version,text,...(bad.mention?{mentions:[{roleId:roleA.id,expectedVersion:roleA.version}]}:{})}) as Message
   badResults.push({label:bad.label,messageId:sent.id,decision:await awaitDecision(sent.id)})
  }
- // 有 @ 的那一条由宿主按结构化目标直接派给 A：等它的运行起来，确保来源计数不与在途派发赛跑。
- const mentionedBad=await awaitRoutedRun(badResults[0]!.messageId,roleA.id)
+ // 决策与段 D 派发同一路径：parse-failed 时没有任何接收者，决策落库即无在途派发，计数不会赛跑。
  const sourcesAfterBad=await countOf('teloa_group_task_sources')
- await t.test('I18 坏 JSON（含 v1 旧协议）整条被拒：有结构化 @ 时宿主直接派给被点名者，没有 @ 就一个字不回、一条任务不建',()=>{
-  // 结构化 @（规格 §3.2）：接收者由宿主固定、模型只判意图；模型答坏时仍按点名派发，记 direct 而不是 parse-failed。
-  assert.deepEqual([badResults[0]!.decision.kind,badResults[0]!.decision.respond],['direct',[roleA.id]],'有 @ 时只派给被 @ 且在候选集里的那位')
-  assert.ok(mentionedBad.taskId,'被点名者的任务必须真的建起来')
-  assert.deepEqual(badResults.slice(1).map(item=>[item.label,item.decision.kind]),badAnswers.slice(1).map(bad=>[bad.label,'parse-failed']))
-  for(const item of badResults.slice(1))assert.deepEqual(item.decision.respond,[],`${item.label}：没有 @ 就不回`)
+ await t.test('I18 坏 JSON（含 v1 旧协议）整条被拒：有没有结构化 @ 都记 parse-failed、一个字不回、一条任务不建',()=>{
+  // 结构化 @（规格 §3.2）只固定接收者身份；模型答坏时意图读不出来，不按点名退化成交流回应（c4df592a：可沿原消息重试）。
+  assert.deepEqual(badResults.map(item=>[item.label,item.decision.kind]),badAnswers.map(bad=>[bad.label,'parse-failed']))
+  for(const item of badResults)assert.deepEqual(item.decision.respond,[],`${item.label}：解析失败不派任何人`)
   for(const item of badResults)assert.deepEqual(item.decision.reactions,[],`${item.label}：退化时一个表情都不落`)
-  assert.equal(sourcesAfterBad,sourcesBeforeBad+1,'整段只许多出被点名那一位的群任务来源')
+  assert.equal(sourcesAfterBad,sourcesBeforeBad,'整段一条群任务来源都不许落表')
   // v1 三键在 v2 解析器面前就是错形状，不存在「旧协议放行」的兜底分支。
   assert.throws(()=>groupRoutingOutputV2(legacyAnswerOf([roleA.id]),[roleA.id,roleB.id],[],'任意正文'),{code:'teloa/invalid-input'})
  })

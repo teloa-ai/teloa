@@ -3,6 +3,11 @@ import {readGoalRunBinding,type GoalRunBinding} from './task-run-goal.ts'
 
 export type WorkControl={id:string;ownerId:string;generation:number;version:number;state:'active'|'pausing'|'paused'|'stopping'|'stopped';scope:'round'|'definition';pendingRunIds:string[];unknownOperationIds:string[]}
 export type RecoveryCandidate={controlId:string;expectedGeneration:number;runId:string;nativeRequestId:string;goal:GoalRunBinding|null;reason:'unaccepted'|'accepted'|'unknown';safeRecovery:boolean}
+/**
+ * `work-recovery/inspect` 的回包项：候选本身（随恢复票据持久化，形状不变）加上服务端判定的 `resumable`——
+ * 整项恢复是否会接受这条候选（结果未知、或已受理却没有可核验待办与 Goal 的执行会被拒）。旧回包不带该字段时为 undefined，由调用方按未知处理。
+ */
+export type RecoveryInspection=RecoveryCandidate&{resumable?:boolean}
 export type WorkControlChange={requestId:string;controlId:string;expectedVersion:number;action:'pause'|'resume'|'stop';scope:'round'|'definition';roundControlId:string|null}
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0
@@ -19,6 +24,12 @@ export function readWorkControlChange(value:unknown):WorkControlChange{
  const r=exact(value,['requestId','controlId','expectedVersion','action','scope','roundControlId'])
  if(!uuid(r.requestId)||!uuid(r.controlId)||!positive(r.expectedVersion)||!['pause','resume','stop'].includes(r.action as string)||!['round','definition'].includes(r.scope as string)||r.roundControlId!==null&&!uuid(r.roundControlId))throw invalid()
  return {requestId:r.requestId,controlId:r.controlId,expectedVersion:r.expectedVersion,action:r.action as WorkControlChange['action'],scope:r.scope as WorkControlChange['scope'],roundControlId:r.roundControlId as string|null}
+}
+export function readRecoveryInspection(value:unknown):RecoveryInspection{
+ if(!value||typeof value!=='object'||!Object.hasOwn(value,'resumable'))return readRecoveryCandidate(value)
+ const {resumable,...candidate}=value as Record<string,unknown>
+ if(typeof resumable!=='boolean')throw invalid()
+ return {...readRecoveryCandidate(candidate),resumable}
 }
 export function readRecoveryCandidate(value:unknown):RecoveryCandidate{
  const r=exact(value,['controlId','expectedGeneration','runId','nativeRequestId','goal','reason','safeRecovery'])

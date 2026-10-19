@@ -113,3 +113,68 @@ test('同Run已封口的未知模型预留保留未知token，核验终态后释
   assert.deepEqual(child,{state:'unknown',reserved_tokens:1,actual_tokens:null,elapsed_ended_at:null,settled_at:null})
  }
 })
+
+test('派发前原子并发准入：账户内未终态 Run 与活动预留计入并发位，满额拒绝且不改预算、不建预留；终态或结算后放行',{timeout:60000},async t=>{
+ const env=await setupRoleWork();t.after(env.close)
+ const {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy}=await import('../src/work/work-budget.ts')
+ await initializeWorkBudgets(env.pool)
+ const {owner,role,taskId}=await roleFixture(env.pool,'employee')
+ const db=await env.pool.connect();let lineage
+ try{await db.query('begin');lineage=await new WorkLineageService(env.pool,identity).bindTask(db,owner,{taskId,source:{kind:'owner-task',taskId}});await db.query('commit')}finally{db.release()}
+ const account=lineage.budgetAccountId,policy={...defaultWorkBudgetPolicy,maxConcurrent:1}
+ await env.pool.query('update teloa_work_budget_accounts set policy=$3 where owner_id=$1 and id=$2',[owner,account,JSON.stringify(policy)])
+ const budgets=new WorkBudgetService(env.pool,identity)
+ await budgets.admitRunStart(owner,account)
+ const runId=await insertRoleRun(env.pool,owner,role.id,taskId,'prepared')
+ await assert.rejects(budgets.admitRunStart(owner,account),{code:'teloa/budget-exhausted'},'已准备未终态的 Run 占并发位')
+ await env.pool.query("update teloa_task_runs set state='ended' where id=$1",[runId])
+ await budgets.admitRunStart(owner,account)
+ await env.pool.query("insert into teloa_work_budget_reservations(id,owner_id,budget_account_id,control_generation,model_request_id,kind,reserved_tokens,reserved_rounds,state,created_at) values($1,$2,$3,1,$4,'goal',100,1,'reserved',now())",[randomUUID(),owner,account,'model-'+randomUUID()])
+ await assert.rejects(budgets.admitRunStart(owner,account),{code:'teloa/budget-exhausted'},'活动模型预留同样占并发位')
+ await env.pool.query("update teloa_work_budget_reservations set state='settled',actual_tokens=100,settled_at=now() where owner_id=$1 and budget_account_id=$2",[owner,account])
+ await budgets.admitRunStart(owner,account)
+ assert.deepEqual((await env.pool.query('select policy from teloa_work_budget_accounts where owner_id=$1 and id=$2',[owner,account])).rows[0].policy,policy,'准入不改预算')
+ assert.equal((await env.pool.query("select count(*)::int n from teloa_work_budget_reservations where owner_id=$1 and budget_account_id=$2 and state='reserved'",[owner,account])).rows[0].n,0,'准入不建预留')
+})
+
+test('模型耗时按滚动24小时窗口计：终身累计超限的旧耗时不封住持续业务，窗口内超限按职责/本人范围拒绝并自动恢复',{timeout:60000},async t=>{
+ const env=await setupRoleWork();t.after(env.close)
+ const {WorkBudgetService,initializeWorkBudgets}=await import('../src/work/work-budget.ts');await initializeWorkBudgets(env.pool)
+ const f=await roleFixture(env.pool,'employee'),db=await env.pool.connect();let lineage
+ try{await db.query('begin');lineage=await new WorkLineageService(env.pool,identity).bindTask(db,f.owner,{taskId:f.taskId,source:{kind:'owner-task',taskId:f.taskId}});await db.query('commit')}finally{db.release()}
+ const service=new WorkBudgetService(env.pool,identity,ownerAuthority),account=lineage.budgetAccountId,hour=3600000
+ const policy={maxGoalRounds:32,maxTokens:10_000_000,maxElapsedMs:hour,maxConcurrent:4,maxRetries:3,stagnationRounds:3,money:null}
+ await service.configure(f.owner,{requestId:randomUUID(),budgetAccountId:account,expectedVersion:1,policy})
+ // 已结算调用：按真实结算终点计时，再把区间整体平移到指定的历史时刻。
+ const settled=async(startAgoMs:number,durationMs:number)=>{
+  const r=await service.reserve(f.owner,{budgetAccountId:account,controlGeneration:1,kind:'goal',tokens:10,rounds:0,modelRequestId:randomUUID()})
+  await service.markDispatched(f.owner,{reservationId:r.id});await service.settle(f.owner,{reservationId:r.id,modelRequestId:r.modelRequestId,providerRequestId:null,tokens:10,moneyMinorUnits:null,currency:null,receiptId:randomUUID()})
+  await env.pool.query("update teloa_work_budget_reservations set created_at=now()-$2::double precision*interval '1 millisecond',settled_at=now()-$3::double precision*interval '1 millisecond',elapsed_ended_at=now()-$3::double precision*interval '1 millisecond' where id=$1",[r.id,startAgoMs,startAgoMs-durationMs]);return r
+ }
+ const admission=async()=>{const c=await env.pool.connect();try{await c.query('begin');await service.admissionInTransaction(c,f.owner,account)}finally{await c.query('rollback');c.release()}}
+ const near=(actual:number,expected:number,label:string)=>assert.ok(Math.abs(actual-expected)<60000,label+'：'+actual+' ≈ '+expected)
+ // 一周前持续运行的 30 小时累计耗时：旧口径会永久超过 1 小时上限，新口径完全滑出窗口。
+ for(let day=7;day>=2;day--)await settled(day*24*hour,5*hour)
+ await assert.doesNotReject(admission,'窗口外历史耗时不再封住新工作')
+ near((await service.read(f.owner,{budgetAccountId:account})).usedElapsedMs,0,'职责窗口用量');near((await service.readOwner(f.owner)).usedElapsedMs,0,'本人窗口用量')
+ // 跨窗口边界的调用只计窗口内部分；再加窗口内 40 分钟即超过职责 1 小时上限。
+ await settled(25*hour,1.5*hour);near((await service.read(f.owner,{budgetAccountId:account})).usedElapsedMs,0.5*hour,'跨边界只计窗口内半小时')
+ await assert.doesNotReject(admission)
+ const inside=await settled(2*hour,40*60000)
+ near((await service.read(f.owner,{budgetAccountId:account})).usedElapsedMs,0.5*hour+40*60000,'窗口内合计')
+ await assert.rejects(admission,{code:'teloa/budget-exhausted',details:{reason:'elapsed',scope:'work'}})
+ await assert.rejects(service.reserve(f.owner,{budgetAccountId:account,controlGeneration:1,kind:'goal',tokens:1,rounds:0,modelRequestId:randomUUID()}),{code:'teloa/budget-exhausted',details:{reason:'elapsed',scope:'work'}})
+ // 本人总额同样按窗口：职责放宽后由本人 1 小时上限拒绝，原因与范围分别可见。
+ await service.configure(f.owner,{requestId:randomUUID(),budgetAccountId:account,expectedVersion:2,policy:{...policy,maxElapsedMs:4*hour}})
+ const owner=await service.readOwner(f.owner);await service.configureOwner(f.owner,{requestId:randomUUID(),expectedVersion:owner.version,policy:{...owner.policy,maxElapsedMs:hour}})
+ await assert.rejects(admission,{code:'teloa/budget-exhausted',details:{reason:'elapsed',scope:'owner'}})
+ // 无需人工提额：窗口内耗时随时间滑出后自动恢复（以平移区间模拟时间流逝）。
+ await env.pool.query("update teloa_work_budget_reservations set created_at=created_at-interval '1 day',settled_at=settled_at-interval '1 day',elapsed_ended_at=elapsed_ended_at-interval '1 day' where id=$1",[inside.id])
+ await assert.doesNotReject(admission,'窗口内耗时滑出后自动恢复')
+ // 未核验终态的调用仍按进行中计时，即便开始于窗口之前也计满整个窗口，不能借窗口提前释放。
+ const open=await service.reserve(f.owner,{budgetAccountId:account,controlGeneration:1,kind:'goal',tokens:1,rounds:0,modelRequestId:randomUUID()});await service.markDispatched(f.owner,{reservationId:open.id})
+ await env.pool.query("update teloa_work_budget_reservations set created_at=now()-interval '30 hours' where id=$1",[open.id])
+ near((await service.readOwner(f.owner)).usedElapsedMs,24*hour+0.5*hour,'未封口调用计满窗口')
+ await assert.rejects(admission,{code:'teloa/budget-exhausted',details:{reason:'elapsed',scope:'work'}},'职责先于本人核对')
+ assert.equal((await service.read(f.owner,{budgetAccountId:account})).usedTokens,10*8+1,'token 仍累计，口径不随耗时窗口改变')
+})

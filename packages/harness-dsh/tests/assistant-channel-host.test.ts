@@ -1,14 +1,13 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {createHardwareStore,initializeHardwareDevices,createDirectDeviceStore} from '@teloa/backend'
 import {hardwareScopes,type HardwareBinding} from '@teloa/contract'
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg')
 let pool:Parameters<typeof initializeHardwareDevices>[0],container:StartedPostgreSqlContainer
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeHardwareDevices(pool)},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})

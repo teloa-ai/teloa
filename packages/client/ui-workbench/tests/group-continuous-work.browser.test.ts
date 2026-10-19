@@ -15,10 +15,10 @@ test('群动态状态随真实工作推进，成功回帖收起回执，审批�
  const view=createRoot(document.getElementById('root')),locale='zh-CN',snapshot={locale,dshLocale:locale,revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
  const recipient=(phase,mode='work')=>({roleId:'11111111-1111-4111-8111-111111111111',name:'跟进员',taskId:'22222222-2222-4222-8222-222222222222',runId:'33333333-3333-4333-8333-333333333333',phase,resultMessageId:null,executionMode:mode});
  const f=window.workFixture={calls:[],archived:false,status:null,render:()=>render()};
- f.set=(phase,extra={})=>{f.status={messageId:'44444444-4444-4444-8444-444444444444',attemptVersion:1,phase,recipients:[recipient(phase,extra.mode)],hintCode:extra.hint??null,canRetry:extra.canRetry??false};render()};
+ f.set=(phase,extra={})=>{f.status={messageId:'44444444-4444-4444-8444-444444444444',attemptVersion:1,phase,recipients:[recipient(phase,extra.mode)],hintCode:extra.hint??null,canRetry:extra.canRetry??false,...(extra.budget?{budget:extra.budget}:{})};render()};
  function render(){flushSync(()=>view.render(<I18nProvider runtime={runtime}><main><textarea aria-label="群讨论消息" defaultValue="未发送的群讨论"/>{f.status&&<GroupMessageStatus status={f.status} archived={f.archived} retrying={false} retryFailed={false} retry={()=>f.calls.push(['retry'])} openTask={taskId=>f.calls.push(['open',taskId])}/>}<div data-n46-progress><GroupProgressStatus statuses={f.status?[f.status]:[]} avatar={()=>null}/></div></main></I18nProvider>))}
  f.set('running');`)
- const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'fixture.tsx'),name:'GroupContinuousWorkTest',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'GroupContinuousWorkTest',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code,styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
@@ -72,6 +72,11 @@ test('群动态状态随真实工作推进，成功回帖收起回执，审批�
  // 引用资料变化：说明原因，不给内部码。
  await set('blocked',{hint:'source-changed'})
  await status.getByText('引用的资料已变化，请核对后再继续。',{exact:true}).waitFor()
+ // 路由被工作额度拒绝：说明是耗时额度、范围与「工作额度」下一步，仍可重新安排，不显示通用的无法判断。
+ await set('routing-failed',{hint:'budget-exhausted',budget:{reason:'elapsed',scope:'owner'},canRetry:true})
+ await status.getByText(/模型耗时已达到最近 24 小时上限/).waitFor()
+ await status.getByRole('button',{name:'重新安排'}).waitFor()
+ assert.doesNotMatch(await status.innerText(),/暂时无法判断由谁回应|teloa\//)
  // 交流回应由原消息内容承载，退出动态提示，不冒称业务工作完成。
  await set('completed',{mode:'reply'})
  await page.getByRole('button',{name:'查看工作',exact:true}).waitFor()

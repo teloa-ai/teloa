@@ -23,6 +23,7 @@ function load(){
   if(id==='react'||id==='react/jsx-runtime')return React
   if(id==='./DetailsMenu.js'){const code=ts.transpileModule(readFileSync(new URL('../src/client/DetailsMenu.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;const values:Record<string,any>={};new Function('require','exports','React',code)(require,values,React);return values}
   if(id==='./i18n/provider.js')return {useI18n:()=>({t})}
+  if(id==='./i18n/errors.js')return {localizeWorkError:()=>''}
   if(id==='./group-progress-presentation.js')return presentation
   if(id==='lucide-react')return {ExternalLink:()=>React.createElement('svg',{'data-icon':'external'})}
   if(id.endsWith('.module.css'))return {default:new Proxy({},{get:(_,key)=>String(key)})}

@@ -4,7 +4,7 @@ import {createHash,randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
 import type {Pool as PoolType,PoolClient} from 'pg'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {
  IndustryDataSourceService,IndustryExecutionToolService,IndustryLoadService,IndustryMcpConnectionService,IndustryPluginService,PlanService,RoleService,

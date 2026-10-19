@@ -4,6 +4,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import {groupRoutingInputSchema,groupRoutingOutputV2Schema,groupRoutingRequestId,groupRoutingSessionId} from '@teloa/contract'
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
 import {askGroupRouting,assertRoutingPreset,groupRoutingInput,groupRoutingInputNotice,groupRoutingInputTask,isRoutingSession,type GroupRoutingAsk} from '../src/group-routing.ts'
+import {readRoutingWorkCandidates} from '../src/group-routing-dispatch.ts'
 
 const owner='11111111-1111-4111-8111-111111111111'
 const groupId='22222222-2222-4222-8222-222222222222'
@@ -36,6 +37,8 @@ type HarnessOptions={
  existingSession?:boolean
  dropTurnEnd?:boolean
  silent?:boolean
+ /** 本轮 turn/end 的原生结束原因；缺省为正常结束。 */
+ endReason?:unknown
  mixIn?:boolean
  promptDelayMs?:number
  seed?:unknown[]
@@ -56,7 +59,7 @@ function harness(options:HarnessOptions){
   // 混入：同一轮里再进来一条别人的用户消息（判据照搬 task-tool-guard.ts:52-55）。
   if(options.mixIn)events.push(userMessage(events.length,requestOf(otherMessageId)))
   if(!options.silent)events.push({seq:events.length,time:events.length,type:'assistant/message',surfaceOp:'append',data:{turn,message:{content:[{type:'text',text:options.answer}]}}})
-  if(!options.dropTurnEnd)events.push({seq:events.length,time:events.length,type:'turn/end',data:{turn,reason:{kind:'stop'}}})
+  if(!options.dropTurnEnd)events.push({seq:events.length,time:events.length,type:'turn/end',data:{turn,reason:options.endReason??{kind:'stop'}}})
  }
  const ctx={
   get:(name:string)=>name==='teloaResidentInputAdmission'&&options.resident!=='missing'?{bindRouting:async(input:Record<string,unknown>)=>{calls.bind.push(input);if(options.resident==='deny')throw Error('原来源已暂停');return ()=>{calls.release++}}}:undefined,
@@ -120,6 +123,17 @@ test('防护句逐字：含跨轮不作数那一句（M4）',()=>{
  assert.ok(groupRoutingInputTask.includes('不要生成新的工作目标'))
  assert.ok(groupRoutingInputTask.includes('消息明确提及全员'))
  assert.ok(groupRoutingInputTask.includes('纯寒暄或社交性消息'))
+})
+
+test('原消息引用的任务关联必须传到路由输入，续办优先选择同一工作而非另派',async()=>{
+ const taskId='77777777-7777-4777-8777-777777777777',runId='88888888-8888-4888-8888-888888888888'
+ const db={query:async()=>({rows:[{id:taskId,run_id:runId,version:9,state:'waiting',title:'原T2调查',quoted:true},{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',run_id:null,version:1,state:'ready',title:'其他工作',quoted:false}]})} as unknown as Parameters<typeof readRoutingWorkCandidates>[3]
+ const work=await readRoutingWorkCandidates(owner,groupId,messageId,db)
+ assert.equal(Reflect.get(work[0]!,'quoted'),true)
+ assert.equal(Object.hasOwn(work[1]!,'quoted'),false)
+ const input=groupRoutingInput({...ask(),work})
+ assert.deepEqual(input.work,[{taskId,runId,title:'原T2调查',state:'waiting',quoted:true},{taskId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',runId:null,title:'其他工作',state:'ready'}])
+ assert.ok(groupRoutingInputTask.includes('quoted:true')&&groupRoutingInputTask.includes('原任务续办'))
 })
 
 test('输入面按三把尺截断：触发正文保留完整 8000、岗位使命 2000、五组职责各前 10 条各 300',()=>{
@@ -289,6 +303,21 @@ test('这一轮说完了却一句话没说时回 degraded，记的是「没有�
  assert.match(calls.warn[0]!,/模型这一轮没有给出任何回答/)
 })
 
+test('本轮被工作额度拒绝时回 degraded 并带原因与范围；其余原生失败不带，未知原因只给通用额度',async()=>{
+ const budget=harness({answer:'不会被读到',silent:true,endReason:{kind:'error',error:{code:'teloa/budget-exhausted/elapsed/owner',message:'PRIVATE_RAW'}}})
+ assert.deepEqual(await route(budget.ctx),{kind:'degraded',budget:{reason:'elapsed',scope:'owner'}})
+ assert.equal(budget.calls.warn.length,1)
+ assert.match(budget.calls.warn[0]!,/工作额度不足/)
+ assert.doesNotMatch(budget.calls.warn[0]!,/PRIVATE_RAW/)
+ const generic=harness({answer:'不会被读到',silent:true,endReason:{kind:'error',error:{code:'teloa/budget-exhausted',message:'x'}}})
+ assert.deepEqual(await route(generic.ctx),{kind:'degraded',budget:{}})
+ for(const code of ['teloa/budget-exhausted/PRIVATE/owner','teloa/unavailable']){
+  const other=harness({answer:'不会被读到',silent:true,endReason:{kind:'error',error:{code,message:'x'}}})
+  assert.deepEqual(await route(other.ctx),{kind:'degraded'})
+  assert.match(other.calls.warn[0]!,/模型这一轮没有给出任何回答/)
+ }
+})
+
 test('本轮混入别人的请求时整条 degraded，不取任何结论（HIGH①）',async()=>{
  const {ctx,calls}=harness({answer:answerOf([roleA]),mixIn:true})
  assert.deepEqual(await route(ctx),{kind:'degraded'})
@@ -374,4 +403,16 @@ test('宿主给出合法原文范围：首项整句、按句读切分、不切�
  assert.deepEqual(ranges.slice(1).map(range=>range.text),['整理这些记录，生成跟进表。','不要修改原记录！','😀确认'])
  const input=groupRoutingInput({...ask(),trigger:{...ask().trigger,text}}) as {trigger:{length:number;ranges:unknown[]}}
  assert.equal(input.trigger.length,text.length);assert.deepEqual(input.trigger.ranges,ranges.map(({start,end})=>({start,end})),'提供给模型复制的对象必须与 instructionRange 契约同形，不夹带 text 字段')
+})
+
+test('员工的具名交接与具体待答问题按求答识别，保留仅提名和未来条件分工边界',()=>{
+ assert.match(groupRoutingInputTask,/明确交接给被点名者并列出具体待答问题/)
+ assert.match(groupRoutingInputTask,/不要求紧邻.*请.*问号/)
+ assert.match(groupRoutingInputTask,/仅建议将来升级.*不应选人/)
+})
+
+test('路由默认输出示例不为普通回应夹带工作分派',()=>{
+ const output=groupRoutingInput(ask()).output as {assignments:unknown[]}
+ assert.deepEqual(output.assignments,[])
+ assert.match(groupRoutingInputTask,/reply.*assignments.*\[\]/)
 })

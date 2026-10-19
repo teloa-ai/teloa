@@ -109,13 +109,13 @@ test('常规多方法整稿共同纠正全部标准，再由独立整稿R2决定
  assert.deepEqual(rounds[0]!.units.map(unit=>[unit.start,unit.end,unit.criteria]),[[0,original.length,undefined]])
 })
 
-test('共同整稿R1仍拒绝同块不同修改，不部分应用或追加R2',async t=>{
+test('共同整稿R1仍拒绝同块不同修改，唯一纠正名额用尽后不部分应用或追加R2',async t=>{
  const invalid=revision([{blockId:1,after:'结论：1 家已付款。'},{blockId:1,after:'结论：付款资料需继续核实。'}],'资料：1 家已付款。',3)
- const f=await fixture(t,'MiniMax-M3',[text(multiMethodDraft),submit(invalid)])
+ const f=await fixture(t,'MiniMax-M3',[text(multiMethodDraft),submit(invalid),submit(invalid)])
  await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
- assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,2)
+ assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,3,'同一轮纠正一次后仍冲突即收错')
  assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
- assert.ok(f.events().some(event=>event.type==='tool/result'&&event.data.message.isError===true))
+ assert.deepEqual(f.events().flatMap(event=>event.type==='tool/result'?[event.data.message.isError]:[]),[true,true],'两次冲突都如实落为错误回执')
  assert.ok(!f.events().some(event=>event.type==='user/message'&&Reflect.get(event.data.source,'summary')==='复核后交付'))
 })
 
@@ -722,18 +722,21 @@ test('显式保留未列块：R2实际少核默认retain块或unknown不得交�
   const acceptance=verify(['r1:u1:i1'],[[5,6,7,8,9,10]])
   if(mode==='missing')acceptance.changeChecks[0]!.reviewedBlockIds=[6,7,8,9,10]
   else acceptance.changeChecks[0]!.status='unknown'
-  const f=await fixture(sub,'MiniMax-M3',[text(omittedCoverageDraft),submit(explicitUnlistedSubmission()),submit(acceptance)])
+  // 同一不合格验收连续两次，耗尽整租约唯一纠正名额。
+  const f=await fixture(sub,'MiniMax-M3',[text(omittedCoverageDraft),submit(explicitUnlistedSubmission()),submit(acceptance),submit(acceptance)])
   await f.ports.send({...f.run,inputText:unlistedRunInput()},f.signal,f.target);await f.agent.whenIdle()
-  assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,3,'应到真正R2后拒绝，不能由R1提前失败冒负例通过')
+  assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,4,'应到真正R2后拒绝（含一次同轮纠正），不能由R1提前失败冒负例通过')
+  assert.deepEqual(f.events().flatMap(event=>event.type==='tool/result'?[event.data.message.isError]:[]),[false,true,true],'R1成功，R2两次验收都被拒')
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
  })
 })
 
-test('显式保留未列块：原未声明的漏块回执仍在R1失败，不重写旧红',async t=>{
- const f=await fixture(t,'MiniMax-M3',[text(omittedCoverageDraft),submit(omittedCoverageSubmission),submit(verify())])
+test('显式保留未列块：原未声明的漏块回执仍在R1失败，唯一纠正名额用尽后不重写旧红',async t=>{
+ const f=await fixture(t,'MiniMax-M3',[text(omittedCoverageDraft),submit(omittedCoverageSubmission),submit(omittedCoverageSubmission),submit(verify())])
  await f.ports.send({...f.run,inputText:unlistedRunInput()},f.signal,f.target);await f.agent.whenIdle()
- assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,2);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
- const result=f.events().find(event=>event.type==='tool/result');assert.ok(result?.type==='tool/result');assert.ok(result.data.message.isError);assert.match(JSON.stringify(result.data.message.content),/coverage/)
+ assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,3,'同一漏块回执纠正一次仍失败即收错，不进入R2');assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
+ const results=f.events().filter(event=>event.type==='tool/result');assert.equal(results.length,2)
+ for(const result of results){assert.ok(result.type==='tool/result');assert.ok(result.data.message.isError);assert.match(JSON.stringify(result.data.message.content),/coverage/)}
 })
 
 // 278实次42块分区的通用形状：四集合已完整，只在旧冗余affected漏了显式retain。
@@ -741,7 +744,8 @@ const scopeCoverage={"change": [24], "retain": [3, 4, 7, 9, 11, 12, 13, 14, 15, 
 const scopeDraft=Array.from({length:42},(_,index)=>`资料第 ${index+1} 段。`).join('\n\n')
 const scopeRelated=[...scopeCoverage.change,...scopeCoverage.retain].sort((a,b)=>a-b)
 const legacyScopeIssue=()=>({problem:'修改结论时须同时核对其相关保留段，保留不表示事实通过。',basis:[goalBasis('资料：1 家已付款。')],affectedBlockIds:[24],coverage:structuredClone(scopeCoverage),edits:[{blockId:24,after:'资料第 24 段：仅按原输入陈述。'}]})
-const scopedSubmission=()=>{const {affectedBlockIds:_redundant,...issue}=legacyScopeIssue();return {phase:'revise',issues:[{...issue,affectedScope:'coverage' as const}]}}
+// 当前 coverage 简写按模型可见 schema 必须显式写 unlisted:"retain"；四集合已完整时不展开额外块。
+const scopedSubmission=()=>{const {affectedBlockIds:_redundant,...issue}=legacyScopeIssue();return {phase:'revise',issues:[{...issue,affectedScope:'coverage' as const,coverage:{...issue.coverage,unlisted:'retain' as const}}]}}
 
 test('coverage作用域：真实SDK从完整42块分区派生相关块，原wire与冷读精确绑定',async t=>{
  const r1=scopedSubmission(),blocks=splitReviewBlocks(scopeDraft),expected=scopeDraft.slice(0,blocks[23]!.start)+r1.issues[0]!.edits[0]!.after+scopeDraft.slice(blocks[23]!.end)
@@ -777,14 +781,16 @@ test('coverage作用域：R2漏掉显式retain或未知仍在真实第三请求�
   const acceptance=verify(['r1:u1:i1'],[scopeRelated])
   if(mode==='missing-retain')acceptance.changeChecks[0]!.reviewedBlockIds=scopeRelated.filter(id=>id!==3)
   else acceptance.changeChecks[0]!.status='unknown'
-  const f=await fixture(sub,'MiniMax-M3',[text(scopeDraft),submit(scopedSubmission()),submit(acceptance)])
+  // 同一不合格验收连续两次，耗尽整租约唯一纠正名额；R1 须先成功，不能由 R1 提前失败冒负例通过。
+  const f=await fixture(sub,'MiniMax-M3',[text(scopeDraft),submit(scopedSubmission()),submit(acceptance),submit(acceptance)])
   await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
-  assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,3);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
+  assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,4);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
+  assert.deepEqual(f.events().flatMap(event=>event.type==='tool/result'?[event.data.message.isError]:[]),[false,true,true])
  })
 })
 
-test('coverage作用域：原42块完整coverage但IDs漏retain无显式声明仍严格拒绝',async t=>{
- const f=await fixture(t,'MiniMax-M3',[text(scopeDraft),submit({phase:'revise',issues:[legacyScopeIssue()]}),submit(verify())])
+test('coverage作用域：原42块完整coverage但IDs漏retain无显式声明仍严格拒绝，唯一纠正名额用尽后收错',async t=>{
+ const f=await fixture(t,'MiniMax-M3',[text(scopeDraft),submit({phase:'revise',issues:[legacyScopeIssue()]}),submit({phase:'revise',issues:[legacyScopeIssue()]}),submit(verify())])
  await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
- assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,2);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
+ assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,3);assert.deepEqual(f.events().flatMap(event=>event.type==='tool/result'?[event.data.message.isError]:[]),[true,true]);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
 })

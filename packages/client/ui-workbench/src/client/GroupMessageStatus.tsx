@@ -2,22 +2,25 @@ import type {ReactNode} from 'react'
 import type {GroupRoutingStatusView} from '@teloa/contract'
 import {ExternalLink} from 'lucide-react'
 import {useI18n} from './i18n/provider.js'
+import {localizeWorkError} from './i18n/errors.js'
 import {DetailsMenu} from './DetailsMenu.js'
 import {groupMessageStatusPresentation,groupProgressPresentation,type GroupProgressPerson} from './group-progress-presentation.js'
 import css from './CollaborationPage.module.css'
 
 /**
- * 本人消息下的真实处理状态（规格 §5，N46 轻量化）。只呈现服务端投影：阶段、需要关注的接收者与闭集提示码；
+ * 本人消息与员工交接消息下的真实处理状态（规格 §5，N46 轻量化）。只呈现服务端投影：阶段、需要关注的接收者与闭集提示码；
  * 进行中的阶段改由输入框附近的 GroupProgressStatus 聚合，已完成只留原工作入口，不再逐人铺完成清单。
  * 「重新安排」只在服务端判定可重试且群未归档时出现，未知提交只给「查看工作」。忽略这一行不会触发恢复、重发或停止。
  */
-export function GroupMessageStatus({status,archived,retrying,retryFailed,retry,openTask}:{status:GroupRoutingStatusView;archived:boolean;retrying:boolean;retryFailed:boolean;retry:()=>void;openTask?:((taskId:string)=>void)|undefined}){
- const {t}=useI18n()
+export function GroupMessageStatus({status,archived,retrying,retryFailed,retry,openTask,resume}:{status:GroupRoutingStatusView;archived:boolean;retrying:boolean;retryFailed:boolean;retry:()=>void;openTask?:((taskId:string)=>void)|undefined;resume?:((controlId:string)=>void)|undefined}){
+ const {locale,t}=useI18n()
  const view=groupMessageStatusPresentation(status,archived)
  const name=(value:string)=>value||t('collaboration.message.historicalMember')
  // 原工作入口按原 taskId 打开；多位员工各有工作时图标带上归属的员工名。
  const workIcon=(taskId:string,owner?:string)=>{const label=owner===undefined?t('group.status.openWork'):t('group.status.openWorkOf',{name:name(owner)});return <button key={taskId} type="button" className={css.statusIconButton} aria-label={label} title={label} onClick={()=>openTask?.(taskId)}><ExternalLink size={14} aria-hidden/></button>}
  const tasks=openTask?view.tasks:[]
+ // 续办被原任务暂停挡住：唯一的下一步是就地打开整项恢复确认（抽屉），点击本身不恢复。
+ const resumable=view.hintCode==='continue-paused'&&status.controlId&&resume&&!archived?status.controlId:null
  const detailed=view.phase!==null||view.hintCode!==null||view.recipients.length>0||view.canRetry||retryFailed||retrying
  if(!detailed){
   // 回帖本身就是结果：只留紧凑的查看工作图标，不播报、不写「已完成」。
@@ -30,9 +33,11 @@ export function GroupMessageStatus({status,archived,retrying,retryFailed,retry,o
  return <div className={css.messageStatus} role="status" aria-label={t('group.status.label')} data-phase={status.phase} data-tone={view.tone}>
   {view.phase&&<span className={view.tone==='attention'?css.messageStatusPhase:css.messageStatusQuiet}>{t(`group.status.phase.${view.phase}`)}</span>}
   {view.recipients.length>0&&<ul className={css.messageStatusRecipients}>{view.recipients.map(item=><li key={item.roleId}>{t('group.status.recipient',{name:name(item.name),phase:t(`group.status.phase.${item.phase}`)})}{item.taskId&&openTask&&workIcon(item.taskId,item.name)}</li>)}</ul>}
-  {view.hintCode&&<p className={css.messageStatusHint}>{t(`group.status.hint.${view.hintCode}`)}</p>}
+  {/* 路由被工作额度拒绝：复用任务工作额度的同一句说明（原因、范围与「工作额度」入口），不另立群文案。 */}
+  {view.hintCode&&<p className={css.messageStatusHint}>{view.hintCode==='budget-exhausted'?localizeWorkError(locale,{code:'teloa/budget-exhausted',details:status.budget??{}}):t(`group.status.hint.${view.hintCode}`)}</p>}
   {retryFailed&&<p className={css.messageStatusHint} role="alert">{t('group.status.retryFailed')}</p>}
-  {(view.canRetry||tasks.length>0)&&<div className={css.messageActions}>
+  {(view.canRetry||tasks.length>0||resumable)&&<div className={css.messageActions}>
+   {resumable&&<button type="button" className={css.replyButton} onClick={()=>resume?.(resumable)}>{t('group.resume.action')}</button>}
    {view.canRetry&&<button type="button" className={css.replyButton} disabled={retrying} onClick={retry}>{t(retrying?'group.status.retrying':'group.status.retry')}</button>}
    {tasks.length===1?workIcon(tasks[0]!.taskId):tasks.map(item=>workIcon(item.taskId,item.name))}
   </div>}

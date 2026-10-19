@@ -1,4 +1,4 @@
-import {readWorkControl,readRecoveryCandidate,type WorkControl} from '@teloa/contract'
+import {readWorkControl,readRecoveryInspection,type WorkControl} from '@teloa/contract'
 import {workObject,workUuid} from '@teloa/contract'
 import {readWorkProgress} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
@@ -18,7 +18,7 @@ export function createWorkControlApi(call:(endpoint:string,payload:unknown)=>Pro
   pending:()=>pending?structuredClone(pending):undefined,recoveryMessage:()=>error,recover:send,
   discard(){clear();error=undefined},
   async get(controlId:string){const value=readWorkControl(await call('work-controls/get',{controlId}));if(value.id!==controlId)throw Error('控制详情与当前工作不一致。');return value},
-  async inspect(controlId:string){const raw=await call('work-recovery/inspect',{controlId});if(!Array.isArray(raw))throw Error('恢复候选格式不正确。');const rows=raw.map(readRecoveryCandidate);if(rows.some(r=>r.controlId!==controlId)||new Set(rows.map(r=>r.runId)).size!==rows.length)throw Error('恢复候选不属于当前工作。');return rows},
+  async inspect(controlId:string){const raw=await call('work-recovery/inspect',{controlId});if(!Array.isArray(raw))throw Error('恢复候选格式不正确。');const rows=raw.map(readRecoveryInspection);if(rows.some(r=>r.controlId!==controlId)||new Set(rows.map(r=>r.runId)).size!==rows.length)throw Error('恢复候选不属于当前工作。');return rows},
   change:(control:WorkControl,action:'pause'|'stop',scope:WorkControl['scope']=control.scope,roundControlId:string|null=null)=>prepare({kind:'change',requestId:pending?.kind==='change'?pending.requestId:id(),controlId:control.id,expectedVersion:control.version,action,scope,roundControlId}),
   resume:(control:WorkControl,candidateRunIds:string[])=>prepare({kind:'resume',requestId:pending?.kind==='resume'?pending.requestId:id(),controlId:control.id,expectedVersion:control.version,candidateRunIds}),
   async progress(rootTaskId:string){const raw=await call('work-progress/get',{rootTaskId});if(raw===null)return null;const result=readWorkProgress(raw);if(result.rootTaskId!==rootTaskId)throw Error('进展不属于当前工作。');return result},

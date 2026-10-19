@@ -285,6 +285,7 @@ const messages={
  'taskExecution.context.planTitle':v('自动化触发依据','自動化觸發依據','Automation trigger context','自動化のトリガー根拠','자동화 트리거 근거','Căn cứ kích hoạt tự động hóa','Contexto del activador','Contexte du déclencheur','Kontext der Automatisierung','Contexto do acionamento'),
  'taskExecution.context.industryTitle':v('行业工作依据','產業工作依據','Industry work context','業界作業の根拠','산업 작업 근거','Căn cứ công việc ngành','Contexto del trabajo sectorial','Contexte du travail sectoriel','Branchenkontext','Contexto do trabalho setorial'),
  'taskExecution.context.businessTitle':v('锁定的业务对象','鎖定的業務物件','Locked business object','固定業務オブジェクト','고정 업무 객체','Đối tượng nghiệp vụ cố định','Objeto de negocio fijado','Objet métier fixé','Fixiertes Geschäftsobjekt','Objeto de negócio fixado'),
+ 'taskExecution.context.businessUpdateTitle':fallback('续办补充的业务事实','續辦補充的業務事實','Business facts added for continuation'),
  'taskExecution.context.occurrence':v('触发标识','觸發識別碼','Trigger ID','トリガー ID','트리거 ID','ID kích hoạt','ID del activador','ID du déclencheur','Auslöser-ID','ID do acionador'),
  'taskExecution.context.dataScope':v('数据范围','資料範圍','Data scope','データ範囲','데이터 범위','Phạm vi dữ liệu','Ámbito de datos','Périmètre des données','Datenumfang','Âmbito dos dados'),
  'taskExecution.context.delivery':v('交付要求','交付要求','Delivery','Expected output','납품 요구','Yêu cầu đầu ra','Entrega','Livrable','Lieferumfang','Entrega'),

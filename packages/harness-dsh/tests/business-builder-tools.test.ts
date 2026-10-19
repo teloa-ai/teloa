@@ -1,8 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg') as {Pool:new(options:{connectionString:string})=>ConstructorParameters<typeof BusinessConfigurationDraftService>[0]}
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {Context} from '@deepseek-ai/cordis'
 import {ToolRuntime} from '@deepseek-ai/dsh-tools'

@@ -105,7 +105,8 @@ test('官方 Controller 只读冷 root：真实 Loop 失败后卸载仍能证明
  let resolutions=0
  env.ctx.sessionController.resolveAgent=async()=>{resolutions++;throw Error('状态读取不能恢复执行')}
  const ports=dshTaskRunPorts(env.ctx,'owner',async()=>({ownerId:'owner',sessionId:env.run.sessionId,status:'ready'}),undefined,undefined,undefined,undefined,undefined,undefined,env.links)
- assert.deepEqual(await Promise.all([env.team.state(env.run),ports.stopState!(env.run)]),[{outstanding:false,interrupted:false},{running:false,settledSeq:null}])
+ // 已核实固定终态且 Inbox 为空的冷轮可只读证明停妥：停止读数报告该 Run 原生日志的结束 seq，供暂停/停止收口（9651a5b4）。
+ assert.deepEqual(await Promise.all([env.team.state(env.run),ports.stopState!(env.run)]),[{outstanding:false,interrupted:false},{running:false,settledSeq:(env.run.evidence as {endSeq:number}).endSeq}])
  const nativeBackground=ports.backgroundState!
  ports.backgroundState=async run=>{const [jobs,team]=await Promise.all([nativeBackground(run),env.team.state(run)]);return {outstanding:jobs.outstanding||team.outstanding,interrupted:jobs.interrupted||team.interrupted}}
  ports.subagentState=async()=> 'none';ports.flowState=async()=> 'none';ports.goalObservation=async()=>undefined

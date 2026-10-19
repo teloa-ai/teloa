@@ -19,7 +19,7 @@ function render(){flushSync(()=>view.render(<I18nProvider runtime={runtime}><div
 `
 before(async()=>{
  temp=await mkdtemp(join(root,'.runtime-conversation-overview-'));await writeFile(join(temp,'fixture.tsx'),entry)
- const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'fixture.tsx'),name:'ConversationOverviewFixture',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',plugins:[{name:'forbid-host-crypto',enforce:'pre',resolveId:(id:string)=>id==='node:crypto'?'\0forbid-host-crypto':undefined,load:(id:string)=>id==='\0forbid-host-crypto'?"function blocked(){throw Error('浏览器客户端不得执行宿主摘要或验签')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}":undefined}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:join(temp,'fixture.tsx'),name:'ConversationOverviewFixture',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
  script=bundle.output.find(item=>item.type==='chunk')!.code;styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
  browser=await loadPlaywright().chromium.launch(launchOptions())

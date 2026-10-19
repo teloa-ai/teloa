@@ -71,3 +71,24 @@ test('状态投影：恰 6 键、闭集 phase/hint、空身份只用 null',()=>{
  assert.equal(isGroupRoutingStatusView({...view,recipients:[{...view.recipients[0],taskId:null,runId:requestId}]}),false)
  assert.equal(isGroupRoutingStatusView({...view,recipients:[{...view.recipients[0],taskId:''}]}),false)
 })
+test('额度拒绝：退化决策与状态投影只带合法额度原因；旧决策不带也有效，其他决策与提示不能夹带',()=>{
+ const decision={kind:'degraded' as const,respond:[],reactions:[],hops:0,candidateIds:[A],truncatedCandidates:false,stopMessageId:null,at:'2026-10-19T00:00:00.000Z'}
+ assert.equal(isGroupRoutingDecision(decision),true,'旧记录不带 budget')
+ for(const budget of [{reason:'elapsed',scope:'owner'},{reason:'tokens',scope:'work'},{}])assert.equal(isGroupRoutingDecision({...decision,budget}),true)
+ for(const budget of [{reason:'elapsed'},{reason:'PRIVATE',scope:'owner'},{reason:'elapsed',scope:'owner',message:'raw'},null,'elapsed'])assert.equal(isGroupRoutingDecision({...decision,budget}),false)
+ assert.equal(isGroupRoutingDecision({...decision,kind:'parse-failed',budget:{}}),false,'只有通道退化可带额度原因')
+ const view={messageId,attemptVersion:1,phase:'routing-failed',recipients:[],hintCode:'budget-exhausted',canRetry:true,budget:{reason:'elapsed',scope:'owner'}}
+ assert.equal(isGroupRoutingStatusView(view),true)
+ assert.equal(isGroupRoutingStatusView({...view,budget:{}}),true)
+ const {budget:_,...bare}=view
+ assert.equal(isGroupRoutingStatusView(bare),false,'额度提示必须带原因（可为空）')
+ assert.equal(isGroupRoutingStatusView({...view,hintCode:'route-unavailable'}),false,'其他提示不能夹带额度原因')
+ assert.equal(isGroupRoutingStatusView({...view,budget:{reason:'elapsed',scope:'PRIVATE'}}),false)
+ // 续办被暂停挡住：恰带挡住它的本轮控制身份，其他提示不能夹带控制身份。
+ const paused={messageId,attemptVersion:1,phase:'paused',recipients:[],hintCode:'continue-paused',canRetry:false,controlId:messageId}
+ assert.equal(isGroupRoutingStatusView(paused),true)
+ const {controlId:__,...noControl}=paused
+ assert.equal(isGroupRoutingStatusView(noControl),false,'续办暂停提示必须带控制身份')
+ assert.equal(isGroupRoutingStatusView({...paused,hintCode:'work-paused'}),false,'其他提示不能夹带控制身份')
+ assert.equal(isGroupRoutingStatusView({...paused,controlId:'round-1'}),false)
+})

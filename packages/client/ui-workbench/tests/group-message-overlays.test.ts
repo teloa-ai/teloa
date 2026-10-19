@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {GroupMessage,GroupRoutingStatusView} from '@teloa/contract'
-import {groupMessageOverlayIds,groupMessageStatusIds,mergeGroupMessageStatuses} from '../src/client/group-message-overlays.ts'
+import {groupMessageOverlayIds,groupMessageStatusIds,groupProgressStatuses,mergeGroupMessageStatuses} from '../src/client/group-message-overlays.ts'
 
 const own=(id:string,rootId:string|null=null):GroupMessage=>({id,groupId:'group',rootId,authorId:'self',text:id,references:[],mentions:[],createdAt:'2026-10-15T00:00:00.000Z'})
 const status=(messageId:string,phase:GroupRoutingStatusView['phase']):GroupRoutingStatusView=>({messageId,phase,attemptVersion:1,recipients:[],hintCode:null,canRetry:false})
@@ -39,12 +39,19 @@ test('G-A04：两个流的窗口高度重叠时去重后补足名额，不丢主
  assert.equal(ids.length,200);assert.equal(new Set(ids).size,200)
 })
 
-test('状态独立选择本人窗口，保留进行中接收者和本群旧工作，忽略陌生身份与已完成旧消息',()=>{
+test('状态独立选择消息窗口（含员工交接），保留进行中接收者和本群旧工作，忽略陌生身份与已完成旧消息',()=>{
  const main=['completed','old-work','mixed','linked','main-1','main-2'].map(id=>own(id)),topic=[own('root'),own('topic-1','root'),own('topic-2','root')]
  const mixed=status('mixed','awaiting-review');mixed.recipients=[{roleId:'role',name:'原员工',taskId:'task',runId:'run',phase:'running',resultMessageId:null,executionMode:'work'}]
  const employee={...own('employee'),authorId:'role',taskId:'task',runId:'run',contextMode:'main' as const}
  const ids=groupMessageStatusIds([...main,employee],topic,4,[status('completed','completed'),status('old-work','running'),mixed,status('outside','running')],['linked','other-group-source'])
- assert.deepEqual(ids,['topic-2','root','main-2','main-1','old-work','mixed','linked'])
+ assert.deepEqual(ids,['topic-2','root','employee','main-2','old-work','mixed','linked'],'员工交接与本人消息同样读取处理状态')
+})
+
+test('聚合进行中状态：本人消息全部参与，员工消息只在已派出接手者时参与',()=>{
+ const employee=(id:string)=>({...own(id),authorId:'role',taskId:'task',runId:'run',contextMode:'main' as const})
+ const handoff=status('handoff','running');handoff.recipients=[{roleId:'next',name:'调查员',taskId:'child',runId:null,phase:'running',resultMessageId:null,executionMode:'work'}]
+ const statuses=[status('mine','routing'),status('reply','routing'),handoff,status('foreign','running')]
+ assert.deepEqual(groupProgressStatuses([own('mine'),employee('reply'),employee('handoff')],statuses).map(item=>item.messageId),['mine','handoff'])
 })
 
 test('状态合并保留未成功重读的缓存，替换已核对回执并排除离开原目录的身份',()=>{

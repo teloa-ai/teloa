@@ -1,4 +1,5 @@
 .card{display:flex;flex-direction:column;gap:16px;padding:4px 0 22px 55px}
+.card.embedded{padding-left:0}
 .rows{display:flex;flex-direction:column;gap:10px;margin:0}
 .rows>div{display:flex;gap:14px;align-items:flex-start;min-width:0}
 .rows dt{flex:0 0 52px;margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}

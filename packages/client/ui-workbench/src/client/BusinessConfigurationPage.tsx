@@ -1,4 +1,4 @@
-import {businessObjectReference,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessObjectReference,type BusinessConfigurationViewRefVersioned} from '@teloa/contract'
+import {businessObjectReference,type BusinessObjectSnapshot,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessObjectReference,type BusinessConfigurationViewRefVersioned} from '@teloa/contract'
 import {useEffect,useMemo,useState} from 'react'
 import {BusinessDashboardGrid} from './BusinessDashboardGrid.js'
 import {BusinessTypedViewNotes,typedViewSharedCoverage} from './BusinessTypedViewWidget.js'
@@ -25,7 +25,7 @@ export type BusinessConfigurationPageProps={
  go?:((target:BusinessTarget)=>void)|undefined
  recordSource?:{api:Pick<BusinessBuilderApi,'page'>;current:NonNullable<Awaited<ReturnType<BusinessBuilderApi['current']>>>}|undefined
 }
-type RecordPreview={origin:object;reference:BusinessObjectReference;title:string;objectType:BusinessConfigurationViewRefVersioned['objectType']}
+type RecordPreview={origin:object;reference:BusinessObjectReference;title:string;objectType?:BusinessConfigurationViewRefVersioned['objectType']|undefined}
 /** 两个看板入口共用原固定记录内容；正式记录页和快照各自核验，不改首页选页。 */
 function DashboardRecordPreview({preview,source,flow,taskList,close,go}:{preview:RecordPreview;source:NonNullable<BusinessConfigurationPageProps['recordSource']>;flow:BusinessRecordFlow;taskList:BusinessConfigurationPageProps['taskList'];close:()=>void;go:BusinessConfigurationPageProps['go']}){
  const {t}=useI18n(),[read,setRead]=useState<{status:'loading'|'failed'|'ready';page?:BusinessConfigurationPageProjection}>({status:'loading'}),[revision,setRevision]=useState(0)
@@ -37,7 +37,7 @@ function DashboardRecordPreview({preview,source,flow,taskList,close,go}:{preview
    if(!definition||reference.scope!==current.scope)throw Error('记录不属于当前业务配置。')
    const page=await readBusinessConfigurationSavedPage(api,reference.scope,current,definition.id,abort.signal)
    if(abort.signal.aborted)return
-   if(page.page.kind!=='records'||JSON.stringify(page.page.objectType)!==JSON.stringify(preview.objectType))throw Error('记录类型与看板来源不一致。')
+   if(page.page.kind!=='records'||page.page.objectType.id!==reference.type||preview.objectType!==undefined&&JSON.stringify(page.page.objectType)!==JSON.stringify(preview.objectType))throw Error('记录类型与看板来源不一致。')
    setRead({status:'ready',page})
   })().catch(()=>{if(!abort.signal.aborted)setRead({status:'failed'})})
   return()=>abort.abort()
@@ -47,6 +47,14 @@ function DashboardRecordPreview({preview,source,flow,taskList,close,go}:{preview
   {read.status==='failed'&&<p role="alert">{t('business.records.readError')} <button type="button" onClick={()=>setRevision(value=>value+1)}>{t('business.records.retry')}</button></p>}
   {read.status==='ready'&&read.page&&<BusinessRecordPage projection={read.page} flow={flow} recordReference={preview.reference} referenceOnly go={go} taskList={taskList}/>}
  </ContextDrawer>
+}
+/** 从固定记录打开轻详情；复用看板下钻的正式记录页、归属核验和原生表单。 */
+export function BusinessSavedRecordPreview({record,api,flow,taskList,go,close}:{record:BusinessObjectSnapshot;api:Pick<BusinessBuilderApi,'current'|'page'>;flow:BusinessRecordFlow;taskList:BusinessConfigurationPageProps['taskList'];go:BusinessConfigurationPageProps['go'];close:()=>void}){
+ const {t}=useI18n(),[read,setRead]=useState<{current:NonNullable<Awaited<ReturnType<BusinessBuilderApi['current']>>>}|{failed:true}>()
+ useEffect(()=>{const abort=new AbortController();setRead(undefined);void api.current({scope:record.scope},abort.signal).then(current=>{if(!abort.signal.aborted){if(!current||current.scope!==record.scope)setRead({failed:true});else setRead({current})}},()=>{if(!abort.signal.aborted)setRead({failed:true})});return()=>abort.abort()},[api,record.scope])
+ const preview=useMemo(()=>({origin:record,reference:businessObjectReference({scope:record.scope,type:record.type,id:record.id,version:record.version,snapshotHash:record.snapshotHash}),title:record.title}),[record])
+ if(!read||'failed'in read)return <ContextDrawer padded title={record.title} close={close}><p role={read?'alert':'status'}>{t(read?'business.records.readError':'business.records.loading')}</p></ContextDrawer>
+ return <DashboardRecordPreview preview={preview} source={{api,current:read.current}} flow={flow} taskList={taskList} close={close} go={go}/>
 }
 /** 候选预览与正式页面共享展示；仅正式页面接入记录操作和下钻。 */
 export function BusinessConfigurationPage({projection,recordFlow,importFlow,capabilities,colorScheme,go,onDispatch,taskList,recordReference,recordSource}:BusinessConfigurationPageProps){

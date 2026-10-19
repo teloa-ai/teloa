@@ -26,5 +26,5 @@ export async function prepareOwnerRun(owner:string,command:{requestId:string;tas
  const link=await managed.links.change(owner,{requestId:command.requestId,kind:'task',objectId:target.taskId,expectedObjectVersion:target.taskVersion,sessionId,expectedLinkVersion:0,action:'link'})
  signal.throwIfAborted()
  const policy=await ports.prepareOwnerPolicy?.(sessionId,agentPresetId!,signal,{taskId:target.taskId,taskVersion:target.taskVersion,sessionId,linkVersion:link.version,scope:'general'})??{allowedTools:[]}
- return service.prepareOwner(owner,{...base,expectedLinkVersion:link.version},{agentPresetId:agentPresetId!,...(modelPolicy?{modelPolicy}:{}),...policy})
+ return service.prepareOwner(owner,{...base,expectedLinkVersion:link.version},{agentPresetId:agentPresetId!,...(modelPolicy?{modelPolicy}:{}),...policy,...(managed.admitRun?{admit:(db,lineage)=>managed.admitRun!(db,owner,lineage)}:{})})
 }

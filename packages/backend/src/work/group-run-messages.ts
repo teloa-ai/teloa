@@ -204,14 +204,14 @@ export class GroupRunMessageService{
    if(!taskRow||!roleRow)throw new WorkError('teloa/forbidden','任务或员工已不存在，不能回传群消息。')
    const task=readStoredTask(taskRow),role=readStoredRole(roleRow)
    if('planOccurrenceId' in context){
-    const occurrence=await new PlanOccurrenceService(this.pool,{id:this.identity.id}).executionContext(client,owner,task.id)
+    const occurrence=await new PlanOccurrenceService(this.pool,{id:this.identity.id}).executionContext(client,owner,task.id,undefined,false,'stored')
     const plan=(await client.query('select p.state,p.version,o.plan_version from teloa_plan_occurrences o join teloa_plans p on p.id=o.plan_id and p.owner_id=o.owner_id where o.id=$1 and o.owner_id=$2 for share of p,o',[context.planOccurrenceId,owner])).rows[0]
     if(!plan||plan.state!=='active'||plan.version!==plan.plan_version||occurrence?.occurrenceId!==context.planOccurrenceId||!occurrence.reportGroup||JSON.stringify(occurrence.reportGroup)!==JSON.stringify({groupId:context.groupId,groupVersion:context.groupVersion,grantVersion:context.grantVersion})||task.groupId!==context.groupId||task.assigneeRoleId!==role.id||role.version!==context.roleVersion)throw new WorkError('teloa/version-conflict','原计划或汇报权限已变化，结果保留但不发布。')
     const input=JSON.parse(String(runRow.input_text)),authorization=readRoleWorkAuthorization(input.role?.authorization)
     const admission=await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:role.id,expectedRoleVersion:role.version,scope:task.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:context.groupId},client)
     admission.assertCurrent()
    }else{
-    const current=await readRunGroupContext(client,owner,task,role,this.files,this.pool)
+    const current=await readRunGroupContext(client,owner,task,role,this.files,this.pool,JSON.parse(String(runRow.input_text)).groupContinuation?.references)
     if(!current||JSON.stringify(current)!==JSON.stringify(context))throw new WorkError('teloa/version-conflict','群任务授权或资料已变化，不能回传群消息。')
    }
    const grantRow=(await client.query('select * from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for share',[context.groupId,context.roleId])).rows[0]

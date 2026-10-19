@@ -1,4 +1,4 @@
-import {WorkError,isRecord,workTaskStates,readRunPlanEventContext,readPlanWorkDefinition} from '@teloa/contract'
+import {WorkError,isRecord,workTaskStates,readRunPlanEventContext,readPlanWorkDefinition,planWorkEventMatches} from '@teloa/contract'
 import type {PlanExecutionHistoryPage,PlanSkipHistoryPage} from '@teloa/backend'
 import {planExecutionHistoryInput,planExecutionHistoryResponse,type PlanExecutionHistoryInput} from './plan-execution-history.ts'
 import {planSkipHistoryInput,planSkipHistoryResponse,type PlanSkipHistoryInput} from './plan-skip-history.ts'
@@ -34,7 +34,7 @@ function overview(value:unknown,owner:string,planId:string):Record<string,unknow
   if(occurrence.event!==undefined){
    try{
     const fixed=readRunPlanEventContext(occurrence.event),definition=readPlanWorkDefinition(occurrence.workDefinition)
-    if(fixed.event.ownerId!==owner||!isRecord(occurrence.fields)||fixed.event.sourceRef.scope!==occurrence.fields.scope||occurrence.occurrenceId!=='event:'+fixed.event.id||definition.schema!=='teloa.plan-work/v3'||definition.definitionVersion!==occurrence.configVersion||!definition.triggers.some(trigger=>trigger.kind==='local-event'&&'sourceRef'in trigger&&trigger.eventKind===fixed.event.kind&&JSON.stringify(trigger.sourceRef)===JSON.stringify(fixed.event.sourceRef)))throw Error()
+    if(fixed.event.ownerId!==owner||!isRecord(occurrence.fields)||fixed.event.sourceRef.scope!==occurrence.fields.scope||occurrence.occurrenceId!=='event:'+fixed.event.id||definition.schema!=='teloa.plan-work/v3'||definition.definitionVersion!==occurrence.configVersion||!definition.triggers.some(trigger=>trigger.kind==='local-event'&&'sourceRef'in trigger&&trigger.eventKind===fixed.event.kind&&planWorkEventMatches(trigger,fixed.event)))throw Error()
    }catch{throw invalidResponse()}
   }
   if(latest.task!==null){const task=response(latest.task,['id','state']);if(!uuid(task.id)||!workTaskStates.some(state=>state===task.state))throw invalidResponse()}

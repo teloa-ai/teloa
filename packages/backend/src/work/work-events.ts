@@ -1,4 +1,3 @@
-import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,isResourceSpec} from '@teloa/contract'
@@ -9,12 +8,13 @@ import {PlanOccurrenceService,type PlanOccurrence,} from './plan-occurrences.ts'
 import type {PlanMarketSources} from './plans.ts'
 import {readStoredSecurityApproval} from '../security/approvals.ts'
 import type {BusinessWorkSourceReader,BusinessEventOrigin,BusinessEventOriginProof} from './business-work-event-source.ts'
+import {routeBusinessObjectEventToExistingTask,businessObjectReferenceOf} from './business-task-source-updates.ts'
+import {workEventDigest} from './work-event-digest.ts'
 
 export type TrustedMaterialVersion={sourceVersion:string;contentSha256:string}
 export type WorkEventPorts={business?:BusinessWorkSourceReader;businessOrigin?:(db:PoolClient,owner:string,origin:BusinessEventOrigin)=>Promise<BusinessEventOriginProof|undefined>;material:(db:PoolClient,owner:string,resourceId:string)=>Promise<TrustedMaterialVersion>;approval?:(db:PoolClient,owner:string,actionId:string,actionVersion:number,approvalId:string)=>Promise<void>}
 const denied=()=>new WorkError('teloa/forbidden','工作事件缺少当前真实来源或执行边界。')
-const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value
-const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
+const digest=workEventDigest
 const date=(v:Date)=>v.toISOString()
 export async function initializeWorkEvents(pool:Pool):Promise<void>{await pool.query(`
  create table if not exists teloa_work_events(id uuid not null,owner_id text not null,source_event_id text not null,event jsonb not null,payload jsonb not null,payload_hash text not null,created_at timestamptz not null,primary key(owner_id,id),unique(owner_id,source_event_id));
@@ -102,6 +102,10 @@ export class WorkEventService{
   for(const plan of plans){const trigger=plan.workDefinition!.triggers.find(t=>planWorkEventMatches(t,event));if(!trigger||trigger.kind!=='local-event')continue
    if(trigger.coalesce==='latest')await db.query("update teloa_plan_work_events q set state='superseded' from teloa_work_events e where q.owner_id=$1 and q.plan_id=$2 and q.definition_version=$3 and q.state='pending' and e.owner_id=q.owner_id and e.id=q.event_id and e.event->>'kind'=$4 and ((e.event->>'sourceId'=$5::text and $5::text is not null) or (e.event->'sourceRef'=$6::jsonb and $6::jsonb is not null))",[event.ownerId,plan.id,plan.configVersion,event.kind,event.schema==='teloa.work-event/v1'?event.sourceId:null,event.schema==='teloa.work-event/v2'?JSON.stringify(event.sourceRef):null])
    // 撤回仍固定事实并淘汰旧待办，但不派发；自身链只凭真实 Run/Plan 关联排除。
+   // 对象撤回且本计划已为该对象领取过任务：记一条 needs-user 的来源更新由本人处理，不自动复活也不新建。
+   if(event.schema==='teloa.work-event/v2'&&event.sourceRef.kind==='business-object'&&payload.active!==true&&payload.data&&typeof payload.data==='object'&&'object' in payload.data){
+    await routeBusinessObjectEventToExistingTask(db,event.ownerId,plan.id,event,businessObjectReferenceOf((payload.data as {object:unknown}).object),true,this.clock)
+   }
    if(event.schema==='teloa.work-event/v2'&&(payload.active!==true||payload.originPlanId===plan.id))continue
    await db.query("insert into teloa_plan_work_events(owner_id,plan_id,definition_version,event_id,source_event_id,state,created_at) values($1,$2,$3,$4,$5,'pending',$6) on conflict do nothing",[event.ownerId,plan.id,plan.configVersion,event.id,event.sourceEventId,event.createdAt])
   }return event

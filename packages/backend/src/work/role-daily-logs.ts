@@ -180,7 +180,7 @@ export class RoleDailyLogService{
  async completeEvidenceInTransaction(db:PoolClient,ownerId:string,runId:string):Promise<RoleDailyLogCompletionEvidence|null>{
   const who=await this.digestRun(ownerId,{runId},db)
   if(!who)return null
-  const context=await new PlanOccurrenceService(this.pool,this.identity).executionContext(db,ownerId,who.taskId)
+  const context=await new PlanOccurrenceService(this.pool,this.identity).executionContext(db,ownerId,who.taskId,undefined,false,'stored')
   if(!context)return null
   const stored=(await db.query('select * from teloa_plan_occurrences where owner_id=$1 and id=$2',[ownerId,context.occurrenceId])).rows[0]
   if(!stored)return null

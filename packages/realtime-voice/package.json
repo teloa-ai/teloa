@@ -1,11 +1,14 @@
 {
   "name": "@teloa/realtime-voice",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
   "description": "Teloa 社区版持续监听、流式播放与可打断语音媒体插件。",
-  "engines": {"dsh": "0.2.1-rc.2", "node": "^22.19.0 || >=24.0.0"},
+  "engines": {
+    "dsh": "0.2.1-rc.2",
+    "node": "^22.19.0 || >=24.0.0"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client/index.ts",
@@ -13,8 +16,15 @@
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
-  "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
-  "scripts": {"build": "tsc -b", "test": "node --test tests/*.test.ts"},
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test tests/*.test.ts"
+  },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
@@ -23,5 +33,7 @@
     "@teloa/harness-dsh": "workspace:*",
     "ws": "8.21.3"
   },
-  "devDependencies": {"@types/ws": "8.18.1"}
+  "devDependencies": {
+    "@types/ws": "8.18.1"
+  }
 }

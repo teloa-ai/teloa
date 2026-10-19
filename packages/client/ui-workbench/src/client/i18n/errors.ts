@@ -1,3 +1,4 @@
+import {readWorkBudgetExhaustedCode} from '@teloa/contract'
 import {translateMessage, type MessageKey} from './messages.js'
 import {marketTargetCheckLabel} from './market-target.js'
 import type {MarketTargetCheck} from '../market-target.js'
@@ -61,8 +62,10 @@ export const isTaskWorkOutstandingError=(error:unknown):boolean=>codeOf(error)==
 /** 服务端 message 仅供日志；用户提示只由稳定 code 和当前产品词典决定。 */
 export function localizeWorkError(locale: string, error: unknown): string {
   if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'secret-in-message') return translateMessage(locale, 'error.secretInMessage')
-  if(codeOf(error)==='teloa/budget-exhausted'){
-    const reason=detailsFieldOf(error,'reason'),scope=detailsFieldOf(error,'scope')
+  // 请求错误带 details；会话本轮失败只有原生 code（teloa/budget-exhausted/<reason>/<scope>）。
+  const exhausted=codeOf(error)==='teloa/budget-exhausted'?{reason:detailsFieldOf(error,'reason'),scope:detailsFieldOf(error,'scope')}:readWorkBudgetExhaustedCode(codeOf(error))
+  if(exhausted){
+    const {reason,scope}=exhausted
     const key=reason==='tokens'?'planWork.budget.exhausted.tokens':reason==='rounds'?'planWork.budget.exhausted.rounds':reason==='concurrent'?'planWork.budget.exhausted.concurrent':reason==='elapsed'?'planWork.budget.exhausted.elapsed':'planWork.budget.exhausted'
     return translateMessage(locale,key,{scope:translateMessage(locale,scope==='owner'?'planWork.budget.owner':scope==='work'?'planWork.budget.account':'planWork.budget.title')})
   }

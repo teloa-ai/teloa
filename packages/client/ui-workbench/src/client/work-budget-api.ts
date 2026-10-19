@@ -1,11 +1,11 @@
 import {readWorkBudgetPolicy,taskInput,workUuid,type WorkBudgetPolicy} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 type Journal={read:()=>string|null;write:(v:string)=>void;clear:()=>void}
-export type BudgetView={version:number;policy:WorkBudgetPolicy;usedTokens:number;usedRounds:number;concurrent:number;moneyMinorUnits:null;budgetAccountId?:string}
+export type BudgetView={version:number;policy:WorkBudgetPolicy;usedTokens:number;usedRounds:number;concurrent:number;usedElapsedMs:number;moneyMinorUnits:null;budgetAccountId?:string}
 type Command={kind:'account'|'owner';requestId:string;expectedVersion:number;policy:WorkBudgetPolicy;budgetAccountId?:string}
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0
 function readCommand(value:unknown):Command{const r=taskInput(value,['kind','requestId','expectedVersion','policy','budgetAccountId']);if(!['account','owner'].includes(String(r.kind))||!workUuid(r.requestId)||!positive(r.expectedVersion)||r.kind==='account'&&!workUuid(r.budgetAccountId)||r.kind==='owner'&&r.budgetAccountId!==undefined)throw Error('额度恢复请求不正确。');return {...r,policy:readWorkBudgetPolicy(r.policy)} as Command}
-function readView(value:unknown,id?:string):BudgetView{const r=taskInput(value,['budgetAccountId','version','policy','usedTokens','usedRounds','concurrent','moneyMinorUnits']);if(!positive(r.version)||['usedTokens','usedRounds','concurrent'].some(k=>!Number.isSafeInteger(r[k])||Number(r[k])<0)||r.moneyMinorUnits!==null||(id===undefined?r.budgetAccountId!==undefined:r.budgetAccountId!==id))throw Error('额度回包不属于当前工作或格式不正确。');return {...r,policy:readWorkBudgetPolicy(r.policy)} as BudgetView}
+function readView(value:unknown,id?:string):BudgetView{const r=taskInput(value,['budgetAccountId','version','policy','usedTokens','usedRounds','concurrent','usedElapsedMs','moneyMinorUnits']);if(!positive(r.version)||['usedTokens','usedRounds','concurrent','usedElapsedMs'].some(k=>!Number.isSafeInteger(r[k])||Number(r[k])<0)||r.moneyMinorUnits!==null||(id===undefined?r.budgetAccountId!==undefined:r.budgetAccountId!==id))throw Error('额度回包不属于当前工作或格式不正确。');return {...r,policy:readWorkBudgetPolicy(r.policy)} as BudgetView}
 export function createWorkBudgetApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:Journal,newId=()=>crypto.randomUUID()){
  let pending:Command|undefined,error:Error|undefined,busy=false
  try{const raw=journal?.read();if(raw){const r=taskInput(JSON.parse(raw),['schema','request']);if(r.schema!=='teloa.work-budget-command/v1')throw Error();pending=readCommand(r.request)}}catch{error=recoveryStorageError()}

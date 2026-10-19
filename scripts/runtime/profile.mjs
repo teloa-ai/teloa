@@ -104,6 +104,8 @@ export function runtimeEnvironment(layout,environment=process.env){
  const allowed=['PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','TMP','TEMP','LANG','LC_ALL','LC_CTYPE','TZ','SYSTEMROOT','WINDIR','COMSPEC','PATHEXT','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy',
   // 使用统计排除变量：CI / 验收 / 开发环境里用 npm 版 teloa 启动也不上报（宿主据此优先于 on 排除）。
   'CI','TELOA_BROWSER_ACCEPTANCE','NODE_ENV',
+  // 升级回执由 supervisor 转交宿主；CLI startService 会先清除调用者 shell 中的同名值。
+  'TELOA_PLANNED_RESTART',
   // 凭据存储档位与主密钥来源（规格 §3.4）：显式密钥文件、systemd 凭据目录，以及 Linux 桌面 Secret Service 所需的 D-Bus 两项。
   // 凭据验收开关（TELOA_CREDENTIALS_KEYRING、TELOA_CREDENTIALS_KEY_DIR）任何情况下都不透传：验收只走源码启动器。
   'TELOA_CREDENTIALS_KEY_FILE','TELOA_CREDENTIALS_STORE','CREDENTIALS_DIRECTORY','DBUS_SESSION_BUS_ADDRESS','XDG_RUNTIME_DIR']

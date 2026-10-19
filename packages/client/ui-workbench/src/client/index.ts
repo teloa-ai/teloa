@@ -82,6 +82,7 @@ import {createTaskRunApi} from './task-run-api.js'
 import {TaskRunChatPresentationDirectory,readTaskRunSelectedBinding} from './task-run-chat-presentation.js'
 import {TaskRunConversationTitle,TaskRunUserMessageView} from './TaskRunChatPresentation.js'
 import {DeliveryReviewContextView} from './DeliveryReviewContextView.js'
+import {BudgetTurnErrorView} from './BudgetTurnErrorView.js'
 import {createTaskMaterialApi} from './task-material-api.js'
 import {createObjectConversationApi} from './object-conversation-api.js'
 import {createHandoffApi} from './handoff-api.js'
@@ -787,6 +788,9 @@ export async function apply(ctx: Context): Promise<void> {
     child.slots.inject('conversation.chat.node',()=>child.slots.register({name:'conversation.chat.node',key:'user',priority:-100,locale:'chat',inject:sessionId=>({source:taskRunChat.forSession(sessionId),renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}})},TaskRunUserMessageView))
     // 宿主交付复核的「复核后交付」以可读、可复制的交付卡呈现并标明宿主来源；其余上下文行仍交给原生 context renderer。
     child.slots.inject('conversation.chat.node',()=>child.slots.register({name:'conversation.chat.node',key:'context',priority:-100,locale:'chat',inject:()=>({renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}})},DeliveryReviewContextView))
+    // 本轮因工作额度停止时按原因与范围本地化说明下一步，不显示服务端原文与内部 code；其他本轮失败仍交给原生 renderer。
+    const LocalizedBudgetTurnError=(props:ComponentProps<typeof BudgetTurnErrorView>)=>createElement(I18nProvider,{runtime:requireI18n()},createElement(BudgetTurnErrorView,props))
+    child.slots.inject('conversation.chat.node',()=>child.slots.register({name:'conversation.chat.node',key:'turn-error',priority:-100,locale:'chat',inject:()=>({renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}})},LocalizedBudgetTurnError))
     child.slots.inject('conversation.chat.turnTail',()=>child.slots.register({
       name:'conversation.chat.turnTail',id:'teloa-produced-files',order:-100,
       inject:sessionId=>{

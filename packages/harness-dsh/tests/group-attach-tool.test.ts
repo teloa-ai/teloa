@@ -201,7 +201,7 @@ test('装配：自授权集在既有两族之后追加本工具，顺序与既�
 })
 
 test('装配：运行上下文的 groupContext 端口绑上附件字节端口（T7 评审 HIGH）',()=>{
- assert.equal(wiring.includes('groupContext:async(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool)'),true)
+ assert.equal(wiring.includes('groupContext:async(db,actor,task,role,continuationReferences)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool,continuationReferences)'),true)
  // 附件字节与真实连接池共同进入运行上下文，不能回落成缺失这两个端口的裸函数。
  assert.equal(wiring.includes('groupContext:readRunGroupContext'),false)
  assert.equal(wiring.includes('const runGroupFilePorts:RunGroupFilePorts={readAttachmentBytes:'),true)

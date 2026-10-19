@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,taskInput,readRecoveryCandidate,readGoalRunBinding,readWorkControl,type RecoveryCandidate,type WorkControl} from '@teloa/contract'
+import {WorkError,taskInput,readRecoveryCandidate,readGoalRunBinding,readWorkControl,type RecoveryCandidate,type RecoveryInspection,type WorkControl} from '@teloa/contract'
 import {WorkControlService} from './work-control.ts'
 import {WorkLineageService} from './work-lineage.ts'
 import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
@@ -18,6 +18,8 @@ const forbidden=()=>new WorkError('teloa/forbidden','需要本人复核当前角
 const conflict=()=>new WorkError('teloa/version-conflict','恢复候选、检查点或宿主世代已变化。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','工作恢复记录不完整。')
 const invalid=()=>new WorkError('teloa/invalid-input','恢复请求不正确或包含未知字段。')
+/** 整项恢复会接受的候选：结果已知、没有未知操作，且已受理的执行有可核验的待办或 Goal。inspect 与 resume 共用同一判据。 */
+const replayable=(candidate:RecoveryCandidate,checkpoint:WorkRecoveryCheckpoint)=>candidate.reason!=='unknown'&&!checkpoint.unknownOperationIds.length&&!(candidate.reason==='accepted'&&!checkpoint.hasPendingInput&&!candidate.goal)
 
 export async function initializeWorkRecovery(pool:Pool):Promise<void>{await pool.query(`
  create table if not exists teloa_work_recovery_requests(
@@ -77,8 +79,9 @@ export class WorkRecoveryService{
   }
   return {control,results}
  }
- async inspect(owner:string,value:{controlId:string}):Promise<RecoveryCandidate[]>{roleWorkOwner(owner);const a=taskInput(value,['controlId']);if(!uuid(a.controlId))throw invalid();return (await this.candidates(owner,a.controlId)).results.map(r=>r.candidate)}
- async resume(owner:string,value:WorkResumeInput):Promise<WorkControl>{
+ async inspect(owner:string,value:{controlId:string}):Promise<RecoveryInspection[]>{roleWorkOwner(owner);const a=taskInput(value,['controlId']);if(!uuid(a.controlId))throw invalid();return (await this.candidates(owner,a.controlId)).results.map(r=>({...r.candidate,resumable:replayable(r.candidate,r.checkpoint)}))}
+ /** plannedRestart 仅供宿主内的计划升级重启恢复使用（不经本人 RPC）：只接受全部候选 safeRecovery、仍是该撤防世代的重启暂停，且不顺带恢复已暂停的所属本轮。 */
+ async resume(owner:string,value:WorkResumeInput,plannedRestart?:{generation:number}):Promise<WorkControl>{
   roleWorkOwner(owner);const a=taskInput(value,['requestId','controlId','expectedVersion','candidateRunIds'])
   if(!uuid(a.requestId)||!uuid(a.controlId)||!positive(a.expectedVersion)||!Array.isArray(a.candidateRunIds)||a.candidateRunIds.some(id=>!uuid(id))||new Set(a.candidateRunIds).size!==a.candidateRunIds.length)throw invalid()
   const request={requestId:a.requestId,controlId:a.controlId,expectedVersion:a.expectedVersion,candidateRunIds:[...a.candidateRunIds].sort()} as WorkResumeInput
@@ -96,18 +99,21 @@ export class WorkRecoveryService{
    if(control.version!==request.expectedVersion)throw conflict()
    if(!isDeepStrictEqual(results.map(r=>r.candidate.runId).sort(),request.candidateRunIds))throw conflict()
    if(results.some(r=>r.checkpoint.reason==='unknown'||r.checkpoint.unknownOperationIds.length))throw new WorkError('teloa/execution-pending','外部受理或检查点结果未知，请先核对，不能重放。')
+   if(plannedRestart&&results.some(r=>!r.candidate.safeRecovery))throw new WorkError('teloa/conflict','有候选未开启安全恢复，需要本人在原入口确认。')
    if(!this.ports.authorizeResume)throw new WorkError('teloa/unavailable','真实恢复预算与宿主准入尚未装配。')
    const leases=[seal]
    for(const {candidate,run,checkpoint} of results){
-    if(candidate.reason==='accepted'&&!checkpoint.hasPendingInput&&!candidate.goal)throw new WorkError('teloa/conflict','已受理执行没有可核验的待办或 Goal，不能重放原请求。')
+    if(!replayable(candidate,checkpoint))throw new WorkError('teloa/conflict','已受理执行没有可核验的待办或 Goal，不能重放原请求。')
     leases.push((await this.authorization(db,owner,run)).lease,await this.ports.authorizeResume(db,owner,{candidate,hostGeneration:host}))
    }
    const approval=combineWorkAccessLeases(leases);approval.assertCurrent();if(host!==this.ports.hostGeneration())throw conflict()
    const roundIds=control.scope==='definition'?results.map(r=>r.run.task_id):[],rounds=roundIds.length?(await db.query('select distinct round_control_id from teloa_task_work_lineage where owner_id=$1 and task_id=any($2::uuid[])',[owner,roundIds])).rows.map(row=>row.round_control_id as string):[]
    // 与准入同序锁全部控制；整项恢复只包含本次本人明确列出的、已结清暂停的 round。
    await db.query('select id from teloa_work_controls where owner_id=$1 and id=any($2::uuid[]) order by id for update',[owner,[control.id,...rounds]])
+   if(plannedRestart)await this.controls.assertPlannedRestartInTransaction(db,owner,{controlId:control.id,generation:plannedRestart.generation})
    for(const id of [...new Set(rounds)].sort()){
     const child=await this.controls.getInTransaction(db,owner,{controlId:id})
+    if(child.state==='paused'&&plannedRestart)throw new WorkError('teloa/conflict','所属本轮已由本人暂停，计划重启不能代为恢复。')
     if(child.state==='paused')await this.controls.resumeInTransaction(db,owner,{controlId:id,expectedVersion:child.version},approval)
     else if(child.state!=='active')throw new WorkError('teloa/conflict','所属本轮尚未结清或已停止，不能整项恢复。')
    }

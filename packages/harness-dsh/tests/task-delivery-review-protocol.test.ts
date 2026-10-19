@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {createHash} from 'node:crypto'
-import {createReviewSourceCatalog,deliveryRevisionData,deliveryReviewProtocol,readRevisionSubmission,readVerificationSubmission,readReviewCoverage,reviewBlockRequirements,reviewCheckIds,reviewSourceDirectory,type ReviewPassage} from '../src/task-delivery-review-protocol.ts'
+import {createReviewSourceCatalog,describeReviewReferences,deliveryRevisionData,deliveryReviewProtocol,readRevisionSubmission,readVerificationSubmission,readReviewCoverage,reviewBlockRequirements,reviewCheckIds,reviewSourceDirectory,type ReviewPassage} from '../src/task-delivery-review-protocol.ts'
 
 const catalog=createReviewSourceCatalog([{id:'goal',kind:'goal',title:'原目标',text:'三家愿意付费，已付款一家的归属未知。\n',origin:{field:'inputText',pointer:'/task/goal'}},{id:'method:1',kind:'method',title:'核对方法',text:'没有原文依据时，保留未知。',origin:{field:'skills',pointer:'/0/content'}}])
 const basis=[{sourceId:'goal',passageId:'p1'}]
@@ -216,4 +216,19 @@ test('显式coverage作用域替代冗余IDs，双真源和未声明错误严格
  assert.deepEqual(combined.issues[0]!.coverage,{change:[1],retain:[3],unrelated:[2],unknown:[]})
  const legacy=readRevisionSubmission({phase:'revise',issues:[{...issue,affectedBlockIds:[1]}]},context)
  assert.deepEqual(legacy,{reason:'coverage'},'原coverage完整但IDs漏retain的278错误仍严格拒绝')
+})
+
+test('依据或块号被拒时逐项指出不存在的段落、该来源可引用范围与越界块号；合法引用不报',()=>{
+ const goal=catalog.passages.find(passage=>passage.sourceId==='goal')!
+ const ids=catalog.passages.filter(passage=>passage.sourceId==='goal').map(passage=>passage.id)
+ // 实跑：R2 findings 引用了来源中并不存在的段落号，一次纠正原样重交仍失败。
+ const text=describeReviewReferences({phase:'verify',findings:[
+  {problem:'甲',basis:[{sourceId:'goal',passageId:goal.id}],blockIds:[1]},
+  {problem:'乙',basis:[{sourceId:'goal',passageId:'p98'},{sourceId:'missing',passageId:'p1'}],blockIds:[1,9]},
+ ]},{catalog,blockCount:3})
+ assert.ok(!text.includes('findings[0]'),'合法引用不报')
+ assert.match(text,new RegExp(`findings\\[1\\]\\.basis goal / p98 不存在（该来源可引用 ${ids[0]}–${ids.at(-1)}`))
+ assert.match(text,/findings\[1\]\.basis missing \/ p1 不存在（该来源不在本轮输入来源中/)
+ assert.match(text,/findings\[1\]\.blockIds 9 超出全稿块号 1–3/)
+ assert.equal(describeReviewReferences({phase:'revise',issues:'[{"basis":[]}]'},{catalog,blockCount:3}),'','字符串化数组另由 schema 提示，不在此误报')
 })

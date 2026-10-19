@@ -1,7 +1,7 @@
 import test,{after,before} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeMarketContents,MarketContentStore,type MarketActor} from '../src/market/content-store.ts'
 import {GithubSourceService,initializeGithubSources} from '../src/market/github-source.ts'

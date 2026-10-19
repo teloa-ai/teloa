@@ -50,7 +50,14 @@ export async function serviceStatus(state:InstallState):Promise<Status>{
  }
 }
 /** 由调用方持安装互斥锁，涵盖数据库准备与 supervisor 启动。 */
-export async function startService(state:InstallState,{timeoutMs=75_000}:{timeoutMs?:number}={}):Promise<Status>{
+/** supervisor 环境：计划重启回执不从调用者 shell 继承，普通 up/restart 一律不带，只有 upgradeInstall 显式传入。 */
+export function serviceEnvironment(base:NodeJS.ProcessEnv,plannedRestartId?:string):NodeJS.ProcessEnv{
+ const env={...base};delete env.TELOA_PLANNED_RESTART
+ if(plannedRestartId)env.TELOA_PLANNED_RESTART=plannedRestartId
+ return env
+}
+/** plannedRestartId 只由 upgradeInstall 传入：新宿主据此一次性恢复本次重启撤防所暂停的工作。 */
+export async function startService(state:InstallState,{timeoutMs=75_000,plannedRestartId}:{timeoutMs?:number;plannedRestartId?:string}={}):Promise<Status>{
  if(state.phase==='maintenance')throw Error('安装处于维护状态，不能启动；请用已保存备份恢复到新目录。')
  const status=await serviceStatus(state)
  if(status.app==='ready')return status
@@ -59,7 +66,7 @@ export async function startService(state:InstallState,{timeoutMs=75_000}:{timeou
  await portAvailable(state.port)
  const {runtimeEnvironment}=await import(pathToFileURL(join(state.layout.releaseRoot,'scripts/runtime/profile.mjs')).href)
  await writeInstall({...state,phase:'prepared'})
- const child=spawn(process.execPath,[join(state.layout.releaseRoot,'packages/cli/lib/service-entry.js'),state.layout.home],{cwd:state.layout.workspaceRoot,env:runtimeEnvironment({...state.layout,programRoot:state.layout.releaseRoot,profileName:'teloa'}),detached:true,stdio:'ignore'})
+ const child=spawn(process.execPath,[join(state.layout.releaseRoot,'packages/cli/lib/service-entry.js'),state.layout.home],{cwd:state.layout.workspaceRoot,env:serviceEnvironment(runtimeEnvironment({...state.layout,programRoot:state.layout.releaseRoot,profileName:'teloa'}),plannedRestartId),detached:true,stdio:'ignore'})
  let spawnError=false
  child.once('error',()=>{spawnError=true})
  child.unref()

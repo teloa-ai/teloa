@@ -72,7 +72,9 @@ export function createBusinessDashboardHandler(owner:string,scopeIds:()=>Promise
     const mappings=(await sync.mappings(actor,scope)).filter(mapping=>mapping.source.kind!=='role-result')
     const states=await Promise.all(mappings.map(async mapping=>{
      const state=await rules.get(actor,{scope,mappingId:mapping.id})
-     return readBusinessSyncRuleView({...state,title:mapping.title,schedule:mapping.schedule,running:state.enabled&&scopeState.syncEnabled},scope)
+     // 来源只投影物理身份（受管 MCP 为 serverName/tool），供目录与内页判断「哪些来源真正接入」，不暴露参数与字段映射。
+     const source=mapping.source.kind==='mcp-tool'?{kind:'mcp-tool' as const,serverName:mapping.source.serverName,tool:mapping.source.tool}:mapping.source.kind==='business-data-port'?{kind:'business-data-port' as const,sourceId:mapping.source.sourceId}:{kind:'role-result' as const}
+     return readBusinessSyncRuleView({...state,title:mapping.title,schedule:mapping.schedule,running:state.enabled&&scopeState.syncEnabled,source},scope)
     }))
     return states
    }

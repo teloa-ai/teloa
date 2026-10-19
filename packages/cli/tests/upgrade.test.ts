@@ -59,3 +59,15 @@ test('upgrade 命令把当前命令包版本与包根交给候选选择',async()
  assert.match(source,/upgradeInstall\(state,String\(options\.to\),releaseSource\(String\(options\.to\),\{version:pkg\.version,root:programRoot\}\)\)/)
  assert.match(source,/state\.version!==pkg\.version\)console\.error\(/,'版本提示走 stderr，不影响 stdout 解析')
 })
+test('只有显式升级把一次性计划重启回执交给新宿主；普通启动清除调用者 shell 中的同名值',async()=>{
+ const {serviceEnvironment}=await import('../src/service.ts'),runtime=await import('../../../scripts/runtime/profile.mjs') as any,id='8f0c2a52-5b8e-4f0e-9c1d-2a3b4c5d6e7f'
+ const inherited=runtime.runtimeEnvironment({programRoot:'/app',dshHome:'/d',runtimeRoot:'/r',workspaceRoot:'/w',profileName:'teloa'},{PATH:'/tools',TELOA_PLANNED_RESTART:'0e4f8a1c-1111-4222-8333-944455556666'})
+ assert.equal(serviceEnvironment(inherited).TELOA_PLANNED_RESTART,undefined,'普通启动不沿用 shell 中的回执')
+ assert.equal(serviceEnvironment(inherited,id).TELOA_PLANNED_RESTART,id)
+ assert.equal(inherited.TELOA_PLANNED_RESTART,'0e4f8a1c-1111-4222-8333-944455556666','不改调用方的环境对象')
+ // supervisor 用同一 runtimeEnvironment 组装宿主环境，必须转交回执。
+ assert.equal(runtime.runtimeEnvironment({programRoot:'/app',dshHome:'/d',runtimeRoot:'/r',workspaceRoot:'/w',profileName:'teloa'},serviceEnvironment(inherited,id)).TELOA_PLANNED_RESTART,id)
+ // upgradeInstall 需要真实发行包、备份与数据库才能走到 startService，这里只核对它把本次 restartId 交给启动。
+ const {readFile}=await import('node:fs/promises'),upgrade=await readFile(new URL('../src/upgrade.ts',import.meta.url),'utf8')
+ assert.match(upgrade,/startService\(\{\.\.\.next,phase:'stopped'\},\{plannedRestartId:restartId\}\)/)
+})

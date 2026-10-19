@@ -55,16 +55,26 @@ export async function initializeRoleDelegations(pool:Pool):Promise<void>{
   );
  `)
 }
-/** 群交付独立于原生结束；只消费原Run唯一、可信且无待送的原群回执。 */
+/**
+ * 群交付独立于原生结束；completed 只消费原Run唯一、可信且无待送的原群回执。
+ * 失败终态（error、cancelled 等）按契约没有应交付成果：`TaskRunService.record` 只在 completed 时排群发布，
+ * `GroupRunMessageService` 也拒绝非 completed 的发布回执。这类 Run 只在宿主已登记收口证明（非 legacy 路径）
+ * 且库中没有任何发布残留——无待发布、无结果文件、无以该 Run 为作者的群回帖、无未定案 outbox——时才算收口；
+ * 零工具旧例外不对失败终态放行，不伪造成功交付。
+ */
 async function settledOwnerGroupDelivery(db:PoolClient,owner:string,raw:Record<string,unknown>,run:TaskRun,legacy:boolean):Promise<boolean>{
  const plan=readStoredRunPlanReport(raw),context=run.groupContext
  if(!context&&!plan)return true
- if(run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||raw.group_publication!=null||raw.group_publication_next_at!=null)return false
+ if(run.evidence?.state!=='ended'||raw.group_publication!=null||raw.group_publication_next_at!=null)return false
  const manifest=groupRunResultManifest(raw.group_result_manifest)
  if(legacy&&manifest.files.length)return false
  const schema=(await db.query("select to_regclass('teloa_group_run_sources') sources,to_regclass('teloa_group_routing_wakes') wakes,to_regclass('teloa_group_routing_outbox') outbox")).rows[0]
  if(!schema?.sources||!schema.wakes||!schema.outbox)return false
  const rows=(await db.query('select * from teloa_group_messages where owner_id=$1 and run_id=$2 for share',[owner,run.id])).rows
+ if(run.evidence.reason!=='completed'){
+  if(legacy||manifest.files.length||rows.length)return false
+  return !(await db.query("select 1 from teloa_group_routing_outbox where owner_id=$1 and run_id=$2 and state<>'settled' limit 1 for share",[owner,run.id])).rowCount
+ }
  if(rows.length!==1)return false
  const row=rows[0]!,message=readStoredGroupMessage(row),groupId=context?.groupId??plan!.reportGroup.groupId,rootId=context?.source.rootId??null,requestId=plan?.occurrenceId??run.nativeRequestId
  if(!('runId'in message)||message.runId!==run.id||message.taskId!==run.taskId||message.authorId!==run.roleId||message.groupId!==groupId||message.rootId!==rootId||row.request_id!==requestId)return false

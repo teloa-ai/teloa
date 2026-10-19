@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {mkdtemp,rm} from 'node:fs/promises'
@@ -22,7 +22,6 @@ import {KnowledgeTreeService} from '../../backend/src/capabilities/knowledge-tre
 import {KnowledgeResourceService} from '../../backend/src/capabilities/knowledge-resources.ts'
 import {registerLibraryTools,type LibraryToolsPorts} from '../src/library-tools.ts'
 
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg')
 let container:StartedPostgreSqlContainer,pool:ResourceService['pool'],root:string
 before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'

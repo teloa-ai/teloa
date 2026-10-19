@@ -19,8 +19,8 @@ const material:ReviewMaterial={goal,inputs:{knowledge:0,group:false,context:fals
 const oldBlock='第21项：口述付款可定A级。',newBlock='第21项：待核；只有口述付款，没有独立付款凭据。'
 const draft=Array.from({length:51},(_,index)=>index===20?oldBlock:`第${index+1}项：保留的合成内容。`).join('\n\n')
 const fixed=draft.replace(oldBlock,newBlock)
-/** 实测两次失败的结构：只把 affectedScope 改为显式编号，coverage.unknown 仍是非法空串。内容均为合成资料。 */
-const revision=(explicit:boolean,unknown:unknown)=>({phase:'revise',issues:[{problem:'分类超出原资料，需保留待核。',basis:[{sourceId:'goal',passageId:passage.id}],...explicit?{affectedBlockIds:[21,11]}:{affectedScope:'coverage'},coverage:{change:[21],retain:[11],unrelated:Array.from({length:51},(_,index)=>index+1).filter(id=>id!==21&&id!==11),unknown},edits:[{blockId:21,after:newBlock}]}]})
+/** 实测两次失败的结构：只把 affectedScope 改为显式编号，coverage.unknown 仍是非法空串。当前简写按模型可见 schema 显式写 unlisted:"retain"。内容均为合成资料。 */
+const revision=(explicit:boolean,unknown:unknown)=>({phase:'revise',issues:[{problem:'分类超出原资料，需保留待核。',basis:[{sourceId:'goal',passageId:passage.id}],...explicit?{affectedBlockIds:[21,11]}:{affectedScope:'coverage'},coverage:{change:[21],retain:[11],unrelated:Array.from({length:51},(_,index)=>index+1).filter(id=>id!==21&&id!==11),unknown,...explicit?{}:{unlisted:'retain'}},edits:[{blockId:21,after:newBlock}]}]})
 const acceptance={phase:'verify',verdict:'accept',checks:(['goal',1,2,3,4,5,6,7,8] as const).map(id=>({id,status:'pass'})),changeChecks:[{issueId:'r1:u1:i1',status:'verified',reviewedBlockIds:[11,21]}],findings:[]}
 const errors=(events:readonly SessionEvent[])=>events.flatMap(event=>event.type==='tool/result'&&event.data.message.isError?[event.data.message.content.filter(part=>part.type==='text').map(part=>part.text).join('\n')]:[])
 const result=(events:readonly SessionEvent[])=>readTaskRunGroupResult(events,'loop-input',undefined,undefined,{requireReview:true,runId:'diagnostics-run'})
@@ -40,15 +40,17 @@ async function runtime(t:TestContext,scripts:Reply[]){
  })
  return {...f,traces,caught}
 }
-function originalError(error:ToolArgsError,message:string){
+/** 当前 coverage 简写先按模型可见 schema 校验，直接报具体叶违规；历史显式编号或混用两种字段仍由 SDK oneOf 严格拒绝。 */
+const oneOfViolation='"issues[0]" must match exactly one oneOf branch (matched 0)',unknownViolation='"issues[0].coverage.unknown" must be an array'
+function originalError(error:ToolArgsError,message:string,violation:string){
  assert.equal(Object.getPrototypeOf(error),ToolArgsError.prototype)
  assert.equal(error.name,'ToolArgsError');assert.equal(error.code,'INVALID_ARGS')
- assert.deepEqual(error.violations,['"issues[0]" must match exactly one oneOf branch (matched 0)'],'原SDK violations不被诊断覆盖')
+ assert.deepEqual(error.violations,[violation],'原SDK violations不被诊断覆盖')
  assert.equal(message,'Error: '+error.message,'SDK仍渲染实际捕获实例的message，不以新回执替换原失败')
 }
-function leafDiagnostic(message:string){
+function leafDiagnostic(message:string,violation:string){
  assert.match(message,/invalid arguments:/,'保留原生参数错误，不能用普通提示替代失败')
- assert.match(message,/"issues\[0\]" must match exactly one oneOf branch \(matched 0\)/,'原严格oneOf错误仍在')
+ assert.ok(message.startsWith('Error: invalid arguments: '+violation+'\n'),'原严格错误仍在')
  assert.match(message,/"issues\[0\]\.coverage\.unknown" must be an array/,'具体叶路径与期望类型必须到达原生工具回执')
  assert.ok(!message.includes(newBlock)&&!message.includes(goal),'类型诊断不复制业务正文或依据')
 }
@@ -57,8 +59,8 @@ test('真实RC2 Loop：oneOf叶错误到达同R1唯一纠参请求，修正unkno
  const first=revision(false,''),corrected=revision(true,[])
  const f=await runtime(t,[text(draft),call(first),call(corrected),call(acceptance)]);await f.send()
  assert.equal(f.adapter.requests.length,4)
- const failed=errors(f.events);assert.equal(failed.length,1);leafDiagnostic(failed[0]!)
- assert.equal(f.caught.length,1);originalError(f.caught[0]!,failed[0]!)
+ const failed=errors(f.events);assert.equal(failed.length,1);leafDiagnostic(failed[0]!,unknownViolation)
+ assert.equal(f.caught.length,1);originalError(f.caught[0]!,failed[0]!,unknownViolation)
  const retry=JSON.stringify(f.adapter.requests[2]!.messages)
  assert.ok(retry.includes('issues[0].coverage.unknown')&&retry.includes('must be an array'),'模型实际收到叶错误，而非只在内部trace保存')
  assert.equal(first.issues[0]!.coverage.unknown,'','宿主没有把原非法参数coerce成数组')
@@ -83,8 +85,8 @@ test('真实RC2 Loop：实测失败pair仅换编号分支仍严格拒绝，两�
  const first=revision(false,''),second=revision(true,'')
  const f=await runtime(t,[text(draft),call(first),call(second),call(acceptance)]);await f.send()
  assert.equal(f.adapter.requests.length,3,'全lease唯一纠参耗尽，不发第四次provider')
- const failed=errors(f.events);assert.equal(failed.length,2);for(const error of failed)leafDiagnostic(error)
- assert.equal(f.caught.length,2);f.caught.forEach((error,index)=>originalError(error,failed[index]!))
+ const failed=errors(f.events),violations=[unknownViolation,oneOfViolation];assert.equal(failed.length,2);failed.forEach((error,index)=>leafDiagnostic(error,violations[index]!))
+ assert.equal(f.caught.length,2);f.caught.forEach((error,index)=>originalError(error,failed[index]!,violations[index]!))
  assert.deepEqual(f.events.flatMap(event=>event.type==='tool/result'?[event.data.message.isError]:[]),[true,true])
  assert.deepEqual(f.events.flatMap(event=>event.type==='turn/end'?[event.data.reason.kind]:[]),['error'])
  assert.equal(first.issues[0]!.coverage.unknown,'');assert.equal(second.issues[0]!.coverage.unknown,'')
@@ -97,7 +99,7 @@ test('真实RC2 Loop：两个互斥编号字段同时给出时列出所有分支
  const both=revision(false,[]);Reflect.set(both.issues[0]!,'affectedBlockIds',[21,11])
  const f=await runtime(t,[text(draft),call(both),call(revision(true,[])),call(acceptance)]);await f.send()
  assert.equal(f.adapter.requests.length,4)
- const failed=errors(f.events);assert.equal(failed.length,1);assert.equal(f.caught.length,1);originalError(f.caught[0]!,failed[0]!)
+ const failed=errors(f.events);assert.equal(failed.length,1);assert.equal(f.caught.length,1);originalError(f.caught[0]!,failed[0]!,oneOfViolation)
  assert.match(failed[0]!,/issues\[0\] 分支1：.*affectedBlockIds/)
  assert.match(failed[0]!,/issues\[0\] 分支2：.*affectedScope/)
  assert.ok(!failed[0]!.includes('coverage.unknown'),'合法数组不被误诊为类型错误')

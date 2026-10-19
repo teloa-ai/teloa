@@ -13,5 +13,6 @@ export function groupTaskSourceDigest(source:GroupTaskSource):string{
   // v2 才追加关系、上下文模式、尝试世代与执行策略；v1 序列逐字不变。
   ...(source.schema==='teloa.group-task-source/v2'?[[source.replyToMessageId,source.contextMode,source.routingAttemptVersion,source.executionMode,source.trigger]]:[]),
   ...(source.schema==='teloa.group-task-source/v2'&&source.businessTarget?[[source.businessTarget.scope,source.businessTarget.object?[source.businessTarget.object.scope,source.businessTarget.object.type,source.businessTarget.object.id,source.businessTarget.object.version,source.businessTarget.object.snapshotHash]:null]]:[]),
+  ...(source.schema==='teloa.group-task-source/v2'&&source.ownerRequest?[[source.ownerRequest.messageId,source.ownerRequest.text,source.ownerRequest.sha256,...(source.ownerRequest.priorRequests?[source.ownerRequest.priorRequests.map(item=>[item.messageId,item.text,item.sha256])]:[])]]:[]),
  ])).digest('hex')
 }

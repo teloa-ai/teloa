@@ -77,6 +77,7 @@ import {runtimeAdmission} from './runtime-admission.ts'
 import {requireNativeInputProvider} from './native-input-provider.ts'
 import {installResidentModelBudget} from './resident-model-budget.ts'
 import {createResidentWorkRuntime,residentOwnerEndpoints} from './resident-work-runtime.ts'
+import {takePlannedRestartReceipt} from './planned-restart-resume.ts'
 import {trustedWorkEventProducers} from './trusted-work-event-producers.ts'
 import {collectLocalMaterialEvents} from './local-material-events.ts'
 import {dispatchPendingPlanEvents} from './plan-event-coordinator.ts'
@@ -151,6 +152,7 @@ import {createTaskRunBrowser,attachTaskRunBrowser} from './task-run-browser.ts'
 import {assertRoutingGuardRegisteredFirst,registerGroupRoutingGuard} from './group-routing-guard.ts'
 import {assertRoutingPreset,isRoutingSession} from './group-routing.ts'
 import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,readRoutingWorkCandidates,type GroupRoutingDispatchPorts} from './group-routing-dispatch.ts'
+import {readTrustedGroupMessageRunSource} from '@teloa/backend'
 import {readSubagentDelegationLimits} from './subagent-delegation.ts'
 import {registerTaskSubagentTool} from './task-subagent-tool.ts'
 import {createTaskRunHandler,taskRunEndpoints} from './task-runs.ts'
@@ -223,6 +225,8 @@ import { RoleService,TaskService,RoleLifecycleService,HandoffService,Collaborati
 import {readRunGroupTopic} from '@teloa/backend'
 import {GroupReactionService,GroupRoutingAttemptService,GroupRoutingDecisionService,GroupRoutingStatusService,GroupWorkInputService,readGroupRunAppendIds,readGroupRunAppendTarget,readGroupTaskBusinessGrant} from '@teloa/backend'
 import {drainGroupWorkInputs,type GroupWorkInputPorts} from './group-work-input-driver.ts'
+import {drainBusinessTaskSourceUpdates,type BusinessTaskSourceUpdatePorts} from './business-source-update-driver.ts'
+import {BusinessTaskSourceUpdateService,readBusinessTaskSourceUpdatesForRun} from '@teloa/backend'
 import {groupRunAwaitsApproval} from './group-run-append.ts'
 import {readHomeSkills} from './home-skills.ts'
 import { randomUUID } from 'node:crypto'
@@ -568,7 +572,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    const objectWork=new BusinessObjectWorkLinkService(pool,identity,{authorizeSession:async(db,actor,scope,sessionId)=>{if(actor.ownerId!==owner)throw new WorkError('teloa/forbidden','工作不属于当前本人。');await lockBusinessWorkAuthorization(db,sessionId);await authorizeObjectWorkSession(scope,sessionId,new AbortController().signal)}})
    // CSV 读取复用官方附件仓，导入与普通记录共享同一事务原语及固定来源引用。
    const imports=new BusinessRecordImportService(pool,identity,{definitions,store,records,references,files:createBusinessImportFilePort(attachmentPorts),xlsx:createBusinessImportXlsxPort(),tables:{parse:(bytes,mapping,signal)=>parseBusinessImportCsv(bytes,mapping.delimiter,signal)}})
-   return {pool,local,definitions,ledger,store,drafts,imports,changes,objectWork,responsibility:new BusinessResponsibilityService(pool),configuration:new BusinessConfigurationService(pool,identity,{drafts,store,definitions,runtime:new BusinessRuntimeService(pool,identity),spaces:new BusinessSpaceService(pool,identity)}),configurationPreview:new BusinessConfigurationPreviewService(pool,drafts,definitions,identity),pages:new BusinessConfigurationPageService(pool,identity,{drafts,store,definitions,executor:businessSqlExecutor}),records,preview:new BusinessDefinitionPreviewService(pool,identity,local,definitions,ledger,{widgets,resolveSource:businessSyncSources}),warehouse,widgets,executor:businessSqlExecutor,sync:new BusinessSyncService(pool,identity,definitions,warehouse,businessSyncSources,{sync:async(...args)=>{if(!residentWork)throw new WorkError('teloa/unavailable','业务变化观察尚未就绪。');return trustedWorkEventProducers(residentWork.events).businessSync(...args)}}),dashboards:new BusinessDashboardService(pool,identity,definitions,widgets)}
+   return {pool,local,definitions,ledger,store,drafts,imports,changes,objectWork,responsibility:new BusinessResponsibilityService(pool),configuration:new BusinessConfigurationService(pool,identity,{drafts,store,definitions,runtime:new BusinessRuntimeService(pool,identity),spaces:new BusinessSpaceService(pool,identity)}),configurationPreview:new BusinessConfigurationPreviewService(pool,drafts,definitions,identity),pages:new BusinessConfigurationPageService(pool,identity,{drafts,store,definitions,executor:businessSqlExecutor}),records,preview:new BusinessDefinitionPreviewService(pool,identity,local,definitions,ledger,{widgets,resolveSource:businessSyncSources}),warehouse,widgets,executor:businessSqlExecutor,sync:new BusinessSyncService(pool,identity,definitions,warehouse,businessSyncSources,{sync:async(...args)=>{if(!residentWork)throw new WorkError('teloa/unavailable','业务变化观察尚未就绪。');return trustedWorkEventProducers(residentWork.events).businessSync(...args)},object:async(...args)=>{if(!residentWork)throw new WorkError('teloa/unavailable','业务变化观察尚未就绪。');return trustedWorkEventProducers(residentWork.events).businessObject(...args)}}),dashboards:new BusinessDashboardService(pool,identity,definitions,widgets)}
   }
   const businessDefinitionHandler=createBusinessDefinitionHandler(owner,businessScopeIds,async()=>(await businessDefinitionServices()).ledger,businessDefinitionServices)
   const businessImportHandler=createBusinessImportHandler(owner,businessScopeIds,businessDefinitionServices)
@@ -819,7 +823,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       const pending=read.delegations.find(item=>item.roleVersion===run.roleVersion&&['pausing','ending'].includes(item.state))
       if(pending)await delegations.reconcile(actor,{roleId:run.roleId,expectedVersion:pending.version})
     }catch(error){ctx.logger.warn('Teloa 执行委托待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
-  },runReservation:(actor,id)=>service.isTaskRunReserved(actor,id),roleMemory:(db,actor,target,role)=>(roleMemoryService()).then(memory=>memory.confirmedForRun(db,actor,roleMemoryRunTarget(target,role),role)),groupContext:async(db,actor,task,role)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool),groupTopic:async(db,actor,groupContext)=>readRunGroupTopic(db,actor,groupContext,await personalDisplayProfile.displayName()),businessContext:async(db,actor,task,authorization)=>{const context=await readRunBusinessTaskContext(actor,task,async(who,input)=>{const identity={id:randomUUID,now:()=>new Date().toISOString()},pool=(await resources.database()).pool,market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),definitions=(await businessDefinitionServices()).definitions;return new BusinessTaskService(pool,identity,new TaskService(pool,identity),{definitions,loads,works:new IndustryWorkSource(market,loads,industryModelProbe)}).executionContextInTransaction(db,who,input)});return withBusinessTaskResultMappings(context,authorization,async context=>{const {sync}=await businessDefinitionServices();return sync.taskResultMappingsInTransaction(db,{ownerId:actor,scopeIds:[task.scope]},{reference:context.object,roleId:authorization.roleId})})},industryContext:async(db,actor,taskId)=>(await industryTaskService()).executionContextInTransaction(db,actor,taskId),planContext:async(db,actor,taskId,completion,includeMethodSource)=>{const context=await planRuntime.executionContext(db,actor,taskId,completion,includeMethodSource),work=await(await industryPlanService()).executionContextInTransaction(db,actor,taskId);if(work&&!context)throw new WorkError('teloa/storage-corrupt','行业计划工作依据缺少真实调度关联。');return context?{...context,...(work?{work}:{})}:undefined},industrySkills:(db,actor,taskId,roleId)=>resolveIndustryRunSkillBindings(db,actor,taskId,roleId,industryModelProbe),roleGrants:{
+  },runReservation:(actor,id)=>service.isTaskRunReserved(actor,id),roleMemory:(db,actor,target,role)=>(roleMemoryService()).then(memory=>memory.confirmedForRun(db,actor,roleMemoryRunTarget(target,role),role)),groupContext:async(db,actor,task,role,continuationReferences)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool,continuationReferences),groupTopic:async(db,actor,groupContext)=>readRunGroupTopic(db,actor,groupContext,await personalDisplayProfile.displayName()),businessContext:async(db,actor,task,authorization)=>{const context=await readRunBusinessTaskContext(actor,task,async(who,input)=>{const identity={id:randomUUID,now:()=>new Date().toISOString()},pool=(await resources.database()).pool,market=new MarketContentStore(pool,identity),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market)),definitions=(await businessDefinitionServices()).definitions;return new BusinessTaskService(pool,identity,new TaskService(pool,identity),{definitions,loads,works:new IndustryWorkSource(market,loads,industryModelProbe)}).executionContextInTransaction(db,who,input)});const updates=context?await readBusinessTaskSourceUpdatesForRun(db,actor,task.id,task.version):[];return withBusinessTaskResultMappings(context?{...context,...(updates.length?{updates}:{})}:undefined,authorization,async context=>{const {sync}=await businessDefinitionServices();return sync.taskResultMappingsInTransaction(db,{ownerId:actor,scopeIds:[task.scope]},{reference:context.object,roleId:authorization.roleId})})},industryContext:async(db,actor,taskId)=>(await industryTaskService()).executionContextInTransaction(db,actor,taskId),planContext:async(db,actor,taskId,completion,includeMethodSource)=>{const context=await planRuntime.executionContext(db,actor,taskId,completion,includeMethodSource),work=await(await industryPlanService()).executionContextInTransaction(db,actor,taskId);if(work&&!context)throw new WorkError('teloa/storage-corrupt','行业计划工作依据缺少真实调度关联。');return context?{...context,...(work?{work}:{})}:undefined},industrySkills:(db,actor,taskId,roleId)=>resolveIndustryRunSkillBindings(db,actor,taskId,roleId,industryModelProbe),roleGrants:{
     // validate 与 recheck 都是**运行准备**路径上对岗位已保存的 argumentRules 的核对（不是授权页），
     // 两处一律恒当总开关开着算候选——`webToolRules(true)`。总开关只由派发前的 `task-tool-guard`
     // 闸 ① 执行（逐字理由「设置中已关闭网页搜索与读取。」），不能让这里的候选缺失把同一运行的其余工具
@@ -852,7 +856,11 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       return {run,hasRuns}
     },
   })
+  // 回执经只读启动快照读取，只属于本进程首次装配的宿主；同一进程内的再次装配按普通重启处理。
+  const plannedRestartId=await takePlannedRestartReceipt(trusted)
   const resident=await createResidentWorkRuntime(ctx,{business:businessEventSource,businessOrigin:businessEventOrigin,owner,pool:database.pool,identity:workIdentity,nativeInput:requireNativeInputProvider(ctx).input,ownerAuthority:ownerWorkAuthority,runs:runService,resources:database.service,dailyLogs:roleDailyLogService,ordinaryConversations:service,
+   // 只有本人 teloa upgrade 启动的宿主带此回执；校验失败按普通重启处理。
+   ...(plannedRestartId?{plannedRestartId}:{}),
    executionScope:(db,actor,runId,mode)=>runService().then(api=>api.executionScopeInTransaction(db,actor,{runId,mode})),
    verifyInitialMessage:async(run,message,acceptedAt)=>{
     const hint=await skillHttpRunHint(run,declaredSkillSecrets),date={type:'text' as const,text:runDateLine(new Date(acceptedAt))},images=message.content.filter(part=>part.type==='image')
@@ -1651,6 +1659,29 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     workInputs:new GroupWorkInputService(database.pool,{now:()=>new Date().toISOString()}),
     group:readRoutingGroup,
     message:async(actor,messageId)=>readRoutingMessage(actor,messageId,(await resources.database()).pool,await personalDisplayProfile.displayName()),
+    sourceReviewed:async(actor,messageId,signal)=>{
+     let stage='owner'
+     try{
+      signal.throwIfAborted();if(actor!==owner)throw new WorkError('teloa/forbidden','交接成果不属于当前本人。')
+      stage='message'
+      const row=(await database.pool.query('select group_id,text from teloa_group_messages where owner_id=$1 and id=$2',[actor,messageId])).rows[0]
+      if(!row)return false
+      stage='source'
+      const source=await readTrustedGroupMessageRunSource(database.pool,actor,{groupId:row.group_id,messageId})
+      if(!source)return false
+      stage='run'
+      const run=await(await runService()).get(actor,{runId:source.runId})
+      if(!run.skills?.length)return true
+      if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed')return false
+      stage='events'
+      const events=(await runPorts.events(run)).slice(0,run.evidence.endSeq+1)
+      signal.throwIfAborted()
+      stage='continuations';const continuations=await runPorts.continuations?.(run,events)
+      stage='goal';const goal=await runPorts.goalObservation?.(run,events)
+      stage='review';const text=readTaskRunGroupResult(events,run.nativeRequestId,continuations,goal,{requireReview:true,runId:run.id})
+      return text!==undefined&&text.trim()===String(row.text).trim()
+     }catch(error){ctx.logger.warn('交接复核来源读取未完成（消息 %s，阶段 %s）：%s',messageId,stage,error instanceof WorkError?error.code+' '+error.message:'teloa/dependency-unavailable');throw error}
+    },
     candidates:(actor,id,db)=>readRoutingCandidates(actor,id,db,database.pool),
     topic:async(actor,groupId,rootId,db,messageId)=>readRoutingTopic(actor,groupId,rootId,db,messageId,await personalDisplayProfile.displayName()),
     // 三个写端口都再核一次本人：这三条路由绕开了浏览器 RPC 的 owner 固定，身份只能在这里自证。
@@ -1700,8 +1731,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     run:async(actor,runId,signal)=>{signal.throwIfAborted();if(actor!==owner)throw new WorkError('teloa/forbidden','群工作追加不属于当前本人。');const run=await(await runService()).get(actor,{runId});return {state:run.state,sessionId:run.sessionId}},
     submit:async(sessionId,nativeRequestId,text,signal)=>{await ctx.sessionController.prompt({sessionId:brandString<SessionId>(sessionId),requestId:brandString<SessionRequestId>(nativeRequestId),mode:'queue' as const,content:[{type:'text',text}]},signal)},
    }}
+  // 同一业务对象后续版本的续办：复用一键准备/启动与原 Run 读取；只在常驻泵里排空账本，不新建任务。
+  const businessSourceUpdatePorts:BusinessTaskSourceUpdatePorts={updates:new BusinessTaskSourceUpdateService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()}),prepare:groupRoutingDispatchPorts.prepare,start:groupRoutingDispatchPorts.start,readRun:groupWorkInputPorts.readRun,reconcile:groupDelivery.reconcile,report:code=>ctx.logger.warn('Teloa 业务来源续办待核对：%s',code)}
   groupRoutingDispatchPorts.drainWorkInputs=(actor,signal)=>drainGroupWorkInputs(actor,groupWorkInputPorts,signal)
-  const pumpResident=(signal:AbortSignal)=>runtimeAdmission.run(async()=>{await resident.pump(groupDelivery,(actor,messageId,currentSignal)=>dispatchGroupRouting(ctx,actor,messageId,groupRoutingDispatchPorts,currentSignal),signal);await drainGroupWorkInputs(owner,groupWorkInputPorts,signal);if(projectRuntimeHost&&projectVerified){const host=projectRuntimeHost;await projectVerified.recover(signal,source=>host.ingest(source,{retryOnTransient:true}))}})
+  const pumpResident=(signal:AbortSignal)=>runtimeAdmission.run(async()=>{await resident.pump(groupDelivery,(actor,messageId,currentSignal)=>dispatchGroupRouting(ctx,actor,messageId,groupRoutingDispatchPorts,currentSignal),signal);await drainGroupWorkInputs(owner,groupWorkInputPorts,signal);await drainBusinessTaskSourceUpdates(owner,businessSourceUpdatePorts,signal);if(projectRuntimeHost&&projectVerified){const host=projectRuntimeHost;await projectVerified.recover(signal,source=>host.ingest(source,{retryOnTransient:true}))}})
   resources.beforeDatabaseClose(startPlanScheduler({recover:(_now,signal)=>pumpResident(signal),tick:(_now,signal)=>pumpResident(signal),report:(_phase,code)=>ctx.logger.warn('Teloa 常驻协作待核对：%s',code)}))
   // 运行上下文里的文本类附件要现读正文；只改一个键名走同一处适配，不再写第二份按 kind 的分流。
   // 文件类按 maxBytes 只读前段（文本正文只要前 groupFileTextMaxBytes 字节）；图片仍整张读，交给同一处按 kind 分流的适配。

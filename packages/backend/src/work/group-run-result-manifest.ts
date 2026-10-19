@@ -54,13 +54,13 @@ export class GroupRunResultManifestService{
   if(!task||!role||run.roleId===null||run.roleVersion===null)throw new WorkError('teloa/forbidden','原岗位或任务不可用。')
   const plan=readStoredRunPlanReport(row)
   if(plan){
-   const occurrence=await new PlanOccurrenceService(this.pool,{id:()=>{throw new WorkError('teloa/storage-corrupt','不能为交付声明新建发生实例。')}}).executionContext(db,owner,run.taskId)
+   const occurrence=await new PlanOccurrenceService(this.pool,{id:()=>{throw new WorkError('teloa/storage-corrupt','不能为交付声明新建发生实例。')}}).executionContext(db,owner,run.taskId,undefined,false,'stored')
    if(!occurrence?.reportGroup||occurrence.occurrenceId!==plan.occurrenceId||JSON.stringify(occurrence.reportGroup)!==JSON.stringify(plan.reportGroup))throw new WorkError('teloa/version-conflict','原计划汇报范围已变化，不能增加声明。')
    const authorization=readRoleWorkAuthorization(JSON.parse(run.inputText).role?.authorization),storedTask=readStoredTask(task)
    const admission=await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:run.roleId,expectedRoleVersion:run.roleVersion,scope:storedTask.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:plan.reportGroup.groupId},db)
    admission.assertCurrent();return
   }
-  const current=await readRunGroupContext(db,owner,readStoredTask(task),readStoredRole(role),this.files,this.pool)
+  const current=await readRunGroupContext(db,owner,readStoredTask(task),readStoredRole(role),this.files,this.pool,JSON.parse(run.inputText).groupContinuation?.references)
   if(!current||JSON.stringify(current)!==JSON.stringify(run.groupContext))throw new WorkError('teloa/version-conflict','原群工作范围或资料已变化，不能增加声明。')
   const grant=(await db.query('select grant_version,state,can_post from teloa_group_agent_grants where owner_id=$1 and group_id=$2 and role_id=$3 order by grant_version desc limit 1 for share',[owner,current.groupId,run.roleId])).rows[0]
   if(!grant||grant.state!=='active'||grant.grant_version!==current.grantVersion||grant.can_post!==true)throw new WorkError('teloa/forbidden','本员工没有当前群内发言授权。')

@@ -1,10 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {readBusinessConfigurationCandidateV2} from '@teloa/contract'
+import {readBusinessConfigurationCandidateV2,readBusinessTemplateUpgradeImpact} from '@teloa/contract'
 import {dashboardBody} from './fixtures/business-dashboard.ts'
 import {mergeBusinessDashboardResourceUpgrade} from '../src/work/business-dashboard-resource-upgrade.ts'
 
 const configuration=()=>readBusinessConfigurationCandidateV2(dashboardBody().configuration)
+test('未改字段的既有坏值显式警告；新增必填或收紧规则仍阻止采用，警告不能伪装类型变更',async()=>{
+ const {inspectBusinessTemplateUpgradeImpact}=await import('../src/work/business-dashboard-resource-upgrade.ts'),current=configuration(),candidate=configuration()
+ candidate.title='仅改业务标题'
+ const record={type:'alert',id:'one',fields:[{label:'状态',value:'旧来源未识别值'}]},impact=inspectBusinessTemplateUpgradeImpact({current,candidate,records:[record,record]})
+ assert.equal(impact.blocked,false);assert.equal(impact.affectedRecords,0)
+ assert.deepEqual(impact.warnings,[{objectType:'alert',field:'state',reason:'invalid-existing-value',affectedRecords:1}])
+ assert.deepEqual(readBusinessTemplateUpgradeImpact(impact),impact)
+ const changed=structuredClone(candidate),object=changed.definitions.find(row=>row.kind==='object-type')!
+ if(object.kind!=='object-type')throw Error('fixture')
+ object.definition.fields.push({name:'required',label:'新增必填',from:'新增必填',type:'text',required:true})
+ assert.equal(inspectBusinessTemplateUpgradeImpact({current,candidate:changed,records:[record]}).blocked,true)
+ assert.throws(()=>readBusinessTemplateUpgradeImpact({...impact,warnings:[{...impact.warnings![0],reason:'changed-type'}]}))
+})
 const title=(candidate:ReturnType<typeof configuration>,kind:string,value:string)=>{const row=candidate.definitions.find(row=>row.kind===kind)!;row.definition.title=value}
 test('来源只更新未被本地修改的定义；本地业务元数据、独立页面和修改保留，输入不被写入',()=>{
  const baseline=configuration(),current=configuration(),candidate=configuration()

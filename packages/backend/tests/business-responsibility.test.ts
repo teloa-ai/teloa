@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import * as api from '../src/index.ts'
 import {BusinessDefinitionSourceReader} from '../src/work/business-definition-source.ts'

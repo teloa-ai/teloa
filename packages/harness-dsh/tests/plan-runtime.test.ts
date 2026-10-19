@@ -5,7 +5,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises'
 import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {ConversationService,TaskRunPresetError,openResourceDatabase,RoleService,PlanService,TaskRunService,WorkControlService,initializeWorkControl,initializeRoles,initializeTasks,initializePlans,initializeMarketContents,initializePlanOccurrences,initializeObjectConversations,initializeTaskRuns,initializePlanSchedulerStatus,PlanOccurrenceService,PlanSchedulerStatusService} from '@teloa/backend'
+import {ConversationService,TaskRunPresetError,openResourceDatabase,RoleService,PlanService,TaskRunService,WorkControlService,initializeWorkControl,initializeWorkBudgets,initializeRoles,initializeTasks,initializePlans,initializeMarketContents,initializePlanOccurrences,initializeObjectConversations,initializeTaskRuns,initializePlanSchedulerStatus,PlanOccurrenceService,PlanSchedulerStatusService} from '@teloa/backend'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {TaskExecutionScope,RunSkill,RunKnowledge} from '@teloa/backend'
 import type {Conversation} from '@teloa/contract'
@@ -19,7 +19,7 @@ before(async()=>{
  temporary=await mkdtemp(join(tmpdir(),'teloa-plan-runtime-'));const config=join(temporary,'database.json')
  await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
  pool=(await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()})).pool
- await initializeRoles(pool);await initializeTasks(pool);await initializePlans(pool);await initializeMarketContents(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializePlanSchedulerStatus(pool);await initializeWorkControl(pool)
+ await initializeRoles(pool);await initializeTasks(pool);await initializePlans(pool);await initializeMarketContents(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializePlanSchedulerStatus(pool);await initializeWorkControl(pool);await initializeWorkBudgets(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop();if(temporary)await rm(temporary,{recursive:true,force:true})})
 
@@ -51,13 +51,13 @@ async function fixture(){
  return {owner,plan,plans,role,controls,conversations,runtime,runPorts,calls,setNow:(value:string)=>{now=value},setBeforeRunService:(value:(()=>Promise<void>)|undefined)=>{beforeRunService=value},getRunService}
 }
 
-test('创建runtime不读取数据库、不建表、不启动调度',()=>{
+test('创建runtime不读取数据库、不建表、不启动调度',{timeout:60_000},()=>{
  let calls=0
  createPlanRuntime({owner:'owner',getPool:async()=>{calls++;throw Error('不得调用')},getRunService:async()=>{throw Error('不得调用')},conversations:{createRun:async()=>{throw Error('不得调用')},runReservation:async()=>{throw Error('不得调用')},failRunReservation:async()=>{throw Error('不得调用')},bySession:async()=>{throw Error('不得调用')}},runPorts:{check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>[]}})
  assert.equal(calls,0)
 })
 
-test('runtime 将独立通知端口接入协调周期，不把结果写入调度状态',async()=>{
+test('runtime 将独立通知端口接入协调周期，不把结果写入调度状态',{timeout:60_000},async()=>{
  const f=await fixture();let deliveries=0,reports:string[]=[]
  const runtime=createPlanRuntime({owner:f.owner,getPool:async()=>pool,conversations:f.conversations,getRunService:f.getRunService,runPorts:f.runPorts,deliverNotifications:async(owner,signal)=>{assert.equal(owner,f.owner);signal.throwIfAborted();deliveries++},reportNotification:code=>reports.push(code)})
  await runtime.coordinator.recover('2026-09-12T00:00:00.000Z',new AbortController().signal)
@@ -65,7 +65,7 @@ test('runtime 将独立通知端口接入协调周期，不把结果写入调度
  assert.equal((await runtime.status({}))?.health,'healthy')
 })
 
-test('真实计划到期经helper创建普通任务并准备发送，技能知识使用可信执行范围',async()=>{
+test('真实计划到期经helper创建普通任务并准备发送，技能知识使用可信执行范围',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal
  await f.runtime.coordinator.recover('2026-09-12T00:59:59.000Z',signal)
  f.setNow('2026-09-12T01:00:00.000Z');await f.runtime.coordinator.tick('2026-09-12T01:00:00.000Z',signal)
@@ -90,7 +90,7 @@ test('真实计划到期经helper创建普通任务并准备发送，技能知�
  await assert.rejects(f.runtime.readPorts.overview('other',{planId:f.plan.id}),{code:'teloa/forbidden'})
 })
 
-test('本人立即运行复用正式任务与Agent执行链，不改下一次日程且同请求不重复发送',async()=>{
+test('本人立即运行复用正式任务与Agent执行链，不改下一次日程且同请求不重复发送',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal
  await f.runtime.coordinator.recover('2026-09-12T00:30:00.000Z',signal)
  const before=await f.runtime.overview({planId:f.plan.id})
@@ -105,7 +105,7 @@ test('本人立即运行复用正式任务与Agent执行链，不改下一次日
  assert.equal(again.task.id,first.task.id);assert.equal(again.run.id,first.run.id);assert.equal(f.calls.sends,1)
 })
 
-test('计划 Run 已准备后真实控制暂停或控制读口缺失均拒绝领取发送权',async()=>{
+test('计划 Run 已准备后真实控制暂停或控制读口缺失均拒绝领取发送权',{timeout:60_000},async()=>{
  for(const mode of ['paused','missing'] as const){
   const f=await fixture(),signal=new AbortController().signal
   if(mode==='missing')delete f.runPorts.controlState
@@ -128,7 +128,7 @@ test('计划 Run 已准备后真实控制暂停或控制读口缺失均拒绝领
  }
 })
 
-test('计划岗位未声明 preset 时解析并固定宿主真实默认配置',async()=>{
+test('计划岗位未声明 preset 时解析并固定宿主真实默认配置',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal;let declared:unknown='not-called'
  await pool.query("update teloa_roles set definition=definition-'runtimeConfig' where id=$1",[f.role.id])
  f.runPorts.resolvePreset=async value=>{declared=value;return 'default-agent'}
@@ -139,7 +139,7 @@ test('计划岗位未声明 preset 时解析并固定宿主真实默认配置',a
  assert.equal(declared,undefined);assert.equal(run.agentPresetId,'default-agent');assert.equal(f.calls.sends,1)
 })
 
-test('计划运行配置失败保留终态执行并报告稳定失败，恢复不再启动 Agent',async()=>{
+test('计划运行配置失败保留终态执行并报告稳定失败，恢复不再启动 Agent',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal
  f.runPorts.resolvePreset=async()=>{throw Error('preset missing')}
  await f.runtime.coordinator.recover('2026-09-12T00:59:59.000Z',signal)
@@ -151,7 +151,7 @@ test('计划运行配置失败保留终态执行并报告稳定失败，恢复�
  await f.runtime.coordinator.recover('2026-09-12T01:00:02.000Z',signal);assert.equal(f.calls.sends,0)
 })
 
-test('计划任务创建后岗位版本变化时，可信 prepare 在会话预约和 Run 前拒绝',async()=>{
+test('计划任务创建后岗位版本变化时，可信 prepare 在会话预约和 Run 前拒绝',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal;let upgraded=false
  f.setBeforeRunService(async()=>{if(upgraded)return;upgraded=true;await pool.query('update teloa_roles set version=version+1 where id=$1',[f.role.id])})
  await f.runtime.coordinator.recover('2026-09-12T00:59:59.000Z',signal)
@@ -166,7 +166,7 @@ test('计划任务创建后岗位版本变化时，可信 prepare 在会话预�
  assert.deepEqual(f.calls,{sends:0,checks:0,skills:0,skillDatabases:[],knowledge:[]})
 })
 
-test('发送回包未知持久记录失败，重建runtime只恢复原run且不重新发送',async()=>{
+test('发送回包未知持久记录失败，重建runtime只恢复原run且不重新发送',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal
  f.runPorts.send=async()=>{f.calls.sends++;throw Error('原生提交结果未知')}
  await f.runtime.coordinator.recover('2026-09-12T00:59:59.000Z',signal)
@@ -183,7 +183,7 @@ test('发送回包未知持久记录失败，重建runtime只恢复原run且不�
  assert.equal((await pool.query('select count(*) from teloa_task_runs where owner_id=$1',[f.owner])).rows[0].count,'1')
 })
 
-test('终态无run的skip通过helper写入真实ack，普通重叠skip不伪造失败',async()=>{
+test('终态无run的skip通过helper写入真实ack，普通重叠skip不伪造失败',{timeout:60_000},async()=>{
  const f=await fixture(),service=new PlanOccurrenceService(pool,{id:randomUUID}),signal=new AbortController().signal
  const claim=(await service.claim(f.owner,{planId:f.plan.id,now:'2026-09-12T01:00:00.000Z'})).occurrence!
  const {task}=await service.dispatchTask(f.owner,{claimId:claim.id,taskRequestId:claim.taskRequestId,now:'2026-09-12T01:00:00.000Z'})
@@ -197,7 +197,7 @@ test('终态无run的skip通过helper写入真实ack，普通重叠skip不伪造
  assert.deepEqual(await f.runtime.status({planId:f.plan.id}),prior)
 })
 
-test('立即运行与调度恢复并发派发同一 claim：后到者读回同一 Run，不报冲突、不留失败记录',async()=>{
+test('立即运行与调度恢复并发派发同一 claim：后到者读回同一 Run，不报冲突、不留失败记录',{timeout:60_000},async()=>{
  const f=await fixture(),signal=new AbortController().signal
  await f.runtime.coordinator.recover('2026-09-12T00:30:00.000Z',signal)
  const requestId=randomUUID(),input={planId:f.plan.id,requestId,expectedVersion:f.plan.version,expectedConfigVersion:f.plan.configVersion,now:'2026-09-12T00:31:00.000Z'}

@@ -949,6 +949,12 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Abrir a página completa"
   ],
   [
+    "business.scope.stat.sourcesUnknown",
+    "待核对",
+    "待核對",
+    "Pending check"
+  ],
+  [
     "business.scope.stat.sourcesValue",
     "已接入 {n} 个",
     "已接入 {n} 個",
@@ -1025,6 +1031,18 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "{sources} {noun} connectés ; aucun employé affecté",
     "{sources} {noun} verbunden; kein Mitarbeiter zugewiesen",
     "{sources} {noun} ligadas; sem funcionário atribuído"
+  ],
+  [
+    "business.home.situation.unknown",
+    "{noun}接入状态待核对，{staff} 位员工在岗",
+    "{noun}接入狀態待核對，{staff} 位員工在崗",
+    "{noun} connection status pending check, {staff} employees on duty"
+  ],
+  [
+    "business.home.situation.unknownNoStaff",
+    "{noun}接入状态待核对，尚未安排员工",
+    "{noun}接入狀態待核對，尚未安排員工",
+    "{noun} connection status pending check; no employee assigned"
   ],
   [
     "business.home.situation.noneNoStaff",

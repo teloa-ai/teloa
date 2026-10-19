@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto'
 import type {RunBusinessContext} from '../src/work/task-run-business-context.ts'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import type {PoolClient} from 'pg'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeRoles,RoleService} from '../src/work/roles.ts'
@@ -1195,4 +1195,31 @@ test('修改员工姓名头像后原准备运行可领取、继续准入并核�
  await service.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
  const db=await pool.connect()
  try{await db.query('begin');assert.equal((await service.executionScopeInTransaction(db,f.owner,{runId:run.id,mode:'completion'})).taskId,f.task.id);await db.query('commit')}finally{await db.query('rollback');db.release()}
+})
+
+test('同一本人两任务并发准备、总额并发上限 1：准入在写 Run 的事务内原子，恰好一条成功；拒绝不留 Run 与预留，结束后同一请求可再准备',async()=>{
+ const {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy}=await import('../src/work/work-budget.ts')
+ await initializeWorkBudgets(pool)
+ const f=await fixture(),sessionId=randomUUID(),first=await f.inspect(),conversations=new Map([[first.sessionId,first],[sessionId,{id:randomUUID(),sessionId,ownerId:f.owner,status:'ready'}]])
+ // 两条运行会话各自返回本会话回执；fixture 的 inspect 恒返回第一会话，第二条准备会在预算前被会话守卫拒绝。
+ const inspect=async(_owner:string,id:string)=>{const found=conversations.get(id as ReturnType<typeof randomUUID>);if(!found)throw new WorkError('teloa/forbidden','会话不属于本人。');return found}
+ const service=new TaskRunService(pool,identity,inspect)
+ const second=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'调查二',goal:'核对第二条告警',scope:'general'},assignee:{roleId:f.role.id,expectedVersion:2}})
+ await new ObjectConversationService(pool,inspect,identity.now).change(f.owner,{requestId:randomUUID(),kind:'task',objectId:second.id,expectedObjectVersion:1,sessionId,expectedLinkVersion:0,action:'link'})
+ const commandB={...f.command,requestId:randomUUID(),taskId:second.id,sessionId}
+ await pool.query('insert into teloa_owner_work_budgets(owner_id,policy,version) values($1,$2,1)',[f.owner,JSON.stringify({...defaultWorkBudgetPolicy,maxConcurrent:1})])
+ const budgets=new WorkBudgetService(pool,identity),admit=(db:PoolClient,lineage:{budgetAccountId:string})=>budgets.admitRunStartInTransaction(db,f.owner,lineage.budgetAccountId)
+ const prepare=(command:typeof f.command)=>service.prepare(f.owner,command,undefined,undefined,undefined,undefined,undefined,admit)
+ const outcomes=await Promise.allSettled([prepare(f.command),prepare(commandB)])
+ assert.equal(outcomes.filter(o=>o.status==='fulfilled').length,1,'恰好一条越过并发位')
+ const rejected=outcomes.find(o=>o.status==='rejected') as PromiseRejectedResult
+ assert.equal((rejected.reason as WorkError).code,'teloa/budget-exhausted')
+ assert.equal((await pool.query('select count(*)::int n from teloa_task_runs where owner_id=$1',[f.owner])).rows[0].n,1,'拒绝方不留 Run')
+ assert.equal((await pool.query('select count(*)::int n from teloa_work_budget_reservations where owner_id=$1',[f.owner])).rows[0].n,0,'准入不建预留')
+ const admitted=(outcomes.find(o=>o.status==='fulfilled') as PromiseFulfilledResult<{id:string;taskId:string}>).value,loser=admitted.taskId===f.task.id?commandB:f.command
+ await assert.rejects(prepare(loser),{code:'teloa/budget-exhausted'},'占位未释放前再试仍排队')
+ await pool.query("update teloa_task_runs set state='ended',evidence=$2 where id=$1",[admitted.id,JSON.stringify({state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'})])
+ const resumed=await prepare(loser)
+ assert.equal(resumed.taskId,loser.taskId);assert.equal(resumed.state,'prepared')
+ assert.deepEqual((await pool.query('select policy from teloa_owner_work_budgets where owner_id=$1',[f.owner])).rows[0].policy,{...defaultWorkBudgetPolicy,maxConcurrent:1},'准入不改预算')
 })

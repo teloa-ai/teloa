@@ -35,6 +35,10 @@ test('持续规则回包必须固定范围、映射、声明摘要与启停修�
  const state={scope:'soc',mappingId:'soc-alert-sync',definitionHash:'a'.repeat(64),enabled:false,revision:0}
  assert.deepEqual(readBusinessSyncRuleState(state,'soc'),state)
  assert.deepEqual(readBusinessSyncRuleView({...state,title:'SOC 告警同步',schedule:{kind:'every',seconds:300},running:false},'soc'),{...state,title:'SOC 告警同步',schedule:{kind:'every',seconds:300},running:false})
+ // 新宿主附带来源物理身份；旧宿主不带仍可读；形状不对或未知种类拒收。
+ const view={...state,title:'SOC 告警同步',schedule:{kind:'every',seconds:300},running:false}
+ for(const source of [{kind:'mcp-tool',serverName:'soc_logs',tool:'wazuh_alerts'},{kind:'business-data-port',sourceId:'external'},{kind:'role-result'}])assert.deepEqual(readBusinessSyncRuleView({...view,source},'soc'),{...view,source})
+ for(const source of [{kind:'mcp-tool',serverName:'soc_logs'},{kind:'mcp-tool',serverName:'soc_logs',tool:'x',arguments:{}},{kind:'business-data-port'},{kind:'role-result',roleId:'r'},{kind:'other'},null])hostInvalid(()=>readBusinessSyncRuleView({...view,source},'soc'))
  hostInvalid(()=>readBusinessSyncRuleState({...state,scope:'other'},'soc'))
  hostInvalid(()=>readBusinessSyncRuleState({...state,definitionHash:'bad'},'soc'))
  hostInvalid(()=>readBusinessSyncRuleState({...state,enabled:true,revision:-1},'soc'))

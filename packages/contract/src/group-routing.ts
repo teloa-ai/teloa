@@ -3,6 +3,7 @@ import {WorkError} from './work-error.ts'
 import {isGroupReactionEmoji,type GroupReactionEmoji} from './group-reactions.ts'
 import {groupTaskBusinessTarget,type GroupTaskBusinessTarget} from './collaboration.ts'
 import {parseBusinessRecordReferences} from './business-data.ts'
+import {workBudgetExhaustedCode,type WorkBudgetExhaustion} from './work-budget.ts'
 
 export const groupRoutingInputSchema='teloa.group-routing-input/v1'
 export const groupRoutingOutputSchema='teloa.group-routing-output/v1'
@@ -35,8 +36,11 @@ export type GroupRoutingWorkTarget={taskId:string;runId:string|null}
  * 不携带自由生成的工作目标、负责人、工具集合或跨群对象。
  */
 export type GroupRoutingOutputV2={schema:typeof groupRoutingOutputV2Schema;intent:GroupRoutingIntent;respond:string[];reactions:GroupRoutingReaction[];assignments:GroupRoutingAssignment[];workTarget:GroupRoutingWorkTarget|null}
-/** 恰 8 键；v2 路由另带 intent／assignments／workTarget 三个可选键。落 teloa_group_routing_decisions.decision。 */
-export type GroupRoutingDecision={kind:GroupRoutingDecisionKind;respond:string[];reactions:{roleId:string;emoji:GroupReactionEmoji}[];hops:number;candidateIds:string[];truncatedCandidates:boolean;stopMessageId:string|null;at:string;intent?:GroupRoutingIntent;assignments?:GroupRoutingAssignment[];workTarget?:GroupRoutingWorkTarget|null;withdrawn?:string[]}
+/**
+ * 恰 8 键；v2 路由另带 intent／assignments／workTarget 三个可选键。落 teloa_group_routing_decisions.decision。
+ * `budget` 只出现在 degraded：路由模型请求被工作额度拒绝时的原因与范围（原因不明为 `{}`）；旧记录不带。
+ */
+export type GroupRoutingDecision={kind:GroupRoutingDecisionKind;respond:string[];reactions:{roleId:string;emoji:GroupReactionEmoji}[];hops:number;candidateIds:string[];truncatedCandidates:boolean;stopMessageId:string|null;at:string;intent?:GroupRoutingIntent;assignments?:GroupRoutingAssignment[];workTarget?:GroupRoutingWorkTarget|null;withdrawn?:string[];budget?:Partial<WorkBudgetExhaustion>}
 /** 恰 4 键。groups/routing/list 的回包项，不下发 candidateIds / reactions / stopMessageId。 */
 export type GroupRoutingDecisionView={messageId:string;kind:GroupRoutingDecisionKind;respond:string[];hops:number}
 /** 恰 2 键。 */
@@ -118,11 +122,14 @@ const validBusinessTarget=(value:unknown)=>{try{groupTaskBusinessTarget(value);r
 const assignmentList=(v:unknown):v is GroupRoutingAssignment[]=>Array.isArray(v)&&v.length<=groupRoutingRespondMax&&v.every(item=>record(item)&&Object.keys(item).length===2+Number(Object.hasOwn(item,'stage'))+Number(Object.hasOwn(item,'businessTarget'))&&uuid(item.roleId)&&range(item.instructionRange)&&(!Object.hasOwn(item,'stage')||stage(item.stage))&&(!Object.hasOwn(item,'businessTarget')||validBusinessTarget(item.businessTarget)))&&new Set(v.map(item=>(item as GroupRoutingAssignment).roleId)).size===v.length&&contiguousStages(v as GroupRoutingAssignment[])
 /** 阶段必须从 1 开始且连续，不能只有后序阶段而没有当前阶段。 */
 function contiguousStages(items:readonly GroupRoutingAssignment[]):boolean{const stages=[...new Set(items.map(item=>item.stage??1))].sort((a,b)=>a-b);return stages.every((value,index)=>value===index+1)}
+/** 额度原因：`{}`（原因不明），或恰 reason/scope 两键且能编成具体的额度 code。 */
+const budgetExhaustion=(v:unknown):v is Partial<WorkBudgetExhaustion>=>record(v)&&(Object.keys(v).length===0||Object.keys(v).length===2&&workBudgetExhaustedCode(v)!=='teloa/budget-exhausted')
 const workTarget=(v:unknown):v is GroupRoutingWorkTarget|null=>v===null||record(v)&&Object.keys(v).length===2&&uuid(v.taskId)&&(v.runId===null||uuid(v.runId))
 export function isGroupRoutingDecision(value:unknown):value is GroupRoutingDecision{
  if(!record(value))return false
- const extended=['intent','assignments','workTarget'].filter(key=>Object.hasOwn(value,key)).length,withdrawn=Object.hasOwn(value,'withdrawn')
- if(extended!==0&&extended!==3||Object.keys(value).length!==8+extended+Number(withdrawn))return false
+ const extended=['intent','assignments','workTarget'].filter(key=>Object.hasOwn(value,key)).length,withdrawn=Object.hasOwn(value,'withdrawn'),budget=Object.hasOwn(value,'budget')
+ if(extended!==0&&extended!==3||Object.keys(value).length!==8+extended+Number(withdrawn)+Number(budget))return false
+ if(budget&&(value.kind!=='degraded'||!budgetExhaustion(value.budget)))return false
  // 模型等待期间失去资格、被宿主在定案前撤下的接收者：只用于准确呈现失效对象，不再参与派发。
  if(withdrawn&&(!roleIds(value.withdrawn)||(value.withdrawn as string[]).length===0||(value.withdrawn as string[]).some(id=>(value.respond as unknown[]).includes(id))))return false
  if(extended&&(!intents.includes(value.intent as GroupRoutingIntent)||!assignmentList(value.assignments)||!workTarget(value.workTarget)||(value.assignments as GroupRoutingAssignment[]).some(item=>!(value.respond as unknown[]).includes(item.roleId))))return false
@@ -151,12 +158,16 @@ export function groupRoutingListInput(value:unknown):GroupRoutingListInput{
 /** 群消息处理状态闭集（规格 §6）。只由持久消息、路由尝试、outbox、Task/Run 与已发布回帖投影，不由员工是否发过言推断。 */
 export const groupMessagePhases=['received','routing','queued','running','awaiting-approval','awaiting-review','delivering','publication-blocked','completed','recorded','routing-failed','unavailable','blocked','unknown','paused','stopping','stopped'] as const
 export type GroupMessagePhase=typeof groupMessagePhases[number]
-export const groupMessageHintCodes=['route-unavailable','route-invalid','target-unavailable','mention-all-denied','not-authorized','resource-required','model-configuration','group-changed','source-changed','delivery-unknown','work-paused','work-stopped','group-archived','result-pending','result-retained','result-unconfirmed','over-budget','work-failed'] as const
+export const groupMessageHintCodes=['route-unavailable','route-invalid','target-unavailable','mention-all-denied','not-authorized','resource-required','model-configuration','group-changed','source-changed','delivery-unknown','work-paused','work-stopped','group-archived','result-pending','result-retained','result-unconfirmed','over-budget','work-failed','handoff-unavailable','handoff-invalid','handoff-review-required','relay-stopped','budget-exhausted','continue-paused'] as const
 export type GroupMessageHintCode=typeof groupMessageHintCodes[number]
 /** 恰 7 键。空身份一律 null，不伪造标识；executionMode 区分交流回应（reply：回帖即已回应）与明确工作（work：原任务完成判据才算完成）。 */
 export type GroupRecipientStatus={roleId:string;name:string;taskId:string|null;runId:string|null;phase:GroupMessagePhase;resultMessageId:string|null;executionMode:'reply'|'work'|null}
-/** 恰 6 键。groups/routing/status 的回包项。 */
-export type GroupRoutingStatusView={messageId:string;attemptVersion:number;phase:GroupMessagePhase;recipients:GroupRecipientStatus[];hintCode:GroupMessageHintCode|null;canRetry:boolean}
+/**
+ * 恰 6 键；提示为 `budget-exhausted` 时恰另带 `budget`（额度原因与范围，原因不明为 `{}`），界面据此复用工作额度说明；
+ * 提示为 `continue-paused`（本人续办已保存、原任务本轮工作控制暂停）时恰另带 `controlId`：正是挡住续办的那个本轮控制，界面只据此打开既有整项恢复确认。
+ * groups/routing/status 的回包项。
+ */
+export type GroupRoutingStatusView={messageId:string;attemptVersion:number;phase:GroupMessagePhase;recipients:GroupRecipientStatus[];hintCode:GroupMessageHintCode|null;canRetry:boolean;budget?:Partial<WorkBudgetExhaustion>;controlId?:string}
 /** 沿原 messageId 重试安排；不重新保存正文。`overrideRecipients` 是本人显式选择接收者，只写新尝试快照。 */
 export type GroupRoutingRetryInput={requestId:string;groupId:string;messageId:string;expectedAttempt:number;expectedGroupVersion:number;overrideRecipients?:{roleId:string;expectedVersion:number}[]}
 
@@ -169,7 +180,9 @@ export function isGroupRecipientStatus(value:unknown):value is GroupRecipientSta
 }
 
 export function isGroupRoutingStatusView(value:unknown):value is GroupRoutingStatusView{
- if(!record(value)||Object.keys(value).length!==6||!uuid(value.messageId)||!positive(value.attemptVersion)||!phase(value.phase)||!(value.hintCode===null||hint(value.hintCode))||typeof value.canRetry!=='boolean')return false
+ if(!record(value))return false
+ const budget=Object.hasOwn(value,'budget'),control=Object.hasOwn(value,'controlId')
+ if(Object.keys(value).length!==6+Number(budget)+Number(control)||budget!==(value.hintCode==='budget-exhausted')||budget&&!budgetExhaustion(value.budget)||control!==(value.hintCode==='continue-paused')||control&&!uuid(value.controlId)||!uuid(value.messageId)||!positive(value.attemptVersion)||!phase(value.phase)||!(value.hintCode===null||hint(value.hintCode))||typeof value.canRetry!=='boolean')return false
  const recipients=value.recipients
  return Array.isArray(recipients)&&recipients.length<=groupRoutingCandidatesMax&&recipients.every(isGroupRecipientStatus)&&new Set(recipients.map(item=>(item as GroupRecipientStatus).roleId)).size===recipients.length
 }

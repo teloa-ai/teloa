@@ -18,7 +18,7 @@ import {getToolResourceProvenance,type ToolResourceProvenance,type ToolResourceS
 import {readCustomMcpDefinition,customMcpDefinitionHash,type CustomMcpDefinition} from './custom-mcp-definition.ts'
 import {bodyPreview} from './skill-http-tool.ts'
 
-export const managedMcpConnectionEndpoints=['mcp-connections/add','mcp-connections/preview-custom','mcp-connections/save-custom','mcp-connections/get-custom','mcp-connections/update-custom','mcp-connections/connect','mcp-connections/disconnect','mcp-connections/delete','mcp-connections/list','mcp-connections/get','mcp-connections/oauth-start','mcp-connections/oauth-status'] as const
+export const managedMcpConnectionEndpoints=['mcp-connections/add','mcp-connections/preview-custom','mcp-connections/save-custom','mcp-connections/get-custom','mcp-connections/update-custom','mcp-connections/connect','mcp-connections/authorize-custom','mcp-connections/disconnect','mcp-connections/delete','mcp-connections/list','mcp-connections/get','mcp-connections/oauth-start','mcp-connections/oauth-status'] as const
 
 const uuidPat=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const uuid=(v:unknown):v is string=>typeof v==='string'&&uuidPat.test(v)
@@ -48,7 +48,7 @@ export type ManagedMcpConnectionRecord={
 }
 
 /** 持久化存储条目（内部，不外露） */
-type PersistedConnection=ManagedMcpConnectionRecord&{_credentialsStored:boolean;_catalogEntry?:MarketCatalogConnectorEntry;_customDefinition?:CustomMcpDefinition;_customRequestId?:string;_customUpdate?:{requestId:string;previousHash:string}}
+type PersistedConnection=ManagedMcpConnectionRecord&{_credentialsStored:boolean;_catalogEntry?:MarketCatalogConnectorEntry;_customDefinition?:CustomMcpDefinition;_customRequestId?:string;_customAuthorization?:{kind:'bearer';readOnlyTools:string[];definitionHash:string;generation:string};_customUpdate?:{requestId:string;previousHash:string}}
 type StateFile={connections:PersistedConnection[]}
 
 // ──────────── 路径 ────────────
@@ -476,7 +476,12 @@ export function createManagedMcpConnectionHandler(
  const prepared=new WeakMap<ToolExecution,BusinessSourceAuthority>()
  const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
  const credentialBasis=async(serverName:string,entry:ManagedConnectorEntry|undefined)=>{
-  if(!entry||entry.connector.auth.kind==='none')return 'none'
+  if(!entry){
+   const conn=(await loadState(runtimeRoot)).connections.find(row=>row.serverName===serverName)
+   if(!conn?._customAuthorization)return 'none'
+   return fingerprint({credentials:await slots.read(serverName),authorization:conn._customAuthorization})
+  }
+  if(entry.connector.auth.kind==='none')return 'none'
   const value=await slots.read(serverName)
   return fingerprint(isSupportedOAuth(entry)?{grant:value.oauth_grant_id??value.oauth_access_token,scope:value.oauth_granted_scope,client:value.oauth_token_client_id,userClient:value.oauth_client_id,issuer:value.oauth_as_metadata}:value)
  }
@@ -559,7 +564,11 @@ export function createManagedMcpConnectionHandler(
  async function doConnectCustom(conn:PersistedConnection,definition:CustomMcpDefinition):Promise<ManagedMcpConnectionRecord>{
   if(definition.serverName!==conn.serverName)throw invalid('自定义 MCP 定义与保存的命名空间不一致。')
   if(liveConnections.has(conn.serverName))return toRecord(conn)
-  const config:McpClient.Config={transport:'streamable-http',serverName:definition.serverName,url:definition.url,headers:{},toolCallTimeoutMs:60_000,failOnStartupError:true,maxInstructionBytes:managedMcpMaxInstructionBytes}
+  const authorization=conn._customAuthorization
+  if(authorization&&authorization.definitionHash!==customMcpDefinitionHash(definition))throw invalid('应用地址或定义已变化，请本人重新授权后连接。')
+  const token=authorization?(await slots.read(conn.serverName)).bearer:undefined
+  if(authorization&&!token)throw invalid('应用连接缺少本人保存的认证，请重新授权。')
+  const config:McpClient.Config={transport:'streamable-http',serverName:definition.serverName,url:definition.url,headers:token?{Authorization:'Bearer '+token}:{}, toolCallTimeoutMs:60_000,failOnStartupError:true,maxInstructionBytes:managedMcpMaxInstructionBytes}
   return activateConnection(conn,config,[],{kind:'mcp',providerId:conn.serverName,name:definition.title},true)
  }
 
@@ -568,7 +577,7 @@ export function createManagedMcpConnectionHandler(
   // 先登记再建连：首次同步到写入快照之间、以及之后重同步新增的已声明写工具，都已在审批闸的名单里
   declaredToolsMap.set(conn.serverName,declared)
   const usedCredentialBasis=await credentialBasis(conn.serverName,entryOf(conn))
-  const discovered=(name:string,fullName:string)=>{if(!declared.some(tool=>tool.fullName===fullName))declared.push({name,fullName,readOnly:false})}
+  const discovered=(name:string,fullName:string)=>{if(!declared.some(tool=>tool.fullName===fullName))declared.push({name,fullName,readOnly:conn._customAuthorization?.readOnlyTools.includes(name)??false})}
   const fiber=ctx.plugin(declaredToolsOnly(discover?null:new Map(declared.map(t=>[t.fullName,t.name])),source,()=>getToolResourceProvenance(ctx),discover?discovered:undefined,definition=>guardDefinition(conn.serverName,definition)),config)
   let timer:ReturnType<typeof setTimeout>|undefined
   try{
@@ -895,6 +904,28 @@ export function createManagedMcpConnectionHandler(
    })
   }
 
+  if(endpoint==='mcp-connections/authorize-custom'){
+   const input=taskInput(payload,['id','expectedDefinitionHash','credentials','readOnlyTools'])
+   if(!uuid(input.id)||typeof input.expectedDefinitionHash!=='string'||!Array.isArray(input.readOnlyTools)||input.readOnlyTools.length>32||!input.readOnlyTools.every(name=>typeof name==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(name))||new Set(input.readOnlyTools).size!==input.readOnlyTools.length)throw invalid('应用授权身份或只读工具清单不正确。')
+   const credentials=taskInput(input.credentials,['bearer'])
+   if(typeof credentials.bearer!=='string'||!credentials.bearer.trim()||credentials.bearer.length>8192||/[\x00-\x20\x7f]/.test(credentials.bearer))throw invalid('请通过安全认证控件提供有效令牌。')
+   const found=(await loadState(runtimeRoot)).connections.find(row=>row.id===input.id)
+   if(!found?._customDefinition)throw invalid('未找到可授权的本人自定义应用。')
+   return locked(found.serverName,async()=>{
+    const current=(await loadState(runtimeRoot)).connections.find(row=>row.id===input.id)
+    if(!current?._customDefinition||customMcpDefinitionHash(readCustomMcpDefinition(current._customDefinition))!==input.expectedDefinitionHash)throw new WorkError('teloa/version-conflict','应用定义已变化，请重新核对授权。')
+    await slots.assertWritable(current.serverName)
+    await releaseClient(current.serverName)
+    await slots.replace(current.serverName,{bearer:credentials.bearer as string})
+    return updateState(runtimeRoot,state=>{
+     const row=state.connections.find(item=>item.id===input.id)!
+     row._customAuthorization={kind:'bearer',readOnlyTools:[...input.readOnlyTools as string[]],definitionHash:input.expectedDefinitionHash as string,generation:randomUUID()}
+     row._credentialsStored=true;row.status='saved';row.updatedAt=new Date().toISOString();delete row.tools;delete row.errorMessage;delete row.errorCode
+     return toRecord(row)
+    })
+   })
+  }
+
   if(endpoint==='mcp-connections/connect'){
    const input=taskInput(payload,['id'])
    if(!uuid(input.id))throw invalid('受管 MCP 连接身份必须是 UUID。')
@@ -924,7 +955,7 @@ export function createManagedMcpConnectionHandler(
    const {id,serverName}=state.connections[idx]!
    // 无需凭据的连接器没有凭据记录，删除不碰存储（锁定时也能删）；其余先做可写预检，锁定时零副作用
    const entry=entryOf(state.connections[idx]!)
-   const touchesStore=!state.connections[idx]!._customDefinition&&(entry===undefined||entry.connector.auth.kind!=='none')
+   const touchesStore=!!state.connections[idx]!._customAuthorization||!state.connections[idx]!._customDefinition&&(entry===undefined||entry.connector.auth.kind!=='none')
    if(touchesStore)await slots.assertWritable(serverName)
    // 先立即释放客户端（注销工具）；未完成的授权随连接作废
    for(const [flowState,flow] of oauth.pendingFlows){if(flow.connectionId===id)oauth.pendingFlows.delete(flowState)}

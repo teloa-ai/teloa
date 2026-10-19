@@ -212,7 +212,7 @@ export {readTaskCompletionPolicy,readCompletionCandidate,type TaskCompletionPoli
 
 export * from './work-control.ts'
 export * from './group-routing-outbox.ts'
-export {readWorkBudgetPolicy,type BudgetReservation} from './work-budget.ts'
+export {readWorkBudgetPolicy,workBudgetElapsedWindowMs,workBudgetExhaustedCode,readWorkBudgetExhaustedCode,type WorkBudgetExhaustion,type BudgetReservation} from './work-budget.ts'
 export * from './plan-work.ts'
 export * from './work-events.ts'
 export * from './work-progress.ts'

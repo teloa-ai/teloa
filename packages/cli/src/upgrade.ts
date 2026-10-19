@@ -49,20 +49,21 @@ export async function upgradeInstall(state:InstallState,version:string,download=
  const directory=state.layout.home+'.backups';await mkdir(directory,{recursive:true,mode:0o700})
  const backup=join(directory,'before-'+version+'-'+randomUUID())
  await createBackup(state,backup)
- const next:InstallState={...state,version,layout,phase:'maintenance'},record=join(layout.instanceRoot,'upgrade.json')
- await writePrivateJson(record,{from:state.version,to:version,backup,status:'switching'})
+ const next:InstallState={...state,version,layout,phase:'maintenance'},record=join(layout.instanceRoot,'upgrade.json'),restartId=randomUUID()
+ await writePrivateJson(record,{from:state.version,to:version,backup,restartId,status:'switching'})
  await writeInstall(next)
  try{
   await prepareDatabase(next)
   const pool=await databasePool(next)
   try{const row=(await pool.query('select data_version from teloa_installation where id=$1',[next.id])).rows[0];if(!canUseData(candidate,row?.data_version))throw Error('数据库版本与候选不兼容。')}finally{await pool.end()}
-  await startService({...next,phase:'stopped'})
-  await writePrivateJson(record,{from:state.version,to:version,backup,status:'complete'})
+  // 本人显式升级引起的重启：新宿主只恢复升级前仍为 active、且仅因本次重启暂停的工作。
+  await startService({...next,phase:'stopped'},{plannedRestartId:restartId})
+  await writePrivateJson(record,{from:state.version,to:version,backup,restartId,status:'complete'})
   const ready:InstallState={...next,phase:'ready'};await writeInstall(ready);return ready
  }catch{
   await stopService(next).catch(()=>{})
   await writeInstall({...next,phase:'maintenance'})
-  await writePrivateJson(record,{from:state.version,to:version,backup,status:'failed'})
+  await writePrivateJson(record,{from:state.version,to:version,backup,restartId,status:'failed'})
   throw Error('候选版本未就绪；安装保持维护状态，未自动降级数据。请用旧版 CLI 将 '+backup+' 恢复到新目录；该备份不含凭据，恢复后需在设置中重新录入。')
  }
 }

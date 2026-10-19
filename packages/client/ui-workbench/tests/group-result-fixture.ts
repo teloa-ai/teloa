@@ -19,6 +19,8 @@ export function groupResultFixtureModule(id:string):unknown{
  if(id==='./GroupMessageStatus.js')return {GroupMessageStatus:()=>null,GroupProgressStatus:()=>null}
  // 旧文件只验父层消息/异步/草稿；资料面板和固定版预览由 group-materials.browser.test.ts 真浏览器覆盖。
  if(id==='./GroupMaterialsPanel.js')return {GroupMaterialsPanel:()=>null}
+ // 原工作暂停时的恢复抽屉由 group-continue-paused.browser.test.ts 使用真实组件覆盖。
+ if(id==='./GroupWorkResume.js')return {GroupWorkResumeDrawer:()=>null}
  if(id==='./GroupAttachmentPreview.js')return {GroupAttachmentPreview:()=>null}
  if(id==='./GroupResourcePreview.js')return {GroupResourcePreview:()=>null}
  // 完整回复预览由 group-message-body.browser.test.ts 覆盖，旧消息夹具不打开抽屉。

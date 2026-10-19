@@ -44,7 +44,16 @@ export type GroupExecutionMode='reply'|'work'
  * v1 的读取、摘要算法与历史行保持原样；v2 不回写旧来源。
  */
 export type GroupTaskBusinessTarget={scope:string;object?:BusinessObjectReference}
-export type GroupTaskSourceV2=Omit<GroupTaskSourceV1,'schema'>&{schema:'teloa.group-task-source/v2';replyToMessageId:string|null;contextMode:'main'|'thread';routingAttemptVersion:number;executionMode:GroupExecutionMode;businessTarget?:GroupTaskBusinessTarget}
+/** 宿主从同群本人消息核实的目标；员工交接正文不能充当本人授权来源。 */
+type GroupOwnerMessage={messageId:string;text:string;sha256:string}
+export type GroupOwnerRequest=GroupOwnerMessage&{priorRequests?:GroupOwnerMessage[]}
+const isGroupOwnerMessage=(value:unknown):value is GroupOwnerMessage=>record(value)&&Object.keys(value).length===3&&uuid(value.messageId)&&typeof value.text==='string'&&!!value.text.trim()&&value.text.length<=8000&&typeof value.sha256==='string'&&/^[a-f0-9]{64}$/.test(value.sha256)
+export function isGroupOwnerRequest(value:unknown):value is GroupOwnerRequest{
+ if(!record(value))return false
+ const {priorRequests,...current}=value
+ return isGroupOwnerMessage(current)&&(priorRequests===undefined||Array.isArray(priorRequests)&&priorRequests.length<=16&&priorRequests.every(isGroupOwnerMessage))
+}
+export type GroupTaskSourceV2=Omit<GroupTaskSourceV1,'schema'>&{schema:'teloa.group-task-source/v2';replyToMessageId:string|null;contextMode:'main'|'thread';routingAttemptVersion:number;executionMode:GroupExecutionMode;businessTarget?:GroupTaskBusinessTarget;ownerRequest?:GroupOwnerRequest}
 export type GroupTaskSource=GroupTaskSourceV1|GroupTaskSourceV2
 /** `executionMode`／`routingAttemptVersion` 只随宿主路由派工（trigger=routed）出现，写入 v2 来源。 */
 export type GroupTaskCreateInput={requestId:string;groupId:string;messageId:string;expectedGroupVersion:number;goal:string;assignee?:{roleId:string;expectedVersion:number};trigger?:'manual'|'mention'|'routed';executionMode?:GroupExecutionMode;routingAttemptVersion?:number;handoffMessageId?:string;handoffMessageIds?:string[];businessTarget?:GroupTaskBusinessTarget}
@@ -388,9 +397,9 @@ export function isGroupMessage(value:unknown):value is GroupMessage{
 export function isGroupTaskSource(value:unknown):value is GroupTaskSource{
   if(!record(value))return false
   if(value.schema==='teloa.group-task-source/v2'){
-    const {schema,replyToMessageId,contextMode,routingAttemptVersion,executionMode,businessTarget,...base}=value
+    const {schema,replyToMessageId,contextMode,routingAttemptVersion,executionMode,businessTarget,ownerRequest,...base}=value
     try{if(businessTarget!==undefined){groupTaskBusinessTarget(businessTarget);if(executionMode!=='work'||base.createdAssignee===null)return false}}catch{return false}
-    return Object.keys(value).length===17+Number(businessTarget!==undefined)&&(replyToMessageId===null||uuid(replyToMessageId))&&(contextMode==='main'||contextMode==='thread')&&version(routingAttemptVersion)&&(executionMode==='reply'||executionMode==='work')&&(base.trigger==='routed'||businessTarget!==undefined)&&isGroupTaskSource({...base,schema:'teloa.group-task-source/v1'})
+    return Object.keys(value).length===17+Number(businessTarget!==undefined)+Number(ownerRequest!==undefined)&&(ownerRequest===undefined||executionMode==='work'&&isGroupOwnerRequest(ownerRequest))&&(replyToMessageId===null||uuid(replyToMessageId))&&(contextMode==='main'||contextMode==='thread')&&version(routingAttemptVersion)&&(executionMode==='reply'||executionMode==='work')&&(base.trigger==='routed'||businessTarget!==undefined)&&isGroupTaskSource({...base,schema:'teloa.group-task-source/v1'})
   }
   if(Object.keys(value).length!==13||value.schema!=='teloa.group-task-source/v1'||!uuid(value.taskId)||typeof value.ownerId!=='string'||!value.ownerId.trim()||value.ownerId.length>128||!uuid(value.groupId)||!version(value.groupVersion)||!uuid(value.messageId)||!uuid(value.rootId)||!stamp(value.messageCreatedAt)||typeof value.messageText!=='string'||!value.messageText.trim()||value.messageText.length>8000||!Array.isArray(value.references)||!value.references.every(isMessageReference)||new Set((value.references as MessageReference[]).map(reference=>`${reference.kind}:${reference.id}`)).size!==value.references.length||value.references.length>8||value.trigger!=='manual'&&value.trigger!=='mention'&&value.trigger!=='routed'||!stamp(value.createdAt))return false
   const assignee=value.createdAssignee

@@ -86,6 +86,17 @@ test('认领领养失败不认领、不写入待用身份；下一次进入首�
  assert.deepEqual(adopted,['official','official']);assert.equal(controller.owns('official'),true)
 })
 
+test('任务专用初始会话不能认领，首页继续准备独立空稿，未知领养错误仍原样失败',async()=>{
+ for(const code of ['teloa/binding-pending','teloa/session-not-adoptable']){
+  const storage=memory(),adopted:string[]=[]
+  const controller=new HomeNativeController({storage,identity:()=> 'home-draft',isBlank:()=>true,create:async id=>id,adopt:async id=>{adopted.push(id);if(id==='task-session')throw Object.assign(Error('reserved'),{code})}})
+  assert.equal(await controller.claimPrepared('task-session',()=>{}),false)
+  assert.equal(storage.getItem('teloa.home-native-session/v1'),null)
+  assert.equal(await controller.prepare(),'home-draft')
+  assert.deepEqual(adopted,['task-session','home-draft'])
+ }
+})
+
 test('领养期间选择或待用身份变化时认领失败关闭，不写入待用身份',async()=>{
  for(const change of ['selection','draft'] as const){
   const storage=memory();let current=true

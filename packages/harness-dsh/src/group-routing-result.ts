@@ -2,6 +2,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionId} from '@deepseek-ai/dsh-session'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
+import {readWorkBudgetExhaustedCode,type WorkBudgetExhaustion} from '@teloa/contract'
 import {observeTaskRun} from './task-run-observation.ts'
 import {readSessionEvents} from './session-events.ts'
 
@@ -41,6 +42,18 @@ export function readGroupRoutingResult(events:readonly SessionEvent[],nativeRequ
   if(text)result=text
  }
  return result
+}
+
+/**
+ * 本次已结束原生轮次是否因工作额度被拒：只认本轮 `turn/end` 的原生失败 code（`teloa/budget-exhausted[/<reason>/<scope>]`），
+ * 不解析 message。不是额度拒绝时交出 `undefined`，调用方按原退化口径处理。
+ */
+export function readGroupRoutingBudgetExhaustion(events:readonly SessionEvent[],nativeRequestId:string,turn:number):Partial<WorkBudgetExhaustion>|undefined{
+ const observed=observeTaskRun(events,nativeRequestId)
+ if(observed.state!=='ended'||observed.turn!==turn)return undefined
+ const end=events[observed.endSeq]
+ if(end?.type!=='turn/end'||end.data.reason.kind!=='error')return undefined
+ return readWorkBudgetExhaustedCode(end.data.reason.error.code)
 }
 
 /**

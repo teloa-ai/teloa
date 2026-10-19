@@ -55,7 +55,7 @@ test('长目标可完整展开，宽窄布局不丢属性，取消任务只保�
  await detail.getByRole('button',{name:'收起',exact:true}).click()
  await detail.locator('button[aria-pressed]').click()
  const handoff=detail.getByRole('textbox',{name:'交接草稿',exact:true});assert.equal(await handoff.isVisible(),true,'交接动作不藏在编号与配置中');await handoff.fill('本人未提交的交接说明');const config=detail.getByRole('button',{name:'执行配置与任务信息',exact:true});await config.click();await config.click();assert.equal(await handoff.inputValue(),'本人未提交的交接说明');assert.equal(await handoff.isVisible(),true)
- const facts=detail.locator('dl[aria-label="任务概要"]'),goal=detail.locator('p[class*="goalLine"]')
+ const facts=detail.locator('dl[aria-label="任务概要"]'),goal=detail.locator('div[class*="goalLine"]')
  assert.ok((await facts.boundingBox()).x>(await goal.boundingBox()).x+200,'宽详情的属性在右侧')
  const result=detail.locator('section[aria-label="工作成果"]'),resultY=(await result.boundingBox()).y
  await detail.getByRole('button',{name:'资料与关联会话',exact:true}).click()

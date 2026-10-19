@@ -117,9 +117,11 @@ test('替换逐字等于原块不计实际修改：第 1 轮原样替换也经�
  })
  await t.test('新协议同块逐字重复也拒绝',async sub=>{
   const fixed='1 家已付款（口述）。'
-  const f=await runtime(sub,[text(draft),blockPlan(blocks=>{const id=blocks.find(block=>block.text.includes('A 级'))!.id;return [[id,fixed],[id,fixed]]}),text('不应出现')])
+  const duplicate=blockPlan(blocks=>{const id=blocks.find(block=>block.text.includes('A 级'))!.id;return [[id,fixed],[id,fixed]]})
+  // 唯一纠正名额：同一轮按真实错误回执续一步重交；再次重复即收错。
+  const f=await runtime(sub,[text(draft),duplicate,duplicate,text('不应出现')])
   await f.send()
-  assert.equal(f.adapter.requests.length,2)
+  assert.equal(f.adapter.requests.length,3)
   assert.equal(f.traces.at(-1)!.reason,'rewrite-plan:block-conflict')
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
  })})
@@ -131,7 +133,7 @@ const longDraft=[section(1),section(2),section(3)].join('\n')
 /** 直接写某个编号的一项（编号可以不在本单元标注中），用于构造不合格回执。 */
 const rawGroup=(id:number,content:string,blockCount=4):Plan=>()=>revise([{blockId:id,after:content}],blockCount)
 
-test('块编号回执不合格时整轮原子拒绝、不部分应用、不回退草稿：未知编号、其他单元的编号、同块不同改法、带旧契约摘要字段、正文写旧原文锚点格式',async t=>{
+test('块编号回执不合格时整轮原子拒绝、不部分应用、不回退草稿：未知编号、其他单元的编号、同块不同改法、带旧契约摘要字段、正文写旧原文锚点格式；唯一纠正名额用尽后仍不合格即收错',async t=>{
  for(const [label,source,plan,reason] of [
   ['未知编号',draft,rawGroup(99,'x'),'rewrite-plan:affected-blocks'],
   ['其他单元的编号',longDraft,rawGroup(3,'x',6),'rewrite-plan:edit-range'],
@@ -139,11 +141,16 @@ test('块编号回执不合格时整轮原子拒绝、不部分应用、不回�
   ['显式带摘要字段（旧契约）',draft,(prompt:string)=>({...blockPlan(blocks=>[[blocks[1]!.id,'x']])(prompt) as Submission,snapshotHash:draftSha256(draft)}),'rewrite-plan:shape'],
   ['旧原文锚点格式',draft,(prompt:string)=>'草稿 SHA-256：'+draftSha256(draft)+'\n<<<原文>>>\n仅依据资料。\n<<<改为>>>\n仅依据本人资料。\n<<<结束>>>','rewrite-plan:missing-submission'],
  ] as const)await t.test(label,async sub=>{
-  const f=await runtime(sub,[text(source),plan,text('不应出现')])
+  // 同一类不合格回执连续两次：第一次用掉唯一纠正名额（语义拒绝沿真实错误回执续步，缺交由宿主补交提醒），第二次收错。
+  const f=await runtime(sub,[text(source),plan,plan,text('不应出现')])
   await f.send()
-  assert.equal(f.adapter.requests.length,2,'失败后不再追加调用')
+  assert.equal(f.adapter.requests.length,3,'纠正一次后仍不合格即收错，不追加第三次复核调用')
   assert.deepEqual(ends(f.events()),['error'])
   assert.equal(f.traces.at(-1)!.reason,reason)
+  const corrections=f.traces.filter(entry=>entry.state==='requested'&&entry.reason?.startsWith('correction:')).map(entry=>entry.reason)
+  const errors=f.events().filter(event=>event.type==='tool/result'&&Reflect.get(event.data,'message').isError===true).length
+  if(reason==='rewrite-plan:missing-submission'){assert.deepEqual(corrections,['correction:plan:missing-submission']);assert.equal(errors,0)}
+  else{assert.deepEqual(corrections,[],'语义纠正不新增用户输入');assert.equal(errors,2,'两次真实错误回执都如实落盘')}
   assert.ok(!f.traces.some(entry=>entry.state==='applied'),'整轮未应用')
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined,'草稿不成为交付')
  })
@@ -155,12 +162,14 @@ test('多单元：每个单元只标注本单元的完整块、编号全稿唯�
  const fixed=longDraft.replace('第1节第3句内容。','第1节第3句已核对。').trim()
  await t.test('第 2 轮仍需修改',async sub=>{
   const f=await runtime(sub,[text(longDraft),fix(1),noChange,noChange,
-   accepted(['r1:u1:i1']),()=>({...verify(),verdict:'reject',findings:[{problem:'本单元仍有无据结论。',basis:[passageBasis(material.catalog,'goal',goal)],blockIds:[4]}]}),text('不应进入下一单元')])
+   accepted(['r1:u1:i1']),()=>({...verify(),verdict:'reject',findings:[{problem:'本单元仍有无据结论。',basis:[passageBasis(material.catalog,'goal',goal)],blockIds:[4]}]}),text('R3 只写说明不交回执'),text('补交提醒后仍不交回执')])
   await f.send()
-  assert.equal(f.adapter.requests.length,6)
+  assert.equal(f.adapter.requests.length,8,'R2 拒绝后在独立复核预算内进入 R3：R3 第 1 单元与一次补交提醒')
   const ids=f.adapter.requests.slice(1,4).map(request=>labelledBlocks(Reflect.get(request.messages.filter(message=>message.role==='user').at(-1)!.content[0]!,'text') as string).map(block=>block.id))
   assert.deepEqual(ids,[[1,2],[3,4],[5,6]],'单元内是完整块，编号全稿唯一')
-  assert.equal(f.traces.at(-1)!.reason,'review-repair-budget','保留原拒绝问题；剩余步骤不足以完整修订与冷验')
+  assert.ok(f.traces.some(entry=>entry.state==='requested'&&entry.round===3&&entry.unit===0&&entry.reason===undefined),'有据拒绝进入第 3 轮修订')
+  assert.ok(!f.traces.some(entry=>entry.reason==='review-repair-budget'),'复核预算与起草步数分开，不在 repair 前停止')
+  assert.equal(f.traces.at(-1)!.reason,'rewrite-r3-plan:missing-submission','R3 补交后仍缺交即收错，保留原拒绝问题')
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
  })
  await t.test('第 2 轮仅验收不再生成替换',async sub=>{

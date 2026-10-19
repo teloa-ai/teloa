@@ -35,7 +35,12 @@ export class HomeNativeController{
   unchanged()
   if(blank!==true)return false
   // 先领养再认领：失败即不认领，首页不开放该会话；下次进入首页以同一领养请求重试。
-  await this.port.adopt(sessionId)
+  try{await this.port.adopt(sessionId)}catch(error){
+   unchanged()
+   // 任务执行及内部会话即使没有用户消息也不能领养；首页另备空稿，原归属保持。
+   if(error&&typeof error==='object'&&'code'in error&&['teloa/binding-pending','teloa/session-not-adoptable'].includes(String(error.code)))return false
+   throw error
+  }
   unchanged()
   this.port.storage.setItem(draftKey,sessionId);this.ready=sessionId
   return true

@@ -134,9 +134,13 @@ function globNamesHit(text:string,list:readonly string[]):boolean{
  }
  return false
 }
+const textOnlyHostTools=new Set(['teloa_business_object_result_record','teloa_submit_review_plan'])
 export function guardDecision(args:unknown,input:{toolName:string;cwd:string;roots:readonly string[];known:readonly string[];env:Readonly<Record<string,string|undefined>>;home:string}):string|undefined{
  const texts=strings(args)
  if(input.known.length){const forms=input.known.flatMap(encodedForms);if(texts.some(text=>detectSecrets(text,forms).some(item=>item.kind==='stored')))return denial}
+ // 这些宿主工具只处理正文：业务结果只把经映射与授权校验的数据写入候选，交付复核回执只编辑待复核草稿；都不读写文件、不执行命令。
+ // HTTP `/?query` 若走文件路径判定会误作根目录通配读取（实跑：复核回执引用 `/?soc_case=…` 被拒，整份交付失败）；真实已存密钥仍由上面的值检查拒绝。
+ if(textOnlyHostTools.has(input.toolName))return undefined
  const names=protectedNames(input.roots)
  for(const text of new Set(texts.flatMap(text=>{const bare=unquoted(text);return [text,bare,braceExpanded(text),braceExpanded(bare)]}))){
   if(markers.test(text)||commandRules.some(rule=>rule.test(text)))return denial

@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {mkdtemp,writeFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -24,7 +24,6 @@ import {ResourceService} from '../../backend/src/capabilities/resources.ts'
 import {ReferenceCatalog} from '../../mcp-reference/src/catalog.ts'
 import {WorkError} from '@teloa/contract'
 import type {TaskRunService} from '@teloa/backend'
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg') as {Pool:new(options:Record<string,unknown>)=>TaskRunService['pool']}
 let pool:TaskRunService['pool'],container:StartedPostgreSqlContainer
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{

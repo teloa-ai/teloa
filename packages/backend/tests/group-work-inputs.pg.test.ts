@@ -27,10 +27,71 @@ async function fixture(){
  const created=await new GroupTaskService(pool,identity,new TaskService(pool,identity)).create(owner,{requestId:randomUUID(),groupId:group.id,messageId:asked.id,expectedGroupVersion:group.version,goal:'整理',assignee:{roleId:role.id,expectedVersion:role.version},trigger:'routed',executionMode:'work',routingAttemptVersion:1})
  const send=(text:string)=>groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text})
  const reserve=async(messageId:string,operation:'continue'|'stop',version?:number)=>{const db=await pool.connect();try{return await inputs.reserveInTransaction(db,owner,{requestId:randomUUID(),groupId:group.id,messageId,taskId:created.task.id,expectedTaskVersion:version??(await taskRow(owner,created.task.id)).version,operation})}finally{db.release()}}
- return {owner,group,inputs,created,send,reserve}
+ return {owner,group,groups,role,inputs,created,send,reserve}
 }
 const taskRow=async(owner:string,id:string)=>(await pool.query('select version,state from teloa_tasks where owner_id=$1 and id=$2',[owner,id])).rows[0] as {version:number;state:string}
 const sourceRow=async(id:string)=>(await pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[id])).rows[0]
+
+test('引用另一个原工作时不能续办同群旧任务，旧版已登记的错误回执也在升版本前拒绝',async()=>{
+ const f=await fixture(),quotedId=randomUUID(),quotedTask=randomUUID()
+ // 测试专用持久员工回帖；不以名称或提示词作为引用身份。
+ await pool.query(`insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,author_id,task_id,run_id,text,reference_snapshot,created_at)
+  values($1,$2,$3,$4,'{}',$5,$6,$7,'固定交付','[]',$8)`,[quotedId,f.owner,f.group.id,randomUUID(),f.role.id,quotedTask,randomUUID(),identity.now()])
+ const message=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,replyToMessageId:quotedId,text:'继续引用的原工作。'})
+ const before=await taskRow(f.owner,f.created.task.id)
+ assert.equal((await f.reserve(message.id,'continue')).state,'rejected')
+ const legacy=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,replyToMessageId:quotedId,text:'继续引用的原工作，保留旧回执。'}),requestId=randomUUID()
+ await pool.query(`insert into teloa_group_work_inputs(owner_id,request_id,group_id,message_id,task_id,operation,expected_task_version,payload_sha256,observed_run_id,state,expected_content_version,created_at,updated_at)
+  values($1,$2,$3,$4,$5,'continue',$6,$7,null,'reserved',1,$8,$8)`,[f.owner,requestId,f.group.id,legacy.id,f.created.task.id,before.version,'0'.repeat(64),identity.now()])
+ assert.equal((await f.inputs.continueTask(f.owner,requestId)).state,'rejected')
+ assert.deepEqual(await taskRow(f.owner,f.created.task.id),before,'错误续办不得改变另一项任务的版本或状态')
+})
+
+test('登记原工作归属与路由三条关联对齐：定义关联群或仅经本人同群引用可追溯的任务可登记；无任何关联或别人的任务仍拒绝',async()=>{
+ const f=await fixture(),tasks=new TaskService(pool,identity)
+ const reserveFor=async(messageId:string,taskId:string)=>{const db=await pool.connect();try{return await f.inputs.reserveInTransaction(db,f.owner,{requestId:randomUUID(),groupId:f.group.id,messageId,taskId,expectedTaskVersion:(await taskRow(f.owner,taskId))?.version??1,operation:'continue'})}finally{db.release()}}
+ // 定义挂群、没有群交办来源（草稿/配置/计划领取形态）。
+ const bound=await tasks.create(f.owner,{requestId:randomUUID(),fields:{title:'定义关联群的任务',goal:'原目标',scope:'general',groupId:f.group.id}})
+ assert.equal((await reserveFor((await f.send('继续定义关联群的任务。')).id,bound.id)).state,'reserved')
+ // 既无来源也不挂群，只能从本条消息引用的员工回帖追溯；引用由宿主按同本人同群持久关联读出。
+ const quotedOnly=await tasks.create(f.owner,{requestId:randomUUID(),fields:{title:'仅经引用可追溯',goal:'原目标',scope:'general'}}),delivered=randomUUID()
+ await pool.query(`insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,author_id,task_id,run_id,text,reference_snapshot,created_at)
+  values($1,$2,$3,$4,'{}',$5,$6,$7,'第2版交付','[]',$8)`,[delivered,f.owner,f.group.id,randomUUID(),f.role.id,quotedOnly.id,randomUUID(),identity.now()])
+ const quoting=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,replyToMessageId:delivered,text:'按同一案例更新交付。'})
+ assert.equal((await reserveFor(quoting.id,quotedOnly.id)).state,'reserved','被引用回帖所属原任务不再被「原工作不属于本群」误拒')
+ assert.equal((await reserveFor((await f.send('不引用地继续它。')).id,quotedOnly.id).catch(error=>error)).code,'teloa/forbidden','未引用时仅经回帖可追溯的任务不算本群工作')
+ const elsewhere=await tasks.create(f.owner,{requestId:randomUUID(),fields:{title:'无关任务',goal:'原目标',scope:'general'}})
+ assert.equal((await reserveFor((await f.send('继续无关任务。')).id,elsewhere.id).catch(error=>error)).code,'teloa/forbidden')
+ const other=await fixture()
+ assert.equal((await reserveFor((await f.send('继续别人的任务。')).id,other.created.task.id).catch(error=>error)).code,'teloa/forbidden','跨本人任务即使同名同群也不登记')
+})
+
+test('本人引用自己当初的交办消息：按该消息唯一派生的原任务登记续办；指向同群另一项任务拒绝',async()=>{
+ const f=await fixture(),tasks=new TaskService(pool,identity),asked=(await pool.query('select message_id from teloa_group_task_sources where task_id=$1',[f.created.task.id])).rows[0].message_id
+ const reply=(text:string)=>f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,replyToMessageId:asked,text})
+ assert.equal((await f.reserve((await reply('质量退回：按复核意见修订后再交。')).id,'continue')).state,'reserved')
+ const bound=await tasks.create(f.owner,{requestId:randomUUID(),fields:{title:'同群另一项',goal:'原目标',scope:'general',groupId:f.group.id}})
+ const db=await pool.connect()
+ try{assert.equal((await f.inputs.reserveInTransaction(db,f.owner,{requestId:randomUUID(),groupId:f.group.id,messageId:(await reply('退回修订。')).id,taskId:bound.id,expectedTaskVersion:(await taskRow(f.owner,bound.id)).version,operation:'continue'})).state,'rejected')}finally{db.release()}
+})
+
+test('员工版本已高于任务固定负责人版本：续办在升版本前按 version-conflict 拒绝，不空升版本、不自动续签；本人确认交接到新版本后才续办',async()=>{
+ const f=await fixture()
+ await pool.query("update teloa_tasks set state='waiting' where owner_id=$1 and id=$2",[f.owner,f.created.task.id])
+ // 模拟本人新增工具授权：员工版本 +1，任务固定的负责人版本仍是交办时那一版。
+ await pool.query('update teloa_roles set version=version+1 where owner_id=$1 and id=$2',[f.owner,f.role.id])
+ const before=await taskRow(f.owner,f.created.task.id),stale=await f.reserve((await f.send('继续原任务。')).id,'continue')
+ assert.equal(stale.state,'reserved','登记本身仍持久保存')
+ const rejected=await f.inputs.continueTask(f.owner,stale.requestId)
+ assert.deepEqual([rejected.state,rejected.taskVersion],['rejected',before.version])
+ assert.deepEqual(await taskRow(f.owner,f.created.task.id),before,'拒绝不升版本、不改状态、不把任务续签到新员工版本')
+ assert.equal((await pool.query('select reason from teloa_group_work_inputs where owner_id=$1 and request_id=$2',[f.owner,stale.requestId])).rows[0].reason,'teloa/version-conflict')
+ // 本人确认同员工新版本的交接（与 handoffs/change 写入等价的负责人版本推进）后，新的续办恢复正常升版本。
+ const role=(await pool.query('select version from teloa_roles where owner_id=$1 and id=$2',[f.owner,f.role.id])).rows[0].version as number
+ await pool.query('update teloa_tasks set assignee_role_version=$3,version=version+1 where owner_id=$1 and id=$2',[f.owner,f.created.task.id,role])
+ const confirmed=await taskRow(f.owner,f.created.task.id),fresh=await f.reserve((await f.send('交接后再继续。')).id,'continue')
+ assert.deepEqual([(await f.inputs.continueTask(f.owner,fresh.requestId)).state,(await taskRow(f.owner,f.created.task.id)).version],['continued',confirmed.version+1])
+})
 
 test('续办内容版本提交后尚未送达：恢复泵仍能拾取，准备失败回执可进入unknown并保持原任务版本',async()=>{
  const f=await fixture()
@@ -67,6 +128,11 @@ test('完成后追加：保留同一 taskId、新增任务版本；原来源快�
  assert.deepEqual([accepted.state,accepted.nativeRequestId],['accepted','native-1'])
  assert.equal((await f.inputs.settle(f.owner,{requestId:first.requestId,state:'unknown',runId,reason:'x'})).state,'accepted','终态不能改回未知')
  assert.equal((await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version+1))?.references.length,0)
+ // 执行失败只推进状态版本，重试仍需收到同一明确追加；本人改了目标后则不能套用旧追加。
+ await pool.query("update teloa_tasks set state='blocked',version=version+2 where owner_id=$1 and id=$2",[f.owner,f.created.task.id])
+ assert.equal((await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version+3))?.text,'补上负责人列。')
+ await new TaskService(pool,identity).edit(f.owner,{taskId:f.created.task.id,expectedVersion:original.version+3,fields:{title:f.created.task.title,goal:'新的独立目标。'}})
+ assert.equal(await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version+4),undefined,'内容版本改变不能继承先前追加')
  await assert.rejects(pool.query('delete from teloa_group_work_inputs where owner_id=$1',[f.owner]),/immutable/)
 })
 

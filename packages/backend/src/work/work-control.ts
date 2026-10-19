@@ -34,6 +34,8 @@ export async function initializeWorkControl(pool:Pool):Promise<void>{await pool.
   primary key(owner_id,control_id),foreign key(owner_id,control_id) references teloa_work_controls(owner_id,id)
  );
  create table if not exists teloa_work_control_hosts(owner_id text primary key,generation integer not null check(generation>0));
+ create table if not exists teloa_work_control_planned_restarts(owner_id text not null,restart_id uuid not null,host_generation integer not null check(host_generation>0),created_at timestamptz not null,primary key(owner_id,restart_id));
+ alter table teloa_work_control_planned_restarts add column if not exists results jsonb not null default '{}';
 `)}
 
 export class WorkControlService{
@@ -105,6 +107,45 @@ export class WorkControlService{
   })
   for(const control of changes)await Promise.allSettled([...this.listeners].map(listener=>listener({control,runIds:control.pendingRunIds,action:'pause'})))
   return changes
+ }
+ /** 本人升级命令带来的计划重启回执只认领一次，且只属于已完成撤防的当前宿主世代；崩溃后再启动不能沿用。认领时登记待恢复集合，逐项结果落库。 */
+ async claimPlannedRestart(owner:string,value:{restartId:string;hostGeneration:number;controlIds:string[]}):Promise<boolean>{
+  roleWorkOwner(owner);const a=input(value,['restartId','hostGeneration','controlIds']);if(!uuid(a.restartId)||!positive(a.hostGeneration)||!Array.isArray(a.controlIds)||a.controlIds.some(id=>!uuid(id)))throw invalid()
+  if(this.ports.hostGeneration?.()!==a.hostGeneration)throw forbidden()
+  const results=Object.fromEntries((a.controlIds as string[]).map(id=>[id,'pending']))
+  const result=await this.pool.query('insert into teloa_work_control_planned_restarts(owner_id,restart_id,host_generation,results,created_at) select $1,$2,$3,$4,$5 from teloa_work_control_hosts where owner_id=$1 and generation=$3 on conflict(owner_id,restart_id) do nothing',[owner,a.restartId,a.hostGeneration,JSON.stringify(results),this.identity.now()])
+  return result.rowCount===1
+ }
+ /** 只改已登记的待恢复项；结果为 resumed 或 held:<原因>。 */
+ async recordPlannedRestart(owner:string,value:{restartId:string;controlId:string;outcome:string}):Promise<void>{
+  roleWorkOwner(owner);const a=input(value,['restartId','controlId','outcome']);if(!uuid(a.restartId)||!uuid(a.controlId)||typeof a.outcome!=='string'||!/^(resumed|held:[-a-z0-9/:_]{1,128})$/.test(a.outcome))throw invalid()
+  await this.pool.query("update teloa_work_control_planned_restarts set results=jsonb_set(results,array[$3::text],to_jsonb($4::text)) where owner_id=$1 and restart_id=$2 and results->>$3='pending'",[owner,a.restartId,a.controlId,a.outcome])
+ }
+ /** 旧宿主世代认领后未做完的自动恢复：标为 abandoned 并返回控制，供日志提示本人在原入口手动恢复；不再自动恢复。 */
+ async abandonPlannedRestarts(owner:string,value:{hostGeneration:number}):Promise<string[]>{
+  roleWorkOwner(owner);const a=input(value,['hostGeneration']);if(!positive(a.hostGeneration))throw invalid()
+  const rows=(await this.pool.query("select restart_id,results from teloa_work_control_planned_restarts where owner_id=$1 and host_generation<$2 and exists(select 1 from jsonb_each_text(results) r where r.value='pending')",[owner,a.hostGeneration])).rows
+  const abandoned:string[]=[]
+  for(const row of rows){
+   const ids=Object.entries(row.results as Record<string,string>).filter(([,outcome])=>outcome==='pending').map(([id])=>id);abandoned.push(...ids)
+   await this.pool.query('update teloa_work_control_planned_restarts set results=results||$3::jsonb where owner_id=$1 and restart_id=$2',[owner,row.restart_id,JSON.stringify(Object.fromEntries(ids.map(id=>[id,'abandoned'])))])
+  }
+  return abandoned.sort()
+ }
+ /** 计划重启后的自动恢复判据：仍是本次撤防所置、未被本人改动的暂停，且已安全收口。未知操作保持暂停，由本人在原入口处理。 */
+ async plannedRestartState(owner:string,value:{controlId:string;generation:number}):Promise<'wait'|'ready'|'changed'|'unknown-operation'|'unsettled'>{
+  roleWorkOwner(owner);const a=input(value,['controlId','generation']);if(!uuid(a.controlId)||!positive(a.generation))throw invalid()
+  const current=await this.read(this.pool,owner,a.controlId),row=(await this.pool.query('select pause_origin from teloa_work_controls where owner_id=$1 and id=$2',[owner,current.id])).rows[0]
+  if(current.generation!==a.generation||row?.pause_origin!=='restart')return 'changed'
+  if(current.unknownOperationIds.length)return 'unknown-operation'
+  if(current.state==='pausing')return 'wait'
+  return current.state==='paused'&&!current.pendingRunIds.length?'ready':'unsettled'
+ }
+ /** 恢复事务内、已锁控制后复核：仍是指定撤防世代所置的重启暂停。检查与使用之间本人的任何操作都会改变世代。 */
+ async assertPlannedRestartInTransaction(db:PoolClient,owner:string,value:{controlId:string;generation:number}):Promise<void>{
+  roleWorkOwner(owner);const a=input(value,['controlId','generation']);if(!uuid(a.controlId)||!positive(a.generation))throw invalid()
+  const current=await this.read(db,owner,a.controlId,true),row=(await db.query('select pause_origin from teloa_work_controls where owner_id=$1 and id=$2',[owner,current.id])).rows[0]
+  if(current.state!=='paused'||current.generation!==a.generation||row?.pause_origin!=='restart')throw new WorkError('teloa/conflict','原工作已不是本次计划重启所暂停的状态，保持暂停。')
  }
  private async runIds(owner:string,controlId:string):Promise<string[]>{return (await new WorkLineageService(this.pool,this.identity).descendants(owner,{controlId})).runIds}
  async change(owner:string,value:WorkControlChange):Promise<WorkControl>{

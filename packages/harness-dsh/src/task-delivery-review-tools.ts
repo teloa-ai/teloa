@@ -35,7 +35,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  const first=roots[0]!,start=events.findIndex(event=>event===first),window=events.slice(start)
  let currentTurn:number|undefined
  for(const event of events.slice(0,start))if(event.type==='turn/start')currentTurn=event.data.turn
- const ownedTurns=new Set<number>(),calls=new Map<string,Extract<SessionEvent,{type:'tool/call'}>>(),results=new Map<string,Extract<SessionEvent,{type:'tool/result'}>>()
+ const ownedTurns=new Set<number>(),refused=new Set<string>(),calls=new Map<string,Extract<SessionEvent,{type:'tool/call'}>>(),results=new Map<string,Extract<SessionEvent,{type:'tool/result'}>>()
  const assistants:AssistantEvent[]=[],continuations:ContinuationReceipt[]=[],inputIds=new Set<string>()
  const registeredJobs=new Map<string,Extract<SessionEvent,{type:'job/registered'}>>(),settledJobs=new Map<string,Extract<SessionEvent,{type:'job/settled'}>>()
  const externalCatalog:Extract<SessionEvent,{type:'subagent/catalog'}>[]=[]
@@ -55,7 +55,10 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
    assistants.push(event)
   }
   if(event.type==='tool/call'){
-   if(!ownedTurns.has(event.data.turn)||calls.has(event.data.callId)||!snapshot.allowedTools.includes(event.data.name))return blocked('tool-identity')
+   if(!ownedTurns.has(event.data.turn)||calls.has(event.data.callId))return blocked('tool-identity')
+   // 模型调用了未授权给它的工具（实跑：未暴露的 list_agents）：宿主已拒绝、只回错误时按错误回执封存，不让一次误调用废掉整份交付；
+   // 未授权工具若返回成功回执仍视为身份异常。
+   if(!snapshot.allowedTools.includes(event.data.name))refused.add(event.data.callId)
    calls.set(event.data.callId,event)
   }
   if(event.type==='tool/result'){
@@ -114,6 +117,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
   if(matching.length!==1||!assistant||!result)return blocked('tool-pair')
   const blocks=assistant.data.message.content.filter(block=>block.type==='tool-call'&&block.id===id),block=blocks[0]
   if(blocks.length!==1||block?.type!=='tool-call'||block.name!==call.data.name||!isDeepStrictEqual(block.arguments,call.data.arguments)||assistant.seq>=call.seq||call.seq>=result.seq||result.data.turn!==call.data.turn||result.data.step!==call.data.step||!isDeepStrictEqual(result.sourceEventSeqs,[call.seq])||typeof result.data.message.isError!=='boolean'||result.data.message.content.some(part=>part.type!=='text'))return blocked('tool-pair')
+  if(refused.has(id)&&result.data.message.isError!==true)return blocked('tool-identity')
   const provider=call.data.name==='subagent_codex'?'codex':call.data.name==='subagent_claude_code'?'claude-code':undefined
   if(provider&&!result.data.message.isError){
    const matches=snapshot.runtimeLinks.filter(row=>row.kind==='external'&&row.payload.provider===provider&&row.payload.reservationId==='external:'+sha(JSON.stringify([row.payload.runtimeId,binding.sessionId,id,provider])))

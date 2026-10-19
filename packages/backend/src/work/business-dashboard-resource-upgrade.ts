@@ -8,11 +8,11 @@ type ImpactRecord={type:string;id:string;fields:readonly {label:string;value:str
 export function inspectBusinessTemplateUpgradeImpact(input:{current:Configuration|undefined;candidate:Configuration;records:readonly ImpactRecord[]}):BusinessTemplateUpgradeImpact{
  type ObjectType=BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2
  const objects=(configuration:Configuration|undefined)=>new Map((configuration?.definitions??[]).filter(row=>row.kind==='object-type').map(row=>[row.definition.id,row.definition as ObjectType]))
- const previous=objects(input.current),next=objects(input.candidate),issues=new Map<string,{row:BusinessTemplateUpgradeImpact['fields'][number];ids:Set<string>}>(),affected=new Set<string>()
- const add=(type:string,field:string,reason:BusinessTemplateUpgradeImpact['fields'][number]['reason'],records:readonly ImpactRecord[])=>{
-  const key=JSON.stringify([type,field,reason]);let issue=issues.get(key)
-  if(!issue){issue={row:{objectType:type,field,reason,affectedRecords:0},ids:new Set()};issues.set(key,issue)}
-  for(const record of records){const id=JSON.stringify([type,record.id]);issue.ids.add(id);affected.add(id)}
+ const previous=objects(input.current),next=objects(input.candidate),issues=new Map<string,{row:BusinessTemplateUpgradeImpact['fields'][number];ids:Set<string>}>(),warnings=new Map<string,{row:BusinessTemplateUpgradeImpact['fields'][number];ids:Set<string>}>(),affected=new Set<string>()
+ const add=(type:string,field:string,reason:BusinessTemplateUpgradeImpact['fields'][number]['reason'],records:readonly ImpactRecord[],warning=false)=>{
+  const target=warning?warnings:issues,key=JSON.stringify([type,field,reason]);let issue=target.get(key)
+  if(!issue){issue={row:{objectType:type,field,reason,affectedRecords:0},ids:new Set()};target.set(key,issue)}
+  for(const record of records){const id=JSON.stringify([type,record.id]);issue.ids.add(id);if(!warning)affected.add(id)}
  }
  for(const [type,old] of previous){
   const records=input.records.filter(record=>record.type===type),definition=next.get(type)
@@ -24,10 +24,15 @@ export function inspectBusinessTemplateUpgradeImpact(input:{current:Configuratio
    else if(changed.type!==field.type||changed.from!==field.from||('referenceType' in changed?changed.referenceType:undefined)!==('referenceType' in field?field.referenceType:undefined))add(type,field.name,'changed-type',records)
    else if('values' in field&&field.values?.some(value=>!('values' in changed)||!changed.values?.includes(value)))add(type,field.name,'changed-rule',records)
   }
-  for(const record of records)for(const field of definition.fields){try{assertBusinessRecordFieldValue(field,record.fields.find(row=>row.label===field.from)?.value)}catch{add(type,field.name,'invalid-existing-value',[record])}}
+  // 继续核对全部历史；同一声明下已存在的问题显式报告，不冒充本次配置新增的不兼容。
+  // 字段新增、改型、改来源或规则变化时仍严格阻断，绝不改写原快照以通过检查。
+  for(const record of records)for(const field of definition.fields){
+   try{assertBusinessRecordFieldValue(field,record.fields.find(row=>row.label===field.from)?.value)}
+   catch{const prior=old.fields.find(row=>row.name===field.name);add(type,field.name,'invalid-existing-value',[record],prior!==undefined&&industryUpdateCanonical(prior)===industryUpdateCanonical(field))}
+  }
  }
  for(const record of input.records)if(!previous.has(record.type))add(record.type,'','removed-object',[record])
- return {blocked:affected.size>0,affectedRecords:affected.size,fields:[...issues.values()].map(issue=>({...issue.row,affectedRecords:issue.ids.size})),newSourceRequirements:input.candidate.definitions.filter(row=>row.kind==='source-mapping'&&!input.current?.definitions.some(old=>old.kind===row.kind&&old.definition.id===row.definition.id&&industryUpdateCanonical(old.definition)===industryUpdateCanonical(row.definition))).map(row=>row.definition.id)}
+ return {blocked:affected.size>0,affectedRecords:affected.size,fields:[...issues.values()].map(issue=>({...issue.row,affectedRecords:issue.ids.size})),...(warnings.size?{warnings:[...warnings.values()].map(issue=>({...issue.row,affectedRecords:issue.ids.size}))}:{}),newSourceRequirements:input.candidate.definitions.filter(row=>row.kind==='source-mapping'&&!input.current?.definitions.some(old=>old.kind===row.kind&&old.definition.id===row.definition.id&&industryUpdateCanonical(old.definition)===industryUpdateCanonical(row.definition))).map(row=>row.definition.id)}
 }
 
 export type BusinessDashboardUpgradeChoice='keep-local'|'use-incoming'

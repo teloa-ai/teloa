@@ -18,7 +18,7 @@ function setup(overrides:{page?:unknown}={}){
   refresh:async(actor:unknown,input:unknown)=>{calls.push({operation:'refresh',actor,input});return overrides.page??page()},
  }
  const sync={
-  mappings:async()=>[{id:'alerts',title:'告警同步',schedule:{kind:'every',seconds:300},source:{kind:'business-data-port'}}],
+  mappings:async()=>[{id:'alerts',title:'告警同步',schedule:{kind:'every',seconds:300},source:{kind:'business-data-port',sourceId:'external'}}],
   status:async(actor:unknown,input:unknown)=>{calls.push({operation:'status',actor,input});return [{mappingId:'alerts',lastRun:run,consecutiveFailures:0,quota:{rows:1,limit:500000}}]},
   runs:async(actor:unknown,input:unknown)=>{calls.push({operation:'runs',actor,input});return [run]},
   run:async(actor:unknown,input:unknown)=>{calls.push({operation:'run',actor,input});return run},
@@ -51,7 +51,7 @@ test('看板与同步端点：键集严格、主体与范围只取可信来源�
 
 test('持续规则列表显示真实周期和实际运行；启停只用本人身份、独立请求及预期修订',async()=>{
  const e=setup()
- assert.deepEqual(await e.handler('business-sync/rules',{scope}),[{scope,mappingId:'alerts',definitionHash:hash,enabled:true,revision:2,title:'告警同步',schedule:{kind:'every',seconds:300},running:true}])
+ assert.deepEqual(await e.handler('business-sync/rules',{scope}),[{scope,mappingId:'alerts',definitionHash:hash,enabled:true,revision:2,title:'告警同步',schedule:{kind:'every',seconds:300},running:true,source:{kind:'business-data-port',sourceId:'external'}}])
  assert.deepEqual(await e.handler('business-sync/rule-set',{scope,mappingId:'alerts',enabled:false,expectedRevision:2,requestId}),{scope,mappingId:'alerts',definitionHash:hash,enabled:false,revision:3})
  assert.deepEqual(e.calls.map(call=>call.operation),['runtime-get','rule-get','rule-set'])
  assert.deepEqual(e.calls.at(-1)?.actor,{ownerId:owner,scopeIds:[scope,'AppSec']})

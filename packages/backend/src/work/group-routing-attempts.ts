@@ -1,6 +1,7 @@
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,groupRoutingRetryInput,isGroupMention,isGroupRoutingDecision,type GroupMention,type GroupRoutingDecision} from '@teloa/contract'
 import {workAccess} from './work-access.ts'
+import {readTrustedGroupMessageRunSource} from './group-routing-outbox.ts'
 
 type Database=Pick<PoolClient,'query'>
 const ownerId=(value:string):void=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
@@ -84,13 +85,16 @@ export class GroupRoutingAttemptService{
  /**
   * 沿原 messageId 重新安排（规格 §5）：不重新保存正文，旧决策与旧回执保留。
   * 已有任何派工（含未知提交）时拒绝重新选人，只能核对原对象；同一 requestId 重放回同一尝试。
+  * 员工消息（交接）同样由本人沿原消息重试：只认可信工作来源，接手者仍由路由按原消息语义判断，不能由本人另选；
+  * 跳数上限、接力闸门、预算与控制世代在本次尝试判断时由路由编排与宿主按原来源再核，重试不绕过。
   */
  async retry(owner:string,input:unknown):Promise<{messageId:string;attemptVersion:number}>{
   ownerId(owner)
   const request=groupRoutingRetryInput(input),spec=JSON.stringify(request)
   const message=(await this.pool.query('select id,group_id,root_id,author_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,request.groupId,request.messageId])).rows[0]
   if(!message)throw new WorkError('teloa/forbidden','群消息不属于当前本人或当前群。')
-  if(message.author_id!=='self')throw new WorkError('teloa/forbidden','只能重新安排本人发出的消息。')
+  const employee=message.author_id!=='self'
+  if(employee&&request.overrideRecipients)throw new WorkError('teloa/invalid-input','员工交接只能沿原消息重新安排，不能另选接收者。')
   const rootId=message.root_id===null?String(message.id):String(message.root_id)
   const client=await this.pool.connect()
   try{
@@ -112,6 +116,7 @@ export class GroupRoutingAttemptService{
    if(current.attemptVersion!==request.expectedAttempt)throw new WorkError('teloa/version-conflict','原消息的安排已变化，请刷新后核对。')
    const delivered=!!(await client.query('select 1 from teloa_group_routing_outbox where owner_id=$1 and message_id=$2 limit 1',[owner,request.messageId])).rowCount
    if(!groupRoutingRetryable(current.decision,delivered))throw new WorkError('teloa/conflict','这条消息已有员工接手或不需要重新安排，请查看原工作。')
+   if(employee&&!await readTrustedGroupMessageRunSource(client,owner,{groupId:request.groupId,messageId:request.messageId},this.pool))throw new WorkError('teloa/conflict','这条员工消息没有可信的工作来源，不能重新安排交接。')
    for(const recipient of request.overrideRecipients??[]){
     const role=(await client.query(`select roles.version,roles.state from teloa_group_members members join teloa_roles roles on roles.id=members.role_id and roles.owner_id=members.owner_id
      where members.owner_id=$1 and members.group_id=$2 and members.role_id=$3 for share of members,roles`,[owner,request.groupId,recipient.roleId])).rows[0]

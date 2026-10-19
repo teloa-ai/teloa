@@ -24,8 +24,8 @@ type Ports={service:Pick<WorkRecoveryService,'resume'|'begin'|'record'>;runs:Pic
 export class WorkRecoveryCoordinator{
  readonly ports:Ports
  constructor(ports:Ports){this.ports=ports}
- async resume(owner:string,input:WorkResumeInput,signal:AbortSignal):Promise<WorkControl>{
-  signal.throwIfAborted();const control=await this.ports.service.resume(owner,input)
+ async resume(owner:string,input:WorkResumeInput,signal:AbortSignal,plannedRestart?:{generation:number}):Promise<WorkControl>{
+  signal.throwIfAborted();const control=await this.ports.service.resume(owner,input,plannedRestart)
   for(const runId of input.candidateRunIds){
    signal.throwIfAborted();const permit=await this.ports.service.begin(owner,{requestId:input.requestId,runId})
    if(!permit.dispatch)continue

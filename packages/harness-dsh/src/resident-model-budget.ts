@@ -1,9 +1,9 @@
 import {createHash,randomUUID} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
-import type {GenerateOptions,StreamChunk,TokenUsage,LlmFailure} from '@deepseek-ai/dsh-llm'
+import {LlmError,type GenerateOptions,type StreamChunk,type TokenUsage,type LlmFailure} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm-retry'
 import {SessionId,type SessionEvent} from '@deepseek-ai/dsh-session'
-import {WorkError} from '@teloa/contract'
+import {WorkError,workBudgetExhaustedCode} from '@teloa/contract'
 import {WorkRetryService,combineWorkAccessLeases,type TaskRunService,type TaskRun,type WorkControlService,type WorkBudgetService,type WorkAccessLease,type RunBudgetTerminal} from '@teloa/backend'
 import type {createNativeWorkInput} from './native-work-input.ts'
 import {readSessionEvents} from './session-events.ts'
@@ -16,6 +16,11 @@ type Attempt={run:TaskRun;tokens:number;role:WorkAccessLease}
 const digest=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const unavailable=()=>new WorkError('teloa/unavailable','当前模型请求没有完整的受控工作准入。')
 const count=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>=0
+/** 额度拒绝改为原生可保留的失败 code，会话 turn/end 留下原因与范围供界面说明；其余错误原样上抛。 */
+async function reserveOrExplain<T>(reserve:()=>Promise<T>):Promise<T>{
+ try{return await reserve()}
+ catch(error){if(error instanceof WorkError&&error.code==='teloa/budget-exhausted')throw new LlmError(error.message,workBudgetExhaustedCode(error.details),{cause:error});throw error}
+}
 
 /** 只读同一原生 Run 的持久结束锚点；修复器回填的 turn/end 时间不能替代其正式封口时刻。 */
 export function runBudgetTerminal(run:TaskRun,snapshot:{sessionId:string;events:readonly SessionEvent[];inheritedEventCount:number}):RunBudgetTerminal|null{
@@ -51,18 +56,41 @@ type ModelFinish=Extract<StreamChunk,{type:'finish'}>['reason']
 function unsentCredentialFailure(finish:ModelFinish|undefined,streamActivitySeen:boolean,signal:AbortSignal|undefined):boolean{
  return !streamActivitySeen&&!signal?.aborted&&finish?.kind==='error'&&finish.failure?.code==='MISSING_CREDENTIAL'&&finish.failure.status===undefined&&finish.failure.requestId===undefined
 }
-function failureOutcome(failure:LlmFailure|undefined,outputSeen:boolean):'transient'|'authentication'|'permission'|'conflict'|'unknown'{
+export function failureOutcome(failure:LlmFailure|undefined,outputSeen:boolean):'transient'|'authentication'|'permission'|'conflict'|'unknown'{
  if(!failure||outputSeen)return 'unknown'
  if(failure.status===401||failure.code==='AUTHENTICATION_ERROR')return 'authentication'
  if(failure.status===403||failure.code==='PERMISSION_DENIED')return 'permission'
  if(failure.status===409)return 'conflict'
  // 明确拒绝的模型请求可以有限重试；传输中断或丢失回包保留未知，不自动重放。
- if(failure.status===429||failure.status===503||failure.code==='RATE_LIMITED')return 'transient'
+ // 部分 Anthropic 协议适配器不填 status，只把 HTTP 状态写在服务端错误消息开头（实跑：MiniMax 529 overloaded_error）。
+ const leading=failure.status===undefined&&failure.code==='SERVER'?Number(/^(\d{3})\s/.exec(failure.message??'')?.[1]):undefined
+ const status=failure.status??leading
+ if(status===429||status===503||status===529||failure.code==='RATE_LIMITED')return 'transient'
  return 'unknown'
 }
-function operationStep(ctx:Context,position:Position):number{
+function positionEvents(ctx:Context,position:Position):readonly SessionEvent[]{
  const agent=ctx.agents.get(SessionId(position.sessionId));if(!agent)throw unavailable()
- const events=readSessionEvents(agent.session)
+ return readSessionEvents(agent.session)
+}
+/** 本 turn 仍未闭合的官方压缩身份；压缩持锁期间的请求都属于这次压缩。 */
+function openCompaction(events:readonly SessionEvent[],turn:number):string|null{
+ for(let index=events.length-1;index>=0;index--){
+  const event=events[index]!
+  if(event.type==='compaction/start')return event.data.turn===turn?event.data.compactionId:null
+  if(event.type==='compaction/end'||event.type==='turn/start')return null
+ }
+ return null
+}
+/**
+ * 模型操作的持久身份。pre-step 压缩发生在 step-end 之后，同一 turn 的各次压缩步号都为 0；
+ * 追加持久 compaction/start 的 compactionId，使不同压缩各自独立，同一次压缩的重放仍回到原操作。
+ * 非压缩请求保持原身份。
+ */
+export function modelOperationId(events:readonly SessionEvent[],position:Position,run:string,request:Pick<GenerateOptions,'purpose'|'provider'|'model'>):string{
+ const compaction=openCompaction(events,position.turn)
+ return 'model:'+digest([run,position.sessionId,position.turn,operationStep(events,position),request.purpose??null,request.provider,request.model,...compaction===null?[]:[compaction]])
+}
+function operationStep(events:readonly SessionEvent[],position:Position):number{
  const tail=[...events].reverse().find(e=>e.type==='llm/retry-started'||e.type==='assistant/message'||e.type==='turn/start')
  if(tail?.type==='llm/retry-started'&&tail.data.turn===position.turn){
   const first=events.find(e=>e.type==='llm/retry'&&e.data.retryId===tail.data.retryId&&e.data.turn===position.turn)
@@ -99,8 +127,8 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   if(!count(tokens))throw unavailable()
   if(routing){
    routing.lease.assertCurrent();request.signal?.throwIfAborted()
-   const modelRequestId='routing:'+digest([routing.operationId,position.sessionId,position.turn,operationStep(ctx,position),request.provider,request.model])
-   const reservation=routing.budgetAccountId===null?await budgets.reserveOwnerRouting(owner,{modelRequestId,tokens}):await budgets.reserve(owner,{budgetAccountId:routing.budgetAccountId,controlGeneration:routing.controlGeneration,modelRequestId,kind:'routing',tokens,rounds:0})
+   const modelRequestId='routing:'+digest([routing.operationId,position.sessionId,position.turn,operationStep(positionEvents(ctx,position),position),request.provider,request.model])
+   const reservation=await reserveOrExplain(()=>routing.budgetAccountId===null?budgets.reserveOwnerRouting(owner,{modelRequestId,tokens}):budgets.reserve(owner,{budgetAccountId:routing.budgetAccountId,controlGeneration:routing.controlGeneration,modelRequestId,kind:'routing',tokens,rounds:0}))
    const lease=combineWorkAccessLeases([routing.lease,budgets.lease(owner,reservation)])
    let dispatched=false,usage:number|null=null,finish:ModelFinish|undefined,streamActivitySeen=false
    try{
@@ -118,7 +146,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    return
   }
   if(!run?.lineage)throw unavailable()
-  const operationId='model:'+digest([run.id,position.sessionId,position.turn,operationStep(ctx,position),request.purpose??null,request.provider,request.model])
+  const operationId=modelOperationId(positionEvents(ctx,position),position,run.id,request)
   const role=await(await runs()).executionAdmission(owner,run.id),controlled=await controls.acquireForRun(owner,{runId:run.id,mode:'continuation'})
   request.signal?.throwIfAborted();role.assertCurrent();controlled.lease.assertCurrent()
   if(pending.has(operationId))throw new WorkError('teloa/execution-pending','原模型请求仍在受理，不重复派发。')
@@ -128,7 +156,8 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    await retries.register(owner,{runId:run.id,operationId})
    claim=await retries.claim(owner,{operationId,requestId:randomUUID(),expectedGeneration:controlled.control.generation})
    if(!claim.dispatch)throw new WorkError('teloa/conflict','原模型操作已经完成，不能重复派发。')
-   const reservation=await budgets.reserve(owner,{budgetAccountId:run.lineage.budgetAccountId,controlGeneration:controlled.control.generation,modelRequestId:claim.modelRequestId,kind:'retry',tokens,rounds:0})
+   const reserve={budgetAccountId:run.lineage.budgetAccountId,controlGeneration:controlled.control.generation,modelRequestId:claim.modelRequestId,kind:'retry' as const,tokens,rounds:0}
+   const reservation=await reserveOrExplain(()=>budgets.reserve(owner,reserve))
    reservationId=reservation.id
    request.signal?.throwIfAborted();claim.lease.assertCurrent();controlled.lease.assertCurrent()
    await budgets.markDispatched(owner,{reservationId});dispatched=true

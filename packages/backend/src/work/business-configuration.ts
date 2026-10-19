@@ -25,12 +25,12 @@ function authorize(actor:BusinessConfigurationActor,scope?:string){
  if(!actor||typeof actor.ownerId!=='string'||!actor.ownerId.trim()||actor.ownerId!==actor.ownerId.trim()||actor.ownerId.length>128||/[\x00-\x1f\x7f]/.test(actor.ownerId)||!Array.isArray(actor.scopeIds)||new Set(actor.scopeIds).size!==actor.scopeIds.length||actor.scopeIds.some(s=>!isBusinessScopeKey(s))||(scope!==undefined&&!actor.scopeIds.includes(scope)))throw forbidden()
 }
 const cancelled=(signal?:AbortSignal)=>signal?.throwIfAborted()
-/** 检查所有固定历史，归档不免除迁移约束；绝不改写快照。 */
+/** 检查所有固定历史；新增不兼容阻止采用，未变声明的既有数据问题显式警告，绝不改写快照。 */
 export async function inspectBusinessConfigurationRecordImpact(db:PoolClient,ownerId:string,candidate:BusinessConfigurationCandidate|BusinessConfigurationCandidateV2,current:BusinessConfigurationCurrent|undefined,signal?:AbortSignal){
  const previous=new Map((current?.leaves??[]).filter(leaf=>leaf.kind==='object-type').map(leaf=>[leaf.localId,JSON.parse(leaf.body) as BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2]))
  const before=current?{...current.manifest,definitions:current.leaves.map(leaf=>({kind:leaf.kind,definition:JSON.parse(leaf.body)}))} as typeof candidate:undefined
  const impact=inspectBusinessTemplateUpgradeImpact({current:before,candidate,records:[]})
- const affected=new Set<string>(),counts=new Map<string,Set<string>>()
+ const affected=new Set<string>(),counts=new Map<string,Set<string>>(),warningCounts=new Map<string,Set<string>>()
  const next=new Map(candidate.definitions.filter(item=>item.kind==='object-type').map(item=>[item.definition.id,item.definition as BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2]))
  const migrate=()=>new WorkError('teloa/conflict','配置变化与已有历史记录不兼容，需要先迁移数据。')
  let cursor:[string,string,number]|undefined
@@ -60,12 +60,19 @@ export async function inspectBusinessConfigurationRecordImpact(db:PoolClient,own
    if(!impact.fields.some(row=>JSON.stringify([row.objectType,row.field,row.reason])===key))impact.fields.push({...field,affectedRecords:0})
    if(field.affectedRecords){const ids=counts.get(key)??new Set<string>();ids.add(JSON.stringify([snapshot.type,snapshot.id]));counts.set(key,ids)}
   }
+  for(const field of checked.warnings??[]){
+   const key=JSON.stringify([field.objectType,field.field,field.reason])
+   impact.warnings??=[]
+   if(!impact.warnings.some(row=>JSON.stringify([row.objectType,row.field,row.reason])===key))impact.warnings.push({...field,affectedRecords:0})
+   const ids=warningCounts.get(key)??new Set<string>();ids.add(JSON.stringify([snapshot.type,snapshot.id]));warningCounts.set(key,ids)
+  }
  }
  if(rows.length<200)break
  const last=rows[rows.length-1]!;cursor=[last.object_type,last.object_id,last.object_version]
  }
  impact.affectedRecords=affected.size;impact.blocked=affected.size>0
  for(const field of impact.fields)field.affectedRecords=counts.get(JSON.stringify([field.objectType,field.field,field.reason]))?.size??0
+ for(const field of impact.warnings??[])field.affectedRecords=warningCounts.get(JSON.stringify([field.objectType,field.field,field.reason]))?.size??0
  return impact
 
 }

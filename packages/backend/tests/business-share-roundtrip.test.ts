@@ -5,7 +5,7 @@ import {readFile,readdir} from 'node:fs/promises'
 import {homedir} from 'node:os'
 import {join,relative,sep} from 'node:path'
 import {fileURLToPath} from 'node:url'
-import {Pool,type PoolClient} from 'pg'
+import {Pool,type PoolClient} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {
  BusinessDataService,BusinessDefinitionSourceReader,BusinessLedgerService,

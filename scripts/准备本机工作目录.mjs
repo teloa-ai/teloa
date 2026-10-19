@@ -401,7 +401,10 @@ async function ensurePlans(roles){
  return plans
 }
 
-const fixedIdentity=(key,time)=>({id:()=>requestId('record:'+key),now:()=>time})
+// 后端一次业务动作可能连续取多个 id：派工时任务、预算账户、定义控制与轮次控制各一条，
+// 后两条同落 teloa_work_controls，同一 UUID 会撞 (owner_id,id) 主键。固定身份按调用次序派生：
+// 首个沿用原键，既有数据重跑仍收敛到同一批记录；之后按序号追加，同一动作内不再重复。
+const fixedIdentity=(key,time)=>{let calls=0;return {id:()=>{const index=calls++;return requestId('record:'+key+(index?':'+index:''))},now:()=>time}}
 
 async function ensurePlanHistory(plans){
  const plan=plans['soc-triage'],manualRequestId=requestId('plan-trigger:soc-triage')

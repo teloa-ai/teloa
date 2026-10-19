@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,writeFile,rm} from 'node:fs/promises';import {fileURLToPath} from 'node:url';import {join} from 'node:path';import {createServer} from 'node:http';import {build} from 'vite';import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs';
+
+test('业务审批已核对时，其它待办仍未知不能隐藏审批入口',{timeout:60000},async()=>{
+ const client=fileURLToPath(new URL('../src/client/',import.meta.url)),root=fileURLToPath(new URL('../../../../',import.meta.url)),temp=await mkdtemp(join(root,'.runtime-review-isolation-'));let browser;const server=createServer((_q,r)=>{r.setHeader('content-type','text/html');r.end('<div id="root"></div>')});
+ try{
+  await writeFile(join(temp,'team.tsx'),`import React from 'react';export function BusinessTeamCollaboration({renderOverview}){return renderOverview({review:<button>待Max审批候选</button>,reviewCount:1,reviewKnown:true,reviewFailed:false})}`);
+  await writeFile(join(temp,'fixture.tsx'),`
+import React from 'react';import {createRoot} from 'react-dom/client';import {BusinessWorkspace} from '${client}BusinessWorkspace.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+const snapshot={locale:'zh-CN',dshLocale:'zh',revision:1},runtime={t:(k,p)=>translateMessage('zh-CN',k,p),subscribe:()=>()=>{},getSnapshot:()=>snapshot},noop=()=>{};
+const services={collaboration:{tasks:{},artifacts:{}},groups:{list:async()=>({items:[{id:'00000000-0000-4000-8000-000000000001',scope:'soc',name:'SOC',archived:false,updatedAt:'2026-10-18T00:00:00.000Z'}]}),resources:async()=>({items:[{title:'AI 团队协作交付'}]})},openGroup:noop,createGroup:noop,talkRole:async()=>{},attention:[],openAttention:noop,tasksKnown:true,tasksFailed:false,rolesKnown:true,rolesFailed:false,renderRole:()=>null,attentionKnown:false,attentionFailed:false,refresh:noop};
+createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><BusinessWorkspace scope="soc" title="安全运营" services={services} target={{scope:'soc',section:'overview'}} state={{tasks:[],roles:[]}} go={noop} back={noop} start={noop} configure={noop} staff={noop} openTask={noop} openWork={noop} dashboardApi={{list:async()=>[]}} colorScheme="light">业务内容</BusinessWorkspace></I18nProvider>);
+`);
+  const result=await build({configFile:false,root,logLevel:'error',plugins:[{name:'team-contract-fixture',enforce:'pre',resolveId(id){if(id==='./BusinessTeamCollaboration.js')return join(temp,'team.tsx')}}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:id=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'ReviewIsolation',formats:['iife']}}}),bundle=Array.isArray(result)?result[0]:result;
+  const script=bundle.output.find(x=>x.type==='chunk').code,css=bundle.output.filter(x=>x.type==='asset'&&x.fileName.endsWith('.css')).map(x=>String(x.source)).join('\n');
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));const url='http://127.0.0.1:'+server.address().port,{chromium}=await loadPlaywright();browser=await chromium.launch(launchOptions());const p=await browser.newPage();await p.route('**/*',r=>r.request().url().startsWith(url)?r.continue():r.abort());await p.goto(url);await p.addStyleTag({content:css});await p.addScriptTag({content:script});
+  await p.getByRole('button',{name:'待Max审批候选',exact:true}).waitFor({timeout:4000}).catch(async e=>{console.log(await p.locator('body').innerText());throw e});assert.match(await p.locator('[id="business-attention-soc"]').innerText(),/正在读取/);
+ }finally{await browser?.close();await new Promise(r=>server.close(r));await rm(temp,{recursive:true,force:true})}
+});

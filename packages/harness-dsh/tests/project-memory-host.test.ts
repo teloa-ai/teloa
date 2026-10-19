@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {WorkBudgetService,initializeWorkBudgets} from '../../backend/src/work/work-budget.ts'
 import {initializeBusinessSpaces} from '../../backend/src/work/business-spaces.ts'
@@ -15,7 +15,6 @@ import {nativeHotCausalityFixture,nativeHotLlmFixture,textAnswer} from './fixtur
 import {createUserMessage,type StreamChunk,type GenerateOptions} from '@deepseek-ai/dsh-llm'
 import {WorkError} from '@teloa/contract'
 
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg') as {Pool:new(options:Record<string,unknown>)=>WorkBudgetService['pool']}
 let pool:WorkBudgetService['pool'],container:StartedPostgreSqlContainer
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{

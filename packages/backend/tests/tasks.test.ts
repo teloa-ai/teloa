@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
 import {TaskService,initializeTasks} from '../src/work/tasks.ts'
@@ -73,6 +73,21 @@ test('任务目标编辑保留业务与负责人，旧版本重试固定回执�
  await assert.rejects(service.edit('other',command),{code:'teloa/forbidden'})
  await pool.query("update teloa_tasks set state='running' where id=$1",[task.id])
  await assert.rejects(service.edit(owner,{...command,expectedVersion:3}),{code:'teloa/conflict'})
+})
+test('只提供 goal 或只提供 title 的编辑沿用原任务另一字段，不因缺字段被拒',async()=>{
+ const owner=randomUUID(),service=new TaskService(pool,identity)
+ const task=await service.create(owner,{requestId:randomUUID(),fields:{title:'原任务',goal:'原目标',scope:'general',skills:['证据核对']}})
+ const goalOnly={taskId:task.id,expectedVersion:1,fields:{goal:'新目标'}}
+ const [a,b]=await Promise.all([service.edit(owner,goalOnly),service.edit(owner,goalOnly)])
+ assert.deepEqual(a,b);assert.equal(a.version,2);assert.equal(a.title,'原任务');assert.equal(a.goal,'新目标');assert.deepEqual(a.skills,['证据核对'])
+ const titleOnly=await service.edit(owner,{taskId:task.id,expectedVersion:2,fields:{title:'新任务'}})
+ assert.equal(titleOnly.version,3);assert.equal(titleOnly.title,'新任务');assert.equal(titleOnly.goal,'新目标')
+ assert.deepEqual(await service.edit(owner,goalOnly),a,'标题后续已改，旧版本 goal-only 重试仍按回执固定结果补全并返回原回执')
+ await assert.rejects(service.edit(owner,{...goalOnly,fields:{goal:'另一个目标'}}),{code:'teloa/version-conflict'},'同一基线的异值重放不能借回执通过')
+ await assert.rejects(service.edit(owner,{...goalOnly,fields:{goal:'新目标',title:'别的任务'}}),{code:'teloa/version-conflict'},'多补一个不一致字段同样是异值重放')
+ await assert.rejects(service.edit(owner,{taskId:task.id,expectedVersion:3,fields:{goal:'新目标'}}),{code:'teloa/conflict'},'未改变目标仍判无变化')
+ for(const fields of [{},{title:undefined},{goal:undefined,title:'x'},{goal:''},{title:'  '}])await assert.rejects(service.edit(owner,{taskId:task.id,expectedVersion:3,fields}),{code:'teloa/invalid-input'},`非法字段 ${JSON.stringify(fields)} 在读库前被拒`)
+ assert.equal((await service.list(owner,{}))[0]!.version,3,'被拒请求不产生新版本')
 })
 test('编辑回执写入失败回滚任务，损坏回执不能作为成功返回',async()=>{
  const owner=randomUUID(),service=new TaskService(pool,identity),task=await service.create(owner,{requestId:randomUUID(),fields})

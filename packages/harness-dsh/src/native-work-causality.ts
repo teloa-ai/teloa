@@ -448,14 +448,18 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  return Object.freeze({
   assertReady,
   /** 仅投影当前真实受理根，不能凭类型、摘要、复制的 Agent 或冷日志重建继承证明。 */
-  readReviewState(agent:Agent,requestId:string):Readonly<{continuationMessageIds:readonly string[];pendingJobCompletion:boolean;pendingInput:boolean}>{
+  readReviewState(agent:Agent,requestId:string,admittedGroupAppendRequestIds:ReadonlySet<string>=new Set()):Readonly<{continuationMessageIds:readonly string[];pendingJobCompletion:boolean;pendingInput:boolean}>{
    const turn=turns.get(agent)
    if(!turn||!requestId)throw denied()
    target(turn);fixedRoots([...turn.roots])
+   // 只由宿主传入本 Run 持久登记的群追加请求；真实受理根、现行许可仍逐项核对。
+   const groupAppends=new Set(admittedGroupAppendRequestIds)
+   if([...groupAppends].some(id=>typeof id!=='string'||!id.trim()||id.length>128))throw denied()
    const owns=(root:InputCause)=>{
     if(root.session!==turn.session||root.event.type!=='agent/inbox/spliced'||root.event.data.inserted.length!==1)return false
     const message=root.event.data.inserted[0]!
-    return message.source.kind==='user'&&Reflect.get(message.source,'rpcId')===requestId
+    const rpcId=Reflect.get(message.source,'rpcId')
+    return message.source.kind==='user'&&(rpcId===requestId||typeof rpcId==='string'&&groupAppends.has(rpcId))
    }
    if(!turn.roots.size||[...turn.roots].some(root=>!owns(root)))throw denied()
    const fixed=(cause:InputCause)=>{
@@ -468,7 +472,8 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     fixed(input.receipt);for(const root of input.roots)fixed(root)
     const event=input.receipt.event
     if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1||event.data.inserted[0]!.id!==id)throw denied()
-    if(!input.roots.includes(input.receipt))ids.push(id)
+    const source=event.data.inserted[0]!.source
+    if(!input.roots.includes(input.receipt)||source.kind==='user'&&groupAppends.has(String(Reflect.get(source,'rpcId'))))ids.push(id)
    }
    let pendingJobCompletion=false
    for(const [id,entry] of jobs){

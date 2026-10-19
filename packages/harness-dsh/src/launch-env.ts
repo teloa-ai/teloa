@@ -35,6 +35,8 @@ export const securityEnvNames=[
  'TELOA_SUBAGENT_MAX_DEPTH','TELOA_SUBAGENT_MAX_PER_RUN',
  // 版本：非 personal 值会让宿主装配失败（工作区 .env 可借它拒绝服务）
  'TELOA_EDITION',
+ // 升级计划重启回执：授权新宿主一次性恢复本次重启暂停的工作，只认本人 CLI 启动的 process 层。
+ 'TELOA_PLANNED_RESTART',
 ] as const
 
 /**

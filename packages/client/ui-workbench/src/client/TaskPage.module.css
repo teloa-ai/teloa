@@ -1,4 +1,4 @@
-.page{container:task-page / inline-size;height:100%;min-height:0;display:flex;flex-direction:column;color:var(--teloa-text);background:var(--teloa-background)}
+.page{font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body);container:task-page / inline-size;height:100%;min-height:0;display:flex;flex-direction:column;color:var(--teloa-text);background:var(--teloa-background)}
 .page button:where(:not([data-teloa-toolbar-icon])),.dialog button:where(:not([data-teloa-toolbar-icon])){font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:7px 10px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;justify-content:center}
 .page button:hover,.dialog button:hover{background:var(--teloa-hover)}
 .page button:disabled,.dialog button:disabled{opacity:.45;cursor:not-allowed}

@@ -19,11 +19,15 @@ export function groupMessageOverlayIds(main:readonly GroupMessage[],topic:readon
 const settled=new Set(['received','completed','recorded','routing-failed','unavailable','blocked','stopped'])
 const changing=(status:GroupRoutingStatusView)=>!settled.has(status.phase)||status.recipients.some(person=>!settled.has(person.phase))
 
-/** 状态只读取本人消息；已知在途工作独立于表情窗口持续刷新，直到收到真实终态。 */
+/** 本人消息与员工交接消息都读取状态；已知在途工作独立于表情窗口持续刷新，直到收到真实终态。 */
 export function groupMessageStatusIds(main:readonly GroupMessage[],topic:readonly GroupMessage[],cap:number,previous:readonly GroupRoutingStatusView[],workMessageIds:readonly string[]=[],visible:{main?:readonly string[];topic?:readonly string[]}={}):string[]{
- const own=(rows:readonly GroupMessage[])=>rows.filter(message=>!('runId' in message))
- const allowed=new Set(own([...main,...topic]).map(message=>message.id))
- return [...new Set([...groupMessageOverlayIds(own(main),own(topic),cap,visible),...previous.filter(changing).map(status=>status.messageId),...workMessageIds])].filter(id=>allowed.has(id))
+ const allowed=new Set([...main,...topic].map(message=>message.id))
+ return [...new Set([...groupMessageOverlayIds(main,topic,cap,visible),...previous.filter(changing).map(status=>status.messageId),...workMessageIds])].filter(id=>allowed.has(id))
+}
+
+/** 输入框附近的聚合进行中状态：本人消息全部参与；员工消息只有已派出接手者的交接参与，员工普通回帖不是本人在等的回应。 */
+export function groupProgressStatuses(list:readonly GroupMessage[],statuses:readonly GroupRoutingStatusView[]):GroupRoutingStatusView[]{
+ return list.flatMap(message=>{const status=statuses.find(item=>item.messageId===message.id);return status&&(!('runId' in message)||status.recipients.length)?[status]:[]})
 }
 
 /** 本轮窗口与在途工作保留缓存，成功批次替换原状态，失败批次保留；窗口外终态随下一轮退役。 */

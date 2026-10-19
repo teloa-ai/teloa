@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {BusinessDataService,businessObjectSnapshotHash,initializeBusinessData,readBusinessObjectSnapshot,type BusinessDataQuery,type BusinessDataSourcePort} from '../src/work/business-data.ts'
 

@@ -14,6 +14,7 @@ import {createMarketContentHandler} from '../../../harness-dsh/src/market-conten
 import {createBusinessBuilderHandler} from '../../../harness-dsh/src/business-builder.ts'
 import {createBusinessDashboardResourceHandler} from '../../../harness-dsh/src/business-dashboard-resource.ts'
 import {useLocalContainerRuntime} from '../../../backend/tests/testcontainers-env.ts'
+import {Pool} from '../../../backend/tests/postgres-test-lifecycle.ts'
 import {packageBusinessDashboardResource} from '../src/client/business-dashboard-resource-api.ts'
 import {readIndustryArchive} from '../src/client/industry-archive.ts'
 import {inspectBusinessShareContent} from '@teloa/contract'
@@ -22,7 +23,7 @@ import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
 test('正式分享、导入、本人记录、升级和恢复组件连接真实PG完成模板往返',{timeout:120000},async t=>{
  const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=join(root,'packages/client/ui-workbench/src/client/'),require=createRequire(join(root,'packages/backend/package.json'))
- const {Pool}=require('pg'),{PostgreSqlContainer}=require('@testcontainers/postgresql')
+ const {PostgreSqlContainer}=require('@testcontainers/postgresql')
  await mkdir(join(root,'packages/client/ui-workbench/.runtime'),{recursive:true})
  const temp=await mkdtemp(join(root,'packages/client/ui-workbench/.runtime/template-roundtrip-')),identity={id:randomUUID,now:()=>new Date().toISOString()},unavailable=async()=>{throw Error('本轮不调用外部来源或模型')}
  let container:any,pool:any,browser:any,server:any

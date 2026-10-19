@@ -31,12 +31,17 @@ export type PlanWorkConfiguration={completion:TaskCompletionPolicy;triggers:Plan
 export type PlanWorkAuthorization=RoleWorkAuthorization|Extract<WorkExecutor,{kind:'owner'}>
 export type PlanWorkDefinition=PlanWorkConfiguration&{schema:'teloa.plan-work/v2'|'teloa.plan-work/v3';definitionVersion:number;definitionControlId:string;budgetAccountId:string;authorization:PlanWorkAuthorization}
 export function planWorkEventMatches(trigger:PlanWorkTrigger,event:WorkEvent):boolean{
- return trigger.kind==='local-event'&&trigger.eventKind===event.kind&&(event.schema==='teloa.work-event/v1'?'sourceId'in trigger&&trigger.sourceId===event.sourceId:'sourceRef'in trigger&&businessWorkSourceKey(trigger.sourceRef)===businessWorkSourceKey(event.sourceRef))
+ if(trigger.kind!=='local-event'||trigger.eventKind!==event.kind)return false
+ if(event.schema==='teloa.work-event/v1')return 'sourceId'in trigger&&trigger.sourceId===event.sourceId
+ if(!('sourceRef'in trigger))return false
+ // 类型级订阅匹配同范围、同类型的任一对象版本事件（含订阅之后才出现的新对象）；对象级与同步批次级仍按完整来源键全等。
+ if(trigger.sourceRef.kind==='business-object-type')return event.sourceRef.kind==='business-object'&&event.sourceRef.scope===trigger.sourceRef.scope&&event.sourceRef.type===trigger.sourceRef.type
+ return businessWorkSourceKey(trigger.sourceRef)===businessWorkSourceKey(event.sourceRef)
 }
 export function readPlanWorkTrigger(value:unknown):PlanWorkTrigger{
  if(value&&typeof value==='object'&&'sourceRef'in value){
   const v=workObject(value,['kind','eventKind','sourceRef','coalesce']),sourceRef=readBusinessWorkSourceRef(v.sourceRef)
-  if(v.kind!=='local-event'||v.eventKind!==(sourceRef.kind==='business-object'?'business-object-version':'business-sync-result')||!['latest','none'].includes(String(v.coalesce)))throw new WorkError('teloa/invalid-input','业务变化触发来源不正确。')
+  if(v.kind!=='local-event'||v.eventKind!==(sourceRef.kind==='business-sync'?'business-sync-result':'business-object-version')||!['latest','none'].includes(String(v.coalesce)))throw new WorkError('teloa/invalid-input','业务变化触发来源不正确。')
   return {kind:'local-event',eventKind:v.eventKind as typeof businessWorkEventKinds[number],sourceRef,coalesce:v.coalesce as 'latest'|'none'}
  }
  if(value&&typeof value==='object'&&'kind' in value&&value.kind==='schedule'){const v=workObject(value,['kind','schedule']);return {kind:'schedule',schedule:readScheduleTrigger(v.schedule)}}

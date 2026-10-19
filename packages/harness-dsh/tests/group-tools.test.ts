@@ -203,8 +203,7 @@ test('模型群定义与资料正文复用密钥闸，命中或密钥来源失�
 
 test('隔离 PostgreSQL：真实群处理器与持久服务完成建群、成员编辑和资料修订撤回，保持版本授权边界',{skip:process.env.TELOA_GROUP_TOOLS_POSTGRES_TEST!=='1'},async t=>{
  const {PostgreSqlContainer}=await import('@testcontainers/postgresql')
- const {createRequire}=await import('node:module')
- const {Pool}=createRequire(import.meta.resolve('@teloa/backend'))('pg')
+ const {Pool}=await import('../../backend/tests/postgres-test-lifecycle.ts')
  const {randomUUID}=await import('node:crypto')
  const {CollaborationService,RoleService,GroupAgentGrantService,initializeRoles,initializeRoleDelegations,initializeTasks,initializeCollaboration,initializeGroupAgentGrants}=await import('@teloa/backend')
  const container=await new PostgreSqlContainer('postgres:17-alpine').start()

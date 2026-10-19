@@ -1,6 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 const id='12345678-1234-4234-8234-123456789abc'
+test('类型级业务对象订阅匹配同范围同类型任一对象版本事件；事件本体不能是类型级；对象级与同步级匹配不变',async()=>{
+ const {planWorkEventMatches,readPlanWorkTrigger}=await import('../src/plan-work.ts'),{readWorkEvent,readBusinessWorkSourceRef,businessWorkSourceKey}=await import('../src/work-events.ts')
+ const event=(objectId:string,type='soc-source-alert',scope='SOC')=>readWorkEvent({schema:'teloa.work-event/v2',id,ownerId:'me',sourceEventId:'business:'+objectId,kind:'business-object-version',sourceRef:{kind:'business-object',scope,type,id:objectId},sourceVersion:'1',basisHash:'a'.repeat(64),createdAt:'2026-10-19T00:00:00.000Z'})
+ const typeLevel=readPlanWorkTrigger({kind:'local-event',eventKind:'business-object-version',sourceRef:{kind:'business-object-type',scope:'SOC',type:'soc-source-alert'},coalesce:'latest'})
+ assert.ok(planWorkEventMatches(typeLevel,event('wazuh/alerts/1')),'订阅后才出现的新对象也匹配');assert.ok(planWorkEventMatches(typeLevel,event('malcolm/idx/2')))
+ assert.equal(planWorkEventMatches(typeLevel,event('x','other-type')),false);assert.equal(planWorkEventMatches(typeLevel,event('x','soc-source-alert','OTHER')),false)
+ const objectLevel=readPlanWorkTrigger({kind:'local-event',eventKind:'business-object-version',sourceRef:{kind:'business-object',scope:'SOC',type:'soc-source-alert',id:'wazuh/alerts/1'},coalesce:'none'})
+ assert.ok(planWorkEventMatches(objectLevel,event('wazuh/alerts/1')));assert.equal(planWorkEventMatches(objectLevel,event('wazuh/alerts/2')),false,'对象级订阅仍只认同一对象')
+ assert.throws(()=>readPlanWorkTrigger({kind:'local-event',eventKind:'business-sync-result',sourceRef:{kind:'business-object-type',scope:'SOC',type:'soc-source-alert'},coalesce:'latest'}),'类型级订阅只能是对象版本事件')
+ assert.throws(()=>readWorkEvent({schema:'teloa.work-event/v2',id,ownerId:'me',sourceEventId:'business:t',kind:'business-object-version',sourceRef:{kind:'business-object-type',scope:'SOC',type:'soc-source-alert'},sourceVersion:'1',basisHash:'a'.repeat(64),createdAt:'2026-10-19T00:00:00.000Z'}),'类型级来源不能作为事件本体')
+ assert.equal(businessWorkSourceKey(readBusinessWorkSourceRef({kind:'business-object-type',scope:'SOC',type:'soc-source-alert'})),JSON.stringify(['business-object-type','SOC','soc-source-alert']))
+ assert.throws(()=>readBusinessWorkSourceRef({kind:'business-object-type',scope:'SOC',type:'t',id:'x'}),'类型级来源不带对象身份')
+})
 test('本人计划草稿显式区分无员工身份，旧员工草稿可选字段省略且规范化不混入Task技能字段',async()=>{
  const {readOwnerPlanFields,readRolePlanDraftFields,readPlanWorkDefinition}=await import('../src/plan-work.ts')
  const fields={title:'本人核对',goal:'核对原已授权资料',scope:'general',dataScope:'已选资料',delivery:'核对结论',trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},notificationPolicy:'attention'}

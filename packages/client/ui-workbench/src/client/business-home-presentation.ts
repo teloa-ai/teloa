@@ -1,6 +1,8 @@
 import type { BusinessScopeKind, BusinessScopeLabel } from './business-directory.js';
 import type { IndustryDataSourceInstance } from './industry-data-source-api.js';
 import type { IndustryLoadRecord } from './industry-load-api.js';
+import type { ManagedMcpConnectionRecord } from './mcp-connections-api.js';
+import type { BusinessSyncRuleView } from '@teloa/contract';
 import type { AttentionItem } from './attention-item.js';
 import type { PreviewRole } from './role-preview.js';
 import type { PreviewTask } from './task-preview.js';
@@ -21,7 +23,9 @@ export type BusinessHomeCard = {
     sourceNoun?: string;
     /** 这张卡上「这个业务有什么」的七行计数；空行不在其中，卡上据此只说有的那几段。 */
     composition: CompositionCount[];
-    situationKey: 'business.home.situation.connected' | 'business.home.situation.none' | 'business.home.situation.connectedNoStaff' | 'business.home.situation.noneNoStaff';
+    /** 一个也没确认接入、且有来源状态读不出来：处境句说「待核对」，不说「还没接入」。 */
+    sourcesUnknown: boolean;
+    situationKey: 'business.home.situation.connected' | 'business.home.situation.none' | 'business.home.situation.unknown' | 'business.home.situation.connectedNoStaff' | 'business.home.situation.noneNoStaff' | 'business.home.situation.unknownNoStaff';
     lineKey: 'business.home.line.connected' | 'business.home.line.none';
 };
 
@@ -46,9 +50,49 @@ export const nextBusinessHome = (
             : signal.origin === 'view' ? (signal.viewChanged ? true : null)
                 : signal.targetChanged ? false : null;
 
-/** 数据源数只认已经完成授权的正式实例；模板声明、待授权、漂移回退与已解除实例都不算已接入。 */
-export const businessHomeSources = (dataSources: readonly IndustryDataSourceInstance[], scope: string): number =>
-    dataSources.filter(instance => instance.scope === scope && instance.state === 'active').length;
+/**
+ * 本地业务经应用/MCP 的正式接入观测：`rules` 来自宿主 `business-sync/rules`（规则授权 × 业务级运行开关 = running），
+ * `connections` 来自受管 MCP 连接目录。任一位读不到就是 `undefined`，投影据此如实说「待核对」，不猜。
+ */
+export type BusinessSourceObservation = {
+    rules?: readonly BusinessSyncRuleView[];
+    connections?: readonly Pick<ManagedMcpConnectionRecord, 'serverName' | 'status' | 'tools'>[];
+};
+
+/** 目录卡与范围内页共用的来源判据：已接入几个、还有没有判不出来的。 */
+export type BusinessSourceState = { connected: number; unknown: boolean };
+
+/**
+ * 已接入来源按物理身份合并去重，两条路径各自只认真实状态：
+ * - 模板来源：已完成授权的正式实例（`active`）；待授权、漂移回退、已解除都不算（原语义保留）。
+ * - 本地业务的 `mcp-tool` 映射：规则在跑、该 MCP 连接此刻 `connected` 且映射工具声明只读；只有映射配置不算接入。
+ * `business-data-port` 读的是模板数据源端口，身份已由实例一侧计入，不再双计；`role-result` 是员工成果，不是外部来源。
+ * 规则读不到、或在跑的 MCP 映射读不到连接目录、或旧宿主没有来源身份时标 `unknown`，由界面如实表达。
+ */
+export function businessHomeSourceState(dataSources: readonly IndustryDataSourceInstance[], scope: string, observation?: BusinessSourceObservation): BusinessSourceState {
+    const identities = new Set<string>();
+    for (const instance of dataSources) if (instance.scope === scope && instance.state === 'active') identities.add('port:' + instance.binding.sourceId);
+    if (!observation) return { connected: identities.size, unknown: false };
+    if (observation.rules === undefined) return { connected: identities.size, unknown: true };
+    let unknown = false;
+    for (const rule of observation.rules) {
+        if (rule.scope !== scope || !rule.running) continue;
+        if (rule.source === undefined) { unknown = true; continue; }
+        if (rule.source.kind !== 'mcp-tool') continue;
+        if (observation.connections === undefined) { unknown = true; continue; }
+        const { serverName, tool } = rule.source;
+        // 与宿主同步闸一致：连接在线且映射工具仍在目录中、声明只读才算接入；在线但没有工具目录时如实标未知。
+        const connection = observation.connections.find(row => row.serverName === serverName && row.status === 'connected');
+        if (!connection) continue;
+        if (connection.tools === undefined) { unknown = true; continue; }
+        if (connection.tools.some(row => row.name === tool && row.readOnly)) identities.add('mcp:' + serverName + '/' + tool);
+    }
+    return { connected: identities.size, unknown };
+}
+
+/** 数据源数只认真正接入的来源：已授权的模板实例，以及连接在线且规则在跑的 MCP 映射来源（见 `businessHomeSourceState`）。 */
+export const businessHomeSources = (dataSources: readonly IndustryDataSourceInstance[], scope: string, observation?: BusinessSourceObservation): number =>
+    businessHomeSourceState(dataSources, scope, observation).connected;
 
 /** 在岗同事：这一范围里既没暂停也没退役的数字员工；分身（`twin`）不算在岗人手。 */
 export const businessHomeStaff = (roles: readonly PreviewRole[], scope: string): readonly PreviewRole[] =>
@@ -67,7 +111,7 @@ const KIND_ORDER: Record<BusinessScopeKind, number> = { builtin: 0, domain: 1, l
 
 export function businessHomeCards(
     labels: readonly BusinessScopeLabel[],
-    snapshot: { roles: readonly PreviewRole[]; dataSources: readonly IndustryDataSourceInstance[]; attention: readonly AttentionItem[]; tasks: readonly PreviewTask[]; locale: string; loads?: readonly IndustryLoadRecord[]; plans?: readonly { scope: string; state: string; title: string }[] },
+    snapshot: { roles: readonly PreviewRole[]; dataSources: readonly IndustryDataSourceInstance[]; attention: readonly AttentionItem[]; tasks: readonly PreviewTask[]; locale: string; loads?: readonly IndustryLoadRecord[]; plans?: readonly { scope: string; state: string; title: string }[]; sourceObservations?: Readonly<Record<string, BusinessSourceObservation>> },
 ): BusinessHomeCard[] {
     return labels
         // 删除配置后，迁移为历史可读性重新登记的自动范围不再是一项当前业务。
@@ -77,7 +121,8 @@ export function businessHomeCards(
             || snapshot.roles.some(role => role.kind === 'employee' && role.state !== 'retired' && roleSupportsScope(role.scopes, label.scope))
             || (snapshot.plans ?? []).some(plan => plan.scope === label.scope && plan.state !== 'archived'))
         .map((label): BusinessHomeCard => {
-            const sources = businessHomeSources(snapshot.dataSources, label.scope);
+            const sourceState = businessHomeSourceState(snapshot.dataSources, label.scope, snapshot.sourceObservations?.[label.scope]);
+            const sources = sourceState.connected, sourcesUnknown = !sources && sourceState.unknown;
             const staff = businessHomeStaff(snapshot.roles, label.scope);
             return {
                 scope: label.scope,
@@ -86,14 +131,15 @@ export function businessHomeCards(
                 title: label.title,
                 kind: label.kind,
                 sources,
+                sourcesUnknown,
                 staff,
                 attention: businessHomeAttention(snapshot.attention, label.scope),
                 working: businessHomeWorking(snapshot.tasks, label.scope),
                 ...(label.sourceNoun===undefined?{}:{sourceNoun:label.sourceNoun}),
-                // 处境句两件事各说各的：接没接上来源、有没有同事在这儿（原型 `situationOf` 的两段拼法）。
+                // 处境句两件事各说各的：接没接上来源、有没有同事在这儿（原型 `situationOf` 的两段拼法）；来源读不出来时如实说待核对。
                 situationKey: staff.length
-                    ? (sources ? 'business.home.situation.connected' : 'business.home.situation.none')
-                    : (sources ? 'business.home.situation.connectedNoStaff' : 'business.home.situation.noneNoStaff'),
+                    ? (sources ? 'business.home.situation.connected' : sourcesUnknown ? 'business.home.situation.unknown' : 'business.home.situation.none')
+                    : (sources ? 'business.home.situation.connectedNoStaff' : sourcesUnknown ? 'business.home.situation.unknownNoStaff' : 'business.home.situation.noneNoStaff'),
                 lineKey: sources ? 'business.home.line.connected' : 'business.home.line.none',
             };
         })

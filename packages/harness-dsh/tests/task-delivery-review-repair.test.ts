@@ -114,17 +114,21 @@ test('真实Loop的R4隔离全部旧AI意见，只保留当前稿、原事实和
  assert.equal(result(legacy),fixed,'旧v4四轮冷读继续核全部旧意见和真实依赖')
 })
 
-test('真实Loop：剩余步数不能覆盖完整R3和最坏R4时，在repair开始前停止，不用半套修订耗尽预算',async t=>{
+test('真实Loop：复核预算与起草取证步数分开计，长稿四单元R2有据拒绝后也能进入完整R3修订与R4独立验收',async t=>{
  const section=(n:number)=>`## 第${n}节\n\n`+Array.from({length:140},(_,j)=>`第${n}节第${j}句内容。`).join('')+'\n'
  const longDraft=Array.from({length:9},(_,i)=>section(i+1)).join('\n')
  assert.equal(splitReviewUnits(longDraft).length,4,'实际单元划分产生已消费的模型步骤')
- const f=await runtime(t,[text(longDraft),...Array.from({length:4},()=>call(revise())),call(r2Reject())]);await f.send()
- assert.deepEqual(ends(f.events),['error'])
- assert.equal(f.adapter.requests.length,6)
- assert.equal(f.traces.at(-1)!.reason,'review-repair-budget')
- assert.ok(!f.traces.some(entry=>entry.round===3),'没有申请或应用半个repair')
- assert.equal(result(f.events),undefined)
- assert.equal(delivered(f.events).length,0)
+ const heading='## 第1节（待核）',repaired=longDraft.replace('## 第1节',heading).trim()
+ const repair={phase:'revise',issues:[{problem:'按原资料修正分类及其依据。',basis:basis.map(ref=>({...ref})),affectedBlockIds:[1],coverage:{change:[1],retain:[],unrelated:Array.from({length:17},(_,i)=>i+2),unknown:[]},edits:[{blockId:1,after:heading}]}]}
+ // R1 四单元零改 + R2 首单元有据拒绝后，R3 四单元与 R4 四单元仍在独立复核预算（4+1+4+4≤17）内。
+ const f=await runtime(t,[text(longDraft),...Array.from({length:4},()=>call(revise())),call(r2Reject()),call(repair),...Array.from({length:3},()=>call(revise())),call(r4Accept()),...Array.from({length:3},()=>call(verify()))]);await f.send()
+ assert.equal(f.adapter.requests.length,1+4+1+4+4)
+ assert.ok(!f.traces.some(entry=>entry.reason==='review-repair-budget'),'不在repair开始前因起草步数挤占而停止')
+ assert.deepEqual(f.traces.filter(entry=>entry.state==='requested').map(entry=>[entry.round,entry.unit]),[[1,0],[1,1],[1,2],[1,3],[2,0],[3,0],[3,1],[3,2],[3,3],[4,0],[4,1],[4,2],[4,3]],'第3轮修订与第4轮独立验收的请求实际发出')
+ assert.deepEqual(ends(f.events),['completed'])
+ assert.equal(result(f.events),repaired)
+ assert.equal(result(clone(f.events)),repaired)
+ assert.equal(delivered(f.events).length,1)
 })
 
 test('真实Loop：尚未形成草稿时仍受同租约十步硬限，真实工具错误续步不能发出第十一次provider调用',async t=>{

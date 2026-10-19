@@ -9,7 +9,9 @@ test('群内提及只接受self并绑定原运行，非群、过期发言权、�
  registerGroupMentionTool(ctx,{context:async id=>{calls.push(['read',id]);return context},declare:async(id,request)=>{if(failDeclaration)throw Error('private storage token');calls.push(['declare',id,request])}})
  const exec={agent:{session:{id:'original-session',header:{},snapshotEvents:()=>[]}},signal:new AbortController().signal}
  assert.equal((await pre({name:tool.name,arguments:{target:'self'},...exec},async()=>({kind:'allow'}))).kind,'allow')
- await tool.execute({target:'self'},exec)
+ const receipt=JSON.parse(await tool.execute({target:'self'},exec))
+ assert.equal(receipt.mentionSelf,true,'复核按 mentionSelf 识别真实提醒回执')
+ assert.match(receipt.notice,/最后一条回复作为正式交付/,'回执提示完整成果须在最后一条回复中给出')
  assert.deepEqual(calls.at(-1),['declare','original-session','original-request'])
  const declarations=calls.filter(call=>Array.isArray(call)&&call[0]==='declare').length
  for(const args of [{target:'Max'},{target:'self',owner:'other'},{target:'self',groupId:'other'},{target:'self',name:'Max'},{}])await assert.rejects(tool.execute(args,exec),(error:any)=>['INVALID_ARGS','teloa/invalid-input'].includes(error.code))

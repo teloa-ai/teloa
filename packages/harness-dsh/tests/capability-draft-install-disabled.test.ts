@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {WorkError,type PageCreateDraft} from '@teloa/contract'
 import {SkillInstallationService,SkillAvailabilityService,initializeSkillInstallations,initializeRoles,initializePlans,initializeTasks,initializeObjectConversations,initializeTaskRuns,type NativeSkillMetadata,type SkillInstallSourceBundle} from '@teloa/backend'
@@ -14,7 +14,6 @@ import {createSkillAvailabilityHandler} from '../src/skill-availability.ts'
 // NL-03：真实 Postgres + 真实安装/启停服务 + 真实宿主处理器；只把市场导入、来源读取与原生文件替换为隔离桩。
 // harness 包不直接依赖 pg；沿用既有生产用例从 backend 解析同一驱动。
 type DbPool=ConstructorParameters<typeof SkillInstallationService>[0]
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg') as {Pool:new(config:{connectionString:string})=>DbPool}
 let container:StartedPostgreSqlContainer,pool:DbPool
 const owner='local:teloa-owner',now='2026-10-15T00:00:00.000Z',sha=(s:string)=>createHash('sha256').update(s).digest('hex')
 const native:NativeSkillMetadata={name:'meeting-notes',description:'整理会议纪要',modelInvocable:true,userInvocable:true,bodyHash:sha('body')}

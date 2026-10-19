@@ -145,27 +145,33 @@ test('多单元复核：每轮每个单元一次调用，宿主租约把各单�
  assert.deepEqual(rounds.map(entry=>Reflect.get(entry,'inputSha256')),[draftSha256(longDraft),draftSha256(after)],'轮次记录的输入摘要与回执结果一致')
 })
 
-test('多单元失败面：跨单元编辑、某单元计划非法（整轮不部分应用）、某单元截断、第 2 轮仍需修改、单元间取消（共享时限）都不交付，且不再追加调用',async t=>{
+test('多单元失败面：跨单元编辑、某单元计划非法（整轮不部分应用）、某单元截断、第 2 轮仍需修改、单元间取消（共享时限）都不交付；唯一纠正名额用尽后不再追加调用',async t=>{
  const edited=planOf(longDraft,[['第1节第3句内容。','第1节第3句已核对。']])
- for(const [label,replies,requests,reason] of [
-  ['跨单元编辑',[text(longDraft),text(planOf(longDraft,[['第2节第5句内容。','x']]))],2,'rewrite-plan:edit-range'],
-  ['后一单元计划非法时前一单元的编辑也不应用',[text(longDraft),text(edited),text(planOf(longDraft,[['不存在的句子','x']]))],3,'rewrite-plan:affected-blocks'],
-  ['单元截断',[text(longDraft),text(edited),text(planOf(longDraft,[]),'max-tokens')],3,'rewrite-finish:max-tokens'],
+ // 同一类非法回执连续两次：第一次用掉整租约唯一纠正名额，第二次按原原因收错。
+ const crossUnit=planOf(longDraft,[['第2节第5句内容。','x']]),unknownBlock=planOf(longDraft,[['不存在的句子','x']])
+ for(const [label,replies,requests,reason,correction] of [
+  ['跨单元编辑',[text(longDraft),text(crossUnit),text(crossUnit)],3,'rewrite-plan:edit-range',undefined],
+  ['后一单元计划非法时前一单元的编辑也不应用',[text(longDraft),text(edited),text(unknownBlock),text(unknownBlock)],4,'rewrite-plan:affected-blocks',undefined],
+  // 长度截断不给补交：原生循环把 max-tokens 记为整轮收尾原因，仍立即收错。
+  ['单元截断',[text(longDraft),text(edited),text(planOf(longDraft,[]),'max-tokens')],3,'rewrite-finish:max-tokens',undefined],
  ] as const)await t.test(label,async sub=>{
   const f=await runtime(sub,[...replies,text('不应出现')])
   await f.send()
-  assert.equal(f.adapter.requests.length,requests,'失败后不再追加调用')
+  assert.equal(f.adapter.requests.length,requests,'纠正名额用尽后不再追加调用')
   assert.deepEqual(ends(f.events()),['error'])
   assert.equal(f.traces.at(-1)!.reason,reason)
+  assert.deepEqual(f.traces.filter(entry=>entry.state==='requested'&&entry.reason?.startsWith('correction:')).map(entry=>entry.reason),correction?[correction]:[],'语义拒绝沿错误回执续步不新增输入，截断不发补交提醒')
   assert.ok(!f.traces.some(entry=>entry.state==='applied'),'整轮未原子应用')
   assert.equal(delivered(f.events()).length,0);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined,'草稿与部分编辑都不成为交付')
  })
  await t.test('第 2 轮某单元仍需修改',async sub=>{
   const after=longDraft.replace('第1节第3句内容。','第1节第3句已核对。').trim()
-  const f=await runtime(sub,[text(longDraft),text(edited),text(planOf(longDraft,[])),text(planOf(longDraft,[])),text(verify(['r1:u1:i1'],[[2]])),text({...verify(),verdict:'reject',findings:[{problem:'本单元仍有无据结论。',basis:[passageBasis(material.catalog,'goal',goal)],blockIds:[4]}]}),text('不应进入下一单元'),text('不应出现')])
+  const f=await runtime(sub,[text(longDraft),text(edited),text(planOf(longDraft,[])),text(planOf(longDraft,[])),text(verify(['r1:u1:i1'],[[2]])),text({...verify(),verdict:'reject',findings:[{problem:'本单元仍有无据结论。',basis:[passageBasis(material.catalog,'goal',goal)],blockIds:[4]}]}),text('R3 只写说明不交回执'),text('补交提醒后仍不交回执'),text('不应出现')])
   await f.send()
-  assert.equal(f.adapter.requests.length,6,'剩余4步不足以完整修订与冷验，不进入下一单元或半轮修订')
-  assert.equal(f.traces.at(-1)!.reason,'review-repair-budget')
+  assert.equal(f.adapter.requests.length,8,'R2 有据拒绝后在独立复核预算内进入 R3，不进入 R2 下一单元')
+  assert.deepEqual(f.traces.filter(entry=>entry.state==='requested').map(entry=>[entry.round,entry.unit,entry.reason??null]),[[1,0,null],[1,1,null],[1,2,null],[2,0,null],[2,1,null],[3,0,null],[3,0,'correction:plan:missing-submission']])
+  assert.ok(!f.traces.some(entry=>entry.reason==='review-repair-budget'),'复核预算与起草步数分开计')
+  assert.equal(f.traces.at(-1)!.reason,'rewrite-r3-plan:missing-submission','R3 补交后仍缺交即收错')
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
  })
  await t.test('单元之间取消（共享任务时限）',async sub=>{
@@ -244,14 +250,14 @@ test('真实租约链：成组问题的多个修改先原子应用再验收；�
  assert.deepEqual(f.traces.filter(entry=>entry.round===1&&(entry.state==='planned'||entry.state==='applied')).map(entry=>[entry.state,entry.unit??null,entry.edits]),[['planned',0,1],['planned',1,0],['planned',2,1],['applied',null,2]])
  assert.equal(units.length,3)
  await t.test('同块重复修订拒绝',async sub=>{
-  const g=await runtime(sub,[text(longDraft),text(planOf(longDraft,[first,first])),text('不应出现')])
-  await g.send();assert.equal(g.adapter.requests.length,2);assert.equal(g.traces.at(-1)!.reason,'rewrite-plan:block-conflict');assert.equal(readTaskRunGroupResult(g.events(),'rpc'),undefined)
+  const g=await runtime(sub,[text(longDraft),text(planOf(longDraft,[first,first])),text(planOf(longDraft,[first,first])),text('不应出现')])
+  await g.send();assert.equal(g.adapter.requests.length,3,'唯一纠正名额用尽后仍重复即收错');assert.equal(g.traces.at(-1)!.reason,'rewrite-plan:block-conflict');assert.equal(readTaskRunGroupResult(g.events(),'rpc'),undefined)
  })
  await t.test('重复组越出本单元',async sub=>{
   const outside=['第2节第5句内容。','x'] as const
-  const g=await runtime(sub,[text(longDraft),text(planOf(longDraft,[first,outside,outside])),text('不应出现')])
+  const g=await runtime(sub,[text(longDraft),text(planOf(longDraft,[first,outside,outside])),text(planOf(longDraft,[first,outside,outside])),text('不应出现')])
   await g.send()
-  assert.equal(g.adapter.requests.length,2)
+  assert.equal(g.adapter.requests.length,3,'唯一纠正名额用尽后仍越界即收错')
   assert.equal(g.traces.at(-1)!.reason,'rewrite-plan:edit-range')
   assert.equal(readTaskRunGroupResult(g.events(),'rpc'),undefined,'不部分应用、不回退草稿')
  })
@@ -317,8 +323,9 @@ test('候选：编辑重分块后按宿主旧新映射核验依赖，旧编号�
   const draft='甲摘要。\n\n乙分析。\n\n丙结论。'
   const first={phase:'revise',issues:[{problem:'摘要修订影响结论核对。',basis:[passageBasis(material.catalog,'goal',goal)],affectedBlockIds:[1,3],coverage:{change:[1],retain:[3],unrelated:[2],unknown:[]},edits:[{blockId:1,after:'甲修订。\n\n新增说明。'}]}]}
   const accepted={...verify(['r1:u1:i1']),changeChecks:[{issueId:'r1:u1:i1',status:'verified',reviewedBlockIds:stale?[1,3]:[1,2,4]}]}
-  const f=await runtime(sub,[text(draft),text(first as unknown as Submission),text(accepted as unknown as Submission)]);await f.send()
-  assert.equal(f.adapter.requests.length,3)
+  // 错误旧编号连续提交两次以耗尽唯一纠正名额；准确新编号一次通过，不消费第二份。
+  const f=await runtime(sub,[text(draft),text(first as unknown as Submission),text(accepted as unknown as Submission),text(accepted as unknown as Submission)]);await f.send()
+  assert.equal(f.adapter.requests.length,stale?4:3)
   const expected='甲修订。\n\n新增说明。\n\n乙分析。\n\n丙结论。'
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),stale?undefined:expected)
   if(stale)assert.ok(f.traces.some(x=>x.reason==='rewrite-r2-plan:change-blocks'))

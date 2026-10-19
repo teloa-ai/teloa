@@ -33,6 +33,16 @@ test('普通任务没有来源上下文时不生成伪依据',()=>{
  assert.deepEqual(taskRunContextSections({}),[])
 })
 
+test('续办的新事实使用同一依据组件另列，保留原固定版本而不混成当前快照',()=>{
+ const object={scope:'soc',type:'alert',id:'alert-1',version:1,snapshotHash:'a'.repeat(64),title:'告警',source:'Wazuh',observedAt:'2026-10-19T00:00:00.000Z',receivedAt:'2026-10-19T00:00:01.000Z',quality:'complete' as const,summary:'原事实',fields:[{label:'记录',value:'原记录'}]}
+ const updated={...object,version:2,snapshotHash:'b'.repeat(64),summary:'新增事实',fields:[{label:'记录',value:'新增记录'}]}
+ const sections=taskRunContextSections({businessContext:{taskId:'22222222-2222-4222-8222-222222222222',sourceId:'soc_logs',object,updates:[updated],notice:'固定来源不授予权限'}})
+ assert.deepEqual(sections.map(s=>s.titleKey),['taskExecution.context.businessTitle','taskExecution.context.businessUpdateTitle'])
+ assert.deepEqual(sections.map(s=>s.facts.find(f=>f.labelKey==='taskExecution.context.version')?.value),['1','2'])
+ assert.deepEqual(sections.map(s=>s.requirements[0]?.value),['原记录','新增记录'])
+ assert.equal(object.summary,'原事实')
+})
+
 test('待执行记录默认展开固定依据并渲染统一上下文模型',async()=>{
  const source=await readFile(new URL('../src/client/TaskExecutions.tsx',import.meta.url),'utf8')
  assert.match(source,/taskRunContextSections/)

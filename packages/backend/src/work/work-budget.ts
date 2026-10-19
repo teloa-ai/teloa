@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,taskInput,readWorkBudgetPolicy,type WorkBudgetPolicy,type BudgetReservation} from '@teloa/contract'
+import {WorkError,taskInput,readWorkBudgetPolicy,workBudgetElapsedWindowMs,type WorkBudgetPolicy,type BudgetReservation} from '@teloa/contract'
 import {authorizeOwnerWork,type OwnerWorkAuthority} from './twin-execution-consents.ts'
 import type {WorkAccessLease} from './work-access.ts'
 
@@ -12,7 +12,7 @@ const exhausted=(reason='unknown',scope:'work'|'owner'='work')=>new WorkError('t
 const invalid=()=>new WorkError('teloa/invalid-input','工作额度请求格式不正确。')
 const epochs=new WeakMap<Pool,Map<string,number>>()
 const reservationStates=new WeakMap<Pool,Map<string,{state:BudgetReservation['state'];epoch:number}>>()
-/** 默认有限；本人可在工作设置确认新额度。闲置等待不消耗模型 token。 */
+/** 默认有限；本人可在工作设置确认新额度。闲置等待不消耗模型 token；耗时上限按滚动窗口计，不是终身累计。 */
 export const defaultWorkBudgetPolicy:WorkBudgetPolicy=Object.freeze({maxGoalRounds:32,maxTokens:2_000_000,maxElapsedMs:21_600_000,maxConcurrent:4,maxRetries:3,stagnationRounds:3,money:null})
 const ownerPolicy:WorkBudgetPolicy={...defaultWorkBudgetPolicy,maxTokens:8_000_000,maxConcurrent:8}
 type ReserveInput={budgetAccountId:string;controlGeneration:number;modelRequestId:string;kind:BudgetReservation['kind'];tokens:number;rounds:number}
@@ -60,8 +60,9 @@ export class WorkBudgetService{
  }
  private async stats(db:PoolClient,owner:string,id:string|null){
   // 用量未知仍全额计入 token；只有活动请求占并发，已核验终态不能永久封住下一次工作。
-  const row=(await db.query(`select coalesce(sum(case when state='settled' then actual_tokens else reserved_tokens end),0) as tokens,coalesce(sum(reserved_rounds),0) as rounds,count(*) filter(where (state='reserved' or state='unknown' and elapsed_terminal is null) and reserved_tokens>0) as concurrent,coalesce(sum(case when reserved_tokens>0 then greatest(0,extract(epoch from(coalesce(elapsed_ended_at,settled_at,now())-created_at))*1000) else 0 end),0) as elapsed from teloa_work_budget_reservations where owner_id=$1 and ($2::uuid is null or budget_account_id=$2) and state<>'released'`,[owner,id])).rows[0]
-  return {tokens:Number(row.tokens),rounds:Number(row.rounds),concurrent:Number(row.concurrent),elapsed:Number(row.elapsed)}
+  // 耗时只取滚动窗口内的模型调用区间：7×24 持续业务的旧耗时满窗口后自动释放；未封口调用仍按进行中计到当前。
+  const row=(await db.query(`select coalesce(sum(case when state='settled' then actual_tokens else reserved_tokens end),0) as tokens,coalesce(sum(reserved_rounds),0) as rounds,count(*) filter(where (state='reserved' or state='unknown' and elapsed_terminal is null) and reserved_tokens>0) as concurrent,coalesce(sum(case when reserved_tokens>0 then greatest(0,extract(epoch from(least(coalesce(elapsed_ended_at,settled_at,now()),now())-greatest(created_at,now()-$3::double precision*interval '1 millisecond')))*1000) else 0 end),0) as elapsed from teloa_work_budget_reservations where owner_id=$1 and ($2::uuid is null or budget_account_id=$2) and state<>'released'`,[owner,id,workBudgetElapsedWindowMs])).rows[0]
+  return {tokens:Number(row.tokens),rounds:Number(row.rounds),concurrent:Number(row.concurrent),elapsed:Math.round(Number(row.elapsed))}
  }
  async configure(owner:string,input:unknown){
   const a=taskInput(input,['requestId','budgetAccountId','expectedVersion','policy']),policy=readWorkBudgetPolicy(a.policy)
@@ -91,7 +92,7 @@ export class WorkBudgetService{
    await db.query('insert into teloa_work_budget_changes values($1,$2,$3,$4)',[owner,a.requestId,JSON.stringify(a),JSON.stringify(result)]);lease.assertCurrent();await db.query('commit');this.invalidate(owner,'owner');return result
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
- async readOwner(owner:string){if(!identity(owner))throw invalid();const db=await this.pool.connect();try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-budget/'+owner]);const policy=await this.ownerPolicy(db,owner),used=await this.stats(db,owner,null);await db.query('commit');return {...policy,usedTokens:used.tokens,usedRounds:used.rounds,concurrent:used.concurrent,moneyMinorUnits:null}}catch(e){await db.query('rollback');throw e}finally{db.release()}}
+ async readOwner(owner:string){if(!identity(owner))throw invalid();const db=await this.pool.connect();try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-budget/'+owner]);const policy=await this.ownerPolicy(db,owner),used=await this.stats(db,owner,null);await db.query('commit');return {...policy,usedTokens:used.tokens,usedRounds:used.rounds,concurrent:used.concurrent,usedElapsedMs:used.elapsed,moneyMinorUnits:null}}catch(e){await db.query('rollback');throw e}finally{db.release()}}
  /** 恢复事务复用原连接。此许可只核额度，不能自行激活控制或派发模型。 */
  async admissionInTransaction(db:PoolClient,owner:string,budgetAccountId:string):Promise<WorkAccessLease>{
   const {policy}=await this.lock(db,owner,budgetAccountId),total=await this.ownerPolicy(db,owner)
@@ -99,6 +100,24 @@ export class WorkBudgetService{
   this.assertCapacity(accountStats,policy);this.assertCapacity(ownerStats,total.policy,0,0,'owner')
   const epoch=this.epoch(owner,budgetAccountId),ownerEpoch=this.epoch(owner,'owner')
   return Object.freeze({assertCurrent:()=>{if(this.epoch(owner,budgetAccountId)!==epoch||this.epoch(owner,'owner')!==ownerEpoch)throw exhausted()}})
+ }
+ /**
+  * 派发前的原子并发准入：在与预留同序的本人总额→职责账户锁下，把账户内尚未终态的 Run（已准备/提交/受理/活动）与活动模型预留
+  * 一并计入并发位；满额抛 `budget-exhausted(concurrent)`，调用方保留原任务与领取为未派发，下一周期再试。
+  * 只核对、不建预留、不改预算、不扩额度；模型请求时的预算预留与控制许可照旧另行核验。
+  */
+ async admitRunStartInTransaction(db:PoolClient,owner:string,budgetAccountId:string):Promise<void>{
+  const {policy}=await this.lock(db,owner,budgetAccountId),total=await this.ownerPolicy(db,owner)
+  const activeRuns=async(account:string|null)=>Number((await db.query(`select count(*) as n from teloa_task_runs r join teloa_task_work_lineage l on l.owner_id=r.owner_id and l.task_id=r.task_id
+   where r.owner_id=$1 and ($2::uuid is null or l.budget_account_id=$2) and r.state not in ('ended','withdrawn','configuration_failed')`,[owner,account])).rows[0]?.n)
+  const accountStats=await this.stats(db,owner,budgetAccountId),ownerStats=await this.stats(db,owner,null)
+  this.assertCapacity(accountStats,policy);this.assertCapacity(ownerStats,total.policy,0,0,'owner')
+  if(Math.max(accountStats.concurrent,await activeRuns(budgetAccountId))>=policy.maxConcurrent)throw exhausted('concurrent')
+  if(Math.max(ownerStats.concurrent,await activeRuns(null))>=total.policy.maxConcurrent)throw exhausted('concurrent','owner')
+ }
+ async admitRunStart(owner:string,budgetAccountId:string):Promise<void>{
+  const db=await this.pool.connect()
+  try{await db.query('begin');await this.admitRunStartInTransaction(db,owner,budgetAccountId);await db.query('commit')}catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async reserveInTransaction(db:PoolClient,owner:string,input:ReserveInput):Promise<BudgetReservation>{
   return this.reserveWithContext(db,owner,input,true)
@@ -148,7 +167,7 @@ export class WorkBudgetService{
   const epoch=this.epoch(owner,r.budgetAccountId),ownerEpoch=this.epoch(owner,'owner'),reservationEpoch=state.epoch
   return Object.freeze({assertCurrent:()=>{const current=states.get(key);if(this.epoch(owner,r.budgetAccountId)!==epoch||this.epoch(owner,'owner')!==ownerEpoch||!current||current.epoch!==reservationEpoch||!['reserved','unknown'].includes(current.state))throw exhausted()}})
  }
- async read(owner:string,input:unknown){const a=taskInput(input,['budgetAccountId']);if(!uuid(a.budgetAccountId))throw invalid();const db=await this.pool.connect();try{await db.query('begin');const {row,policy}=await this.lock(db,owner,a.budgetAccountId),s=await this.stats(db,owner,a.budgetAccountId);await db.query('commit');return {budgetAccountId:a.budgetAccountId,version:row.version,policy,usedTokens:s.tokens,usedRounds:s.rounds,concurrent:s.concurrent,moneyMinorUnits:null}}catch(e){await db.query('rollback');throw e}finally{db.release()}}
+ async read(owner:string,input:unknown){const a=taskInput(input,['budgetAccountId']);if(!uuid(a.budgetAccountId))throw invalid();const db=await this.pool.connect();try{await db.query('begin');const {row,policy}=await this.lock(db,owner,a.budgetAccountId),s=await this.stats(db,owner,a.budgetAccountId);await db.query('commit');return {budgetAccountId:a.budgetAccountId,version:row.version,policy,usedTokens:s.tokens,usedRounds:s.rounds,concurrent:s.concurrent,usedElapsedMs:s.elapsed,moneyMinorUnits:null}}catch(e){await db.query('rollback');throw e}finally{db.release()}}
  async markDispatched(owner:string,input:unknown){const a=taskInput(input,['reservationId']);if(!uuid(a.reservationId))throw invalid();const result=await this.pool.query("update teloa_work_budget_reservations set state='unknown' where owner_id=$1 and id=$2 and state='reserved' returning *",[owner,a.reservationId]);if(!result.rows[0])throw new WorkError('teloa/conflict','本次请求未持有可派发的额度。');return this.remember(reservation(result.rows[0]))}
  async releaseUnaccepted(owner:string,input:unknown){const a=taskInput(input,['reservationId']);if(!uuid(a.reservationId))throw invalid();const rows=await this.pool.query("update teloa_work_budget_reservations set state='released',settled_at=$3 where owner_id=$1 and id=$2 and state in ('reserved','released') returning *",[owner,a.reservationId,this.clock.now()]);if(!rows.rows[0])throw new WorkError('teloa/conflict','请求已可能消耗额度，须核对真实回执，不能释放。');return this.remember(reservation(rows.rows[0]),true)}
  /** 宿主核对原生日志后的内部结算口，不注册本人/模型 RPC；结束耗时与未知用量分别保留。 */

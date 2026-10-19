@@ -18,6 +18,30 @@ test('暂停走原生取消但不写不可恢复 Run stop；未知外部动作�
  control.state='stopping';await driver.apply(owner,control,new AbortController().signal);assert.equal(business,1)
 })
 
+test('已结束且带原生终态证据的成功 Run：旧会话不可读时以持久终态结算收口；结算不成立、link 在途/未知、证据未结束或缺端口仍待核对',async()=>{
+ const ended={state:'ended' as const,turn:1,messageSeq:8,endSeq:50,reason:'completed'}
+ const run:any={id:'run',taskId:'task',roleId:'role',sessionId:'old-session',nativeRequestId:'native',state:'ended',stopRequestedAt:null,evidence:{...ended}}
+ let settled=true,links:any[]=[],readSession=0
+ const cold={stopState:async()=>{readSession++;throw new WorkError('teloa/unavailable','旧会话不可 materialize')},backgroundState:async()=>({outstanding:false,interrupted:false}),subagentState:async()=>'none',goalObservation:async()=>{readSession++;throw new WorkError('teloa/unavailable','旧 Goal 足迹不可读')},events:async()=>[]}
+ const make=(ports:object,withProof=true)=>new WorkControlDriver({runs:{get:async()=>run},runtimeLinks:{list:async()=>links},ports,...(withProof?{terminalSettled:async(_owner:string,value:any)=>{assert.equal(value.id,run.id);return settled}}:{})} as never)
+ const input={runId:'run',action:'pause' as const,generation:20}
+ assert.equal((await make(cold).inspectRun('owner',input)).settled,true,'持久终态结算成立即收口');assert.equal(readSession,0,'不为宣布停妥读取旧会话')
+ assert.equal((await make({}).inspectRun('owner',input)).settled,true,'冷宿主缺检查器同样以持久结算为证')
+ settled=false;assert.equal((await make({}).inspectRun('owner',input)).settled,false,'结算不成立不伪造停妥')
+ assert.equal((await make(cold).inspectRun('owner',input).catch(error=>error)).code,'teloa/unavailable','结算不成立时回到原路径读会话并如实失败，不静默判停妥')
+ settled=true;links=[{kind:'job',payload:{record:'job',runtimeId:taskRunRuntimeId,requestId:'native',jobId:'j',status:'running'}}]
+ assert.equal((await make({}).inspectRun('owner',input)).settled,false,'在途 job 不走持久结算')
+ links=[{kind:'browser',payload:{status:'dirty',dispatchId:'write:1'}}]
+ const dirty=await make({}).inspectRun('owner',input);assert.equal(dirty.settled,false);assert.deepEqual(dirty.unknownOperationIds,['browser:write:1'],'未知浏览器动作照常上报')
+ links=[];run.evidence={state:'active',turn:1,messageSeq:8}
+ assert.equal((await make({}).inspectRun('owner',input)).settled,false,'原生证据未结束不走持久结算')
+ run.evidence={...ended};run.state='active'
+ assert.equal((await make({}).inspectRun('owner',input)).settled,false,'未结束 Run 仍需宿主检查器')
+ run.state='ended'
+ assert.equal((await make({},false).inspectRun('owner',input)).settled,false,'没有持久结算端口时维持原口径：冷宿主不判停妥')
+ assert.equal((await make(cold,false).inspectRun('owner',input).catch(error=>error)).code,'teloa/unavailable','没有端口时仍按原路径读会话并如实失败')
+})
+
 test('外部预留和运行未结清时不能停妥，旧宿主与unknown只返回待核对',async()=>{
  let status='running',runtimeId:string=taskRunRuntimeId
  const run={id:'run',state:'active'},driver=new WorkControlDriver({runs:{get:async()=>run},runtimeLinks:{list:async()=>[{kind:'external',nativeId:'reservation',payload:{provider:'codex',runtimeId,reservationId:'reservation',status}}]},ports:{stopState:async()=>({running:false,settledSeq:3}),backgroundState:async()=>({outstanding:false,interrupted:false}),subagentState:async()=> 'none'}} as never)

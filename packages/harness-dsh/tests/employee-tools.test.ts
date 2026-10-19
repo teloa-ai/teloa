@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
@@ -21,7 +21,6 @@ import {initializeTasks} from '../../backend/src/work/tasks.ts'
 import {createRoleHandler} from '../src/roles.ts'
 import {registerEmployeeTools,type EmployeeToolsPorts} from '../src/employee-tools.ts'
 
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg')
 let container:StartedPostgreSqlContainer,pool:RoleService['pool']
 before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')

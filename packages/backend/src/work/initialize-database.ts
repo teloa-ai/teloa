@@ -72,6 +72,7 @@ import {initializeBusinessDefinitions} from './business-definition-local.ts'
 import {initializePageCreateDrafts} from './page-create-drafts.ts'
 import {initializeMethodReuse} from './method-reuse.ts'
 import {initializeBusinessTasks} from './business-tasks.ts'
+import {initializeBusinessTaskSourceUpdates} from './business-task-source-updates.ts'
 import {initializeSecurityRequests} from '../security/request-journal.ts'
 import {initializeSecurityActions} from '../security/actions.ts'
 import {initializeSecurityApprovals} from '../security/approvals.ts'
@@ -188,6 +189,8 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeGroupRoutingAttempts(pool)
  await initializeGroupWorkInputs(pool)
  await initializeWorkEvents(pool)
+ // 更新账本引用任务、业务快照与可信事件，须在这些父表之后创建。
+ await initializeBusinessTaskSourceUpdates(pool)
  await initializeWorkProgress(pool)
  await initializeWorkRetries(pool)
  await initializeConversationWork(pool)

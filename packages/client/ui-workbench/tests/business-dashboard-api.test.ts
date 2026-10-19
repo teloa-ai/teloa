@@ -74,6 +74,8 @@ test('持续规则列表与启停：固定请求键，回包映射/修订核对�
  const view={...state,title:'SOC 告警同步',schedule:{kind:'every',seconds:300},running:false}
  const {api,calls}=fake(method=>method==='business-sync/rules'?[view]:state)
  assert.deepEqual(await api.syncRules({scope:'SOC'}),[view])
+ const sourced={...view,source:{kind:'mcp-tool',serverName:'soc_logs',tool:'wazuh_alerts'}}
+ assert.deepEqual(await createBusinessDashboardApi(async()=>[sourced]).syncRules({scope:'SOC'}),[sourced],'新宿主附带的来源物理身份原样读回')
  assert.deepEqual(await api.setSyncRule({scope:'SOC',mappingId:'soc-alerts',enabled:false,expectedRevision:0,requestId}),state)
  assert.deepEqual(calls,[{method:'business-sync/rules',payload:{scope:'SOC'}},{method:'business-sync/rule-set',payload:{scope:'SOC',mappingId:'soc-alerts',enabled:false,expectedRevision:0,requestId}}])
  await assert.rejects(api.setSyncRule({scope:'SOC',mappingId:'soc-alerts',enabled:true,expectedRevision:1,requestId:'bad'}))

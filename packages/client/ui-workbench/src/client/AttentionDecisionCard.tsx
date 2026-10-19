@@ -20,16 +20,17 @@ export type AttentionRiskFacts={riskTier:SecurityRiskTier;reversible:SecurityRev
  * 依据行是叙述，走 Markdown 固定子集；远程图片一律不加载，免得把“谁在看这条依据”
  * 泄露给图片主机。
  */
-export function AttentionDecisionCard({id,item,sourceName,scopeName,occurred,summary,risk,request,evidence,actions}:{
+export function AttentionDecisionCard({id,item,sourceName,scopeName,occurred,summary,risk,request,evidence,actions,embedded=false}:{
  id:string;item:AttentionItem;sourceName:string;scopeName:string;occurred:string
  request?:DecisionRequest|undefined
  summary?:string|undefined;risk?:AttentionRiskFacts|undefined
  evidence:readonly EvidenceEntry[];actions:ReactNode
+ embedded?:boolean|undefined
 }){
  const {t}=useI18n()
  // 依据 = 事项原因 + 对象摘要（任务目标 / 动作 goal / 交接原因），两者都可能为空。
  const basis=[attentionReasonText(item.reason,key=>t(key)),evidence.some(entry=>entry.kind==='text'&&entry.body.trim()===summary?.trim())?undefined:summary?.trim()].filter(value=>value!==undefined&&value!=='').join('\n\n')
- return <div className={css.card} id={id}>
+ return <div className={[css.card,embedded?css.embedded:undefined].filter(Boolean).join(' ')} id={id}>
   {request&&<section className={css.request} aria-label={t('attention.request.title')}>
    <h3>{request.title}</h3>
    <div><span>{t('attention.request.targets')}</span><ul>{request.targets.map(target=><li key={target}>{target}</li>)}</ul></div>

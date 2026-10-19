@@ -5,6 +5,13 @@ import type {Artifact} from '../src/client/artifact-preview.ts'
 import {createHash} from 'node:crypto'
 const id='12345678-1234-4234-8234-123456789012',source={kind:'session' as const,id:'s1',scope:'general',version:'binding',title:'来源'},at='2026-09-11T00:00:00Z'
 const input:Artifact={id:'temporary',source:{kind:'session',id:'s1'},primary:false,links:[],feedback:[],versions:[{number:1,title:'成果',sections:[{id:'p1',title:'正文',text:'结果'}],source:{ref:{kind:'session',id:'s1'},scope:'general',version:'binding',title:'来源',author:'本人',private:true,evidence:[]},note:'保存',author:'本人',at}]}
+test('跨步骤质量退回使用固定反馈请求身份，已成功回读后重试仍不换ID',async()=>{
+ const artifact={...structuredClone(input),id},requestId='87654321-1234-4234-8234-123456789012',requests:string[]=[]
+ const saved={artifactId:id,ownerId:'owner',number:1,source,content:{title:'成果',sections:[{id:'p1',title:'正文',text:'结果'}],snapshotIds:[],note:'保存'},createdAt:at}
+ const api=createArtifactApi(async(method,payload:any)=>{if(method==='artifacts/feedback/add'){requests.push(payload.requestId);return {id:requestId,artifactId:id,ownerId:'owner',version:1,sectionId:'p1',text:'补充依据',createdAt:at}}if(method==='artifacts/versions')return [saved];if(method==='artifacts/feedback/list')return [];throw Error(method)})
+ await api.feedback(artifact,1,'p1','补充依据',requestId);await api.feedback(artifact,1,'p1','补充依据',requestId)
+ assert.deepEqual(requests,[requestId,requestId])
+})
 test('任务消息保存使用关联会话并可读回，未关联消息不捕获',async()=>{
  const artifact=structuredClone(input);artifact.source={kind:'task',id};artifact.versions[0]!.source.ref=artifact.source
  const message={sessionId:'s1',messageId:'m1',seq:1,role:'assistant' as const,at,text:'原结论',images:[],interrupted:false,omittedBlocks:0};artifact.versions[0]!.messages=[message]

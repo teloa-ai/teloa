@@ -127,21 +127,29 @@ export class TaskService{
  async edit(owner:string,input:unknown):Promise<WorkTask>{
   ownerIdentity(owner);const row=taskInput(input,['taskId','expectedVersion','fields']),fields=taskInput(row.fields,['title','goal'])
   if(!uuid(row.taskId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1)throw new WorkError('teloa/invalid-input','任务身份或目标版本不正确。')
+  // 只传 title 或只传 goal 时另一字段沿用基线任务；显式 undefined、空对象与非法值在读库前拒绝，不当作「沿用」。
+  if(!Object.keys(fields).length||Object.values(fields).some(value=>value===undefined))throw new WorkError('teloa/invalid-input','请提供实际需要修改的任务名称或目标。')
+  const normalized=taskDefinition({title:'任务',goal:'目标',scope:'general',...fields}),changes:Partial<Pick<WorkTask,'title'|'goal'>>={...(fields.title===undefined?{}:{title:normalized.title}),...(fields.goal===undefined?{}:{goal:normalized.goal})}
+  // 业务、群、技能与完成策略始终沿用基线，不由本接口改写。
+  const complete=(base:WorkTask)=>taskDefinition({title:base.title,goal:base.goal,...changes,scope:base.scope,groupId:base.groupId,skills:base.skills,...(base.completionPolicy?{completionPolicy:base.completionPolicy}:{})})
   const client=await this.pool.connect()
   try{await client.query('begin')
    const rows=await client.query('select * from teloa_tasks where owner_id=$1 and id=$2 for update',[owner,row.taskId])
    if(!rows.rows[0])throw new WorkError('teloa/forbidden','任务不存在或不属于本人。')
-   const task=readStoredTask(rows.rows[0]),definition=taskDefinition({...fields,scope:task.scope,groupId:task.groupId,skills:task.skills,...(task.completionPolicy?{completionPolicy:task.completionPolicy}:{})})
-   const stored=JSON.stringify(definition),spec=JSON.stringify(requestFields(definition))
-   const receipts=await client.query('select *,request_spec=$3::jsonb as same_request from teloa_task_edits where task_id=$1 and base_version=$2',[task.id,row.expectedVersion,spec])
-   if(receipts.rows[0]){
-    const receipt=receipts.rows[0];if(!receipt.same_request)throw new WorkError('teloa/version-conflict','原版本已保存其他目标，请核对新版本。')
+   const task=readStoredTask(rows.rows[0])
+   // 旧版本回执按 (task, base_version) 固定；补全字段只能来自回执的固定结果，不能取最新 Task，否则标题后续变化会让 goal-only 重试被误判为其他目标。
+   const receipt=(await client.query('select * from teloa_task_edits where task_id=$1 and base_version=$2',[task.id,row.expectedVersion])).rows[0]
+   if(receipt){
     let saved:WorkTask
-    try{const raw=receipt.result;saved=readStoredTask({...raw,created_at:new Date(raw.created_at),updated_at:new Date(raw.updated_at)});if(saved.id!==task.id||saved.ownerId!==owner||saved.version!==(row.expectedVersion as number)+1||JSON.stringify(requestFields(taskDefinition({title:saved.title,goal:saved.goal,scope:saved.scope,groupId:saved.groupId,skills:saved.skills,...(saved.completionPolicy?{completionPolicy:saved.completionPolicy}:{})})))!==spec)throw Error()}
+    try{const raw=receipt.result;saved=readStoredTask({...raw,created_at:new Date(raw.created_at),updated_at:new Date(raw.updated_at)});if(saved.id!==task.id||saved.ownerId!==owner||saved.version!==(row.expectedVersion as number)+1||!isDeepStrictEqual(receipt.request_spec,requestFields(taskDefinition({title:saved.title,goal:saved.goal,scope:saved.scope,groupId:saved.groupId,skills:saved.skills,...(saved.completionPolicy?{completionPolicy:saved.completionPolicy}:{})}))))throw Error()}
     catch{throw new WorkError('teloa/storage-corrupt','任务编辑回执损坏，已停止重试。')}
+    // 提供的每个字段都须与固定结果一致；省略字段视为沿用，异值重放不得借原回执通过。
+    if(!Object.entries(changes).every(([key,value])=>saved[key as 'title'|'goal']===value))throw new WorkError('teloa/version-conflict','原版本已保存其他目标，请核对新版本。')
     await client.query('commit');return saved
    }
    if(task.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','任务版本已变化，请核对新版本。')
+   // 无回执且版本相等：当前 Task 就是本次编辑的基线。
+   const definition=complete(task),stored=JSON.stringify(definition),spec=JSON.stringify(requestFields(definition))
    if(['running','completed','cancelled'].includes(task.state))throw new WorkError('teloa/conflict','执行中或已结束的任务不能修改目标。')
    if(task.title===definition.title&&task.goal===definition.goal)throw new WorkError('teloa/conflict','任务目标没有变化。')
    // 编辑沿用任务原有的业务范围：该范围若已不再登记（例如历史标签被清理），就不该继续往它名下写新版本。

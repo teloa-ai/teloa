@@ -4,7 +4,8 @@ import {taskInput} from './tasks.ts'
 import {isRecord} from './resources.ts'
 export const workEventKinds=['material-version','group-message','child-completed','approval-result'] as const
 export const businessWorkEventKinds=['business-object-version','business-sync-result'] as const
-export type BusinessWorkSourceRef={kind:'business-object';scope:string;type:string;id:string}|{kind:'business-sync';scope:string;mappingId:string}
+/** `business-object-type` 只用于计划订阅（同范围同类型的任一对象实质变化）；事件本体恒为对象级或同步批次级。 */
+export type BusinessWorkSourceRef={kind:'business-object';scope:string;type:string;id:string}|{kind:'business-object-type';scope:string;type:string}|{kind:'business-sync';scope:string;mappingId:string}
 type WorkEventIdentity={id:string;ownerId:string;sourceEventId:string;sourceVersion:string;createdAt:string}
 export type WorkEventV1=WorkEventIdentity&{schema:'teloa.work-event/v1';kind:typeof workEventKinds[number];sourceId:string}
 export type WorkEventV2=WorkEventIdentity&{schema:'teloa.work-event/v2';kind:typeof businessWorkEventKinds[number];sourceRef:BusinessWorkSourceRef;basisHash:string}
@@ -16,18 +17,18 @@ export function workObject(value:unknown,keys:readonly string[]):Record<string,u
 export function workMoment(value:unknown):string{if(typeof value!=='string'||!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)throw new WorkError('teloa/invalid-input','长期工作时间格式不正确。');return value}
 export function readBusinessWorkSourceRef(value:unknown):BusinessWorkSourceRef{
  const kind=value&&typeof value==='object'&&'kind'in value?value.kind:undefined
- const v=workObject(value,kind==='business-object'?['kind','scope','type','id']:['kind','scope','mappingId'])
- if(!isBusinessScopeKey(v.scope)||(kind==='business-object'? !workIdentity(v.type)||!workIdentity(v.id):kind!=='business-sync'||!workIdentity(v.mappingId)))throw new WorkError('teloa/invalid-input','业务事件来源不正确。')
- return kind==='business-object'?{kind,scope:v.scope as string,type:v.type as string,id:v.id as string}:{kind:'business-sync',scope:v.scope as string,mappingId:v.mappingId as string}
+ const v=workObject(value,kind==='business-object'?['kind','scope','type','id']:kind==='business-object-type'?['kind','scope','type']:['kind','scope','mappingId'])
+ if(!isBusinessScopeKey(v.scope)||(kind==='business-object'? !workIdentity(v.type)||!workIdentity(v.id):kind==='business-object-type'?!workIdentity(v.type):kind!=='business-sync'||!workIdentity(v.mappingId)))throw new WorkError('teloa/invalid-input','业务事件来源不正确。')
+ return kind==='business-object'?{kind,scope:v.scope as string,type:v.type as string,id:v.id as string}:kind==='business-object-type'?{kind,scope:v.scope as string,type:v.type as string}:{kind:'business-sync',scope:v.scope as string,mappingId:v.mappingId as string}
 }
 export function businessWorkSourceKey(value:BusinessWorkSourceRef):string{
  const v=readBusinessWorkSourceRef(value)
- return JSON.stringify(v.kind==='business-object'?[v.kind,v.scope,v.type,v.id]:[v.kind,v.scope,v.mappingId])
+ return JSON.stringify(v.kind==='business-object'?[v.kind,v.scope,v.type,v.id]:v.kind==='business-object-type'?[v.kind,v.scope,v.type]:[v.kind,v.scope,v.mappingId])
 }
 export function readWorkEvent(value:unknown):WorkEvent{
  if(value&&typeof value==='object'&&'schema'in value&&value.schema==='teloa.work-event/v2'){
   const v=workObject(value,['schema','id','ownerId','sourceEventId','kind','sourceRef','sourceVersion','basisHash','createdAt']),sourceRef=readBusinessWorkSourceRef(v.sourceRef)
-  if(!workUuid(v.id)||!workIdentity(v.ownerId)||!workIdentity(v.sourceEventId)||!workIdentity(v.sourceVersion)||typeof v.basisHash!=='string'||!/^[a-f0-9]{64}$/.test(v.basisHash)||v.kind!==(sourceRef.kind==='business-object'?'business-object-version':'business-sync-result'))throw new WorkError('teloa/invalid-input','业务事件身份或依据不正确。')
+  if(sourceRef.kind==='business-object-type'||!workUuid(v.id)||!workIdentity(v.ownerId)||!workIdentity(v.sourceEventId)||!workIdentity(v.sourceVersion)||typeof v.basisHash!=='string'||!/^[a-f0-9]{64}$/.test(v.basisHash)||v.kind!==(sourceRef.kind==='business-object'?'business-object-version':'business-sync-result'))throw new WorkError('teloa/invalid-input','业务事件身份或依据不正确。')
   return {...v,sourceRef,createdAt:workMoment(v.createdAt)} as WorkEventV2
  }
  const v=workObject(value,['schema','id','ownerId','sourceEventId','kind','sourceId','sourceVersion','createdAt'])

@@ -82,6 +82,19 @@ test('路由失败：状态给出失败与恢复；同一重试请求重放两�
  assert.deepEqual(await f.attempts.retry(f.owner,{...retry,requestId:randomUUID(),expectedAttempt:2}),{messageId:message.id,attemptVersion:3})
 })
 
+test('路由额度拒绝：状态说明额度原因与范围并保留重新安排；旧退化决策仍是通用提示',async()=>{
+ const f=await fixture(),limited=await f.send('今天的告警谁来看？'),generic=await f.send('再看一下。'),legacy=await f.send('旧消息。')
+ await f.decide(limited.id,{...decisionOf('degraded'),budget:{reason:'elapsed',scope:'owner'}})
+ await f.decide(generic.id,{...decisionOf('degraded'),budget:{}})
+ await f.decide(legacy.id,decisionOf('degraded'))
+ const read=async(id:string)=>{const item=await f.read(id);return {phase:item.phase,hint:item.hintCode,canRetry:item.canRetry,budget:item.budget}}
+ assert.deepEqual(await read(limited.id),{phase:'routing-failed',hint:'budget-exhausted',canRetry:true,budget:{reason:'elapsed',scope:'owner'}})
+ assert.deepEqual(await read(generic.id),{phase:'routing-failed',hint:'budget-exhausted',canRetry:true,budget:{}})
+ const old=await f.read(legacy.id)
+ assert.deepEqual({phase:old.phase,hint:old.hintCode,canRetry:old.canRetry},{phase:'routing-failed',hint:'route-unavailable',canRetry:true});assert.equal('budget' in old,false)
+ await assert.rejects(f.decide(randomUUID(),{...decisionOf('parse-failed'),budget:{}}),{code:'teloa/invalid-input'})
+})
+
 test('未知提交：状态只链接原工作，不允许重新选人；归档群与他人不能重试',async()=>{
  const f=await fixture(),message=await f.send('请整理跟进表。'),roleId=randomUUID()
  await f.decide(message.id,decisionOf('routed',[roleId]))

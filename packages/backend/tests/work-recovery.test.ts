@@ -19,14 +19,19 @@ test('恢复仅本人明确批准当前 checkpoint；未知拒绝，已受理不
   await f.pool.query('update teloa_task_runs set input_text=$2 where id=$1',[runId,original])
   const controls=new WorkControlService(f.pool,identity,{ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled:true,unknownOperationIds:[]})})
   const c=await controls.get(owner,{controlId:lineage.roundControlId}),p=await controls.change(owner,{requestId:randomUUID(),controlId:c.id,expectedVersion:c.version,action:'pause',scope:'round',roundControlId:null}),paused=await controls.reconcile(owner,{controlId:c.id,generation:p.generation})
-  let reason='unknown',hash='a'.repeat(64),host=1,transactionInspections=0
-  const ports={hostGeneration:()=>host,ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectCheckpoint:async(_owner:string,_input:any,db:any)=>{if(db)transactionInspections++;await (db??f.pool).query('select 1');return {reason,checkpointSha256:hash,hasPendingInput:true,unknownOperationIds:reason==='unknown'?['external:unknown']:[]}},authorizeResume:async()=>({assertCurrent(){}})}
+  let reason='unknown',hash='a'.repeat(64),host=1,transactionInspections=0,pendingInput=true
+  const ports={hostGeneration:()=>host,ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectCheckpoint:async(_owner:string,_input:any,db:any)=>{if(db)transactionInspections++;await (db??f.pool).query('select 1');return {reason,checkpointSha256:hash,hasPendingInput:pendingInput,unknownOperationIds:reason==='unknown'?['external:unknown']:[]}},authorizeResume:async()=>({assertCurrent(){}})}
   const service=new api.WorkRecoveryService(f.pool,identity,controls,ports)
-  const pending=await service.inspect(owner,{controlId:c.id});assert.equal(pending[0].reason,'unknown');assert.equal(pending[0].safeRecovery,false)
+  const pending=await service.inspect(owner,{controlId:c.id});assert.equal(pending[0].reason,'unknown');assert.equal(pending[0].safeRecovery,false);assert.equal(pending[0].resumable,false,'结果未知的候选不可恢复')
   const request={requestId:randomUUID(),controlId:c.id,expectedVersion:paused.version,candidateRunIds:[runId]}
   await assert.rejects(service.resume(owner,request),{code:'teloa/execution-pending'})
   assert.equal((await controls.get(owner,{controlId:c.id})).state,'paused')
-  reason='accepted';const active=await service.resume(owner,request);assert.equal(active.state,'active');assert.ok(active.generation>paused.generation)
+  // 已受理却没有可核验的待办或 Goal：inspect 先如实报不可恢复，resume 按同一判据拒绝且不改控制。
+  reason='accepted';pendingInput=false
+  assert.equal((await service.inspect(owner,{controlId:c.id}))[0].resumable,false)
+  await assert.rejects(service.resume(owner,{...request,requestId:randomUUID()}),{code:'teloa/conflict'});assert.equal((await controls.get(owner,{controlId:c.id})).state,'paused')
+  pendingInput=true;assert.equal((await service.inspect(owner,{controlId:c.id}))[0].resumable,true)
+  const active=await service.resume(owner,request);assert.equal(active.state,'active');assert.ok(active.generation>paused.generation)
   assert.deepEqual(await service.resume(owner,request),active)
   const ticket=await service.acquire(owner,{requestId:request.requestId,runId});assert.equal(ticket.candidate.reason,'accepted');ticket.lease.assertCurrent()
   assert.equal((await service.begin(owner,{requestId:request.requestId,runId})).dispatch,true)

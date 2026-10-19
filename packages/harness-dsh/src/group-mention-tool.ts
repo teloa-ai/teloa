@@ -22,13 +22,14 @@ export function registerGroupMentionTool(ctx:Context,ports:Ports){
   return {sessionId,nativeRequestId:context.nativeRequestId}
  }
  ctx.tools.register(defineTool({name:groupMentionToolName,
-  description:'在本次群工作的最终回复里提及本人，提醒其阅读原消息。需要本人关注或补充意见时使用；只登记本次运行的提醒意图，运行成功回群时才出现。不是审批、任务创建或授权，不发额外消息；正文里写 @姓名 不会形成提及。',
+  description:'在本次群工作的最终回复里提及本人，提醒其阅读原消息。需要本人关注或补充意见时使用；只登记本次运行的提醒意图，运行成功回群时才出现。先调用本工具，再在最后一条回复交付完整成果和具体交接；工具调用前的中间稿不会代替最终正文，不能最后只写“报告已交付”。不是审批、任务创建或授权，不发额外消息；正文里写 @姓名 不会形成提及。',
   parameters:{target:{type:'string',enum:['self'],required:true}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
    const target=await authorize(args,exec)
    try{await ports.declare(target.sessionId,target.nativeRequestId,exec.signal)}catch(error){if(error instanceof WorkError||exec.signal.aborted)throw error;throw new WorkError('teloa/dependency-unavailable','未能保存本轮提及，请稍后重试。')}
-   return JSON.stringify({mentionSelf:true})
+   // 回执紧邻员工写最终回复的那一步：明确只有接下来的最后一条回复会作为正式交付保存与复核，避免把完整稿留在调用前、最后只交摘要。
+   return JSON.stringify({mentionSelf:true,notice:'提醒已登记。宿主只把你接下来的最后一条回复作为正式交付保存、复核并回群；调用本工具前写的正文不会被采用。请在下一条回复中完整给出成果正文（全部章节、表格与交接内容），不要只写摘要、“报告已交付”或引用未在该回复中出现的章节。'})
   },
  }))
  ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{

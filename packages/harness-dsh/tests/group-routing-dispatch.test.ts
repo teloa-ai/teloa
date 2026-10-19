@@ -7,11 +7,11 @@ import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import type {Context} from '@deepseek-ai/cordis'
 import {WorkError,groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutedAttemptTaskRequestId,groupRoutingAttemptRequestId,groupRoutingRequestId,groupRoutingSessionId,groupRoutingOutputV2Schema,groupRoutingCandidatesMax,type GroupReactionEmoji,type GroupTaskCreateInput} from '@teloa/contract'
-import {CollaborationService,GroupAgentGrantService,GroupReactionService,GroupRoutingAttemptService,GroupRoutingDecisionService,initializeGroupRoutingAttempts,initializeGroupRoutingOutbox,readCurrentGroupRoutingAttempt,RoleDelegationService,RoleLifecycleService,RoleService,RoleToolGrantService,TwinExecutionConsentService,groupRelayStopText,groupRoutedTaskGoal,groupRunConfigFailedText,initializeCollaboration,initializeGroupAgentGrants,initializeGroupReactions,initializeGroupRoutingDecisions,initializeResources,initializeRoleLifecycle,initializeRoleToolGrants,initializeRoles,initializeTasks,initializeTaskRuns,initializeTaskRunSubagents,initializeTaskRunRuntimeLinks,initializeTaskRunFlows,openResourceDatabase} from '@teloa/backend'
+import {CollaborationService,GroupAgentGrantService,GroupReactionService,GroupRoutingAttemptService,GroupRoutingDecisionService,initializeGroupRoutingAttempts,initializeGroupRoutingOutbox,readCurrentGroupRoutingAttempt,RoleDelegationService,RoleLifecycleService,RoleService,RoleToolGrantService,TwinExecutionConsentService,groupRelayStopText,groupRoutedTaskGoal,groupRoutingRetryable,groupRunConfigFailedText,initializeCollaboration,initializeGroupAgentGrants,initializeGroupReactions,initializeGroupRoutingDecisions,initializeGroupTasks,initializeResources,initializeRoleLifecycle,initializeRoleToolGrants,initializeRoles,initializeTasks,initializeTaskRuns,initializeTaskRunSubagents,initializeTaskRunRuntimeLinks,initializeTaskRunFlows,openResourceDatabase} from '@teloa/backend'
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
 import {createTaskRunGroupPublisher} from '../src/task-run-group-publisher.ts'
 import type {GroupRoutingCandidate} from '../src/group-routing.ts'
-import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,type GroupRoutingDispatchPorts} from '../src/group-routing-dispatch.ts'
+import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,readRoutingWorkCandidates,type GroupRoutingDispatchPorts} from '../src/group-routing-dispatch.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {GroupRoutingOutboxPorts} from '../src/group-routing-outbox-driver.ts'
 import type {GroupRoutingOutboxService} from '../../backend/src/work/group-routing-outbox.ts'
@@ -50,7 +50,10 @@ const endedTurn=(requestId:string,text:string)=>[
  {seq:3,time:3,type:'turn/end',data:{turn:0,reason:{kind:'stop'}}},
 ]
 
-type ModelOptions={answer?:string;broken?:boolean;onPrompt?:()=>void|Promise<void>;admissionMissing?:boolean}
+/** 路由回合因工作额度被拒：本轮只有原生失败结束，没有助手正文。 */
+const budgetRejectedTurn=(requestId:string,code:string)=>[...endedTurn(requestId,'').slice(0,2),{seq:2,time:2,type:'turn/end',data:{turn:0,reason:{kind:'error',error:{code,message:'PRIVATE_RAW'}}}}]
+
+type ModelOptions={answer?:string;broken?:boolean;onPrompt?:()=>void|Promise<void>;admissionMissing?:boolean;budgetCode?:string}
 /** 只桩原生会话面：路由通道本身（T8）照真跑，模型输出仍要过 `groupRoutingOutput` 的封闭集合判据。 */
 function modelHarness(options:ModelOptions){
  const calls={prompt:[] as Record<string,unknown>[],warn:[] as string[],bound:[] as string[],released:[] as string[]},leases=new Map<string,string>()
@@ -75,7 +78,7 @@ function modelHarness(options:ModelOptions){
     calls.prompt.push(request)
     await options.onPrompt?.()
     if(options.broken)throw Error('模型通道不可用')
-    events=endedTurn(String(request.requestId),options.answer??'')
+    events=options.budgetCode?budgetRejectedTurn(String(request.requestId),options.budgetCode):endedTurn(String(request.requestId),options.answer??'')
     return {accepted:true as const}
    },
    resolveAgent:async()=>({agent:{session}}),
@@ -92,10 +95,17 @@ const candidateOf=(roleId:string,version:number,name:string):GroupRoutingCandida
  * 数字员工回帖的真链路要走一整条运行（先例见 `group-tasks.test.ts` 的 `employeeReply`），
  * 跳数只关心 author_id 序列，因此这里按建表约束直接落行：author_id 是岗位 id 时 task_id/run_id 必须非空。
  */
-async function colleagueMessage(owner:string,groupId:string,rootId:string,roleId:string,text:string):Promise<string>{
+async function colleagueMessage(owner:string,groupId:string,rootId:string,roleId:string,text:string,taskId:string=randomUUID()):Promise<string>{
  const id=randomUUID()
  await pool.query('insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,text,reference_snapshot,created_at,task_id,run_id) values($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9::jsonb,$10,$11,$12)',
-  [id,owner,groupId,randomUUID(),'{}',rootId,roleId,text,'[]',identity.now(),randomUUID(),randomUUID()])
+  [id,owner,groupId,randomUUID(),'{}',rootId,roleId,text,'[]',identity.now(),taskId,randomUUID()])
+ return id
+}
+/** 直接落一条已存任务（供候选工作读口用）：按建表约束写齐定义、版本与负责人列，不经交办流程。 */
+async function storedTask(owner:string,fields:{title:string;groupId:string|null;assigneeRoleId?:string;state?:string}):Promise<string>{
+ const id=randomUUID(),now=identity.now()
+ await pool.query("insert into teloa_tasks(id,owner_id,request_id,request_spec,definition,version,state,assignee_role_id,assignee_role_version,created_at,updated_at) values($1,$2,$3,'{}'::jsonb,$4::jsonb,1,$5,$6,$7,$8,$8)",
+  [id,owner,randomUUID(),JSON.stringify({title:fields.title,goal:'原目标',scope:'SOC',groupId:fields.groupId,skills:[]}),fields.state??'waiting',fields.assigneeRoleId??null,fields.assigneeRoleId?1:null,now])
  return id
 }
 
@@ -123,6 +133,7 @@ function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()
    claimed:(db,actor,messageId)=>decisions.claimed(db,actor,messageId),
    isStopMessage:(db,actor,groupId,messageId)=>decisions.isStopMessage(db,actor,groupId,messageId),
    relayGateOpen:(db,actor,groupId,rootId,messageId)=>decisions.relayGateOpen(db,actor,groupId,rootId,messageId),
+   relayStopMessageId:(db,actor,groupId,rootId)=>decisions.relayStopMessageId(db,actor,groupId,rootId),
    relayStopRounds:(db,actor,groupId,rootId)=>decisions.relayStopRounds(db,actor,groupId,rootId),
    hops:(db,actor,groupId,rootId,messageId)=>decisions.hops(db,actor,groupId,rootId,messageId),
    record:(db,actor,params)=>decisions.record(db,actor,params),
@@ -152,7 +163,7 @@ function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()
 
 async function readDecision(owner:string,messageId:string){
  const row=(await pool.query('select decision from teloa_group_routing_decisions where owner_id=$1 and message_id=$2',[owner,messageId])).rows[0]
- return row?.decision as {kind:string;respond:string[];hops:number;candidateIds:string[];stopMessageId:string|null;truncatedCandidates:boolean}|undefined
+ return row?.decision as {kind:string;respond:string[];hops:number;candidateIds:string[];stopMessageId:string|null;truncatedCandidates:boolean;budget?:Record<string,string>;intent?:string;workTarget?:{taskId:string;runId:string|null}|null}|undefined
 }
 const countDecisions=async(owner:string):Promise<number>=>(await pool.query('select count(*)::int c from teloa_group_routing_decisions where owner_id=$1',[owner])).rows[0].c as number
 
@@ -176,6 +187,18 @@ test('选中一位：写决策行、建任务带 trigger=routed、prepare 与 st
  assert.equal(decision?.kind,'routed')
  assert.deepEqual(decision?.respond,[f.a.id])
  assert.equal(decision?.hops,0)
+})
+
+test('员工源交付缺少必需复核时定案为blocked，不问模型、不建下游任务',async()=>{
+ const f=await fixture(),messageId=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'请@物流补充调查。')
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.b.id,f.b.version,'物流')]})
+ Object.assign(ports,{sourceReviewed:async()=>false})
+ const {ctx,calls}=modelHarness({answer:output([f.b.id])})
+ await dispatchGroupRouting(ctx,f.owner,messageId,ports,signal())
+ assert.equal(calls.prompt.length,0);assert.equal(recorded.createTask.length,0)
+ assert.equal((await readDecision(f.owner,messageId))?.kind,'blocked')
+ await dispatchGroupRouting(ctx,f.owner,messageId,ports,signal())
+ assert.equal(await countDecisions(f.owner),1,'重入不重派，也不靠删除旧消息跳过复核')
 })
 
 test('四段顺序：锁不跨模型调用、不跨建任务',async()=>{
@@ -278,6 +301,20 @@ test('结构化 @ 由宿主直接选定接收者：模型只判断意图、不�
  const none=await readDecision(f.owner,plain.id)
  assert.equal(none?.kind,'degraded')
  assert.deepEqual(none?.respond,[])
+ assert.equal(none&&'budget' in none,false,'通道故障的退化不冒充额度拒绝')
+})
+
+test('路由回合被工作额度拒绝：退化决策持久保存额度原因与范围，不派工、可沿原消息重试',async()=>{
+ const f=await fixture()
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
+ const plain=await f.self('今天的告警谁来看？')
+ await dispatchGroupRouting(modelHarness({budgetCode:'teloa/budget-exhausted/elapsed/owner'}).ctx,f.owner,plain.id,ports,signal())
+ const limited=await readDecision(f.owner,plain.id)
+ assert.deepEqual([limited?.kind,limited?.respond,limited?.budget],['degraded',[],{reason:'elapsed',scope:'owner'}])
+ assert.ok(groupRoutingRetryable(limited as never,false));assert.equal(recorded.createTask.length,0)
+ const generic=await f.self('再看一下。')
+ await dispatchGroupRouting(modelHarness({budgetCode:'teloa/budget-exhausted'}).ctx,f.owner,generic.id,ports,signal())
+ assert.deepEqual((await readDecision(f.owner,generic.id))?.budget,{},'原因不明时只记额度拒绝，不猜维度')
 })
 
 test('模型有回但解析不过：写 parse-failed，不建任务',async()=>{
@@ -574,17 +611,24 @@ test('引用员工消息：按宿主读出的原作者直接选定；显式 @ �
  const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后'),candidateOf(f.b.id,f.b.version,'物流')]})
  const answer=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'预算还剩 680 元。')
  const quoted=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'这个数怎么来的？',replyToMessageId:answer})
- const model=modelHarness({answer:output([f.b.id])})
+ // 固定接收者时模型只在被固定的人里判断意图、不选人：合法回答不点名任何人，接收者仍由宿主按引用作者／@ 选定。
+ const answering={answer:output([])},model=modelHarness(answering)
  await dispatchGroupRouting(model.ctx,f.owner,quoted.id,ports,signal())
  assert.equal(model.calls.prompt.length,1)
+ assert.deepEqual((JSON.parse((model.calls.prompt[0]!.content as {text:string}[])[0]!.text) as {candidates:{roleId:string}[]}).candidates.map(row=>row.roleId),[f.a.id])
  assert.deepEqual(await readDecision(f.owner,quoted.id).then(row=>[row?.kind,row?.respond]),['direct',[f.a.id]])
  const overridden=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'@物流 你来核对。',replyToMessageId:answer,mentions:[{roleId:f.b.id,expectedVersion:f.b.version}]})
  await dispatchGroupRouting(model.ctx,f.owner,overridden.id,ports,signal())
  assert.deepEqual(await readDecision(f.owner,overridden.id).then(row=>[row?.kind,row?.respond]),['direct',[f.b.id]])
  const anchored=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'接着上面说。',replyToMessageId:f.root.id})
+ answering.answer=output([f.b.id])
  await dispatchGroupRouting(model.ctx,f.owner,anchored.id,ports,signal())
  assert.equal(model.calls.prompt.length,3,'引用本人消息只是上下文锚点，仍由语义选人')
  assert.deepEqual(recorded.createTask.map(item=>item.assignee?.roleId),[f.a.id,f.b.id,f.b.id])
+ // 模型点名固定接收者之外的人是非法结构：记 parse-failed 可重试，不再退化成按引用作者派交流任务（c4df592a 语义）。
+ const strayed=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'再说说这个数。',replyToMessageId:answer})
+ await dispatchGroupRouting(model.ctx,f.owner,strayed.id,ports,signal())
+ assert.deepEqual(await readDecision(f.owner,strayed.id).then(row=>[row?.kind,row?.respond]),['parse-failed',[]]);assert.equal(recorded.createTask.length,3)
 })
 
 test('结构化全员：群规则允许时每位候选直接回应；关闭时 blocked、不问模型、不建任务',async()=>{
@@ -623,6 +667,67 @@ test('沿原消息重试：新尝试使用带版本的路由与任务身份，�
 })
 
 const v2=(patch:Record<string,unknown>)=>JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'reply',respond:[],reactions:[],assignments:[],workTarget:null,...patch})
+/**
+ * 员工消息的可信来源由 GroupRoutingAttemptService 在登记重试时核对（后端 PG 用例覆盖）；这里的员工消息按建表约束直接落行，
+ * 因此直接写入一行待定案尝试，只验证编排对重试尝试仍做同样的跳数、语义判断与解析失败口径。
+ */
+const pendAttempt=(owner:string,groupId:string,messageId:string,attemptVersion:number,groupVersion:number)=>pool.query(`insert into teloa_group_routing_attempts(owner_id,message_id,group_id,attempt_version,request_id,request_spec,group_version,created_at)
+ values($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7)`,[owner,messageId,groupId,attemptVersion,randomUUID(),groupVersion,identity.now()])
+const readAttempt=async(owner:string,messageId:string,attemptVersion:number)=>(await pool.query('select decision from teloa_group_routing_attempts where owner_id=$1 and message_id=$2 and attempt_version=$3',[owner,messageId,attemptVersion])).rows[0]?.decision as {kind:string;respond:string[];intent?:string;assignments?:{roleId:string}[];hops:number}|undefined
+
+test('员工交接沿原消息重试：仍按语义判断接手者，非法输出照记 parse-failed 不按 @ 降级；有效交接按新尝试身份派工',async()=>{
+ const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'一线'),candidateOf(f.b.id,f.b.version,'调查员')]})
+ const text='升级@调查员，交接事件A：请独立交付调查结果。',handoff=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,text)
+ const broken=v2({intent:'work',respond:[f.b.id],assignments:[],workTarget:null})
+ await dispatchGroupRouting(modelHarness({answer:broken}).ctx,f.owner,handoff,ports,signal())
+ assert.equal((await readDecision(f.owner,handoff))?.kind,'parse-failed')
+ await pendAttempt(f.owner,f.group.id,handoff,2,f.group.version)
+ const again=modelHarness({answer:broken})
+ await dispatchGroupRouting(again.ctx,f.owner,handoff,ports,signal())
+ assert.ok(again.calls.prompt.every(call=>call.requestId===groupRoutingAttemptRequestId(f.owner,f.group.id,handoff,2)))
+ const second=await readAttempt(f.owner,handoff,2)
+ assert.deepEqual([second?.kind,second?.respond],['parse-failed',[]],'重试同样不把非法交接降级成交流回应')
+ assert.equal(recorded.createTask.length,0)
+ await pendAttempt(f.owner,f.group.id,handoff,3,f.group.version)
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'work',respond:[f.b.id],assignments:[{roleId:f.b.id,instructionRange:{start:0,end:text.length}}],workTarget:null})}).ctx,f.owner,handoff,ports,signal())
+ const third=await readAttempt(f.owner,handoff,3)
+ assert.deepEqual([third?.kind,third?.respond,third?.intent,third?.assignments?.map(item=>item.roleId)],['routed',[f.b.id],'work',[f.b.id]])
+ assert.deepEqual(recorded.createTask.map(item=>item.requestId),[groupRoutedAttemptTaskRequestId(f.owner,f.group.id,handoff,f.b.id,3)])
+ assert.equal((await readDecision(f.owner,handoff))?.kind,'parse-failed','原决策保留为旧审计')
+})
+
+test('接力停下后重试较早的失败消息：闸门不会再开，尝试定案为 relay-stopped 并引用原停下消息，不停在正在安排',async()=>{
+ const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.b.id,f.b.version,'物流')]})
+ const model=modelHarness({answer:output([f.b.id])})
+ let last=''
+ for(let index=0;index<6;index+=1)last=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'同事第'+index+'跳。')
+ await dispatchGroupRouting(model.ctx,f.owner,last,ports,signal())
+ const stopId=(await readDecision(f.owner,last))?.stopMessageId
+ assert.ok(stopId)
+ const late=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'停下后的交接。')
+ await decisions.withTopicLock(f.owner,f.group.id,f.root.id,db=>decisions.record(db,f.owner,{groupId:f.group.id,messageId:late,decision:{kind:'parse-failed',respond:[],reactions:[],hops:7,candidateIds:[f.b.id],truncatedCandidates:false,stopMessageId:null,at:identity.now()}}))
+ await pendAttempt(f.owner,f.group.id,late,2,f.group.version)
+ const sent=recorded.sendSystem.length
+ await dispatchGroupRouting(model.ctx,f.owner,late,ports,signal())
+ const settled=await readAttempt(f.owner,late,2) as {kind:string;stopMessageId?:string|null}|undefined
+ assert.deepEqual([settled?.kind,settled?.stopMessageId],['relay-stopped',stopId])
+ assert.equal(recorded.sendSystem.length,sent,'不另发停下消息');assert.equal(model.calls.prompt.length,0);assert.equal(recorded.createTask.length,0)
+})
+
+test('员工交接重试按原消息位置重算跳数：超过接力上限时尝试定案为 relay-stopped，不问模型、不派工',async()=>{
+ const f=await fixture(),{ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.b.id,f.b.version,'物流')]})
+ let last=''
+ for(let index=0;index<6;index+=1)last=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'同事第'+index+'跳。')
+ await decisions.withTopicLock(f.owner,f.group.id,f.root.id,db=>decisions.record(db,f.owner,{groupId:f.group.id,messageId:last,decision:{kind:'parse-failed',respond:[],reactions:[],hops:6,candidateIds:[f.b.id],truncatedCandidates:false,stopMessageId:null,at:identity.now()}}))
+ await pendAttempt(f.owner,f.group.id,last,2,f.group.version)
+ const model=modelHarness({answer:output([f.b.id])})
+ await dispatchGroupRouting(model.ctx,f.owner,last,ports,signal())
+ assert.equal(model.calls.prompt.length,0)
+ const settled=await readAttempt(f.owner,last,2)
+ assert.deepEqual([settled?.kind,settled?.hops],['relay-stopped',6])
+ assert.equal(groupRoutingRetryable(settled as never,false),false,'接力停下后不能再重新安排')
+ assert.equal(recorded.createTask.length,0)
+})
 
 test('依赖派工：模型等待期间撤销唯一前序接手者，后序一起失效，决策仍能落库且不会提前启动',async()=>{
  const f=await fixture(),text='先售后整理，再物流核对结果。',message=await f.self(text)
@@ -654,6 +759,151 @@ test('没有可回应员工时，本人对原工作的停止仍登记到原工�
  assert.deepEqual(reserved.map(item=>(item as {operation:string;taskId:string}).operation),['stop'])
 })
 
+test('引用原成果的续办关联穿过真实路由编排，登记原任务追加且不创建新任务',async()=>{
+ const f=await fixture(),message=await f.self('继续引用的原任务，修改交付，不另建任务。'),taskId=randomUUID(),runId=randomUUID(),reserved:unknown[]=[]
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后')]})
+ ports.workCandidates=async()=>[{taskId,runId,title:'原工作',state:'waiting',version:9,quoted:true}]
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{reserved.push(input);return {requestId:(input as {requestId:string}).requestId,taskId,taskVersion:9,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:'continue'}}}
+ const model=modelHarness({answer:v2({intent:'continue',workTarget:{taskId,runId}})})
+ await dispatchGroupRouting(model.ctx,f.owner,message.id,ports,signal())
+ const input=JSON.parse((model.calls.prompt[0]!.content as {text:string}[])[0]!.text) as {work:{taskId:string;quoted?:true}[]}
+ assert.deepEqual(input.work.map(item=>({taskId:item.taskId,quoted:item.quoted})),[{taskId,quoted:true}])
+ assert.deepEqual(reserved.map(item=>({taskId:(item as {taskId:string}).taskId,operation:(item as {operation:string}).operation})),[{taskId,operation:'continue'}])
+ assert.equal(recorded.createTask.length,0)
+})
+
+test('引用员工交付的续办：原任务负责人已是续办接收者，模型同时选中该员工也不另派交流回应任务；续办登记被拒绝时同样不降级成新任务',async()=>{
+ const f=await fixture(),taskId=randomUUID(),runId=randomUUID(),reserved:unknown[]=[]
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后'),candidateOf(f.b.id,f.b.version,'物流')]})
+ const delivered=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'第2版交付。')
+ ports.workCandidates=async()=>[{taskId,runId,title:'原工作',state:'waiting',version:9,quoted:true,assigneeRoleId:f.a.id}]
+ let outcome:'reserved'|'rejected'='reserved'
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{reserved.push(input);return {requestId:(input as {requestId:string}).requestId,taskId,taskVersion:9,runId:null,state:outcome,nativeRequestId:null,acceptedSeq:null,operation:'continue'}}}
+ // 真实日志里的组合：本人无 @、引用员工交付 → 宿主固定被引用员工；模型判 continue 的同时把该员工放进 respond。
+ const continued=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'继续原任务，按退回意见修订，不另建工作。',replyToMessageId:delivered})
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'continue',respond:[f.a.id],workTarget:{taskId,runId}})}).ctx,f.owner,continued.id,ports,signal())
+ assert.deepEqual(await readDecision(f.owner,continued.id).then(row=>[row?.kind,row?.respond]),['direct',[]],'续办接收者就是原任务负责人，决策里不再把同一员工列为交流回应者')
+ assert.deepEqual(reserved.map(item=>({taskId:(item as {taskId:string}).taskId,operation:(item as {operation:string}).operation})),[{taskId,operation:'continue'}])
+ assert.equal(recorded.createTask.length,0,'续办已登记到原任务，不得再为同一员工建交流回应任务')
+ // 续办登记持久记为拒绝（原工作版本已变化）：保留拒绝回执由本人处理，同样不悄悄降级成新任务。
+ outcome='rejected'
+ const rejected=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'再继续一次原任务。',replyToMessageId:delivered})
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'continue',respond:[f.a.id],workTarget:{taskId,runId}})}).ctx,f.owner,rejected.id,ports,signal())
+ assert.equal(reserved.length,2);assert.equal(recorded.createTask.length,0,'续办未成功也不能改派成新任务')
+})
+
+test('续办互斥只针对原任务负责人：模型为另一位员工安排的交流回应照常派发',async()=>{
+ const f=await fixture(),message=await f.self('继续原来的整理，物流也说一下情况。'),taskId=randomUUID(),runId=randomUUID(),reserved:unknown[]=[]
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'售后'),candidateOf(f.b.id,f.b.version,'物流')]})
+ ports.workCandidates=async()=>[{taskId,runId,title:'原工作',state:'waiting',version:9,assigneeRoleId:f.a.id}]
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{reserved.push(input);return {requestId:(input as {requestId:string}).requestId,taskId,taskVersion:9,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:'continue'}}}
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'continue',respond:[f.a.id,f.b.id],workTarget:{taskId,runId}})}).ctx,f.owner,message.id,ports,signal())
+ assert.deepEqual((await readDecision(f.owner,message.id))?.respond,[f.b.id])
+ assert.equal(reserved.length,1);assert.deepEqual(recorded.createTask.map(item=>item.assignee?.roleId),[f.b.id])
+})
+
+test('候选工作按三条持久关联取并集：群交办来源、定义关联群、本条引用的员工回帖所属任务；跨群、跨本人与已取消不入列',async()=>{
+ const f=await fixture();await initializeGroupTasks(pool)
+ const sourced=await storedTask(f.owner,{title:'群交办任务',groupId:null})
+ await pool.query("insert into teloa_group_task_sources(task_id,owner_id,request_id,request_spec,group_id,group_version,message_id,root_id,source_snapshot,snapshot_digest,created_at) values($1,$2,$3,'{}'::jsonb,$4,1,$5,$5,'{}'::jsonb,$6,$7)",[sourced,f.owner,randomUUID(),f.group.id,f.root.id,'a'.repeat(64),identity.now()])
+ const bound=await storedTask(f.owner,{title:'定义关联群的任务',groupId:f.group.id})
+ // 真实故障组合：原任务既无群交办来源，定义也没挂群（例如计划领取或旧草稿），只能从被引用的员工回帖追溯。
+ const quotedOnly=await storedTask(f.owner,{title:'仅经引用可追溯',groupId:null,assigneeRoleId:f.a.id})
+ await storedTask(f.owner,{title:'别的群',groupId:randomUUID()});await storedTask(f.owner,{title:'已取消',groupId:f.group.id,state:'cancelled'})
+ await storedTask(randomUUID(),{title:'别人的任务',groupId:f.group.id})
+ const delivered=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'第2版调查交付。',quotedOnly)
+ const quoting=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'# 原任务标题\n按同一案例更新调查交付。',replyToMessageId:delivered})
+ const work=await readRoutingWorkCandidates(f.owner,f.group.id,quoting.id,pool)
+ assert.deepEqual(work.map(item=>[item.taskId,item.quoted===true,item.assigneeRoleId]).slice(0,1),[[quotedOnly,true,f.a.id]],'被引用回帖所属原任务排最前并标 quoted')
+ assert.deepEqual(new Set(work.map(item=>item.taskId)),new Set([quotedOnly,sourced,bound]))
+ assert.equal(work.filter(item=>item.quoted).length,1)
+ const plain=await f.self('今天进度如何？')
+ assert.deepEqual(new Set((await readRoutingWorkCandidates(f.owner,f.group.id,plain.id,pool)).map(item=>item.taskId)),new Set([sourced,bound]),'未引用时仅经回帖可追溯的任务不入列，不能借非引用消息抬进本群')
+})
+
+test('本人引用自己当初的交办消息：原任务复核未通过、未回群时按该消息唯一派生的任务标 quoted；一条交办派出多项时不猜',async()=>{
+ const f=await fixture();await initializeGroupTasks(pool)
+ const source=(taskId:string,messageId:string)=>pool.query("insert into teloa_group_task_sources(task_id,owner_id,request_id,request_spec,group_id,group_version,message_id,root_id,source_snapshot,snapshot_digest,created_at) values($1,$2,$3,'{}'::jsonb,$4,1,$5,$6,'{}'::jsonb,$7,$8)",[taskId,f.owner,randomUUID(),f.group.id,messageId,f.root.id,'a'.repeat(64),identity.now()])
+ // 3110 实跑：T2 任务由本人交办消息派生，两轮复核退回未回群；本人只能引用那条交办消息退回修订。
+ const assigned=await f.self('T2 现在开始：交接送达即正式启动。'),original=await storedTask(f.owner,{title:'群任务：T2 现在开始',groupId:null,assigneeRoleId:f.a.id})
+ await source(original,assigned.id)
+ for(let i=0;i<3;i++)await source(await storedTask(f.owner,{title:'R02 新源告警持续研判',groupId:null}),(await f.self('自动告警 '+i)).id)
+ const quoting=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'## 质量退回：T2 报告按复核意见修订后再交',replyToMessageId:assigned.id})
+ const work=await readRoutingWorkCandidates(f.owner,f.group.id,quoting.id,pool)
+ assert.deepEqual(work.filter(item=>item.quoted).map(item=>item.taskId),[original],'原任务唯一标 quoted 并排最前')
+ assert.equal(work[0]!.taskId,original)
+ const split=await f.self('两位分别处理。')
+ await source(await storedTask(f.owner,{title:'甲',groupId:null}),split.id);await source(await storedTask(f.owner,{title:'乙',groupId:null}),split.id)
+ const ambiguous=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'退回修订。',replyToMessageId:split.id})
+ assert.equal((await readRoutingWorkCandidates(f.owner,f.group.id,ambiguous.id,pool)).filter(item=>item.quoted).length,0,'多项派生不猜引用对象')
+ const plainQuote=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'补一句。',replyToMessageId:(await f.self('只是记录。')).id})
+ assert.equal((await readRoutingWorkCandidates(f.owner,f.group.id,plainQuote.id,pool)).filter(item=>item.quoted).length,0,'未派生任务的本人消息不形成引用')
+})
+
+test('真实候选工作读口贯通：引用仅经回帖可追溯的原任务，模型判 continue 登记原任务；模型故障或指向他任务时记可重试失败而非交流任务；普通提问保留 reply',async()=>{
+ const f=await fixture();await initializeGroupTasks(pool)
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'调查员')]}),reserved:{taskId:string;operation:string}[]=[]
+ ports.workCandidates=(actor,groupId,messageId,db)=>readRoutingWorkCandidates(actor,groupId,messageId,db)
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{const fixed=input as {requestId:string;taskId:string;operation:'continue'|'stop'};reserved.push({taskId:fixed.taskId,operation:fixed.operation});return {requestId:fixed.requestId,taskId:fixed.taskId,taskVersion:1,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:fixed.operation}}}
+ const original=await storedTask(f.owner,{title:'原任务标题',groupId:null,assigneeRoleId:f.a.id})
+ const delivered=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'第2版调查交付。',original)
+ const quote=(text:string)=>f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text,replyToMessageId:delivered})
+ const continued=await quote('# 原任务标题\n按同一案例更新调查交付。'),model=modelHarness({answer:v2({intent:'continue',respond:[f.a.id],workTarget:{taskId:original,runId:null}})})
+ await dispatchGroupRouting(model.ctx,f.owner,continued.id,ports,signal())
+ const input=JSON.parse((model.calls.prompt[0]!.content as {text:string}[])[0]!.text) as {work:{taskId:string;quoted?:true}[]}
+ assert.deepEqual(input.work.map(item=>[item.taskId,item.quoted]),[[original,true]],'原任务以 quoted 进入模型输入')
+ assert.deepEqual(reserved,[{taskId:original,operation:'continue'}]);assert.deepEqual(await readDecision(f.owner,continued.id).then(row=>[row?.kind,row?.respond]),['direct',[]]);assert.equal(recorded.createTask.length,0)
+ const broken=await quote('# 原任务标题\n再按同一案例补充交付。')
+ await dispatchGroupRouting(modelHarness({broken:true}).ctx,f.owner,broken.id,ports,signal())
+ const failed=await readDecision(f.owner,broken.id)
+ assert.deepEqual([failed?.kind,failed?.respond],['degraded',[]]);assert.ok(groupRoutingRetryable(failed as never,false),'失败可见且可沿原消息重试');assert.equal(recorded.createTask.length,0);assert.equal(reserved.length,1)
+ const hijack=await quote('继续原任务。')
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'continue',workTarget:{taskId:randomUUID(),runId:null}})}).ctx,f.owner,hijack.id,ports,signal())
+ assert.deepEqual(await readDecision(f.owner,hijack.id).then(row=>[row?.kind,row?.respond]),['parse-failed',[]],'模型不能借引用把续办指向本群候选之外的任务');assert.equal(reserved.length,1);assert.equal(recorded.createTask.length,0)
+ const question=await quote('这份交付里的数字怎么来的？')
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'reply',respond:[f.a.id]})}).ctx,f.owner,question.id,ports,signal())
+ assert.deepEqual(await readDecision(f.owner,question.id).then(row=>[row?.kind,row?.respond]),['direct',[f.a.id]]);assert.deepEqual(recorded.createTask.map(item=>item.assignee?.roleId),[f.a.id],'普通提问仍派被引用员工交流回应');assert.equal(reserved.length,1)
+})
+
+test('实跑：本人引用原工作退回修订，模型却把同一负责人判成新 work——宿主按引用对象续办原任务，不另建同题任务；接手者不同时沿用模型结论',async()=>{
+ const f=await fixture();await initializeGroupTasks(pool)
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'调查员'),candidateOf(f.b.id,f.b.version,'复核员')]}),reserved:{taskId:string;operation:string}[]=[]
+ ports.workCandidates=(actor,groupId,messageId,db)=>readRoutingWorkCandidates(actor,groupId,messageId,db)
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{const fixed=input as {requestId:string;taskId:string;operation:'continue'|'stop'};reserved.push({taskId:fixed.taskId,operation:fixed.operation});return {requestId:fixed.requestId,taskId:fixed.taskId,taskVersion:1,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:fixed.operation}}}
+ const original=await storedTask(f.owner,{title:'T2 调查',groupId:null,assigneeRoleId:f.a.id})
+ const delivered=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'T2 中间稿。',original)
+ const quote=(text:string)=>f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text,replyToMessageId:delivered})
+ const returned=await quote('## 质量退回：按复核意见修订后再交')
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'work',respond:[f.a.id],assignments:[{roleId:f.a.id,instructionRange:{start:0,end:17}}]})}).ctx,f.owner,returned.id,ports,signal())
+ const decision=await readDecision(f.owner,returned.id)
+ assert.deepEqual([decision?.intent,decision?.respond,decision?.workTarget?.taskId],['continue',[],original])
+ assert.deepEqual(reserved,[{taskId:original,operation:'continue'}]);assert.equal(recorded.createTask.length,0,'不另建同题任务')
+ // 引用本人自己的交办消息时不固定接收者：模型交给另一位员工的新工作不改判。
+ const assigned=await f.self('T2 调查交办。'),sourced=await storedTask(f.owner,{title:'T2 交办任务',groupId:null,assigneeRoleId:f.a.id})
+ await pool.query("insert into teloa_group_task_sources(task_id,owner_id,request_id,request_spec,group_id,group_version,message_id,root_id,source_snapshot,snapshot_digest,created_at) values($1,$2,$3,'{}'::jsonb,$4,1,$5,$6,'{}'::jsonb,$7,$8)",[sourced,f.owner,randomUUID(),f.group.id,assigned.id,f.root.id,'a'.repeat(64),identity.now()])
+ const handoff=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'请复核员独立复核这份交付。',replyToMessageId:assigned.id})
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'work',respond:[f.b.id],assignments:[{roleId:f.b.id,instructionRange:{start:0,end:13}}]})}).ctx,f.owner,handoff.id,ports,signal())
+ assert.equal((await readDecision(f.owner,handoff.id))?.intent,'work','交给另一位员工的新工作不改判');assert.deepEqual(recorded.createTask.map(item=>item.assignee?.roleId),[f.b.id]);assert.equal(reserved.length,1)
+})
+
+test('实跑两份非法互斥输出：本人引用 quoted 原工作却 work＋workTarget；员工交接却 work＋空 assignments——都记 parse-failed、respond 空、不建交流任务、可重试',async()=>{
+ const f=await fixture();await initializeGroupTasks(pool)
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.a.id,f.a.version,'一线'),candidateOf(f.b.id,f.b.version,'调查员')]}),reserved:unknown[]=[]
+ ports.workCandidates=(actor,groupId,messageId,db)=>readRoutingWorkCandidates(actor,groupId,messageId,db)
+ ports.workInputs={reserveInTransaction:async(_db,_owner,input)=>{reserved.push(input);return {requestId:(input as {requestId:string}).requestId,taskId:(input as {taskId:string}).taskId,taskVersion:1,runId:null,state:'reserved',nativeRequestId:null,acceptedSeq:null,operation:'continue'}}}
+ const original=await storedTask(f.owner,{title:'原任务标题',groupId:f.group.id,assigneeRoleId:f.b.id}),delivered=await colleagueMessage(f.owner,f.group.id,f.root.id,f.b.id,'第2版调查交付。',original)
+ const text='# 原任务标题\n'+'按同一案例更新调查交付。'.repeat(60),quoting=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text,replyToMessageId:delivered})
+ const shapeOne=modelHarness({answer:v2({intent:'work',respond:[f.b.id],assignments:[{roleId:f.b.id,instructionRange:{start:0,end:text.length}}],workTarget:{taskId:original,runId:null}})})
+ await dispatchGroupRouting(shapeOne.ctx,f.owner,quoting.id,ports,signal())
+ assert.deepEqual((JSON.parse((shapeOne.calls.prompt[0]!.content as {text:string}[])[0]!.text) as {work:{taskId:string;quoted?:true}[]}).work.map(item=>[item.taskId,item.quoted]),[[original,true]],'原任务本就在 work 里并已 quoted，本例不是候选缺失')
+ const first=await readDecision(f.owner,quoting.id)
+ assert.deepEqual([first?.kind,first?.respond],['parse-failed',[]]);assert.ok(groupRoutingRetryable(first as never,false));assert.equal(recorded.createTask.length,0);assert.equal(reserved.length,0)
+ const handoff=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'升级@调查员，交接事件A，具体问题：能否判定影响、尚缺什么，请独立交付调查结果。')
+ await dispatchGroupRouting(modelHarness({answer:v2({intent:'work',respond:[f.b.id],assignments:[],workTarget:null})}).ctx,f.owner,handoff,ports,signal())
+ const second=await readDecision(f.owner,handoff)
+ assert.deepEqual([second?.kind,second?.respond],['parse-failed',[]]);assert.equal(recorded.createTask.length,0,'员工消息没有候选工作，解析失败同样不得降级成交流任务')
+})
+
 test('本群协调者进入真实路由输入，明确点名优先且不可用协调者不进入候选',async()=>{
  const f=await fixture(),group=await f.groups.change(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,fields:{name:f.group.name,announcement:f.group.announcement,rules:f.group.rules,memberRoleIds:[f.a.id,f.b.id],pinned:false,archived:false,coordinatorRoleId:f.a.id}})
  const {ports,recorded}=makePorts(f.owner,{})
@@ -662,7 +912,8 @@ test('本群协调者进入真实路由输入，明确点名优先且不可用�
  await dispatchGroupRouting(semantic.ctx,f.owner,first.id,ports,signal())
  const input=(call:Record<string,unknown>)=>JSON.parse((call.content as {text:string}[])[0]!.text) as {group:{coordinatorRoleId?:string};candidates:{roleId:string}[]}
  assert.equal(input(semantic.calls.prompt[0]!).group.coordinatorRoleId,f.a.id);assert.equal(recorded.createTask[0]!.assignee?.roleId,f.a.id)
- const direct=modelHarness({answer:output([f.a.id])}),second=await message('请物流核对。',[{roleId:f.b.id,expectedVersion:f.b.version}])
+ // 点名后模型只见被点名者；合法回答不另选人（选协调者即越出固定集合，按 c4df592a 记 parse-failed）。
+ const direct=modelHarness({answer:output([])}),second=await message('请物流核对。',[{roleId:f.b.id,expectedVersion:f.b.version}])
  await dispatchGroupRouting(direct.ctx,f.owner,second.id,ports,signal())
  assert.deepEqual(input(direct.calls.prompt[0]!).candidates.map(row=>row.roleId),[f.b.id]);assert.equal(input(direct.calls.prompt[0]!).group.coordinatorRoleId,undefined)
  assert.equal(recorded.createTask.at(-1)!.assignee?.roleId,f.b.id)

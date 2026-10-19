@@ -1,7 +1,8 @@
 /* 任务详情以阅读和交付为主；次要属性在同一个滚动面内按需展开。 */
 .heading{position:sticky;top:0;z-index:3;background:var(--teloa-background);padding-top:4px}
 .heading>header{padding-bottom:12px;gap:8px}
-.heading h2{flex:1 1 240px}
+.heading h2{flex:1 1 240px;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+.heading h2 [title],.heading h2[title]{-webkit-line-clamp:2}
 .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 16px;margin:0 0 16px;padding:4px 0 12px;border-bottom:1px solid var(--teloa-border)}
 .fact,.wideFact{display:grid;grid-template-columns:76px minmax(0,1fr);align-items:start;gap:8px;min-height:34px;padding:2px 0;font-size:var(--teloa-font-control);line-height:1.6}
 .wideFact{grid-column:1/-1}
@@ -74,3 +75,7 @@
 .actionGroup:empty,.actionGroup:has(>div:only-child:empty){display:none}
 .actionGroup>section{margin:0;padding:0;border:0;border-radius:0;background:transparent}
 .actionGroup h3{margin:0 0 8px}
+
+/* 任务目标与群消息、成果正文复用同一Markdown及字体层级。 */
+.detailMarkdown{white-space:normal;font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body)}
+.detailMarkdown :is(h1,h2,h3,h4,h5,h6){margin:12px 0 6px}.detailMarkdown> :first-child{margin-top:0}.detailMarkdown p,.detailMarkdown ul,.detailMarkdown ol{margin:6px 0}.detailMarkdown ul,.detailMarkdown ol{padding-left:20px}

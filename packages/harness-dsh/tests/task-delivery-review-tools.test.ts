@@ -11,12 +11,13 @@ import {Session,SessionId,SessionStore} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
+import * as RepeatToolReminder from '@deepseek-ai/dsh-repeat-tool-reminder'
 import {LocalJobRegistry} from '@deepseek-ai/dsh-jobs-local'
 import type {JobId,JobOutcome,JobView} from '@deepseek-ai/dsh-jobs'
-import {leaseTaskDeliveryReview,createReviewSourceCatalog,deliveryReviewToolName,type DeliveryReviewTrace} from '../src/task-delivery-review.ts'
+import {leaseTaskDeliveryReview,createReviewSourceCatalog,deliveryReviewToolName,splitReviewUnits,type DeliveryReviewTrace} from '../src/task-delivery-review.ts'
 import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 import {readSessionEvents} from '../src/session-events.ts'
-import {collectReviewToolEvidence,type DeliveryReviewExecutionSnapshot} from '../src/task-delivery-review-tools.ts'
+import {collectReviewToolEvidence,replayReviewToolEvidence,type DeliveryReviewExecutionSnapshot} from '../src/task-delivery-review-tools.ts'
 import {nativeHotCausalityFixture,toolAnswer} from './fixtures/native-hot-causality.ts'
 import {patchedNativePackage} from './fixtures/native-patched-package.ts'
 import type {NativeJobCompletion} from '../src/native-work-causality.ts'
@@ -55,7 +56,7 @@ test('真实ToolRuntime已完成工具后的最终正文仍须原R1/R2，普通�
  const adapter=new ToolReviewAdapter([call('calculation','calculation-call',{}),text(draft),revise(),verify()]);ctx.llm.registerAdapter(['minimax'],adapter)
  const {agent}=await ctx.agents.create({sessionId:SessionId('tool-review-owner'),agentOptions:{provider:'minimax',model:'MiniMax-M3',maxTokens:65536}})
  const traces:DeliveryReviewTrace[]=[],catalog=createReviewSourceCatalog([{id:'goal',kind:'goal',title:'本人目标',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}])
- const lease={runId:'run',requestId:'rpc',material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},publish:async(message:UserMessage,signal:AbortSignal)=>{signal.throwIfAborted();agent.inject(message)},trace:(entry:DeliveryReviewTrace)=>traces.push(entry),readExecution:async()=>({runId:'run',sessionId:agent.id,requestId:'rpc',allowedTools:['calculation'],continuationMessageIds:new Set<string>(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none' as const,flow:'none' as const})}
+ const lease={runId:'run',requestId:'rpc',requireReview:true as const,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},publish:async(message:UserMessage,signal:AbortSignal)=>{signal.throwIfAborted();agent.inject(message)},trace:(entry:DeliveryReviewTrace)=>traces.push(entry),readExecution:async()=>({runId:'run',sessionId:agent.id,requestId:'rpc',allowedTools:['calculation'],continuationMessageIds:new Set<string>(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none' as const,flow:'none' as const})}
  const release=leaseTaskDeliveryReview(agent,lease);t.after(release)
  agent.followup(createUserMessage({source:{kind:'user',rpcId:'rpc'},content:[{type:'text',text:goal}]}));await agent.whenIdle()
  assert.equal(executed,1)
@@ -201,4 +202,52 @@ test('两个真实Job的可信完成通知可在原同一turn批量入步，重�
  const duplicate=structuredClone(prefix),first=duplicate.find(event=>event.type==='user/message'&&event.data.id===ids[0])!
  duplicate.splice(duplicate.indexOf(first)+1,0,structuredClone(first))
  assert.equal(collectReviewToolEvidence(duplicate,binding,snapshot).state,'blocked')
+})
+
+test('官方重复提醒不能打断不同冻结单元的合法相同验收，普通工具重复提醒仍保留',async t=>{
+ const ctx=new Context();t.after(()=>ctx.fiber.dispose())
+ for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
+ await ctx.plugin(AgentLoop,{agents:[]});await ctx.plugin(RepeatToolReminder,{thresholds:[3]})
+ ctx.tools.register(defineTool({name:'calculation',description:'合成计算',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>result}))
+ const body=Array.from({length:4},(_,i)=>`## 第${i+1}节\n\n`+'已提供的合成事实。'.repeat(125)).join('\n\n'),units=splitReviewUnits(body)
+ assert.equal(units.length,4)
+ const scripts=[call('calculation','first-calculation',{}),call('calculation','second-calculation',{}),text(body),...units.map((_,i)=>call(deliveryReviewToolName,'r1-unit-'+i,{phase:'revise',issues:[]})),...units.map((_,i)=>call(deliveryReviewToolName,'r2-unit-'+i,{phase:'verify',verdict:'accept',checks:['goal',1,2,3,4,5,6,7,8].map(id=>({id,status:'pass'})),changeChecks:[],findings:[]}))]
+ const adapter=new ToolReviewAdapter(scripts);ctx.llm.registerAdapter(['minimax'],adapter)
+ const {agent}=await ctx.agents.create({sessionId:SessionId('review-repeat-units'),agentOptions:{provider:'minimax',model:'MiniMax-M3',maxTokens:65536}})
+ const catalog=createReviewSourceCatalog([{id:'goal',kind:'goal',title:'本人目标',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}]),traces:DeliveryReviewTrace[]=[]
+ const release=leaseTaskDeliveryReview(agent,{runId:'repeat-units-run',requestId:'review-input',requireReview:true,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},publish:async(message,signal)=>{signal.throwIfAborted();agent.inject(message)},trace:entry=>traces.push(entry),readExecution:async()=>({runId:'repeat-units-run',sessionId:agent.id,requestId:'review-input',allowedTools:['calculation'],continuationMessageIds:new Set(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none',flow:'none'})});t.after(release)
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'review-input'},content:[{type:'text',text:goal}]}));await agent.whenIdle()
+ assert.equal(adapter.requests.length,11,'两步取证、完整草稿、四次修订与四次验收都必须实际提交，不跳单元')
+ assert.ok(traces.some(row=>row.state==='delivered'))
+ const events=readSessionEvents(agent.session)
+ assert.equal(readTaskRunGroupResult(events,'review-input',undefined,undefined,{requireReview:true,runId:'repeat-units-run'}),body)
+ assert.ok(!events.some(event=>event.type==='agent/inbox/spliced'&&event.data.inserted?.some(message=>message.source.kind==='repeat-tool-reminder')))
+ release()
+ adapter.scripts.push(...[0,1,2].map(i=>call('calculation','ordinary-repeat-'+i,{})),text('普通任务结束。'))
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'ordinary-input'},content:[{type:'text',text:'普通合成计算'}]}));await agent.whenIdle()
+ assert.ok(readSessionEvents(agent.session).some(event=>event.type==='agent/inbox/spliced'&&event.data.inserted?.some(message=>message.source.kind==='repeat-tool-reminder'&&Reflect.get(message.source,'summary')==='calculation × 3')),'不能把普通工具防循环提醒关闭')
+})
+
+test('实跑：模型误调用未授权给它的工具、宿主拒绝只回错误时按错误回执封存并可冷读；未授权工具返回成功仍拒',()=>{
+ const rpc='rpc-refused',args='{}'
+ const events=(isError:boolean)=>{
+  const rows:any[]=[]
+  const push=(type:string,data:unknown,extra:Record<string,unknown>={})=>{rows.push({type,seq:rows.length,data,...extra});return rows.length-1}
+  push('turn/start',{turn:1})
+  push('user/message',{id:'root',source:{kind:'user',rpcId:rpc},content:[{type:'text',text:goal}],role:'user'},{surfaceOp:'append'})
+  push('assistant/message',{turn:1,step:1,message:{id:'a1',content:[{type:'tool-call',id:'c1',name:'list_agents',arguments:args}]}},{surfaceOp:'append'})
+  const callSeq=push('tool/call',{turn:1,step:1,callId:'c1',name:'list_agents',arguments:args})
+  push('tool/result',{turn:1,step:1,message:{toolCallId:'c1',isError,content:[{type:'text',text:isError?'Error: 当前会话不能使用此委派工具，请核对员工执行范围。':'[]'}]}},{sourceEventSeqs:[callSeq]})
+  push('assistant/message',{turn:1,step:2,message:{id:'draft',content:[{type:'text',text:draft}]}},{surfaceOp:'append'})
+  return rows as never
+ }
+ const snapshot:DeliveryReviewExecutionSnapshot={runId:'run',sessionId:'session',requestId:rpc,allowedTools:['hot_result'],continuationMessageIds:new Set(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none',flow:'none'}
+ const binding={runId:'run',sessionId:'session',requestId:rpc,turn:1}
+ const refused=collectReviewToolEvidence(events(true),binding,snapshot)
+ assert.equal(refused.state,'ready','一次被拒的误调用不废掉整份交付')
+ if(refused.state==='ready'){
+  assert.deepEqual(refused.evidence.receipts.map(row=>[row.name,row.isError]),[['list_agents',true]],'按错误回执原样封存')
+  assert.equal(replayReviewToolEvidence(events(true),refused.evidence),true,'冷读复算一致')
+ }
+ assert.deepEqual(collectReviewToolEvidence(events(false),binding,snapshot),{state:'blocked',reason:'tool-identity'},'未授权工具返回成功仍是身份异常')
 })

@@ -44,6 +44,8 @@ const childEnv={
   TELOA_WORKSPACE_ROOT:workspaceRoot,
   TELOA_DSH_PROFILE:profileName,
 }
+// 计划升级重启回执只由 npm CLI 的 teloa upgrade 交给宿主；源码启动一律按普通重启处理。
+delete childEnv.TELOA_PLANNED_RESTART
 
 function assertAcceptanceIsolation() {
   // IM 验收桩渠道只允许在隔离验收宿主里开启（评审 H4）；正式宿主连 --version 也拒绝。

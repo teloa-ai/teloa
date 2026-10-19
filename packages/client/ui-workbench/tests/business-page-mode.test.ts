@@ -5,7 +5,7 @@ import test from 'node:test'
 import ts from 'typescript'
 import {BUSINESS_PAGE_MESSAGE_ROWS} from '../src/client/i18n/locales/business-page.ts'
 import {businessPageSurface,businessSectionAwayFromLedger} from '../src/client/business-page-mode.ts'
-import {businessHomeSources} from '../src/client/business-home-presentation.ts'
+import {businessHomeSourceState} from '../src/client/business-home-presentation.ts'
 import {businessLibraryText} from '../src/client/business-library-presentation.ts'
 import * as composition from '../src/client/industry-composition.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
@@ -120,7 +120,7 @@ function pageHarness(){
   if(id.endsWith('business-scope-context.js'))return {useBusinessScopes:()=>({SOC:'安全运营'})}
   if(id.endsWith('business-page-mode.js'))return {businessPageSurface,businessSectionAwayFromLedger,businessTargetMissing:()=>false}
   if(id.endsWith('business-preview.js'))return {queryObjects:()=>[],objectRef:(ref:unknown)=>ref,projectTypeLabel:()=>'project.type.general'}
-  if(id.endsWith('business-home-presentation.js'))return {businessHomeSources,businessHomeStaff:()=>[{id:'r1'},{id:'r2'}]}
+  if(id.endsWith('business-home-presentation.js'))return {businessHomeSourceState,businessHomeStaff:()=>[{id:'r1'},{id:'r2'}]}
   if(id.endsWith('industry-composition.js'))return composition
   if(id.endsWith('business-current-presentation.js'))return {businessCurrentTasks:()=>[],businessCurrentWaiting:()=>[],businessCompletedTasks:()=>[]}
   // 声明行按 `IndustryResourceDeclarations` 真实读到的那几项给全，否则「更多」进来的目录那一档一渲染就炸。

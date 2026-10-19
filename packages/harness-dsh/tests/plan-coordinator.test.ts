@@ -27,6 +27,21 @@ function fixture(){
  return {ports,calls,reports,notificationReports,active,pending,ready,coordinator:new PlanCoordinator('owner',ports)}
 }
 
+test('容量满额的准备记 skipped 而非失败：领取保持待执行，下一周期重新派发；周期健康不被排队污染',async()=>{
+ const f=fixture()
+ let capacityFull=true
+ f.ports.dispatcher.dispatch=async(owner,value)=>{assert.equal(owner,'owner');f.calls.push(`execute:${value.claimId}`);if(capacityFull)throw new WorkError('teloa/budget-exhausted','本次请求超出可用工作额度，请调整额度后继续。',{reason:'concurrent',scope:'work'})}
+ await f.coordinator.tick('2026-10-19T09:00:00.000Z',signal())
+ const first=f.reports.filter(report=>report.phase==='execute'&&report.claimId===id(11))
+ assert.deepEqual(first.map(report=>[report.outcome,report.code]),[['skipped','teloa/budget-exhausted']],'满额只记一次排队，不记 failed')
+ assert.ok(f.reports.every(report=>report.outcome!=='failed'),'排队不污染周期健康')
+ assert.equal(f.calls.filter(call=>call.startsWith('execute:')).length,1)
+ capacityFull=false
+ await f.coordinator.tick('2026-10-19T09:01:00.000Z',signal())
+ assert.equal(f.calls.filter(call=>call.startsWith('execute:')).length,2,'下一周期按原领取重新派发')
+ assert.ok(f.reports.some(report=>report.phase==='execute'&&report.claimId===id(11)&&report.outcome==='success'))
+})
+
 test('启动先建立未来基线再恢复固定领取和执行；普通tick不重建新启用计划基线',async()=>{
  const f=fixture(),now='2026-09-12T00:00:00.000Z'
  await f.coordinator.recover(now,signal())

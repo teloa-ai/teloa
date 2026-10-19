@@ -54,13 +54,19 @@ export async function assertMaintenanceDatabase(db:{query:(sql:string)=>Promise<
   (select count(*)::integer from teloa_plan_occurrences o
    join teloa_plan_task_links l on l.claim_id=o.id join teloa_tasks t on t.id=l.task_id
    left join teloa_task_runs r on r.owner_id=o.owner_id and r.request_id=o.id
-   where r.request_id is null and t.state not in ('completed','cancelled')) as plans,
+   where r.request_id is null and t.state not in ('completed','cancelled') and (
+    t.state not in ('ready','paused','blocked','waiting')
+    or t.owner_id is distinct from o.owner_id or l.owner_id is distinct from o.owner_id
+    or l.task_request_id is distinct from o.task_request_id or t.request_id is distinct from o.task_request_id
+   )) as plans,
   (select count(*)::integer from teloa_security_action_executions where state in ('dispatching','accepted','effect_unknown')) as effects,
   (select count(*)::integer from teloa_plugin_installations where state in ('preparing','unknown')) as plugins`)
  const row=pending.rows[0]
  if(!row||Object.values(row).some(value=>!Number.isSafeInteger(value)||Number(value)<0))throw Error('数据库维护状态不可确认。')
  if(row.runs)throw Error('数据库仍有未收尾的运行；请回到原安装处理后再备份。')
- if(row.plans)throw Error('仍有已生成任务但尚未运行的计划待派发项；请回到原安装收尾。')
+ // 已停止宿主中，来源链完整且尚未派发的任务只是持久待办；备份保留原领取与任务，不执行或重建它们。
+ // 在跑/身份不一致的领取仍拒绝；所有未收口 Run、外部效果及扩展安装继续由独立检查拦截。
+ if(row.plans)throw Error('计划待派发项仍在运行或来源身份不一致；请回到原安装核对。')
  if(row.effects)throw Error('仍有未确认结果的外部执行；请在原安装完成核对。')
  if(row.plugins)throw Error('仍有未完成的扩展安装；请先在原安装处理。')
 }

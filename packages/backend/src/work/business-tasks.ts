@@ -112,6 +112,25 @@ export async function readFixedBusinessTaskReference(db:PoolClient,owner:string,
  return {reference,object:{...snapshot,snapshotHash:found.snapshot_hash},sourceId:found.source_id}
 }
 
+/**
+ * 内部派发（计划按业务事件领取）在同一事务里为已建任务固定业务对象来源：与 `BusinessTaskService.create` 写同一张表、同一摘要。
+ * 同一任务重放只核对原引用不重写；任务范围必须与对象范围一致。不接受调用方自报的快照，只认 `readFixedBusinessTaskReference` 的固定版本。
+ */
+export async function bindBusinessTaskSourceInTransaction(db:PoolClient,owner:string,input:{task:WorkTask;requestId:string;reference:BusinessObjectReference;assignee:{roleId:string;roleVersion:number}|null;now:string}):Promise<BusinessTaskSource>{
+ const prior=(await db.query('select source_snapshot from teloa_business_task_sources where owner_id=$1 and task_id=$2',[owner,input.task.id])).rows[0]
+ if(prior){
+  const stored=prior.source_snapshot as BusinessTaskSource
+  if(!isRecord(stored)||stored.taskId!==input.task.id||!sameReference(businessObjectReference(stored.reference),input.reference))throw new WorkError('teloa/conflict','任务已固定其他业务对象来源。')
+  return stored
+ }
+ if(input.task.scope!==input.reference.scope)throw new WorkError('teloa/forbidden','任务业务范围与对象来源不一致。')
+ const object=await readFixedBusinessTaskReference(db,owner,input.reference,true)
+ const spec={reference:input.reference,goal:input.task.goal,title:input.task.title,assignee:input.assignee?{roleId:input.assignee.roleId,expectedVersion:input.assignee.roleVersion}:null}
+ const source:BusinessTaskSource={schema:'teloa.business-task-source/v1',taskId:input.task.id,ownerId:owner,sourceId:object.sourceId,reference:input.reference,createdAssignee:input.assignee,createdAt:input.now}
+ await db.query(`insert into teloa_business_task_sources(task_id,owner_id,request_id,request_spec,scope_id,object_type,object_id,object_version,snapshot_hash,source_id,source_snapshot,snapshot_digest,created_at)
+  values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[input.task.id,owner,input.requestId,JSON.stringify(spec),input.reference.scope,input.reference.type,input.reference.id,input.reference.version,input.reference.snapshotHash,object.sourceId,JSON.stringify(source),businessTaskSourceDigest(source),input.now])
+ return source
+}
 export class BusinessTaskService{
  private readonly pool:Pool
  private readonly identity:{now:()=>string}

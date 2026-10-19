@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeMarketContents,MarketContentStore,type MarketFileInput} from '../src/market/content-store.ts'
 import {createIndustryLoadSource,type IndustryLoadSource} from '../src/work/industry-load-source.ts'

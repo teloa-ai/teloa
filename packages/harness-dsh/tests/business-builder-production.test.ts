@@ -59,7 +59,7 @@ test('rc.1真实Controller/Query/JSONL/ProjectionCache/Workspace与只读PG：�
  assert.equal(ctx.agents.list().length,0);assert.ok((await query.listSessions()).every(record=>!record.live))
  const directory=await ctx.sessionController.list({},AbortSignal.timeout(5000));assert.equal(directory.items[0]!.sessionId,older.sessionId);assert.equal(directory.items[0]!.agentAvailable,false)
  assert.equal(directory.items.find(item=>item.sessionId===newer.sessionId)!.blank,true)
- const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg') as {Pool:new(config:{connectionString:string;max:number;options:string})=>NonNullable<typeof database>['pool']}
+ const {Pool}=await import('../../backend/tests/postgres-test-lifecycle.ts')
  readOnly=new Pool({connectionString:container.getConnectionUri(),max:1,options:'-c default_transaction_read_only=on'})
  const cold=new BusinessConversationBindingService(readOnly,identity,{drafts,conversations,contexts:{context:async()=>{throw Error('不得激活context')}},visibleSessions:async signal=>{const {items}=await ctx.sessionController.list({},signal??AbortSignal.timeout(5000)),archived=new Set(ctx.workspaceRegistry.archivedSessionIds);return items.filter(item=>!archived.has(item.sessionId))}})
  const before=await repository.read()

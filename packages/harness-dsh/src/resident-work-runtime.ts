@@ -12,7 +12,7 @@ import {WorkControlDriver} from './work-control-driver.ts'
 import {WorkRecoveryCoordinator,controlledWorkRestore} from './work-recovery-coordinator.ts'
 import {TaskRunDriver,type TaskRunPorts} from './task-run-driver.ts'
 import {assertSafeTaskRunRetry} from './task-run-retry-proof.ts'
-import {TaskRunSubagentService,TaskRunWebAccessService} from '@teloa/backend'
+import {TaskRunSubagentService,TaskRunWebAccessService,roleWorkOutstanding} from '@teloa/backend'
 import {nativeInputRecoveryCandidate,type NativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
 import {createOrdinaryNativeRestoreAuthorization} from './ordinary-native-restore.ts'
 import {nativeInputIdentity} from './native-input-access.ts'
@@ -27,6 +27,7 @@ import {isRoutingSession} from './group-routing.ts'
 import type {NativeCheckpointSnapshot,NativeInputRestore,NativeInputRestoreInput,NativeInputRestoreLease} from './native-input-checkpoint.ts'
 import {taskRunOwnerSettlement} from './task-run-owner-settlement.ts'
 import {taskRunRuntimeId} from './task-run-background.ts'
+import {plannedRestartResume} from './planned-restart-resume.ts'
 
 type Pool=TaskRunService['pool']
 type Permit=Awaited<ReturnType<WorkRecoveryService['begin']>>
@@ -41,6 +42,8 @@ export type ResidentWorkRuntimeOptions={
  verifyInitialMessage:(run:TaskRun,message:NativeInputRestoreInput['messages'][number],acceptedAt:number)=>Promise<boolean>
  ordinaryConversations?:Pick<ConversationService,'repository'>
  report:(code:string)=>void
+ /** 本人升级命令交给新宿主的一次性计划重启回执；缺席时重启撤防一律保持暂停，等本人逐项恢复。 */
+ plannedRestartId?:string
 }
 export const residentOwnerEndpoints=['work-controls/get','work-controls/change','work-recovery/inspect','work-recovery/resume','work-budgets/read','work-budgets/configure','work-budgets/owner/read','work-budgets/owner/configure','work-progress/get'] as const
 const canonical=(v:unknown):unknown=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,canonical(x)])):v
@@ -64,6 +67,22 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   const [children,web]=await Promise.all([new TaskRunSubagentService(pool,identity).listMany(owner,[run.id]),new TaskRunWebAccessService(pool,identity).listMany(owner,[run.id])])
   await assertSafeTaskRunRetry(run,attached().ports,signal,{subagents:children.get(run.id)??[],webAccess:web.get(run.id)??[]})
  }
+ /**
+  * 已结束 Run 的持久终态结算：复用委托收口同一判据（`roleWorkOutstanding`：原任务全部 Run 已终态、子工作/流程收口、runtime link 回执或宿主结算成立、
+  * 群交付与安全效果无残留）。不读原生会话、不改库、不把模型完成当业务质检通过；任一判据不成立即 false，由调用方保持待核对。
+  */
+ const terminalRunSettled=async(run:TaskRun):Promise<boolean>=>{
+  if(run.state!=='ended'||run.evidence?.state!=='ended')return false
+  const db=await pool.connect()
+  try{
+   await db.query('begin')
+   // 与 prepare/claim/record 的「run 锁 → task 锁」次序兼容：这里只取任务行共享锁作串行点，不再取 run 锁。
+   await db.query('select 1 from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,run.taskId])
+   const outstanding=await roleWorkOutstanding(db,owner,run.roleId??'',{taskId:run.taskId})
+   await db.query('commit');return !outstanding
+  }catch(error){await db.query('rollback').catch(()=>{});if(error instanceof WorkError)return false;throw error}
+  finally{db.release()}
+ }
  const controls=new WorkControlService(pool,identity,{hostGeneration:()=>generation,ownerAuthority:authority,inspectRun:async(value,input)=>{
   assertOwner(value);if(!controlDriver)throw unavailable()
   let proof=await controlDriver.inspectRun(value,input).catch(()=>({settled:false,unknownOperationIds:[] as string[]}))
@@ -73,6 +92,10 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   return {settled:proof.settled&&operations.length===0,unknownOperationIds:[...proof.unknownOperationIds,...operations.filter(row=>row.state==='dispatching'||row.state==='effect_unknown').map(row=>'security:'+row.operation_id)]}
  }})
  const restarted=await controls.disarmForRestart(owner,{hostGeneration:generation})
+ // 上一代宿主认领后未做完的自动恢复不再续做，只提示本人在原入口手动恢复。
+ const abandoned=await controls.abandonPlannedRestarts(owner,{hostGeneration:generation}).catch(()=>[] as string[])
+ if(abandoned.length)options.report('teloa/planned-restart-incomplete:'+abandoned.join(','))
+ const planned=options.plannedRestartId!==undefined&&await controls.claimPlannedRestart(owner,{restartId:options.plannedRestartId,hostGeneration:generation,controlIds:restarted.map(control=>control.id)}).catch(error=>{options.report(error instanceof WorkError?error.code:'teloa/unavailable');return false})
  const snapshot=async(sessionId:string):Promise<NativeCheckpointSnapshot>=>{
   const agent=ctx.agents.get(SessionId(sessionId))
   if(agent){if(!await ctx.sessions.flush(agent.session))throw unavailable();return {header:agent.session.header,events:[...readSessionEvents(agent.session)],inheritedEventCount:Number(agent.session.inheritedEventCount)}}
@@ -247,6 +270,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   assertOwner(value);recovering.set(input.sessionId,{runId:input.runId,permit:input.permit});signal.throwIfAborted()
   const agent=await ctx.sessionController.resolveAgent(SessionId(input.sessionId));if('error'in agent)throw unavailable();input.permit.lease.assertCurrent()
  },resumeGoal:async(value,input,signal)=>{assertOwner(value);signal.throwIfAborted();const run=await(await runs()).get(value,{runId:input.runId}),request=recoveryRequests.get(input.runId);if(input.permit.candidate.goal){if(!request||!run.lineage)throw unavailable();const round=await controls.get(value,{controlId:run.lineage.roundControlId});await retries.acknowledgeStagnation(value,{requestId:request,runId:run.id,goalId:input.permit.candidate.goal.goalId,controlGeneration:round.generation})}await goal.resume(run,input.permit.lease)}})
+ const resumePlanned=planned?plannedRestartResume(owner,options.plannedRestartId!,restarted,{controls,inspect:(value,input)=>recovery.inspect(value,input),resume:(value,input,signal,plannedRestart)=>coordinator.resume(value,input,signal,plannedRestart),report:options.report}):async()=>{}
  const artifacts=new ArtifactService(pool,identity,async(value,expected,db)=>{assertOwner(value);if(expected.kind!=='task')throw unavailable();return {source:await taskArtifactSource(db,value,expected.id,true),sessionIds:await taskArtifactSessions(db,value,expected.id,true)}})
  const verifiers=createTaskCompletionVerifiers({digest:async input=>(await dailyLogs()).completeEvidenceInTransaction(input.db,input.ownerId,input.run.id),saveDigestArtifact:async(input,evidence)=>{const saved=await artifacts.createInTransaction(input.db,input.ownerId,{requestId:requestId(['daily-digest-artifact',input.ownerId,input.run.id]),source:await taskArtifactSource(input.db,input.ownerId,input.task.id,true),content:artifactContent({title:input.task.title,sections:[{id:'daily-digest',title:evidence.log.day,text:evidence.log.markdown}],snapshotIds:[]})});return {id:saved.artifactId,version:saved.number}},material:async(input,source)=>{
   const target=await options.executionScope(input.db,input.ownerId,input.run.id,'completion'),auth=taskKnowledgeAuthorization(input.ownerId,target,input.run.roleSnapshot?.scopes)
@@ -337,11 +361,14 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
    await reconcileOwnerSettlements(new AbortController().signal)
    await reconcileRunBudgets(new AbortController().signal)
    const pausePorts={...value.ports,stop:async(run:TaskRun,signal:AbortSignal)=>{
-    // 宿主启动的暂停不得为了取消一个已证实零副作用的终轮而重新 materialize 它。
-    if(run.state==='ended')try{await zeroWorkFailure(run,signal);return}catch{signal.throwIfAborted()}
+    // 宿主启动的暂停不得为了取消一个已证实零副作用的终轮、或已按持久终态结算收口的成功终轮而重新 materialize 它。
+    if(run.state==='ended'){
+     try{await zeroWorkFailure(run,signal);return}catch{signal.throwIfAborted()}
+     if(await terminalRunSettled(run))return
+    }
     await value.ports.stop(run,signal)
    }}
-   controlDriver=new WorkControlDriver({controls,runs:{get:async(actor,input)=>{assertOwner(actor);return(await runs()).get(actor,input)}},lineage,driver:{stop:async(actor,input,signal)=>(await driver()).stop(actor,input,signal)},ports:pausePorts,runtimeLinks:value.runtimeLinks})
+   controlDriver=new WorkControlDriver({controls,runs:{get:async(actor,input)=>{assertOwner(actor);return(await runs()).get(actor,input)}},lineage,driver:{stop:async(actor,input,signal)=>(await driver()).stop(actor,input,signal)},ports:pausePorts,runtimeLinks:value.runtimeLinks,terminalSettled:async(actor,run)=>{assertOwner(actor);return terminalRunSettled(run)}})
    for(const control of restarted)await controlDriver.apply(owner,control,new AbortController().signal)
   },
   async pump(delivery:GroupRoutingOutboxPorts,route:(owner:string,messageId:string,signal:AbortSignal)=>Promise<void>,signal:AbortSignal){await reconcileOwnerSettlements(signal);await reconcileRunBudgets(signal);await drainGroupRoutingWakes(owner,{outbox,route,report:options.report},signal);await drainGroupRoutingOutbox(owner,delivery,signal);
@@ -350,7 +377,9 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
    // Run commit 后崩溃可以丢失 callback；只核真实已完成 Run 和等待验收 Task，不重新执行。
    const completed=(await pool.query("select r.id from teloa_task_runs r join teloa_tasks t on t.owner_id=r.owner_id and t.id=r.task_id where r.owner_id=$1 and r.state='ended' and r.evidence->>'reason'='completed' and t.state='waiting' and t.definition->'completionPolicy'->>'kind'='verified' order by r.created_at,r.id limit 100",[owner])).rows
    for(const row of completed){signal.throwIfAborted();try{await settleRun(owner,await(await runs()).get(owner,{runId:row.id}))}catch(error){options.report(error instanceof WorkError?error.code:'teloa/unavailable')}}
-   const rows=(await pool.query("select id,generation from teloa_work_controls where owner_id=$1 and state in ('pausing','ending') order by id",[owner])).rows;for(const row of rows){signal.throwIfAborted();if(controlDriver)await controlDriver.apply(owner,await controls.get(owner,{controlId:row.id}),signal)}},
+   const rows=(await pool.query("select id,generation from teloa_work_controls where owner_id=$1 and state in ('pausing','ending') order by id",[owner])).rows;for(const row of rows){signal.throwIfAborted();if(controlDriver)await controlDriver.apply(owner,await controls.get(owner,{controlId:row.id}),signal)}
+   // 只在就绪后的维护循环中恢复，不在启动就绪前派发工作。
+   await resumePlanned(signal)},
   async ownerRpc(endpoint:string,input:unknown,signal:AbortSignal){signal.throwIfAborted();if(endpoint==='work-progress/get'){const row=taskInput(input,['rootTaskId']);return progress.get(owner,{rootTaskId:row.rootTaskId as string})}if(endpoint==='work-controls/get')return controls.get(owner,input as {controlId:string});if(endpoint==='work-controls/change')return controls.change(owner,input as WorkControlChange);if(endpoint==='work-recovery/inspect')return recovery.inspect(owner,input as {controlId:string});if(endpoint==='work-recovery/resume')return coordinator.resume(owner,input as WorkResumeInput,signal);if(endpoint==='work-budgets/read')return budgets.read(owner,input);if(endpoint==='work-budgets/configure')return budgets.configure(owner,input);if(endpoint==='work-budgets/owner/read'){taskInput(input,[]);return budgets.readOwner(owner)}if(endpoint==='work-budgets/owner/configure')return budgets.configureOwner(owner,input);throw new WorkError('teloa/not-found','未提供此本人工作接口。')},
   close(){closed=true;unsubscribe();goal.close();recovering.clear();recoveryRequests.clear();recoveringInputs.clear();routingInputs.clear();ordinaryProvenance.clear()},
  }

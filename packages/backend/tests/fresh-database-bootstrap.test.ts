@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
 import type {Pool as PoolType} from 'pg'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {BusinessScopeService,BusinessSpaceService,initializeTeloaDatabase} from '../src/index.ts'
 
@@ -27,6 +27,7 @@ const expectedTables=[
  "teloa_business_data_changes",
  "teloa_business_task_result_heads",
  "teloa_business_task_result_receipts",
+ "teloa_business_task_source_updates",
  "teloa_group_routing_outbox",
  "teloa_group_routing_wakes",
  "teloa_group_run_sources",
@@ -54,6 +55,7 @@ const expectedTables=[
  "teloa_work_budget_changes",
  "teloa_work_budget_reservations",
  "teloa_work_control_hosts",
+ "teloa_work_control_planned_restarts",
  "teloa_work_control_progress",
  "teloa_work_control_requests",
  "teloa_work_controls",

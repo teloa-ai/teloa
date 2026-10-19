@@ -4,7 +4,7 @@ import {createHash,randomUUID} from 'node:crypto'
 import {readFileSync} from 'node:fs'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import type {MessageReference} from '@teloa/contract'
 import {CollaborationService,initializeCollaboration} from '../src/work/collaboration.ts'
@@ -98,6 +98,15 @@ async function fixture(kind:'employee'|'twin'='employee'){
 
 type Fixture=Awaited<ReturnType<typeof fixture>>
 
+test('原群增加协作成员后，精确重授予仍在岗原负责人的资料即可沿原Task准备，不要求重建Task',async()=>{
+ const f=await fixture();await wire(f,[])
+ const role=await new RoleService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{...roleFields,name:'后续调查岗'}})
+ const {scope:_scope,...fields}=groupFields([f.role.id,role.id])
+ const group=await new CollaborationService(pool,identity).change(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,fields:{...fields,pinned:false,archived:false}})
+ await new GroupAgentGrantService(pool,identity.now).change(f.owner,{requestId:randomUUID(),groupId:group.id,roleId:f.role.id,expectedGroupVersion:group.version,expectedRoleVersion:f.role.version,expectedGrantVersion:2,action:'save',resources:[],canPost:true,canAutoRun:true})
+ const result=await context(f);assert.equal(result?.taskId,f.task.id);assert.equal(result?.groupVersion,group.version)
+})
+
 /**
  * 直接改写来源快照与授权行：T6 的 send／grants 三分流与本任务并行，本用例不依赖它们落地。
  * 摘要用现行 groupTaskSourceDigest 重算，因此 T6 改摘要算法后本夹具仍自洽。
@@ -109,12 +118,40 @@ async function wire(f:Fixture,references:MessageReference[],granted=references){
  await pool.query("insert into teloa_group_agent_grants(group_id,owner_id,role_id,grant_version,group_version,role_version,state,resources,can_post,can_auto_run,request_id,request_spec,created_at) values($1,$2,$3,1,$4,$5,'active',$6,false,false,$7,'{}'::jsonb,$8)",[f.group.id,f.owner,f.role.id,f.group.version,f.role.version,JSON.stringify(granted),randomUUID(),identity.now()])
 }
 
-async function context(f:Fixture,ports:RunGroupFilePorts|null=runPorts,withPool=true):Promise<RunGroupContext|undefined>{
+async function context(f:Fixture,ports:RunGroupFilePorts|null=runPorts,withPool=true,continuationReferences:readonly MessageReference[]=[]):Promise<RunGroupContext|undefined>{
  const db=await pool.connect()
- try{await db.query('begin');const value=await readRunGroupContext(db,f.owner,f.task,f.role,ports??undefined,withPool?pool:undefined);await db.query('commit');return value}
+ try{await db.query('begin');const value=await readRunGroupContext(db,f.owner,f.task,f.role,ports??undefined,withPool?pool:undefined,continuationReferences);await db.query('commit');return value}
  catch(error){await db.query('rollback');throw error}
  finally{db.release()}
 }
+
+test('续办明确引用的固定资料进入新上下文，授权本身不注入，未授权及版本漂移拒绝',async()=>{
+ const f=await fixture(),groups=new CollaborationService(pool,identity)
+ const resource=await groups.saveResource(f.owner,{requestId:randomUUID(),groupId:f.group.id,resourceId:randomUUID(),expectedVersion:0,title:'独立质检固定意见',markdown:'受审版本1：退回，须修订时间与证据边界。'})
+ const reference:MessageReference={kind:'group-resource',id:resource.id,version:resource.version}
+ await wire(f,[],[reference])
+ const before=await context(f);assert.deepEqual(before!.materials,[])
+ const after=await context(f,runPorts,true,[reference,reference])
+ assert.deepEqual(after!.materials.map(item=>item.markdown),['受审版本1：退回，须修订时间与证据边界。'])
+ assert.deepEqual(before!.materials,[])
+ await assert.rejects(context(f,runPorts,true,[{...reference,version:2}]),{code:'teloa/forbidden'})
+ await wire(f,[],[])
+ await assert.rejects(context(f,runPorts,true,[reference]),{code:'teloa/forbidden'})
+})
+
+test('JSONB原引用与续办引用字段顺序不同也按精确身份去重，不把8份原件计为16份',async()=>{
+ const f=await fixture(),groups=new CollaborationService(pool,identity),references:MessageReference[]=[]
+ for(let i=0;i<8;i++){
+  const resource=await groups.saveResource(f.owner,{requestId:randomUUID(),groupId:f.group.id,resourceId:randomUUID(),expectedVersion:0,title:'固定原件'+i,markdown:'证据'+i})
+  references.push({kind:'group-resource',id:resource.id,version:resource.version})
+ }
+ await wire(f,references)
+ const continuation=references.map(r=>({version:r.version,kind:r.kind,id:r.id}))
+ const result=await context(f,runPorts,true,continuation)
+ assert.equal(result!.materials.length,8)
+ assert.equal(new Set(result!.materials.map(r=>r.resourceId)).size,8)
+ await assert.rejects(context(f,runPorts,true,[{...references[0]!,version:2}]),{code:'teloa/forbidden'},'去重不合并不同版本或扩大授权')
+})
 
 const upload=async(f:Fixture,mime:string,name:string,content:Buffer)=>f.attachments.upload(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,mime,name,dataBase64:content.toString('base64')})
 

@@ -1,5 +1,5 @@
 import {isDeepStrictEqual} from 'node:util'
-import {readRunKnowledge,readRunSkills,readRunPlanContext,planContextNotice,planWorkContextNotice,readArtifactRevisionContext,TaskRunPresetError} from '@teloa/backend'
+import {readRunKnowledge,readRunSkills,readRunPlanContext,planContextNotice,planWorkContextNotice,readArtifactRevisionContext,readRunGroupContinuation,groupContinuationNotice,currentGroupContinuationNotice,TaskRunPresetError} from '@teloa/backend'
 import {createHash} from 'node:crypto'
 import {resolveDshRoleSkills} from './role-skills-dsh.ts'
 import type {Context} from '@deepseek-ai/cordis'
@@ -106,6 +106,33 @@ export function taskRunReviewMaterial(run:Pick<TaskRun,'taskId'|'taskVersion'|'i
    goal=conversationSource.sourceText;sources=[{id:'goal',kind:'goal',title:'本人原指令',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}]
   // 派发概述与原 JSON 仍保留在实际发送和固定快照中，但不能充当本人事实依据。
  }else sources=[{id:'goal',kind:'goal',title:'本轮原目标',text:goal,origin:{field:'inputText',pointer:'/task/goal'}},{id:'input',kind:'context',title:'本轮实际发送的固定输入',text:inputText,origin:{field:'inputText',pointer:''}}]
+ let ownerGoal=goal
+ const ownerRequest=run.groupContext?.ownerRequest
+ if(ownerRequest){
+  sources=sources.map(source=>source.id==='goal'?{...source,id:'assignment',kind:'context' as const,title:'员工工作分工'}:source)
+  sources.unshift({id:'goal',kind:'goal',title:'宿主核实的本人当前要求',text:ownerRequest.text,sha256:ownerRequest.sha256,origin:{field:'inputText',pointer:'/groupContext/ownerRequest/text'}})
+  ownerGoal=ownerRequest.text
+  goal='本人当前要求：\n'+ownerRequest.text+'\n\n员工分工（不得扩大本人授权）：\n'+goal
+  for(const [index,prior] of (ownerRequest.priorRequests??[]).entries()){
+   goal+='\n\n原本人消息（数据、工具和审批限制继续适用，业务目标按当前要求更新）：\n'+prior.text
+   sources.push({id:'owner-prior:'+index,kind:'context',title:'原本人固定限制与上下文',text:prior.text,sha256:prior.sha256,origin:{field:'inputText',pointer:'/groupContext/ownerRequest/priorRequests/'+index+'/text'}})
+  }
+ }
+ if(snapshot.groupContinuation!==undefined){
+  if(!run.groupContext)throw new WorkError('teloa/storage-corrupt','群续办缺少原任务群来源。')
+  const continuation=readRunGroupContinuation(snapshot.groupContinuation)
+  if(Reflect.get(snapshot.groupContinuation as object,'notice')===currentGroupContinuationNotice){
+   sources=sources.map(source=>source.id==='goal'?{...source,id:'original-goal',kind:'context' as const,title:'原任务目标与限制'}:source)
+   sources.unshift({id:'goal',kind:'goal',title:'本轮本人当前续办要求',text:continuation.text,origin:{field:'inputText',pointer:'/groupContinuation/text'}})
+   goal=currentGroupContinuationNotice+'\n'+continuation.text+'\n\n原任务来源（工具、资料和审批限制继续适用）：\n'+goal
+   ownerGoal=continuation.text
+  }else{
+   goal+='\n\n本轮本人对同一任务的追加修订（当前交付要求，不能仅以旧交办问题删除；原限制与授权继续有效）：\n'+groupContinuationNotice+'\n'+continuation.text
+   sources.push({id:'continuation-goal',kind:'goal',title:'本轮本人固定续办要求',text:continuation.text,origin:{field:'inputText',pointer:'/groupContinuation/text'}})
+  }
+ }
+ const ownerNames=((snapshot.groupTopic as {messages?:{authorKind?:string;authorName?:string}[]}|undefined)?.messages??[]).filter(message=>message.authorKind==='self').flatMap(message=>message.authorName?[message.authorName]:[])
+ const requiredDeclarations=ownerReviewDeclarations(ownerGoal,ownerNames)
  skills.forEach((skill,index)=>sources.push({id:`method:${index+1}`,kind:'method',title:skill.name,text:skill.content,sha256:skill.sha256,origin:{field:'skills',pointer:`/${index}/content`}}))
  knowledge.forEach((item,index)=>sources.push({id:`knowledge:${index+1}`,kind:'knowledge',title:`${item.title} · ${item.id} v${item.version}`,text:item.text,sha256:item.sourceVersion,origin:{field:'knowledge',pointer:`/${index}/text`}}))
  // 只遍历已经送入原输入的业务/计划/行业与群上下文字段；不把岗位、密钥提示、模型配置或已移除的记忆复制为依据。
@@ -118,7 +145,7 @@ export function taskRunReviewMaterial(run:Pick<TaskRun,'taskId'|'taskVersion'|'i
  }
  for(const key of [...reviewContextKeys,'groupContext','groupTopic','groupContinuation'])if(snapshot[key]!==undefined)appendContext(snapshot[key],'/'+key)
  // 原模板名来自同一份固定正文的 frontmatter（与 GitHub 导入同一解析器）；与安装原生名相同或没有 frontmatter 时不另附。
- return {goal,inputs,catalog:createReviewSourceCatalog(sources),methods:skills.map(skill=>{const originalName=skillFrontmatterName(skill.content);return {name:skill.name,...(originalName!==undefined&&originalName!==skill.name?{originalName}:{}),sha256:skill.sha256}})}
+ return {goal,inputs,...(requiredDeclarations?{requiredDeclarations}:{}),catalog:createReviewSourceCatalog(sources),methods:skills.map(skill=>{const originalName=skillFrontmatterName(skill.content);return {name:skill.name,...(originalName!==undefined&&originalName!==skill.name?{originalName}:{}),sha256:skill.sha256}})}
 }
 function taskRunGoalPart(run:Pick<TaskRun,'taskId'|'taskVersion'|'inputText'|'executor'>,material?:ReviewMaterial|{skip:'no-material'}):PromptTextPart|undefined{
  const goal=material&&!('skip'in material)?material.goal:readTaskRunGoal(run)
@@ -185,10 +212,14 @@ const browserToolPrefix='mcp__playwright-mcp__',browserCloseTool=browserToolPref
 export type RunToolApplicability={group:boolean;digest:boolean;report?:boolean}
 const groupRunToolNames:readonly string[]=[groupAttachToolName,groupReactToolName,groupMentionToolName]
 const teamPolicySection='team:policy'
-export function restrictRunTools(agent:Pick<Agent,'ctx'>,allowedTools:readonly string[],applicable:RunToolApplicability):()=>void{
+function runToolNames(allowedTools:readonly string[],applicable:RunToolApplicability):Set<string>{
  const inapplicable=new Set<string>([...(applicable.group?[]:groupRunToolNames.filter(name=>!applicable.report||name!==groupAttachToolName&&name!==groupMentionToolName)),...(applicable.digest?[]:roleDailyDigestToolNames)])
  const keep=new Set<string>([...allowedTools,...selfAuthorizedToolNames].filter(name=>!inapplicable.has(name)))
  if(allowedTools.some(name=>name.startsWith(browserToolPrefix)))keep.add(browserCloseTool)
+ return keep
+}
+export function restrictRunTools(agent:Pick<Agent,'ctx'>,allowedTools:readonly string[],applicable:RunToolApplicability):()=>void{
+ const keep=runToolNames(allowedTools,applicable)
  const scoped=new Set<string>(teamDelegationTools),hiddenScoped=new Set<string>(teamDelegationTools.filter(name=>!allowedTools.includes(name)))
  const visible=agent.ctx.tools.schemas(agent).map(schema=>schema.name)
  const lift=agent.ctx.tools.restrict({allow:visible.filter(name=>name!=='run_code'&&!scoped.has(name)&&keep.has(name))})
@@ -433,20 +464,30 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     // 固定技能与本人运行在本次请求的轮次收尾前复核交付（task-delivery-review.ts）；复核输入沿用本运行的
     // 生产者身份，有原生输入准入时经同一许可层发布，没有时与社区版首个输入一样直接交给原 Agent。
     // 复核依据本轮冻结的原目标与选中方法身份，不从历史猜；没有可核对原目标时明确跳过复核。
-    const readExecution=run.executor?.kind==='owner'&&runtimeLinks&&nativeInput?.readReviewState?async(reviewSignal:AbortSignal):Promise<DeliveryReviewExecutionSnapshot>=>{
+    // 计划向群汇报的执行同样必须核对真实工具回执，不能因没有 groupContext 而退回纯文本跳过复核。
+    const requiresGroupDeliveryReview=run.groupContext!==undefined||taskRunPlanReportOccurrence(run)!==undefined
+    const readExecution=(run.executor?.kind==='owner'||requiresGroupDeliveryReview)&&runtimeLinks&&nativeInput?.readReviewState?async(reviewSignal:AbortSignal):Promise<DeliveryReviewExecutionSnapshot>=>{
      const assertLive=()=>{reviewSignal.throwIfAborted();if(ctx.agents.get(agent.id)!==agent||agent.session!==session||store.get(agent.id)!==session)throw new WorkError('teloa/forbidden','复核执行会话已变化。')}
      assertLive()
      if(!ports.subagentState||!ports.flowState||!Reflect.get(ctx,'jobs'))throw new WorkError('teloa/dependency-unavailable','执行收尾读口尚未就绪。')
      await background?.flush(run.sessionId);assertLive()
      const links=await runtimeLinks.list({runId:run.id}),children=await ports.subagentState(run,reviewSignal),flow=await ports.flowState(run)
      assertLive()
-     const proof=nativeInput.readReviewState!(agent,run.nativeRequestId)
+     const declared=run.groupContext?await ports.continuations?.(run,readSessionEvents(session)):undefined
+     assertLive()
+     const groupAppendRequestIds=new Set<string>()
+     for(const key of declared??[]){
+      let value:unknown;try{value=JSON.parse(key)}catch{continue}
+      if(Array.isArray(value)&&value.length===2&&value[0]==='group-append'&&typeof value[1]==='string'&&JSON.stringify(value)===key)groupAppendRequestIds.add(value[1])
+     }
+     const proof=nativeInput.readReviewState!(agent,run.nativeRequestId,groupAppendRequestIds)
      const jobs=ctx.jobs.list(agent.id).map(job=>({id:job.id,owner:job.owner,status:job.status}))
      assertLive()
-     return {runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId,allowedTools:[...run.allowedTools],continuationMessageIds:new Set(proof.continuationMessageIds),runtimeLinks:links,jobs,pendingJobCompletion:proof.pendingJobCompletion,pendingInput:proof.pendingInput,children,flow}
+     return {runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId,allowedTools:[...runToolNames(run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined})],continuationMessageIds:new Set(proof.continuationMessageIds),runtimeLinks:links,jobs,pendingJobCompletion:proof.pendingJobCompletion,pendingInput:proof.pendingInput,children,flow}
     }:undefined
     const leaseReview=(material:ReviewMaterial|{skip:'no-material'}|undefined)=>agent.ctx&&material?leaseTaskDeliveryReview(agent,{runId:run.id,requestId:run.nativeRequestId,
      material,
+     ...requiresGroupDeliveryReview&&!('skip'in material)?{requireReview:true as const}:{},
      ...(readExecution?{readExecution}:{}),
      publish:async(message,reviewSignal)=>{if(nativeInput)await nativeInput.withNewInput(agent,message,context,()=>{agent.inject(message)},reviewSignal);else agent.inject(message)},
      trace:entry=>ctx.logger.info(JSON.stringify({event:'task-run.delivery-review',...entry}))}):undefined
@@ -578,7 +619,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     await validateBinding(run)
     if(!ctx.agents.get(brandString<SessionId>(run.sessionId))){
      const jobs=await background?.state(run)
-     return {running:inbox['next-turn'].length>0||inbox['next-step'].length>0||!!jobs?.outstanding,settledSeq:null}
+     const running=inbox['next-turn'].length>0||inbox['next-step'].length>0||!!jobs?.outstanding
+     // 已核实本Run固定终态及空Inbox，可只读证明冷轮停妥；不为暂停重新激活旧输入。
+     return {running,settledSeq:!running&&run.evidence?.state==='ended'?run.evidence.endSeq:null}
     }
    }
    const agent=await resolve(run),running=(await background?.state(run))?.outstanding??agent.status==='running'
@@ -607,4 +650,21 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   },
  }
  return ports
+}
+
+/** 只将可信本人目标中的明确提醒要求固定为原生声明义务；引用和否定不形成义务。 */
+export function ownerReviewDeclarations(goal:string,ownerNames:readonly string[]):readonly 'owner-mention'[]|undefined{
+ let fenced=false
+ for(const line of goal.split('\n')){
+  if(/^\s*```/.test(line)){fenced=!fenced;continue}
+  if(fenced||/^\s*>/.test(line)||/^\s*(示例|例如)/.test(line))continue
+  for(const clause of line.split(/[，,；;。]/)){
+  if(/不要|无需|不需要|不得|禁止|别|示例|例如/.test(clause))continue
+  const explicit=clause.includes('teloa_group_mention')&&/target\s*(?:[:=]\s*)?['"]?self/.test(clause)
+  const named=ownerNames.some(name=>clause.includes('@'+name)&&/质检|复核|审批|核对|确认|提醒|交给/.test(clause))
+  const self=/提醒我|交给我.{0,8}(质检|复核|审批|核对)|请我.{0,8}(质检|复核|审批|核对)|本人质检/.test(clause)
+  if(explicit||named||self)return ['owner-mention']
+  }
+ }
+ return undefined
 }

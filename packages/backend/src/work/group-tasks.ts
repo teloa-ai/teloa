@@ -1,3 +1,5 @@
+import {groupTaskTitle} from './task-title.ts'
+import {readGroupOwnerRequest} from './group-owner-request.ts'
 import {lockConversationTaskParent,assertConversationTaskOpen} from './conversation-work-task-protection.ts'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,groupDefinition,groupTaskCreateInput,isGroupMessage,isGroupTaskSource,normalizeReferences,groupMessageRelationFields,isMessageReference,ungrantedGroupReferences,roleSupportsScope,type GroupMessage,type GroupTaskCreateInput,type GroupTaskSource,type MessageReference,type WorkTask} from '@teloa/contract'
@@ -73,7 +75,6 @@ function requestSpec(request:GroupTaskCreateInput):string{
  // 执行策略与尝试世代只在路由派工出现；没有时指纹与旧请求逐字一致。
  return JSON.stringify({groupId:request.groupId,messageId:request.messageId,expectedGroupVersion:request.expectedGroupVersion,goal:request.goal,assignee:request.assignee??null,...(trigger==='manual'?{}:{trigger}),...(request.executionMode?{executionMode:request.executionMode,routingAttemptVersion:request.routingAttemptVersion}:{}),...(request.handoffMessageId?{handoffMessageId:request.handoffMessageId}:{}),...(request.handoffMessageIds?{handoffMessageIds:request.handoffMessageIds}:{}),...(request.businessTarget?{businessTarget:request.businessTarget}:{})})
 }
-function title(text:string):string{return ('群任务：'+text.replace(/\s+/g,' ').trim()).slice(0,120)}
 function readMessage(row:Record<string,unknown>):GroupMessage{
  try{
   const base={id:row.id,groupId:row.group_id,rootId:row.root_id,authorId:row.author_id,text:row.text,references:normalizeReferences(row.reference_snapshot),createdAt:stamp(row.created_at)}
@@ -164,7 +165,7 @@ export class GroupTaskService{
    if(request.handoffMessageId&&!workSource)throw new WorkError('teloa/forbidden','交接依据不是本群可信的前序阶段成果。')
    if(handoffs.length&&(!role||!request.assignee))throw new WorkError('teloa/forbidden','交接工作必须有明确负责人。')
    const object=request.businessTarget?.object?await readFixedBusinessTaskReference(client,owner,request.businessTarget.object,true):undefined
-   const task=await this.tasks.createInTransaction(client,owner,{requestId:request.requestId,fields:{title:title(message.text),goal:request.goal,scope,groupId:request.groupId},...(request.assignee?{assignee:request.assignee}:{})},workSource??undefined)
+   const task=await this.tasks.createInTransaction(client,owner,{requestId:request.requestId,fields:{title:groupTaskTitle(message.text),goal:request.goal,scope,groupId:request.groupId},...(request.assignee?{assignee:request.assignee}:{})},workSource??undefined)
    const createdAt=this.identity.now(),base={taskId:task.id,ownerId:owner,groupId:request.groupId,groupVersion:groupRow.version as number,messageId:message.id,rootId,messageCreatedAt:message.createdAt,messageText:message.text,references:message.references.map(reference=>({...reference})),createdAssignee:request.assignee?{roleId:request.assignee.roleId,roleVersion:request.assignee.expectedVersion}:null,trigger:request.trigger??'manual',createdAt}
    let contextMode:'main'|'thread'=message.rootId===null?'main':'thread'
    // 员工接力仍带原话题根，显示位置须继承服务端原来源，不能把非空 rootId 一律当成话题。
@@ -173,8 +174,9 @@ export class GroupTaskService{
     if(prior){const source=readGroupTaskSource(prior);if(source.groupId!==request.groupId||source.rootId!==rootId)throw corrupt();if(source.schema==='teloa.group-task-source/v2')contextMode=source.contextMode}
    }
    // 路由派工与显式业务目标写 v2；旧入口不补新字段，原快照及幂等摘要保持兼容。
+   const ownerRequest=request.executionMode==='work'?await readGroupOwnerRequest(client,owner,request.groupId,message.id,this.pool):undefined
    const source:GroupTaskSource=request.executionMode&&request.routingAttemptVersion||request.businessTarget
-    ?{schema:'teloa.group-task-source/v2',...base,replyToMessageId:'replyToMessageId' in message?message.replyToMessageId??null:null,contextMode,routingAttemptVersion:request.routingAttemptVersion??1,executionMode:request.executionMode??'work',...(request.businessTarget?{businessTarget:request.businessTarget}:{})}
+    ?{schema:'teloa.group-task-source/v2',...base,replyToMessageId:'replyToMessageId' in message?message.replyToMessageId??null:null,contextMode,routingAttemptVersion:request.routingAttemptVersion??1,executionMode:request.executionMode??'work',...(request.businessTarget?{businessTarget:request.businessTarget}:{}),...(ownerRequest?{ownerRequest}:{})}
     :{schema:'teloa.group-task-source/v1',...base}
    await client.query(`insert into teloa_group_task_sources(task_id,owner_id,request_id,request_spec,group_id,group_version,message_id,root_id,source_snapshot,snapshot_digest,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[task.id,owner,request.requestId,spec,request.groupId,source.groupVersion,message.id,rootId,JSON.stringify(source),groupTaskSourceDigest(source),createdAt])

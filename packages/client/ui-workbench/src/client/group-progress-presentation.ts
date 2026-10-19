@@ -46,7 +46,7 @@ export type GroupProgressPerson={roleId:string;name:string}
 export type GroupProgressPresentation={bucket:GroupProgressBucket;mode:'reply'|'work'|null;people:GroupProgressPerson[];more:number}
 
 /**
- * 当前会话的聚合进行中状态。`statuses` 按会话中消息先后排列且只含本会话的本人消息；
+ * 当前会话的聚合进行中状态。`statuses` 按会话中消息先后排列，只含本会话的本人消息与已派出接手者的员工交接；
  * 最近的消息优先取人，最多前两位，其余只计数。尚未分配接收者的 active 消息也保留动态点；
  * 没有 active 消息或接收者时返回 null，所以终态（完成、记录、失败、停止……）一到即退出动态显示。
  */

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto'
-import {PlanService,MarketContentStore,PlanOccurrenceService,PlanSchedulerStatusService,ObjectConversationService,type ConversationService,type PlanOccurrence,type TaskRun,type TaskRunService,type WorkEventService} from '@teloa/backend'
+import {PlanService,MarketContentStore,PlanOccurrenceService,PlanSchedulerStatusService,ObjectConversationService,WorkBudgetService,WorkLineageService,type ConversationService,type PlanOccurrence,type TaskRun,type TaskRunService,type WorkEventService} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {PlanCoordinator} from './plan-coordinator.ts'
 import {PlanDshDispatcher} from './plan-dispatch-dsh.ts'
@@ -49,11 +49,15 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
   const market=new MarketContentStore(pool,identity)
   return {pool,plans:new PlanService(pool,identity,market,undefined,undefined,undefined,dependencies.ownerPlans),occurrences:new PlanOccurrenceService(pool,identity,market,dependencies.verifyWorkEvent,dependencies.ownerPlans)}
  }
+ // 容量准入分两层：派发前按账户预检，避免为明显满额的领取创建运行会话；真正的准入由 admitRun 在 prepare 写入 Run 的同一事务、
+ // 同一把预算锁下完成，事件协调器与周期协调器两个入口乃至多进程并发都不能越过并发上限。
+ // 满额抛 budget-exhausted：不建 Run、不写失败，领取保持 pendingExecutions 的 prepare 动作，下一周期自动继续。
  const dispatchExecutionOnce=async(value:string,job:Parameters<PlanDshDispatcher['dispatch']>[1],signal:AbortSignal)=>{
    actor(value);signal.throwIfAborted()
    const runService=await getRunService();signal.throwIfAborted()
-   const links=new ObjectConversationService((await services(signal)).pool,(actor,id)=>conversations.bySession(actor,id),now)
-   const prepare=createTaskRunHandler(owner,async()=>runService,runPorts,loadTaskKnowledge,{conversations,links})
+   const pool=(await services(signal)).pool,budgets=new WorkBudgetService(pool,identity)
+   const links=new ObjectConversationService(pool,(actor,id)=>conversations.bySession(actor,id),now)
+   const prepare=createTaskRunHandler(owner,async()=>runService,runPorts,loadTaskKnowledge,{conversations,links,admitRun:(db,actorId,lineage)=>{actor(actorId);return budgets.admitRunStartInTransaction(db,owner,lineage.budgetAccountId)}})
    const dispatcher=new PlanDshDispatcher({
     prepare:async(actorId,input,currentSignal)=>{
      actor(actorId);currentSignal.throwIfAborted()
@@ -61,6 +65,10 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
     },
     driver:new TaskRunDriver(runService,runPorts),
    })
+   const lineage=await new WorkLineageService(pool,identity).read(owner,{taskId:job.taskId})
+   if(!lineage||lineage.ownerId!==owner)throw new WorkError('teloa/conflict','计划任务缺少执行谱系，不能派发。')
+   // 同一 claim 已有 Run（幂等重放、继续启动或收口）不占新并发位；只在首次准备前预检。
+   if(!await runService.request(owner,{requestId:job.claimId,taskId:job.taskId,expectedTaskVersion:job.taskCreatedVersion}))await budgets.admitRunStart(owner,lineage.budgetAccountId)
    return dispatcher.dispatch(owner,job,signal)
   }
  // 立即运行与协调周期的恢复扫描会同时拿到同一个 claim。并行派发时后到者会越过 prepare 的幂等预检，

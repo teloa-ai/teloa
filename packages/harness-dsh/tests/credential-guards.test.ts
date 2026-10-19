@@ -39,6 +39,21 @@ test('参数中出现已存值或其编码形态即拒绝，理由不回显值�
  assert.ok(reason);assert.ok(!reason!.includes(stored))
 })
 
+test('业务候选正文中的HTTP查询不是文件通配读取，真实已存密钥仍拒绝',()=>{
+ const input={toolName:'teloa_business_object_result_record',cwd:'/work',roots:['/runtime/credentials.enc'],known:[] as string[],env:{},home:'/home/owner'}
+ const args={mappingId:'ai-soc-alert-result',result:{evidence:'正常对照 GET /?soc_case=lab-benign；原日志记载 cat /etc/shadow，不执行该命令。'}}
+ assert.equal(guardDecision(args,input),undefined)
+ const stored=rand(24)
+ assert.ok(guardDecision({result:{evidence:stored}},{...input,known:[stored]}))
+ assert.ok(guardDecision({result:{evidence:Buffer.from(stored).toString('base64')}},{...input,known:[stored]}))
+ assert.ok(guardDecision({command:'cat /?soc_case=lab-benign'},{...input,toolName:'bash'}))
+ assert.ok(guardDecision({path:'/?soc_case=lab-benign'},{...input,toolName:'read'}))
+ // 实跑：交付复核回执的修订正文引用 HTTP 路径被当成根目录通配读取，整份交付失败。
+ const review={...input,toolName:'teloa_submit_review_plan'}
+ assert.equal(guardDecision({phase:'revise',issues:[{problem:'端口差异',edits:[{blockId:34,after:'uri `/?soc_case=soc-lab-benign`；status=200'}]}]},review),undefined)
+ assert.ok(guardDecision({phase:'revise',issues:[{problem:stored}]},{...review,known:[stored]}),'复核回执里出现真实已存密钥仍拒绝')
+})
+
 test('输出脱敏：成功结果替换 content，失败结果改 block，未命中不改',()=>{
  const stored=rand(24),known=[stored]
  assert.deepEqual(redactContent([{type:'text',text:'k='+stored}],known),[{type:'text',text:'k=[已隐藏]'}])

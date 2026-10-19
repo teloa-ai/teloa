@@ -1,7 +1,7 @@
 import test,{after,before,type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
@@ -18,7 +18,6 @@ import {registerPageCreateTools} from '../src/page-create-tools.ts'
 
 // 与实际保存相同的工具、严格正文读取器、Postgres 服务及预览；没有 mock draft/save 端口。
 type DbPool=ConstructorParameters<typeof PageCreateDraftService>[0]
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg') as {Pool:new(config:{connectionString:string})=>DbPool}
 let container:StartedPostgreSqlContainer,pool:DbPool
 before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializePageCreateDrafts(pool)},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})

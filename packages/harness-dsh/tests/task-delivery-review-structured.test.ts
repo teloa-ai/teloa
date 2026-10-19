@@ -75,11 +75,11 @@ const toolsOf=(request:GenerateOptions)=>(request.tools??[]).map(tool=>tool.name
 const results=(events:readonly SessionEvent[])=>events.flatMap(event=>event.type==='tool/result'?[{callId:event.data.message.toolCallId,isError:event.data.message.isError}]:[])
 const owns=(agent:Agent)=>ownsDeliveryReviewSubmission({name:deliveryReviewToolName,agent})
 
-/** 真实 N24 失败的参数类型：空集合被模型写成字符串，不能在宿主侧静默转换。 */
+/** 真实 N24 失败的参数类型：空集合被模型写成字符串，不能在宿主侧静默转换。当前简写按模型可见 schema 显式写 unlisted:"retain"。 */
 const coverageSubmission=(unknown:unknown):Call=>{
  const call=submission([{blockId:1,after:fixed}])
  const args=call.arguments as Revision
- return {...call,arguments:{...args,issues:args.issues.map(({affectedBlockIds:_ids,...issue})=>({...issue,affectedScope:'coverage',coverage:{...issue.coverage,unknown}}))}}
+ return {...call,arguments:{...args,issues:args.issues.map(({affectedBlockIds:_ids,...issue})=>({...issue,affectedScope:'coverage',coverage:{...issue.coverage,unknown,unlisted:'retain'}}))}}
 }
 const invalidCoverage=()=>coverageSubmission('')
 
@@ -214,7 +214,7 @@ test('复核步里同一回复夹带业务工具或重复提交：业务工具�
  })
 })
 
-test('回执带摘要字段或块编号不合格：工具体拒绝并如实落为错误结果，本单元原子失败，不再请求模型重交',async t=>{
+test('回执带摘要字段或块编号不合格：工具体拒绝并如实落为错误结果，唯一纠正名额用尽后仍不合格即本单元原子失败',async t=>{
  for(const [label,call,reason] of [
   // 活动契约不接受模型输入的摘要：即使抄对也不吞掉、不静默替换，按多余字段拒绝。
   ['显式摘要字段（抄对）',{name:deliveryReviewToolName,arguments:{phase:'revise',issues:[],snapshotHash:draftSha256(draft)}},'rewrite-plan:shape'],
@@ -222,12 +222,13 @@ test('回执带摘要字段或块编号不合格：工具体拒绝并如实落�
   ['块编号不存在',submission([{blockId:9,after:'x'}]),'rewrite-plan:affected-blocks'],
   ['参数多余字段',{name:deliveryReviewToolName,arguments:{phase:'revise',issues:[],note:'x'}},'rewrite-plan:shape'],
  ] as const)await t.test(label,async sub=>{
-  const f=await runtime(sub,{m:[text(draft),calls(call),text('不应出现')]})
+  // 同一不合格回执连续两次：第一次沿真实错误回执在同一轮纠正，第二次按原原因收错。
+  const f=await runtime(sub,{m:[text(draft),calls(call),calls(call),text('不应出现')]})
   const a=await f.lease('m')
   await a.send()
-  assert.equal(f.adapter.requests.length,2)
+  assert.equal(f.adapter.requests.length,3,'纠正一次后不再请求模型重交')
   assert.deepEqual(ends(a.events()),['error']);assert.equal(a.traces.at(-1)!.reason,reason)
-  assert.deepEqual(results(a.events()).map(entry=>entry.isError),[true])
+  assert.deepEqual(results(a.events()).map(entry=>entry.isError),[true,true])
   assert.equal(readTaskRunGroupResult(a.events(),'rpc'),undefined)
  })
 })

@@ -16,6 +16,7 @@ import {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy} from '.
 import {initializeWorkRetries} from '../../backend/src/work/work-retries.ts'
 import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {installResidentModelBudget} from '../src/resident-model-budget.ts'
+import {readSessionEvents} from '../src/session-events.ts'
 
 test('路由本地缺凭据且无输出/用量时结算零token；传输未知、已有输出或取消仍保留预留',{timeout:30000},async t=>{
  const db=await setupRoleWork();t.after(db.close)
@@ -161,4 +162,25 @@ for(const general of [false,true])test((general?'本人无员工快照':'员工'
  assert.equal(physicalRequests,3);assert.equal((await budgets.readOwner(owner)).usedTokens,before+17)
  assert.equal((await db.pool.query('select count(*)::int count from teloa_tasks where owner_id=$1',[owner])).rows[0].count,tasksBefore,'本人路由额度不制造业务任务')
  assert.equal((await db.pool.query("select count(*)::int count from teloa_work_budget_reservations where owner_id=$1 and kind='routing' and state='settled'",[owner])).rows[0].count,1)
+})
+
+test('额度拒绝以稳定原因与范围留在会话 turn/end：不调用模型、不建预留，界面可本地化而非显示 UNKNOWN',{timeout:30000},async t=>{
+ const db=await setupRoleWork();t.after(db.close)
+ await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
+ const f=await patchedSessionFixture(t),{owner}=await roleFixture(db.pool,'employee')
+ const {agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'budget-refused',model:'finite',maxTokens:32}})
+ const controls=new WorkControlService(db.pool,identity),budgets=new WorkBudgetService(db.pool,identity,ownerAuthority),input=createNativeWorkInput(f.ctx,new WorkAccess())
+ const close=installResidentModelBudget(f.ctx,{owner,pool:db.pool,identity,runs:async()=>new TaskRunService(db.pool,identity,async()=>{throw Error('路由不读取任务会话')}),controls,budgets,resolveRun:async()=>null,resolveRouting:async id=>id===agent.id?{budgetAccountId:null,controlGeneration:1,operationId:'owner-source-message',lease:{assertCurrent(){}}}:null,nativeInput:input,report:()=>{}})
+ t.after(()=>{close();input.close()})
+ let streamCalls=0
+ class Never extends LlmAdapter{override async resolveModel(provider:string,model:string){return {provider,id:model,name:model}};async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{streamCalls++;throw new LlmError('额度已拒绝时不应调用模型','TRANSPORT')}}
+ f.ctx.llm.registerAdapter(['budget-refused'],new Never())
+ const current=await budgets.readOwner(owner);await budgets.configureOwner(owner,{requestId:randomUUID(),expectedVersion:current.version,policy:{...defaultWorkBudgetPolicy,maxTokens:1}})
+ const message=createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text:'本人总额不足时路由'}]})
+ await input.withNewInput(agent,message,{producer:'prompt',identity:'owner-source-message'},()=>agent.followup(message))
+ await until(()=>agent.status==='idle'&&agent.inbox.nextTurn.length===0)
+ const end=[...readSessionEvents(agent.session)].reverse().find(event=>event.type==='turn/end')
+ assert.equal(end?.type,'turn/end');if(end?.type!=='turn/end'||end.data.reason.kind!=='error')throw Error('本轮应以错误结束')
+ assert.equal(end.data.reason.error.code,'teloa/budget-exhausted/tokens/owner')
+ assert.equal(streamCalls,0,'额度不足不派发模型');assert.equal((await db.pool.query('select count(*)::int n from teloa_work_budget_reservations where owner_id=$1',[owner])).rows[0].n,0,'被拒请求不留预留')
 })

@@ -113,6 +113,30 @@ function quotes(value:unknown,resolve:PassageResolver):ReviewQuote[]|undefined{
  }
  return rows
 }
+/**
+ * 依据或块号被拒时逐项指出哪一处引用不存在、哪个块号越界，以及该来源实际可引用的段落范围，
+ * 供唯一一次纠正据此改正；只读回执原文，不放宽任何校验。
+ */
+export function describeReviewReferences(value:unknown,context:Readonly<{catalog:ReviewSourceCatalog;blockCount:number}>):string{
+ const resolve=passageResolver(context.catalog),problems:string[]=[]
+ const available=(sourceId:string)=>{const ids=context.catalog.passages.filter(passage=>passage.sourceId===sourceId).map(passage=>passage.id);return ids.length?`该来源可引用 ${ids[0]}–${ids.at(-1)!}（共 ${ids.length} 段）`:'该来源不在本轮输入来源中或没有可引用段落'}
+ for(const [key,field] of [['issues','affectedBlockIds'],['findings','blockIds']] as const){
+  const items=value&&typeof value==='object'?Reflect.get(value,key):undefined
+  if(!Array.isArray(items))continue
+  items.forEach((item:unknown,index:number)=>{
+   const basis=item&&typeof item==='object'?Reflect.get(item,'basis'):undefined
+   if(!Array.isArray(basis)||!basis.length)problems.push(`${key}[${index}].basis 须为非空数组`)
+   else for(const ref of basis){
+    const sourceId=ref&&typeof ref==='object'?Reflect.get(ref,'sourceId'):undefined,passageId=ref&&typeof ref==='object'?Reflect.get(ref,'passageId'):undefined
+    if(typeof sourceId!=='string'||typeof passageId!=='string')problems.push(`${key}[${index}].basis 每项只含字符串 sourceId 与 passageId`)
+    else if(!resolve(sourceId,passageId))problems.push(`${key}[${index}].basis ${sourceId} / ${passageId} 不存在（${available(sourceId)}）`)
+   }
+   const ids=item&&typeof item==='object'?Reflect.get(item,field):undefined
+   if(Array.isArray(ids)){const bad=ids.filter(id=>typeof id!=='number'||!Number.isSafeInteger(id)||id<1||id>context.blockCount);if(bad.length)problems.push(`${key}[${index}].${field} ${bad.map(id=>JSON.stringify(id)).join('、')} 超出全稿块号 1–${context.blockCount}`)}
+  })
+ }
+ return problems.slice(0,8).join('；')
+}
 function blockIds(value:unknown,count:number):number[]|undefined{
  if(!Array.isArray(value)||!value.length||value.some(id=>typeof id!=='number'||!Number.isSafeInteger(id)||id<1||id>count)||new Set(value).size!==value.length)return
  return [...value] as number[]

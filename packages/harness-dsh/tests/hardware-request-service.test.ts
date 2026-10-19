@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {createRequire} from 'node:module'
+import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {Session,SessionId} from '@deepseek-ai/dsh-session'
 import {createUserMessage,createAssistantMessage} from '@deepseek-ai/dsh-llm'
@@ -9,7 +9,6 @@ import {createHardwareStore,initializeHardwareDevices} from '@teloa/backend'
 import {WorkError,type HardwareOperation} from '@teloa/contract'
 import {readHardwareResult} from '../src/hardware-result-reader.ts'
 import * as implementation from '../src/hardware-request-service.ts'
-const {Pool}=createRequire(new URL('../../backend/package.json',import.meta.url))('pg')
 let pool:Parameters<typeof initializeHardwareDevices>[0],container:StartedPostgreSqlContainer
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeHardwareDevices(pool)},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})

@@ -22,6 +22,16 @@ import {readPlanWorkDefinition,type PlanWorkDefinition} from '@teloa/contract'
 import {planWorkEventMatches,type WorkEvent} from '@teloa/contract'
 import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
 import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
+import {bindBusinessTaskSourceInTransaction} from './business-tasks.ts'
+import {routeBusinessObjectEventToExistingTask,hasBusinessTaskSourceUpdates,businessObjectReferenceOf} from './business-task-source-updates.ts'
+import {workEventDigest} from './work-event-digest.ts'
+/**
+ * 业务事件领取的复核深度：
+ * - `live`：原件完整核对之后，再经宿主 `verifyEvent`（businessWorkSourceReader）重算当前业务事实；领取、执行准备、派发前复核必须用它，缺端口即失败。
+ * - `stored`：只核对原件完整（事件行哈希、领取链、计划/控制世代、对象级固定快照哈希或同步级回执存在）；供只读取原发生实例固定身份的消费者
+ *   （汇报资格、回群、交付声明、日志小结）使用，不替代 live。
+ */
+export type PlanEventVerification='live'|'stored'
 
 type RoleOccurrenceFields={groupId?:string|null;title:string;goal:string;scope:string;dataScope:string;delivery:string;roleId:string;trigger:ScheduleTrigger;notificationPolicy?:PlanNotificationPolicy;completionPolicy?:TaskCompletionPolicy}
 export type PlanOccurrenceFields=RoleOccurrenceFields|OwnerPlanFields
@@ -298,6 +308,14 @@ export class PlanOccurrenceService{
    const verified=await this.verifyEvent(db,owner,event.id)
    if(!same(verified.event,event))throw corrupt()
    businessEvent=readRunPlanEventContext({event,controlGeneration:input.controlGeneration,data:verified.payload.data})
+   // 同一计划、同一业务对象已有领取：不再新建任务。任务已派发 → 记入来源更新账本（未结束 pending／已结束或来源撤回 needs-user）并把本事件定案；
+   // 领取已有但任务尚未派发 → 事件保持待定，下一轮再核。独立对象（首次出现）才继续按原路径新建任务。
+   if(event.sourceRef.kind==='business-object'){
+    const object=businessObjectReferenceOf(verified.payload.data.object)
+    const routed=await routeBusinessObjectEventToExistingTask(db,owner,plan.id,event,object,verified.payload.active!==true,{id:this.identity.id,now:()=>input.now})
+    if(routed==='wait'){plan.assertCurrent();return null}
+    if(routed==='queued'){await db.query("update teloa_plan_work_events set state='superseded' where owner_id=$1 and plan_id=$2 and definition_version=$3 and event_id=$4",[owner,plan.id,input.definitionVersion,event.id]);plan.assertCurrent();return null}
+   }
   }else await checkSource()
   const admission=combineWorkAccessLeases([await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:plan.id,operation:'run'}),await workAccess.authorize({kind:'plan-occurrence',ownerId:owner,planId:plan.id,occurrenceId:identity,source:'local-event'})])
   const id=this.identity.id(),requestId=this.identity.id(),snapshot={...(businessEvent?{event:businessEvent}:{}),fields:plan.fields,source:plan.source,roleVersion:plan.roleVersion,workDefinition:definition,...(plan.reportGroup?{reportGroup:plan.reportGroup}:{})}
@@ -364,7 +382,34 @@ export class PlanOccurrenceService{
   if(claim.taskRequestId!==value.taskRequestId)throw new WorkError('teloa/conflict','领取请求身份不一致。')
   return claim
  }
- private async verifyBusinessEvent(db:PoolClient,owner:string,claim:PlanOccurrence):Promise<void>{
+ /**
+  * 领取时固定的控制世代与当前世代不等时的唯一放行条件（宿主重启暂停 → 本人原生恢复）：
+  * - 当前世代只能更高，且 `teloa_work_recovery_requests` 里有本人、本控制、结果为 active 且 generation 等于当前世代的真实已确认 resume 收据；
+  * - 原任务下每个 Run 要么在该收据之后创建（恢复后的首次准备或续办），要么已终态，要么持有本人恢复票据（`teloa_work_recovery_tickets`）；
+  *   暂停前在途而没有票据的 Run 不借此重放。
+  * 不改写事件、领取与任务；缺收据、暂停/停止、撤权、源变化仍按原口径拒绝。
+  */
+ private async assertResumedGeneration(db:PoolClient,owner:string,claim:PlanOccurrence,control:{id:string;generation:number},taskId:string|undefined):Promise<void>{
+  const changed=()=>new WorkError('teloa/version-conflict','业务事件计划或控制世代已变化。')
+  if(!claim.event||control.generation<claim.event.controlGeneration)throw changed()
+  const tables=(await db.query("select to_regclass('teloa_work_recovery_requests') as requests,to_regclass('teloa_work_recovery_tickets') as tickets")).rows[0]
+  if(!tables?.requests||!tables.tickets)throw changed()
+  const receipt=(await db.query("select request_id,created_at from teloa_work_recovery_requests where owner_id=$1 and control_id=$2 and result->>'state'='active' and (result->>'generation')::int=$3 and result->>'id'=$2::text and result->>'ownerId'=$1 order by created_at desc limit 1",[owner,control.id,control.generation])).rows[0]
+  if(!receipt||!(receipt.created_at instanceof Date))throw changed()
+  if(!taskId)return
+  const runs=(await db.query('select id,state,created_at from teloa_task_runs where owner_id=$1 and task_id=$2',[owner,taskId])).rows
+  if(!runs.length)return
+  const tickets=(await db.query('select run_id,state from teloa_work_recovery_tickets where owner_id=$1 and run_id=any($2::uuid[]) and request_id=$3',[owner,runs.map(run=>run.id),receipt.request_id])).rows
+  if(tickets.some(ticket=>ticket.state==='unknown'))throw new WorkError('teloa/execution-pending','原运行的恢复结果未知，请先核对，不能重新派发。')
+  const ticketed=new Set(tickets.filter(ticket=>['reserved','applying','applied'].includes(String(ticket.state))).map(ticket=>String(ticket.run_id)))
+  for(const run of runs){
+   if(ticketed.has(String(run.id)))continue
+   if(run.created_at instanceof Date&&run.created_at.getTime()>=receipt.created_at.getTime())continue
+   if(['ended','withdrawn','configuration_failed'].includes(String(run.state)))continue
+   throw changed()
+  }
+ }
+ private async verifyBusinessEvent(db:PoolClient,owner:string,claim:PlanOccurrence,verification:PlanEventVerification='live'):Promise<void>{
   if(!claim.event){
    if(claim.workDefinition?.schema==='teloa.plan-work/v3'&&eventOccurrenceIdentity(claim.occurrenceId)){
     const source=(await db.query('select event from teloa_work_events where owner_id=$1 and id=$2',[owner,claim.occurrenceId.slice(6)])).rows[0]
@@ -372,13 +417,33 @@ export class PlanOccurrenceService{
    }
    return
   }
-  if(!this.verifyEvent||claim.occurrenceId!=='event:'+claim.event.event.id)throw new WorkError('teloa/source-unavailable','业务事件复核入口不可用。')
+  if(claim.occurrenceId!=='event:'+claim.event.event.id)throw new WorkError('teloa/source-unavailable','业务事件复核入口不可用。')
   const queue=(await db.query("select 1 from teloa_plan_work_events where owner_id=$1 and plan_id=$2 and definition_version=$3 and event_id=$4 and state='claimed' and claim_id=$5",[owner,claim.planId,claim.configVersion,claim.event.event.id,claim.id])).rowCount
   const plan=(await db.query('select * from teloa_plans where owner_id=$1 and id=$2',[owner,claim.planId])).rows[0]
-  const current=plan&&readPlan(plan),control=claim.workDefinition&&(await db.query('select state,generation from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,claim.workDefinition.definitionControlId])).rows[0]
-  if(!queue||!current||current.state!=='active'||current.version!==claim.planVersion||current.configVersion!==claim.configVersion||current.roleVersion!==claim.roleVersion||!control||control.state!=='active'||control.generation!==claim.event.controlGeneration)throw new WorkError('teloa/version-conflict','业务事件计划或控制世代已变化。')
+  const current=plan&&readPlan(plan),control=claim.workDefinition&&(await db.query('select id,state,generation from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,claim.workDefinition.definitionControlId])).rows[0]
+  if(!queue||!current||current.state!=='active'||current.version!==claim.planVersion||current.configVersion!==claim.configVersion||current.roleVersion!==claim.roleVersion||!control||control.state!=='active')throw new WorkError('teloa/version-conflict','业务事件计划或控制世代已变化。')
+  const link=(await db.query('select task_id from teloa_plan_task_links where claim_id=$1 and owner_id=$2',[claim.id,owner])).rows[0]
+  if(control.generation!==claim.event.controlGeneration)await this.assertResumedGeneration(db,owner,claim,control,link?String(link.task_id):undefined)
+  // 原件完整核对（不依赖宿主端口）：事件行只追加且带事实摘要；领取快照里的事件与事实必须逐字等于原件；
+  // 对象级事件的固定快照哈希必须仍等于事件依据，同步批次级事件的同步回执必须仍存在。
+  const stored=(await db.query('select event,payload,payload_hash from teloa_work_events where owner_id=$1 and id=$2',[owner,claim.event.event.id])).rows[0]
+  if(!stored||stored.payload_hash!==workEventDigest(stored.payload)||!same(readRunPlanEventContext({event:stored.event,controlGeneration:claim.event.controlGeneration,data:stored.payload?.data}),claim.event))throw new WorkError('teloa/version-conflict','业务事件原件已变化。')
+  const sourceRef=claim.event.event.sourceRef
+  if(sourceRef.kind==='business-object'){
+   const object=businessObjectReferenceOf(claim.event.data.object)
+   const snapshot=(await db.query('select snapshot_hash from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version=$5',[owner,object.scope,object.type,object.id,object.version])).rows[0]
+   if(!snapshot||snapshot.snapshot_hash!==object.snapshotHash||snapshot.snapshot_hash!==claim.event.event.basisHash)throw new WorkError('teloa/version-conflict','业务事件固定快照已变化。')
+  }else if(sourceRef.kind==='business-sync'){
+   const present=(await db.query("select to_regclass('teloa_business_sync_runs') as relation")).rows[0]?.relation
+   if(!present||!(await db.query('select 1 from teloa_business_sync_runs where owner_id=$1 and scope_id=$2 and mapping_id=$3 and run_id=$4',[owner,sourceRef.scope,sourceRef.mappingId,claim.event.event.sourceVersion])).rowCount)throw new WorkError('teloa/version-conflict','业务同步原回执已不可用。')
+  }else throw corrupt()
+  // 同一对象的后续实质变化已由来源更新账本显式带入续办 Run（原固定对象 + updates 分开冻结）：此时原件完整即可，
+  // 不再要求其后无变化；没有账本的任务在 live 复核下仍按原口径要求连续历史无实质变更。
+  const carried=!!link&&sourceRef.kind==='business-object'&&await hasBusinessTaskSourceUpdates(db,owner,String(link.task_id))
+  if(verification==='stored'||carried)return
+  if(!this.verifyEvent)throw new WorkError('teloa/source-unavailable','业务事件复核入口不可用。')
   const actual=await this.verifyEvent(db,owner,claim.event.event.id)
-  if(!same(readRunPlanEventContext({event:actual.event,controlGeneration:control.generation,data:actual.payload.data}),claim.event))throw new WorkError('teloa/version-conflict','业务事件来源版本或摘要已变化。')
+  if(!same(readRunPlanEventContext({event:actual.event,controlGeneration:claim.event.controlGeneration,data:actual.payload.data}),claim.event))throw new WorkError('teloa/version-conflict','业务事件来源版本或摘要已变化。')
  }
  async revalidate(owner:string,input:unknown):Promise<PlanOccurrence>{
   const value=this.claimIdentity(input),db=await this.pool.connect()
@@ -594,12 +659,18 @@ export class PlanOccurrenceService{
    const tasks=new TaskService(this.pool,{id:this.identity.id,now:()=>now})
    // 首次创建就固定可核的 claim 来源；Task、执行授权、谱系和关联一起提交。
    const task=await tasks.createInTransaction(db,owner,occurrence.taskRequest,{kind:'plan-occurrence',claimId:occurrence.id})
+   // 业务对象事件领取的任务同时固定业务对象来源（同 BusinessTaskService.create 的表与摘要）：Run 由此得到冻结的原对象与成果映射，
+   // 不把告警正文拼进目标；对象版本与摘要逐字取自已复核的事件事实。
+   if(occurrence.event&&occurrence.event.event.sourceRef.kind==='business-object'){
+    const assignee=occurrence.taskRequest.assignee
+    await bindBusinessTaskSourceInTransaction(db,owner,{task,requestId:occurrence.taskRequestId,reference:businessObjectReferenceOf(occurrence.event.data.object),assignee:assignee?{roleId:assignee.roleId,roleVersion:assignee.expectedVersion}:null,now})
+   }
    const association=await this.associate(db,owner,occurrence,task.id)
    assignment?.assertCurrent();await db.query('commit');return {occurrence,task,association}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  // 调用者已持有任务执行所需的锁；这里只读取固定来源，不再反向锁岗位或计划。
- async executionContext(db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource=false):Promise<RunPlanContext|undefined>{
+ async executionContext(db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource=false,verification:PlanEventVerification='live'):Promise<RunPlanContext|undefined>{
   if(!text(owner,128))throw new WorkError('teloa/forbidden','需要有效的本人身份。')
   if(!uuid(taskId))throw invalid()
   const taskRow=(await db.query('select * from teloa_tasks where id=$1 and owner_id=$2',[taskId,owner])).rows[0]
@@ -616,7 +687,7 @@ export class PlanOccurrenceService{
   if(occurrence.ownerId!==owner||occurrence.taskRequestId!==taskRow.request_id||task.goal!==occurrence.fields.goal||task.scope!==occurrence.fields.scope)throw corrupt()
   const spec=frozenTaskRequestSpec(occurrence)
   if(!(await db.query('select request_spec=$2::jsonb as matches from teloa_tasks where id=$1',[task.id,JSON.stringify(spec)])).rows[0]?.matches)throw corrupt()
-  await this.verifyBusinessEvent(db,owner,occurrence)
+  await this.verifyBusinessEvent(db,owner,occurrence,verification)
   if(occurrence.source.kind==='method-reuse')await verifyPlanSource(owner,occurrence.source,this.marketSources,db,this.ownerPlans)
   if(occurrence.fields.roleId===null){
    if(completion){

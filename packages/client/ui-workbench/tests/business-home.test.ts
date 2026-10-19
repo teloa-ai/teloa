@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs'
 import ts from 'typescript'
 import {toolbarIconComponent} from './toolbar-icon-component-fixture.ts'
 import {businessWorkspaceText} from '../src/client/business-workspace-copy.ts'
-import {businessHomeAttention,businessHomeCards,businessHomeSources,businessHomeStaff,businessHomeSummaryParts,businessHomeWorking} from '../src/client/business-home-presentation.ts'
+import {businessHomeAttention,businessHomeCards,businessHomeSourceState,businessHomeSources,businessHomeStaff,businessHomeSummaryParts,businessHomeWorking} from '../src/client/business-home-presentation.ts'
 import {businessScopeNames} from '../src/client/business-directory.ts'
 import type {BusinessScopeLabel} from '../src/client/business-directory.ts'
 import type {AttentionItem} from '../src/client/attention-item.ts'
@@ -368,4 +368,40 @@ test('当前业务摘要不把退役员工计入人数，暂停员工和本人�
  const roles=[role('active','在岗','general'),role('paused','暂停','general',{state:'paused'}),role('retired','旧验收','general',{state:'retired'}),role('self','分身','general',{kind:'twin'})]
  const card=businessHomeCards([label('general','通用工作','builtin')],{roles,dataSources:[],attention:[],tasks:[],locale:'zh-CN'})[0]!
  assert.equal(card.composition.find(x=>x.id==='staff')?.count,2)
+})
+
+test('来源投影统一两条接入路径：已授权模板实例与「规则在跑 × MCP 连接在线」的映射来源按物理身份去重，配置本身不算接入，读不到如实标未知',()=>{
+ const rules=(rows:Array<{mappingId:string;running:boolean;source?:unknown}>)=>rows.map(row=>({scope:'SOC',definitionHash:'a'.repeat(64),enabled:row.running,revision:1,title:row.mappingId,schedule:{kind:'every' as const,seconds:60},...row})) as never
+ const mcp=(mappingId:string,tool:string,running=true)=>({mappingId,running,source:{kind:'mcp-tool',serverName:'soc_logs',tool}})
+ const tools=['wazuh_alerts','malcolm_logs','source_alerts'].map(name=>({name,fullName:'mcp__soc_logs__'+name,readOnly:true}))
+ const connected=[{serverName:'soc_logs',status:'connected' as const,tools}]
+ // 原案形状：没有模板实例，一个已连接 MCP 应用上三条在跑的 60 秒映射 → 三个物理来源，不再说「还没接入」。
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('wazuh','wazuh_alerts'),mcp('malcolm','malcolm_logs'),mcp('alerts','source_alerts')]),connections:connected}),{connected:3,unknown:false})
+ // 同一 serverName/tool 两条映射只算一个来源；模板活跃实例照旧计入。
+ assert.deepEqual(businessHomeSourceState([dataSource('active','SOC','active')],'SOC',{rules:rules([mcp('a','wazuh_alerts'),mcp('b','wazuh_alerts')]),connections:connected}),{connected:2,unknown:false})
+ // 只有映射配置（规则未在跑）或连接不在线都不算接入；本地记录端口与员工成果不是外部来源。
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('a','wazuh_alerts',false)]),connections:connected}),{connected:0,unknown:false})
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('a','wazuh_alerts')]),connections:[{serverName:'soc_logs',status:'error'}]}),{connected:0,unknown:false})
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([{mappingId:'port',running:true,source:{kind:'business-data-port',sourceId:'x'}},{mappingId:'role',running:true,source:{kind:'role-result'}}]),connections:connected}),{connected:0,unknown:false})
+ // 别的范围的规则不串入；规则读不到、在跑的 MCP 映射读不到连接目录、旧宿主无来源身份 → 未知。
+ assert.deepEqual(businessHomeSourceState([],'AppSec',{rules:rules([mcp('a','wazuh_alerts')]),connections:connected}),{connected:0,unknown:false})
+ assert.deepEqual(businessHomeSourceState([dataSource('active','SOC','active')],'SOC',{connections:connected}),{connected:1,unknown:true})
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('a','wazuh_alerts')])}),{connected:0,unknown:true})
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([{mappingId:'old',running:true}]),connections:connected}),{connected:0,unknown:true})
+ // 与宿主同步闸一致：工具已不在目录或不再只读不算接入；在线但没有工具目录时如实标未知。
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('a','wazuh_alerts')]),connections:[{serverName:'soc_logs',status:'connected',tools:[{name:'wazuh_alerts',fullName:'mcp__soc_logs__wazuh_alerts',readOnly:false}]}]}),{connected:0,unknown:false})
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('a','renamed_tool')]),connections:connected}),{connected:0,unknown:false})
+ assert.deepEqual(businessHomeSourceState([],'SOC',{rules:rules([mcp('a','wazuh_alerts')]),connections:[{serverName:'soc_logs',status:'connected'}]}),{connected:0,unknown:true})
+ assert.equal(businessHomeSources([],'SOC'),0,'未观测时保持原模板实例语义')
+ // 卡片处境句：确认接入按数说；一个也没确认且有未知时说待核对；都读到且确实没有才说还没接入。
+ const card=(observation:unknown)=>businessHomeCards([label('SOC','安全运营','builtin')],{roles:[role('r1','甲','SOC')],dataSources:[],attention:[],tasks:[],locale:'zh-CN',sourceObservations:{SOC:observation as never}})[0]!
+ assert.equal(card({rules:rules([mcp('a','wazuh_alerts')]),connections:connected}).situationKey,'business.home.situation.connected')
+ assert.equal(card({connections:connected}).situationKey,'business.home.situation.unknown')
+ assert.equal(card({rules:rules([]),connections:connected}).situationKey,'business.home.situation.none')
+ assert.equal(businessHomeCards([label('SOC','安全运营','builtin')],{roles:[],dataSources:[],attention:[],tasks:[],locale:'zh-CN',sourceObservations:{SOC:{}}})[0]!.situationKey,'business.home.situation.unknownNoStaff')
+ for(const key of ['business.home.situation.unknown','business.home.situation.unknownNoStaff','business.scope.stat.sourcesUnknown']){
+  const row=BUSINESS_PAGE_MESSAGE_ROWS.find(row=>row[0]===key)
+  // 简中、繁中、英文定稿；其余语言按统一回退显示英文，不随本轮自动补译。
+  assert.ok(row,key);assert.equal(row!.length,4,key);for(const value of row!)assert.ok(String(value).trim(),key)
+ }
 })

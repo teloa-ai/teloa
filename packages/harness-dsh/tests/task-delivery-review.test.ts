@@ -10,10 +10,11 @@ import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
 import type {TaskExecutionScope,TaskRun} from '@teloa/backend'
-import {createReviewSourceCatalog,reviewSourceDirectory,readRevisionSubmission,applyDeliveryPlan,deliveryReviewPrompt,deliveryReviewSource,deliveryReviewText,deliveryReviewToolName,draftSha256,leaseTaskDeliveryReview,readDeliveryDraft,reviewBlockTag,reviewInputSources,splitReviewBlocks,type DeliveryReviewTrace,type ReviewMaterial} from '../src/task-delivery-review.ts'
+import {createReviewSourceCatalog,reviewSourceDirectory,readRevisionSubmission,applyDeliveryPlan,deliveryReviewPrompt,deliveryReviewSource,deliveryReviewText,deliveryReviewToolName,draftSha256,leaseTaskDeliveryReview,readDeliveryDraft,reviewBlockTag,reviewInputSources,splitReviewBlocks,type DeliveryReviewTrace,type DeliveryReviewLease,type ReviewMaterial} from '../src/task-delivery-review.ts'
 import {readRunKnowledge} from '@teloa/backend'
 import {planContextNotice} from '../../backend/src/work/task-run-plan-context.ts'
-import {dshTaskRunPorts,leaseTaskRunMethods,taskRunReviewMaterial,taskSkillUsageNotice} from '../src/task-run-dsh.ts'
+import {groupContinuationNotice} from '../../backend/src/work/task-runs.ts'
+import {dshTaskRunPorts,leaseTaskRunMethods,taskRunReviewMaterial,taskSkillUsageNotice,ownerReviewDeclarations} from '../src/task-run-dsh.ts'
 import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 import {readSessionEvents} from '../src/session-events.ts'
 
@@ -61,22 +62,58 @@ const grading='---\nname: grading\n---\nGrade founder-supplied Evidence as first
 const gradingSha=createHash('sha256').update(grading).digest('hex')
 const reviewMaterial:ReviewMaterial={goal:material,inputs:{knowledge:0,group:false,context:false},methods:[{name:'grading',sha256:gradingSha}],catalog:createReviewSourceCatalog([{id:'goal',kind:'goal',title:'原目标',text:material,origin:{field:'inputText',pointer:'/task/goal'}},{id:'method:1',kind:'method',title:'grading',text:grading,origin:{field:'skills',pointer:'/0/content'}}])}
 const revise=(edits:Edit[]=[],blockCount=1):Revision=>({phase:'revise',issues:edits.length?[{problem:'结论应按原资料核对。',basis:[passageBasis(reviewMaterial.catalog,'goal',material)],affectedBlockIds:[...new Set(edits.map(edit=>edit.blockId))],coverage:coverageFor(blockCount,edits.map(edit=>edit.blockId)),edits}]:[]})
-async function runtime(t:TestContext,replies:Reply[],publish?:(agent:Agent,message:UserMessage,signal:AbortSignal)=>Promise<void>){
+async function runtime(t:TestContext,replies:Reply[],publish?:(agent:Agent,message:UserMessage,signal:AbortSignal)=>Promise<void>,reviewOptions:Partial<Pick<DeliveryReviewLease,'requireReview'|'readExecution'>>={}){
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
  await ctx.plugin(AgentLoop,{agents:[]})
  const adapter=new ScriptAdapter(replies);ctx.llm.registerAdapter(['script'],adapter)
  let executed=0
  ctx.tools.register(defineTool({name:'teloa_capabilities',description:'测试工具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{executed++;return 'fixture'}}))
+ ctx.tools.register(defineTool({name:'teloa_group_mention',description:'测试原生提醒声明',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>JSON.stringify({mentionSelf:true})}))
  const create=()=>ctx.agents.create({sessionId:SessionId('review-'+t.name),agentOptions:{provider:'script',model:'model'}})
  const {agent}=await create()
  const traces:DeliveryReviewTrace[]=[]
- const release=leaseTaskDeliveryReview(agent,{runId:'run',requestId:'rpc',material:reviewMaterial,trace:entry=>{traces.push(entry)},publish:publish?(message,signal)=>publish(agent,message,signal):async message=>{agent.inject(message)}})
+ const release=leaseTaskDeliveryReview(agent,{runId:'run',requestId:'rpc',material:reviewMaterial,...reviewOptions,trace:entry=>{traces.push(entry)},publish:publish?(message,signal)=>publish(agent,message,signal):async message=>{agent.inject(message)}})
  const send=async(rpcId='rpc')=>{agent.followup(createUserMessage({source:{kind:'user',rpcId},content:[{type:'text',text:material}]}));await agent.whenIdle()}
  return {agent,adapter,traces,release,send,executed:()=>executed,events:()=>readSessionEvents(agent.session) as readonly SessionEvent[]}
 }
 const hostMessages=(events:readonly SessionEvent[])=>events.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.data.source.kind===deliveryReviewSource)
 const reviews=(events:readonly SessionEvent[])=>hostMessages(events).filter(event=>event.type==='user/message'&&event.surfaceOp==='append')
+
+test('本人自然语言质检要求形成提醒义务，否定与引用示例不形成义务',()=>{
+ for(const goal of ['最后交给@Max质检。','完成后提醒我核对成果。','交给我复核。','不要修改原始数据，完成后提醒我核对成果。','不得处置；最后交给 @Max 质检。'])assert.deepEqual(ownerReviewDeclarations(goal,['Max']),['owner-mention'])
+ for(const goal of ['不要@Max质检。','不要提醒我。','示例：最后交给@Max质检。','> 最后交给@Max质检。','不要调用 teloa_group_mention target=self。','请@调查员独立复核。'])assert.equal(ownerReviewDeclarations(goal,['Max']),undefined)
+})
+test('本人明确要求的提醒不能以正文@姓名或模型验收accept冒充真实声明',async t=>{
+ const f=await runtime(t,[text('报告已完成，@Max。'),submit(revise()),submit(verify())],undefined,{requireReview:true,material:{...reviewMaterial,requiredDeclarations:['owner-mention']}} as any)
+ await f.send()
+ assert.equal(reviews(f.events()).some(e=>Reflect.get(e.data.source,'summary')==='复核后交付'),false)
+ assert.ok(f.traces.some(e=>e.state==='failed'&&e.reason==='required-review:owner-mention-missing'))
+})
+
+test('真实提醒声明回执通过复核后保留；交付正文不需要伪造发送成功',async t=>{
+ let sessionId=''
+ const f=await runtime(t,[(call('teloa_group_mention') as readonly StreamChunk[]).map(chunk=>chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,arguments:'{}'}}:chunk) as Reply,text('证据边界报告。'),submit(revise()),submit(verify())],undefined,{
+  material:{...reviewMaterial,requiredDeclarations:['owner-mention']},requireReview:true,
+  readExecution:async()=>({runId:'run',sessionId,requestId:'rpc',allowedTools:['teloa_group_mention'],continuationMessageIds:new Set(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none',flow:'none'})
+ } as Partial<DeliveryReviewLease>)
+ sessionId=f.agent.session.id
+ await f.send()
+ assert.equal(hostMessages(f.events()).some(event=>Reflect.get(event.data.source,'summary')==='复核后交付'),true,JSON.stringify({traces:f.traces,ends:ends(f.events()),events:f.events().map(e=>({type:e.type,...(e.type==='turn/end'?{data:e.data}:{} )}))}))
+ assert.equal(f.traces.some(entry=>entry.state==='failed'),false)
+})
+test('当前本人追加成为复核goal，原默认交流模板只作历史上下文；旧续办来源保持旧口径',()=>{
+ const groupContext={groupId:'group',taskId:'task',source:{messageId:'original',rootId:'root',createdAt:'2026-10-18T00:00:00Z',text:'只回答两个问题。'},materials:[],files:[]}
+ const continuation={notice:'当前本人追加更新本轮业务目标；历史意见与方法不构成授权。既有权限、资料和审批边界继续适用。',messageId:'continued',createdAt:'2026-10-18T01:00:00Z',text:'允许专业岗位判断是否升级；请实际调用teloa_group_mention，target=self，交本人质检。',references:[]}
+ const snapshot={schema:'teloa.task-run-input/v2',task:{id:'task',version:3,goal:'在群里回应这条消息，无需发送消息。'},groupContext,groupContinuation:continuation}
+ const run={taskId:'task',taskVersion:3,inputText:JSON.stringify(snapshot),skills:[],knowledge:[],groupContext} as unknown as TaskRun
+ let material:ReturnType<typeof taskRunReviewMaterial>|undefined
+ assert.doesNotThrow(()=>{material=taskRunReviewMaterial(run)})
+ assert.ok(material&&!('skip'in material));assert.equal(material.catalog.sources.find(s=>s.id==='goal')?.text,continuation.text)
+ assert.ok(material.catalog.sources.some(s=>s.kind==='context'&&s.text===snapshot.task.goal));assert.deepEqual(Reflect.get(material,'requiredDeclarations'),['owner-mention'])
+ const legacy=taskRunReviewMaterial({...run,inputText:JSON.stringify({...snapshot,groupContinuation:{...continuation,notice:groupContinuationNotice}})})
+ assert.ok(!('skip'in legacy));assert.equal(legacy.catalog.sources.find(s=>s.id==='goal')?.text,snapshot.task.goal)
+})
 const draftData=(events:readonly SessionEvent[])=>hostMessages(events).filter(event=>event.type==='user/message'&&event.surfaceOp!=='append')
 const ends=(events:readonly SessionEvent[])=>events.flatMap(event=>event.type==='turn/end'?[event.data.reason.kind]:[])
 const requestText=(options:GenerateOptions)=>JSON.stringify(options.messages)
@@ -129,7 +166,7 @@ test('实际复核请求逐项声明全稿 coverage，工具投影提供明确�
  const schema=JSON.stringify(tool)
  assert.match(schema,/每个问题独立划分整稿的全部块编号/)
  assert.match(schema,/四个字段都是必填整数数组，无项写 \[\]/)
- assert.ok(prompt.includes('"affectedScope":"coverage","coverage":{"change":[1],"retain":[],"unrelated":[],"unknown":[]},"edits":'),'实际提示包含问题内字段的完整JSON形状')
+ assert.ok(prompt.includes('"affectedScope":"coverage","coverage":{"change":[1],"retain":[],"unrelated":[],"unknown":[],"unlisted":"retain"},"edits":'),'实际提示包含问题内字段与显式未列归属的完整JSON形状')
  assert.match(tool.description??'',/每个问题各自提交覆盖全稿的 coverage，不能跨问题合并/)
 })
 
@@ -412,6 +449,20 @@ test('草稿缺少明确完成回执时不进入复核',async t=>{
  assert.deepEqual(readDeliveryDraft(incomplete,'rpc',1),{skip:'finish:missing'})
 })
 
+test('必须复核的群交付不能因工具证据不支持而退回未经复核的正文',async t=>{
+ const f=await runtime(t,[call('teloa_capabilities'),text('不应直接交付的工具后正文')],undefined,{requireReview:true})
+ await f.send()
+ assert.deepEqual(ends(f.events()),['error'],'跳过复核必须收错，不能作为completed回群再触发交接')
+ assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
+ assert.ok(f.traces.some(entry=>entry.state==='failed'&&entry.reason==='required-review:tools'))
+ let blocked:Awaited<ReturnType<typeof runtime>>
+ blocked=await runtime(t,[call('teloa_capabilities'),text('不应绕过授权证据的正文')],undefined,{requireReview:true,readExecution:async()=>({runId:'run',sessionId:blocked.agent.id,requestId:'rpc',allowedTools:[],continuationMessageIds:new Set(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none',flow:'none'})})
+ await blocked.send()
+ assert.deepEqual(ends(blocked.events()),['error'])
+ assert.equal(readTaskRunGroupResult(blocked.events(),'rpc'),undefined)
+ assert.ok(blocked.traces.some(entry=>entry.state==='failed'&&entry.reason==='required-review:tool-identity'),'不支持的工具证据也不能降级交付')
+})
+
 test('空回复、长度截断、带工具的轮次与他人请求的轮次都不启动复核；复核要求中「本轮没有工具回执」只对无工具轮次成立',async t=>{
  const empty=await runtime(t,[text('   ')]);await empty.send()
  assert.equal(empty.adapter.requests.length,1);assert.equal(reviews(empty.events()).length,0)
@@ -487,7 +538,7 @@ test('任务运行只为带固定技能的运行装配复核；有原生输入�
 })
 
 const goalSnapshot=JSON.stringify({schema:'teloa.task-run-input/v2',task:{id:'task',version:3,goal:'资料：1 家已付款。'}})
-test('任务运行把冻结原目标与本次运行的方法身份交给复核，进入时把草稿节点换成未确认草稿数据，同一轮只判定一次；无合法原目标明确跳过；v2 身份损坏仍是存储损坏',async()=>{
+test('任务运行把冻结原目标与本次运行的方法身份交给复核，进入时把草稿节点换成未确认草稿数据，同一轮只判定一次；正文写计划仅得一次同轮补交提醒；无合法原目标明确跳过；v2 身份损坏仍是存储损坏',async()=>{
  const f=fakeSend({withNewInput:(async(_agent:unknown,_message:UserMessage,_context:unknown,submit:()=>void)=>{submit()}) as never})
  await f.ports.send(f.run({skills:[skill],roleSnapshot:undefined,inputText:goalSnapshot}),new AbortController().signal,target)
  const [stopping]=f.listeners.get('agent/turn-stopping')??[],[preStep]=f.listeners.get('agent/pre-step')??[]
@@ -503,8 +554,14 @@ test('任务运行把冻结原目标与本次运行的方法身份交给复核�
  // 装配层只核对交接与租约；回执工具的接收、两轮推进与交付由真实 AgentLoop 用例覆盖。替身不执行工具，正文里写计划不被接受。
  const reviewEvent={type:'assistant/message',seq:4,time:0,surfaceOp:'append',data:{turn:1,step:2,message:{id:'b',role:'assistant',source:{kind:'model',provider:'p',model:'m'},content:[{type:'text',text:'正文写的计划'}]},stream:[{type:'chunk',time:0,chunk:{type:'finish',reason:{kind:'stop'}}}]}}
  f.setEvents([...draftTurn,reviewEvent] as unknown as SessionEvent[],[1,3,4])
+ await stop({turn:1,signal:new AbortController().signal})
+ assert.equal(f.injected.length,2);assert.equal(Reflect.get(f.injected[1]!.source,'summary'),'交付复核补交','正文写的计划不被接受；唯一纠正名额用于同一轮的补交提醒，不是新一轮复核输入')
+ await enter({step:3,messages:[f.injected[1]!],signal:new AbortController().signal},async()=>undefined)
+ assert.equal(f.appended.length,1,'补交提醒不重复替换视图')
+ const again={...reviewEvent,seq:5,data:{...reviewEvent.data,step:3,message:{...reviewEvent.data.message,id:'c'}}}
+ f.setEvents([...draftTurn,reviewEvent,again] as unknown as SessionEvent[],[1,3,4,5])
  await assert.rejects(stop({turn:1,signal:new AbortController().signal}),/交付复核未形成完整编辑计划/)
- assert.equal(f.appended.length,1,'没有原生回执不追加交付');assert.equal(f.injected.length,1,'不发布第 2 轮')
+ assert.equal(f.appended.length,1,'没有原生回执不追加交付');assert.equal(f.injected.length,2,'名额用尽后仍缺交即收错，不发布第 2 轮')
  const legacy=fakeSend({withNewInput:(async(_agent:unknown,_message:UserMessage,_context:unknown,submit:()=>void)=>{submit()}) as never})
  await legacy.ports.send(legacy.run({skills:[skill],roleSnapshot:undefined,inputText:'固定目标'}),new AbortController().signal,target)
  const legacyStop=(legacy.listeners.get('agent/turn-stopping')??[])[0] as typeof stop
@@ -570,6 +627,29 @@ test('复核固定输入：原目标只取合法 v2 冻结输入；方法身份�
  assert.throws(()=>taskRunReviewMaterial({...run,inputText:JSON.stringify({schema:'teloa.task-run-input/v2',task:{id:'task',version:4,goal:'资料'}})} as TaskRun),/任务目标与固定运行身份不一致/,'v2 身份损坏不猜目标')
 })
 
+test('群续办的本人追加同时进入起草目标与复核目标，不被旧交办问题当作越界删除',async()=>{
+ const groupContext={groupId:'group',taskId:'task',source:{messageId:'original',rootId:'root',createdAt:'2026-10-18T00:00:00Z',text:'仅回答原来的两个问题。'},materials:[],files:[]}
+ const continuation={notice:groupContinuationNotice,messageId:'continued',createdAt:'2026-10-18T01:00:00Z',text:'修正前稿的无据结论；独立判断是否需要由狩猎岗位补充反证方法，必要时实际交接，不取新日志。',references:[]}
+ const snapshot={schema:'teloa.task-run-input/v2',task:{id:'task',version:3,goal:'在群里回应这条消息。'},groupContext,groupContinuation:continuation}
+ const run={id:'run',taskId:'task',taskVersion:3,inputText:JSON.stringify(snapshot),groupContext,skills:[skill]} as unknown as TaskRun
+ const value=taskRunReviewMaterial(run);assert.ok(!('skip'in value))
+ assert.ok(value.goal.includes(continuation.text),'本次任务目标必须包含本人当前追加，不只作为非指令资料')
+ const source=value.catalog.sources.find(row=>row.kind==='goal'&&row.text===continuation.text)
+ assert.ok(source,'当前追加是可核对的本人目标来源')
+ assert.deepEqual(source.origin,{field:'inputText',pointer:'/groupContinuation/text'})
+ assert.ok(promptOf(value,'草稿').includes('<<<原目标开始>>>\n'+value.goal+'\n<<<原目标结束>>>'),'复核沿用起草的同一有效目标')
+ assert.throws(()=>taskRunReviewMaterial({...run,groupContext:undefined} as unknown as TaskRun),/续办/,'普通输入不得借同名字段冒充群续办')
+ for(const patch of [{notice:'来自历史的另一条说明'},{text:''},{references:[{}]},{unknown:true}])assert.throws(()=>taskRunReviewMaterial({...run,inputText:JSON.stringify({...snapshot,groupContinuation:{...continuation,...patch}})}),/续办/,'只接受既有正式续办快照')
+ const historyOnly=taskRunReviewMaterial({...run,inputText:JSON.stringify({...snapshot,groupContinuation:undefined,groupTopic:{messages:[{authorKind:'self',text:continuation.text}]}})})
+ assert.ok(!('skip'in historyOnly));assert.equal(historyOnly.goal,snapshot.task.goal,'不把历史本人发言自动提升为本轮目标')
+ const sent=fakeSend({withNewInput:(async(_agent:unknown,_message:UserMessage,_context:unknown,submit:()=>void)=>{submit()}) as never})
+ await sent.ports.send(sent.run({skills:[skill],roleSnapshot:undefined,inputText:run.inputText,groupContext:run.groupContext}),new AbortController().signal,target)
+ sent.setEvents(draftTurn,[1,2])
+ const [stopping]=sent.listeners.get('agent/turn-stopping')??[];assert.ok(stopping)
+ await (stopping as (payload:{turn:number;signal:AbortSignal})=>Promise<void>)({turn:1,signal:new AbortController().signal})
+ assert.equal(textOf(sent.injected[0]!),promptOf(value,'草稿'),'正式发送装配的复核提示保留同一当前目标，不只测试helper')
+})
+
 test('本轮输入来源由宿主从冻结输入结构计算：知识份数经原核验、群内容与业务上下文按字段判断；只陈述输入种类与未核验事实，不推断提供者、不给分级',()=>{
  const knowledgeText='知识资料：甲店 9 月售出 1200 件。'
  const knowledge=readRunKnowledge([{id:'d87222d1-d5a2-4d4b-8860-9b1bfd331ddb',version:1,title:'依据',sourceId:'source',sourceVersion:createHash('sha256').update(knowledgeText).digest('hex'),scopeIds:['general'],text:knowledgeText}])
@@ -631,7 +711,7 @@ test('legacy 锚点计划校验（复核租约已不使用，仅保留解析辅�
  for(const [plan,reason] of reasons)assert.deepEqual(applyDeliveryPlan(plan,draft),{reason},reason)
 })
 
-test('真实 AgentLoop：编辑计划未通过校验时本轮如实收为错误，不部分应用、不追加交付、不把草稿或计划当结果；显式无需修改且完整收尾时交付即冻结草稿',async t=>{
+test('真实 AgentLoop：编辑计划未通过校验时唯一纠正名额用尽后本轮如实收为错误，不部分应用、不追加交付、不把草稿或计划当结果；显式无需修改且完整收尾时交付即冻结草稿',async t=>{
  for(const [label,plan,reason] of [
   ['引用不存在的块编号',(draft:string)=>planOf(draft,[['不存在的句子','x']]),'rewrite-plan:affected-blocks'],
   ['旧原文锚点格式不再被接受',(draft:string)=>anchorPlanOf(draft,[['口述付款记为最高级','x']]),'rewrite-plan:missing-submission'],
@@ -639,11 +719,14 @@ test('真实 AgentLoop：编辑计划未通过校验时本轮如实收为错误�
   ['重写整篇而不是编辑计划',()=>'终稿：重写后的整篇交付。','rewrite-plan:missing-submission'],
  ] as const)await t.test(label,async sub=>{
   const draft='草稿：口述付款记为最高级。'
-  const f=await runtime(sub,[text(draft),text(plan(draft)),text('不应出现')])
+  // 同一类不合格回执连续两次：第一次用掉唯一纠正名额（语义拒绝沿错误回执续步；缺交得一次补交提醒），第二次收错。
+  const f=await runtime(sub,[text(draft),text(plan(draft)),text(plan(draft)),text('不应出现')])
   await f.send()
-  assert.equal(f.adapter.requests.length,2,'不追加第三步')
+  assert.equal(f.adapter.requests.length,3,'纠正一次后不追加第四步')
   assert.deepEqual(ends(f.events()),['error'])
-  assert.deepEqual(f.traces.map(entry=>[entry.state,entry.phase,entry.reason??null]),[['requested','rewrite',null],['failed','rewrite',reason]])
+  const missing=reason==='rewrite-plan:missing-submission'
+  assert.deepEqual(f.traces.map(entry=>[entry.state,entry.phase,entry.reason??null]),[['requested','rewrite',null],...missing?[['requested','rewrite','correction:plan:missing-submission']]:[],['failed','rewrite',reason]])
+  assert.equal(f.events().filter(event=>event.type==='tool/result'&&Reflect.get(event.data,'message').isError===true).length,missing?0:2,'语义拒绝的两次真实错误回执如实落盘')
   assert.equal(applied(f.events()).length,0,'不追加复核后交付')
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined,'草稿、计划都不成为交付')
  })
@@ -703,10 +786,13 @@ test('R2拒绝不交付：只有有依据的新问题进入有界修订，其他
   ['旧空编辑不是验收',text({edits:[]} as unknown as Submission)],
   ['第2轮截断',text(accepted(),'max-tokens')],['第2轮调用业务工具',call('teloa_capabilities')],
  ] as const)await t.test(label,async sub=>{
-  const schemaError=label==='旧空编辑不是验收'
-  const f=await runtime(sub,[text(draft),text(firstRound),second,...schemaError?[text({edits:[]} as unknown as Submission)]:[],text('不应出现')])
+  // 严格schema或工具体语义拒绝的回执连续出现两次，耗尽整租约唯一纠正名额；截断与调用其他工具不可纠正。
+  const repeated=['检查未知','检查缺项','漏验宿主R1问题','验收夹带after','旧空编辑不是验收'].includes(label)
+  const tail=label==='新增阻断'?[text('R3 只写说明不交回执'),text('补交提醒后仍不交回执')]:repeated?[second]:[]
+  const f=await runtime(sub,[text(draft),text(firstRound),second,...tail,text('不应出现')])
   await f.send()
-  assert.equal(f.adapter.requests.length,schemaError||label==='新增阻断'?4:3,'有依据拒绝可进入唯一R3；R3无合法回执仍收错，其他未知或非法回执不修稿')
+  assert.equal(f.adapter.requests.length,label==='新增阻断'?5:repeated?4:3,'有依据拒绝可进入唯一R3；R3补交后仍无合法回执收错；其他未知或非法回执纠正一次仍不合格即收错，不修稿')
+  if(label==='新增阻断')assert.equal(f.traces.at(-1)!.reason,'rewrite-r3-plan:missing-submission')
   assert.equal(f.executed(),0);assert.deepEqual(ends(f.events()),['error'])
   assert.equal(applied(f.events()).length,0);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined)
  })
@@ -725,4 +811,52 @@ test('R2拒绝不交付：只有有依据的新问题进入有界修订，其他
   assert.deepEqual(phases,['revise','verify'])
   assert.deepEqual(f.traces.filter(entry=>entry.state==='delivered').map(entry=>entry.round),[2])
  })
+})
+
+test('实际执行校验与本轮来源枚举一致：错误片段沿原生工具错误只纠参一次，仍须R2验收',async t=>{
+ const invalid=revise([{blockId:1,after:'核对后的结果'}]);invalid.issues[0]!.basis=[{sourceId:'goal',passageId:'p999'}]
+ const f=await runtime(t,[text('原草稿'),submit(invalid),submit(revise([{blockId:1,after:'核对后的结果'}])),submit(verify(['r1:u1:i1'],[[1]]))])
+ await f.send();assert.equal(f.adapter.requests.length,4);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),'核对后的结果')
+ assert.deepEqual(f.events().filter(e=>e.type==='tool/result').map(e=>e.type==='tool/result'&&e.data.message.isError),[true,false,false])
+ const error=f.events().find(e=>e.type==='tool/result'&&e.data.message.isError)
+ assert.ok(error?.type==='tool/result')
+ const diagnostic=error.data.message.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n')
+ assert.match(diagnostic,/当前可用来源片段组合/)
+ assert.ok(diagnostic.includes('"sourceId":"goal"')&&diagnostic.includes('"passageIds":["p1"]'),'按冻结目录明确列出可选组合，不让模型拆路径或猜编号')
+})
+
+test('来源枚举重复非法不能续领纠参名额，冻结草稿不作为交付',async t=>{
+ const invalid=revise([{blockId:1,after:'核对后的结果'}]);invalid.issues[0]!.basis=[{sourceId:'goal',passageId:'p999'}]
+ const f=await runtime(t,[text('原草稿'),submit(invalid),submit(invalid)]);await f.send()
+ assert.equal(f.adapter.requests.length,3);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined);assert.equal(ends(f.events()).at(-1),'error')
+})
+
+test('复核阶段以宿主系统段明确工具回执协议，普通起草不带该段且JSON正文不代替工具',async t=>{
+ const f=await runtime(t,[text('原草稿'),submit(revise()),submit(verify())]);await f.send()
+ const marker='当前处于宿主交付复核阶段'
+ assert.ok(!JSON.stringify(f.adapter.requests[0]).includes(marker))
+ assert.ok(JSON.stringify(f.adapter.requests[1]).includes(marker))
+ assert.match(JSON.stringify(f.adapter.requests[1]),/JSON正文或代码块不构成工具回执/)
+ assert.match(JSON.stringify(f.adapter.requests[2]),/verify/)
+})
+
+test('当前覆盖简写漏掉未列归属时由模型纠参一次，R2仍须核对整稿保留块',async t=>{
+ const draft='保留的第1块。\n\n需改的第2块。'
+ const invalid={phase:'revise',issues:[{problem:'修正第2块。',basis:[passageBasis(reviewMaterial.catalog,'goal',material)],affectedScope:'coverage',coverage:{change:[2],retain:[],unrelated:[],unknown:[]},edits:[{blockId:2,after:'核对后的第2块。'}]}]}
+ const corrected=structuredClone(invalid) as Record<string,any>;corrected.issues[0].coverage.unlisted='retain'
+ const f=await runtime(t,[text(draft),submit(invalid as unknown as Submission),submit(corrected as Submission),submit(verify(['r1:u1:i1'],[[1,2]]))])
+ await f.send();assert.equal(f.adapter.requests.length,4);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),'保留的第1块。\n\n核对后的第2块。')
+ assert.deepEqual(f.events().filter(e=>e.type==='tool/result').map(e=>e.type==='tool/result'&&e.data.message.isError),[true,false,false])
+})
+
+test('覆盖简写重复漏项不能重复纠参，也不能把草稿交付到群',async t=>{
+ const invalid={phase:'revise',issues:[{problem:'修正第2块。',basis:[passageBasis(reviewMaterial.catalog,'goal',material)],affectedScope:'coverage',coverage:{change:[2],retain:[],unrelated:[],unknown:[]},edits:[{blockId:2,after:'核对后的第2块。'}]}]}
+ const f=await runtime(t,[text('保留的第1块。\n\n需改的第2块。'),submit(invalid as unknown as Submission),submit(invalid as unknown as Submission)])
+ await f.send();assert.equal(f.adapter.requests.length,3);assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined);assert.equal(ends(f.events()).at(-1),'error')
+})
+
+test('显式保留的未列块仍属R2必核依赖，漏验时不能交付',async t=>{
+ const revision={phase:'revise',issues:[{problem:'修正第2块。',basis:[passageBasis(reviewMaterial.catalog,'goal',material)],affectedScope:'coverage',coverage:{change:[2],retain:[],unrelated:[],unknown:[],unlisted:'retain'},edits:[{blockId:2,after:'核对后的第2块。'}]}]}
+ const f=await runtime(t,[text('保留的第1块。\n\n需改的第2块。'),submit(revision as unknown as Submission),submit(verify(['r1:u1:i1'],[[2]]))])
+ await f.send();assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined);assert.equal(ends(f.events()).at(-1),'error')
 })

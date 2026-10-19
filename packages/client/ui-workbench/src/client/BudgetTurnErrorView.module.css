@@ -1,0 +1,5 @@
+.row{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));grid-template-columns:10px minmax(0,1fr);align-items:start;gap:8px;padding:2px 0;display:grid}
+.dot{margin-top:5px}
+.copy{overflow-wrap:anywhere;min-width:0}
+.title{color:var(--dsw-alias-state-error-primary);margin-right:6px;font-weight:600}
+.message{color:var(--dsw-alias-label-secondary)}

@@ -35,9 +35,9 @@ test('本轮白话词条保留隐私、结果未知与额度边界，未定稿�
   for(const key of keys)assert.equal(translateMessage(locale,key),translateMessage('en',key),`${locale}:${key} 保留现有回退合同`)
  }
  for(const [locale,privacy,pending,budget] of [
-  ['zh-CN',/账号.*登录密钥.*私人记忆.*会话.*权限.*工作进度/,/结果尚未确认.*核对原请求/,/子任务.*累计原用量.*尚未确认.*预留额度.*不显示为零/],
-  ['zh-Hant',/帳號.*登入金鑰.*私人記憶.*對話.*權限.*工作進度/,/結果尚未確認.*核對原請求/,/子任務.*累計原用量.*尚未確認.*預留額度.*不顯示為零/],
-  ['en',/Accounts.*sign-in secrets.*private memory.*conversations.*permissions.*work progress/,/unresolved.*Check its result/,/subtask.*accumulated usage.*Reserved capacity.*unconfirmed/],
+  ['zh-CN',/账号.*登录密钥.*私人记忆.*会话.*权限.*工作进度/,/结果尚未确认.*核对原请求/,/子任务.*持续累计.*最近 24 小时.*自动释放.*尚未确认.*预留额度.*不显示为零/],
+  ['zh-Hant',/帳號.*登入金鑰.*私人記憶.*對話.*權限.*工作進度/,/結果尚未確認.*核對原請求/,/子任務.*持續累計.*最近 24 小時.*自動釋放.*尚未確認.*預留額度.*不顯示為零/],
+  ['en',/Accounts.*sign-in secrets.*private memory.*conversations.*permissions.*work progress/,/unresolved.*Check its result/,/accumulate.*subtasks.*last 24 hours.*released automatically.*Reserved capacity.*unconfirmed/],
  ] as const){
   assert.match(translateMessage(locale,'templateShare.excluded'),privacy)
   assert.match(translateMessage(locale,'roleDelegation.pending'),pending)

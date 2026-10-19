@@ -12,6 +12,10 @@ const projectRoot=fileURLToPath(new URL('../',import.meta.url))
 const formalRuntimeRoot=resolve(projectRoot,'.runtime/teloa')
 // 系统验收可传一次性 PG 配置，避免依赖或读取开发者正在使用的数据库。
 // 地址与库名仍经过下方相同的 loopback 校验；未指定时保持原有独立 schema 跑法。
+// 目标库的 public schema 必须已经建好 Teloa 表：启动前的目录快照直接读 public 下的
+// teloa_resources 等表，启动器只负责在同一库里另建 teloa_e2e_… schema。新建的空库先初始化一次：
+//   node --input-type=module -e "import {initializeTeloaDatabase} from './scripts/初始化资料数据库.mjs';await initializeTeloaDatabase('<database.json 路径>')"
+// 已被宿主用过的库（如 3100 的 .runtime/teloa）已由宿主初始化，不需要也不应再执行。
 const formalDatabaseConfig=resolve(process.env.TELOA_ACCEPTANCE_DATABASE_CONFIG??resolve(formalRuntimeRoot,'database.json'))
 const formalCredentialsFile=resolve(projectRoot,'.runtime/dsh/.credentials.yaml')
 const verifyCleanup=process.argv.slice(2).includes('--verify-cleanup')

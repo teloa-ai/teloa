@@ -806,6 +806,9 @@ importers:
       '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: 0.2.1-rc.2
         version: 0.2.1-rc.2(9f61478b6a6127a829b9d050c39ef655)
+      '@deepseek-ai/dsh-repeat-tool-reminder':
+        specifier: 0.2.1-rc.2
+        version: 0.2.1-rc.2(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-agent@0.2.1-rc.2(ba922ad4037e40def714bb7e19d35103))(@deepseek-ai/dsh-tools@0.2.1-rc.2(f4f5dafa2004c02f6afbbbc8518bca23))
       '@deepseek-ai/dsh-session-format':
         specifier: 0.2.1-rc.2
         version: 0.2.1-rc.2(@deepseek-ai/cordis@4.0.5)

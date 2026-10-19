@@ -62,10 +62,16 @@ export class PlanCoordinator{
    try{await invoke(()=>this.ports.report(this.owner,{...context,now,outcome,...(errorCode?{code:errorCode}:{})},signal))}
    catch(error){signal.throwIfAborted();reportErrors.push(error);failureCode??='teloa/plan-status-unavailable'}
   }
-  const attempt=async<T>(context:Context,work:()=>Promise<T>,success=true):Promise<{ok:true;value:T}|{ok:false}>=>{
+  const attempt=async<T>(context:Context,work:()=>Promise<T>,success=true,queued?:(errorCode:string)=>boolean):Promise<{ok:true;value:T}|{ok:false}>=>{
    try{const value=await invoke(work);if(success)await publish(context,'success');return {ok:true,value}}
-   catch(error){signal.throwIfAborted();const errorCode=code(error);failureCode??=errorCode;await publish(context,'failed',errorCode);return {ok:false}}
+   catch(error){
+    signal.throwIfAborted();const errorCode=code(error)
+    // 容量排队不是失败：原任务与领取保持未派发，下一周期按原身份继续；只记一次 skipped，不污染周期健康。
+    if(queued?.(errorCode)){await publish(context,'skipped',errorCode);return {ok:false}}
+    failureCode??=errorCode;await publish(context,'failed',errorCode);return {ok:false}
+   }
   }
+  const capacityQueued=(errorCode:string)=>errorCode==='teloa/budget-exhausted'
   const dispatch=async(occurrence:Occurrence)=>{
    const context:Context={phase:'pending',planId:occurrence.planId,claimId:occurrence.id}
    return attempt(context,async()=>{
@@ -103,7 +109,7 @@ export class PlanCoordinator{
      }else await attempt(context,async()=>{
       if(!['prepare','start','reconcile'].includes(entry.action))throw corrupt()
       return this.ports.dispatcher.dispatch(this.owner,entry.job,signal)
-     })
+     },true,entry.action==='prepare'?capacityQueued:undefined)
     }
     if(!result.value.cursor)return
     cursor=result.value.cursor

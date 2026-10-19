@@ -45,7 +45,7 @@ test('分身负责人沿用资料姓名和同一缩写头像，不改原任务�
 test('群自动回复任务展示来源原话，保持原执行目标且不编辑内部约束',()=>{
  const routed={...task,groupId:'group-1',goal:'INTERNAL_REPLY_EXECUTION_CONTRACT',source:{groupId:'group-1',messageId:'msg-1',rootId:'msg-1',text:'@全员 hi',trigger:'routed'}}
  const html=paint({task:routed,draft:readTaskInputs({},routed as never)})
- assert.match(html,/<p class="goalLine slotGoal">[\s\S]*?<span[^>]*class="detailText">@全员 hi<\/span><\/p>/)
+ assert.match(html,/<div class="goalLine slotGoal">[\s\S]*?<div[^>]*class="detailText detailMarkdown[^"]*"><p>@全员 hi<\/p><\/div><\/div>/)
  assert.doesNotMatch(html,/INTERNAL_REPLY_EXECUTION_CONTRACT/)
  assert.doesNotMatch(html,/aria-label="修改任务目标"/)
  assert.equal(routed.goal,'INTERNAL_REPLY_EXECUTION_CONTRACT','用户显示不改写运行快照')

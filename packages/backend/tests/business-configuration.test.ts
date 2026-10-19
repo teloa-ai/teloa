@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {businessObjectSnapshotHash} from '../src/work/business-data.ts'
 import * as api from '../src/index.ts'
@@ -132,6 +132,19 @@ async function historical(f:Awaited<ReturnType<typeof fixture>>){
  const snapshot={scope:f.draft.scope,type:'ticket',id:'one',version:1,title:'旧记录',source:'本地',observedAt:identity.now(),receivedAt:identity.now(),quality:'complete',summary:'',fields:[{label:'状态',value:'旧值'}],deletedAt:identity.now()}
  await pool.query('insert into teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version,snapshot_hash,snapshot,source_id,first_seen_at) values($1,$2,$3,$4,1,$5,$6,$7,now())',[f.actor.ownerId,f.draft.scope,'ticket','one',businessObjectSnapshotHash(snapshot as never),JSON.stringify(snapshot),f.definition.sourceId])
 }
+test('未变声明的历史缺失值不阻塞独立配置变化，预览显式警告且保留全部历史摘要；新约束仍阻断',async()=>{
+ const f=await fixture(),first=await f.apply.apply(f.actor,f.input);f.actor.scopeIds=[first.scope]
+ const now=identity.now(),old={scope:first.scope,type:'ticket',id:'source-one',version:1,title:'来源记录',source:'来源',observedAt:now,receivedAt:now,quality:'missing',summary:'',fields:[{label:'状态',value:''}]},fixed={...old,version:2,quality:'complete',fields:[{label:'状态',value:'已补全'}]}
+ for(const snapshot of[old,fixed])await pool.query('insert into teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version,snapshot_hash,snapshot,source_id,first_seen_at) values($1,$2,$3,$4,$5,$6,$7,$8,now())',[f.actor.ownerId,first.scope,'ticket',snapshot.id,snapshot.version,businessObjectSnapshotHash(snapshot as never),JSON.stringify(snapshot),f.definition.sourceId])
+ const read=async()=>(await pool.query('select snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 order by object_version',[f.actor.ownerId,first.scope])).rows,before=await read()
+ const draft=await f.drafts.begin(f.actor,{requestId:randomUUID(),scope:first.scope,title:'新增独立页面'}),changed=await f.drafts.revise(f.actor,{requestId:randomUUID(),draftId:draft.id,expectedRevision:1,patch:{title:'持续业务'}}),preview=await f.preview.preview(f.actor,{draftId:draft.id,expectedRevision:changed.revision})
+ assert.equal(preview.impact?.blocked,false)
+ assert.deepEqual(preview.impact?.warnings,[{objectType:'ticket',field:'state',reason:'invalid-existing-value',affectedRecords:1}])
+ const adopted=await f.apply.apply(f.actor,{requestId:randomUUID(),draftId:draft.id,expectedRevision:changed.revision,expectedBaseVersion:draft.baseVersion,previewReceipt:preview.receipt})
+ assert.equal(adopted.version,2);assert.deepEqual(await read(),before)
+ await assert.rejects(adoptNext(f,{upsertDefinitions:[{kind:'object-type',definition:{...f.definition,fields:[...f.definition.fields,{name:'extra',label:'新增必填',type:'text',required:true,from:'新增必填'}]}}]}),{code:'teloa/conflict'})
+ assert.deepEqual(await read(),before)
+})
 test('历史归档记录阻止字段重映射和必填新增，中文label改名保留取值身份',async()=>{
  const f=await fixture(),first=await f.apply.apply(f.actor,f.input);f.actor.scopeIds=[first.scope];await historical(f)
  await assert.rejects(adoptNext(f,{upsertDefinitions:[{kind:'object-type',definition:{...f.definition,fields:[{...f.definition.fields[0],from:'新键'}]}}]}),{code:'teloa/conflict'})

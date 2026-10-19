@@ -7,8 +7,9 @@ import type {ContextFormed} from '@deepseek-ai/dsh-llm/message'
 import type {SessionEvent,SessionSeq} from '@deepseek-ai/dsh-session'
 import {WorkError} from '@teloa/contract'
 import {readSessionEvents} from './session-events.ts'
+import {protectCompactionTail} from './local-model-compaction.ts'
 import {collectReviewToolEvidence,replayReviewToolEvidence,reviewToolSources,type DeliveryReviewExecutionSnapshot,type ReviewToolEvidence} from './task-delivery-review-tools.ts'
-import {createReviewSourceCatalog} from './task-delivery-review-protocol.ts'
+import {createReviewSourceCatalog,describeReviewReferences} from './task-delivery-review-protocol.ts'
 import {createDeliveryReviewToolParameters,deliveryReviewToolShapeExample} from './task-delivery-review-schema.ts'
 import {deliveryReviewProtocol,deliveryRepairProtocol,currentDraftReviewProjection,legacyDeliveryReviewProtocol,passageDeliveryReviewProtocol,readReviewCoverage,readRevisionCoverage,reviewBlockRequirements,type ReviewBlockMap,deliveryRevisionData,deliveryReviewReceiptText,reviewSourceDirectory,readRevisionSubmission,readVerificationSubmission,reviewCheckIds,type ReviewProtocol,type RevisionIssue,type ReviewChangeCheck,type ReviewCheck,type ReviewFinding,type ReviewPhase,type ReviewSourceCatalog,type ReviewToolReceipt,type VerificationSubmission} from './task-delivery-review-protocol.ts'
 export {createReviewSourceCatalog,deliveryReviewProtocol,deliveryRepairProtocol,legacyDeliveryReviewProtocol,passageDeliveryReviewProtocol,readReviewCoverage,reviewBlockRequirements,type ReviewBlockMap,deliveryRevisionData,deliveryReviewReceiptText,reviewSourceDirectory,readRevisionSubmission,readVerificationSubmission,reviewCheckIds,type ReviewProtocol,type ReviewPassage,type ReviewPassageRef,type ReviewQuote,type RevisionIssue,type ReviewSource,type ReviewSourceInput,type ReviewSourceCatalog,type ReviewToolReceipt,type ReviewPhase,type ReviewCheck,type ReviewChangeCheck,type ReviewFinding,type VerificationSubmission} from './task-delivery-review-protocol.ts'
@@ -28,7 +29,9 @@ declare module '@deepseek-ai/dsh-llm' {interface MessageSourceMap {'plugin:teloa
  * 可执行动作；方法要求本轮做不到时只能写明受限或按方法原文降级，不延长期限，也不用资料以外的内容补足。
  * 降级措辞不构成缺失原因或来源状态的事实依据；起草与复核共用这个优先级，不含模板专属规则。
  */
-export const taskMethodPriority='任务的期限或范围与技能要求冲突时，以当前任务为准：交付中的方案、判据与下一步都须在当前任务的期限、范围与授权内能执行并判定；技能要求而本轮做不到的部分，按该技能原文给出的降级写法处理，或写明在该限制下无法确立的结论，不延长期限，不以模型自有知识或资料以外的内容补足。方法或岗位规则中的降级写法只约定如何呈现，不构成事实依据。来源内容无法取得，不代表内容不存在、已删除、权限拒绝或返回了某个状态；缺失原因和具体状态只能依据本轮材料或真实回执，未给出时保留已知的不可用状态并说明原因未知，不按方法措辞补出原因。先检查观测与比较的前提是否成立，再判定业务结果；缺测或不可测不能当作实测为零或业务假设被否证，有效观测为零或失败仍可按原判据判定；方法允许因采集失败停止流程时，区分流程停止与业务假设失败。'
+/** 本人当前要求优先的引言；此前冻结的复核提示不含这一段，冷读旧历史时按当时原文比对。 */
+const ownerRequirementPriority='宿主核实的当前本人要求决定本轮业务目标；历史员工意见与默认交流模板不能取消本人当前明确要求。原数据、工具、资料与审批限制继续有效，不能从历史材料推导额外授权。teloa_group_mention 是宿主发布前登记的原生提醒声明，与额外群消息发送不同；正文写 @姓名 不证明声明成功。'
+export const taskMethodPriority=ownerRequirementPriority+'任务的期限或范围与技能要求冲突时，以当前任务为准：交付中的方案、判据与下一步都须在当前任务的期限、范围与授权内能执行并判定；技能要求而本轮做不到的部分，按该技能原文给出的降级写法处理，或写明在该限制下无法确立的结论，不延长期限，不以模型自有知识或资料以外的内容补足。方法或岗位规则中的降级写法只约定如何呈现，不构成事实依据。来源内容无法取得，不代表内容不存在、已删除、权限拒绝或返回了某个状态；缺失原因和具体状态只能依据本轮材料或真实回执，未给出时保留已知的不可用状态并说明原因未知，不按方法措辞补出原因。先检查观测与比较的前提是否成立，再判定业务结果；缺测或不可测不能当作实测为零或业务假设被否证，有效观测为零或失败仍可按原判据判定；方法允许因采集失败停止流程时，区分流程停止与业务假设失败。'
  +'事实与提案须分开：资料中的既有事实和观测前提只能按来源陈述；当前任务要求设计方案或实验时，可以提出明确标注为建议的样本规模、干预条件、判定阈值以及后续规模与周期，说明选择理由和取舍，不能只因原资料未给这些设计参数就全部改为待补字段，也不能把建议写成已知事实、已取得数据或已经执行的动作。'
  +'建议参数不证明实施资源、对象资格或事件周期已具备：进入本次判据前核实影响可执行性与可观测性的前提，条件未知时写明核实步骤或条件分支；区分本次可判定的观测、待核实项与后续观察，不能将不同阶段的行为或缺测改算为所需结果。'
 /** 复核的通用检查项：只是提醒，不替代、不放宽方法原文，也不含模板专属规则。 */
@@ -41,8 +44,8 @@ export const deliveryReviewToolName='teloa_submit_review_plan'
 const reviewBasisSchema={type:'array',required:true,items:{type:'object',additionalProperties:false,properties:{sourceId:{type:'string',required:true},passageId:{type:'string',required:true}}}} as const
 const reviewBlockIdsSchema={type:'array',required:true,items:{type:'integer'}} as const
 const reviewCoverageContract='每一个 issues[i].coverage 都必须各自覆盖整稿块编号 1..N（N 为宿主整稿块数），每个编号必须且只能归入 change（需改）、retain（相关保留）、unrelated（不相关）、unknown（未知）之一；不能只列 affectedBlockIds，也不能由多个问题合并覆盖全稿。例如整稿有 3 块，某问题只改第 2 块时，该问题的 coverage 为 {change:[2],retain:[],unrelated:[1,3],unknown:[]}；另一个问题也必须单独覆盖 1、2、3。'
-const reviewUnlistedContract='未列块的显式简写（可选）：作为逐号列全的替代，可在coverage中额外明确声明unlisted:"retain"，其余四数组仍必填。沿用affectedBlockIds分支时只列四数组中已明确列出的change/retain/unknown之并集；宿主将整稿未列编号全部展开到retain与affectedBlockIds，作为相关保留交给第2轮逐块核对。省略unlisted仍按原规则拒绝漏号；不支持其他默认分类。retain只表示保留原文，不代表事实通过；重复、越界或未知仍不能交付。'
-const reviewAffectedScopeContract='推荐简写：每个问题用affectedScope:"coverage"取代affectedBlockIds，宿主从coverage导出全部change/retain/unknown及其R2依赖；两字段不能并存。'
+const reviewUnlistedContract='未列块简写：每个问题的coverage必须显式写unlisted:"retain"（参数校验要求，省略即被拒绝并消耗唯一纠正机会），其余四数组仍必填，只需列出需改、相关保留、不相关及未知块；宿主将整稿未列编号全部展开到retain，作为相关保留交给第2轮逐块核对。不支持其他默认分类。retain只表示保留原文，不代表事实通过；重复、越界或未知仍不能交付。'
+const reviewAffectedScopeContract='推荐使用coverage.unlisted:"retain"，仅明确列出需改、相关保留、不相关及未知块，其余块由宿主展开为相关保留；仍须第2轮逐块验收，绝不表示事实通过。不要为凑齐全稿手写长编号序列。推荐简写：每个问题用affectedScope:"coverage"取代affectedBlockIds，宿主从coverage导出全部change/retain/unknown及其R2依赖；两字段不能并存。'
 const reviewCoverageSchema={type:'object',description:reviewCoverageContract+'\n'+reviewUnlistedContract,required:true,additionalProperties:false,properties:{change:reviewBlockIdsSchema,retain:reviewBlockIdsSchema,unrelated:reviewBlockIdsSchema,unknown:reviewBlockIdsSchema,unlisted:{type:'string',enum:['retain'],description:'仅显式选择时，将未列整稿编号纳入相关保留与R2逐块核对；省略不补编号。'}}} as const
 const reviewIssueProperties={problem:{type:'string',required:true},basis:reviewBasisSchema,coverage:reviewCoverageSchema,edits:{type:'array',required:true,items:{type:'object',additionalProperties:false,properties:{blockId:{type:'integer',required:true},after:{type:'string',required:true}}}}} as const
 const reviewIssueSchema={oneOf:[
@@ -311,7 +314,7 @@ function distinctConstraintEdits(edits:readonly PlanEdit[]):PlanEdit[]{
  * `originalName` 是宿主从同一份固定正文 frontmatter 解析出的原模板名（与原生名不同时才带），`sha256` 是该正文摘要。
  * 方法全文已在系统的固定工作方法段，这里只列身份，不重复正文、不转抄资料，复核要求长度只随原目标增长。
  */
-export type ReviewMaterial=Readonly<{goal:string;inputs:Readonly<{knowledge:number;group:boolean;context:boolean}>;methods:readonly Readonly<{name:string;originalName?:string;sha256:string}>[];catalog:ReviewSourceCatalog;toolEvidence?:ReviewToolEvidence}>
+export type ReviewMaterial=Readonly<{goal:string;requiredDeclarations?:readonly 'owner-mention'[];inputs:Readonly<{knowledge:number;group:boolean;context:boolean}>;methods:readonly Readonly<{name:string;originalName?:string;sha256:string}>[];catalog:ReviewSourceCatalog;toolEvidence?:ReviewToolEvidence}>
 /** 起草与各轮复核共用同一替换单位，不能把反馈点名的子标题误当整个所选段落。 */
 export const artifactRevisionScope='本次替换单位是 artifactRevision.originalText 的全文，可能包含多个标题、表格和小节。反馈只点名其中一处时，只修改该处及其受影响的依赖，仍须输出整个替换单位的完整正文；未经反馈要求或有依据纠正的其余标题、内容与结构保持，不只返回被点名的子节。旧稿仅作编辑基线，不作为业务事实依据，也不要求保留其中无据的判断。'
 function reviewEditingBaseline(catalog:ReviewSourceCatalog):string{
@@ -329,8 +332,12 @@ export function reviewInputSources(inputs:ReviewMaterial['inputs']):string{
  const kinds=['本人本轮的任务目标文字',...inputs.knowledge?[`随任务固定提供的知识资料 ${inputs.knowledge} 份`]:[],...inputs.group?['群消息、群资料或文件正文']:[],...inputs.context?['本人工作区的业务、计划或行业上下文']:[]]
  return '本轮输入来源（宿主按冻结输入确认）：本轮业务资料只有'+kinds.join('、')+'，全部是随任务提供的文字，本轮没有工具取得的内容。宿主没有在本轮额外核验资料的提供者身份、采集渠道、真伪或独立佐证；这只表示这些前提在资料未写明时仍属未知，不表示资料中没有凭证或核实记载，也不表示资料不实。资料原文明确记载的凭证、核实情况及其限制，按原文评估；宿主不替资料作真实背书。固定工作方法（含其中的角色设定、对使用者的称呼与示例）只规定做法与定义，不能用来补出本人、资料提供者或佐证情况等前提。'
 }
-/** 两轮优先；R2有依据拒绝时至多追加一次修订与冷验，总模型步骤不超过10。 */
-export const maxReviewRounds=4,maxDeliveryModelSteps=10
+/**
+ * 起草与复核分别计步：未成稿的取证起草循环限十步；复核从第 1 轮首个单元起另计，覆盖 R1–R4 各至多四个单元与整租约唯一一次纠正，
+ * 取证步数多少不挤占复核预算。
+ */
+export const maxReviewRounds=4,maxReviewModelSteps=maxReviewRounds*maxReviewUnits+1
+const maxDraftModelSteps=10
 /** 一个复核单元的提示材料：单元序号与总数、本轮块标签，以及本单元的完整块（全稿唯一编号与逐字正文）。 */
 export type ReviewUnitPrompt=Readonly<{index:number;total:number;blockCount:number;tag:ReviewBlockTag;round?:number;criteria?:readonly ReviewCheck['id'][];blocks:readonly Readonly<{id:number;text:string}>[]}>
 /**
@@ -391,6 +398,8 @@ export type DeliveryReviewLease=Readonly<{
  runId:string
  /** 本次运行固定的原生请求 id；只有它所在的轮次可以复核。 */
  requestId:string
+ /** 当前群交付必须通过复核；不能把不支持的证据分支降为未经复核的成功正文。 */
+ requireReview?:true
  /** 宿主核原受理根和真实后台结清状态；不提供时保留原纯文本准入。 */
  readExecution?:(signal:AbortSignal)=>Promise<DeliveryReviewExecutionSnapshot>
  /**
@@ -418,7 +427,24 @@ function completeText(event:Extract<SessionEvent,{type:'assistant/message'}>):St
  return {messageId:event.data.message.id,seq:event.seq,text}
 }
 
-const planSummary='交付编辑计划',appliedSummary='复核后交付',rewriteSummary='交付改写',legacyRewriteSummary='交付前复核'
+const planSummary='交付编辑计划',appliedSummary='复核后交付',rewriteSummary='交付改写',legacyRewriteSummary='交付前复核',reminderSummary='交付复核补交'
+
+/** 工具体语义校验原因的可执行说明：只复述宿主已有规则，帮助唯一一次纠正，不放宽校验也不代填字段。 */
+const reviewRejectionHints:Readonly<Record<string,string>>={
+ 'change-blocks':'changeChecks 每项的 reviewedBlockIds 须逐值等于宿主当前依赖块核对表中同一 issueId 的 blockIds，按全稿依赖块核对，不只本单元',
+ 'change-checks':'changeChecks 须对宿主列出的每个 issueId 恰好各交一项，status 取 verified、unresolved 或 unknown',
+ 'checks':'checks 须对 goal 与 1–8 各交一项且不重复，status 取 pass、fail 或 unknown',
+ 'verdict-conflict':'verdict 为 accept 时 checks 须全部 pass、changeChecks 须全部 verified 且 findings 为空；否则提交 reject 并写明 findings',
+ 'edit-range':'edits 只能修改本单元内、且已列入该问题 coverage.change 或 retain 的块',
+ 'block-conflict':'同一块在本单元只能由一个问题修改一次',
+ 'coverage':'coverage 的 change、retain、unrelated、unknown 须互斥并覆盖全稿块号，或显式写 unlisted:"retain"',
+ 'basis':'issues 每项的 basis 只能引用本轮输入来源中实际存在的 sourceId 与 passageId',
+ 'affected-blocks':'affectedBlockIds 须为全稿块号范围内不重复的块号',
+ 'finding-basis':'findings 每项的 basis 只能引用本轮输入来源中实际存在的 sourceId 与 passageId，blockIds 须为全稿块号范围内不重复的块号',
+}
+/** 单元漏交回执时的唯一一次补交提醒：复核要求、正文与依据不变，只要求通过真实工具调用提交本单元回执。 */
+const reviewReminderText=(phase:ReviewPhase)=>'交付复核（宿主固定步骤）：上一步没有通过真实工具调用提交本单元回执；正文说明或 JSON 代码块不构成回执。本单元的复核要求、待复核正文与依据保持不变。现在只调用一次 '+deliveryReviewToolName
+ +(phase==='revise'?' 提交 phase:"revise" 回执，没有需改问题时 issues 写 []':' 提交 phase:"verify" 验收回执，按实际核对填写全部验收项')+'；不输出说明文字，不调用其他工具。本次复核仅此一次补交机会，再次缺交即如实收为错误。'
 
 /** v1/v2历史按其明确协议读取，均须完整两轮验收；活动v2解析器不接受v1的quote参数。无protocol旧历史仍走原规则。 */
 function acceptedReviewDelivery(source:object,text:string,events:readonly SessionEvent[],turn:number|undefined):boolean{
@@ -460,7 +486,7 @@ function acceptedReviewDelivery(source:object,text:string,events:readonly Sessio
 /** v4不把旧AI意见变为事实：重算两次实际改稿，并逐字核对中间数据、拒绝回执和最终全部依赖。 */
 function acceptedRepairDelivery(source:object,text:string,events:readonly SessionEvent[],turn:number|undefined):boolean{
  const raw=Reflect.get(source,'rounds'),catalogSha=Reflect.get(source,'sourceCatalogSha256')
- if(turn===undefined||events.filter(event=>event.type==='step/start'&&event.data.turn===turn).length>maxDeliveryModelSteps||Reflect.get(source,'phase')!=='verify'||Reflect.get(source,'verdict')!=='accepted'||Reflect.get(source,'deliverySha256')!==draftSha256(text)||typeof catalogSha!=='string'||!/^[a-f0-9]{64}$/.test(catalogSha)||!Array.isArray(raw)||raw.length!==4||raw.some(round=>!plainRecord(round)))return false
+ if(turn===undefined||events.filter(event=>event.type==='step/start'&&event.data.turn===turn).length>maxDraftModelSteps+maxReviewModelSteps||Reflect.get(source,'phase')!=='verify'||Reflect.get(source,'verdict')!=='accepted'||Reflect.get(source,'deliverySha256')!==draftSha256(text)||typeof catalogSha!=='string'||!/^[a-f0-9]{64}$/.test(catalogSha)||!Array.isArray(raw)||raw.length!==4||raw.some(round=>!plainRecord(round)))return false
  const rounds=raw as Record<string,unknown>[],[r1,r2,r3,r4]=rounds as [Record<string,unknown>,Record<string,unknown>,Record<string,unknown>,Record<string,unknown>]
  for(const [index,round]of rounds.entries()){
   const revise=index%2===0,protocol=index<2?deliveryReviewProtocol:deliveryRepairProtocol
@@ -586,6 +612,8 @@ export function readDeliveryDraft(events:readonly SessionEvent[],requestId:strin
  */
 type SubmissionStep={messageId:string;seq:SessionSeq;callId:string;assistantSeq:SessionSeq;callSeq:SessionSeq}
 type ReviewStep=SubmissionStep&{turn:number;step:number;prompt:UserMessage;failed?:true}
+/** 单元那一步只有推理或说明文字、没有任何工具调用；仅供唯一一次补交后的视图核对，不是回执。 */
+type MissedReviewStep=Readonly<{turn:number;step:number;prompt:UserMessage;missed:SessionSeq}>
 function readSubmissionStep(events:readonly SessionEvent[],turn:number,step:number,callId:string|undefined,failed=false):SubmissionStep|{skip:string}{
  let message:Extract<SessionEvent,{type:'assistant/message'}>|undefined
  for(const event of events)if(event.type==='assistant/message'&&event.data.turn===turn&&event.data.step===step)message=event
@@ -602,6 +630,22 @@ function readSubmissionStep(events:readonly SessionEvent[],turn:number,step:numb
  const result=events.find(event=>event.type==='tool/result'&&event.data.turn===turn&&event.data.step===step&&event.data.message.toolCallId===callId)
  if(!result||Reflect.get(result.data,'message').isError!==failed)return {skip:'plan:submission-result'}
  return {messageId:message.data.message.id,seq:result.seq,callId,assistantSeq:message.seq,callSeq:callEvents[0]!.seq}
+}
+
+/**
+ * 漏交回执：本轮该步恰有一条完整落盘、未中断的助手消息，以 stop 收尾，且没有任何工具块或工具事件。
+ * 返回该消息的 seq；其余情形（含调用了任何工具、被中断、长度截断或另有异常收尾）都不算漏交。
+ */
+function missedSubmission(events:readonly SessionEvent[],turn:number,step:number):SessionSeq|undefined{
+ const messages=events.filter((event):event is Extract<SessionEvent,{type:'assistant/message'}>=>event.type==='assistant/message'&&event.data.turn===turn&&event.data.step===step)
+ const message=messages[0]
+ if(messages.length!==1||!message||message.surfaceOp!=='append'||message.data.interrupted===true)return
+ let finish='missing'
+ for(const record of message.data.stream)if(record.type==='chunk'&&record.chunk.type==='finish')finish=record.chunk.reason.kind
+ if(finish!=='stop')return
+ if(message.data.message.content.some(block=>block.type==='tool-call'))return
+ if(events.some(event=>toolEvent(event.type)&&Reflect.get(event.data as object,'turn')===turn&&Reflect.get(event.data as object,'step')===step))return
+ return message.seq
 }
 
 /** SDK的oneOf错误只报告匹配数；本工具补真实分支的叶错误，诊断不决定通过，也不修改原参数或异常身份。 */
@@ -639,7 +683,9 @@ function replayRevisionMap(source:object,text:string|undefined,round:Record<stri
    const prompt=prompts[0],part=prompt?.data.content[0]
    if(prompts.length!==1||!prompt||Reflect.get(prompt.data.source,'form')!=='notice'||Reflect.get(prompt.data.source,'runId')!==Reflect.get(source,'runId')||Reflect.get(prompt.data.source,'draftMessageId')!==Reflect.get(source,'draftMessageId')||prompt.data.content.length!==1||part?.type!=='text')return undefined
    const suffix=reviewUnitText({index,total:units.length,blockCount:blocks.length,tag:reviewBlockTag(draft),criteria:range.criteria,blocks:blocks.map((block,index)=>({id:index+1,text:draft.slice(block.start,block.end)}))},'revise')
-   const prefixes=Reflect.get(source,'toolEvidence')?[toolReviewText('revise'),toolReviewText('revise',true)]:[deliveryReviewText,deliveryReviewBasis+legacyDeliveryPlanContract]
+   const current=Reflect.get(source,'toolEvidence')?[toolReviewText('revise'),toolReviewText('revise',true)]:[deliveryReviewText,deliveryReviewBasis+legacyDeliveryPlanContract]
+   // 加入本人要求优先引言之前冻结的提示同样按原文接受；只去掉这一段，其余字节仍须逐字一致。
+   const prefixes=[...current,...current.map(prefix=>prefix.replace(ownerRequirementPriority,''))]
    if(!prefixes.some(prefix=>part.text.startsWith(prefix))||!part.text.endsWith(suffix))return undefined
   }
   const message=events.find(event=>event.seq===step.assistantSeq)
@@ -770,21 +816,23 @@ export function ownsDeliveryReviewSubmission(exec:Pick<ToolExecution,'name'|'age
  * 计划由宿主租约绑定到自己持有的同一完整快照（摘要由宿主计算并写入回执结果与轮次记录，模型不输入），只按编号整块替换本单元的块；一轮的全部单元计划都校验通过后才一次性应用。有界收尾：第 1 轮
  * 全部单元通过后原子应用，即使零改也不交付，按当前完整快照重新划分块与单元再做第2轮验收；第2轮只接收明确验收回执，
  * 任一单元拒绝或未知均不交付。仅第2轮有依据的正式拒绝可在剩余预算足够完整修订与冷验时，
- * 追加一次第3轮修订和第4轮独立验收；仍拒绝则收错。全部模型步骤上限10，严格schema纠参整个租约共享一次名额。
+ * 追加一次第3轮修订和第4轮独立验收；仍拒绝则收错。起草限十步，复核另计 maxReviewModelSteps 步；整个租约共享唯一一次纠正名额。
  * 复核步只向模型提供这一个回执工具（登记在本 agent 自己的作用域，不改岗位授权清单），其他工具调用一律拒绝；回执只在本 agent、
- * 本请求轮次、本单元已进入的那一步、且本单元尚未提交时接收，一次为限。唯一调用的严格参数校验失败可沿 SDK 的真实错误回执纠参一次，
- * 不重发输入、不新增轮次；重复非法、语义校验失败、截断、中断、多个调用、取消或超时仍收为错误，不以中间稿冒充结果。
+ * 本请求轮次、本单元已进入的那一步、且本单元尚未提交时接收，一次为限。唯一调用的严格参数或工具体语义校验失败可沿 SDK 的真实错误回执纠正一次，
+ * 不重发输入、不新增轮次；单元只写推理或说明、没有任何工具调用即收尾时，可改用这一名额在同一轮发一次补交提醒。名额用尽后再次非法或缺交、
+ * 长度截断、中断、多个调用、调用其他工具、取消或超时仍收为错误，不以中间稿冒充结果。
  * 授权、预算与取消沿用发布端口和原轮次 signal（共享原任务时限）。不另起会话、不伪造助手消息、不改写原输入或技能。
  */
 export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:DeliveryReviewLease):()=>void{
  let material=lease.material
  let decided=false,phase:'idle'|'rewrite'|'done'='idle',draftMessageId=''
  // 当前待进入的单元复核输入与进入前的视图替换（只在每轮第一个单元），以及该单元实际进入的步号。
- let pending:{message:UserMessage;unit:number;replace?:{seq:SessionSeq;data:UserMessage;missing:'draft-surface'|'round-surface';prior?:{data:UserMessage;steps:readonly ReviewStep[];end:SessionSeq}}}|undefined,entered:number|undefined
+ // reminder：本单元漏交回执后宿主发出的唯一一次补交提醒；此时视图替换已完成，不再重复。
+ let pending:{message:UserMessage;unit:number;reminder?:UserMessage;replace?:{seq:SessionSeq;data:UserMessage;missing:'draft-surface'|'round-surface';prior?:{data:UserMessage;steps:readonly (ReviewStep|MissedReviewStep)[];end:SessionSeq}}}|undefined,entered:number|undefined
  // 当前轮：绑定的完整快照、同一划分事实下的块与单元、本轮块标签、已校验的编辑与单元记录。
  // raw：本轮已读计划的原始组数，合并各单元编辑时作为原始序号的偏移，失败原因可追溯到原计划。
  let current:{round:number;strategy?:'whole-constraints/v1';text:string;blocks:ReviewBlock[];tag:ReviewBlockTag;units:ReviewUnit[];edits:PlanEdit[];issues:RevisionIssue[];records:ReviewUnitRecord[];raw:number}|undefined
- let draftSeq:SessionSeq|undefined,draftText='',dataSeq:SessionSeq|undefined,dataMessage:UserMessage|undefined,roundSteps:ReviewStep[]=[]
+ let draftSeq:SessionSeq|undefined,draftText='',dataSeq:SessionSeq|undefined,dataMessage:UserMessage|undefined,roundSteps:(ReviewStep|MissedReviewStep)[]=[]
  const rounds:ReviewRound[]=[],planSeqs:SessionSeq[]=[],revisionIssues:RevisionIssue[]=[]
  let blockMap:ReviewBlockMap|undefined
  let firstMap:ReviewBlockMap|undefined,firstIssues:readonly RevisionIssue[]=[],repairFindings:RepairFinding[]=[]
@@ -792,14 +840,17 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  // 结构化回执：复核所在的请求轮次、本单元已接收的唯一提交，或被工具体拒绝的原因（下一步前据此收错）。
  type Submission={callId:string;inputSha256:string}&({phase:'revise';plan:BlockPlan;issues:readonly RevisionIssue[]}|{phase:'verify';verification:VerificationSubmission})
  let reviewTurn:number|undefined,submission:Submission|undefined,rejected:string|undefined,submitTool:ToolDefinition|undefined
- // 只记录本工具严格 schema 抛出的真实错误身份，不按错误文案猜测，也不改写非法参数或原生结果。
- let schemaFailure:string|undefined,schemaCorrected=false
+ // 只记录本工具严格 schema 或工具体语义校验抛出的真实错误身份，不按错误文案猜测，也不改写非法参数或原生结果。
+ // corrected：整租约唯一一次纠正名额，由 schema 纠参、语义校验纠正与漏交补交共享。reviewBase：复核开始前本轮已用的起草步数。
+ let schemaFailure:string|undefined,bodyFailure:string|undefined,corrected=false,reviewBase=0
  const releases:Array<()=>void>=[]
  const release=()=>{for(const dispose of releases.splice(0))dispose()}
  const reviewing=()=>phase==='rewrite'
  const accepting=()=>reviewing()&&entered!==undefined&&submission===undefined&&rejected===undefined
  const roundPrefix=()=>current?.round===1?'rewrite':'rewrite-r'+current?.round
  const reviewPhase=():ReviewPhase=>(current?.round??1)%2===1?'revise':'verify'
+ // 展示与实际执行共用本轮冻结的来源枚举；非法片段ID属于参数错误，不由宿主猜测替换。
+ const projectedParameters=()=>parameterSchemaSpecToJsonSchema(createDeliveryReviewToolParameters(reviewPhase(),(material as ReviewMaterial).catalog.sources.map(source=>({id:source.id,passages:(material as ReviewMaterial).catalog.passages.filter(passage=>passage.sourceId===source.id)}))))
  const requiredBlocks=(unit:number)=>{if(unit!==0||!blockMap)return [];const result=current?.round===4?repairReviewRequirements(firstIssues,firstMap!,repairFindings,revisionIssues,blockMap):reviewBlockRequirements(revisionIssues,blockMap);return 'reason'in result?fail('review-dependency-map','交付复核的整稿依赖映射不可核对。'):result}
  const requiredIssues=(unit:number)=>requiredBlocks(unit).map(row=>row.issueId)
  const metadata=()=>({protocol:protocol(),reviewPhase:reviewPhase(),sourceCatalogSha256:(material as ReviewMaterial).catalog.sha256})
@@ -831,7 +882,12 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
     // 待复核正文是租约冻结的本轮快照：编辑按它的块表校验，摘要由宿主自己计算，不接受模型输入的摘要。
     const {round,text,blocks}=current!,unit=pending!.unit
     const inputSha256=draftSha256(text)
-    const invalid=(reason:string):never=>{rejected=reason;throw new WorkError('teloa/invalid-input','复核回执未通过校验：'+reason)}
+    const invalid=(reason:string):never=>{
+     rejected=reason;bodyFailure=exec.callId
+     const hint=reviewRejectionHints[reason],table=reason==='change-blocks'||reason==='change-checks'?'宿主当前依赖块核对表：'+JSON.stringify(requiredBlocks(unit)):''
+     const references=reason==='basis'||reason==='affected-blocks'||reason==='finding-basis'?describeReviewReferences(args,{catalog:(material as ReviewMaterial).catalog,blockCount:blocks.length}):''
+     throw new WorkError('teloa/invalid-input','复核回执未通过校验：'+reason+(hint?'。'+hint:'')+(references?'\n具体问题：'+references:'')+(table?'\n'+table:''))
+    }
     let receipt:ReviewToolReceipt={protocol:protocol(),phase:reviewPhase(),round,unit,inputSha256,sourceCatalogSha256:(material as ReviewMaterial).catalog.sha256,edits:0,unchanged:0,duplicates:0,verdict:'pending',issueIds:[],checks:[],changeChecks:[],findings:[]}
     if(reviewPhase()==='revise'){
      const read=readRevisionSubmission(args,{catalog:(material as ReviewMaterial).catalog,blockCount:blocks.length,unit:unitBlocks(unit),unitIndex:unit,round:round as 1|3})
@@ -853,13 +909,36 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   })
   const execute=definition.execute
   definition.execute=async(args,exec)=>{
-   try{return await execute(args,exec)}
+   try{
+    if(exec.agent===agent&&accepting()&&plainRecord(args)){
+     const key=reviewPhase()==='revise'?'issues':'findings',groups=args[key],parameters=projectedParameters()
+     const itemSchema=parameters.properties?.[key]?.items,basisSchema=itemSchema?.properties?.basis,coverageSchema=itemSchema?.properties?.coverage
+     if(basisSchema&&Array.isArray(groups)){
+      // 当前简写显式选择未列归属；旧逐号分支继续按历史契约校验，不替模型补任何字段。
+      const errors=groups.flatMap((group,index)=>plainRecord(group)?[
+       ...Array.isArray(group.basis)?validateJsonSchemaValue(basisSchema,group.basis,`${key}[${index}].basis`):[],
+       ...coverageSchema&&group.affectedScope==='coverage'?validateJsonSchemaValue(coverageSchema,group.coverage,`${key}[${index}].coverage`):[],
+      ]:[])
+      if(errors.length){
+       if(errors.some(error=>error.includes('.basis'))){
+        const catalog=(material as ReviewMaterial).catalog
+        errors.push('当前可用来源片段组合（只列身份，不代选依据）：'+JSON.stringify(catalog.sources.map(source=>({sourceId:source.id,passageIds:catalog.passages.filter(passage=>passage.sourceId===source.id).map(passage=>passage.id)})))+'。逐字选择完整sourceId及其passageIds中的一个passageId，不拆分路径、不猜编号；原参数仍被拒绝。')
+       }
+       throw new ToolArgsError(errors)
+      }
+     }
+    }
+    return await execute(args,exec)
+   }
    catch(error){
     if(error instanceof ToolArgsError&&exec.agent===agent&&accepting()&&!exec.signal.aborted){
      schemaFailure=exec.callId
      try{
       const details=reviewArgumentDetails(definition,args)
       if(details.length)error.message+='\n原严格schema分支诊断（不改变失败状态）：\n'+details.join('\n')
+      // 实跑：模型把数组字段整体写成字符串化 JSON 并原样重复。只指出字段与正确形态，不代为解码或改写原参数。
+      const encoded=plainRecord(args)?['issues','checks','changeChecks','findings'].filter(key=>{const value=args[key];if(typeof value!=='string')return false;try{return Array.isArray(JSON.parse(value))}catch{return false}}):[]
+      if(encoded.length)error.message+='\n'+encoded.join('、')+' 被写成了字符串化的 JSON（外面多了一层引号）；请直接传 JSON 数组本身，例如 "issues":[{...}]，不要传 "issues":"[{...}]"。'
      }catch{/* 诊断本身失败也只重抛原SDK异常，不替换失败身份或发放额外纠参机会。 */}
     }
     throw error
@@ -890,6 +969,13 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   const data=events.find(event=>event.seq===replace.seq)
   if(data?.type!=='user/message'||!isDeepStrictEqual(data.data,prior.data))return refuse()
   for(const step of prior.steps){
+   if('missed'in step){
+    // 漏交那一步只可能是本单元提示后的一条无工具助手消息；它与原提示一并退出视图。
+    const prompt=events.find(event=>event.type==='user/message'&&event.data.id===step.prompt.id)
+    if(prompt?.type!=='user/message'||!isDeepStrictEqual(prompt.data,step.prompt)||missedSubmission(events,step.turn,step.step)!==step.missed)return refuse()
+    allowed.add(prompt.seq);allowed.add(step.missed)
+    continue
+   }
    const found=readSubmissionStep(events,step.turn,step.step,step.callId,step.failed===true)
    if('skip' in found||!isDeepStrictEqual(found,{messageId:step.messageId,seq:step.seq,callId:step.callId,assistantSeq:step.assistantSeq,callSeq:step.callSeq}))return refuse()
    const prompt=events.find(event=>event.type==='user/message'&&event.data.id===step.prompt.id),result=events.find(event=>event.seq===step.seq)
@@ -899,7 +985,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   const shadowed=nodes.slice(first,last+1)
   // tool/call 本身不在 surface，也必须恰属已核对的调用，不能借替换吞掉未知工具活动。
   const begin=events.findIndex(event=>event.seq===replace.seq),end=events.findIndex(event=>event.seq===prior.end)
-  if(begin<0||end<begin||events.slice(begin,end+1).some(event=>toolEvent(event.type)&&!callSeqs.has(event.seq)&&!prior.steps.some(step=>step.seq===event.seq)))return refuse()
+  if(begin<0||end<begin||events.slice(begin,end+1).some(event=>toolEvent(event.type)&&!callSeqs.has(event.seq)&&!prior.steps.some(step=>'seq'in step&&step.seq===event.seq)))return refuse()
   for(const seq of shadowed){
    if(allowed.has(seq))continue
    const index=events.findIndex(event=>event.seq===seq),event=events[index]
@@ -927,7 +1013,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   signal.throwIfAborted()
   const {round,text,units,blocks,tag}=current!,sha=draftSha256(text),{first,last}=unitBlocks(unit)
   const message=notice(planSummary,deliveryReviewPrompt(material as ReviewMaterial,{index:unit,total:units.length,blockCount:blocks.length,tag,...round>=3?{round}:{},...units[unit]!.criteria?{criteria:units[unit]!.criteria}:{},blocks:blocks.slice(first,last+1).map((block,offset)=>({id:first+offset+1,text:text.slice(block.start,block.end)}))},reviewPhase(),reviewPhase()==='verify'?requiredIssues(unit):[])+(reviewPhase()==='verify'?'\n宿主当前依赖块核对表：'+JSON.stringify(requiredBlocks(unit)):''))
-  pending={message,unit,...replace?{replace}:{}};entered=undefined;submission=undefined;rejected=undefined;schemaFailure=undefined;phase='rewrite'
+  pending={message,unit,...replace?{replace}:{}};entered=undefined;submission=undefined;rejected=undefined;schemaFailure=undefined;bodyFailure=undefined;phase='rewrite'
   try{await lease.publish(message,signal)}
   catch(error){
    lease.trace({runId:lease.runId,state:'failed',phase:'rewrite',round,unit,draftMessageId,reason:error instanceof Error?error.name:'Error'})
@@ -946,38 +1032,53 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  /** 本单元那一步有失败的工具回执（被拒的其他工具、参数未过框架校验等工具体未能记录原因的情形）。 */
  const failedSubmission=(step:number)=>readSessionEvents(agent.session).some(event=>event.type==='tool/result'&&event.data.turn===reviewTurn&&event.data.step===step&&Reflect.get(event.data,'message').isError===true)
  try{
+  // 复核期间自动压缩只摘要复核前的历史：当前待校正数据（首轮进入前为原草稿）及其后的复核尾段保持原样，轮次替换与冷读核对不受影响。
+  releases.push(protectCompactionTail(agent.session,()=>reviewing()?dataSeq??draftSeq:undefined))
   // 复核步只提供本回执工具；其余步骤不提供它。
   releases.push(agent.ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
    const result=await next()
    // 只投影当前阶段的推荐形状；登记身份、执行校验与历史显式编号分支保持原样。
-   return {...result,tools:result.tools.filter(tool=>reviewing()===(tool.name===deliveryReviewToolName)).map(tool=>reviewing()&&tool.name===deliveryReviewToolName
-    ?{...tool,parameters:{...parameterSchemaSpecToJsonSchema(createDeliveryReviewToolParameters(reviewPhase())),additionalProperties:false}}:tool)}
-  }))
+   return {...result,sections:reviewing()?[...result.sections,{name:'teloa:delivery-review-output',text:'当前处于宿主交付复核阶段 '+reviewPhase()+'。本步骤只通过真实工具调用 '+deliveryReviewToolName+' 提交回执；JSON正文或代码块不构成工具回执。原任务的直接回复正文要求用于正式交付，不用于本复核步。'+(reviewPhase()==='revise'?'没有需改问题时也必须调用工具提交 phase:revise、issues:[]。':'verify阶段只提交phase、verdict、checks、changeChecks、findings，禁止提交issues或改稿字段；按实际核对填写全部验收项，不能默认接受。')+'不输出改写全文或自查说明，不调用其它工具。',interpolate:false}]:result.sections,tools:result.tools.filter(tool=>reviewing()===(tool.name===deliveryReviewToolName)).map(tool=>reviewing()&&tool.name===deliveryReviewToolName
+    ?{...tool,parameters:{...projectedParameters(),additionalProperties:false}}:tool)}
+  },{prepend:true}))
   releases.push(agent.ctx.on('tools/pre-execute',async(exec,next)=>reviewing()
    ?exec.name===deliveryReviewToolName?next():{kind:'deny' as const,reason:'交付前复核步骤只提交复核计划，不调用其他工具。'}
    :exec.name===deliveryReviewToolName?{kind:'deny' as const,reason:'不在交付复核步骤内。'}:next()))
+  // 不同冻结单元可以有相同的验收参数；其推进由宿主单元身份和唯一成功回执核验，不能被通用重复提醒插入新输入打断。
+  // 仅处理本租约已接收且成功结束的内部回执；失败、阻断、其他工具及其他上下文全部保留。
+  releases.push(agent.ctx.on('tools/post-execute',async(exec,result,next)=>{
+   const decision=await next()
+   if(exec.agent!==agent||exec.name!==deliveryReviewToolName||!reviewing()||result.isError||!result.concludesTurn||decision.kind!=='accept'||rejected!==undefined||submission?.callId!==exec.callId||!pending||entered===undefined)return decision
+   const contexts=decision.additionalContexts
+   if(!contexts)return decision
+   return {...decision,additionalContexts:contexts.filter(message=>!(String(message.source.kind)==='repeat-tool-reminder'&&Reflect.get(message.source,'form')==='notice'&&typeof Reflect.get(message.source,'summary')==='string'&&String(Reflect.get(message.source,'summary')).startsWith(deliveryReviewToolName+' × ')))}
+  },{prepend:true}))
   // 官方单调守卫：其他 agent、非本单元、已提交或已被拒后的回执一律拒绝；守卫只能拒绝，不能被后续监听放行。
   releases.push(agent.ctx.tools.guard(exec=>exec.name===deliveryReviewToolName&&(exec.agent!==agent||!accepting())?'复核计划只在本复核单元内提交一次。':undefined))
   releases.push(agent.ctx.on('agent/pre-step',async(payload,next)=>{
    if(phase==='idle'&&payload.messages.some(message=>message.source.kind==='user'&&Reflect.get(message.source,'rpcId')===lease.requestId))reviewTurn=payload.turn
-   if(!('skip'in material)&&phase!=='done'&&payload.turn===reviewTurn&&readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===payload.turn).length>=maxDeliveryModelSteps)fail('review-model-step-limit','本次模型步骤预算已用尽，未解决的交付问题仍保留。')
+   if(!('skip'in material)&&phase!=='done'&&payload.turn===reviewTurn){
+    const steps=readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===payload.turn).length
+    if(phase==='idle'?steps>=maxDraftModelSteps:steps-reviewBase>=maxReviewModelSteps)fail('review-model-step-limit','本次模型步骤预算已用尽，未解决的交付问题仍保留。')
+   }
    if(!reviewing())return next()
    payload.signal.throwIfAborted()
-   // SDK 已把严格 schema 错误原样作为 tool/result 给同一轮次；仅允许一次无新输入的原生续步。
-   // 调用、结果、助手消息必须唯一且成对，不接纳其他工具失败、工具体拒绝或混入的新请求。
-   if(entered!==undefined&&pending&&!schemaCorrected&&schemaFailure!==undefined&&submission===undefined&&rejected===undefined&&payload.turn===reviewTurn&&payload.step===entered+1&&payload.messages.length===0){
-    const events=readSessionEvents(agent.session),step=readSubmissionStep(events,reviewTurn!,entered,schemaFailure,true)
+   // SDK 已把严格 schema 错误或工具体语义拒绝原样作为 tool/result 给同一轮次；整租约仅允许一次无新输入的原生续步纠正。
+   // 二者互斥：schema 拒绝时工具体未执行，语义拒绝时 rejected 即其原因；过期调用、其他工具失败或混入的新请求都不能纠正。
+   const failure=rejected===undefined?(bodyFailure===undefined?schemaFailure:undefined):(schemaFailure===undefined?bodyFailure:undefined)
+   if(entered!==undefined&&pending&&!corrected&&failure!==undefined&&submission===undefined&&payload.turn===reviewTurn&&payload.step===entered+1&&payload.messages.length===0){
+    const events=readSessionEvents(agent.session),step=readSubmissionStep(events,reviewTurn!,entered,failure,true)
     const results=events.filter(event=>event.type==='tool/result'&&event.data.turn===reviewTurn&&event.data.step===entered)
     if(!('skip'in step)&&results.length===1&&isDeepStrictEqual(results[0]!.sourceEventSeqs,[step.callSeq])){
-     roundSteps.push({...step,turn:reviewTurn!,step:entered,prompt:pending.message,failed:true})
-     schemaCorrected=true;schemaFailure=undefined;entered=payload.step
+     roundSteps.push({...step,turn:reviewTurn!,step:entered,prompt:pending.reminder??pending.message,failed:true})
+     corrected=true;schemaFailure=undefined;bodyFailure=undefined;rejected=undefined;entered=payload.step
      return next()
     }
    }
    // 回执被拒后循环会续一步：在发出任何新请求之前按记录的原因收错，不追加模型调用。
    if(entered!==undefined&&(rejected!==undefined||failedSubmission(entered)))fail(roundPrefix()+'-plan:'+(rejected??'step-tool-error'),'交付复核编辑计划未通过校验，请核对原结果。')
-   // 每个单元只进入一次，且必须是该单元复核输入带来的那一步；其余续步一律收为错误。
-   if(entered!==undefined||!pending||payload.messages.length!==1||!isDeepStrictEqual(payload.messages[0],pending.message))fail('review-step-limit','交付复核未形成完整编辑计划，请核对原结果。')
+   // 每个单元只进入一次（漏交后另有唯一一次补交提醒），且必须是该输入带来的那一步；其余续步一律收为错误。
+   if(entered!==undefined||!pending||payload.messages.length!==1||!isDeepStrictEqual(payload.messages[0],pending.reminder??pending.message))fail('review-step-limit','交付复核未形成完整编辑计划，请核对原结果。')
    const {replace}=pending!,session=agent.session
    if(replace){
     // 被替换的节点已不在模型视图（如被压缩替换）就不动视图，如实收错。
@@ -1015,10 +1116,15 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
      }
     }else found=readDeliveryDraft(events,lease.requestId,turn)
     // 别的轮次不消费这次机会；本次请求的轮次无论复核与否都只判一次。
-    if('skip' in found){if(found.skip!=='turn'&&found.skip!=='foreign-turn'){decided=true;lease.trace({runId:lease.runId,state:'skipped',reason:found.skip})}return}
+    if('skip' in found){if(found.skip!=='turn'&&found.skip!=='foreign-turn'){decided=true;if(lease.requireReview)return fail('required-review:'+found.skip,'本轮交付未能完成必需复核，请核对执行证据后继续原任务。');lease.trace({runId:lease.runId,state:'skipped',reason:found.skip})}return}
     decided=true;draftMessageId=found.draftMessageId
     if('skip' in material){lease.trace({runId:lease.runId,state:'skipped',reason:material.skip,draftMessageId});return}
+    if(material.requiredDeclarations?.includes('owner-mention')&&!material.toolEvidence?.receipts.some(receipt=>{
+     if(receipt.name!=='teloa_group_mention'||receipt.isError)return false
+     try{return JSON.parse(receipt.text).mentionSelf===true}catch{return false}
+    }))return fail('required-review:owner-mention-missing','本轮要求的本人质检提醒尚未取得真实声明回执，请沿原任务补齐后继续。')
     draftSeq=found.draftSeq;draftText=found.draftText
+    reviewBase=readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===turn).length
     return startRound(1,draftText,{seq:draftSeq,data:notice('待校正草稿',deliveryDraftData(draftText)),missing:'draft-surface'},signal,turn)
    }
    // 单元复核步结束：只接受该步唯一一次成功的原生回执，否则如实收为错误。失败原因按轮次区分：第 1 轮 rewrite-*，第 2 轮 rewrite-r2-*。
@@ -1026,8 +1132,26 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
    if(turn!==reviewTurn)return fail(prefix+'-plan:foreign-turn','交付复核未形成完整编辑计划，请核对原结果。')
    if(rejected!==undefined)return fail(prefix+'-plan:'+rejected,'交付复核编辑计划未通过校验，请核对原结果。')
    const step=entered===undefined?{skip:'not-entered'}:readSubmissionStep(readSessionEvents(agent.session),turn,entered,submission?.callId)
-   if('skip' in step)return fail(prefix+'-'+step.skip,'交付复核未形成完整编辑计划，请核对原结果。')
-   roundSteps.push({...step,turn,step:entered!,prompt:pending!.message})
+   if('skip' in step){
+    // 只写了推理或说明、没有任何工具调用即收尾：沿用整租约唯一一次纠正名额，在同一轮发一次补交提醒，复核要求与依据不变。
+    // 长度截断不补交：原生循环把 max-tokens 记为整轮收尾原因，补交后也只能以截断结束。
+    const missed=!corrected&&entered!==undefined&&submission===undefined&&step.skip==='plan:missing-submission'?missedSubmission(readSessionEvents(agent.session),turn,entered):undefined
+    if(missed!==undefined){
+     const reminder=notice(reminderSummary,reviewReminderText(reviewPhase()))
+     roundSteps.push({turn,step:entered!,prompt:pending!.message,missed})
+     corrected=true;pending={message:pending!.message,unit,reminder};entered=undefined
+     try{await lease.publish(reminder,signal)}
+     catch(error){
+      lease.trace({runId:lease.runId,state:'failed',phase:'rewrite',round,unit,draftMessageId,reason:error instanceof Error?error.name:'Error'})
+      phase='done';pending=undefined
+      throw error
+     }
+     lease.trace({runId:lease.runId,state:'requested',phase:'rewrite',round,unit,draftMessageId,reason:'correction:'+step.skip,inputSha256:draftSha256(text),...metadata()})
+     return
+    }
+    return fail(prefix+'-'+step.skip,'交付复核未形成完整编辑计划，请核对原结果。')
+   }
+   roundSteps.push({...step,turn,step:entered!,prompt:pending!.reminder??pending!.message})
    // 编号、单元范围与冲突已在工具体内按宿主持有的本轮整稿校验；这里只采用与原生回执一致的那一份。
    const accepted=submission!,record={unit,start:range.start,end:range.end,...range.criteria?{criteria:range.criteria}:{},planMessageId:step.messageId,callId:step.callId,protocol:protocol()}
    if(accepted.phase==='revise'){
@@ -1047,10 +1171,10 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
    if(accepted.phase==='verify'&&accepted.verification.verdict!=='accept'){
     rounds.push({round,verificationProjection:currentDraftReviewProjection,inputSha256:draftSha256(text),outputSha256:draftSha256(text),edits:0,units:[...current!.records],protocol:protocol(),phase:'verify',verdict:'rejected',sourceCatalogSha256:(material as ReviewMaterial).catalog.sha256})
     if(round===2&&accepted.verification.findings.length){
-     // 修订开始前一次性保留完整冷验的最坏单元预算；不透支第4轮，也不另起Run或重置schema名额。
+     // 修订开始前一次性保留完整冷验的最坏单元预算；不透支第4轮，也不另起Run或重置纠正名额。
      const enteredSteps=readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===turn).length
-     const reserve=splitReviewUnits(text).length+maxReviewUnits+(schemaCorrected?0:1)
-     if(maxDeliveryModelSteps-enteredSteps<reserve)return fail('review-repair-budget','复核发现未解决的问题，但剩余模型步骤不足以完成修订与独立验收。')
+     const reserve=splitReviewUnits(text).length+maxReviewUnits+(corrected?0:1)
+     if(maxReviewModelSteps-(enteredSteps-reviewBase)<reserve)return fail('review-repair-budget','复核发现未解决的问题，但剩余模型步骤不足以完成修订与独立验收。')
      if(dataSeq===undefined||!dataMessage)return fail('round-surface','交付复核未找到当前稿，请核对原结果。')
      firstMap=blockMap;firstIssues=[...revisionIssues];revisionIssues.splice(0)
      repairFindings=current!.records.flatMap(record=>(record.findings??[]).map((finding,index)=>({...finding,id:`r2:u${record.unit+1}:f${index+1}`})))

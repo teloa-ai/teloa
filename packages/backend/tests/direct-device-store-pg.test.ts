@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID,createHash} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {createDirectDeviceStore} from '../src/devices/direct-store.ts'
 let pool:Pool,container:StartedPostgreSqlContainer

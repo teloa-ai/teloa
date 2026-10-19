@@ -52,8 +52,10 @@ export const businessMappingPlatformFields=['title','summary','observedAt'] as c
 export type BusinessSyncRun={id:string;mappingId:string;scope:string;startedAt:string;finishedAt:string;status:'ok'|'failed'|'throttled';upserted:number;tombstoned:number;fetched:number;durationMs:number;error?:{code:WorkErrorCode;reason:string};nextCursor?:string;trigger:'schedule'|'manual'|'tool'}
 export type BusinessSyncStatus={mappingId:string;lastRun?:BusinessSyncRun;nextRunAt?:string;consecutiveFailures:number;backoffUntil?:string;quota:{rows:number;limit:number}}
 export type BusinessSyncRuleState={scope:string;mappingId:string;definitionHash:string;enabled:boolean;revision:number}
-/** running 是规则授权与业务级持续运行开关共同作用后的实际派发状态。 */
-export type BusinessSyncRuleView=BusinessSyncRuleState&{title:string;schedule:BusinessSyncSchedule;running:boolean}
+/** 规则所读来源的物理身份投影：只带辨识来源所需的键，不带参数、分页与字段映射。 */
+export type BusinessSyncRuleSource={kind:'mcp-tool';serverName:string;tool:string}|{kind:'business-data-port';sourceId:string}|{kind:'role-result'}
+/** running 是规则授权与业务级持续运行开关共同作用后的实际派发状态；`source` 由新宿主附带，旧宿主回包没有这一位。 */
+export type BusinessSyncRuleView=BusinessSyncRuleState&{title:string;schedule:BusinessSyncSchedule;running:boolean;source?:BusinessSyncRuleSource}
 export const businessSyncRunStatuses=['ok','failed','throttled'] as const
 export const businessSyncTriggers=['schedule','manual','tool'] as const
 
@@ -296,13 +298,21 @@ export function readBusinessSyncRuleState(value:unknown,scope:string):BusinessSy
  return {scope,mappingId:row.mappingId,definitionHash:row.definitionHash,enabled:row.enabled,revision:row.revision as number}
 }
 
+function readBusinessSyncRuleSource(value:unknown):BusinessSyncRuleSource{
+ if(!isRecord(value))throw hostError('持续规则来源格式不正确。')
+ if(value.kind==='role-result'){if(Object.keys(value).length!==1)throw hostError('持续规则来源格式不正确。');return {kind:'role-result'}}
+ if(value.kind==='business-data-port'){const row=exactHost(value,['kind','sourceId'],'持续规则来源格式不正确。');if(typeof row.sourceId!=='string'||!label(row.sourceId,120))throw hostError('持续规则来源格式不正确。');return {kind:'business-data-port',sourceId:row.sourceId}}
+ if(value.kind==='mcp-tool'){const row=exactHost(value,['kind','serverName','tool'],'持续规则来源格式不正确。');if(typeof row.serverName!=='string'||!label(row.serverName,64)||typeof row.tool!=='string'||!label(row.tool,128))throw hostError('持续规则来源格式不正确。');return {kind:'mcp-tool',serverName:row.serverName,tool:row.tool}}
+ throw hostError('持续规则来源格式不正确。')
+}
 export function readBusinessSyncRuleView(value:unknown,scope:string):BusinessSyncRuleView{
- const row=exactHost(value,['scope','mappingId','definitionHash','enabled','revision','title','schedule','running'],'持续规则展示状态格式不正确。')
+ const hasSource=isRecord(value)&&'source' in value
+ const row=exactHost(value,['scope','mappingId','definitionHash','enabled','revision','title','schedule','running',...(hasSource?['source']:[])],'持续规则展示状态格式不正确。')
  const state=readBusinessSyncRuleState({scope:row.scope,mappingId:row.mappingId,definitionHash:row.definitionHash,enabled:row.enabled,revision:row.revision},scope)
  if(typeof row.title!=='string'||!label(row.title,80)||typeof row.running!=='boolean'||row.running&&!state.enabled)throw hostError('持续规则展示状态不一致。')
  let schedule:BusinessSyncSchedule
  try{schedule=readBusinessSyncSchedule(row.schedule).schedule}catch{throw hostError('持续规则周期格式不正确。')}
- return {...state,title:row.title,schedule,running:row.running}
+ return {...state,title:row.title,schedule,running:row.running,...(hasSource?{source:readBusinessSyncRuleSource(row.source)}:{})}
 }
 
 export function readBusinessSyncStatus(value:unknown,scope:string):BusinessSyncStatus{

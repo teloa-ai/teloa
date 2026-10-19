@@ -18,6 +18,17 @@ test('冷读执行证据经官方 inspect，不能为了核对结果激活或重
  wrongSession=true;await assert.rejects(ports.events(run),{code:'teloa/forbidden'})
 })
 
+test('已结束冷会话以固定终态和空Inbox证明停妥，不为暂停重新激活旧Run',async()=>{
+ const events=[{seq:0,time:0,type:'turn/start',data:{turn:0}},{seq:1,time:1,type:'user/message',surfaceOp:'append',data:{id:'u',role:'user',source:{kind:'user',rpcId:'native'},content:[{type:'text',text:'原任务'}]}},{seq:2,time:2,type:'assistant/message',surfaceOp:'append',data:{turn:0,step:1,message:{id:'a',role:'assistant',source:{kind:'model',provider:'p',model:'m'},content:[{type:'text',text:'固定交付'}]},stream:[{type:'chunk',time:2,chunk:{type:'finish',reason:{kind:'stop'}}}]}},{seq:3,time:3,type:'turn/end',data:{turn:0,reason:{kind:'completed'}}}] as unknown as SessionEvent[]
+ const inbox={'next-turn':[] as unknown[],'next-step':[] as unknown[]}
+ const ctx={agents:{get:()=>undefined},sessionController:{inspect:async()=>({meta:{id:'session',version:4,createdAt:0,isSeeded:false},events,inheritedEventCount:0}),resolveAgent:async()=>{throw Error('不能激活已结束Run')}},sessionProjections:{stateOf:()=>inbox}} as unknown as Context
+ const run={id:'run',state:'ended',sessionId:'session',nativeRequestId:'native',stopRequestedAt:null,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:3,reason:'completed'}} as TaskRun
+ const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}))
+ assert.deepEqual(await ports.stopState!(run),{running:false,settledSeq:3})
+ inbox['next-step'].push({});assert.deepEqual(await ports.stopState!(run),{running:true,settledSeq:null},'旧Inbox仍有输入时不能给出停妥证明')
+ inbox['next-step']=[];await assert.rejects(ports.stopState!({...run,evidence:{...run.evidence!,endSeq:2}} as TaskRun),{code:'teloa/session-unavailable'},'终态与固定Run不符不能收口')
+})
+
 const target:TaskExecutionScope={taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'SOC'}
 
 test('v2 常驻角色执行缺少最终原生准入时拒绝，不能退回旧发送路径',async()=>{

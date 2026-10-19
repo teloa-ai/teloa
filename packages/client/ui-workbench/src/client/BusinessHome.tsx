@@ -9,7 +9,7 @@ import type { IndustryLoadRecord } from './industry-load-api.js';
 import type { PreviewRole } from './role-preview.js';
 import type { PreviewTask } from './task-preview.js';
 import type { CompositionTarget } from './industry-composition.js';
-import { businessHomeCards, businessHomeSummaryParts, type BusinessHomeCard } from './business-home-presentation.js';
+import { businessHomeCards, businessHomeSummaryParts, type BusinessHomeCard, type BusinessSourceObservation } from './business-home-presentation.js';
 import { useI18n } from './i18n/provider.js';
 import { useDismissible } from './use-dismissible.js';
 import { EmployeeAvatar } from './EmployeeAvatar.js';
@@ -28,6 +28,8 @@ export type BusinessHomeProps = {
     /** 卡摘要那一行的事实来源：已加载的业务内容与持续计划；读不到就整行不摆。 */
     loads?: readonly IndustryLoadRecord[];
     plans?: readonly { scope: string; state: string; title: string }[];
+    /** 各范围的来源接入观测（同步规则 × MCP 连接）；与范围内页读同一份，缺省只按模板实例计数。 */
+    sourceObservations?: Readonly<Record<string, BusinessSourceObservation>>;
     open: (scope: string) => void;
     openStaff: (scope: string) => void;
     connect: (scope: string) => void;
@@ -85,10 +87,10 @@ function SpaceCard({ card, open, openStaff, connect, goComposition }: { card: Bu
  * 业务台账首页（原型 B3）：按业务范围一张张卡，每张卡先讲此刻的处境，再给一个直接动作。
  * 三个数都来自 `business-home-presentation.ts` 的纯函数，本组件只负责排版与接线。
  */
-export function BusinessHome({ labels, directory, roles, dataSources, attention, tasks, loads, plans, open, openStaff, connect, addBusiness, creationReady=true, createEntry, builderDirectory, market, goComposition }: BusinessHomeProps) {
+export function BusinessHome({ labels, directory, roles, dataSources, attention, tasks, loads, plans, sourceObservations, open, openStaff, connect, addBusiness, creationReady=true, createEntry, builderDirectory, market, goComposition }: BusinessHomeProps) {
     const { t, locale } = useI18n();
     const names = businessScopeNames(labels, {general:t('business.scope.general'),SOC:t('business.scope.soc'),AppSec:t('business.scope.appsec')});
-    const cards = businessHomeCards(labels.map(label=>({...label,title:names[label.scope]??label.title})), { roles, dataSources, attention, tasks, locale, ...(loads ? { loads } : {}), ...(plans ? { plans } : {}) });
+    const cards = businessHomeCards(labels.map(label=>({...label,title:names[label.scope]??label.title})), { roles, dataSources, attention, tasks, locale, ...(loads ? { loads } : {}), ...(plans ? { plans } : {}), ...(sourceObservations ? { sourceObservations } : {}) });
     const [createOpen, setCreateOpen] = useState(false);
     const createControlRef = useRef<HTMLDetailsElement>(null);
     useDismissible(createControlRef, createOpen, () => setCreateOpen(false), undefined, 'click');

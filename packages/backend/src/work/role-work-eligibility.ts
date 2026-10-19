@@ -85,7 +85,8 @@ export class RoleWorkEligibilityService{
     if(groupSource||groupId===null||authorization.kind==='task'&&authorization.taskId!==row.reportTaskId)throw new WorkError('teloa/forbidden','原群任务不能改成计划汇报。')
     const reportTask=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,row.reportTaskId])).rows[0]
     if(!reportTask||reportTask.assignee_role_id!==role.id||reportTask.assignee_role_version!==role.version||readStoredTask(reportTask).scope!==scope||readStoredTask(reportTask).groupId!==groupId||authorization.kind==='delegation'&&!isDeepStrictEqual(reportTask.execution_authorization,authorization))throw new WorkError('teloa/forbidden','原计划任务与汇报身份不一致。')
-    const fixed=await new PlanOccurrenceService(this.pool,{id:()=>{throw roleWorkInvalid()}}).executionContext(db,owner,String(row.reportTaskId))
+    // 汇报资格只需原发生实例的固定汇报目标：按原件完整复核（stored）；当前业务事实的 live 复核由领取与执行准备承担。
+    const fixed=await new PlanOccurrenceService(this.pool,{id:()=>{throw roleWorkInvalid()}}).executionContext(db,owner,String(row.reportTaskId),undefined,false,'stored')
     if(fixed?.reportGroup?.groupId!==groupId)throw new WorkError('teloa/forbidden','缺少原发生实例的固定汇报目标。')
     reportOnly=true
    }

@@ -1,0 +1,3 @@
+/* 正文标题复用工作台字体层级，不使用浏览器默认标题字号。 */
+.typography.typography :is(h1,h2,h3,h4,h5,h6){font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);overflow-wrap:anywhere}
+.typography.typography :is(h1,h2){font-size:var(--teloa-font-section)}

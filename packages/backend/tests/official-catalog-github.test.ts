@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
-import {Pool} from 'pg'
+import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {marketCatalogUpstreamTreeHash,readMarketCatalogEntry,type MarketCatalogUpstreamSkillEntry} from '@teloa/contract'
 import {OfficialCatalogService} from '../src/market/official-catalog.ts'

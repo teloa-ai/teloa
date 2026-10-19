@@ -34,6 +34,15 @@ async function topicMessages(db:PoolClient,owner:string,groupId:string,rootId:st
  return rows.map(row=>({id:String(row.id),authorId:String(row.author_id)}))
 }
 
+/** 本话题最近一条 `relay-stopped` 原决策（只看第一尝试；显式重试的终态不另开闸、不计轮次）。 */
+async function latestRelayStop(db:PoolClient,owner:string,groupId:string,rootId:string):Promise<{created_at:unknown;stopMessageId:string|null}|undefined>{
+ const row=(await db.query(`select d.created_at,d.decision->>'stopMessageId' as stop_message_id from teloa_group_routing_decisions d
+  join teloa_group_messages m on m.id=d.message_id and m.group_id=d.group_id
+  where d.owner_id=$1 and d.group_id=$2 and (m.id=$3 or m.root_id=$3) and d.decision->>'kind'='relay-stopped'
+  order by d.created_at desc,d.message_id desc limit 1`,[owner,groupId,rootId])).rows[0]
+ return row?{created_at:row.created_at,stopMessageId:typeof row.stop_message_id==='string'?row.stop_message_id:null}:undefined
+}
+
 function view(row:Record<string,unknown>):GroupRoutingDecisionView{
  const decision=row.decision
  if(!isGroupRoutingDecision(decision))throw corrupt()
@@ -93,10 +102,7 @@ export class GroupRoutingDecisionService{
   */
  async relayGateOpen(db:PoolClient,owner:string,groupId:string,rootId:string,messageId:string):Promise<boolean>{
   ownerId(owner)
-  const stopped=(await db.query(`select d.created_at from teloa_group_routing_decisions d
-   join teloa_group_messages m on m.id=d.message_id and m.group_id=d.group_id
-   where d.owner_id=$1 and d.group_id=$2 and (m.id=$3 or m.root_id=$3) and d.decision->>'kind'='relay-stopped'
-   order by d.created_at desc,d.message_id desc limit 1`,[owner,groupId,rootId])).rows[0]
+  const stopped=await latestRelayStop(db,owner,groupId,rootId)
   if(!stopped)return true
   return !!(await db.query(`select 1 from teloa_group_messages m
    join teloa_group_messages t on t.owner_id=$1 and t.group_id=$2 and t.id=$5
@@ -104,6 +110,12 @@ export class GroupRoutingDecisionService{
    and (m.created_at,m.id)<=(t.created_at,t.id)
    and not exists(select 1 from teloa_group_routing_decisions d where d.owner_id=$1 and d.group_id=$2 and d.decision->>'stopMessageId'=m.id::text) limit 1`,
    [owner,groupId,rootId,stopped.created_at,messageId])).rowCount
+ }
+
+ /** 本话题最近一次停下写出的停下消息；没有停下过为 null。显式重试被闸门挡住时用它定案并引用原停下消息。 */
+ async relayStopMessageId(db:PoolClient,owner:string,groupId:string,rootId:string):Promise<string|null>{
+  ownerId(owner)
+  return (await latestRelayStop(db,owner,groupId,rootId))?.stopMessageId??null
  }
 
  /**

@@ -46,6 +46,15 @@ export async function initializeGroupWorkInputs(pool:Pool):Promise<void>{await p
  create trigger teloa_group_work_inputs_guard before update or delete on teloa_group_work_inputs for each row execute function teloa_group_work_inputs_guard();
 `)}
 
+/**
+ * 本人消息所引用的那条消息（别名 reply）对应的原任务：员工回帖取宿主发布时写入的所属任务；
+ * 本人自己的交办消息取它唯一派生的群任务——原任务复核未通过、尚未回群时，本人只能引用当初交办的那条消息退回修订。
+ * 一条交办派出多项任务时不猜，按未引用处理。
+ */
+export const groupQuotedTaskSql=`case when reply.author_id<>'self' then reply.task_id else (select s.task_id from teloa_group_task_sources s
+ where s.owner_id=reply.owner_id and s.group_id=reply.group_id and s.message_id=reply.id
+ and not exists(select 1 from teloa_group_task_sources o where o.owner_id=s.owner_id and o.group_id=s.group_id and o.message_id=s.message_id and o.task_id<>s.task_id)) end`
+
 function receipt(row:Record<string,unknown>):GroupWorkInputReceipt{
  const value={requestId:row.request_id,taskId:row.task_id,taskVersion:row.task_version??row.expected_task_version,runId:row.run_id??null,state:row.state,nativeRequestId:row.native_request_id??null,acceptedSeq:row.accepted_seq??null,operation:row.operation}
  if(!isGroupWorkInputReceipt(value))throw corrupt()
@@ -71,14 +80,21 @@ export class GroupWorkInputService{
   const request=groupWorkInput(input),{requestId:_requestId,...payload}=request,sha=createHash('sha256').update(JSON.stringify(payload)).digest('hex')
   const prior=(await db.query('select * from teloa_group_work_inputs where owner_id=$1 and (request_id=$2 or (message_id=$3 and task_id=$4)) order by (request_id=$2) desc limit 1',[owner,request.requestId,request.messageId,request.taskId])).rows[0]
   if(prior){if(prior.payload_sha256!==sha)throw new WorkError('teloa/conflict','同一追加请求不能更换内容。');return receipt(prior)}
-  const message=(await db.query('select author_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,request.groupId,request.messageId])).rows[0]
+  const message=(await db.query(`select m.author_id,${groupQuotedTaskSql} as quoted_task_id from teloa_group_messages m
+   left join teloa_group_messages reply on reply.owner_id=m.owner_id and reply.group_id=m.group_id and reply.id=m.reply_to_message_id
+   where m.owner_id=$1 and m.group_id=$2 and m.id=$3`,[owner,request.groupId,request.messageId])).rows[0]
   if(!message||message.author_id!=='self')throw new WorkError('teloa/forbidden','只能由本人在本群的消息追加或停止原工作。')
-  const task=(await db.query(`select t.version,t.state,t.content_version from teloa_tasks t join teloa_group_task_sources s on s.owner_id=t.owner_id and s.task_id=t.id
-   where t.owner_id=$1 and t.id=$2 and s.group_id=$3 for share of t`,[owner,request.taskId,request.groupId])).rows[0]
+  // 「属于本群」与路由候选读口同一套三条持久关联：群交办来源、任务定义关联群、本条本人消息实际引用的员工回帖所属任务
+  // （quoted_task_id 已按同本人、同群读出：员工回帖所属任务，或本人交办消息唯一派生的任务）。缺任一条都会让模型正确选中的原任务在登记处被误拒。
+  const task=(await db.query(`select t.version,t.state,t.content_version from teloa_tasks t
+   where t.owner_id=$1 and t.id=$2 and (
+    exists(select 1 from teloa_group_task_sources s where s.owner_id=t.owner_id and s.task_id=t.id and s.group_id=$3)
+    or lower(t.definition->>'groupId')=lower($4)
+    or t.id=$5::uuid) for share`,[owner,request.taskId,request.groupId,request.groupId,message.quoted_task_id??null])).rows[0]
   if(!task)throw new WorkError('teloa/forbidden','原工作不属于本群。')
   // 登记本身总是持久化：原工作已取消，或追加时原工作已被改过（停止不受版本推进影响），记为拒绝并给出原因，
   // 不能让路由定案成「无需处理」而本人的追加或停止无声丢失（规格 §5）。
-  const reason=task.state==='cancelled'?'teloa/conflict':request.operation==='continue'&&task.version!==request.expectedTaskVersion?'teloa/version-conflict':null
+  const reason=message.quoted_task_id&&message.quoted_task_id!==request.taskId?'teloa/forbidden':task.state==='cancelled'?'teloa/conflict':request.operation==='continue'&&task.version!==request.expectedTaskVersion?'teloa/version-conflict':null
   const observed=(await db.query('select id from teloa_task_runs where owner_id=$1 and task_id=$2 order by created_at desc,id desc limit 1',[owner,request.taskId])).rows[0]?.id??null
   const now=this.identity.now()
   const saved=(await db.query(`insert into teloa_group_work_inputs(owner_id,request_id,group_id,message_id,task_id,operation,expected_task_version,payload_sha256,observed_run_id,state,reason,expected_content_version,created_at,updated_at)
@@ -110,10 +126,16 @@ export class GroupWorkInputService{
    if(!row)throw new WorkError('teloa/forbidden','群工作追加回执不属于当前本人。')
    // 只有尚未升版本的回执（已保存，或升版本前结果未知）走续办；已续办的只按原 Run 身份推进，不再升版本。
    if(row.operation!=='continue'||!(row.state==='reserved'||row.state==='unknown'&&row.task_version===null))return receipt(row)
-   const task=(await db.query('select version,state,content_version from teloa_tasks where owner_id=$1 and id=$2 for update',[owner,row.task_id])).rows[0]
+   const task=(await db.query(`select t.version,t.state,t.content_version,t.assignee_role_version,r.version as role_version from teloa_tasks t
+    left join teloa_roles r on r.owner_id=t.owner_id and r.id=t.assignee_role_id where t.owner_id=$1 and t.id=$2 for update of t`,[owner,row.task_id])).rows[0]
    const latest=(await db.query('select id,state from teloa_task_runs where owner_id=$1 and task_id=$2 order by created_at desc,id desc limit 1',[owner,row.task_id])).rows[0]
-   if(latest&&!settledRun.includes(String(latest.state)))return receipt(row)
    const reject=async(reason:string)=>receipt((await db.query("update teloa_group_work_inputs set state='rejected',reason=$3,updated_at=$4 where owner_id=$1 and request_id=$2 returning *",[owner,requestId,reason,this.identity.now()])).rows[0]!)
+   // 同样核对旧版本已登记但尚未派发的回执；升级不能继续消费历史误选的另一个任务。
+   const quoted=(await db.query(`select ${groupQuotedTaskSql} as task_id from teloa_group_messages m join teloa_group_messages reply
+    on reply.owner_id=m.owner_id and reply.group_id=m.group_id and reply.id=m.reply_to_message_id
+    where m.owner_id=$1 and m.group_id=$2 and m.id=$3`,[owner,row.group_id,row.message_id])).rows[0]
+   if(quoted?.task_id&&quoted.task_id!==row.task_id)return reject('teloa/forbidden')
+   if(latest&&!settledRun.includes(String(latest.state)))return receipt(row)
    if(!task||task.state==='cancelled')return reject('teloa/conflict')
    if((latest?.id??null)!==row.observed_run_id)return reject('teloa/version-conflict')
    // 排队期间本人改过目标或配置（内容版本变化）就不能把追加套到另一版目标上；正常运行推进只改状态版本，不在此拒绝。
@@ -124,6 +146,9 @@ export class GroupWorkInputService{
    const control=typeof lineage?.roundControlId==='string'?(await db.query('select state from teloa_work_controls where owner_id=$1 and id=$2',[owner,lineage.roundControlId])).rows[0]:undefined
    if(control&&control.state!=='active'){if(['ending','ended','stopping','stopped'].includes(String(control.state)))return reject('teloa/conflict');return receipt(row)}
    if(!['waiting','completed','blocked','paused','ready'].includes(String(task.state)))return receipt(row)
+   // 员工版本已高于任务固定的负责人版本（例如本人新增工具授权）时，一键准备必然判 version-conflict「请重新交接后再执行」。
+   // 这里在升版本之前就按同一结论拒绝：不自动续签到新版本，也不让每条「继续」把原任务空升一版。
+   if(task.assignee_role_version!==null&&task.role_version!==null&&task.assignee_role_version!==task.role_version)return reject('teloa/version-conflict')
    const now=this.identity.now(),updated=(await db.query("update teloa_tasks set state='ready',version=version+1,updated_at=$3 where owner_id=$1 and id=$2 returning version",[owner,row.task_id,now])).rows[0]
    // 即时追加没被原 Run 受理（原 Run 已结束且原生日志里没有它）时转为续办：清掉原 Run 绑定，新 Run 另行记录。
    return receipt((await db.query("update teloa_group_work_inputs set state='continued',task_version=$3,run_id=null,native_request_id=null,accepted_seq=null,updated_at=$4 where owner_id=$1 and request_id=$2 returning *",[owner,requestId,updated!.version,now])).rows[0]!)
@@ -151,9 +176,11 @@ export class GroupWorkInputService{
  * 等原 Run 收敛后按新任务版本续办。
  */
 export async function readGroupRunAppendTarget(db:Database,owner:string,requestId:string):Promise<{runId:string;sessionId:string;text:string}|null>{
- const row=(await db.query(`select i.*,m.text,m.reference_snapshot from teloa_group_work_inputs i join teloa_group_messages m on m.id=i.message_id and m.group_id=i.group_id and m.owner_id=i.owner_id
+ const row=(await db.query(`select i.*,m.text,m.reference_snapshot,${groupQuotedTaskSql} as quoted_task_id from teloa_group_work_inputs i join teloa_group_messages m on m.id=i.message_id and m.group_id=i.group_id and m.owner_id=i.owner_id
+  left join teloa_group_messages reply on reply.id=m.reply_to_message_id and reply.owner_id=m.owner_id and reply.group_id=m.group_id
   where i.owner_id=$1 and i.request_id=$2`,[owner,requestId])).rows[0]
  if(!row||row.operation!=='continue'||row.state!=='reserved'||row.native_request_id!==null)return null
+ if(row.quoted_task_id&&row.quoted_task_id!==row.task_id)return null
  const references=normalizeReferences(row.reference_snapshot)
  if(!Array.isArray(references)||references.length)return null
  const run=(await db.query('select id,session_id,state from teloa_task_runs where owner_id=$1 and task_id=$2 order by created_at desc,id desc limit 1',[owner,row.task_id])).rows[0]
@@ -169,9 +196,14 @@ export async function readGroupRunAppendIds(db:Database,owner:string,sessionId:s
 
 /** 续办 Run 的追加来源：只认已送达、且绑定到该任务版本的那一条；不同版本的 Run 读不到彼此的追加。 */
 export async function readGroupWorkContinuation(db:Database,owner:string,taskId:string,taskVersion:number):Promise<GroupWorkContinuation|undefined>{
- // 续办 Run 在 continued 阶段准备：只要回执已为该任务版本升版本（且未被拒绝），新 Run 就读这一条追加。
+ // 失败重试只推进状态版本时保留同一明确追加；内容版本变了则不能套用旧指令。
+ // 旧 Run 仍可按自身精确版本读取原来源，且永远读不到后来的追加。
  const row=(await db.query(`select m.id,m.text,m.created_at,m.reference_snapshot from teloa_group_work_inputs i join teloa_group_messages m on m.id=i.message_id and m.group_id=i.group_id and m.owner_id=i.owner_id
-  where i.owner_id=$1 and i.task_id=$2 and i.task_version=$3 and i.operation='continue' and i.state in ('continued','accepted','unknown')`,[owner,taskId,taskVersion])).rows[0]
+  join teloa_tasks t on t.owner_id=i.owner_id and t.id=i.task_id
+  where i.owner_id=$1 and i.task_id=$2 and i.task_version<=$3
+   and (i.task_version=$3 or i.expected_content_version=t.content_version)
+   and i.operation='continue' and i.state in ('continued','accepted','unknown')
+  order by i.task_version desc,i.created_at desc limit 1`,[owner,taskId,taskVersion])).rows[0]
  if(!row)return undefined
  // 追加消息里的资料、附件与成果按原消息固定版本随来源进入新 Run；是否可读仍由本群对该员工的授权决定，不因引用而扩权。
  const references=normalizeReferences(row.reference_snapshot)

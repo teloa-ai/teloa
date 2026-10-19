@@ -6,7 +6,7 @@ import {build} from 'vite'
 import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
 test('真实身份与引用记录抽屉恢复焦点和草稿；窄桌面概览并栏或收起不覆盖输入',async t=>{
- const built=await build({configFile:false,root:fileURLToPath(new URL('../../../../',import.meta.url)),logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:fileURLToPath(new URL('./fixtures/context-header-drawers.tsx',import.meta.url)),name:'ContextHeaderTest',formats:['iife']}}})
+ const built=await build({configFile:false,root:fileURLToPath(new URL('../../../../',import.meta.url)),logLevel:'error',plugins:[{name:'forbid-host-crypto',enforce:'pre',resolveId:(id:string)=>id==='node:crypto'?'\0forbid-host-crypto':undefined,load:(id:string)=>id==='\0forbid-host-crypto'?"function blocked(){throw Error('浏览器客户端不得执行宿主摘要或验签')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}":undefined}],define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:fileURLToPath(new URL('./fixtures/context-header-drawers.tsx',import.meta.url)),name:'ContextHeaderTest',formats:['iife']}}})
  const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code,styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())

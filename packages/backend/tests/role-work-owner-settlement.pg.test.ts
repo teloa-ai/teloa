@@ -26,7 +26,7 @@ let env:Awaited<ReturnType<typeof setupRoleWork>>
 before(async()=>{env=await setupRoleWork();await initializeTeloaDatabase(env.pool)})
 after(async()=>{await env.close()})
 const sha=(text:string)=>createHash('sha256').update(text).digest('hex')
-async function fixture(tools:string[]=[],deliver=true){
+async function fixture(tools:string[]=[],deliver=true,reason='completed'){
  const pool=env.pool,owner=randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'固定纯文本群岗位',kind:'employee',scopes:['general'],duty:'核对原消息并回原群',dataScope:'固定原群',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}})
  const groups=new CollaborationService(pool,identity),group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'已交付原群',scope:'general',announcement:'核对原消息',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},memberRoleIds:[role.id]}})
  const source=await groups.send(owner,{requestId:randomUUID(),groupId:group.id,expectedVersion:group.version,text:'仅核对本次固定目标并回原群。'})
@@ -39,7 +39,7 @@ async function fixture(tools:string[]=[],deliver=true){
  await runs.claim(owner,{runId:run.id})
  const links=new TaskRunRuntimeLinkService(pool),runtimeId=randomUUID(),nativeId='owner:'+runtimeId+':'+sessionId
  await links.put(owner,{runId:run.id,kind:'job',nativeId,sessionId,payload:{record:'owner',runtimeId,requestId:run.nativeRequestId}})
- const evidence={state:'ended' as const,turn:1,messageSeq:1,endSeq:2,reason:'completed'},ended=await runs.record(owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence})
+ const evidence={state:'ended' as const,turn:1,messageSeq:1,endSeq:2,reason},ended=await runs.record(owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence})
  const outbox=new GroupRoutingOutboxService(pool,identity),publisher=new GroupRunMessageService(pool,identity,undefined,undefined,outbox)
  const posted=deliver?await publisher.post(owner,{requestId:run.nativeRequestId,runId:run.id,text:'已按固定原消息核对，本轮纯文本成果。'}):undefined
  const settleWake=async()=>{const wake=await outbox.claimWake(owner);assert.ok(wake);await outbox.settleWake(owner,{messageId:wake.messageId,leaseGeneration:wake.leaseGeneration,settled:true})}
@@ -102,6 +102,35 @@ test('宿主回执或旧群兼容均不放行待群发布、坏归属、真正jo
   await blocked('冻结快照损坏不消费收口证明',"update teloa_task_runs set input_text='{}' where id=$1",[f.run.id],'update teloa_task_runs set input_text=$2 where id=$1',[f.run.id,f.run.inputText])
   if(sealed)await blocked('持久回执哈希损坏不放行','update teloa_task_run_runtime_links set owner_settlement=$3 where owner_id=$1 and run_id=$2',[f.owner,f.run.id,JSON.stringify({...f.proof,inputSha256:'b'.repeat(64)})],'update teloa_task_run_runtime_links set owner_settlement=$3 where owner_id=$1 and run_id=$2',[f.owner,f.run.id,JSON.stringify(f.proof)])
  }
+})
+
+test('失败终态（error）群Run：宿主收口证明且无任何发布残留才放行；无证明、待发布、outbox、残留回帖、结果文件、子登记一律保守阻断',async()=>{
+ // 实跑形状：Run ended、evidence.reason=error、group_publication/next_at 为 null、manifest files 为空、runtime link 带 owner_settlement。
+ const unproven=await fixture([],false,'error')
+ assert.equal((await unproven.read()).canEditExecution,false,'零工具旧例外不对失败终态放行：没有宿主证明保持保守')
+ const f=await fixture(['get_goal'],false,'error')
+ assert.equal((await f.read()).canEditExecution,false,'没有宿主收口证明不放行')
+ await f.links.recordOwnerSettlement(f.owner,f.proof)
+ assert.equal((await f.read()).canEditExecution,true,'宿主已证明 error 终态；契约对失败终态不排发布、库中无任何残留，不得永久阻断后续委托')
+ assert.equal((await f.pool.query('select count(*)::int count from teloa_group_messages where owner_id=$1 and run_id=$2',[f.owner,f.run.id])).rows[0].count,0,'放行不伪造任何成功交付')
+ assert.deepEqual((await f.runs.get(f.owner,{runId:f.run.id})).evidence,f.run.evidence,'不改写终态证据')
+ const blocked=async(label:string,sql:string,values:unknown[],restore:string,restoreValues:unknown[])=>{
+  await f.pool.query(sql,values)
+  try{assert.equal((await f.read()).canEditExecution,false,label)}finally{await f.pool.query(restore,restoreValues)}
+  assert.equal((await f.read()).canEditExecution,true,'恢复测试原事实后仍可配置：'+label)
+ }
+ for(const state of ['retrying','blocked'])await blocked('失败终态仍有待发布或发布受阻记录时保守在途','update teloa_task_runs set group_publication=$2 where id=$1',[f.run.id,JSON.stringify({state,code:'teloa/unavailable',attempts:1,at:identity.now()})],'update teloa_task_runs set group_publication=null where id=$1',[f.run.id])
+ await blocked('待发布时刻不能误当已收口','update teloa_task_runs set group_publication_next_at=now() where id=$1',[f.run.id],'update teloa_task_runs set group_publication_next_at=null where id=$1',[f.run.id])
+ await blocked('失败终态留有结果文件残留不放行','update teloa_task_runs set group_result_manifest=$2 where id=$1',[f.run.id,JSON.stringify({files:[{path:'报告.md',sha256:'c'.repeat(64)}],noVision:false})],'update teloa_task_runs set group_result_manifest=$2 where id=$1',[f.run.id,JSON.stringify({files:[],noVision:false})])
+ const stray=randomUUID()
+ await blocked('失败终态却存在以该Run为作者的群回帖，是未核实的发布残留','insert into teloa_group_messages(id,owner_id,group_id,request_id,request_spec,root_id,author_id,text,reference_snapshot,created_at,task_id,run_id) values($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9::jsonb,$10,$11,$12)',[stray,f.owner,f.group.id,randomUUID(),'{}',f.source.id,f.role.id,'残留回帖','[]',identity.now(),f.task.id,f.run.id],'delete from teloa_group_messages where id=$1',[stray])
+ await f.pool.query("insert into teloa_group_routing_decisions(owner_id,group_id,message_id,decision,created_at) values($1,$2,$3,'{}'::jsonb,now()) on conflict do nothing",[f.owner,f.group.id,f.source.id])
+ const outbox=randomUUID()
+ // 路由决策是不可变历史，测试同样保留到隔离容器退役，不删除以掩盖约束。
+ await blocked('该Run仍有未定案的投递outbox不放行',"insert into teloa_group_routing_outbox(id,owner_id,group_id,message_id,decision_version,role_id,role_version,request_id,group_version,state,task_id,run_id,created_at) values($1,$2,$3,$4,1,$5,1,$6,1,'pending',$7,$8,now())",[outbox,f.owner,f.group.id,f.source.id,f.role.id,randomUUID(),f.task.id,f.run.id],'delete from teloa_group_routing_outbox where id=$1',[outbox])
+ const child=randomUUID()
+ await blocked('有子登记均不得放行',"insert into teloa_task_run_subagents(owner_id,run_id,reservation_id,state,created_at,ended_at,stop_reason) values($1,$2,$3,'abandoned',now(),now(),'unknown')",[f.owner,f.run.id,child],'delete from teloa_task_run_subagents where owner_id=$1 and run_id=$2 and reservation_id=$3',[f.owner,f.run.id,child])
+ await blocked('持久回执损坏不放行','update teloa_task_run_runtime_links set owner_settlement=$3 where owner_id=$1 and run_id=$2',[f.owner,f.run.id,JSON.stringify({...f.proof,inputSha256:'b'.repeat(64)})],'update teloa_task_run_runtime_links set owner_settlement=$3 where owner_id=$1 and run_id=$2',[f.owner,f.run.id,JSON.stringify(f.proof)])
 })
 
 test('真实未知安全执行不能借已结束宿主证明解除配置保护，正式效果收口后才放行',async()=>{
