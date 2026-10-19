@@ -49,5 +49,5 @@ test('ApprovalNotesProvider 与 BusinessScopeProvider 同层包住整个 frame�
  assert.doesNotMatch(source.slice(scopeOpened,opened),/<(?:div|main|section|aside|nav)\b/,'BusinessScopeProvider 与 ApprovalNotesProvider 之间只能是 provider')
  assert.match(source,/<\/div><\/ApprovalNotesProvider>(?:<\/\w+Provider>)*<\/BusinessScopeProvider>/)
  assert.doesNotMatch(source,/<ApprovalNotesProvider><main/,'provider 不能只包 <main>')
- assert.ok(source.slice(opened,closed).includes('className={css.details}'),'.details 轨道必须在 provider 之内')
+ assert.ok(source.slice(opened,closed).includes('id={DETAILS_TRACK_ID}')&&source.slice(opened,closed).includes('className={clsx(css.details,artifactRailShown&&css.artifactDetails)}'),'.details 轨道必须在 provider 之内')
 })

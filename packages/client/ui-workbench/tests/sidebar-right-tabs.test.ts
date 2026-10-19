@@ -60,18 +60,20 @@ test('本轮已迁入右栏的页类型是 kind 名单的子集',()=>{
  for(const kind of TELOA_RAIL_KINDS)assert.ok(TELOA_TAB_KINDS.includes(kind))
 })
 
-test('普通会话的右栏占位跟随原生呈现；搭建预览与非会话页面不占位，不看详情目标',()=>{
+test('原生右栏占位隔离当前会话；成果可独立占用同一轨道，搭建预览仍不占位',()=>{
  assert.doesNotMatch(frame,/closeNativeRightbar/)
  assert.doesNotMatch(frame,/kind==='native'/)
  // 执行真正的占位表达式，既保留普通会话原语义，也覆盖搭建预览新增的排除条件。
  const ast=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
- let expression:ts.Expression|undefined
- const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText()==='railShown')expression=node.initializer;ts.forEachChild(node,visit)}
- visit(ast);assert.ok(expression)
+ let expression:ts.Expression|undefined,combined:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)){if(node.name.getText()==='nativeRailShown')expression=node.initializer;if(node.name.getText()==='railShown')combined=node.initializer;}ts.forEachChild(node,visit)}
+ visit(ast);assert.ok(expression);assert.ok(combined)
  const shown=new Function('builderVisible','conversationVisible','state','return '+expression.getText()) as (builder:boolean,conversation:boolean,state:{rightbar:{shown:boolean}})=>boolean
  for(const builder of [false,true])for(const conversation of [false,true])for(const rightbar of [false,true]){
   assert.equal(shown(builder,conversation,{rightbar:{shown:rightbar}}),!builder&&conversation&&rightbar,JSON.stringify({builder,conversation,rightbar}))
  }
+ const combinedShown=new Function('nativeRailShown','artifactRailShown','return '+combined.getText()) as (native:boolean,artifact:boolean)=>boolean
+ for(const native of [false,true])for(const artifact of [false,true])assert.equal(combinedShown(native,artifact),native||artifact)
 })
 
 test('刷新恢复只认属于当前会话的详情，A 会话的对象不会开进 B 的右栏',()=>{

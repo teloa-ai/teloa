@@ -250,7 +250,7 @@ test('拖拽走指针捕获，监听挂把手而不是 window，并跟随最新�
 })
 
 test('把手是带值的 separator，aria-controls 指向它调的轨道，Enter 等价于双击',()=>{
- assert.match(frame,/id=\{DETAILS_TRACK_ID\} role="region" hidden=\{!conversationVisible\|\|builderVisible\} className=\{css\.details\}/)
+ assert.match(frame,/id=\{DETAILS_TRACK_ID\} role="region" hidden=\{!conversationVisible&&!artifactRailShown\|\|builderVisible\} className=\{clsx\(css\.details,artifactRailShown&&css\.artifactDetails\)\}/)
  assert.match(frame,/aria-controls=\{DETAILS_TRACK_ID\} aria-valuenow=\{detailsWidth\} aria-valuemin=\{detailsRange\.min\} aria-valuemax=\{detailsRange\.max\}/)
  assert.match(frame,/if\(event\.key==='Enter'\)\{event\.preventDefault\(\);restoreDetailsWidth\(\)/)
 })
@@ -259,19 +259,21 @@ test('原生折叠态仍由 DSH 面板负责，首页、群与目录隐藏整条
  // 依赖 @deepseek-ai/dsh-client-ui-sidebar-right 的 .panel：它是 visibility:hidden，
  // 展开才加 [data-sidebar-right-open]{visibility:visible}，并写 aria-hidden={!expanded}。
  // 该包不在本包依赖里，无法直接断言其源码；这里改为钉住 Teloa 侧的前提——
- // 轨道里除了把手就只有 renderSlot('rightbar')，没有 Teloa 自己的可读内容。
- const track=frame.split('id={DETAILS_TRACK_ID}')[1]!.split('</div>')[0]!
+ // 原生工具与成果各有座位；成果占用备用座位时隐藏原生工具，不泄露上一会话。
+ const track=frame.split('id={DETAILS_TRACK_ID}')[1]!.split('        </div>')[0]!
  assert.match(track,/renderSlot\('rightbar'/)
- assert.match(track,/hidden=\{!conversationVisible\|\|builderVisible\}/,'首页、群与目录不暴露上一原生会话工具')
+ assert.match(track,/hidden=\{!conversationVisible&&!artifactRailShown\|\|builderVisible\}/,'首页、群与目录不暴露上一原生会话工具')
  assert.doesNotMatch(track,/hidden=\{!?railShown\}/,'不覆盖 DSH 自己的展开/折叠状态')
- assert.equal(track.split('<').filter(part=>part.startsWith('button')||part.startsWith('div')||part.startsWith('section')).length,1)
+ assert.match(track,/className=\{css\.nativeRail\} hidden=\{artifactFallbackShown\}/)
+ assert.match(track,/className=\{css\.artifactMount\} hidden=\{!artifactFallbackShown\}/)
+ assert.equal(track.split('<').filter(part=>part.startsWith('button')||part.startsWith('div')||part.startsWith('section')).length,3)
  // 执行实际 Frame 的纯展示守卫，不能仅因它们的名字存在就认定旧会话已被隐藏。
- const source=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),initializers=new Map<string,ts.Expression>(),names=new Set(['conversationVisible','nativeMainVisible','railShown'])
+ const source=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),initializers=new Map<string,ts.Expression>(),names=new Set(['conversationVisible','nativeMainVisible','nativeRailShown','groupArtifactShown','artifactRailShown','railShown'])
  const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&names.has(node.name.text)&&node.initializer){assert.equal(initializers.has(node.name.text),false,'展示守卫必须唯一');initializers.set(node.name.text,node.initializer)}ts.forEachChild(node,visit)}
  visit(source);for(const name of names)assert.ok(initializers.has(name),name)
  const hidden=track.match(/hidden=\{([^}]+)\}/)?.[1];assert.ok(hidden)
- type State=Pick<WorkbenchNavigationState,'messageMode'>&{view:WorkbenchView;rightbar:{shown:boolean}}
- const presentation=new Function('state','nativePanelVisible','builderVisible',`const conversationVisible=${initializers.get('conversationVisible')!.getText(source)};const nativeMainVisible=${initializers.get('nativeMainVisible')!.getText(source)};const railShown=${initializers.get('railShown')!.getText(source)};return {nativeMainVisible,railShown,hidden:${hidden}}`) as (state:State,nativePanelVisible:boolean,builderVisible:boolean)=>{nativeMainVisible:boolean;railShown:boolean;hidden:boolean}
+ type State=Pick<WorkbenchNavigationState,'messageMode'>&{view:WorkbenchView;rightbar:{shown:boolean};groupTarget?:{groupId:string}}
+ const presentation=new Function('state','nativePanelVisible','builderVisible','artifactOpen','groupArtifactSeat',`const conversationVisible=${initializers.get('conversationVisible')!.getText(source)};const nativeMainVisible=${initializers.get('nativeMainVisible')!.getText(source)};const nativeRailShown=${initializers.get('nativeRailShown')!.getText(source)};const groupArtifactShown=${initializers.get('groupArtifactShown')!.getText(source)};const artifactRailShown=${initializers.get('artifactRailShown')!.getText(source)};const railShown=${initializers.get('railShown')!.getText(source)};return {nativeMainVisible,railShown,hidden:${hidden}}`) as (state:State,nativePanelVisible:boolean,builderVisible:boolean,artifactOpen?:boolean,groupArtifactSeat?:{groupId:string})=>{nativeMainVisible:boolean;railShown:boolean;hidden:boolean}
  for(const view of ['home','attention','tasks','plans','projects','team','spaces','market','resources','settings'] as const){
   const value=presentation({view,messageMode:'native',rightbar:{shown:true}},false,false)
   assert.equal(value.hidden,true,view+' 不暴露上一会话右栏');assert.equal(value.railShown,false,view+' 不展示上一会话停靠轨道')
@@ -281,5 +283,7 @@ test('原生折叠态仍由 DSH 面板负责，首页、群与目录隐藏整条
  assert.deepEqual(presentation({view:'messages',messageMode:'native',rightbar:{shown:false}},false,false),{nativeMainVisible:true,railShown:false,hidden:false},'原会话收起仍交由 DSH 的 seat 管理，不隐藏整条挂载轨道')
  assert.deepEqual(presentation({view:'messages',messageMode:'native',rightbar:{shown:true}},false,false),{nativeMainVisible:true,railShown:true,hidden:false},'原会话可正常展开工作概览')
  assert.equal(presentation({view:'messages',messageMode:'native',rightbar:{shown:true}},false,true).hidden,true,'业务构建视图不能暴露上一会话右栏')
+ assert.deepEqual(presentation({view:'projects',messageMode:'native',rightbar:{shown:false}},false,false,true),{nativeMainVisible:false,railShown:true,hidden:false},'项目成果可独立使用同一右栏，不显示上一原生会话')
+ assert.equal(presentation({view:'projects',messageMode:'native',rightbar:{shown:false}},false,true,true).hidden,true,'搭建预览仍隐藏成果轨道')
  assert.deepEqual(presentation({view:'messages',messageMode:'native',rightbar:{shown:true}},true,false),{nativeMainVisible:true,railShown:false,hidden:true},'原生设置等面板仍可显示主列，但隔离原会话右栏')
 })

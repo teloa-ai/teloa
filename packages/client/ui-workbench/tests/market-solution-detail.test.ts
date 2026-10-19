@@ -35,10 +35,11 @@ function order(...markers: string[]) {
 }
 
 test('产品页纵向顺序：回到市场 → hero → 问一问 → 按真实组成分类查看 → 资源与用法 → 来源与版本', () => {
+ assert.match(market,/<ContextDrawer title=\{localizedMarketItemCopy\(item,locale\)\.title\}/,'标题由当前详情抽屉承担')
+ assert.doesNotMatch(industryBranch,/<h1>/,'正文不重复抽屉标题')
  order(
   "t('market.solution.back')",
   "className={css.solutionHero}",
-  '<h1>{copy.title}</h1>',
   '<p>{copy.summary}</p>',
   "t('market.industry.loadWorkspace')",
   "t('market.solution.askFit')",
