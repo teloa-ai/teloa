@@ -11,7 +11,7 @@ import {IndustryLoadService,createIndustryInstanceKit,industryPredicates,initial
 let container:StartedPostgreSqlContainer,pool:Pool
 before(async()=>{
  process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
- container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeIndustryLoads(pool)
+ container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});pool.on('error',()=>{/* pool.end() 不等待空闲连接关闭；停容器时的 57P01 只属于收尾，与生产连接池一致忽略。 */});await initializeIndustryLoads(pool)
  await pool.query(`
   create table if not exists teloa_kit_probe_instances(
    id uuid primary key,owner_id text not null,load_id uuid not null references teloa_industry_loads(id),item_instance_id uuid not null,item_local_id text not null,
