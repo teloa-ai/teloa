@@ -16,6 +16,7 @@ declare module '*native-auto-review-fixture.mjs' {
  type OfficialModules={
   'dsh-skill':typeof import('@deepseek-ai/dsh-skill')
   'dsh-user-approval':typeof import('@deepseek-ai/dsh-user-approval')
+  'dsh-host-webserver':{WebServer:new(ctx:Context,config:{host:string;port:number})=>Service}
   'dsh-sandbox-policy':typeof import('@deepseek-ai/dsh-sandbox-policy')
   'dsh-fs-sandbox':{default:new(ctx:Context,config:import('@deepseek-ai/dsh-fs-local').Config)=>Context['fs']}
   'dsh-subprocess-local':{default:new(ctx:Context)=>Context['subprocess']}
