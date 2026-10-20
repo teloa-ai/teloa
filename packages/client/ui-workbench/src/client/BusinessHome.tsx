@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ArrowUpRight, Bell, Plus, Users } from 'lucide-react';
+import { Globe2, Plus, Store, Users } from 'lucide-react';
 import type { AttentionItem } from './attention-item.js';
 import { useRef, useState, type ReactNode } from 'react';
 import type { BusinessScopeLabel } from './business-directory.js';
@@ -57,16 +57,21 @@ function StaffRow({ staff }: { staff: readonly PreviewRole[] }) {
 }
 
 /** 范围标签只在模板来源称呼唯一时给出这一位；否则回落通用名词，避免猜测。 */
-function SpaceCard({ card, open, openStaff, connect, goComposition }: { card: BusinessHomeCard } & Pick<BusinessHomeProps, 'open' | 'openStaff' | 'connect' | 'goComposition'>) {
+/** 1.0 业务卡：首字瓷砖按卡片顺序取三种身份色，通用工作固定中性色并带「默认」徽标。 */
+function SpaceCard({ card, tone, open, openStaff, connect, goComposition }: { card: BusinessHomeCard; tone: number } & Pick<BusinessHomeProps, 'open' | 'openStaff' | 'connect' | 'goComposition'>) {
     const { t, number, locale } = useI18n();
     const noun = card.sourceNoun ?? t('business.source.noun');
     // 一个东西都没有的业务不摆空摘要；摘要本身在处境句这一块下面，因为按钮不能套按钮。
     const summary = card.composition.length ? businessHomeSummaryParts(card.composition, card.scope, t, number) : [];
     return <article className={css.spaceCard}>
         <button type="button" className={css.spaceOpen} onClick={() => open(card.scope)}>
-            <span className={css.spaceName}>{card.title}<ArrowUpRight size={16} /></span>
-            <span className={css.spaceSituation}>{card.scope==='general'?businessWorkspaceText(locale,card.staff.length?'generalStaff':'generalNoStaff').replace('{count}',number(card.staff.length)):t(card.situationKey, { sources: number(card.sources), staff: number(card.staff.length), noun })}</span>
+            <span className={clsx(css.spaceTile, card.scope !== 'general' && css['tile' + tone])} aria-hidden="true">{Array.from(card.title.trim())[0] ?? ''}</span>
+            <span className={css.spaceText}>
+                <span className={css.spaceName}>{card.title}</span>
+                <span className={css.spaceSituation}>{card.scope==='general'?businessWorkspaceText(locale,card.staff.length?'generalStaff':'generalNoStaff').replace('{count}',number(card.staff.length)):t(card.situationKey, { sources: number(card.sources), staff: number(card.staff.length), noun })}</span>
+            </span>
             <span className={css.spaceWork}>{card.working ? t('business.home.working', { count: number(card.working) }) : t('business.home.quiet')}</span>
+            {card.scope === 'general' && <span className={css.defaultBadge} title={businessWorkspaceText(locale, 'defaultBusinessHint')}>{businessWorkspaceText(locale, 'defaultBusiness')}</span>}
         </button>
         {summary.length > 0 && <div className={css.spaceComposition}>
             {summary.map((part, index) => part.go
@@ -75,8 +80,8 @@ function SpaceCard({ card, open, openStaff, connect, goComposition }: { card: Bu
         </div>}
         <div className={css.spaceFoot}>
             <StaffRow staff={card.staff} />
+            {card.attention > 0 && <span className={css.needPill}>{t('business.home.waiting', { count: number(card.attention) })}</span>}
             <span className={css.grow} />
-            {card.attention > 0 && <span className={css.needPill}><Bell size={12} />{t('business.home.waiting', { count: number(card.attention) })}</span>}
             <ToolbarIconButton label={`${t('business.home.staff')} · ${card.title}`} icon={Users} onClick={() => openStaff(card.scope)}/>
             {card.scope!=='general'&&<ToolbarIconButton label={`${t('business.home.connect', { noun })} · ${card.title}`} icon={Plus} onClick={() => connect(card.scope)}/>}
         </div>
@@ -88,7 +93,7 @@ function SpaceCard({ card, open, openStaff, connect, goComposition }: { card: Bu
  * 三个数都来自 `business-home-presentation.ts` 的纯函数，本组件只负责排版与接线。
  */
 export function BusinessHome({ labels, directory, roles, dataSources, attention, tasks, loads, plans, sourceObservations, open, openStaff, connect, addBusiness, creationReady=true, createEntry, builderDirectory, market, goComposition }: BusinessHomeProps) {
-    const { t, locale } = useI18n();
+    const { t, locale, number } = useI18n();
     const names = businessScopeNames(labels, {general:t('business.scope.general'),SOC:t('business.scope.soc'),AppSec:t('business.scope.appsec')});
     const cards = businessHomeCards(labels.map(label=>({...label,title:names[label.scope]??label.title})), { roles, dataSources, attention, tasks, locale, ...(loads ? { loads } : {}), ...(plans ? { plans } : {}), ...(sourceObservations ? { sourceObservations } : {}) });
     const [createOpen, setCreateOpen] = useState(false);
@@ -99,9 +104,10 @@ export function BusinessHome({ labels, directory, roles, dataSources, attention,
             <header className={css.pageHeader}>
                 <div>
                     <h1>{t('business.home.title')}</h1>
+                    {directory.status === 'ready' && cards.length > 0 && <p className={css.pageCount}>{businessWorkspaceText(locale, 'businessCount').replace('{count}', number(cards.length))}</p>}
                 </div>
                 {createEntry===undefined
-                  ? <div className={css.entryActions}><button type="button" disabled={!creationReady} onClick={addBusiness}>{t(builderDirectory===undefined?'business.home.add':'business.builder.new')}</button>{market&&<button type="button" onClick={market}>{t('business.builder.market')}</button>}</div>
+                  ? <div className={css.entryActions}>{market&&<button type="button" onClick={market}><Store size={14} aria-hidden />{t('business.builder.market')}</button>}<button type="button" className={css.primaryAction} disabled={!creationReady} onClick={addBusiness}><Plus size={15} aria-hidden />{t(builderDirectory===undefined?'business.home.add':'business.builder.new')}</button></div>
                   : <details ref={createControlRef} className={clsx(css.createControl, createOpen && css.createOpen)} open={createOpen} onToggle={event => setCreateOpen(event.currentTarget.open)}><summary aria-controls="business-create-entry">{t('business.home.add')}</summary><div id="business-create-entry" className={css.create}>{createEntry}</div></details>}
             </header>
             {!creationReady&&<p role="status">{t('business.daily.readyWaiting')}</p>}
@@ -112,11 +118,12 @@ export function BusinessHome({ labels, directory, roles, dataSources, attention,
                     {directory.error && <p>{directory.error}</p>}
                     <button type="button" onClick={directory.retry}>{t('common.retry')}</button>
                 </div>}
-                {directory.status === 'ready' && cards.map(card => <SpaceCard key={card.scope} card={card} open={open} openStaff={openStaff} connect={connect} {...(goComposition ? { goComposition } : {})} />)}
+                {directory.status === 'ready' && cards.map((card, index) => <SpaceCard key={card.scope} card={card} tone={(cards.slice(0, index).filter(row => row.scope !== 'general').length % 3) + 1} open={open} openStaff={openStaff} connect={connect} {...(goComposition ? { goComposition } : {})} />)}
                 {directory.status === 'ready' && !cards.length && <div className={css.empty}>
+                    <span className={css.emptyIcon} aria-hidden="true"><Globe2 size={18} /></span>
                     <h2>{t('business.home.empty.title')}</h2>
                     <p>{t(builderDirectory===undefined?'business.home.empty.description':'business.builder.newNote')}</p>
-                    {builderDirectory===undefined&&<button type="button" disabled={!creationReady} onClick={addBusiness}>{t('business.home.add')}</button>}
+                    {builderDirectory===undefined&&<button type="button" className={css.primaryAction} disabled={!creationReady} onClick={addBusiness}>{t('business.home.add')}</button>}
                 </div>}
             </div>
             {builderDirectory}

@@ -15,8 +15,8 @@ import css from './TwinProfile.module.css'
 
 const TWIN_TABS=['draft','samples','habits','boundary'] as const
 type TwinTab=typeof TWIN_TABS[number]
-// 页签标题：「判断力样本」复用既有 team.detail.tab.judgment；「Auto Dream · 习惯观察」读 habitLog.title。不再新开同义词条。
-const TAB_TITLES={draft:'team.twin.tab.draft',samples:'team.detail.tab.judgment',habits:'habitLog.title',boundary:'team.twin.tab.boundary'} as const
+// 页签标题：「判断力样本」复用既有 team.detail.tab.judgment；1.0 页签只写「习惯观察」，面板内仍由 habitLog 词条说明 Auto Dream 来源。
+const TAB_TITLES={draft:'team.twin.tab.draft',samples:'team.detail.tab.judgment',habits:'team.twin.tab.habits',boundary:'team.twin.tab.boundary'} as const
 const SHORT_STAGE:Partial<Record<RoleDelegationMessageKey,RoleDelegationMessageKey>>={
  'roleDelegation.status.draft':'roleDelegation.overview.stageDraft','roleDelegation.status.active':'roleDelegation.overview.stageActive',
  'roleDelegation.status.awaitingConsent':'roleDelegation.overview.stagePending','roleDelegation.status.paused':'roleDelegation.overview.stagePaused',
@@ -24,7 +24,7 @@ const SHORT_STAGE:Partial<Record<RoleDelegationMessageKey,RoleDelegationMessageK
 }
 
 /** 分身沿用代拟、样本、习惯与授权路径；切页保留正文和草稿，联系动作复用平台图标。 */
-export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,phone,talkDisabledReason,conversations,samples,habits,delegation,executionStatus,assign}:{
+export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,phone,talkDisabledReason,conversations,samples,sampleCount,habits,delegation,executionStatus,assign}:{
   profileName:string
   profileInitials?:string
   role:PreviewRole
@@ -36,6 +36,8 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
   talkDisabledReason?:string
   conversations:ReactNode
   samples:ReactNode
+  /** 已读取的判断力样本条数；未读完时不传，页签不显示计数。 */
+  sampleCount?:number
   /** 由 RoleDetail 传入的 <RoleDailyLogPanel kind='habit-digest' …/>；不传时该页签不渲染内容且按钮 disabled。 */
   habits?:ReactNode
   /** 可信委托服务的现有授权管理节点；不改变代拟、样本与习惯观察路径。 */
@@ -50,6 +52,8 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
   const tabId=useId()
   const tabButtons=useRef<Partial<Record<TwinTab,HTMLButtonElement|null>>>({})
   const twinName=twinDisplayName(profileName,t)
+  // 页签计数只取真实条目：代拟稿目前只有一份，样本数由调用方在读取完成后传入；习惯观察没有可汇总的条数，不显示。
+  const tabCount:Partial<Record<TwinTab,number>>={draft:role.draft?1:0,...(sampleCount!==undefined?{samples:sampleCount}:{})}
   // habits 未传时该页签按钮 disabled：键盘环绕要跳过它，否则会「选中」一个点不了的页签。
   const tabEnabled=(item:TwinTab)=>!(item==='habits'&&!habits)
   const step=(from:number,delta:number):TwinTab=>{
@@ -83,12 +87,12 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
           <p>{t('team.twin.subtitle',{name:profileName})}</p>
         </div>
         <ToolbarIconButton label={t('team.profile.action.chat')} icon={MessageCircle} disabled={!talk} aria-describedby={talkDisabledReason?`${tabId}-talk-note`:undefined} onClick={()=>{if(!talk)return;setChatError('');void talk().catch(error=>setChatError(localizeWorkError(locale,error)))}}/>
-        {phone&&<ToolbarIconButton label={employeeCopy(locale,'voice')} icon={Phone} onClick={()=>{setChatError('');void phone().catch(error=>setChatError(localizeWorkError(locale,error)))}}/>}
+        {phone&&<ToolbarIconButton label={employeeCopy(locale,'call')} icon={Phone} onClick={()=>{setChatError('');void phone().catch(error=>setChatError(localizeWorkError(locale,error)))}}/>}
       </div>
       {chatError&&<p role="alert" className={css.note}>{chatError}</p>}
       {talkDisabledReason&&<p id={`${tabId}-talk-note`} className={css.note}>{talkDisabledReason}</p>}
       <nav className={css.tabs} role="tablist" aria-label={t('team.twin.tabsAria')}>
-        {TWIN_TABS.map(item=><button key={item} ref={node=>{tabButtons.current[item]=node}} id={`${tabId}-tab-${item}`} type="button" role="tab" aria-selected={tab===item} aria-controls={`${tabId}-panel-${item}`} tabIndex={tab===item?0:-1} disabled={!tabEnabled(item)} onKeyDown={event=>moveTab(event,item)} onClick={()=>setTab(item)}>{t(TAB_TITLES[item])}</button>)}
+        {TWIN_TABS.map(item=><button key={item} ref={node=>{tabButtons.current[item]=node}} id={`${tabId}-tab-${item}`} type="button" role="tab" aria-selected={tab===item} aria-controls={`${tabId}-panel-${item}`} tabIndex={tab===item?0:-1} disabled={!tabEnabled(item)} data-count={tabCount[item]?tabCount[item]:undefined} onKeyDown={event=>moveTab(event,item)} onClick={()=>setTab(item)}>{t(TAB_TITLES[item])}</button>)}
       </nav>
     </header>
 
@@ -98,7 +102,7 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
           <h3>{t('team.twin.draft.title')}</h3>
           <span className={css.draftBadge}>{t('team.twin.draft.badge')}</span>
         </header>
-          <p>{role.draft?.body??t('team.twin.draft.empty')}</p>
+          <p className={role.draft?css.draftBody:undefined}>{role.draft?.body??t('team.twin.draft.empty')}</p>
           <details className={css.draftEditor}>
             <summary>{t('team.twin.draft.edit')}</summary>
             <TwinDraftEditor role={role} input={draft} update={update} save={save}/>

@@ -2,14 +2,14 @@ import { WorkError } from './work-error.ts'
 import {readModelReference,sameModelRoute,type ModelReference,type TaskRunModelPolicy} from './model-policy.ts'
 export type RoleResponsibility={triggers:string[];autonomousActions:string[];confirmationPoints:string[];escalationRules:string[];deliveryChecks:string[]}
 export type RoleRuntimeConfig={agentPresetId?:string;model?:ModelReference;fallbackModel?:ModelReference}
-import {ROLE_AVATAR_KEYS} from './role-avatars.mjs'
-export {ROLE_AVATAR_KEYS} from './role-avatars.mjs'
-export type RoleAvatarKey = typeof ROLE_AVATAR_KEYS[number]
+import {isRoleAvatarKey,type RoleAvatarKey} from './role-avatars.mjs'
+export {ROLE_AVATAR_KEYS,ROLE_AVATAR_SHAPES,ROLE_AVATAR_COLORS,ROLE_AVATAR_PRESETS,isRoleAvatarKey,isRoleAvatarCombination,roleAvatarParts,roleAvatarKeyOf} from './role-avatars.mjs'
+export type {RoleAvatarKey,RoleAvatarPresetKey,RoleAvatarShape,RoleAvatarColor} from './role-avatars.mjs'
 export type RoleProfile={name:string;avatarKey?:RoleAvatarKey}
 /** 身份展示字段独立于岗位执行定义，不授予或撤销工作能力。 */
 export function readRoleProfile(value:unknown):RoleProfile{
  const row=roleInput(value,['name','avatarKey'])
- if(typeof row.name!=='string'||!row.name.trim()||row.name.length>80||row.avatarKey!==undefined&&!ROLE_AVATAR_KEYS.includes(row.avatarKey as RoleAvatarKey))throw new WorkError('teloa/invalid-input','员工姓名或头像不合法。')
+ if(typeof row.name!=='string'||!row.name.trim()||row.name.length>80||row.avatarKey!==undefined&&!isRoleAvatarKey(row.avatarKey))throw new WorkError('teloa/invalid-input','员工姓名或头像不合法。')
  return {name:row.name.trim(),...(row.avatarKey===undefined?{}:{avatarKey:row.avatarKey as RoleAvatarKey})}
 }
 export type RoleDefinition={avatarKey?:RoleAvatarKey;name:string;kind:'employee'|'twin';scopes:string[];duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility?:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig}
@@ -43,7 +43,7 @@ export function roleDefinition(value:unknown):RoleDefinition{
   const items=v.map(item=>text(item,128));if(ids&&items.some(item=>!/^[-a-zA-Z0-9_]+$/.test(item)))return fail()
   return [...new Set(items)]
  }
- if(row.avatarKey!==undefined&&!ROLE_AVATAR_KEYS.includes(row.avatarKey as RoleAvatarKey))return fail()
+ if(row.avatarKey!==undefined&&!isRoleAvatarKey(row.avatarKey))return fail()
  if(row.kind!=='employee'&&row.kind!=='twin')return fail()
  let responsibility:RoleResponsibility|undefined
  if(row.responsibility!==undefined){
@@ -65,4 +65,17 @@ export function roleWriteDefinition(value:unknown):WritableRoleDefinition{
  const definition=roleDefinition(value)
  if(!definition.responsibility)throw new WorkError('teloa/invalid-input','新建或修改员工时需要提交完整结构化职责。')
  return definition as WritableRoleDefinition
+}
+
+export type RoleTemplateDefinition=Pick<RoleDefinition,'name'|'kind'|'avatarKey'|'duty'|'dataScope'|'executionScope'|'responsibility'|'runtimeConfig'>
+/** 市场预览和宿主读取同一模板合同；安装范围、能力和模型账户由本人实例绑定。 */
+export function readRoleTemplateDefinition(value:unknown):{definition:RoleTemplateDefinition;ignoredModelSelection:boolean}{
+ const row=roleInput(value,['format','name','kind','duty','dataScope','executionScope','responsibility','runtimeConfig','avatarKey'])
+ if(row.format!=='teloa.role/v1')throw new WorkError('teloa/invalid-input','员工定义格式不正确。')
+ const rawRuntime=row.runtimeConfig
+ const ignoredModelSelection=!!rawRuntime&&typeof rawRuntime==='object'&&!Array.isArray(rawRuntime)&&('model' in rawRuntime||'fallbackModel' in rawRuntime)
+ const runtimeConfig=ignoredModelSelection?(()=>{const {model:_model,fallbackModel:_fallback,...rest}=rawRuntime as Record<string,unknown>;return Object.keys(rest).length?rest:undefined})():rawRuntime
+ const full=roleDefinition({name:row.name,kind:row.kind,scopes:['placeholder'],duty:row.duty,dataScope:row.dataScope,executionScope:row.executionScope,skills:[],knowledge:[],...(row.avatarKey===undefined?{}:{avatarKey:row.avatarKey}),responsibility:row.responsibility===undefined?{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}:row.responsibility,...(runtimeConfig===undefined?{}:{runtimeConfig})})
+ const {name,kind,duty,dataScope,executionScope,avatarKey,responsibility}=full
+ return {definition:{name,kind,duty,dataScope,executionScope,...(avatarKey===undefined?{}:{avatarKey}),...(responsibility?{responsibility}:{}),...(full.runtimeConfig?{runtimeConfig:full.runtimeConfig}:{})},ignoredModelSelection}
 }

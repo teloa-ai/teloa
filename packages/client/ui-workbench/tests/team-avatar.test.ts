@@ -56,10 +56,10 @@ test('StaffAvatar.module.css 六档身份色与公开设计黄金逐字一致', 
   assert.doesNotMatch(source, /--staff-(bg|ink|glyph):var\(--teloa-/)
 })
 
-test('个人主页头像：数字员工用持久小松鼠形象，分身仍用既有 Fingerprint 角标的 .avatar', async () => {
+test('个人主页头像：数字员工用持久头像形象，分身仍用既有 Fingerprint 角标的 .avatar', async () => {
   const source = await readFile(new URL('TeamPage.tsx', clientRoot), 'utf8')
   const body = source.slice(source.indexOf('function RoleDetail'), source.indexOf('function Dialog'))
-  assert.ok(body.includes('EmployeeAvatar avatarKey={role.avatarKey}'), 'AI 员工应使用已保存的小松鼠形象')
+  assert.ok(body.includes('EmployeeAvatar avatarKey={role.avatarKey}'), 'AI 员工应使用已保存的头像形象')
   // 分身整页搬到 TwinProfile.tsx（原型 原型.jsx:459 的 Avatar human）；头像统一由 TwinAvatar 渲染（圆形 human 底色 + Fingerprint 角标）。
   const twin = await readFile(new URL('TwinProfile.tsx', clientRoot), 'utf8')
   const twinAvatar = await readFile(new URL('TwinAvatar.tsx', clientRoot), 'utf8')

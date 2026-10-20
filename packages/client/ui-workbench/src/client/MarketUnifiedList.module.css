@@ -51,7 +51,8 @@
 .purposeBar>.filterRow{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .purposeBar .filterLabel{display:none}
 .purposeBar .chips{gap:7px}
-.purposeBar .chips button{border:0;background:var(--teloa-subtle);min-height:32px;padding:6px 13px}
+.purposeBar .chips button{border:0;background:transparent;min-height:30px;padding:4px 10px;color:var(--teloa-text)}
+.purposeBar .chips button:hover:not(:disabled){background:var(--teloa-subtle)}
 .purposeBar .chips button[aria-pressed=true]{background:var(--teloa-text);color:var(--teloa-surface)}
 .purposeBar .chips button span{display:none}
 .purposeBar .moreFilters{grid-column:auto}
@@ -62,19 +63,24 @@
 .purposeBar .filterPanel .filterLabel{display:block;line-height:1.6}
 .purposeBar .filterPanel .chips{gap:6px}
 .grid.cards{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.cards .gridCard{position:relative;flex-direction:column;align-items:flex-start;gap:12px;padding:16px;background:var(--teloa-subtle);border:1px solid transparent;border-radius:var(--teloa-design-r3)}
-.cards .gridCard:hover{border-color:var(--teloa-border);background:var(--teloa-hover)}
-.cards .rowMain{width:100%;gap:6px}
-.cards .rowTop{align-items:flex-start;flex-wrap:wrap;gap:5px 8px}
-.cards .gridTitle{font-size:var(--teloa-font-body);line-height:1.5;flex-basis:100%}
-.cards .gridPitch{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.65;min-height:3.3em}
-.cards .rowFacts{font-size:var(--teloa-font-caption);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.cardAction{align-self:flex-end;display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:var(--teloa-font-caption);color:var(--teloa-accent);white-space:nowrap}
+.cards .gridCard{position:relative;flex-direction:column;align-items:stretch;gap:10px;padding:14px 16px 12px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3)}
+.cards .gridCard:hover{background:var(--teloa-subtle)}
+.cardHead{display:flex;align-items:center;gap:10px;min-width:0}
+.cardHead>:first-child{flex:none}
+.cardIdentity{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.cards .rowTop{align-items:center;flex-wrap:wrap;gap:4px 6px}
+.cards .gridTitle{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:1.4}
+.cardCredit{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cards .gridPitch{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6;min-height:3.2em}
+.cardFoot{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0}
+.cardAction{display:inline-flex;align-items:center;min-height:26px;padding:2px 12px;border:1px solid var(--teloa-border);border-radius:999px;font-size:var(--teloa-font-caption);color:var(--teloa-text);background:var(--teloa-surface);white-space:nowrap}
+.cardAction.cardAdded{border-color:transparent;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .resultGroup{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .cardSections{display:grid;gap:28px}
 .cardSections section>header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
 .cardSections h2{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
 .cardSections header>button{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.cardSections header>button>span{font-variant-numeric:tabular-nums}
 .templateDetails{margin-top:16px}
 .detailTabs{display:flex;flex-wrap:wrap;gap:6px 18px;border-bottom:1px solid var(--teloa-border)}
 .detailTabs.detailTabs button{font:inherit;font-size:var(--teloa-font-control);padding:8px 0;border:0;border-radius:0;border-bottom:2px solid transparent;background:transparent;color:var(--teloa-muted);cursor:pointer}
@@ -117,9 +123,24 @@
 .purposeNav .filterPanel .chips button{width:auto;min-height:28px;padding:3px 10px;border:1px solid var(--teloa-border);background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-caption)}
 .purposeNav .filterPanel .chips button[aria-pressed=true]{border-color:var(--teloa-text);background:var(--teloa-text);color:var(--teloa-surface)}
 .directoryBody .grid.cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
-.directoryBody .cards .gridCard{padding:18px 16px 12px;background:var(--teloa-surface);border-color:var(--teloa-border);border-radius:var(--teloa-design-r3)}
-.directoryBody .cards .gridCard:hover{background:var(--teloa-subtle)}
+.directoryBody .cards .gridCard{padding:14px 16px 12px}
 .directoryBody .cards .gridPitch{min-height:2.75em}
 @media(max-width:1180px){.directory{grid-template-columns:112px minmax(0,1fr);gap:20px}.directoryBody .grid.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:740px){.directory{display:block}.directoryNav{position:static;margin-bottom:16px}.purposeNav.purposeBar{flex-direction:row;flex-wrap:wrap;align-items:center}.purposeNav>.filterRow{flex-direction:row;flex:1}.purposeNav .chips{flex-direction:row;flex-wrap:wrap;gap:6px}.purposeNav .chips button{width:auto;min-height:32px;padding:6px 13px;background:var(--teloa-subtle);color:var(--teloa-text)}.purposeNav .chips button[aria-pressed=true]{background:var(--teloa-text);color:var(--teloa-surface)}.purposeNav>.moreFilters{align-self:flex-start;border:0;padding:0}.directoryBody .grid.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.directoryBody .grid.cards{grid-template-columns:1fr}}
+.cards .cardBundle{width:40px;height:40px}
+.cards .cardBundle>span:nth-child(1){width:17px;height:17px;left:5px;top:6px}
+.cards .cardBundle>span:nth-child(2){width:12px;height:12px;right:6px;top:9px}
+.cards .cardBundle>span:nth-child(3){width:25px;height:25px;left:11px;bottom:-9px}
+/* B8 读取骨架：沿用真实卡片 / 行的盒子，只把内容换成色块；不响应悬停，不显示指针。 */
+.skeletonLine{display:block;height:10px;border-radius:4px;background:var(--teloa-hover)}
+.skeletonArt{flex:none;width:44px;height:44px;border-radius:12px;background:var(--teloa-subtle);border:1px solid var(--teloa-border)}
+.skeletonPitch{display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:3.2em;font-size:var(--teloa-font-caption)}
+.skeletonPitch .skeletonLine,.rowMain .skeletonLine+.skeletonLine{background:var(--teloa-subtle)}
+.skeletonPill{display:block;width:52px;height:32px;border-radius:999px;background:var(--teloa-subtle)}
+.cardIdentity .skeletonLine+.skeletonLine{margin-top:4px;height:8px}
+.grid .skeletonCard,.rows .skeletonRow{cursor:default}
+.cards .skeletonCard:hover{background:var(--teloa-surface)}
+.rows .skeletonRow:hover{background:transparent}
+.grid .skeletonCard:hover{border-color:var(--teloa-border)}
+.cardSections header .skeletonLine{height:12px}

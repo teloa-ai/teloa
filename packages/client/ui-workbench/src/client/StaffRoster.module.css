@@ -9,14 +9,16 @@
 .rosterCount small{line-height:1.5;overflow-wrap:anywhere}
 .rosterStack{display:flex;flex-direction:column;gap:14px;min-width:0}
 .sortControl{display:flex;align-items:center;gap:8px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
-.tableViewport{overflow-x:auto;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface)}
+.tableViewport{overflow-x:auto}
 .rosterTable{width:100%;border-collapse:collapse;text-align:left;table-layout:fixed}
-.rosterTable th{padding:12px 16px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.rosterTable th{padding:10px 12px;color:var(--teloa-muted);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-regular)}
 .rosterTable th:nth-child(1){width:31%}.rosterTable th:nth-child(2){width:22%}.rosterTable th:nth-child(4){width:82px}
-.rosterTable td{padding:16px;border-top:1px solid var(--teloa-border);vertical-align:middle;overflow-wrap:anywhere}
-.rosterTable tbody tr:hover{background:var(--teloa-subtle)}
+.rosterTable td{padding:12px;border-top:1px solid var(--teloa-border);vertical-align:middle;overflow-wrap:anywhere}
+.rosterTable tbody tr:hover{background:var(--teloa-hover)}
 .rosterTable .personMain{min-width:0}.rosterTable .cardIdentity{width:100%}.rosterTable .cardIdentity>svg{flex:none;color:var(--teloa-muted)}
-.contacts{display:flex;gap:4px}.contacts button{display:grid!important;place-items:center;padding:0!important;width:34px;height:34px;border:0!important;background:transparent!important;color:var(--teloa-muted);cursor:pointer}.contacts button:hover{background:var(--teloa-hover)!important;color:var(--teloa-text)}
+/* 1.0：联系动作悬停或聚焦时出现；触屏设备常显。 */
+.contacts{display:flex;justify-content:flex-end;gap:4px;opacity:0}.rosterTable tr:hover .contacts,.rosterTable tr:focus-within .contacts{opacity:1}@media(hover:none){.contacts{opacity:1}}
+.rosterTable th:nth-child(4){text-align:right}.contacts button{display:grid!important;place-items:center;padding:0!important;width:34px;height:34px;border:0!important;background:transparent!important;color:var(--teloa-muted);cursor:pointer}.contacts button:hover{background:var(--teloa-hover)!important;color:var(--teloa-text)}
 .workLink{display:block!important;max-width:100%;margin-top:6px;padding:0!important;border:0!important;background:transparent!important;text-align:left!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption)!important;cursor:pointer}.workLink:hover{text-decoration:underline}
 @media(max-width:900px){.rosterTable{min-width:660px}.rosterTable th,.rosterTable td{padding:12px}.sortControl{flex-wrap:wrap}}
 .cardGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;min-width:0}

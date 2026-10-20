@@ -31,6 +31,6 @@
 .actions>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .actions button{flex:none;min-height:36px;padding:7px 14px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;cursor:pointer}
 .actions button:hover{background:var(--teloa-hover)}
-.actions .primary{border-color:var(--teloa-accent);background:var(--teloa-accent);color:var(--teloa-on-accent)}
+.actions .primary{border-color:var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary)}
 .actions button:disabled{opacity:.45;cursor:default}
 @media(max-width:600px){.body{padding:20px 20px 0}.footer{padding:16px 20px 20px}}

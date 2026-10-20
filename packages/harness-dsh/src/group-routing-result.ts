@@ -5,6 +5,34 @@ import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import {readWorkBudgetExhaustedCode,type WorkBudgetExhaustion} from '@teloa/contract'
 import {observeTaskRun} from './task-run-observation.ts'
 import {readSessionEvents} from './session-events.ts'
+import {createHash} from 'node:crypto'
+
+/** 与正式尝试不同的原生请求身份；同一尝试恢复时只回读，不重复发问。 */
+export function groupRoutingEmptyRetryRequestId(requestId:string):string{
+ const hash=createHash('sha256').update('teloa/group-routing-empty-retry/v1\0'+requestId).digest('hex')
+ return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`
+}
+
+export function readGroupRoutingFailure(events:readonly SessionEvent[],requestId:string,turn:number):'credentials'|'model'|'request'|undefined{
+ const observed=observeTaskRun(events,requestId)
+ if(observed.state!=='ended'||observed.turn!==turn)return
+ const end=events[observed.endSeq]
+ if(end?.type!=='turn/end')return
+ if(end.data.reason.kind==='error'){
+  const code=end.data.reason.error.code
+  return ['MISSING_CREDENTIAL','AUTHENTICATION_ERROR','PERMISSION_DENIED'].includes(code)?'credentials':['NO_ADAPTER','UNKNOWN_MODEL'].includes(code)?'model':'request'
+ }
+ if(end.data.reason.kind!=='completed')return 'request'
+}
+
+/** 仅重问已正常结束的空答；未知消耗、失败、串轮与仍在运行的请求均不自动重放。 */
+export function mayRetryEmptyGroupRouting(events:readonly SessionEvent[],requestId:string,turn:number):boolean{
+ const observed=observeTaskRun(events,requestId)
+ return observed.state==='ended'&&observed.turn===turn&&events[observed.endSeq]?.type==='turn/end'
+  &&(events[observed.endSeq] as Extract<SessionEvent,{type:'turn/end'}>).data.reason.kind==='completed'
+  &&!routingTurnMixed(events,observed.messageSeq,observed.endSeq,requestId)
+  &&readGroupRoutingResult(events,requestId,turn)===undefined
+}
 
 /**
  * 本轮里是否混进了别的请求。判据照搬 `task-tool-guard.ts:52-55`：从 `from` 往前找到本轮的
@@ -34,6 +62,8 @@ export function routingTurnMixed(events:readonly SessionEvent[],from:number,to:n
 export function readGroupRoutingResult(events:readonly SessionEvent[],nativeRequestId:string,turn:number):string|undefined{
  const observed=observeTaskRun(events,nativeRequestId)
  if(observed.state!=='ended'||observed.turn!==turn)return undefined
+ const terminal=events[observed.endSeq]
+ if(terminal?.type==='turn/end'&&terminal.data.reason.kind==='error')return undefined
  if(routingTurnMixed(events,observed.messageSeq,observed.endSeq,nativeRequestId))return undefined
  let result:string|undefined
  for(const event of events){

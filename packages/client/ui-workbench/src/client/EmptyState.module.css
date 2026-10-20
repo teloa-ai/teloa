@@ -1,0 +1,13 @@
+/* 1.0 空态（设计 30）：页面级卡片与卡内一行；颜色只取 --teloa-* 令牌。 */
+.block{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:8px;width:min(100%,480px);margin:0 auto;padding:32px;border:1px solid var(--teloa-border-card);border-radius:var(--teloa-design-r2,10px);background:var(--teloa-surface);color:var(--teloa-text);text-align:center}
+.icon{display:grid;place-items:center;width:40px;height:40px;border-radius:var(--teloa-design-r2,10px);background:var(--teloa-subtle);color:var(--teloa-muted)}
+.block .title{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+.block .description{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
+.block .actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:6px}
+.block .actions button{box-sizing:border-box;min-height:30px;padding:0 12px;border:1px solid var(--teloa-border-strong);border-radius:var(--teloa-design-r1,8px);background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);cursor:pointer}
+.block .actions button:hover{background:var(--teloa-hover)}
+.block .actions .primary{border-color:var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary)}
+.block .actions .primary:hover{background:var(--teloa-primary);filter:brightness(.94)}
+.block .actions button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.inline{display:flex;align-items:center;gap:10px;margin:0;padding:10px 12px;border-radius:var(--teloa-design-r1,8px);background:var(--teloa-bar-info);color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label)}
+.inline>svg{flex:none;color:var(--teloa-good)}

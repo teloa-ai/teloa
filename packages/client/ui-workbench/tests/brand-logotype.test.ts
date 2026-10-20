@@ -37,11 +37,11 @@ test('宽高比常量集中在 logotype.ts 并被 BrandLogo 使用',async()=>{
   assert.doesNotMatch(logo,/618\.3|146\.3/)
 })
 
-test('已选员工优先欢迎区复用原松鼠头像，品牌槽不复制原输入与工作区',async()=>{
+test('欢迎区主助手头像复用员工头像组件，品牌槽不复制原输入与工作区',async()=>{
   const [brand,welcome,styles]=await Promise.all([readFile(new URL('ConversationBrand.tsx',client),'utf8'),readFile(new URL('ConversationWelcome.tsx',client),'utf8'),readFile(new URL('ConversationWelcome.module.css',client),'utf8')])
   assert.match(brand,/<ConversationWelcome\/>/)
-  assert.match(welcome,/companion\/icon\.webp/)
-  assert.match(styles,/width:54px;height:54px/)
+  assert.match(welcome,/<EmployeeAvatar assistant/)
+  assert.match(styles,/width:48px;height:48px/,'1.0 欢迎区头像 48px')
   assert.doesNotMatch(brand+welcome,/textarea|workspace\.select|createSession/)
 })
 
@@ -52,15 +52,17 @@ test('关于页字标与欢迎区同帽高',async()=>{
 
 test('左栏品牌区左缘与导航项对齐并按新字标校正尺寸',async()=>{
   const styles=await readFile(new URL('WorkbenchFrame.module.css',client),'utf8')
-  // 个人版左栏顶部只剩品牌与「新建」，不再有空间名行：品牌块自己收着 16px 的底部留白，左缘仍是 10px。
-  assert.match(styles,/\.brand\{display:flex;align-items:center;gap:9px;padding:4px 10px 16px\}/)
+  // 1.0：品牌与「新建」「搜索」同处顶部一行，品牌块左缘 10px 与导航项文字对齐，留白交给行容器。
+  assert.match(styles,/\.brand\{display:flex;align-items:center;gap:9px;padding:0 0 0 10px\}/)
+  assert.match(styles,/\.navHeader\{display:flex;align-items:center;justify-content:space-between;[^}]*min-height:28px/)
   assert.match(styles,/\.brand img\{display:block;width:81px;height:16px;object-fit:contain\}/)
   assert.match(styles,/\.brandIdentity\{[^}]*gap:4px/)
   assert.match(styles,/\.brandStudio\{[^}]*font-size:var\(--teloa-font-caption\);line-height:1\.4/)
   // 版本名紧跟字标显示为小号灰字，不做胶囊：长名称（Enterprise）与短名称（Pro）都不抢字标。
-  const tier=styles.match(/\.brandTier\{[^}]*\}/)?.[0]??""
+  // 只取基础规则：窄屏抽屉另有 `.navigation .brandTier{display:none}` 收起版本名。
+  const tier=styles.match(/(?:^|\})\.brandTier\{[^}]*\}/m)?.[0]??""
   assert.match(tier,/padding:0;border:0;background:none/)
   assert.match(tier,/font-size:var\(--teloa-font-caption\);line-height:16px;font-weight:var\(--teloa-weight-regular\)/)
   assert.doesNotMatch(tier,/border-radius|border:1px/)
-  assert.match(styles,/\.navItem\{[^}]*padding:8px 10px/)
+  assert.match(styles,/\.navItem\{[^}]*min-height:34px;[^}]*padding:0 10px/)
 })

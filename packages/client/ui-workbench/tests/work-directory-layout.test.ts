@@ -147,7 +147,7 @@ test('窄目录不会横向溢出，列表行紧凑且次要操作按需显现',
   assert.match(directory,/\.rows \.more\{[^}]*opacity:0/)
   assert.match(directory,/\.row:hover \.more,.row:focus-within \.more\{opacity:1/)
   assert.match(shared,/\.row\{[^}]*min-width:0[^}]*border-radius:0/)
-  assert.match(directory,/\.directory \.row\{[^}]*padding:8px 7px!important/)
+  assert.match(directory,/\.directory \.row\{[^}]*padding:9px 8px!important/)
   assert.match(navigation,/\.navigation\{[^}]*min-height:0[^}]*overflow:hidden/)
   assert.match(navigation,/\.navScroll\{[^}]*flex:1 1 auto[^}]*min-height:0[^}]*overflow-y:auto/)
   assert.match(navigation,/\.navFooter\{[^}]*flex:none/)

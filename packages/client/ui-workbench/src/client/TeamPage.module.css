@@ -99,7 +99,6 @@
 .lookRow{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
 .lookOption{padding:5px;background:transparent;border:2px solid transparent;border-radius:12px;line-height:0;cursor:pointer}
 .lookOption:hover{border-color:var(--teloa-border)}
-.lookPicked{border-color:var(--teloa-focus)}
 .jobRow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}
 .jobCard{position:relative;display:flex;flex-direction:column;gap:6px;padding:14px 13px;text-align:left;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:9px;color:inherit;font:inherit;cursor:pointer}
 .jobCard strong{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
@@ -139,7 +138,7 @@
    StaffRoster.module.css 跨模块拿不到这个前缀，那边只能用 !important。
    圆角走 --teloa-design-r1/r2（prototype-theme.ts 生成，theme-presenter 运行时挂到 body），与原型 --maxent-preview-r* 对应。 */
 .rosterPage{display:flex;flex:1;min-height:0;overflow:auto}
-.rosterPane{box-sizing:border-box;display:flex;flex-direction:column;gap:14px;width:100%;max-width:1120px;margin:0 auto;padding:38px 42px}
+.rosterPane{box-sizing:border-box;display:flex;flex-direction:column;gap:14px;width:100%;max-width:none;margin:0;padding:26px 40px}
 .rosterPane:focus{outline:none}
 .rosterHead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;min-width:0}
 .rosterHeadMain{min-width:0}
@@ -196,9 +195,9 @@
 .teamPage .employeeDrawer>[data-teloa-pane=detail]>header{display:none}
 .employeeDrawer .identityRail{position:static;display:flex;flex-direction:column;align-items:stretch;padding:0;border:0;text-align:left;background:transparent;gap:8px;width:100%;box-sizing:border-box}
 .employeeDrawer .identityRail h2{margin:0;font-size:var(--teloa-font-dialog)}
-.identityHeading{display:flex;align-items:flex-start;gap:12px;min-width:0}
-.identityHeading>div{display:grid;gap:4px;min-width:0}
-.identityHeading p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+
+
+
 .employeeDrawer .identityRail>p{margin:0}
 .employeeDrawer .identityToday,.employeeDrawer .identityOwner{display:none}
 .employeeDrawer .identityActions{display:flex;flex-wrap:wrap;gap:8px}
@@ -210,8 +209,6 @@
 .rosterActions{display:flex;gap:8px;align-items:center;margin-left:auto;flex-shrink:0}
 .employeeWork>section{margin:0;padding-top:0;border-top:0}
 .employeeWork>section>header h3{font-size:var(--teloa-font-body)}
-.employeeScopes,.deviceNote{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
-.deviceNote{display:flex;align-items:center;gap:6px}
 .employeeWork{display:grid;gap:8px;margin-bottom:20px;min-width:0}
 .employeeWork h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
 .employeeWork button{display:flex;flex-direction:column;align-items:flex-start!important;text-align:left;min-width:0}
@@ -221,17 +218,23 @@
 .employeeDevices h4{display:flex;align-items:center;gap:7px;margin:16px 0 8px}
 .sourceModes{display:flex;gap:8px;flex-wrap:wrap}
 .sourceModes button[aria-pressed=true]{border-color:var(--teloa-focus);background:var(--teloa-hover)}
-.avatarGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;max-height:250px;overflow:auto;padding:4px}
-.avatarOption.avatarOption{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 4px;min-width:0;font-size:var(--teloa-font-caption)}
-.avatarOption small{max-width:100%;overflow-wrap:anywhere}
-
-.avatarOption.avatarOption{position:relative}.avatarOption.avatarOption[aria-checked=true]{border:2px solid var(--teloa-focus);background:var(--teloa-hover);padding:7px 3px}.avatarSelected{position:absolute;top:5px;right:5px;display:flex;align-items:center;justify-content:center;width:19px;height:19px;background:var(--teloa-text);color:var(--teloa-surface);border-radius:50%}
+/* 1.0 选择形象：大预览 + 名字居中，下面形状一行（12 等分）、色板一行，标签沿用表单字段样式；选中用焦点色描边。 */
+.avatarPicker{display:flex;flex-direction:column;gap:13px}
+.avatarPreview{display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0 6px}.avatarPreview strong{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);color:var(--teloa-text)}.avatarPreview small{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
+.avatarField{display:flex;flex-direction:column;gap:7px}
+.avatarShapes{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px}
+.avatarShape.avatarShape{display:flex;align-items:center;justify-content:center;aspect-ratio:1;min-width:0;min-height:0;padding:0;background:transparent;border:2px solid transparent;border-radius:10px;cursor:pointer}
+.avatarShape.avatarShape:hover{background:var(--teloa-hover)}.avatarShape.avatarShape[aria-checked=true]{border-color:var(--teloa-focus);background:var(--teloa-hover)}
+.avatarColors{display:flex;flex-wrap:wrap;gap:8px}
+.avatarSwatch.avatarSwatch{width:26px;height:26px;min-width:0;min-height:0;padding:0;border:0;border-radius:50%;cursor:pointer}
+.avatarSwatch.avatarSwatch[aria-checked=true]{box-shadow:0 0 0 2px var(--teloa-surface),0 0 0 4px var(--teloa-focus)}
+.avatarShape.avatarShape:focus-visible,.avatarSwatch.avatarSwatch:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 
 /* 详情沿用工作台令牌：一个身份、一个联系区，页签内查阅原工作和配置。 */
-.contactActions{display:flex;align-items:center;gap:4px;margin-top:10px;min-width:0}
-.contactActions button:disabled{cursor:default}
-.profileActions{display:flex;justify-content:flex-end;margin-top:4px}
-.profileActions button{font-size:var(--teloa-font-caption)}
+
+
+
+
 .profileMenu{position:relative}.profileMenu>summary{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:32px;height:32px;list-style:none;border-radius:7px;color:var(--teloa-muted);cursor:pointer}.profileMenu>summary::-webkit-details-marker{display:none}.profileMenu>summary:hover{background:var(--teloa-subtle);color:var(--teloa-text)}.profileMenu>summary:focus-visible{outline:2px solid var(--teloa-text);outline-offset:2px}.profileMenu>div{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:grid;min-width:190px;padding:6px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:10px;box-shadow:0 8px 24px #0001}.profileMenu>div>button{width:100%;padding:8px 10px;text-align:left;border:0;background:transparent;border-radius:6px;color:var(--teloa-text);font:inherit;cursor:pointer}.profileMenu>div>button:hover{background:var(--teloa-subtle)}
 .profilePanelBody{padding:24px;min-width:0}.profilePanelBody>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.profilePanelBody h3{font-size:var(--teloa-font-control);margin:0}.profilePanelBody p{font-size:var(--teloa-font-control);line-height:1.7}
 .homepageBody>[role=tabpanel]{padding-top:16px;min-width:0}
@@ -256,3 +259,30 @@
 .roleSteps:not(.roleStepsFour) strong{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5}
 
 .identityHeading>.profileActions{display:flex;align-items:center;flex:none;gap:2px;margin-top:0}.identityHeading>div:not(.profileActions){flex:1}
+
+/* 1.0 员工抽屉身份区：居中排布，动作只留「发消息」「通话」「⋯」。 */
+.identityHero{display:flex;flex-direction:column;align-items:center;width:100%;text-align:center}
+.identityHero>:first-child{width:72px;height:72px}
+.identityRail .identityHero h2{margin:12px 0 0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:28px}
+.identityChips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:6px}
+.identityChips .scopeNames{display:contents}
+.identityChips .scopeNames>button,.identityChips .scopeNames>span,.identityChips .identityStatusRow{display:inline-flex;min-height:0;min-width:0;align-items:center;gap:4px;padding:0 8px;border:0;border-radius:var(--teloa-design-round);background:var(--teloa-subtle);color:var(--teloa-secondary);font:inherit;font-size:var(--teloa-font-caption);line-height:20px}
+.identityChips .scopeNames>button{cursor:pointer}.identityChips .scopeNames>button:hover{color:var(--teloa-text)}
+.identityChips .identityStatusRow[data-identity-status=active]{background:var(--teloa-good-bg);color:var(--teloa-good)}
+.identityChips .identityStatusRow[data-identity-status=paused]{background:var(--teloa-warn-bg);color:var(--teloa-warn)}
+.identityRail .identityHero>p{max-width:320px;margin:10px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:20px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.identityActions{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px}
+.identityActions .primaryPill,.identityActions .outlinePill{display:inline-flex;align-items:center;gap:6px;height:34px;min-height:0;padding:0 18px;border-radius:var(--teloa-design-round);font:inherit;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);white-space:nowrap;cursor:pointer}
+.identityActions .primaryPill{border:0;background:var(--teloa-primary);color:var(--teloa-on-primary)}.identityActions .primaryPill:hover:not(:disabled){background:var(--teloa-primary);filter:brightness(.92)}
+.identityActions .outlinePill{padding:0 16px;border:1px solid var(--teloa-border-strong);background:var(--teloa-surface);color:var(--teloa-text)}
+.identityActions .outlinePill:hover:not(:disabled){background:var(--teloa-hover)}
+.identityActions .primaryPill:disabled,.identityActions .outlinePill:disabled{opacity:.5;cursor:default}
+.identityActions .profileMenu>summary{width:34px;height:34px;border:1px solid var(--teloa-border-strong);border-radius:50%;background:var(--teloa-surface);color:var(--teloa-secondary)}
+.identityActions .profileMenu>div{left:50%;right:auto;transform:translateX(-50%);min-width:220px;text-align:left}
+.profileMenu>div>button{display:flex;align-items:center;gap:9px}.identityActions .profileMenu>div>button{justify-content:flex-start;min-height:0;padding:7px 10px;text-align:left;font-size:var(--teloa-font-control);color:var(--teloa-secondary)}.identityActions .profileMenu>div>button:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)}
+.profileMenu>div>button>svg{flex:none;color:var(--teloa-muted)}
+.profileMenu>div>button:disabled{opacity:.5;cursor:default}
+.menuDivider{display:block;height:1px;margin:4px 6px;background:var(--teloa-border)}
+.identityHero>.muted,.identityHero .reasonNote{margin:8px 0 0}
+@media(max-width:740px){.identityActions .primaryPill,.identityActions .outlinePill,.identityActions .profileMenu>summary{height:44px}.identityActions .profileMenu>summary{width:44px}}
+.employeeDrawer .homepageBody>.tabs{gap:0}.employeeDrawer .homepageBody>.tabs button{flex:1;justify-content:center}

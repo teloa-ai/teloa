@@ -87,7 +87,9 @@ test('对话保持一级，任务自动化与需要你收进工作台；自动�
   assert.match(source,/actions\.navigate\(id\)/)
   assert.match(chrome,/className=\{clsx\(css\.navItem,active&&css\.active\)\}/)
   assert.match(chrome,/aria-current=\{active\?'page':undefined\} onClick=\{\(\)=>onSelect\(id\)\}/)
-  assert.match(chrome,/id==='attention'&&needCount>0/)
+  // 1.0：待处理数量只在侧栏「工作台」与首页卡片出现，页签不重复角标。
+  assert.match(chrome,/id==='home'&&needCount>0/)
+  assert.doesNotMatch(chrome,/id==='attention'&&needCount>0/)
   assert.match(chrome,/\['messages','navigation\.v2\.conversations',MessageSquare\]/)
   assert.match(chrome,/workbenchHubNavigation=\[\['home',[^\n]*\['attention','navigation\.attention'[^\n]*\['tasks','navigation\.tasks'[^\n]*\['plans','navigation\.plans'/)
   assert.match(chrome,/id==='home'&&isWorkbenchHubView\(view\)/)

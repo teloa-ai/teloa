@@ -15,3 +15,12 @@
 /* 轻详情正文可选统一内边距；已有自行排版的调用保持原样。 */
 .content.padded{padding:20px 24px}
 @media(max-width:600px){.content.padded{padding:20px}}
+
+/* 1.0 抽屉样板（设计 71i）：宽 420–480、头部 52px、标题 15/600、关闭 28px；默认几何不变，由轻量详情显式加 compact。 */
+.drawer.compact{width:min(480px,100vw)}
+.compact>.header{min-height:52px;padding:0 12px 0 20px;gap:12px}
+.compact>.header h2{font-size:15px;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.drawer.compact>.header>button{width:28px;min-width:28px;height:28px;min-height:28px}
+.drawer.compact>.header>button>svg{width:16px;height:16px}
+.compact>.content.padded{padding:16px 20px}
+@media(max-width:600px){.compact>.header{padding:0 8px 0 16px}.compact>.content.padded{padding:16px}}

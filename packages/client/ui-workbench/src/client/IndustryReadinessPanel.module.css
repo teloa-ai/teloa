@@ -14,7 +14,7 @@
 .meter::-webkit-progress-value{background:var(--teloa-accent);border-radius:2px}
 .meter::-moz-progress-bar{background:var(--teloa-accent)}
 .panel .primaryButton,.panel .secondaryButton{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 14px;border-radius:8px;font:inherit;font-size:var(--teloa-font-control);cursor:pointer;white-space:nowrap}
-.panel .primaryButton{justify-self:start;border:1px solid var(--teloa-accent);background:var(--teloa-accent);color:var(--teloa-on-accent)}
+.panel .primaryButton{justify-self:start;border:1px solid var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary)}
 .panel .primaryButton:hover:not(:disabled){filter:brightness(.95)}
 .panel .secondaryButton{border:1px solid var(--teloa-border);background:var(--teloa-surface);color:var(--teloa-text)}
 .panel .secondaryButton:hover:not(:disabled){background:var(--teloa-hover)}

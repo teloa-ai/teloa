@@ -21,7 +21,7 @@ test('业务空间提供项目子页；左栏平台级「项目」入口按 2026
 test('项目页读取真实详情和六类关系，不伪造项目主会话',async()=>{
  const source=await readFile(new URL('../src/client/ProjectWorkspace.tsx',import.meta.url),'utf8')
  assert.match(source,/api\.get\(selectedId\)/)
- assert.match(source,/projectLinkKinds\.map/)
+ assert.match(source,/projectLinkKinds\.filter\(kind=>kind!=='task'\)\.map\(relationSection\)/,'六类关系：任务在主栏，其余进右侧「关联」栏')
  assert.doesNotMatch(source,/mainConversation|task\.conversations/)
  assert.doesNotMatch(source,/业务对象/)
 })

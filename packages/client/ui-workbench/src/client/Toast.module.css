@@ -1,0 +1,15 @@
+/* Toast 回执（设计 30）：左下角距边 16px，新的在上；反色底取 --teloa-toast-* 令牌，深浅色各一套。
+   宿主本身不接收点击，只有条目可点，空白处不挡住下面的侧栏与目录。 */
+.host{position:fixed;left:16px;bottom:16px;z-index:var(--teloa-z-toast,80);display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:min(400px,calc(100vw - 32px));pointer-events:none}
+.host .toast{box-sizing:border-box;display:flex;align-items:center;gap:12px;max-width:100%;min-height:40px;padding:8px 8px 8px 14px;border-radius:var(--teloa-design-r2,10px);background:var(--teloa-toast-bg);color:var(--teloa-toast-fg);box-shadow:var(--teloa-toast-shadow);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label);pointer-events:auto;animation:toast-in .16s ease-out}
+.host .icon{flex:none;color:var(--teloa-toast-good)}
+.host .toast[data-tone=info] .icon{color:var(--teloa-toast-fg)}
+.host .toast[data-tone=warning] .icon{color:var(--teloa-toast-warn)}
+.host .toast[data-tone=error] .icon{color:var(--teloa-toast-danger)}
+.host .message{min-width:0;overflow-wrap:anywhere}
+.host .action{flex:none;min-height:26px;margin-left:4px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--teloa-toast-action);font:inherit;font-weight:var(--teloa-weight-medium);cursor:pointer}
+.host .close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-toast-fg);opacity:.7;cursor:pointer}
+.host .action:hover,.host .close:hover{background:color-mix(in srgb,var(--teloa-toast-fg) 14%,transparent);opacity:1}
+.host .action:focus-visible,.host .close:focus-visible{outline:2px solid var(--teloa-toast-fg);outline-offset:1px}
+@keyframes toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.host .toast{animation:none}}

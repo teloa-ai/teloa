@@ -2,7 +2,8 @@ import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Session} from '@deepseek-ai/dsh-session'
 import {defineTool,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,ROLE_AVATAR_KEYS,roleInput,roleDefinition,roleWriteDefinition,readRoleProfile,type DigitalRole,type RoleProfile,type RoleRuntimeConfig} from '@teloa/contract'
+import {WorkError,roleInput,roleDefinition,roleWriteDefinition,readRoleProfile,type DigitalRole,type RoleProfile,type RoleRuntimeConfig} from '@teloa/contract'
+import {roleAvatarDescription} from './role-avatar-description.ts'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {authorizeOrdinaryConversationMutation} from './conversation-mutation.ts'
 import {readConversationInstructionIdentity,type ConversationInstructionIdentity} from './conversation-instruction-identity.ts'
@@ -81,7 +82,7 @@ function fields(row:Record<string,unknown>){
 }
 
 const stringList={type:'array',items:{type:'string'},required:true} as const
-const avatar={type:'string',enum:ROLE_AVATAR_KEYS,description:'Teloa内置小松鼠头像键；不要使用URL或自定义凭据。'} as const
+const avatar={type:'string',description:roleAvatarDescription} as const
 const model={type:'object',additionalProperties:false,properties:{provider:{type:'string',required:true},model:{type:'string',required:true},reasoningEffort:{type:'string'}}} as const
 const runtime={type:'object',additionalProperties:false,properties:{agentPresetId:{type:'string'},model:{oneOf:[model,{type:'string',enum:['auto','default']}]},fallbackModel:model}} as const
 const profileSpec={type:'object',additionalProperties:false,properties:{name:{type:'string',required:true},avatarKey:avatar}} as const
@@ -108,7 +109,7 @@ export function registerEmployeeTools(ctx:Context,ports:EmployeeToolsPorts){
   {name:'teloa_employees_directory',description:'列出本人真实数字员工的身份、头像、职责、范围、状态和版本（排除个人分身）。创建或调整前读取；未知写入结果先核对此目录，不重复创建。能力和资料是声明，实际使用仍需原服务授权。',parameters:{}},
   {name:'teloa_employees_get',description:'按本人目录中的roleId读取完整员工详情和当前版本。修改时使用此处姓名头像作为expectedProfile，不猜身份或版本；员工原单聊由客户端已有入口打开。',parameters:{roleId:{type:'string',required:true}}},
   {name:'teloa_employees_create',description:'依本人当轮明确指令创建一位真实数字员工。完整填写职责、资料范围、执行边界及结构化职责；未选择的技能和资料用空数组，模型可省略或auto。只创建employee，不能创建分身，不安装技能、不写凭据、不授予外发权限。原生审核决定风险审批；成功回执返回真实员工id/version/name及来源会话。',parameters:fullDefinition},
-  {name:'teloa_employees_profile',description:'依本人当轮指令修改员工姓名和内置小松鼠头像。先读取员工详情，传当前expectedVersion及完整expectedProfile；新profile也需完整填写。此操作不改变岗位执行版本、职责或权限，并发资料变化会拒绝覆盖。',parameters:{...versionParameters,expectedProfile:{...profileSpec,required:true},profile:{...profileSpec,required:true}}},
+  {name:'teloa_employees_profile',description:'依本人当轮指令修改员工姓名和内置头像。先读取员工详情，传当前expectedVersion及完整expectedProfile；新profile也需完整填写。此操作不改变岗位执行版本、职责或权限，并发资料变化会拒绝覆盖。',parameters:{...versionParameters,expectedProfile:{...profileSpec,required:true},profile:{...profileSpec,required:true}}},
   {name:'teloa_employees_update',description:'依本人当轮明确指令保存员工完整职责及运行定义。先读取身份、版本和姓名头像基线；保留未要求修改的字段。扩大范围、变更能力/资料/模型前按原服务要求先暂停并等待关联工作收口，不能自动停任务。风险与权限提升由原生审核判断；成功后返回原员工与新版本，不另建员工。',parameters:{...versionParameters,expectedProfile:{...profileSpec,required:true},...fullDefinition}},
   {name:'teloa_employees_lifecycle',description:'依本人当轮明确指令暂停、恢复或退役原数字员工。先读取当前版本，说明真实原因；恢复按原权益重新核验，退役可产生待交接任务。不得代替用户主动停止关联运行，不处理个人分身。保留原生风险审核与原服务版本回执。',parameters:{...versionParameters,action:{type:'string',enum:['pause','resume','retire'],required:true},reason:{type:'string',required:true}}},
  ] as const

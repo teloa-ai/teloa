@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
 import {readdirSync} from 'node:fs'
-import {marketDerivativeMinimumTeloa,marketDerivativeChangeTypes,marketEntryUsesDerivativeFields} from '../src/market-catalog.ts'
+import {marketAvatarCombinationMinimumTeloa,marketDerivativeMinimumTeloa,marketDerivativeChangeTypes,marketEntryUsesDerivativeFields} from '../src/market-catalog.ts'
 import {isGithubRepositoryName,readMarketCatalogEntry,readMarketCatalogIndex,readMarketCatalogArtifact,marketCatalogTreeHash,marketCatalogCompatibility,skillFrontmatterName,marketEntryKinds,readSkillSecrets,skillSecretPathAllowed,skillSecretPathSafe,isForbiddenSecretHeader,marketAlternativesMinimumTeloa,catalogExtensionsLastUnsupportedTeloa,skillSecretLastUnsupportedTeloa,normalizedHeaderName,isForbiddenModelHeader,stdioArgEnvRefs,marketEntryNeedsV2,assertSecretGroupsConsistent,readMarketCatalogListSecretGroup,modelHeaderSegmentExceptions,isForbiddenConnectorHeader,type MarketCatalogSkillEntry} from '../src/market-catalog.ts'
 
 const solutionSample=():Record<string,any>=>({format:'teloa.market-catalog-entry/v1',id:'teloa.office',kind:'solution',delivery:'install',version:'1.0.0',upstream:null,
@@ -546,6 +546,18 @@ test('role 条目：批准的内置头像原样保留，旧条目不变，未知
  }
  assert.throws(()=>readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarUrl:'https://example.com/avatar.png'}}}),/岗位定义/)
  assert.throws(()=>readMarketCatalogEntry({...row,compatibility:{...row.compatibility,teloa:'>=0.2.0-alpha.7'}}),/兼容下界/)
+})
+
+test('role 条目：自由组合头像要求 Teloa 兼容下界 ≥ 0.2.4，旧版按范围过滤；等于预设的旧键仍按 0.2.0-alpha.8',()=>{
+ const row=roleSample()
+ row.role.definition.avatarKey='bot:ghost:amber'
+ for(const teloa of ['>=0.2.0-alpha.8','>=0.2.3','>=0.2.4-alpha.1'])assert.throws(()=>readMarketCatalogEntry({...row,compatibility:{...row.compatibility,teloa}}),/自由组合员工头像.*0\.2\.4/,teloa)
+ row.compatibility.teloa='>='+marketAvatarCombinationMinimumTeloa
+ const entry=readMarketCatalogEntry(row)
+ if(entry.kind!=='role')throw Error()
+ assert.equal(entry.role.definition.avatarKey,'bot:ghost:amber');assert.deepEqual(entry,row);assert.equal(marketEntryNeedsV2(entry),true)
+ assert.equal(readMarketCatalogEntry({...row,compatibility:{...row.compatibility,teloa:'>=0.2.0-alpha.8'},role:{...row.role,definition:{...row.role.definition,avatarKey:'researcher'}}}).kind,'role')
+ for(const avatarKey of ['bot:circle:ink','bot:star:teal'])assert.throws(()=>readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarKey}}}),/岗位定义/)
 })
 
 test('model 条目：cloud 要求 local/variants 为 null；non-commercial、http baseURL、未知 provider 一律拒绝',()=>{

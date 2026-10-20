@@ -129,12 +129,12 @@ const baseProps=(patch:Partial<Props> = {}):Props=>({
 const tabButton=(app:ReturnType<typeof mount>,name:string)=>app.find(el=>el.props.role==='tab'&&app.contentOf(el)===name)
 const tabPanelByLabelledby=(app:ReturnType<typeof mount>,suffix:string)=>app.find(el=>el.props.role==='tabpanel'&&typeof el.props['aria-labelledby']==='string'&&el.props['aria-labelledby'].endsWith(suffix))
 
-test('分身主页出现四个页签，第三个标题逐字等于「Auto Dream · 习惯观察」',()=>{
+test('分身主页出现四个页签，第三个标题按 1.0 设计稿逐字等于「习惯观察」',()=>{
  const app=mount(baseProps({habits:React.createElement('div',{'data-habits-marker':'1'})}))
  const tabs=app.findAll(el=>el.props.role==='tab')
  assert.equal(tabs.length,4,'分身主页应有四个页签')
- assert.equal(app.contentOf(tabs[2]!),'Auto Dream · 习惯观察')
- assert.equal(app.contentOf(tabs[2]!),zh('habitLog.title'))
+ assert.equal(app.contentOf(tabs[2]!),'习惯观察')
+ assert.equal(app.contentOf(tabs[2]!),zh('team.twin.tab.habits'))
 })
 
 test('习惯观察面板顶部两行逐字等于 hint 与 private 词条，不新开色值（复用 note 类）',()=>{

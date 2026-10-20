@@ -1,5 +1,5 @@
 /** 可移植的模板分享边界；只接受静态文本，正文仍由原资源解析器核验，不产生运行权限。 */
-import {ROLE_AVATAR_KEYS} from './role-avatars.mjs'
+import {isRoleAvatarKey} from './role-avatars.mjs'
 const encoder = new TextEncoder()
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
@@ -36,7 +36,7 @@ function screen(values) {for(const value of values){const issue=templateShareTex
 function employeeRole(source,structured=false) {
  const role=object(json(source),['format','name','kind','duty','dataScope','executionScope','avatarKey',...structured?['responsibility']:[]],['format','name','kind','duty','dataScope','executionScope'])
  if(role.format!=='teloa.role/v1'||role.kind!=='employee')fail('Template must define an employee, without private identity.')
- if(Object.hasOwn(role,'avatarKey')&&!ROLE_AVATAR_KEYS.includes(role.avatarKey))fail('Template avatar must be a built-in employee avatar.')
+ if(Object.hasOwn(role,'avatarKey')&&!isRoleAvatarKey(role.avatarKey))fail('Template avatar must be a built-in employee avatar.')
  text(role.name,80);for(const key of ['duty','dataScope','executionScope'])text(role[key],4000)
  if(role.responsibility!==undefined){
   const duties=object(role.responsibility,['triggers','autonomousActions','confirmationPoints','escalationRules','deliveryChecks'])

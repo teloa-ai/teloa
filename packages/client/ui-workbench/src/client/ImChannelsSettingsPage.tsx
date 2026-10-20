@@ -7,6 +7,7 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import tokens from './theme-tokens.module.css'
 import css from './ImChannelsSettingsPage.module.css'
+import {StatusPill} from './StatusPill.js'
 
 type Option={id:string;name:string}
 type Pairing={channelId:string;code:string;expiresAt:string}
@@ -134,6 +135,7 @@ export function ImChannelsSettingsView(props:ImChannelsSettingsViewProps){
  }
 
  return <section aria-label={t('imChannels.title')} className={clsx(tokens.tokens,css.page)}>
+  <h2 className={css.pageTitle}>{t('imChannels.title')}</h2>
   <p className={css.lead}>{t('imChannels.description')}</p>
   {props.recovery&&<div className={css.notice} role="status">
    <span>{t('imChannels.recovery.pending')} {t('recovery.nextStep')}</span>
@@ -147,12 +149,12 @@ export function ImChannelsSettingsView(props:ImChannelsSettingsViewProps){
 
   <div className={css.section}>
    <h3 className={css.title}>{t('imChannels.channels.title')}</h3>
-   {channels.length===0?<p className={css.muted}>{t('imChannels.channels.empty')}</p>:<ul className={css.list}>
+   {channels.length===0?<p className={clsx(css.muted,css.empty)}>{t('imChannels.channels.empty')}</p>:<ul className={css.list}>
     {channels.map(channel=>{const state=channelState(channel);return <li key={channel.channelId} className={css.row}>
      <span className={css.rowText}>
       <strong>{t(kindLabel[channel.kind])}</strong>
       <span className={css.status}><span className={clsx(css.dot,css[state])} aria-hidden="true"/>{t(statusLabel[state])}{state==='error'&&<span className={css.reason}>{t(errorKey(channel.status.error))}</span>}</span>
-      {channel.credentialsSaved&&<span className={css.pill}>{t('imChannels.saved')}</span>}
+      {channel.credentialsSaved&&<StatusPill tone="good">{t('imChannels.saved')}</StatusPill>}
      </span>
      <span className={css.actions}>
       <input className={css.switch} type="checkbox" role="switch" aria-label={channel.enabled?t('imChannels.disable'):t('imChannels.enable')} checked={channel.enabled} disabled={busy} onChange={()=>props.onToggle(channel)}/>
@@ -165,7 +167,7 @@ export function ImChannelsSettingsView(props:ImChannelsSettingsViewProps){
    </ul>}
   </div>
 
-  <form className={css.section} onSubmit={submitCredentials} autoComplete="off">
+  <form className={clsx(css.section,css.formCard)} onSubmit={submitCredentials} autoComplete="off">
    <h3 className={css.title}>{t('imChannels.add')}</h3>
    <label className={css.field}><span>{t('imChannels.kind.label')}</span>
     <select className={css.input} value={kind} disabled={busy} onChange={event=>setKind(event.target.value as ImChannelKind)}>
@@ -321,7 +323,7 @@ type NoticeState=Exclude<BundledExtensionState,'active'>|'unreadable'
 export function ImChannelsExtensionNotice({onRetry}:{state:NoticeState;onRetry?:()=>void}){
  const {t}=useI18n()
  return <section className={css.section} aria-label={t('imChannels.title')}>
-  <h2 className={css.title}>{t('imChannels.title')}</h2>
+  <h2 className={css.pageTitle}>{t('imChannels.title')}</h2>
   <p className={css.notice} role="status">{t('bundledExtensions.im.builtinUnavailable')}</p>
   {onRetry&&<button type="button" className={css.button} onClick={onRetry}>{t('bundledExtensions.retry')}</button>}
  </section>

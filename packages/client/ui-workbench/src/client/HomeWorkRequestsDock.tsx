@@ -6,6 +6,7 @@ import {readHomeWorkStatus,type HomeWorkStatus,type HomeWorkStatusCall} from './
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import css from './HomeWorkRequestCard.module.css'
+import dock from './ComposerDock.module.css'
 
 type Props=PropsRuntime<'conversation.input.dock'>&{work:BindingClient;call:HomeWorkStatusCall;isAssistantContext:(id:string,signal?:AbortSignal)=>Promise<boolean>;openTask:(id:string)=>void;subscribeActivity:(listener:()=>void)=>()=>void}
 /** 公开 dock 常驻展示请求；工具步骤折叠不影响进度和任务入口。 */
@@ -47,7 +48,8 @@ export function HomeWorkRequestsDock({sessionId,work,call,isAssistantContext,ope
   setRetry(value=>value+1)
  }
  if(!ready||snapshot.sessionId!==sessionId||!snapshot.rows.length&&!snapshot.error)return null
- return <div className={css.dock} role="region" aria-label={zh?'本会话交办':'Work in this conversation'}>
+ return <div className={`${css.dock} ${dock.strip}`} role="region" aria-label={zh?'本会话交办':'Work in this conversation'}>
+  {snapshot.rows.length>0&&<p className={css.dockTitle}>{zh?`本会话交办了 ${snapshot.rows.length} 项工作`:`${snapshot.rows.length} work ${snapshot.rows.length===1?'request':'requests'} in this conversation`}</p>}
   {snapshot.rows.map(row=><HomeWorkStatusCard key={row.sessionId+':'+row.requestId} initial={row} call={call} openTask={openTask} managed onChange={changed}/>)}
   {snapshot.error&&<p role="alert">{snapshot.error} <button type="button" onClick={()=>setRetry(value=>value+1)}>{zh?'重试读取进度':'Retry progress'}</button></p>}
  </div>

@@ -48,7 +48,7 @@
 .iconButton{display:inline-flex;align-items:center;justify-content:center;flex:0 0 27px;width:27px;min-height:27px;border:0;border-radius:5px;background:transparent;padding:4px;color:var(--teloa-muted)!important}
 .iconButton:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)!important}
 .artifactCard{display:flex;align-items:center;min-width:0;gap:3px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);padding-right:6px}
-.artifactPreview{display:flex;align-items:center;flex:1;min-width:0;gap:9px;border:0;border-radius:7px;background:transparent;padding:10px;text-align:left}
+.artifactPreview{display:flex;align-items:center;flex:1;min-width:0;gap:9px;border:0;border-radius:7px;background:transparent;color:var(--teloa-text);padding:10px;text-align:left}
 .artifactPreview:hover{background:var(--teloa-hover)}
 .fileIcon{display:flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;height:42px;border:1px solid var(--teloa-border);border-radius:5px;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .fileInfo{flex:1;min-width:0;overflow-wrap:anywhere}

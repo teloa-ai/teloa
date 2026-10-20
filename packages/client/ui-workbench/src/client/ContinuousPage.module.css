@@ -63,3 +63,17 @@
 .embedded{padding:0!important;min-height:0!important;height:0!important;overflow:visible!important}.embedded>header,.embedded>nav,.embedded>p{display:none}.embedded [data-teloa-pane=directory]{display:none}.planDrawer.planDrawer{width:min(760px,100vw)}.planDrawer [data-teloa-pane=detail]{width:100%;box-sizing:border-box;overflow:visible;padding:20px 24px;border:0;background:transparent}.planDrawer [data-teloa-pane=detail]>button:first-child{display:none}.embedded [data-teloa-pane=detail]{min-height:0}.embedded [data-teloa-pane=directory]{display:none}
 
 .drawerPage .workLayout{display:block;box-sizing:border-box;width:100%;max-width:1120px;margin:0 auto;padding:0 42px 38px}.drawerPage [data-teloa-pane=directory]{padding:0;border:0;background:transparent;width:100%}.planDrawer .planBody{grid-template-columns:minmax(0,1fr);gap:20px}.planDrawer [data-teloa-pane=detail]{min-height:0}
+
+/* 1.0 一层页头：自动化计划与执行记录两个页签的大标题只给读屏；计划 / 执行记录为圆角胶囊页签。 */
+.workPage.hubPage>header h1{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.workPage .modeTabs{gap:4px;border:0;margin:16px 40px 20px;width:auto;max-width:none;align-self:stretch}
+/* 总览页头只剩「新建自动化」（标题仅读屏），与计划 / 执行记录页签同一行靠右。 */
+.workPage.hubPage{position:relative}.workPage.hubPage>header{position:absolute;top:2px;right:40px;z-index:1;padding:0;margin:0;width:auto;max-width:none;border:0}
+.workPage .goalStart,.workPage .savedPlans{max-width:960px;margin-left:0;margin-right:0;padding-left:40px;padding-right:40px}
+.workPage .modeTabs button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:7px;color:var(--teloa-secondary)}
+.workPage .modeTabs button[aria-current]{background:var(--teloa-active);color:var(--teloa-text);font-weight:var(--teloa-weight-medium);border:0}
+.modeTabs span{font-family:var(--teloa-design-mono)}
+@media(max-width:760px){.workPage.hubPage>header{position:static;padding:12px 21px 0}.workPage .modeTabs{margin:12px 21px 16px}.workPage .goalStart,.workPage .savedPlans{padding-left:21px;padding-right:21px}}
+/* 计划全部列表与工作台其他页同一版心：主区左右 40px。 */
+.workPage.hubPage .workLayout{max-width:none;margin:0;padding-left:40px;padding-right:40px}
+@media(max-width:760px){.workPage.hubPage .workLayout{padding-left:21px;padding-right:21px}}

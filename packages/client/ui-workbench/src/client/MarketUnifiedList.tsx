@@ -123,16 +123,27 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
  const {t}=useI18n()
  const dataAttrs=(row:MarketListRow)=>row.catalogId?{'data-catalog-row':row.catalogId}:{'data-teloa-entry':row.key}
  const tag=(row:MarketListRow)=>row.tag?<span className={css.tag}>{row.tag}</span>:null
- if(layout==='grid'||layout==='cards')return <ul className={clsx(css.grid,layout==='cards'&&css.cards)}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
+ // 紧凑卡里的团队方案形象缩到与员工形象同一 40px
+ const art=(row:MarketListRow,compact=false)=>row.art.kind==='industry'?<span className={clsx(pageCss.bundleArt,compact&&css.cardBundle,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>:<ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed} avatarKey={row.art.avatarKey}/>
+ const ariaLabel=(row:MarketListRow)=>[row.title,row.tag,row.mark&&stateMarkLabel(row.mark,t)].filter(Boolean).join(', ')
+ // 1.0 紧凑卡（设计稿 10）：形象 + 名称 + 提供方小字，一句话，底部右侧「添加 / 已添加」胶囊；已添加不再另画记号，需重启与冲突仍留记号
+ if(layout==='cards')return <ul className={clsx(css.grid,css.cards)}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
+  <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={ariaLabel(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
+   <span className={css.cardHead}>{art(row,true)}<span className={css.cardIdentity}><span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{(row.mark==='restart'||row.mark==='conflict')&&<StateMark mark={row.mark} t={t}/>}</span>{row.credit&&<span className={css.cardCredit}>{row.credit}</span>}</span></span>
+   <span className={css.gridPitch}>{row.summary}</span>
+   <span className={css.cardFoot}><span className={clsx(css.cardAction,row.mark==='added'&&css.cardAdded)}>{row.mark==='added'?stateMarkLabel('added',t):t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}</span></span>
+  </button>
+ </li>)}</ul>
+ if(layout==='grid')return <ul className={css.grid}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 方案卡内容多（一句话 + 包含），可访问名只取标题、标签与状态 */}
-  <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={[row.title,row.tag,row.mark&&stateMarkLabel(row.mark,t)].filter(Boolean).join(', ')} aria-current={row.current?'page':undefined} onClick={row.open}>
-   {row.art.kind==='industry'?<span className={clsx(pageCss.bundleArt,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>:<ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed} avatarKey={row.art.avatarKey}/>}
+  <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={ariaLabel(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
+   {art(row)}
    <span className={css.rowMain}>
-    <span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{row.mark&&(layout!=='cards'||row.mark!=='available')&&<StateMark mark={row.mark} t={t}/>}</span>
+    <span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{row.mark&&<StateMark mark={row.mark} t={t}/>}</span>
     <span className={css.gridPitch}>{row.summary}</span>
-    <span className={css.rowFacts}>{layout==='cards'&&row.credit?row.credit:row.facts}</span>
+    <span className={css.rowFacts}>{row.facts}</span>
    </span>
-   {layout==='cards'?<span className={css.cardAction}>{t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}<ArrowUpRight size={13} aria-hidden="true"/></span>:<ArrowUpRight size={16} aria-hidden="true"/>}
+   <ArrowUpRight size={16} aria-hidden="true"/>
   </button>
  </li>)}</ul>
  return <ul className={css.rows}>{rows.map(row=><li key={row.key} className={css.row} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
@@ -153,15 +164,27 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
 
 /** 首页按真实用途分区，不制造精选或安装统计；查看全部继续使用同一筛选。 */
 export function MarketCardSections({rows,grouped,onSelect,showGroups=false}:{rows:readonly MarketListRow[];grouped:boolean;onSelect:(fn:TaxonomyFilter['fn'])=>void;showGroups?:boolean}){
- const {t,locale}=useI18n()
+ const {t,locale,number}=useI18n()
  if(!grouped)return <MarketListRows rows={rows} layout="cards" showGroups={showGroups}/>
  const keys=[...FN_KEYS,UNCLASSIFIED] as const
  return <div className={css.cardSections}>{keys.map(fn=>{
   const items=rows.filter(row=>(row.taxonomy.functions[0]??UNCLASSIFIED)===fn)
   if(!items.length)return null
   const label=fn===UNCLASSIFIED?t('market.catalog.official.taxonomyUnclassified'):getTaxonomyLabel('function',fn,locale)??fn
-  return <section key={fn}><header><h2>{label}</h2><button type="button" onClick={()=>onSelect(fn)}>{t('market.primary.viewAll')}<ChevronRight size={13}/></button></header><MarketListRows rows={items.slice(0,4)} layout="cards"/></section>
+  return <section key={fn}><header><h2>{label}</h2><button type="button" aria-label={t('market.primary.viewAll')} onClick={()=>onSelect(fn)}>{t('market.primary.viewAll')}<span>{number(items.length)}</span></button></header><MarketListRows rows={items.slice(0,4)} layout="cards"/></section>
  })}</div>
+}
+
+/** 读取骨架（B8）：直接套真实卡片 / 行的类名与尺寸（44px 形象、两行一句话、底部胶囊），读到后原位换成真实条目不跳动。 */
+export function MarketCatalogSkeleton({layout,grouped=false}:{layout:'list'|'grid'|'cards';grouped?:boolean}){
+ const line=(width:string)=><span className={css.skeletonLine} style={{width}}/>
+ if(layout==='list')return <ul className={css.rows}>{[0,1,2,3].map(index=><li key={index} className={css.row}><div className={clsx(css.rowButton,css.skeletonRow)}><span className={css.skeletonArt}/><span className={css.rowMain}>{line('38%')}{line('86%')}{line('24%')}</span></div></li>)}</ul>
+ const cards=<ul className={clsx(css.grid,layout==='cards'&&css.cards)}>{[0,1,2,3].map(index=><li key={index}><div className={clsx(css.gridCard,css.skeletonCard)}>{layout==='cards'?<>
+  <span className={css.cardHead}><span className={css.skeletonArt}/><span className={css.cardIdentity}>{line('62%')}{line('34%')}</span></span>
+  <span className={css.skeletonPitch}>{line('94%')}{line('72%')}</span>
+  <span className={css.cardFoot}><span className={css.skeletonPill}/></span>
+ </>:<><span className={css.skeletonArt}/><span className={css.rowMain}>{line('42%')}{line('92%')}{line('68%')}{line('30%')}</span></>}</div></li>)}</ul>
+ return grouped?<div className={css.cardSections}><section><header>{line('96px')}</header>{cards}</section></div>:cards
 }
 
 /** 方案 B 主目录版面：左栏用途分类（`MarketFilterBar sidebar`），右栏搜索与紧凑卡片；窄窗口下分类回到卡片上方横排。 */

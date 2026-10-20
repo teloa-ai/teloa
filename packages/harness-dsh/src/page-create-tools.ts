@@ -1,7 +1,8 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,valueSchemaSpecToJsonSchema,validateJsonSchemaValue,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,isRecord,taskInput,readPageCreateAtomicSkillDraft,readPageCreateBody,pageCreateCanonicalBody,pageCreateLimits,pageCreateEntities,ROLE_AVATAR_KEYS,templateShareResourceCapability,readPageCreateDraftOrigin,readPageCreateDraftReferences,type PageCreateDraftOrigin,type PageCreateDraftRevisionInput,type PageCreateDraftDirectory,type PageCreateDraftReadResult,type PageCreateDraftPreview,type PageCreateEntity,type WritableRoleDefinition,type MarketCatalogEntry} from '@teloa/contract'
+import {WorkError,isRecord,taskInput,readPageCreateAtomicSkillDraft,readPageCreateBody,pageCreateCanonicalBody,pageCreateLimits,pageCreateEntities,templateShareResourceCapability,readPageCreateDraftOrigin,readPageCreateDraftReferences,type PageCreateDraftOrigin,type PageCreateDraftRevisionInput,type PageCreateDraftDirectory,type PageCreateDraftReadResult,type PageCreateDraftPreview,type PageCreateEntity,type WritableRoleDefinition,type MarketCatalogEntry} from '@teloa/contract'
 import {savedDraftSummaries} from './saved-draft-summaries.ts'
+import {roleAvatarDescription} from './role-avatar-description.ts'
 import {registerSavedDraftContext} from './saved-draft-context.ts'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {authorizeConversationInstructionMutation,conversationInstructionMutationRequestId,assertConversationInstructionMutationAuthorization,type ConversationInstructionMutationAuthorization} from './conversation-mutation.ts'
@@ -42,7 +43,7 @@ const templateManifestJsonSchema=valueSchemaSpecToJsonSchema(templateManifestPar
 // 对应原分享 parser 的 portable employee 白名单；不套用可运行员工的 scopes/skills/knowledge/runtimeConfig。
 const responsibilityEntries={type:'array',items:{type:'string'},required:true} as const
 const portableRoleParameters={type:'object',additionalProperties:false,description:'可移植静态员工定义；不含账号、scopes、skills、knowledge或运行配置，能力关联只写manifest。',properties:{
- format:{type:'string',enum:['teloa.role/v1'],required:true},name:{type:'string',required:true},kind:{type:'string',enum:['employee'],required:true},duty:{type:'string',required:true},dataScope:{type:'string',required:true},executionScope:{type:'string',required:true},avatarKey:{type:'string',enum:ROLE_AVATAR_KEYS},
+ format:{type:'string',enum:['teloa.role/v1'],required:true},name:{type:'string',required:true},kind:{type:'string',enum:['employee'],required:true},duty:{type:'string',required:true},dataScope:{type:'string',required:true},executionScope:{type:'string',required:true},avatarKey:{type:'string',description:roleAvatarDescription},
  responsibility:{type:'object',additionalProperties:false,properties:{triggers:responsibilityEntries,autonomousActions:responsibilityEntries,confirmationPoints:responsibilityEntries,escalationRules:responsibilityEntries,deliveryChecks:responsibilityEntries}},
 }} as const
 const portableRoleJsonSchema=valueSchemaSpecToJsonSchema(portableRoleParameters)

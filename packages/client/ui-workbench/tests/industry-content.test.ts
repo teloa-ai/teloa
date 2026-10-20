@@ -25,6 +25,27 @@ test('单个非法岗位留下明确错误，不损失同集合中的有效知�
  }
  const rows=await inspect('{bad');assert.equal(rows[0]?.state,'invalid')
 })
+test('市场员工预览保留共享契约校验后的结构化职责，不采纳权限字段',async()=>{
+ const responsibility={triggers:[' 收到调查任务 ','收到调查任务'],autonomousActions:['核对证据'],confirmationPoints:['扩大资料范围'],escalationRules:['关键证据不足'],deliveryChecks:['保留来源与版本']}
+ const row=(await inspect(JSON.stringify({...role,responsibility})))[0]
+ assert.equal(row?.state,'parsed')
+ assert.ok(row?.definition?.kind==='role')
+ assert.deepEqual(row.definition.fields.responsibility,{...responsibility,triggers:['收到调查任务']})
+ assert.equal(Object.hasOwn(row.definition.fields,'scopes'),false)
+ for(const invalid of [null,'职责',{...responsibility,unknown:[]},{...responsibility,triggers:['x'.repeat(1001)]},{...responsibility,deliveryChecks:Array(31).fill('检查')}]){
+  const result=(await inspect(JSON.stringify({...role,responsibility:invalid})))[0]
+  assert.equal(result?.state,'invalid')
+ }
+})
+test('模板运行配置与宿主一致：保留预设，首选和备用模型不从模板继承',async()=>{
+ const row=(await inspect(JSON.stringify({...role,runtimeConfig:{agentPresetId:'research',model:{provider:'template-cloud',model:'template-only'},fallbackModel:{provider:'other-cloud',model:'fallback-only'}}})))[0]
+ assert.equal(row?.state,'parsed');assert.ok(row?.definition?.kind==='role')
+ assert.deepEqual(row.definition.fields.runtimeConfig,{agentPresetId:'research'})
+ assert.equal(row.definition.ignoredModelSelection,true)
+ for(const runtimeConfig of [{agentPresetId:'INVALID ID'},{unknown:true},null])assert.equal((await inspect(JSON.stringify({...role,runtimeConfig})))[0]?.state,'invalid')
+ const legacy=(await inspect(JSON.stringify(role)))[0];assert.ok(legacy?.definition?.kind==='role')
+ assert.deepEqual(legacy.definition.fields.responsibility,{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]})
+})
 test('空知识内容拒绝，正文中的HTML作为纯文本保留',async()=>{
  assert.equal((await inspect(JSON.stringify(role),'   '))[1]?.state,'invalid')
  const row=(await inspect(JSON.stringify(role),'<script>alert(1)</script>'))[1]

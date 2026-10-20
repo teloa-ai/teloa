@@ -1,6 +1,5 @@
 import {useState} from 'react'
 import {ContextDrawer} from './ContextDrawer.js'
-import {EmployeeAvatar} from './EmployeeAvatar.js'
 import {EmployeeAvatarPicker} from './EmployeeAvatarPicker.js'
 import {employeeCopy} from './employee-copy.js'
 import {useI18n} from './i18n/provider.js'
@@ -32,8 +31,7 @@ export function EmployeeProfileEditor({role,initial,onDraft,close,save}:{role:Pr
    {error&&<p role="alert">{error}</p>}
    <fieldset disabled={busy} className={teamCss.formBody}>
     <label>{t('team.form.name')}<input required maxLength={80} value={name} onChange={event=>change({name:event.target.value})}/></label>
-    <EmployeeAvatar avatarKey={avatarKey} size="lg"/>
-    <EmployeeAvatarPicker value={avatarKey} onChange={avatarKey=>change({avatarKey})}/>
+    <EmployeeAvatarPicker value={avatarKey} name={name} onChange={avatarKey=>change({avatarKey})}/>
     <label>{t('team.form.mission')}<textarea required maxLength={4000} rows={5} value={duty} onChange={event=>change({duty:event.target.value})}/></label>
     <p className={css.muted}>{employeeCopy(locale,'profileEditHint')}</p>
     <footer className={css.buttons}><button type="button" onClick={close}>{t('team.form.cancel')}</button><button type="submit" disabled={!name.trim()||!duty.trim()}>{employeeCopy(locale,'save')}</button></footer>

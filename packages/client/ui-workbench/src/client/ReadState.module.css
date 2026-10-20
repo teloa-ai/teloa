@@ -1,0 +1,23 @@
+/* 读取三态（设计 30 / 13）：较慢提示是骨架上方一行，失败与已取消是区域内状态；颜色只取 --teloa-* 令牌。
+   按钮用 .scope .class 两级选择器，压过 TaskPage 等页面里 (0,1,1) 的基础 button 规则。 */
+.pending{display:flex;flex-direction:column;gap:12px;min-width:0}
+.srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.slow{display:flex;align-items:center;gap:8px;min-height:36px;padding:6px 8px 6px 12px;border:1px solid var(--teloa-border-card);border-radius:var(--teloa-design-r2,10px);background:var(--teloa-bar-info);color:var(--teloa-text);font-size:var(--teloa-font-control)}
+.slow>span[role=status]{flex:1;min-width:0}
+.elapsed{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;white-space:nowrap}
+.spinner{flex:none;color:var(--teloa-muted);animation:read-spin 1s linear infinite}
+.skeleton{min-width:0;animation:read-pulse 1.6s ease-in-out infinite}
+.failed{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;border:1px solid var(--teloa-border-card);border-radius:var(--teloa-design-r2,10px);background:var(--teloa-surface)}
+.failed .title{display:flex;align-items:center;gap:8px;margin:0;color:var(--teloa-danger);font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
+.failed .reason{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);overflow-wrap:anywhere}
+.failed .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.cancelled{display:flex;align-items:center;gap:12px;min-height:36px;padding:6px 8px 6px 12px;border:1px solid var(--teloa-border-card);border-radius:var(--teloa-design-r2,10px);background:var(--teloa-bar-info);color:var(--teloa-muted);font-size:var(--teloa-font-control)}
+.cancelled>span{flex:1;min-width:0}
+.slow button,.failed button,.cancelled button{display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;min-height:28px;padding:0 10px;border:1px solid var(--teloa-border-strong);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);cursor:pointer}
+.slow button:hover,.failed button:hover,.cancelled button:hover{background:var(--teloa-hover)}
+.failed .primary{border-color:var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary)}
+.failed .primary:hover{background:var(--teloa-primary);filter:brightness(.94)}
+.slow button:focus-visible,.failed button:focus-visible,.cancelled button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@keyframes read-spin{to{transform:rotate(360deg)}}
+@keyframes read-pulse{50%{opacity:.62}}
+@media(prefers-reduced-motion:reduce){.spinner,.skeleton{animation:none}}

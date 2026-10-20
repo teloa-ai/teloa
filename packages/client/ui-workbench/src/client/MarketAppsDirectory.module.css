@@ -1,7 +1,8 @@
 /* 应用：沿用工作台主题令牌；双列紧凑行，详情使用平台抽屉。 */
-.directory{display:grid;gap:16px;min-width:0}
-.title{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.title h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);color:var(--teloa-text)}
+.directory{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.title{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:16px;min-width:0}
+/* 1.0：应用是市场的一个分类，页头与选中的「应用」页签已说明位置；标题只给读屏，标题行只留「我的应用」与「添加」。 */
+.title h2{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .title button,.link,.categories button,.groupHead button,.empty button,.emptyActions button,.notice button,.lines button,.advanced button{font:inherit;font-size:var(--teloa-font-control);color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap}
 .title button[aria-pressed="true"],.categories button[aria-pressed="true"]{background:var(--teloa-text);border-color:var(--teloa-text);color:var(--teloa-surface)}
 .searchRow{display:flex;align-items:center;gap:10px}
@@ -30,7 +31,7 @@
 .empty h3{margin:0;font-size:var(--teloa-font-body);color:var(--teloa-text)}
 .empty p{margin:0}
 .emptyActions{display:flex;flex-wrap:wrap;gap:8px}
-.primary{font:inherit;font-size:var(--teloa-font-control);border:1px solid var(--teloa-accent);border-radius:8px;background:var(--teloa-accent);color:var(--teloa-on-accent);font-weight:var(--teloa-weight-medium);padding:6px 16px;cursor:pointer}
+.primary{font:inherit;font-size:var(--teloa-font-control);border:1px solid var(--teloa-primary);border-radius:8px;background:var(--teloa-primary);color:var(--teloa-on-primary);font-weight:var(--teloa-weight-medium);padding:6px 16px;cursor:pointer}
 .primary:disabled{opacity:.6;cursor:default}
 .advanced{font-size:var(--teloa-font-caption);color:var(--teloa-muted);border-top:1px solid var(--teloa-border);padding-top:12px}
 .advanced .link{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 0;background:transparent;border:0;border-radius:4px;color:var(--teloa-muted)}
@@ -80,7 +81,7 @@
 @media (max-width:600px){.detailBody{padding:20px}.detailHead{flex-wrap:wrap}.detailIdentity{flex-basis:calc(100% - 64px)}.detailHead .primary{margin-left:64px}}
 
 /* 创建与导入收为一个轻入口，不另设配置页。 */
-.titleActions{display:flex;align-items:center;gap:10px}
+.titleActions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:10px;min-width:0}
 .addMenu{position:relative}
 .addMenu>summary{display:grid;place-items:center;width:32px;height:32px;list-style:none;border-radius:var(--teloa-design-r1);cursor:pointer;color:var(--teloa-muted)}
 .addMenu>summary::-webkit-details-marker{display:none}

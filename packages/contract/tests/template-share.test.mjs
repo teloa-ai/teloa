@@ -17,6 +17,18 @@ test('an employee template preserves a built-in avatar and includes it in the fi
   assert.throws(()=>readTemplateSharePackage(invalid),/avatar/i)
  }
 })
+test('free-combination avatars pass v1 and v2 employee templates unchanged; ink and unknown shapes are rejected',()=>{
+ const p=sample(),file=p.files.find(f=>f.path==='role.json')
+ file.text=JSON.stringify({...JSON.parse(file.text),avatarKey:'bot:ghost:amber'})
+ assert.equal(JSON.parse(readTemplateSharePackage(p).files.find(f=>f.path==='role.json').text).avatarKey,'bot:ghost:amber')
+ const v2=employee(),role=v2.files.find(f=>f.path==='roles/lead.json')
+ role.text=JSON.stringify({...JSON.parse(role.text),avatarKey:'bot:capsule:plum'})
+ assert.equal(JSON.parse(share.readTemplateSharePackageV2(v2).files.find(f=>f.path==='roles/lead.json').text).avatarKey,'bot:capsule:plum')
+ for(const avatarKey of ['bot:circle:ink','bot:star:teal','bot:circle','bot:circle:teal:x','BOT:circle:teal']){
+  const invalid=structuredClone(p);invalid.files.find(f=>f.path==='role.json').text=JSON.stringify({...JSON.parse(file.text),avatarKey})
+  assert.throws(()=>readTemplateSharePackage(invalid),/avatar/i,avatarKey)
+ }
+})
 test('canonical contents are independent of file ordering, and digest detects edits',async()=>{const p=sample(),q=structuredClone(p);q.files.reverse();assert.equal(canonicalTemplateShare(p),canonicalTemplateShare(q));assert.equal(await templateShareDigest(p),await templateShareDigest(q));q.description='Another purpose';assert.notEqual(await templateShareDigest(p),await templateShareDigest(q));assert.deepEqual(readTemplateSharePackage(p).requirements,[])})
 test('source identity, runtime configuration and undeclared private fields cannot pass',()=>{for(const key of ['ownerId','roleId','runtimeConfig','memory']){const p=sample();p[key]='private';assert.throws(()=>readTemplateSharePackage(p))}const p=sample();const f=p.files.find(f=>f.path==='role.json');const v=JSON.parse(f.text);v.runtimeConfig={modelAccountId:'private'};f.text=JSON.stringify(v);assert.throws(()=>readTemplateSharePackage(p))})
 test('unsafe, duplicate, hidden and executable paths are rejected',()=>{for(const path of ['../a.md','/a.md','.env','a/.secret.md','a\\b.md','a%2fb.md','run.js','run.sh']){const p=sample();p.files.push({path,text:'hello'});assert.throws(()=>readTemplateSharePackage(p),path)}const p=sample();p.files.push(p.files[1]);assert.throws(()=>readTemplateSharePackage(p))})

@@ -48,6 +48,7 @@ import {PRESENTATION_HELPER_MESSAGE_ROWS} from './presentation-helpers.js'
 import {PRESENTATION_SECONDARY_MESSAGE_ROWS} from './presentation-secondary.js'
 import {INDUSTRY_UPDATE_PREVIEW_MESSAGE_ROWS} from './industry-update-preview.js'
 import {EDITION_MESSAGE_ROWS} from './edition.js'
+import {STATE_COMPONENT_MESSAGE_ROWS} from './state-components.js'
 import {ATTENTION_DECISION_MESSAGE_ROWS} from './attention-decision.js'
 import {SECURITY_RECOVERY_MESSAGE_ROWS} from './security-recovery.js'
 import {RECOVERY_DISCARD_MESSAGE_ROWS} from './recovery-discard.js'
@@ -92,7 +93,9 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ['planWork.ownerConfirm','我确认在原本人授权内更新日程、完成条件和累计额度。','我確認在原本人授權內更新日程、完成條件及累計額度。','I confirm these schedule, completion policy, and cumulative limits within my existing authorization.'],
   ['p6.planSource.conversation.open','打开原会话','開啟原對話','Open original conversation'],
   ['workbench.hub.overview','总览','總覽','Overview'],
-  ['workbench.create.taskPrompt','帮我创建一项任务。请在这个会话里帮助我明确目标、负责员工和交付要求；先保存，不开始执行。','幫我建立一項任務。請在這個會話裡協助我釐清目標、負責員工和交付要求；先儲存，不開始執行。','Help me create a task in this conversation. Clarify the goal, employee and deliverable; save it without starting execution.'],
+  ['workbench.create.noTaskReceipt','本轮没有创建任务。请核对草稿后保存；对话中的“已保存”不代表任务记录。','本輪未有建立任務。請核對草稿後儲存；對話中的「已儲存」不代表任務紀錄。','No task was created this turn. Review and save the draft; a chat reply saying “saved” is not a task record.'],
+  ['workbench.create.taskForm','按表单创建','以表單建立','Create with form'],
+  ['workbench.create.taskPrompt','帮我准备一项任务。请在这个会话里帮助我明确目标、负责员工和交付要求，先整理草稿，不开始执行。只保存时请提示我核对草稿并按表单创建；系统确认保存成功前，不能声称任务已保存。只有我明确要求开始执行时，才查询目录并调用交办工具，等待原生确认。','幫我準備一項任務。請在這個會話裡協助我釐清目標、負責員工和交付要求，先整理草稿，不開始執行。只儲存時請提示我核對草稿並以表單建立；系統確認儲存成功前，不能聲稱任務已儲存。只有我明確要求開始執行時，才查詢目錄並呼叫交辦工具，等候原生確認。','Help me prepare a task. Clarify the goal, employee and deliverable in this conversation; draft it without executing. To save only, ask me to review the draft and create it with the form. Do not claim it is saved until the system confirms the save. Query the directory and dispatch with native approval only when I explicitly request execution.'],
   ['workbench.create.planPrompt','帮我创建一条自动化计划：{goal}。请查找真实在岗员工，缺少关键条件时再询问；按我明确选择的时间和通知方式保存暂停计划，不启用或立即执行。','幫我建立一條自動化計劃：{goal}。請查找實際在職員工，缺少關鍵條件時再詢問；依我明確選擇的時間和通知方式儲存暫停計劃，不啟用或立即執行。','Create an automation plan: {goal}. Find an available employee and ask only for missing essential details. Save it paused using my chosen schedule and notification policy; do not enable or run it.'],
   ['workbench.create.employee','负责员工：{name}。','負責員工：{name}。','Responsible employee: {name}.'],
   ['about.editions.version','版本','版本','Edition'],
@@ -299,6 +302,7 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...PRESENTATION_SECONDARY_MESSAGE_ROWS,
   ...INDUSTRY_UPDATE_PREVIEW_MESSAGE_ROWS,
   ...EDITION_MESSAGE_ROWS,
+  ...STATE_COMPONENT_MESSAGE_ROWS,
   ...ATTENTION_DECISION_MESSAGE_ROWS,
   ...SECURITY_RECOVERY_MESSAGE_ROWS,
   ...RECOVERY_DISCARD_MESSAGE_ROWS,

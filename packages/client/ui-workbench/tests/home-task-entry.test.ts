@@ -172,6 +172,6 @@ test('侧栏新建任务与任务页共用会话准备入口，不直接弹表�
  const calls:unknown[]=[],exports:{prepare?:()=>void}={}
  const helperJs=ts.transpileModule('exports.prepare='+callback.initializer.getText(file),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
  new Function('exports','requestCreation','t',helperJs)(exports,(input:unknown)=>calls.push(input),()=> '本人待核对的任务目标')
- exports.prepare!();assert.deepEqual(calls,[{scope:'general',goal:'本人待核对的任务目标'}])
+ exports.prepare!();assert.deepEqual(calls,[{taskCreation:true,scope:'general',goal:'本人待核对的任务目标'}])
  assert.match(source,/<TaskPage\b[^>]*\bcreateConversation=\{requestTaskCreationConversation\}/,'任务页沿同一入口准备，不自动发送或执行')
 })

@@ -9,6 +9,7 @@ import {localizeWorkError} from './i18n/errors.js'
 import css from './ResourceRecovery.module.css'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {RefreshCw} from 'lucide-react'
+import dock from './ComposerDock.module.css'
 
 export function ResourceRecovery({sessionId,session,input,inputActions,api,work}:PropsRuntime<'conversation.input.dock'> & {api:ResourceApi;work:BindingClient}){
   const {locale,t,dateTime}=useI18n()
@@ -41,7 +42,7 @@ export function ResourceRecovery({sessionId,session,input,inputActions,api,work}
   }
   const copy=async(message:RecoverableRequest)=>{try{await navigator.clipboard.writeText(message.text);setNotice(t('resourceRecovery.copied'))}catch(cause){setError(localizeWorkError(locale,cause))}}
   const blocked=session.running||input.phase!=='plain'||input.draft.length>0||input.attachmentIds.length>0
-  return <details className={css.panel}>
+  return <details className={`${css.panel} ${css.dockPanel} ${css.dockDanger} ${dock.strip}`}>
     <summary>{t('resourceRecovery.title',{count:active?.failures.length??0})}</summary>
     <div className={css.body}>
       <p className={css.muted}>{t('resourceRecovery.description')}</p>

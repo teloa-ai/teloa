@@ -72,7 +72,8 @@ test('ObjectPageHeader：菜单触发按钮 aria-haspopup，静态渲染下菜�
  assert.doesNotMatch(html,/role="menu"/)
  assert.match(html,/<h2 aria-label="Fix login"><button[^>]*aria-label="edit title"[^>]*><span[^>]*title="Fix login"[^>]*>Fix login<\/span><svg/)
  assert.match(html,/class="back"/)
- assert.match(html,/data-tone="info" data-mark="inactive"/)
+ // 1.0 页头状态改为统一状态胶囊（设计 13/15）：文字胶囊，不再带图标标记。
+ assert.match(html,/<span class="pill" data-tone="info">Running<\/span>/)
  const hidden=paint(ObjectPageHeader,{title:'Fix login',status:{label:'Done',tone:'good'},menuLabel:'more actions',back:noop,backLabel:'back',backHidden:true})
  assert.doesNotMatch(hidden,/class="back"/)
  assert.match(hidden,/<h2[^>]*title="Fix login"[^>]*>Fix login<\/h2>/)
@@ -83,5 +84,5 @@ test('四个组件源码不含 dangerouslySetInnerHTML；样式只用 --teloa- �
  const styles=await source('ObjectPage.module.css')
  assert.doesNotMatch(styles,/var\((?!--teloa-)/)
  assert.doesNotMatch(styles,/#[0-9a-f]{3,8}\b/i)
- for(const cls of ['header','back','titleRow','titleButton','badge','info','warn','good','muted','badges','owner','menuTrigger','menu','statusBox','sentence','hint','statusActions','primary','secondary','timeline','empty','events','event','pending','fold','icon','line','toggle','detail','rail','row','railLink','railDetail','mono'])assert.match(styles,new RegExp('\\.'+cls+'[\\s{,:>\\[]'),cls)
+ for(const cls of ['header','back','titleRow','titleButton','info','warn','good','muted','badges','owner','menuTrigger','menu','statusBox','sentence','hint','statusActions','primary','secondary','timeline','empty','events','event','pending','fold','icon','line','toggle','detail','rail','row','railLink','railDetail','mono'])assert.match(styles,new RegExp('\\.'+cls+'[\\s{,:>\\[]'),cls)
 })

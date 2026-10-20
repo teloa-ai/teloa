@@ -4,8 +4,9 @@
    六档都是深底 + 近白字 + 半透明白图形，浅深色主题通用（原型同一套值，仓库也没有 [data-theme] 级深色选择器，
    头像自带底色，主题切换不影响它的对比度）。
    市场方案卡插画（`SolutionCards.tsx` / `MarketPage.tsx` 产品页 hero）直接复用本文件 `.tone0-5`：类名 `.tone0`–`.tone5` 与三个变量名是对外契约，改名要一起改。 */
-.avatarWrap{display:inline-flex;flex:none}
-.squirrel{display:block;width:100%;height:100%;object-fit:contain;border-radius:26%;background:var(--teloa-subtle)}
+.avatarWrap{display:inline-flex;flex:none;overflow:hidden;border-radius:50%;background:var(--teloa-avatar-plate)}
+/* 1.0 员工头像：形状本身就是头像（落在半径 29 的圆内），不加底板、不裁切。 */
+.botWrap{display:inline-flex;flex:none}.botWrap svg{display:block;width:100%;height:100%;overflow:visible}
 .avatarSvg{display:block;width:100%;height:100%;border-radius:26%}
 .sizesm{width:24px;height:24px}
 .sizemd{width:40px;height:40px}

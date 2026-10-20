@@ -2,7 +2,7 @@ import {directoryChoiceCopy} from './directory-choice-copy.js'
 import {settingsEntryGroup,settingsGroupOrder} from './settings-navigation.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import type {SettingsNavigation} from './settings-navigation.js'
-import {FileCode2} from 'lucide-react'
+import {ChevronRight,FileCode2} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -49,7 +49,7 @@ export function SettingsShell({selection,mainSession,open,close,renderSlot,useSe
 }
 export function GeneralSettings({renderSlot}:PropsRenderSlots<'settings.general.item'>){
   const {t}=useI18n()
-  return <section className={css.general} aria-label={t('settings.general')}>{renderSlot('settings.general.item',{})}<SettingsConfigurationGuide/></section>
+  return <section className={css.general} aria-label={t('settings.general')}><h2 className={css.pageTitle}>{t('settings.general')}</h2>{renderSlot('settings.general.item',{})}<SettingsConfigurationGuide/></section>
 }
 
 /** rc.1 通用设置插件不导出单行组件；此处只接界面，偏好读取与保存完全交给官方服务。 */
@@ -78,12 +78,13 @@ export function NativePanelsSettings({surface,webAccessApi}:{surface:RuntimeSett
   const {t}=useI18n()
   const render=useSyncExternalStore(surface.subscribe,surface.getSnapshot)
   return <section className={css.runtimeSurface} aria-label={t('teamCapability.runtime.manage')}>
+    <h2 className={css.pageTitle}>{t('teamCapability.runtime.manage')}</h2>
     <p className={css.sectionPurpose}>{t('settings.runtime.purpose')}</p>
     <details className={css.webPolicy}>
-      <summary>{t('webAccess.settings.title')}</summary>
+      <summary><ChevronRight size={14} aria-hidden/>{t('webAccess.settings.title')}</summary>
       <div><WebAccessSettings api={webAccessApi} embedded/></div>
     </details>
-    {render?render():<p role="status">{t('settings.loading')}</p>}
+    {render?<div className={css.nativeSurface}>{render()}</div>:<p role="status">{t('settings.loading')}</p>}
   </section>
 }
 
@@ -105,5 +106,5 @@ export function SettingsDocumentAction({describe,openDocument,loopback}:{describ
   const pending=useRef(false)
   useEffect(()=>{void describe.ensure().catch(error=>setError(localizeWorkError(locale,error)))},[describe,locale])
   if(!loopback||!state.view?.hasDocument)return null
-  return <div className={css.documentAction}>{error&&<span role="alert">{error}</span>}<button type="button" aria-label={t(busy?'settings.document.opening':'settings.document.open')} title={t('settings.document.open')} disabled={busy} onClick={()=>{if(pending.current)return;pending.current=true;setBusy(true);setError(undefined);void openDocument().catch(error=>setError(localizeWorkError(locale,error))).finally(()=>{pending.current=false;setBusy(false)})}}><FileCode2 size={17} aria-hidden/></button></div>
+  return <div className={css.documentAction}>{error&&<span role="alert">{error}</span>}<button type="button" disabled={busy} onClick={()=>{if(pending.current)return;pending.current=true;setBusy(true);setError(undefined);void openDocument().catch(error=>setError(localizeWorkError(locale,error))).finally(()=>{pending.current=false;setBusy(false)})}}><FileCode2 size={15} aria-hidden/><span>{t(busy?'settings.document.opening':'settings.document.open')}</span></button></div>
 }

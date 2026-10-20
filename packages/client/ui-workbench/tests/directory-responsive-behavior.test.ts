@@ -52,16 +52,17 @@ test('市场窄窗口保留两主入口与明确分组的原分类，技能仍�
   let tree=page.render('TestCatalog',props)
   const nav=nodes(tree).find(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria')!
   const buttons=nodes(nav).filter(node=>node.type==='button')
-  assert.deepEqual(buttons.map(node=>node.children[0]),['market.primary.employees','market.primary.teams'])
+  assert.deepEqual(buttons.map(node=>node.children[0]),['market.primary.all','market.primary.employees','market.primary.teams','market.apps.title','market.presentation.category.skill'])
   assert.equal(buttons.filter(node=>node.props['aria-current']==='page').length,1)
   assert.equal(nodes(tree).some(node=>node.props['aria-label']==='market.primary.advancedAria'),false,'市场不再挂高级分类')
   const apps=nodes(tree).filter(node=>node.type==='button'&&node.children.includes('market.apps.title'))
-  assert.equal(apps.length,1,'应用是常驻入口，高级菜单不重复')
+  assert.equal(apps.length,1,'应用是市场分类页签，高级菜单不重复')
   apps[0]!.props.onClick();tree=page.render('TestCatalog',props)
-  // 进入应用后是统一应用目录（自带「应用」标题与搜索），不再重复市场标题、市场分类与应用快捷入口（见 market-primary-navigation）
+  // 1.0：进入应用后是统一应用目录，市场分类保留且「应用」页签选中（见 market-primary-navigation）
   assert.ok(nodes(tree).some(node=>node.type===appsDirectory),'应用入口到达统一应用目录')
-  assert.equal(nodes(tree).some(node=>node.type==='button'&&node.children.includes('market.apps.title')),false,'应用内不重复应用入口')
-  assert.equal(nodes(tree).some(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria'),false,'应用不重复市场分类')
+  assert.equal(nodes(tree).filter(node=>node.type==='button'&&node.children.includes('market.apps.title')).length,1,'应用内只有分类页签一处')
+  assert.equal(nodes(tree).find(node=>node.type==='button'&&node.children.includes('market.apps.title'))!.props['aria-current'],'page')
+  assert.equal(nodes(tree).some(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria'),true,'应用视图保留市场分类')
   tree=mount('MarketPage.tsx',{'./MarketResourceCatalog.js':catalogModule,'./MarketCatalogSection.js':{MarketCatalogSection:section}}).render('TestCatalog',{...props,navigationState:{category:'skill'}})
   assert.equal(tree.props['data-mobile-layer'],'list')
   assert.deepEqual(nodes(tree).find(node=>node.type===section)!.props.kinds,['skill'],'技能到达同一官方目录区块且只列技能')

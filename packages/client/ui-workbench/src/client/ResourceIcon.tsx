@@ -1,7 +1,7 @@
 import {BookOpen,Braces,FileText,Link2,Package,Palette,Presentation,Search,ShieldCheck,Workflow} from 'lucide-react'
 import {useState} from 'react'
-import {resourceBrands,resourceAvatars,type ResourceBrand} from './resource-icon-assets.js'
-import {employeeAvatar} from './employee-avatars.js'
+import {resourceBrands,type ResourceBrand} from './resource-icon-assets.js'
+import {botAvatarUri} from './bot-avatar.js'
 import type {RoleAvatarKey} from '@teloa/contract'
 import css from './ResourceIcon.module.css'
 
@@ -14,7 +14,7 @@ export function resourceBrand(id:string,title:string):keyof typeof resourceBrand
  const parts=[title,server??leaf]
  return Object.keys(resourceBrands).find(key=>parts.some(part=>token(part)===token(key)||aliases[token(part)]===key)) as keyof typeof resourceBrands|undefined
 }
-function avatarFor(title:string):keyof typeof resourceAvatars{
+function avatarFor(title:string):RoleAvatarKey{
  if(/设计|designer|design/i.test(title))return 'ui-designer'
  if(/研究|research/i.test(title))return 'researcher'
  if(/开发|工程|developer|engineer/i.test(title))return 'developer'
@@ -32,7 +32,7 @@ export function ResourceIcon({kind,id,title,avatarKey,brandKey,size=44}:{kind:st
  const role=kind==='agent'||kind==='role'
  // null 明确禁用标题推断：本机自建同名技能不能冒用第三方品牌。
  const brand=role||brandKey===null?undefined:brandKey??resourceBrand(id,title)
- const image=role?(avatarKey?employeeAvatar(avatarKey).src:resourceAvatars[avatarFor(title)]):brand?resourceBrands[brand]:undefined
+ const image=role?botAvatarUri(avatarKey??avatarFor(title)):brand?resourceBrands[brand]:undefined
  const Icon=/research|研究|调研/i.test(title)?Search:/ppt|演示|presentation/i.test(title)?Presentation:/pdf|文档|document/i.test(title)?FileText:/design|设计/i.test(title)?Palette:/security|安全/i.test(title)?ShieldCheck:kind==='source'||kind==='connector'||kind==='mcp'||kind==='data-source'?Link2:kind==='skill'?Braces:kind==='method'||kind==='work-template'?Workflow:kind==='knowledge'?BookOpen:Package
  return <span className={`${css.icon} ${role?css.avatar:brand?css.brand:css[kind]??css.skill}`} style={{width:size,height:size}} aria-hidden="true">{image&&failed!==image?<img src={image} alt="" onError={()=>setFailed(image)}/>:<Icon size={size/2}/>}</span>
 }

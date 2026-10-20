@@ -27,13 +27,13 @@ test('工作台恢复提示沿用平台主题，重试继续原工作，只有�
  assert.equal(await page.getByRole('button',{name:'选择工作位置',exact:true}).count(),0)
  const button=page.getByRole('button',{name:'重试',exact:true})
  const appearance=await button.evaluate((element:HTMLElement)=>{const style=getComputedStyle(element);return {height:style.minHeight,radius:style.borderRadius,fontSize:style.fontSize,background:style.backgroundColor,border:style.borderColor}})
- assert.deepEqual(appearance,{height:'36px',radius:'7px',fontSize:'13px',background:'rgb(163, 69, 41)',border:'rgb(163, 69, 41)'})
+ assert.deepEqual(appearance,{height:'36px',radius:'7px',fontSize:'13px',background:'rgb(28, 27, 25)',border:'rgb(28, 27, 25)'})
  await button.click();assert.deepEqual(await page.evaluate(()=>(window as any).recoveryTest.calls),['retry'])
- assert.equal(await button.evaluate((element:HTMLElement)=>getComputedStyle(element).backgroundColor),'rgb(163, 69, 41)','悬停后的主按钮保持品牌底色和可读文字')
+ assert.equal(await button.evaluate((element:HTMLElement)=>getComputedStyle(element).backgroundColor),'rgb(28, 27, 25)','悬停后的主按钮保持 1.0 墨黑主色和可读文字')
  const capture=process.env.TELOA_HOME_RECOVERY_CAPTURE
  if(capture){await mkdir(capture,{recursive:true});await page.screenshot({path:join(capture,'home-recovery-light.png')})}
  await page.evaluate(()=>{const state=(window as any).recoveryTest;state.theme='dark';state.render()})
- await page.waitForFunction(()=>getComputedStyle(document.querySelector('main')!).backgroundColor==='rgb(32, 34, 31)')
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('main')!).backgroundColor==='rgb(22, 21, 19)')
  if(capture)await page.screenshot({path:join(capture,'home-recovery-dark.png')})
  await page.evaluate(()=>{const state=(window as any).recoveryTest;state.error='location';state.render()})
  await page.getByRole('heading',{name:'选择工作位置',exact:true}).waitFor();await page.getByRole('button',{name:'选择工作位置',exact:true}).click()

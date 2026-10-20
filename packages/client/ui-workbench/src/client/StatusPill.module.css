@@ -1,0 +1,8 @@
+/* 状态胶囊：圆角 999、12px、2/8 内边距；六种语气只取 1.0 新增的 --teloa-tag-* 与既有 warn/danger 令牌。 */
+.pill{display:inline-flex;flex:none;align-items:center;gap:4px;max-width:100%;box-sizing:border-box;padding:2px 8px;border:0;border-radius:var(--teloa-design-round,999px);background:var(--teloa-pill-bg);color:var(--teloa-pill-ink);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);line-height:var(--teloa-leading-label);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill[data-tone=good]{--teloa-pill-bg:var(--teloa-tag-good-bg);--teloa-pill-ink:var(--teloa-tag-good)}
+.pill[data-tone=info]{--teloa-pill-bg:var(--teloa-tag-info-bg);--teloa-pill-ink:var(--teloa-tag-info)}
+.pill[data-tone=warn]{--teloa-pill-bg:var(--teloa-warn-bg);--teloa-pill-ink:var(--teloa-warn)}
+.pill[data-tone=neutral]{--teloa-pill-bg:var(--teloa-tag-neutral-bg);--teloa-pill-ink:var(--teloa-tag-neutral)}
+.pill[data-tone=muted]{--teloa-pill-bg:var(--teloa-tag-muted-bg);--teloa-pill-ink:var(--teloa-tag-muted)}
+.pill[data-tone=danger]{--teloa-pill-bg:var(--teloa-danger-bg);--teloa-pill-ink:var(--teloa-danger)}

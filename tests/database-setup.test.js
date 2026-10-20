@@ -25,10 +25,15 @@ if(args.includes('--context'))fail('The test engine has no vendor context');
 if(mode==='offline')fail('Cannot connect to Docker daemon');
 if(args[0]==='info')process.exit(0);
 if(args[0]==='inspect'){
- if(mode==='new'&&!fs.existsSync(root+'/created'))fail('No such object: teloa-postgres');
+ if(['new','volume-missing-modern','volume-denied','volume-unavailable'].includes(mode)&&!fs.existsSync(root+'/created'))fail('No such object: teloa-postgres');
  if(mode==='inspect-error')fail('permission denied');
  console.log(JSON.stringify([{Config:{Labels:{'teloa.project':mode==='foreign'?'different-project':root+'/'}},State:{Running:mode!=='stopped'||fs.existsSync(root+'/started')},NetworkSettings:{Ports:{'5432/tcp':[{HostPort:'45432'}]}}}]));
-}else if(args[0]==='volume'&&args[1]==='inspect')fail('No such volume: teloa-postgres-data');
+}else if(args[0]==='volume'&&args[1]==='inspect'){
+ if(mode==='volume-missing-modern')fail('Error response from daemon: get teloa-postgres-data: no such volume');
+ if(mode==='volume-denied')fail('Error response from daemon: permission denied');
+ if(mode==='volume-unavailable')fail('Cannot connect to Docker daemon: no such volume');
+ fail('No such volume: teloa-postgres-data');
+}
 else if(args[0]==='run')fs.writeFileSync(root+'/created','yes');
 else if(args[0]==='start')fs.writeFileSync(root+'/started','yes');
 `,{mode:0o755})
@@ -59,6 +64,18 @@ test('复用属于本工程的数据库，不重复创建容器',async()=>{
   assert.equal(r.status,0,r.stderr)
   assert.equal(r.initialized,true)
   assert.equal(r.calls.some(call=>['run','start'].includes(call.args[0])),false)
+})
+test('Docker get-name 缺卷错误继续创建所属数据卷',async()=>{
+ const r=await runSetup('volume-missing-modern')
+ assert.equal(r.status,0,r.stderr)
+ assert.equal(r.initialized,true)
+ assert.equal(r.calls.filter(call=>call.args[0]==='volume'&&call.args[1]==='create').length,1)
+})
+for(const mode of ['volume-denied','volume-unavailable'])test(`缺卷兼容不会吞掉 ${mode}，不创建数据卷或容器`,async()=>{
+ const r=await runSetup(mode)
+ assert.equal(r.status,1)
+ assert.equal(r.calls.some(call=>call.args[0]==='run'||call.args[0]==='volume'&&call.args[1]==='create'),false)
+ assert.equal(r.initialized,false)
 })
 test('停止的已有数据库可重新启动',async()=>{
   const r=await runSetup('stopped')

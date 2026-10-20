@@ -105,17 +105,28 @@ test('最近工作每一行带一个移出按钮，点击只隐藏这一行，�
  assert.deepEqual(opened,[],'点移出不应触发打开这条会话')
 })
 
-test('侧栏账号只显示用户名缩写头像，点击仍进入原设置',()=>{
- let opened=0
- const render=mount('WorkNavigation.tsx',{...props([],async()=>{}),actions:{openDirectory:()=>{opened++}}})
- const view=render(),account=nodes(view).find(node=>node.props.className==='account')
+test('侧栏头像直接打开我的分身，设置只有一个入口，仍显示本人缩写',async()=>{
+ let settings=0,twins=0
+ const render=mount('WorkNavigation.tsx',{...props([],async()=>{}),openTwin:async()=>{twins++},actions:{openDirectory:()=>{settings++}}})
+ const view=render(),account=nodes(view).find(node=>node.props.className==='footerTools')
  assert.ok(account)
  const avatar=nodes(account).find(node=>node.type==='button'&&node.props.className==='profileButton avatar')
  assert.ok(avatar);assert.equal(textOf(avatar),'M');assert.equal(textOf(account).includes('Max'),false)
- avatar.props.onClick();assert.equal(opened,1)
- // 主题切换由设置页（宿主主题）承担，账号块只剩缩写头像，不再放主题按钮（2026-10-14 keep theme control in settings）
- assert.deepEqual(nodes(account).filter(node=>node.type==='button').map(node=>node.props.className),['profileButton avatar'])
- assert.equal(nodes(view).some(node=>node.type==='button'&&['navigation.themeDark','navigation.themeLight'].includes(node.props['aria-label'])),false)
+ avatar.props.onClick();await Promise.resolve();assert.equal(twins,1);assert.equal(settings,0)
+ const buttons=nodes(account).filter(node=>node.type==='button')
+ assert.deepEqual(buttons.map(node=>node.props['aria-label']),['navigation.twin','navigation.v2.settings'])
+ buttons[1]!.props.onClick();assert.equal(settings,1);assert.equal(twins,1)
+})
+
+test('主聊等本人会话目录就绪后才可打开，避免冷启动提前点击失败',async()=>{
+ let ready=false,opened=0
+ const render=mount('WorkNavigation.tsx',{...props([],async()=>{}),openAssistant:async()=>{opened++},management:{subscribe:()=>()=>{},getSnapshot:()=>({baseline:ready,archived:[],ready})}})
+ const button=()=>nodes(render()).find(node=>node.type==='button'&&node.props['aria-label']==='Teloa')!
+ assert.equal(button().props.disabled,true)
+ button().props.onClick({detail:1});await Promise.resolve();assert.equal(opened,0)
+ ready=true
+ assert.equal(button().props.disabled,false)
+ button().props.onClick({detail:1});await Promise.resolve();assert.equal(opened,1)
 })
 
 test('移出最近的隐藏名单本地持久化：重新挂载（模拟刷新）后仍隐藏，其它行不受影响',()=>{

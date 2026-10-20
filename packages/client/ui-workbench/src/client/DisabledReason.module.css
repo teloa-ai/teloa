@@ -1,0 +1,4 @@
+/* 禁用原因：info 图标 + 13px 次要灰字。 */
+.reason{display:flex;align-items:flex-start;gap:6px;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label)}
+.reason>svg{flex:none;margin-top:2px}
+.reason>span{min-width:0;overflow-wrap:anywhere}

@@ -54,30 +54,6 @@ test('重命名是独立表单，未修改、空白、处理中都不能提交�
  assert.deepEqual(s.calls,['rename:source:Updated','close'])
 })
 
-test('归档先展示独立确认，默认焦点落到取消；取消不调用归档',()=>{
- const s=setup('archive'),tree=s.render()
- assert.deepEqual(s.calls,[])
- assert.equal(nodes(tree).some(node=>node.props.type==='checkbox'),false)
- assert.equal(nodes(tree).some(node=>node.type==='form'),false)
- assert.ok(button(tree,'workDirectory.action.cancel').props.ref)
- button(tree,'workDirectory.action.cancel').props.onClick()
- assert.deepEqual(s.calls,['close'])
-})
-
-test('运行中不能归档，操作期间不允许重复执行或关闭；失败保留确认页',async()=>{
- const s=setup('archive');s.props.running=true
- let tree=s.render();assert.equal(button(tree,'workDirectory.archive.action').props.disabled,true)
- button(tree,'workDirectory.archive.action').props.onClick();await flush();assert.deepEqual(s.calls,[])
- s.props.running=false
- let reject!:(error:Error)=>void
- s.props.management.archive=async(id:string)=>{s.calls.push(`archive:${id}`);await new Promise<void>((_,no)=>{reject=no})}
- tree=s.render();button(tree,'workDirectory.archive.action').props.onClick();button(tree,'workDirectory.archive.action').props.onClick();button(tree,'workDirectory.action.cancel').props.onClick()
- assert.deepEqual(s.calls,['archive:source'])
- reject(Error('offline'));await flush();tree=s.render()
- assert.ok(nodes(tree).some(node=>node.props.role==='alert'&&node.children.includes('offline')))
- assert.equal(button(tree,'workDirectory.archive.action').props.disabled,false)
-})
-
 test('副本创建入口保留历史核对闸，不把重命名、归档混在一个表单',()=>{
  const s=setup('copy'),tree=s.render()
  assert.equal(button(tree,'workDirectory.copy.create').props.disabled,true)

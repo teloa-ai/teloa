@@ -36,6 +36,8 @@ import {HomeWorkRequestCard} from './HomeWorkRequestCard.js'
 import {HomeWorkRequestsDock} from './HomeWorkRequestsDock.js'
 import {HomeSubmissionJournal,isDeterministicPromptRejection,type HomeSubmissionMonitor} from './home-native-submission.js'
 import {HomeSubmissionNotice} from './HomeSubmissionNotice.js'
+import {TaskCreationNotice} from './TaskCreationNotice.js'
+import {taskCreationEventSource} from './task-creation-receipt.js'
 import {homeNativeCopy} from './home-native-copy.js'
 import type {AssistantVoiceDraft} from './AssistantVoiceMessage.js'
 import {insertHomeCapabilities,insertAssistantVoiceDraft} from './home-native-capabilities.js'
@@ -936,7 +938,7 @@ export async function apply(ctx: Context): Promise<void> {
       inject:sessionId=>{
         const binding=sessionId?child.sessions.binding(sessionId):undefined
         const input=binding?child.conversation.input.for(binding.ctx).state:undefined
-        return {isHomeDraft:()=>!!sessionId&&homeSession.owns(sessionId),accept:()=>{if(sessionId)homeSession.accept(sessionId)},acceptance:{
+        return {taskCreation:(openForm:(goal:string,scope:string)=>void)=>sessionId&&binding?createElement(TaskCreationNotice,{sessionId,storage:navigationStorage,events:taskCreationEventSource(binding.eventSource),openForm}):null,isHomeDraft:()=>!!sessionId&&homeSession.owns(sessionId),accept:()=>{if(sessionId)homeSession.accept(sessionId)},acceptance:{
           getSnapshot:()=>!!binding&&(binding.eventSource.getSnapshot().entries.some(entry=>entry.event.type==='user/message'&&entry.event.surfaceOp==='append'&&entry.event.data.source.kind==='user')||!!input?.getSnapshot().queue.some(item=>item.source.kind==='user'&&'rpcId'in item.source)),
           subscribe:(listener:()=>void)=>{const off=[binding?.eventSource.subscribe(listener),input?.subscribe(listener)];return()=>{for(const dispose of off)dispose?.()}},
         }}

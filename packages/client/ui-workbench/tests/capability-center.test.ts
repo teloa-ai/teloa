@@ -17,27 +17,22 @@ test('市场与我的能力共用一个「市场」侧栏入口，不再出现�
  }
 })
 
-test('左栏资源组「市场」与「应用」并列：应用打开同一市场的应用视图，二者高亮互斥',()=>{
+test('1.0 左栏资源组只有「资料」「市场」：应用并入市场分类，在应用视图点市场回到市场首页',()=>{
  const page=mount('WorkbenchNavigationChrome.tsx')
  const contains=(node:any,key:string)=>nodes(node).some(n=>n.children.includes(key))
  const opened:string[]=[]
- const render=(view:string,marketApps:boolean)=>nodes(page.render('WorkbenchNavigationItems',{view,marketApps,onSelect:(id:string)=>opened.push(id),onApps:()=>opened.push('apps')})).filter(node=>node.type==='button')
- const pick=(buttons:any[],key:string)=>buttons.filter(node=>contains(node,key))
- let buttons=render('market',false)
- assert.equal(pick(buttons,'market.apps.title').length,1);assert.equal(pick(buttons,'market.title').length,1)
- const order=buttons.map(node=>contains(node,'market.title')?'market':contains(node,'market.apps.title')?'apps':contains(node,'navigation.v2.library')?'library':'other').filter(id=>id!=='other')
- assert.deepEqual(order,['library','market','apps'],'资源组顺序：资料、市场、应用')
- assert.equal(pick(buttons,'market.title')[0].props['aria-current'],'page');assert.equal(pick(buttons,'market.apps.title')[0].props['aria-current'],undefined)
- buttons=render('market',true)
- assert.equal(pick(buttons,'market.apps.title')[0].props['aria-current'],'page');assert.equal(pick(buttons,'market.title')[0].props['aria-current'],undefined)
- buttons=render('market',false)
- assert.equal(pick(buttons,'market.title')[0].props['aria-current'],'page','我的资源归属市场「已添加」，左栏仍是市场');assert.equal(pick(buttons,'market.apps.title')[0].props['aria-current'],undefined)
- pick(buttons,'market.apps.title')[0].props.onClick();pick(buttons,'market.title')[0].props.onClick()
- assert.deepEqual(opened,['apps','market'])
- assert.equal(nodes(page.render('WorkbenchNavigationItems',{view:'market',onSelect:()=>{}})).some(node=>contains(node,'market.apps.title')),false,'没有打开端口（访客）时不显示失效入口')
- const work=readFileSync(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8'),frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8'),store=readFileSync(new URL('../src/client/store.ts',import.meta.url),'utf8')
- assert.match(work,/marketApps=\{marketApps\} onApps=\{\(\)=>actions\.openMarketCategory\('apps'\)\}/,'复用原市场类别请求，不另建执行入口')
- assert.match(frame,/<WorkNavigation marketApps=\{state\.marketMode==='catalog'&&marketNavigation\.category==='apps'\}/)
+ const buttons=nodes(page.render('WorkbenchNavigationItems',{view:'market',onSelect:(id:string)=>opened.push(id)})).filter(node=>node.type==='button')
+ const pick=(key:string)=>buttons.filter(node=>contains(node,key))
+ assert.equal(pick('market.apps.title').length,0,'应用不再占左栏入口')
+ const order=buttons.map(node=>contains(node,'market.title')?'market':contains(node,'navigation.v2.library')?'library':'other').filter(id=>id!=='other')
+ assert.deepEqual(order,['library','market'],'资源组顺序：资料、市场')
+ assert.equal(pick('market.title')[0]!.props['aria-current'],'page','应用、已添加都归属市场，左栏仍是市场')
+ pick('market.title')[0]!.props.onClick()
+ assert.deepEqual(opened,['market'])
+ const work=readFileSync(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8'),frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8'),store=readFileSync(new URL('../src/client/store.ts',import.meta.url),'utf8'),market=readFileSync(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
+ assert.match(work,/id==='market'\?marketApps\?actions\.openMarketCategory\('home'\):actions\.openMarket\(\)/,'在应用视图点市场回到 AI 员工首页，复用原市场类别请求')
+ assert.match(frame,/<WorkNavigation marketApps=\{marketAppsPage\}/)
+ assert.match(market,/aria-current=\{primaryView==='apps'\?'page':undefined\} onClick=\{\(\)=>selectKind\('apps'\)\}/,'应用是市场分类页签')
  assert.match(store,/openMarketCategory\(state,category:MarketCategoryRequest\)/)
  assert.match(store,/export type MarketCategoryRequest=MarketCategory\|'home'\|'apps'\|'intents'/)
 })
@@ -55,7 +50,7 @@ test('同服务器多项 MCP 工具合并，含下划线服务器名也保留独
 })
 
 test('图标识别产品自身，不把 Codex 市场来源当作每个技能的 Logo',()=>{
- const page=mount('ResourceIcon.tsx',{'./resource-icon-assets.js':{resourceBrands:{github:'github.svg',codex:'codex.svg'},resourceAvatars:{general:'general.webp'}}})
+ const page=mount('ResourceIcon.tsx',{'./resource-icon-assets.js':{resourceBrands:{github:'github.svg',codex:'codex.svg'}}})
  assert.equal(page.exported.resourceBrand('codex.research','资料研究'),undefined)
  assert.equal(page.exported.resourceBrand('teloa.github','GitHub'),'github')
  assert.equal(page.exported.resourceBrand('source:mcp__github__search','GitHub'),'github')
@@ -86,13 +81,13 @@ test('统一发现首页进入 AI 员工，团队方案只列方案，应用改�
   assert.deepEqual(tree.filter(node=>node.type==='h1').map(node=>node.children.join('')),['market.title'],'方案 B 只有市场标题，不再套能力中心标题')
  }
  // 2026-10-14 用户选 B：应用入口是统一应用目录（连接器应用与技能同列、各守已装/已连接状态），不再是只列连接器的官方目录
- assert.equal(render({category:'home'}).some(node=>node.props.className==='appsShortcut'),false,'工作台内应用只在左栏，不在页内重复')
+ assert.equal(render({category:'home'}).some(node=>node.props.className==='appsShortcut'),false,'应用是市场分类页签，不另设快捷入口')
  const appsTree=render({category:'apps'})
  assert.equal(appsTree.some(node=>node.type===section),false)
  assert.equal(appsTree.find(node=>node.type===appsDirectory)!.props.catalogApi,marketCatalogApi)
- // 统一应用目录自带「应用」标题与搜索（见 market-primary-navigation / market-primary.browser），工作台内不再外套市场标题与市场分类
- assert.deepEqual(appsTree.filter(node=>node.type==='h1').map(node=>node.children.join('')),[],'应用目录不再套市场标题')
- assert.equal(appsTree.some(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria'),false,'应用不重复员工市场的分类')
+ // 1.0：应用并入市场，进入应用仍保留市场标题与分类页签（应用页签选中）
+ assert.deepEqual(appsTree.filter(node=>node.type==='h1').map(node=>node.children.join('')),['market.title'],'应用视图保留市场标题')
+ assert.equal(appsTree.some(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria'),true,'应用视图保留市场分类')
  const searched=render({category:'employees',query:'研究'})
  assert.equal(searched.find(node=>node.type===section)!.props.kinds,undefined,'主入口搜索不能丢失技能等次级类型')
  assert.equal(searched.some(node=>node.type===appsDirectory),false,'主入口搜索不切到应用目录')

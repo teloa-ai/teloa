@@ -13,6 +13,7 @@ import type {IndustryManifest} from './industry-manifest.js'
 import type {SkillSecretsState} from './skill-secrets-api.js'
 import {SkillSecretsBadgeButton} from './SkillSecretsBadgeButton.js'
 import css from './MarketCatalogSection.module.css'
+import {StatusPill,type StatusPillTone} from './StatusPill.js'
 import {MarketReviews} from './MarketReviews.js'
 import {MarketDerivativeChanges} from './MarketDerivativeChanges.js'
 import {TeloaFeedbackForm} from './TeloaFeedback.js'
@@ -30,7 +31,8 @@ import type {MarketItem} from './market-preview.js'
 import type {MarketCatalogSolutionPackage} from './market-catalog-api.js'
 import type {SolutionMark} from './market-solution-presentation.js'
 import type {TeloaTranslate} from './i18n/index.js'
-import {FilterRow,MarketDirectoryLayout,MarketEmpty,MarketFilterBar,MarketListRows,MarketCardSections,MarketTemplateDetails,MarketResultLine,type MarketListRow} from './MarketUnifiedList.js'
+import {FilterRow,MarketCatalogSkeleton,MarketDirectoryLayout,MarketEmpty,MarketFilterBar,MarketListRows,MarketCardSections,MarketTemplateDetails,MarketResultLine,type MarketListRow} from './MarketUnifiedList.js'
+import {ReadState} from './ReadState.js'
 import {filterTaxonomyRows,taxonomySearchTerms,type TaxonomyFilter} from './market-taxonomy-filter.js'
 
 import type {ConnectorAuth,MarketCatalogConnectorEntry} from '@teloa/contract'
@@ -58,6 +60,8 @@ export type CatalogSolutionTeam={
  ask:(item:MarketItem)=>Promise<void>
 }
 
+/** 兼容性胶囊：已验证=good，需要配置与只含说明=neutral（浏览目录不算阻塞，不用琥珀），暂不支持=muted；类别、安装量等属性一律 neutral。 */
+const compatibilityTones:Record<MarketCatalogCompatibility,StatusPillTone>={verified:'good','needs-configuration':'neutral','content-only':'neutral',unsupported:'muted'}
 const compatibilityKeys:Record<MarketCatalogCompatibility,'market.catalog.official.compatVerified'|'market.catalog.official.compatNeedsConfiguration'|'market.catalog.official.compatContentOnly'|'market.catalog.official.compatUnsupported'>={
  verified:'market.catalog.official.compatVerified','needs-configuration':'market.catalog.official.compatNeedsConfiguration','content-only':'market.catalog.official.compatContentOnly',unsupported:'market.catalog.official.compatUnsupported',
 }
@@ -187,13 +191,18 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
   void api.ranking().then(value=>{if(active)setRanking(value)})
   return()=>{active=false}
  },[api])
+ // 读取三态（B8）：本人取消或 30 秒超时即停止等待，迟到的回包按代次丢弃；重试从新的一代重新读取。
+ const [stopped,setStopped]=useState<'cancelled'|'timeout'>()
+ const readGeneration=useRef(0)
  useEffect(()=>{
-  let active=true
-  setListing(undefined);setReadError(undefined)
+  const generation=++readGeneration.current
+  setListing(undefined);setReadError(undefined);setStopped(undefined)
   // 一个 Teloa 官方目录：分类只筛选已读结果，不按分类另读来源
-  void loadCatalogListing(api).then(value=>{if(active){setListing(value);onCounts?.(value.counts)}},error=>{if(active)setReadError(localizeWorkError(locale,error))})
-  return()=>{active=false}
+  void loadCatalogListing(api).then(value=>{if(readGeneration.current===generation){setListing(value);onCounts?.(value.counts)}},error=>{if(readGeneration.current===generation)setReadError(localizeWorkError(locale,error))})
+  return()=>{if(readGeneration.current===generation)readGeneration.current++}
  },[api,revision])
+ const stopRead=(kind:'cancelled'|'timeout')=>{readGeneration.current++;setStopped(kind)}
+ const readStatus=listing?undefined:stopped??(readError?'failed':'pending')
  // 停在官方方案详情时读方案包清单，产品页据此列「添加后你会得到」；换条目或重试时重读
  const selectedSolution=listing?.items.find(item=>item.entry.id===selectedEntryId&&item.entry.kind==='solution')?.entry.id
  const [solutionPackage,setSolutionPackage]=useState<{entryId:string;state:CatalogSolutionPackageState}>()
@@ -284,7 +293,7 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
  // 从官方目录添加过的条目在本机也有一份内容：只留官方那一行（带「已添加」记号），不重复列出
  const addedContent=new Set((listing?.items??[]).flatMap(item=>item.addedContentId?[item.addedContentId]:[]))
  // 目录读完前先不显示带内容编号的本机行（可能是已添加的官方条目，读完就会被合并掉），避免闪现；读取失败时照常显示
- const local=(localRows??[]).filter(row=>!row.contentId||(listing?!addedContent.has(row.contentId):!!readError))
+ const local=(localRows??[]).filter(row=>!row.contentId||(listing?!addedContent.has(row.contentId):!!readError||!!stopped))
  // 本机条目（含内置示例）排在前面，官方条目按排序方式排在后面；两者同一套行业 / 功能筛选
  const officialRows=sortCatalogItems(baseItems,ranking,sort).map(item=>catalogListRow(item,{t,locale,number,ranking,roleReceipt:roleReceipts[item.entry.id],openEntry,after:<CatalogAlternativeLinks entry={item.entry} items={listing?.items??[]} openEntry={openEntry}/>}))
  const allRows=[...local,...officialRows]
@@ -308,8 +317,8 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
    </section></ContextDrawer>
   }else detail=<ContextDrawer title={selected?catalogText(catalogEntryTitle(selected.entry),locale):t('market.catalog.official.detailTitle')} close={backFromEntry} className={css.detailDrawer??''}><section className={clsx(css.section,css.detailView)} aria-label={t('market.catalog.official.detailTitle')}>
    <ToolbarIconButton className={css.backLink} label={t('market.catalog.connector.back')} icon={ArrowLeft} onClick={backFromEntry}/>
-   {!listing&&!readError&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
-   {selected?renderCards([selected]):(listing||readError)&&<p className={css.error} role="status">{t('market.catalog.official.entryUnavailable')}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
+   {!listing&&!readError&&!stopped&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
+   {selected?renderCards([selected]):(listing||readError||stopped)&&<p className={css.error} role="status">{t('market.catalog.official.entryUnavailable')}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
   </section></ContextDrawer>
  }
  const merged=localRows!==undefined
@@ -322,10 +331,11 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
   </MarketFilterBar>
  // 方案 B 主目录：一类一个平铺卡片网格（不再按用途分区）；搜索时带组别。其余入口保持按用途分区与「查看全部」。
  const list=rows.length?sidebar?<MarketListRows rows={rows} layout="cards" showGroups={!!query.trim()&&!presentation}/>:search?<MarketCardSections rows={rows} showGroups={!!query.trim()&&!presentation} grouped={!query.trim()&&taxonomy.fn===null} onSelect={fn=>setTaxonomy(current=>({...current,fn}))}/>:<MarketListRows rows={rows} layout={layout}/>:merged?<MarketEmpty filtered={filtered} onReset={()=>{setTaxonomy({industry:null,fn:null});onResetQuery?.()}}/>:<p className={css.status}>{t('market.catalog.official.empty')}</p>
+ // 1.0（设计稿 10）：搜索框与用途筛选同一行；左栏布局仍把搜索放在卡片上方
+ const toolRow=search&&!sidebar?<div className={css.toolRow}>{search}{filterBar}</div>:null
  const body=<>
-  {search}
-  {readError&&<p className={css.error} role="alert">{t('market.catalog.official.readFailed',{reason:readError})}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
-  {!listing&&!readError&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
+  {sidebar?search:null}
+  {readStatus&&<ReadState key={revision} status={readStatus} subject={t('market.catalog.official.readSubject')} loadingLabel={t('market.catalog.official.loading')} reason={readError} skeleton={<MarketCatalogSkeleton layout={sidebar||search?'cards':layout} grouped={!!search&&!sidebar&&!query.trim()}/>} cancel={()=>stopRead('cancelled')} retry={()=>setRevision(value=>value+1)} onTimeout={()=>stopRead('timeout')} {...(onBack?{back:onBack}:{})}/>}
   {(listing||local.length>0)&&<>
    {(!search||filtered)&&<MarketResultLine count={rows.length}/>}
    {list}
@@ -335,7 +345,7 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
  return <><section ref={sectionRef} className={css.section} aria-label={label??t('market.catalog.official.title')}>
   {/* 单独使用（连接页深链等）时保留目录标题；页面里与本机条目合成一个列表时不再另起标题，只写结果行 */}
   {!merged&&<header className={css.header}><h2>{t('market.catalog.official.title')}</h2></header>}
-  {sidebar?<MarketDirectoryLayout nav={filterBar}>{body}</MarketDirectoryLayout>:<>{filterBar}{body}</>}
+  {sidebar?<MarketDirectoryLayout nav={filterBar}>{body}</MarketDirectoryLayout>:<>{toolRow??filterBar}{body}</>}
  </section>{detail}</>
 }
 
@@ -365,8 +375,8 @@ export function catalogListRow(item:MarketCatalogItem,{t,locale,number,ranking,r
   key:'catalog:'+entry.id,catalogId:entry.id,title:catalogText(catalogEntryTitle(entry),locale),summary:catalogText(catalogSummary(entry),locale),
   // 官方方案带了包含计数时照原型方案卡写「包含：…」，与本机方案卡同一套摘要
   facts:contains?t('market.solution.contains',{list:contains}):[state,source,...(installs>0?[t('market.catalog.official.installs',{count:number(installs)})]:[])].join(' · '),
-  // 团队方案卡的第三行先写「N 位 AI 员工」（原型 B card-meta），再写目录提供方
-  credit:marketPrimaryCatalogItem(item,'teams')&&item.contents?.role?t('market.primary.teamMembers',{count:number(item.contents.role)})+' · '+source:source,
+  // 卡片头部小字：团队先写「N 位 AI 员工」（原型 B card-meta），再写目录提供方；有安装量时接「N 次添加」（设计稿 10）
+  credit:[...(marketPrimaryCatalogItem(item,'teams')&&item.contents?.role?[t('market.primary.teamMembers',{count:number(item.contents.role)})]:[]),source,...(installs>0?[t('market.primary.installs',{count:number(installs)})]:[])].join(' · '),
   group:t(marketCatalogItemGroup(item)),
   mark:catalogItemMark(item,roleReceipt),art:{kind:catalogArtKind(entry.kind),seed:entry.id,...(entry.kind==='role'&&entry.role.definition.avatarKey?{avatarKey:entry.role.definition.avatarKey}:{})},taxonomy:entry.taxonomy,open:()=>openEntry(entry.id),
   ...(after?{after}:{}),
@@ -422,7 +432,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
  return items.length?<ul className={css.list}>{items.map(item=>appendSlot((()=>{
    const {entry}=item
    const installs=ranking?.get(entry.id)?.installs??0
-   const installsBadge=installs>0?<span className={css.badge}>{t('market.catalog.official.installs',{count:number(installs)})}</span>:null
+   const installsBadge=installs>0?<StatusPill>{t('market.catalog.official.installs',{count:number(installs)})}</StatusPill>:null
    const actions=<div className={css.actions}>{entry.delivery==='builtin'?<span>{t('market.catalog.official.builtin')}</span>:item.addedContentId?<><span>{t('market.catalog.official.added')}</span><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>entry.kind==='connector'&&openConnection?openConnection(entry.id,entry as MarketCatalogConnectorEntry):open(item.addedContentId!)}/>{entry.kind==='skill'&&entry.secrets?.length&&openSkillSecrets?<SkillSecretsBadgeButton skill={entry.skill.name} title={catalogText(entry.skill.title,locale)} describe={describeSkillSecrets} open={openSkillSecrets}/>:null}</>:<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>add(item)}>{busy===entry.id?t('market.catalog.official.adding'):entry.kind==='solution'?t('market.catalog.official.addSolution'):entry.kind==='dashboard'?t('market.apps.action.add'):entry.kind==='connector'?t('market.catalog.official.addConnector'):t('market.catalog.official.add')}</button>}</div>
    const errorNode=addErrors[entry.id]&&<p className={css.error} role="alert">{addErrors[entry.id]}</p>
    const feedback=<MarketResourceFeedback entry={entry}/>
@@ -436,7 +446,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
       ?<div className={css.actions}><span>{entry.compatibility.conditions[0]?catalogText(entry.compatibility.conditions[0],locale):t('market.catalog.official.unsupportedFallback')}</span></div>
       :actions
      return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-      <div className={css.top}><h3 className={css.name}>{catalogText(entry.skill.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}</div>
+      <div className={css.top}><h3 className={css.name}>{catalogText(entry.skill.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}</div>
       <p className={css.summary}>{catalogText(entry.skill.summary,locale)}</p>
       <p className={css.meta}>{sourceLabel} · {t('market.catalog.official.matchesOriginal')}</p>
       <SecretGroupLine group={item.secretGroup} entryId={entry.id}/>
@@ -460,7 +470,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
     const upstream=entry.upstream,derivation=entry.derivation
     const upstreamUrl=upstream&&githubTreeUrl(upstream.repository,upstream.commit,upstream.path)
     return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-     <div className={css.top}><h3 className={css.name}>{catalogText(entry.skill.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}</div>
+     <div className={css.top}><h3 className={css.name}>{catalogText(entry.skill.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}</div>
      <p className={css.summary}>{catalogText(entry.skill.summary,locale)}</p>
      <p className={css.meta}>{upstream&&derivation?t('market.catalog.official.derivedFrom',{author:upstream.author,owner:upstream.repository.owner,repo:upstream.repository.repo,license:entry.license.spdx}):upstream?t('market.catalog.official.upstream',{author:upstream.author,license:entry.license.spdx}):t('market.catalog.official.builtinSource',{license:entry.license.spdx})}</p>
      <SecretGroupLine group={item.secretGroup} entryId={entry.id}/>
@@ -487,7 +497,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
      :entry.compatibility.status==='unsupported'?<span>{entry.compatibility.conditions[0]?catalogText(entry.compatibility.conditions[0],locale):t('market.catalog.official.unsupportedFallback')}</span>
      :plan?null:<button type="button" className={css.primary} disabled={busy!==undefined} onClick={()=>addRole?.(item)}>{t('market.catalog.official.addRole')}</button>
     return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-     <div className={css.top}><ItemArt kind="agent" title={catalogText(entry.role.title,locale)} seed={entry.id} avatarKey={entry.role.definition.avatarKey}/><h3 className={css.name}>{catalogText(entry.role.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}<span className={css.badge}>{t('market.catalog.official.roleBadge')}</span></div>
+     <div className={css.top}><ItemArt kind="agent" title={catalogText(entry.role.title,locale)} seed={entry.id} avatarKey={entry.role.definition.avatarKey}/><h3 className={css.name}>{catalogText(entry.role.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}<StatusPill>{t('market.catalog.official.roleBadge')}</StatusPill></div>
      <p className={css.summary}>{catalogText(entry.role.summary,locale)}</p>
      <p>{entry.role.definition.duty}</p>
      {roleActions&&<div className={css.actions}>{roleActions}</div>}
@@ -515,7 +525,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
      const embedding=entry.model.usage.some(usage=>usage==='embedding')&&entry.model.native.kind==='teloa-embedding'
      const prepare=embedding?(openRetrievalModel?()=>openRetrievalModel(entry.id,entry.version):undefined):openLocalModel
      return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-      <div className={css.top}><h3 className={css.name}>{catalogText(entry.model.title,locale)}</h3><span className={css.badge}>{t(embedding?'retrieval.resources.title':'market.catalog.official.localModelBadge')}</span>{entry.model.support==='experimental'&&<span className={css.badge}>{t('market.catalog.official.modelExperimental')}</span>}</div>
+      <div className={css.top}><h3 className={css.name}>{catalogText(entry.model.title,locale)}</h3><StatusPill>{t(embedding?'retrieval.resources.title':'market.catalog.official.localModelBadge')}</StatusPill>{entry.model.support==='experimental'&&<StatusPill>{t('market.catalog.official.modelExperimental')}</StatusPill>}</div>
       <p className={css.summary}>{catalogText(entry.model.summary,locale)}</p>
       <p className={css.meta}>{t('market.catalog.official.localModelHost')}</p>
       {entry.model.license.tier==='restricted'&&<p className={css.error} role="note">{entry.model.license.restrictions.map(item=>catalogText(item,locale)).join(' ')}</p>}
@@ -536,7 +546,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
     const provider=cloud?.provider??null
     const modelIds=entry.model.form==='cloud'?entry.model.cloud.models.map(model=>model.id):entry.model.variants.map(variant=>variant.sources[0].name)
     return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-     <div className={css.top}><h3 className={css.name}>{catalogText(entry.model.title,locale)}</h3><span className={css.badge}>{t('market.catalog.official.modelBadge')}</span><span className={css.badge}>{t(cloud?reachKey:'market.catalog.official.modelLocalBadge')}</span>{entry.model.support==='experimental'&&<span className={css.badge}>{t('market.catalog.official.modelExperimental')}</span>}</div>
+     <div className={css.top}><h3 className={css.name}>{catalogText(entry.model.title,locale)}</h3><StatusPill>{t('market.catalog.official.modelBadge')}</StatusPill><StatusPill>{t(cloud?reachKey:'market.catalog.official.modelLocalBadge')}</StatusPill>{entry.model.support==='experimental'&&<StatusPill>{t('market.catalog.official.modelExperimental')}</StatusPill>}</div>
      <p className={css.summary}>{catalogText(entry.model.summary,locale)}</p>
      {entry.model.license.tier==='restricted'&&<p className={css.error} role="note"><strong>{t('market.catalog.official.modelRestricted')}</strong> {entry.model.license.restrictions.map(item=>catalogText(item,locale)).join(' ')}</p>}
      {entry.model.form==='cloud'?<p className={css.meta}>{t(priceKey)} · {modelIds.join(', ')}</p>:entry.model.variants.map((variant,i)=><p key={i} className={css.meta}>{variant.sources[0].name} · {t('market.catalog.official.modelLocalVariant',{quant:variant.quant,size:formatBytes(variant.sizeBytes),min:variant.hardware.minRamGb,rec:variant.hardware.recommendedRamGb})}</p>)}
@@ -552,7 +562,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
     </li>
    }
    if(entry.kind==='solution') return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-    <div className={css.top}><h3 className={css.name}>{catalogText(entry.solution.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}<span className={css.badge}>{t('market.catalog.official.solutionBadge')}</span></div>
+    <div className={css.top}><h3 className={css.name}>{catalogText(entry.solution.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}<StatusPill>{t('market.catalog.official.solutionBadge')}</StatusPill></div>
     <p className={css.summary}>{catalogText(entry.solution.summary,locale)}</p>
     {(['now','needs','permissions'] as const).map(group=><div key={group}><strong>{t(capabilityGroupKeys[group])}</strong><ul>{entry.solution.capabilities[group].slice(0,2).map((cap,i)=><li key={i}>{catalogText(cap,locale)}</li>)}</ul></div>)}
     {actions}{errorNode}
@@ -567,7 +577,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
     </details>
    </li>
    if(entry.kind==='dashboard') return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-    <div className={css.top}><h3 className={css.name}>{catalogText(entry.dashboard.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}<span className={css.badge}>{t('market.presentation.category.dashboard')}</span></div>
+    <div className={css.top}><h3 className={css.name}>{catalogText(entry.dashboard.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}<StatusPill>{t('market.presentation.category.dashboard')}</StatusPill></div>
     <p className={css.summary}>{catalogText(entry.dashboard.summary,locale)}</p>
     {(['now','needs','permissions'] as const).map(group=><div key={group}><strong>{t(capabilityGroupKeys[group])}</strong><ul>{entry.dashboard.capabilities[group].slice(0,2).map((cap,i)=><li key={i}>{catalogText(cap,locale)}</li>)}</ul></div>)}
     {actions}{errorNode}
@@ -585,7 +595,7 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
    const previewTools=entry.connector.tools.slice(0,3)
    const connectorActions=!item.addedContentId&&oauthAllowlistBlocked(entry.connector.auth)?<div className={css.actions}><span>{t('market.catalog.connector.oauthErrorAllowlist')}</span></div>:actions
    return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
-    <div className={css.top}><h3 className={css.name}>{catalogText(entry.connector.title,locale)}</h3><span className={css.badge}>{t(compatibilityKeys[entry.compatibility.status])}</span>{installsBadge}<span className={css.badge}>{t('market.catalog.official.connectorBadge')}</span><span className={css.badge}>{t(authBadgeKey)}</span></div>
+    <div className={css.top}><h3 className={css.name}>{catalogText(entry.connector.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}<StatusPill>{t('market.catalog.official.connectorBadge')}</StatusPill><StatusPill>{t(authBadgeKey)}</StatusPill></div>
     <p className={css.summary}>{catalogText(entry.connector.summary,locale)}</p>
     {oauthFullAccessToken(entry.connector.auth)&&<p className={css.error} role="note">{t('market.catalog.connector.oauthFullAccess')}</p>}
     {previewTools.length>0&&<ul>{previewTools.map(tool=><li key={tool.name}>{catalogText(tool.description,locale)}</li>)}</ul>}

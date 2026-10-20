@@ -51,7 +51,7 @@ test('适用范围与来源收进行内第二行「范围 · 来源」，不再�
 
 test('同事行用本人形象，其余类型用类型图标',()=>{
  const staff=catalog([item({id:'role-a',kind:'role',title:'研究助理'})],'role')
- assert.match(staff,/class="icon avatar"[^>]*>.*researcher\.webp/)
+ assert.match(staff,/class="icon avatar"[^>]*><img src="data:image\/svg\+xml,[^"]*%3Cpath%20d%3D%22M23%2010c8-3/,'研究岗位用豆形机器人头像')
  assert.doesNotMatch(staff,/class="itemArt"/)
  assert.match(catalog([item()],'skill'),/class="icon skill"[^>]*>.*lucide-braces/)
 })

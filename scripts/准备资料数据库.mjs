@@ -11,7 +11,13 @@ const name='teloa-postgres',image='postgres@sha256:18cfe3ef5e6815560c98237d6216d
 const invokeDocker=(args)=>spawnSync('docker',args,{encoding:'utf8'})
 const dockerFailure=(result)=>Error('Docker 操作失败：'+(result.error?.message||result.stderr?.trim()||'未知错误')+'（请安装并启动 Docker，并用 `docker info` 验证连接；远程 daemon 不适用于此本机安装脚本）')
 const docker=(args)=>{const result=invokeDocker(args);if(result.status!==0)throw dockerFailure(result);return result.stdout.trim()}
-const inspect=(args)=>{const result=invokeDocker(args);if(result.status===0)return JSON.parse(result.stdout)[0];if(result.status===1&&/No such (?:object|container|volume):/i.test(result.stderr||''))return null;throw dockerFailure(result)}
+const inspect=(args)=>{
+ const result=invokeDocker(args)
+ if(result.status===0)return JSON.parse(result.stdout)[0]
+ const error=(result.stderr||'').trim(),missingVolume=args[0]==='volume'&&args[1]==='inspect'&&error.toLowerCase()===`error response from daemon: get ${args[2]}: no such volume`.toLowerCase()
+ if(result.status===1&&(/No such (?:object|container|volume):/i.test(error)||missingVolume))return null
+ throw dockerFailure(result)
+}
 try{
   docker(['info'])
   await mkdir(directory,{recursive:true,mode:0o700})

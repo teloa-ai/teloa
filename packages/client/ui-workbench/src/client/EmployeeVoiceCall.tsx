@@ -11,7 +11,6 @@ import {employeeVoiceCopy} from './employee-voice-copy.js'
 import {useI18n} from './i18n/provider.js'
 import {companionSafePoint} from './assistant-companion-position.js'
 import css from './EmployeeVoiceCall.module.css'
-import assistantAvatar from '../brand/companion/icon.webp'
 type RoleTarget={id:string;version:number;name:string;avatarKey?:RoleAvatarKey|undefined;roleKind?:'employee'|'twin';initials?:string}
 export type VoiceCallTarget=({kind:'role'}&RoleTarget)|{kind:'assistant';name:string;contextVersion:number}
 type State='preparing'|'connecting'|'listening'|'recording'|'thinking'|'speaking'|'muted'|'ended'|'closeFailed'
@@ -239,7 +238,7 @@ export function EmployeeVoiceCall({api,role,target:providedTarget,sessionId,open
  },[initialSession,api,target])
  const panel=<section ref={panelRef} className={[css.panel,target.kind==='assistant'?css.assistant:''].join(' ')} role="region" aria-label={copy('call')} data-dragging={dragging||undefined} style={position?{left:position.x,top:position.y,right:'auto',bottom:'auto',maxWidth:position.maxWidth,maxHeight:position.maxHeight}:undefined}>
   <header tabIndex={0} aria-label={copy('call')} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={event=>{if(drag.current?.pointerId===event.pointerId)releaseDrag()}} onKeyDown={moveWithKeyboard}><span>{copy('call')}</span>{startTime.current&&<time>{Math.floor(elapsed/60).toString().padStart(2,'0')}:{(elapsed%60).toString().padStart(2,'0')}</time>}</header>
-  <div className={css.avatar} data-state={state} aria-hidden="true">{target.kind==='assistant'?<img src={assistantAvatar} alt=""/>:target.roleKind==='twin'?<TwinAvatar initials={target.initials??''}/>:<EmployeeAvatar avatarKey={target.avatarKey} size="lg"/>}</div>
+  <div className={css.avatar} data-state={state} aria-hidden="true">{target.kind==='assistant'?<EmployeeAvatar assistant size="lg"/>:target.roleKind==='twin'?<TwinAvatar initials={target.initials??''}/>:<EmployeeAvatar avatarKey={target.avatarKey} size="lg"/>}</div>
   <strong className={css.name}>{target.name}</strong>
   <p className={css.status} role="status"><span data-state={state}/>{copy(state)}</p>
   {lastText&&<p className={css.transcript}>{lastText}</p>}

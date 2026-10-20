@@ -36,17 +36,5 @@ import brandCodex from '../brand/resources/codex.svg'
 import brandSlack from '../brand/resources/slack.svg'
 import brandRemotion from '../brand/resources/remotion.svg'
 import brandPstack from '../brand/resources/pstack.png'
-import avatarGeneral from '../brand/resources/general.webp'
-import avatarUidesigner from '../brand/resources/ui-designer.webp'
-import avatarDeveloper from '../brand/resources/developer.webp'
-import avatarResearcher from '../brand/resources/researcher.webp'
-import avatarMarketing from '../brand/resources/marketing.webp'
-import avatarSales from '../brand/resources/sales.webp'
-import avatarHr from '../brand/resources/hr.webp'
-import avatarFinance from '../brand/resources/finance.webp'
-import avatarProject from '../brand/resources/project.webp'
-import avatarContentwriter from '../brand/resources/content-writer.webp'
-import avatarSecurityanalyst from '../brand/resources/security-analyst.webp'
 export const resourceBrands={'github':brandGithub,'figma':brandFigma,'notion':brandNotion,'cloudflare':brandCloudflare,'stripe':brandStripe,'supabase':brandSupabase,'linear':brandLinear,'atlassian':brandAtlassian,'gitlab':brandGitlab,'sentry':brandSentry,'posthog':brandPosthog,'pagerduty':brandPagerduty,'zapier':brandZapier,'anthropic':brandAnthropic,'claude':brandClaude,'google-drive':brandGoogledrive,'gmail':brandGmail,'google-sheets':brandGooglesheets,'google-slides':brandGoogleslides,'google-meet':brandGooglemeet,'google-play':brandGoogleplay,'google':brandGoogle,'clickup':brandClickup,'todoist':brandTodoist,'trello':brandTrello,'asana':brandAsana,'hubspot':brandHubspot,'discord':brandDiscord,'spotify':brandSpotify,'obsidian':brandObsidian,'telegram':brandTelegram,'airtable':brandAirtable,'mailchimp':brandMailchimp,'openai':brandOpenai,'codex':brandCodex,'slack':brandSlack,'remotion':brandRemotion,'pstack':brandPstack} as const
 export type ResourceBrand=keyof typeof resourceBrands
-export const resourceAvatars={'general':avatarGeneral,'ui-designer':avatarUidesigner,'developer':avatarDeveloper,'researcher':avatarResearcher,'marketing':avatarMarketing,'sales':avatarSales,'hr':avatarHr,'finance':avatarFinance,'project':avatarProject,'content-writer':avatarContentwriter,'security-analyst':avatarSecurityanalyst} as const

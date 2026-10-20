@@ -5,8 +5,11 @@ import {approvalText,type ApprovalRecord, type ApprovalDecision } from './approv
 import { useApprovalNotes } from './ApprovalNotes.js'
 import { useI18n } from './i18n/provider.js'
 import css from './TaskPage.module.css'
+import {StatusPill,type StatusPillTone} from './StatusPill.js'
 
 const approvalStatusKeys={pending:'approvalCard.status.pending',approved:'approvalCard.status.approved',rejected:'approvalCard.status.rejected',changes:'approvalCard.status.changes',stale:'approvalCard.status.stale'} as const
+/** 待批准才是阻塞（warn）；已批准=good，需修改=neutral，已拒绝/已失效/已过期=muted。 */
+const approvalTones:Record<ApprovalRecord['status'],StatusPillTone>={pending:'warn',approved:'good',rejected:'muted',changes:'neutral',stale:'muted'}
 const decisionKeys={changes:'approvalCard.action.changes',rejected:'approvalCard.action.rejected',approved:'approvalCard.action.approved'} as const
 
 export function ApprovalCard({approval,onDecide,openArtifact}:{openArtifact?:(ref:ArtifactRef)=>void;approval:ApprovalRecord;onDecide:(change:ApprovalDecision)=>boolean}){
@@ -16,7 +19,7 @@ export function ApprovalCard({approval,onDecide,openArtifact}:{openArtifact?:(re
   const snapshot=approval.snapshot
   const stamp=(value:string)=>dateTime(value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
   return <section className={css.approval} aria-label={t('approvalCard.aria',{id:approval.id})}>
-    <header><ShieldCheck size={21}/><h3>{t('approvalCard.title')}</h3><span className={css.badge}>{t(expired?'approvalCard.status.expired':approvalStatusKeys[approval.status])}</span></header>
+    <header><ShieldCheck size={21}/><h3>{t('approvalCard.title')}</h3><StatusPill tone={expired?'muted':approvalTones[approval.status]}>{t(expired?'approvalCard.status.expired':approvalStatusKeys[approval.status])}</StatusPill></header>
     <h4>{snapshot.title}</h4><p>{t('approvalCard.submittedSubject',{object:approvalText(snapshot.object,t),subject:approvalText(snapshot.subjectLabel,t),version:snapshot.subjectVersion})}</p><div className={css.risk}>{approvalText(snapshot.risk,t)}</div>
     <h4>{t('approvalCard.goal')}</h4><p>{snapshot.goal}</p><h4>{t('approvalCard.recommendation')}</h4><p>{snapshot.result||t('approvalCard.noResult')}</p>
     {snapshot.artifact&&<details><summary>{t('approvalCard.artifact',{version:snapshot.artifact.version})}</summary><p>{snapshot.artifactText}</p>{openArtifact&&<button type="button" onClick={()=>openArtifact(snapshot.artifact!)}>{t('approvalCard.openArtifact',{version:snapshot.artifact.version})}</button>}</details>}

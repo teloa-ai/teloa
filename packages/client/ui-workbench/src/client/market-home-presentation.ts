@@ -9,7 +9,8 @@ import type {MarketCatalogListCounts,MarketCatalogListItem,MarketEntryKind} from
 
 export type MarketCategory='industry'|'dashboard'|'agent'|'skill'|'plugin'|'connector'|'model'|'knowledge'|'work-template'
 /** 市场主目录（方案 B「员工／团队」）：一位 AI 员工、一组 AI 员工；应用从旁侧常驻快捷入口到达，不作为主标签。 */
-export type MarketPrimaryView='employees'|'teams'|'apps'
+/** 1.0：「全部」与员工、团队、应用同为市场分类页签，全部不按类型过滤（模型仍只在设置里配置）。 */
+export type MarketPrimaryView='all'|'employees'|'teams'|'apps'
 export type MarketBrowseKind=MarketCategory|MarketPrimaryView|'home'|'intents'|'resources'
 export type MarketAdvancedEntry=MarketCategory|'apps'
 export type MarketGroupKey='market.primary.employees'|'market.primary.teams'|'market.primary.apps'|'market.primary.methodsGroup'|'market.primary.connectGroup'|'market.primary.businessGroup'|'market.primary.runtimeGroup'|'market.presentation.category.dashboard'
@@ -31,6 +32,7 @@ export function solutionRoleCount(item:Pick<MarketItem,'manifest'>):number|undef
 /** 原资源保持各自身份；此映射只决定用户从哪个常用入口找到它：含一位员工的模板归 AI 员工，多位员工归团队方案。 */
 export function marketPrimaryItem(item:MarketItem,view:MarketPrimaryView):boolean{
  const category=marketCategoryOf(item)
+ if(view==='all')return category!=='model'
  if(view==='apps')return category==='connector'||category==='plugin'
  if(category==='agent')return view==='employees'
  if(category==='dashboard')return view==='teams'
@@ -51,6 +53,7 @@ export function marketItemGroup(item:MarketItem):MarketGroupKey{
 
 /** 旧宿主没有组成计数时保留方案（归团队方案），不能因未知计数隐藏原适配模板。 */
 export function marketPrimaryCatalogItem(item:MarketCatalogListItem,view:MarketPrimaryView):boolean{
+ if(view==='all')return item.entry.kind!=='model'
  if(view==='apps')return item.entry.kind==='connector'
  if(item.entry.kind==='role')return view==='employees'
  if(item.entry.kind==='dashboard')return view==='teams'

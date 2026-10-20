@@ -1,12 +1,13 @@
 import {useEffect,useState} from 'react'
 import clsx from 'clsx'
-import {CalendarDays,FolderKanban,Plus,RefreshCw} from 'lucide-react'
+import {FolderKanban,Plus,RefreshCw} from 'lucide-react'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {projectStates,type ProjectDefinition,type WorkProject} from '@teloa/contract'
 import type {ProjectApi} from './project-api.js'
 import type {BusinessScopeLabel} from './business-directory.js'
 import type {WorkbenchDirectoryNavigation,WorkbenchDirectoryPatch} from './workbench-navigation-state.js'
-import {projectStateKeys} from './project-presentation.js'
+import {projectStateKeys,projectCopy} from './project-presentation.js'
+import {ProjectCard} from './ProjectWorkspace.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import page from './TaskPage.module.css'
@@ -27,14 +28,14 @@ export function ProjectOverviewPage({api,scopeLabels,labelsReady,scopeName,navig
  useEffect(()=>{if(!visible)return;const update=()=>{if(document.visibilityState==='visible')refresh(n=>n+1)};window.addEventListener('focus',update);const timer=setInterval(update,30000);return()=>{window.removeEventListener('focus',update);clearInterval(timer)}},[visible])
  const loadMore=async()=>{if(!nextCursor||more)return;setMore(true);setError('');try{const value=await api.overview({scope,state:stateFilter,cursor:nextCursor,limit:pageSize});setRows(current=>[...current,...value.rows.filter(row=>!current.some(item=>item.id===row.id))]);setNextCursor(value.nextCursor)}catch(e){setError(localizeWorkError(locale,e))}finally{setMore(false)}}
  return <section className={clsx(page.page,css.workspace)} aria-label={t('project.overview.title')}>
-  <header className={page.pageHeader}><div><h1>{t('project.overview.title')}</h1></div><ToolbarIconButton label={t('project.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>refresh(n=>n+1)}/></header>
+  <header className={css.overviewHeader}><div><h1>{t('project.overview.title')}</h1><p>{projectCopy(locale,'overviewLead')}</p></div><div className={css.overviewActions}><ToolbarIconButton label={t('project.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>refresh(n=>n+1)}/><button type="button" className={css.primary} onClick={()=>create(scope??(scopeLabels.length===1?scopeLabels[0]!.scope:undefined))}><Plus size={15}/>{t('project.create')}</button></div></header>
   <div className={css.overviewBody} data-teloa-pane="directory" tabIndex={-1}>
    <div className={css.toolbar}>
     {scopeLabels.length>1&&<select aria-label={t('project.overview.businessFilter')} value={scope??''} onChange={e=>navigation.change({category:e.target.value||undefined})}><option value="">{t('project.overview.allBusinesses')}</option>{scopeLabels.map(label=><option key={label.scope} value={label.scope}>{scopeName(label.scope)}</option>)}</select>}
     <select aria-label={t('project.overview.stateFilter')} value={stateFilter} onChange={e=>navigation.change({query:e.target.value==='current'?undefined:e.target.value})}>{stateFilters.map(value=><option key={value} value={value}>{t(value==='current'?'project.current':projectStateKeys[value])}</option>)}</select>
    </div>
    {error&&<div className={css.error} role="alert">{error}<button type="button" disabled={loading||more} onClick={()=>refresh(n=>n+1)}>{t('project.refresh')}</button></div>}
-   {loading?<p role="status">{t('project.loading')}</p>:!rows.length?(error?null:<div className={css.directoryEmpty}><FolderKanban size={27}/><h3>{t(scope||stateFilter!=='current'?'project.overview.noMatch':'project.overview.empty')}</h3><div className={page.buttons}>{(scope||stateFilter!=='current')&&<button type="button" onClick={()=>navigation.change({category:undefined,query:undefined})}>{t('task.filter.reset')}</button>}<button type="button" onClick={()=>create(scope??(scopeLabels.length===1?scopeLabels[0]!.scope:undefined))}><Plus size={16}/>{t('project.overview.createInBusiness')}</button></div></div>):<div className={css.projectList}>{rows.map(project=><button type="button" className={css.projectCard} key={project.id} data-project-card={project.id} onClick={()=>open(project)}><span className={css.cardTitle}><FolderKanban size={19}/><strong>{project.title}</strong><small>{t(projectStateKeys[project.state])}</small></span><span className={css.cardScope}>{scopeName(project.scope)}</span><span className={css.cardGoal}>{project.goal}</span>{project.dueDate&&<span className={css.due}><CalendarDays size={13}/>{project.dueDate}</span>}</button>)}</div>}
+   {loading?<p role="status">{t('project.loading')}</p>:!rows.length?(error?null:<div className={css.directoryEmpty}><FolderKanban size={27}/><h3>{t(scope||stateFilter!=='current'?'project.overview.noMatch':'project.overview.empty')}</h3><div className={page.buttons}>{(scope||stateFilter!=='current')&&<button type="button" onClick={()=>navigation.change({category:undefined,query:undefined})}>{t('task.filter.reset')}</button>}<button type="button" onClick={()=>create(scope??(scopeLabels.length===1?scopeLabels[0]!.scope:undefined))}><Plus size={16}/>{t('project.overview.createInBusiness')}</button></div></div>):<div className={css.projectList}>{rows.map(project=><ProjectCard key={project.id} project={project} scopeName={scopeName(project.scope)} open={()=>open(project)}/>)}</div>}
    {nextCursor&&!loading&&<div className={css.loadMore}><button type="button" data-project-load-more="" disabled={more} onClick={()=>void loadMore()}>{t('project.overview.loadMore')}</button></div>}
   </div>
  </section>

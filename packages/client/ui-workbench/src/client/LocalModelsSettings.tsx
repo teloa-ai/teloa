@@ -1,6 +1,5 @@
-import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from 'react'
-import {Download,HardDrive,RefreshCw,ExternalLink} from 'lucide-react'
+import {Download,HardDrive,Info,RefreshCw,ArrowUpRight} from 'lucide-react'
 import {OLLAMA_MIN_VERSION,readOllamaAddress,type LocalModelsOverview,type LocalModelRow,type LocalModelStatus,type PullJobView} from '@teloa/contract'
 import type {LocalModelsApi,LocalModelsFocus} from './local-models-api.js'
 import {useI18n} from './i18n/provider.js'
@@ -96,15 +95,15 @@ export function LocalModelsView({overview,error,busy,loading,confirmation,acknow
   return <button type="button" disabled={busy||inProgress} onClick={()=>onAsk({kind:'pull',row,overview})}><Download size={14} aria-hidden="true"/>{t(row.status==='route-pending'?'localModels.action.retry':'localModels.action.pull')}</button>
  }
  return <section className={css.page} ref={root} aria-label={t('localModels.title')}>
-  <header className={css.header}><h2>{t('localModels.title')}</h2><ToolbarIconButton label={t('collaboration.action.refresh')} icon={RefreshCw} disabled={busy||loading} onClick={onRefresh}/></header>
+  <header className={css.header}><h2>{t('localModels.title')}</h2><button type="button" disabled={busy||loading} onClick={onRefresh}><RefreshCw size={14} aria-hidden="true"/>{t('collaboration.action.refresh')}</button></header>
   {error&&<p className={css.error} role="alert">{error}</p>}
   {!overview&&loading&&<p role="status">{t('localModels.loading')}</p>}
   {overview&&<>
-   <div className={css.runtime}><HardDrive size={20} aria-hidden="true"/><div><strong>{overview.runtime.state==='running'?t('localModels.runtime.running',{version:overview.runtime.version??'—'}):t('localModels.runtime.missing')}</strong>
-    {overview.runtime.state==='missing'&&<a href="https://ollama.com/download" target="_blank" rel="noreferrer">{t('localModels.install')} <ExternalLink size={12} aria-hidden="true"/></a>}
+   <div className={css.runtime} data-state={overview.runtime.state}><HardDrive size={18} aria-hidden="true"/><div><strong>{overview.runtime.state==='running'?t('localModels.runtime.running',{version:overview.runtime.version??'—'}):t('localModels.runtime.missing')}</strong>
     {overview.runtime.outdated&&<p className={css.error}>{t('localModels.runtime.outdated',{min:OLLAMA_MIN_VERSION})}</p>}
-    <p>{overview.runtime.address.local?t('localModels.hardware',{ram:overview.hardware.totalMemGb,unified:overview.hardware.unified?t('localModels.hardware.unified'):'',disk:formatBytes(overview.hardware.diskFreeBytes)}):t('localModels.runtime.external',{host:overview.runtime.address.baseURL})}</p>
+    {overview.runtime.state==='missing'&&<a className={css.install} href="https://ollama.com/download" target="_blank" rel="noreferrer">{t('localModels.install')}<ArrowUpRight size={14} aria-hidden="true"/></a>}
    </div></div>
+   <p className={css.hardware}><Info size={14} aria-hidden="true"/><span>{overview.runtime.address.local?t('localModels.hardware',{ram:overview.hardware.totalMemGb,unified:overview.hardware.unified?t('localModels.hardware.unified'):'',disk:formatBytes(overview.hardware.diskFreeBytes)}):t('localModels.runtime.external',{host:overview.runtime.address.baseURL})}</span></p>
    <details className={css.address}><summary>{t('localModels.address.label')}</summary><form onSubmit={event=>{event.preventDefault();onAddress(address)}}><label>{t('localModels.target')}<input type="url" value={address} disabled={busy||inProgress} onChange={event=>setAddress(event.target.value)} spellCheck={false} autoComplete="off" required/></label><div className={css.actions}><button type="submit" disabled={busy||inProgress||address===overview.runtime.address.baseURL}>{t('localModels.save')}</button>{overview.runtime.address.custom&&<button type="button" disabled={busy||inProgress} onClick={()=>onAddress(null)}>{t('localModels.resetAddress')}</button>}</div></form></details>
    {pull&&<div className={css.progress} aria-label={t('localModels.downloadProgress')}><div className={css.rowHeader}><strong>{pull.name}</strong><span role="status">{t(pull.phase==='pulling'?(percent===null?'localModels.downloading':'localModels.status.pulling'):pull.phase==='verifying'?'localModels.status.verifying':pull.phase==='done'?'localModels.downloaded':pull.phase==='cancelled'?'localModels.cancelled':'localModels.failed',{percent:percent??0})}</span></div>{inProgress&&<><progress aria-label={t('localModels.downloadProgress')} max={100} {...(percent===null?{}:{value:percent})}/><div className={css.rowHeader}><small>{formatBytes(pull.completed)}{pull.total!==null?' / '+formatBytes(pull.total):''}</small><button type="button" disabled={busy} onClick={()=>onCancelPull(pull.name)}>{t('localModels.action.cancel')}</button></div></>}{pull.error&&<p className={css.error} role="alert">{pull.error}</p>}</div>}
    {confirmation&&<section className={css.confirm} tabIndex={-1} ref={confirmRef} aria-label={t('localModels.confirmation')} onKeyDown={event=>{if(event.key==='Escape'&&!busy){event.stopPropagation();onClose()}}}>

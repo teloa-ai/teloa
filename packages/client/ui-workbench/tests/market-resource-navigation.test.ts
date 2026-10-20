@@ -41,7 +41,7 @@ test('实体资源单击直达正式详情，返回恢复筛选、选中行与�
  assert.equal(nodes(returned).some(node=>node.props['data-teloa-pane']==='detail'),false)
  // 分类入口通过已保留的分类词典识别，不把筛选控件当成页签。
  const categoryNav=nodes(root).find(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria')!
- const tab=nodes(categoryNav).find(node=>node.type==='button'&&node.props['aria-current']!== 'page')!
+ const tab=nodes(categoryNav).find(node=>node.type==='button'&&node.children.join('')==='market.primary.employees')!
  assert.ok(tab)
  tab.props.onClick()
  root=page.render('TestCatalog',props())

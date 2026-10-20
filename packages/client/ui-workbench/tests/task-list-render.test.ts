@@ -21,7 +21,7 @@ const render=(node:unknown)=>renderToStaticMarkup(createElement(I18nProvider,{ru
 const task=(id:string,patch:Partial<PreviewTask>={}):PreviewTask=>({id,title:'任务 '+id,goal:'',scope:'general',object:'对象',version:1,state:'ready',need:null,request:'',authorId:'me',assigneeId:'me',assigneeHistory:[],createdAt:'2026-09-20T00:00:00.000Z',updatedAt:'2026-09-20T00:00:00.000Z',result:'',evidence:[],history:[],supplements:[],approvalRequired:false,risk:{key:'security.risk.low'},execution:'not_started',...patch} as PreviewTask)
 const none:TaskRowAttention={kinds:[],reason:null}
 const row=(item:PreviewTask,patch:Partial<{attention:TaskRowAttention;unverified:boolean}>={})=>({task:item,attention:none,ownerName:'本人',scopeLabel:'通用工作',unverified:false,...patch})
-const routed=(id:string)=>task(id,{source:{groupId:'g',messageId:'m',rootId:'r',text:'',trigger:'routed'}})
+const routed=(id:string)=>task(id,{source:{groupId:'g',messageId:'m',rootId:'r',text:'',trigger:'routed',executionMode:'reply'}})
 const rows=[row(task('f1')),row(task('f2',{storage:'persistent'}),{unverified:true}),row(routed('r1')),row(routed('r2')),row(routed('r3'))]
 const props={filter:'all' as const,selected:null as string|null,select:()=>{},stateLabel:(state:PreviewTask['state'])=>state,attentionLabel:(kind:string)=>kind,stamp:(at:string)=>at}
 

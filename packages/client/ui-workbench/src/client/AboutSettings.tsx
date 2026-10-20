@@ -16,6 +16,7 @@ export function AboutSettings({theme}:{theme:BrandTheme}){
   const application=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getSnapshot,applicationPresentation.getSnapshot)
   const {locale,t}=useI18n()
   return <section className={css.about} aria-label={t('about.studio')}>
+    <h2 className={css.pageTitle}>{t('settings.about')}</h2>
     <header className={css.brandHeader}><div className={css.identity}><div className={css.brandRow}><div className={css.brandName}><BrandLogo theme={theme} height={19}/></div></div><p>{t('about.studio')}</p></div><div className={css.release}><span>v{__TELOA_VERSION__}</span><span>{t('about.local')}</span></div><p className={css.headerTagline}>{t('about.tagline')}</p></header>
     <section className={css.plansSection} aria-label={t('about.plans.title')}>
       <div className={css.plansHeader}>

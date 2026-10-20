@@ -1,0 +1,23 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-experimental-auto-review",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "d982915074ee241b96e2cc9210f7e79ac326e7a243efaf86ba7218531fe4929c",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "14b0fec944f734a888468b75ee9d7ae121383f018ce5bf76c4506393a910787f",
+      "afterSha256": "27b63665ab6511081ee9c80785014439eacd78be4df8222684a8e9afeb7f663d"
+    }
+  ],
+  "api": [
+    "autoReviewRequestOwner"
+  ],
+  "scope": {
+    "admission": "Read-only exact live review envelope bound to the official pending tool execution, agent, session and cancellation signal",
+    "default": "Preserve the native reviewer policy, decision parsing, approval fallback and lifecycle",
+    "boundary": "Only classifyRisk publishes; finally always clears. The host still verifies current accepted work, tool execution and permission mode. Copies and replay grant no proof.",
+    "budget": "Use the existing finite request-header output cap; each reviewed tool receives an independent model operation identity."
+  }
+}

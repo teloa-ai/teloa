@@ -59,6 +59,7 @@ export function MiniMaxVoiceSettings({api}:{api:VoiceServiceApi}){
  }
  return <section className={css.page} aria-label={copy('title')}><h2>{copy('title')}</h2>
   {error&&<p className={voiceCss.notice} role="alert">{copy('failed')}</p>}
+  <div className={css.card}>
   <div className={css.row}>
    <div className={css.rowText}><strong>{copy('speech')}</strong><p>{selected?.configured?copy('configured'):copy('missing')}</p></div>
    <div className={css.rowControl}><select aria-label={copy('provider')} value={selected?.id??''} disabled={saving||!status} onChange={event=>{stop();setSelection(event.target.value as SpeechProviderId);setSaved(undefined);setAppliedVoice(undefined);setError(false)}}>{status?.providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
@@ -77,8 +78,9 @@ export function MiniMaxVoiceSettings({api}:{api:VoiceServiceApi}){
      {asrDirty&&<button type="submit" disabled={saving||!writable}>{copy('saveAsrSettings')}</button>}{(saved==='asr'||saved==='asr-key')&&<span role="status">{copy('saved')}</span>}
     </div>
    </form>
-   {asrProviderId==='sensevoice-local'&&!status?.asr.configured&&<p className={voiceCss.notice}>{copy('asrLocalHint')}</p>}
+   {asrProviderId==='sensevoice-local'&&!status?.asr.configured&&<p className={voiceCss.notice+' '+voiceCss.cardNote}>{copy('asrLocalHint')}</p>}
   </section>
+  </div>
   <details className={voiceCss.advanced} open={selected?.id!=='minimax'||!selected.configured}><summary>{copy('advancedVoice')}</summary>
    <form className={voiceCss.form} onSubmit={event=>{event.preventDefault();void save()}}>
     <div className={voiceCss.fields}><div><label htmlFor="voice-model">{copy('model')}</label><input id="voice-model" value={draft?.model??''} onChange={event=>edit({model:event.target.value})} disabled={saving||!writable} maxLength={128}/></div><div><label htmlFor="voice-id">{copy('voice')}</label><input id="voice-id" value={draft?.voiceId??''} onChange={event=>edit({voiceId:event.target.value})} disabled={saving||!writable} maxLength={128}/></div></div>

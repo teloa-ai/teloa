@@ -12,3 +12,9 @@
 .button:disabled{opacity:.55;cursor:not-allowed}
 
 .removeReference{margin-inline-start:8px}
+
+/* 作为输入框停靠条出现时（第 53 屏）：外形交给 ComposerDock 的 .strip，这里只撤掉独立面板的圆角、外边距与底色。 */
+.panel.dockPanel{display:block;margin:0 auto calc(0px - var(--dsh-composer-stack-gap,6px) - 3px);padding:0 0 calc(var(--dsh-composer-stack-gap,6px) + 3px);border-radius:10px 10px 0 0;border-bottom:0;background:var(--teloa-panel);font-size:13px}
+.panel.dockPanel.dockDanger{background:var(--teloa-danger-bg)}
+.dockPanel summary{padding:9px 16px;color:var(--teloa-text)}
+.dockPanel .body{padding:0 16px 10px}

@@ -383,8 +383,8 @@ test('真渲染·同事回帖复用群成员姓名与员工头像，来源收进
  assert.equal(text.includes('AI 员工'),false,'通用标签不再当名字用')
  assert.equal(text.includes('受管回传'),false,'技术来源不挤占作者行')
  assert.equal(app.findAll(el=>el.type==='details'&&String(el.props.className).includes('messageSource')).length,1)
- const avatars=app.findAll(el=>el.type==='img'&&String(el.props.className).includes('squirrel'))
- assert.ok(avatars.some(el=>el.props.src==='avatar-researcher.webp'),'消息复用该员工已选形象')
+ const avatars=app.findAll(el=>el.type==='span'&&String(el.props.className).includes('botWrap'))
+ assert.ok(avatars.some(el=>el.props['data-avatar']==='researcher'),'消息复用该员工已选形象')
 })
 
 test('真渲染·群里已经不在的成员回帖按「历史成员」兜底，界面上不出现 roleId',async()=>{

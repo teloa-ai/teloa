@@ -79,6 +79,7 @@ function navigationMenu(){
  const render=mountComponent('WorkNavigation.tsx',{
   '../brand/companion/icon.webp':{default:'fixture-assistant.webp'},
   './ConversationPlanCard.js':{ConversationPlanClock:()=>null},
+  './EmployeeAvatar.js':{EmployeeAvatar:()=>null},
   './CapabilityNotice.js':{useApplicationCapability:()=>true},
   './work-presentation.js':{presentConversations:()=>[]},
   './WorkbenchNavigationChrome.js':{WorkbenchNavigationBrand:()=>null,WorkbenchNavigationItems:()=>null},

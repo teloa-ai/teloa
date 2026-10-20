@@ -54,3 +54,14 @@ test('设置目录注册使用随当前语言求值的标签',async()=>{
   assert.doesNotMatch(entry,/id:'teloa-about'[\s\S]{0,120}label:'关于'/)
   assert.doesNotMatch(integration,/label:'(?:执行位置|通用设置)'/)
 })
+
+test('工作台顶栏在设置内显示「设置 › 页名」：页名由设置外壳上报，卸载时清空',async()=>{
+  const [layout,frame]=await Promise.all([readFile(new URL('SettingsLayout.tsx',client),'utf8'),readFile(new URL('WorkbenchFrame.tsx',client),'utf8')])
+  assert.match(layout,/export const settingsPageTitle=\{/)
+  assert.match(layout,/useEffect\(\(\)=>\{publishPageTitle\(selected\?\.label\)\},\[selected\?\.label\]\)/)
+  assert.match(layout,/useEffect\(\(\)=>\(\)=>publishPageTitle\(undefined\),\[\]\)/)
+  assert.match(frame,/useSyncExternalStore\(settingsPageTitle\.subscribe,settingsPageTitle\.getSnapshot/)
+  assert.match(frame,/const settingsInnerTitle=state\.view==='settings'\?settingsTitle:undefined/)
+  assert.match(frame,/\{settingsInnerTitle&&<><span className=\{css\.crumbText\}>\{labels\.settings\}<\/span><ChevronRight size=\{12\} aria-hidden\/><\/>\}/)
+  assert.match(frame,/businessInnerTitle\?\?settingsInnerTitle\?\?labels\[state\.view\]/)
+})

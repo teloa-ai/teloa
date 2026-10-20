@@ -17,6 +17,8 @@ import {dshTaskRunPorts} from '../src/task-run-dsh.ts'
 import {createTaskModelRouting,taskModelRecoverySource} from '../src/task-model-dsh.ts'
 import TeloaAttachmentStore from '../src/attachment-guard.ts'
 import {tempHome,rand} from './fixtures/credentials.ts'
+import {askGroupRouting,type GroupRoutingAsk} from '../src/group-routing.ts'
+import {groupRoutingOutputV2Schema,groupRoutingSessionId} from '@teloa/contract'
 
 // 真实 DSH loop/工具/事件 + 产品模型路由；只用本地脚本替代外部推理。
 const text:StreamChunk[]=[{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:'done'},{type:'block-end',index:0,block:{type:'text',text:'done'}},{type:'finish',reason:{kind:'stop'}}]
@@ -34,14 +36,14 @@ class Adapter extends LlmAdapter{
  override async resolveModel(provider:string,model:string){if(model==='missing')throw new LlmError('missing','UNKNOWN_MODEL');return {provider,id:model,name:model,inputModalities:provider==='default'||model==='text-only'?['text'] as const:['text','image'] as const,...thinking[model]?{reasoning:thinking[model]}:{}}}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(options);const result=this.scripts.shift();assert.ok(result,'模型调用超出预期');if(result instanceof Error)throw result;yield* result}
 }
-async function setup(t:TestContext,persistent=false){
+async function setup(t:TestContext,persistent=false,sessionId='recovery-test'){
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  if(persistent)await ctx.plugin(JsonlSessionPersistence,{root:(await tempHome(t))+'/sessions',compression:'none'})
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const adapter=new Adapter();ctx.llm.registerAdapter(['local','remote','default'],adapter)
  let writes=0
  ctx.tools.register(defineTool({name:'write_result',description:'一次副作用',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{writes++;return 'saved-once'}}))
- const {agent}=await ctx.agents.create({sessionId:SessionId('recovery-test'),agentOptions:{provider:'default',model:'default-model'}})
+ const {agent}=await ctx.agents.create({sessionId:SessionId(sessionId),agentOptions:{provider:'default',model:'default-model'}})
  // 与 SessionController 使用同一官方选择 middleware；不得通过 selectModel 改全局默认。
  const selection={current:{provider:'default',model:'default-model'},assembled:undefined}
  installModelSelection(agent.ctx,selection)
@@ -232,5 +234,29 @@ test('固定任务模型声明思考档位但无默认值时按 high 请求；�
   adapter.scripts.push(text)
   await run(agent)
   assert.equal(adapter.requests[0]?.reasoningEffort,expected,primary.model+' '+String(primary.reasoningEffort))
+ }
+})
+
+test('群路由经真实 DSH loop 保留默认模型与显式档位、补齐 high，并且不暴露工具',async t=>{
+ const owner='11111111-1111-4111-8111-111111111111',groupId='22222222-2222-4222-8222-222222222222',messageId='33333333-3333-4333-8333-333333333333',roleId='44444444-4444-4444-8444-444444444444',day='2026-10-20'
+ const sessionId=groupRoutingSessionId(owner,groupId,day)
+ for(const [model,effort,expected] of [['think-no-default',undefined,'high'],['think-medium-default',undefined,'medium'],['think-no-default','off','off']] as const){
+  const {ctx,agent,adapter,selection}=await setup(t,false,sessionId)
+  assert.equal(selection.current.provider,'default','会话仍保留创建时的旧默认模型，后台路由须读取当前默认')
+  ctx.provide('teloaResidentInputAdmission',{bindRouting:async()=>()=>{}})
+  ctx.provide('sessionController',{
+   modelCatalog:async()=>({default:{provider:'remote',model,...(effort?{reasoningEffort:ReasoningEffortId(effort)}:{})}}),
+   inspect:async()=>({meta:{id:sessionId,agentPreset:'teloa-standard'}}),
+   resolveAgent:async()=>({agent}),
+   prompt:async(request:{requestId:string;content:any[]})=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}},
+  } as unknown as Context['sessionController'])
+  const output=JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'reply',respond:[roleId],reactions:[],assignments:[],workTarget:null})
+  adapter.scripts.push([{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:output},{type:'block-end',index:0,block:{type:'text',text:output}},{type:'finish',reason:{kind:'stop'}}])
+  const ask:GroupRoutingAsk={groupId,groupName:'测试群',messageId,rootId:messageId,trigger:{authorKind:'self',authorId:'self',authorName:'本人',text:'请解释异常登录',createdAt:day+'T10:00:00Z',mentions:[]},topic:[],candidates:[{roleId,roleVersion:1,name:'调查员',duty:'调查',triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}],hops:0}
+  assert.equal((await askGroupRouting(ctx,owner,ask,AbortSignal.timeout(5000),day)).kind,'ok')
+  assert.equal(adapter.requests[0]!.reasoningEffort,expected)
+  assert.equal(adapter.requests[0]!.provider,'remote')
+  assert.equal(adapter.requests[0]!.model,model)
+  assert.deepEqual(adapter.requests[0]!.tools??[],[])
  }
 })

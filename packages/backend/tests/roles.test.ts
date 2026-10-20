@@ -79,6 +79,18 @@ test('员工小松鼠头像随创建、恢复读取及编辑回执持久化',asy
  assert.deepEqual(await service.edit(owner,input),edited)
  assert.equal((await service.list(owner,{}))[0]?.avatarKey,'developer')
 })
+test('自由组合头像随创建、编辑与身份修改原样持久化，旧预设基线可改为组合',async()=>{
+ const {owner,service}=fixture(),created=await service.create(owner,{requestId:randomUUID(),fields:{...fields,avatarKey:'bot:ghost:amber'}})
+ assert.equal(created.avatarKey,'bot:ghost:amber')
+ assert.equal((await service.list(owner,{}))[0]?.avatarKey,'bot:ghost:amber')
+ const profiled=await service.updateProfile(owner,{roleId:created.id,expectedVersion:created.version,expectedProfile:{name:fields.name,avatarKey:'bot:ghost:amber'},profile:{name:fields.name,avatarKey:'researcher'}})
+ assert.equal(profiled.avatarKey,'researcher')
+ await pool.query("update teloa_roles set state='paused' where id=$1",[created.id])
+ const edited=await service.edit(owner,{roleId:created.id,expectedVersion:profiled.version,expectedProfile:{name:fields.name,avatarKey:'researcher'},fields:{...fields,avatarKey:'bot:capsule:plum'}})
+ assert.equal(edited.avatarKey,'bot:capsule:plum')
+ assert.deepEqual(await service.get(owner,created.id),edited)
+ await assert.rejects(service.create(owner,{requestId:randomUUID(),fields:{...fields,avatarKey:'bot:circle:ink'}}),{code:'teloa/invalid-input'})
+})
 test('在岗员工可以保存姓名头像职责简介，但不能顺带变更执行范围或模型',async()=>{
  const {owner,service}=fixture(),role=await service.create(owner,{requestId:randomUUID(),fields:configuredFields})
  const input={roleId:role.id,expectedVersion:role.version,expectedProfile:{name:role.name},fields:{...configuredFields,name:'小研',avatarKey:'researcher',duty:'核实信号并整理证据'}}

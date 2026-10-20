@@ -14,7 +14,7 @@ export function PersonalProfileSettings(){
   return <section className={css.profile} aria-label={t('profile.title')}>
     <div><strong>{t('profile.title')}</strong><p>{profile.managed?t('profile.accountDescription'):t('profile.description')}</p>{profile.email&&<p>{profile.email}</p>}</div>
     <form onSubmit={async event=>{event.preventDefault();if(profile.managed||saving)return;setSaving(true);try{await personalProfile.setDisplayName(name);setDirty(false);setNotice(t('profile.saved'))}catch(error){setNotice(localizeWorkError(locale,error))}finally{setSaving(false)}}}>
-      <label>{t('profile.displayName')}<input aria-label={t('profile.displayName')} readOnly={profile.managed} disabled={saving} required maxLength={profile.managed?320:40} value={name} onChange={event=>{setName(event.target.value);setDirty(true);setNotice('')}}/></label>
+      <label><span className={css.srOnly}>{t('profile.displayName')}</span><input aria-label={t('profile.displayName')} readOnly={profile.managed} disabled={saving} required maxLength={profile.managed?320:40} value={name} onChange={event=>{setName(event.target.value);setDirty(true);setNotice('')}}/></label>
       {profile.managed?<button type="button" disabled={opening} onClick={()=>{setOpening(true);void applicationPresentation.openAccount().catch(()=>setNotice(t('profile.manageFailed'))).finally(()=>setOpening(false))}}>{t('profile.manageAccount')}</button>:<button type="submit" disabled={saving||name.trim()===profile.displayName}>{t('profile.save')}</button>}
     </form>
     {notice&&<p role="status" className={css.notice}>{notice}</p>}

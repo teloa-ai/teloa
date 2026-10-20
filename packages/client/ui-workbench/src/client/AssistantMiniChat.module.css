@@ -39,5 +39,5 @@
 .composer:focus-within{border-color:var(--teloa-focus)}
 .composer textarea{flex:1;min-width:0;min-height:22px;max-height:120px;field-sizing:content;resize:none;border:0;padding:3px 0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:1.5;outline:none}
 .composer textarea:disabled{cursor:not-allowed}
-.send{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:var(--teloa-accent);color:var(--teloa-on-accent)!important;flex:none}
+.send{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:var(--teloa-primary);color:var(--teloa-on-primary)!important;flex:none}
 .send:disabled{background:var(--teloa-subtle);color:var(--teloa-muted)!important;opacity:1!important}

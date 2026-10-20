@@ -1,3 +1,4 @@
+import {businessMenuItem} from './business-header-menu.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createBusinessBuilderApi} from '../src/client/business-builder-api.ts'
@@ -230,7 +231,7 @@ test('业务看板首屏展示内容，配置在抽屉；关闭保留选页并�
 test('业务设置在所有业务页签复用配置抽屉，关闭保留负责人草稿且不写数据',async t=>{
  const page=await browserFixture(t)
  await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,workspace:true,responsibility:true,section:'employees'}))
- const settings=page.getByRole('button',{name:'业务设置',exact:true})
+ const settings=businessMenuItem(page,'业务设置')
  for(const tab of ['总览','业务内容','统计看板','AI 员工','协作群','项目']){
   await page.getByRole('navigation',{name:'业务页面',exact:true}).first().getByRole('button',{name:tab,exact:true}).click()
   await settings.click()
@@ -254,7 +255,7 @@ test('业务设置在所有业务页签复用配置抽屉，关闭保留负责�
 test('业务设置读取失败可在原业务重试，只有明确旧业务才进入模板配置',async t=>{
  const page=await browserFixture(t)
  await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,workspace:true,section:'employees',mode:'failed'}))
- await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ await businessMenuItem(page,'业务设置').click()
  const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true});await drawer.getByRole('alert').waitFor()
  assert.doesNotMatch(await drawer.innerText(),/private host detail/)
  assert.equal(await page.evaluate(()=>(window as any).surfaceFixture.actions.some((item:any)=>item[0]==='legacy-settings')),false)
@@ -263,7 +264,7 @@ test('业务设置读取失败可在原业务重试，只有明确旧业务才�
  await drawer.getByRole('button',{name:'调整业务',exact:true}).waitFor()
  await drawer.getByRole('button',{name:'关闭',exact:true}).click()
  await page.evaluate(()=>(window as any).surfaceFixture.change({mode:'legacy'}))
- await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ await businessMenuItem(page,'业务设置').click()
  await page.waitForFunction(()=>(window as any).surfaceFixture.actions.some((item:any)=>item[0]==='legacy-settings'))
  assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((item:any)=>item[0]==='legacy-settings')),[['legacy-settings','sales']])
  assert.equal(await drawer.count(),0)
@@ -271,7 +272,7 @@ test('业务设置读取失败可在原业务重试，只有明确旧业务才�
 test('业务设置关闭与切换范围丢弃迟到配置；通用工作没有业务设置',async t=>{
  const page=await browserFixture(t)
  await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,workspace:true,section:'employees',holdCurrent:true}))
- const settings=page.getByRole('button',{name:'业务设置',exact:true})
+ const settings=businessMenuItem(page,'业务设置')
  await settings.click()
  const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true});await drawer.waitFor()
  await page.waitForFunction(()=>(window as any).surfaceFixture.releaseCurrent!==null)
@@ -284,7 +285,7 @@ test('业务设置关闭与切换范围丢弃迟到配置；通用工作没有�
  await page.evaluate(()=>(window as any).surfaceFixture.releaseCurrent())
  await page.getByRole('heading',{level:1,name:'support',exact:true}).waitFor()
  assert.equal(await drawer.count(),0)
- await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ await businessMenuItem(page,'业务设置').click()
  await drawer.getByRole('button',{name:'调整业务',exact:true}).click()
  assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((item:any)=>item[0]==='adjust')),[['adjust','support']])
  await page.evaluate(()=>(window as any).surfaceFixture.change({scope:'general'}))
@@ -357,7 +358,7 @@ test('配置详情关闭后重开不接收上一轮迟到负责人目录',async 
 for(const width of [390,1400])test(width+' 配置抽屉标题、调整按钮与内容保持标准边距，窄窗不横溢',async t=>{
  const page=await browserFixture(t,'zh-CN',width)
  await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true,advanced:true,whole:true,workspace:true,section:'employees'}))
- await page.getByRole('button',{name:'业务设置',exact:true}).click()
+ await businessMenuItem(page,'业务设置').click()
  const drawer=page.getByRole('dialog',{name:'查看配置详情',exact:true})
  await drawer.getByRole('combobox',{name:'选择员工',exact:true}).waitFor()
  const spacing=await drawer.evaluate((dialog:HTMLDialogElement)=>{

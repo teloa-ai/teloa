@@ -1,3 +1,4 @@
+import {businessMenuItem} from './business-header-menu.ts'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir,readFile} from 'node:fs/promises'
@@ -86,7 +87,7 @@ async function mount(t:any,locale='zh-CN',startup:Record<string,unknown>={}){
 
 
 async function connection(t:any,mode:string){
- const p=await mount(t,'zh-CN',{formal:true,mcpMode:mode});await p.evaluate(()=>(window as any).frameFixture.openExact());await p.getByRole('button',{name:'业务设置',exact:true}).click()
+ const p=await mount(t,'zh-CN',{formal:true,mcpMode:mode});await p.evaluate(()=>(window as any).frameFixture.openExact());await businessMenuItem(p,'业务设置').click()
  const panel=p.getByRole('region',{name:"员工与能力"});await panel.getByText('未设置，可稍后配置',{exact:true}).waitFor();await panel.locator('summary').filter({has:p.getByText('本机连接',{exact:true})}).click();await panel.getByRole('button',{name:'配置 CRM',exact:true}).click();await p.getByRole('button',{name:'打开连接配置',exact:true}).click();await p.getByRole('heading',{name:'测试连接',exact:true}).waitFor();return p
 }
 for(const mode of ['connected','secret','oauth'])test('真实McpConnectionView '+mode+' 跨身份配置状态清空，原API旧实例拒绝，新视图重读',async t=>{

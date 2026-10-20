@@ -27,7 +27,7 @@
 .row strong{font-size:var(--teloa-font-body);line-height:1.5;overflow-wrap:anywhere}.row small,.rowMeta{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}.rowMeta{display:flex;justify-content:space-between;gap:8px}
 .exampleButton{font-size:var(--teloa-font-caption)!important}.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;color:var(--teloa-muted)}.empty h2{font-size:var(--teloa-font-section);color:var(--teloa-text);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.empty p{max-width:420px;font-size:var(--teloa-font-control);line-height:1.8}
 .detail{padding:24px 32px;overflow:auto;min-width:0;scrollbar-gutter:stable;overflow-wrap:anywhere}.detail>h2{font-size:var(--teloa-font-detail);line-height:var(--teloa-leading-heading);margin:18px 0 8px;font-weight:var(--teloa-weight-heading)}.detail p{line-height:1.8;white-space:pre-wrap;font-size:var(--teloa-font-body)}.detail h3{font-size:var(--teloa-font-body);margin:0 0 12px;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.detail h4{font-size:var(--teloa-font-body);margin:16px 0 6px;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
-.detailHeader{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.detailHeader .back{border:0;padding-left:0}.badge{border:1px solid var(--teloa-border);border-radius:6px;padding:4px 8px;font-size:var(--teloa-font-caption)}.muted,.metadata{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.metadata{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0 24px}.metadata strong{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.detailHeader{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.detailHeader .back{border:0;padding-left:0}.muted,.metadata{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.metadata{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0 24px}.metadata strong{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .block{padding:20px 0;border-top:1px solid var(--teloa-border)}.block>header{display:flex;align-items:baseline;justify-content:space-between;gap:10px}.block>header button{font-size:var(--teloa-font-caption)}.block blockquote{margin:12px 0;padding:12px 16px;border-left:3px solid var(--teloa-border);background:var(--teloa-sidebar);white-space:pre-wrap;line-height:1.8}.block small{color:var(--teloa-muted)}
 .form{display:flex;flex-direction:column;gap:13px;font-size:var(--teloa-font-control)}.form label{display:flex;flex-direction:column;gap:7px}.form>button{align-self:flex-start}.form textarea{width:100%}
 .approval{padding:22px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-sidebar);margin:20px 0}.approval>header{display:flex;align-items:center;gap:9px}.approval h3{margin:0;flex:1}.approval small{color:var(--teloa-muted)}.approval details{padding:12px 0}.risk{padding:12px;background:var(--teloa-surface);font-size:var(--teloa-font-control);line-height:1.6}.check{display:flex;align-items:flex-start;gap:8px;margin:22px 0 14px;font-size:var(--teloa-font-control)}.check input{accent-color:var(--teloa-focus)}
@@ -37,7 +37,7 @@
 .sectionEyebrow{display:block;margin-bottom:5px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5;letter-spacing:.03em}
 .taskSummary{padding:10px 0 28px}
 .summaryHeading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
-.summaryHeading>div{min-width:0}.summaryHeading h2{margin:0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:normal}.summaryHeading>.badge{flex:none;margin-top:2px}
+.summaryHeading>div{min-width:0}.summaryHeading h2{margin:0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:normal}
 .goal{margin-top:22px;padding:16px 18px;background:var(--teloa-subtle)}
 .goal>span{display:block;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.goal p{margin:5px 0 0;font-size:var(--teloa-font-reading)}
 .summaryMeta{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin-top:14px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.summaryMeta>span{display:inline-flex;align-items:center;gap:4px}.summaryMeta strong{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
@@ -59,7 +59,7 @@
 .dialog{color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:14px;width:min(520px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:24px;box-sizing:border-box}.dialog::backdrop{background:var(--teloa-backdrop)}.dialog header{display:flex;justify-content:space-between;align-items:center;gap:12px}.dialog h2{min-width:0;overflow-wrap:anywhere;margin:0;font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.dialog p{color:var(--teloa-muted);line-height:1.7}.dialog footer{justify-content:flex-end}
 @media(max-width:1100px){.layout{grid-template-columns:260px minmax(0,1fr)}.detail{padding:22px}.pageHeader{padding:18px}}
 @media(max-width:760px){.preview{padding:10px 14px;gap:8px;font-size:var(--teloa-font-caption)}.pageHeader{padding:14px;flex-wrap:wrap;gap:7px}.pageHeader h1{font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.pageHeader p{font-size:var(--teloa-font-caption)}.pageHeader .buttons{margin:0}.layout{display:flex;flex-direction:column}.directory{flex:1;border-right:0}.hasSelection .directory{display:none}.detail{flex:1;padding:16px}.detail>h2{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.approval{padding:15px}.approval>header{flex-wrap:wrap}.block>header{flex-wrap:wrap}.metadata{gap:8px}.dialog{padding:18px}}
-@media(max-width:760px){.summaryHeading{flex-direction:column;gap:10px}.summaryHeading h2{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.summaryHeading>.badge{align-self:flex-start}.taskSummary{padding-bottom:22px}.goal{margin-top:16px;padding:14px}.progressPanel{padding:16px}.detailGroup{margin-top:24px;padding-top:22px}.handoffPanel{padding:14px}.handoffChoices{grid-template-columns:1fr}.resultActions>button{width:100%}}
+@media(max-width:760px){.summaryHeading{flex-direction:column;gap:10px}.summaryHeading h2{font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.taskSummary{padding-bottom:22px}.goal{margin-top:16px;padding:14px}.progressPanel{padding:16px}.detailGroup{margin-top:24px;padding-top:22px}.handoffPanel{padding:14px}.handoffChoices{grid-template-columns:1fr}.resultActions>button{width:100%}}
 @media(max-width:760px){.assigneeControl{padding:12px}.assigneeControl>header{align-items:flex-start}.assigneeForm{grid-template-columns:1fr}.assigneeReview{grid-template-columns:1fr}.assigneeActions{width:100%;flex-direction:column}.assigneeActions>button{width:100%}}
 
 .form details{overflow-wrap:anywhere}
@@ -99,8 +99,6 @@
 .alignedPage .row strong{display:block;font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
 .alignedPage .rowDescription{display:block;font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.65;margin:5px 0;white-space:normal}
 .alignedPage .row small{font-size:var(--teloa-font-caption);line-height:1.65}.alignedPage .rowMeta{font-size:var(--teloa-font-caption)}
-.alignedPage .badge{display:inline-flex;align-items:center;gap:4px;border:0;padding:3px 7px;font-size:var(--teloa-font-caption);line-height:1.4;border-radius:5px;font-weight:var(--teloa-weight-regular);color:var(--teloa-muted);background:var(--teloa-subtle)}
-.alignedPage .warn{color:var(--teloa-warn);background:var(--teloa-warn-bg)}.alignedPage .good{color:var(--teloa-good);background:var(--teloa-good-bg)}.alignedPage .info{color:var(--teloa-info);background:var(--teloa-info-bg)}
 .alignedPage .exampleButton{border:0;border-top:1px solid var(--teloa-border);border-radius:0;padding:12px 15px;font-size:var(--teloa-font-caption)!important;color:var(--teloa-muted);background:none;text-align:left;justify-content:flex-start}
 .alignedPage .empty{padding:50px 25px}.alignedPage .empty h2{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.alignedPage .empty p{font-size:var(--teloa-font-caption);line-height:1.9}.alignedPage .directory .empty{padding:36px 16px}.alignedPage .directory .empty h2{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.alignedPage .directory .empty p{font-size:var(--teloa-font-caption)}
 .alignedPage .detail{width:100%;max-width:920px;justify-self:center;padding:26px 32px 28px;scrollbar-gutter:auto;box-sizing:border-box}
@@ -167,7 +165,6 @@
 .listPinned td:first-child{border-left:0}
 .alignedPage .layout.hasSelection .tableLink{min-width:0;overflow-wrap:anywhere}
 .alignedPage .layout.hasSelection .tableWrap td{padding:12px 10px}
-.alignedPage .tableWrap .badge{white-space:nowrap}
 .listGroupRow td{background:var(--teloa-subtle);padding:10px 16px}.listGroupRow button{border:0;background:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 
 /* 完整阅读模式与目录预览共用一个详情实例，切换不丢表单或运行面状态。 */
@@ -211,3 +208,20 @@
 
 /* 新建以本次工作为主，已有业务、群与负责人只作紧凑上下文；详细选项按需展开。 */
 .form .createContext{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}.form .createDescription{min-height:180px;max-height:45dvh;line-height:1.65}.createOptions{border-top:1px solid var(--teloa-border);padding-top:10px}.createOptions summary{cursor:pointer;color:var(--teloa-muted);font-size:var(--teloa-font-control);padding:4px 0}.createOptions>div{display:flex;flex-direction:column;gap:13px;margin-top:12px}
+
+/* 1.0 一层页头：工作台页签页的大标题只给读屏，视觉上由面包屑与页签承担；任务数与新建动作保留为工具条。 */
+.overviewPage>.pageHeader h1{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.alignedPage.overviewPage>.taskHeader{padding:18px 40px 0;align-items:center}
+.alignedPage.overviewPage>.pageHeader,.alignedPage.overviewPage>.layout{max-width:none}
+.alignedPage.overviewPage .overviewLayout{padding-left:40px;padding-right:40px}
+.alignedPage.overviewPage>.taskHeader p{margin:0;color:var(--teloa-text);font-size:var(--teloa-font-reading);font-weight:var(--teloa-weight-heading);line-height:1.5}
+.alignedPage.overviewPage>.taskHeader>.buttons{margin:0}
+.alignedPage.overviewPage>.attentionHeader{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+/* 需要你的分类为圆角胶囊页签，选中用 1.0 选中底色。 */
+.alignedPage .overviewLayout .attentionTabs{gap:4px;padding:0;margin:18px 0 8px;border:0}
+.alignedPage .attentionTabs button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:7px;color:var(--teloa-secondary)}
+.alignedPage .attentionTabs button[aria-current=page]{background:var(--teloa-active);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.alignedPage .attentionTabs button span{font-family:var(--teloa-design-mono)}
+@media(max-width:760px){.alignedPage.overviewPage>.taskHeader{padding:14px 21px 0}.alignedPage.overviewPage .overviewLayout{padding-left:21px;padding-right:21px}}
+/* 总览列表铺满版心：共享目录窄列的内缩（搜索 14px、筛选 14px、列表 8px）在这里归零，与页头左缘对齐。 */
+.alignedPage.overviewPage .overviewLayout .search{width:100%;margin-left:0;margin-right:0}.alignedPage.overviewPage .overviewLayout .filterBar{padding-left:0;padding-right:0}.alignedPage.overviewPage .overviewLayout .rows{padding:0!important}

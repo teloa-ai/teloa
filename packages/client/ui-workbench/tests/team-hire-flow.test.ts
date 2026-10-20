@@ -8,10 +8,10 @@ import * as scopes from '../src/client/role-scope-options.ts'
 import * as avatars from '../src/client/staff-avatar-seed.ts'
 import {employeeCopy} from '../src/client/employee-copy.ts'
 
-const avatarModule={employeeAvatarName:(key:string)=>key==='researcher'?'Researcher':'General',employeeAvatars:[{key:'general',en:'General',zh:'通用工作伙伴'},{key:'researcher',en:'Researcher',zh:'研究助手'}]}
+const avatarModule=await import('../lib/types/client/employee-avatars.js'),botModule=await import('../lib/types/client/bot-avatar.js')
 function form(runtimeConfigs?:runtime.RoleRuntimeConfigApi,initial?:any){
- // 形象网格是共享组件 EmployeeAvatarPicker：用同一手动调度器挂真实组件，网格节点仍在 RoleForm 树里可查。
- const picker=mount('EmployeeAvatarPicker.tsx',{'./employee-copy.js':{employeeCopy},'./employee-avatars.js':avatarModule})
+ // 形状行与色板行是共享组件 EmployeeAvatarPicker：用同一手动调度器挂真实组件，单选节点仍在 RoleForm 树里可查。
+ const picker=mount('EmployeeAvatarPicker.tsx',{'./employee-copy.js':{employeeCopy},'./employee-avatars.js':avatarModule,'./bot-avatar.js':botModule})
  const mounted=mount('TeamPage.tsx',{
   './EmployeeAvatarPicker.js':{EmployeeAvatarPicker:function EmployeeAvatarPicker(props:any){return picker.render('EmployeeAvatarPicker',props)}},
   './role-hire-presets.ts':presets,'./role-runtime-config.js':runtime,'./role-models.js':models,
@@ -75,9 +75,12 @@ test('入职默认不请求模型目录；主动展开后改选的首选、备�
  ui.next();assert.deepEqual(ui.saved().runtimeConfig,{model:local,fallbackModel:remote})
 })
 
-test('小松鼠选择保存准确标识，SOP导入与描述共用职责草稿',async()=>{
+test('头像选择保存准确标识，SOP导入与描述共用职责草稿',async()=>{
  const ui=form();ui.setName()
- nodes(ui.render()).find(node=>node.props.role==='radio'&&node.props['aria-label']==='Researcher')!.props.onClick()
+ const pick=(label:string)=>nodes(ui.render()).find(node=>node.props.role==='radio'&&node.props['aria-label']===label)!.props.onClick()
+ pick('Little ghost');pick('Amber')
+ assert.ok(nodes(ui.render()).some(node=>node.type==='small'&&node.children.includes('Amber · Little ghost')),'预览说明随组合更新')
+ pick('Bean');pick('Olive')
  ui.next();ui.setMission('Draft still kept.')
  nodes(ui.render()).find(node=>node.type==='button'&&node.children.includes(employeeCopy('en','importSop')))!.props.onClick()
  const upload=nodes(ui.render()).find(node=>node.type==='input'&&node.props.type==='file')!

@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useId,useRef,useState} from 'react'
-import {ChevronDown,ExternalLink,Plug} from 'lucide-react'
+import {ChevronDown,ExternalLink,Plug,TriangleAlert} from 'lucide-react'
 import {ContextDrawer} from './ContextDrawer.js'
 import {useI18n} from './i18n/provider.js'
 import {subscribeSettingsPanelVisible} from './AutoDreamSettingsPage.js'
@@ -29,11 +29,13 @@ export function HardwareDevicesSettings({api}:{api:HardwareDevicesApi}){
  const current=status?.available?status:undefined
  const hintId=useId(),permissionId=useId()
  const connectionState=current?copy(current.authorization.enabled?current.state:current.configured?'configured':'missing'):copy('connecting')
- return <section className={page.page} aria-label={copy('title')}><h2>{copy('title')}</h2><p className={css.note}>{copy('lead')}</p>
-  {api.direct&&<DirectDeviceSettings api={api.direct}/>}
-  {status?.available===false?<p>{copy('absent')}</p>:<div className={page.row}><div className={page.rowText}><strong>{copy('name')}</strong><p role="status">{connectionState}</p></div><div className={css.actions}><button type="button" onClick={()=>setEditor(true)} disabled={!current}>{copy('configure')}</button><button type="button" onClick={()=>void load()}>{copy('refresh')}</button></div></div>}
+ const xiaozhi=status?.available===false?null:<div className={page.row}><div className={page.rowText}><strong>{copy('name')}</strong><p role="status">{connectionState}</p></div><div className={css.actions}><button type="button" onClick={()=>setEditor(true)} disabled={!current}>{copy('configure')}</button><button type="button" onClick={()=>void load()}>{copy('refresh')}</button></div></div>
+ // 设备连接收在同一张卡片里；插件未加载时改为提示条，不留空卡。
+ return <section className={page.page} aria-label={copy('title')}><h2>{copy('title')}</h2><p className={page.lead}>{copy('lead')}</p>
+  {(api.direct||xiaozhi)&&<div className={page.card}>{api.direct&&<DirectDeviceSettings api={api.direct}/>}{xiaozhi}</div>}
+  {status?.available===false&&<div className={page.missing}><TriangleAlert size={14} aria-hidden="true"/><span>{copy('absent')}</span></div>}
   <p className={css.note}>{copy('pending')}</p>
-  {editor&&<ContextDrawer title={copy('name')} close={()=>setEditor(false)}><div className={css.editor}>
+  {editor&&<ContextDrawer compact title={copy('name')} close={()=>setEditor(false)}><div className={css.editor}>
    <div className={css.connection}><span className={css.connectionIcon}><Plug size={20} aria-hidden="true"/></span><div><p className={css.connectionState} role="status"><span className={current?.state==='ready'&&current.authorization.enabled?css.connectedDot:css.statusDot}/>{connectionState}</p><p className={css.note}>{copy('summary')}</p></div></div>
    <section className={css.section} aria-label={copy('connectionTitle')}>
     <div className={css.sectionHeading}><h3>{copy('connectionTitle')}</h3><a href="https://xiaozhi.me/console/agent" target="_blank" rel="noreferrer">{copy('console')}<ExternalLink size={13} aria-hidden="true"/></a></div>

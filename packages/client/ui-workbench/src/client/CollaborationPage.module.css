@@ -35,9 +35,9 @@
 .topicTasks{flex-shrink:0;padding:0 25px 15px;border-top:1px solid var(--teloa-border)}.topicTasks>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0 8px;font-size:var(--teloa-font-caption)}.topicTasks>header strong{font-weight:var(--teloa-weight-medium)}.topicTasks>header span{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}.topicTasks>div{display:grid;gap:5px;max-height:132px;overflow:auto}.topicTasks button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:8px 9px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-background);color:var(--teloa-text);text-align:left}.topicTasks button:hover{background:var(--teloa-hover)}.topicTasks button>span{min-width:0}.topicTasks button strong,.topicTasks button small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.topicTasks button strong{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);line-height:1.55}.topicTasks button small{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.5}.topicTasks button em{flex:none;font-size:var(--teloa-font-caption);font-style:normal;color:var(--teloa-muted);white-space:nowrap}.topicTasks>p{margin:0;padding:0 0 2px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
 .empty{margin:auto;max-width:460px;text-align:center;padding:50px 25px;color:var(--teloa-muted)}.empty h1,.empty h2{color:var(--teloa-text);font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);margin:16px 0 10px;line-height:var(--teloa-leading-label)}.empty p{font-size:var(--teloa-font-caption);line-height:1.9;margin:0 0 20px}.emptyActions{display:flex;justify-content:center;gap:9px;flex-wrap:wrap}.hint{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.8}
 .routeNotice{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 32px;border-bottom:1px solid var(--teloa-border);background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}.routeNotice button{flex:none;border:0;background:transparent;color:var(--teloa-accent);font:inherit;font-size:var(--teloa-font-caption);padding:3px 0}.routeNotice button:hover{text-decoration:underline}
-.primary,.secondary{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--teloa-border);border-radius:8px;padding:7px 12px;background:var(--teloa-accent);color:var(--teloa-on-accent);font-size:var(--teloa-font-control);min-height:36px}.primary{border-color:var(--teloa-accent)}.secondary{background:var(--teloa-surface);color:var(--teloa-text)}.secondary:hover{background:var(--teloa-hover)}.primary:hover{opacity:.9}.primary:disabled{opacity:.45}
+.primary,.secondary{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--teloa-border);border-radius:8px;padding:7px 12px;background:var(--teloa-primary);color:var(--teloa-on-primary);font-size:var(--teloa-font-control);min-height:36px}.primary{border-color:var(--teloa-accent)}.secondary{background:var(--teloa-surface);color:var(--teloa-text)}.secondary:hover{background:var(--teloa-hover)}.primary:hover{opacity:.9}.primary:disabled{opacity:.45}
 .error{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--teloa-border);font-size:var(--teloa-font-caption)}.error button{border:0;background:transparent;color:inherit}
-.dialog{box-sizing:border-box;width:570px;max-width:calc(100vw - 28px);max-height:86dvh;overflow:auto;border:1px solid var(--teloa-border);border-radius:16px;background:var(--teloa-surface);color:var(--teloa-text);padding:26px;box-shadow:var(--teloa-shadow)}.dialog::backdrop{background:var(--teloa-backdrop)}.dialog header,.dialog footer{display:flex;align-items:center;justify-content:space-between;gap:14px}.dialog h2{font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);margin:0;line-height:var(--teloa-leading-heading)}.dialog form>label{display:flex;flex-direction:column;gap:8px;margin:18px 0 8px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}.dialog input:not([type=checkbox]),.dialog select,.dialog textarea{box-sizing:border-box;width:100%;border:1px solid var(--teloa-border);background:var(--teloa-background);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);line-height:1.8;border-radius:7px;padding:10px 12px}.dialog textarea{min-height:110px;max-height:300px;resize:vertical}.dialog fieldset{border:0;padding:0;margin:20px 0}.dialog legend{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);margin-bottom:10px}.memberChoice{display:flex;align-items:center;gap:9px;min-height:38px;font-size:var(--teloa-font-caption)}.memberChoice small{font-size:var(--teloa-font-caption);margin-left:10px;color:var(--teloa-muted)}.dialog footer{justify-content:flex-end;margin-top:22px}.dialog input[type=checkbox]{accent-color:var(--teloa-accent)}
+.dialog{box-sizing:border-box;width:570px;max-width:calc(100vw - 28px);max-height:86dvh;overflow:auto;border:1px solid var(--teloa-border);border-radius:16px;background:var(--teloa-surface);color:var(--teloa-text);padding:26px;box-shadow:var(--teloa-shadow)}.dialog::backdrop{background:var(--teloa-backdrop)}.dialog header,.dialog footer{display:flex;align-items:center;justify-content:space-between;gap:14px}.dialog h2{font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);margin:0;line-height:var(--teloa-leading-heading)}.dialog form>label{display:flex;flex-direction:column;gap:8px;margin:18px 0 8px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}.dialog input:not([type=checkbox]),.dialog select,.dialog textarea{box-sizing:border-box;width:100%;border:1px solid var(--teloa-border-strong);background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);line-height:1.8;border-radius:9px;padding:10px 12px}.dialog textarea{min-height:110px;max-height:300px;resize:vertical}.dialog fieldset{border:0;padding:0;margin:20px 0}.dialog legend{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium);margin-bottom:10px}.memberChoice{display:flex;align-items:center;gap:9px;min-height:38px;font-size:var(--teloa-font-caption)}.memberChoice small{font-size:var(--teloa-font-caption);margin-left:10px;color:var(--teloa-muted)}.dialog footer{justify-content:flex-end;margin-top:22px}.dialog input[type=checkbox]{accent-color:var(--teloa-accent)}
 .mobileBack{display:none}.page button:focus-visible,.page input:focus-visible,.page textarea:focus-visible,.page select:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}.page textarea:focus-visible{outline-offset:5px}
 .sharedDirectory .discussion{display:flex;min-width:0}
 @media(min-width:1600px){.directory{flex-basis:296px}.panel{flex-basis:430px}}
@@ -231,3 +231,64 @@
 .taskDrawer .taskContext{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 8px;margin:0 0 18px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}.taskContext strong{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .taskDrawer fieldset{margin:0;min-width:0}.taskDrawer label{display:flex;flex-direction:column;gap:6px;margin:0 0 16px;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}.taskDrawer textarea{min-height:168px}.taskDrawer .hint{margin:8px 0;font-size:var(--teloa-font-caption);line-height:1.6}
 .taskDetails{margin:4px 0 16px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.taskDetails summary{width:fit-content;cursor:pointer}.taskDetails[open] summary{margin-bottom:14px}.taskDrawer footer{flex-wrap:wrap;gap:10px}.taskCreateHint{margin-right:auto;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.taskDrawer .primary{border-color:var(--teloa-text);background:var(--teloa-text);color:var(--teloa-background)}
+
+/* 1.0 设计（B6，第 18 屏）：浮起的动作条在隐藏时只降透明度、不关指针，悬停前也能直接点到（键盘经 focus-within 显示）。
+   一行 56px 页头（群名 + 业务胶囊 + 图标文字动作）→ 公告条 → @我阅读条；
+   成员消息去掉气泡、名字与身份同行，本人消息保留右侧气泡（与对话页本人消息一致）；
+   次要动作悬停时浮在消息右上角，已有表情回应时留在行内；正文列 680px、输入框 700px 居中。 */
+.page .discussion{max-width:none}
+.page .groupHeader{min-height:56px;box-sizing:border-box;padding:0 16px 0 24px;gap:10px}
+.page .groupHeader .heading{gap:8px}
+.page .groupHeader .heading>div{display:flex;align-items:center;gap:8px;min-width:0}
+.page .groupHeader .heading h1{margin:0;min-width:0;font-size:15px;font-weight:var(--teloa-weight-heading);line-height:1.4}
+.page .groupHeader .groupContext{flex:none;max-width:40%;padding:2px 8px;border-radius:999px;background:var(--teloa-hover);color:var(--teloa-secondary);font-size:12px;line-height:18px}
+.page .groupHeader .groupContext em{margin-left:6px}
+.page .groupHeader .groupAvatar{width:28px;height:28px;flex:0 0 28px;border-radius:7px;background:transparent;color:var(--teloa-muted)}
+.page .groupHeader .groupAvatar>svg{position:static;background:transparent;padding:0}
+.page .groupHeader .groupAvatar:hover{background:var(--teloa-hover)}
+.page .groupHeader>.actions{gap:2px}
+.page .groupHeader .actions>button.labelButton{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:var(--teloa-secondary);font-size:13px;white-space:nowrap}
+.page .groupHeader .actions>button.labelButton:hover{background:var(--teloa-hover);color:var(--teloa-text)}
+.page .groupHeader .actions>button.labelButton[aria-expanded=true]{background:var(--teloa-hover);color:var(--teloa-text)}
+.page .groupHeader .actions>.labelButton:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.page .groupHeader .messageSearch{margin-right:4px}
+.page .groupHeader .messageSearch input{width:150px;height:30px;box-sizing:border-box;border:1px solid transparent;border-radius:8px;background:var(--teloa-subtle);font-size:13px}
+.page .groupHeader .messageSearch input:focus{border-color:var(--teloa-border-strong);background:var(--teloa-surface);outline:0}
+.page .groupHeader .groupMore>summary{width:32px;height:32px;border-radius:7px;color:var(--teloa-secondary)}
+.page .announcement{flex:none;padding:0 16px 0 24px;border-bottom:1px solid var(--teloa-border);background:var(--teloa-warn-bg);color:var(--teloa-secondary);font-size:13px}
+.page .announcement summary{min-height:36px;gap:8px}
+.page .announcement summary svg{color:var(--teloa-warn)}
+.page .announcement summary strong{color:var(--teloa-text);font-weight:var(--teloa-weight-heading)}
+.page .announcement[open]{padding-bottom:10px}.page .announcement p{margin:0 0 0 22px;color:var(--teloa-text)}
+.page .mentionSummary{min-height:34px;box-sizing:border-box;padding:0 24px;border-bottom:1px solid var(--teloa-border);background:var(--teloa-panel);color:var(--teloa-secondary);font-size:13px}
+.page .mentionSummary>button{color:var(--teloa-secondary);padding:2px 6px;margin-left:-6px;min-height:26px;border-radius:6px}
+.page .mentionSummary>button:hover{background:var(--teloa-hover);color:var(--teloa-text);text-decoration:none}
+.page .discussionBody>.transcript{padding:20px max(28px,calc((100% - 680px) / 2))}
+.page .messageTime{align-items:center;gap:10px;margin:4px 0 14px;font-size:12px}
+.page .messageDate::before,.page .messageDate::after{content:'';flex:1;height:1px;background:var(--teloa-border)}
+.page .message{position:relative;gap:12px;margin-bottom:18px}
+.page .message:not(.ownMessage){margin-inline:-8px;padding:6px 8px;border-radius:10px}
+.page .message:not(.ownMessage):hover{background:var(--teloa-panel)}
+.page .message:not(.ownMessage) header{min-height:22px;gap:8px}
+.page .message:not(.ownMessage) header :is(strong,.messageAuthor){font-size:14px;font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
+.page .message:not(.ownMessage) header>span{font-size:13px;color:var(--teloa-muted)}
+.page .message:not(.ownMessage) .markdown{width:auto;max-width:100%;margin:3px 0 0;padding:0;border-radius:0;background:transparent;line-height:1.7}
+.page .message:not(.ownMessage) .markdown :is(p,li){line-height:1.7}
+.page .messageSource{margin-top:4px}
+.page .messageSource summary{padding:1px 0}
+.page .message .messageActions{margin-top:6px}
+.page .message .messageActions>button,.page .message .messageActions [data-message-id]>div>button,.page .message .messageMore>summary{opacity:0}
+.page .message:is(:hover,:focus-within) .messageActions>button,.page .message:is(:hover,:focus-within) .messageActions [data-message-id]>div>button,.page .message:is(:hover,:focus-within) .messageMore>summary,.page .message .messageMore[open]>summary{opacity:1;pointer-events:auto}
+.page .message:not(.ownMessage) .messageActions:not(:has([aria-pressed])){position:absolute;top:-14px;right:8px;z-index:2;margin:0;gap:2px;padding:3px;border:1px solid var(--teloa-border-strong);border-radius:8px;background:var(--teloa-surface);box-shadow:0 4px 12px -4px rgb(28 27 25 / .18);opacity:0}
+.page .message:not(.ownMessage):is(:hover,:focus-within) .messageActions:not(:has([aria-pressed])){opacity:1;pointer-events:auto}
+.page .message:not(.ownMessage) .messageActions:not(:has([aria-pressed])) :is(.replyButton,.messageMore>summary){height:26px;min-height:26px;width:auto;padding:0 8px;border-radius:5px;font-size:12px}
+.page .message:not(.ownMessage) .messageActions:not(:has([aria-pressed])) .messageMore>div{top:calc(100% + 5px);bottom:auto;left:auto;right:0}
+.page .ownMessage .messageActions:not(:has([aria-pressed])){position:absolute;top:-14px;right:46px;z-index:2;margin:0;gap:2px;padding:3px;border:1px solid var(--teloa-border-strong);border-radius:8px;background:var(--teloa-surface);box-shadow:0 4px 12px -4px rgb(28 27 25 / .18);opacity:0}
+.page .ownMessage:is(:hover,:focus-within) .messageActions:not(:has([aria-pressed])){opacity:1;pointer-events:auto}
+.page .ownMessage .messageActions:not(:has([aria-pressed])) :is(.replyButton,.messageMore>summary){height:26px;min-height:26px;width:auto;padding:0 8px;border-radius:5px;font-size:12px}
+.page .ownMessage .messageActions:not(:has([aria-pressed])) .messageMore>div{top:calc(100% + 5px);bottom:auto}
+@media(hover:none),(pointer:coarse){.page .message .messageActions>button,.page .message .messageActions [data-message-id]>div>button,.page .message .messageMore>summary{opacity:1;pointer-events:auto}.page .message .messageActions:not(:has([aria-pressed])){position:static;margin-top:6px;padding:0;border:0;background:transparent;box-shadow:none;opacity:1;pointer-events:auto}}
+.page .discussionBody>.composer{width:calc(100% - 56px);max-width:700px;box-sizing:border-box;margin:0 auto 18px;border-color:var(--teloa-border-strong);box-shadow:var(--teloa-composer-shadow)}
+.page .panel{background:var(--teloa-panel)}
+.page .panel>header{min-height:56px}
+@media(max-width:740px){.page .groupHeader{padding:0 12px}.page .groupHeader .labelButton>span{display:none}.page .discussionBody>.transcript{padding:16px}.page .discussionBody>.composer{width:calc(100% - 24px);margin-bottom:12px}.page .announcement,.page .mentionSummary{padding-inline:12px}}

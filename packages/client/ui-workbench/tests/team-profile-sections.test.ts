@@ -198,11 +198,12 @@ test('T5 版本号不在页顶常驻，只在「它的变更记录」的折叠�
  assert.ok(changes.includes(version),'版本号应落在「它的变更记录」的折叠小字里')
 })
 
-test('定稿联系区顺序为对话、语音、邀请；生命周期和完整配置保留在员工管理',()=>{
+test('1.0 联系区为「发消息」「通话」文字按钮与「更多」；邀请、编辑收进更多，生命周期和完整配置保留在员工管理',()=>{
  const rail=railOf(render(baseRole(),{editing:false}))
- const labels=['对话','语音','邀请'],positions=labels.map(label=>rail.indexOf('aria-label="'+label+'"'))
- assert.ok(positions.every(index=>index>=0));assert.deepEqual(positions,[...positions].sort((a,b)=>a-b))
- for(const label of labels){const action=rail.match(new RegExp('<button[^>]*aria-label="'+label+'"[^>]*>([\\s\\S]*?)</button>'));assert.ok(action);assert.equal(action[1]!.replace(/<[^>]*>/g,''),'','联系动作用有提示的图标，不显示文字按钮')}
+ const texts=[...rail.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(match=>match[1]!.replace(/<[^>]*>/g,''))
+ const positions=['发消息','通话','编辑资料','邀请参与协作'].map(label=>texts.indexOf(label))
+ assert.ok(positions.every(index=>index>=0),'发消息、通话、编辑资料、邀请参与协作都在身份区');assert.deepEqual(positions,[...positions].sort((a,b)=>a-b))
+ assert.ok(rail.indexOf('aria-label="更多员工操作"')<rail.indexOf('>编辑资料</button>'),'编辑与邀请位于「更多员工操作」之后的菜单内')
  assert.ok(rail.includes('>员工管理</button>'),'身份更多菜单保留员工管理入口')
  for(const key of ['team.profile.action.pause','team.profile.action.retire','team.action.edit'])assert.ok(!rail.includes(zh(key)),'管理动作按需在抽屉呈现')
 })
@@ -210,7 +211,7 @@ test('定稿联系区顺序为对话、语音、邀请；生命周期和完整�
 test('暂停员工可继续原对话，工作页签的交办按钮禁用',()=>{
  const html=render(baseRole({state:'paused'}),{editing:false,talk:async()=>true})
  const buttons=html.match(/<button[^>]*>[\s\S]*?<\/button>/g)??[]
- const chat=buttons.find(button=>button.includes('aria-label="对话"'))
+ const chat=buttons.find(button=>button.replace(/<[^>]*>/g,'')==='发消息')
  const assign=buttons.find(button=>button.includes(zh('team.profile.action.assign')))
  assert.ok(chat);assert.doesNotMatch(chat,/disabled/)
  assert.ok(assign);assert.match(assign,/disabled/)

@@ -148,7 +148,7 @@ test('沙盒数字员工只能预览，不能进入正式会话或渲染关联�
     talk:async()=>{talks++;return true},
     conversations:()=>{conversationPanels++;return createElement('div',null,'关联管理')},
   })
-  const chat=[...markup.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match=>match[1]!.includes('aria-label="'+employeeCopy('zh-CN','chat')+'"'))
+  const chat=[...markup.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match=>match[2]!.replace(/<[^>]*>/g,'')===employeeCopy('zh-CN','message'))
   assert.ok(chat,'沙盒员工仍须提供明确的对话入口及不可用说明')
   assert.match(chat[1]!,/disabled=""/)
   assert.match(markup,/这是预览身份，保存为员工后才能开始会话。/)

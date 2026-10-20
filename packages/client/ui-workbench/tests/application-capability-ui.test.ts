@@ -80,7 +80,7 @@ test('员工只读时禁止指派、编辑和恢复，停止、撤销及历史�
   const active=render(RoleLifecycle,{role,api});assert.doesNotMatch(button(active,zh('roleLifecycle.pause')),/disabled/);assert.doesNotMatch(button(active,zh('roleLifecycle.retire')),/disabled/)
   const paused=render(RoleLifecycle,{role:{...role,state:'paused'},api});assert.match(button(paused,zh('roleLifecycle.resume')),/disabled/);assert.doesNotMatch(button(paused,zh('roleLifecycle.retire')),/disabled/)
   const html=render(RoleDetail,{work:{},resourceApi:{},memoryApi:undefined,persistence:undefined,conversations:()=>null,talk:async()=>true,input:{draft:undefined,editing:false},update:noop,role,state:{...emptyTaskPreview(),roles:[role]},collaboration:emptyCollaboration(),change:noop,back:noop,openTask:noop,openGroup:noop,resources:noop,nativeSettings:noop,capabilities:()=>null,plans:()=>null})
-  assert.match(html,/调查员/);assert.match(button(html,zh('team.profile.action.assign')),/disabled/);assert.match(button(html,employeeCopy('zh-CN','profileEdit')),/disabled/);assert.doesNotMatch(button(html,employeeCopy('zh-CN','chat')),/disabled/)
+  assert.match(html,/调查员/);assert.match(button(html,zh('team.profile.action.assign')),/disabled/);assert.match(button(html,employeeCopy('zh-CN','editProfile')),/disabled/);assert.doesNotMatch(button(html,employeeCopy('zh-CN','message')),/disabled/)
   const draft=render(TwinDraftEditor,{role:{...role,kind:'twin'},input:{version:2,body:'本人未保存原稿'},update:noop,save:()=>true});assert.match(draft,/readonly=""/);assert.match(draft,/本人未保存原稿/);assert.match(button(draft,zh('twinDraft.save')),/disabled/)
  }finally{close()}
 })

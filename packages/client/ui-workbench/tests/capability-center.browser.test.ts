@@ -39,20 +39,20 @@ test('精简市场：员工／团队入口、应用连接往返、已添加无�
  await page.keyboard.press('Escape');await page.locator('details[open] > summary[aria-label="创建或导入"]').waitFor({state:'detached'})
  assert.equal(await page.getByRole('button',{name:/^已添加/}).count(),1)
  const categories=page.getByRole('navigation',{name:'市场分类',exact:true})
- assert.deepEqual(await categories.getByRole('button').allTextContents(),['AI 员工','AI 团队'])
+ assert.deepEqual(await categories.getByRole('button').allTextContents(),['全部','AI 员工','AI 团队','应用','技能'])
  // 发现首页是 AI 员工；2026-10-14 用户选 B：应用是主导航旁的快捷入口，进入统一应用目录——连接器应用与技能同列，但各守应用/技能身份与已装/已连接状态
  // 隔离目录没有员工或团队条目：官方目录读完后给出真实空态，而不是补示例或列出连接器；用途分类只在有可选用途时出现（见 market-primary.browser）
  await page.getByRole('status').filter({hasText:'这里还没有内容'}).waitFor()
  assert.equal(await page.getByRole('group',{name:'用途分类',exact:true}).count(),0,'没有可选用途时不渲染只剩「全部」的分类')
  assert.equal(await page.locator('[data-catalog-row="teloa.github"]').count(),0,'AI 员工目录不列连接器')
- // 方案 B：「应用」是左栏资源组里与「市场」并列的入口，打开同一市场目录的应用视图；市场页内不再重复一个
- const appsEntry=nav.getByRole('button',{name:'应用',exact:true}),marketEntry=nav.getByRole('button',{name:'市场',exact:true})
- assert.equal(await page.getByRole('button',{name:'应用',exact:true}).count(),1,'应用只有左栏一处');assert.equal(await categories.getByRole('button').filter({hasText:/应用/}).count(),0,'应用不进市场主标签')
+ // 1.0：应用并入市场，是与 AI 员工、AI 团队并列的分类页签；左栏只留市场
+ const appsEntry=categories.getByRole('button',{name:'应用',exact:true}),marketEntry=nav.getByRole('button',{name:'市场',exact:true})
+ assert.equal(await page.getByRole('button',{name:'应用',exact:true}).count(),1,'应用只在市场分类一处');assert.equal(await nav.getByRole('button',{name:'应用',exact:true}).count(),0,'应用不再占左栏入口')
  await appsEntry.click()
  const appsSearch=page.getByRole('searchbox',{name:'在应用和技能中搜索',exact:true});await appsSearch.waitFor()
- assert.equal(await appsEntry.getAttribute('aria-current'),'page');assert.equal(await marketEntry.getAttribute('aria-current'),null)
- // 统一应用目录自带唯一「应用」标题，不再外套市场标题与市场分类（见 market-primary.browser）
- assert.equal(await page.getByRole('heading',{name:'市场',exact:true}).count(),0);assert.equal(await page.getByRole('heading',{name:'应用',exact:true}).count(),1);assert.equal(await categories.count(),0,'应用不重复市场分类')
+ assert.equal(await appsEntry.getAttribute('aria-current'),'page');assert.equal(await marketEntry.getAttribute('aria-current'),'page','应用归属市场，左栏仍是市场')
+ // 应用视图保留市场标题与分类；应用目录标题只给读屏
+ assert.equal(await page.getByRole('heading',{name:'市场',exact:true}).count(),1);assert.equal(await page.getByRole('heading',{name:'应用',exact:true}).count(),1);assert.equal(await categories.count(),1,'应用视图保留市场分类')
  assert.equal(await page.locator('[data-catalog-row]').count(),0,'应用页不再是旧官方目录行')
  const github=page.getByRole('button',{name:/^GitHub/}),research=page.getByRole('button',{name:/^资料研究/})
  await github.waitFor();await research.waitFor()

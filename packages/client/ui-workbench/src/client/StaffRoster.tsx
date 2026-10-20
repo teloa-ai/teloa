@@ -1,7 +1,7 @@
 import {EmployeeAvatar} from './EmployeeAvatar.js'
 import {employeeCopy} from './employee-copy.js'
 import {StatusLabel} from './StatusLabel.js'
-import { ChevronRight, Fingerprint, MessageCircle, Phone } from 'lucide-react';
+import { Fingerprint, MessageCircle, Phone } from 'lucide-react';
 import {sortRoster,type RosterSort} from './team-roster-grouping.js';
 import {directoryChoiceCopy} from './directory-choice-copy.js';
 import type { BusinessScopeLabel } from './business-directory.js';
@@ -62,7 +62,6 @@ export function StaffRoster({roles,labels,tasks,onSelect,onTalk,onPhone,onOpenTa
    <button type="button" data-teloa-entry={item.id} className={rosterCss.cardIdentity} onClick={()=>onSelect(item.id)}>
     {item.kind==='twin'?<TwinAvatar initials={profileInitials}/>:<EmployeeAvatar avatarKey={item.avatarKey}/>}
     <span className={rosterCss.personMain}><strong>{name}</strong><small>{dutyLead(roleFieldText(item,'duty',t))}</small></span>
-    <ChevronRight size={15}/>
    </button></td><td><small className={rosterCss.cardScopes}>{list(item.scopes.map(scopeName))}</small></td><td>
    <span className={rosterCss.status} data-roster-status={status}>{status==='twin'?<><Fingerprint size={12}/>{statusLabel}</>:<StatusLabel label={statusLabel} mark={status==='active'?'enabled':status==='paused'?'paused':'retired'} tone={status==='active'?'good':'muted'}/>}</span>
    {task?<button type="button" className={rosterCss.workLink} onClick={()=>onOpenTask?onOpenTask(task.id):onSelect(item.id)} title={task.title}>{task.title}</button>:<small className={rosterCss.cardScopes}>{t('team.roster.idle')}</small>}

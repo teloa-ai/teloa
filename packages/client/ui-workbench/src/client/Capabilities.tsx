@@ -12,6 +12,7 @@ import type { HomeSkillSelection } from './prompt-preparation.js'
 import type {TeloaI18n} from './i18n/index.js'
 import {formatDateTime} from './i18n/format.js'
 import {localizeWorkError} from './i18n/errors.js'
+import dock from './ComposerDock.module.css'
 
 export type WorkInjected={work:BindingClient}
 type I18nInjected={i18n:TeloaI18n}
@@ -124,7 +125,7 @@ export function BindingStatus({sessionId,useInput,work,i18n}:PropsRuntime<'conve
   const pendingAttachments=useInput(input=>input.attachmentIds.length)
   if(state.sessionId!==sessionId||state.status==='idle')return null
   if(state.status==='ready'&&pendingAttachments===0)return null
-  return <div className={css.binding} role={state.status==='failed'?'alert':'status'}>
+  return <div className={`${css.binding} ${dock.strip}${state.status==='failed'?' '+dock.danger:''}`} role={state.status==='failed'?'alert':'status'}>
     {state.status!=='ready'&&<span>{state.status==='loading'?t('capabilities.binding.loadingDetailed'):localizeWorkError(i18n.getSnapshot().locale,state.error)}</span>}
     {state.status==='failed'&&<button type="button" className={css.trigger} onClick={()=>void work.retry()}>{t('capabilities.binding.retry')}</button>}
     {pendingAttachments>0&&<span>{t('capabilities.attachments.pending',{count:pendingAttachments})}</span>}

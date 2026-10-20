@@ -3,16 +3,18 @@ import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionId} from '@deepseek-ai/dsh-session'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
-import {createUserMessage,type ContextFormed} from '@deepseek-ai/dsh-llm'
+import {createUserMessage,LlmError,ReasoningEffortId,type ContextFormed} from '@deepseek-ai/dsh-llm'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {RunGroupTopic} from '@teloa/backend'
 import {WorkError,groupReactionEmojis,groupRoutingHopLimit,groupRoutingInputSchema,groupRoutingOutputV2,groupRoutingOutputV2Schema,groupRoutingAttemptRequestId,groupRoutingSessionId,groupRoutingTopicMax,type GroupRoutingOutputV2,type WorkBudgetExhaustion} from '@teloa/contract'
 import {teloaAgentPresetId} from './composition-safety.ts'
 import {prepareDshTaskSession,resolveDshTaskPreset} from './task-run-dsh.ts'
-import {readGroupRoutingBudgetExhaustion,readGroupRoutingResult,readRoutingEvents,routingTurnMixed} from './group-routing-result.ts'
+import {groupRoutingEmptyRetryRequestId,mayRetryEmptyGroupRouting,readGroupRoutingFailure,readGroupRoutingBudgetExhaustion,readGroupRoutingResult,readRoutingEvents,routingTurnMixed} from './group-routing-result.ts'
+import {withDefaultModelEffort} from './model-default-effort.ts'
 import {observeTaskRun} from './task-run-observation.ts'
 import {readSessionEvents} from './session-events.ts'
 import {parseBusinessRecordReferences} from '@teloa/contract'
+import {readModelReference} from '@teloa/contract'
 
 /** 话题投影的单条形状由后端 `group-topic.ts` 定死（恰 5 键），这里只引用它，不另立一份。 */
 type RunGroupTopicMessage=RunGroupTopic['messages'][number]
@@ -58,6 +60,9 @@ const routingDegradeReasons={
  aborted:'本次路由已取消',
  mixed:'路由会话本轮混入了其他请求',
  silent:'模型这一轮没有给出任何回答',
+ credentials:'后台路由模型缺少有效凭据，请在设置中核对默认模型',
+ model:'后台路由模型配置不可用，请在设置中核对默认模型',
+ request:'后台路由模型请求未正常完成',
  corrupt:'路由会话日志不完整或请求重复',
  budget:'工作额度不足，模型请求被拒绝',
 } as const
@@ -199,6 +204,16 @@ async function hideRoutingTools(ctx:Context,sessionId:string):Promise<void>{
  if('error' in resolved)throw new WorkError('teloa/unavailable','路由会话尚未就绪。')
  const agent=resolved.agent as unknown as Partial<Pick<Agent,'ctx'>>&object
  if(!agent.ctx||routingToolsHidden.has(agent))return
+ agent.ctx.on('agent/request',async({signal},next)=>{
+  const inherited=await next(),selected=(await ctx.sessionController.modelCatalog()).default
+  signal.throwIfAborted()
+  // 路由会话同群同日复用；本人更换默认模型后，不能继续使用建会话时留下的旧配置。
+  if(!selected?.provider||!selected.model)throw new LlmError('Group routing requires a configured default model','UNKNOWN_MODEL')
+  const {provider:_provider,model:_model,reasoningEffort:_effort,...sampling}=inherited
+  const model=readModelReference(selected)
+  const config=await agent.ctx!.llm.resolveCallConfig({...sampling,provider:model.provider,model:model.model,...(model.reasoningEffort===undefined?{}:{reasoningEffort:ReasoningEffortId(model.reasoningEffort)})},signal)
+  return withDefaultModelEffort(agent.ctx!.llm,config,signal)
+ },{prepend:true})
  agent.ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
   const result=await next()
   return {...result,tools:[],sections:result.sections.filter(section=>section.name!=='team:policy')}
@@ -317,8 +332,9 @@ export async function askGroupRouting(ctx:Context,owner:string,ask:GroupRoutingA
  return queued.kind==='overflow'?degraded(ctx,'timeout',sessionId):queued.value
 }
 
-async function askOnce(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:AbortSignal,sessionId:string,day:string):Promise<GroupRoutingAnswer>{
- const requestId=groupRoutingAttemptRequestId(owner,ask.groupId,ask.messageId,ask.attempt??1)
+async function askOnce(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:AbortSignal,sessionId:string,day:string,emptyRetry=false):Promise<GroupRoutingAnswer>{
+ const primaryId=groupRoutingAttemptRequestId(owner,ask.groupId,ask.messageId,ask.attempt??1)
+ const requestId=emptyRetry?groupRoutingEmptyRetryRequestId(primaryId):primaryId
  let settled:RoutingTurn
  try{await ensureRoutingSession(ctx,sessionId,signal);await hideRoutingTools(ctx,sessionId)}
  catch{return degraded(ctx,signal.aborted?'aborted':'session',sessionId)}
@@ -346,7 +362,15 @@ async function askOnce(ctx:Context,owner:string,ask:GroupRoutingAsk,signal:Abort
  if(budget)return {...degraded(ctx,'budget',sessionId),budget}
  const text=readGroupRoutingResult(settled.events,requestId,settled.turn)
  // 一句话都没说 = 没拿到回答，算通道这一侧的退化，不是模型说错了话。
- if(text===undefined)return degraded(ctx,'silent',sessionId)
+ if(text===undefined){
+  const failure=readGroupRoutingFailure(settled.events,requestId,settled.turn)
+  if(failure)return degraded(ctx,failure,sessionId)
+  if(!emptyRetry&&!signal.aborted&&mayRetryEmptyGroupRouting(settled.events,requestId,settled.turn)){
+   release?.();release=undefined
+   return askOnce(ctx,owner,ask,signal,sessionId,day,true)
+  }
+  return degraded(ctx,'silent',sessionId)
+ }
  try{return {kind:'ok',output:groupRoutingOutputV2(text,ask.candidates.map(candidate=>candidate.roleId),(ask.work??[]).map(item=>({taskId:item.taskId,runId:item.runId})),ask.trigger.text,ask.candidates.map(candidate=>({roleId:candidate.roleId,scopes:candidate.scopes??[]})))}}
  catch{return {kind:'parse-failed'}}
  }finally{release?.()}

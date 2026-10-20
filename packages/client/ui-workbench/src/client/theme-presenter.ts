@@ -80,8 +80,10 @@ export class ThemePresenter {
       'bg-module-platform':'sidebar','bg-multi-select':'accent-bg','bg-mask-1':'overlay','bg-mask-2':'overlay',
       'label-primary':'text','label-primary-bluish':'text','label-primary-dimmed':'text','label-secondary':'muted','label-tertiary':'muted','label-caption':'muted','label-dimmed':'muted','label-primary-inverted':'surface',
       'border-l1':'border','border-l2':'border','border-l3':'border','border-l4':'border',
-      'brand-primary':'accent','brand-text':'accent','brand-primary-invert':'on-accent',
+      'brand-primary':'primary','brand-text':'accent','brand-primary-invert':'on-primary',
       'interactive-bg-hover':'hover','interactive-bg-active':'hover','interactive-bg-hover-accent':'accent-bg',
+      // 1.0：原生「信息主按钮」（发送键、选中图标）跟随墨黑唯一主动作。
+      'button-info-fill':'primary','button-info-hover':'primary',
     }))native['--dsw-alias-'+name]=palette['--teloa-design-'+key]!
     native['--dsw-font-family']=textFont
     this.projectStyles({...snapshot.active.tokens,...palette,...native,

@@ -12,7 +12,7 @@
 .dialog button:focus-visible,.dialog select:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .dialog footer{display:flex;gap:8px;margin-top:24px;align-items:center;flex-wrap:wrap}
 .dialog footer>span{flex:1}
-.dialog .primary{background:var(--teloa-accent);color:var(--teloa-on-accent);border-color:var(--teloa-accent)}
+.dialog .primary{background:var(--teloa-primary);color:var(--teloa-on-primary);border-color:var(--teloa-primary)}
 .path{display:flex;align-items:flex-start;gap:8px;margin-top:10px;padding:9px 10px;border-radius:7px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
 .path svg{flex-shrink:0;margin-top:2px}
 .path>span{display:grid;min-width:0;gap:1px}.path strong{overflow:hidden;color:var(--teloa-text);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);text-overflow:ellipsis;white-space:nowrap}.path small{font-size:var(--teloa-font-caption);line-height:1.5}

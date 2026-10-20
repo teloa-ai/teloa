@@ -13,7 +13,7 @@ export type WorkspaceMarketSearchEntry={id:string;title:string;summary:string;de
 export type WorkspaceSearchSource={
  conversations:readonly PresentedConversation[]
  tasks:readonly Pick<PreviewTask,'storage'|'id'|'title'|'goal'|'state'|'scope'>[]
- roles:readonly Pick<PreviewRole,'storage'|'id'|'name'|'duty'|'state'>[]
+ roles:readonly (Pick<PreviewRole,'storage'|'id'|'name'|'duty'|'state'>&Partial<Pick<PreviewRole,'kind'|'avatarKey'>>)[]
  groups:readonly (Pick<CollaborationGroup,'id'|'name'|'announcement'|'archived'>&{storage?:'persistent'})[]
  spaces:readonly (Pick<BusinessScopeLabel,'scope'|'title'>&{storage?:'persistent'})[]
   knowledge:readonly WorkspaceKnowledgeSearchEntry[]
@@ -33,18 +33,20 @@ export function filterWorkspaceSearchResults(rows:readonly WorkspaceSearchResult
 export function searchWorkspace(source:WorkspaceSearchSource,query:string):WorkspaceSearchResult[]{
  const needle=query.trim().toLocaleLowerCase()
  const rows:WorkspaceSearchResult[]=[]
- const add=(kind:WorkspaceSearchResult['kind'],id:string,title:string,detailKey:MessageKey,extra='')=>{
-  if([title,id,extra].some(text=>text.toLocaleLowerCase().includes(needle)))rows.push({key:kind+':'+id,kind,id,title,detailKey})
+ const add=(kind:WorkspaceSearchResult['kind'],id:string,title:string,detailKey:MessageKey,extra='',description?:string)=>{
+  if([title,id,extra].some(text=>text.toLocaleLowerCase().includes(needle)))rows.push({key:kind+':'+id,kind,id,title,detailKey,...(description?{description}:{})})
  }
+ // 结果行的所属业务只取已保存业务的真实名称；找不到或归属多个业务时不写，避免替用户猜。
+ const businessTitle=(scopes:readonly string[])=>scopes.length===1?source.spaces.find(space=>space.scope===scopes[0])?.title:undefined
  const conversationKeys:Record<PresentedConversation['status'],MessageKey>={pending:'workDirectory.status.pending',running:'workDirectory.status.running',blank:'workDirectory.status.blank',idle:'workDirectory.status.idle',unknown:'workDirectory.status.unknown'}
  const taskKeys:Record<PreviewTask['state'],MessageKey>={ready:'status.ready',running:'status.running',paused:'status.paused',waiting:'status.waiting',blocked:'status.blocked',completed:'status.completed',cancelled:'status.cancelled'}
  const roleKeys:Record<PreviewRole['state'],MessageKey>={active:'status.enabled',paused:'status.paused',retired:'status.archived'}
  for(const row of source.conversations)if(row.conversation.status==='ready')add('conversation',row.conversation.id,row.title,conversationKeys[row.status])
- for(const row of source.tasks)if(row.storage==='persistent')add('task',row.id,row.title,taskKeys[row.state],row.goal)
+ for(const row of source.tasks)if(row.storage==='persistent')add('task',row.id,row.title,taskKeys[row.state],row.goal,businessTitle([row.scope]))
  for(const row of source.groups)if(row.storage==='persistent'&&!row.archived)add('group',row.id,row.name,'workspaceSearch.detail.group',row.announcement)
  for(const row of source.roles)if(row.storage==='persistent')add('role',row.id,row.name,roleKeys[row.state],row.duty)
  for(const row of source.spaces)if(row.storage==='persistent')add('business',row.scope,row.title,'workspaceSearch.detail.business')
- for(const row of source.knowledge)add('knowledge',row.id,row.title,'workspaceSearch.detail.knowledge',[row.resourceTitle,row.knowledgeId,row.nodeId,String(row.version),...row.path,...row.topics,...row.scopeIds,row.category].join(' '))
+ for(const row of source.knowledge)add('knowledge',row.id,row.title,'workspaceSearch.detail.knowledge',[row.resourceTitle,row.knowledgeId,row.nodeId,String(row.version),...row.path,...row.topics,...row.scopeIds,row.category].join(' '),businessTitle(row.scopeIds))
  const capabilityKeys:Record<WorkspaceCapabilitySearchRow['type'],MessageKey>={skill:'workspaceSearch.detail.skill',plugin:'workspaceSearch.detail.plugin',mcp:'workspaceSearch.detail.mcp'}
  for(const row of source.capabilities){
   if([row.title,row.id,row.detail].some(text=>text.toLocaleLowerCase().includes(needle)))rows.push({key:'capability:'+row.key,kind:'capability',id:row.id,title:row.title,detailKey:capabilityKeys[row.type],open:row.open})

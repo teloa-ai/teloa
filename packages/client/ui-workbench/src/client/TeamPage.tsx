@@ -2,7 +2,7 @@ import {skillDisplayTitle,type RoleSkillTitleReader,type SkillDisplayTitle} from
 import {directoryChoiceCopy} from './directory-choice-copy.js';
 import type {RosterSort} from './team-roster-grouping.js';
 import {EmployeeProfileEditor,type EmployeeProfileFields} from './EmployeeProfileEditor.js'
-import {EmployeeDevices} from './EmployeeDevices.js'
+import {EmployeeDevices,EmployeeMailDrawer} from './EmployeeDevices.js'
 import {DetailsMenu} from './DetailsMenu.js'
 import {EmployeeGroupInvite} from './EmployeeGroupInvite.js'
 import {EmployeeAvatar} from './EmployeeAvatar.js'
@@ -25,6 +25,7 @@ import {RoleDelegation,roleDelegationStatus} from './RoleDelegation.js'
 import type {RoleDelegationApi,RoleDelegationRead} from './role-delegation-api.js'
 import type {RoleToolGrantApi} from './role-tool-grant-api.js'
 import {StatusLabel} from './StatusLabel.js'
+import {DisabledReason} from './DisabledReason.js'
 import type {ScheduleTrigger} from '@teloa/contract';
 import { HomeSkillPicker } from './HomeSkillPicker.js';
 import type { BindingClient } from './binding-client.js';
@@ -248,7 +249,6 @@ export function TeamPage({ skillTitleReader,phone,templateSharing,delegations,ro
             <header className={teamCss.rosterHead}>
               <div className={teamCss.rosterHeadMain}>
                 <div className={teamCss.rosterTitleRow}>
-                  <Bot size={22} aria-hidden="true"/>
                   <h1>{t('navigation.team')}</h1>
                   {persistence&&!isSandbox&&<button type="button" className={directoryCss.iconAction} disabled={persistence.loading} aria-label={t(persistence.loading ? 'team.loading' : 'team.refresh')} title={t(persistence.loading ? 'team.loading' : 'team.refresh')} onClick={persistence.load}><RefreshCw size={15}/></button>}
                 </div>
@@ -370,6 +370,7 @@ export function RoleDetail({ skillTitleReader,phone,templateSharing,delegations,
     const openRoleEditor=()=>{if(!roleEditSlot.read().value)roleEditSlot.set({role,fields:undefined});setForm('edit')};
     const [savedMemories, setSavedMemories] = useState<RoleMemory[]>([]), [memoryLoading, setMemoryLoading] = useState(false), [memoryError, setMemoryError] = useState<string>(), [memoryDiscarded, setMemoryDiscarded] = useState(false);
     const [profilePanel,setProfilePanel]=useState<'memory'|'log'|'plans'|'conversations'|'management'>();
+    const [mailOpen,setMailOpen]=useState(false);
     const profileMenu=useRef<HTMLDetailsElement>(null);
     const profilePanelLabels={memory:t('team.profile.group.memory'),log:t('dailyLog.entry'),plans:t('navigation.plans'),conversations:t('objectConversations.aria'),management:employeeCopy(locale,'management')};
     const openProfilePanel=(panel:NonNullable<typeof profilePanel>)=>{profileMenu.current?.removeAttribute('open');profileMenu.current?.querySelector('summary')?.focus();setProfilePanel(panel)};
@@ -468,7 +469,7 @@ export function RoleDetail({ skillTitleReader,phone,templateSharing,delegations,
         {!retired && <button type="button" className={teamCss.identityEditLink} disabled={!allowed} onClick={openRoleEditor}>{t('team.action.edit')}</button>}
         {role.storage!=='persistent'&&!retired&&<><button type="button" disabled={!allowed&&role.state==='paused'} onClick={()=>act({type:'lifecycle',roleId:role.id,expectedVersion:role.version,action:role.state==='paused'?'resume':'pause',reason:t(role.state==='paused'?'team.detail.resumeReason':'team.detail.pauseReason'),now:new Date().toISOString()})}>{t(role.state==='paused'?'team.profile.action.resume':'team.profile.action.pause')}</button><button type="button" onClick={()=>setForm('retire')}>{t('team.profile.action.retire')}</button></>}
         {templateSharing&&role.storage==='persistent'&&<><button type="button" onClick={()=>setSharing(true)}>{t('templateShare.create')}</button><EmployeeTemplateShare role={role} open={sharing} close={()=>setSharing(false)} storage={templateSharing.storage} bridge={templateSharing.bridge}/></>}
-        {role.storage === 'persistent' && persistence && <RoleLifecycle key={actionOrigin.epoch} role={role} draft={actionDrafts(work).lifecycle?.value} pending={actionDrafts(work).lifecycle?.pending} onDraft={value=>{const drafts=actionDrafts(work);if(drafts.lifecycle)drafts.lifecycle.value=value;else drafts.lifecycle={role,value};publishDraft()}} api={{...persistence.lifecycle,change:async(_role,action,reason)=>{
+        {role.storage === 'persistent' && persistence && <RoleLifecycle key={actionOrigin.epoch} role={role} impact={{tasks:unfinished.length,groups:savedMemberships?.length}} draft={actionDrafts(work).lifecycle?.value} pending={actionDrafts(work).lifecycle?.pending} onDraft={value=>{const drafts=actionDrafts(work);if(drafts.lifecycle)drafts.lifecycle.value=value;else drafts.lifecycle={role,value};publishDraft()}} api={{...persistence.lifecycle,change:async(_role,action,reason)=>{
           const drafts=actionDrafts(work),draft=drafts.lifecycle
           if(!draft)throw Error(t('team.assignment.unavailable'))
           await submitActionDraft(draft,()=>persistence.lifecycle.change(draft.role,action,reason),()=>{if(drafts.lifecycle===draft)drafts.lifecycle=undefined;publishDraft()})
@@ -493,39 +494,43 @@ export function RoleDetail({ skillTitleReader,phone,templateSharing,delegations,
     {/* 分身保留既有专属流程，数字员工详情按工作、协作与能力页签组织；
         「全部同事」返回、错误条与各个对话框都留在外面，两支共用。 */}
     {twin
-      ? <TwinProfile {...(phone&&!retired&&role.storage==='persistent'?{phone:()=>phone(role.id)}:{})} profileName={profileName} profileInitials={profileInitials} role={role} draft={input.draft} update={draft => update({ draft })} save={act} {...(talk?{talk:async()=>{await talk(role.id)}}:talkDisabledReason?{talkDisabledReason}:{})} conversations={role.storage==='persistent'?conversations(role.id):null} samples={memorySection} delegation={delegationNode} {...(delegationNode?{executionStatus:roleDelegationStatus(role,delegationRead)}:{})} {...(!retired&&role.state==='active'&&allowed&&persistence?.assignConfirmed?{assign:()=>setForm('assign')}:{})} habits={role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} {...(dailyLogSchedule?{schedule:dailyLogSchedule(role.id)}:{})} roleId={role.id} kind="habit-digest" api={dailyLogApi} memoryApi={memoryApi} {...(promoteHabit?{promote:promoteHabit}:{})}/>:undefined}/>
+      ? <TwinProfile {...(phone&&!retired&&role.storage==='persistent'?{phone:()=>phone(role.id)}:{})} profileName={profileName} profileInitials={profileInitials} role={role} draft={input.draft} update={draft => update({ draft })} save={act} {...(talk?{talk:async()=>{await talk(role.id)}}:talkDisabledReason?{talkDisabledReason}:{})} conversations={role.storage==='persistent'?conversations(role.id):null} samples={memorySection} {...(role.storage!=='persistent'?{sampleCount:role.memories.length}:!memoryLoading&&!memoryError?{sampleCount:savedMemories.length}:{})} delegation={delegationNode} {...(delegationNode?{executionStatus:roleDelegationStatus(role,delegationRead)}:{})} {...(!retired&&role.state==='active'&&allowed&&persistence?.assignConfirmed?{assign:()=>setForm('assign')}:{})} habits={role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} {...(dailyLogSchedule?{schedule:dailyLogSchedule(role.id)}:{})} roleId={role.id} kind="habit-digest" api={dailyLogApi} memoryApi={memoryApi} {...(promoteHabit?{promote:promoteHabit}:{})}/>:undefined}/>
       : <div className={teamCss.homepage}>
       <aside className={teamCss.identityRail} aria-label={t('team.profile.title')}>
-        <div className={teamCss.identityHeading}><EmployeeAvatar avatarKey={role.avatarKey} size="lg"/><div>
+        {/* 1.0 员工抽屉：居中身份区；动作只留「发消息」「通话」「⋯」，编辑、邀请、云电脑、邮箱与档案面板收进「⋯」。 */}
+        <div className={teamCss.identityHero}>
+        <EmployeeAvatar avatarKey={role.avatarKey} size="xl"/>
         <h2>{role.name}</h2>
-        <p>{dutyLead}</p>
-        <div className={teamCss.employeeScopes}>
-          <span>{employeeCopy(locale,'servingBusinesses')}</span>
-          <span className={teamCss.scopeNames}>{role.scopes.length?role.scopes.map(scope=>openBusiness
+        <div className={teamCss.identityChips}>
+          <span className={teamCss.scopeNames} aria-label={employeeCopy(locale,'servingBusinesses')}>{role.scopes.length?role.scopes.map(scope=>openBusiness
             ? <button type="button" key={scope} data-current-scope={scope===businessContext?true:undefined} aria-label={scope===businessContext?`${collaborationScopes[scope]??scope} · ${employeeCopy(locale,'currentBusiness')}`:undefined} onClick={()=>openBusiness(scope)}>{collaborationScopes[scope]??scope}</button>
             : <span key={scope} title={scope===businessContext?employeeCopy(locale,'currentBusiness'):undefined}>{collaborationScopes[scope]??scope}</span>):employeeCopy(locale,'noBusiness')}</span>
+          <span className={teamCss.identityStatusRow} data-identity-status={identityStatus}><StatusLabel label={statusLabel(identityStatus)} mark={identityStatus==='active'?'enabled':identityStatus==='paused'?'paused':'retired'} tone={identityStatus==='active'?'good':'muted'}/></span>
         </div>
-        <span className={teamCss.identityStatusRow} data-identity-status={identityStatus}><StatusLabel label={statusLabel(identityStatus)} mark={identityStatus==='active'?'enabled':identityStatus==='paused'?'paused':'retired'} tone={identityStatus==='active'?'good':'muted'}/></span>
-        </div>        <div className={teamCss.profileActions}>
-          {!retired&&<ToolbarIconButton label={employeeCopy(locale,'profileEdit')} icon={Pencil} disabled={!allowed} onClick={()=>{setEditingRole(input.profileEdit?.role??role);setForm('profile')}}/>}
-          <DetailsMenu menuRef={profileMenu} className={teamCss.profileMenu} resetKey={role.id}>
-            <summary aria-label={employeeCopy(locale,'moreActions')} title={employeeCopy(locale,'moreActions')}><MoreHorizontal size={17}/></summary>
-            <div>{(Object.keys(profilePanelLabels) as Array<NonNullable<typeof profilePanel>>).filter(panel=>panel!=='conversations'||role.storage==='persistent').map(panel=><button type="button" key={panel} onClick={()=>openProfilePanel(panel)}>{profilePanelLabels[panel]}</button>)}</div>
+        <p>{dutyLead}</p>
+        <div className={teamCss.identityActions} aria-label={t('team.profile.title')}>
+          <button type="button" className={teamCss.primaryPill} disabled={!talk} aria-describedby={talkDisabledReason?`role-chat-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{if(!talk)return;setChatNotice(undefined);void talk(role.id).then(opened=>{if(!opened)setChatNotice(t('team.profile.historyEmpty'))}).catch(error=>setError(localizeWorkError(locale,error)))}}><MessageCircle size={14} aria-hidden/>{retired?t('team.profile.action.history'):employeeCopy(locale,'message')}</button>
+          <button type="button" className={teamCss.outlinePill} disabled={!phone||retired||role.storage!=='persistent'} aria-describedby={!phone?`role-phone-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{void phone?.(role.id).catch(error=>setError(localizeWorkError(locale,error)))}}><Phone size={14} aria-hidden/>{employeeCopy(locale,'call')}</button>
+          <DetailsMenu menuRef={profileMenu} className={teamCss.profileMenu} resetKey={role.id} closeOnSelect>
+            <summary aria-label={employeeCopy(locale,'moreActions')} title={employeeCopy(locale,'moreActions')}><MoreHorizontal size={16}/></summary>
+            <div role="menu">
+              {!retired&&<button type="button" disabled={!allowed} onClick={()=>{setEditingRole(input.profileEdit?.role??role);setForm('profile')}}><Pencil size={14} aria-hidden/>{employeeCopy(locale,'editProfile')}</button>}
+              <button type="button" disabled={!allowed||retired||!savedGroups} onClick={()=>setForm('invite')}><Users size={14} aria-hidden/>{employeeCopy(locale,'inviteTitle')}</button>
+              <EmployeeDevices role={role} variant="menu" openMail={()=>setMailOpen(true)}/>
+              <span className={teamCss.menuDivider} aria-hidden="true"/>
+              {(Object.keys(profilePanelLabels) as Array<NonNullable<typeof profilePanel>>).filter(panel=>panel!=='conversations'||role.storage==='persistent').map(panel=><button type="button" key={panel} onClick={()=>openProfilePanel(panel)}>{profilePanelLabels[panel]}</button>)}
+            </div>
           </DetailsMenu>
         </div>
-</div><div className={teamCss.identityToday}><small>{t('team.profile.today')}</small><strong>{doingNow ?? t('team.roster.idle')}</strong></div>
+        {!phone&&<DisabledReason id={`role-phone-note-${encodeURIComponent(role.id)}`} className={teamCss.reasonNote}>{employeeCopy(locale,'phoneUnavailable')}</DisabledReason>}
+        {chatNotice&&<p role="status" className={teamCss.muted}>{chatNotice}</p>}
+        {talkDisabledReason&&<DisabledReason id={`role-chat-note-${encodeURIComponent(role.id)}`} className={teamCss.reasonNote}>{talkDisabledReason}</DisabledReason>}
+        </div>
+        <div className={teamCss.identityToday}><small>{t('team.profile.today')}</small><strong>{doingNow ?? t('team.roster.idle')}</strong></div>
         <small className={teamCss.identityOwner}><Users size={13}/>{t('team.profile.owner')}</small>
         {retired&&<div className={teamCss.notice}><strong>{lifecycle.label}</strong><p>{role.retirementReason}</p><p>{lifecycle.summary}</p><p>{t('team.detail.retiredNext', { next: lifecycle.next })}</p></div>}
-        <div className={teamCss.contactActions} aria-label={t('team.profile.title')}>
-          <ToolbarIconButton label={retired?t('team.profile.action.history'):employeeCopy(locale,'chat')} icon={MessageCircle} disabled={!talk} aria-describedby={talkDisabledReason?`role-chat-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{if(!talk)return;setChatNotice(undefined);void talk(role.id).then(opened=>{if(!opened)setChatNotice(t('team.profile.historyEmpty'))}).catch(error=>setError(localizeWorkError(locale,error)))}}/>
-          <ToolbarIconButton label={employeeCopy(locale,'voice')} icon={Phone} disabled={!phone||retired||role.storage!=='persistent'} aria-describedby={!phone?`role-phone-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{void phone?.(role.id).catch(error=>setError(localizeWorkError(locale,error)))}}/>
-          <ToolbarIconButton label={employeeCopy(locale,'invite')} icon={Users} disabled={!allowed||retired||!savedGroups} onClick={()=>setForm('invite')}/>
-          <EmployeeDevices role={role}/>
-        </div>
-        {!phone&&<p id={`role-phone-note-${encodeURIComponent(role.id)}`} className={teamCss.deviceNote}>{employeeCopy(locale,'phoneUnavailable')}</p>}
-        {chatNotice&&<p role="status" className={teamCss.muted}>{chatNotice}</p>}
-        {talkDisabledReason&&<p id={`role-chat-note-${encodeURIComponent(role.id)}`} className={teamCss.muted}>{talkDisabledReason}</p>}
       </aside>
+      {mailOpen&&<EmployeeMailDrawer role={role} close={()=>setMailOpen(false)}/>}
       <section className={teamCss.homepageBody}>
         <nav className={teamCss.tabs} role="tablist" aria-label={employeeCopy(locale,'detailTabs')}>
           {detailTabs.map(tab=><button key={tab} type="button" role="tab" id={`employee-detail-tab-${tab}`} aria-controls={`employee-detail-panel-${tab}`} aria-selected={detailTab===tab} tabIndex={detailTab===tab?0:-1} onClick={()=>setDetailTab(tab)} onKeyDown={moveDetailTab}>{employeeCopy(locale,tab==='work'?'workTab':tab==='collaboration'?'collaborationTab':'capabilities')}{tab==='work'&&related.length>0?` (${related.length})`:tab==='collaboration'&&(savedGroups?savedMemberships?.length:groups.length)?` (${savedGroups?savedMemberships?.length:groups.length})`:''}</button>)}
@@ -734,7 +739,7 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
     </div>}
     {mode==='edit'&&step===0&&<section className={teamCss.stepPanel} aria-label={t('team.form.step.identity')}>
       <label>{t('team.form.name')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})} placeholder={t('team.form.namePlaceholder')}/></label>
-      {value.kind==='employee'&&<EmployeeAvatarPicker value={value.avatarKey} onChange={avatarKey=>patch({avatarKey})}/>}
+      {value.kind==='employee'&&<EmployeeAvatarPicker value={value.avatarKey} name={value.name} onChange={avatarKey=>patch({avatarKey})}/>}
       <label>{t('team.form.kind')}<select disabled={!!role} value={value.kind} onChange={event=>patch({kind:event.target.value as RoleFields['kind']})}><option value="employee">{t('team.form.employee')}</option><option value="twin">{t('team.form.twin')}</option></select></label>
       <label>{t('team.form.mission')}<textarea ref={dutyRef} aria-invalid={!!validationError&&!value.duty.trim()} required rows={3} maxLength={4000} value={value.duty} onChange={event=>patch({duty:event.target.value})} placeholder={t('team.form.missionPlaceholder')}/></label>
       <p className={teamCss.stepHint}>{t('team.form.responsibilityHint')}</p>
@@ -745,7 +750,7 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
       <h1>{t('team.hire.identity.title')}</h1>
 
       <label>{t('team.hire.identity.nameLabel')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} autoFocus required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})} placeholder={t('team.hire.identity.namePlaceholder')}/></label>
-      <EmployeeAvatarPicker value={value.avatarKey} onChange={avatarKey=>patch({avatarKey})}/>
+      <EmployeeAvatarPicker value={value.avatarKey} name={value.name} onChange={avatarKey=>patch({avatarKey})}/>
     </section>}
     {mode==='edit'&&step===1&&<section className={teamCss.stepPanel} aria-label={t('team.form.step.scope')}>
       <fieldset className={teamCss.scopes}><legend>{t('team.detail.businessScope')}</legend>{roleScopeOptions(collaborationScopes,value.scopes).map(([id,label])=><label key={id}><input ref={value.scopes.length?undefined:scopeRef} type="checkbox" checked={value.scopes.includes(id as CollaborationScope)} onChange={event=>patch({scopes:event.target.checked?[...value.scopes,id as CollaborationScope]:value.scopes.filter(scope=>scope!==id)})}/>{label}</label>)}</fieldset>

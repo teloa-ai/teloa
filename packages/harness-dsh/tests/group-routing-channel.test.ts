@@ -5,6 +5,7 @@ import {groupRoutingInputSchema,groupRoutingOutputV2Schema,groupRoutingRequestId
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
 import {askGroupRouting,assertRoutingPreset,groupRoutingInput,groupRoutingInputNotice,groupRoutingInputTask,isRoutingSession,type GroupRoutingAsk} from '../src/group-routing.ts'
 import {readRoutingWorkCandidates} from '../src/group-routing-dispatch.ts'
+import {groupRoutingEmptyRetryRequestId} from '../src/group-routing-result.ts'
 
 const owner='11111111-1111-4111-8111-111111111111'
 const groupId='22222222-2222-4222-8222-222222222222'
@@ -37,6 +38,7 @@ type HarnessOptions={
  existingSession?:boolean
  dropTurnEnd?:boolean
  silent?:boolean
+ reasoningOnly?:number
  /** 本轮 turn/end 的原生结束原因；缺省为正常结束。 */
  endReason?:unknown
  mixIn?:boolean
@@ -58,8 +60,8 @@ function harness(options:HarnessOptions){
   events.push(userMessage(events.length,requestId))
   // 混入：同一轮里再进来一条别人的用户消息（判据照搬 task-tool-guard.ts:52-55）。
   if(options.mixIn)events.push(userMessage(events.length,requestOf(otherMessageId)))
-  if(!options.silent)events.push({seq:events.length,time:events.length,type:'assistant/message',surfaceOp:'append',data:{turn,message:{content:[{type:'text',text:options.answer}]}}})
-  if(!options.dropTurnEnd)events.push({seq:events.length,time:events.length,type:'turn/end',data:{turn,reason:options.endReason??{kind:'stop'}}})
+  if(!options.silent)events.push({seq:events.length,time:events.length,type:'assistant/message',surfaceOp:'append',data:{turn,message:{content:[turn<(options.reasoningOnly??0)?{type:'reasoning',text:'PRIVATE_REASONING'}:{type:'text',text:options.answer}]}}})
+  if(!options.dropTurnEnd)events.push({seq:events.length,time:events.length,type:'turn/end',data:{turn,reason:options.endReason??{kind:'completed'}}})
  }
  const ctx={
   get:(name:string)=>name==='teloaResidentInputAdmission'&&options.resident!=='missing'?{bindRouting:async(input:Record<string,unknown>)=>{calls.bind.push(input);if(options.resident==='deny')throw Error('原来源已暂停');return ()=>{calls.release++}}}:undefined,
@@ -294,12 +296,15 @@ test('这一轮没说完时回 degraded，而闸仍然在（C1 反例：超时�
  assert.match(calls.warn[0]!,/本次路由已取消|等待模型回答超时/)
 })
 
-test('这一轮说完了却一句话没说时回 degraded，记的是「没有给出任何回答」那一行',async()=>{
+test('正常结束的空答只重试一次，仍为空则回 degraded；重复恢复不再次调用模型',async()=>{
  const {ctx,calls}=harness({answer:'不会被读到',silent:true})
  assert.deepEqual(await route(ctx),{kind:'degraded'})
- assert.equal(calls.prompt.length,1)
+ assert.equal(calls.prompt.length,2)
+ assert.equal(calls.prompt[1]!.requestId,groupRoutingEmptyRetryRequestId(requestOf()))
+ assert.deepEqual(await route(ctx),{kind:'degraded'})
+ assert.equal(calls.prompt.length,2)
  assert.equal(isRoutingSession(sessionOf()),true)
- assert.equal(calls.warn.length,1)
+ assert.equal(calls.warn.length,2)
  assert.match(calls.warn[0]!,/模型这一轮没有给出任何回答/)
 })
 
@@ -314,8 +319,28 @@ test('本轮被工作额度拒绝时回 degraded 并带原因与范围；其余�
  for(const code of ['teloa/budget-exhausted/PRIVATE/owner','teloa/unavailable']){
   const other=harness({answer:'不会被读到',silent:true,endReason:{kind:'error',error:{code,message:'x'}}})
   assert.deepEqual(await route(other.ctx),{kind:'degraded'})
-  assert.match(other.calls.warn[0]!,/模型这一轮没有给出任何回答/)
+  assert.match(other.calls.warn[0]!,/模型请求未正常完成/)
+  assert.equal(other.calls.prompt.length,1)
  }
+})
+
+test('只有 reasoning 无正文的正常轮次有界重问后取得决策，推理内容不作正文或写入日志',async()=>{
+ const f=harness({answer:answerOf([roleA]),reasoningOnly:1})
+ assert.equal((await route(f.ctx)).kind,'ok')
+ assert.equal(f.calls.prompt.length,2)
+ assert.equal(f.calls.bind.length,2,'每次请求分别取得来源和额度租约')
+ assert.equal(f.calls.release,2)
+ assert.deepEqual(f.calls.warn,[])
+ assert.equal((await route(f.ctx)).kind,'ok')
+ assert.equal(f.calls.prompt.length,2,'原始轮次及空答重试均沿原身份回读')
+})
+
+test('默认后台路由缺少凭据时不标为空答、不重试、不泄露原异常',async()=>{
+ const f=harness({answer:'',silent:true,endReason:{kind:'error',error:{code:'MISSING_CREDENTIAL',message:'PRIVATE_KEY'}}})
+ assert.equal((await route(f.ctx)).kind,'degraded')
+ assert.equal(f.calls.prompt.length,1)
+ assert.match(f.calls.warn[0]!,/默认模型/)
+ assert.doesNotMatch(f.calls.warn[0]!,/PRIVATE_KEY|没有给出任何回答/)
 })
 
 test('本轮混入别人的请求时整条 degraded，不取任何结论（HIGH①）',async()=>{

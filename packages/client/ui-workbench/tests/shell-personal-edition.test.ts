@@ -92,7 +92,7 @@ test('左栏辅助动作以有名称和提示的图标呈现，点击仍使用�
  for(const label of ['navigation.new','navigation.search','navigation.v2.settings','navigation.twin']){
   const button=buttons(view).find(row=>row.props['aria-label']===label)
   assert.ok(button,label);assert.ok(button.props.title,label+' 必须可理解')
-  assert.equal(text(button),'',label+' 不再占用文字导航行')
+  assert.equal(text(button),label==='navigation.twin'?'M':'',label+' 保留头像缩写，其余动作不占文字导航行')
   if(label!=='navigation.new')button.props.onClick()
  }
  assert.deepEqual(calls,['search','settings','twin'])

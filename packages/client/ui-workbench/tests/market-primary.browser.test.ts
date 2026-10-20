@@ -32,12 +32,14 @@ async function mount(t:any){
 }
 
 test('真实市场首页即「AI 员工」：横向工作领域、分区卡片，用途筛选与窄窗口仍可用',async t=>{
- const page=await mount(t);const nav=page.getByRole('navigation',{name:'市场分类'});assert.deepEqual(await nav.getByRole('button').allInnerTexts(),['AI 员工','AI 团队']);assert.equal(await nav.getByRole('button',{name:'AI 员工',exact:true}).getAttribute('aria-current'),'page')
+ const page=await mount(t);const nav=page.getByRole('navigation',{name:'市场分类'});assert.deepEqual(await nav.getByRole('button').allInnerTexts(),['全部','AI 员工','AI 团队','应用','技能']);assert.equal(await nav.getByRole('button',{name:'AI 员工',exact:true}).getAttribute('aria-current'),'page')
  await page.locator('[data-catalog-row="teloa.role.role-0"]').waitFor()
  const first=page.locator('ul').filter({has:page.locator('[data-catalog-row="teloa.role.role-0"]')}).first(),columns=await first.evaluate((el:HTMLElement)=>getComputedStyle(el).gridTemplateColumns.split(' ').length)
- assert.equal(columns,4);assert.equal(await first.locator('button').first().evaluate((el:HTMLElement)=>getComputedStyle(el).backgroundColor),'rgb(247, 247, 245)');if(process.env.TELOA_MARKET_CAPTURE)await page.screenshot({path:join(process.env.TELOA_MARKET_CAPTURE,'market-b-employees.png'),fullPage:true})
+ // 1.0 紧凑卡：白底描边（设计稿 10），不再是灰底
+ assert.equal(columns,4);assert.equal(await first.locator('button').first().evaluate((el:HTMLElement)=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');if(process.env.TELOA_MARKET_CAPTURE)await page.screenshot({path:join(process.env.TELOA_MARKET_CAPTURE,'market-b-employees.png'),fullPage:true})
  // 单员工模板与员工同一目录；工作领域在搜索上方横排，不占侧栏。
- const purpose=page.getByRole('group',{name:'用途分类'}),purposeBox=await purpose.boundingBox(),search=page.getByRole('textbox',{name:'搜索市场'}),searchBox=await search.boundingBox();assert.ok(purposeBox&&searchBox&&purposeBox.y+purposeBox.height<=searchBox.y&&purposeBox.width>searchBox.width*.7)
+ // 1.0（设计稿 10）：搜索框在左、用途分类在同一行右侧，搜索框不超过 360px
+ const purpose=page.getByRole('group',{name:'用途分类'}),purposeBox=await purpose.boundingBox(),search=page.getByRole('textbox',{name:'搜索市场'}),searchBox=await search.boundingBox();assert.ok(purposeBox&&searchBox&&Math.abs(purposeBox.y+purposeBox.height/2-(searchBox.y+searchBox.height/2))<24&&purposeBox.x>searchBox.x+searchBox.width&&searchBox.width<=360)
  assert.equal(await search.getAttribute('placeholder'),'搜索员工、团队或想完成的工作');assert.equal(await page.getByText('高级资源',{exact:true}).count(),0);assert.equal(await page.getByText('更多筛选',{exact:true}).count(),0)
  // 分区先列四项，查看全部仍使用同一领域筛选，原条目没有丢失。
  await page.getByRole('button',{name:'查看全部',exact:true}).click();assert.equal(await page.locator('[data-catalog-row="teloa.office"]').count(),1)
@@ -45,14 +47,14 @@ test('真实市场首页即「AI 员工」：横向工作领域、分区卡片�
  await page.setViewportSize({width:900,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
 })
 
-test('团队推荐不补个人旧模板，原团队详情按深链可读；应用独立入口可达',async t=>{
+test('团队推荐不补个人旧模板，原团队详情按深链可读；应用分类页签可达',async t=>{
  const page=await mount(t);await page.getByRole('navigation',{name:'市场分类'}).getByRole('button',{name:'AI 团队',exact:true}).click()
  const security=page.locator('[data-teloa-entry="bundle-security"]');assert.equal(await security.count(),0)
  assert.equal(await page.locator('[data-catalog-row="teloa.office"]').count(),0);assert.equal(await page.locator('[data-catalog-row^="teloa.role.role-"]').count(),0);assert.equal(await page.locator('[data-teloa-entry="bundle-general"]').count(),0)
  if(process.env.TELOA_MARKET_CAPTURE)await page.screenshot({path:join(process.env.TELOA_MARKET_CAPTURE,'market-b-teams.png'),fullPage:true})
  // 团队详情按实际组成显示：两位员工各自成卡，不是静态文案
  await page.evaluate(()=> (window as any).openSavedMarketItem('bundle-security'));const dialog=page.getByRole('dialog');await dialog.waitFor();assert.match(await dialog.innerText(),/安全行业模板/);assert.match(await dialog.innerText(),/2 位员工[\s\S]*SOC 调查岗[\s\S]*AppSec 审计岗/);await page.keyboard.press('Escape');assert.equal(await dialog.count(),0)
- await page.getByRole('button',{name:'应用',exact:true}).click();await page.getByRole('searchbox',{name:'在应用和技能中搜索'}).waitFor();assert.equal(await page.getByRole('searchbox',{name:'在应用和技能中搜索'}).getAttribute('placeholder'),'在应用和技能中搜索');await page.getByRole('button',{name:/内部沟通稿.*起草周报/}).waitFor();assert.equal(await page.getByRole('navigation',{name:'市场分类'}).count(),0,'应用不重复市场分类');assert.equal(await page.getByRole('heading',{name:'市场',exact:true}).count(),0);assert.equal(await page.getByRole('heading',{name:'应用',exact:true}).count(),1,'应用保持唯一标题');const appRow=page.locator('section[aria-labelledby="market-apps-title"] li').filter({hasText:'内部沟通稿'}),main=appRow.locator('button').first();assert.equal(await main.evaluate((el:HTMLElement)=>getComputedStyle(el).borderTopWidth),'0px','应用名称保持无框轻行');assert.equal(await main.evaluate((el:HTMLElement)=>getComputedStyle(el).justifyContent),'flex-start','名称左对齐，不被市场通用按钮覆盖');assert.equal(await appRow.locator('button').nth(1).evaluate((el:HTMLElement)=>getComputedStyle(el).borderRadius),'999px','操作使用轻量胶囊');assert.equal(await page.locator('[data-catalog-row^="teloa.role.role-"]').count(),0)
+ await page.getByRole('navigation',{name:'市场分类'}).getByRole('button',{name:'应用',exact:true}).click();await page.getByRole('searchbox',{name:'在应用和技能中搜索'}).waitFor();assert.equal(await page.getByRole('searchbox',{name:'在应用和技能中搜索'}).getAttribute('placeholder'),'在应用和技能中搜索');await page.getByRole('button',{name:/内部沟通稿.*起草周报/}).waitFor();assert.equal(await page.getByRole('navigation',{name:'市场分类'}).getByRole('button',{name:'应用',exact:true}).getAttribute('aria-current'),'page','应用视图保留市场分类且应用页签选中');assert.equal(await page.getByRole('heading',{name:'市场',exact:true}).count(),1);assert.equal(await page.getByRole('heading',{name:'应用',exact:true}).count(),1,'应用目录标题只给读屏');const appRow=page.locator('section[aria-labelledby="market-apps-title"] li').filter({hasText:'内部沟通稿'}),main=appRow.locator('button').first();assert.equal(await main.evaluate((el:HTMLElement)=>getComputedStyle(el).borderTopWidth),'0px','应用名称保持无框轻行');assert.equal(await main.evaluate((el:HTMLElement)=>getComputedStyle(el).justifyContent),'flex-start','名称左对齐，不被市场通用按钮覆盖');assert.equal(await appRow.locator('button').nth(1).evaluate((el:HTMLElement)=>getComputedStyle(el).borderRadius),'999px','操作使用轻量胶囊');assert.equal(await page.locator('[data-catalog-row^="teloa.role.role-"]').count(),0)
 })
 
 test('行业看板可从 AI 团队目录和用途筛选进入原详情，关闭仍回到团队目录',async t=>{
@@ -189,7 +191,7 @@ test('业务连接重挂载时首次应用导航覆盖旧市场类别，同seria
  await page.evaluate(()=>(window as any).remountForcedMarketCategory('apps'))
  const search=page.getByRole('searchbox',{name:'在应用和技能中搜索',exact:true})
  await search.waitFor();assert.equal(await search.inputValue(),'')
- assert.equal(await page.getByRole('navigation',{name:'市场分类',exact:true}).count(),0)
+ assert.equal(await page.getByRole('navigation',{name:'市场分类',exact:true}).getByRole('button',{name:'应用',exact:true}).getAttribute('aria-current'),'page')
  await search.fill('meeting-summary')
  await page.evaluate(()=>(window as any).repeatForcedMarketCategory())
  assert.equal(await search.inputValue(),'meeting-summary','相同导航请求不清空已输入的应用搜索')
@@ -201,7 +203,7 @@ test('默认home serial0不覆盖冷启动恢复的应用目录与搜索',async 
  await page.evaluate(()=>(window as any).restoreMarketNavigation('apps'))
  const search=page.getByRole('searchbox',{name:'在应用和技能中搜索',exact:true})
  await search.waitFor();assert.equal(await search.inputValue(),'notes')
- assert.equal(await page.getByRole('navigation',{name:'市场分类',exact:true}).count(),0)
+ assert.equal(await page.getByRole('navigation',{name:'市场分类',exact:true}).getByRole('button',{name:'应用',exact:true}).getAttribute('aria-current'),'page')
 })
 
 

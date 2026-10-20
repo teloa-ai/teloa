@@ -74,7 +74,7 @@ function readGuestSettings(element:HTMLElement,settings:GuestWorkbenchSettings|u
 /** 只复用工作台的呈现层；不装配本人资料、导航存储、RPC 或执行服务。 */
 function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;controller:GuestController}){
  const {locale,t}=useI18n(),copy=guestCopy(locale)
- const [view,setView]=useState<WorkbenchView>('home'),[marketApps,setMarketApps]=useState(false),[prompt,setPrompt]=useState(options.initialPrompt??'')
+ const [view,setView]=useState<WorkbenchView>('home'),[prompt,setPrompt]=useState(options.initialPrompt??'')
  const [colorScheme,setColorScheme]=useState<'light'|'dark'>(()=>globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light')
  // 无本人设置的访客视图沿用系统外观；系统设置改变后同步令牌，不在左栏另设主题开关。
  useEffect(()=>{
@@ -87,7 +87,7 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
  const [navOpen,setNavOpen]=useState(false),[pending,setPending]=useState(false),[notice,setNotice]=useState<string>()
  const [account,setAccount]=useState<GuestWorkbenchAccount|null>(null)
  const [selectedSettings,setSelectedSettings]=useState(options.settings?.entries[0]?.id)
- const active=useRef(false),closing=useRef(false),pendingNavigation=useRef<{view:WorkbenchView;marketApps:boolean}>(),previousView=useRef<WorkbenchView>('home'),currentView=useRef(view),frame=useRef<HTMLDivElement>(null)
+ const active=useRef(false),closing=useRef(false),pendingNavigation=useRef<{view:WorkbenchView}>(),previousView=useRef<WorkbenchView>('home'),currentView=useRef(view),frame=useRef<HTMLDivElement>(null)
  currentView.current=view
  controller.setPrompt=setPrompt
  controller.setAccount=setAccount
@@ -104,19 +104,18 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
  const closeSettings=()=>{
   if(currentView.current!=='settings'||!options.settings)return
   const navigation=pendingNavigation.current,next=navigation?.view??previousView.current
-  if(navigation)setMarketApps(navigation.marketApps)
   pendingNavigation.current=undefined;closing.current=false
   currentView.current=next;setView(next);setNavOpen(false);setNotice(undefined);setPending(false)
  }
  controller.openSettings=openSettings
  controller.closeSettings=closeSettings
- const select=(next:WorkbenchView,apps=false)=>{
+ const select=(next:WorkbenchView)=>{
   if(next==='settings'&&options.settings){openSettings();return}
   if(currentView.current==='settings'&&options.settings){
    if(active.current||closing.current)return
-   pendingNavigation.current={view:next,marketApps:apps};request('settings-close');return
+   pendingNavigation.current={view:next};request('settings-close');return
   }
-  currentView.current=next;setView(next);setMarketApps(apps);setNavOpen(false);setNotice(undefined)
+  currentView.current=next;setView(next);setNavOpen(false);setNotice(undefined)
  }
  const request=(kind:'start'|'account'|'settings-close')=>{
   if(active.current||closing.current)return
@@ -138,13 +137,13 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
   document.addEventListener('keydown',escape)
   return ()=>document.removeEventListener('keydown',escape)
  })
- const row=primaryNavigation.find(([id])=>id===view),hubRow=workbenchHubNavigation.find(([id])=>id===view),title=view==='market'&&marketApps?t('market.apps.title'):hubRow?t(hubRow[1]):row?t(row[1]):t('navigation.v2.settings'),Icon=row?.[2]??Settings2
+ const row=primaryNavigation.find(([id])=>id===view),hubRow=workbenchHubNavigation.find(([id])=>id===view),title=hubRow?t(hubRow[1]):row?t(row[1]):t('navigation.v2.settings'),Icon=row?.[2]??Settings2
  const settingsEntry=options.settings?.entries.find(row=>row.id===selectedSettings)??options.settings?.entries[0]
  return <div ref={frame} data-guest-workbench data-theme={colorScheme} className={clsx(tokens.tokens,css.frame,guestCss.guest,navOpen&&css.navOpen)} style={{...prototypeThemes[colorScheme],colorScheme} as CSSProperties}>
   <aside className={css.navigation} aria-label={t('navigation.main')}>
    <WorkbenchNavigationBrand product={options.product} colorScheme={colorScheme} onClose={()=>setNavOpen(false)}/>
    <button type="button" className={css.newWork} onClick={()=>select('home')}><Plus size={16}/><span>{t('navigation.new')}</span></button>
-   <div className={css.navScroll}><WorkbenchNavigationItems view={view} onSelect={select} marketApps={marketApps} onApps={()=>select('market',true)}/></div>
+   <div className={css.navScroll}><WorkbenchNavigationItems view={view} onSelect={select}/></div>
    <div className={css.navFooter}>
     <button type="button" className={css.navItem} aria-current={view==='settings'?'page':undefined} onClick={()=>select('settings')}><Settings2 size={16}/><span>{t('navigation.v2.settings')}</span></button>
     <div className={css.account}><button type="button" className={clsx(css.profileButton,css.avatar)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{initials||<UserRound size={15} aria-hidden/>}</button></div>

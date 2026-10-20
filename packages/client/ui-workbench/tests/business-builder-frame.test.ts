@@ -1,3 +1,4 @@
+import {businessMenuItem} from './business-header-menu.ts'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir,readFile} from 'node:fs/promises'
@@ -197,7 +198,7 @@ for(const locale of ['zh-CN','en'])test('Task3 '+locale+'正式业务继续/另�
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
  assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
  await page.screenshot({path:'/tmp/teloa-builder-frame/daily-'+locale+'-1000.png',fullPage:true})
- await page.locator('#teloa-main').getByRole('button',{name:en?'New conversation':'另建会话',exact:true}).click()
+ await businessMenuItem(page.locator('#teloa-main'),en?'New conversation':'另建会话').click()
  await page.waitForFunction((id:string)=>(window as any).frameFixture.current()!==id,first)
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.creates),2)
  const pending=await page.evaluate(async()=>{const f=(window as any).frameFixture,row=await f.pending('support');await f.select(row.sessionId);f.navigate('home');return row.sessionId})
@@ -214,7 +215,7 @@ test('Task3 键盘确认保留原稿；确认期间的新编辑不能借旧批�
  await page.waitForFunction(()=>(window as any).frameFixture.controller.getSnapshot().sessionKind==='daily')
  const first=await page.evaluate(()=>{const f=(window as any).frameFixture;f.input({draft:'保留的原稿',draftRev:1,phase:'plain',attachmentIds:[],occurrences:[],queue:[]});f.navigate('spaces');return f.current()})
  await page.locator('article').getByRole('button',{name:/^验收业务/}).click()
- await page.locator('#teloa-main').getByRole('button',{name:'另建会话',exact:true}).click()
+ await businessMenuItem(page.locator('#teloa-main'),'另建会话').click()
  const confirm=page.getByRole('dialog').getByRole('button',{name:'保留草稿并新开',exact:true})
  await confirm.waitFor()
  await page.evaluate(()=>{(window as any).frameFixture.input({draft:'确认前的新编辑',draftRev:2,phase:'plain',attachmentIds:[],occurrences:[],queue:[]})})
@@ -222,7 +223,7 @@ test('Task3 键盘确认保留原稿；确认期间的新编辑不能借旧批�
  await page.locator('#teloa-main').getByRole('alert').waitFor()
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.creates),1)
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.current()),first)
- await page.locator('#teloa-main').getByRole('button',{name:'另建会话',exact:true}).click()
+ await businessMenuItem(page.locator('#teloa-main'),'另建会话').click()
  await confirm.waitFor();await confirm.focus();await page.keyboard.press('Enter')
  await page.waitForFunction((id:string)=>(window as any).frameFixture.current()!==id,first)
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.creates,f.prepares,f.mounts,f.unmounts]}),[2,0,1,0])

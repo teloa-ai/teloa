@@ -10,16 +10,15 @@
 .summary{margin:0;font-size:var(--teloa-font-body);color:var(--teloa-text);line-height:var(--teloa-leading-label)}
 .meta{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .stars{display:inline-flex;gap:1px;vertical-align:-1px;color:var(--teloa-accent)}
-.badge{display:inline-flex;align-items:center;border:1px solid var(--teloa-border);border-radius:999px;padding:1px 8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);white-space:nowrap}
 .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .actions button{font:inherit;font-size:var(--teloa-font-control);border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);padding:4px 12px;cursor:pointer;white-space:nowrap}
 .actions button:hover:not(:disabled){background:var(--teloa-hover)}
 .actions button:focus-visible,.details summary:focus-visible,.details a:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .actions button:disabled{cursor:default;color:var(--teloa-muted)}
-/* 主按钮：实心强调色（添加 / 连接 / 去配置），其余为描边次按钮；不再用强调色描边，免得像危险操作 */
-.actions .primary{border-color:var(--teloa-accent);background:var(--teloa-accent);color:var(--teloa-on-accent);font-weight:var(--teloa-weight-medium)}
-.actions .primary:hover:not(:disabled){background:var(--teloa-accent);opacity:.9}
-.actions .primary:disabled{color:var(--teloa-on-accent);opacity:.6}
+/* 主按钮：实心主色（添加 / 连接 / 去配置），其余为描边次按钮；不用强调色描边，免得像危险操作 */
+.actions .primary{border-color:var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary);font-weight:var(--teloa-weight-medium)}
+.actions .primary:hover:not(:disabled){background:var(--teloa-primary);opacity:.9}
+.actions .primary:disabled{color:var(--teloa-on-primary);opacity:.6}
 .details{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .details summary{cursor:pointer;color:var(--teloa-text)}
 .details ul{margin:6px 0;padding-left:18px}
@@ -62,3 +61,6 @@
 
 /* 短说明或读取失败时，网格里的方案正文也保持与抽屉标题对齐。 */
 .detailDrawer .section>article{box-sizing:border-box;width:100%;min-width:0;max-width:none;margin:0}
+.toolRow{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;min-width:0}
+.toolRow>label{flex:1 1 280px;max-width:360px;min-width:220px}
+.toolRow>div{flex:999 1 auto;min-width:0}

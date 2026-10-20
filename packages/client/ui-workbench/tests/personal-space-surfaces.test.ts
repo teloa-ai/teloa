@@ -76,10 +76,13 @@ test('左栏顶部不再有空间入口与切换箭头；账号块提供「我�
  assert.match(frame,/role&&<RoleToolGrants/)
  const team=await read('TeamPage.tsx')
  assert.match(team,/configuration=\{\(\)=>[\s\S]*?capabilities\(role\.id\)/)
- // 2026-09-20 用户裁定面包屑可点：显示名成为回工作台的按钮，页名成为回列表根的按钮。
- assert.match(frame,/<button type="button" className=\{clsx\(css\.crumb,css\.workspaceName\)\} onClick=\{\(\)=>actions\.navigate\('home'\)\}>\{profile\.displayName\}<\/button>/)
+ // 2026-09-20 用户裁定面包屑可点；1.0（2026-10-20 第五批）去掉显示名前缀，只留页名按钮回列表根。
+ assert.doesNotMatch(frame,/css\.workspaceName/)
  // 方案 B：左栏「应用」与「市场」并列，停在统一应用目录时页名面包屑写「应用」，其余视图仍用视图标签。
- assert.match(frame,/aria-current=\"page\" onClick=\{\(\)=>isWorkbenchHubView\(state\.view\)\?actions\.navigate\('home'\):openViewRoot\(state\.view\)\}><strong>\{isWorkbenchHubView\(state\.view\)\?t\('navigation\.home'\):marketAppsPage\?t\('market\.apps\.title'\):labels\[state\.view\]\}<\/strong><\/button>/)
+ // 1.0：工作台次级页签显示「工作台 › 需要你」两级，第一级回总览，当前级用页签自身词条。
+ assert.match(frame,/isWorkbenchHubView\(state\.view\)&&state\.view!=='home'&&<><button type="button" className=\{css\.crumb\} onClick=\{\(\)=>actions\.navigate\('home'\)\}>\{t\('navigation\.home'\)\}<\/button>/)
+ assert.match(frame,/aria-current=\"page\" onClick=\{isWorkbenchHubView\(state\.view\)&&state\.view!=='home'\?undefined:\(\)=>isWorkbenchHubView\(state\.view\)\?actions\.navigate\('home'\):openViewRoot\(state\.view\)\}><strong>\{isWorkbenchHubView\(state\.view\)\?t\(state\.view==='home'\?'navigation\.home':workbenchHubNavigation\.find\(\(\[id\]\)=>id===state\.view\)!\[1\]\):marketAppsPage\?t\('market\.apps\.title'\):businessInnerTitle\?\?settingsInnerTitle\?\?labels\[state\.view\]\}<\/strong><\/button>/)
+ assert.match(frame,/\{businessInnerTitle&&<><button type="button" className=\{css\.crumb\} onClick=\{\(\)=>openViewRoot\('spaces'\)\}>\{labels\.spaces\}<\/button>/,'业务内页面包屑为「业务 › 业务名」，父级回到业务首页')
  assert.doesNotMatch(frame.slice(frame.indexOf('css.crumb,css.workspaceName')-5,frame.indexOf('css.crumb,css.workspaceName')+160),/shell\.workspace\.mine/)
  // WorkbenchFrame 把直接会话入口传给左栏：有历史按最近活跃打开，零历史复用既有创建链路。
  assert.match(frame,/openTwin=\{async\(\)=>\{await openTwinConversation\(\)\}\}/)

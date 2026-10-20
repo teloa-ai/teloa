@@ -1,0 +1,40 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -395,12 +395,17 @@
+ 	return parseDecision(final.text);
+ }
+ /** Review one frozen pending action with the fixed policy and current LLM route. */
++const activeReviewRequests = /* @__PURE__ */ new WeakMap();
++/** Read-only provenance for the exact live review, never a publisher. */
++function autoReviewRequestOwner(options) { return activeReviewRequests.get(options); }
+ async function classifyRisk(ctx, agent, exec, signal) {
+ 	const snapshot = snapshotAutoReview(agent, exec, await ctx.workingDirectory.ensure(agent, signal));
+ 	const options = deepFreeze({
+ 		provider: snapshot.provider,
+ 		model: snapshot.model,
+ 		system: REVIEW_POLICY,
++		sessionId: agent.session.id,
++		maxTokens: agent.session.requestHeader()?.config.maxTokens,
+ 		messages: [{
+ 			role: "user",
+ 			content: [{
+@@ -411,7 +416,12 @@
+ 		temperature: 0,
+ 		signal
+ 	});
+-	return readDecision(ctx.llm.stream(options));
++	activeReviewRequests.set(options, Object.freeze({ agent, session: agent.session, exec, options, signal }));
++	try {
++		return await readDecision(ctx.llm.stream(options));
++	} finally {
++		activeReviewRequests.delete(options);
++	}
+ }
+ /** Materialize the fixed model-facing final Auto denial plus optional UI detail. */
+ function denied(exec, reason) {
+@@ -504,4 +514,4 @@
+ 	}, "auto-review lifecycle");
+ }
+ //#endregion
+-export { apply, inject, name };
++export { apply, autoReviewRequestOwner, inject, name };

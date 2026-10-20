@@ -1,3 +1,4 @@
+import {businessMenuItem} from './business-header-menu.ts'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir,readFile} from 'node:fs/promises'
@@ -63,7 +64,7 @@ const renderSlot=(name,props,options)=>name==='teloa.conversation'?props.content
 f.openExact=()=>store.actions.openBusiness({scope:'sales',section:'dashboards',dashboardId:'review'});f.openBusiness=target=>store.actions.openBusiness(target);f.otherBusiness=()=>store.actions.openBusiness({scope:'support',section:'overview'});f.setupReads=[];
 props.managedMcpConnectionApi=generic;
 props.createBusinessSetup=(namespace,token)=>({read:async input=>{f.setupReads.push({namespace,sameToken:token===controller.getSnapshot().api,input});return {scope:input.scope,configurationVersion:input.expectedVersion,configurationHash:input.expectedHash,observedAt:stamp,colleagues:{status:'observed',value:{responsibility:{roleId:null,availability:'none'},roles:[],selectedRole:null}},skills:{status:'observed',value:{declared:[],executionChecked:false}},knowledge:{status:'observed',value:{assigned:[],generalResourceCount:0,businessResourceCount:0}},connections:{status:'observed',value:{items:[{id:'one',catalogId:'official-crm',serverName:'CRM',status:'connected',updatedAt:stamp}],binding:'not-declared'}}}}});
-f.remember=(id,patch)=>store.actions.rememberDirectory(id,patch);f.openCapabilities=()=>store.actions.openCapabilityCatalog();f.recheck=async()=>{await controller.followSession(undefined);await controller.followSession(selected)};f.current=()=>selected;f.state=()=>store.getSnapshot();f.controller=controller;f.navigate=view=>store.actions.navigate(view);f.openFormal=()=>store.actions.openBusiness({scope:'sales',section:'overview'});f.releaseIdentity=()=>{f.holdIdentity=false;releaseIdentity?.()};f.start=()=>controller.start();f.releaseCreate=()=>{f.holdCreate=false;releaseCreate?.()};f.reconnect=()=>controller.connect({});f.select=async id=>{selected=id;for(const l of listeners)l();await controller.followSession(id)};f.native=ready=>{f.nativeReady=ready;f.nativeNotify()};f.pending=async(scope='sales')=>{const requestId=crypto.randomUUID(),p={requestId,title:'待恢复业务会话',kind:'daily',scope,workspaceId:'workspace'};await api.reserve(p);return work.create({requestId,title:p.title,workspaceId:p.workspaceId,beforeOpen:async()=>{throw Error('controlled pending')}}).catch(()=>[...rows.values()].find(r=>r.requestId===requestId));};
+f.remember=(id,patch)=>store.actions.rememberDirectory(id,patch);f.openCapabilities=()=>store.actions.openCapabilityCatalog();f.openMarketCategory=category=>store.actions.openMarketCategory(category);f.recheck=async()=>{await controller.followSession(undefined);await controller.followSession(selected)};f.current=()=>selected;f.state=()=>store.getSnapshot();f.controller=controller;f.navigate=view=>store.actions.navigate(view);f.openFormal=()=>store.actions.openBusiness({scope:'sales',section:'overview'});f.releaseIdentity=()=>{f.holdIdentity=false;releaseIdentity?.()};f.start=()=>controller.start();f.releaseCreate=()=>{f.holdCreate=false;releaseCreate?.()};f.reconnect=()=>controller.connect({});f.select=async id=>{selected=id;for(const l of listeners)l();await controller.followSession(id)};f.native=ready=>{f.nativeReady=ready;f.nativeNotify()};f.pending=async(scope='sales')=>{const requestId=crypto.randomUUID(),p={requestId,title:'待恢复业务会话',kind:'daily',scope,workspaceId:'workspace'};await api.reserve(p);return work.create({requestId,title:p.title,workspaceId:p.workspaceId,beforeOpen:async()=>{throw Error('controlled pending')}}).catch(()=>[...rows.values()].find(r=>r.requestId===requestId));};
 createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><WorkbenchFrame {...props} navigationStorage={sessionStorage} runtimeSettings={{attach:()=>noop}} runtimeExtensions={{getSnapshot:()=>[],subscribe:()=>noop}} resolveExtensionText={String} setTheme={noop} sidebarRightFace={()=>undefined} mainSession={main} openNativePanel={noop} useStore={useStore} useSessions={useSessions} actions={store.actions} renderSlot={renderSlot} work={work} management={management} conversationSearch={generic} businessBuilder={controller} createBusinessRecordFlow={()=>controller.createRecordFlow({list:async()=>({schema:'teloa.business-data-page/v1',sourceId:'local',capturedAt:stamp,items:f.records?[record]:[]}),get:async input=>{f.recordReads=[...(f.recordReads||[]),input];return record}})} insertBusinessRecord={async(reference,sessionId,token)=>{f.recordInserts=(f.recordInserts||0)+1;await insertBusinessRecordInput(reference,sessionId,{switching:controller.ports.switching,isCurrent:()=>controller.getSnapshot().api===token,verify:async()=>record,state:{getSnapshot:()=>inputs.get(selected)||emptyInput,subscribe:fn=>{nativeListeners.add(fn);return()=>nativeListeners.delete(fn)}},insert:request=>{f.inserted=request;inputs.set(selected,{...emptyInput,draft:'record chip',draftRev:1,occurrences:[{...request.reference,invalid:false}]});f.nativeNotify();return true}})}} prepareHomeSession={async()=>{f.prepares++;return selected}} homeContextApi={homeContextApi} sendConversationMessage={noop} insertConversationCapabilities={noop}/></I18nProvider>);
 void controller.connect({});
 `
@@ -86,7 +87,7 @@ async function mount(t:any,locale='zh-CN',startup:Record<string,unknown>={}){
 
 async function openSetup(page:any,en=false){
  const panel=page.getByRole('region',{name:en?'Employees and capabilities':'员工与能力'})
- if(!await panel.isVisible())await page.getByRole('button',{name:en?'Business settings':'业务设置',exact:true}).click()
+ if(!await panel.isVisible())await businessMenuItem(page,en?'Business settings':'业务设置').click()
  await page.getByRole('dialog',{name:en?'View setup details':'查看配置详情',exact:true}).waitFor()
  await panel.getByText(en?'Not assigned; configure later':'未设置，可稍后配置',{exact:true}).waitFor()
 }
@@ -215,26 +216,29 @@ test('真实Frame换API只重挂市场配置层，原生输入挂载和草稿保
  assert.equal(await p.evaluate((value:number)=>(window as any).frameFixture.marketUnmounts>value,before.unmounts),true)
  assert.deepEqual(await p.evaluate(()=>{const f=(window as any).frameFixture;return [f.mounts,f.unmounts]}),[1,0]);assert.equal(await p.getByRole('textbox',{name:'slot-probe',includeHidden:true}).inputValue(),'原生输入草稿')
 })
-test('真实Frame市场入口：左栏市场与应用并列打开同一市场，父层只有市场面包屑，我的能力归属市场，应用目录取得受管连接',async t=>{
+test('真实Frame市场入口：应用并入市场分类，左栏只有市场，应用面包屑为市场 › 应用，我的能力归属市场，应用目录取得受管连接',async t=>{
  const p=await mount(t,'zh-CN',{formal:true}),nav=p.getByRole('navigation',{name:'主导航',exact:true})
- const market=nav.getByRole('button',{name:'市场',exact:true}),apps=nav.getByRole('button',{name:'应用',exact:true})
+ const market=nav.getByRole('button',{name:'市场',exact:true})
  assert.equal(await nav.getByRole('button',{name:'能力中心',exact:true}).count(),0)
+ assert.equal(await nav.getByRole('button',{name:'应用',exact:true}).count(),0,'1.0：应用不再占左栏入口')
  await market.click();await p.waitForFunction(()=>(window as any).frameFixture.state().view==='market')
  const crumbs=p.getByRole('navigation',{name:'页面位置',exact:true})
  assert.equal(await crumbs.getByRole('button',{name:'市场',exact:true}).getAttribute('aria-current'),'page')
  assert.equal(await p.getByRole('heading',{name:'能力中心',exact:true}).count(),0,'父层不再套能力中心标题')
  assert.equal(await p.getByRole('button',{name:/^(我的|发现)$/}).count(),0,'父层不再有我的／发现切换')
- assert.equal(await market.getAttribute('aria-current'),'page');assert.equal(await apps.getAttribute('aria-current'),null)
+ assert.equal(await market.getAttribute('aria-current'),'page')
  let props=await p.evaluate(()=>{const v=(window as any).frameFixture.marketProps;return {category:v.navigationState.category,managed:!!v.managed,inCenter:v.inCenter}})
  assert.deepEqual(props,{category:'home',managed:true,inCenter:true},'默认进入 AI 员工目录，应用目录有受管连接')
  const before=await p.evaluate(()=>(window as any).frameFixture.state().marketCategoryRequest.serial)
- await apps.click()
+ await p.evaluate(()=>(window as any).frameFixture.openMarketCategory('apps'))
  await p.waitForFunction((serial:number)=>{const f=(window as any).frameFixture;return f.state().marketCategoryRequest.serial>serial&&f.marketProps.forceCategory?.category==='apps'},before)
  assert.equal(await p.evaluate(()=>(window as any).frameFixture.state().view),'market','应用复用同一市场视图，不另建页面')
- // 市场页把所在类别写回目录后，左栏高亮切到应用
+ // 市场页把所在类别写回目录后，左栏仍高亮市场，面包屑为「市场 › 应用」
  await p.evaluate(()=>(window as any).frameFixture.remember('market',{category:JSON.stringify({category:'apps',mobileLayer:'list'})}))
- await p.waitForFunction(()=>document.querySelector('nav[aria-label="主导航"] button[aria-current="page"]')?.textContent?.includes('应用'))
- assert.equal(await market.getAttribute('aria-current'),null)
+ await crumbs.getByRole('button',{name:'应用',exact:true}).waitFor()
+ assert.equal(await crumbs.getByRole('button',{name:'应用',exact:true}).getAttribute('aria-current'),'page')
+ assert.equal(await crumbs.getByRole('button',{name:'市场',exact:true}).getAttribute('aria-current'),null)
+ assert.equal(await market.getAttribute('aria-current'),'page')
  // 在应用里点「市场」回到 AI 员工目录，而不是停在应用视图
  const appsSerial=await p.evaluate(()=>(window as any).frameFixture.state().marketCategoryRequest.serial)
  await market.click();await p.waitForFunction((serial:number)=>{const request=(window as any).frameFixture.state().marketCategoryRequest;return request.serial>serial&&request.category==='home'},appsSerial)
@@ -260,14 +264,14 @@ for(const [saved,entry] of [['industry','teams'],['skill','home'],['connector','
 test('真实Frame只派发未消费类别请求：默认0保留冷恢复，业务API重挂不重放已确认应用请求',async t=>{
  const p=await mount(t,'zh-CN',{formal:true,marketCategory:'apps'})
  assert.equal(await p.evaluate(()=>(window as any).frameFixture.marketProps.forceCategory),undefined)
- const nav=p.getByRole('navigation',{name:'主导航',exact:true})
- await nav.getByRole('button',{name:'应用',exact:true}).click()
+ const openApps=()=>p.evaluate(()=>(window as any).frameFixture.openMarketCategory('apps'))
+ await openApps()
  await p.waitForFunction(()=>(window as any).frameFixture.marketProps.forceCategory?.category==='apps')
  const original=await p.evaluate(()=>{const f=(window as any).frameFixture,serial=f.marketProps.forceCategory.serial;f.marketProps.completeCategory(serial);f.remember('market',{category:JSON.stringify({category:'apps',mobileLayer:'list'}),query:'原应用搜索'});return {serial,mounts:f.marketMounts}})
  await p.waitForFunction(()=>(window as any).frameFixture.marketProps.forceCategory===undefined)
  await p.evaluate(()=>(window as any).frameFixture.reconnect())
  await p.waitForFunction((count:number)=>(window as any).frameFixture.marketMounts>count,original.mounts)
  assert.deepEqual(await p.evaluate(()=>{const f=(window as any).frameFixture;return {force:f.marketProps.forceCategory,category:f.marketProps.navigationState.category,query:f.marketProps.navigationState.query}}),{force:undefined,category:'apps',query:'原应用搜索'})
- await nav.getByRole('button',{name:'应用',exact:true}).click()
+ await openApps()
  await p.waitForFunction((serial:number)=>(window as any).frameFixture.marketProps.forceCategory?.serial>serial,original.serial)
 })

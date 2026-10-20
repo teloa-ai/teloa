@@ -99,6 +99,14 @@ test('「代拟工作」页签：代拟未发送卡 + 既有 TwinDraftEditor + �
  assert.ok(render(twinRole()).includes(zh('team.twin.draft.empty')),'空代拟稿缺少占位说明')
 })
 
+test('1.0 页签计数只取真实条目：有代拟稿计 1、样本按已读条数，无条目不显示',()=>{
+ const memory={id:'mem-1',title:'候选判断',text:'依据',source:'自评',scope:'private',status:'candidate',version:1,createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z'}
+ const html=render(twinRole({draft:{body:'代拟正文',version:1,editorId:'self',updatedAt:'2026-01-02T00:00:00.000Z'},memories:[memory,{...memory,id:'mem-2'}]}))
+ assert.match(html,/data-count="1"[^>]*>代拟工作<\/button>/)
+ assert.match(html,/data-count="2"[^>]*>判断力样本<\/button>/)
+ assert.ok(!render(twinRole()).includes('data-count='),'没有代拟稿与样本时不显示计数')
+})
+
 test('「判断力样本」页签是既有分身记忆列表（twinPath 路径说明 + 演示确认/撤回）',()=>{
  const html=render(twinRole({memories:[{id:'mem-1',title:'候选判断',text:'内容词条-代拟草稿的判断依据',source:'自评',scope:'private',status:'candidate',version:1,createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z'}]}))
  assert.ok(html.includes(zh('team.detail.tab.judgment')),'缺少「判断力样本」标题')

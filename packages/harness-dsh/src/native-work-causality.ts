@@ -2,6 +2,7 @@ import {AsyncLocalStorage} from 'node:async_hooks'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {BasicCompactionEngine} from '@deepseek-ai/dsh-compaction-basic'
+import * as NativeAutoReview from '@deepseek-ai/dsh-experimental-auto-review'
 import {isAgentLoopRequest,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {Session,SessionId,SessionLogOffset,interruptedTurnClosers,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
 import type {ToolExecution,ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
@@ -19,7 +20,7 @@ import {parseHarnessDirective} from './harness-routing.ts'
 type Step={number:number;signal:AbortSignal}
 type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
 type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<InputCause>;step:Step|undefined}
-type Model={turn:Turn;step:Step|undefined;options:GenerateOptions;assertCurrent:()=>void;entered:boolean;active:boolean}
+type Model={turn:Turn;step:Step|undefined;options:GenerateOptions;assertCurrent:()=>void;entered:boolean;active:boolean;requestSignal?:AbortSignal;reviewCallId?:string}
 type ToolCause={turn:Turn;step:Step;exec:ToolRunContext;signal:AbortSignal;parent:ToolRunContext['parent'];token:ToolRunContext['token'];agent:Agent;callId:string;rootCallId:string;name:string;arguments:unknown;active:boolean}
 type PendingInput={receipt:InputCause;roots:readonly InputCause[]}
 type ContextPublication={session:Session;identity:NativeInputIdentity;roots:readonly InputCause[];accepted:boolean}
@@ -153,7 +154,8 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  }
  const assertModel=(model:Model)=>{
   try{
-   if(!model.active||model.options.signal!==model.turn.signal||model.turn.step!==model.step)throw denied()
+   if(!model.active||model.options.signal!==(model.requestSignal??model.turn.signal)||model.turn.step!==model.step)throw denied()
+   model.requestSignal?.throwIfAborted()
    model.assertCurrent()
   }
   catch{cancel(model.turn.agent);throw denied()}
@@ -190,6 +192,23 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   const model:Model={turn,step,options,assertCurrent,entered:false,active:false}
   models.set(options,model)
   return model
+ }
+ /** 只承认固定审核插件正在处理的精确请求，沿当前 SDK 工具执行继承已受理工作。 */
+ const reviewModel=(options:GenerateOptions):Model|undefined=>{
+  const lookup:unknown=Reflect.get(NativeAutoReview,'autoReviewRequestOwner')
+  if(typeof lookup!=='function'||!Object.isFrozen(options))return undefined
+  const owner=()=>Reflect.apply(lookup,undefined,[options]) as unknown
+  const proof=owner()
+  if(!proof||typeof proof!=='object'||!Object.isFrozen(proof)||Reflect.get(proof,'options')!==options)return undefined
+  const exec=Reflect.get(proof,'exec') as ToolRunContext|undefined,cause=exec?executions.get(exec):undefined
+  if(!cause||Reflect.get(proof,'agent')!==cause.agent||Reflect.get(proof,'session')!==cause.turn.session||Reflect.get(proof,'signal')!==options.signal||options.sessionId!==cause.agent.id||!options.signal)return undefined
+  const assertCurrent=()=>{
+   options.signal!.throwIfAborted();assertTool(cause)
+   if(owner()!==proof||ctx.permissionPresets.current(cause.turn.session)!=='auto')throw denied()
+  }
+  assertCurrent()
+  const model:Model={turn:cause.turn,step:cause.step,options,assertCurrent,entered:false,active:false,requestSignal:options.signal,reviewCallId:JSON.stringify([cause.rootCallId,cause.callId])}
+  models.set(options,model);return model
  }
  const assertTool=(cause:ToolCause)=>{
   try{
@@ -427,7 +446,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    finally{auxiliary.active=false}
    return
   }
-  const model=models.get(options)??summaryModel(options)
+  const model=models.get(options)??summaryModel(options)??reviewModel(options)
   if(!model||model.entered)throw denied()
   model.entered=true;model.active=true
   try{assertModel(model);for await(const chunk of next()){assertModel(model);yield chunk}}
@@ -596,10 +615,10 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    return parseHarnessDirective('')
   },
   /** 只返回当前真实 request 对象的执行位置；归因字符串或复制 options 不能产生证明。 */
-  modelPosition(options:GenerateOptions):Readonly<{sessionId:string;turn:number;step:number}>|null{
+  modelPosition(options:GenerateOptions):Readonly<{sessionId:string;turn:number;step:number;reviewCallId?:string}>|null{
    const model=models.get(options);if(!model)return null
    if(!model.active)throw denied();assertModel(model)
-   return Object.freeze({sessionId:model.turn.agent.id,turn:model.turn.number,step:model.step?.number??0})
+   return Object.freeze({sessionId:model.turn.agent.id,turn:model.turn.number,step:model.step?.number??0,...(model.reviewCallId?{reviewCallId:model.reviewCallId}:{})})
   },
   /** 仅给宿主预算中间层识别已经持独立预算的精确辅助 request；不会返回或创建证明。 */
   hasAuxiliaryModelAdmission(options:Readonly<GenerateOptions>):boolean{const proof=auxiliaryModels.get(options);if(!proof)return false;proof.assertCurrent();return true},

@@ -101,7 +101,8 @@ test('DOM 的 className 全部来自 module css；样式颜色只用 --teloa-* �
   error:'出错',recovery:true,discarded:true,
  })
  assert.match(html,/丢弃这条恢复记录/);assert.match(html,/已丢弃本地恢复记录/)
- const styles=source('ImChannelsSettingsPage.module.css')
+ // 状态胶囊来自共享 StatusPill（1.0 统一状态组件），其类名同样只来自它自己的 module css。
+ const styles=source('ImChannelsSettingsPage.module.css')+source('StatusPill.module.css')
  const defined=new Set([...styles.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)].map(match=>match[1]!).concat('tokens'))
  const used=new Set([...html.matchAll(/class="([^"]*)"/g)].flatMap(match=>match[1]!.split(/\s+/).filter(Boolean)))
  for(const name of used)assert.ok(defined.has(name),`className ${name} 未在 module css 中定义`)

@@ -1,7 +1,8 @@
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import type {BusinessObjectReference,LocalizedMetadata} from '@teloa/contract'
 import {useEffect,useMemo,useRef,useState,useSyncExternalStore,type ReactNode} from 'react'
-import {ArrowLeft,ArrowUpRight,MessageSquare,RefreshCw,SlidersHorizontal} from 'lucide-react'
+import {ArrowLeft,ArrowUpRight,MessageSquare,PencilRuler,RefreshCw,Share2,SlidersHorizontal} from 'lucide-react'
+import {businessWorkspaceText} from './business-workspace-copy.js'
 import type {BusinessBuilderApi} from './business-builder-api.js'
 import type {BusinessRecordFlow,BusinessRecordCapabilities} from './business-record-flow.js'
 import type {BusinessImportTargetFactory} from './business-import-integration.js'
@@ -30,7 +31,7 @@ type DetailsRead={identity:object;status:'loading'|'failed'|'ready';current?:Con
  * includeShare：业务工作区的页签不再各摆一排业务级按钮，「分享业务配置」随「调整业务」收在这里。
  */
 export function BusinessConfigurationDetails({scope,services,current,open,close,legacy,includeShare=false}:{scope:string;services:BusinessConfigurationServices;current?:ConfigurationCurrent;open:boolean;close:()=>void;legacy?:()=>void;includeShare?:boolean}){
- const {t}=useI18n(),identity=useMemo(()=>({}),[scope,services.api]),[sharing,setSharing]=useState(false)
+ const {t,locale}=useI18n(),identity=useMemo(()=>({}),[scope,services.api]),[sharing,setSharing]=useState(false)
  const [read,setRead]=useState<DetailsRead>({identity,status:'loading'}),[readRevision,setReadRevision]=useState(0),[setupRefresh,setSetupRefresh]=useState(0),[saving,setSaving]=useState(false)
  const callbacks=useRef({close,legacy});callbacks.current={close,legacy}
  useEffect(()=>{
@@ -52,8 +53,8 @@ export function BusinessConfigurationDetails({scope,services,current,open,close,
   <div hidden={!ready}>
    {selected&&<>
     <div className={css.detailsActions}>
-     <button type="button" disabled={services.actionReady===false} onClick={()=>{close();services.adjust(scope)}}>{t('business.configuration.adjust')}</button>
-     {includeShare&&services.share&&<button type="button" disabled={services.actionReady===false} aria-expanded={sharing} onClick={()=>setSharing(value=>!value)}>{t('business.share.title')}</button>}
+     <button type="button" className={css.actionCard} aria-label={t('business.configuration.adjust')} disabled={services.actionReady===false} onClick={()=>{close();services.adjust(scope)}}><PencilRuler size={16} aria-hidden/><span><strong>{t('business.configuration.adjust')}</strong><small>{businessWorkspaceText(locale,'adjustHint')}</small></span></button>
+     {includeShare&&services.share&&<button type="button" className={css.actionCard} aria-label={t('business.share.title')} disabled={services.actionReady===false} aria-expanded={sharing} onClick={()=>setSharing(value=>!value)}><Share2 size={16} aria-hidden/><span><strong>{t('business.share.title')}</strong><small>{businessWorkspaceText(locale,'shareHint')}</small></span></button>}
     </div>
     {includeShare&&sharing&&services.share?.(scope)}
     {services.setup&&<BusinessSetup scope={scope} title={selected.manifest.title} configurationVersion={selected.version} configurationHash={selected.hash} services={services.setup} refreshKey={setupRefresh} visible={open&&ready}/>}

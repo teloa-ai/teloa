@@ -7,7 +7,7 @@
 .list li{padding:10px 0;border-bottom:1px solid var(--teloa-border);overflow-wrap:anywhere}
 .list small{color:var(--teloa-muted)}
 .notConnected{padding:12px 0;margin-top:8px;border-top:1px solid var(--teloa-border)}
-.binding{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);padding:8px 4px}
+.binding{justify-content:space-between}
 .toolCard{border:1px solid var(--teloa-border);border-radius:10px;padding:12px;color:var(--teloa-text);background:var(--teloa-surface);font-size:var(--teloa-font-control)}
 .toolCard details{margin:10px 0}
 .toolCard pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;font-size:var(--teloa-font-caption)}

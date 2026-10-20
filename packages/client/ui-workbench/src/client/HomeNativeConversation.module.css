@@ -10,8 +10,8 @@
 .recoveryActions button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 14px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);cursor:pointer}
 .recoveryActions button:hover{background:var(--teloa-hover)}
 .recoveryActions button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-.recoveryActions .recoveryPrimary{background:var(--teloa-accent);border-color:var(--teloa-accent);color:var(--teloa-on-accent)}
-.recoveryActions .recoveryPrimary:hover{background:var(--teloa-accent);color:var(--teloa-on-accent);filter:brightness(.94)}
+.recoveryActions .recoveryPrimary{background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary)}
+.recoveryActions .recoveryPrimary:hover{background:var(--teloa-primary);color:var(--teloa-on-primary);filter:brightness(.94)}
 @media(max-width:740px){.homeConversation{height:410px}}
 
 .homeConversation[hidden],.body[hidden]{display:none}

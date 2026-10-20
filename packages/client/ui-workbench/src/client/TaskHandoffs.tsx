@@ -10,6 +10,7 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {handoffRecoveryDescription} from './handoff-copy.js'
 import css from './TaskPage.module.css'
+import {StatusPill} from './StatusPill.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 export type HandoffPort={rows:TaskHandoff[];known:boolean;loading:boolean;error:string|undefined;pending:ReturnType<HandoffApi['pending']>;changePending:ReturnType<HandoffApi['pendingChange']>;changeError:unknown;load:()=>Promise<void>;resolve:(id:string,request:HandoffRequest)=>Promise<void>;recover:()=>Promise<void>;change:(taskId:string,expectedTaskVersion:number,target:TaskHandoffTarget,note:string)=>Promise<void>;recoverChange:()=>Promise<void>}
@@ -25,7 +26,7 @@ export function TaskHandoffs({api,tasks,roles,selected,select}:{api:HandoffPort;
   if(!row&&!pending&&!api.loading&&!api.error)return null
   // 锚点给“需要你”卡里的“交由另一岗位”定位：跳到详情后要能直接落到交接段，而不是让人自己找。
   return <section className={css.handoffPanel} data-teloa-handoff-section aria-label={t('task.detail.handoffWork')}>
-   {row?<><header><div><span className={css.sectionEyebrow}>{t('task.detail.arrangeSuccessor')}</span><h3>{t('task.detail.successorPlaceholder')}</h3></div><span className={css.badge}>{t('task.detail.handoffPending')}</span></header><p>{row.reason}</p><p className={css.muted}>{t('task.detail.handoffDescription')}</p></>:<header><div><span className={css.sectionEyebrow}>{t('task.detail.handoffWork')}</span><h3>{t(api.loading?'collaboration.state.loading':'error.storageUnavailable')}</h3></div></header>}
+   {row?<><header><div><span className={css.sectionEyebrow}>{t('task.detail.arrangeSuccessor')}</span><h3>{t('task.detail.successorPlaceholder')}</h3></div><StatusPill tone="warn">{t('task.detail.handoffPending')}</StatusPill></header><p>{row.reason}</p><p className={css.muted}>{t('task.detail.handoffDescription')}</p></>:<header><div><span className={css.sectionEyebrow}>{t('task.detail.handoffWork')}</span><h3>{t(api.loading?'collaboration.state.loading':'error.storageUnavailable')}</h3></div></header>}
    {api.error&&<p role="alert">{api.error}</p>}{error&&<p role="alert">{error}</p>}
    {pending&&<div className={css.pendingAction}><p>{handoffRecoveryDescription(locale)}</p><button type="button" disabled={busy} onClick={()=>void run(api.recover)}>{t('collaboration.action.recover')}</button></div>}
    {row&&task&&<div className={css.handoffChoices} aria-label={t('task.detail.handoffForm')}><button type="button" aria-pressed={mode==='role'} disabled={busy||!!pending||!!api.error} onClick={()=>setMode(value=>value==='role'?null:'role')}><strong>{t('task.detail.arrangeSuccessor')}</strong><span>{t('task.detail.successorPlaceholder')}</span></button><button type="button" aria-pressed={mode==='self'} disabled={busy||!!pending||!!api.error} onClick={()=>setMode(value=>value==='self'?null:'self')}><strong>{t('collaboration.message.selfRole')}</strong><span>{t('task.detail.handoffDescription')}</span></button></div>}

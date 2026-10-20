@@ -10,7 +10,7 @@
 .card button{cursor:pointer;white-space:normal}
 .card button:disabled,.card select:disabled{opacity:.6;cursor:default}
 .card :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-.card .primary{background:var(--teloa-accent);color:var(--teloa-on-accent);border-color:var(--teloa-accent)}
+.card .primary{background:var(--teloa-primary);color:var(--teloa-on-primary);border-color:var(--teloa-primary)}
 .notice{margin-top:14px;padding:12px;border-radius:8px;background:var(--teloa-subtle);overflow-wrap:anywhere}
 .notice p{margin:0 0 10px}
 .notice button{margin-inline-start:8px}

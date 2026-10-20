@@ -1,6 +1,8 @@
 import {useEffect,useRef,useState} from 'react'
 import {X} from 'lucide-react'
 import {openDialog} from './dialog-focus.js'
+import {useDialogDismiss} from './use-dialog-dismiss.js'
+import {useLightDraft} from './light-dialog-drafts.js'
 import type {BusinessSpaceRecord,BusinessSpaceChange} from './business-directory.js'
 import {BusinessSpaceRenameAlert,submitBusinessSpaceRename} from './business-space-rename.js'
 import {useI18n} from './i18n/provider.js'
@@ -18,7 +20,9 @@ import css from './BusinessSpaceForm.module.css'
 export function BusinessSpaceForm({initial,save,close}:{initial:BusinessSpaceRecord;save:(change:BusinessSpaceChange)=>Promise<void>|void;close:()=>void}){
  const {locale,t}=useI18n()
  const dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null)
- const [name,setName]=useState(initial.name),[description,setDescription]=useState(initial.description),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ // 草稿按原空间版本保留：改名成功后宿主版本前进，旧版本草稿不会再被带出。
+ const [draft,setDraft]=useLightDraft('business-space:'+initial.id+':'+initial.version,()=>({name:initial.name,description:initial.description})),{name,description}=draft,[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ const setName=(value:string)=>setDraft(current=>({...current,name:value})),setDescription=(value:string)=>setDraft(current=>({...current,description:value})),dismissEvents=useDialogDismiss(close,!busy)
  useEffect(()=>openDialog(dialog.current,input.current),[])
  const submit=async()=>{
   if(busy)return
@@ -26,5 +30,5 @@ export function BusinessSpaceForm({initial,save,close}:{initial:BusinessSpaceRec
   setError(await submitBusinessSpaceRename(save,{expectedVersion:initial.version,name,description},error=>localizeWorkError(locale,error)))
   setBusy(false)
  }
- return <dialog ref={dialog} className={css.dialog} aria-label={t('business.space.edit')} onCancel={close}><form onSubmit={event=>{event.preventDefault();void submit()}}><header><h2>{t('business.space.edit')}</h2><button type="button" aria-label={t('business.space.close')} onClick={close}><X size={18}/></button></header><p>{t('business.space.description')}</p><label>{t('business.space.name')}<input ref={input} value={name} maxLength={80} required onChange={event=>setName(event.target.value)}/></label><label>{t('business.space.notes')}<textarea value={description} maxLength={2000} rows={3} onChange={event=>setDescription(event.target.value)}/></label><BusinessSpaceRenameAlert message={error}/><footer><button type="button" onClick={close}>{t('business.form.cancel')}</button><button type="submit" disabled={busy||!name.trim()}>{t('business.space.save')}</button></footer></form></dialog>
+ return <dialog ref={dialog} className={css.dialog} aria-label={t('business.space.edit')} {...dismissEvents}><form onSubmit={event=>{event.preventDefault();void submit()}}><header><h2>{t('business.space.edit')}</h2><button type="button" aria-label={t('business.space.close')} onClick={close}><X size={18}/></button></header><p>{t('business.space.description')}</p><label>{t('business.space.name')}<input ref={input} value={name} maxLength={80} required onChange={event=>setName(event.target.value)}/></label><label>{t('business.space.notes')}<textarea value={description} maxLength={2000} rows={3} onChange={event=>setDescription(event.target.value)}/></label><BusinessSpaceRenameAlert message={error}/><footer><button type="button" onClick={close}>{t('business.form.cancel')}</button><button type="submit" disabled={busy||!name.trim()}>{t('business.space.save')}</button></footer></form></dialog>
 }

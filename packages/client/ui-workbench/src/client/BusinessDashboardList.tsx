@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react'
-import {ArrowRight} from 'lucide-react'
+import {ArrowRight,BarChart3} from 'lucide-react'
 import type {BusinessDashboardSummary} from '@teloa/contract'
 import type {BusinessDashboardApi} from './business-dashboard-api.js'
 import type {BusinessCustomizationApi} from './business-customization-api.js'
@@ -46,6 +46,6 @@ export function BusinessDashboardList({scope,api,customization,open,openDrafts,p
      <small>{dashboard.updatedAt===null?t('business.dashboards.neverUpdated'):t('business.dashboards.updatedAt',{time:dateTime(new Date(dashboard.updatedAt),{dateStyle:'medium',timeStyle:'short'})})}</small>
      <small>{t('business.dashboards.widgets',{count:number(dashboard.widgets)})}</small>
     </button>)}</div>
-   :<div className={base.empty}><h2>{t('business.dashboards.empty.title')}</h2><p>{prepare?copy.dashboardHint:t('business.dashboards.empty.description')}</p>{prepare&&<button type="button" onClick={prepare}>{copy.prepareDashboard}</button>}</div>)}
+   :<div className={`${base.empty} ${css.emptyBoard}`}><span className={css.emptyIcon} aria-hidden="true"><BarChart3 size={18}/></span><h2>{t('business.dashboards.empty.title')}</h2><p>{prepare?copy.dashboardHint:t('business.dashboards.empty.description')}</p>{prepare&&<button type="button" className={css.emptyPrimary} onClick={prepare}>{copy.prepareDashboard}</button>}</div>)}
  </section>
 }

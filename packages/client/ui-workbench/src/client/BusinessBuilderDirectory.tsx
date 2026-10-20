@@ -5,7 +5,7 @@ import {openDialog} from './dialog-focus.js'
 import {useI18n} from './i18n/provider.js'
 import dialog from './CreateConversationDialog.module.css'
 import css from './BusinessBuilderDirectory.module.css'
-import {RefreshCw} from 'lucide-react'
+import {FilePenLine,RefreshCw} from 'lucide-react'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 /** 服务端精简目录是唯一草案列表；分页不拼接另一份本地正文目录。 */
@@ -17,12 +17,12 @@ export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover
  const refresh=async(cursor?:string)=>{setLoading(true);setFailed(false);try{await flow.refreshDirectory(cursor)}catch{setFailed(true)}finally{setLoading(false)}}
  useEffect(()=>{void refresh()},[flow])
  return <section className={css.directory} aria-label={t('business.builder.directory')}>
-  <header><h2>{t('business.builder.directory')}</h2><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void refresh()}/></header>
+  <header><h2>{t('business.builder.directory')}{state.directory&&state.directory.items.length>0&&<span className={css.count}>{state.directory.items.length}</span>}</h2><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void refresh()}/></header>
   {pending&&recover&&<div><p>{pending.title}</p><button type="button" disabled={!ready} onClick={()=>recover(pending!.requestId)}>{t('business.builder.restore')}</button></div>}
   {recoveryFailed&&<p role="alert">{t('business.builder.error')}</p>}
   {loading&&<p role="status">{t('business.builder.loading')}</p>}
   {failed&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void refresh()}>{t('common.retry')}</button></p>}
-  {state.directory?.items.map(({binding,draft})=><button type="button" className={css.item} disabled={!ready} key={binding.requestId} onClick={()=>open(binding)}><span><strong>{draft?.title??binding.title}</strong><small>{dateTime(new Date(draft?.updatedAt??binding.updatedAt),{dateStyle:'medium',timeStyle:'short'})}</small></span><span>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}</span></button>)}
+  {state.directory?.items.map(({binding,draft})=><button type="button" className={css.item} disabled={!ready} key={binding.requestId} onClick={()=>open(binding)}><FilePenLine size={16} aria-hidden/><strong>{draft?.title??binding.title}</strong><time dateTime={draft?.updatedAt??binding.updatedAt}>{dateTime(new Date(draft?.updatedAt??binding.updatedAt),{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><span className={css.go}>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}</span></button>)}
   {state.directory?.nextCursor&&<button type="button" disabled={loading} onClick={()=>void refresh(state.directory!.nextCursor)}>{t('business.records.more')}</button>}
  </section>
 }

@@ -4,10 +4,10 @@ import {Session,SessionId,SessionLogOffset,type SessionEvent} from '@deepseek-ai
 import {foldGoal} from '@deepseek-ai/dsh-goal'
 import {boundContextSummary} from '@deepseek-ai/dsh-llm'
 import {finalAssistantOutput} from '@deepseek-ai/dsh-subagent'
-import {WorkError,artifactContent,taskInput,readRetrievalSearchResult,groupRoutingAttemptRequestId,groupRoutingSessionId,type WorkControlChange} from '@teloa/contract'
+import {WorkError,taskInput,readRetrievalSearchResult,groupRoutingAttemptRequestId,groupRoutingSessionId,type WorkControlChange} from '@teloa/contract'
 import {ArtifactService,taskArtifactSource,taskArtifactSessions,GroupRoutingOutboxService,WorkLineageService,WorkControlService,WorkRecoveryService,WorkBudgetService,TaskRunGoalService,TaskRunRuntimeLinkService,TaskCompletionService,readStoredTask,WorkEventService,MarketContentStore,WorkProgressService,WorkRetryService,combineWorkAccessLeases,readTrustedGroupMessageRunSource,readCurrentGroupRoutingAttempt,readGroupRunAppendIds,RoleWorkEligibilityService,workAccess,type TaskRunService,type TaskRun,type OwnerWorkAuthority,type ResourceService,type RoleDailyLogService,type WorkAccessLease,type WorkResumeInput,type WorkRecoveryCheckpoint,type TaskExecutionScope,type ConversationService} from '@teloa/backend'
 import {createTaskRunGoal} from './task-run-goal.ts'
-import {createTaskCompletionVerifiers} from './task-completion-verifiers.ts'
+import {createTaskCompletionVerifiers,systemDigestArtifactContent} from './task-completion-verifiers.ts'
 import {WorkControlDriver} from './work-control-driver.ts'
 import {WorkRecoveryCoordinator,controlledWorkRestore} from './work-recovery-coordinator.ts'
 import {TaskRunDriver,type TaskRunPorts} from './task-run-driver.ts'
@@ -24,6 +24,8 @@ import {drainGroupRoutingOutbox,drainGroupRoutingWakes,type GroupRoutingOutboxPo
 import type {TeloaNativeInput} from './native-input-provider.ts'
 import {runBudgetTerminal,type ResidentRoutingBudget} from './resident-model-budget.ts'
 import {isRoutingSession} from './group-routing.ts'
+import {groupRoutingEmptyRetryRequestId,mayRetryEmptyGroupRouting} from './group-routing-result.ts'
+import {observeTaskRun} from './task-run-observation.ts'
 import type {NativeCheckpointSnapshot,NativeInputRestore,NativeInputRestoreInput,NativeInputRestoreLease} from './native-input-checkpoint.ts'
 import {taskRunOwnerSettlement} from './task-run-owner-settlement.ts'
 import {taskRunRuntimeId} from './task-run-background.ts'
@@ -272,7 +274,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
  },resumeGoal:async(value,input,signal)=>{assertOwner(value);signal.throwIfAborted();const run=await(await runs()).get(value,{runId:input.runId}),request=recoveryRequests.get(input.runId);if(input.permit.candidate.goal){if(!request||!run.lineage)throw unavailable();const round=await controls.get(value,{controlId:run.lineage.roundControlId});await retries.acknowledgeStagnation(value,{requestId:request,runId:run.id,goalId:input.permit.candidate.goal.goalId,controlGeneration:round.generation})}await goal.resume(run,input.permit.lease)}})
  const resumePlanned=planned?plannedRestartResume(owner,options.plannedRestartId!,restarted,{controls,inspect:(value,input)=>recovery.inspect(value,input),resume:(value,input,signal,plannedRestart)=>coordinator.resume(value,input,signal,plannedRestart),report:options.report}):async()=>{}
  const artifacts=new ArtifactService(pool,identity,async(value,expected,db)=>{assertOwner(value);if(expected.kind!=='task')throw unavailable();return {source:await taskArtifactSource(db,value,expected.id,true),sessionIds:await taskArtifactSessions(db,value,expected.id,true)}})
- const verifiers=createTaskCompletionVerifiers({digest:async input=>(await dailyLogs()).completeEvidenceInTransaction(input.db,input.ownerId,input.run.id),saveDigestArtifact:async(input,evidence)=>{const saved=await artifacts.createInTransaction(input.db,input.ownerId,{requestId:requestId(['daily-digest-artifact',input.ownerId,input.run.id]),source:await taskArtifactSource(input.db,input.ownerId,input.task.id,true),content:artifactContent({title:input.task.title,sections:[{id:'daily-digest',title:evidence.log.day,text:evidence.log.markdown}],snapshotIds:[]})});return {id:saved.artifactId,version:saved.number}},material:async(input,source)=>{
+ const verifiers=createTaskCompletionVerifiers({digest:async input=>(await dailyLogs()).completeEvidenceInTransaction(input.db,input.ownerId,input.run.id),saveDigestArtifact:async(input,evidence)=>{const saved=await artifacts.createInTransaction(input.db,input.ownerId,{requestId:requestId(['daily-digest-artifact',input.ownerId,input.run.id]),source:await taskArtifactSource(input.db,input.ownerId,input.task.id,true),content:systemDigestArtifactContent(input.task.title,evidence.log)});return {id:saved.artifactId,version:saved.number}},material:async(input,source)=>{
   const target=await options.executionScope(input.db,input.ownerId,input.run.id,'completion'),auth=taskKnowledgeAuthorization(input.ownerId,target,input.run.roleSnapshot?.scopes)
   if(auth.knowledgeIds!==undefined&&auth.knowledgeIds!==null&&!auth.knowledgeIds.includes(source.resourceId))throw unavailable()
   const current=(await resources.executionKnowledgeInTransaction(input.db,auth.actor,auth.targetScopes,[source.resourceId]))[0];if(!current)throw unavailable();return current
@@ -302,7 +304,12 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
    if(!group||group.archived||!message)throw unavailable()
    // 原生请求身份必须对应本消息当前仍待定案的那一次尝试：第一尝试沿原公式，重试使用带尝试版本的身份。
    const attempt=await readCurrentGroupRoutingAttempt(db,owner,input.messageId)
-   if(attempt.decision!==null||input.nativeRequestId!==groupRoutingAttemptRequestId(owner,input.groupId,input.messageId,attempt.attemptVersion))throw unavailable()
+   const primaryId=groupRoutingAttemptRequestId(owner,input.groupId,input.messageId,attempt.attemptVersion)
+   if(attempt.decision!==null)throw unavailable()
+   if(input.nativeRequestId!==primaryId){
+    const agent=ctx.agents.get(SessionId(input.sessionId)),history=agent?readSessionEvents(agent.session):[],observed=observeTaskRun(history,primaryId)
+    if(input.nativeRequestId!==groupRoutingEmptyRetryRequestId(primaryId)||observed.state!=='ended'||!mayRetryEmptyGroupRouting(history,primaryId,observed.turn))throw unavailable()
+   }
    const source=await readTrustedGroupMessageRunSource(db,owner,{groupId:input.groupId,messageId:input.messageId}),leases:WorkAccessLease[]=[]
    let budgetAccountId:string|null=null,controlGeneration=1
    if(message.author_id==='self'){

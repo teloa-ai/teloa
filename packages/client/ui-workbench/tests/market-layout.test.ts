@@ -81,8 +81,8 @@ test('统一列表：条目是单列条目卡（形象 + 标题 + 两行摘要 +
  const cssText=readFileSync(new URL('../src/client/MarketCatalogSection.module.css',import.meta.url),'utf8')
  assert.match(source,/export function MarketListRows\(/)
  assert.match(source,/<ItemArt /);assert.match(source,/<StateMark /)
- // 主按钮实心强调色，不再是红色描边
- assert.match(cssText,/\.primary\{[^}]*background:var\(--teloa-accent\)[^}]*color:var\(--teloa-on-accent\)/)
+ // 1.0：实心主按钮用墨黑主色，不再是品牌红底或红色描边
+ assert.match(cssText,/\.primary\{[^}]*background:var\(--teloa-primary\)[^}]*color:var\(--teloa-on-primary\)/)
  assert.doesNotMatch(cssText,/\.primary\{[^}]*color:var\(--teloa-accent\)!important/)
 })
 

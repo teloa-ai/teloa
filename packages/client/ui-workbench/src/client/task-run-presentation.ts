@@ -1,9 +1,18 @@
 import type {RunView} from './task-run-api.js'
 
+import type {StatusPillTone} from './StatusPill.js'
 export type TaskRunControl='open'|'start'|'withdraw'|'stop'|'reconcile'
 
 export const taskRunPhaseKeys={prepared:'taskExecution.phase.prepared',submitting:'taskExecution.phase.submitting',accepted:'taskExecution.phase.accepted',active:'taskExecution.phase.active',ended:'taskExecution.phase.ended',withdrawn:'taskExecution.phase.withdrawn',configuration_failed:'taskExecution.phase.configurationFailed'} as const
 export const taskRunReasonKeys:Record<string,string>={completed:'taskExecution.reason.completed',aborted:'taskExecution.reason.aborted',blocked:'taskExecution.reason.blocked',error:'taskExecution.reason.error','max-tokens':'taskExecution.reason.maxTokens',interrupted:'taskExecution.reason.interrupted'}
+
+/** 执行记录状态胶囊语气：进行中=info，完成=good，阻塞=warn，失败=danger，停止/撤回/结束=muted，尚未提交=neutral。 */
+const reasonTones:Record<string,StatusPillTone>={completed:'good',blocked:'warn',error:'danger','max-tokens':'danger',aborted:'muted',interrupted:'muted'}
+const phaseTones:Record<RunView['state'],StatusPillTone>={prepared:'neutral',submitting:'info',accepted:'info',active:'info',ended:'muted',withdrawn:'muted',configuration_failed:'danger'}
+export function taskRunTone(row:Pick<RunView,'state'|'reason'>,stopping:boolean):StatusPillTone{
+ if(stopping)return 'info'
+ return row.reason?reasonTones[row.reason]??'muted':phaseTones[row.state]
+}
 
 /**
  * 已请求停止但原生轮次还在跑：返回已等待的整秒数。界面据此显示「停止中」并停用停止按钮，

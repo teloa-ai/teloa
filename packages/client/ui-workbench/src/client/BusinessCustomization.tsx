@@ -7,6 +7,7 @@ import {customizationApplyGuard,customizationDraftRows,customizationFailureKey,c
 import {useI18n} from './i18n/provider.js'
 import base from './TaskPage.module.css'
 import css from './BusinessCustomization.module.css'
+import {EmptyInline} from './EmptyState.js'
 import dashboardCss from './BusinessDashboardPage.module.css'
 
 type Props={scope:string;api:BusinessCustomizationApi;changed:()=>void;colorScheme:'light'|'dark'}
@@ -194,7 +195,7 @@ export function BusinessCustomization({scope,api,changed,colorScheme}:Props){
   {message&&<p className={base.error} role="alert">{message}</p>}
   {failedStage&&<button type="button" className={css.retry} disabled={busy} onClick={retry}>{t('business.custom.retry')}</button>}
   {!preview&&<>
-   {!rows.length?<p className={css.empty}>{t('business.custom.drafts.empty')}</p>:<div className={css.rows}>{rows.map(row=><article key={row.draftId}><div><strong>{row.localId}</strong><small>{t(row.kindKey)} · v{row.semver} · {t('business.custom.draft.pending')}</small></div><button type="button" disabled={busy} onClick={()=>void loadPreview(row.draftId)}>{t('business.custom.preview.open')}</button></article>)}</div>}
+   {!rows.length?<EmptyInline>{t('business.custom.drafts.empty')}</EmptyInline>:<div className={css.rows}>{rows.map(row=><article key={row.draftId}><div><strong>{row.localId}</strong><small>{t(row.kindKey)} · v{row.semver} · {t('business.custom.draft.pending')}</small></div><button type="button" disabled={busy} onClick={()=>void loadPreview(row.draftId)}>{t('business.custom.preview.open')}</button></article>)}</div>}
    {!!directory?.entries.length&&<details className={css.versions}><summary>{t('business.custom.local.version')}</summary>{directory.entries.map(entry=>{
     const options=customizationRevertOptions(entry)
     if(!options.length)return null

@@ -341,7 +341,7 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
   </div></ContextDrawer>:null
   return <section className={css.surface} aria-label={copy.title}>
    <header className={css.directoryHeader}>
-    <div><span className={css.lead}>{copy.lead}</span><h2>{copy.title}</h2></div>
+    <div><h2>{copy.title}</h2><span className={css.lead}>{copy.lead}</span></div>
     <button type="button" className={light.back} onClick={()=>go({scope,section:'data'})}><ArrowLeft size={14} aria-hidden/>{t('business.ledger.back')}</button>
    </header>
    {match&&<div className={css.sourceNotice} role="note" data-ledger-match><span>{t('business.ledger.match',{field:matchField?localizedBusinessFieldLabel(matchField,locale):match.field==='_id'?t('business.object.id'):match.field,value:matchField?localizedBusinessFieldValue(matchField,match.value,locale):match.value})}</span><button type="button" onClick={()=>go({scope,section:'data',objectType:definition.id})}>{t('business.ledger.matchClear')}</button></div>}

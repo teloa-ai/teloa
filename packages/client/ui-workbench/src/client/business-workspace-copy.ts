@@ -1,5 +1,6 @@
 const copy={
  staffCount:['{count} 位员工','{count} 位員工','{count} employees'],
+ groupCount:['{count} 个协作群','{count} 個協作群','{count} groups'],groupColumn:['群','群組','Group'],lastMessage:['最近消息','最近訊息','Last message'],members:['成员','成員','Members'],memberCount:['{count} 人','{count} 人','{count} people'],open:['打开','開啟','Open'],adjustHint:['会打开一条搭建会话，改动先成为草案','會開啟一條搭建會話，改動先成為草案','Opens a builder conversation; changes become a draft first'],shareHint:['导出为可复用的模板','匯出為可重複使用的範本','Export as a reusable template'],moreActions:['更多操作','更多操作','More actions'], businessCount:['{count} 个业务','{count} 個業務','{count} businesses'],defaultBusiness:['默认','預設','Default'],defaultBusinessHint:['没有归入业务的工作都在这里','未歸入業務的工作都在這裡','Work not assigned to a business lands here'],
  generalStaff:['{count} 位在岗员工，可以一起协作','{count} 位在職員工，可以一起協作','{count} active employees ready to collaborate'],generalNoStaff:['暂无在岗员工','暫無在職員工','No active employees'],generalDescription:['资料、任务、项目与协作群，都能围绕你的目标展开。','資料、任務、專案與協作群，都能圍繞你的目標展開。','Work with your team on files, tasks, projects and shared goals.'],
  newConversation:['另建会话','另建對話','New conversation'],
  coordinator:['协调员工','協調員工','Coordinator'],unavailable:['当前不可交办','目前不可交辦','Unavailable for dispatch'],configureCoordinator:['设置协调员工','設定協調員工','Set coordinator'],coordinatorHint:['协调由同一位员工兼任。此设置也用作新工作的默认负责员工，不改变已交办工作。','由同一位員工兼任協調。此設定亦用作新工作的預設負責員工，不更改已交辦工作。','An existing employee coordinates the team and becomes the default assignee for new work. Existing work stays assigned.'],
@@ -17,4 +18,5 @@ const copy={
  dashboardEmpty:['尚未配置统计看板','尚未設定統計看板','No dashboards configured'],dashboardHint:['配置后，已保存的业务结果会按指标口径汇总到这里。','設定後，已儲存的業務結果會按指標定義彙總到這裡。','Once configured, saved business results are aggregated by your metric definitions.'],prepareDashboard:['配置看板','設定看板','Configure dashboard'],
  task:['工作','工作','Work'],employee:['负责人','負責人','Assignee'],state:['状态','狀態','Status'],updated:['最近更新','最近更新','Updated'],unassigned:['待分派','待指派','Unassigned'],
 } as const
-export function businessWorkspaceText(locale:string,key:keyof typeof copy){return copy[key][locale.startsWith('zh')?(/Hant|TW|HK/i.test(locale)?1:0):2]}
+/** 没有语言标签（如仅注入 t 的测试运行时）时回退英文。 */
+export function businessWorkspaceText(locale:string|undefined,key:keyof typeof copy){const tag=locale??'';return copy[key][tag.startsWith('zh')?(/Hant|TW|HK/i.test(tag)?1:0):2]}

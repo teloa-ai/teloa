@@ -20,15 +20,14 @@ const docked=(viewportWidth:number)=>viewportWidth>=RIGHTBAR_DOCKED_MIN_VIEWPORT
 
 export function navigationTrackWidth(viewportWidth:number):number{
  // 1080 及以下主导航是 position:fixed 的抽屉，不占列宽。
- return viewportWidth<=1080?0:204
+ return viewportWidth<=1080?0:236
 }
 
 export function directoryTrackWidth(viewportWidth:number,directoryOpen:boolean):number{
  if(!directoryOpen)return 0
  if(viewportWidth<=RIGHTBAR_FULL_WIDTH_MAX_VIEWPORT)return 0
- if(viewportWidth<=1080)return 264
- if(viewportWidth<=1380)return 260
- return viewportWidth>=1600?296:280
+ // 1.0：桌面会话目录固定 240px；1080 及以下仍为 264px 的覆盖层宽度。
+ return viewportWidth<=1080?264:240
 }
 
 export function rightbarWidthRange(viewportWidth:number,directoryOpen:boolean):{min:number;max:number}{

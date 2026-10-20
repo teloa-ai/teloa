@@ -24,13 +24,13 @@ test('资料版本小结核真实来源版本与正式成果摘要，伪已完�
  const unavailable=createTaskCompletionVerifiers({artifact:async()=>artifact})['material-version-summary'];assert.equal((await unavailable(input)).verified,false)
 })
 test('系统小结只认真实employee daily-digest回执，不接分身habit或缺输出',async()=>{
- const {createTaskCompletionVerifiers}=await api()
+ const {createTaskCompletionVerifiers,systemDigestArtifactContent}=await api()
  const verifier=createTaskCompletionVerifiers({digest:async()=>null})['system-digest']
  assert.equal((await verifier({...input,policy:{kind:'verified',verifier:'system-digest',verifierVersion:1,authorizationVersion:1}})).verified,false)
  const log:RoleDailyLog={id,ownerId:'owner',roleId:id,roleVersion:1,runId:id,kind:'daily-digest',state:'kept',day:'2026-10-09',title:'每日小结',markdown:'真实来源事实。',scopeIds:['general'],evidence:[],pruneHints:[],createdAt:at,discardedAt:null}
  const evidence:RoleDailyLogCompletionEvidence={identity:{taskId:id,runId:id,roleId:id,roleVersion:1,day:log.day,planId:id},log,receiptIds:[receiptId],contentHash:sha(log.markdown)}
  let current=structuredClone(evidence),saved=0
- const actual=createTaskCompletionVerifiers({digest:async()=>current,saveDigestArtifact:async()=>{saved++;return {id:artifactId,version:1}}})['system-digest'],candidate={...input,candidate:{runId:id,terminalEventSeq:3,artifactIds:[],receiptIds:[]}}
+ const actual=createTaskCompletionVerifiers({digest:async()=>current,saveDigestArtifact:async(input,evidence)=>{const content=systemDigestArtifactContent(input.task.title,evidence.log);assert.deepEqual(artifactContent(content),content);assert.ok(content.note.trim());assert.equal(content.sections[0]!.text,evidence.log.markdown);saved++;return {id:artifactId,version:1}}})['system-digest'],candidate={...input,candidate:{runId:id,terminalEventSeq:3,artifactIds:[],receiptIds:[]}}
  assert.equal((await actual(candidate)).verified,true);assert.equal(saved,1)
  const patches:Array<Partial<RoleDailyLogCompletionEvidence>>=[{log:{...log,kind:'habit-digest',runId:null}},{log:{...log,roleId:artifactId}},{identity:{...evidence.identity,day:'2026-10-08'}},{identity:{...evidence.identity,roleId:artifactId}},{receiptIds:[]},{contentHash:sha('伪已完成')}]
  for(const patch of patches){current={...evidence,...patch};assert.equal((await actual(candidate)).verified,false)}

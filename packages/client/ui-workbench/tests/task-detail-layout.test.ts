@@ -105,7 +105,7 @@ test('当前负责沿用同一员工的已保存形象；旧员工回退通用�
  for(const [avatarKey,file] of [['security-analyst','security-analyst'],['researcher','researcher'],[undefined,'general']] as const){
   const html=paint({task:{...task,assigneeId:role.id},roles:[{...role,avatarKey}]})
   const owner=html.match(/<dt>当前负责<\/dt>[\s\S]*?<\/dd>/)?.[0]??''
-  assert.match(owner,new RegExp('<img[^>]*src="[^"]*/'+file+'\\.webp"'))
+  assert.match(owner,new RegExp('data-avatar="'+file+'"'))
   assert.match(owner,/>小研<\/span>/)
   assert.doesNotMatch(owner,/>小<\/span>/)
  }

@@ -1,7 +1,7 @@
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
 import {type MarketTaxonomy,type MarketEntryKind,readMarketTaxonomy} from './market-taxonomy.ts'
-import {roleDefinition,type RoleResponsibility,type RoleAvatarKey} from './roles.ts'
+import {roleDefinition,isRoleAvatarCombination,type RoleResponsibility,type RoleAvatarKey} from './roles.ts'
 import {parseTeloaRange,teloaRangeHasLowerBound,teloaRangeSatisfies} from './semver-range.ts'
 export type {MarketTaxonomy} from './market-taxonomy.ts'
 export {marketFunctionKeys,marketIndustryKeys,marketIndustryParent,isMarketIndustryRoot,readMarketTaxonomy,marketEntryKinds} from './market-taxonomy.ts'
@@ -47,6 +47,13 @@ export const marketDerivativeMinimumTeloa='0.2.0-alpha.7'
  * 只有兼容下界高于旧版上报版本（TELOA_APP_VERSION）时旧版才会逐项按「需更新应用」跳过，所以必须严格高于 0.2.0-alpha.7；新构建须同步把上报版本提到不低于此值才能看到这些条目。不进 v1 索引；发布与生成共用。
  */
 export const marketPluginMinimumTeloa='0.2.0-alpha.8'
+/** 员工内置头像（预设键）从此版本提供。 */
+export const marketAvatarMinimumTeloa='0.2.0-alpha.8'
+/**
+ * 员工头像自由组合（`bot:<shape>:<color>`）从此版本提供：旧版按头像白名单整条拒收，条目须用兼容下界把旧版排除；
+ * 上报版本取自包版本，0.2.4 及以后的构建才能看到这些条目。若 0.2.4 正式版不含组合头像，发版前须同步上调。
+ */
+export const marketAvatarCombinationMinimumTeloa='0.2.4'
 /** 二次开发修改七类，互斥、按此顺序取优先（security > fixed > removed > adapted > added > improved > localized）。 */
 export const marketDerivativeChangeTypes=['security','fixed','removed','adapted','added','improved','localized'] as const
 export type MarketDerivativeChangeType=typeof marketDerivativeChangeTypes[number]
@@ -1067,7 +1074,10 @@ function readRoleEntry(row:Record<string,unknown>):MarketCatalogRoleEntry{
  try{checked=roleDefinition({...definitionRow,scopes:['general'],skills:[],knowledge:[]})}catch{throw bad('岗位定义不合法。')}
  if(!checked.responsibility)throw bad('岗位定义必须包含结构化职责。')
  const definition:MarketCatalogRoleDefinition={name:checked.name,kind:checked.kind,duty:checked.duty,dataScope:checked.dataScope,executionScope:checked.executionScope,responsibility:checked.responsibility,...(checked.avatarKey===undefined?{}:{avatarKey:checked.avatarKey})}
- if(definition.avatarKey!==undefined&&(!isRecord(row.compatibility)||typeof row.compatibility.teloa!=='string'||!teloaRangeHasLowerBound(row.compatibility.teloa,'0.2.0-alpha.8')))throw bad('使用内置员工头像的条目，Teloa 兼容下界须为 0.2.0-alpha.8 或更高。')
+ if(definition.avatarKey!==undefined){
+  const [minimum,label]=isRoleAvatarCombination(definition.avatarKey)?[marketAvatarCombinationMinimumTeloa,'自由组合员工头像']:[marketAvatarMinimumTeloa,'内置员工头像']
+  if(!isRecord(row.compatibility)||typeof row.compatibility.teloa!=='string'||!teloaRangeHasLowerBound(row.compatibility.teloa,minimum))throw bad('使用'+label+'的条目，Teloa 兼容下界须为 '+minimum+' 或更高。')
+ }
  const skills=distinct(list(roleRow.skills,'依赖技能',30).map(item=>pattern(item,marketCatalogSkillName,'技能名')),'依赖技能')
  let preferredModel:MarketCatalogRoleEntry['role']['preferredModel']=null
  if(roleRow.preferredModel!==null){

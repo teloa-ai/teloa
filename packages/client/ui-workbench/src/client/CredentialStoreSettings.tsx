@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useState} from 'react'
-import {TriangleAlert} from 'lucide-react'
+import {HardDrive,TriangleAlert} from 'lucide-react'
 import type {CredentialStoreApi,CredentialStoreStatus} from './credential-store-api.js'
 import {subscribeSettingsPanelVisible} from './AutoDreamSettingsPage.js'
 import {useI18n} from './i18n/provider.js'
@@ -30,10 +30,10 @@ export function CredentialStoreSettings({api}:{api:CredentialStoreApi}){
   <h2>{t('credentialStore.title')}</h2>
   {status?.fault&&<div className={css.missing} role="alert"><TriangleAlert size={15} aria-hidden="true"/><span>{t('credentialStore.locked')} {faultDetail}</span></div>}
   {status&&!status.fault&&status.tier==='plaintext'&&<div className={css.missing} role="alert"><TriangleAlert size={15} aria-hidden="true"/><span>{t('credentialStore.tier.plaintext')}</span></div>}
-  {status&&!status.fault&&(status.tier==='keyring'||status.tier==='file')&&<div className={css.row}><div className={css.rowText}><p>{t(status.tier==='keyring'?'credentialStore.tier.keyring':'credentialStore.tier.file')}</p></div></div>}
+  {status&&!status.fault&&(status.tier==='keyring'||status.tier==='file')&&<div className={css.info}><HardDrive size={14} aria-hidden="true"/><span>{t(status.tier==='keyring'?'credentialStore.tier.keyring':'credentialStore.tier.file')}</span></div>}
   {error&&<p role="alert">{error}</p>}
   {refused>0&&<p role="status">{t('credentialStore.copies.refused',{count:refused})}</p>}
-  {status&&status.copies.length>0&&<section className={css.recent} aria-label={t('credentialStore.copies.title')}>
+  {status&&status.copies.length>0&&<section className={css.card+' '+css.recent} aria-label={t('credentialStore.copies.title')}>
    <header className={css.recentHeader}><h3>{t('credentialStore.copies.title')}</h3>
     {confirming?<span className={css.rowControl}><button type="button" disabled={busy} onClick={()=>void remove()}>{t('credentialStore.copies.delete')}</button><button type="button" disabled={busy} onClick={()=>setConfirming(false)}>{t('credentialStore.copies.cancel')}</button></span>
      :<button type="button" disabled={busy||!selected.length} onClick={()=>setConfirming(true)}>{t('credentialStore.copies.delete')}</button>}

@@ -4,7 +4,7 @@ import {credentialRef} from '@deepseek-ai/dsh-credentials'
 import {isRecord} from '@teloa/contract'
 
 export type NativeModelCatalog=Awaited<ReturnType<SessionController['modelCatalog']>>
-export type ModelCatalogReadiness={catalog:NativeModelCatalog;missingCredentialProviders:string[]}
+export type ModelCatalogReadiness={catalog:NativeModelCatalog;missingCredentialProviders:string[];configuredCredentialProviders?:string[]}
 export type ModelCatalogReader={read:(signal?:AbortSignal)=>Promise<ModelCatalogReadiness>}
 type ReadinessSettings={describe:(options:{redactSecrets:true})=>readonly {ns:string;value:unknown}[]}
 declare module '@deepseek-ai/cordis'{interface Context{teloaModelCatalog:ModelCatalogReader}}
@@ -15,6 +15,7 @@ export async function readModelCatalogReadiness(ctx:Context,catalog:NativeModelC
  try{
   const settings=Reflect.get(ctx,'settings') as ReadinessSettings
   const namespaces=settings.describe({redactSecrets:true}),providers=ctx.llm.listConfigurableProviders()
+  const configured:string[]=[]
   const states=await Promise.all(providers.map(async provider=>{
    signal?.throwIfAborted()
    // 官方账号路由使用登录状态，不以 BYOK 引用是否配置判断可用性。
@@ -23,11 +24,11 @@ export async function readModelCatalogReadiness(ctx:Context,catalog:NativeModelC
    for(const key of provider.settingsPath)profile=isRecord(profile)?profile[key]:undefined
    const ref=isRecord(profile)?profile.apiKeyEnv:undefined
    if(typeof ref!=='string'||!ref)return undefined
-   try{const info=await ctx.credentials.describe(credentialRef(ref));signal?.throwIfAborted();return info.configured===false?provider.provider:undefined}
+   try{const info=await ctx.credentials.describe(credentialRef(ref));signal?.throwIfAborted();if(info.configured===true)configured.push(provider.provider);return info.configured===false?provider.provider:undefined}
    catch{signal?.throwIfAborted();return undefined}
   }))
   signal?.throwIfAborted()
-  return {catalog,missingCredentialProviders:[...new Set(states.filter((id):id is string=>id!==undefined))]}
+  return {catalog,missingCredentialProviders:[...new Set(states.filter((id):id is string=>id!==undefined))],configuredCredentialProviders:[...new Set(configured)]}
  }catch{signal?.throwIfAborted();return {catalog,missingCredentialProviders:[]}}
 }
 

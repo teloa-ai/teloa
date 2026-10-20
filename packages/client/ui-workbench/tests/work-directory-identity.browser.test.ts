@@ -62,14 +62,14 @@ test('助手目录按本人昵称显示、检索与键盘操作，重命名仍�
  const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__directory_assistant_identity_fixture.tsx'
  const entry=`import React from 'react';import {createRoot} from 'react-dom/client';
  import {WorkDirectory} from '${client}WorkDirectory.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
- import {createDialogueOrganization} from '${client}dialogue-organization.ts';import {ConversationSearch} from '${client}conversation-search.ts';import assistantAvatar from '${client}../brand/companion/icon.webp';
+ import {createDialogueOrganization} from '${client}dialogue-organization.ts';import {ConversationSearch} from '${client}conversation-search.ts';
  import tokens from '${client}theme-tokens.module.css';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';
  Object.entries(prototypeThemes.light).forEach(([key,value])=>document.body.style.setProperty(key,value));document.body.classList.add(tokens.tokens);
  const noop=()=>{},listeners=new Set(),memory=new Map(),organization=createDialogueOrganization({getItem:key=>memory.get(key)??null,setItem:(key,value)=>memory.set(key,value)});
  organization.renameAssistant('小罗同学');
  const make=(id,title,purpose)=>({id:'binding-'+id,ownerId:'owner',title,...purpose?{purpose}:{},scopeIds:['general'],version:1,status:'ready',requestedSessionId:id,sessionId:id,createdAt:'2026-10-12T00:00:00Z'});
  let rows=[make('assistant','Teloa 小松鼠助手','assistant'),make('ordinary','Teloa 小松鼠助手'),make('custom','我的独立话题'),make('employee','原员工话题')],directory={status:'ready',rows};
- const f=window.assistantDirectoryAudit={opens:[],writes:[],moves:[],searches:[],organization,assistantAvatar,original:rows[0],setTopic:title=>{rows=rows.map(row=>row.sessionId==='assistant'?{...row,title}:row);directory={status:'ready',rows};for(const listener of listeners)listener()}};
+ const f=window.assistantDirectoryAudit={opens:[],writes:[],moves:[],searches:[],organization,original:rows[0],setTopic:title=>{rows=rows.map(row=>row.sessionId==='assistant'?{...row,title}:row);directory={status:'ready',rows};for(const listener of listeners)listener()}};
  const work={subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)},getDirectorySnapshot:()=>directory,openConversation:async row=>{f.opens.push({sessionId:row.sessionId,title:row.title,original:row===rows.find(item=>item.sessionId===row.sessionId)});return 'opened'}};
  const managed={ready:true,baseline:true,archived:[],workspaces:[{workspaceId:'workspace',title:'测试工作区',path:'/fixture',sessionIds:rows.map(row=>row.sessionId)}],pending:{},copyHistory:[],uncertain:[],copies:{}};
  const management={subscribe:()=>noop,getSnapshot:()=>managed,rename:async(...args)=>f.writes.push(args),move:async(...args)=>f.moves.push(args)};
@@ -90,11 +90,8 @@ test('助手目录按本人昵称显示、检索与键盘操作，重命名仍�
  const failures:string[]=[],check=(actual:unknown,expected:unknown,label:string)=>{if(actual!==expected)failures.push(label+': '+JSON.stringify({actual,expected}))}
  check(await assistant.getByRole('button').first().getAttribute('title'),'小罗同学','悬浮名称')
  check(await assistant.getByRole('button',{name:'Conversation actions: 小罗同学',exact:true}).count(),1,'菜单可访问名称')
- check(await assistant.locator('img').count(),1,'共享品牌头像')
- if(await assistant.locator('img').count()){
-  assert.equal(await assistant.locator('img').getAttribute('src'),await page.evaluate(()=>(window as any).assistantDirectoryAudit.assistantAvatar))
-  assert.equal(await assistant.locator('img').getAttribute('alt'),'')
- }
+ check(await assistant.locator('[data-avatar="teloa"]').count(),1,'共享 Teloa 主助手头像（墨黑四角星）')
+ if(await assistant.locator('[data-avatar="teloa"]').count())assert.equal(await assistant.locator('[data-avatar="teloa"]').getAttribute('aria-hidden'),'true')
  assert.equal(await ordinary.getByText('Teloa 小松鼠助手',{exact:true}).count(),1)
  assert.equal(await ordinary.locator('img').count(),0,'普通同名会话不冒认助手')
  await query.fill('小罗同学');await page.waitForFunction(()=>(window as any).assistantDirectoryAudit.searches.includes('小罗同学'))

@@ -1,1 +1,11 @@
 .files{margin:12px 0;display:flex;flex-direction:column;gap:8px;font-size:var(--teloa-font-caption);color:var(--teloa-text);min-width:0}.list{display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow:auto}.card{display:flex;max-width:100%;min-width:0;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface)}.card button{display:flex;align-items:center;gap:7px;min-width:0;border:0;background:transparent;color:var(--teloa-text);padding:9px 10px;font:inherit;cursor:pointer}.card button:first-child{flex:1}.card button:last-child{flex-shrink:0;color:var(--teloa-muted);border-left:1px solid var(--teloa-border)}.card span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card button:hover{background:var(--teloa-hover)}.files p{color:var(--teloa-muted)}
+
+/* 1.0 设计第 52i 屏：本轮产出文件收成一张列表卡——标题行 + 每个文件一行（文件名 / 打开），行间细线。 */
+.files{gap:0;width:min(100%,620px);box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface);overflow:hidden}
+.files>strong{padding:10px 14px;border-bottom:1px solid var(--teloa-border);color:var(--teloa-secondary);font-weight:var(--teloa-weight-regular)}
+.files .list{flex-direction:column;flex-wrap:nowrap;gap:0}
+.files .card{border:0;border-radius:0;background:transparent}
+.files .card+.card{border-top:1px solid var(--teloa-border)}
+.files .card button:first-child{padding:10px 14px;font-size:var(--teloa-font-control);color:var(--teloa-text)}
+.files .card button:last-child{border-left:0;padding:10px 14px;color:var(--teloa-secondary)}
+.files>p{margin:0;padding:8px 14px}

@@ -4,13 +4,16 @@ import type {Conversation} from '@teloa/contract'
 import type {ConversationManagement} from './conversation-management.js'
 import {ComposerPopover} from './ComposerPopover.js'
 import {openDialog} from './dialog-focus.js'
+import {useDialogDismiss} from './use-dialog-dismiss.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {dialogueCopy} from './dialogue-copy.js'
+import base from './dialog-base.module.css'
 import css from './ConversationActions.module.css'
 
 export type ConversationAction='rename'|'copy'|'archive'
-export type ConversationActionTarget={row:Conversation;title:string;blank:boolean;action:ConversationAction}
+/** 归档是 L1 可撤销操作（B8）：菜单直接执行并给撤销回执，不再进入确认弹框；弹框只承接重命名与创建副本。 */
+export type ConversationActionTarget={row:Conversation;title:string;blank:boolean;action:Exclude<ConversationAction,'archive'>}
 const actionKeys={rename:'workDirectory.rename.title',copy:'workDirectory.copy.title',archive:'workDirectory.archive.title'} as const
 
 export function ConversationActionMenu({title,disabled,className,choose,organize,results}:{title:string;disabled:boolean;className?:string|undefined;choose:(action:ConversationAction)=>void;organize?:()=>void;results?:(()=>void)|undefined}){
@@ -30,7 +33,7 @@ export function ConversationActionMenu({title,disabled,className,choose,organize
  </>
 }
 
-export function ConversationActions({target,candidates,management,title,changeTitle,close,open,running=false}:{target:ConversationActionTarget;candidates:readonly {id:string;title:string}[];management:ConversationManagement;title:string;changeTitle:(value:string)=>void;close:()=>void;open:(row:Conversation,signal:AbortSignal)=>Promise<void>;running?:boolean}){
+export function ConversationActions({target,candidates,management,title,changeTitle,close,open}:{target:ConversationActionTarget;candidates:readonly {id:string;title:string}[];management:ConversationManagement;title:string;changeTitle:(value:string)=>void;close:()=>void;open:(row:Conversation,signal:AbortSignal)=>Promise<void>}){
  const {t,locale,dateTime}=useI18n(),heading=useId(),description=useId()
  const ref=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null),cancel=useRef<HTMLButtonElement>(null)
  const state=useSyncExternalStore(management.subscribe,management.getSnapshot)
@@ -38,7 +41,6 @@ export function ConversationActions({target,candidates,management,title,changeTi
  const [historyReady,setHistoryReady]=useState(false),[historyError,setHistoryError]=useState<string>(),[historyOpen,setHistoryOpen]=useState(false)
  const [choices,setChoices]=useState<Record<string,string>>({}),[allowIndependent,setAllowIndependent]=useState<Record<string,boolean>>({})
  const operation=useRef(false),[working,setWorking]=useState(false),opening=useRef<AbortController>(),historyGeneration=useRef(0)
- const backdropStart=useRef(false)
  const id=target.row.sessionId,busy=working||!!state.pending[id],archived=state.archived.includes(id),action=target.action
  const attempts=state.copyHistory.filter(row=>row.sourceSessionId===id),uncertain=state.uncertain.includes(id)
  const canRename=!busy&&state.ready&&!!title.trim()&&title.trim()!==target.title.trim()
@@ -54,13 +56,14 @@ export function ConversationActions({target,candidates,management,title,changeTi
  useEffect(()=>{if(action==='copy')void refreshHistory()},[])
  useEffect(()=>{if(uncertain)setHistoryOpen(true)},[uncertain])
  const done=()=>{if(operation.current||busy)return;if(copy)management.acknowledgeCopy(id,copy.sessionId);close()}
+ const dismissEvents=useDialogDismiss(done,!busy)
  const perform=async(run:()=>Promise<void>)=>{
   if(operation.current||busy||!state.ready||archived)return
   operation.current=true;setWorking(true);setError(undefined);setNotice(undefined)
   try{await run()}catch(error){setError(localizeWorkError(locale,error))}finally{operation.current=false;setWorking(false)}
  }
  const cancelButton=<button ref={cancel} type="button" disabled={busy} onClick={done}>{t('workDirectory.action.cancel')}</button>
- return <dialog ref={ref} className={css.dialog} aria-labelledby={heading} aria-describedby={action==='rename'?undefined:description} aria-busy={busy} onCancel={event=>{event.preventDefault();done()}} onPointerDown={event=>{backdropStart.current=event.target===event.currentTarget}} onClick={event=>{if(backdropStart.current&&event.target===event.currentTarget)done();backdropStart.current=false}}>
+ return <dialog ref={ref} className={base.dialog+' '+css.dialog} aria-labelledby={heading} aria-describedby={action==='rename'?undefined:description} aria-busy={busy} {...dismissEvents}>
   <div className={css.content}>
    <header className={css.header}><h2 id={heading}>{t(actionKeys[action])}</h2><button className={css.close} type="button" aria-label={t('workDirectory.management.close')} disabled={busy} onClick={done}><X size={18}/></button></header>
    {action!=='rename'&&<p className={css.subject} title={target.title}>{target.title}</p>}
@@ -69,12 +72,7 @@ export function ConversationActions({target,candidates,management,title,changeTi
     <form onSubmit={event=>{event.preventDefault();if(canRename)void perform(async()=>{await management.rename(id,title.trim());changeTitle(title.trim());close()})}}>
      <label className={css.field}>{t('workDirectory.rename.label')}<input ref={input} value={title} maxLength={200} disabled={busy} onChange={event=>changeTitle(event.target.value)} required/></label>
      <footer className={css.footer}>{cancelButton}<button className={css.primary} type="submit" disabled={!canRename}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t('workDirectory.rename.save')}</span></button></footer>
-    </form>:action==='archive'?<>
-     <p id={description} className={css.description}>{t('workDirectory.archive.explanation')}</p>
-     <p className={css.description}>{dialogueCopy(locale,'archiveHint')}</p>
-     {running&&<p role="status" className={css.description}>{t('workDirectory.archive.running')}</p>}
-     <footer className={css.footer}>{cancelButton}<button className={css.primary} type="button" disabled={busy||!state.ready||running} onClick={()=>{if(!running)void perform(async()=>{await management.archive(id);close()})}}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t('workDirectory.archive.action')}</span></button></footer>
-    </>:<>
+    </form>:<>
      <p id={description} className={css.description}>{t('workDirectory.copy.description')}</p>
      {target.blank&&<p className={css.description}>{t('workDirectory.copy.blank')}</p>}
      {!historyReady&&!historyError&&<p role="status" className={css.inlineStatus}><LoaderCircle size={14} className={css.spinner}/>{t('workDirectory.copy.checking')}</p>}

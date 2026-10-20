@@ -1,0 +1,16 @@
+/* 输入框停靠条（1.0 设计第 53 屏）：贴在输入框上沿，左右比输入框内缩，底边藏进输入框边框之下。
+   几何沿用 DSH 原生停靠面板的同一组变量（--dsh-composer-side-clearance / -dock-inset / -stack-gap），
+   原生排队条与 Teloa 各停靠条因此同宽、同一贴合方式；不在原生会话外使用时按默认值回退。 */
+.strip{box-sizing:border-box;flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;width:calc(100% - 2 * var(--dsh-composer-side-clearance,16px) - 2 * var(--dsh-composer-dock-inset,8px));max-width:calc(var(--dsh-composer-card-max-width,760px) - 2 * var(--dsh-composer-dock-inset,8px));margin:0 auto calc(0px - var(--dsh-composer-stack-gap,6px) - 3px);padding:9px 16px calc(9px + var(--dsh-composer-stack-gap,6px) + 3px);border:1px solid var(--teloa-border-strong);border-bottom:0;border-radius:10px 10px 0 0;background:var(--teloa-panel);color:var(--teloa-secondary);font-size:13px;line-height:1.5}
+.strip>p{flex:1 1 220px;min-width:0;margin:0;overflow-wrap:anywhere}
+.warn{background:var(--teloa-warn-bg)}
+.danger{background:var(--teloa-danger-bg)}
+/* 停靠条里的动作统一为文字按钮（设计：重试 / 移除 / 切换权限 / 现在启动）。 */
+.strip :is(.strip>button,.strip>p>button,.strip>aside>button){flex:none;min-height:26px;padding:2px 6px;border:0;border-radius:6px;background:transparent;color:var(--teloa-text);font:inherit;font-weight:var(--teloa-weight-heading);cursor:pointer}
+.strip :is(.strip>button,.strip>p>button,.strip>aside>button):hover:not(:disabled){background:var(--teloa-hover)}
+.strip :is(.strip>button,.strip>p>button,.strip>aside>button):disabled{opacity:.55;cursor:default}
+.strip :is(.strip>button,.strip>p>button,.strip>aside>button):focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+/* 能力受限提示复用全站 CapabilityNotice，在停靠条里去掉它自己的外框与外边距。 */
+.strip>aside{flex:1;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font-size:inherit}
+@media(max-width:740px){.strip :is(.strip>button,.strip>p>button,.strip>aside>button){min-height:32px}}
+.strip:empty{display:none}

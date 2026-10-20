@@ -12,23 +12,23 @@ const directory=(tree:ReturnType<typeof render>)=>tree.find(node=>node.type===se
 // 2026-10-14 用户选 B：应用入口改接 MarketAppsDirectory（统一列连接器应用与技能），不再经 MarketCatalogSection
 const apps=(tree:ReturnType<typeof render>)=>tree.find(node=>node.type===appsDirectory)!
 
-test('市场首页即「AI 员工」，主导航只有员工／团队两项，应用是主导航旁的快捷入口，技术资源不再另列高级分类',()=>{
+test('市场首页即「AI 员工」，分类为 全部／员工／团队／应用／技能 五项，技术资源不再另列高级分类',()=>{
  const tree=render('home'),nav=tree.find(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria')!
- assert.deepEqual(nodes(nav).filter(node=>node.type==='button').map(node=>node.children.join('')),['market.primary.employees','market.primary.teams'])
+ // 1.0（2026-10-20 用户定稿）：页签为 全部 / AI 员工 / AI 团队 / 应用 / 技能，不另设「行业模板」
+ assert.deepEqual(nodes(nav).filter(node=>node.type==='button').map(node=>node.children.join('')),['market.primary.all','market.primary.employees','market.primary.teams','market.apps.title','market.presentation.category.skill'])
  assert.deepEqual(directory(tree).props.kinds,['role','solution'])
  assert.equal(directory(tree).props.presentation,'employees')
  assert.equal(!!directory(tree).props.sidebar,false)
  assert.equal(tree.some(node=>node.props['aria-label']==='market.primary.advancedAria'),false)
  assert.equal(tree.some(node=>node.type==='summary'&&node.children.includes('market.primary.more')),false)
- // 应用是主导航旁的快捷入口：不与员工／团队同级进主导航，也不再收进高级资源组；点击进入统一应用目录：连接器应用与技能同列，官方目录分区不再出现
+ // 1.0：应用并入市场，是与员工／团队并列的分类页签，不另设快捷入口；点击进入统一应用目录：连接器应用与技能同列，官方目录分区不再出现
  const shortcut=(tree:ReturnType<typeof render>)=>tree.filter(node=>node.type==='button'&&node.props.className==='appsShortcut')
- const appsButtons=shortcut(tree)
- assert.equal(appsButtons.length,1);assert.deepEqual(appsButtons[0]!.children,['market.apps.title'],'快捷入口与统一目录同名「应用」');assert.equal(appsButtons[0]!.props['aria-current'],undefined)
- assert.equal(nodes(nav).some(node=>node.props.className==='appsShortcut'||node.children.includes('market.apps.title')||node.children.includes('market.primary.apps')),false)
+ assert.equal(shortcut(tree).length,0,'不再有分类旁的应用快捷入口')
+ const tab=(tree:ReturnType<typeof render>)=>nodes(tree.find(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria')!).find(node=>node.type==='button'&&node.children.includes('market.apps.title'))!
+ assert.equal(tab(tree).props['aria-current'],undefined)
  const appsTree=render('apps')
- assert.equal(shortcut(appsTree).length,0,'进入应用后不重复市场入口')
- assert.equal(appsTree.some(node=>node.type==='h1'&&node.children.includes('market.title')),false,'应用没有外层市场标题')
- assert.equal(appsTree.some(node=>node.type==='nav'&&node.props['aria-label']==='market.category.aria'),false,'应用不重复员工市场的分类')
+ assert.equal(tab(appsTree).props['aria-current'],'page','进入应用后「应用」页签选中')
+ assert.equal(appsTree.some(node=>node.type==='h1'&&node.children.includes('market.title')),true,'应用保留市场标题')
  assert.equal(appsTree.some(node=>node.type===section),false,'Apps 页不再渲染官方目录分区')
  const props=apps(appsTree).props
  assert.equal(props.catalogApi,marketCatalogApi)

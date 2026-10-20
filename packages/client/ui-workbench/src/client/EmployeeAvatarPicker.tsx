@@ -1,31 +1,38 @@
-import {useState,type KeyboardEvent} from 'react'
-import {Check} from 'lucide-react'
-import clsx from 'clsx'
+import {useId,type KeyboardEvent} from 'react'
 import type {RoleAvatarKey} from '@teloa/contract'
 import {EmployeeAvatar} from './EmployeeAvatar.js'
-import {employeeAvatars,employeeAvatarName} from './employee-avatars.js'
+import {botColors} from './bot-avatar.js'
+import {avatarShapes,avatarColors,avatarKeyOf,avatarChoice,avatarShapeName,avatarColorName,employeeAvatarName} from './employee-avatars.js'
 import {employeeCopy} from './employee-copy.js'
 import {useI18n} from './i18n/provider.js'
-// 与 TeamPage/EmployeeProfileEditor 同序：页面基础样式先于团队样式进入包，保持 .segment/.avatarOption 的层叠不变。
+// 与 TeamPage/EmployeeProfileEditor 同序：页面基础样式先于团队样式进入包，保持按钮基础样式与头像选项的层叠不变。
 import './TaskPage.module.css'
 import css from './TeamPage.module.css'
 
-/** 员工形象的唯一选择方式：内置形象网格（搜索 + 单选组 + 方向键），新建、完整编辑与轻量编辑共用；只回传 avatarKey，不做保存。 */
-export function EmployeeAvatarPicker({value,onChange}:{value:RoleAvatarKey|undefined;onChange:(key:RoleAvatarKey)=>void}){
- const {locale}=useI18n(),[query,setQuery]=useState(''),current=value??'general'
- const choices=employeeAvatars.filter(item=>[item.zh,item.en,employeeAvatarName(item.key,locale)].some(text=>text.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())))
- const focusExists=choices.some(item=>item.key===current)
- const move=(event:KeyboardEvent<HTMLButtonElement>,index:number)=>{
-  const last=choices.length-1
-  const next=event.key==='ArrowRight'||event.key==='ArrowDown'?(index+1)%(last+1):event.key==='ArrowLeft'||event.key==='ArrowUp'?(index+last)%(last+1):event.key==='Home'?0:event.key==='End'?last:undefined
-  if(next===undefined)return
-  event.preventDefault();onChange(choices[next]!.key)
-  event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[next]?.focus()
- }
- return <>
-  <label>{employeeCopy(locale,'avatar')}<input value={query} onChange={event=>setQuery(event.target.value)} placeholder={employeeCopy(locale,'avatarSearch')}/></label>
-  <div className={css.avatarGrid} role="radiogroup" aria-label={employeeCopy(locale,'avatar')}>
-   {choices.map((item,index)=><button key={item.key} type="button" role="radio" aria-checked={current===item.key} aria-label={employeeAvatarName(item.key,locale)} tabIndex={current===item.key||!focusExists&&index===0?0:-1} onKeyDown={event=>move(event,index)} className={clsx(css.avatarOption,current===item.key&&css.lookPicked)} onClick={()=>onChange(item.key)}><EmployeeAvatar avatarKey={item.key} size="lg"/>{current===item.key&&<span className={css.avatarSelected} aria-hidden="true"><Check size={13}/></span>}<small>{employeeAvatarName(item.key,locale)}</small></button>)}
-  </div>{!choices.length&&<p role="status">{employeeCopy(locale,'noAvatars')}</p>}
- </>
+/** 单选组方向键：左右/上下循环，Home/End 到首尾；选中即回传并把焦点移到新项。 */
+function arrowSelect(event:KeyboardEvent<HTMLButtonElement>,index:number,count:number,pick:(index:number)=>void){
+ const last=count-1
+ const next=event.key==='ArrowRight'||event.key==='ArrowDown'?(index+1)%count:event.key==='ArrowLeft'||event.key==='ArrowUp'?(index+last)%count:event.key==='Home'?0:event.key==='End'?last:undefined
+ if(next===undefined)return
+ event.preventDefault();pick(next)
+ event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[next]?.focus()
+}
+
+/**
+ * 员工形象的唯一选择方式（新建、完整编辑与轻量编辑共用）：大预览 + 名字，下面形状一行、色板一行，自由组合 12 × 9。
+ * 组合等于某个预设时回传预设键（旧版本也能读），否则回传 `bot:<shape>:<color>`；未改动时不回传，保持「未设置」。只回传值，不做保存。
+ */
+export function EmployeeAvatarPicker({value,name,onChange}:{value:RoleAvatarKey|undefined;name?:string|undefined;onChange:(key:RoleAvatarKey)=>void}){
+ const {locale}=useI18n(),id=useId(),{shape,color}=avatarChoice(value)
+ return <div className={css.avatarPicker} role="group" aria-label={employeeCopy(locale,'avatar')}>
+  <div className={css.avatarPreview}><EmployeeAvatar avatarKey={value} size="xl"/><strong>{name?.trim()||employeeCopy(locale,'avatarUnnamed')}</strong><small>{employeeAvatarName(value,locale)}</small></div>
+  <div className={css.avatarField}><span id={id+'shape'}>{employeeCopy(locale,'avatarShape')}</span>
+  <div className={css.avatarShapes} role="radiogroup" aria-labelledby={id+'shape'}>
+   {avatarShapes.map((item,index)=><button key={item} type="button" role="radio" aria-checked={shape===item} aria-label={avatarShapeName(item,locale)} title={avatarShapeName(item,locale)} tabIndex={shape===item?0:-1} onKeyDown={event=>arrowSelect(event,index,avatarShapes.length,next=>onChange(avatarKeyOf(avatarShapes[next]!,color)))} className={css.avatarShape} onClick={()=>onChange(avatarKeyOf(item,color))}><EmployeeAvatar avatarKey={avatarKeyOf(item,color)} size="sm"/></button>)}
+  </div></div>
+  <div className={css.avatarField}><span id={id+'color'}>{employeeCopy(locale,'avatarColor')}</span>
+  <div className={css.avatarColors} role="radiogroup" aria-labelledby={id+'color'}>
+   {avatarColors.map((item,index)=><button key={item} type="button" role="radio" aria-checked={color===item} aria-label={avatarColorName(item,locale)} title={avatarColorName(item,locale)} tabIndex={color===item?0:-1} onKeyDown={event=>arrowSelect(event,index,avatarColors.length,next=>onChange(avatarKeyOf(shape,avatarColors[next]!)))} className={css.avatarSwatch} style={{background:botColors[item]}} onClick={()=>onChange(avatarKeyOf(shape,item))}/>)}
+  </div></div>
+ </div>
 }

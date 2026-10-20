@@ -24,14 +24,14 @@ test('工作台次级页面仍高亮工作台并保留待办提示，不重复�
  }
 })
 
-test('四个工作台次级入口保持原视图身份、单一选中项与完整待办计数',()=>{
+test('四个工作台次级入口保持原视图身份与单一选中项；待办数量只在侧栏与首页卡片出现',()=>{
  for(const [view,label] of [['home','总览'],['attention','需要你'],['tasks','任务'],['plans','自动化']]){
-  const html=renderToStaticMarkup(createElement(I18nProvider,{runtime:runtime as never},createElement(WorkbenchHubNavigation,{view:view as never,onSelect:()=>{},needCount:17})))
+  const html=renderToStaticMarkup(createElement(I18nProvider,{runtime:runtime as never},createElement(WorkbenchHubNavigation,{view:view as never,onSelect:()=>{}})))
   assert.match(html,/<nav[^>]*aria-label="工作台"/)
   assert.equal(html.match(/aria-current="page"/g)?.length,1)
   assert.match(html,new RegExp('<button[^>]*aria-current="page"[^>]*>'+label))
   assert.equal(html.match(/<button/g)?.length,4)
-  assert.match(html,/>17</)
+  assert.doesNotMatch(html,/class="count"/,'1.0 页签不重复角标')
  }
  const html=renderToStaticMarkup(createElement(I18nProvider,{runtime:runtime as never},createElement(WorkbenchHubNavigation,{view:'messages',onSelect:()=>{}})))
  assert.equal(html,'','普通会话与业务页面不混入工作台导航')

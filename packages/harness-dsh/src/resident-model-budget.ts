@@ -9,7 +9,7 @@ import type {createNativeWorkInput} from './native-work-input.ts'
 import {readSessionEvents} from './session-events.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 
-type Position={sessionId:string;turn:number;step:number}
+type Position={sessionId:string;turn:number;step:number;reviewCallId?:string}
 export type ResidentRoutingBudget={budgetAccountId:string|null;controlGeneration:number;operationId:string;lease:WorkAccessLease}
 type Options={owner:string;pool:TaskRunService['pool'];identity:{id:()=>string;now:()=>string};runs:()=>Promise<TaskRunService>;controls:WorkControlService;budgets:WorkBudgetService;resolveRun:(sessionId:string)=>Promise<TaskRun|null>;resolveRouting?:(sessionId:string)=>Promise<ResidentRoutingBudget|null>;nativeInput:Pick<ReturnType<typeof createNativeWorkInput>,'modelPosition'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'hasAuxiliaryModelAdmission'>>;report:(code:string)=>void}
 type Attempt={run:TaskRun;tokens:number;role:WorkAccessLease}
@@ -88,7 +88,7 @@ function openCompaction(events:readonly SessionEvent[],turn:number):string|null{
  */
 export function modelOperationId(events:readonly SessionEvent[],position:Position,run:string,request:Pick<GenerateOptions,'purpose'|'provider'|'model'>):string{
  const compaction=openCompaction(events,position.turn)
- return 'model:'+digest([run,position.sessionId,position.turn,operationStep(events,position),request.purpose??null,request.provider,request.model,...compaction===null?[]:[compaction]])
+ return 'model:'+digest([run,position.sessionId,position.turn,operationStep(events,position),request.purpose??null,request.provider,request.model,...compaction===null?[]:[compaction],...position.reviewCallId===undefined?[]:[position.reviewCallId]])
 }
 function operationStep(events:readonly SessionEvent[],position:Position):number{
  const tail=[...events].reverse().find(e=>e.type==='llm/retry-started'||e.type==='assistant/message'||e.type==='turn/start')
@@ -127,7 +127,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   if(!count(tokens))throw unavailable()
   if(routing){
    routing.lease.assertCurrent();request.signal?.throwIfAborted()
-   const modelRequestId='routing:'+digest([routing.operationId,position.sessionId,position.turn,operationStep(positionEvents(ctx,position),position),request.provider,request.model])
+   const modelRequestId='routing:'+digest([routing.operationId,position.sessionId,position.turn,operationStep(positionEvents(ctx,position),position),request.provider,request.model,...position.reviewCallId===undefined?[]:[position.reviewCallId]])
    const reservation=await reserveOrExplain(()=>routing.budgetAccountId===null?budgets.reserveOwnerRouting(owner,{modelRequestId,tokens}):budgets.reserve(owner,{budgetAccountId:routing.budgetAccountId,controlGeneration:routing.controlGeneration,modelRequestId,kind:'routing',tokens,rounds:0}))
    const lease=combineWorkAccessLeases([routing.lease,budgets.lease(owner,reservation)])
    let dispatched=false,usage:number|null=null,finish:ModelFinish|undefined,streamActivitySeen=false

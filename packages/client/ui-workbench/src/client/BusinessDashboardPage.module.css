@@ -80,3 +80,8 @@
  .pipeline li{grid-template-columns:minmax(0,1fr) auto}
  .pipeline .bar{grid-column:1/-1;grid-row:2}
 }
+
+/* 1.0 看板空态（设计 60f）：虚线卡、图标方块、说明与唯一主按钮。 */
+.emptyBoard.emptyBoard{align-items:center;text-align:center;gap:10px;padding:48px 24px;border:1px dashed var(--teloa-border-strong);border-radius:12px;background:var(--teloa-background)}.emptyBoard h2{margin:4px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading)}.emptyBoard p{max-width:360px;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+.emptyIcon{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--teloa-subtle);color:var(--teloa-muted)}
+.emptyBoard .emptyPrimary{margin-top:4px;background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary)}

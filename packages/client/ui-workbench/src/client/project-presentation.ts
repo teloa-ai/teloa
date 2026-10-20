@@ -18,3 +18,11 @@ export function referenceScopeName(ref:{scope:string},labels:readonly BusinessSc
 export const projectStateKeys={planning:'project.state.planning',running:'project.state.running',review:'project.state.review',completed:'project.state.completed',archived:'project.state.archived'} as const
 export const projectKindKeys={task:'project.kind.task',group:'project.groups',role:'project.kind.role',plan:'project.plans',resource:'project.resources',artifact:'project.artifacts'} as const
 export const projectItemStateKeys={ready:'status.ready',running:'project.state.running',paused:'composition.state.paused',waiting:'attention.review',blocked:'status.blocked',completed:'project.state.completed',cancelled:'status.cancelled',active:'project.item.active',saved:'project.item.saved',archived:'project.state.archived',retired:'project.item.unavailable',withdrawn:'project.item.unavailable'} as const
+/** 卡片与详情的目标摘要：新建时首行常是与名称相同的 Markdown 标题，去掉后只留正文；其余标题记号也去掉。 */
+export function projectGoalText(project:Pick<ProjectDefinition,'title'|'goal'>){
+ const lines=project.goal.split(/\r?\n/).map(line=>line.replace(/^#{1,6}\s+/,'').trim()).filter(Boolean)
+ if(lines[0]===project.title.trim())lines.shift()
+ return lines.join('\n')
+}
+const copy={overviewLead:['跨业务查看所有项目','跨業務查看所有專案','Projects across all businesses'],count:['{count} 个','{count} 個','{count}'],created:['创建于 {date}','建立於 {date}','Created {date}'],related:['关联','關聯','Related']} as const
+export function projectCopy(locale:string,key:keyof typeof copy){return copy[key][locale.startsWith('zh')?(/Hant|TW|HK/i.test(locale)?1:0):2]}

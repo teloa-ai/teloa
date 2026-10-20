@@ -16,6 +16,10 @@ export type TaskCompletionVerifierPorts={
 }
 const sha=(value:string)=>createHash('sha256').update(value).digest('hex')
 const refuse=(reason:string):CompletionVerification=>({verified:false,reason,receiptIds:[]})
+/** 自动结项与正式成果共用严格正文契约，包括必填的说明。 */
+export function systemDigestArtifactContent(title:string,log:Pick<RoleDailyLogCompletionEvidence['log'],'day'|'markdown'>):ArtifactContent{
+ return artifactContent({title,sections:[{id:'daily-digest',title:log.day,text:log.markdown}],snapshotIds:[],note:'员工每日日志'})
+}
 export function materialVersionSummaryRequestId(ownerId:string,runId:string):string{
  const digest=sha(JSON.stringify(['teloa-material-version-summary/v1',ownerId,runId]))
  return `${digest.slice(0,8)}-${digest.slice(8,12)}-5${digest.slice(13,16)}-a${digest.slice(17,20)}-${digest.slice(20,32)}`

@@ -1,11 +1,11 @@
 .note{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}
 .actions,.formActions,.permissionActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.actions button,.editor button{box-sizing:border-box;min-height:38px;padding:8px 14px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);line-height:1.5;cursor:pointer}
+.actions button,.editor button{box-sizing:border-box;min-height:38px;padding:8px 14px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);line-height:1.5;cursor:pointer}.actions button{min-height:32px;padding:5px 12px;border-color:var(--teloa-border-strong);border-radius:8px}
 .actions button:hover:not(:disabled),.editor button:hover:not(:disabled){background:var(--teloa-hover)}
 .actions button:disabled,.editor button:disabled{opacity:.45;cursor:default}
-.editor .primary{border-color:transparent;background:var(--teloa-accent);color:var(--teloa-on-accent)}
-.editor .primary:hover:not(:disabled){background:var(--teloa-accent);filter:brightness(.94)}
-.editor{display:flex;min-width:0;flex-direction:column;gap:24px;padding:24px;box-sizing:border-box;color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body)}
+.editor .primary{border-color:transparent;background:var(--teloa-primary);color:var(--teloa-on-primary)}
+.editor .primary:hover:not(:disabled){background:var(--teloa-primary);filter:brightness(.94)}
+.editor{display:flex;min-width:0;flex-direction:column;gap:20px;padding:20px;box-sizing:border-box;color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body)}
 .editor p,.editor h3{margin:0}
 .connection{display:flex;align-items:center;gap:12px;min-width:0}
 .connection>div{min-width:0;display:grid;gap:3px}
@@ -41,3 +41,6 @@
 .actions button:focus-visible,.editor :is(button,input,a,summary):focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
 @media(max-width:600px){.editor{padding:20px}.formActions,.permissionActions{gap:10px}.formActions .saved{flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){.details summary svg{transition:none}}
+/* 紧凑抽屉（1.0 设计 71i）里标题是 15/600：分节标题降到 14/600 保持层级，首节不再在页头分隔线下重复画线。 */
+.editor .section h3,.editor .sectionHeading h3{font-size:var(--teloa-font-body)}
+.editor>.section:first-child{padding-top:0;border-top:0}

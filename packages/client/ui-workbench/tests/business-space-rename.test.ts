@@ -63,7 +63,9 @@ test('改名表单把失败留在原地：表单不自行关闭；业务范围�
  const submitBody=form.slice(form.indexOf('const submit=async()=>{'),form.indexOf('return <dialog'))
  assert.ok(submitBody.includes('submitBusinessSpaceRename'),'截取到的必须是提交路径')
  assert.doesNotMatch(submitBody,/\bclose\b/,'提交路径里不能自行关闭表单')
- assert.match(form,/onCancel=\{close\}/)
+ // B7：轻窗口统一外点关闭，Esc 与外点走共享 hook；保存中不关，关闭只收起并按原版本保留草稿。
+ assert.match(form,/dismissEvents=useDialogDismiss\(close,!busy\)/)
+ assert.match(form,/\{\.\.\.dismissEvents\}/)
  assert.equal([...form.matchAll(/onClick=\{close\}/g)].length,2,'关闭只挂在标题栏关闭与取消两个按钮上')
  // 第二期：范围内页页头摘掉「管理」菜单之后，个人版界面上不再有改名入口——
  // 提交路径的「失败留在原地」由表单自己保证，业务页这一侧只剩「不再托管改名表单」这一条。

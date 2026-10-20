@@ -228,7 +228,7 @@ test('顶部分类直接切换，窄屏目录也始终可切换类型',async()=>
   assert.ok(nav,'核对市场分类导航自身，而非其他目录的按钮')
   assert.match(nav,/selectKind\('employees'\)/)
   assert.match(nav,/selectKind\('teams'\)/)
-  assert.doesNotMatch(nav,/selectKind\('apps'\)/)
+  assert.match(nav,/selectKind\('apps'\)/,'1.0：应用并入市场分类')
   assert.doesNotMatch(source,/market\.primary\.more/)
   assert.doesNotMatch(nav,/<select|tabItems/)
   assert.doesNotMatch(source,/market\.solution\.itemType/)

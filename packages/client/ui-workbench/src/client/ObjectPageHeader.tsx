@@ -1,6 +1,6 @@
 import {useEffect,useId,useRef,useState,type KeyboardEvent,type ReactNode} from 'react'
 import {ArrowLeft,ArrowUpRight,ChevronRight,Ellipsis,Pencil,UserRound} from 'lucide-react'
-import {StatusLabel} from './StatusLabel.js'
+import {StatusPill} from './StatusPill.js'
 import clsx from 'clsx'
 import type {StatusMark} from './status-presentation.js'
 import {useDismissible} from './use-dismissible.js'
@@ -9,7 +9,7 @@ import css from './ObjectPage.module.css'
 export type ObjectMenuItem={id:string;label:string;onSelect:()=>void;disabled?:boolean}
 export type ObjectBadge={id:string;label:string;onOpen?:()=>void}
 
-/** 对象页页头：返回、标题（可点开编辑）、状态标记、对象属性、负责人与 ··· 菜单（`role="menu"`，↑↓/Home/End/Esc 可达）。 */
+/** 对象页页头：返回、标题（可点开编辑）、状态胶囊（status.mark 保留给调用方兼容，胶囊只显示文字）、对象属性、负责人与 ··· 菜单（`role="menu"`，↑↓/Home/End/Esc 可达）。 */
 export function ObjectPageHeader(props:{
  title:string;onEditTitle?:()=>void;editTitleLabel?:string
  status:{label:string;tone:'info'|'warn'|'good'|'muted';mark?:StatusMark}
@@ -59,7 +59,7 @@ export function ObjectPageHeader(props:{
    </div>}
   </div>
   <div className={css.badges}>
-   <StatusLabel {...status}/>
+   <StatusPill tone={status.tone}>{status.label}</StatusPill>
    {badges?.map(badge=>badge.onOpen?<button key={badge.id} type="button" className={css.objectLink} onClick={badge.onOpen}>{badge.label}<ChevronRight size={12} aria-hidden="true"/></button>:<span key={badge.id} className={css.metadata}>{badge.label}</span>)}
    {owner&&<span className={css.owner}><UserRound size={13} aria-hidden="true"/>{owner.label}{owner.onOpen?<button type="button" onClick={owner.onOpen}>{owner.name}<ArrowUpRight size={12}/></button>:<strong>{owner.name}</strong>}</span>}
    {meta&&<small className={css.muted}>{meta}</small>}

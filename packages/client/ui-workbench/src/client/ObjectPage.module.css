@@ -13,12 +13,6 @@
 .titleButton>svg{flex:none;color:var(--teloa-muted);opacity:0;transition:opacity .12s}
 .titleButton:hover>svg,.titleButton:focus-visible>svg{opacity:1}
 .badges{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
-.badge{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--teloa-border);border-radius:999px;padding:3px 10px;font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-text);background:var(--teloa-surface)}
-.badge.info{border-color:var(--teloa-info);color:var(--teloa-info);background:var(--teloa-info-bg)}
-.badge.warn{border-color:var(--teloa-warn);color:var(--teloa-warn);background:var(--teloa-warn-bg)}
-.badge.good{border-color:var(--teloa-good);color:var(--teloa-good);background:var(--teloa-good-bg)}
-.badge.muted{border-color:var(--teloa-border);color:var(--teloa-muted);background:var(--teloa-subtle)}
-.header button.badge{border-radius:999px;padding:3px 10px;min-height:0;font-size:var(--teloa-font-caption)}
 .owner{display:inline-flex;align-items:center;gap:5px}
 .owner strong{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .owner button{border:0!important;background:transparent!important;padding:0!important;min-height:0!important;color:var(--teloa-text)!important;font-weight:var(--teloa-weight-medium);font-size:var(--teloa-font-caption)!important}
