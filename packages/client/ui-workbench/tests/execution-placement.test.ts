@@ -123,7 +123,8 @@ async function settingsSections(){
   if(id==='./main-session.js')return {mainSessionSource:()=>({})}
   if(id==='@deepseek-ai/dsh-brand')return {brandString:(value:unknown)=>value}
   if(id==='@deepseek-ai/dsh-client-ui-slots')return {resolveSlotLabel:(value:unknown)=>value}
-  if(['./LocalModelsSettings.js','./SettingsShell.js','./WorkspaceSettings.js','./ImChannelsSettingsPage.js'].includes(id))return new Proxy({},{get:(_,key)=>key==='__esModule'?false:function Component(){return null}})
+  if(id==='./i18n/locale.js')return {resolveProductLocale:()=> 'zh-CN'}
+  if(['./LocalModelsSettings.js','./EmployeeIntegrationSettings.js','./SettingsShell.js','./WorkspaceSettings.js','./ImChannelsSettingsPage.js'].includes(id))return new Proxy({},{get:(_,key)=>key==='__esModule'?false:function Component(){return null}})
   throw Error('unexpected import '+id+' from settings-integration.ts')
  }
  new Function('require','exports',ts.transpileModule(read('settings-integration.ts'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText)(require,exported)

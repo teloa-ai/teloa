@@ -77,6 +77,8 @@ test('三选可用性矩阵：各实体 × hasForm/hasMarket 的组合逐格对�
   'share/false/true':'sentence+market','share/true/true':'sentence+market',
   'plan/false/false':'sentence','plan/true/false':'sentence+form',
   'plan/false/true':'sentence+market','plan/true/true':'sentence+form+market',
+  'app/false/false':'sentence','app/true/false':'sentence+form',
+  'app/false/true':'sentence+market','app/true/true':'sentence+form+market',
  })
 })
 
