@@ -37,7 +37,7 @@ function entityValue(value:unknown):PageCreateEntity{
 // 但它终究会被当成 `industry-loads.ts`/`content-store.ts` 里的范围键，键格式必须先在这里挡住。
 const scopeKeyPattern=/^[a-zA-Z0-9_-]{1,64}$/
 function requireScope(entity:PageCreateEntity,scope:unknown):string|undefined{
- if(entity==='role'||entity==='skill'||entity==='extension'||entity==='share'||entity==='plan'){
+ if(entity==='role'||entity==='skill'||entity==='extension'||entity==='share'||entity==='plan'||entity==='app'){
   if(scope!==undefined)throw invalid('此类新建草案不接受业务范围。')
   return undefined
  }
@@ -51,6 +51,7 @@ function titleOf(entity:PageCreateEntity,value:unknown):string{
  const row=value as Record<string,unknown>
  const title=entity==='plan'?('definition' in row?(row.definition as Record<string,unknown>)?.title:(row.fields as Record<string,unknown>|undefined)?.title??'计划配置')
   :entity==='share'?(row.package as Record<string,unknown>|undefined)?.title
+  :entity==='app'?(row.definition as Record<string,unknown>|undefined)?.title
   :entity==='role'?row.name
   :entity==='extension'?typeof row.packageName==='string'&&typeof row.version==='string'?row.packageName+' @ '+row.version:undefined
    :entity==='business-domain'?((row.manifest as Record<string,unknown>|undefined)?.title)
@@ -86,7 +87,7 @@ function storedDraft(row:Record<string,unknown>,readers:PageCreateReaders):PageC
 export async function initializePageCreateDrafts(pool:Pool):Promise<void>{
  await pool.query(`create table if not exists teloa_page_create_drafts (
   owner_id text not null,id uuid not null,request_id uuid not null,
-  entity text not null check(entity in ('business-definition','business-domain','role','skill','connector','extension','share','plan')),
+  entity text not null check(entity in ('business-definition','business-domain','role','skill','connector','extension','share','plan','app')),
   scope_id text,title text not null,body text not null,body_hash text not null check(body_hash~'^[a-f0-9]{64}$'),
   status text not null check(status in ('draft','applied','discarded')),applied_ref text,
   created_at timestamptz not null,updated_at timestamptz not null,
@@ -102,7 +103,7 @@ export async function initializePageCreateDrafts(pool:Pool):Promise<void>{
   primary key(owner_id,request_id),foreign key(owner_id,draft_id) references teloa_page_create_drafts(owner_id,id)
  )`)
  const constraint=(await pool.query("select pg_get_constraintdef(oid) definition from pg_constraint where conrelid='teloa_page_create_drafts'::regclass and conname='teloa_page_create_drafts_entity_check'")).rows[0]?.definition
- if(typeof constraint!=='string'||!constraint.includes("'plan'"))await pool.query("alter table teloa_page_create_drafts drop constraint if exists teloa_page_create_drafts_entity_check, add constraint teloa_page_create_drafts_entity_check check(entity in ('business-definition','business-domain','role','skill','connector','extension','share','plan'))")
+ if(typeof constraint!=='string'||!constraint.includes("'app'"))await pool.query("alter table teloa_page_create_drafts drop constraint if exists teloa_page_create_drafts_entity_check, add constraint teloa_page_create_drafts_entity_check check(entity in ('business-definition','business-domain','role','skill','connector','extension','share','plan','app'))")
 }
 
 export class PageCreateDraftService{

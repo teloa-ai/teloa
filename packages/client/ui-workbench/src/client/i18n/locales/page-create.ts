@@ -12,6 +12,22 @@
 /** 新增词条只定稿三语，其余列使用英文回退。 */
 const fallbackRow=<K extends string>(key:K,cn:string,tw:string,en:string):readonly[K,string,string,string,string,string,string,string,string,string,string]=>[key,cn,tw,en,en,en,en,en,en,en,en]
 const rows = [
+ fallbackRow('create.entity.app','自定义应用连接','自訂應用程式連線','Custom app connection'),
+ fallbackRow('create.sentence.placeholder.mcpApp','接入我的日志服务，地址是 https://mcp.example.com/mcp，使用 API Key 认证。这里不填写密钥。','連接我的日誌服務，網址是 https://mcp.example.com/mcp，使用 API Key 驗證。請勿在此填寫金鑰。','Connect my log service at https://mcp.example.com/mcp using an API key. Do not enter credentials here.'),
+ fallbackRow('create.next.app','核对连接后填写认证，添加并连接','核對連線後填寫驗證資料，加入並連接','Check the connection, enter credentials, then add and connect'),
+ fallbackRow('create.app.url','连接地址','連線網址','Connection URL'),
+ fallbackRow('create.app.credentialsHint','认证值仅保存到本机加密存储。不要把密钥发到会话或草稿。','驗證資料只儲存於本機加密儲存區。請勿把金鑰傳送至對話或草稿。','Credentials are saved only in local encrypted storage. Keep secrets out of conversations and drafts.'),
+ fallbackRow('create.app.existingAuth','已保存认证；留空可沿用，填写全部字段可更新。','已儲存驗證資料；留空可沿用，填寫全部欄位可更新。','Authorization is saved. Leave fields empty to reuse it, or fill every field to update it.'),
+ fallbackRow('create.app.optionalBearer','访问令牌（可选）','存取權杖（選填）','Access token (optional)'),
+ fallbackRow('create.app.readOnly','本人确认只读的工具','本人確認為唯讀的工具','Tools I confirm are read-only'),
+ fallbackRow('create.app.permissionHint','工具来自实际服务发现。连接不会自动增加员工权限，未确认只读的工具仍按当前会话模式审批。','工具由實際服務探索取得。連線不會自動增加員工權限；未確認唯讀的工具仍按目前對話模式審批。','Tools come from live discovery. Connecting does not expand employee permissions. Other tools follow the current conversation approval mode.'),
+ fallbackRow('create.app.connected','已连接，发现 {count} 个工具','已連接，找到 {count} 個工具','Connected; discovered {count} tools'),
+ fallbackRow('create.app.connect','添加并连接 / 更新连接','加入並連接／更新連線','Add and connect / Update connection'),
+ fallbackRow('create.app.disconnect','断开连接','中斷連線','Disconnect'),
+ fallbackRow('create.app.remove','删除连接','刪除連線','Delete connection'),
+ fallbackRow('create.app.confirmRemove','确认删除连接与认证','確認刪除連線及驗證資料','Confirm deletion of connection and credentials'),
+ fallbackRow('create.app.retry','重新读取','重新讀取','Read again'),
+ fallbackRow('create.app.shareTemplate','制作可分享的应用模板','製作可分享的應用程式範本','Create a shareable app template'),
  fallbackRow('create.employee.prompt.scope','新员工默认归属「{name}」（业务键 {scope}），把它写进员工正文的 scopes；员工草案工具仍不传顶层 scope。名称、岗位与必要边界先按这段说明拟成可审阅草案，仅缺少必需信息时补问；不安装应用、不授予新权限、不自动执行。','新員工預設歸屬「{name}」（業務鍵 {scope}），把它寫入員工正文的 scopes；員工草案工具仍不傳頂層 scope。名稱、職責與必要界線先按這段說明擬成可供核對的草案，僅欠缺必要資料時補問；不安裝應用程式、不授予新權限、不自動執行。','Default the new employee to {name} (business key {scope}) in the employee body’s scopes; do not pass a top-level scope to the employee draft tool. Propose a reviewable name, role and necessary boundaries from this description. Ask only for missing required information. Do not install apps, grant new permissions or start work.'),
  fallbackRow('create.revise','在会话中修改','在對話中修改','Edit in conversation'),
  fallbackRow('create.revise.failed','原创建会话暂不可用或草稿已变化。原草稿已保留，请重新核对。','原建立對話暫時無法使用或草稿已變更。原草稿已保留，請重新核對。','The original conversation is unavailable or the draft changed. Your draft is preserved; check it again.'),

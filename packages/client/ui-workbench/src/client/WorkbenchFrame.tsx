@@ -113,6 +113,7 @@ import {WorkAttentionSourceView,type WorkAttentionOriginalSource} from './WorkAt
 import type {CreateEntryProps} from './CreateEntry.js'
 import {ExtensionCreateEntry} from './ExtensionCreateEntry.js'
 import {PageCreateShareConfirmation} from './PageCreateShareConfirmation.js'
+import {CustomMcpAppConfirmation} from './CustomMcpAppEntry.js'
 import {applyPageCreatedBusinessDefinition} from './page-create-business-definition.js'
 import {roleWriteDefinition} from '@teloa/contract'
 import type {ArtifactApi} from './artifact-api.js'
@@ -1387,6 +1388,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     else if(source.entity==='skill')creation={onConfirm:confirmPageCreateSkill,afterConfirm:openConfirmedPageCreateSkill}
     else if(source.entity==='extension')creation={renderConfirmation:({preview,apply})=><ExtensionCreateEntry preview={preview} api={marketPluginInstallApi} apply={apply}/>}
     else if(source.entity==='share')creation={renderConfirmation:({preview,apply})=><PageCreateShareConfirmation preview={preview} apply={apply} api={pageCreateApi} confirmed={()=>{finishAttentionSource(source);void workAttention.reload()}}/>}
+    else if(source.entity==='app'&&managedMcpConnectionApi)creation={renderConfirmation:({preview,apply})=><CustomMcpAppConfirmation key={preview.draft.id+preview.draft.bodyHash} api={managedMcpConnectionApi} preview={preview} active apply={async id=>{await apply(id);finishAttentionSource(source);void workAttention.reload()}}/>}
     else if(source.entity==='connector'&&source.scope)creation={onConfirm:preview=>confirmPageCreateConnector(source.scope!,preview),afterConfirm:openConfirmedPageCreateConnector}
     else if(source.entity==='business-domain')creation={onConfirm:confirmPageCreateBusinessDomain,afterConfirm:openConfirmedPageCreateBusinessDomain}
     else if(source.entity==='business-definition'&&source.scope)creation={

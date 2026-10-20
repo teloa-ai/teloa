@@ -11,16 +11,16 @@ for(const mode of ['danger-full-access','workspace-write'])test(`生产守卫顺
  await ctx.plugin(autoReview);ctx.permissionPresets.set(agent.session,'auto')
  let reads=0,bodies=0
  const read=async()=>{
-  // 原生前置、任务前置、原生执行复核、任务执行复核：最后一次读口让出执行权。
-  if(++reads===4){await Promise.resolve();ctx.permissionPresets.set(agent.session,mode)}
+  // 岗位前置与派发前复核：最后一次异步岗位读取后只能同步复核原生权限。
+  if(++reads===2){await Promise.resolve();ctx.permissionPresets.set(agent.session,mode)}
   return {nativeRequestId:'review-request',allowedTools:['probe']}
  }
  ctx.tools.register(defineTool({name:'probe',description:'Synthetic fixture.',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{bodies++;return 'synthetic'}}))
- registerNativeAutoReviewGuard(ctx,read)
+ registerNativeAutoReviewGuard(ctx,async()=>({nativeRequestId:'review-request',allowedTools:['probe']}))
  registerTaskToolGuard(ctx,read)
  adapter.script.push(toolResponse('probe','late-change'),textResponse(JSON.stringify({risk:'low',decision:'allow'})),textResponse('done'))
  agent.followup(createUserMessage({source:{kind:'user',rpcId:'review-request'},content:[{type:'text',text:'Run the fixture.'}]}));await agent.whenIdle()
- assert.equal(reads,4);assert.equal(bodies,0)
+ assert.equal(reads,2);assert.equal(bodies,0)
  const result=agent.session.snapshotEvents().find(event=>event.type==='tool/result')
  assert.equal(result.data.message.isError,true)
  assert.match(JSON.stringify(result.data.message),/权限模式已变化/)

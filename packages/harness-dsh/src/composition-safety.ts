@@ -174,12 +174,14 @@ function workspaceRootPinned(value:unknown):boolean{
  return typeof value==='string'&&value===process.cwd()
 }
 
-/** 预设表里任何一条放行全盘写或把征询钉成 never，都等于绕过部署默认值。 */
+/** 仅本人可选的官方 Full access 使用全权限；别名和被篡改的受限预设仍拒绝。 */
 function presetsSafe(value:unknown):boolean{
  if(!record(value))return false
- const presets=Object.values(value)
+ const presets=Object.entries(value)
  if(!presets.length)return false
- return presets.every(preset=>record(preset)&&preset.approval==='ask'&&sandboxModes.includes(String(preset.sandbox)))
+ return presets.every(([name,preset])=>record(preset)&&(name==='danger-full-access'
+  ?preset.sandbox==='danger-full-access'&&preset.approval==='never'
+  :preset.approval==='ask'&&sandboxModes.includes(String(preset.sandbox))))
 }
 
 /** 纯函数：键值快照 → 违规钉子列表。钉子测试与装配期复验共用这一份判据。 */

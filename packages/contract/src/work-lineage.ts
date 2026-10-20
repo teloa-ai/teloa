@@ -2,7 +2,7 @@ import {WorkError} from './work-error.ts'
 
 /** 话题归属不是执行父关系；这些字段只从持久可信来源推导。 */
 export type WorkLineage={schema:'teloa.work-lineage/v1';ownerId:string;rootTaskId:string;definition:{planId:string;definitionVersion:number;occurrenceId:string}|null;parentRunId:string|null;definitionControlId:string|null;roundControlId:string;controlGeneration:number;budgetAccountId:string}
-export type WorkSource={kind:'owner-task';taskId:string}|{kind:'plan-occurrence';claimId:string}|{kind:'group-run-message';messageId:string;runId:string}|{kind:'team-child';parentRunId:string;memberId:string}
+export type WorkSource={kind:'owner-task';taskId:string}|{kind:'integration';workId:string;round:number}|{kind:'plan-occurrence';claimId:string}|{kind:'group-run-message';messageId:string;runId:string}|{kind:'team-child';parentRunId:string;memberId:string}
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
@@ -14,8 +14,9 @@ const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{if(!
 
 /** 只解析来源声明；真实本人、Task 与 Run 关系仍由可信服务端核对。 */
 export function readWorkSource(value:unknown):WorkSource{
- const row=exact(value,['kind','taskId','claimId','messageId','runId','parentRunId','memberId'])
+ const row=exact(value,['kind','taskId','claimId','messageId','runId','parentRunId','memberId','workId','round'])
  if(row.kind==='owner-task'&&Object.keys(row).length===2&&uuid(row.taskId))return {kind:'owner-task',taskId:row.taskId.toLowerCase()}
+ if(row.kind==='integration'&&Object.keys(row).length===3&&uuid(row.workId)&&positive(row.round))return {kind:'integration',workId:row.workId.toLowerCase(),round:row.round as number}
  if(row.kind==='plan-occurrence'&&Object.keys(row).length===2&&uuid(row.claimId))return {kind:'plan-occurrence',claimId:row.claimId.toLowerCase()}
  if(row.kind==='group-run-message'&&Object.keys(row).length===3&&uuid(row.messageId)&&uuid(row.runId))return {kind:'group-run-message',messageId:row.messageId.toLowerCase(),runId:row.runId.toLowerCase()}
  if(row.kind==='team-child'&&Object.keys(row).length===3&&uuid(row.parentRunId)&&reservation(row.memberId))return {kind:'team-child',parentRunId:row.parentRunId.toLowerCase(),memberId:row.memberId}

@@ -69,6 +69,13 @@ export class WorkLineageService{
   if(!row||row.owner_id!==owner||!uuid(row.id)||!uuid(row.budget_account_id)||!positive(row.generation)||!['active','pausing','paused','ending','ended'].includes(row.state)||!['round','definition'].includes(row.kind)||!stamp(row.created_at)||!stamp(row.updated_at)||row.kind==='round'&&!uuid(row.root_task_id)||row.kind==='definition'&&row.root_task_id!==null)throw corrupt()
   return row
  }
+ /** 外部调用根只能来自同事务登记的集成工作轮次，不能伪装为本人的自然语言执行确认。 */
+ private async integration(db:Database,owner:string,task:Record<string,any>,source:Extract<WorkSource,{kind:'integration'}>,creating=false){
+  if(!await present(db,'teloa_employee_api_rounds'))throw forbidden()
+  const row=(await db.query('select w.owner_id,w.employee_id,w.employee_version,w.scope,r.task_id,r.request_id,i.permissions from teloa_employee_api_work w join teloa_employee_api_rounds r on r.work_id=w.id join teloa_employee_integrations i on i.id=w.integration_id and i.owner_id=w.owner_id where w.owner_id=$1 and w.id=$2 and r.round=$3',[owner,source.workId,source.round])).rows[0]
+  const definition=readStoredTask(task)
+  if(!row||row.owner_id!==owner||row.request_id!==task.request_id||row.employee_id!==definition.assigneeRoleId||row.employee_version!==definition.assigneeRoleVersion||row.scope!==definition.scope||definition.groupId!==null||!Array.isArray(row.permissions)||!row.permissions.includes('execute')||row.task_id!==task.id&&!(creating&&row.task_id===null))throw forbidden()
+ }
  private async parent(db:Database,owner:string,source:Extract<WorkSource,{kind:'group-run-message'|'team-child'}>):Promise<{runId:string;taskId:string}>{
   if(!await present(db,'teloa_task_runs'))throw forbidden()
   const runId=source.kind==='team-child'?source.parentRunId:source.runId
@@ -110,8 +117,9 @@ export class WorkLineageService{
     const definition=await this.control(db,owner,lineage.definitionControlId!),binding=(await db.query('select * from teloa_work_plan_bindings where owner_id=$1 and plan_id=$2 and config_version=$3',[owner,lineage.definition.planId,lineage.definition.definitionVersion])).rows[0]
     if(definition.kind!=='definition'||definition.budget_account_id!==lineage.budgetAccountId||!binding||binding.definition_control_id!==lineage.definitionControlId||binding.budget_account_id!==lineage.budgetAccountId||!stamp(binding.created_at))throw Error()
    }
-   if(source.kind==='owner-task'){
-    if(source.taskId!==task.id||lineage.rootTaskId!==task.id||lineage.parentRunId!==null||lineage.definition!==null)throw Error()
+   if(source.kind==='owner-task'||source.kind==='integration'){
+    if(source.kind==='integration')await this.integration(db,owner,task,source)
+    if(source.kind==='owner-task'&&source.taskId!==task.id||lineage.rootTaskId!==task.id||lineage.parentRunId!==null||lineage.definition!==null)throw Error()
    }else if(source.kind==='plan-occurrence'){
     const definition=await this.plan(db,owner,task,source.claimId)
     if(lineage.rootTaskId!==task.id||lineage.parentRunId!==null||!isDeepStrictEqual(definition,lineage.definition))throw Error()
@@ -137,8 +145,9 @@ export class WorkLineageService{
   if(prior){let fixed:WorkSource;try{fixed=readWorkSource(prior.source)}catch{throw corrupt()};if(!isDeepStrictEqual(fixed,source))throw new WorkError('teloa/conflict','任务已有固定工作来源，不能覆盖。');return this.stored(client,owner,task,prior)}
   let lineage:WorkLineage
   const now=this.identity.now();if(!Number.isFinite(Date.parse(now)))throw corrupt()
-  if(source.kind==='owner-task'||source.kind==='plan-occurrence'){
+  if(source.kind==='owner-task'||source.kind==='integration'||source.kind==='plan-occurrence'){
    if(source.kind==='owner-task'&&source.taskId!==task.id)throw forbidden()
+   if(source.kind==='integration')await this.integration(client,owner,task,source,true)
    const definition=source.kind==='plan-occurrence'?await this.plan(client,owner,task,source.claimId):null
    let budget:string,definitionControl:string|null=null
    if(definition){

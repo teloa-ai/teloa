@@ -44,6 +44,25 @@ test('旧草案约束升级后保留原稿，静态模板原稿可持久保存�
  assert.equal((await pool.query('select count(*)::int total from teloa_page_create_drafts where owner_id=$1 and request_id=$2',[owner.ownerId,input.requestId])).rows[0].total,1)
 })
 const view=(title='风险分布')=>({format:'teloa.business-view/v1',id:'risk-distribution',version:'1.0.0',domain:'SOC',title,kind:'distribution',chart:'bar',objectType:'alert-ticket',dimension:{field:'severity',limit:3},measures:[{id:'total',label:'条数',aggregation:'count'}],filters:[],sort:{by:'measure',measureId:'total',direction:'desc'},limit:3})
+
+test('旧实体约束升级保留员工原稿，自定义应用草稿独立持久化、幂等且不接收认证值',async()=>{
+ const owner=actor(),service=new PageCreateDraftService(pool,identity),old=await service.draft(owner,{entity:'role',body:role(),requestId:randomUUID()})
+ await pool.query("alter table teloa_page_create_drafts drop constraint teloa_page_create_drafts_entity_check, add constraint teloa_page_create_drafts_entity_check check(entity in ('business-definition','business-domain','role','skill','connector','extension','share','plan'))")
+ await initializePageCreateDrafts(pool)
+ assert.deepEqual(await service.read(owner,{draftId:old.id}),old)
+ const definition={schema:'teloa.mcp-server/v1',serverName:'owned_logs',title:'本人日志服务',transport:'streamable-http',url:'https://mcp.example.com/mcp',auth:{kind:'headers',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-API-Key'}]}}
+ const input={entity:'app' as const,body:{definition},requestId:randomUUID()},saved=await service.draft(owner,input)
+ assert.equal(saved.entity,'app');assert.equal(saved.scope,undefined);assert.equal(saved.title,definition.title)
+ const retried=await service.draft(owner,input);assert.equal(retried.id,saved.id)
+ const reloaded=new PageCreateDraftService(pool,identity)
+ assert.deepEqual(await reloaded.read(owner,{draftId:saved.id}),retried)
+ assert.deepEqual((await reloaded.directory(owner,{entity:'app'})).drafts.map(d=>d.id),[saved.id])
+ assert.equal((await reloaded.directory(actor(),{entity:'app'})).drafts.length,0)
+ await assert.rejects(()=>reloaded.draft(owner,{...input,scope:'SOC',requestId:randomUUID()}),{code:'teloa/invalid-input'})
+ await assert.rejects(()=>reloaded.draft(owner,{...input,body:{definition,credentials:{bearer:'synthetic-private'}},requestId:randomUUID()}),{code:'teloa/invalid-input'})
+ await assert.rejects(()=>reloaded.draft(owner,{...input,body:{definition:{...definition,auth:{kind:'headers',headers:[{name:'Authorization',value:'synthetic-private'}]}}},requestId:randomUUID()}),{code:'teloa/invalid-input'})
+ assert.equal((await reloaded.directory(owner,{entity:'app'})).drafts.length,1)
+})
 const businessDomainBody=(scope:string)=>({
  manifest:{format:'teloa.business-package/v2',id:'recruiting-template',title:'招聘行业模板',version:'1.0.0',domain:'recruiting',scope,description:'用于验证新业务范围目录读取。',resources:[{id:'recruiting-template-work',kind:'work-template',title:'招聘工作模板',version:'1.0.0',required:true,source:{kind:'local',path:'work-template.json'}}],relations:[],entrypoints:[]},
  definitions:[view()],

@@ -104,6 +104,7 @@ import { isCopyAttempt } from './copy-recovery.js'
 import { SettingsBrand } from './SettingsBrand.js'
 import brandMark from '../brand/teloa-mark.svg'
 import { installSettingsShell } from './settings-integration.js'
+import {createEmployeeIntegrationApi} from './employee-integration-api.js'
 import { AboutSettings } from './AboutSettings.js'
 import { installTeloaFeedback } from './TeloaFeedbackIntegration.js'
 import { PersonalProfileSettings } from './PersonalProfileSettings.js'
@@ -383,7 +384,7 @@ export async function apply(ctx: Context): Promise<void> {
   // 都已就绪；ctx.inject 系依赖解析，不受调用先后影响，与它之前紧跟着的其余 slot 注册没有次序依赖。
   const localModelsApi=createLocalModelsApi(call),localModelsFocus=createLocalModelsFocus()
   const openLocalModels=(entryId:string)=>{localModelsFocus.set(entryId);settingsNavigation.select('teloa-local-models');requireActions().openDirectory()}
-  installSettingsShell(ctx,{open:()=>requireActions().openDirectory(),close:()=>requireActions().closeSettings(),selection:settingsNavigation},(key,params)=>requireI18n().t(key,params),webAccessApi,runtimeSettings,{api:imChannelsApi,roles:async()=>(await roleApi.list()).map(role=>({id:role.id,name:role.name})),groups:async()=>(await groupApi.list()).items.map(group=>({id:group.id,name:group.name})),extension:{read:async()=>(await bundledExtensionsApi.list()).find(row=>row.id==='im-gateway')}},{api:localModelsApi,focus:localModelsFocus})
+  installSettingsShell(ctx,{open:()=>requireActions().openDirectory(),close:()=>requireActions().closeSettings(),selection:settingsNavigation},(key,params)=>requireI18n().t(key,params),webAccessApi,runtimeSettings,{api:imChannelsApi,roles:async()=>(await roleApi.list()).map(role=>({id:role.id,name:role.name})),groups:async()=>(await groupApi.list()).items.map(group=>({id:group.id,name:group.name})),extension:{read:async()=>(await bundledExtensionsApi.list()).find(row=>row.id==='im-gateway')}},{api:localModelsApi,focus:localModelsFocus},createEmployeeIntegrationApi(call))
   const handoffApi=createHandoffApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.handoff/v1'),journal('teloa.handoff-change/v1'))
   const objectConversationApi=createObjectConversationApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.object-conversation/v1'))
   const taskApi=createTaskApi(call,journal('teloa.task-create/v1'))

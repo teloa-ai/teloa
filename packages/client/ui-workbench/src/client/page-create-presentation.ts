@@ -44,6 +44,7 @@ const placeholderKeys={
  extension:'create.sentence.placeholder.extension',
  share:'create.sentence.placeholder.share',
  plan:'create.sentence.placeholder.plan',
+ app:'create.sentence.placeholder.mcpApp',
 } as const
 
 /** 一句话预备进会话时要点名的实体名词，按 entity 取，六类各一条。 */
@@ -56,6 +57,7 @@ const entityNameKeys={
  extension:'create.entity.extension',
  share:'create.entity.share',
  plan:'create.entity.plan',
+ app:'create.entity.app',
 } as const
 
 const consequenceKeys={
@@ -74,6 +76,7 @@ const draftStatusKeys={
 const nextKeys={
  role:'create.next.role',skill:'create.next.skill',connector:'create.next.connector',
  extension:'create.next.extension','business-domain':'create.next.businessDomain','business-definition':'create.next.businessDefinition',share:'create.next.share',plan:'create.next.plan',
+ app:'create.next.app',
 } as const
 /** 给用户的是既有步骤名称，端点名仍仅供调用方核对落点。 */
 export function createNextKey(entity:PageCreateEntity):typeof nextKeys[PageCreateEntity]{return nextKeys[entity]}

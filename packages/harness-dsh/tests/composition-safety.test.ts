@@ -386,12 +386,12 @@ test('待启用插件的判据同时看 bundles 与组合树里的挂载行',()=
  assert.equal(compositionSnapshot([]).pendingPluginsExcluded,undefined)
 })
 
-test('预设表里任何一条放行全盘写或 never 征询都算违规',()=>{
+test('预设表只接受官方 Full access 的全权限组合，其他 never 和别名仍拒绝',()=>{
  const presets=(extra:Record<string,unknown>)=>({...safe,permissionPresets:{...safe.permissionPresets,...extra}})
- assert.deepEqual(compositionViolations(presets({'danger-full-access':{sandbox:'danger-full-access',approval:'never'}})),['permission'])
+ assert.deepEqual(compositionViolations(presets({'danger-full-access':{sandbox:'danger-full-access',approval:'never'}})),[])
  assert.deepEqual(compositionViolations(presets({quiet:{sandbox:'workspace-write',approval:'never'}})),['permission'])
  assert.deepEqual(compositionViolations(presets({wide:{sandbox:'danger-full-access',approval:'ask'}})),['permission'])
- // 预设表整体缺失就落回上游默认表，那份里带着 danger-full-access。
+ // 预设表整体缺失时无法核对实际选项，不能依赖上游默认表。
  assert.deepEqual(compositionViolations({...safe,permissionPresets:undefined}),['permission'])
 })
 

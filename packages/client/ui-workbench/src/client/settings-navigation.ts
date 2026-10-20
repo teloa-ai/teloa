@@ -20,7 +20,7 @@ export type SettingsGroup=typeof settingsGroupOrder[number]
 export function settingsEntryGroup(id:string):SettingsGroup{
  if(id==='general')return 'preferences'
  if(['models','teloa-local-models','teloa-credential-store','teloa-voice-service'].includes(id))return 'models'
- if(['teloa-workspaces','teloa-native-panels','teloa-im-channels','teloa-hardware-devices'].includes(id))return 'connections'
+ if(['teloa-workspaces','teloa-native-panels','teloa-im-channels','teloa-hardware-devices','teloa-employee-integrations'].includes(id))return 'connections'
  if(['teloa-auto-dream','agent-presets'].includes(id))return 'work'
  return id==='teloa-about'?'about':'advanced'
 }

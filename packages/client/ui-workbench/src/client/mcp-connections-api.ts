@@ -1,4 +1,5 @@
 // 受管 MCP 连接客户端 API；凭据只在 add 请求时提交，回包与其他端点均不含凭据字段。
+import {readCustomMcpDefinition,type CustomMcpDefinition} from '@teloa/contract'
 type Call=(method:string,payload:unknown)=>Promise<unknown>
 
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
@@ -22,6 +23,7 @@ export type ManagedMcpConnectionRecord={
  errorCode?:'install-timeout'|'install-failed'
  tools?:{name:string;fullName:string;readOnly:boolean}[]
  sourceScopeSupport?:'unsupported'
+ custom?:{title:string}
  createdAt:string
  updatedAt:string
 }
@@ -34,7 +36,7 @@ export type ManagedMcpOAuthStatus={status:'pending-oauth'|'connected'|'error';er
 
 function readRecord(value:unknown):ManagedMcpConnectionRecord{
  try{
-  const row=exact(value,['id','catalogId','serverName','status','errorMessage','errorCode','tools','sourceScopeSupport','createdAt','updatedAt'])
+  const row=exact(value,['id','catalogId','serverName','status','errorMessage','errorCode','tools','sourceScopeSupport','custom','createdAt','updatedAt'])
   if(row.sourceScopeSupport!==undefined&&row.sourceScopeSupport!=='unsupported')throw Error()
   if(!uuid(row.id)||typeof row.catalogId!=='string'||!catalogIdPat.test(row.catalogId))throw Error()
   if(typeof row.serverName!=='string'||!serverNamePat.test(row.serverName))throw Error()
@@ -56,6 +58,7 @@ function readRecord(value:unknown):ManagedMcpConnectionRecord{
   if(row.errorCode)rec.errorCode=row.errorCode as NonNullable<ManagedMcpConnectionRecord['errorCode']>
   if(tools)rec.tools=tools
   if(row.sourceScopeSupport==='unsupported')rec.sourceScopeSupport='unsupported'
+  if(row.custom!==undefined){const custom=exact(row.custom,['title']);if(typeof custom.title!=='string'||!custom.title.trim()||custom.title.length>120||/[\x00-\x1f\x7f]/.test(custom.title))throw Error();rec.custom={title:custom.title}}
   return rec
  }catch{throw Error('受管 MCP 连接记录格式不正确。')}
 }
@@ -91,8 +94,39 @@ function readOAuthStatus(value:unknown):ManagedMcpOAuthStatus{
 }
 
 export type ManagedMcpConnectionApi=ReturnType<typeof createManagedMcpConnectionApi>
+export type CustomMcpAppApi=Pick<ManagedMcpConnectionApi,'getCustom'|'previewCustom'|'saveCustom'|'updateCustom'|'authorizeCustom'|'connect'|'disconnect'|'delete'>
+export function hasCustomMcpAppApi(api:Partial<ManagedMcpConnectionApi>):api is CustomMcpAppApi{
+ return (['getCustom','previewCustom','saveCustom','updateCustom','authorizeCustom','connect','disconnect','delete'] as const).every(key=>typeof api[key]==='function')
+}
+export type CustomMcpPreview={definition:CustomMcpDefinition;definitionHash:string;authorizationConfigured:boolean;connection?:ManagedMcpConnectionRecord}
+function readCustomPreview(value:unknown):CustomMcpPreview{
+ const row=exact(value,['schema','definition','definitionHash','connection','authorizationConfigured','readiness','next'])
+ if(row.schema!=='teloa.mcp-preview/v1'||typeof row.definitionHash!=='string'||!/^[a-f0-9]{64}$/.test(row.definitionHash))throw Error('自定义应用预览格式不正确。')
+ if(typeof row.authorizationConfigured!=='boolean')throw Error('自定义应用认证状态不正确。')
+ return {definition:readCustomMcpDefinition(row.definition),definitionHash:row.definitionHash,authorizationConfigured:row.authorizationConfigured,...row.connection===undefined?{}:{connection:readRecord(row.connection)}}
+}
 export function createManagedMcpConnectionApi(call:Call){
+ const listeners=new Set<()=>void>()
+ const changed=<T,>(value:T):T=>{for(const listener of listeners)listener();return value}
+ const identity=(id:string,definitionHash?:string)=>{if(!uuid(id)||definitionHash!==undefined&&!/^[a-f0-9]{64}$/.test(definitionHash))throw Error('应用身份或预览版本不正确。')}
  return {
+  subscribe(listener:()=>void){listeners.add(listener);return ()=>{listeners.delete(listener)}},
+  async previewCustom(definition:CustomMcpDefinition){return readCustomPreview(await call('mcp-connections/preview-custom',{definition:readCustomMcpDefinition(definition)}))},
+  async getCustom(id:string){identity(id);return readCustomPreview(await call('mcp-connections/get-custom',{id}))},
+  async saveCustom(input:{requestId:string;definition:CustomMcpDefinition;expectedDefinitionHash:string}){
+   identity(input.requestId,input.expectedDefinitionHash)
+   return changed(readRecord(await call('mcp-connections/save-custom',{...input,definition:readCustomMcpDefinition(input.definition)})))
+  },
+  async updateCustom(input:{id:string;requestId:string;definition:CustomMcpDefinition;expectedDefinitionHash:string}){
+   identity(input.id,input.expectedDefinitionHash);identity(input.requestId)
+   return changed(readRecord(await call('mcp-connections/update-custom',{...input,definition:readCustomMcpDefinition(input.definition)})))
+  },
+  /** 仅可信浏览器控件调用；认证值不写浏览器存储或通用待恢复请求。 */
+  async authorizeCustom(input:{id:string;expectedDefinitionHash:string;credentials:Record<string,string>;readOnlyTools:string[]}){
+   identity(input.id,input.expectedDefinitionHash)
+   if(!Array.isArray(input.readOnlyTools)||input.readOnlyTools.length>32||new Set(input.readOnlyTools).size!==input.readOnlyTools.length||input.readOnlyTools.some(v=>!/^[A-Za-z0-9_-]{1,128}$/.test(v))||Object.values(input.credentials).some(v=>typeof v!=='string'||!v.trim()||v.length>8192||/[\x00-\x1f\x7f]/.test(v)))throw Error('请核对认证值和只读工具清单。')
+   return changed(readRecord(await call('mcp-connections/authorize-custom',input)))
+  },
   /** 添加连接器；credentials 只含配方声明字段，值均为字符串 */
   async add(catalogId:string,credentials?:Record<string,string>):Promise<ManagedMcpConnectionRecord>{
    if(typeof catalogId!=='string'||!catalogIdPat.test(catalogId))throw Error('catalogId 格式不正确。')
@@ -111,17 +145,18 @@ export function createManagedMcpConnectionApi(call:Call){
   /** 建立连接 */
   async connect(id:string):Promise<ManagedMcpConnectionRecord>{
    if(!uuid(id))throw Error('受管 MCP 连接 id 格式不正确。')
-   return readRecord(await call('mcp-connections/connect',{id:id.toLowerCase()}))
+   return changed(readRecord(await call('mcp-connections/connect',{id:id.toLowerCase()})))
   },
   /** 断开连接（保留凭据与配置） */
   async disconnect(id:string):Promise<ManagedMcpConnectionRecord>{
    if(!uuid(id))throw Error('受管 MCP 连接 id 格式不正确。')
-   return readRecord(await call('mcp-connections/disconnect',{id:id.toLowerCase()}))
+   return changed(readRecord(await call('mcp-connections/disconnect',{id:id.toLowerCase()})))
   },
   /** 删除连接与凭据 */
   async delete(id:string):Promise<void>{
    if(!uuid(id))throw Error('受管 MCP 连接 id 格式不正确。')
    await call('mcp-connections/delete',{id:id.toLowerCase()})
+   changed(undefined)
   },
   /** 发起 OAuth 授权：只提交 {id}；回包为授权链接，由负责人在浏览器中点击完成 */
   async oauthStart(id:string):Promise<ManagedMcpOAuthStart>{

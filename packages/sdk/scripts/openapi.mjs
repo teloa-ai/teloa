@@ -1,0 +1,13 @@
+import {writeFile} from 'node:fs/promises'
+import {employeeApiSchemas,employeeApiOperations} from '../contract.mjs'
+const ref=name=>({$ref:'#/components/schemas/'+name}),paths={}
+for(const operation of employeeApiOperations){
+ const parameters=[]
+ if(operation.path.includes('{workId}'))parameters.push({name:'workId',in:'path',required:true,schema:{type:'string',format:'uuid'}})
+ if(operation.idempotent)parameters.push({name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',format:'uuid'},description:'Persist this UUID before sending. Retries use the same UUID and the same request. Different input returns 409.'})
+ if(operation.resultVersion)parameters.push({name:'version',in:'query',schema:{type:'integer',minimum:1}})
+ if(operation.events)parameters.push({name:'after',in:'query',schema:{type:'integer',minimum:0,default:0}})
+ const schema=operation.events?{type:'object',properties:{items:{type:'array',items:{type:'object',properties:{cursor:{type:'integer'},event:{type:'object',description:'CloudEvents 1.0 ai.teloa.work.changed.v1 envelope'}}}},nextCursor:{type:'integer'}}}:operation.list?{type:'object',required:['items'],properties:{items:{type:'array',items:ref(operation.response)}}}:ref(operation.response)
+ paths[operation.path]??={};paths[operation.path][operation.method]={operationId:operation.id,security:[{employeeApiKey:[]}],description:'Requires '+operation.permission+' permission. Credentials are scoped to a fixed employee version and business scope.',...(parameters.length?{parameters}:{}),...(operation.body?{requestBody:{required:true,content:{'application/json':{schema:ref(operation.body)}}}}:{}),responses:{[operation.status??200]:{description:operation.status===202?'Accepted; this is not a completion receipt.':'Success',content:{'application/json':{schema}}},...Object.fromEntries([400,401,403,404,409,413,415,429,503].map(status=>[status,{description:status===429?'Too many requests':'Request failed',content:{'application/json':{schema:ref('Error')}}}]))}}
+}
+await writeFile(new URL('../openapi.json',import.meta.url),JSON.stringify({openapi:'3.1.0',info:{title:'Teloa Employee Work API',version:'1.0.0',description:'Asynchronous work by explicitly authorized employees. Does not expose internal RPC, approve tools or grant additional employee permissions.'},servers:[{url:'http://127.0.0.1:3100',description:'Replace with your own Teloa origin; remote deployments require HTTPS.'}],paths,components:{securitySchemes:{employeeApiKey:{type:'http',scheme:'bearer',bearerFormat:'Teloa integration key'}},schemas:employeeApiSchemas}},null,2)+'\n')

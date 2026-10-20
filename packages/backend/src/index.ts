@@ -37,6 +37,9 @@ export {GroupWorkInputService,groupQuotedTaskSql,initializeGroupWorkInputs,readG
 export {groupRoutedTaskGoal,groupRelayStopText,groupRunConfigFailedText} from './work/group-routing-text.ts'
 
 export { TaskService,initializeTasks,readStoredTask } from './work/tasks.ts'
+export {EmployeeIntegrationService,initializeEmployeeIntegrations,type EmployeeIntegration,type EmployeeIntegrationIdentity,type IntegrationSecrets} from './work/employee-integrations.ts'
+export {EmployeeApiWorkService,initializeEmployeeApiWork,type EmployeeApiRuntime} from './work/employee-api-work.ts'
+export {EmployeeApiWebhooks} from './work/employee-api-webhooks.ts'
 export type {ConversationTaskIdentity} from './work/conversation-task-request.ts'
 export {ConversationWorkService,initializeConversationWork,readStoredConversationWorkContext,readStoredConversationWorkRequest,workRequestChildId,type ConversationWorkContext,type ConversationWorkRequest,type ConversationWorkReserveInput,type WorkRequestTarget,type WorkResponsibilitySnapshot} from './work/conversation-work.ts'
 export {BusinessReassignmentService,initializeBusinessReassignments,reserveInputFromReassignment,type ReassignmentRunIdentity,type ReassignmentRunTargets} from './work/business-reassignment.ts'

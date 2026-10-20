@@ -8,8 +8,9 @@ import {readMarketPluginRegistrySource,type MarketPluginRegistrySource} from './
 import {readTemplateShare} from './template-share.mjs'
 import {readOwnerPlanFields,readRolePlanDraftFields,readPlanWorkConfiguration,type OwnerPlanFields,type RolePlanDraftFields,type PlanWorkConfiguration} from './plan-work.ts'
 import {readMethodReuseSource,type MethodReuseSource,type MethodReuseIntent} from './method-reuse.ts'
+import {readCustomMcpDefinition} from './custom-mcp-definition.ts'
 
-export const pageCreateEntities=['business-definition','business-domain','role','skill','connector','extension','share','plan'] as const
+export const pageCreateEntities=['business-definition','business-domain','role','skill','connector','extension','share','plan','app'] as const
 export type PageCreateEntity=typeof pageCreateEntities[number]
 /** 由宿主核对的原生本人消息；不是模型可声明的授权。 */
 export type PageCreateDraftOrigin={sessionId:string;messageId:string;messageSeq:number;requestId?:string}
@@ -309,6 +310,7 @@ const connectorResource=(value:unknown):unknown=>{
  * `entity` 与正文形状不符时由被分派到的那个 `read*` 抛 `teloa/invalid-input`，不在这里另判一遍。
  */
 export function readPageCreateBody(entity:PageCreateEntity,value:unknown,readers:PageCreateBodyReaders={}):unknown{
+ if(entity==='app')return {definition:readCustomMcpDefinition(exact(value,['definition'],'应用草稿只能包含无凭据的连接定义。').definition)}
  if(entity==='plan')return readPageCreatePlanDraft(value)
  // 直接生成静态模板，不要求先创建真实员工；包判据与导出/接收共用。
  if(entity==='share'){

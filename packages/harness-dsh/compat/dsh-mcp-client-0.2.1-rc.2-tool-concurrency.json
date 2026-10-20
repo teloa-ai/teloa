@@ -1,0 +1,23 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-mcp-client",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "api": [
+    "McpToolDefinitionOptions.annotations",
+    "ToolDefinition.isConcurrencySafe"
+  ],
+  "patchSha256": "b53ed7c733e468230e84be8b1262e85b83577dd23f872953c5ffb5afa6e91580",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "758d8fc473b700b5d351158d06ce9f9e92c16e8b25497b08bb7bd2122a87f5dd",
+      "afterSha256": "0cd7324bc4baa560daa7d04e0ce83a238595d94292b8c99ebfc6a2450a9a47c5"
+    },
+    {
+      "path": "lib/types/tools.d.ts",
+      "beforeSha256": "32fa23472d05bbe322ccf4541d033e1467aa795770fb3e0c3817271416e82dfc",
+      "afterSha256": "c5304a175997d6175d6046e1e40f7ffd47be8b112024164900001ff55fb982b8"
+    }
+  ]
+}

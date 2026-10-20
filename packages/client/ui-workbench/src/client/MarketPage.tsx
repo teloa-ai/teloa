@@ -106,7 +106,7 @@ function MarketCards({items,loads,runtime,selectedId,open}:{items:readonly Marke
 
 function MarketCatalog(props:MarketProps&{runtime:MarketSkillRuntime;runtimeChanged?:()=>void}){
   const {locale,t}=useI18n()
-  const templateSharing=useTemplateShare(),templateCreation=props.mine?.pageCreate
+  const templateSharing=useTemplateShare(),templateCreation=props.mine?.pageCreate?{...props.mine.pageCreate,...(props.managedMcpConnectionApi?{mcp:props.managedMcpConnectionApi}:{})}:undefined
   const [creationKind,setCreationKind]=useState<MarketTemplateKind|null>(null),[creationVisited,setCreationVisited]=useState<MarketTemplateKind[]>([])
   const [resourceCreation,setResourceCreation]=useState<MarketResourceKind|null>(null),[resourceCreations,setResourceCreations]=useState<MarketResourceKind[]>([])
   const createResource=(kind:MarketResourceKind)=>{setResourceCreations(current=>current.includes(kind)?current:[...current,kind]);setResourceCreation(kind)}

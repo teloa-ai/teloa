@@ -29,6 +29,7 @@ const next:Record<PageCreateEntity,{endpoint:string;consentKeys:string[]}>= {
  extension:{endpoint:'industry-plugins/preview',consentKeys:['create.consequence.permission']},
  share:{endpoint:'page-create-drafts/read',consentKeys:[]},
  plan:{endpoint:'plans/create-confirmed',consentKeys:[]},
+ app:{endpoint:'mcp-connections/save-custom',consentKeys:['create.consequence.egress']},
 }
 
 /**
@@ -94,14 +95,18 @@ export class PageCreatePreviewService{
 }
 
 function consequencesOf(entity:PageCreateEntity,body:unknown):PageCreateDraftPreview['consequences']{
+ if(entity==='app'){
+  const definition=(body as {definition:{serverName:string;auth?:unknown}}).definition
+  return [{kind:'egress',id:definition.serverName,required:true},...(definition.auth?[{kind:'credential' as const,id:'custom-app-credentials',required:true}]:[])]
+ }
  if(entity==='connector'){
   const resource=(body as {resource?:{sourceId?:string;serverName?:string}}).resource
   const id=resource?.sourceId??resource?.serverName
   return [{kind:'credential',id:'credential',required:true},{kind:'egress',id:id??'connector',required:true}]
  }
- const impact:Record<Exclude<PageCreateEntity,'connector'|'extension'>,string>={
+ const impact:Record<Exclude<PageCreateEntity,'connector'|'extension'|'app'>,string>={
   'business-definition':'business-definition-customization','business-domain':'business-scope-registration',role:'role-onboarding',skill:'skill-directory-only',share:'static-template-only',plan:'plan-save-paused',
  }
  if(entity==='plan'&&readPageCreatePlanDraft(body).intent==='create-and-enable')return [{kind:'impact',id:'plan-create-and-enable',required:true},{kind:'permission',id:'plan-execution-authorization',required:true}]
- return [{kind:'impact',id:impact[entity as Exclude<PageCreateEntity,'connector'|'extension'>],required:true}]
+ return [{kind:'impact',id:impact[entity as Exclude<PageCreateEntity,'connector'|'extension'|'app'>],required:true}]
 }

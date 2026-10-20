@@ -8,7 +8,7 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {getTaxonomyLabel} from './market-taxonomy-filter.js'
 import {loadCatalogListing,type MarketCatalogApi,type MarketCatalogItem,type MarketCatalogRanking} from './market-catalog-api.js'
-import type {ManagedMcpConnectionApi} from './mcp-connections-api.js'
+import {hasCustomMcpAppApi,type ManagedMcpConnectionApi} from './mcp-connections-api.js'
 import type {SkillInstallApi,SkillInstallationRecord} from './skill-install-api.js'
 import {installAppPack,type AppPackOutcome} from './market-app-pack-install.js'
 import {appsCategories,appsDirectoryRows,appsRowAction,appsRowShareSource,appsRowStatus,appsSections,skillAction,skillStatus,type AppsConnections,type AppsConnector,type AppsDeclaredPackage,type AppsStoredContent,type AppsRow,type AppsRowAction,type AppsSection,type AppsSkill,type AppsView} from './market-apps-presentation.js'
@@ -19,6 +19,7 @@ import type {SkillSecretsState} from './skill-secrets-api.js'
 import type {IndustryLoadRecord} from './industry-load-api.js'
 import type {MarketAppsMessageKey} from './i18n/locales/market-apps.js'
 import css from './MarketAppsDirectory.module.css'
+import {CustomMcpAppManager} from './CustomMcpAppEntry.js'
 
 /**
  * 能力详情里的分享入口：目录技能与连接器直接按固定引用打包；本机安装技能经分享来源端口解析静态正文，
@@ -69,6 +70,7 @@ export type MarketAppsDirectoryViewProps={
  onManagePlugins?:()=>void
  onOpenTemplates?:()=>void
  skillSecrets?:{describe:(skill:string)=>Promise<SkillSecretsState>;open:(skill:string,title:string)=>void}|undefined
+ renderCustomConnection?:(record:NonNullable<AppsRow['customConnection']>,close:()=>void)=>ReactNode
 }
 
 const actionKey=(action:AppsRowAction)=>'entryId' in action?action.entryId:action.kind==='open-package'?action.packageId:action.kind==='install-pack'?action.key:''
@@ -148,7 +150,7 @@ export function MarketAppsDirectoryView(props:MarketAppsDirectoryViewProps){
   </div></div>}
   {props.nativeApps}
   {props.onManagePlugins&&<div className={css.advanced}><button type="button" className={css.link} onClick={props.onManagePlugins}>{text('market.apps.managePlugins')}<ChevronRight size={14} aria-hidden/></button></div>}
-  {detail&&<MarketAppDetailView row={detail} close={()=>set({})} runAction={props.runAction} busy={props.busy} error={props.errors[detail.key]??detail.entryIds.map(id=>props.errors[id]).find(Boolean)??(detail.packageId?props.errors[detail.packageId]:undefined)} packRun={props.packRuns?.[detail.key]} skillSecrets={props.skillSecrets}/>}
+  {detail&&(detail.customConnection&&props.renderCustomConnection?props.renderCustomConnection(detail.customConnection,()=>set({})):<MarketAppDetailView row={detail} close={()=>set({})} runAction={props.runAction} busy={props.busy} error={props.errors[detail.key]??detail.entryIds.map(id=>props.errors[id]).find(Boolean)??(detail.packageId?props.errors[detail.packageId]:undefined)} packRun={props.packRuns?.[detail.key]} skillSecrets={props.skillSecrets}/>)}
  </section>
 }
 
@@ -277,7 +279,7 @@ export async function performAppsAction(action:AppsRowAction,ports:AppsActionPor
 
 export type MarketAppsDirectoryProps={
  catalogApi:Pick<MarketCatalogApi,'list'|'add'|'ranking'>
- connectionApi?:Pick<ManagedMcpConnectionApi,'list'>|undefined
+ connectionApi?:(Pick<ManagedMcpConnectionApi,'list'>&Partial<ManagedMcpConnectionApi>)|undefined
  /** 只带 list 时只读安装记录；宿主给出完整的原生预览 / 安装 / 待核对端口时，应用包才提供一次安装。 */
  installationApi?:Pick<SkillInstallApi,'list'>|Pick<SkillInstallApi,'list'|'preview'|'install'|'pending'|'recover'>|undefined
  packages?:readonly AppsDeclaredPackage[]
@@ -297,6 +299,7 @@ export type MarketAppsDirectoryProps={
  */
 export function MarketAppsDirectory(props:MarketAppsDirectoryProps){
  const {locale}=useAppsText(),{catalogApi,connectionApi,installationApi}=props
+ const customApi=connectionApi&&hasCustomMcpAppApi(connectionApi)?connectionApi:undefined
  const [items,setItems]=useState<MarketCatalogItem[]>([]),[catalog,setCatalog]=useState<AppsCatalogState>({status:'loading'}),[ranking,setRanking]=useState<MarketCatalogRanking>(new Map())
  const [connections,setConnections]=useState<AppsConnections>({status:'loading'}),[installations,setInstallations]=useState<readonly SkillInstallationRecord[]>([])
  const [installationsKnown,setInstallationsKnown]=useState(false)
@@ -304,6 +307,8 @@ export function MarketAppsDirectory(props:MarketAppsDirectoryProps){
  const view=props.view??ownView,onViewChange=(next:AppsView)=>{if(!props.view)setOwnView(next);props.onViewChange?.(next)}
  const installer=installationApi&&'preview' in installationApi&&'install' in installationApi&&'pending' in installationApi&&'recover' in installationApi?installationApi:undefined
  const [packRuns,setPackRuns]=useState<Record<string,AppsPackRun>>({})
+ const connectionSource=useRef(connectionApi)
+ useEffect(()=>connectionApi?.subscribe?.(()=>setReload(current=>({...current,connections:current.connections+1}))),[connectionApi])
  // 本人与宿主端口的代次：端口对象更换或离开目录后，进行中的应用包安装不再提交后续请求、也不写回结果
  const generation=useRef(0)
  useEffect(()=>{generation.current+=1;setPackRuns({});return ()=>{generation.current+=1}},[catalogApi,installationApi])
@@ -319,7 +324,7 @@ export function MarketAppsDirectory(props:MarketAppsDirectoryProps){
  useEffect(()=>{
   let active=true
   if(!connectionApi){setConnections({status:'unavailable'});return}
-  setConnections({status:'loading'})
+  if(connectionSource.current!==connectionApi){connectionSource.current=connectionApi;setConnections({status:'loading'})}
   void connectionApi.list().then(records=>{if(active)setConnections({status:'ready',records})},()=>{if(active)setConnections({status:'unavailable'})})
   return ()=>{active=false}
  },[connectionApi,reload.connections])
@@ -359,6 +364,7 @@ export function MarketAppsDirectory(props:MarketAppsDirectoryProps){
   finally{if(adding)setBusy(undefined)}
  }
  return <MarketAppsDirectoryView rows={rows} ranking={ranking} catalog={catalog} connections={connections} view={view} onViewChange={onViewChange} runAction={(row,action)=>void runAction(row,action)} busy={busy} errors={errors} packRuns={packRuns}
+  {...(customApi?{renderCustomConnection:(record:NonNullable<AppsRow['customConnection']>,close:()=>void)=><CustomMcpAppManager key={record.id} api={customApi} id={record.id} title={record.custom?.title??record.serverName} close={close}/>}:{})}
   connectionServiceUnavailable={!connectionApi} retryCatalog={()=>setReload(current=>({...current,catalog:current.catalog+1}))} {...(connectionApi?{retryConnections:()=>setReload(current=>({...current,connections:current.connections+1}))}:{})} skillSecrets={props.skillSecrets}
   {...(props.onDescribe?{onDescribe:props.onDescribe}:{})} {...(props.onImportSkill?{onImportSkill:props.onImportSkill}:{})} {...(props.onCreateSkill?{onCreateSkill:props.onCreateSkill}:{})} {...(props.onCreateApp?{onCreateApp:props.onCreateApp}:{})} {...(props.nativeApps?{nativeApps:props.nativeApps}:{})} {...(props.onManagePlugins?{onManagePlugins:props.onManagePlugins}:{})} {...(props.onOpenTemplates?{onOpenTemplates:props.onOpenTemplates}:{})}/>
 }

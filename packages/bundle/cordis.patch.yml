@@ -161,9 +161,8 @@
   disabled: false
 - id: preset-cordis
   disabled: false
-# 会话级预设裁掉 danger-full-access：该预设等于 sandbox: danger-full-access
-# + approval: never，一次 /permission 切换就让沙箱写范围越出工作区、每次征询直接
-# 判过不提示。部署默认值已在上面钉死 workspace-write/ask，这里补上会话侧的入口。
+# 部署默认仍为 workspace-write/ask；本人可以显式选择官方 Full access。
+# never 不弹逐次确认；独立业务授权与原生 deny/ask 不被当作自动批准。
 - id: permission
   config:
     presets:
@@ -173,6 +172,9 @@
       workspace-write:
         sandbox: workspace-write
         approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
 # 上网的 provider 选择与边界值钉成字面量。
 # `web-fetch-http` 原本**没有 config**，取的全是上游默认；而补丁按整块替换，第三方 bundle
 # 在 `dsh.profile.bundles` 尾部追加一行就能把 maxRedirects 提到 50、maxResponseBytes 提到 5GB。

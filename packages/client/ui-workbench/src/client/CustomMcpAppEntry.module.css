@@ -1,0 +1,9 @@
+/* 与统一创建抽屉共用产品令牌；认证输入只存在于组件内存。 */
+.form{display:grid;gap:14px;min-width:0}
+.form label{display:grid;gap:6px;font-size:var(--teloa-font-control);color:var(--teloa-text)}
+.form input:not([type=checkbox]){box-sizing:border-box;width:100%;min-width:0;padding:10px 12px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-background);color:var(--teloa-text);font:inherit}
+.form input:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.tools{display:grid;gap:8px;border:0;padding:0;margin:0}
+.tools legend{margin-bottom:8px;font-weight:var(--teloa-weight-medium)}
+.tools label{display:flex;align-items:center;gap:8px;overflow-wrap:anywhere}
+.status{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.7;margin:0}

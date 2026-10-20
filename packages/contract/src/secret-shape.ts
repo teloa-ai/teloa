@@ -3,7 +3,7 @@
  * 再与已存凭据值精确比对；不单凭高熵报警，以免误伤 git SHA、UUID、sha256 与 base64 图片。
  * 结果只含类别与位置，不回传命中值。脱敏不是安全边界：拼接、截断、自定义编码都能绕过。
  */
-export type SecretKind='private-key'|'anthropic'|'openai'|'github'|'gitlab'|'slack'|'aws'|'google'|'xai'|'jwt'|'bearer'|'assignment'|'stored'
+export type SecretKind='private-key'|'teloa'|'anthropic'|'openai'|'github'|'gitlab'|'slack'|'aws'|'google'|'xai'|'jwt'|'bearer'|'assignment'|'stored'
 export type SecretFinding={kind:SecretKind;start:number;end:number}
 
 type Rule={kind:SecretKind;pattern:RegExp;minEntropy:number;skip?:(body:string)=>boolean}
@@ -15,6 +15,7 @@ const reference=(body:string)=>{const value=body.replace(/=+$/,'');return /^[A-Z
 /** 第 1 捕获组是判随机度的主体；顺序即同起点时的优先级（anthropic 先于 openai）。 */
 const rules:readonly Rule[]=[
  {kind:'private-key',pattern:/-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----|$)/g,minEntropy:0},
+ {kind:'teloa',pattern:/\bteloa_api_([A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])/g,minEntropy:3},
  {kind:'anthropic',pattern:/\bsk-ant-(?:[a-z]+\d{2}-)?([A-Za-z0-9_-]{20,})/g,minEntropy:3},
  // 真实键主体是大小写混合的 base62；只有单一大小写的 slug、CSS 类名、占位符不报。
  {kind:'openai',pattern:/\bsk-(?:proj-|svcacct-|admin-)?([A-Za-z0-9_-]{20,})/g,minEntropy:3,skip:body=>!/[a-z]/.test(body)||!/[A-Z]/.test(body)},
@@ -86,7 +87,7 @@ export function redactSecrets(text:string,known:readonly string[]=[],mask='[已�
  return out
 }
 
-const kindLabels:Readonly<Record<SecretKind,string>>={'private-key':'私钥',anthropic:'Anthropic',openai:'OpenAI',github:'GitHub',gitlab:'GitLab',slack:'Slack',aws:'AWS',google:'Google',xai:'xAI',jwt:'JWT',bearer:'Bearer 令牌',assignment:'密钥赋值',stored:'已保存的凭据'}
+const kindLabels:Readonly<Record<SecretKind,string>>={'private-key':'私钥',teloa:'Teloa API',anthropic:'Anthropic',openai:'OpenAI',github:'GitHub',gitlab:'GitLab',slack:'Slack',aws:'AWS',google:'Google',xai:'xAI',jwt:'JWT',bearer:'Bearer 令牌',assignment:'密钥赋值',stored:'已保存的凭据'}
 /** 宿主拒收提示：只说类别与去处，不回显命中值；kinds 为空表示检测本身失败。 */
 export function promptSecretMessage(kinds:readonly SecretKind[]):string{
  if(!kinds.length)return '无法完成密钥检查，本条消息未发送，请稍后重试。'

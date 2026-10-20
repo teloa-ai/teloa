@@ -5,6 +5,7 @@ import {detectSecrets,encodedForms,isSecretRejection,promptSecretMessage,redactS
 
 const rand=(n:number)=>{let out='';while(out.length<n)out+=randomBytes(n).toString('base64').replace(/[^A-Za-z0-9]/g,'');return out.slice(0,n)}
 const positives:[string,string][]=[
+ ['teloa','teloa'+'_api_'+randomBytes(32).toString('base64url')],
  ['openai','sk-'+'proj-'+rand(40)],
  ['anthropic','sk-'+'ant-'+'api03-'+rand(80)],
  ['github','gh'+'p_'+rand(36)],

@@ -13,16 +13,20 @@ const readers:PageCreateBodyReaders={manifest:value=>value,skill:value=>value}
 const invalidInput=(error:unknown)=>(error as {code?:string}).code==='teloa/invalid-input'
 
 test('各 entity 分派到既有校验函数；entity 与正文形状不符即 invalid-input',()=>{
- assert.deepEqual([...pageCreateEntities],['business-definition','business-domain','role','skill','connector','extension','share','plan'])
+ assert.deepEqual([...pageCreateEntities],['business-definition','business-domain','role','skill','connector','extension','share','plan','app'])
  assert.equal((readPageCreateBody('business-definition',objectType) as {id:string}).id,'alert-ticket')
  assert.equal((readPageCreateBody('business-definition',view) as {id:string}).id,'soc-risk-distribution')
  assert.equal((readPageCreateBody('role',role) as {name:string}).name,'SOC 调查岗')
  assert.deepEqual(readPageCreateBody('connector',{manifest,resource:dataSource},readers),{manifest,resource:dataSource})
  assert.deepEqual(readPageCreateBody('business-domain',{manifest,definitions:[objectType]},readers),{manifest,definitions:[readPageCreateBody('business-definition',objectType)]})
  assert.deepEqual(readPageCreateBody('skill',{id:'report',text:'# SKILL'},readers),{id:'report',text:'# SKILL'})
+ const app={schema:'teloa.mcp-server/v1',serverName:'reports',title:'报告应用',transport:'streamable-http',url:'https://example.com/mcp',auth:{kind:'headers',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-Tenant'}]}}
+ assert.deepEqual(readPageCreateBody('app',{definition:app}),{definition:app})
  // 形状不符一律由被分派到的既有 read* 判死，不在分派处另判一遍
  assert.throws(()=>readPageCreateBody('business-definition',role),invalidInput)
  assert.throws(()=>readPageCreateBody('role',objectType),invalidInput)
+ assert.throws(()=>readPageCreateBody('app',role),invalidInput)
+ assert.throws(()=>readPageCreateBody('app',{definition:{...app,auth:{kind:'headers',headers:[{name:'Authorization',value:'must-not-be-in-a-draft'}]}}}),invalidInput)
  assert.throws(()=>readPageCreateBody('extension',dataSource),invalidInput)
  // 白名单已清空：形状合法的官方包引用也一律拒绝，不是「形状对就收」
  assert.throws(()=>readPageCreateBody('extension',{registry:'npm',packageName:'dsh-visualize',version:'0.1.2'}),invalidInput)

@@ -1,0 +1,37 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -136,6 +136,7 @@ async function syncTools(client, ctx, opts, previous) {
+ 			description: tool.description ?? "",
+ 			inputSchema: tool.inputSchema,
+ 			outputSchema: tool.outputSchema,
++			annotations: tool.annotations,
+ 			taskRequired: tool.execution?.taskSupport === "required",
+ 			call: (args, execution) => client.callTool({
+ 				name: tool.name,
+@@ -178,11 +179,15 @@ function supportedOutputSchema(candidate) {
+ */
+ function createMcpToolDefinition(ctx, options) {
+ 	const { name, rawName, description, inputSchema } = options;
++	const annotations = options.annotations === void 0 ? void 0 : Object.freeze({ ...options.annotations });
++	const concurrencySafe = annotations?.readOnlyHint === true && annotations?.destructiveHint !== true && options.taskRequired !== true;
+ 	const projections = /* @__PURE__ */ new WeakMap();
+ 	return {
+ 		name,
+ 		description,
+ 		parameters: inputSchema,
++		annotations,
++		isConcurrencySafe: () => concurrencySafe,
+ 		output: createOutput(rawName, supportedOutputSchema(options.outputSchema)),
+ 		execute: createExecutor(ctx, options, projections),
+ 		projectContent(exec, result) {
+--- a/lib/types/tools.d.ts
++++ b/lib/types/tools.d.ts
+@@ -83,6 +83,8 @@ export interface McpToolDefinitionOptions {
+     outputSchema?: unknown;
+     /** Whether the upstream tool requires the unsupported task execution extension. */
+     taskRequired?: boolean;
++    /** Upstream hints affect scheduling only; they do not grant authorization. */
++    annotations?: Readonly<{ readOnlyHint?: boolean; destructiveHint?: boolean; [key: string]: unknown }>;
+     /**
+      * Obtain one raw MCP result from the provider.
+      * @param args - model arguments admitted by the ToolRuntime.

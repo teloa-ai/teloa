@@ -1,4 +1,6 @@
 import {initializeTaskRunGoals} from './task-run-goals.ts'
+import {initializeEmployeeIntegrations} from './employee-integrations.ts'
+import {initializeEmployeeApiWork} from './employee-api-work.ts'
 import {initializeWorkControl} from './work-control.ts'
 import {initializeWorkRecovery} from './work-recovery.ts'
 import {initializeWorkBudgets} from './work-budget.ts'
@@ -103,6 +105,8 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  // 岗位是任务、计划、群、岗位记忆的共同外键目标。
  await initializeRoles(pool)
  await initializeTasks(pool)
+ await initializeEmployeeIntegrations(pool)
+ await initializeEmployeeApiWork(pool)
  await initializeProjects(pool)
  await initializeProjectContext(pool)
  await initializeProjectRuntime(pool)

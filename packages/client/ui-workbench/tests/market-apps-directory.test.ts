@@ -388,3 +388,15 @@ test('应用包内连接按服务名与工具回查官方目录连接：匹配�
  const en=render(createElement(MarketAppDetailView,{row:row('package:bundle'),close:()=>{},runAction:()=>{},busy:undefined,error:undefined} as never),'en')
  assert.match(en,/isn’t in the app directory/)
 })
+
+test('本人自定义 MCP 连接按稳定身份出现在我的应用，真实工具状态不伪造官方来源',()=>{
+ const connection={...record('custom.local','connected'),custom:{title:'本人连接'},tools:[{name:'search',fullName:'local/search',readOnly:false}]}
+ const rows=presentation.appsDirectoryRows({items:[],connections:ready([connection]),locale:'zh-CN'})
+ assert.equal(rows.length,1);const row=rows[0]
+ assert.equal(row.title,'本人连接');assert.equal(row.customConnection.id,connection.id)
+ assert.equal(row.publisher,undefined);assert.equal(row.license,undefined);assert.deepEqual(row.entryIds,[])
+ assert.equal(row.connectors[0].tools[0].readOnly,false);assert.equal(row.connectors[0].state.connection,'connected')
+ assert.equal(presentation.filterAppsRows(rows,{query:'',category:'all',mine:false}).length,0)
+ assert.equal(presentation.filterAppsRows(rows,{query:'本人',category:'all',mine:true}).length,1)
+ assert.deepEqual(presentation.appsRowAction(row),{kind:'detail'})
+})

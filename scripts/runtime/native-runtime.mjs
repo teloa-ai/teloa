@@ -25,6 +25,8 @@ specs.push({name:'@deepseek-ai/dsh-client-ui-conversation',basename:'dsh-client-
 // 提供方未单独配置上限时，固定 SDK 模型已有有限输出上界；将它绑定到原生 prepared call，供受控工作预留额度。
 specs.push({name:'@deepseek-ai/dsh-llm-pi-ai',basename:'dsh-llm-pi-ai-'+version+'-output-cap',targets:['lib/index.js','lib/types/adapter.d.ts']})
 specs.push({name:'@deepseek-ai/dsh-experimental-auto-review',basename:'dsh-experimental-auto-review-'+version+'-request-owner',targets:['lib/index.js']})
+// 远端只读提示仅供原生有界并发调度，不替代本人确认、员工授权和参数边界。
+specs.push({name:'@deepseek-ai/dsh-mcp-client',basename:'dsh-mcp-client-'+version+'-tool-concurrency',targets:['lib/index.js','lib/types/tools.d.ts']})
 export const nativeRuntimeCompatibilityFiles=Object.freeze(specs.flatMap(spec=>[spec.basename+'.json',spec.basename+'.patch']))
 const hash=value=>createHash('sha256').update(value).digest('hex'),sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const exec=promisify(execFile),trusted=new WeakMap();let installed

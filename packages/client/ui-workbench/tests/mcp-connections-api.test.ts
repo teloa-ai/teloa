@@ -72,3 +72,22 @@ test('受管 MCP 连接 API（规格 2026-09-27 §7.1）：add 原样提交 head
  assert.deepEqual(calls,[['mcp-connections/add',{catalogId:'teloa.mcp-test',credentials}]])
  for(const extra of [{credentials},{basic_user_test_conn:'alice'},{'header_test_conn__x-api-key':'key-12345678'}])await assert.rejects(api({...record('saved'),...extra}).add('teloa.mcp-test',credentials),/格式不正确/,JSON.stringify(Object.keys(extra)))
 })
+
+test('自定义应用认证走独立端点，绑定定义摘要；公开回包不接收认证值，成功变更通知目录',async()=>{
+ const definition={schema:'teloa.mcp-server/v1',serverName:'headers',title:'双头连接',transport:'streamable-http',url:'https://mcp.example.test/mcp',auth:{kind:'headers',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-API-Key'}]}} as const
+ const hash='a'.repeat(64),connection={...record('saved'),custom:{title:'双头连接'}},calls:unknown[][]=[]
+ let response:unknown={schema:'teloa.mcp-preview/v1',definition,definitionHash:hash,authorizationConfigured:false},notifications=0
+ const api=createManagedMcpConnectionApi(async(method,payload)=>{calls.push([method,payload]);return response}),unsubscribe=api.subscribe(()=>notifications++)
+ assert.deepEqual((await api.previewCustom(definition as never)).definition,definition)
+ assert.equal(notifications,0)
+ response=connection
+ await api.saveCustom({requestId:id,definition:definition as never,expectedDefinitionHash:hash})
+ const input={id,expectedDefinitionHash:hash,credentials:{Authorization:'local-synthetic-value','X-API-Key':'local-synthetic-key'},readOnlyTools:['search']}
+ await api.authorizeCustom(input)
+ assert.deepEqual(calls.at(-1),['mcp-connections/authorize-custom',input]);assert.equal(notifications,2)
+ for(const change of [{expectedDefinitionHash:'old'},{readOnlyTools:['search','search']},{credentials:{Authorization:'injected\r\nX-Other: value'}}])await assert.rejects(()=>api.authorizeCustom({...input,...change}))
+ assert.equal(calls.length,3)
+ response={...connection,credentials:input.credentials};await assert.rejects(()=>api.get(id),/格式不正确/)
+ response={schema:'teloa.mcp-preview/v1',definition,definitionHash:hash,authorizationConfigured:true,credentials:input.credentials};await assert.rejects(()=>api.getCustom(id))
+ unsubscribe();response=connection;await api.disconnect(id);assert.equal(notifications,2)
+})

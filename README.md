@@ -225,6 +225,12 @@ Teloa's three editions share the same product core and serve different working n
 | Pro | A native Mac application for personal and professional work. Get started with local task execution and access to your files and apps, then create, follow and continue work from your phone. |
 | Enterprise | For businesses and organizations, deployed in the company cloud or internal network. Manage members, shared AI employees, permissions and audit, and connect internal data, systems and business workflows. |
 
+## Call employees from your business system
+
+Create a scoped key under **Settings > Employee integrations** to call a fixed employee version through the **HTTP API, TypeScript/JavaScript SDK or MCP Server**. Requests use persistent work IDs and idempotency keys; results have fixed versions and checksums. Signed CloudEvents callbacks support retries and delivery records.
+
+The API uses the same employee permissions, BYOK and Task/Run pipeline as the workbench. Execution, tool approval and business acceptance remain separate. See the [SDK and integration contract](packages/sdk/README.md) or [integration guide](https://docs.teloa.ai/en/develop/employee-api).
+
 ## Documentation
 
 | What you want to do | Start here |

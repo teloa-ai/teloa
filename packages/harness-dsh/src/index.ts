@@ -93,6 +93,7 @@ import {registerConversationWorkTools} from './conversation-work-tools.ts'
 import {ConversationWorkDispatch} from './conversation-work-dispatch.ts'
 import {publishConversationWorkStatus} from './conversation-work-publisher.ts'
 import {readTaskRunGroupResult} from './task-run-group-result.ts'
+import {createEmployeeIntegrationHost,employeeIntegrationOwnerEndpoints} from './employee-integration-host.ts'
 import {ConversationWorkService,WorkFactsService,workRequestChildId} from '@teloa/backend'
 import {registerIndustryPlanTools} from './industry-plan-tools.ts'
 import {registerSkillInstallTools} from './skill-install-tools.ts'
@@ -2362,6 +2363,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     const scopes=[...await businessScopeIds()]
     // 新的一类业务的范围键在加载后才登记（0df1b3a 后端同一口径）：这一实体读目录只回已登记清单并标明该键是否已被占用，不按「已获准范围」拦。
     if(input.entity==='business-domain')return {entity:input.entity,scopes,...(input.scope===undefined?{}:{exists:scopes.includes(input.scope)})}
+    if(input.entity==='app')return {entity:'app',schema:'teloa.mcp-server/v1',transport:'streamable-http',authKinds:['headers'],maxHeaders:8,credentials:'browser-only',tools:'discover-after-owner-connect'}
     if(input.entity==='share'){
      // 应用模板的连接只能引用已审目录连接：沿目录列表（快照与已采用在线连接）分页读取，只回服务名、工具名与鉴权方式，不回配方、地址或任何凭据。
      let entries:Parameters<typeof shareConnectorDirectory>[0]=[],cursor:string|null=null
@@ -2435,6 +2437,16 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   }
   // Connection 保证请求已认证；本切片只有本地 profile 的一位操作者。
   const connection=Reflect.get(ctx,'connection') as HostConnectionHandle
+  const employeeIntegrations=createEmployeeIntegrationHost(ctx,{owner,scopes:businessScopeIds,pool:async()=>(await resources.database()).pool,employees:async()=>await roleHandler('roles/list',{}) as DigitalRole[],admit:operation=>runtimeAdmission.run(operation),report:code=>ctx.logger.warn('员工对外调用待恢复：%s',code),runtime:{
+   prepare:async(actor,input,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','集成归属不一致。');return taskRunHandler('task-runs/prepare',input,signal)},
+   start:async(actor,runId,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','集成归属不一致。');return taskRunHandler('task-runs/start',{runId},signal)},
+   read:async(actor,runId,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','集成归属不一致。');return taskRunHandler('task-runs/reconcile',{runId},signal)},
+   stop:async(actor,runId,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','集成归属不一致。');return taskRunHandler('task-runs/stop',{runId},signal)},
+   withdraw:async(actor,runId,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','集成归属不一致。');return taskRunHandler('task-runs/withdraw',{runId},signal)},
+   waiting:async run=>{const events=await runPorts.events(run),pending=new Set<string>();for(const event of events){if(run.evidence&&run.evidence.state!=='accepted'&&event.seq<run.evidence.messageSeq)continue;if(event.type==='approval/asked')pending.add(event.data.id);else if(event.type==='approval/decided')pending.delete(event.data.id)}return pending.size>0},
+   result:async run=>{if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)return;const events=(await runPorts.events(run)).slice(0,run.evidence.endSeq+1),continuations=await runPorts.continuations?.(run,events),goal=await runPorts.goalObservation?.(run,events),reviewed=readTaskRunGroupResult(events,run.nativeRequestId,continuations,goal,{requireReview:true,runId:run.id}),text=reviewed??readTaskRunGroupResult(events,run.nativeRequestId,continuations,goal);return text?{text,review:reviewed===undefined?'unreviewed':'accepted'}:undefined},
+  }})
+  resources.beforeDatabaseClose(()=>employeeIntegrations.close())
   const dispatchTeloaEndpoint=async(endpoint:string,payload:unknown,signal:AbortSignal)=>{
     if(!endpointSet.has(endpoint)||endpoint==='requests/pending/list'||endpoint==='requests/pending/recover'||endpoint==='requests/pending/ack')throw new WorkError('teloa/not-found','未提供此工作接口。')
     if(endpoint==='resource-use/list')return resourceUseSnapshots.list(payload)
@@ -2551,6 +2563,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   connection.fetch.register(createGroupAttachmentUploadRoute(groupAttachmentHandler,error=>ctx.logger.warn('Teloa 群附件上传失败：%s',error instanceof Error?(error.stack??error.message):String(error))))
   connection.rpc.handle('/teloa',async(endpoint,payload,signal,peer)=>{
     try {
+      if((employeeIntegrationOwnerEndpoints as readonly string[]).includes(endpoint)){
+       if(peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','员工对外调用凭据仅供本人浏览器管理。')
+       signal.throwIfAborted();return {ok:true,value:await employeeIntegrations.owner(endpoint,payload)}
+      }
       if((directDeviceEndpoints as readonly string[]).includes(endpoint)){
        if(peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','设备直连仅供本人浏览器管理。')
        signal?.throwIfAborted()

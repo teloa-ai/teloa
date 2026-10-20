@@ -1,4 +1,7 @@
 import {LocalModelsSettings} from './LocalModelsSettings.js'
+import {EmployeeIntegrationSettings,employeeIntegrationSettingsTitle} from './EmployeeIntegrationSettings.js'
+import type {EmployeeIntegrationApi} from './employee-integration-api.js'
+import {resolveProductLocale} from './i18n/locale.js'
 import type {LocalModelsApi,LocalModelsFocus} from './local-models-api.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
@@ -37,7 +40,7 @@ function directory(ctx:Context,key:'settings.section'|'settings.onboarding'|'sid
   }
 }
 
-export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close:()=>void;selection:SettingsNavigation},t:TeloaTranslate,webAccessApi:WebAccessApi,runtimeSettings:RuntimeSettingsSurface,imChannels:ImChannelsSettingsProps,localModels?:{api:LocalModelsApi;focus:LocalModelsFocus}):void{
+export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close:()=>void;selection:SettingsNavigation},t:TeloaTranslate,webAccessApi:WebAccessApi,runtimeSettings:RuntimeSettingsSurface,imChannels:ImChannelsSettingsProps,localModels?:{api:LocalModelsApi;focus:LocalModelsFocus},integrations?:EmployeeIntegrationApi):void{
   // 应用桥在装配前已读取；宿主分配执行位置时不提供执行位置分区及其本机目录管理。
   if(applicationPresentation.getExecutionPlacement()==='user-selected')ctx.inject(['workspaces','connection'],child=>{
     const workspaces=child.workspaces as unknown as IWorkspaces
@@ -70,6 +73,7 @@ export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close
     child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'teloa-native-panels',order:10,label:()=>t('teamCapability.runtime.manage'),inject:()=>({surface:runtimeSettings,webAccessApi})},NativePanelsSettings))
     child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'teloa-im-channels',order:15,label:()=>t('imChannels.title'),inject:()=>imChannels},ImChannelsSettingsPage))
     if(localModels)child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'teloa-local-models',order:25,label:()=>t('localModels.title'),inject:()=>localModels},LocalModelsSettings))
+    if(integrations)child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'teloa-employee-integrations',order:66,label:()=>employeeIntegrationSettingsTitle(resolveProductLocale(child.locale.getSnapshot().active)),inject:()=>({api:integrations})},EmployeeIntegrationSettings))
     child.slots.inject('plugins.detail.actions',()=>child.slots.register({name:'plugins.detail.actions',id:'teloa-settings-detail-scope'},NativePluginDetailMarker))
     child.slots.inject('settings.section',()=>child.slots.register({name:'settings.section',id:'plugins',order:15,label:()=>t('settings.systemComponents'),children:{'settings.plugins.tab':{kind:'list',scope:'root'}}},ComponentStatusSettings))
     child.slots.inject('settings.action',()=>child.slots.register({name:'settings.action',id:'open-document',order:0,inject:()=>({describe,loopback:remote.$host.isLoopback,openDocument:async()=>{const result=await remote.settings.openSettingsDocument();if(!result.ok)throw Error(result.error.message)}})},SettingsDocumentAction))

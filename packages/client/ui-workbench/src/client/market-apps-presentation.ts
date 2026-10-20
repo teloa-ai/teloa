@@ -50,6 +50,7 @@ export type AppsRow={
  contentId?:string
  savedState?:'saved'|'saved-pending-install'|'installing'
  pack?:AppsPack
+ customConnection?:ManagedMcpConnectionRecord
  mine:boolean
 }
 /** `content`：已读取的包文件，用于按连接声明（serverName 与工具）回查官方目录连接；未读取时连接标为 unread。 */
@@ -222,12 +223,16 @@ export function appsDirectoryRows(input:{items:readonly MarketCatalogItem[];conn
    connectors:declaredConnectors(declared),
    skills:resources.filter(row=>row.kind==='skill').map(row=>({title:row.title,summary:'',added:false,installed:false,builtin:false})),mine:false})
  }
+ if(input.connections.status==='ready')for(const record of input.connections.records.filter(record=>record.custom)){
+  const title=record.custom!.title
+  rows.push({key:'custom:'+record.id,kind:'app',title,summary:'',categories:[],connectors:[{title,added:true,tools:(record.tools??[]).map(tool=>({name:tool.name,description:'',readOnly:tool.readOnly})),state:connectorState(record.catalogId,input.connections)}],skills:[],entryIds:[],mine:true,customConnection:record})
+ }
  return rows
 }
 
 const inCategory=(row:AppsRow,key:MarketFunctionKey)=>row.categories.includes(key)||key==='other'&&!row.categories.length
 /** 不在 Teloa 官方目录里的本机安装技能只属于「我的应用」：不进入浏览目录、用途分类与推荐。 */
-const catalogBrowsable=(row:AppsRow)=>row.kind!=='installed-skill'&&!row.contentId
+const catalogBrowsable=(row:AppsRow)=>row.kind!=='installed-skill'&&!row.contentId&&!row.customConnection
 export function appsCategories(rows:readonly AppsRow[]):MarketFunctionKey[]{
  return marketFunctionKeys.filter(key=>rows.some(row=>catalogBrowsable(row)&&inCategory(row,key)))
 }
@@ -276,6 +281,7 @@ function appUnavailable(row:AppsRow):boolean{
 
 /** 行上的主动作与真实状态一致：应用直接进入原连接设置，由本人明确连接；技能先添加为内容，状态未知或不支持时只打开详情。 */
 export function appsRowAction(row:AppsRow):AppsRowAction{
+ if(row.customConnection)return {kind:'detail'}
  if(row.contentId)return {kind:'open-content',entryId:row.key,contentId:row.contentId}
  if(row.kind==='app'){
   const connector=row.connectors[0]!,state=connector.state
@@ -318,6 +324,7 @@ export function skillStatus(skill:AppsSkill):string{
  */
 export type AppsShareSource={subject:'skill'|'app'|'mcp';skills:{name:string;title:string;resourceId:string;version:string;publicId:string}[];connections:{serverName:string;title:string;tools:string[]}[]}
 export function appsRowShareSource(row:AppsRow):AppsShareSource|undefined{
+ if(row.customConnection)return undefined
  if(row.kind==='bundle')return undefined
  // 公共引用写原技能名与固定版本（契约 localId），不写含点的目录 id；接收方按「名 + 版本」唯一解析回目录条目。
  const skills=row.skills.flatMap(skill=>skill.item?.entry.kind==='skill'&&skill.entryId&&!skill.builtin?[{name:skill.item.entry.skill.name,title:skill.title,resourceId:skill.item.entry.skill.name,version:skill.item.entry.version,publicId:skill.item.entry.skill.name}]:[])

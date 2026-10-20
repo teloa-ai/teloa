@@ -958,6 +958,8 @@ importers:
         specifier: 8.18.1
         version: 8.18.1
 
+  packages/sdk: {}
+
   packages/xiaozhi-mcp:
     dependencies:
       '@deepseek-ai/cordis':
