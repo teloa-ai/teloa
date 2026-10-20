@@ -41,23 +41,23 @@ export function BusinessMoreMenu({scope,choose}:{scope:string;choose:(action:Bus
  },[open])
  const pick=(action:BusinessMoreAction)=>{ref.current?.querySelector('summary')?.focus();setOpen(false);choose(action,scope)}
  return <details ref={ref} className={css.scopeMore} data-placement={above?'above':'below'} open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
-  <summary>{t('business.section.more')}<ChevronDown size={13}/></summary>
+  <summary onClick={event=>{event.preventDefault();setOpen(value=>!value)}}>{t('business.section.more')}<ChevronDown size={13}/></summary>
   <div role="group" aria-label={t('business.section.more.aria')} className={css.scopeMorePanel}>
    <section aria-labelledby={`${id}-view`}><h3 id={`${id}-view`}>{t('business.more.view')}</h3>
     <button type="button" onClick={()=>pick('work')}>{t('business.more.currentTasks')}</button>
     <button type="button" onClick={()=>pick('completed')}>{t('business.done.title')}</button>
-    <button type="button" onClick={()=>pick('dashboards')}>{t('business.more.dashboards')}</button>
+    {scope!=='general'&&<button type="button" onClick={()=>pick('dashboards')}>{t('business.more.dashboards')}</button>}
     <button type="button" onClick={()=>pick('automations')}>{t('business.section.continuous')}</button>
    </section>
-   <section aria-labelledby={`${id}-configure`}><h3 id={`${id}-configure`}>{t('business.more.configure')}</h3>
+   {scope!=='general'&&<section aria-labelledby={`${id}-configure`}><h3 id={`${id}-configure`}>{t('business.more.configure')}</h3>
     <button type="button" onClick={()=>pick('adjustment')}>{t('business.more.adjustment')}</button>
     <button type="button" onClick={()=>pick('connector')}>{t('business.more.connector')}</button>
     <button type="button" onClick={()=>pick('sources')}>{t('business.more.sources')}</button>
     <details className={css.scopeMoreAdvanced}><summary>{t('business.more.advanced')}</summary><button type="button" onClick={()=>pick('manual-definition')}>{t('business.more.manualDefinition')}</button></details>
-   </section>
-   <section aria-labelledby={`${id}-share`}><h3 id={`${id}-share`}>{t('business.more.share')}</h3>
+   </section>}
+   {scope!=='general'&&<section aria-labelledby={`${id}-share`}><h3 id={`${id}-share`}>{t('business.more.share')}</h3>
     <button type="button" onClick={()=>pick('share')}>{t('business.more.shareBusiness')}</button>
-   </section>
+   </section>}
   </div>
  </details>
 }

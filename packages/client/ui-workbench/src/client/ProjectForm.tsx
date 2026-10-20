@@ -15,7 +15,7 @@ function descriptionTitle(value:string){
  const text=line.replace(/^#{1,6}\s+/,'').replace(/\s+#+$/,'').replace(/^(?:[-*+]\s+|\d+[.)]\s+)/,'')
  return (text.split(/(?<=[。！？])|(?<=[.!?])\s+/)[0]??'').trim().slice(0,120).replace(/[\uD800-\uDBFF]$/,'')
 }
-export function ProjectForm({initial,draft,changeDraft,pending,editing=false,openTasks=0,scopeName,close,save}:{initial:ProjectDefinition;draft?:ProjectFormDraft;changeDraft?:(draft:ProjectFormDraft)=>void;pending?:Promise<void>|undefined;editing?:boolean;openTasks?:number;scopeName?:string;close:()=>void;save:(fields:ProjectDefinition)=>Promise<void>}){
+export function ProjectForm({initial,draft,changeDraft,pending,editing=false,openTasks=0,scopeName,scopes,close,save}:{initial:ProjectDefinition;draft?:ProjectFormDraft;changeDraft?:(draft:ProjectFormDraft)=>void;pending?:Promise<void>|undefined;editing?:boolean;openTasks?:number;scopeName?:string;scopes?:readonly {scope:string;label:string}[];close:()=>void;save:(fields:ProjectDefinition)=>Promise<void>}){
  const {t,locale}=useI18n(),dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null),description=useRef<HTMLTextAreaElement>(null)
  const [fields,updateFields]=useState(draft?.fields??initial),[busy,setBusy]=useState(!!pending),[error,setError]=useState(''),[ack,updateAck]=useState(draft?.ack??false),[titleEdited,updateTitleEdited]=useState(draft?.titleEdited??!!(draft?.fields.title??initial.title))
  const setFields=(fields:ProjectDefinition,edited=titleEdited)=>{updateFields(fields);updateTitleEdited(edited);changeDraft?.({fields,ack,titleEdited:edited})},setAck=(ack:boolean)=>{updateAck(ack);changeDraft?.({fields,ack,titleEdited})},dismiss=useDialogDismiss(close,!busy)
@@ -31,7 +31,7 @@ export function ProjectForm({initial,draft,changeDraft,pending,editing=false,ope
    <label>{t('project.goal')}<textarea aria-label={t('project.goal')} required maxLength={8000} rows={4} value={fields.goal} disabled={busy} onChange={e=>setFields({...fields,goal:e.target.value})}/></label>
    <label>{t('project.dueDate')}<input aria-label={t('project.dueDate')} type="date" value={fields.dueDate??''} disabled={busy} onChange={e=>setFields({...fields,dueDate:e.target.value||null})}/></label>
   </>:<>
-   <p className={css.createScope}>{t('project.create.scope',{name:scopeName??initial.scope})}</p>
+   {scopes&&scopes.length>1?<label>{t('project.create.business')}<select aria-label={t('project.create.business')} value={fields.scope} disabled={busy} onChange={e=>setFields({...fields,scope:e.target.value})}>{scopes.map(item=><option key={item.scope} value={item.scope}>{item.label}</option>)}</select></label>:<p className={css.createScope}>{t('project.create.scope',{name:scopeName??initial.scope})}</p>}
    <label>{t('project.create.description')}<textarea ref={description} className={css.createDescription} aria-label={t('project.create.description')} aria-describedby="project-description-hint" required maxLength={8000} rows={8} placeholder={t('project.create.example')} value={fields.goal} disabled={busy} onChange={e=>setFields({...fields,goal:e.target.value,...(!titleEdited?{title:descriptionTitle(e.target.value)}:{})})}/></label>
    <p id="project-description-hint">{t('project.create.hint')}</p>
    {(fields.goal.trim()||fields.title)&&<label className={css.proposedTitle}>{t('project.name')}<input aria-label={t('project.name')} required maxLength={120} value={fields.title} disabled={busy} onChange={e=>setFields({...fields,title:e.target.value},true)}/></label>}

@@ -22,10 +22,10 @@ type Props={api:ProjectApi;conversationActions?:ProjectConversationActions|undef
 type Draft<T>={value:T;pending?:Promise<void>}
 type FormDraft=Draft<ProjectFormDraft>&{initial:ProjectDefinition;project?:WorkProject}
 type RelationDraft<T>=Draft<T>&{project:WorkProject}
-type ProjectDrafts={forms:Map<string,FormDraft>;relations:Map<string,RelationDraft<ProjectRelationsDraft>>;references:Map<string,RelationDraft<ProjectReferencesDraft>>}
+type ProjectDrafts={forms:Map<string,FormDraft>;relations:Map<string,RelationDraft<ProjectRelationsDraft>>;references:Map<string,RelationDraft<ProjectReferencesDraft>>;directories:Map<string,{query:string;archived:boolean}>}
 // 同一本人连接内按项目和入口保留草稿；连接释放后不保留跨身份的全局副本。
 const projectDrafts=new WeakMap<ProjectApi,ProjectDrafts>()
-const draftsFor=(api:ProjectApi)=>{let drafts=projectDrafts.get(api);if(!drafts){drafts={forms:new Map(),relations:new Map(),references:new Map()};projectDrafts.set(api,drafts)}return drafts}
+const draftsFor=(api:ProjectApi)=>{let drafts=projectDrafts.get(api);if(!drafts){drafts={forms:new Map(),relations:new Map(),references:new Map(),directories:new Map()};projectDrafts.set(api,drafts)}return drafts}
 function submitDraft<T extends Draft<unknown>>(drafts:Map<string,T>,key:string,draft:T,run:()=>Promise<void>){
  if(draft.pending)return draft.pending
  const pending=Promise.resolve().then(run).then(()=>{if(drafts.get(key)===draft)drafts.delete(key)})
@@ -36,11 +36,13 @@ function submitDraft<T extends Draft<unknown>>(drafts:Map<string,T>,key:string,d
 type OpenDraft<T>={book:ProjectDrafts;key:string;draft:T}
 export function ProjectWorkspace({api,conversationActions,scope,selectedId,typeName,scopeLabels=[],select,back,openItem}:Props){
  const {t,locale}=useI18n(),collaborationScopes=useBusinessScopes(),scopeName=(value:string)=>referenceScopeName({scope:value},scopeLabels,item=>collaborationScopes[item]||item),[rows,setRows]=useState<WorkProject[]>([]),[detail,setDetail]=useState<ProjectDetail>(),[loadedKey,setLoadedKey]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,refresh]=useState(0)
- const [query,setQuery]=useState(''),[archived,setArchived]=useState(false),[busy,setBusy]=useState(false),[discarded,setDiscarded]=useState(false)
+ const [query,setQueryValue]=useState(()=>draftsFor(api).directories.get(scope)?.query??''),[archived,setArchivedValue]=useState(()=>draftsFor(api).directories.get(scope)?.archived??false),[busy,setBusy]=useState(false),[discarded,setDiscarded]=useState(false)
  const [form,setForm]=useState<OpenDraft<FormDraft>|null>(null),[relations,setRelations]=useState<OpenDraft<RelationDraft<ProjectRelationsDraft>>|null>(null),[references,setReferences]=useState<OpenDraft<RelationDraft<ProjectReferencesDraft>>|null>(null),[archive,setArchive]=useState<WorkProject|null>(null)
  const [contextProject,setContextProject]=useState<string>()
  const key=scope+':'+(selectedId??''),current=loadedKey===key?detail:undefined
  const book=draftsFor(api),origin=JSON.stringify([scope,selectedId??null]),location=useRef({api,key}),mounted=useRef(true)
+ const setQuery=(query:string)=>{book.directories.set(scope,{query,archived});setQueryValue(query)},setArchived=(archived:boolean)=>{book.directories.set(scope,{query,archived});setArchivedValue(archived)}
+ useEffect(()=>{const saved=book.directories.get(scope);setQueryValue(saved?.query??'');setArchivedValue(saved?.archived??false)},[api,scope])
  location.current={api,key}
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
  useEffect(()=>{setForm(null);setRelations(null);setReferences(null)},[api,key])

@@ -54,6 +54,9 @@ test('新版资料库桌面：访问视图、搜索、收藏、阅读、文件�
  await content.getByRole('button',{name:'查看全部资料',exact:true}).click()
  assert.equal(await page.getByRole('table').count(),1)
  if(previewDir)await page.screenshot({path:previewDir+'/资料库-列表-开发.png'})
+ // 窄窗口仍须同时取得导航与真实列表，不能只剩空 Wiki 目录。
+ await page.setViewportSize({width:430,height:900});await content.getByRole('table').waitFor({state:'visible'});await content.getByRole('button',{name:'产品定位',exact:true}).click();await page.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor();await page.getByRole('button',{name:'返回列表',exact:true}).click();await content.getByRole('table').waitFor({state:'visible'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));if(previewDir)await page.screenshot({path:previewDir+'/资料库-窄窗列表-开发.png'});await page.setViewportSize({width:1440,height:1050});
+
  await page.getByRole('button',{name:'产品定位',exact:true}).last().click()
  await addMenu.click()
  await page.getByRole('button',{name:'跟踪本机文件',exact:true}).click()

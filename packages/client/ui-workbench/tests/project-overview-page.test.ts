@@ -3,16 +3,17 @@ import assert from 'node:assert/strict'
 import ts from 'typescript'
 import {readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
+import {projectDefinition} from '@teloa/contract'
 
 function harness(){
  const source=readFileSync(new URL('../src/client/ProjectOverviewPage.tsx',import.meta.url),'utf8')
  const states:any[]=[],effects:any[]=[];let cursor=0,pending:Array<()=>void>=[]
  // 项目卡是共用组件：桩直接展开函数组件，断言仍看渲染出的卡片按钮。
  const React={createElement:(type:any,props:any,...children:any[])=>typeof type==='function'?type(props??{}):({type,props:props??{},children:children.flat(Infinity)}),useState(initial:any){const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],(value:any)=>states[i]=typeof value==='function'?value(states[i]):value]},useRef(initial:any){const i=cursor++;return states[i]??(states[i]={current:initial})},useEffect(fn:()=>any,deps:any[]){const i=cursor++;if(!effects[i]||deps.some((value,j)=>value!==effects[i].deps[j])){effects[i]?.cleanup?.();pending.push(()=>effects[i]={deps,cleanup:fn()})}}}
- const modules:Record<string,any>={react:React,'@teloa/contract':{projectStates:['planning','running','review','completed','archived']},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en'})},'./i18n/errors.js':{localizeWorkError:()=>'LOAD FAILED'},'./ProjectWorkspace.js':{ProjectCard:({project,open}:any)=>({type:'button',props:{'data-project-card':project.id,onClick:open},children:[project.title]})},'./project-presentation.js':{projectCopy:(_locale:string,key:string)=>key,projectStateKeys:{planning:'project.state.planning',running:'project.state.running',review:'project.state.review',completed:'project.state.completed',archived:'project.state.archived'}},'./ProjectWorkspace.module.css':{default:{}},'./TaskPage.module.css':{default:{}},'./ToolbarIconButton.js':{ToolbarIconButton:function ToolbarIconButton(){return null}},'lucide-react':new Proxy({},{get:()=>()=>null}),clsx:{default:(...values:unknown[])=>values.filter(Boolean).join(' ')}}
+ const modules:Record<string,any>={react:React,'@teloa/contract':{projectDefinition,projectStates:['planning','running','review','completed','archived']},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en'})},'./i18n/errors.js':{localizeWorkError:()=>'LOAD FAILED'},'./ProjectForm.js':{ProjectForm:(props:any)=>({type:'project-form',props,children:[]})},'./ProjectWorkspace.js':{ProjectCard:({project,open}:any)=>({type:'button',props:{'data-project-card':project.id,onClick:open},children:[project.title]})},'./project-presentation.js':{projectCopy:(_locale:string,key:string)=>key,projectStateKeys:{planning:'project.state.planning',running:'project.state.running',review:'project.state.review',completed:'project.state.completed',archived:'project.state.archived'}},'./ProjectWorkspace.module.css':{default:{}},'./TaskPage.module.css':{default:{}},'./ToolbarIconButton.js':{ToolbarIconButton:function ToolbarIconButton(){return null}},'lucide-react':new Proxy({},{get:()=>()=>null}),clsx:{default:(...values:unknown[])=>values.filter(Boolean).join(' ')}}
  const out:Record<string,any>={}
  // 遮蔽组件内 setInterval(update,30000)：断言失败时不会走到 visible:false 清理，真定时器会令进程挂起 30 秒不退出。
- new Function('require','exports','React','setInterval','clearInterval',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText)((id:string)=>modules[id],out,React,()=>0,()=>{})
+ new Function('require','exports','React','setInterval','clearInterval',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText)((id:string)=>modules[id],out,React,()=>0,()=>{})
  const nodes=(node:any):any[]=>node&&typeof node==='object'&&'props'in node?[node,...node.children.flatMap(nodes)]:[]
  const render=(props:any)=>{cursor=0;const tree=out.ProjectOverviewPage(props),jobs=pending;pending=[];jobs.forEach(fn=>fn());return tree}
  const settle=()=>new Promise(resolve=>setTimeout(resolve,10))
@@ -22,27 +23,43 @@ const label=(scope:string)=>({scope,title:scope,kind:'builtin',loads:0,activeLoa
 const project=(id:string,scope:string,state='planning')=>({id:`${id}0000000-0000-4000-8000-000000000001`,ownerId:'self',version:1,createdAt:'2026-09-24T00:00:00Z',updatedAt:'2026-09-24T00:00:00Z',scope,title:`P${id} ${scope}`,goal:'Ship',state,dueDate:null,links:[],references:[]})
 ;(globalThis as any).window??={addEventListener(){},removeEventListener(){}};(globalThis as any).document??={visibilityState:'visible'}
 
-test('空项目目录提供所属业务入口；筛选零结果可以恢复全部项目，不误称没有创建',async()=>{
+test('项目总览直接打开 Markdown 草稿；关闭保留内容，筛选零结果可恢复全部项目',async()=>{
  const {render,nodes,settle}=harness(),entered:any[]=[],patches:any[]=[]
- const props={api:{overview:async()=>({rows:[],nextCursor:null})},scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(scope:string)=>scope,navigation:{state:{},change:(patch:any)=>patches.push(patch)},open(){},create:(scope:string|undefined)=>entered.push(scope),visible:true}
+ const props={api:{pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async()=>({rows:[],nextCursor:null})},scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(scope:string)=>scope,navigation:{state:{},change:(patch:any)=>patches.push(patch)},open(){},create:(scope:string|undefined)=>entered.push(scope),visible:true}
  render(props);await settle();let tree=render(props)
- const entry=nodes(tree).find(node=>node.type==='button'&&node.children.includes('project.overview.createInBusiness'));assert.ok(entry)
- entry.props.onClick();assert.deepEqual(entered,[undefined])
+ const entry=nodes(tree).find(node=>node.type==='button'&&node.children.includes('project.create'));assert.ok(entry)
+ entry.props.onClick();tree=render(props);let form=nodes(tree).find(node=>node.type==='project-form');assert.ok(form);assert.equal(form.props.initial.scope,'general');assert.deepEqual(entered,[],'打开草稿不跳页');form.props.changeDraft({fields:{...form.props.initial,title:'Draft',goal:'# Draft goal'},ack:false});form.props.close();tree=render(props);nodes(tree).find(node=>node.type==='button'&&node.children.includes('project.create')).props.onClick();tree=render(props);form=nodes(tree).find(node=>node.type==='project-form');assert.equal(form.props.draft.fields.goal,'# Draft goal');form.props.close()
  const filtered={...props,navigation:{...props.navigation,state:{category:'SOC',query:'archived'}}}
  render(filtered);await settle();tree=render(filtered)
  assert.ok(nodes(tree).some(node=>node.children.includes('project.overview.noMatch')))
  assert.ok(!nodes(tree).some(node=>node.children.includes('project.overview.empty')))
  nodes(tree).find(node=>node.type==='button'&&node.children.includes('task.filter.reset')).props.onClick()
  assert.deepEqual(patches.at(-1),{category:undefined,query:undefined})
- nodes(tree).find(node=>node.type==='button'&&node.children.includes('project.overview.createInBusiness')).props.onClick()
- assert.deepEqual(entered,[undefined,'SOC'])
+ nodes(tree).find(node=>node.type==='button'&&node.children.includes('project.create')).props.onClick()
+ tree=render(filtered);form=nodes(tree).find(node=>node.type==='project-form');assert.equal(form.props.initial.scope,'SOC');assert.deepEqual(entered,[])
  render({...props,visible:false})
+})
+
+test('总览草稿只在明确保存后创建；离开后的旧回包不打开其他页面',async()=>{
+ const {render,nodes,settle}=harness(),opened:any[]=[],calls:any[]=[];let release:(value:any)=>void=()=>{}
+ const api={pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async()=>({rows:[],nextCursor:null}),create:(fields:any)=>{calls.push(fields);return new Promise(resolve=>{release=resolve})}}
+ const props={api,scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(s:string)=>s,navigation:{state:{category:'SOC'},change(){}},open:(row:any)=>opened.push(row),visible:true}
+ render(props);await settle();let tree=render(props);nodes(tree).find(n=>n.type==='button'&&n.children.includes('project.create')).props.onClick();tree=render(props);const form=nodes(tree).find(n=>n.type==='project-form');assert.equal(form.props.initial.scope,'SOC');assert.equal(calls.length,0)
+ const fields={...form.props.initial,title:'Reviewed',goal:'Full Markdown'},save=form.props.save(fields);assert.deepEqual(calls,[fields]);render({...props,visible:false});release({...project('4','SOC'),...fields});await save;assert.deepEqual(opened,[])
+ render(props);await settle();tree=render(props);nodes(tree).find(n=>n.type==='button'&&n.children.includes('project.create')).props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.type==='project-form').props.initial.goal,'','成功只清原创建草稿');render({...props,visible:false})
+})
+
+test('未知创建保留原草稿并阻止重复，恢复原回执成功后清除同一草稿',async()=>{
+ const {render,nodes,settle}=harness(),opened:any[]=[];let pending:any
+ const api={pendingFields:()=>pending,recoveryError:()=>undefined,overview:async()=>({rows:[],nextCursor:null}),create:async(fields:any)=>{pending=fields;throw Error('Unknown receipt')},recover:async()=>{const fields=pending;pending=undefined;return {...project('5','general'),...fields}}}
+ const props={api,scopeLabels:[label('general')],labelsReady:true,scopeName:(s:string)=>s,navigation:{state:{},change(){}},open:(row:any)=>opened.push(row),visible:true}
+ render(props);await settle();let tree=render(props);nodes(tree).find(n=>n.type==='button'&&n.children.includes('project.create')).props.onClick();tree=render(props);const form=nodes(tree).find(n=>n.type==='project-form'),fields={...form.props.initial,title:'Once',goal:'Original goal'};form.props.changeDraft({fields,ack:false});await assert.rejects(form.props.save(fields),/Unknown receipt/);form.props.close();tree=render(props);assert.equal(nodes(tree).find(n=>n.type==='button'&&n.children.includes('project.create')).props.disabled,true);nodes(tree).find(n=>n.type==='button'&&n.children.includes('project.recover')).props.onClick();await settle();tree=render(props);assert.equal(opened.length,1);assert.equal(opened[0].goal,'Original goal');nodes(tree).find(n=>n.type==='button'&&n.children.includes('project.create')).props.onClick();tree=render(props);assert.equal(nodes(tree).find(n=>n.type==='project-form').props.initial.goal,'');render({...props,visible:false})
 })
 
 test('单业务不渲染业务下拉；「当前」以 state:current 查询，回包几行渲染几行（不再本地过滤）；点卡片调用 open',async()=>{
  const {render,nodes,settle}=harness(),calls:any[]=[],opened:any[]=[]
  const rows=[project('1','general'),project('2','general','running'),project('3','general','review')]
- const props={api:{overview:async(input:any)=>{calls.push(input);return {rows,nextCursor:null}}},scopeLabels:[label('general')],labelsReady:true,scopeName:(scope:string)=>scope,navigation:{state:{},change(){}},open:(row:any)=>opened.push(row),visible:true}
+ const props={api:{pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>{calls.push(input);return {rows,nextCursor:null}}},scopeLabels:[label('general')],labelsReady:true,scopeName:(scope:string)=>scope,navigation:{state:{},change(){}},open:(row:any)=>opened.push(row),visible:true}
  render(props);await settle();const tree=render(props)
  assert.deepEqual(calls,[{scope:null,state:'current',cursor:null,limit:50}])
  assert.equal(nodes(tree).find(node=>node.type==='select'&&node.props['aria-label']==='project.overview.businessFilter'),undefined)
@@ -54,7 +71,7 @@ test('单业务不渲染业务下拉；「当前」以 state:current 查询，�
 test('多业务时选择业务写入 navigation.category 并以该 scope 查询；选「已归档」写入 query 并传 state',async()=>{
  const {render,nodes,settle}=harness(),calls:any[]=[],patches:any[]=[]
  let navigation={state:{} as Record<string,string|undefined>,change(patch:Record<string,string|undefined>){patches.push(patch);navigation={...navigation,state:{...navigation.state,...Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined))}}}}
- const props=()=>({api:{overview:async(input:any)=>{calls.push(input);return {rows:[project('1',input.scope??'general',input.state==='current'?'planning':input.state)],nextCursor:null}}},scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(scope:string)=>scope==='SOC'?'Security Ops':scope,navigation,open(){},visible:true})
+ const props=()=>({api:{pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>{calls.push(input);return {rows:[project('1',input.scope??'general',input.state==='current'?'planning':input.state)],nextCursor:null}}},scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(scope:string)=>scope==='SOC'?'Security Ops':scope,navigation,open(){},visible:true})
  render(props());await settle();let tree=render(props())
  const business=nodes(tree).find(node=>node.type==='select'&&node.props['aria-label']==='project.overview.businessFilter');assert.ok(business)
  assert.deepEqual(nodes(business).filter(node=>node.type==='option').map(node=>[node.props.value,node.children[0]]),[['','project.overview.allBusinesses'],['general','general'],['SOC','Security Ops']])
@@ -72,7 +89,7 @@ test('多业务时选择业务写入 navigation.category 并以该 scope 查询�
 test('有 nextCursor 时显示加载更多，点击后传 cursor 并追加去重',async()=>{
  const {render,nodes,settle}=harness(),calls:any[]=[]
  const first={rows:[project('1','general'),project('2','SOC')],nextCursor:'2026-09-25T00:00:00.000Z|20000000-0000-4000-8000-000000000001'},second={rows:[project('2','SOC'),project('3','AppSec')],nextCursor:null}
- const props={api:{overview:async(input:any)=>{calls.push(input);return input.cursor?second:first}},scopeLabels:[label('general'),label('SOC'),label('AppSec')],labelsReady:true,scopeName:(scope:string)=>scope,navigation:{state:{},change(){}},open(){},visible:true}
+ const props={api:{pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>{calls.push(input);return input.cursor?second:first}},scopeLabels:[label('general'),label('SOC'),label('AppSec')],labelsReady:true,scopeName:(scope:string)=>scope,navigation:{state:{},change(){}},open(){},visible:true}
  render(props);await settle();let tree=render(props)
  const more=nodes(tree).find(node=>node.props['data-project-load-more']!==undefined);assert.ok(more)
  await more.props.onClick();tree=render(props)
@@ -83,7 +100,7 @@ test('有 nextCursor 时显示加载更多，点击后传 cursor 并追加去重
 })
 test('业务目录未就绪时不发首屏请求，就绪后按恢复的业务筛选只查一次；列表容器标记为 directory 面板供 scrollTop 复用',async()=>{
  const {render,nodes,settle}=harness(),calls:any[]=[]
- const api={overview:async(input:any)=>{calls.push(input);return {rows:[project('1','SOC')],nextCursor:null}}}
+ const api={pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>{calls.push(input);return {rows:[project('1','SOC')],nextCursor:null}}}
  const props=(labelsReady:boolean,scopeLabels:any[])=>({api,scopeLabels,labelsReady,scopeName:(scope:string)=>scope,navigation:{state:{category:'SOC'},change(){}},open(){},visible:true})
  render(props(false,[]));await settle();render(props(false,[]))
  assert.deepEqual(calls,[],'标签未就绪不请求')

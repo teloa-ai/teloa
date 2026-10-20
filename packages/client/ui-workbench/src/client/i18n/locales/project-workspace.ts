@@ -5,6 +5,7 @@ export const PROJECT_WORKSPACE_MESSAGE_ROWS = [
 ["project.create.example","# 客户上线项目\n目标：完成产品试用并交付上线说明。\n需要：整理资料、协调员工、确认交付结果。","# 客戶上線專案\n目標：完成產品試用並交付上線說明。\n需要：整理資料、協調員工、確認交付結果。","# Customer launch\nGoal: complete the trial and deliver a launch guide.\nNeeds: organize material, coordinate employees, confirm deliverables."],
 ["project.create.hint","支持 Markdown，全文保存为目标；此步只创建项目。","支援 Markdown，全文儲存為目標；此步只新增專案。","Supports Markdown. The full description becomes the goal; this step only creates the project."],
 ["project.create.scope","业务：{name}","業務：{name}","Business: {name}"],
+["project.create.business","所属业务","所屬業務","Business"],
 ["project.edit","编辑项目","編輯專案","Edit project","プロジェクトを編集","프로젝트 편집","Sửa dự án","Editar proyecto","Modifier le projet","Projekt bearbeiten","Editar projeto"],
 ["project.save","保存项目","儲存專案","Save project","保存","프로젝트 저장","Lưu dự án","Guardar proyecto","Enregistrer le projet","Projekt speichern","Guardar projeto"],
 ["project.name","项目名称","專案名稱","Project name","プロジェクト名","프로젝트 이름","Tên dự án","Nombre del proyecto","Nom du projet","Projektname","Nome do projeto"],
