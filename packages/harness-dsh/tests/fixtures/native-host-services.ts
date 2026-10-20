@@ -58,6 +58,8 @@ export async function installNativeSessions(ctx:Context):Promise<void>{
 
 /** 生产装配必需的原生服务。外部模型仍由各集成用例控制，不替换 jobs/Team/权限实现。 */
 export async function installNativeHostServices(ctx:Context,directory:string):Promise<void>{
+ // 与宿主 inject 契约一致，使用官方本机路由服务承接对外接口，不替代业务处理或鉴权。
+ if(!Reflect.get(ctx,'webServer'))await ctx.plugin((await official('dsh-host-webserver')).WebServer,{host:'127.0.0.1',port:0})
  if(!Reflect.get(ctx,'attachments'))await ctx.plugin(TeloaAttachmentStore,{dshHome:directory})
  await ctx.plugin(LocalJobRegistry,{})
  await ctx.plugin((await nativeGraph(ctx)).persistencePackage,{root:join(directory,'sessions'),compression:'none'})
