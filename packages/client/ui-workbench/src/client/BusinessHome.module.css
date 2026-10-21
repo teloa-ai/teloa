@@ -29,6 +29,7 @@
 .defaultBadge{flex:none;padding:0 8px;border:1px solid var(--teloa-border-strong);border-radius:var(--teloa-design-round);background:var(--teloa-panel);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:18px;cursor:help}
 .spaceName{min-width:0;font-size:15px;font-weight:var(--teloa-weight-heading);line-height:1.5;color:var(--teloa-text)}
 .spaceSituation{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6}
+.spaceName,.spaceSituation{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .spaceWork{flex:none;font-size:var(--teloa-font-caption);line-height:1.6;color:var(--teloa-secondary)}
 /* 七行摘要：处境句那一块下面一行名词计数，每段是可点的文字按钮，分隔符不可点。 */
 /* 1.0：摘要回到说明色，仍可点进对应位置（悬停下划线）。 */

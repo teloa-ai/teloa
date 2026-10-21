@@ -16,6 +16,7 @@
 .rosterTable td{padding:12px;border-top:1px solid var(--teloa-border);vertical-align:middle;overflow-wrap:anywhere}
 .rosterTable tbody tr:hover{background:var(--teloa-hover)}
 .rosterTable .personMain{min-width:0}.rosterTable .cardIdentity{width:100%}.rosterTable .cardIdentity>svg{flex:none;color:var(--teloa-muted)}
+.rosterTable .personMain strong,.rosterTable .cardScopes{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 /* 1.0：联系动作悬停或聚焦时出现；触屏设备常显。 */
 .contacts{display:flex;justify-content:flex-end;gap:4px;opacity:0}.rosterTable tr:hover .contacts,.rosterTable tr:focus-within .contacts{opacity:1}@media(hover:none){.contacts{opacity:1}}
 .rosterTable th:nth-child(4){text-align:right}.contacts button{display:grid!important;place-items:center;padding:0!important;width:34px;height:34px;border:0!important;background:transparent!important;color:var(--teloa-muted);cursor:pointer}.contacts button:hover{background:var(--teloa-hover)!important;color:var(--teloa-text)}

@@ -63,16 +63,16 @@
 .purposeBar .filterPanel .filterLabel{display:block;line-height:1.6}
 .purposeBar .filterPanel .chips{gap:6px}
 .grid.cards{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.cards .gridCard{position:relative;flex-direction:column;align-items:stretch;gap:10px;padding:14px 16px 12px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3)}
+.cards .gridCard{position:relative;flex-direction:column;align-items:stretch;gap:10px;height:200px;overflow:hidden;padding:14px 16px 12px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3)}
 .cards .gridCard:hover{background:var(--teloa-subtle)}
-.cardHead{display:flex;align-items:center;gap:10px;min-width:0}
+.cardHead{display:flex;align-items:center;gap:10px;min-width:0;height:56px;flex:none}
 .cardHead>:first-child{flex:none}
 .cardIdentity{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
-.cards .rowTop{align-items:center;flex-wrap:wrap;gap:4px 6px}
-.cards .gridTitle{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:1.4}
+.cards .rowTop{align-items:center;flex-wrap:nowrap;gap:4px 6px;min-width:0}
+.cards .gridTitle{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:1.4;flex:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .cardCredit{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cards .gridPitch{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6;min-height:3.2em}
-.cardFoot{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0}
+.cards .gridPitch{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6;height:3.2em;min-height:3.2em;flex:none}
+.cardFoot{margin-top:auto;flex:none;display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0}
 .cardAction{display:inline-flex;align-items:center;min-height:26px;padding:2px 12px;border:1px solid var(--teloa-border);border-radius:999px;font-size:var(--teloa-font-caption);color:var(--teloa-text);background:var(--teloa-surface);white-space:nowrap}
 .cardAction.cardAdded{border-color:transparent;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .resultGroup{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
@@ -148,3 +148,7 @@
 .cardRequirements{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.5;overflow-wrap:anywhere}.cardRequirements:empty{display:none}
 
 .cardRequirements>.skeletonLine{height:1.5em}
+
+/* 市场与已添加共用固定卡片槽位；原始全文仍在详情中读取。 */
+.cards .cardRequirements{overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;max-height:1.5em;flex:none}
+.cards .cardRequirements:empty{display:none}
