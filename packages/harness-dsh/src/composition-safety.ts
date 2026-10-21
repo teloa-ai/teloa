@@ -67,8 +67,9 @@ export type CompositionSnapshot={
   * 这枚钉管的是「一旦放行，走的还是不是那套被审过的 provider 与那几个边界值」。
   *
   * 私网 / 链路本地 / 云元数据地址、非 `http(s)`、跨源重定向与重定向后复判，全部由上游
-  * `dsh-web-fetch-http` 这个 provider 自己做，Teloa 不重写一份；换掉 `fetchProvider`
-  * 因此等于一次性换掉那整套保护。而 `web-fetch-http` 原本**没有 config**、取的全是上游默认，
+  * `dsh-web-fetch-http` 这个 provider 自己做，Teloa 不重写一份；除显式选择官方 Search/Fetch
+  * API 完整配对外，换掉 `fetchProvider` 就会换掉那整套保护。API 抓取由 DeepSeek 服务处理，
+  * 仍须验证固定端点、凭据引用与原文发送策略。`web-fetch-http` 原本**没有 config**、取的全是上游默认，
   * 第三方 bundle 在 `dsh.profile.bundles` 尾部追加一行就能把 maxRedirects 提到 50、
   * maxResponseBytes 提到 5GB。`userAgent` 一并钉住：它是每次外发对目标站点的自我披露，
   * `SECURITY.md` 逐字向本人承诺目标站点看到的是 `deepseek-harness/…`，改掉它等于让那句承诺失真。
@@ -150,12 +151,15 @@ const webRowNames={web:'@deepseek-ai/dsh-web',search:'@deepseek-ai/dsh-web-searc
  * 上网的三行是否仍是那套被审过的 provider、端点与边界值。
  *
  * 判据只认字面量：取不到（缺行、重复、被关闭、`name` 对不上）与被改掉同样为假。
+ * 只接受原生设置开关使用的两组完整配对，切换后仍复验全部共同边界。
  * 这里不判「能不能上网」——那是执行态 `task-tool-guard` / `role-tool-grants` 的事。
  */
 function webPinned(snapshot:CompositionSnapshot):boolean{
  if(snapshot.webDirectApiPinned!==true)return false
  if(snapshot.webRowName!==webRowNames.web||snapshot.webSearchRowName!==webRowNames.search||snapshot.webFetchRowName!==webRowNames.fetch)return false
- if(snapshot.webSearchProvider!=='deepseek-official'||snapshot.webFetchProvider!=='http')return false
+ const messagesHttp=snapshot.webSearchProvider==='deepseek-official'&&snapshot.webFetchProvider==='http'
+ const directApi=snapshot.webSearchProvider==='deepseek-search-api'&&snapshot.webFetchProvider==='deepseek-fetch-api'
+ if(!messagesHttp&&!directApi)return false
  if(snapshot.webSearchBaseUrl!==webSearchBaseUrl||snapshot.webSearchApiKeyEnv!=='DEEPSEEK_API_KEY')return false
  return snapshot.webFetchMaxResponseBytes===5000000&&snapshot.webFetchMaxBodyChars===100000&&snapshot.webFetchTimeoutMs===30000&&snapshot.webFetchMaxRedirects===3&&snapshot.webFetchUserAgent===webFetchUserAgent
 }

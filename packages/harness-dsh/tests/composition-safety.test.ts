@@ -267,26 +267,45 @@ test('第三方补丁把任一钉子改回上游取值都会被判为违规',()=
  assert.deepEqual(compositionViolations({...safe,presetBodyDigestMatches:false}),['tools'])
  const {presetBodyDigestMatches:_noDigest,...withoutDigest}=safe
  assert.deepEqual(compositionViolations(withoutDigest),['tools'])
- // 上网的 provider 选择与抓取边界值：provider 被换掉等于上游那整套 SSRF 保护被整体换掉；
- // 边界值缺键（`web-fetch-http` 那一行本来就没有 config）与被放大同等对待。
- assert.deepEqual(compositionViolations({...safe,webFetchProvider:'something-else'}),['web'])
- assert.deepEqual(compositionViolations({...safe,webSearchProvider:'bing'}),['web'])
- assert.deepEqual(compositionViolations({...safe,webFetchMaxRedirects:50}),['web'])
- assert.deepEqual(compositionViolations({...safe,webFetchMaxResponseBytes:5000000000}),['web'])
- assert.deepEqual(compositionViolations({...safe,webFetchTimeoutMs:600000}),['web'])
- assert.deepEqual(compositionViolations({...safe,webFetchUserAgent:'Mozilla/5.0'}),['web'])
+ // 两组官方 provider 选择都保留全部边界钉；切到远端 API 不允许改坏本机 HTTP 回退配置。
+ for(const providers of [
+  {webSearchProvider:'deepseek-official',webFetchProvider:'http'},
+  {webSearchProvider:'deepseek-search-api',webFetchProvider:'deepseek-fetch-api'},
+ ]){
+ const webSafe={...safe,...providers}
+ assert.deepEqual(compositionViolations({...webSafe,webFetchProvider:'something-else'}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webSearchProvider:'bing'}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webFetchMaxRedirects:50}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webFetchMaxResponseBytes:5000000000}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webFetchTimeoutMs:600000}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webFetchUserAgent:'Mozilla/5.0'}),['web'])
  // 检索端点被改写 = 检索词连同 DEEPSEEK_API_KEY 改投别处；上游那条 env 回落分支正是靠写死 baseURL 关掉的。
- assert.deepEqual(compositionViolations({...safe,webSearchBaseUrl:'https://example.com/v1'}),['web'])
- assert.deepEqual(compositionViolations({...safe,webSearchApiKeyEnv:'OTHER_KEY'}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webSearchBaseUrl:'https://example.com/v1'}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webSearchApiKeyEnv:'OTHER_KEY'}),['web'])
  // 同一个 id 的 name 被换成第三方实现：config 逐字对得上，provider 却已被整包顶替。
- assert.deepEqual(compositionViolations({...safe,webRowName:'@vendor/web'}),['web'])
- assert.deepEqual(compositionViolations({...safe,webSearchRowName:'@vendor/search'}),['web'])
- assert.deepEqual(compositionViolations({...safe,webFetchRowName:'@vendor/fetch'}),['web'])
- const {webFetchRowName:_noFetchName,...withoutFetchName}=safe
+ assert.deepEqual(compositionViolations({...webSafe,webRowName:'@vendor/web'}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webSearchRowName:'@vendor/search'}),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webFetchRowName:'@vendor/fetch'}),['web'])
+ const {webFetchRowName:_noFetchName,...withoutFetchName}=webSafe
  assert.deepEqual(compositionViolations(withoutFetchName),['web'])
- const {webFetchMaxBodyChars:_noBodyChars,...withoutBodyChars}=safe
+ const {webFetchMaxBodyChars:_noBodyChars,...withoutBodyChars}=webSafe
  assert.deepEqual(compositionViolations(withoutBodyChars),['web'])
+ assert.deepEqual(compositionViolations({...webSafe,webDirectApiPinned:false}),['web'])
+ }
  assert.deepEqual(compositionViolations({}),['telemetry','sandbox','approval','tools','agentPresets','permission','patchReload','pendingPlugins','web','credentials','promptAdmission'])
+})
+
+test('原生网页搜索开关的两组完整 provider 配对均可启动，混配与未知 provider 仍拒绝',()=>{
+ const violations=(searchProvider:string,fetchProvider:string)=>{
+  const rows=readCompositionRows({loader:compositionEntries({web:{searchProvider,fetchProvider}})})!
+  return compositionViolations(compositionSnapshot(rows,{bundles:[],packages:[]}))
+ }
+ assert.deepEqual(violations('deepseek-official','http'),[])
+ assert.deepEqual(violations('deepseek-search-api','deepseek-fetch-api'),[])
+ for(const [search,fetch] of [
+  ['deepseek-search-api','http'],['deepseek-official','deepseek-fetch-api'],
+  ['unknown','deepseek-fetch-api'],['deepseek-search-api','unknown'],
+ ])assert.deepEqual(violations(search!,fetch!),['web'])
 })
 
 test('原生声明无需目录根，环境变量不能改变预设来源',()=>{
@@ -304,17 +323,24 @@ test('原生声明无需目录根，环境变量不能改变预设来源',()=>{
 test('新版检索保持原生实现、固定来源与默认不附带用户原文',()=>{
  const row={id:'web-deepseek-api',name:'@deepseek-ai/dsh-web-deepseek-api',disabled:false,config:{baseURL:'https://api.deepseek.com/v1/tools',apiKeyEnv:'DEEPSEEK_API_KEY',count:10,sendOriginalQuestion:false}}
  const pinned=(rows:typeof row[])=>compositionSnapshot(rows).webDirectApiPinned
+ const baseline=readCompositionRows({loader:compositionEntries({web:{searchProvider:'deepseek-search-api',fetchProvider:'deepseek-fetch-api'}})})!.filter(row=>row.id!=='web-deepseek-api')
+ const violations=(rows:typeof row[])=>compositionViolations(compositionSnapshot([...baseline,...rows],{bundles:[],packages:[]}))
  assert.equal(pinned([row]),true)
+ assert.deepEqual(violations([row]),[])
  for(const config of [
   {...row.config,baseURL:'https://untrusted.invalid/tools'},
   {...row.config,apiKeyEnv:'TELOA_PLATFORM_TOKEN'},
   {...row.config,apiKey:'literal-secret'},
+  {...row.config,count:50},
   {...row.config,sendOriginalQuestion:true},
- ])assert.equal(pinned([{...row,config}]),false)
- assert.equal(pinned([{...row,name:'@vendor/web'}]),false)
- assert.equal(pinned([{...row,disabled:true}]),false)
- assert.equal(pinned([row,{...row,id:'alias-web-api'}]),false)
- assert.equal(pinned([]),false)
+ ]){
+  assert.equal(pinned([{...row,config}]),false)
+  assert.deepEqual(violations([{...row,config}]),['web'])
+ }
+ for(const rows of [[{...row,name:'@vendor/web'}],[{...row,disabled:true}],[row,{...row,id:'alias-web-api'}],[]]){
+  assert.equal(pinned(rows),false)
+  assert.deepEqual(violations(rows),['web'])
+ }
  assert.deepEqual(compositionViolations({...safe,webDirectApiPinned:false}),['web'])
 })
 
