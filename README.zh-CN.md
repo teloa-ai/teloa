@@ -42,9 +42,9 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 ## 30 秒，看看真实工作台
 
-https://github.com/user-attachments/assets/e116d654-e9e5-4fa8-a2b1-4b4aa603ef24
+[![播放社区版 0.2.4 真实工作台巡览](https://www.teloa.ai/assets/videos/teloa-poster-0.2.4-30-zh-CN.66ef7a7bb0e7.webp)](https://www.teloa.ai/#film)
 
-社区版 0.2.2 实际界面，使用示例数据。 [观看字幕版](https://www.teloa.ai/#film)
+社区版 0.2.4 全新录制，使用示例数据。[播放 30 秒巡览](https://www.teloa.ai/#film) · [下载 MP4](https://www.teloa.ai/assets/videos/teloa-film-0.2.4-30-zh-CN.767d3aed81b4.mp4)
 
 ## 功能截图
 
