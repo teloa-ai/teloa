@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {createHash} from 'node:crypto'
 import {createResourceApi} from '../src/client/resource-api.ts'
 
 const id='10000000-0000-4000-8000-000000000001',sourceId='20000000-0000-4000-8000-000000000001',hash='a'.repeat(64),createdAt='2026-09-12T00:00:00.000Z'
@@ -37,4 +38,15 @@ test('知识版本客户端拒绝跨知识身份和损坏响应',async()=>{
  await assert.rejects(createResourceApi(async()=>({...version,knowledgeId:wrong})).readKnowledgeVersion(id,1),/格式/)
  await assert.rejects(createResourceApi(async()=>[{...summary,contentHash:'bad'}]).listKnowledgeVersions(id),/格式/)
  await assert.rejects(createResourceApi(async()=>({knowledge:{item,version},resource:{...resource,sourceId:'knowledge_'+wrong}})).reviseKnowledgeResource({requestId:id,knowledgeId:id,expectedKnowledgeVersion:1,resourceId:resource.id,expectedResourceVersion:1,markdown:'# 标题'}),/格式/)
+})
+
+
+test('独立知识修订与恢复使用固定原对象和CAS，回包必须保留身份与真实正文摘要',async()=>{
+ const markdown='# 本人新版本',nextVersion={...version,version:2,markdown,bytes:Buffer.byteLength(markdown),contentHash:createHash('sha256').update(markdown).digest('hex')},next={item:{...item,currentVersion:2},version:nextVersion},calls:Array<[string,unknown]>=[]
+ const api=createResourceApi(async(endpoint,input)=>{calls.push([endpoint,input]);return next})
+ const edit={requestId:id,knowledgeId:id,expectedVersion:1,markdown},restore={requestId:sourceId,knowledgeId:id,expectedVersion:1,version:1}
+ assert.deepEqual(await api.reviseStandaloneKnowledge(edit),next)
+ assert.deepEqual(await api.restoreStandaloneKnowledge(restore),next)
+ assert.deepEqual(calls,[['knowledge/revise-standalone',edit],['knowledge/restore-standalone',restore]])
+ for(const response of [{...next,item:{...next.item,id:sourceId}},{...next,item:{...next.item,currentVersion:3}},{...next,version:{...nextVersion,contentHash:'b'.repeat(64)}},{...next,version:{...nextVersion,ownerId:'other'}}])await assert.rejects(createResourceApi(async()=>response).reviseStandaloneKnowledge(edit),/格式/)
 })

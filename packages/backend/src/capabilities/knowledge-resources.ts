@@ -53,6 +53,21 @@ export class KnowledgeResourceService{
  private readonly knowledge:MarkdownKnowledgeService
  private readonly resources:ResourceService
  constructor(_pool:Pool,knowledge:MarkdownKnowledgeService,resources:ResourceService){this.knowledge=knowledge;this.resources=resources}
+ /** 未提交知识仍由本人编辑；一旦有过工作资料投影，须沿原知识与资源一体化修订入口。 */
+ private async standalone(client:PoolClient,actor:ResourceActor,saved:PasteKnowledge,replayed:boolean):Promise<void>{
+  // 已验证身份与原请求的回执只读恢复；后续资料提交不撤销此前已经保存的事实。
+  if(replayed)return
+  // 新版本路径已经持锁；投影查询前明确核对与资料提交共用的原知识锁。
+  await client.query('select id from teloa_knowledge_items where owner_id=$1 and id=$2 for update',[actor.ownerId,saved.item.id])
+  const projected=(await client.query("select 1 from teloa_resources where owner_id=$1 and lower(spec->>'sourceId')=$2 limit 1",[actor.ownerId,markdownKnowledgeReferenceId(saved.item.id)])).rowCount
+  if(projected)throw new WorkError('teloa/conflict','这篇知识已有工作资料版本，请从原工作资料修订或恢复。')
+ }
+ async reviseStandalone(actor:ResourceActor,input:unknown):Promise<PasteKnowledge>{
+  return (await this.knowledge.reviseWithTransaction(actor,input,(client,saved,replayed)=>this.standalone(client,actor,saved,replayed))).knowledge
+ }
+ async restoreStandalone(actor:ResourceActor,input:unknown):Promise<PasteKnowledge>{
+  return (await this.knowledge.restoreWithTransaction(actor,input,(client,saved,replayed)=>this.standalone(client,actor,saved,replayed))).knowledge
+ }
  private async project(client:PoolClient,actor:ResourceActor,requestId:string,spec:CommandSpec,saved:PasteKnowledge):Promise<KnowledgeResourceRevision>{
   await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['knowledge-resource-revision',actor.ownerId,requestId])])
   const prior=(await client.query('select * from teloa_knowledge_resource_revisions where owner_id=$1 and request_id=$2 for update',[actor.ownerId,requestId])).rows[0] as Record<string,unknown>|undefined

@@ -2,6 +2,7 @@ import {isResourceUsagePage,type ResourceUsagePage} from '@teloa/contract'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDirectory,isResourceDraft,isWorkResource,isSourceReference,isResourceHistoryPage,type KnowledgeResourceRestoreInput,type KnowledgeResourceReviseInput,type KnowledgeResourceRevision,type KnowledgeTree,type KnowledgeTreeMutation,type KnowledgeVersion,type KnowledgeVersionSummary,type ResourceHistoryPage,type ResourceSpec,type ResourceDirectory,type ResourceDraft,type WorkResource,type SourceReference } from '@teloa/contract'
 import { isResourceRecoveryPage,type ResourceRecoveryPage } from '@teloa/contract'
 import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isLocalMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
+import {isPasteKnowledge,verifyKnowledgeVersionContent,type KnowledgeReviseInput,type KnowledgeRestoreInput,type PasteKnowledge} from '@teloa/contract'
 export type ResourceApi={
   registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;
   localMaterialRequests?:LocalMaterialRegistration;
@@ -18,6 +19,8 @@ export type ResourceApi={
   readKnowledgeVersion(knowledgeId:string,version:number):Promise<KnowledgeVersion>;
   reviseKnowledgeResource(input:KnowledgeResourceReviseInput):Promise<KnowledgeResourceRevision>;
   restoreKnowledgeResource(input:KnowledgeResourceRestoreInput):Promise<KnowledgeResourceRevision>;
+  reviseStandaloneKnowledge(input:KnowledgeReviseInput):Promise<PasteKnowledge>;
+  restoreStandaloneKnowledge(input:KnowledgeRestoreInput):Promise<PasteKnowledge>;
   knowledgeTree():Promise<KnowledgeTree>;
   createKnowledgeFolder(input:{requestId:string;parentId:string;title:string;expectedDirectoryRevision:number;position?:number}):Promise<KnowledgeTreeMutation>;
   renameKnowledgeNode(input:{requestId:string;nodeId:string;title:string;expectedDirectoryRevision:number}):Promise<KnowledgeTreeMutation>;
@@ -57,6 +60,8 @@ export function createResourceApi(call:Call,journal?:{read:()=>string|null;write
     async readKnowledgeVersion(knowledgeId,version){const value=await call('knowledge/read-version',{knowledgeId,version});if(!isKnowledgeVersion(value)||value.knowledgeId!==knowledgeId||value.version!==version)throw invalid();return value},
     async reviseKnowledgeResource(input){const value=await call('knowledge/revise-resource',input);if(!isKnowledgeResourceRevision(value)||value.knowledge.item.id!==input.knowledgeId)throw invalid();return value},
     async restoreKnowledgeResource(input){const value=await call('knowledge/restore-resource',input);if(!isKnowledgeResourceRevision(value)||value.knowledge.item.id!==input.knowledgeId)throw invalid();return value},
+    async reviseStandaloneKnowledge(input){const value=await call('knowledge/revise-standalone',input);if(!isPasteKnowledge(value)||value.item.id!==input.knowledgeId||value.item.currentVersion!==input.expectedVersion+1||!await verifyKnowledgeVersionContent(value.version))throw invalid();return value},
+    async restoreStandaloneKnowledge(input){const value=await call('knowledge/restore-standalone',input);if(!isPasteKnowledge(value)||value.item.id!==input.knowledgeId||value.item.currentVersion!==input.expectedVersion+1||!await verifyKnowledgeVersionContent(value.version))throw invalid();return value},
     async knowledgeTree(){const value=await call('knowledge/tree',{});if(!isKnowledgeTree(value))throw invalid();return value},
     async createKnowledgeFolder(input){const value=await call('knowledge/create-folder',input);if(!isKnowledgeTreeMutation(value)||value.node.type!=='folder')throw invalid();return value},
     async renameKnowledgeNode(input){const value=await call('knowledge/rename-node',input);if(!isKnowledgeTreeMutation(value)||value.node.id!==input.nodeId)throw invalid();return value},

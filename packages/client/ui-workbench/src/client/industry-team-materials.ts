@@ -50,7 +50,6 @@ export async function readIndustryTeamMaterials(snapshot:GroupSnapshot,ports:{gr
   const roleIds=load.relations.filter(link=>link.kind==='role-knowledge'&&link.to===mapped.instanceId).map(link=>industryTeamRole(load,link.from,rows)?.roleId);if(roleIds.some(id=>!id||!seed.memberRoleIds.includes(id)))throw fail()
   documents.push({id:definition.id,title:mapped.title,path,text,hash:file.hash,roleIds:[...new Set(roleIds)] as string[],itemInstanceId:mapped.instanceId,sourceId:known.sourceId,sourceVersion:known.sourceVersion,resourceId:known.resource.id,resourceVersion:known.resource.version})
  }
- if(!documents.length)throw fail()
  return {group,seed,roles,documents}
 }
 

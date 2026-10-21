@@ -33,7 +33,7 @@
 .composition{display:grid;gap:10px}
 .composition ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .composition li{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-surface,#fff);font-size:var(--teloa-font-control,13px)}
-.composition li>span{flex:1;min-width:0;display:grid;gap:2px}
+.composition .compositionText{flex:1;min-width:0;display:grid;gap:2px}
 .composition li small{color:var(--teloa-muted,#646860)}
 .composition li em{font-style:normal;font-size:var(--teloa-font-caption,12px);color:var(--teloa-muted,#646860);flex:none}
 .composition li .stateGood{color:var(--teloa-good,#2f6c51)}

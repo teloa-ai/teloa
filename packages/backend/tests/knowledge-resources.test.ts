@@ -9,13 +9,15 @@ import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontaine
 import * as backend from '../src/index.ts'
 import {MarkdownKnowledgeService} from '../src/capabilities/markdown-knowledge.ts'
 import {MarkdownKnowledgeCatalog,markdownKnowledgeReferenceId} from '../src/capabilities/markdown-knowledge-catalog.ts'
-import {ResourceService,type ResourceActor} from '../src/capabilities/resources.ts'
+import {ResourceService,type ResourceActor,type ResourceSourceCatalog} from '../src/capabilities/resources.ts'
 import {initializeResources} from '../src/capabilities/schema.ts'
-import {isKnowledgeResourceRevision} from '@teloa/contract'
+import {isKnowledgeResourceRevision,isWorkResource} from '@teloa/contract'
 
 type RevisionService={
  revise(actor:ResourceActor,input:unknown):Promise<unknown>
  restore(actor:ResourceActor,input:unknown):Promise<unknown>
+ reviseStandalone(actor:ResourceActor,input:unknown):Promise<unknown>
+ restoreStandalone(actor:ResourceActor,input:unknown):Promise<unknown>
 }
 type RevisionConstructor=new(pool:Pool,knowledge:MarkdownKnowledgeService,resources:ResourceService)=>RevisionService
 
@@ -44,6 +46,79 @@ async function fixture(ids?:string[]){
  assert.equal(typeof Constructor,'function','后端必须提供知识版本与可引用资源一体化修订服务')
  return {user,knowledge,resources,saved,resource,revisions:Constructor?new Constructor(pool,knowledge,resources):undefined}
 }
+
+test('未提交的原知识独立修订与历史恢复保留身份和幂等，不生成工作资料或扩大主体',async()=>{
+ const user=actor(),ids=identity(),knowledge=new MarkdownKnowledgeService(pool,root,'default',ids),resources=new ResourceService(pool,new MarkdownKnowledgeCatalog(knowledge),ids),revisions=new (backend.KnowledgeResourceService as RevisionConstructor)(pool,knowledge,resources)
+ const saved=await knowledge.createPaste(user,{requestId:randomUUID(),title:'本人未提交知识',category:'reference',topics:[],scopeIds:['general'],markdown:'# 原知识\n'})
+ const input={requestId:randomUUID(),knowledgeId:saved.item.id,expectedVersion:1,markdown:'# 本人修订\n'}
+ const revised=await revisions.reviseStandalone(user,input) as typeof saved
+ assert.equal(revised.item.id,saved.item.id);assert.equal(revised.item.currentVersion,2);assert.equal(revised.version.markdown,input.markdown)
+ assert.deepEqual(await revisions.reviseStandalone(user,input),revised)
+ await assert.rejects(revisions.reviseStandalone(user,{...input,requestId:randomUUID()}),{code:'teloa/version-conflict'})
+ await assert.rejects(revisions.reviseStandalone({...user,kind:'agent'},{...input,requestId:randomUUID(),expectedVersion:2}),{code:'teloa/forbidden'})
+ await assert.rejects(revisions.reviseStandalone(user,{...input,requestId:randomUUID(),expectedVersion:2,ownerId:'forged'}),{code:'teloa/invalid-input'})
+ const restoreInput={requestId:randomUUID(),knowledgeId:saved.item.id,expectedVersion:2,version:1}
+ const restored=await revisions.restoreStandalone(user,restoreInput) as typeof saved
+ assert.equal(restored.item.id,saved.item.id);assert.equal(restored.item.currentVersion,3);assert.equal(restored.version.markdown,saved.version.markdown)
+ assert.deepEqual((await resources.list(user)),{drafts:[],resources:[]})
+ assert.equal((await knowledge.listVersions(user,{knowledgeId:saved.item.id})).length,3)
+ const draft=await resources.create(user,{requestId:randomUUID(),title:saved.item.title,sourceId:markdownKnowledgeReferenceId(saved.item.id),sourceVersion:restored.version.contentHash,scopeIds:saved.item.scopeIds})
+ await resources.apply(user,{draftId:draft.id,expectedVersion:draft.version})
+ // 后续本人提交不改变已保存请求的事实；纯回执恢复不能另写或被误作新的独立修订。
+ assert.deepEqual(await revisions.reviseStandalone(user,input),revised)
+ assert.deepEqual(await revisions.restoreStandalone(user,restoreInput),restored)
+ assert.equal((await knowledge.listVersions(user,{knowledgeId:saved.item.id})).length,3)
+ assert.equal((await resources.list(user)).resources.length,1)
+})
+
+test('已提交或撤回的知识不能借独立修订绕过原投影，拒绝时保留原版本',async()=>{
+ for(const withdrawn of [false,true]){
+  const value=await fixture();assert.ok(value.revisions)
+  if(withdrawn)await value.resources.withdraw(value.user,{resourceId:value.resource.id,expectedVersion:value.resource.version})
+  await assert.rejects(value.revisions.reviseStandalone(value.user,{requestId:randomUUID(),knowledgeId:value.saved.item.id,expectedVersion:1,markdown:'# 不应发布\n'}),{code:'teloa/conflict'})
+  await assert.rejects(value.revisions.restoreStandalone(value.user,{requestId:randomUUID(),knowledgeId:value.saved.item.id,expectedVersion:1,version:1}),{code:'teloa/conflict'})
+  assert.equal((await value.knowledge.listVersions(value.user,{knowledgeId:value.saved.item.id})).length,1)
+  assert.equal((await value.resources.list(value.user)).resources.length,1)
+ }
+})
+
+test('资料提交与独立编辑按同一原知识串行，提交在途不能遗漏尚未提交的投影',{timeout:15_000},async()=>{
+ const user=actor(),ids=identity(),knowledge=new MarkdownKnowledgeService(pool,root,'default',ids),catalog=new MarkdownKnowledgeCatalog(knowledge)
+ let entered!:(pid:number)=>void,release!:()=>void
+ const reading=new Promise<number>(resolve=>{entered=resolve}),continueRead=new Promise<void>(resolve=>{release=resolve})
+ const sources:ResourceSourceCatalog={list:context=>catalog.list(context),read:async(id,version,context)=>{
+  assert.ok(context?.client)
+  entered((await context.client.query('select pg_backend_pid() pid')).rows[0].pid)
+  await continueRead
+  return catalog.read(id,version,context)
+ }}
+ const resources=new ResourceService(pool,sources,ids),revisions=new (backend.KnowledgeResourceService as RevisionConstructor)(pool,knowledge,resources)
+ const saved=await knowledge.createPaste(user,{requestId:randomUUID(),title:'并发原知识',category:'reference',topics:[],scopeIds:['general'],markdown:'# 未提交版本\n'})
+ // 来源读取的合法大小写别名也必须共用同一知识锁及投影检查。
+ const draft=await resources.create(user,{requestId:randomUUID(),title:saved.item.title,sourceId:markdownKnowledgeReferenceId(saved.item.id).toUpperCase(),sourceVersion:saved.version.contentHash,scopeIds:saved.item.scopeIds})
+ const applying=resources.apply(user,{draftId:draft.id,expectedVersion:draft.version})
+ const pid=await Promise.race([reading,applying.then(()=>{throw Error('资料提交未到达真实来源读取')})])
+ let settled=false
+ const revising=revisions.reviseStandalone(user,{requestId:randomUUID(),knowledgeId:saved.item.id,expectedVersion:1,markdown:'# 不得越过在途提交\n'})
+ void revising.then(()=>{settled=true},()=>{settled=true})
+ let results:PromiseSettledResult<unknown>[]=[]
+ try{
+  let blocked=false
+  for(let attempt=0;attempt<100&&!settled;attempt++){
+   blocked=(await pool.query('select exists(select 1 from pg_stat_activity where $1=any(pg_blocking_pids(pid))) blocked',[pid])).rows[0].blocked
+   if(blocked)break
+   await new Promise(resolve=>setTimeout(resolve,20))
+  }
+  assert.ok(blocked,'资料提交在事务内时，独立编辑必须等待原知识锁，不能漏查其未提交投影')
+ }finally{release();results=await Promise.allSettled([applying,revising])}
+ assert.equal(results[0]?.status,'fulfilled');assert.equal(results[1]?.status,'rejected')
+ if(results[1]?.status==='rejected')assert.equal(results[1].reason.code,'teloa/conflict')
+ assert.equal((await knowledge.listVersions(user,{knowledgeId:saved.item.id})).length,1)
+ assert.equal((await resources.list(user)).resources.length,1)
+ assert.ok(results[0]?.status==='fulfilled'&&isWorkResource(results[0].value))
+ const projected=await revisions.revise(user,{requestId:randomUUID(),knowledgeId:saved.item.id,expectedKnowledgeVersion:1,resourceId:results[0].value.id,expectedResourceVersion:results[0].value.version,markdown:'# 仍可沿原工作资料修订\n'})
+ assert.ok(isKnowledgeResourceRevision(projected));assert.equal(projected.knowledge.item.currentVersion,2)
+})
 
 test('修订与恢复在一个命令内切换唯一活动 WorkResource，并保留旧引用版本',async()=>{
  const value=await fixture();if(!value.revisions)return

@@ -2,6 +2,7 @@ export const COLLABORATION_MESSAGE_ROWS = [
  ["collaboration.results.sharedOnly","仅查看本群已分享的版本。","只檢視本群組已分享的版本。","Only versions shared with this group are shown."],
  ["group.templateMaterials.review","重新核对","重新核對","Review again"],
  ["group.templateMaterials.title", "模板资料", "範本資料", "Template materials"],
+ ["group.templateMaterials.empty", "这个团队模板没有附带资料。", "這個團隊範本沒有附帶資料。", "This team template has no attached materials."],
  ["group.templateMaterials.boundary", "所选原文将共享给本群及以下员工，带入输入框后由你发送。", "所選原文將分享給本群組及以下員工，加入輸入框後由你傳送。", "Share the selected original text with this group and these employees, then attach it to your draft for you to send."],
  ["group.templateMaterials.recipients", "接收员工：{names}", "接收員工：{names}", "Recipients: {names}"],
  ["group.templateMaterials.samples", "模板样例只作格式参考，不代表真实业务事实。", "範本示例僅作格式參考，不代表真實業務事實。", "Template examples show the format, not verified business facts."],

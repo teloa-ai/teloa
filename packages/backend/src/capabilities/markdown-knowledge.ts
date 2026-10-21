@@ -311,7 +311,7 @@ export class MarkdownKnowledgeService{
   if(!isPasteKnowledge(value)||value.item.updatedAt!==value.version.createdAt)throw corrupt()
   return value
  }
- private async appendVersion<T>(actor:ResourceActor,requestId:string,spec:RevisionRequestSpec,source:{kind:'markdown';markdown:string}|{kind:'version';version:number},within:(client:PoolClient,value:PasteKnowledge)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
+ private async appendVersion<T>(actor:ResourceActor,requestId:string,spec:RevisionRequestSpec,source:{kind:'markdown';markdown:string}|{kind:'version';version:number},within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
   authorizeResourceActor(actor,actor.ownerId,[],true)
   const client=await this.pool.connect().catch(()=>{throw unavailable()})
   let published:Published|undefined,commitStarted=false
@@ -321,7 +321,7 @@ export class MarkdownKnowledgeService{
    const prior=(await client.query('select * from teloa_knowledge_revision_requests where owner_id=$1 and request_id=$2 for update',[actor.ownerId,requestId])).rows[0] as Record<string,unknown>|undefined
    if(prior){
     if(!sameRevisionRequest(prior.request_spec,spec)||prior.operation!==spec.operation||prior.knowledge_id!==spec.knowledgeId)throw new WorkError('teloa/conflict','同一请求 ID 不能发布另一份知识版本。')
-    const knowledge=await this.revisionResult(client,actor,prior),value=await within(client,knowledge);commitStarted=true;await client.query('commit');return {knowledge,value}
+    const knowledge=await this.revisionResult(client,actor,prior),value=await within(client,knowledge,true);commitStarted=true;await client.query('commit');return {knowledge,value}
    }
    const item=await this.item(client,actor,spec.knowledgeId,true)
    if(item.sourceType!=='paste')throw new WorkError('teloa/conflict','在线同步来源保持只读；请先创建本地校正版。')
@@ -345,17 +345,17 @@ export class MarkdownKnowledgeService{
    const saved=stored((await client.query(selectStored+' where i.owner_id=$1 and i.id=$2 and v.number=$3',[item.ownerId,item.id,next])).rows[0],markdown),value={item:saved.item,version:saved.version}
    if(!isPasteKnowledge(value))throw corrupt()
    await client.query('insert into teloa_knowledge_revision_requests(owner_id,request_id,request_spec,operation,knowledge_id,published_version,result,created_at) values($1,$2,$3,$4,$5,$6,$7,$8)',[item.ownerId,requestId,JSON.stringify(spec),spec.operation,item.id,next,JSON.stringify({item:value.item}),now])
-   const result=await within(client,value)
+   const result=await within(client,value,false)
    commitStarted=true;await client.query('commit');return {knowledge:value,value:result}
   }catch(error){await client.query('rollback').catch(()=>{});if(published&&!commitStarted)await this.cleanupPublished(published);if(error instanceof WorkError)throw error;throw unavailable()}finally{if(published)await this.closeAnchors(published.anchors);client.release()}
  }
- async reviseWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
+ async reviseWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','knowledgeId','expectedVersion','markdown'])
   if(!resourceId(row.requestId)||!resourceId(row.knowledgeId)||!resourceVersion(row.expectedVersion))throw bad()
   const markdown=normalizePasteMarkdown(row.markdown),contentHash=digest(Buffer.from(markdown,'utf8')),spec:RevisionRequestSpec={operation:'revise',knowledgeId:(row.knowledgeId as string).toLowerCase(),expectedVersion:row.expectedVersion as number,contentHash}
   return this.appendVersion(actor,(row.requestId as string).toLowerCase(),spec,{kind:'markdown',markdown},within)
  }
- async restoreWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
+ async restoreWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','knowledgeId','version','expectedVersion'])
   if(!resourceId(row.requestId)||!resourceId(row.knowledgeId)||!resourceVersion(row.version)||!resourceVersion(row.expectedVersion))throw bad()
   const spec:RevisionRequestSpec={operation:'restore',knowledgeId:(row.knowledgeId as string).toLowerCase(),expectedVersion:row.expectedVersion as number,version:row.version as number}

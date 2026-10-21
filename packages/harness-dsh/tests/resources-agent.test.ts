@@ -15,7 +15,7 @@ import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { PostgreSqlContainer } from '@testcontainers/postgresql'
 import { ConversationService,FileConversationRepository,openResourceDatabase,initializeResources } from '@teloa/backend'
-import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDraft,isSourceReference,isWorkResource,encodeResourceReference,isResourceRecoveryPage,isResourceHistoryPage,isResourceUsagePage } from '@teloa/contract'
+import { isPasteKnowledge,isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDraft,isSourceReference,isWorkResource,encodeResourceReference,isResourceRecoveryPage,isResourceHistoryPage,isResourceUsagePage } from '@teloa/contract'
 import { registerResources,resourceEndpoints } from '../src/resources.ts'
 import {registerLibraryTools} from '../src/library-tools.ts'
 
@@ -86,7 +86,7 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   await initializeResources(database.pool)
   const adapter=new ScriptedResourceAdapter(),first=await mount(root,adapter)
   t.after(()=>first.ctx.fiber.dispose())
-  for(const endpoint of ['knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource'])assert.ok(resourceEndpoints.includes(endpoint),'RPC 端点必须显式注册：'+endpoint)
+  for(const endpoint of ['knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource','knowledge/revise-standalone','knowledge/restore-standalone'])assert.ok(resourceEndpoints.includes(endpoint),'RPC 端点必须显式注册：'+endpoint)
   for(const endpoint of ['knowledge/revise','knowledge/restore'])assert.equal(resourceEndpoints.includes(endpoint),false,'低级知识写端点不能绕过可引用资源投影：'+endpoint)
   const created=await database.knowledge.createPaste({ownerId:'test-owner',kind:'human',scopeIds:['general']},{requestId:randomUUID(),title:'可编辑知识',category:'sop',topics:['值班'],scopeIds:['general'],markdown:'# 第一版\n'})
   const tree=await first.resources.handle('knowledge/tree',{})
@@ -105,6 +105,13 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   assert.equal(firstVersion.markdown,'# 第一版\n')
   await assert.rejects(first.resources.handle('knowledge/revise',{requestId:randomUUID(),knowledgeId:created.item.id,expectedVersion:1,markdown:'# 绕过投影\n'}),{code:'teloa/not-found'})
   await assert.rejects(first.resources.handle('knowledge/restore',{requestId:randomUUID(),knowledgeId:created.item.id,version:1,expectedVersion:1}),{code:'teloa/not-found'})
+  const standaloneInput={requestId:randomUUID(),knowledgeId:created.item.id,expectedVersion:1,markdown:'# 本人未提交的修订\n'}
+  const standalone=await first.resources.handle('knowledge/revise-standalone',standaloneInput)
+  assert.ok(isPasteKnowledge(standalone));assert.equal(standalone.item.id,created.item.id);assert.equal(standalone.version.version,2)
+  assert.deepEqual(await first.resources.handle('knowledge/revise-standalone',standaloneInput),standalone)
+  const standaloneRestore=await first.resources.handle('knowledge/restore-standalone',{requestId:randomUUID(),knowledgeId:created.item.id,expectedVersion:2,version:1})
+  assert.ok(isPasteKnowledge(standaloneRestore));assert.equal(standaloneRestore.version.version,3);assert.equal(standaloneRestore.version.markdown,'# 第一版\n')
+  assert.deepEqual(await first.resources.handle('resources/list',{}),{drafts:[],resources:[]},'本人编辑原知识不自动提交资料')
 
   const projected=await database.knowledge.createPaste({ownerId:'test-owner',kind:'human',scopeIds:['general']},{requestId:randomUUID(),title:'投影知识',category:'sop',topics:['投影'],scopeIds:['general'],markdown:'# 投影第一版\n'})
   const projectedDraft=await database.service.create({ownerId:'test-owner',kind:'human',scopeIds:['general']},{requestId:randomUUID(),title:projected.item.title,sourceId:'knowledge_'+projected.item.id,sourceVersion:projected.version.contentHash,scopeIds:['general']})
@@ -119,6 +126,8 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   assert.ok(isKnowledgeResourceRevision(projectionRestore))
   assert.equal(projectionRestore.knowledge.item.currentVersion,3)
   assert.equal(projectionRestore.knowledge.version.markdown,'# 投影第一版\n')
+  await assert.rejects(first.resources.handle('knowledge/revise-standalone',{requestId:randomUUID(),knowledgeId:projected.item.id,expectedVersion:3,markdown:'# 不绕过投影\n'}),{code:'teloa/conflict'})
+  await assert.rejects(first.resources.handle('knowledge/restore-standalone',{requestId:randomUUID(),knowledgeId:projected.item.id,expectedVersion:3,version:1}),{code:'teloa/conflict'})
   await assert.rejects(first.resources.handle('knowledge/revise-resource',{...projectionInput,ownerId:'forged'}),{code:'teloa/invalid-input'})
   const sessionId=SessionId(randomUUID())
   const {agent}=await first.ctx.agents.create({sessionId,meta:{cwd:root},agentOptions:{provider:'test-resources',model:'scripted'}})

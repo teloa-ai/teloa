@@ -19,6 +19,11 @@ const badInput=()=>new WorkError('teloa/invalid-input','资源请求格式不正
 const corrupt=()=>new WorkError('teloa/storage-corrupt','资源存储内容不符合合同，已停止读取。')
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
 const stableId=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
+/** Markdown 来源的合法大小写别名指向同一 UUID；其他来源标识仍逐字比较。 */
+const knowledgeSourceId=(sourceId:string):string|undefined=>{
+  const id=/^knowledge_/i.test(sourceId)?sourceId.slice('knowledge_'.length):undefined
+  return resourceId(id)?id.toLowerCase():undefined
+}
 /** 整段进模型的资料正文：单份与岗位/任务合计 256 KiB；单条消息引用合计 1 MiB（原 8 份 × 128 KiB 的实际上界）。更大的资料只走本地检索摘录。 */
 const fullTextMaxBytes=promptFullTextMaxBytes,messageReferenceMaxBytes=1024*1024
 const fullTextTotal={role:'员工资料正文总量过大，请缩小本次资料范围。',task:'任务知识正文总量过大，请缩小本次资料范围。'} as const
@@ -142,10 +147,13 @@ export class ResourceService {
         return this.resource(client,actor,draft.resourceId!)
       }
       if(draft.version!==version)throw new WorkError('teloa/version-conflict','草案已变化，请核对后提交。')
+      // 与未提交知识的本人修订共享原知识锁，避免未提交投影被并发编辑的检查漏过。
+      const knowledgeId=knowledgeSourceId(draft.sourceId)
+      if(knowledgeId)await client.query('select id from teloa_knowledge_items where owner_id=$1 and id=$2 for update',[actor.ownerId,knowledgeId])
       await this.source(draft,actor,client)
-      const value=spec(draft),resourceId=this.identity.id(),now=this.identity.now()
-      const row=(await client.query(`insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,$4,$4) returning *`,[resourceId,actor.ownerId,JSON.stringify(value),now])).rows[0]
-      await client.query(`update teloa_resource_drafts set status='applied',resource_id=$2,applied_version=revision,revision=revision+1,updated_at=$3 where id=$1`,[id,resourceId,now])
+      const value=spec(draft),nextId=this.identity.id(),now=this.identity.now()
+      const row=(await client.query(`insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,$4,$4) returning *`,[nextId,actor.ownerId,JSON.stringify(value),now])).rows[0]
+      await client.query(`update teloa_resource_drafts set status='applied',resource_id=$2,applied_version=revision,revision=revision+1,updated_at=$3 where id=$1`,[id,nextId,now])
       return resourceRow(row)
     })
   }
@@ -164,7 +172,8 @@ export class ResourceService {
     if(!resourceId(input.resourceId)||!resourceVersion(input.expectedVersion)||!stableId(input.expectedSourceId)||!isResourceSpec({title:input.title,sourceId:input.expectedSourceId,sourceVersion:input.nextSourceVersion,scopeIds:input.scopeIds})||!isResourceSpec({title:input.title,sourceId:input.expectedSourceId,sourceVersion:input.expectedSourceVersion,scopeIds:input.scopeIds}))throw badInput()
     const current=await this.resource(client,actor,input.resourceId,'update')
     if(current.status!=='active'||current.version!==input.expectedVersion)throw new WorkError('teloa/version-conflict','可引用知识版本已变化，请重新读取后编辑。')
-    if(current.sourceId!==input.expectedSourceId||current.sourceVersion!==input.expectedSourceVersion||current.title!==input.title||!same(current.scopeIds,[...input.scopeIds].sort()))throw new WorkError('teloa/version-conflict','可引用知识与当前正文版本不一致，请重新读取后编辑。')
+    const knowledgeId=knowledgeSourceId(current.sourceId),sameSource=current.sourceId===input.expectedSourceId||knowledgeId!==undefined&&knowledgeId===knowledgeSourceId(input.expectedSourceId)
+    if(!sameSource||current.sourceVersion!==input.expectedSourceVersion||current.title!==input.title||!same(current.scopeIds,[...input.scopeIds].sort()))throw new WorkError('teloa/version-conflict','可引用知识与当前正文版本不一致，请重新读取后编辑。')
     const nextSpec=spec({title:input.title,sourceId:input.expectedSourceId,sourceVersion:input.nextSourceVersion,scopeIds:input.scopeIds}),nextId=this.identity.id(),now=this.identity.now()
     if(!resourceId(nextId)||!Number.isFinite(Date.parse(now)))throw corrupt()
     const next=resourceRow((await client.query(`insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,$4,$4) returning *`,[nextId,actor.ownerId,JSON.stringify(nextSpec),now])).rows[0])

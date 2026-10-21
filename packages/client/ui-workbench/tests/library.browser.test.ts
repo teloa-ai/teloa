@@ -6,13 +6,18 @@ import {build} from 'vite'
 // @ts-expect-error 既有无头浏览器加载器。
 import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
-test('新版资料库桌面：访问视图、搜索、收藏、阅读、文件夹和任务准备',async t=>{
+async function libraryHtml(){
  const result=await build({configFile:false,plugins:[{name:'forbid-host-crypto',enforce:'pre',resolveId(id){if(id==='node:crypto')return '\0forbid-host-crypto'},load(id){if(id==='\0forbid-host-crypto')return "function blocked(){throw Error('本浏览器验收不允许执行宿主摘要算法')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}"}}],root:fileURLToPath(new URL('../../../../',import.meta.url)),logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:fileURLToPath(new URL('./fixtures/library.tsx',import.meta.url)),name:'CapabilityCenterTest',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result
  assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code
  const style=bundle.output.filter(item=>item.type==='asset'&&item.fileName.endsWith('.css')).map(item=>String((item as any).source)).join('\n')
  const html='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>资料库开发预览</title><style>body{margin:0}*{box-sizing:border-box}'+style+'</style><body><div id="root"></div><script>'+script.replace(/<\/script/gi,'<\\/script')+'</script></body></html>'
+ return html
+}
+
+test('新版资料库桌面：访问视图、搜索、收藏、阅读、文件夹和任务准备',async t=>{
+ const html=await libraryHtml()
  const previewDir=process.env.TELOA_LIBRARY_PREVIEW_DIR
  if(previewDir){await mkdir(previewDir,{recursive:true});await writeFile(previewDir+'/资料库开发预览.html',html)}
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
@@ -191,4 +196,99 @@ test('新版资料库桌面：访问视图、搜索、收藏、阅读、文件�
  assert.equal(await page.getByRole('button',{name:'丢弃这条恢复记录',exact:true}).count(),0)
  assert.equal(await page.evaluate(()=>(window as any).__libraryCalls.filter((item:string)=>item==='discard-local').length),1)
  assert.deepEqual(errors,[]);assert.deepEqual(requests,[])
+})
+
+
+test('独立知识无需工作资料投影即可列出并读取原页面',async t=>{
+ const html=await libraryHtml(),browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ const page=await browser.newPage({viewport:{width:1440,height:1050}});page.setDefaultTimeout(7000)
+ const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message))
+ await page.route('**/*',(route:any)=>new URL(route.request().url()).origin==='http://127.0.0.1:3199'?route.fulfill({contentType:'text/html',body:html}):route.abort())
+ await page.goto('http://127.0.0.1:3199/library-test?standalone')
+ await page.getByRole('button',{name:'全部资料',exact:true}).click()
+ await page.getByRole('button',{name:'产品定位',exact:true}).click()
+ await page.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
+ const original=await page.locator('article[role="tabpanel"]').innerText()
+ assert.equal(await page.getByRole('button',{name:'用于任务',exact:true}).count(),0)
+ assert.equal(await page.getByRole('button',{name:'复制引用',exact:true}).count(),0)
+ assert.equal(await page.getByRole('button',{name:'撤回当前引用',exact:true}).count(),0)
+ await page.getByRole('tab',{name:'编辑',exact:true}).click()
+ const edited='# 原知识的本人新版本\n\n关闭与刷新均须保留。'
+ await page.locator('textarea').fill(edited)
+ await page.getByRole('button',{name:'返回列表',exact:true}).click()
+ await page.locator('summary').filter({hasText:'产品资料'}).click()
+ await page.getByRole('heading',{name:'产品资料',exact:true}).waitFor()
+ await page.getByRole('button',{name:'产品定位',exact:true}).click()
+ await page.getByRole('tab',{name:'编辑',exact:true}).click()
+ assert.equal(await page.locator('textarea').inputValue(),edited,'关闭后原知识草稿恢复')
+ await page.reload()
+ await page.getByRole('button',{name:'全部资料',exact:true}).click()
+ await page.getByRole('button',{name:'产品定位',exact:true}).click()
+ await page.getByRole('tab',{name:'编辑',exact:true}).click()
+ assert.equal(await page.locator('textarea').inputValue(),edited,'真实页面刷新恢复本人原知识草稿')
+ assert.deepEqual(await page.evaluate(()=>(window as any).__standaloneKnowledgeWrites),[],'关闭和刷新不提交正文')
+ await page.getByRole('button',{name:'保存新版本',exact:true}).click()
+ await page.getByRole('button',{name:'查看版本 v2',exact:true}).waitFor()
+ await page.getByRole('button',{name:'查看版本 v1',exact:true}).click()
+ await page.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
+ assert.equal(await page.locator('article[role="tabpanel"]').innerText(),original)
+ await page.getByRole('button',{name:'恢复为新版本',exact:true}).click()
+ await page.getByRole('button',{name:'查看版本 v3',exact:true}).waitFor()
+ await page.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
+ await page.getByRole('button',{name:'保存新版本',exact:true}).waitFor()
+ const writes=await page.evaluate(()=>(window as any).__standaloneKnowledgeWrites)
+ assert.deepEqual(writes.map((row:any)=>[row.endpoint,row.input.knowledgeId,row.input.expectedVersion]),[['knowledge/revise-standalone','11111111-1111-4111-8111-111111111111',1],['knowledge/restore-standalone','11111111-1111-4111-8111-111111111111',2]])
+ assert.equal(writes[1].input.version,1)
+ const evidence=process.env.TELOA_LIBRARY_STANDALONE_EVIDENCE
+ if(evidence){await mkdir(evidence,{recursive:true});await page.screenshot({path:evidence+'/standalone-knowledge-desktop.png'});await page.setViewportSize({width:430,height:900});await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:evidence+'/standalone-knowledge-430.png'})}
+ assert.deepEqual(await page.evaluate(()=>(window as any).__libraryCalls),[],'原知识编辑与历史恢复不创建或应用工作资料')
+ assert.deepEqual(errors,[])
+})
+
+async function standalonePage(t:any){
+ const html=await libraryHtml(),browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
+ const page=await browser.newPage({viewport:{width:1440,height:1050}});page.setDefaultTimeout(7000)
+ const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message))
+ await page.route('**/*',(route:any)=>new URL(route.request().url()).origin==='http://127.0.0.1:3199'?route.fulfill({contentType:'text/html',body:html}):route.abort())
+ await page.goto('http://127.0.0.1:3199/library-test?standalone')
+ await page.getByRole('button',{name:'全部资料',exact:true}).click();await page.getByRole('button',{name:'产品定位',exact:true}).click();await page.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
+ return {page,errors}
+}
+
+test('独立知识失回包刷新后仅沿固定原请求恢复，迟到成功不打开其他本人',async t=>{
+ const {page,errors}=await standalonePage(t)
+ await page.getByRole('tab',{name:'编辑',exact:true}).click();await page.locator('textarea').fill('# 失回包仍保留原请求')
+ await page.evaluate(()=>(window as any).__standaloneLoseReply())
+ await page.getByRole('button',{name:'保存新版本',exact:true}).click();await page.getByRole('alert').waitFor()
+ const original=(await page.evaluate(()=>(window as any).__standaloneKnowledgeWrites))[0]
+ await page.reload();await page.getByRole('button',{name:'全部资料',exact:true}).click();await page.getByRole('button',{name:'产品定位',exact:true}).click()
+ await page.getByRole('button',{name:'保存新版本',exact:true}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>(window as any).__standaloneKnowledgeWrites),[],'重开不得自动再次写入')
+ await page.getByRole('button',{name:'保存新版本',exact:true}).click();await page.getByRole('button',{name:'查看版本 v2',exact:true}).waitFor()
+ assert.deepEqual((await page.evaluate(()=>(window as any).__standaloneKnowledgeWrites))[0],original,'回执未知沿同对象、版本、正文和requestId恢复')
+ assert.equal((await page.evaluate(()=>(window as any).__standaloneKnowledgeVersions())).length,2)
+ await page.getByRole('tab',{name:'编辑',exact:true}).click();await page.locator('textarea').fill('# 关闭期间完成的保存')
+ await page.evaluate(()=>(window as any).__libraryPauseSave());await page.getByRole('button',{name:'保存新版本',exact:true}).click()
+ await page.getByRole('button',{name:'返回列表',exact:true}).click();await page.getByRole('button',{name:'切换验收身份',exact:true}).click();await page.getByText('还没有访问记录',{exact:true}).waitFor()
+ await page.evaluate(()=>(window as any).__libraryReleaseSave())
+ await page.waitForFunction(()=>(window as any).__standaloneKnowledgeVersions().length===3)
+ assert.equal(await page.getByRole('heading',{name:'产品定位',exact:true}).count(),0,'旧保存不得在新本人弹出详情')
+ await page.getByRole('button',{name:'切换验收身份',exact:true}).click();await page.getByRole('button',{name:'全部资料',exact:true}).click();await page.getByRole('button',{name:'产品定位',exact:true}).click()
+ await page.getByRole('button',{name:'保存新版本',exact:true}).click();await page.getByRole('button',{name:'查看版本 v3',exact:true}).waitFor()
+ const writes=await page.evaluate(()=>(window as any).__standaloneKnowledgeWrites)
+ assert.deepEqual(writes.at(-1),writes.at(-2));assert.equal((await page.evaluate(()=>(window as any).__standaloneKnowledgeVersions())).length,3)
+ assert.deepEqual(await page.evaluate(()=>(window as any).__libraryCalls),[]);assert.deepEqual(errors,[])
+})
+
+test('独立知识并发改版CAS拒绝且保留草稿，不覆盖另一窗口正文',async t=>{
+ const {page,errors}=await standalonePage(t)
+ await page.getByRole('tab',{name:'编辑',exact:true}).click();await page.locator('textarea').fill('# 本窗口未提交草稿')
+ await page.evaluate(()=>(window as any).__libraryPauseSave());await page.getByRole('button',{name:'保存新版本',exact:true}).click()
+ await page.evaluate(()=>(window as any).__standaloneConcurrentVersion());await page.evaluate(()=>(window as any).__libraryReleaseSave())
+ await page.getByRole('alert').waitFor();assert.equal(await page.locator('textarea').inputValue(),'# 本窗口未提交草稿')
+ assert.equal((await page.evaluate(()=>(window as any).__standaloneKnowledgeVersions())).length,2)
+ await page.getByRole('button',{name:'返回列表',exact:true}).click();await page.getByRole('button',{name:'产品定位',exact:true}).click();await page.getByRole('tab',{name:'查看源码',exact:true}).or(page.getByRole('tab',{name:'编辑',exact:true})).click()
+ assert.equal(await page.locator('textarea').inputValue(),'# 本窗口未提交草稿')
+ assert.equal(await page.locator('textarea').getAttribute('readonly'),'')
+ assert.deepEqual(await page.evaluate(()=>(window as any).__libraryCalls),[]);assert.deepEqual(errors,[])
 })

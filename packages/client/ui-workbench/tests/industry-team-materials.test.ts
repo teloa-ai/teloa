@@ -22,6 +22,28 @@ function fixture(){
  return {ports,load,item,source,snapshot,members,originalRoles,knowledge,docs,resources,bodies,grants,calls,local,api,flow:()=>createIndustryTeamMaterials(ports),failSave:()=>{failSave=true},failGrant:()=>{failGrant=true},cancel:()=>{cancelAfterSave=true},current:()=>allowed,writes:()=>calls.filter(row=>row.endpoint.endsWith('/save')||row.endpoint.endsWith('/change')),journal:()=>journal}
 }
 
+function emptyTeamFixture(){
+ const f=fixture(),kept=new Set(f.members.slice(0,2))
+ f.snapshot.members=f.snapshot.members.filter(member=>member.roleId===null||kept.has(member.roleId))
+ f.load.items=f.load.items.filter(item=>item.kind==='role'&&kept.has(f.originalRoles.find(role=>role.itemInstanceId===item.instanceId)?.role.id??''))
+ f.load.relations=f.load.relations.filter(link=>link.kind==='role-coordination'&&f.load.items.some(item=>item.instanceId===link.to))
+ f.originalRoles.splice(2);f.knowledge.splice(0)
+ f.item.manifest.resources=[];f.item.packageContent.files=[]
+ return f
+}
+
+test('真实两岗位零knowledge模板是已核对的空集，不能生成资料或授权确认',async()=>{
+ const f=emptyTeamFixture(),preview=await f.flow().load(f.snapshot)
+ assert.equal(preview.roles.length,2);assert.deepEqual(preview.documents,[]);assert.deepEqual(f.writes(),[])
+ await assert.rejects(f.flow().prepare(preview,[],()=>true));assert.deepEqual(f.writes(),[]);assert.equal(f.local.size,0)
+})
+
+test('零knowledge仍拒绝缺失内容、错误hash/mapping或岗位映射，不吞来源损坏',async()=>{
+ for(const mutate of [(f:ReturnType<typeof emptyTeamFixture>)=>{f.ports.contents.list=async()=>[]},(f:ReturnType<typeof emptyTeamFixture>)=>{f.item.packageContent.hash='c'.repeat(64)},(f:ReturnType<typeof emptyTeamFixture>)=>{f.snapshot.group.source.mappingHash='c'.repeat(64)},(f:ReturnType<typeof emptyTeamFixture>)=>{f.originalRoles[0]!.itemInstanceId=id(999)}]){
+  const f=emptyTeamFixture();mutate(f);await assert.rejects(f.flow().load(f.snapshot),{code:'teloa/source-unavailable'});assert.deepEqual(f.writes(),[])
+ }
+})
+
 test('11份原固定静态文档逐字进入3岗位和共享4包；不读取岗位私人知识正文',async()=>{const f=fixture(),preview=await readIndustryTeamMaterials(f.snapshot,f.ports),packs=await industryTeamMaterialPacks(preview,preview.documents.map(doc=>doc.id));assert.equal(preview.documents.length,11);assert.equal(packs.length,4);for(const doc of preview.documents){assert.equal(doc.hash,sha(doc.text));assert.equal(packs.filter(pack=>pack.documentIds.includes(doc.id)).length,1);assert.ok(packs.some(pack=>pack.markdown.includes(doc.text)));assert.ok(packs.every(pack=>!pack.markdown.includes('私人知识，不得读取')))}assert.ok(packs.every(pack=>pack.markdown.length<=16000&&pack.markdown.includes('Examples are format samples')));assert.deepEqual(await industryTeamMaterialPacks(preview,preview.documents.map(doc=>doc.id)),packs)})
 
 test('仅精确contentId/hash/current或carried来源；另一份同hash内容与本地被改知识均拒绝',async()=>{for(const mutate of [(f:any)=>{f.item.contentStorage.contentId=id(200)},(f:any)=>{f.item.packageContent.hash='c'.repeat(64)},(f:any)=>{f.knowledge[0].resource.sourceVersion='d'.repeat(64)},(f:any)=>{f.knowledge.push({...f.knowledge[0]})}]){const f=fixture();mutate(f);await assert.rejects(readIndustryTeamMaterials(f.snapshot,f.ports));assert.deepEqual(f.writes(),[])}})

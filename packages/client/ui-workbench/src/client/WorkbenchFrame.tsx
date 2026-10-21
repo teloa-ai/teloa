@@ -441,7 +441,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     if(state.view!=='home'||!homeManagement.ready)return
     if(businessBuilder&&current&&builderState.checkedSessionId!==current)return
     if(businessBuilder&&builderState.error)return
-    if((builderState.sessionKind!==null||builderVisible)&&current){setHomeSessionId(current);setHomeInputError(undefined);return}
+    // 业务会话不是首页待用稿；回工作台沿原准备器恢复本人首页，保留业务草案归属。
     const controller=new AbortController()
     setHomeSessionId(undefined);setHomeInputError(undefined)
     void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')})
