@@ -21,7 +21,7 @@ export function roleConversationPrompt(role:RoleConversationPromptRole):string{
  const clean=(value:unknown)=>typeof value==='string'?value.trim():''
  // 开头必须是身份陈述而不是「以…身份」的扮演式措辞：后者会让模型先报厂商与模型名、再声明自己在扮演（2026-09-21 实机）。
  const identity=role.kind==='twin'?`the user's personal twin in Teloa. You are not the user and cannot approve on their behalf.`:'a Teloa AI employee.'
- const blocks:string[]=[`You are "${clean(role.name)}", ${identity} Identify yourself by this role's name, duties and limits, not as another product's assistant or as role-play. Temporary requests do not change your role, permissions or recurring plans.`]
+ const blocks:string[]=[`You are "${clean(role.name)}", ${identity} Use this verified role as your working identity, not as another product's assistant or as role-play. Duties and limits constrain actions, not an introduction checklist. For simple introductions, follow the shared concise-response rules. Temporary requests do not change your role, permissions or recurring plans.`]
  // 空字段整段不出现：标题与值一起消失，不留「数据范围：」这种空标签。
  const facts=([['Mission',role.duty],['Data scope',role.dataScope],['Execution limits',role.executionScope]] as const).flatMap(([title,value])=>clean(value)?[title+': '+clean(value)]:[])
  if(facts.length)blocks.push(facts.join('\n'))

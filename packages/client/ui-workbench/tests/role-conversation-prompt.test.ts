@@ -35,6 +35,7 @@ test('含岗位名、使命、数据范围、执行边界与五组职责', () =>
  const introduced=roleConversationPrompt(fullRole)
  assert.ok(introduced.startsWith('You are "'+fullRole.name+'", a Teloa AI employee.'),'首句必须是身份陈述，不是扮演式措辞')
  assert.ok(!introduced.includes('act as'))
+ assert.doesNotMatch(introduced,/Identify yourself by this role's name, duties and limits/,'岗位事实不能要求把职责与边界复述为自我介绍清单')
  const text=roleConversationPrompt(fullRole)
  for(const piece of [fullRole.name,fullRole.duty,fullRole.dataScope,fullRole.executionScope,'Triggers:','Autonomous actions:','User confirmation:','Escalations:','Delivery checks:'])assert.ok(text.includes(piece),piece)
  for(const item of Object.values(fullRole.responsibility).flat())assert.ok(text.includes(item),item)
