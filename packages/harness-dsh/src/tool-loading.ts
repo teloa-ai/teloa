@@ -15,6 +15,7 @@ import {selfAuthorizedToolNames} from './self-authorized-tools.ts'
 /** 统一的工具加载器：普通会话与语音轮次共用同一个名字、目录与守卫。 */
 export const toolLoaderName='teloa_tools_load'
 const legacyLoaderNames=new Set(['teloa_voice_tools'])
+const sessionContextName='teloa:session-tool-directory'
 const voiceContextName='teloa:voice-tool-directory'
 const voiceImmediate=new Set(['teloa_work_stop'])
 // 已关联原稿状态上下文（saved-draft-context.ts）以本工具可见为前提；加载新建类工具时一并展开，保持原稿状态连续。
@@ -63,7 +64,8 @@ const terms=(text:string)=>{
 function search(available:ReadonlyMap<string,ToolSchema>,query:string):string[]{
  const words=terms(query),rows=[...available.values()].map(tool=>{const category=categoryOf(tool.name);return {tool,name:tool.name.toLowerCase(),text:(tool.name+' '+tool.description+' '+category.label+' '+category.hint).toLowerCase()}})
  const frequencies=new Map(words.map(word=>[word,rows.filter(row=>row.text.includes(word)).length]))
- return rows.map(row=>({name:row.tool.name,score:(query.toLowerCase().includes(row.name)?100:0)+words.reduce((sum,word)=>sum+(row.text.includes(word)?(row.name.includes(word)?4:1)*Math.log(1+rows.length/(frequencies.get(word)!+1)):0),0)/Math.sqrt(1+row.tool.description.length/256)})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).slice(0,6).map(row=>row.name)
+ // 每个词只计一次；详细字段与安全示例使说明变长，不应把真正的动作工具排在只读辅助工具之后。
+ return rows.map(row=>({name:row.tool.name,score:(query.toLowerCase().includes(row.name)?100:0)+words.reduce((sum,word)=>sum+(row.text.includes(word)?(row.name.includes(word)?4:1)*Math.log(1+rows.length/(frequencies.get(word)!+1)):0),0)})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).slice(0,6).map(row=>row.name)
 }
 const sectionTool=(name:string)=>name.match(/^tool:([^:]+)(?::.*)?$/)?.[1]
 
@@ -178,7 +180,9 @@ function createEngine(ctx:Context){
   const deferred=(name:string)=>{const tool=sectionTool(name);return !!tool&&(available.has(tool)||hidden.has(tool))&&!exposed.has(tool)}
   passes.set(loader,{available,sections:assembly.sections.filter(row=>deferred(row.name)),contexts:assembly.contexts.filter(row=>deferred(row.name))})
   state.mode='session';state.available=available;state.hidden=hidden;state.exposed=exposed
-  return refineWorkBehavior({...assembly,tools,sections:assembly.sections.filter(row=>!deferred(row.name)),contexts:assembly.contexts.filter(row=>!deferred(row.name))})
+  const contexts=assembly.contexts.filter(row=>!deferred(row.name)&&row.name!==sessionContextName)
+  contexts.push({name:sessionContextName,interpolate:false,text:'# 当前会话的工具发现\n工具列表只展开常用入口；未展开工具不表示已经列出全部能力。本人要求实际操作而未见对应工具时，先用 '+toolLoaderName+' 的 query 按动作搜索，例如“保存知识 Markdown”“新建员工 草案”，下一步读取已加载参数再操作。不能因工具未加载就断言平台不支持、没有保存能力或要求本人手动处理。搜索未命中可用更直接的同义词核对；完整目录仍无匹配或权限拒绝时如实说明，不猜工具名或绕过拒绝。加载不执行、不扩大授权，问答不必加载工具。'})
+  return refineWorkBehavior({...assembly,tools,sections:assembly.sections.filter(row=>!deferred(row.name)),contexts})
  }
 
  /** 语音轮次：首步只暴露加载器与停止，加载按轮次重置；普通会话已处理时以其许可目录为底。 */
@@ -213,7 +217,7 @@ function createEngine(ctx:Context){
   // 普通会话装配已延后的说明，在语音加载对应工具后补回。
   const restored=<T extends {name:string}>(rows:readonly T[])=>rows.filter(row=>{const tool=sectionTool(row.name);return !!tool&&exposed.has(tool)})
   const sections=[...assembly.sections.filter(section=>!deferred(section.name)),...pass?restored(pass.sections):[]]
-  const activeContexts=[...contexts.filter(context=>!deferred(context.name)),...pass?restored(pass.contexts):[]]
+  const activeContexts=[...contexts.filter(context=>context.name!==sessionContextName&&!deferred(context.name)),...pass?restored(pass.contexts):[]]
   state.mode='voice';state.available=available;state.hidden=new Set();state.exposed=exposed
   // 首步只能聊天、查参数或停止原工作；开始实际操作前恢复完整的适用工作规则。
   return refineWorkBehavior({...assembly,sections,contexts:activeContexts,tools},!voice.loaded.size)

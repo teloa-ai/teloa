@@ -33,6 +33,7 @@ export type ConversationObjectCardPorts={
  readGroup:(id:string)=>Promise<Group>
  drafts:PageCreateApi
  openPlanDraft?:(draft:PageCreateDraft)=>void
+ openRoleDraft?:(draft:PageCreateDraft)=>void
  mcp:ManagedMcpConnectionApi
  openRole:(id:string)=>void
  openGroup:(id:string)=>void
@@ -102,10 +103,11 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
  useEffect(()=>{if(receipt.draftReference&&!requested)return;const controller=new AbortController();let live=true;setError('');setDetail(undefined)
   const load=async()=>{
    const own=(ownerId:string)=>{if(ownerId!=='local:teloa-owner')throw Error(copy('对象不属于当前本人。','物件不屬於目前本人。','This object does not belong to the current user.'))}
+   const readRole=async(id:string)=>{const role=await ports.readRole(id);if(!role||role.id!==id)throw Error(copy('员工已不可用，请核对目录。','員工已不可用，請核對名錄。','Employee is unavailable.'));own(role.ownerId);return role}
    const readSkill=async(id:string)=>{if(!ports.readSkill)throw Error(copy('技能详情暂不可用，请重试。','技能詳情暫時無法使用，請重試。','Skill details are unavailable. Retry.'));const value=await ports.readSkill(id),skill=record(value).kind==='industry'?await readConversationIndustrySkillDetail(value):readConversationSkillResult(value);if(skill.skill.installationId!==id||receipt.skillSource&&(skill.skill.id!==receipt.skillSource.resourceId||skill.skill.contentId!==receipt.skillSource.contentId||skill.skill.nativeName!==receipt.skillSource.nativeName))throw Error('技能身份不一致。');return skill}
    if(receipt.kind==='project'){if(!ports.readProject)throw Error(copy('项目详情暂不可用。','專案詳情暫時無法使用。','Project details are unavailable.'));const project=await ports.readProject(receipt.id);own(project.ownerId);if(project.id!==receipt.id||project.scope!==receipt.scope)throw Error(copy('项目身份或业务不一致。','專案身分或業務不一致。','Project identity or business does not match.'));return {project}}
    if(receipt.kind==='task'){if(!ports.readTask)throw Error(copy('任务详情暂不可用。','工作詳情暫時無法使用。','Task details are unavailable.'));const task=await ports.readTask(receipt.id);if(!task)throw Error(copy('任务已不可用。','工作已無法使用。','Task is unavailable.'));own(task.ownerId);if(task.id!==receipt.id||task.scope!==receipt.scope)throw Error(copy('任务身份或业务不一致。','工作身分或業務不一致。','Task identity or business does not match.'));return {task}}
-   if(receipt.kind==='role'){const role=await ports.readRole(receipt.id);if(!role||role.id!==receipt.id)throw Error(copy('员工已不可用，请核对目录。','員工已不可用，請核對名錄。','Employee is unavailable.'));own(role.ownerId);return {role}}
+   if(receipt.kind==='role')return {role:await readRole(receipt.id)}
    if(receipt.kind==='group'){const group=await ports.readGroup(receipt.id);if(group.id!==receipt.id)throw Error('群身份不一致。');own(group.ownerId);return {group}}
    if(receipt.kind==='mcp')return {mcp:await ports.mcp.get(receipt.id)}
    if(receipt.kind==='skill'){const skill=await readSkill(receipt.id);return 'kind' in skill?{industrySkill:skill}:{skill}}
@@ -134,7 +136,8 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
    const draftRecord=await ports.drafts.read({draftId:receipt.id},controller.signal)
    own(draftRecord.ownerId);if(draftRecord.id!==receipt.id||receipt.draftReference&&(draftRecord.entity!==receipt.draftReference.entity||draftRecord.scope!==receipt.scope))throw Error(copy('草案身份或业务不一致。','草稿身分或業務不一致。','Draft identity or business does not match.'))
    const installed=draftRecord.entity==='skill'&&draftRecord.status==='applied'&&draftRecord.appliedRef?.startsWith('skill:')&&ports.readSkill?await readSkill(draftRecord.appliedRef.slice(6)):undefined
-   return {draftRecord,...(installed?('kind' in installed?{industrySkill:installed}:{skill:installed}):{}),...(draftRecord.status==='draft'?{draft:await ports.drafts.preview({draftId:receipt.id},controller.signal)}:{})}
+   const role=draftRecord.entity==='role'&&draftRecord.status==='applied'&&draftRecord.appliedRef?await readRole(draftRecord.appliedRef):undefined
+   return {draftRecord,...(role?{role}:{}),...(installed?('kind' in installed?{industrySkill:installed}:{skill:installed}):{}),...(draftRecord.status==='draft'?{draft:await ports.drafts.preview({draftId:receipt.id},controller.signal)}:{})}
   };let generation=0;const refresh=()=>{const current=++generation;void load().then(value=>{if(live&&current===generation){setDetail(value);setError('')}},cause=>{if(live&&current===generation)setError(localizeWorkError(locale,cause))})};refresh();window.addEventListener('focus',refresh);return()=>{live=false;controller.abort();window.removeEventListener('focus',refresh)}
  },[requested,receipt.kind,receipt.id,receipt.revision,receipt.scope,receipt.draftReference?.entity,receipt.skillSource?.resourceId,receipt.skillSource?.contentId,receipt.skillSource?.nativeName,retry,ports.readRole,ports.readGroup,ports.readProject,ports.readTask,ports.drafts,ports.mcp,ports.resources,ports.readSkill,ports.readCapability,locale])
  useEffect(()=>{
@@ -171,9 +174,12 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
    {detail?.draftRecord&&!detail.skill&&!detail.industrySkill&&<>
     <h3>{title}</h3><p>{state}</p><DraftContent draft={detail.draftRecord} copy={copy}/>
     {detail.draftRecord.entity==='plan'&&detail.draftRecord.status==='draft'&&ports.openPlanDraft&&<button type="button" onClick={()=>{ports.openPlanDraft?.(detail.draftRecord!);closePreview()}}>{t('create.plan.review')}</button>}
+    {detail.draftRecord.entity==='role'&&detail.draftRecord.status==='draft'&&ports.openRoleDraft&&<button type="button" onClick={()=>{ports.openRoleDraft?.(detail.draftRecord!);closePreview()}}>{copy('核对并创建员工','核對並建立員工','Review and create employee')}</button>}
+    {detail.draftRecord.entity==='role'&&detail.draftRecord.status==='applied'&&detail.role&&<button type="button" onClick={()=>{closePreview();ports.openRole(detail.role!.id)}}>{copy('查看员工','查看員工','View employee')}</button>}
     {detail.draftRecord.entity==='app'&&detail.draft&&<CustomMcpAppConfirmation key={detail.draftRecord.id+detail.draftRecord.bodyHash} api={ports.mcp} preview={detail.draft} active={previewOpen} apply={async id=>{const draft=detail.draftRecord!;await ports.drafts.settle({requestId:crypto.randomUUID(),draftId:draft.id,expectedBodyHash:draft.bodyHash,outcome:'applied',appliedRef:id});setRetry(value=>value+1)}}/>}
     {detail.draftRecord.entity==='app'&&detail.draftRecord.status==='applied'&&detail.draftRecord.appliedRef&&<CustomMcpAppSettings api={ports.mcp} id={detail.draftRecord.appliedRef} removed={closePreview}/>}
-    {detail.draftRecord.entity!=='app'&&<p>{detail.draftRecord.status==='draft'?copy('可以回到此会话继续调整，或要求应用这份草案。','可以返回此會話繼續調整，或要求套用這份草案。','Continue refining or ask to apply this draft in the conversation.'):copy('此记录关联同一份能力定义。','此記錄關聯同一份能力定義。','This record links to the same capability.')}</p>}
+    {detail.draftRecord.entity==='role'&&detail.draftRecord.status==='draft'&&<p>{copy('先核对职责与范围，再由本人确认创建；查看草案不会创建员工或授予权限。','先核對職責與範圍，再由本人確認建立；檢視草稿不會建立員工或授予權限。','Review the duties and scope before confirming creation. Viewing the draft does not create an employee or grant permissions.')}</p>}
+    {detail.draftRecord.entity!=='app'&&detail.draftRecord.entity!=='role'&&<p>{detail.draftRecord.status==='draft'?copy('可以回到此会话继续调整，或要求应用这份草案。','可以返回此會話繼續調整，或要求套用這份草案。','Continue refining or ask to apply this draft in the conversation.'):copy('此记录关联同一份能力定义。','此記錄關聯同一份能力定義。','This record links to the same capability.')}</p>}
    </>}
    {detail?.skill&&<>
     <h3>{title}</h3><p>{detail.skill.skill.description}</p><p>{state} · {detail.skill.skill.version}</p><p>{copy('本人保存的技能。保存新版不会自动发布、启用或切换正在使用的版本。','本人儲存的技能。儲存新版不會自動發佈、啟用或切換正在使用的版本。','A skill saved by you. Saving a new version does not publish or enable it, or switch the active version.')}</p><article className={[css.markdown,markdownTypography.typography].join(" ")} aria-label={copy('技能正文','技能內文','Skill content')}><MarkdownPreview markdown={detail.skill.body} images={false}/></article>{detail.draftRecord&&<details><summary>{copy('创建文件清单','建立檔案清單','Created files')}</summary><DraftContent draft={detail.draftRecord} copy={copy}/></details>}
@@ -181,7 +187,7 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
    {detail?.industrySkill&&<>
     <h3>{title}</h3><p>{sub}</p><p>{state} · {detail.industrySkill.skill.version}</p><p>{copy('来自模板','來自範本','From template')}：{detail.industrySkill.load.templateTitle}</p><p>{copy('此技能随原模板维护；查看不会修改正文、启用或切换版本。','此技能隨原範本維護；檢視不會修改內文、啟用或切換版本。','This skill is maintained with its original template. Viewing does not edit content, enable it, or switch versions.')}</p>
    </>}
-   {detail&&detail.draftRecord?.entity!=='app'&&<button type="button" onClick={()=>{closePreview();ports.openCapabilities()}}>{copy('打开应用','開啟應用程式','Open Apps')}</button>}
+   {detail&&detail.draftRecord?.entity!=='app'&&detail.draftRecord?.entity!=='role'&&<button type="button" onClick={()=>{closePreview();ports.openCapabilities()}}>{copy('打开应用','開啟應用程式','Open Apps')}</button>}
   </div></ContextDrawer>}
   {previewOpen&&detail?.knowledge&&<ContextDrawer title={copy('知识详情','知識詳情','Knowledge details')} close={()=>setPreviewOpen(false)}><div className={css.preview}><h3>{title}</h3><p>{copy('版本','版本','Version')} {detail.knowledge.version} · {copy('已保存，尚未提交为工作资料','已儲存，尚未提交為工作資料','Saved, not applied as a work resource')}</p><article className={[css.markdown,markdownTypography.typography].join(" ")}><MarkdownPreview markdown={detail.knowledge.markdown} images={false}/></article><p>{copy('查看不会加入员工岗位或授予任务读取权限。','檢視不會加入員工崗位或授予任務讀取權限。','Viewing does not add this to an employee or authorize task access.')}</p>{ports.openResources&&<button type="button" onClick={()=>{setPreviewOpen(false);ports.openResources?.()}}>{copy('打开知识库','開啟知識庫','Open knowledge library')}</button>}</div></ContextDrawer>}
   {previewOpen&&detail?.capability&&<ContextDrawer title={category} close={()=>setPreviewOpen(false)}><div className={css.preview}><h3>{title}</h3><p>{detail.capability.description}</p><p>{state} · {copy('版本','版本','Version')} {detail.capability.version}</p><p>{copy('详情按实际配置读取。查看不会启用能力、连接服务或授予权限；可在会话继续提出修改。','詳情按實際設定讀取。檢視不會啟用能力、連線服務或授予權限；可在會話繼續提出修改。','Details reflect the saved configuration. Viewing does not enable capabilities, connect services, or grant permission. Continue changes in this conversation.')}</p><button type="button" onClick={()=>{setPreviewOpen(false);ports.openCapabilities()}}>{copy('打开应用','開啟應用程式','Open Apps')}</button></div></ContextDrawer>}

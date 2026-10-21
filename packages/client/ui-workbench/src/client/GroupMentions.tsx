@@ -30,6 +30,7 @@ export function GroupMentions({api,groupId,active,locate,author,time}:{api:Pick<
  useEffect(()=>{if(open&&active){void load();filter.current?.focus()}},[api,groupId,open,unreadOnly,active])
  const dismiss=(restoreFocus:boolean)=>{++reading.current;++navigating.current;setBusy(false);setLocating(undefined);setLocationFailure(undefined);setOpen(false);if(restoreFocus)requestAnimationFrame(()=>toggle.current?.focus())}
  const close=()=>dismiss(true)
+ useEffect(()=>{if(summary?.mentionCount===0)dismiss(false)},[summary?.mentionCount])
  const locateItem=async(item:GroupMentionItem)=>{
   const version=++navigating.current
   setLocating(item.message.id);setLocationFailure(undefined)
@@ -42,8 +43,9 @@ export function GroupMentions({api,groupId,active,locate,author,time}:{api:Pick<
   }catch{if(alive.current&&version===navigating.current)setLocationFailure(item)}
   finally{if(alive.current&&version===navigating.current)setLocating(undefined)}
  }
+ if(!summaryFailed&&!(summary&&summary.mentionCount>0))return null
  return <div onKeyDown={event=>{if(open&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close()}}}>
-  <div className={css.mentionSummary}><button ref={toggle} type="button" className={css.replyButton} aria-expanded={open} aria-controls={panelId} onClick={()=>{if(open)close();else setOpen(true)}}><AtSign size={14} aria-hidden/>{t('group.mentions.title')}{summary&&' '+summary.mentionCount}</button>{summary&&summary.unreadCount>0&&<small>{t('group.mentions.unread',{count:summary.unreadCount})}</small>}{summaryFailed&&<span role="status">{t('group.mentions.summaryFailed')} <button type="button" className={css.replyButton} onClick={()=>void refresh()}>{t('group.mentions.retry')}</button></span>}</div>
+  <div className={css.mentionSummary}>{summary&&summary.mentionCount>0&&<button ref={toggle} type="button" className={css.replyButton} aria-expanded={open} aria-controls={panelId} onClick={()=>{if(open)close();else setOpen(true)}}><AtSign size={14} aria-hidden/>{t('group.mentions.title')}{' '+summary.mentionCount}</button>}{summary&&summary.unreadCount>0&&<small>{t('group.mentions.unread',{count:summary.unreadCount})}</small>}{summaryFailed&&<span role="status">{t('group.mentions.summaryFailed')} <button type="button" className={css.replyButton} onClick={()=>void refresh()}>{t('group.mentions.retry')}</button></span>}</div>
   {open&&<section id={panelId} className={css.messageSearchResults} aria-label={t('group.mentions.title')}><header><label><input ref={filter} type="checkbox" checked={unreadOnly} disabled={!!locating} onChange={event=>setUnreadOnly(event.target.checked)}/>{t('group.mentions.unreadOnly')}</label><button type="button" className={css.iconButton} aria-label={t('group.mentions.close')} onClick={close}><X size={15}/></button></header>
    {locationFailure&&<p role="status">{t('group.mentions.locateFailed')} <button type="button" disabled={!!locating} onClick={()=>void locateItem(locationFailure)}>{t('group.mentions.retry')}</button></p>}
    {failed?<p role="status">{t('group.mentions.failed')} <button type="button" onClick={()=>void load()}>{t('group.mentions.retry')}</button></p>:busy&&!page?<p role="status">{t('group.mentions.loading')}</p>:page?.items.length===0?<p role="status">{t(unreadOnly?'group.mentions.noUnread':'group.mentions.empty')}</p>:page?.items.map(item=><button type="button" key={item.message.id} disabled={busy||!!locating} onClick={()=>void locateItem(item)}><span>{author(item)} · {time(item.message.createdAt)} · {t(item.rootId?'collaboration.panel.topic':'collaboration.view.discussion')}{item.unread&&' · '+t('group.mentions.new')}</span><strong>{item.excerpt}</strong></button>)}

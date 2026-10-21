@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {SessionId,type SessionEvent} from '@deepseek-ai/dsh-session'
-import {ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {Session,SessionId,type SessionEvent} from '@deepseek-ai/dsh-session'
+import {ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import type {TaskRun,TaskRunSubagent} from '@teloa/backend'
 import {nativeHotSubagentFixture} from './fixtures/native-hot-subagent.ts'
 import {registerTaskSubagentTool} from '../src/task-subagent-tool.ts'
@@ -12,6 +12,7 @@ import {assertSafeTaskRunRetry} from '../src/task-run-retry-proof.ts'
 import type {TaskRunPorts} from '../src/task-run-driver.ts'
 import type {RetryChildInspection} from '../src/task-run-review-retry-proof.ts'
 const answer='37 × 23 = 37 × (20 + 3) = 740 + 111 = 851。'
+const createUserMessageForSuffix=()=>createUserMessage({source:{kind:'user',rpcId:'late-request'},content:[{type:'text',text:'另一条指令'}]})
 const text=(value:string):StreamChunk[]=>[{type:'block-start',index:0,blockType:'text'},{type:'block-end',index:0,block:{type:'text',text:value}},{type:'finish',reason:{kind:'stop'}}]
 const call=(name:string,id:string,args:unknown):StreamChunk[]=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'block-end',index:0,block:{type:'tool-call',name,id:ToolCallId(id),arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}]
 
@@ -33,6 +34,20 @@ test('官方父子Loop纯计算与真实平台拒绝写口：完整原事件可�
  const signal=new AbortController().signal,registry={subagents:registrations,webAccess:[]}
  await assertSafeTaskRunRetry(run,ports,signal,registry)
  assert.equal(f.adapter.requests.length,4,'证明不派发模型或再次执行child')
+ await t.test('官方Session冷重建追加end-seed仍核原prefix，未知后缀不能被截掉',async()=>{
+  const cold=readSessionEvents(Session.create(f.parent.id,events,f.parent.session.header)),last=cold.at(-1)!
+  assert.equal(last.type,'session/end-seed');assert.equal(last.seq,evidence.endSeq+1)
+  await assertSafeTaskRunRetry(run,{...ports,events:async()=>cold},signal,registry)
+  for(const suffix of [
+   {...last,data:{unknown:true}},
+   {...last,type:'session/unknown-lifecycle'},
+   {...last,time:events[evidence.endSeq]!.time-1},
+   {...last,surfaceOp:'append'},
+   {...last,type:'user/message',surfaceOp:'append',data:createUserMessageForSuffix()},
+   {...last,type:'tool/call',data:{turn:evidence.turn,step:9,callId:ToolCallId('late-write'),name:'write',arguments:'{}'}},
+  ])await assert.rejects(assertSafeTaskRunRetry(run,{...ports,events:async()=>[...events,suffix] as SessionEvent[]},signal,registry),{code:'teloa/conflict'})
+  await assert.rejects(assertSafeTaskRunRetry(run,{...ports,events:async()=>[...cold,{...last,seq:last.seq+1}] as SessionEvent[]},signal,registry),{code:'teloa/conflict'})
+ })
  for(const mode of ['missing-result','successful-write','unknown-tool','foreign-child','unfinished','missing-reader','late-event','pending','foreign-registry'] as const)await t.test(mode,async()=>{
   const changed=structuredClone(snapshot),bad={...ports},rows=structuredClone(registrations)
   const result=changed.events.find(event=>event.type==='tool/result'),tool=changed.events.find(event=>event.type==='tool/call')

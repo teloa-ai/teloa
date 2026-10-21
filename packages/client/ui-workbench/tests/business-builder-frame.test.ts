@@ -284,6 +284,25 @@ test('R2 刷新保留原稿后从业务首页继续当前builder不弹无意义�
  assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'原生输入草稿')
 })
 
+test('业务草案保留后离开到工作台显示总览和自动化，回原入口仍是同一原稿',async t=>{
+ const page=await mount(t)
+ await page.getByRole('button',{name:'新建业务',exact:true}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ await page.getByRole('textbox',{name:'slot-probe'}).fill('业务搭建原会话未发送输入')
+ const original=await page.evaluate(()=>{const f=(window as any).frameFixture;return {session:f.current(),draft:f.controller.getSnapshot().flow.getSnapshot().binding.draftId}})
+ await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button',{name:/工作台/}).click()
+ // 首次手动入口产生的 revision 1 尚未保存，不需要确认，也不能因此覆盖工作台。
+ assert.equal(await page.getByRole('button',{name:'保留草案离开',exact:true}).count(),0)
+ await page.getByRole('navigation',{name:'工作台',exact:true}).getByRole('button',{name:'自动化',exact:true}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'保存业务',exact:true}).count(),0)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return {view:f.state().view,session:f.current(),draft:f.controller.getSnapshot().flow.getSnapshot().binding.draftId,status:f.controller.getSnapshot().flow.getSnapshot().draft.status,creates:f.creates}}),{view:'home',...original,status:'draft',creates:1})
+ await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button',{name:'业务',exact:true}).click()
+ await page.getByRole('region',{name:'继续搭建',exact:true}).getByRole('button').filter({hasText:'验收业务'}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return {view:f.state().view,session:f.current(),draft:f.controller.getSnapshot().flow.getSnapshot().binding.draftId,creates:f.creates}}),{view:'messages',...original,creates:1})
+ assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'业务搭建原会话未发送输入')
+})
+
 for(const locale of ['zh-CN','en'])test(locale+' 记录交办只准备引用；原稿保留并通过确认在新daily带入，不直接发送',async t=>{
  const page=await mount(t,locale),en=locale==='en'
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.formal=true;f.records=true;f.openFormal()})

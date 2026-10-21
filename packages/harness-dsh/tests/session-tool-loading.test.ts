@@ -15,6 +15,11 @@ import {groupRoutingSessionId} from '@teloa/contract'
 import {groupRoutingDenyReason,registerGroupRoutingGuard} from '../src/group-routing-guard.ts'
 import {isRoutingSession} from '../src/group-routing.ts'
 import * as workBehavior from '../src/work-behavior.ts'
+import {registerPageCreateTools} from '../src/page-create-tools.ts'
+import {registerCapabilityDraftTools} from '../src/capability-draft-tools.ts'
+import {registerMethodReuseTools} from '../src/method-reuse-tools.ts'
+import {registerPlanTools} from '../src/plan-tools.ts'
+import {registerLibraryTools} from '../src/library-tools.ts'
 
 class Adapter extends LlmAdapter{
  readonly requests:GenerateOptions[]=[]
@@ -32,14 +37,15 @@ const deferred={workflow:'组织多步并行工作 workflow',bash:'运行本机�
 const runOnly=['teloa_group_attach']
 const padding='本工具的完整参数与使用约束说明。'.repeat(30)
 
-async function setup(t:TestContext,options:{loading?:boolean;sessionId?:string;routing?:boolean}={}){
+async function setup(t:TestContext,options:{loading?:boolean;sessionId?:string;routing?:boolean;productionCatalog?:boolean}={}){
  const ctx=new Context(),adapter=new Adapter(),executed:string[]=[];t.after(()=>ctx.fiber.dispose())
  for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
  await ctx.plugin(AgentLoop,{agents:[]})
  ctx.llm.registerAdapter(['capture'],adapter)
  const register=(name:string,description:string)=>ctx.tools.register(defineTool({name,description:description+padding,parameters:{target:{type:'string',description:'操作对象'}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{executed.push(name);return 'ok:'+name}}))
  for(const name of core)register(name,'常驻工具'+name)
- for(const [name,description] of Object.entries(deferred))register(name,description)
+ for(const [name,description] of Object.entries(deferred))if(!options.productionCatalog||!/^teloa_(?:create_|library_)/.test(name))register(name,description)
+ if(options.productionCatalog)for(const registerTools of [registerPageCreateTools,registerCapabilityDraftTools,registerMethodReuseTools,registerPlanTools,registerLibraryTools])registerTools(ctx,{} as never)
  for(const name of runOnly)register(name,'群运行贴回文件')
  ctx.systemPrompt.section({name:'tool:teloa_projects_list',order:3000,text:'项目工具规则：只读项目目录。'})
  if(options.routing)registerGroupRoutingGuard(ctx,isRoutingSession)
@@ -65,6 +71,10 @@ test('普通会话首个请求只广告常驻核心与加载器，加载器描�
  assert.ok(slim.tools!.length<=core.length+1)
  for(const name of [...Object.keys(deferred),...runOnly])assert.ok(!names(slim).includes(name),name+' 不应在首步广告')
  const loader=slim.tools!.find(tool=>tool.name===toolLoaderName)!
+ const visible=JSON.stringify(slim.messages)
+ assert.match(visible,/未展开.*不.*全部能力/)
+ assert.match(visible,/teloa_tools_load/)
+ assert.match(visible,/不能.*未加载.*不支持/)
  for(const label of ['新建与草案','市场与行业','员工与团队','项目','资料库'])assert.match(loader.description,new RegExp(label))
  assert.doesNotMatch(loader.description,/群管理|计划（/,'没有可加载工具的类别不列出')
  assert.doesNotMatch(system(slim),/项目工具规则/,'延后工具的 tool: 说明随参数一起延后')
@@ -74,6 +84,16 @@ test('普通会话首个请求只广告常驻核心与加载器，加载器描�
  t.diagnostic(`改前 ${full.tools!.length} 个工具 ${bytes(full)} 字节，系统提示 ${system(full).length} 字符；改后 ${slim.tools!.length} 个 ${bytes(slim)} 字节，系统提示 ${system(slim).length} 字符`)
  assert.ok(bytes(slim)<bytes(full)*0.7)
  assert.ok(system(slim).length<system(full).length)
+})
+
+test('真实长说明的员工草案与知识保存工具可按自然动作搜索到，不被只读辅助工具挤出',async t=>{
+ for(const [query,expected] of [['新建员工 草案','teloa_create_draft'],['保存员工草案','teloa_create_draft'],['create employee draft','teloa_create_draft'],['保存知识 Markdown','teloa_library_save'],['save knowledge markdown','teloa_library_save']]){
+  const f=await setup(t,{productionCatalog:true})
+  f.adapter.scripts.push(call(toolLoaderName,{query}),text)
+  await f.send()
+  assert.ok(names(f.adapter.requests[1]).includes(expected!),query+' 应找到 '+expected+'，实际为 '+names(f.adapter.requests[1]).join(','))
+  assert.deepEqual(f.executed,[],'发现工具不能执行业务操作')
+ }
 })
 
 test('调用加载器后下一请求出现被加载工具，同一会话后续轮次仍在，对应提示词模块恢复',async t=>{
@@ -126,6 +146,8 @@ test('语音轮次以普通会话的许可目录为底，按轮次加载；语�
  assert.equal(voice.refine(f.agent,assembled,{voice:false,turn:1}).tools,assembled.tools,'非语音轮次保持普通会话工具面')
  const slim=voice.refine(f.agent,assembled,{voice:true,turn:1})
  assert.deepEqual(slim.tools.map(tool=>tool.name).sort(),[toolLoaderName,'teloa_work_stop'].sort())
+ assert.ok(slim.contexts.some(context=>context.name==='teloa:voice-tool-directory'))
+ assert.ok(!slim.contexts.some(context=>context.name==='teloa:session-tool-directory'),'语音使用本轮规则，不重复普通会话发现说明')
  await f.ctx.tools.get(toolLoaderName,f.agent)!.execute({query:'列出项目'},{agent:f.agent,signal:new AbortController().signal} as never)
  const loaded=voice.refine(f.agent,await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent}),{voice:true,turn:1})
  assert.ok(loaded.tools.some(tool=>tool.name==='teloa_projects_list'),'语音可加载普通会话首步延后的工具')

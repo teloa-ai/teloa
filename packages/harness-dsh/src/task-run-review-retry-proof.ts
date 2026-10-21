@@ -46,7 +46,9 @@ const registered=(rows:readonly TaskRunSubagent[])=>rows.map(({tokenEstimate:_,.
 export async function assertSafeReviewFailedRetry(run:TaskRun,ports:TaskRunPorts,signal:AbortSignal,registrations:{subagents:readonly unknown[];webAccess:readonly unknown[]}):Promise<void>{
  if(run.executor?.kind!=='owner'||run.roleId!==null||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null||run.flowId!==undefined||run.groupContext!==undefined||registrations.webAccess.length||registrations.subagents.length>4||!ports.backgroundState||!ports.subagentState||!ports.flowState||!ports.stopState||!ports.goalObservation||!ports.retryOwnerOnlyBackground||!ports.reviewSubagents)throw denied()
  const events=await ports.events(run);signal.throwIfAborted();shape(events,false)
- if(events.length!==run.evidence.endSeq+1||!isDeepStrictEqual(observeTaskRunTimeline(events,run.nativeRequestId).observation,run.evidence))throw denied()
+ const prefix=events.slice(0,run.evidence.endSeq+1),suffix=events.slice(run.evidence.endSeq+1),end=prefix.at(-1),tail=suffix[0]
+ // Session.create 冷重建会在原终态后追加空 end-seed；只核过这一条明确生命周期后缀才读冻结前缀。
+ if(end?.type!=='turn/end'||suffix.length>1||tail&&(tail.type!=='session/end-seed'||Object.keys(tail).sort().join(',')!=='data,seq,time,type'||tail.data===null||Array.isArray(tail.data)||typeof tail.data!=='object'||Object.keys(tail.data).length!==0||tail.seq!==run.evidence.endSeq+1||!Number.isSafeInteger(tail.time)||tail.time<end.time)||!isDeepStrictEqual(observeTaskRunTimeline(prefix,run.nativeRequestId).observation,run.evidence))throw denied()
  const roots=events.filter(event=>event.type==='user/message'&&event.data.source.kind==='user')
  const root=roots[0]
  if(roots.length!==1||root?.type!=='user/message'||root.seq!==run.evidence.messageSeq||Reflect.get(root.data.source,'rpcId')!==run.nativeRequestId)throw denied()
@@ -60,8 +62,8 @@ export async function assertSafeReviewFailedRetry(run:TaskRun,ports:TaskRunPorts
  }
  const binding={runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId}
  let children:Awaited<ReturnType<typeof readNativeReviewChildren>>
- try{children=await readNativeReviewChildren({inspect,live:()=>undefined},events,binding,before,signal)}catch{signal.throwIfAborted();throw denied()}
- if((children?.length??0)!==before.length||!proveNativeReviewChildren(events.filter(event=>event.type==='subagent/catalog'),safeCalls(events,false),binding,children))throw denied()
+ try{children=await readNativeReviewChildren({inspect,live:()=>undefined},prefix,binding,before,signal)}catch{signal.throwIfAborted();throw denied()}
+ if((children?.length??0)!==before.length||!proveNativeReviewChildren(prefix.filter(event=>event.type==='subagent/catalog'),safeCalls(prefix,false),binding,children))throw denied()
  const settled=async()=>{
   const [background,children,flow,host,goal,ownerOnly]=await Promise.all([ports.backgroundState!(run),ports.subagentState!(run,signal),ports.flowState!(run),ports.stopState!(run),ports.goalObservation!(run,events),ports.retryOwnerOnlyBackground!(run,signal)])
   if(background.outstanding!==false||background.cancelled===true||typeof background.interrupted!=='boolean'||children!=='none'||flow!=='none'||host.running!==false||goal!==undefined||ownerOnly!==true)throw denied()

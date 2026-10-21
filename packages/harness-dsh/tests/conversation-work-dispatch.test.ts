@@ -362,6 +362,9 @@ test('本人completed但正式复核未过：候选仍可读，显式原卡只�
  f.ports.delivery=async()=>({state:'review-required'})
  const status=await f.dispatch.status('origin',requestId)
  assert.equal(status.counts.received,0);assert.equal(status.members[0]?.status,'failed');assert.match(status.members[0]?.reason??'',/正式复核/);assert.equal(status.members[0]?.result,'真实最终回复','原候选可读，不能冒充已核交付')
+ f.stored.failures.general={code:'teloa/conflict',message:'原执行副作用核对拒绝的真实失败原因'}
+ assert.equal((await f.dispatch.status('origin',requestId)).members[0]?.reason,'原执行副作用核对拒绝的真实失败原因','真实resume失败不能被通用交付提示覆盖')
+ delete f.stored.failures.general
  f.ports.delivery=async()=>({state:'unknown'})
  assert.equal((await f.dispatch.status('origin',requestId)).members[0]?.status,'waiting')
  await f.dispatch.deliver();assert.equal(f.calls.includes('publish'),false);assert.equal(f.calls.includes('notified'),false)

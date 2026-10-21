@@ -196,7 +196,7 @@ export class ConversationWorkDispatch{
   const status:WorkMemberStatus=run?.state==='configuration_failed'?'failed':run?.state==='withdrawn'||run?.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run?.state==='ended'?completed?delivery?.state==='saved'&&!!result?'received':delivery?.state==='review-required'?'failed':'waiting':'failed':!run&&request.stoppedAt?'stopped':!run&&failure?'failed':'waiting'
   const deliveryReason=completed&&status!=='received'?(delivery?.state==='review-required'?'正文仍是待复核候选，尚未通过正式复核；可查看原运行并明确重试。':'正式成果的保存结果尚待核对，请沿原运行继续核对。'):undefined
   const executor={kind:'owner' as const,grantId:request.requestId,grantVersion:1}
-  const member:ConversationWorkMember={roleId:null,executor,name:'通用 Agent',scope:'general',status,...(task?{task:projection(task)}:{}),...(run?{run:runProjection(run)}:{}),...(result?{result}:{}),...(deliveryReason?{reason:deliveryReason}:status==='failed'||status==='waiting'&&failure?{reason:run?.configurationError?.message??failure?.message??'本次执行没有可核验的最终回复。'}:{})}
+  const member:ConversationWorkMember={roleId:null,executor,name:'通用 Agent',scope:'general',status,...(task?{task:projection(task)}:{}),...(run?{run:runProjection(run)}:{}),...(result?{result}:{}),...(status==='failed'||status==='waiting'&&(failure||deliveryReason)?{reason:failure?.message??deliveryReason??run?.configurationError?.message??'本次执行没有可核验的最终回复。'}:{})}
   const counts:ConversationWorkStatus['counts']={received:0,waiting:0,unavailable:0,failed:0,stopped:0};counts[status]++
   await this.authorize(request)
   return {requestId:request.requestId,sessionId:request.sessionId,kind:'task',title:request.title,scope:'general',observedAt:ports.now(),stoppedAt:request.stoppedAt,counts,members:[member]}

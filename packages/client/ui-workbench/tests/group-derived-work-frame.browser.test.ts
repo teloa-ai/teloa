@@ -42,7 +42,8 @@ const call=async(endpoint,input)=>{
  if(endpoint==='groups/messages/page')return groupMessagePageFixture(f.completed?[human,...replies]:[human],input);
  if(endpoint==='groups/reading/get'||endpoint==='groups/reading/mark')return groupMessageReadingFixture(f.completed?[human,...replies]:[human],input,f.cursors||(f.cursors={}));
  if(endpoint==='groups/attention')return {schema:'teloa.group-attention/v1',items:[]};
- if(endpoint==='groups/resources/list'||endpoint==='groups/attachments/list')return [];
+ if(endpoint==='groups/resources/list')return [];
+ if(endpoint==='groups/attachments/list')return {items:[]};
  if(endpoint==='groups/reactions/list')return {items:[]};
  if(endpoint==='groups/agent-grants/get')return {groupVersion:1,roleVersion:3,grant:null,status:'not-granted'};
  if(endpoint==='groups/tasks/source')return null;
@@ -54,11 +55,11 @@ const call=async(endpoint,input)=>{
  f.writes.push(endpoint);throw Error('隔离群刷新不得调用未声明端口：'+endpoint);
 };
 props.groupApi=createGroupApi(call);props.groupRoutingApi=createGroupRoutingApi(call);props.taskApi=createTaskApi(call);props.groupWorkLinks=createGroupWorkLinkApi(call);
-props.groupAttachmentApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>[]:target[key]});props.groupReactionApi=createGroupReactionApi(call);
+props.groupAttachmentApi=createGroupAttachmentApi(call);props.groupReactionApi=createGroupReactionApi(call);
 props.roleApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>staff:target[key]});props.businessTaskApi=new Proxy(generic,{get:(target,key)=>key==='source'?async()=>null:target[key]});
 f.openOriginalGroup=()=>store.actions.openGroupTopic(groupId,'');f.completeOriginalWork=()=>{f.completed=true};
 `
- entry="import {createGroupApi} from '"+client+"group-api.ts';import {createTaskApi} from '"+client+"task-api.ts';import {createGroupRoutingApi} from '"+client+"group-routing-api.ts';import {createGroupReactionApi} from '"+client+"group-reaction-api.ts';import {createGroupWorkLinkApi} from '"+client+"group-work-links-api.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '"+client+"../../tests/fixtures/group-message-page-rpc.ts';\n"+entry
+ entry="import {createGroupApi} from '"+client+"group-api.ts';import {createGroupAttachmentApi} from '"+client+"group-attachment-api.ts';import {createTaskApi} from '"+client+"task-api.ts';import {createGroupRoutingApi} from '"+client+"group-routing-api.ts';import {createGroupReactionApi} from '"+client+"group-reaction-api.ts';import {createGroupWorkLinkApi} from '"+client+"group-work-links-api.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '"+client+"../../tests/fixtures/group-message-page-rpc.ts';\n"+entry
  entry=entry.replace("const frameRoot=",setup+"const frameRoot=")
  const temp=await mkdtemp(join(root,'.runtime-group-derived-frame-'));t.after(()=>rm(temp,{recursive:true,force:true}));await writeFile(join(temp,'entry.tsx'),entry)
  const isolated=['WorkDirectory','TaskPage','TeamPage','BusinessPage','MarketPage','TeamCapabilitiesPage','ResourceManager','ArtifactPanel','ProjectOverviewPage','CapabilityTargetPanel','SavedIndustryDirectory','AutoDreamSettingsPage'],stubbed=new Set(isolated.map(name=>join(client,name+'.tsx')))

@@ -6,10 +6,12 @@ const runtime=await import('../../../scripts/runtime/profile.mjs').catch(error=>
 test('本机宿主环境只继承明确允许的变量，并覆盖安装身份路径',()=>{
  assert.equal(typeof runtime.runtimeEnvironment,'function','缺少原生运行环境组装')
  const layout={programRoot:'/app',dshHome:'/state/dsh',runtimeRoot:'/state/data',workspaceRoot:'/work',profileName:'teloa'}
- const environment=runtime.runtimeEnvironment(layout,{PATH:'/tools',LANG:'zh_CN.UTF-8',AWS_SECRET_ACCESS_KEY:'private',TELOA_PROJECT_ROOT:'/wrong',NODE_OPTIONS:'--require injected.js'})
+ const environment=runtime.runtimeEnvironment(layout,{PATH:'/tools',LANG:'zh_CN.UTF-8',AWS_SECRET_ACCESS_KEY:'private',TELOA_PROJECT_ROOT:'/wrong',DSH_HOME:'/native-dsh',TELOA_DSH_HOME:'/another-home',DSH_PROFILE:'native',NODE_OPTIONS:'--require injected.js'})
  assert.equal(environment.TELOA_PROJECT_ROOT,'/app')
  assert.equal(environment.TELOA_WORKSPACE_ROOT,'/work')
  assert.equal(environment.DSH_HOME,'/state/dsh')
+ assert.equal(environment.TELOA_DSH_HOME,undefined)
+ assert.equal(environment.DSH_PROFILE,undefined)
  assert.equal(environment.AWS_SECRET_ACCESS_KEY,undefined)
  assert.equal(environment.NODE_OPTIONS,undefined)
  assert.ok(environment.PATH.endsWith('/tools'))

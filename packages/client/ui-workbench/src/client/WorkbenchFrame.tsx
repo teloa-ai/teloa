@@ -326,7 +326,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const workAttention=useWorkAttention(workAttentionApi,attentionIdentity)
   const [attentionSourceSelection,setAttentionSourceSelection]=useState<{source:WorkAttentionOriginalSource;identity:typeof attentionIdentity}>()
   const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity?attentionSourceSelection.source:undefined
-  const planDraftConnection=useMemo(()=>({planDraftApi,pageCreateApi,planApi,conversationPlans,attentionIdentity}),[planDraftApi,pageCreateApi,planApi,conversationPlans,attentionIdentity])
+  const planDraftConnection=useMemo(()=>({planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity}),[planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity])
   const planDraftEntry=JSON.stringify([state.view,state.detail,state.rolePreview])
   const planDraftFrame=useRef({connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry})
   planDraftFrame.current={connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry}
@@ -335,15 +335,15 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     let live=true,request=0
     const off=planDraftApi.onOpen(value=>{
       const draft={...value}
-      const origin=planDraftFrame.current,sequence=++request
-      const current=()=>live&&request===sequence&&planDraftFrame.current.connection===origin.connection&&planDraftFrame.current.selection===origin.selection&&planDraftFrame.current.entry===origin.entry
+      const origin=planDraftFrame.current,sourceSession=mainSession.getSnapshot(),sequence=++request
+      const current=()=>live&&request===sequence&&mainSession.getSnapshot()===sourceSession&&planDraftFrame.current.connection===origin.connection&&planDraftFrame.current.selection===origin.selection&&planDraftFrame.current.entry===origin.entry
       setPlanDraftOpenError(undefined)
       void (async()=>{
-        if(draft.entity!=='plan'||draft.status!=='draft')throw Object.assign(Error(),{code:'teloa/version-conflict'})
+        if(!['plan','role'].includes(draft.entity)||draft.status!=='draft')throw Object.assign(Error(),{code:'teloa/version-conflict'})
         const read=await pageCreateApi.read({draftId:draft.id})
         if(!current())return
-        if(read.ownerId!==draft.ownerId||read.id!==draft.id||read.entity!=='plan'||read.status!=='draft'||read.scope!==draft.scope||read.bodyHash!==draft.bodyHash||read.body!==draft.body)throw Object.assign(Error(),{code:'teloa/version-conflict'})
-        setAttentionSourceSelection({source:{kind:'page-create-draft',entity:'plan',draftId:read.id,bodyHash:read.bodyHash,...(read.scope===undefined?{}:{scope:read.scope})},identity:attentionIdentity})
+        if(read.ownerId!==draft.ownerId||read.id!==draft.id||read.entity!==draft.entity||read.status!=='draft'||read.scope!==draft.scope||read.bodyHash!==draft.bodyHash||read.body!==draft.body)throw Object.assign(Error(),{code:'teloa/version-conflict'})
+        setAttentionSourceSelection({source:{kind:'page-create-draft',entity:read.entity,draftId:read.id,bodyHash:read.bodyHash,...(read.scope===undefined?{}:{scope:read.scope})},identity:attentionIdentity})
       })().catch(error=>{if(current())setPlanDraftOpenError({connection:origin.connection,message:localizeWorkError(locale,error)})})
     })
     return()=>{live=false;off()}
@@ -422,7 +422,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const builderValue=useSyncExternalStore(builderFlow?.subscribe??noSubscribe,builderFlow?.getSnapshot??noBuilderFlowSnapshot)
   const [builderTab,setBuilderTab]=useState<'conversation'|'preview'>('conversation')
   const [builderError,setBuilderError]=useState<string>(),[builderSwitch,setBuilderSwitch]=useState<{token:BusinessNavigationToken;switching:boolean;proceed:()=>void}>()
-  const builderVisible=!!builderValue?.binding&&builderValue.binding.kind==='builder'&&(builderValue.binding.sessionId===current||!builderValue.binding.sessionId&&builderState.checkedSessionId===current)&&(state.view==='home'||state.view==='messages'&&state.messageMode==='native')
+  const builderVisible=!!builderValue?.binding&&builderValue.binding.kind==='builder'&&(builderValue.binding.sessionId===current||!builderValue.binding.sessionId&&builderState.checkedSessionId===current)&&state.view==='messages'&&state.messageMode==='native'
   const beforeBuilderLeave=async()=>{
     if(!builderVisible||!builderFlow)return true
     const controller=businessBuilder,identity=controller?.getSnapshot(),location=homeCreationLocation(latestState.current)
@@ -2053,19 +2053,23 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     setAttentionSourceSelection(previous=>previous?.source.kind==='page-create-draft'&&previous.source.draftId===draft.id?undefined:previous)
     actions.closeDetail();actions.openMessages('native')
   }
+  const twinDraftOpening=useRef<{sessionId:string;connected:()=>boolean}>()
   const openSavedTwinDraft=async(sessionId:string,text:string,selected:()=>boolean)=>{
-    const original=twinDraftApi,current=()=>projectFrameMounted.current&&!!original&&currentTwinDraftApi.current===original&&selected()
+    const original=twinDraftApi,connected=()=>projectFrameMounted.current&&!!original&&currentTwinDraftApi.current===original,current=()=>connected()&&selected()
     if(!current())throw Object.assign(Error(),{code:'teloa/twin-draft-open-unavailable'})
     const cancelSignal=new AbortController().signal,navigationSignal=beginNativeNavigation?.()
     const navigation=pageCreateDraftRevisionNavigation({cancelSignal,...(navigationSignal?{navigationSignal}:{}),current,location:()=>homeCreationLocation(latestState.current),isNativeConversation:()=>latestState.current.view==='messages'&&latestState.current.messageMode==='native',mainSession:mainSession.getSnapshot,boundSession:()=>work.getSnapshot().sessionId})
-    await openTwinDraftConversation(text,{
-      current:()=>navigation.mayOpen()||navigation.isOpened(sessionId),
-      open:async()=>await work.openSessionResult(sessionId,navigation.signal,navigation.mayOpen)==='opened'&&navigation.isOpened(sessionId),
-      input:()=>conversationDraftInput(sessionId),
-      messages:{unavailable:twinDraftCopy(locale,'openUnavailable'),occupied:twinDraftCopy(locale,'inputOccupied'),rejected:twinDraftCopy(locale,'inputRejected')},
-    })
-    if(!current()||!navigation.isOpened(sessionId))throw Object.assign(Error(),{code:'teloa/twin-draft-open-unavailable'})
-    actions.closeDetail();actions.openMessages('native');closeNarrowDirectory()
+    const opening={sessionId,connected};twinDraftOpening.current=opening
+    try{
+      await openTwinDraftConversation(text,{
+        current:()=>navigation.mayOpen()||navigation.isOpened(sessionId),
+        open:async()=>await work.openSessionResult(sessionId,navigation.signal,navigation.mayOpen)==='opened'&&navigation.isOpened(sessionId),
+        input:()=>conversationDraftInput(sessionId),
+        messages:{unavailable:twinDraftCopy(locale,'openUnavailable'),occupied:twinDraftCopy(locale,'inputOccupied'),rejected:twinDraftCopy(locale,'inputRejected')},
+      })
+      if(!current()||!navigation.isOpened(sessionId))throw Object.assign(Error(),{code:'teloa/twin-draft-open-unavailable'})
+      actions.closeDetail();actions.openMessages('native');closeNarrowDirectory()
+    }finally{if(twinDraftOpening.current===opening)twinDraftOpening.current=undefined}
   }
   /** 页内输入仅在创建回执明确成功后清空；工作区选择与关闭沿用原创建流程。 */
   function preparePageCreation(prompt:{text:string},scope?:CollaborationScope):Promise<void>{
@@ -2126,6 +2130,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   useEffect(()=>{
     const follow=shouldFollowCurrentSession(previous.current,current,state.view)&&(state.view!=='messages'||state.messageMode==='native')
     if(previous.current===current)return
+    // 本次原会话回填仍受选稿守卫约束；仅延后自身打开引起的自动关闭，完成后由原入口明确导航。
+    const draftOpening=twinDraftOpening.current
+    if(draftOpening&&draftOpening.sessionId===current&&draftOpening.connected()&&work.getSnapshot().sessionId===current){previous.current=current;return}
     if(previous.current!==undefined&&state.rolePreview)actions.closeRolePreview(state.rolePreview.request)
     previous.current=current
     actions.retainDetailForSession(current);actions.closeCapabilities()
@@ -2589,7 +2596,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     {creationIntent&&workspaceSelection&&<CreateConversationDialog management={management} current={current} initialWorkspaceId={work.getPendingCreation()?.workspaceId??assistantRecovery?.workspaceId} pendingRequestId={assistantRecovery?undefined:work.getPendingCreation()?.requestId} restart={requestId=>work.releaseCreationForNewWork(requestId)} locked={!!work.getPendingCreation()||!!assistantRecovery} busy={creating} goal={creationIntent.goal} notice={creationIntent.notice} initialError={creationError} mode={creationMode} create={async workspaceId=>{if(creationMode==='chooseWorkspace')await changeCreationLocation(workspaceId);else await createWork(workspaceId,creationIntent)}} close={closeCreation} settings={()=>{closeCreation();actions.openDirectory()}}/>}
     <TemplateShareReceive createTeam={createIndustryTeam} openGroup={openSavedGroup} open={templateReceiveOpen} close={()=>setTemplateReceiveOpen(false)} intent={templateIntent} bridge={templateShareBridge} accept={(pkg,choice,intent)=>templateAcceptance.accept(pkg,choice,intent)} savedChoice={pkg=>templateAcceptance.choice(pkg)} openRole={actions.previewRole} configure={loadId=>actions.openIndustryResources({loadId})} openSkill={()=>actions.openCapabilityCatalog()} openConnections={()=>actions.openMarket()} targets={scopeLabels.map(label=>({scope:label.scope,title:label.title}))}/>
     {planDraftOpenError?.connection===planDraftConnection&&<p role="alert">{planDraftOpenError.message}</p>}
-    {attentionOriginalSource&&<WorkAttentionSourceView creationIdentity={attentionOriginalSource.kind==='page-create-draft'&&attentionOriginalSource.entity==='plan'?planDraftConnection:undefined} source={attentionOriginalSource} businessWork={attentionBusinessApi} businessDashboard={businessDashboardApi} pageCreate={pageCreateApi} {...(attentionCreation(attentionOriginalSource)?{creation:attentionCreation(attentionOriginalSource)!}:{})} close={()=>{const key=JSON.stringify(attentionOriginalSource);setAttentionSourceSelection(current=>current?.identity===attentionIdentity&&JSON.stringify(current.source)===key?undefined:current)}} changed={()=>{void workAttention.reload()}}/>}
+    {attentionOriginalSource&&<WorkAttentionSourceView creationIdentity={attentionOriginalSource.kind==='page-create-draft'&&['plan','role'].includes(attentionOriginalSource.entity)?planDraftConnection:undefined} source={attentionOriginalSource} businessWork={attentionBusinessApi} businessDashboard={businessDashboardApi} pageCreate={pageCreateApi} {...(attentionCreation(attentionOriginalSource)?{creation:attentionCreation(attentionOriginalSource)!}:{})} close={()=>{const key=JSON.stringify(attentionOriginalSource);setAttentionSourceSelection(current=>current?.identity===attentionIdentity&&JSON.stringify(current.source)===key?undefined:current)}} changed={()=>{void workAttention.reload()}}/>}
     {shareDraft&&<ShareDraftDrawer pkg={shareDraft} open close={()=>setShareDraft(undefined)}/>}
     <div className={css.overlay} data-shell-overlay>{renderSlot('shell.overlay',{})}</div>
     <ToastHost/>
