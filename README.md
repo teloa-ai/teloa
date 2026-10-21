@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.teloa.ai/en/">Website</a> · <a href="https://docs.teloa.ai/en/">Docs</a> · <a href="https://market.teloa.ai/en/">Market</a> · <a href="https://www.teloa.ai/en/blog/">Blog</a> · <a href="https://security.teloa.ai/">AI Security</a> · <a href="https://github.com/teloa-ai/teloa">GitHub</a> · <a href="#quick-start">Quick start</a> · <a href="#product-editions">Editions</a> · <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="https://www.teloa.ai/en/">Website</a> · <a href="https://docs.teloa.ai/en/">Docs</a> · <a href="https://market.teloa.ai/en/">Market</a> · <a href="https://www.teloa.ai/en/blog/">Blog</a> · <a href="https://security.teloa.ai/">AI Security</a> · <a href="https://github.com/teloa-ai/teloa">GitHub</a> · <a href="#feature-screenshots">Screenshots</a> · <a href="#quick-start">Quick start</a> · <a href="#product-editions">Editions</a> · <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 # Teloa — An AI team of your own. For everyone.
@@ -45,6 +45,236 @@ This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-sou
 https://github.com/user-attachments/assets/24f31f10-8df6-46fc-b631-e54ca66ad3fe
 
 Community 0.2.2 · Actual interface with sample data. [Watch with captions](https://www.teloa.ai/en/#film)
+
+## Feature screenshots
+
+Browse every view below, or [open the complete screenshot gallery](https://docs.teloa.ai/en/start/screenshots) to filter by feature and follow usage guides.
+
+Community 0.2.4 · 32 views · Actual interfaces with example data. Click an image for the full original. Unconfigured setup and unsent drafts remain visible as such.
+
+<details open>
+<summary><strong>Assign and follow work · 5 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/workbench-024.18aefe7ecd43.png"><img src="https://docs.teloa.ai/assets/screenshots/en/workbench-024.18aefe7ecd43.png" alt="Workspace" width="420" loading="lazy"></a>
+<p><strong>Workspace</strong><br>Describe a goal and continue work; the example draft is unsent.<br><a href="https://docs.teloa.ai/en/guides/workbench">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/attention-024.58a5b2acd718.png"><img src="https://docs.teloa.ai/assets/screenshots/en/attention-024.58a5b2acd718.png" alt="Needs you" width="420" loading="lazy"></a>
+<p><strong>Needs you</strong><br>Review decisions, missing information and exceptions.<br><a href="https://docs.teloa.ai/en/guides/workbench">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/tasks-024.353ca01411f6.png"><img src="https://docs.teloa.ai/assets/screenshots/en/tasks-024.353ca01411f6.png" alt="Tasks" width="420" loading="lazy"></a>
+<p><strong>Tasks</strong><br>Follow saved work by owner and status.<br><a href="https://docs.teloa.ai/en/guides/tasks">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/create-task-024.765ca8dfed89.png"><img src="https://docs.teloa.ai/assets/screenshots/en/create-task-024.765ca8dfed89.png" alt="Create a task" width="420" loading="lazy"></a>
+<p><strong>Create a task</strong><br>Draft the goal, evidence and deliverable before submitting.<br><a href="https://docs.teloa.ai/en/guides/tasks">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/conversations-024.369f45d7f5f7.png"><img src="https://docs.teloa.ai/assets/screenshots/en/conversations-024.369f45d7f5f7.png" alt="Conversations" width="420" loading="lazy"></a>
+<p><strong>Conversations</strong><br>Find earlier work conversations and continue in context.<br><a href="https://docs.teloa.ai/en/guides/conversations">Usage guide</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Employees and collaboration · 6 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/team-024.460a59cf33c9.png"><img src="https://docs.teloa.ai/assets/screenshots/en/team-024.460a59cf33c9.png" alt="Employee directory" width="420" loading="lazy"></a>
+<p><strong>Employee directory</strong><br>Browse employees and their state, then open their conversations.<br><a href="https://docs.teloa.ai/en/guides/colleagues">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/employee-create-024.d5c8f0263fea.png"><img src="https://docs.teloa.ai/assets/screenshots/en/employee-create-024.d5c8f0263fea.png" alt="Create an AI employee" width="420" loading="lazy"></a>
+<p><strong>Create an AI employee</strong><br>Describe responsibilities and scope, then review the draft.<br><a href="https://docs.teloa.ai/en/guides/colleagues">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/employee-detail-024.3b22e615fb49.png"><img src="https://docs.teloa.ai/assets/screenshots/en/employee-detail-024.3b22e615fb49.png" alt="Employee profile" width="420" loading="lazy"></a>
+<p><strong>Employee profile</strong><br>Review responsibilities, capabilities, memory and boundaries.<br><a href="https://docs.teloa.ai/en/guides/colleagues">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/twin-024.5bbaa69b928b.png"><img src="https://docs.teloa.ai/assets/screenshots/en/twin-024.5bbaa69b928b.png" alt="My twin" width="420" loading="lazy"></a>
+<p><strong>My twin</strong><br>Review personal habit notes and sources, and retain or withdraw them.<br><a href="https://docs.teloa.ai/en/concepts/people">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/groups-024.73e4a003d510.png"><img src="https://docs.teloa.ai/assets/screenshots/en/groups-024.73e4a003d510.png" alt="Collaboration groups" width="420" loading="lazy"></a>
+<p><strong>Collaboration groups</strong><br>Bring employees, members and collaboration rules into one group.<br><a href="https://docs.teloa.ai/en/guides/groups">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/create-group-024.9fba4f71c701.png"><img src="https://docs.teloa.ai/assets/screenshots/en/create-group-024.9fba4f71c701.png" alt="Create a group" width="420" loading="lazy"></a>
+<p><strong>Create a group</strong><br>Prepare a group goal and members; the screenshot shows an unsent draft.<br><a href="https://docs.teloa.ai/en/guides/groups">Usage guide</a></p>
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Business and projects · 5 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/business-024.2cfa530d2971.png"><img src="https://docs.teloa.ai/assets/screenshots/en/business-024.2cfa530d2971.png" alt="Business directory" width="420" loading="lazy"></a>
+<p><strong>Business directory</strong><br>Find the employees, tasks and attention items for a business.<br><a href="https://docs.teloa.ai/en/guides/business">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/business-page-024.7e05c5b73773.png"><img src="https://docs.teloa.ai/assets/screenshots/en/business-page-024.7e05c5b73773.png" alt="Business records" width="420" loading="lazy"></a>
+<p><strong>Business records</strong><br>Follow fields, owners and stages; shown with 8 fictional sample records.<br><a href="https://docs.teloa.ai/en/guides/business">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/business-dashboard-024.22f992c8cf57.png"><img src="https://docs.teloa.ai/assets/screenshots/en/business-dashboard-024.22f992c8cf57.png" alt="Business dashboard" width="420" loading="lazy"></a>
+<p><strong>Business dashboard</strong><br>Calculate measures and lists from saved records, with missing values identified.<br><a href="https://docs.teloa.ai/en/guides/business">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/business-dashboard-detail-024.e787ba1992b7.png"><img src="https://docs.teloa.ai/assets/screenshots/en/business-dashboard-detail-024.e787ba1992b7.png" alt="Dashboard detail" width="420" loading="lazy"></a>
+<p><strong>Dashboard detail</strong><br>Inspect the full dashboard; values are hand-entered examples, not live business data.<br><a href="https://docs.teloa.ai/en/guides/business">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/projects-024.807864ff213c.png"><img src="https://docs.teloa.ai/assets/screenshots/en/projects-024.807864ff213c.png" alt="Projects" width="420" loading="lazy"></a>
+<p><strong>Projects</strong><br>Organize related work and materials around a delivery goal.<br><a href="https://docs.teloa.ai/en/guides/projects">Usage guide</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Marketplace and resources · 4 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/market-024.324853296f4d.png"><img src="https://docs.teloa.ai/assets/screenshots/en/market-024.324853296f4d.png" alt="Four marketplace categories" width="420" loading="lazy"></a>
+<p><strong>Four marketplace categories</strong><br>Browse AI employees, AI teams, apps and skills.<br><a href="https://docs.teloa.ai/en/guides/market">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/market-team-024.1dfe89cdc7b0.png"><img src="https://docs.teloa.ai/assets/screenshots/en/market-team-024.1dfe89cdc7b0.png" alt="AI team details" width="420" loading="lazy"></a>
+<p><strong>AI team details</strong><br>Inspect employees, skills, materials and plans before adding; work does not start automatically.<br><a href="https://docs.teloa.ai/en/guides/market">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/capabilities-024.f287a91cd6cf.png"><img src="https://docs.teloa.ai/assets/screenshots/en/capabilities-024.f287a91cd6cf.png" alt="Apps and skills" width="420" loading="lazy"></a>
+<p><strong>Apps and skills</strong><br>Manage reusable methods and account connections.<br><a href="https://docs.teloa.ai/en/guides/capabilities">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/library-024.3c6c5d6be02f.png"><img src="https://docs.teloa.ai/assets/screenshots/en/library-024.3c6c5d6be02f.png" alt="Library" width="420" loading="lazy"></a>
+<p><strong>Library</strong><br>Organize source materials and inspect retrieval and employee resources.<br><a href="https://docs.teloa.ai/en/guides/knowledge">Usage guide</a></p>
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Models and voice · 4 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/model-settings-024.0562e27d2b4e.png"><img src="https://docs.teloa.ai/assets/screenshots/en/model-settings-024.0562e27d2b4e.png" alt="Chat models" width="420" loading="lazy"></a>
+<p><strong>Chat models</strong><br>Save BYOK per provider and check the default model.<br><a href="https://docs.teloa.ai/en/start/models">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/model-key-024.5d7394d174ce.png"><img src="https://docs.teloa.ai/assets/screenshots/en/model-key-024.5d7394d174ce.png" alt="Select a conversation model" width="420" loading="lazy"></a>
+<p><strong>Select a conversation model</strong><br>An unconfigured selector has no available models; save chat credentials in Settings first.<br><a href="https://docs.teloa.ai/en/start/models">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/local-models-024.8ae5acc6dfb0.png"><img src="https://docs.teloa.ai/assets/screenshots/en/local-models-024.8ae5acc6dfb0.png" alt="Local models and retrieval" width="420" loading="lazy"></a>
+<p><strong>Local models and retrieval</strong><br>Review requirements before preparing local chat or retrieval models.<br><a href="https://docs.teloa.ai/en/start/models">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/voice-settings-024.8cf54b0fa87b.png"><img src="https://docs.teloa.ai/assets/screenshots/en/voice-settings-024.8cf54b0fa87b.png" alt="Voice services" width="420" loading="lazy"></a>
+<p><strong>Voice services</strong><br>Prepare local recognition and speech output separately from chat credentials.<br><a href="https://docs.teloa.ai/en/start/models">Usage guide</a></p>
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Ongoing work and memory · 3 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/automation-024.46b11542c853.png"><img src="https://docs.teloa.ai/assets/screenshots/en/automation-024.46b11542c853.png" alt="Automation" width="420" loading="lazy"></a>
+<p><strong>Automation</strong><br>Prepare recurring work and review its schedule and permissions.<br><a href="https://docs.teloa.ai/en/guides/automations">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/auto-dream-024.b7a661aa1ced.png"><img src="https://docs.teloa.ai/assets/screenshots/en/auto-dream-024.b7a661aa1ced.png" alt="Work summaries and experience" width="420" loading="lazy"></a>
+<p><strong>Work summaries and experience</strong><br>Review work summaries, candidate experience and its sources.<br><a href="https://docs.teloa.ai/en/guides/auto-dream">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/auto-dream-settings-024.f928444f43a8.png"><img src="https://docs.teloa.ai/assets/screenshots/en/auto-dream-settings-024.f928444f43a8.png" alt="Auto Dream settings" width="420" loading="lazy"></a>
+<p><strong>Auto Dream settings</strong><br>Configure summary schedules and scope; saving does not grant execution permissions.<br><a href="https://docs.teloa.ai/en/guides/auto-dream">Usage guide</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Integrations and settings · 5 views</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/employee-api-024.971227cf2aa8.png"><img src="https://docs.teloa.ai/assets/screenshots/en/employee-api-024.971227cf2aa8.png" alt="SDK, API and MCP" width="420" loading="lazy"></a>
+<p><strong>SDK, API and MCP</strong><br>Scope an integration to employees and businesses; no key has been created in this example.<br><a href="https://docs.teloa.ai/en/develop/employee-api">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/extensions-024.58d3171491f5.png"><img src="https://docs.teloa.ai/assets/screenshots/en/extensions-024.58d3171491f5.png" alt="Browser and computer tools" width="420" loading="lazy"></a>
+<p><strong>Browser and computer tools</strong><br>Enable providers and review system permissions; employees are not automatically authorized.<br><a href="https://docs.teloa.ai/en/guides/native-capabilities">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/im-channels-024.f2fcc971f787.png"><img src="https://docs.teloa.ai/assets/screenshots/en/im-channels-024.f2fcc971f787.png" alt="Messaging channels" width="420" loading="lazy"></a>
+<p><strong>Messaging channels</strong><br>Review connection methods and status, then configure each channel.<br><a href="https://docs.teloa.ai/en/guides/im-channels">Usage guide</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/settings-024.e96ffca67fe0.png"><img src="https://docs.teloa.ai/assets/screenshots/en/settings-024.e96ffca67fe0.png" alt="Workspace settings" width="420" loading="lazy"></a>
+<p><strong>Workspace settings</strong><br>Manage preferences, models and the runtime environment.<br><a href="https://docs.teloa.ai/en/guides/settings">Usage guide</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/en/about-024.56ae7484eedc.png"><img src="https://docs.teloa.ai/assets/screenshots/en/about-024.56ae7484eedc.png" alt="About Teloa" width="420" loading="lazy"></a>
+<p><strong>About Teloa</strong><br>Find the version, product positioning and further information.<br><a href="https://docs.teloa.ai/en/start/overview">Usage guide</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
 
 ## Quick start
 

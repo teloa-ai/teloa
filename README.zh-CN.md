@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.teloa.ai/">官网</a> · <a href="https://docs.teloa.ai/">文档</a> · <a href="https://market.teloa.ai/">资源市场</a> · <a href="https://www.teloa.ai/blog/">博客</a> · <a href="https://security.teloa.ai/?lang=zh-CN">AI 安全研究</a> · <a href="https://github.com/teloa-ai/teloa">GitHub</a> · <a href="#快速开始">快速开始</a> · <a href="#版本选择">版本选择</a> · <a href="CONTRIBUTING.md">参与贡献</a>
+  <a href="https://www.teloa.ai/">官网</a> · <a href="https://docs.teloa.ai/">文档</a> · <a href="https://market.teloa.ai/">资源市场</a> · <a href="https://www.teloa.ai/blog/">博客</a> · <a href="https://security.teloa.ai/?lang=zh-CN">AI 安全研究</a> · <a href="https://github.com/teloa-ai/teloa">GitHub</a> · <a href="#功能截图">功能截图</a> · <a href="#快速开始">快速开始</a> · <a href="#版本选择">版本选择</a> · <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
 
 # Teloa — 让每个人，都拥有自己的 AI 团队
@@ -45,6 +45,236 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 https://github.com/user-attachments/assets/e116d654-e9e5-4fa8-a2b1-4b4aa603ef24
 
 社区版 0.2.2 实际界面，使用示例数据。 [观看字幕版](https://www.teloa.ai/#film)
+
+## 功能截图
+
+展开下方分类即可浏览所有界面，也可[打开完整截图总览](https://docs.teloa.ai/start/screenshots)，按功能筛选并进入使用指南。
+
+社区版 0.2.4 · 32 个场景 · 真实界面与示例数据。点击图片查看完整原图；未配置、未发送等状态按实际界面保留。
+
+<details open>
+<summary><strong>交办与跟进 · 5 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/workbench-024.18aefe7ecd43.png"><img src="https://docs.teloa.ai/assets/screenshots/workbench-024.18aefe7ecd43.png" alt="工作台" width="420" loading="lazy"></a>
+<p><strong>工作台</strong><br>描述目标，继续手头工作；示例输入尚未发送。<br><a href="https://docs.teloa.ai/guides/workbench">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/attention-024.58a5b2acd718.png"><img src="https://docs.teloa.ai/assets/screenshots/attention-024.58a5b2acd718.png" alt="需要你" width="420" loading="lazy"></a>
+<p><strong>需要你</strong><br>集中核对待确认事项、缺失资料和异常。<br><a href="https://docs.teloa.ai/guides/workbench">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/tasks-024.353ca01411f6.png"><img src="https://docs.teloa.ai/assets/screenshots/tasks-024.353ca01411f6.png" alt="任务" width="420" loading="lazy"></a>
+<p><strong>任务</strong><br>按负责人和状态查看已经保存的工作。<br><a href="https://docs.teloa.ai/guides/tasks">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/create-task-024.765ca8dfed89.png"><img src="https://docs.teloa.ai/assets/screenshots/create-task-024.765ca8dfed89.png" alt="创建任务" width="420" loading="lazy"></a>
+<p><strong>创建任务</strong><br>先写明目标、依据与交付要求，再明确提交。<br><a href="https://docs.teloa.ai/guides/tasks">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/conversations-024.369f45d7f5f7.png"><img src="https://docs.teloa.ai/assets/screenshots/conversations-024.369f45d7f5f7.png" alt="对话" width="420" loading="lazy"></a>
+<p><strong>对话</strong><br>找回已有工作会话，继续原来的讨论。<br><a href="https://docs.teloa.ai/guides/conversations">使用指南</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>员工与协作 · 6 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/team-024.460a59cf33c9.png"><img src="https://docs.teloa.ai/assets/screenshots/team-024.460a59cf33c9.png" alt="员工目录" width="420" loading="lazy"></a>
+<p><strong>员工目录</strong><br>查看员工与运行状态，进入个人工作会话。<br><a href="https://docs.teloa.ai/guides/colleagues">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/employee-create-024.d5c8f0263fea.png"><img src="https://docs.teloa.ai/assets/screenshots/employee-create-024.d5c8f0263fea.png" alt="创建 AI 员工" width="420" loading="lazy"></a>
+<p><strong>创建 AI 员工</strong><br>用一段说明描述职责与范围，先审阅草稿。<br><a href="https://docs.teloa.ai/guides/colleagues">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/employee-detail-024.3b22e615fb49.png"><img src="https://docs.teloa.ai/assets/screenshots/employee-detail-024.3b22e615fb49.png" alt="员工资料" width="420" loading="lazy"></a>
+<p><strong>员工资料</strong><br>核对职责、能力、记忆与执行边界。<br><a href="https://docs.teloa.ai/guides/colleagues">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/twin-024.5bbaa69b928b.png"><img src="https://docs.teloa.ai/assets/screenshots/twin-024.5bbaa69b928b.png" alt="我的分身" width="420" loading="lazy"></a>
+<p><strong>我的分身</strong><br>查看个人习惯观察及来源，决定保留或撤回。<br><a href="https://docs.teloa.ai/concepts/people">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/groups-024.73e4a003d510.png"><img src="https://docs.teloa.ai/assets/screenshots/groups-024.73e4a003d510.png" alt="协作群" width="420" loading="lazy"></a>
+<p><strong>协作群</strong><br>在同一群中组织员工、成员与协作规则。<br><a href="https://docs.teloa.ai/guides/groups">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/create-group-024.9fba4f71c701.png"><img src="https://docs.teloa.ai/assets/screenshots/create-group-024.9fba4f71c701.png" alt="创建协作群" width="420" loading="lazy"></a>
+<p><strong>创建协作群</strong><br>准备群目标和成员；截图为未提交的草稿。<br><a href="https://docs.teloa.ai/guides/groups">使用指南</a></p>
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>业务与项目 · 5 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/business-024.2cfa530d2971.png"><img src="https://docs.teloa.ai/assets/screenshots/business-024.2cfa530d2971.png" alt="业务目录" width="420" loading="lazy"></a>
+<p><strong>业务目录</strong><br>在业务入口查看相关员工、任务与待办。<br><a href="https://docs.teloa.ai/guides/business">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/business-page-024.7e05c5b73773.png"><img src="https://docs.teloa.ai/assets/screenshots/business-page-024.7e05c5b73773.png" alt="业务记录" width="420" loading="lazy"></a>
+<p><strong>业务记录</strong><br>跟进字段、负责人和阶段；图中为 8 条虚构示例记录。<br><a href="https://docs.teloa.ai/guides/business">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/business-dashboard-024.22f992c8cf57.png"><img src="https://docs.teloa.ai/assets/screenshots/business-dashboard-024.22f992c8cf57.png" alt="业务看板" width="420" loading="lazy"></a>
+<p><strong>业务看板</strong><br>从已保存的记录计算指标与清单，缺失值单独提示。<br><a href="https://docs.teloa.ai/guides/business">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/business-dashboard-detail-024.e787ba1992b7.png"><img src="https://docs.teloa.ai/assets/screenshots/business-dashboard-detail-024.e787ba1992b7.png" alt="看板详情" width="420" loading="lazy"></a>
+<p><strong>看板详情</strong><br>查看看板完整内容；数值来自手工示例，非真实业务。<br><a href="https://docs.teloa.ai/guides/business">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/projects-024.807864ff213c.png"><img src="https://docs.teloa.ai/assets/screenshots/projects-024.807864ff213c.png" alt="项目" width="420" loading="lazy"></a>
+<p><strong>项目</strong><br>围绕一个交付目标组织关联工作与资料。<br><a href="https://docs.teloa.ai/guides/projects">使用指南</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>市场与资源 · 4 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/market-024.324853296f4d.png"><img src="https://docs.teloa.ai/assets/screenshots/market-024.324853296f4d.png" alt="四类市场资源" width="420" loading="lazy"></a>
+<p><strong>四类市场资源</strong><br>浏览 AI 员工、AI 团队、应用与技能。<br><a href="https://docs.teloa.ai/guides/market">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/market-team-024.1dfe89cdc7b0.png"><img src="https://docs.teloa.ai/assets/screenshots/market-team-024.1dfe89cdc7b0.png" alt="AI 团队详情" width="420" loading="lazy"></a>
+<p><strong>AI 团队详情</strong><br>添加前查看员工、技能、资料与安排，不自动开始工作。<br><a href="https://docs.teloa.ai/guides/market">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/capabilities-024.f287a91cd6cf.png"><img src="https://docs.teloa.ai/assets/screenshots/capabilities-024.f287a91cd6cf.png" alt="应用与技能" width="420" loading="lazy"></a>
+<p><strong>应用与技能</strong><br>管理可复用的方法与账号连接。<br><a href="https://docs.teloa.ai/guides/capabilities">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/library-024.3c6c5d6be02f.png"><img src="https://docs.teloa.ai/assets/screenshots/library-024.3c6c5d6be02f.png" alt="资料" width="420" loading="lazy"></a>
+<p><strong>资料</strong><br>整理依据资料，检查检索与员工资源状态。<br><a href="https://docs.teloa.ai/guides/knowledge">使用指南</a></p>
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>模型与语音 · 4 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/model-settings-024.0562e27d2b4e.png"><img src="https://docs.teloa.ai/assets/screenshots/model-settings-024.0562e27d2b4e.png" alt="聊天模型" width="420" loading="lazy"></a>
+<p><strong>聊天模型</strong><br>按提供商保存 BYOK，并核对默认模型。<br><a href="https://docs.teloa.ai/start/models">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/model-key-024.5d7394d174ce.png"><img src="https://docs.teloa.ai/assets/screenshots/model-key-024.5d7394d174ce.png" alt="选择会话模型" width="420" loading="lazy"></a>
+<p><strong>选择会话模型</strong><br>未配置时提示没有可用模型，先到设置保存聊天模型凭据。<br><a href="https://docs.teloa.ai/start/models">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/local-models-024.8ae5acc6dfb0.png"><img src="https://docs.teloa.ai/assets/screenshots/local-models-024.8ae5acc6dfb0.png" alt="本地模型与检索" width="420" loading="lazy"></a>
+<p><strong>本地模型与检索</strong><br>先核对运行要求，再准备聊天或检索模型。<br><a href="https://docs.teloa.ai/start/models">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/voice-settings-024.8cf54b0fa87b.png"><img src="https://docs.teloa.ai/assets/screenshots/voice-settings-024.8cf54b0fa87b.png" alt="语音服务" width="420" loading="lazy"></a>
+<p><strong>语音服务</strong><br>分别准备本地识别与播报；不与聊天凭据混用。<br><a href="https://docs.teloa.ai/start/models">使用指南</a></p>
+</td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>持续工作与记忆 · 3 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/automation-024.46b11542c853.png"><img src="https://docs.teloa.ai/assets/screenshots/automation-024.46b11542c853.png" alt="自动化" width="420" loading="lazy"></a>
+<p><strong>自动化</strong><br>创建重复工作计划，先核对执行时间与授权。<br><a href="https://docs.teloa.ai/guides/automations">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/auto-dream-024.b7a661aa1ced.png"><img src="https://docs.teloa.ai/assets/screenshots/auto-dream-024.b7a661aa1ced.png" alt="工作小结与经验" width="420" loading="lazy"></a>
+<p><strong>工作小结与经验</strong><br>查看工作小结、经验候选及其来源。<br><a href="https://docs.teloa.ai/guides/auto-dream">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/auto-dream-settings-024.f928444f43a8.png"><img src="https://docs.teloa.ai/assets/screenshots/auto-dream-settings-024.f928444f43a8.png" alt="Auto Dream 设置" width="420" loading="lazy"></a>
+<p><strong>Auto Dream 设置</strong><br>按需配置小结安排与范围，保存不代替执行授权。<br><a href="https://docs.teloa.ai/guides/auto-dream">使用指南</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>集成与设置 · 5 个场景</strong></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/employee-api-024.971227cf2aa8.png"><img src="https://docs.teloa.ai/assets/screenshots/employee-api-024.971227cf2aa8.png" alt="SDK、API 与 MCP" width="420" loading="lazy"></a>
+<p><strong>SDK、API 与 MCP</strong><br>选择员工与业务范围后创建集成；图中尚未创建密钥。<br><a href="https://docs.teloa.ai/develop/employee-api">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/extensions-024.58d3171491f5.png"><img src="https://docs.teloa.ai/assets/screenshots/extensions-024.58d3171491f5.png" alt="浏览器与电脑操作" width="420" loading="lazy"></a>
+<p><strong>浏览器与电脑操作</strong><br>分别启用提供方并核对系统权限，不自动授权所有员工。<br><a href="https://docs.teloa.ai/guides/native-capabilities">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/im-channels-024.f2fcc971f787.png"><img src="https://docs.teloa.ai/assets/screenshots/im-channels-024.f2fcc971f787.png" alt="消息渠道" width="420" loading="lazy"></a>
+<p><strong>消息渠道</strong><br>查看接入方式与连接状态，按渠道完成配置。<br><a href="https://docs.teloa.ai/guides/im-channels">使用指南</a></p>
+</td>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/settings-024.e96ffca67fe0.png"><img src="https://docs.teloa.ai/assets/screenshots/settings-024.e96ffca67fe0.png" alt="平台设置" width="420" loading="lazy"></a>
+<p><strong>平台设置</strong><br>统一管理偏好、模型和运行环境。<br><a href="https://docs.teloa.ai/guides/settings">使用指南</a></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://docs.teloa.ai/assets/screenshots/about-024.56ae7484eedc.png"><img src="https://docs.teloa.ai/assets/screenshots/about-024.56ae7484eedc.png" alt="关于 Teloa" width="420" loading="lazy"></a>
+<p><strong>关于 Teloa</strong><br>查看版本、产品定位与进一步了解的入口。<br><a href="https://docs.teloa.ai/start/overview">使用指南</a></p>
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+</details>
 
 ## 快速开始
 
