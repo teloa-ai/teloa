@@ -5,7 +5,7 @@ import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 
 export type BusinessConfigurationActor={ownerId:string;scopeIds:string[]}
 type Candidate=BusinessConfigurationCandidate|BusinessConfigurationCandidateV2
-export type BusinessConfigurationDraft={ownerId:string;id:string;scope:string;revision:number;baseVersion:number;candidate:Candidate;hash:string;status:'draft'|'applied';createdAt:string;updatedAt:string}
+export type BusinessConfigurationDraft={ownerId:string;id:string;scope:string;revision:number;baseVersion:number;candidate:Candidate;hash:string;status:'draft'|'applied'|'discarded';createdAt:string;updatedAt:string}
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const invalid=()=>new WorkError('teloa/invalid-input','业务配置请求格式不正确。')
 const forbidden=()=>new WorkError('teloa/forbidden','业务配置草案不存在或当前主体未获准访问。')
@@ -20,10 +20,10 @@ function reviseInput(input:unknown){
 }
 function readDraft(row:Record<string,unknown>):BusinessConfigurationDraft{
  try{
-  if(!uuid(row.id)||typeof row.owner_id!=='string'||!Number.isSafeInteger(row.revision)||Number(row.revision)<1||!Number.isSafeInteger(row.base_version)||Number(row.base_version)<0||(row.status!=='draft'&&row.status!=='applied'))throw corrupt()
+  if(!uuid(row.id)||typeof row.owner_id!=='string'||!Number.isSafeInteger(row.revision)||Number(row.revision)<1||!Number.isSafeInteger(row.base_version)||Number(row.base_version)<0||!['draft','applied','discarded'].includes(String(row.status)))throw corrupt()
   const candidate=readBusinessConfigurationCandidateVersioned(row.candidate)
   if(row.scope_id!==candidate.scope||row.hash!==businessConfigurationHash(candidate))throw corrupt()
-  return {ownerId:row.owner_id,id:row.id,scope:candidate.scope,revision:Number(row.revision),baseVersion:Number(row.base_version),candidate,hash:String(row.hash),status:row.status,createdAt:(row.created_at instanceof Date?row.created_at:new Date(String(row.created_at))).toISOString(),updatedAt:(row.updated_at instanceof Date?row.updated_at:new Date(String(row.updated_at))).toISOString()}
+  return {ownerId:row.owner_id,id:row.id,scope:candidate.scope,revision:Number(row.revision),baseVersion:Number(row.base_version),candidate,hash:String(row.hash),status:row.status as BusinessConfigurationDraft['status'],createdAt:(row.created_at instanceof Date?row.created_at:new Date(String(row.created_at))).toISOString(),updatedAt:(row.updated_at instanceof Date?row.updated_at:new Date(String(row.updated_at))).toISOString()}
  }catch{throw corrupt()}
 }
 function fromResult(value:unknown):BusinessConfigurationDraft{
@@ -112,6 +112,24 @@ export class BusinessConfigurationDraftService{
   const db=await this.pool.connect()
   try{return await this.draftInTransaction(db,actor,row.draftId)}finally{db.release()}
  }
+ /** 只退役未采用的草案；同一修订重复确认幂等，不删除会话、历史或正式业务配置。 */
+ async discard(actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationDraft>{
+  actorValid(actor)
+  const row=taskInput(input,['draftId','expectedRevision'])
+  if(!uuid(row.draftId)||!Number.isSafeInteger(row.expectedRevision)||Number(row.expectedRevision)<1)throw invalid()
+  const draftId=row.draftId.toLowerCase(),revision=Number(row.expectedRevision)
+  return this.transaction(async db=>{
+   await lockBusinessConfigurationRequests(db,actor.ownerId)
+   const initial=await this.draftInTransaction(db,actor,draftId)
+   await lockBusinessConfiguration(db,actor.ownerId,initial.scope)
+   const saved=(await db.query('select * from teloa_business_configuration_drafts where owner_id=$1 and id=$2 for update',[actor.ownerId,draftId])).rows[0]
+   const draft=readDraft(saved)
+   if(draft.status==='discarded'&&draft.revision===revision+1)return draft
+   if(draft.status!=='draft'||draft.revision!==revision)throw new WorkError('teloa/version-conflict','业务配置草案已变化，请重新读取。')
+   const updated=(await db.query("update teloa_business_configuration_drafts set status='discarded',revision=revision+1,updated_at=$3 where owner_id=$1 and id=$2 returning *",[actor.ownerId,draftId,this.identity.now()])).rows[0]
+   return readDraft(updated)
+  })
+ }
  /** 调用方负责事务；预览可在同一只读快照内读取完整草案。 */
  async draftInTransaction(db:PoolClient,actor:BusinessConfigurationActor,draftId:string):Promise<BusinessConfigurationDraft>{
   actorValid(actor);if(!uuid(draftId))throw invalid()
@@ -123,8 +141,11 @@ export class BusinessConfigurationDraftService{
  }
 
  async revise(actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationDraft>{
+  return this.transaction(db=>this.reviseInTransaction(db,actor,input))
+ }
+ /** 原方案选择与配置候选在同一事务内修订。 */
+ async reviseInTransaction(db:PoolClient,actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationDraft>{
   actorValid(actor);const row=reviseInput(input),{requestId,draftId}=row
-  return this.transaction(async db=>{
    const prior=await this.reviseReceiptInTransaction(db,actor,row)
    if(prior)return prior
    const initial=(await db.query('select scope_id,candidate from teloa_business_configuration_drafts where owner_id=$1 and id=$2',[actor.ownerId,draftId])).rows[0]
@@ -144,7 +165,6 @@ export class BusinessConfigurationDraftService{
    const candidate=merge(draft.candidate,patch),hash=businessConfigurationHash(candidate)
    const updated=(await db.query('update teloa_business_configuration_drafts set candidate=$3,hash=$4,revision=revision+1,updated_at=$5 where owner_id=$1 and id=$2 returning *',[actor.ownerId,draft.id,JSON.stringify(candidate),hash,this.identity.now()])).rows[0]
    return this.receipt(db,actor.ownerId,requestId,'revise',specHash,readDraft(updated))
-  })
  }
 
  private async reviseReceiptInTransaction(db:PoolClient,actor:BusinessConfigurationActor,row:ReturnType<typeof reviseInput>):Promise<BusinessConfigurationDraft|undefined>{
@@ -162,10 +182,12 @@ export class BusinessConfigurationDraftService{
  }
 
  async upgradeFormat(actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationDraft>{
-  actorValid(actor);const row=taskInput(input,['draftId','expectedRevision','requestId'])
+  return this.transaction(db=>this.upgradeFormatInTransaction(db,actor,input))
+ }
+ async upgradeFormatInTransaction(db:PoolClient,actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationDraft>{
+  actorValid(actor);await lockBusinessConfigurationRequests(db,actor.ownerId);const row=taskInput(input,['draftId','expectedRevision','requestId'])
   if(!uuid(row.draftId)||!uuid(row.requestId)||!Number.isSafeInteger(row.expectedRevision)||Number(row.expectedRevision)<1)throw invalid()
   const requestId=row.requestId.toLowerCase(),draftId=row.draftId.toLowerCase(),specHash=businessConfigurationHash({kind:'upgrade-format',draftId,expectedRevision:row.expectedRevision})
-  return this.transaction(async db=>{
    const prior=await this.request(db,actor.ownerId,requestId,'upgrade-format',specHash)
    if(prior){
     const current=await this.draftInTransaction(db,actor,draftId)
@@ -188,6 +210,5 @@ export class BusinessConfigurationDraftService{
    const updated=(await db.query("update teloa_business_configuration_drafts set candidate=$3,hash=$4,revision=revision+1,updated_at=$5 where owner_id=$1 and id=$2 and revision=$6 and status='draft' returning *",[actor.ownerId,draftId,JSON.stringify(candidate),hash,this.identity.now(),row.expectedRevision])).rows[0]
    if(!updated)throw new WorkError('teloa/version-conflict','业务配置草案已变化，请重新读取。')
    return this.receipt(db,actor.ownerId,requestId,'upgrade-format',specHash,readDraft(updated))
-  })
  }
 }

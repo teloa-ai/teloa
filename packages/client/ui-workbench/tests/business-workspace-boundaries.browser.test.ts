@@ -26,7 +26,8 @@ const read=async(kind,scope)=>{evidence.calls.push(kind+':'+scope);if(evidence.f
 const api={list:({scope})=>read('list',scope),syncStatus:({scope})=>read('status',scope),syncRules:({scope})=>read('rules',scope),syncRuntime:async({scope})=>{await read('runtime',scope);return {scope,managed:false,syncEnabled:false,revision:0}}};
 const groups={list:async()=>({items:[]})},customization={directory:async()=>({drafts:[]})};
 const responsibility={api:{read:async({scope})=>{evidence.calls.push('responsibility:'+scope);return null}},roles:{list:async()=>[]}};
-const services={responsibility,groups,attention:[],rolesKnown:true,rolesFailed:false,tasksKnown:true,tasksFailed:false,attentionKnown:true,attentionFailed:false,refresh:()=>{},openGroup:()=>{},createGroup:()=>{},talkRole:async()=>{},openAttention:()=>{},renderRole:()=>null};
+function Profile({visible}){const [draft,setDraft]=useState('');return visible?<label>业务员工草稿<input value={draft} onChange={event=>setDraft(event.target.value)}/></label>:null}
+const services={responsibility,groups,attention:[],rolesKnown:true,rolesFailed:false,tasksKnown:true,tasksFailed:false,attentionKnown:true,attentionFailed:false,refresh:()=>{},openGroup:()=>{},createGroup:()=>{},talkRole:async()=>{},openAttention:()=>{},renderRole:(id,close,visible=true)=><Profile visible={visible}/>};
 const state={tasks:[],roles:[{id:'same-employee',storage:'persistent',kind:'employee',state:'active',scopes:['sales'],name:'Analyst',duty:'Analyze'}]};
 function App(){const [mode,setMode]=useState('general'),[section,setSection]=useState('dashboards');const scope=mode==='general'?'general':'sales';return <I18nProvider runtime={runtime}><aside><button onClick={()=>{setSection('dashboards');setMode('general')}}>测试通用</button><button onClick={()=>{setSection('dashboards');setMode('sales')}}>测试具体业务</button><button onClick={()=>{evidence.failure='network';setMode('sync-network')}}>测试同步断线</button><button onClick={()=>{evidence.failure='forbidden';setMode('sync-forbidden')}}>测试同步拒绝</button><button onClick={()=>{evidence.failure='ready'}}>恢复读取</button></aside>{mode.startsWith('sync')?<BusinessSyncControls key={mode} scope="sales" api={api}/>:<BusinessWorkspace key={scope} scope={scope} title={scope==='general'?'通用工作':'销售工作'} target={{scope,section}} state={state} services={services} dashboardApi={api} go={target=>setSection(target.section)} back={()=>{}} start={()=>evidence.calls.push('start')} configure={()=>{}} staff={()=>{}} openTask={()=>{}} openWork={()=>{}} colorScheme="light"><BusinessDashboardList scope={scope} api={api} customization={customization} open={()=>{}} openDrafts={()=>{}}/></BusinessWorkspace>}</I18nProvider>};createRoot(document.getElementById('root')).render(<App/>);
 `)
@@ -46,6 +47,15 @@ function App(){const [mode,setMode]=useState('general'),[section,setSection]=use
   assert.equal(await page.getByRole('button',{name:'业务内容',exact:true}).count(),0)
   await page.getByRole('button',{name:'AI 员工',exact:true}).click()
   await page.getByRole('button',{name:'Analyst Analyze',exact:true}).waitFor()
+  await page.getByRole('button',{name:'Analyst Analyze',exact:true}).click()
+  const profile=page.getByRole('dialog',{name:'Analyst',exact:true});await profile.waitFor()
+  assert.equal(Math.round((await profile.boundingBox())!.width),432)
+  assert.equal(await profile.locator(':scope > header h2').count(),0,'业务入口采用单一身份区')
+  await profile.getByRole('textbox',{name:'业务员工草稿',exact:true}).fill('保留业务来源的输入')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button',{name:'Analyst Analyze',exact:true}).click()
+  assert.equal(await profile.getByRole('textbox',{name:'业务员工草稿',exact:true}).inputValue(),'保留业务来源的输入')
+  await page.keyboard.press('Escape')
   assert.deepEqual(await page.evaluate(()=>(window as any).boundaryFixture.calls),[],'general 不读取业务数据、看板或业务负责人')
   await page.getByRole('button',{name:'测试具体业务',exact:true}).click()
   await page.getByRole('alert').waitFor()

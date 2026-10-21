@@ -1,6 +1,6 @@
 export const ROLE_AVATAR_KEYS: readonly ['ui-designer', 'project', 'researcher', 'sales', 'supporter', 'commerce', 'developer', 'product-manager', 'data-analyst', 'qa-tester', 'it-operations', 'security-analyst', 'marketing', 'content-writer', 'brand-designer', 'hr', 'recruiter', 'finance', 'legal', 'procurement', 'admin', 'executive-assistant', 'business-analyst', 'trainer', 'general', 'general-research', 'general-creative', 'general-execution']
 export const ROLE_AVATAR_SHAPES: readonly ['circle', 'pebble', 'star4', 'cloud', 'drop', 'squircle', 'bean', 'flower', 'softtri', 'capsule', 'ghost', 'hexa']
-export const ROLE_AVATAR_COLORS: readonly ['terracotta', 'orange', 'amber', 'olive', 'teal', 'mist', 'indigo', 'plum', 'warmgray']
+export const ROLE_AVATAR_COLORS: readonly ['terracotta', 'orange', 'amber', 'olive', 'teal', 'mist', 'indigo', 'plum', 'warmgray', 'ink']
 export type RoleAvatarPresetKey = typeof ROLE_AVATAR_KEYS[number]
 export type RoleAvatarShape = typeof ROLE_AVATAR_SHAPES[number]
 export type RoleAvatarColor = typeof ROLE_AVATAR_COLORS[number]

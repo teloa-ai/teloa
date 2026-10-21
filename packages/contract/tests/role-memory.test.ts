@@ -6,6 +6,16 @@ const id='16057272-ed9d-44a3-abe4-2ab04e056105'
 const hash='a'.repeat(64)
 const sourceKinds=['task','run','artifact','knowledge'] as const
 
+test('本人编辑版本保留原候选时间，并显式标记编辑者；旧版本仍严格校验',()=>{
+ const candidateAt='2026-09-13T01:00:00.000Z',createdAt='2026-09-13T02:00:00.000Z'
+ const memory={id,ownerId:'local:owner',roleId:'26057272-ed9d-44a3-abe4-2ab04e056105',roleVersion:3,title:'修订经验',state:'candidate',stateVersion:2,source:{kind:'task',id,version:1},sourceTitle:'原任务',sourceAvailable:true,visibility:{kind:'role',scopeIds:['SOC']},proposedBy:{kind:'role',roleId:'26057272-ed9d-44a3-abe4-2ab04e056105',roleVersion:3},content:{version:2,contentHash:hash,bytes:6,markdown:'修订',createdAt,editedBy:'self'},candidateAt,confirmedAt:null,withdrawnAt:null}
+ assert.equal(isRoleMemory(memory),true)
+ assert.equal(isRoleMemory({...memory,content:{...memory.content,editedBy:'role'}}),false)
+ const {editedBy:_editedBy,...unattributed}=memory.content
+ assert.equal(isRoleMemory({...memory,content:unattributed}),false)
+ assert.equal(isRoleMemory({...memory,content:{...unattributed,version:1}}),false)
+})
+
 test('岗位记忆合同只接受五类固定来源及明确版本',()=>{
  for(const kind of sourceKinds)assert.deepEqual(roleMemorySource({kind,id,version:2}),{kind,id,version:2})
  assert.deepEqual(roleMemorySource({kind:'self-feedback',id,version:1}),{kind:'self-feedback',id,version:1})

@@ -13,11 +13,11 @@ before(async()=>{
  temp=await mkdtemp(join(root,'.runtime-minimax-settings-'))
  await writeFile(join(temp,'fixture.tsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import {MiniMaxVoiceSettings} from '${client}MiniMaxVoiceSettings.tsx';import {publishSettingsPanelVisible} from '${client}AutoDreamSettingsPage.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
  const locale=window.voiceOptions?.locale??'zh-CN',snapshot={locale,dshLocale:'zh',revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
- let status={providerId:'minimax',configured:false,writable:true,secure:true,model:'speech-2.8-turbo',voiceId:'male-qn-qingse',providers:[{id:'minimax',name:'MiniMax',configured:false,model:'speech-2.8-turbo',voiceId:'male-qn-qingse'},{id:'openai',name:'OpenAI',configured:true,model:'gpt-4o-mini-tts',voiceId:'alloy'},{id:'elevenlabs',name:'ElevenLabs',configured:true,model:'eleven_multilingual_v2',voiceId:'JBFqnCBsd6RMkjVDRZzb'}],asr:{providerId:'minimax',configured:false}};window.voiceFixture={saves:0,tests:0,aborted:0,failSave:false,holdStatus:false,requests:[]};
- const options=window.voiceOptions??{};if(options.minimaxReady){status.configured=true;status.providers[0].configured=true;status.asr.configured=true}if(options.ttsProvider){const p=status.providers.find(p=>p.id===options.ttsProvider);status={...status,...p,providerId:p.id};delete status.id;delete status.name}if(options.asrProvider)status.asr={providerId:options.asrProvider,configured:options.localReady??false};
+ let status={providerId:'minimax',configured:false,writable:true,secure:true,model:'speech-2.8-turbo',voiceId:'male-qn-qingse',providers:[{id:'minimax',name:'MiniMax',configured:false,model:'speech-2.8-turbo',voiceId:'male-qn-qingse'},{id:'openai',name:'OpenAI',configured:true,model:'gpt-4o-mini-tts',voiceId:'alloy'},{id:'elevenlabs',name:'ElevenLabs',configured:true,model:'eleven_multilingual_v2',voiceId:'JBFqnCBsd6RMkjVDRZzb'}],asr:{providerId:'minimax',configured:false}};window.voiceFixture={saves:0,tests:0,aborted:0,failSave:false,holdStatus:false,requests:[],reads:0,localSettings:0,statusFailures:window.voiceOptions?.statusFailures??0};
+ const options=window.voiceOptions??{};if(options.lockedTts){status.writable=false;status.secure=false}if(options.minimaxReady){status.configured=true;status.providers[0].configured=true;status.asr.configured=true}if(options.ttsProvider){const p=status.providers.find(p=>p.id===options.ttsProvider);status={...status,...p,providerId:p.id};delete status.id;delete status.name}if(options.asrProvider)status.asr={providerId:options.asrProvider,configured:options.localReady??false};
  window.voiceFixture.replaceSpeech=voiceId=>{status={...status,voiceId,providers:status.providers.map(p=>p.id===status.providerId?{...p,voiceId}:p)}};window.voiceFixture.readStatus=()=>structuredClone(status);
- const api={status:()=>{const snapshot=structuredClone(status);return window.voiceFixture.holdStatus?new Promise(resolve=>{window.voiceFixture.releaseStatus=()=>resolve(snapshot)}):Promise.resolve(snapshot)},save:async input=>{window.voiceFixture.saves++;window.voiceFixture.requests.push(input);if(window.voiceFixture.failSave)throw Error('failure');const providers=status.providers.map(p=>p.id===input.providerId?{...p,...(input.model?{model:input.model}:{}),voiceId:input.voiceId,configured:p.configured||!!input.apiKey}:p),selected=providers.find(p=>p.id===(!('providerId'in input)||input.setDefault===false?status.providerId:input.providerId)),asrProviderId=input.asrProviderId??status.asr.providerId;status={...status,...selected,providerId:selected.id,providers,asr:{providerId:asrProviderId,configured:asrProviderId==='minimax'?providers[0].configured:options.localReady??false}};delete status.id;delete status.name;return structuredClone(status)},test:(providerId,signal,voice)=>{window.voiceFixture.tests++;window.voiceFixture.previewVoice=voice;window.voiceFixture.previewProvider=providerId;if(window.voiceFixture.failPreview)return Promise.reject(Error('preview failed'));signal.addEventListener('abort',()=>{window.voiceFixture.aborted++});return new Promise(resolve=>{window.voiceFixture.releasePreview=()=>resolve({providerId,tts:true,mime:'audio/mpeg',audio:'SUQzAA=='})})}};
- window.voiceFixture.visibility=publishSettingsPanelVisible;createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><MiniMaxVoiceSettings api={api}/></I18nProvider>);`)
+ const api={status:()=>{window.voiceFixture.reads++;if(window.voiceFixture.statusFailures-->0)return Promise.reject(Error('status unavailable'));const snapshot=structuredClone(status);return window.voiceFixture.holdStatus?new Promise(resolve=>{window.voiceFixture.releaseStatus=()=>resolve(snapshot)}):Promise.resolve(snapshot)},save:async input=>{window.voiceFixture.saves++;window.voiceFixture.requests.push(input);if(window.voiceFixture.failSave)throw Error('failure');const providers=status.providers.map(p=>p.id===input.providerId?{...p,...(input.model?{model:input.model}:{}),voiceId:input.voiceId,configured:p.configured||!!input.apiKey}:p),selected=providers.find(p=>p.id===(!('providerId'in input)||input.setDefault===false?status.providerId:input.providerId)),asrProviderId=input.asrProviderId??status.asr.providerId;status={...status,...selected,providerId:selected.id,providers,asr:{providerId:asrProviderId,configured:asrProviderId==='minimax'?providers[0].configured:options.localReady??false}};delete status.id;delete status.name;return structuredClone(status)},test:(providerId,signal,voice)=>{window.voiceFixture.tests++;window.voiceFixture.previewVoice=voice;window.voiceFixture.previewProvider=providerId;if(window.voiceFixture.failPreview)return Promise.reject(Error('preview failed'));signal.addEventListener('abort',()=>{window.voiceFixture.aborted++});return new Promise(resolve=>{window.voiceFixture.releasePreview=()=>resolve({providerId,tts:true,mime:'audio/mpeg',audio:'SUQzAA=='})})}};
+ window.voiceFixture.visibility=publishSettingsPanelVisible;createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><MiniMaxVoiceSettings api={api} openLocalRecognition={()=>{window.voiceFixture.localSettings++}}/></I18nProvider>);`)
  const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:')},lib:{entry:join(temp,'fixture.tsx'),name:'VoiceSettingsFixture',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);script=bundle.output.find(item=>item.type==='chunk')!.code
  browser=await loadPlaywright().chromium.launch(launchOptions())
@@ -27,7 +27,8 @@ async function mount(t:any,options:Record<string,unknown>={}){
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors:string[]=[];page.setDefaultTimeout(3000);page.on('pageerror',(e:Error)=>errors.push(e.message))
  t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
  await page.route('**/*',(route:any)=>route.abort());await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.evaluate((value:Record<string,unknown>)=>{(window as any).voiceOptions=value},options);await page.addScriptTag({content:script})
- await page.getByLabel('API Key',{exact:true}).waitFor({state:'attached'});await page.waitForFunction(()=>!document.querySelector('input')!.disabled)
+ if(options.statusFailures){await page.getByRole('alert').waitFor();return page}
+ await page.getByLabel('API Key',{exact:true}).waitFor({state:'attached'});if(!options.lockedTts)await page.waitForFunction(()=>!document.querySelector('input')!.disabled)
  return page
 }
 test('设置不自动测试；保存失败保留输入、取消不写入、成功清空密钥',async t=>{
@@ -172,4 +173,31 @@ test('试听失败回到可重试状态，不标记正在播放或选用；繁�
  await page.getByRole('button',{name:'試聽 · 溫潤男聲',exact:true}).click();await page.getByRole('button',{name:'停止試聽 · 溫潤男聲',exact:true}).waitFor()
  await page.getByRole('button',{name:'停止試聽 · 溫潤男聲',exact:true}).click();await page.evaluate(()=>(window as any).voiceFixture.releasePreview())
  assert.equal(await page.locator('audio').count(),0)
+})
+
+
+test('本地识别准备直达原生安装，不保存设置或调用语音服务，原播报草稿保留',async t=>{
+ const page=await mount(t,{asrProvider:'sensevoice-local'}),recognition=page.getByRole('region',{name:'语音识别',exact:true})
+ await page.getByLabel('API Key',{exact:true}).fill('uncommitted-voice-key')
+ assert.equal(await page.evaluate(()=>(window as any).voiceFixture.localSettings),0)
+ await recognition.getByRole('button',{name:'下载并准备本地识别',exact:true}).click()
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).voiceFixture;return {opens:f.localSettings,saves:f.saves,tests:f.tests}}),{opens:1,saves:0,tests:0})
+ assert.equal(await page.getByLabel('API Key',{exact:true}).inputValue(),'uncommitted-voice-key')
+})
+test('本地识别的来源选择不被无关播报密钥存储锁定',async t=>{
+ const page=await mount(t,{lockedTts:true}),recognition=page.getByRole('region',{name:'语音识别',exact:true})
+ const select=recognition.getByRole('combobox',{name:'识别来源',exact:true})
+ assert.equal(await select.isEnabled(),true)
+ await select.selectOption('sensevoice-local');await recognition.getByRole('button',{name:'保存识别设置',exact:true}).click()
+ await page.waitForFunction(()=>(window as any).voiceFixture.saves===1)
+ assert.deepEqual(await page.evaluate(()=>(window as any).voiceFixture.requests),[{asrProviderId:'sensevoice-local'}])
+ assert.equal(await page.getByLabel('API Key',{exact:true}).isDisabled(),true)
+})
+test('语音设置首次读取失败可明确重试，重试只读且不生成试听',async t=>{
+ const page=await mount(t,{statusFailures:1})
+ await page.getByRole('button',{name:'重试',exact:true}).click()
+ await page.getByRole('combobox',{name:'识别来源',exact:true}).waitFor()
+ await page.waitForFunction(()=>(window as any).voiceFixture.reads===2)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).voiceFixture;return {saves:f.saves,tests:f.tests}}),{saves:0,tests:0})
+ assert.equal(await page.getByRole('alert').count(),0)
 })

@@ -1,4 +1,4 @@
-import type {Pool} from 'pg'
+import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,businessDefinitionPaths,businessConfigurationFormatV2,type BusinessDefinitionDiffRow} from '@teloa/contract'
 import {BusinessConfigurationStore} from './business-configuration-store.ts'
 import type {BusinessConfigurationActor,BusinessConfigurationDraftService} from './business-configuration-drafts.ts'
@@ -29,11 +29,13 @@ export class BusinessConfigurationPreviewService{
   this.pool=pool;this.drafts=drafts;this.definitions=definitions
  }
  async preview(actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationPreview>{
+  const db=await this.pool.connect()
+  try{await db.query('begin isolation level repeatable read read only');const result=await this.previewInTransaction(db,actor,input);await db.query('commit');return result}catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
+ }
+ /** 同一方案事务内检查完整候选和现存记录，签名仍绑定真实草案。 */
+ async previewInTransaction(db:PoolClient,actor:BusinessConfigurationActor,input:unknown):Promise<BusinessConfigurationPreview>{
   const row=taskInput(input,['draftId','expectedRevision'])
   if(typeof row.draftId!=='string'||!Number.isSafeInteger(row.expectedRevision)||Number(row.expectedRevision)<1)throw new WorkError('teloa/invalid-input','业务配置预览请求格式不正确。')
-  const db=await this.pool.connect()
-  try{
-   await db.query('begin isolation level repeatable read read only')
    const draft=await this.drafts.draftInTransaction(db,actor,row.draftId)
    if(draft.status!=='draft'||draft.revision!==row.expectedRevision)throw new WorkError('teloa/version-conflict','业务配置草案已变化，请重新读取。')
    const current=await new BusinessConfigurationStore(this.pool).currentInTransaction(db,actor.ownerId,draft.scope)
@@ -47,8 +49,6 @@ export class BusinessConfigurationPreviewService{
    const impact=await inspectBusinessConfigurationRecordImpact(db,actor.ownerId,draft.candidate,current)
    const dependencyHash=businessConfigurationDependencyHash(current,await businessDataRevision(db,actor.ownerId,draft.scope))
    const result:BusinessConfigurationPreview={draftId:draft.id,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash,receipt:issueBusinessConfigurationPreviewReceipt({ownerId:actor.ownerId,scope:draft.scope,draftId:draft.id,revision:draft.revision,candidateHash:draft.hash,baseVersion:draft.baseVersion,dependencyHash}),changes:changes(before,draft.candidate),issues:[],impact}
-   await db.query('commit')
    return result
-  }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
  }
 }

@@ -23,6 +23,8 @@ export type MarketListRow={
  summary:string
  /** 第三行小字：「状态 · 来源」或方案的「包含：…」 */
  facts:string
+ /** 真实资源声明的连接/工具要求，不推断连接状态。 */
+ requirements?:string
  /** 仅使用真实声明的作者或来源，不从审查人推定作者。 */
  credit?:string
  group?:string
@@ -131,6 +133,7 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
   <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={ariaLabel(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
    <span className={css.cardHead}>{art(row,true)}<span className={css.cardIdentity}><span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{(row.mark==='restart'||row.mark==='conflict')&&<StateMark mark={row.mark} t={t}/>}</span>{row.credit&&<span className={css.cardCredit}>{row.credit}</span>}</span></span>
    <span className={css.gridPitch}>{row.summary}</span>
+   <span className={css.cardRequirements}>{row.requirements}</span>
    <span className={css.cardFoot}><span className={clsx(css.cardAction,row.mark==='added'&&css.cardAdded)}>{row.mark==='added'?stateMarkLabel('added',t):t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}</span></span>
   </button>
  </li>)}</ul>
@@ -182,6 +185,7 @@ export function MarketCatalogSkeleton({layout,grouped=false}:{layout:'list'|'gri
  const cards=<ul className={clsx(css.grid,layout==='cards'&&css.cards)}>{[0,1,2,3].map(index=><li key={index}><div className={clsx(css.gridCard,css.skeletonCard)}>{layout==='cards'?<>
   <span className={css.cardHead}><span className={css.skeletonArt}/><span className={css.cardIdentity}>{line('62%')}{line('34%')}</span></span>
   <span className={css.skeletonPitch}>{line('94%')}{line('72%')}</span>
+  <span className={css.cardRequirements}>{line('64%')}</span>
   <span className={css.cardFoot}><span className={css.skeletonPill}/></span>
  </>:<><span className={css.skeletonArt}/><span className={css.rowMain}>{line('42%')}{line('92%')}{line('68%')}{line('30%')}</span></>}</div></li>)}</ul>
  return grouped?<div className={css.cardSections}><section><header>{line('96px')}</header>{cards}</section></div>:cards

@@ -160,6 +160,10 @@ Open the complete authentication URL printed at startup. On macOS or Linux, use 
 
 On first use, follow the voice prompt to prepare the local SenseVoice model and allow microphone access. Showing the button does not download models or start recording; cancelling setup preserves your draft. Transcription runs locally, and text you send is handled by your selected model service. If you disable voice input, later starts preserve that choice.
 
+New installations also use local SenseVoice for call recognition. Open **Settings → Voice service → Download and prepare local recognition** to reach its model setup. Configure MiniMax speech credentials in that same settings page for speech output; saved recognition choices are preserved when speech output changes.
+
+For local search, open **Library → Local → Open search settings**, enable local retrieval, and choose Qwen3 Embedding or Google EmbeddingGemma 2. The app includes their integrations; model weights download only after confirmation. EmbeddingGemma 2 requires Ollama installed and running on the Teloa host; the preparation page links to its installer and offers status refresh and retry.
+
 See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [local development guide](https://docs.teloa.ai/en/develop/local-development) for deployment and troubleshooting. Back up your data before upgrades.
 
 </details>

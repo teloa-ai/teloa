@@ -337,16 +337,24 @@ export class CollaborationService{
 
   async send(owner:string,input:unknown):Promise<GroupMessage>{
     ownerId(owner)
-    const request=groupSendInput(input),spec=sendSpec(request),client=await this.pool.connect()
+    const client=await this.pool.connect()
     try{
       await client.query('begin')
+      const message=await this.sendInTransaction(client,owner,input)
+      await client.query('commit');return message
+    }catch(error){await client.query('rollback');throw error}finally{client.release()}
+  }
+
+  /** 调用方持有事务；本人稿采用与群消息、路由唤醒在同一提交中生效。 */
+  async sendInTransaction(client:PoolClient,owner:string,input:unknown):Promise<GroupMessage>{
+    ownerId(owner)
+    const request=groupSendInput(input),spec=sendSpec(request)
       await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['teloa/group-send',owner,request.requestId])])
       const prior=await client.query('select *,request_spec=$3::jsonb as same_request from teloa_group_messages where owner_id=$1 and request_id=$2',[owner,request.requestId,spec])
       if(prior.rows[0]){
         if(!prior.rows[0].same_request)throw new WorkError('teloa/conflict','同一消息请求不能更换内容。')
         const message=readMessage(prior.rows[0])
         await this.routing?.recordWake(client,owner,{groupId:message.groupId,messageId:message.id})
-        await client.query('commit')
         return message
       }
       if(request.mentions?.length)await client.query('select id from teloa_roles where owner_id=$1 and id=any($2::uuid[]) order by id for update',[owner,[...new Set(request.mentions.map(mention=>mention.roleId))].sort()])
@@ -366,9 +374,7 @@ export class CollaborationService{
       const message=readMessage(saved.rows[0])
       await this.routing?.recordWake(client,owner,{groupId:message.groupId,messageId:message.id})
       admission.assertCurrent()
-      await client.query('commit')
       return message
-    }catch(error){await client.query('rollback');throw error}finally{client.release()}
   }
 
   async messages(owner:string,input:unknown):Promise<GroupMessage[]>{

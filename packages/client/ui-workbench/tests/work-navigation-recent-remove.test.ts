@@ -118,6 +118,17 @@ test('侧栏头像直接打开我的分身，设置只有一个入口，仍显�
  buttons[1]!.props.onClick();assert.equal(settings,1);assert.equal(twins,1)
 })
 
+test('搭建离开确认未获保留时，侧栏设置与分身不执行；确认后才导航',async()=>{
+ let allowed=false,settings=0,twins=0,checks=0
+ const render=mount('WorkNavigation.tsx',{...props([],async()=>{}),beforeNavigate:async()=>{checks++;return allowed},openTwin:async()=>{twins++},actions:{openDirectory:()=>{settings++}}})
+ const button=(name:string)=>nodes(render()).find(node=>node.type==='button'&&node.props['aria-label']===name)!
+ button('navigation.v2.settings').props.onClick();button('navigation.twin').props.onClick();await Promise.resolve();await Promise.resolve()
+ assert.equal(checks,2);assert.equal(settings,0);assert.equal(twins,0)
+ allowed=true
+ button('navigation.v2.settings').props.onClick();button('navigation.twin').props.onClick();await Promise.resolve();await Promise.resolve()
+ assert.equal(checks,4);assert.equal(settings,1);assert.equal(twins,1)
+})
+
 test('主聊等本人会话目录就绪后才可打开，避免冷启动提前点击失败',async()=>{
  let ready=false,opened=0
  const render=mount('WorkNavigation.tsx',{...props([],async()=>{}),openAssistant:async()=>{opened++},management:{subscribe:()=>()=>{},getSnapshot:()=>({baseline:ready,archived:[],ready})}})

@@ -8,6 +8,7 @@ import {businessPageSurface,businessSectionAwayFromLedger} from '../src/client/b
 import {businessHomeSourceState} from '../src/client/business-home-presentation.ts'
 import {businessLibraryText} from '../src/client/business-library-presentation.ts'
 import * as composition from '../src/client/industry-composition.ts'
+import * as moreActions from '../src/client/business-more-actions.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
 import type {IndustryDataSourceInstance} from '../src/client/industry-data-source-api.ts'
 
@@ -111,13 +112,18 @@ function pageHarness(){
   createElement,
   useState:(initial:unknown)=>{const index=cursor++;if(!(index in states))states[index]=typeof initial==='function'?(initial as ()=>unknown)():initial;return [states[index],(value:unknown)=>{states[index]=typeof value==='function'?(value as (previous:unknown)=>unknown)(states[index]):value}]},
   useRef:(value:unknown)=>{const index=cursor++;return states[index]??(states[index]={current:value})},
-  useEffect:(effect:()=>unknown)=>{effects.push(effect)},useLayoutEffect:()=>{},useMemo:(factory:()=>unknown)=>factory(),
+  useEffect:(effect:()=>unknown,deps:readonly unknown[]=[])=>{const index=cursor++,prior=states[index] as readonly unknown[]|undefined;if(!prior||deps.some((value,i)=>value!==prior[i])){states[index]=deps;effects.push(effect)}},useLayoutEffect:()=>{},useMemo:(factory:()=>unknown,deps:readonly unknown[]=[])=>{const index=cursor++,prior=states[index] as {deps:readonly unknown[];value:unknown}|undefined;if(!prior||deps.some((value,i)=>value!==prior.deps[i]))states[index]={deps,value:factory()};return (states[index] as {value:unknown}).value},
  }
  const cssProxy=new Proxy({},{get:(_,key)=>String(key)})
  const require=(id:string)=>{
   if(id==='react')return React
   if(id==='clsx')return {default:(...values:unknown[])=>values.filter(Boolean).join(' ')}
   if(id.endsWith('business-scope-context.js'))return {useBusinessScopes:()=>({SOC:'安全运营'})}
+  if(id.endsWith('business-more-actions.js'))return moreActions
+  if(id.endsWith('BusinessWorkspace.js'))return {BusinessWorkspace:function BusinessWorkspace(props:Record<string,unknown>){return createElement('business-workspace',props,props.more,props.children)}}
+  if(id.endsWith('BusinessConfigurationSurface.js'))return {BusinessConfigurationDetails:function BusinessConfigurationDetails(props:Record<string,unknown>){return createElement('business-configuration-details',props)},BusinessConfigurationSurface:function BusinessConfigurationSurface(props:Record<string,unknown>){return createElement('business-configuration-surface',props)}}
+  if(id.endsWith('BusinessCustomization.js'))return {BusinessCustomization:function BusinessCustomization(props:Record<string,unknown>){return createElement('business-customization',props)}}
+  if(id.endsWith('BusinessWorkResults.js'))return {BusinessPendingChanges:function BusinessPendingChanges(props:Record<string,unknown>){return createElement('business-pending-changes',props)}}
   if(id.endsWith('business-page-mode.js'))return {businessPageSurface,businessSectionAwayFromLedger,businessTargetMissing:()=>false}
   if(id.endsWith('business-preview.js'))return {queryObjects:()=>[],objectRef:(ref:unknown)=>ref,projectTypeLabel:()=>'project.type.general'}
   if(id.endsWith('business-home-presentation.js'))return {businessHomeSourceState,businessHomeStaff:()=>[{id:'r1'},{id:'r2'}]}
@@ -382,4 +388,52 @@ test('业务资源空态三语使用当前资源概念，保留旧词条供兼�
  }
  assert.equal(businessLibraryText('zh-HK').openResourcesMarket,'開啟市集')
  assert.equal(businessLibraryText('zh-TW').openResourcesMarket,'開啟市集')
+})
+
+
+test('正式业务全部页签共享更多入口，九项复用原业务服务且关闭不提交',async()=>{
+ const harness=pageHarness(),calls:unknown[]=[],api={current:async()=>({scope:'SOC'})},work={enabled:true},refresh=()=>calls.push('refresh')
+ const props=pageProps({workspace:{refresh},configuration:{api,records:{api:{work}},manualSetup:(scope:string)=>calls.push(['manual',scope]),reviewSetup:(scope:string)=>({type:'business-setup-review',props:{scope},children:[]}),adjust:(scope:string)=>calls.push(['adjust',scope])},target:{scope:'SOC',section:'data'},go:(target:unknown)=>calls.push(target),openWork:()=>calls.push('work')})
+ harness.render(props);await harness.flush()
+ const menu=()=>nodes(harness.render(props)).find(node=>node.type==='business-more-menu')!
+ menu().props.choose('connector','SOC')
+ const connections=nodes(harness.render(props)).find(node=>node.type==='business-configuration-details')!
+ assert.equal(connections.props.scope,'SOC');assert.equal(connections.props.initialSection,'connections');assert.deepEqual(calls,[])
+ connections.props.close();assert.deepEqual(calls,[])
+ menu().props.choose('manual-definition','SOC')
+ harness.render(props);await harness.flush();harness.render(props);await harness.flush()
+ assert.equal(nodes(harness.render(props)).some(node=>node.type==='business-customization'),false,'正式配置不能提交旧独立定义入口')
+ assert.deepEqual(calls,[['manual','SOC']])
+ menu().props.choose('changes','SOC')
+ assert.ok(nodes(harness.render(props)).some(node=>node.type==='business-setup-review'&&node.props.scope==='SOC'))
+ assert.equal(nodes(harness.render(props)).some(node=>node.type==='business-pending-changes'),false,'定义与员工方案复核不能使用记录变更集替代')
+ menu().props.choose('adjustment','SOC');harness.render(props);await harness.flush();const openBuilder=nodes(harness.render(props)).find(node=>node.type==='button'&&text(node)==='business.more.openBuilder')!;assert.ok(openBuilder);openBuilder.props.onClick();menu().props.choose('team','SOC');menu().props.choose('completed','SOC');menu().props.choose('work','SOC')
+ assert.deepEqual(calls.slice(1),[['adjust','SOC'],{scope:'SOC',section:'employees'},{scope:'SOC',section:'work'},'work'])
+ assert.equal(nodes(harness.render({...props,target:{scope:'SOC',section:'employees'}})).filter(node=>node.type==='business-more-menu').length,1)
+})
+
+test('业务或宿主更换后旧更多回调不能打开新界面或创建旧业务草案',async()=>{
+ const harness=pageHarness(),calls:unknown[]=[],api={},configuration={api,records:{api:{work:{enabled:true}}},adjust:(scope:string)=>calls.push(scope)}
+ const props=pageProps({workspace:{refresh:()=>{}},configuration,target:{scope:'SOC',section:'data'},openWork:()=>calls.push('work'),go:(target:unknown)=>calls.push(target)})
+ const old=nodes(harness.render(props)).find(node=>node.type==='business-more-menu')!.props.choose
+ await harness.flush()
+ harness.render({...props,configuration:{...configuration,api:{}}})
+ old('adjustment','SOC');old('work','SOC');old('completed','SOC')
+ assert.deepEqual(calls,[])
+})
+
+test('服务对象存在但current为null的旧业务继续走原定义与分享入口',async()=>{
+ const harness=pageHarness(),calls:unknown[]=[],api={current:async()=>null},businessShareApi={}
+ const props=pageProps({businessShareApi,workspace:{refresh:()=>{}},configuration:{api,records:{api:{work:{enabled:true}}},adjust:()=>calls.push('wrong formal adjust'),share:()=>{calls.push('wrong formal share');return 'formal share'}}})
+ harness.render(props);await harness.flush()
+ const choose=(action:string)=>nodes(harness.render(props)).find(node=>node.type==='business-more-menu')!.props.choose(action,'SOC')
+ choose('adjustment');harness.render(props);await harness.flush()
+ assert.deepEqual(calls,[],'不得仅因服务对象存在就发起正式搭建')
+ assert.ok(nodes(harness.render(props)).some(node=>node.props.entity==='business-definition'),'旧业务应进入自然语言定义入口')
+ choose('share');harness.render(props);await harness.flush()
+ assert.deepEqual(calls,[],'旧业务不能走正式看板导出器')
+ assert.ok(nodes(harness.render(props)).some(node=>node.props.api===businessShareApi&&node.props.scope==='SOC'))
+ choose('manual-definition');harness.render(props);await harness.flush()
+ assert.ok(nodes(harness.render(props)).some(node=>node.type==='business-customization'&&node.props.scope==='SOC'))
+ assert.deepEqual(calls,[],'旧业务手动定义不得启动正式业务搭建')
 })

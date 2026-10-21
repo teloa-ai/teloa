@@ -312,10 +312,10 @@ export function MarketCatalogSection({search,sidebar=false,presentation,cardLayo
    const pkg:CatalogSolutionPackageState=solutionPackage?.entryId===id?solutionPackage.state:{status:'loading'}
    // 是否已在团队：方案包读到后按清单标识与版本判断，与本机方案页同一判据（不依赖本机列表是否已读回这份内容）
    const loaded=pkg.status==='ready'&&!!solutionTeam?.installed({manifest:pkg.manifest})
-   detail=<ContextDrawer title={catalogText(catalogEntryTitle(selected.entry),locale)} close={backFromEntry} className={css.detailDrawer??''}><section className={css.section} aria-label={t('market.catalog.official.detailTitle')}>
-    <CatalogSolutionProduct hideTitle item={selected} pkg={pkg} busy={busy} error={addErrors[id]} add={()=>void add(selected)} {...(solutionTeam?{team:{loaded,links:loaded&&pkg.status==='ready'?solutionTeam.loadLinks({manifest:pkg.manifest}):null,panel:!loaded&&teamPanel?.entryId===id?solutionTeam.form(teamPanel.item,()=>setTeamPanel(undefined)):null,addToTeam:()=>void addToTeam(selected)},ask:{busy:asking,run:()=>void askFit(selected,pkg)}}:{})} open={contentId=>void openAdded(contentId)} back={backFromEntry} retry={()=>setSolutionRevision(value=>value+1)} after={<><CatalogAlternativeLinks entry={selected.entry} items={listing?.items??[]} openEntry={openEntry}/>{reviewSlot?.(selected.entry)}</>}/>
+   detail=<ContextDrawer title={catalogText(catalogEntryTitle(selected.entry),locale)} titleHidden={!!selected} close={backFromEntry} className={css.detailDrawer??''}><section className={css.section} aria-label={t('market.catalog.official.detailTitle')}>
+    <CatalogSolutionProduct item={selected} pkg={pkg} busy={busy} error={addErrors[id]} add={()=>void add(selected)} {...(solutionTeam?{team:{loaded,links:loaded&&pkg.status==='ready'?solutionTeam.loadLinks({manifest:pkg.manifest}):null,panel:!loaded&&teamPanel?.entryId===id?solutionTeam.form(teamPanel.item,()=>setTeamPanel(undefined)):null,addToTeam:()=>void addToTeam(selected)},ask:{busy:asking,run:()=>void askFit(selected,pkg)}}:{})} open={contentId=>void openAdded(contentId)} back={backFromEntry} retry={()=>setSolutionRevision(value=>value+1)} after={<><CatalogAlternativeLinks entry={selected.entry} items={listing?.items??[]} openEntry={openEntry}/>{reviewSlot?.(selected.entry)}</>}/>
    </section></ContextDrawer>
-  }else detail=<ContextDrawer title={selected?catalogText(catalogEntryTitle(selected.entry),locale):t('market.catalog.official.detailTitle')} close={backFromEntry} className={css.detailDrawer??''}><section className={clsx(css.section,css.detailView)} aria-label={t('market.catalog.official.detailTitle')}>
+  }else detail=<ContextDrawer title={selected?catalogText(catalogEntryTitle(selected.entry),locale):t('market.catalog.official.detailTitle')} titleHidden={!!selected} close={backFromEntry} className={css.detailDrawer??''}><section className={clsx(css.section,css.detailView)} aria-label={t('market.catalog.official.detailTitle')}>
    <ToolbarIconButton className={css.backLink} label={t('market.catalog.connector.back')} icon={ArrowLeft} onClick={backFromEntry}/>
    {!listing&&!readError&&!stopped&&<p className={css.status} role="status">{t('market.catalog.official.loading')}</p>}
    {selected?renderCards([selected]):(listing||readError||stopped)&&<p className={css.error} role="status">{t('market.catalog.official.entryUnavailable')}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('market.catalog.official.retry')}</button></p>}
@@ -372,6 +372,7 @@ export function catalogListRow(item:MarketCatalogItem,{t,locale,number,ranking,r
  const source='Teloa'
  const contains=item.contents?compositionSummary(composeFromCounts(item.contents),t,number):''
  return {
+  requirements:entry.requires.tools.length?t('market.catalog.official.tools',{tools:entry.requires.tools.join(' · ')}):item.contents?.mcp?t('market.solution.contains',{list:compositionSummary(composeFromCounts({mcp:item.contents.mcp}),t,number)}):locale==='zh-CN'?'工具与连接要求未声明':locale.startsWith('zh')?'工具與連接要求未聲明':'Tool and connection requirements not declared',
   key:'catalog:'+entry.id,catalogId:entry.id,title:catalogText(catalogEntryTitle(entry),locale),summary:catalogText(catalogSummary(entry),locale),
   // 官方方案带了包含计数时照原型方案卡写「包含：…」，与本机方案卡同一套摘要
   facts:contains?t('market.solution.contains',{list:contains}):[state,source,...(installs>0?[t('market.catalog.official.installs',{count:number(installs)})]:[])].join(' · '),
@@ -499,13 +500,12 @@ export function MarketCatalogCards({items,catalogVersion,catalogItems=items,open
     return <li key={entry.id} className={css.card} data-teloa-catalog-entry={entry.id}>
      <div className={css.top}><ItemArt kind="agent" title={catalogText(entry.role.title,locale)} seed={entry.id} avatarKey={entry.role.definition.avatarKey}/><h3 className={css.name}>{catalogText(entry.role.title,locale)}</h3><StatusPill tone={compatibilityTones[entry.compatibility.status]}>{t(compatibilityKeys[entry.compatibility.status])}</StatusPill>{installsBadge}<StatusPill>{t('market.catalog.official.roleBadge')}</StatusPill></div>
      <p className={css.summary}>{catalogText(entry.role.summary,locale)}</p>
-     <p>{entry.role.definition.duty}</p>
      {roleActions&&<div className={css.actions}>{roleActions}</div>}
      {plan&&!roleId&&!unfinished&&<RolePlanPanel plan={plan} busy={busy===entry.id} retry={()=>addRole?.(item)} confirm={()=>confirmRole?.(item)} cancel={()=>cancelRole?.(entry.id)}/>}
      {receipt&&<RoleInstallNote receipt={receipt}/>}
      {errorNode}
      <MarketTemplateDetails key={entry.id} sections={[
-      {id:'responsibility',title:t('market.industry.contents.duty'),content:<><p>{entry.role.definition.executionScope}</p><ul>{entry.role.definition.responsibility.deliveryChecks.map(value=><li key={value}>{value}</li>)}</ul></>},
+      {id:'responsibility',title:t('market.industry.contents.duty'),content:<><ul>{entry.role.definition.responsibility.autonomousActions.slice(0,4).map(value=><li key={value}>{value}</li>)}</ul><details><summary>{locale==='zh-CN'?'完整职责与执行范围':locale.startsWith('zh')?'完整職責與執行範圍':'Full responsibilities and execution scope'}</summary><p>{entry.role.definition.duty}</p><p>{entry.role.definition.executionScope}</p><ul>{entry.role.definition.responsibility.deliveryChecks.map(value=><li key={value}>{value}</li>)}</ul></details></>},
       {id:'skills',title:t('market.primary.methods'),content:<><p>{t('market.catalog.official.roleSkills',{skills:entry.role.skills.length?entry.role.skills.join(', '):'—'})}</p>{entry.role.skills.length>0&&<p>{t('market.catalog.official.roleSkillsHint')}</p>}</>},
       {id:'routines',title:t('market.primary.routines'),content:<p>{t('market.primary.noRoutines')}</p>},
       {id:'dependencies',title:t('market.primary.appsAndPermissions'),content:<><p>{entry.role.definition.dataScope}</p><ul>{entry.requires.tools.map(value=><li key={value}>{value}</li>)}</ul><ul>{entry.role.definition.responsibility.confirmationPoints.map(value=><li key={value}>{value}</li>)}</ul><p>{t('market.primary.templateBoundary')}</p></>},

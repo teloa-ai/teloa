@@ -20,6 +20,13 @@ after(async()=>{await pool?.end();await container?.stop()})
 
 /** 2026-10-12核对统一初始化链与静态DDL的完整表清单；期待不在测试运行时从被测实现推导。 */
 const expectedTables=[
+ // 完整业务方案及采用回执、来源固定多稿与记忆正文编辑回执。
+ "teloa_business_setup_plans",
+ "teloa_business_setup_requests",
+ "teloa_twin_drafts",
+ "teloa_twin_draft_revisions",
+ "teloa_twin_draft_requests",
+ "teloa_role_memory_edits",
  // 员工对外调用的授权、工作轮次、幂等命令、固定成果及回调投递持久表。
  "teloa_employee_integrations",
  "teloa_employee_api_work",

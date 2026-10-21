@@ -7,7 +7,7 @@ export type RoleMemorySourceKind=typeof roleMemorySourceKinds[number]
 export type RoleMemorySource={kind:RoleMemorySourceKind;id:string;version:number}
 export type RoleMemoryVisibility={kind:'role';scopeIds:string[]}|{kind:'private';scopeIds:[]}
 export type RoleMemoryProposer={kind:'self'}|{kind:'role';roleId:string;roleVersion:number}
-export type RoleMemoryContent={version:number;contentHash:string;bytes:number;markdown:string;createdAt:string}
+export type RoleMemoryContent={version:number;contentHash:string;bytes:number;markdown:string;createdAt:string;editedBy?:'self'}
 export type RoleMemory={
  id:string;ownerId:string;roleId:string;roleVersion:number;title:string;state:RoleMemoryState;stateVersion:number
  source:RoleMemorySource;sourceTitle:string;sourceAvailable:boolean;visibility:RoleMemoryVisibility;proposedBy:RoleMemoryProposer
@@ -47,14 +47,15 @@ export function isRoleMemory(value:unknown):value is RoleMemory{
   const proposed=exact(row.proposedBy,['kind','roleId','roleVersion'])
   if(proposed.kind==='self'){if(Object.keys(proposed).length!==1)return false}
   else if(proposed.kind!=='role'||!uuid(proposed.roleId)||proposed.roleId!==row.roleId||!positive(proposed.roleVersion))return false
-  const content=exact(row.content,['version','contentHash','bytes','markdown','createdAt'])
+  const content=exact(row.content,['version','contentHash','bytes','markdown','createdAt','editedBy'])
   const candidateAt=row.candidateAt
-  if(!positive(content.version)||typeof content.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(content.contentHash)||!positive(content.bytes)||content.bytes>128*1024||typeof content.markdown!=='string'||!content.markdown.trim()||new TextEncoder().encode(content.markdown).byteLength!==content.bytes||!stamp(content.createdAt)||!stamp(candidateAt)||content.createdAt!==candidateAt)return false
+  if(!positive(content.version)||typeof content.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(content.contentHash)||!positive(content.bytes)||content.bytes>128*1024||typeof content.markdown!=='string'||!content.markdown.trim()||new TextEncoder().encode(content.markdown).byteLength!==content.bytes||!stamp(content.createdAt)||!stamp(candidateAt)||content.createdAt<candidateAt)return false
+  if(content.version===1?(content.createdAt!==candidateAt||Object.hasOwn(content,'editedBy')):content.editedBy!=='self')return false
   const confirmed=row.confirmedAt,withdrawn=row.withdrawnAt
   if(confirmed!==null&&!stamp(confirmed)||withdrawn!==null&&!stamp(withdrawn))return false
-  if(row.state==='candidate'&&(row.stateVersion!==1||confirmed!==null||withdrawn!==null))return false
-  if(row.state==='confirmed'&&(row.stateVersion!==2||confirmed===null||withdrawn!==null))return false
-  if(row.state==='withdrawn'&&(withdrawn===null||row.stateVersion!==(confirmed===null?2:3)))return false
+  if(row.state==='candidate'&&(row.stateVersion!==content.version||confirmed!==null||withdrawn!==null))return false
+  if(row.state==='confirmed'&&(row.stateVersion!==content.version+1||confirmed===null||withdrawn!==null))return false
+  if(row.state==='withdrawn'&&(withdrawn===null||row.stateVersion!==content.version+(confirmed===null?1:2)))return false
   return [confirmed,withdrawn].filter((item):item is string=>item!==null).every(item=>item>=candidateAt)
  }catch{return false}
 }

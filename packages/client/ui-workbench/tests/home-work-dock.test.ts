@@ -53,7 +53,7 @@ test('切换会话立即移除旧交办，丢失的旧读取回包不能显示�
  assert.ok(nodes(view).filter(node=>node.type==='shared-status-card').every(node=>node.props.initial.sessionId==='other'))
  mode='fail';activity();instance.timer(200);await tick();view=instance.render()
  assert.match(text(view),/读取暂不可用/);assert.ok(nodes(view).find(node=>node.type==='shared-status-card'))
- mode='first';nodes(view).find(node=>node.type==='button')!.props.onClick();instance.render();await tick();assert.doesNotMatch(text(instance.render()),/读取暂不可用/)
+ mode='first';nodes(view).find(node=>node.type==='button'&&text(node)==='重试读取进度')!.props.onClick();instance.render();await tick();assert.doesNotMatch(text(instance.render()),/读取暂不可用/)
  instance.unmount()
 })
 
@@ -86,5 +86,19 @@ test('复用的进度卡接受同一请求的新快照并显示真实结果及�
  instance.render();assert.match(text(instance.render()),/等待中/)
  props.initial=readHomeWorkStatus(status('s','received'),'s');instance.render()
  const view=instance.render();assert.match(text(view),/安全运营/);assert.match(text(view),/核查已完成/);assert.match(text(view),/已收到/)
+ instance.unmount()
+})
+
+
+test('停靠条默认收起，展开只显示两项，查看其余不卸载卡片且切换会话重置',async()=>{
+ let selected='s'
+ const props={sessionId:'s',work:{subscribe:()=>()=>{},getSnapshot:()=>({sessionId:selected,status:'ready'})},call:async()=>Array.from({length:4},(_,index)=>({...status(selected),requestId:'r'+index})),isAssistantContext:async()=>true,openTask:()=>{},subscribeActivity:()=>()=>{}}
+ const instance=component('HomeWorkRequestsDock.tsx','HomeWorkRequestsDock',props)
+ instance.render();await tick();let view=instance.render()
+ const visible=()=>nodes(view).filter(node=>node.type==='div'&&node.children.some((child:any)=>child?.type==='shared-status-card')&&!node.props.hidden).length
+ assert.equal(visible(),0);assert.equal(nodes(view).filter(node=>node.type==='shared-status-card').length,4)
+ nodes(view).find(node=>node.type==='button'&&text(node)==='展开')!.props.onClick();view=instance.render();assert.equal(visible(),2)
+ nodes(view).find(node=>node.type==='button'&&text(node)==='还有 2 条')!.props.onClick();view=instance.render();assert.equal(visible(),4)
+ selected='other';props.sessionId='other';instance.render();await tick();view=instance.render();assert.equal(visible(),0)
  instance.unmount()
 })

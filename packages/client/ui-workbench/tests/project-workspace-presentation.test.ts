@@ -7,12 +7,11 @@ const pageSource=await readFile(new URL('../src/client/BusinessPage.tsx',import.
 test('业务空间提供项目子页；左栏平台级「项目」入口按 2026-09-25 裁定新增（覆盖一期「不增加一级导航」）',async()=>{
  assert.match(pageSource,/section\('projects'/)
  assert.match(pageSource,/<ProjectWorkspace/)
- // 项目仍是业务摘要条的直接入口；左栏「项目」总览只是跨业务视角，不改归属。
- const beforeMore=pageSource.split('<BusinessMoreMenu')[0]??''
- assert.match(beforeMore,/aria-pressed=\{target\.section==='projects'\}/)
- assert.match(beforeMore,/onClick=\{\(\)=>section\('projects'\)\}/)
+ // 旧独立业务仍有项目入口；外壳「更多」也会先于旧页面声明，不能按首个菜单截断源码。
+ assert.match(pageSource,/aria-pressed=\{target\.section==='projects'\}/)
+ assert.match(pageSource,/onClick=\{\(\)=>section\('projects'\)\}/)
  const [navigationChrome,workNavigation]=await Promise.all([readFile(new URL('../src/client/WorkbenchNavigationChrome.tsx',import.meta.url),'utf8'),readFile(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8')])
- assert.match(navigationChrome,/\['projects','navigation\.projects',FolderKanban\]/)
+ assert.match(navigationChrome,/\['projects','navigation\.projects',Folder\]/)
  assert.match(navigationChrome,/primaryNavigation\.map\(/);assert.match(navigationChrome,/onClick=\{\(\)=>onSelect\(id\)\}/)
  assert.match(workNavigation,/import \{WorkbenchNavigationBrand,WorkbenchNavigationItems\} from '\.\/WorkbenchNavigationChrome\.js'/)
  assert.match(workNavigation,/<WorkbenchNavigationItems view=\{view\}/);assert.match(workNavigation,/:actions\.navigate\(id\)\}/)

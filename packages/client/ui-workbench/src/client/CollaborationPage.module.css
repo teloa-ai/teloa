@@ -267,22 +267,22 @@
 .page .messageTime{align-items:center;gap:10px;margin:4px 0 14px;font-size:12px}
 .page .messageDate::before,.page .messageDate::after{content:'';flex:1;height:1px;background:var(--teloa-border)}
 .page .message{position:relative;gap:12px;margin-bottom:18px}
-.page .message:not(.ownMessage){margin-inline:-8px;padding:6px 8px;border-radius:10px}
-.page .message:not(.ownMessage):hover{background:var(--teloa-panel)}
-.page .message:not(.ownMessage) header{min-height:22px;gap:8px}
-.page .message:not(.ownMessage) header :is(strong,.messageAuthor){font-size:14px;font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
-.page .message:not(.ownMessage) header>span{font-size:13px;color:var(--teloa-muted)}
-.page .message:not(.ownMessage) .markdown{width:auto;max-width:100%;margin:3px 0 0;padding:0;border-radius:0;background:transparent;line-height:1.7}
-.page .message:not(.ownMessage) .markdown :is(p,li){line-height:1.7}
+.page .message{margin-inline:-8px;padding:6px 8px;border-radius:10px}
+.page .message:hover{background:var(--teloa-panel)}
+.page .message header{min-height:22px;gap:8px}
+.page .message header :is(strong,.messageAuthor){font-size:14px;font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
+.page .message header>span{font-size:13px;color:var(--teloa-muted)}
+.page .message .markdown{width:auto;max-width:100%;margin:3px 0 0;padding:0;border-radius:0;background:transparent;line-height:1.7}
+.page .message .markdown :is(p,li){line-height:1.7}
 .page .messageSource{margin-top:4px}
 .page .messageSource summary{padding:1px 0}
 .page .message .messageActions{margin-top:6px}
 .page .message .messageActions>button,.page .message .messageActions [data-message-id]>div>button,.page .message .messageMore>summary{opacity:0}
 .page .message:is(:hover,:focus-within) .messageActions>button,.page .message:is(:hover,:focus-within) .messageActions [data-message-id]>div>button,.page .message:is(:hover,:focus-within) .messageMore>summary,.page .message .messageMore[open]>summary{opacity:1;pointer-events:auto}
-.page .message:not(.ownMessage) .messageActions:not(:has([aria-pressed])){position:absolute;top:-14px;right:8px;z-index:2;margin:0;gap:2px;padding:3px;border:1px solid var(--teloa-border-strong);border-radius:8px;background:var(--teloa-surface);box-shadow:0 4px 12px -4px rgb(28 27 25 / .18);opacity:0}
-.page .message:not(.ownMessage):is(:hover,:focus-within) .messageActions:not(:has([aria-pressed])){opacity:1;pointer-events:auto}
-.page .message:not(.ownMessage) .messageActions:not(:has([aria-pressed])) :is(.replyButton,.messageMore>summary){height:26px;min-height:26px;width:auto;padding:0 8px;border-radius:5px;font-size:12px}
-.page .message:not(.ownMessage) .messageActions:not(:has([aria-pressed])) .messageMore>div{top:calc(100% + 5px);bottom:auto;left:auto;right:0}
+.page .message .messageActions:not(:has([aria-pressed])){position:absolute;top:-14px;right:8px;z-index:2;margin:0;gap:2px;padding:3px;border:1px solid var(--teloa-border-strong);border-radius:8px;background:var(--teloa-surface);box-shadow:0 4px 12px -4px rgb(28 27 25 / .18);opacity:0}
+.page .message:is(:hover,:focus-within) .messageActions:not(:has([aria-pressed])){opacity:1;pointer-events:auto}
+.page .message .messageActions:not(:has([aria-pressed])) :is(.replyButton,.messageMore>summary){height:26px;min-height:26px;width:auto;padding:0 8px;border-radius:5px;font-size:12px}
+.page .message .messageActions:not(:has([aria-pressed])) .messageMore>div{top:calc(100% + 5px);bottom:auto;left:auto;right:0}
 .page .ownMessage .messageActions:not(:has([aria-pressed])){position:absolute;top:-14px;right:46px;z-index:2;margin:0;gap:2px;padding:3px;border:1px solid var(--teloa-border-strong);border-radius:8px;background:var(--teloa-surface);box-shadow:0 4px 12px -4px rgb(28 27 25 / .18);opacity:0}
 .page .ownMessage:is(:hover,:focus-within) .messageActions:not(:has([aria-pressed])){opacity:1;pointer-events:auto}
 .page .ownMessage .messageActions:not(:has([aria-pressed])) :is(.replyButton,.messageMore>summary){height:26px;min-height:26px;width:auto;padding:0 8px;border-radius:5px;font-size:12px}
@@ -292,3 +292,5 @@
 .page .panel{background:var(--teloa-panel)}
 .page .panel>header{min-height:56px}
 @media(max-width:740px){.page .groupHeader{padding:0 12px}.page .groupHeader .labelButton>span{display:none}.page .discussionBody>.transcript{padding:16px}.page .discussionBody>.composer{width:calc(100% - 24px);margin-bottom:12px}.page .announcement,.page .mentionSummary{padding-inline:12px}}
+
+.page .message.ownMessage{flex-direction:row;margin-inline:-8px;padding:6px 8px;border-radius:10px}.page .message.ownMessage>div{flex:1;max-width:none}.page .message.ownMessage .markdown{width:auto;max-width:100%;margin:3px 0 0;padding:0;border-radius:0;background:transparent}.page .message.ownMessage:hover{background:var(--teloa-panel)}.page .message header time{margin-left:0;font-size:12px;color:var(--teloa-muted);font-variant-numeric:tabular-nums}.page .ownMessage .messageActions:not(:has([aria-pressed])){right:8px}

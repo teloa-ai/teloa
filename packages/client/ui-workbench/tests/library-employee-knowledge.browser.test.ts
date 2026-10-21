@@ -94,7 +94,7 @@ test('资料库员工知识分组：在岗员工资料可见，退役员工与�
   await directory.getByRole('button',{name:'员工专项资料甲',exact:true}).click()
   const detail=page.locator('main[data-teloa-pane=detail]')
   // 详情区域应显示选中资料的名称
-  await detail.getByText('员工专项资料甲').waitFor()
+  await detail.getByRole('heading',{name:'员工专项资料甲',exact:true}).waitFor()
   await page.screenshot({path:'/tmp/teloa-walkthrough/library-employee-resource-detail.png'})
 
   // ── 3. 搜索过滤员工知识分组 ─────────────────────────────────────────────────

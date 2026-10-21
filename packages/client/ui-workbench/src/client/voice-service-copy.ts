@@ -1,4 +1,6 @@
 const copy={
+ prepareLocalAsr:['下载并准备本地识别','下載並準備本機識別','Download and prepare local recognition'],
+ manageLocalAsr:['管理本地识别模型','管理本機識別模型','Manage local recognition model'],
  customVoice:['自定义音色','自訂聲線','Custom voice'],
  voicePending:['试听后选用，当前音色暂不更改。','試聽後選用，目前聲線暫不更改。','Preview, then apply to change your call voice.'],
  voices:['音色','聲線','Voices'],currentVoice:['当前音色','目前聲線','Current voice'],mandarin:['普通话','普通話','Mandarin'],listen:['试听','試聽','Preview'],useVoice:['选用','選用','Use voice'],configureBeforePreview:['先在下方配置 MiniMax 语音凭据，即可试听和选用。','請先在下方設定 MiniMax 語音憑據，即可試聽及選用。','Configure your MiniMax speech credential below to preview and use voices.'],advancedVoice:['模型、凭据与自定义音色','模型、憑據及自訂聲線','Model, credential and custom voice'],voiceApplied:['音色已选用','已選用聲線','Voice applied'],

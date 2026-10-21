@@ -105,12 +105,12 @@ test('返回沿用轻量图标，真实市场父级样式不把它撑成描边�
  const page=await mount(t),search=page.getByRole('textbox',{name:'搜索市场'})
  const assertBack=async(name:string)=>{
   const dialog=page.getByRole('dialog'),back=dialog.getByRole('button',{name,exact:true});await back.waitFor()
-  const title=await dialog.locator(':scope > header h2').textContent();assert.equal(await dialog.getByRole('heading',{name:title!,exact:true}).count(),1,'抽屉只显示一次对象标题')
+  const labelId=await dialog.getAttribute('aria-labelledby'),title=await dialog.locator('[id='+JSON.stringify(labelId)+']').textContent();assert.equal(await dialog.getByRole('heading',{name:title!,exact:true}).count(),1,'抽屉只显示一次对象标题')
   assert.equal(await back.getAttribute('title'),name)
   assert.equal(await back.textContent(),'','导航不占用一行文字按钮')
   const shape=await back.evaluate((el:HTMLElement)=>{const css=getComputedStyle(el),box=el.getBoundingClientRect();return {width:box.width,height:box.height,border:css.borderTopWidth,bg:css.backgroundColor}})
   assert.equal(shape.width,32);assert.equal(shape.height,32);assert.equal(shape.border,'0px');assert.equal(shape.bg,'rgba(0, 0, 0, 0)')
-  const titleBox=await dialog.locator(':scope > header h2').boundingBox(),backBox=await back.boundingBox();assert.ok(titleBox&&backBox&&Math.abs(backBox.x-titleBox.x)<=24,'短内容详情不缩到抽屉中间 '+JSON.stringify({titleBox,backBox}))
+  const titleBox=await dialog.boundingBox(),backBox=await back.boundingBox();assert.ok(titleBox&&backBox&&backBox.x-titleBox.x>=0&&backBox.x-titleBox.x<=28,'短内容详情不缩到抽屉中间 '+JSON.stringify({titleBox,backBox}))
   await back.press('Enter');assert.equal(await dialog.count(),0)
  }
  await search.fill('办公');await page.locator('[data-catalog-row="teloa.office"]').click();await assertBack('回到市场');assert.equal(await search.inputValue(),'办公')

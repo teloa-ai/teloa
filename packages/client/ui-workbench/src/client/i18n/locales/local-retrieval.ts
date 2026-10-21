@@ -901,7 +901,13 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  ["retrieval.setup.ollama", "需要安装并启动 Ollama 0.40.0 或更新版本。", "需要安裝並啟動 Ollama 0.40.0 或更新版本。", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later.", "Install and start Ollama 0.40.0 or later."],
  ["retrieval.setup.installOllama", "安装 Ollama", "安裝 Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama", "Install Ollama"],
  ["retrieval.model.select", "使用此模型", "使用此模型", "Use this model", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search", "Use for knowledge search"],
- ["retrieval.model.selected", "当前使用", "目前使用", "In use", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search"]
+ ["retrieval.model.selected", "当前使用", "目前使用", "In use", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search", "Used for knowledge search"],
+ ["retrieval.setup.ollamaRequirement","请先安装并启动 Ollama {version} 或更新版本，再确认下载模型。","請先安裝並啟動 Ollama {version} 或更新版本，再確認下載模型。","Install and start Ollama {version} or later before confirming the model download."],
+ ["retrieval.failure.ollamaCheck","请检查 Ollama 是否已安装并启动、版本是否符合要求，以及模型能否运行，然后重试准备。","請檢查 Ollama 是否已安裝並啟動、版本是否符合要求，以及模型能否執行，然後重試準備。","Check that Ollama is installed and running, meets the required version, and can run the model, then retry preparation."],
+ ["retrieval.model.refresh","刷新状态","重新整理狀態","Refresh status"],
+ ["retrieval.model.retry","重试准备","重試準備","Retry preparation"],
+ ["retrieval.resources.openSettings","打开检索设置","開啟檢索設定","Open search settings"],
+ ["retrieval.resources.modelsHint","在检索设置中选择 Qwen3 Embedding 0.6B 或 Google EmbeddingGemma 2，查看运行要求和准备状态，按需下载。","在檢索設定中選擇 Qwen3 Embedding 0.6B 或 Google EmbeddingGemma 2，檢視執行要求及準備狀態，按需要下載。","Choose Qwen3 Embedding 0.6B or Google EmbeddingGemma 2 in search settings, review its requirements and preparation status, and download if needed."]
 ,
  ["retrieval.setup.retry","重试加入","重試加入","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding","Retry adding"]
 ,

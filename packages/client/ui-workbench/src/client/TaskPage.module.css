@@ -225,3 +225,11 @@
 @media(max-width:760px){.alignedPage.overviewPage>.taskHeader{padding:14px 21px 0}.alignedPage.overviewPage .overviewLayout{padding-left:21px;padding-right:21px}}
 /* 总览列表铺满版心：共享目录窄列的内缩（搜索 14px、筛选 14px、列表 8px）在这里归零，与页头左缘对齐。 */
 .alignedPage.overviewPage .overviewLayout .search{width:100%;margin-left:0;margin-right:0}.alignedPage.overviewPage .overviewLayout .filterBar{padding-left:0;padding-right:0}.alignedPage.overviewPage .overviewLayout .rows{padding:0!important}
+
+/* 1.0 待办目录：事项、来源和真实更新时间分列，窄屏保留同一项的上下文。 */
+.attentionColumns{display:grid;grid-template-columns:minmax(0,1fr) 200px 140px 40px;gap:16px;padding:12px 16px;border-bottom:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:12px}
+.alignedPage .attentionList .attentionRow{display:grid;grid-template-columns:minmax(0,1fr) 200px 140px;gap:16px;border:0;border-radius:0;background:transparent;padding:16px;align-items:center}
+.attentionItemCell{display:flex;align-items:center;gap:12px;min-width:0}.attentionItemCell>span:last-child{min-width:0;flex:1}.attentionReason{display:block;color:var(--teloa-muted);font-size:12px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attentionSourceCell,.attentionTimeCell{font-size:12px;color:var(--teloa-muted);text-align:left}.attentionTimeCell{font-variant-numeric:tabular-nums}.attentionSourceCell{overflow-wrap:anywhere}
+.attentionRowLine{border-bottom:1px solid var(--teloa-border);border-radius:0}.attentionRowLine:hover{background:var(--teloa-hover)}
+@media(max-width:760px){.attentionColumns{grid-template-columns:minmax(0,1fr) 120px 40px}.attentionColumns>span:nth-child(3){display:none}.alignedPage .attentionList .attentionRow{grid-template-columns:minmax(0,1fr) 120px}.attentionTimeCell{grid-column:2;font-size:11px}.attentionItemCell{grid-row:1/3}.attentionSourceCell{font-size:11px}}
+@media(max-width:480px){.attentionColumns{display:none}.alignedPage .attentionList .attentionRow{grid-template-columns:minmax(0,1fr);gap:6px;padding:14px 8px}.attentionItemCell{grid-row:auto}.attentionSourceCell,.attentionTimeCell{grid-column:1;margin-left:29px}.attentionReason{white-space:normal}}

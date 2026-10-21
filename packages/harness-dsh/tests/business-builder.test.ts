@@ -65,3 +65,31 @@ test('最近日常scope-only端点传真实actor和signal，回包必须同scope
  const previous=calls;await assert.rejects(f.handler('business-conversations/recent-daily',{scope:'SOC',sessionIds:['fake']},abort.signal),{code:'teloa/invalid-input'});assert.equal(calls,previous)
  Object.assign(f.services.bindings,{recentDaily:async()=>{throw Error('目录不可读')}});await assert.rejects(f.handler('business-conversations/recent-daily',{scope:'SOC'},abort.signal),/目录不可读/)
 })
+
+test('放弃须绑定原会话与草案；回执校验且目录排除退役项',async()=>{
+ const f=fixture(),calls:unknown[]=[]
+ let current:any=await f.services.drafts.get()
+ Object.assign(f.services.drafts,{discard:async(actor:unknown,input:any)=>{calls.push([actor,input]);current={...current,status:'discarded',revision:3};return current}})
+ f.services.drafts.get=async()=>current
+ const target={sessionId:'builder',draftId,expectedRevision:2}
+ for(const patch of [{sessionId:'foreign'},{draftId:randomUUID()},{ownerId:'other'}])await assert.rejects(f.handler('business-configuration/discard',{...target,...patch}))
+ assert.equal(calls.length,0)
+ const result:any=await f.handler('business-configuration/discard',target)
+ assert.equal(result.status,'discarded')
+ assert.deepEqual(calls,[[{ownerId:'owner',scopeIds:[]},{draftId,expectedRevision:2}]])
+ assert.deepEqual((await f.handler('business-conversations/list',{}) as any).items,[])
+ Object.assign(f.services.drafts,{discard:async()=>({...current,status:'draft'})})
+ await assert.rejects(f.handler('business-configuration/discard',target),{code:'teloa/invalid-host-response'})
+})
+
+test('未绑定预约按固定request放弃；伪造请求、草案和重复定位字段在写入前拒绝',async()=>{
+ const f=fixture(),{sessionId:_,...pending}=binding,calls:unknown[]=[]
+ f.services.bindings.byRequest=async()=>pending as typeof binding
+ const draft=await f.services.drafts.get()
+ Object.assign(f.services.drafts,{discard:async(a:unknown,r:unknown)=>{calls.push([a,r]);return {...draft,status:'discarded',revision:3}}})
+ const target={requestId,draftId,expectedRevision:2}
+ for(const patch of [{requestId:randomUUID()},{draftId:randomUUID()},{sessionId:'builder'},{ownerId:'other'}])await assert.rejects(f.handler('business-configuration/discard',{...target,...patch}))
+ assert.equal(calls.length,0)
+ assert.equal((await f.handler('business-configuration/discard',target) as typeof draft).status,'discarded')
+ assert.deepEqual(calls,[[{ownerId:'owner',scopeIds:[]},{draftId,expectedRevision:2}]])
+})

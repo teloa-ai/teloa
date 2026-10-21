@@ -31,7 +31,7 @@ test('原生双层对话框一次 Escape 只关闭员工编辑，焦点回详情
  await page.getByRole('button',{name:'打开员工',exact:true}).click();
  const close=page.getByRole('dialog',{name:'员工详情',exact:true}).getByRole('button',{name:'关闭',exact:true})
  assert.equal(await close.evaluate((el:HTMLElement)=>getComputedStyle(el).padding),'0px','宿主页样式不能压缩共同抽屉关闭图标')
- assert.equal(await close.locator('svg').evaluate((el:SVGElement)=>el.getBoundingClientRect().width),20)
+ assert.equal(await close.locator('svg').evaluate((el:SVGElement)=>el.getBoundingClientRect().width),16)
  await page.getByRole('button',{name:'编辑员工',exact:true}).click()
  await page.getByRole('dialog',{name:'员工编辑',exact:true}).waitFor()
  await page.keyboard.press('Escape')

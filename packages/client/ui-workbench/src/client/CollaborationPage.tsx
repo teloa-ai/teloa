@@ -1,4 +1,5 @@
 import type {IndustryTeamMaterialsPort} from './industry-team-materials.js'
+import {RoleProfileDrawer} from './RoleProfileDrawer.js'
 import { ContextDrawer } from './ContextDrawer.js'
 import { useEffect, useRef, useState } from 'react'
 import type { CollaborationGroup, CollaborationScope } from './collaboration-preview.js'
@@ -29,14 +30,16 @@ export function CollaborationPage({persistence,...props}:Props){
  const [workDetail,setWorkDetail]=useState<GroupWorkLinkItem>()
  useEffect(()=>setRoleDetail(undefined),[props.target?.groupId,props.visible])
  useEffect(()=>setWorkDetail(undefined),[props.target?.groupId,props.visible])
- const role=props.roles.find(row=>row.id===roleDetail)
+ const lastRoleId=useRef<string>(),roleOrigin=useRef<{groupId:string|undefined;api:GroupApi}>();if(roleDetail)lastRoleId.current=roleDetail
+ const profileVisible=props.visible&&!!roleDetail&&roleOrigin.current?.groupId===props.target?.groupId&&roleOrigin.current?.api===persistence.api
+ const role=props.roles.find(row=>row.id===lastRoleId.current)
  const closeRole=()=>setRoleDetail(undefined)
  // 群内身份沿用平台详情装配，不能借全局导航卸载群设置、话题和输入。
- const work=props.work?{...props.work,...(props.work.renderRole?{openRole:(id:string)=>setRoleDetail(id)}:{}),...(props.work.renderLink?{openLink:(item:GroupWorkLinkItem)=>setWorkDetail(item)}:{})}:undefined
+ const work=props.work?{...props.work,...(props.work.renderRole?{openRole:(id:string)=>{roleOrigin.current={groupId:props.target?.groupId,api:persistence.api};setRoleDetail(id)}}:{}),...(props.work.renderLink?{openLink:(item:GroupWorkLinkItem)=>setWorkDetail(item)}:{})}:undefined
  // 共用目录切群时按身份重建详情，旧群的在途读取、资料选择和编辑表单不能落到新群。
  // 创建草稿属于来源业务，放在群详情身份外侧，保存或切群只清当前来源。
  const page=<SavedCollaborationPage artifactRail={props.artifactRail} creationForms={{items:createForms,change:setCreateForms}} work={work} key={persistence.directory?props.target?.groupId:undefined} visible={props.visible} panel={props.panel} templateMaterials={persistence.templateMaterials} preferences={persistence.preferences} api={persistence.api} attachments={persistence.attachments} reactions={persistence.reactions} routing={persistence.routing} channels={persistence.channels} directory={persistence.directory} target={props.target} roles={props.roles} profileName={props.profileName}/>
- return props.work?.renderRole||props.work?.renderLink?<>{page}{props.visible&&role&&props.work.renderRole&&<ContextDrawer title={role.kind==='twin'?twinDisplayName(props.profileName,t):role.name} close={closeRole}>{props.work.renderRole(role.id,closeRole)}</ContextDrawer>}{props.visible&&workDetail?.available&&props.work.renderLink&&<ContextDrawer open={!props.artifactOpen} title={workDetail.title!} close={()=>setWorkDetail(undefined)}>{props.work.renderLink(workDetail,()=>setWorkDetail(undefined))}</ContextDrawer>}</>:page
+ return props.work?.renderRole||props.work?.renderLink?<>{page}{props.work.renderRole&&<RoleProfileDrawer key={props.target?.groupId} open={profileVisible&&!!role} kind={role?.kind} title={role?.kind==='twin'?twinDisplayName(props.profileName,t):role?.name??t('navigation.team')} close={closeRole}>{lastRoleId.current&&props.work.renderRole(lastRoleId.current,closeRole,profileVisible&&!!role)}</RoleProfileDrawer>}{props.visible&&workDetail?.available&&props.work.renderLink&&<ContextDrawer open={!props.artifactOpen} title={workDetail.title!} close={()=>setWorkDetail(undefined)}>{props.work.renderLink(workDetail,()=>setWorkDetail(undefined))}</ContextDrawer>}</>:page
 }
 
 export function GroupForm({group,rules,close,save,people,profileName,error}:{people:ReturnType<typeof rolePeople>;profileName:string;error:string|undefined;group:CollaborationGroup|undefined;rules:GroupRules;close:()=>void;save:(value:{name:string;scope:CollaborationScope;announcement:string;memberIds:string[];rules:GroupRules})=>void}){

@@ -26,6 +26,11 @@ test('备份校验读取所有摘要，坏摘要及未知数据版本拒绝',asy
  await writeFile(join(other.root,'backup-manifest.json'),JSON.stringify(other.manifest))
  await assert.rejects(api.verifyBackup(other.root),/版本/)
 })
+test('真实数据版本 2 的备份清单可校验，不把编辑后的记忆标成旧数据 1',async()=>{
+ const {root,manifest}=await fixture();manifest.dataVersion=2
+ await writeFile(join(root,'backup-manifest.json'),JSON.stringify(manifest),{mode:0o600})
+ assert.equal((await api.verifyBackup(root)).dataVersion,2)
+})
 test('拒绝备份路径穿越、软链接、未列入清单的文件与重复路径',async()=>{
  for(const path of ['../escape','/absolute','dsh/../escape','dsh\\escape']){
   const {root,manifest}=await fixture();manifest.files[0]!.path=path

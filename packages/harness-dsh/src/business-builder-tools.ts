@@ -8,9 +8,10 @@ import {authorizeOrdinaryConversationMutation} from './conversation-mutation.ts'
 import {readConversationInstructionIdentity,type ConversationInstructionIdentity} from './conversation-instruction-identity.ts'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 
-export const businessBuilderToolNames=['teloa_business_builder_read','teloa_business_builder_revise','teloa_business_builder_upgrade'] as const
+export const businessBuilderToolNames=['teloa_business_builder_read','teloa_business_builder_revise','teloa_business_builder_upgrade','teloa_business_builder_plan_revise'] as const
 export type BusinessBuilderToolsPorts={
  owner:string
+ setupPlan?:{read:(draftId:string)=>Promise<unknown>;revise:(input:{requestId:string;draftId:string;expectedRevision:number;package:unknown;roleEdits:unknown[]})=>Promise<unknown>}
  conversation:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:'pending'|'ready'}>
  readTaskPolicy:TaskToolPolicyReader
  isRoleConversation:(sessionId:string)=>Promise<boolean>
@@ -129,16 +130,34 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
   return {draft,fingerprint:JSON.stringify([ports.owner,auth.sessionId,binding.requestId,binding.draftId,binding.scope??null,binding.workspaceId??null,binding.title,binding.createdAt,draft.scope,draft.candidate.sources,draft.candidate.format])}
  }
  const authorize=async(exec:Pick<ToolExecution,'agent'|'signal'>)=>({...await authorizeContext(exec),instruction:readConversationInstructionIdentity(exec.agent!)})
+ const planInput=(value:unknown)=>{
+  const r=taskInput(value,['draftId','expectedRevision','patchJson'])
+  if(typeof r.draftId!=='string'||!uuid.test(r.draftId)||!Number.isSafeInteger(r.expectedRevision)||Number(r.expectedRevision)<0||typeof r.patchJson!=='string'||Buffer.byteLength(r.patchJson,'utf8')>2097152)throw invalid()
+  let raw:unknown;try{raw=JSON.parse(r.patchJson)}catch{throw invalid()}
+  const patch=taskInput(raw,['package','roleEdits']);if(!Array.isArray(patch.roleEdits))throw invalid()
+  return {draftId:r.draftId,expectedRevision:Number(r.expectedRevision),package:patch.package,roleEdits:patch.roleEdits}
+ }
  const definitions:ReadonlyArray<{name:typeof businessBuilderToolNames[number];description:string;parameters:ParameterSchemaSpec}>=[
   {name:businessBuilderToolNames[0],description:'仅在已绑定的本人业务搭建会话读取当前草案与能力规则。普通会话没有搭建草案时，请引导本人在“业务”页点击“新建业务”，进入搭建会话继续描述；已有草案则打开原搭建会话，不猜范围或草案格式，不以 teloa_create_draft 替代。{} 或 cursor 按32条读取定义目录；definition:{kind,localId} 读一条定义；pageId 读一页配置，三类互斥。不返回业务记录或凭据。修订或结果未知时先读取当前 revision/hash。',parameters:{cursor:{type:'integer'},definition:{type:'object',additionalProperties:false,properties:{kind:{type:'string',enum:[...businessConfigurationDefinitionKinds],required:true},localId:{type:'string',required:true}}},pageId:{type:'string'}}},
   {name:businessBuilderToolNames[1],description:'经本人一次原生确认，整组修订当前业务草案；不采用、启用或交办。先 read 核对原 scope/sources/revision 与 capabilities.patchProtocol 合法完整示例。优先 patchJson：JSON.stringify(patch) 生成的字符串；与旧对象 patch 恰一，不用 item 包装、不猜字段、不转换布尔字符串。整组支持 title/homePageId/upsertDefinitions/removeDefinitions/upsertPages/removePageIds/pageOrder，不能更换范围或来源。返回 revision/hash 才是保存成功；未知先 read，沿原指令回执核对。',parameters:{draftId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},patchJson:{type:'string',description:'完整 JSON 对象的字符串，UTF-8 不超过 2097152 字节；按 read 的 patchProtocol.exampleJson 构造实际 patch，保留原范围/来源和已有配置。与 patch 恰一。'},patch:{type:'object',additionalProperties:true,description:'兼容旧调用的对象 patch；不能与 patchJson 同时提供，数组/布尔必须是原生 JSON 类型。'}}},
   {name:businessBuilderToolNames[2],description:'经本人一次原生确认，为当前旧版搭建草案增加金额、多选支持。先 read 核对 draftId/revision，再升级，成功后再次 read 读取新版能力再 revise。只升级同一份草案，不改现有记录，不保存或运行业务。不能选择其他范围、会话、身份或目标格式；已经支持时无需升级。回包未知先 read，同原指令与旧 revision 只能核对原请求回执。',parameters:{draftId:{type:'string',required:true},expectedRevision:{type:'integer',required:true}}},
+  {name:businessBuilderToolNames[3],description:'在原业务搭建草案上保存完整方案候选，不采用、不授权、不创建运行实例。先用read核对setupPlan和原草案scope、sources及configuration format；旧版先upgrade再修订配置。patchJson包含package:{manifestPath,files:[{path,text}]}及roleEdits数组。包清单使用teloa.business-package/v4，scope必须为原草案scope；员工用teloa.role/v1，分工用现有work-template及role-work，连接必须用真实声明，计划用teloa.plan/v1并指向唯一员工和真实workTemplate。宿主自动附加原草案的记录/看板配置，无需复制configuration资源。所有正文仅静态保存；不要填凭据、账号或样例员工。现有员工职责仅可用真实目录roleId、expectedVersion、duty和完整responsibility，不改scope、技能或权限。expectedRevision使用setupPlan当前版本；没有方案时为0。',parameters:{draftId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},patchJson:{type:'string',required:true}}},
  ] as const
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
   try{
    const fixed=authorized.get(exec),current=await authorize(exec)
    if(!fixed||fixed.fingerprint!==current.fingerprint||JSON.stringify(fixed.instruction)!==JSON.stringify(current.instruction))throw new WorkError('teloa/conflict','审批期间本人指令或草案绑定已变化，请重新读取后发起。')
-   if(definition.name===businessBuilderToolNames[0])return read(current.draft,query(args))
+   if(definition.name===businessBuilderToolNames[0]){
+    const result=JSON.parse(read(current.draft,query(args)))
+    if(ports.setupPlan)result.setupPlan=await ports.setupPlan.read(current.draft.id)
+    return encoded(result)
+   }
+   if(definition.name===businessBuilderToolNames[3]){
+    if(!ports.setupPlan)throw new WorkError('teloa/dependency-unavailable','完整业务方案服务尚未连接。')
+    const input=planInput(args);if(input.draftId!==current.draft.id)throw new WorkError('teloa/forbidden','不能修改另一份业务方案。')
+    const h=createHash('sha256').update(JSON.stringify(['business-setup-plan-revise',ports.owner,fixed.instruction,input.draftId,input.expectedRevision])).digest('hex'),requestId=`${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`
+    return encoded(await ports.setupPlan.revise({...input,requestId}))
+   }
    if(definition.name===businessBuilderToolNames[2]){
     if(fixed.upgradeState!==upgradeState(current.draft))throw new WorkError('teloa/version-conflict','审批期间业务草案版本已变化，请重新读取后升级。')
     const input=upgradeInput(args,current.draft),result=upgradeReceipt(await ports.upgradeFormat({...input,requestId:upgradeRequestId(ports.owner,fixed.instruction,input.draftId,input.expectedRevision)}),current.draft,input.expectedRevision)
@@ -157,6 +176,7 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
   try{
    current=await authorize(exec)
    if(exec.name===businessBuilderToolNames[0])query(exec.arguments)
+   else if(exec.name===businessBuilderToolNames[3]){const input=planInput(exec.arguments);if(input.draftId!==current.draft.id||!ports.setupPlan)throw new WorkError('teloa/forbidden','原业务方案尚未绑定。')}
    else if(exec.name===businessBuilderToolNames[2])upgrade=upgradeInput(exec.arguments,current.draft)
    else{
     const raw=mutationInput(exec.arguments)
@@ -173,6 +193,7 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
   const decision=await next()
   if(decision.kind==='deny'||decision.kind==='cancel')return decision
   if(upgrade)return {kind:'ask' as const,reason:(decision.kind==='ask'&&decision.reason?decision.reason+'\n':'')+'为这份草案增加金额、多选支持；现有记录不会改变，保存业务前仍需预览。确认继续？'}
+  if(exec.name===businessBuilderToolNames[3])return {kind:'ask' as const,reason:'保存当前完整业务方案草案，包含员工、工作分工、连接声明及暂停计划；不会采用、授予权限或启动运行。确认保存？'}
   if(!input)return decision
   const p=input.patch,summary={title:p.title,homePageId:p.homePageId,upsertDefinitions:p.upsertDefinitions?.map(d=>({kind:d.kind,id:d.definition.id,title:d.definition.title})),removeDefinitions:p.removeDefinitions,upsertPages:p.upsertPages?.map(d=>({id:d.id,title:d.title})),removePageIds:p.removePageIds,pageOrder:p.pageOrder}
   return {kind:'ask' as const,reason:(decision.kind==='ask'&&decision.reason?decision.reason+'\n':'')+'确认修订业务“'+current.draft.candidate.title+'”的整组草案（原版本 '+input.expectedRevision+'）？变更：'+JSON.stringify(summary)+'。只保存草案，需在预览页另行保存业务，不会启动运行。'}
@@ -181,7 +202,7 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
   const decision=await next();if(decision.kind==='reject'||!decision.messages.some(message=>message.source.kind==='user'))return decision
   let current:Awaited<ReturnType<typeof authorizeContext>>
   try{current=await authorizeContext({agent,signal})}catch(error){if(error instanceof WorkError&&['teloa/not-bound','teloa/not-found','teloa/forbidden'].includes(error.code))return decision;throw error}
-  const notice=createUserMessage({source:{kind:source,form:'notice',summary:'当前业务搭建草案'},content:[{type:'text',text:'当前是本人已绑定的业务搭建会话，正在搭建业务“'+current.draft.candidate.title+'”。宿主已生成草案及业务标识，用户只需中文描述目标和字段；不要要求用户填写或选择范围键、UUID、版本或来源ID，也不要另建业务。capabilities中的general与draft-only仅描述会话许可和保存状态，不改变当前搭建身份。先用 teloa_business_builder_read 取得当前草案的scope、sources、revision、能力及patchProtocol合法示例，沿用它们，再用 teloa_business_builder_revise 的patchJson字符串整组保存可预览草案；此处不使用业务definitions独立草案或teloa_create_draft替代原草案。旧版需要金额、多选关联或唯一约束时先用 teloa_business_builder_upgrade 升级，升级后再次用 teloa_business_builder_read 读取新版能力，再 revise。v2的multi-reference保存真实目标ID数组，uniqueFields逐字段独立唯一；目标标题与状态从记录list/get读取，预查不能保证事务唯一。v2 类型化统计须依能力表生成，旧 SQL 不支持富字段；现有看板必须完整保留，不删页绕限制。保存草案不采用、启用或交办；自然语言回答不等于已保存，采用仍由本人在预览页执行。最终只展示业务名称、可理解状态和下一步，技术身份仅供工具内部。当前草案：'+JSON.stringify({draftId:current.draft.id,revision:current.draft.revision})}]})
+  const notice=createUserMessage({source:{kind:source,form:'notice',summary:'当前业务搭建草案'},content:[{type:'text',text:'当前是本人已绑定的业务搭建会话，正在搭建业务“'+current.draft.candidate.title+'”。宿主已生成草案及业务标识，用户只需中文描述目标和字段；不要要求用户填写或选择范围键、UUID、版本或来源ID，也不要另建业务。capabilities中的general与draft-only仅描述会话许可和保存状态，不改变当前搭建身份。先用 teloa_business_builder_read 取得当前草案的scope、sources、revision、能力及patchProtocol合法示例，沿用它们，再用 teloa_business_builder_revise 的patchJson字符串整组保存可预览草案；此处不使用业务definitions独立草案或teloa_create_draft替代原草案。旧版需要金额、多选关联或唯一约束时先用 teloa_business_builder_upgrade 升级，升级后再次用 teloa_business_builder_read 读取新版能力，再 revise。v2的multi-reference保存真实目标ID数组，uniqueFields逐字段独立唯一；目标标题与状态从记录list/get读取，预查不能保证事务唯一。v2 类型化统计须依能力表生成，旧 SQL 不支持富字段；现有看板必须完整保留，不删页绕限制。保存草案不采用、启用或交办；自然语言回答不等于已保存，采用仍由本人在预览页执行。完整方案还需用 teloa_business_builder_plan_revise 保存员工、work-template分工、真实连接及暂停计划，先读setupPlan的当前版本和真实员工目录；原配置v2由宿主附加，不另建scope。不要把静态步骤称为自动执行流水线。最终只展示业务名称、可理解状态和下一步，技术身份仅供工具内部。当前草案：'+JSON.stringify({draftId:current.draft.id,revision:current.draft.revision})}]})
   return {...decision,messages:[...decision.messages,notice]}
  })
  return ()=>{removeGuard();removeContext()}

@@ -9,13 +9,14 @@ import * as module from '../src/client/business-builder-flow.ts'
 const stamp='2026-09-29T00:00:00.000Z',hash='a'.repeat(64)
 function deferred<T>(){let resolve!:(v:T)=>void,reject!:(e:Error)=>void;const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject}}
 function fixture(){
- let saved:string|null=null
- const storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>={getItem:()=>saved,setItem:(_k:string,v:string)=>{saved=v},removeItem:()=>{saved=null}}
+ let saved:string|null=null,setupSaved:string|null=null;const editorRows=new Map<string,string>()
+ const storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>={getItem:key=>key.includes('/setup-editor/')?editorRows.get(key)??null:key.endsWith('/setup-apply')?setupSaved:saved,setItem:(key:string,v:string)=>{if(key.includes('/setup-editor/'))editorRows.set(key,v);else if(key.endsWith('/setup-apply'))setupSaved=v;else saved=v},removeItem:key=>{if(key.includes('/setup-editor/'))editorRows.delete(key);else if(key.endsWith('/setup-apply'))setupSaved=null;else saved=null}}
  const bindings=new Map<string,BusinessConversationBinding>(),conversations=new Map<string,Conversation>(),drafts=new Map<string,BusinessConfigurationDraftResponse>(),receipts=new Map<string,BusinessConfigurationApplyResult>()
  const calls:string[]=[],writes:unknown[]=[],opened:string[]=[],input:InputState={draft:'',draftRev:0,phase:'plain',attachmentIds:[],occurrences:[],queue:[]}
  let main:string|undefined,scopes=0,fail:string|undefined
  const call=async(endpoint:string,value:unknown,_signal?:AbortSignal):Promise<unknown>=>{
   const r=value as Record<string,any>;calls.push(endpoint)
+  if(endpoint==='business-setup-plan/read')return null
   if(fail===endpoint){fail=undefined;throw Error('lost')}
   if(endpoint==='business-conversations/reserve'){
    writes.push(value)
@@ -28,6 +29,11 @@ function fixture(){
   if(endpoint==='business-conversations/bind'){const b={...bindings.get(r.requestId)!,sessionId:r.sessionId};bindings.set(b.requestId,b);return b}
   if(endpoint==='business-conversations/list')return {items:[...bindings.values()].map(binding=>{const d=drafts.get(binding.draftId!)!;return {binding,draft:{id:d.id,title:d.candidate.title,scope:d.scope,revision:d.revision,status:d.status,updatedAt:d.updatedAt}}})}
   if(endpoint==='business-configuration/draft')return drafts.get(r.draftId)!
+  if(endpoint==='business-configuration/discard'){
+   const current=drafts.get(r.draftId)!
+   const discarded={...current,status:'discarded' as const,revision:r.expectedRevision+1}
+   drafts.set(discarded.id,discarded);return discarded
+  }
   if(endpoint==='business-configuration/preview'){const d=drafts.get(r.draftId)!;return {draftId:d.id,revision:r.expectedRevision,candidateHash:d.hash,baseVersion:d.baseVersion,dependencyHash:hash,receipt:hash,changes:{rows:[],truncated:false},issues:[]}}
   if(endpoint==='business-configuration/receipt')return receipts.get(r.requestId)??null
   if(endpoint==='business-configuration/apply'){
@@ -43,9 +49,27 @@ function fixture(){
   let c=conversations.get(r.requestId);if(!c){c={id:'work',ownerId:'owner',title:r.title??'默认',version:1,status:'ready',sessionId:'session-'+conversations.size,requestedSessionId:'session-'+conversations.size,requestId:r.requestId,scopeIds:['general'],createdAt:stamp,...(r.workspaceId?{requestedWorkspaceId:r.workspaceId}:{})};conversations.set(r.requestId,c)}return c
  }}
  const switching:module.BusinessBuilderSwitchPort={read:()=>({mainSessionId:main,bindingSessionId:main,bindingReady:true,input,pendingSubmissions:[],monitor:{getSnapshot:()=>false,check:async()=>{}}})}
- const make=()=>new module.BusinessBuilderFlow({api,work:new BindingClient(port),storage,journalKey:'owner/builder',id:randomUUID,refreshScopes:async()=>{scopes++;calls.push('scopes')},switching})
+ const make=(journalKey='owner/builder')=>new module.BusinessBuilderFlow({api,work:new BindingClient(port),storage,journalKey,id:randomUUID,refreshScopes:async()=>{scopes++;calls.push('scopes')},switching})
  return {make,api,storage,bindings,drafts,receipts,calls,writes,opened,port,conversations,input,switching,setRoute:(f:typeof route)=>route=f,baseCall:call,setFail:(v:string)=>fail=v,scopes:()=>scopes,journal:()=>saved}
 }
+test('离开草案有三种明确结果，保留不新建会话，继续不导航',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({})
+ const draftId=flow.getSnapshot().draft!.id,writes=f.writes.length
+ const stay=flow.requestLeave();assert.equal(flow.getSnapshot().leaveConfirmation,true);flow.decideLeave('continue');assert.equal(await stay,false)
+ const keep=flow.requestLeave();flow.decideLeave('keep');assert.equal(await keep,true);assert.equal(flow.getSnapshot().draft!.id,draftId);assert.equal(f.writes.length,writes)
+})
+test('等待离开确认时宿主退役或草案revision改变会结算false，旧决定不能导航新绑定',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({})
+ const pending=flow.requestLeave();flow.leave();assert.equal(await pending,false);assert.equal(flow.getSnapshot().leaveConfirmation,false)
+ await flow.restoreSession(flow.getSnapshot().binding!.sessionId!)
+ const second=flow.requestLeave(),old=flow.getSnapshot().draft!;f.drafts.set(old.id,{...old,revision:old.revision+1,hash:'b'.repeat(64)});await flow.refreshDraft()
+ assert.equal(await second,false);flow.decideLeave('keep');assert.equal(flow.getSnapshot().leaveConfirmation,false)
+})
+test('离开时明确放弃沿固定revision完成才允许导航，不被自身退役回执当成换草案取消',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({});const snapshot=flow.getSnapshot(),pending=flow.requestLeave()
+ await flow.discard(snapshot.binding!,snapshot.draft!)
+ assert.equal(await pending,true);assert.equal(flow.getSnapshot().draft!.status,'discarded');assert.equal(flow.getSnapshot().leaveConfirmation,false)
+})
 test('预约前持久固定意图，create/bind断点完整刷新后复用唯一原生会话且绑定前不开',async()=>{
  const f=fixture(),first=f.make();f.setFail('business-conversations/bind')
  await assert.rejects(first.start({workspaceId:'workspace'}),/lost/)
@@ -316,4 +340,151 @@ test('R1 明确就绪且无会话作用域的null输入可首次建业务，unde
   assert.notEqual(await module.checkBusinessBuilderSwitch(g.switching,true),'ready')
   await assert.rejects(g.make().start({allowDraft:true}),{code:'teloa/conflict'});assert.equal(g.calls.length,0)
  }
+})
+
+test('放弃草案只移除原目录项，失回执可按同修订重试，迟答不覆盖另一草案',async()=>{
+ const f=fixture(),flow=f.make(),binding=await flow.start()
+ await flow.restoreSession(binding.sessionId!);await flow.refreshDirectory()
+ const draft=flow.getSnapshot().draft!
+ const hold=deferred<unknown>()
+ f.setRoute((endpoint,input,signal)=>endpoint==='business-configuration/discard'?hold.promise:f.baseCall(endpoint,input,signal))
+ const operation=flow.discard(binding,draft)
+ const other={...binding,requestId:randomUUID(),draftId:randomUUID(),sessionId:'another-session'}
+ const next={...draft,id:other.draftId!,candidate:{...draft.candidate,title:'另一草案'}}
+ f.bindings.set(other.requestId,other);f.drafts.set(next.id,next)
+ await flow.restoreSession(other.sessionId!)
+ hold.resolve({...draft,status:'discarded',revision:draft.revision+1})
+ await operation
+ assert.equal(flow.getSnapshot().draft?.id,next.id)
+ assert.equal(flow.getSnapshot().directory?.items.some(item=>item.binding.requestId===binding.requestId),false)
+ assert.equal(f.calls.filter(call=>call==='business-configuration/apply').length,0)
+ const retry=f.make();await retry.restoreSession(binding.sessionId!)
+ f.setRoute(f.baseCall)
+ f.setFail('business-configuration/discard')
+ await assert.rejects(retry.discard(binding,draft),/lost/)
+ assert.equal((await retry.discard(binding,draft)).status,'discarded')
+})
+
+test('保存结果未知时不能放弃，必须保留原采用意图',async()=>{
+ const f=fixture(),flow=f.make(),binding=await flow.start()
+ await flow.restoreSession(binding.sessionId!);await flow.preview()
+ const draft=flow.getSnapshot().draft!
+ f.setFail('business-configuration/apply')
+ await assert.rejects(flow.save(),/lost/)
+ await assert.rejects(flow.discard(binding,draft),/核对原保存结果/)
+ assert.equal(f.calls.includes('business-configuration/discard'),false)
+})
+
+test('同一草案已收到采用回执时，拒绝陈旧目录修订的放弃操作',async()=>{
+ const f=fixture(),flow=f.make(),binding=await flow.start()
+ await flow.restoreSession(binding.sessionId!);await flow.preview()
+ const original=flow.getSnapshot().draft!
+ await flow.save()
+ await assert.rejects(flow.discard(binding,original),/已采用/)
+ assert.equal(f.calls.includes('business-configuration/discard'),false)
+})
+
+test('放弃回执与首次目录读取交错时仍显示其他草案，并过滤已退役项',async()=>{
+ const f=fixture(),flow=f.make(),a=await flow.start(),draft=flow.getSnapshot().draft!
+ const b=await flow.start({title:'另一业务'})
+ const discard=deferred<unknown>(),list=deferred<unknown>()
+ const directory=await f.baseCall('business-conversations/list',{})
+ f.setRoute((e,r,s)=>e==='business-configuration/discard'?discard.promise:e==='business-conversations/list'?list.promise:f.baseCall(e,r,s))
+ const retired=flow.discard(a,draft),reading=flow.refreshDirectory()
+ discard.resolve({...draft,status:'discarded',revision:draft.revision+1});await retired
+ list.resolve(directory);await reading
+ assert.deepEqual(flow.getSnapshot().directory?.items.map(i=>i.binding.requestId),[b.requestId])
+})
+
+test('切出再返回同一草案后旧放弃回执只更新目录，不改变新展示周期',async()=>{
+ const f=fixture(),flow=f.make(),a=await flow.start(),draft=flow.getSnapshot().draft!
+ const b=await flow.start({title:'另一业务'});await flow.restoreSession(a.sessionId!)
+ const gate=deferred<unknown>();f.setRoute((e,r,s)=>e==='business-configuration/discard'?gate.promise:f.baseCall(e,r,s))
+ const retiring=flow.discard(a,draft)
+ await flow.restoreSession(b.sessionId!);await flow.restoreSession(a.sessionId!)
+ const current=flow.getSnapshot().draft
+ gate.resolve({...draft,status:'discarded',revision:draft.revision+1});await retiring
+ assert.equal(flow.getSnapshot().draft,current)
+ assert.equal(flow.getSnapshot().discardedDraft,undefined)
+})
+
+test('尚未绑定会话的预约可按原请求放弃，并清除该预约的本地恢复意图',async()=>{
+ const f=fixture(),flow=f.make()
+ // 模拟原生创建失败，业务预约及固定请求仍存在。
+ f.setRoute((e,r,s)=>{if(e==='business-conversations/bind')throw Error('native bind unavailable');return f.baseCall(e,r,s)})
+ await assert.rejects(flow.start(),/unavailable/)
+ const binding=[...f.bindings.values()][0]!,draft=f.drafts.get(binding.draftId!)!
+ f.setRoute(f.baseCall)
+ assert.equal(binding.sessionId,undefined)
+ assert.equal((await flow.discard(binding,draft)).status,'discarded')
+ assert.equal(flow.pendingCreation(),null)
+})
+
+test('手动输入独立持久恢复，固定原revision与来源；额度失败保留内存输入，换本人和草案隔离',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({})
+ const draft=flow.getSnapshot().draft!,snapshot={draftId:draft.id,revision:0,configurationRevision:draft.revision,configurationHash:draft.hash,candidate:{...draft.candidate,format:'teloa.business-configuration/v2' as const,definitions:[]},description:'原说明',roleEdits:[],employees:[]}
+ const value={snapshot,edit:{candidate:{...snapshot.candidate,title:''},description:'尚未保存的输入',roleEdits:[]}}
+ flow.writeManualInput(value)
+ assert.equal(flow.pendingCreation(),null);assert.equal(flow.pendingSave(),null)
+ const restored=f.make();await restored.restoreSession(flow.getSnapshot().binding!.sessionId!)
+ assert.deepEqual(restored.readManualInput(snapshot),value)
+ const other=f.make('other/builder');await other.restoreSession(flow.getSnapshot().binding!.sessionId!)
+ assert.equal(other.readManualInput(snapshot),null)
+ const original=f.storage.setItem;f.storage.setItem=()=>{throw Error('quota')}
+ value.edit.description='额度失败仍保留当前输入';assert.throws(()=>flow.writeManualInput(value),/quota/);assert.equal(value.edit.description,'额度失败仍保留当前输入')
+ f.storage.setItem=original
+ await flow.start({});assert.throws(()=>flow.writeManualInput(value),{code:'teloa/conflict'})
+})
+test('完整方案采用失回包刷新后按原journal读回执，不重发新采用请求',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({})
+ const draft=flow.getSnapshot().draft!,contentId=randomUUID();let adoption:any=null,plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0
+ f.setRoute(async(endpoint,input)=>{const r=input as any
+  if(endpoint==='business-setup-plan/read')return plan
+  if(endpoint==='business-setup-plan/preview'){plan={...plan,revision:plan.revision+1};return {draftId:draft.id,revision:plan.revision,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:0,changes:[],rejected:[],blocked:false}}
+  if(endpoint==='business-setup-plan/apply'){applications++;adoption={requestId:r.requestId,configuration:{requestId:r.requestId,scope:draft.scope,version:1,configurationHash:hash},contentId,contentHash:hash,roleIds:[],steps:[]};plan={...plan,state:'applied',adoption};throw Error('lost after commit')}
+  if(endpoint==='business-setup-plan/receipt'){assert.equal(r.requestId,adoption.requestId);return adoption}
+  return f.baseCall(endpoint,input)
+ })
+ await flow.refreshSetupPlan();await flow.previewSetup([])
+ await assert.rejects(flow.adoptSetup(),/lost after commit/);const intent=flow.pendingSetupSave()!;assert.ok(intent)
+ const restored=f.make();await restored.restoreSession(flow.getSnapshot().binding!.sessionId!)
+ const result=await restored.adoptSetup(true);assert.equal(result.requestId,intent.input.requestId);assert.equal(applications,1);assert.equal(restored.pendingSetupSave(),null)
+})
+
+test('采用确定成功但展示读取失败时保留原journal，可核回执恢复且不重复采用',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({});const draft=flow.getSnapshot().draft!,contentId=randomUUID()
+ let adoption:any=null,plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0,failRead=false,receiptReads=0
+ f.setRoute(async(endpoint,input)=>{const r=input as any
+  if(endpoint==='business-setup-plan/read'){if(failRead){failRead=false;throw Error('display unavailable')};return plan}
+  if(endpoint==='business-setup-plan/preview'){plan={...plan,revision:plan.revision+1};return {draftId:draft.id,revision:plan.revision,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:0,changes:[],rejected:[],blocked:false}}
+  if(endpoint==='business-setup-plan/apply'){applications++;adoption={requestId:r.requestId,configuration:{requestId:r.requestId,scope:draft.scope,version:1,configurationHash:hash},contentId,contentHash:hash,roleIds:[],steps:[]};plan={...plan,state:'applied',adoption};failRead=true;return adoption}
+  if(endpoint==='business-setup-plan/receipt'){receiptReads++;return adoption}
+  return f.baseCall(endpoint,input)
+ })
+ await flow.refreshSetupPlan();await flow.previewSetup([]);await assert.rejects(flow.adoptSetup(),/display unavailable/)
+ assert.ok(flow.pendingSetupSave(),'已成功但展示未完成时仍可沿原请求核对')
+ await flow.adoptSetup(true);assert.equal(applications,1);assert.equal(receiptReads,1);assert.equal(flow.getSnapshot().phase,'saved');assert.equal(flow.pendingSetupSave(),null)
+})
+
+test('方案采用journal严格拒绝损坏JSON、未知键、无效版本和身份，原日志不删且不apply',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({});const draft=flow.getSnapshot().draft!,valid={scope:draft.scope,input:{requestId:randomUUID(),draftId:draft.id,sessionId:flow.getSnapshot().binding!.sessionId!,expectedRevision:1,expectedDigest:hash,previewReceipt:hash}},key='owner/builder/setup-apply'
+ for(const value of ['{broken',{...valid,ownerId:'other'},{...valid,input:{...valid.input,extra:true}},{...valid,input:{...valid.input,expectedRevision:0}},{...valid,input:{...valid.input,previewReceipt:'invalid'}},{...valid,input:{...valid.input,draftId:'arbitrary'}}]){
+  const raw=typeof value==='string'?value:JSON.stringify(value);f.storage.setItem(key,raw)
+  assert.throws(()=>flow.pendingSetupSave(),{code:'teloa/conflict'});await assert.rejects(flow.adoptSetup(true),{code:'teloa/conflict'});assert.equal(f.storage.getItem(key),raw)
+ }
+ assert.equal(f.calls.includes('business-setup-plan/apply'),false)
+})
+
+test('完整方案固定凭证明确过期且无成功回执时只更新预览，须本人再次采用',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({});const draft=flow.getSnapshot().draft!,requestId=randomUUID()
+ let plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId:randomUUID(),contentHash:hash,title:'方案',description:'方案说明',resources:[],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0
+ f.setRoute(async(endpoint,input)=>{if(endpoint==='business-setup-plan/read')return plan
+  if(endpoint==='business-setup-plan/receipt')return null
+  if(endpoint==='business-setup-plan/apply'){applications++;throw Object.assign(Error('expired'),{code:'teloa/conflict',details:{reason:'preview-receipt-invalid'}})}
+  if(endpoint==='business-setup-plan/preview'){plan={...plan,revision:2};return {draftId:draft.id,revision:2,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:0,changes:[],rejected:[],blocked:false}}
+  return f.baseCall(endpoint,input)
+ })
+ await flow.refreshSetupPlan();f.storage.setItem('owner/builder/setup-apply',JSON.stringify({scope:draft.scope,input:{requestId,draftId:draft.id,sessionId:flow.getSnapshot().binding!.sessionId!,expectedRevision:1,expectedDigest:hash,previewReceipt:hash}}))
+ await assert.rejects(flow.adoptSetup(true),{code:'teloa/conflict',details:{reason:'preview-review-required'}})
+ assert.equal(applications,1);assert.equal(flow.getSnapshot().setupPreview!.revision,2);assert.equal(flow.getSnapshot().setupUnknown,false);assert.equal(flow.pendingSetupSave(),null)
 })

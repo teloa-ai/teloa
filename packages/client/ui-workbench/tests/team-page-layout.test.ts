@@ -137,7 +137,7 @@ test('非嵌入且已选中：右抽屉显示原身份并保留目录', () => {
   assert.doesNotMatch(markup, /aria-controls="staff-roster-/)
   assert.match(markup, /data-teloa-entry=/)
   assert.match(markup, /<h1>员工<\/h1>/)
-  assert.match(markup, /<dialog[^>]*class="drawer"/)
+  assert.match(markup, /<dialog[^>]*class="drawer compact profileDrawer"/)
   assert.match(markup, new RegExp(zh('team.detail.back')))
 })
 

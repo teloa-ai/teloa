@@ -243,7 +243,10 @@ export class IndustryLoadService{
   if(!row||!['pending-adapter','skipped'].includes(row.status))throw corrupt()
   return row.status as IndustryLoadStoredStatus
  }
- async create(ownerId:string,value:unknown):Promise<IndustryLoadRecord>{
+ async create(ownerId:string,value:unknown):Promise<IndustryLoadRecord>{return this.createWithConfiguration(ownerId,value)}
+ /** 仅宿主可用的受管配置资源加载；公共 create 不接受此绑定。 */
+ async createForConfiguration(ownerId:string,value:unknown,configuration:{scope:string;version:number;hash:string}):Promise<IndustryLoadRecord>{return this.createWithConfiguration(ownerId,value,configuration)}
+ private async createWithConfiguration(ownerId:string,value:unknown,configuration?:{scope:string;version:number;hash:string}):Promise<IndustryLoadRecord>{
   const data=input(ownerId,value)
   const initialReceipt=(await this.pool.query('select *,request_spec=$3::jsonb as same_request from teloa_industry_load_requests where owner_id=$1 and request_id=$2',[ownerId,data.requestId,JSON.stringify(data.spec)])).rows[0]
   if(initialReceipt){
@@ -263,10 +266,10 @@ export class IndustryLoadService{
     let result:IndustryLoadRecord
     try{result=await this.read(db,ownerId,receipt.load_id)}catch{throw corrupt()}
     if(result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
-    if(result.contentId!==data.contentId)result=await this.repairReceipt(db,ownerId,data,snapshot,now,result)
+    if(result.contentId!==data.contentId)result=await this.repairReceipt(db,ownerId,data,snapshot,now,result,configuration)
     await db.query('commit');return result
    }
-   const loadId=await this.insert(db,ownerId,data,snapshot,now,{duplicate:'reuse'})
+   const loadId=await this.insert(db,ownerId,data,snapshot,now,{duplicate:'reuse',...(configuration?{configuration}:{})})
    await db.query('insert into teloa_industry_load_requests values($1,$2,$3,$4)',[ownerId,data.requestId,JSON.stringify(data.spec),loadId])
    const result=await this.read(db,ownerId,loadId)
    if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
@@ -274,13 +277,13 @@ export class IndustryLoadService{
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  /** 只纠正旧 hash 去重造成的 contentId 误绑定：原请求、旧加载及其成果保留，写入仍走原配置锁、权限和空间版本闸。 */
- private async repairReceipt(db:PoolClient,ownerId:string,data:Input,snapshot:ResolvedIndustryLoadSourceSnapshot,now:string,previous:IndustryLoadRecord):Promise<IndustryLoadRecord>{
-  await this.lockConfiguration(db,ownerId,snapshot.scope)
+ private async repairReceipt(db:PoolClient,ownerId:string,data:Input,snapshot:ResolvedIndustryLoadSourceSnapshot,now:string,previous:IndustryLoadRecord,configuration?:{scope:string;version:number;hash:string}):Promise<IndustryLoadRecord>{
+  if(configuration)await lockBusinessConfiguration(db,ownerId,snapshot.scope);else await this.lockConfiguration(db,ownerId,snapshot.scope)
   const original=(await db.query('select source_snapshot from teloa_industry_loads where id=$1 and owner_id=$2 for update',[previous.id,ownerId])).rows[0]
   const current=await this.read(db,ownerId,previous.id)
   if(!original||current.contentId===data.contentId||current.contentHash!==data.contentHash||current.space.id!==data.target.spaceId||current.status!=='active'||current.upgrade||!same(sourceSnapshot(original.source_snapshot),snapshot))throw corrupt()
   if((await db.query('select 1 from teloa_industry_load_request_repairs where owner_id=$1 and request_id=$2',[ownerId,data.requestId])).rowCount)throw corrupt()
-  const loadId=await this.insert(db,ownerId,data,snapshot,now,{duplicate:'reuse'}),result=await this.read(db,ownerId,loadId)
+  const loadId=await this.insert(db,ownerId,data,snapshot,now,{duplicate:'reuse',...(configuration?{configuration}:{})}),result=await this.read(db,ownerId,loadId)
   if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
   await db.query('insert into teloa_industry_load_request_repairs values($1,$2,$3,$4,$5,$6)',[ownerId,data.requestId,previous.id,loadId,JSON.stringify(data.spec),now])
   await db.query('update teloa_industry_load_requests set load_id=$3 where owner_id=$1 and request_id=$2',[ownerId,data.requestId,loadId])
@@ -296,8 +299,14 @@ export class IndustryLoadService{
   * 调用方须已在写事务内并已完成回执复放，回执由调用方按各自的回执表写。
   * 同空间同固定内容身份与摘要已有加载时，`reuse` 直接复用，`reject` 拒绝（升级不能把已在场的版本当作继任）。
   */
- private async insert(db:PoolClient,ownerId:string,data:Pick<Input,'contentId'|'contentHash'|'target'>,snapshot:ResolvedIndustryLoadSourceSnapshot,now:string,options:{duplicate:'reuse'|'reject';supersedes?:string;carriedFrom?:ReadonlyMap<string,string>}):Promise<string>{
-  await this.lockConfiguration(db,ownerId,snapshot.scope)
+ private async insert(db:PoolClient,ownerId:string,data:Pick<Input,'contentId'|'contentHash'|'target'>,snapshot:ResolvedIndustryLoadSourceSnapshot,now:string,options:{duplicate:'reuse'|'reject';supersedes?:string;carriedFrom?:ReadonlyMap<string,string>;configuration?:{scope:string;version:number;hash:string}}):Promise<string>{
+  if(options.configuration){
+   const expected=options.configuration
+   await lockBusinessConfiguration(db,ownerId,snapshot.scope)
+   const current=await new BusinessConfigurationStore(this.pool).currentInTransaction(db,ownerId,snapshot.scope)
+   const target=(await db.query('select space_id from teloa_business_scopes where owner_id=$1 and scope=$2',[ownerId,snapshot.scope])).rows[0]
+   if(expected.scope!==snapshot.scope||!current||current.version!==expected.version||current.hash!==expected.hash||data.target.kind!=='existing'||target?.space_id!==data.target.spaceId)throw new WorkError('teloa/version-conflict','已采用配置版本或业务归属已变化，不能加载旧方案。')
+  }else await this.lockConfiguration(db,ownerId,snapshot.scope)
   await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['industry-load-space',ownerId,data.target.spaceId])])
   let space=(await db.query('select * from teloa_business_spaces where id=$1 and owner_id=$2 for update',[data.target.spaceId,ownerId])).rows[0]
   const newName=data.target.kind==='new'?data.target.name:null

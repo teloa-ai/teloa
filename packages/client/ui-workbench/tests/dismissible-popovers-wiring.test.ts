@@ -9,9 +9,8 @@ test('业务内页「更多」菜单接 useDismissible，点菜单项后自己�
  assert.match(source,/useDismissible\(ref,open,\(\)=>setOpen\(false\)\)/)
  assert.match(source,/<details ref=\{ref\} className=\{css\.scopeMore\}[^>]*open=\{open\} onToggle=\{event=>setOpen\(event\.currentTarget\.open\)\}>/)
  assert.match(source,/const pick=\(action:BusinessMoreAction\)=>\{(?:ref\.current\?\.querySelector\('summary'\)\?\.focus\(\);)?setOpen\(false\);choose\(action,scope\)\}/,'允许先聚焦稳定入口，随后仍须关闭菜单并传递原动作和范围')
- assert.match(page,/<BusinessMoreMenu scope=\{target\.scope\} choose=\{chooseMore\}\/>/)
- const actions=['work','completed','dashboards','automations','adjustment','connector','sources','manual-definition','share']
- for(const action of actions)assert.match(source,new RegExp(`onClick=\\{\\(\\)=>pick\\('${action}'\\)\\}`),action+' 应经 pick 收起菜单并保留范围')
+ assert.match(page,/<BusinessMoreMenu scope=\{target\.scope\} choose=\{chooseMore\}/)
+ assert.match(source,/businessMoreActions\(scope\)\.map\(action=>/);assert.match(source,/onClick=\{\(\)=>pick\(action\)\}/,'统一动作仍经 pick 关闭并保留原范围')
 })
 
 test('市场「创建或导入」合并下拉接 useDismissible（方案 B 页头只有一个入口）',async()=>{

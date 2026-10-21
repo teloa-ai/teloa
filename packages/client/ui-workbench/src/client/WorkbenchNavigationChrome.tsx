@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import {LayoutGrid,Globe2,MessageSquare,Bot,Library,FolderKanban,Store,X} from 'lucide-react'
+import {LayoutGrid,BriefcaseBusiness,MessageSquare,Users,Library,Folder,Store,X} from 'lucide-react'
 import type {WorkbenchView} from './store.js'
 import {useI18n} from './i18n/provider.js'
 import {applicationProductName,type ApplicationPresentation} from './application-presentation.js'
@@ -9,8 +9,8 @@ import css from './WorkbenchFrame.module.css'
 
 /** 导航定义和呈现由在线工作台与无宿主浏览状态共同复用。 */
 export const primaryNavigation=[
- ['home','navigation.home',LayoutGrid],['messages','navigation.v2.conversations',MessageSquare],['projects','navigation.projects',FolderKanban],
- ['team','navigation.v2.colleagues',Bot],['spaces','navigation.v2.business',Globe2],
+ ['home','navigation.home',LayoutGrid],['messages','navigation.v2.conversations',MessageSquare],['projects','navigation.projects',Folder],
+ ['team','navigation.v2.colleagues',Users],['spaces','navigation.v2.business',BriefcaseBusiness],
  ['resources','navigation.v2.library',Library],['market','market.title',Store],
 ] as const
 const primaryNavigationGroupKeys={home:'navigation.group.work',team:'navigation.group.team',resources:'navigation.group.resources'} as const

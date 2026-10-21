@@ -242,3 +242,15 @@ test('原生上游 cancel 原样终止整组修订，不弹审批、不调用服
  assert.equal(f.requests.length,0)
  assert.equal((await f.service.get(f.actor,{draftId:f.draft.id})).revision,1)
 })
+
+test('完整方案工具沿原生ask与原会话保存静态候选；拒绝不写，重试固定请求身份',async t=>{
+ const writes:any[]=[],directory={plan:null,employees:[],rules:'静态候选'}
+ const f=await fixture({setupPlan:{read:async()=>directory,revise:async input=>{writes.push(input);return {draftId:input.draftId,revision:1}}}});t.after(()=>f.ctx.fiber.dispose())
+ const current=JSON.parse((await f.call(read)).content.map(item=>item.type==='text'?item.text:'').join(''));assert.deepEqual(current.setupPlan,directory)
+ const args={draftId:f.draft.id,expectedRevision:0,patchJson:JSON.stringify({package:{manifestPath:'teloa.json',files:[{path:'teloa.json',text:'静态包正文'}]},roleEdits:[]})},name='teloa_business_builder_plan_revise'
+ f.approve(async()=> 'rejected');assert.equal((await f.call(name,args)).isError,true);assert.equal(writes.length,0)
+ f.approve(async()=> 'allowed-once');assert.equal((await f.call(name,args)).isError,false);assert.equal((await f.call(name,args)).isError,false)
+ assert.equal(writes.length,2);assert.equal(writes[0].requestId,writes[1].requestId);assert.equal(writes[0].draftId,f.draft.id)
+ assert.equal((await f.call(name,{...args,draftId:randomUUID()})).isError,true);assert.equal(writes.length,2)
+ assert.equal((await f.service.get(f.actor,{draftId:f.draft.id})).status,'draft')
+})

@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { BusinessScopeService,openResourceDatabase,AuthorizedLocalMaterialCatalog,initializeAuthorizedLocalMaterials,type AuthorizedLocalMaterialPorts,type ConversationService,type ResourceActor } from '@teloa/backend'
-import { isRecord,promptFullTextMaxBytes,WorkError } from '@teloa/contract'
+import { readResourceRelations,BusinessScopeService,openResourceDatabase,AuthorizedLocalMaterialCatalog,initializeAuthorizedLocalMaterials,type AuthorizedLocalMaterialPorts,type ConversationService,type ResourceActor } from '@teloa/backend'
+import { isRecord,resourceId,resourceVersion,promptFullTextMaxBytes,WorkError } from '@teloa/contract'
 import { sessionInput } from '@teloa/backend'
 import type {} from '@deepseek-ai/dsh-agent'
 import { LlmError } from '@deepseek-ai/dsh-llm'
@@ -11,12 +11,13 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { appendResourceContext } from './resource-context.ts'
 import { recoveryPage } from './resource-recovery.ts'
 import { resourceHistoryPage } from './resource-history.ts'
+import {resourceUsagePage} from './resource-usage.ts'
 import {createHostShutdown} from './host-shutdown.ts'
 import {resolveTeloaRuntime} from './runtime-paths.ts'
 import {securityEnv} from './launch-env.ts'
 import {readSessionEvents} from './session-events.ts'
 
-export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/apply','resources/withdraw','resources/recovery','resources/history','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource']
+export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/apply','resources/withdraw','resources/recovery','resources/history','resources/usage','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource']
 const empty=(value:unknown)=>{if(!isRecord(value)||Object.keys(value).length)throw new WorkError('teloa/invalid-input','此查询不接受其他参数。')}
 export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>,localMaterialPorts?:AuthorizedLocalMaterialPorts){
   // 运行目录与部署形态只认启动时继承的进程环境（launch-env.ts）：决定数据库口令文件位置与数据库主机白名单。
@@ -54,6 +55,14 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
     }
     const {service,knowledge,knowledgeTree,knowledgeResources}=await get(),humanActor=await human()
     switch(endpoint){
+      case 'resources/usage':{
+        if(!isRecord(payload)||Object.keys(payload).some(key=>!['resourceId','version','cursor'].includes(key))||!resourceId(payload.resourceId)||!resourceVersion(payload.version))throw new WorkError('teloa/invalid-input','资料引用查询参数不正确。')
+        const cursor=payload.cursor===undefined?undefined:sessionInput({sessionId:payload.cursor})
+        const resource=(await service.list(humanActor)).resources.find(row=>row.id===payload.resourceId&&row.version===payload.version)
+        if(!resource)throw new WorkError('teloa/not-found','资料版本不存在或不可访问。')
+        const [usage,related]=await Promise.all([resourceUsagePage(owner,resource,await conversations.resourceHistoryCandidates(owner),async id=>{await conversations.bySession(owner,id);return readHistory(id)},cursor),readResourceRelations((await get()).pool,owner,resource.id,humanActor.scopeIds)])
+        return {...usage,related:related.items,relatedMore:related.more}
+      }
       case 'resources/register-local-material':if(!localMaterials)throw new WorkError('teloa/unavailable','当前宿主尚不支持跟踪本机原件。');return localMaterials.register(humanActor,payload)
       case 'resources/read-content':return service.readContent(humanActor,payload)
       case 'resources/sources':empty(payload);return service.sourceDirectory(humanActor)

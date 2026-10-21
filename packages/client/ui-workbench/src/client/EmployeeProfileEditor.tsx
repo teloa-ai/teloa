@@ -21,7 +21,7 @@ export function EmployeeProfileEditor({role,initial,onDraft,close,save}:{role:Pr
   onDraft?.(next.name!==role.name||next.duty!==role.duty||next.avatarKey!==role.avatarKey?next:undefined)
  }
  const [busy,setBusy]=useState(false),[error,setError]=useState<string>()
- return <ContextDrawer title={employeeCopy(locale,'profileEditTitle')} close={()=>{if(!busy)close()}} canClose={!busy} {...(css.dialog?{className:css.dialog}:{})}>
+ return <ContextDrawer compact title={employeeCopy(locale,'profileEditTitle')} close={()=>{if(!busy)close()}} canClose={!busy}>
   <form className={`${css.form} ${teamCss.profileEditor}`} onSubmit={async event=>{
    event.preventDefault();if(busy||!applicationPresentation.can('people')||!name.trim()||!duty.trim())return
    setBusy(true);setError(undefined)

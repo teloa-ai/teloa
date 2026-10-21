@@ -10,7 +10,7 @@ import {createVoiceService} from '../src/voice-service.ts'
 import {createBrowserVoiceMedia} from '../src/browser-voice-media.ts'
 
 // N34：多厂商语音播报。三家都按官方协议发真实形状的请求（只用本地替身 fetch，不发生收费调用）；
-// 各厂商凭据独立、不复用模型密钥；模型与音色按厂商持久化；ASR 仍为 MiniMax。
+// 各厂商凭据独立、不复用模型密钥；模型与音色按厂商持久化；云端识别用例显式选择 MiniMax。
 type Call={url:string;init:RequestInit&{headers:Record<string,string>}}
 const mp3=Buffer.from('ID3\u0004\u0000\u0000\u0000\u0000\u0000\u0000fake-mp3-frame')
 const audioResponse=(bytes:Uint8Array=mp3,type='audio/mpeg')=>new Response(new ReadableStream({start(controller){controller.enqueue(bytes.subarray(0,5));controller.enqueue(bytes.subarray(5));controller.close()}}),{status:200,headers:{'content-type':type}})
@@ -99,6 +99,7 @@ async function harness(){
 test('接通预热仅唤醒已选择的本机识别，不调用云端或改变识别设置',async t=>{
  const h=await harness();t.after(h.dispose)
  const config=createVoiceServiceConfig(join(h.dir,'voice-service.json'));let warmed=0,previews=0
+ await config.update(current=>({...current,asrProviderId:'minimax'}))
  const service=createVoiceService({credentials:{describe:async()=>({configured:true,writable:true}),set:async()=>{},resolve:async()=>{throw Error('预热不能解析云凭据')}},secure:()=>true,config,fetch:async()=>{throw Error('预热不能请求云端')},localRecognition:{configured:()=>true,transcribe:async()=>{previews++;return null},async warm(signal){signal.throwIfAborted();warmed++}}})
  await service.speech.warm!(new AbortController().signal);assert.equal(warmed,0)
  await service.speech.prepareRecognition!(new Uint8Array(),'wav',new AbortController().signal);assert.equal(previews,0)
@@ -110,11 +111,13 @@ test('接通预热仅唤醒已选择的本机识别，不调用云端或改变�
  await assert.rejects(service.speech.warm!(aborted.signal));assert.equal(warmed,1)
 })
 
-test('设置：默认兼容旧 MiniMax；保存后重开保留厂商、模型与音色；凭据只写不读',async t=>{
+test('设置：新装本机识别可显式选择 MiniMax；重开保留厂商、模型与音色；凭据只写不读',async t=>{
  const h=await harness();t.after(h.dispose)
  let service=h.make()
  const initial=readVoiceServiceSettings(await service.handler('voice-service/settings',{}))
  assert.equal(initial.providerId,'minimax');assert.equal(initial.configured,false);assert.equal(initial.model,'speech-2.8-turbo');assert.equal(initial.voiceId,'male-qn-qingse');assert.equal(initial.asr.configured,false)
+ assert.equal(initial.asr.providerId,'sensevoice-local')
+ await service.handler('voice-service/save',{asrProviderId:'minimax'})
  // 旧客户端只送 {apiKey}：写入 MiniMax 凭据，不改当前播报厂商
  const legacy=readVoiceServiceSettings(await service.handler('voice-service/save',{apiKey:keys.minimax}))
  assert.equal(legacy.providerId,'minimax');assert.equal(legacy.configured,true);assert.equal(legacy.asr.configured,true);assert.equal(h.stored.get('minimax'),keys.minimax)
@@ -191,6 +194,7 @@ test('临时中英文试听不写配置或凭据、不改通话签名；选用�
 test('实际播报复用同一路由：就绪需 ASR 与所选 TTS 都已配置，更换厂商后下一句即生效且不重启通话',async t=>{
  const h=await harness();t.after(h.dispose)
  const service=h.make()
+ await service.handler('voice-service/save',{asrProviderId:'minimax'})
  const media=createBrowserVoiceMedia({configured:service.configured,providerId:service.providerId,speech:service.speech})
  t.after(()=>media.dispose())
  assert.deepEqual(await media.transport.readiness(),{status:'unavailable',providerId:'minimax',reason:'provider-unconfigured'})

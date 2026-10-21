@@ -3,10 +3,52 @@ import assert from 'node:assert/strict'
 import {
  businessLedgerBlockUpdated,businessLedgerCacheKey,businessLedgerCacheKeys,businessLedgerFailureKey,
  createBusinessLedgerApi,ledgerListTruncation,readBusinessLedger,
+ readBusinessLedgerDirectory,
 } from '../src/client/business-ledger-api.ts'
 import {block,computedAt,ledger,ledgerObject,listView,otherLedger,seedHash,viewResult} from './business-ledger-fixtures.ts'
 
 const sample=()=>ledger({blocks:[block({views:[listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','a-1'),ledgerObject('SOC','alert-ticket','a-2')])]})]})
+
+test('业务台账默认只读取第一类记录，保留其他类型目录且不全部展开',async()=>{
+ const catalog=await readBusinessLedger(ledger({blocks:[block(),block({definition:{id:'other',title:'其他记录'}})]}),'SOC')
+ const selected=await readBusinessLedger(ledger({blocks:[block({views:[...block().views,...sample().blocks[0]!.views]})]}),'SOC'),calls:unknown[]=[]
+ const api={read:async(r:unknown)=>{calls.push(r);return calls.length===1?catalog:selected}}
+ const value=await readBusinessLedgerDirectory(api,{scope:'SOC'})
+ assert.deepEqual(calls,[{scope:'SOC'},{scope:'SOC',objectType:'alert-ticket'}])
+ assert.equal(value.catalog.blocks.length,2)
+ assert.equal(value.ledger.blocks.length,1)
+ assert.equal(value.ledger.blocks[0]!.views.some(v=>v.kind==='list'),true)
+ assert.equal(value.catalog,catalog)
+})
+
+test('台账两次读取间声明变化、未知类型、失败或取消不会拼出成功页面',async()=>{
+ const catalog=await readBusinessLedger(ledger({blocks:[block()]}),'SOC'),selected=await readBusinessLedger(sample(),'SOC')
+ const changed={...selected,blocks:selected.blocks.map(b=>({...b,objectType:{...b.objectType,source:{...b.objectType.source,definitionHash:seedHash('changed')}}}))}
+ let calls=0
+ await assert.rejects(readBusinessLedgerDirectory({read:async()=>++calls===1?catalog:changed},{scope:'SOC'}))
+ await assert.rejects(readBusinessLedgerDirectory({read:async()=>catalog},{scope:'SOC',objectType:'missing'}))
+ const empty=await readBusinessLedger(ledger({blocks:[]}),'SOC')
+ assert.equal((await readBusinessLedgerDirectory({read:async()=>empty},{scope:'SOC'})).ledger,empty)
+ const abort=new AbortController();calls=0
+ await assert.rejects(readBusinessLedgerDirectory({read:async()=>{calls++;abort.abort();return catalog}},{scope:'SOC'},abort.signal),{name:'AbortError'})
+ assert.equal(calls,1)
+})
+
+test('分批台账保留各自计算时间，分析视图或动作单独变更也不能混用',async()=>{
+ const catalog=await readBusinessLedger(ledger({blocks:[block()]}),'SOC')
+ const full=await readBusinessLedger(ledger({blocks:[block({views:[...block().views,listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','a-1')])]})]}),'SOC')
+ const later={...full,computedAt:'2026-09-15T03:00:00.000Z',blocks:full.blocks.map(b=>({...b,views:b.views.map(v=>({...v,computedAt:'2026-09-15T03:00:00.000Z'}))}))}
+ let calls=0
+ const value=await readBusinessLedgerDirectory({read:async()=>++calls===1?catalog:later},{scope:'SOC'})
+ await assert.doesNotReject(readBusinessLedger(value.ledger,'SOC'))
+ await assert.doesNotReject(readBusinessLedger(value.catalog,'SOC'))
+ for(const next of [
+  {...later,blocks:later.blocks.map(b=>({...b,views:b.views.map(v=>v.kind==='list'?v:{...v,definitionHash:seedHash('new view')})}))},
+  {...later,actions:later.actions.map(a=>({...a,definition:{...a.definition,title:'新动作标题'}}))},
+ ]){
+  calls=0;await assert.rejects(readBusinessLedgerDirectory({read:async()=>++calls===1?catalog:next},{scope:'SOC'}))
+ }
+})
 
 test('来源名词可选，提供时必须是十二字以内的单行名称',async()=>{
  const value=sample()

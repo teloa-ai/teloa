@@ -10,10 +10,11 @@ import {miniMaxVoiceName,type MiniMaxVoice} from './minimax-voice-catalog.js'
 
 type Draft={model:string;voiceId:string;apiKey:string}
 /** 播报和识别分别配置；试听不启动通话、麦克风或员工任务。 */
-export function MiniMaxVoiceSettings({api}:{api:VoiceServiceApi}){
+export function MiniMaxVoiceSettings({api,openLocalRecognition}:{api:VoiceServiceApi;openLocalRecognition?:()=>void|Promise<void>}){
  const {locale}=useI18n(),copy=(key:Parameters<typeof voiceServiceCopy>[1])=>voiceServiceCopy(locale,key)
  const [status,setStatus]=useState<VoiceServiceSettings>(),[selection,setSelection]=useState<SpeechProviderId>(),[drafts,setDrafts]=useState<Partial<Record<SpeechProviderId,Draft>>>({}),[asrKey,setAsrKey]=useState(''),[asrSelection,setAsrSelection]=useState<SpeechRecognitionProviderId>()
  const [saving,setSaving]=useState(false),[testing,setTesting]=useState(false),[error,setError]=useState(false),[saved,setSaved]=useState<'tts'|'asr'|'asr-key'>(),[clip,setClip]=useState<string>(),[previewVoice,setPreviewVoice]=useState<MiniMaxVoice>(),[appliedVoice,setAppliedVoice]=useState<MiniMaxVoice>(),[playBlocked,setPlayBlocked]=useState(false)
+ const [readAttempt,setReadAttempt]=useState(0)
  const audio=useRef<HTMLAudioElement>(null),request=useRef<AbortController>(),url=useRef<string>(),generation=useRef(0),statusGeneration=useRef(0),visible=useRef(true),mounted=useRef(false)
  const stop=()=>{generation.current++;request.current?.abort();request.current=undefined;audio.current?.pause();if(url.current)URL.revokeObjectURL(url.current);url.current=undefined;setClip(undefined);setTesting(false);setPreviewVoice(undefined);setPlayBlocked(false);setAppliedVoice(undefined)}
  useEffect(()=>{
@@ -21,7 +22,7 @@ export function MiniMaxVoiceSettings({api}:{api:VoiceServiceApi}){
   const load=()=>{const current=++statusGeneration.current;api.status().then(value=>{if(mounted.current&&current===statusGeneration.current){setStatus(value);setError(false)}},()=>{if(mounted.current&&current===statusGeneration.current)setError(true)})}
   load();const off=subscribeSettingsPanelVisible(next=>{visible.current=next;if(next)load();else stop()})
   return()=>{mounted.current=false;generation.current++;statusGeneration.current++;off();request.current?.abort();audio.current?.pause();if(url.current)URL.revokeObjectURL(url.current)}
- },[api])
+ },[api,readAttempt])
  useEffect(()=>{if(clip&&visible.current){const current=generation.current;void audio.current?.play().catch(()=>{if(current===generation.current)setPlayBlocked(true)})}},[clip])
  const selected=status?.providers.find(p=>p.id===(selection??status.providerId)),draft=selected?(drafts[selected.id]??{model:selected.model,voiceId:selected.voiceId,apiKey:''}):undefined
  const profileDirty=!!(selected&&draft&&(draft.model!==selected.model||draft.voiceId!==selected.voiceId||draft.apiKey.trim())),dirty=profileDirty||selected?.id!==status?.providerId
@@ -58,7 +59,8 @@ export function MiniMaxVoiceSettings({api}:{api:VoiceServiceApi}){
   catch{if(!abort.signal.aborted&&current===generation.current){setError(true);setPreviewVoice(undefined)}}finally{if(current===generation.current){setTesting(false);request.current=undefined}}
  }
  return <section className={css.page} aria-label={copy('title')}><h2>{copy('title')}</h2>
-  {error&&<p className={voiceCss.notice} role="alert">{copy('failed')}</p>}
+  <p>{copy('lead')}</p>
+  {error&&<div className={voiceCss.notice} role="alert">{copy('failed')} <button type="button" disabled={saving} onClick={()=>{stop();setReadAttempt(value=>value+1)}}>{copy('retry')}</button></div>}
   <div className={css.card}>
   <div className={css.row}>
    <div className={css.rowText}><strong>{copy('speech')}</strong><p>{selected?.configured?copy('configured'):copy('missing')}</p></div>
@@ -72,13 +74,15 @@ export function MiniMaxVoiceSettings({api}:{api:VoiceServiceApi}){
    {clip&&<><audio ref={audio} controls src={clip} onEnded={()=>setPreviewVoice(undefined)}/>{playBlocked&&<p>{copy('playFailed')}</p>}</>}
   </div>}
   <section aria-label={copy('recognition')}>
+   <p className={voiceCss.cardNote}>{copy('asrHint')}</p>
    <form className={css.row} onSubmit={event=>{event.preventDefault();void save('asr')}}>
     <div className={css.rowText}><strong>{copy('recognition')}</strong><p>{status&&(status.asr.providerId==='sensevoice-local'?copy('asrLocal')+' · '+(status.asr.configured?copy('ready'):copy('notReady')):copy('asrCloud')+' · '+(status.asr.configured?copy('configured'):copy('missing')))}</p></div>
-    <div className={css.rowControl}><select aria-label={copy('asrProvider')} value={asrProviderId??''} disabled={saving||!writable} onChange={event=>{stop();setAsrSelection(event.target.value as SpeechRecognitionProviderId);setSaved(undefined);setError(false)}}><option value="minimax">{copy('asrCloud')}</option><option value="sensevoice-local">{copy('asrLocal')}</option></select>
-     {asrDirty&&<button type="submit" disabled={saving||!writable}>{copy('saveAsrSettings')}</button>}{(saved==='asr'||saved==='asr-key')&&<span role="status">{copy('saved')}</span>}
+    <div className={css.rowControl}><select aria-label={copy('asrProvider')} value={asrProviderId??''} disabled={saving||!status} onChange={event=>{stop();setAsrSelection(event.target.value as SpeechRecognitionProviderId);setSaved(undefined);setError(false)}}><option value="minimax">{copy('asrCloud')}</option><option value="sensevoice-local">{copy('asrLocal')}</option></select>
+     {asrDirty&&<button type="submit" disabled={saving||!status}>{copy('saveAsrSettings')}</button>}{(saved==='asr'||saved==='asr-key')&&<span role="status">{copy('saved')}</span>}
     </div>
    </form>
    {asrProviderId==='sensevoice-local'&&!status?.asr.configured&&<p className={voiceCss.notice+' '+voiceCss.cardNote}>{copy('asrLocalHint')}</p>}
+   {asrProviderId==='sensevoice-local'&&openLocalRecognition&&<div className={voiceCss.actions}><button type="button" disabled={saving} onClick={()=>{stop();void Promise.resolve().then(openLocalRecognition).catch(()=>{if(mounted.current)setError(true)})}}>{copy(status?.asr.providerId==='sensevoice-local'&&status.asr.configured?'manageLocalAsr':'prepareLocalAsr')}</button></div>}
   </section>
   </div>
   <details className={voiceCss.advanced} open={selected?.id!=='minimax'||!selected.configured}><summary>{copy('advancedVoice')}</summary>

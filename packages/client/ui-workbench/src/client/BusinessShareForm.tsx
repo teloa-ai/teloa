@@ -1,3 +1,4 @@
+import {useBusinessShareMetadata} from './use-business-share-metadata.js'
 import {isIndustryManifest} from './industry-manifest.ts'
 import {useEffect,useRef,useState} from 'react'
 import {Download,Store} from 'lucide-react'
@@ -15,7 +16,7 @@ import type {BusinessShareInspection as Inspection} from '@teloa/contract'
 
 type Source=Pick<BusinessShareInput,'objectTypes'|'views'|'actions'|'sources'|'available'>
 type Draft=Pick<BusinessShareInput,'packageId'|'packageVersion'|'title'|'description'|'english'>
-type Props={scope:string;api:BusinessShareApi;openMarket:(id?:string)=>void}
+type Props={draftKey?:string|undefined;scope:string;api:BusinessShareApi;openMarket:(id?:string)=>void}
 type Busy='read'|'plan'|'download'|'fix'|undefined
 
 const initialDraft=(scope:string,t:TeloaTranslate):Draft=>({
@@ -33,11 +34,11 @@ function saveArchive(bytes:Uint8Array,name:string){
  * 分享前只让用户编辑包的门面信息；声明、来源名词与可用项由现有本地固定内容读取，
  * 因此不会把快照、连接地址或凭据重新暴露成可编辑字段。
  */
-export function BusinessShareForm({scope,api,openMarket}:Props){
+export function BusinessShareForm({scope,api,openMarket,draftKey}:Props){
  const {t}=useI18n()
  const alive=useRef(true)
  const [source,setSource]=useState<Source>()
- const [draft,setDraft]=useState<Draft>(()=>initialDraft(scope,t))
+ const {metadata:draft,update}=useBusinessShareMetadata(api,scope,draftKey,()=>initialDraft(scope,t))
  const [item,setItem]=useState<MarketItem>()
  const [inspection,setInspection]=useState<Inspection>()
  const [excluded,setExcluded]=useState<Awaited<ReturnType<BusinessShareApi['plan']>>['excluded']>([])
@@ -46,11 +47,10 @@ export function BusinessShareForm({scope,api,openMarket}:Props){
  const [notice,setNotice]=useState('')
  const [fixedItemId,setFixedItemId]=useState<string>()
 
- useEffect(()=>{alive.current=true;setSource(undefined);setItem(undefined);setExcluded([]);setError('');setNotice('');setDraft(initialDraft(scope,t));setBusy('read');void api.source.read(scope).then(value=>{if(alive.current)setSource(value)}).catch(()=>{if(alive.current)setError(t('business.share.failed'))}).finally(()=>{if(alive.current)setBusy(undefined)});return()=>{alive.current=false}},[api,scope,t])
+ useEffect(()=>{alive.current=true;setSource(undefined);setItem(undefined);setExcluded([]);setError('');setNotice('');setBusy('read');void api.source.read(scope).then(value=>{if(alive.current)setSource(value)}).catch(()=>{if(alive.current)setError(t('business.share.failed'))}).finally(()=>{if(alive.current)setBusy(undefined)});return()=>{alive.current=false}},[api,scope,t])
  const english=draft.english?.title.trim()&&draft.english.description.trim()?draft.english:undefined
  const input=source?{scope,packageId:draft.packageId,packageVersion:draft.packageVersion,title:draft.title,description:draft.description,...(english?{english}:{}),...source}:undefined
  const ready=input!==undefined&&businessShareReady(input)
- const update=<K extends keyof Draft>(key:K,value:Draft[K])=>setDraft(current=>({...current,[key]:value}))
  const generate=async()=>{
   if(!input||!ready)return
   setBusy('plan');setError('');setNotice('')

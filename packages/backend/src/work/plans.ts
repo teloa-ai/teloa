@@ -2,7 +2,7 @@ import type {Pool,PoolClient} from 'pg'
 import {readOwnerPlanSource,readStoredOwnerPlan,createOwnerPlan,changeOwnerPlan,configureOwnerPlan} from './owner-plans.ts'
 import type {OwnerPlanAuthority,OwnerPlanGrant} from './owner-plan-authority.ts'
 import type {OwnerPlanFields,WorkExecutor} from '@teloa/contract'
-import {WorkError,isRecord,readScheduleTrigger,roleSupportsScope,taskDefinition,readTaskCompletionPolicy,type TaskCompletionPolicy,type ScheduleTrigger} from '@teloa/contract'
+import {WorkError,isRecord,roleWriteDefinition,readScheduleTrigger,roleSupportsScope,taskDefinition,readTaskCompletionPolicy,type TaskCompletionPolicy,type ScheduleTrigger} from '@teloa/contract'
 import type {MarketContent} from '../market/content-store.ts'
 import {assertBusinessScopeRegistered} from './business-scopes.ts'
 import {workAccess,combineWorkAccessLeases,type WorkAccessLease} from './work-access.ts'
@@ -240,7 +240,7 @@ export class PlanService{
    const result=await this.createInTransaction(db,ownerId,input,lease);lease.assertCurrent();await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
- async createInTransaction(client:PoolClient,ownerId:string,input:unknown,confirmed?:WorkAccessLease):Promise<PersistentPlan>{
+ async createInTransaction(client:PoolClient,ownerId:string,input:unknown,confirmed?:WorkAccessLease,options?:{pausedEmployeeDraft:true}):Promise<PersistentPlan>{
    owner(ownerId);const value=createInput(input)
    // 系统计划的来源身份必须就是它负责的那位员工：不一致会让每日小结的运行判据与闸永远判不出来。
    if(value.source.kind==='system-digest'&&value.source.roleId!==value.fields.roleId)throw invalid()
@@ -264,7 +264,15 @@ export class PlanService{
    await this.verifySource(ownerId,value.source,client)
    const role=(await client.query('select * from teloa_roles where id=$1 and owner_id=$2 for share',[value.fields.roleId,ownerId])).rows[0] as Record<string,unknown>|undefined
    if(!role)throw new WorkError('teloa/forbidden','负责员工不存在或不属于当前本人。')
-   const assignment=await validateRole(client,this.pool,ownerId,role,value.fields,value.expectedRoleVersion,value.source)
+   let assignment:WorkAccessLease
+   if(options?.pausedEmployeeDraft){
+    // 宿主只能保存固定市场来源的暂停员工计划；此分支不授予任务、群报告或执行许可。
+    const paused=readStoredRole(role)
+    if(value.source.kind!=='market-content'||value.fields.groupId!==undefined||paused.ownerId!==ownerId||paused.kind!=='employee'||paused.state!=='paused'||!roleSupportsScope(paused.scopes,value.fields.scope))throw new WorkError('teloa/conflict','仅允许为当前业务的暂停员工保存固定方案计划。')
+    if(paused.version!==value.expectedRoleVersion)throw new WorkError('teloa/version-conflict','负责员工版本已变化。')
+    const {id:_,ownerId:__,version:___,state:____,createdAt:_____,updatedAt:______,...definition}=paused;roleWriteDefinition(definition)
+    assignment={assertCurrent(){}}
+   }else assignment=await validateRole(client,this.pool,ownerId,role,value.fields,value.expectedRoleVersion,value.source)
    const admission=combineWorkAccessLeases([assignment,await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:value.requestId,operation:'create'})])
    admission.assertCurrent()
    const now=this.identity.now(),inserted=(await client.query(`insert into teloa_plans(id,owner_id,request_id,request_spec,definition,source,notification_policy,role_id,role_version,scope,version,config_version,state,archived_reason,archived_at,created_at,updated_at)
@@ -299,7 +307,7 @@ export class PlanService{
    const result=await this.changeInTransaction(db,ownerId,input,lease);lease.assertCurrent();await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
- async changeInTransaction(client:PoolClient,ownerId:string,input:unknown,confirmed?:WorkAccessLease):Promise<PersistentPlan>{
+ async changeInTransaction(client:PoolClient,ownerId:string,input:unknown,confirmed?:WorkAccessLease,options?:{pausedEmployeeDraft:true}):Promise<PersistentPlan>{
   owner(ownerId);const row=object(input,['planId','requestId','expectedVersion','expectedConfigVersion','action','note','fields'])
   if(!uuid(row.planId)||!uuid(row.requestId)||!Number.isSafeInteger(row.expectedVersion)||Number(row.expectedVersion)<1||!['enable','pause','archive','update'].includes(String(row.action)))throw invalid()
   const action=row.action as 'enable'|'pause'|'archive'|'update';let note:string|undefined,fields:PlanUpdateFields|undefined

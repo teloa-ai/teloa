@@ -4,8 +4,11 @@ import {mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createHash} from 'node:crypto'
+import type {SpeechSnapshot,SpeechProviderId} from '@deepseek-ai/dsh-experimental-speech-to-text'
+import {brandString} from '@deepseek-ai/dsh-brand'
 import {createVoiceServiceConfig} from '../src/voice-service-config.ts'
 import {createVoiceService} from '../src/voice-service.ts'
+import {createLocalVoiceRecognition} from '../src/local-voice-recognition.ts'
 
 async function fixture(t:{after:(callback:()=>Promise<void>)=>void},local=true){
  const dir=await mkdtemp(join(tmpdir(),'teloa-local-call-')),config=createVoiceServiceConfig(join(dir,'voice.json'));t.after(()=>rm(dir,{recursive:true,force:true}))
@@ -17,9 +20,37 @@ async function fixture(t:{after:(callback:()=>Promise<void>)=>void},local=true){
  return {config,service,keys,calls,audio,signal,save,setReady:(value:boolean)=>{ready=value},dir}
 }
 
-test('旧配置和新安装仍默认MiniMax，显式本机选择持久化且损坏来源拒绝',async t=>{
+test('新安装默认本机识别，未准备时不自动下载或回退云端',async t=>{
+ const f=await fixture(t),calls:string[]=[]
+ assert.equal((await f.config.read()).asrProviderId,'sensevoice-local')
+ const providerId=brandString<SpeechProviderId>('sensevoice-local')
+ const localRecognition=createLocalVoiceRecognition(()=>({
+  snapshot:():SpeechSnapshot=>({selection:{providerId,language:'auto'},providers:[{id:providerId,name:'SenseVoice',languages:['auto'],location:'host-local',preparation:{phase:'unprepared'}}]}),
+  prepare(){calls.push('download');throw Error('不应自动下载')},
+  resolve(){calls.push('resolve');throw Error('未准备不得识别')},
+  async transcribe(){calls.push('local');throw Error('未准备不得识别')},
+ }))
+ const service=createVoiceService({config:f.config,secure:()=>true,localRecognition,credentials:{describe:async()=>({configured:true,writable:true}),set:async()=>{throw Error('不应写凭据')},resolve:async()=>{calls.push('key');return 'test-key'}},fetch:async()=>{calls.push('network');throw Error('不应请求云端')},transcribe:async()=>{calls.push('cloud');return null}})
+ const status=await service.handler('voice-service/settings',{})
+ assert.deepEqual(status.asr,{providerId:'sensevoice-local',configured:false});assert.equal(await service.configured(),false)
+ await assert.rejects(service.speech.warm!(f.signal),/本机|识别/)
+ await assert.rejects(service.speech.transcribe(f.audio,'wav',f.signal),/本机|识别/)
+ assert.deepEqual(calls,[])
+})
+
+test('旧配置缺识别字段及已保存云端选择保持MiniMax，保存播报不改变识别来源',async t=>{
+ const f=await fixture(t),initial=await f.config.read()
+ const {asrProviderId:_asr,...legacy}=initial
+ for(const saved of [legacy,{...initial,asrProviderId:'minimax'}]){
+  await writeFile(join(f.dir,'voice.json'),JSON.stringify({schema:'teloa.voice-service/v1',...saved}))
+  assert.equal((await f.config.read()).asrProviderId,'minimax')
+  await f.service.handler('voice-service/save',{providerId:'minimax',model:'speech-2.8-hd',voiceId:'female-shaonv',setDefault:false})
+  assert.equal((await f.config.read()).asrProviderId,'minimax')
+ }
+})
+
+test('显式本机选择持久化且损坏来源拒绝',async t=>{
  const f=await fixture(t)
- assert.equal((await f.config.read()).asrProviderId,'minimax')
  await f.save('sensevoice-local');assert.equal((await f.config.read()).asrProviderId,'sensevoice-local')
  const stored=await f.config.read();await writeFile(join(f.dir,'voice.json'),JSON.stringify({schema:'teloa.voice-service/v1',...stored,asrProviderId:'browser-google'}))
  await assert.rejects(f.config.read(),/损坏/)
@@ -34,8 +65,8 @@ test('本机ASR无需MiniMax识别凭据，播报仍要单独就绪；调用不�
  assert.equal(result?.providerId,'sensevoice-local');assert.equal(result?.text,'本机结果');assert.deepEqual(f.calls,['local'])
 })
 
-test('普通播报设置及旧客户端密钥保存保留本机识别选择',async t=>{
- const f=await fixture(t);await f.save('sensevoice-local')
+test('普通播报设置及旧客户端密钥保存保留新安装的本机识别默认',async t=>{
+ const f=await fixture(t)
  await f.service.handler('voice-service/save',{apiKey:'test-key'})
  await f.service.handler('voice-service/save',{providerId:'minimax',model:'speech-2.8-turbo',voiceId:'female-shaonv'})
  const status=await f.service.handler('voice-service/settings',{})

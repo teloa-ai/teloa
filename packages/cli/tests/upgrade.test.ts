@@ -7,6 +7,10 @@ test('仅放行已验收的数据版本，不将兼容读取等同于可逆迁�
  assert.equal(api.canUseData(release,1),true)
  assert.equal(api.canUseData(release,2),false)
  assert.equal(api.canUseData({...release,dataVersion:2,compatibleDataVersions:[1,2]},1),false)
+ assert.equal(api.canUseData({...release,dataVersion:2,compatibleDataVersions:[2]},2),true)
+ assert.equal(api.canUpgradeData({...release,dataVersion:2,compatibleDataVersions:[2]},1),true)
+ assert.equal(api.canUpgradeData(release,2),false,'数据 2 不降级为 1，即使旧发行曾声明同版本兼容')
+ assert.equal(api.canUpgradeData({...release,dataVersion:3,compatibleDataVersions:[3]},2),false)
 })
 test('注册表安装记录必须固定包名、版本和完整性',()=>{
  assert.equal(typeof api.verifyRegistryInstall,'function')
@@ -44,7 +48,7 @@ test('本地命令包候选与注册表候选一样经过版本与数据兼容�
   const home=join(root,'home'),current=join(root,'current')
   await mkdir(current,{recursive:true});await writeFile(join(current,'release-manifest.json'),JSON.stringify({...release,version:'0.2.0-beta.2'}))
   const state={version:'0.2.0-beta.2',phase:'stopped',layout:{home,releaseRoot:current,instanceRoot:join(home,'instances/default'),runtimeRoot:join(home,'instances/default/runtime'),workspaceRoot:join(home,'workspaces/default')}}
-  for(const [name,manifest,error] of [['data',{version:'0.2.0-beta.3',dataVersion:2,compatibleDataVersions:[2]},/数据兼容性/],['version',{version:'0.2.0-beta.4'},/数据兼容性/]] as const){
+  for(const [name,manifest,error] of [['data',{version:'0.2.0-beta.3',dataVersion:3,compatibleDataVersions:[3]},/数据兼容性/],['version',{version:'0.2.0-beta.4'},/数据兼容性/]] as const){
    const candidate=join(root,name);await mkdir(candidate,{recursive:true})
    await writeFile(join(candidate,'release-manifest.json'),JSON.stringify({...release,...manifest}))
    await assert.rejects(api.upgradeInstall(state,'0.2.0-beta.3',api.releaseSource('0.2.0-beta.3',{version:'0.2.0-beta.3',root:candidate})),error)

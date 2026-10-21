@@ -111,6 +111,7 @@ test('派活表单继续使用原生约束校验，不继承员工配置的产�
  const {page,entryButton}=await open(t)
  await entryButton('原员工甲').click()
  const profile=page.getByRole('dialog',{name:'原员工甲',exact:true})
+ await profile.getByRole('button',{name:'更多员工操作',exact:true}).click()
  await profile.getByRole('button',{name:'交给它一件事',exact:true}).click()
  const assignment=page.locator('dialog[open]').last()
  assert.equal(await page.locator('dialog[open]').count(),2)

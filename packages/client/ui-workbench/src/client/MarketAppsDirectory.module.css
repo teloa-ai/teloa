@@ -90,3 +90,7 @@
 .addMenu>div{position:absolute;top:calc(100% + 6px);right:0;z-index:var(--teloa-z-menu);min-width:170px;padding:5px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
 .addMenu button{display:block;width:100%;padding:9px 12px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;cursor:pointer}
 .addMenu button:hover{background:var(--teloa-hover)}
+
+.drawer.drawer{width:min(520px,100vw)}
+
+.detailFooter{position:sticky;bottom:-24px;z-index:1;padding:16px 0;background:var(--teloa-surface);border-top:1px solid var(--teloa-border)}.detailFooter .primary{width:100%;min-height:38px}

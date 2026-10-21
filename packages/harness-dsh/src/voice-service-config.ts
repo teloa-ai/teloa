@@ -5,7 +5,7 @@ import {WorkError,isSpeechModel,isSpeechProviderId,isSpeechVoiceId,isSpeechRecog
 /** 非秘密语音配置：当前播报厂商与各厂商模型、音色。凭据只在宿主凭据存储，不进此文件。 */
 export type VoiceServiceConfig=Readonly<{providerId:SpeechProviderId;asrProviderId?:SpeechRecognitionProviderId;providers:Readonly<Record<SpeechProviderId,Readonly<{model:string;voiceId:string}>>>}>
 const schema='teloa.voice-service/v1'
-const defaults=():VoiceServiceConfig=>({providerId:'minimax',asrProviderId:'minimax',providers:{...speechProviderDefaults}})
+const defaults=():VoiceServiceConfig=>({providerId:'minimax',asrProviderId:'sensevoice-local',providers:{...speechProviderDefaults}})
 const broken=()=>new WorkError('teloa/unavailable','语音设置文件已损坏，请重新保存语音设置。')
 
 function parse(text:string):VoiceServiceConfig{

@@ -174,6 +174,8 @@ import {readNativeArtifactMessage} from './native-artifact-message.ts'
 import {createRoleHandler,roleEndpoints} from './roles.ts'
 import {roleMemoryRunTarget,createRoleMemoryHandler,createRoleMemoryViewHandler,roleMemoryViewEndpoints,registerRoleMemoryTools,roleMemoryEndpoints} from './role-memory.ts'
 import {createRoleDelegationHandler,roleDelegationEndpoints} from './role-delegations.ts'
+import {createTwinDraftHandler,createTwinDraftConversationReader,twinDraftHumanEndpoints} from './twin-drafts.ts'
+import {registerTwinDraftTools} from './twin-draft-tools.ts'
 import {createRoleDailyLogHandler,registerRoleDailyDigestTools,roleDailyLogEndpoints} from './role-daily-log.ts'
 import {createGroupHandler,groupEndpoints} from './groups.ts'
 import {createGroupAgentGrantHandler,groupAgentGrantEndpoints} from './group-agent-grants.ts'
@@ -224,6 +226,7 @@ import {createIndustryTasksHandler,industryTaskEndpoints} from './industry-tasks
 import {IndustryPlanService,IndustryPlanSource} from '@teloa/backend'
 import {createIndustryPlansHandler,industryPlanEndpoints} from './industry-plans.ts'
 import { RoleService,TaskService,RoleLifecycleService,HandoffService,CollaborationService,GroupAgentGrantService,GroupAttachmentService,GroupTaskService,GroupRunMessageService,GroupRunResultManifestService,readRunGroupContext,type RunGroupFilePorts } from '@teloa/backend'
+import {TwinDraftService,BusinessSetupPlanService} from '@teloa/backend'
 import {readRunGroupTopic} from '@teloa/backend'
 import {GroupReactionService,GroupRoutingAttemptService,GroupRoutingDecisionService,GroupRoutingStatusService,GroupWorkInputService,readGroupRunAppendIds,readGroupRunAppendTarget,readGroupTaskBusinessGrant} from '@teloa/backend'
 import {drainGroupWorkInputs,type GroupWorkInputPorts} from './group-work-input-driver.ts'
@@ -1620,6 +1623,28 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 已存值来源与群聊闸、会话发表评价闸共用
   const storedSecrets=storedSecretSource(()=>ctx.credentials,message=>ctx.logger.warn(message))
   const groupSecretGate=groupMessageSecretGate(storedSecrets)
+  const twinDraftConversationReader=createTwinDraftConversationReader({
+   conversation:(actor,sessionId)=>service.snapshotBySession(actor,sessionId),
+   session:async sessionId=>{
+    const nativeId=brandString<SessionId>(sessionId),live=sessionStore.get(nativeId)
+    if(live)return live
+    const resolved=await ctx.sessionController.resolveAgent(nativeId)
+    if('error'in resolved)throw new WorkError('teloa/source-unavailable','原会话暂时不能读取，请保留草稿后重试。')
+    return resolved.agent.session
+   },
+  })
+  const twinDraftService=async()=>{
+   const {pool}=await resources.database()
+   return new TwinDraftService(pool,workIdentity,{groups:new CollaborationService(pool,workIdentity,groupRoutingPersistence),conversation:twinDraftConversationReader,admitText:groupSecretGate})
+  }
+  const twinDraftHandler=createTwinDraftHandler(owner,twinDraftService,{
+   afterGroupSend:adoption=>{
+    const result=adoption.receipt.result
+    if(result.kind!=='group-message')return
+    void runtimeAdmission.defer(()=>dispatchGroupRouting(ctx,owner,result.messageId,groupRoutingDispatchPorts,new AbortController().signal)).catch(error=>ctx.logger.warn('Teloa 代拟稿消息已保存，群路由待重试：%s',codeOf(error,'teloa/dependency-unavailable')))
+   },
+   report:error=>ctx.logger.warn('Teloa 代拟稿消息已保存，群路由待重试：%s',codeOf(error,'teloa/dependency-unavailable')),
+  })
   // 群消息、资料、表情与路由各自维护原服务，在此组合提供方，统一由 groupHandler 分发。
   const groupHandler=createGroupHandler(owner,async()=>{
     const {pool}=await resources.database(),identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -1839,8 +1864,26 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   resources.beforeDatabaseClose(()=>projectRuntimeHost?.dispose())
   const projectRuntimeHandler=createProjectRuntimeHandler(owner,async()=>{if(!projectRuntimeHost)throw new WorkError('teloa/host-unavailable','项目运行上下文尚未就绪。');return projectRuntimeHost})
   const businessBuilderServices=async()=>{
-   const business=await businessDefinitionServices()
-   return {...business,preview:business.configurationPreview,bindings:businessBindings}
+   const business=await businessDefinitionServices(),runtime=await resources.database(),pool=business.pool,identity=workIdentity
+   if(runtime.pool!==pool)throw new WorkError('teloa/unavailable','业务连接已变化，请保留原方案后重试。')
+   const market=new MarketContentStore(pool,identity),plans=new PlanService(pool,identity,market),loads=new IndustryLoadService(pool,identity,createIndustryLoadSource(market),plans)
+   const roles=new RoleService(pool,identity,{plans}),knowledge=new IndustryKnowledgeService(pool,identity,loads,new IndustryReferenceCatalog(pool,market,loads),runtime.service)
+   const industryRoles=new IndustryRoleService(pool,identity,loads,new IndustryRoleSource(market,loads),knowledge,roles)
+   const setup=new BusinessSetupPlanService(pool,{
+    drafts:business.drafts,configuration:business.configuration,preview:business.configurationPreview,market,roles,loads,industryRoles,
+    plans:new IndustryPlanService(pool,identity,new IndustryPlanSource(market,loads,new IndustryWorkSource(market,loads,industryModelProbe)),plans),
+    readiness:async loadId=>{
+     const value=await industryPrepareHandler('industry-loads/readiness',{loadId})
+     if(!('rows'in value))throw new WorkError('teloa/invalid-host-response','业务准备目录回包不正确。')
+     return value
+    },
+    prepare:async(loadId,digest,options)=>{
+     const value=await industryPrepareHandler('industry-loads/prepare',{loadId,expectedDigest:digest,activate:options.activate},undefined,'panel',{activate:false})
+     if(!('results'in value))throw new WorkError('teloa/invalid-host-response','业务准备回执不正确。')
+     return value
+    },
+   },identity)
+   return {...business,preview:business.configurationPreview,bindings:businessBindings,setup}
   }
   // 仅检查真实会话与预约索引；isBuilder 不读取日常 context，避免 inspect 反向递归。
   const isBuilderConversation=async(sessionId:string):Promise<boolean>=>(await businessBuilderServices()).bindings.isBuilder(owner,sessionId)
@@ -1859,6 +1902,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    revise:async input=>(await businessBuilderServices()).drafts.revise(await businessBuilderActor(),input),
    upgradeFormat:async input=>(await businessBuilderServices()).drafts.upgradeFormat(await businessBuilderActor(),input),
    reviseReceipt:async input=>(await businessBuilderServices()).drafts.reviseReceipt(await businessBuilderActor(),input),
+   setupPlan:{read:async draftId=>(await businessBuilderServices()).setup.directory(await businessBuilderActor(),{draftId}),revise:async input=>(await businessBuilderServices()).setup.revise(await businessBuilderActor(),input)},
   }))
   const businessConversationAuthorization:BusinessConversationAuthorizationPorts={
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:async(id,signal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})},
@@ -2241,6 +2285,17 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   const ordinaryTaskPolicy=async(id:string,signal:AbortSignal)=>{signal.throwIfAborted();return (await runService()).toolPolicy(owner,{sessionId:id})}
   const stopEmployeeTools=registerEmployeeTools(toolRegistrationContext,{owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,roleHandler,lifecycle:changeRoleLifecycle})
+  const stopTwinDraftTools=registerTwinDraftTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
+   roleForSession:async sessionId=>{
+    const links=(await workLinks.bySession(owner,{sessionId})).filter(link=>link.kind==='role'&&link.active&&!link.sourceOnly)
+    if(links.length!==1)return null
+    const {pool,identity,plans}=await autoDreamPlans()
+    return new RoleService(pool,identity,{plans}).get(owner,links[0]!.objectId)
+   },
+   create:async(actor,input)=>(await twinDraftService()).create(actor,input),
+  })
+  resources.beforeDatabaseClose(()=>{stopTwinDraftTools()})
   const stopGroupTools=registerGroupTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
    isRoleConversation:async id=>(await workLinks.bySession(owner,{sessionId:id})).some(link=>link.kind==='role'),isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:id=>businessBindings.isPendingDaily(owner,id),
@@ -2604,6 +2659,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       }
       // 执行委托、本人确认与群记忆选择只经本人连接，不能被模型工具、IM 或通用重放代授。
       if((roleDelegationEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await roleDelegationHandler(endpoint,payload)}
+      if((twinDraftHumanEndpoints as readonly string[]).includes(endpoint)){
+       if(peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','代拟稿采用与发送仅供本人浏览器连接使用。')
+       signal.throwIfAborted();return {ok:true,value:await twinDraftHandler(endpoint,payload)}
+      }
       if((residentOwnerEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await resident.ownerRpc(endpoint,payload,signal)}
       if((confirmedPlanEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedPlanHandler(endpoint,payload)}
       if((confirmedPlanDraftEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedPlanDraftHandler(endpoint,payload,signal)}

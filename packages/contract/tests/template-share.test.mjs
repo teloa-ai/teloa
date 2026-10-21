@@ -17,14 +17,16 @@ test('an employee template preserves a built-in avatar and includes it in the fi
   assert.throws(()=>readTemplateSharePackage(invalid),/avatar/i)
  }
 })
-test('free-combination avatars pass v1 and v2 employee templates unchanged; ink and unknown shapes are rejected',()=>{
+test('free-combination avatars pass v1 and v2 employee templates unchanged; ink is supported and unknown shapes are rejected',()=>{
  const p=sample(),file=p.files.find(f=>f.path==='role.json')
  file.text=JSON.stringify({...JSON.parse(file.text),avatarKey:'bot:ghost:amber'})
  assert.equal(JSON.parse(readTemplateSharePackage(p).files.find(f=>f.path==='role.json').text).avatarKey,'bot:ghost:amber')
  const v2=employee(),role=v2.files.find(f=>f.path==='roles/lead.json')
  role.text=JSON.stringify({...JSON.parse(role.text),avatarKey:'bot:capsule:plum'})
  assert.equal(JSON.parse(share.readTemplateSharePackageV2(v2).files.find(f=>f.path==='roles/lead.json').text).avatarKey,'bot:capsule:plum')
- for(const avatarKey of ['bot:circle:ink','bot:star:teal','bot:circle','bot:circle:teal:x','BOT:circle:teal']){
+ const ink=structuredClone(p);ink.files.find(f=>f.path==='role.json').text=JSON.stringify({...JSON.parse(file.text),avatarKey:'bot:circle:ink'})
+ assert.equal(JSON.parse(readTemplateSharePackage(ink).files.find(f=>f.path==='role.json').text).avatarKey,'bot:circle:ink')
+ for(const avatarKey of ['bot:star:teal','bot:circle','bot:circle:teal:x','BOT:circle:teal']){
   const invalid=structuredClone(p);invalid.files.find(f=>f.path==='role.json').text=JSON.stringify({...JSON.parse(file.text),avatarKey})
   assert.throws(()=>readTemplateSharePackage(invalid),/avatar/i,avatarKey)
  }

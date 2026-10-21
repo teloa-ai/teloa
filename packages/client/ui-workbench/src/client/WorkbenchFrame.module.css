@@ -128,3 +128,5 @@
 /* 1.0：工作台各页的面包屑、页签与内容统一从主区左侧 40px 起排。 */
 .topbar:has(~ .hubNavigation){padding-left:40px}
 @media(max-width:760px){.hubNavigation{gap:18px;padding:0 21px}.topbar:has(~ .hubNavigation){padding-left:12px}}
+
+.quickActions .newWorkGroup .newWorkMenu{position:fixed;right:auto;width:240px;max-width:calc(100vw - 24px)}

@@ -69,6 +69,8 @@ export function AutoDreamSettingsPage({api,recent,openRole}:{api:AutoDreamSettin
  },[visible,rows,recent,locale,recentRefresh])
  const available=!!rows?.length
  const time=rows?.[0]?.trigger.time??'23:30',timezone=rows?.[0]?.trigger.timezone??'Asia/Singapore'
+ const legend=(cn:string,hant:string,en:string)=>locale==='zh-CN'?cn:locale.startsWith('zh')?hant:en
+ const calendarDays=recentRows?.[0]?.days??[]
  const missing=recentRows?.filter(row=>row.kind==='employee'&&!row.hasPlan)??[]
  // 失败也重新读取版本，保留原设置写口的恢复规则。
  const run=async(action:()=>Promise<void>)=>{setBusy(true);setError(undefined);try{await action()}catch(error){setError(localizeWorkError(locale,error))}finally{setBusy(false);load()}}
@@ -79,7 +81,9 @@ export function AutoDreamSettingsPage({api,recent,openRole}:{api:AutoDreamSettin
   <section className={css.card+' '+css.recent} aria-label={t('autoDream.recent.title')}><header className={css.recentHeader}><h3>{t('autoDream.recent.title')}</h3>{recent&&<ToolbarIconButton label={t('autoDream.recent.refresh')} icon={RefreshCw} disabled={recentLoading||!rows} onClick={()=>setRecentRefresh(value=>value+1)}/>}</header>
    {recentError&&<p role="alert">{recentError}</p>}
    {recentRows?.length===0&&<p>{t('autoDream.recent.empty')}</p>}
+   {calendarDays.length>0&&<div className={css.calendarHeader} aria-hidden="true"><span/><span className={css.days}>{calendarDays.map(day=><span key={day.day}>{day.day.slice(5).replace('-','/')}</span>)}</span><span/></div>}
    {recentRows?.map(row=><div className={css.recentRow} data-role-id={row.roleId} key={row.roleId}><span className={css.avatar} aria-hidden="true">{(row.kind==='twin'?t('navigation.twin'):row.name).slice(0,1)}</span><span className={css.name}>{row.kind==='twin'?t('navigation.twin'):row.name}</span><span className={css.days} role="img" aria-label={row.today==='unavailable'?t('autoDream.recent.unavailable'):row.days.filter(day=>day.kept).length+'/7'}>{row.days.map(day=><i key={day.day} data-day={day.day} title={day.day} className={clsx(css.day,day.kept===null&&css.dayUnknown,day.kept&&css.dayKept)}/>)}</span><span className={css.status}>{t(row.today==='unavailable'?'autoDream.recent.unavailable':row.today==='habit'?'autoDream.recent.habitGenerated':row.today==='generated'?'autoDream.recent.generated':'autoDream.recent.noEvidence')}</span></div>)}
+   {calendarDays.length>0&&<div className={css.legend}><span><i className={clsx(css.day,css.dayKept)}/>{legend('已保留小结','已保留小結','Saved digest')}</span><span><i className={css.day}/>{legend('没有已保留的小结','沒有已保留的小結','No saved digest')}</span><span><i className={clsx(css.day,css.dayUnknown)}/>{legend('历史未核实','歷史未核實','History unavailable')}</span></div>}
   </section>
   {missing.length>0&&<div className={css.missing} role="status"><TriangleAlert size={15} aria-hidden="true"/><span>{t('autoDream.missingPlan',{count:missing.length})} {t('autoDream.missingPlanHint')}</span>{openRole&&<button type="button" onClick={()=>openRole(missing[0]!.roleId)}>{t('autoDream.missingPlanAction')}</button>}</div>}
  </section>

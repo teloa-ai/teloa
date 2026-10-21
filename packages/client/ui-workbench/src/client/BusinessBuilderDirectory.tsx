@@ -6,6 +6,7 @@ import {useI18n} from './i18n/provider.js'
 import dialog from './CreateConversationDialog.module.css'
 import css from './BusinessBuilderDirectory.module.css'
 import {FilePenLine,RefreshCw} from 'lucide-react'
+import {BusinessDraftDiscard} from './BusinessDraftDiscard.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 /** 服务端精简目录是唯一草案列表；分页不拼接另一份本地正文目录。 */
@@ -22,7 +23,8 @@ export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover
   {recoveryFailed&&<p role="alert">{t('business.builder.error')}</p>}
   {loading&&<p role="status">{t('business.builder.loading')}</p>}
   {failed&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void refresh()}>{t('common.retry')}</button></p>}
-  {state.directory?.items.map(({binding,draft})=><button type="button" className={css.item} disabled={!ready} key={binding.requestId} onClick={()=>open(binding)}><FilePenLine size={16} aria-hidden/><strong>{draft?.title??binding.title}</strong><time dateTime={draft?.updatedAt??binding.updatedAt}>{dateTime(new Date(draft?.updatedAt??binding.updatedAt),{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><span className={css.go}>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}</span></button>)}
+  {state.discardedDraft&&<p role="status">{t('business.builder.discarded')}</p>}
+  {state.directory?.items.map(({binding,draft})=><div className={css.draftRow} key={binding.requestId}><button type="button" className={css.item} disabled={!ready} key={binding.requestId} onClick={()=>open(binding)}><FilePenLine size={16} aria-hidden/><strong>{draft?.title??binding.title}</strong><time dateTime={draft?.updatedAt??binding.updatedAt}>{dateTime(new Date(draft?.updatedAt??binding.updatedAt),{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><span className={css.go}>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}</span></button>{draft?.status==='draft'&&<BusinessDraftDiscard flow={flow} binding={binding} draft={draft} disabled={!ready||loading}/>}</div>)}
   {state.directory?.nextCursor&&<button type="button" disabled={loading} onClick={()=>void refresh(state.directory!.nextCursor)}>{t('business.records.more')}</button>}
  </section>
 }

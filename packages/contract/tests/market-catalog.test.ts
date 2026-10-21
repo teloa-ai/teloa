@@ -557,7 +557,8 @@ test('role 条目：自由组合头像要求 Teloa 兼容下界 ≥ 0.2.4，旧�
  if(entry.kind!=='role')throw Error()
  assert.equal(entry.role.definition.avatarKey,'bot:ghost:amber');assert.deepEqual(entry,row);assert.equal(marketEntryNeedsV2(entry),true)
  assert.equal(readMarketCatalogEntry({...row,compatibility:{...row.compatibility,teloa:'>=0.2.0-alpha.8'},role:{...row.role,definition:{...row.role.definition,avatarKey:'researcher'}}}).kind,'role')
- for(const avatarKey of ['bot:circle:ink','bot:star:teal'])assert.throws(()=>readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarKey}}}),/岗位定义/)
+ assert.equal(readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarKey:'bot:circle:ink'}}}).kind,'role')
+ for(const avatarKey of ['bot:star:teal'])assert.throws(()=>readMarketCatalogEntry({...row,role:{...row.role,definition:{...row.role.definition,avatarKey}}}),/岗位定义/)
 })
 
 test('model 条目：cloud 要求 local/variants 为 null；non-commercial、http baseURL、未知 provider 一律拒绝',()=>{

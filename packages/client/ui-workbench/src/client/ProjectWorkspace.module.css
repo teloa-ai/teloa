@@ -45,3 +45,5 @@
 @media(max-width:740px){.overviewHeader{padding:20px 20px 16px}.overviewBody{padding:0 20px 24px}}
 .detailHeader.detailHeader{border-bottom:0;padding-bottom:0}.detailBody{margin-top:8px}
 .directory>header{align-items:center;margin:0 0 16px}
+
+.cardProgress{display:flex;align-items:center;gap:10px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);margin-top:8px}.cardProgress progress{flex:1;min-width:24px;height:4px;accent-color:var(--teloa-text)}.cardProgress>span:last-child{margin-left:auto}

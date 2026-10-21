@@ -1,7 +1,7 @@
 import {readFile,mkdtemp,mkdir,chmod,unlink} from 'node:fs/promises'
 import {join,dirname} from 'node:path'
 import {randomUUID} from 'node:crypto'
-import type {ReleaseManifest,InstallState} from './contracts.ts'
+import type {InstallState} from './contracts.ts'
 import {exactVersion,resolveLayout} from './layout.ts'
 import {writePrivateJson,writeInstall} from './state.ts'
 import {verifyRelease,stageRelease} from './releases.ts'
@@ -9,11 +9,9 @@ import {createBackup,assertMaintenanceStopped} from './maintenance.ts'
 import {databasePool,prepareDatabase} from './database.ts'
 import {serviceStatus,startService,stopService,controlPath} from './service.ts'
 import {command} from './process.ts'
+import {canUpgradeData,canUseData} from './data-version.ts'
 
-export function canUseData(release:ReleaseManifest,dataVersion:number):boolean{
- // 首发没有通用 schema 降级系统；只支持已验收的同数据版本，不执行迁移。
- return dataVersion===1&&release.dataVersion===1&&release.compatibleDataVersions.includes(dataVersion)
-}
+export {canUpgradeData,canUseData} from './data-version.ts'
 export function verifyRegistryInstall(pkg:any,lock:any,version:string):void{
  if(!exactVersion(version)||pkg?.version!==version)throw Error('注册表发行版本与指定版本不一致。')
  if(pkg?.name!=='@teloa/cli')throw Error('注册表包身份不正确。')
@@ -43,7 +41,7 @@ export async function upgradeInstall(state:InstallState,version:string,download=
  assertMaintenanceStopped(await serviceStatus(state),state.phase)
  const current=await verifyRelease(state.layout.releaseRoot)
  const source=await download(state,version),candidate=await verifyRelease(source)
- if(candidate.version!==version||!canUseData(candidate,current.dataVersion))throw Error('候选版本的数据兼容性尚未验证，拒绝切换。')
+ if(candidate.version!==version||current.version!==state.version||!canUpgradeData(candidate,current.dataVersion))throw Error('候选版本的数据兼容性尚未验证，拒绝切换。')
  const layout=await resolveLayout({home:state.layout.home,workspace:state.layout.workspaceRoot,version})
  await stageRelease(source,layout)
  const directory=state.layout.home+'.backups';await mkdir(directory,{recursive:true,mode:0o700})
@@ -53,7 +51,7 @@ export async function upgradeInstall(state:InstallState,version:string,download=
  await writePrivateJson(record,{from:state.version,to:version,backup,restartId,status:'switching'})
  await writeInstall(next)
  try{
-  await prepareDatabase(next)
+  await prepareDatabase(next,current.dataVersion===candidate.dataVersion?{}:{migrationBackup:backup})
   const pool=await databasePool(next)
   try{const row=(await pool.query('select data_version from teloa_installation where id=$1',[next.id])).rows[0];if(!canUseData(candidate,row?.data_version))throw Error('数据库版本与候选不兼容。')}finally{await pool.end()}
   // 本人显式升级引起的重启：新宿主只恢复升级前仍为 active、且仅因本次重启暂停的工作。

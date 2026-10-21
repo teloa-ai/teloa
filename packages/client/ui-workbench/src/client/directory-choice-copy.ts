@@ -12,5 +12,6 @@ const copy={
  preparingConversation:['正在准备会话…','正在準備會話…','Preparing conversation…'],savedPlans:['已保存计划','已儲存計劃','Saved plans'],allPlans:['查看全部','查看全部','View all'],
  taskCount:['共 {count} 项任务','共 {count} 項任務','{count} tasks'],
  executionInfo:['执行信息','執行資訊','Execution details'],viewPlans:['查看计划','查看計劃','View plans'],planFilters:['筛选计划','篩選計劃','Filter plans'],
+ attentionItem:['事项','事項','Item'],attentionSource:['来源','來源','Source'],attentionUpdated:['更新','更新','Updated'],
 } as const
 export function directoryChoiceCopy(locale:string,key:keyof typeof copy){return copy[key][locale==='zh-CN'?0:locale.startsWith('zh')?1:2]}

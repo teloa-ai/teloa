@@ -200,7 +200,6 @@ export function MarketAppDetailView({row,close,runAction,busy,error,packRun,skil
   <div className={css.detailHead}>
    <AppResourceIcon row={row} size={52}/>
    <div className={css.detailIdentity}><h3>{row.title}</h3>{(row.publisher||row.source)&&<p>{row.publisher??row.source?.label}</p>}</div>
-   {primary}
    {row.kind==='skill'&&secretAction(row.skills[0])}
   </div>
   {row.summary&&<p className={css.summary}>{row.summary}</p>}
@@ -252,6 +251,7 @@ export function MarketAppDetailView({row,close,runAction,busy,error,packRun,skil
    </dl>
   </details>
   </details>
+  {primary&&<footer className={css.detailFooter}>{primary}</footer>}
  </div>
  </ContextDrawer>
 }

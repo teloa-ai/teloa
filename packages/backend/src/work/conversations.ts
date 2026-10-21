@@ -97,6 +97,13 @@ export class ConversationService {
   list(owner:string,input:unknown):Promise<Conversation[]> {
     return this.serial(async()=>{inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
   }
+  /** 资料引用可核对本人已绑定的原生历史；读取不会把旧会话自动加入工作目录。 */
+  resourceHistoryCandidates(owner:string):Promise<Conversation[]> {
+    return this.serial(async()=>{
+      if(!owner)throw new WorkError('teloa/forbidden','缺少可信主体。')
+      return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.status==='ready'&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))
+    })
+  }
   private createNow(owner:string,input:unknown,run?:{sessionId:string;taskId:string;taskVersion:number;roleId:string|null;roleVersion:number|null;agentPresetId:string;executor?:Extract<import('@teloa/contract').WorkExecutor,{kind:'owner'}>;signal?:AbortSignal},assistant=false):Promise<Conversation> {
     return (async()=>{
       const data=inputObject(input,['requestId','title','workspaceId','roleId'])

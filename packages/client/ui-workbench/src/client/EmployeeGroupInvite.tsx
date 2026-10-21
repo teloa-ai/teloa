@@ -29,7 +29,7 @@ export function EmployeeGroupInvite({role,api,close,invited}:{role:PreviewRole;a
   for(let start=0;start<items.length;start+=4)rows.push(...await Promise.all(items.slice(start,start+4).map(group=>api.get(group.id))))
   if(active)setItems(rows.filter(({group,members})=>!group.archived&&!members.some(member=>member.roleId===role.id)))
  }).catch(error=>{if(active)setLoadError(localizeWorkError(locale,error))});return()=>{active=false}},[api,role.id,locale,loadAttempt])
- return <ContextDrawer title={employeeCopy(locale,'inviteTitle')} close={()=>{if(!busy)close()}} canClose={!busy}><form className={css.form} onSubmit={async event=>{
+ return <ContextDrawer compact title={employeeCopy(locale,'inviteTitle')} close={()=>{if(!busy)close()}} canClose={!busy}><form className={css.form} onSubmit={async event=>{
   event.preventDefault();if(busy||!selected||!applicationPresentation.can('people')||role.state==='retired')return
   const original=draft.value
   if(!original)return

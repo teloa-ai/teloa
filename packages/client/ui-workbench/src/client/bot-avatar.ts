@@ -17,8 +17,8 @@ export const botShapes:Record<RoleAvatarShape,{d:string;eye:number;hl:readonly [
  ghost:{d:'M32 6c13 0 23 10 23 23v19c0 4-4 6-7 3l-3-3-4 4c-2 2-5 2-7 0l-2-2-2 2c-2 2-5 2-7 0l-4-4-3 3c-3 3-7 1-7-3V29C9 16 19 6 32 6z',eye:29,hl:[21,16,-30]},
  hexa:{d:'M27 7c3-2 7-2 10 0l15 9c3 2 5 5 5 9v14c0 4-2 7-5 9l-15 9c-3 2-7 2-10 0l-15-9c-3-2-5-5-5-9V25c0-4 2-7 5-9z',eye:32,hl:[19,20,-30]}
 }
-/** 员工色板（形状、颜色与 28 款预设的对照表在契约 role-avatars.mjs）；墨黑只留给 Teloa 主助手（深色界面看不清），普通员工不用。 */
-export const botColors:Record<RoleAvatarColor,string>={terracotta:'#B5583B',orange:'#D9772E',amber:'#C99A22',olive:'#76863A',teal:'#2F877B',mist:'#6A8BA6',indigo:'#4A55A0',plum:'#8A4E86',warmgray:'#8A8278'}
+/** 员工色板（形状、颜色与 28 款预设的对照表在契约 role-avatars.mjs）；墨黑与最新在线稿一致，员工形象有浅色衬底，保持白色眼睛。 */
+export const botColors:Record<RoleAvatarColor,string>={terracotta:'#B5583B',orange:'#D9772E',amber:'#C99A22',olive:'#76863A',teal:'#2F877B',mist:'#6A8BA6',indigo:'#4A55A0',plum:'#8A4E86',warmgray:'#8A8278',ink:'#2D2E2B'}
 type BotPaint={shape:RoleAvatarShape;fill:string;eye:string}
 /** 预设键与 `bot:<shape>:<color>` 都按形状 × 颜色绘制；未设置或无法识别的值（如更新版本的新形状）稳定回退通用形象。 */
 export const botAvatarParts=(key?:string)=>roleAvatarParts(key)??roleAvatarParts('general')!

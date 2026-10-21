@@ -1,3 +1,4 @@
+import {isResourceUsagePage,type ResourceUsagePage} from '@teloa/contract'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDirectory,isResourceDraft,isWorkResource,isSourceReference,isResourceHistoryPage,type KnowledgeResourceRestoreInput,type KnowledgeResourceReviseInput,type KnowledgeResourceRevision,type KnowledgeTree,type KnowledgeTreeMutation,type KnowledgeVersion,type KnowledgeVersionSummary,type ResourceHistoryPage,type ResourceSpec,type ResourceDirectory,type ResourceDraft,type WorkResource,type SourceReference } from '@teloa/contract'
 import { isResourceRecoveryPage,type ResourceRecoveryPage } from '@teloa/contract'
 import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isLocalMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
@@ -11,6 +12,7 @@ export type ResourceApi={
   apply(draft:ResourceDraft):Promise<WorkResource>;withdraw(resource:WorkResource):Promise<WorkResource>;
   candidates(sessionId:string,signal:AbortSignal):Promise<WorkResource[]>;
   history(sessionId:string,beforeSeq:number|undefined,signal:AbortSignal):Promise<ResourceHistoryPage>;
+  usage?:(resource:WorkResource,cursor:string|undefined,signal:AbortSignal)=>Promise<ResourceUsagePage>;
   recovery(sessionId:string,beforeSeq:number|undefined,signal:AbortSignal):Promise<ResourceRecoveryPage>;
   listKnowledgeVersions(knowledgeId:string):Promise<KnowledgeVersionSummary[]>;
   readKnowledgeVersion(knowledgeId:string,version:number):Promise<KnowledgeVersion>;
@@ -48,6 +50,7 @@ export function createResourceApi(call:Call,journal?:{read:()=>string|null;write
     async apply(draft){const value=await call('resources/apply',{draftId:draft.id,expectedVersion:draft.version});if(!isWorkResource(value))throw invalid();return value},
     async withdraw(resource){const value=await call('resources/withdraw',{resourceId:resource.id,expectedVersion:resource.version});if(!isWorkResource(value))throw invalid();return value},
     async candidates(sessionId,signal){const value=await call('resources/candidates',{sessionId},signal);if(!Array.isArray(value)||!value.every(isWorkResource))throw invalid();return value},
+    async usage(resource,cursor,signal){const value=await call('resources/usage',{resourceId:resource.id,version:resource.version,...(cursor?{cursor}:{})},signal);if(!isResourceUsagePage(value)||value.resourceId!==resource.id||value.version!==resource.version)throw invalid();return value},
     async history(sessionId,beforeSeq,signal){const value=await call('resources/history',{sessionId,...(beforeSeq===undefined?{}:{beforeSeq})},signal);if(!isResourceHistoryPage(value)||value.sessionId!==sessionId)throw invalid();return value},
     async recovery(sessionId,beforeSeq,signal){const value=await call('resources/recovery',{sessionId,...(beforeSeq===undefined?{}:{beforeSeq})},signal);if(!isResourceRecoveryPage(value)||value.sessionId!==sessionId)throw invalid();return value},
     async listKnowledgeVersions(knowledgeId){const value=await call('knowledge/list-versions',{knowledgeId});if(!Array.isArray(value)||!value.every(isKnowledgeVersionSummary))throw invalid();return value},

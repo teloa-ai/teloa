@@ -15,7 +15,7 @@ import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { PostgreSqlContainer } from '@testcontainers/postgresql'
 import { ConversationService,FileConversationRepository,openResourceDatabase,initializeResources } from '@teloa/backend'
-import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDraft,isSourceReference,isWorkResource,encodeResourceReference,isResourceRecoveryPage,isResourceHistoryPage } from '@teloa/contract'
+import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDraft,isSourceReference,isWorkResource,encodeResourceReference,isResourceRecoveryPage,isResourceHistoryPage,isResourceUsagePage } from '@teloa/contract'
 import { registerResources,resourceEndpoints } from '../src/resources.ts'
 import {registerLibraryTools} from '../src/library-tools.ts'
 
@@ -159,7 +159,13 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   assert.equal(context.contents[0].title,'本人核对后的资料')
   assert.equal(context.contents[0].sourceVersion,source.version)
   assert.ok(adapter.requests[2]!.messages.some(item=>item.content.some(block=>block.type==='text'&&block.text===body.text)),'发给模型的上下文必须包含获准正文')
-  await first.resources.handle('resources/withdraw',{resourceId:resource.id,expectedVersion:resource.version})
+  const citations=await first.resources.handle('resources/usage',{resourceId:resource.id,version:resource.version})
+  assert.ok(isResourceUsagePage(citations))
+  assert.ok(citations.items.some(item=>item.sessionId===sessionId&&item.version===resource.version),'反向引用读取真实原生会话和当时版本')
+  await assert.rejects(first.resources.handle('resources/usage',{resourceId:resource.id,version:resource.version,ownerId:'forged'}),{code:'teloa/invalid-input'})
+  await assert.rejects(first.resources.handle('resources/usage',{resourceId:resource.id,version:resource.version+100}),{code:'teloa/not-found'})
+  const withdrawnResource=await first.resources.handle('resources/withdraw',{resourceId:resource.id,expectedVersion:resource.version})
+  assert.ok(isWorkResource(withdrawnResource))
   agent.followup(createUserMessage({source:{kind:'user',rpcId:'request-after-withdraw'},content:[{type:'text',text:'再次读取 '+encodeResourceReference(resource)}]}))
   await agent.whenIdle()
   assert.equal(adapter.requests.length,3,'撤回后必须在调用模型前阻断')
@@ -200,6 +206,9 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   assert.ok(childHistory.items[0]!.seq>=inherited)
   assert.equal(childRecovery.failures.length,1,'父会话失败不能进入子会话恢复目录')
   assert.equal(childRecovery.failures[0]!.messages[0]!.text,'子会话读取 '+encodeResourceReference(resource))
+  const beforeRestartUsage=await first.resources.handle('resources/usage',{resourceId:resource.id,version:withdrawnResource.version})
+  assert.ok(isResourceUsagePage(beforeRestartUsage))
+  assert.equal(beforeRestartUsage.items.some(item=>item.sessionId===anotherId),false,'其他本人的会话不能泄漏到引用目录')
   const historical=JSON.parse(JSON.stringify(agent.session.snapshotEvents()))
   await first.ctx.fiber.dispose()
   const second=await mount(root,new ScriptedResourceAdapter())
@@ -210,6 +219,7 @@ test('真实 Agent 工具创建与 UI 提交同一草案；引用进入目标消
   const resumedChild=await second.ctx.agents.resume({resumeSessionId:childId,agentOptions:{provider:'test-resources',model:'scripted'}})
   assert.equal(resumedChild.agent.session.inheritedEventCount,inherited)
   assert.ok(resumedChild.agent.session.firstLiveSeq>inherited,'恢复边界与 fork 继承边界必须不同')
+  assert.deepEqual(await second.resources.handle('resources/usage',{resourceId:resource.id,version:withdrawnResource.version}),beforeRestartUsage,'重启后由原生历史重建同一引用目录')
   assert.deepEqual(await second.resources.handle('resources/history',{sessionId:childId}),childHistory)
   assert.deepEqual(await second.resources.handle('resources/recovery',{sessionId:childId}),childRecovery)
   // 新宿主尚未打开资料数据库，临时拿走自身测试配置仍应能从原生日志恢复。

@@ -68,3 +68,14 @@ test('草案、预览、采用和页面拒绝错ID/revision/版本；原宿主�
  const rejected=Object.assign(Error('expired'),{code:'teloa/conflict',details:{reason:'preview-receipt-invalid'}})
  await assert.rejects(module.createBusinessBuilderApi(async()=>{throw rejected}).preview({...target,expectedRevision:2}),e=>e===rejected)
 })
+
+test('放弃固定草案修订，核对返回身份与退役状态，拒绝伪造主体',async()=>{
+ const target={sessionId:'builder',draftId,expectedRevision:2},calls:unknown[]=[]
+ const discarded={ownerId:'owner',id:draftId,scope:'sales',revision:3,baseVersion:0,status:'discarded',hash:'a'.repeat(64),createdAt:now,updatedAt:now,candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:'未采用业务',sources:[{sourceId:'records',kind:'local-records'}],definitions:[],pages:[]}}
+ const api=module.createBusinessBuilderApi(async(endpoint,input)=>{calls.push([endpoint,input]);return discarded})
+ assert.deepEqual(await api.discard(target),discarded)
+ assert.deepEqual(calls,[['business-configuration/discard',target]])
+ await assert.rejects(api.discard({...target,ownerId:'other'} as never),{code:'teloa/invalid-input'})
+ assert.equal(calls.length,1)
+ for(const change of [{id:requestId},{status:'draft'},{revision:2}])await assert.rejects(module.createBusinessBuilderApi(async()=>({...discarded,...change})).discard(target),{code:'teloa/invalid-host-response'})
+})

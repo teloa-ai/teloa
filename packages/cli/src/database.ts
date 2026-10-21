@@ -6,6 +6,8 @@ import {readFile,writeFile,lstat} from 'node:fs/promises'
 import type {InstallState,Status} from './contracts.ts'
 import {privateDirectory,readPrivateJson,writePrivateJson} from './state.ts'
 import {command} from './process.ts'
+import {verifyRelease} from './releases.ts'
+import {canUpgradeData,canUseData,supportedDataVersion} from './data-version.ts'
 
 export const databaseImage='postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 export const databaseName=(state:InstallState)=>'teloa-'+state.id
@@ -77,7 +79,9 @@ export async function databasePool(state:InstallState):Promise<any>{
  pool.on('error',()=>{})
  return pool
 }
-export async function prepareDatabase(state:InstallState,options:{initialize?:boolean}={}):Promise<{configPath:string}>{
+export async function prepareDatabase(state:InstallState,options:{initialize?:boolean;migrationBackup?:string}={}):Promise<{configPath:string}>{
+ const release=await verifyRelease(state.layout.releaseRoot)
+ if(release.version!==state.version||!canUseData(release,release.dataVersion))throw Error('数据库数据版本尚不支持，拒绝初始化或接管；请使用匹配发行。')
  if(state.database.kind==='docker')await prepareDocker(state)
  else{
   const value=await readPrivateJson(state.database.configFile) as {connectionString?:unknown}
@@ -94,20 +98,33 @@ export async function prepareDatabase(state:InstallState,options:{initialize?:bo
   // 跨安装同一专库也串行认领。先记录归属，初始化中断后同身份可以重试。
   await client.query("select pg_advisory_lock(hashtext('teloa-install-owner'))")
   const marker=await client.query("select to_regclass('public.teloa_installation') as marker")
+  let previousVersion=release.dataVersion
   if(marker.rows[0].marker){
    const rows=await client.query('select id,data_version from public.teloa_installation')
    if(rows.rows.length!==1||rows.rows[0].id!==state.id)throw Error('数据库已归属另一安装，拒绝接管。')
-   // 当前发行只支持已验收的数据版本 1；不能先初始化或改表，再发现旧程序不兼容。
-   if(rows.rows[0].data_version!==1)throw Error('数据库数据版本尚不支持，拒绝初始化或接管；请使用匹配版本恢复。')
+   previousVersion=rows.rows[0].data_version
+   if(!canUseData(release,previousVersion)){
+    if(!supportedDataVersion(previousVersion)||!canUpgradeData(release,previousVersion))throw Error('数据库数据版本尚不支持，拒绝初始化或接管；请使用匹配版本恢复。')
+    if(options.initialize===false||state.phase!=='maintenance'||!options.migrationBackup)throw Error('数据库数据版本需要先备份迁移；请停止原安装并通过 teloa upgrade 显式升级。')
+    const {verifyBackup}=await import('./maintenance.ts'),backup=await verifyBackup(options.migrationBackup)
+    const source=await verifyRelease(join(state.layout.home,'releases',backup.version))
+    if(backup.installId!==state.id||backup.dataVersion!==previousVersion||source.version!==backup.version||!canUseData(source,previousVersion)||backup.version===state.version)throw Error('数据库数据版本迁移备份与原安装或发行不符，拒绝初始化。')
+   }
   }else{
+   if(options.migrationBackup)throw Error('数据库数据版本迁移必须使用原安装数据库，不能改为认领新库。')
    const tables=await client.query("select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not in ('pg_catalog','information_schema') and n.nspname not like 'pg_toast%' and c.relkind in ('r','p','v','m','S') limit 1")
    if(tables.rows.length)throw Error('已有数据库不是空库，拒绝接管。请使用新的本机 teloa 专库。')
    await client.query('begin')
-   try{await client.query('create table public.teloa_installation (id uuid primary key, data_version integer not null)');await client.query('insert into public.teloa_installation values ($1,1)',[state.id]);await client.query('commit')}catch(error){await client.query('rollback');throw error}
+   try{await client.query('create table public.teloa_installation (id uuid primary key, data_version integer not null)');await client.query('insert into public.teloa_installation values ($1,$2)',[state.id,release.dataVersion]);await client.query('commit')}catch(error){await client.query('rollback');throw error}
   }
   if(options.initialize!==false){
    const {initializeTeloaDatabase}=await import(pathToFileURL(join(state.layout.releaseRoot,'packages/backend/lib/work/initialize-database.js')).href)
    await initializeTeloaDatabase(pool)
+   // 仅在全部初始化成功之后声明新数据版本。失败保留原标记与恢复点，不伪装可逆降级。
+   if(previousVersion!==release.dataVersion){
+    const result=await client.query('update public.teloa_installation set data_version=$1 where id=$2 and data_version=$3',[release.dataVersion,state.id,previousVersion])
+    if(result.rowCount!==1)throw Error('数据库数据版本迁移期间身份或版本发生变化。')
+   }
   }
  }catch(error){
   if(error instanceof Error&&/^(数据库已归属|数据库数据版本|已有数据库不是空库|本机数据库未就绪)/.test(error.message))throw error
@@ -117,7 +134,7 @@ export async function prepareDatabase(state:InstallState,options:{initialize?:bo
 }
 export async function inspectDatabase(state:InstallState):Promise<Status['database']>{
  let pool
- try{pool=await databasePool(state);const result=await pool.query('select id from public.teloa_installation');return result.rows.length===1&&result.rows[0].id===state.id?'ready':'unavailable'}catch{return 'unavailable'}finally{await pool?.end()}
+ try{const release=JSON.parse(await readFile(join(state.layout.releaseRoot,'release-manifest.json'),'utf8'));pool=await databasePool(state);const result=await pool.query('select id,data_version from public.teloa_installation');return release.version===state.version&&result.rows.length===1&&result.rows[0].id===state.id&&canUseData(release,result.rows[0].data_version)?'ready':'unavailable'}catch{return 'unavailable'}finally{await pool?.end()}
 }
 export async function stopDatabase(state:InstallState):Promise<void>{
  if(state.database.kind!=='docker')return

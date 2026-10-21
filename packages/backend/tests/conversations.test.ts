@@ -94,6 +94,11 @@ test('工作目录保留待恢复预约，只返回本人显式创建的工作',
   const rows=await f.service.list(owner,{})
   assert.equal(rows.length,2);assert.equal(rows[0]?.id,a.id);assert.equal(rows[1]?.status,'pending')
   assert.deepEqual(await f.service.list('someone-else',{}),[])
+  const histories=await f.service.resourceHistoryCandidates(owner)
+  assert.deepEqual(new Set(histories.map(row=>row.sessionId)),new Set(['native',a.sessionId]),'引用候选包含旧绑定，排除未就绪预约')
+  assert.deepEqual(await f.service.resourceHistoryCandidates('someone-else'),[])
+  await assert.rejects(f.service.resourceHistoryCandidates(''),{code:'teloa/forbidden'})
+  assert.equal((await f.service.list(owner,{})).length,2,'读取旧历史不自动采用到工作目录')
   await assert.rejects(f.service.list(owner,{ownerId:'someone-else'}),{code:'teloa/invalid-input'})
 })
 test('明确加入原生副本才进入工作目录，沿用原绑定并在重启后保持幂等',async()=>{

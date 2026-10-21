@@ -14,3 +14,11 @@ div.dock{display:block;max-height:min(28vh,260px);overflow:auto;overscroll-behav
 .status[data-state=review]{background:var(--teloa-warn-bg);color:var(--teloa-warn)}
 .status[data-state=completed]{background:var(--teloa-good-bg);color:var(--teloa-good)}
 .status:is([data-state=failed],[data-state=blocked],[data-state=unavailable]){background:var(--teloa-danger-bg);color:var(--teloa-danger)}
+.dockHeader{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dockHeader .dockTitle{margin:0;font-size:var(--teloa-font-control);color:var(--teloa-secondary)}
+.dockHeader>button,.dockMore{padding:2px 0;border:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.dockItem[hidden]{display:none}
+.dockItem>.card{margin:6px 0 0;padding:6px 0;border:0;border-top:1px solid var(--teloa-border);border-radius:0;background:transparent}
+.dockItem>.card ul{margin-top:4px}
+.dockItem>.card li+li{margin-top:4px;padding-top:4px}
+.dockMore{margin-top:6px;color:var(--teloa-muted)}

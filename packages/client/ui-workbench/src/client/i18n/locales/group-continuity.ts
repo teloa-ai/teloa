@@ -2,7 +2,6 @@
 // 4 列：[key, zh-CN, zh-Hant, en]；其余语言按核心词表统一回退英文，待成熟版本按用户指令补译。
 // 状态文案只描述可信依据对应的结果与下一步，不含内部 ID、异常串或调度术语。
 export const GROUP_CONTINUITY_MESSAGE_ROWS = [
- ['group.message.more','更多消息操作','更多訊息操作','More message actions'],
  ['group.task.adjust','调整归属','調整歸屬','Adjust assignment'],
  ['group.task.chooseAssignee','选择员工','選擇員工','Choose an employee'],
  ['group.task.ownerRequired','此业务需要一位负责员工。','此業務需要一位負責員工。','This business task needs an employee owner.'],

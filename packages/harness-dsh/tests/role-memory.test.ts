@@ -13,6 +13,15 @@ import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {roleMemoryRunTarget,createRoleMemoryHandler,createRoleMemoryViewHandler,registerRoleMemoryTools,roleMemoryProposalToolName,type RoleMemoryToolPorts} from '../src/role-memory.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
 
+test('本人编辑和固定版本读口只走本人RPC，不允许伪造来源或主体',async()=>{
+ const calls:unknown[]=[],service={list:async()=>[],create:async()=>({}),confirm:async()=>({}),withdraw:async()=>({}),edit:async(actor:unknown,input:unknown)=>{calls.push(['edit',actor,input]);return {}},readVersion:async(actor:unknown,input:unknown)=>{calls.push(['readVersion',actor,input]);return {}}},handle=createRoleMemoryHandler('self',async()=>service)
+ const input={requestId:'request',roleId:'role',memoryId:'memory',expectedContentVersion:1,expectedContentHash:'a'.repeat(64),expectedStateVersion:1,title:'修订',markdown:'本人修订'}
+ await handle('role-memory/edit',input);await handle('role-memory/read-version',{roleId:'role',memoryId:'memory',version:1})
+ assert.deepEqual(calls,[['edit',{ownerId:'self',kind:'human'},input],['readVersion',{ownerId:'self',kind:'human'},{roleId:'role',memoryId:'memory',version:1}]])
+ for(const forged of [{ownerId:'other'},{kind:'agent'},{source:{}},{visibility:{}}])await assert.rejects(handle('role-memory/edit',{...input,...forged}),{code:'teloa/invalid-input'})
+ assert.equal(calls.length,2)
+})
+
 test('岗位记忆 RPC 固定为本人，并独立分派目录、候选、确认与撤回',async()=>{
  const calls:unknown[]=[],backend={
   list:async(actor:unknown,input:unknown)=>{calls.push(['list',actor,input]);return []},

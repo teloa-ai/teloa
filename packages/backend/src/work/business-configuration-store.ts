@@ -12,7 +12,13 @@ export async function initializeBusinessConfigurations(pool:Pool):Promise<void>{
  create table if not exists teloa_business_configuration_drafts(
  owner_id text not null,id uuid not null,scope_id text not null,revision integer not null check(revision>0),
  base_version integer not null check(base_version>=0),candidate jsonb not null,hash text not null check(hash~'^[a-f0-9]{64}$'),
- status text not null check(status in ('draft','applied')),created_at timestamptz not null,updated_at timestamptz not null,primary key(owner_id,id));
+ status text not null constraint teloa_business_configuration_drafts_status_v2_check check(status in ('draft','applied','discarded')),created_at timestamptz not null,updated_at timestamptz not null,primary key(owner_id,id));
+ do $migration$ begin
+ perform pg_advisory_xact_lock(hashtextextended('teloa.business-draft-status/v2:'||current_schema(),0));
+ if not exists(select 1 from pg_constraint where conrelid='teloa_business_configuration_drafts'::regclass and conname='teloa_business_configuration_drafts_status_v2_check') then
+ alter table teloa_business_configuration_drafts drop constraint if exists teloa_business_configuration_drafts_status_check;
+ alter table teloa_business_configuration_drafts add constraint teloa_business_configuration_drafts_status_v2_check check(status in ('draft','applied','discarded'));
+ end if; end $migration$;
  create table if not exists teloa_business_configuration_versions(
  owner_id text not null,scope_id text not null,version integer not null check(version>0),manifest jsonb not null,
  hash text not null check(hash~'^[a-f0-9]{64}$'),created_at timestamptz not null,primary key(owner_id,scope_id,version));
@@ -28,6 +34,25 @@ export async function initializeBusinessConfigurations(pool:Pool):Promise<void>{
 export class BusinessConfigurationStore{
  readonly pool:Pool
  constructor(pool:Pool){this.pool=pool}
+ /** 固定历史只沿当时 manifest 的版本引用读取；绝不读取当前 leaf head 替代历史。 */
+ async versionInTransaction(db:PoolClient,ownerId:string,scope:string,version:number):Promise<BusinessConfigurationCurrent|undefined>{
+  const stored=(await db.query('select * from teloa_business_configuration_versions where owner_id=$1 and scope_id=$2 and version=$3',[ownerId,scope,version])).rows[0]
+  if(!stored)return undefined
+  try{
+   const manifest=readBusinessConfigurationManifestVersioned(stored.manifest)
+   if(manifest.scope!==scope||stored.hash!==businessConfigurationHash(manifest)||!Number.isSafeInteger(stored.version)||stored.version<1)throw corrupt()
+   const leaves=[]
+   for(const ref of manifest.definitions){
+    const row=(await db.query('select * from teloa_business_local_definitions where owner_id=$1 and scope_id=$2 and kind=$3 and local_id=$4 and version=$5',[ownerId,scope,ref.kind,ref.localId,ref.version])).rows[0]
+    if(!row)throw corrupt()
+    const leaf=versionOf(scope,row),parsed=prepareBusinessConfigurationDefinition(scope,leaf.kind,JSON.parse(leaf.body),manifest.format)
+    if(leaf.definitionHash!==ref.definitionHash||parsed.localId!==leaf.localId||parsed.semver!==leaf.semver||parsed.body!==leaf.body||parsed.definitionHash!==leaf.definitionHash)throw corrupt()
+    leaves.push(leaf)
+   }
+   readBusinessConfigurationCandidateVersioned({...manifest,definitions:leaves.map(leaf=>({kind:leaf.kind,definition:JSON.parse(leaf.body)}))})
+   return {ownerId,scope,version:stored.version,manifest,hash:stored.hash,createdAt:new Date(stored.created_at).toISOString(),leaves}
+  }catch{throw corrupt()}
+ }
  /** 所有事实一次 SQL 读取，即使调用方用 READ COMMITTED 也来自同一 MVCC 快照。 */
  async currentInTransaction(db:PoolClient,ownerId:string,scope:string):Promise<BusinessConfigurationCurrent|undefined>{
   const row=(await db.query(`select

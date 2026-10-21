@@ -5,7 +5,7 @@ import {WorkError,isRoleMemory,roleMemorySource,taskInput,type DigitalRole} from
 import {resolveSessionLineage,type LineageSession} from './subagent-lineage.ts'
 import type {RoleMemoryActor,TaskExecutionScope} from '@teloa/backend'
 
-export const roleMemoryEndpoints=['role-memory/list','role-memory/create','role-memory/confirm','role-memory/withdraw'] as const
+export const roleMemoryEndpoints=['role-memory/list','role-memory/create','role-memory/confirm','role-memory/withdraw','role-memory/edit','role-memory/read-version'] as const
 export const roleMemoryViewEndpoints=['role-memory-views/create','role-memory-views/read'] as const
 export const roleMemoryProposalToolName='teloa_role_memory_propose'
 /** 岗位记忆读口只接受已授权的范围选择，不把任务及原生会话载体作为读取权限。 */
@@ -19,17 +19,21 @@ type RoleMemoryOperations={
  create:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
  confirm:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
  withdraw:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
+ edit?:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
+ readVersion?:(actor:RoleMemoryActor,input:unknown)=>Promise<unknown>
 }
 
 /** 浏览器只以已认证的本人身份管理候选和确认记录，不接受调用方声明主体。 */
 export function createRoleMemoryHandler(ownerId:string,get:()=>Promise<RoleMemoryOperations>){
  return async(endpoint:string,payload:unknown)=>{
   if(!(roleMemoryEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此员工记忆接口。')
-  taskInput(payload,endpoint==='role-memory/list'?['roleId']:endpoint==='role-memory/create'?['requestId','roleId','expectedRoleVersion','title','markdown','source','visibility']:['requestId','memoryId','expectedStateVersion'])
+  taskInput(payload,endpoint==='role-memory/list'?['roleId']:endpoint==='role-memory/create'?['requestId','roleId','expectedRoleVersion','title','markdown','source','visibility']:endpoint==='role-memory/edit'?['requestId','roleId','memoryId','expectedContentVersion','expectedContentHash','expectedStateVersion','title','markdown']:endpoint==='role-memory/read-version'?['roleId','memoryId','version']:['requestId','memoryId','expectedStateVersion'])
   const service=await get(),actor={ownerId,kind:'human' as const}
   if(endpoint==='role-memory/list')return service.list(actor,payload)
   if(endpoint==='role-memory/create')return service.create(actor,payload)
   if(endpoint==='role-memory/confirm')return service.confirm(actor,payload)
+  if(endpoint==='role-memory/edit'){if(!service.edit)throw new WorkError('teloa/not-found','当前宿主尚不支持编辑员工记忆。');return service.edit(actor,payload)}
+  if(endpoint==='role-memory/read-version'){if(!service.readVersion)throw new WorkError('teloa/not-found','当前宿主尚不支持读取记忆历史。');return service.readVersion(actor,payload)}
   return service.withdraw(actor,payload)
  }
 }

@@ -3,13 +3,34 @@ import {
  readBusinessBuilderRequest,readBusinessConfigurationDraftResponseVersioned as readBusinessConfigurationDraftResponse,readBusinessConfigurationPreviewResponse,readBusinessConfigurationApplyResult,readBusinessConfigurationCurrentResponseVersioned as readBusinessConfigurationCurrentResponse,readBusinessConfigurationPageProjectionVersioned as readBusinessConfigurationPageProjection,
  type BusinessConversationReserve,type BusinessConversationList,type BusinessConfigurationPageRequest,
 } from '@teloa/contract'
+import {businessSetupUuid,readBusinessSetupPlan,readBusinessSetupPreview,readBusinessSetupAdoption,readBusinessSetupManual,readBusinessSetupHistory,type BusinessSetupManual} from '@teloa/contract'
 type Call=(endpoint:string,input:unknown,signal?:AbortSignal)=>Promise<unknown>
 export type BusinessBuilderDraftTarget={sessionId:string;draftId:string}
 export type BusinessBuilderPreviewInput=BusinessBuilderDraftTarget&{expectedRevision:number}
+export type BusinessBuilderDiscardInput=({sessionId:string}|{requestId:string})&{draftId:string;expectedRevision:number}
 export type BusinessBuilderApplyInput=BusinessBuilderPreviewInput&{requestId:string;expectedBaseVersion:number;previewReceipt:string}
 const invalid=()=>new WorkError('teloa/invalid-host-response','业务搭建回包与请求不一致。')
 export function createBusinessBuilderApi(call:Call){
+ const setupTarget=(input:BusinessBuilderDraftTarget)=>{readBusinessConversationSession({sessionId:input.sessionId});if(!businessSetupUuid(input.draftId))throw invalid();return input}
  return {
+  async setupPlans(input:{scope:string},signal?:AbortSignal){
+   if(Object.keys(input).length!==1||typeof input.scope!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(input.scope)||input.scope==='general')throw invalid()
+   const result=await call('business-setup-plan/list',input,signal)
+   if(!result||typeof result!=='object'||Object.keys(result).length!==1||!('items'in result)||!Array.isArray(result.items)||result.items.length>16)throw invalid()
+   const nonempty=(v:unknown,max:number)=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v)
+   if(result.items.some(row=>!row||typeof row!=='object'||Object.keys(row).length!==5||Object.keys(row).some(k=>!['scope','draftId','sessionId','title','revision'].includes(k))||row.scope!==input.scope||!businessSetupUuid(row.draftId)||!nonempty(row.sessionId,200)||!nonempty(row.title,120)||!Number.isSafeInteger(row.revision)||row.revision<1)||new Set(result.items.map(row=>row.draftId)).size!==result.items.length||new Set(result.items.map(row=>row.sessionId)).size!==result.items.length)throw invalid()
+   return result as {items:{draftId:string;scope:string;sessionId:string;title:string;revision:number}[]}
+  },
+  async setupPlan(input:BusinessBuilderDraftTarget,signal?:AbortSignal){const target=setupTarget(input),value=await call('business-setup-plan/read',target,signal);if(value===null)return null;const result=readBusinessSetupPlan(value);if(result.draftId!==target.draftId)throw invalid();return result},
+  async setupHistory(input:{scope:string;beforeVersion?:number},signal?:AbortSignal){if(typeof input.scope!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(input.scope)||input.scope==='general'||Object.keys(input).some(k=>!['scope','beforeVersion'].includes(k))||input.beforeVersion!==undefined&&(!Number.isSafeInteger(input.beforeVersion)||input.beforeVersion<1))throw invalid();const result=readBusinessSetupHistory(await call('business-setup-plan/history',input,signal));if(result.scope!==input.scope||input.beforeVersion!==undefined&&result.items.some(row=>row.version>=input.beforeVersion!))throw invalid();return result},
+  async setupRestore(input:BusinessBuilderDraftTarget&{requestId:string;expectedRevision:0;configurationRevision:number;configurationHash:string;version:number;expectedHash:string},signal?:AbortSignal){setupTarget(input);const result=readBusinessSetupPlan(await call('business-setup-plan/restore',input,signal));if(result.draftId!==input.draftId||result.revision!==1)throw invalid();return result},
+  async setupManual(input:BusinessBuilderDraftTarget,signal?:AbortSignal){setupTarget(input);const result=readBusinessSetupManual(await call('business-setup-plan/manual',input,signal));if(result.draftId!==input.draftId)throw invalid();return result},
+  async setupEdit(input:BusinessBuilderDraftTarget&{requestId:string;expectedRevision:number;configurationRevision:number;configurationHash:string}&Pick<BusinessSetupManual,'candidate'|'description'|'roleEdits'>,signal?:AbortSignal){setupTarget(input);const result=readBusinessSetupPlan(await call('business-setup-plan/edit',input,signal));if(result.draftId!==input.draftId||result.revision!==input.expectedRevision+1)throw invalid();return result},
+  async setupPreview(input:BusinessBuilderDraftTarget&{expectedRevision:number;rejected:string[]},signal?:AbortSignal){setupTarget(input);const result=readBusinessSetupPreview(await call('business-setup-plan/preview',input,signal));if(result.draftId!==input.draftId||result.revision!==input.expectedRevision+1)throw invalid();return result},
+  async setupApply(input:BusinessBuilderDraftTarget&{requestId:string;expectedRevision:number;expectedDigest:string;previewReceipt:string},signal?:AbortSignal){setupTarget(input);const result=readBusinessSetupAdoption(await call('business-setup-plan/apply',input,signal));if(result.requestId!==input.requestId)throw invalid();return result},
+  async setupReceipt(input:BusinessBuilderDraftTarget&{requestId:string},signal?:AbortSignal){setupTarget(input);const value=await call('business-setup-plan/receipt',input,signal);if(value===null)return null;const result=readBusinessSetupAdoption(value);if(result.requestId!==input.requestId)throw invalid();return result},
+  async setupPrepare(input:BusinessBuilderDraftTarget&{expectedDigest?:string},signal?:AbortSignal){setupTarget(input);const result=readBusinessSetupPlan(await call('business-setup-plan/prepare',input,signal));if(result.draftId!==input.draftId||result.state!=='applied')throw invalid();return result},
+  async setupReadiness(input:BusinessBuilderDraftTarget,signal?:AbortSignal){setupTarget(input);const value=await call('business-setup-plan/readiness',input,signal);if(value===null)return null;if(!value||typeof value!=='object'||!('digest'in value)||typeof value.digest!=='string'||!/^[a-f0-9]{64}$/.test(value.digest)||!('rows'in value)||!Array.isArray(value.rows))throw invalid();return value as {digest:string;rows:{itemInstanceId:string;kind:string;title:string;state:string}[]}},
   async recentDaily(input:{scope:string},signal?:AbortSignal){
    const r=readBusinessConversationRecentDaily(input)
    return readBusinessConversationRecentDailyResponse(await call('business-conversations/recent-daily',r,signal),r.scope)
@@ -44,6 +65,11 @@ export function createBusinessBuilderApi(call:Call){
   async draft(input:BusinessBuilderDraftTarget,signal?:AbortSignal){
    const r=readBusinessBuilderRequest('business-configuration/draft',input),result=readBusinessConfigurationDraftResponse(await call('business-configuration/draft',r,signal))
    if(result.id!==r.draftId)throw invalid();return result
+  },
+  async discard(input:BusinessBuilderDiscardInput,signal?:AbortSignal){
+   const r=readBusinessBuilderRequest('business-configuration/discard',input),result=readBusinessConfigurationDraftResponse(await call('business-configuration/discard',r,signal))
+   if(result.id!==r.draftId||result.revision!==Number(r.expectedRevision)+1||result.status!=='discarded')throw invalid()
+   return result
   },
   async preview(input:BusinessBuilderPreviewInput,signal?:AbortSignal){
    const r=readBusinessBuilderRequest('business-configuration/preview',input),result=readBusinessConfigurationPreviewResponse(await call('business-configuration/preview',r,signal))

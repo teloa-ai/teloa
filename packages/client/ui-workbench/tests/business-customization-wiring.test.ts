@@ -15,7 +15,7 @@ const [frame,page,ledger,panel,api,entry]=await Promise.all([
 test('装配处把会话定制 API 传进真实台账概览，并在刷新后重读台账',async()=>{
  assert.match(frame,/businessCustomizationApi=\{businessCustomizationApi\}/)
  assert.match(page,/target\.section==='overview'[\s\S]*<BusinessCustomization/)
- assert.match(page,/ledgerVisible&&<BusinessLedgerSurface refreshKey=\{ledgerRevision\}/)
+ assert.match(page,/ledgerVisible&&<BusinessLedgerSurface refreshKey=\{ledgerRevision\+contentRevision\}/)
  assert.match(page,/applyPageCreatedBusinessDefinition\(businessCustomizationApi,target\.scope,preview\)/)
  const preview={draft:{id:'draft-1',scope:'sales',kind:'object',localId:'customer',definitionHash:'a'.repeat(64)},receipt:{id:'fixed-preview'}},calls:Record<string,unknown>[]=[]
  const api={directory:async(input:unknown)=>{assert.deepEqual(input,{scope:'sales'});return {entries:[{kind:'object',localId:'customer',current:{version:4}}]}},apply:async(input:Record<string,unknown>)=>{calls.push(input);return {kind:'object',localId:'customer',current:{version:5}}}}

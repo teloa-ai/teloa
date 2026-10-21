@@ -29,7 +29,7 @@ export function LocalRetrievalResourcesPresentation({status,resource,busy,error,
  const together=(sourceId:string)=>sourceCount(sourceId)>1&&<small className={css.together}>{t('retrieval.resources.sourceImpact',{count:sourceCount(sourceId)})}</small>
  return <section className={`${css.panel} ${css.compact} ${css.search}`} aria-label={t('retrieval.resources.title')} data-retrieval-resources>
   <header className={css.searchHeader}>
-   <div className={css.searchIntro}><strong>{t('retrieval.resources.title')}</strong><p>{t('retrieval.resources.summary')}</p></div>
+   <div className={css.searchIntro}><strong>{t('retrieval.resources.title')}</strong><p>{t('retrieval.resources.summary')}</p>{status?.enrolled===0&&onModelSettings&&<><p>{t('retrieval.resources.modelsHint')}</p><ActionButton className={css.button} disabled={(settingsBusy??busy)||!!readFailed} onClick={onModelSettings}>{t('retrieval.resources.openSettings')}</ActionButton></>}</div>
    <div className={css.searchTools}>
     {status?<span role="status" className={css.count}>{t('retrieval.resources.counts',{sources:status.enrolled})}</span>:<span className={css.count}>{t('retrieval.phase.checking')}</span>}
     {status?.building&&<ActionButton className={css.button} disabled={busy} onClick={onCancel}>{t(busy?'retrieval.resources.working':'retrieval.resources.cancel')}</ActionButton>}

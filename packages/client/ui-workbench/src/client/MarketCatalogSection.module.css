@@ -31,7 +31,7 @@
 /* 详情：返回链接 + 一张完整卡片（添加、来源与许可、评价、问题反馈都在这里） */
 .backLink{justify-self:start;margin-bottom:8px}
 .detailView{max-width:760px}
-.detailDrawer.detailDrawer{width:min(740px,calc(100vw - 28px))}
+.detailDrawer.detailDrawer{width:min(520px,100vw)}
 .detailDrawer .section,.detailDrawer .detailView{padding:22px 24px}
 .detailDrawer .detailView .card{padding:0;border:0;border-radius:0}
 .detailView .card{padding:20px 22px;gap:10px}
@@ -57,10 +57,12 @@
 .alternatives button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 
 /* 抽屉标题已给出条目名称，详情卡片不再重复同一标题。 */
-.detailView .name{display:none}
+.detailView .name{display:block;min-width:0;flex:1;font-size:18px;line-height:1.4;overflow-wrap:anywhere}
 
 /* 短说明或读取失败时，网格里的方案正文也保持与抽屉标题对齐。 */
 .detailDrawer .section>article{box-sizing:border-box;width:100%;min-width:0;max-width:none;margin:0}
 .toolRow{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;min-width:0}
 .toolRow>label{flex:1 1 280px;max-width:360px;min-width:220px}
 .toolRow>div{flex:999 1 auto;min-width:0}
+
+.detailView .top{align-items:center;gap:8px 12px}.detailView .actions{order:50;position:sticky;bottom:-22px;z-index:1;padding:16px 0;background:var(--teloa-surface);border-top:1px solid var(--teloa-border)}.detailView .actions .primary{flex:1;min-height:38px}.detailView .summary{margin-top:6px;font-size:14px;line-height:1.7}.detailView .card>.details{border-top:1px solid var(--teloa-border);padding-top:12px}

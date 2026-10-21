@@ -1,8 +1,8 @@
 /** 内置员工头像键；身份定义与可移植模板共享同一白名单。 */
 export const ROLE_AVATAR_KEYS = Object.freeze(['ui-designer', 'project', 'researcher', 'sales', 'supporter', 'commerce', 'developer', 'product-manager', 'data-analyst', 'qa-tester', 'it-operations', 'security-analyst', 'marketing', 'content-writer', 'brand-designer', 'hr', 'recruiter', 'finance', 'legal', 'procurement', 'admin', 'executive-assistant', 'business-analyst', 'trainer', 'general', 'general-research', 'general-creative', 'general-execution'])
-/** 1.0 小机器人的形状与员工色板；墨黑只给 Teloa 主助手，员工不可选。 */
+/** 1.0 小机器人的形状与员工色板；含最新在线稿的墨黑选项；旧预设外观不变。 */
 export const ROLE_AVATAR_SHAPES = Object.freeze(['circle', 'pebble', 'star4', 'cloud', 'drop', 'squircle', 'bean', 'flower', 'softtri', 'capsule', 'ghost', 'hexa'])
-export const ROLE_AVATAR_COLORS = Object.freeze(['terracotta', 'orange', 'amber', 'olive', 'teal', 'mist', 'indigo', 'plum', 'warmgray'])
+export const ROLE_AVATAR_COLORS = Object.freeze(['terracotta', 'orange', 'amber', 'olive', 'teal', 'mist', 'indigo', 'plum', 'warmgray', 'ink'])
 /**
  * 预设键的固定外观（形状 × 颜色，互不重复）；已保存的旧值据此显示，不能随意改动。
  * 前 12 项沿用 Claude Design 员工对照表，其余按同规则补齐；稿中高管助理与通用同为暖灰圆，高管助理改为梅紫圆。

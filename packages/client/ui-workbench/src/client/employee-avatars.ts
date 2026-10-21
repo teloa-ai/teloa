@@ -8,7 +8,7 @@ const shapeNames:Record<RoleAvatarShape,readonly [string,string,string]>={
 }
 const colorNames:Record<RoleAvatarColor,readonly [string,string,string]>={
  terracotta:['陶土','陶土','Terracotta'],orange:['橙','橙','Orange'],amber:['琥珀','琥珀','Amber'],olive:['橄榄绿','橄欖綠','Olive'],teal:['青绿','青綠','Teal'],
- mist:['雾蓝','霧藍','Mist blue'],indigo:['靛蓝','靛藍','Indigo'],plum:['梅紫','梅紫','Plum'],warmgray:['暖灰','暖灰','Warm gray']
+ mist:['雾蓝','霧藍','Mist blue'],indigo:['靛蓝','靛藍','Indigo'],plum:['梅紫','梅紫','Plum'],warmgray:['暖灰','暖灰','Warm gray'],ink:['墨黑','墨黑','Ink']
 }
 const index=(locale:string)=>locale==='zh-CN'?0:locale.startsWith('zh')?1:2
 export const avatarShapes=ROLE_AVATAR_SHAPES,avatarColors=ROLE_AVATAR_COLORS,avatarKeyOf=roleAvatarKeyOf

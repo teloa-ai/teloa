@@ -1,4 +1,17 @@
 export const BUSINESS_PAGE_MESSAGE_ROWS = [
+  ['business.more.changes','变更集复核','變更集覆核','Review changes'],
+  ['business.more.team','业务团队','業務團隊','Business team'],
+  ['business.more.openBuilder','打开搭建会话','開啟搭建對話','Open builder conversation'],
+  ['business.more.adjustmentNote','将打开搭建会话，修改在采用前不会影响当前业务。','將開啟搭建對話，採用前不會影響目前業務。','Open a builder conversation. Changes take effect after you review and adopt them.'],
+  ['business.more.changesUnavailable','业务方案连接尚未就绪，请稍后重试。','業務方案連線尚未就緒，請稍後重試。','The business plan connection is not ready. Try again shortly.'],
+  ['business.more.noSetupChanges','当前业务没有待复核的搭建方案。','目前業務沒有待覆核的搭建方案。','There are no business plans awaiting review.'],
+  ['business.more.setupChangesNote','回到原搭建会话核对定义与员工变更；采用前不会影响当前业务。','返回原搭建對話核對定義與員工變更；採用前不會影響目前業務。','Review definition and employee changes in their original builder conversation. They take effect after adoption.'],
+  ['business.ledger.overview','概览','概覽','Overview'],
+  ['business.ledger.tab','台账','台賬','Records'],
+  ['business.ledger.analysis','分析','分析','Analysis'],
+  ['business.ledger.type','记录类型','記錄類型','Record type'],
+  ['business.ledger.analysisEmpty','此记录类型还没有分析视图。','此記錄類型還沒有分析檢視。','No analysis views for this record type yet.'],
+  ['business.ledger.noListView','此记录类型尚未配置台账视图。可切换到分析查看已有统计，或调整业务定义。','此記錄類型尚未設定台賬檢視。可切換到分析查看現有統計，或調整業務定義。','No records view is configured for this type. Switch to Analysis for existing statistics, or adjust the business definition.'],
   [
     "business.section.data",
     "业务数据",
@@ -1093,7 +1106,7 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
   ["business.more.sources","业务资源","業務資源","Business resources","ソリューションのリソース","솔루션 리소스","Tài nguyên giải pháp","Recursos de la solución","Ressources de la solution","Lösungsressourcen","Recursos da solução"],
   ["business.more.advanced","高级设置","進階設定","Advanced settings","詳細設定","고급 설정","Cài đặt nâng cao","Configuración avanzada","Paramètres avancés","Erweiterte Einstellungen","Definições avançadas"],
   ["business.more.manualDefinition","手动定义","手動定義","Define manually","手動で定義","직접 정의","Định nghĩa thủ công","Definir manualmente","Définir manuellement","Manuell definieren","Definir manualmente"],
-  ["business.more.shareBusiness","分享业务","分享業務","Share this business","この業務を共有","이 업무 공유","Chia sẻ nghiệp vụ này","Compartir este negocio","Partager cette activité","Geschäftsbereich teilen","Partilhar este negócio"],
+  ["business.more.shareBusiness","分享业务配置","分享業務設定","Share business configuration","この業務を共有","이 업무 공유","Chia sẻ nghiệp vụ này","Compartir este negocio","Partager cette activité","Geschäftsbereich teilen","Partilhar este negócio"],
   [
     "business.section.backLedger",
     "返回业务",

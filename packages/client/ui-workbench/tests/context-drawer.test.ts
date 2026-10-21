@@ -45,3 +45,10 @@ test('共同抽屉遮罩需按下与松开均在外部，打开与关闭复用�
  tree.props.onPointerDown(pointer(400));tree.props.onPointerUp(pointer(400));assert.equal(closes,1)
  app.render('ContextDrawer',{...props,open:false});app.effects[0]?.();assert.equal(opened,1)
 })
+
+
+test('身份详情保留对话框名称，隐藏标题不再生成重复的标题层级',()=>{
+ const app=mount('ContextDrawer.tsx',{'./dialog-focus.js':{openDialog:()=>()=>{}},'./use-dialog-dismiss.js':sharedDismiss()})
+ const tree=app.render('ContextDrawer',{title:'员工 A',titleHidden:true,close:()=>{},children:null}),label=nodes(tree).find(node=>node.props['data-drawer-label'])
+ assert.ok(label);assert.equal(label.props.id,tree.props['aria-labelledby']);assert.equal(nodes(tree).some(node=>node.type==='h2'),false)
+})

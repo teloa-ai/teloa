@@ -26,3 +26,8 @@
 @media(max-width:800px){.layout{grid-template-columns:minmax(0,1fr)}.profile{overflow:visible}.page{height:auto;min-height:100dvh}.desktop{min-height:60dvh}.expanded .desktop{min-height:100dvh}}
 /* 「⋯」菜单里的设备项：名称在左，接入状态以说明字号靠右。 */
 .menuItem{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:7px 10px;border:0;border-radius:6px;background:transparent;color:var(--teloa-secondary);font:inherit;font-size:var(--teloa-font-control);text-align:left;text-decoration:none;cursor:pointer}.menuItem:hover,.menuItem:focus-visible{background:var(--teloa-hover);color:var(--teloa-text)}.menuItem>svg{flex:none;color:var(--teloa-muted)}.menuItem>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.menuItem>small{flex:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.previewLink{display:flex;align-items:center;gap:12px;color:var(--teloa-text);text-decoration:none;min-width:0}
+.previewImage{display:grid;place-items:center;flex:none;width:120px;height:68px;background:var(--teloa-subtle);border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted)}
+.previewLink>span:last-child{min-width:0;display:grid;gap:4px}
+.previewLink strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.previewLink small{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.5;overflow-wrap:anywhere}

@@ -334,3 +334,39 @@ test('归档历史仍阻止reference目标、类型、字段身份改变和对�
  await assert.rejects(adoptNext(f,{removeDefinitions:[{kind:'object-type',localId:'ticket'}],upsertPages:[{...page,objectType:'other'}]}),{code:'teloa/conflict'})
  assert.equal((await f.apply.current(f.actor,{scope:first.scope}))?.version,1)
 })
+
+for(const format of ['teloa.business-configuration/v1','teloa.business-configuration/v2'])test(format+' 退役草案幂等且保留正文与历史，不能再采用或修改，不影响正式配置',async()=>{
+ const f=await fixture(format),request={draftId:f.draft.id,expectedRevision:f.draft.revision}
+ await assert.rejects(f.drafts.discard({ownerId:'other',scopeIds:[]},request),{code:'teloa/forbidden'})
+ await assert.rejects(f.drafts.discard(f.actor,{...request,expectedRevision:1}),{code:'teloa/version-conflict'})
+ const [first,again]=await Promise.all([f.drafts.discard(f.actor,request),f.drafts.discard(f.actor,request)])
+ assert.deepEqual(first,again)
+ assert.equal(first.status,'discarded');assert.equal(first.revision,f.draft.revision+1)
+ assert.deepEqual(first.candidate,f.draft.candidate)
+ assert.equal((await services().drafts.get(f.actor,{draftId:f.draft.id})).status,'discarded')
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_configuration_heads where owner_id=$1 and scope_id=$2',[f.actor.ownerId,f.draft.scope])).rows[0].n,0)
+ await assert.rejects(f.apply.apply(f.actor,f.input),{code:'teloa/version-conflict'})
+ await assert.rejects(f.drafts.revise(f.actor,{requestId:randomUUID(),draftId:first.id,expectedRevision:first.revision,patch:{title:'复活草案'}}),{code:'teloa/version-conflict'})
+ const approved=await fixture(),published=await approved.apply.apply(approved.actor,approved.input)
+ approved.actor.scopeIds=[published.scope]
+ await assert.rejects(approved.drafts.discard(approved.actor,{draftId:approved.draft.id,expectedRevision:approved.draft.revision}),{code:'teloa/version-conflict'})
+ assert.equal((await approved.apply.current(approved.actor,{scope:published.scope}))?.version,published.version)
+})
+test('放弃与采用同时竞争只有一方生效，旧状态约束迁移后支持退役',async()=>{
+ const schema='teloa_discard_migration_'+randomUUID().replaceAll('-','')
+ await pool.query('create schema "'+schema+'"')
+ const migration=new Pool({connectionString:container.getConnectionUri(),options:'-c search_path='+schema})
+ try{
+  await migration.query("create table teloa_business_configuration_drafts (like public.teloa_business_configuration_drafts including all);alter table teloa_business_configuration_drafts drop constraint teloa_business_configuration_drafts_status_v2_check;alter table teloa_business_configuration_drafts add constraint teloa_business_configuration_drafts_status_check check(status in ('draft','applied'))")
+  await api.initializeBusinessConfigurations(migration)
+  await api.initializeBusinessConfigurations(migration)
+  const statuses=(await migration.query("select pg_get_constraintdef(oid) body from pg_constraint where conrelid='teloa_business_configuration_drafts'::regclass and conname='teloa_business_configuration_drafts_status_v2_check'")).rows
+  assert.match(statuses[0].body,/discarded/)
+ }finally{await migration.end();await pool.query('drop schema "'+schema+'" cascade')}
+ const f=await fixture()
+ const results=await Promise.allSettled([f.drafts.discard(f.actor,{draftId:f.draft.id,expectedRevision:f.draft.revision}),f.apply.apply(f.actor,f.input)])
+ assert.equal(results.filter(row=>row.status==='fulfilled').length,1)
+ const current=(await pool.query("select status from teloa_business_configuration_drafts where owner_id=$1 and id=$2",[f.actor.ownerId,f.draft.id])).rows[0].status
+ const heads=(await pool.query("select version from teloa_business_configuration_heads where owner_id=$1 and scope_id=$2",[f.actor.ownerId,f.draft.scope])).rowCount
+ assert.equal(heads,current==='applied'?1:0)
+})

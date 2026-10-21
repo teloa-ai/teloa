@@ -28,7 +28,7 @@ export type BusinessConfigurationPageContentV2=
 export type BusinessConfigurationPageProjectionV2={format:'teloa.business-configuration-page/v2';scope:string;configurationHash:string;page:BusinessConfigurationPageContentV2}&(
  {mode:'preview';draftId:string;revision:number}|{mode:'saved';configurationVersion:number})
 export type BusinessConfigurationPageProjectionVersioned=BusinessConfigurationPageProjection|BusinessConfigurationPageProjectionV2
-export type BusinessConfigurationDraftResponse={ownerId:string;id:string;scope:string;revision:number;baseVersion:number;candidate:BusinessConfigurationCandidate;hash:string;status:'draft'|'applied';createdAt:string;updatedAt:string}
+export type BusinessConfigurationDraftResponse={ownerId:string;id:string;scope:string;revision:number;baseVersion:number;candidate:BusinessConfigurationCandidate;hash:string;status:'draft'|'applied'|'discarded';createdAt:string;updatedAt:string}
 /**
  * pageTitles：页面标题仍是所引用定义（看板或对象类型）原文时，宿主从同一版本配置的定义附上其标题本地化元数据，
  * 让页面导航按界面语言显示内置页名而不读取页面数据；用户改过的页名不附带。
@@ -128,7 +128,7 @@ export function readBusinessConfigurationPageProjectionVersioned(value:unknown):
 function draftResponse<T extends BusinessConfigurationCandidate|BusinessConfigurationCandidateV2>(value:unknown,read:(value:unknown)=>T):Omit<BusinessConfigurationDraftResponse,'candidate'>&{candidate:T}{return response(()=>{
  const r=exact(value,['ownerId','id','scope','revision','baseVersion','candidate','hash','status','createdAt','updatedAt'])
  const candidate=read(r.candidate)
- if(typeof r.ownerId!=='string'||!r.ownerId.trim()||r.ownerId.length>128||!uuid(r.id)||r.scope!==candidate.scope||!positive(r.revision)||!natural(r.baseVersion)||!hash(r.hash)||!['draft','applied'].includes(String(r.status))||!stamp(r.createdAt)||!stamp(r.updatedAt)||r.updatedAt<r.createdAt)throw bad()
+ if(typeof r.ownerId!=='string'||!r.ownerId.trim()||r.ownerId.length>128||!uuid(r.id)||r.scope!==candidate.scope||!positive(r.revision)||!natural(r.baseVersion)||!hash(r.hash)||!['draft','applied','discarded'].includes(String(r.status))||!stamp(r.createdAt)||!stamp(r.updatedAt)||r.updatedAt<r.createdAt)throw bad()
  return {...r,candidate} as Omit<BusinessConfigurationDraftResponse,'candidate'>&{candidate:T}
 })}
 export function readBusinessConfigurationDraftResponse(value:unknown):BusinessConfigurationDraftResponse{return draftResponse(value,readBusinessConfigurationCandidate)}
@@ -170,6 +170,7 @@ export type BusinessConfigurationPageRequest={scope:string;pageId:string;timeRan
 export function readBusinessBuilderRequest(endpoint:string,input:unknown):Record<string,unknown>{
  const keys:Record<string,string[]>={
   'business-configuration/draft':['sessionId','draftId'],
+  'business-configuration/discard':isRecord(input)&&Object.hasOwn(input,'requestId')?['requestId','draftId','expectedRevision']:['sessionId','draftId','expectedRevision'],
   'business-configuration/preview':['sessionId','draftId','expectedRevision'],
   'business-configuration/apply':['sessionId','requestId','draftId','expectedRevision','expectedBaseVersion','previewReceipt'],
   'business-configuration/receipt':['requestId'],

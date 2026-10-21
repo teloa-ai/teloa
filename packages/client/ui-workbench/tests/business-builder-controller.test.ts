@@ -18,6 +18,7 @@ function fixture(){
  const source={read:():BusinessBuilderSwitchSnapshot=>({mainSessionId:selected,bindingSessionId:selected,bindingReady:input!==undefined,input:selected?input:input===undefined?undefined:null,pendingSubmissions:[],monitor:undefined})}
  const api=createBusinessBuilderApi(async(endpoint,payload)=>{
   calls.push(endpoint);const p=payload as Record<string,any>
+  if(endpoint==='business-setup-plan/read')return null
   if(endpoint==='business-conversations/recent-daily')return [...bindings.values()].find(b=>b.kind==='daily'&&b.scope===p.scope)??null
   if(endpoint==='business-conversations/reserve'){
    if(p.kind==='daily'){const b={...p,createdAt:stamp,updatedAt:stamp} as BusinessConversationBinding;bindings.set(b.requestId,b);return b}
@@ -38,6 +39,15 @@ function fixture(){
  return {port,changeInput:(next:BusinessBuilderSwitchSnapshot['input'])=>{input=next;for(const listener of listeners)listener()},notify:()=>{for(const listener of listeners)listener()},controller,calls,blocks,bindings,drafts,conversations,rows,source,space:()=>space,changeSpace:()=>space=randomUUID(),selected:()=>selected,select:(id:string|undefined)=>{selected=id},navigate:(value:string)=>location=value,refreshes:()=>refreshes}
 }
 
+test('来源抽屉关闭后原生read迟答不能导航到旧方案',async()=>{
+ const f=fixture();f.select('original');await f.controller.connect({})
+ let current=true,release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve)
+ f.port.read=async sessionId=>{await gate;return {id:'target',sessionId,requestedSessionId:sessionId,ownerId:'self',title:'方案',scopeIds:['general'],version:1,status:'ready',createdAt:stamp}}
+ const token=f.controller.captureNavigation(()=>current),pending=f.controller.open('target',false,token)
+ await new Promise(resolve=>setImmediate(resolve));current=false;release();await assert.rejects(pending,{code:'teloa/conflict'})
+ assert.equal(f.selected(),'original');assert.equal(f.calls.includes('open'),false)
+ f.controller.dispose()
+})
 test('无main真实已就绪的空选择不造InputState；未确认连接/选择/绑定保持undefined',()=>{
  const common={connected:true,generationReady:true,selectionReady:true,mainSessionId:undefined,bindingSessionId:undefined,bindingReady:false,pendingSubmissions:[],monitor:undefined}
  assert.equal(readBuilderSwitchSnapshot({...common,input:undefined}).input,null)
@@ -167,7 +177,8 @@ test('官方MutableSessionEventSource成功revise结果只刷新一次；继承�
  source.append(call(5,'failed'));source.append(result(6,'failed',true));assert.equal(refreshes,0)
  source.append(call(7,'changed'));source.append(result(8,'changed'));assert.equal(refreshes,1)
  source.replace(source.getSnapshot().entries,false);assert.equal(refreshes,1)
- off();source.append(call(9,'later'));source.append(result(10,'later'));assert.equal(refreshes,1)
+ source.append(call(9,'plan','teloa_business_builder_plan_revise'));source.append(result(10,'plan'));assert.equal(refreshes,2)
+ off();source.append(call(11,'later'));source.append(result(12,'later'));assert.equal(refreshes,2)
 })
 
 test('权威身份失败保持关闭并可显式重试，绑定读失败继续阻止原生发送',async()=>{
@@ -282,7 +293,7 @@ test('同一草稿批准贯穿原生read/adopt等待；后来编辑不能借旧�
   f.port.read=async sessionId=>{if(stage==='read')await gate;return {id:'target',sessionId,requestedSessionId:sessionId,ownerId:'self',title:'目标',scopeIds:['general'],version:1,status:'ready',createdAt:stamp}}
   f.port.adopt=async id=>{if(stage==='adopt')await gate;return id}
   const pending=f.controller.open('target',false,token)
-  await new Promise(resolve=>setImmediate(resolve));f.changeInput({...input,draft:'后来编辑',draftRev:2});release();await pending
+  await new Promise(resolve=>setImmediate(resolve));f.changeInput({...input,draft:'后来编辑',draftRev:2});release();await assert.rejects(pending,{code:'teloa/conflict'})
   assert.equal(f.selected(),'original');assert.equal(f.calls.includes('open'),false)
   f.controller.dispose()
  }
@@ -322,7 +333,7 @@ test('R2 当前builder重开仍核unknown/pending/真实binding，核对和adopt
   if(mode==='read-changed'){const original=f.controller.ports.api.bySession;f.controller.ports.api.bySession=async request=>{const result=await original(request);f.changeInput({...input,draft:'新编辑',draftRev:2});return result}}
   if(mode==='adopt-changed')f.port.adopt=async id=>{f.changeInput({...input,draft:'新编辑',draftRev:2});return id}
   const opens=f.calls.filter(c=>c==='open').length
-  if(mode==='adopt-changed')await f.controller.open(current)
+  if(mode==='adopt-changed')await assert.rejects(f.controller.open(current),{code:'teloa/conflict',details:{reason:'changed'}})
   else await assert.rejects(f.controller.open(current),{code:'teloa/conflict',details:{reason:mode==='read-changed'?'changed':mode}})
   assert.equal(f.calls.filter(c=>c==='open').length,opens);assert.equal(f.selected(),current)
   if(mode==='unknown')assert.equal(checks,1)

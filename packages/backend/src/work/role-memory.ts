@@ -68,8 +68,18 @@ export async function initializeRoleMemory(pool:Pool):Promise<void>{await pool.q
   source_snapshot jsonb not null check(jsonb_typeof(source_snapshot)='object'),visibility jsonb not null check(jsonb_typeof(visibility)='object'),proposed_by jsonb not null check(jsonb_typeof(proposed_by)='object'),
   candidate_at timestamptz not null,confirmed_at timestamptz,withdrawn_at timestamptz,
   primary key(owner_id,id),unique(owner_id,request_id),foreign key(role_id,owner_id) references teloa_roles(id,owner_id),
-  check((state='candidate' and state_version=1 and confirmed_at is null and withdrawn_at is null) or (state='confirmed' and state_version=2 and confirmed_at is not null and withdrawn_at is null) or (state='withdrawn' and withdrawn_at is not null and state_version=case when confirmed_at is null then 2 else 3 end))
+  constraint teloa_role_memories_lifecycle check((state='candidate' and state_version=current_version and confirmed_at is null and withdrawn_at is null) or (state='confirmed' and state_version=current_version+1 and confirmed_at is not null and withdrawn_at is null) or (state='withdrawn' and withdrawn_at is not null and state_version=current_version+case when confirmed_at is null then 1 else 2 end))
  );
+ do $migration$ declare old_check record; legacy text; begin
+  lock table teloa_role_memories in share row exclusive mode;
+  legacy:=upper(regexp_replace($old$CHECK ((state='candidate'::text and state_version=1 and confirmed_at is null and withdrawn_at is null) or (state='confirmed'::text and state_version=2 and confirmed_at is not null and withdrawn_at is null) or (state='withdrawn'::text and withdrawn_at is not null and state_version=case when confirmed_at is null then 2 else 3 end))$old$,'[[:space:]()]','','g'));
+  for old_check in select conname,pg_get_constraintdef(oid) as definition from pg_constraint where conrelid='teloa_role_memories'::regclass and contype='c' loop
+   if upper(regexp_replace(old_check.definition,'[[:space:]()]','','g'))=legacy then execute format('alter table teloa_role_memories drop constraint %I',old_check.conname); end if;
+  end loop;
+  if not exists(select 1 from pg_constraint where conrelid='teloa_role_memories'::regclass and conname='teloa_role_memories_lifecycle') then
+   alter table teloa_role_memories add constraint teloa_role_memories_lifecycle check((state='candidate' and state_version=current_version and confirmed_at is null and withdrawn_at is null) or (state='confirmed' and state_version=current_version+1 and confirmed_at is not null and withdrawn_at is null) or (state='withdrawn' and withdrawn_at is not null and state_version=current_version+case when confirmed_at is null then 1 else 2 end));
+  end if;
+ end $migration$;
  create table if not exists teloa_role_memory_versions(
   owner_id text not null,memory_id uuid not null,number integer not null check(number>0),content_hash text not null check(content_hash ~ '^[a-f0-9]{64}$'),bytes integer not null check(bytes>0 and bytes<=131072),markdown text not null,created_at timestamptz not null,
   primary key(owner_id,memory_id,number),foreign key(owner_id,memory_id) references teloa_role_memories(owner_id,id)
@@ -83,6 +93,10 @@ export async function initializeRoleMemory(pool:Pool):Promise<void>{await pool.q
  create table if not exists teloa_role_memory_creations(
   owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),memory_id uuid not null,result jsonb not null check(jsonb_typeof(result)='object'),created_at timestamptz not null,
   primary key(owner_id,request_id),foreign key(owner_id,memory_id) references teloa_role_memories(owner_id,id)
+ );
+ create table if not exists teloa_role_memory_edits(
+  owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),memory_id uuid not null,result_version integer not null check(result_version>1),result jsonb not null check(jsonb_typeof(result)='object'),created_at timestamptz not null,
+  primary key(owner_id,request_id),unique(owner_id,memory_id,result_version),foreign key(owner_id,memory_id,result_version) references teloa_role_memory_versions(owner_id,memory_id,number)
  );
  insert into teloa_role_memory_creations(owner_id,request_id,request_spec,memory_id,result,created_at)
  select m.owner_id,m.request_id,m.request_spec,m.id,jsonb_build_object(
@@ -103,6 +117,8 @@ export async function initializeRoleMemory(pool:Pool):Promise<void>{await pool.q
  create or replace function teloa_reject_role_memory_creation_mutation() returns trigger language plpgsql as $$ begin raise exception 'role memory creations are immutable'; end $$;
  drop trigger if exists teloa_role_memory_creations_immutable on teloa_role_memory_creations;
  create trigger teloa_role_memory_creations_immutable before update or delete on teloa_role_memory_creations for each row execute function teloa_reject_role_memory_creation_mutation();
+ drop trigger if exists teloa_role_memory_edits_immutable on teloa_role_memory_edits;
+ create trigger teloa_role_memory_edits_immutable before update or delete on teloa_role_memory_edits for each row execute function teloa_reject_role_memory_change_mutation();
  alter table teloa_task_runs add column if not exists role_memory jsonb not null default '[]'::jsonb;
 `);await initializeRoleExperience(pool)}
 
@@ -167,8 +183,15 @@ export class RoleMemoryService{
    if(!version||typeof version.markdown!=='string'||hash(version.markdown)!==version.content_hash||Buffer.byteLength(version.markdown)!==version.bytes)throw Error()
    const candidateAt=stamp(row.candidate_at),confirmedAt=row.confirmed_at===null?null:stamp(row.confirmed_at),withdrawnAt=row.withdrawn_at===null?null:stamp(row.withdrawn_at)
    const request=exact(row.request_spec,['roleId','expectedRoleVersion','title','contentHash','source','visibility','proposedBy'])
-   if(request.roleId!==row.role_id||request.expectedRoleVersion!==row.role_version||request.title!==row.title||request.contentHash!==version.content_hash||JSON.stringify(roleMemorySource(request.source))!==JSON.stringify(snapshot.source)||JSON.stringify(roleMemoryVisibility(request.visibility))!==JSON.stringify(visibility)||JSON.stringify(proposer(request.proposedBy,row.role_id as string))!==JSON.stringify(proposedBy))throw Error()
-   const value:RoleMemory={id:row.id,ownerId:row.owner_id,roleId:row.role_id,roleVersion:row.role_version,title:row.title,state:row.state as RoleMemory['state'],stateVersion:row.state_version,source:snapshot.source,sourceTitle:snapshot.title,sourceAvailable:sourceAvailable??await this.available(db,ownerId,snapshot,row.role_id as string),visibility,proposedBy,content:{version:version.number,contentHash:version.content_hash,bytes:version.bytes,markdown:version.markdown,createdAt:stamp(version.created_at)},candidateAt,confirmedAt,withdrawnAt}
+   const original=row.current_version===1?version:(await db.query('select * from teloa_role_memory_versions where owner_id=$1 and memory_id=$2 and number=1',[ownerId,row.id])).rows[0]
+   if(!original||request.roleId!==row.role_id||request.expectedRoleVersion!==row.role_version||request.contentHash!==original.content_hash||hash(original.markdown)!==original.content_hash||JSON.stringify(roleMemorySource(request.source))!==JSON.stringify(snapshot.source)||JSON.stringify(roleMemoryVisibility(request.visibility))!==JSON.stringify(visibility)||JSON.stringify(proposer(request.proposedBy,row.role_id as string))!==JSON.stringify(proposedBy))throw Error()
+   if(row.current_version===1){if(request.title!==row.title)throw Error()}
+   else{
+    const edit=(await db.query('select result from teloa_role_memory_edits where owner_id=$1 and memory_id=$2 and result_version=$3',[ownerId,row.id,row.current_version])).rows[0]?.result
+    if(!isRoleMemory(edit)||edit.ownerId!==ownerId||edit.id!==row.id||edit.roleId!==row.role_id||edit.roleVersion!==row.role_version||edit.title!==row.title||edit.content.version!==row.current_version||edit.content.contentHash!==version.content_hash||edit.content.markdown!==version.markdown||edit.content.createdAt!==stamp(version.created_at)||JSON.stringify(roleMemorySource(edit.source))!==JSON.stringify(snapshot.source)||JSON.stringify(roleMemoryVisibility(edit.visibility))!==JSON.stringify(visibility)||JSON.stringify(proposer(edit.proposedBy,row.role_id as string))!==JSON.stringify(proposedBy))throw Error()
+   }
+   const value:RoleMemory={id:row.id,ownerId:row.owner_id,roleId:row.role_id,roleVersion:row.role_version,title:row.title,state:row.state as RoleMemory['state'],stateVersion:row.state_version,source:snapshot.source,sourceTitle:snapshot.title,sourceAvailable:sourceAvailable??await this.available(db,ownerId,snapshot,row.role_id as string),visibility,proposedBy,content:{version:version.number,contentHash:version.content_hash,bytes:version.bytes,markdown:version.markdown,createdAt:stamp(version.created_at),...(row.current_version===1?{}:{editedBy:'self' as const})},candidateAt,confirmedAt,withdrawnAt}
+   if(!isRoleMemory(value))throw Error()
    return value
   }catch(error){if(error instanceof WorkError&&error.code!=='teloa/invalid-input')throw error;throw corrupt()}
  }
@@ -244,6 +267,44 @@ export class RoleMemoryService{
   const rows=(await this.pool.query('select * from teloa_role_memories where owner_id=$1 and role_id=$2 order by candidate_at,id',[who.ownerId,row.roleId])).rows,result:RoleMemory[]=[]
   for(const stored of rows)result.push(await this.read(this.pool,who.ownerId,stored));return result
  }
+ /** 本人修订只追加固定正文与回执，不改原来源、提出者、范围或确认状态。 */
+ async edit(principal:RoleMemoryActor,input:unknown):Promise<RoleMemory>{
+  const who=actor(principal);if(who.kind!=='human')throw new WorkError('teloa/forbidden','只有本人可以编辑员工记忆。')
+  const row=exact(input,['requestId','roleId','memoryId','expectedContentVersion','expectedContentHash','expectedStateVersion','title','markdown'])
+  if(!uuid(row.requestId)||!uuid(row.roleId)||!uuid(row.memoryId)||!positive(row.expectedContentVersion)||!positive(row.expectedStateVersion)||typeof row.expectedContentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.expectedContentHash)||typeof row.title!=='string'||!row.title.trim()||row.title.length>120)throw bad()
+  const content=markdown(row.markdown),title=row.title.trim(),spec={action:'edit',roleId:row.roleId,memoryId:row.memoryId,expectedContentVersion:row.expectedContentVersion,expectedContentHash:row.expectedContentHash,expectedStateVersion:row.expectedStateVersion,title,contentHash:content.contentHash},db=await this.pool.connect()
+  try{
+   await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['role-memory-change',who.ownerId,row.requestId])])
+   const previous=(await db.query('select *,request_spec=$3::jsonb as same from teloa_role_memory_edits where owner_id=$1 and request_id=$2',[who.ownerId,row.requestId,JSON.stringify(spec)])).rows[0]
+   if(previous){if(!previous.same)throw new WorkError('teloa/conflict','同一请求不能执行不同的记忆编辑。');const result=previous.result;if(!isRoleMemory(result)||result.ownerId!==who.ownerId||result.roleId!==row.roleId||result.id!==row.memoryId||result.content.version!==previous.result_version||result.content.contentHash!==content.contentHash)throw corrupt();await db.query('commit');return result}
+   if((await db.query('select 1 from teloa_role_memory_changes where owner_id=$1 and request_id=$2',[who.ownerId,row.requestId])).rows.length)throw new WorkError('teloa/conflict','同一请求已经用于其他记忆决定。')
+   // 与共享视图保持岗位 → 记忆锁序；不在持有记忆锁后等待岗位锁。
+   const role=await this.role(db,who.ownerId,row.roleId,true)
+   const stored=(await db.query('select * from teloa_role_memories where owner_id=$1 and id=$2 for update',[who.ownerId,row.memoryId])).rows[0]
+   if(!stored||stored.role_id!==role.id)throw new WorkError('teloa/forbidden','员工记忆不存在或不属于当前本人和员工。')
+   const current=await this.read(db,who.ownerId,stored)
+   if(current.content.version!==row.expectedContentVersion||current.content.contentHash!==row.expectedContentHash||current.stateVersion!==row.expectedStateVersion)throw new WorkError('teloa/version-conflict','记忆正文或状态已变化，请核对当前版本；原编辑草稿已保留。')
+   if(current.state==='withdrawn'||role.state==='retired')throw new WorkError('teloa/conflict','已撤回记忆或已退役员工不能编辑。')
+   const now=this.identity.now(),version=current.content.version+1,result:RoleMemory={...current,title,stateVersion:current.stateVersion+1,content:{version,...content,createdAt:now,editedBy:'self'}}
+   if(!isRoleMemory(result))throw corrupt()
+   await db.query('insert into teloa_role_memory_versions(owner_id,memory_id,number,content_hash,bytes,markdown,created_at) values($1,$2,$3,$4,$5,$6,$7)',[who.ownerId,current.id,version,content.contentHash,content.bytes,content.markdown,now])
+   await db.query('insert into teloa_role_memory_edits(owner_id,request_id,request_spec,memory_id,result_version,result,created_at) values($1,$2,$3,$4,$5,$6,$7)',[who.ownerId,row.requestId,JSON.stringify(spec),current.id,version,JSON.stringify(result),now])
+   await db.query('update teloa_role_memories set current_version=$3,title=$4,state_version=state_version+1 where owner_id=$1 and id=$2',[who.ownerId,current.id,version,title])
+   await db.query('commit');return result
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ /** 原创建回执与每次编辑回执是当时的固定快照，不以当前状态改写历史。 */
+ async readVersion(principal:RoleMemoryActor,input:unknown):Promise<RoleMemory>{
+  const who=actor(principal);if(who.kind!=='human')throw new WorkError('teloa/forbidden','员工记忆历史只对本人开放。')
+  const row=exact(input,['roleId','memoryId','version']);if(!uuid(row.roleId)||!uuid(row.memoryId)||!positive(row.version))throw bad()
+  await this.role(this.pool,who.ownerId,row.roleId)
+  const memory=(await this.pool.query('select role_id from teloa_role_memories where owner_id=$1 and id=$2',[who.ownerId,row.memoryId])).rows[0]
+  if(memory?.role_id!==row.roleId)throw new WorkError('teloa/forbidden','员工记忆不属于当前本人和员工。')
+  const result=(await this.pool.query(row.version===1?'select result from teloa_role_memory_creations where owner_id=$1 and memory_id=$2':'select result from teloa_role_memory_edits where owner_id=$1 and memory_id=$2 and result_version=$3',row.version===1?[who.ownerId,row.memoryId]:[who.ownerId,row.memoryId,row.version])).rows[0]?.result
+  if(!result)throw new WorkError('teloa/not-found','未找到该记忆的固定版本。')
+  if(!isRoleMemory(result)||result.ownerId!==who.ownerId||result.roleId!==row.roleId||result.id!==row.memoryId||result.content.version!==row.version||hash(result.content.markdown)!==result.content.contentHash)throw corrupt()
+  return result
+ }
  private async change(principal:RoleMemoryActor,input:unknown,action:'confirm'|'withdraw'):Promise<RoleMemory>{
   const who=actor(principal);if(who.kind!=='human')throw new WorkError('teloa/forbidden','只有本人可以确认或撤回员工记忆。')
   const row=exact(input,['requestId','memoryId','expectedStateVersion']);if(!uuid(row.requestId)||!uuid(row.memoryId)||!positive(row.expectedStateVersion))throw bad()
@@ -252,6 +313,7 @@ export class RoleMemoryService{
    await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['role-memory-change',who.ownerId,row.requestId])])
    const previous=(await db.query('select *,request_spec=$3::jsonb as same from teloa_role_memory_changes where owner_id=$1 and request_id=$2',[who.ownerId,row.requestId,JSON.stringify(spec)])).rows[0]
    if(previous){if(!previous.same)throw new WorkError('teloa/conflict','同一请求不能执行不同的记忆决定。');if(previous.result===null)throw new WorkError('teloa/conflict','该旧请求缺少当时的完整回执，无法安全重放；请刷新员工记忆目录核对当前状态。');if(!isRoleMemory(previous.result)||previous.result.ownerId!==who.ownerId||previous.result.id!==previous.memory_id||previous.result.stateVersion!==previous.result_state_version)throw corrupt();await db.query('commit');return previous.result}
+   if((await db.query('select 1 from teloa_role_memory_edits where owner_id=$1 and request_id=$2',[who.ownerId,row.requestId])).rows.length)throw new WorkError('teloa/conflict','同一请求已经用于记忆编辑。')
    const stored=(await db.query('select * from teloa_role_memories where owner_id=$1 and id=$2 for update',[who.ownerId,row.memoryId])).rows[0]
    if(!stored)throw new WorkError('teloa/forbidden','员工记忆不存在或不属于当前本人。')
    const current=await this.read(db,who.ownerId,stored)

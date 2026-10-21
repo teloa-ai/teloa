@@ -280,3 +280,20 @@ export function businessLedgerFailureKey(error:unknown):'business.ledger.readFai
 export function ledgerListTruncation(list:{dimensionValues:number;rows:readonly unknown[]},shown:number):{serverTruncated:boolean;filtered:boolean}{
  return {serverTruncated:list.dimensionValues>list.rows.length,filtered:shown<list.rows.length}
 }
+
+/** 目录只展开一个类型；两次读取间声明变更时拒绝拼接，交由原重试入口重新读取。 */
+export async function readBusinessLedgerDirectory(api:Pick<BusinessLedgerApi,'read'>,request:BusinessLedgerRequest,signal?:AbortSignal):Promise<{catalog:BusinessLedger;ledger:BusinessLedger}>{
+ const catalog=await api.read({scope:request.scope},signal)
+ signal?.throwIfAborted()
+ const id=request.objectType??catalog.blocks[0]?.objectType.definition.id
+ if(id===undefined)return {catalog,ledger:catalog}
+ const original=catalog.blocks.find(block=>block.objectType.definition.id===id)
+ if(!original)throw invalid()
+ const selected=await api.read({...request,objectType:id},signal)
+ signal?.throwIfAborted()
+ const block=selected.blocks[0]
+ if(selected.scope!==catalog.scope||selected.blocks.length!==1||!block||block.objectType.definition.id!==id||JSON.stringify(block.objectType)!==JSON.stringify(original.objectType)||JSON.stringify(selected.actions)!==JSON.stringify(catalog.actions))throw invalid()
+ const identity=(view:BusinessViewResult)=>JSON.stringify([view.schema,view.viewId,view.viewVersion,view.definitionHash,view.origin])
+ if(original.views.some(view=>!block.views.some(current=>identity(view)===identity(current))))throw invalid()
+ return {catalog,ledger:selected}
+}

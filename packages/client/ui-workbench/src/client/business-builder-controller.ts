@@ -14,7 +14,7 @@ export function watchBusinessBuilderRevisions(source:SessionEventSource,changed:
  return source.subscribe(()=>{
   const window=source.getSnapshot(),before=cursor;cursor=Math.max(cursor,high())
   if(window.change.kind!=='append')return
-  const calls=new Set(window.entries.flatMap(({event})=>event.type==='tool/call'&&event.data.name==='teloa_business_builder_revise'?[event.data.callId]:[]))
+  const calls=new Set(window.entries.flatMap(({event})=>event.type==='tool/call'&&['teloa_business_builder_revise','teloa_business_builder_upgrade','teloa_business_builder_plan_revise'].includes(event.data.name)?[event.data.callId]:[]))
   if(window.change.entries.some(({event})=>event.seq>before&&event.type==='tool/result'&&event.surfaceOp==='append'&&calls.has(event.data.message.toolCallId)&&!event.data.message.isError))changed()
  })
 }
@@ -30,10 +30,10 @@ export const builderJournalKey=(personalSpaceId:string)=>{
  return 'teloa.business-builder/v1/personal-space/'+personalSpaceId.toLowerCase()
 }
 export type BusinessNavigationToken=Readonly<{id:symbol}>
-type Navigation={epoch:number;session:string|undefined;input:BusinessBuilderSwitchSnapshot['input'];location:string|undefined;approved:boolean}
+type Navigation={epoch:number;session:string|undefined;input:BusinessBuilderSwitchSnapshot['input'];location:string|undefined;approved:boolean;current?:()=>boolean}
 type DailyPending=Pick<BusinessConversationBinding,'requestId'|'scope'|'title'>
 type State={nativeReady:boolean;sessionKind:'builder'|'daily'|null;daily:BusinessDailyFlow|null;dailyPending:DailyPending|null;api:BusinessBuilderApi|null;status:'loading'|'ready'|'failed';flow:BusinessBuilderFlow|null;namespace:string|null;checkedSessionId:string|null|undefined;error:unknown|null}
-type Ports={api:BusinessBuilderApi;work:Pick<BindingClient,'create'|'openSession'>;storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>;identity:()=>Promise<string>;switching:BusinessBuilderSwitchPort;subscribeNative:(listener:()=>void)=>()=>void;contextCall:(endpoint:string,payload:unknown)=>Promise<unknown>;block:(sessionId:string,reason:string|undefined)=>void;watch:(sessionId:string,changed:()=>void)=>()=>void;id:()=>string}
+type Ports={api:BusinessBuilderApi;work:Pick<BindingClient,'create'|'openSession'|'openSessionResult'>;storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>;identity:()=>Promise<string>;switching:BusinessBuilderSwitchPort;subscribeNative:(listener:()=>void)=>()=>void;contextCall:(endpoint:string,payload:unknown)=>Promise<unknown>;block:(sessionId:string,reason:string|undefined)=>void;watch:(sessionId:string,changed:()=>void)=>()=>void;id:()=>string}
 const checking='checking',pending='builder-pending'
 const changed=()=>new WorkError('teloa/conflict','当前会话内容或业务目标已变化。',{reason:'changed'})
 /** 薄装配生命周期：只持有连接和展示归属，创建/采用/草案真源全部委派既有 Flow。 */
@@ -59,12 +59,12 @@ export class BusinessBuilderController{
  getSnapshot=()=>this.state
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
  private refreshNative(){const s=this.ports.switching.read(),nativeReady=s.bindingReady&&s.input!==undefined&&(s.mainSessionId?s.bindingSessionId===s.mainSessionId:s.bindingSessionId===undefined&&s.input===null);if(nativeReady!==this.state.nativeReady)this.publish({nativeReady})}
- captureNavigation():BusinessNavigationToken{
+ captureNavigation(current?:()=>boolean):BusinessNavigationToken{
   this.flow();this.refreshNative();if(!this.state.nativeReady)throw new WorkError('teloa/conflict','原生会话尚未就绪。',{reason:'binding'})
   const s=this.ports.switching.read(),token={id:Symbol('business navigation')}
-  this.tokens.set(token,{epoch:this.epoch,session:s.mainSessionId,input:s.input,location:this.navigation?.location(),approved:false});return token
+  this.tokens.set(token,{epoch:this.epoch,session:s.mainSessionId,input:s.input,location:this.navigation?.location(),approved:false,...(current?{current}:{})});return token
  }
- private validNavigation(n:Navigation,afterOpen=false){const s=this.ports.switching.read();return n.epoch===this.epoch&&n.location===this.navigation?.location()&&(afterOpen&&s.mainSessionId!==n.session||s.mainSessionId===n.session&&s.input===n.input)}
+ private validNavigation(n:Navigation,afterOpen=false){const s=this.ports.switching.read();return n.current?.()!==false&&n.epoch===this.epoch&&n.location===this.navigation?.location()&&(afterOpen&&s.mainSessionId!==n.session||s.mainSessionId===n.session&&s.input===n.input)}
  private token(token:BusinessNavigationToken){const n=this.tokens.get(token);if(!n||!this.validNavigation(n))throw changed();return n}
  approveNavigation(token:BusinessNavigationToken){const n=this.token(token);if(n.approved)throw changed();n.approved=true}
  private async action<T>(token:BusinessNavigationToken|undefined,run:(approved:boolean)=>Promise<T>):Promise<T>{
@@ -167,7 +167,8 @@ export class BusinessBuilderController{
    const keepDraft=approved||sameSession,decision=await checkBusinessBuilderSwitch(this.ports.switching,keepDraft)
    if(!this.validNavigation(n))throw changed()
    if(decision!=='ready')throw new WorkError('teloa/conflict','请先处理当前会话的待发送内容或恢复状态。',{reason:decision})
-   await this.ports.work.openSession(sessionId,undefined,()=>this.validNavigation(n)&&switchDecision(this.ports.switching.read(),keepDraft)==='ready')
+   const opened=await this.ports.work.openSessionResult(sessionId,undefined,()=>this.validNavigation(n)&&switchDecision(this.ports.switching.read(),keepDraft)==='ready')
+   if(opened!=='opened')throw changed()
   })
  }
  async recover(requestId?:string,allowDraft=false,token?:BusinessNavigationToken){

@@ -19,7 +19,7 @@ function arrowSelect(event:KeyboardEvent<HTMLButtonElement>,index:number,count:n
 }
 
 /**
- * 员工形象的唯一选择方式（新建、完整编辑与轻量编辑共用）：大预览 + 名字，下面形状一行、色板一行，自由组合 12 × 9。
+ * 员工形象的唯一选择方式（新建、完整编辑与轻量编辑共用）：大预览 + 名字，下面形状一行、色板一行，自由组合 12 × 10。
  * 组合等于某个预设时回传预设键（旧版本也能读），否则回传 `bot:<shape>:<color>`；未改动时不回传，保持「未设置」。只回传值，不做保存。
  */
 export function EmployeeAvatarPicker({value,name,onChange}:{value:RoleAvatarKey|undefined;name?:string|undefined;onChange:(key:RoleAvatarKey)=>void}){

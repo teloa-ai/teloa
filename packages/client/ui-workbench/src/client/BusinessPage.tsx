@@ -1,10 +1,10 @@
 import {applyPageCreatedBusinessDefinition} from './page-create-business-definition.js'
 import {BusinessWorkspace,type BusinessWorkspaceServices} from './BusinessWorkspace.js'
 import {BusinessPendingChanges} from './BusinessWorkResults.js'
-import {BusinessConfigurationSurface,type BusinessConfigurationServices} from './BusinessConfigurationSurface.js'
+import {BusinessConfigurationSurface,BusinessConfigurationDetails,type BusinessConfigurationServices} from './BusinessConfigurationSurface.js'
 import type {IndustryPluginInstance} from './industry-plugin-api.js'
 import { useBusinessScopes } from './business-scope-context.js'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowLeft, ArrowRight, ArrowUpRight, Clock, Database, ChevronDown, ChevronRight, ListTodo, MessageSquare, Pin, PinOff, Store, Users } from 'lucide-react'
 import { type CollaborationScope } from './collaboration-preview.js'
@@ -46,8 +46,9 @@ import {ContextDrawer} from './ContextDrawer.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {businessLibraryText} from './business-library-presentation.js'
 import {localizeWorkError} from './i18n/errors.js'
+import {businessMoreActionTitles} from './business-more-actions.js'
 
-type Props={projectConversations?:ProjectConversationActions;workspace?:BusinessWorkspaceServices;chrome?:boolean;configuration?:BusinessConfigurationServices;plugins?:readonly IndustryPluginInstance[];projectApi:ProjectApi;openProjectItem:(item:import('@teloa/contract').ProjectItem|import('@teloa/contract').ProjectReferenceItem)=>void|Promise<void>;scopeLabels?:readonly BusinessScopeLabel[];embedded?:boolean;openFull?:()=>void;automations?:number;plans?:readonly {scope:string;state:string;title:string}[];goComposition?:(target:CompositionTarget)=>void;backHome:()=>void;openStaff:(scope:string)=>void;manageIndustryResources:(scope:string)=>void;industryLoads:readonly IndustryLoadRecord[];dataSources:readonly IndustryDataSourceInstance[];/** 与业务台账首页卡同一份来源观测；没传时只按模板实例计数。 */sourceObservation?:BusinessSourceObservation;visible:boolean;state:TaskPreview;target:BusinessTarget;go:(target:BusinessTarget)=>void;openTask:(id:string)=>void;openWork:()=>void;openMessages:()=>void;openGroups:()=>void;openResources:()=>void;market:(id?:string)=>void;capabilities:(scope:CollaborationScope)=>ReactNode;openPlans:(scope:CollaborationScope)=>void;businessLedgerApi:BusinessLedgerApi;businessCustomizationApi:BusinessCustomizationApi;businessShareApi:BusinessShareApi;pageCreate:{api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string})=>void|Promise<void>;openMarket:()=>void;confirmConnector:(scope:string,preview:import('@teloa/contract').PageCreateDraftPreview)=>Promise<string>;openConnector:(value:string)=>void};businessTaskApi:BusinessTaskApi;createBusinessTask:(request:BusinessTaskRequest)=>Promise<BusinessTaskResult>;recoverBusinessTask:()=>Promise<BusinessTaskResult>;isPinned?:boolean;togglePin?:(target:Pick<BusinessTarget,'scope'|'section'|'dashboardId'>)=>void;businessDashboardApi:BusinessDashboardApi;colorScheme:'light'|'dark'}
+type Props={shareDraftKey?:string|undefined;contentRevision?:number;externalMore?:boolean;projectConversations?:ProjectConversationActions;workspace?:BusinessWorkspaceServices;chrome?:boolean;configuration?:BusinessConfigurationServices;plugins?:readonly IndustryPluginInstance[];projectApi:ProjectApi;openProjectItem:(item:import('@teloa/contract').ProjectItem|import('@teloa/contract').ProjectReferenceItem)=>void|Promise<void>;scopeLabels?:readonly BusinessScopeLabel[];embedded?:boolean;openFull?:()=>void;automations?:number;plans?:readonly {scope:string;state:string;title:string}[];goComposition?:(target:CompositionTarget)=>void;backHome:()=>void;openStaff:(scope:string)=>void;manageIndustryResources:(scope:string)=>void;industryLoads:readonly IndustryLoadRecord[];dataSources:readonly IndustryDataSourceInstance[];/** 与业务台账首页卡同一份来源观测；没传时只按模板实例计数。 */sourceObservation?:BusinessSourceObservation;visible:boolean;state:TaskPreview;target:BusinessTarget;go:(target:BusinessTarget)=>void;openTask:(id:string)=>void;openWork:()=>void;openMessages:()=>void;openGroups:()=>void;openResources:()=>void;market:(id?:string)=>void;capabilities:(scope:CollaborationScope)=>ReactNode;openPlans:(scope:CollaborationScope)=>void;businessLedgerApi:BusinessLedgerApi;businessCustomizationApi:BusinessCustomizationApi;businessShareApi:BusinessShareApi;pageCreate:{api:PageCreateApi;prepare:(prompt:{sourceId:string;title:string;text:string})=>void|Promise<void>;openMarket:()=>void;confirmConnector:(scope:string,preview:import('@teloa/contract').PageCreateDraftPreview)=>Promise<string>;openConnector:(value:string)=>void};businessTaskApi:BusinessTaskApi;createBusinessTask:(request:BusinessTaskRequest)=>Promise<BusinessTaskResult>;recoverBusinessTask:()=>Promise<BusinessTaskResult>;isPinned?:boolean;togglePin?:(target:Pick<BusinessTarget,'scope'|'section'|'dashboardId'>)=>void;businessDashboardApi:BusinessDashboardApi;colorScheme:'light'|'dark'}
 const sectionKeys={work:'business.section.work',analysis:'business.section.analysis',execution:'business.section.execution',dashboards:'business.section.dashboards'} as const
 const industryReadinessKeys={
  role:'market.industry.directory.needsSetup',
@@ -136,14 +137,31 @@ function IndustryWorkspaceSummary({resources,sources,manage}:{resources:readonly
 }
 
 export function BusinessPage(props:Props){
- const scopes=useBusinessScopes(),{locale}=useI18n()
+ const scopes=useBusinessScopes(),{locale,t}=useI18n()
  const [startError,setStartError]=useState(''),startGeneration=useRef(0)
+ const moreOrigin=useMemo(()=>({}),[props.target.scope,props.configuration?.api,props.businessCustomizationApi,props.businessShareApi,props.pageCreate.api,props.shareDraftKey])
+ const currentMoreOrigin=useRef(moreOrigin);currentMoreOrigin.current=moreOrigin
+ const [moreTool,setMoreTool]=useState<{origin:object;action:BusinessMoreAction}>()
+ const [contentRevision,setContentRevision]=useState(0)
+ useEffect(()=>setMoreTool(undefined),[moreOrigin,props.visible])
+ const chooseMore=(action:BusinessMoreAction,scope:string)=>{
+  if(scope!==props.target.scope||currentMoreOrigin.current!==moreOrigin)return
+  setMoreTool(undefined)
+  if(action==='work')props.openWork()
+  else if(action==='completed')props.go({scope,section:'work'})
+  else if(action==='team')props.go({scope,section:'employees'})
+  else if(action==='automations')props.openPlans(scope)
+  else if(action==='dashboards')props.go({scope,section:'dashboards'})
+  else if(action==='connector'&&!props.configuration)props.manageIndustryResources(scope)
+  else setMoreTool({origin:moreOrigin,action})
+ }
+ const more=<span className={css.page} style={{display:'contents'}}><BusinessMoreMenu scope={props.target.scope} choose={chooseMore} unavailable={props.configuration?.reviewSetup?{}:{changes:t('business.more.changesUnavailable')}}/></span>
  useEffect(()=>{startGeneration.current++;setStartError('');return()=>{startGeneration.current++}},[props.pageCreate.api,props.target.scope,props.visible])
  const start=async()=>{const generation=startGeneration.current;setStartError('');try{await props.pageCreate.prepare({sourceId:`business:${props.target.scope}:work`,title:scopes[props.target.scope]||props.target.scope,text:scopes[props.target.scope]||props.target.scope})}catch(error){if(generation===startGeneration.current&&(error as {code?:string})?.code!=='teloa/cancelled')setStartError(localizeWorkError(locale,error))}}
  if(!props.visible)return null
  if(!props.workspace)return <BusinessContent {...props}/>
  const scope=props.target.scope,title=scopes[scope]||scope
- return <>{startError&&<p className={base.error} role="alert">{startError}</p>}<BusinessWorkspace recordChanges={scope!=='general'&&props.configuration?.records.api.work?.enabled?<BusinessPendingChanges key={scope} scope={scope} api={props.configuration.records.api.work}/>:undefined} key={scope} services={props.workspace} scope={scope} title={title} target={props.target} state={props.state} go={props.go} back={props.backHome} start={props.workspace.start??(()=>void start())} configure={()=>props.manageIndustryResources(scope)} staff={()=>props.openStaff(scope)} openTask={props.openTask} openWork={props.openWork} dashboardApi={props.businessDashboardApi} configurationApi={props.configuration?.api} configurationServices={props.configuration} colorScheme={props.colorScheme} embedded={props.embedded} openFull={props.openFull} pinned={props.isPinned} togglePin={props.togglePin}><BusinessContent {...props} chrome={false}/></BusinessWorkspace></>
+ return <>{startError&&<p className={base.error} role="alert">{startError}</p>}<BusinessWorkspace more={more} recordChanges={scope!=='general'&&props.configuration?.records.api.work?.enabled?<BusinessPendingChanges key={scope} scope={scope} api={props.configuration.records.api.work}/>:undefined} key={scope} services={props.workspace} scope={scope} title={title} target={props.target} state={props.state} go={props.go} back={props.backHome} start={props.workspace.start??(()=>void start())} configure={()=>props.manageIndustryResources(scope)} staff={()=>props.openStaff(scope)} openTask={props.openTask} openWork={props.openWork} dashboardApi={props.businessDashboardApi} configurationApi={props.configuration?.api} configurationServices={props.configuration} colorScheme={props.colorScheme} embedded={props.embedded} openFull={props.openFull} pinned={props.isPinned} togglePin={props.togglePin}><BusinessContent {...props} externalMore contentRevision={contentRevision} chrome={false}/></BusinessWorkspace>{moreTool?.origin===moreOrigin&&<BusinessMoreTools key={moreTool.action} {...props} action={moreTool.action} changed={()=>{if(currentMoreOrigin.current===moreOrigin){setContentRevision(value=>value+1);props.workspace?.refresh()}}} close={()=>setMoreTool(undefined)}/>}</>
 }
 
 function BusinessContent(props:Props){
@@ -154,10 +172,43 @@ function BusinessContent(props:Props){
  if(!props.visible)return null
  // 「业务内容」只列记录页、「统计看板」只列看板页；总览（无工作区时）仍列出全部页面。
  const pageKind=props.target.section==='data'?'records' as const:props.target.section==='dashboards'?'dashboard' as const:undefined
- return <BusinessConfigurationSurface chrome={props.chrome} pageKind={pageKind} scope={props.target.scope} recordReference={props.target.recordReference} services={configuration} colorScheme={props.colorScheme} backHome={props.backHome} go={props.go} {...(props.embedded===undefined?{}:{embedded:props.embedded})} {...(props.openFull?{openFull:props.openFull}:{})} legacy={()=><LegacyBusinessPage {...props}/>}/>
+ return <BusinessConfigurationSurface refreshKey={props.contentRevision} chrome={props.chrome} pageKind={pageKind} scope={props.target.scope} recordReference={props.target.recordReference} services={configuration} colorScheme={props.colorScheme} backHome={props.backHome} go={props.go} {...(props.embedded===undefined?{}:{embedded:props.embedded})} {...(props.openFull?{openFull:props.openFull}:{})} legacy={()=><LegacyBusinessPage {...props}/>}/>
 }
 
-function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi,openProjectItem,scopeLabels,embedded=false,openFull,automations,plans,goComposition,backHome,openStaff,manageIndustryResources,industryLoads,dataSources,sourceObservation,visible,state,target,go,openTask,openWork,openMessages,openGroups,openResources,market,capabilities,openPlans,businessLedgerApi,businessCustomizationApi,businessShareApi,pageCreate,businessTaskApi,createBusinessTask,recoverBusinessTask,isPinned=false,togglePin,businessDashboardApi,colorScheme}:Props){
+/** 业务级轻操作放在工作区外壳，避免仅某个旧内页挂载时才出现入口。 */
+function BusinessMoreTools(props:Props&{action:BusinessMoreAction;close:()=>void;changed:()=>void}){
+ const {t,locale}=useI18n(),scopes=useBusinessScopes(),scope=props.target.scope,title=scopes[scope]||scope,copy=businessLibraryText(locale)
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),mounted=useRef(false)
+ const classify=props.action==='adjustment'||props.action==='share'||props.action==='manual-definition',configurationApi=props.configuration?.api
+ const [classification,setClassification]=useState<{status:'loading'|'ready'|'failed';formal:boolean}>({status:classify&&configurationApi?'loading':'ready',formal:false}),[readRevision,setReadRevision]=useState(0)
+ useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
+ useEffect(()=>{
+  if(!classify||!configurationApi){setClassification({status:'ready',formal:false});return}
+  const abort=new AbortController();setClassification({status:'loading',formal:false})
+  void configurationApi.current({scope},abort.signal).then(value=>{if(abort.signal.aborted)return;if(value===undefined||value!==null&&value.scope!==scope)throw Error();setClassification({status:'ready',formal:value!==null})}).catch(()=>{if(!abort.signal.aborted)setClassification({status:'failed',formal:false})})
+  return()=>abort.abort()
+ },[classify,configurationApi,scope,readRevision])
+ const manualLaunched=useRef(false)
+ useEffect(()=>{
+  if(props.action==='manual-definition'&&classification.status==='ready'&&classification.formal&&props.configuration?.manualSetup&&props.configuration.actionReady!==false&&!manualLaunched.current&&mounted.current){
+   manualLaunched.current=true;props.close();props.configuration.manualSetup(scope)
+  }
+ },[props.action,classification,props.configuration?.manualSetup,props.configuration?.actionReady,scope])
+ const prepare=async()=>{setBusy(true);setError('');try{await props.pageCreate.prepare({sourceId:`business:${scope}:resources`,title:title+' · '+copy.resourcesPreparationTitle,text:copy.resourcesPreparationGoal(title,scope)});if(mounted.current)props.close()}catch(error){if(mounted.current&&(error as {code?:string})?.code!=='teloa/cancelled')setError(localizeWorkError(locale,error))}finally{if(mounted.current)setBusy(false)}}
+ const resources=projectIndustryWorkspace(props.industryLoads,{scope}),sources=props.industryLoads.filter(load=>load.space.scope===scope)
+ if(props.action==='connector'&&props.configuration)return <BusinessConfigurationDetails key={scope} scope={scope} services={props.configuration} open initialSection="connections" close={props.close} legacy={()=>props.manageIndustryResources(scope)}/>
+ return <ContextDrawer title={t(businessMoreActionTitles[props.action])} close={props.close}><div className={css.resourceDrawer}>
+  {classify&&classification.status==='loading'&&<p role="status">{t('business.configuration.loading')}</p>}
+  {classify&&classification.status==='failed'&&<p role="alert">{t('business.configuration.readFailed')} <button type="button" onClick={()=>setReadRevision(value=>value+1)}>{t('common.retry')}</button></p>}
+  {props.action==='sources'&&<><p>{title}</p>{error&&<p role="alert" className={base.error}>{error}</p>}{resources.length||sources.some(source=>source.items.some(item=>item.status!=='skipped'))?<><IndustryWorkspaceSummary resources={resources} sources={sources} manage={()=>{props.close();props.manageIndustryResources(scope)}}/>{resources.length>0&&<IndustryResourceDeclarations rows={resources} label={t('business.more.sources')} openPlans={()=>props.openPlans(scope)}/>}</>:<section className={base.empty}><h3>{copy.resourcesEmpty}</h3><div className={base.buttons}><ToolbarIconButton label={copy.prepareResourcesAction} icon={MessageSquare} disabled={busy} onClick={()=>void prepare()}/><ToolbarIconButton label={copy.openResourcesMarket} icon={Store} onClick={()=>{props.close();props.pageCreate.openMarket()}}/></div></section>}</>}
+  {props.action==='manual-definition'&&classification.status==='ready'&&(classification.formal?<p role={props.configuration?.manualSetup?'status':'alert'}>{t(props.configuration?.manualSetup?'business.builder.loading':'business.manual.error')}</p>:<BusinessCustomization scope={scope} api={props.businessCustomizationApi} changed={props.changed} colorScheme={props.colorScheme}/>)}
+  {props.action==='share'&&classification.status==='ready'&&(classification.formal&&props.configuration?.share?props.configuration.share(scope):<BusinessShareForm draftKey={props.shareDraftKey} scope={scope} api={props.businessShareApi} openMarket={props.market}/>)}
+  {props.action==='changes'&&props.configuration?.reviewSetup?.(scope)}
+  {props.action==='adjustment'&&classification.status==='ready'&&(classification.formal?<><p>{t('business.more.adjustmentNote')}</p><button type="button" disabled={props.configuration?.actionReady===false} onClick={()=>{if(mounted.current){props.close();props.configuration!.adjust(scope)}}}>{t('business.more.openBuilder')}</button></>:<CreateEntry entity="business-definition" titleKey="create.title.businessDefinition" scope={scope} api={props.pageCreate.api} prepare={props.pageCreate.prepare} openMarket={props.pageCreate.openMarket} onConfirm={preview=>{if(!preview.businessPreview)throw Error(t('business.custom.readFailed'));return applyPageCreatedBusinessDefinition(props.businessCustomizationApi,scope,preview.businessPreview)}}/>)}
+ </div></ContextDrawer>
+}
+
+function LegacyBusinessPage({chrome=true,shareDraftKey,contentRevision=0,externalMore=false,configuration,plugins,projectConversations,projectApi,openProjectItem,scopeLabels,embedded=false,openFull,automations,plans,goComposition,backHome,openStaff,manageIndustryResources,industryLoads,dataSources,sourceObservation,visible,state,target,go,openTask,openWork,openMessages,openGroups,openResources,market,capabilities,openPlans,businessLedgerApi,businessCustomizationApi,businessShareApi,pageCreate,businessTaskApi,createBusinessTask,recoverBusinessTask,isPinned=false,togglePin,businessDashboardApi,colorScheme}:Props){
   const {t,number,locale}=useI18n(),copy=businessLibraryText(locale)
   const collaborationScopes=useBusinessScopes()
   const sourceNoun=scopeLabels?.find(label=>label.scope===target.scope)?.sourceNoun
@@ -165,7 +216,7 @@ function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi
   const [preparationError,setPreparationError]=useState(''),preparationGeneration=useRef(0)
   const [ledger,setLedger]=useState<BusinessLedger|undefined>(undefined)
   // 低频配置不挤占首页，统一从「更多」按需展开。
-  const [ledgerTool,setLedgerTool]=useState<'resources'|'definition'|'connector'|'customization'|'share'|null>(null)
+  const [ledgerTool,setLedgerTool]=useState<'resources'|'definition'|'connector'|'customization'|'share'|'changes'|null>(null)
   const scroll=useRef<HTMLDivElement>(null),positions=useRef<Record<string,number>>({})
   const routeKey=JSON.stringify([target.scope,target.section,target.id,target.objectType,target.dashboardId])
   useLayoutEffect(()=>{preparationGeneration.current++;setPreparationError('');return()=>{preparationGeneration.current++}},[pageCreate.api,routeKey,visible,ledgerTool])
@@ -184,7 +235,7 @@ function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi
     ()=>{if(!controller.signal.aborted)setLedger(undefined)},
    )
    return ()=>controller.abort()
-  },[businessLedgerApi,target.scope,ledgerRevision,visible])
+  },[businessLedgerApi,target.scope,ledgerRevision,contentRevision,visible])
   if(!visible)return null
   const navigate=(next:BusinessTarget)=>go(next)
   const section=(section:BusinessTarget['section'],id?:string,dashboardId?:string)=>navigate({scope:target.scope,section,...(id?{id}:{}),...(dashboardId?{dashboardId}:{})})
@@ -196,6 +247,8 @@ function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi
    else if(action==='completed')section('work')
    else if(action==='dashboards')section('dashboards')
    else if(action==='automations')openPlans(scope)
+   else if(action==='team')openStaff(scope)
+   else if(action==='changes')toggleLedgerTool('changes')
    else toggleLedgerTool(action==='adjustment'?'definition':action==='connector'?'connector':action==='sources'?'resources':action==='manual-definition'?'customization':'share')
   }
   const pendingBusinessTask=businessTaskApi.pending()
@@ -222,15 +275,15 @@ function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi
   return <section className={clsx(base.page,css.page,embedded&&css.embeddedPage,!chrome&&css.contentOnly)} aria-label={t('business.scope.pageAria')}>
     <div className={css.content} ref={scroll} onScroll={event=>{positions.current[routeKey]=event.currentTarget.scrollTop}}><div className={css.container}>
       {chrome&&<header className={css.pageHeader}><div>{!embedded&&<button type="button" className={css.backHome} onClick={backHome}><ArrowLeft size={14}/>{t('business.scope.backHome')}</button>}<h1>{collaborationScopes[target.scope]||target.scope}</h1></div>{!embedded&&togglePin&&<button type="button" className={css.pinShortcut} aria-pressed={isPinned} onClick={()=>togglePin(pinTarget)}>{isPinned?<PinOff size={14}/>:<Pin size={14}/>} {t(isPinned?'navigation.shortcut.unpin':pinTarget.dashboardId?'business.dashboards.pin':'navigation.shortcut.pin')}</button>}{embedded&&openFull&&<button type="button" className={css.openFull} onClick={openFull}>{t('business.scope.openFull')}</button>}</header>}
-      {chrome&&<section className={css.scopeBar} aria-label={t('business.scope.barAria')}><dl className={css.scopeStats}><div className={css.scopeStat}><dt><Database size={14}/>{t('business.scope.stat.sources')}</dt><dd>{(()=>{const sourceState=businessHomeSourceState(dataSources,target.scope,sourceObservation);return sourceState.connected||!sourceState.unknown?t('business.scope.stat.sourcesValue',{n:number(sourceState.connected)}):t('business.scope.stat.sourcesUnknown')})()}</dd></div><div className={css.scopeStat}><dt><Users size={14}/>{t('business.scope.stat.staff')}</dt><dd>{t('business.scope.stat.staffValue',{n:number(businessHomeStaff(state.roles,target.scope).length)})}</dd></div>{automations!==undefined&&<div className={css.scopeStat}><dt><Clock size={14}/>{t('business.scope.stat.automations')}</dt><dd>{t('business.scope.stat.automationsValue',{n:number(automations)})}</dd></div>}</dl>{goComposition&&<BusinessComposition sections={compositionSections} go={goComposition}/>}{!embedded&&<button type="button" className={css.scopeStaff} onClick={()=>openStaff(target.scope)}>{t('business.home.staff')}<ArrowRight size={14}/></button>}{!embedded&&<button type="button" className={css.scopeStaff} aria-pressed={target.section==='projects'} onClick={()=>section('projects')}>{projectTypeName}</button>}<BusinessMoreMenu scope={target.scope} choose={chooseMore}/></section>}
-      {!chrome&&<InBusinessTabs className={css.contentTools} scopeClassName={css.page}><BusinessMoreMenu scope={target.scope} choose={chooseMore}/></InBusinessTabs>}
+      {chrome&&<section className={css.scopeBar} aria-label={t('business.scope.barAria')}><dl className={css.scopeStats}><div className={css.scopeStat}><dt><Database size={14}/>{t('business.scope.stat.sources')}</dt><dd>{(()=>{const sourceState=businessHomeSourceState(dataSources,target.scope,sourceObservation);return sourceState.connected||!sourceState.unknown?t('business.scope.stat.sourcesValue',{n:number(sourceState.connected)}):t('business.scope.stat.sourcesUnknown')})()}</dd></div><div className={css.scopeStat}><dt><Users size={14}/>{t('business.scope.stat.staff')}</dt><dd>{t('business.scope.stat.staffValue',{n:number(businessHomeStaff(state.roles,target.scope).length)})}</dd></div>{automations!==undefined&&<div className={css.scopeStat}><dt><Clock size={14}/>{t('business.scope.stat.automations')}</dt><dd>{t('business.scope.stat.automationsValue',{n:number(automations)})}</dd></div>}</dl>{goComposition&&<BusinessComposition sections={compositionSections} go={goComposition}/>}{!embedded&&<button type="button" className={css.scopeStaff} onClick={()=>openStaff(target.scope)}>{t('business.home.staff')}<ArrowRight size={14}/></button>}{!embedded&&<button type="button" className={css.scopeStaff} aria-pressed={target.section==='projects'} onClick={()=>section('projects')}>{projectTypeName}</button>}{!externalMore&&<BusinessMoreMenu scope={target.scope} choose={chooseMore} unavailable={configuration?.reviewSetup?{}:{changes:t('business.more.changesUnavailable')}}/>}</section>}
+      {!chrome&&!externalMore&&<InBusinessTabs className={css.contentTools} scopeClassName={css.page}><BusinessMoreMenu scope={target.scope} choose={chooseMore} unavailable={configuration?.reviewSetup?{}:{changes:t('business.more.changesUnavailable')}}/></InBusinessTabs>}
       <div className={css.viewBody}>
       {preparationError&&ledgerTool!=='resources'&&<p className={base.error} role="alert">{preparationError}</p>}
       {target.section==='execution'&&<IndustryResourceDeclarations rows={executionDeclarations} label={t('business.industry.loadedExecutionToolDeclarations')} openPlans={undefined}/>}
       {chrome&&businessSectionAwayFromLedger(target.section)&&<button type="button" className={css.backLedger} onClick={()=>section('overview')}><ArrowLeft size={14}/>{t('business.section.backLedger')}</button>}
       {target.section==='projects'&&<ProjectWorkspace key={target.scope} api={projectApi} conversationActions={projectConversations} scope={target.scope} {...(target.id?{selectedId:target.id}:{})} typeName={projectTypeName} scopeLabels={scopeLabels??[]} select={(id,scope)=>navigate({scope:(scope??target.scope) as CollaborationScope,section:'projects',id})} back={()=>section('projects')} openItem={openProjectItem}/>}
-      {(target.section==='overview'||!chrome&&target.section==='data')&&<>{workspaceResources.length>0&&<section className={css.workEnvironment} aria-label={t('business.capabilities.bindingsAria')}>{capabilities(target.scope)}</section>} {ledgerTool==='definition'&&<CreateEntry entity="business-definition" titleKey="create.title.businessDefinition" scope={target.scope} api={pageCreate.api} prepare={pageCreate.prepare} openMarket={pageCreate.openMarket} onConfirm={preview=>{if(!preview.businessPreview)throw Error(t('business.custom.readFailed'));return applyPageCreatedDefinition(preview.businessPreview)}} renderBusinessPreview={renderPageCreatedDefinition}/>} {ledgerTool==='connector'&&<CreateEntry entity="connector" titleKey="create.title.connector" scope={target.scope} api={pageCreate.api} prepare={pageCreate.prepare} openMarket={pageCreate.openMarket} onConfirm={preview=>pageCreate.confirmConnector(target.scope,preview)} afterConfirm={pageCreate.openConnector}/>} {ledgerTool==='customization'&&<BusinessCustomization scope={target.scope} api={businessCustomizationApi} changed={()=>setLedgerRevision(value=>value+1)} colorScheme={colorScheme}/>} {ledgerTool==='share'&&<BusinessShareForm scope={target.scope} api={businessShareApi} openMarket={market}/>}</>}
-      {ledgerVisible&&<BusinessLedgerSurface refreshKey={ledgerRevision} scope={target.scope} {...(target.objectType?{objectType:target.objectType}:{})} {...(target.id?{objectId:target.id}:{})} {...(target.match?{match:target.match}:{})} api={businessLedgerApi} go={navigate} connect={()=>manageIndustryResources(target.scope)} objectActions={ledgerObjectActions} empty={<div className={base.empty} aria-label={t('business.ledger.title')}><h2>{t('business.ledger.empty.types')}</h2><p>{t('business.ledger.empty.typesHint')}</p><button type="button" onClick={()=>manageIndustryResources(target.scope)}>{t('business.home.connect',{noun:sourceNoun??t('business.source.noun')})}</button></div>}/>}
+      {(target.section==='overview'||!chrome&&target.section==='data')&&<>{workspaceResources.length>0&&<section className={css.workEnvironment} aria-label={t('business.capabilities.bindingsAria')}>{capabilities(target.scope)}</section>} {ledgerTool==='definition'&&<CreateEntry entity="business-definition" titleKey="create.title.businessDefinition" scope={target.scope} api={pageCreate.api} prepare={pageCreate.prepare} openMarket={pageCreate.openMarket} onConfirm={preview=>{if(!preview.businessPreview)throw Error(t('business.custom.readFailed'));return applyPageCreatedDefinition(preview.businessPreview)}} renderBusinessPreview={renderPageCreatedDefinition}/>} {ledgerTool==='connector'&&<CreateEntry entity="connector" titleKey="create.title.connector" scope={target.scope} api={pageCreate.api} prepare={pageCreate.prepare} openMarket={pageCreate.openMarket} onConfirm={preview=>pageCreate.confirmConnector(target.scope,preview)} afterConfirm={pageCreate.openConnector}/>} {ledgerTool==='customization'&&<BusinessCustomization scope={target.scope} api={businessCustomizationApi} changed={()=>setLedgerRevision(value=>value+1)} colorScheme={colorScheme}/>} {ledgerTool==='share'&&<BusinessShareForm scope={target.scope} api={businessShareApi} draftKey={shareDraftKey} openMarket={market}/>}</>}
+      {ledgerVisible&&<BusinessLedgerSurface refreshKey={ledgerRevision+contentRevision} scope={target.scope} {...(target.objectType?{objectType:target.objectType}:{})} {...(target.id?{objectId:target.id}:{})} {...(target.match?{match:target.match}:{})} api={businessLedgerApi} go={navigate} connect={()=>manageIndustryResources(target.scope)} objectActions={ledgerObjectActions} empty={<div className={base.empty} aria-label={t('business.ledger.title')}><h2>{t('business.ledger.empty.types')}</h2><p>{t('business.ledger.empty.typesHint')}</p><button type="button" onClick={()=>manageIndustryResources(target.scope)}>{t('business.home.connect',{noun:sourceNoun??t('business.source.noun')})}</button></div>}/>}
       {target.section==='work'&&<BusinessHistory scope={target.scope} tasks={state.tasks} openTask={openTask}/>}
       {target.section==='dashboards'&&(target.dashboardId
        ?<BusinessDashboardPage key={JSON.stringify([target.scope,target.dashboardId])} scope={target.scope} dashboardId={target.dashboardId} api={businessDashboardApi} ledger={ledger} colorScheme={colorScheme} back={()=>section('dashboards')} go={navigate}/>
@@ -238,6 +291,7 @@ function LegacyBusinessPage({chrome=true,plugins,projectConversations,projectApi
       {target.section!=='overview'&&target.section!=='data'&&target.section!=='work'&&target.section!=='projects'&&target.section!=='dashboards'&&<BusinessConnectionGuide {...(sourceNoun===undefined?{}:{sourceNoun})} connect={()=>manageIndustryResources(target.scope)}/>}
       </div>
     </div></div>
+    {ledgerTool==='changes'&&configuration?.reviewSetup&&<ContextDrawer title={t('business.more.changes')} close={()=>setLedgerTool(null)}>{configuration.reviewSetup(target.scope)}</ContextDrawer>}
     {ledgerTool==='resources'&&<ContextDrawer title={t('business.more.sources')} close={()=>setLedgerTool(null)}><div className={css.resourceDrawer}>
       <p>{businessTitle}</p>
       {preparationError&&<p className={base.error} role="alert">{preparationError}</p>}

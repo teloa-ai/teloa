@@ -48,7 +48,7 @@
 /* 「更多」：台账之外那几件事收在范围摘要条右端的一个菜单里（页签条撤掉之后的唯一入口）。 */
 /* 「这个业务有什么」：摘要条上就近展开的七行清单，桌面双列，窄屏单列。
    面板挂在摘要条上定位、宽度按容器算：嵌入态的右栏页签只有 ~380px 宽，按视口算会横着溢出到页签外面。 */
-.page .composition>summary{display:inline-flex;align-items:center;gap:5px;min-height:28px;color:var(--teloa-accent);font-size:var(--teloa-font-caption);cursor:pointer;list-style:none;white-space:nowrap}
+.page .composition>summary{display:inline-flex;align-items:center;gap:5px;min-height:28px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer;list-style:none;white-space:nowrap}
 .composition>summary::-webkit-details-marker{display:none}
 .compositionRows{position:absolute;right:0;top:calc(100% + 7px);z-index:var(--teloa-z-menu);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px;width:min(640px,100%);max-height:min(60vh,420px);overflow:auto;padding:14px 16px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3);background:var(--teloa-surface);box-shadow:var(--teloa-design-shadow)}
 .compositionRows h3{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:0 0 6px;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
@@ -62,14 +62,14 @@
 .page .compositionRows li>button{padding:0;min-height:24px;border:0;border-radius:0;background:transparent;color:var(--teloa-accent);font-size:var(--teloa-font-caption);white-space:nowrap}
 .page .compositionRows li>button:hover{background:transparent;text-decoration:underline}
 .scopeMore{position:relative}
-.page .scopeMore>summary{display:inline-flex;align-items:center;gap:5px;min-height:28px;color:var(--teloa-accent);font-size:var(--teloa-font-caption);cursor:pointer;list-style:none;white-space:nowrap}
+.page .scopeMore>summary{display:inline-flex;align-items:center;gap:5px;min-height:28px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer;list-style:none;white-space:nowrap}
 .scopeMore>summary::-webkit-details-marker{display:none}
 .scopeMore>div{box-sizing:border-box;position:absolute;right:var(--scope-menu-right,0px);top:calc(100% + 7px);z-index:var(--teloa-z-menu);display:flex;flex-direction:column;width:var(--scope-menu-width,min(264px,calc(100vw - 24px)));max-height:var(--scope-menu-available,calc(100dvh - 24px));overflow-y:auto;padding:6px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);box-shadow:var(--teloa-design-shadow)}
 .scopeMore[data-placement=above]>div{top:auto;bottom:calc(100% + 7px)}
 .scopeMorePanel section{display:flex;flex-direction:column;padding:5px 0}
 .scopeMorePanel section+section{border-top:1px solid var(--teloa-border)}
 .scopeMorePanel h3{margin:0;padding:7px 10px 5px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
-.page .scopeMorePanel button{box-sizing:border-box;justify-content:flex-start;width:100%;border:0;border-radius:var(--teloa-design-r1);background:transparent;text-align:left}
+.page .scopeMorePanel button{box-sizing:border-box;justify-content:flex-start;width:100%;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-text);text-align:left}
 .page .scopeMorePanel button:hover{background:var(--teloa-subtle)}
 .scopeMoreAdvanced{padding:0 4px}
 .scopeMoreAdvanced>summary{min-height:36px;display:flex;align-items:center;padding:6px;color:var(--teloa-muted);font-size:var(--teloa-font-control);cursor:pointer}

@@ -108,7 +108,7 @@ test('BusinessPage 无页签条；抽出的更多菜单仍是原生 details 并�
   assert.doesNotMatch(source, /role="tablist"/)
   const header = source.slice(source.indexOf('<header className={css.pageHeader}'), source.indexOf('<section className={css.scopeBar}'))
   assert.doesNotMatch(header, /aria-current="page"/)
-  assert.match(source, /<BusinessMoreMenu scope=\{target\.scope\} choose=\{chooseMore\}\/>/)
+  assert.match(source, /<BusinessMoreMenu scope=\{target\.scope\} choose=\{chooseMore\}/)
   assert.match(menu, /<details[^>]*className=\{css\.scopeMore\}[^>]*>/, '更多菜单必须仍是原生 <details>，不是页签条')
 })
 

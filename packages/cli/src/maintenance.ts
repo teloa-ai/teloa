@@ -13,6 +13,7 @@ import {verifyRelease,stageRelease} from './releases.ts'
 import {serviceStatus,portAvailable} from './service.ts'
 import {prepareDatabase,stopDatabase,databasePool,databaseConfig,ownContainer,databaseName,localConnection} from './database.ts'
 import {command} from './process.ts'
+import {canUseData,supportedDataVersion} from './data-version.ts'
 
 const digest=(value:Buffer)=>createHash('sha256').update(value).digest('hex')
 const safePath=(path:unknown):path is string=>typeof path==='string'&&path.length>0&&!isAbsolute(path)&&!path.includes('\\')&&!path.includes('\0')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..')
@@ -35,7 +36,7 @@ export async function verifyBackup(root:string):Promise<BackupManifest>{
  const files=await listFiles(root)
  const value=await readPrivateJson(join(root,'backup-manifest.json')) as BackupManifest
  if(!value||Object.keys(value).sort().join(',')!=='createdAt,dataVersion,externalWorkspaceIncluded,files,id,installId,schema,version'||value.schema!=='teloa.backup/v1'||!uuid(value.id)||!uuid(value.installId)||!exactVersion(value.version)||!Number.isFinite(Date.parse(value.createdAt))||value.externalWorkspaceIncluded!==false||!Array.isArray(value.files))throw Error('备份清单无效。')
- if(value.dataVersion!==1)throw Error('备份数据版本尚不支持。')
+ if(!supportedDataVersion(value.dataVersion))throw Error('备份数据版本尚不支持。')
  const names=new Set<string>()
  for(const row of value.files){
   if(!row||Object.keys(row).sort().join(',')!=='path,sha256'||!safePath(row.path)||names.has(row.path)||!/^[a-f0-9]{64}$/.test(row.sha256)||!(row.path==='database.dump'||row.path==='installation.json'||row.path.startsWith('dsh/')||row.path.startsWith('runtime/')))throw Error('备份清单路径无效。')
@@ -70,11 +71,11 @@ export async function assertMaintenanceDatabase(db:{query:(sql:string)=>Promise<
  if(row.effects)throw Error('仍有未确认结果的外部执行；请在原安装完成核对。')
  if(row.plugins)throw Error('仍有未完成的扩展安装；请先在原安装处理。')
 }
-async function assertNoRuns(state:InstallState):Promise<void>{
+async function assertNoRuns(state:InstallState,dataVersion:number):Promise<void>{
  const pool=await databasePool(state)
  try{
   const marker=await pool.query('select id,data_version from teloa_installation')
-  if(marker.rows.length!==1||marker.rows[0].id!==state.id||marker.rows[0].data_version!==1)throw Error('数据库身份或版本不符。')
+  if(marker.rows.length!==1||marker.rows[0].id!==state.id||marker.rows[0].data_version!==dataVersion)throw Error('数据库身份或版本不符。')
   await assertMaintenanceDatabase(pool)
  }finally{await pool.end()}
 }
@@ -205,11 +206,11 @@ export async function createBackup(state:InstallState,output:string):Promise<Bac
  if(within(state.layout.home,destination)||within(destination,state.layout.home)||within(state.layout.workspaceRoot,destination)||within(destination,state.layout.workspaceRoot))throw Error('备份位置必须独立于安装和工作目录。')
  try{await lstat(destination);throw Error('备份目标已存在；请选择新目录。')}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
  const release=await verifyRelease(state.layout.releaseRoot)
- if(release.dataVersion!==1)throw Error('该发行数据版本尚未通过备份验收。')
+ if(release.version!==state.version||!canUseData(release,release.dataVersion))throw Error('该发行数据版本尚未通过备份验收。')
  const staging=destination+'.incomplete-'+randomUUID()
  await writeInstall({...state,phase:'maintenance'})
  try{
-  await prepareDatabase(state,{initialize:false});await assertNoRuns(state)
+  await prepareDatabase(state,{initialize:false});await assertNoRuns(state,release.dataVersion)
   await mkdir(staging,{mode:0o700})
   await transferDatabase(state,join(staging,'database.dump'),'dump')
   await copyBackupData(state.layout.dshHome,join(staging,'dsh'),state.layout.releaseRoot,true)
@@ -274,7 +275,7 @@ export async function restoreBackup(archive:string,targetHome:string,database:Da
     const rows=(await restored.query("select id,owner_id,version from teloa_plans where state='active' order by id")).rows
     for(const row of rows)await plans.change(row.owner_id,{requestId:randomUUID(),planId:row.id,expectedVersion:row.version,action:'pause',note:'从备份恢复；由本人核对后重新启用'})
    }finally{await restored.end()}
-   await assertNoRuns(state)
+   await assertNoRuns(state,manifest.dataVersion)
    await stopDatabase(state)
    const stopped:InstallState={...state,phase:'stopped'};await writeInstall(stopped)
   }catch{await stopDatabase(state).catch(()=>{});throw Error('恢复未完成，目标保留在维护状态；原安装与备份未修改。请检查后选择另一新目录重试。')}

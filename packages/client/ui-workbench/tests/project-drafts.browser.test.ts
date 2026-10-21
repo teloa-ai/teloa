@@ -101,4 +101,23 @@ test('项目创建、编辑、关联与引用窗口保留原入口草稿',async 
    await page.locator('[data-project-edit]').click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Project name',{exact:true}).fill('Saved old project');await page.evaluate(()=>(window as any).fixture.mode('hold'));await dialog.locator('button[type=submit]').click();await page.waitForFunction(()=>(window as any).fixture.calls.some((call:any)=>!call.read));await page.evaluate(()=>(window as any).fixture.go(1));await dialog.waitFor({state:'detached'});await page.getByRole('heading',{name:'Project 2',exact:true}).waitFor();await page.locator('[data-project-edit]').click();await dialog.getByLabel('Project name',{exact:true}).fill('Keep new project draft');await page.evaluate(()=>(window as any).fixture.release());await page.waitForFunction(()=>(window as any).fixture.rows[0].version===2);assert.equal(await dialog.getByLabel('Project name',{exact:true}).inputValue(),'Keep new project draft');assert.equal((await page.evaluate(()=>(window as any).fixture.calls.filter((call:any)=>!call.read))).length,1);assert.deepEqual(errors,[])
   }finally{await page.close()}
  })
+ for(const change of ['project','account'])await t.test('归档确认在切换'+change+'后立即失效，不向新入口提交旧项目',async()=>{
+  const {page,errors}=await setup();try{
+   await page.getByRole('button',{name:'Archive project',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Archive project',exact:true});await dialog.waitFor()
+   await page.evaluate((change:string)=>change==='account'?(window as any).fixture.account(1):(window as any).fixture.go(1),change)
+   await dialog.waitFor({state:'detached'});await page.locator('[data-project-edit]:not(:disabled)').waitFor()
+   assert.deepEqual(await page.evaluate(()=>(window as any).fixture.calls.filter((call:any)=>!call.read)),[])
+   await page.getByRole('button',{name:'Archive project',exact:true}).click();await dialog.locator('button[type=submit]').click();await dialog.waitFor({state:'detached'})
+   const calls=await page.evaluate(()=>(window as any).fixture.calls.filter((call:any)=>!call.read));assert.equal(calls.length,1);assert.equal(calls[0].account,change==='account'?1:0);assert.equal(calls[0].id,change==='project'?'10000000-0000-4000-8000-000000000002':'10000000-0000-4000-8000-000000000001');assert.equal(calls[0].version,1);assert.equal(calls[0].fields.state,'archived');assert.deepEqual(errors,[])
+  }finally{await page.close()}
+ })
+ await t.test('原归档的迟到成功不关闭新项目的归档确认',async()=>{
+  const {page,errors}=await setup();try{
+   await page.getByRole('button',{name:'Archive project',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Archive project',exact:true})
+   await page.evaluate(()=>(window as any).fixture.mode('hold'));await dialog.locator('button[type=submit]').click();await page.waitForFunction(()=>(window as any).fixture.calls.some((call:any)=>!call.read))
+   await page.evaluate(()=>(window as any).fixture.go(1));await dialog.waitFor({state:'detached'});await page.getByRole('heading',{name:'Project 2',exact:true}).waitFor()
+   await page.getByRole('button',{name:'Archive project',exact:true}).click();await dialog.waitFor();await page.evaluate(()=>(window as any).fixture.release());await page.waitForFunction(()=>(window as any).fixture.rows[0].state==='archived')
+   assert.equal(await dialog.isVisible(),true);assert.equal(await dialog.locator('button[type=submit]').isEnabled(),true);assert.equal((await page.evaluate(()=>(window as any).fixture.calls.filter((call:any)=>!call.read))).length,1);assert.deepEqual(errors,[])
+  }finally{await page.close()}
+ })
 })

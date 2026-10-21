@@ -107,10 +107,13 @@ export class BusinessConfigurationService{
   return this.transaction(db=>this.dependencies.store.currentInTransaction(db,actor.ownerId,row.scope as string))
  }
  async apply(actor:BusinessConfigurationActor,input:unknown,signal?:AbortSignal):Promise<BusinessConfigurationResult>{
+  return this.transaction(db=>this.applyInTransaction(db,actor,input,signal),signal)
+ }
+ /** 供业务方案在同一事务中采用配置与员工职责，校验与独立入口相同。 */
+ async applyInTransaction(db:PoolClient,actor:BusinessConfigurationActor,input:unknown,signal?:AbortSignal):Promise<BusinessConfigurationResult>{
   authorize(actor);const row=taskInput(input,['requestId','draftId','expectedRevision','expectedBaseVersion','previewReceipt'])
   if(!uuid(row.requestId)||!uuid(row.draftId)||!Number.isSafeInteger(row.expectedRevision)||Number(row.expectedRevision)<1||!Number.isSafeInteger(row.expectedBaseVersion)||Number(row.expectedBaseVersion)<0||typeof row.previewReceipt!=='string'||!row.previewReceipt||row.previewReceipt.length>2048)throw invalid()
   const requestId=row.requestId.toLowerCase(),draftId=row.draftId.toLowerCase(),specHash=businessConfigurationHash({kind:'apply',...row,requestId,draftId})
-  return this.transaction(async db=>{
    await lockBusinessConfigurationRequests(db,actor.ownerId);cancelled(signal)
    const prior=await this.readReceipt(db,actor,requestId,specHash);if(prior)return prior
    const initial=(await db.query('select scope_id from teloa_business_configuration_drafts where owner_id=$1 and id=$2',[actor.ownerId,draftId])).rows[0]
@@ -157,6 +160,5 @@ export class BusinessConfigurationService{
    const result={scope:draft.scope,version,configurationHash:hash,requestId}
    await db.query("insert into teloa_business_configuration_receipts(owner_id,request_id,kind,spec_hash,result,created_at) values($1,$2,'apply',$3,$4,$5)",[actor.ownerId,requestId,specHash,JSON.stringify(result),now])
    return result
-  },signal)
  }
 }

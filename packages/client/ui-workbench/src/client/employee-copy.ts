@@ -41,11 +41,19 @@ const copy = {
  email:['工作邮箱','工作電郵','Work email'], emailUnavailable:['工作邮箱服务尚未接入','工作電郵服務尚未接入','Work email is not integrated'],
  phoneUnavailable:['通话尚未接入','通話尚未接入','Calls are not connected'],
  profileConfiguration:['工作配置','工作設定','Work configuration'],profileCollapse:['收起全部','收起全部','Collapse all'],
- profileHow:['工作方式','工作方式','Working style'],profileTools:['应用工具','應用工具','Tools'],profileMaterials:['资料','資料','Materials'],profileLimits:['权限边界','權限界線','Permissions'],profileActivity:['活动状态','活動狀態','Activity'],profileChanges:['变更记录','變更記錄','Change history'],
+ profileHow:['工作方式','工作方式','Working style'],profileTools:['应用与技能','應用與技能','Apps and skills'],profileMaterials:['资料','資料','Materials'],profileLimits:['权限边界','權限界線','Permissions'],profileActivity:['活动状态','活動狀態','Activity'],profileChanges:['变更记录','變更記錄','Change history'],
+ profileResultsUnavailable:['当前宿主未提供员工成果目录','目前宿主未提供員工成果目錄','Employee outputs are unavailable on this host'],
+ profileProgressSnapshot:['最近更新时的任务状态','最近更新時的工作狀態','Task status at the latest update'],
+ profilePermissions:['委托与工具授权','委託與工具授權','Delegation and tool access'],profileShare:['分享这位员工','分享這位員工','Share this employee'],
+ profileProgress:['进展','進展','Progress'],profileRunning:['运行中','執行中','Running'],profileNoRunning:['没有正在运行的工作','沒有正在執行的工作','No work is running'],profileNoProgress:['还没有工作进展','還沒有工作進展','No work progress yet'],
+ profileResults:['成果','成果','Results'],profileNoResults:['还没有保存的成果','還沒有儲存的成果','No saved results yet'],profileAllTasks:['全部任务','全部工作','All tasks'],
+ profileInputs:['本轮输入','本輪輸入','Run inputs'],profileInputHint:['来自最近执行的固定资料与技能快照。','來自最近執行的固定資料與技能快照。','Materials and skills from the latest run snapshot.'],
+ profileCoworkers:['常一起工作的员工','經常合作的員工','Frequent collaborators'],profileNoCoworkers:['当前任务中还没有共同处理记录','目前工作中還沒有共同處理紀錄','No shared work in the current task records'],profileSharedTasks:['一起处理 {count} 项任务','一起處理 {count} 項工作','Worked on {count} tasks together'],
+ profileBusinessScope:['业务范围','業務範圍','Business scope'],profileGrantedTools:['已授权工具','已授權工具','Granted tools'],
  profileActionCount:['{count} 项自主处理','{count} 項自主處理','Autonomous actions: {count}'],profileCheckCount:['{count} 项交付检查','{count} 項交付檢查','Delivery checks: {count}'],
  profileSkillCount:['{count} 项已选技能','{count} 項已選技能','Selected skills: {count}'],profileMaterialCount:['{count} 份已分配','已指派 {count} 份','Assigned materials: {count}'],profileChangeCount:['{count} 条记录','{count} 項記錄','Records: {count}'],
  profileUnrecorded:['尚未记录','尚未記錄','Not recorded'],profileSkills:['已选技能','已選技能','Selected skills'],profileNoSkills:['尚未选择技能','尚未選擇技能','No selected skills'],
- profileManageTools:['查看技能与应用连接','查看技能與應用連線','View skills and app connections'],profileManageMaterials:['查看资料','查看資料','View materials'],
+ profileManageTools:['查看技能与应用连接','查看技能與應用連線','View skills and app connections'],profileManageMaterials:['查看资料','查看資料','View materials'],profileFullDuty:['完整职责说明','完整職責說明','Full responsibility description'],
 } as const
 export function employeeCopy(locale:string,key:keyof typeof copy){
  const index=locale==='zh-CN'?0:locale.startsWith('zh')?1:2

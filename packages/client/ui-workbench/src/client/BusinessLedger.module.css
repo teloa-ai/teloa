@@ -89,7 +89,7 @@
 .table td:nth-child(3),.table td:nth-child(4){white-space:nowrap}
 .table td small{display:block;margin-top:2px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .table tr:hover td{background:var(--teloa-hover)}
-.table td button{border:0;background:transparent;text-align:left;padding:0;min-height:0;line-height:1.6;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.table td button{border:0;background:transparent;color:var(--teloa-text);text-align:left;padding:0;min-height:0;line-height:1.6;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
 .table td button:hover{color:var(--teloa-text);background:transparent;text-decoration:underline}
 .table td button[aria-pressed='true']{color:var(--teloa-accent)}
 
@@ -125,3 +125,10 @@
 .objectDrawer{padding:24px;display:grid;gap:16px;min-width:0}
 .objectDrawer>.sheet{margin-top:0}
 .objectDrawer>button{justify-self:start}
+.filters select{font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:6px;padding:7px 10px;max-width:100%}
+.contentModes{display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--teloa-border);padding-bottom:10px;margin-bottom:20px}
+.contentModes button{border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);font:inherit;padding:6px 12px;cursor:pointer}
+.contentModes button[aria-pressed=true]{background:var(--teloa-active);color:var(--teloa-text);font-weight:600}
+.contentModes button:focus-visible,.directoryHeader select:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.directoryHeader select{max-width:min(100%,260px);padding:7px 10px;border:1px solid var(--teloa-border);border-radius:6px;color:var(--teloa-text);background:var(--teloa-surface);font:inherit}
+@media(max-width:740px){.contentModes button,.directoryHeader select{min-height:44px}.directoryHeader select{max-width:100%}}

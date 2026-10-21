@@ -19,6 +19,7 @@ before(async()=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-cli-ownership-')),releaseRoot=join(root,'release'),runtimeRoot=join(root,'runtime')
  await mkdir(join(releaseRoot,'node_modules'),{recursive:true,mode:0o700});await mkdir(runtimeRoot,{mode:0o700})
  await writeFile(join(releaseRoot,'package.json'),'{}',{mode:0o600})
+ await writeFile(join(releaseRoot,'release-manifest.json'),JSON.stringify({schema:'teloa.release/v1',version:'0.2.0-alpha.7',dshVersion:'0.1.6-alpha.1',dataVersion:1,compatibleDataVersions:[1],files:[]}),{mode:0o600})
  // prepareDatabase 从固定发行目录解析 pg；测试只映射本仓实际安装的驱动，不替代数据库或查询。
  await symlink(dirname(dirname(createRequire(import.meta.url).resolve('pg'))),join(releaseRoot,'node_modules/pg'))
  configFile=join(root,'connection.json');await writeFile(configFile,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})

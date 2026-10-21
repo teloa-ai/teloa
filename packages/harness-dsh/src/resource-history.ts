@@ -3,7 +3,7 @@ import { isRecord,isResourceSpec,parseResourceReferences,resourceScopes,type Res
 import {resourceMessageSource} from './resource-message-source.ts'
 
 // 从已验证的 DSH 日志投影，只取本会话新增消息；不读取现行目录、不返回资料正文。
-export function resourceHistoryPage(ownerId:string,sessionId:string,events:readonly SessionEvent[],beforeSeq?:number,inheritedEventCount=0):ResourceHistoryPage{
+export function resourceHistoryPage(ownerId:string,sessionId:string,events:readonly SessionEvent[],beforeSeq?:number,inheritedEventCount=0,reference?:{id:string;version?:number}):ResourceHistoryPage{
   const items:ResourceHistoryItem[]=[],contexts=new Map<string,unknown[]>()
   let turn:number|null=null
   for(const event of events.slice(inheritedEventCount)){
@@ -34,7 +34,7 @@ export function resourceHistoryPage(ownerId:string,sessionId:string,events:reado
     }
     if(previous)item.references=item.references.map((ref,index)=>({...ref,metadata:previous![index]!}))
   }
-  const eligible=items.filter(item=>beforeSeq===undefined||item.seq<beforeSeq).reverse(),page=eligible.slice(0,10)
+  const eligible=items.filter(item=>(beforeSeq===undefined||item.seq<beforeSeq)&&(!reference||item.references.some(ref=>ref.id===reference.id&&(reference.version===undefined||ref.version===reference.version)))).reverse(),page=eligible.slice(0,10)
   return {sessionId,items:page,nextBeforeSeq:eligible.length>10?page.at(-1)!.seq:null}
 }
 function checkedMetadata(payload:unknown,ownerId:string,sessionId:string,refs:ResourceReference[]):ResourceSpec[]|undefined{

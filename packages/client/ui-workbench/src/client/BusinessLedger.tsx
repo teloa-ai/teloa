@@ -1,7 +1,7 @@
 import {useEffect,useState,type ReactNode} from 'react'
 import {ArrowLeft,ArrowUpRight} from 'lucide-react'
 import type {BusinessActionRecord,BusinessLedger,BusinessLedgerBlock,BusinessLedgerObject,BusinessObjectTypeDefinition,BusinessViewCoverage,BusinessViewResult} from '@teloa/contract'
-import {businessLedgerBlockUpdated,businessLedgerCacheKeys,businessLedgerFailureKey,ledgerListTruncation,type BusinessLedgerApi} from './business-ledger-api.js'
+import {businessLedgerBlockUpdated,businessLedgerCacheKeys,businessLedgerFailureKey,ledgerListTruncation,readBusinessLedgerDirectory,type BusinessLedgerApi} from './business-ledger-api.js'
 import {durationText,localizedBusinessActionTitle,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessObjectType,localizedBusinessView} from './business-definition-localization.js'
 import {blockLocalCustomized} from './business-customization-presentation.js'
 import type {BusinessTarget} from './business-preview.js'
@@ -279,7 +279,7 @@ function ObjectSheet({object,definition,sourceLabel}:{object:BusinessLedgerObjec
  </article>
 }
 
-type SurfaceState={status:'loading'}|{status:'failed';reason:ReturnType<typeof businessLedgerFailureKey>}|{status:'ready';ledger:BusinessLedger;updated:ReadonlySet<string>}
+type SurfaceState={status:'loading'}|{status:'failed';reason:ReturnType<typeof businessLedgerFailureKey>}|{status:'ready';ledger:BusinessLedger;catalog:BusinessLedger;updated:ReadonlySet<string>}
 
 /**
  * 缓存挂在组件 useRef 上时，离开业务页再回来必然重挂、清零，于是「声明已更新」在真实流程里等于不存在。
@@ -289,6 +289,7 @@ const ledgerKeys=new Map<string,Map<string,string>>()
 
 type ViewProps={
  ledger:BusinessLedger;objectType?:string|undefined;objectId?:string|undefined;updated?:ReadonlySet<string>|undefined
+ catalog?:BusinessLedger|undefined
  /** 组件下钻带来的对象清单筛选：清单已由服务端按它收窄，这里只负责说出来并给「看全部」。 */
  match?:BusinessTarget['match']
  go:(target:BusinessTarget)=>void;connect:(sourceId:string)=>void
@@ -299,18 +300,23 @@ type ViewProps={
 }
 
 /** 已经读到台账之后的那一层：五档空态与五个组件全在这里，读取与缓存留在外面一层。 */
-export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,connect,objectActions,empty}:ViewProps){
+export function BusinessLedgerView({ledger,catalog=ledger,objectType:requestedType,objectId,updated,match,go,connect,objectActions,empty}:ViewProps){
  const {t,locale}=useI18n()
  const scope=ledger.scope as BusinessTarget['scope']
  // 详情只是同一目录的另一层；返回时保留筛选，不把上一个对象类型的筛选带进新类型。
  const [filters,setFilters]=useState<Record<string,{quality:'all'|'complete'|'missing';stage:string|null}>>({})
+ const objectType=requestedType??ledger.blocks[0]?.objectType.definition.id
+ const [mode,setMode]=useState<'overview'|'ledger'|'analysis'>('ledger')
  const filterKey=JSON.stringify([scope,objectType])
  const {quality,stage}=filters[filterKey]??{quality:'all' as const,stage:null}
  const filter=(patch:Partial<{quality:'all'|'complete'|'missing';stage:string|null}>)=>setFilters(current=>({...current,[filterKey]:{quality,stage,...patch}}))
  if(!ledger.blocks.length)return <>{empty??<div className={base.empty} aria-label={t('business.ledger.title')}><h2>{t('business.ledger.empty.types')}</h2><p>{t('business.ledger.empty.typesHint')}</p></div>}</>
  const block=objectType?ledger.blocks.find(row=>row.objectType.definition.id===objectType):undefined
  if(objectType&&!block)return <div className={base.empty} aria-label={t('business.ledger.title')}><h2>{t('business.ledger.empty.types')}</h2><p>{t('business.ledger.empty.typesHint')}</p></div>
- if(block){
+ const navigation=<nav className={css.contentModes} aria-label={t('business.ledger.title')}>{(['overview','ledger','analysis'] as const).map(value=><button type="button" key={value} aria-pressed={mode===value} onClick={()=>setMode(value)}>{t(value==='overview'?'business.ledger.overview':value==='ledger'?'business.ledger.tab':'business.ledger.analysis')}</button>)}</nav>
+ const snapshotOnly=(mode==='overview'?catalog:ledger).blocks.some(row=>!row.source.connected&&row.objects>0)
+ const snapshotNotice=snapshotOnly&&<div className={css.sourceNotice} role="note" data-fixed-snapshot><span>{t('business.ledger.snapshotOnly')}</span></div>
+ if(block&&mode!=='overview'){
   const definition=block.objectType.definition
   const copy=localizedBusinessObjectType(definition,locale)
   const sourceName=block.source.sourceNoun??t('business.source.noun')
@@ -340,9 +346,12 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
    {current?<><ObjectSheet object={current} definition={definition} sourceLabel={sourceName}/>{objectActions?.(current,definition.id,block)}</>:<p role="status" className={base.empty}>{t('error.notFound')}</p>}
   </div></ContextDrawer>:null
   return <section className={css.surface} aria-label={copy.title}>
+   {navigation}{snapshotNotice}
+   {updated?.has(definition.id)&&<p className={css.note} data-definition-updated>{t('business.ledger.definitionUpdated')}</p>}
+   {blockLocalCustomized(block)&&<p className={css.note} data-local-customized>{t('business.custom.local.badge')}</p>}
    <header className={css.directoryHeader}>
     <div><h2>{copy.title}</h2><span className={css.lead}>{copy.lead}</span></div>
-    <button type="button" className={light.back} onClick={()=>go({scope,section:'data'})}><ArrowLeft size={14} aria-hidden/>{t('business.ledger.back')}</button>
+    <select aria-label={t('business.ledger.type')} value={definition.id} onChange={event=>go({scope,section:'data',objectType:event.target.value})}>{catalog.blocks.map(row=><option key={row.objectType.definition.id} value={row.objectType.definition.id}>{localizedBusinessObjectType(row.objectType.definition,locale).title}</option>)}</select>
    </header>
    {match&&<div className={css.sourceNotice} role="note" data-ledger-match><span>{t('business.ledger.match',{field:matchField?localizedBusinessFieldLabel(matchField,locale):match.field==='_id'?t('business.object.id'):match.field,value:matchField?localizedBusinessFieldValue(matchField,match.value,locale):match.value})}</span><button type="button" onClick={()=>go({scope,section:'data',objectType:definition.id})}>{t('business.ledger.matchClear')}</button></div>}
    {!block.source.connected&&!block.objects
@@ -352,7 +361,7 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
      : <>
        {!block.source.connected&&<div className={css.sourceNotice} data-source-disconnected><span title={block.source.sourceId}>{t('business.ledger.source.notConnected')} · {sourceName}</span><button type="button" onClick={()=>connect(block.source.sourceId)}>{t('business.ledger.source.connect')}</button></div>}
        <Coverage coverage={block.coverage} connected={block.source.connected}/>
-       {view
+       {mode==='ledger'&&(view
         ? <>{stageField?.values&&<div className={css.stageFilters} role="group" aria-label={t('business.directory.stage.aria')}>
           <button type="button" aria-pressed={selectedStage===null} onClick={()=>filter({stage:null})}>{t('business.directory.stage.all')}</button>
           {stageField.values.map(value=><button key={value} type="button" aria-pressed={selectedStage===value} onClick={()=>filter({stage:value})}>{localizedBusinessFieldValue(stageField,value,locale)}</button>)}
@@ -366,20 +375,16 @@ export function BusinessLedgerView({ledger,objectType,objectId,updated,match,go,
          {truncation?.filtered&&<p className={css.note} data-rows-filtered>{t('business.ledger.filteredShown',{total:list!.rows.length,count:rows.length})}</p>}
          <MissingFields fields={view.missingFields} definition={definition}/>
         </>
-        : <MissingFields fields={block.missingFields} definition={definition}/>}
-       {analysisViews.length>0&&<details className={css.analysisViews}>
-        <summary>{t('business.section.analysis')}</summary>
-        <div>{analysisViews.map(view=><section key={view.viewId} className={css.view}><ViewChart view={view} definition={definition}/></section>)}</div>
-       </details>}
+        : <><p className={css.note} role="status">{t('business.ledger.noListView')}</p><MissingFields fields={block.missingFields} definition={definition}/></>)}
+       {analysisViews.length>0?<div className={css.analysisViews} hidden={mode!=='analysis'}>{analysisViews.map(view=><section key={view.viewId} className={css.view}><ViewChart view={view} definition={definition}/></section>)}</div>:mode==='analysis'&&<p className={css.note}>{t('business.ledger.analysisEmpty')}</p>}
       </>}
    {detail}
   </section>
  }
- const snapshotOnly=ledger.blocks.some(row=>!row.source.connected&&row.objects>0)
  return <section className={css.surface} aria-label={t('business.ledger.title')}>
-  <p className={css.note}>{t('business.ledger.note')}</p>
-  {snapshotOnly&&<div className={css.sourceNotice} role="note" data-fixed-snapshot><span>{t('business.ledger.snapshotOnly')}</span></div>}
-  <div className={css.blocks}>{ledger.blocks.map(row=><ObjectTypeBlock key={row.objectType.definition.id} block={row} actions={ledger.actions} updated={updated?.has(row.objectType.definition.id)??false} localCustomized={blockLocalCustomized(row)} connect={connect} open={id=>go({scope,section:'data',objectType:id})}/>)}</div>
+  {navigation}<p className={css.note}>{t('business.ledger.note')}</p>
+  {snapshotNotice}
+  <div className={css.blocks}>{catalog.blocks.map(row=><ObjectTypeBlock key={row.objectType.definition.id} block={row} actions={catalog.actions} updated={updated?.has(row.objectType.definition.id)??false} localCustomized={blockLocalCustomized(row)} connect={connect} open={id=>{setMode('ledger');go({scope,section:'data',objectType:id})}}/>)}</div>
  </section>
 }
 
@@ -404,17 +409,17 @@ export function BusinessLedgerSurface({scope,objectType,objectId,match,api,go,co
  useEffect(()=>{
   const controller=new AbortController()
   setState({status:'loading'})
-  void api.read({scope,...(objectType?{objectType}:{}),...(objectType&&matchField!==undefined&&matchValue!==undefined?{match:{field:matchField,value:matchValue}}:{})},controller.signal).then(ledger=>{
+  void readBusinessLedgerDirectory(api,{scope,...(objectType?{objectType}:{}),...(objectType&&matchField!==undefined&&matchValue!==undefined?{match:{field:matchField,value:matchValue}}:{})},controller.signal).then(({catalog,ledger})=>{
    if(controller.signal.aborted)return
    const previous=ledgerKeys.get(scope)
    const updated=new Set(ledger.blocks.filter(block=>businessLedgerBlockUpdated(previous,scope,block)).map(block=>block.objectType.definition.id))
    ledgerKeys.set(scope,businessLedgerCacheKeys(ledger))
-   setState({status:'ready',ledger,updated})
+   setState({status:'ready',ledger,catalog,updated})
   },error=>{if(!controller.signal.aborted)setState({status:'failed',reason:businessLedgerFailureKey(error)})})
   return ()=>controller.abort()
  },[api,scope,objectType,matchField,matchValue,attempt,refreshKey])
  if(state.status==='loading')return <div className={base.empty} aria-label={t('business.ledger.title')}><h3>{t('business.ledger.loading')}</h3></div>
  // 按宿主回的错误码选一条固定文案；`details` 不碰，原始 message 与内部错误码都不上屏。
  if(state.status==='failed')return <div className={base.error} role="alert"><span>{t(state.reason)}</span><button type="button" onClick={()=>setAttempt(value=>value+1)}>{t('business.ledger.retry')}</button></div>
- return <BusinessLedgerView ledger={state.ledger} updated={state.updated} go={go} connect={connect} {...(objectType?{objectType}:{})} {...(objectId?{objectId}:{})} {...(match?{match}:{})} {...(objectActions?{objectActions}:{})} {...(empty?{empty}:{})}/>
+ return <BusinessLedgerView ledger={state.ledger} catalog={state.catalog} updated={state.updated} go={go} connect={connect} {...(objectType?{objectType}:{})} {...(objectId?{objectId}:{})} {...(match?{match}:{})} {...(objectActions?{objectActions}:{})} {...(empty?{empty}:{})}/>
 }

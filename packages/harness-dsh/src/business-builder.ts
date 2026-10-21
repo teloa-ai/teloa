@@ -4,14 +4,18 @@ import {
  readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordList,readBusinessRecordGet,readBusinessRecordReceipt,readBusinessRecordSnapshot,readBusinessRecordPage,
 } from '@teloa/contract'
 import type {BusinessConversationBindingService,BusinessConfigurationDraftService,BusinessConfigurationService,BusinessConfigurationPreviewService,BusinessConfigurationPageService,BusinessRecordService} from '@teloa/backend'
+import {businessSetupPlanEndpoints,createBusinessSetupPlanHandler} from './business-setup-plan.ts'
+import type {BusinessSetupPlanService} from '@teloa/backend'
 export const businessBuilderEndpoints=[
+ ...businessSetupPlanEndpoints,
  'business-conversations/reserve','business-conversations/bind','business-conversations/by-request','business-conversations/by-session','business-conversations/list','business-conversations/recent-daily',
- 'business-configuration/draft','business-configuration/preview','business-configuration/apply','business-configuration/receipt','business-configuration/current','business-configuration/page',
+ 'business-configuration/draft','business-configuration/discard','business-configuration/preview','business-configuration/apply','business-configuration/receipt','business-configuration/current','business-configuration/page',
  'business-records/create','business-records/edit','business-records/archive','business-records/list','business-records/get','business-records/receipt',
 ] as const
 export type BusinessBuilderServices={
+ setup?:BusinessSetupPlanService
  bindings:Pick<BusinessConversationBindingService,'reserve'|'bind'|'byRequest'|'bySession'|'list'|'recentDaily'>
- drafts:Pick<BusinessConfigurationDraftService,'get'>
+ drafts:Pick<BusinessConfigurationDraftService,'get'|'discard'>
  configuration:Pick<BusinessConfigurationService,'apply'|'receipt'|'current'>
  preview:Pick<BusinessConfigurationPreviewService,'preview'>
  pages:Pick<BusinessConfigurationPageService,'read'|'preview'>
@@ -38,6 +42,7 @@ function businessConfigurationPageTitles(value:{manifest:{pages:readonly ({id:st
 
 export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<readonly string[]>,get:()=>Promise<BusinessBuilderServices>){
  return async(endpoint:string,payload:unknown,signal?:AbortSignal):Promise<unknown>=>{
+  if((businessSetupPlanEndpoints as readonly string[]).includes(endpoint))return createBusinessSetupPlanHandler(owner,scopeIds,async()=>{const services=await get();if(!services.setup)throw new WorkError('teloa/dependency-unavailable','业务方案服务尚未连接，原草案已保留。');return {bindings:services.bindings,setup:services.setup}})(endpoint,payload)
   if(!(businessBuilderEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此业务搭建接口。')
   const readers:Record<string,(v:unknown)=>unknown>={
    'business-conversations/recent-daily':readBusinessConversationRecentDaily,'business-conversations/reserve':readBusinessConversationReserve,'business-conversations/bind':readBusinessConversationBind,
@@ -59,6 +64,7 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
      if(checked.draftId){
       const draft=readBusinessConfigurationDraftResponse(await services.drafts.get(actor,{draftId:checked.draftId}))
       if(draft.ownerId!==owner||draft.id!==checked.draftId)throw invalid()
+      if(draft.status==='discarded')continue
       items.push({binding:checked,draft:{id:draft.id,title:draft.candidate.title,scope:draft.scope,revision:draft.revision,status:draft.status,updatedAt:draft.updatedAt}})
      }else items.push({binding:checked})
     }
@@ -90,7 +96,20 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
    const checked=readBusinessConversationBinding(binding)
    if(checked.kind!=='builder'||checked.sessionId!==request.sessionId||checked.draftId!==request.draftId)throw forbidden()
   }
-  const {sessionId:_,...input}=request
+  if(endpoint==='business-configuration/discard'&&request.requestId!==undefined){
+   const binding=await services.bindings.byRequest(actor,{requestId:request.requestId})
+   if(!binding)throw forbidden()
+   const checked=readBusinessConversationBinding(binding)
+   if(checked.kind!=='builder'||checked.requestId!==request.requestId||checked.draftId!==request.draftId||checked.sessionId!==undefined)throw forbidden()
+  }
+  const {sessionId:_,...rest}=request
+  const {requestId:discardRequestId,...discardInput}=rest
+  const input=endpoint==='business-configuration/discard'?discardInput:rest
+  if(endpoint==='business-configuration/discard'){
+   const discarded=readBusinessConfigurationDraftResponse(await services.drafts.discard(actor,input))
+   if(discarded.ownerId!==owner||discarded.id!==input.draftId||discarded.status!=='discarded'||discarded.revision!==Number(input.expectedRevision)+1)throw invalid()
+   return discarded
+  }
   if(endpoint==='business-configuration/draft'){
    const draft=readBusinessConfigurationDraftResponse(await services.drafts.get(actor,input))
    if(draft.ownerId!==owner||draft.id!==input.draftId)throw invalid()
@@ -114,6 +133,7 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
    if(result.scope!==input.scope)throw invalid()
    return result
   }
+  if(endpoint==='business-configuration/apply'&&services.setup&&await services.setup.read(actor,{draftId:input.draftId}))throw new WorkError('teloa/conflict','此草案已有关联的完整方案，请在方案复核中采用。')
   const value=endpoint==='business-configuration/apply'?await services.configuration.apply(actor,input,signal):await services.configuration.receipt(actor,input)
   if(value===undefined){if(endpoint==='business-configuration/receipt')return null;throw invalid()}
   const result=readBusinessConfigurationApplyResult(value)

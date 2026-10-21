@@ -84,6 +84,8 @@ import {initializeNotificationDeliveries} from './notification-deliveries.ts'
 import {initializePendingRequests} from './pending-requests.ts'
 import {initializeConversationWork} from './conversation-work.ts'
 import {initializeBusinessResponsibilities} from './business-responsibility.ts'
+import {initializeTwinDrafts} from './twin-drafts.ts'
+import {initializeBusinessSetupPlans} from './business-setup-plans.ts'
 
 /**
  * Teloa 全库结构的唯一初始化入口。
@@ -175,6 +177,7 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeBusinessConfigurations(pool)
  await initializeBusinessDashboardResources(pool)
  await initializeBusinessResponsibilities(pool)
+ await initializeBusinessSetupPlans(pool)
  await initializeBusinessConversationBindings(pool)
  await initializePageCreateDrafts(pool)
  await initializeMethodReuse(pool)
@@ -201,6 +204,7 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  // 岗位记忆要给 `teloa_task_runs` 补列，必须排在执行表之后。
  await initializeRoleMemory(pool)
  await initializeRoleMemoryViews(pool)
+ await initializeTwinDrafts(pool)
  await initializeRoleDailyLogs(pool)
  await initializeNotificationDeliveries(pool)
  return {businessSqlRole}

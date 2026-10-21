@@ -19,3 +19,5 @@
 @media(max-width:700px){.row{flex-direction:column;align-items:stretch}.missing{flex-wrap:wrap}.rowControl select{max-width:100%}}
 
 .recentHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.recentHeader h3{margin:0}.recentHeader button:disabled{opacity:.45;cursor:not-allowed}.dayUnknown{border-style:dashed;opacity:.55}
+
+.recent{overflow-x:auto}.recentRow{display:grid;grid-template-columns:22px minmax(100px,1fr) 252px 100px;min-width:540px;gap:12px}.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;align-items:center}.calendarHeader{display:grid;grid-template-columns:minmax(134px,1fr) 252px 100px;gap:12px;min-width:540px;color:var(--teloa-muted);font-size:11px;padding-bottom:8px}.calendarHeader .days>span{text-align:center}.days .day{margin-inline:auto}.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--teloa-muted);margin-top:14px}.legend>span{display:flex;align-items:center;gap:5px}.legend .day{display:inline-block;width:10px;height:10px;border-radius:3px}

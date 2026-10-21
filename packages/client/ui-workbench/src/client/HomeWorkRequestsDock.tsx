@@ -11,9 +11,11 @@ import dock from './ComposerDock.module.css'
 type Props=PropsRuntime<'conversation.input.dock'>&{work:BindingClient;call:HomeWorkStatusCall;isAssistantContext:(id:string,signal?:AbortSignal)=>Promise<boolean>;openTask:(id:string)=>void;subscribeActivity:(listener:()=>void)=>()=>void}
 /** 公开 dock 常驻展示请求；工具步骤折叠不影响进度和任务入口。 */
 export function HomeWorkRequestsDock({sessionId,work,call,isAssistantContext,openTask,subscribeActivity}:Props){
- const {locale}=useI18n(),zh=locale.startsWith('zh'),binding=useSyncExternalStore(work.subscribe,work.getSnapshot)
+ const {locale}=useI18n(),zh=locale.startsWith('zh'),hant=zh&&locale!=='zh-CN',binding=useSyncExternalStore(work.subscribe,work.getSnapshot)
  const ready=binding.sessionId===sessionId&&binding.status==='ready'
  const [snapshot,setSnapshot]=useState<{sessionId:string;rows:HomeWorkStatus[];error?:string}>({sessionId,rows:[]}),[retry,setRetry]=useState(0)
+ const [expanded,setExpanded]=useState(false),[showAll,setShowAll]=useState(false)
+ useEffect(()=>{setExpanded(false);setShowAll(false)},[sessionId,work])
  const generation=useRef(0),latest=useRef({sessionId,ready});latest.current={sessionId,ready}
  useEffect(()=>{
   if(!ready)return
@@ -48,9 +50,10 @@ export function HomeWorkRequestsDock({sessionId,work,call,isAssistantContext,ope
   setRetry(value=>value+1)
  }
  if(!ready||snapshot.sessionId!==sessionId||!snapshot.rows.length&&!snapshot.error)return null
- return <div className={`${css.dock} ${dock.strip}`} role="region" aria-label={zh?'本会话交办':'Work in this conversation'}>
-  {snapshot.rows.length>0&&<p className={css.dockTitle}>{zh?`本会话交办了 ${snapshot.rows.length} 项工作`:`${snapshot.rows.length} work ${snapshot.rows.length===1?'request':'requests'} in this conversation`}</p>}
-  {snapshot.rows.map(row=><HomeWorkStatusCard key={row.sessionId+':'+row.requestId} initial={row} call={call} openTask={openTask} managed onChange={changed}/>)}
-  {snapshot.error&&<p role="alert">{snapshot.error} <button type="button" onClick={()=>setRetry(value=>value+1)}>{zh?'重试读取进度':'Retry progress'}</button></p>}
+ return <div className={`${css.dock} ${dock.strip}`} role="region" aria-label={zh?(hant?'本會話交辦':'本会话交办'):'Work in this conversation'}>
+  {snapshot.rows.length>0&&<header className={css.dockHeader}><p className={css.dockTitle}>{zh?(hant?`本會話交辦了 ${snapshot.rows.length} 項工作`:`本会话交办了 ${snapshot.rows.length} 项工作`):`${snapshot.rows.length} work ${snapshot.rows.length===1?'request':'requests'} in this conversation`}</p><button type="button" aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?(zh?'收起':'Collapse'):(zh?(hant?'展開':'展开'):'Expand')}</button></header>}
+  {snapshot.rows.map((row,index)=><div className={css.dockItem} hidden={!expanded||!showAll&&index>=2} key={row.sessionId+':'+row.requestId}><HomeWorkStatusCard initial={row} call={call} openTask={openTask} managed onChange={changed}/></div>)}
+  {expanded&&snapshot.rows.length>2&&<button type="button" className={css.dockMore} onClick={()=>setShowAll(value=>!value)}>{showAll?(zh?'收起':'Show less'):(zh?(hant?`還有 ${snapshot.rows.length-2} 條`:`还有 ${snapshot.rows.length-2} 条`):`${snapshot.rows.length-2} more`)}</button>}
+  {snapshot.error&&<p role="alert">{snapshot.error} <button type="button" onClick={()=>setRetry(value=>value+1)}>{zh?(hant?'重試讀取進度':'重试读取进度'):'Retry progress'}</button></p>}
  </div>
 }

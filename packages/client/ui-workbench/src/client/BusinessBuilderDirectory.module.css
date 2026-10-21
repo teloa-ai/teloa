@@ -2,3 +2,9 @@
 .count{margin-left:8px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);font-variant-numeric:tabular-nums}
 /* 用 .directory 前缀压过页面基础 .page button 的边框、圆角与强调色。 */
 .directory .item{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:11px 0;border:0;border-top:1px solid var(--teloa-border);border-radius:0;background:transparent;text-align:left;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}.directory .item:hover:not(:disabled){background:transparent}.item:hover:not(:disabled) strong{text-decoration:underline;text-underline-offset:3px}.item:disabled{opacity:.55;cursor:default}.item>svg{flex:none;color:var(--teloa-muted)}.item strong{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}.item time{width:100px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}.directory .go{flex:none;color:var(--teloa-text);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}.actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px}@media(max-width:740px){.directory button{min-height:44px}.actions>button{flex:1}}
+
+.draftRow{display:flex;align-items:center;gap:16px;border-top:1px solid var(--teloa-border)}
+.directory .draftRow>.item{flex:1;min-width:0;border-top:0}
+.directory .draftRow>button:not(.item){flex:none;padding:8px 0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
+.directory .draftRow>button:not(.item):disabled{opacity:.5;cursor:default}
+@media(max-width:520px){.draftRow{flex-wrap:wrap;gap:0}.directory .draftRow>.item{flex-basis:100%}.directory .draftRow>button:not(.item){margin-left:auto;min-height:44px}}

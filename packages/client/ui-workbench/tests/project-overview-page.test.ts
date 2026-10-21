@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import ts from 'typescript'
 import {readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
+import {invalidateProjectCardSummary} from '../src/client/project-card-summary.ts'
 import {projectDefinition} from '@teloa/contract'
 
 function harness(){
@@ -10,7 +11,7 @@ function harness(){
  const states:any[]=[],effects:any[]=[];let cursor=0,pending:Array<()=>void>=[]
  // 项目卡是共用组件：桩直接展开函数组件，断言仍看渲染出的卡片按钮。
  const React={createElement:(type:any,props:any,...children:any[])=>typeof type==='function'?type(props??{}):({type,props:props??{},children:children.flat(Infinity)}),useState(initial:any){const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],(value:any)=>states[i]=typeof value==='function'?value(states[i]):value]},useRef(initial:any){const i=cursor++;return states[i]??(states[i]={current:initial})},useEffect(fn:()=>any,deps:any[]){const i=cursor++;if(!effects[i]||deps.some((value,j)=>value!==effects[i].deps[j])){effects[i]?.cleanup?.();pending.push(()=>effects[i]={deps,cleanup:fn()})}}}
- const modules:Record<string,any>={react:React,'@teloa/contract':{projectDefinition,projectStates:['planning','running','review','completed','archived']},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en'})},'./i18n/errors.js':{localizeWorkError:()=>'LOAD FAILED'},'./ProjectForm.js':{ProjectForm:(props:any)=>({type:'project-form',props,children:[]})},'./ProjectWorkspace.js':{ProjectCard:({project,open}:any)=>({type:'button',props:{'data-project-card':project.id,onClick:open},children:[project.title]})},'./project-presentation.js':{projectCopy:(_locale:string,key:string)=>key,projectStateKeys:{planning:'project.state.planning',running:'project.state.running',review:'project.state.review',completed:'project.state.completed',archived:'project.state.archived'}},'./ProjectWorkspace.module.css':{default:{}},'./TaskPage.module.css':{default:{}},'./ToolbarIconButton.js':{ToolbarIconButton:function ToolbarIconButton(){return null}},'lucide-react':new Proxy({},{get:()=>()=>null}),clsx:{default:(...values:unknown[])=>values.filter(Boolean).join(' ')}}
+ const modules:Record<string,any>={'./project-card-summary.js':{invalidateProjectCardSummary},react:React,'@teloa/contract':{projectDefinition,projectStates:['planning','running','review','completed','archived']},'./i18n/provider.js':{useI18n:()=>({t:(key:string)=>key,locale:'en'})},'./i18n/errors.js':{localizeWorkError:()=>'LOAD FAILED'},'./ProjectForm.js':{ProjectForm:(props:any)=>({type:'project-form',props,children:[]})},'./ProjectWorkspace.js':{ProjectCard:({project,open}:any)=>({type:'button',props:{'data-project-card':project.id,onClick:open},children:[project.title]})},'./project-presentation.js':{projectCopy:(_locale:string,key:string)=>key,projectStateKeys:{planning:'project.state.planning',running:'project.state.running',review:'project.state.review',completed:'project.state.completed',archived:'project.state.archived'}},'./ProjectWorkspace.module.css':{default:{}},'./TaskPage.module.css':{default:{}},'./ToolbarIconButton.js':{ToolbarIconButton:function ToolbarIconButton(){return null}},'lucide-react':new Proxy({},{get:()=>()=>null}),clsx:{default:(...values:unknown[])=>values.filter(Boolean).join(' ')}}
  const out:Record<string,any>={}
  // 遮蔽组件内 setInterval(update,30000)：断言失败时不会走到 visible:false 清理，真定时器会令进程挂起 30 秒不退出。
  new Function('require','exports','React','setInterval','clearInterval',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText)((id:string)=>modules[id],out,React,()=>0,()=>{})
@@ -98,6 +99,35 @@ test('有 nextCursor 时显示加载更多，点击后传 cursor 并追加去重
  assert.equal(nodes(tree).find(node=>node.props['data-project-load-more']!==undefined),undefined)
  render({...props,visible:false})
 })
+for(const change of ['business','state','host'] as const)test('加载更多迟答不混入切换后的项目目录：'+change,async()=>{
+ const {render,nodes,settle}=harness();let release!:(value:unknown)=>void
+ const oldPage=new Promise(resolve=>{release=resolve}),first={rows:[project('1','general')],nextCursor:'old-cursor'},next={rows:[project('2','SOC','archived')],nextCursor:'new-cursor'}
+ let switched=false
+ const api={pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>input.cursor?oldPage:switched?next:first}
+ const props={api,scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(s:string)=>s,navigation:{state:{},change(){}},open(){},visible:true}
+ render(props);await settle();nodes(render(props)).find(n=>n.props['data-project-load-more']!==undefined).props.onClick()
+ switched=true
+ const changed={...props,...(change==='host'?{api:{...api}}:{navigation:{...props.navigation,state:change==='business'?{category:'SOC'}:{query:'archived'}}})}
+ render(changed);await settle();release({rows:[project('3','general')],nextCursor:'stale-cursor'});await settle()
+ let tree=render(changed)
+ assert.deepEqual(nodes(tree).filter(n=>n.props['data-project-card']).map(n=>n.props['data-project-card']),[next.rows[0]!.id],'原分页不能带回旧业务/筛选/宿主的项目')
+ assert.ok(nodes(tree).some(n=>n.props['data-project-load-more']!==undefined),'原分页不能改写新目录游标')
+ render({...changed,visible:false})
+})
+test('旧分页失败不显示到新目录，也不释放新分页的忙碌状态',async()=>{
+ const {render,nodes,settle}=harness();let rejectOld!:(error:Error)=>void,releaseNew!:(value:unknown)=>void
+ const oldPage=new Promise((_resolve,reject)=>{rejectOld=reject}),newPage=new Promise(resolve=>{releaseNew=resolve})
+ const api={pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>input.cursor?(input.scope==='SOC'?newPage:oldPage):{rows:[project(input.scope==='SOC'?'2':'1',input.scope??'general')],nextCursor:'next-cursor'}}
+ const props={api,scopeLabels:[label('general'),label('SOC')],labelsReady:true,scopeName:(s:string)=>s,navigation:{state:{},change(){}},open(){},visible:true}
+ render(props);await settle();nodes(render(props)).find(n=>n.props['data-project-load-more']!==undefined).props.onClick()
+ const changed={...props,navigation:{...props.navigation,state:{category:'SOC'}}};render(changed);await settle()
+ let tree=render(changed),more=nodes(tree).find(n=>n.props['data-project-load-more']!==undefined)
+ assert.equal(more.props.disabled,false,'新目录不继承原分页的忙碌状态')
+ more.props.onClick();render(changed);rejectOld(Error('old host failed'));await settle();tree=render(changed)
+ assert.equal(nodes(tree).find(n=>n.props['data-project-load-more']!==undefined).props.disabled,true,'原 finally 不得释放新分页')
+ assert.ok(!nodes(tree).some(n=>n.children.includes('LOAD FAILED')),'原错误不能出现在新目录')
+ releaseNew({rows:[],nextCursor:null});await settle();render({...changed,visible:false})
+})
 test('业务目录未就绪时不发首屏请求，就绪后按恢复的业务筛选只查一次；列表容器标记为 directory 面板供 scrollTop 复用',async()=>{
  const {render,nodes,settle}=harness(),calls:any[]=[]
  const api={pendingFields:()=>undefined,recoveryError:()=>undefined,overview:async(input:any)=>{calls.push(input);return {rows:[project('1','SOC')],nextCursor:null}}}
@@ -116,7 +146,7 @@ test('导航状态含 projects 视图与目录；左栏与外壳四处接线；n
  assert.throws(()=>readWorkbenchNavigationState(JSON.stringify({...saved,view:'bogus'})))
  const client=new URL('../src/client/',import.meta.url)
  const [chrome,nav,frame,store]=await Promise.all([readFile(new URL('WorkbenchNavigationChrome.tsx',client),'utf8'),readFile(new URL('WorkNavigation.tsx',client),'utf8'),readFile(new URL('WorkbenchFrame.tsx',client),'utf8'),readFile(new URL('store.ts',client),'utf8')])
- assert.match(chrome,/\['messages','navigation\.v2\.conversations',MessageSquare\],\['projects','navigation\.projects',FolderKanban\]/)
+ assert.match(chrome,/\['messages','navigation\.v2\.conversations',MessageSquare\],\['projects','navigation\.projects',Folder\]/)
  assert.match(chrome,/primaryNavigation\.map\(/);assert.match(chrome,/onClick=\{\(\)=>onSelect\(id\)\}/)
  assert.match(nav,/import \{WorkbenchNavigationBrand,WorkbenchNavigationItems\} from '\.\/WorkbenchNavigationChrome\.js'/)
  assert.match(nav,/<WorkbenchNavigationItems view=\{view\}/);assert.match(nav,/:actions\.navigate\(id\)\}/)

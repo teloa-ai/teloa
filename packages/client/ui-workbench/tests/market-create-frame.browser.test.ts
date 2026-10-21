@@ -19,7 +19,7 @@ before(async()=>{
  entry=patch(entry,"workspaces:[{workspaceId:'workspace',title:'工作目录',path:'/fixture',sessionIds:[]}]","workspaces:[{workspaceId:'workspace',title:'工作目录',path:'/fixture',sessionIds:[]},{workspaceId:'other',title:'其他目录',path:'/other',sessionIds:[]}]")
  entry=patch(entry,"create:async p=>{const prior=","create:async p=>{(f.creationRequests??=[]).push(p.requestId);if(f.failCreate)throw Error('controlled native create failure');const prior=")
  entry=patch(entry,"open:id=>{selected=id;","open:id=>{if(f.abortNativeNavigationOnOpen)nativeNavigation.abort();selected=id;")
- entry=patch(entry,"return [{scope:f.otherScope?'general':'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]","return [{scope:'general',title:'通用工作',kind:'general',loads:0,activeLoads:0,tasks:0,groups:0},{scope:'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]")
+ entry=patch(entry,"return [{scope:f.otherScope?'general':'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]","return [{scope:'general',title:'通用工作',kind:'general',loads:0,activeLoads:0,tasks:0,groups:0},{scope:'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0},...(startup.secondBusiness?[{scope:'design-review',title:'第二验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]:[])]")
  const setup=`
  if(startup.oneWorkspace)managementState.workspaces.splice(1);
  f.creationPrompts=[];props.preparation={prepare:prompt=>f.creationPrompts.push(prompt),invalidate:noop};
@@ -149,13 +149,13 @@ test('真实Frame资源准备成功进入原会话后原抽屉收起，返回原
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.creates,f.creationPrompts.length,f.sent.length]}),[1,1,0])
 })
 test('真实Frame旧资源准备迟到不收起切到另一业务后新开的资源抽屉',async t=>{
- const {page}=await mount(t,{legacyBusiness:true,holdCreate:true,oneWorkspace:true})
+ const {page}=await mount(t,{legacyBusiness:true,holdCreate:true,oneWorkspace:true,secondBusiness:true})
  await page.locator('summary').filter({hasText:'更多'}).first().click();await page.getByRole('button',{name:'业务资源',exact:true}).click()
  const resources=page.getByRole('dialog',{name:'业务资源',exact:true});await resources.getByRole('button',{name:'在会话中准备业务资源',exact:true}).click();await page.waitForFunction(()=>(window as any).frameFixture.creates===1)
- await resources.getByRole('button',{name:'关闭',exact:true}).click();await page.evaluate(()=>(window as any).frameFixture.openBusiness({scope:'general',section:'overview'}))
+ await resources.getByRole('button',{name:'关闭',exact:true}).click();await page.evaluate(()=>(window as any).frameFixture.openBusiness({scope:'design-review',section:'overview'}))
  await page.locator('summary').filter({hasText:'更多'}).first().click();await page.getByRole('button',{name:'业务资源',exact:true}).click();await resources.waitFor()
  await page.evaluate(()=>(window as any).frameFixture.releaseCreate());await page.waitForFunction(()=>(window as any).frameFixture.rows().length===1)
  assert.equal(await resources.isVisible(),true,'旧请求不能收起另一业务新入口')
- assert.equal(await resources.getByText('通用工作',{exact:true}).count(),1)
+ assert.equal(await resources.getByText('第二验收业务',{exact:true}).count(),1)
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.creationPrompts.length,f.sent.length]}),[0,0])
 })

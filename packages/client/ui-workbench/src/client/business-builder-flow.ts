@@ -1,9 +1,11 @@
+import {readBusinessSetupAdoption,businessSetupUuid,readBusinessConversationSession,type BusinessSetupPlan,type BusinessSetupPreview,type BusinessSetupAdoption,type BusinessSetupManual} from '@teloa/contract'
 import {businessConfigurationPreviewReceiptRejected} from '@teloa/contract'
 import {WorkError,isRecord,isBusinessScopeKey,readBusinessConversationReserve,readBusinessBuilderRequest,type BusinessConversationReserve,type BusinessConversationBinding,type BusinessConversationDirectory,type BusinessConfigurationDraftResponseVersioned as BusinessConfigurationDraftResponse,type BusinessConfigurationPreviewResponse,type BusinessConfigurationApplyResult,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessTimeRange} from '@teloa/contract'
 import type {InputState} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {BindingClient} from './binding-client.ts'
 import type {BusinessBuilderApi,BusinessBuilderApplyInput} from './business-builder-api.ts'
 import type {HomeSubmissionMonitor} from './home-native-submission.ts'
+import {readBusinessSetupManualInput,serializeBusinessSetupManualInput,type BusinessSetupManualInput} from './business-setup-manual-journal.ts'
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>
 export type BusinessBuilderSwitchSnapshot={mainSessionId:string|undefined;bindingSessionId:string|undefined;bindingReady:boolean;input:InputState|null|undefined;pendingSubmissions:readonly {requestId:string}[];monitor:Pick<HomeSubmissionMonitor,'getSnapshot'|'check'>|undefined}
 export type BusinessBuilderSwitchPort={read:()=>BusinessBuilderSwitchSnapshot}
@@ -35,10 +37,13 @@ const invalid=()=>new WorkError('teloa/invalid-host-response','业务搭建返�
 const code=(error:unknown)=>isRecord(error)?error.code:undefined
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)
 export type BusinessBuilderState={
+ setupPlan?:BusinessSetupPlan|null;setupPreview?:BusinessSetupPreview|null;setupReadiness?:{digest:string;rows:{itemInstanceId:string;kind:string;title:string;state:string}[]}|null;setupUnknown?:boolean;leaveConfirmation?:boolean
+
  phase:'idle'|'creating'|'recovering'|'ready'|'saving'|'unknown'|'saved'|'error'
  binding:BusinessConversationBinding|null;draft:BusinessConfigurationDraftResponse|null;preview:BusinessConfigurationPreviewResponse|null
  page:BusinessConfigurationPageProjection|null;pageStatus:'idle'|'loading'|'ready'|'invalid'
  directory:BusinessConversationDirectory|null;result:BusinessConfigurationApplyResult|null;error:unknown|null
+ discardedDraft?:{id:string;revision:number}|undefined
 }
 export type BusinessBuilderFlowPorts={
  api:BusinessBuilderApi;work:Pick<BindingClient,'create'>;storage:Storage;journalKey:string;id:()=>string
@@ -47,6 +52,10 @@ export type BusinessBuilderFlowPorts={
 /** 浏览器journal只持久固定请求意图。草案正文、会话内容和正式配置始终从服务端读取。 */
 export class BusinessBuilderFlow{
  private readonly ports:BusinessBuilderFlowPorts
+ private leavePending:{resolve:(allowed:boolean)=>void;epoch:number;draftId:string;revision:number;sessionId:string|undefined}|undefined
+ private setupFlight:Promise<BusinessSetupAdoption>|undefined
+ private manualIntent:{spec:string;input:Parameters<BusinessBuilderApi['setupEdit']>[0]}|undefined
+ private restoreIntent:{spec:string;input:Parameters<BusinessBuilderApi['setupRestore']>[0]}|undefined
  private state:BusinessBuilderState={phase:'idle',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',directory:null,result:null,error:null}
  private listeners=new Set<()=>void>()
  private epoch=0
@@ -54,6 +63,7 @@ export class BusinessBuilderFlow{
  private previewRead=0
  private pageRead=0
  private directoryRead=0
+ private discardedDraftIds=new Set<string>()
  private creationFlight:Promise<BusinessConversationBinding>|undefined
  private saveFlight:Promise<BusinessConfigurationApplyResult>|undefined
  constructor(ports:BusinessBuilderFlowPorts){
@@ -62,7 +72,7 @@ export class BusinessBuilderFlow{
  }
  getSnapshot=()=>this.state
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
- private publish(patch:Partial<BusinessBuilderState>){this.state={...this.state,...patch};for(const listener of this.listeners)listener()}
+ private publish(patch:Partial<BusinessBuilderState>){const next={...this.state,...patch},leave=this.leavePending;if(leave&&(leave.epoch!==this.epoch||leave.draftId!==next.draft?.id||leave.revision!==next.draft?.revision||leave.sessionId!==next.binding?.sessionId)){this.leavePending=undefined;leave.resolve(false);next.leaveConfirmation=false}this.state=next;for(const listener of this.listeners)listener()}
  private journal():Journal{
   const raw=this.ports.storage.getItem(this.ports.journalKey)
   if(raw===null)return empty()
@@ -88,8 +98,15 @@ export class BusinessBuilderFlow{
  }
  pendingCreation=()=>this.journal().creation
  pendingSave=()=>this.journal().save
+ async requestLeave():Promise<boolean>{
+  if(this.leavePending)return false
+  const draft=this.state.draft
+  if(!draft||draft.status!=='draft'||draft.revision===1&&!this.state.setupPlan)return true
+  return new Promise(resolve=>{this.leavePending={resolve,epoch:this.epoch,draftId:draft.id,revision:draft.revision,sessionId:this.state.binding?.sessionId};this.publish({leaveConfirmation:true})})
+ }
+ decideLeave(choice:'keep'|'continue'){const leave=this.leavePending;this.leavePending=undefined;const matches=!!leave&&leave.epoch===this.epoch&&leave.draftId===this.state.draft?.id&&leave.revision===this.state.draft?.revision&&leave.sessionId===this.state.binding?.sessionId;this.publish({leaveConfirmation:false});leave?.resolve(matches&&choice==='keep')}
  /** 离开只失效展示与导航回调；不能取消或换ID重建已提交的业务操作。 */
- leave(){this.epoch++;this.draftRead++;this.previewRead++;this.pageRead++;this.publish({phase:'idle'})}
+ leave(){this.epoch++;this.draftRead++;this.previewRead++;this.pageRead++;this.publish({phase:'idle',discardedDraft:undefined})}
  private async maySwitch(allowDraft:boolean){
   const epoch=this.epoch,initial=this.ports.switching.read()
   const decision=await checkBusinessBuilderSwitch(this.ports.switching,allowDraft)
@@ -102,7 +119,27 @@ export class BusinessBuilderFlow{
  async refreshDirectory(cursor?:string){
   const generation=++this.directoryRead
   const result=await this.ports.api.list({kind:'builder',...(cursor===undefined?{}:{cursor})})
-  if(generation===this.directoryRead)this.publish({directory:result})
+  if(generation===this.directoryRead)this.publish({directory:{...result,items:result.items.filter(item=>!item.binding.draftId||!this.discardedDraftIds.has(item.binding.draftId))}})
+  return result
+ }
+ async discard(binding:BusinessConversationBinding,draft:Pick<BusinessConfigurationDraftResponse,'id'|'scope'|'revision'|'status'>){
+  if(this.pendingSave()||this.state.phase==='saving'||this.state.phase==='unknown'||this.pendingSetupSave())throw conflict('请先核对原保存结果，再放弃草案。')
+  if(this.state.result&&this.state.binding?.draftId===draft.id)throw conflict('已采用的草案不能放弃。')
+  if(this.creationFlight)throw conflict('请先等待当前业务会话创建完成。')
+  if(binding.kind!=='builder'||binding.draftId!==draft.id||draft.status!=='draft')throw conflict('请先恢复并核对原业务草案。')
+  const epoch=this.epoch
+  const leave=this.leavePending?.draftId===draft.id&&this.leavePending.revision===draft.revision?this.leavePending:undefined
+  const result=await this.ports.api.discard({...(binding.sessionId?{sessionId:binding.sessionId}:{requestId:binding.requestId}),draftId:draft.id,expectedRevision:draft.revision})
+  if(result.scope!==draft.scope)throw invalid()
+  this.discardedDraftIds.add(draft.id)
+  const journal=this.journal()
+  if(journal.creation?.requestId===binding.requestId)this.write({...journal,creation:null},journal)
+  const directory=this.state.directory
+  const same=epoch===this.epoch&&this.state.draft?.id===draft.id&&this.state.draft.revision===draft.revision
+  const discardedForLeave=!!leave&&this.leavePending===leave&&same&&leave.epoch===this.epoch
+  if(discardedForLeave)this.leavePending=undefined
+  this.publish({...(epoch===this.epoch?{discardedDraft:{id:result.id,revision:result.revision}}:{}),...(directory?{directory:{...directory,items:directory.items.filter(item=>item.binding.draftId!==draft.id)}}:{}),...(same?{draft:result,preview:null,page:null,pageStatus:'idle',error:null}: {})})
+  if(discardedForLeave){this.publish({leaveConfirmation:false});leave!.resolve(true)}
   return result
  }
  async start(options:{title?:string;scope?:string;workspaceId?:string;allowDraft?:boolean}={}):Promise<BusinessConversationBinding>{
@@ -138,7 +175,7 @@ export class BusinessBuilderFlow{
   const locationMatches=()=>this.ports.switching.read().mainSessionId===approved.mainSessionId&&this.ports.mayOpen?.()!==false
   if(!locationMatches())return Promise.reject(conflict('当前业务目标已变化，原预约可稍后恢复。'))
   const epoch=++this.epoch,approvedInput=approved.input
-  this.publish({phase:'creating',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null})
+  this.publish({phase:'creating',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null,discardedDraft:undefined,setupPlan:null,setupPreview:null,setupReadiness:null})
   const operation=(async()=>{
    try{
     const reserved=await this.ports.api.reserve(request)
@@ -156,7 +193,7 @@ export class BusinessBuilderFlow{
      const latest=this.journal()
      if(latest.creation?.requestId!==request.requestId)throw conflict('创建恢复记录已变化。')
      this.write({...latest,creation:null},latest)
-     if(epoch===this.epoch)this.publish({phase:'ready',binding:bound,draft,error:null})
+     if(epoch===this.epoch)this.publish({phase:'ready',binding:bound,draft,error:null});if(epoch===this.epoch)await this.refreshSetupPlan()
     }})
     if(!bound)throw invalid()
     return bound
@@ -169,7 +206,7 @@ export class BusinessBuilderFlow{
  /** 全局目录打开原session时恢复外壳，不创建、领养或提交任何原生消息。 */
  async restoreSession(sessionId:string){
   const epoch=++this.epoch
-  this.publish({phase:'recovering',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null})
+  this.publish({phase:'recovering',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null,discardedDraft:undefined,setupPlan:null,setupPreview:null,setupReadiness:null})
   try{
    const binding=await this.ports.api.bySession({sessionId})
    if(epoch!==this.epoch)return
@@ -178,7 +215,7 @@ export class BusinessBuilderFlow{
    if(binding.sessionId!==sessionId||!binding.draftId)return
    const draft=await this.ports.api.draft({sessionId,draftId:binding.draftId})
    if(binding.scope!==undefined&&draft.scope!==binding.scope)throw invalid()
-   if(epoch===this.epoch)this.publish({phase:'ready',draft})
+   if(epoch===this.epoch){this.publish({phase:'ready',draft});await this.refreshSetupPlan()}
   }catch(error){if(epoch===this.epoch)this.publish({phase:'error',error});throw error}
  }
  private target(){
@@ -195,6 +232,7 @@ export class BusinessBuilderFlow{
   if(draft.revision===this.state.draft!.revision&&draft.hash!==this.state.draft!.hash)throw invalid()
   const changed=draft.revision!==this.state.draft!.revision||draft.status!==this.state.draft!.status
   this.publish({draft,...(changed?{preview:null,pageStatus:'idle' as const}:{}),error:null})
+  await this.refreshSetupPlan()
   return draft
  }
  private same(epoch:number,draft:BusinessConfigurationDraftResponse){return epoch===this.epoch&&this.state.draft?.id===draft.id&&this.state.draft.revision===draft.revision&&this.state.draft.hash===draft.hash}
@@ -215,10 +253,109 @@ export class BusinessBuilderFlow{
    return result
   }catch(error){if(this.same(epoch,draft)&&generation===this.pageRead)this.publish({pageStatus:'invalid',error});throw error}
  }
+ async refreshSetupPlan(){
+  if(!this.ports.api.setupPlan)return null
+  const target=this.target(),epoch=this.epoch,plan=await this.ports.api.setupPlan({sessionId:target.sessionId,draftId:target.draftId})
+  if(epoch===this.epoch){const changed=plan?.revision!==this.state.setupPlan?.revision||plan?.configurationHash!==this.state.setupPlan?.configurationHash;this.publish({setupPlan:plan,...(changed?{setupPreview:null}: {})})}
+  return plan
+ }
+ async readManual(){const target=this.target(),epoch=this.epoch;const manual=await this.ports.api.setupManual({sessionId:target.sessionId,draftId:target.draftId});if(!this.same(epoch,target.draft)||manual.configurationRevision!==target.draft.revision||manual.configurationHash!==target.draft.hash)throw conflict('原业务草案已变化，请刷新后编辑。');this.manualIntent=undefined;return manual}
+ private manualInputKey(draftId:string){if(this.target().draftId!==draftId)throw conflict('编辑目标已变化。');return this.ports.journalKey+'/setup-editor/'+draftId}
+ readManualInput(snapshot:BusinessSetupManual){const raw=this.ports.storage.getItem(this.manualInputKey(snapshot.draftId));if(raw===null)return null;const value=readBusinessSetupManualInput(raw);if(value.snapshot.draftId!==snapshot.draftId||value.snapshot.candidate.scope!==snapshot.candidate.scope)throw conflict('编辑恢复内容不属于当前草案。');return value}
+ writeManualInput(value:BusinessSetupManualInput){const key=this.manualInputKey(value.snapshot.draftId),raw=serializeBusinessSetupManualInput(value);this.ports.storage.setItem(key,raw);if(this.ports.storage.getItem(key)!==raw)throw conflict('编辑输入尚未可靠保存在本机。')}
+ clearManualInput(snapshot:BusinessSetupManual){this.ports.storage.removeItem(this.manualInputKey(snapshot.draftId))}
+ async saveManual(snapshot:BusinessSetupManual,edit:Pick<BusinessSetupManual,'candidate'|'description'|'roleEdits'>){
+  const target=this.target(),epoch=this.epoch
+  if(this.pendingSave()||this.pendingSetupSave()||target.draft.status!=='draft'||snapshot.draftId!==target.draftId||snapshot.configurationRevision!==target.draft.revision||snapshot.configurationHash!==target.draft.hash||(this.state.setupPlan?.revision??0)!==snapshot.revision)throw conflict('编辑所依据的方案已变化，请重新读取原稿。')
+  const spec=JSON.stringify([snapshot,edit]);if(this.manualIntent&&this.manualIntent.spec!==spec)throw conflict('上次编辑结果待核对，请先读取原稿。')
+  const intent=this.manualIntent??{spec,input:{sessionId:target.sessionId,draftId:target.draftId,requestId:this.ports.id(),expectedRevision:snapshot.revision,configurationRevision:snapshot.configurationRevision,configurationHash:snapshot.configurationHash,...edit}}
+  this.manualIntent=intent
+  const plan=await this.ports.api.setupEdit(intent.input)
+  if(this.manualIntent===intent)this.manualIntent=undefined
+  if(epoch===this.epoch){await this.refreshDraft();if(epoch===this.epoch)await this.previewSetup([])}
+  return plan
+ }
+ async restoreConfiguration(version:number,expectedHash:string){
+  const target=this.target(),epoch=this.epoch
+  if(target.draft.status!=='draft'||this.state.setupPlan||this.pendingSave()||this.pendingSetupSave()||!Number.isSafeInteger(version)||version<1||!hash(expectedHash))throw conflict('请选择同业务的新编辑草案复核历史版本。')
+  const spec=JSON.stringify([target.draftId,target.draft.revision,target.draft.hash,version,expectedHash]);if(this.restoreIntent&&this.restoreIntent.spec!==spec)throw conflict('原版本准备结果待核对，请先读取原草案。')
+  const intent=this.restoreIntent??{spec,input:{sessionId:target.sessionId,draftId:target.draftId,requestId:this.ports.id(),expectedRevision:0 as const,configurationRevision:target.draft.revision,configurationHash:target.draft.hash,version,expectedHash}}
+  this.restoreIntent=intent
+  const plan=await this.ports.api.setupRestore(intent.input)
+  if(this.restoreIntent===intent)this.restoreIntent=undefined
+  if(epoch===this.epoch){await this.refreshDraft();if(epoch===this.epoch)await this.previewSetup([])}
+  return plan
+ }
+ async previewSetup(rejected:string[]=[]){
+  const target=this.target(),plan=this.state.setupPlan,epoch=this.epoch
+  if(!plan||plan.state!=='draft')throw conflict('请先保存完整业务方案草案。')
+  const preview=await this.ports.api.setupPreview({sessionId:target.sessionId,draftId:target.draftId,expectedRevision:plan.revision,rejected})
+  await this.refreshDraft()
+  if(epoch===this.epoch)this.publish({setupPreview:preview,error:null})
+  return preview
+ }
+ private setupJournalKey(){return this.ports.journalKey+'/setup-apply'}
+ pendingSetupSave(){
+  const raw=this.ports.storage.getItem(this.setupJournalKey());if(raw===null)return null
+  try{if(raw.length>8192)throw Error();const value:unknown=JSON.parse(raw)
+   if(!isRecord(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'scope')||!Object.hasOwn(value,'input')||!isBusinessScopeKey(value.scope)||value.scope==='general'||!isRecord(value.input))throw Error()
+   const input=value.input,keys=['requestId','draftId','sessionId','expectedRevision','expectedDigest','previewReceipt']
+   if(Object.keys(input).length!==keys.length||Object.keys(input).some(key=>!keys.includes(key))||!businessSetupUuid(input.requestId)||!businessSetupUuid(input.draftId)||!Number.isSafeInteger(input.expectedRevision)||Number(input.expectedRevision)<1||!hash(input.expectedDigest)||!hash(input.previewReceipt))throw Error()
+   readBusinessConversationSession({sessionId:input.sessionId})
+   return value as {scope:string;input:{requestId:string;draftId:string;sessionId:string;expectedRevision:number;expectedDigest:string;previewReceipt:string}}
+  }catch{throw conflict('方案采用恢复记录无法读取；原记录已保留，请先核对原业务会话与服务端回执。')}
+ }
+ adoptSetup(recover=false):Promise<BusinessSetupAdoption>{
+  if(this.setupFlight)return this.setupFlight
+  const operation=(async()=>{
+   const target=this.target(),plan=this.state.setupPlan,preview=this.state.setupPreview,epoch=this.epoch
+   let pending=this.pendingSetupSave()
+   if(!pending){if(recover)throw conflict('没有待核对的方案采用请求。');if(!plan||!preview||preview.blocked||preview.revision!==plan.revision)throw conflict('请先核对完整方案与逐项决定。');pending={scope:plan.scope,input:{sessionId:target.sessionId,draftId:target.draftId,requestId:this.ports.id(),expectedRevision:plan.revision,expectedDigest:preview.digest,previewReceipt:preview.receipt}};this.ports.storage.setItem(this.setupJournalKey(),JSON.stringify(pending));if(JSON.stringify(this.pendingSetupSave())!==JSON.stringify(pending))throw conflict('采用意图无法可靠保存。')}
+   if(pending.scope!==target.draft.scope||pending.input.draftId!==target.draftId||pending.input.sessionId!==target.sessionId)throw conflict('请回到原业务会话核对采用结果。')
+   if(epoch===this.epoch)this.publish({phase:'saving',setupUnknown:false,error:null})
+   try{
+    let adoption=recover?await this.ports.api.setupReceipt(pending.input):null
+    if(!adoption)try{adoption=await this.ports.api.setupApply(pending.input)}catch(error){
+     if(!recover||!businessConfigurationPreviewReceiptRejected(error))throw error
+     adoption=await this.ports.api.setupReceipt(pending.input)
+     if(!adoption){
+      const original=await this.ports.api.setupPlan({sessionId:target.sessionId,draftId:target.draftId})
+      if(!original||original.state!=='draft'||original.scope!==pending.scope||original.revision!==pending.input.expectedRevision)throw conflict('原方案已变化，不能替换待核对的采用请求。')
+      const checked=await this.ports.api.setupPreview({sessionId:target.sessionId,draftId:target.draftId,expectedRevision:original.revision,rejected:original.rejected})
+      if(this.pendingSetupSave()?.input.requestId!==pending.input.requestId)throw conflict('采用恢复记录已变化。')
+      if(epoch===this.epoch)await this.refreshDraft()
+      this.ports.storage.removeItem(this.setupJournalKey())
+      if(epoch===this.epoch)this.publish({phase:'ready',setupUnknown:false,setupPreview:checked,error:null})
+      throw new WorkError('teloa/conflict','预览已更新，请本人重新核对后采用。',{reason:'preview-review-required'})
+     }
+    }
+    if(adoption.configuration.scope!==pending.scope)throw invalid()
+    await this.ports.refreshScopes()
+    if(this.pendingSetupSave()?.input.requestId!==pending.input.requestId)throw conflict('采用恢复记录已变化。')
+    if(epoch===this.epoch)await this.refreshSetupPlan()
+    if(this.pendingSetupSave()?.input.requestId!==pending.input.requestId)throw conflict('采用恢复记录已变化。')
+    this.ports.storage.removeItem(this.setupJournalKey())
+    if(epoch===this.epoch)this.publish({phase:'saved',result:adoption.configuration,setupUnknown:false,setupPreview:null})
+    return adoption
+   }catch(error){if(epoch===this.epoch){const reviewed=isRecord(error)&&isRecord(error.details)&&error.details.reason==='preview-review-required';this.publish({phase:reviewed?'ready':'unknown',setupUnknown:!reviewed,error})}throw error}
+  })()
+  this.setupFlight=operation;void operation.then(()=>{this.setupFlight=undefined},()=>{this.setupFlight=undefined});return operation
+ }
+ async prepareSetup(confirmed=false){
+  if(this.pendingSetupSave())throw conflict('请先核对原方案采用结果。')
+  const target=this.target(),epoch=this.epoch,readiness=this.state.setupReadiness
+  if(confirmed&&!readiness)throw conflict('请先读取并核对资源准备清单。')
+  const plan=await this.ports.api.setupPrepare({sessionId:target.sessionId,draftId:target.draftId,...(confirmed?{expectedDigest:readiness!.digest}:{})})
+  const after=await this.ports.api.setupReadiness({sessionId:target.sessionId,draftId:target.draftId})
+  if(epoch===this.epoch)this.publish({setupPlan:plan,setupReadiness:after,error:null})
+  return plan
+ }
  save():Promise<BusinessConfigurationApplyResult>{
   if(this.saveFlight)return this.saveFlight
   try{
    const journal=this.journal()
+   if(this.pendingSetupSave())throw conflict('请先核对原完整方案采用结果。')
+   if(this.state.setupPlan)throw conflict('请在完整方案预览中采用业务。')
    if(journal.save)throw conflict('上次保存结果仍待核对，请先读取原请求回执。')
    const {sessionId,draftId,draft}=this.target(),preview=this.state.preview
    if(draft.status!=='draft'||!preview||preview.impact?.blocked||preview.draftId!==draftId||preview.revision!==draft.revision||preview.candidateHash!==draft.hash||preview.baseVersion!==draft.baseVersion)throw conflict('业务草案已变化或影响现有记录，请重新预览后保存。')

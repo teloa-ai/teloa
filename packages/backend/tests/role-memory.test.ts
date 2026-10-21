@@ -47,6 +47,51 @@ async function memoryViewFixture(){
  return {...f,groupId,views,memory,input:{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,groupId,entries}}
 }
 
+test('本人编辑记忆：固定双版本CAS、幂等回执、原来源与旧正文可追溯',async()=>{
+ await pool.query("alter table teloa_role_memories drop constraint teloa_role_memories_lifecycle; alter table teloa_role_memories add constraint legacy_role_memory_lifecycle check((state='candidate' and state_version=1 and confirmed_at is null and withdrawn_at is null) or (state='confirmed' and state_version=2 and confirmed_at is not null and withdrawn_at is null) or (state='withdrawn' and withdrawn_at is not null and state_version=case when confirmed_at is null then 2 else 3 end)); alter table teloa_role_memories add constraint retained_custom_memory_check check(length(title)>0)")
+ await initializeRoleMemory(pool);await initializeRoleMemory(pool)
+ const constraints=(await pool.query("select conname from pg_constraint where conrelid='teloa_role_memories'::regclass")).rows.map(row=>row.conname)
+ assert.equal(constraints.includes('legacy_role_memory_lifecycle'),false);assert.equal(constraints.includes('retained_custom_memory_check'),true);assert.equal(constraints.includes('teloa_role_memories_lifecycle'),true)
+ const f=await fixture(),candidate=await f.service.create({ownerId:f.owner,kind:'agent',roleId:f.role.id},{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'原判断',markdown:'原固定正文',source:{kind:'task',id:f.task!.id,version:1},visibility:{kind:'role',scopeIds:['SOC']}})
+ const input={requestId:randomUUID(),roleId:f.role.id,memoryId:candidate.id,expectedContentVersion:1,expectedContentHash:candidate.content.contentHash,expectedStateVersion:1,title:'本人修订',markdown:'本人核对后的修订正文'}
+ assert.equal(typeof f.service.edit,'function')
+ const edited=await f.service.edit(f.human,input)
+ assert.equal(edited.content.version,2);assert.equal(edited.content.editedBy,'self');assert.notEqual(edited.content.contentHash,candidate.content.contentHash)
+ assert.equal(edited.state,'candidate');assert.equal(edited.stateVersion,2);assert.equal(edited.confirmedAt,null)
+ assert.deepEqual(edited.source,candidate.source);assert.deepEqual(edited.proposedBy,candidate.proposedBy);assert.deepEqual(edited.visibility,candidate.visibility)
+ assert.deepEqual(await f.service.readVersion(f.human,{roleId:f.role.id,memoryId:candidate.id,version:1}),candidate)
+ assert.deepEqual(await f.service.list(f.human,{roleId:f.role.id}),[edited])
+ await assert.rejects(f.service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1}),{code:'teloa/version-conflict'})
+ const confirmed=await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:2})
+ assert.deepEqual(await f.service.edit(f.human,input),edited,'重复请求返回原回执，而非后续确认状态')
+ await assert.rejects(f.service.edit(f.human,{...input,requestId:randomUUID()}),{code:'teloa/version-conflict'})
+ await assert.rejects(f.service.edit(f.human,{...input,markdown:'同请求换正文'}),{code:'teloa/conflict'})
+ const next={...input,requestId:randomUUID(),expectedContentVersion:2,expectedContentHash:edited.content.contentHash,expectedStateVersion:3,title:'生效后修订',markdown:'新运行才看到本次修订'}
+ const oldRun=await f.service.confirmedForRun(pool,f.owner,'SOC',f.role),updated=await f.service.edit(f.human,next),newRun=await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)
+ assert.equal(updated.state,confirmed.state);assert.equal(updated.stateVersion,confirmed.stateVersion+1);assert.equal(updated.confirmedAt,confirmed.confirmedAt)
+ assert.equal(oldRun[0]!.version,2);assert.equal(newRun[0]!.version,3);assert.notEqual(oldRun[0]!.contentHash,newRun[0]!.contentHash)
+ assert.equal((await f.service.readVersion(f.human,{roleId:f.role.id,memoryId:candidate.id,version:2})).content.markdown,input.markdown)
+ const wrongRole=await fixture()
+ for(const [who,request] of [[{ownerId:wrongRole.owner,kind:'human'},next],[{ownerId:f.owner,kind:'agent',roleId:f.role.id},next],[f.human,{...next,roleId:wrongRole.role.id}]] as const)await assert.rejects(f.service.edit(who as never,{...request,requestId:randomUUID()}),{code:'teloa/forbidden'})
+ for(const field of [{source:{kind:'self-feedback',id:randomUUID(),version:1}},{visibility:{kind:'private',scopeIds:[]}},{proposedBy:{kind:'self'}}])await assert.rejects(f.service.edit(f.human,{...next,...field}),{code:'teloa/invalid-input'})
+ const stale={...next,requestId:randomUUID(),expectedContentVersion:3,expectedContentHash:updated.content.contentHash,expectedStateVersion:4}
+ await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:4})
+ await assert.rejects(f.service.edit(f.human,stale),{code:'teloa/version-conflict'})
+ await assert.rejects(pool.query('update teloa_role_memory_versions set markdown=$1 where owner_id=$2 and memory_id=$3 and number=1',['篡改',f.owner,candidate.id]),/immutable/)
+ await initializeRoleMemory(pool);await initializeRoleMemory(pool)
+ assert.deepEqual(await f.service.edit(f.human,input),edited,'重复初始化不抹去编辑回执')
+})
+
+test('本人编辑记忆：并发双版本只写一份，旧共享视图不能默默采用新版本',async()=>{
+ const f=await memoryViewFixture(),request={roleId:f.role.id,memoryId:f.memory.id,expectedContentVersion:1,expectedContentHash:f.memory.content.contentHash,expectedStateVersion:2,title:'并发修订',markdown:'固定新正文'}
+ assert.equal(typeof f.service.edit,'function')
+ const results=await Promise.allSettled([1,2].map(()=>f.service.edit(f.human,{requestId:randomUUID(),...request})))
+ assert.equal(results.filter(result=>result.status==='fulfilled').length,1)
+ assert.equal(results.filter(result=>result.status==='rejected'&&result.reason.code==='teloa/version-conflict').length,1)
+ await assert.rejects(f.service.confirmedViewEntries(pool,f.owner,f.role,f.input.entries),{code:'teloa/version-conflict'})
+ assert.equal((await pool.query('select count(*) from teloa_role_memory_versions where owner_id=$1 and memory_id=$2',[f.owner,f.memory.id])).rows[0].count,'2')
+})
+
 test('共享视图真实持久化且幂等，只读取固定项并保持原记忆私有',async()=>{
  const f=await memoryViewFixture(),view=await f.views.create(f.owner,f.input)
  assert.deepEqual(await new RoleMemoryViewService(pool,identity,new RoleMemoryService(pool,identity)).read(f.owner,{viewId:view.id}),view)

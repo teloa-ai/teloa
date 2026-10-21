@@ -12,7 +12,7 @@ registerHooks({
  resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
  load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
 })
-const {BusinessLedgerView}=await import('../lib/types/client/BusinessLedger.js')
+const {BusinessLedgerView,ObjectTypeBlock}=await import('../lib/types/client/BusinessLedger.js')
 const {I18nProvider}=await import('../lib/types/client/i18n/provider.js')
 const {translateMessage}=await import('../lib/types/client/i18n/messages.js')
 
@@ -20,6 +20,28 @@ type TestLocale='zh-CN'|'en'
 const runtime=(locale:TestLocale)=>({t:(key:string,params?:Record<string,string|number>)=>translateMessage(locale,key as never,params),subscribe:()=>()=>{},getSnapshot:()=>({locale,dshLocale:locale==='en'?'en':'zh',revision:1})})
 const paint=(props:Record<string,unknown>,locale:TestLocale='zh-CN')=>renderToStaticMarkup(createElement(I18nProvider,{runtime:runtime(locale) as never},createElement(BusinessLedgerView as never,{go:()=>{},connect:()=>{},...props} as never)))
 const render=async(value:unknown,props:Record<string,unknown>={},locale:TestLocale='zh-CN')=>paint({ledger:await readBusinessLedger(value,String((value as {scope:string}).scope)),...props},locale)
+
+const renderCards=async(value:unknown,props:{updated?:Set<string>}={})=>{
+ const data=await readBusinessLedger(value,String((value as {scope:string}).scope))
+ return renderToStaticMarkup(createElement(I18nProvider,{runtime:runtime('zh-CN') as never},...data.blocks.map(block=>createElement(ObjectTypeBlock,{key:block.objectType.definition.id,block,actions:data.actions,updated:props.updated?.has(block.objectType.definition.id)??false,open:()=>{},connect:()=>{}}))))
+}
+
+test('业务内容首屏直接显示台账记录和类型切换，概览与分析按需切换',async()=>{
+ const value=ledger({blocks:[block({objects:1,views:[listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','first-record')])]}),block({definition:{id:'other',title:'其他记录'}})]})
+ const html=await render(value)
+ assert.match(html,/工单 first-record/)
+ assert.match(html,/其他记录/)
+ assert.match(html,/aria-pressed="true"[^>]*>台账/)
+ assert.match(html,/>概览</)
+ assert.match(html,/>分析</)
+ assert.doesNotMatch(html,/data-object-type-block=/)
+})
+
+test('对象已有存档却没有清单视图时说明原因，不能在覆盖率后显示空白',async()=>{
+ const html=await render(ledger({blocks:[block({views:[]})]}))
+ assert.match(html,/尚未配置台账视图/)
+ assert.match(html,/切换到分析/)
+})
 
 test('五档空态各有固定文案与可操作的下一步',async()=>{
  // 1 范围下没有对象类型声明
@@ -126,7 +148,7 @@ test('范围总览只画对象类型卡，图表进入对象目录',async()=>{
   viewResult('SOC','alert-ticket','severity-table',[{dimension:'高',label:'高',values:[7]}],{chart:'table',title:'严重度明细'}),
   listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','a-1')]),
  ]})]})
- const overview=await render(value)
+ const overview=await renderCards(value)
  assert.match(overview,/data-object-type-block/)
  assert.match(overview,/data-block-summary/)
  assert.ok(!overview.includes('data-view-board-card'),'范围总览不再叠图表')
@@ -190,7 +212,7 @@ test('对象目录用清单组件，第四列列头取该视图度量的标签�
  assert.match(html,/<th[^>]*>条数<\/th>/)
  assert.match(html,/<th[^>]*>对象<\/th>/)
  assert.equal([...html.matchAll(/<th scope="col"/g)].length,4,'四个列头都带 scope="col"')
- assert.match(html,/回到全部对象/)
+ assert.match(html,/aria-label="记录类型"/)
  assert.match(html,/工单 a-1/)
 })
 
@@ -220,13 +242,13 @@ test('声明了进度的对象目录显示业务状态，并以人类来源名�
  assert.ok(!html.includes('>appsec-finding-http<'))
 })
 
-test('对象目录先展示可操作的清单，低频分析折叠到清单之后',async()=>{
+test('对象目录先展示可操作的清单，分析在页签切换前保持隐藏',async()=>{
  const objects=[ledgerObject('SOC','alert-ticket','a-1')]
  const analysis=viewResult('SOC','alert-ticket','risk-distribution',[{dimension:'高',label:'高',values:[1]}])
  const html=await render(ledger({blocks:[block({views:[analysis,listView('SOC','alert-ticket',objects)]})]}),{objectType:'alert-ticket'})
  assert.ok(html.indexOf('data-view-list')<html.indexOf('data-view-distribution'),'目录首屏先给对象清单，再给分析图')
- assert.match(html,/<details class="analysisViews">/)
- assert.match(html,/<summary>持续分析<\/summary>/)
+ assert.match(html,/<div class="analysisViews" hidden="">/)
+ assert.match(html,/aria-pressed="false">分析<\/button>/)
 })
 
 test('对象目录服务端截断与完整性筛选差额分开各说各的，互不冒充（复审 N-2）',async()=>{
@@ -253,7 +275,7 @@ test('选中的对象展开成字段行加摘要，未在声明里出现的快�
  assert.match(html,/<dialog[^>]*class="drawer/,'使用共同抽屉容器')
  assert.ok(!html.includes('data-view-distribution'),'详情不夹带目录中的图表')
  assert.match(html,/返回告警工单目录/)
- assert.match(html,/回到全部对象/,'返回目录和返回台账是独立入口')
+ assert.match(html,/aria-label="记录类型"/,'关闭详情后通过类型切换浏览另一目录')
 })
 
 test('只有进度声明指向的枚举才提供状态筛选，不从状态字段名字推断',async()=>{
@@ -278,12 +300,7 @@ test('对象直达失效时给出可返回的未找到状态，不静默退成�
  assert.ok(html.includes('工单 a-1'))
 })
 
-test('对象详情和类型目录返回台账时都落数据面根，不跳正在处理或残留对象标识',()=>{
- const source=readFileSync(new URL('../src/client/BusinessLedger.tsx',import.meta.url),'utf8')
- const buttons=[...source.matchAll(/<button\s+type="button"(?:\s+className=\{[\w.]+\})?\s+onClick=\{\(\)=>go\((\{[^}]+\})\)\}>(?:<ArrowLeft[^>]*\/>)?\{t\('business\.ledger\.back'\)\}<\/button>/g)]
- assert.equal(buttons.length,1,'抽屉关闭返回目录，目录只保留一个返回台账按钮')
- for(const button of buttons)assert.equal(button[1],"{scope,section:'data'}")
-})
+
 
 test('execution-tool 动作第一期不给入口',async()=>{
  const html=await render(ledger({blocks:[block({defaultAction:{actionId:'isolate-endpoint',title:'隔离这台主机',targetKind:'execution-tool',available:false}})]}))
@@ -291,7 +308,7 @@ test('execution-tool 动作第一期不给入口',async()=>{
 })
 
 test('工作模板动作在对象类型卡上保留默认动作，但不伪造确认建任务入口',async()=>{
- const html=await render(ledger())
+ const html=await renderCards(ledger())
  assert.match(html,/<button[^>]+data-default-action="assign-alert-review"[^>]*>交给同事核对<\/button>/)
  assert.match(html,/alert-triage-review/)
  assert.match(html,/自动填入 2 项任务资料/)
@@ -299,13 +316,13 @@ test('工作模板动作在对象类型卡上保留默认动作，但不伪造�
 })
 
 test('对象类型卡只显示真实的同步摘要，不用“暂无”占位或伪造阶段进度',async()=>{
- const html=await render(ledger())
+ const html=await renderCards(ledger())
  assert.match(html,/data-block-summary/)
  assert.match(html,/最近同步/)
  assert.ok(!html.includes('还没完、等你各多少：暂无'))
  assert.ok(!html.includes('最近变化：暂无'))
  // 每个块各有一份真实摘要，两个块就是两份。
- const two=await render(ledger({blocks:[block(),block({definition:{id:'alert-asset',title:'资产'}})]}))
+ const two=await renderCards(ledger({blocks:[block(),block({definition:{id:'alert-asset',title:'资产'}})]}))
  assert.equal([...two.matchAll(/data-block-summary/g)].length,2)
  // 同步摘要预留两行高度，块的下缘不会因为时间文案长短参差。
  assert.match(readFileSync(new URL('../src/client/BusinessLedger.module.css',import.meta.url),'utf8'),/\.blockSummary\{[^}]*min-height:3\.4em/)
@@ -319,7 +336,7 @@ test('模板声明了阶段和变化时间时，对象类型卡展示真实摘�
   ],
   progress:{stageField:'state',unfinished:['新建','等确认'],waitingForYou:['等确认'],changedAtField:'changed-at'},
  }
- const html=await render(ledger({blocks:[block({definition,progress:{unfinished:8,waitingForYou:2,latestChangedAt:'2026-09-15T01:00:00.000Z'}})]}))
+ const html=await renderCards(ledger({blocks:[block({definition,progress:{unfinished:8,waitingForYou:2,latestChangedAt:'2026-09-15T01:00:00.000Z'}})]}))
  assert.match(html,/待完成 8 项 · 待你处理 2 项/)
  assert.match(html,/最近变化/)
  assert.match(html,/data-block-progress/)

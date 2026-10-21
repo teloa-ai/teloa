@@ -144,3 +144,7 @@
 .rows .skeletonRow:hover{background:transparent}
 .grid .skeletonCard:hover{border-color:var(--teloa-border)}
 .cardSections header .skeletonLine{height:12px}
+
+.cardRequirements{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.5;overflow-wrap:anywhere}.cardRequirements:empty{display:none}
+
+.cardRequirements>.skeletonLine{height:1.5em}

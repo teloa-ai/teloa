@@ -8,6 +8,7 @@ import {twinDisplayName} from './team-presentation.js'
 import {personalAvatarInitials,personalDisplayName} from './personal-profile.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
+import {twinDraftCopy} from './i18n/locales/twin-drafts.js'
 import teamCss from './TeamPage.module.css'
 import {TwinAvatar} from './TwinAvatar.js'
 import {employeeCopy} from './employee-copy.js'
@@ -24,7 +25,7 @@ const SHORT_STAGE:Partial<Record<RoleDelegationMessageKey,RoleDelegationMessageK
 }
 
 /** 分身沿用代拟、样本、习惯与授权路径；切页保留正文和草稿，联系动作复用平台图标。 */
-export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,phone,talkDisabledReason,conversations,samples,sampleCount,habits,delegation,executionStatus,assign}:{
+export function TwinProfile({profileName,profileInitials=personalAvatarInitials(profileName),role,draft,update,save,talk,phone,talkDisabledReason,conversations,samples,sampleCount,habits,delegation,executionStatus,assign,draftWorkspace,draftCount}:{
   profileName:string
   profileInitials?:string
   role:PreviewRole
@@ -44,6 +45,8 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
   delegation?:ReactNode
   executionStatus?:RoleDelegationMessageKey
   assign?:()=>void
+  draftWorkspace?:ReactNode
+  draftCount?:number|undefined
 }){
   const {locale,t}=useI18n()
   profileName=personalDisplayName(profileName,t('profile.account'))
@@ -52,8 +55,8 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
   const tabId=useId()
   const tabButtons=useRef<Partial<Record<TwinTab,HTMLButtonElement|null>>>({})
   const twinName=twinDisplayName(profileName,t)
-  // 页签计数只取真实条目：代拟稿目前只有一份，样本数由调用方在读取完成后传入；习惯观察没有可汇总的条数，不显示。
-  const tabCount:Partial<Record<TwinTab,number>>={draft:role.draft?1:0,...(sampleCount!==undefined?{samples:sampleCount}:{})}
+  // 真实分身计数由持久目录提供，旧本地演示仍只取已有那一稿。
+  const tabCount:Partial<Record<TwinTab,number>>={...(draftCount===undefined?(role.storage!=='persistent'?{draft:role.draft?1:0}:{}):{draft:draftCount}),...(sampleCount!==undefined?{samples:sampleCount}:{})}
   // habits 未传时该页签按钮 disabled：键盘环绕要跳过它，否则会「选中」一个点不了的页签。
   const tabEnabled=(item:TwinTab)=>!(item==='habits'&&!habits)
   const step=(from:number,delta:number):TwinTab=>{
@@ -97,6 +100,7 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
     </header>
 
     <section id={`${tabId}-panel-draft`} className={css.panel} role="tabpanel" aria-labelledby={`${tabId}-tab-draft`} tabIndex={0} hidden={tab!=='draft'}>
+      {draftWorkspace??(role.storage==='persistent'?<p role="status" className={css.note}>{twinDraftCopy(locale,'serviceUnready')}</p>:<>
       <article className={css.draftCard}>
         <header className={css.draftHeading}>
           <h3>{t('team.twin.draft.title')}</h3>
@@ -108,6 +112,7 @@ export function TwinProfile({profileName,profileInitials=personalAvatarInitials(
             <TwinDraftEditor role={role} input={draft} update={update} save={save}/>
           </details>
       </article>
+      </>)}
       <p className={css.note}>{t('team.twin.chat.note')}</p>
       {conversations&&<div className={css.chatPanel}>{conversations}</div>}
     </section>
