@@ -473,6 +473,8 @@ Teloa 的三个版本共享同一产品核心，面向不同的使用场景。�
 | 了解行业工作方式 | [行业场景](https://docs.teloa.ai/tutorials/industry-examples) · [SOC 教程](https://docs.teloa.ai/tutorials/soc-triage) |
 | 维护与升级 | [备份与升级](https://docs.teloa.ai/deploy/backup) · [安全政策](SECURITY.md) |
 | 了解智能体安全与评估平台 | [Teloa AI Security](https://security.teloa.ai/?lang=zh-CN) · [安全基线自评](https://security.teloa.ai/agent-baseline-assessor/?lang=zh-CN) |
+| 开发可复用资源 | [AI 员工](https://docs.teloa.ai/develop/employees) · [AI 团队](https://docs.teloa.ai/develop/teams) · [应用](https://docs.teloa.ai/develop/apps) · [SKILL](https://docs.teloa.ai/develop/skills) |
+| 分享与接收资源 | [离线文件、在线链接、接收与撤销](https://docs.teloa.ai/guides/sharing) |
 | 开发与贡献 | [本地开发](https://docs.teloa.ai/develop/local-development) · [贡献指南](CONTRIBUTING.md) |
 
 ## 架构与开发

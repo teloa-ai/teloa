@@ -477,6 +477,8 @@ The API uses the same employee permissions, BYOK and Task/Run pipeline as the wo
 | Explore industry workflows | [Industry examples](https://docs.teloa.ai/en/tutorials/industry-examples) · [SOC walkthrough](https://docs.teloa.ai/en/tutorials/soc-triage) |
 | Maintain and upgrade an installation | [Backup and upgrades](https://docs.teloa.ai/en/deploy/backup) · [Security policy](SECURITY.md) |
 | Explore agent security and assess your platform | [Teloa AI Security](https://security.teloa.ai/) · [Baseline self-assessment](https://security.teloa.ai/agent-baseline-assessor/?lang=en) |
+| Author reusable resources | [AI employees](https://docs.teloa.ai/en/develop/employees) · [AI teams](https://docs.teloa.ai/en/develop/teams) · [Apps](https://docs.teloa.ai/en/develop/apps) · [SKILLs](https://docs.teloa.ai/en/develop/skills) |
+| Share and receive resources | [Offline files, online links, receipt and revocation](https://docs.teloa.ai/en/guides/sharing) |
 | Develop and contribute | [Local development](https://docs.teloa.ai/en/develop/local-development) · [Contributing](CONTRIBUTING.md) |
 
 ## Architecture and development
