@@ -437,7 +437,7 @@ test('手动输入独立持久恢复，固定原revision与来源；额度失败
 })
 test('完整方案采用失回包刷新后按原journal读回执，不重发新采用请求',async()=>{
  const f=fixture(),flow=f.make();await flow.start({})
- const draft=flow.getSnapshot().draft!,contentId=randomUUID();let adoption:any=null,plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0
+ const draft=flow.getSnapshot().draft!,contentId=randomUUID();let adoption:any=null,plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[{id:'work',kind:'work-template',title:'工作分工',version:'1',description:'新增工作模板'}],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0
  f.setRoute(async(endpoint,input)=>{const r=input as any
   if(endpoint==='business-setup-plan/read')return plan
   if(endpoint==='business-setup-plan/preview'){plan={...plan,revision:plan.revision+1};return {draftId:draft.id,revision:plan.revision,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:0,changes:[],rejected:[],blocked:false}}
@@ -453,7 +453,7 @@ test('完整方案采用失回包刷新后按原journal读回执，不重发新�
 
 test('采用确定成功但展示读取失败时保留原journal，可核回执恢复且不重复采用',async()=>{
  const f=fixture(),flow=f.make();await flow.start({});const draft=flow.getSnapshot().draft!,contentId=randomUUID()
- let adoption:any=null,plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0,failRead=false,receiptReads=0
+ let adoption:any=null,plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[{id:'work',kind:'work-template',title:'工作分工',version:'1',description:'新增工作模板'}],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp},applications=0,failRead=false,receiptReads=0
  f.setRoute(async(endpoint,input)=>{const r=input as any
   if(endpoint==='business-setup-plan/read'){if(failRead){failRead=false;throw Error('display unavailable')};return plan}
   if(endpoint==='business-setup-plan/preview'){plan={...plan,revision:plan.revision+1};return {draftId:draft.id,revision:plan.revision,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:0,changes:[],rejected:[],blocked:false}}
@@ -487,4 +487,46 @@ test('完整方案固定凭证明确过期且无成功回执时只更新预览�
  await flow.refreshSetupPlan();f.storage.setItem('owner/builder/setup-apply',JSON.stringify({scope:draft.scope,input:{requestId,draftId:draft.id,sessionId:flow.getSnapshot().binding!.sessionId!,expectedRevision:1,expectedDigest:hash,previewReceipt:hash}}))
  await assert.rejects(flow.adoptSetup(true),{code:'teloa/conflict',details:{reason:'preview-review-required'}})
  assert.equal(applications,1);assert.equal(flow.getSnapshot().setupPreview!.revision,2);assert.equal(flow.getSnapshot().setupUnknown,false);assert.equal(flow.pendingSetupSave(),null)
+})
+
+test('完整方案原无差异或全部拒绝不写采用journal、不发送apply；新增资源仍可采用',async()=>{
+ for(const kind of ['empty','rejected','resources'] as const){
+  const f=fixture(),flow=f.make();await flow.start({});const draft=flow.getSnapshot().draft!,contentId=randomUUID();let applications=0
+  let plan:any={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId,contentHash:hash,title:'方案',description:'方案说明',resources:[{id:'configuration',kind:'business-configuration',title:'页面',version:'1',description:'页面'},...(kind==='resources'?[{id:'work',kind:'work-template',title:'核对工作',version:'1',description:'仅准备工作模板'}]:[])],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp}
+  f.setRoute(async(endpoint,input)=>{const r=input as any
+   if(endpoint==='business-setup-plan/read')return plan
+   if(endpoint==='business-setup-plan/preview'){plan={...plan,revision:2};return {draftId:draft.id,revision:2,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:0,changes:kind==='rejected'?[{id:'business:title',entity:'business',label:'业务名称',before:'原名',after:'新名'}]:[],rejected:kind==='rejected'?['business:title']:[],blocked:false}}
+   if(endpoint==='business-setup-plan/apply'){applications++;const adoption={requestId:r.requestId,configuration:{requestId:r.requestId,scope:draft.scope,version:1,configurationHash:hash},contentId,contentHash:hash,roleIds:[],steps:[]};plan={...plan,state:'applied',adoption};return adoption}
+   return f.baseCall(endpoint,input)
+  })
+  await flow.refreshSetupPlan();await flow.previewSetup([])
+  if(kind==='resources'){await flow.adoptSetup();assert.equal(applications,1)}
+  else{await assert.rejects(flow.adoptSetup(),{code:'teloa/conflict'});assert.equal(applications,0);assert.equal(flow.pendingSetupSave(),null);assert.equal(flow.getSnapshot().phase,'ready')}
+ }
+})
+
+test('同原请求确定零写拒绝只读回执与同revision预览后恢复编辑，不泛化清除未知或冲突journal',async()=>{
+ for(const kind of ['no-writes','generic','network','version','permission','foreign-request','new-revision','receipt-unavailable'] as const){
+  const f=fixture(),flow=f.make();await flow.start({});const draft=flow.getSnapshot().draft!,requestId=randomUUID(),key='owner/builder/setup-apply'
+  const plan={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:draft.scope,revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId:randomUUID(),contentHash:hash,title:'方案',description:'仅方案说明',resources:[{id:'configuration',kind:'business-configuration',title:'页面',version:'1',description:'页面'}],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp}
+  const preview={draftId:draft.id,revision:1,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:1,changes:[],rejected:[],blocked:false}
+  let apply=0,previews=0
+  f.setRoute(async(endpoint,input)=>{
+   if(endpoint==='business-setup-plan/read')return {...plan,revision:kind==='new-revision'?2:1}
+   if(endpoint==='business-setup-plan/receipt'){if(kind==='receipt-unavailable')throw Error('receipt unavailable');return null}
+   if(endpoint==='business-setup-plan/preview'){previews++;throw Error('恢复不能通过递增预览改写原版本')}
+   if(endpoint==='business-setup-plan/apply'){
+    apply++;if(kind==='network')throw Error('network unknown')
+    if(kind==='generic')throw Object.assign(Error('所有变更均已拒绝，无需采用。'),{code:'teloa/conflict'})
+    if(kind==='version'||kind==='permission')throw Object.assign(Error(kind),{code:kind==='version'?'teloa/version-conflict':'teloa/forbidden'})
+    throw Object.assign(Error('no effective changes'),{code:'teloa/conflict',details:{reason:'setup-no-effective-changes',requestId:kind==='foreign-request'?randomUUID():requestId,noWrites:true,preview}})
+   }
+   return f.baseCall(endpoint,input)
+  })
+  await flow.refreshSetupPlan();f.storage.setItem(key,JSON.stringify({scope:draft.scope,input:{requestId,draftId:draft.id,sessionId:flow.getSnapshot().binding!.sessionId!,expectedRevision:1,expectedDigest:hash,previewReceipt:hash}}))
+  await assert.rejects(flow.adoptSetup(true))
+  assert.equal(previews,0,'核对零写回执不能另存一个预览版本')
+  if(kind==='no-writes'){assert.equal(flow.pendingSetupSave(),null);assert.equal(flow.getSnapshot().phase,'ready');assert.equal(flow.getSnapshot().setupUnknown,false);assert.equal(flow.getSnapshot().setupPreview!.revision,1);assert.equal(apply,1)}
+  else{assert.equal(flow.pendingSetupSave()!.input.requestId,requestId,kind);assert.equal(flow.getSnapshot().phase,'unknown',kind);assert.equal(flow.getSnapshot().setupUnknown,true,kind)}
+ }
 })

@@ -6,6 +6,7 @@ import {renderToStaticMarkup} from 'react-dom/server'
 import ts from 'typescript'
 import type {GroupRecipientStatus,GroupRoutingStatusView} from '@teloa/contract'
 import * as presentation from '../src/client/group-progress-presentation.ts'
+import * as routingView from '../src/client/group-routing-view.ts'
 import {GROUP_CONTINUITY_MESSAGE_ROWS} from '../src/client/i18n/locales/group-continuity.ts'
 
 const messageId='66666666-6666-4666-8666-666666666666',otherMessage='99999999-9999-4999-8999-999999999999'
@@ -25,6 +26,7 @@ function load(){
   if(id==='./i18n/provider.js')return {useI18n:()=>({t})}
   if(id==='./i18n/errors.js')return {localizeWorkError:()=>''}
   if(id==='./group-progress-presentation.js')return presentation
+  if(id==='./group-routing-view.js')return routingView
   if(id==='lucide-react')return {ExternalLink:()=>React.createElement('svg',{'data-icon':'external'})}
   if(id.endsWith('.module.css'))return {default:new Proxy({},{get:(_,key)=>String(key)})}
   throw Error('未声明的组件依赖：'+id)

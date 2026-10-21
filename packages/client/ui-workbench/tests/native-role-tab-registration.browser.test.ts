@@ -36,8 +36,9 @@ test('实际DSH TabSlot注册向员工正文传递原会话目标，重开同一
  let frameEntryNode:ts.Expression|undefined
  const findEntry=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(frameAst)==='entry')frameEntryNode=node.initializer;ts.forEachChild(node,findEntry)};findEntry(frameAst);assert.ok(frameEntryNode)
  const frameEntry=new Function('client','return '+frameEntryNode.getText(frameAst))(client) as string
- const framePrelude=frameEntry.slice(0,frameEntry.indexOf('createRoot(document.getElementById')).replace("const renderSlot=", "const frameRenderSlot=")
- const frameRender=frameEntry.slice(frameEntry.indexOf('createRoot(document.getElementById')).replace("sidebarRightFace={()=>undefined}","sidebarRightFace={()=>native.controller}")
+ const renderStart=frameEntry.indexOf('const frameRoot=');assert.ok(renderStart>0,'共享入口的完整声明边界必须存在')
+ const framePrelude=frameEntry.slice(0,renderStart).replace("const renderSlot=", "const frameRenderSlot=")
+ const frameRender=frameEntry.slice(renderStart).replace("sidebarRightFace={()=>undefined}","sidebarRightFace={()=>native.controller}")
  const entry=`
 import {staticSeeds as seeds} from 'official-static-seeds';import {SidebarRightTabBody} from '${client}SidebarRightTabBody.tsx';import {SidebarRightTabTitle} from '${client}SidebarRightTabTitle.tsx';import {publishTeloaTabHost,teloaTabHost} from '${client}sidebar-right-tab-host.ts';import {TELOA_RAIL_KINDS,TELOA_TAB_IDS,teloaTabDefinition,tabToDetailTarget} from '${client}sidebar-right-tabs.ts';
 const officialReact=seeds.react.default??seeds.react,{createElement:h}=officialReact,factories=new Map();window.__ModuleLoader__={load:row=>factories.set(row.id,row.factory)};new Function(${JSON.stringify(sidebar)})();new Function(${JSON.stringify(rendererExposed)})();

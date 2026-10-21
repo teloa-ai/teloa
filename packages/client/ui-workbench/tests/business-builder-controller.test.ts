@@ -48,6 +48,19 @@ test('来源抽屉关闭后原生read迟答不能导航到旧方案',async()=>{
  assert.equal(f.selected(),'original');assert.equal(f.calls.includes('open'),false)
  f.controller.dispose()
 })
+test('创建已绑定但离开到无主会话视图时，等待拒绝后清理旧Flow且保留原创建回执',async t=>{
+ const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})
+ const read=f.controller.ports.api.draft
+ f.controller.ports.api.draft=async request=>{const draft=await read(request);f.navigate('tasks');f.select(undefined);return draft}
+ await assert.rejects(f.controller.start({}),{code:'teloa/conflict'})
+ assert.equal(f.selected(),undefined)
+ assert.equal(f.controller.getSnapshot().flow!.getSnapshot().phase,'idle')
+ assert.equal(f.controller.getSnapshot().checkedSessionId,null)
+ assert.equal(f.calls.filter(call=>call==='create').length,1)
+ assert.equal(f.calls.includes('open'),false)
+ assert.equal(f.bindings.size,1)
+ assert.equal(f.conversations.size,1)
+})
 test('无main真实已就绪的空选择不造InputState；未确认连接/选择/绑定保持undefined',()=>{
  const common={connected:true,generationReady:true,selectionReady:true,mainSessionId:undefined,bindingSessionId:undefined,bindingReady:false,pendingSubmissions:[],monitor:undefined}
  assert.equal(readBuilderSwitchSnapshot({...common,input:undefined}).input,null)
@@ -132,6 +145,116 @@ test('真实BindingClient首次新建只有一原生业务会话；全局重开�
  await f.controller.followSession(id)
  assert.equal(f.calls.filter(c=>c==='create').length,1)
  f.controller.dispose()
+})
+
+test('明确start/open/recover等待原目标的延迟原生绑定通知，完成前不冒充ready或重复导航',async t=>{
+ for(const operation of ['start','open','recover'] as const){
+  const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})
+  const original=operation==='start'?undefined:await f.controller.start({workspaceId:'workspace'})
+  if(original){f.select(undefined);f.notify();await f.controller.followSession(undefined)}
+  const open=f.port.open;f.port.open=id=>{open(id);f.changeInput(undefined)}
+  let settled=false
+  const pending=operation==='start'?f.controller.start({workspaceId:'workspace'}):operation==='open'?f.controller.open(original!.sessionId!):f.controller.recover(original!.requestId)
+  void pending.then(()=>{settled=true},()=>{settled=true})
+  await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))
+  assert.equal(settled,false,operation+'必须等待官方原生绑定通知')
+  const sessionId=f.selected()!,created=f.calls.filter(c=>c==='create').length,opened=f.calls.filter(c=>c==='open').length
+  assert.equal(f.controller.getSnapshot().checkedSessionId,undefined)
+  f.changeInput({draft:'',draftRev:0,phase:'plain',attachmentIds:[],occurrences:[],queue:[]})
+  await pending
+  const state=f.controller.getSnapshot(),builder=state.flow!.getSnapshot()
+  assert.equal(state.nativeReady,true);assert.equal(state.checkedSessionId,sessionId);assert.equal(state.sessionKind,'builder')
+  assert.equal(builder.binding!.sessionId,sessionId);assert.equal(builder.draft!.id,builder.binding!.draftId)
+  assert.equal(f.calls.filter(c=>c==='create').length,created);assert.equal(f.calls.filter(c=>c==='open').length,opened)
+  assert.equal(f.conversations.size,1)
+ }
+})
+
+test('同原目标交错follow合并读取，所有调用都等待最终绑定核对',async t=>{
+ const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({});const bound=await f.controller.start()
+ await f.controller.followSession(undefined)
+ const read=f.controller.ports.api.bySession;let reads=0,release!:()=>void
+ const gate=new Promise<void>(resolve=>{release=resolve});t.after(()=>release())
+ f.controller.ports.api.bySession=async input=>{reads++;if(reads===1)await gate;return read(input)}
+ const first=f.controller.followSession(bound.sessionId!);await new Promise(resolve=>setImmediate(resolve))
+ const second=f.controller.followSession(bound.sessionId!),third=f.controller.followSession(bound.sessionId!)
+ assert.equal(reads,1,'同target只保留一条在途读取')
+ release();await Promise.all([first,second,third])
+ assert.equal(reads,2,'一轮归属核对和Flow恢复各读一次，不互相作废重读')
+ assert.equal(f.controller.getSnapshot().checkedSessionId,bound.sessionId)
+ assert.equal(f.controller.getSnapshot().flow!.getSnapshot().draft!.id,bound.draftId)
+})
+
+test('明确导航等待中关闭/API/原生session变化立即失效，迟答不串入新目标',async t=>{
+ for(const stage of ['binding','draft'] as const)for(const mode of ['close','api','session'] as const){
+  const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})
+  const abort=new AbortController(),token=f.controller.captureNavigation(()=>!abort.signal.aborted,abort.signal)
+  const originalFlow=f.controller.getSnapshot().flow!,read=f.controller.ports.api.bySession,draft=f.controller.ports.api.draft;let release!:()=>void,entered!:()=>void
+  const gate=new Promise<void>(resolve=>{release=resolve}),reading=new Promise<void>(resolve=>{entered=resolve});t.after(()=>release())
+  if(stage==='binding')f.controller.ports.api.bySession=async input=>{entered();await gate;return read(input)}
+  else f.controller.ports.api.draft=async input=>{if(f.calls.includes('open')){entered();await gate}return draft(input)}
+  let rejected=false;const pending=f.controller.start({},token);void pending.catch(()=>{rejected=true})
+  await reading;const sessionId=f.selected()!;let reconnect:Promise<void>|undefined
+  if(mode==='close')abort.abort()
+  else if(mode==='api')reconnect=f.controller.connect({})
+  else{f.select('new-native-target');f.notify()}
+  await new Promise(resolve=>setImmediate(resolve))
+  assert.equal(rejected,true,stage+'/'+mode+'必须立即失效，不等待旧RPC回包')
+  await assert.rejects(pending,{code:'teloa/conflict',details:{reason:'changed'}})
+  release();await reconnect;await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))
+  if(mode==='api'){
+   assert.notEqual(f.controller.getSnapshot().flow,originalFlow)
+   assert.equal(f.controller.getSnapshot().checkedSessionId,sessionId,'新API独立核对原目标，不被旧finally覆盖')
+  }else if(mode==='close'){
+   assert.equal(f.controller.getSnapshot().checkedSessionId,sessionId,'关闭后仍选中原目标，由原在途只读核验恢复保护')
+   assert.equal(f.blocks.get(sessionId),undefined)
+  }else assert.equal(f.controller.getSnapshot().checkedSessionId,undefined)
+  if(mode!=='close')assert.equal(originalFlow.getSnapshot().phase,'idle','切主体/目标后旧Flow迟答不恢复ready')
+  if(mode==='session')assert.equal(f.selected(),'new-native-target')
+  assert.equal(f.calls.filter(c=>c==='create').length,1);assert.equal(f.calls.filter(c=>c==='open').length,1)
+  assert.equal(f.conversations.size,1)
+ }
+})
+
+test('从B打开已有A后关闭只取消局部等待，原A可信核验解锁或显式重试，不重开会话',async t=>{
+ for(const fail of [false,true]){
+  const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})
+  const a=await f.controller.start(),b=await f.controller.start(),flow=f.controller.getSnapshot().flow!
+  assert.equal(flow.getSnapshot().binding!.sessionId,b.sessionId)
+  const abort=new AbortController(),token=f.controller.captureNavigation(()=>!abort.signal.aborted,abort.signal)
+  const read=f.controller.ports.api.bySession;let release!:()=>void,entered!:()=>void
+  const gate=new Promise<void>(resolve=>{release=resolve}),reading=new Promise<void>(resolve=>{entered=resolve});t.after(()=>release())
+  f.controller.ports.api.bySession=async input=>{if(input.sessionId===a.sessionId){entered();await gate;if(fail)throw Error('A binding unavailable')}return read(input)}
+  const pending=f.controller.open(a.sessionId!,false,token);void pending.catch(()=>{})
+  await reading;assert.equal(f.selected(),a.sessionId);assert.equal(f.blocks.get(a.sessionId!),'checking')
+  assert.equal(flow.getSnapshot().binding!.sessionId,b.sessionId,'开始核验A时Flow仍保留B原稿，不能借它放行')
+  const created=f.calls.filter(c=>c==='create').length,opened=f.calls.filter(c=>c==='open').length
+  abort.abort();await assert.rejects(pending,{code:'teloa/conflict',details:{reason:'changed'}})
+  assert.equal(f.blocks.get(a.sessionId!),'checking','关闭不能无条件解除原生发送保护')
+  release();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))
+  assert.equal(f.controller.getSnapshot().checkedSessionId,a.sessionId)
+  if(fail){
+   assert.match(String(f.controller.getSnapshot().error),/A binding unavailable/);assert.equal(f.blocks.get(a.sessionId!),'checking')
+   f.controller.ports.api.bySession=read;await f.controller.retry()
+  }
+  assert.equal(f.controller.getSnapshot().error,null);assert.equal(f.blocks.get(a.sessionId!),undefined)
+  assert.equal(flow.getSnapshot().binding!.sessionId,a.sessionId);assert.equal(flow.getSnapshot().draft!.id,a.draftId)
+  assert.equal(f.calls.filter(c=>c==='create').length,created);assert.equal(f.calls.filter(c=>c==='open').length,opened)
+ }
+})
+
+test('原生绑定尚未就绪时关闭留下可重试状态，随后只读核验恢复原目标',async t=>{
+ const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})
+ const abort=new AbortController(),token=f.controller.captureNavigation(()=>!abort.signal.aborted,abort.signal)
+ const open=f.port.open;f.port.open=id=>{open(id);f.changeInput(undefined)}
+ const pending=f.controller.start({},token);void pending.catch(()=>{})
+ await new Promise(resolve=>setImmediate(resolve));const sessionId=f.selected()!
+ abort.abort();await assert.rejects(pending,{code:'teloa/conflict'})
+ assert.equal(f.controller.getSnapshot().checkedSessionId,undefined)
+ assert.ok(f.controller.getSnapshot().error,'没有在途核验时不可留下无限checking而无错误/重试入口')
+ f.changeInput({draft:'',draftRev:0,phase:'plain',attachmentIds:[],occurrences:[],queue:[]});await f.controller.retry()
+ assert.equal(f.controller.getSnapshot().checkedSessionId,sessionId);assert.equal(f.controller.getSnapshot().error,null)
+ assert.equal(f.calls.filter(c=>c==='create').length,1);assert.equal(f.calls.filter(c=>c==='open').length,1)
 })
 
 test('切换原生会话读取期间暂时阻止发送；失败不当作普通空绑定放行',async()=>{

@@ -10,7 +10,7 @@ import artifacts from './artifacts.ts'
 import projects from './projects.ts'
 import {selfAuthorizedToolNames} from '../self-authorized-tools.ts'
 
-export const workBehaviorVersion='2026-10-15.fact-language.v3'
+export const workBehaviorVersion='2026-10-21.product-identity.v4'
 export const workPromptModules=[core,tools,planning,memory,skills,collaboration,background,artifacts,projects] as const
 type WorkPromptModule=typeof workPromptModules[number]
 type ToolSchema=PromptAssembly['tools'][number]

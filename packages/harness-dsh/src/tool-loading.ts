@@ -11,7 +11,6 @@ import {hasTaskModelRouting} from './task-model-routing.ts'
 import {knowledgeSearchToolName} from './local-retrieval.ts'
 import {skillHttpToolName} from './skill-http-tool.ts'
 import {selfAuthorizedToolNames} from './self-authorized-tools.ts'
-import {conversationWorkToolNames} from './conversation-work-tool-names.ts'
 
 /** 统一的工具加载器：普通会话与语音轮次共用同一个名字、目录与守卫。 */
 export const toolLoaderName='teloa_tools_load'
@@ -24,6 +23,12 @@ const deliveryReviewTool='teloa_submit_review_plan'
 
 /** 延迟加载的平台管理类目录；只用于加载器描述与搜索，不决定授权。 */
 const categories:readonly Readonly<{label:string;hint:string;pattern:RegExp}>[]=[
+ {label:'文件与命令',hint:'读写编辑文件、查找内容、运行命令',pattern:/^(?:bash|pwsh|write|edit|read_image|glob|grep|working_directory)$/},
+ {label:'网页检索',hint:'搜索网页、读取网页',pattern:/^web_(?:search|fetch)$/},
+ {label:'并行协作',hint:'子助手、团队任务、工作流、沟通与等待',pattern:/^(?:subagent(?:_|$)|workflow$|ralph$|spawn_teammate$|send_message$|list_agents$|wait_agent$|interrupt_agent$|team_task_)/},
+ {label:'后台工作与目标',hint:'后台任务、目标进度、待办',pattern:/^(?:job_|(?:get|create|update)_goal$|todo_write$)/},
+ {label:'连接与资源',hint:'调用已连接应用、MCP和共享资源',pattern:/^(?:mcp__|mcp_|(?:list|read)_mcp_)/},
+ {label:'工作查询与汇报',hint:'查询真实工作统计、业务资料、安排员工汇报',pattern:/^teloa_(?:work_(?:facts|collect_reports)|business_data_query)$/},
  {label:'新建与草案',hint:'新建员工、技能、方法等草案，修订、预览与应用',pattern:/^teloa_(?:create|method)_/},
  {label:'市场与行业',hint:'市场搜索、安装、评价发布，行业方案与模型准备',pattern:/^teloa_(?:market|industry)_|^teloa_(?:mcp_connect|model_prepare)$/},
  {label:'员工与团队',hint:'员工目录、创建编辑、在岗状态、工具授权',pattern:/^teloa_(?:employees|role_tools)_/},
@@ -39,11 +44,13 @@ const categories:readonly Readonly<{label:string;hint:string;pattern:RegExp}>[]=
 const otherCategory={label:'其他平台工具',hint:'其余平台管理操作'}
 const categoryOf=(name:string)=>categories.find(row=>row.pattern.test(name))??otherCategory
 
-let coreNames:ReadonlySet<string>|undefined
-/** 常驻核心：原生/预设/MCP/技能等非 teloa_ 工具全部常驻；teloa_ 只保留会话工作、能力查询、知识检索与技能 HTTP。 */
+const coreNames:ReadonlySet<string>=new Set([
+ 'read','skill','ask_user_question','exit_plan_mode',
+ 'teloa_work_directory','teloa_work_dispatch','teloa_work_status','teloa_work_stop','teloa_work_resume',
+ 'teloa_capabilities',knowledgeSearchToolName,skillHttpToolName,deliveryReviewTool,toolLoaderName,
+])
+/** 常驻只保留问答与交办所需入口；原生大工具、MCP与平台管理工具均按需展开，权限仍由原工具核对。 */
 export function isCoreTool(name:string):boolean{
- if(!name.startsWith('teloa_'))return true
- coreNames??=new Set<string>([...conversationWorkToolNames,'teloa_capabilities',knowledgeSearchToolName,skillHttpToolName,deliveryReviewTool,toolLoaderName])
  return coreNames.has(name)
 }
 /** 只在受管任务运行中可用的自授权工具：其闸要求本会话有已受理的固定运行，加载器可见即说明不是运行会话（运行会话由 restrictRunTools 收窄，不含加载器）。 */
@@ -83,7 +90,7 @@ function restoreLoaded(agent:Agent):Set<string>{
    if(name===toolLoaderName||legacyLoaderNames.has(name)){
     loaderCalls.add(callId)
     try{const value=JSON.parse(args) as {names?:unknown};if(Array.isArray(value?.names))for(const row of value.names)if(typeof row==='string')loadInto(loaded,row)}catch{}
-   }else if(name.startsWith('teloa_'))loadInto(loaded,name)
+   }else loadInto(loaded,name)
   }else if(event.type==='tool/result'){
    const message=event.data.message as {toolCallId:string;isError?:boolean;content:readonly {type:string;text?:string}[]}
    if(message.isError||!loaderCalls.has(message.toolCallId))continue
@@ -129,7 +136,7 @@ function createEngine(ctx:Context){
  const registration=getToolResourceProvenance(ctx).wrapContext(ctx,{kind:'plugin',providerId:'@teloa/harness-dsh',name:'Teloa'})
  const off=registration.tools.register(defineTool({
   name:toolLoaderName,
-  description:'按操作目标加载当前会话已允许、但尚未展开参数的平台工具，供下一步调用。query用简短中英文动作词，例如"新建员工"、"market install"、"读取项目"；已知准确工具名时用names指定，最多8个。只加载参数，不执行业务操作或新增授权；普通问答和已可见的工具无需调用。',
+  description:'按操作目标加载当前会话已允许、但尚未展开参数的工具，供下一步调用。query用简短中英文动作词，例如"网页搜索 web search"、"运行命令 shell"、"新建员工"；已知准确工具名时用names指定，最多8个。只加载参数，不执行操作或新增授权；普通问答和已可见的工具无需调用。',
   parameters:{query:{type:'string',description:'简短的动作词，可同时用中英文，例如网页搜索 web search。'},names:{type:'array',items:{type:'string'}}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async({names,query},exec)=>{

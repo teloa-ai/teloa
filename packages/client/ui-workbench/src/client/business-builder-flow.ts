@@ -1,4 +1,4 @@
-import {readBusinessSetupAdoption,businessSetupUuid,readBusinessConversationSession,type BusinessSetupPlan,type BusinessSetupPreview,type BusinessSetupAdoption,type BusinessSetupManual} from '@teloa/contract'
+import {businessSetupSelectionState,businessSetupNoEffectsRejection,readBusinessSetupAdoption,businessSetupUuid,readBusinessConversationSession,type BusinessSetupPlan,type BusinessSetupPreview,type BusinessSetupAdoption,type BusinessSetupManual} from '@teloa/contract'
 import {businessConfigurationPreviewReceiptRejected} from '@teloa/contract'
 import {WorkError,isRecord,isBusinessScopeKey,readBusinessConversationReserve,readBusinessBuilderRequest,type BusinessConversationReserve,type BusinessConversationBinding,type BusinessConversationDirectory,type BusinessConfigurationDraftResponseVersioned as BusinessConfigurationDraftResponse,type BusinessConfigurationPreviewResponse,type BusinessConfigurationApplyResult,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessTimeRange} from '@teloa/contract'
 import type {InputState} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -310,12 +310,25 @@ export class BusinessBuilderFlow{
   const operation=(async()=>{
    const target=this.target(),plan=this.state.setupPlan,preview=this.state.setupPreview,epoch=this.epoch
    let pending=this.pendingSetupSave()
-   if(!pending){if(recover)throw conflict('没有待核对的方案采用请求。');if(!plan||!preview||preview.blocked||preview.revision!==plan.revision)throw conflict('请先核对完整方案与逐项决定。');pending={scope:plan.scope,input:{sessionId:target.sessionId,draftId:target.draftId,requestId:this.ports.id(),expectedRevision:plan.revision,expectedDigest:preview.digest,previewReceipt:preview.receipt}};this.ports.storage.setItem(this.setupJournalKey(),JSON.stringify(pending));if(JSON.stringify(this.pendingSetupSave())!==JSON.stringify(pending))throw conflict('采用意图无法可靠保存。')}
+   if(!pending){if(recover)throw conflict('没有待核对的方案采用请求。');if(!plan||!preview||preview.blocked||preview.revision!==plan.revision)throw conflict('请先核对完整方案与逐项决定。');const selection=businessSetupSelectionState(plan,preview);if(selection==='empty'||selection==='rejected')throw conflict('当前没有已选变更或新增资源，草案仍可继续编辑。');pending={scope:plan.scope,input:{sessionId:target.sessionId,draftId:target.draftId,requestId:this.ports.id(),expectedRevision:plan.revision,expectedDigest:preview.digest,previewReceipt:preview.receipt}};this.ports.storage.setItem(this.setupJournalKey(),JSON.stringify(pending));if(JSON.stringify(this.pendingSetupSave())!==JSON.stringify(pending))throw conflict('采用意图无法可靠保存。')}
    if(pending.scope!==target.draft.scope||pending.input.draftId!==target.draftId||pending.input.sessionId!==target.sessionId)throw conflict('请回到原业务会话核对采用结果。')
    if(epoch===this.epoch)this.publish({phase:'saving',setupUnknown:false,error:null})
    try{
     let adoption=recover?await this.ports.api.setupReceipt(pending.input):null
     if(!adoption)try{adoption=await this.ports.api.setupApply(pending.input)}catch(error){
+     const noEffects=businessSetupNoEffectsRejection(error,pending.input)
+     if(noEffects){
+      adoption=await this.ports.api.setupReceipt(pending.input)
+      if(!adoption){
+       const original=await this.ports.api.setupPlan({sessionId:target.sessionId,draftId:target.draftId})
+       if(!original||original.state!=='draft'||original.scope!==pending.scope||original.revision!==pending.input.expectedRevision||original.configurationRevision!==noEffects.configurationRevision||JSON.stringify(original.rejected)!==JSON.stringify(noEffects.rejected)||!['empty','rejected'].includes(businessSetupSelectionState(original,noEffects)))throw conflict('原方案已变化，不能解除待核对的采用请求。')
+       const draft=await this.refreshDraft()
+       if(epoch!==this.epoch||draft.status!=='draft'||draft.revision!==original.configurationRevision||draft.hash!==original.configurationHash||this.state.setupPlan?.revision!==original.revision||this.pendingSetupSave()?.input.requestId!==pending.input.requestId)throw conflict('原方案或采用恢复记录已变化。')
+       this.ports.storage.removeItem(this.setupJournalKey())
+       this.publish({phase:'ready',setupUnknown:false,setupPlan:original,setupPreview:noEffects,error:null})
+       throw new WorkError('teloa/conflict','没有可采用的变更，草案已保留，可以继续编辑。',{reason:'setup-no-effective-changes-reviewed'})
+      }
+     }else{
      if(!recover||!businessConfigurationPreviewReceiptRejected(error))throw error
      adoption=await this.ports.api.setupReceipt(pending.input)
      if(!adoption){
@@ -328,6 +341,7 @@ export class BusinessBuilderFlow{
       if(epoch===this.epoch)this.publish({phase:'ready',setupUnknown:false,setupPreview:checked,error:null})
       throw new WorkError('teloa/conflict','预览已更新，请本人重新核对后采用。',{reason:'preview-review-required'})
      }
+     }
     }
     if(adoption.configuration.scope!==pending.scope)throw invalid()
     await this.ports.refreshScopes()
@@ -337,7 +351,7 @@ export class BusinessBuilderFlow{
     this.ports.storage.removeItem(this.setupJournalKey())
     if(epoch===this.epoch)this.publish({phase:'saved',result:adoption.configuration,setupUnknown:false,setupPreview:null})
     return adoption
-   }catch(error){if(epoch===this.epoch){const reviewed=isRecord(error)&&isRecord(error.details)&&error.details.reason==='preview-review-required';this.publish({phase:reviewed?'ready':'unknown',setupUnknown:!reviewed,error})}throw error}
+   }catch(error){if(epoch===this.epoch){const reviewed=isRecord(error)&&isRecord(error.details)&&['preview-review-required','setup-no-effective-changes-reviewed'].includes(String(error.details.reason));this.publish({phase:reviewed?'ready':'unknown',setupUnknown:!reviewed,error:reviewed?null:error})}throw error}
   })()
   this.setupFlight=operation;void operation.then(()=>{this.setupFlight=undefined},()=>{this.setupFlight=undefined});return operation
  }

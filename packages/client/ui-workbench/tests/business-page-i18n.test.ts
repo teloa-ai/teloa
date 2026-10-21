@@ -29,7 +29,9 @@ test('目录、接入引导、概览和行业资源区段使用业务词典键',
   for(const name of ['BusinessConnectionGuide','IndustryResourceDeclarations','IndustryWorkspaceSummary'])assert.match(source,new RegExp(`function ${name}`))
   assert.match(source,/<BusinessLedgerSurface/)
   for(const key of ['business.connection.guideTitle','business.industry.sourceAndPinnedVersion','business.industry.loadedDataSourceDeclarations','business.industry.loadedExecutionToolDeclarations'])assert.match(source,new RegExp(`t\\('${key}'`))
-  assert.match(await readFile(new URL('../src/client/BusinessMoreMenu.tsx',import.meta.url),'utf8'),/t\('business\.section\.continuous'\)/)
+  const menu=await readFile(new URL('../src/client/BusinessMoreMenu.tsx',import.meta.url),'utf8'),actions=await readFile(new URL('../src/client/business-more-actions.ts',import.meta.url),'utf8')
+  assert.match(menu,/t\(businessMoreActionTitles\[action\]\)/)
+  assert.match(actions,/automations:'business\.section\.continuous'/)
 })
 
 test('业务空间总览先呈现真实状态，模板来源只保留紧凑摘要',async()=>{
@@ -68,7 +70,7 @@ test('业务台账直接使用行业声明的对象类型名称，不在页面�
   assert.doesNotMatch(source,/businessDataSectionKey|dataSectionName/)
   const ledger=await readFile(new URL('../src/client/BusinessLedger.tsx',import.meta.url),'utf8')
   assert.match(ledger,/localizedBusinessObjectType\(definition,locale\)/)
-  assert.match(ledger,/ledger\.blocks\.map/)
+  assert.match(ledger,/catalog\.blocks\.map/,'类型选择使用真实目录；记录只展开选中类型')
   const rows:Map<string,readonly string[]>=new Map(BUSINESS_PAGE_MESSAGE_ROWS.map(row=>[row[0],row]))
   // business.section.data.* 与 business.data.title 是页面写死行业目录时代的兜底名称，界面早已不再引用，
   // 孤儿清理二期把这几行连同十一列翻译一起删了；这里只剩下对仍在用的 business.section.data 的用词核对。

@@ -11,7 +11,7 @@ export type ReviewProtocol=typeof deliveryReviewProtocol|typeof deliveryRepairPr
 export const reviewCheckIds=['goal',1,2,3,4,5,6,7,8] as const
 export type ReviewCheckId=typeof reviewCheckIds[number]
 export type ReviewPhase='revise'|'verify'
-export type ReviewSourceInput=Readonly<{id:string;kind:'goal'|'method'|'knowledge'|'context'|'baseline';title:string;text:string;sha256?:string;origin:Readonly<{field:'inputText'|'skills'|'knowledge'|'workRequest'|'toolResults';pointer:string}>}>
+export type ReviewSourceInput=Readonly<{id:string;kind:'goal'|'method'|'knowledge'|'context'|'baseline';title:string;text:string;sha256?:string;origin:Readonly<{field:'inputText'|'skills'|'knowledge'|'workRequest'|'toolResults'|'assistantDrafts';pointer:string}>}>
 export type ReviewSource=Readonly<Omit<ReviewSourceInput,'sha256'>&{sha256:string}>
 /** start/end只供宿主切原字符串，模型仅选择目录中的ID，不提交偏移或抄写引文。 */
 export type ReviewPassage=Readonly<{sourceId:string;id:string;start:number;end:number}>
@@ -64,7 +64,7 @@ function sourcePassages(source:ReviewSource):ReviewPassage[]{
 export function createReviewSourceCatalog(inputs:readonly ReviewSourceInput[]):ReviewSourceCatalog{
  const ids=new Set<string>()
  const sources=inputs.map(input=>{
-  if(!record(input)||Reflect.ownKeys(input).some(key=>typeof key!=='string'||!['id','kind','title','text','sha256','origin'].includes(key))||!text(input.id)||ids.has(input.id)||!['goal','method','knowledge','context','baseline'].includes(input.kind)||!text(input.title)||typeof input.text!=='string'||!shape(input.origin,['field','pointer'])||!['inputText','skills','knowledge','workRequest','toolResults'].includes(input.origin.field as string)||typeof input.origin.pointer!=='string'||(input.origin.pointer!==''&&!input.origin.pointer.startsWith('/')))throw Error('Invalid frozen review source.')
+  if(!record(input)||Reflect.ownKeys(input).some(key=>typeof key!=='string'||!['id','kind','title','text','sha256','origin'].includes(key))||!text(input.id)||ids.has(input.id)||!['goal','method','knowledge','context','baseline'].includes(input.kind)||!text(input.title)||typeof input.text!=='string'||!shape(input.origin,['field','pointer'])||!['inputText','skills','knowledge','workRequest','toolResults','assistantDrafts'].includes(input.origin.field as string)||typeof input.origin.pointer!=='string'||(input.origin.pointer!==''&&!input.origin.pointer.startsWith('/')))throw Error('Invalid frozen review source.')
   const digest=sha256(input.text)
   if(input.sha256!==undefined&&input.sha256!==digest)throw Error('Frozen review source hash mismatch.')
   ids.add(input.id)

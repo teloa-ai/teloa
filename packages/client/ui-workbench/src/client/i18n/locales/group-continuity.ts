@@ -61,6 +61,7 @@ export const GROUP_CONTINUITY_MESSAGE_ROWS = [
  ['group.status.phase.recorded','已记录，无需处理','已記錄，無需處理','Noted, no action needed'],
  ['group.status.phase.routing-failed','未能安排回应','未能安排回應','Could not arrange a response'],
  ['group.status.phase.unavailable','暂无可回应的员工','暫無可回應的員工','No employee can respond'],
+ ['group.status.followup.noCandidate','本轮没有其他接手人。','本輪沒有其他接手人。','No other employee is taking over this round.'],
  ['group.status.phase.blocked','暂不能处理','暫不能處理','Cannot proceed'],
  ['group.status.phase.unknown','待核对','待核對','Needs checking'],
  ['group.status.phase.paused','已暂停','已暫停','Paused'],

@@ -36,7 +36,7 @@ export function conversationAtLocation(row:Conversation,workspaceId:string|undef
 }
 
 /** 官方公开输入门面中迁移所需的部分。 */
-export type DraftInputPort={state:{getSnapshot:()=>Pick<InputState,'draft'|'attachmentIds'|'phase'|'occurrences'|'queue'>};setDraft:(text:string)=>void;notify:(level:'info'|'error',text:string)=>void}
+export type DraftInputPort={state:{getSnapshot:()=>Pick<InputState,'draft'|'attachmentIds'|'phase'|'occurrences'|'queue'>};setDraft:(text:string)=>void;notify:(level:'info'|'error',text:string)=>void;focus?:()=>void}
 /**
  * 公开门面只能整段写入纯文本：引用 chip 的结构化写入与附件改投（rebindDraftFiles）未在固定版 DSH 公开，
  * 因此引用与附件不迁移，由调用方保留原会话并说明；排队或提交中的输入也不打断。

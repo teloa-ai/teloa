@@ -53,7 +53,9 @@ test('真实多稿界面保留编辑、退回与未知采用；核对回执后�
  await page.getByRole('textbox',{name:'代拟正文',exact:true}).fill('修复存储后保留新输入。')
 
  await page.getByRole('button',{name:'保存修改',exact:true}).click()
- await page.getByText('修改已保存，尚未发送。',{exact:true}).waitFor()
+ // 保存结果以持久版本和正文核对；成功提示会随版本切换收起，不能作为异步完成信号。
+ await page.getByText('待你确认 · v2',{exact:true}).waitFor()
+ await page.getByText('修复存储后保留新输入。',{exact:true}).waitFor()
  assert.equal(await page.evaluate(()=>(window as any).twinDraftEvidence.sends),0)
  await page.getByRole('checkbox').check();await page.getByRole('button',{name:'采用并发送',exact:true}).click()
  await page.getByText('上次操作结果尚未核实，草稿与原请求已保留。',{exact:true}).waitFor()
@@ -68,7 +70,7 @@ test('真实多稿界面保留编辑、退回与未知采用；核对回执后�
  await page.getByRole('button',{name:'退回',exact:true}).last().click()
  await page.getByText('退回意见：请核对日期',{exact:true}).waitFor()
  await page.getByRole('textbox',{name:'退回意见',exact:true}).waitFor({state:'detached'})
- await page.screenshot({path:'/private/tmp/twin-draft-workspace.png',fullPage:true})
+ await page.screenshot({path:join(temp,'twin-draft-workspace.png'),fullPage:true})
  await page.setViewportSize({width:390,height:1000})
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true)
  assert.deepEqual(errors,[])
@@ -97,7 +99,7 @@ test('回原会话已有输入时显示受控保留提示，普通异常不透�
  await page.getByText('原输入已有文字、附件或排队内容；两份内容均保留，请复制稿件后自行发送。',{exact:true}).waitFor()
  assert.deepEqual(await page.evaluate(()=>{const e=(window as any).twinDraftOpenEvidence;return {text:e.text,writes:e.writes,sends:e.sends}}),{text:'已有输入不可覆盖',writes:0,sends:0})
  assert.equal(await page.getByText('保留的回复正文',{exact:true}).count(),1);assert.equal(await page.getByText('INTERNAL MESSAGE MUST NOT LEAK',{exact:true}).count(),0)
- await page.screenshot({path:'/private/tmp/twin-draft-occupied-message.png',fullPage:true})
+ await page.screenshot({path:join(temp,'twin-draft-occupied-message.png'),fullPage:true})
  await page.evaluate(()=>{(window as any).twinDraftOpenEvidence.untrusted=true});await page.getByRole('button',{name:'回原会话继续发送',exact:true}).click()
  await page.getByRole('alert').waitFor();assert.equal(await page.getByText('UNTRUSTED HOST MESSAGE',{exact:true}).count(),0);assert.equal(await page.getByText('原输入已有文字、附件或排队内容；两份内容均保留，请复制稿件后自行发送。',{exact:true}).count(),0)
  assert.deepEqual(errors,[])

@@ -21,6 +21,8 @@ import {WorkAccess} from '@teloa/backend'
 import {tmpdir} from 'node:os'
 import {installResidentModelBudget} from '../src/resident-model-budget.ts'
 import {defineTool} from '@deepseek-ai/dsh-tools'
+import * as workBehavior from '../src/work-behavior.ts'
+import {productIdentityText} from '../src/work-prompts/product-identity.ts'
 
 function projectPorts(){
  const state={generation:1,text:'项目规则：只交付桌面版，保留 {{literal}}。',memoryMode:'enabled' as 'enabled'|'off',calls:0,uses:[] as Parameters<ProjectRuntimeContextPorts['recordUsed']>[0][],prepared:[] as ProjectRuntimePrepared[]}
@@ -68,17 +70,27 @@ test('关闭记忆只接受固定SDK与宿主的必要上下文，未知记忆pr
  const f=await nativeHotCausalityFixture(t),{ports,state}=projectPorts();state.memoryMode='off'
  const necessary=['sandbox:policy','approval:policy','subagent:delegation','teloa:work-behavior-runtime','teloa/role-identity','teloa/saved-draft-state']
  for(const name of necessary)f.ctx.systemPrompt.context({name,order:100,text:'必要上下文 '+name})
+ await f.ctx.plugin(workBehavior,{productOnly:true})
  f.ctx.systemPrompt.context({name:'future:memory-provider',order:110,text:'未来记忆不能穿透-F713'})
  f.ctx.systemPrompt.context({name:'teloa/role-experience',order:111,text:'旧经验不能穿透-E713'})
  f.ctx.systemPrompt.section({name:'trusted-system-constraint',order:100,text:'必要安全系统规则-S713'})
  const runtime=registerProjectRuntimeContext(f.ctx,ports);t.after(()=>runtime.close())
- f.adapter.scripts.push(textAnswer)
+ const acceptedProductCounts:number[]=[]
+ f.ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{const result=await next();if(context.agent===f.agent)acceptedProductCounts.push(result.contexts.filter(row=>row.name==='teloa:product-identity').length);return result},{prepend:true})
+ f.adapter.scripts.push(textAnswer,textAnswer)
  await sendText(f,'仅使用必要项目资料','off-context-admission')
- const request=JSON.stringify(f.adapter.requests[0]?.messages)
- for(const name of necessary)assert.match(request,new RegExp('必要上下文 '+name))
- assert.match(request,/必要安全系统规则-S713/)
- assert.match(request,/项目规则：只交付桌面版/)
- assert.doesNotMatch(request,/未来记忆不能穿透-F713|旧经验不能穿透-E713/)
+ await sendText(f,'继续当前项目，不打开记忆','off-context-next')
+ assert.equal(f.adapter.requests.length,2)
+ assert.ok(acceptedProductCounts.length>=2)
+ assert.ok(acceptedProductCounts.every(count=>count===1),'原生刷新前的项目最终装配也显式保留唯一产品规则')
+ for(const input of f.adapter.requests){
+  const request=input.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('\n')
+  for(const name of necessary)assert.match(request,new RegExp('必要上下文 '+name))
+  assert.equal(request.split(productIdentityText).length-1,1,'关闭记忆的真实模型请求仍仅包含一份宿主产品与用量规则')
+  assert.match(request,/必要安全系统规则-S713/)
+  assert.match(request,/项目规则：只交付桌面版/)
+  assert.doesNotMatch(request,/未来记忆不能穿透-F713|旧经验不能穿透-E713/)
+ }
 })
 test('同项目同代次的正式fork子Agent清除父模型旧历史，不借父marker跳过最小输入重建',async t=>{
  const f=await nativeHotSubagentFixture(t,'continuable'),{ports}=projectPorts()

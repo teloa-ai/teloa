@@ -4,9 +4,11 @@ import * as groupPanelPreference from '../src/client/group-panel-preference.ts'
 import * as groupMessageOverlays from '../src/client/group-message-overlays.ts'
 import {groupReadingFixture} from './group-reading-fixture.ts'
 import * as groupMessageWindow from '../src/client/group-message-window.ts'
+import {twinDraftCopy} from '../src/client/i18n/locales/twin-drafts.ts'
 
 /** 旧消息/输入夹具保留真实投影；成果呈现由 group-work-results.browser.test.ts 真浏览器单独覆盖。 */
 export function groupResultFixtureModule(id:string):unknown{
+ if(id==='./i18n/locales/twin-drafts.js')return {twinDraftCopy}
  if(id==='./group-message-window.js')return groupMessageWindow
  if(id==='./use-group-reading.js')return groupReadingFixture
  if(id==='./group-panel-preference.js')return groupPanelPreference

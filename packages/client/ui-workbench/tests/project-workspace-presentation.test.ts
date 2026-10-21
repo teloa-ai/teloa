@@ -1,3 +1,4 @@
+import {jsxAttributeExpressions} from './jsx-source-attributes.ts'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
@@ -14,7 +15,7 @@ test('业务空间提供项目子页；左栏平台级「项目」入口按 2026
  assert.match(navigationChrome,/\['projects','navigation\.projects',Folder\]/)
  assert.match(navigationChrome,/primaryNavigation\.map\(/);assert.match(navigationChrome,/onClick=\{\(\)=>onSelect\(id\)\}/)
  assert.match(workNavigation,/import \{WorkbenchNavigationBrand,WorkbenchNavigationItems\} from '\.\/WorkbenchNavigationChrome\.js'/)
- assert.match(workNavigation,/<WorkbenchNavigationItems view=\{view\}/);assert.match(workNavigation,/:actions\.navigate\(id\)\}/)
+ assert.match(workNavigation,/<WorkbenchNavigationItems view=\{view\}/);assert.match(jsxAttributeExpressions(workNavigation,'WorkbenchNavigationItems','onSelect')[0]!,/^id=>navigate\(\(\)=>.*:actions\.navigate\(id\)\)$/)
 })
 
 test('项目页读取真实详情和六类关系，不伪造项目主会话',async()=>{

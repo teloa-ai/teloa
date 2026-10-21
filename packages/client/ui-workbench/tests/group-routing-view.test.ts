@@ -169,7 +169,9 @@ import type {GroupAgentGrant,GroupMember} from '@teloa/contract'
 import * as savedCollaborationState from '../src/client/saved-collaboration-state.ts'
 import {createSavedCollaborationDraftStore} from '../src/client/saved-collaboration-drafts.ts'
 import * as groupRoutingView from '../src/client/group-routing-view.ts'
+import * as groupProgressPresentation from '../src/client/group-progress-presentation.ts'
 import {GROUP_REACTION_MESSAGE_ROWS} from '../src/client/i18n/locales/group-reaction.ts'
+import {GROUP_CONTINUITY_MESSAGE_ROWS} from '../src/client/i18n/locales/group-continuity.ts'
 import {COLLABORATION_MESSAGE_ROWS} from '../src/client/i18n/locales/collaboration.ts'
 import type {PreviewRole} from '../src/client/role-preview.ts'
 import type {GroupApi,GroupSnapshot} from '../src/client/group-api.js'
@@ -180,6 +182,7 @@ if(!('document' in globalThis))(globalThis as Record<string,unknown>).document={
 if(!('HTMLElement' in globalThis))(globalThis as Record<string,unknown>).HTMLElement=class{}
 
 const routingText=new Map<string,string>(GROUP_REACTION_MESSAGE_ROWS.map(row=>[row[0],row[1]] as [string,string]))
+for(const row of GROUP_CONTINUITY_MESSAGE_ROWS)routingText.set(row[0],row[1]!)
 // 作者区用的是协作词表里的几条，逐字从 COLLABORATION_MESSAGE_ROWS 取 zh-CN，不在测试里另造文案。
 for(const key of ['collaboration.message.self','collaboration.message.selfRole','collaboration.message.employeeRole','collaboration.message.historicalMember'])routingText.set(key,COLLABORATION_MESSAGE_ROWS.find(row=>row[0]===key)![1]!)
 const rt=(key:string,params?:Record<string,string|number>)=>{
@@ -246,7 +249,7 @@ const testMarkdownText=({text}:{text:string}):React.ReactNode=>{
 }
 
 /** 递归加载真实模块：group-routing-view 与 GroupReactionBar 都跑真身，只有外部依赖给桩。 */
-function mountPage(props:Record<string,unknown>){
+function mountPage(props:Record<string,unknown>,realStatus=false){
  let refresh:(()=>Promise<void>)|undefined
  const slots:unknown[]=[]
  let cursor=0,dirty=true,tree:React.ReactNode
@@ -276,6 +279,7 @@ function mountPage(props:Record<string,unknown>){
   return exported
  }
  const require=(id:string):unknown=>{
+  if(realStatus&&id==='./GroupMessageStatus.js')return load('GroupMessageStatus.tsx')
   const groupResult=groupResultFixtureModule(id);if(groupResult!==undefined)return groupResult
   if(id==='./GroupChannelBindings.js')return {GroupChannelBindings:()=>null}
   const capability=applicationCapabilityModule(id);if(capability!==undefined)return capability
@@ -302,6 +306,7 @@ function mountPage(props:Record<string,unknown>){
   if(id.endsWith('group-message-refresh.js'))return {scheduleGroupMessageRefresh:(run:()=>Promise<void>)=>{refresh=run;return ()=>{refresh=undefined}}}
   // 这两条是本轮的重点：真模块、真组件，不给空桩。
   if(id.endsWith('group-routing-view.js'))return groupRoutingView
+  if(id.endsWith('group-progress-presentation.js'))return groupProgressPresentation
   if(id.endsWith('GroupReactionBar.js'))return load('GroupReactionBar.tsx')
   // @deepseek-ai/dsh-client-ui-primitives 是 DSH 平台模块（运行时由宿主注入，katex.min.css/anser/shiki/mdast
   // 一串依赖只在宿主里有），Node 下 import 当场炸掉整个测试文件（详见 saved-message-markdown-stubs.ts）。
@@ -385,6 +390,16 @@ test('真渲染·同事回帖复用群成员姓名与员工头像，来源收进
  assert.equal(app.findAll(el=>el.type==='details'&&String(el.props.className).includes('messageSource')).length,1)
  const avatars=app.findAll(el=>el.type==='span'&&String(el.props.className).includes('botWrap'))
  assert.ok(avatars.some(el=>el.props['data-avatar']==='researcher'),'消息复用该员工已选形象')
+})
+
+test('真实主群与话题状态行带入原消息作者和对应路由，不能把员工回帖后续当成本人问题失败',async()=>{
+ const root=selfMessage(messageId,fresh()),reply={...roleMessage('55555555-5555-4555-8555-555555555555',roleA,fresh(),'37乘以23等于851。'),contextMode:'main' as const}
+ const finalDecision=decision({messageId:reply.id,kind:'no-candidate',respond:[],hops:1})
+ const f=viewFixture({main:[root,reply],replies:[root,reply],decisions:[decision(),finalDecision],statuses:[{messageId:root.id,attemptVersion:1,phase:'completed',recipients:[],hintCode:null,canRetry:false},{messageId:reply.id,attemptVersion:1,phase:'unavailable',recipients:[],hintCode:'target-unavailable',canRetry:true}]})
+ const app=mountPage(pageProps(f),true);await app.flush()
+ const rows=app.findAll(el=>el.type==='p'&&el.props.children==='本轮没有其他接手人。')
+ assert.equal(rows.length,2,'主群与当前话题两处都用真实消息和路由呈现中性状态')
+ assert.equal(app.text().includes('暂无可回应的员工'),false);assert.equal(app.text().includes('重新安排'),false)
 })
 
 test('真渲染·群里已经不在的成员回帖按「历史成员」兜底，界面上不出现 roleId',async()=>{

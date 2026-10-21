@@ -24,13 +24,14 @@ const eventPlan={...original,completionPolicy:{kind:'manual'},workDefinition:{..
 const template={key:'fixed',itemId:'fixed',templateId:'review',title:'固定安全模板',version:'1.0.0',scope:'SOC',hash:'a'.repeat(64),example:false,source:'测试固定来源',author:'本人',license:'MIT',description:'核对资料',requirements:[],output:'结果',skills:[]};
 window.planFixture={creates:[],updates:[],contacts:[],selected:[],tasks:[],conversations:[]};crypto.randomUUID=()=>'66666666-6666-4666-8666-666666666666';
 function App(){
- const mode=window.planMode,sourcePlan=mode==='event-plan'?eventPlan:mode==='owner'?ownerPlan:mode.startsWith('origin')?{...original,source:{kind:'manual',sessionId:'original-plan-session'}}:original,[plans,setPlans]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?[sourcePlan]:[]),[target,go]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?{kind:'plan',id:original.id}:mode==='business'?{kind:'plans',scope:'SOC'}:{kind:'plans'}),[seed,setSeed]=useState(mode==='template'?{template,fields:{...fields,title:template.title},source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:null);
+ const mode=window.planMode,sourcePlan=mode==='event-plan'?eventPlan:mode==='owner'?ownerPlan:mode.startsWith('origin')?{...original,source:{kind:'manual',sessionId:'original-plan-session'}}:original,[plans,setPlans]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?[sourcePlan]:[]),[target,go]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?{kind:'plan',id:original.id}:mode==='business'?{kind:'plans',scope:'SOC'}:{kind:'plans'}),[seed,setSeed]=useState(mode==='template'||mode==='journal-sandbox-template'?{template:{...template,example:mode==='journal-sandbox-template'},fields:{...fields,title:template.title},...(mode==='template'?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})}:null);
  window.planFixture.enterScope=scope=>go({kind:'plans',...(scope?{scope}:{})});
+ window.planFixture.enterTemplate=example=>setSeed({template:{...template,example},fields:{...fields,title:template.title},...(!example?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})});
  const [sort,setSort]=useState('name');
  if(mode==='staff')return <I18nProvider runtime={runtime}><label>排序<select value={sort} onChange={event=>setSort(event.target.value)}><option value="name">姓名</option><option value="duty">岗位</option></select></label><StaffRoster roles={[...roles,roles[0]]} labels={roles.flatMap(row=>row.scopes.map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0})))} tasks={[{id:'original-task',assigneeId:roles[0].id,state:'ready',title:'原始任务',updatedAt:stamp,scope:'SOC'}]} sort={sort} fold={{toggled:[]}} onFoldChange={()=>{}} searching={false} onSelect={id=>window.planFixture.selected.push(id)} onTalk={id=>window.planFixture.contacts.push(['chat',id])} onPhone={id=>window.planFixture.contacts.push(['phone',id])} onOpenTask={id=>window.planFixture.tasks.push(id)} onHire={()=>{}}/></I18nProvider>;
  const merge=rows=>setPlans(current=>[...current.filter(row=>!rows.some(next=>next.id===row.id)),...rows]);
- const api=useMemo(()=>({list:async()=>plans,directory:async()=>({items:[],cursor:null}),executions:async()=>({items:[],nextCursor:null}),skips:async()=>({items:[],nextCursor:null}),schedule:async()=>mode==='event-plan'?{available:true,overview:{planId:original.id,planVersion:1,state:'paused',nextAt:null,latest:null,latestSkip:null},health:null}:null,pending:()=>null,recoveryMessage:()=>null,create:async(fields,source)=>{window.planFixture.creates.push({fields,source});return {...original,...fields,source,id:'55555555-5555-4555-8555-555555555555'}},update:async(plan,fields)=>{window.planFixture.updates.push({plan,fields});return {...plan,...fields,version:plan.version+1}}}),[]);
- return <I18nProvider runtime={runtime}><BusinessScopeProvider labels={['general','SOC','sales'].map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}))}><ContinuousPage openConversation={async id=>{window.planFixture.conversations.push(id);if(mode==='origin-error')throw Error('原会话暂不可用');}} prepareConversation={mode.startsWith('conversation')?async request=>{window.planFixture.conversations.push(request);if(mode==='conversation-error')throw Error('会话准备失败');}:undefined} visible state={{...emptyTaskPreview(),roles,continuous:{plans:plans.map(projectSavedPlan),runs:[],loaded:true}}} target={target} go={go} persistence={{api,plans,controls:mode==='event-plan'?{get:async()=>({ownerId:original.ownerId,scope:'definition',state:'active'}),pending:()=>null}:undefined,merge,refreshRoles:()=>{},industrySource:()=>null}} seed={seed} clearSeed={()=>setSeed(null)} change={()=>{}} openArtifacts={()=>{}} openMarket={()=>{}} openTask={()=>{}} openRole={id=>window.planFixture.contacts.push(['role',id])} openBusiness={()=>{}} team={()=>{}} attention={()=>{}}/></BusinessScopeProvider></I18nProvider>
+ const api=useMemo(()=>({list:async()=>plans,directory:async()=>({items:[],cursor:null}),executions:async()=>({items:[],nextCursor:null}),skips:async()=>({items:[],nextCursor:null}),schedule:async()=>mode==='event-plan'?{available:true,overview:{planId:original.id,planVersion:1,state:'paused',nextAt:null,latest:null,latestSkip:null},health:null}:null,pending:()=>mode==='journal-pending'?{kind:'create'}:null,recoveryMessage:()=>null,create:async(fields,source)=>{window.planFixture.creates.push({fields,source});return {...original,...fields,source,id:'55555555-5555-4555-8555-555555555555'}},update:async(plan,fields)=>{window.planFixture.updates.push({plan,fields});return {...plan,...fields,version:plan.version+1}}}),[]);
+ return <I18nProvider runtime={runtime}><BusinessScopeProvider labels={['general','SOC','sales'].map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}))}><ContinuousPage draftStorage={mode.startsWith('journal')?{namespace:'owner:journal-test',storage:mode==='journal-quota'?{getItem:key=>sessionStorage.getItem(key),setItem:()=>{throw Error('QuotaExceededError')},removeItem:key=>sessionStorage.removeItem(key)}:window.sessionStorage}:undefined} openConversation={async id=>{window.planFixture.conversations.push(id);if(mode==='origin-error')throw Error('原会话暂不可用');}} prepareConversation={mode.startsWith('conversation')?async request=>{window.planFixture.conversations.push(request);if(mode==='conversation-error')throw Error('会话准备失败');}:undefined} visible state={{...emptyTaskPreview(),roles,continuous:{plans:plans.map(projectSavedPlan),runs:[],loaded:true}}} target={target} go={go} persistence={{api,plans,controls:mode==='event-plan'?{get:async()=>({ownerId:original.ownerId,scope:'definition',state:'active'}),pending:()=>null}:undefined,merge,refreshRoles:()=>{},industrySource:()=>null}} seed={seed} clearSeed={()=>setSeed(null)} change={()=>{}} openArtifacts={()=>{}} openMarket={()=>{}} openTask={()=>{}} openRole={id=>window.planFixture.contacts.push(['role',id])} openBusiness={()=>{}} team={()=>{}} attention={()=>{}}/></BusinessScopeProvider></I18nProvider>
 }createRoot(document.getElementById('root')).render(<App/>);
 `
 before(async()=>{
@@ -46,8 +47,14 @@ async function mount(t:any,mode='new'){
  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors:string[]=[]
  page.setDefaultTimeout(4000);page.on('pageerror',(e:Error)=>errors.push(e.message))
  t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
- await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>')
+ if(mode.startsWith('journal')){
+  await page.route('**/*',(route:any)=>route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>'}))
+  await page.addInitScript((value:string)=>(window as any).planMode=value,mode)
+  await page.goto('http://continuous-drafts.test/')
+ }else{
+  await page.route('**/*',(route:any)=>route.abort())
+  await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>')
+ }
  await page.evaluate((value:string)=>(window as any).planMode=value,mode)
  await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  return page
@@ -105,6 +112,17 @@ test('编辑已保存计划仍固定业务与员工，固定业务模板不能�
  const seeded=await mount(t,'template');form=seeded.getByRole('dialog')
  await form.waitFor();assert.equal(await form.getByRole('combobox',{name:/^业务范围/}).isDisabled(),true)
  assert.equal(await form.getByRole('combobox',{name:/^业务范围/}).inputValue(),'SOC')
+})
+
+test('示例模板切换至演示范围后仍打开原表单，不创建或执行正式计划',async t=>{
+ const page=await mount(t,'journal-sandbox-template'),form=page.getByRole('dialog',{name:'新建持续计划',exact:true})
+ await form.waitFor();assert.equal(await form.getByRole('textbox',{name:'计划名称',exact:true}).inputValue(),'固定安全模板')
+ assert.equal(await page.locator('[data-continuous-mode="sandbox"]').count(),1)
+ await form.getByRole('textbox',{name:'计划名称',exact:true}).fill('示例模板保留的输入');await page.keyboard.press('Escape')
+ await page.evaluate(()=>(window as any).planFixture.enterTemplate(false));await form.waitFor();assert.equal(await page.locator('[data-continuous-mode="saved"]').count(),1);assert.equal(await form.getByRole('textbox',{name:'计划名称',exact:true}).inputValue(),'固定安全模板')
+ await form.getByRole('textbox',{name:'计划名称',exact:true}).fill('正式模板独立输入');await page.keyboard.press('Escape')
+ await page.evaluate(()=>(window as any).planFixture.enterTemplate(true));await form.waitFor();assert.equal(await page.locator('[data-continuous-mode="sandbox"]').count(),1);assert.equal(await form.getByRole('textbox',{name:'计划名称',exact:true}).inputValue(),'示例模板保留的输入')
+ assert.deepEqual(await page.evaluate(()=>(window as any).planFixture.creates),[]);assert.deepEqual(await page.evaluate(()=>(window as any).planFixture.tasks),[])
 })
 
 test('业务内新建保持该业务上下文，不跳到其他业务归属',async t=>{
@@ -213,4 +231,38 @@ test('真实业务观察计划仅显示有效事件触发，暂停状态优先�
  await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'})
  const rows=await page.locator('body').innerText();assert.ok(rows.includes('业务记录更新'));assert.ok(!rows.includes('09:00'))
  const calls=await page.evaluate(()=>(window as any).planFixture);assert.deepEqual(calls.creates,[]);assert.deepEqual(calls.updates,[])
+})
+
+
+test('本人入口的未提交计划在关闭与刷新后恢复原字段，不创建或执行',async t=>{
+ const page=await mount(t,'journal');await startGoal(page,'agent-business 持续核对测试资料')
+ const form=page.getByRole('dialog',{name:'新建持续计划',exact:true})
+ await form.getByLabel('计划名称',{exact:true}).fill('agent-business 刷新保留计划')
+ await form.getByRole('combobox',{name:/^负责员工/}).selectOption('22222222-2222-4222-8222-222222222222')
+ await form.getByRole('combobox',{name:'通知策略',exact:true}).selectOption('failure')
+ await form.getByRole('button',{name:'关闭并保留草稿',exact:true}).click()
+ await page.reload();await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ await startGoal(page,'agent-business 持续核对测试资料')
+ assert.equal(await form.getByLabel('计划名称',{exact:true}).inputValue(),'agent-business 刷新保留计划')
+ assert.equal(await form.getByRole('combobox',{name:/^负责员工/}).inputValue(),'22222222-2222-4222-8222-222222222222')
+ assert.equal(await form.getByRole('combobox',{name:'通知策略',exact:true}).inputValue(),'failure')
+ const calls=await page.evaluate(()=>(window as any).planFixture);assert.deepEqual(calls.creates,[]);assert.deepEqual(calls.updates,[]);assert.deepEqual(calls.tasks,[])
+})
+
+
+test('浏览器存储不足时明确提示未持久化且关闭重开仍保留本窗口输入',async t=>{
+ const page=await mount(t,'journal-quota');await startGoal(page)
+ const form=page.getByRole('dialog',{name:'新建持续计划',exact:true});await form.getByLabel('计划名称',{exact:true}).fill('存储不足时不要丢这份输入')
+ assert.match(await form.getByRole('alert').innerText(),/草稿未能保存到浏览器/)
+ await form.getByRole('button',{name:'关闭并保留草稿',exact:true}).click();await page.getByRole('button',{name:'继续设置',exact:true}).click()
+ assert.equal(await form.getByLabel('计划名称',{exact:true}).inputValue(),'存储不足时不要丢这份输入');assert.deepEqual(await page.evaluate(()=>(window as any).planFixture.creates),[])
+})
+
+test('原计划提交结果待核对时恢复输入不会另发创建或更新',async t=>{
+ const page=await mount(t,'journal-pending');await startGoal(page)
+ const form=page.getByRole('dialog',{name:'新建持续计划',exact:true});await form.getByLabel('计划名称',{exact:true}).fill('不得重复创建')
+ await form.getByRole('combobox',{name:/^负责员工/}).selectOption('22222222-2222-4222-8222-222222222222');await form.getByRole('combobox',{name:'通知策略',exact:true}).selectOption('failure')
+ assert.equal(await form.getByRole('button',{name:'保存暂停计划',exact:true}).isDisabled(),true)
+ await form.locator('form').evaluate((node:HTMLFormElement)=>node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+ const calls=await page.evaluate(()=>(window as any).planFixture);assert.deepEqual(calls.creates,[]);assert.deepEqual(calls.updates,[]);assert.deepEqual(calls.tasks,[])
 })

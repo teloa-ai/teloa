@@ -1,6 +1,17 @@
 # 替换布局；原生侧栏、会话、工具详情、模型与引用插件全部保留。
 # 分身/同事会话复用原生选模，只隔离其附带的全局默认写入。
+# 通过官方配置关闭框架自称；模型变量、原生运行上下文与预设 persona 保留。
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: true
+    personaPrefix: You are a Teloa work assistant powered by the {{model}} model.
 - insert:
+    - id: teloa-product-identity
+      name: '@teloa/harness-dsh/work-behavior'
+      config:
+        enabled: true
+        productOnly: true
     # 固定随附的上下文观察插件，复用原生会话页签、右栏和 /context 入口。
     - id: dsh-context
       name: dsh-context

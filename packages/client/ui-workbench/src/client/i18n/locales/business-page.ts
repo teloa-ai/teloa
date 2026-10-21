@@ -1096,15 +1096,11 @@ export const BUSINESS_PAGE_MESSAGE_ROWS = [
     "Weitere Geschäftsfunktionen",
     "Mais funções do negócio"
   ],
-  ["business.more.view","查看","查看","View","見る","보기","Xem","Ver","Voir","Ansehen","Ver"],
-  ["business.more.configure","配置","設定","Configure","設定","설정","Cấu hình","Configurar","Configurer","Einrichten","Configurar"],
-  ["business.more.share","分享","分享","Share","共有","공유","Chia sẻ","Compartir","Partager","Teilen","Partilhar"],
   ["business.more.currentTasks","当前业务任务","目前業務任務","Current business tasks","この業務のタスク","현재 업무 작업","Nhiệm vụ của nghiệp vụ này","Tareas de este negocio","Tâches de cette activité","Aufgaben dieses Geschäftsbereichs","Tarefas deste negócio"],
   ["business.more.dashboards","业务看板","業務看板","Business dashboards","業務ダッシュボード","업무 대시보드","Bảng theo dõi nghiệp vụ","Tableros del negocio","Tableaux de bord métier","Geschäfts-Dashboards","Painéis do negócio"],
   ["business.more.adjustment","调整业务定义","調整業務定義","Adjust business definitions","業務定義を調整","업무 정의 조정","Điều chỉnh định nghĩa nghiệp vụ","Ajustar definiciones del negocio","Ajuster les définitions métier","Geschäftsdefinitionen anpassen","Ajustar definições do negócio"],
   ["business.more.connector","数据连接","資料連線","Data connections","データ接続","데이터 연결","Kết nối dữ liệu","Conexiones de datos","Connexions de données","Datenverbindungen","Ligações de dados"],
   ["business.more.sources","业务资源","業務資源","Business resources","ソリューションのリソース","솔루션 리소스","Tài nguyên giải pháp","Recursos de la solución","Ressources de la solution","Lösungsressourcen","Recursos da solução"],
-  ["business.more.advanced","高级设置","進階設定","Advanced settings","詳細設定","고급 설정","Cài đặt nâng cao","Configuración avanzada","Paramètres avancés","Erweiterte Einstellungen","Definições avançadas"],
   ["business.more.manualDefinition","手动定义","手動定義","Define manually","手動で定義","직접 정의","Định nghĩa thủ công","Definir manualmente","Définir manuellement","Manuell definieren","Definir manualmente"],
   ["business.more.shareBusiness","分享业务配置","分享業務設定","Share business configuration","この業務を共有","이 업무 공유","Chia sẻ nghiệp vụ này","Compartir este negocio","Partager cette activité","Geschäftsbereich teilen","Partilhar este negócio"],
   [

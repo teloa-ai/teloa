@@ -328,15 +328,19 @@ test('终审 Minor：市场打开 AI 同事时读取岗位失败由 loadRoles �
  const {readFile}=await import('node:fs/promises')
  const source=await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8')
  // loadRoles 吞掉读取失败并写进 roleLoadError；查看员工只开预览，保留市场来源。
- const load=source.slice(source.indexOf('const loadRoles=async()=>{'),source.indexOf('const loadRoles=async()=>{')+1800)
- assert.match(load,/await roleApi\.list\(\)/)
- assert.match(load,/catch\(error\)[\s\S]*setRoleLoadError\(localizeWorkError\(locale,error\)\)/)
- // 后面再接的 catch 永远走不到，还会把真实错误覆盖成「岗位已不存在」的误导文案。
  const file=ts.createSourceFile('WorkbenchFrame.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),callbacks:ts.ArrowFunction[]=[]
- const visit=(node:ts.Node)=>{if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==='MarketPage')for(const attr of node.attributes.properties){if(ts.isJsxAttribute(attr)&&attr.name.getText(file)==='openRole'&&attr.initializer&&ts.isJsxExpression(attr.initializer)&&attr.initializer.expression&&ts.isArrowFunction(attr.initializer.expression))callbacks.push(attr.initializer.expression)}ts.forEachChild(node,visit)}
- visit(file);assert.equal(callbacks.length,1)
- const calls:unknown[][]=[],open=new Function('actions','loadRoles','return ('+callbacks[0]!.getText(file)+')')({previewRole:(id:string)=>calls.push(['preview',id]),openRole:()=>{throw Error('查看员工不能切走市场')}},()=>{calls.push(['load']);return Promise.resolve()})
- open('original-role');assert.deepEqual(calls,[['preview','original-role'],['load']])
+ let loader:ts.ArrowFunction|undefined
+ // 后面再接的 catch 永远走不到，还会把真实错误覆盖成「岗位已不存在」的误导文案。
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='loadRoles'&&node.initializer&&ts.isArrowFunction(node.initializer))loader=node.initializer;if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==='MarketPage')for(const attr of node.attributes.properties){if(ts.isJsxAttribute(attr)&&attr.name.getText(file)==='openRole'&&attr.initializer&&ts.isJsxExpression(attr.initializer)&&attr.initializer.expression&&ts.isArrowFunction(attr.initializer.expression))callbacks.push(attr.initializer.expression)}ts.forEachChild(node,visit)}
+ visit(file);assert.equal(callbacks.length,1);assert.ok(loader)
+ assert.match(loader.getText(file),/await roleApi\.list\(\)/)
+ assert.match(loader.getText(file),/catch\(error\)[\s\S]*setRoleLoadError\(localizeWorkError\(locale,error\)\)/)
+ const failure=Error('role-read-failed'),roleApi={list:async()=>{throw failure}},errors:unknown[]=[],loading:boolean[]=[]
+ const environment={roleLoadGeneration:{current:0},businessDirectoryStatus:'ready',businessDirectoryError:undefined,setRoleLoading:(value:boolean)=>loading.push(value),setRoleLoadError:(value:unknown)=>errors.push(value),roleApi,roleLoadApi:{current:roleApi},roleWorkAccessRef:{current:{}},roleAccessGeneration:{current:new Map()},mergeRoleWorkAccess:()=>{throw Error('本用例没有旧授权')},localizeWorkError:(_locale:string,error:unknown)=>{assert.equal(error,failure);return '真实读取失败'},locale:'zh-CN'}
+ const actualLoad=new Function(...Object.keys(environment),ts.transpileModule('return ('+loader.getText(file)+')',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText)(...Object.values(environment))
+ let loaded:Promise<void>|undefined
+ const calls:unknown[][]=[],open=new Function('actions','loadRoles','return ('+callbacks[0]!.getText(file)+')')({previewRole:(id:string)=>calls.push(['preview',id]),openRole:()=>{throw Error('查看员工不能切走市场')}},()=>{calls.push(['load']);loaded=actualLoad();return loaded})
+ open('original-role');await loaded;assert.deepEqual(calls,[['preview','original-role'],['load']]);assert.deepEqual(errors,[undefined,'真实读取失败']);assert.deepEqual(loading,[true,false])
 })
 
 test('Teloa 内置技能（无上游）的元信息用专用词条「Teloa 内置 · 许可」，不借用筛选按钮的「Teloa 官方」',()=>{

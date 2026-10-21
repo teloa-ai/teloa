@@ -1,10 +1,11 @@
 import type {ReactNode} from 'react'
-import type {GroupRoutingStatusView} from '@teloa/contract'
+import type {GroupMessage,GroupRoutingDecisionView,GroupRoutingStatusView} from '@teloa/contract'
 import {ExternalLink} from 'lucide-react'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {DetailsMenu} from './DetailsMenu.js'
 import {groupMessageStatusPresentation,groupProgressPresentation,type GroupProgressPerson} from './group-progress-presentation.js'
+import {groupRoutingFollowupIsIdle} from './group-routing-view.js'
 import css from './CollaborationPage.module.css'
 
 /**
@@ -12,8 +13,9 @@ import css from './CollaborationPage.module.css'
  * 进行中的阶段改由输入框附近的 GroupProgressStatus 聚合，已完成只留原工作入口，不再逐人铺完成清单。
  * 「重新安排」只在服务端判定可重试且群未归档时出现，未知提交只给「查看工作」。忽略这一行不会触发恢复、重发或停止。
  */
-export function GroupMessageStatus({status,archived,retrying,retryFailed,retry,openTask,resume}:{status:GroupRoutingStatusView;archived:boolean;retrying:boolean;retryFailed:boolean;retry:()=>void;openTask?:((taskId:string)=>void)|undefined;resume?:((controlId:string)=>void)|undefined}){
+export function GroupMessageStatus({status,message,decision,archived,retrying,retryFailed,retry,openTask,resume}:{status:GroupRoutingStatusView;message?:GroupMessage|undefined;decision?:GroupRoutingDecisionView|undefined;archived:boolean;retrying:boolean;retryFailed:boolean;retry:()=>void;openTask?:((taskId:string)=>void)|undefined;resume?:((controlId:string)=>void)|undefined}){
  const {locale,t}=useI18n()
+ if(!retrying&&!retryFailed&&groupRoutingFollowupIsIdle(message,decision,status))return <p className={`${css.messageStatus} ${css.messageStatusQuiet}`} role="status" data-tone="quiet">{t('group.status.followup.noCandidate')}</p>
  const view=groupMessageStatusPresentation(status,archived)
  const name=(value:string)=>value||t('collaboration.message.historicalMember')
  // 原工作入口按原 taskId 打开；多位员工各有工作时图标带上归属的员工名。

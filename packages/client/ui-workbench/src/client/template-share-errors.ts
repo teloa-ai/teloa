@@ -18,6 +18,8 @@ export function templateShareErrorKey(error:unknown,fallback:TemplateShareMessag
  if(status===410||code==='gone'||code==='revoked')return 'templateShare.revoked'
  if(status===404||code.includes('not_found')||code.includes('not-found'))return 'templateShare.notFound'
  if(status===400||code.includes('invalid')||code.includes('bad_request'))return 'templateShare.invalid'
+ if(code==='teloa/source-unavailable')return 'templateShare.receiveSourceUnavailable'
+ if(code==='teloa/dependency-unavailable')return 'templateShare.installUnavailable'
  if(status===503||code.includes('unavailable'))return 'templateShare.offline'
  return fallback
 }

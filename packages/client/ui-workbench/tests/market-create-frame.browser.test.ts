@@ -19,8 +19,8 @@ before(async()=>{
  entry=patch(entry,"workspaces:[{workspaceId:'workspace',title:'工作目录',path:'/fixture',sessionIds:[]}]","workspaces:[{workspaceId:'workspace',title:'工作目录',path:'/fixture',sessionIds:[]},{workspaceId:'other',title:'其他目录',path:'/other',sessionIds:[]}]")
  entry=patch(entry,"create:async p=>{const prior=","create:async p=>{(f.creationRequests??=[]).push(p.requestId);if(f.failCreate)throw Error('controlled native create failure');const prior=")
  entry=patch(entry,"open:id=>{selected=id;","open:id=>{if(f.abortNativeNavigationOnOpen)nativeNavigation.abort();selected=id;")
- entry=patch(entry,"return [{scope:f.otherScope?'general':'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]","return [{scope:'general',title:'通用工作',kind:'general',loads:0,activeLoads:0,tasks:0,groups:0},{scope:'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0},...(startup.secondBusiness?[{scope:'design-review',title:'第二验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]:[])]")
  const setup=`
+ f.scopeRows=[{scope:'general',title:'通用工作',kind:'general',loads:0,activeLoads:0,tasks:0,groups:0},{scope:'sales',title:'验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0},...(startup.secondBusiness?[{scope:'design-review',title:'第二验收业务',kind:'domain',loads:0,activeLoads:0,tasks:0,groups:0}]:[])];
  if(startup.oneWorkspace)managementState.workspaces.splice(1);
  f.creationPrompts=[];props.preparation={prepare:prompt=>f.creationPrompts.push(prompt),invalidate:noop};
  props.pageCreateApi={directory:async({entity,scope})=>({schema:'teloa.page-create-drafts/v1',entity,...(scope?{scope}:{}),drafts:[],readAt:stamp})};
@@ -28,7 +28,7 @@ before(async()=>{
  props.businessCustomizationApi=new Proxy(generic,{get:(target,key)=>key==='directory'?async()=>({drafts:[],entries:[]}):target[key]});
  f.openMarket=()=>startup.businessPreparation||startup.legacyBusiness?store.actions.openBusiness({scope:'sales',section:startup.businessSection||'overview'}):store.actions.openMarketCategory('apps');
  `
- entry=patch(entry,"createRoot(document.getElementById('root')).render",setup+"createRoot(document.getElementById('root')).render")
+ entry=patch(entry,"const frameRoot=",setup+"const frameRoot=")
  temp=await mkdtemp(join(root,'.runtime-market-create-frame-'));await writeFile(join(temp,'entry.tsx'),entry)
  const stubbed=new Set(isolated.map(name=>join(client,name+'.tsx')))
  // 目录内容不参与创建回执；保留真实 Frame 接线、创建抽屉、CreateEntry 与工作区选择窗。

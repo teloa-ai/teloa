@@ -1,7 +1,7 @@
 import {createHash,createHmac,randomBytes} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,readRoleTemplateDefinition,readIndustryDataSourceDefinition,readIndustryMcpConnectionDefinition,readIndustryPluginDefinition,readScheduleTrigger,readBusinessConfigurationCandidateV2,type BusinessConfigurationCandidate,type BusinessConfigurationCandidateV2} from '@teloa/contract'
-import {businessSetupUuid,readBusinessSetupPackage,readBusinessSetupRoleEdit,type BusinessSetupPlan,type BusinessSetupPreview,type BusinessSetupAdoption,type BusinessSetupRoleEdit,type BusinessSetupResource,type BusinessSetupStep,type BusinessSetupManual,type BusinessSetupHistory} from '@teloa/contract'
+import {businessSetupSelectionState,businessSetupUuid,readBusinessSetupPackage,readBusinessSetupRoleEdit,type BusinessSetupPlan,type BusinessSetupPreview,type BusinessSetupAdoption,type BusinessSetupRoleEdit,type BusinessSetupResource,type BusinessSetupStep,type BusinessSetupManual,type BusinessSetupHistory} from '@teloa/contract'
 import {validateManifest,readMarketBusinessConfigurationResource,type MarketContent,type MarketContentStore} from '../market/content-store.ts'
 import {BusinessConfigurationStore,businessConfigurationHash} from './business-configuration-store.ts'
 import {lockBusinessConfigurationRequests,type BusinessConfigurationActor,type BusinessConfigurationDraftService} from './business-configuration-drafts.ts'
@@ -242,7 +242,9 @@ export class BusinessSetupPlanService{
    const content=await this.ports.market.getInTransaction(db,{ownerId:actor.ownerId,kind:'human'},{contentId:body.plan.contentId})
    if(content.hash!==body.plan.contentHash)throw fail('方案固定来源已变化。','teloa/source-unavailable')
    await this.roleChanges(db,actor,body)
-   if(!preview.changes.some(c=>!body.plan.rejected.includes(c.id))&&!body.plan.resources.some(r=>r.kind!=='business-configuration'))throw fail('所有变更均已拒绝，无需采用。')
+   const selection=businessSetupSelectionState(body.plan,preview)
+   // 到此只有读锁与校验；配置、员工、方案及请求回执的首次写入均在此分支之后。
+   if(selection==='empty'||selection==='rejected')throw new WorkError('teloa/conflict',selection==='empty'?'当前方案没有可采用的变更，草案仍保留。':'所有变更均已拒绝，无需采用。',{reason:'setup-no-effective-changes',requestId,noWrites:true,preview})
    const configuration=await this.ports.configuration.applyInTransaction(db,actor,{requestId:businessSetupRequestId(requestId,'configuration'),draftId,expectedRevision:preview.configurationRevision,expectedBaseVersion:preview.baseVersion,previewReceipt:preview.configurationReceipt})
    const roleIds=[]
    for(const edit of [...body.plan.roleEdits].sort((a,b)=>a.roleId.localeCompare(b.roleId))){

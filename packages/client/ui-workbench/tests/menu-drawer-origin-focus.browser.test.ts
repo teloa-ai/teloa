@@ -45,6 +45,16 @@ for(const origin of ['业务资源','新建协作群'])test(`${origin}菜单打�
  assert.equal(await page.getByRole('textbox',{name:'原任务输入',exact:true}).inputValue(),'原工作草稿')
 })
 
-test('通用工作菜单只显示可达动作，不把业务看板或数据配置导回总览',async t=>{
- const page=await browser.newPage({viewport:{width:1280,height:900}});page.setDefaultTimeout(4000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort());await page.setContent('<html><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.evaluate(()=>(window as any).menuFixture.scope('general'));await page.locator('main > details > summary').click();assert.equal(await page.getByRole('button',{name:'业务看板',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'数据连接',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'当前业务任务',exact:true}).isVisible(),true);await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('main > details')?.hasAttribute('open'));await page.evaluate(()=>(window as any).menuFixture.scope('SOC'));await page.getByRole('button',{name:'业务看板',exact:true,includeHidden:true}).waitFor({state:'attached'});await page.locator('main > details > summary').click();await page.getByRole('button',{name:'业务看板',exact:true}).waitFor({state:'visible'});await page.getByRole('button',{name:'数据连接',exact:true}).waitFor({state:'visible'})
+test('通用工作菜单三项与正式业务九项顺序一致，Escape不选择动作',async t=>{
+ const page=await browser.newPage({viewport:{width:1280,height:900}});page.setDefaultTimeout(4000);t.after(()=>page.close())
+ await page.route('**/*',(route:any)=>route.abort());await page.setContent('<html><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ const menu=page.locator('main > details'),trigger=menu.locator(':scope > summary')
+ await page.evaluate(()=>(window as any).menuFixture.scope('general'));await trigger.click()
+ assert.deepEqual(await menu.getByRole('button').allTextContents(),['当前业务任务','已完成任务','自动化'])
+ await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('main > details')?.hasAttribute('open'))
+ assert.equal(await page.getByRole('dialog').count(),0)
+ await page.evaluate(()=>(window as any).menuFixture.scope('SOC'));await trigger.click()
+ assert.deepEqual(await menu.getByRole('button').allTextContents(),['调整业务定义','数据连接','业务资源','手动定义','分享业务配置','已完成任务','当前业务任务','变更集复核','业务团队'])
+ assert.equal(await menu.getByRole('button',{name:'业务看板',exact:true}).count(),0,'看板按正式业务页面进入，不保留旧第十项')
+ await page.keyboard.press('Escape');assert.equal(await page.getByRole('dialog').count(),0)
 })

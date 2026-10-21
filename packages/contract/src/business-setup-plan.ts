@@ -11,6 +11,18 @@ export type BusinessSetupStep={id:string;kind:string;title:string;state:'pending
 export type BusinessSetupAdoption={requestId:string;configuration:BusinessConfigurationApplyResult;roleIds:string[];contentId:string;contentHash:string;loadId?:string;steps:BusinessSetupStep[];preparation?:{digest:string;state:'unknown'|'finished';code?:string}}
 export type BusinessSetupPlan={format:'teloa.business-setup-plan/v1';draftId:string;scope:string;revision:number;configurationRevision:number;configurationHash:string;contentId:string;contentHash:string;title:string;description:string;resources:BusinessSetupResource[];roleEdits:BusinessSetupRoleEdit[];roleNames?:Record<string,string>;rejected:string[];state:'draft'|'applied';updatedAt:string;adoption?:BusinessSetupAdoption}
 export type BusinessSetupPreview={draftId:string;revision:number;digest:string;receipt:string;configurationReceipt:string;configurationRevision:number;baseVersion:number;changes:BusinessSetupChange[];rejected:string[];blocked:boolean}
+export function businessSetupSelectionState(plan:Pick<BusinessSetupPlan,'resources'>,preview:Pick<BusinessSetupPreview,'changes'|'rejected'>):'changes'|'resources'|'empty'|'rejected'{
+ if(preview.changes.some(change=>!preview.rejected.includes(change.id)))return 'changes'
+ if(plan.resources.some(resource=>resource.kind!=='business-configuration'))return 'resources'
+ return preview.changes.length?'rejected':'empty'
+}
+/** 仅识别服务端在任何采用写入前返回、且与同一固定请求匹配的拒绝；普通冲突或文本不构成零写证明。 */
+export function businessSetupNoEffectsRejection(error:unknown,input:{requestId:string;draftId:string;expectedRevision:number;expectedDigest:string;previewReceipt:string}):BusinessSetupPreview|undefined{
+ if(!isRecord(error)||error.code!=='teloa/conflict'||!isRecord(error.details))return
+ const details=error.details
+ if(Object.keys(details).length!==4||Object.keys(details).some(key=>!['reason','requestId','noWrites','preview'].includes(key))||details.reason!=='setup-no-effective-changes'||details.requestId!==input.requestId||details.noWrites!==true)return
+ try{const preview=readBusinessSetupPreview(details.preview);if(preview.draftId===input.draftId&&preview.revision===input.expectedRevision&&preview.digest===input.expectedDigest&&preview.receipt===input.previewReceipt&&!preview.blocked&&!preview.changes.some(change=>!preview.rejected.includes(change.id)))return preview}catch{}
+}
 export type BusinessSetupPackage={manifestPath:string;files:{path:string;text:string}[]}
 const bad=()=>new WorkError('teloa/invalid-input','业务方案格式不正确或包含未知字段。')
 export const businessSetupUuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)

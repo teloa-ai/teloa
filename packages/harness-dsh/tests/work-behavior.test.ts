@@ -75,7 +75,7 @@ test('默认预设的完整行为进入模型请求，保留原生工具及权�
  assert.doesNotMatch(system,/只有本轮真实授权回执能支持“已打开、已发送、已建单”这类动作完成的说法/)
  assert.match(JSON.stringify(adapter.requests[0]!.messages),/当前授权仅允许读取测试资料/)
  const facts=runtimeFacts(assembled)
- assert.equal(facts.behavior_version,'2026-10-15.fact-language.v3')
+ assert.equal(facts.behavior_version,'2026-10-21.product-identity.v4')
  assert.deepEqual(facts.modules,['01-core','02-tools','03-planning','08-artifacts'])
  const input=adapter.requests[0]!.messages.find(message=>message.source?.kind==='user'&&message.content.some(block=>block.type==='text'&&block.text==='核对测试资料'))
  assert.ok(input,'追加规则不能把实际用户输入改成工作资料')

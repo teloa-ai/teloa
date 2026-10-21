@@ -30,7 +30,7 @@ export const builderJournalKey=(personalSpaceId:string)=>{
  return 'teloa.business-builder/v1/personal-space/'+personalSpaceId.toLowerCase()
 }
 export type BusinessNavigationToken=Readonly<{id:symbol}>
-type Navigation={epoch:number;session:string|undefined;input:BusinessBuilderSwitchSnapshot['input'];location:string|undefined;approved:boolean;current?:()=>boolean}
+type Navigation={epoch:number;session:string|undefined;input:BusinessBuilderSwitchSnapshot['input'];location:string|undefined;approved:boolean;current?:()=>boolean;signal?:AbortSignal}
 type DailyPending=Pick<BusinessConversationBinding,'requestId'|'scope'|'title'>
 type State={nativeReady:boolean;sessionKind:'builder'|'daily'|null;daily:BusinessDailyFlow|null;dailyPending:DailyPending|null;api:BusinessBuilderApi|null;status:'loading'|'ready'|'failed';flow:BusinessBuilderFlow|null;namespace:string|null;checkedSessionId:string|null|undefined;error:unknown|null}
 type Ports={api:BusinessBuilderApi;work:Pick<BindingClient,'create'|'openSession'|'openSessionResult'>;storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>;identity:()=>Promise<string>;switching:BusinessBuilderSwitchPort;subscribeNative:(listener:()=>void)=>()=>void;contextCall:(endpoint:string,payload:unknown)=>Promise<unknown>;block:(sessionId:string,reason:string|undefined)=>void;watch:(sessionId:string,changed:()=>void)=>()=>void;id:()=>string}
@@ -46,6 +46,7 @@ export class BusinessBuilderController{
  private creation=false
  private readonly tokens=new WeakMap<BusinessNavigationToken,Navigation>()
  private activeNavigation:Navigation|undefined
+ private following:{flow:BusinessBuilderFlow;session:string|undefined;selection:number;done:Promise<void>}|undefined
  private offNative:(()=>void)|undefined
  private offDaily:(()=>void)|undefined
  private offFlow:(()=>void)|undefined
@@ -59,19 +60,68 @@ export class BusinessBuilderController{
  getSnapshot=()=>this.state
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
  private refreshNative(){const s=this.ports.switching.read(),nativeReady=s.bindingReady&&s.input!==undefined&&(s.mainSessionId?s.bindingSessionId===s.mainSessionId:s.bindingSessionId===undefined&&s.input===null);if(nativeReady!==this.state.nativeReady)this.publish({nativeReady})}
- captureNavigation(current?:()=>boolean):BusinessNavigationToken{
+ captureNavigation(current?:()=>boolean,signal?:AbortSignal):BusinessNavigationToken{
+  if(signal?.aborted||current?.()===false)throw changed()
   this.flow();this.refreshNative();if(!this.state.nativeReady)throw new WorkError('teloa/conflict','原生会话尚未就绪。',{reason:'binding'})
   const s=this.ports.switching.read(),token={id:Symbol('business navigation')}
-  this.tokens.set(token,{epoch:this.epoch,session:s.mainSessionId,input:s.input,location:this.navigation?.location(),approved:false,...(current?{current}:{})});return token
+  this.tokens.set(token,{epoch:this.epoch,session:s.mainSessionId,input:s.input,location:this.navigation?.location(),approved:false,...(current?{current}:{}),...(signal?{signal}:{})});return token
  }
- private validNavigation(n:Navigation,afterOpen=false){const s=this.ports.switching.read();return n.current?.()!==false&&n.epoch===this.epoch&&n.location===this.navigation?.location()&&(afterOpen&&s.mainSessionId!==n.session||s.mainSessionId===n.session&&s.input===n.input)}
+ private validNavigation(n:Navigation,afterOpen=false){const s=this.ports.switching.read();return !n.signal?.aborted&&n.current?.()!==false&&n.epoch===this.epoch&&n.location===this.navigation?.location()&&(afterOpen&&s.mainSessionId!==n.session||s.mainSessionId===n.session&&s.input===n.input)}
  private token(token:BusinessNavigationToken){const n=this.tokens.get(token);if(!n||!this.validNavigation(n))throw changed();return n}
  approveNavigation(token:BusinessNavigationToken){const n=this.token(token);if(n.approved)throw changed();n.approved=true}
- private async action<T>(token:BusinessNavigationToken|undefined,run:(approved:boolean)=>Promise<T>):Promise<T>{
-  const key=token??this.captureNavigation(),n=this.token(key);if(this.creation)throw changed();this.activeNavigation=n;this.creation=true
-  try{const result=await run(n.approved);this.tokens.delete(key);return result}
+ private async action<T>(token:BusinessNavigationToken|undefined,run:(approved:boolean)=>Promise<T>,builderTarget?:(result:T)=>string|undefined):Promise<T>{
+  const key=token??this.captureNavigation(),n=this.token(key);if(this.creation||this.activeNavigation)throw changed();this.activeNavigation=n;this.creation=true
+  if(this.following){++this.selection;this.following=undefined;this.state.flow?.leave()}
+  let waiting=false
+  try{
+   const result=await run(n.approved)
+   if(builderTarget){
+    const sessionId=builderTarget(result);if(!sessionId)throw changed()
+    waiting=true;this.creation=false;this.publish({checkedSessionId:undefined})
+    await this.waitForBuilder(sessionId,n)
+   }
+   this.tokens.delete(key);return result
+  }
   catch(error){if(!(error instanceof WorkError&&error.details?.reason==='draft'))this.tokens.delete(key);throw error}
-  finally{if(this.activeNavigation===n&&n.epoch===this.epoch){this.creation=false;this.activeNavigation=undefined;this.publish({checkedSessionId:undefined});await this.followSession(this.ports.switching.read().mainSessionId)}}
+  finally{if(this.activeNavigation===n&&n.epoch===this.epoch){this.creation=false;this.activeNavigation=undefined;if(!waiting){this.publish({checkedSessionId:undefined});await this.followSession(this.ports.switching.read().mainSessionId)}}}
+ }
+ /** 导航回执不等于原生工作绑定就绪；只等待本次固定目标的可信通知，不轮询或重开。 */
+ private waitForBuilder(sessionId:string,n:Navigation):Promise<void>{
+  const flow=this.flow(),api=this.state.api
+  return new Promise((resolve,reject)=>{
+   let stopped=false,running=false,offState=()=>{},offNative=()=>{}
+   const finish=(error?:unknown)=>{
+    if(stopped)return;stopped=true;offState();offNative();n.signal?.removeEventListener('abort',check)
+    if(error){
+     const sameTarget=n.epoch===this.epoch&&this.state.flow===flow&&this.state.api===api&&this.ports.switching.read().mainSessionId===sessionId
+     const following=this.following?.flow===flow&&this.following.session===sessionId&&this.following.selection===this.selection
+     // 关闭只撤销局部等待；仍选中原目标时，让已在途的只读核验完成并恢复发送保护。
+     if(!sameTarget&&n.epoch===this.epoch&&this.state.flow===flow&&this.state.api===api&&(following||!this.following&&flow.getSnapshot().binding?.sessionId===sessionId)){
+      if(following){++this.selection;this.following=undefined}
+      flow.leave()
+      if(this.ports.switching.read().mainSessionId===undefined)this.publish({checkedSessionId:null,sessionKind:null,error:null})
+     }
+     else if(sameTarget&&!following&&this.state.checkedSessionId!==sessionId)this.publish({error})
+     reject(error)
+    }else resolve()
+   }
+   const check=()=>{
+    if(stopped)return
+    const native=this.ports.switching.read(),state=this.state
+    if(n.signal?.aborted||n.current?.()===false||n.epoch!==this.epoch||this.activeNavigation!==n||n.location!==this.navigation?.location()||state.flow!==flow||state.api!==api||native.mainSessionId!==sessionId){finish(changed());return}
+    if(!native.bindingReady||native.bindingSessionId!==sessionId||native.input===undefined)return
+    if(running)return
+    const following=this.following
+    if(following?.flow===flow&&following.session===sessionId&&following.selection===this.selection){running=true;void following.done.then(()=>{running=false;check()});return}
+    if(state.checkedSessionId===sessionId){
+     if(state.error){finish(state.error);return}
+     const value=flow.getSnapshot(),binding=value.binding
+     finish(state.sessionKind==='builder'&&binding?.sessionId===sessionId&&value.draft&&binding.draftId===value.draft.id?undefined:new WorkError('teloa/conflict','当前搭建会话归属尚未确认。',{reason:'binding'}));return
+    }
+    running=true;void this.followSession(sessionId).then(()=>{running=false;check()},finish)
+   }
+   offState=this.subscribe(check);offNative=this.ports.subscribeNative(check);n.signal?.addEventListener('abort',check,{once:true});check()
+  })
  }
  private publish(patch:Partial<State>){this.state={...this.state,...patch};for(const listener of this.listeners)listener()}
  configure(navigation:{location:()=>string;refreshScopes:()=>Promise<unknown>}){this.navigation=navigation}
@@ -118,34 +168,39 @@ export class BusinessBuilderController{
   if(this.creation)return
   const native=this.ports.switching.read()
   const bound=!sessionId||native.mainSessionId===sessionId&&native.bindingSessionId===sessionId&&native.bindingReady
+  if(bound&&this.following?.flow===flow&&this.following.session===sessionId&&this.following.selection===this.selection)return this.following.done
   if(bound&&this.state.checkedSessionId===(sessionId??null))return
   const selection=++this.selection
-  this.offWatch?.();this.offWatch=undefined;this.watchSession=undefined
-  if(!sessionId){flow.leave();this.state.daily?.leave();this.publish({checkedSessionId:null,sessionKind:null});return}
-  flow.leave();this.state.daily?.leave();this.block(sessionId,checking);this.publish({checkedSessionId:undefined,sessionKind:null,error:null})
-  // 原生选中先于 ensure 回执；工作绑定就绪后由同一选择通知继续核对。
-  if(!bound)return
+  let complete!:()=>void
+  const job={flow,session:sessionId,selection,done:new Promise<void>(resolve=>{complete=resolve})};this.following=job
+  const current=()=>selection===this.selection&&flow===this.state.flow&&this.ports.switching.read().mainSessionId===sessionId
   try{
+   this.offWatch?.();this.offWatch=undefined;this.watchSession=undefined
+   if(!sessionId){flow.leave();this.state.daily?.leave();this.publish({checkedSessionId:null,sessionKind:null});return}
+   flow.leave();this.state.daily?.leave();this.block(sessionId,checking);this.publish({checkedSessionId:undefined,sessionKind:null,error:null})
+   // 原生选中先于 ensure 回执；工作绑定就绪后由同一选择通知继续核对。
+   if(!bound)return
    const binding=await this.state.api!.bySession({sessionId})
-   if(selection!==this.selection||flow!==this.state.flow)return
+   if(!current())return
    this.publish({sessionKind:binding?.kind??null})
    if(binding?.kind==='daily'){
     flow.leave();const daily=this.state.daily!;await daily.inspectSession(sessionId)
-    if(selection!==this.selection||flow!==this.state.flow)return
+    if(!current())return
     const value=daily.getSnapshot();this.block(sessionId,value.phase==='pending'?'daily-pending':undefined);this.publish({checkedSessionId:sessionId,dailyPending:value.phase==='pending'?value.binding:null});return
    }
    this.state.daily?.leave();
    if(!binding){flow.leave();this.block(sessionId,undefined);this.publish({checkedSessionId:sessionId});return}
    await flow.restoreSession(sessionId)
-   if(selection!==this.selection||flow!==this.state.flow)return
-   const state=flow.getSnapshot(),bound=state.binding
-   this.block(sessionId,bound?.kind==='builder'&&(!bound.sessionId||!state.draft)?pending:undefined)
+   if(!current())return
+   const state=flow.getSnapshot(),restored=state.binding
+   this.block(sessionId,restored?.kind==='builder'&&(!restored.sessionId||!state.draft)?pending:undefined)
    this.publish({checkedSessionId:sessionId})
-   if(bound?.kind==='builder'&&bound.sessionId===sessionId&&state.draft){
+   if(restored?.kind==='builder'&&restored.sessionId===sessionId&&state.draft){
     this.watchReady(flow,sessionId)
     await this.refreshPreview()
    }
-  }catch(error){if(selection===this.selection&&flow===this.state.flow)this.publish({checkedSessionId:sessionId,error})}
+  }catch(error){if(current())this.publish({checkedSessionId:sessionId,error})}
+  finally{if(this.following===job)this.following=undefined;complete()}
  }
  private watchReady(flow:BusinessBuilderFlow,sessionId:string){
   if(flow!==this.state.flow||this.watchSession===sessionId)return
@@ -153,7 +208,7 @@ export class BusinessBuilderController{
  }
 
  async start(options:{scope?:string;workspaceId?:string;allowDraft?:boolean}={},token?:BusinessNavigationToken){
-  return this.action(token,approved=>this.flow().start({...options,allowDraft:approved}))
+  return this.action(token,approved=>this.flow().start({...options,allowDraft:approved}),binding=>binding.sessionId)
  }
  async open(sessionId:string,allowDraft=false,token?:BusinessNavigationToken){
   return this.action(token,async approved=>{
@@ -169,10 +224,10 @@ export class BusinessBuilderController{
    if(decision!=='ready')throw new WorkError('teloa/conflict','请先处理当前会话的待发送内容或恢复状态。',{reason:decision})
    const opened=await this.ports.work.openSessionResult(sessionId,undefined,()=>this.validNavigation(n)&&switchDecision(this.ports.switching.read(),keepDraft)==='ready')
    if(opened!=='opened')throw changed()
-  })
+  },()=>sessionId)
  }
  async recover(requestId?:string,allowDraft=false,token?:BusinessNavigationToken){
-  return this.action(token,approved=>this.flow().recoverCreation(requestId,approved))
+  return this.action(token,approved=>this.flow().recoverCreation(requestId,approved),binding=>binding.sessionId)
  }
  /** 只读决定是否需要执行位置；正式Flow仍会重读recent，pending从不隐式换业务。 */
  async prepareDaily(options:BusinessDailyOpenOptions,token?:BusinessNavigationToken):Promise<boolean>{

@@ -59,7 +59,7 @@ props.roleApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>staff:t
 f.openOriginalGroup=()=>store.actions.openGroupTopic(groupId,'');f.completeOriginalWork=()=>{f.completed=true};
 `
  entry="import {createGroupApi} from '"+client+"group-api.ts';import {createTaskApi} from '"+client+"task-api.ts';import {createGroupRoutingApi} from '"+client+"group-routing-api.ts';import {createGroupReactionApi} from '"+client+"group-reaction-api.ts';import {createGroupWorkLinkApi} from '"+client+"group-work-links-api.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '"+client+"../../tests/fixtures/group-message-page-rpc.ts';\n"+entry
- entry=entry.replace("createRoot(document.getElementById('root')).render",setup+"createRoot(document.getElementById('root')).render")
+ entry=entry.replace("const frameRoot=",setup+"const frameRoot=")
  const temp=await mkdtemp(join(root,'.runtime-group-derived-frame-'));t.after(()=>rm(temp,{recursive:true,force:true}));await writeFile(join(temp,'entry.tsx'),entry)
  const isolated=['WorkDirectory','TaskPage','TeamPage','BusinessPage','MarketPage','TeamCapabilitiesPage','ResourceManager','ArtifactPanel','ProjectOverviewPage','CapabilityTargetPanel','SavedIndustryDirectory','AutoDreamSettingsPage'],stubbed=new Set(isolated.map(name=>join(client,name+'.tsx')))
  const markdown='\0group-derived-markdown',nodeCrypto='\0group-derived-node-crypto'

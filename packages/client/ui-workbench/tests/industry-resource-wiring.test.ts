@@ -1,3 +1,4 @@
+import {jsxAttributeExpressions} from './jsx-source-attributes.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
@@ -33,7 +34,12 @@ test('真实业务总览保留对象台账，工作环境从更多按需展开',
   assert.match(business,/target\.section==='overview'/)
   assert.match(business,/ledgerTool==='resources'/)
   assert.match(business,/action==='sources'\?'resources'/)
-  assert.match(business,/<BusinessMoreMenu scope=\{target\.scope\} choose=\{chooseMore\}\/>/)
+  const scopes=jsxAttributeExpressions(business,'BusinessMoreMenu','scope')
+  assert.ok(scopes.length>0&&scopes.every(value=>/^(props\.)?target\.scope$/.test(value)))
+  assert.deepEqual(jsxAttributeExpressions(business,'BusinessMoreMenu','choose'),scopes.map(()=>'chooseMore'))
+  const unavailable=jsxAttributeExpressions(business,'BusinessMoreMenu','unavailable')
+  assert.equal(unavailable.length,scopes.length,'每个菜单都保留未连接方案的复核限制')
+  assert.ok(unavailable.every(value=>value.includes("changes:t('business.more.changesUnavailable')")))
   assert.match(business,/className=\{css\.workEnvironment\}/)
   assert.equal(business.match(/capabilities\(target\.scope\)/g)?.length,1)
   assert.match(business,/manageIndustryResources\(target\.scope\)/)

@@ -31,7 +31,7 @@ api.list=async()=>({items:draft.status==='discarded'?[]:[{binding,draft:{id:draf
 api.discard=async input=>{fixture.calls.push('discard:'+input.expectedRevision);if(fixture.holdDiscard)await new Promise(resolve=>{fixture.releaseDiscard=resolve});if(draft.status!=='discarded')draft={...draft,status:'discarded',revision:draft.revision+1};if(fixture.loseDiscard){fixture.loseDiscard=false;throw Error('private discard details')};return draft};
 let plan=null;
 api.setupPlan=async()=>plan;
-api.setupPreview=async input=>{fixture.calls.push('setup-preview');plan={...plan,revision:plan.revision+1,rejected:input.rejected};return {draftId:draft.id,revision:plan.revision,digest:'c'.repeat(64),receipt:'d'.repeat(64),configurationReceipt:draft.hash,configurationRevision:draft.revision,baseVersion:0,rejected:input.rejected,blocked:false,changes:[{id:'field:ticket:date',entity:'field',label:en?'Ticket · Release date':'工单 · 上线日期',before:null,after:{label:'上线日期',type:'datetime',required:false}},{id:'role:operator',entity:'role',label:en?'Reviewer · Duties':'质检员 · 职责',before:{duty:'核对'},after:{duty:'核对上线'}}]}};
+api.setupPreview=async input=>{fixture.calls.push('setup-preview');plan={...plan,revision:plan.revision+1,rejected:input.rejected};return {draftId:draft.id,revision:plan.revision,digest:'c'.repeat(64),receipt:'d'.repeat(64),configurationReceipt:draft.hash,configurationRevision:draft.revision,baseVersion:0,rejected:input.rejected,blocked:false,changes:fixture.noSetupChanges?[]:[{id:'field:ticket:date',entity:'field',label:en?'Ticket · Release date':'工单 · 上线日期',before:null,after:{label:'上线日期',type:'datetime',required:false}},{id:'role:operator',entity:'role',label:en?'Reviewer · Duties':'质检员 · 职责',before:{duty:'核对'},after:{duty:'核对上线'}}]}};
 api.setupApply=async input=>{fixture.calls.push('setup-apply');const adoption={requestId:input.requestId,configuration:{scope:'sales',version:1,configurationHash:draft.hash,requestId:input.requestId},roleIds:[],contentId:plan.contentId,contentHash:plan.contentHash,steps:plan.resources.map(r=>({id:r.id,kind:r.kind,title:r.title,state:'pending'}))};plan={...plan,state:'applied',adoption};draft={...draft,status:'applied'};return adoption};
 api.setupPrepare=async input=>{fixture.calls.push(input.expectedDigest?'setup-prepare-confirmed':'setup-prepare-read');plan={...plan,adoption:{...plan.adoption,loadId:'12345678-1234-4234-8234-123456789088',steps:plan.resources.map(r=>({id:r.id,kind:r.kind,title:r.title,state:r.kind==='mcp'?'needs-user':input.expectedDigest?'done':'pending'}))}};return plan};
 api.setupReadiness=async()=>({digest:'e'.repeat(64),rows:plan.resources.map(r=>({itemInstanceId:r.id,kind:r.kind,title:r.title,state:r.kind==='mcp'?'needs-user':'auto'}))});
@@ -41,6 +41,7 @@ fixture.load=async(empty=false)=>{draft={...draft,candidate:{...draft.candidate,
 fixture.serverPending=async()=>{fixture.pending=true;const {sessionId,...reservation}=binding;binding=reservation;await flow.restoreSession('native-session')};
 fixture.completePlan=async()=>{await fixture.load();plan={format:'teloa.business-setup-plan/v1',draftId:draft.id,scope:'sales',revision:1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId:'12345678-1234-4234-8234-123456789077',contentHash:'b'.repeat(64),title:draft.candidate.title,description:en?'Review tickets and prepare a daily summary.':'核对客户工单，整理每日摘要。',roleEdits:[],rejected:[],state:'draft',updatedAt:draft.updatedAt,resources:[{id:'operator',kind:'role',title:en?'Ticket reviewer':'工单审核员',version:'1.0.0',description:en?'Review ticket urgency.':'核对工单优先级。'},{id:'work',kind:'work-template',title:en?'Review tickets':'核对工单',version:'1.0.0',description:en?'Follow the existing review method.':'依照工作模板核对未结工单。'},{id:'mail',kind:'mcp',title:en?'Support connection':'客服连接',version:'1.0.0',description:en?'Requires your authorization.':'需要本人另行连接与授权。'},{id:'daily',kind:'plan',title:en?'Daily review':'每日核对',version:'1.0.0',description:en?'Save paused.':'保存后保持暂停。'}]};await flow.refreshSetupPlan()};
 fixture.leave=()=>{void flow.requestLeave().then(value=>{fixture.leaveResult=value})};
+fixture.emptyPlan=async kind=>{await fixture.completePlan();fixture.noSetupChanges=kind!=='rejected';if(kind!=='resources')plan={...plan,resources:[{id:'configuration',kind:'business-configuration',title:'页面',version:'1',description:'页面'}]};await flow.refreshSetupPlan()};
 fixture.corruptSetup=()=>{setupJournal='{broken';render()};
 fixture.snapshot=()=>flow.getSnapshot();fixture.refreshDraft=()=>flow.refreshDraft();
 const app=createRoot(document.getElementById('root'));const render=()=>app.render(<I18nProvider runtime={runtime}><main className={tokens.tokens}>{showDirectory?<BusinessBuilderDirectory flow={flow} open={()=>{fixture.opened.push('builder')}}/>:<BusinessBuilderPanel flow={flow} renderPage={projection=><article data-page={projection.page.definition.id}><h3>{projection.page.definition.title}</h3><p>{en?'No records yet':'还没有记录'}</p></article>} onOpenSaved={result=>fixture.opened.push(result)}/> }</main></I18nProvider>);
@@ -101,6 +102,24 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:'/tmp/teloa-builder-panel/'+locale+'-'+width+'-saved.png',fullPage:true})
 })
 
+
+test('无差异、全部拒绝与仅新增资源显示不同状态；无有效变更禁采用且无请求',async t=>{
+ for(const kind of ['empty','rejected','resources']){
+  const page=await browser.newPage();page.setDefaultTimeout(5000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort())
+  await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+  await page.evaluate((value:string)=>(window as any).builderFixture.emptyPlan(value),kind)
+  await page.getByRole('button',{name:'复核完整方案',exact:true}).click()
+  if(kind==='rejected')while(await page.getByRole('button',{name:'拟采纳 · 改为拒绝',exact:true}).count())await page.getByRole('button',{name:'拟采纳 · 改为拒绝',exact:true}).first().click()
+  const apply=page.getByRole('button',{name:'采用已选变更',exact:true})
+  await apply.waitFor()
+  assert.equal(await apply.isDisabled(),kind!=='resources',kind)
+  await page.getByText(kind==='empty'?'当前没有需要采用的改动，也没有新增资源。草案已保留，可以继续编辑。':kind==='rejected'?'所有变更均已拒绝，且没有新增资源。可以调整逐项决定或继续编辑。':'页面、字段和现有员工职责没有变更；采用后可按方案准备新增资源。',{exact:true}).waitFor()
+  assert.equal(await page.evaluate(()=>(window as any).builderFixture.calls.filter((value:string)=>value==='setup-apply').length),0)
+  assert.equal(await page.evaluate(()=>(window as any).builderFixture.snapshot().phase),'ready')
+  if(kind==='empty')await page.screenshot({path:'/tmp/teloa-builder-panel/no-effective-changes.png',fullPage:true})
+  if(kind==='rejected'){await page.getByRole('button',{name:'已拒绝 · 改为采纳',exact:true}).first().click();assert.equal(await apply.isEnabled(),true)}
+ }
+})
 
 test('服务端预约未绑定且本地journal已丢失：现有恢复按钮显式按固定request恢复，不挂在核对中',async t=>{
  const page=await browser.newPage();page.setDefaultTimeout(5000);t.after(()=>page.close())
@@ -178,7 +197,8 @@ test('放弃请求在连接更换后迟答不关闭新确认，不把旧完成�
 test('损坏方案恢复日志显示明确读取错误，保留方案而不发采用',async t=>{
  const page=await browser.newPage();page.setDefaultTimeout(5000);t.after(()=>page.close());const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
  await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.evaluate(async()=>{const f=(window as any).builderFixture;await f.completePlan();f.corruptSetup()})
- await page.getByRole('alert').filter({hasText:'无法读取本机方案采用恢复记录'}).waitFor()
+ const recoveryError=page.getByRole('alert').filter({hasText:'无法读取上次采用方案的本机记录'});await recoveryError.waitFor()
+ assert.match(await recoveryError.innerText(),/记录仍保留，请回到原业务会话核对执行结果；当前不会重新采用。/)
  assert.equal(await page.getByRole('heading',{name:'完整业务方案',exact:true}).isVisible(),true);assert.deepEqual(errors,[])
  assert.equal(await page.getByRole('button',{name:'采用已选变更',exact:true}).count(),0)
  assert.equal(await page.evaluate(()=>(window as any).builderFixture.calls.includes('setup-apply')),false)

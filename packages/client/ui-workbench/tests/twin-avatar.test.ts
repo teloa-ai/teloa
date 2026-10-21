@@ -1,3 +1,4 @@
+import {jsxAttributeExpressions} from './jsx-source-attributes.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
@@ -62,7 +63,7 @@ test('群消息、话题预览、群进度、群概览成员与加成员选择�
  assert.match(page,/const avatar=identity\.kind==='twin'\?<TwinAvatar initials=\{twinInitials\}\/>/,'群消息')
  assert.match(page,/role\?\.kind==='twin'\?<TwinAvatar initials=\{personalAvatarInitials\(props\.profileName\)\}\/>/,'群概览成员')
  assert.match(page,/role\.kind==='employee'\?<EmployeeAvatar avatarKey=\{role\.avatarKey\} size="md"\/>:<TwinAvatar initials=\{personalAvatarInitials\(profileName\)\}\/>/,'加成员选择器')
- assert.equal((page.match(/<SavedMessage\b[^>]*\btwinInitials=\{twinInitials\}/g)??[]).length,2,'主会话与话题都透传 twinInitials')
+ assert.deepEqual(jsxAttributeExpressions(page,'SavedMessage','twinInitials'),['twinInitials','twinInitials'],'主会话与话题都透传 twinInitials')
  assert.match(page,/<GroupReplyPreview [^>]*twinInitials=\{twinInitials\}/)
  assert.ok(!/kind!=='twin'/.test(page),'不再把分身落入名称首字回退')
 })

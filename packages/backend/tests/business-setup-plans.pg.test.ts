@@ -114,6 +114,33 @@ test('字段子集与现有员工职责同事务采用；员工写失败回滚�
  assert.equal(saved.configuration.version,2);assert.equal((await f.roles.get(f.actor.ownerId,role.id))!.version,2)
  assert.deepEqual(await f.setup.apply(f.actor,input),saved)
 })
+test('无有效变更的采用在首写前拒绝并给同请求同revision预览；全拒绝与仅新增资源分开',async()=>{
+ const f=await fixture(false),first=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:f.plan.revision,rejected:[]})
+ await f.setup.apply(f.actor,applyInput(first));f.actor.scopeIds=[f.draft.scope]
+ const next=await f.drafts.begin(f.actor,{requestId:randomUUID(),scope:f.draft.scope,title:'继续编辑'}),manual=await f.setup.manual(f.actor,{draftId:next.id})
+ const unchanged=await f.setup.edit(f.actor,{requestId:randomUUID(),draftId:next.id,expectedRevision:0,configurationRevision:manual.configurationRevision,configurationHash:manual.configurationHash,candidate:manual.candidate,description:'只保存方案说明，不改变定义',roleEdits:[]})
+ const preview=await f.setup.preview(f.actor,{draftId:next.id,expectedRevision:unchanged.revision,rejected:[]});assert.deepEqual(preview.changes,[])
+ const check=async(value:typeof preview)=>{
+  const input=applyInput(value),before=await f.configuration.current(f.actor,{scope:f.draft.scope}),draft=await f.drafts.get(f.actor,{draftId:next.id}),plan=await f.setup.read(f.actor,{draftId:next.id})
+  await assert.rejects(f.setup.apply(f.actor,input),{code:'teloa/conflict',details:{reason:'setup-no-effective-changes',requestId:input.requestId,noWrites:true,preview:value}})
+  assert.deepEqual(await f.configuration.current(f.actor,{scope:f.draft.scope}),before)
+  assert.deepEqual(await f.drafts.get(f.actor,{draftId:next.id}),draft);assert.deepEqual(await f.setup.read(f.actor,{draftId:next.id}),plan)
+  assert.equal(await f.setup.receiptByRequest(f.actor,{requestId:input.requestId}),null)
+  assert.equal((await pool.query('select count(*)::int as n from teloa_business_setup_requests where owner_id=$1 and request_id=$2',[f.actor.ownerId,input.requestId])).rows[0].n,0)
+ }
+ await check(preview)
+ const input=await f.setup.manual(f.actor,{draftId:next.id}),candidate={...input.candidate,title:'拟改名'}
+ const changed=await f.setup.edit(f.actor,{requestId:randomUUID(),draftId:next.id,expectedRevision:input.revision,configurationRevision:input.configurationRevision,configurationHash:input.configurationHash,candidate,description:input.description,roleEdits:[]})
+ const all=await f.setup.preview(f.actor,{draftId:next.id,expectedRevision:changed.revision,rejected:[]}),rejected=await f.setup.preview(f.actor,{draftId:next.id,expectedRevision:all.revision,rejected:all.changes.map(change=>change.id)})
+ assert.ok(rejected.changes.length);await check(rejected)
+ const current=await f.drafts.get(f.actor,{draftId:next.id}),pkg=structuredClone(f.request.package),manifest=JSON.parse(pkg.files.find(file=>file.path==='teloa.json')!.text)
+ manifest.resources.push({id:'new-work',kind:'work-template',title:'新增分工',version:'1.0.0',required:true,source:{kind:'local',path:'new-work.json'}});manifest.entrypoints=['new-work']
+ pkg.files.find(file=>file.path==='teloa.json')!.text=JSON.stringify(manifest);pkg.files.find(file=>file.path==='configuration.json')!.text=JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:'configuration',version:'1.0.0',configuration:current.candidate})
+ pkg.files.push({path:'new-work.json',text:JSON.stringify({format:'teloa.work-template/v1',id:'new-work',title:'新增分工',version:'1.0.0',domain:current.scope,description:'仅准备分工',requirements:['本轮资料'],output:'未发送草稿',skills:[]})})
+ const withResource=await f.setup.revise(f.actor,{requestId:randomUUID(),draftId:next.id,expectedRevision:rejected.revision,package:pkg,roleEdits:[]}),resourcePreview=await f.setup.preview(f.actor,{draftId:next.id,expectedRevision:withResource.revision,rejected:[]})
+ assert.deepEqual(resourcePreview.changes,[]);const adoption=await f.setup.apply(f.actor,applyInput(resourcePreview));assert.equal(adoption.configuration.version,2);assert.ok(adoption.steps.some(step=>step.kind==='work-template'&&step.state==='pending'))
+})
+
 test('宿主暂停计划不授予启用或调度；公共创建不可开启选项，过期/退休/跨业务岗位及损坏来源拒绝',async()=>{
  const f=await fixture(),preview=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:f.plan.revision,rejected:[]})
  await f.setup.apply(f.actor,applyInput(preview));f.actor.scopeIds=[f.draft.scope]

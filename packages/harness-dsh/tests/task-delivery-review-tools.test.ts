@@ -248,6 +248,8 @@ test('实跑：模型误调用未授权给它的工具、宿主拒绝只回错�
  if(refused.state==='ready'){
   assert.deepEqual(refused.evidence.receipts.map(row=>[row.name,row.isError]),[['list_agents',true]],'按错误回执原样封存')
   assert.equal(replayReviewToolEvidence(events(true),refused.evidence),true,'冷读复算一致')
+  const {schema:_schema,drafts:_drafts,sha256:_sha256,...same}=refused.evidence,legacy={schema:'teloa.delivery-review-tools/v1' as const,...same}
+  assert.equal(replayReviewToolEvidence(events(true),{...legacy,sha256:createHash('sha256').update(JSON.stringify(legacy)).digest('hex')}),true,'旧v1证据原样冷读，不要求补写早期候选或改历史')
  }
  assert.deepEqual(collectReviewToolEvidence(events(false),binding,snapshot),{state:'blocked',reason:'tool-identity'},'未授权工具返回成功仍是身份异常')
 })

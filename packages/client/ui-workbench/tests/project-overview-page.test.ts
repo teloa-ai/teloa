@@ -1,3 +1,4 @@
+import {jsxAttributeExpressions} from './jsx-source-attributes.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import ts from 'typescript'
@@ -149,7 +150,7 @@ test('导航状态含 projects 视图与目录；左栏与外壳四处接线；n
  assert.match(chrome,/\['messages','navigation\.v2\.conversations',MessageSquare\],\['projects','navigation\.projects',Folder\]/)
  assert.match(chrome,/primaryNavigation\.map\(/);assert.match(chrome,/onClick=\{\(\)=>onSelect\(id\)\}/)
  assert.match(nav,/import \{WorkbenchNavigationBrand,WorkbenchNavigationItems\} from '\.\/WorkbenchNavigationChrome\.js'/)
- assert.match(nav,/<WorkbenchNavigationItems view=\{view\}/);assert.match(nav,/:actions\.navigate\(id\)\}/)
+ assert.match(nav,/<WorkbenchNavigationItems view=\{view\}/);assert.match(jsxAttributeExpressions(nav,'WorkbenchNavigationItems','onSelect')[0]!,/^id=>navigate\(\(\)=>.*:actions\.navigate\(id\)\)$/)
  assert.match(frame,/state\.view==='projects'&&<ProjectOverviewPage/);assert.match(frame,/open=\{project=>enterBusiness\(/);assert.match(frame,/'spaces','plans','projects'\] as const\)\.find\(id=>id===state\.view\)/)
  assert.match(store,/'plans' \| 'projects' \| 'settings'/)
  for(const locale of ['zh-CN','zh-Hant','en','ja','ko','vi','es','fr','de','pt'])assert.match(await readFile(new URL('i18n/locales/'+locale+'.ts',client),'utf8'),/'navigation\.projects': '[^']+'/,locale)

@@ -1,3 +1,4 @@
+import {jsxAttributeExpressions} from './jsx-source-attributes.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
@@ -49,7 +50,7 @@ test('共享目录样式在 280px 内收窄并使用无卡片高密度列表行'
 test('会话和协作群组进入同一目录，成果入口保留；普通会话不要求保存模板',async()=>{
   const source=await readFile(new URL('WorkbenchFrame.tsx',clientRoot),'utf8')
   assert.doesNotMatch(source,/<nav className=\{css\.messageTabs\}/)
-  assert.match(source,/<WorkDirectory organization=\{dialogueOrganization\} conversationPlans=\{conversationPlans\} groups=\{conversationGroups\}/)
+  for(const [prop,value] of [['organization','dialogueOrganization'],['conversationPlans','conversationPlans'],['groups','conversationGroups']] as const)assert.deepEqual(jsxAttributeExpressions(source,'WorkDirectory',prop),[value])
   assert.match(source,/openGroup=\{openSavedGroup\}/)
   assert.match(source,/createGroup=\{createDirectoryGroup\}/)
   const menu=source.slice(source.indexOf('<DetailsMenu menuRef={messageContextMenu}'))

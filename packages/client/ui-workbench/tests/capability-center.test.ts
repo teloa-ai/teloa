@@ -1,3 +1,4 @@
+import {jsxAttributeExpressions} from './jsx-source-attributes.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFileSync} from 'node:fs'
@@ -31,7 +32,7 @@ test('1.0 左栏资源组只有「资料」「市场」：应用并入市场分�
  assert.deepEqual(opened,['market'])
  const work=readFileSync(new URL('../src/client/WorkNavigation.tsx',import.meta.url),'utf8'),frame=readFileSync(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8'),store=readFileSync(new URL('../src/client/store.ts',import.meta.url),'utf8'),market=readFileSync(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
  assert.match(work,/id==='market'\?marketApps\?actions\.openMarketCategory\('home'\):actions\.openMarket\(\)/,'在应用视图点市场回到 AI 员工首页，复用原市场类别请求')
- assert.match(frame,/<WorkNavigation marketApps=\{marketAppsPage\}/)
+ assert.deepEqual(jsxAttributeExpressions(frame,'WorkNavigation','marketApps'),['marketAppsPage'])
  assert.match(market,/aria-current=\{primaryView==='apps'\?'page':undefined\} onClick=\{\(\)=>selectKind\('apps'\)\}/,'应用是市场分类页签')
  assert.match(store,/openMarketCategory\(state,category:MarketCategoryRequest\)/)
  assert.match(store,/export type MarketCategoryRequest=MarketCategory\|'home'\|'apps'\|'intents'/)

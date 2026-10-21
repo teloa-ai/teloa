@@ -165,11 +165,12 @@ test('台账：读取带上 match，清单提示条「看全部」清掉 match �
   './business-definition-localization.js':await import('../src/client/business-definition-localization.ts'),
   './business-customization-presentation.js':await import('../src/client/business-customization-presentation.ts'),
  })
- const reads:unknown[]=[]
- expand(React.createElement(ledgerModule.BusinessLedgerSurface,{scope:'SOC',objectType:'alert-ticket',match:{field:'severity',value:'高'},api:{read:(request:unknown)=>{reads.push(request);return new Promise(()=>{})}},go:()=>{},connect:()=>{}}))
- assert.deepEqual(reads,[{scope:'SOC',objectType:'alert-ticket',match:{field:'severity',value:'高'}}])
  const {ledger,block,listView,ledgerObject}=await import('./business-ledger-fixtures.ts')
  const value=await api.readBusinessLedger(ledger({blocks:[block({views:[listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','a-1')])]})]}),'SOC')
+ const reads:unknown[]=[],catalog={...value,blocks:value.blocks.map(block=>({...block,views:[]}))}
+ expand(React.createElement(ledgerModule.BusinessLedgerSurface,{scope:'SOC',objectType:'alert-ticket',match:{field:'severity',value:'高'},api:{read:(request:{objectType?:string})=>{reads.push(request);return request.objectType?new Promise(()=>{}):Promise.resolve(catalog)}},go:()=>{},connect:()=>{}}))
+ await new Promise(resolve=>setImmediate(resolve))
+ assert.deepEqual(reads,[{scope:'SOC'},{scope:'SOC',objectType:'alert-ticket',match:{field:'severity',value:'高'}}],'先读目录再读固定单类；筛选只进入记录读取')
  const calls:unknown[]=[]
  const tree=expand(React.createElement(ledgerModule.BusinessLedgerView,{ledger:value,objectType:'alert-ticket',match:{field:'severity',value:'高'},go:(target:unknown)=>calls.push(target),connect:()=>{}}))
  const note=walk(tree).find(node=>node.props['data-ledger-match']!==undefined)!

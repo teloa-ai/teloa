@@ -2,6 +2,7 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {buildSharePlan,sharePackageDigest,sharePackageSummary} from '../src/client/share-package-plan.ts'
 import {createShareAcceptance,resolvePublicCatalogEntry,shareIndustryItem,teamCoordination,type ShareAcceptPorts} from '../src/client/template-share-accept.ts'
+import {templateShareErrorKey} from '../src/client/template-share-errors.ts'
 import {buildEmployeeTemplate} from '../src/client/employee-template-share.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
 
@@ -216,4 +217,21 @@ test('an employee shared with the apps it depends on binds them and reports each
   assert.deepEqual(result.plugins,[{resourceId:pluginId,title:'Ticket',state,...(reason?{reason}:{})}],state)
   assert.equal(result.pendingKinds.includes('plugin'),pending,state)
  }
+})
+
+
+test('offline application public-source failure is readable and resumes the same saved choice after the source recovers',async()=>{
+ const pkg=buildSharePlan({...base,subject:'app',title:'Offline app',roles:[],skills:[{name:'internal-comms',title:'Internal comms',resourceId:'internal-comms',version:'1.2.0',publicId:'internal-comms'}]})
+ const {storage,values}=memory(),fake=industry(),source=Object.assign(Error('GitHub API rate limit'),{code:'teloa/source-unavailable'});let blocked=true
+ const ports={createRole:async()=>{throw Error('app must not create an employee')},industry:{...fake.ports,publicSkill:async(input:{publicId:string;version:string})=>{if(blocked)throw source;return fake.ports.publicSkill(input)}}}
+ const flow=createShareAcceptance(storage,ports),choice={scope:'general',skills:['internal-comms']}
+ await assert.rejects(flow.accept(pkg,choice),error=>error===source)
+ assert.equal(templateShareErrorKey(source),'templateShare.receiveSourceUnavailable','source rate limits must not be shown as an online-share outage')
+ assert.deepEqual(await flow.choice(pkg),choice);assert.equal(fake.calls.imports.length,0);assert.equal(fake.calls.loads.length,0)
+ const pending=JSON.parse([...values.values()][0]!),originalRequest=pending.contentRequestId,originalLoad=pending.loadRequestId
+ blocked=false
+ const resumed=createShareAcceptance(storage,ports),result=await resumed.accept(pkg,choice)
+ assert.equal(result.complete,true);assert.deepEqual(result.roleIds,[]);assert.deepEqual(fake.calls.imports,[originalRequest]);assert.deepEqual(fake.calls.loads,[originalLoad]);assert.equal(fake.calls.installs.length,1)
+ await resumed.accept(pkg,choice)
+ assert.deepEqual(fake.calls.imports,[originalRequest]);assert.deepEqual(fake.calls.loads,[originalLoad]);assert.equal(fake.calls.installs.length,1)
 })

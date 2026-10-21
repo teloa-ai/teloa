@@ -18,19 +18,20 @@ function identityOf(value:object){let id=identities.get(value);if(id===undefined
 export function BusinessSetupManualWorkspace(props:Props){return <Workspace key={identityOf(props.controller)+':'+identityOf(props.api)+':'+props.scope} {...props}/>}
 function Workspace({controller,api,scope,close,review}:Props){
  const {t}=useI18n(),[tab,setTab]=useState<'edit'|'history'>('edit'),[flow,setFlow]=useState<BusinessBuilderFlow>(),[error,setError]=useState(false),[busy,setBusy]=useState(true)
- const identity=useRef(controller.getSnapshot()),alive=useRef(true),started=useRef(false),operation=useRef<Promise<BusinessBuilderFlow>>(),restoring=useRef<{version:number;hash:string;draftId?:string;started?:boolean}>()
+ const identity=useRef(controller.getSnapshot()),alive=useRef(true),navigationAbort=useRef(new AbortController()),started=useRef(false),operation=useRef<Promise<BusinessBuilderFlow>>(),restoring=useRef<{version:number;hash:string;draftId?:string;started?:boolean}>()
  const current=()=>alive.current&&identity.current.api===api&&controller.getSnapshot().api===api&&controller.getSnapshot().namespace===identity.current.namespace
- const closeWorkspace=()=>{alive.current=false;close()}
+ const editable=(state:ReturnType<BusinessBuilderFlow['getSnapshot']>|undefined)=>state?.draft?.scope===scope&&state.draft.status==='draft'&&state.setupPlan?.state!=='applied'&&state.phase!=='saved'&&!state.result
+ const closeWorkspace=()=>{alive.current=false;navigationAbort.current.abort();close()}
  const ready=()=>{
   if(!current())throw changed()
   const next=controller.getSnapshot().flow,state=next?.getSnapshot()
-  if(!next||controller.getSnapshot().checkedSessionId!==state?.binding?.sessionId||controller.getSnapshot().sessionKind!=='builder'||state?.draft?.scope!==scope||state.draft.status!=='draft'||!state.binding?.sessionId||state.binding.draftId!==state.draft.id)throw changed()
+  if(!next||!editable(state)||controller.getSnapshot().checkedSessionId!==state?.binding?.sessionId||controller.getSnapshot().sessionKind!=='builder'||!state?.binding?.sessionId||state.binding.draftId!==state.draft?.id)throw changed()
   return next
  }
  const start=async()=>{
   if(!current())throw changed()
   const original=controller.getSnapshot().flow,pending=original?.pendingCreation()
-  const token=controller.captureNavigation(current)
+  const token=controller.captureNavigation(current,navigationAbort.current.signal)
   if(pending){if(pending.scope!==scope)throw changed();await controller.recover(pending.requestId,false,token)}
   else{if(started.current)throw changed();started.current=true;await controller.start({scope},token)}
   return ready()
@@ -38,15 +39,15 @@ function Workspace({controller,api,scope,close,review}:Props){
  const ensure=async()=>{
   if(!current()||!identity.current.namespace)throw changed()
   const original=controller.getSnapshot().flow,state=original?.getSnapshot()
-  if(state?.draft?.scope===scope&&state.draft.status==='draft'&&state.binding?.sessionId&&controller.getSnapshot().checkedSessionId===state.binding.sessionId&&controller.getSnapshot().sessionKind==='builder')return ready()
+  if(editable(state)&&state?.binding?.sessionId&&controller.getSnapshot().checkedSessionId===state.binding.sessionId&&controller.getSnapshot().sessionKind==='builder')return ready()
   const directory=await api.setupPlans({scope});if(!current())throw changed()
-  if(directory.items[0]){await controller.open(directory.items[0].sessionId,false,controller.captureNavigation(current));return ready()}
+  if(directory.items[0]){await controller.open(directory.items[0].sessionId,false,controller.captureNavigation(current,navigationAbort.current.signal));return ready()}
   // 尚未保存完整方案的原生 builder 仍拥有输入 journal；不能只查 revision>=1 的聚合目录。
   let cursor:string|undefined;const seen=new Set<string>()
   do{
    const builders=await api.list({kind:'builder',scope,limit:32,...(cursor?{cursor}:{})});if(!current())throw changed()
    const originalDraft=builders.items.find(item=>item.draft?.scope===scope&&item.draft.status==='draft'&&item.binding.kind==='builder')
-   if(originalDraft){const token=controller.captureNavigation(current);if(originalDraft.binding.sessionId)await controller.open(originalDraft.binding.sessionId,false,token);else await controller.recover(originalDraft.binding.requestId,false,token);return ready()}
+   if(originalDraft){const token=controller.captureNavigation(current,navigationAbort.current.signal);if(originalDraft.binding.sessionId)await controller.open(originalDraft.binding.sessionId,false,token);else await controller.recover(originalDraft.binding.requestId,false,token);return ready()}
    cursor=builders.nextCursor;if(cursor){if(seen.has(cursor))throw changed();seen.add(cursor)}
   }while(cursor)
   return start()
@@ -57,7 +58,7 @@ function Workspace({controller,api,scope,close,review}:Props){
   const pending=ensure();operation.current=pending
   try{const next=await pending;if(current())setFlow(next);return next}catch(error){if(current())setError(true);throw error}finally{if(operation.current===pending)operation.current=undefined;if(current())setBusy(false)}
  }
- useEffect(()=>{alive.current=true;void load().catch(()=>{});return()=>{alive.current=false}},[controller,api,scope])
+ useEffect(()=>{alive.current=true;if(navigationAbort.current.signal.aborted)navigationAbort.current=new AbortController();void load().catch(()=>{});return()=>{alive.current=false;navigationAbort.current.abort()}},[controller,api,scope])
  const restore=async(version:number,hash:string)=>{
   if(!current()||operation.current)throw changed()
   if(restoring.current&&(restoring.current.version!==version||restoring.current.hash!==hash))throw changed()

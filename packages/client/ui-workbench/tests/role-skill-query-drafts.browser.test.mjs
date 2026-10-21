@@ -112,7 +112,7 @@ work.readHomeSkills=async()=>[{...native,source:'fixed-original',provider:'local
 f.openOriginalGroup=()=>store.actions.openGroupTopic(groupId,'');f.labels={mission:runtime.t('team.form.mission')};
 `
  entry="import {createGroupApi} from '"+client+"group-api.ts';import {createGroupRoutingApi} from '"+client+"group-routing-api.ts';import {createGroupReactionApi} from '"+client+"group-reaction-api.ts';import {createGroupWorkLinkApi} from '"+client+"group-work-links-api.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '"+client+"../../tests/fixtures/group-message-page-rpc.ts';\n"+entry
- entry=entry.replace("createRoot(document.getElementById('root')).render",setup+"createRoot(document.getElementById('root')).render")
+ entry=entry.replace("const frameRoot=",setup+"const frameRoot=")
  const temp=await mkdtemp(join(root,'.runtime-role-title-frame-'));t.after(()=>rm(temp,{recursive:true,force:true}));await writeFile(join(temp,'entry.tsx'),entry)
  const stubbed=new Set(['WorkDirectory','WorkHome','TaskPage','BusinessPage','MarketPage','TeamCapabilitiesPage','ResourceManager','ArtifactPanel','ProjectOverviewPage','CapabilityTargetPanel','SavedIndustryDirectory','AutoDreamSettingsPage','RoleToolGrants'].map(name=>join(client,name+'.tsx'))),markdown='\0title-markdown',nodeCrypto='\0title-node-crypto'
  const built=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},resolve:{alias:[{find:'@deepseek-ai/dsh-client-ui-primitives',replacement:markdown},{find:'node:crypto',replacement:nodeCrypto}]},plugins:[{name:'role-title-frame',enforce:'pre',resolveId:id=>[markdown,nodeCrypto].includes(id)?id:null,load:async id=>{

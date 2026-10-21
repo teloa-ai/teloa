@@ -26,7 +26,7 @@ before(async()=>{
  `
  // 与真实应用 observeMainSessionBinding 一致：主会话打开后绑定跟随。
  entry=patch(entry,"open:id=>{selected=id;","open:id=>{selected=id;void work.select(id);")
- entry=patch(entry,"createRoot(document.getElementById('root')).render",setup+"createRoot(document.getElementById('root')).render")
+ entry=patch(entry,"const frameRoot=",setup+"const frameRoot=")
  entry=patch(entry,'<WorkbenchFrame {...props}','<WorkbenchFrame {...props} conversationDraftInput={draftInput}')
  temp=await mkdtemp(join(root,'.runtime-n13-location-'));await writeFile(join(temp,'fixture.tsx'),entry)
  const stubbed=new Set(isolated.map(name=>join(client,name+'.tsx')))

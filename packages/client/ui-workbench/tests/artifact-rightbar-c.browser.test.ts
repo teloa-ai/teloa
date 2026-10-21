@@ -16,7 +16,7 @@ test('真实 Frame 的会话、任务、项目共用成果右栏，C 列表与�
  let entry:ts.Expression|undefined;const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='entry')entry=node.initializer;ts.forEachChild(node,visit)};visit(file);assert.ok(entry)
  let source=new Function('client','return '+entry.getText(file))(client) as string
  source=`import {ConversationSearch} from ${JSON.stringify(join(client,'conversation-search.ts'))};import {teloaTabHost} from ${JSON.stringify(join(client,'sidebar-right-tab-host.ts'))};window.frameStartup={sessionId:'session-original',roleSession:true};`+source
- const boundary="createRoot(document.getElementById('root')).render("
+ const boundary="const frameRoot="
  source=source.replace(boundary,`
  const verifiedConversationSearch=new ConversationSearch(async()=>({items:[],hasMore:false}),()=>[...rows.keys()]);f.actions=store.actions;f.host=()=>teloaTabHost();
  const sourceTask={id:'10000000-0000-4000-8000-000000000001',ownerId:'self',title:'原交付任务',goal:'保持原任务和上下文',scope:'general',groupId:null,skills:[],state:'ready',version:1,contentVersion:1,assigneeRoleId:null,assigneeRoleVersion:null,createdAt:stamp,updatedAt:stamp,result:'任务原始成果正文'};

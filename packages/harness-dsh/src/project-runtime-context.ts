@@ -34,7 +34,7 @@ export type ProjectRuntimeInputHooks={
 }
 const markerName='teloa/project-context-generation'
 // 固定 DSH 的许可/委派上下文及本宿主的必要工作状态；新增 provider 必须先审核其无记忆语义。
-const memoryOffContexts=new Set(['sandbox:policy','approval:policy','subagent:delegation','teloa:work-behavior-runtime','teloa/role-identity','teloa/saved-draft-state'])
+const memoryOffContexts=new Set(['sandbox:policy','approval:policy','subagent:delegation','teloa:product-identity','teloa:work-behavior-runtime','teloa/role-identity','teloa/saved-draft-state'])
 const denied=()=>new WorkError('teloa/conflict','项目上下文已更新，当前工作等待使用可用资料重新继续。')
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(Reflect.get(value,key))])):value
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')

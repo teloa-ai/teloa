@@ -26,9 +26,9 @@ const text:readonly StreamChunk[]=[{type:'block-start',index:0,blockType:'text'}
 let calls=0
 const call=(name:string,args:unknown):readonly StreamChunk[]=>{const id=ToolCallId('call-'+ ++calls),json=JSON.stringify(args);return [{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id,name,argumentsDelta:json},{type:'block-end',index:0,block:{type:'tool-call',id,name,arguments:json}},{type:'finish',reason:{kind:'tool-calls'}}]}
 
-// 常驻核心：原生/预设与 MCP 工具、会话工作工具、能力查询、知识检索；延迟：平台管理类；运行专用：自授权群工具。
-const core=['read','web_search','skill','teloa_work_status','teloa_work_stop','teloa_capabilities','teloa_knowledge_search','mcp__crm__lookup']
-const deferred={teloa_employees_create:'创建员工草案并保存岗位职责',teloa_market_search:'搜索市场中的技能、员工与方案',teloa_projects_list:'列出本人项目及其状态',teloa_create_draft:'保存新建对象草案',teloa_create_drafts:'检索以前保存的新建草案',teloa_library_save:'保存资料库文件版本'}
+// 常驻仅保留对话/交办必需工具；原生大工具和 MCP 与平台管理类一起按需展开。
+const core=['read','skill','teloa_work_status','teloa_work_stop','teloa_capabilities','teloa_knowledge_search']
+const deferred={workflow:'组织多步并行工作 workflow',bash:'运行本机命令 shell command',web_search:'网页搜索 web search',mcp__crm__lookup:'查询客户 CRM lookup',teloa_work_facts:'查询工作统计',teloa_employees_create:'创建员工草案并保存岗位职责',teloa_market_search:'搜索市场中的技能、员工与方案',teloa_projects_list:'列出本人项目及其状态',teloa_create_draft:'保存新建对象草案',teloa_create_drafts:'检索以前保存的新建草案',teloa_library_save:'保存资料库文件版本'}
 const runOnly=['teloa_group_attach']
 const padding='本工具的完整参数与使用约束说明。'.repeat(30)
 
@@ -160,7 +160,29 @@ test('群路由会话不进入按需加载：误调工具由路由守卫拒绝',
 })
 
 test('常驻核心名单',()=>{
- assert.ok(conversationWorkToolNames.every(isCoreTool))
- for(const name of ['teloa_capabilities','teloa_knowledge_search','teloa_skill_http','mcp__any__tool','bash','skill'])assert.ok(isCoreTool(name),name)
- for(const name of ['teloa_employees_create','teloa_market_add','teloa_create_draft','teloa_mcp_save','teloa_plans_create','teloa_groups_create','teloa_projects_create','teloa_library_save','teloa_work_supersede'])assert.ok(!isCoreTool(name),name)
+ assert.ok(['teloa_work_directory','teloa_work_dispatch','teloa_work_status','teloa_work_stop','teloa_work_resume'].every(isCoreTool))
+ assert.ok(conversationWorkToolNames.filter(name=>!isCoreTool(name)).length>0)
+ for(const name of ['teloa_capabilities','teloa_knowledge_search','teloa_skill_http','read','ask_user_question','exit_plan_mode','skill'])assert.ok(isCoreTool(name),name)
+ for(const name of ['mcp__any__tool','bash','workflow','team_task_update','web_search','teloa_work_collect_reports','teloa_work_facts','teloa_business_data_query','teloa_employees_create','teloa_market_add','teloa_create_draft','teloa_mcp_save','teloa_plans_create','teloa_groups_create','teloa_projects_create','teloa_library_save','teloa_work_supersede'])assert.ok(!isCoreTool(name),name)
+})
+
+
+test('原生大工具和MCP按需加载、撤权后不可见，重装保留真实调用的工具与原约束',async t=>{
+ const f=await setup(t)
+ f.ctx.systemPrompt.section({name:'tool:workflow:rules',order:3001,text:'工作流的原约束：只在已有授权内执行。'})
+ f.ctx.systemPrompt.context({name:'fixture:permission',order:110,text:'本会话只允许fixture工作，不授予其他权限。'})
+ f.adapter.scripts.push(call(toolLoaderName,{query:'多步并行工作 workflow'}),call('workflow',{target:'fixture'}),text)
+ await f.send()
+ assert.ok(!names(f.adapter.requests[0]).includes('workflow'))
+ assert.doesNotMatch(system(f.adapter.requests[0]!),/工作流的原约束/)
+ assert.ok(names(f.adapter.requests[1]).includes('workflow'))
+ assert.match(system(f.adapter.requests[1]!),/工作流的原约束/)
+ assert.match(JSON.stringify(f.adapter.requests[1]!.messages),/本会话只允许fixture工作/)
+ assert.deepEqual(f.executed,['workflow'])
+ f.reinstall();await f.send()
+ assert.ok(names(f.adapter.requests.at(-1)).includes('workflow'),'冷恢复不能忘记原生已使用工具')
+ f.agent.ctx.tools.restrict({allow:['read',toolLoaderName]});await f.send()
+ assert.ok(!names(f.adapter.requests.at(-1)).includes('workflow'),'历史加载不恢复被撤销的工具许可')
+ await assert.rejects(f.ctx.tools.get(toolLoaderName,f.agent)!.execute({names:['mcp__crm__lookup']},{agent:f.agent,signal:new AbortController().signal} as never),{code:'teloa/forbidden'})
+ assert.deepEqual(f.executed,['workflow'])
 })

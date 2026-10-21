@@ -6,6 +6,7 @@ import {registerHooks} from 'node:module'
 import ts from 'typescript'
 import * as React from 'react'
 import {employeeCopy} from '../src/client/employee-copy.ts'
+import {twinDraftCopy} from '../src/client/i18n/locales/twin-drafts.ts'
 import {personalAvatarInitials,personalDisplayName} from '../src/client/personal-identity.ts'
 import type {PreviewRole, TeamChange} from '../src/client/role-preview.ts'
 
@@ -63,6 +64,7 @@ function mount(initial:Props){
   if(id.endsWith('.module.css'))return {default:cssProxy}
   if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({t:zh,locale:'zh-CN',dateTime:(value:string)=>String(value).slice(0,10)})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>cause instanceof Error?cause.message:String(cause)}
+  if(id==='./i18n/locales/twin-drafts.js')return {twinDraftCopy}
   if(id.endsWith('team-presentation.js'))return {twinDisplayName}
   if(id.endsWith('employee-copy.js'))return {employeeCopy}
   if(id.endsWith('personal-profile.js'))return {personalAvatarInitials,personalDisplayName}

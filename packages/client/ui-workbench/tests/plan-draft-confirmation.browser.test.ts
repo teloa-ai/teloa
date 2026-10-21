@@ -40,10 +40,9 @@ a.openOriginal=value=>props.planDraftApi.openDraft(value||planRecord());
 a.nextGeneration=()=>{a.generation++;for(const listener of a.listeners)listener()};
 const oldRefresh=props.conversationPlans.refresh;props.conversationPlans.refresh=async()=>{a.calls.push(['plans-refresh']);return oldRefresh()};
 `
- const marker="createRoot(document.getElementById('root')).render"
+ const marker="const frameRoot="
  assert.equal(entry.split(marker).length,2);entry=entry.replace(marker,setup+marker)
- entry=entry.replace("createRoot(document.getElementById('root')).render", "const planRoot=createRoot(document.getElementById('root'));const renderPlanFrame=()=>planRoot.render")
- entry=entry.replace("void controller.connect({});", "f.replacePlanApi=()=>{props.planDraftApi={...props.planDraftApi,confirm:async()=>{throw Error('New API must not receive old confirmation')}};renderPlanFrame()};renderPlanFrame();void controller.connect({});")
+ entry=entry.replace("void controller.connect({});", "f.replacePlanApi=()=>{props.planDraftApi={...props.planDraftApi,confirm:async()=>{throw Error('New API must not receive old confirmation')}};renderFrame()};void controller.connect({});")
 
  temp=await mkdtemp(join(root,'.runtime-plan-draft-'));await writeFile(join(temp,'fixture.tsx'),entry)
  const stubs=new Set(isolated.map(name=>join(client,name+'.tsx')))

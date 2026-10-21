@@ -130,7 +130,7 @@ test('全部暴露恢复错误的客户端接口都提供丢弃入口',async()=>
  assert.deepEqual(missing,[],'这些模块暴露了恢复错误却没有出路')
 })
 
-test('全部渲染恢复错误的组件都是丢弃按钮 + 下一步提示 + 已丢弃确认三件套',async()=>{
+test('恢复错误有协议对应的下一步：普通记录可丢弃，分身未知请求须核对原结果',async()=>{
  const dir=new URL('../src/client/',import.meta.url)
  // 丢弃按钮只能出现在真正持有 api 引用（能调用 .discard()）的组件自己身上；
  // 但错误文字与"下一步"提示、"已丢弃"确认可能被下放到它实际委托渲染错误的那个子组件里。
@@ -146,6 +146,13 @@ test('全部渲染恢复错误的组件都是丢弃按钮 + 下一步提示 + �
  for(const name of (await readdir(dir)).filter(file=>file.endsWith('.tsx'))){
   const text=await readFile(new URL(name,dir),'utf8')
   if(!/recoveryMessage\(\)|recoveryError\(/.test(text))continue
+  // 多稿协议的未知请求不能被清除后重发；保留原请求核对，存储失败则明确保留本页输入。
+  // 只为这两个真实多稿容器核对其专属路径，不放宽其他持有 discard 的组件。
+  if(name==='GroupTwinDraftComposer.tsx'||name==='TwinDraftWorkspace.tsx'){
+   for(const required of [/api\.recover/,/copy\('recover'\)/,/copy\('storageFailed'\)/,/api\.pending\(\)/,/unknown/])assert.match(text,required,name)
+   assert.doesNotMatch(text,/api\.discard\(/,name+' 不得丢弃未知请求并允许重新发送')
+   continue
+  }
   const withDelegates=text+'\n'+(delegateText[name]??'')
   if(!text.includes("'recovery.discard'"))missing.push(name+' 缺 recovery.discard')
   if(!withDelegates.includes("'recovery.nextStep'"))missing.push(name+' 缺 recovery.nextStep')

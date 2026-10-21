@@ -575,7 +575,7 @@ export function SavedCollaborationPage({artifactRail,templateMaterials,preferenc
  }
  const statusRow=(message:GroupMessage)=>{
   const status=messageStatuses.find(item=>item.messageId===message.id)
-  return status&&group?<GroupMessageStatus status={status} archived={group.archived||!allowed} retrying={retrying[status.messageId]==='pending'} retryFailed={retrying[status.messageId]==='failed'} retry={()=>void retryRouting(status)} openTask={work?.openTask} resume={work?.controls&&status.controlId&&!group.archived&&allowed?(controlId=>setResumeTarget({controlId,taskId:status.recipients.find(item=>item.executionMode==='work'&&item.phase==='paused'&&item.taskId)?.taskId??null})):undefined}/>:null
+  return status&&group?<GroupMessageStatus status={status} message={message} decision={routingDecisions.find(item=>item.messageId===message.id)} archived={group.archived||!allowed} retrying={retrying[status.messageId]==='pending'} retryFailed={retrying[status.messageId]==='failed'} retry={()=>void retryRouting(status)} openTask={work?.openTask} resume={work?.controls&&status.controlId&&!group.archived&&allowed?(controlId=>setResumeTarget({controlId,taskId:status.recipients.find(item=>item.executionMode==='work'&&item.phase==='paused'&&item.taskId)?.taskId??null})):undefined}/>:null
  }
  // 输入框上方的聚合进行中状态只看本会话可见的本人消息与已派出接手者的员工交接，换群残留的投影按消息身份自然排除（N46）。
  const progressRow=(list:readonly GroupMessage[])=>{

@@ -21,6 +21,8 @@ const rows=[
  ['revoke','撤销链接','撤銷連結','Revoke link'],['copy','复制链接','複製連結','Copy link'],
  ['copied','链接已复制','連結已複製','Link copied'],
  ['offline','当前没有在线分享服务；可以导出文件。','目前沒有線上分享服務；可以匯出檔案。','Online sharing is unavailable here; you can export a file.'],
+ ['receiveSourceUnavailable','暂时无法读取所选版本的来源，来源可能正在限流或无法连接。请稍后核对原操作继续；不会改用其他版本或新增授权。','暫時無法讀取所選版本的來源，來源可能正受流量限制或無法連線。請稍後核對原操作繼續；不會改用其他版本或新增授權。','The source for the selected version is temporarily unavailable or rate limited. Check the original operation later to continue; versions and permissions remain unchanged.'],
+ ['installUnavailable','本地模板安装服务尚未就绪。请重新连接后核对原操作；已开始的添加不会重新创建。','本機範本安裝服務尚未就緒。請重新連線後核對原操作；已開始的加入不會重新建立。','Local template installation is not ready. Reconnect and check the original operation; an existing installation will not be created again.'],
  ['login','登录后可继续分享或接收；草稿会保留。','登入後可繼續分享或接收；草稿會保留。','Sign in to continue sharing or receiving. Your draft is kept.'],
  ['account','打开用户中心','開啟使用者中心','Open account settings'],
  ['denied','当前账号没有此操作权限。','目前帳號沒有此操作權限。','This account does not have permission for this action.'],

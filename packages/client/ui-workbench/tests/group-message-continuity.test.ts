@@ -5,12 +5,13 @@ import {registerHooks} from 'node:module'
 import * as React from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
 import ts from 'typescript'
-import type {GroupRoutingStatusView} from '@teloa/contract'
+import type {GroupMessage,GroupRoutingDecisionView,GroupRoutingStatusView} from '@teloa/contract'
 import {createGroupApi} from '../src/client/group-api.ts'
 import {createGroupRoutingApi} from '../src/client/group-routing-api.ts'
 import {createSavedCollaborationDraftStore} from '../src/client/saved-collaboration-drafts.ts'
 import {GROUP_CONTINUITY_MESSAGE_ROWS} from '../src/client/i18n/locales/group-continuity.ts'
 import * as presentation from '../src/client/group-progress-presentation.ts'
+import * as routingView from '../src/client/group-routing-view.ts'
 
 // 状态行的额度说明复用 i18n/errors.ts：源码按 .js 引用同目录模块，测试按 .ts 源码解析。
 registerHooks({resolve(specifier,context,next){
@@ -94,6 +95,7 @@ function loadStatusComponent(locale?:string){
   if(id==='react'||id==='react/jsx-runtime')return React
   if(id==='./DetailsMenu.js'){const code=ts.transpileModule(readFileSync(new URL('../src/client/DetailsMenu.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;const values:Record<string,any>={};new Function('require','exports','React',code)(require,values,React);return values}
   if(id==='./group-progress-presentation.js')return presentation
+  if(id==='./group-routing-view.js')return routingView
   if(id==='lucide-react')return {ExternalLink:()=>React.createElement('svg')}
   if(id==='./i18n/provider.js')return {useI18n:()=>({locale:locale??'zh-CN',t})}
   if(id==='./i18n/errors.js')return {localizeWorkError}
@@ -126,6 +128,28 @@ test('员工交接状态行：判定失败说明是交接并给重新安排，�
  }
  const handed=render({status:status({phase:'running',hintCode:null,canRetry:false,recipients:[{roleId,name:'调查员',taskId,runId:null,phase:'running',resultMessageId:null,executionMode:'work'}]})})
  assert.doesNotMatch(handed,/重新安排/);assert.match(handed,/aria-label="查看工作"/)
+})
+
+test('真实员工回帖之后无人继续接手是中性状态；本人问题无人回应与真正失败仍保留原因和重试',()=>{
+ const message:GroupMessage={id:messageId,groupId,rootId:replyId,authorId:roleId,taskId,runId:replyId,text:'37乘以23等于851。',references:[],createdAt:at}
+ const decision:GroupRoutingDecisionView={messageId,kind:'no-candidate',respond:[],hops:1}
+ const unavailable=status({phase:'unavailable',hintCode:'target-unavailable'})
+ for(const [locale,neutral] of [['zh-CN','本轮没有其他接手人。'],['zh-Hant','本輪沒有其他接手人。'],['en','No other employee is taking over this round.']] as const){
+  const GroupMessageStatus=loadStatusComponent(locale),render=(props:Record<string,unknown>)=>renderToStaticMarkup(React.createElement(GroupMessageStatus,{archived:false,retrying:false,retryFailed:false,retry:()=>{},status:unavailable,message,decision,...props}))
+  const html=render({})
+  assert.ok(html.includes(neutral),html);assert.match(html,/data-tone="quiet"/)
+  for(const key of ['group.status.phase.unavailable','group.status.hint.target-unavailable','group.status.retry'])assert.ok(!html.includes(translateMessage(locale,key)),key)
+  assert.doesNotMatch(html,/<button/,'正常回帖之后无接手者，不诱导重新安排这条已回帖消息')
+  const self=render({message:{...message,authorId:'self'},decision:{...decision,hops:0}})
+  assert.ok(self.includes(translateMessage(locale,'group.status.phase.unavailable')));assert.ok(self.includes(translateMessage(locale,'group.status.retry')))
+  for(const mismatch of [{message:undefined},{decision:undefined},{decision:{...decision,hops:0}},{decision:{...decision,messageId:replyId}},{message:{...message,id:replyId}},{status:{...unavailable,hintCode:'not-authorized'}},{retryFailed:true}]){
+   assert.ok(!render(mismatch).includes(neutral),'缺少可信对应或实际失败不能按正常后续接力收起：'+JSON.stringify(mismatch))
+  }
+  for(const kind of ['degraded','parse-failed'] as const){
+   const failed=render({decision:{...decision,kind},status:status({hintCode:kind==='degraded'?'handoff-unavailable':'handoff-invalid'})})
+   assert.ok(failed.includes(translateMessage(locale,'group.status.phase.routing-failed')));assert.ok(failed.includes(translateMessage(locale,'group.status.retry')));assert.ok(!failed.includes(neutral))
+  }
+ }
 })
 
 test('路由被工作额度拒绝：简繁英说明原因、范围与「工作额度」下一步，仍给重新安排；未知原因只给通用额度说明',()=>{

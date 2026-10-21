@@ -14,7 +14,7 @@ before(async()=>{
  let item:ts.Expression|undefined;const visit=(n:ts.Node)=>{if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='entry')item=n.initializer;ts.forEachChild(n,visit)};visit(ast);assert.ok(item)
  let entry=new Function('client','return '+item.getText(ast))(client) as string
  const setup="f.groupReads=0;f.groupItems=[];f.holdGroups=!!startup.holdGroups;f.releaseGroups=items=>{f.groupItems=items;f.holdGroups=false;f.groupRelease?.()};props.groupApi=new Proxy(generic,{get:(target,key)=>key==='list'?async()=>{f.groupReads++;if(f.holdGroups)await new Promise(resolve=>f.groupRelease=resolve);return {items:f.groupItems}}:key==='directorySnapshot'?()=>({items:f.groupItems}):target[key]});"
- entry=entry.replace("createRoot(document.getElementById('root')).render",setup+"createRoot(document.getElementById('root')).render")
+ entry=entry.replace("const frameRoot=",setup+"const frameRoot=")
  temp=await mkdtemp(join(root,'.runtime-group-options-frame-'));await writeFile(join(temp,'entry.tsx'),entry)
  const isolated=['WorkDirectory','TaskPage','TeamPage','BusinessPage','MarketPage','TeamCapabilitiesPage','ResourceManager','CollaborationPage','ArtifactPanel','ProjectOverviewPage','CapabilityTargetPanel','SavedIndustryDirectory','AutoDreamSettingsPage'],stubbed=new Set(isolated.map(name=>join(client,name+'.tsx')))
  const built=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'group-options-frame',enforce:'pre',load:async id=>{

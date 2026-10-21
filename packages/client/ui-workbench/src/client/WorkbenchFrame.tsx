@@ -890,6 +890,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
 
   const [roleLoadError,setRoleLoadError]=useState<string>(),[roleLoading,setRoleLoading]=useState(false),[roleDirectoryKnown,setRoleDirectoryKnown]=useState(false)
   const roleWorkAccessRef=useRef<Record<string,RoleDelegationRead>>({}),roleAccessGeneration=useRef(new Map<string,number>()),roleLoadGeneration=useRef(0)
+  const roleLoadApi=useRef(roleApi),roleScopeRefresh=useRef<{api:RoleApi;missing:string}>();roleLoadApi.current=roleApi
   const mergeRoleWorkAccess=(roleId:string,read:RoleDelegationRead|undefined)=>{
     if(read)roleWorkAccessRef.current[roleId]=read
     else delete roleWorkAccessRef.current[roleId]
@@ -928,19 +929,29 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     setRoleLoading(true);setRoleLoadError(undefined)
     try{
       const rows=await roleApi.list()
-      if(generation!==roleLoadGeneration.current)return
+      if(generation!==roleLoadGeneration.current||roleLoadApi.current!==roleApi)return
+      const missing=[...new Set(rows.flatMap(row=>row.scopes.filter(scope=>!registeredBusinessScope(scope,scopeLabels))))].sort().join(',')
+      if(missing){
+        // 另一窗口可能刚创建合法业务。只重读一次本人目录，再由目录就绪的 effect 重载整批员工；
+        // 仍未知时保留归属校验，不能过滤该员工或不断刷新，也不把旧目录误报成保存失败。
+        if(roleScopeRefresh.current?.api===roleApi&&roleScopeRefresh.current.missing===missing)throw Error(t('frame.p5.roleScopeUnknown'))
+        roleScopeRefresh.current={api:roleApi,missing}
+        await loadBusinessDirectory()
+        return
+      }
+      roleScopeRefresh.current=undefined
       mergeRoles(rows);setRoleDirectoryKnown(true)
       const results=await Promise.allSettled(rows.map(role=>loadRoleWorkAccess(role.id)))
       const failure=results.find((result):result is PromiseRejectedResult=>result.status==='rejected')
       if(generation===roleLoadGeneration.current&&failure)setRoleLoadError(localizeWorkError(locale,failure.reason))
     }catch(error){
-      if(generation!==roleLoadGeneration.current)return
+      if(generation!==roleLoadGeneration.current||roleLoadApi.current!==roleApi)return
       for(const roleId of Object.keys(roleWorkAccessRef.current)){roleAccessGeneration.current.set(roleId,(roleAccessGeneration.current.get(roleId)??0)+1);mergeRoleWorkAccess(roleId,undefined)}
       setRoleLoadError(localizeWorkError(locale,error))
     }finally{if(generation===roleLoadGeneration.current)setRoleLoading(false)}
   }
   const roleExecutionAccess=useMemo(()=>Object.fromEntries(tasks.roles.flatMap(role=>role.workAccess?.roleId===role.id&&role.workAccess.roleVersion===role.version?[[role.id,role.workAccess]]:[])),[tasks.roles])
-  const refreshRoles=()=>businessDirectoryStatus==='failed'?loadBusinessDirectory().catch(()=>{}):loadRoles()
+  const refreshRoles=()=>{roleScopeRefresh.current=undefined;return businessDirectoryStatus==='failed'?loadBusinessDirectory().catch(()=>{}):loadRoles()}
   const openIndustryRole=async(roleId:string)=>{actions.previewRole(roleId);const rows=await roleApi.list();mergeRoles(rows);if(!rows.some(role=>role.id===roleId))throw Error(t('frame.p5.industryRoleUnavailable'))}
   useEffect(()=>{if(computerRoleId||state.rolePreview||['home','team','tasks','plans','attention','spaces','messages','market'].includes(state.view)||conversationLedger)void loadRoles()},[computerRoleId,state.view,!!state.rolePreview,conversationLedger,roleApi,roleDelegationApi,businessDirectoryStatus,businessDirectoryError,scopeLabels])
   useEffect(()=>{if(!restorePending.current.team||!roleDirectoryKnown)return;const restored=reconcileAvailableDirectoryTarget({id:state.roleId??undefined},tasks.roles.filter(role=>role.storage==='persistent').map(role=>role.id),state.detail,'team');restorePending.current.team=false;actions.reconcileDirectory('team',restored.id,restored.detail)},[roleDirectoryKnown,tasks.roles,state.roleId,state.detail,actions])
@@ -2451,7 +2462,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const renderContinuousPage=(visible:boolean,target:import('./continuous-preview.js').ContinuousTarget,go:(target:import('./continuous-preview.js').ContinuousTarget)=>void,embedded=false)=>{
     const navigate=<Args extends unknown[],Result>(action:(...args:Args)=>Result)=>(...args:Args)=>{if(embedded)setConversationPlanTarget(undefined);return action(...args)}
     return (
-<ContinuousPage groups={savedGroupOptions} openConversation={openPlanSourceConversation} prepareConversation={navigate(request=>{const employee=request.roleId?tasks.roles.find(row=>row.id===request.roleId&&row.storage==='persistent'):undefined;const goal=t('workbench.create.planPrompt',{goal:request.goal})+(employee?' '+t('workbench.create.employee',{name:employee.name}):'');if(request.roleId){const object=resolveConversationObject('role',request.roleId);return requestRoleCreation(object,request.scope?[request.scope]:employee?.scopes??[],goal)}return requestCreation({scope:request.scope??'general',goal})})} navigation={{state:state.navigationDirectories.plans??{},change:patch=>actions.rememberDirectory('plans',patch)}} persistence={{api:planApi,controls:workControlApi,resources:resourceApi,plans:savedPlans,merge:mergeSavedPlans,refreshRoles:()=>{void refreshRoles()},industrySource:plan=><IndustryPlanSourcePanel key={'industry-plan-source-'+plan.id} planId={plan.id} api={industryPlanApi}/>}} openArtifacts={navigate(openArtifacts)} seed={state.templatePlanSeed} clearSeed={actions.clearPlanSeed} openMarket={navigate(actions.openMarket)} visible={visible} embedded={embedded} state={tasks} target={target} go={go} change={command=>{const id='planId' in command?command.planId:'id' in command?command.id:undefined;if(savedPlansRef.current.some(plan=>plan.id===id))throw Error(t('frame.p5.planServiceRequired'));const next=changeContinuousWork(tasks,command,marketRef.current);setTasks(next);return next}} openTask={navigate(actions.openTask)} openRole={actions.previewRole} openBusiness={navigate(enterBusiness)} team={navigate(()=>actions.navigate('team'))} attention={navigate(actions.openAttention)}/>
+<ContinuousPage draftStorage={builderState.status==='ready'&&builderState.namespace?{namespace:builderState.namespace,storage:navigationStorage}:null} groups={savedGroupOptions} openConversation={openPlanSourceConversation} prepareConversation={navigate(request=>{const employee=request.roleId?tasks.roles.find(row=>row.id===request.roleId&&row.storage==='persistent'):undefined;const goal=t('workbench.create.planPrompt',{goal:request.goal})+(employee?' '+t('workbench.create.employee',{name:employee.name}):'');if(request.roleId){const object=resolveConversationObject('role',request.roleId);return requestRoleCreation(object,request.scope?[request.scope]:employee?.scopes??[],goal)}return requestCreation({scope:request.scope??'general',goal})})} navigation={{state:state.navigationDirectories.plans??{},change:patch=>actions.rememberDirectory('plans',patch)}} persistence={{api:planApi,controls:workControlApi,resources:resourceApi,plans:savedPlans,merge:mergeSavedPlans,refreshRoles:()=>{void refreshRoles()},industrySource:plan=><IndustryPlanSourcePanel key={'industry-plan-source-'+plan.id} planId={plan.id} api={industryPlanApi}/>}} openArtifacts={navigate(openArtifacts)} seed={state.templatePlanSeed} clearSeed={actions.clearPlanSeed} openMarket={navigate(actions.openMarket)} visible={visible} embedded={embedded} state={tasks} target={target} go={go} change={command=>{const id='planId' in command?command.planId:'id' in command?command.id:undefined;if(savedPlansRef.current.some(plan=>plan.id===id))throw Error(t('frame.p5.planServiceRequired'));const next=changeContinuousWork(tasks,command,marketRef.current);setTasks(next);return next}} openTask={navigate(actions.openTask)} openRole={actions.previewRole} openBusiness={navigate(enterBusiness)} team={navigate(()=>actions.navigate('team'))} attention={navigate(actions.openAttention)}/>
   )
   }
   const rolePreview=state.rolePreview,previewRole=tasks.roles.find(role=>role.id===rolePreview?.id)
@@ -2529,7 +2540,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
             overview:<WorkHome assistantName={assistantName} current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
           })}</div></AssistantConversationTitleContext.Provider>
           {builderState.sessionKind==='daily'&&(state.view==='home'||conversationVisible)&&dailyStatus}
-          {builderVisible&&builderFlow&&<section key="business-builder" className={css.builderPreview}><BusinessBuilderPanel flow={builderFlow} openConnections={(scope,loadId)=>actions.openIndustryResources({scope,loadId})} renderPage={projection=><BusinessConfigurationPage projection={projection} colorScheme={state.colorScheme}/>} onOpenSaved={result=>openBusinessScope(result.scope)}/></section>}
+          {builderVisible&&builderFlow&&<section key="business-builder" className={css.builderPreview}><BusinessBuilderPanel flow={builderFlow} onContinueEditing={()=>{const sessionId=builderFlow.getSnapshot().binding?.sessionId;if(!sessionId||mainSession.getSnapshot()!==sessionId||work.getSnapshot().sessionId!==sessionId)return;setBuilderTab('conversation');requestAnimationFrame(()=>{if(latestState.current.view==='messages'&&latestState.current.messageMode==='native'&&mainSession.getSnapshot()===sessionId&&work.getSnapshot().sessionId===sessionId)conversationDraftInput(sessionId)?.focus?.()})}} openConnections={(scope,loadId)=>actions.openIndustryResources({scope,loadId})} renderPage={projection=><BusinessConfigurationPage projection={projection} colorScheme={state.colorScheme}/>} onOpenSaved={result=>openBusinessScope(result.scope)}/></section>}
           {builderVisible&&<div key="business-builder-tabs" className={css.builderTabs} role="tablist" aria-label={t('business.builder.title')}><button type="button" role="tab" aria-selected={builderTab==='conversation'} onClick={()=>setBuilderTab('conversation')}>{t('business.builder.conversation')}</button><button type="button" role="tab" aria-selected={builderTab==='preview'} onClick={()=>setBuilderTab('preview')}>{t('business.builder.previewTab')}</button></div>}
           {nativePanelVisible&&<div className={css.nativeConversation} aria-label={t('teamCapability.runtime.manage')}>{renderSlot('main',{}, {entryKey:state.panelInfo.activePanelId!})}</div>}
           {conversationDirectoryVisible&&<section className={css.conversationLanding} aria-label={t('conversationDirectory.landingTitle')}><MessageSquare size={30} aria-hidden="true"/><h1>{t('conversationDirectory.landingTitle')}</h1></section>}

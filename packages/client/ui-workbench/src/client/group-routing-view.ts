@@ -1,4 +1,9 @@
-import type {GroupMessage,GroupRoutingDecisionView} from '@teloa/contract'
+import type {GroupMessage,GroupRoutingDecisionView,GroupRoutingStatusView} from '@teloa/contract'
+
+/** 员工真实回帖后的空候选只说明没有下一位接手人，不代表原本人问题失败。 */
+export function groupRoutingFollowupIsIdle(message:GroupMessage|undefined,decision:GroupRoutingDecisionView|undefined,status:GroupRoutingStatusView):boolean{
+ return !!message&&message.authorId!=='self'&&'runId' in message&&message.id===status.messageId&&decision?.messageId===message.id&&decision.kind==='no-candidate'&&decision.hops>0&&decision.respond.length===0&&status.phase==='unavailable'&&status.hintCode==='target-unavailable'&&status.recipients.length===0
+}
 
 /**
  * 话题面板「同事正在回复…」折叠行的纯派生（规格 §3.4）。

@@ -54,7 +54,7 @@ test('群回复入口空白起草、关闭刷新保留；Quota与迟到unknown�
  assert.equal(await page.evaluate(()=>(window as any).groupTwinEvidence.creates),1)
  assert.equal(await page.getByRole('button',{name:'保存到分身待审',exact:true}).isDisabled(),true)
  await page.getByRole('button',{name:'打开分身工作区',exact:true}).click();assert.equal((await page.evaluate(()=>(window as any).groupTwinEvidence.opened)).length,1)
- await page.screenshot({path:'/private/tmp/group-twin-draft-composer.png',fullPage:true})
+ await page.screenshot({path:join(temp,'group-twin-draft-composer.png'),fullPage:true})
  assert.deepEqual(errors,[])
 })
 
@@ -92,5 +92,5 @@ test('群草稿入口核对唯一分身和完整原文，关闭迟答不污染�
  await input.waitFor();assert.equal(await input.inputValue(),'');await page.getByText('来源消息预览',{exact:true}).click();assert.ok((await page.locator('blockquote').textContent())!.startsWith('这是经过可信全文接口读取的完整原消息。'));assert.ok((await page.locator('blockquote').textContent())!.length>8000)
  assert.equal(await page.evaluate(()=>(window as any).groupTwinEntryEvidence.writes),0,'仅加载与重试不得创建草稿')
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'390px抽屉不能横向溢出')
- await page.getByText('来源消息预览',{exact:true}).click();await page.screenshot({path:'/private/tmp/group-twin-draft-entry-narrow.png',fullPage:true});assert.deepEqual(errors,[])
+ await page.getByText('来源消息预览',{exact:true}).click();await page.screenshot({path:join(temp,'group-twin-draft-entry-narrow.png'),fullPage:true});assert.deepEqual(errors,[])
 })

@@ -34,7 +34,7 @@ async function employeeFrameFixture(t:TestContext,cold=false,receiptOpen?:string
  let entry:ts.Expression|undefined;const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='entry')entry=node.initializer;ts.forEachChild(node,visit)};visit(file);assert.ok(entry)
  let original=new Function('client','return '+entry.getText(file))(client) as string
  if(receiptOpen){const probe='<textarea aria-label="slot-probe" defaultValue="原生输入草稿"/>';assert.equal(original.split(probe).length,2);original=`import {ConversationObjectCard} from ${JSON.stringify(join(client,'ConversationObjectCard.tsx'))};`+original.replace(probe,probe+`<ConversationObjectCard receipt={{kind:'role',id:employee.id,title:employee.name,revision:'3'}} readRole={async()=>({...employee,ownerId:'local:teloa-owner'})} readGroup={async()=>undefined} drafts={{}} mcp={{}} openRole={${receiptOpen}} openGroup={noop} openCapabilities={noop}/>`)}
- const boundary="createRoot(document.getElementById('root')).render(";assert.equal(original.split(boundary).length,2)
+ const boundary="const frameRoot=";assert.equal(original.split(boundary).length,2)
  return fixture(t,"window.frameStartup={withRole:true};"+original.replace(boundary,`
  f.holdRoleReads=${cold};const roleReads=[];f.releaseRoleReads=()=>{f.holdRoleReads=false;roleReads.splice(0).forEach(resolve=>resolve())};
  const requireActions=()=>store.actions;f.actions=store.actions;f.nativeSession=id=>{selected=id;for(const listener of listeners)listener()};

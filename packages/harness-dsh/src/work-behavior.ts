@@ -2,12 +2,13 @@ import type {Context} from '@deepseek-ai/cordis'
 import type {PromptAssembly} from '@deepseek-ai/dsh-system-prompt'
 import z from '@deepseek-ai/schemastery'
 import {workPromptModules,selectWorkPromptModules,renderWorkRuntimeContext} from './work-prompts/runtime-context.ts'
+import {productIdentityText} from './work-prompts/product-identity.ts'
 
 export {workBehaviorVersion,workPromptModules} from './work-prompts/runtime-context.ts'
 export const name='teloa-work-behavior'
 export const inject=['systemPrompt']
-export interface Config{enabled?:boolean}
-export const Config=z.object({enabled:z.boolean().default(true)})
+export interface Config{enabled?:boolean;productOnly?:boolean}
+export const Config=z.object({enabled:z.boolean().default(true),productOnly:z.boolean().default(false)})
 
 /** 完整文本出口用于检查；实际请求按当轮能力选择正文。 */
 export const workBehaviorText=workPromptModules.map(module=>module.text).join('\n\n')
@@ -27,6 +28,11 @@ export function refineWorkBehavior(assembly:PromptAssembly,coreOnly=false):Promp
 
 export function apply(ctx:Context,config:Config={}):void{
  if(config.enabled===false)return
+ if(config.productOnly){
+  // 官方 complete persona 会替换全部 section；required 上下文仍由原生装配保留。
+  ctx.systemPrompt.context({name:'teloa:product-identity',order:0,text:productIdentityText,required:true,interpolate:false})
+  return
+ }
  ctx.systemPrompt.section({
   name:'teloa:work-behavior',
   order:ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX')+100,
