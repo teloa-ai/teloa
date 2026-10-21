@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url'
 import {join} from 'node:path'
 import {build} from 'vite'
 import {dashboardShareFixture} from '../../../backend/tests/fixtures/business-dashboard-share.ts'
+import {DASHBOARD_SHARE_MESSAGE_ROWS} from '../src/client/i18n/locales/dashboard-share.ts'
 // @ts-expect-error 复用已有隔离无头浏览器加载器。
 import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
@@ -73,6 +74,6 @@ createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtim
   assert.deepEqual(errors,[]);assert.deepEqual(remote,[]);assert.deepEqual(unexpected,[])
   const evidence=process.env.TELOA_DASHBOARD_SHARE_TEST_OUTPUT
   if(evidence){await mkdir(evidence,{recursive:true});await writeFile(join(evidence,'dashboard-share.csv'),csv);await writeFile(join(evidence,'dashboard-share.png'),png);await page.screenshot({path:join(evidence,'drawer-sent.png'),fullPage:true});await writeFile(join(evidence,'browser-result.json'),JSON.stringify({source:'isolated service-generated fixture; no user instance or live model',target:value.target,snapshotHash:value.snapshotHash,rawRows:55,pngBytes:png.length,csvBytes:csv.length,pngWidth:png.readUInt32BE(16),pngHeight:png.readUInt32BE(20),uploadCount:uploads.length,sendCalls:sendCalls.length,messages:messages.size,errors,remote},null,2)+'\n')}
-   const reread=page.waitForResponse((response:any)=>response.url().endsWith('/rpc')&&response.request().postDataJSON().endpoint==='business-dashboards/share-snapshot');await drawer.getByRole('button',{name:'重新读取快照'}).click();await reread;await drawer.getByRole('button',{name:'确认发送',exact:true}).waitFor();assert.equal(readCalls,2);assert.equal(messages.size,1);assert.equal(uploads.length,2);await page.mouse.click(20,500);await drawer.waitFor({state:'hidden'});assert.equal(messages.size,1)
+   const reread=page.waitForResponse((response:any)=>response.url().endsWith('/rpc')&&response.request().postDataJSON().endpoint==='business-dashboards/share-snapshot');await drawer.getByRole('button',{name:DASHBOARD_SHARE_MESSAGE_ROWS.find(row=>row[0]==='dashboardShare.reload')![1],exact:true}).click();await reread;await drawer.getByRole('button',{name:'确认发送',exact:true}).waitFor();assert.equal(readCalls,2);assert.equal(messages.size,1);assert.equal(uploads.length,2);await page.mouse.click(20,500);await drawer.waitFor({state:'hidden'});assert.equal(messages.size,1)
  }catch(error){if(pageForFailure){console.error(await pageForFailure.locator('body').innerText());const output=process.env.TELOA_DASHBOARD_SHARE_TEST_OUTPUT;if(output)await pageForFailure.screenshot({path:join(output,'drawer-failed.png'),fullPage:true})}throw error}finally{await browser?.close();if(server.listening)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await rm(temp,{recursive:true,force:true})}
 })
