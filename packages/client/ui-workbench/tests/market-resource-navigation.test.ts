@@ -125,7 +125,7 @@ test('工作模板用两排行业 / 功能筛选与「共 N 项」，详情返�
  assert.deepEqual(bar(tree).props.filter,{industry:null,fn:null})
  assert.equal(nodes(tree).some(node=>node.type==='select'),false,'不再有范围 / 可见范围下拉')
  const header=nodes(tree).find(node=>node.type==='header'&&node.props.className==='pageHeader')!
- assert.equal(nodes(header).filter(node=>node.type==='button'&&node.props.className==='addedBadge').length,1)
+ assert.deepEqual(nodes(header).filter(node=>node.type==='button'&&node.props.className==='addedBadge').map(node=>node.children.join('')),['market.apps.mineTitle','market.addedCount'],'两种已添加内容在页头保留各自入口')
  assert.equal(nodes(tree).some(node=>node.type==='button'&&node.children.includes('market.home')),false)
  const all=nodes(tree).find(node=>node.type?.name==='MarketCards')!.props.items.length
  bar(tree).props.onChange({industry:'general',fn:null})

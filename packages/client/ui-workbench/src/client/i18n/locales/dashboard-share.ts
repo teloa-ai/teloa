@@ -1,8 +1,8 @@
 /** 本批定稿中简、繁体及英文，其余既有语言使用英文回退。 */
 export const DASHBOARD_SHARE_MESSAGE_ROWS=[
  ['dashboardShare.title','分享看板','分享看板','Share dashboard'],
- ['dashboardShare.loading','正在读取固定看板快照…','正在讀取固定看板快照…','Reading a fixed dashboard snapshot…'],
- ['dashboardShare.readFailed','无法读取看板快照，请重试。配置改变后请返回看板重新打开。','無法讀取看板快照，請重試。設定變更後請返回看板重新開啟。','Unable to read the snapshot. Retry, or reopen from the dashboard if its configuration changed.'],
+ ['dashboardShare.loading','正在读取看板数据…','正在讀取看板資料…','Loading dashboard data…'],
+ ['dashboardShare.readFailed','无法读取看板数据，请重试。配置改变后请返回看板重新打开。','無法讀取看板資料，請重試。設定變更後請返回看板重新開啟。','Unable to load dashboard data. Retry, or reopen from the dashboard if its configuration changed.'],
  ['dashboardShare.boundary','文件包含此版本、时间范围的看板数据。不会创建公开链接，也不会自动发送。','檔案包含此版本及時間範圍的看板資料。不會建立公開連結，也不會自動傳送。','Files contain this dashboard version and time range. No public link is created and nothing is sent automatically.'],
  ['dashboardShare.png','导出图片 PNG','匯出圖片 PNG','Export PNG image'],
  ['dashboardShare.csv','导出原始数据 CSV','匯出原始資料 CSV','Export raw CSV data'],
@@ -19,8 +19,8 @@ export const DASHBOARD_SHARE_MESSAGE_ROWS=[
  ['dashboardShare.noGroups','此业务还没有协作群。请在该业务的「协作群」中创建后再分享。','此業務尚未有協作群。請先在該業務的「協作群」中建立群組再分享。','This business has no groups yet. Create one in its Groups tab, then share here.'],
  ['dashboardShare.generated','文件已生成。','檔案已產生。','The file is ready.'],
  ['dashboardShare.sent','已发送到所选协作群。','已傳送至所選協作群。','Sent to the selected group.'],
- ['dashboardShare.reload','重新读取快照','重新讀取快照','Read a new snapshot'],
- ['dashboardShare.failed','操作未完成。请重试；已有发送请求会先核对原回执。','操作未完成。請重試；已有傳送請求會先核對原回執。','The action did not complete. Retry; an existing send is checked before continuing.'],
+ ['dashboardShare.reload','重新读取数据','重新讀取資料','Reload dashboard data'],
+ ['dashboardShare.failed','操作未完成。请重试；已有发送请求会先核对原发送结果。','操作未完成。請重試；已有傳送請求會先核對原傳送結果。','The action did not complete. Retry; an existing send is checked before continuing.'],
  ['dashboardShare.limit','看板数据超过导出上限，请缩小时间范围或看板内容后重试。','看板資料超過匯出上限，請縮小時間範圍或看板內容後重試。','The dashboard exceeds the export limit. Reduce its time range or contents and retry.'],
  ['dashboardShare.notReady','图表仍在读取，请等待完成后重试。','圖表仍在讀取，請等候完成後重試。','A chart is still loading. Wait for it to finish and retry.'],
  ['dashboardShare.imageFailed','此看板含无法安全导出的图像内容。请检查图表后重试。','此看板含無法安全匯出的圖片內容。請檢查看板圖表後重試。','The dashboard contains image content that cannot be safely exported. Check the charts and retry.'],

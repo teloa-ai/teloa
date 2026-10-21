@@ -2,6 +2,7 @@ import {readFile} from 'node:fs/promises'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
+import {deflateRawSync} from 'node:zlib'
 import type {MarketCatalogUpstreamGithub} from '@teloa/contract'
 import {downloadGithubCatalogSkill,type GithubHttpPort,type GithubHttpRequest} from '../src/market/github-source.ts'
 
@@ -47,6 +48,127 @@ function fixture(){
 }
 const treeCalls=(f:ReturnType<typeof fixture>)=>f.calls.filter(call=>new URL(call.url).hostname==='api.github.com')
 const rawCalls=(f:ReturnType<typeof fixture>)=>f.calls.filter(call=>new URL(call.url).hostname==='raw.githubusercontent.com')
+
+type ArchiveEntry={path:string;text?:string;mode?:number;os?:number;creatorVersion?:number;externalAttrs?:number;badCrc?:boolean}
+function catalogZip(source:MarketCatalogUpstreamGithub,entries:ArchiveEntry[],options:{root?:string;commit?:string}={}):Uint8Array{
+ const root=options.root??`${source.repository.repo}-${source.commit}`,locals:Buffer[]=[],centrals:Buffer[]=[];let offset=0
+ const crc32=(value:Uint8Array)=>{let crc=0xffffffff;for(const byte of value){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}return (crc^0xffffffff)>>>0}
+ for(const entry of entries){
+  const name=Buffer.from(root+'/'+entry.path),plain=Buffer.from(entry.text??''),compressed=deflateRawSync(plain),crc=(crc32(plain)+(entry.badCrc?1:0))>>>0
+  const local=Buffer.alloc(30);local.writeUInt32LE(0x04034b50);local.writeUInt16LE(20,4);local.writeUInt16LE(0x800,6);local.writeUInt16LE(8,8);local.writeUInt32LE(crc,14);local.writeUInt32LE(compressed.length,18);local.writeUInt32LE(plain.length,22);local.writeUInt16LE(name.length,26)
+  locals.push(local,name,compressed)
+  const central=Buffer.alloc(46);central.writeUInt32LE(0x02014b50);central.writeUInt16LE(entry.creatorVersion??(((entry.os??3)<<8)|20),4);central.writeUInt16LE(20,6);central.writeUInt16LE(0x800,8);central.writeUInt16LE(8,10);central.writeUInt32LE(crc,16);central.writeUInt32LE(compressed.length,20);central.writeUInt32LE(plain.length,24);central.writeUInt16LE(name.length,28);central.writeUInt32LE(entry.externalAttrs??((((entry.mode??(entry.path.endsWith('/')?0x41ed:0x81a4))&0xffff)<<16)>>>0),38);central.writeUInt32LE(offset,42)
+  centrals.push(central,name);offset+=local.length+name.length+compressed.length
+ }
+ const comment=Buffer.from(options.commit??source.commit),size=centrals.reduce((sum,part)=>sum+part.length,0),end=Buffer.alloc(22)
+ end.writeUInt32LE(0x06054b50);end.writeUInt16LE(entries.length,8);end.writeUInt16LE(entries.length,10);end.writeUInt32LE(size,12);end.writeUInt32LE(offset,16);end.writeUInt16LE(comment.length,20)
+ return Buffer.concat([...locals,...centrals,end,comment])
+}
+function rateFallbackFixture(){
+ const f=fixture(),entries:ArchiveEntry[]=[{path:'',mode:0x41ed},{path:'skills/'},{path:'skills/notes/'},{path:'skills/notes/references/'},...Object.entries(f.texts).map(([path,text])=>({path:f.source.path+'/'+path,text}))]
+ const seen:GithubHttpRequest[]=[],options:{root?:string;commit?:string}={},api={status:403,headers:{'x-ratelimit-remaining':'0','x-ratelimit-reset':String(Math.floor(Date.now()/1000)+60)} as Record<string,string>},archive={status:200,headers:{} as Record<string,string>}
+ const http:GithubHttpPort={request:async request=>{
+  seen.push(request)
+  if(new URL(request.url).hostname==='api.github.com')return {...api,body:(async function*(){yield bytes('rate limit exceeded')})()}
+  assert.equal(request.url,`https://codeload.github.com/${f.source.repository.owner}/${f.source.repository.repo}/zip/${f.source.commit}`)
+  const zip=catalogZip(f.source,entries,options)
+  return {status:archive.status,headers:{'content-length':String(zip.length),...archive.headers},body:(async function*(){yield zip})()}
+ }}
+ return {...f,entries,seen,options,api,archive,fallbackHttp:http}
+}
+
+test('固定目录遇真实API限额时仅一次同提交ZIP恢复，原文件与许可摘要不变',async()=>{
+ const f=rateFallbackFixture(),files=await downloadGithubCatalogSkill(f.source,f.fallbackHttp)
+ assert.deepEqual(files.map(file=>file.path),['LICENSE','SKILL.md','references/guide.md'])
+ for(const file of files)assert.deepEqual(file.bytes,bytes(f.texts[file.path]!))
+ assert.equal(f.seen.length,2)
+ assert.equal(new URL(f.seen[0]!.url).hostname,'api.github.com')
+ assert.equal(new URL(f.seen[1]!.url).hostname,'codeload.github.com')
+ assert.ok(f.seen.every(call=>call.redirect==='manual'&&!('authorization' in call.headers)))
+})
+
+test('限额归档仍拒绝错误提交/根、无可信模式、危险路径与祖先歧义，不返回部分文件',async()=>{
+ const cases:{name:string;change:(f:ReturnType<typeof rateFallbackFixture>)=>void}[]=[
+  {name:'错误提交注释',change:f=>{f.options.commit='b'.repeat(40)}},
+  {name:'错误固定根',change:f=>{f.options.root='skills-'+ 'b'.repeat(40)}},
+  {name:'缺少根目录',change:f=>{f.entries.shift()}},
+  {name:'缺少祖先目录',change:f=>{f.entries.splice(1,1)}},
+  {name:'祖先是文件',change:f=>{f.entries[1]={path:'skills',text:''}}},
+  {name:'大小写祖先歧义',change:f=>{f.entries.push({path:'Skills/'})}},
+  {name:'目录重复',change:f=>{f.entries.push({path:'skills/'})}},
+  {name:'文件/目录同名',change:f=>{f.entries.push({path:'skills/notes/SKILL.md/'})}},
+  {name:'未知creator OS',change:f=>{f.entries.at(-1)!.os=0}},
+  {name:'无Unix模式',change:f=>{f.entries.at(-1)!.mode=0}},
+  {name:'可执行文件',change:f=>{f.entries.at(-1)!.mode=0x81ed}},
+  {name:'特殊权限',change:f=>{f.entries.at(-1)!.mode=0x89a4}},
+  {name:'符号链接',change:f=>{f.entries.at(-1)!.mode=0xa1ff}},
+  {name:'目录伪装',change:f=>{f.entries.at(-1)!.mode=0x41ed}},
+  {name:'路径越界',change:f=>{f.entries.push({path:'../escape',text:'x'})}},
+  {name:'文件缺失',change:f=>{f.entries.pop()}},
+  {name:'CRC错误',change:f=>{f.entries.at(-1)!.badCrc=true}},
+  {name:'文件篡改',change:f=>{f.entries.at(-1)!.text='changed'}},
+  {name:'固定blob不符',change:f=>{f.source.files[0]!.gitBlob='b'.repeat(40)}},
+  {name:'固定sha256不符',change:f=>{f.source.files[0]!.sha256='b'.repeat(64)}},
+  {name:'固定大小不符',change:f=>{f.source.files[0]!.size=1}},
+ ]
+ for(const item of cases){const f=rateFallbackFixture();item.change(f);await assert.rejects(downloadGithubCatalogSkill(f.source,f.fallbackHttp),(error:unknown)=>error instanceof Error&&'code' in error&&error.code==='teloa/source-unavailable'&&/GitHub API 限流/.test(error.message)&&/固定提交归档验证也未完成/.test(error.message),item.name);assert.equal(f.seen.length,2,item.name)}
+})
+
+test('非限额403/404/网络或树内容损坏不读取归档；429限额可恢复，归档失败保留两阶段原因',async()=>{
+ for(const status of [403,404,500]){const f=rateFallbackFixture();f.api.status=status;f.api.headers={};await assert.rejects(downloadGithubCatalogSkill(f.source,f.fallbackHttp));assert.equal(f.seen.length,1)}
+ const network=rateFallbackFixture();await assert.rejects(downloadGithubCatalogSkill(network.source,{request:async request=>{network.seen.push(request);throw Error('network')}}));assert.equal(network.seen.length,1)
+ const badTree=fixture();badTree.overrides.set('tree:'+badTree.source.commit,{body:'{}'});await assert.rejects(downloadGithubCatalogSkill(badTree.source,badTree.http));assert.equal(badTree.calls.length,1)
+ const retry=rateFallbackFixture();retry.api.status=429;retry.api.headers={'retry-after':'120'};assert.equal((await downloadGithubCatalogSkill(retry.source,retry.fallbackHttp)).length,3)
+ for(const status of [301,403,404]){const f=rateFallbackFixture();f.archive.status=status;f.archive.headers={location:'https://evil.example/archive'};await assert.rejects(downloadGithubCatalogSkill(f.source,f.fallbackHttp),(error:unknown)=>error instanceof Error&&/API 限流/.test(error.message)&&new RegExp('HTTP '+status).test(error.message));assert.equal(f.seen.length,2)}
+ const tooLarge=rateFallbackFixture();tooLarge.archive.headers={'content-length':String(20*1024*1024+1)};await assert.rejects(downloadGithubCatalogSkill(tooLarge.source,tooLarge.fallbackHttp),/超过/);assert.equal(tooLarge.seen.length,2)
+})
+
+test('限额归档保留NFD原路径、目录外许可映射和size未知时的实际摘要验证',async()=>{
+ const f=rateFallbackFixture(),text='Repository license'
+ f.source.files.push({path:'licenses/upstream/LICENSE',repositoryPath:'LICENSE',gitBlob:blob(text),sha256:sha256(text),size:bytes(text).byteLength});f.entries.push({path:'LICENSE',text})
+ f.source.files[0]!.size=null
+ const files=await downloadGithubCatalogSkill(f.source,f.fallbackHttp)
+ assert.deepEqual(files.map(file=>file.path),['LICENSE','SKILL.md','licenses/upstream/LICENSE','references/guide.md'])
+ assert.deepEqual(files.find(file=>file.path==='licenses/upstream/LICENSE')!.bytes,bytes(text))
+ const unicode=rateFallbackFixture(),guide=unicode.source.files.find(file=>file.path==='references/guide.md')!
+ guide.path='references/café.md';unicode.entries.at(-1)!.path=unicode.source.path+'/references/cafe\u0301.md'
+ assert.ok((await downloadGithubCatalogSkill(unicode.source,unicode.fallbackHttp)).some(file=>file.path==='references/café.md'))
+ unicode.entries.push({path:unicode.source.path+'/references/café.md',text:unicode.texts['references/guide.md']!})
+ await assert.rejects(downloadGithubCatalogSkill(unicode.source,unicode.fallbackHttp),/重复|冲突/)
+})
+
+test('仅支持Git官方默认ZIP模式和同响应规范更名，固定commit/root/header不一致或歧义均拒绝',async()=>{
+ // Git 2.50.1 的真实 100644/100755/120000 树归档复核：普通文件 0/0，执行与链接 0x0317/Unix attrs。
+ // 规则来源：git/git archive-zip.c write_zip_entry；这不是把任意缺失模式当普通文件。
+ const gitDefault=()=>{const f=rateFallbackFixture();for(const entry of f.entries){entry.creatorVersion=0;entry.externalAttrs=entry.path===''||entry.path.endsWith('/')?16:0}return f}
+ const renamed=gitDefault();renamed.options.root='renamed-skills-'+renamed.source.commit;renamed.archive.headers={'content-disposition':`attachment; filename=${renamed.options.root}.zip`}
+ assert.equal((await downloadGithubCatalogSkill(renamed.source,renamed.fallbackHttp)).length,3);assert.equal(renamed.seen.length,2)
+ const direct=gitDefault();assert.equal((await downloadGithubCatalogSkill(direct.source,direct.fallbackHttp)).length,3)
+ for(const disposition of [
+  `attachment; filename=renamed-skills-${'b'.repeat(40)}.zip`,
+  `attachment; filename=renamed-skills-${'b'.repeat(7)}.zip`,
+  `attachment; filename=renamed-skills-${direct.source.commit}.zip; filename=other.zip`,
+  `attachment; filename*=UTF-8''renamed-skills-${direct.source.commit}.zip`,
+  `attachment; filename=../renamed-skills-${direct.source.commit}.zip`,
+  `attachment; filename=renamed%2fskills-${direct.source.commit}.zip`,
+  `attachment; filename=renamed-skills-${direct.source.commit}.zip.extra`,
+  `inline; filename=renamed-skills-${direct.source.commit}.zip`,
+  `attachment; filename=renamed-skills-${direct.source.commit}.zip`,
+ ]){const f=gitDefault();f.archive.headers={'content-disposition':disposition};await assert.rejects(downloadGithubCatalogSkill(f.source,f.fallbackHttp),/归档/);assert.equal(f.seen.length,2)}
+ for(const attrs of [1,16,32,0x81a40000]){const f=gitDefault();f.entries.at(-1)!.externalAttrs=attrs;await assert.rejects(downloadGithubCatalogSkill(f.source,f.fallbackHttp),/模式|100644/)}
+ const unknownCreator=gitDefault();unknownCreator.entries.at(-1)!.creatorVersion=20;await assert.rejects(downloadGithubCatalogSkill(unknownCreator.source,unknownCreator.fallbackHttp),/模式/)
+ for(const mode of [0x81ed,0xa1ff]){const f=gitDefault();f.entries.at(-1)!.creatorVersion=0x0317;f.entries.at(-1)!.externalAttrs=(mode<<16)>>>0;await assert.rejects(downloadGithubCatalogSkill(f.source,f.fallbackHttp),/100644|符号链接/)}
+})
+
+test('限额备用归档与原目录遍历共用120秒预算，过期不开始备用请求也不返回已读文件',async t=>{
+ let clock=0;t.mock.method(Date,'now',()=>clock)
+ for(const expiredBefore of [true,false]){
+  clock=0;const f=rateFallbackFixture()
+  const http:GithubHttpPort={request:async request=>{const reply=await f.fallbackHttp.request(request);clock=new URL(request.url).hostname==='api.github.com'?(expiredBefore?120001:119000):120001;return reply}}
+  await assert.rejects(downloadGithubCatalogSkill(f.source,http),/120 秒/)
+  assert.equal(f.seen.length,expiredBefore?1:2)
+ }
+})
 
 test('目录只下载已审查文件，固定提交、逐文件 blob/大小与许可原字节，剥离文件不请求',async()=>{
  const f=fixture(),files=await downloadGithubCatalogSkill(f.source,f.http)

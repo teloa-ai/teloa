@@ -36,6 +36,8 @@ const OWNER=/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/
 const invalid=(message='GitHub 来源请求格式不正确。')=>new WorkError('teloa/invalid-input',message)
 const unavailable=(message='GitHub 来源暂不可用。')=>new WorkError('teloa/source-unavailable',message)
 const corrupt=()=>new WorkError('teloa/storage-corrupt','GitHub 固定来源记录损坏，已停止读取。')
+/** 只在真正的 API 配额响应上产生，不能由网络错误、普通 403 或内容错误触发归档读取。 */
+class GithubApiRateLimit extends WorkError {constructor(message:string){super('teloa/source-unavailable',message)}}
 const sha=(value:Uint8Array|string)=>createHash('sha256').update(value).digest('hex')
 const hex=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value)
 const uuid=(value:unknown):value is string=>typeof value==='string'&&UUID.test(value)
@@ -83,7 +85,7 @@ function rateLimited(status:number,headers:Readonly<Record<string,string|undefin
  return `GitHub API 限流（HTTP ${status}，剩余配额 ${remaining??'未知'}），${when}`
 }
 /** `label` 说明这次请求在取什么（阶段 + 相对路径），失败文案据此定位到具体请求，不再只有「请求未成功」。 */
-async function requestBytes(http:GithubHttpPort,url:string,host:GithubHost,max:number,accept:string,timeoutMs:number,label:string):Promise<Uint8Array>{
+async function requestBytes(http:GithubHttpPort,url:string,host:GithubHost,max:number,accept:string,timeoutMs:number,label:string,onHeaders?:(headers:GithubHttpResponse['headers'])=>void):Promise<Uint8Array>{
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),target=checkedUrl(url,host),pathname=new URL(target).pathname
  try{
   const request=async(destination:string)=>{try{return await http.request({url:destination,method:'GET',redirect:'manual',signal:controller.signal,headers:{accept,'user-agent':'Teloa-AI-Studio/0.0.1'}})}catch{throw unavailable(`GitHub ${label} 请求未完成（网络错误或超时 ${timeoutMs} ms）：${pathname}`)}}
@@ -98,7 +100,8 @@ async function requestBytes(http:GithubHttpPort,url:string,host:GithubHost,max:n
   const moved=response.status===301?repositoryRedirect(target,host,header(response.headers,'location')):undefined
   if(moved){await read(response);response=await request(moved)}
   if(response.status>=300&&response.status<400)throw unavailable(`GitHub ${label} 返回了不允许跟随的重定向（HTTP ${response.status}）：${pathname}`)
-  if(response.status!==200){const limited=rateLimited(response.status,response.headers);throw unavailable(limited?`${limited}；${label} 未读取：${pathname}`:`GitHub ${label} 请求失败（HTTP ${response.status}）：${pathname}`)}
+  if(response.status!==200){const limited=rateLimited(response.status,response.headers),message=limited?`${limited}；${label} 未读取：${pathname}`:`GitHub ${label} 请求失败（HTTP ${response.status}）：${pathname}`;throw limited&&host==='api.github.com'?new GithubApiRateLimit(message):unavailable(message)}
+  onHeaders?.(response.headers)
   return await read(response)
  }finally{clearTimeout(timer)}
 }
@@ -127,13 +130,15 @@ function finalPath(raw:string,root:string):string{
  if(parts.length<2||parts[0]!==root||parts.some(part=>!part||part==='.'||part==='..')||normalized.startsWith('/')||/[\\:?%#\u0000-\u001f\u007f]/.test(normalized))throw unavailable('GitHub 来源包含不安全路径：'+quoted(raw.slice(root.length+1)))
  const path=parts.slice(1).join('/');if(path.length>500)throw unavailable('GitHub 来源文件路径超过 500 字符：'+shown(path.slice(0,80))+'…');return path
 }
-function extractZip(input:Uint8Array):GithubSourceFile[]{
+type ZipInspection={root:string;commit:string;entries:{path:string;mode:number;directory:boolean}[]}
+function extractZip(input:Uint8Array,inspection?:ZipInspection):GithubSourceFile[]{
  // 归档只按静态字节树解析；这里不会执行脚本，也不会展开 submodule 或 Git LFS 指针。
  const buffer=Buffer.from(input),from=Math.max(0,buffer.length-65557);let end=-1
  for(let at=buffer.length-22;at>=from;at--)if(u32(buffer,at)===0x06054b50){end=at;break}
  if(end<0||u16(buffer,end+4)!==0||u16(buffer,end+6)!==0)throw unavailable('GitHub ZIP 不支持多卷格式。')
  const diskEntries=u16(buffer,end+8),entries=u16(buffer,end+10),centralSize=u32(buffer,end+12),centralOffset=u32(buffer,end+16)
  if(entries!==diskEntries||entries===0xffff||entries>MAX_ENTRIES||centralOffset===0xffffffff||centralSize===0xffffffff||centralOffset+centralSize>end)throw unavailable('GitHub ZIP 目录无效或超过条目限制。')
+ if(inspection&&(end+22+u16(buffer,end+20)!==buffer.length||!buffer.subarray(end+22).equals(Buffer.from(inspection.commit,'ascii'))))throw unavailable('GitHub 归档缺少匹配固定提交的 ZIP 注释。')
  const decoder=new TextDecoder('utf-8',{fatal:true}),files:GithubSourceFile[]=[];let at=centralOffset,total=0,root:string|undefined;const paths=new Set<string>(),folded=new Set<string>()
  for(let index=0;index<entries;index++){
   if(u32(buffer,at)!==0x02014b50)throw unavailable('GitHub ZIP 中央目录无效。')
@@ -144,6 +149,14 @@ function extractZip(input:Uint8Array):GithubSourceFile[]{
   const mode=(external>>>16)&0xffff,type=mode&0xf000,directory=raw.endsWith('/')
   if(type===0xa000)throw unavailable('GitHub ZIP 不接受符号链接。')
   if(type!==0&&type!==0x8000&&type!==0x4000)throw unavailable('GitHub ZIP 包含不支持的文件类型。')
+  if(inspection){
+   if(entryRoot!==inspection.root||parts[0]!==raw.split('/')[0])throw unavailable('GitHub 归档根目录与固定仓库和提交不一致。')
+   // Git archive 对非执行文件精确编码为 creator=0/attrs=0，目录为 0/16；其他缺省模式不猜作 100644。
+   const creator=u16(buffer,at+4),gitDefault=creator===0&&external===(directory?16:0),dosAttrs=external&0xffff
+   if(!gitDefault&&((creator>>>8)!==3||mode&0x0e00||dosAttrs!==0&&(!directory||dosAttrs!==16)||(directory?type!==0x4000:type!==0x8000)))throw unavailable('GitHub 归档条目缺少可靠的 Git 普通文件或目录模式。')
+   const path=raw===inspection.root+'/'?'':finalPath(directory?raw.slice(0,-1):raw,inspection.root)
+   inspection.entries.push({path,mode:gitDefault?(directory?0x4000:0x81a4):mode,directory})
+  }
   if(!directory){
    if(files.length>=MAX_FILES||size>MAX_FILE_BYTES||total+size>MAX_ARCHIVE_BYTES)throw unavailable('GitHub ZIP 解压内容超过大小限制。')
    const path=finalPath(raw,root),fold=path.toLocaleLowerCase('en-US');if(paths.has(path)||folded.has(fold))throw unavailable('GitHub ZIP 包含重复或大小写冲突路径。')
@@ -265,9 +278,9 @@ function gitTreeReader(http:GithubHttpPort,spec:RequestSpec,deadline:number){
  * 普通导入先读 commit 对象取根树 sha，再按根树 sha（而不是 commit）请求根树并核对回包 sha（+1 次 ≈1 KB 请求，树请求数不变）：
  * GitHub `GET /git/trees/{commit}` 的回包 sha 是请求时传入的 commit，按 commit 请求根本核不了根树。已审路径由目录钉住每个 blob，不为此多发请求，根树仍按 commit 请求、只验格式。
  */
-async function downloadSubtree(http:GithubHttpPort,spec:RequestSpec&{path:string},commit:string,selection?:ReadonlyMap<string,MarketCatalogUpstreamGithub['files'][number]>):Promise<{archiveHash:string;files:GithubSourceFile[]}>{
+async function downloadSubtree(http:GithubHttpPort,spec:RequestSpec&{path:string},commit:string,selection?:ReadonlyMap<string,MarketCatalogUpstreamGithub['files'][number]>,deadline=Date.now()+SUBTREE_DEADLINE_MS):Promise<{archiveHash:string;files:GithubSourceFile[]}>{
  // 整次下载（commit 对象 + 树 + raw）限时 120 秒、raw 4 路并发：上游慢或内容多时尽快失败，不长时间占着数据库连接与请求锁。
- const deadline=Date.now()+SUBTREE_DEADLINE_MS,trees=gitTreeReader(http,spec,deadline),tree:TreeItem[]=[]
+ const trees=gitTreeReader(http,spec,deadline),tree:TreeItem[]=[]
  const rootTree=selection?undefined:await commitTree(http,spec,commit,10000)
  const root=await trees.read(rootTree??commit,rootTree,`根树（commit ${commit.slice(0,12)}）`)
  const hint=(similar:string|undefined)=>similar===undefined?'':`；仓库中有大小写或 Unicode 规范化不同的 ${similar}，路径区分大小写，请按仓库实际名称填写`
@@ -328,6 +341,39 @@ async function downloadSubtree(http:GithubHttpPort,spec:RequestSpec&{path:string
  return {archiveHash:sha(stable(entries.map(entry=>[entry.path,entry.sha,entry.size]))),files}
 }
 
+/** 已审目录的备用传输：固定提交 ZIP 独立验源，不声称读取了 API 的祖先树 SHA。 */
+async function downloadCatalogArchive(http:GithubHttpPort,spec:RequestSpec&{path:string},commit:string,selection:ReadonlyMap<string,MarketCatalogUpstreamGithub['files'][number]>,deadline:number):Promise<GithubSourceFile[]>{
+ const remaining=deadline-Date.now()
+ if(remaining<=0)throw unavailable('目录下载超过 120 秒，未开始归档读取。')
+ let root=`${spec.repo}-${commit}`
+ const archive=await requestBytes(http,`https://codeload.github.com/${spec.owner}/${spec.repo}/zip/${commit}`,'codeload.github.com',MAX_ARCHIVE_BYTES,'application/zip, application/octet-stream;q=0.9',Math.min(30000,remaining),`已审目录固定归档 ${commit.slice(0,12)}`,headers=>{
+  const disposition=header(headers,'content-disposition');if(disposition===undefined)return
+  // 官方更名可由同一固定 codeload 响应给出规范文件名；不跟随 URL、不重解析来源，不接受 filename* 或多值。
+  const match=/^attachment;\s*filename=(?:"([^";]+)"|([^\s;]+))\s*$/i.exec(disposition),filename=match?.[1]??match?.[2],suffix=`-${commit}.zip`
+  if(!filename||!filename.endsWith(suffix)||!isGithubRepositoryName(filename.slice(0,-suffix.length)))throw unavailable('GitHub 归档响应文件名不是唯一的固定提交 ZIP 名称。')
+  root=filename.slice(0,-4)
+ })
+ const inspection:ZipInspection={root,commit,entries:[]},files=extractZip(archive,inspection),byPath=new Map(files.map(file=>[file.path,file])),metadata=new Map<string,ZipInspection['entries']>()
+ for(const entry of inspection.entries){const key=fold(entry.path);metadata.set(key,[...metadata.get(key)??[],entry])}
+ const output:GithubSourceFile[]=[],prefix=spec.path+'/'
+ for(const [repositoryPath,expected] of selection){
+  const parts=repositoryPath.split('/');let selected:ZipInspection['entries'][number]|undefined
+  for(let index=0;index<=parts.length;index++){
+   const path=parts.slice(0,index).join('/'),matches=metadata.get(fold(path))
+   if(!matches||matches.length!==1)throw unavailable(`GitHub 归档缺少唯一的目录声明路径：${shown(path||'根目录')}。`)
+   const item=matches[0]!
+   if(item.path!==path)throw unavailable(`GitHub 归档路径经 NFC 比较后仍不匹配：${shown(path)}。`)
+   if(index<parts.length){if(!item.directory)throw unavailable(`GitHub 归档祖先不是普通目录：${shown(path)}。`)}else selected=item
+  }
+  if(!selected||selected.directory||selected.mode!==0x81a4)throw unavailable(`GitHub 归档文件不是普通 100644 blob：${shown(repositoryPath)}。`)
+  const file=byPath.get(repositoryPath)
+  if(!file||file.bytes.byteLength>MAX_FILE_BYTES||expected.size!==null&&file.bytes.byteLength!==expected.size||gitBlob(file.bytes)!==expected.gitBlob||file.hash!==expected.sha256)throw unavailable(`GitHub 归档文件与已审查目录的大小、blob 或 sha256 不一致：${shown(repositoryPath)}。`)
+  output.push({path:finalPath('root/'+prefix+expected.path,'root'),hash:file.hash,bytes:file.bytes})
+ }
+ if(Date.now()>=deadline)throw unavailable('目录下载超过 120 秒，已停止归档读取。')
+ return output.sort((left,right)=>left.path<right.path?-1:left.path>right.path?1:0)
+}
+
 /** 目录上游添加的薄适配：复用固定子目录读取，只读取审核清单，不创建另一套来源存储或下载器。 */
 export async function downloadGithubCatalogSkill(input:MarketCatalogUpstreamGithub|MarketCatalogUpstreamSkillEntry,http:GithubHttpPort):Promise<{path:string;bytes:Uint8Array}[]>{
  // 辅助代码只随 Teloa 已审原插件的完整技能内容下载，不执行。普通来源仍遵守原纯文本规则。
@@ -347,8 +393,14 @@ export async function downloadGithubCatalogSkill(input:MarketCatalogUpstreamGith
   total+=file.size??0;selection.set(repositoryPath,{...file,path});folded.add(fold);sourceFolded.add(sourceFold)
  }
  if(total>MAX_ARCHIVE_BYTES||!source.files.some(file=>file.path==='SKILL.md'&&file.repositoryPath===undefined))throw invalid('目录 GitHub 文件超限或缺少 SKILL.md。')
- const result=await downloadSubtree(http,{...spec,path:spec.path!},source.commit,selection)
- return result.files.map(file=>({path:file.path.slice(spec.path!.length+1),bytes:file.bytes}))
+ const deadline=Date.now()+SUBTREE_DEADLINE_MS;let files:GithubSourceFile[]
+ try{files=(await downloadSubtree(http,{...spec,path:spec.path!},source.commit,selection,deadline)).files}
+ catch(error){
+  if(!(error instanceof GithubApiRateLimit))throw error
+  try{files=await downloadCatalogArchive(http,{...spec,path:spec.path!},source.commit,selection,deadline)}
+  catch(secondary){throw unavailable(`${error.message}；固定提交归档验证也未完成：${secondary instanceof WorkError?secondary.message:'归档读取失败。'}`)}
+ }
+ return files.map(file=>({path:file.path.slice(spec.path!.length+1),bytes:file.bytes}))
 }
 
 function treeHash(files:GithubSourceFile[]):string{return sha(stable(files.map(file=>[file.path,file.hash,file.bytes.byteLength])))}

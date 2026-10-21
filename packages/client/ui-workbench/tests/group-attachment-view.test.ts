@@ -2,6 +2,7 @@ import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
 import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import * as groupWorkResources from '../src/client/group-work-resources.ts'
 import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -216,6 +217,7 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
   if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
   // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
   if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./group-work-resources.js')return groupWorkResources
   if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }
@@ -543,7 +545,7 @@ test('撤回确认弹层的正文逐字含「已存的字节不会被删除。�
  assert.deepEqual(Object.keys(withdraw[0]!.payload as object).sort(),['attachmentId','requestId'],'撤回只提交白名单字段')
 })
 
-test('授权面按 kind 分三组，勾选后提交的 resources 就是勾选那几条且顺序稳定',async()=>{
+test('授权面按 kind 分四组，未接资料库保持空态，勾选后只提交所选资源且顺序稳定',async()=>{
  const resource={id:resourceId,groupId,version:2,title:'核对口径',withdrawnAt:null,createdAt:stamp,updatedAt:stamp}
  const {api,calls}=makeApi({resources:[resource],messages:[employeeMessage('m6',[{kind:'artifact',id:artifactId,version:2}])]})
  const {attachments}=makeAttachments({files:[attachment({})],opened:{[artifactId]:'fail'}})
@@ -554,7 +556,9 @@ test('授权面按 kind 分三组，勾选后提交的 resources 就是勾选那
  app.find(el=>el.type==='button'&&app.contentOf(el)==='collaboration.agentGrant.configure'&&el.props.className==='replyButton').props.onClick()
  await app.flush()
  const legends=app.findAll(el=>el.type==='legend').map(el=>app.contentOf(el))
- assert.deepEqual(legends,[t('collaboration.grant.section.resources'),t('collaboration.grant.section.attachments'),t('collaboration.grant.section.artifacts')],'三组齐全且按资料／文件／成果排列')
+ assert.deepEqual(legends,[t('collaboration.grant.section.resources'),t('group.mention.sectionLibrary'),t('collaboration.grant.section.attachments'),t('collaboration.grant.section.artifacts')],'四组齐全且按资料／资料库／文件／成果排列')
+ const library=app.find(el=>el.type==='fieldset'&&app.contentOf(el).includes(t('group.mention.sectionLibrary')))
+ assert.ok(app.contentOf(library).includes(t('collaboration.resources.savedEmpty')),'未接资料库时保持空态，不隐式带入资料或授权')
  assert.ok(app.findAll(el=>app.contentOf(el)===t('collaboration.grant.canPost.attachmentNote')).length>0,'群内发言开关下补一句附件说明')
  const boxes=app.findAll(el=>el.type==='input'&&el.props.type==='checkbox')
  const labelled=(text:string)=>app.find(el=>el.props.className==='memberChoice'&&app.contentOf(el).includes(text))

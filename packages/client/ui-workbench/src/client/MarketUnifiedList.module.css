@@ -63,7 +63,7 @@
 .purposeBar .filterPanel .filterLabel{display:block;line-height:1.6}
 .purposeBar .filterPanel .chips{gap:6px}
 .grid.cards{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.cards .gridCard{position:relative;flex-direction:column;align-items:stretch;gap:10px;height:200px;overflow:hidden;padding:14px 16px 12px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3)}
+.cards .gridCard{box-sizing:border-box;position:relative;flex-direction:column;align-items:stretch;gap:10px;height:200px;overflow:hidden;padding:14px 16px 12px;background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r3)}
 .cards .gridCard:hover{background:var(--teloa-subtle)}
 .cardHead{display:flex;align-items:center;gap:10px;min-width:0;height:56px;flex:none}
 .cardHead>:first-child{flex:none}

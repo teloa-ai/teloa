@@ -99,12 +99,18 @@ test('统一发现首页进入 AI 员工，团队方案只列方案，应用改�
 
 test('市场页头：独立「我的能力」入口退出、已添加进入原目录、创建或导入只有模板和技能导入',()=>{
  const page=mount('MarketPage.tsx',{'./MarketCatalogSection.js':{MarketCatalogSection:()=>null}})
- const tree=nodes(page.render('TestCatalog',{...marketProps({category:'home'}),inCapabilityCenter:true,marketCatalogApi:{},capabilities:()=>{},runtime:{state:'ready',facts:[]}}))
+ const navigation:Record<string,unknown>[]=[]
+ const tree=nodes(page.render('TestCatalog',{...marketProps({category:'home'}),onNavigationChange:(value:Record<string,unknown>)=>navigation.push(value),inCapabilityCenter:true,marketCatalogApi:{},capabilities:()=>{},runtime:{state:'ready',facts:[]}}))
  const header=tree.find(node=>node.type==='header'&&node.props.className==='pageHeader')!
  assert.ok(header,'工作台内也渲染方案 B 页头')
  const inHeader=nodes(header)
  assert.equal(inHeader.some(node=>node.type==='button'&&node.children.includes('capabilityCenter.mineTitle')),false,'页头不再有独立「我的能力」入口')
- assert.equal(inHeader.filter(node=>node.type==='button'&&node.props.className==='addedBadge').length,1)
+ const directories=inHeader.filter(node=>node.type==='button'&&node.props.className==='addedBadge')
+ assert.deepEqual(directories.map(node=>node.children.join('')),['market.apps.mineTitle','market.addedCount'],'我的应用与技能移到页头，与已添加模板分开')
+ directories[0]!.props.onClick()
+ assert.equal(navigation.at(-1)!.category,'apps');assert.equal(navigation.at(-1)!.appsMine,true)
+ directories[1]!.props.onClick()
+ assert.equal(navigation.at(-1)!.category,'intents')
  const summary=inHeader.find(node=>node.type==='summary')!
  assert.equal(summary.props['aria-label'],'capabilityCenter.createOrImport');assert.equal(summary.props.title,'capabilityCenter.createOrImport')
  assert.equal(inHeader.filter(node=>node.type==='summary').length,1,'创建与导入只有一个入口')

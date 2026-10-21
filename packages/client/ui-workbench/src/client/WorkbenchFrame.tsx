@@ -2283,7 +2283,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [resourceMessage,setResourceMessage]=useState<{target:ResourceMessageTarget;api:NativeResourceMessageApi;resources:ResourceApi;identity:typeof attentionIdentity;current:()=>boolean}>()
   const resourceMessageCurrent=()=>!!resourceMessage&&projectFrameMounted.current&&resourceMessage.identity===attentionIdentity&&resourceMessage.api===nativeResourceMessages&&resourceMessage.resources===resourceApi&&state.view==='resources'&&resourceMessage.current()
   const resourceUsageNavigation={
-    previewMessage:(target:ResourceMessageTarget,current:()=>boolean)=>{if(!nativeResourceMessages)throw Error('原消息读取服务暂时不可用。');setResourceMessage({target,api:nativeResourceMessages,resources:resourceApi,identity:attentionIdentity,current})},
+    previewMessage:(target:ResourceMessageTarget,current:()=>boolean)=>{if(!nativeResourceMessages)throw Object.assign(Error(),{code:'teloa/source-unavailable'});setResourceMessage({target,api:nativeResourceMessages,resources:resourceApi,identity:attentionIdentity,current})},
     openConversation:(id:string,current:()=>boolean)=>work.openSessionResult(id,undefined,current),
     showConversation:()=>actions.openMessages('native'),
     openGroup:(id:string,rootId:string,messageId?:string)=>actions.openGroupTopic(id,rootId,messageId),

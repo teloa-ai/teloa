@@ -2,6 +2,7 @@ import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
 import * as industryTeamMaterials from '../src/client/industry-team-materials.ts'
+import * as groupWorkResources from '../src/client/group-work-resources.ts'
 import {staffAvatarComponent,personalProfileForGroup} from './staff-avatar-component.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -150,6 +151,7 @@ function mount(initial:Props){
   if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
   // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
   if(id==='./industry-team-materials.js')return industryTeamMaterials
+  if(id==='./group-work-resources.js')return groupWorkResources
   if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
   throw Error('未声明的组件依赖：'+id)
  }

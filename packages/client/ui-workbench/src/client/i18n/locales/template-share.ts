@@ -77,7 +77,7 @@ const rows=[
  ['connectionTemplate','连接设置模板（可选）','連線設定範本（選填）','Connection setup template (optional)'],
  ['addressTemplate','地址模板','地址範本','URL template'],
  ['configurationNames','所需配置项名称（每行一项）','所需設定項目名稱（每行一項）','Required configuration names (one per line)'],
- ['connectionTemplateHint','只填写可复用的地址结构和配置项名称。用 {NAME} 代替账号、租户和密钥；查询值必须是占位符。运行地址不会自动带入，接收方仍需在连接设置中填写本人配置。','只填寫可重用的地址結構和設定項目名稱。用 {NAME} 代替帳號、租戶和金鑰；查詢值必須是佔位符。不會自動帶入執行中的地址，接收方仍需在連線設定中填寫自己的設定。','Enter only reusable URL structure and configuration names. Use {NAME} for accounts, tenants and secrets; query values must be placeholders. Runtime URLs are never copied. Receivers still fill in their own connection settings.'],
+ ['connectionTemplateHint','只填写可复用的地址结构和配置项名称。用 {NAME} 代替账号、租户和密钥；查询值必须是占位符。现有连接地址不会自动带入，接收方仍需在连接设置中填写本人配置。','只填寫可重用的地址結構和設定項目名稱。用 {NAME} 代替帳號、租戶和金鑰；查詢值必須是佔位符。不會自動帶入現有連線地址，接收方仍需在連線設定中填寫自己的設定。','Enter only reusable URL structure and configuration names. Use {NAME} for accounts, tenants and secrets; query values must be placeholders. Current connection addresses are never copied. Receivers still fill in their own connection settings.'],
  ['connectionTemplateInvalid','地址模板或配置项名称不合法。请去掉账号、片段和配置值，并把查询值改为 {NAME} 占位符。','地址範本或設定項目名稱不合法。請移除帳號、片段和設定值，並把查詢值改為 {NAME} 佔位符。','Invalid URL template or configuration names. Remove user information, fragments and configuration values, and replace query values with {NAME} placeholders.'],
  ['applyConnectionTemplate','应用模板说明','套用範本說明','Apply template details'],
  ['connectionTemplateSaved','模板说明已更新，导出前将重新检查。','範本說明已更新，匯出前會重新檢查。','Template details updated; contents will be checked again before export.'],

@@ -149,8 +149,9 @@ test('市场顶层直接展示已选定的资源分类，保留搜索和资源�
   assert.match(source,/const solutionCategory=kind==='industry'/)
   assert.match(source,/const primaryView:MarketPrimaryView/)
   assert.match(source,/const listKind:MarketCategory=solutionCategory\?'industry':atomicCategory/)
-  // 方案卡有两处合法投影：首页方案与“已添加”均复用同一组件，不能再各造一套卡片实现。
-  assert.equal((source.match(/<SolutionCards /g)??[]).length,2)
+  // 旧方案视图保留原投影；已添加复用市场统一卡片，以同一固定尺寸显示长摘要。
+  assert.equal((source.match(/<SolutionCards /g)??[]).length,1)
+  assert.match(source,/<MarketListRows rows=\{solutionListRows\(addedSolutions\)\.map\(row=>\(\{\.\.\.row,requirements:row\.facts\}\)\)\} layout="cards"\/>/)
   // 方案页签：本机方案卡与官方目录上下分区，外层是区块栈（区块间距统一）
   assert.match(source,/:solutionCategory\?<section className=\{css\.sectionStack\}/)
   // 2026-10-15：加号按对象创建与导入分层；格式选择留在导入窗口，不重复占一级菜单。

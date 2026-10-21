@@ -55,7 +55,7 @@ test('成员栏按真实资格说明原因：不服务本群业务、不在岗�
 
 test('授权抽屉：不服务本群业务或不在岗时不展示可保存的权限表单，明确原因并提供员工档案入口；服务本群业务时保留原表单',()=>{
  const app=page()
- const base={resources:[],attachments:[],artifacts:[],artifactSummaries:{},scope:'SOC',error:undefined,save(){assert.fail('不支持的员工不能提交授权')}}
+ const base={workResources:[],resources:[],attachments:[],artifacts:[],artifactSummaries:{},scope:'SOC',error:undefined,save(){assert.fail('不支持的员工不能提交授权')}}
  for(const [role,reason] of [[outside,'group.grant.notServing'],[retired,'group.grant.inactive']] as const){
   const opened:string[]=[]
   const tree=app.render('SavedAgentGrantForm',{...base,form:{role,read:read('not-granted')},close(){},openRole:(id:string)=>opened.push(id)})

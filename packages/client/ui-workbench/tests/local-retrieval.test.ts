@@ -1,20 +1,31 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {registerHooks} from 'node:module'
+import {existsSync,readFileSync} from 'node:fs'
+import ts from 'typescript'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
 import {captureRetrievalPreparation} from '@teloa/contract'
 import {retrievalPreparationDetails} from '../../../local-embedding/src/preparation-details.ts'
 import manifest from '../../../local-embedding/runtime/assets.json' with {type:'json'}
 registerHooks({
- resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
- load:(url,context,next)=>url.endsWith('.module.css')?{format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}:next(url,context),
+ resolve:(specifier,context,next)=>{
+  if(specifier.endsWith('.module.css'))return {url:new URL(specifier,context.parentURL).href,shortCircuit:true}
+  if(specifier.startsWith('.')&&specifier.endsWith('.js')&&context.parentURL?.includes('/src/client/'))for(const suffix of ['.ts','.tsx']){const source=new URL(specifier.slice(0,-3)+suffix,context.parentURL);if(existsSync(source))return next(source.href,context)}
+  return next(specifier,context)
+ },
+ load:(url,context,next)=>{
+  if(url.endsWith('.module.css'))return {format:'module',shortCircuit:true,source:'export default new Proxy({},{get:(_,key)=>String(key)})'}
+  if(url.includes('/src/client/')&&url.endsWith('.tsx'))return {format:'module',shortCircuit:true,source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText}
+  return next(url,context)
+ },
 })
 const {createLocalRetrievalApi,readRetrievalModelStatus,readRetrievalStatus}=await import('../lib/types/client/local-retrieval-api.js')
 const {LocalRetrievalModelPresentation}=await import('../lib/types/client/LocalRetrievalModelPanel.js')
-const {LocalRetrievalResourcesPresentation}=await import('../lib/types/client/LocalRetrievalResources.js')
-const {translateMessage}=await import('../lib/types/client/i18n/messages.js')
-const {LOCAL_RETRIEVAL_MESSAGE_ROWS}=await import('../lib/types/client/i18n/locales/local-retrieval.js')
+// 此入口随用户要求迁移到统一设置；直接验当前源码，不能由上次编译的旧区块掩盖差异。
+const {LocalRetrievalResourcesPresentation}=await import('../src/client/LocalRetrievalResources.tsx')
+const {translateMessage}=await import('../src/client/i18n/messages.ts')
+const {LOCAL_RETRIEVAL_MESSAGE_ROWS}=await import('../src/client/i18n/locales/local-retrieval.ts')
 const details=retrievalPreparationDetails('fp32','/host/models/fp32','/host/runtime')
 const provider={id:'qwen3-embedding-0.6b',location:'host-local',catalogId:'teloa.model.qwen3-embedding-0-6b',catalogVersion:'1.0.0',profileHash:'a'.repeat(64),variant:'fp32',totalMemoryBytes:8*1024**3,memoryRisk:true,preparation:{phase:'unprepared'},preparationDetails:details}
 const model={enabled:true,provider,building:false,guidance:null}
@@ -191,15 +202,19 @@ test('确认卡的下载来源单选：官方默认选中，镜像写明第三�
  assert.deepEqual(calls.filter((_row,i)=>i%2===1),[{expected,source:'hf-mirror'},{expected}])
 })
 
-test('本地检索区块只呈现用途和真实状态，不再常驻工程操作说明',()=>{
+test('本地检索区块只呈现真实状态与统一设置入口，资料操作保留且不自动管理模型',()=>{
  const plain=(html:string)=>html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')
  const excluded=renderIndex({status:{items:[],enrolled:0,chunks:0,building:false}})
- assert.match(plain(excluded),/本地检索 开启后，员工会在需要时自动查找你加入的资料。/)
+ assert.match(plain(excluded),/本地检索 已加入 0 份资料/)
  assert.match(plain(excluded),/已加入 0 份资料/)
  assert.doesNotMatch(excluded,/索引块/,'统计不再报索引块数')
  assert.match(plain(excluded),/检索测试资料 · 未加入 加入/)
  assert.doesNotMatch(plain(excluded),/需要先在市场|模型就绪|打开资料页时|索引块/)
  assert.doesNotMatch(excluded,/来源与许可|加入与移出均按资料来源生效|取消保留已完成索引/)
+ assert.doesNotMatch(plain(excluded),/开启后，员工会|检索设置|检索模型|下载模型/,'用途与模型管理不重新塞回资料区块')
+ const settings=renderIndex({status:{items:[],enrolled:0,chunks:0,building:false},modelReady:false,modelLabel:t('retrieval.resources.disabled'),onModelSettings:()=>{}})
+ assert.match(plain(settings),/本地检索 未启用 去启用/)
+ assert.doesNotMatch(settings,/<select|role="dialog"/,'资料只导航到统一设置，不保留旧模型管理窗口')
  const ready={items:[{...index.items[0],state:'ready',chunkCount:4},{sourceId:'knowledge_two',resourceId:'resource-two',title:'第二份资料',version:2,state:'stale',chunkCount:null}],enrolled:2,chunks:4,building:false}
  const enrolled=renderIndex({status:ready})
  assert.match(plain(enrolled),/已加入 2 份资料/)
@@ -217,6 +232,9 @@ test('本地检索区块只呈现用途和真实状态，不再常驻工程操�
  buttons(tree).find(props=>props.children===t('retrieval.resources.rebuild')).onClick()
  buttons(tree).filter(props=>props.children===t('retrieval.resources.remove'))[1].onClick()
  assert.deepEqual(calls,['rebuild','remove:knowledge_two'])
+ const navigation:string[]=[],notReady=LocalRetrievalResourcesPresentation({status:ready,resource,busy:false,error:'',modelReady:false,t,onModelSettings:()=>navigation.push('settings'),onEnroll:()=>navigation.push('enroll'),onRemove:()=>navigation.push('remove'),onReindex:()=>navigation.push('rebuild'),onCancel:()=>navigation.push('cancel')} as never)
+ buttons(notReady).find(props=>props.children===t('retrieval.resources.goEnable')).onClick()
+ assert.deepEqual(navigation,['settings'],'去启用仅请求设置导航，不下载、选择或加入资料')
 })
 
 test('EmbeddingGemma 2可按受审provider准备并显式选用，默认读取和取消仍兼容',async()=>{
