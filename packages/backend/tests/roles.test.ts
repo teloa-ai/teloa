@@ -89,7 +89,11 @@ test('自由组合头像随创建、编辑与身份修改原样持久化，旧�
  const edited=await service.edit(owner,{roleId:created.id,expectedVersion:profiled.version,expectedProfile:{name:fields.name,avatarKey:'researcher'},fields:{...fields,avatarKey:'bot:capsule:plum'}})
  assert.equal(edited.avatarKey,'bot:capsule:plum')
  assert.deepEqual(await service.get(owner,created.id),edited)
- await assert.rejects(service.create(owner,{requestId:randomUUID(),fields:{...fields,avatarKey:'bot:circle:ink'}}),{code:'teloa/invalid-input'})
+ const ink=await service.create(owner,{requestId:randomUUID(),fields:{...fields,avatarKey:'bot:circle:ink'}})
+ assert.equal(ink.avatarKey,'bot:circle:ink')
+ assert.deepEqual(await service.get(owner,ink.id),ink)
+ for(const avatarKey of ['bot:circle:unknown','bot:star:teal'])await assert.rejects(service.create(owner,{requestId:randomUUID(),fields:{...fields,avatarKey}}),{code:'teloa/invalid-input'},avatarKey)
+ assert.equal((await service.list(owner,{})).length,2)
 })
 test('在岗员工可以保存姓名头像职责简介，但不能顺带变更执行范围或模型',async()=>{
  const {owner,service}=fixture(),role=await service.create(owner,{requestId:randomUUID(),fields:configuredFields})
