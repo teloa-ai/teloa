@@ -1,9 +1,13 @@
 import type {Context} from '@deepseek-ai/cordis'
 import type {PromptAssembly} from '@deepseek-ai/dsh-system-prompt'
+import {renderContextSnapshot} from '@deepseek-ai/dsh-system-prompt'
+import type {Agent} from '@deepseek-ai/dsh-agent'
+import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import z from '@deepseek-ai/schemastery'
 import {workPromptModules,selectWorkPromptModules,renderWorkRuntimeContext} from './work-prompts/runtime-context.ts'
 import {productIdentityText} from './work-prompts/product-identity.ts'
+import {readSessionEvents} from './session-events.ts'
 
 export {workBehaviorVersion,workPromptModules} from './work-prompts/runtime-context.ts'
 export const name='teloa-work-behavior'
@@ -27,11 +31,42 @@ export function refineWorkBehavior(assembly:PromptAssembly,coreOnly=false):Promp
  }
 }
 
+/** 只退休本模块的旧静态正文；权限、岗位、其他快照字段与原始事件均保留。 */
+function retireHistoricalProductContext(agent:Agent,assembly:PromptAssembly):void{
+ const visible=new Set(agent.session.surface.nodes)
+ const snapshots=readSessionEvents(agent.session).filter(event=>visible.has(event.seq)&&event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot')
+ const owned=(section:{name:string;text:string})=>section.name==='teloa:product-identity'&&/^# Teloa (?:identity and usage|产品与用量事实)\n/.test(section.text)
+ const old=snapshots.filter(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot'&&event.data.source.sections.some(owned))
+ if(!old.length)return
+ const latest=snapshots.at(-1)
+ if(old.length===1&&latest&&old[0]===latest&&latest.type==='user/message'&&latest.data.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')===renderContextSnapshot(assembly))return
+ const replacements=[]
+ for(const event of old){
+  if(event.type!=='user/message'||event.data.source.kind!=='runtime-context'||event.data.source.form!=='snapshot')continue
+  const sections=event.data.source.sections.filter(section=>!owned(section))
+  const before=event.data.source.sections.map(section=>section.text).join('\n\n'),after=sections.map(section=>section.text).join('\n\n')
+  // 只修改具名正文唯一对应的块，保留官方或插件的原包装；未知形状整批不动。
+  const matches=event.data.content.flatMap((block,index)=>block.type==='text'&&block.text.includes(before)?[index]:[])
+  if(!before||matches.length!==1)return
+  const index=matches[0]!,block=event.data.content[index]!
+  if(block.type!=='text'||block.text.split(before).length!==2)return
+  const content=event.data.content.map((row,i)=>i===index&&row.type==='text'?{...row,text:row.text.replace(before,()=>after)}:row)
+  replacements.push({seq:event.seq,message:createUserMessage({source:{...event.data.source,sections},content})})
+ }
+ // 改写旧 runtime 节点会更新原生 retained 指针，因此本轮变化时连旧 latest 一起退休，交由原生补唯一 current。
+ for(const replacement of replacements)agent.session.append('user/message',replacement.message,{surfaceOp:{op:'replace',startSeq:replacement.seq,endSeq:replacement.seq},sourceEventSeqs:[replacement.seq]})
+}
+
 export function apply(ctx:Context,config:Config={}):void{
  if(config.enabled===false)return
  if(config.productOnly){
   // 官方 complete persona 会替换全部 section；required 上下文仍由原生装配保留。
   ctx.systemPrompt.context({name:'teloa:product-identity',order:0,text:productIdentityText,required:true,interpolate:false})
+  ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
+   const result=await next();context.signal?.throwIfAborted()
+   if(context.agent)retireHistoricalProductContext(context.agent,result)
+   return result
+  },{prepend:true})
   // 发送前 refreshContext 会重读原生 provider；独立 required 分类与原 Team 事实一同刷新，不覆盖其路由正文。
   ctx.systemPrompt.context({name:'teloa:team-routing-metadata',order:ctx.systemPrompt.getContextOrder('TEAM_IDENTITY')-1,required:true,interpolate:false,text:({agent})=>{
    if(!agent||!ctx.get('agentTeams')?.tryMembership(agent)||!agent.ctx.tools.get('list_agents',agent))return ''

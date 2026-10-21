@@ -25,6 +25,7 @@ import {installNativeWorkingDirectory} from './fixtures/native-working-directory
 import {groupRoutingInputNotice} from '../src/group-routing.ts'
 import {refineWorkBehavior} from '../src/work-behavior.ts'
 import {productIdentityText} from '../src/work-prompts/product-identity.ts'
+import {readSessionEvents} from '../src/session-events.ts'
 
 const require=createRequire(import.meta.url),officialRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const {parse}=require('yaml'),yaml=(source:string)=>parse(source,{customTags:[{tag:'tag:yaml.org,2002:js',resolve:(value:string)=>value}]})
@@ -44,10 +45,16 @@ test('实际bundle与官方SystemPrompt装配只保留Teloa产品身份，不再
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry)
  await ctx.plugin(SystemPrompt,systemConfig);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const adapter=new Capture();ctx.llm.registerAdapter(['minimax-fixture'],adapter)
- ctx.systemPrompt.context({name:'fixture:permission',order:110,text:'本人权限：只读已提供资料；未经确认不得发送。'})
+ let permission='本人权限：只读已提供资料；未经确认不得发送。'
+ ctx.systemPrompt.context({name:'fixture:permission',order:110,text:()=>permission})
  ctx.tools.register(defineTool({name:'read_fixture',description:'只读已授权资料',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>'fixture'}))
  if(identity)await ctx.plugin(await import(identity.name),identity.config)
  const {agent}=await ctx.agents.create({sessionId:SessionId('product-identity-default'),agentOptions:{provider:'minimax-fixture',model:'MiniMax-M3'}})
+ const legacyProducts=['# Teloa 产品与用量事实\n\n旧静态产品规则。','# Teloa identity and usage\n\nOld static product rule.']
+ const legacy=legacyProducts.map(legacyProduct=>{
+  const sections=[{name:'teloa:product-identity',text:legacyProduct},{name:'fixture:historical-permission',text:'历史权限事实：只读旧资料。'}]
+  return agent.session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections},content:[{type:'text',text:'Original wrapper prefix\n'+sections.map(row=>row.text).join('\n\n')+'\nOriginal wrapper suffix'},{type:'text',text:'Other content block remains literal: {{not-a-variable}}'}]}),{surfaceOp:'append'})
+ })
  const persona=standard.plugins.find((row:any)=>row.id==='persona'),behavior=standard.plugins.find((row:any)=>row.id==='teloa-work-behavior')
  await agent.ctx.plugin(await import(pathToFileURL(officialRequire.resolve(persona.name)).href),persona.config)
  await agent.ctx.plugin(await import(behavior.name),behavior.config)
@@ -64,12 +71,38 @@ test('实际bundle与官方SystemPrompt装配只保留Teloa产品身份，不再
  assert.match(text,/do not routinely recommend a new session for every task/)
  assert.equal(assembly.contexts.filter(row=>row.name==='teloa:product-identity').length,1)
  assert.equal(text.split(productIdentityText).length-1,1,'实际请求只注入一份产品与用量规则')
+ for(const legacyProduct of legacyProducts)assert.ok(!text.includes(legacyProduct),'已知中英文旧版静态正文均应从模型投影中退休')
+ assert.match(text,/Original wrapper prefix\n历史权限事实：只读旧资料。\nOriginal wrapper suffix/)
+ assert.match(text,/Other content block remains literal: \{\{not-a-variable\}\}/)
+ for(const [index,event] of legacy.entries()){
+  const original=readSessionEvents(agent.session).find(row=>row.seq===event.seq)
+  assert.ok(original?.type==='user/message'&&original.data.content.some(block=>block.type==='text'&&block.text.includes(legacyProducts[index]!)),'原始历史事件必须保留，退休只追加可追溯替换')
+ }
  assert.equal(refineWorkBehavior(assembly,true).contexts.filter(row=>row.name==='teloa:product-identity').length,1,'工具收窄仍保留唯一产品与用量规则')
  assert.match(renderContextSnapshot(assembly),/本人权限：只读已提供资料；未经确认不得发送。/)
  assert.deepEqual(assembly.tools.map(row=>row.name),['read_fixture'])
  assert.ok(request.messages.some(row=>row.role==='user'&&row.content.some(block=>block.type==='text'&&block.text==='介绍当前平台；当前会话消耗是否较小？')))
+ permission='本人权限：仍只读；当前资料范围缩小为本人指定的一份记录。'
  agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'继续原会话，不执行。'}]}));await agent.whenIdle()
  assert.equal(trustedInput(adapter.requests.at(-1)!).split(productIdentityText).length-1,1,'连续会话不重复注入相同产品规则')
+ assert.match(trustedInput(adapter.requests.at(-1)!),/只读已提供资料；未经确认不得发送/,'旧权限事实不能随静态规则被抹掉')
+ assert.ok(trustedInput(adapter.requests.at(-1)!).includes(permission),'当前权限事实仍进入真实请求')
+ const runtimeCount=()=>readSessionEvents(agent.session).filter(row=>row.type==='user/message'&&row.data.source.kind==='runtime-context').length
+ const beforeUnchanged=runtimeCount()
+ agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'保持当前范围，不执行。'}]}));await agent.whenIdle()
+ assert.equal(trustedInput(adapter.requests.at(-1)!).split(productIdentityText).length-1,1)
+ assert.equal(runtimeCount(),beforeUnchanged,'上下文未变时不应重复投影产品规则')
+ let changeDuringAdmission=true
+ const release=agent.ctx.on('agent/pre-step',async(_payload,next)=>{
+  const decision=await next()
+  if(changeDuringAdmission){permission='准备期间更新权限：仍只读最后指定的记录。';changeDuringAdmission=false}
+  return decision
+ },{prepend:true})
+ agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'核对更新后的范围，不执行。'}]}));await agent.whenIdle();release()
+ assert.ok(trustedInput(adapter.requests.at(-1)!).includes(permission),'最终 admission 刷新不能丢当前权限')
+ assert.match(trustedInput(adapter.requests.at(-1)!),/历史权限事实：只读旧资料/)
+ agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'继续当前范围，不执行。'}]}));await agent.whenIdle()
+ assert.equal(trustedInput(adapter.requests.at(-1)!).split(productIdentityText).length-1,1,'准备期间的交错更新至下一次装配收敛，不让静态副本继续累积')
 })
 
 test('普通/分身/员工/Run及所有官方模式继承同一短规则，可信身份权限和内部JSON协议不被改写',async t=>{
