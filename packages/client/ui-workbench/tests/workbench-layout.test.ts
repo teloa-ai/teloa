@@ -82,6 +82,33 @@ test('其他原生面板和会话导航保持原行为，未知面板不改变�
   layout.dispose()
 })
 
+test('原稿导航租约仅暂缓有效目标的null面板，释放后不遗留全局hold',()=>{
+ const store=createWorkbenchStore().create(),layout=createWorkbenchLayout(store.actions,()=>false,createSettingsNavigation(),{getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:store.subscribe})
+ store.actions.navigate('team')
+ const signal=layout.beginNavigation(),old=layout.deferNativeConversationNavigation(()=>true),release=layout.deferNativeConversationNavigation(()=>true)
+ old();layout.selectPanel(null)
+ assert.equal(store.getSnapshot().view,'team');assert.equal(signal.aborted,false,'自身打开不提前撤销选稿导航')
+ release();layout.selectPanel(null)
+ assert.equal(store.getSnapshot().view,'messages');assert.equal(signal.aborted,true)
+ store.actions.navigate('team');layout.deferNativeConversationNavigation(()=>true);layout.dispose();layout.selectPanel(null)
+ assert.equal(store.getSnapshot().view,'messages','卸载释放租约')
+})
+
+test('守卫失效、新导航及非null面板均撤销原稿租约，不能后来重新拦截',()=>{
+ for(const boundary of ['guard','navigation','panel'] as const){
+  const store=createWorkbenchStore().create(),layout=createWorkbenchLayout(store.actions,id=>id==='plugins',createSettingsNavigation(),{getSnapshot:()=>store.getSnapshot().panelInfo,subscribe:store.subscribe})
+  store.actions.navigate('team');let current=true
+  layout.deferNativeConversationNavigation(()=>current)
+  if(boundary==='panel')layout.selectPanel('plugins' as MainPanelId)
+  else if(boundary==='navigation'){layout.beginNavigation();layout.selectPanel(null)}
+  else{current=false;layout.selectPanel(null)}
+  assert.equal(store.getSnapshot().view,boundary==='panel'?'settings':'messages',boundary+'不能延后本人导航')
+  current=true;store.actions.navigate('team');layout.selectPanel(null)
+  assert.equal(store.getSnapshot().view,'messages',boundary+'已使旧租约永久失效')
+  layout.dispose()
+ }
+})
+
 test('设置外部入口、目录按钮和引导步骤共享同一个选中态',()=>{
   const page=mount('SettingsShell.tsx',{'./settings-navigation.js':settingsNavigation}),layout=mount('SettingsLayout.tsx'),selection=createSettingsNavigation()
   const rows=[{id:'general',label:'通用设置',order:0},{id:'teloa-native-panels',label:'连接与运行环境',order:1}]

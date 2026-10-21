@@ -303,6 +303,30 @@ test('业务草案保留后离开到工作台显示总览和自动化，回原�
  assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'业务搭建原会话未发送输入')
 })
 
+test('原生打开先切到messages：从工作台打开及业务目录继续都完成原草案归属核对',async t=>{
+ const page=await mount(t)
+ await page.getByRole('button',{name:'新建业务',exact:true}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ await page.evaluate(()=>{(window as any).frameFixture.navigate('home')})
+ await page.getByRole('navigation',{name:'工作台',exact:true}).getByRole('button',{name:'自动化',exact:true}).waitFor()
+ const session=await page.evaluate(async()=>{const f=(window as any).frameFixture;f.nativeOpenView='messages';const id=f.current();await f.controller.open(id);return id})
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture,s=f.controller.getSnapshot();return {view:f.state().view,session:f.current(),checked:s.checkedSessionId,error:s.error,creates:f.creates}}),{view:'messages',session,checked:session,error:null,creates:1})
+ await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button',{name:'业务',exact:true}).click()
+ await page.getByRole('region',{name:'继续搭建',exact:true}).getByRole('button').filter({hasText:'验收业务'}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ await page.waitForFunction((id:string)=>(window as any).frameFixture.controller.getSnapshot().checkedSessionId===id,session)
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.controller.getSnapshot().error),null)
+})
+
+test('首次新建的原生open先切messages，明确打开通知后一次完成业务归属且不要求重试',async t=>{
+ const page=await mount(t,'zh-CN',{nativeOpenView:'messages'})
+ await page.getByRole('button',{name:'新建业务',exact:true}).click()
+ await page.waitForFunction(()=>{const f=(window as any).frameFixture,s=f.controller.getSnapshot();return s.error||f.current()&&s.checkedSessionId===f.current()&&s.sessionKind==='builder'})
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture,s=f.controller.getSnapshot();return {view:f.state().view,error:s.error,session:s.flow.getSnapshot().binding.sessionId,checked:s.checkedSessionId,creates:f.creates}}),await page.evaluate(()=>{const f=(window as any).frameFixture;return {view:'messages',error:null,session:f.current(),checked:f.current(),creates:1}}))
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+})
+
 for(const locale of ['zh-CN','en'])test(locale+' 记录交办只准备引用；原稿保留并通过确认在新daily带入，不直接发送',async t=>{
  const page=await mount(t,locale),en=locale==='en'
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.formal=true;f.records=true;f.openFormal()})

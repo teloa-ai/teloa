@@ -18,21 +18,29 @@ const code=ts.transpileModule('const openSavedTwinDraft='+initializer.getText(fi
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(r=>{resolve=r});return {promise,resolve}}
 async function fixture(at:'read'|'adopt'){
  const wait=deferred(),writes:string[]=[],opened:string[]=[],actionsLog:string[]=[],reads:string[]=[],original={},currentTwinDraftApi={current:original}
- let selected=true,current='previous',draft=''
+ let selected=true,current='previous',draft='',released=0
  const row=(sessionId:string):Conversation=>({id:'conversation-'+sessionId,sessionId,requestedSessionId:sessionId,scopeIds:['general'],ownerId:'owner',status:'ready',version:1,title:sessionId,createdAt:'2026-10-21T00:00:00Z'})
  const port={current:()=>current,ensure:async(id:string)=>row(id),read:async(id:string)=>{reads.push(id);if(at==='read')await wait.promise;return row(id)},adopt:async(id:string)=>{if(at==='adopt')await wait.promise;return id},isNativeChild:()=>false,block:()=>{},open:(id:string)=>{opened.push(id);current=id},list:async()=>[]} as unknown as WorkPort
  const work=new BindingClient(port);await work.select('previous')
- const env={twinDraftApi:original,currentTwinDraftApi,twinDraftOpening:{current:undefined},projectFrameMounted:{current:true},beginNativeNavigation:()=>undefined,pageCreateDraftRevisionNavigation,homeCreationLocation:()=> 'same-twin-workspace',latestState:{current:{}},mainSession:{getSnapshot:()=>current},work,openTwinDraftConversation,conversationDraftInput:()=>({state:{getSnapshot:()=>({draft,attachmentIds:[],occurrences:[],queue:[],phase:'plain'})},setDraft:(text:string)=>{writes.push(text);draft=text}}),twinDraftCopy:(_locale:string,key:string)=>key,locale:'zh-CN',actions:{closeDetail:()=>actionsLog.push('close'),openMessages:()=>actionsLog.push('navigate')},closeNarrowDirectory:()=>actionsLog.push('directory')}
+ const env={twinDraftApi:original,currentTwinDraftApi,twinDraftOpening:{current:undefined},projectFrameMounted:{current:true},beginNativeNavigation:()=>undefined,deferNativeConversationNavigation:()=>()=>{released++},pageCreateDraftRevisionNavigation,homeCreationLocation:()=> 'same-twin-workspace',latestState:{current:{}},mainSession:{getSnapshot:()=>current},work,openTwinDraftConversation,conversationDraftInput:()=>({state:{getSnapshot:()=>({draft,attachmentIds:[],occurrences:[],queue:[],phase:'plain'})},setDraft:(text:string)=>{writes.push(text);draft=text}}),twinDraftCopy:(_locale:string,key:string)=>key,locale:'zh-CN',actions:{closeDetail:()=>actionsLog.push('close'),openMessages:()=>actionsLog.push('navigate')},closeNarrowDirectory:()=>actionsLog.push('directory')}
  const run=new Function(...Object.keys(env),code+';return openSavedTwinDraft')(...Object.values(env)) as (id:string,text:string,current:()=>boolean)=>Promise<void>
- return {run:()=>run('original-A','A待发送正文',()=>selected),cancel:()=>{selected=false},wait,writes,opened,actionsLog,reads,work}
+ return {released:()=>released,switchSession:()=>{current='other'},changeApi:()=>{currentTwinDraftApi.current={}},run:()=>run('original-A','A待发送正文',()=>selected),cancel:()=>{selected=false},wait,writes,opened,actionsLog,reads,work}
 }
 for(const at of ['read','adopt'] as const)test('Frame在真实BindingClient '+at+'慢回包期间切稿，不打开/回填/关闭后来的B',async()=>{
  const f=await fixture(at),pending=f.run();await new Promise<void>(r=>setImmediate(r));f.cancel();f.wait.resolve()
  await assert.rejects(pending,{code:'teloa/twin-draft-open-unavailable'})
- assert.deepEqual(f.opened,[]);assert.deepEqual(f.writes,[]);assert.deepEqual(f.actionsLog,[]);assert.equal(f.work.getSnapshot().sessionId,'previous')
+ assert.deepEqual(f.opened,[]);assert.deepEqual(f.writes,[]);assert.deepEqual(f.actionsLog,[]);assert.equal(f.work.getSnapshot().sessionId,'previous');assert.equal(f.released(),1)
 })
 test('Frame在已切稿时不发起原会话读取，原选择有效则一次回填但不发送',async()=>{
- const cancelled=await fixture('read');cancelled.cancel();cancelled.wait.resolve();await assert.rejects(cancelled.run(),{code:'teloa/twin-draft-open-unavailable'});assert.deepEqual(cancelled.reads,[])
+ const cancelled=await fixture('read');cancelled.cancel();cancelled.wait.resolve();await assert.rejects(cancelled.run(),{code:'teloa/twin-draft-open-unavailable'});assert.deepEqual(cancelled.reads,[]);assert.equal(cancelled.released(),0)
  const current=await fixture('read'),pending=current.run();current.wait.resolve();await pending
- assert.deepEqual(current.opened,['original-A']);assert.deepEqual(current.writes,['A待发送正文']);assert.deepEqual(current.actionsLog,['close','navigate','directory'])
+ assert.deepEqual(current.opened,['original-A']);assert.deepEqual(current.writes,['A待发送正文']);assert.deepEqual(current.actionsLog,['close','navigate','directory']);assert.equal(current.released(),1)
+})
+
+test('Frame换API后不采用旧导航，失败也释放专属租约',async()=>{
+ const f=await fixture('adopt'),pending=f.run();await new Promise<void>(r=>setImmediate(r));f.changeApi();f.wait.resolve();await assert.rejects(pending,{code:'teloa/twin-draft-open-unavailable'});assert.deepEqual(f.opened,[]);assert.deepEqual(f.writes,[]);assert.equal(f.released(),1)
+})
+
+test('Frame原生选择已转他处时不抢回原稿目标，且释放专属租约',async()=>{
+ const f=await fixture('adopt'),pending=f.run();await new Promise<void>(r=>setImmediate(r));f.switchSession();f.wait.resolve();await assert.rejects(pending,{code:'teloa/twin-draft-open-unavailable'});assert.deepEqual(f.opened,[]);assert.deepEqual(f.writes,[]);assert.equal(f.released(),1)
 })

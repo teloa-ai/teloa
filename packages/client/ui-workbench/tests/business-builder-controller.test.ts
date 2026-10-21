@@ -36,8 +36,35 @@ function fixture(){
  const port:WorkPort={list:async()=>[...conversations.values()],read:async id=>conversations.get(id)!,ensure:async id=>conversations.get(id)!,isNativeChild:()=>false,catalog:async()=>{throw Error('not requested')},block:()=>{},current:()=>selected,open:id=>{selected=id;calls.push('open')},adopt:async id=>id,create:async p=>{calls.push('create');const existing=[...conversations.values()].find(row=>row.requestId===p.requestId);if(existing)return existing;const row:Conversation={id:randomUUID(),ownerId:'self',title:p.title!,version:1,status:'ready',sessionId:randomUUID(),requestedSessionId:'request',requestId:p.requestId,scopeIds:['general'],createdAt:stamp,...(p.workspaceId?{requestedWorkspaceId:p.workspaceId}:{})};conversations.set(row.sessionId,row);return row}}
  const controller=new BusinessBuilderController({api,work:new BindingClient(port),storage:{getItem:key=>rows.get(key)??null,setItem:(key,value)=>{rows.set(key,value)},removeItem:key=>{rows.delete(key)}},identity:async()=>space,switching:source,subscribeNative:listener=>{listeners.add(listener);return()=>listeners.delete(listener)},contextCall:async(endpoint,payload)=>{const p=payload as any;if(endpoint==='work-context/read')return {sessionId:p.sessionId,scopeId:'sales',roleId:null,version:1,locked:false};throw Error(endpoint)},block:(id,reason)=>blocks.set(id,reason),watch:()=>()=>{},id:randomUUID})
  controller.configure({location:()=>location,refreshScopes:async()=>{refreshes++}})
- return {port,changeInput:(next:BusinessBuilderSwitchSnapshot['input'])=>{input=next;for(const listener of listeners)listener()},notify:()=>{for(const listener of listeners)listener()},controller,calls,blocks,bindings,drafts,conversations,rows,source,space:()=>space,changeSpace:()=>space=randomUUID(),selected:()=>selected,select:(id:string|undefined)=>{selected=id},navigate:(value:string)=>location=value,refreshes:()=>refreshes}
+ return {port,changeInput:(next:BusinessBuilderSwitchSnapshot['input'])=>{input=next;for(const listener of listeners)listener()},notify:()=>{for(const listener of listeners)listener()},controller,calls,blocks,bindings,drafts,conversations,rows,source,space:()=>space,changeSpace:()=>space=randomUUID(),selected:()=>selected,select:(id:string|undefined)=>{selected=id},navigate:(value:string)=>location=value,location:()=>location,refreshes:()=>refreshes}
 }
+
+test('固定原来源的native页面只在本次明确opened后接受，start/open/recover首次完成原稿核对',async t=>{
+ for(const operation of ['start','open','recover'] as const){
+  const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})
+  const original=operation==='start'?undefined:await f.controller.start()
+  f.navigate('home');f.controller.configure({location:f.location,nativeLocation:()=> 'messages/native/sales/original-detail',refreshScopes:async()=>{}})
+  const open=f.port.open;f.port.open=id=>{open(id);f.navigate('messages/native/sales/original-detail')}
+  const result=operation==='start'?await f.controller.start():operation==='open'?await f.controller.open(original!.sessionId!):await f.controller.recover(original!.requestId)
+  const state=f.controller.getSnapshot(),binding=state.flow!.getSnapshot().binding!
+  assert.equal(state.error,null,operation);assert.equal(state.checkedSessionId,binding.sessionId);assert.equal(binding.sessionId,f.selected())
+  assert.equal(state.sessionKind,'builder');assert.equal(f.conversations.size,1);if(result)assert.equal(result.sessionId,binding.sessionId)
+ }
+})
+
+test('native目标在capture时固定，用户先切页面、换来源或换会话不借本次opened恢复',async t=>{
+ for(const change of ['before-open','source','session','changed-projection','cancelled'] as const){
+  const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({});const original=await f.controller.start()
+  f.navigate('home');let projected='messages/native/sales/original-detail'
+  f.controller.configure({location:f.location,nativeLocation:()=>projected,refreshScopes:async()=>{}})
+  const token=f.controller.captureNavigation(),open=f.port.open
+  if(change==='before-open'){const adopt=f.port.adopt;f.port.adopt=async(...args)=>{f.navigate(projected);return adopt(...args)}}
+  else if(change==='cancelled')f.controller.ports.work.openSessionResult=async()=>{f.navigate(projected);return 'cancelled'}
+  else f.port.open=id=>{open(id);if(change==='source')f.navigate('messages/native/other-scope/detail');else if(change==='session'){f.navigate(projected);f.select('other-session')}else{projected='messages/native/changed-detail';f.navigate(projected)}}
+  await assert.rejects(f.controller.open(original.sessionId!,false,token),{code:'teloa/conflict'},change)
+  assert.equal(f.conversations.size,1)
+ }
+})
 
 test('来源抽屉关闭后原生read迟答不能导航到旧方案',async()=>{
  const f=fixture();f.select('original');await f.controller.connect({})

@@ -81,7 +81,12 @@ type State={
  hidden:ReadonlySet<string>
  exposed:ReadonlySet<string>
 }
-const loadInto=(target:Set<string>,name:string)=>{target.add(name);if(name.startsWith('teloa_create_'))target.add(savedDraftAnchor)}
+const loadInto=(target:Set<string>,name:string)=>{
+ target.add(name)
+ if(name.startsWith('teloa_create_'))target.add(savedDraftAnchor)
+ // 保存知识依赖真实目录的 parentId/revision；仅展开已许可参数，不执行前置读取。
+ if(name==='teloa_library_save')target.add('teloa_library_directory')
+}
 
 /** 从本会话历史恢复已加载名单：历史中实际调用过的平台工具与加载器回执里的工具。只影响可见性，曝光时仍取本轮许可目录交集。 */
 function restoreLoaded(agent:Agent):Set<string>{
@@ -156,7 +161,8 @@ function createEngine(ctx:Context){
     if(state.mode==='voice'){loadInto(state.voice!.loaded,name);if(state.voice!.persist&&state.session)loadInto(state.session,name)}
     else loadInto(state.session!,name)
    }
-   return JSON.stringify({loaded:selected.map(name=>({name,description:catalog.get(name)!.description})),next:selected.length?'下一步使用这些工具的完整参数；实际操作仍按原权限、审批与执行规则。':'未找到。可换用更直接的操作词或中英文同义词再搜索；不能猜测工具参数或宣称已执行。'})
+   // 下一步正式工具声明已含完整说明；回执只保留可冷恢复的名称，避免把长说明重复写进历史。
+   return JSON.stringify({loaded:selected.map(name=>({name})),next:selected.length?'下一步使用这些工具的完整参数；实际操作仍按原权限、审批与执行规则。':'未找到。可换用更直接的操作词或中英文同义词再搜索；不能猜测工具参数或宣称已执行。'})
   },
  }))
 

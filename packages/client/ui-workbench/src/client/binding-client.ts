@@ -3,7 +3,7 @@ export type BindingState={sessionId:string|undefined;status:'idle'|'loading'|'re
 // roleId 只进「同一 requestId 不能改投另一项工作」的请求指纹（服务端按落盘的 requestedRoleId 比对）；
 // 回包 Conversation 零新键，客户端读不回它，因此恢复路径重建请求时无从补上（见 T14 报告疑虑）。
 export type ConversationCreation=Readonly<{requestId:string;title?:string;workspaceId?:string;roleId?:string}>
-export type CreateConversationOptions=Readonly<{requestId?:string;title?:string;workspaceId?:string;roleId?:string;beforeOpen?:(conversation:Conversation)=>Promise<void>;mayOpen?:()=>boolean}>
+export type CreateConversationOptions=Readonly<{requestId?:string;title?:string;workspaceId?:string;roleId?:string;beforeOpen?:(conversation:Conversation)=>Promise<void>;mayOpen?:()=>boolean;onOpened?:(sessionId:string)=>void}>
 /** opened 表示守卫通过并已派发原生打开，不依赖随后到达的选中投影。 */
 export type ConversationOpenResult='opened'|'cancelled'
 const taskRunInputBlock='工作会话正在由任务执行编排，请从原任务恢复。'
@@ -217,7 +217,7 @@ export class BindingClient {
       if(sessionId!==conversation.sessionId)throw Error('原生会话领养返回了不同身份，已停止切换。')
       await options.beforeOpen?.(conversation)
       this.creation=undefined
-      if(this.port.current()===previous&&this.generation===generation&&this.opening===opening&&options.mayOpen?.()!==false)this.port.open(sessionId)
+      if(this.port.current()===previous&&this.generation===generation&&this.opening===opening&&options.mayOpen?.()!==false){this.port.open(sessionId);options.onOpened?.(sessionId)}
       void this.refreshDirectory()
       return conversation
     }catch(error){

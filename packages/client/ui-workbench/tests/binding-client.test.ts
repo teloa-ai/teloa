@@ -502,6 +502,20 @@ test('业务保存回执迟到且页面已变时，完成保存但不打开主�
  assert.deepEqual(opened,[]);assert.equal(f.client.getPendingCreation(),undefined)
 })
 
+test('创建只在真实原生open派发后通知固定session，取消或外部导航绝不通知',async()=>{
+ for(const outcome of ['opened','cancelled','navigation'] as const){
+  const f=fixture(),gate=deferred<void>(),events:string[]=[];let current='original',allowed=true
+  f.port.current=()=>current;f.port.open=id=>{current=id;events.push('open:'+id)}
+  const pending=f.client.create({beforeOpen:()=>gate.promise,mayOpen:()=>allowed,onOpened:sessionId=>{assert.equal(current,sessionId);events.push('notified:'+sessionId)}})
+  await new Promise(resolve=>setImmediate(resolve))
+  if(outcome==='cancelled')allowed=false
+  if(outcome==='navigation')current='other'
+  gate.resolve();const result=await pending
+  assert.equal(result.sessionId,'new')
+  assert.deepEqual(events,outcome==='opened'?['open:new','notified:new']:[],outcome)
+ }
+})
+
 
 test('原生页切群、目录或同级其他对象后，创建迟到不重开原生页',async()=>{
  for(const change of [{view:'messages',messageMode:'groups',groupTarget:{groupId:'g'}},{view:'messages',messageMode:'directory'},{view:'tasks',taskId:'different'},{view:'team',roleId:'different'}]){

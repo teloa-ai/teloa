@@ -96,6 +96,35 @@ test('真实长说明的员工草案与知识保存工具可按自然动作搜�
  }
 })
 
+test('展开知识保存时同时提供其必需的目录读取，撤销目录许可后不恢复该能力',async t=>{
+ const f=await setup(t,{productionCatalog:true})
+ f.adapter.scripts.push(call(toolLoaderName,{names:['teloa_library_save']}),text)
+ await f.send()
+ assert.ok(names(f.adapter.requests[1]).includes('teloa_library_save'))
+ assert.ok(names(f.adapter.requests[1]).includes('teloa_library_directory'),'保存所需的 parentId 与目录 revision 应通过真实目录读取，不能要求本人提供内部参数')
+ assert.deepEqual(f.executed,[],'只展开参数，不读取目录或保存知识')
+ f.agent.ctx.tools.restrict({allow:[...core,toolLoaderName,'teloa_library_save']})
+ await f.send()
+ assert.ok(!names(f.adapter.requests.at(-1)).includes('teloa_library_directory'),'配套参数不得恢复已撤销的许可')
+})
+
+test('工具发现回执不重复整份长说明，正式参数仍完整提供并能冷恢复',async t=>{
+ const f=await setup(t,{productionCatalog:true})
+ f.adapter.scripts.push(call(toolLoaderName,{query:'保存知识 Markdown'}),text)
+ await f.send()
+ const event=f.agent.session.snapshotEvents().find(event=>event.type==='tool/result')!
+ assert.equal(event.type,'tool/result')
+ const response=event.data.message.content.filter(row=>row.type==='text').map(row=>row.text).join('\n')
+ assert.ok(Buffer.byteLength(response,'utf8')<1024,'发现回执只需短名称凭据；完整说明已在下一步正式工具参数中，不应重复占据历史')
+ const save=f.adapter.requests[1]!.tools!.find(tool=>tool.name==='teloa_library_save')!
+ assert.match(save.description,/teloa_library_directory/)
+ const parameters=save.parameters as {properties:Record<string,unknown>;required:string[]}
+ assert.ok(parameters.properties.parentId&&parameters.properties.expectedDirectoryRevision&&parameters.required.includes('parentId')&&parameters.required.includes('expectedDirectoryRevision'),'节省回执不能省略正式必填参数')
+ f.reinstall();await f.send()
+ assert.ok(names(f.adapter.requests.at(-1)).includes('teloa_library_save'))
+ assert.ok(names(f.adapter.requests.at(-1)).includes('teloa_library_directory'))
+})
+
 test('调用加载器后下一请求出现被加载工具，同一会话后续轮次仍在，对应提示词模块恢复',async t=>{
  const f=await setup(t)
  f.adapter.scripts.push(call(toolLoaderName,{names:['teloa_projects_list']}),text)
