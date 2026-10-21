@@ -16,4 +16,3 @@ export function createDashboardShareApi(call:Call){
   return result
  }
 }
-

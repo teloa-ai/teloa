@@ -87,4 +87,3 @@ test('已发起意图的快照、正文或文件变化不能覆盖原发送',asy
  for(const change of [{snapshotHash:'b'.repeat(64)},{text:'different'},{files:[new File(['modified'],'dashboard.csv',{type:'text/csv'})]}])await assert.rejects(flow.send({...request,...change}),{code:'teloa/dashboard-share-intent-changed'})
  assert.equal(f.messages.size,1);assert.equal(f.posts.length,1)
 })
-

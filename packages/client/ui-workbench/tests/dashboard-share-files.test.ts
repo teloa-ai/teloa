@@ -38,4 +38,3 @@ test('无原始来源、损坏行、超过总行数及字节上限均明确拒�
  assert.throws(()=>dashboardShareCsv(snapshot([['id','x'.repeat(dashboardShareCsvMaxBytes)]])),{code:'teloa/dashboard-share-limit'})
  assert.equal(dashboardShareFilename(snapshot([]),'csv'),'dashboard-overview-7d-bbbbbbbbbbbb.csv')
 })
-

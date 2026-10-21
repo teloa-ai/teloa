@@ -27,4 +27,3 @@ export const DASHBOARD_SHARE_MESSAGE_ROWS=[
  ['dashboardShare.pending','还有待核对的群消息，请先在协作群核对原请求，再开始新的分享。','尚有待核對的群訊息，請先在協作群核對原請求，再開始新的分享。','A group message still needs checking. Resolve its original request in the group before starting another share.'],
  ['dashboardShare.groupChanged','协作群的业务归属、状态或版本已改变，未继续发送。请返回协作群核对。','協作群的業務歸屬、狀態或版本已變更，未繼續傳送。請返回協作群核對。','The group’s business, state or version changed. Sending stopped; check the group before continuing.'],
 ].map(([key,cn,hant,en])=>[key!,cn!,hant!,en!,en!,en!,en!,en!,en!,en!,en!] as const)
-

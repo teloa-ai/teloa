@@ -61,4 +61,3 @@ export function createDashboardGroupShare(groups:DashboardShareGroups,attachment
   },
  }
 }
-
