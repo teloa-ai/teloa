@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
+import ts from 'typescript'
 import type {Context} from '@deepseek-ai/cordis'
 import {WorkError} from '@teloa/contract'
 import {groupAttachToolName,registerGroupAttachTool,type GroupAttachRunContext,type GroupAttachToolPorts} from '../src/group-attach-tool.ts'
@@ -200,11 +201,29 @@ test('装配：自授权集在既有两族之后追加本工具，顺序与既�
  assert.equal(wiring.includes('registerGroupAttachTool(toolRegistrationContext,{context:'),true)
 })
 
-test('装配：运行上下文的 groupContext 端口绑上附件字节端口（T7 评审 HIGH）',()=>{
+test('装配：运行上下文的 groupContext 端口绑上附件字节端口（T7 评审 HIGH）',t=>{
  assert.equal(wiring.includes('groupContext:async(db,actor,task,role,continuationReferences)=>readRunGroupContext(db,actor,task,role,runGroupFilePorts,(await resources.database()).pool,continuationReferences)'),true)
  // 附件字节与真实连接池共同进入运行上下文，不能回落成缺失这两个端口的裸函数。
  assert.equal(wiring.includes('groupContext:readRunGroupContext'),false)
- assert.equal(wiring.includes('const runGroupFilePorts:RunGroupFilePorts={readAttachmentBytes:'),true)
+ const attachmentBytePort=(source:string)=>{
+  const file=ts.createSourceFile('index.ts',source,ts.ScriptTarget.Latest,true),declarations:ts.VariableDeclaration[]=[]
+  const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text==='runGroupFilePorts')declarations.push(node);ts.forEachChild(node,visit)}
+  visit(file)
+  assert.equal(declarations.length,1,'必须定位唯一的 runGroupFilePorts 声明')
+  const declaration=declarations[0]!
+  assert.ok(declaration.type&&ts.isTypeReferenceNode(declaration.type)&&ts.isIdentifier(declaration.type.typeName)&&declaration.type.typeName.text==='RunGroupFilePorts')
+  assert.ok(declaration.initializer&&ts.isObjectLiteralExpression(declaration.initializer))
+  const ports=declaration.initializer.properties.filter((property):property is ts.PropertyAssignment=>ts.isPropertyAssignment(property)&&(ts.isIdentifier(property.name)||ts.isStringLiteral(property.name))&&property.name.text==='readAttachmentBytes')
+  assert.equal(ports.length,1,'runGroupFilePorts 必须包含唯一的 readAttachmentBytes')
+  const property=ports[0]!
+  assert.ok(ts.isArrowFunction(property.initializer)||ts.isFunctionExpression(property.initializer),'附件字节端口必须可调用')
+  return {file,property}
+ }
+ const {file,property}=attachmentBytePort(wiring)
+ // 从同一真实对象删除该属性后，结构守卫必须拒绝；其它源码里出现同名文字不能代替接线。
+ const withoutAttachmentPort=wiring.slice(0,property.getStart(file))+wiring.slice(property.end)
+ assert.throws(()=>attachmentBytePort(withoutAttachmentPort),/runGroupFilePorts 必须包含唯一的 readAttachmentBytes/)
+ t.diagnostic('删除真实 runGroupFilePorts 对象的附件字节属性后，结构守卫按预期失败')
 })
 
 test('装配：发布器拿到声明文件、无视觉登记、附件字节与群路由持久服务',()=>{
