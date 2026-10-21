@@ -64,6 +64,15 @@ function header(headers:Readonly<Record<string,string|undefined>>,name:string):s
 type GithubHost='api.github.com'|'codeload.github.com'|'raw.githubusercontent.com'
 function checkedUrl(value:string,host:GithubHost):string{const url=new URL(value);if(url.protocol!=='https:'||url.hostname!==host||url.port||url.username||url.password)throw unavailable('GitHub 请求目标不在允许的主机范围内。');return url.toString()}
 
+/** 官方更名只接受同源数字仓库地址；endpoint、固定 ref/sha 和 query 不得随跳转改变。 */
+function repositoryRedirect(target:string,host:GithubHost,location:string|undefined):string|undefined{
+ if(host!=='api.github.com'||location===undefined)return
+ const source=new URL(target),suffix=/^\/repos\/[^/]+\/[^/]+(\/.+)$/.exec(source.pathname)
+ const moved=/^https:\/\/api\.github\.com\/repositories\/[1-9]\d*(\/[^?#]+)(\?[^#]*)?$/.exec(location)
+ if(source.hash||!suffix||!moved||moved[1]!==suffix[1]||(moved[2]??'')!==source.search)return
+ return location
+}
+
 /** 403/429 且剩余配额为 0（或带 retry-after）视为 GitHub API 限流；文案给出重置时间，便于自动化 harness 定位与择时重试。 */
 function rateLimited(status:number,headers:Readonly<Record<string,string|undefined>>):string|undefined{
  const remaining=header(headers,'x-ratelimit-remaining'),reset=header(headers,'x-ratelimit-reset'),retryAfter=header(headers,'retry-after')
@@ -77,15 +86,20 @@ function rateLimited(status:number,headers:Readonly<Record<string,string|undefin
 async function requestBytes(http:GithubHttpPort,url:string,host:GithubHost,max:number,accept:string,timeoutMs:number,label:string):Promise<Uint8Array>{
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),target=checkedUrl(url,host),pathname=new URL(target).pathname
  try{
-  let response:GithubHttpResponse
-  try{response=await http.request({url:target,method:'GET',redirect:'manual',signal:controller.signal,headers:{accept,'user-agent':'Teloa-AI-Studio/0.0.1'}})}catch{throw unavailable(`GitHub ${label} 请求未完成（网络错误或超时 ${timeoutMs} ms）：${pathname}`)}
+  const request=async(destination:string)=>{try{return await http.request({url:destination,method:'GET',redirect:'manual',signal:controller.signal,headers:{accept,'user-agent':'Teloa-AI-Studio/0.0.1'}})}catch{throw unavailable(`GitHub ${label} 请求未完成（网络错误或超时 ${timeoutMs} ms）：${pathname}`)}}
+  const read=async(response:GithubHttpResponse)=>{
+   const length=header(response.headers,'content-length')
+   if(length!==undefined&&(!/^\d+$/.test(length)||Number(length)>max))throw unavailable(`GitHub ${label} 响应 ${length} 字节，超过 ${max} 字节上限：${pathname}`)
+   const parts:Uint8Array[]=[];let total=0
+   try{for await(const chunk of response.body){if(!(chunk instanceof Uint8Array))throw Error();total+=chunk.byteLength;if(total>max){controller.abort();throw Error()}parts.push(Uint8Array.from(chunk))}}catch(error){if(error instanceof WorkError)throw error;throw unavailable(`GitHub ${label} 响应读取失败或超过 ${max} 字节上限：${pathname}`)}
+   const output=new Uint8Array(total);let offset=0;for(const part of parts){output.set(part,offset);offset+=part.byteLength}return output
+  }
+  let response=await request(target)
+  const moved=response.status===301?repositoryRedirect(target,host,header(response.headers,'location')):undefined
+  if(moved){await read(response);response=await request(moved)}
   if(response.status>=300&&response.status<400)throw unavailable(`GitHub ${label} 返回了不允许跟随的重定向（HTTP ${response.status}）：${pathname}`)
   if(response.status!==200){const limited=rateLimited(response.status,response.headers);throw unavailable(limited?`${limited}；${label} 未读取：${pathname}`:`GitHub ${label} 请求失败（HTTP ${response.status}）：${pathname}`)}
-  const length=header(response.headers,'content-length')
-  if(length!==undefined&&(!/^\d+$/.test(length)||Number(length)>max))throw unavailable(`GitHub ${label} 响应 ${length} 字节，超过 ${max} 字节上限：${pathname}`)
-  const parts:Uint8Array[]=[];let total=0
-  try{for await(const chunk of response.body){if(!(chunk instanceof Uint8Array))throw Error();total+=chunk.byteLength;if(total>max){controller.abort();throw Error()}parts.push(Uint8Array.from(chunk))}}catch(error){if(error instanceof WorkError)throw error;throw unavailable(`GitHub ${label} 响应读取失败或超过 ${max} 字节上限：${pathname}`)}
-  const output=new Uint8Array(total);let offset=0;for(const part of parts){output.set(part,offset);offset+=part.byteLength}return output
+  return await read(response)
  }finally{clearTimeout(timer)}
 }
 

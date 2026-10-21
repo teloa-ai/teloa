@@ -53,6 +53,40 @@ test('先固定 commit，再只从 codeload 按 commit 获取并持久化文件�
  const stored=await pool.query('select request_spec,stage,resolved_commit,archive_hash,record_hash from teloa_github_source_requests where owner_id=$1 and request_id=$2',[result.ownerId,requestId]);assert.deepEqual(stored.rows[0].request_spec,{owner:'Teloa-AI',repo:'demo_repo',ref:'feature/x'});assert.equal(stored.rows[0].stage,'ready');assert.equal(stored.rows[0].resolved_commit,commit);assert.match(stored.rows[0].record_hash,/^[0-9a-f]{64}$/)
 })
 
+test('官方原repo301：只按同源数字ID读取原endpoint，原commit、文件和provenance保持不变',async()=>{
+ const originalCommit='64c3f33fa13beb98c96d736390f80f3454a93a88',prefix='https://api.github.com/repos/slackapi/slack-mcp-plugin',numeric='https://api.github.com/repositories/1156686035'
+ const endpoints=['/commits/'+originalCommit,'/git/commits/'+originalCommit,'/git/trees/'+treeSha('root'),'/git/trees/'+treeSha('skills'),'/git/trees/'+treeSha('skills/pdf')+'?recursive=1']
+ const replies=[resolved(originalCommit),json({sha:originalCommit,tree:{sha:treeSha('root')}}),...descent()],http=new Http(endpoints.flatMap((endpoint,index)=>[response(301,bytes('{"message":"Moved Permanently"}'),{Location:numeric+endpoint}),replies[index]!]))
+ http.replies.push(raw(subtreeFiles['skills/pdf/SKILL.md']),raw(subtreeFiles['skills/pdf/references/a.md']))
+ const self=ownerId(),requestId=randomUUID(),input={requestId,owner:'slackapi',repo:'slack-mcp-plugin',ref:originalCommit,path:'skills/pdf'},result=await new GithubSourceService(pool,{now},http).resolve(self,input)
+ assert.deepEqual(http.calls.slice(0,10).map(call=>call.url),endpoints.flatMap(endpoint=>[prefix+endpoint,numeric+endpoint]))
+ for(let index=0;index<10;index+=2){assert.equal(http.calls[index]!.signal,http.calls[index+1]!.signal);assert.deepEqual(http.calls[index]!.headers,http.calls[index+1]!.headers)}
+ assert.ok(http.calls.every(call=>call.redirect==='manual'&&call.method==='GET'&&!Object.keys(call.headers).some(key=>key.toLowerCase()==='authorization')))
+ assert.deepEqual(result.files.map(file=>file.path),['skills/pdf/SKILL.md','skills/pdf/references/a.md'])
+ assert.equal(result.provenance.owner,input.owner);assert.equal(result.provenance.repo,input.repo);assert.equal(result.provenance.resolvedCommit,originalCommit);assert.equal(result.provenance.requestedRef,originalCommit)
+ const stored=(await pool.query('select request_spec,stage,resolved_commit from teloa_github_source_requests where owner_id=$1 and request_id=$2',[self,requestId])).rows[0]
+ assert.deepEqual(stored.request_spec,{owner:input.owner,repo:input.repo,ref:originalCommit,path:input.path});assert.equal(stored.stage,'ready');assert.equal(stored.resolved_commit,originalCommit)
+ const offline=new Http([]),again=await new GithubSourceService(pool,{now},offline).read(self,{requestId});assert.equal(again.provenance.archiveHash,result.provenance.archiveHash);assert.equal(offline.calls.length,0)
+})
+
+test('官方原repo301：拒绝跨host、auth端口fragment、非法ID和逐字变化的endpoint/ref/query',async()=>{
+ const suffix='/commits/feature%2Fx',base='https://api.github.com/repositories/1156686035'
+ const locations=[undefined,'/repositories/1156686035'+suffix,'http://api.github.com/repositories/1156686035'+suffix,'https://api.github.com.evil.example/repositories/1156686035'+suffix,'https://evil.example/repositories/1156686035'+suffix,'https://user@api.github.com/repositories/1156686035'+suffix,'https://api.github.com:443/repositories/1156686035'+suffix,base+suffix+'#fragment',base+suffix+'?',base+suffix+'?recursive=1',base+'/git/trees/feature%2Fx',base+'/commits/feature%2Fy',base+'/commits/feature%2fx',base+'/commits/feature%252Fx',...['0','-1','01','1.5','+1'].map(id=>'https://api.github.com/repositories/'+id+suffix)]
+ for(const location of locations){const http=new Http([response(301,bytes(''),{location})]);await assert.rejects(new GithubSourceService(pool,{now},http).resolve(ownerId(),{requestId:randomUUID(),owner:'good',repo:'repo',ref:'feature/x'}),{code:'teloa/source-unavailable'});assert.equal(http.calls.length,1,String(location))}
+ for(const status of [302,303,307,308]){const http=new Http([response(status,bytes(''),{location:base+suffix})]);await assert.rejects(new GithubSourceService(pool,{now},http).resolve(ownerId(),{requestId:randomUUID(),owner:'good',repo:'repo',ref:'feature/x'}),{code:'teloa/source-unavailable'});assert.equal(http.calls.length,1,String(status))}
+ const changedSha=new Http([response(301,bytes(''),{location:base+'/commits/'+'f'.repeat(40)})]);await assert.rejects(new GithubSourceService(pool,{now},changedSha).resolve(ownerId(),{requestId:randomUUID(),owner:'good',repo:'repo',ref:commit}),{code:'teloa/source-unavailable'});assert.equal(changedSha.calls.length,1)
+})
+
+test('官方原repo301：最多一跳，最终commit/大小校验保留，raw与codeload仍不跟随',async()=>{
+ const moved='https://api.github.com/repositories/1156686035/commits/'+commit
+ for(const final of [response(301,bytes(''),{location:moved}),response(302,bytes(''),{location:moved}),resolved('f'.repeat(40)),response(200,bytes(commit),{'content-length':'2048'})]){
+  const self=ownerId(),requestId=randomUUID(),http=new Http([response(301,bytes(''),{location:moved}),final]);await assert.rejects(new GithubSourceService(pool,{now},http).resolve(self,{requestId,owner:'good',repo:'repo',ref:commit}),{code:'teloa/source-unavailable'});assert.equal(http.calls.length,2);assert.equal((await pool.query('select count(*)::int count from teloa_github_source_files where owner_id=$1 and request_id=$2',[self,requestId])).rows[0].count,0)
+ }
+ const oversized=new Http([response(301,bytes(''),{location:moved,'content-length':'2048'})]);await assert.rejects(new GithubSourceService(pool,{now},oversized).resolve(ownerId(),{requestId:randomUUID(),owner:'good',repo:'repo',ref:commit}),{code:'teloa/source-unavailable'});assert.equal(oversized.calls.length,1)
+ const codeload=new Http([resolved(),response(301,bytes(''),{location:'https://api.github.com/repositories/1156686035/zip/'+commit})]);await assert.rejects(new GithubSourceService(pool,{now},codeload).resolve(ownerId(),{requestId:randomUUID(),owner:'good',repo:'repo',ref:commit}),{code:'teloa/source-unavailable'});assert.equal(codeload.calls.length,2)
+ const rawRedirect=new Http([resolved(),commitObject(),...descent(),response(301,bytes(''),{location:'https://raw.githubusercontent.com/openai/renamed/'+commit+'/skills/pdf/SKILL.md'}),raw(subtreeFiles['skills/pdf/references/a.md'])]);await assert.rejects(new GithubSourceService(pool,{now},rawRedirect).resolve(ownerId(),{requestId:randomUUID(),owner:'openai',repo:'skills',ref:'main',path:'skills/pdf'}),{code:'teloa/source-unavailable'});assert.equal(rawRedirect.calls.filter(call=>call.url.includes('/renamed/')).length,0)
+})
+
 test('失败后从已持久化 commit 恢复，不重新解析已移动的分支',async()=>{
  const self=ownerId(),requestId=randomUUID(),first=new Http([resolved(),new Error('connection lost')]),service=new GithubSourceService(pool,{now},first)
  await assert.rejects(service.resolve(self,{requestId,owner:'teloa-ai',repo:'bundle',ref:'main'}),{code:'teloa/source-unavailable'})
