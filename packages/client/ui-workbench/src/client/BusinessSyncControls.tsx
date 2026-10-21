@@ -17,8 +17,8 @@ function ruleSchedule(schedule:BusinessSyncSchedule,t:ReturnType<typeof useI18n>
  return t('business.dashboards.sync.rule.cron',{expression:schedule.expression,timezone:schedule.timezone})
 }
 
-/** 数据同步一行：映射数、最近一次同步、连续失败次数，外加「立即同步」。没有映射就整行不摆。 */
-export function BusinessSyncControls({scope,api,visible=true,mappingId}:{scope:string;api:BusinessDashboardApi;visible?:boolean;mappingId?:string}){
+/** 数据同步一行默认在无配置时隐藏；完整设置页可显式展示空态。 */
+export function BusinessSyncControls({scope,api,visible=true,mappingId,showEmpty=false}:{scope:string;api:BusinessDashboardApi;visible?:boolean;mappingId?:string;showEmpty?:boolean}){
  const {t,number,dateTime}=useI18n()
  const [statuses,setStatuses]=useState<BusinessSyncStatus[]>(),[statusError,setStatusError]=useState<ReadFailure>(),[running,setRunning]=useState(false),[revision,setRevision]=useState(0),[error,setError]=useState<ReturnType<typeof widgetFailure>|undefined>(undefined)
  const [rules,setRules]=useState<RuleState>({status:'loading'}),[ruleRevision,setRuleRevision]=useState(0),[ruleBusy,setRuleBusy]=useState<string|undefined>(),[scopeBusy,setScopeBusy]=useState(false),[ruleError,setRuleError]=useState(false)
@@ -38,7 +38,8 @@ export function BusinessSyncControls({scope,api,visible=true,mappingId}:{scope:s
   void Promise.all([api.syncRules({scope},controller.signal),api.syncRuntime({scope},controller.signal)]).then(([rows,runtime])=>{if(!controller.signal.aborted)setRules({status:'ready',rows:selectedRules(rows),runtime})},error=>{if(!controller.signal.aborted)setRules({status:'failed',failure:businessDashboardReadFailure(error,'business.dashboards.sync.rule.readFailed')})})
   return ()=>controller.abort()
  },[api,scope,ruleRevision,visible,mappingId])
- if(statuses!==undefined&&!statuses.length&&rules.status==='ready'&&!rules.rows.length)return null
+ const empty=statuses!==undefined&&!statuses.length&&rules.status==='ready'&&!rules.rows.length
+ if(empty&&!showEmpty)return null
  const last=statuses?.map(status=>status.lastRun?.finishedAt).filter((value):value is string=>!!value).sort().at(-1)
  const failures=statuses?.reduce((sum,status)=>sum+status.consecutiveFailures,0)??0
  const run=async()=>{
@@ -71,6 +72,7 @@ export function BusinessSyncControls({scope,api,visible=true,mappingId}:{scope:s
  return <section className={css.sync} aria-label={t('business.dashboards.sync.title')}>
   <strong>{t('business.dashboards.sync.title')}</strong>
   <span>{t('business.dashboards.sync.mappings',{count:statuses===undefined?'—':number(statuses.length)})}</span>
+  {empty&&<p className={css.syncRules}>{t('business.dashboards.sync.empty')}</p>}
   {last&&<span>{t('business.dashboards.sync.lastRun',{time:dateTime(new Date(last),{dateStyle:'medium',timeStyle:'short'})})}</span>}
   {failures>0&&<span data-failed>{t('business.dashboards.sync.failed',{count:number(failures)})}</span>}
   {error&&<span data-failed role="alert">{t(error.key,error.params)}</span>}

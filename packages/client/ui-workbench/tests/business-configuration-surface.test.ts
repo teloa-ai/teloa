@@ -95,6 +95,7 @@ const drillLedger=ledger({scope:'sales',actions:[],blocks:[block({scope:'sales',
 const entry=`
 import React from 'react';import {createRoot} from 'react-dom/client';
 import {BusinessConfigurationSurface} from '${client}BusinessConfigurationSurface.tsx';
+import {BusinessSyncControls} from '${client}BusinessSyncControls.tsx';
 import {BusinessPage} from '${client}BusinessPage.tsx';
 import {emptyTaskPreview} from '${client}task-preview.ts';
 import {BusinessRecordFlow} from '${client}business-record-flow.ts';
@@ -146,8 +147,8 @@ const responsibilityCurrent={scope:'sales',version:0,roleId:null,selectedRoleVer
 const responsibility={api:{reconcile:async()=>{state.responsibilityReads=(state.responsibilityReads??0)+1;const value=structuredClone(responsibilityCurrent);if(state.holdResponsibility)return await new Promise(resolve=>(state.pendingResponsibility??=[]).push(()=>resolve(value)));return value},read:async()=>responsibilityCurrent,pending:()=>null,canReselect:()=>false,read:async()=>responsibilityCurrent,set:async input=>{state.actions.push(['responsibility-set',input.scope,input.role?.id]);responsibilityCurrent.version++;responsibilityCurrent.roleId=input.role?.id??null;responsibilityCurrent.selectedRoleVersion=input.role?.expectedVersion??null;responsibilityCurrent.currentRoleVersion=input.role?.expectedVersion??null;responsibilityCurrent.availability=input.role?'ready':'none';return responsibilityCurrent}},roles:{list:async()=>[{id:'11111111-1111-4111-8111-111111111111',ownerId:'owner',name:state.colleagueName??'Mina',kind:'employee',state:state.colleagueState??'active',version:1,scopes:['sales'],duty:'Customer follow-up',dataScope:'Customers',executionScope:'Read',skills:[],knowledge:[],createdAt:stamp,updatedAt:stamp}]}};
 const taskList={api:{list:async input=>{state.calls.push(['task-list',input]);return {items:[{task:{id:'22222222-2222-4222-8222-222222222222',ownerId:'owner',title:'跟进客户',scope:input.scope,version:1,state:'ready',assigneeRoleId:null,assigneeRoleVersion:null,createdAt:stamp,updatedAt:stamp},source:null,progress:null,completion:null}]}}},openTask:id=>state.actions.push(['open-task',id])};
 const advancedSetup={api:{read:async input=>{state.setupReads=(state.setupReads??0)+1;return {scope:input.scope,configurationVersion:input.expectedVersion,configurationHash:input.expectedHash,observedAt:stamp,colleagues:{status:'unavailable'},skills:{status:'unavailable'},knowledge:{status:'unavailable'},connections:{status:'observed',value:{items:Array.from({length:state.detailRevision?2:1},(_,i)=>({id:'connection-'+i,catalogId:'crm',serverName:'CRM '+i,status:'connected',updatedAt:stamp})),binding:'not-declared'}}}}},open:()=>{}};
-const advancedSync={syncStatus:async()=>{state.syncStatusReads=(state.syncStatusReads??0)+1;return []},syncRules:async()=>{state.syncRuleReads=(state.syncRuleReads??0)+1;return [{mappingId:'mapping-one',title:state.detailRevision?'更新后的同步规则':'原同步规则',revision:state.detailRevision??0,enabled:false,running:false,schedule:{kind:'daily',time:'10:00',timezone:'Asia/Singapore'}}]},syncRuntime:async()=>({managed:true,syncEnabled:true,revision:1})};
-state.render=()=>{const supplied={...services,...(state.talk?{talk:scope=>state.actions.push(['talk',scope])}:{}),...(state.responsibility?{responsibility}:{}),...(state.advanced?{setup:advancedSetup,dashboardApi:advancedSync}:{}),...(state.taskList?{taskList}:{})};app.render(<I18nProvider runtime={runtime}>{state.whole?<BusinessPage {...legacyProps} workspace={state.workspace?workspaceServices:undefined} target={{scope:state.scope,section:state.section,...(state.objectType?{objectType:state.objectType}:{}),...(state.id?{id:state.id}:{}),...(state.match?{match:state.match}:{}),...(state.recordReference?{recordReference:state.recordReference}:{})}} configuration={supplied}/>:<BusinessConfigurationSurface chrome={state.chrome} scope={state.scope} services={supplied} colorScheme="light" backHome={()=>state.actions.push(['back'])} legacy={()=><div data-legacy>Legacy business</div>}/>}</I18nProvider>)};
+const advancedSync={syncStatus:async()=>{state.syncStatusReads=(state.syncStatusReads??0)+1;return []},syncRules:async()=>{state.syncRuleReads=(state.syncRuleReads??0)+1;return state.emptySync?[]:[{mappingId:'mapping-one',title:state.detailRevision?'更新后的同步规则':'原同步规则',revision:state.detailRevision??0,enabled:false,running:false,schedule:{kind:'daily',time:'10:00',timezone:'Asia/Singapore'}}]},syncRuntime:async()=>{state.syncRuntimeReads=(state.syncRuntimeReads??0)+1;return {managed:true,syncEnabled:true,revision:1}},syncRun:async input=>state.actions.push(['sync-run',input]),setSyncRule:async input=>state.actions.push(['sync-rule',input]),setSyncRuntime:async input=>state.actions.push(['sync-runtime',input])};
+state.render=()=>{const supplied={...services,...(state.talk?{talk:scope=>state.actions.push(['talk',scope])}:{}),...(state.responsibility?{responsibility}:{}),...(state.advanced?{setup:advancedSetup,dashboardApi:advancedSync}:{}),...(state.taskList?{taskList}:{})};app.render(<I18nProvider runtime={runtime}>{state.compactSync&&<div data-compact-sync><BusinessSyncControls scope={state.scope} api={advancedSync}/></div>}{state.whole?<BusinessPage {...legacyProps} workspace={state.workspace?workspaceServices:undefined} target={{scope:state.scope,section:state.section,...(state.objectType?{objectType:state.objectType}:{}),...(state.id?{id:state.id}:{}),...(state.match?{match:state.match}:{}),...(state.recordReference?{recordReference:state.recordReference}:{})}} configuration={supplied}/>:<BusinessConfigurationSurface chrome={state.chrome} scope={state.scope} services={supplied} colorScheme="light" backHome={()=>state.actions.push(['back'])} legacy={()=><div data-legacy>Legacy business</div>}/>}</I18nProvider>)};
 state.change=patch=>{Object.assign(state,patch);if(patch.owner)services=makeServices(patch.owner);state.render()};state.render();
 `
 before(async()=>{
@@ -317,6 +318,29 @@ test('关闭配置抽屉不提交负责人草稿，重新打开保留未保存�
  await page.getByRole('button',{name:'保存负责人',exact:true}).click()
  assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[['responsibility-set','sales',employee]])
 })
+for(const [locale,details,advanced,title,empty] of [
+ ['zh-CN','查看配置详情','高级设置','数据同步','尚未配置数据同步或周期规则。可在「调整业务」中补充数据来源、字段和同步要求。'],
+ ['zh-Hant','查看設定詳情','進階設定','資料同步','尚未設定資料同步或週期規則。可在「調整業務」中補充資料來源、欄位和同步要求。'],
+ ['en','View setup details','Advanced','Data sync','No data sync or recurring rules are configured. Use Adjust business to describe the sources, fields and sync requirements.'],
+] as const)test(locale+' 高级设置空同步有说明，默认紧凑控件隐藏且没有同步写入口',async t=>{
+ const page=await browserFixture(t,locale)
+ await page.evaluate(()=>(window as any).surfaceFixture.change({advanced:true,emptySync:true,compactSync:true}))
+ await page.waitForFunction(()=>{const f=(window as any).surfaceFixture;return f.syncStatusReads>=1&&f.syncRuleReads>=1&&f.syncRuntimeReads>=1&&document.querySelector('[data-compact-sync]')?.childElementCount===0})
+ await page.getByRole('button',{name:details,exact:true}).click()
+ const drawer=page.getByRole('dialog',{name:details,exact:true})
+ await drawer.getByRole('button',{name:advanced,exact:true}).click()
+ await page.waitForFunction(()=>{const f=(window as any).surfaceFixture;return f.syncStatusReads>=2&&f.syncRuleReads>=2&&f.syncRuntimeReads>=2})
+ const sync=drawer.getByRole('region',{name:title,exact:true})
+ await sync.getByText(empty,{exact:true}).waitFor()
+ assert.match(await sync.innerText(),locale==='en'?/0 data source mappings/:locale==='zh-CN'?/0 个数据源映射/:/0 個資料來源對應/)
+ assert.equal(await sync.getByRole('button').count(),0,'空配置不能显示启用、立即同步或其他写入口')
+ assert.equal(await page.locator('[data-compact-sync]').locator('*').count(),0,'默认紧凑控件保持隐藏')
+ assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions),[])
+ if(process.env.TELOA_ADVANCED_EMPTY_SCREENSHOTS)await page.screenshot({path:join(process.env.TELOA_ADVANCED_EMPTY_SCREENSHOTS,'green-'+locale+'.png'),fullPage:true})
+ await page.keyboard.press('Escape')
+ assert.equal(await page.getByRole('dialog').count(),0)
+})
+
 test('配置详情每次重开读取最新准备、负责人和同步规则，保留未提交选择且关闭不写入',async t=>{
  const page=await browserFixture(t)
  await page.evaluate(()=>(window as any).surfaceFixture.change({responsibility:true,advanced:true}))

@@ -63,7 +63,7 @@ export function BusinessConfigurationDetails({scope,services,current,open,close,
     {includeShare&&sharing&&services.share?.(scope)}</section>
     <div hidden={section==='advanced'}>{services.setup&&<BusinessSetup scope={scope} title={selected.manifest.title} configurationVersion={selected.version} configurationHash={selected.hash} services={services.setup} refreshKey={setupRefresh} visible={open&&ready&&section!=='advanced'} sections={section==='definition'?['colleagues','skills','knowledge','connections']:section==='members'?['colleagues','skills']:section==='resources'?['knowledge']:section==='connections'?['connections']:[]}/>}</div>
     <div hidden={section!=='members'}>{services.responsibility&&<BusinessResponsibility scope={scope} {...services.responsibility} visible={open&&ready&&section==='members'} onSavingChange={setSaving} onChanged={()=>setSetupRefresh(value=>value+1)}/>}</div>
-    <div hidden={section!=='advanced'}>{services.dashboardApi&&<BusinessSyncControls key={scope} scope={scope} api={services.dashboardApi} visible={open&&ready&&section==='advanced'}/>}</div>
+    <div hidden={section!=='advanced'}>{services.dashboardApi&&<BusinessSyncControls key={scope} scope={scope} api={services.dashboardApi} visible={open&&ready&&section==='advanced'} showEmpty/>}</div>
    </>}
   </div></div>
   </div>
