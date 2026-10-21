@@ -23,9 +23,11 @@ Teloa is an **AI-Native Team Studio** for building, managing, and running teams 
 
 This repository maintains **Teloa Community**: an [Apache-2.0](LICENSE) open-source edition for individuals and developers. Deploy it on your own computer and manage multiple AI employees in your personal Web workspace. **DeepSeek Harness (DSH)** supplies the current agent runtime.
 
-![Teloa workspace: describe a goal and continue work assigned to AI employees](https://docs.teloa.ai/assets/screenshots/en/workbench-022.4c75329f0610.png)
+![Teloa workspace: describe a goal and continue work assigned to AI employees](https://docs.teloa.ai/assets/screenshots/en/workbench-024.18aefe7ecd43.png)
 
-*Community 0.2.2 interface with example employees; a fresh installation does not require demo data.*
+*Community 0.2.4 actual interface with example tasks and an unsent draft. A fresh installation does not require demo data.*
+
+[Get started with the new 0.2.4 features](https://docs.teloa.ai/en/start/whats-new)
 
 ## Why Teloa
 
@@ -197,9 +199,9 @@ See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [loc
 
 A **business** organizes records, people and resources. An **AI employee** owns a role; a **skill** supplies a method; **knowledge** provides evidence; a **connector** gives access to a system. A **task** tracks an assignment, a **deliverable** preserves its output, and a **dashboard** summarizes the business records.
 
-![A content operations business in Teloa Community: the records page lists sample records, with dashboards, AI employees, groups and projects in the same business](https://docs.teloa.ai/assets/screenshots/en/business-page-022.62346ddd9a58.png)
+![A content operations business in Teloa Community: the records page lists sample records, with dashboards, AI employees, groups and projects in the same business](https://docs.teloa.ai/assets/screenshots/en/business-page-024.7e05c5b73773.png)
 
-*0.2.2 interface with sample data. A business keeps records, dashboards, AI employees, groups and projects together; Start work begins work from here.*
+*0.2.4 interface with 8 fictional sample records. A business keeps records, dashboards, AI employees, groups and projects together; Start work begins work from here.*
 
 For example, in **security operations (SOC)**:
 
@@ -211,9 +213,9 @@ For example, in **security operations (SOC)**:
 
 Adding a team template does not automatically connect accounts, authorize employees or start scheduled work. Those choices stay with you.
 
-[![Content operations overview dashboard with sample records](https://docs.teloa.ai/assets/screenshots/en/business-dashboard-detail-022.7f3d79c64e39.png)](https://docs.teloa.ai/assets/screenshots/en/business-dashboard-022.67e58581c119.png)
+[![Content operations overview dashboard with sample records](https://docs.teloa.ai/assets/screenshots/en/business-dashboard-detail-024.e787ba1992b7.png)](https://docs.teloa.ai/assets/screenshots/en/business-dashboard-024.22f992c8cf57.png)
 
-*Dashboards work the same way across businesses. This example uses a marketplace content operations dashboard with 10 sample records in the 0.2.2 interface; it is not live data. Detail preview; click to view the complete screenshot.*
+*Dashboards work the same way across businesses. This example uses a marketplace content operations dashboard with 8 fictional sample records in the 0.2.4 interface; it is not live data. Detail preview; click to view the complete screenshot.*
 
 SOC is the first end-to-end business scenario. Customer delivery, content operations, retail, software development, education, store services and other security workflows are **future scenario examples**, rather than completed integrations. See [industry examples](https://docs.teloa.ai/en/tutorials/industry-examples) and the [SOC walkthrough](https://docs.teloa.ai/en/tutorials/soc-triage).
 
