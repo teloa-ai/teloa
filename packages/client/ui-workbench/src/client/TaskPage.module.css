@@ -221,7 +221,7 @@
 .alignedPage .overviewLayout .attentionTabs{gap:4px;padding:0;margin:18px 0 8px;border:0}
 .alignedPage .attentionTabs button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:7px;color:var(--teloa-secondary)}
 .alignedPage .attentionTabs button[aria-current=page]{background:var(--teloa-active);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
-.alignedPage .attentionTabs button span{font-family:var(--teloa-design-mono)}
+.alignedPage .attentionTabs button span{font-family:inherit;font-variant-numeric:tabular-nums;}
 @media(max-width:760px){.alignedPage.overviewPage>.taskHeader{padding:14px 21px 0}.alignedPage.overviewPage .overviewLayout{padding-left:21px;padding-right:21px}}
 /* 总览列表铺满版心：共享目录窄列的内缩（搜索 14px、筛选 14px、列表 8px）在这里归零，与页头左缘对齐。 */
 .alignedPage.overviewPage .overviewLayout .search{width:100%;margin-left:0;margin-right:0}.alignedPage.overviewPage .overviewLayout .filterBar{padding-left:0;padding-right:0}.alignedPage.overviewPage .overviewLayout .rows{padding:0!important}

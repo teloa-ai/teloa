@@ -72,7 +72,7 @@
 .workPage .goalStart,.workPage .savedPlans{max-width:960px;margin-left:0;margin-right:0;padding-left:40px;padding-right:40px}
 .workPage .modeTabs button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:7px;color:var(--teloa-secondary)}
 .workPage .modeTabs button[aria-current]{background:var(--teloa-active);color:var(--teloa-text);font-weight:var(--teloa-weight-medium);border:0}
-.modeTabs span{font-family:var(--teloa-design-mono)}
+.modeTabs span{font-family:inherit;font-variant-numeric:tabular-nums;}
 /* 自动化与任务目录同一层级；目标输入不是宣传大标题。 */
 .workPage.hubPage .modeTabs button,.workPage.hubPage .goalLabel,.workPage.hubPage .savedPlan strong{font-size:var(--teloa-font-control)}
 .workPage.hubPage .goalStart h2{font-size:var(--teloa-font-section);line-height:var(--teloa-leading-label)}

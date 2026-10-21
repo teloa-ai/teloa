@@ -17,7 +17,7 @@ dialog.detailDrawer.detailDrawer{width:min(1120px,100vw)}
 .tabs button:hover{background:transparent!important;color:var(--teloa-text)}
 .tabs button[aria-selected=true]{border-bottom-color:var(--teloa-text)!important;color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 /* 1.0 页签计数：等宽小号灰字跟在页签名后；计数写在 data-count 上，避免把数字拼进页签名称节点。 */
-.tabs button[data-count]::after{content:attr(data-count);margin-left:6px;font-family:var(--teloa-design-mono);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);color:var(--teloa-muted);font-variant-numeric:tabular-nums}
+.tabs button[data-count]::after{content:attr(data-count);margin-left:6px;font-family:inherit;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);color:var(--teloa-muted);font-variant-numeric:tabular-nums}
 .panel{padding-top:22px;min-width:0}
 .panel[hidden]{display:none}
 .twin .panel h2{margin:0 0 6px;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}

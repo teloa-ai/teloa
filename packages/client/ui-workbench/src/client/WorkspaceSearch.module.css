@@ -12,7 +12,7 @@
 .types{display:flex;align-items:center;gap:2px;padding:8px 10px;overflow-x:auto;scrollbar-width:thin;border-bottom:1px solid var(--teloa-border)}
 .dialog .types button{flex:none;display:inline-flex;align-items:center;white-space:nowrap;box-sizing:border-box;min-height:28px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
 .dialog .types button[aria-selected=true]{background:var(--teloa-chip-active,var(--teloa-hover));color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}.dialog .types button:hover{background:var(--teloa-hover)}
-.count{margin-left:4px;font-family:var(--teloa-design-mono);font-size:11px;font-weight:var(--teloa-weight-regular);color:var(--teloa-muted);font-variant-numeric:tabular-nums}
+.count{margin-left:4px;font-family:inherit;font-size:11px;font-weight:var(--teloa-weight-regular);color:var(--teloa-muted);font-variant-numeric:tabular-nums}
 .body{display:flex;flex-direction:column;gap:4px;padding:6px}
 .progress{display:flex;align-items:flex-start;gap:7px;padding:2px 10px 4px;color:var(--teloa-muted)}
 .progress>svg{flex:none;margin-top:3px}

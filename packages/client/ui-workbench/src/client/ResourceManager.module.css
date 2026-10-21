@@ -70,7 +70,7 @@
 .governanceFacts dd{min-width:0;margin:0;overflow-wrap:anywhere}
 .emptyDetail{display:grid;place-content:center;min-height:55vh;text-align:center}
 .emptyDetail p,.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
-.version{overflow-wrap:anywhere;color:var(--teloa-muted);font-family:monospace;font-size:var(--teloa-font-caption)}
+.version{overflow-wrap:anywhere;color:var(--teloa-muted);font-family:inherit;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .button,.primaryButton{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 10px;border-radius:7px;font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
 .button{border:1px solid var(--teloa-border);background:var(--teloa-background);color:var(--teloa-text)}

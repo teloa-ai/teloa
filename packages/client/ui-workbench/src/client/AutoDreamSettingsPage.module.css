@@ -8,7 +8,7 @@
 .rowText{min-width:0}.rowText strong{display:block;font-weight:var(--teloa-weight-medium);font-size:var(--teloa-font-body)}.rowText p{margin:2px 0 0;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);color:var(--teloa-muted);overflow-wrap:anywhere}
 .rowControl{display:flex;gap:8px;flex:none;flex-wrap:wrap;align-items:center}
 .rowControl input,.rowControl select,.missing button,.recentHeader button,.rowControl button,.row>button{box-sizing:border-box;min-height:32px;border:1px solid var(--teloa-border-strong);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);padding:5px 10px;min-width:0}
-.rowControl input[type=time]{font-family:var(--teloa-design-mono);font-variant-numeric:tabular-nums}
+.rowControl input[type=time]{font-family:inherit;font-variant-numeric:tabular-nums}
 .rowControl button,.row>button,.missing button,.recentHeader button{cursor:pointer}.rowControl button:hover:not(:disabled),.row>button:hover:not(:disabled),.missing button:hover,.recentHeader button:hover:not(:disabled){background:var(--teloa-hover)}
 .page :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .page input:disabled,.page select:disabled{opacity:.45;cursor:not-allowed}

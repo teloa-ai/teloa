@@ -18,15 +18,20 @@ export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
 /** Body variable carrying the user's content font size in px. */
 export const CONTENT_FONT_SIZE_VARIABLE = '--dsh-content-font-size'
 
+/** Scope interface-control typography to the active Teloa theme. */
+export const UI_FONT_ATTRIBUTE = 'data-teloa-ui-font'
+
 /** Applies theme snapshots to the document; one instance per plugin fiber. */
 export class ThemePresenter {
   /** Capture original styles once and restore only values still owned by this presenter. */
   private readonly appliedStyles = new Map<string,{original:string;priority:string;value:string}>()
   /** The single metadata node this presenter inserts and removes. */
   private readonly themeColorMeta: HTMLMetaElement
+  private readonly originalUiFontAttribute: string | null
 
   /** Create the presenter-owned metadata node before the first snapshot arrives. */
   constructor() {
+    this.originalUiFontAttribute = document.body.getAttribute(UI_FONT_ATTRIBUTE)
     this.themeColorMeta = document.createElement('meta')
     this.themeColorMeta.name = 'theme-color'
   }
@@ -66,6 +71,7 @@ export class ThemePresenter {
     const scheme = snapshot.active.colorScheme
     document.documentElement.style.colorScheme = scheme
     const body = document.body
+    body.setAttribute(UI_FONT_ATTRIBUTE, '')
     if (scheme === 'dark') body.setAttribute(DARK_ATTRIBUTE, '')
     else body.removeAttribute(DARK_ATTRIBUTE)
     const base=prototypeThemes[scheme]
@@ -104,6 +110,10 @@ export class ThemePresenter {
     document.documentElement.style.removeProperty('color-scheme')
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
+    if (body.getAttribute(UI_FONT_ATTRIBUTE) === '') {
+      if (this.originalUiFontAttribute === null) body.removeAttribute(UI_FONT_ATTRIBUTE)
+      else body.setAttribute(UI_FONT_ATTRIBUTE, this.originalUiFontAttribute)
+    }
     for(const name of this.appliedStyles.keys())this.retractStyle(name)
     this.themeColorMeta.remove()
   }
