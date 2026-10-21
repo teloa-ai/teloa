@@ -72,6 +72,8 @@ function mountPage(api:unknown){
   if(id.endsWith('business-definition-localization.js'))return {localizedBusinessViewTitle:(value:{title:string})=>value.title}
   if(id.endsWith('business-widget-presentation.js'))return presentation
   if(id.endsWith('BusinessDashboardGrid.js'))return {BusinessDashboardGrid}
+  if(id.endsWith('BusinessDashboardShare.js'))return {BusinessDashboardShareButton:()=>null}
+  if(id.endsWith('dashboard-share-api.js'))return {dashboardShareDigest:async()=> 'a'.repeat(64)}
   if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton}
   throw Error('未预期的依赖：'+id)
  }

@@ -13,6 +13,9 @@ export type TemplateShareReceipt={shareId:string;version:string;sha256:string;sh
 export type TemplateShareIntent={shareId:string}
 export type TemplateShareBridge={policy():Promise<TemplateSharePolicy>;publish(input:{requestId:string;package:AnyTemplateSharePackage}):Promise<TemplateShareReceipt>;list():Promise<TemplateShareReceipt[]>;revoke(input:{shareId:string}):Promise<unknown>;read(input:{shareId:string}):Promise<{shareId:string;package:AnyTemplateSharePackage;sha256:string}>;pending():TemplateShareIntent|null|Promise<TemplateShareIntent|null>;subscribe(callback:(intent:TemplateShareIntent|null)=>void):()=>void;dismiss(input:{shareId:string}):Promise<unknown>;beginAcceptance?(input:{requestId:string;shareId?:string}):Promise<{acceptanceId:string}>;endAcceptance?(input:{acceptanceId:string}):Promise<unknown>;submit?(input:{shareId:string;licenseAttestation:true;notes?:string}):Promise<TemplateShareSubmission>}
 export function templateShareTextIssue(value:string):string|undefined
+/** 无运行地址或配置值；接收方在可信连接设置中填写自己的配置。 */
+export type McpConnectionSetup={urlTemplate?:string;configurationKeys:string[]}
+export function readMcpConnectionSetup(value:unknown):McpConnectionSetup
 export function readTemplateSharePackage(value:unknown):TemplateSharePackage
 export function readTemplateSharePackageV2(value:unknown):TemplateSharePackageV2
 export function readTemplateShare(value:unknown):AnyTemplateSharePackage

@@ -1,11 +1,12 @@
 import {useCallback,useEffect,useRef,useState,useSyncExternalStore} from 'react'
 import {Download,HardDrive,Info,RefreshCw,ArrowUpRight} from 'lucide-react'
-import {OLLAMA_MIN_VERSION,readOllamaAddress,type LocalModelsOverview,type LocalModelRow,type LocalModelStatus,type PullJobView} from '@teloa/contract'
+import {OLLAMA_MIN_VERSION,embeddingProviderForCatalog,readOllamaAddress,type LocalModelsOverview,type LocalModelRow,type LocalModelStatus,type PullJobView} from '@teloa/contract'
 import type {LocalModelsApi,LocalModelsFocus} from './local-models-api.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {catalogText} from './market-catalog-api.js'
 import {subscribeSettingsPanelVisible} from './AutoDreamSettingsPage.js'
+import {LocalRetrievalSettings,type LocalRetrievalSettingsProps} from './LocalRetrievalSettings.js'
 import css from './LocalModelsSettings.module.css'
 
 const active=(job:PullJobView|null|undefined)=>job?.phase==='pulling'||job?.phase==='verifying'
@@ -18,8 +19,10 @@ export {formatBytes} from './local-models-api.js'
 import {formatBytes} from './local-models-api.js'
 type Confirmation={kind:'pull';row:LocalModelRow;overview:LocalModelsOverview}|{kind:'attach'|'remove';name:string;overview:LocalModelsOverview}
 const noSubscribe=()=>()=>{},noFocus=()=>undefined
-export function LocalModelsSettings({api,focus}:{api:LocalModelsApi;focus?:LocalModelsFocus}){
+export type LocalModelsSettingsProps={api:LocalModelsApi;focus?:LocalModelsFocus;retrieval?:Pick<LocalRetrievalSettingsProps,'api'|'activation'>}
+export function LocalModelsSettings({api,focus,retrieval}:LocalModelsSettingsProps){
  const {locale,t}=useI18n(),target=useSyncExternalStore(focus?.subscribe??noSubscribe,focus?.getSnapshot??noFocus,noFocus)
+ const retrievalFocus=target&&(target.entryId==='teloa.local-retrieval'||embeddingProviderForCatalog(target.entryId))?target:undefined
  const [overview,setOverview]=useState<LocalModelsOverview>(),[error,setError]=useState<string>(),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[visible,setVisible]=useState(true)
  const [confirmation,setConfirmation]=useState<Confirmation>(),[acknowledged,setAcknowledged]=useState(false)
  const mounted=useRef(false),generation=useRef(0),locked=useRef(false),returnFocus=useRef<HTMLElement|null>(null)
@@ -70,7 +73,7 @@ export function LocalModelsSettings({api,focus}:{api:LocalModelsApi;focus?:Local
   }
   if(mounted.current)close()
  })
- return <LocalModelsView overview={overview} error={error} busy={busy} loading={loading} confirmation={confirmation} acknowledged={acknowledged} focus={target} onRefresh={()=>void refresh()} onAsk={ask} onClose={close} onAcknowledge={setAcknowledged} onConfirm={confirm} onCancelPull={name=>void mutate(async()=>{const pull=await api.pullCancel(name);if(mounted.current)setOverview(current=>current?{...current,pull}:current);await refresh()})} onAddress={value=>void mutate(async()=>{if(value!==null){try{readOllamaAddress(value)}catch{throw Error(t('localModels.address.invalid'))}}const next=await api.address(value);if(mounted.current){setOverview(next);setConfirmation(undefined)}})}/>
+ return <><LocalModelsView overview={overview} error={error} busy={busy} loading={loading} confirmation={confirmation} acknowledged={acknowledged} focus={target} onRefresh={()=>void refresh()} onAsk={ask} onClose={close} onAcknowledge={setAcknowledged} onConfirm={confirm} onCancelPull={name=>void mutate(async()=>{const pull=await api.pullCancel(name);if(mounted.current)setOverview(current=>current?{...current,pull}:current);await refresh()})} onAddress={value=>void mutate(async()=>{if(value!==null){try{readOllamaAddress(value)}catch{throw Error(t('localModels.address.invalid'))}}const next=await api.address(value);if(mounted.current){setOverview(next);setConfirmation(undefined)}})}/>{retrieval&&<LocalRetrievalSettings {...retrieval} visible={visible} focus={retrievalFocus?.serial} requestedProvider={retrievalFocus?embeddingProviderForCatalog(retrievalFocus.entryId):undefined}/>}</>
 }
 
 export type LocalModelsViewProps={overview:LocalModelsOverview|undefined;error:string|undefined;busy:boolean;loading:boolean;confirmation:Confirmation|undefined;acknowledged:boolean;focus:{entryId:string;serial:number}|undefined;onRefresh:()=>void;onAsk:(value:Confirmation)=>void;onClose:()=>void;onAcknowledge:(value:boolean)=>void;onConfirm:()=>void;onCancelPull:(name:string)=>void;onAddress:(value:string|null)=>void}

@@ -28,6 +28,8 @@ const categories:readonly Readonly<{label:string;hint:string;searchTerms:string;
  {label:'Web search',hint:'search and fetch web pages',searchTerms:'网页检索 搜索网页、读取网页',pattern:/^web_(?:search|fetch)$/},
  {label:'Collaboration',hint:'subagents, team tasks, workflows, messages and waiting',searchTerms:'并行协作 子助手、团队任务、工作流、沟通与等待',pattern:/^(?:subagent(?:_|$)|workflow$|ralph$|spawn_teammate$|send_message$|list_agents$|wait_agent$|interrupt_agent$|team_task_)/},
  {label:'Jobs and goals',hint:'background jobs, goal progress and todos',searchTerms:'后台工作与目标 后台任务、目标进度、待办',pattern:/^(?:job_|(?:get|create|update)_goal$|todo_write$)/},
+ {label:'Browser',hint:'browser pages, navigation, tabs and snapshots',searchTerms:'浏览器 内置浏览器 自带浏览器 打开网页 导航 标签页',pattern:/^mcp__playwright-mcp__/},
+ {label:'Computer',hint:'host desktop apps, windows and existing browser processes',searchTerms:'电脑 桌面 应用 窗口 已有浏览器 进程 PID 接管',pattern:/^cua_driver_native__/},
  {label:'Connected resources',hint:'connected apps, MCP and shared resources',searchTerms:'连接与资源 调用已连接应用、MCP和共享资源',pattern:/^(?:mcp__|mcp_|(?:list|read)_mcp_)/},
  {label:'Work queries and reports',hint:'work statistics, business data and employee reports',searchTerms:'工作查询与汇报 查询真实工作统计、业务资料、安排员工汇报',pattern:/^teloa_(?:work_(?:facts|collect_reports)|business_data_query)$/},
  {label:'Creation and drafts',hint:'employee, skill and method drafts; revise, preview and apply',searchTerms:'新建与草案 新建员工、技能、方法等草案，修订、预览与应用',pattern:/^teloa_(?:create|method)_/},
@@ -61,11 +63,24 @@ const terms=(text:string)=>{
  const words=text.toLowerCase().match(/[a-z0-9]+|[\p{Script=Han}]+/gu)??[]
  return [...new Set(words.flatMap(word=>/^[a-z0-9]+$/.test(word)?[word]:Array.from({length:Math.max(1,word.length-1)},(_,at)=>word.slice(at,at+2))))]
 }
-function search(available:ReadonlyMap<string,ToolSchema>,query:string):string[]{
+const browserPrefix='mcp__playwright-mcp__',computerPrefix='cua_driver_native__'
+const browserEntries=['browser_navigate','browser_tabs','browser_snapshot'].map(name=>browserPrefix+name)
+function search(available:ReadonlyMap<string,ToolSchema>,query:string):{names:string[];hasMore:boolean}{
  const words=terms(query),rows=[...available.values()].map(tool=>{const category=categoryOf(tool.name);return {tool,name:tool.name.toLowerCase(),text:(tool.name+' '+tool.description+' '+category.label+' '+category.hint+' '+category.searchTerms).toLowerCase()}})
  const frequencies=new Map(words.map(word=>[word,rows.filter(row=>row.text.includes(word)).length]))
+ const computer=/\b(?:pid|desktop|computer|cua|attach)\b|\bexisting (?:browser )?(?:process|profile|window)\b|桌面|电脑|进程|接管|(?:已有|现有)(?:浏览器)?(?:配置文件|窗口)/i.test(query)
+ const browser=/\b(?:browser|playwright)\b|浏览器|打开网页/i.test(query)
+ const opening=browser&&!computer&&(/\b(?:open|builtin|built-in|launch|start)\b|打开|开启|启动|自带|内置/i.test(query)||/^(?:browser|浏览器)$/i.test(query.trim()))
+ // 相同 browser 词可指独立页面或已有桌面进程；先匹配用户指定的表面，再排动作。只排序当前许可目录，不补造工具。
+ const priority=(name:string)=>{
+  if(computer)return Number(name.startsWith(computerPrefix))
+  if(!browser||!name.startsWith(browserPrefix))return 0
+  const entry=opening?browserEntries.indexOf(name):-1
+  return entry<0?1:browserEntries.length+1-entry
+ }
  // 每个词只计一次；详细字段与安全示例使说明变长，不应把真正的动作工具排在只读辅助工具之后。
- return rows.map(row=>({name:row.tool.name,score:(query.toLowerCase().includes(row.name)?100:0)+words.reduce((sum,word)=>sum+(row.text.includes(word)?(row.name.includes(word)?4:1)*Math.log(1+rows.length/(frequencies.get(word)!+1)):0),0)})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).slice(0,6).map(row=>row.name)
+ const matches=rows.map(row=>({name:row.tool.name,score:(query.toLowerCase().includes(row.name)?100:0)+words.reduce((sum,word)=>sum+(row.text.includes(word)?(row.name.includes(word)?4:1)*Math.log(1+rows.length/(frequencies.get(word)!+1)):0),0)})).filter(row=>row.score>0).sort((a,b)=>priority(b.name)-priority(a.name)||b.score-a.score||a.name.localeCompare(b.name))
+ return {names:matches.slice(0,6).map(row=>row.name),hasMore:matches.length>6}
 }
 const sectionTool=(name:string)=>name.match(/^tool:([^:]+)(?::.*)?$/)?.[1]
 
@@ -152,9 +167,10 @@ function createEngine(ctx:Context){
    exec.signal.throwIfAborted()
    if(names!==undefined&&(names.length<1||names.length>8)||query!==undefined&&(!query.trim()||query.length>256)||names===undefined&&query===undefined)throw new WorkError('teloa/invalid-input','Provide a short action query or 1 to 8 exact tool names.')
    const catalog=state.available
-   const selected=names?[...new Set(names)]:search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query!)
+   const matches=names?undefined:search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query!)
+   const selected=names?[...new Set(names)]:matches!.names
    if(selected.some(name=>!catalog.has(name)||name===toolLoaderName)){
-    const matches=search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query??names!.join(' '))
+    const matches=search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query??names!.join(' ')).names
     throw new WorkError('teloa/forbidden','Names are outside this conversation\'s permitted catalog; nothing loaded or executed. Skill names are not tool names; check skills with skill. Remove names and use only query to search by action next. '+(matches.length?'Matching permitted tools: '+matches.join(', ')+'.':'No permitted tool matches; do not guess names or claim saving succeeded.'))
    }
    for(const name of selected){
@@ -162,7 +178,10 @@ function createEngine(ctx:Context){
     else loadInto(state.session!,name)
    }
    // 下一步正式工具声明已含完整说明；回执只保留可冷恢复的名称，避免把长说明重复写进历史。
-   return JSON.stringify({loaded:selected.map(name=>({name})),next:selected.length?'Read these tools\' full schemas next; original permissions, approval and execution rules still apply.':'No match. Try a more direct action or English/Chinese synonym; do not guess parameters or claim execution.'})
+   const nativeBrowser=selected.some(name=>name.startsWith(browserPrefix)||name.startsWith(computerPrefix+'browser_')||name===computerPrefix+'get_browser_state')
+   const providers=nativeBrowser&&[...catalog.keys()].some(name=>name.startsWith(browserPrefix))&&[...catalog.keys()].some(name=>name.startsWith(computerPrefix))?['playwright-mcp','cua-driver-native']:undefined
+   const next=selected.length?'Read these tools\' full schemas next; original permissions, approval and execution rules still apply.':'No match. Try a more direct action or English/Chinese synonym; do not guess parameters or claim execution.'
+   return JSON.stringify({loaded:selected.map(name=>({name})),...(matches?.hasMore?{hasMore:true}:{}),...(providers?{providers}:{}),next:next+(matches?.hasMore?' Partial matches, not the full catalog; refine the query for others.':'')+(nativeBrowser?' Browser and computer targets differ. Correct parameter errors from the schema; they do not prove browsing is unavailable.':'')})
   },
  }))
 

@@ -218,7 +218,7 @@ export class GroupRunMessageService{
    if(!grantRow)throw new WorkError('teloa/forbidden','员工没有当前群内发言授权。')
    const grant=readGroupAgentGrant(grantRow)
    if(grant.state!=='active'||grant.grantVersion!==context.grantVersion||!grant.canPost)throw new WorkError('teloa/forbidden','员工没有当前群内发言授权。')
-   const now=this.identity.now(),references:MessageReference[]=context.materials.map(material=>({kind:'group-resource',id:material.resourceId,version:material.resourceVersion}))
+   const now=this.identity.now(),references:MessageReference[]=[...context.materials.map(material=>({kind:'group-resource' as const,id:material.resourceId,version:material.resourceVersion})),...('workResources' in context?context.workResources??[]:[]).map(resource=>({kind:'work-resource' as const,id:resource.id,version:resource.version}))]
    let failed=0
    if(claims.length){
     const ports=this.artifacts

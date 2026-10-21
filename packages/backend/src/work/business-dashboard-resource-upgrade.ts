@@ -1,4 +1,4 @@
-import {WorkError,isRecord,industryUpdateCanonical,readBusinessConfigurationCandidateV2,type BusinessConfigurationCandidateV2} from '@teloa/contract'
+import {WorkError,isRecord,industryUpdateCanonical,readBusinessConfigurationCandidateV2,assertBusinessViewV2References,type BusinessConfigurationCandidateV2} from '@teloa/contract'
 import type {BusinessConfigurationCandidate,BusinessObjectTypeDefinition,BusinessObjectTypeDefinitionV2,BusinessTemplateUpgradeImpact} from '@teloa/contract'
 import {assertBusinessRecordFieldValue} from './business-record-values.ts'
 
@@ -40,6 +40,44 @@ export type BusinessDashboardUpgradeConflict={key:string;entity:'definition'|'pa
 export type BusinessDashboardUpgradeMerge={configuration:BusinessConfigurationCandidateV2|null;conflicts:BusinessDashboardUpgradeConflict[];changed:string[]}
 const invalid=(message:string)=>new WorkError('teloa/invalid-input',message)
 const same=(left:unknown,right:unknown)=>industryUpdateCanonical(left)===industryUpdateCanonical(right)
+
+/** 本人明确选择的兼容草案：保留记录形状，不能移除筛选或度量来伪造兼容。 */
+export function preserveBusinessDashboardDataShape(input:{current:unknown;candidate:unknown}):{configuration:BusinessConfigurationCandidateV2;deferred:string[]}{
+ const current=readBusinessConfigurationCandidateV2(input.current),candidate=readBusinessConfigurationCandidateV2(input.candidate)
+ if(current.scope!==candidate.scope)throw invalid('保留字段的草案必须属于同一业务。')
+ const deferred:string[]=[],objects=new Map(current.definitions.filter(row=>row.kind==='object-type').map(row=>[row.definition.id,row])),views=new Map(current.definitions.filter(row=>row.kind==='view').map(row=>[row.definition.id,row]))
+ const definitions=candidate.definitions.map(row=>{
+  if(row.kind!=='object-type')return structuredClone(row)
+  const old=objects.get(row.definition.id);if(!old)return structuredClone(row)
+  if(!same(old,row)){
+   const names=new Set([...old.definition.fields,...row.definition.fields].map(field=>field.name))
+   for(const name of names)if(!same(old.definition.fields.find(field=>field.name===name),row.definition.fields.find(field=>field.name===name)))deferred.push('object:'+row.definition.id+':'+name)
+   if(!same(old.definition.sourceId,row.definition.sourceId))deferred.push('object-source:'+row.definition.id)
+   if(!deferred.some(value=>value.startsWith('object:'+row.definition.id+':')||value==='object-source:'+row.definition.id))deferred.push('object:'+row.definition.id)
+  }
+  return structuredClone(old)
+ })
+ for(const [id,old] of objects)if(!definitions.some(row=>row.kind==='object-type'&&row.definition.id===id)){definitions.push(structuredClone(old));deferred.push('object:'+id)}
+ const retained=new Map(definitions.filter(row=>row.kind==='object-type').map(row=>[row.definition.id,row.definition]))
+ for(const row of definitions)if(row.kind==='view'){
+  const object=retained.get(row.definition.objectType);if(!object)throw invalid('保留字段后视图对象不存在。')
+  const dimension=row.definition.dimension,old=views.get(row.definition.id)
+  if(dimension&&!object.fields.some(field=>field.name===dimension.field)){
+   if(!old||old.definition.objectType!==row.definition.objectType)throw invalid('新视图没有可保留的原维度，请先连接所需字段。')
+   const {dimension:_,...rest}=row.definition
+   row.definition={...rest,...old.definition.dimension?{dimension:structuredClone(old.definition.dimension)}:{}}
+   deferred.push('view:'+row.definition.id+':dimension:'+dimension.field)
+  }
+  try{assertBusinessViewV2References(row.definition,object)}catch{throw invalid('保留现有字段后筛选或度量仍不兼容；请先核对来源，不能自动删去这些规则。')}
+ }
+ const pages=candidate.pages.map(page=>{
+  if(page.kind!=='records')return structuredClone(page)
+  const object=retained.get(page.objectType);if(!object)throw invalid('保留字段后记录页对象不存在。')
+  const fields=page.fields.filter(name=>{const found=object.fields.some(field=>field.name===name);if(!found)deferred.push('page:'+page.id+':field:'+name);return found})
+  return {...page,fields}
+ })
+ return {configuration:readBusinessConfigurationCandidateV2({...candidate,definitions,pages}),deferred:[...new Set(deferred)]}
+}
 
 /** 三份输入已映射到同一业务。仅合并声明实体，不读取、改写或删除业务记录。 */
 export function mergeBusinessDashboardResourceUpgrade(input:{baseline:unknown;current:unknown;candidate:unknown;choices?:unknown}):BusinessDashboardUpgradeMerge{

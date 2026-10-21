@@ -1,4 +1,5 @@
 .page{max-width:780px;min-width:0;color:var(--teloa-text);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}
+.retrievalSettings{margin-top:24px;padding-top:24px;border-top:1px solid var(--teloa-border);scroll-margin-block:24px}.retrievalSettings.retrievalSettings h2{font-size:var(--teloa-font-section)}
 .page h2{margin:0;font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:-.2px}
 .page h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);overflow-wrap:anywhere}
 .header,.rowHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}

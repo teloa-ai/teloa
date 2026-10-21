@@ -1,3 +1,4 @@
+import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,roleSupportsScope,groupAgentGrantChangeInput,groupAgentGrantGetInput,groupDefinition,isGroupAgentGrant,isGroupAgentGrantRead,normalizeReferences,type GroupAgentGrant,type GroupAgentGrantRead,type GroupAgentResourceGrant} from '@teloa/contract'
 import {readActiveAttachment} from './group-attachments.ts'
@@ -146,6 +147,8 @@ export class GroupAgentGrantService{
      on resources.id=versions.resource_id and resources.owner_id=versions.owner_id and resources.group_id=versions.group_id
      where versions.resource_id=$1 and versions.owner_id=$2 and versions.group_id=$3 and versions.version=$4 and resources.withdrawn_at is null for share of versions,resources`,[resource.id,owner,groupId,resource.version])).rows[0]
     if(!found)throw new WorkError('teloa/forbidden','授权资料版本不存在、已撤回或不属于当前群。')
+   }else if(resource.kind==='work-resource'){
+    await readActiveGroupWorkResource(client,owner,groupId,resource)
    }else if(resource.kind==='attachment'){
     if(!await readActiveAttachment(client,owner,resource.id))throw new WorkError('teloa/forbidden','授权的原件不存在、已撤回或不属于当前本人。')
    }else{

@@ -4,7 +4,6 @@ import {libraryRows,libraryPreferenceKey,readLibraryPreferences,visitLibraryReso
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 import {isLocalMaterialSourceId} from './local-material-registration.js'
 import {LocalRetrievalResources} from './LocalRetrievalResources.js'
-import type {BundledExtensionsApi} from './bundled-extensions-api.js'
 import type {LocalRetrievalApi} from './local-retrieval-api.js'
 import { useEffect,useMemo,useRef,useState,type ReactNode } from 'react'
 import { ChevronDown,FileCheck,FileText,Folder,FolderInput,FolderPlus,MessageSquare,MoreHorizontal,Pencil,RefreshCw,Search,Plus,Users } from 'lucide-react'
@@ -24,7 +23,7 @@ export type {LibraryPreparationRequest} from './business-library-presentation.js
 
 export type ResourceManagerNavigationState={query:string;category:NonNullable<ResourceManagerFilters['category']>;selectedId:string|undefined;mobileLayer:'directory'|'detail';libraryView:LibraryView;browseNodeId:string|undefined}
 
-export function ResourceManager({openUsage,preferenceStorage,onUseResource,localRetrievalApi,api,roleApi,artifactApi,openArtifact,visible,selectedDraftId,targetResource,clearTarget,openConversation,bundledExtensionsApi,navigationState,onNavigationChange}:{openUsage?:((target:ResourceUsageTarget,current:()=>boolean)=>void|Promise<void>)|undefined;preferenceStorage?:WorkbenchNavigationStorage|undefined;onUseResource?:((resource:WorkResource)=>void)|undefined;localRetrievalApi?:LocalRetrievalApi|undefined;api:ResourceApi;roleApi?:{list():Promise<readonly RoleKnowledgeRef[]>}|undefined;artifactApi?:{listByRole(roleId:string):Promise<readonly RoleArtifactSummary[]>}|undefined;openArtifact?:((output:RoleArtifactSummary)=>Promise<void>)|undefined;visible:boolean;selectedDraftId:string|null;targetResource:{id:string;request:number}|null;clearTarget:()=>void;openConversation:(request:LibraryPreparationRequest)=>void;bundledExtensionsApi?:BundledExtensionsApi|undefined;navigationState?:Partial<ResourceManagerNavigationState>;onNavigationChange?:(state:ResourceManagerNavigationState)=>void}){
+export function ResourceManager({openUsage,onLocalModels,preferenceStorage,onUseResource,localRetrievalApi,api,roleApi,artifactApi,openArtifact,visible,selectedDraftId,targetResource,clearTarget,openConversation,navigationState,onNavigationChange}:{openUsage?:((target:ResourceUsageTarget,current:()=>boolean)=>void|Promise<void>)|undefined;onLocalModels?:()=>void;preferenceStorage?:WorkbenchNavigationStorage|undefined;onUseResource?:((resource:WorkResource)=>void)|undefined;localRetrievalApi?:LocalRetrievalApi|undefined;api:ResourceApi;roleApi?:{list():Promise<readonly RoleKnowledgeRef[]>}|undefined;artifactApi?:{listByRole(roleId:string):Promise<readonly RoleArtifactSummary[]>}|undefined;openArtifact?:((output:RoleArtifactSummary)=>Promise<void>)|undefined;visible:boolean;selectedDraftId:string|null;targetResource:{id:string;request:number}|null;clearTarget:()=>void;openConversation:(request:LibraryPreparationRequest)=>void;navigationState?:Partial<ResourceManagerNavigationState>;onNavigationChange?:(state:ResourceManagerNavigationState)=>void}){
   const {locale,t}=useI18n()
   const currentApi=useRef(api);currentApi.current=api
   const [directory,setDirectory]=useState<ResourceDirectory>({drafts:[],resources:[]}),[sources,setSources]=useState<SourceReference[]>([]),[loadedKnowledgeTree,setKnowledgeTree]=useState<KnowledgeTree>()
@@ -188,7 +187,7 @@ export function ResourceManager({openUsage,preferenceStorage,onUseResource,local
     <h1 className={css.srOnly}>{t('library.title')}</h1>
     {error&&<p className={css.message} role="alert">{error}</p>}{notice&&<p className={css.message} role="status">{notice}</p>}
     {pendingLeave&&<div className={css.unsaved} role="alert"><p>{t('library.unsaved')}</p><button className={css.button} onClick={()=>setPendingLeave(undefined)}>{t('library.stay')}</button><button className={css.button} onClick={()=>{const action=pendingLeave;setPendingLeave(undefined);setDocumentDirty(false);action()}}>{t('library.leave')}</button></div>}
-    {loadedApi===api&&localRetrievalApi&&libraryView==='local'&&<div className={css.retrieval}><LocalRetrievalResources api={localRetrievalApi} resource={mobileDetailOpen?selectedResource:undefined} visible={visible} activationApi={bundledExtensionsApi}/></div>}
+    {loadedApi===api&&localRetrievalApi&&libraryView==='local'&&<div className={css.retrieval}><LocalRetrievalResources api={localRetrievalApi} resource={mobileDetailOpen?selectedResource:undefined} visible={visible} {...(onLocalModels?{onModelSettings:onLocalModels}:{})}/></div>}
     <div {...directoryFocus} className={css.workspace}>
       {/* 工具行与快捷视图不等目录读完：目录晚到不能关闭用户刚打开的添加菜单。 */}
       <div className={css.directoryColumn}>{libraryToolbar}<LibraryViews view={libraryView} onChange={changeLibraryView}/>{loadedApi===api&&<WikiKnowledgeTree

@@ -3,7 +3,7 @@ import {Copy,FileDown,FileText,Link2,Send,ShieldCheck,Upload} from 'lucide-react
 import {assertBusinessShareInspection,inspectBusinessShareContent,readTemplateSharePackage,type TemplateSharePackage,type TemplateShareReceipt,type TemplateShareBridge,type TemplateSharePolicy} from '@teloa/contract'
 import type {PreviewRole} from './role-preview.js'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
-import {buildSharePlan,canonicalSharePackage,editSharePackage,readSharePackage,readShareSubmission,sharePackageDigest,sharePackageSummary,shareInspectionInput,type SharePackage,type ShareConnectionSource,type ShareRoleSource,type ShareSkillSource,type ShareSubject,type ShareSubmission} from './share-package-plan.js'
+import {buildSharePlan,canonicalSharePackage,editSharePackage,editShareConnectionSetup,readSharePackage,readShareSubmission,sharePackageDigest,sharePackageSummary,shareInspectionInput,type SharePackage,type ShareConnectionSource,type ShareRoleSource,type ShareSkillSource,type ShareSubject,type ShareSubmission} from './share-package-plan.js'
 import {readIndustryArchive} from './industry-archive.js'
 import {isIndustryManifest} from './industry-manifest.js'
 import {TemplateShareDrawer} from './TemplateShareDrawer.js'
@@ -14,6 +14,7 @@ import type {TemplateShareMessageKey} from './i18n/locales/template-share.js'
 import css from './TemplateShareDrawer.module.css'
 import {templateShareErrorKey,templateSharePolicyKey} from './template-share-errors.js'
 import {createRoleFormDrafts,useRoleFormDraft} from './role-form-drafts.js'
+import {ConnectionTemplateSetup,ConnectionTemplateSetupEditor} from './ConnectionTemplateSetup.js'
 
 /**
  * 分享桥：在契约 v1 桥的基础上接受 v2 包并可选提供投稿；契约 v2 合入后以 `TemplateShareBridge` 替换本类型。
@@ -24,6 +25,8 @@ export type ShareBridge=Omit<TemplateShareBridge,'publish'|'read'>&{
  read(input:{shareId:string}):Promise<{shareId:string;package:unknown;sha256:string}>
  submit?(input:{shareId:string;licenseAttestation:true;notes?:string}):Promise<unknown>
  withdraw?(input:{shareId:string}):Promise<unknown>
+ /** 社区 Web 的公开链接只触发预览意图，不安装或执行。 */
+ receiveLink?(input:string):void
 }
 /** 分享来源：按员工绑定的原生技能名解析实际安装身份、版本与（许可允许时的）静态正文；连接按受管记录解析。 */
 export type TemplateShareSources={skills:(names:readonly string[],selection?:{installationId:string})=>Promise<ShareSkillSource[]>;connections?:(serverNames?:readonly string[])=>Promise<ShareConnectionSource[]>}
@@ -45,6 +48,7 @@ export function TemplateFiles({pkg}:{pkg:SharePackage}){
  useLayoutEffect(()=>{if(reader.current)reader.current.scrollTop=scrolls.current.get(selected?.path??'')??0},[selected?.path])
  return <details className={css.disclosure}><summary><FileText size={17} aria-hidden="true"/>{t('templateShare.details')}<span className={css.summaryMeta}>{pkg.files.length}</span></summary><div className={css.detailContent}>
   {(summary.license||summary.publisher)&&<dl className={css.facts}>{summary.publisher&&<><dt>{t('templateShare.publisher')}</dt><dd>{summary.publisher}</dd></>}{summary.license&&<><dt>{t('templateShare.license')}</dt><dd>{summary.license}</dd></>}{summary.provenance.length>0&&<><dt>{t('templateShare.provenance')}</dt><dd>{summary.provenance.map(s=><span key={s.title}>{s.title} · {s.license}{s.url?' · '+s.url:''}</span>)}</dd></>}</dl>}
+  {summary.connections.filter(connection=>connection.setup).map(connection=><div key={connection.resourceId}><strong>{connection.title}</strong><ConnectionTemplateSetup setup={connection.setup!}/></div>)}
   <div className={css.fileReader}><nav aria-label={t('templateShare.files')}>{pkg.files.map(file=><button type="button" key={file.path} aria-pressed={selected?.path===file.path} onClick={()=>selectFile(file.path)}>{file.path}</button>)}</nav>{selected&&<section aria-label={selected.path}><h4>{selected.path}</h4><pre ref={reader}>{selected.text}</pre></section>}</div>{pkg.requirements.length>0&&<><strong>{t('templateShare.requirements')}</strong><ul>{pkg.requirements.map((r,i)=><li key={i}>{r}</li>)}</ul></>}
  </div></details>
 }
@@ -152,6 +156,7 @@ export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,titl
     {(!bridge||policy&&!policy.canPublish)&&<p className={css.note}>{t(templateSharePolicyKey(policy))}</p>}
    </TemplateShareCard>
    <p className={css.privacy}><ShieldCheck size={17} aria-hidden="true"/><span>{t('templateShare.excluded')}</span></p>
+   {editable&&!draft.attempted&&sharePackageSummary(draft.package).connections.some(connection=>connection.serverName)&&<details className={css.disclosure}><summary>{t('templateShare.connectionTemplate')}</summary><div className={css.detailContent}><p className={css.note}>{t('templateShare.connectionTemplateHint')}</p>{sharePackageSummary(draft.package).connections.filter(connection=>connection.serverName).map(connection=><ConnectionTemplateSetupEditor key={draft.package.id+'/'+connection.resourceId} title={connection.title} setup={connection.setup} disabled={busy} apply={value=>{const next=editShareConnectionSetup(draft.package,connection.resourceId,value);persist({...draft,package:next,inspection:undefined});void inspect(next).then(inspection=>setDraft(current=>current?.package===next?(storage.setItem(key,JSON.stringify({...current,inspection})),{...current,inspection}):current))}}/>)}</div></details>}
    <TemplateFiles pkg={draft.package}/>
    {editable&&!draft.attempted&&<details className={css.disclosure}><summary>{t('templateShare.editIntro')}</summary><div className={css.detailContent}>
     <label>{t('templateShare.title')}<input maxLength={120} value={draft.package.title} disabled={busy} onChange={e=>change(e.target.value,draft.package.description)}/></label>

@@ -160,3 +160,12 @@ test('真实 DSH 与 profile 排队锁：取消或换轮次后不写配置、不
   if(mode==='before-commit')assert.equal(guards,2)
  })
 })
+
+test('群知识授权工具接受明确的全局资料固定引用，仍仅透传可信群授权端点',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ const input={groupId:id,roleId:other,expectedGroupVersion:1,expectedRoleVersion:1,action:'save',resources:[{kind:'work-resource',id:other,version:1}],canPost:true,canAutoRun:false}
+ const result=await e.call('teloa_group_agent_grant_change',input,'explicit-work-resource-grant')
+ assert.equal(result.isError,false);assert.equal(e.calls.at(-1)?.endpoint,'groups/agent-grants/change')
+ assert.deepEqual(e.calls.at(-1)?.payload.resources,input.resources)
+ assert.equal('ownerId' in e.calls.at(-1)!.payload,false)
+})

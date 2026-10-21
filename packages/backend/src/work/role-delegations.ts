@@ -1,3 +1,4 @@
+import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import type {Pool,PoolClient} from 'pg'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
@@ -198,6 +199,7 @@ export async function readRoleWorkGroupGrant(db:PoolClient,owner:string,role:Dig
   let present:boolean
   if(reference.kind==='group-resource')present=Boolean((await db.query(`select 1 from teloa_group_resource_versions v join teloa_group_resources r on r.id=v.resource_id and r.owner_id=v.owner_id and r.group_id=v.group_id
    where v.owner_id=$1 and v.group_id=$2 and v.resource_id=$3 and v.version=$4 and r.withdrawn_at is null for share of v,r`,[owner,groupId,reference.id,reference.version])).rowCount)
+  else if(reference.kind==='work-resource'){await readActiveGroupWorkResource(db,owner,groupId,reference);present=true}
   else if(reference.kind==='attachment')present=Boolean(await readActiveAttachment(db,owner,reference.id))
   else present=roleWorkUuid(reference.id)&&Boolean((await db.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,reference.id,reference.version])).rowCount)
   if(!present)throw new WorkError('teloa/forbidden','群执行授权的原件已撤回或不再可见。')

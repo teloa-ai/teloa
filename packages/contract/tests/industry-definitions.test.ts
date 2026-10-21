@@ -47,6 +47,28 @@ test('MCP 连接定义校验 serverName 与工具名并拼出完整工具名',()
  ])assert.throws(()=>readIndustryMcpConnectionDefinition(bad),{code:'teloa/invalid-input'})
 })
 
+test('连接模板只带可填写的地址占位和配置项名称，拒绝任何实际地址或配置值',()=>{
+ const base={format:'teloa.mcp-connection/v1',serverName:'reference',tools:['search']}
+ const setup={urlTemplate:'https://{host}/{path}',configurationKeys:['url','Authorization','X-Workspace']}
+ assert.deepEqual(readIndustryMcpConnectionDefinition({...base,setup}),{...base,setup})
+ const declared={urlTemplate:'https://service.example/{tenant}/mcp?key={API_KEY}',configurationKeys:['API_KEY','tenant']}
+ assert.deepEqual(readIndustryMcpConnectionDefinition({...base,setup:declared}),{...base,setup:declared})
+ assert.deepEqual(readIndustryMcpConnectionDefinition({...base,setup:{configurationKeys:['API_KEY']}}),{...base,setup:{configurationKeys:['API_KEY']}})
+ for(const invalid of [
+  {...setup,urlTemplate:'https://private.example/mcp?token=private-value'},
+  {...setup,urlTemplate:'https://user:password@host/mcp?token=secret'},
+  {...setup,urlTemplate:'file:///{path}'},
+  {...setup,urlTemplate:'https://service.example/mcp#fragment'},
+  {...setup,urlTemplate:'https://service.example/'+('opaque'.repeat(8))},
+  {...setup,urlTemplate:'https://service.example/mcp?key={API_KEY}&key={OTHER}'},
+  {...setup,headers:{Authorization:'secret'}},
+  {...setup,configurationKeys:['Authorization','authorization']},
+  {...setup,configurationKeys:['Authorization: secret']},
+  {...setup,configurationKeys:Array.from({length:33},(_,i)=>'key'+i)},
+  {configurationKeys:['url'],url:'https://private.example/mcp'},
+ ])assert.throws(()=>readIndustryMcpConnectionDefinition({...base,setup:invalid}),{code:'teloa/invalid-input'})
+})
+
 test('MCP 工具名允许点号，完整工具名按 DSH 公开名规则归一化（非法字符换下划线并追加身份摘要）',()=>{
  // 飞书官方 MCP 的工具名形如 im.v1.message.list；DSH 只接受 [A-Za-z0-9_-]{1,64}，越界时追加 sha256(server\0raw) 前 12 位。
  assert.deepEqual(readIndustryMcpConnectionDefinition({format:'teloa.mcp-connection/v1',serverName:'lark',tools:['im.v1.message.list','docx.v1.document.get']}).tools,['im.v1.message.list','docx.v1.document.get'])

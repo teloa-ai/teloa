@@ -32,7 +32,7 @@
 /* 资料页「本地检索」：标题与一句用途在左，已加入份数与「更多」在右；每份资料一行，底部一句说明。 */
 .search { display: grid; gap: 10px; padding: 14px 16px; }
 .searchHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.searchIntro { min-width: 0; }
+.searchIntro { min-width: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .searchIntro strong { font-size: var(--teloa-font-body); font-weight: var(--teloa-weight-heading); }
 .searchIntro p { margin: 2px 0 0; color: var(--teloa-muted); font-size: var(--teloa-font-caption); line-height: var(--teloa-leading-label); }
 .searchTools { display: flex; align-items: center; gap: 8px; flex: none; }

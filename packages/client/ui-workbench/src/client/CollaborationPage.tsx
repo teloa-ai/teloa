@@ -1,3 +1,4 @@
+import type {GroupWorkResourcePort} from './group-work-resources.js'
 import type {IndustryTeamMaterialsPort} from './industry-team-materials.js'
 import {RoleProfileDrawer} from './RoleProfileDrawer.js'
 import { ContextDrawer } from './ContextDrawer.js'
@@ -18,7 +19,7 @@ import type { GroupRoutingApi } from './group-routing-api.js'
 import {useI18n} from './i18n/provider.js'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 
-type Props={artifactRail?:GroupArtifactRailPort|undefined;artifactOpen?:boolean;work?:GroupWorkContext|undefined;visible:boolean;panel?:GroupPanelPort|undefined;target:{groupId:string;rootId:string}|null;roles:PreviewRole[];profileName:string;persistence:{templateMaterials?:IndustryTeamMaterialsPort;preferences?:WorkbenchNavigationStorage;api:GroupApi;attachments?:GroupAttachmentApi;reactions?:GroupReactionApi;routing?:GroupRoutingApi;channels?:GroupChannelContext;directory?:SavedConversationDirectory}}
+type Props={artifactRail?:GroupArtifactRailPort|undefined;artifactOpen?:boolean;work?:GroupWorkContext|undefined;visible:boolean;panel?:GroupPanelPort|undefined;target:{groupId:string;rootId:string;messageId?:string}|null;roles:PreviewRole[];profileName:string;persistence:{workResources?:GroupWorkResourcePort;templateMaterials?:IndustryTeamMaterialsPort;preferences?:WorkbenchNavigationStorage;api:GroupApi;attachments?:GroupAttachmentApi;reactions?:GroupReactionApi;routing?:GroupRoutingApi;channels?:GroupChannelContext;directory?:SavedConversationDirectory}}
 type RolePerson=ReturnType<typeof rolePeople>[number]
 const memberKind=(t:ReturnType<typeof useI18n>['t'],value:RolePerson['kind']|undefined)=>value==='human'?t('collaboration.member.human'):value==='draft'?t('collaboration.member.draft'):value==='digital'?t('collaboration.member.digital'):value
 
@@ -38,7 +39,7 @@ export function CollaborationPage({persistence,...props}:Props){
  const work=props.work?{...props.work,...(props.work.renderRole?{openRole:(id:string)=>{roleOrigin.current={groupId:props.target?.groupId,api:persistence.api};setRoleDetail(id)}}:{}),...(props.work.renderLink?{openLink:(item:GroupWorkLinkItem)=>setWorkDetail(item)}:{})}:undefined
  // 共用目录切群时按身份重建详情，旧群的在途读取、资料选择和编辑表单不能落到新群。
  // 创建草稿属于来源业务，放在群详情身份外侧，保存或切群只清当前来源。
- const page=<SavedCollaborationPage artifactRail={props.artifactRail} creationForms={{items:createForms,change:setCreateForms}} work={work} key={persistence.directory?props.target?.groupId:undefined} visible={props.visible} panel={props.panel} templateMaterials={persistence.templateMaterials} preferences={persistence.preferences} api={persistence.api} attachments={persistence.attachments} reactions={persistence.reactions} routing={persistence.routing} channels={persistence.channels} directory={persistence.directory} target={props.target} roles={props.roles} profileName={props.profileName}/>
+ const page=<SavedCollaborationPage workResources={persistence.workResources} artifactRail={props.artifactRail} creationForms={{items:createForms,change:setCreateForms}} work={work} key={persistence.directory?props.target?.groupId:undefined} visible={props.visible} panel={props.panel} templateMaterials={persistence.templateMaterials} preferences={persistence.preferences} api={persistence.api} attachments={persistence.attachments} reactions={persistence.reactions} routing={persistence.routing} channels={persistence.channels} directory={persistence.directory} target={props.target} roles={props.roles} profileName={props.profileName}/>
  return props.work?.renderRole||props.work?.renderLink?<>{page}{props.work.renderRole&&<RoleProfileDrawer key={'profile:'+props.target?.groupId} open={profileVisible&&!!role} kind={role?.kind} title={role?.kind==='twin'?twinDisplayName(props.profileName,t):role?.name??t('navigation.team')} close={closeRole}>{lastRoleId.current&&props.work.renderRole(lastRoleId.current,closeRole,profileVisible&&!!role)}</RoleProfileDrawer>}{props.visible&&workDetail?.available&&props.work.renderLink&&<ContextDrawer open={!props.artifactOpen} title={workDetail.title!} close={()=>setWorkDetail(undefined)}>{props.work.renderLink(workDetail,()=>setWorkDetail(undefined))}</ContextDrawer>}</>:page
 }
 

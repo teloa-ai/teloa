@@ -1,65 +1,47 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {fileURLToPath} from 'node:url'
+import {createServer} from 'node:http'
 import {build} from 'vite'
 import {retrievalPreparationDetails} from '../../../local-embedding/src/preparation-details.ts'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
-import {join} from 'node:path'
-// @ts-expect-error 复用既有无头浏览器加载器。
+// @ts-expect-error 复用既有无头本机浏览器加载器。
 import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
-test('本地检索在资料上下文启停：取消零写入，确认不下载，关闭重开不丢资料与准备意图',async t=>{
+test('资料只显示状态并进入统一本地模型设置；启用与下载分别确认，返回后明确加入原资料',async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__retrieval_unified_settings.tsx'
  const details=JSON.stringify(retrievalPreparationDetails('fp32','/test/models','/test/runtime'))
- const client=fileURLToPath(new URL('../src/client/',import.meta.url))
- const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {LocalRetrievalResources} from '${client}LocalRetrievalResources.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {ThemePresenter} from '${client}theme-presenter.ts';
- new ThemePresenter().apply({active:{colorScheme:'light',tokens:{}},fontSizes:{text:14}});
- let enabled=false;const calls=[];window.retrievalEntry={calls,phase:phase=>provider.preparation={phase}};
- const status={items:[],enrolled:0,chunks:0,building:false};
- const provider={id:'qwen3-embedding-0.6b',location:'host-local',catalogId:'teloa.model.qwen3-embedding-0-6b',catalogVersion:'1.0.0',profileHash:'a'.repeat(64),variant:'fp32',totalMemoryBytes:16*1024**3,memoryRisk:false,preparation:{phase:'unprepared'},preparationDetails:${details}};
- const api={status:async()=>status,modelStatus:async()=>({enabled,provider:enabled?provider:null,building:false,guidance:null}),prepare:async()=>{calls.push('prepare');throw Error('不得自动下载')},cancelPreparation:async()=>{calls.push('cancel');provider.preparation={phase:'unprepared'};return {enabled,provider,building:false,guidance:null}},enroll:async(sourceId)=>{calls.push('enroll:'+sourceId);return status}};
- const row=()=>({id:'local-embedding',packageName:'@teloa/local-embedding',version:'0.2.0-alpha.8',state:enabled?'active':'available',configuredChannels:0});
- const activationApi={list:async()=>[row()],set:async(id,value)=>{calls.push('set:'+value);enabled=value;return row()}};
- const resource={id:'own-file',sourceId:'own-source',title:'本人资料',status:'active'};
- const snapshot={locale:'zh-CN',dshLocale:'zh',revision:1};const runtime={t:(key,params)=>translateMessage('zh-CN',key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
- function App(){const [selected,setSelected]=React.useState(resource);window.retrievalEntry.other=()=>setSelected({id:'other-file',sourceId:'other-source',title:'另一份资料',status:'active'});return <LocalRetrievalResources api={api} activationApi={activationApi} resource={selected} visible/>}createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><App/></I18nProvider>);`
- const root=fileURLToPath(new URL('../../../../',import.meta.url)),temp=await mkdtemp(join(root,'.tmp-retrieval-entry-'));t.after(()=>rm(temp,{recursive:true,force:true}));const id=join(temp,'entry.tsx');await writeFile(id,entry)
- const result=await build({configFile:false,root,plugins:[{name:'forbid-host-crypto',enforce:'pre',resolveId(id){if(id==='node:crypto')return '\0forbid-host-crypto'},load(id){if(id==='\0forbid-host-crypto')return "function blocked(){throw Error('浏览器不得执行宿主摘要算法')} export {blocked as createHash,blocked as createPublicKey,blocked as verify}"}}],logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,lib:{entry:id,name:'RetrievalEntry',formats:['iife']}}})
+ const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {ResourceManager} from '${client}ResourceManager.tsx';import {LocalModelsSettings} from '${client}LocalModelsSettings.tsx';import {createLocalModelsFocus} from '${client}local-models-api.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';import tokens from '${client}theme-tokens.module.css';
+ const stamp='2026-10-21T00:00:00.000Z',resource={id:'11111111-1111-4111-8111-111111111111',ownerId:'self',version:1,status:'active',title:'本人资料',sourceId:'local_material_own',sourceVersion:'a'.repeat(64),scopeIds:['general'],createdAt:stamp,updatedAt:stamp},node={id:'root',spaceId:'space',parentId:null,type:'space',title:'个人空间',path:['root'],siblingOrder:0,createdAt:stamp,updatedAt:stamp};
+ const f=window.retrievalEntry={calls:[],navigation:0},focus=createLocalModelsFocus();f.openModel=id=>focus.set(id);let enabled=false,phase='unprepared',enrolled=false;
+ const provider=id=>({id:id??'qwen3-embedding-0.6b',location:'host-local',catalogId:id==='embeddinggemma-2'?'teloa.model.embeddinggemma-2':'teloa.model.qwen3-embedding-0-6b',catalogVersion:'1.0.0',profileHash:'a'.repeat(64),variant:'fp32',totalMemoryBytes:32*1024**3,memoryRisk:false,preparation:{phase},preparationDetails:${details}});
+ const model=id=>({enabled,provider:enabled?provider(id):null,building:false,guidance:null,selectedProviderId:'qwen3-embedding-0.6b'}),index=()=>({items:enrolled?[{sourceId:resource.sourceId,resourceId:resource.id,title:resource.title,version:1,state:'ready',chunkCount:1}]:[],enrolled:enrolled?1:0,chunks:enrolled?1:0,building:false});
+ const api={status:async()=>index(),modelStatus:async(signal,id)=>{f.requested=id;return model(id)},prepare:async()=>{f.calls.push('prepare');phase='ready';return model()},cancelPreparation:async()=>{f.calls.push('cancel');return model()},enroll:async source=>{f.calls.push('enroll:'+source);enrolled=true;return index()},remove:async source=>{f.calls.push('remove:'+source);enrolled=false;return index()},reindex:async()=>{f.calls.push('reindex');return index()},cancel:async()=>index()};
+ const activation={list:async()=>[{id:'local-embedding',packageName:'@teloa/local-embedding',version:'0.2.0',state:enabled?'active':'available',configuredChannels:0}],set:async(id,on)=>{f.calls.push('set:'+on);enabled=on;return {id,packageName:'@teloa/local-embedding',version:'0.2.0',state:on?'active':'available',configuredChannels:0}}};
+ const resources={directory:async()=>({resources:[resource],drafts:[]}),sources:async()=>[{id:resource.sourceId,title:resource.title,source:'本地文件',version:resource.sourceVersion,bytes:1}],knowledgeTree:async()=>({space:{id:'space',ownerId:'self',workspaceId:'default',title:'个人空间',rootNodeId:'root',directoryRevision:1,scopeIds:['general'],createdAt:stamp,updatedAt:stamp},nodes:[node]}),readContent:async()=>({resource,text:'原资料正文'})};
+ const overview={runtime:{state:'running',version:'0.11.4',outdated:false,address:{baseURL:'http://127.0.0.1:11434',custom:false,local:true}},hardware:{totalMemGb:32,unified:true,diskFreeBytes:100*2**30},rows:[],offCatalog:[],pull:null};
+ let snapshot={locale:'zh-CN',dshLocale:'zh',revision:1};const listeners=new Set(),runtime={getSnapshot:()=>snapshot,subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)},t:(key,params)=>translateMessage(snapshot.locale,key,params)};f.locale=locale=>{snapshot={locale,dshLocale:locale,revision:snapshot.revision+1};for(const listener of listeners)listener()};
+ function App(){const [settings,show]=useState(false);return <I18nProvider runtime={runtime}><div className={tokens.tokens} style={{...prototypeThemes.light,minHeight:'100vh'}}><div hidden={settings}><ResourceManager api={resources} localRetrievalApi={api} onLocalModels={()=>{f.navigation++;focus.set('teloa.local-retrieval');show(true)}} visible={!settings} navigationState={{libraryView:'local'}} selectedDraftId={null} targetResource={{id:resource.id,request:1}} clearTarget={()=>{}} openConversation={()=>{}}/></div>{settings&&<main style={{padding:24}}><button onClick={()=>show(false)}>返回资料</button><LocalModelsSettings api={{overview:async()=>overview}} focus={focus} retrieval={{api,activation}}/></main>}</div></I18nProvider>}createRoot(document.getElementById('root')).render(<App/>);`
+ const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'retrieval-unified',resolveId:id=>id.endsWith('retrieval-unified')?virtual:null,load:id=>id===virtual?entry:null}],build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:')},lib:{entry:'retrieval-unified',name:'RetrievalUnified',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
- const script=bundle.output.find(row=>row.type==='chunk')!.code,style=bundle.output.filter(row=>row.type==='asset'&&row.fileName.endsWith('.css')).map(row=>String((row as any).source)).join('\n')
- const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());t.signal.addEventListener('abort',()=>void browser.close().catch(()=>{}),{once:true})
- const page=await browser.newPage({viewport:{width:1280,height:900}});page.setDefaultTimeout(6000)
- const errors:string[]=[],requests:string[]=[];page.on('pageerror',(error:Error)=>{errors.push(error.message);console.error(error.message)});await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
- await page.setContent('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>body{margin:24px}*{box-sizing:border-box}'+style+'</style><body><div id="root"></div><script>'+script.replace(/<\/script/gi,'<\\/script')+'</script>')
- const open=async()=>{await page.locator('[data-retrieval-more]>summary').click();await page.getByRole('button',{name:'检索设置',exact:true}).click()}
- await page.getByRole('button',{name:/加入.*本人资料|本人资料.*加入/}).click();const drawer=page.getByRole('dialog',{name:'本地检索',exact:true});await drawer.waitFor()
- assert.equal(await drawer.getByText('官方扩展',{exact:true}).count(),0)
- assert.doesNotMatch(await drawer.innerText(),/市场|插件|重启/)
- await drawer.getByRole('button',{name:'启用',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),[])
- assert.match(await drawer.innerText(),/不会下载/)
- await drawer.getByRole('button',{name:'取消',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),[])
- await drawer.getByRole('button',{name:'启用',exact:true}).click();await drawer.getByRole('button',{name:'确认',exact:true}).click();await drawer.getByRole('button',{name:'停用',exact:true}).waitFor()
- assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true'])
- // 明确取消下载确认会放弃原资料意图，模型后来就绪也不能偷加。
- await drawer.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await drawer.count(),0)
- await page.evaluate(()=>(window as any).retrievalEntry.phase('ready'));await open();await drawer.waitFor()
- assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true'])
- await drawer.getByRole('button',{name:'关闭',exact:true}).click()
- // 有意图但尚无请求时不冒充“处理中”；关闭不停止原资料的后台续办。
- await page.evaluate(()=>(window as any).retrievalEntry.phase('checking'))
- await page.getByRole('button',{name:/加入.*本人资料|本人资料.*加入/}).click();await drawer.waitFor()
- await drawer.getByRole('button',{name:'关闭',exact:true}).click()
- await page.getByText('待加入：本人资料',{exact:true}).waitFor()
- await page.evaluate(()=>(window as any).retrievalEntry.other())
- assert.equal(await page.getByRole('button',{name:/加入.*另一份资料|另一份资料.*加入/}).isEnabled(),false)
- await page.evaluate(()=>(window as any).retrievalEntry.phase('ready'))
- await page.waitForFunction(()=>(window as any).retrievalEntry.calls.includes('enroll:own-source'))
- assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true','enroll:own-source'])
- // 取消准备清理新的 B 意图；之后查看设置不再加入 B。
- await page.evaluate(()=>(window as any).retrievalEntry.phase('checking'))
- await page.getByRole('button',{name:/加入.*另一份资料|另一份资料.*加入/}).click();await drawer.waitFor()
- await drawer.getByRole('button',{name:'取消准备',exact:true}).click();await drawer.waitFor({state:'detached'})
- await page.evaluate(()=>(window as any).retrievalEntry.phase('ready'));await open();await drawer.waitFor()
- assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true','enroll:own-source','cancel'])
- assert.deepEqual(errors,[]);assert.deepEqual(requests,[])
- assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(6000)
+ const server=createServer((_req,res)=>res.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>body{margin:0}*{box-sizing:border-box}</style><div id="root"></div></html>'));await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())))
+ const url='http://127.0.0.1:'+(server.address() as {port:number}).port,errors:string[]=[],external:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.route('**/*',(r:any)=>{if(r.request().url().startsWith(url+'/'))return r.continue();external.push(r.request().url());return r.abort()})
+ await page.goto(url);await page.addStyleTag({content:bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(row=>row.type==='chunk')!.code})
+ const panel=page.locator('[data-retrieval-resources]');await panel.getByText('未启用',{exact:true}).waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});assert.doesNotMatch(await panel.innerText(),/Qwen|EmbeddingGemma|在检索设置中/);assert.equal(await page.getByRole('dialog').count(),0)
+ if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/retrieval-short-status.png'})
+ for(const [locale,label,state] of [['zh-TW','前往啟用','未啟用'],['en','Set up','Not enabled'],['zh-CN','去启用','未启用']]){await page.evaluate((locale:string)=>(window as any).retrievalEntry.locale(locale),locale);await panel.getByRole('button',{name:label,exact:true}).waitFor();await panel.getByText(state,{exact:true}).waitFor()}
+ await panel.getByRole('button',{name:'去启用',exact:true}).click();await page.getByRole('heading',{name:'本地模型',exact:true}).waitFor();await page.getByText(/Ollama .*运行中/).waitFor()
+ const settings=page.locator('[data-entry-id="teloa.local-retrieval"]');await settings.getByRole('button',{name:'启用',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),[])
+ await settings.getByRole('button',{name:'确认',exact:true}).click();await settings.getByRole('button',{name:'停用',exact:true}).waitFor();await settings.getByRole('combobox',{name:'检索模型',exact:true}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true']);assert.equal(await settings.getByRole('option',{name:'EmbeddingGemma 2',exact:true}).count(),1)
+ await page.evaluate(()=>(window as any).retrievalEntry.openModel('teloa.model.embeddinggemma-2'));await page.waitForFunction(()=>document.querySelector<HTMLSelectElement>('select[aria-label="检索模型"]')?.value==='embeddinggemma-2');assert.equal(await page.evaluate(()=>(window as any).retrievalEntry.requested),'embeddinggemma-2')
+ assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true'],'按目录型号定位只读，不默认选用、准备或加入')
+ await page.evaluate(()=>(window as any).retrievalEntry.openModel('teloa.model.qwen3-embedding-0-6b'));await page.waitForFunction(()=>document.querySelector<HTMLSelectElement>('select[aria-label="检索模型"]')?.value==='qwen3-embedding-0.6b')
+ if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/local-models-unified.png'})
+ await settings.getByRole('button',{name:'准备检索模型',exact:true}).click().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await settings.innerText(),buttons:await settings.getByRole('button').allTextContents()}));throw error});assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true'])
+ await settings.getByRole('button',{name:'确认下载并准备',exact:true}).click();await settings.getByText('当前使用',{exact:true}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true','prepare'],'模型就绪不自动加入资料')
+ await page.getByRole('button',{name:'返回资料',exact:true}).click();await panel.getByRole('button',{name:/本人资料.*加入|加入.*本人资料/}).waitFor();await panel.getByRole('button',{name:/本人资料.*加入|加入.*本人资料/}).click();await panel.getByRole('button',{name:/本人资料.*移出|移出.*本人资料/}).waitFor()
+ assert.deepEqual(await page.evaluate(()=>(window as any).retrievalEntry.calls),['set:true','prepare','enroll:local_material_own']);assert.equal(await page.evaluate(()=>(window as any).retrievalEntry.navigation),1)
+ assert.deepEqual(errors,[]);assert.deepEqual(external,[])
 })

@@ -36,6 +36,15 @@ test('读取固定行业 MCP 连接定义并返回不可变来源摘要',async()
  assert.deepEqual(f.calls,{load:1,content:1})
 })
 
+test('固定分享声明保留地址模板与字段名称；不接受查询实值或运行配置',async()=>{
+ const definition={...valid,setup:{urlTemplate:'https://service.example/{tenant}/mcp?key={API_KEY}',configurationKeys:['tenant','API_KEY']}}
+ const f=fixture(definition),value=await f.source.read({} as PoolClient,f.owner,{loadId:f.loadId,itemInstanceId:f.itemInstanceId})
+ assert.deepEqual(value.definition,definition);assert.equal(value.fileHash,sha(f.bytes))
+ for(const setup of [{...definition.setup,urlTemplate:'https://service.example/mcp?key=private-value'},{...definition.setup,headers:{Authorization:'private-value'}}]){
+  const invalid=fixture({...definition,setup});await assert.rejects(invalid.source.read({} as PoolClient,invalid.owner,{loadId:invalid.loadId,itemInstanceId:invalid.itemInstanceId}),{code:'teloa/source-unavailable'})
+ }
+})
+
 test('拒绝额外字段、错误格式和错误工具声明',async()=>{
  const cases=[
   {...valid,label:'客户端伪造'},

@@ -1,7 +1,9 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {buildSharePlan,readSharePackage,sharePackageDigest,sharePackageSummary,shareInspectionInput,readShareSubmission} from '../src/client/share-package-plan.ts'
+import {buildSharePlan,readSharePackage,sharePackageDigest,sharePackageSummary,shareInspectionInput,readShareSubmission,editShareConnectionSetup,sharePackageV2ToFiles} from '../src/client/share-package-plan.ts'
 import {buildEmployeeTemplate} from '../src/client/employee-template-share.ts'
+import {customConnectionShareSource,catalogConnectionShareSetup} from '../src/client/connection-share-source.ts'
+import {inspectBusinessShareContent,readIndustryMcpConnectionDefinition} from '@teloa/contract'
 
 const role=(id:string,name:string,skills:string[]=[])=>({id,name,kind:'employee' as const,duty:'Verify sources.',dataScope:'Provided documents.',executionScope:'Confirm external writes.',skills,knowledge:['private-knowledge-id'],scopes:['general'],runtimeConfig:{modelAccountId:'private-account'},responsibility:{triggers:[],autonomousActions:[],confirmationPoints:['Ask before external writes.'],escalationRules:[],deliveryChecks:[]}})
 const base={publisher:'Max',license:'CC-BY-4.0',connections:[],plugins:[]}
@@ -58,6 +60,34 @@ test('summary reads v1 employee packages and packages without any employee witho
  assert.equal(summary.roles.length,0);assert.equal(summary.subject,'mcp');assert.deepEqual(summary.connections[0]!.tools,['search'])
  const app=buildSharePlan({...base,subject:'app',roles:[],skills:[{name:'s',title:'S',resourceId:'s',version:'1.0.0',text:skillText,license:'MIT'}],connections:[{serverName:'notion',title:'Notion',tools:['search']}]})
  assert.equal(sharePackageSummary(app).subject,'app')
+})
+
+test('自定义连接导出不复制运行地址或配置值，明确编写的模板原样往返且不改资源身份',async()=>{
+ const source=customConnectionShareSource({schema:'teloa.mcp-server/v1',serverName:'private_docs',title:'资料连接',transport:'streamable-http',url:'https://my-tenant.example/private-token/mcp',auth:{kind:'headers',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-Workspace'}]}},[{name:'search'}])
+ assert.deepEqual(source.setup,{urlTemplate:'https://{host}/{path}',configurationKeys:['url','Authorization','X-Workspace']})
+ assert.deepEqual(customConnectionShareSource({schema:'teloa.mcp-server/v1',serverName:'local',title:'Local',transport:'streamable-http',url:'http://127.0.0.1:8000/mcp',auth:{kind:'headers',headers:[{name:'URL'}]}},[{name:'read'}]).setup,{urlTemplate:'http://{host}/{path}',configurationKeys:['URL']})
+ const pkg=buildSharePlan({...base,subject:'mcp',roles:[],skills:[],connections:[{...source,version:'2.3.4'}]})
+ assert.ok(!JSON.stringify(pkg).includes('my-tenant'));assert.ok(!JSON.stringify(pkg).includes('private-token'))
+ const summary=sharePackageSummary(pkg),connection=summary.connections[0]!,setup={urlTemplate:'https://service.example/{tenant}/mcp?key={API_KEY}',configurationKeys:['tenant','API_KEY','Authorization']}
+ const edited=editShareConnectionSetup(pkg,connection.resourceId,setup)
+ assert.equal(edited.id,pkg.id);assert.equal(edited.version,pkg.version)
+ assert.deepEqual(sharePackageSummary(edited).connections[0],{...connection,setup})
+ assert.notEqual(await sharePackageDigest(edited),await sharePackageDigest(pkg))
+ const files=sharePackageV2ToFiles(edited as typeof pkg,{scope:'general',skills:[]}).files
+ const declaration=JSON.parse(files.find(file=>file.path==='mcp-private-docs.json')!.text)
+ assert.deepEqual(readIndustryMcpConnectionDefinition(declaration),{format:'teloa.mcp-connection/v1',serverName:'private_docs',tools:['search'],setup})
+ assert.deepEqual((await inspectBusinessShareContent(shareInspectionInput(edited))).findings,[])
+ for(const invalid of [{...setup,urlTemplate:'https://service.example/mcp?key=actual-value'},{...setup,headers:{Authorization:'actual-value'}},{...setup,configurationKeys:['header=value']}])assert.throws(()=>editShareConnectionSetup(pkg,connection.resourceId,invalid))
+ const hostile={...edited,files:edited.files.map(file=>file.path==='mcp-private-docs.json'?{...file,text:JSON.stringify({...declaration,setup:{...setup,urlTemplate:'https://service.example/?key=actual-value'}})}:file)}
+ assert.throws(()=>readSharePackage(hostile))
+ assert.throws(()=>editShareConnectionSetup(pkg,'different-resource',setup))
+})
+
+test('已审目录配方只取公开端点与认证槽名称；运行值没有输入通道',()=>{
+ const entry={connector:{recipe:{transport:'streamable-http-template',urlTemplate:'https://service.example/mcp?token={secret}'},auth:{kind:'secret',vars:[{target:'url-path',required:true,label:{en:'Key'}}]}}} as never
+ assert.deepEqual(catalogConnectionShareSetup(entry),{urlTemplate:'https://service.example/mcp?token={secret}',configurationKeys:['url','secret']})
+ const stdio={connector:{recipe:{transport:'stdio'},auth:{kind:'secret',vars:[{target:'env',envVarName:'SERVICE_KEY'}]}}} as never
+ assert.deepEqual(catalogConnectionShareSetup(stdio),{configurationKeys:['SERVICE_KEY']})
 })
 
 test('inspection input covers every file and the purpose; a credential in a skill body is refused by the reader',()=>{

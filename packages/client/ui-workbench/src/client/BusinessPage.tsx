@@ -1,3 +1,4 @@
+import {DashboardShareProvider} from './BusinessDashboardShare.js'
 import {applyPageCreatedBusinessDefinition} from './page-create-business-definition.js'
 import {BusinessWorkspace,type BusinessWorkspaceServices} from './BusinessWorkspace.js'
 import {BusinessPendingChanges} from './BusinessWorkResults.js'
@@ -136,7 +137,8 @@ function IndustryWorkspaceSummary({resources,sources,manage}:{resources:readonly
   })}</div></section>
 }
 
-export function BusinessPage(props:Props){
+export function BusinessPage(props:Props){return <DashboardShareProvider services={props.configuration?.dashboardSharing}><BusinessPageContent {...props}/></DashboardShareProvider>}
+function BusinessPageContent(props:Props){
  const scopes=useBusinessScopes(),{locale,t}=useI18n()
  const [startError,setStartError]=useState(''),startGeneration=useRef(0)
  const moreOrigin=useMemo(()=>({}),[props.target.scope,props.configuration?.api,props.businessCustomizationApi,props.businessShareApi,props.pageCreate.api,props.shareDraftKey])

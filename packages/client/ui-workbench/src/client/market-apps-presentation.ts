@@ -5,6 +5,8 @@ import type {SkillInstallationRecord} from './skill-install-api.js'
 import type {IndustryManifest} from './industry-manifest.js'
 import type {IndustryLoadRecord} from './industry-load-api.js'
 import {localizedIndustryResourceTitle} from './industry-template-presentation.js'
+import {catalogConnectionShareSetup} from './connection-share-source.js'
+import type {ShareConnectionSource} from './share-package-plan.js'
 
 /**
  * 「连接应用」目录的呈现模型：只从官方目录条目、真实连接记录、技能安装记录与已声明的资源包推导，
@@ -322,13 +324,13 @@ export function skillStatus(skill:AppsSkill):string{
  * 从目录行解析可单独分享的能力：官方目录技能按条目 id 与版本固定引用，连接器按声明的 serverName 与工具列表；
  * 本机安装技能与声明资源包没有可读静态正文，由调用方经分享来源端口解析或如实标注不可用。
  */
-export type AppsShareSource={subject:'skill'|'app'|'mcp';skills:{name:string;title:string;resourceId:string;version:string;publicId:string}[];connections:{serverName:string;title:string;tools:string[]}[]}
+export type AppsShareSource={subject:'skill'|'app'|'mcp';skills:{name:string;title:string;resourceId:string;version:string;publicId:string}[];connections:ShareConnectionSource[]}
 export function appsRowShareSource(row:AppsRow):AppsShareSource|undefined{
  if(row.customConnection)return undefined
  if(row.kind==='bundle')return undefined
  // 公共引用写原技能名与固定版本（契约 localId），不写含点的目录 id；接收方按「名 + 版本」唯一解析回目录条目。
  const skills=row.skills.flatMap(skill=>skill.item?.entry.kind==='skill'&&skill.entryId&&!skill.builtin?[{name:skill.item.entry.skill.name,title:skill.title,resourceId:skill.item.entry.skill.name,version:skill.item.entry.version,publicId:skill.item.entry.skill.name}]:[])
- const connections=row.connectors.flatMap(connector=>connector.entry&&connector.tools.length?[{serverName:connector.entry.connector.serverName,title:connector.title,tools:connector.tools.map(tool=>tool.name)}]:[])
+ const connections=row.connectors.flatMap(connector=>connector.entry&&connector.tools.length?[{serverName:connector.entry.connector.serverName,title:connector.title,version:connector.entry.version,tools:connector.tools.map(tool=>tool.name),setup:catalogConnectionShareSetup(connector.entry)}]:[])
  if(!skills.length&&!connections.length)return undefined
  if(skills.length===1&&!connections.length)return {subject:'skill',skills,connections}
  if(!skills.length&&connections.length===1)return {subject:'mcp',skills,connections}

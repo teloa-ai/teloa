@@ -7,6 +7,8 @@ import {localizeWorkError} from './i18n/errors.js'
 import shared from './CreateEntry.module.css'
 import css from './CustomMcpAppEntry.module.css'
 import drawer from './MarketTemplateCreator.module.css'
+import {CapabilityTemplateShare,useTemplateShare} from './EmployeeTemplateShare.js'
+import {customConnectionShareSource} from './connection-share-source.js'
 
 /** 密钥不进入草稿、导航存储或可恢复写请求；关闭及定义变化即清空输入。 */
 function CustomMcpAppForm({api,initial,requestId,active=true,created,removed}:{api:CustomMcpAppApi;initial:CustomMcpPreview;requestId?:string;active?:boolean;created?:(id:string)=>Promise<void>;removed?:()=>void}){
@@ -70,5 +72,12 @@ export function CustomMcpAppManager({api,id,title,close}:{api:CustomMcpAppApi;id
 export function CustomMcpAppSettings({api,id,removed}:{api:CustomMcpAppApi;id:string;removed:()=>void}){
  const {t}=useI18n(),[preview,setPreview]=useState<CustomMcpPreview>(),[failed,setFailed]=useState(false),[retry,setRetry]=useState(0)
  useEffect(()=>{let live=true;setPreview(undefined);setFailed(false);void api.getCustom(id).then(value=>{if(live)setPreview(value)},()=>{if(live)setFailed(true)});return ()=>{live=false}},[api,id,retry])
- return failed?<div role="alert"><p>{t('create.readFailed')}</p><button type="button" onClick={()=>setRetry(value=>value+1)}>{t('create.app.retry')}</button></div>:preview?<CustomMcpAppForm key={id+preview.definitionHash} api={api} initial={preview} removed={removed}/>:<p role="status">{t('create.preview.loading')}</p>
+ return failed?<div role="alert"><p>{t('create.readFailed')}</p><button type="button" onClick={()=>setRetry(value=>value+1)}>{t('create.app.retry')}</button></div>:preview?<><CustomMcpAppForm key={id+preview.definitionHash} api={api} initial={preview} removed={removed}/><CustomConnectionTemplateShare key={id+preview.definitionHash} id={id} preview={preview}/></>:<p role="status">{t('create.preview.loading')}</p>
+}
+
+/** 自定义连接复用已读取的无凭据声明；运行 URL 从不进入分享草稿。 */
+function CustomConnectionTemplateShare({id,preview}:{id:string;preview:CustomMcpPreview}){
+ const {t}=useI18n(),shared=useTemplateShare(),[open,setOpen]=useState(false),tools=preview.connection?.tools??[]
+ if(!shared)return null
+ return <><button type="button" disabled={!tools.length} onClick={()=>setOpen(true)}>{t('templateShare.shareConnection')}</button>{!tools.length&&<p className={css.status}>{t('templateShare.connectionToolsRequired')}</p>}{open&&<CapabilityTemplateShare subject="mcp" skills={[]} connections={[customConnectionShareSource(preview.definition,tools)]} open close={()=>setOpen(false)} draftKey={'custom/'+id+'/'+preview.definitionHash}/>}</>
 }

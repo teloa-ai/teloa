@@ -73,6 +73,10 @@
 .workPage .modeTabs button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:7px;color:var(--teloa-secondary)}
 .workPage .modeTabs button[aria-current]{background:var(--teloa-active);color:var(--teloa-text);font-weight:var(--teloa-weight-medium);border:0}
 .modeTabs span{font-family:var(--teloa-design-mono)}
+/* 自动化与任务目录同一层级；目标输入不是宣传大标题。 */
+.workPage.hubPage .modeTabs button,.workPage.hubPage .goalLabel,.workPage.hubPage .savedPlan strong{font-size:var(--teloa-font-control)}
+.workPage.hubPage .goalStart h2{font-size:var(--teloa-font-section);line-height:var(--teloa-leading-label)}
+.workPage.hubPage .savedPlans h2{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading)}
 @media(max-width:760px){.workPage.hubPage>header{position:static;padding:12px 21px 0}.workPage .modeTabs{margin:12px 21px 16px}.workPage .goalStart,.workPage .savedPlans{padding-left:21px;padding-right:21px}}
 /* 计划全部列表与工作台其他页同一版心：主区左右 40px。 */
 .workPage.hubPage .workLayout{max-width:none;margin:0;padding-left:40px;padding-right:40px}

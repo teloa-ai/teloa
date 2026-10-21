@@ -906,6 +906,9 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  ["retrieval.failure.ollamaCheck","请检查 Ollama 是否已安装并启动、版本是否符合要求，以及模型能否运行，然后重试准备。","請檢查 Ollama 是否已安裝並啟動、版本是否符合要求，以及模型能否執行，然後重試準備。","Check that Ollama is installed and running, meets the required version, and can run the model, then retry preparation."],
  ["retrieval.model.refresh","刷新状态","重新整理狀態","Refresh status"],
  ["retrieval.model.retry","重试准备","重試準備","Retry preparation"],
+ ["retrieval.resources.goEnable","去启用","前往啟用","Set up"],
+ ["retrieval.resources.localModels","本地模型","本機模型","Local models"],
+ ["retrieval.resources.disabled","未启用","未啟用","Not enabled"],
  ["retrieval.resources.openSettings","打开检索设置","開啟檢索設定","Open search settings"],
  ["retrieval.resources.modelsHint","在检索设置中选择 Qwen3 Embedding 0.6B 或 Google EmbeddingGemma 2，查看运行要求和准备状态，按需下载。","在檢索設定中選擇 Qwen3 Embedding 0.6B 或 Google EmbeddingGemma 2，檢視執行要求及準備狀態，按需要下載。","Choose Qwen3 Embedding 0.6B or Google EmbeddingGemma 2 in search settings, review its requirements and preparation status, and download if needed."]
 ,

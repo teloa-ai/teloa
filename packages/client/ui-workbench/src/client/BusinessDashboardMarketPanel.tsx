@@ -13,9 +13,9 @@ import {ToolbarIconButton} from './ToolbarIconButton.js'
 import css from './BusinessBuilderPanel.module.css'
 import own from './BusinessDashboardMarketPanel.module.css'
 const rejected=(error:unknown)=>!!error&&typeof error==='object'&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/not-found','teloa/source-unavailable','teloa/version-conflict','teloa/conflict'].includes(String(error.code))
-export type BusinessDashboardMarketPanelProps={item:MarketItem;defaultTitle?:string|undefined;api:BusinessDashboardResourceApi;spaces:readonly BusinessScopeLabel[];colorScheme:'light'|'dark';embedded?:boolean;journalKey?:string;refreshScopes?:(()=>Promise<unknown>)|undefined;onDiscardDraft?:()=>void;openSaved?:(scope:string)=>void;upgrade?:(adoption:{draft:BusinessConfigurationDraftResponseVersioned;result:DashboardMarketAdoption;resource:BusinessDashboardResourceDefinition})=>ReactNode}
+export type BusinessDashboardMarketPanelProps={item:MarketItem;defaultTitle?:string|undefined;api:BusinessDashboardResourceApi;spaces:readonly BusinessScopeLabel[];colorScheme:'light'|'dark';embedded?:boolean;journalKey?:string;refreshScopes?:(()=>Promise<unknown>)|undefined;onDiscardDraft?:()=>void;openSaved?:(scope:string)=>void;openConnections?:(scope:string)=>void;onPreserveDataShape?:(()=>Promise<void>)|undefined;upgrade?:(adoption:{draft:BusinessConfigurationDraftResponseVersioned;result:DashboardMarketAdoption;resource:BusinessDashboardResourceDefinition})=>ReactNode}
 /** 添加固定内容只打开此面板；生成草案、预览与本人采用均为独立操作。 */
-export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,colorScheme,openSaved,upgrade,journalKey,onDiscardDraft,refreshScopes,embedded=false}:BusinessDashboardMarketPanelProps){
+export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,colorScheme,openSaved,upgrade,journalKey,onDiscardDraft,refreshScopes,embedded=false,openConnections,onPreserveDataShape}:BusinessDashboardMarketPanelProps){
  const {t,locale}=useI18n(),alive=useRef(true),running=useRef(false)
  const rows=isIndustryManifest(item.manifest)&&item.packageContent?inspectIndustryContent(item.manifest,item.packageContent).filter(row=>row.state==='parsed'&&row.definition?.kind==='business-configuration'):[]
  const contentId=item.contentStorage?.contentId,journalId=journalKey??item.contentStorage?.contentId
@@ -24,10 +24,17 @@ export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,color
  const [resourceId,setResourceId]=useState(restored.current.value?.resourceId??restored.current.value?.prepare?.resourceId??rows[0]?.id??''),[scope,setScope]=useState(restored.current.value?.prepare?.target.kind==='existing'?restored.current.value.prepare.target.scope:''),[title,setTitle]=useState(restored.current.value?.prepare?.target.kind==='new'?restored.current.value.prepare.target.title:defaultTitle??localizedMarketItemMetadata(item,locale).title.value),[current,setCurrent]=useState<BusinessConfigurationCurrentResponseVersioned|null>(),[mapping,setMapping]=useState<Record<string,string>>({})
  const [draft,setDraft]=useState<BusinessConfigurationDraftResponseVersioned|undefined>(restored.current.value?.draft),[preview,setPreview]=useState<BusinessConfigurationPreviewResponse>(),[page,setPage]=useState<BusinessConfigurationPageProjectionVersioned>(),[result,setResult]=useState<DashboardMarketAdoption|undefined>(restored.current.value?.result),[busy,setBusy]=useState(false),[error,setError]=useState(!!restored.current.error),[pending,setPending]=useState<DashboardApplyInput|undefined>(restored.current.value?.apply)
  const [directoryError,setDirectoryError]=useState(false)
+ const deferred=restored.current.value?.deferred??[],details=deferred.length?{deferred}:{}
  // 目录多语言标题异步到达：本人尚未改名、也不是恢复的草稿时，用它作为新建业务的默认名称。
  const titleEdited=useRef(restored.current.value?.prepare?.target.kind==='new')
  useEffect(()=>{if(defaultTitle&&!titleEdited.current)setTitle(defaultTitle)},[defaultTitle])
  const selected=rows.find(row=>row.id===resourceId)?.definition,objects=selected?.kind==='business-configuration'?selected.definition.configuration.definitions.filter(row=>row.kind==='object-type'):[]
+ const deferredText=(value:string)=>{
+  const [kind,id,...rest]=value.split(':'),candidate=draft?.candidate
+  const title=kind==='page'?candidate?.pages.find(page=>page.id===id)?.title:candidate?.definitions.find(row=>row.definition.id===id&&(kind==='view'?row.kind==='view':row.kind==='object-type'))?.definition.title
+  const field=rest.at(-1),labels=field?objects.flatMap(row=>row.definition.fields.filter(item=>item.name===field).map(item=>item.label)):[]
+  return [title??t('market.dashboard.deferred'),field?(labels[0]??field):undefined].filter(Boolean).join(' / ')
+ }
  const firstResourceId=rows[0]?.id
  // 详情正文会在面板挂载后异步到达；显式选中首项，避免浏览器显示了首项而内部身份仍为空。
  useEffect(()=>{if(!resourceId&&firstResourceId)setResourceId(firstResourceId)},[resourceId,firstResourceId])
@@ -40,7 +47,7 @@ export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,color
  }
  const finish=async(value:DashboardMarketAdoption,savedDraft:BusinessConfigurationDraftResponseVersioned)=>{
   if(!alive.current)return
-  if(contentId)api.journal?.write(journalId!,{resourceId,draft:savedDraft,result:value})
+  if(contentId)api.journal?.write(journalId!,{resourceId,draft:savedDraft,result:value,...details})
   setResult(value);setPending(undefined)
   await refreshDirectory()
  }
@@ -58,13 +65,13 @@ export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,color
   preparation.current=input
   let value:BusinessConfigurationDraftResponseVersioned
   try{value=await api.prepare(input)}catch(error){if(rejected(error)){if(contentId)api.journal?.clear(journalId!);preparation.current=undefined}throw error}
-  if(contentId)api.journal?.write(journalId!,{resourceId,draft:value})
+  if(contentId)api.journal?.write(journalId!,{resourceId,draft:value,...details})
   if(alive.current){setDraft(value);preparation.current=undefined;setPage(undefined);setPreview(undefined)}
   if(value.status==='applied')await confirmApplied(value)
  })
  const show=async(pageId:string)=>{if(!draft||draft.status!=='draft')return;const projection=await api.page({draftId:draft.id,expectedRevision:draft.revision,pageId});if(projection.configurationHash!==draft.hash)throw Error('stale');if(alive.current)setPage(projection)}
  const check=()=>act(async()=>{if(!draft||draft.status!=='draft')return;const value=await api.preview({draftId:draft.id,expectedRevision:draft.revision});if(value.candidateHash!==draft.hash||value.baseVersion!==draft.baseVersion)throw Error('stale');if(alive.current)setPreview(value);await show(draft.candidate.homePageId??draft.candidate.pages[0]!.id)})
- const save=()=>act(async()=>{if(!draft||draft.status!=='draft'||!preview||preview.impact?.blocked)return;const input={draftId:draft.id,expectedRevision:draft.revision,expectedBaseVersion:draft.baseVersion,previewReceipt:preview.receipt,requestId:crypto.randomUUID()};if(contentId)api.journal?.write(journalId!,{resourceId,draft,apply:input});setPending(input);let value:BusinessConfigurationApplyResult;try{value=await api.apply(input)}catch(error){if(rejected(error)){if(contentId)api.journal?.write(journalId!,{resourceId,draft});setPending(undefined)}throw error}if(value.scope!==draft.scope||value.version!==draft.baseVersion+1)throw Error('stale');await finish(value,draft)})
+ const save=()=>act(async()=>{if(!draft||draft.status!=='draft'||!preview||preview.impact?.blocked)return;const input={draftId:draft.id,expectedRevision:draft.revision,expectedBaseVersion:draft.baseVersion,previewReceipt:preview.receipt,requestId:crypto.randomUUID()};if(contentId)api.journal?.write(journalId!,{resourceId,draft,apply:input,...details});setPending(input);let value:BusinessConfigurationApplyResult;try{value=await api.apply(input)}catch(error){if(rejected(error)){if(contentId)api.journal?.write(journalId!,{resourceId,draft,...details});setPending(undefined)}throw error}if(value.scope!==draft.scope||value.version!==draft.baseVersion+1)throw Error('stale');await finish(value,draft)})
  const recover=()=>act(async()=>{
   if(!pending)return
   let value=await api.receipt({requestId:pending.requestId})
@@ -73,7 +80,7 @@ export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,color
    value=await api.receipt({requestId:pending.requestId})
    if(!value){
     if(!draft)throw error
-    if(contentId)api.journal?.write(journalId!,{resourceId,draft})
+    if(contentId)api.journal?.write(journalId!,{resourceId,draft,...details})
     setPending(undefined);setPreview(undefined);setPage(undefined)
     throw error
    }
@@ -94,7 +101,7 @@ export function BusinessDashboardMarketPanel({item,defaultTitle,api,spaces,color
    <footer className={css.footer}><button type="button" disabled={busy||!resourceId||!item.contentStorage?.contentId||!item.packageContent?.hash||!title.trim()||!!restored.current.error||!!scope&&!current} onClick={()=>void prepare()}>{t('market.dashboard.prepare')}</button></footer>
   </>}
   {draft?.status==='applied'&&!result&&<button type="button" disabled={busy} onClick={()=>void act(()=>confirmApplied(draft))}>{t('business.builder.check')}</button>}
-  {draft?.status==='draft'&&!result&&<><nav className={css.navigation}>{draft.candidate.pages.map(value=><button type="button" key={value.id} disabled={busy||!!pending||!preview} onClick={()=>void act(()=>show(value.id))}>{value.title}</button>)}</nav><ToolbarIconButton label={t('business.builder.refresh')} icon={RefreshCw} disabled={busy||!!pending} onClick={()=>void check()}/>{preview?.impact&&<BusinessTemplateUpgradeImpact impact={preview.impact}/>}{page&&<BusinessConfigurationPage projection={page} colorScheme={colorScheme}/>}{pending?<p role="status">{t('business.builder.unknown')}<button type="button" disabled={busy} onClick={()=>void recover()}>{t('business.builder.check')}</button></p>:<footer className={css.footer}><button type="button" disabled={busy||!preview||!!preview.impact?.blocked||!page} onClick={()=>void save()}>{t('business.builder.save')}</button><button type="button" disabled={busy} onClick={()=>{if(contentId)api.journal?.clear(journalId!);setDraft(undefined);setPreview(undefined);setPage(undefined);onDiscardDraft?.()}}>{t('market.dashboard.cancel')}</button></footer>}</>}
+  {draft?.status==='draft'&&!result&&<><nav className={css.navigation}>{draft.candidate.pages.map(value=><button type="button" key={value.id} disabled={busy||!!pending||!preview} onClick={()=>void act(()=>show(value.id))}>{value.title}</button>)}</nav><ToolbarIconButton label={t('business.builder.refresh')} icon={RefreshCw} disabled={busy||!!pending} onClick={()=>void check()}/>{preview?.impact&&<BusinessTemplateUpgradeImpact impact={preview.impact}/>} {deferred.length>0&&<section aria-label={t('market.dashboard.deferred')}><p>{t('market.dashboard.preservedBoundary')}</p><ul>{deferred.map(value=><li key={value}>{deferredText(value)}</li>)}</ul></section>}{preview?.impact?.blocked&&(openConnections||onPreserveDataShape)&&<div className={css.footer}>{openConnections&&<button type="button" disabled={busy||!!pending} onClick={()=>openConnections(draft.scope)}>{t('market.dashboard.connectSource')}</button>}{onPreserveDataShape&&<button type="button" disabled={busy||!!pending} onClick={()=>void act(onPreserveDataShape)}>{t('market.dashboard.preserveShape')}</button>}</div>}{page&&<BusinessConfigurationPage projection={page} colorScheme={colorScheme}/>}{pending?<p role="status">{t('business.builder.unknown')}<button type="button" disabled={busy} onClick={()=>void recover()}>{t('business.builder.check')}</button></p>:<footer className={css.footer}><button type="button" disabled={busy||!preview||!!preview.impact?.blocked||!page} onClick={()=>void save()}>{t('business.builder.save')}</button><button type="button" disabled={busy} onClick={()=>{if(contentId)api.journal?.clear(journalId!);setDraft(undefined);setPreview(undefined);setPage(undefined);onDiscardDraft?.()}}>{t('market.dashboard.cancel')}</button></footer>}</>}
   {result&&!embedded&&<footer className={css.success}><p>{t('business.builder.saved')}</p>{openSaved&&<button type="button" onClick={()=>openSaved(result.scope)}>{t('business.builder.open')}</button>}</footer>}
   {result&&draft&&selected?.kind==='business-configuration'&&upgrade?.({draft,result,resource:selected.definition})}
  </Surface>

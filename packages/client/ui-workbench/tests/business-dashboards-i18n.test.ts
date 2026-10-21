@@ -5,7 +5,7 @@ import {BUSINESS_DASHBOARD_MESSAGE_ROWS} from '../src/client/i18n/locales/busine
 import {chineseUiLiterals} from './i18n-ast.ts'
 
 const {catalogs}=await import('../lib/types/client/i18n/messages.js') as {catalogs:Record<string,Record<string,string>>}
-const files=['BusinessDashboardPage.tsx','BusinessWidgets.tsx','BusinessDashboardList.tsx','BusinessSyncControls.tsx']
+const files=['BusinessDashboardPage.tsx','BusinessWidgets.tsx','BusinessDashboardList.tsx','BusinessSyncControls.tsx','BusinessDashboardShare.tsx']
 const components=await Promise.all(files.map(name=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')))
 const wired=[...components,...await Promise.all(['BusinessPage.tsx','BusinessLedger.tsx','WorkNavigation.tsx','business-widget-presentation.ts','business-dashboard-errors.ts'].map(name=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')))]
 const locales=['zh-CN','zh-Hant','en','ja','ko','vi','es','fr','de','pt'] as const

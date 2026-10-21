@@ -77,7 +77,7 @@ export function LocalRetrievalModelPresentation(p:RetrievalModelPresentationProp
   </>}
  </section>
 }
-export function LocalRetrievalModelPanel({api,catalogId,catalogVersion,onBack,onExtensions,compact=false,embedded=false,onReady,onProviderChange,providerChangeBusy}:{api:LocalRetrievalApi;catalogId:string;catalogVersion:string;onBack:()=>void;onExtensions:()=>void;compact?:boolean;embedded?:boolean;onReady?:((signal:AbortSignal)=>Promise<void>)|undefined;onProviderChange?:((id:EmbeddingProviderId)=>void)|undefined;providerChangeBusy?:boolean|undefined}){
+export function LocalRetrievalModelPanel({api,catalogId,catalogVersion,onBack,onExtensions,compact=false,embedded=false,autoConfirm=compact,onReady,onProviderChange,providerChangeBusy}:{api:LocalRetrievalApi;catalogId:string;catalogVersion:string;onBack:()=>void;onExtensions:()=>void;compact?:boolean;embedded?:boolean;autoConfirm?:boolean;onReady?:((signal:AbortSignal)=>Promise<void>)|undefined;onProviderChange?:((id:EmbeddingProviderId)=>void)|undefined;providerChangeBusy?:boolean|undefined}){
  const providerId=embeddingProviderForCatalog(catalogId)
  const {locale,t}=useI18n(),snapshot=useRetrievalSnapshot(signal=>api.modelStatus(signal,providerId),catalogId)
  const [confirmation,setConfirmation]=useState<RetrievalPreparationExpected>()
@@ -99,11 +99,11 @@ export function LocalRetrievalModelPanel({api,catalogId,catalogVersion,onBack,on
  useEffect(()=>{
   const p=snapshot.value?.provider
   if(!compact||abandoned.current||!p||p.catalogId!==catalogId||p.catalogVersion!==catalogVersion)return
-  if(!autoConfirmed.current&&p.preparationDetails&&!preparationBusy(p.preparation.phase)&&!['ready','standby'].includes(p.preparation.phase)){autoConfirmed.current=true;setConfirmation(captureRetrievalPreparation(p))}
+  if(autoConfirm&&!autoConfirmed.current&&p.preparationDetails&&!preparationBusy(p.preparation.phase)&&!['ready','standby'].includes(p.preparation.phase)){autoConfirmed.current=true;setConfirmation(captureRetrievalPreparation(p))}
   if(onReady&&!finishing.current&&['ready','standby'].includes(p.preparation.phase)){
    complete()
   }
- },[snapshot.value,compact,catalogId,catalogVersion,onReady])
+ },[snapshot.value,compact,autoConfirm,catalogId,catalogVersion,onReady])
  const confirm=()=>void snapshot.run(async signal=>{
   abandoned.current=false
   const accepted=confirmation;setConfirmation(undefined)

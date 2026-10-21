@@ -25,6 +25,35 @@ function version(value) {text(value,80);if(!SEMVER.test(value))fail('Template ve
 function json(value) {try{return JSON.parse(value)}catch{fail('Template JSON is invalid.')}}
 function unique(values) {if(new Set(values).size!==values.length)fail('Template list repeats.');return values}
 
+/** 本人明确编写的地址结构；查询值必须是占位符，不能夹带运行凭据。 */
+function connectionUrlTemplate(value) {
+ if(typeof value!=='string'||!value||value.length>2048||/[\s\\%#\x00-\x1f\x7f]/.test(value))fail('Template connection address is invalid.')
+ const placeholder=/\{[A-Za-z][A-Za-z0-9_]{0,63}\}/g
+ const plain=value.replace(placeholder,'placeholder')
+ if(/[{}]/.test(plain)||templateShareTextIssue(value))fail('Template connection address contains invalid placeholders or credentials.')
+ let url;try{url=new URL(plain)}catch{fail('Template connection address is invalid.')}
+ if(url.username||url.password||!/^https?:\/\//.test(value)||url.protocol!=='https:'&&!(url.protocol==='http:'&&(['localhost','127.0.0.1','[::1]'].includes(url.hostname)||value.startsWith('http://{host}/'))))fail('Template connection address must be HTTPS or a local HTTP placeholder.')
+ // 主机路径可以保留明确的静态服务端点；长不透明段必须由作者改成占位符。
+ const path=value.split('?')[0].replace(placeholder,'')
+ if(/(?:^|\/)[A-Za-z0-9_=-]{24,}(?:\/|$)/.test(path))fail('Template connection address contains an opaque path; use a placeholder.')
+ const query=value.includes('?')?value.slice(value.indexOf('?')+1):undefined
+ if(query!==undefined){
+  const params=query.split('&');if(!query||params.length>32)fail('Template connection query is invalid.')
+  const names=new Set()
+  for(const param of params){const at=param.indexOf('='),name=param.slice(0,at),v=param.slice(at+1);if(at<1||!/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(name)||!/^\{[A-Za-z][A-Za-z0-9_]{0,63}\}$/.test(v)||names.has(name))fail('Template connection query values must be placeholders only.');names.add(name)}
+ }
+ return value
+}
+
+/** 接收方手动填写的提示，不能承载原作者的请求头值或配置值。 */
+export function readMcpConnectionSetup(value) {
+ const row=object(value,['urlTemplate','configurationKeys'],['configurationKeys'])
+ const urlTemplate=row.urlTemplate===undefined?undefined:connectionUrlTemplate(row.urlTemplate)
+ const keys=list(row.configurationKeys,32)
+ if(keys.some(key=>typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(key)||templateShareTextIssue(key))||new Set(keys.map(key=>key.toLowerCase())).size!==keys.length)fail('Template connection configuration names are invalid.')
+ return {...urlTemplate===undefined?{}:{urlTemplate},configurationKeys:[...keys]}
+}
+
 /** 常见凭据与本机路径筛查，不代表可以省略作者对完整正文的审阅。 */
 export function templateShareTextIssue(value) {
  if(/(?:\/Users\/|\/home\/|[A-Z]:\\Users\\|file:\/\/)/i.test(value))return 'Template contains a private local path.'
@@ -130,14 +159,15 @@ function modelDependencies(value) {
  }
  if(!seen.size)fail('Template model dependencies are invalid.')
 }
-/** 连接、扩展与业务结构只收固定声明（与安装端定义同形），地址、环境变量、令牌、同步绑定等运行配置一律拒绝。 */
+/** 连接、扩展与业务结构只收固定声明；连接可附无值的设置提示，不收运行地址、凭据或同步绑定。 */
 function declarationBody(resource,source,scope) {
  const value=json(source)
  if(['mcp','plugin','data-source','execution-tool'].includes(resource.kind)&&encoder.encode(source).byteLength>CONNECTION_BYTES)fail('Template connection declaration exceeds 128 KiB.')
  if(resource.kind==='mcp'){
-  const v=object(value,['format','serverName','tools'])
+  const v=object(value,['format','serverName','tools','setup'],['format','serverName','tools'])
   if(v.format!=='teloa.mcp-connection/v1'||typeof v.serverName!=='string'||!SERVER_NAME.test(v.serverName))fail('Template MCP declaration is invalid.')
   const tools=list(v.tools,64);if(!tools.length||tools.some(t=>typeof t!=='string'||!TOOL_NAME.test(t)))fail('Template MCP tools are invalid.');unique(tools)
+  if(v.setup!==undefined)readMcpConnectionSetup(v.setup)
  }else if(resource.kind==='plugin'){
   const v=object(value,['format','registry','packageName','version'])
   if(v.format!=='teloa.plugin/v1'||v.registry!=='npm'||typeof v.packageName!=='string'||v.packageName.length>214||!NPM_NAME.test(v.packageName))fail('Template plugin declaration is invalid.')

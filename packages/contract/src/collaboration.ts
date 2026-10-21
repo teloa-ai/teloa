@@ -4,7 +4,7 @@ import {groupReferenceMaxFiles} from './group-attachments.ts'
 import {businessObjectReference,type BusinessObjectReference} from './business-data.ts'
 import {isBusinessScopeKey} from './business-scopes.ts'
 
-export type MessageReferenceKind='group-resource'|'artifact'|'attachment'
+export type MessageReferenceKind='group-resource'|'artifact'|'attachment'|'work-resource'
 export type MessageReference={kind:MessageReferenceKind;id:string;version:number}
 export type GroupMention={roleId:string;expectedVersion:number}
 /** 群规则只描述群内可见性与提醒边界，不授予资料、审批或执行权限。 */
@@ -116,7 +116,7 @@ export function ungrantedGroupReferences(references:readonly MessageReference[],
 }
 export function isMessageReference(value:unknown):value is MessageReference{
   if(!record(value)||Object.keys(value).length!==3)return false
-  if(value.kind==='group-resource')return uuid(value.id)&&version(value.version)
+  if(value.kind==='group-resource'||value.kind==='work-resource')return uuid(value.id)&&version(value.version)
   if(value.kind==='artifact')return artifactId(value.id)&&version(value.version)
   return value.kind==='attachment'&&attachmentRefId(value.id)&&value.version===1
 }
@@ -129,7 +129,7 @@ const normalizeReference=(value:unknown):unknown=>{
   if(!record(value))return value
   const keys=Object.keys(value)
   // 新形状按固定键序重建：jsonb 回读会按自己的顺序排键，客户端回执核对（JSON 字面比对）不能受键序影响。
-  if(keys.length===3&&'kind' in value&&'id' in value&&'version' in value)return {kind:value.kind,id:value.id,version:value.version}
+  if(keys.length===3&&'kind' in value&&'id' in value&&'version' in value)return {kind:value.kind,id:value.kind==='work-resource'&&uuid(value.id)?value.id.toLowerCase():value.id,version:value.version}
   if(keys.length!==2||!('resourceId' in value)||!('resourceVersion' in value))return value
   return {kind:'group-resource',id:value.resourceId,version:value.resourceVersion}
 }

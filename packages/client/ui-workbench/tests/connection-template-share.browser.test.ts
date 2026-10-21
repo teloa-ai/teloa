@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {mkdtemp,rm,writeFile,readFile,mkdir} from 'node:fs/promises'
+import {fileURLToPath} from 'node:url'
+import {join} from 'node:path'
+import {build} from 'vite'
+import {readSharePackage,sharePackageSummary} from '../src/client/share-package-plan.ts'
+// @ts-expect-error 复用现有无头浏览器加载器。
+import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
+
+test('自定义连接从真实分享抽屉导出，接收保留声明、取消不安装、未知回执沿原申请恢复',{timeout:45000},async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),temp=await mkdtemp(join(root,'packages/client/ui-workbench/.runtime-connection-share-'))
+ t.after(()=>rm(temp,{recursive:true,force:true}))
+ const evidence=process.env.TELOA_CONNECTION_SHARE_EVIDENCE
+ await writeFile(join(temp,'fixture.tsx'),`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {CustomMcpAppSettings} from '${client}CustomMcpAppEntry.tsx';import {TemplateShareProvider} from '${client}EmployeeTemplateShare.tsx';import {TemplateShareReceive} from '${client}TemplateShareReceive.tsx';import {createShareAcceptance} from '${client}template-share-accept.ts';import {readIndustryMcpConnectionDefinition} from '@teloa/contract';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
+ const snapshot={locale:'zh-CN',dshLocale:'zh',revision:1},runtime={getSnapshot:()=>snapshot,subscribe:()=>()=>{},t:(key,params)=>translateMessage('zh-CN',key,params)},values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ const state=window.fixture={reads:0,external:0,imports:0,loads:[],installed:0,configured:0,storage:()=>[...values.values()].join(''),definition:undefined};const forbidden=async()=>{state.external++;throw Error('本轮不连接、授权、安装或调用模型')};
+ const api={getCustom:async()=>{state.reads++;return {definition:{schema:'teloa.mcp-server/v1',serverName:'custom_docs',title:'本人资料连接',transport:'streamable-http',url:'https://private-tenant.example/private-path/mcp',auth:{kind:'headers',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-Workspace'}]}},definitionHash:'b'.repeat(64),authorizationConfigured:false,connection:{id:'local-custom',serverName:'custom_docs',tools:[{name:'search',fullName:'mcp__custom_docs__search',readOnly:true}],status:'saved'}}},previewCustom:forbidden,saveCustom:forbidden,updateCustom:forbidden,authorizeCustom:forbidden,connect:forbidden,disconnect:forbidden,delete:forbidden};
+ let manifest,lost=true;const flow=createShareAcceptance(storage,{createRole:forbidden,industry:{publicSkill:forbidden,target:async()=>({kind:'existing',spaceId:'00000000-0000-4000-8000-000000000001',expectedVersion:1}),importContent:async item=>{state.imports++;manifest=item.manifest;const file=item.packageContent.files.find(file=>file.path===manifest.resources[0].source.path);state.definition=readIndustryMcpConnectionDefinition(JSON.parse(new TextDecoder().decode(file.bytes)));return {...item,contentStorage:{contentId:'00000000-0000-4000-8000-000000000002',createdAt:'2026-10-21T00:00:00Z',loaded:true}}},load:async request=>{state.loads.push(request);if(lost){lost=false;throw Error('模拟派发后回执丢失')}return {id:'00000000-0000-4000-8000-000000000003'}},getLoad:async()=>({items:manifest.resources.map(row=>({localId:row.id,instanceId:'item-'+row.id})),relations:[]}),installSkill:async()=>{state.installed++;throw Error('没有技能')},prepare:async()=>({rows:manifest.resources.map(row=>({itemInstanceId:'item-'+row.id,state:'needs-user',entry:'connector-settings'}))}),roles:async()=>[]}});
+ function App(){const [receive,setReceive]=useState(false);return <I18nProvider runtime={runtime}><TemplateShareProvider value={{storage,publisher:'Fixture author',receive:()=>{},openDraft:()=>{}}}><textarea aria-label='原会话草稿' defaultValue='保留我的原输入'/><CustomMcpAppSettings api={api} id='local-custom' removed={()=>{}}/><button onClick={()=>setReceive(true)}>打开接收</button><TemplateShareReceive open={receive} close={()=>setReceive(false)} intent={null} accept={flow.accept} savedChoice={flow.choice} openRole={()=>{}} configure={()=>{}} openConnections={()=>{state.configured++}}/></TemplateShareProvider></I18nProvider>};createRoot(document.getElementById('root')).render(<App/>);`)
+ const result=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'ConnectionShare',formats:['iife']}}})
+ const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
+ const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1440,height:1050}});page.setDefaultTimeout(6000)
+ const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));const url='http://127.0.0.1/connection-share-fixture'
+ await page.route('**/*',(route:any)=>route.request().url()===url?route.fulfill({contentType:'text/html; charset=utf-8',body:'<!doctype html><div id="root"></div>'}):route.abort());await page.goto(url)
+ await page.addStyleTag({content:bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(row=>row.type==='chunk')!.code})
+ await page.getByLabel('Authorization · Bearer').fill('owner-entered-credential-must-stay-private')
+ await page.getByRole('button',{name:'分享连接',exact:true}).click();let share=page.getByRole('dialog',{name:'分享连接',exact:true})
+ await share.getByRole('button',{name:'导出离线模板',exact:true}).waitFor();await share.getByText('连接设置模板（可选）',{exact:true}).click()
+ assert.equal(await share.getByLabel('地址模板',{exact:true}).inputValue(),'https://{host}/{path}')
+ await share.getByLabel('地址模板',{exact:true}).fill('https://service.example/mcp?key=actual-private-value');await share.getByRole('button',{name:'应用模板说明',exact:true}).click();await share.getByRole('alert').filter({hasText:'地址模板或配置项名称不合法'}).waitFor()
+ assert.ok(!(await page.evaluate(()=>Reflect.get(window,'fixture').storage())).includes('actual-private-value'),'无效地址值不写入分享草稿')
+ const declared='https://service.example/{tenant}/mcp?key={API_KEY}'
+ await share.getByLabel('地址模板',{exact:true}).fill(declared);await share.locator('form textarea').fill('tenant\nAPI_KEY\nAuthorization');await share.getByRole('button',{name:'应用模板说明',exact:true}).click();await share.getByText('模板说明已更新，导出前将重新检查。',{exact:true}).waitFor()
+ await page.keyboard.press('Escape');await share.waitFor({state:'hidden'});assert.equal(await page.getByLabel('原会话草稿').inputValue(),'保留我的原输入')
+ await page.getByRole('button',{name:'分享连接',exact:true}).click();share=page.getByRole('dialog',{name:'分享连接',exact:true});await share.getByText('连接设置模板（可选）',{exact:true}).click();assert.equal(await share.getByLabel('地址模板',{exact:true}).inputValue(),declared)
+ const downloadPromise=page.waitForEvent('download');await share.getByRole('button',{name:'导出离线模板',exact:true}).click();const download=await downloadPromise,file=join(temp,'connection.json');await download.saveAs(file)
+ const bytes=await readFile(file),pkg=readSharePackage(JSON.parse(bytes.toString('utf8'))),summary=sharePackageSummary(pkg)
+ assert.deepEqual(summary.connections[0]!.setup,{urlTemplate:declared,configurationKeys:['tenant','API_KEY','Authorization']})
+ for(const privateValue of ['private-tenant','private-path','owner-entered-credential','actual-private-value'])assert.ok(!bytes.includes(Buffer.from(privateValue)),privateValue)
+ assert.equal(summary.connections[0]!.serverName,'custom_docs');assert.deepEqual(summary.connections[0]!.tools,['search']);await page.keyboard.press('Escape')
+ const receive=async()=>{await page.getByRole('button',{name:'打开接收',exact:true}).click();const dialog=page.getByRole('dialog',{name:'导入模板',exact:true});await dialog.locator('input[type=file]').setInputFiles(file);await dialog.getByText(declared,{exact:true}).first().waitFor();return dialog}
+ let dialog=await receive();await page.keyboard.press('Escape');assert.deepEqual(await page.evaluate(()=>{const s=Reflect.get(window,'fixture');return {imports:s.imports,loads:s.loads.length,external:s.external}}),{imports:0,loads:0,external:0})
+ dialog=await receive();await dialog.getByRole('button',{name:'确认添加',exact:true}).click();await page.waitForFunction(()=>Reflect.get(window,'fixture').loads.length===1);await dialog.getByRole('alert').waitFor();await page.keyboard.press('Escape')
+ dialog=await receive();await dialog.getByText('这份模板已开始添加，将按原来的业务范围和所选技能继续，不会重复创建。',{exact:true}).waitFor();await dialog.getByRole('button',{name:/^(重试|确认添加)$/}).click();await dialog.getByText('能力已添加。',{exact:true}).waitFor()
+ const actual=await page.evaluate(()=>{const s=Reflect.get(window,'fixture');return {definition:s.definition,imports:s.imports,loads:s.loads,external:s.external,installed:s.installed,configured:s.configured}})
+ assert.equal(actual.imports,1);assert.equal(actual.loads.length,2);assert.deepEqual(actual.loads[0],actual.loads[1]);assert.equal(actual.external,0);assert.equal(actual.installed,0);assert.equal(actual.configured,0);assert.deepEqual(actual.definition.setup,summary.connections[0]!.setup)
+ assert.equal(await dialog.locator('a[href^="https://service.example"]').count(),0,'模板不是自动连接或外链')
+ if(evidence){await mkdir(evidence,{recursive:true});await page.screenshot({path:join(evidence,'connection-received.png')});await writeFile(join(evidence,'exported-connection.json'),bytes);await writeFile(join(evidence,'summary.json'),JSON.stringify({status:'passed',realComponents:true,isolatedPorts:true,runtimeAndExternalCalls:0,cancelBeforeImport:true,sameRequestRecovery:true,definition:actual.definition},null,2)+'\n')}
+ await dialog.getByRole('button',{name:'打开连接设置',exact:true}).click();assert.equal(await page.evaluate(()=>Reflect.get(window,'fixture').configured),1);assert.equal(await page.getByLabel('原会话草稿').inputValue(),'保留我的原输入');assert.deepEqual(errors,[])
+})

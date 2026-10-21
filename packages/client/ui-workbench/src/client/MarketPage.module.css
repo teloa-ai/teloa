@@ -80,7 +80,7 @@
 .pageHeader.pageHeader{align-items:flex-start;margin-bottom:20px;gap:16px}
 .pageHeader.pageHeader h1{margin:0}
 .subtitle{margin:6px 0 0;font-size:var(--teloa-font-control);color:var(--teloa-muted);line-height:1.6}
-.headerActions.headerActions{align-items:center;flex-wrap:nowrap;gap:14px;padding-top:4px}
+.headerActions.headerActions{align-items:center;flex-wrap:wrap;gap:8px 14px;padding-top:4px}
 .headerActions .toolMenu>summary{min-height:34px;padding:7px 16px;border:0;border-radius:999px;background:var(--teloa-text);color:var(--teloa-surface);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
 .headerActions .toolMenu>summary:hover{background:var(--teloa-text);opacity:.88}
 .headerActions .toolMenu>div{left:auto;right:0;width:230px}

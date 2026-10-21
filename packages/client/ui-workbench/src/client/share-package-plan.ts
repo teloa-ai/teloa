@@ -1,4 +1,4 @@
-import {canonicalTemplateShare,templateShareResourceCapability,readTemplateShare,readTemplateSharePackageV2,readTemplateShareSubmission,templateShareDigest,type RoleAvatarKey,type RoleResponsibility,type AnyTemplateSharePackage,type TemplateSharePackageV2,type TemplateShareSubject,type TemplateShareCapability,type TemplateShareProvenanceSource} from '@teloa/contract'
+import {canonicalTemplateShare,templateShareResourceCapability,readTemplateShare,readTemplateSharePackageV2,readTemplateShareSubmission,templateShareDigest,readMcpConnectionSetup,type McpConnectionSetup,type RoleAvatarKey,type RoleResponsibility,type AnyTemplateSharePackage,type TemplateSharePackageV2,type TemplateShareSubject,type TemplateShareCapability,type TemplateShareProvenanceSource} from '@teloa/contract'
 import type {PreviewRole} from './role-preview.ts'
 import type {IndustryResource as Resource} from './industry-manifest.ts'
 
@@ -35,7 +35,7 @@ export type ShareSummary={
  roles:{resourceId:string;name:string;avatarKey?:RoleAvatarKey;duty:string;dataScope:string;executionScope:string;responsibility?:RoleResponsibility;skills:string[];knowledge:string[];connections:string[]}[]
  coordinatorResourceId?:string
  skills:{resourceId:string;title:string;version:string;required:boolean;source:'local'|'public';text?:string;publicId?:string}[]
- connections:{resourceId:string;title:string;version:string;required:boolean;serverName?:string;tools?:string[]}[]
+ connections:{resourceId:string;title:string;version:string;required:boolean;serverName?:string;tools?:string[];setup?:McpConnectionSetup}[]
  plugins:{resourceId:string;title:string;version:string;required:boolean;packageName?:string}[]
  plans:{resourceId:string;title:string}[];workTemplates:{resourceId:string;title:string}[];knowledge:{resourceId:string;title:string}[]
  counts:Record<string,number>;license?:string;publisher?:string;provenance:ShareProvenanceSource[]
@@ -57,7 +57,7 @@ export function sharePackageSummary(pkg:SharePackage):ShareSummary{
   subject:v2?.subject??'employee',version:pkg.version,title:pkg.title,description:pkg.description,scope:manifest.scope??manifest.domain,
   roles,...(v2?.team?{coordinatorResourceId:v2.team.coordinatorResourceId}:{}),
   skills:resources.filter(r=>r.kind==='skill').map(r=>({resourceId:r.id,title:r.title,version:r.version,required:r.required as boolean,source:r.source.kind,...(r.source.kind==='public'?{publicId:r.source.id}:{}),...(body(r)===undefined?{}:{text:body(r)!})})),
-  connections:resources.filter(r=>['mcp','data-source','execution-tool'].includes(r.kind)).map(r=>{const d=parse<{serverName?:string;tools?:string[]}>(r);return {resourceId:r.id,title:r.title,version:r.version,required:r.required,...(d?.serverName?{serverName:d.serverName}:{}),...(d?.tools?{tools:d.tools}:{})}}),
+  connections:resources.filter(r=>['mcp','data-source','execution-tool'].includes(r.kind)).map(r=>{const d=parse<{serverName?:string;tools?:string[];setup?:McpConnectionSetup}>(r);return {resourceId:r.id,title:r.title,version:r.version,required:r.required,...(d?.serverName?{serverName:d.serverName}:{}),...(d?.tools?{tools:d.tools}:{}),...(d?.setup?{setup:readMcpConnectionSetup(d.setup)}:{})}}),
   plugins:resources.filter(r=>r.kind==='plugin').map(r=>{const d=parse<{packageName?:string}>(r);return {resourceId:r.id,title:r.title,version:r.version,required:r.required,...(d?.packageName?{packageName:d.packageName}:{})}}),
   plans:resources.filter(r=>r.kind==='plan').map(r=>({resourceId:r.id,title:r.title})),workTemplates:resources.filter(r=>r.kind==='work-template').map(r=>({resourceId:r.id,title:r.title})),knowledge:resources.filter(r=>r.kind==='knowledge').map(r=>({resourceId:r.id,title:r.title})),
   counts,...(v2?{license:v2.license,publisher:v2.trust.publisher,provenance:v2.provenance.sources}:{provenance:[]}),
@@ -68,7 +68,7 @@ export function sharePackageSummary(pkg:SharePackage):ShareSummary{
 export type ShareRoleSource=Pick<PreviewRole,'id'|'name'|'kind'|'avatarKey'|'duty'|'dataScope'|'executionScope'|'skills'|'knowledge'>&{responsibility?:PreviewRole['responsibility']|undefined}
 /** 技能来源：`name` 是员工绑定的原生技能名；`publicId` 表示官方目录固定引用，`text` 表示许可允许随包的静态正文。 */
 export type ShareSkillSource={name:string;title?:string;resourceId?:string;version?:string;text?:string;/** 同一技能入口下已核摘要的静态原文；路径相对于 SKILL.md。 */files?:readonly {path:string;text:string}[];license?:string;publisher?:string;sourceUrl?:string;publicId?:string}
-export type ShareConnectionSource={serverName:string;title?:string;tools:string[];version?:string}
+export type ShareConnectionSource={serverName:string;title?:string;tools:string[];version?:string;setup?:McpConnectionSetup}
 export type SharePluginSource={packageName:string;version:string;title?:string}
 export type SharePlanInput={subject:ShareSubject;title?:string;description?:string;publisher:string;license?:string;modifications?:string;roles:readonly ShareRoleSource[];skills:readonly ShareSkillSource[];connections?:readonly ShareConnectionSource[];plugins?:readonly SharePluginSource[];coordinatorRoleId?:string;/** 员工与连接、依赖应用（按包名）的显式关系；缺省时员工主题绑定全部连接与应用，团队主题不猜。 */bindings?:readonly {roleId:string;skills?:readonly string[];connections?:readonly string[];plugins?:readonly string[]}[]}
 const slug=(value:string,fallback:string)=>{const s=value.normalize('NFKD').replace(/[^a-zA-Z0-9-]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase().slice(0,60);return LOCAL_ID.test(s)?s:fallback}
@@ -95,7 +95,7 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
  const connectionById=new Map<string,string>()
  for(const c of input.connections??[]){
   const rid=uniqueId(used,slug('mcp-'+c.serverName,'mcp')),p=rid+'.json'
-  files.push({path:p,text:JSON.stringify({format:'teloa.mcp-connection/v1',serverName:c.serverName,tools:[...new Set(c.tools)]},null,2)})
+  files.push({path:p,text:JSON.stringify({format:'teloa.mcp-connection/v1',serverName:c.serverName,tools:[...new Set(c.tools)],...c.setup?{setup:readMcpConnectionSetup(c.setup)}:{}},null,2)})
   resources.push({id:rid,kind:'mcp',title:c.title??c.serverName,version:c.version??'1.0.0',required:false,source:{kind:'local',path:p}});connectionById.set(c.serverName,rid)
   requirements.push(`Connect your own account for: ${c.title??c.serverName}`)
  }
@@ -135,6 +135,15 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
 export function editSharePackage(pkg:SharePackage,title:string,description:string):SharePackage{
  const manifest=JSON.parse(pkg.files.find(f=>f.path==='teloa.json')!.text)
  return readSharePackage({...pkg,title,description,files:pkg.files.map(f=>f.path==='teloa.json'?{path:f.path,text:JSON.stringify({...manifest,title,description},null,2)}:f)})
+}
+
+/** 只更新已选 MCP 的声明提示，资源身份、版本、工具与其他文件均保持不变。 */
+export function editShareConnectionSetup(pkg:SharePackage,resourceId:string,setup:unknown):SharePackage{
+ const manifest=JSON.parse(pkg.files.find(f=>f.path==='teloa.json')!.text) as {resources:Resource[]}
+ const resource=manifest.resources.find(row=>row.id===resourceId&&row.kind==='mcp')
+ if(!resource||resource.source.kind!=='local')throw Error('Connection source is unavailable.')
+ const path=resource.source.path,checked=readMcpConnectionSetup(setup)
+ return readSharePackage({...pkg,files:pkg.files.map(file=>file.path===path?{path,text:JSON.stringify({...JSON.parse(file.text),setup:checked},null,2)}:file)})
 }
 
 /**

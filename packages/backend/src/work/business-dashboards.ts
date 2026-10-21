@@ -1,13 +1,15 @@
 import type {Pool,PoolClient} from 'pg'
+import {createHash} from 'node:crypto'
 import {
- WorkError,businessScopeKeyRule,businessTimeRanges,isBusinessScopeKey,nextBusinessSyncOccurrence,taskInput,
- type BusinessDashboardDefinition,type BusinessDashboardPage,type BusinessDashboardSummary,type BusinessTimeRange,type BusinessWidgetDefinition,type BusinessWidgetResult,
+ WorkError,businessScopeKeyRule,businessTimeRanges,isBusinessScopeKey,nextBusinessSyncOccurrence,taskInput,readBusinessDashboardShareTarget,businessDashboardShareDefinitionText,
+ type BusinessDashboardDefinition,type BusinessDashboardPage,type BusinessDashboardSummary,type BusinessTimeRange,type BusinessWidgetDefinition,type BusinessWidgetResult,type BusinessDashboardShareSnapshot,type BusinessDashboardShareSection,
 } from '@teloa/contract'
 import type {BusinessDefinitionBundle,BusinessDefinitionSourceReader} from './business-definition-source.ts'
 import type {BusinessSyncTrigger} from './business-sync.ts'
 import {businessDashboardMigrationLock,businessWidgetDefinitionHash,businessWidgetResultOf,type BusinessWidgetComputeContext,type BusinessWidgetService} from './business-widgets.ts'
 import {assertScheduledSync,lockBusinessRuntime,scheduledSyncAllowed} from './business-runtime.ts'
 import {businessDataRevision} from './business-data.ts'
+import {dashboardShareView,dashboardShareRaw,sealDashboardShareSnapshot} from './business-dashboard-share.ts'
 
 export type BusinessDashboardActor={ownerId:string;scopeIds:string[]}
 
@@ -142,6 +144,34 @@ export class BusinessDashboardService{
    const selected=selectedRange(located.dashboard,requested)
    const results=await this.widgets.latest(db,actor.ownerId,scope,dashboardId,rangesOf(located,selected))
    return this.page(db,actor.ownerId,scope,located,results,selected)
+  })
+ }
+
+ async shareSnapshot(actor:BusinessDashboardActor,input:unknown,signal?:AbortSignal):Promise<BusinessDashboardShareSnapshot>{
+  actorOf(actor)
+  const target=readBusinessDashboardShareTarget(input)
+  if(target.kind!=='legacy')throw invalid('需要旧版看板目标。')
+  const scope=scopeOf(actor,target.scope)
+  return this.readOnly(async db=>{
+   signal?.throwIfAborted()
+   const located=locate(await this.definitions.forScope(db,actor.ownerId,scope),target.dashboardId),{dashboard,widgets,bundles}=located
+   if(createHash('sha256').update(businessDashboardShareDefinitionText(dashboard)).digest('hex')!==target.definitionHash)throw new WorkError('teloa/version-conflict','看板定义已变化，请重新读取后分享。')
+   const selected=selectedRange(dashboard,dashboard.filters?target.timeRange:undefined)
+   if(selected!==target.timeRange)throw invalid('此看板未提供所选时间范围。')
+   const capturedAt=this.identity.now(),results=await this.widgets.latest(db,actor.ownerId,scope,dashboard.id,rangesOf(located,selected)),sections:BusinessDashboardShareSection[]=[],rawAvailable=widgets.every(widget=>widget.kind==='view-ref')
+   if(rawAvailable){
+    const views=bundles.flatMap(bundle=>bundle.views),types=bundles.flatMap(bundle=>bundle.objectTypes)
+    for(const widget of widgets){
+     const view=views.find(record=>record.definition.id===widget.viewRef),type=types.find(record=>record.definition.id===view?.definition.objectType)
+     if(!view||!type)throw new WorkError('teloa/source-unavailable','看板引用的原始记录来源已不可读取。')
+     const shared=await dashboardShareView(db,actor.ownerId,scope,widget,view,type,types,capturedAt,signal)
+     sections.push(shared.section);results.set(widget.id,shared.legacy)
+    }
+   }
+   const read=await this.page(db,actor.ownerId,scope,located,results,selected)
+   const page=rawAvailable?{...read,results:widgets.map(widget=>results.get(widget.id)!),updatedAt:capturedAt}:read
+   signal?.throwIfAborted()
+   return sealDashboardShareSnapshot({target,capturedAt,page:{kind:'legacy',page},raw:rawAvailable?dashboardShareRaw(sections):{status:'unavailable',reason:'sql-source-lineage-unavailable'}})
   })
  }
 

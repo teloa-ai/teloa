@@ -1,3 +1,4 @@
+import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {presentGroupMessages,readStoredGroupMessage as readMessage} from './group-message-presentation.ts'
@@ -688,6 +689,8 @@ export class CollaborationService{
       if(reference.kind==='group-resource'){
         const found=await client.query('select resource_id from teloa_group_resource_versions versions join teloa_group_resources resources on resources.id=versions.resource_id and resources.owner_id=versions.owner_id and resources.group_id=versions.group_id where versions.resource_id=$1 and versions.owner_id=$2 and versions.group_id=$3 and versions.version=$4 and resources.withdrawn_at is null for share of versions,resources',[reference.id,owner,groupId,reference.version])
         if(!found.rows[0])throw new WorkError('teloa/forbidden',referenceInvisible)
+      }else if(reference.kind==='work-resource'){
+        await readActiveGroupWorkResource(client,owner,groupId,reference)
       }else if(reference.kind==='attachment'){
         if(!await readActiveAttachment(client,owner,reference.id))throw new WorkError('teloa/forbidden',referenceInvisible)
       }else{

@@ -1,13 +1,14 @@
 import {createHash} from 'node:crypto'
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
+import {readMcpConnectionSetup,type McpConnectionSetup} from './template-share.mjs'
 
 /**
  * `sourceNoun` 是这门业务自己的来源说法（SOC 的「告警源」、AppSec 的「代码仓库」）：
  * 界面把「接入数据源」换成「接入告警源」，缺省时回落通用名词，旧模板不带这一位仍然合法。
  */
 export type IndustryDataSourceDefinition={format:'teloa.data-source/v1';sourceId:string;scopes:string[];sourceNoun?:string}
-export type IndustryMcpConnectionDefinition={format:'teloa.mcp-connection/v1';serverName:string;tools:string[]}
+export type IndustryMcpConnectionDefinition={format:'teloa.mcp-connection/v1';serverName:string;tools:string[];setup?:McpConnectionSetup}
 export type IndustryPluginDefinition={format:'teloa.plugin/v1';registry:'npm';packageName:string;version:string}
 
 const bad=(message:string)=>new WorkError('teloa/invalid-input',message)
@@ -42,9 +43,12 @@ export function readIndustryDataSourceDefinition(value:unknown):IndustryDataSour
 }
 
 export function readIndustryMcpConnectionDefinition(value:unknown):IndustryMcpConnectionDefinition{
- const row=exact(value,['format','serverName','tools'],'行业 MCP 连接定义格式不正确。')
+ const hasSetup=isRecord(value)&&value.setup!==undefined
+ const row=exact(value,['format','serverName','tools',...hasSetup?['setup']:[]],'行业 MCP 连接定义格式不正确。')
  if(row.format!=='teloa.mcp-connection/v1'||typeof row.serverName!=='string'||!serverName.test(row.serverName))throw bad('行业 MCP 连接定义格式不正确。')
- return {format:'teloa.mcp-connection/v1',serverName:row.serverName,tools:list(row.tools,toolName,64,'行业 MCP 连接工具名必须非空、去重且只含字母数字下划线连字符与点号。')}
+ let setup:McpConnectionSetup|undefined
+ if(hasSetup){try{setup=readMcpConnectionSetup(row.setup)}catch{throw bad('行业 MCP 连接设置提示必须只有地址占位符和配置项名称。')}}
+ return {format:'teloa.mcp-connection/v1',serverName:row.serverName,tools:list(row.tools,toolName,64,'行业 MCP 连接工具名必须非空、去重且只含字母数字下划线连字符与点号。'),...setup?{setup}:{}}
 }
 
 export function readIndustryPluginDefinition(value:unknown):IndustryPluginDefinition{

@@ -10,6 +10,7 @@ import {localizedBusinessPageTitle} from './business-definition-localization.js'
 import type {BusinessBuilderApi} from './business-builder-api.js'
 import {readBusinessConfigurationSavedPage} from './business-configuration-surface.js'
 import {ContextDrawer} from './ContextDrawer.js'
+import {BusinessDashboardShareButton} from './BusinessDashboardShare.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessDashboardPage.module.css'
 
@@ -75,7 +76,7 @@ export function BusinessConfigurationPage({projection,recordFlow,importFlow,capa
  }
  const title=localizedBusinessPageTitle(page.definition,page.dashboard,locale)
  return <><section className={css.surface} aria-label={title} data-dashboard={page.dashboard.id}>
-  <header className={css.header}><div><h2>{title}</h2><BusinessTypedViewNotes shared={shared}/></div></header>
+  <header className={css.header}><div><h2>{title}</h2><BusinessTypedViewNotes shared={shared}/></div>{projection.mode==='saved'&&<BusinessDashboardShareButton colorScheme={colorScheme} identity={JSON.stringify([projection.scope,projection.configurationVersion,projection.configurationHash,page.definition.id,page.timeRange])} target={async()=>({kind:'configuration',scope:projection.scope,pageId:page.definition.id,configurationVersion:projection.configurationVersion,configurationHash:projection.configurationHash,timeRange:page.timeRange})}/>}</header>
   <BusinessDashboardGrid dashboard={page.dashboard} widgets={page.widgets} results={page.results} viewRefs={page.viewRefs} colorScheme={colorScheme} ranged={page.dashboard.filters!==undefined} go={projection.mode==='saved'?go:undefined} openRecord={projection.mode==='saved'&&recordFlow&&recordSource?openRecord:undefined} sharedCoverage={shared.size?shared:undefined}/>
  </section>{preview?.origin===origin&&recordFlow&&recordSource&&<DashboardRecordPreview key={JSON.stringify(preview.reference)} preview={preview} source={recordSource} flow={recordFlow} taskList={taskList} close={()=>setPreview(undefined)} go={go}/>}</>
 }

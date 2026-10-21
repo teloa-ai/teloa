@@ -12,6 +12,8 @@ import {CapabilityNotice,useApplicationCapability} from './CapabilityNotice.js'
 import {useI18n} from './i18n/provider.js'
 import css from './TemplateShareDrawer.module.css'
 import {templateShareErrorKey,templateSharePolicyKey} from './template-share-errors.js'
+import {ConnectionTemplateSetup} from './ConnectionTemplateSetup.js'
+import {readWebTemplateShareLink} from './web-template-share.js'
 
 type Props={createTeam?:((loadId:string,isCurrent?:()=>boolean)=>Promise<void>)|undefined;openGroup?:((groupId:string)=>void)|undefined;open:boolean;close:()=>void;intent:TemplateShareIntent|null;bridge?:ShareBridge|undefined;accept:(pkg:SharePackage,choice:ShareAcceptChoice,intent?:TemplateShareIntent)=>Promise<ShareAcceptanceResult>;/** 已开始接收的原选择：存在时锁定范围与技能，只能继续原申请。 */savedChoice?:((pkg:SharePackage)=>Promise<ShareAcceptChoice|undefined>)|undefined;openRole:(id:string)=>void;configure:(loadId:string)=>void;openSkill?:((installationId:string)=>void)|undefined;openConnections?:(()=>void)|undefined;/** 可添加到的业务范围；缺省只提供通用。 */targets?:readonly {scope:string;title:string}[]|undefined}
 const stateClass=(state:ShareAcceptItemState)=>state==='done'?css.stateGood:state==='failed'?css.stateBad:undefined
@@ -22,7 +24,7 @@ function Composition({summary,locked,selected,toggle,result,busy,openRole,openSk
  return <div className={css.composition}>
   {summary.roles.length>0&&<><strong>{t(summary.subject==='team'?'templateShare.members':'templateShare.employee')}</strong><ul>{summary.roles.map(role=>{const added=result?.roles.find(r=>r.resourceId===role.resourceId);return <li key={role.resourceId}><EmployeeAvatar avatarKey={role.avatarKey} size="sm"/><span className={css.compositionText}><strong>{role.name}</strong>{summary.coordinatorResourceId===role.resourceId&&<small>{t('templateShare.coordinator')}</small>}</span>{added?.roleId?<button type="button" className={css.textButton} onClick={()=>openRole(added.roleId!)}>{t('templateShare.openRole')}</button>:added?<em className={stateClass(added.state)}>{t(`templateShare.result.${added.state}`)}</em>:null}</li>})}</ul></>}
   {summary.skills.length>0&&<><strong>{t('templateShare.skill')}</strong><ul>{summary.skills.map(skill=>{const item=state(result?.skills,skill.resourceId);return <li key={skill.resourceId}><span className={css.compositionText}>{result?<strong>{skill.title}</strong>:<label className={css.option}><input type="checkbox" disabled={busy||locked} checked={selected.has(skill.resourceId)} onChange={e=>toggle(skill.resourceId,e.target.checked)}/>{skill.title}</label>}<small>v{skill.version} · {t(skill.source==='public'?'templateShare.skillPublic':'templateShare.skillLocal')}{!result&&' · '+t('templateShare.installSkill')}</small></span>{item?.installationId&&openSkill?<button type="button" className={css.textButton} onClick={()=>openSkill(item.installationId!)}>{t('templateShare.openSkill')}</button>:label(item)}</li>})}</ul></>}
-  {summary.connections.length>0&&<><strong>{t('templateShare.connection')}</strong><ul>{summary.connections.map(c=>{const item=state(result?.mcp,c.resourceId);return <li key={c.resourceId}><span className={css.compositionText}><strong>{c.title}</strong><small>{c.serverName?c.serverName+(c.tools?' · '+c.tools.length:''):''}</small></span>{item?.state==='done'&&openConnections?<button type="button" className={css.textButton} onClick={openConnections}>{t('templateShare.openConnections')}</button>:label(item)}</li>})}</ul><p className={css.note}>{t('templateShare.connectionsNote')}</p></>}
+  {summary.connections.length>0&&<><strong>{t('templateShare.connection')}</strong><ul>{summary.connections.map(c=>{const item=state(result?.mcp,c.resourceId);return <li key={c.resourceId}><span className={css.compositionText}><strong>{c.title}</strong><small>{c.serverName?c.serverName+(c.tools?' · '+c.tools.length:''):''}</small>{c.setup&&<ConnectionTemplateSetup setup={c.setup}/>}</span>{item?.state==='done'&&openConnections?<button type="button" className={css.textButton} onClick={openConnections}>{t('templateShare.openConnections')}</button>:label(item)}</li>})}</ul><p className={css.note}>{t('templateShare.connectionsNote')}</p></>}
   {summary.plugins.length>0&&<><strong>{t('templateShare.plugin')}</strong><ul>{summary.plugins.map(p=>{const item=state(result?.plugins,p.resourceId);return <li key={p.resourceId}><span className={css.compositionText}><strong>{p.title}</strong><small>{p.packageName??''} v{p.version}{item?.reason?' · '+t(`templateShare.pluginReason.${item.reason}`):''}</small></span>{label(item)}</li>})}</ul><p className={css.note}>{t('templateShare.pluginNote')}</p></>}
   {summary.plans.length>0&&<><strong>{t('templateShare.plan')}</strong><ul>{summary.plans.map(p=><li key={p.resourceId}><span className={css.compositionText}><strong>{p.title}</strong></span>{label(state(result?.plans,p.resourceId))}</li>)}</ul><p className={css.note}>{t('templateShare.plansNote')}</p></>}
  </div>
@@ -31,6 +33,7 @@ export function TemplateShareReceive({open,close:onClose,intent,bridge,accept,sa
  const {t}=useI18n(),allowed=useApplicationCapability('people'),automation=useApplicationCapability('automation')
  const [pkg,setPackage]=useState<SharePackage>(),[policy,setPolicy]=useState<TemplateSharePolicy>(),[error,setError]=useState<string>(),[busy,setBusy]=useState(false),[result,setResult]=useState<ShareAcceptanceResult>(),[online,setOnline]=useState<string>(),[selected,setSelected]=useState<Set<string>>(new Set()),[scope,setScope]=useState('general'),[locked,setLocked]=useState(false)
  const [choiceReady,setChoiceReady]=useState(false)
+ const [shareLink,setShareLink]=useState('')
  const epoch=useRef(0)
  const close=()=>{epoch.current++;onClose()}
  const summary=useMemo(()=>pkg?sharePackageSummary(pkg):undefined,[pkg])
@@ -63,6 +66,10 @@ export function TemplateShareReceive({open,close:onClose,intent,bridge,accept,sa
  const added=result?.complete?(summary?.subject==='team'?'templateShare.teamAdded':summary?.roles.length?'templateShare.added':'templateShare.capabilityAdded'):'templateShare.partial'
  return <TemplateShareDrawer open={open} title={t('templateShare.receive')} close={close}>
   {error&&<p className={css.alert} role="alert">{error}</p>}
+  {bridge?.receiveLink&&<form className={css.detailContent} onSubmit={event=>{event.preventDefault();if(busy||locked)return;try{const selected=readWebTemplateShareLink(shareLink);setError(undefined);if(intent?.shareId===selected.shareId)void read();else bridge.receiveLink!(shareLink)}catch{setError(t('templateShare.invalid'))}}}>
+   <label>{t('templateShare.shareUrl')}<input type="url" value={shareLink} maxLength={2048} placeholder="https://market.teloa.ai/share/?id=…" disabled={busy||locked} onChange={event=>setShareLink(event.target.value)}/></label>
+   <button type="submit" disabled={busy||locked||!shareLink.trim()}>{t('templateShare.read')}</button>
+  </form>}
   {pkg&&summary?<>
    <TemplateShareCard key={pkg.id} pkg={pkg} status={result?.complete?'addedLabel':'preview'}>
     {result?.complete?<>

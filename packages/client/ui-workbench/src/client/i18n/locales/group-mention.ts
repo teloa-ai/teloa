@@ -6,6 +6,8 @@
 // 按 2026-10-07 用户裁定只定稿简中/繁中/英文，其余列沿用英文回退，不另行补译。
 // 11 列：[key, zh-CN, zh-Hant, en, ja, ko, vi, es, fr, de, pt]。
 export const GROUP_MENTION_MESSAGE_ROWS = [
+ ['group.mention.sectionLibrary','资料库引用','資料庫引用','Library references','Library references','Library references','Library references','Library references','Library references','Library references','Library references'],
+ ['group.library.unavailable','资料库暂不可读，请重试。','資料庫暫時無法讀取，請重試。','The library is unavailable. Retry.','The library is unavailable. Retry.','The library is unavailable. Retry.','The library is unavailable. Retry.','The library is unavailable. Retry.','The library is unavailable. Retry.','The library is unavailable. Retry.','The library is unavailable. Retry.'],
  ['group.mention.pickAny','提及员工或引用资料','提及員工或引用資料','Mention an employee or reference material','Mention an employee or reference material','Mention an employee or reference material','Mention an employee or reference material','Mention an employee or reference material','Mention an employee or reference material','Mention an employee or reference material','Mention an employee or reference material'],
  ['group.mention.sectionEmployees','员工','員工','Employees','Employees','Employees','Employees','Employees','Employees','Employees','Employees'],
  ['group.mention.sectionResources','资料','資料','Materials','Materials','Materials','Materials','Materials','Materials','Materials','Materials'],

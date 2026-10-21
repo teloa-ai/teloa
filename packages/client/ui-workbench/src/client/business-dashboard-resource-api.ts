@@ -5,7 +5,7 @@ import type {BusinessBuilderApplyInput,BusinessBuilderPreviewInput} from './busi
 type Call=(endpoint:string,input:unknown,signal?:AbortSignal)=>Promise<unknown>
 export type DashboardPrepareInput={requestId:string;contentId:string;contentHash:string;resourceId:string;target:{kind:'new';title:string}|{kind:'existing';scope:string;expectedVersion:number};objectMapping?:Record<string,string>}
 export type DashboardUpgradeChoice='keep-local'|'use-incoming'
-export type DashboardUpgradeInput={requestId:string;adoptionId:string;candidateContentId:string;candidateContentHash:string;resourceId:string;expectedConfigurationVersion:number;choices?:Record<string,DashboardUpgradeChoice>;mode?:'upgrade'|'restore'}
+export type DashboardUpgradeInput={requestId:string;adoptionId:string;candidateContentId:string;candidateContentHash:string;resourceId:string;expectedConfigurationVersion:number;choices?:Record<string,DashboardUpgradeChoice>;mode?:'upgrade'|'restore';preserveDataShape?:boolean}
 export type DashboardUpgradeConflict={key:string;entity:'definition'|'page'|'home-page';id:string;kind?:string;baseline:unknown;current:unknown;incoming:unknown}
 export type DashboardPreviewInput=Omit<BusinessBuilderPreviewInput,'sessionId'>
 export type DashboardApplyInput=Omit<BusinessBuilderApplyInput,'sessionId'>
@@ -37,7 +37,7 @@ export function createBusinessDashboardResourceApi(call:Call,journal?:DashboardM
    const value=await call('business-dashboard-resources/prepare-upgrade',input,signal)
    if(!value||typeof value!=='object'||Array.isArray(value))throw invalid()
    const row=value as Record<string,unknown>
-   if(Object.keys(row).length!==3||!Array.isArray(row.conflicts)||!Array.isArray(row.changed)||row.changed.some(value=>typeof value!=='string'))throw invalid()
+   if(Object.keys(row).some(key=>!['draft','conflicts','changed','deferred'].includes(key))||!Array.isArray(row.conflicts)||!Array.isArray(row.changed)||row.changed.some(value=>typeof value!=='string')||row.deferred!==undefined&&(!Array.isArray(row.deferred)||row.deferred.length>4096||row.deferred.some(value=>typeof value!=='string'||value.length>400||/[\x00-\x1f\x7f]/.test(value))))throw invalid()
    const conflicts=row.conflicts.map((value):DashboardUpgradeConflict=>{
     if(!value||typeof value!=='object'||Array.isArray(value))throw invalid()
     const r=value as Record<string,unknown>,keys=['key','entity','id','baseline','current','incoming']
@@ -47,7 +47,7 @@ export function createBusinessDashboardResourceApi(call:Call,journal?:DashboardM
    if(new Set(conflicts.map(value=>value.key)).size!==conflicts.length)throw invalid()
    const draft=row.draft===null?null:readBusinessConfigurationDraftResponseVersioned(row.draft)
    if(draft?(draft.candidate.format!=='teloa.business-configuration/v2'||draft.baseVersion!==input.expectedConfigurationVersion||conflicts.length>0):!conflicts.length)throw invalid()
-   return {draft,conflicts,changed:row.changed as string[]}
+   return {draft,conflicts,changed:row.changed as string[],...row.deferred?{deferred:row.deferred as string[]}:{}}
   },
   async preview(input:DashboardPreviewInput,signal?:AbortSignal){
    const result=readBusinessConfigurationPreviewResponse(await call('business-dashboard-resources/preview',input,signal))

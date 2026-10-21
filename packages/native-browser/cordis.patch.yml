@@ -10,3 +10,6 @@
       config:
         mode: launch
         headless: true
+# 选择本组合后恢复官方「开始 → 浏览器」；沙箱网页面板独立于助手的 Playwright 会话。
+- id: ui-sidebar-browser
+  disabled: false

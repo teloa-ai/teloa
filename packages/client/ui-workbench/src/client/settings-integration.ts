@@ -1,8 +1,7 @@
-import {LocalModelsSettings} from './LocalModelsSettings.js'
+import {LocalModelsSettings,type LocalModelsSettingsProps} from './LocalModelsSettings.js'
 import {EmployeeIntegrationSettings,employeeIntegrationSettingsTitle} from './EmployeeIntegrationSettings.js'
 import type {EmployeeIntegrationApi} from './employee-integration-api.js'
 import {resolveProductLocale} from './i18n/locale.js'
-import type {LocalModelsApi,LocalModelsFocus} from './local-models-api.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {SettingsNavigation} from './settings-navigation.js'
@@ -40,7 +39,7 @@ function directory(ctx:Context,key:'settings.section'|'settings.onboarding'|'sid
   }
 }
 
-export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close:()=>void;selection:SettingsNavigation},t:TeloaTranslate,webAccessApi:WebAccessApi,runtimeSettings:RuntimeSettingsSurface,imChannels:ImChannelsSettingsProps,localModels?:{api:LocalModelsApi;focus:LocalModelsFocus},integrations?:EmployeeIntegrationApi):void{
+export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close:()=>void;selection:SettingsNavigation},t:TeloaTranslate,webAccessApi:WebAccessApi,runtimeSettings:RuntimeSettingsSurface,imChannels:ImChannelsSettingsProps,localModels?:LocalModelsSettingsProps,integrations?:EmployeeIntegrationApi):void{
   // 应用桥在装配前已读取；宿主分配执行位置时不提供执行位置分区及其本机目录管理。
   if(applicationPresentation.getExecutionPlacement()==='user-selected')ctx.inject(['workspaces','connection'],child=>{
     const workspaces=child.workspaces as unknown as IWorkspaces

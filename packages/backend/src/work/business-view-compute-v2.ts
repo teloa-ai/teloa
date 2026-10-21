@@ -82,8 +82,8 @@ function valueOrder(left:Exclude<ResultValue,null>,right:Exclude<ResultValue,nul
  return a===b?0:a<b?-1:1
 }
 
-/** 纯计算仍校验真实定义与快照摘要，绝不把 rich 字段伪装为 v1 的 text。 */
-export function computeBusinessViewV2(input:BusinessViewV2ComputeInput):BusinessViewResultV2{
+/** 页面统计与原始记录导出共用筛选；导出不能另写一套近似的字段或时间判据。 */
+function prepare(input:BusinessViewV2ComputeInput){
  const objectType=readBusinessObjectTypeDefinitionVersioned(input.objectType),view=readBusinessViewDefinitionVersioned(input.view)
  assertBusinessViewV2References(view,objectType)
  if(input.scope!==objectType.domain||input.scope!==view.domain||!Number.isFinite(Date.parse(input.computedAt))||new Date(input.computedAt).toISOString()!==input.computedAt)throw bad()
@@ -104,6 +104,11 @@ export function computeBusinessViewV2(input:BusinessViewV2ComputeInput):Business
   if(view.window&&range){const value=object.values.get(view.window.field);if(typeof value!=='string')return false;const at=Date.parse(value);if(at<range.from||(range.inclusive?at>range.to:at>=range.to))return false}
   return view.filters.every(filter=>matches(filter,fields,object.values))
  })
+ return {objectType,view,fields,objects,eligible}
+}
+/** 纯计算仍校验真实定义与快照摘要，绝不把 rich 字段伪装为 v1 的 text。 */
+export function computeBusinessViewV2(input:BusinessViewV2ComputeInput):BusinessViewResultV2{return computePrepared(input,prepare(input))}
+function computePrepared(input:BusinessViewV2ComputeInput,{objectType,view,fields,objects,eligible}:ReturnType<typeof prepare>):BusinessViewResultV2{
  const groups=new Map<string,ParsedObject[]>()
  if(view.kind==='board-card')groups.set('',eligible)
  else if(view.kind==='list')for(const object of eligible)groups.set(object.snapshot.id,[object])
@@ -145,7 +150,8 @@ export type BusinessViewV2TransactionInput={scope:string;objectType:BusinessObje
 export class BusinessViewV2Computer{
  private readonly identity:{now:()=>string}
  constructor(identity:{now:()=>string}){this.identity=identity}
- async computeInTransaction(db:PoolClient,actor:BusinessLedgerActor,input:BusinessViewV2TransactionInput,signal?:AbortSignal):Promise<BusinessViewResultV2>{
+ async computeInTransaction(db:PoolClient,actor:BusinessLedgerActor,input:BusinessViewV2TransactionInput,signal?:AbortSignal):Promise<BusinessViewResultV2>{return (await this.snapshotInTransaction(db,actor,input,signal)).view}
+ async snapshotInTransaction(db:PoolClient,actor:BusinessLedgerActor,input:BusinessViewV2TransactionInput,signal?:AbortSignal):Promise<{view:BusinessViewResultV2;objects:BusinessObjectSnapshot[];truncated:boolean}>{
   if(typeof actor?.ownerId!=='string'||!actor.ownerId.trim()||actor.ownerId!==actor.ownerId.trim()||actor.ownerId.length>128||!Array.isArray(actor.scopeIds)||new Set(actor.scopeIds).size!==actor.scopeIds.length||!actor.scopeIds.includes(input.scope))throw new WorkError('teloa/forbidden','当前主体未获准读取此业务范围。')
   for(const record of [input.objectType,input.view])if(record.source.scope!==input.scope||record.definition.domain!==input.scope||record.source.localId!==record.definition.id||record.source.version!==record.definition.version||! /^[a-f0-9]{64}$/.test(record.source.definitionHash))throw corrupt()
   assertBusinessViewV2References(input.view.definition,input.objectType.definition)
@@ -162,6 +168,8 @@ export class BusinessViewV2Computer{
    known.set(field.referenceType,new Set(rows.filter(row=>row.snapshot.deletedAt===undefined).map(row=>row.snapshot.id)))
    signal?.throwIfAborted()
   }
-  return computeBusinessViewV2({objectType:input.objectType.definition,view:input.view.definition,snapshots:snapshots.map(row=>row.snapshot),truncated:snapshots.truncated,computedAt:this.identity.now(),scope:input.scope,definitionHash:input.view.source.definitionHash,origin:input.view.source.origin,known})
+  const compute:BusinessViewV2ComputeInput={objectType:input.objectType.definition,view:input.view.definition,snapshots:snapshots.map(row=>row.snapshot),truncated:snapshots.truncated,computedAt:this.identity.now(),scope:input.scope,definitionHash:input.view.source.definitionHash,origin:input.view.source.origin,known}
+  const prepared=prepare(compute)
+  return {view:computePrepared(compute,prepared),objects:prepared.eligible.map(object=>object.snapshot),truncated:snapshots.truncated}
  }
 }

@@ -8,7 +8,7 @@ import type {BusinessConfigurationPreviewService} from './business-configuration
 import type {BusinessConfigurationPageService} from './business-configuration-page.ts'
 import {businessConfigurationHash} from './business-configuration-store.ts'
 import {mapBusinessDashboardConfiguration} from './business-dashboard-resource-mapping.ts'
-import {mergeBusinessDashboardResourceUpgrade} from './business-dashboard-resource-upgrade.ts'
+import {mergeBusinessDashboardResourceUpgrade,preserveBusinessDashboardDataShape} from './business-dashboard-resource-upgrade.ts'
 import {compareSemver} from '@teloa/contract'
 import {prepareBusinessConfigurationDefinition} from './business-definition-write.ts'
 
@@ -137,16 +137,17 @@ export class BusinessDashboardResourceService{
  }
 
  async prepareUpgrade(actor:BusinessConfigurationActor,input:unknown){
-  const row=taskInput(input,['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices','mode'])
+  const row=taskInput(input,['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices','mode','preserveDataShape'])
   if(row.mode!==undefined&&row.mode!=='upgrade'&&row.mode!=='restore')throw invalid()
+  if(row.preserveDataShape!==undefined&&typeof row.preserveDataShape!=='boolean'||row.preserveDataShape===true&&row.mode==='restore')throw invalid()
   if(!uuid(row.requestId)||!uuid(row.adoptionId)||!uuid(row.candidateContentId)||typeof row.candidateContentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.candidateContentHash)||!localId(row.resourceId)||!Number.isSafeInteger(row.expectedConfigurationVersion)||Number(row.expectedConfigurationVersion)<1)throw invalid()
   const externalRequest=row.requestId.toLowerCase(),specHash=businessConfigurationHash({...row,requestId:externalRequest,adoptionId:row.adoptionId.toLowerCase(),candidateContentId:row.candidateContentId.toLowerCase()})
   const prior=(await this.pool.query('select spec_hash,draft_id,result from teloa_business_dashboard_preparations where owner_id=$1 and request_id=$2',[actor.ownerId,externalRequest])).rows[0]
   if(prior){
    if(prior.spec_hash!==specHash)throw new WorkError('teloa/conflict','此请求已用于不同的看板升级，请重新发起。')
-   if(prior.draft_id)return {draft:await this.ports.drafts.get(actor,{draftId:prior.draft_id}),conflicts:[],changed:prior.result.changed??[]}
+   if(prior.draft_id)return {draft:await this.ports.drafts.get(actor,{draftId:prior.draft_id}),conflicts:[],changed:prior.result.changed??[],...prior.result.deferred?{deferred:prior.result.deferred}:{}}
    const latest=(await this.pool.query('select source,draft_id,result from teloa_business_dashboard_preparations where owner_id=$1 and request_id=$2',[actor.ownerId,externalRequest])).rows[0]
-   if(latest?.draft_id)return {draft:await this.ports.drafts.get(actor,{draftId:latest.draft_id}),conflicts:[],changed:latest.result.changed??[]}
+   if(latest?.draft_id)return {draft:await this.ports.drafts.get(actor,{draftId:latest.draft_id}),conflicts:[],changed:latest.result.changed??[],...latest.result.deferred?{deferred:latest.result.deferred}:{}}
    const stored=latest?.source
    if(!isRecord(stored)||!isRecord(stored.pendingUpgrade)||stored.planHash!==businessConfigurationHash(stored.pendingUpgrade))throw new WorkError('teloa/storage-corrupt','固定升级意图不一致，已停止恢复。')
    await this.ports.drafts.get(actor,{draftId:row.adoptionId})
@@ -183,11 +184,12 @@ export class BusinessDashboardResourceService{
   const incomingBaseline=resourceBaseline(incoming,candidate,incomingMapping,borrowedObjectIds)
   const merged=mergeBusinessDashboardResourceUpgrade({baseline,current:candidate,candidate:incomingBaseline,choices:row.choices as never})
   if(!merged.configuration)return {draft:null,conflicts:merged.conflicts,changed:merged.changed}
-  const plan:UpgradePlan={configuration:merged.configuration,current:candidate,baseline:incomingBaseline,resource:incoming,mapping:incomingMapping,borrowedObjectIds,scope:adoption.scope,changed:merged.changed,contentId:content.id,contentHash:content.hash,resourceId:row.resourceId,adoptionId:adoption.id,baseVersion:current.version}
+  const preserved=row.preserveDataShape===true?preserveBusinessDashboardDataShape({current:candidate,candidate:merged.configuration}):undefined
+  const plan:UpgradePlan={configuration:preserved?.configuration??merged.configuration,...preserved?{deferred:preserved.deferred}:{},current:candidate,baseline:incomingBaseline,resource:incoming,mapping:incomingMapping,borrowedObjectIds,scope:adoption.scope,changed:merged.changed,contentId:content.id,contentHash:content.hash,resourceId:row.resourceId,adoptionId:adoption.id,baseVersion:current.version}
   await this.pool.query('insert into teloa_business_dashboard_preparations(owner_id,request_id,spec_hash,source,result) values($1,$2,$3,$4,$5) on conflict(owner_id,request_id) do nothing',[actor.ownerId,externalRequest,specHash,JSON.stringify({pendingUpgrade:plan,planHash:businessConfigurationHash(plan)}),JSON.stringify({})])
   const intent=(await this.pool.query('select spec_hash,draft_id,source,result from teloa_business_dashboard_preparations where owner_id=$1 and request_id=$2',[actor.ownerId,externalRequest])).rows[0]
   if(!intent||intent.spec_hash!==specHash)throw new WorkError('teloa/conflict','升级意图已变化，请重新发起。')
-  if(intent.draft_id)return {draft:await this.ports.drafts.get(actor,{draftId:intent.draft_id}),conflicts:[],changed:intent.result.changed??[]}
+  if(intent.draft_id)return {draft:await this.ports.drafts.get(actor,{draftId:intent.draft_id}),conflicts:[],changed:intent.result.changed??[],...intent.result.deferred?{deferred:intent.result.deferred}:{}}
   if(intent.source.planHash!==businessConfigurationHash(intent.source.pendingUpgrade))throw new WorkError('teloa/storage-corrupt','固定升级意图不一致。')
   return this.finishUpgrade(actor,externalRequest,specHash,intent.source.pendingUpgrade as UpgradePlan)
  }
@@ -203,10 +205,10 @@ export class BusinessDashboardResourceService{
    upsertPages:config.pages,removePageIds:candidate.pages.filter(page=>!config.pages.some(item=>item.id===page.id)).map(page=>page.id),homePageId:config.homePageId,pageOrder:config.pages.map(page=>page.id),
   }})
   const provenance={contentId:plan.contentId,contentHash:plan.contentHash,resourceId:plan.resourceId,resource,objectMapping:plan.mapping,borrowedObjectIds:plan.borrowedObjectIds,adoptionId:plan.adoptionId,baseline,baselineHash:businessConfigurationHash(baseline)}
-  await this.pool.query('update teloa_business_dashboard_preparations set draft_id=$4,source=$5,result=$6 where owner_id=$1 and request_id=$2 and spec_hash=$3 and (draft_id is null or draft_id=$4)',[actor.ownerId,externalRequest,specHash,result.id,JSON.stringify(provenance),JSON.stringify({draftId:result.id,changed:plan.changed})])
+  await this.pool.query('update teloa_business_dashboard_preparations set draft_id=$4,source=$5,result=$6 where owner_id=$1 and request_id=$2 and spec_hash=$3 and (draft_id is null or draft_id=$4)',[actor.ownerId,externalRequest,specHash,result.id,JSON.stringify(provenance),JSON.stringify({draftId:result.id,changed:plan.changed,...plan.deferred?{deferred:plan.deferred}:{}})])
   const saved=(await this.pool.query('select spec_hash,draft_id from teloa_business_dashboard_preparations where owner_id=$1 and request_id=$2',[actor.ownerId,externalRequest])).rows[0]
   if(!saved||saved.spec_hash!==specHash||saved.draft_id!==result.id)throw new WorkError('teloa/conflict','升级准备请求已变化，请重新核对。')
-  return {draft:result,conflicts:[],changed:plan.changed}
+  return {draft:result,conflicts:[],changed:plan.changed,...plan.deferred?{deferred:plan.deferred}:{}}
  }
 }
-type UpgradePlan={configuration:ReturnType<typeof readBusinessConfigurationCandidateV2>;current:ReturnType<typeof readBusinessConfigurationCandidateV2>;baseline:ReturnType<typeof readBusinessConfigurationCandidateV2>;resource:BusinessDashboardResourceDefinition;mapping:Record<string,string>;borrowedObjectIds:string[];scope:string;changed:string[];contentId:string;contentHash:string;resourceId:string;adoptionId:string;baseVersion:number}
+type UpgradePlan={configuration:ReturnType<typeof readBusinessConfigurationCandidateV2>;deferred?:string[];current:ReturnType<typeof readBusinessConfigurationCandidateV2>;baseline:ReturnType<typeof readBusinessConfigurationCandidateV2>;resource:BusinessDashboardResourceDefinition;mapping:Record<string,string>;borrowedObjectIds:string[];scope:string;changed:string[];contentId:string;contentHash:string;resourceId:string;adoptionId:string;baseVersion:number}

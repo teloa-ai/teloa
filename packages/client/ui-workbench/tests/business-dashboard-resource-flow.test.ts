@@ -78,6 +78,17 @@ test('升级有未裁定冲突时不形成草案，并严格核候选目标与�
  await assert.rejects(createBusinessDashboardResourceApi(async()=>({draft:null,conflicts:[],changed:[]})).prepareUpgrade(input),{code:'teloa/invalid-host-response'})
 })
 
+test('保留字段意图与暂缓项按同一固定升级回执读取，坏的暂缓内容不能进入恢复记录',async()=>{
+ const candidate=dashboardResourceFixture().configuration,draft={ownerId:'owner',id:contentId,scope:'SOC',revision:1,baseVersion:2,status:'draft',hash,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:'2026-10-01T00:00:00.000Z',candidate}
+ const input={requestId,adoptionId:requestId,candidateContentId:contentId,candidateContentHash:hash,resourceId:'soc-overview',expectedConfigurationVersion:2,preserveDataShape:true},deferred=['object:alert:channel','view:states:dimension:channel']
+ const api=createBusinessDashboardResourceApi(async(_endpoint,actual)=>{assert.deepEqual(actual,input);return {draft,conflicts:[],changed:[],deferred}})
+ assert.deepEqual((await api.prepareUpgrade(input)).deferred,deferred)
+ for(const bad of ['private-value',[42],['bad\nvalue'],['x'.repeat(401)]])await assert.rejects(createBusinessDashboardResourceApi(async()=>({draft,conflicts:[],changed:[],deferred:bad})).prepareUpgrade(input),{code:'teloa/invalid-host-response'})
+ const memory=new Map<string,string>(),journal=createDashboardMarketJournal({getItem:key=>memory.get(key)??null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},'owner@host')
+ journal.write('preserved',{draft:draft as BusinessConfigurationDraftResponseVersioned,deferred});assert.deepEqual(journal.read('preserved')?.deferred,deferred)
+ memory.set([...memory.keys()][0]!,JSON.stringify({draft,deferred:['bad\nvalue']}));assert.throws(()=>journal.read('preserved'))
+})
+
 test('同请求恢复允许已采用草案；权威采用身份不伪造保存请求且清单摘要与正文摘要分离',async()=>{
  const candidate=dashboardResourceFixture().configuration
  const draft:BusinessConfigurationDraftResponseVersioned={ownerId:'owner',id:contentId,scope:'SOC',revision:1,baseVersion:2,status:'applied',hash,createdAt:'2026-10-01T00:00:00.000Z',updatedAt:'2026-10-01T00:00:00.000Z',candidate}

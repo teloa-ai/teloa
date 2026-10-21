@@ -149,6 +149,7 @@ export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.r
     const file=await readArtifactSnapshot(snapshotIds[0]!)
     return openedArtifactFile(file)
    }
+   if(reference.kind!=='group-resource')throw Error('该引用不通过群附件服务读取。')
    if(!groupId||!uuid(groupId))throw Error('群资料引用缺少所属群身份。')
    const version=await call('groups/resources/get',{groupId,resourceId:reference.id,resourceVersion:reference.version})
    if(!isGroupResourceVersion(version)||version.resourceId!==reference.id||version.groupId!==groupId||version.version!==reference.version)throw Error('群资料版本格式不正确。')

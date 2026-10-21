@@ -1,5 +1,5 @@
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,taskInput,businessTimeRanges,businessConfigurationFormatV2,readBusinessBuilderRequest,readBusinessConfigurationPageProjectionVersioned,type BusinessConfigurationPage,type BusinessConfigurationPageProjectionVersioned,type BusinessTimeRange,type BusinessObjectTypeDefinition,type BusinessViewWidgetResultV2} from '@teloa/contract'
+import {WorkError,taskInput,businessTimeRanges,businessConfigurationFormatV2,readBusinessBuilderRequest,readBusinessConfigurationPageProjectionVersioned,readBusinessDashboardShareTarget,type BusinessConfigurationPage,type BusinessConfigurationPageProjectionVersioned,type BusinessTimeRange,type BusinessObjectTypeDefinition,type BusinessViewWidgetResultV2,type BusinessDashboardShareSnapshot,type BusinessDashboardShareSection} from '@teloa/contract'
 import type {BusinessConfigurationActor,BusinessConfigurationDraftService} from './business-configuration-drafts.ts'
 import type {BusinessConfigurationStore} from './business-configuration-store.ts'
 import type {BusinessDefinitionSourceReader,BusinessDefinitionBundle,BusinessDefinitionBundleVersioned} from './business-definition-source.ts'
@@ -7,6 +7,7 @@ import type {BusinessSqlExecutor} from './business-sql-executor.ts'
 import {BusinessLedgerService} from './business-view-compute.ts'
 import {BusinessWidgetService,businessWidgetDefinitionHash} from './business-widgets.ts'
 import {BusinessViewV2Computer} from './business-view-compute-v2.ts'
+import {dashboardShareView,dashboardShareRaw,sealDashboardShareSnapshot} from './business-dashboard-share.ts'
 type Dependencies={drafts:Pick<BusinessConfigurationDraftService,'draftInTransaction'>;store:Pick<BusinessConfigurationStore,'currentInTransaction'>;definitions:Pick<BusinessDefinitionSourceReader,'forScope'|'forConfigurationCandidate'>&Partial<Pick<BusinessDefinitionSourceReader,'forScopeVersioned'|'forConfigurationCandidateVersioned'>>;executor:Pick<BusinessSqlExecutor,'schema'|'execute'>}
 const forbidden=()=>new WorkError('teloa/forbidden','当前主体未获准访问此业务页面。')
 const conflict=()=>new WorkError('teloa/version-conflict','业务配置草案已变化，请重新读取。')
@@ -50,7 +51,29 @@ export class BusinessConfigurationPageService{
    return readBusinessConfigurationPageProjectionVersioned({...(versioned?{format:'teloa.business-configuration-page/v2'}:{}),mode:'saved',scope,configurationVersion:current.version,configurationHash:current.hash,page})
   },signal)
  }
- private async project(db:PoolClient,ownerId:string,scope:string,pages:BusinessConfigurationPage[],bundles:BusinessDefinitionBundleVersioned[],pageId:string,requestedRange:BusinessTimeRange|undefined,versioned:boolean,signal?:AbortSignal):Promise<BusinessConfigurationPageProjectionVersioned['page']>{
+ /** 明确分享只读正式版本；页面与原始记录在同一事务、同一时刻取得，不调用刷新或来源连接。 */
+ async shareSnapshot(actor:BusinessConfigurationActor,input:unknown,signal?:AbortSignal):Promise<BusinessDashboardShareSnapshot>{
+  const target=readBusinessDashboardShareTarget(input)
+  if(target.kind!=='configuration')throw new WorkError('teloa/invalid-input','需要正式配置看板目标。')
+  if(!actor?.ownerId||!actor.scopeIds?.includes(target.scope))throw forbidden()
+  return this.transaction(async db=>{
+   const current=await this.dependencies.store.currentInTransaction(db,actor.ownerId,target.scope)
+   if(!current||current.version!==target.configurationVersion||current.hash!==target.configurationHash)throw conflict()
+   const versioned=current.manifest.format===businessConfigurationFormatV2,reader=this.dependencies.definitions
+   if(versioned&&!reader.forScopeVersioned)throw new WorkError('teloa/dependency-unavailable','富字段页面读取尚未接入。')
+   const bundles=versioned?await reader.forScopeVersioned!(db,actor.ownerId,target.scope):await reader.forScope(db,actor.ownerId,target.scope)
+   const definition=current.manifest.pages.find(page=>page.id===target.pageId)
+   if(!definition||definition.kind!=='dashboard')throw new WorkError('teloa/not-found','当前正式配置没有该看板页面。')
+   const dashboard=bundles.flatMap(bundle=>bundle.dashboards).find(row=>row.definition.id===definition.dashboardId)?.definition
+   if(!dashboard)throw new WorkError('teloa/source-unavailable','当前看板声明已不可读取。')
+   const all=bundles.flatMap(bundle=>bundle.widgets),rawAvailable=dashboard.widgets.every(id=>all.find(row=>row.definition.id===id)?.definition.kind==='view-ref')
+   const sections:BusinessDashboardShareSection[]|undefined=rawAvailable?[]:undefined,capturedAt=this.identity.now()
+   const page=await this.project(db,actor.ownerId,target.scope,current.manifest.pages,bundles,target.pageId,target.timeRange,versioned,signal,capturedAt,sections)
+   const projection=readBusinessConfigurationPageProjectionVersioned({...(versioned?{format:'teloa.business-configuration-page/v2'}:{}),mode:'saved',scope:target.scope,configurationVersion:current.version,configurationHash:current.hash,page})
+   return sealDashboardShareSnapshot({target,capturedAt,page:{kind:'configuration',projection},raw:sections?dashboardShareRaw(sections):{status:'unavailable',reason:'sql-source-lineage-unavailable'}})
+  },signal)
+ }
+ private async project(db:PoolClient,ownerId:string,scope:string,pages:BusinessConfigurationPage[],bundles:BusinessDefinitionBundleVersioned[],pageId:string,requestedRange:BusinessTimeRange|undefined,versioned:boolean,signal?:AbortSignal,shareCapturedAt?:string,shareSections?:BusinessDashboardShareSection[]):Promise<BusinessConfigurationPageProjectionVersioned['page']>{
   signal?.throwIfAborted()
   const definition=pages.find(page=>page.id===pageId)
   if(!definition)throw new WorkError('teloa/not-found','此业务配置没有该页面。')
@@ -67,14 +90,16 @@ export class BusinessConfigurationPageService{
   const allWidgets=bundles.flatMap(b=>b.widgets),views=bundles.flatMap(b=>b.views)
   const widgets=dashboard.widgets.map(id=>allWidgets.find(r=>r.definition.id===id)!.definition)
   if(versioned){
-   const computedAt=this.identity.now(),computer=new BusinessViewV2Computer({now:()=>computedAt}),results:BusinessViewWidgetResultV2[]=[]
+   const computedAt=shareCapturedAt??this.identity.now(),computer=new BusinessViewV2Computer({now:()=>computedAt}),results:BusinessViewWidgetResultV2[]=[]
    const objectTypes=bundles.flatMap(bundle=>bundle.objectTypes)
    for(const widget of widgets){
     if(widget.kind!=='view-ref'||!widget.viewRef)throw new WorkError('teloa/dependency-unavailable','富字段配置看板当前仅支持视图组件。')
     const record=views.find(view=>view.definition.id===widget.viewRef)
     const objectType=objectTypes.find(type=>type.definition.id===record?.definition.objectType)
     if(!record||!objectType)throw new WorkError('teloa/source-unavailable','业务看板引用的视图或对象类型不在同一配置内。')
-    const view=await computer.computeInTransaction(db,{ownerId,scopeIds:[scope]},{scope,objectType,view:record,objectTypes},signal)
+    const shared=shareSections?await dashboardShareView(db,ownerId,scope,widget,record,objectType,objectTypes,computedAt,signal):undefined
+    if(shared)shareSections!.push(shared.section)
+    const view=shared?.result.view??await computer.computeInTransaction(db,{ownerId,scopeIds:[scope]},{scope,objectType,view:record,objectTypes},signal)
     results.push({format:'teloa.business-view-widget-result/v2',widgetId:widget.id,definitionHash:businessWidgetDefinitionHash(widget),computedAt,view:{...view,rows:view.rows.slice(0,50),...(view.objects?{objects:view.objects.slice(0,50)}:{})},stale:false})
    }
    const viewRefs=[...new Set(widgets.map(widget=>widget.viewRef!))].map(id=>{
@@ -95,6 +120,14 @@ export class BusinessConfigurationPageService{
   const ctx={ownerId,scope,objectTypes,views:legacyViews,now:this.identity.now(),db},results=[]
   for(const widget of widgets){
    signal?.throwIfAborted()
+   if(shareSections&&widget.kind==='view-ref'){
+    const view=views.find(record=>record.definition.id===widget.viewRef),objectType=bundles.flatMap(bundle=>bundle.objectTypes).find(record=>record.definition.id===view?.definition.objectType)
+    if(!view||!objectType)throw new WorkError('teloa/source-unavailable','看板原始记录来源已不可读取。')
+    const shared=await dashboardShareView(db,ownerId,scope,widget,view,objectType,bundles.flatMap(bundle=>bundle.objectTypes),shareCapturedAt!,signal)
+    shareSections.push(shared.section)
+    results.push({...shared.legacy,rows:shared.legacy.rows.slice(0,50),rowCount:Math.min(50,shared.legacy.rowCount)})
+    continue
+   }
    // SQL 使用独立只读执行器连接；不宣称与 view-ref 共用同一 MVCC 时刻。
    const {throttled:_,...result}=await computer.compute(ctx,widget,50,signal,timeRange)
    results.push(result)

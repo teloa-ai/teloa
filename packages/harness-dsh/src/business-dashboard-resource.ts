@@ -5,7 +5,7 @@ export const businessDashboardResourceEndpoints=['business-dashboard-resources/e
 const inputKeys:Record<string,readonly string[]>={
  'business-dashboard-resources/export':['scope','id','version'],
  'business-dashboard-resources/prepare':['requestId','contentId','contentHash','resourceId','target','objectMapping'],
- 'business-dashboard-resources/prepare-upgrade':['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices','mode'],
+ 'business-dashboard-resources/prepare-upgrade':['requestId','adoptionId','candidateContentId','candidateContentHash','resourceId','expectedConfigurationVersion','choices','mode','preserveDataShape'],
  'business-dashboard-resources/adoption':['draftId'],
  'business-dashboard-resources/preview':['draftId','expectedRevision'],
  'business-dashboard-resources/apply':['requestId','draftId','expectedRevision','expectedBaseVersion','previewReceipt'],
@@ -29,7 +29,8 @@ export function createBusinessDashboardResourceHandler(ownerId:string,scopeIds:(
   }
   if(endpoint==='business-dashboard-resources/prepare-upgrade'){
    const result=await service.prepareUpgrade(actor,payload)
-   if(!Array.isArray(result.conflicts)||!Array.isArray(result.changed)||result.changed.some(key=>typeof key!=='string')||result.conflicts.some(row=>!isRecord(row)||typeof row.key!=='string'||!['definition','page','home-page'].includes(row.entity)||typeof row.id!=='string')||result.draft!==null&&result.conflicts.length)throw new WorkError('teloa/invalid-host-response','升级差异回包格式不正确。')
+   const deferred:unknown='deferred' in result?result.deferred:undefined
+   if(!Array.isArray(result.conflicts)||!Array.isArray(result.changed)||result.changed.some(key=>typeof key!=='string')||deferred!==undefined&&(!Array.isArray(deferred)||deferred.length>4096||deferred.some((key:unknown)=>typeof key!=='string'||key.length>400||/[\x00-\x1f\x7f]/.test(key)))||result.conflicts.some(row=>!isRecord(row)||typeof row.key!=='string'||!['definition','page','home-page'].includes(row.entity)||typeof row.id!=='string')||result.draft!==null&&result.conflicts.length)throw new WorkError('teloa/invalid-host-response','升级差异回包格式不正确。')
    const draft=result.draft===null?null:readBusinessConfigurationDraftResponseVersioned(result.draft)
    if(draft&&draft.ownerId!==ownerId)throw new WorkError('teloa/invalid-host-response','升级草案不属于当前本人。')
    return {...result,draft}

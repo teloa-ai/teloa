@@ -2,6 +2,7 @@ import {
  businessTimeRanges,isBusinessScopeKey,readBusinessDashboardPage,readBusinessDashboardSummaries,readBusinessSyncRun,readBusinessSyncStatus,readBusinessSyncRuleState,readBusinessSyncRuleView,readBusinessRuntimeState,
  type BusinessDashboardPage,type BusinessDashboardSummary,type BusinessSyncRun,type BusinessSyncStatus,type BusinessSyncRuleState,type BusinessSyncRuleView,type BusinessRuntimeState,type BusinessTimeRange,
 } from '@teloa/contract'
+import {createDashboardShareApi} from './dashboard-share-api.ts'
 
 type Call=(method:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>
 
@@ -35,6 +36,7 @@ function pageFor(page:BusinessDashboardPage,dashboardId:string,range:{timeRange?
  */
 export function createBusinessDashboardApi(call:Call){
  return {
+  shareSnapshot:createDashboardShareApi(call),
   async list(input:{scope:string},signal?:AbortSignal):Promise<BusinessDashboardSummary[]>{
    const scope=scopeOf(input.scope)
    return readBusinessDashboardSummaries(await call('business-dashboards/list',{scope},signal),scope)
@@ -96,4 +98,4 @@ export function createBusinessDashboardApi(call:Call){
  }
 }
 
-export type BusinessDashboardApi=ReturnType<typeof createBusinessDashboardApi>
+export type BusinessDashboardApi=Omit<ReturnType<typeof createBusinessDashboardApi>,'shareSnapshot'>&Partial<Pick<ReturnType<typeof createBusinessDashboardApi>,'shareSnapshot'>>

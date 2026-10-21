@@ -11,6 +11,13 @@ const attachmentId='33333333-3333-4333-8333-333333333333'
 const resourceId='44444444-4444-4444-8444-444444444444'
 const sha256='a'.repeat(64)
 const at='2026-09-21T00:00:00.000Z'
+
+test('资料库引用不误走群附件或群资料读取口',async()=>{
+ const calls:string[]=[]
+ const api=createGroupAttachmentApi(async endpoint=>{calls.push(endpoint);throw Error('不应调用')})
+ await assert.rejects(api.openReference({kind:'work-resource',id:resourceId,version:3},groupId),/不通过群附件服务读取/)
+ assert.deepEqual(calls,[])
+})
 /** 与 group-attachment-api.ts 里 sha256Hex 同一算法，测试侧用 node:crypto 现算，不硬编码哈希值。 */
 const hashOf=(bytes:number[]):string=>createHash('sha256').update(Buffer.from(bytes)).digest('hex')
 

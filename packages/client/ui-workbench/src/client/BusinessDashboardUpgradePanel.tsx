@@ -11,17 +11,18 @@ import {BusinessDashboardMarketPanel} from './BusinessDashboardMarketPanel.js'
 import {useI18n} from './i18n/provider.js'
 import css from './BusinessDashboardUpgradePanel.module.css'
 type Adoption={draft:BusinessConfigurationDraftResponseVersioned;result:DashboardMarketAdoption;resource:BusinessDashboardResourceDefinition}
-type Props={item:MarketItem;candidates:readonly MarketItem[];api:BusinessDashboardResourceApi;adoption:Adoption;hydrate:(item:MarketItem)=>Promise<MarketItem>;spaces:readonly BusinessScopeLabel[];refreshScopes?:(()=>Promise<unknown>)|undefined;colorScheme:'light'|'dark';openSaved?:(scope:string)=>void}
+type Props={item:MarketItem;candidates:readonly MarketItem[];api:BusinessDashboardResourceApi;adoption:Adoption;hydrate:(item:MarketItem)=>Promise<MarketItem>;spaces:readonly BusinessScopeLabel[];refreshScopes?:(()=>Promise<unknown>)|undefined;colorScheme:'light'|'dark';openSaved?:(scope:string)=>void;openConnections?:(scope:string)=>void}
 /** 升级只能从原本人采用记录发起；固定新版后仍逐项比较，不沿用目录的「已添加」记号。 */
 export function BusinessDashboardUpgradePanel(props:Props){
  const {t,locale}=useI18n(),{item,api,adoption}=props,contentId=item.contentStorage?.contentId
  const [open,setOpen]=useState(false),[selected,setSelected]=useState(''),[candidate,setCandidate]=useState<MarketItem>(),[candidateVersion,setCandidateVersion]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(false),[conflicts,setConflicts]=useState<DashboardUpgradeConflict[]>([]),[choices,setChoices]=useState<Record<string,DashboardUpgradeChoice>>({}),[prepared,setPrepared]=useState<MarketItem>(),[locked,setLocked]=useState(false)
+ const [preparedPreserved,setPreparedPreserved]=useState(false)
  const [mode,setMode]=useState<'upgrade'|'restore'>('upgrade')
  const restoreLabel=locale==='zh-CN'?'恢复模板配置':locale==='zh-TW'||locale==='zh-HK'?'還原範本配置':'Restore template configuration'
  const candidateLabel=mode==='restore'?(locale==='zh-CN'?'已保存的旧版本':locale==='zh-TW'||locale==='zh-HK'?'已儲存的舊版本':'Saved earlier version'):t('market.dashboard.candidate')
  const eligible=(version:string,kind:'upgrade'|'restore')=>kind==='restore'?compareSemver(version,adoption.resource.version)<0:compareSemver(version,adoption.resource.version)>0
  const pending=useRef<DashboardMarketPending['upgrade']>(),running=useRef(false),alive=useRef(true)
- const draftJournalKey=(id:string)=>'upgrade:'+adoption.draft.id+':'+id
+ const draftJournalKey=(id:string,preserved=false)=>'upgrade:'+adoption.draft.id+':'+id+(preserved?':preserve':'')
  const allOptions=props.candidates.filter(value=>value.contentStorage?.contentId&&value.contentStorage.contentId!==contentId&&isIndustryManifest(value.manifest)&&value.manifest.resources.some(resource=>resource.kind==='business-configuration'&&(resource.source.kind==='public'?resource.source.id:resource.id)===adoption.resource.id&&compareSemver(resource.version,adoption.resource.version)!==0))
  const options=allOptions.filter(value=>isIndustryManifest(value.manifest)&&value.manifest.resources.some(resource=>resource.kind==='business-configuration'&&(resource.source.kind==='public'?resource.source.id:resource.id)===adoption.resource.id&&eligible(resource.version,mode)))
  useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
@@ -44,21 +45,23 @@ export function BusinessDashboardUpgradePanel(props:Props){
    const option=allOptions.find(value=>value.contentStorage?.contentId===stored.request.candidateContentId);if(!option)throw Error('source')
    const {fixed,version}=await read(option,nextMode);if(fixed.packageContent!.hash!==stored.request.candidateContentHash||version!==stored.candidateVersion)throw Error('changed')
    setSelected(option.contentStorage!.contentId);setCandidate(fixed);setCandidateVersion(version);setChoices(stored.request.choices??{})
-   if(stored.draftId){const saved=api.journal?.read(draftJournalKey(option.contentStorage!.contentId));if(saved?.draft?.id!==stored.draftId)throw Error('draft');setPrepared(fixed)}
+   if(stored.draftId){const saved=api.journal?.read(draftJournalKey(option.contentStorage!.contentId,stored.request.preserveDataShape===true));if(saved?.draft?.id!==stored.draftId)throw Error('draft');setPreparedPreserved(stored.request.preserveDataShape===true);setPrepared(fixed)}
   }
  })
  const choose=(id:string)=>{setSelected(id);setCandidate(undefined);setCandidateVersion('');setConflicts([]);setChoices({});pending.current=undefined;if(!id)return;void act(async()=>{const option=options.find(value=>value.contentStorage!.contentId===id);if(!option)throw Error('source');const {fixed,version}=await read(option);if(alive.current){setCandidate(fixed);setCandidateVersion(version)}})}
- const prepare=()=>act(async()=>{
+ const prepareRequest=async(preserveDataShape=false)=>{
   if(!contentId||!candidate)return
   let intention=pending.current
-  if(!intention){
+  if(!intention||preserveDataShape&&intention.request.preserveDataShape!==true){
    const current=await api.current({scope:adoption.result.scope});if(!current)throw Error('configuration')
    const {fixed,resource,version}=await read(candidate)
-   intention={request:{requestId:crypto.randomUUID(),adoptionId:adoption.draft.id,candidateContentId:fixed.contentStorage!.contentId,candidateContentHash:fixed.packageContent!.hash,resourceId:resource.id,expectedConfigurationVersion:current.version,mode},candidateVersion:version}
+   intention={request:{requestId:crypto.randomUUID(),adoptionId:adoption.draft.id,candidateContentId:fixed.contentStorage!.contentId,candidateContentHash:fixed.packageContent!.hash,resourceId:resource.id,expectedConfigurationVersion:current.version,mode,...preserveDataShape?{preserveDataShape:true}:{}},candidateVersion:version}
   }
   const request=locked?intention.request:{...intention.request,...(Object.keys(choices).length?{choices}:{})}
   intention={...intention,request};pending.current=intention
-  const original=api.journal?.read(contentId)??{draft:adoption.draft,result:adoption.result}
+  const stored=api.journal?.read(contentId)
+  // 恢复到同一内容版本后，父采用可能已经换成新的草案；不能把新请求挂到初次采用的旧草案上。
+  const original=stored?.draft?.id===adoption.draft.id?stored:{draft:adoption.draft,result:adoption.result}
   api.journal?.write(contentId,{...original,upgrade:intention});setLocked(true)
   let value:Awaited<ReturnType<BusinessDashboardResourceApi['prepareUpgrade']>>
   try{value=await api.prepareUpgrade(request)}catch(error){
@@ -68,13 +71,14 @@ export function BusinessDashboardUpgradePanel(props:Props){
   if(value.draft){
    if(value.draft.scope!==adoption.result.scope)throw Error('scope')
    // 先保存新草案，再给原采用记录加指针；故障不移除原采用事实。
-   api.journal?.write(draftJournalKey(request.candidateContentId),{resourceId:request.resourceId,draft:value.draft})
+   api.journal?.write(draftJournalKey(request.candidateContentId,request.preserveDataShape===true),{resourceId:request.resourceId,draft:value.draft,...value.deferred?{deferred:value.deferred}:{}})
    api.journal?.write(contentId,{...original,upgrade:{...intention,draftId:value.draft.id}})
-   setPrepared(candidate);setLocked(false)
+   setPreparedPreserved(request.preserveDataShape===true);setPrepared(candidate);setLocked(false)
   }else{setConflicts(value.conflicts);setLocked(false)}
- })
+ }
+ const prepare=()=>act(()=>prepareRequest())
  const close=()=>{if(locked)return;if(contentId){const stored=api.journal?.read(contentId);if(stored){const {upgrade:_,...original}=stored;api.journal?.write(contentId,original)}}setOpen(false);setCandidate(undefined);setSelected('');setConflicts([]);setChoices({});pending.current=undefined}
- if(prepared)return <BusinessDashboardMarketPanel embedded journalKey={draftJournalKey(prepared.contentStorage!.contentId)} onDiscardDraft={()=>{setPrepared(undefined);close()}} key={prepared.contentStorage!.contentId} item={prepared} api={api} refreshScopes={props.refreshScopes} spaces={props.spaces} colorScheme={props.colorScheme} upgrade={next=><BusinessDashboardUpgradePanel {...props} item={prepared} adoption={next}/>} {...(props.openSaved?{openSaved:props.openSaved}:{})}/>
+ if(prepared)return <BusinessDashboardMarketPanel embedded journalKey={draftJournalKey(prepared.contentStorage!.contentId,preparedPreserved)} onDiscardDraft={()=>{setPrepared(undefined);close()}} key={prepared.contentStorage!.contentId+String(preparedPreserved)} item={prepared} api={api} refreshScopes={props.refreshScopes} spaces={props.spaces} colorScheme={props.colorScheme} {...(props.openConnections?{openConnections:props.openConnections}:{})} {...(mode==='upgrade'&&!preparedPreserved?{onPreserveDataShape:()=>prepareRequest(true)}:{})} upgrade={next=><BusinessDashboardUpgradePanel {...props} item={prepared} adoption={next}/>} {...(props.openSaved?{openSaved:props.openSaved}:{})}/>
  return <section className={css.panel} aria-label={t('market.dashboard.upgrade')}>
   {!open?<><button type="button" disabled={busy||!api.journal||!contentId} onClick={()=>void start()}>{t('market.dashboard.upgrade')}</button><button type="button" disabled={busy||!api.journal||!contentId} onClick={()=>void start('restore')}>{restoreLabel}</button></>:<><header><h3>{mode==='restore'?restoreLabel:t('market.dashboard.upgrade')}</h3><p className={css.versionChange}>{adoption.resource.id} · v{adoption.resource.version} <ArrowRight size={14} role="img" aria-label={t('presentation.changeTo')}/> {candidateVersion||'…'}</p></header><p>{mode==='restore'?(locale==='zh-CN'?'仅恢复模板配置，保留记录、成果和已发生的业务操作。':locale==='zh-TW'||locale==='zh-HK'?'只還原範本配置，保留記錄、成果及已發生的業務操作。':'Restore template configuration only. Records, results and completed business actions are preserved.'):t('market.dashboard.upgradeBoundary')}</p>
    <label>{candidateLabel}<select aria-label={candidateLabel} value={selected} disabled={busy||locked} onChange={event=>choose(event.target.value)}><option value="">{t('market.industry.update.choose')}</option>{options.map(option=><option key={option.contentStorage!.contentId} value={option.contentStorage!.contentId}>{option.title} · v{option.version}</option>)}</select></label>

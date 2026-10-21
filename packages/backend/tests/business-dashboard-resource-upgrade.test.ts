@@ -5,6 +5,25 @@ import {dashboardBody} from './fixtures/business-dashboard.ts'
 import {mergeBusinessDashboardResourceUpgrade} from '../src/work/business-dashboard-resource-upgrade.ts'
 
 const configuration=()=>readBusinessConfigurationCandidateV2(dashboardBody().configuration)
+test('本人选择保留数据形状时只暂缓字段与新维度，保留新版其他改进并明确列出暂缓项',async()=>{
+ const {preserveBusinessDashboardDataShape}=await import('../src/work/business-dashboard-resource-upgrade.ts')
+ assert.equal(typeof preserveBusinessDashboardDataShape,'function')
+ const current=configuration(),candidate=configuration(),object=candidate.definitions.find(row=>row.kind==='object-type')!,view=candidate.definitions.find(row=>row.kind==='view')!
+ if(object.kind!=='object-type'||view.kind!=='view')throw Error('fixture')
+ object.definition.fields.push({name:'channel',label:'渠道',from:'渠道',type:'enum',required:true,values:['官网','线下']})
+ view.definition.dimension={field:'channel',limit:10};view.definition.title='新版改进的标题'
+ const records=candidate.pages.find(row=>row.kind==='records')!;if(records.kind!=='records')throw Error('fixture');records.fields.push('channel')
+ const before=structuredClone({current,candidate}),kept=preserveBusinessDashboardDataShape({current,candidate})
+ assert.deepEqual(kept.configuration.definitions.find(row=>row.kind==='object-type'),current.definitions.find(row=>row.kind==='object-type'))
+ const keptView=kept.configuration.definitions.find(row=>row.kind==='view')!;if(keptView.kind!=='view')throw Error('fixture')
+ assert.equal(keptView.definition.title,'新版改进的标题');assert.deepEqual(keptView.definition.dimension,(current.definitions.find(row=>row.kind==='view')! as typeof view).definition.dimension)
+ assert.deepEqual(kept.configuration.pages.find(row=>row.kind==='records'),current.pages.find(row=>row.kind==='records'))
+ assert.ok(kept.deferred.includes('object:alert:channel'));assert.ok(kept.deferred.includes('view:states:dimension:channel'));assert.ok(kept.deferred.includes('page:alerts:field:channel'))
+ assert.deepEqual({current,candidate},before)
+ // 不兼容的筛选与度量不能静默丢弃，也不能借保留形状放行。
+ view.definition.filters=[{field:'channel',op:'eq',values:['官网']}]
+ assert.throws(()=>preserveBusinessDashboardDataShape({current,candidate}),{code:'teloa/invalid-input'})
+})
 test('未改字段的既有坏值显式警告；新增必填或收紧规则仍阻止采用，警告不能伪装类型变更',async()=>{
  const {inspectBusinessTemplateUpgradeImpact}=await import('../src/work/business-dashboard-resource-upgrade.ts'),current=configuration(),candidate=configuration()
  candidate.title='仅改业务标题'

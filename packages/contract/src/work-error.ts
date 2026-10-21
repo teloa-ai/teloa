@@ -10,6 +10,8 @@ export const workErrorCodes = [
   'teloa/invalid-host-response',
   // 正式码之后追加：交付需本人复核
   'teloa/delivery-review-required',
+  // 看板分享的原始记录或字节超限，客户端引导缩小范围而非重试来源连接。
+  'teloa/dashboard-share-limit',
   // 既有位置接受
   'teloa/storage-unavailable',
   'teloa/not-found',

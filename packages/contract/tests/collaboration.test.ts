@@ -272,3 +272,11 @@ test('员工显示位置和作者仅为服务端可读投影，旧九键消息�
  for(const patch of [{contextMode:'unknown'},{replyToMessageId:messageId},{author:{...author,kind:'self'}},{author:{...author,version:0}},{author:{...author,ownerId:'other'}},{ownerId:'other'}])assert.equal(isGroupMessage({...old,...patch}),false)
  for(const patch of [{contextMode:'main'},{author}])assert.throws(()=>groupSendInput({requestId,groupId,expectedVersion:1,text:'测试',...patch}))
 })
+
+test('全局工作资料群引用固定身份与版本，不改变原三类引用语义',()=>{
+ const reference={kind:'work-resource',id:'abcdefab-cdef-4abc-a123-abcdefabcdef',version:1}
+ assert.equal(isMessageReference(reference),true)
+ const sent=groupSendInput({requestId:'22222222-2222-4222-a222-222222222222',groupId:'33333333-3333-4333-a333-333333333333',expectedVersion:1,text:'固定知识',references:[{...reference,id:reference.id.toUpperCase()}]})
+ assert.equal(sent.references?.[0]?.id,reference.id.toLowerCase())
+ for(const value of [{...reference,version:0},{...reference,id:'file-opaque'},{...reference,scope:'general'}])assert.equal(isMessageReference(value),false)
+})
