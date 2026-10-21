@@ -351,8 +351,8 @@ async function* githubResponseBody(body:ReadableStream<Uint8Array>|null){
 }
 const githubHttp:GithubHttpPort={request:async request=>{
  const response=await fetch(request.url,{method:request.method,headers:request.headers,redirect:request.redirect,signal:request.signal})
- // 大小与限流头用于边界和失败说明；Location 交后端核对固定 GitHub API 的仓库迁移，不由 fetch 自动跟随。
- const headers:Record<string,string|undefined>={'content-length':response.headers.get('content-length')??undefined,'retry-after':response.headers.get('retry-after')??undefined,location:response.headers.get('location')??undefined}
+ // 大小与限流头用于边界和失败说明；Location 与归档文件名交后端核对固定来源的仓库迁移，不由 fetch 自动跟随。
+ const headers:Record<string,string|undefined>={'content-length':response.headers.get('content-length')??undefined,'retry-after':response.headers.get('retry-after')??undefined,location:response.headers.get('location')??undefined,'content-disposition':response.headers.get('content-disposition')??undefined}
  response.headers.forEach((value,name)=>{if(name.startsWith('x-ratelimit-'))headers[name]=value})
  return {status:response.status,headers,body:githubResponseBody(response.body)}
 }}
