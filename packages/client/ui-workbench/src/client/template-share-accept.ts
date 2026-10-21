@@ -1,9 +1,11 @@
 import {industryTeamSeed,industryTeamRole,type IndustryTeamSeed} from './industry-team.ts'
-import type {MarketCatalogEntry,TemplateShareIntent} from '@teloa/contract'
+import {marketCatalogUpstreamTreeInput,type MarketCatalogEntry,type TemplateShareIntent} from '@teloa/contract'
 import type {RoleFields} from './role-preview.ts'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.ts'
 import type {IndustryLoadCreateInput,IndustryLoadRecord,IndustryPluginHoldReason,IndustryReadiness,IndustryReadinessRow} from './industry-load-api.ts'
 import type {MarketItem} from './market-preview.ts'
+import {loadCatalogListing,type MarketCatalogApi} from './market-catalog-api.ts'
+import type {MarketContentApi} from './market-content-api.ts'
 import {createTemplateAcceptance,type TemplateAcceptanceResult} from './employee-template-share.ts'
 import {shareIndustryItem} from './industry-directory.ts'
 import {referenceCandidates,resolveIndustryReferences} from './industry-reference.ts'
@@ -55,6 +57,28 @@ export function resolvePublicCatalogEntry<T extends {entry:MarketCatalogEntry}>(
  const found=items.filter(item=>item.entry.kind==='skill'&&item.entry.skill.name===publicId&&item.entry.version===version)
  if(found.length!==1)throw Object.assign(Error(found.length?'Public skill reference is ambiguous.':'Public skill reference is not in the catalog.'),{code:'teloa/source-unavailable'})
  return found[0]!
+}
+
+/**
+ * 当前目录的 addedContentId 是本人内容身份与信任摘要的查询信号；上游来源还由宿主核原导入回执、条目版本与树。
+ * hydrate 再按本人权限读取、重算完整字节与信任摘要。这里继续核完整文件集合，不能用同名内容或旧目录替代。
+ * 已有内容读不出或不匹配时保留原失败，不静默下载另一份；只有当前目录明确未添加才走原 add。
+ */
+export async function readPublicCatalogSkill(catalog:Pick<MarketCatalogApi,'list'|'add'>,content:Pick<MarketContentApi,'hydrate'>,{publicId,version}:{publicId:string;version:string}):Promise<MarketItem>{
+ const found=resolvePublicCatalogEntry((await loadCatalogListing(catalog)).items,publicId,version)
+ const entry=found.entry,unavailable=()=>Object.assign(Error('Public skill content does not match the current catalog source.'),{code:'teloa/source-unavailable'})
+ if(entry.kind!=='skill'||entry.compatibility.status==='unsupported')throw unavailable()
+ const files=entry.delivery==='upstream'?entry.upstream.files:found.artifact?.files
+ const treeHash=entry.delivery==='upstream'?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream)))),byte=>byte.toString(16).padStart(2,'0')).join(''):found.artifact?.treeHash
+ if(!files?.length||!treeHash)throw unavailable()
+ const contentId=found.addedContentId===null?(await catalog.add(entry.id,{version,treeHash})).contentId:found.addedContentId
+ const item=await content.hydrate({kind:'skill',contentStorage:{contentId,createdAt:new Date().toISOString(),loaded:true}} as MarketItem),skill=item.atomicSkill
+ if(item.kind!=='skill'||item.contentStorage?.contentId!==contentId||!item.contentStorage.loaded||item.version!==version||!skill||skill.id!==publicId||skill.version!==version||skill.entryPath!==publicId+'/SKILL.md'||!item.trust||item.trust.review.conclusion!=='approved'||skill.files.length!==files.length)throw unavailable()
+ for(const expected of files){
+  const actual=skill.files.find(file=>file.path===publicId+'/'+expected.path)
+  if(!actual||actual.hash!==expected.sha256||expected.size!==null&&actual.bytes.byteLength!==expected.size)throw unavailable()
+ }
+ return item
 }
 
 /** 团队协调关系从加载真源读回：协调者 → 成员的 `role-coordination` 关系映射到实际员工；旧包没有声明时为空。 */

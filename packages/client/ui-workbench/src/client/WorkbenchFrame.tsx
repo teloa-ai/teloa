@@ -19,11 +19,10 @@ import {conversationHeaderCopy} from './conversation-header-copy.js'
 import {DetailsMenu} from './DetailsMenu.js'
 import {leaseNativeSidebarAccessibility} from './native-sidebar-accessibility.js'
 import {TemplateShareReceive} from './TemplateShareReceive.js'
-import {createShareAcceptance,resolvePublicCatalogEntry} from './template-share-accept.js'
+import {createShareAcceptance,readPublicCatalogSkill} from './template-share-accept.js'
 import {ShareDraftDrawer,TemplateShareProvider,type ShareBridge,type TemplateShareSources} from './EmployeeTemplateShare.js'
 import type {SharePackage} from './share-package-plan.js'
 import {resolveTemplateShareSkills} from './template-share-skill-sources.js'
-import {loadCatalogListing} from './market-catalog-api.js'
 import type {TemplateShareIntent} from '@teloa/contract'
 import {WorkProgressPanel} from './WorkProgressPanel.js'
 import type {WorkControlApi} from './work-control-api.js'
@@ -972,11 +971,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     createRole:async(fields,requestId)=>{const row=await roleApi.create(fields,requestId);mergeRoles([row]);return row.id},
     // v2 复用固定内容 → 加载 → 一键准备：岗位、资料、连接与协调关系都落在同一加载真源，刷新后可从服务读回。
     industry:{
-      publicSkill:async({publicId,version})=>{
-        const found=resolvePublicCatalogEntry((await loadCatalogListing(marketCatalogApi)).items,publicId,version)
-        const {contentId}=await marketCatalogApi.add(found.entry.id,found.artifact?{version:found.entry.version,treeHash:found.artifact.treeHash}:undefined)
-        return marketContentApi.hydrate({kind:'skill',contentStorage:{contentId,createdAt:new Date().toISOString(),loaded:true}} as MarketItem)
-      },
+      publicSkill:input=>readPublicCatalogSkill(marketCatalogApi,marketContentApi,input),
       target:async()=>{const space=await businessSpaceApi.current();return {kind:'existing',spaceId:space.id,expectedVersion:space.version}},
       importContent:async(item,requestId)=>{const saved=await marketContentApi.importIndustry(item,requestId);const current=marketRef.current;changeMarket({...current,items:mergeMarketItems(current.items,[saved])});return saved},
       load:async request=>{const row=await industryLoadApi.create(request);mergeIndustryLoad(row);await loadBusinessDirectory();return row},

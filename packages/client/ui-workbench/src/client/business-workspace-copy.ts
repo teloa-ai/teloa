@@ -10,7 +10,7 @@ const copy={
  start:['开始工作','開始工作','Start work'],createGroup:['发起协作群','發起協作群','Create group'],configure:['业务设置','業務設定','Business settings'],
  current:['正在推进','正在推進','In progress'],attention:['需要你处理','需要你處理','Needs you'],completed:['已完成工作','已完成工作','Completed work'],active:['在岗员工','在職員工','Active employees'],
  progress:['员工工作进展','員工工作進度','Team progress'],work:['当前工作','目前工作','Current work'],history:['完成记录','完成記錄','Completed work'],
- emptyWork:['还没有进行中的工作','還沒有進行中的工作','No work in progress'],emptyWorkHint:['提出目标、补充资料，就能开始；也可以从业务内容中交办工作。','提出目標、補充資料，就能開始；也可以從業務內容中交辦工作。','Describe a goal and add context to start, or dispatch work from a record.'],
+ emptyWork:['还没有进行中的工作','還沒有進行中的工作','No work in progress'],emptyCompleted:['还没有已完成的工作','還沒有已完成的工作','No completed work yet'],emptyWorkHint:['提出目标、补充资料，就能开始；也可以从业务内容中交办工作。','提出目標、補充資料，就能開始；也可以從業務內容中交辦工作。','Describe a goal and add context to start, or dispatch work from a record.'],
  emptyAttention:['暂时没有需要你处理的事项','暫時沒有需要你處理的事項','Nothing needs your attention'],emptyStaff:['还没有参与这项业务的员工','還沒有參與這項業務的員工','No employees assigned to this business'],manageStaff:['管理员工','管理員工','Manage employees'],
  emptyGroups:['还没有协作群','還沒有協作群','No groups yet'],groupHint:['为同一目标组群，共用平台里的员工、消息与资料。','為同一目標組群，共用平台中的員工、訊息與資料。','Bring the same platform employees together with shared messages and context.'],
  idle:['暂无进行中的工作','暫無進行中的工作','No work in progress'],noWork:['无进行中工作','無進行中工作','No active work'],workCount:['{count} 项','{count} 項','{count} active'],talk:['对话','對話','Chat'],paused:['暂停','暫停','Paused'],working:['在岗','在職','Active'],

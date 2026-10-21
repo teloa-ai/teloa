@@ -833,10 +833,10 @@ test('来源枚举重复非法不能续领纠参名额，冻结草稿不作为�
 
 test('复核阶段以宿主系统段明确工具回执协议，普通起草不带该段且JSON正文不代替工具',async t=>{
  const f=await runtime(t,[text('原草稿'),submit(revise()),submit(verify())]);await f.send()
- const marker='当前处于宿主交付复核阶段'
+ const marker='Host delivery-review phase:'
  assert.ok(!JSON.stringify(f.adapter.requests[0]).includes(marker))
  assert.ok(JSON.stringify(f.adapter.requests[1]).includes(marker))
- assert.match(JSON.stringify(f.adapter.requests[1]),/JSON正文或代码块不构成工具回执/)
+ assert.match(JSON.stringify(f.adapter.requests[1]),/JSON prose\/code fences are not receipts/)
  assert.match(JSON.stringify(f.adapter.requests[2]),/verify/)
 })
 

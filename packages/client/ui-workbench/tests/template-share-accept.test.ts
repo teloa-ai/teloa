@@ -1,10 +1,17 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {buildSharePlan,sharePackageDigest,sharePackageSummary} from '../src/client/share-package-plan.ts'
-import {createShareAcceptance,resolvePublicCatalogEntry,shareIndustryItem,teamCoordination,type ShareAcceptPorts} from '../src/client/template-share-accept.ts'
+import {createShareAcceptance,readPublicCatalogSkill,resolvePublicCatalogEntry,shareIndustryItem,teamCoordination,type ShareAcceptPorts} from '../src/client/template-share-accept.ts'
 import {templateShareErrorKey} from '../src/client/template-share-errors.ts'
 import {buildEmployeeTemplate} from '../src/client/employee-template-share.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
+import {createHash} from 'node:crypto'
+import {marketCatalogUpstreamTreeInput,readMarketCatalogEntry} from '@teloa/contract'
+import {createMarketCatalogApi,type MarketCatalogItem} from '../src/client/market-catalog-api.ts'
+import {createMarketContentApi} from '../src/client/market-content-api.ts'
+import {readAtomicSkill} from '../src/client/atomic-skill.ts'
+import {catalogEntry} from './market-catalog-fixture.ts'
+import type {MarketItem} from '../src/client/market-preview.ts'
 
 const duties={triggers:['New ticket arrives'],autonomousActions:['Draft a reply'],confirmationPoints:['Before refunds'],escalationRules:['Legal threats go to the lead'],deliveryChecks:['Cite the source']}
 const role=(id:string,name:string,skills:string[]=[],responsibility=duties)=>({id,name,kind:'employee' as const,duty:'Verify sources.',dataScope:'Provided documents.',executionScope:'Confirm external writes.',skills,knowledge:[],scopes:['general'],responsibility})
@@ -48,6 +55,70 @@ test('public skills resolve by original name and pinned version to exactly one c
  assert.throws(()=>resolvePublicCatalogEntry(catalog,'internal-comms','9.9.9'),/not in the catalog/,'no fallback to latest')
  assert.throws(()=>resolvePublicCatalogEntry([...catalog,entry('mirror.internal-comms','internal-comms','1.2.0')],'internal-comms','1.2.0'),/ambiguous/,'never takes the first of several')
  assert.throws(()=>resolvePublicCatalogEntry(catalog,'anthropic.internal-comms','1.2.0'),/not in the catalog/,'the dotted catalog id is not a public name')
+})
+
+test('shared public sources reuse owner-bound catalog contents across recovery and never replace a bad lookup',async t=>{
+ const names=['block-kit','create-slack-app','slack-api','slack-cli','slack-docs','slack-messaging','slack-search','test-slack-app'],version='1.4.1',createdAt='2026-10-21T08:00:00.000Z'
+ const sha=(value:string)=>createHash('sha256').update(value).digest('hex'),stable=(value:unknown):string=>JSON.stringify(value,(_,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item)
+ const sources=await Promise.all(names.map(async(name,index)=>{
+  const raw=new TextEncoder().encode(skillText(name)),id=`00000000-0000-4000-8000-${String(index+1).padStart(12,'0')}`
+  const entry=readMarketCatalogEntry({...catalogEntry(),id:'cursor.slack-'+name,delivery:'upstream',version,skill:{name,title:{'zh-CN':name,en:name},summary:{'zh-CN':'公开技能',en:'Public skill'}},license:{spdx:'MIT',files:[]},compatibility:{...catalogEntry().compatibility,teloa:'>=0.2.0-alpha.8'},upstream:{kind:'github',repository:{host:'github.com',owner:'slackapi',repo:'slack-mcp-plugin'},commit:'64c3f33fa13beb98c96d736390f80f3454a93a88',path:'skills/'+name,files:[{path:'SKILL.md',gitBlob:'a'.repeat(40),sha256:sha(skillText(name)),size:raw.byteLength}]},origin:{marketplace:'cursor',installs:null,installsLabel:'Unknown',countedAt:'2026-10-18'},alternatives:[],unsupportedComponents:[]})
+  assert.ok(entry.kind==='skill'&&entry.delivery==='upstream')
+  const metadata={id:name,title:name,version,categories:['communication']},skill=await readAtomicSkill([{path:name+'/SKILL.md',size:raw.byteLength,read:async()=>raw}],metadata)
+  const trust={publisher:'cursor',repository:entry.upstream.kind==='github'?entry.upstream.repository:null,license:{status:'declared',value:'MIT'},signature:{status:'unverified',signer:null},compatibility:{teloa:entry.compatibility.teloa,dsh:entry.compatibility.dsh},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'approved',summary:'Fixed catalog source.'}}
+  const content={id,ownerId:'owner',kind:'atomic-skill',logicalId:name,version,hash:skill.hash,baseHash:skill.hash,manifestPath:skill.entryPath,metadata,trust,trustHash:sha(stable(trust)),files:skill.files.map(file=>({path:file.path,hash:file.hash,base64:Buffer.from(file.bytes).toString('base64')})),provides:[{resourceId:name,kind:'skill',version,path:skill.entryPath}],references:[],createdAt}
+  return {entry,id,content,treeHash:sha(marketCatalogUpstreamTreeInput(entry.upstream))}
+ }))
+ const rows:MarketCatalogItem[]=sources.map((source,index)=>({entry:source.entry,artifact:null,addedContentId:index<5?source.id:null,addedRoleId:null,secretGroup:null})),adds:string[]=[],gets:string[]=[],expectedTrees:(string|undefined)[]=[]
+ let rejectMissing=true,listed=rows,read=(id:string)=>sources.find(source=>source.id===id)!.content
+ const apis=()=>{
+  const pending:Promise<MarketItem>[]=[]
+  const catalog=createMarketCatalogApi(async(endpoint,input)=>{
+   if(endpoint==='market-catalog/list')return {catalogVersion:'2026.10.18.2',items:listed,nextCursor:null,counts:{solution:0,dashboard:0,role:0,skill:listed.length,connector:0,model:0},skipped:{unknownKind:0,newerApp:0}}
+   assert.equal(endpoint,'market-catalog/add');const payload=input as {entryId:string;requestId:string;expectedTreeHash:string},source=sources.find(source=>source.entry.id===payload.entryId)!
+   adds.push(source.entry.skill.name);expectedTrees.push(payload.expectedTreeHash)
+   if(rejectMissing)throw Error('Root tree HTTP 403')
+   return {receipt:{requestId:payload.requestId,contentId:source.id,source:{kind:'catalog',catalog:'teloa-official',catalogVersion:'2026.10.18.2',entryId:source.entry.id,entryVersion:version,treeHash:source.treeHash},createdAt},content:source.content}
+  })
+  const content=createMarketContentApi(async(endpoint,input)=>{assert.equal(endpoint,'market-content/get');const id=(input as {contentId:string}).contentId;gets.push(id);return read(id)})
+  return {catalog,content,pending,publicSkill:(input:{publicId:string;version:string})=>{const request=readPublicCatalogSkill(catalog,content,input);pending.push(request);return request}}
+ }
+ await t.test('five prepared sources survive a failed remainder, API recreation and the original template journal',async()=>{
+  const pkg=buildSharePlan({...base,subject:'app',title:'Slack',roles:[],skills:names.map(name=>({name,publicId:name,version}))}),sha256=await sharePackageDigest(pkg),key='teloa.share-accept/v3/'+sha256,{storage}=memory()
+  const original={sha256,scope:'general',skills:names,contentRequestId:'30000000-0000-4000-8000-000000000001',loadRequestId:'30000000-0000-4000-8000-000000000002',sourceMetadataVersion:1,installs:{}}
+  storage.setItem(key,JSON.stringify(original))
+  const firstApi=apis(),first=industry({publicSkill:firstApi.publicSkill})
+  await assert.rejects(createShareAcceptance(storage,{createRole:async()=>'unused',industry:first.ports}).accept(pkg,{scope:'general',skills:names}),/HTTP 403/)
+  await Promise.allSettled(firstApi.pending)
+  assert.deepEqual(adds.slice().sort(),names.slice(5).sort(),'the five prepared sources must not be downloaded again');assert.deepEqual(expectedTrees.slice().sort(),sources.slice(5).map(source=>source.treeHash).sort());assert.deepEqual(gets.slice().sort(),sources.slice(0,5).map(source=>source.id).sort());assert.deepEqual(JSON.parse(storage.getItem(key)!),original)
+  assert.equal(first.calls.imports.length,0);assert.equal(first.calls.loads.length,0)
+  adds.length=0;gets.length=0;expectedTrees.length=0;rejectMissing=false
+  const resumed=industry({publicSkill:apis().publicSkill}),result=await createShareAcceptance(storage,{createRole:async()=>'unused',industry:resumed.ports}).accept(pkg,{scope:'general',skills:names})
+  assert.equal(result.complete,true);assert.deepEqual(adds.slice().sort(),names.slice(5).sort());assert.deepEqual(expectedTrees.slice().sort(),sources.slice(5).map(source=>source.treeHash).sort());assert.equal(gets.length,8);assert.deepEqual(resumed.calls.imports,[original.contentRequestId]);assert.deepEqual(resumed.calls.loads,[original.loadRequestId])
+  const after=JSON.parse(storage.getItem(key)!);for(const field of ['scope','skills','contentRequestId','loadRequestId'] as const)assert.deepEqual(after[field],original[field])
+ })
+ await t.test('removed, ambiguous and unsupported current entries do not use cached content',async()=>{
+  const source=rows[0]!,api=apis();adds.length=0;gets.length=0
+  for(const value of [[],[source,{...source,entry:{...source.entry,id:'cursor.mirror'}}],[{...source,entry:{...source.entry,compatibility:{...source.entry.compatibility,status:'unsupported'}}}]]){
+   listed=value as MarketCatalogItem[];await assert.rejects(api.publicSkill({publicId:names[0]!,version}),{code:'teloa/source-unavailable'})
+  }
+  assert.deepEqual(adds,[]);assert.deepEqual(gets,[]);listed=rows
+ })
+ await t.test('corrupt bytes, trust, content identity, changed tree and forbidden ownership reject without redownload',async()=>{
+  const source=sources[0]!,api=apis();adds.length=0
+  const otherVersion='1.4.2',raw=Buffer.from(source.content.files[0]!.base64,'base64'),changed=await readAtomicSkill([{path:source.content.manifestPath,size:raw.byteLength,read:async()=>raw}],{...source.content.metadata,version:otherVersion})
+  const variants=[{...source.content,files:[{...source.content.files[0]!,base64:'AA=='}]},{...source.content,trust:{...source.content.trust,publisher:'untrusted'}},{...source.content,id:sources[1]!.id},{...sources[1]!.content,id:source.id},{...source.content,version:otherVersion,metadata:{...source.content.metadata,version:otherVersion},hash:changed.hash,baseHash:changed.hash}]
+  for(const value of variants){read=()=>value;await assert.rejects(api.publicSkill({publicId:names[0]!,version}))}
+  read=()=>source.content
+  const entry=rows[0]!.entry;assert.ok(entry.kind==='skill'&&entry.delivery==='upstream'&&entry.upstream.kind==='github')
+  const original=entry.upstream.files[0]!
+  for(const files of [[{...original,sha256:'f'.repeat(64)}],[{...original,size:original.size!+1}],[original,{...original,path:'missing.md'}]]){
+   listed=[{...rows[0]!,entry:{...entry,upstream:{...entry.upstream,files}}}]
+   await assert.rejects(api.publicSkill({publicId:names[0]!,version}),{code:'teloa/source-unavailable'})
+  }
+  listed=rows;read=()=>{throw Object.assign(Error('Other owner'),{code:'teloa/forbidden'})};await assert.rejects(api.publicSkill({publicId:names[0]!,version}),{code:'teloa/forbidden'})
+  assert.deepEqual(adds,[])
+ })
 })
 
 test('receiving a shared application preserves its declared publisher and license without treating it as verified',async()=>{

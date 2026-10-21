@@ -231,7 +231,8 @@ test('已持久verified事件的事务内瞬态核验冲突保留原事件等待
  assert.equal((await f.host.service.drain(f.owner)).failed,1)
  const pending=(await pool.query('select status,attempts,error_code from teloa_project_extraction_events where owner_id=$1 and event_id=$2',[f.owner,queued.eventId])).rows[0]
  assert.deepEqual(pending,{status:'queued',attempts:1,error_code:'teloa/dependency-unavailable'})
- await pool.query('update teloa_project_extraction_events set next_attempt_at=now() where owner_id=$1 and event_id=$2',[f.owner,queued.eventId])
+ // 排期与 claim 使用同一毫秒时钟；PG now() 的微秒余量可能仍晚于本次领取时刻。
+ await pool.query('update teloa_project_extraction_events set next_attempt_at=$3 where owner_id=$1 and event_id=$2',[f.owner,queued.eventId,identity.now()])
  assert.equal((await f.host.service.drain(f.owner)).completed,1)
  assert.equal((await f.context.get(f.owner,{projectId:f.project.id})).entries[0]?.markdown,f.assertion)
 })
