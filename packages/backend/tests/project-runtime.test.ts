@@ -40,7 +40,7 @@ test('真实PG：普通会话归属、关闭可选记忆、撤回换代和实际
  await runtime.bind(owner,{requestId:randomUUID(),sessionId:'ordinary-one',projectId:null,expectedVersion:binding.version,memoryMode:'off'})
  await assert.rejects(runtime.prepare(owner,{sessionId:'ordinary-one',messageId:'message-vague',query:'继续'}),/重新说明/)
  const detached=await runtime.prepare(owner,{sessionId:'ordinary-one',messageId:'message-3',query:'请开始新的独立核对任务'})
- assert.ok(detached);assert.equal(detached.binding.projectId,null);assert.equal(detached.reset,true);assert.match(detached.text,/长期记忆已关闭/);assert.doesNotMatch(detached.text,/只做Mac/)
+ assert.ok(detached);assert.equal(detached.binding.projectId,null);assert.equal(detached.reset,true);assert.match(detached.text,/Long-term memory is off/);assert.doesNotMatch(detached.text,/只做Mac/)
  await assert.rejects(runtime.settings('other',{projectId:project.id}))
 })
 test('真实PG：迟到派生工作冻结原受理项目与模式、必读预算及撤权标题',{timeout:60000},async t=>{

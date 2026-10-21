@@ -58,7 +58,7 @@ export function rebuildProjectModelSurface(session:Session,generation:number|str
  const shadowed=head?.type==='system/message'?nodes.slice(1):nodes
  // 新会话的首个 surface 节点必须由官方 system/message 保留；代次标记随本步上下文落盘。
  if(!shadowed.length)return
- const message=createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:markerName,text:key}]},content:[{type:'text',text:'项目上下文已更新；后续仅采用当前可用资料与本轮明确输入。'}]})
+ const message=createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:markerName,text:key}]},content:[{type:'text',text:'Project context updated: use only currently available materials and explicit input from this turn.'}]})
  session.append('user/message',message,{surfaceOp:{op:'replace',startSeq:shadowed[0]!,endSeq:shadowed.at(-1)!},sourceEventSeqs:shadowed})
 }
 

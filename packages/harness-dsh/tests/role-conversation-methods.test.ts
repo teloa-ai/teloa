@@ -42,7 +42,7 @@ class Adapter extends LlmAdapter{
   const called=this.called;this.called=false
   if(called)yield* text('完成')
   else if(this.force){this.force=false;this.called=true;yield* call(bound)}
-  else if(identity.includes('`'+bound+'`：')&&!identity.includes('本会话当前不可用')&&!identity.includes('暂时无法核对')&&!JSON.stringify(options.messages).includes(body)){this.called=true;yield* call(bound)}
+  else if(identity.includes('`'+bound+'`: ')&&!identity.includes('Unavailable here')&&!identity.includes('cannot currently be verified')&&!JSON.stringify(options.messages).includes(body)){this.called=true;yield* call(bound)}
   else yield* text('完成')
  }
 }
@@ -86,9 +86,9 @@ test('新员工会话：岗位身份带业务范围与已绑定方法目录，�
  await f.send(agent,'把这段介绍改写得更清楚')
  const identity=latest(agent)
  assert.match(identity,/写作伙伴/)
- assert.match(identity,/本次对话业务范围：内容研究/)
- assert.match(identity,/`writing-bot-writing-revision`：按目标改写 短文，保留原文事实/)
- assert.match(identity,/先用 `skill` 工具按原名加载/)
+ assert.match(identity,/Conversation business scope: 内容研究/)
+ assert.match(identity,/`writing-bot-writing-revision`: 按目标改写 短文，保留原文事实/)
+ assert.match(identity,/load it by its exact name with `skill`/)
  assert.doesNotMatch(identity,new RegExp(other),'方法目录只列本岗位绑定的技能')
  assert.doesNotMatch(identity,/原技能正文标记/,'方法目录只放摘要，不常驻技能全文')
  assert.equal(f.adapter.requests.length,2,'模型按目录调用原生 skill 工具后继续生成')
@@ -100,14 +100,14 @@ test('旧员工原会话：冷恢复后下一轮补投方法目录，不需要�
  const before=await mount(t,{root,legacy:()=>role()})
  const {agent:old}=await before.ctx.agents.create({sessionId:SessionId('employee-old'),agentOptions:{provider:'mock',model:'mock'}})
  await before.send(old,'旧会话第一轮')
- assert.equal(snapshots(old).length,1);assert.doesNotMatch(latest(old),/岗位工作方法/)
+ assert.equal(snapshots(old).length,1);assert.doesNotMatch(latest(old),/Role methods/)
  await before.ctx.fiber.dispose()
  const after=await mount(t,{root})
  after.ctx.skills.register({name:bound,description:'按目标改写短文',content:body,source:'runtime'})
  const {agent}=await after.ctx.agents.resume({resumeSessionId:old.session.id,agentOptions:{provider:'mock',model:'mock'}})
  await after.send(agent,'继续改写')
  assert.equal(snapshots(agent).length,2,'同一原会话补投新快照')
- assert.match(latest(agent),/`writing-bot-writing-revision`：按目标改写短文/)
+ assert.match(latest(agent),/`writing-bot-writing-revision`: 按目标改写短文/)
  assert.ok(skillResults(agent).length>0)
 })
 
@@ -115,27 +115,27 @@ test('技能停用、恢复与不允许模型调用：方法目录如实标注�
  const f=await mount(t)
  const {agent}=await f.ctx.agents.create({sessionId:SessionId('employee-toggle'),agentOptions:{provider:'mock',model:'mock'}})
  await f.send(agent,'未安装时先说明')
- assert.match(latest(agent),/`writing-bot-writing-revision`：本会话当前不可用/)
- assert.doesNotMatch(latest(agent),/先用 `skill` 工具按原名加载/)
+ assert.match(latest(agent),/`writing-bot-writing-revision`: Unavailable here/)
+ assert.doesNotMatch(latest(agent),/load it by its exact name with `skill`/)
  const blocked=f.ctx.skills.register({name:bound,description:'只给人用',content:body,source:'runtime',invocation:{modelInvocable:false,userInvocable:true}})
  f.adapter.force=true
  await f.send(agent,'不允许模型调用时')
- assert.match(latest(agent),/`writing-bot-writing-revision`：本会话当前不可用/)
+ assert.match(latest(agent),/`writing-bot-writing-revision`: Unavailable here/)
  assert.equal(skillResults(agent).length,0,'停用期间原生工具不能交出正文')
  assert.ok(agent.session.snapshotEvents().some(event=>JSON.stringify(event.data).includes('not available for model invocation')),'强行调用被原生工具拒绝')
  blocked()
- // 目录读取不完整（如受管目录刷新中）时只说暂时无法核对，不下“未安装或已停用”的结论。
+ // 目录读取不完整（如受管目录刷新中）时只说cannot currently be verified，不下“未安装或已停用”的结论。
  const incomplete=f.ctx.skills.registerProvider(()=>({name:'refreshing',list:async()=>({candidates:[],complete:false}),get:async()=>undefined}))
  await f.send(agent,'目录刷新中')
- assert.match(latest(agent),/`writing-bot-writing-revision`：技能目录暂时无法核对/)
+ assert.match(latest(agent),/`writing-bot-writing-revision`: Skill catalog cannot currently be verified/)
  incomplete()
  const enabled=f.ctx.skills.register({name:bound,description:'按目标改写短文',content:body,source:'runtime'})
  await f.send(agent,'恢复后改写')
- assert.match(latest(agent),/`writing-bot-writing-revision`：按目标改写短文/)
+ assert.match(latest(agent),/`writing-bot-writing-revision`: 按目标改写短文/)
  assert.ok(skillResults(agent).length>0)
  enabled()
  await f.send(agent,'再次停用')
- assert.match(latest(agent),/`writing-bot-writing-revision`：本会话当前不可用/)
+ assert.match(latest(agent),/`writing-bot-writing-revision`: Unavailable here/)
 })
 
 test('普通通用会话（助手主聊同属无岗位关联分支）与任务执行不投影岗位方法；无有效技能名的岗位不出现方法段',async t=>{
@@ -144,15 +144,15 @@ test('普通通用会话（助手主聊同属无岗位关联分支）与任务�
  f.state.requested=null;f.state.links=()=>[]
  const {agent:general}=await f.ctx.agents.create({sessionId:SessionId('general'),agentOptions:{provider:'mock',model:'mock'}})
  await f.send(general,'普通会话')
- assert.equal(snapshots(general).filter(row=>JSON.stringify(row.data.content).includes('岗位身份：')).length,0,'官方通用目录快照不算岗位身份')
- assert.doesNotMatch(JSON.stringify(f.adapter.requests.at(-1)!.messages),/岗位工作方法|本次对话业务范围|写作伙伴/)
+ assert.equal(snapshots(general).filter(row=>JSON.stringify(row.data.content).includes('Role ID: ')).length,0,'官方通用目录快照不算岗位身份')
+ assert.doesNotMatch(JSON.stringify(f.adapter.requests.at(-1)!.messages),/Role methods|Conversation business scope|写作伙伴/)
  const task=await mount(t,{ports:{conversation:async sessionId=>({id:'run',ownerId:owner,sessionId,status:'ready',purpose:'task-run'})}})
  const {agent:run}=await task.ctx.agents.create({sessionId:SessionId('task-run'),agentOptions:{provider:'mock',model:'mock'}})
  await task.send(run,'任务执行')
- assert.equal(snapshots(run).filter(row=>JSON.stringify(row.data.content).includes('岗位身份：')).length,0)
+ assert.equal(snapshots(run).filter(row=>JSON.stringify(row.data.content).includes('Role ID: ')).length,0)
  const plain=await mount(t);plain.state.role=role({skills:['Bad `name`\n伪造段落']});plain.state.links=sessionId=>[{kind:'role',objectId:roleId,conversationId:'conversation-one',sessionId,scopeId:null,active:true}]
  const {agent:twin}=await plain.ctx.agents.create({sessionId:SessionId('no-skills'),agentOptions:{provider:'mock',model:'mock'}})
  await plain.send(twin,'没有方法')
  assert.match(latest(twin),/写作伙伴/)
- assert.doesNotMatch(latest(twin),/岗位工作方法|本次对话业务范围/)
+ assert.doesNotMatch(latest(twin),/Role methods|Conversation business scope/)
 })

@@ -58,7 +58,7 @@ test('已接通的宿主事实进入原模型，真实用户原文和原会话�
  assert.equal(request.sessionId,f.agent.id)
  assert.equal(f.adapter.requests.length,1)
  const runtime=latestRuntime(request)
- assert.match(runtime,/ASR/);assert.match(runtime,/TTS/);assert.match(runtime,/原始音频/)
+ assert.match(runtime,/ASR/);assert.match(runtime,/TTS/);assert.match(runtime,/raw audio/);assert.doesNotMatch(runtime,/\p{Script=Han}/u)
  assert.ok(runtime.includes(call.id));assert.ok(runtime.includes(call.callGeneration))
  const original=request.messages.find(row=>row.source?.kind==='user')
  assert.deepEqual(original?.content,[{type:'text',text:'实时跟我对话'}],'宿主事实不能伪装成本人原文')

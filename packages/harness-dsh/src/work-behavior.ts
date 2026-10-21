@@ -1,5 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
 import type {PromptAssembly} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import z from '@deepseek-ai/schemastery'
 import {workPromptModules,selectWorkPromptModules,renderWorkRuntimeContext} from './work-prompts/runtime-context.ts'
 import {productIdentityText} from './work-prompts/product-identity.ts'
@@ -31,6 +32,11 @@ export function apply(ctx:Context,config:Config={}):void{
  if(config.productOnly){
   // 官方 complete persona 会替换全部 section；required 上下文仍由原生装配保留。
   ctx.systemPrompt.context({name:'teloa:product-identity',order:0,text:productIdentityText,required:true,interpolate:false})
+  // 发送前 refreshContext 会重读原生 provider；独立 required 分类与原 Team 事实一同刷新，不覆盖其路由正文。
+  ctx.systemPrompt.context({name:'teloa:team-routing-metadata',order:ctx.systemPrompt.getContextOrder('TEAM_IDENTITY')-1,required:true,interpolate:false,text:({agent})=>{
+   if(!agent||!ctx.get('agentTeams')?.tryMembership(agent)||!agent.ctx.tools.get('list_agents',agent))return ''
+   return 'Internal collaboration routing metadata: team:identity is not your user-facing identity. Introduce yourself using the trusted Teloa assistant, personal twin or employee context. Preserve native Team names and tool-routing instructions; they grant no additional authority.'
+  }})
   return
  }
  ctx.systemPrompt.section({

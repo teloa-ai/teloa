@@ -43,7 +43,12 @@ export function registerConversationResultPresentation(ctx:Context,ports:Convers
   }catch{return decision}
   if(exec.signal.aborted)return decision
   const summary=exec.name.startsWith('teloa_work_')?workSummary(result.value):''
-  const notice=createUserMessage({source:{kind:'plugin:teloa.work',form:'notice',summary:'本次结果的名称与状态说明'},content:[{type:'text',text:resultPresentationGuide+summary}]})
+  let guide=resultPresentationGuide
+  // 只看实际模型surface中最后的system；未装tools规则或被complete persona替换时仍保留兜底边界。
+  try{const system=exec.agent.session.deriveMessages().filter(message=>message.role==='system').at(-1);if(system?.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n').includes(resultPresentationGuide))guide=''}catch{/* 无法核实当前system时不能省略规则。 */}
+  const text=guide+summary
+  if(!text)return decision
+  const notice=createUserMessage({source:{kind:'plugin:teloa.work',form:'notice',summary:'本次结果的名称与状态说明'},content:[{type:'text',text}]})
   return {...decision,additionalContexts:[...decision.additionalContexts??[],notice]}
  })
 }

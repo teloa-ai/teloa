@@ -39,7 +39,7 @@ test('正式原稿回执后，每次原生模型请求刷新同一原稿的当�
  const previous=f.agent.session.snapshotEvents().filter(row=>row.type==='tool/result')
  f.state.draft={...f.state.draft,status:'discarded',updatedAt:'2026-10-12T00:01:00.000Z'};const reads=f.state.reads;await f.send('现在是什么状态？')
  assert.equal(f.adapter.requests.length,3);assert.ok(f.state.reads>reads)
- assert.match(text(f.adapter.requests[2]!),/"state":"已丢弃"/);assert.doesNotMatch(text(f.adapter.requests[2]!),/PRIVATE_BODY/)
+ assert.match(text(f.adapter.requests[2]!),/"state":"discarded"/);assert.doesNotMatch(text(f.adapter.requests[2]!),/PRIVATE_BODY/)
  assert.deepEqual(f.agent.session.snapshotEvents().filter(row=>row.type==='tool/result'),previous,'不能重写旧工具快照冒充本轮读取')
  assert.equal(f.agent.session.snapshotEvents().filter(row=>row.type==='tool/call').length,1,'动态只读事实不强迫额外模型工具调用')
 })
@@ -53,7 +53,7 @@ test('没有正式原稿关联不扫描目录，当前工具不可见时不刷�
 
 test('关联原稿读取失败明确标记当前未知，不注入正文、异常或虚构当前状态',async t=>{
  const f=await fixture(t);await f.send('查核对原稿');f.state.offline=true;await f.send('现在呢？')
- const messages=text(f.adapter.requests.at(-1)!);assert.match(messages,/"state":"暂无法核实"/);assert.doesNotMatch(messages,/PRIVATE_EXCEPTION|PRIVATE_BODY/)
+ const messages=text(f.adapter.requests.at(-1)!);assert.match(messages,/"state":"currently unverified"/);assert.doesNotMatch(messages,/PRIVATE_EXCEPTION|PRIVATE_BODY/)
 })
 
 test('归属或任务策略在读取前后变化，真实Loop不将旧元数据发送给模型',async t=>{

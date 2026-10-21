@@ -85,6 +85,28 @@ const efforts=(adapter:EffortAdapter)=>adapter.requests.map(request=>request.rea
 const ends=(events:readonly SessionEvent[])=>events.flatMap(event=>event.type==='turn/end'?[event.data.reason.kind]:[])
 const multiMethodDraft=['结论：1 家已付款（且必然续费）。','说明：付款均已独立核实。','资料限制：'+'只按给定原文核对，不把未知写成已知。'.repeat(90)].join('\n\n')
 
+test('真实Loop的复核专用系统规则使用英文，保留真实工具提交与R1/R2字段边界',async t=>{
+ const f=await fixture(t,'MiniMax-M3',[text(draft),submit(noChange()),submit(verify())])
+ await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
+ assert.deepEqual(ends(f.events()),['completed']);assert.equal(f.adapter.requests.length,3)
+ for(const [index,phase] of (['revise','verify'] as const).entries()){
+  const request=f.adapter.requests[index+1]!,system=request.messages.filter(message=>message.role==='system').flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('\n')
+  const rule=/Host delivery-review phase:[\s\S]*?Do not output a rewritten body or self-check, or call other tools\./.exec(system)?.[0]
+  assert.ok(rule,'模型实际system中必须装配专用英文规则')
+  assert.ok(rule.startsWith('Host delivery-review phase: '+phase+'. '))
+  assert.ok(rule.includes('real '+deliveryReviewToolName+' call; JSON prose/code fences are not receipts'))
+  assert.ok(rule.includes('Direct-answer instructions apply to the final deliverable, not this review step'))
+  assert.equal(/\p{Script=Han}/u.test(rule),false)
+  assert.deepEqual(request.tools?.map(tool=>tool.name),[deliveryReviewToolName],'复核步仍只提供原回执工具')
+  if(phase==='revise')assert.ok(rule.includes('Even with no corrections, call with phase:revise and issues:[]'))
+  else{
+   assert.ok(rule.includes('Submit only phase, verdict, checks, changeChecks and findings; no issues or editing fields'))
+   assert.ok(rule.includes('Fill every acceptance check from actual review; never default to acceptance'))
+  }
+ }
+ assert.equal(readTaskRunGroupResult(f.events(),'rpc'),draft,'仅改系统脚手架，不改无修改回执交付的原正文')
+})
+
 test('常规多方法整稿共同纠正全部标准，再由独立整稿R2决定交付',async t=>{
  const original=multiMethodDraft
  const expected=original.replace('结论：1 家已付款（且必然续费）。','结论：1 家已付款。').replace('说明：付款均已独立核实。','说明：来源未额外核实。')
@@ -363,6 +385,9 @@ test('旧whole-constraints真实SDK历史仍冷读，并拒绝缺单元、改约
  const alteredPrompt=structuredClone(events),plan=alteredPrompt.find(event=>event.type==='user/message'&&Reflect.get(event.data.source,'summary')==='交付编辑计划');assert.ok(plan?.type==='user/message')
  const part=plan.data.content[0];assert.ok(part?.type==='text');part.text=part.text.replace('原标准 [1,6,7]','原标准 [8]')
  assert.equal(readTaskRunGroupResult(alteredPrompt,'rpc'),undefined,'实际提示篡改不能凭绿色metadata通过')
+ const alteredPriority=structuredClone(events),priorityPlan=alteredPriority.find(event=>event.type==='user/message'&&Reflect.get(event.data.source,'summary')==='交付编辑计划');assert.ok(priorityPlan?.type==='user/message')
+ const priorityPart=priorityPlan.data.content[0];assert.ok(priorityPart?.type==='text');const originalPriority=priorityPart.text;priorityPart.text=priorityPart.text.replace('以当前任务为准','以方法要求为准');assert.notEqual(priorityPart.text,originalPriority,'固定旧历史确实含被核对的优先级约束')
+ assert.equal(readTaskRunGroupResult(alteredPriority,'rpc'),undefined,'旧静态文本仅精确白名单，变造任务优先级不得冷读通过')
  const duplicate=histories.duplicate.events.find(event=>event.type==='user/message'&&Reflect.get(event.data.source,'summary')==='复核后交付');assert.ok(duplicate?.type==='user/message')
  assert.equal(Reflect.get(duplicate.data.source,'edits'),1,'旧两单元同改仍只应用一次')
 })
@@ -409,7 +434,7 @@ test('员工会话交办实际SDK以原本人文字起草，有技能沿原两�
   f.ports.conversationReviewSource=async()=>source
   await f.ports.send(run,f.signal,f.target);await f.agent.whenIdle()
   assert.equal(f.adapter.requests.length,reviewed?3:1)
-  const instruction=f.adapter.requests[0]!.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).find(text=>text.startsWith('本次任务（按原目标完成交付）'))!
+  const instruction=f.adapter.requests[0]!.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).find(text=>text.startsWith('Current task (fulfill the original goal)'))!
   assert.ok(instruction.endsWith(original));assert.ok(!instruction.includes(summary))
   const material=taskRunReviewMaterial(run,run.inputText,source);assert.ok(!('skip'in material));assert.equal(material.catalog.sources.some(row=>row.text.includes(summary)),false)
   assert.equal(readTaskRunGroupResult(f.events(),'rpc'),'记录：1 家已付款。')
@@ -434,7 +459,7 @@ test('员工固定修订与计划来源优先于派发概述，真实SDK仍沿�
   assert.equal(material.goal,kind==='revision'?revision.notice+'\n\n本人已保存的反馈：\n'+revision.feedback:planContext.goal)
   assert.equal(material.catalog.sources.some(row=>row.text.includes('派发概述')),false)
   await f.ports.send(run,f.signal,f.target);await f.agent.whenIdle();assert.equal(f.adapter.requests.length,3)
-  const instruction=f.adapter.requests[0]!.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).find(text=>text.startsWith('本次任务（按原目标完成交付）'))!
+  const instruction=f.adapter.requests[0]!.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).find(text=>text.startsWith('Current task (fulfill the original goal)'))!
   assert.ok(instruction.endsWith(kind==='revision'?revision.feedback:planContext.goal))
  })
 })
@@ -453,17 +478,17 @@ test('无固定技能的 owner 实际请求约束事实判断、系统日期与�
   assert.deepEqual(ends(f.events()),['completed']);assert.equal(f.adapter.requests.length,kind==='role'?1:3,'无技能owner也复用原两轮复核；普通角色分支不扩大')
   const request=f.adapter.requests[0]!,messages=requestTexts(request)
   assert.ok(request.messages.some(message=>message.role==='user'&&message.content.some(part=>part.type==='text'&&part.text===input)),'本轮完整JSON、原文与反馈逐字发送')
-  assert.ok(messages.some(message=>message.includes('本次运行日期：')),'运行参照日期沿原发送路径保留，不改成业务事实')
+  assert.ok(messages.some(message=>message.includes('Run date: ')),'运行参照日期沿原发送路径保留，不改成业务事实')
   assert.deepEqual(request.tools??[],[]);assert.equal(request.provider,'minimax');assert.equal(request.model,'MiniMax-M3');assert.equal(request.reasoningEffort,'high');assert.equal(request.maxTokens,65536)
   assert.equal(admitted.length,kind==='role'?1:3);assert.ok(admitted.every(context=>context.producer==='task-run'))
-  const instruction=request.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).find(part=>part.includes('本次任务（按原目标完成交付）'))!
+  const instruction=request.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).find(part=>part.includes('Current task (fulfill the original goal)'))!
   assert.ok(instruction.endsWith(kind==='owner-revision'?revision.feedback:goal))
-  if(kind==='role'){assert.equal(instruction,'本次任务（按原目标完成交付）：\n'+goal);return}
-  assert.match(instruction,/事实.*本轮资料或可核算结果/)
-  assert.match(instruction,/建议标签不使缺少依据的状态判断成立/)
-  assert.match(instruction,/限定只用提供资料.*系统日期只是运行参照.*不据此新增.*业务日期或时间窗口/)
-  assert.match(instruction,/所选段落内受反馈影响的判断与依赖.*纠正无据判断.*未选内容保持/)
-  assert.match(instruction,/交办、创建执行或显示批准卡的步骤已经完成，不再重复/)
+  if(kind==='role'){assert.equal(instruction,'Current task (fulfill the original goal):\n'+goal);return}
+  assert.match(instruction,/Base facts on current material or verifiable calculation/)
+  assert.match(instruction,/labeling a suggestion does not validate such a judgment/)
+  assert.match(instruction,/supplied-material-only work.*system date is a runtime reference, not evidence for business dates\/windows/)
+  assert.match(instruction,/correct affected judgments\/dependencies in the selected content, preserve ownership and unselected content/)
+  assert.match(instruction,/Dispatch, execution creation and native approval are already complete; do not repeat them/)
   if(kind==='owner-draft')assert.equal(instruction.includes(artifactRevisionScope),false,'普通独立任务没有编辑基线，不增加虚构替换单位')
   if(kind==='owner-revision'){
    assert.deepEqual(JSON.parse(input).artifactRevision,revision,'真实notice/原文/反馈由官方canonical输入逐值保留，不从提示中另写答案')
@@ -488,11 +513,11 @@ test('当前任务优先：起草与复核的实际请求带同一句任务期�
  await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
  assert.deepEqual(ends(f.events()),['completed'])
  const [drafting,review]=f.adapter.requests.map(requestTexts)
- const priority=/任务的期限或范围与技能要求冲突时，以当前任务为准[^。]*。/.exec(drafting!.join('\n'))?.[0]
+ const priority=/The current task overrides conflicting skill deadlines\/scope\.[\s\S]*?outside material\./.exec(drafting!.join('\n'))?.[0]
  assert.ok(priority,'起草请求带任务优先约定')
  const reviewMessage=review!.find(message=>message.includes('交付复核（宿主固定步骤'))
  assert.ok(reviewMessage?.includes(priority),'复核要求逐字带起草阶段的同一句任务优先约定，不另维护一份')
- for(const forbidden of ['不延长期限','不以模型自有知识'])assert.ok(priority.includes(forbidden),'方法做不到时只能受限或降级：'+forbidden)
+ for(const forbidden of ['do not extend time','fill gaps from model knowledge/outside material'])assert.ok(priority.includes(forbidden),'方法做不到时只能受限或降级：'+forbidden)
  assert.ok([...drafting!,...review!].every(message=>!message.includes('不用短期行为替代原方法要求的长期证据')),'不再把方法的长期观察引导为超出任务期限的补足')
 })
 
@@ -510,17 +535,15 @@ test('可判定前提：真实 Loop 起草与两轮复核先区分缺测、有�
  assert.deepEqual(efforts(f.adapter),['high','high','high'])
  assert.equal(readTaskRunGroupResult(f.events(),'rpc'),corrected+'\n\n'+retained,'仅验证回放计划经原块替换生效，不把回放答案当模型质量')
  const assertObservationGate=(message:string)=>{
-  assert.match(message,/先检查观测与比较的前提是否成立，再判定业务结果/,'分类前先核观测有效性与可比性')
-  assert.match(message,/缺测或不可测不能当作实测为零或业务假设被否证/,'未知不能进入零值或否证结果桶')
-  assert.match(message,/有效观测为零或失败仍可按原判据判定/,'不排除真实零值或失败')
-  assert.match(message,/方法允许因采集失败停止流程时，区分流程停止与业务假设失败/,'保留方法的流程停止出口')
+  assert.match(message,/Check observation\/comparison prerequisites before judging outcomes/,'分类前先核观测有效性与可比性')
+  assert.match(message,/missing\/unmeasurable is not measured zero or disproval/,'未知不能进入零值或否证结果桶')
+  assert.match(message,/valid zero\/failure may meet the original criterion/,'不排除真实零值或失败')
+  assert.match(message,/Distinguish collection-related process stop from business-hypothesis failure/,'保留方法的流程停止出口')
  }
  const drafting=f.adapter.requests[0]!
- for(const role of ['system','user']){
-  const notice=drafting.messages.find(message=>message.role===role&&requestTexts({...drafting,messages:[message]}).join('\n').includes('本轮技能使用约定'))
-  assert.ok(notice,'起草的 '+role+' 部件带共享方法约定')
-  assertObservationGate(requestTexts({...drafting,messages:[notice]}).join('\n'))
- }
+ const methodNotices=drafting.messages.filter(message=>requestTexts({...drafting,messages:[message]}).join('\n').includes('Selected skills supply methods and output contracts'))
+ assert.equal(methodNotices.length,1,'共享方法约定只进一份实际system，不重复附到用户输入')
+ assert.equal(methodNotices[0]!.role,'system');assertObservationGate(requestTexts({...drafting,messages:[methodNotices[0]!]}).join('\n'))
  for(const request of f.adapter.requests){
   assert.ok(request.messages.some(message=>message.role==='user'&&message.content.some(part=>part.type==='text'&&part.text===input)),'原目标、完整参考与方法快照不改写')
   for(const method of fixedSkills)assert.ok(request.messages.some(message=>message.role==='system'&&message.content.some(part=>part.type==='text'&&part.text.includes(method.content))),'固定方法原文逐字送达')
@@ -554,13 +577,13 @@ test('提案与事实边界：真实 Loop 允许有理由的设计参数，保�
  const reviews=f.adapter.requests.slice(1).map(request=>requestTexts(request).find(message=>message.includes('交付复核（宿主固定步骤'))!)
  await t.test('设计参数允许提出而不伪造事实，真实起草及两轮复核共享此边界',()=>{
   for(const [index,request] of f.adapter.requests.entries()){
-   const messages=index===0?['system','user'].map(role=>request.messages.find(message=>message.role===role&&requestTexts({...request,messages:[message]}).join('\n').includes('本轮技能使用约定'))).map(message=>message&&requestTexts({...request,messages:[message]}).join('\n')):[reviews[index-1]]
+   const messages=index===0?['system'].map(role=>request.messages.find(message=>message.role===role&&requestTexts({...request,messages:[message]}).join('\n').includes('Selected skills supply methods and output contracts'))).map(message=>message&&requestTexts({...request,messages:[message]}).join('\n')):[reviews[index-1]]
    for(const message of messages){
-    assert.ok(message,'真实起草的两处技能约定及R1/R2各自复核要求均含事实与提案边界')
-    assert.match(message,/可以提出明确标注为建议的样本规模、干预条件、判定阈值以及后续规模与周期/)
-    assert.match(message,/说明选择理由和取舍/)
-    assert.match(message,/不能只因原资料未给这些设计参数就全部改为待补字段/)
-    assert.match(message,/建议参数不证明实施资源、对象资格或事件周期已具备/)
+    assert.ok(message,'真实起草的单份系统方法约定及R1/R2均含事实与提案边界')
+    assert.match(message,/propose explicitly labeled concrete sample sizes, interventions, thresholds, later scale\/cycles/)
+    assert.match(message,/reasons\/tradeoffs/)
+    assert.match(message,/even if absent from the source; do not replace all design choices with missing fields/)
+    assert.match(message,/Proposed parameters do not establish implementation resources, participant eligibility or event cycles/)
    }
    assert.ok(request.messages.some(message=>message.role==='user'&&message.content.some(part=>part.type==='text'&&part.text===input)),'原材料逐字不改')
   }

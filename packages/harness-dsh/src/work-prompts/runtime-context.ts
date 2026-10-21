@@ -10,7 +10,7 @@ import artifacts from './artifacts.ts'
 import projects from './projects.ts'
 import {selfAuthorizedToolNames} from '../self-authorized-tools.ts'
 
-export const workBehaviorVersion='2026-10-21.product-identity.v4'
+export const workBehaviorVersion='2026-10-21.english-identity.v5'
 export const workPromptModules=[core,tools,planning,memory,skills,collaboration,background,artifacts,projects] as const
 type WorkPromptModule=typeof workPromptModules[number]
 type ToolSchema=PromptAssembly['tools'][number]
@@ -38,7 +38,7 @@ export function selectWorkPromptModules(catalog:readonly ToolSchema[]):readonly 
 
 /** 身份、岗位、模式、权限、时间与目录继续由既有原生上下文提供。 */
 export function renderWorkRuntimeContext(modules:readonly WorkPromptModule[]):string{
- return '# 当前工作行为适用范围\n'+JSON.stringify({
+ return '# Applicable work behavior\n'+JSON.stringify({
   behavior_version:workBehaviorVersion,
   modules:modules.map(module=>module.id),
   capability_basis:'visible-tool-catalog',

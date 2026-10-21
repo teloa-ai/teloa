@@ -346,7 +346,7 @@ const cooldownPath=(pathname:string)=>{let path=pathname;try{path=decodeURICompo
  */
 export function registerSkillHttpTool(ctx:Context,ports:RegisterPorts){
  const full=(exec:ToolExecution):SkillHttpPorts=>({...ports,resolve:ports.resolve??((host,signal)=>resolveOutboundAddresses(host,signal)),request:ports.request??pinnedHttpsRequest,skillVisible:skill=>ports.skillVisible(exec,skill,exec.signal)})
- ctx.tools.register(defineTool({name:skillHttpToolName,description:'调用已安装技能写明的第三方 HTTP 接口；该技能所需的 API 密钥由 Teloa 在请求时注入，你看不到也不需要密钥，不要在参数里提供密钥。只能访问该技能写明的地址与方法；headers 每行一个 Name: value，只允许 Accept、Accept-Language、Content-Type、User-Agent、Idempotency-Key 与该技能写明放开的附加请求头；POST、PUT、PATCH、DELETE 每次调用前都会请本人确认。',parameters,output,execute:async(args,exec)=>{
+ ctx.tools.register(defineTool({name:skillHttpToolName,description:'Call only the origins, path prefixes and HTTP methods declared by an installed skill. Teloa injects its saved API secrets; never supply, request or expose them. headers uses one Name: value per line, limited to Accept, Accept-Language, Content-Type, User-Agent and Idempotency-Key plus skill-declared extra headers. Writes (POST, PUT, PATCH, DELETE) require native approval before execution; this tool never grants permission.',parameters,output,execute:async(args,exec)=>{
   const caller=await ports.authorize(exec,args)
   return runSkillHttp(full(exec),args,exec.signal,caller)
  }}))

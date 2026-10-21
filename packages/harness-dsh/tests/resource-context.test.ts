@@ -16,6 +16,8 @@ test('宿主只展开当前用户消息的引用，每条消息保留各自版�
   const contexts=result.slice(3).map(message=>{
     assert.equal(message.source.kind,'plugin:teloa.resources')
     const block=message.content[0];assert.ok(block?.type==='text')
+    assert.match(block.text,/^Work materials read within the target conversation scope\./)
+    assert.doesNotMatch(block.text.split('\n')[0]!,/\p{Script=Han}/u)
     return JSON.parse(block.text.slice(block.text.indexOf('\n')+1)) as ResourceContext
   })
   assert.equal(contexts[0]!.snapshot.messageId,a.id)

@@ -19,8 +19,8 @@ test('资料准备保留目标空间路径和保存意图，业务不扩展到�
 })
 test('目录位置使用真实空间路径，版本不冒用最新来源版本',()=>{
  const resource={id:'r',title:'同名资料',sourceId:'knowledge_k',sourceVersion:'old',version:1,status:'withdrawn',scopeIds:['general']} as any
- const source={id:'knowledge_k',source:'knowledge:k@2',version:'new',knowledge:{knowledgeId:'k',knowledgeVersion:2}} as any
- const tree={nodes:[{id:'root',title:'个人空间',type:'space'},{id:'folder',title:'方案',type:'folder'},{id:'page',title:'同名资料',type:'page',knowledgeId:'k',path:['root','folder','page']}]} as any
+ const source={id:'knowledge_k',source:'knowledge:k@2',version:'new',knowledge:{workspaceId:'local',knowledgeId:'k',knowledgeVersion:2}} as any
+ const tree={space:{id:'personal',workspaceId:'local'},nodes:[{id:'root',title:'个人空间',type:'space'},{id:'folder',title:'方案',type:'folder'},{id:'page',title:'同名资料',type:'page',knowledgeId:'k',path:['root','folder','page']}]} as any
  const [row]=libraryRows({drafts:[],resources:[resource]},[source],{view:'mine',query:'',preferences:{recent:[],favorites:[]},tree})
  assert.equal(row?.location,'个人空间 / 方案')
  assert.equal(row?.knowledgeVersion,undefined)

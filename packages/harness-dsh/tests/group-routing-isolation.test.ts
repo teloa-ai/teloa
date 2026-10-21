@@ -64,7 +64,7 @@ test('同群同日复用的路由会话：每次发问前把此前各轮换成�
  assert.equal(archive.length,1)
  assert.deepEqual(archive[0]!.options.surfaceOp,{op:'replace',startSeq:priorNodes[1],endSeq:priorNodes.at(-1)},'系统提示之后的此前各轮整段替换')
  assert.deepEqual(archive[0]!.options.sourceEventSeqs,priorNodes.slice(1))
- assert.match(JSON.stringify(archive[0]!.data.content),/本轮只依据下一条输入判断/)
+ assert.match(JSON.stringify(archive[0]!.data.content),/Route only the next input/)
  const view=f.surface.nodes.map(seq=>f.events[seq]!)
  assert.deepEqual(view.map(event=>event.type),['system/message','user/message','user/message','assistant/message'],'模型视图：系统提示、归档说明、本轮输入、本轮回答')
  assert.equal(view[1]!.data.source.kind,groupRoutingArchiveSource)

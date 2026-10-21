@@ -37,12 +37,12 @@ const deferred={workflow:'组织多步并行工作 workflow',bash:'运行本机�
 const runOnly=['teloa_group_attach']
 const padding='本工具的完整参数与使用约束说明。'.repeat(30)
 
-async function setup(t:TestContext,options:{loading?:boolean;sessionId?:string;routing?:boolean;productionCatalog?:boolean}={}){
+async function setup(t:TestContext,options:{loading?:boolean;sessionId?:string;routing?:boolean;productionCatalog?:boolean;englishDescriptions?:boolean}={}){
  const ctx=new Context(),adapter=new Adapter(),executed:string[]=[];t.after(()=>ctx.fiber.dispose())
  for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
  await ctx.plugin(AgentLoop,{agents:[]})
  ctx.llm.registerAdapter(['capture'],adapter)
- const register=(name:string,description:string)=>ctx.tools.register(defineTool({name,description:description+padding,parameters:{target:{type:'string',description:'操作对象'}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{executed.push(name);return 'ok:'+name}}))
+ const register=(name:string,description:string)=>ctx.tools.register(defineTool({name,description:options.englishDescriptions?'Original fixture description for '+name:description+padding,parameters:{target:{type:'string',description:'操作对象'}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{executed.push(name);return 'ok:'+name}}))
  for(const name of core)register(name,'常驻工具'+name)
  for(const [name,description] of Object.entries(deferred))if(!options.productionCatalog||!/^teloa_(?:create_|library_)/.test(name))register(name,description)
  if(options.productionCatalog)for(const registerTools of [registerPageCreateTools,registerCapabilityDraftTools,registerMethodReuseTools,registerPlanTools,registerLibraryTools])registerTools(ctx,{} as never)
@@ -63,6 +63,22 @@ const names=(request:GenerateOptions|undefined)=>(request?.tools??[]).map(tool=>
 const system=(request:GenerateOptions)=>JSON.stringify(request.messages.filter(message=>message.role==='system'))
 const results=(agent:Agent)=>JSON.stringify(agent.session.snapshotEvents().filter(event=>event.type==='tool/result'))
 
+test('加载器静态模型说明统一英文，中文类别别名仍能发现全英文工具且不进入提示词',async t=>{
+ for(const [query,expected] of [['文件与命令','bash'],['员工与团队','teloa_employees_create'],['资料库','teloa_library_save']]){
+  const f=await setup(t,{englishDescriptions:true}),original=f.ctx.tools.schemas(f.agent).find(tool=>tool.name===expected)!
+  f.adapter.scripts.push(call(toolLoaderName,{query}),text);await f.send()
+  const first=f.adapter.requests[0]!,loader=first.tools!.find(tool=>tool.name===toolLoaderName)!,directory=JSON.stringify(first.messages.filter(message=>message.source?.kind==='runtime-context'))
+  assert.doesNotMatch(loader.description,/\p{Script=Han}/u,'加载器说明/类别不能序列化中文搜索别名');assert.doesNotMatch(JSON.stringify(loader.parameters),/\p{Script=Han}/u)
+  assert.doesNotMatch(directory,/\p{Script=Han}/u,'普通发现上下文只保留英文静态规则')
+  const loaded=f.adapter.requests[1]!.tools!.find(tool=>tool.name===expected)
+  assert.ok(loaded,query+'应通过内部中文别名找到'+expected);assert.equal(loaded.description,original.description);assert.deepEqual(loaded.parameters,original.parameters,'延后加载不能压缩真实schema或翻译原字段说明')
+  assert.doesNotMatch(results(f.agent),/\p{Script=Han}/u,'成功回执静态提示为英文');assert.deepEqual(f.executed,[])
+  const voice=createVoiceToolLoading(f.ctx);t.after(voice.dispose);const slim=voice.refine(f.agent,await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent}),{voice:true,turn:1})
+  assert.doesNotMatch(slim.contexts.find(row=>row.name==='teloa:voice-tool-directory')!.text,/\p{Script=Han}/u)
+  await assert.rejects(f.ctx.tools.get(toolLoaderName,f.agent)!.execute({names:['unknown-tool']},{agent:f.agent,signal:new AbortController().signal} as never),error=>{assert.doesNotMatch(String(error),/\p{Script=Han}/u);return (error as {code?:string}).code==='teloa/forbidden'})
+ }
+})
+
 test('普通会话首个请求只广告常驻核心与加载器，加载器描述列出可加载类别，提示词随核心集合变小',async t=>{
  const before=await setup(t,{loading:false});await before.send()
  const after=await setup(t);await after.send()
@@ -72,14 +88,14 @@ test('普通会话首个请求只广告常驻核心与加载器，加载器描�
  for(const name of [...Object.keys(deferred),...runOnly])assert.ok(!names(slim).includes(name),name+' 不应在首步广告')
  const loader=slim.tools!.find(tool=>tool.name===toolLoaderName)!
  const visible=JSON.stringify(slim.messages)
- assert.match(visible,/未展开.*不.*全部能力/)
+ assert.match(visible,/common entry points, not all capabilities/)
  assert.match(visible,/teloa_tools_load/)
- assert.match(visible,/不能.*未加载.*不支持/)
- for(const label of ['新建与草案','市场与行业','员工与团队','项目','资料库'])assert.match(loader.description,new RegExp(label))
- assert.doesNotMatch(loader.description,/群管理|计划（/,'没有可加载工具的类别不列出')
+ assert.match(visible,/Do not infer lack of support.*unloaded tool/)
+ for(const label of ['Creation and drafts','Market and industry','Employees and teams','Projects','Library'])assert.match(loader.description,new RegExp(label))
+ assert.doesNotMatch(loader.description,/Groups \(|Plans \(/,'没有可加载工具的类别不列出')
  assert.doesNotMatch(system(slim),/项目工具规则/,'延后工具的 tool: 说明随参数一起延后')
- assert.match(system(full),/# 项目配置/);assert.doesNotMatch(system(slim),/# 项目配置/)
- assert.match(system(full),/# 记忆与经验/);assert.doesNotMatch(system(slim),/# 记忆与经验/)
+ assert.match(system(full),/# Project configuration/);assert.doesNotMatch(system(slim),/# Project configuration/)
+ assert.match(system(full),/# Memory and experience/);assert.doesNotMatch(system(slim),/# Memory and experience/)
  const bytes=(request:GenerateOptions)=>JSON.stringify(request.tools).length
  t.diagnostic(`改前 ${full.tools!.length} 个工具 ${bytes(full)} 字节，系统提示 ${system(full).length} 字符；改后 ${slim.tools!.length} 个 ${bytes(slim)} 字节，系统提示 ${system(slim).length} 字符`)
  assert.ok(bytes(slim)<bytes(full)*0.7)
@@ -132,7 +148,7 @@ test('调用加载器后下一请求出现被加载工具，同一会话后续�
  assert.ok(!names(f.adapter.requests[0]).includes('teloa_projects_list'))
  assert.ok(names(f.adapter.requests[1]).includes('teloa_projects_list'))
  assert.match(system(f.adapter.requests[1]!),/项目工具规则/)
- assert.match(system(f.adapter.requests[1]!),/# 项目配置/)
+ assert.match(system(f.adapter.requests[1]!),/# Project configuration/)
  await f.send()
  assert.ok(names(f.adapter.requests[2]).includes('teloa_projects_list'),'加载状态在同一会话内只增不减')
  f.adapter.scripts.push(call(toolLoaderName,{query:'创建员工'}),text)
@@ -149,12 +165,12 @@ test('直接调用许可内未加载工具照常执行并补加载；运行专�
  const f=await setup(t)
  f.adapter.scripts.push(call('teloa_employees_create',{target:'销售助理'}),text)
  await f.send()
- assert.doesNotMatch(results(f.agent),/本次未执行/)
+ assert.doesNotMatch(results(f.agent),/nothing executed/)
  assert.deepEqual(f.executed,['teloa_employees_create'],'许可内工具按名称直接调用即由原工具执行，参数与权限仍走原工具自身校验')
  assert.ok(names(f.adapter.requests[1]).includes('teloa_employees_create'),'执行后下一步可见正式参数')
  f.adapter.scripts.push(call('teloa_group_attach',{target:'a.txt'}),text)
  await f.send()
- assert.match(results(f.agent),/teloa_group_attach 只适用于受管任务运行，当前会话不可用，本次未执行/)
+ assert.match(results(f.agent),/teloa_group_attach is for managed task runs only, unavailable in this conversation; nothing executed/)
  assert.ok(!names(f.adapter.requests[3]).includes('teloa_group_attach'))
  assert.deepEqual(f.executed,['teloa_employees_create'])
  await assert.rejects(f.ctx.tools.get(toolLoaderName,f.agent)!.execute({names:['teloa_group_attach']},{agent:f.agent,signal:new AbortController().signal} as never),{code:'teloa/forbidden'},'加载器不能展开当前会话不适用的工具')
@@ -207,7 +223,7 @@ test('群路由会话不进入按需加载：误调工具由路由守卫拒绝',
  assert.match(results(f.agent),new RegExp(groupRoutingDenyReason))
  assert.doesNotMatch(results(f.agent),/尚未通过/)
  assert.deepEqual(f.executed,[])
- await assert.rejects(f.ctx.tools.get(toolLoaderName,f.agent)!.execute({names:['teloa_projects_list']},{agent:f.agent,signal:new AbortController().signal} as never),/不在工具加载阶段/,'路由会话不建立加载状态')
+ await assert.rejects(f.ctx.tools.get(toolLoaderName,f.agent)!.execute({names:['teloa_projects_list']},{agent:f.agent,signal:new AbortController().signal} as never),/not in a tool-loading phase/,'路由会话不建立加载状态')
 })
 
 test('常驻核心名单',()=>{
@@ -223,7 +239,7 @@ test('把技能名误当工具名时仍拒绝执行，并向模型给出当前�
  await f.send()
  assert.match(results(f.agent),/teloa_employees_create/,'失败回执应给出真实的许可内候选，不能只让模型猜名称')
  assert.match(results(f.agent),/query/)
- assert.match(results(f.agent),/技能名/)
+ assert.match(results(f.agent),/Skill names are not tool names/)
  assert.doesNotMatch(results(f.agent),/teloa_group_attach/,'运行专用工具不能出现在纠正候选中')
  assert.deepEqual(names(f.adapter.requests[1]),[...core,toolLoaderName].sort(),'失败既不部分加载，也不执行业务工具')
  assert.deepEqual(f.executed,[])

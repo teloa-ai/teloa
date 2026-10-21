@@ -132,7 +132,7 @@ export function createDirectDeviceHost(ports:Ports){
  }
  return Object.freeze({authorize,media,
   approvalConnections:()=>[...approvalBindings.values()].filter(binding=>!closed&&!blocked.has(binding.id)&&(leases.get(binding.id)?.size??0)>0),
-  voiceContext:(sessionId:string)=>!closed&&activeSessions.has(sessionId)?'当前输入来自本人已配对的 Teloa 语音硬件，由宿主识别语音并将本次完整回答播报。沿用原助手、原会话、模型、工具和审批；普通交流简短自然地直接回答，不先说“已接手”代替结果。媒体关闭后不再持续监听。':'',
+  voiceContext:(sessionId:string)=>!closed&&activeSessions.has(sessionId)?'Input comes from the user’s paired Teloa voice hardware. The host transcribes speech and speaks the complete reply. Keep the original assistant, conversation, model, tools and approvals. Answer ordinary conversation directly, briefly and naturally; do not replace results with a handoff acknowledgement. Listening ends when media closes.':'',
   async revoke(id:string){blocked.add(id);for(const lease of leases.get(id)??[])lease.abort();await ports.store.revoke(id)},
   async close(){closed=true;for(const set of leases.values())for(const lease of set)lease.abort();leases.clear()},
  })

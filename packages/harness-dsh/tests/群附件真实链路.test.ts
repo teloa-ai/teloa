@@ -441,8 +441,8 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
   assert.equal((images[0]!.attachment as Record<string,unknown>).name,'格式验收.jpg')
   const texts=promptOne.content.filter(part=>part.type==='text')
   assert.equal(texts.length,3,'固定输入、运行日期与本次原目标各一个 text 部件')
-  assert.equal(texts[2]!.text,'本次任务（按原目标完成交付）：\n'+JSON.parse(String(texts[0]!.text)).task.goal,'任务目标逐字保留，不能用群资料代替')
-  assert.ok(String(texts[1]!.text).startsWith('本次运行日期：'))
+  assert.equal(texts[2]!.text,'Current task (fulfill the original goal):\n'+JSON.parse(String(texts[0]!.text)).task.goal,'任务目标逐字保留，不能用群资料代替')
+  assert.ok(String(texts[1]!.text).startsWith('Run date: '))
   // GIF 走文件通道（编排者裁定 1）：它既不成为 image 部件，也不带 mediaType=image/gif。
   assert.equal(images.some(part=>(part.attachment as Record<string,unknown>).name==='动画验收.gif'||(part.attachment as Record<string,unknown>).mediaType==='image/gif'),false,'GIF 不得成为 image 部件')
  })

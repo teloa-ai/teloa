@@ -156,7 +156,7 @@ test('真实语音原Agent按需加载工具，下一步照常执行，普通输
  assert.deepEqual(f.adapter.requests[1]!.tools?.map(t=>t.name).sort(),['hot_result',voiceToolsName].sort())
  assert.equal(f.counters.tools,1,'加载目录本身不能执行业务，正式工具仍由原Loop执行')
  assert.deepEqual(f.routes(),[fast,fast,fast],'宿主补充说明不能丢掉原语音轮次归属')
- assert.ok(f.adapter.requests[0]!.messages.some(message=>JSON.stringify(message.content).includes('当前语音轮次的工具加载')))
+ assert.ok(f.adapter.requests[0]!.messages.some(message=>JSON.stringify(message.content).includes('Tool loading for this voice turn')))
  await f.plain();await f.agent.whenIdle()
  assert.deepEqual(f.adapter.requests[3]!.tools?.map(t=>t.name),['hot_result'])
  await f.sendVoice();await f.agent.whenIdle()
@@ -192,19 +192,19 @@ test('语音先聊天、按需恢复工作规则；猜测未加载工具不能�
  f.adapter.scripts.push(toolAnswer,textAnswer)
  await f.sendVoice();await f.agent.whenIdle()
  assert.equal(f.counters.tools,0)
- assert.ok(JSON.stringify(f.agent.session.snapshotEvents()).includes('本次未执行'))
+ assert.ok(JSON.stringify(f.agent.session.snapshotEvents()).includes('nothing executed'))
  const project={name:'teloa_projects_read',description:'读取项目配置',parameters:{type:'object',properties:{}}}
  const discovery={name:voiceToolsName,description:'加载',parameters:{type:'object',properties:{}}}
  const assembly={sections:[{name:'teloa:work-behavior',text:'原完整规则'},{name:'identity',text:'原身份与权限'}],contexts:[{name:'teloa:work-behavior-runtime',text:''},{name:'role',text:'原职责'}],variables:{},tools:[project,discovery]} as never
  const first=loading.refine(f.agent,assembly,{voice:true,turn:10})
- assert.ok(first.sections[0]!.text.includes('# 通用核心'))
- assert.ok(!first.sections[0]!.text.includes('# 项目配置'))
+ assert.ok(first.sections[0]!.text.includes('# Core'))
+ assert.ok(!first.sections[0]!.text.includes('# Project configuration'))
  assert.equal(first.sections[1]!.text,'原身份与权限')
  assert.equal(first.contexts.find(c=>c.name==='role')!.text,'原职责')
  await f.ctx.tools.get(voiceToolsName,f.agent)!.execute({query:'读取项目'},{agent:f.agent,signal:new AbortController().signal} as never)
  const work=loading.refine(f.agent,assembly,{voice:true,turn:10})
  assert.ok(work.tools.some(tool=>tool.name===project.name))
- assert.ok(work.sections[0]!.text.includes('# 项目配置'))
+ assert.ok(work.sections[0]!.text.includes('# Project configuration'))
 })
 
 test('原许可工具名被提前调用时只加载参数，下一步才执行，不再绕一次目录搜索',async t=>{

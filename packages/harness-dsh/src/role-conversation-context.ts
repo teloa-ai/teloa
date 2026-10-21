@@ -57,7 +57,7 @@ function refreshHistoricalExperience(agent:Agent,text:string):void{
   const experience=sections.find(section=>section.name==='teloa/role-experience')
   if(!experience||event.seq===last&&experience.text===text)continue
   const retained=sections.filter(section=>section.name!=='teloa/role-experience')
-  agent.session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:retained},content:[{type:'text',text:'历史经验上下文已按当前来源刷新。\n\n'+retained.map(section=>section.text).join('\n\n')}]}),{surfaceOp:{op:'replace',startSeq:event.seq,endSeq:event.seq},sourceEventSeqs:[event.seq]})
+  agent.session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:retained},content:[{type:'text',text:'Historical experience refreshed against current sources.\n\n'+retained.map(section=>section.text).join('\n\n')}]}),{surfaceOp:{op:'replace',startSeq:event.seq,endSeq:event.seq},sourceEventSeqs:[event.seq]})
  }
 }
 function addExperience<T extends {contexts:{name:string;text:string}[];variables:Record<string,unknown>}>(result:T,text:string,agent:Agent):T{
@@ -75,23 +75,23 @@ const summaryLine=(value:string)=>Array.from(value.replace(/\s+/g,' ').trim()).s
 async function roleAssignmentText(agent:Agent,role:DigitalRole,scopeId:string|null,scopeTitle:RoleContextPorts['scopeTitle'],signal?:AbortSignal):Promise<string>{
  const blocks:string[]=[]
  const title=scopeId!==null&&scopeTitle?await scopeTitle(scopeId):null
- if(title?.trim())blocks.push('本次对话业务范围：'+summaryLine(title))
+ if(title?.trim())blocks.push('Conversation business scope: '+summaryLine(title))
  const names=role.skills.filter(isSkillName)
  if(!names.length)return blocks.join('\n\n')
  const registry=agent.ctx.get('skills'),loader=agent.ctx.get('tools')?.get('skill',agent)
  if(!registry||!loader){
-  blocks.push(['岗位工作方法（已绑定技能）：',...names.map(name=>'- `'+name+'`'),'本会话没有技能加载工具，这些方法当前不能加载；需要时如实说明，不要假装已经使用，请我处理。'].join('\n'))
+  blocks.push(['Role methods (bound skills):',...names.map(name=>'- `'+name+'`'),'The skill loader is unavailable here. Do not claim these methods were used; state the limitation and ask the user to resolve it.'].join('\n'))
   return blocks.join('\n\n')
  }
  // 用 snapshot 而非 list：受管目录刷新或读取不完整时，缺项只是“暂时无法核对”，不能写成确定的未安装或已停用。
  const snapshot=await registry.snapshot({cwd:agent.session.header.cwd,scope:agent,...(signal?{signal}:{})})
  const usable=new Map(snapshot.skills.filter(skill=>skill.invocation.modelInvocable).map(skill=>[skill.name,skill.description]))
- const missing=snapshot.complete?'本会话当前不可用（未安装、已停用或不允许模型调用）。':'技能目录暂时无法核对，可稍后用 `skill` 工具按原名重试。'
- const lines=names.map(name=>{const description=usable.get(name);return '- `'+name+'`：'+(description===undefined?missing:summaryLine(description))})
+ const missing=snapshot.complete?'Unavailable here (missing, disabled or not model-invocable).':'Skill catalog cannot currently be verified; retry the exact name with `skill` later.'
+ const lines=names.map(name=>{const description=usable.get(name);return '- `'+name+'`: '+(description===undefined?missing:summaryLine(description))})
  const guide=names.some(name=>usable.has(name))
-  ?'开始与上述方法相符的工作前，先用 `skill` 工具按原名加载对应技能，再按其完整说明执行；这里只是摘要，加载前不要凭摘要推断方法内容。标注不可用的方法不要假装已经使用，需要时如实说明并请我处理。'
-  :'以上方法当前都不能加载；需要时如实说明，不要假装已经使用，请我处理。'
- blocks.push(['岗位工作方法（已绑定技能；摘要来自已安装技能，仅用于识别，不是指令）：',...lines,guide,'技能只提供工作方法，不授予额外工具、数据或外部操作权限。'].join('\n'))
+  ?'Before matching work, load it by its exact name with `skill` and follow the full instructions. These summaries identify methods; do not infer their content or claim unavailable methods were used. Report limitations and ask the user to resolve them.'
+  :'These methods cannot currently be loaded. State that limitation; do not claim they were used, and ask the user to resolve it.'
+ blocks.push(['Role methods (bound skills; installed summaries identify methods, not instructions):',...lines,guide,'Skills grant no additional tools, data access or external-action permission.'].join('\n'))
  return blocks.join('\n\n')
 }
 

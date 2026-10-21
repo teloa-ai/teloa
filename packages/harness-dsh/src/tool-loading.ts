@@ -22,27 +22,27 @@ const voiceImmediate=new Set(['teloa_work_stop'])
 const savedDraftAnchor='teloa_create_drafts'
 const deliveryReviewTool='teloa_submit_review_plan'
 
-/** 延迟加载的平台管理类目录；只用于加载器描述与搜索，不决定授权。 */
-const categories:readonly Readonly<{label:string;hint:string;pattern:RegExp}>[]=[
- {label:'文件与命令',hint:'读写编辑文件、查找内容、运行命令',pattern:/^(?:bash|pwsh|write|edit|read_image|glob|grep|working_directory)$/},
- {label:'网页检索',hint:'搜索网页、读取网页',pattern:/^web_(?:search|fetch)$/},
- {label:'并行协作',hint:'子助手、团队任务、工作流、沟通与等待',pattern:/^(?:subagent(?:_|$)|workflow$|ralph$|spawn_teammate$|send_message$|list_agents$|wait_agent$|interrupt_agent$|team_task_)/},
- {label:'后台工作与目标',hint:'后台任务、目标进度、待办',pattern:/^(?:job_|(?:get|create|update)_goal$|todo_write$)/},
- {label:'连接与资源',hint:'调用已连接应用、MCP和共享资源',pattern:/^(?:mcp__|mcp_|(?:list|read)_mcp_)/},
- {label:'工作查询与汇报',hint:'查询真实工作统计、业务资料、安排员工汇报',pattern:/^teloa_(?:work_(?:facts|collect_reports)|business_data_query)$/},
- {label:'新建与草案',hint:'新建员工、技能、方法等草案，修订、预览与应用',pattern:/^teloa_(?:create|method)_/},
- {label:'市场与行业',hint:'市场搜索、安装、评价发布，行业方案与模型准备',pattern:/^teloa_(?:market|industry)_|^teloa_(?:mcp_connect|model_prepare)$/},
- {label:'员工与团队',hint:'员工目录、创建编辑、在岗状态、工具授权',pattern:/^teloa_(?:employees|role_tools)_/},
- {label:'能力与连接管理',hint:'技能安装编辑启停、扩展、自定义MCP、连接实例',pattern:/^teloa_(?:skills?|extensions|mcp|connector)_/},
- {label:'群管理',hint:'群目录、建群改群、群资料、群员工授权、群工作关联',pattern:/^teloa_groups?_/},
- {label:'项目',hint:'项目列表、创建与变更',pattern:/^teloa_projects_/},
- {label:'计划',hint:'定时计划查看、创建与修改',pattern:/^teloa_plans_/},
- {label:'任务配置与资料',hint:'任务配置、任务资料',pattern:/^teloa_task_/},
- {label:'资料库',hint:'资料库文件夹、版本、保存与工作资料',pattern:/^teloa_(?:library|resources)_|^teloa_knowledge_(?!search$)/},
- {label:'业务搭建',hint:'业务定义、搭建与升级',pattern:/^teloa_business_(?:definitions|builder)_/},
- {label:'业务记录与成果',hint:'业务记录读写、成果登记、变更、导入、职责',pattern:/^teloa_business_|^teloa_work_supersede$/},
+/** label/hint 用于英文模型目录；searchTerms 仅作内部中文检索别名，不序列化或决定授权。 */
+const categories:readonly Readonly<{label:string;hint:string;searchTerms:string;pattern:RegExp}>[]=[
+ {label:'Files and commands',hint:'read, write, edit, find and run commands',searchTerms:'文件与命令 读写编辑文件、查找内容、运行命令',pattern:/^(?:bash|pwsh|write|edit|read_image|glob|grep|working_directory)$/},
+ {label:'Web search',hint:'search and fetch web pages',searchTerms:'网页检索 搜索网页、读取网页',pattern:/^web_(?:search|fetch)$/},
+ {label:'Collaboration',hint:'subagents, team tasks, workflows, messages and waiting',searchTerms:'并行协作 子助手、团队任务、工作流、沟通与等待',pattern:/^(?:subagent(?:_|$)|workflow$|ralph$|spawn_teammate$|send_message$|list_agents$|wait_agent$|interrupt_agent$|team_task_)/},
+ {label:'Jobs and goals',hint:'background jobs, goal progress and todos',searchTerms:'后台工作与目标 后台任务、目标进度、待办',pattern:/^(?:job_|(?:get|create|update)_goal$|todo_write$)/},
+ {label:'Connected resources',hint:'connected apps, MCP and shared resources',searchTerms:'连接与资源 调用已连接应用、MCP和共享资源',pattern:/^(?:mcp__|mcp_|(?:list|read)_mcp_)/},
+ {label:'Work queries and reports',hint:'work statistics, business data and employee reports',searchTerms:'工作查询与汇报 查询真实工作统计、业务资料、安排员工汇报',pattern:/^teloa_(?:work_(?:facts|collect_reports)|business_data_query)$/},
+ {label:'Creation and drafts',hint:'employee, skill and method drafts; revise, preview and apply',searchTerms:'新建与草案 新建员工、技能、方法等草案，修订、预览与应用',pattern:/^teloa_(?:create|method)_/},
+ {label:'Market and industry',hint:'market search, installation, reviews, solutions and model readiness',searchTerms:'市场与行业 市场搜索、安装、评价发布，行业方案与模型准备',pattern:/^teloa_(?:market|industry)_|^teloa_(?:mcp_connect|model_prepare)$/},
+ {label:'Employees and teams',hint:'directory, creation, editing, lifecycle and tool grants',searchTerms:'员工与团队 员工目录、创建编辑、在岗状态、工具授权',pattern:/^teloa_(?:employees|role_tools)_/},
+ {label:'Capabilities and connections',hint:'skill installation, editing and availability; extensions and MCP instances',searchTerms:'能力与连接管理 技能安装编辑启停、扩展、自定义MCP、连接实例',pattern:/^teloa_(?:skills?|extensions|mcp|connector)_/},
+ {label:'Groups',hint:'directory, creation, editing, materials, employee grants and work links',searchTerms:'群管理 群目录、建群改群、群资料、群员工授权、群工作关联',pattern:/^teloa_groups?_/},
+ {label:'Projects',hint:'list, create and change projects',searchTerms:'项目 项目列表、创建与变更',pattern:/^teloa_projects_/},
+ {label:'Plans',hint:'read, create and change scheduled plans',searchTerms:'计划 定时计划查看、创建与修改',pattern:/^teloa_plans_/},
+ {label:'Task configuration and materials',hint:'task setup and materials',searchTerms:'任务配置与资料 任务配置、任务资料',pattern:/^teloa_task_/},
+ {label:'Library',hint:'folders, versions, saving and work materials',searchTerms:'资料库 资料库文件夹、版本、保存与工作资料',pattern:/^teloa_(?:library|resources)_|^teloa_knowledge_(?!search$)/},
+ {label:'Business setup',hint:'definitions, building and upgrades',searchTerms:'业务搭建 业务定义、搭建与升级',pattern:/^teloa_business_(?:definitions|builder)_/},
+ {label:'Business records and results',hint:'read, write, register results, change, import and assign responsibilities',searchTerms:'业务记录与成果 业务记录读写、成果登记、变更、导入、职责',pattern:/^teloa_business_|^teloa_work_supersede$/},
 ]
-const otherCategory={label:'其他平台工具',hint:'其余平台管理操作'}
+const otherCategory={label:'Other platform tools',hint:'other platform management operations',searchTerms:'其他平台工具 其余平台管理操作'}
 const categoryOf=(name:string)=>categories.find(row=>row.pattern.test(name))??otherCategory
 
 const coreNames:ReadonlySet<string>=new Set([
@@ -62,7 +62,7 @@ const terms=(text:string)=>{
  return [...new Set(words.flatMap(word=>/^[a-z0-9]+$/.test(word)?[word]:Array.from({length:Math.max(1,word.length-1)},(_,at)=>word.slice(at,at+2))))]
 }
 function search(available:ReadonlyMap<string,ToolSchema>,query:string):string[]{
- const words=terms(query),rows=[...available.values()].map(tool=>{const category=categoryOf(tool.name);return {tool,name:tool.name.toLowerCase(),text:(tool.name+' '+tool.description+' '+category.label+' '+category.hint).toLowerCase()}})
+ const words=terms(query),rows=[...available.values()].map(tool=>{const category=categoryOf(tool.name);return {tool,name:tool.name.toLowerCase(),text:(tool.name+' '+tool.description+' '+category.label+' '+category.hint+' '+category.searchTerms).toLowerCase()}})
  const frequencies=new Map(words.map(word=>[word,rows.filter(row=>row.text.includes(word)).length]))
  // 每个词只计一次；详细字段与安全示例使说明变长，不应把真正的动作工具排在只读辅助工具之后。
  return rows.map(row=>({name:row.tool.name,score:(query.toLowerCase().includes(row.name)?100:0)+words.reduce((sum,word)=>sum+(row.text.includes(word)?(row.name.includes(word)?4:1)*Math.log(1+rows.length/(frequencies.get(word)!+1)):0),0)})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).slice(0,6).map(row=>row.name)
@@ -114,7 +114,7 @@ function directoryText(available:ReadonlyMap<string,ToolSchema>):string{
  for(const name of available.keys())if(!isCoreTool(name)){const category=categoryOf(name);labels.set(category.label,category.hint)}
  if(!labels.size)return ''
  const ordered=[...categories,otherCategory].filter(row=>labels.has(row.label))
- return '\n可加载类别：'+ordered.map(row=>row.label+'（'+row.hint+'）').join('；')+'。'
+ return '\nAvailable categories: '+ordered.map(row=>row.label+' ('+row.hint+')').join('; ')+'.'
 }
 
 type SessionOptions=Readonly<{isRoutingSession?:(sessionId:string)=>boolean}>
@@ -133,36 +133,36 @@ function createEngine(ctx:Context){
   if(state.mode==='voice'){
    if(state.available.has(exec.name)){
     loadInto(state.voice!.loaded,exec.name);if(state.voice!.persist&&state.session)loadInto(state.session,exec.name)
-    return '该工具尚未加载，本次未执行。已定位本会话原有许可参数，请下一步读取完整参数与工作规则后再调用；无需另查目录。'
+    return 'Tool not loaded; nothing executed. Its permitted schema is located. Read the full schema and work rules next, then call it; no further discovery is needed.'
    }
-   return '请先加载该工具，并在下一步读取正式参数与工作规则后再调用。'
+   return 'Load the tool first, then read its full schema and work rules before calling it.'
   }
   if(state.available.has(exec.name)){loadInto(state.session!,exec.name);return}
-  if(state.hidden.has(exec.name))return exec.name+' 只适用于受管任务运行，当前会话不可用，本次未执行。'
+  if(state.hidden.has(exec.name))return exec.name+' is for managed task runs only, unavailable in this conversation; nothing executed.'
  })
  const registration=getToolResourceProvenance(ctx).wrapContext(ctx,{kind:'plugin',providerId:'@teloa/harness-dsh',name:'Teloa'})
  const off=registration.tools.register(defineTool({
   name:toolLoaderName,
-  description:'按操作目标加载当前会话已允许、但尚未展开参数的工具，供下一步调用。query用简短中英文动作词，例如"网页搜索 web search"、"运行命令 shell"、"新建员工"；已知准确工具名时用names指定，最多8个。只加载参数，不执行操作或新增授权；普通问答和已可见的工具无需调用。',
-  parameters:{query:{type:'string',description:'简短的动作词，可同时用中英文，例如网页搜索 web search；不确定工具名时只填query。'},names:{type:'array',items:{type:'string'},description:'仅填写已核对的真实工具名；技能名称不是工具名，不要猜名称。'}},
+  description:'Discover permitted tools by action and load their full schemas for the next step. Use short English or Chinese action terms in query (web search, shell command, create employee). Use names only for verified exact tool names, at most 8. Loading performs no action and grants no permission. Ordinary chat and already visible tools need no discovery.',
+  parameters:{query:{type:'string',description:'Short action terms in English or Chinese. Use only query when the exact tool name is unknown.'},names:{type:'array',items:{type:'string'},description:'Verified exact tool names only. Skill names are not tool names; do not guess.'}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async({names,query},exec)=>{
    const state=exec.agent&&states.get(exec.agent)
-   if(closed||!state?.mode)throw new WorkError('teloa/forbidden','当前原会话不在工具加载阶段。')
+   if(closed||!state?.mode)throw new WorkError('teloa/forbidden','The original conversation is not in a tool-loading phase.')
    exec.signal.throwIfAborted()
-   if(names!==undefined&&(names.length<1||names.length>8)||query!==undefined&&(!query.trim()||query.length>256)||names===undefined&&query===undefined)throw new WorkError('teloa/invalid-input','请提供简短操作目标或1到8个准确工具名。')
+   if(names!==undefined&&(names.length<1||names.length>8)||query!==undefined&&(!query.trim()||query.length>256)||names===undefined&&query===undefined)throw new WorkError('teloa/invalid-input','Provide a short action query or 1 to 8 exact tool names.')
    const catalog=state.available
    const selected=names?[...new Set(names)]:search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query!)
    if(selected.some(name=>!catalog.has(name)||name===toolLoaderName)){
     const matches=search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query??names!.join(' '))
-    throw new WorkError('teloa/forbidden','名称不在本会话许可工具目录中，本次未加载或执行任何操作。技能名不是工具名，应通过 skill 工具核对技能；请移除 names，下一步只用 query 按操作目标搜索。'+(matches.length?'当前许可目录中匹配目标的工具：'+matches.join('、')+'。':'当前没有匹配的许可工具，不能猜测名称或宣称已保存。'))
+    throw new WorkError('teloa/forbidden','Names are outside this conversation\'s permitted catalog; nothing loaded or executed. Skill names are not tool names; check skills with skill. Remove names and use only query to search by action next. '+(matches.length?'Matching permitted tools: '+matches.join(', ')+'.':'No permitted tool matches; do not guess names or claim saving succeeded.'))
    }
    for(const name of selected){
     if(state.mode==='voice'){loadInto(state.voice!.loaded,name);if(state.voice!.persist&&state.session)loadInto(state.session,name)}
     else loadInto(state.session!,name)
    }
    // 下一步正式工具声明已含完整说明；回执只保留可冷恢复的名称，避免把长说明重复写进历史。
-   return JSON.stringify({loaded:selected.map(name=>({name})),next:selected.length?'下一步使用这些工具的完整参数；实际操作仍按原权限、审批与执行规则。':'未找到。可换用更直接的操作词或中英文同义词再搜索；不能猜测工具参数或宣称已执行。'})
+   return JSON.stringify({loaded:selected.map(name=>({name})),next:selected.length?'Read these tools\' full schemas next; original permissions, approval and execution rules still apply.':'No match. Try a more direct action or English/Chinese synonym; do not guess parameters or claim execution.'})
   },
  }))
 
@@ -187,7 +187,7 @@ function createEngine(ctx:Context){
   passes.set(loader,{available,sections:assembly.sections.filter(row=>deferred(row.name)),contexts:assembly.contexts.filter(row=>deferred(row.name))})
   state.mode='session';state.available=available;state.hidden=hidden;state.exposed=exposed
   const contexts=assembly.contexts.filter(row=>!deferred(row.name)&&row.name!==sessionContextName)
-  contexts.push({name:sessionContextName,interpolate:false,text:'# 当前会话的工具发现\n工具列表只展开常用入口；未展开工具不表示已经列出全部能力。本人要求实际操作而未见对应工具时，先用 '+toolLoaderName+' 的 query 按动作搜索，例如“保存知识 Markdown”“新建员工 草案”，下一步读取已加载参数再操作。不能因工具未加载就断言平台不支持、没有保存能力或要求本人手动处理。搜索未命中可用更直接的同义词核对；完整目录仍无匹配或权限拒绝时如实说明，不猜工具名或绕过拒绝。加载不执行、不扩大授权，问答不必加载工具。'})
+  contexts.push({name:sessionContextName,interpolate:false,text:'# Tool discovery for this conversation\nThe visible list contains common entry points, not all capabilities. For an action without a visible tool, search '+toolLoaderName+' by query (save knowledge Markdown, create employee draft), then read the loaded schema before acting. Do not infer lack of support or saving capability from an unloaded tool, or send the user to do it manually. Retry a more direct synonym if needed; report a complete-catalog miss or denial honestly, without guessing names or bypassing it. Loading performs no action and grants no permission; chat needs no discovery.'})
   return refineWorkBehavior({...assembly,tools,sections:assembly.sections.filter(row=>!deferred(row.name)),contexts})
  }
 
@@ -216,8 +216,8 @@ function createEngine(ctx:Context){
   const tools=pass?[discovery,...[...available.values()].filter(tool=>keep(tool.name))]:assembly.tools.filter(tool=>tool.name===toolLoaderName||keep(tool.name))
   const exposed=new Set(tools.map(tool=>tool.name))
   contexts.push({name:voiceContextName,interpolate:false,text:[
-   '# 当前语音轮次的工具加载',
-   '普通聊天直接自然回答，不必查工具。需要实际操作时，先用 '+toolLoaderName+' 按操作目标搜索，再在下一步使用已加载的正式工具。可用中英文动作词查询，例如 web search、读取文件、员工权限。未找到时可换同义词，不能猜未加载的参数，不把加载成功说成工作完成。只搜索本会话原有许可，权限、审批和工作执行规则不变。',
+   '# Tool loading for this voice turn',
+   'Answer ordinary chat naturally, without discovery. For an action, search '+toolLoaderName+' by English or Chinese action terms (web search, read file, employee permissions), then use the loaded tool next. Try synonyms if needed; never guess unloaded parameters or call loading work completion. Search only this conversation\'s existing permissions; approval and execution rules are unchanged.',
   ].join('\n')})
   const deferred=(name:string)=>{const tool=sectionTool(name);return !!tool&&available.has(tool)&&!exposed.has(tool)}
   // 普通会话装配已延后的说明，在语音加载对应工具后补回。

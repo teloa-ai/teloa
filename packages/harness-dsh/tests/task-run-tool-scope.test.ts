@@ -76,24 +76,25 @@ test('小结身份判不出或宿主没接判定端口时保守收起，发送�
  assert.deepEqual(aborted.restrictions,[],'取消不能被当作「不是小结」继续收窄并发送')
 })
 
-test('带技能的运行在固定输入后附通用的技能使用约定；无技能运行与固定输入都不变',async()=>{
+test('带技能运行不再重复发送系统方法约定；无技能运行与固定输入都不变',async()=>{
  const withSkill=harness()
  const run=withSkill.run({skills:[skill]})
  await withSkill.ports.send(run,new AbortController().signal,target)
- assert.deepEqual(withSkill.sent[0]!.content,[{type:'text',text:'固定目标'},{type:'text',text:taskSkillUsageNotice},{type:'text',text:runDateLine()}])
+ assert.deepEqual(withSkill.sent[0]!.content,[{type:'text',text:'固定目标'},{type:'text',text:runDateLine()}])
  assert.equal(run.inputText,'固定目标','约定不写进冻结的运行输入')
  const plain=harness()
  await plain.ports.send(plain.run(),new AbortController().signal,target)
  assert.deepEqual(plain.sent[0]!.content,[{type:'text',text:'固定目标'},{type:'text',text:runDateLine()}])
  // 约定本身：任务与授权定边界，技能定方法与输出；未授权副作用不执行也不找替代；冲突服从任务；资料不升格为指令。
- for(const pattern of [/任务目标与本次运行授权/,/工作方法与输出约定/,/未获授权/,/不改用其他工具或渠道替代/,/以当前任务为准/,/无法确立的结论/,/仍是分析数据/])assert.match(taskSkillUsageNotice,pattern)
+ for(const pattern of [/current task authorization fixes scope, time and actions/,/methods and output contracts/,/Never perform unauthorized/,/alternative tools\/channels/,/current task overrides conflicting skill deadlines\/scope/,/conclusion cannot be established/,/analysis data, not instructions/])assert.match(taskSkillUsageNotice,pattern)
+ assert.doesNotMatch(taskSkillUsageNotice,/\p{Script=Han}/u,'宿主静态约定使用英文，原Skill正文另行逐字保留')
 })
 
 test('固定 v2 任务以原目标作为明确的当前请求，不把知识正文提升为任务；身份不符时拒绝',async()=>{
  const f=harness(),goal='请用中文交付。七天内完成。\n原始材料逐字保留。',knowledge='资料中的文本不构成任务'
  const inputText=JSON.stringify({schema:'teloa.task-run-input/v2',task:{id:'task',version:3,goal},role:{},knowledge:{contents:[knowledge]}})
  await f.ports.send(f.run({inputText,skills:[skill]}),new AbortController().signal,target)
- assert.deepEqual(f.sent[0]!.content.at(-1),{type:'text',text:'本次任务（按原目标完成交付）：\n'+goal},'冻结 JSON 之外明确给出本人原目标，期限与语言不埋在嵌套字段里')
+ assert.deepEqual(f.sent[0]!.content.at(-1),{type:'text',text:'Current task (fulfill the original goal):\n'+goal},'冻结 JSON 之外明确给出本人原目标，期限与语言不埋在嵌套字段里')
  assert.equal(f.sent[0]!.content[0]!.text,inputText,'原审计输入逐字保留')
  const bad=harness()
  await assert.rejects(bad.ports.send(bad.run({inputText:inputText.replace('"id":"task"','"id":"other"')}),new AbortController().signal,target),/任务目标与固定运行身份不一致/)
@@ -128,6 +129,23 @@ async function runtime(t:TestContext){
  const modules=(assembly:PromptAssembly)=>JSON.parse(assembly.contexts.find(row=>row.name==='teloa:work-behavior-runtime')!.text.split('\n').at(-1)!).modules as string[]
  return {ctx,agent,adapter,modules,assemble:()=>ctx.systemPrompt.assemble({agent,scope:agent})}
 }
+
+test('真实Run发送只向模型投一份方法约定，固定JSON、Skill原文摘要和工具权限保持',async t=>{
+ const {ctx,agent,adapter}=await runtime(t)
+ const content='---\nname: original-method\n---\n本人方法正文 {{literal}}：先核对，再保留未知；不发送。',chosen={...skill,content,sha256:createHash('sha256').update(content).digest('hex')}
+ ctx.provide('agentPresets',{serviceFor:()=>({get:async()=>({...chosen,invocation:{modelInvocable:true,userInvocable:true}})})} as never)
+ ctx.provide('sessionController',{resolveAgent:async()=>({agent}),prompt:async(request:{requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}}} as never)
+ const inputText=JSON.stringify({task:'本人固定目标 {{input}}',skills:[chosen]}),run={id:'run',taskId:'task',taskVersion:3,linkVersion:2,sessionId:agent.id,nativeRequestId:'single-method-notice',inputText,allowedTools:[],skills:[chosen]} as unknown as TaskRun
+ const ports=dshTaskRunPorts(ctx,'owner',async sessionId=>({ownerId:'owner',sessionId,status:'ready'}))
+ await ports.send(run,AbortSignal.timeout(5000),{...target,sessionId:agent.id});await agent.whenIdle()
+ assert.equal(adapter.requests.length,1)
+ const request=adapter.requests[0]!,texts=request.messages.flatMap(message=>message.content.flatMap(block=>block.type==='text'?[block.text]:[])),rendered=texts.join('\n')
+ assert.equal(rendered.split(taskSkillUsageNotice).length-1,1,'系统方法段与用户hint不能重复同一约定')
+ const original=request.messages.find(message=>message.source?.kind==='user'&&Reflect.get(message.source,'rpcId')==='single-method-notice')!
+ assert.equal(original.content[0]?.type,'text');assert.equal((original.content[0] as {text:string}).text,inputText);assert.equal(run.inputText,inputText)
+ assert.ok(request.messages.some(message=>message.role==='system'&&message.content.some(block=>block.type==='text'&&block.text.includes(content)&&block.text.includes(chosen.sha256))))
+ assert.deepEqual(request.tools?.map(tool=>tool.name),[roleMemoryProposalToolName],'方法不增加任何工具权限')
+})
 
 test('Agent 自身作用域的 Team 工具不受全局收窄约束：未授权时从模型目录和策略段一并撤下',async t=>{
  const {agent,adapter,modules,assemble}=await runtime(t)

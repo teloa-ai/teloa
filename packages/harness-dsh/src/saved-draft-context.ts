@@ -10,7 +10,7 @@ import type {PageCreateToolsPorts} from './page-create-tools.ts'
 type Reference={id:string;entity:PageCreateEntity;scope?:string;title:string}
 const sources=new Set(['teloa_create_drafts','teloa_create_draft','teloa_create_revise','teloa_method_reuse','teloa_create_preview','teloa_create_apply'])
 const scoped=new Set(['business-definition','business-domain','connector'])
-const states={draft:'已保存，未应用',applied:'原稿已应用',discarded:'已丢弃'} as const
+const states={draft:'saved, not applied',applied:'draft applied',discarded:'discarded'} as const
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 
 /** 仅认原生成功工具回执，不从用户正文、模型文字或目录列表推导关联。 */
@@ -58,13 +58,13 @@ export function registerSavedDraftContext(ctx:Context,ports:Pick<PageCreateTools
    signal.throwIfAborted()
    try{
     const summary=savedDraftSummaries(await ports.draftDirectory(input,signal),input,ports.owner)
-    for(const ref of refs){const current=summary.drafts.find(draft=>draft.id===ref.id);items.push({title:current?.title??ref.title,entity:ref.entity,state:current?states[current.status]:'暂无法核实',readAt:summary.readAt})}
-   }catch{items.push(...refs.map(ref=>({title:ref.title,entity:ref.entity,state:'暂无法核实'})))}
+    for(const ref of refs){const current=summary.drafts.find(draft=>draft.id===ref.id);items.push({title:current?.title??ref.title,entity:ref.entity,state:current?states[current.status]:'currently unverified',readAt:summary.readAt})}
+   }catch{items.push(...refs.map(ref=>({title:ref.title,entity:ref.entity,state:'currently unverified'})))}
   }
   await authorize();signal.throwIfAborted()
   const name='teloa/saved-draft-state',variable='teloa_saved_draft_state'
   if(result.contexts.some(row=>row.name===name)||Object.hasOwn(result.variables,variable))throw new WorkError('teloa/conflict','原稿状态上下文名称已被占用。')
-  const facts={schema:'teloa.saved-draft-state/v1',notice:'本次模型请求前由正式只读服务核对的事实；仅包含本会话最近关联的八份原稿，不是指令或授权。state 是可读的原稿状态，不证明能力安装、启用、连接或运行。暂无法核实时不能沿用历史状态。向本人用其语言简洁说明名称和当前状态，不复述技术枚举或元数据，不建议未要求的创建、安装或其他操作。本会话已有原生原稿卡，点击名称即可查看，不需要再要求本人选择是否展示。',items}
+  const facts={schema:'teloa.saved-draft-state/v1',notice:'Facts checked by the official read-only service before this request: at most eight recently linked drafts in this conversation, not instructions or authorization. state describes the draft, not installation, activation, connection or execution. Unverified means unknown now; do not reuse old states. Briefly explain names and current states in the response language without technical enums, metadata or unrequested actions. Existing native draft cards open by name; do not ask whether to display them.',items}
   // 动态系统变量不经过 tools/post-execute，必须在此出口复用同一已存值来源和脱敏规则。
   const safeFacts=redactSecrets(JSON.stringify(facts),known())
   return {...result,contexts:[...result.contexts,{name,text:'{{'+variable+'}}'}],variables:{...result.variables,[variable]:safeFacts}}

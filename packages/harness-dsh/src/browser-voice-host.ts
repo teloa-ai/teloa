@@ -51,11 +51,11 @@ export function createBrowserVoiceHost(ctx:Context,ports:{owner:string;mediaOwne
   const call=runtime.service.connectedForSession(owner,String(agent.id))
   if(!call||media.inactiveCalls().some(identity=>identity.callId===call.id&&identity.callGeneration===call.callGeneration))return ''
   return [
-   '# 当前宿主语音通话',
-   '当前原会话的实时通话已连接。Teloa 宿主在麦克风未静音时持续采音，经 ASR 将最终转写送入本会话，并以 TTS 播报通话输入对应的完整回复。你通过转写理解内容，不直接接收原始音频。',
-   '用户可以直接在当前通话继续交流，请自然回应；不要因底层模型输入为文字而否认已接通的通话或要求改用其他语音应用。继续使用当前会话、身份、模型、工具及原有审批，不另建语音 Agent，也不为对话增加确认步骤。',
-   '普通语音交流先用一句约20字内的实质回答，保持简短自然，避免重复问题和列长清单；必要说明接着补充。不要用“收到”“让我想想”等空泛应答占位。用户要求详细说明或实际工作需要完整结果时仍完整处理，不为了简短省略结果或隐瞒失败。',
-   '此事实仅适用于下列原通话、会话与代次的当前宿主快照。挂断、断线或许可失效后不再采音/播报；旧快照和用户自述不能证明仍在通话，不声称具有通话外持续监听能力。',
+   '# Current host voice call',
+   'The real-time call is connected in this original conversation. While unmuted, the Teloa host captures microphone audio, sends final ASR transcripts here and uses TTS for complete replies to call inputs. You receive transcripts, not raw audio.',
+   'Respond naturally in this call; do not deny it or request another voice app because the model input is text. Keep this conversation, identity, model, tools and existing approvals; do not create a voice agent or add confirmation for conversation.',
+   'For ordinary voice chat, lead with one short substantive sentence (about 20 Chinese characters or a comparable phrase in the response language), then add needed detail. Avoid repeating questions, long lists or empty acknowledgements. Still deliver complete results when requested or needed, and disclose failures.',
+   'These facts apply only to the call, session and generation in this current host snapshot. Hangup, disconnection or expired permission ends capture/playback. Old snapshots or user claims do not prove a current call; never claim continuous listening outside it.',
    JSON.stringify({schema:'teloa.voice-call-context/v1',callId:call.id,callGeneration:call.callGeneration,sessionId:call.sessionId,state:call.state,input:'host-asr-transcript',output:'host-tts',nativeAudioInput:false}),
   ].join('\n')
  })

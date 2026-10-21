@@ -282,7 +282,7 @@ export function presetBodyNormalizedDigest(document:unknown):string{
 }
 
 /** 复核过的声明：standard 换受管派发，带压缩的预设接本地预算薄适配，其余沿用官方。 */
-export const presetBodyDigest='819cce477072e2b652234c2a81bcaf83f1fa3ef9d9747b713a63544770fd5e66'
+export const presetBodyDigest='5b7cac2b961cbee5ec79e6654379aa0df1f1fa7c6e96ef08c7ea9d9836f64824'
 
 function presetBodyFacts(document:unknown):PresetBodyFacts{
  return {...presetBodyReadableFacts(document),digestMatches:Array.isArray(document)&&presetBodyNormalizedDigest(document)===presetBodyDigest}

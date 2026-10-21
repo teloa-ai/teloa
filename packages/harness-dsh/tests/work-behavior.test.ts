@@ -10,6 +10,20 @@ import {SystemPrompt,renderPrompt,renderContextSnapshot,type PromptAssembly} fro
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
 import {readFile} from 'node:fs/promises'
 import {createRequire} from 'node:module'
+import {workPromptModules,renderWorkRuntimeContext} from '../src/work-prompts/runtime-context.ts'
+import {resultPresentationGuide} from '../src/work-prompts/result-presentation.ts'
+import {productIdentityText} from '../src/work-prompts/product-identity.ts'
+
+test('静态工作规则统一英文，保留跟随用户语言与内部协议，不改用户原文',()=>{
+ for(const module of workPromptModules)assert.doesNotMatch(module.text,/\p{Script=Han}/u,module.id+'仍含中文静态规则')
+ for(const text of [productIdentityText,resultPresentationGuide,renderWorkRuntimeContext(workPromptModules)])assert.doesNotMatch(text,/\p{Script=Han}/u)
+ assert.match(productIdentityText,/explicit instruction in the current request; an actual trusted host reply-language setting; current user input language; then known UI locale when input language is unclear/)
+ assert.match(productIdentityText,/UI locale is not a reply preference/)
+ assert.match(productIdentityText,/Never invent a setting or use English just because these rules are English/)
+ assert.doesNotMatch(workPromptModules[0].text,/response-language setting|UI locale/,'通用core不重复全模式required语言规则')
+ assert.equal([productIdentityText,...workPromptModules.map(module=>module.text)].join('\n').split('# Reply language').length-1,1)
+ assert.match(productIdentityText,/Internal routing and JSON.*take precedence/)
+})
 
 class CaptureAdapter extends LlmAdapter{
  requests:GenerateOptions[]=[]
@@ -48,34 +62,34 @@ test('默认预设的完整行为进入模型请求，保留原生工具及权�
  assert.equal(adapter.requests.length,1)
  const system=adapter.requests[0]!.messages.filter(message=>message.role==='system').flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n\n')
  assert.equal(system,renderPrompt(assembled))
- assert.match(system,/本轮可用且适用的连接器或直接接口/)
- assert.match(system,/视觉核对或接口未覆盖时用界面操作/)
- assert.match(system,/路径切换不改变权限、宿主与资料范围/)
- assert.match(system,/下一步只能来自当前工具或界面明确提供的入口/)
- assert.match(system,/不推测按钮、页面和流程/)
- assert.match(system,/本人只要求核对平台资源或原稿的当前状态时，答复止于名称、可读状态和本人需要的原稿入口/)
- assert.match(system,/这不限制本人要求的正文读取、总结、分析或组合任务/)
- assert.doesNotMatch(system,/只读查询完成后，答复止于/)
- assert.match(system,/不附加未要求的安装、启用、重建或跳转页面建议/)
- assert.match(system,/明确授权后的配置或应用继续沿原会话工具/)
- assert.match(system,/历史工具快照只能作为定位线索/)
- assert.match(system,/源记录与成果不能合称为同一记录的版本/)
+ assert.match(system,/Prefer an available, suitable connector or direct API/)
+ assert.match(system,/Use UI interaction for visual checks or gaps in APIs/)
+ assert.match(system,/Switching paths does not change permissions, host or data scope/)
+ assert.match(system,/Next steps must come from currently verified tools\/UI/)
+ assert.match(system,/not an invented button, page or workflow/)
+ assert.match(system,/For a status-only query about a platform resource or draft, give its name, readable state and original draft entry when needed/)
+ assert.match(system,/This does not restrict requested reading, summarizing, analysis or combined tasks/)
+ assert.doesNotMatch(system,/For every read-only query, reply only/)
+ assert.match(system,/do not add unrequested installation, enablement, rebuilding or page-switch advice/)
+ assert.match(system,/Explicitly authorized configuration\/application continues through the original conversation tools/)
+ assert.match(system,/historical tool snapshots only locate evidence and cannot replace a current read/)
+ assert.match(system,/Do not describe source records and artifacts as versions of one record/)
  // 事实边界（caf 诊断与首批 8 例真实输出）：few-shot 示例变事实、提供摘录却称已打开应用、未知阶段写成已完成/不变。四条约定随核心模块进入真实请求。
  // 澄清（v2）：只约束明确作为示例/范文的内容，不否定方法里的实际业务定义；“真实授权回执”只约束助手自己本轮声称的动作，资料记载的他人已完成动作可忠实转述。
- assert.match(system,/模板或工作方法中明确作为示例、范文或演示的人物、数字、案例与对话只说明格式与方法，不能当作本次客户或本人的经历/)
- assert.match(system,/方法里的实际业务定义、规则与本人授权的背景按其来源使用/)
- assert.match(system,/本人为假设情境提供的合成资料只在该情境内使用，不外推为真实经营结果/)
- assert.match(system,/资料记载的他人已完成动作按来源忠实转述/)
- assert.match(system,/助手自己本轮声称已连接、打开、查询、发送或建单，只能以本轮真实授权回执为据/)
- assert.match(system,/提到某个应用或收到其摘录不等于自己打开或查询过它/)
- assert.match(system,/未知的阶段、日期、负责人或结论写明未知，不写成已完成、没有变化或默认值/)
- assert.match(system,/本人明确要求虚构写作或示意文案时按要求创作，不附加无关提醒/)
+ assert.match(system,/People, numbers, cases and dialogues explicitly marked as examples, samples or demonstrations teach format or method; they are not this customer's or user's experiences/)
+ assert.match(system,/Actual business definitions, rules and authorized background in a method retain their stated provenance/)
+ assert.match(system,/User-supplied synthetic data applies only to its hypothetical scenario, not real operating results/)
+ assert.match(system,/Attribute others' recorded actions to their source/)
+ assert.match(system,/Claims that you connected, opened, queried, sent or created something require actual authorized receipts from this run/)
+ assert.match(system,/an app mention or supplied excerpt is not proof you accessed it/)
+ assert.match(system,/Mark unknown stages, dates, owners and conclusions as unknown, not completed, unchanged or defaulted/)
+ assert.match(system,/Fulfill explicit fiction or illustrative-writing requests without irrelevant warnings/)
  // 反例：v1 的过宽措辞不再出现（它会否定方法里的真实业务定义，以及资料中他人已完成的动作，如 Writing 素材里“Priya 已审核明细”）。
- assert.doesNotMatch(system,/模板、工作方法和示例里的人物、数字、案例与范文只说明格式与方法，不是本轮已发生的事实/)
- assert.doesNotMatch(system,/只有本轮真实授权回执能支持“已打开、已发送、已建单”这类动作完成的说法/)
+ assert.doesNotMatch(system,/All people and facts in methods are fictional/)
+ assert.doesNotMatch(system,/Others' recorded actions require receipts from this run/)
  assert.match(JSON.stringify(adapter.requests[0]!.messages),/当前授权仅允许读取测试资料/)
  const facts=runtimeFacts(assembled)
- assert.equal(facts.behavior_version,'2026-10-21.product-identity.v4')
+ assert.equal(facts.behavior_version,'2026-10-21.english-identity.v5')
  assert.deepEqual(facts.modules,['01-core','02-tools','03-planning','08-artifacts'])
  const input=adapter.requests[0]!.messages.find(message=>message.source?.kind==='user'&&message.content.some(block=>block.type==='text'&&block.text==='核对测试资料'))
  assert.ok(input,'追加规则不能把实际用户输入改成工作资料')

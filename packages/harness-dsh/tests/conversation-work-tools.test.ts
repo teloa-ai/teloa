@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {createHash} from 'node:crypto'
 import {Context} from '@deepseek-ai/cordis'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
@@ -10,10 +11,48 @@ import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {WorkError,encodeBusinessRecordReference} from '@teloa/contract'
 import {ArtifactRevisionRequestService} from '@teloa/backend'
-import {registerConversationWorkTools,type ConversationWorkToolsPorts} from '../src/conversation-work-tools.ts'
+import {registerConversationWorkTools,conversationWorkToolNames,type ConversationWorkToolsPorts} from '../src/conversation-work-tools.ts'
 import {loopWorkFixture,loopText,loopTool} from './fixtures/native-loop-work-admission.ts'
 import {registerCredentialGuards} from '../src/credential-guards.ts'
 const owner='owner',roleId='22222222-2222-4222-8222-222222222222'
+const coordinationSummary='当前工作的业务与接手约定'
+test('工作工具英文静态说明不改变八项原生参数与工具协议',async t=>{
+ const f=await setup();t.after(()=>f.ctx.fiber.dispose())
+ const schemas=f.ctx.tools.schemas(f.agent).filter(tool=>(conversationWorkToolNames as readonly string[]).includes(tool.name)).sort((a,b)=>a.name.localeCompare(b.name))
+ const withoutDescriptions=(value:unknown):unknown=>Array.isArray(value)?value.map(withoutDescriptions):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>key!=='description').sort(([a],[b])=>a.localeCompare(b)).map(([key,child])=>[key,withoutDescriptions(child)])):value
+ assert.equal(schemas.length,8)
+ assert.equal(createHash('sha256').update(JSON.stringify(withoutDescriptions(schemas))).digest('hex'),'b0d14cbda922ab690b40ee2467f1f436abbafd7ce8b0026c0cf4f76035efed33','英文改写只能改变description，工具名字和原生参数协议逐项保持')
+ const check=(value:unknown):void=>{if(Array.isArray(value)){value.forEach(check);return}if(value&&typeof value==='object')for(const [key,child]of Object.entries(value)){if(key==='description'&&typeof child==='string')assert.doesNotMatch(child,/\p{Script=Han}/u);else check(child)}}
+ schemas.forEach(check)
+})
+test('真实Loop多轮只保留当前主会话规则与选择，原本人消息和工具回执不退役', {timeout:10000},async t=>{
+ let scopeId='SOC',roleConversation=false
+ const base=await setup();t.after(()=>base.ctx.fiber.dispose())
+ const f=await loopWorkFixture(t,true)
+ registerConversationWorkTools(f.ctx,{...base.ports,freeze:async()=>({sessionId:f.agent.session.id,scopeId,roleId:null,version:1,locked:false}),isRoleConversation:async()=>roleConversation})
+ const original=createUserMessage({source:{kind:'user',rpcId:'legacy-user'},content:[{type:'text',text:'原本人指令 {{model}} 保持原文'}]})
+ const legacy=createUserMessage({source:{kind:'plugin:teloa.work',form:'notice',summary:coordinationSummary},content:[{type:'text',text:'你是本人主会话助手。原静态规则。当前可信选择：{"context":{"scopeId":"OLD"}}'}]})
+ const receipt=createUserMessage({source:{kind:'plugin:teloa.work',form:'notice',summary:'本次结果的名称与状态说明',requestId:'original-request'},content:[{type:'text',text:'原工具回执保留'}]})
+ for(const message of [original,legacy,receipt])f.agent.session.append('user/message',message,{surfaceOp:'append'})
+ const send=async(text:string,rpcId:string)=>{f.adapter.scripts.push(loopText);f.agent.followup(createUserMessage({source:{kind:'user',rpcId},content:[{type:'text',text}]}));await f.agent.whenIdle()}
+ const requestText=(index:number)=>f.adapter.requests[index]!.messages.flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')
+ const activeNotices=()=>f.agent.session.surface.nodes.map(seq=>f.agent.session.eventAt(seq)).filter(event=>event?.type==='user/message'&&event.data.source.kind==='plugin:teloa.work'&&event.data.source.form==='notice'&&event.data.source.summary===coordinationSummary)
+ await send('我没睡醒','ordinary-one')
+ assert.equal(f.adapter.requests.length,1)
+ assert.equal(activeNotices().length,1,'旧宿主投影应退出模型surface，仅保留本轮一份')
+ assert.doesNotMatch(requestText(0),/原静态规则|"scopeId":"OLD"/)
+ scopeId='CRM';await send('你是谁','ordinary-two')
+ assert.equal(activeNotices().length,1,'静态规则不随用户轮次累积')
+ const latest=requestText(1)
+ assert.ok(latest.includes('"scopeId":"CRM"'));assert.doesNotMatch(latest,/"scopeId":"SOC"/)
+ for(const text of ['原本人指令 {{model}} 保持原文','原工具回执保留'])assert.ok(latest.includes(text),text)
+ const events=f.agent.session.snapshotEvents()
+ for(const message of [original,legacy,receipt])assert.ok(events.some(event=>event.type==='user/message'&&event.data.id===message.id),'原事件保留审计')
+ roleConversation=true;await send('继续原岗位工作','role-turn')
+ assert.equal(activeNotices().length,0,'失去主会话资格后不留旧可信选择')
+ assert.doesNotMatch(requestText(2),/"scopeId":"CRM"/)
+ assert.equal(base.dispatched.length,0);assert.equal(base.approvals.length,0)
+})
 async function setup(overrides:Partial<ConversationWorkToolsPorts>={},origin?:'subagent'){
  const ctx=new Context();await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('work-origin'),...(origin?{meta:{origin,delegationDepth:1}}:{}),agentOptions:{provider:'test',model:'test'}})
@@ -33,10 +72,11 @@ test('正式工作回包后提供当前可读执行与验收状态，原始回�
  const notice=result.additionalContexts?.at(-1)
  assert.equal(notice?.source.kind,'plugin:teloa.work')
  const text=notice!.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')
- for(const expected of ['核对续约资料','调查员','已收到回复','待验收','原始记录版本','成果版本'])assert.ok(text.includes(expected),expected)
+ for(const expected of ['核对续约资料','调查员','已收到回复','待验收'])assert.ok(text.includes(expected),expected)
+ assert.match(text,/Source-record, artifact, task and configuration versions are independent/)
  assert.match(text,/下一步：从本会话交办卡的工作名称打开原任务核对结果/)
- assert.match(text,/同一 ID.*不同记录类型/)
- assert.match(text,/不指示未经核验的按钮/)
+ assert.match(text,/different record types remain distinct even with the same ID/)
+ assert.match(text,/not an invented button, page or workflow/)
  for(const hidden of ['internal-request','internal-task',roleId,'收到完整材料'])assert.ok(!text.includes(hidden),hidden)
  const decision=await f.ctx.waterfall('agent/pre-step',{agent:f.agent,messages:[],turn:1,step:2,signal:new AbortController().signal},async()=>({kind:'enter' as const,messages:[]}))
  assert.deepEqual(decision,{kind:'enter',messages:[]},'空步骤不注入提示，允许原生Loop结束')
@@ -65,7 +105,7 @@ test('通用资源成功后提示不授予权限，失败/阻断/结束轮次及
  f.ctx.tools.register(defineTool({name:'teloa_test_resource',description:'资源回包',parameters:{},output:{schema:{type:'string'},render:(_a,v)=>[{type:'text',text:v}]},execute:async()=>'{"name":"知识甲","state":"draft","id":"raw-id"}'}))
  const result=await f.call('teloa_test_resource')
  assert.equal(result.isError,false);assert.equal(result.additionalContexts?.length,1)
- assert.match(JSON.stringify(result.additionalContexts),/保存不等于启用/)
+ assert.match(JSON.stringify(result.additionalContexts),/Saving is not enabling/)
  const existing=createUserMessage({source:{kind:'tool',callId:ToolCallId('existing')},content:[{type:'text',text:'既有上下文'}]})
  const inherit=f.ctx.on('tools/post-execute',async()=>({kind:'accept' as const,additionalContexts:[existing]}))
  const inherited=await f.call('teloa_test_resource');assert.deepEqual(inherited.additionalContexts?.[0],existing);assert.equal(inherited.additionalContexts?.length,2);inherit()
@@ -86,7 +126,7 @@ test('官方Loop工具后的下一次模型请求收到提示且正常结束，�
  const chunks=loopTool.map(chunk=>chunk.type==='tool-call-delta'?{...chunk,name:'teloa_work_status'}:chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,name:'teloa_work_status'}}:chunk)
  f.adapter.scripts.push(chunks,loopText);await f.send()
  assert.equal(f.adapter.requests.length,2)
- assert.match(JSON.stringify(f.adapter.requests[1]),/保存不等于启用/)
+ assert.match(JSON.stringify(f.adapter.requests[1]),/Saving is not enabling/)
  assert.equal(f.events.filter(event=>event.type==='turn/start').length,1)
  assert.equal(f.events.filter(event=>event.type==='turn/end').length,1)
  assert.equal(f.agent.inbox.nextStep.length,0)
@@ -101,14 +141,18 @@ test('只读目录的真实Loop回包与主会话约定不冒充交办或稍后�
  const receipt=JSON.parse(result.data.message.content.filter(block=>block.type==='text').map(block=>block.text).join('\n'))
  assert.deepEqual({context:receipt.context,scopes:receipt.scopes,businesses:receipt.businesses,roles:receipt.roles},{context:null,scopes:['general'],businesses:[],roles:[]})
  assert.equal(receipt.approvalState,undefined,'目录读取不能伪造批准状态')
- assert.match(receipt.receiptNotice,/teloa_work_directory 只读目录.*不提交交办.*不触发原生确认卡.*不派发工作/)
- assert.match(receipt.receiptNotice,/下一步实际调用 teloa_work_dispatch/)
- assert.match(receipt.receiptNotice,/不能声称确认卡稍后弹出/)
- assert.match(receipt.receiptNotice,/未取得回执不能声称已提交或已派发/)
- assert.match(receipt.receiptNotice,/普通问答直接回答/)
+ assert.match(receipt.receiptNotice,/Read-only directory: no delegation, native approval card or execution/)
+ assert.match(receipt.receiptNotice,/Explicit delegation next calls teloa_work_dispatch/)
+ assert.match(receipt.receiptNotice,/never promise a later card/)
+ assert.match(receipt.receiptNotice,/claim submission without its receipt/)
+ assert.match(receipt.receiptNotice,/Answer ordinary questions directly/)
  assert.ok(JSON.stringify(f.adapter.requests[1]).includes(receipt.receiptNotice),'实际下一次请求收到目录即时说明')
- assert.ok(JSON.stringify(f.adapter.requests[0]).includes(receipt.receiptNotice),'本人主会话约定与工具回执一致')
- assert.match(f.ctx.tools.schemas(f.agent).find(schema=>schema.name==='teloa_work_directory')?.description??'',/只读目录/)
+ const initial=f.events.find(event=>event.type==='user/message'&&event.data.source.kind==='plugin:teloa.work'&&event.data.source.form==='notice'&&event.data.source.summary===coordinationSummary)
+ assert.ok(initial&&initial.type==='user/message')
+ const initialText=initial.data.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')
+ assert.match(initialText,/Directory reads neither dispatch work nor schedule a later card/)
+ assert.match(initialText,/No Task\/Run exists before approval; rejection executes nothing/)
+ assert.match(f.ctx.tools.schemas(f.agent).find(schema=>schema.name==='teloa_work_directory')?.description??'',/Read the main conversation/)
  assert.equal(base.approvals.length,0);assert.equal(base.dispatched.length,0)
  assert.equal(f.events.filter(event=>event.type==='turn/start').length,1);assert.equal(f.events.filter(event=>event.type==='turn/end').length,1)
  assert.equal(f.agent.inbox.nextStep.length,0,'普通回答不被强制续发交办')
@@ -120,7 +164,7 @@ test('真实交办回包明确本次批准已完成，原始回执和等待含�
  assert.equal(result.isError,false)
  const actual=JSON.parse(result.content.filter(block=>block.type==='text').map(block=>block.text).join('\n'))
  assert.equal(actual.approvalState,'approved')
- assert.match(actual.receiptNotice,/审批已通过/);assert.match(actual.receiptNotice,/waiting.*不是等待审批/)
+ assert.match(actual.receiptNotice,/approval completed through the native card/);assert.match(actual.receiptNotice,/waiting means no final reply, not approval pending/)
  const {approvalState:_approval,receiptNotice:_notice,...original}=actual
  assert.deepEqual(original,receipt);assert.equal(f.approvals.length,1)
 })
@@ -165,15 +209,15 @@ test('明确交办先走原生批准卡且批准前不建任务，模型可见�
  const schemas=f.ctx.tools.schemas(f.agent)
  for(const name of ['teloa_work_dispatch','teloa_work_collect_reports']){
   const description=schemas.find(schema=>schema.name===name)?.description??''
-  assert.match(description,/原生确认卡/,name)
-  assert.match(description,/批准前不创建/,name)
-  assert.match(description,/不要用聊天询问代替/,name)
+  assert.match(description,/native approval card/,name)
+  assert.match(description,/no Task\/Run before approval/,name)
+  assert.match(description,/Do not substitute chat questions/,name)
  }
  const messages=[createUserMessage({source:{kind:'user'},content:[{type:'text',text:'请交给调查员核对，等我批准'}]})]
  const decision=await f.ctx.waterfall('agent/pre-step',{agent:f.agent,messages,turn:1,step:1,signal:new AbortController().signal},async()=>({kind:'enter' as const,messages})) as unknown as {messages:Array<{content:ReadonlyArray<{type:string;text?:string}>}>}
  const notice=decision.messages.at(-1)!.content.map(block=>block.text??'').join('')
- assert.match(notice,/调用.*teloa_work_dispatch.*原生确认卡/)
- assert.match(notice,/不要用聊天询问代替/)
+ assert.match(notice,/teloa_work_dispatch for the native approval card/)
+ assert.match(notice,/Do not substitute chat questions/)
  let entered!:()=>void,release!:()=>void
  const approvalEntered=new Promise<void>(resolve=>{entered=resolve}),approvalReleased=new Promise<void>(resolve=>{release=resolve})
  f.approve(async()=>{entered();await approvalReleased;return 'allowed-once'})
@@ -238,7 +282,7 @@ test('审批期间已核验固定对象标题变化仍拒绝，执行回执和�
  const schemas=f.ctx.tools.schemas(f.agent)
  for(const name of ['teloa_work_dispatch','teloa_work_status']){
   const description=schemas.find(schema=>schema.name===name)!.description??''
-  assert.match(description,/members\.status/);assert.match(description,/task\.state/);assert.match(description,/received/);assert.match(description,/批准已经完成/)
+  assert.match(description,/members\.status/);assert.match(description,/task\.state/);assert.match(description,/received/);assert.match(description,/Approval already completed/)
  }
 })
 test('数字短对象ID不改写目标里的数量，生成的对象标题不再作标识替换',async t=>{
@@ -346,10 +390,10 @@ test('成果续改由宿主在本轮目录给出已核反馈，general schema �
  assert.equal(receipt.artifactRevision.goal,saved)
  assert.deepEqual({executor:receipt.artifactRevision.executor,scope:receipt.artifactRevision.scope},{executor:'general',scope:'general'})
  assert.equal(receipt.artifactRevision.reference,undefined)
- assert.match(receipt.artifactRevision.receiptNotice,/不传 reference/)
+ assert.match(receipt.artifactRevision.receiptNotice,/omit reference/)
  const schema=f.ctx.tools.schemas(f.agent).find(value=>value.name==='teloa_work_dispatch')!
- assert.match(schema.description,/成果续改.*不传 reference/)
- assert.match(JSON.stringify(schema),/仅.*业务.*reference|reference.*仅.*业务/)
+ assert.match(schema.description,/Artifact revisions.*omit reference/)
+ assert.match(JSON.stringify(schema),/Business-employee work only: exact record reference/)
  assert.equal(f.dispatched.length,0);assert.equal(f.approvals.length,0)
 })
 
@@ -365,7 +409,7 @@ test('官方Loop首次pre-step在本人消息持久化前从真实claimed输入�
  assert.equal(reads,1,'首个真实请求已有已核反馈；不能依赖后续directory工具才读取')
  assert.equal(currentUserWasDurable,false,'官方Loop确实先pre-step、后user/message持久化')
  assert.ok(JSON.stringify(f.adapter.requests[0]).includes('小林2026-10-22；阿文2026-10-21；总预算12000，已支出4500，剩余7500。'))
- assert.ok(JSON.stringify(f.adapter.requests[0]).includes('不传 reference'))
+ assert.ok(JSON.stringify(f.adapter.requests[0]).includes('omit reference'))
  assert.equal(f.events.filter(event=>event.type==='user/message'&&event.data.source.kind==='user').length,1,'投影不伪造或提前写入用户消息')
  assert.equal(base.dispatched.length,0);assert.equal(base.approvals.length,0)
 })
@@ -438,7 +482,7 @@ test('general 的错误业务 reference 仍拒绝且说明修订由宿主绑定�
  f.agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'请续改 [teloa-revision:11111111-1111-4111-8111-111111111111]'}]}),{surfaceOp:'append'})
  for(const reference of [{scope:'general',type:'artifact-revision',id:'11111111-1111-4111-8111-111111111111',version:1,snapshotHash:'11111111-1111-4111-8111-111111111111'},{scope:'general',type:'record',id:'real-looking',version:1,snapshotHash:'a'.repeat(64)}]){
   const result=await f.call('teloa_work_dispatch',{executor:'general',scope:'general',title:'修订',goal:'请修订',reference})
-  assert.equal(result.isError,true);assert.match(JSON.stringify(result),/不传 reference/)
+  assert.equal(result.isError,true);assert.match(JSON.stringify(result),/omit reference/)
  }
  assert.equal(f.approvals.length,0);assert.equal(f.dispatched.length,0)
 })
@@ -513,5 +557,5 @@ test('模型可见的恢复说明与主会话指引明确区分成果续改与�
  const messages=[createUserMessage({source:{kind:'user'},content:[{type:'text',text:'请核对原工作'}]})]
  const decision=await f.ctx.waterfall('agent/pre-step',{agent:f.agent,messages,turn:1,step:1,signal:new AbortController().signal},async()=>({kind:'enter' as const,messages})) as unknown as {messages:Array<{content:ReadonlyArray<{type:string;text?:string}>}>}
  const notice=decision.messages.at(-1)!.content.map(block=>block.text??'').join('')
- assert.match(notice,/成果续改/);assert.match(notice,/teloa-revision/);assert.match(notice,/不是.*requestId/)
+ assert.match(notice,/new linked artifact revision/);assert.match(notice,/teloa-revision/);assert.match(notice,/not a requestId or retry/)
 })

@@ -39,6 +39,7 @@ test('索引异步回执持久化，冷恢复和并发读取不重复提交',asy
  const f=fixture()
  const first=await f.service.read(f.input)
  assert.equal(first.mode,'confirmed')
+ assert.doesNotMatch(JSON.parse(first.text).notice,/\p{Script=Han}/u)
  const current=await Promise.all([f.service.read(f.input),new RoleExperienceService(pool,f.provider,f.options).read(f.input)])
  assert.ok(current.every(result=>result.mode==='recalled'))
  assert.equal(f.provider.calls.length,1)
@@ -108,7 +109,7 @@ test('全部历史参与索引；退化正文受窗口限制，派生经验保�
  f.provider.facts=[{id:'observation',text:'历史中常见的检查顺序',type:'observation',sourceFactIds:[]}]
  const next=await f.service.read(f.input)
  assert.equal(next.mode,'recalled');assert.equal(next.sources.length,45)
- assert.match(next.text,/推导/);assert.match(next.text,/历史中常见的检查顺序/)
+ assert.match(JSON.parse(next.text).notice,/inferences/);assert.match(next.text,/derived from the current authorized snapshot/);assert.match(next.text,/历史中常见的检查顺序/)
 })
 
 test('不认识的事实文档不能混入；取消和错误正文摘要被拒绝',async()=>{

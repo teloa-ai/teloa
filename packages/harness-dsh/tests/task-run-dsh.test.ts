@@ -528,7 +528,7 @@ test('通用任务并集越过资源主体范围上限（16 条）时退回任�
 
 test('运行日期行只到「日」并带本机时区名，不含时分秒',()=>{
  const line=runDateLine(new Date('2026-09-25T12:00:00Z'))
- assert.match(line,/^本次运行日期：\d{4}-\d{2}-\d{2}（时区 [A-Za-z0-9_+\-\/]+）$/)
+ assert.match(line,/^Run date: \d{4}-\d{2}-\d{2} \(time zone [A-Za-z0-9_+\-\/]+\)$/)
  assert.equal(/\d{2}:\d{2}/.test(line),false)
 })
 
@@ -541,12 +541,12 @@ test('本次运行日期作为独立 text 部件紧随固定输入，图片与�
  assert.equal(sent.length,1)
  assert.deepEqual(sent[0]!.content.map(part=>part.type),['text','text'])
  assert.equal(sent[0]!.content[0]!.text,'固定目标')
- assert.match(String(sent[0]!.content[1]!.text),/^本次运行日期：\d{4}-\d{2}-\d{2}（时区 [^）]+）$/)
+ assert.match(String(sent[0]!.content[1]!.text),/^Run date: \d{4}-\d{2}-\d{2} \(time zone [^)]+\)$/)
  const {ports:vision,sent:visionSent,run:groupRun5}=visionHarness(['text','image'],Array.from({length:5},(_,index)=>({...png(16),id:'att-'+index,name:index+'.png'})))
  await vision.send(groupRun5,new AbortController().signal,{...target,sessionId:'session'})
  assert.deepEqual(visionSent[0]!.content.map(part=>part.type),['text','text','image','image','image','image'])
  assert.equal(visionSent[0]!.content[0]!.text,'固定目标\n\n本轮还有 1 张已授权图片未进模型。')
- assert.match(String(visionSent[0]!.content[1]!.text),/^本次运行日期：/)
+ assert.match(String(visionSent[0]!.content[1]!.text),/^Run date: /)
 })
 
 test('发送前按本次运行的授权清单收窄该会话可见的全局工具：未授权的不再出现在工具列表',async()=>{

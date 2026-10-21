@@ -130,7 +130,7 @@ test('真实私聊adapter回读本人role/link和固定private选择，迟撤回
  const adapters=createProjectRuntimeAdapters(ctx as never,{owner:'owner',pool,conversations:{snapshotBySession:async()=>({id:'conversation',ownerId:'owner',sessionId:session.id,title:'分身私聊'}),repository:{read:async()=>[{sessionId:session.id,requestedRoleId:roleId}]}},links:{bySession:async()=>state.linked?[{kind:'role',active:true,objectId:roleId,conversationId:'conversation',sessionId:session.id,scopeId:'general'}]:[]},roleMemories:async()=>({confirmedForRun:async(...args:unknown[])=>{reads.push(args);await state.afterRead?.();return state.memories}})} as never)
  const role={...row.definition,id:roleId,ownerId:'owner',version:1,state:'active',createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString()} as DigitalRole
  const input={sessionId:session.id,role,scopeId:'general'},lease=await adapters.privateMemory(input)
- assert.match(lease.text,/本人私有习惯/);assert.deepEqual((reads[0] as unknown[]).slice(1,3),['owner',{scope:'general',groupId:null,memoryViewId:null}]);await lease.assertCurrent()
+ assert.match(lease.text,/本人私有习惯/);assert.match(JSON.parse(lease.text).notice,/private twin experience/);assert.doesNotMatch(JSON.parse(lease.text).notice,/\p{Script=Han}/u);assert.deepEqual((reads[0] as unknown[]).slice(1,3),['owner',{scope:'general',groupId:null,memoryViewId:null}]);await lease.assertCurrent()
  state.memories=[];await assert.rejects(lease.assertCurrent(),{code:'teloa/version-conflict'});assert.equal((await adapters.privateMemory(input)).text,'')
  state.version=2;await assert.rejects(adapters.privateMemory(input),{code:'teloa/forbidden'});state.version=1
  state.linked=false;await assert.rejects(adapters.privateMemory(input),{code:'teloa/forbidden'})

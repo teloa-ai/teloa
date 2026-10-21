@@ -69,7 +69,7 @@ test('经验召回期间岗位或关联变化，在发模型前拒绝；分身�
  let reads=0;f.ports.experience=async()=>{reads++;return '员工经验'};f.state.role=role({kind:'twin'})
  await f.send('分身保持私有记忆路径');assert.equal(reads,0)
  assert.doesNotMatch(JSON.stringify(f.adapter.requests.at(-1)!.messages),/员工经验/)
- assert.doesNotMatch(JSON.stringify(f.adapter.requests.at(-1)!.messages.filter(message=>message.role==='system')),/AI 员工共同工作规则/)
+ assert.doesNotMatch(JSON.stringify(f.adapter.requests.at(-1)!.messages.filter(message=>message.role==='system')),/AI employee working rules/)
 })
 
 test('分身私聊读取本人确认私有背景，memory off与撤回后清除旧输入且不改工具',async t=>{
@@ -159,8 +159,8 @@ test('官方 AgentLoop 只在身份变化时投影角色，原始用户消息不
  assert.equal(f.agent.session.snapshotEvents().filter(event=>event.type==='user/message'&&event.data.source.kind==='user').length,1)
  assert.ok(f.adapter.requests[0]!.messages.some(message=>message.role==='user'&&message.source?.kind==='runtime-context'),'模型输入必须保留官方 runtime-context 来源')
  assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/核对 \{\{foo\}\} 告警/)
- assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/临时任务不自动改写岗位、权限或例行计划/)
- assert.ok(f.adapter.requests[0]!.messages.some(message=>message.role==='system'&&message.content.some(block=>block.type==='text'&&block.text.includes('# AI 员工共同工作规则'))),'可信员工须取得公共系统规则，不只取得身份说明')
+ assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/Temporary requests do not change your role, permissions or recurring plans/)
+ assert.ok(f.adapter.requests[0]!.messages.some(message=>message.role==='system'&&message.content.some(block=>block.type==='text'&&block.text.includes('# AI employee working rules'))),'可信员工须取得公共系统规则，不只取得身份说明')
  assert.deepEqual((await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools,before)
  await f.send('继续')
  assert.equal(snapshots(f.agent).length,1)
@@ -168,7 +168,7 @@ test('官方 AgentLoop 只在身份变化时投影角色，原始用户消息不
  await f.send('再核对')
  assert.equal(snapshots(f.agent).length,2)
  assert.match(JSON.stringify(f.adapter.requests.at(-1)!.messages),/核对新版告警/)
- assert.match(JSON.stringify(f.adapter.requests.at(-1)!.messages),/版本：2/)
+ assert.match(JSON.stringify(f.adapter.requests.at(-1)!.messages),/Role version: 2/)
 })
 
 test('岗位指纹丢关联、错归属或多关联时在模型请求前拒绝，不降为普通会话',async t=>{
@@ -192,7 +192,7 @@ test('普通会话不注入岗位上下文；关联读取故障不伪装成普�
  await f.send('普通会话')
  assert.equal(f.adapter.requests.length,1)
  assert.equal(snapshots(f.agent).length,0)
- assert.doesNotMatch(JSON.stringify(f.adapter.requests[0]!.messages),/AI 员工共同工作规则/)
+ assert.doesNotMatch(JSON.stringify(f.adapter.requests[0]!.messages),/AI employee working rules/)
  f.state.requested=roleId;f.state.failure=Error('数据库读取失败')
  await f.send('不可静默降级')
  assert.equal(f.adapter.requests.length,1)
@@ -234,7 +234,7 @@ test('岗位退役、撤范围、跨本人、缺定义和读取故障均在发�
  f.state.roleFailure=null;f.state.bindingOwner=owner;f.state.role=role({state:'paused',version:4})
  await f.send('暂停岗位仍可对话')
  assert.equal(f.adapter.requests.length,1)
- assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/版本：4/)
+ assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/Role version: 4/)
 })
 
 test('关联解绑后旧岗位快照不再参与新请求，原请求身份与关联不一致时拒绝',async t=>{

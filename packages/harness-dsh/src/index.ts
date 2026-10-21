@@ -2720,7 +2720,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   toolRegistrationContext.tools.register(defineTool({
     name:'teloa_capabilities',
-    description:'查询当前 Teloa 工作会话的已绑定范围、DSH 实际技能与 MCP 工具目录。只读，注册不等于连接健康或本轮已使用，不提供安装、授权或写操作。',
+    description:'Read the current Teloa session\'s bound scopes and actual DSH skill/MCP tool catalogs. Registration does not prove connection health or use in this turn. No installation, authorization or writes.',
     parameters:{},
     output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
     execute:async(_args,exec)=>{

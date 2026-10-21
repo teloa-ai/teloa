@@ -269,7 +269,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  }
  ctx.tools.register(defineTool({
   name:knowledgeSearchToolName,
-  description:'回答需要本人工作资料中的信息时，主动使用此工具检索已加入且当前会话有权读取的资料。资料更新后自动整理，再返回带原文位置（行、字符区间、标题路径）的有界摘录与覆盖范围。引用来源时使用 [资料标题](citationPath)，逐字使用该命中的 citationPath，不把 sourceId、resourceId 或本机路径当链接。coverage.searched 是本次实际检索的资料，coverage.pending 是已加入但尚不可检索的资料；如有 pending，应如实说明覆盖范围，不能把尚未检索的资料当成已核实。只接受 query（1–500 字）与 limit（1–8，默认 5），不能指定资料、范围或路径。',
+  description:'Search authorized, enrolled work materials when needed to answer. Updated materials are indexed automatically. Results contain bounded excerpts, source positions (lines, character ranges, heading paths) and coverage. Cite [material title](citationPath), copying the matched citationPath exactly; never use sourceId, resourceId or local paths as links. coverage.searched lists materials actually searched; coverage.pending lists enrolled materials not yet searchable. Disclose pending coverage and do not treat unsearched material as verified. Accepts only query (1–500 characters) and limit (1–8, default 5); no material, scope or path selection.',
   parameters:{query:{type:'string',required:true},limit:{type:'integer'}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{

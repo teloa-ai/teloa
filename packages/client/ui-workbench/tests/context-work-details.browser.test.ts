@@ -33,7 +33,14 @@ async function employeeFrameFixture(t:TestContext,cold=false,receiptOpen?:string
  const source=await readFile(join(client,'../../tests/business-builder-frame.test.ts'),'utf8'),file=ts.createSourceFile('frame-fixture.ts',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
  let entry:ts.Expression|undefined;const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='entry')entry=node.initializer;ts.forEachChild(node,visit)};visit(file);assert.ok(entry)
  let original=new Function('client','return '+entry.getText(file))(client) as string
- if(receiptOpen){const probe='<textarea aria-label="slot-probe" defaultValue="原生输入草稿"/>';assert.equal(original.split(probe).length,2);original=`import {ConversationObjectCard} from ${JSON.stringify(join(client,'ConversationObjectCard.tsx'))};`+original.replace(probe,probe+`<ConversationObjectCard receipt={{kind:'role',id:employee.id,title:employee.name,revision:'3'}} readRole={async()=>({...employee,ownerId:'local:teloa-owner'})} readGroup={async()=>undefined} drafts={{}} mcp={{}} openRole={${receiptOpen}} openGroup={noop} openCapabilities={noop}/>`)}
+ if(receiptOpen){
+  // 定位实际原生输入探针，保留其受控输入与挂载生命周期，不依赖旧属性拼写。
+  const fixtureFile=ts.createSourceFile('employee-frame-fixture.tsx',original,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),probes:ts.JsxSelfClosingElement[]=[]
+  const findProbe=(node:ts.Node)=>{if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(fixtureFile)==='textarea'&&node.attributes.properties.some(attribute=>ts.isJsxAttribute(attribute)&&attribute.name.getText(fixtureFile)==='aria-label'&&attribute.initializer&&ts.isStringLiteral(attribute.initializer)&&attribute.initializer.text==='slot-probe'))probes.push(node);ts.forEachChild(node,findProbe)}
+  findProbe(fixtureFile);assert.equal(probes.length,1)
+  const probe=probes[0]!.getText(fixtureFile)
+  original=`import {ConversationObjectCard} from ${JSON.stringify(join(client,'ConversationObjectCard.tsx'))};`+original.replace(probe,probe+`<ConversationObjectCard receipt={{kind:'role',id:employee.id,title:employee.name,revision:'3'}} readRole={async()=>({...employee,ownerId:'local:teloa-owner'})} readGroup={async()=>undefined} drafts={{}} mcp={{}} openRole={${receiptOpen}} openGroup={noop} openCapabilities={noop}/>`)
+ }
  const boundary="const frameRoot=";assert.equal(original.split(boundary).length,2)
  return fixture(t,"window.frameStartup={withRole:true};"+original.replace(boundary,`
  f.holdRoleReads=${cold};const roleReads=[];f.releaseRoleReads=()=>{f.holdRoleReads=false;roleReads.splice(0).forEach(resolve=>resolve())};

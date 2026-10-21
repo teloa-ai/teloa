@@ -30,8 +30,13 @@ declare module '@deepseek-ai/dsh-llm' {interface MessageSourceMap {'plugin:teloa
  * 降级措辞不构成缺失原因或来源状态的事实依据；起草与复核共用这个优先级，不含模板专属规则。
  */
 /** 本人当前要求优先的引言；此前冻结的复核提示不含这一段，冷读旧历史时按当时原文比对。 */
-const ownerRequirementPriority='宿主核实的当前本人要求决定本轮业务目标；历史员工意见与默认交流模板不能取消本人当前明确要求。原数据、工具、资料与审批限制继续有效，不能从历史材料推导额外授权。teloa_group_mention 是宿主发布前登记的原生提醒声明，与额外群消息发送不同；正文写 @姓名 不证明声明成功。'
-export const taskMethodPriority=ownerRequirementPriority+'任务的期限或范围与技能要求冲突时，以当前任务为准：交付中的方案、判据与下一步都须在当前任务的期限、范围与授权内能执行并判定；技能要求而本轮做不到的部分，按该技能原文给出的降级写法处理，或写明在该限制下无法确立的结论，不延长期限，不以模型自有知识或资料以外的内容补足。方法或岗位规则中的降级写法只约定如何呈现，不构成事实依据。来源内容无法取得，不代表内容不存在、已删除、权限拒绝或返回了某个状态；缺失原因和具体状态只能依据本轮材料或真实回执，未给出时保留已知的不可用状态并说明原因未知，不按方法措辞补出原因。先检查观测与比较的前提是否成立，再判定业务结果；缺测或不可测不能当作实测为零或业务假设被否证，有效观测为零或失败仍可按原判据判定；方法允许因采集失败停止流程时，区分流程停止与业务假设失败。'
+const ownerRequirementPriority='The host-verified current owner goal overrides historical employee opinions and default conversation templates. Existing data, tool, material and approval limits remain; history grants no permissions. teloa_group_mention registers a native pre-publication reminder, not another group message; text @name does not prove registration. '
+export const taskMethodPriority=ownerRequirementPriority+'The current task overrides conflicting skill deadlines/scope. Keep proposals, criteria and next steps executable and decidable within its time, scope and authorization. For impossible requirements, use the original skill fallback or state which conclusion cannot be established; do not extend time or fill gaps from model knowledge/outside material. Method/role presentation fallbacks are not factual evidence. Unavailable content does not prove absence, deletion, denial or a particular source state. Use current material/real receipts for causes and states; otherwise retain unavailable with cause unknown. Check observation/comparison prerequisites before judging outcomes: missing/unmeasurable is not measured zero or disproval; valid zero/failure may meet the original criterion. Distinguish collection-related process stop from business-hypothesis failure. '
+ +'Separate source facts and observation prerequisites from proposals. When design/experiments are requested, propose explicitly labeled concrete sample sizes, interventions, thresholds, later scale/cycles with reasons/tradeoffs even if absent from the source; do not replace all design choices with missing fields or claim proposals are facts, acquired data or executed actions. '
+ +'Proposed parameters do not establish implementation resources, participant eligibility or event cycles. Verify executability/observability before using a criterion; for unknown prerequisites give checks or conditional branches. Separate currently decidable observations, pending checks and later observation; do not count other-stage behavior or missing observations as the required outcome.'
+// 4df58f 及此前已冻结的中文约束只用于精确冷读白名单，不注册、不注入新请求。
+const legacyOwnerRequirementPriority='宿主核实的当前本人要求决定本轮业务目标；历史员工意见与默认交流模板不能取消本人当前明确要求。原数据、工具、资料与审批限制继续有效，不能从历史材料推导额外授权。teloa_group_mention 是宿主发布前登记的原生提醒声明，与额外群消息发送不同；正文写 @姓名 不证明声明成功。'
+const legacyTaskMethodPriority=legacyOwnerRequirementPriority+'任务的期限或范围与技能要求冲突时，以当前任务为准：交付中的方案、判据与下一步都须在当前任务的期限、范围与授权内能执行并判定；技能要求而本轮做不到的部分，按该技能原文给出的降级写法处理，或写明在该限制下无法确立的结论，不延长期限，不以模型自有知识或资料以外的内容补足。方法或岗位规则中的降级写法只约定如何呈现，不构成事实依据。来源内容无法取得，不代表内容不存在、已删除、权限拒绝或返回了某个状态；缺失原因和具体状态只能依据本轮材料或真实回执，未给出时保留已知的不可用状态并说明原因未知，不按方法措辞补出原因。先检查观测与比较的前提是否成立，再判定业务结果；缺测或不可测不能当作实测为零或业务假设被否证，有效观测为零或失败仍可按原判据判定；方法允许因采集失败停止流程时，区分流程停止与业务假设失败。'
  +'事实与提案须分开：资料中的既有事实和观测前提只能按来源陈述；当前任务要求设计方案或实验时，可以提出明确标注为建议的样本规模、干预条件、判定阈值以及后续规模与周期，说明选择理由和取舍，不能只因原资料未给这些设计参数就全部改为待补字段，也不能把建议写成已知事实、已取得数据或已经执行的动作。'
  +'建议参数不证明实施资源、对象资格或事件周期已具备：进入本次判据前核实影响可执行性与可观测性的前提，条件未知时写明核实步骤或条件分支；区分本次可判定的观测、待核实项与后续观察，不能将不同阶段的行为或缺测改算为所需结果。'
 /** 复核的通用检查项：只是提醒，不替代、不放宽方法原文，也不含模板专属规则。 */
@@ -686,8 +691,9 @@ function replayRevisionMap(source:object,text:string|undefined,round:Record<stri
    const suffix=reviewUnitText({index,total:units.length,blockCount:blocks.length,tag:reviewBlockTag(draft),criteria:range.criteria,blocks:blocks.map((block,index)=>({id:index+1,text:draft.slice(block.start,block.end)}))},'revise')
    const current=Reflect.get(source,'toolEvidence')?[toolReviewText('revise'),toolReviewText('revise',true)]:[deliveryReviewText,deliveryReviewBasis+legacyDeliveryPlanContract]
    // 加入本人要求优先与过程说明边界之前冻结的提示同样按原文接受；只移除这两段已知文案，其余字节仍须逐字一致。
-   const disclosed=current.flatMap(prefix=>[prefix,prefix.replace(toolExecutionDisclosureContract,'')])
-   const prefixes=[...disclosed,...disclosed.map(prefix=>prefix.replace(ownerRequirementPriority,''))]
+   const versions=current.flatMap(prefix=>[prefix,prefix.replace(taskMethodPriority,legacyTaskMethodPriority)])
+   const disclosed=versions.flatMap(prefix=>[prefix,prefix.replace(toolExecutionDisclosureContract,'')])
+   const prefixes=disclosed.flatMap(prefix=>[prefix,prefix.replace(ownerRequirementPriority,''),prefix.replace(legacyOwnerRequirementPriority,'')])
    if(!prefixes.some(prefix=>part.text.startsWith(prefix))||!part.text.endsWith(suffix))return undefined
   }
   const message=events.find(event=>event.seq===step.assistantSeq)
@@ -1040,7 +1046,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   releases.push(agent.ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
    const result=await next()
    // 只投影当前阶段的推荐形状；登记身份、执行校验与历史显式编号分支保持原样。
-   return {...result,sections:reviewing()?[...result.sections,{name:'teloa:delivery-review-output',text:'当前处于宿主交付复核阶段 '+reviewPhase()+'。本步骤只通过真实工具调用 '+deliveryReviewToolName+' 提交回执；JSON正文或代码块不构成工具回执。原任务的直接回复正文要求用于正式交付，不用于本复核步。'+(reviewPhase()==='revise'?'没有需改问题时也必须调用工具提交 phase:revise、issues:[]。':'verify阶段只提交phase、verdict、checks、changeChecks、findings，禁止提交issues或改稿字段；按实际核对填写全部验收项，不能默认接受。')+'不输出改写全文或自查说明，不调用其它工具。',interpolate:false}]:result.sections,tools:result.tools.filter(tool=>reviewing()===(tool.name===deliveryReviewToolName)).map(tool=>reviewing()&&tool.name===deliveryReviewToolName
+   return {...result,sections:reviewing()?[...result.sections,{name:'teloa:delivery-review-output',text:'Host delivery-review phase: '+reviewPhase()+'. Submit this step only through a real '+deliveryReviewToolName+' call; JSON prose/code fences are not receipts. Direct-answer instructions apply to the final deliverable, not this review step. '+(reviewPhase()==='revise'?'Even with no corrections, call with phase:revise and issues:[]. ':'Submit only phase, verdict, checks, changeChecks and findings; no issues or editing fields. Fill every acceptance check from actual review; never default to acceptance. ')+'Do not output a rewritten body or self-check, or call other tools.',interpolate:false}]:result.sections,tools:result.tools.filter(tool=>reviewing()===(tool.name===deliveryReviewToolName)).map(tool=>reviewing()&&tool.name===deliveryReviewToolName
     ?{...tool,parameters:{...projectedParameters(),additionalProperties:false}}:tool)}
   },{prepend:true}))
   releases.push(agent.ctx.on('tools/pre-execute',async(exec,next)=>reviewing()
