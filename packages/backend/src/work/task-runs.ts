@@ -258,9 +258,9 @@ export class TaskRunService{
   const parent=await this.conversationParent(owner,{runId});if(!parent)throw new WorkError('teloa/conflict','失败重试缺少原交办。')
   await this.lockRunParent(db,owner,parent)
   const run=await this.readVerifiedInTransaction(db,owner,runId)
-  if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='error'||run.stopRequestedAt!==null||!run.lineage)throw new WorkError('teloa/conflict','原执行不接受失败重试。')
+  if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='error'&&!(run.evidence.reason==='completed'&&run.executor?.kind==='owner')||run.stopRequestedAt!==null||!run.lineage)throw new WorkError('teloa/conflict','原执行不接受失败重试。')
   if(run.executor?.kind==='owner'){
-   await this.retryTaskVersion(owner,run)
+   await this.retryTaskVersionInTransaction(db,owner,run)
    return (await new OwnerWorkAuthority(this.pool,this.ownerPlans).current(db,owner,run.executor)).admission
   }
   if(!run.roleSnapshot)throw new WorkError('teloa/conflict','原员工执行快照不可核对。')
@@ -303,12 +303,26 @@ export class TaskRunService{
  /** 重试仍是原任务目标；当前目标或固定负责人改变时，必须另行核对原交办。 */
  async retryTaskVersion(owner:string,run:TaskRun):Promise<number>{
   actor(owner)
-  const row=(await this.pool.query('select * from teloa_tasks where owner_id=$1 and id=$2',[owner,run.taskId])).rows[0]
+  const db=await this.pool.connect()
+  try{await db.query('begin');const version=await this.retryTaskVersionInTransaction(db,owner,run);await db.query('commit');return version}
+  catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ private async retryTaskVersionInTransaction(db:PoolClient,owner:string,run:TaskRun):Promise<number>{
+  const completed=run.evidence?.state==='ended'&&run.evidence.reason==='completed'
+  const stored=completed?(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2 for share',[owner,run.id])).rows[0]:undefined
+  const row=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,run.taskId])).rows[0]
   if(!row)throw new WorkError('teloa/forbidden','原任务不属于本人。')
   const task=readStoredTask(row)
   let fixed:{task?:{id?:unknown;scope?:unknown;goal?:unknown}}
   try{fixed=JSON.parse(run.inputText)}catch{throw new WorkError('teloa/storage-corrupt','原执行目标快照不可核对。')}
   if(fixed.task?.id!==task.id||fixed.task.scope!==task.scope||fixed.task.goal!==task.goal||task.assigneeRoleId!==run.roleId||task.assigneeRoleVersion!==run.roleVersion)throw new WorkError('teloa/conflict','原任务目标或负责人已变化，请先核对原交办。')
+  if(completed){
+   const denied=()=>new WorkError('teloa/conflict','原任务尚无确定的复核失败记录，或已有正式成果；请核对原运行。')
+   const current=stored&&read(stored)
+   if(!current||current.executor?.kind!=='owner'||run.executor?.kind!=='owner'||current.state!=='ended'||!isDeepStrictEqual(current.evidence,run.evidence)||current.stopRequestedAt!==null||stored.owner_result_pending!==false||!positive(stored.task_state_version)||task.version!==stored.task_state_version+2||task.state!=='blocked'||!isDeepStrictEqual(task.executor,run.executor)||!isDeepStrictEqual(current.executor,run.executor)||current.taskId!==task.id||current.sessionId!==run.sessionId||current.nativeRequestId!==run.nativeRequestId||current.inputText!==run.inputText||Reflect.has(JSON.parse(run.inputText),'artifactRevision'))throw denied()
+   // 同事务持有 task 读锁；正式结项/成果保存同样锁定原任务，不把发布未知当作“无成果”。
+   if((await db.query("select 1 from teloa_artifact_versions where owner_id=$1 and source->>'kind'='task' and source->>'id'=$2 limit 1",[owner,task.id])).rowCount||(await db.query('select 1 from teloa_task_completions where owner_id=$1 and task_id=$2 limit 1',[owner,task.id])).rowCount)throw denied()
+  }
   return task.version
  }
  /** 只读取本人原任务/Run 的确定父来源，不返回或授予执行身份。 */

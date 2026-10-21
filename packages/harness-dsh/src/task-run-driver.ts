@@ -1,4 +1,4 @@
-import type {TaskExecutionScope,TaskRun,TaskRunService,TaskRunSkillDatabase} from '@teloa/backend'
+import type {TaskExecutionScope,TaskRun,TaskRunService,TaskRunSkillDatabase,TaskRunSubagent} from '@teloa/backend'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import {WorkError,type RoleRuntimeConfig,type TaskRunModelPolicy,type WorkControl} from '@teloa/contract'
 import {observeTaskRun,type TaskRunObservation} from './task-run-observation.ts'
@@ -64,6 +64,10 @@ export type TaskRunPorts={
  stop:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  /** 收口前核对子级是否已结项；读口失败保持未结清，不妨碍先请求取消。 */
  subagentState?:(run:TaskRun,signal:AbortSignal)=>Promise<'none'|'outstanding'>
+ /** 本人原 Run 的既有子调用登记；正式复核再与官方子会话固定归属和终态核对。 */
+ reviewSubagents?:(run:TaskRun,signal:AbortSignal)=>Promise<readonly TaskRunSubagent[]>
+ /** 显式复核失败重试只读原 fresh child 完整事件；不恢复 Agent、不复用复核摘要判断副作用。 */
+ retryChildInspection?:(run:TaskRun,childSessionId:string,signal:AbortSignal)=>Promise<import('./task-run-review-retry-proof.ts').RetryChildInspection>
  /** 官方后台工作及排队的官方续轮尚未结清时，Run 必须保持 active。 */
  backgroundState?:(run:TaskRun)=>Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:boolean;reviewOnly?:boolean;cancelled?:boolean}>
  /** 仅显式 retry 已证实零输出/零工具的失败轮可消费；不能替代后台完成判据。 */

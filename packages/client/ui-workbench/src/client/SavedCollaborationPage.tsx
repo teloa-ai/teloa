@@ -177,8 +177,17 @@ export function SavedCollaborationPage({artifactRail,templateMaterials,preferenc
  const panelOpener=useRef<HTMLElement|null>(null),panelWasOpen=useRef(false),panelRestored=useRef(false)
  // 待发送附件的原始 File 只活在本次挂载里：失败重试要拿它重发同一个 requestId，草稿存储只存可序列化的那份状态。
  const pendingFiles=useRef(new Map<string,File>()),openedBlobs=useRef<OpenedAttachment[]>([]),requestedReferences=useRef(new Set<string>()),imageDialog=useRef<HTMLDialogElement>(null),imageCloseButton=useRef<HTMLButtonElement>(null),imageOpener=useRef<HTMLElement|null>(null)
- // 建过的 blob 地址只有这一个释放口：换群、卸载都从这里走，别处不许单独 revoke。
- const releaseOpenedBlobs=()=>{for(const item of openedBlobs.current)item.revoke();openedBlobs.current=[];requestedReferences.current.clear()}
+ const attachmentGeneration=useRef(0),attachmentConnection=useRef(attachments);attachmentConnection.current=attachments
+ // 换群、卸载释放本页持有的地址；附件 API 在可信撤回后也会幂等释放同附件的地址。
+ const releaseOpenedBlobs=()=>{attachmentGeneration.current++;for(const item of openedBlobs.current)item.revoke();openedBlobs.current=[];requestedReferences.current.clear()}
+ useEffect(()=>{releaseOpenedBlobs();setOpenedReferences({})},[attachments])
+ useEffect(()=>attachments?.subscribeWithdrawal?.(attachmentId=>{
+  const key=referenceKey({kind:'attachment',id:attachmentId,version:1}),previous=openedReferences[key]
+  setOpenedReferences(current=>({...current,[key]:{state:'failed'}}))
+  if(previous?.state==='ready')setImageView(current=>current?.blobUrl===previous.opened.blobUrl?undefined:current)
+  setAttachmentPreview(current=>current?.file.attachmentId===attachmentId?undefined:current)
+  setGroupFiles(current=>current?.filter(file=>file.attachmentId!==attachmentId))
+ }),[attachments,openedReferences])
  const refreshDirectory=async()=>{if(conversationDirectory){await conversationDirectory.refresh();return}setLoading(true);setDirectoryError(undefined);try{setDirectory((await api.list()).items)}catch(cause){setDirectoryError(localizeWorkError(locale,cause))}finally{setLoading(false)}}
  const readAgentGrants=async(next:GroupSnapshot)=>{const generation=viewGeneration.current;const entries=await Promise.all(next.members.flatMap(member=>member.roleId?[api.agentGrant(next.group.id,member.roleId).then(read=>[member.roleId,read] as const)]:[]));if(generation===viewGeneration.current)setAgentGrants(Object.fromEntries(entries))}
  const readMessages=(id:string,root?:string)=>{
@@ -275,16 +284,18 @@ export function SavedCollaborationPage({artifactRail,templateMaterials,preferenc
  useEffect(()=>{
   const activeGroup=snapshot?.group
   if(!attachments||!activeGroup)return
+  const generation=attachmentGeneration.current,current=()=>generation===attachmentGeneration.current&&attachmentConnection.current===attachments&&selectedGroup.current===activeGroup.id&&visibleRef.current
   const wanted=new Map([...(messages??[]),...(topic??[])].flatMap(message=>message.references).filter(reference=>reference.kind==='attachment').map(reference=>[referenceKey(reference),reference] as const))
   for(const [key,reference] of wanted){
    if(requestedReferences.current.has(key))continue
    requestedReferences.current.add(key)
    setOpenedReferences(current=>({...current,[key]:{state:'loading'}}))
    void attachments.openReference(reference,activeGroup.id).then(value=>{
+    if(!current()){if(!('kind'in value))value.revoke();return}
     if('kind' in value){setOpenedReferences(current=>({...current,[key]:{state:'failed'}}));return}
     openedBlobs.current.push(value)
     setOpenedReferences(current=>({...current,[key]:{state:'ready',opened:value}}))
-   },()=>setOpenedReferences(current=>({...current,[key]:{state:'failed'}})))
+   },()=>{if(current())setOpenedReferences(current=>({...current,[key]:{state:'failed'}}))})
   }
  },[attachments,snapshot?.group.id,messages,topic])
  // 成果卡只先取标题／版本／文件清单（describeArtifact，不取字节）。只关联一个文件时沿用旧体验直接把

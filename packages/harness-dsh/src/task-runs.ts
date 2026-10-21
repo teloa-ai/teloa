@@ -57,6 +57,7 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
     signal.throwIfAborted();return withSubagents(existing[0])
    }
    if(runs.some(run=>run.id!==failed.id))throw new WorkError('teloa/conflict','原任务已有其他执行，请先核对运行记录。')
+   if(failed.evidence?.state==='ended'&&failed.evidence.reason==='completed'&&(await delivery?.read(owner,failed))?.state!=='review-required')throw new WorkError('teloa/conflict','原执行的正式成果仍待核对或已经保存，不能重复执行。')
    if(!subagents||!webAccess)throw new WorkError('teloa/unavailable','执行副作用登记尚未完成核对，不能重复派发。')
    const [children,web]=await Promise.all([subagents.listMany(owner,[failed.id]),webAccess.listMany(owner,[failed.id])])
    await assertSafeTaskRunRetry(failed,ports,signal,{subagents:children.get(failed.id)??[],webAccess:web.get(failed.id)??[]})

@@ -2053,15 +2053,18 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     setAttentionSourceSelection(previous=>previous?.source.kind==='page-create-draft'&&previous.source.draftId===draft.id?undefined:previous)
     actions.closeDetail();actions.openMessages('native')
   }
-  const openSavedTwinDraft=async(sessionId:string,text:string)=>{
-    const original=twinDraftApi,cancelSignal=new AbortController().signal,navigationSignal=beginNativeNavigation?.()
-    const navigation=pageCreateDraftRevisionNavigation({cancelSignal,...(navigationSignal?{navigationSignal}:{}),current:()=>projectFrameMounted.current&&!!original&&currentTwinDraftApi.current===original,location:()=>homeCreationLocation(latestState.current),isNativeConversation:()=>latestState.current.view==='messages'&&latestState.current.messageMode==='native',mainSession:mainSession.getSnapshot,boundSession:()=>work.getSnapshot().sessionId})
+  const openSavedTwinDraft=async(sessionId:string,text:string,selected:()=>boolean)=>{
+    const original=twinDraftApi,current=()=>projectFrameMounted.current&&!!original&&currentTwinDraftApi.current===original&&selected()
+    if(!current())throw Object.assign(Error(),{code:'teloa/twin-draft-open-unavailable'})
+    const cancelSignal=new AbortController().signal,navigationSignal=beginNativeNavigation?.()
+    const navigation=pageCreateDraftRevisionNavigation({cancelSignal,...(navigationSignal?{navigationSignal}:{}),current,location:()=>homeCreationLocation(latestState.current),isNativeConversation:()=>latestState.current.view==='messages'&&latestState.current.messageMode==='native',mainSession:mainSession.getSnapshot,boundSession:()=>work.getSnapshot().sessionId})
     await openTwinDraftConversation(text,{
       current:()=>navigation.mayOpen()||navigation.isOpened(sessionId),
       open:async()=>await work.openSessionResult(sessionId,navigation.signal,navigation.mayOpen)==='opened'&&navigation.isOpened(sessionId),
       input:()=>conversationDraftInput(sessionId),
       messages:{unavailable:twinDraftCopy(locale,'openUnavailable'),occupied:twinDraftCopy(locale,'inputOccupied'),rejected:twinDraftCopy(locale,'inputRejected')},
     })
+    if(!current()||!navigation.isOpened(sessionId))throw Object.assign(Error(),{code:'teloa/twin-draft-open-unavailable'})
     actions.closeDetail();actions.openMessages('native');closeNarrowDirectory()
   }
   /** 页内输入仅在创建回执明确成功后清空；工作区选择与关闭沿用原创建流程。 */

@@ -1,8 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as module from '../src/client/business-builder-api.ts'
+import {taskInput} from '@teloa/contract'
 const requestId='11111111-1111-4111-8111-111111111111',draftId='22222222-2222-4222-8222-222222222222',now='2026-09-29T00:00:00.000Z'
 const binding={requestId,kind:'builder',title:'新业务',draftId,createdAt:now,updatedAt:now}
+test('完整采用恢复记录查询原回执时遵守服务端只读请求协议，不携带写入和预览字段',async()=>{
+ const pending={sessionId:'original-builder',draftId,requestId,expectedRevision:2,expectedDigest:'a'.repeat(64),previewReceipt:'b'.repeat(64)},signal=new AbortController().signal,calls:unknown[]=[]
+ const api=module.createBusinessBuilderApi(async(endpoint,input,passedSignal)=>{
+  assert.equal(endpoint,'business-setup-plan/receipt')
+  const checked=taskInput(input,['sessionId','draftId','requestId'])
+  calls.push(checked);assert.equal(passedSignal,signal);return null
+ })
+ assert.equal(await api.setupReceipt(pending,signal),null)
+ assert.deepEqual(calls,[{sessionId:'original-builder',draftId,requestId}])
+ assert.equal(pending.expectedRevision,2);assert.equal(pending.previewReceipt,'b'.repeat(64))
+})
 test('v2 配置通过正式 API 读取草案、保存声明和记录页；错业务或页面仍拒绝',async()=>{
  const hash='a'.repeat(64),objectType={format:'teloa.business-object-type/v2',id:'customer',version:'1.0.0',domain:'sales',title:'客户',unit:'位',lead:'客户',sourceId:'records',fields:[{format:'teloa.business-rich-field/v2',name:'amount',label:'金额',type:'money',from:'金额',required:false,currencies:['CNY']}]}
  const definition={id:'customers',kind:'records',title:'客户',objectType:'customer',fields:['amount'],allowCreate:true,allowEdit:true,allowArchive:true}

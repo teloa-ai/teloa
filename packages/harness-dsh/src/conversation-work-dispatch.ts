@@ -1,5 +1,6 @@
 import {WorkError,parseResourceReferences,type WorkTask,type ResourceReference,type BusinessReassignmentReceipt,type BusinessObjectReference} from '@teloa/contract'
 import type {ReassignmentRunTargets} from '@teloa/backend'
+import type {TaskRunDeliveryReader} from './task-run-delivery-status.ts'
 import {workRequestChildId,type ConversationWorkRequest,type ConversationWorkReserveInput,type ConversationWorkService,type TaskRun,type TaskService,type WorkRequestTarget,type ConversationTaskIdentity} from '@teloa/backend'
 
 export type WorkMemberStatus='received'|'waiting'|'unavailable'|'failed'|'stopped'
@@ -15,6 +16,7 @@ export type ConversationWorkDispatchPorts={
  runs:(taskId:string)=>Promise<TaskRun[]>
  run:(endpoint:string,input:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity)=>Promise<TaskRun>
  result:(run:TaskRun)=>Promise<string|undefined>
+ delivery?:TaskRunDeliveryReader['read']
  authorize?:(scopes:readonly string[])=>Promise<void>
  revalidate?:(request:ConversationWorkRequest,target:WorkRequestTarget,signal:AbortSignal)=>Promise<void>
  publish:(status:ConversationWorkStatus,lockSignal:AbortSignal)=>Promise<void>
@@ -176,7 +178,7 @@ export class ConversationWorkDispatch{
     active.throwIfAborted();await revalidate?.();active.throwIfAborted()
     if(!fixed.run&&runs.length)throw new WorkError('teloa/conflict','原任务已有其他执行，请核对原记录。')
     let run=fixed.run
-    if(explicitRetry&&run===fixed.original&&run?.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='error'&&run.stopRequestedAt===null)run=await ports.run('task-runs/retry',{runId:run.id},active,identity)
+    if(explicitRetry&&run===fixed.original&&run?.state==='ended'&&run.evidence?.state==='ended'&&run.stopRequestedAt===null&&(run.evidence.reason==='error'||run.evidence.reason==='completed'&&task.state==='blocked'&&(await ports.delivery?.(ports.owner,run))?.state==='review-required'))run=await ports.run('task-runs/retry',{runId:run.id},active,identity)
     if(!run)run=await ports.run('task-runs/prepare',{requestId:workRequestChildId(request.requestId,'run'),taskId:task.id,expectedTaskVersion:task.version},active,identity)
     active.throwIfAborted();await revalidate?.();active.throwIfAborted()
     if(run.state==='prepared')await ports.run('task-runs/start',{runId:run.id},active,identity)
@@ -189,9 +191,12 @@ export class ConversationWorkDispatch{
  private async generalStatus(request:ConversationWorkRequest):Promise<ConversationWorkStatus>{
   const {ports}=this,task=await ports.boundTasks.request(this.generalIdentity(request)),runs=task?await ports.runs(task.id):[],run=this.generalRun(request,runs).run,failure=request.failures.general
   const result=run?.state==='ended'?await ports.result(run):undefined
-  const status:WorkMemberStatus=run?.state==='configuration_failed'?'failed':run?.state==='withdrawn'||run?.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run?.state==='ended'?run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&!!result?'received':'failed':!run&&request.stoppedAt?'stopped':!run&&failure?'failed':'waiting'
+  const completed=run?.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&run.stopRequestedAt===null
+  const delivery=completed?await ports.delivery?.(ports.owner,run):undefined
+  const status:WorkMemberStatus=run?.state==='configuration_failed'?'failed':run?.state==='withdrawn'||run?.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run?.state==='ended'?completed?delivery?.state==='saved'&&!!result?'received':delivery?.state==='review-required'?'failed':'waiting':'failed':!run&&request.stoppedAt?'stopped':!run&&failure?'failed':'waiting'
+  const deliveryReason=completed&&status!=='received'?(delivery?.state==='review-required'?'正文仍是待复核候选，尚未通过正式复核；可查看原运行并明确重试。':'正式成果的保存结果尚待核对，请沿原运行继续核对。'):undefined
   const executor={kind:'owner' as const,grantId:request.requestId,grantVersion:1}
-  const member:ConversationWorkMember={roleId:null,executor,name:'通用 Agent',scope:'general',status,...(task?{task:projection(task)}:{}),...(run?{run:runProjection(run)}:{}),...(result?{result}:{}),...(status==='failed'||status==='waiting'&&failure?{reason:run?.configurationError?.message??failure?.message??'本次执行没有可核验的最终回复。'}:{})}
+  const member:ConversationWorkMember={roleId:null,executor,name:'通用 Agent',scope:'general',status,...(task?{task:projection(task)}:{}),...(run?{run:runProjection(run)}:{}),...(result?{result}:{}),...(deliveryReason?{reason:deliveryReason}:status==='failed'||status==='waiting'&&failure?{reason:run?.configurationError?.message??failure?.message??'本次执行没有可核验的最终回复。'}:{})}
   const counts:ConversationWorkStatus['counts']={received:0,waiting:0,unavailable:0,failed:0,stopped:0};counts[status]++
   await this.authorize(request)
   return {requestId:request.requestId,sessionId:request.sessionId,kind:'task',title:request.title,scope:'general',observedAt:ports.now(),stoppedAt:request.stoppedAt,counts,members:[member]}

@@ -3,6 +3,7 @@ import {WorkError,taskInput} from '@teloa/contract'
 import type {TaskRun} from '@teloa/backend'
 import type {TaskRunPorts} from './task-run-driver.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
+import {assertSafeReviewFailedRetry} from './task-run-review-retry-proof.ts'
 
 const denied=()=>new WorkError('teloa/conflict','无法证实原失败没有执行副作用，请核对原运行；不会重复派发。')
 /** 官方 fallback 标题是原输入的日志投影；种子边界也是元数据，均不进入模型消息或派发工作。 */
@@ -17,6 +18,7 @@ function safeSessionMetadata(event:{type:string;seq:number;data:unknown},message
 /** 显式重试只接受固定失败轮的零输出、零工具、零子级证据；读取失败不是零副作用证明。 */
 export async function assertSafeTaskRunRetry(run:TaskRun,ports:TaskRunPorts,signal:AbortSignal,registrations:{subagents:readonly unknown[];webAccess:readonly unknown[]}):Promise<void>{
  signal.throwIfAborted()
+ if(run.evidence?.state==='ended'&&run.evidence.reason==='completed')return assertSafeReviewFailedRetry(run,ports,signal,registrations)
  if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='error'||run.stopRequestedAt!==null||run.flowId!==undefined||run.groupContext!==undefined||!Array.isArray(registrations.subagents)||!Array.isArray(registrations.webAccess)||registrations.subagents.length||registrations.webAccess.length)throw denied()
  if(!ports.backgroundState||!ports.subagentState||!ports.flowState||!ports.stopState||!ports.goalObservation)throw denied()
  const events=await ports.events(run)

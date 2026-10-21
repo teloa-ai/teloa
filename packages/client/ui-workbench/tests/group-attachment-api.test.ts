@@ -21,6 +21,26 @@ function bytesReply(patch:Partial<Record<string,unknown>>={}){
  return {attachmentId,version:1 as const,mime:'application/pdf',bytes:4,sha256,name:'x.png',dataBase64:'ZGF0YQ==',...patch}
 }
 
+test('已核验撤回回执释放同附件全部URL，拒绝撤回前字节迟答且不影响别的附件',async()=>{
+ const second='另一份附件',replies:((value:unknown)=>void)[]=[],events:string[]=[]
+ let defer=false
+ const api=createGroupAttachmentApi(async(endpoint,input)=>{
+  if(endpoint==='groups/attachments/withdraw')return {attachment:attachment({state:'withdrawn',withdrawnAt:at})}
+  const id=(input as {attachmentId:string}).attachmentId
+  if(defer)return new Promise(resolve=>replies.push(resolve))
+  return {bytes:bytesReply({attachmentId:id})}
+ })
+ const first=await api.openReference({kind:'attachment',id:attachmentId,version:1}),other=await api.openReference({kind:'attachment',id:second,version:1})
+ assert.ok(!('kind'in first)&&!('kind'in other))
+ api.subscribeWithdrawal(id=>events.push(id))
+ defer=true;const late=api.openReference({kind:'attachment',id:attachmentId,version:1})
+ await api.withdraw(attachmentId,requestId)
+ assert.equal(resolveObjectURL(first.blobUrl),undefined,'已打开的同附件URL及时释放')
+ assert.ok(resolveObjectURL(other.blobUrl),'其他附件原URL仍可用')
+ replies[0]!({bytes:bytesReply()});await assert.rejects(late,{code:'teloa/source-unavailable'})
+ assert.deepEqual(events,[attachmentId]);first.revoke();other.revoke()
+})
+
 /** 上传专用路由的假 fetch：记下地址与请求，按给定回包作答（与宿主路由同形：{ok,value}／{ok,error}）。 */
 function uploadRoute(reply:(payload:Record<string,unknown>)=>{status?:number;body:unknown;raw?:string}){
  const posts:{url:string;init:RequestInit;payload:Record<string,unknown>}[]=[]

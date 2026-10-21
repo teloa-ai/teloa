@@ -137,7 +137,7 @@ function createEngine(ctx:Context){
  const off=registration.tools.register(defineTool({
   name:toolLoaderName,
   description:'按操作目标加载当前会话已允许、但尚未展开参数的工具，供下一步调用。query用简短中英文动作词，例如"网页搜索 web search"、"运行命令 shell"、"新建员工"；已知准确工具名时用names指定，最多8个。只加载参数，不执行操作或新增授权；普通问答和已可见的工具无需调用。',
-  parameters:{query:{type:'string',description:'简短的动作词，可同时用中英文，例如网页搜索 web search。'},names:{type:'array',items:{type:'string'}}},
+  parameters:{query:{type:'string',description:'简短的动作词，可同时用中英文，例如网页搜索 web search；不确定工具名时只填query。'},names:{type:'array',items:{type:'string'},description:'仅填写已核对的真实工具名；技能名称不是工具名，不要猜名称。'}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async({names,query},exec)=>{
    const state=exec.agent&&states.get(exec.agent)
@@ -146,7 +146,10 @@ function createEngine(ctx:Context){
    if(names!==undefined&&(names.length<1||names.length>8)||query!==undefined&&(!query.trim()||query.length>256)||names===undefined&&query===undefined)throw new WorkError('teloa/invalid-input','请提供简短操作目标或1到8个准确工具名。')
    const catalog=state.available
    const selected=names?[...new Set(names)]:search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query!)
-   if(selected.some(name=>!catalog.has(name)||name===toolLoaderName))throw new WorkError('teloa/forbidden','工具不在本会话许可目录中。')
+   if(selected.some(name=>!catalog.has(name)||name===toolLoaderName)){
+    const matches=search(new Map([...catalog].filter(([name])=>!state.exposed.has(name))),query??names!.join(' '))
+    throw new WorkError('teloa/forbidden','名称不在本会话许可工具目录中，本次未加载或执行任何操作。技能名不是工具名，应通过 skill 工具核对技能；请移除 names，下一步只用 query 按操作目标搜索。'+(matches.length?'当前许可目录中匹配目标的工具：'+matches.join('、')+'。':'当前没有匹配的许可工具，不能猜测名称或宣称已保存。'))
+   }
    for(const name of selected){
     if(state.mode==='voice'){loadInto(state.voice!.loaded,name);if(state.voice!.persist&&state.session)loadInto(state.session,name)}
     else loadInto(state.session!,name)

@@ -1248,6 +1248,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    route:messageId=>{void runtimeAdmission.defer(()=>dispatchGroupRouting(ctx,owner,messageId,groupRoutingDispatchPorts,new AbortController().signal)).catch(error=>ctx.logger.warn('Teloa 群内路由未完成：%s',codeOf(error,'teloa/dependency-unavailable')))},
    report:code=>ctx.logger.warn('Teloa 员工群内回传未写入：%s',code),
   })
+  runPorts.reviewSubagents=async(run,signal)=>{
+   signal.throwIfAborted()
+   const children=await new TaskRunSubagentService((await resources.database()).pool,{now:()=>new Date().toISOString()}).list(owner,run.id)
+   signal.throwIfAborted()
+   return children
+  }
   runPorts.subagentState=async(run,signal)=>{
    signal.throwIfAborted()
    const subagents=await new TaskRunSubagentService((await resources.database()).pool,{now:()=>new Date().toISOString()}).outstanding(owner,run.id)
@@ -1281,12 +1287,13 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   resources.beforeDatabaseClose(startPlanScheduler({recover:async()=>{},tick:(now,signal)=>runtimeAdmission.run(()=>habitTick(now,signal)),report:(_phase,code)=>ctx.logger.warn('Teloa 分身观察待恢复：%s',code)}))
   const planScheduleHandler=createPlanScheduleHandler(owner,{isAvailable:()=>true,overview:planRuntime.readPorts.overview,getStatus:planRuntime.readPorts.status,executionHistory:planRuntime.readPorts.executionHistory,skipHistory:planRuntime.readPorts.skipHistory})
+  const taskRunDeliveryReader=createTaskRunDeliveryReader({receipt:(actor,run)=>new ArtifactService(database.pool,workIdentity,async(who,expected,db)=>({source:await taskArtifactSource(db,who,expected.id,true),sessionIds:await taskArtifactSessions(db,who,expected.id,true)})).ownerRunReceipt(actor,run),events:run=>runPorts.events(run),...(runPorts.continuations?{continuations:runPorts.continuations}:{}),...(runPorts.goalObservation?{goalObservation:runPorts.goalObservation}:{})})
   const taskRunHandler=createTaskRunHandler(owner,runService,runPorts,loadTaskKnowledge,{beforeCreate:sessionId=>resident.invalidateOrdinaryRestore(sessionId),conversations:service,links:guardedObjectConversations(new ObjectConversationService(database.pool,(actor,id)=>service.snapshotBySession(actor,id),()=>new Date().toISOString()))},{listMany:(actor,runIds)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds),recover:(actor,input)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).recover(actor,input)},{estimate:async sessionId=>{
    try{
     const agent=ctx.agents.get(brandString<SessionId>(sessionId)),meter=Reflect.get(ctx,'tokenMeter') as {measure?:(session:unknown)=>{totalTokens?:unknown}}|undefined,total=agent===undefined?undefined:meter?.measure?.(agent.session).totalTokens
     return typeof total==='number'&&Number.isSafeInteger(total)&&total>=0&&total<=2147483647?total:undefined
    }catch{return undefined}
-  }},{listMany:(actor,runIds)=>new TaskRunWebAccessService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds)},createTaskRunModelReader(ctx,runPorts.continuations),createTaskRunDeliveryReader({receipt:(actor,run)=>new ArtifactService(database.pool,workIdentity,async(who,expected,db)=>({source:await taskArtifactSource(db,who,expected.id,true),sessionIds:await taskArtifactSessions(db,who,expected.id,true)})).ownerRunReceipt(actor,run),events:run=>runPorts.events(run),...(runPorts.continuations?{continuations:runPorts.continuations}:{}),...(runPorts.goalObservation?{goalObservation:runPorts.goalObservation}:{})}))
+  }},{listMany:(actor,runIds)=>new TaskRunWebAccessService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds)},createTaskRunModelReader(ctx,runPorts.continuations),taskRunDeliveryReader)
   const admitFlowInTransaction=async(db:Parameters<TaskRunService['executionAdmissionInTransaction']>[0],actor:string,runId:string)=>{
    if(actor!==owner)throw new WorkError('teloa/forbidden','Flow 不属于当前本人。')
    const api=await runService(),role=await api.executionAdmissionInTransaction(db,actor,runId),run=await api.readVerifiedInTransaction(db,actor,runId)
@@ -1984,6 +1991,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   }
   const workDispatch=new ConversationWorkDispatch({
    authorize:authorizeWorkResultScopes,
+   delivery:taskRunDeliveryReader.read,
    owner,requests:conversationWork,tasks:new TaskService(database.pool,{id:randomUUID,now:()=>new Date().toISOString()}),
    boundTasks:{
     request:async identity=>{

@@ -59,15 +59,18 @@ test('真实创建幂等并返回完整员工回执；同轮不同调用产生�
  assert.equal((await f.call('teloa_employees_create',{...input,name:'伪重试'},'create-1')).isError,true)
 })
 
-test('模型工具可写自由组合头像并原样作为资料基线传回；墨黑与未知形状在写入前拒绝',async t=>{
+test('模型工具可写自由组合及墨黑头像并原样作为资料基线传回；未知形状与颜色在写入前拒绝',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
  const created=value(await f.call('teloa_employees_create',{...fields,avatarKey:'bot:ghost:amber'})).role
  assert.equal(created.avatarKey,'bot:ghost:amber')
  const read=value(await f.call('teloa_employees_get',{roleId:created.id})).role
  const updated=await f.call('teloa_employees_profile',{roleId:created.id,expectedVersion:read.version,expectedProfile:{name:read.name,avatarKey:read.avatarKey},profile:{name:read.name,avatarKey:'bot:capsule:plum'}})
  assert.equal(updated.isError,false);assert.equal(value(updated).role.avatarKey,'bot:capsule:plum')
- for(const avatarKey of ['bot:circle:ink','bot:star:teal'])assert.equal((await f.call('teloa_employees_create',{...fields,avatarKey})).isError,true,avatarKey)
- assert.equal((await f.roles.list(f.owner,{})).length,1)
+ const ink=value(await f.call('teloa_employees_create',{...fields,avatarKey:'bot:circle:ink'})).role
+ assert.equal(ink.avatarKey,'bot:circle:ink')
+ assert.equal(value(await f.call('teloa_employees_get',{roleId:ink.id})).role.avatarKey,'bot:circle:ink')
+ for(const avatarKey of ['bot:circle:unknown','bot:star:teal'])assert.equal((await f.call('teloa_employees_create',{...fields,avatarKey})).isError,true,avatarKey)
+ assert.equal((await f.roles.list(f.owner,{})).length,2)
 })
 
 test('目录详情隔离本人且排除分身；伪造主体、凭据及无效头像在写入前拒绝',async t=>{

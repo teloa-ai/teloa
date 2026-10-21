@@ -40,6 +40,7 @@ import {readEndedTaskRunSession} from './task-run-cold-session.ts'
 import {leaseEmployeeSystemPrompt} from './employee-system-prompt.ts'
 import {artifactRevisionScope,createReviewSourceCatalog,leaseTaskDeliveryReview,taskMethodPriority,type ReviewMaterial,type ReviewSourceInput} from './task-delivery-review.ts'
 import type {DeliveryReviewExecutionSnapshot} from './task-delivery-review-tools.ts'
+import {readNativeReviewChildren} from './task-delivery-review-native-children.ts'
 
 export type DshTaskNativeInput=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'readReviewState'>>
 
@@ -482,8 +483,12 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      }
      const proof=nativeInput.readReviewState!(agent,run.nativeRequestId,groupAppendRequestIds)
      const jobs=ctx.jobs.list(agent.id).map(job=>({id:job.id,owner:job.owner,status:job.status}))
+     const events=readSessionEvents(session),root=events.find(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'&&Reflect.get(event.data.source,'rpcId')===run.nativeRequestId)
+     const nativeCatalog=root!==undefined&&events.some(event=>event.seq>=root.seq&&event.type==='subagent/catalog'&&event.data.version===0&&event.data.mode==='continuable')
+     if(nativeCatalog&&!ports.reviewSubagents)throw new WorkError('teloa/dependency-unavailable','原生子调用复核读口尚未就绪。')
+     const nativeChildren=nativeCatalog?await readNativeReviewChildren({inspect:(id,signal)=>ctx.sessionController.inspect(brandString<SessionId>(id),signal),live:id=>ctx.agents.get(brandString<SessionId>(id))},events,{runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId},await ports.reviewSubagents!(run,reviewSignal),reviewSignal):undefined
      assertLive()
-     return {runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId,allowedTools:[...runToolNames(run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined})],continuationMessageIds:new Set(proof.continuationMessageIds),runtimeLinks:links,jobs,pendingJobCompletion:proof.pendingJobCompletion,pendingInput:proof.pendingInput,children,flow}
+     return {runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId,allowedTools:[...runToolNames(run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined})],continuationMessageIds:new Set(proof.continuationMessageIds),runtimeLinks:links,jobs,pendingJobCompletion:proof.pendingJobCompletion,pendingInput:proof.pendingInput,children,flow,...(nativeChildren?{nativeChildren}:{})}
     }:undefined
     const leaseReview=(material:ReviewMaterial|{skip:'no-material'}|undefined)=>agent.ctx&&material?leaseTaskDeliveryReview(agent,{runId:run.id,requestId:run.nativeRequestId,
      material,
@@ -630,9 +635,20 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   ...(background?{backgroundState:async(run:TaskRun)=>{await validateBinding(run);return background.state(run)}}:{}),
   ...(background?{retryOwnerOnlyBackground:async(run:TaskRun,signal:AbortSignal)=>{
    signal.throwIfAborted();await validateBinding(run)
+   const agent=ctx.agents.get(brandString<SessionId>(run.sessionId))
+   if(agent&&(agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length))return false
    const exact=await background.retryOwnerOnly(run)
-   await validateBinding(run);signal.throwIfAborted();return exact
+   await validateBinding(run);signal.throwIfAborted()
+   return exact&&ctx.agents.get(brandString<SessionId>(run.sessionId))===agent&&(!agent||agent.status==='idle'&&!agent.inbox.nextTurn.length&&!agent.inbox.nextStep.length)
   }}:{}),
+  retryChildInspection:async(run,id,signal)=>{
+   signal.throwIfAborted();await validateBinding(run)
+   const child=ctx.agents.get(brandString<SessionId>(id))
+   if(child&&(child.status!=='idle'||child.inbox.nextTurn.length||child.inbox.nextStep.length))throw new WorkError('teloa/conflict','原子调用仍有在途工作，不能重复执行。')
+   const snapshot=await ctx.sessionController.inspect(brandString<SessionId>(id),signal)
+   if(snapshot.meta.id!==id||snapshot.meta.parentSession!==run.sessionId||ctx.agents.get(brandString<SessionId>(id))!==child||child&&(child.status!=='idle'||child.inbox.nextTurn.length||child.inbox.nextStep.length))throw new WorkError('teloa/conflict','原子调用归属或活动已变化。')
+   await validateBinding(run);signal.throwIfAborted();return snapshot
+  },
   reassignmentInspection:async(run,signal)=>readNativeReassignmentInspection({get:id=>store.get(brandString<SessionId>(id)),flush:session=>store.flush(session),inspect:id=>ctx.sessionController.inspect(brandString<SessionId>(id))},run,signal),
   withReassignmentInspection:async(run,signal,work)=>withNativeResourceInspection(ctx.agents.get(brandString<SessionId>(run.sessionId)),{get:id=>store.get(brandString<SessionId>(id)),flush:session=>store.flush(session),inspect:id=>ctx.sessionController.inspect(brandString<SessionId>(id))},run,runtimeLinks,taskRunRuntimeId,Reflect.get(ctx,'jobs'),signal,work),
   events:async run=>{

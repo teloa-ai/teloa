@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type {TaskRunRuntimeLink} from '@teloa/backend'
 import type {ReviewSourceInput} from './task-delivery-review-protocol.ts'
 import {proveRunTaskBook} from './task-delivery-review-team-tasks.ts'
+import {proveNativeReviewChildren,type NativeReviewChild} from './task-delivery-review-native-children.ts'
 
 /** 宿主按原受理根、运行关联及真实后台读口提供；当前 Agent 收尾的 running 不属于后台待办。 */
 export type DeliveryReviewExecutionSnapshot=Readonly<{
@@ -15,6 +16,7 @@ export type DeliveryReviewExecutionSnapshot=Readonly<{
  jobs:readonly Readonly<{id:string;owner:string|undefined;status:string}>[]
  pendingJobCompletion:boolean;pendingInput:boolean
  children:'none'|'outstanding';flow:'none'|'outstanding'
+ nativeChildren?:readonly NativeReviewChild[]
 }>
 type FrozenExecution=Omit<DeliveryReviewExecutionSnapshot,'continuationMessageIds'>&{continuationMessageIds:readonly string[]}
 type ToolReceipt=Readonly<{callId:string;name:string;turn:number;step:number;assistantSeq:number;callSeq:number;resultSeq:number;argumentsSha256:string;isError:boolean;text:string;sha256:string}>
@@ -42,6 +44,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  const assistants:AssistantEvent[]=[],continuations:ContinuationReceipt[]=[],inputIds=new Set<string>()
  const registeredJobs=new Map<string,Extract<SessionEvent,{type:'job/registered'}>>(),settledJobs=new Map<string,Extract<SessionEvent,{type:'job/settled'}>>()
  const externalCatalog:Extract<SessionEvent,{type:'subagent/catalog'}>[]=[]
+ const nativeCatalog:Extract<SessionEvent,{type:'subagent/catalog'}>[]=[]
  const taskBook:Extract<SessionEvent,{type:'team/task'}>[]=[]
  for(const event of window){
   if(event.type==='turn/start'){currentTurn=event.data.turn;continue}
@@ -76,8 +79,10 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
    if(event.data.owner!==binding.sessionId||settledJobs.has(event.data.jobId))return blocked('job-event-identity')
    settledJobs.set(event.data.jobId,event)
   }else if(event.type==='subagent/catalog'){
-   if(event.data.version!==2||event.data.mode!=='external'||externalCatalog.some(row=>row.data.childId===event.data.childId))return blocked('unproven-child-event')
-   externalCatalog.push(event)
+   if([...externalCatalog,...nativeCatalog].some(row=>row.data.childId===event.data.childId))return blocked('unproven-child-event')
+   if(event.data.version===2&&event.data.mode==='external')externalCatalog.push(event)
+   else if(event.data.version===0&&event.data.mode==='continuable')nativeCatalog.push(event)
+   else return blocked('unproven-child-event')
   }else if(event.type==='team/task'){
    taskBook.push(event)
   // 只有与原调用回执一致的本 Run 任务簿和官方外部目录可读；未知协作仍拒绝。
@@ -134,6 +139,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
   receipts.push({callId:id,name:call.data.name,turn:call.data.turn,step:call.data.step,assistantSeq:assistant.seq,callSeq:call.seq,resultSeq:result.seq,argumentsSha256:sha(call.data.arguments),isError:result.data.message.isError,text,sha256:sha(text)})
  }
  if(results.size!==calls.size||assistants.some(event=>event.data.message.content.some(block=>block.type==='tool-call'&&!calls.has(block.id))))return blocked('tool-unmatched')
+ if(!proveNativeReviewChildren(nativeCatalog,receipts.map(row=>({...row,arguments:calls.get(row.callId)!.data.arguments,callTime:calls.get(row.callId)!.time,resultTime:results.get(row.callId)!.time})),binding,snapshot.nativeChildren))return blocked('unproven-native-child')
  if(!proveRunTaskBook(taskBook,receipts.map(row=>({...row,arguments:calls.get(row.callId)!.data.arguments})),binding.sessionId))return blocked('unproven-team-task')
  if(registeredJobs.size!==jobIds.size||settledJobs.size!==jobIds.size)return blocked('job-event-missing')
  for(const job of snapshot.jobs){
@@ -146,7 +152,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  for(const event of externalCatalog)if(!snapshot.runtimeLinks.some(row=>row.kind==='external'&&row.payload.activationId===event.data.childId&&receipts.some(receipt=>receipt.callSeq<event.seq&&event.seq<receipt.resultSeq&&row.payload.reservationId==='external:'+sha(JSON.stringify([row.payload.runtimeId,binding.sessionId,receipt.callId,row.payload.provider])))))return blocked('external-catalog')
  const draft=assistants.at(-1)
  if(!draft||draft.data.turn!==binding.turn||receipts.some(row=>row.resultSeq>=draft.seq))return blocked('tool-final-draft')
- const execution:FrozenExecution={...snapshot,allowedTools:[...snapshot.allowedTools],continuationMessageIds:continuations.map(row=>row.messageId),runtimeLinks:structuredClone(snapshot.runtimeLinks),jobs:structuredClone(snapshot.jobs)}
+ const execution:FrozenExecution={...snapshot,allowedTools:[...snapshot.allowedTools],continuationMessageIds:continuations.map(row=>row.messageId),runtimeLinks:structuredClone(snapshot.runtimeLinks),jobs:structuredClone(snapshot.jobs),...(snapshot.nativeChildren?{nativeChildren:structuredClone(snapshot.nativeChildren)}:{})}
  const drafts=assistants.filter(event=>event.seq<draft.seq).flatMap(event=>{const text=event.data.message.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n').trim();return text?[{messageId:event.data.message.id,seq:event.seq,text,sha256:sha(text)}]:[]})
  const body={schema:'teloa.delivery-review-tools/v2' as const,execution,turn:binding.turn,draftMessageId:draft.data.message.id,draftSeq:draft.seq,receipts,continuations,drafts}
  const evidence:ReviewToolEvidence={...body,sha256:sha(JSON.stringify(body))}
@@ -155,7 +161,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
 
 /** 普通回执和明确错误原样封存；错误不是成功动作，工具内容也不是可执行指令。 */
 export function reviewToolSources(evidence:ReviewToolEvidence):readonly ReviewSourceInput[]{
- return [...evidence.receipts.map((row):ReviewSourceInput=>({id:'tool-result:'+row.resultSeq,kind:'context',title:`工具 ${row.name} 的${row.isError?'错误':'成功'}回执`,text:JSON.stringify({tool:row.name,callId:row.callId,isError:row.isError,text:row.text}),origin:{field:'toolResults',pointer:'/'+row.resultSeq}})),...evidence.continuations.map((row):ReviewSourceInput=>({id:'tool-continuation:'+row.seq,kind:'context',title:'已登记后台续轮的普通回执',text:row.text,origin:{field:'toolResults',pointer:'/'+row.seq}})),...(evidence.drafts??[]).map((row):ReviewSourceInput=>({id:'assistant-draft:'+row.seq,kind:'context',title:'本轮未复核中间稿（仅候选，不证明事实或执行）',text:row.text,origin:{field:'assistantDrafts',pointer:'/'+row.seq}}))]
+ return [...evidence.receipts.map((row):ReviewSourceInput=>({id:'tool-result:'+row.resultSeq,kind:'context',title:row.name==='subagent_task'&&!row.isError?'子 Agent 的返回资料（尚待复核，不证明其声称的事实或外部动作）':`工具 ${row.name} 的${row.isError?'错误':'成功'}回执`,text:JSON.stringify({tool:row.name,callId:row.callId,isError:row.isError,text:row.text}),origin:{field:'toolResults',pointer:'/'+row.resultSeq}})),...evidence.continuations.map((row):ReviewSourceInput=>({id:'tool-continuation:'+row.seq,kind:'context',title:'已登记后台续轮的普通回执',text:row.text,origin:{field:'toolResults',pointer:'/'+row.seq}})),...(evidence.drafts??[]).map((row):ReviewSourceInput=>({id:'assistant-draft:'+row.seq,kind:'context',title:'本轮未复核中间稿（仅候选，不证明事实或执行）',text:row.text,origin:{field:'assistantDrafts',pointer:'/'+row.seq}}))]
 }
 
 /** 冷读只复算宿主冻结草稿以前的原生事件；首次数据和正式交付必须携带同一份证据。 */
@@ -168,7 +174,7 @@ export function replayReviewToolEvidence(events:readonly SessionEvent[],value:Re
   if(read.state!=='ready')return false
   if(value.schema==='teloa.delivery-review-tools/v2')return isDeepStrictEqual(read.evidence,value)
   const root=prefix.find(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'&&Reflect.get(event.data.source,'rpcId')===snapshot.requestId)
-  if(!root||prefix.some(event=>event.seq>=root.seq&&event.type==='team/task'))return false
+  if(!root||prefix.some(event=>event.seq>=root.seq&&(event.type==='team/task'||event.type==='subagent/catalog'&&event.data.version===0)))return false
   const {schema:_schema,drafts:_drafts,sha256:_sha256,...legacy}=read.evidence,legacyBody={schema:'teloa.delivery-review-tools/v1' as const,...legacy}
   return isDeepStrictEqual({...legacyBody,sha256:sha(JSON.stringify(legacyBody))},value)
  }catch{return false}

@@ -13,7 +13,7 @@ function fixture(){
   tasks:{request:async()=>task,create:async(_owner,input)=>{calls.push('create');const value=input as {fields:{title:string;goal:string;scope:string}};return task={...value.fields,groupId:null,skills:[],id:taskId,ownerId:'owner',version:1,state:'ready',assigneeRoleId:roleId,assigneeRoleVersion:1,createdAt:request.createdAt,updatedAt:request.createdAt}}},
   link:async()=>{calls.push('link')},runs:async()=>run?[run]:[],
   run:async(endpoint)=>{calls.push(endpoint);if(endpoint==='task-runs/prepare')return run={id:runId,taskId,roleId,taskVersion:1,roleVersion:1,linkVersion:1,sessionId:'task-run-'+workRequestChildId(stored.requestId,'run',roleId),nativeRequestId:stored.requestId,state:'prepared',evidence:null,stopRequestedAt:null,allowedTools:[],skills:[],knowledge:[],memory:[],inputText:'private',createdAt:request.createdAt};if(endpoint==='task-runs/start'){run={...run!,state:'accepted'};if(sendFailure)throw new WorkError('teloa/execution-pending','需要核对');return run}if(endpoint==='task-runs/withdraw')return run={...run!,state:'withdrawn'};if(endpoint==='task-runs/stop')return run={...run!,stopRequestedAt:stored.stoppedAt};return run!},
-  result:async()=> '真实最终回复',publish:async()=>{calls.push('publish')},now:()=>request.createdAt,
+  result:async()=> '真实最终回复',delivery:async()=>({state:'saved'}),publish:async()=>{calls.push('publish')},now:()=>request.createdAt,
  }
  ports.boundTasks={request:async identity=>{assert.deepEqual(identity,{sessionId:stored.sessionId,requestId:stored.requestId,roleId:stored.targets[0]!.roleId});return task},create:async identity=>{assert.deepEqual(identity,{sessionId:stored.sessionId,requestId:stored.requestId,roleId:stored.targets[0]!.roleId});calls.push('create');return task={title:stored.title,goal:stored.goal,scope:stored.scope,groupId:null,skills:[],id:taskId,ownerId:'owner',version:1,state:'ready',assigneeRoleId:roleId,assigneeRoleVersion:1,createdAt:request.createdAt,updatedAt:request.createdAt}}}
  const dispatch=new ConversationWorkDispatch(ports)
@@ -350,4 +350,25 @@ test('本人原卡只对已证实 error 显式重试一次；未知、自动刷�
  await f.dispatch.resume('origin',requestId,signal);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1)
  await f.dispatch.resume('origin',requestId,signal);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1)
  assert.equal((await f.dispatch.status('origin',requestId)).members[0]?.run?.id,runs[1]!.id)
+})
+
+test('本人completed但正式复核未过：候选仍可读，显式原卡只派生一次retry，unknown不通知',async()=>{
+ const f=fixture(),general:ConversationWorkRequest={...request,scope:'general',executor:'general',targets:[]},executor={kind:'owner' as const,grantId:requestId,grantVersion:1},signal=new AbortController().signal
+ f.setRequest(general)
+ const task:WorkTask={title:general.title,goal:general.goal,scope:'general',groupId:null,skills:[],id:taskId,ownerId:'owner',version:4,state:'blocked',assigneeRoleId:null,assigneeRoleVersion:null,executor,createdAt:request.createdAt,updatedAt:request.createdAt}
+ f.ports.boundTasks={request:async()=>task,create:async()=>assert.fail('原任务不能重复创建')}
+ const original:TaskRun={id:runId,taskId,taskVersion:1,roleId:null,roleVersion:null,executor,linkVersion:1,sessionId:'task-run-'+workRequestChildId(requestId,'run'),nativeRequestId:requestId,state:'ended',evidence:{state:'ended',turn:1,messageSeq:1,endSeq:2,reason:'completed'},stopRequestedAt:null,allowedTools:['subagent_task'],skills:[],knowledge:[],memory:[],inputText:'private',createdAt:request.createdAt}
+ const runs=[original];f.ports.runs=async()=>runs
+ f.ports.delivery=async()=>({state:'review-required'})
+ const status=await f.dispatch.status('origin',requestId)
+ assert.equal(status.counts.received,0);assert.equal(status.members[0]?.status,'failed');assert.match(status.members[0]?.reason??'',/正式复核/);assert.equal(status.members[0]?.result,'真实最终回复','原候选可读，不能冒充已核交付')
+ f.ports.delivery=async()=>({state:'unknown'})
+ assert.equal((await f.dispatch.status('origin',requestId)).members[0]?.status,'waiting')
+ await f.dispatch.deliver();assert.equal(f.calls.includes('publish'),false);assert.equal(f.calls.includes('notified'),false)
+ await f.dispatch.resume('origin',requestId,signal);assert.equal(f.calls.includes('task-runs/retry'),false)
+ f.ports.delivery=async()=>({state:'review-required'})
+ f.ports.run=async(endpoint,_input,_signal,parent)=>{f.calls.push(endpoint);assert.deepEqual(parent,{sessionId:'origin',requestId,executor:'general'});if(endpoint==='task-runs/retry'){const retry={...original,id:'55555555-5555-4555-8555-555555555555',sessionId:'task-run-'+workRequestChildId(requestId,'run-retry:'+runId),state:'prepared',evidence:null};runs.push(retry);return retry}if(endpoint==='task-runs/start')return runs[1]={...runs[1]!,state:'accepted'};return runs[1]!}
+ await f.dispatch.resume('origin',requestId,signal)
+ await f.dispatch.resume('origin',requestId,signal)
+ assert.equal(runs.length,2);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1);assert.deepEqual(runs[0],original)
 })

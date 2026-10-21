@@ -71,7 +71,11 @@ export type GroupAttachmentApi=ReturnType<typeof createGroupAttachmentApi>
  */
 export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.randomUUID(),ownerId='self',send:UploadSend=(url,init)=>globalThis.fetch(url,init)){
  void newId
+ const openedAttachments=new Map<string,Set<OpenedAttachment>>(),withdrawn=new Set<string>(),epochs=new Map<string,number>(),withdrawalListeners=new Set<(attachmentId:string)=>void>()
+ const unavailable=()=>Object.assign(Error('该附件已不可读取。'),{code:'teloa/source-unavailable'})
  return {
+  /** 本人已核验的撤回回执，同时失效各处原消息卡与只读预览。 */
+  subscribeWithdrawal(listener:(attachmentId:string)=>void){withdrawalListeners.add(listener);return()=>{withdrawalListeners.delete(listener)}},
   async upload(groupId:string,expectedVersion:number,file:File,requestId:string):Promise<GroupAttachment>{
    if(!uuid(requestId)||!uuid(groupId))throw Error('群附件上传请求身份不正确。')
    const bytes=new Uint8Array(await file.arrayBuffer())
@@ -86,6 +90,7 @@ export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.r
     */
    const category=mediaCategory(payload.mime)
    if(attachment.state!=='active'||attachment.sha256!==await sha256Hex(bytes)||(category!==undefined&&attachment.kind!==category))throw Error('群附件上传回执与原请求不一致。')
+   withdrawn.delete(attachment.attachmentId)
    return attachment
   },
   async list(groupId:string):Promise<GroupAttachment[]>{
@@ -105,6 +110,10 @@ export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.r
    const row=exact(await call('groups/attachments/withdraw',{requestId,attachmentId}),['attachment'],'群附件撤回回执格式不正确。')
    const attachment=savedAttachment(row.attachment,'群附件撤回回执格式不正确。',ownerId)
    if(attachment.attachmentId!==attachmentId||attachment.state!=='withdrawn'||attachment.withdrawnAt===null)throw Error('群附件撤回回执与原请求不一致。')
+   withdrawn.add(attachmentId);epochs.set(attachmentId,(epochs.get(attachmentId)??0)+1)
+   for(const opened of openedAttachments.get(attachmentId)??[])opened.revoke()
+   // 撤回已提交，界面订阅异常不能把可信回执改成失败。
+   for(const listener of withdrawalListeners){try{listener(attachmentId)}catch{}}
    return attachment
   },
   /**
@@ -121,10 +130,17 @@ export function createGroupAttachmentApi(call:Call,newId:()=>string=()=>crypto.r
    */
   async openReference(reference:MessageReference,groupId?:string):Promise<OpenedAttachment|OpenedResource>{
    if(reference.kind==='attachment'){
+    if(withdrawn.has(reference.id))throw unavailable()
+    const epoch=epochs.get(reference.id)??0
     const row=exact(await call('groups/attachments/read',{attachmentId:reference.id}),['bytes'],'群附件字节格式不正确。')
     const bytes=savedAttachmentBytes(row.bytes,'群附件字节格式不正确。')
     if(bytes.attachmentId!==reference.id||bytes.version!==reference.version)throw Error('群附件字节与引用身份不一致。')
-    return openedBlob(bytes.dataBase64,bytes.mime,bytes.name)
+    if(withdrawn.has(reference.id)||(epochs.get(reference.id)??0)!==epoch)throw unavailable()
+    const original=openedBlob(bytes.dataBase64,bytes.mime,bytes.name),entries=openedAttachments.get(reference.id)??new Set<OpenedAttachment>()
+    let released=false
+    const opened={...original,revoke:()=>{if(released)return;released=true;original.revoke();entries.delete(opened);if(!entries.size)openedAttachments.delete(reference.id)}}
+    entries.add(opened);openedAttachments.set(reference.id,entries)
+    return opened
    }
    if(reference.kind==='artifact'){
     const version=await artifactVersion({kind:'artifact',id:reference.id,version:reference.version})

@@ -166,6 +166,22 @@ test('常驻核心名单',()=>{
  for(const name of ['mcp__any__tool','bash','workflow','team_task_update','web_search','teloa_work_collect_reports','teloa_work_facts','teloa_business_data_query','teloa_employees_create','teloa_market_add','teloa_create_draft','teloa_mcp_save','teloa_plans_create','teloa_groups_create','teloa_projects_create','teloa_library_save','teloa_work_supersede'])assert.ok(!isCoreTool(name),name)
 })
 
+test('把技能名误当工具名时仍拒绝执行，并向模型给出当前许可内可继续搜索的入口',async t=>{
+ const f=await setup(t)
+ f.adapter.scripts.push(call(toolLoaderName,{query:'员工 技能',names:['teloa-skill-creator','skill']}),text)
+ await f.send()
+ assert.match(results(f.agent),/teloa_employees_create/,'失败回执应给出真实的许可内候选，不能只让模型猜名称')
+ assert.match(results(f.agent),/query/)
+ assert.match(results(f.agent),/技能名/)
+ assert.doesNotMatch(results(f.agent),/teloa_group_attach/,'运行专用工具不能出现在纠正候选中')
+ assert.deepEqual(names(f.adapter.requests[1]),[...core,toolLoaderName].sort(),'失败既不部分加载，也不执行业务工具')
+ assert.deepEqual(f.executed,[])
+ f.agent.ctx.tools.restrict({allow:[...core,toolLoaderName]});await f.send()
+ await assert.rejects(f.ctx.tools.get(toolLoaderName,f.agent)!.execute({query:'创建员工',names:['teloa-skill-creator']},{agent:f.agent,signal:new AbortController().signal} as never),error=>{
+  assert.doesNotMatch(String(error),/teloa_employees_create|teloa_group_attach/,'撤权后不再给出旧目录候选');return true
+ })
+})
+
 
 test('原生大工具和MCP按需加载、撤权后不可见，重装保留真实调用的工具与原约束',async t=>{
  const f=await setup(t)

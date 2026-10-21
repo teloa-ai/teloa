@@ -7,27 +7,41 @@ import {twinDraftCopy} from './i18n/locales/twin-drafts.js'
 import {twinDraftConversationErrorCodes} from './twin-draft-conversation.js'
 import css from './TwinDraftWorkspace.module.css'
 
-export type TwinDraftWorkspacePort={api:TwinDraftApi;openConversationDraft?:(sessionId:string,text:string)=>Promise<void>;openDraft?:{roleId:string;draftId:string;requestId:string}|undefined}
+export type TwinDraftWorkspacePort={api:TwinDraftApi;openConversationDraft?:(sessionId:string,text:string,current:()=>boolean)=>Promise<void>;openDraft?:{roleId:string;draftId:string;requestId:string}|undefined}
 /** 来源与目标始终属于原稿；切换选择、关闭和重连不触发采用。 */
 export function TwinDraftWorkspace({port,roleId,roleVersion,retired=false,count}:{port:TwinDraftWorkspacePort;roleId:string;roleVersion:number;retired?:boolean;count?:(value:number)=>void}){
  const {locale}=useI18n(),copy=(key:Parameters<typeof twinDraftCopy>[1])=>twinDraftCopy(locale,key),api=port.api
  const openError=(error:unknown)=>{const code=error&&typeof error==='object'&&'code'in error?error.code:undefined;return code===twinDraftConversationErrorCodes.unavailable?copy('openUnavailable'):code===twinDraftConversationErrorCodes.occupied?copy('inputOccupied'):code===twinDraftConversationErrorCodes.rejected?copy('inputRejected'):localizeWorkError(locale,error)}
  useSyncExternalStore(api.subscribe,api.getSnapshot,api.getSnapshot)
- const origin=useMemo(()=>({api,roleId,roleVersion}),[api,roleId,roleVersion]),live=useRef(origin);live.current=origin
+ const origin=useMemo(()=>({api,roleId,roleVersion}),[api,roleId,roleVersion]),live=useRef<typeof origin|null>(origin);live.current=origin
  const [loaded,setLoaded]=useState<{origin:typeof origin;rows:TwinDraft[]}>(),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState<string>(),[reload,setReload]=useState(0)
  const [editing,setEditing]=useState(false),[returning,setReturning]=useState(false),[reason,setReason]=useState(''),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false)
  const rows=loaded?.origin===origin?loaded.rows:[],current=rows.find(row=>row.id===selected)??rows[0],pending=api.pending(),recoveryError=api.recoveryError()
  const selectedRef=useRef(current?.id);selectedRef.current=current?.id
+ const selection=useMemo(()=>({origin,id:current?.id}),[origin,current?.id]),liveSelection=useRef(selection);liveSelection.current=selection
+ useEffect(()=>{live.current=origin;return()=>{if(live.current===origin)live.current=null}},[origin])
  useEffect(()=>{setBusy(false);setConfirmed(false)},[origin])
  useEffect(()=>{if(port.openDraft?.roleId===roleId)setSelected(port.openDraft.draftId)},[port.openDraft?.roleId,port.openDraft?.draftId,port.openDraft?.requestId,origin])
  useEffect(()=>{let active=true;setError('');void api.list(roleId).then(result=>{if(active&&live.current===origin)setLoaded({origin,rows:result.drafts})},error=>{if(active&&live.current===origin)setError(localizeWorkError(locale,error))});return()=>{active=false}},[origin,reload])
  useEffect(()=>{if(loaded?.origin===origin)count?.(rows.filter(row=>row.state==='draft').length)},[loaded,origin,count])
  useEffect(()=>{setEditing(false);setReturning(false);setReason('');setConfirmed(false);setNotice('')},[current?.id,current?.revision,origin])
  const update=(draft:TwinDraft)=>{if(live.current===origin)setLoaded(previous=>previous?.origin===origin?{origin,rows:previous.rows.map(row=>row.id===draft.id?draft:row)}:previous)}
- const act=async(operation:()=>Promise<TwinDraft|TwinDraftAdoption>,message?:string)=>{
+ const openConversation=async(draft:TwinDraft,requested=liveSelection.current)=>{
+  const current=()=>live.current===origin&&liveSelection.current===requested&&requested.id===draft.id
+  if(!current()||draft.source.kind!=='conversation'||!port.openConversationDraft)return
+  setError('')
+  try{await port.openConversationDraft(draft.source.sessionId,draft.body,current)}catch(error){if(current())setError(openError(error))}
+ }
+ const act=async(operation:()=>Promise<TwinDraft|TwinDraftAdoption>,message?:string,openAdopted=false)=>{
   if(busy)return
+  const requested=liveSelection.current
   setBusy(true);setError('');setNotice('')
-  try{const result=await operation();if(live.current!==origin)return;const draft='draft'in result?result.draft:result;update(draft);if(selectedRef.current===draft.id){setConfirmed(false);setEditing(false);setReturning(false);setReason('');if(message)setNotice(message)}}catch(error){if(live.current===origin)setError(localizeWorkError(locale,error))}finally{if(live.current===origin)setBusy(false)}
+  try{const result=await operation();if(live.current!==origin)return;const draft='draft'in result?result.draft:result;update(draft);if(liveSelection.current===requested&&selectedRef.current===draft.id){setConfirmed(false);setEditing(false);setReturning(false);setReason('');if(message)setNotice(message)
+   // 采用回执已经核验并保留；回填失败只给继续入口，不再采用，也不发送。
+   if(openAdopted&&draft.state==='prepared'&&draft.source.kind==='conversation'){
+    await openConversation(draft,requested)
+   }
+  }}catch(error){if(live.current===origin&&liveSelection.current===requested)setError(localizeWorkError(locale,error))}finally{if(live.current===origin)setBusy(false)}
  }
  const edit=current?api.editing(current.id):undefined,body=edit?.body??current?.body??'',stale=!!current&&!!edit&&(edit.revision!==current.revision||edit.bodyHash!==current.bodyHash)
  const dirty=!!current&&body!==current.body,blocked=busy||!!pending||!!recoveryError,roleStale=retired||!!current&&current.roleVersion!==roleVersion
@@ -59,8 +73,8 @@ export function TwinDraftWorkspace({port,roleId,roleVersion,retired=false,count}
      <button type="button" disabled={blocked||roleStale} onClick={()=>{setReturning(v=>!v);setConfirmed(false)}}>{copy('return')}</button>
     </div>}
     {returning&&<div className={css.returning}><label>{copy('reason')}<textarea maxLength={2000} value={reason} onChange={event=>setReason(event.target.value)}/></label><button type="button" disabled={blocked||!reason.trim()||roleStale} onClick={()=>void act(()=>api.return(current,reason))}>{copy('return')}</button></div>}
-    {current.state==='draft'&&current.source.kind!=='provided'&&<div className={css.adopt}><label><input type="checkbox" checked={confirmed} disabled={blocked||dirty||stale||roleStale} onChange={event=>setConfirmed(event.target.checked)}/>{copy(current.source.kind==='group'?'confirmGroup':'confirmConversation')}</label><button className={css.primary} type="button" disabled={blocked||!confirmed||dirty||stale||roleStale} onClick={()=>void act(()=>api.adopt(current))}>{copy(current.source.kind==='group'?'send':'prepare')}</button></div>}
-    {current.source.kind==='conversation'&&(current.state==='prepared'||current.state==='draft')&&<button type="button" disabled={busy||!port.openConversationDraft} onClick={()=>{setError('');void port.openConversationDraft?.(current.source.kind==='conversation'?current.source.sessionId:'',current.body).catch(error=>{if(live.current===origin)setError(openError(error))})}}>{copy('open')}</button>}
+    {current.state==='draft'&&current.source.kind!=='provided'&&<div className={css.adopt}><label><input type="checkbox" checked={confirmed} disabled={blocked||dirty||stale||roleStale} onChange={event=>setConfirmed(event.target.checked)}/>{copy(current.source.kind==='group'?'confirmGroup':'confirmConversation')}</label><button className={css.primary} type="button" disabled={blocked||!confirmed||dirty||stale||roleStale||current.source.kind==='conversation'&&!port.openConversationDraft} onClick={()=>void act(()=>api.adopt(current),undefined,current.source.kind==='conversation')}>{copy(current.source.kind==='group'?'send':'prepare')}</button></div>}
+    {current.source.kind==='conversation'&&(current.state==='prepared'||current.state==='draft')&&<button type="button" disabled={busy||!port.openConversationDraft} onClick={()=>void openConversation(current)}>{copy('open')}</button>}
     {current.source.kind==='provided'&&<p className={css.muted}>{copy('manual')}</p>}
     <button type="button" onClick={()=>{void navigator.clipboard.writeText(current.body).then(()=>{if(live.current===origin)setNotice(copy('copied'))},error=>setError(localizeWorkError(locale,error)))}}>{copy('copy')}</button>
    </article>}
