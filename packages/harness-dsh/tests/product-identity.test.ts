@@ -92,6 +92,7 @@ test('普通/分身/员工/Run及所有官方模式继承同一短规则，可�
   agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'介绍平台，不执行。'}]}));await agent.whenIdle()
   assert.equal(trustedInput(adapter.requests.at(-1)!).split(productIdentityText).length-1,1,id+'实际请求只含唯一短规则')
   assert.equal(trustedInput(adapter.requests.at(-1)!).split('# Reply language').length-1,1,id+'原生Loop实际请求必须保留唯一语言契约')
+  assert.equal(trustedInput(adapter.requests.at(-1)!).split('# Conversational style').length-1,1,id+'自然简洁规则须覆盖所有模式且不重复')
  }
  for(const kind of ['ordinary','twin','employee','run','plan','internal-json']){
   const {agent}=await ctx.agents.create({sessionId:SessionId('product-scope-'+kind),agentOptions:{provider:'minimax-fixture',model:'MiniMax-M3'}})
@@ -108,6 +109,7 @@ test('普通/分身/员工/Run及所有官方模式继承同一短规则，可�
   agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:input}]}));await agent.whenIdle()
   assert.ok(trustedInput(adapter.requests.at(-1)!).includes('Teloa Community'),kind+'实际请求仍含产品规则')
   assert.equal(trustedInput(adapter.requests.at(-1)!).split('# Reply language').length-1,1,kind+'语言契约不能依赖可选岗位或模式section')
+  assert.equal(trustedInput(adapter.requests.at(-1)!).split('# Conversational style').length-1,1,kind+'岗位职责不应导致自我介绍展开清单')
  }
 })
 
@@ -158,6 +160,7 @@ test('真实官方Team身份仅作内部路由；主会话、可信分身与员�
  const complete=trustedInput(adapter.requests.at(-1)!)
  assert.equal(complete.split(productIdentityText).length-1,1,'完整persona模式继续保留单份产品规则')
  assert.equal(complete.split('# Reply language').length-1,1,'完整persona替换所有section后仍须保留唯一语言契约')
+ assert.equal(complete.split('# Conversational style').length-1,1,'完整persona也须保留同一简洁交流规则')
  assert.equal(complete.split('Internal collaboration routing metadata').length-1,1,'完整persona及连续会话仍保留单份required路由分类')
  assert.ok(complete.includes(agents[0]!.originalTeam),'完整persona模式不删除原Team身份路由协议')
  assert.equal(adapter.requests.length,5)
