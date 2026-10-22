@@ -156,3 +156,28 @@ test('the common share parser refuses two resources claiming the same skill entr
  pkg.files.find(file=>file.path==='teloa.json')!.text=JSON.stringify(manifest)
  assert.throws(()=>readSharePackage(pkg),/missing or reused/)
 })
+
+test('an authored skill may share its byte-verified frontmatter license when import metadata has none',async()=>{
+ const f=await fixture(),licensed=text.replace('description:', 'license: "MIT"\ndescription:')
+ f.item.trust!.license={status:'missing'}
+ const file=f.item.packageContent!.files.find(row=>row.path.endsWith('/SKILL.md'))!
+ file.bytes=new TextEncoder().encode(licensed);file.hash=hash(licensed)
+ f.preview.files=[{path:'SKILL.md',hash:file.hash,size:file.bytes.length}]
+ f.installed.bundleHash=f.preview.bundleHash=hash(JSON.stringify([['SKILL.md',file.hash]]))
+ const [source]=await resolveTemplateShareSkills(['meeting-summary'],f.ports)
+ assert.equal(source!.license,'MIT');assert.equal(source!.text,licensed)
+ assert.equal(f.item.trust!.license.status,'missing','分享不能改写原安装的信任记录')
+ f.item.trust!.license={status:'declared',value:'Apache-2.0'}
+ assert.equal((await resolveTemplateShareSkills(['meeting-summary'],f.ports))[0]!.license,'Apache-2.0','已有固定许可声明优先，不能被文件覆盖')
+})
+
+test('sharing does not invent a license from body text, duplicate keys or complex YAML',async t=>{
+ for(const source of [text+'\nlicense: MIT\n',text.replace('description:','license: MIT\nlicense: Apache-2.0\ndescription:'),text.replace('description:','license: |\n  MIT\ndescription:')])await t.test(source,async()=>{
+  const f=await fixture();f.item.trust!.license={status:'missing'}
+  const file=f.item.packageContent!.files.find(row=>row.path.endsWith('/SKILL.md'))!
+  file.bytes=new TextEncoder().encode(source);file.hash=hash(source)
+  f.preview.files=[{path:'SKILL.md',hash:file.hash,size:file.bytes.length}]
+  f.installed.bundleHash=f.preview.bundleHash=hash(JSON.stringify([['SKILL.md',file.hash]]))
+  assert.equal((await resolveTemplateShareSkills(['meeting-summary'],f.ports))[0]!.text,undefined)
+ })
+})

@@ -23,7 +23,7 @@ const issue={type:'object',additionalProperties:false,properties:{
  problem:{type:'string',required:true},basis,
  affectedScope:{type:'string',const:'coverage',required:true,description:'固定写 coverage，位于每个 issues[i] 内，与 coverage、edits 同级；不提交 affectedBlockIds。'},
  coverage,
- edits:{type:'array',required:true,description:'位于每个 issues[i] 内；按本单元块编号提供完整替换文字，不放到工具参数顶层。',items:{type:'object',additionalProperties:false,properties:{
+ edits:{type:'array',required:true,description:'位于每个 issues[i] 内；按本单元块编号提供完整替换文字，不放到工具参数顶层。同一 blockId 在整个 issues 数组中只能编辑一次；多个问题涉及同一块时，合并为一个问题和一份最终替换。',items:{type:'object',additionalProperties:false,properties:{
   blockId:{type:'integer',required:true},after:{type:'string',required:true},
  }}},
 }} as const
@@ -53,7 +53,7 @@ export function createDeliveryReviewToolParameters(phase:ReviewPhase,sources?:re
  const currentFindings={...findings,items:{...findings.items,properties:{...findings.items.properties,basis:currentBasis}}}
  if(phase==='revise')return {
   phase:{type:'string',const:'revise',required:true},
-  issues:{type:'array',required:true,description:'本阶段只提交问题组；没有需改问题时写 []。每组包含 problem、basis、affectedScope、coverage、edits。',items:currentIssue},
+  issues:{type:'array',required:true,description:'本阶段只提交问题组；没有需改问题时写 []。每组仅包含 problem、basis、affectedScope、coverage、edits。change/retain/unrelated/unknown 只能放在 coverage 内；不要添加 changes、change 或 affectedBlockIds 等同级字段。',items:currentIssue},
  }
  return {
   phase:{type:'string',const:'verify',required:true},
@@ -66,7 +66,7 @@ export function createDeliveryReviewToolParameters(phase:ReviewPhase,sources?:re
 export function deliveryReviewToolShapeExample(phase:ReviewPhase):string{
  if(phase==='revise')return '仅示范一个块的 JSON 形状，编号、来源与内容须以本轮宿主目录为准，不可照抄：'+JSON.stringify({
   phase:'revise',issues:[{problem:'第1块与原资料不符。',basis:[{sourceId:'goal',passageId:'p1'}],affectedScope:'coverage',coverage:{change:[1],retain:[],unrelated:[],unknown:[],unlisted:'retain'},edits:[{blockId:1,after:'依据原资料修订后的第1块。'}]}],
- })+'。affectedScope、coverage、edits 均在同一个 issues[i] 内；四类编号均用数组，空集合写 []；当前简写必须显式提交 coverage.unlisted:"retain"，未列块仍由R2逐块核对。'
+ })+'。affectedScope、coverage、edits 均在同一个 issues[i] 内；四类编号均用数组，空集合写 []；当前简写必须显式提交 coverage.unlisted:"retain"，未列块仍由R2逐块核对。 Each issue has exactly these five keys: problem, basis, affectedScope, coverage, edits. Put change only inside coverage; never add changes or change beside coverage. If issues overlap on a block, merge their problems and write that block once with all corrections combined. Do not submit competing replacements.'
  return '仅示范无待核变更、无问题时的 JSON 形状；状态必须来自本轮实际核对：'+JSON.stringify({
   phase:'verify',verdict:'accept',checks:['goal',1,2,3,4,5,6,7,8].map(id=>({id,status:'pass'})),changeChecks:[],findings:[],
  })+'。本阶段不提交 issues、edits、after 或任何改稿字段；存在问题或未知时应 reject，并完整填写对应核对结果。'

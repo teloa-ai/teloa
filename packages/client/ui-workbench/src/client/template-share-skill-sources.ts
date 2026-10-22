@@ -11,6 +11,15 @@ export type ShareSkillSelection={installationId:string}
 const unavailable=()=>Object.assign(Error('The installed skill’s fixed sharing source is unavailable.'),{code:'teloa/source-unavailable'})
 const stable=(value:unknown):string=>JSON.stringify(value&&typeof value==='object'?Array.isArray(value)?value.map(item=>JSON.parse(stable(item))):Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([key,item])=>[key,JSON.parse(stable(item))])):value)
 const digest=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
+/** SKILL.md 可自行声明单行许可；仅读取首个 frontmatter，不从正文、重复键或复杂 YAML 猜测许可。 */
+function frontmatterLicense(text:string):string|undefined{
+ const header=/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1]
+ const lines=header?.split(/\r?\n/).filter(line=>/^license:/.test(line))??[]
+ if(lines.length!==1)return
+ const match=/^license:[ \t]*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([A-Za-z0-9][A-Za-z0-9 .+()-]*))[ \t]*$/.exec(lines[0]!)
+ const value=(match?.[1]??match?.[2]??match?.[3])?.trim()
+ return value&&value.length<=200?value:undefined
+}
 async function staticSource(record:SkillInstallationRecord,item:MarketItem,entry:string,original:NonNullable<MarketItem['packageContent']>['files'],preview:SkillInstallPreview):Promise<Pick<ShareSkillSource,'text'|'files'|'license'|'publisher'>>{
  const folder=entry.includes('/')?entry.slice(0,entry.lastIndexOf('/')+1):''
  if(entry.slice(folder.length)!=='SKILL.md'||!original.length||original.filter(file=>file.path.split('/').at(-1)==='SKILL.md').length!==1||original.some(file=>!file.path.startsWith(folder)))throw unavailable()
@@ -18,12 +27,13 @@ async function staticSource(record:SkillInstallationRecord,item:MarketItem,entry
  if(files.some(file=>file.hash!==original.find(old=>old.path===folder+file.path)?.hash))throw unavailable()
  const bundleHash=await digest(JSON.stringify(files.map(file=>[file.path,file.hash])))
  if(stable(preview.source)!==stable(record.source)||bundleHash!==record.bundleHash||preview.bundleHash!==record.bundleHash||stable(preview.native)!==stable(record.native)||preview.trustHash!==record.trustHash||stable(preview.files)!==stable(files.map(file=>({path:file.path,hash:file.hash,size:file.bytes.length}))))throw unavailable()
- const license=item.trust?.license.status==='declared'?item.trust.license.value.trim():undefined
- if(!license)return {}
  // ignoreBOM 保留原文件里的 BOM；致命 UTF-8 校验防止替换字符改变原始字节。
  let texts:{path:string;text:string}[]
  try{texts=files.map(file=>({path:file.path,text:new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(file.bytes)}))}catch{throw unavailable()}
- return {text:texts.find(file=>file.path==='SKILL.md')!.text,files:texts,license,...(item.trust?.publisher?{publisher:item.trust.publisher}:{})}
+ const text=texts.find(file=>file.path==='SKILL.md')!.text
+ const license=item.trust?.license.status==='declared'?item.trust.license.value.trim():frontmatterLicense(text)
+ if(!license)return {}
+ return {text,files:texts,license,...(item.trust?.publisher?{publisher:item.trust.publisher}:{})}
 }
 async function localSource(record:SkillInstallationRecord,ports:Ports):Promise<Pick<ShareSkillSource,'text'|'files'|'license'|'publisher'>>{
  const source=record.source

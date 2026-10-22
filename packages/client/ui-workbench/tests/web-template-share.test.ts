@@ -62,11 +62,14 @@ test('同一发布请求冷恢复不能借换号另发一份，身份固定值�
  const g=fixture(undefined,storage);t.after(()=>g.bridge.dispose());const retry=g.bridge.publish({requestId,package:pack});await waitFor(()=>g.openCount()===1);g.ready();g.authorize('44444444-4444-4444-a444-444444444444');await assert.rejects(retry,{code:'context-changed'});assert.equal(g.accepted.length,0)
 })
 
-test('已完成操作之后，新独立请求允许在官方页明确使用新账号',async t=>{
+test('已完成操作后新请求使用新窗口和nonce，旧ready不沿用，仍须本人重新确认身份',async t=>{
  const f=fixture();t.after(()=>f.bridge.dispose())
  const first=f.bridge.list();f.ready();f.authorize();f.answer({items:[]});assert.deepEqual(await first,[])
- const second=f.bridge.list();f.authorize('44444444-4444-4444-a444-444444444444');f.answer({items:[]});assert.deepEqual(await second,[])
- assert.equal(f.accepted.length,2);assert.equal(f.openCount(),1)
+ const old=f.envelope(),second=f.bridge.list();assert.equal(f.openCount(),2)
+ assert.notEqual(f.envelope().nonce,old.nonce)
+ f.emit({...old,type:'ready'});assert.equal(f.sent.length,1)
+ f.ready();f.authorize('44444444-4444-4444-a444-444444444444');f.answer({items:[]});assert.deepEqual(await second,[])
+ assert.equal(f.accepted.length,2)
 })
 
 test('关闭或连接销毁拒绝在途请求，重试仍发送原发布requestId',async t=>{

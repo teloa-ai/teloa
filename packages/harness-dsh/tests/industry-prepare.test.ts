@@ -260,6 +260,17 @@ test('prepare：技能观测状态映射到固定枚举，回执不透传原生�
  }
 })
 
+test('readiness：已装技能被遮蔽、停用、缺失或无法核验时不算就绪，也不重复安装',async()=>{
+ for(const observed of ['shadowed','disabled','missing','unknown']){
+  const w=world({observeState:observed}),r:any=await w.handler('industry-loads/readiness',{loadId})
+  const receipt:any=await w.handler('industry-loads/prepare',{loadId,expectedDigest:r.digest})
+  assert.deepEqual([byId(receipt.readiness,S1).state,byId(receipt.readiness,S1).entry],['needs-user','skill-confirm'])
+  const writes=w.writes().length,again:any=await w.handler('industry-loads/readiness',{loadId})
+  assert.deepEqual([byId(again,S1).state,byId(again,S1).entry],['needs-user','skill-confirm'])
+  assert.equal(w.writes().length,writes)
+ }
+})
+
 test('prepare：执行后读取最终清单失败时照常返回结果，清单标为待刷新且不缓存',async()=>{
  // 第 5 次读加载才是执行后的最终清单（第 4 次是绑定方法前的关联复核）
  const w=world({failLoadsAt:5}),r:any=await w.handler('industry-loads/readiness',{loadId})

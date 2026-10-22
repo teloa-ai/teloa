@@ -2327,7 +2327,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    materials:async taskId=>(await taskMaterialService()).list(owner,{taskId}),request:async requestId=>(await taskMaterialService()).request(owner,{requestId}),checkBudget:checkTaskMaterialBudget,
    add:async(input,signal,revalidate)=>(await taskMaterialService()).add(owner,input,signal,revalidate),admitText:groupSecretGate,
   })
-  const capabilityDraftApplication=createCapabilityDraftApplication({owner,scopeIds:businessScopeIds,services:pageCreateServices,verifySource:async(draft,signal)=>{await(await methodReuseService()).assertDraftCurrent(owner,{draftId:draft.id,bodyHash:draft.bodyHash},signal)},marketContentHandler,skillInstallationsHandler,skillAvailabilityHandler,businessSpaceHandler,industryLoadsHandler,industryMcpConnectionHandler,industryDataSourceHandler,marketPluginInstallationHandler})
+  const capabilityDraftApplication=createCapabilityDraftApplication({owner,scopeIds:businessScopeIds,services:pageCreateServices,roleHandler,verifySource:async(draft,signal)=>{await(await methodReuseService()).assertDraftCurrent(owner,{draftId:draft.id,bodyHash:draft.bodyHash},signal)},marketContentHandler,skillInstallationsHandler,skillAvailabilityHandler,businessSpaceHandler,industryLoadsHandler,industryMcpConnectionHandler,industryDataSourceHandler,marketPluginInstallationHandler})
   const stopCapabilityDraftTools=registerCapabilityDraftTools(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
    ...capabilityDraftApplication,

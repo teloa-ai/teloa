@@ -49,7 +49,11 @@ export function createWebTemplateShareBridge(host:Window=window,fetcher:typeof f
  const listeners=new Set<(value:TemplateShareIntent|null)=>void>()
  const fail=(code:string)=>Object.assign(Error('Template sharing was not completed.'),{code})
  const cancelCurrent=(type:'cancel'|'context-rejected'='cancel')=>{if(pending&&popup&&!popup.closed)popup.postMessage({format,nonce,type,id:pending.id,method:pending.method},templateShareSiteOrigin)}
- const settle=(error:unknown,value?:unknown)=>{const current=pending;if(!current)return;pending=undefined;host.clearTimeout(current.timer);error?current.reject(error):current.resolve(value)}
+ const settle=(error:unknown,value?:unknown)=>{const current=pending;if(!current)return;pending=undefined;host.clearTimeout(current.timer)
+  // 每项操作使用新的确认窗口和握手，避免已完成页面的旧 ready 状态让下一项请求一直等待。
+  ready=false;popup=null;nonce='';if(poll!==undefined){host.clearInterval(poll);poll=undefined}
+  error?current.reject(error):current.resolve(value)
+ }
  const send=()=>{if(!ready||!popup||!pending||pending.sent)return;pending.sent=true;popup.postMessage({format,nonce,type:'request',id:pending.id,method:pending.method,body:pending.body},templateShareSiteOrigin)}
  const message=(event:MessageEvent)=>{
   if(disposed||event.origin!==templateShareSiteOrigin||event.source!==popup||!record(event.data)||event.data.format!==format||event.data.nonce!==nonce)return

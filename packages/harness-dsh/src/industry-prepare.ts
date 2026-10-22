@@ -111,7 +111,7 @@ async function snapshot(ports:IndustryPreparePorts,loadId:string,holds:PluginHol
  // 连接器列表逐行容错：读不出的行只进 errors（只带实例身份），对应条目由 classify 按「已登记但读不出」处理
  const connectors=new Map([...facts(items(await ports.mcp('industry-mcp-connections/list',{},signal))),...facts(items(await ports.dataSources('industry-data-sources/list',{},signal))),...facts(items(await ports.executionTools('industry-execution-tools/list',{},signal)))])
  const plugins=new Map(ofLoad(items(await ports.plugins('industry-plugins/list',{},signal)),load.id).map(row=>[lower(row.itemInstanceId),pluginOf(row)] as const))
- // 已装判定只看 usages：公共技能的安装 source 属于首次安装它的加载（industry-public），本加载经 usages 映射到它（skill-installations.ts:12、:25）
+ // usages 固定安装归属；就绪还必须核对默认工作区实际加载的同一份正文。
  const listed=await ports.skills('skill-installations/list',{},signal)
  if(!isRecord(listed)||!Array.isArray(listed.items)||!Array.isArray(listed.usages))throw hostBad()
  const installs=new Map(listed.items.filter(isRecord).map(row=>[lower(row.id),{state:String(row.state),revision:revisionOf(row.version),identity:installedOf(row)}] as const))
@@ -123,7 +123,14 @@ async function snapshot(ports:IndustryPreparePorts,loadId:string,holds:PluginHol
    const found=used.get(item.instanceId)
    // 有使用登记但安装记录缺失：不重装、不当作处理中，归需要你操作
    if(!found){skills.set(item.instanceId,{raw:'missing',revision:null,installed:false,preparing:false,confirm:true,bundleHash:null,trustHash:null});continue}
-   skills.set(item.instanceId,{raw:found.state,revision:found.revision,installed:found.state==='installed',preparing:found.state!=='installed',confirm:false,bundleHash:null,trustHash:null,installation:found.identity});continue
+   let observed='unverified'
+   if(found.state==='installed'){
+    try{
+     const value=await ports.skills('skill-installations/observe',{installationId:found.identity.id},signal)
+     if(isRecord(value)&&typeof value.state==='string')observed=value.state==='available'?isRecord(value.current)&&value.current.name===found.identity.name&&value.current.bodyHash===found.identity.bodyHash?'available':'mismatch':['shadowed','missing','disabled'].includes(value.state)?value.state:'unverified'
+    }catch(error){if(signal?.aborted)throw error}
+   }
+   skills.set(item.instanceId,{raw:found.state+'/'+observed,revision:found.revision,installed:found.state==='installed'&&observed==='available',preparing:found.state!=='installed',confirm:found.state==='installed'&&observed!=='available',bundleHash:null,trustHash:null,installation:found.identity});continue
   }
   // 预览逐条捕获：单个技能读不出只让该条目归需要你操作，不拖垮整份清单
   let preview:unknown

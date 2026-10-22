@@ -251,6 +251,15 @@ test('员工与团队模板各有完整强类型示例，原生工具编码角�
  assert.equal(e.calls.length,2)
 })
 
+test('应用模板漏顶层version时指出字段位置，不误报同名冲突或写入草稿',async t=>{
+ const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
+ const {version,...template}=typedMeetingAppTemplate()
+ const result=await e.call('teloa_create_draft',{entity:'share',template})
+ assert.equal(result.isError,true)
+ assert.match(JSON.stringify(result.content),/template.*version/)
+ assert.equal(e.calls.length,0)
+})
+
 test('强类型模板角色公开真实数组结构，宿主编码Unicode和换行一次且不携带运行身份',async t=>{
  const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
  const template=typedEmployeeTemplate(),schema=e.ctx.tools.schemas(e.agent).find(row=>row.name==='teloa_create_draft')!

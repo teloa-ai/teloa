@@ -133,6 +133,8 @@ function checkCapabilities(manifest:unknown,compatibility:unknown,path:string){
  }
 }
 function templateDraftBody(value:unknown){
+ const issues=validateJsonSchemaValue(valueSchemaSpecToJsonSchema(templateDraftParameters),value,'template')
+ if(issues.length)throw new WorkError('teloa/invalid-input','模板字段不正确：'+issues.slice(0,12).join('；')+'。仅修正列出的字段后重新提交；这不是同名草稿冲突。')
  if(!isRecord(value)||!Array.isArray(value.files))throw new WorkError('teloa/invalid-input','模板必须是包含 files 的结构化分享包对象。')
  const structuredManifest=Object.hasOwn(value,'manifest')
  if(structuredManifest)checkTemplateManifest(value.manifest,'template.manifest')

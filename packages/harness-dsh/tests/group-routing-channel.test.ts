@@ -283,6 +283,7 @@ for(const [名目,answer] of [
  ['schema 对不上',JSON.stringify({schema:'teloa.group-routing-output/v1',intent:'reply',respond:[],reactions:[],assignments:[],workTarget:null})],
  ['旧三键输出',JSON.stringify({schema:'teloa.group-routing-output/v1',respond:[],reactions:[]})],
  ['候选外工作目标',JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'stop',respond:[],reactions:[],assignments:[],workTarget:{taskId:'77777777-7777-4777-8777-777777777777',runId:null}})],
+ ['分配对象夹带重写指令',JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'work',respond:[roleA],reactions:[],assignments:[{roleId:roleA,instructionRange:{start:0,end:1},instruction:'模型补写的任务'}],workTarget:null})],
  ['问好却分派工作',JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'reply',respond:[roleA],reactions:[],assignments:[{roleId:roleA,instructionRange:{start:0,end:1}}],workTarget:null})],
 ] as const)test(`输出解析失败（${名目}）回 parse-failed，不上抛`,async()=>{
  const {ctx,calls}=harness({answer})

@@ -35,7 +35,12 @@ export function TemplateShareReceive({open,close:onClose,intent,bridge,accept,sa
  const [choiceReady,setChoiceReady]=useState(false)
  const [shareLink,setShareLink]=useState('')
  const epoch=useRef(0)
- const close=()=>{epoch.current++;onClose()}
+ const close=()=>{
+  epoch.current++
+  // 完成回执保留在原接收记录；重新打开导入入口应能接收另一份模板。未完成申请仍保留原选择。
+  if(result?.complete){setPackage(undefined);setResult(undefined);setOnline(undefined);setShareLink('');setLocked(false);setChoiceReady(false);setError(undefined)}
+  onClose()
+ }
  const summary=useMemo(()=>pkg?sharePackageSummary(pkg):undefined,[pkg])
  const restoreChoice=async(value:SharePackage,serial:number)=>{
   setChoiceReady(false)

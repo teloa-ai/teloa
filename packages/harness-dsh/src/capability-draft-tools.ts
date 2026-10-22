@@ -31,8 +31,8 @@ export function registerCapabilityDraftTools(ctx:Context,ports:CapabilityDraftTo
  const checked=new WeakMap<object,ConversationInstructionMutationAuthorization>()
  const authorize=(exec:Parameters<typeof ctx.tools.execute>[0])=>authorizeConversationInstructionMutation({...ports,...(exec.agent?{agent:exec.agent}:{}),signal:exec.signal})
  const definitions=[
-  {name:'teloa_create_preview' as const,description:'在当前对话预览本人已保存的技能、连接器、计划或官方扩展草案，返回要创建的内容、影响和下一步；无需打开管理页面。计划只读预览后由本人打开原稿确认，本工具的 apply 不处理计划。新建草案由 teloa_create_draft 或 teloa_method_reuse 返回身份；查本人以前保存的原稿先调用 teloa_create_drafts 按名称找到固定身份，再核对预览。预览不会安装、运行、授权或启用任何能力。员工创建和修改使用 teloa_employees_* 工具，业务配置使用原会话业务搭建工具，本入口不处理这两类草案。',parameters:{draftId:{type:'string',required:true}}},
-  {name:'teloa_create_apply' as const,description:'按用户指令在当前对话应用已经预览的技能、连接器或官方扩展草案。必须带本次预览的 bodyHash；实际创建和安装复用现有处理服务与原生权限审核。不会执行技能附件、自动填写密钥、完成 OAuth、启用扩展或启动外部 MCP 进程。连接草案保存后可能仍需本人安全连接流程，以回执 readiness 和 next 为准。相同已应用草案可安全重试。技能草案可传 initialAvailability：本人要求只安装、暂不启用时传 disabled，技能从安装起就不可被模型或本人加载；缺省为 enabled。已应用或复用已有安装时不改动原启停，回执 availability 是真实启停值，必须按它回报是否已启用。员工使用 teloa_employees_*，业务使用原会话业务搭建工具。',parameters:{draftId:{type:'string',required:true},expectedBodyHash:{type:'string',required:true},initialAvailability:{type:'string',enum:['enabled','disabled']}}},
+  {name:'teloa_create_preview' as const,description:'在当前对话预览本人已保存的员工、技能、连接器、计划或官方扩展草案，返回要创建的内容、影响和下一步；无需打开管理页面。计划只读预览后由本人打开原稿确认，本工具的 apply 不处理计划。新建草案由 teloa_create_draft 或 teloa_method_reuse 返回身份；查本人以前保存的原稿先调用 teloa_create_drafts 按名称找到固定身份，再核对预览。预览不会安装、运行、授权或启用任何能力。员工草案沿本工具预览与应用，成功后落定同一原稿；teloa_employees_* 用于直接创建或修改实际员工。不要绕过已有员工草案另建同名员工。业务配置使用原会话业务搭建工具。',parameters:{draftId:{type:'string',required:true}}},
+  {name:'teloa_create_apply' as const,description:'按用户指令在当前对话应用已经预览的员工、技能、连接器或官方扩展草案。必须带本次预览的 bodyHash；实际创建和安装复用现有处理服务与原生权限审核。不会执行技能附件、自动填写密钥、完成 OAuth、启用扩展或启动外部 MCP 进程。连接草案保存后可能仍需本人安全连接流程，以回执 readiness 和 next 为准。相同已应用草案可安全重试。技能草案可传 initialAvailability：本人要求只安装、暂不启用时传 disabled，技能从安装起就不可被模型或本人加载；缺省为 enabled。已应用或复用已有安装时不改动原启停，回执 availability 是真实启停值，必须按它回报是否已启用。实际员工的后续修改使用 teloa_employees_*，业务使用原会话业务搭建工具。',parameters:{draftId:{type:'string',required:true},expectedBodyHash:{type:'string',required:true},initialAvailability:{type:'string',enum:['enabled','disabled']}}},
  ] as const
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
   assertConversationInstructionMutationAuthorization(checked.get(exec),await authorize(exec))
@@ -52,6 +52,7 @@ export type CapabilityDraftApplicationPorts={
  owner:string;scopeIds:()=>Promise<readonly string[]>
  services:()=>Promise<{drafts:Pick<PageCreateDraftService,'read'|'apply'>;preview:Pick<PageCreatePreviewService,'preview'>}>
  verifySource?:(draft:PageCreateDraft,signal?:AbortSignal)=>Promise<void>
+ roleHandler?:Handler
  marketContentHandler:Handler;skillInstallationsHandler:Handler;skillAvailabilityHandler:Handler;businessSpaceHandler:Handler;industryLoadsHandler:Handler
  industryMcpConnectionHandler:Handler;industryDataSourceHandler:Handler;marketPluginInstallationHandler:Handler
 }
@@ -89,13 +90,21 @@ function readableSkillPreview(preview:PageCreateDraftPreview):PageCreateDraftPre
 export function createCapabilityDraftApplication(ports:CapabilityDraftApplicationPorts){
  const actor=async()=>({ownerId:ports.owner,scopeIds:[...await ports.scopeIds()].filter(scope=>scope!=='general')})
  const supported=(draft:PageCreateDraft)=>{
+  if(draft.entity==='role'&&ports.roleHandler){if(record(JSON.parse(draft.body)).kind!=='employee')throw invalid('此入口只能创建员工，不能创建个人分身。');return}
   if(draft.entity!=='skill'&&draft.entity!=='connector'&&draft.entity!=='extension')throw invalid('此应用入口只处理技能、连接器和官方扩展草案。')
  }
  const receipt=async(draft:PageCreateDraft,signal?:AbortSignal,requested?:SkillInitialAvailability):Promise<CapabilityDraftResult>=>{
   supported(draft)
   if(draft.status!=='applied'||!draft.appliedRef)throw bad()
   let readiness:string,next:string,availability:SkillInitialAvailability|undefined
-  if(draft.entity==='skill'){
+  if(draft.entity==='role'){
+   if(!uuid(draft.appliedRef))throw bad()
+   const roles=await ports.roleHandler!('roles/list',{},signal)
+   if(!Array.isArray(roles))throw bad()
+   const role=roles.map(record).find(role=>role.id===draft.appliedRef&&role.ownerId===ports.owner)
+   if(!role||!['active','paused','retired'].includes(String(role.state)))throw bad()
+   readiness=String(role.state);next='员工已按此草案创建，原稿已标记为已应用；后续修改使用该员工的现有身份。'
+  }else if(draft.entity==='skill'){
    // 兼容页面已有的 contentId 回执；会话安装回执显式标明 installation 身份。
    if(!draft.appliedRef.startsWith('skill:')){readiness='saved';next='可在本会话继续使用技能安装工具核对并安装。'}
    else{
@@ -131,6 +140,11 @@ export function createCapabilityDraftApplication(ports:CapabilityDraftApplicatio
  const write=async(draft:PageCreateDraft,signal?:AbortSignal,initialAvailability?:SkillInitialAvailability):Promise<string>=>{
   supported(draft);signal?.throwIfAborted()
   await ports.verifySource?.(draft,signal);signal?.throwIfAborted()
+  if(draft.entity==='role'){
+   const role=record(await ports.roleHandler!('roles/create',{requestId:capabilityDraftRequestId(draft,'create-role'),fields:JSON.parse(draft.body)},signal))
+   if(!uuid(role.id)||role.ownerId!==ports.owner)throw bad()
+   return role.id
+  }
   if(draft.entity==='skill'){
    const {files,...metadata}=readPageCreateAtomicSkillDraft(JSON.parse(draft.body))
    const content=contentReceipt(await ports.marketContentHandler('market-content/import',{kind:'atomic-skill',requestId:capabilityDraftRequestId(draft,'import'),source:{kind:'upload',name:'会话创建技能'},metadata,files},signal),ports.owner)
@@ -181,6 +195,7 @@ export function createCapabilityDraftApplication(ports:CapabilityDraftApplicatio
    if(draft.entity!=='share'&&draft.entity!=='plan')supported(draft)
    const preview=await service.preview.preview(currentActor,value,signal)
    if(draft.entity==='share'||draft.entity==='plan')return preview
+   if(draft.entity==='role')return {...preview,next:{endpoint:'roles/create',consentKeys:preview.next.consentKeys}}
    // 页面旧流程只保存市场条目；对话应用的真实落点与后果在这里明确，不把安装说成目录保存。
    if(draft.entity==='skill')return {...readableSkillPreview(preview),consequences:[{kind:'impact',id:'skill-managed-file-install',required:true}],next:{endpoint:'skill-installations/install',consentKeys:[]}}
    if(draft.entity==='extension')return {...preview,next:{endpoint:'market-plugins/install',consentKeys:preview.next.consentKeys}}

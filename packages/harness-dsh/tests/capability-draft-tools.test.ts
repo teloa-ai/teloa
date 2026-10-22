@@ -203,3 +203,19 @@ test('连接草案传真实整包hash、既有空间和固定映射，登记后�
  saved={...unapplied,status:'draft',body:JSON.stringify({manifest:{...manifest,resources:[...manifest.resources,manifest.resources[0]]},resource})}
  await assert.rejects(()=>app.apply({draftId,expectedBodyHash:bodyHash}),{code:'teloa/invalid-input'});assert.equal(calls.length,3)
 })
+
+test('员工草案确认沿固定原稿创建一次并落定，不绕过原稿另建同名员工',async()=>{
+ const fields={name:'反馈分析员',kind:'employee',scopes:['general'],duty:'整理编号反馈',dataScope:'本人提供的文字',executionScope:'只起草，不外发',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}
+ let saved={...draft,entity:'role' as const,body:JSON.stringify(fields)},created:Record<string,unknown>|undefined
+ const calls:{method:string;payload:unknown}[]=[],unavailable=async()=>{throw Error('unrelated handler must not run')}
+ const ports:CapabilityDraftApplicationPorts={owner,scopeIds:async()=>[],services:async()=>({drafts:{read:async()=>saved,apply:async(_actor,input,write)=>{assert.equal(input.expectedBodyHash,saved.bodyHash);if(saved.status==='draft')saved={...saved,status:'applied',appliedRef:await write(saved)};return saved}},preview:{preview:async()=>({schema:'teloa.page-create-draft-preview/v1',draft:saved,fields:[],fieldsTruncated:false,consequences:[],next:{endpoint:'roles/create',consentKeys:[]},computedAt:draft.updatedAt})}}),roleHandler:async(method,payload)=>{calls.push({method,payload});if(method==='roles/create'){created={...(payload as {fields:object}).fields,id:installationId,ownerId:owner,state:'active',version:1};return created}if(method==='roles/list')return created?[created]:[];throw Error('unexpected role endpoint')},marketContentHandler:unavailable,skillInstallationsHandler:unavailable,skillAvailabilityHandler:unavailable,businessSpaceHandler:unavailable,industryLoadsHandler:unavailable,industryMcpConnectionHandler:unavailable,industryDataSourceHandler:unavailable,marketPluginInstallationHandler:unavailable}
+ const app=createCapabilityDraftApplication(ports),preview=await app.preview({draftId})
+ assert.equal(preview.next.endpoint,'roles/create');assert.equal(calls.length,0)
+ const result=await app.apply({draftId,expectedBodyHash:bodyHash})
+ assert.equal(result.draft.status,'applied');assert.equal(result.appliedRef,installationId);assert.equal(result.readiness,'active')
+ assert.deepEqual(calls[0],{method:'roles/create',payload:{requestId:capabilityDraftRequestId(draft,'create-role'),fields}})
+ assert.deepEqual(await app.apply({draftId,expectedBodyHash:bodyHash}),result);assert.equal(calls.filter(x=>x.method==='roles/create').length,1)
+ saved={...draft,entity:'role',body:JSON.stringify({...fields,kind:'twin'})}
+ await assert.rejects(app.apply({draftId,expectedBodyHash:bodyHash}),{code:'teloa/invalid-input'});assert.equal(calls.filter(x=>x.method==='roles/create').length,1)
+ await assert.rejects(createCapabilityDraftApplication({...ports,roleHandler:undefined}).preview({draftId}),{code:'teloa/invalid-input'})
+})
