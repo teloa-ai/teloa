@@ -13,6 +13,19 @@ function tool(ctx:Context,name:string,body:()=>void=()=>{}){
  return ctx.tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{body();return 'executed'}}))
 }
 
+test('核心插件只读可选 provider 不要求注入，不阻塞无浏览器或电脑授权的文本岗位',async t=>{
+ const {ctx}=await createRuntime(t)
+ const browser={providerName:'playwright-mcp'},computer={providerName:'cua-driver-native'}
+ tool(ctx,nativeBrowserToolNames[0]!);tool(ctx,nativeComputerToolNames[0]!)
+ let read!:()=>ReturnType<typeof nativeToolRules>
+ await ctx.plugin({name:'optional-native-provider-consumer',inject:['tools','agents'],apply(child:Context){read=()=>nativeToolRules(child)}})
+ assert.deepEqual(read(),[])
+ ctx.provide('browserUse',browser);ctx.provide('computerUse',computer)
+ assert.deepEqual(read().map(rule=>rule.name),[nativeBrowserToolNames[0],nativeComputerToolNames[0]])
+ computer.providerName='disconnected';browser.providerName='disconnected'
+ assert.deepEqual(read(),[])
+})
+
 test('Goal 岗位候选仅认真实已注册工具和目标服务，调用仍需当前岗位授权',async t=>{
  const {ctx,create}=await createRuntime(t),agent=await create('native-goal-grant')
  const names=['get_goal','create_goal','update_goal'];let allowed=false,bodies=0

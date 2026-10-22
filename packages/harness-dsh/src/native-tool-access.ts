@@ -31,7 +31,8 @@ export function nativeToolNeedsApproval(name:string):boolean{
  return nativeBrowserToolNames.includes(name)||nativeComputerToolNames.includes(name)
 }
 function providerName(ctx:Context,service:'browserUse'|'computerUse'):unknown{
- const registry:unknown=Reflect.get(ctx,service)
+ // 可选 provider 不属于核心宿主的必需注入；查询当前服务，缺失时只排除对应工具。
+ const registry:unknown=ctx.get(service)
  return registry!==null&&typeof registry==='object'?Reflect.get(registry,'providerName'):undefined
 }
 function providerAvailable(ctx:Context,name:string):boolean{

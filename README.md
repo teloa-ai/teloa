@@ -280,7 +280,7 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.4** is the current Community release. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.4) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. [npm](https://www.npmjs.com/package/@teloa/cli) provides the same version. Source builds remain available below.
+**0.2.5** is the current Community release. This patch fixes employee execution when optional browser or computer providers are unavailable. Real MiniMax calls through HTTP API, SDK and MCP have verified results, continuation and cancellation. The SDK remains compatible at `@teloa/sdk@0.2.4`. Its native package is attached to the [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.4) and has been verified on macOS arm64; [Docker Hub](https://hub.docker.com/r/teloa/teloa) provides the matching **Linux ARM64** image. [npm](https://www.npmjs.com/package/@teloa/cli) provides the same version. Source builds remain available below.
 
 ### What changes in this release
 
